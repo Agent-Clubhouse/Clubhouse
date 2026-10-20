@@ -8,6 +8,7 @@ import { MINIMAL_CHAT_CAPABILITIES } from '../../../shared/chat/capabilities';
 import type {
   ChatErrorCode,
   ChatEventDraft,
+  ChatImage,
   ChatModelOption,
   ContentBlock as ChatContentBlock,
   PermissionOption as ChatPermissionOption,
@@ -238,6 +239,22 @@ function toolContent(content: ToolCallContent[] | null | undefined, rawOutput?: 
   return out;
 }
 
+/** ACP image blocks as chat images: bytes when the agent sends them, else a link. */
+function imageOf(block: ContentBlock): ChatImage | undefined {
+  if (block.type !== 'image') return undefined;
+  if (block.data) return { type: 'image', mimeType: block.mimeType, data: block.data };
+  return block.uri ? { type: 'image', mimeType: block.mimeType, uri: block.uri } : undefined;
+}
+
+/** Images in a tool call's content. */
+function toolImages(content: ToolCallContent[] | null | undefined): ChatImage[] {
+  if (!Array.isArray(content)) return [];
+  return content.flatMap((c) => {
+    const image = c.type === 'content' ? imageOf(c.content) : undefined;
+    return image ? [image] : [];
+  });
+}
+
 function blockText(block: ContentBlock): string | undefined {
   switch (block.type) {
     case 'text': return block.text;
@@ -408,6 +425,8 @@ export class AcpChatEventMapper {
   private turnId: string | undefined;
   private turnStartedAt = 0;
   private seqInTurn = 0;
+  /** Ids for media-only calls made from images in the agent's reply. */
+  private imageCount = 0;
   private lastKind: 'message' | 'thought' | 'other' = 'other';
   private messageId = '';
   private thoughtId = '';
@@ -603,7 +622,16 @@ export class AcpChatEventMapper {
     switch (u.sessionUpdate) {
       case 'agent_message_chunk':
       case 'agent_thought_chunk': {
-        if (replay || u.content.type !== 'text') return [];
+        if (replay) return [];
+        const image = u.sessionUpdate === 'agent_message_chunk' ? imageOf(u.content) : undefined;
+        if (image) {
+          // An image in the agent's reply: a media-only call. It leaves the message
+          // segmentation alone, so with rich content off (the call dropped) the
+          // reply's messages are exactly as before.
+          const toolCallId = `${this.turnId ?? `session-${this.idPrefix}`}-image-${++this.imageCount}`;
+          return [this.scoped({ type: 'tool_call', data: { toolCallId, kind: 'other', title: 'Image', status: 'completed', toolName: 'image', mediaOnly: true, media: [image] } })];
+        }
+        if (u.content.type !== 'text') return [];
         const thought = u.sessionUpdate === 'agent_thought_chunk';
         const kind = thought ? 'thought' : 'message';
         if (this.lastKind !== kind) {
@@ -634,6 +662,7 @@ export class AcpChatEventMapper {
           return [this.scoped({ type: 'plan_document', data: { planId: planFile, markdown, status: 'streaming', toolCallId: u.toolCallId } })];
         }
         const title = toolTitle(u.title, u.name, u.kind);
+        const media = toolImages(u.content);
         this.toolCalls.set(u.toolCallId, { locations: locations(u.locations), content, title, name: u.name, kind: u.kind });
         return [this.scoped({
           type: 'tool_call',
@@ -646,6 +675,7 @@ export class AcpChatEventMapper {
             ...(u.rawInput !== undefined && { rawInput: u.rawInput }),
             ...(u.locations && { locations: locations(u.locations) }),
             ...(u.content && { content: toolContent(u.content, u.rawOutput) }),
+            ...(media.length && { media }),
           },
         })];
       }
@@ -686,6 +716,7 @@ export class AcpChatEventMapper {
           : readable(tu.title) ? tu.title
           : known?.title ?? toolTitle(tu.title, tu.name ?? known?.name, tu.kind ?? known?.kind);
         const content = toolContent(tu.content, tu.rawOutput);
+        const media = toolImages(tu.content);
         const out: ChatEventDraft[] = [];
         if (tu.status === 'completed' && this.profile?.tasksAfterToolCall) {
           const tasks = this.profile.tasksAfterToolCall(this.toolInputs.get(tu.toolCallId) ?? tu.rawInput, this.tasks);
@@ -702,6 +733,7 @@ export class AcpChatEventMapper {
             ...(tu.status && { status: tu.status }),
             ...(title && { title }),
             ...(content && { content, contentMode: 'replace' as const }),
+            ...(media.length && { media }),
             ...(tu.rawOutput !== undefined && { rawOutput: tu.rawOutput }),
           },
         })];

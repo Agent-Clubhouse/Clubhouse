@@ -9,6 +9,7 @@ import * as path from 'path';
 import type {
   ChatErrorCode,
   ChatEventDraft,
+  ChatImage,
   ChatQuestionAnswers,
   ChatSessionState,
   ContentBlock,
@@ -485,7 +486,16 @@ export class CodexChatEventMapper {
       case 'imageView':
         return [{
           type: 'tool_call',
-          data: { toolCallId: item.id, kind: 'read', title: `View ${item.path}`, status: 'completed', toolName: 'imageView', locations: [{ path: item.path }] },
+          data: {
+            toolCallId: item.id, kind: 'read', title: `View ${item.path}`, status: 'completed', toolName: 'imageView', locations: [{ path: item.path }],
+            // Main reads it only if it's inside the agent's folders (ChatMediaPolicy).
+            media: [{ type: 'image', mimeType: 'image/*', sourcePath: item.path }],
+          },
+        }];
+      case 'imageGeneration':
+        return [{
+          type: 'tool_call',
+          data: { toolCallId: item.id, kind: 'other', title: 'Generating image', status: 'in_progress', toolName: 'imageGeneration', mediaOnly: true },
         }];
       case 'collabAgentToolCall':
         return item.receiverThreadIds.map((threadId) => ({
@@ -534,29 +544,49 @@ export class CodexChatEventMapper {
           type: 'tool_call_update',
           data: { toolCallId: item.id, status: commandStatus(item.status), content: diffContent(item.changes), contentMode: 'replace' },
         }];
-      case 'mcpToolCall':
+      case 'mcpToolCall': {
+        const media = mcpImages(item.result?.content);
         return [{
           type: 'tool_call_update',
           data: {
             toolCallId: item.id,
             status: item.status === 'failed' ? 'failed' : 'completed',
+            ...(media.length && { media }),
             ...(item.result && { rawOutput: item.result }),
             ...(item.error && { error: item.error.message }),
             ...(item.durationMs != null && { durationMs: item.durationMs }),
           },
         }];
-      case 'dynamicToolCall':
+      }
+      case 'dynamicToolCall': {
+        const media = (item.contentItems ?? []).flatMap((c): ChatImage[] => (c.type === 'inputImage' ? [imageFromUrl(c.imageUrl)] : []));
         return [{
           type: 'tool_call_update',
           data: {
             toolCallId: item.id,
             status: item.status === 'failed' || item.success === false ? 'failed' : 'completed',
+            ...(media.length && { media }),
             ...(item.contentItems && { rawOutput: item.contentItems }),
             ...(item.durationMs != null && { durationMs: item.durationMs }),
           },
         }];
+      }
       case 'webSearch':
         return [{ type: 'tool_call_update', data: { toolCallId: item.id, status: 'completed' } }];
+      case 'imageGeneration': {
+        // `result` is the image as base64; `savedPath` is Codex's own copy, kept for "reveal".
+        const failed = !!item.failure || !item.result;
+        return [{
+          type: 'tool_call_update',
+          data: {
+            toolCallId: item.id,
+            status: failed ? 'failed' : 'completed',
+            title: item.revisedPrompt || 'Generated image',
+            ...(!failed && { media: [{ type: 'image' as const, mimeType: 'image/png', data: item.result }] }),
+            ...(item.failure && { error: imageFailureText(item.failure) }),
+          },
+        }];
+      }
       case 'collabAgentToolCall': {
         const status = item.status === 'failed' ? 'failed' : item.status === 'interrupted' ? 'cancelled' : item.status === 'completed' ? 'completed' : 'running';
         return item.receiverThreadIds.map((threadId) => ({
@@ -579,6 +609,32 @@ export class CodexChatEventMapper {
 }
 
 // ── Helpers ─────────────────────────────────────────────────────────────────
+
+/** Images in an MCP tool result: image content, and embedded resources holding an image. */
+function mcpImages(content: unknown): ChatImage[] {
+  if (!Array.isArray(content)) return [];
+  return content.flatMap((c): ChatImage[] => {
+    if (!c || typeof c !== 'object') return [];
+    const block = c as { type?: unknown; data?: unknown; mimeType?: unknown; resource?: { mimeType?: unknown; blob?: unknown } };
+    if (block.type === 'image' && typeof block.data === 'string') {
+      return [{ type: 'image', mimeType: typeof block.mimeType === 'string' ? block.mimeType : 'image/png', data: block.data }];
+    }
+    const res = block.type === 'resource' ? block.resource : undefined;
+    if (res && typeof res.blob === 'string' && typeof res.mimeType === 'string' && res.mimeType.startsWith('image/')) {
+      return [{ type: 'image', mimeType: res.mimeType, data: res.blob }];
+    }
+    return [];
+  });
+}
+
+/** A dynamic tool's image: a data: URL is bytes, anything else a remote link. */
+function imageFromUrl(url: string): ChatImage {
+  return url.startsWith('data:') ? { type: 'image', mimeType: 'image/*', data: url } : { type: 'image', mimeType: 'image/*', uri: url };
+}
+
+function imageFailureText(failure: { type: string }): string {
+  return failure.type === 'usageLimitExceeded' ? 'Image generation hit a usage limit' : 'Image generation failed';
+}
 
 /** a - b per field, never below zero. */
 function subtractTokens(a: TokenUsageBreakdown, b: TokenUsageBreakdown): TokenUsageBreakdown {

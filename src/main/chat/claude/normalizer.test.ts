@@ -61,6 +61,36 @@ describe('ClaudeNormalizer', () => {
     ]);
   });
 
+  it('maps image blocks in a tool result (Read on an image, MCP screenshots)', () => {
+    const n = new ClaudeNormalizer();
+    n.normalize({ type: 'assistant', message: { id: 'm', content: [{ type: 'tool_use', id: 't', name: 'mcp__browser__screenshot', input: {} }] } });
+    const [u] = n.normalize({
+      type: 'user',
+      message: { content: [{ type: 'tool_result', tool_use_id: 't', content: [
+        { type: 'text', text: 'Screenshot taken' },
+        { type: 'image', source: { type: 'base64', media_type: 'image/png', data: 'iVBORw0KGgo=' } },
+        { type: 'image', source: { type: 'url', url: 'https://example.com/a.png' } },
+      ] }] },
+    });
+    expect(u).toMatchObject({
+      kind: 'tool_call_update', content: 'Screenshot taken',
+      images: [{ type: 'image', mimeType: 'image/png', data: 'iVBORw0KGgo=' }, { type: 'image', mimeType: 'image/png', uri: 'https://example.com/a.png' }],
+    });
+  });
+
+  it("falls back to Read's typed image result when the tool result has no image block", () => {
+    const n = new ClaudeNormalizer();
+    n.normalize({ type: 'assistant', message: { id: 'm', content: [{ type: 'tool_use', id: 't', name: 'Read', input: { file_path: '/p/a.png' } }] } });
+    const [u] = n.normalize({
+      type: 'user',
+      message: { content: [{ type: 'tool_result', tool_use_id: 't', content: [] }] },
+      tool_use_result: { type: 'image', file: { base64: 'R0lGODlh', type: 'image/gif', originalSize: 6 } },
+    });
+    expect(u).toMatchObject({ images: [{ type: 'image', mimeType: 'image/gif', data: 'R0lGODlh' }] });
+    const [plain] = n.normalize({ type: 'user', message: { content: [{ type: 'tool_result', tool_use_id: 't', content: 'text only' }] } });
+    expect(plain).not.toHaveProperty('images');
+  });
+
   it('attaches tool_use_result when the message carries one tool result', () => {
     const n = new ClaudeNormalizer();
     n.normalize({ type: 'assistant', message: { id: 'm', content: [{ type: 'tool_use', id: 't', name: 'Edit', input: {} }] } });

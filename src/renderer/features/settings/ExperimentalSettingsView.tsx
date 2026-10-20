@@ -33,7 +33,7 @@ const EXPERIMENTAL_FEATURES: Array<{
   {
     id: RICH_CHAT_CONTENT_FLAG,
     label: 'Rich chat content',
-    description: 'Show links in chat as links, and GitHub pull requests, issues and commits as references with a hover card. Details load from GitHub through the gh CLI only when you hover one.',
+    description: 'Show images agents return inline in chat, links as links, and GitHub pull requests, issues and commits as references with a hover card. Images from the web load only when you click them, and GitHub details load through the gh CLI only when you hover one.',
   },
   {
     id: 'telemetry',

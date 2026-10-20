@@ -14,6 +14,8 @@ import type {
 import type { ChatCapabilities, ContentBlock } from '../../../../shared/chat';
 import { attachmentName } from './attachments';
 import { enrichMarkdownLinks, useRichLinks, useTokenHandlers } from './rich/RichLinks';
+import { useRichChatContent } from './rich/rich-flag';
+import { handleRemoteImageClick, rewriteMarkdownImages } from './rich/markdown-images';
 import { AlertIcon, BrainIcon, ChevronDown, ChevronRight, FileIcon, ImageIcon, PlanIcon, QuestionIcon } from './icons';
 import { formatCost, formatDuration, formatTokens } from './view-model';
 
@@ -42,21 +44,25 @@ export function Markdown({ text, streaming = false, className = '' }: { text: st
   }, [text, streaming]);
   useEffect(() => () => { if (timer.current) clearTimeout(timer.current); }, []);
 
-  const html = useMemo(() => renderMarkdownSafe(shown), [shown]);
+  // Rich chat content (#2350): web images wait for a click and local ones don't load; off, the HTML is as before.
+  const rich = useRichChatContent();
+  const html = useMemo(() => (rich ? rewriteMarkdownImages(renderMarkdownSafe(shown)) : renderMarkdownSafe(shown)), [shown, rich]);
   // Rich links (#2351) rework the rendered, sanitized DOM; off, the element is exactly as before.
-  const rich = useRichLinks();
-  const richHandlers = useTokenHandlers(rich);
+  const richLinks = useRichLinks();
+  const richHandlers = useTokenHandlers(richLinks);
   const el = useRef<HTMLDivElement>(null);
   const enriched = useRef<string | null>(null);
   useLayoutEffect(() => {
-    if (!rich || !el.current) return;
+    if (!richLinks || !el.current) return;
     // Same HTML, new context (the repo resolved): start again from React's markup.
     if (enriched.current === html) el.current.innerHTML = html;
-    enrichMarkdownLinks(el.current, rich.repo);
+    enrichMarkdownLinks(el.current, richLinks.repo);
     enriched.current = html;
-  }, [html, rich]);
-  if (rich) {
-    return <div ref={el} className={`chat-markdown ${className}`} {...richHandlers} dangerouslySetInnerHTML={{ __html: html }} />;
+  }, [html, richLinks]);
+  if (rich || richLinks) {
+    const linkClick = richHandlers.onClick ?? onClick;
+    const onRichClick = (e: React.MouseEvent<HTMLDivElement>) => { if (!handleRemoteImageClick(e)) linkClick(e); };
+    return <div ref={el} className={`chat-markdown ${className}`} {...richHandlers} onClick={onRichClick} dangerouslySetInnerHTML={{ __html: html }} />;
   }
   return <div className={`chat-markdown ${className}`} onClick={onClick} dangerouslySetInnerHTML={{ __html: html }} />;
 }

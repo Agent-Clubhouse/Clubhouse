@@ -3,10 +3,10 @@
  * the registry, so a request for an agent that isn't running in chat fails
  * cleanly instead of reaching a PTY.
  */
-import { BrowserWindow, ipcMain, type IpcMainInvokeEvent } from 'electron';
+import { BrowserWindow, clipboard, ipcMain, nativeImage, net, shell, type IpcMainInvokeEvent } from 'electron';
 import { IPC } from '../../shared/ipc-channels';
 import type { ChatAgentRuntimeInfo, ChatDriverId, ChatQuestionAnswers, ChatRuntimeSettings, ContentBlock, MessageDelivery, PermissionLevel, PermissionResponseExtras } from '../../shared/chat';
-import { CHAT_ATTACHMENTS_MAX, CHAT_IMAGE_MAX_BYTES, PERMISSION_LEVELS } from '../../shared/chat';
+import { CHAT_ATTACHMENTS_MAX, CHAT_IMAGE_MAX_BYTES, PERMISSION_LEVELS, RICH_CHAT_CONTENT_FLAG, isMediaRef } from '../../shared/chat';
 import { getAgentRuntime, readChatTranscript, listChatSessions, onChatEvent } from '../services/agent-runtime';
 import { getAgentRuntimeInfo, type AgentRuntimeQuery } from '../services/agent-runtime/runtime-info';
 import { createStatusBridge } from '../services/agent-runtime/chat-status-bridge';
@@ -16,6 +16,8 @@ import * as annexEventBus from '../services/annex-event-bus';
 import { broadcastToAllWindows } from '../util/ipc-broadcast';
 import { withValidatedArgs, stringArg, numberArg, objectArg, arrayArg, booleanArg, type ArgValidator } from './validation';
 import { resolveAttachments, stageAttachmentData, stageAttachmentPath } from '../services/agent-runtime/chat-attachments';
+import { fetchRemoteImage, mediaFilePath, readMedia } from '../services/agent-runtime/chat-media';
+import { getSettings as getExperimentalSettings } from '../services/experimental-settings';
 
 /** An effort: a level, omitted to keep the current one, or null for the provider's default. */
 const effortArg: ArgValidator<string | null | undefined> = (value, argName) => (value === null ? null : stringArg({ optional: true })(value, argName));
@@ -30,11 +32,60 @@ function requireChatRuntime(agentId: string) {
  * Staging must come from a Clubhouse window's own page (the main window or a
  * popout), not an iframe, webview or detached WebContents.
  */
-function assertTopFrameOfAppWindow(event: IpcMainInvokeEvent): void {
+function assertTopFrameOfAppWindow(event: IpcMainInvokeEvent, message = 'Attachments can only be added from a Clubhouse window'): void {
   if (!BrowserWindow.fromWebContents(event.sender) || !event.senderFrame || event.senderFrame !== event.sender.mainFrame) {
-    throw new Error('Attachments can only be added from a Clubhouse window');
+    throw new Error(message);
   }
 }
+
+/** Rich chat content channels: only with the flag on, and only from a Clubhouse window's own page. */
+function assertRichMedia(event: IpcMainInvokeEvent): void {
+  if (getExperimentalSettings()[RICH_CHAT_CONTENT_FLAG] !== true) throw new Error('Rich chat content is off');
+  assertTopFrameOfAppWindow(event, 'Chat images can only be opened from a Clubhouse window');
+}
+
+/**
+ * A fetch for click-to-load images over Electron's net (system proxy, no
+ * cookies), with redirects handed back as 3xx responses so fetchRemoteImage
+ * checks every hop before following it.
+ */
+function electronImageFetch(url: string, init: RequestInit): Promise<Response> {
+  return new Promise((resolve, reject) => {
+    const request = net.request({ url, method: 'GET', redirect: 'manual', credentials: 'omit', useSessionCookies: false });
+    request.setHeader('Accept', 'image/*');
+    const signal = init.signal;
+    const onAbort = () => { request.abort(); reject(new Error('The image took too long to load')); };
+    if (signal?.aborted) { onAbort(); return; }
+    signal?.addEventListener('abort', onAbort, { once: true });
+    request.on('redirect', (statusCode, _method, redirectUrl) => {
+      request.abort();
+      signal?.removeEventListener('abort', onAbort);
+      resolve(new Response(null, { status: statusCode, headers: { location: redirectUrl } }));
+    });
+    request.on('response', (response) => {
+      const headers = new Headers();
+      for (const [key, value] of Object.entries(response.headers)) headers.set(key, Array.isArray(value) ? value.join(', ') : String(value));
+      const body = new ReadableStream<Uint8Array>({
+        start(controller) {
+          response.on('data', (chunk: Buffer) => controller.enqueue(new Uint8Array(chunk)));
+          response.on('end', () => { signal?.removeEventListener('abort', onAbort); controller.close(); });
+          response.on('error', (err: Error) => controller.error(err));
+          response.on('aborted', () => controller.error(new Error('The image could not be loaded')));
+        },
+        cancel() { request.abort(); },
+      });
+      const status = response.statusCode >= 200 && response.statusCode <= 599 ? response.statusCode : 502;
+      resolve(new Response(status === 204 || status === 304 ? null : body, { status, headers }));
+    });
+    request.on('error', (err) => { signal?.removeEventListener('abort', onAbort); reject(err); });
+    request.end();
+  });
+}
+
+const mediaRefArg: ArgValidator<string> = (value, argName) => {
+  if (!isMediaRef(value)) throw new Error(`${argName} must be a media reference`);
+  return value;
+};
 
 interface StageInput { path?: unknown; data?: unknown; name?: unknown; imagesAllowed?: unknown }
 
@@ -126,6 +177,42 @@ export function registerChatHandlers(): void {
         return stageAttachmentData(agentId, input.data, name);
       }
       throw new Error('Attachment needs a file path or image data');
+    },
+  ));
+
+  // Stored images are named by reference only; main maps it to the agent's media folder.
+  ipcMain.handle(IPC.CHAT.READ_MEDIA, withValidatedArgs(
+    [stringArg(), mediaRefArg],
+    async (event, agentId, mediaRef) => {
+      assertRichMedia(event);
+      return readMedia(agentId, mediaRef);
+    },
+  ));
+
+  ipcMain.handle(IPC.CHAT.MEDIA_ACTION, withValidatedArgs(
+    [stringArg(), mediaRefArg, stringArg()],
+    async (event, agentId, mediaRef, action) => {
+      assertRichMedia(event);
+      if (action === 'reveal') {
+        shell.showItemInFolder(mediaFilePath(agentId, mediaRef));
+        return;
+      }
+      if (action === 'copy') {
+        const { data } = await readMedia(agentId, mediaRef);
+        const image = nativeImage.createFromBuffer(Buffer.from(data));
+        if (image.isEmpty()) throw new Error("This image can't be copied");
+        clipboard.writeImage(image);
+        return;
+      }
+      throw new Error(`Unknown media action: ${action}`);
+    },
+  ));
+
+  ipcMain.handle(IPC.CHAT.FETCH_REMOTE_IMAGE, withValidatedArgs(
+    [stringArg({ maxLength: 2048 })],
+    async (event, url) => {
+      assertRichMedia(event);
+      return fetchRemoteImage(url, electronImageFetch);
     },
   ));
 

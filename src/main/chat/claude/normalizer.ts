@@ -1,3 +1,4 @@
+import type { ChatImage } from '../../../shared/chat';
 import type { ClaudeBackgroundTask, ClaudeChatEvent, ClaudeChatEventBody, ClaudeCommand, ClaudePermissionUpdate, ClaudeUsage } from './events';
 
 /**
@@ -31,6 +32,18 @@ function toolResultText(content: unknown): string {
     .map((b) => (isObj(b) && b.type === 'text' ? str(b.text) ?? '' : ''))
     .filter(Boolean)
     .join('\n');
+}
+
+/** Image blocks in a tool_result's content (Read on an image, MCP screenshots). */
+function toolResultImages(content: unknown): ChatImage[] {
+  const out: ChatImage[] = [];
+  for (const b of arr(content)) {
+    if (!isObj(b) || b.type !== 'image' || !isObj(b.source)) continue;
+    const mimeType = str(b.source.media_type) ?? 'image/png';
+    if (b.source.type === 'base64' && typeof b.source.data === 'string') out.push({ type: 'image', mimeType, data: b.source.data });
+    else if (b.source.type === 'url' && typeof b.source.url === 'string') out.push({ type: 'image', mimeType, uri: b.source.url });
+  }
+  return out;
 }
 
 function userText(content: unknown): string {
@@ -346,12 +359,19 @@ export class ClaudeNormalizer {
     if (toolResults.length > 0) {
       return toolResults.map((b) => {
         const toolCallId = str(b.tool_use_id) ?? '';
+        const images = toolResultImages(b.content);
+        // Read on an image also reports it as tool_use_result { type: 'image', file: { base64, type } }.
+        const typed = toolResults.length === 1 && isObj(msg.tool_use_result) ? msg.tool_use_result : undefined;
+        if (!images.length && typed?.type === 'image' && isObj(typed.file) && typeof typed.file.base64 === 'string') {
+          images.push({ type: 'image', mimeType: str(typed.file.type) ?? 'image/png', data: typed.file.base64 });
+        }
         return {
           kind: 'tool_call_update' as const,
           toolCallId,
           name: this.toolNames.get(toolCallId) ?? '',
           status: b.is_error === true ? 'failed' as const : 'completed' as const,
           content: toolResultText(b.content),
+          ...(images.length && { images }),
           // tool_use_result belongs to the message's (single) tool result.
           result: toolResults.length === 1 ? msg.tool_use_result : undefined,
           parentToolCallId,

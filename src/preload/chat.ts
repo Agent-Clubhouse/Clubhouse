@@ -30,6 +30,14 @@ export const chat = {
         ...(opts?.imagesAllowed !== undefined ? { imagesAllowed: opts.imagesAllowed } : {}),
       });
     },
+    /** Rich chat content: a stored image by its media reference (never a path). */
+    readMedia: (agentId: string, mediaRef: string): Promise<{ mimeType: string; data: Uint8Array }> =>
+      ipcRenderer.invoke(IPC.CHAT.READ_MEDIA, agentId, mediaRef),
+    mediaAction: (agentId: string, mediaRef: string, action: 'copy' | 'reveal'): Promise<void> =>
+      ipcRenderer.invoke(IPC.CHAT.MEDIA_ACTION, agentId, mediaRef, action),
+    /** Load a remote image the user clicked; main checks the host and sniffs the bytes. */
+    fetchRemoteImage: (url: string): Promise<{ mimeType: string; data: Uint8Array }> =>
+      ipcRenderer.invoke(IPC.CHAT.FETCH_REMOTE_IMAGE, url),
     interrupt: (agentId: string): Promise<void> =>
       ipcRenderer.invoke(IPC.CHAT.INTERRUPT, agentId),
     respondPermission: (agentId: string, requestId: string, optionId: string, extras?: PermissionResponseExtras): Promise<void> =>

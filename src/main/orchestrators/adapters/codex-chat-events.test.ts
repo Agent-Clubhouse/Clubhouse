@@ -207,9 +207,43 @@ describe('CodexChatEventMapper', () => {
       expect(completed(item)[0].data).toEqual({ toolCallId: 'ws-1', status: 'completed' });
     });
 
-    it('maps an image view as a completed read', () => {
+    it('maps an image view as a completed read with the image to preview', () => {
       expect(started({ type: 'imageView', id: 'img-1', path: 'shot.png' })[0].data).toEqual({
         toolCallId: 'img-1', kind: 'read', title: 'View shot.png', status: 'completed', toolName: 'imageView', locations: [{ path: 'shot.png' }],
+        media: [{ type: 'image', mimeType: 'image/*', sourcePath: 'shot.png' }],
+      });
+    });
+
+    it('maps a generated image to a media-only call carrying its bytes', () => {
+      const item = {
+        type: 'imageGeneration' as const, id: 'gen-1', status: 'generating', revisedPrompt: null, result: '', failure: null,
+      };
+      expect(started(item)[0].data).toEqual({ toolCallId: 'gen-1', kind: 'other', title: 'Generating image', status: 'in_progress', toolName: 'imageGeneration', mediaOnly: true });
+      expect(completed({ ...item, status: 'completed', revisedPrompt: 'a red fox', result: 'iVBORw0KGgo=', savedPath: '/home/u/.codex/generated_images/fox.png' })[0].data).toEqual({
+        toolCallId: 'gen-1', status: 'completed', title: 'a red fox', media: [{ type: 'image', mimeType: 'image/png', data: 'iVBORw0KGgo=' }],
+      });
+      expect(completed({ ...item, status: 'failed', failure: { type: 'usageLimitExceeded', limitId: 'images', resetsAt: null } })[0].data).toEqual({
+        toolCallId: 'gen-1', status: 'failed', title: 'Generated image', error: 'Image generation hit a usage limit',
+      });
+    });
+
+    it('maps images in MCP and dynamic tool results', () => {
+      const mcp = {
+        type: 'mcpToolCall' as const, id: 'mcp-img', server: 'browser', tool: 'screenshot', status: 'completed' as const, arguments: {},
+        result: { content: [
+          { type: 'text', text: 'took it' }, { type: 'image', data: 'AAAA', mimeType: 'image/jpeg' },
+          { type: 'resource', resource: { uri: 'mem://shot', mimeType: 'image/webp', blob: 'BBBB' } },
+          { type: 'resource', resource: { uri: 'mem://log', mimeType: 'text/plain', blob: 'CCCC' } },
+        ], structuredContent: null, _meta: null },
+        error: null, durationMs: 5,
+      };
+      expect(completed(mcp as never)[0].data).toMatchObject({ media: [{ type: 'image', mimeType: 'image/jpeg', data: 'AAAA' }, { type: 'image', mimeType: 'image/webp', data: 'BBBB' }] });
+      const dyn = {
+        type: 'dynamicToolCall' as const, id: 'dyn-img', namespace: null, tool: 'render', arguments: {}, status: 'completed' as const, success: true, durationMs: null,
+        contentItems: [{ type: 'inputImage' as const, imageUrl: 'data:image/png;base64,AAAA' }, { type: 'inputImage' as const, imageUrl: 'https://example.com/a.png' }],
+      };
+      expect(completed(dyn as never)[0].data).toMatchObject({
+        media: [{ type: 'image', mimeType: 'image/*', data: 'data:image/png;base64,AAAA' }, { type: 'image', mimeType: 'image/*', uri: 'https://example.com/a.png' }],
       });
     });
 

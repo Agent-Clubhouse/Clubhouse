@@ -180,6 +180,12 @@ export const IPC = {
     LIST_SESSIONS: 'chat:list-sessions',
     SEND_MESSAGE: 'chat:send-message',
     STAGE_ATTACHMENT: 'chat:stage-attachment',
+    /** Rich chat content: a stored image's bytes by media reference. */
+    READ_MEDIA: 'chat:read-media',
+    /** Rich chat content: copy or reveal a stored image. */
+    MEDIA_ACTION: 'chat:media-action',
+    /** Rich chat content: load a remote image the user clicked. */
+    FETCH_REMOTE_IMAGE: 'chat:fetch-remote-image',
     INTERRUPT: 'chat:interrupt',
     RESPOND_PERMISSION: 'chat:respond-permission',
     ANSWER_QUESTION: 'chat:answer-question',
