@@ -26,7 +26,10 @@ vi.mock('../stores/agentStore', () => {
 vi.mock('../stores/projectStore', () => ({
   useProjectStore: {
     getState: () => ({
-      projects: [{ id: 'proj-1', path: '/projects/test', name: 'Test' }],
+      projects: [
+        { id: 'proj-1', path: '/projects/test', name: 'Test' },
+        { id: 'proj-win', path: 'C:\\Projects\\Win', name: 'Win' },
+      ],
     }),
   },
 }));
@@ -421,6 +424,76 @@ describe('resume-queue', () => {
       const statuses = mockSetResumeStatus.mock.calls.map(([, status]) => status);
       expect(statuses).not.toContain('timed_out');
       expect(statuses).toContain('resumed');
+    });
+  });
+
+  describe('the store record a resume writes (#2410)', () => {
+    // Run the resume and return the agent record it wrote, applied to a store
+    // that already holds `existing` (as after loadDurableAgents) or is empty.
+    async function resumedRecord(entry: RestartSessionEntry, existing?: Record<string, unknown>) {
+      vi.mocked(useAgentStore.subscribe).mockImplementation((callback) => {
+        mockAgents[entry.agentId] = { status: 'running' };
+        setTimeout(() => (callback as () => void)(), 0);
+        return vi.fn();
+      });
+      if (existing) mockAgents[entry.agentId] = existing as { status: string };
+      await processResumeQueue(makeState([entry]));
+      for (const [updater] of mockSetState.mock.calls) {
+        if (typeof updater !== 'function') continue;
+        const next = updater({ agents: {}, agentSpawnedAt: {} });
+        if (next?.agents?.[entry.agentId]?.resuming) return next.agents[entry.agentId];
+      }
+      throw new Error('resume wrote no agent record');
+    }
+
+    it('keeps the parent link of a helper already in the store', async () => {
+      const record = await resumedRecord(
+        makeEntry({ agentId: 'helper' }),
+        { id: 'helper', projectId: 'proj-1', kind: 'durable', status: 'sleeping', parentAgentId: 'lead' },
+      );
+      expect(record.parentAgentId).toBe('lead');
+    });
+
+    it('takes the parent link from the saved config when the store has no record yet', async () => {
+      mockGetDurableConfig.mockResolvedValue({ id: 'helper', name: 'helper', color: 'red', parentAgentId: 'lead' });
+      const record = await resumedRecord(makeEntry({ agentId: 'helper' }));
+      expect(record.parentAgentId).toBe('lead');
+    });
+
+    it('keeps other fields the resume does not know, and drops stale sleep and error state', async () => {
+      const record = await resumedRecord(
+        makeEntry({ agentId: 'helper' }),
+        {
+          id: 'helper', projectId: 'proj-1', kind: 'durable', status: 'sleeping',
+          executionMode: 'headless', pluginOwner: 'plug', color: 'green', model: 'claude-opus-4',
+          lastSleep: { reason: 'user', at: '2026-01-01T00:00:00.000Z' }, exitCode: 1, errorMessage: 'boom',
+        },
+      );
+      expect(record).toMatchObject({ executionMode: 'headless', pluginOwner: 'plug', color: 'green', model: 'claude-opus-4', status: 'running' });
+      expect(record.lastSleep).toBeUndefined();
+      expect(record.exitCode).toBeUndefined();
+      expect(record.errorMessage).toBeUndefined();
+    });
+
+    it('finds the project when the path differs only in trailing separator', async () => {
+      const record = await resumedRecord(makeEntry({ agentId: 'slash', projectPath: '/projects/test/' }));
+      expect(record.projectId).toBe('proj-1');
+    });
+
+    it('finds the project when a Windows path differs in case and slash style', async () => {
+      const original = window.clubhouse;
+      (window as any).clubhouse = { ...original, platform: 'win32' };
+      try {
+        const record = await resumedRecord(makeEntry({ agentId: 'win', projectPath: 'c:/projects/win' }));
+        expect(record.projectId).toBe('proj-win');
+      } finally {
+        (window as any).clubhouse = original;
+      }
+    });
+
+    it('does not fold case on other platforms', async () => {
+      const record = await resumedRecord(makeEntry({ agentId: 'posix', projectPath: '/Projects/Test' }));
+      expect(record.projectId).toBe('/Projects/Test');
     });
   });
 

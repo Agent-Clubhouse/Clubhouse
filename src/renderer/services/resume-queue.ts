@@ -4,6 +4,7 @@ import type { Agent, DurableAgentConfig } from '../../shared/types';
 import type { RestartSessionEntry, RestartSessionState } from '../../shared/types';
 import { isAssistantAgent } from '../../shared/assistant-utils';
 import type { ResumeStatus } from '../features/app/ResumeBanner';
+import { sameProjectPath } from '../features/agents/helpers/orchestration-hooks';
 
 /**
  * Process pending resume entries after an update restart.
@@ -45,13 +46,54 @@ async function processWorkspaceQueue(entries: RestartSessionEntry[]): Promise<vo
 }
 
 /**
- * Look up the renderer's projectId from a filesystem path.
+ * Look up the renderer's projectId from a filesystem path (trailing separators
+ * and, on Windows, case and slash style don't matter).
  * Returns the project ID or the path itself as fallback.
  */
 function resolveProjectId(projectPath: string): string {
   const projects = useProjectStore.getState().projects;
-  const match = projects.find((p) => p.path === projectPath);
+  const match = projects.find((p) => sameProjectPath(p.path, projectPath));
   return match?.id || projectPath;
+}
+
+/**
+ * The store record for an agent being resumed. Starts from the record already
+ * in the store, if any, and overlays what the resume knows; with none yet
+ * (loadDurableAgents hasn't run) the config supplies the config-only fields.
+ */
+function buildResumedAgent(
+  existing: Agent | undefined,
+  entry: RestartSessionEntry,
+  projectId: string,
+  durableConfig: DurableAgentConfig | null,
+): Agent {
+  return {
+    ...existing,
+    id: entry.agentId,
+    projectId,
+    name: entry.agentName,
+    kind: entry.kind,
+    status: 'running',
+    color: durableConfig?.color || existing?.color || 'gray',
+    icon: durableConfig?.icon ?? existing?.icon,
+    resuming: true,
+    orchestrator: entry.orchestrator,
+    model: entry.model || durableConfig?.model || existing?.model,
+    // Kept on the agent for display (the run header, a quick agent's record);
+    // it is not sent to the resumed CLI.
+    mission: entry.mission ?? existing?.mission,
+    worktreePath: entry.worktreePath ?? existing?.worktreePath,
+    branch: durableConfig?.branch ?? existing?.branch,
+    freeAgentMode: entry.freeAgentMode ?? durableConfig?.freeAgentMode ?? existing?.freeAgentMode ?? undefined,
+    mcpIds: durableConfig?.mcpIds ?? existing?.mcpIds,
+    // A helper keeps its orchestrator (#2224) so the sidebar keeps it nested (#2231).
+    parentAgentId: durableConfig?.parentAgentId ?? existing?.parentAgentId,
+    // A running agent isn't asleep, failed or exited.
+    lastSleep: undefined,
+    exitCode: undefined,
+    errorMessage: undefined,
+    creationFailed: undefined,
+  };
 }
 
 async function resumeAgent(entry: RestartSessionEntry): Promise<void> {
@@ -81,26 +123,9 @@ async function resumeAgent(entry: RestartSessionEntry): Promise<void> {
     // This mirrors how spawnDurableAgent works in agentLifecycleSlice —
     // the store entry must exist so the PTY data listener and exit
     // handler can find the agent, and so waitForAgentRunning resolves.
-    const agent: Agent = {
-      id: entry.agentId,
-      projectId,
-      name: entry.agentName,
-      kind: entry.kind,
-      status: 'running',
-      color: durableConfig?.color || 'gray',
-      icon: durableConfig?.icon,
-      resuming: true,
-      orchestrator: entry.orchestrator,
-      model: entry.model || durableConfig?.model,
-      // Kept on the agent for display (the run header, a quick agent's record);
-      // it is not sent to the resumed CLI.
-      mission: entry.mission,
-      worktreePath: entry.worktreePath,
-      branch: durableConfig?.branch,
-      freeAgentMode: entry.freeAgentMode ?? durableConfig?.freeAgentMode ?? undefined,
-      mcpIds: durableConfig?.mcpIds,
-    };
-
+    // The record is merged into the one loadDurableAgents already put there,
+    // so fields that only live on it (a helper's parentAgentId, #2410) survive.
+    const agent = buildResumedAgent(useAgentStore.getState().agents[entry.agentId], entry, projectId, durableConfig);
     useAgentStore.setState((s) => ({
       agents: { ...s.agents, [entry.agentId]: agent },
       agentSpawnedAt: { ...s.agentSpawnedAt, [entry.agentId]: Date.now() },
