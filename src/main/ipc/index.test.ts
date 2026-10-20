@@ -30,6 +30,9 @@ vi.mock('../services/log-service', () => ({
   init: vi.fn(),
   appLog: vi.fn(),
 }));
+vi.mock('../telemetry/local-control', () => ({
+  runStartupRetention: vi.fn(),
+}));
 vi.mock('../util/ipc-broadcast-policies', () => ({
   registerDefaultBroadcastPolicies: vi.fn(),
 }));
@@ -54,6 +57,7 @@ import { registerBuiltinProviders } from '../orchestrators';
 import * as hookServer from '../services/hook-server';
 import * as logService from '../services/log-service';
 import { registerDefaultBroadcastPolicies } from '../util/ipc-broadcast-policies';
+import { runStartupRetention } from '../telemetry/local-control';
 
 describe('registerAllHandlers', () => {
   it('calls all handler registration functions', () => {
@@ -107,6 +111,16 @@ describe('registerAllHandlers', () => {
     registerAllHandlers();
 
     expect(callOrder.indexOf('log-init')).toBeLessThan(callOrder.indexOf('pty'));
+  });
+
+  it('prunes the log folder once startup logging is set up, recording on or off (#2313)', () => {
+    const callOrder: string[] = [];
+    vi.mocked(logService.init).mockImplementation(() => { callOrder.push('log-init'); });
+    vi.mocked(runStartupRetention).mockImplementation(() => { callOrder.push('retention'); });
+
+    registerAllHandlers();
+
+    expect(callOrder).toEqual(['log-init', 'retention']);
   });
 
   it('starts the hook server', () => {

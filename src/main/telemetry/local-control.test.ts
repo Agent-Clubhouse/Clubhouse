@@ -25,7 +25,7 @@ vi.mock('./settings', () => ({
 import * as path from 'path';
 import { forceFlushTelemetry, getLocalSink, isTelemetryActive, tel, telemetryLevel } from './facade';
 import { diag, getDiagSink, isDiagActive } from './diag';
-import { _resetLocalRecordingForTests, isDiagRecordingWanted, isLocalRecordingWanted, migrateLocalLevel, runRetention, syncLocalRecording } from './local-control';
+import { _resetLocalRecordingForTests, isDiagRecordingWanted, isLocalRecordingWanted, migrateLocalLevel, runRetention, runStartupRetention, syncLocalRecording } from './local-control';
 import { LOG_RETENTION_TIERS } from '../../shared/types';
 import { TELEMETRY_CONSENT_VERSION } from '../../shared/telemetry/settings-types';
 
@@ -166,10 +166,25 @@ describe('retention while recording (#2298)', () => {
     expect(retention.pruneLogDir).toHaveBeenCalledTimes(1);
   });
 
-  it('does not run retention when recording never starts', async () => {
-    logSettings.getSettings.mockReturnValue({ ...base, enabled: false });
+  it('prunes at startup with recording disabled', async () => {
+    logSettings.getSettings.mockReturnValue({ ...base, enabled: false, retention: 'low' });
     await syncLocalRecording();
     expect(retention.pruneLogDir).not.toHaveBeenCalled();
+    runStartupRetention();
+    expect(retention.pruneLogDir).toHaveBeenCalledTimes(1);
+    const [dir, tier, opts] = retention.pruneLogDir.mock.calls[0] as unknown as [string, unknown, { protect: string[] }];
+    expect(dir).toBe(path.join('/home/tester', '.clubhouse', 'logs'));
+    expect(tier).toEqual(LOG_RETENTION_TIERS.low);
+    expect(opts.protect).toEqual([]);
+    // Once per run.
+    runStartupRetention();
+    expect(retention.pruneLogDir).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not prune twice at startup when recording started and already pruned', async () => {
+    await syncLocalRecording();
+    runStartupRetention();
+    expect(retention.pruneLogDir).toHaveBeenCalledTimes(1);
   });
 
   it('prunes by the logging tier and never touches the chunk being written', async () => {

@@ -65,6 +65,8 @@ let recorder: LocalRecorder | null = null;
 let stopping: Promise<void> | null = null;
 let retentionTimer: ReturnType<typeof setInterval> | null = null;
 let pruning: Promise<unknown> | null = null;
+/** Set once retention has run this run, at a recorder start or by runStartupRetention. */
+let startupPruned = false;
 
 /** The local log folder: telemetry recordings, and session logs from before v0.42 until retention prunes them. */
 export function getLogDir(): string {
@@ -90,6 +92,17 @@ export function runRetention(): Promise<unknown> {
       pruning = null;
     });
   return pruning;
+}
+
+/**
+ * Retention once per run at startup, whether or not recording is on, so old
+ * files age out for a user who turned logging off (#2313). Skipped when a
+ * recorder start has already pruned this run. Async; never throws.
+ */
+export function runStartupRetention(): void {
+  if (startupPruned) return;
+  startupPruned = true;
+  void runRetention();
 }
 
 export function isLocalRecordingWanted(settings: LoggingSettings = logSettings.getSettings()): boolean {
@@ -140,6 +153,7 @@ function start(level: LocalTelemetryLevel, signals: boolean): void {
   // Once when recording starts, then hourly while recording, so a run that lasts days is pruned as it goes.
   retentionTimer = setInterval(() => void runRetention(), RETENTION_INTERVAL_MS);
   retentionTimer.unref?.();
+  startupPruned = true;
   void runRetention();
 }
 
@@ -200,4 +214,5 @@ export async function restartLocalRecording(): Promise<void> {
 export async function _resetLocalRecordingForTests(): Promise<void> {
   await stop();
   stopping = null;
+  startupPruned = false;
 }

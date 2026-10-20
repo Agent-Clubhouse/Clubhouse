@@ -2,9 +2,9 @@
  * Retention for the local log folder (spec §6.12, #2298): local telemetry
  * recordings (`telemetry-*.jsonl`) and the session logs earlier versions
  * wrote (`session-*.jsonl`, #2313) share the logging retention tier's age
- * and size limits. Runs when recording starts, hourly while recording, and
- * after the recorder rotates, so a run that lasts days is pruned while it
- * runs.
+ * and size limits. Runs at startup, when recording starts, hourly while
+ * recording, and after the recorder rotates, so a run that lasts days is
+ * pruned while it runs.
  *
  * No OpenTelemetry imports.
  */

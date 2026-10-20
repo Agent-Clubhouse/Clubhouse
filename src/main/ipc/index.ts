@@ -27,6 +27,7 @@ import { registerBuiltinProviders, getAllProviders } from '../orchestrators';
 import { registerBuiltinChatDrivers } from '../services/agent-runtime/builtin-chat-drivers';
 import { autoDetectDefaults } from '../services/orchestrator-settings';
 import * as logService from '../services/log-service';
+import { runStartupRetention } from '../telemetry/local-control';
 import { registerDefaultBroadcastPolicies } from '../util/ipc-broadcast-policies';
 
 export function registerAllHandlers(): void {
@@ -46,6 +47,8 @@ export function registerAllHandlers(): void {
 
   // Initialize logging service early so handlers can use it
   logService.init();
+  // After ready, off the critical path: prunes the log folder even with recording off (#2313).
+  runStartupRetention();
 
   // Register broadcast throttle policies before handlers that emit events
   registerDefaultBroadcastPolicies();

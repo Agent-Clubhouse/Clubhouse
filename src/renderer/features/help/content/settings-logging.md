@@ -89,7 +89,7 @@ The retention tier sets how long files are kept and how much space they can use 
 | **High** | 30 days | 500 MB |
 | **Unlimited** | No expiry | No cap |
 
-Retention runs when recording starts, every hour while recording, and each time a file reaches 2 MB and continues in a new one. The oldest files are deleted first, and a file that is being written is never deleted. It also deletes the `session-*.jsonl` logs that earlier versions wrote to the same folder.
+Retention runs at startup (even with **Record locally** off), when recording starts, every hour while recording, and each time a file reaches 2 MB and continues in a new one. The oldest files are deleted first, and a file that is being written is never deleted. It also deletes the `session-*.jsonl` logs that earlier versions wrote to the same folder.
 
 ## Feedback reports
 
