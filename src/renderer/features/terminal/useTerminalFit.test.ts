@@ -285,6 +285,21 @@ describe('useTerminalFit', () => {
       expect(mockResize).not.toHaveBeenCalled();
     });
 
+    it('skips the refit while the mount is still replaying', () => {
+      vi.spyOn(document, 'hasFocus').mockReturnValue(true);
+      const readyRef = { current: false };
+      renderHook(() =>
+        useTerminalFit('s1', terminalRef, fitAddonRef, containerRef, false, undefined, readyRef),
+      );
+      mockFit.mockClear();
+      mockResize.mockClear();
+
+      dprListeners[0](1, 2);
+
+      expect(mockFit).not.toHaveBeenCalled();
+      expect(mockResize).not.toHaveBeenCalled();
+    });
+
     it('unsubscribes on unmount', () => {
       const { unmount } = renderHook(() =>
         useTerminalFit('s1', terminalRef, fitAddonRef, containerRef),
