@@ -231,6 +231,8 @@ export class ClaudeSdkTransport extends ClaudeTransportBase {
     ]);
     if (!exited) {
       this.log('warn', 'Claude did not exit after stdin closed; closing query');
+      // query.close() kills only its direct child, which on Windows is a .cmd shim's cmd.exe.
+      if (this.child) void killStructuredChild(this.child, { endStdin: false });
       this.query.close();
       // Bounded too: a query that doesn't end on close must not hang close() (#2274).
       await Promise.race([

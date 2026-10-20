@@ -14,6 +14,10 @@ import type { McpBindingEntry } from '../../../stores/mcpBindingStore';
 
 /** Pixels to pan per arrow key press. */
 const ARROW_PAN_STEP = 40;
+/** WheelEvent.deltaMode values, and the pixels Chromium uses for one line. */
+const WHEEL_DELTA_LINE = 1;
+const WHEEL_DELTA_PAGE = 2;
+const WHEEL_LINE_PX = 40;
 
 export interface ViewportControlsOptions {
   viewport: Viewport;
@@ -64,18 +68,22 @@ export function useViewportControls({
 
   const handleWheel = useCallback((e: React.WheelEvent) => {
     if (!containerRef.current) return;
+    const rect = containerRef.current.getBoundingClientRect();
     if (e.ctrlKey || e.metaKey) {
       e.preventDefault();
       const delta = -e.deltaY * 0.002;
-      const rect = containerRef.current.getBoundingClientRect();
       scheduleViewportChange((current) => {
         const newZoom = clampZoom(current.zoom * (1 + delta));
         return zoomTowardPoint(current, newZoom, e.clientX, e.clientY, rect);
       });
     } else {
+      // Pan deltas can arrive in lines or pages (Windows "one screen at a time" sends deltaY = 1 page).
+      const unit = e.deltaMode === WHEEL_DELTA_PAGE ? rect.height : e.deltaMode === WHEEL_DELTA_LINE ? WHEEL_LINE_PX : 1;
+      const deltaX = e.deltaX * unit;
+      const deltaY = e.deltaY * unit;
       scheduleViewportChange((current) => ({
-        panX: current.panX - e.deltaX / current.zoom,
-        panY: current.panY - e.deltaY / current.zoom,
+        panX: current.panX - deltaX / current.zoom,
+        panY: current.panY - deltaY / current.zoom,
         zoom: current.zoom,
       }));
     }

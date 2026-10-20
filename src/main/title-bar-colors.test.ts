@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { THEME_TITLE_BAR_COLORS, getThemeColorsForTitleBar } from './title-bar-colors';
+import { BUILTIN_THEMES } from '../renderer/themes';
 
 describe('THEME_TITLE_BAR_COLORS', () => {
   const expectedThemeIds = [
@@ -57,7 +58,7 @@ describe('getThemeColorsForTitleBar', () => {
   it('returns colors for a known theme', () => {
     const colors = getThemeColorsForTitleBar('dracula');
     expect(colors.bg).toBe('#282a36');
-    expect(colors.mantle).toBe('#1e1f29');
+    expect(colors.mantle).toBe('#21222c');
     expect(colors.text).toBe('#f8f8f2');
   });
 
@@ -70,4 +71,18 @@ describe('getThemeColorsForTitleBar', () => {
     const colors = getThemeColorsForTitleBar('');
     expect(colors).toEqual(THEME_TITLE_BAR_COLORS['catppuccin-mocha']);
   });
+});
+
+// Windows and Linux draw the title-bar overlay from this table at window creation,
+// before the renderer syncs, so every built-in theme needs a matching entry.
+describe('THEME_TITLE_BAR_COLORS matches the built-in themes', () => {
+  for (const [id, theme] of Object.entries(BUILTIN_THEMES)) {
+    it(`${id}`, () => {
+      expect(THEME_TITLE_BAR_COLORS[id]).toEqual({
+        bg: theme.colors.base,
+        mantle: theme.colors.mantle,
+        text: theme.colors.text,
+      });
+    });
+  }
 });

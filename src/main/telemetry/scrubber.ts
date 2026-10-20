@@ -34,6 +34,7 @@ const EMAIL_RE = /[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/g;
 const WIN_DEVICE_OR_UNC_RE = /\\\\[?.]\\[^\s"'<>|]+|\\\\[^\s\\"'<>|]+\\[^\s"'<>|]*/g;
 // C:\Users\..., c:/Users/..., also JSON-escaped C:\\Users\\...
 const WIN_DRIVE_RE = /(?<![A-Za-z0-9])[A-Za-z]:[\\/][^\s"'<>|]*/g;
+const HOME_REST_RE = /<home>[\\/][^\s"'<>|]*/g;
 const TILDE_RE = /(?<![\w/])~[\\/][^\s"'<>]*/g;
 const POSIX_RE = /(?:\/[^\s/:"'<>]+){2,}\/?/g;
 const IPV4_RE = /(?<![\d.])(?:(?:25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)\.){3}(?:25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)(?![\d.])/g;
@@ -51,6 +52,8 @@ export function createScrubber(ctx: ScrubberContext = {}): Scrubber {
     out = out.replace(URL_RE, '<url>');
     out = out.replace(EMAIL_RE, '<email>');
     if (home) out = out.replace(home, '<home>');
+    // POSIX_RE takes the rest of a /home/... path; a Windows remainder (\\repo\\src) needs its own pass.
+    out = out.replace(HOME_REST_RE, '<home><path>');
     out = out.replace(WIN_DEVICE_OR_UNC_RE, '<path>');
     out = out.replace(WIN_DRIVE_RE, '<path>');
     out = out.replace(TILDE_RE, '<path>');

@@ -1,6 +1,6 @@
 import React, { useState, useRef, useCallback, useEffect, useMemo } from 'react';
 import type { CanvasView } from './canvas-types';
-import { Tooltip } from '../../../components/Tooltip';
+import { Tooltip, formatShortcut } from '../../../components/Tooltip';
 
 interface CanvasSearchProps {
   views: CanvasView[];
@@ -157,11 +157,11 @@ export function CanvasSearch({ views, onSelectView }: CanvasSearchProps) {
 
   if (!isOpen) {
     return (
-      <Tooltip content="Search views (⌘F)">
+      <Tooltip content={`Search views (${formatShortcut('Meta+F')})`}>
         <button
           onClick={handleToggle}
           className={btnClass}
-          aria-label="Search views (⌘F)"
+          aria-label={`Search views (${formatShortcut('Meta+F')})`}
           data-testid="canvas-search-toggle"
         >
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">

@@ -44,7 +44,17 @@ export function buildMenu(): void {
     },
     { role: 'editMenu' },
     { role: 'viewMenu' },
-    { role: 'windowMenu' },
+    // Explicit submenu: the role's default adds Close (Ctrl+W) off macOS, and
+    // closing the main window quits the app on Windows/Linux.
+    {
+      role: 'windowMenu',
+      submenu: [
+        { role: 'minimize' },
+        ...(process.platform === 'darwin'
+          ? [{ role: 'zoom' }, { type: 'separator' }, { role: 'front' }] as Electron.MenuItemConstructorOptions[]
+          : []),
+      ],
+    },
     {
       role: 'help',
       submenu: [
