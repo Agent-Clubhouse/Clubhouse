@@ -10,6 +10,8 @@ export const IPC = {
     IS_SHELL_BUSY: 'pty:is-shell-busy',
     DATA: 'pty:data',
     EXIT: 'pty:exit',
+    /** Main → Renderer: the PTY's size changed (agentId, cols, rows). */
+    RESIZED: 'pty:resized',
   },
   PROJECT: {
     LIST: 'project:list',

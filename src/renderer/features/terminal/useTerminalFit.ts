@@ -1,7 +1,8 @@
-import { useEffect, type RefObject } from 'react';
+import { useCallback, useEffect, useRef, type RefObject } from 'react';
 import type { Terminal } from '@xterm/xterm';
 import type { FitAddon } from '@xterm/addon-fit';
 import { rendererLog } from '../../plugins/renderer-logger';
+import { claimSizeOwner, isSizeOwner, registerSizeOwner } from './pty-size-owner';
 
 const SCROLL_LOG_NS = 'ui:terminal:scroll';
 
@@ -10,6 +11,10 @@ const SCROLL_LOG_NS = 'ui:terminal:scroll';
  *  font metrics — particularly important for canvas views where CSS
  *  transforms affect rendered element sizes. */
 const WAKE_SETTLE_MS = 150;
+
+/** Trailing debounce (ms) for PTY resizes from container size changes, so a
+ *  drag or layout animation sends one size instead of one per frame. */
+export const RESIZE_DEBOUNCE_MS = 80;
 
 /**
  * Whether the terminal viewport is showing the newest output.
@@ -51,19 +56,56 @@ export function hasMeasurableSize(el: HTMLElement | null): el is HTMLElement {
   return !!el && el.clientWidth > 0 && el.clientHeight > 0;
 }
 
+export interface PtySize {
+  cols: number;
+  rows: number;
+}
+
+export interface TerminalFitOptions {
+  /**
+   * While `readyRef.current` is false (the mount is still replaying the
+   * buffer snapshot at its recorded sizes) every trigger is skipped; the
+   * mount calls `refit` once the replay is written.
+   */
+  readyRef?: RefObject<boolean>;
+  /**
+   * The PTY size this terminal's written output was produced at, when known.
+   * A terminal that doesn't drive the PTY size adopts it instead of fitting
+   * its container, so live output lines up (#2322).
+   */
+  ptySizeRef?: RefObject<PtySize | null>;
+}
+
+export interface TerminalFitControls {
+  /** Fit and, if this terminal owns the PTY size and its window has focus, send it now. */
+  refit: (trigger: string) => void;
+  /** After the PTY size changed: adopt it unless this terminal drives it. */
+  syncToPty: () => void;
+}
+
+/** Resize `term` to the known PTY size.  False when no size is known. */
+function followPtySize(term: Terminal, size: PtySize | null | undefined): boolean {
+  if (!size) return false;
+  if (term.cols !== size.cols || term.rows !== size.rows) term.resize(size.cols, size.rows);
+  return true;
+}
+
 /**
- * Manages terminal fit/resize with focus-awareness for multi-window correctness.
+ * Manages terminal fit/resize with focus-awareness for multi-window and
+ * multi-view correctness.
  *
- * Triggers a fit + resize on:
- * - Container size changes (ResizeObserver) — guarded by window focus so
- *   background windows don't override the active window's PTY dimensions
+ * Only the session's size owner in this window (see pty-size-owner) sends PTY
+ * resizes, and only while its window has focus.  Other terminals of the same
+ * session follow the PTY size (`ptySizeRef`) instead, or just fit when it is
+ * unknown.  Triggers:
+ * - Container size changes (ResizeObserver), with the PTY resize debounced
  * - Page becoming visible (covers wake-from-sleep, virtual desktop switch)
  * - Window gaining focus (active window re-asserts its terminal size)
- * - Terminal becoming the focused pane (`focused` prop)
+ * - Terminal becoming the focused pane (`focused` prop), or taking DOM focus;
+ *   both claim ownership
+ * - The previous owner unmounting
  *
- * While `readyRef.current` is false (the mount is still replaying the buffer
- * snapshot at its recorded sizes) every trigger is skipped; the mount fits
- * and resizes once the replay is written.
+ * Hidden and zero-size containers are never measured (#2323).
  */
 export function useTerminalFit(
   sessionId: string,
@@ -72,56 +114,74 @@ export function useTerminalFit(
   containerRef: RefObject<HTMLDivElement | null>,
   focused?: boolean,
   onResize?: (sessionId: string, cols: number, rows: number) => void,
-  readyRef?: RefObject<boolean>,
-): void {
-  // Reactive resize: ResizeObserver + visibility + window focus
+  options: TerminalFitOptions = {},
+): TerminalFitControls {
+  const { readyRef, ptySizeRef } = options;
+  const tokenRef = useRef<symbol | null>(null);
+  if (!tokenRef.current) tokenRef.current = Symbol('terminal-size-owner');
+  const fitRef = useRef<((sendResize: boolean, trigger: string, after?: () => void) => void) | null>(null);
+
   useEffect(() => {
     const container = containerRef.current;
     if (!container) return;
+    const token = tokenRef.current!;
+    const doResize = onResize ?? window.clubhouse.pty.resize;
+    let debounceTimer: ReturnType<typeof setTimeout> | null = null;
 
     /**
-     * Fit the terminal to its container and optionally resize the PTY.
-     * When `sendResize` is false the xterm canvas is re-laid-out (fixing
-     * visual wrapping) but the IPC resize is skipped so a background
-     * window doesn't clobber the active window's PTY dimensions.
-     *
-     * Skips entirely when the container has zero dimensions — this guards
-     * against measuring stale layout after wake-from-sleep or when the
-     * container is hidden (e.g. behind a zoom overlay).
+     * Fit the terminal to its container and, when `sendResize` is true and
+     * this terminal owns the session's size, resize the PTY.  A terminal
+     * that doesn't drive the size adopts the PTY's size when it is known.
+     * `debounce` delays the PTY resize (not the fit) for continuous triggers.
      */
-    const doResize = onResize ?? window.clubhouse.pty.resize;
-
-    const fitAndResize = (sendResize: boolean, trigger?: string) => {
+    const fitAndResize = (sendResize: boolean, trigger: string, after?: () => void, debounce = false) => {
       requestAnimationFrame(() => {
-        if (!fitAddonRef.current || !terminalRef.current) return;
+        const term = terminalRef.current;
+        const fitAddon = fitAddonRef.current;
+        if (!fitAddon || !term) return;
         if (readyRef && !readyRef.current) return;
         const el = containerRef.current;
         if (!hasMeasurableSize(el)) return;
+        const drive = sendResize && isSizeOwner(sessionId, token);
         rendererLog(SCROLL_LOG_NS, 'debug', 'fitAndResize', {
           meta: {
             sessionId,
-            trigger: trigger ?? 'unknown',
-            sendResize,
-            viewportY: terminalRef.current.buffer.active.viewportY,
-            atBottom: isTerminalAtBottom(terminalRef.current),
+            trigger,
+            sendResize: drive,
+            viewportY: term.buffer.active.viewportY,
+            atBottom: isTerminalAtBottom(term),
             containerWidth: el.clientWidth,
             containerHeight: el.clientHeight,
           },
         });
-        fitPreservingScroll(terminalRef.current, fitAddonRef.current, sessionId);
-        if (sendResize) {
-          doResize(
-            sessionId,
-            terminalRef.current.cols,
-            terminalRef.current.rows,
-          );
+        if (drive || !followPtySize(term, ptySizeRef?.current)) {
+          fitPreservingScroll(term, fitAddon, sessionId);
         }
+        if (drive) {
+          if (debounceTimer) clearTimeout(debounceTimer);
+          debounceTimer = null;
+          if (debounce) {
+            debounceTimer = setTimeout(() => {
+              debounceTimer = null;
+              const current = terminalRef.current;
+              if (current && isSizeOwner(sessionId, token)) doResize(sessionId, current.cols, current.rows);
+            }, RESIZE_DEBOUNCE_MS);
+          } else {
+            doResize(sessionId, term.cols, term.rows);
+          }
+        }
+        after?.();
       });
     };
+    fitRef.current = (sendResize, trigger, after) => fitAndResize(sendResize, trigger, after);
+
+    const unregister = registerSizeOwner(sessionId, token, () => {
+      fitAndResize(document.hasFocus(), 'owner-handoff');
+    });
 
     // Container size changes: only resize PTY if this window is focused
     const resizeObserver = new ResizeObserver(() => {
-      fitAndResize(document.hasFocus(), 'resize-observer');
+      fitAndResize(document.hasFocus(), 'resize-observer', undefined, true);
     });
     resizeObserver.observe(container);
 
@@ -139,46 +199,51 @@ export function useTerminalFit(
     const onWindowFocus = () => fitAndResize(true, 'window-focus');
     window.addEventListener('focus', onWindowFocus);
 
+    // Typing into (or clicking) this terminal makes it the size owner.
+    const onFocusIn = () => {
+      if (isSizeOwner(sessionId, token)) return;
+      claimSizeOwner(sessionId, token);
+      fitAndResize(true, 'focus-claim');
+    };
+    container.addEventListener('focusin', onFocusIn);
+
     return () => {
       resizeObserver.disconnect();
       document.removeEventListener('visibilitychange', onVisibility);
       window.removeEventListener('focus', onWindowFocus);
+      container.removeEventListener('focusin', onFocusIn);
       if (wakeTimer) clearTimeout(wakeTimer);
+      if (debounceTimer) clearTimeout(debounceTimer);
+      fitRef.current = null;
+      unregister();
     };
   }, [sessionId, onResize]);
 
-  // Pane-level focus: re-fit, resize PTY, and focus the xterm instance.
-  // This fires when the user clicks a canvas card or switches to the agents tab,
-  // ensuring the PTY dimensions snap to the now-active terminal's container.
+  // Pane-level focus: claim the size, re-fit, resize PTY, and focus the xterm
+  // instance.  This fires when the user clicks a canvas card or switches to
+  // the agents tab, so the PTY dimensions snap to the now-active terminal.
   useEffect(() => {
     if (!focused) return;
+    claimSizeOwner(sessionId, tokenRef.current!);
     if (terminalRef.current) terminalRef.current.focus();
-    const doResize = onResize ?? window.clubhouse.pty.resize;
-    requestAnimationFrame(() => {
-      if (readyRef && !readyRef.current) return;
-      // A focused pane can still be hidden (e.g. behind the review panel).
-      if (!hasMeasurableSize(containerRef.current)) return;
-      if (fitAddonRef.current && terminalRef.current) {
-        rendererLog(SCROLL_LOG_NS, 'debug', 'fitAndResize', {
-          meta: {
-            sessionId,
-            trigger: 'pane-focus',
-            sendResize: true,
-            viewportY: terminalRef.current.buffer.active.viewportY,
-            atBottom: isTerminalAtBottom(terminalRef.current),
-          },
-        });
-        fitPreservingScroll(terminalRef.current, fitAddonRef.current, sessionId);
-        doResize(
-          sessionId,
-          terminalRef.current.cols,
-          terminalRef.current.rows,
-        );
-        // fit() reflow can blur xterm's helper textarea — refocus so the
-        // user can type immediately after switching back to an actively
-        // streaming agent (issue #1387).
-        terminalRef.current.focus();
-      }
-    });
+    // fit() reflow can blur xterm's helper textarea — refocus so the user can
+    // type immediately after switching back to an actively streaming agent
+    // (issue #1387).  A focused pane can still be hidden (behind the review
+    // panel); the zero-size guard then skips the fit and the resize.
+    fitRef.current?.(true, 'pane-focus', () => terminalRef.current?.focus());
   }, [focused, sessionId, onResize]);
+
+  const refit = useCallback((trigger: string) => {
+    // Like the ResizeObserver: a background window must not take the size.
+    fitRef.current?.(document.hasFocus(), trigger);
+  }, []);
+
+  const syncToPty = useCallback(() => {
+    const term = terminalRef.current;
+    if (!term) return;
+    if (isSizeOwner(sessionId, tokenRef.current!) && document.hasFocus()) return;
+    followPtySize(term, ptySizeRef?.current);
+  }, [sessionId]);
+
+  return { refit, syncToPty };
 }

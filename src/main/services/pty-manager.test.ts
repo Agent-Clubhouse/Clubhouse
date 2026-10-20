@@ -35,6 +35,7 @@ vi.mock('../../shared/ipc-channels', () => ({
     PTY: {
       DATA: 'pty:data',
       EXIT: 'pty:exit',
+      RESIZED: 'pty:resized',
     },
   },
 }));
@@ -42,6 +43,7 @@ vi.mock('../../shared/ipc-channels', () => ({
 // Mock broadcastToAllWindows
 vi.mock('../util/ipc-broadcast', () => ({
   broadcastToAllWindows: vi.fn(),
+  flushPendingFor: vi.fn(),
   setChannelPolicy: vi.fn(),
 }));
 
@@ -83,7 +85,7 @@ import type { TelemetryRuntime } from '../telemetry/types';
 // We'll use dynamic imports or reset between tests.
 
 import { getBuffer, getBufferSnapshot, getSerializedBuffer, getLastActivity, isRunning, spawn, spawnShell, resize, write, writeBinary, gracefulKill, isShellBusy, kill, killAll, startStaleSweep, stopStaleSweep, validateSpawnCwd } from './pty-manager';
-import { broadcastToAllWindows } from '../util/ipc-broadcast';
+import { broadcastToAllWindows, flushPendingFor } from '../util/ipc-broadcast';
 import * as annexEventBus from './annex-event-bus';
 import * as headlessTerminal from './pty-headless-terminal';
 import { HOST_SESSION_ENV_FIXTURE, USER_CLAUDE_CONFIG_FIXTURE } from '../util/__fixtures__/host-session-env';
@@ -477,6 +479,31 @@ describe('pty-manager', () => {
           expect.stringContaining('exec ')
         );
       }
+    });
+
+    it('skips same-size resizes but still fires the pending command (#2322)', async () => {
+      await spawn('agent_same', '/test', '/usr/local/bin/claude', []);
+      mockProcess.resize.mockClear();
+      mockProcess.write.mockClear();
+      resize('agent_same', 120, 30); // the spawn size
+      expect(mockProcess.resize).not.toHaveBeenCalled();
+      expect(mockProcess.write).toHaveBeenCalledTimes(1); // the pending command
+
+      resize('agent_same', 90, 20);
+      resize('agent_same', 90, 20);
+      expect(mockProcess.resize).toHaveBeenCalledTimes(1);
+    });
+
+    it('flushes batched output, then broadcasts the new size', async () => {
+      await spawn('agent_bc', '/test', '/usr/local/bin/claude', []);
+      const order: string[] = [];
+      vi.mocked(flushPendingFor).mockImplementation((ch, id) => { order.push(`flush ${ch} ${id}`); });
+      vi.mocked(broadcastToAllWindows).mockImplementation((ch, ...args) => { order.push(`send ${ch} ${args.join(' ')}`); });
+
+      resize('agent_bc', 100, 25);
+      resize('agent_bc', 100, 25);
+
+      expect(order).toEqual(['flush pty:data agent_bc', 'send pty:resized agent_bc 100 25']);
     });
 
     it('does nothing for unknown agent', () => {

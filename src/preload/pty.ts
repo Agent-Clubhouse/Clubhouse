@@ -32,6 +32,13 @@ export const pty = {
     ipcRenderer.on(IPC.PTY.DATA, listener);
     return () => { ipcRenderer.removeListener(IPC.PTY.DATA, listener); };
   },
+  /** The PTY's size changed; sent after any output produced at the old size. */
+  onResized: (callback: (agentId: string, cols: number, rows: number) => void) => {
+    const listener = (_event: Electron.IpcRendererEvent, agentId: string, cols: number, rows: number) =>
+      callback(agentId, cols, rows);
+    ipcRenderer.on(IPC.PTY.RESIZED, listener);
+    return () => { ipcRenderer.removeListener(IPC.PTY.RESIZED, listener); };
+  },
   onExit: (callback: (agentId: string, exitCode: number, lastOutput?: string) => void) => {
     const listener = (_event: Electron.IpcRendererEvent, agentId: string, exitCode: number, lastOutput?: string) =>
       callback(agentId, exitCode, lastOutput);

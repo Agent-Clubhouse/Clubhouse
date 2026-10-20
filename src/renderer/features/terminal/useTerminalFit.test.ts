@@ -1,6 +1,7 @@
 import { renderHook } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { useTerminalFit, isTerminalAtBottom } from './useTerminalFit';
+import { useTerminalFit, isTerminalAtBottom, RESIZE_DEBOUNCE_MS } from './useTerminalFit';
+import { _resetSizeOwnersForTests } from './pty-size-owner';
 
 vi.mock('../../plugins/renderer-logger', () => ({
   rendererLog: vi.fn(),
@@ -46,7 +47,15 @@ describe('useTerminalFit', () => {
   let containerEl: HTMLDivElement;
   let containerRef: { current: HTMLDivElement };
 
+  /** Fire the ResizeObserver and let its debounced PTY resize go out. */
+  function fireResizeObserver(index = 0) {
+    resizeObserverCallbacks[index]!();
+    vi.advanceTimersByTime(RESIZE_DEBOUNCE_MS);
+  }
+
   beforeEach(() => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    _resetSizeOwnersForTests();
     containerEl = document.createElement('div');
     // jsdom returns 0 for clientWidth/clientHeight by default; stub non-zero values
     Object.defineProperty(containerEl, 'clientWidth', { value: 480, configurable: true });
@@ -86,6 +95,7 @@ describe('useTerminalFit', () => {
   });
 
   afterEach(() => {
+    vi.useRealTimers();
     vi.restoreAllMocks();
   });
 
@@ -102,7 +112,7 @@ describe('useTerminalFit', () => {
       mockFit.mockClear();
       mockResize.mockClear();
 
-      resizeObserverCallbacks[0]();
+      fireResizeObserver();
 
       expect(mockFit).toHaveBeenCalledTimes(1);
       expect(mockResize).toHaveBeenCalledWith('s1', 80, 24);
@@ -115,7 +125,7 @@ describe('useTerminalFit', () => {
       mockFit.mockClear();
       mockResize.mockClear();
 
-      resizeObserverCallbacks[0]();
+      fireResizeObserver();
 
       expect(mockFit).toHaveBeenCalledTimes(1);
       expect(mockResize).not.toHaveBeenCalled();
@@ -330,7 +340,7 @@ describe('useTerminalFit', () => {
       mockFit.mockClear();
       mockResize.mockClear();
 
-      resizeObserverCallbacks[0]();
+      fireResizeObserver();
 
       expect(customResize).toHaveBeenCalledWith('s1', 80, 24);
       expect(mockResize).not.toHaveBeenCalled();
@@ -380,7 +390,7 @@ describe('useTerminalFit', () => {
       mockFit.mockClear();
       mockResize.mockClear();
 
-      resizeObserverCallbacks[0]();
+      fireResizeObserver();
 
       expect(mockResize).toHaveBeenCalledWith('s1', 80, 24);
     });
@@ -399,7 +409,7 @@ describe('useTerminalFit', () => {
       mockFit.mockClear();
       mockResize.mockClear();
 
-      resizeObserverCallbacks[0]();
+      fireResizeObserver();
 
       expect(mockFit).not.toHaveBeenCalled();
       expect(mockResize).not.toHaveBeenCalled();
@@ -417,7 +427,7 @@ describe('useTerminalFit', () => {
       mockFit.mockClear();
       mockResize.mockClear();
 
-      resizeObserverCallbacks[0]();
+      fireResizeObserver();
 
       expect(mockFit).not.toHaveBeenCalled();
       expect(mockResize).not.toHaveBeenCalled();
@@ -433,7 +443,7 @@ describe('useTerminalFit', () => {
 
       // Null out the container ref after mount
       mutableRef.current = null;
-      resizeObserverCallbacks[0]();
+      fireResizeObserver();
 
       expect(mockFit).not.toHaveBeenCalled();
       expect(mockResize).not.toHaveBeenCalled();
@@ -445,17 +455,17 @@ describe('useTerminalFit', () => {
       vi.spyOn(document, 'hasFocus').mockReturnValue(true);
       const readyRef = { current: false };
       const { rerender } = renderHook(
-        ({ focused }) => useTerminalFit('s1', terminalRef, fitAddonRef, containerRef, focused, undefined, readyRef),
+        ({ focused }) => useTerminalFit('s1', terminalRef, fitAddonRef, containerRef, focused, undefined, { readyRef }),
         { initialProps: { focused: false } },
       );
-      resizeObserverCallbacks[0]();
+      fireResizeObserver();
       focusListeners[0]();
       rerender({ focused: true });
       expect(mockFit).not.toHaveBeenCalled();
       expect(mockResize).not.toHaveBeenCalled();
 
       readyRef.current = true;
-      resizeObserverCallbacks[0]();
+      fireResizeObserver();
       expect(mockFit).toHaveBeenCalledTimes(1);
       expect(mockResize).toHaveBeenCalledWith('s1', 80, 24);
     });
@@ -477,6 +487,141 @@ describe('useTerminalFit', () => {
     });
   });
 
+  describe('one size owner per session (#2322)', () => {
+    function makeView(cols: number, rows: number) {
+      const term = {
+        cols,
+        rows,
+        focus: vi.fn(),
+        scrollToBottom: vi.fn(),
+        resize: vi.fn(function (this: { cols: number; rows: number }, c: number, r: number) {
+          this.cols = c;
+          this.rows = r;
+        }),
+        buffer: { active: { viewportY: 0, baseY: 0 } },
+      };
+      const fit = vi.fn();
+      const el = document.createElement('div');
+      Object.defineProperty(el, 'clientWidth', { value: 400, configurable: true });
+      Object.defineProperty(el, 'clientHeight', { value: 300, configurable: true });
+      return {
+        term,
+        fit,
+        el,
+        terminalRef: { current: term as any },
+        fitAddonRef: { current: { fit } as any },
+        containerRef: { current: el },
+      };
+    }
+
+    it('lets only the owner resize the PTY; the other view follows the PTY size', () => {
+      vi.spyOn(document, 'hasFocus').mockReturnValue(true);
+      const main = makeView(120, 40);
+      const card = makeView(50, 12);
+      const ptySizeRef = { current: { cols: 120, rows: 40 } };
+      renderHook(() => useTerminalFit('s1', main.terminalRef, main.fitAddonRef, main.containerRef, false, undefined, { ptySizeRef }));
+      renderHook(() => useTerminalFit('s1', card.terminalRef, card.fitAddonRef, card.containerRef, false, undefined, { ptySizeRef }));
+      mockResize.mockClear();
+
+      // Every trigger on the card: no PTY resize, and it renders at the PTY size.
+      fireResizeObserver(1);
+      for (const listener of focusListeners) listener();
+      expect(mockResize).toHaveBeenCalledTimes(1); // the main view's window-focus re-assert
+      expect(mockResize).toHaveBeenCalledWith('s1', 120, 40);
+      expect(card.fit).not.toHaveBeenCalled();
+      expect([card.term.cols, card.term.rows]).toEqual([120, 40]);
+    });
+
+    it('moves ownership to the view that gains pane focus, and back', () => {
+      vi.spyOn(document, 'hasFocus').mockReturnValue(true);
+      const main = makeView(120, 40);
+      const card = makeView(50, 12);
+      const ptySizeRef = { current: { cols: 120, rows: 40 } as { cols: number; rows: number } };
+      const mainHook = renderHook(
+        ({ focused }) => useTerminalFit('s1', main.terminalRef, main.fitAddonRef, main.containerRef, focused, undefined, { ptySizeRef }),
+        { initialProps: { focused: true } },
+      );
+      const cardHook = renderHook(
+        ({ focused }) => useTerminalFit('s1', card.terminalRef, card.fitAddonRef, card.containerRef, focused, undefined, { ptySizeRef }),
+        { initialProps: { focused: false } },
+      );
+      mockResize.mockClear();
+
+      mainHook.rerender({ focused: false });
+      cardHook.rerender({ focused: true });
+      expect(card.fit).toHaveBeenCalled();
+      expect(mockResize).toHaveBeenLastCalledWith('s1', 50, 12);
+
+      // The card now owns the size: the main view's resize observer is quiet.
+      mockResize.mockClear();
+      ptySizeRef.current = { cols: 50, rows: 12 };
+      fireResizeObserver(0);
+      expect(mockResize).not.toHaveBeenCalled();
+      expect([main.term.cols, main.term.rows]).toEqual([50, 12]);
+    });
+
+    it('claims ownership when the user focuses a view that has no focused prop', () => {
+      vi.spyOn(document, 'hasFocus').mockReturnValue(true);
+      const main = makeView(120, 40);
+      const card = makeView(50, 12);
+      renderHook(() => useTerminalFit('s1', main.terminalRef, main.fitAddonRef, main.containerRef));
+      renderHook(() => useTerminalFit('s1', card.terminalRef, card.fitAddonRef, card.containerRef));
+      mockResize.mockClear();
+
+      card.el.dispatchEvent(new FocusEvent('focusin'));
+      expect(mockResize).toHaveBeenCalledWith('s1', 50, 12);
+    });
+
+    it('hands the size to the remaining view when the owner unmounts', () => {
+      vi.spyOn(document, 'hasFocus').mockReturnValue(true);
+      const main = makeView(120, 40);
+      const card = makeView(50, 12);
+      const mainHook = renderHook(() => useTerminalFit('s1', main.terminalRef, main.fitAddonRef, main.containerRef));
+      renderHook(() => useTerminalFit('s1', card.terminalRef, card.fitAddonRef, card.containerRef));
+      mockResize.mockClear();
+
+      mainHook.unmount();
+      expect(mockResize).toHaveBeenCalledWith('s1', 50, 12);
+    });
+
+    it('debounces container resizes into one PTY resize at the final size', () => {
+      vi.spyOn(document, 'hasFocus').mockReturnValue(true);
+      const main = makeView(100, 30);
+      renderHook(() => useTerminalFit('s1', main.terminalRef, main.fitAddonRef, main.containerRef));
+      mockResize.mockClear();
+
+      // A drag: many observer callbacks, each fit, one resize at the end.
+      for (let cols = 100; cols > 60; cols -= 5) {
+        main.fit.mockImplementationOnce(() => { main.term.cols = cols; });
+        resizeObserverCallbacks[0]!();
+        vi.advanceTimersByTime(RESIZE_DEBOUNCE_MS / 4);
+      }
+      expect(mockResize).not.toHaveBeenCalled();
+      vi.advanceTimersByTime(RESIZE_DEBOUNCE_MS);
+      expect(mockResize).toHaveBeenCalledTimes(1);
+      expect(mockResize).toHaveBeenCalledWith('s1', 65, 30);
+    });
+
+    it('syncToPty adopts the PTY size unless this view drives it', () => {
+      const hasFocus = vi.spyOn(document, 'hasFocus').mockReturnValue(true);
+      const main = makeView(120, 40);
+      const card = makeView(50, 12);
+      const ptySizeRef = { current: { cols: 90, rows: 30 } };
+      const mainHook = renderHook(() => useTerminalFit('s1', main.terminalRef, main.fitAddonRef, main.containerRef, false, undefined, { ptySizeRef }));
+      const cardHook = renderHook(() => useTerminalFit('s1', card.terminalRef, card.fitAddonRef, card.containerRef, false, undefined, { ptySizeRef }));
+
+      mainHook.result.current.syncToPty();
+      cardHook.result.current.syncToPty();
+      expect(main.term.resize).not.toHaveBeenCalled();
+      expect([card.term.cols, card.term.rows]).toEqual([90, 30]);
+
+      // The owner in a background window follows too.
+      hasFocus.mockReturnValue(false);
+      mainHook.result.current.syncToPty();
+      expect([main.term.cols, main.term.rows]).toEqual([90, 30]);
+    });
+  });
+
   describe('viewport scroll preservation', () => {
     // xterm 6 scrolls virtually — `.xterm-viewport` scrollTop is always 0 —
     // so scroll state is read from term.buffer.active (viewportY vs baseY).
@@ -490,7 +635,7 @@ describe('useTerminalFit', () => {
       // Reflow to fewer columns wraps lines: baseY grows, viewport lags
       mockFit.mockImplementation(() => { bufferState.baseY = 130; });
       mockScrollToBottom.mockClear();
-      resizeObserverCallbacks[0]();
+      fireResizeObserver();
 
       expect(mockFit).toHaveBeenCalled();
       expect(mockScrollToBottom).toHaveBeenCalledTimes(1);
@@ -504,7 +649,7 @@ describe('useTerminalFit', () => {
 
       mockFit.mockImplementation(() => { bufferState.baseY = 130; });
       mockScrollToBottom.mockClear();
-      resizeObserverCallbacks[0]();
+      fireResizeObserver();
 
       expect(mockFit).toHaveBeenCalled();
       expect(mockScrollToBottom).not.toHaveBeenCalled();
@@ -531,7 +676,7 @@ describe('useTerminalFit', () => {
       renderHook(() => useTerminalFit('s1', terminalRef, fitAddonRef, containerRef));
 
       mockScrollToBottom.mockClear();
-      resizeObserverCallbacks[0]();
+      fireResizeObserver();
 
       expect(mockFit).toHaveBeenCalled();
       expect(mockScrollToBottom).not.toHaveBeenCalled();
@@ -567,7 +712,7 @@ describe('useTerminalFit', () => {
       mockResize.mockClear();
 
       // Trigger a resize
-      resizeObserverCallbacks[0]();
+      fireResizeObserver();
 
       // Early return — neither fit nor resize called
       expect(mockFit).not.toHaveBeenCalled();
@@ -583,7 +728,7 @@ describe('useTerminalFit', () => {
       mockFit.mockClear();
       mockResize.mockClear();
 
-      resizeObserverCallbacks[0]();
+      fireResizeObserver();
 
       expect(mockFit).not.toHaveBeenCalled();
       expect(mockResize).not.toHaveBeenCalled();

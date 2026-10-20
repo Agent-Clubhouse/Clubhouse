@@ -71,6 +71,8 @@ describe('ShellTerminal', () => {
   beforeEach(() => {
     widthSpy = vi.spyOn(HTMLElement.prototype, 'clientWidth', 'get').mockReturnValue(800);
     heightSpy = vi.spyOn(HTMLElement.prototype, 'clientHeight', 'get').mockReturnValue(600);
+    // The app window has focus unless a test says otherwise.
+    vi.spyOn(document, 'hasFocus').mockReturnValue(true);
   });
   afterEach(() => {
     widthSpy.mockRestore();
