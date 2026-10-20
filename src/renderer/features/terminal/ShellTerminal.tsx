@@ -118,7 +118,7 @@ export function ShellTerminal({ sessionId, focused, io }: Props) {
           batch += unseenPtySuffix(chunk.data, chunk.seq, replay.appliedSeq);
           if (chunk.seq !== undefined && chunk.seq > replay.appliedSeq) replay.appliedSeq = chunk.seq;
         }
-        if (batch) await writeAsync(term, batch);
+        if (batch) await writeAsync(term, batch).catch((): void => undefined); // telemetry-exempt: xterm drops writes past its buffer cap; the replay must still finish
       }
       if (terminalRef.current !== term) return;
       replay.replayed = true;
@@ -139,6 +139,8 @@ export function ShellTerminal({ sessionId, focused, io }: Props) {
         : pty.getBuffer(sessionId).then((data) => ({ data, seq: -1 }));
       snapshot.then(async (snap) => {
         if (terminalRef.current !== term) return;
+        // Unsized history (older or remote IO): write at this pane's size.
+        if (!snap.sizes?.length && hasMeasurableSize(containerRef.current)) fitAddon.fit();
         await writePtySnapshot(term, snap);
         if (terminalRef.current !== term) return;
         replay.appliedSeq = snap.seq;

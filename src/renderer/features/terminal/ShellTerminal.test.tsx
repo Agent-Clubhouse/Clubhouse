@@ -161,6 +161,16 @@ describe('ShellTerminal', () => {
       expect(window.clubhouse.pty.resize).not.toHaveBeenCalled();
     });
 
+    it('fits to the pane before writing a snapshot without sizes', async () => {
+      (window.clubhouse.pty.getBufferSnapshot as any).mockResolvedValue({ data: 'old', seq: 3 });
+      const calls: string[] = [];
+      render(<ShellTerminal sessionId="shell-1" />);
+      fitAddon().fit.mockImplementation(() => calls.push('fit'));
+      term().write.mockImplementation((data: string, cb?: () => void) => { calls.push(`write ${data}`); cb?.(); });
+      await act(async () => {});
+      expect(calls.slice(0, 2)).toEqual(['fit', 'write old']);
+    });
+
     it('replays the snapshot at its recorded PTY sizes', async () => {
       (window.clubhouse.pty.getBufferSnapshot as any).mockResolvedValue({
         data: 'abcdef',

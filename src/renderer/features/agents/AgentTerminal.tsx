@@ -184,7 +184,7 @@ export function AgentTerminal({ agentId, focused, zoneThemeId }: Props) {
         const chunks = pendingData.splice(0);
         let batch = '';
         for (const chunk of chunks) batch += takeUnseen(chunk.data, chunk.seq);
-        if (batch) await writeAsync(term, batch);
+        if (batch) await writeAsync(term, batch).catch((): void => undefined); // telemetry-exempt: xterm drops writes past its buffer cap; the replay must still finish
       }
     };
     const finishReplay = () => {
@@ -212,6 +212,9 @@ export function AgentTerminal({ agentId, focused, zoneThemeId }: Props) {
       }
       // Each part of the history is written at the PTY size it was drawn at,
       // leaving the terminal at the PTY's current size for queued live data.
+      // Without recorded sizes (a satellite's serialized screen) the best
+      // guess is this pane's own size, so fit first (the PTY is sized later).
+      if (!snapshot.sizes?.length && hasMeasurableSize(containerRef.current)) fitAddon.fit();
       await writePtySnapshot(term, snapshot);
       if (terminalRef.current !== term) return;
       appliedSeq = snapshot.seq;

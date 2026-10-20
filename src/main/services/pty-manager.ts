@@ -59,6 +59,8 @@ interface ManagedSession {
   sizeLog: Array<{ seq: number; cols: number; rows: number }>;
   /** Whether the alt screen was active at the buffer head (evicted history). */
   headAltScreen: boolean;
+  /** Last few evicted chars, so a toggle split across chunks is still seen. */
+  evictedTail: string;
   /** UTF-16 code units evicted from the head of the buffer so far. */
   evictedChars: number;
   pendingCommand?: string;
@@ -71,6 +73,9 @@ interface ManagedSession {
 }
 
 const MAX_BUFFER_SIZE = 2 * 1024 * 1024; // 2MB per agent
+
+/** Longer than any alt-screen toggle sequence ("ESC[?1049h" is 8). */
+const EVICT_TAIL_CHARS = 16;
 
 /** Size every PTY is spawned at, before a terminal reports its own. */
 const SPAWN_COLS = 120;
@@ -215,6 +220,7 @@ function createSession(process: pty.IPty, agentId: string, pendingCommand?: stri
     outputSeq: outputSeqHighWater,
     sizeLog: [{ seq: outputSeqHighWater, cols: SPAWN_COLS, rows: SPAWN_ROWS }],
     headAltScreen: false,
+    evictedTail: '',
     evictedChars: 0,
     pendingCommand,
   };
@@ -230,7 +236,9 @@ function appendToBuffer(session: ManagedSession, data: string): void {
   let evicted = false;
   while (session.outputSize > MAX_BUFFER_SIZE && session.outputHead < session.outputChunks.length - 1) {
     const chunk = session.outputChunks[session.outputHead]!;
-    session.headAltScreen = altScreenAfter(chunk, session.headAltScreen);
+    const scanned = session.evictedTail + chunk;
+    session.headAltScreen = altScreenAfter(scanned, session.headAltScreen);
+    session.evictedTail = scanned.slice(-EVICT_TAIL_CHARS);
     session.outputSize -= chunk.length;
     session.evictedChars += chunk.length;
     session.outputHead++;
