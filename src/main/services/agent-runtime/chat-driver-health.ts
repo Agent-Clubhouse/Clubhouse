@@ -5,7 +5,7 @@
  * broken install or profile doesn't pause the driver for the others.
  *
  * - Handshake probes are cached per key (re-probed when the binary changes
- *   on disk), so the zero-token handshake runs once per CLI install rather
+ *   on disk: mtime, size or inode), so the zero-token handshake runs once per CLI install rather
  *   than on every wake. A probe that reports a missing login isn't cached
  *   or counted as a failure, so logging in takes effect on the next wake. Concurrent callers share one in-flight probe, so a
  *   burst of agents waking at launch costs one probe and, if it fails, one
@@ -13,7 +13,9 @@
  * - Handshake and spawn-level failures pause a key after a few in a row:
  *   agents skip it (to the next driver, or the terminal) instead of paying
  *   for another failing start each time. One success clears it; after the
- *   pause, the next attempt is let through.
+ *   pause, the next attempt is let through. Failures remember the binary's
+ *   identity, so replacing it at the same path (a fixed install) drops the
+ *   old failures and is tried right away, the same change that re-probes it.
  */
 
 import { createHash } from 'crypto';
@@ -31,11 +33,13 @@ interface Health {
   consecutiveFailures: number;
   lastFailureAt: number;
   lastReason?: string;
+  /** Identity of the binary the failures were recorded against. */
+  binaryIdentity?: string;
 }
 
 const health = new Map<string, Health>();
-const probes = new Map<string, { mtimeMs: number; probe: ChatDriverProbe }>();
-const inFlight = new Map<string, Promise<ChatDriverProbe>>();
+const probes = new Map<string, { identity: string; probe: ChatDriverProbe }>();
+const inFlight = new Map<string, { identity: string | undefined; probe: Promise<ChatDriverProbe> }>();
 
 /** Health and probe-cache key: driver, binary, the profile env it runs with and any command prefix it's launched through. */
 export function driverHealthKey(driver: Pick<ChatDriver, 'id'>, binaryPath: string, env?: Record<string, string>, commandPrefix?: string): string {
@@ -45,26 +49,54 @@ export function driverHealthKey(driver: Pick<ChatDriver, 'id'>, binaryPath: stri
   return `${driver.id}\0${binaryPath}\0${envHash}${commandPrefix ? `\0${commandPrefix}` : ''}`;
 }
 
-export function recordDriverFailure(key: string, reason: string, now = Date.now()): void {
-  const h = health.get(key) ?? { consecutiveFailures: 0, lastFailureAt: 0 };
-  health.set(key, { consecutiveFailures: h.consecutiveFailures + 1, lastFailureAt: now, lastReason: reason });
+/**
+ * Count a failure for the key. With the binary path, the failure is tied to
+ * the binary's current identity, and failures of a different binary at that
+ * path no longer count.
+ */
+export function recordDriverFailure(key: string, reason: string, now = Date.now(), binaryPath?: string): void {
+  recordFailure(key, reason, now, binaryPath !== undefined ? binaryIdentity(binaryPath) : undefined);
+}
+
+function recordFailure(key: string, reason: string, now: number, identity: string | undefined): void {
+  const prev = health.get(key);
+  const h = prev && !identityChanged(prev.binaryIdentity, identity) ? prev : { consecutiveFailures: 0, lastFailureAt: 0 };
+  health.set(key, { consecutiveFailures: h.consecutiveFailures + 1, lastFailureAt: now, lastReason: reason, binaryIdentity: identity ?? h.binaryIdentity });
 }
 
 export function recordDriverSuccess(key: string): void {
   health.delete(key);
 }
 
-/** The reason a key is paused, or undefined when it may be tried. */
-export function driverPausedReason(key: string, now = Date.now()): string | undefined {
+/**
+ * The reason a key is paused, or undefined when it may be tried. With the
+ * binary path, a binary replaced since the failures clears them.
+ */
+export function driverPausedReason(key: string, now = Date.now(), binaryPath?: string): string | undefined {
   const h = health.get(key);
-  if (!h || h.consecutiveFailures < DRIVER_FAILURE_THRESHOLD) return undefined;
+  if (!h) return undefined;
+  if (binaryPath !== undefined && identityChanged(h.binaryIdentity, binaryIdentity(binaryPath))) {
+    health.delete(key);
+    return undefined;
+  }
+  if (h.consecutiveFailures < DRIVER_FAILURE_THRESHOLD) return undefined;
   if (now - h.lastFailureAt >= DRIVER_PAUSE_MS) return undefined;
   return h.lastReason ?? 'repeated failures';
 }
 
-function binaryMtime(binaryPath: string): number | undefined {
+/**
+ * A binary that can't be stat'ed now counts as unchanged; one that couldn't
+ * be when the failures were recorded and can be now has changed.
+ */
+function identityChanged(recorded: string | undefined, current: string | undefined): boolean {
+  return current !== undefined && recorded !== current;
+}
+
+/** What changes when the binary is replaced: mtime, size and inode. */
+function binaryIdentity(binaryPath: string): string | undefined {
   try {
-    return fs.statSync(binaryPath).mtimeMs;
+    const st = fs.statSync(binaryPath);
+    return `${st.mtimeMs}:${st.size}:${st.ino}`;
   } catch { // telemetry-exempt: an unstat-able binary just isn't cached; the probe reports the real failure
     return undefined;
   }
@@ -86,23 +118,26 @@ async function runProbe(driver: ChatDriver, binaryPath: string, env: Record<stri
  */
 export function probeDriver(driver: ChatDriver, binaryPath: string, env?: Record<string, string>, commandPrefix?: string): Promise<ChatDriverProbe> {
   const key = driverHealthKey(driver, binaryPath, env, commandPrefix);
-  const mtimeMs = binaryMtime(binaryPath);
+  const identity = binaryIdentity(binaryPath);
   const cached = probes.get(key);
-  if (cached && mtimeMs !== undefined && cached.mtimeMs === mtimeMs) return Promise.resolve(cached.probe);
+  if (cached && identity !== undefined && cached.identity === identity) return Promise.resolve(cached.probe);
+  // A probe of the binary this one replaced isn't shared.
   const pending = inFlight.get(key);
-  if (pending) return pending;
+  if (pending && !identityChanged(pending.identity, identity)) return pending.probe;
 
   const startedAt = Date.now();
   const probe = runProbe(driver, binaryPath, env, commandPrefix).then((result) => {
+    // Superseded by a probe of a replacement binary: stale, so neither cached nor counted.
+    if (inFlight.get(key)?.probe !== probe) return result;
     inFlight.delete(key);
     if (result.handshakeOk && result.needsLogin) {
       // Healthy CLI, user not logged in: probe again next time rather than caching or pausing.
       probes.delete(key);
     } else if (result.handshakeOk) {
-      if (mtimeMs !== undefined) probes.set(key, { mtimeMs, probe: result });
+      if (identity !== undefined) probes.set(key, { identity, probe: result });
     } else {
       probes.delete(key);
-      recordDriverFailure(key, `handshake failed: ${result.error ?? 'unknown error'}`);
+      recordFailure(key, `handshake failed: ${result.error ?? 'unknown error'}`, Date.now(), identity);
       // One record per actual probe (concurrent callers share it). Raw errors
       // and binary paths stay local; never log/export the environment or key.
       appLog('core:chat', 'warn', 'Chat handshake probe failed', {
@@ -119,7 +154,7 @@ export function probeDriver(driver: ChatDriver, binaryPath: string, env?: Record
     }
     return result;
   });
-  inFlight.set(key, probe);
+  inFlight.set(key, { identity, probe });
   return probe;
 }
 

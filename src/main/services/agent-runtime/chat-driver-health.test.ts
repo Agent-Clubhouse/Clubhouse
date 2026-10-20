@@ -65,6 +65,113 @@ describe('chat driver health', () => {
     expect(driverPausedReason(key, t0 + DRIVER_PAUSE_MS + 1)).toBeUndefined();
   });
 
+  it('keeps a pause while the binary is unchanged and drops it when the binary is replaced at the same path', () => {
+    const { bin, done } = tempBinary();
+    const key = driverHealthKey(new FakeChatDriver(), bin);
+    const t0 = 1_000_000;
+    for (let i = 0; i < DRIVER_FAILURE_THRESHOLD; i++) recordDriverFailure(key, 'session start failed: boom', t0, bin);
+    expect(driverPausedReason(key, t0 + 1, bin)).toBe('session start failed: boom');
+    // Same binary: still paused, and the cooldown still ends it.
+    expect(driverPausedReason(key, t0 + 2, bin)).toBe('session start failed: boom');
+    expect(driverPausedReason(key, t0 + DRIVER_PAUSE_MS, bin)).toBeUndefined();
+    // A fixed install at the same path is tried before the cooldown ends.
+    fs.writeFileSync(bin, 'v2-fixed');
+    fs.utimesSync(bin, new Date(), new Date(Date.now() + 60_000));
+    expect(driverPausedReason(key, t0 + 3, bin)).toBeUndefined();
+    // Its old failures are gone: it starts a fresh count.
+    for (let i = 1; i < DRIVER_FAILURE_THRESHOLD; i++) recordDriverFailure(key, 'still broken', t0 + 4, bin);
+    expect(driverPausedReason(key, t0 + 5, bin)).toBeUndefined();
+    recordDriverFailure(key, 'still broken', t0 + 4, bin);
+    expect(driverPausedReason(key, t0 + 5, bin)).toBe('still broken');
+    done();
+  });
+
+  it('a replaced binary clears only its own key\'s pause', () => {
+    const { bin, done } = tempBinary();
+    const driver = new FakeChatDriver();
+    const a = driverHealthKey(driver, bin, { CLAUDE_CONFIG_DIR: 'a' });
+    const b = driverHealthKey(driver, 'other-bin', { CLAUDE_CONFIG_DIR: 'b' });
+    const t0 = 1_000_000;
+    for (let i = 0; i < DRIVER_FAILURE_THRESHOLD; i++) {
+      recordDriverFailure(a, 'a broken', t0, bin);
+      recordDriverFailure(b, 'b broken', t0);
+    }
+    fs.writeFileSync(bin, 'v2-fixed');
+    expect(driverPausedReason(a, t0 + 1, bin)).toBeUndefined();
+    expect(driverPausedReason(b, t0 + 1)).toBe('b broken');
+    done();
+  });
+
+  it('re-probes a binary replaced while paused, and its failures pause the new binary', async () => {
+    const { bin, done } = tempBinary();
+    const driver = new FakeChatDriver();
+    const key = driverHealthKey(driver, bin);
+    let probes = 0;
+    driver.probe = async () => { probes++; return { handshakeOk: false, capabilities: driver.capabilities, error: 'boom' }; };
+    for (let i = 0; i < DRIVER_FAILURE_THRESHOLD; i++) await probeDriver(driver, bin);
+    expect(driverPausedReason(key, Date.now(), bin)).toBe('handshake failed: boom');
+    fs.writeFileSync(bin, 'v2-fixed');
+    fs.utimesSync(bin, new Date(), new Date(Date.now() + 60_000));
+    // The pause check and the probe cache agree the binary changed.
+    expect(driverPausedReason(key, Date.now(), bin)).toBeUndefined();
+    driver.probe = async () => { probes++; return { handshakeOk: true, cliVersion: '2.1.300', capabilities: driver.capabilities }; };
+    expect((await probeDriver(driver, bin)).handshakeOk).toBe(true);
+    expect(probes).toBe(DRIVER_FAILURE_THRESHOLD + 1);
+    done();
+  });
+
+  it('re-probes a cached binary replaced with the same mtime', async () => {
+    const { bin, done } = tempBinary();
+    const driver = new FakeChatDriver();
+    let probes = 0;
+    driver.probe = async () => { probes++; return { handshakeOk: true, cliVersion: '2.1.300', capabilities: driver.capabilities }; };
+    await probeDriver(driver, bin);
+    const { atime, mtime } = fs.statSync(bin);
+    fs.writeFileSync(bin, 'v2-longer');
+    fs.utimesSync(bin, atime, mtime);
+    await probeDriver(driver, bin);
+    expect(probes).toBe(2);
+    done();
+  });
+
+  it('shares one probe among concurrent callers after a replacement, without handing them the old binary\'s probe', async () => {
+    const { bin, done } = tempBinary();
+    const driver = new FakeChatDriver();
+    const key = driverHealthKey(driver, bin);
+    const releases: Array<(ok: boolean) => void> = [];
+    driver.probe = () => new Promise((resolve) => {
+      releases.push((ok) => resolve(ok
+        ? { handshakeOk: true, cliVersion: '2.1.300', capabilities: driver.capabilities }
+        : { handshakeOk: false, capabilities: driver.capabilities, error: 'old binary' }));
+    });
+    const oldProbe = probeDriver(driver, bin);
+    fs.writeFileSync(bin, 'v2-fixed');
+    const burst = Array.from({ length: 5 }, () => probeDriver(driver, bin));
+    await new Promise((r) => setImmediate(r));
+    expect(releases).toHaveLength(2);
+    releases[1](true);
+    expect((await Promise.all(burst)).every((r) => r.handshakeOk)).toBe(true);
+    // The old binary's late failure neither pauses nor evicts the new one.
+    releases[0](false);
+    expect((await oldProbe).handshakeOk).toBe(false);
+    expect(driverPausedReason(key, Date.now(), bin)).toBeUndefined();
+    await probeDriver(driver, bin);
+    expect(releases).toHaveLength(2);
+    done();
+  });
+
+  it('drops failures recorded while the binary could not be read once it can be', () => {
+    const { bin, done } = tempBinary();
+    const key = driverHealthKey(new FakeChatDriver(), bin);
+    const t0 = 1_000_000;
+    fs.rmSync(bin);
+    for (let i = 0; i < DRIVER_FAILURE_THRESHOLD; i++) recordDriverFailure(key, 'missing', t0, bin);
+    expect(driverPausedReason(key, t0 + 1, bin)).toBe('missing');
+    fs.writeFileSync(bin, 'v2');
+    expect(driverPausedReason(key, t0 + 1, bin)).toBeUndefined();
+    done();
+  });
+
   it('keys health by driver, binary and profile env', () => {
     const d = new FakeChatDriver('claude_agent_sdk');
     const a = driverHealthKey(d, 'bin', { CLAUDE_CONFIG_DIR: 'one' });

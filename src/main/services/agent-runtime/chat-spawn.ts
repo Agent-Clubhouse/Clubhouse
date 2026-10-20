@@ -128,7 +128,7 @@ interface DriverCheck {
 
 /** Paused after repeated failures, handshake, then version policy. Never spends tokens. */
 async function checkDriver(driver: ChatDriver, key: string, binaryPath: string, env?: Record<string, string>, commandPrefix?: string): Promise<DriverCheck> {
-  const paused = driverPausedReason(key);
+  const paused = driverPausedReason(key, Date.now(), binaryPath);
   if (paused) return { ok: false, reason: `${driverLabel(driver)} chat is paused after repeated failures (${paused})`, notices: [] };
   const probe = await probeDriver(driver, binaryPath, env, commandPrefix);
   if (!probe.handshakeOk) {
@@ -380,7 +380,7 @@ async function runChatStart(
       break;
     }
     // A stale resume id fails every driver alike; it says nothing about this one's health.
-    if (!resumeNativeSessionId) recordDriverFailure(key, `session start failed: ${outcome.error}`);
+    if (!resumeNativeSessionId) recordDriverFailure(key, `session start failed: ${outcome.error}`, Date.now(), binaryPath);
     noteChatStartFailure(params.agentId, outcome.error);
     skipped.push(`${driverLabel(driver)} failed to start: ${outcome.error}`);
   }
