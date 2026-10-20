@@ -1,6 +1,7 @@
 import { ipcRenderer } from 'electron';
 import { IPC } from '../shared/ipc-channels';
 import type { BranchChanges, BranchFilePatch, PullRequestInfo } from '../shared/git-branch';
+import type { GithubRefKind, GithubRefResult } from '../shared/github-ref';
 import type { GitLogEntry, GitNumstatEntry, GitOpResult } from '../shared/types';
 
 export const git = {
@@ -57,5 +58,11 @@ export const git = {
   /** Open the branch's pull request or compare page; refused unless it's this repo's on GitHub. */
   openPullRequest: (dirPath: string, url: string): Promise<GitOpResult> =>
     ipcRenderer.invoke(IPC.GIT.OPEN_PULL_REQUEST, dirPath, url),
+  /** "owner/repo" of the directory's GitHub remote, or null. */
+  githubRepo: (dirPath: string): Promise<string | null> =>
+    ipcRenderer.invoke(IPC.GIT.GITHUB_REPO, dirPath),
+  /** A GitHub pull request, issue or commit, through gh; cached in main. `id` is the number or sha. */
+  githubRef: (repo: string, kind: GithubRefKind, id: string): Promise<GithubRefResult> =>
+    ipcRenderer.invoke(IPC.GIT.GITHUB_REF, repo, kind, id),
   },
 };

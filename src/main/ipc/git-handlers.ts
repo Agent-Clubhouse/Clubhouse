@@ -1,6 +1,8 @@
 import { ipcMain, shell } from 'electron';
 import { IPC } from '../../shared/ipc-channels';
 import * as gitService from '../services/git-service';
+import { getGithubRef } from '../services/github-ref-service';
+import type { GithubRefKind } from '../../shared/github-ref';
 import { booleanArg, numberArg, stringArg, withValidatedArgs } from './validation';
 
 function deferInvocation<Result>(operation: () => Promise<Result> | Result): Promise<Result> {
@@ -123,4 +125,14 @@ export function registerGitHandlers(): void {
   ipcMain.handle(IPC.GIT.OPEN_PULL_REQUEST, withValidatedArgs([stringArg(), stringArg({ maxLength: 2048 })], (_event, dirPath: string, url: string) => {
     return gitService.openPullRequest(dirPath, url, (u) => shell.openExternal(u));
   }));
+
+  ipcMain.handle(IPC.GIT.GITHUB_REPO, withValidatedArgs([stringArg()], async (_event, dirPath: string) => {
+    return deferInvocation(() => gitService.getGithubRepo(dirPath));
+  }));
+
+  // The service validates repo, kind and id before anything reaches gh.
+  ipcMain.handle(IPC.GIT.GITHUB_REF, withValidatedArgs(
+    [stringArg({ maxLength: 201 }), stringArg({ maxLength: 16 }), stringArg({ maxLength: 40 })],
+    (_event, repo: string, kind: string, id: string) => getGithubRef(repo, kind as GithubRefKind, id),
+  ));
 }
