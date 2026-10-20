@@ -56,6 +56,34 @@ describe('EDITING_KEYS', () => {
     expect(isEditingKeyEvent(altGr, 'win32')).toBe(true);
   });
 
+  // #2329: Windows AltGr arrives as Ctrl+Alt, with or without the AltGraph modifier state.
+  it.each([
+    ['Czech AltGr+D', { key: 'Đ', code: 'KeyD' }],
+    ['Polish AltGr+A', { key: 'ą', code: 'KeyA' }],
+    ['Hungarian AltGr+W', { key: '|', code: 'KeyW' }],
+    ['German AltGr+E', { key: '€', code: 'KeyE' }],
+    ['German AltGr+Q', { key: '@', code: 'KeyQ' }],
+    ['German AltGr+2', { key: '²', code: 'Digit2' }],
+    ['German AltGr+8', { key: '[', code: 'Digit8' }],
+    ['US-International AltGr+;', { key: '¶', code: 'Semicolon' }],
+  ])('treats %s (Ctrl+Alt, printable) as typing off macOS', (_name, init) => {
+    const e = { ...init, ctrlKey: true, altKey: true };
+    expect(isEditingKeyEvent(e, 'win32')).toBe(true);
+    expect(isEditingKeyEvent(e, 'linux')).toBe(true);
+  });
+
+  it('keeps Ctrl+Alt chords that type nothing, and Cmd+Option on macOS', () => {
+    for (const e of [
+      { key: 'd', code: 'KeyD' }, { key: 'D', code: 'KeyD', shiftKey: true },
+      { key: 'r', code: 'KeyR' }, { key: '1', code: 'Digit1' },
+      { key: 'ArrowRight', code: 'ArrowRight' },
+    ]) {
+      expect(isEditingKeyEvent({ ...e, ctrlKey: true, altKey: true }, 'win32')).toBe(false);
+    }
+    expect(isEditingKeyEvent({ key: '∂', code: 'KeyD', metaKey: true, altKey: true }, 'darwin')).toBe(false);
+    expect(isEditingKeyEvent({ key: '∂', code: 'KeyD', ctrlKey: true, altKey: true }, 'darwin')).toBe(false);
+  });
+
   it('reads the letter from the physical key when Option changes it', () => {
     expect(eventChord({ key: '˚', code: 'KeyK', altKey: true, metaKey: true })).toBe('Meta+Alt+K');
   });

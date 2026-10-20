@@ -92,13 +92,26 @@ export function eventChord(e: ChordEvent): string {
 }
 
 /**
+ * Windows reports AltGr as Ctrl+Alt, so AltGr typing a character reads as a
+ * Ctrl+Alt chord (#2329): Czech AltGr+D types 'Đ' as Ctrl+Alt+D, Hungarian
+ * AltGr+W types '|' as Ctrl+Alt+W. It's typing when the key is a printable
+ * character other than the physical key's own letter or digit. Off macOS only:
+ * there Ctrl+Option types nothing, and Cmd+Option chords are Cmd's.
+ */
+function isAltGrCharacter(e: ChordEvent, platform: KeyPlatform): boolean {
+  if (platform === 'darwin' || !e.ctrlKey || !e.altKey || e.metaKey) return false;
+  if ([...e.key].length !== 1 || /\s/.test(e.key)) return false;
+  const base = /^Key([A-Z])$/.exec(e.code ?? '')?.[1] ?? /^Digit([0-9])$/.exec(e.code ?? '')?.[1];
+  return base === undefined || e.key.toUpperCase() !== base;
+}
+
+/**
  * True when the key belongs to text editing on this platform: an editing
- * chord, an IME composition keystroke, or AltGr typing a character (on Windows
- * AltGr arrives as Ctrl+Alt, so Hungarian AltGr+W, '|', would read as Ctrl+Alt+W).
+ * chord, an IME composition keystroke, or AltGr typing a character.
  */
 export function isEditingKeyEvent(e: ChordEvent, platform: KeyPlatform = keyPlatform()): boolean {
   if (e.isComposing || e.keyCode === 229) return true;
-  if (e.getModifierState?.('AltGraph')) return true;
+  if (e.getModifierState?.('AltGraph') || isAltGrCharacter(e, platform)) return true;
   return EDITING_KEYS[platform].has(eventChord(e));
 }
 

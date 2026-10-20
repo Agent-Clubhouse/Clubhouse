@@ -70,6 +70,23 @@ describe('handleShortcutKeydown in text inputs (#2314)', () => {
     expect(handler).toHaveBeenCalledTimes(1);
   });
 
+  // #2329: Czech AltGr+D types 'Đ' as Ctrl+Alt+D, which is toggle-agent-details (Meta+Alt+D, global).
+  it('types AltGr+D in a textarea on Windows instead of toggling agent details', async () => {
+    setPlatform('win32');
+    const { useAgentDetailsStore } = await import('./features/agents/details/detailsStore');
+    const toggle = vi.spyOn(useAgentDetailsStore.getState(), 'toggle');
+    const altGr = new KeyboardEvent('keydown', { key: 'Đ', code: 'KeyD', ctrlKey: true, altKey: true, cancelable: true });
+    expect(eventToBinding(altGr)).toBe('Meta+Alt+D');
+    Object.defineProperty(altGr, 'target', { value: textarea });
+    handleShortcutKeydown(altGr);
+    expect(altGr.defaultPrevented).toBe(false);
+    expect(toggle).not.toHaveBeenCalled();
+    // Ctrl+Alt+D itself still toggles while typing.
+    expect(press('Ctrl+Alt+D', textarea)).toBe(true);
+    expect(toggle).toHaveBeenCalledTimes(1);
+    toggle.mockRestore();
+  });
+
   it('leaves AltGr characters to the input on Windows', () => {
     setPlatform('win32');
     const handler = vi.fn();
