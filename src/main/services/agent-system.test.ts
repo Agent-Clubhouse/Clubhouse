@@ -593,6 +593,38 @@ describe('agent-system', () => {
       }
     });
 
+    it('records a cancelled chat start as a cancelled chat.start span, and opens nothing (#2304)', async () => {
+      const replaySpan = vi.fn();
+      const event = vi.fn();
+      setProducingRuntime({
+        level: 'standard',
+        flow: (_n: string, _o: unknown, fn: (s: unknown) => unknown) => fn({ set: () => {} }),
+        step: (_n: string, fn: (s: unknown) => unknown) => fn({ set: () => {} }),
+        count: vi.fn(),
+        replaySpan,
+        event,
+      } as unknown as TelemetryRuntime);
+      const realStart = mockTryStartChatAgent.getMockImplementation()!;
+      mockTryStartChatAgent.mockImplementationOnce(async (...args: unknown[]) => {
+        (args[5] as () => void)();
+        Object.assign(args[6] as object, { attempts: [{ driver: 'claude_agent_sdk', checkMs: 5 }], reason: 'killed' });
+        return 'cancelled';
+      });
+      try {
+        await spawnAgent({ agentId: 'agent-1', projectPath: '/project', cwd: '/project', kind: 'durable' });
+        expect(mockPtySpawn).not.toHaveBeenCalled();
+        const span = replaySpan.mock.calls.map((c) => c[0]).find((sp: { name: string }) => sp.name === 'clubhouse.chat.start');
+        expect(span).toMatchObject({ outcome: 'cancelled' });
+        expect(span.attrs).toEqual(expect.arrayContaining([
+          ATTR.chatStartResult('cancelled'), ATTR.chatStartReason('killed'), ATTR.orchestrator('claude-code'), ATTR.agentResume(false),
+        ]));
+        expect(event.mock.calls.map((c) => c[0])).not.toContain('clubhouse.chat.fallback');
+      } finally {
+        mockTryStartChatAgent.mockImplementation(realStart);
+        setProducingRuntime(null);
+      }
+    });
+
     it('passes commandPrefix from project settings to ptyManager.spawn', async () => {
       mockReadProjectAgentDefaults.mockReturnValue({ commandPrefix: '. ./init.sh' });
 

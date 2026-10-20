@@ -835,6 +835,8 @@ describe('ACP chat driver resume stalls and cancellation (#2087)', () => {
     expect(timing.initializeToRequestMs).toBeGreaterThanOrEqual(0);
     // Counts and timings only: no replayed text.
     expect(JSON.stringify(timing)).not.toContain('old 0');
+    // The same timings on the session, for chat start telemetry (#2304).
+    expect(session.resumeTiming).toEqual({ loadMs: timing.totalMs, firstReplyMs: timing.firstActivityMs });
     expect(replayer.errors).toEqual([]);
   });
 
@@ -849,6 +851,8 @@ describe('ACP chat driver resume stalls and cancellation (#2087)', () => {
     const timings = log.mock.calls.filter(([, msg]) => msg === 'ACP session/load timing').map((c) => c[2]);
     expect(timings).toHaveLength(1);
     expect(timings[0]).toMatchObject({ sessionId: 'gone', outcome: 'no_reply', notifications: 0, firstActivityMs: null });
+    // The fresh session carries the stalled load's timings (#2304).
+    expect(session.resumeTiming).toEqual({ loadMs: timings[0].totalMs });
     expect(replayers[1].done).toBe(true);
   });
 
@@ -891,6 +895,8 @@ describe('Copilot resume and level after a respawn (#2155)', () => {
     expect(Date.now() - startedAt).toBeLessThan(2_000);
     expect(session.nativeSessionId).toBe('s-new');
     expect(replayer.written.some((m) => m.method === 'session/load')).toBe(false);
+    // No load ran, so there are no load timings.
+    expect(session.resumeTiming).toBeUndefined();
     const notice = (await session.events[Symbol.asyncIterator]().next()).value;
     expect(notice).toMatchObject({ type: 'notice', data: { code: 'resume_unavailable', message: expect.stringContaining('previous session was not found') } });
     expect(replayer.errors).toEqual([]);

@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
@@ -55,7 +55,7 @@ vi.mock('./chat-version-policy', async (importActual) => {
   return { ...actual, evaluateCliVersion: vi.fn(actual.evaluateCliVersion) };
 });
 
-import { levelForFreeAgent, findChatSessionFor, tryStartChatAgent, isLoginRequiredError, cancelChatStart, hasChatStartInFlight, stopAllChatAgents } from './chat-spawn';
+import { levelForFreeAgent, findChatSessionFor, tryStartChatAgent, isLoginRequiredError, cancelChatStart, hasChatStartInFlight, stopAllChatAgents, type ChatStartFacts } from './chat-spawn';
 import { whenSessionCapturesSettled } from '../session-capture-barrier';
 import { takeChatStartFailure } from './stale-session';
 import { untrackAgent } from '../agent-registry';
@@ -79,6 +79,7 @@ import { isMcpEnabled } from '../mcp-settings';
 import { CodexChatDriver } from '../../orchestrators/adapters/codex-chat-driver';
 import { ClaudeChatDriver } from '../../chat/claude/driver';
 import { ClaudeSdkTransport, SDK_INIT_TIMEOUT_MS } from '../../chat/claude/sdk-transport';
+import { ClaudeStartupTimeoutError } from '../../chat/claude/transport';
 import * as codexFixture from '../../orchestrators/adapters/codex-protocol/__fixtures__/app-server-session';
 
 const provider = {
@@ -569,6 +570,190 @@ require('readline').createInterface({ input: process.stdin }).on('line', line =>
       expect(toasts().at(-1)?.message).toBe('Opened in the terminal: Claude Code (Agent SDK) failed to start: a; Claude Code (stream-json) failed to start: b');
       expect(getAgentRuntime('agent-1')).toBeUndefined();
     });
+  });
+});
+
+describe('chat start facts for telemetry (#2304)', () => {
+  const facts = (): ChatStartFacts => ({ attempts: [] });
+  /** Attempts without their timings, which vary run to run. */
+  const tried = (f: ChatStartFacts) => f.attempts.map(({ checkMs, sessionStartMs, ...rest }) => {
+    expect(checkMs).toBeGreaterThanOrEqual(0);
+    if (sessionStartMs !== undefined) expect(sessionStartMs).toBeGreaterThanOrEqual(0);
+    return { ...rest, ...(sessionStartMs !== undefined && { started: true }) };
+  });
+  function drivers() {
+    const sdk = new FakeChatDriver('claude_agent_sdk');
+    const stream = new FakeChatDriver('claude_stream_json');
+    registerChatDriver(sdk);
+    registerChatDriver(stream);
+    return { sdk, stream };
+  }
+  afterEach(async () => { await getAgentRuntime('agent-1')?.stop(); });
+
+  it('records nothing for an agent that was never chat', async () => {
+    registerChatDriver(new FakeChatDriver());
+    const f = facts();
+    mode.value = { mode: 'terminal' };
+    expect(await tryStartChatAgent(params, provider, undefined, undefined, null, undefined, f)).toBe('terminal');
+    expect(f).toEqual({ attempts: [] });
+  });
+
+  it('records no driver and a missing binary as reasons, with no attempts', async () => {
+    const none = facts();
+    expect(await tryStartChatAgent(params, provider, undefined, undefined, null, undefined, none)).toBe('terminal');
+    expect(none).toEqual({ attempts: [], reason: 'no_driver' });
+
+    registerChatDriver(new FakeChatDriver('claude_agent_sdk'));
+    const missing = { ...provider, getBinaryPath: () => { throw new Error('claude not found at /secret/path'); } } as unknown as OrchestratorProvider;
+    const f = facts();
+    expect(await tryStartChatAgent(params, missing, undefined, undefined, null, undefined, f)).toBe('terminal');
+    expect(f).toEqual({ attempts: [], reason: 'binary_missing', preferredDriver: 'claude_agent_sdk' });
+
+    const noLookup = facts();
+    const { getBinaryPath: _unused, ...rest } = provider as unknown as Record<string, unknown>;
+    expect(await tryStartChatAgent(params, rest as unknown as OrchestratorProvider, undefined, undefined, null, undefined, noLookup)).toBe('terminal');
+    expect(noLookup.reason).toBe('binary_missing');
+  });
+
+  it('records a start on the first driver with its version verdict and no reason', async () => {
+    const { sdk } = drivers();
+    sdk.probe = async () => ({ handshakeOk: true, cliVersion: '2.1.0', capabilities: sdk.capabilities });
+    vi.mocked(evaluateCliVersion).mockReturnValue({ status: 'untested', version: '2.1.0', message: 'newer than tested' });
+    const f = facts();
+    expect(await tryStartChatAgent(params, provider, undefined, undefined, null, undefined, f)).toBe('chat');
+    expect(tried(f)).toEqual([{ driver: 'claude_agent_sdk', versionStatus: 'untested', started: true }]);
+    expect(f.reason).toBeUndefined();
+  });
+
+  it('records a handshake failure with its probe error code, then the driver that worked', async () => {
+    const { sdk } = drivers();
+    sdk.probe = async () => ({ handshakeOk: false, capabilities: sdk.capabilities, error: 'probe did not finish within 30000ms', errorCode: 'rpc_timeout' });
+    const f = facts();
+    expect(await tryStartChatAgent(params, provider, undefined, undefined, null, undefined, f)).toBe('chat');
+    expect(tried(f)).toEqual([
+      { driver: 'claude_agent_sdk', reason: 'handshake_failed', errorCode: 'rpc_timeout' },
+      { driver: 'claude_stream_json', versionStatus: 'unknown', started: true },
+    ]);
+    expect(JSON.stringify(f)).not.toContain('30000ms');
+  });
+
+  it('records the Claude init deadline at session start as rpc_timeout (#2283)', async () => {
+    const { sdk } = drivers();
+    sdk.start = async () => { throw new ClaudeStartupTimeoutError(SDK_INIT_TIMEOUT_MS); };
+    const f = facts();
+    expect(await tryStartChatAgent(params, provider, undefined, undefined, null, undefined, f)).toBe('chat');
+    expect(tried(f)[0]).toEqual({ driver: 'claude_agent_sdk', versionStatus: 'unknown', reason: 'start_failed', errorCode: 'rpc_timeout', started: true });
+  });
+
+  it('records a version the probe could not read as lookup_failed (#2275), and a version below the minimum', async () => {
+    const { sdk, stream } = drivers();
+    sdk.probe = async () => ({ handshakeOk: true, capabilities: sdk.capabilities, versionTransient: true });
+    stream.probe = async () => ({ handshakeOk: true, cliVersion: '0.1.0', capabilities: stream.capabilities });
+    vi.mocked(evaluateCliVersion)
+      .mockReturnValueOnce({ status: 'unknown' })
+      .mockReturnValueOnce({ status: 'below_min', version: '0.1.0', message: 'too old' });
+    sdk.start = async () => { throw new Error('boom'); };
+    const f = facts();
+    expect(await tryStartChatAgent(params, provider, undefined, undefined, null, undefined, f)).toBe('terminal');
+    expect(tried(f)).toEqual([
+      { driver: 'claude_agent_sdk', versionStatus: 'lookup_failed', reason: 'start_failed', started: true },
+      { driver: 'claude_stream_json', versionStatus: 'below_min', reason: 'version_below_min' },
+    ]);
+    expect(f.reason).toBe('version_below_min');
+  });
+
+  it('records a login at the probe or at session start as login_required, and a failure after the session started', async () => {
+    const { sdk } = drivers();
+    sdk.probe = async () => ({ handshakeOk: true, needsLogin: true, loginHint: 'run claude /login', capabilities: sdk.capabilities });
+    const probeLogin = facts();
+    expect(await tryStartChatAgent(params, provider, undefined, undefined, null, undefined, probeLogin)).toBe('terminal');
+    expect(tried(probeLogin)).toEqual([{ driver: 'claude_agent_sdk', reason: 'login_required' }]);
+    expect(probeLogin.reason).toBe('login_required');
+
+    sdk.probe = async () => ({ handshakeOk: true, capabilities: sdk.capabilities });
+    sdk.start = async () => { throw new Error('RPC error -32000: Authentication required'); };
+    const startLogin = facts();
+    expect(await tryStartChatAgent({ ...params, agentId: 'l2' }, provider, undefined, undefined, null, undefined, startLogin)).toBe('terminal');
+    expect(tried(startLogin)).toEqual([{ driver: 'claude_agent_sdk', versionStatus: 'unknown', reason: 'login_required', errorCode: 'auth_required', started: true }]);
+
+    const realStart = FakeChatDriver.prototype.start;
+    sdk.start = async (opts) => {
+      const session = await realStart.call(sdk, opts);
+      session.send = async () => { throw new Error('stdin closed'); };
+      return session;
+    };
+    const after = facts();
+    expect(await tryStartChatAgent({ ...params, agentId: 'm2' }, provider, undefined, undefined, null, undefined, after)).toBe('terminal');
+    expect(after.reason).toBe('failed_after_session_start');
+    expect(after.attempts).toHaveLength(1);
+  });
+
+  it('records a paused driver as paused', async () => {
+    const { sdk } = drivers();
+    sdk.start = async () => { throw new Error('SDK spawn failed'); };
+    for (let i = 0; i < DRIVER_FAILURE_THRESHOLD; i++) await tryStartChatAgent({ ...params, agentId: `p${i}` }, provider, undefined, undefined, null);
+    const f = facts();
+    expect(await tryStartChatAgent({ ...params, agentId: 'p9' }, provider, undefined, undefined, null, undefined, f)).toBe('chat');
+    expect(tried(f)[0]).toEqual({ driver: 'claude_agent_sdk', reason: 'paused' });
+    await getAgentRuntime('p9')?.stop();
+  });
+
+  it('records whether a requested resume was honored, and the driver\'s load timings', async () => {
+    const driver = new FakeChatDriver('copilot_acp', 'claude-code');
+    const realStart = driver.start.bind(driver);
+    // Like the ACP driver after a stalled session/load: a fresh session, with the load's timings.
+    driver.start = async (opts) => Object.assign(await realStart({ ...opts, resumeNativeSessionId: undefined }), { resumeTiming: { loadMs: 20_000 } });
+    registerChatDriver(driver);
+    const f = facts();
+    expect(await tryStartChatAgent({ ...params, mission: undefined, resume: true, sessionId: 'n9' }, provider, undefined, undefined, null, undefined, f)).toBe('chat');
+    expect(f).toMatchObject({ resumeHonored: false, resumeTiming: { loadMs: 20_000 } });
+    await getAgentRuntime('agent-1')?.stop();
+
+    driver.start = realStart;
+    const honored = facts();
+    await tryStartChatAgent({ ...params, mission: undefined, resume: true, sessionId: 'n9' }, provider, undefined, undefined, null, undefined, honored);
+    expect(honored.resumeHonored).toBe(true);
+    expect(honored.resumeTiming).toBeUndefined();
+    await getAgentRuntime('agent-1')?.stop();
+
+    const fresh = facts();
+    await tryStartChatAgent(params, provider, undefined, undefined, null, undefined, fresh);
+    expect(fresh).not.toHaveProperty('resumeHonored');
+  });
+
+  it('records a kill as killed and a newer start as superseded', async () => {
+    const driver = new FakeChatDriver();
+    const finish: Array<() => void> = [];
+    vi.spyOn(driver, 'probe').mockImplementation(() => new Promise((resolve) => {
+      finish.push(() => resolve({ handshakeOk: true, capabilities: driver.capabilities }));
+    }));
+    registerChatDriver(driver);
+
+    const killedFacts = facts();
+    const killed = tryStartChatAgent(params, provider, undefined, undefined, null, undefined, killedFacts);
+    await vi.waitFor(() => expect(finish).toHaveLength(1));
+    await cancelChatStart('agent-1');
+    finish[0]();
+    expect(await killed).toBe('cancelled');
+    expect(killedFacts.reason).toBe('killed');
+
+    const firstFacts = facts();
+    const first = tryStartChatAgent(params, provider, undefined, undefined, null, undefined, firstFacts);
+    await vi.waitFor(() => expect(finish).toHaveLength(2));
+    // The newer start cancels it right away; both wait on the same probe.
+    const second = tryStartChatAgent(params, provider, undefined, undefined, null);
+    for (const done of finish.slice(1)) done();
+    expect(await first).toBe('cancelled');
+    expect(firstFacts.reason).toBe('superseded');
+    expect(await second).toBe('chat');
+  });
+
+  it('records a start that threw as error', async () => {
+    registerChatDriver(new FakeChatDriver());
+    vi.mocked(getShellEnvironment).mockImplementationOnce(() => { throw new Error('shell env blew up'); });
+    const f = facts();
+    await expect(tryStartChatAgent(params, provider, undefined, undefined, null, undefined, f)).rejects.toThrow('shell env blew up');
+    expect(f.reason).toBe('error');
   });
 });
 

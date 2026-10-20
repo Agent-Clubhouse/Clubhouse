@@ -203,6 +203,14 @@ export interface ChatDriverStartOptions {
   signal?: AbortSignal;
 }
 
+/** Timings of one native session load, whether it resumed, failed or stalled. No ids, no content. */
+export interface ChatResumeTiming {
+  /** Load request to its answer, or to giving up. */
+  loadMs: number;
+  /** Load request to the first replayed update; absent when the answer came first, or nothing came. */
+  firstReplyMs?: number;
+}
+
 export interface ChatDriverSession {
   /**
    * Values known at start. Either may change later: the driver then emits a
@@ -211,6 +219,8 @@ export interface ChatDriverSession {
    */
   readonly nativeSessionId: string | undefined;
   readonly capabilities: ChatCapabilities;
+  /** How long loading the requested native session took, when the driver times it (ACP). */
+  readonly resumeTiming?: ChatResumeTiming;
   /**
    * Native protocol translated into contract events, in order. The chat
    * runtime stamps envelopes (agentId, sessionId, seq, ts) and may synthesize

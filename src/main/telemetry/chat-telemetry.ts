@@ -201,7 +201,8 @@ export function handleChatEvent(event: ChatEvent): void {
     case 'session_ended': {
       const reason = event.data.reason;
       if (reason === 'fallback') {
-        // A failed chat start that fell back to the terminal: not a chat run or turn.
+        // A failed chat start that fell back to the terminal: not a chat run or
+        // turn. The fallback itself is `clubhouse.chat.fallback`, recorded at the spawn (#2304).
         discardRun(session.agentId);
       } else if (turn) {
         // The CLI went away mid-turn (some drivers send no turn_ended then):
