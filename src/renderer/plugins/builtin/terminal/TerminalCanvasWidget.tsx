@@ -9,7 +9,8 @@ import type { GitWorktreeEntry } from '../../../../shared/types';
 import type { TerminalIO } from '../../../features/terminal/ShellTerminal';
 import { ShellTerminal } from '../../../features/terminal/ShellTerminal';
 import { useRemoteProject } from '../../../hooks/useRemoteProject';
-import { satellitePtyDataBus, satellitePtyExitBus } from '../../../stores/annexClientStore';
+import { satellitePtyDataBus, satellitePtyExitBus, useAnnexClientStore } from '../../../stores/annexClientStore';
+import { windowsPtyForHost } from '../../../../shared/annex-pty';
 import { WidgetPicker, PickerBack, projectRows } from '../canvas/WidgetPicker';
 import { Button } from '../../../components/Button';
 import { Tooltip } from '../../../components/Tooltip';
@@ -43,9 +44,16 @@ function createRemoteTerminalIO(satelliteIdRef: React.RefObject<string | null>, 
       }
       return Promise.resolve('');
     },
-    onData(callback: (id: string, data: string) => void): () => void {
-      return satellitePtyDataBus.on((sid, agentId, data) => {
-        if (sid === satelliteIdRef.current) callback(agentId, data);
+    // With the seq, ShellTerminal drops live chunks already in the replay (#2324).
+    getBufferSnapshot(sessionId: string): Promise<{ data: string; seq: number }> {
+      if (satelliteIdRef.current) {
+        return useAnnexClientStore.getState().requestPtyBufferSnapshot(satelliteIdRef.current, sessionId);
+      }
+      return Promise.resolve({ data: '', seq: -1 });
+    },
+    onData(callback: (id: string, data: string, seq?: number) => void): () => void {
+      return satellitePtyDataBus.on((sid, agentId, data, seq) => {
+        if (sid === satelliteIdRef.current) callback(agentId, data, seq);
       });
     },
     onExit(callback: (id: string, exitCode: number) => void): () => void {
@@ -94,6 +102,12 @@ export function TerminalCanvasWidget({ widgetId, api, metadata, onUpdateMetadata
   // changing the object identity (which would cascade into terminal recreation).
   const satelliteIdRef = useRef<string | null>(remote.isRemote ? remote.satelliteId : null);
   satelliteIdRef.current = remote.isRemote ? remote.satelliteId : null;
+
+  // A satellite's pty backend arrives in its snapshot, possibly after mount (#2352).
+  const remotePtyHost = useAnnexClientStore((s) => remote.isRemote
+    ? s.satellites.find((sat) => sat.id === remote.satelliteId)?.snapshot?.ptyHost
+    : undefined);
+  const remoteWindowsPty = useMemo(() => windowsPtyForHost(remotePtyHost), [remotePtyHost]);
 
   // Create remote TerminalIO if rendering in a remote context.
   // Only recreated when isRemote flips (local <-> remote); satellite ID
@@ -308,7 +322,7 @@ export function TerminalCanvasWidget({ widgetId, api, metadata, onUpdateMetadata
       </div>
       <div className="flex-1 min-h-0">
         {status !== 'starting' ? (
-          <ShellTerminal sessionId={sessionId} focused={true} io={remoteIO} />
+          <ShellTerminal sessionId={sessionId} focused={true} io={remoteIO} remoteWindowsPty={remoteWindowsPty} />
         ) : (
           <div className="flex items-center justify-center h-full text-ctp-overlay1 text-xs">
             Starting terminal

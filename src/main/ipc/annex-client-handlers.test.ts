@@ -23,6 +23,7 @@ vi.mock('../services/annex-client', () => ({
   requestFileTree: vi.fn(async () => []),
   requestFileRead: vi.fn(async () => ''),
   requestPtyBuffer: vi.fn(async () => ''),
+  requestPtyBufferSnapshot: vi.fn().mockResolvedValue({ data: '', seq: 0 }),
   resizeRemoteBuffer: vi.fn(),
   requestGitOperation: vi.fn(async () => ({})),
   requestSessionList: vi.fn(async () => []),
@@ -213,6 +214,12 @@ describe('annex-client-handlers', () => {
     const handler = handlers.get(IPC.ANNEX_CLIENT.PTY_GET_BUFFER)!;
     await handler({}, 'sat-123', 'agent-1');
     expect(annexClient.requestPtyBuffer).toHaveBeenCalledWith('sat-123', 'agent-1');
+  });
+
+  it('PTY_GET_BUFFER_SNAPSHOT delegates to annexClient.requestPtyBufferSnapshot', async () => {
+    const handler = handlers.get(IPC.ANNEX_CLIENT.PTY_GET_BUFFER_SNAPSHOT)!;
+    await handler({}, 'sat-123', 'agent-1');
+    expect(annexClient.requestPtyBufferSnapshot).toHaveBeenCalledWith('sat-123', 'agent-1');
   });
 
   it('AGENT_REORDER delegates to annexClient.sendToSatellite with agent:reorder', () => {

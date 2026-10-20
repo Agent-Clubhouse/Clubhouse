@@ -25,6 +25,9 @@ export const annexClient = {
     ipcRenderer.invoke(IPC.ANNEX_CLIENT.AGENT_WAKE, satelliteId, agentId, options),
   ptyGetBuffer: (satelliteId: string, agentId: string): Promise<string> =>
     ipcRenderer.invoke(IPC.ANNEX_CLIENT.PTY_GET_BUFFER, satelliteId, agentId),
+  /** The buffer plus the seq it includes; live `pty:data` events carry the same seq. */
+  ptyGetBufferSnapshot: (satelliteId: string, agentId: string): Promise<{ data: string; seq: number }> =>
+    ipcRenderer.invoke(IPC.ANNEX_CLIENT.PTY_GET_BUFFER_SNAPSHOT, satelliteId, agentId),
   fileTree: (satelliteId: string, projectId: string, options?: { path?: string; depth?: number; includeHidden?: boolean }): Promise<unknown[]> =>
     ipcRenderer.invoke(IPC.ANNEX_CLIENT.FILE_TREE, satelliteId, projectId, options),
   fileRead: (satelliteId: string, projectId: string, path: string): Promise<string> =>

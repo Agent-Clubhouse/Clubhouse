@@ -30,8 +30,8 @@ describe('annex-event-bus', () => {
     const fn = vi.fn();
     onPtyData(fn);
     setActive(true);
-    emitPtyData('agent1', 'hello');
-    expect(fn).toHaveBeenCalledWith('agent1', 'hello');
+    emitPtyData('agent1', 'hello', 5);
+    expect(fn).toHaveBeenCalledWith('agent1', 'hello', 5);
   });
 
   it('unsubscribes correctly', () => {

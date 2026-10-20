@@ -60,9 +60,11 @@ vi.mock('./annex-event-bus', () => ({
 
 // Mock pty-headless-terminal
 vi.mock('./pty-headless-terminal', () => ({
+  ensure: vi.fn(),
   feedData: vi.fn(),
   resize: vi.fn(),
   serialize: vi.fn().mockReturnValue(''),
+  snapshot: vi.fn().mockResolvedValue(null),
   dispose: vi.fn(),
   disposeAll: vi.fn(),
 }));
@@ -84,7 +86,7 @@ import type { TelemetryRuntime } from '../telemetry/types';
 // But the module has state (Maps), so we need to handle that.
 // We'll use dynamic imports or reset between tests.
 
-import { getBuffer, getBufferSnapshot, getSerializedBuffer, getLastActivity, isRunning, spawn, spawnShell, resize, write, writeBinary, gracefulKill, isShellBusy, kill, killAll, startStaleSweep, stopStaleSweep, validateSpawnCwd } from './pty-manager';
+import { getBuffer, getBufferSnapshot, getSerializedBuffer, getSerializedBufferSnapshot, getLastActivity, isRunning, spawn, spawnShell, resize, write, writeBinary, gracefulKill, isShellBusy, kill, killAll, startStaleSweep, stopStaleSweep, validateSpawnCwd } from './pty-manager';
 import { broadcastToAllWindows, flushPendingFor } from '../util/ipc-broadcast';
 import * as annexEventBus from './annex-event-bus';
 import * as headlessTerminal from './pty-headless-terminal';
@@ -138,13 +140,55 @@ describe('pty-manager', () => {
     });
   });
 
+  describe('getSerializedBufferSnapshot', () => {
+    it("returns the mirror's state with its seq and the PTY size", async () => {
+      await spawnAndActivate('agent_sersnap');
+      resize('agent_sersnap', 90, 20);
+      vi.mocked(headlessTerminal).snapshot.mockResolvedValueOnce({ data: 'mirrored', seq: 42 });
+      expect(await getSerializedBufferSnapshot('agent_sersnap')).toEqual({ data: 'mirrored', seq: 42, cols: 90, rows: 20 });
+    });
+
+    it('falls back to the raw buffer and its seq without a mirror', async () => {
+      await spawnAndActivate('agent_sersnap_raw');
+      mockProcess.onData.mock.calls[0][0]('raw data');
+      const { seq } = getBufferSnapshot('agent_sersnap_raw');
+      expect(await getSerializedBufferSnapshot('agent_sersnap_raw')).toEqual({ data: 'raw data', seq, cols: 120, rows: 30 });
+    });
+  });
+
   describe('headless terminal integration', () => {
     it('feeds PTY data to headless terminal', async () => {
       vi.mocked(annexEventBus.isActive).mockReturnValue(true);
       await spawnAndActivate('agent_hl');
       const onDataCb = mockProcess.onData.mock.calls[0][0];
       onDataCb('hello');
-      expect(vi.mocked(headlessTerminal).feedData).toHaveBeenCalledWith('agent_hl', 'hello');
+      const { seq } = getBufferSnapshot('agent_hl');
+      expect(vi.mocked(headlessTerminal).feedData).toHaveBeenCalledWith('agent_hl', 'hello', seq);
+      expect(annexEventBus.emitPtyData).toHaveBeenCalledWith('agent_hl', 'hello', seq);
+    });
+
+    it('creates the mirror at the PTY size, not the 120x30 default (#2325)', async () => {
+      await spawnAndActivate('agent_hl_size');
+      resize('agent_hl_size', 80, 24);
+      mockProcess.onData.mock.calls[0][0]('narrow output');
+
+      mockActiveChange.listener?.(true);
+
+      expect(vi.mocked(headlessTerminal).ensure).toHaveBeenCalledWith(
+        'agent_hl_size', expect.objectContaining({ cols: 80, rows: 24 }),
+      );
+      expect(vi.mocked(headlessTerminal).ensure.mock.invocationCallOrder[0])
+        .toBeLessThan(vi.mocked(headlessTerminal).feedData.mock.invocationCallOrder[0]);
+    });
+
+    it('creates a mirror for output after activation at the PTY size', async () => {
+      vi.mocked(annexEventBus.isActive).mockReturnValue(true);
+      await spawnAndActivate('agent_hl_size_live');
+      resize('agent_hl_size_live', 100, 40);
+      mockProcess.onData.mock.calls[0][0]('x');
+      expect(vi.mocked(headlessTerminal).ensure).toHaveBeenCalledWith(
+        'agent_hl_size_live', expect.objectContaining({ cols: 100, rows: 40 }),
+      );
     });
 
     it('does not feed PTY data to headless terminal when Annex is inactive', async () => {
@@ -162,7 +206,16 @@ describe('pty-manager', () => {
 
       mockActiveChange.listener?.(true);
 
-      expect(vi.mocked(headlessTerminal).feedData).toHaveBeenCalledWith('agent_hl_backfill', 'existing output');
+      expect(vi.mocked(headlessTerminal).feedData).toHaveBeenCalledWith(
+        'agent_hl_backfill', 'existing output', getBufferSnapshot('agent_hl_backfill').seq,
+      );
+    });
+
+    it("disposes only this machine's mirrors when Annex deactivates, not the client's remote caches", async () => {
+      await spawnAndActivate('agent_hl_deact');
+      mockActiveChange.listener?.(false);
+      expect(vi.mocked(headlessTerminal).dispose).toHaveBeenCalledWith('agent_hl_deact');
+      expect(vi.mocked(headlessTerminal).disposeAll).not.toHaveBeenCalled();
     });
 
     it('resizes headless terminal on pty resize', async () => {

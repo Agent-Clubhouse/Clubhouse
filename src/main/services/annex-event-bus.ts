@@ -1,7 +1,8 @@
 import type { AgentHookEvent } from '../../shared/types';
 import type { GroupProject, BulletinMessage } from '../../shared/group-project-types';
 
-type PtyDataListener = (agentId: string, data: string) => void;
+/** `seq` is the PTY's output seq at the end of `data` (see pty-manager). */
+type PtyDataListener = (agentId: string, data: string, seq?: number) => void;
 type HookEventListener = (agentId: string, event: AgentHookEvent) => void;
 type PtyExitListener = (agentId: string, exitCode: number) => void;
 type AgentSpawnedListener = (agentId: string, kind: string, projectId: string, meta: Record<string, unknown>) => void;
@@ -29,9 +30,9 @@ export function isActive(): boolean {
   return active;
 }
 
-export function emitPtyData(agentId: string, data: string): void {
+export function emitPtyData(agentId: string, data: string, seq?: number): void {
   if (!active) return;
-  for (const fn of ptyDataListeners) fn(agentId, data);
+  for (const fn of ptyDataListeners) fn(agentId, data, seq);
 }
 
 export function emitHookEvent(agentId: string, event: AgentHookEvent): void {

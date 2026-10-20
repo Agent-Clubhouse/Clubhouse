@@ -78,7 +78,8 @@ vi.mock('../../plugins/renderer-logger', () => ({
 g.__annexMockState = {
   sendPtyInput: vi.fn(),
   sendClipboardImage: vi.fn(),
-  requestPtyBuffer: vi.fn().mockResolvedValue(''),
+  requestPtyBufferSnapshot: vi.fn().mockResolvedValue({ data: '', seq: 0 }),
+  satellites: [],
   sendPtyResize: vi.fn(),
 };
 
@@ -149,7 +150,8 @@ describe('AgentTerminal', () => {
     g.__annexMockState = {
       sendPtyInput: vi.fn(),
       sendClipboardImage: vi.fn(),
-      requestPtyBuffer: vi.fn().mockResolvedValue(''),
+      requestPtyBufferSnapshot: vi.fn().mockResolvedValue({ data: '', seq: 0 }),
+      satellites: [],
       sendPtyResize: vi.fn(),
     };
     mockOnDataCallback = null;
@@ -827,6 +829,34 @@ describe('AgentTerminal', () => {
       const { container } = render(<AgentTerminal agentId="agent-1" />);
       const terminalDiv = container.querySelector('[data-testid="agent-terminal"]') as HTMLElement;
       expect(terminalDiv.style.padding).toBe('8px');
+    });
+  });
+
+  describe('windowsPty for remote terminals (#2352)', () => {
+    const satellite = (ptyHost?: unknown) => ({ id: 'sat-1', snapshot: ptyHost ? { ptyHost } : {} });
+
+    it('passes a Windows satellite\'s pty backend to xterm', async () => {
+      g.__annexMockState.satellites = [satellite({ platform: 'win32', ptyBackend: 'conpty', windowsBuild: 22631 })];
+      await act(async () => { render(<AgentTerminal agentId="remote||sat-1||agent-1" />); });
+      expect(g.__testTerminal.options.windowsPty).toEqual({ backend: 'conpty', buildNumber: 22631 });
+    });
+
+    it('gives no hint for a non-Windows satellite', async () => {
+      g.__annexMockState.satellites = [satellite({ platform: 'darwin', ptyBackend: null })];
+      await act(async () => { render(<AgentTerminal agentId="remote||sat-1||agent-1" />); });
+      expect(g.__testTerminal.options.windowsPty?.backend).toBeUndefined();
+    });
+
+    it('gives no hint for an older satellite that does not report ptyHost', async () => {
+      g.__annexMockState.satellites = [satellite()];
+      await act(async () => { render(<AgentTerminal agentId="remote||sat-1||agent-1" />); });
+      expect(g.__testTerminal.options.windowsPty?.backend).toBeUndefined();
+    });
+
+    it('does not apply a satellite\'s backend to a local terminal', async () => {
+      g.__annexMockState.satellites = [satellite({ platform: 'win32', ptyBackend: 'conpty' })];
+      await act(async () => { render(<AgentTerminal agentId="agent-1" />); });
+      expect(g.__testTerminal.options.windowsPty).toBeUndefined();
     });
   });
 

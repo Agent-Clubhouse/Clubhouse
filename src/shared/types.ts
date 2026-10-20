@@ -1057,6 +1057,8 @@ export interface SatelliteSnapshot {
   bulletinDigests?: Record<string, unknown[]>;
   /** Group project members per group project ID. */
   groupProjectMembers?: Record<string, Array<{ agentId: string; agentName: string; status: string }>>;
+  /** The satellite's OS and PTY backend (#2352). Absent from older satellites. */
+  ptyHost?: import('./annex-pty').AnnexPtyHost;
 }
 
 // --- Auto-update types ---

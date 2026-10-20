@@ -68,6 +68,8 @@ interface AnnexClientStoreState {
   sendAgentKill: (satelliteId: string, agentId: string) => Promise<void>;
   sendAgentWake: (satelliteId: string, agentId: string, options?: { resume?: boolean; mission?: string }) => Promise<void>;
   requestPtyBuffer: (satelliteId: string, agentId: string) => Promise<string>;
+  /** The buffer plus the seq it includes; `satellitePtyDataBus` chunks carry the same seq. */
+  requestPtyBufferSnapshot: (satelliteId: string, agentId: string) => Promise<{ data: string; seq: number }>;
   sendAgentCreateDurable: (satelliteId: string, projectId: string, params: {
     name: string; color: string; model?: string; useWorktree?: boolean;
     orchestrator?: string; freeAgentMode?: boolean; mcpIds?: string[];
@@ -213,6 +215,9 @@ export const useAnnexClientStore = create<AnnexClientStoreState>((set) => ({
     }
   },
 
+  requestPtyBufferSnapshot: (satelliteId, agentId) =>
+    window.clubhouse.annexClient.ptyGetBufferSnapshot(satelliteId, agentId),
+
   sendAgentCreateDurable: async (satelliteId, projectId, params) => {
     return window.clubhouse.annexClient.agentCreateDurable(satelliteId, projectId, params);
   },
@@ -238,7 +243,11 @@ export const useAnnexClientStore = create<AnnexClientStoreState>((set) => ({
 // Satellite PTY Data Bus — simple event emitter for forwarding pty:data events
 // ---------------------------------------------------------------------------
 
-type PtyDataListener = (satelliteId: string, agentId: string, data: string) => void;
+/**
+ * `seq` is the controller's output seq at the end of `data`, matching
+ * `requestPtyBufferSnapshot` (see `unseenPtySuffix`).
+ */
+type PtyDataListener = (satelliteId: string, agentId: string, data: string, seq?: number) => void;
 const ptyDataListeners = new Set<PtyDataListener>();
 
 export const satellitePtyDataBus = {
@@ -246,9 +255,9 @@ export const satellitePtyDataBus = {
     ptyDataListeners.add(listener);
     return () => { ptyDataListeners.delete(listener); };
   },
-  emit(satelliteId: string, agentId: string, data: string): void {
+  emit(satelliteId: string, agentId: string, data: string, seq?: number): void {
     for (const listener of ptyDataListeners) {
-      try { listener(satelliteId, agentId, data); } catch (err) {
+      try { listener(satelliteId, agentId, data, seq); } catch (err) {
         console.warn('[annex-client] ptyDataBus listener threw:', err);
       }
     }
@@ -281,19 +290,19 @@ export const satellitePtyExitBus = {
 // ---------------------------------------------------------------------------
 
 /** Batch PTY data events into 100ms windows to avoid per-keystroke setState. */
-const ptyDataBuffer: Array<{ satelliteId: string; agentId: string; data: string }> = [];
+const ptyDataBuffer: Array<{ satelliteId: string; agentId: string; data: string; seq?: number }> = [];
 let ptyDataFlushTimer: ReturnType<typeof setTimeout> | null = null;
 
 function flushPtyData(): void {
   ptyDataFlushTimer = null;
   const batch = ptyDataBuffer.splice(0);
-  for (const { satelliteId, agentId, data } of batch) {
-    satellitePtyDataBus.emit(satelliteId, agentId, data);
+  for (const { satelliteId, agentId, data, seq } of batch) {
+    satellitePtyDataBus.emit(satelliteId, agentId, data, seq);
   }
 }
 
-function enqueuePtyData(satelliteId: string, agentId: string, data: string): void {
-  ptyDataBuffer.push({ satelliteId, agentId, data });
+function enqueuePtyData(satelliteId: string, agentId: string, data: string, seq?: number): void {
+  ptyDataBuffer.push({ satelliteId, agentId, data, seq });
   if (!ptyDataFlushTimer) {
     ptyDataFlushTimer = setTimeout(flushPtyData, 100);
   }
@@ -365,8 +374,8 @@ export function initAnnexClientListener(): () => void {
         satellitePaused: { ...state.satellitePaused, [satelliteId]: !!snap.sessionPaused },
       }));
     } else if (type === 'pty:data') {
-      const p = payload as { agentId: string; data: string };
-      enqueuePtyData(satelliteId, p.agentId, p.data);
+      const p = payload as { agentId: string; data: string; seq?: number };
+      enqueuePtyData(satelliteId, p.agentId, p.data, typeof p.seq === 'number' ? p.seq : undefined);
     } else if (type === 'hook:event') {
       // Agent detailed status update (pre_tool, post_tool, etc.)
       const p = payload as { agentId: string; event: unknown; detailedStatus?: import('../../shared/types').AgentDetailedStatus };

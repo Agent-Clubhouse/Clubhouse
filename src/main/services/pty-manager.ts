@@ -8,6 +8,7 @@ import { buildWindowsCmdLine } from '../util/windows-launcher';
 import { broadcastToAllWindows, flushPendingFor } from '../util/ipc-broadcast';
 import * as annexEventBus from './annex-event-bus';
 import * as headlessTerminal from './pty-headless-terminal';
+import { detectWindowsPty } from '../util/windows-pty';
 import { broadcastAgentExit } from './agent-exit-broadcast';
 import { StaleSweeper } from './stale-sweeper';
 import { validateCommandPrefix } from './command-prefix-validation';
@@ -350,15 +351,35 @@ export function getBufferSnapshot(agentId: string): PtyBufferSnapshot {
 
 annexEventBus.onActiveChange((active) => {
   if (!active) {
-    headlessTerminal.disposeAll();
+    // Only this machine's mirrors: the Annex client keeps its remote caches
+    // in the same module.
+    for (const id of sessions.keys()) headlessTerminal.dispose(id);
     return;
   }
 
-  for (const [agentId, session] of sessions) {
+  for (const session of sessions.values()) {
     const buffer = getSessionBuffer(session);
-    if (buffer) headlessTerminal.feedData(agentId, buffer);
+    if (buffer) mirrorOutput(session, buffer);
   }
 });
+
+/** The backend node-pty uses here; fixed for the process. */
+const localWindowsPty = detectWindowsPty();
+
+/**
+ * Feed output to the session's Annex headless mirror, creating it at the
+ * PTY's current size so the replay served to controllers wraps like the PTY
+ * (#2325).
+ */
+function currentSize(session: ManagedSession): { cols: number; rows: number } {
+  const { cols, rows } = session.sizeLog[session.sizeLog.length - 1]!;
+  return { cols, rows };
+}
+
+function mirrorOutput(session: ManagedSession, data: string): void {
+  headlessTerminal.ensure(session.agentId, { ...currentSize(session), windowsPty: localWindowsPty });
+  headlessTerminal.feedData(session.agentId, data, session.outputSeq);
+}
 
 /** Get the last activity timestamp for an agent's PTY session, or null if no session exists. */
 export function getLastActivity(agentId: string): number | null {
@@ -376,6 +397,22 @@ export function getSerializedBuffer(agentId: string): string {
   const serialized = headlessTerminal.serialize(agentId);
   if (serialized) return serialized;
   return getBuffer(agentId);
+}
+
+/**
+ * `getSerializedBuffer` for Annex controllers, with the output seq it
+ * includes (live `pty:data` up to `seq` is already in `data`) and the PTY's
+ * size. Waits for the headless mirror to parse everything fed so far.
+ */
+export async function getSerializedBufferSnapshot(
+  agentId: string,
+): Promise<{ data: string; seq: number; cols?: number; rows?: number }> {
+  const mirrored = await headlessTerminal.snapshot(agentId);
+  const session = sessions.get(agentId);
+  const size = session ? currentSize(session) : {};
+  if (mirrored?.data && mirrored.seq !== undefined) return { data: mirrored.data, seq: mirrored.seq, ...size };
+  const { data, seq } = getBufferSnapshot(agentId);
+  return { data, seq, ...size };
 }
 
 /** Check whether an agent has an active PTY session. */
@@ -478,10 +515,10 @@ export async function spawn(agentId: string, cwd: string, binary: string, args: 
     appendToBuffer(current, data);
     agentOutput(agentId, data.length);
     if (annexEventBus.isActive()) {
-      headlessTerminal.feedData(agentId, data);
+      mirrorOutput(current, data);
     }
     broadcastToAllWindows(IPC.PTY.DATA, agentId, data, current.outputSeq);
-    annexEventBus.emitPtyData(agentId, data);
+    annexEventBus.emitPtyData(agentId, data, current.outputSeq);
   });
 
   proc.onExit(({ exitCode }) => {
@@ -549,10 +586,10 @@ export async function spawnShell(id: string, projectPath: string): Promise<void>
     current.lastActivity = Date.now();
     appendToBuffer(current, data);
     if (annexEventBus.isActive()) {
-      headlessTerminal.feedData(id, data);
+      mirrorOutput(current, data);
     }
     broadcastToAllWindows(IPC.PTY.DATA, id, data, current.outputSeq);
-    annexEventBus.emitPtyData(id, data);
+    annexEventBus.emitPtyData(id, data, current.outputSeq);
   });
 
   proc.onExit(({ exitCode }) => {

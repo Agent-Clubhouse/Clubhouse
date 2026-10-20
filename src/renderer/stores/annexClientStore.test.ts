@@ -215,18 +215,19 @@ describe('annexClientStore', () => {
       initAnnexClientListener();
 
       const received: any[] = [];
-      const unsub = satellitePtyDataBus.on((satId, agentId, data) => {
-        received.push({ satId, agentId, data });
+      const unsub = satellitePtyDataBus.on((satId, agentId, data, seq) => {
+        received.push({ satId, agentId, data, seq });
       });
 
       vi.useFakeTimers();
-      eventCallback!({ satelliteId: 'sat-1', type: 'pty:data', payload: { agentId: 'agent-1', data: 'hello world' } });
+      eventCallback!({ satelliteId: 'sat-1', type: 'pty:data', payload: { agentId: 'agent-1', data: 'hello world', seq: 11 } });
 
       // PTY data is batched with a 100ms window
       vi.advanceTimersByTime(100);
 
       expect(received).toHaveLength(1);
-      expect(received[0]).toEqual({ satId: 'sat-1', agentId: 'agent-1', data: 'hello world' });
+      // The seq rides along so terminals can trim against a buffer snapshot (#2324).
+      expect(received[0]).toEqual({ satId: 'sat-1', agentId: 'agent-1', data: 'hello world', seq: 11 });
       unsub();
       vi.useRealTimers();
     });
@@ -609,10 +610,10 @@ describe('annexClientStore', () => {
       const unsub1 = satellitePtyDataBus.on(listener1);
       const unsub2 = satellitePtyDataBus.on(listener2);
 
-      satellitePtyDataBus.emit('sat-1', 'agent-1', 'hello');
+      satellitePtyDataBus.emit('sat-1', 'agent-1', 'hello', 5);
 
-      expect(listener1).toHaveBeenCalledWith('sat-1', 'agent-1', 'hello');
-      expect(listener2).toHaveBeenCalledWith('sat-1', 'agent-1', 'hello');
+      expect(listener1).toHaveBeenCalledWith('sat-1', 'agent-1', 'hello', 5);
+      expect(listener2).toHaveBeenCalledWith('sat-1', 'agent-1', 'hello', 5);
 
       unsub1();
       unsub2();

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useMemo, useState } from 'react';
-import { Terminal } from '@xterm/xterm';
+import { Terminal, type IWindowsPty } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
 import { localWindowsPtyOptions } from '../terminal/windows-pty';
 import { useThemeStore } from '../../stores/themeStore';
@@ -14,6 +14,7 @@ import { useTerminalFit, isTerminalAtBottom, hasMeasurableSize, type PtySize, ty
 import { unseenPtySuffix, isAsciiBinary, writeAsync } from '../terminal/pty-stream';
 import { writePtySnapshot, type PtyBufferSnapshot } from '../../../shared/pty-snapshot';
 import { attachInlineFrameGuard, beginErase, detachInlineFrameGuard, endErase, inlineFrameReplayHooks } from '../terminal/inline-frame';
+import { windowsPtyForHost } from '../../../shared/annex-pty';
 import { ptyResize } from '../../services/project-proxy';
 import { rendererLog } from '../../plugins/renderer-logger';
 import { Spinner } from '../../components/Spinner';
@@ -84,14 +85,18 @@ export function AgentTerminal({ agentId, focused, zoneThemeId }: Props) {
   const remoteParts = useMemo(() => isRemote ? parseNamespacedId(agentId) : null, [agentId, isRemote]);
   const sendPtyInput = useAnnexClientStore((s) => s.sendPtyInput);
   const sendClipboardImage = useAnnexClientStore((s) => s.sendClipboardImage);
-  const requestPtyBuffer = useAnnexClientStore((s) => s.requestPtyBuffer);
+  const requestPtyBufferSnapshot = useAnnexClientStore((s) => s.requestPtyBufferSnapshot);
+  // A remote PTY may be ConPTY on a Windows satellite (#2352).
+  const remotePtyHost = useAnnexClientStore((s) => remoteParts
+    ? s.satellites.find((sat) => sat.id === remoteParts.satelliteId)?.snapshot?.ptyHost
+    : undefined);
 
   // Refs for Zustand store methods — prevents terminal destruction/recreation
   // if the store ever returns a new function reference during state updates.
   const sendPtyInputRef = useRef(sendPtyInput);
   sendPtyInputRef.current = sendPtyInput;
-  const requestPtyBufferRef = useRef(requestPtyBuffer);
-  requestPtyBufferRef.current = requestPtyBuffer;
+  const requestPtyBufferSnapshotRef = useRef(requestPtyBufferSnapshot);
+  requestPtyBufferSnapshotRef.current = requestPtyBufferSnapshot;
 
   const resuming = useAgentStore((s) => s.agents[agentId]?.resuming);
   const clearResuming = useAgentStore((s) => s.clearResuming);
@@ -244,9 +249,11 @@ export function AgentTerminal({ agentId, focused, zoneThemeId }: Props) {
           .then(restore)
           .catch((err: unknown) => replayFailed(err, 'local'));
       } else if (remoteParts) {
-        // Remote agents: fetch the satellite's processed screen via HTTPS REST
-        requestPtyBufferRef.current(remoteParts.satelliteId, remoteParts.agentId)
-          .then((buf: string) => restore({ data: buf, seq: -1 }))
+        // Remote agents: replay the controller's cache of the satellite's
+        // screen, trimming queued live chunks against its seq like the local
+        // path (#2324).
+        requestPtyBufferSnapshotRef.current(remoteParts.satelliteId, remoteParts.agentId)
+          .then((snapshot) => restore(snapshot))
           .catch((err: unknown) => replayFailed(err, 'remote/annex'));
       }
     });
@@ -283,7 +290,7 @@ export function AgentTerminal({ agentId, focused, zoneThemeId }: Props) {
     let snapshotApplied = false;
     let resizedDuringReplay: PtySize | null = null;
     const pendingData: Array<{ data: string; seq?: number }> = [];
-    // Highest output seq written to the terminal (local PTY only).  -1 until
+    // Highest output seq written to the terminal.  -1 until
     // the snapshot arrives, so a failed snapshot fetch drops nothing.
     let appliedSeq = -1;
     const takeUnseen = (data: string, seq: number | undefined): string => {
@@ -418,12 +425,13 @@ export function AgentTerminal({ agentId, focused, zoneThemeId }: Props) {
       const satId = remoteParts?.satelliteId;
       const origAgentId = remoteParts?.agentId;
       removeDataListener = satellitePtyDataBus.on(
-        (incomingSatId: string, incomingAgentId: string, data: string) => {
+        (incomingSatId: string, incomingAgentId: string, data: string, seq?: number) => {
           if (incomingSatId !== satId || incomingAgentId !== origAgentId) return;
           if (bufferReplayed) {
-            enqueueWrite(data);
+            const fresh = takeUnseen(data, seq);
+            if (fresh) enqueueWrite(fresh);
           } else {
-            pendingData.push({ data });
+            pendingData.push({ data, seq });
           }
         }
       );
@@ -445,6 +453,19 @@ export function AgentTerminal({ agentId, focused, zoneThemeId }: Props) {
       fitAddonRef.current = null;
     };
   }, [agentId, isRemote, remoteParts]);
+
+  // The satellite's pty backend can arrive or change (reconnect to an updated
+  // satellite) while the terminal stays mounted, so it is applied here rather
+  // than at creation.
+  useEffect(() => {
+    const term = terminalRef.current;
+    if (!term || !isRemote) return;
+    const windowsPty: IWindowsPty = windowsPtyForHost(remotePtyHost) ?? {};
+    if (windowsPty.backend !== term.options.windowsPty?.backend
+      || windowsPty.buildNumber !== term.options.windowsPty?.buildNumber) {
+      term.options.windowsPty = windowsPty;
+    }
+  }, [isRemote, remotePtyHost, agentId, remoteParts]);
 
   // Focus-aware resize: ResizeObserver, visibilitychange, window focus, pane focus
   // Pass ptyResize so remote agents route resize through the Annex client, not local IPC

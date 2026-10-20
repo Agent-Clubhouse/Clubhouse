@@ -441,6 +441,7 @@ export const IPC = {
     AGENT_KILL: 'annex-client:agent-kill',
     AGENT_WAKE: 'annex-client:agent-wake',
     PTY_GET_BUFFER: 'annex-client:pty-get-buffer',
+    PTY_GET_BUFFER_SNAPSHOT: 'annex-client:pty-get-buffer-snapshot',
     FORGET_SATELLITE: 'annex-client:forget-satellite',
     FORGET_ALL_SATELLITES: 'annex-client:forget-all-satellites',
     FILE_TREE: 'annex-client:file-tree',
