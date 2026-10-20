@@ -244,6 +244,12 @@ export interface ChatDriverProbe {
   needsLogin?: boolean;
   /** How to log in, in the CLI's words, e.g. "Run copilot login". */
   loginHint?: string;
+  /**
+   * True when the version lookup failed in a way that may pass (a timeout,
+   * a slow first launch): the probe isn't cached, so the next start retries
+   * it rather than skipping the version policy until the binary changes.
+   */
+  versionTransient?: boolean;
 }
 
 export interface ChatDriver {

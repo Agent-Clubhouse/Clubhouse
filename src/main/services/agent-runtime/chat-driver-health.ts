@@ -153,7 +153,9 @@ export function probeDriver(driver: ChatDriver, binaryPath: string, env?: Record
       // Healthy CLI, user not logged in: probe again next time rather than caching or pausing.
       probes.delete(key);
     } else if (result.handshakeOk) {
-      if (identity !== undefined) probes.set(key, { identity, probe: result });
+      // A version lookup that failed may pass next time; don't pin "unknown".
+      if (identity !== undefined && !result.versionTransient) probes.set(key, { identity, probe: result });
+      else probes.delete(key);
     } else {
       probes.delete(key);
       recordFailure(key, `handshake failed: ${result.error ?? 'unknown error'}`, Date.now(), identity);

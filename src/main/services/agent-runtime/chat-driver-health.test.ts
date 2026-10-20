@@ -245,6 +245,17 @@ describe('chat driver health', () => {
     done();
   });
 
+  it('neither caches nor counts a probe whose version lookup failed, so the policy gets another try (#2275)', async () => {
+    const { bin, done } = tempBinary();
+    const driver = new FakeChatDriver();
+    let probes = 0;
+    driver.probe = async () => { probes++; return { handshakeOk: true, versionTransient: true, capabilities: driver.capabilities }; };
+    for (let i = 0; i < DRIVER_FAILURE_THRESHOLD + 1; i++) await probeDriver(driver, bin);
+    expect(probes).toBe(DRIVER_FAILURE_THRESHOLD + 1);
+    expect(driverPausedReason(driverHealthKey(driver, bin))).toBeUndefined();
+    done();
+  });
+
   it('treats a throwing probe as a failed handshake', async () => {
     const driver = new FakeChatDriver();
     driver.probe = async () => { throw new Error('spawn ENOENT'); };
