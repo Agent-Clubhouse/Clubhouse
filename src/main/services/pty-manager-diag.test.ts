@@ -98,12 +98,18 @@ describe('PTY exit diag line', () => {
   });
 
   it('redacts before cutting, so a secret straddling the cut leaves no fragment', async () => {
-    const secret = 'ghp_' + 'A'.repeat(36);
-    // The secret ends inside the kept tail and starts before it.
-    const exit = await spawnWithOutput('agent_cut', [`token ${secret}` + ' '.repeat(EXIT_TAIL_CHARS - 20)]);
+    // `password=` falls before the kept tail and its value inside it: cut first, the value would survive unrecognized.
+    const exit = await spawnWithOutput('agent_cut', ['password=hunter2hunter2' + '.'.repeat(EXIT_TAIL_CHARS - 10)]);
     exit(1);
     const lastOutput = ptyLines('PTY exited')[0]!.meta!.lastOutput as string;
-    expect(lastOutput).not.toContain('AAAA');
+    expect(lastOutput).not.toContain('hunter2');
+  });
+
+  it('drops the first line of a window that starts mid-output', async () => {
+    const exit = await spawnWithOutput('agent_long', ['y'.repeat(5000), ' password: hunter2\n', 'last line\n']);
+    exit(1);
+    const lastOutput = ptyLines('PTY exited')[0]!.meta!.lastOutput as string;
+    expect(lastOutput).toBe('last line\n');
   });
 
   it('keeps no last output for a clean or a requested exit', async () => {

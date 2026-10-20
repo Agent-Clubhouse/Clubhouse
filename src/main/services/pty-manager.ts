@@ -163,13 +163,13 @@ const EXIT_REDACT_CHARS = EXIT_TAIL_CHARS * 2;
  * The last output of a failed exit for its diag line: escapes stripped,
  * redacted, then cut, so a cut never leaves part of a secret the redaction
  * would have caught. When the redacted window starts mid-output, its first
- * word may be a fragment of one and is dropped.
+ * line may hold a value cut off from its key (`password: x`) and is dropped.
  */
 function exitTailForDiag(buffer: string): string {
   let text = stripTerminalEscapes(buffer.slice(-EXIT_SCAN_CHARS));
   const truncated = buffer.length > EXIT_SCAN_CHARS || text.length > EXIT_REDACT_CHARS;
   text = text.slice(-EXIT_REDACT_CHARS);
-  if (truncated) text = text.replace(/^\S*/, '');
+  if (truncated) text = text.replace(/^[^\n]*\n?/, '');
   return redactDiagText(text).slice(-EXIT_TAIL_CHARS);
 }
 
