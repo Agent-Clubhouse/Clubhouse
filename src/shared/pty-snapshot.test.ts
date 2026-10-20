@@ -203,11 +203,11 @@ describe('Copilot-shaped inline redraws', () => {
     expect(count(screen(naive), 'COPILOT')).toBeGreaterThan(count(screen(live), 'COPILOT'));
   });
 
-  it('documents the live artifact: an inline redraw after a narrowing reflow leaves stale rows', async () => {
+  it('documents the bare-xterm artifact: an inline redraw after a narrowing reflow leaves stale rows', async () => {
     // Not a replay problem: xterm reflows the wide frame into more rows than
-    // the TUI's "cursor up" covers, so even the live terminal keeps a stale
-    // copy above the new frame.  Replay reproduces it faithfully; fewer PTY
-    // resizes (#2322) mean fewer of these.
+    // the TUI's "cursor up" covers, so a bare terminal keeps a stale copy
+    // above the new frame.  Clubhouse terminals erase the frame first with
+    // InlineFrameGuard (#2359; see inline-frame-guard.test.ts).
     const tui = new CopilotTui(80, false);
     const parts = [{ data: tui.frame(1), cols: 80 }];
     tui.resize(40);

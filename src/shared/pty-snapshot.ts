@@ -62,11 +62,22 @@ export function snapshotSegments(snapshot: PtyBufferSnapshot): PtySnapshotSegmen
  * Write a snapshot into `target`, resizing it to the recorded PTY size before
  * each run of data.  Resolves once xterm has parsed everything, leaving the
  * target at the PTY's latest size so following live output lines up.
+ * `beforeResize` returns data to write (and let parse) before each resize.
  */
-export async function writePtySnapshot(target: PtyReplayTarget, snapshot: PtyBufferSnapshot): Promise<void> {
+export async function writePtySnapshot(
+  target: PtyReplayTarget,
+  snapshot: PtyBufferSnapshot,
+  options: { beforeResize?: (cols: number, rows: number) => string | null } = {},
+): Promise<void> {
   for (const segment of snapshotSegments(snapshot)) {
     const { cols, rows } = segment;
-    if (cols && rows && (cols !== target.cols || rows !== target.rows)) target.resize(cols, rows);
+    if (cols && rows && (cols !== target.cols || rows !== target.rows)) {
+      // Whatever a live terminal wrote just before this resize (the inline
+      // frame erase, #2359) is written here too, so replay matches it.
+      const prelude = options.beforeResize?.(cols, rows);
+      if (prelude) await new Promise<void>((resolve) => target.write(prelude, resolve));
+      target.resize(cols, rows);
+    }
     if (segment.data) await new Promise<void>((resolve) => target.write(segment.data, resolve));
   }
 }

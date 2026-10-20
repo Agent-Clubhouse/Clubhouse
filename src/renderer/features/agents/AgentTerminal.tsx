@@ -13,6 +13,7 @@ import { useFileDrop } from '../terminal/useFileDrop';
 import { useTerminalFit, isTerminalAtBottom, hasMeasurableSize, type PtySize, type TerminalFitControls } from '../terminal/useTerminalFit';
 import { unseenPtySuffix, isAsciiBinary, writeAsync } from '../terminal/pty-stream';
 import { writePtySnapshot, type PtyBufferSnapshot } from '../../../shared/pty-snapshot';
+import { attachInlineFrameGuard, detachInlineFrameGuard, inlineFramePrelude } from '../terminal/inline-frame';
 import { ptyResize } from '../../services/project-proxy';
 import { rendererLog } from '../../plugins/renderer-logger';
 import { Spinner } from '../../components/Spinner';
@@ -144,6 +145,9 @@ export function AgentTerminal({ agentId, focused, zoneThemeId }: Props) {
     const fitAddon = new FitAddon();
     term.loadAddon(fitAddon);
     term.open(xtermHostRef.current);
+    // Inline TUIs (Copilot, Claude Code) must not leave a stale frame copy
+    // when the terminal narrows (#2359).
+    attachInlineFrameGuard(term);
 
     // Blur watchdog — the "can scroll but can't type" recovery path.
     //
@@ -218,7 +222,7 @@ export function AgentTerminal({ agentId, focused, zoneThemeId }: Props) {
       // Without recorded sizes (a satellite's serialized screen) the best
       // guess is this pane's own size, so fit first (the PTY is sized later).
       if (!snapshot.sizes?.length && hasMeasurableSize(containerRef.current)) fitAddon.fit();
-      await writePtySnapshot(term, snapshot);
+      await writePtySnapshot(term, snapshot, { beforeResize: inlineFramePrelude(term) });
       if (terminalRef.current !== term) return;
       appliedSeq = snapshot.seq;
       const last = snapshot.sizes?.[snapshot.sizes.length - 1];
@@ -424,6 +428,7 @@ export function AgentTerminal({ agentId, focused, zoneThemeId }: Props) {
       removeResizedListener();
       ptySizeRef.current = null;
       helperTextarea?.removeEventListener('blur', onHelperBlur);
+      detachInlineFrameGuard(term);
       term.dispose();
       terminalRef.current = null;
       fitAddonRef.current = null;
