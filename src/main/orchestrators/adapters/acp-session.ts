@@ -507,8 +507,10 @@ export class AcpSession {
       if (reported) return;
       reported = true;
       if (this.resumeStats === stats) this.resumeStats = null;
+      // One reading, so the session's timing and the log line agree (#2401).
+      const totalMs = Date.now() - requestedAt;
       this.resumeTiming = {
-        loadMs: Date.now() - requestedAt,
+        loadMs: totalMs,
         ...(firstActivityAt !== null && { firstReplyMs: firstActivityAt - requestedAt }),
       };
       this.log(outcome === 'ok' ? 'info' : 'warn', `ACP ${method} timing`, {
@@ -516,7 +518,7 @@ export class AcpSession {
         outcome,
         initializeToRequestMs: this.initializedAt === null ? null : requestedAt - this.initializedAt,
         firstActivityMs: firstActivityAt === null ? null : firstActivityAt - requestedAt,
-        totalMs: Date.now() - requestedAt,
+        totalMs,
         // Notifications received during the load: the replayed history, plus anything else the agent sent.
         notifications: stats.notifications,
         // Characters of every stdout line received during the load, the response included.
