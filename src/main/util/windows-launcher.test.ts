@@ -12,16 +12,17 @@ import { buildWindowsCmdLine, quoteWindowsArg, resolveNodeShim } from './windows
 const ENV: Record<string, string> = { PATH: 'EXPANDED', USERNAME: 'EXPANDED', A: 'EXPANDED' };
 
 /**
- * Phase 1 on a command line (not in a batch file): `%NAME%` expands when NAME
- * is defined; otherwise the text stays. Resumes right after the opening `%`,
- * so every pair of percent signs is tried as a name.
+ * Phase 1 on a command line (not in a batch file): `%NAME%`, `%NAME:x=y%` and
+ * `%NAME:~n%` expand when NAME (the text before any `:`) is defined;
+ * otherwise the text stays. Resumes right after the opening `%`, so every
+ * pair of percent signs is tried as a name.
  */
 function expandPercent(line: string): string {
   let out = '';
   let i = 0;
   while (i < line.length) {
     const close = line[i] === '%' ? line.indexOf('%', i + 1) : -1;
-    const name = close > i ? line.slice(i + 1, close).toUpperCase() : '';
+    const name = close > i ? line.slice(i + 1, close).split(':')[0].toUpperCase() : '';
     if (name && name in ENV) {
       out += ENV[name];
       i = close + 1;
@@ -119,6 +120,9 @@ const TRICKY_ARGS = [
   '%%PATH%%',
   '%A%%A%',
   '%~dp0',
+  '%PATH:a=b%',
+  '%PATH:~0,2%',
+  'C:\\x:%A:~1%',
   '!PATH!',
   '^',
   'a^b^^c',
@@ -173,8 +177,8 @@ describe('buildWindowsCmdLine', () => {
   });
 
   it('caret-escapes the binary once and a shim\'s arguments twice', () => {
-    expect(buildWindowsCmdLine('C:\\my tools\\x.cmd', ['a b'])).toBe('C:\\my^ tools\\x.cmd ^^^"a^^^ b^^^"');
-    expect(buildWindowsCmdLine('C:\\my tools\\x.exe', ['a b'])).toBe('C:\\my^ tools\\x.exe ^"a^ b^"');
+    expect(buildWindowsCmdLine('C:\\my tools\\x.cmd', ['a b&c'])).toBe('C:\\my^ tools\\x.cmd ^^^"a b^^^&c^^^"');
+    expect(buildWindowsCmdLine('C:\\my tools\\x.exe', ['a b&c'])).toBe('C:\\my^ tools\\x.exe ^"a b^&c^"');
   });
 
   it('the model catches the quoting this replaced', () => {
@@ -226,6 +230,16 @@ describe('resolveNodeShim', () => {
 
   it('ignores a shim that passes interpreter flags', async () => {
     const shim = await writeShim('claude.cmd', CURRENT.replace('"%_prog%"  ', '"%_prog%" --no-warnings '));
+    expect(resolveNodeShim(shim)).toBeNull();
+  });
+
+  it('ignores a shim for another interpreter', async () => {
+    const shim = await writeShim('claude.cmd', CURRENT.replace('SET "_prog=node"', 'SET "_prog=bun"'));
+    expect(resolveNodeShim(shim)).toBeNull();
+  });
+
+  it('ignores a wrapper that sets up its own environment', async () => {
+    const shim = await writeShim('claude.cmd', `@SET ANTHROPIC_BASE_URL=https://proxy\r\n${OLDER}`);
     expect(resolveNodeShim(shim)).toBeNull();
   });
 

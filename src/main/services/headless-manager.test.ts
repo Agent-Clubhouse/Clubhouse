@@ -748,11 +748,9 @@ describe('headless-manager', () => {
 
         const spawnArgs = (mockCpSpawn.mock.calls[0] as any[]);
         expect(spawnArgs[0]).toBe('cmd.exe');
-        expect(spawnArgs[1][0]).toBe('/d');
-        expect(spawnArgs[1][1]).toBe('/s');
-        expect(spawnArgs[1][2]).toBe('/c');
-        expect(spawnArgs[1][3]).toContain('claude.cmd');
-        expect(spawnArgs[1][3]).toContain('-p');
+        expect(spawnArgs[1].slice(0, 4)).toEqual(['/d', '/v:off', '/s', '/c']);
+        expect(spawnArgs[1][4]).toContain('claude.cmd');
+        expect(spawnArgs[1][4]).toContain('-p');
         expect(spawnArgs[2].windowsVerbatimArguments).toBe(true);
       } finally {
         Object.defineProperty(process, 'platform', { value: originalPlatform });
@@ -776,9 +774,9 @@ describe('headless-manager', () => {
       try {
         await spawnHeadless('test-agent', '/project', 'C:\\npm\\claude.cmd', ['-p', 'Fix the login bug', '--verbose']);
 
-        const cmdLine = (mockCpSpawn.mock.calls[0] as any[])[1][3] as string;
+        const cmdLine = (mockCpSpawn.mock.calls[0] as any[])[1][4] as string;
         // Caret-escaped twice: once for cmd.exe /c, once for the shim's %* line.
-        expect(cmdLine).toContain('^^^"Fix^^^ the^^^ login^^^ bug^^^"');
+        expect(cmdLine).toContain('^^^"Fix the login bug^^^"');
       } finally {
         Object.defineProperty(process, 'platform', { value: originalPlatform });
       }
@@ -792,7 +790,7 @@ describe('headless-manager', () => {
       try {
         await spawnHeadless('test-agent', '/project', 'C:\\npm\\claude.cmd', ['%USERNAME%']);
 
-        const cmdLine = (mockCpSpawn.mock.calls[0] as any[])[1][3] as string;
+        const cmdLine = (mockCpSpawn.mock.calls[0] as any[])[1][4] as string;
         expect(cmdLine).toContain('^^^%USERNAME^^^%');
         expect(cmdLine).not.toContain('%%');
       } finally {
@@ -1605,7 +1603,7 @@ describe('headless-manager', () => {
 
       const callArgs = mockCpSpawn.mock.calls[0];
       expect(callArgs[0]).toBe('cmd.exe');
-      const cmdLine = callArgs[1][3] as string;
+      const cmdLine = callArgs[1][4] as string;
       expect(cmdLine).toContain('. .\\init.ps1 & ');
     });
 

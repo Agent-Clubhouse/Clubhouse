@@ -32,8 +32,8 @@ describe('resolveStructuredSpawn', () => {
         // Node refuses to spawn .cmd/.bat without a shell (CVE-2024-27980)
         expect(spawn.binary).toBe('cmd.exe');
         expect(spawn.args).toEqual([
-          '/d', '/s', '/c',
-          `"${caret(binary)} ^^^"app-server^^^" ^^^"--listen^^^" ^^^"stdio://^^^""`,
+          '/d', '/v:off', '/s', '/c',
+          `"${caret(binary)} ^^^"app-server^^^" ^^^"--listen^^^" ^^^"stdio^^^://^^^""`,
         ]);
         expect(spawn.windowsVerbatimArguments).toBe(true);
       },
@@ -46,8 +46,8 @@ describe('resolveStructuredSpawn', () => {
       const spawn = resolveStructuredSpawn(binary, ['{"P":"%PATH%|x"}']);
 
       // MSVCRT: "{\"P\":\"%PATH%|x\"}", then every metacharacter carets twice.
-      expect(spawn.args[3]).toBe(
-        `"${caret(binary)} ^^^"{\\^^^"P\\^^^":\\^^^"^^^%PATH^^^%^^^|x\\^^^"}^^^""`,
+      expect(spawn.args[4]).toBe(
+        `"${caret(binary)} ^^^"{\\^^^"P\\^^^"^^^:\\^^^"^^^%PATH^^^%^^^|x\\^^^"}^^^""`,
       );
     });
 
@@ -68,7 +68,7 @@ describe('resolveStructuredSpawn', () => {
       const spawn = resolveStructuredSpawn(binary, ['app-server'], 'call init.bat');
 
       expect(spawn.binary).toBe('cmd.exe');
-      expect(spawn.args[3]).toBe(`"call init.bat & ${caret(binary)} ^"app-server^""`);
+      expect(spawn.args[4]).toBe(`"call init.bat & ${caret(binary)} ^"app-server^""`);
       expect(spawn.windowsVerbatimArguments).toBe(true);
     });
 
@@ -95,7 +95,7 @@ describe('resolveStructuredSpawn', () => {
       const shim = path.join(tmp, 'claude.cmd');
       await fs.promises.writeFile(
         shim,
-        '@ECHO off\r\nendLocal & goto #_undefined_# 2>NUL || title %COMSPEC% & "%_prog%"  "%dp0%\\cli.js" %*\r\n',
+        '@ECHO off\r\nSET "_prog=node"\r\nendLocal & goto #_undefined_# 2>NUL || title %COMSPEC% & "%_prog%"  "%dp0%\\cli.js" %*\r\n',
       );
       return shim;
     }

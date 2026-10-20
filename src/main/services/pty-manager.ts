@@ -324,7 +324,7 @@ export async function spawn(agentId: string, cwd: string, binary: string, args: 
       const shellCmd = buildWindowsCmdLine(binary, args);
       pendingCommand = commandPrefix ? `${validateCommandPrefix(commandPrefix)} & ${shellCmd}` : shellCmd;
 
-      proc = pty.spawn('cmd.exe', [], {
+      proc = pty.spawn('cmd.exe', ['/v:off'], {
         name: 'xterm-256color',
         cwd,
         env: spawnEnv,

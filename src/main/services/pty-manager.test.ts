@@ -861,7 +861,7 @@ describe('pty-manager', () => {
         // On Windows, cmd.exe is spawned interactively (pendingCommand mechanism)
         expect(pty.spawn).toHaveBeenCalledWith(
           'cmd.exe',
-          [],
+          ['/v:off'],
           expect.objectContaining({
             env: expect.objectContaining({ CUSTOM_VAR: 'value' }),
           })
@@ -890,7 +890,7 @@ describe('pty-manager', () => {
       // Windows now uses interactive cmd.exe (no /c) with pendingCommand
       expect(pty.spawn).toHaveBeenCalledWith(
         'cmd.exe',
-        [],
+        ['/v:off'],
         expect.objectContaining({
           cwd: '/test',
           cols: 120,
@@ -957,7 +957,7 @@ describe('pty-manager', () => {
           (c: string[]) => typeof c[0] === 'string' && c[0].includes('& exit')
         );
         expect(writtenCmd).toBeDefined();
-        expect(writtenCmd![0]).toContain('^"Fix^ the^ login^ bug^"');
+        expect(writtenCmd![0]).toContain('^"Fix the login bug^"');
       }
     });
   });

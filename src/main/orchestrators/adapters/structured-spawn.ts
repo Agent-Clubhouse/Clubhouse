@@ -46,7 +46,7 @@ export function resolveStructuredSpawn(
     const fullCmd = commandPrefix ? `${validateCommandPrefix(commandPrefix)} & ${cmdLine}` : cmdLine;
     return {
       binary: 'cmd.exe',
-      args: ['/d', '/s', '/c', `"${fullCmd}"`],
+      args: ['/d', '/v:off', '/s', '/c', `"${fullCmd}"`],
       windowsVerbatimArguments: true,
     };
   }

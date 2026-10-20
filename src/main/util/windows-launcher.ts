@@ -49,16 +49,21 @@ export function windowsLauncherCandidates(candidate: string): string[] {
 }
 
 /**
- * Characters cmd.exe treats specially outside quotes (cross-spawn's set).
- * Every one is caret-escaped, quotes included, so cmd.exe never enters quote
- * mode and a `"` inside an argument can't expose what follows it. `%` needs
- * it too: `^%PATH^%` looks up a variable named `PATH^`, which is undefined,
- * so it stays literal on a command line (`%%` only collapses in batch files).
+ * Characters caret-escaped in an argument. Quotes are included, so cmd.exe
+ * never enters quote mode and a `"` inside an argument can't expose what
+ * follows it. `%` and `:` need it too: `^%PATH^:~0^%` looks up a variable
+ * named `PATH^`, which is undefined, so it stays literal on a command line
+ * (`%%` only collapses in batch files). Spaces and other delimiters are left
+ * alone; cmd.exe passes them through and the MSVCRT quotes keep them in one
+ * argument, so the line grows only where it has to.
  */
-const CMD_META_RE = /([()\][%!^"`<>&|;, *?])/g;
+const CMD_ARG_META_RE = /([()%!^"<>&|:])/g;
+
+/** The binary is the command token, so delimiters must be escaped too (cross-spawn's set). */
+const CMD_COMMAND_META_RE = /([()\][%!^"`<>&|;, *?])/g;
 
 function caretEscape(s: string): string {
-  return s.replace(CMD_META_RE, '^$1');
+  return s.replace(CMD_ARG_META_RE, '^$1');
 }
 
 /**
@@ -89,17 +94,24 @@ export function buildWindowsCmdLine(binary: string, args: string[]): string {
     const once = caretEscape(quoteWindowsArg(a));
     return batch ? caretEscape(once) : once;
   });
-  return [caretEscape(binary), ...escaped].join(' ');
+  return [binary.replace(CMD_COMMAND_META_RE, '^$1'), ...escaped].join(' ');
 }
 
 /**
  * The node script line of an npm/pnpm/yarn cmd-shim, in its current
  * (`"%_prog%"  "%dp0%\…\cli.js" %*`) and older (`"%~dp0\node.exe"  "%~dp0\…" %*`,
  * `node  "%~dp0\…" %*`) forms. Only whitespace may sit between the
- * interpreter and the script; a shim that adds interpreter flags isn't
- * matched and keeps running through cmd.exe.
+ * interpreter and the script; a shim that adds interpreter flags, sets other
+ * variables or runs another interpreter isn't matched and keeps running
+ * through cmd.exe.
  */
 const NODE_SHIM_RE = /(?:"%_prog%"|"%~dp0\\node\.exe"|^[ \t@]*node)[ \t]+"%(?:~dp0|dp0%)\\([^"\r\n]+\.[cm]?js)"[ \t]+%\*[ \t]*\r?$/im;
+
+/**
+ * A `SET` of anything but the template's own variables. A wrapper that sets
+ * up env (or pnpm's NODE_PATH) needs its batch file to run.
+ */
+const FOREIGN_SET_RE = /^[ \t@]*set[ \t]+(?!"?(?:dp0|_prog|PATHEXT)=)/im;
 
 /** Shims are a few hundred bytes; anything much bigger isn't one. */
 const MAX_SHIM_BYTES = 16 * 1024;
@@ -120,7 +132,9 @@ export function resolveNodeShim(shim: string): { node: string; script: string } 
     return null;
   }
   const match = NODE_SHIM_RE.exec(text);
-  if (!match) return null;
+  if (!match || FOREIGN_SET_RE.test(text)) return null;
+  // cmd-shim sets _prog from the script's shebang; only node is run directly.
+  if (/%_prog%/i.test(text) && !/set[ \t]+"_prog=node"/i.test(text)) return null;
   const dir = path.dirname(shim);
   const script = path.join(dir, match[1]);
   if (!fs.existsSync(script)) return null;

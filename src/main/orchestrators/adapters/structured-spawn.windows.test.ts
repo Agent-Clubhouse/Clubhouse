@@ -114,7 +114,7 @@ describe.runIf(process.platform === 'win32')('discovery and launch of a real npm
 // Arguments cmd.exe or MSVCRT quoting can get wrong (#2339, #2340). Line
 // breaks can't go through cmd.exe at all; they're only sent where it's skipped.
 const TRICKY_ARGS = [
-  '', ' ', 'with spaces', '100%', '%PATH%', '%%PATH%%', '%USERNAME%%PATH%', '%~dp0', '!PATH!',
+  '', ' ', 'with spaces', '100%', '%PATH%', '%%PATH%%', '%USERNAME%%PATH%', '%~dp0', '%PATH:a=b%', '%PATH:~0,2%', '!PATH!',
   '^', 'a^b^^c', 'a&b', 'a|b', '<in>out', '(x) [y] {z}', '"', 'say "hi"', '""',
   'a\\b', 'C:\\data\\', 'trailing\\\\', 'a\\"b', '\\\\"', 'semi;colon,comma=eq', '*?`',
   'https://h/mcp?x=a%20b&y=%PATH%',
