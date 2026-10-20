@@ -450,11 +450,16 @@ describe('AgentListItem helper roll-up and requests (legacy layout)', () => {
     expect(screen.getByTestId('helper-rollup-dot').className).toContain('bg-ctp-warning');
   });
 
-  it('wraps its chips to a second line instead of clipping them on an indented helper row', () => {
+  it('keeps its chips on one line, shortening them with a tooltip, so an indented helper row stays the same height', () => {
     resetStores();
     render(<AgentListItem agent={baseAgent} isActive={false} isThinking={false} onSelect={vi.fn()} indent={40} />);
-    const chips = screen.getByText('Claude Code').parentElement!;
-    expect(chips.className).toMatch(/\bflex-wrap\b/);
+    const label = screen.getByText('Claude Code');
+    const chips = label.parentElement!;
+    expect(chips.className).not.toMatch(/\bflex-wrap\b/);
+    expect(chips.className).toMatch(/\bmin-w-0\b/);
+    expect(label.className).toMatch(/\btruncate\b/);
+    expect(label.className).toMatch(/\bmin-w-0\b/);
+    expect(label).toHaveAttribute('title', 'Claude Code');
     expect(screen.getByText('bold-falcon')).toHaveAttribute('title', 'bold-falcon');
   });
 
