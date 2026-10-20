@@ -555,6 +555,8 @@ async function runChatStart(
     { env, mcpServers, mcpHttpEndpoints, continued }: NonNullable<typeof prepared>,
   ): Promise<{ ok: true } | { ok: false; error: string; errorCode?: string; sessionStarted: boolean }> {
     let sessionStarted = false;
+    /** Recorded once the start succeeds: a start that fails falls back to the terminal, which records its own. */
+    let resumeResult: ReturnType<typeof chatResumeResult> | undefined;
     /** `exitCode` marks the session's end, the one write recorded as its capture (#2305). */
     const recordChatSession = (id: string, exitCode?: number) => {
       const captured = (result: 'captured' | 'persist_failed') => {
@@ -618,9 +620,7 @@ async function runChatStart(
         ...(startSignal ? { signal: startSignal } : {}),
         });
         sessionStarted = true;
-        if (resumeId) {
-          recordResumeOutcome(provider.id, params.agentId, chatResumeResult(resumeId, session.nativeSessionId, session.resumeFallback), 'chat');
-        }
+        if (resumeId) resumeResult = chatResumeResult(resumeId, session.nativeSessionId, session.resumeFallback);
         return session;
       },
       beforePrompt: () => captureBeforePrompt(params.agentId),
@@ -655,6 +655,7 @@ async function runChatStart(
     stopIdleWatch = onAgentIdleSleepChange(params.agentId, () => runtime.idleTimeoutChanged());
     try {
       await runtime.start(params.mission);
+      if (resumeResult) recordResumeOutcome(provider.id, params.agentId, resumeResult, 'chat');
       return { ok: true };
     } catch (err) {
       stopIdleWatch();

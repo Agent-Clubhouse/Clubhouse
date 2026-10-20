@@ -258,6 +258,7 @@ export class AcpChatDriver implements ChatDriver {
         servers: servers.map((s) => ({ name: s.name, transport: 'type' in s ? s.type : 'stdio' })),
       });
       const setup = { cwd: opts.cwd, mcpServers: servers };
+      let resumeFallback: 'not_found' | undefined;
       const startFresh = async (logMessage: string, message: string) => {
         this.log('warn', logMessage, { sessionId: resumeNativeSessionId });
         // Drop anything a failed load replayed before it gave up.
@@ -267,7 +268,6 @@ export class AcpChatDriver implements ChatDriver {
         await session.newSession(setup);
       };
       let resumed = false;
-      let resumeFallback: 'not_found' | undefined;
       const exists = resumeNativeSessionId
         ? await session.agentProfile.nativeSessionExists?.(resumeNativeSessionId, { ...process.env, ...opts.env })
         : undefined;

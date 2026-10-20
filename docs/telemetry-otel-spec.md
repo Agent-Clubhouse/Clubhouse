@@ -390,6 +390,8 @@ Durable agents only. Every event carries `orchestrator` and `c.agent.id_hash`. T
 | `c.agent.session_stale_cleared` | A saved resume id was cleared (#2113) | `c.session.stale.reason`: `store_missing` (checked at wake), `chat_not_found` (chat start said so), `exit_not_found` (the CLI said so on exit), `exit_early` (the resume quit within 10 s) | E |
 | `c.agent.resume_outcome` | Once per durable wake that had a session: at chat session open, at a terminal resume's exit, or at spawn for a fresh start | `c.agent.runtime` (when chosen), `c.session.resume.result`: `resumed`, `fresh_not_found`, `fresh_stalled` (the chat driver gave up on the load, #2296), `fresh_user` (woken fresh with a session to resume), `fresh_other` (a different native id with no reason given), `failed_not_found`, `failed_early_exit` (terminal resumes that failed) | S |
 
+Known gaps: Claude's chat drivers learn the native id only after the first prompt, so a Claude chat resume that silently starts fresh reads as `resumed`. `fresh_user` and a wake-time `fresh_not_found` are recorded before the runtime starts, so a wake cancelled afterwards still counts.
+
 #### Exit and kill
 
 Exits are classified on the `c.agent.run` span (above), not a separate span. Chat exits must also go through `broadcastAgentExit` (the structured-mode bypass, F1, was fixed in [#1928](https://github.com/Agent-Clubhouse/Clubhouse/pull/1928)).

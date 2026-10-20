@@ -790,12 +790,13 @@ async function captureSession(
     // Never save an id the CLI's own store doesn't have (#2156): a scraped UUID
     // can come from the conversation text, and a clean exit doesn't prove the
     // resumed id existed. undefined (can't tell) keeps the id.
-    const exists = async (id: string | null): Promise<string | null> => {
+    // `assigned`: the run's own id, which the CLI may simply not have created yet; not a bad id.
+    const exists = async (id: string | null, assigned = false): Promise<string | null> => {
       if (!id || !isSessionCapable(provider) || !provider.hasSession) return id;
       const has = await provider.hasSession(id, profileEnv).catch((): undefined => undefined);
       if (has === false) {
         appLog('core:agent', 'warn', 'Ignoring a session id the CLI store does not have', { meta: { agentId, sessionId: id } });
-        rejected = 'ignored_not_in_store';
+        if (!assigned) rejected = 'ignored_not_in_store';
         return null;
       }
       return id;
@@ -814,7 +815,7 @@ async function captureSession(
     };
     // The id Clubhouse gave a fresh session (Copilot's --session-id) is the
     // run's own; it's checked too, as the CLI may have quit before creating it.
-    let sessionId: string | null = assignedId ? await exists(assignedId) : null;
+    let sessionId: string | null = assignedId ? await exists(assignedId, true) : null;
     if (sessionId) source = 'assigned';
     if (!sessionId && buffer && isSessionCapable(provider)) {
       sessionId = await scraped(provider.extractSessionId(buffer));

@@ -1535,6 +1535,16 @@ describe('agent-system', () => {
           expect(await capture()).toMatchObject({ 'clubhouse.session.capture.result': 'captured', 'clubhouse.session.capture.source': 'assigned' });
         });
 
+        it('an assigned id the CLI never created is not a rejected id', async () => {
+          config = {};
+          mockCodexProvider.buildSpawnCommand.mockResolvedValueOnce({ binary: 'copilot', args: ['--session-id', REAL], sessionId: REAL } as never);
+          (mockCodexProvider as Record<string, unknown>).hasSession = vi.fn(async () => false);
+          (mockCodexProvider as Record<string, unknown>).findRunSession = vi.fn(async () => null);
+          const { onExit } = await wake('codex-cli');
+          onExit('agent-1', 0, 'bye');
+          expect(await capture()).toMatchObject({ 'clubhouse.session.capture.result': 'kept_previous', 'clubhouse.session.capture.source': 'none' });
+        });
+
         it('a made-up scraped id and nothing else: ignored_not_in_store (#2086)', async () => {
           config = {};
           (mockCodexProvider as Record<string, unknown>).hasSession = vi.fn(async () => false);

@@ -384,6 +384,18 @@ require('readline').createInterface({ input: process.stdin }).on('line', line =>
       }]);
     });
 
+    it('a chat resume whose start then fails records no chat outcome (the terminal records its own)', async () => {
+      const driver = new FakeChatDriver();
+      vi.spyOn(driver, 'start').mockImplementationOnce(async (opts) => {
+        const session = await FakeChatDriver.prototype.start.call(driver, opts);
+        vi.spyOn(session, 'send').mockRejectedValue(new Error('boom'));
+        return session;
+      });
+      registerChatDriver(driver);
+      expect(await tryStartChatAgent({ ...params, resume: true, sessionId: 'n9' }, provider, undefined, undefined, null)).toBe('terminal');
+      expect(recorded('clubhouse.agent.resume_outcome')).toEqual([]);
+    });
+
     it('a fresh start records no resume outcome; its end records the provider-reported capture', async () => {
       registerChatDriver(new FakeChatDriver());
       await tryStartChatAgent(params, provider, undefined, undefined, null);
