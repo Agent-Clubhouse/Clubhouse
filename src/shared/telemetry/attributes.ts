@@ -861,12 +861,12 @@ export const METRICS = {
   },
   'clubhouse.process.eventloop.delay.p99': {
     kind: 'gauge', unit: 's', level: 'standard',
-    description: 'Main-process event-loop delay, 99th percentile over the last minute',
+    description: 'Main-process event-loop delay (lateness past the sampling interval), 99th percentile over the last minute',
     attributes: [],
   },
   'clubhouse.process.eventloop.delay.max': {
     kind: 'gauge', unit: 's', level: 'standard',
-    description: 'Main-process event-loop delay, maximum over the last minute',
+    description: 'Main-process event-loop delay (lateness past the sampling interval), maximum over the last minute',
     attributes: [],
   },
   'clubhouse.process.memory': {
