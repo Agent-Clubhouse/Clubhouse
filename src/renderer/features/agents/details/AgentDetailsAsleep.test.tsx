@@ -174,6 +174,7 @@ describe('Agent details for a sleeping agent (#2281)', () => {
   });
 
   // #2375: a change before the provider lists its models used to save model: '' and drop the saved model.
+  // React still runs onChange for a disabled select here, so this checks the card's guard, not only the attribute.
   it('saves nothing from the Model select until its options have loaded', async () => {
     saved.model = 'opus';
     let list!: (v: unknown) => void;
@@ -189,6 +190,16 @@ describe('Agent details for a sleeping agent (#2281)', () => {
     list([{ id: 'default', label: 'Default' }, { id: 'sonnet', label: 'Sonnet' }, { id: 'opus', label: 'Opus' }]);
     await loadedModelSelect('sonnet');
     expect(model.value).toBe('opus');
+  });
+
+  it('saves nothing for a model the provider did not list', async () => {
+    saved.model = 'opus';
+    render(<AgentDetails agent={sleeping} />);
+    const model = await loadedModelSelect('sonnet');
+    // A value with no option (here a model the list dropped) reads back as ''.
+    fireEvent.change(model, { target: { value: 'haiku' } });
+    expect(window.clubhouse.agent.updateDurableConfig).not.toHaveBeenCalled();
+    expect(saved.model).toBe('opus');
   });
 
   it('shows the terminal and no Runs in control with the Chat flag off', async () => {

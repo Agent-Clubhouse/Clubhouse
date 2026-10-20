@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { renderHook, waitFor } from '@testing-library/react';
+import { act, renderHook, waitFor } from '@testing-library/react';
 import { useModelOptions } from './useModelOptions';
 import { useProjectStore } from '../stores/projectStore';
 
@@ -38,12 +38,28 @@ describe('useModelOptions', () => {
     for (const r of renders.filter((x) => x.path && !x.loading)) expect(r.ids).toEqual(['default', 'sonnet']);
   });
 
-  it('drops the old provider\'s options the moment the provider changes', async () => {
-    const { result, rerender } = renderHook(({ o }) => useModelOptions(o, '/work/proj'), { initialProps: { o: 'claude-code' } });
-    await waitFor(() => expect(result.current.options).toEqual(OPTIONS));
+  it('drops the old provider\'s options in the same render as the provider changes', async () => {
+    const renders: Array<{ o: string; loading: boolean; ids: string[] }> = [];
+    const { rerender } = renderHook(({ o }) => {
+      const r = useModelOptions(o, '/work/proj');
+      renders.push({ o, loading: r.loading, ids: r.options.map((x) => x.id) });
+      return r;
+    }, { initialProps: { o: 'claude-code' } });
+    await waitFor(() => expect(renders.at(-1)?.loading).toBe(false));
     window.clubhouse.agent.getModelOptions = vi.fn(() => new Promise(() => {})) as never;
     rerender({ o: 'codex-cli' });
-    expect(result.current).toEqual({ options: [{ id: 'default', label: 'Default' }], loading: true });
+    for (const r of renders.filter((x) => x.o === 'codex-cli')) expect(r).toEqual({ o: 'codex-cli', loading: true, ids: ['default'] });
+  });
+
+  it('ignores a list that arrives after the path changed', async () => {
+    const answers: Record<string, (v: unknown) => void> = {};
+    window.clubhouse.agent.getModelOptions = vi.fn((p: string) => new Promise((r) => { answers[p] = r; })) as never;
+    const { result, rerender } = renderHook(({ path }) => useModelOptions('claude-code', path), { initialProps: { path: '/a' } });
+    rerender({ path: '/b' });
+    await act(async () => { answers['/a']([{ id: 'from-a', label: 'A' }]); });
+    expect(result.current.loading).toBe(true);
+    await act(async () => { answers['/b'](OPTIONS); });
+    expect(result.current).toEqual({ options: OPTIONS, loading: false });
   });
 
   it('settles on the placeholder when the read fails', async () => {
