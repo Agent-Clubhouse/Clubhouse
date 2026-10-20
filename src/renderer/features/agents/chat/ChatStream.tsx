@@ -4,6 +4,8 @@ import type { ChatViewState } from '../../../stores/chatStore';
 import { buildStreamBlocks, commandOutputIds, toolErrorText, type StreamBlock } from './view-model';
 import { scrollWithin } from './scroll';
 import { RichLinkProvider } from './rich/RichLinks';
+import { useRichChatContent } from './rich/rich-flag';
+import { ChatMediaContext } from './rich/ChatImages';
 import { rendererLog } from '../../../plugins/renderer-logger';
 import {
   AgentMessage,
@@ -230,7 +232,8 @@ const ChatStreamInner = memo(function ChatStreamInner({
   const onJumpResultRef = useRef(onJumpResult);
   onJumpResultRef.current = onJumpResult;
   const { items, subagents, capabilities, commands } = state;
-  const blocks = useMemo(() => buildStreamBlocks({ items, subagents, capabilities }), [items, subagents, capabilities]);
+  const rich = useRichChatContent();
+  const blocks = useMemo(() => buildStreamBlocks({ items, subagents, capabilities }, { mediaVisible: rich }), [items, subagents, capabilities, rich]);
   const commandOutput = useMemo(() => commandOutputIds(items, commands), [items, commands]);
   const [windowStart, setWindowStart] = useState(() => Math.max(0, blocks.length - CHAT_STREAM_WINDOW_SIZE));
   const [followTail, setFollowTail] = useState(true);
@@ -372,6 +375,7 @@ const ChatStreamInner = memo(function ChatStreamInner({
   const awaiting = useMemo(() => new Set(awaitingKey.split('\n').filter(Boolean)), [awaitingKey]);
 
   return (
+    <ChatMediaContext.Provider value={rich ? state.agentId : null}>
     <LiveTurnContext.Provider value={state.turnId}>
     <AwaitingApprovalContext.Provider value={awaiting}>
     <div ref={scroller} onScroll={onScroll} className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden px-7 pt-5 pb-2.5" data-testid="chat-stream">
@@ -441,5 +445,6 @@ const ChatStreamInner = memo(function ChatStreamInner({
     </div>
     </AwaitingApprovalContext.Provider>
     </LiveTurnContext.Provider>
+    </ChatMediaContext.Provider>
   );
 });

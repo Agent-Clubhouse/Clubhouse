@@ -10,6 +10,8 @@
  * should be a rename, not a redesign.
  */
 
+import type { ChatImage } from '../../../shared/chat';
+
 /** Claude Code's native permission modes. `-p` may start in `auto`, so callers always pass one. */
 export type ClaudePermissionMode = 'default' | 'acceptEdits' | 'bypassPermissions' | 'plan' | 'dontAsk' | 'auto';
 
@@ -74,6 +76,8 @@ export type ClaudeChatEventBody =
       status: 'completed' | 'failed';
       /** Text form of the tool_result content sent to the model. */
       content: string;
+      /** Image blocks in the tool_result content. */
+      images?: ChatImage[];
       /** The CLI's typed `tool_use_result` (e.g. `structuredPatch` for edits). */
       result?: unknown;
       parentToolCallId?: string;

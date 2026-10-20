@@ -21,9 +21,10 @@ import {
   toolTarget,
   type DiffLine,
 } from './view-model';
-import { AgentsIcon, BrainIcon, ChevronDown, ChevronRight, EditIcon, FileIcon, GlobeIcon, SearchIcon, TerminalIcon, ToolIcon } from './icons';
+import { AgentsIcon, BrainIcon, ChevronDown, ChevronRight, EditIcon, FileIcon, GlobeIcon, ImageIcon, SearchIcon, TerminalIcon, ToolIcon } from './icons';
 import { AgentMessage, ThoughtRow } from './MessageBlocks';
 import { RichText } from './rich/RichLinks';
+import { ChatMediaContext, ToolImages } from './rich/ChatImages';
 
 const KIND_ICONS: Record<ToolKind, (p: { className?: string }) => ReactNode> = {
   read: FileIcon,
@@ -162,6 +163,7 @@ export function ToolRow({ tool }: { tool: ToolCallItem }) {
         <span className="ml-auto flex items-center gap-1.5 text-[11.5px] text-ctp-overlay0 whitespace-nowrap"><StatusMeta tool={tool} /></span>
       </div>
       {error && <div className="ml-6 text-[12px] text-ctp-error break-words">{error}</div>}
+      <ToolImages media={tool.media} className="ml-6" />
     </div>
   );
 }
@@ -356,8 +358,10 @@ export function ToolCard({ tool, mcpServers, expansionKey }: { tool: ToolCallIte
   const result = useMemo(() => toolResultText(tool), [tool]);
   const error = toolErrorText(tool, result);
   const [open, toggle] = useToolOpen(tool.status, expansionKey);
-  const Ico = KIND_ICONS[tool.toolKind] ?? ToolIcon;
-  const label = mcp ? `${mcp.server} · ${mcp.tool}` : KIND_VERBS[tool.toolKind];
+  // A call that only carries an image (a generated image): shown as an image, not a generic tool.
+  const mediaOnly = useContext(ChatMediaContext) !== null && tool.mediaOnly === true;
+  const Ico = mediaOnly ? ImageIcon : KIND_ICONS[tool.toolKind] ?? ToolIcon;
+  const label = mcp ? `${mcp.server} · ${mcp.tool}` : mediaOnly ? 'Image' : KIND_VERBS[tool.toolKind];
   const summary = mcp ? argSummary(tool) : toolTarget(tool);
   // Built-in tools show their input only when it isn't already the summary (e.g. a path).
   const showArgs = args !== null && (mcp !== null || tool.toolKind === 'other');
@@ -384,6 +388,8 @@ export function ToolCard({ tool, mcpServers, expansionKey }: { tool: ToolCallIte
           )}
         </div>
       )}
+      {/* Images, like the error, stay visible on a collapsed card: they're the outcome. */}
+      <ToolImages media={tool.media} className="px-3 border-t border-surface-0" />
       {/* The error stays visible on a collapsed card: it's the outcome, not detail. */}
       {error && <div className="px-3 py-1.5 text-[12px] text-ctp-error border-t border-surface-0 break-words" data-testid="chat-tool-error">{error}</div>}
     </div>

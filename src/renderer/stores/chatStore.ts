@@ -24,6 +24,7 @@ import type {
   ChatDriverId,
   ChatEvent,
   ChatEventDataMap,
+  ChatImage,
   ChatQuestion,
   ChatQuestionAnswers,
   ChatSessionState,
@@ -94,6 +95,10 @@ export interface ToolCallItem extends ChatItemBase {
   rawInput?: unknown;
   locations?: ToolCallLocation[];
   content: ToolCallContent[];
+  /** Images the call returned (rich chat content), by media reference or remote link. */
+  media?: ChatImage[];
+  /** The call only carries its images (a generated image). */
+  mediaOnly?: boolean;
   subagentId?: string;
   rawOutput?: unknown;
   durationMs?: number;
@@ -317,6 +322,14 @@ function findItemIndex(items: ChatItem[], id: string): number {
     if (items[i].id === id) return i;
   }
   return -1;
+}
+
+/** A call's images plus new ones; a stored image or link already there isn't added twice. */
+function mergeMedia(existing: ChatImage[] | undefined, added: ChatImage[]): ChatImage[] {
+  const key = (m: ChatImage) => m.mediaRef ?? m.uri ?? '';
+  const seen = new Set((existing ?? []).map(key));
+  const fresh = added.filter((m) => { const k = key(m); if (!k || seen.has(k)) return false; seen.add(k); return true; });
+  return fresh.length ? [...(existing ?? []), ...fresh] : existing ?? [];
 }
 
 /** Insert `item` or update the existing item with the same id via `update`. */
@@ -676,12 +689,13 @@ export function reduceChatEvent(prev: ChatViewState | undefined, event: ChatEven
         ...(d.rawInput !== undefined && { rawInput: d.rawInput }),
         ...(d.locations !== undefined && { locations: d.locations }),
         ...(d.subagentId !== undefined && { subagentId: d.subagentId }),
+        ...(d.mediaOnly && { mediaOnly: true }),
       };
       const items = upsertItem<ToolCallItem>(
         state.items,
         id,
-        () => ({ ...itemBase(event, id), kind: 'tool_call', toolCallId: d.toolCallId, content: d.content ?? [], ...fields }),
-        (existing) => ({ ...existing, ...fields, content: d.content ?? existing.content }),
+        () => ({ ...itemBase(event, id), kind: 'tool_call', toolCallId: d.toolCallId, content: d.content ?? [], ...fields, ...(d.media?.length && { media: d.media }) }),
+        (existing) => ({ ...existing, ...fields, content: d.content ?? existing.content, ...(d.media?.length && { media: mergeMedia(existing.media, d.media) }) }),
       );
       return { ...state, items };
     }
@@ -695,6 +709,7 @@ export function reduceChatEvent(prev: ChatViewState | undefined, event: ChatEven
         if (d.content !== undefined) {
           next.content = d.contentMode === 'append' ? [...existing.content, ...d.content] : d.content;
         }
+        if (d.media?.length) next.media = mergeMedia(existing.media, d.media);
         if (d.rawOutput !== undefined) next.rawOutput = d.rawOutput;
         if (d.durationMs !== undefined) next.durationMs = d.durationMs;
         if (d.error !== undefined) next.error = d.error;

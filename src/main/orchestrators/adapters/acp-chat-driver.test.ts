@@ -357,6 +357,28 @@ describe('ACP → chat contract mapping', () => {
     expect(id(c)).not.toBe(id(a));
   });
 
+  it('maps image content in tool calls and in the agent message', () => {
+    const mapper = new AcpChatEventMapper('copilot_acp');
+    const u = (update: Record<string, unknown>) => mapper.map({ type: 'update', sessionId: 's1', replay: false, update: update as never }, state());
+    mapper.map({ type: 'turn_started', sessionId: 's1' }, state());
+    const image = { type: 'image', data: 'iVBORw0KGgo=', mimeType: 'image/png' };
+    expect(u({ sessionUpdate: 'tool_call', toolCallId: 't', title: 'Screenshot', kind: 'read', content: [{ type: 'content', content: image }] })[0].data)
+      .toMatchObject({ toolCallId: 't', content: [], media: [{ type: 'image', mimeType: 'image/png', data: 'iVBORw0KGgo=' }] });
+    expect(u({ sessionUpdate: 'tool_call_update', toolCallId: 't', status: 'completed', content: [{ type: 'content', content: { type: 'image', mimeType: 'image/jpeg', data: '', uri: 'https://example.com/a.jpg' } }] })[0].data)
+      .toMatchObject({ media: [{ type: 'image', mimeType: 'image/jpeg', uri: 'https://example.com/a.jpg' }] });
+    const [msgImage] = u({ sessionUpdate: 'agent_message_chunk', content: image });
+    expect(msgImage).toMatchObject({ type: 'tool_call', data: { kind: 'other', title: 'Image', status: 'completed', toolName: 'image', mediaOnly: true, media: [{ type: 'image', mimeType: 'image/png', data: 'iVBORw0KGgo=' }] } });
+    // The image leaves the reply in one message: dropped with rich content off, text is as before.
+    const text = (t: string) => u({ sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: t } })[0];
+    const before = text('a');
+    u({ sessionUpdate: 'agent_message_chunk', content: image });
+    const after = text('b');
+    expect(after.type === 'agent_message_chunk' && before.type === 'agent_message_chunk' && after.data.messageId === before.data.messageId).toBe(true);
+    // Thought images and replayed chunks aren't shown.
+    expect(u({ sessionUpdate: 'agent_thought_chunk', content: image })).toEqual([]);
+    expect(mapper.map({ type: 'update', sessionId: 's1', replay: true, update: { sessionUpdate: 'agent_message_chunk', content: image } as never }, state())).toEqual([]);
+  });
+
   it('maps plans, notices and USD cost', () => {
     const mapper = new AcpChatEventMapper('copilot_acp');
     const u = (update: Record<string, unknown>) => mapper.map({ type: 'update', sessionId: 's1', replay: false, update: update as never }, state());

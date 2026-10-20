@@ -1,9 +1,15 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach, afterAll } from 'vitest';
 import type { ChatEvent, ChatCapabilities } from '../../../shared/chat';
 import { MINIMAL_CHAT_CAPABILITIES } from '../../../shared/chat';
 
 const transcript: ChatEvent[] = [];
+const mediaRoot = vi.hoisted(() => {
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const fs = require('fs') as typeof import('fs'); const os = require('os') as typeof import('os'); const path = require('path') as typeof import('path');
+  return fs.mkdtempSync(path.join(os.tmpdir(), 'chat-runtime-media-'));
+});
 vi.mock('./chat-transcript', () => ({
+  agentMediaDir: (agentId: string) => `${mediaRoot}/${agentId}/media`,
   appendChatEvent: vi.fn(async (e: ChatEvent) => { transcript.push(e); }),
   readChatTranscript: vi.fn(async (_agentId: string, opts: { sessionId?: string; afterSeq?: number; tail?: number } = {}) => {
     let events = opts.sessionId ? transcript.filter((e) => e.sessionId === opts.sessionId) : [...transcript];
@@ -65,6 +71,51 @@ beforeEach(() => {
 
 afterEach(() => {
   vi.useRealTimers();
+});
+
+describe('ChatAgentRuntime rich media', () => {
+  const PNG = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0, 13, 0x49, 0x48, 0x44, 0x52, 0, 0, 0, 2, 0, 0, 0, 2, 8, 6, 0, 0, 0]).toString('base64');
+
+  afterAll(async () => {
+    (await import('fs')).rmSync(mediaRoot, { recursive: true, force: true });
+  });
+
+  async function run(richMedia: boolean): Promise<ChatEvent[]> {
+    const fs = await import('fs');
+    fs.mkdirSync(`${mediaRoot}/agent-1`, { recursive: true });
+    const driver = new FakeChatDriver();
+    const published: ChatEvent[] = [];
+    onChatEvent((e) => published.push(e));
+    const { runtime } = makeRuntime(driver, { richMedia: () => richMedia });
+    await runtime.start();
+    driver.last.emit({ type: 'tool_call', data: { toolCallId: 'r1', kind: 'read', title: 'Read a.png', status: 'pending', toolName: 'Read' } });
+    driver.last.emit({ type: 'tool_call_update', data: { toolCallId: 'r1', status: 'completed', media: [{ type: 'image', mimeType: 'image/png', data: PNG }] } });
+    driver.last.emit({ type: 'tool_call', data: { toolCallId: 'g1', kind: 'other', title: 'Generating image', status: 'in_progress', toolName: 'imageGeneration', mediaOnly: true } });
+    driver.last.emit({ type: 'tool_call_update', data: { toolCallId: 'g1', status: 'completed', media: [{ type: 'image', mimeType: 'image/png', data: PNG }] } });
+    driver.last.emit({ type: 'agent_message', data: { messageId: 'm1', text: 'Done.' } });
+    // Storing images is real file work: wait for the last event rather than a fixed number of ticks.
+    await vi.waitFor(() => expect(transcript.some((e) => e.type === 'agent_message')).toBe(true));
+    expect(published).toEqual(transcript);
+    return transcript.filter((e) => e.type !== 'session_started' && e.type !== 'session_state');
+  }
+
+  it('with the flag off, writes no images and no media-only calls, with no gaps in seq', async () => {
+    const events = await run(false);
+    expect(events.map((e) => [e.type, (e.data as { toolCallId?: string }).toolCallId])).toEqual([
+      ['tool_call', 'r1'], ['tool_call_update', 'r1'], ['agent_message', undefined],
+    ]);
+    expect(events[1].data).toEqual({ toolCallId: 'r1', status: 'completed' });
+    expect(transcript.map((e) => e.seq)).toEqual(transcript.map((_, i) => i + 1));
+  });
+
+  it('with the flag on, stores images by reference and never writes their bytes', async () => {
+    const events = await run(true);
+    expect(events.map((e) => [e.type, (e.data as { toolCallId?: string }).toolCallId])).toEqual([
+      ['tool_call', 'r1'], ['tool_call_update', 'r1'], ['tool_call', 'g1'], ['tool_call_update', 'g1'], ['agent_message', undefined],
+    ]);
+    expect(events[1].data).toEqual({ toolCallId: 'r1', status: 'completed', media: [{ type: 'image', mimeType: 'image/png', mediaRef: expect.stringMatching(/^[0-9a-f]{64}\.png$/), width: 2, height: 2 }] });
+    expect(JSON.stringify(transcript)).not.toContain(PNG);
+  });
 });
 
 describe('ChatAgentRuntime', () => {

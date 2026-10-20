@@ -935,6 +935,7 @@ export class ClaudeChatDriverSession implements ChatDriverSession {
             toolCallId: ev.toolCallId,
             status: ev.status,
             content: claudeToolContent(tool.name, tool.input, ev.result, ev.content, this.opts.cwd),
+            ...(ev.images?.length && { media: ev.images }),
             rawOutput: ev.result,
             error: ev.status === 'failed' ? ev.content : undefined,
           },

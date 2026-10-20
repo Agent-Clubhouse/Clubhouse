@@ -27,9 +27,14 @@ export type StreamBlock = ItemBlock | ExploreBlock | SubagentBlock;
 
 const READ_ONLY_KINDS = new Set(['read', 'search', 'fetch', 'think']);
 
-/** A tool call that only looks around: no diff or output, didn't fail. */
-export function isExploreTool(item: ChatItem): item is ToolCallItem {
+/**
+ * A tool call that only looks around: no diff or output, didn't fail. With
+ * `mediaVisible` (rich chat content), a call that returned images isn't
+ * folded away either: the images are worth seeing.
+ */
+export function isExploreTool(item: ChatItem, mediaVisible = false): item is ToolCallItem {
   if (item.kind !== 'tool_call') return false;
+  if (mediaVisible && item.media?.length) return false;
   if (!READ_ONLY_KINDS.has(item.toolKind)) return false;
   if (item.status === 'failed' || item.status === 'pending') return false;
   return !item.content.some((c) => c.type === 'diff' || c.type === 'terminal');
@@ -43,7 +48,7 @@ export function isExploreTool(item: ChatItem): item is ToolCallItem {
  *   or 'none' they stay in the main stream as ordinary rows.
  * - Two or more consecutive read-only tools fold into an ExploreBlock.
  */
-export function buildStreamBlocks(state: Pick<ChatViewState, 'items' | 'subagents' | 'capabilities'>): StreamBlock[] {
+export function buildStreamBlocks(state: Pick<ChatViewState, 'items' | 'subagents' | 'capabilities'>, opts: { mediaVisible?: boolean } = {}): StreamBlock[] {
   const { items, subagents } = state;
   const nestSubagents = state.capabilities?.subagents === 'full';
 
@@ -106,7 +111,7 @@ export function buildStreamBlocks(state: Pick<ChatViewState, 'items' | 'subagent
       continue;
     }
     const item = entry as ChatItem;
-    if (isExploreTool(item)) {
+    if (isExploreTool(item, opts.mediaVisible)) {
       run.push(item);
       continue;
     }

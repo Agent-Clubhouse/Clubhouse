@@ -16,6 +16,14 @@ function segment(id: string): string {
 function sessionDir(agentId: string): string {
   return path.join(transcriptDir(), segment(agentId));
 }
+/**
+ * The agent's rich-content media folder, inside its transcript folder. Only
+ * written once that folder exists (the transcript created it), so media can't
+ * make an unmigrated legacy log look migrated.
+ */
+export function agentMediaDir(agentId: string): string {
+  return path.join(sessionDir(agentId), 'media');
+}
 /** Without a session id, returns the legacy path (read-only after migration). */
 export function transcriptPath(agentId: string, sessionId?: string): string {
   return sessionId === undefined

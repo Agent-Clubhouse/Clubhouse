@@ -49,6 +49,7 @@ import * as permissionQueue from '../annex-permission-queue';
 import { broadcastToAllWindows } from '../../util/ipc-broadcast';
 import { IPC } from '../../../shared/ipc-channels';
 import { appLog } from '../log-service';
+import { ChatMediaPolicy } from './chat-media';
 import { agentRegistry } from '../agent-registry';
 import { ACCESS_LEVELS, accessLevelOf, launchAccessForChatLevel } from '../../../shared/orchestration-policy';
 
@@ -76,6 +77,10 @@ export interface ChatAgentRuntimeOptions {
   provider: string;
   driverId: ChatDriverId;
   cwd: string;
+  /** The agent's project, a root rich-content images may be read from besides `cwd`. */
+  projectPath?: string;
+  /** Whether rich chat content (inline images) is on; read per event. Off when absent. */
+  richMedia?: () => boolean;
   /**
    * Starts (or resumes) a driver session. Called once at start and again after
    * clearContext(). `signal` aborts when stop() or abandon() cancels the start.
@@ -186,12 +191,20 @@ export class ChatAgentRuntime implements AgentRuntime {
   private readonly exitListeners = new Set<(info: RuntimeExitInfo) => void>();
   private readonly eventListeners = new Set<(event: ChatEvent) => void>();
 
+  /** Stores images out of events, or drops them while rich chat content is off. */
+  private readonly media: ChatMediaPolicy;
+
   constructor(private readonly opts: ChatAgentRuntimeOptions) {
     this.agentId = opts.agentId;
     this.sessionId = opts.sessionId ?? opts.newId?.() ?? randomUUID();
     this.seq = opts.lastSeq ?? 0;
     this.now = opts.now ?? Date.now;
     this.newId = opts.newId ?? randomUUID;
+    this.media = new ChatMediaPolicy({
+      agentId: opts.agentId,
+      enabled: () => opts.richMedia?.() === true,
+      roots: () => [opts.cwd, ...(opts.projectPath ? [opts.projectPath] : [])],
+    });
   }
 
   // ── Lifecycle ──────────────────────────────────────────────────────────
@@ -766,6 +779,13 @@ export class ChatAgentRuntime implements AgentRuntime {
 
   private emit(draft: ChatEventDraft): Promise<void> {
     const next = this.emitChain.then(async () => {
+      const prepared = await this.media.apply(draft).catch((err: unknown) => {
+        // Never lose the event: write it without its images instead.
+        appLog('core:chat', 'warn', 'Chat media step failed', { meta: { agentId: this.agentId, error: err instanceof Error ? err.message : String(err) } });
+        return this.media.withoutMedia(draft);
+      });
+      if (!prepared) return;
+      draft = prepared;
       const event = {
         v: CHAT_CONTRACT_VERSION,
         agentId: this.agentId,

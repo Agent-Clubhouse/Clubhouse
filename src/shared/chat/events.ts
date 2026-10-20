@@ -125,6 +125,30 @@ export type ToolCallContent =
       exitCode?: number;
     };
 
+/**
+ * An image a tool returned or produced (experimental rich chat content):
+ * Claude tool-result image blocks, Codex imageGeneration / imageView / MCP
+ * images, ACP image content. Drivers send base64 `data` or a `sourcePath`;
+ * the runtime stores the bytes as a file under the agent's media folder and
+ * replaces them with `mediaRef` before the event is written or published, so
+ * transcripts never hold image bytes. With the flag off the runtime drops
+ * `media` altogether.
+ */
+export interface ChatImage {
+  type: 'image';
+  mimeType: string;
+  /** `<sha256>.<ext>` in the agent's media folder; read it back over IPC. */
+  mediaRef?: string;
+  width?: number;
+  height?: number;
+  /** The file the image came from, when it came from disk (Codex imageView). */
+  sourcePath?: string;
+  /** A remote image: never fetched until the user asks. */
+  uri?: string;
+  /** Base64 bytes from the driver. Never written or published. */
+  data?: string;
+}
+
 /** Normalized permission option kinds. `label` keeps the provider's own wording. */
 export type PermissionOptionKind =
   | 'allow_once'
@@ -348,6 +372,14 @@ export interface ChatEventDataMap {
     rawInput?: unknown;
     locations?: ToolCallLocation[];
     content?: ToolCallContent[];
+    /** Images the call returned or produced (rich chat content). */
+    media?: ChatImage[];
+    /**
+     * The call exists only to carry its images (a Codex generated image, an
+     * image in an ACP agent's reply). With rich chat content off the runtime
+     * drops it and its updates.
+     */
+    mediaOnly?: boolean;
     /** Set when the call belongs to a subagent. */
     subagentId?: string;
   };
@@ -358,6 +390,8 @@ export interface ChatEventDataMap {
     content?: ToolCallContent[];
     /** 'append' adds to existing content (streamed output); 'replace' swaps it. Default 'replace'. */
     contentMode?: 'append' | 'replace';
+    /** More images; always added to the call's earlier ones. */
+    media?: ChatImage[];
     rawOutput?: unknown;
     durationMs?: number;
     error?: string;

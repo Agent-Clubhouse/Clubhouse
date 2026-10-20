@@ -24,6 +24,8 @@ import { touchSessionEntry } from '../agent-config';
 import { broadcastAgentExit } from '../agent-exit-broadcast';
 import { appLog } from '../log-service';
 import { resolveRuntimeMode } from '../chat-runtime-settings';
+import { getSettings as getExperimentalSettings } from '../experimental-settings';
+import { RICH_CHAT_CONTENT_FLAG } from '../../../shared/chat';
 import type { ChatDriver } from '../../../shared/chat';
 import type { McpHttpEndpoint } from '../../../shared/chat/runtime';
 import { IPC } from '../../../shared/ipc-channels';
@@ -485,6 +487,8 @@ async function runChatStart(
       provider: provider.id,
       driverId: driver.id,
       cwd: params.cwd,
+      projectPath: params.projectPath,
+      richMedia: () => getExperimentalSettings()[RICH_CHAT_CONTENT_FLAG] === true,
       level,
       // A resumed session already has its instructions; only new sessions need them.
       systemPrompt: resumeNativeSessionId ? undefined : params.systemPrompt,
