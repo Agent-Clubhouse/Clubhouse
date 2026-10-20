@@ -4,7 +4,6 @@ import { MINIMAL_CHAT_CAPABILITIES } from '../../../shared/chat';
 
 const transcript: ChatEvent[] = [];
 const mediaRoot = vi.hoisted(() => {
-  // eslint-disable-next-line @typescript-eslint/no-require-imports
   const fs = require('fs') as typeof import('fs'); const os = require('os') as typeof import('os'); const path = require('path') as typeof import('path');
   return fs.mkdtempSync(path.join(os.tmpdir(), 'chat-runtime-media-'));
 });
