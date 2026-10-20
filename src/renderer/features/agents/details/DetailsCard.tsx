@@ -64,11 +64,26 @@ export function CardNote({ children }: { children: ReactNode }) {
   return <p className="pr-3.5 pl-[33px] pt-0.5 pb-1.5 text-xs leading-normal text-ctp-overlay1">{children}</p>;
 }
 
-/** A key / value row (Session card). */
-export function CardRow({ label, children }: { label: string; children: ReactNode }) {
+/** A key / value row (Session and Settings cards). */
+export function CardRow({ label, children, labelWidth, testId, describedBy, locked }: {
+  label: string;
+  children: ReactNode;
+  /** Room for longer labels ("Clubhouse mode") on one line. */
+  labelWidth?: 'wide';
+  testId?: string;
+  /** The id of a note about this row, such as why it can't change now. */
+  describedBy?: string;
+  /** The row's value can't be changed now (Settings card). */
+  locked?: boolean;
+}) {
   return (
-    <div className="min-h-[26px] flex items-baseline gap-2.5 py-[3px] pr-3.5 pl-[33px] text-xs">
-      <span className="flex-shrink-0 w-[72px] text-ctp-overlay1">{label}</span>
+    <div
+      className="min-h-[26px] flex items-baseline gap-2.5 py-[3px] pr-3.5 pl-[33px] text-xs"
+      data-testid={testId}
+      data-locked={locked || undefined}
+      aria-describedby={describedBy}
+    >
+      <span className={`flex-shrink-0 ${labelWidth === 'wide' ? 'w-[96px]' : 'w-[72px]'} text-ctp-overlay1`}>{label}</span>
       <span className="min-w-0 text-ctp-text break-words">{children}</span>
     </div>
   );

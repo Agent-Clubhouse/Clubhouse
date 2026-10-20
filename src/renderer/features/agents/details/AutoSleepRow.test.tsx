@@ -19,7 +19,7 @@ let saved: Record<string, unknown>;
 beforeEach(() => {
   saved = {};
   useProjectStore.setState({ projects: [{ id: 'p1', name: 'proj', path: '/work/proj' }] as never });
-  useAgentDetailsStore.setState({ open: true, focus: null });
+  useAgentDetailsStore.setState({ open: true, settingsOpen: false, focus: null });
   useChatIdleSettingsStore.setState({ idleTimeoutMinutes: 30 } as never);
   window.clubhouse.settings.get = vi.fn(async () => ({ idleTimeoutMinutes: 30 })) as never;
   window.clubhouse.git.branchChanges = vi.fn(async () => ({ available: false, files: [] }));
@@ -33,9 +33,9 @@ afterEach(() => {
   useProjectStore.setState({ projects: [] });
 });
 
-function openSession() {
-  fireEvent.click(screen.getByTestId('details-card-session-toggle'));
-  return within(screen.getByTestId('details-card-session'));
+function openSettings() {
+  fireEvent.click(screen.getByTestId('details-card-settings-toggle'));
+  return within(screen.getByTestId('details-card-settings'));
 }
 
 describe('autoSleepSource', () => {
@@ -46,10 +46,10 @@ describe('autoSleepSource', () => {
   });
 });
 
-describe('Auto-sleep in the Session card (#2143)', () => {
+describe('Auto-sleep in the Settings card (#2143, #2280)', () => {
   it('shows the app default for an agent that inherits', async () => {
     render(<AgentDetails agent={agent} chat={chat} />);
-    const card = openSession();
+    const card = openSettings();
     const select = card.getByTestId('details-auto-sleep') as HTMLSelectElement;
     await waitFor(() => expect(select).not.toBeDisabled());
     expect(select.value).toBe('inherit');
@@ -60,7 +60,7 @@ describe('Auto-sleep in the Session card (#2143)', () => {
 
   it('saves the agent\'s own value, and clears it back to inherit', async () => {
     render(<AgentDetails agent={agent} chat={chat} />);
-    const card = openSession();
+    const card = openSettings();
     const select = card.getByTestId('details-auto-sleep') as HTMLSelectElement;
     await waitFor(() => expect(select).not.toBeDisabled());
 
@@ -80,7 +80,7 @@ describe('Auto-sleep in the Session card (#2143)', () => {
   it('shows a saved value, including one outside the list', async () => {
     saved = { idleSleep: 45 };
     render(<AgentDetails agent={agent} chat={chat} />);
-    const select = openSession().getByTestId('details-auto-sleep') as HTMLSelectElement;
+    const select = openSettings().getByTestId('details-auto-sleep') as HTMLSelectElement;
     await waitFor(() => expect(select.value).toBe('45'));
     expect(screen.getByRole('option', { name: 'After 45 min idle' })).toBeInTheDocument();
   });
@@ -89,7 +89,7 @@ describe('Auto-sleep in the Session card (#2143)', () => {
     saved = { idleSleep: 60 };
     window.clubhouse.agent.updateDurableConfig = vi.fn(async () => { throw new Error('disk full'); }) as never;
     render(<AgentDetails agent={agent} chat={chat} />);
-    const card = openSession();
+    const card = openSettings();
     const select = card.getByTestId('details-auto-sleep') as HTMLSelectElement;
     await waitFor(() => expect(select.value).toBe('60'));
     fireEvent.change(select, { target: { value: 'never' } });
@@ -99,7 +99,7 @@ describe('Auto-sleep in the Session card (#2143)', () => {
 
   it('is left out for terminal agents, which don\'t idle-sleep', () => {
     render(<AgentDetails agent={agent} />);
-    expect(openSession().queryByTestId('details-auto-sleep')).not.toBeInTheDocument();
+    expect(openSettings().queryByTestId('details-auto-sleep')).not.toBeInTheDocument();
   });
 
   it('works in a popout, which has no project list, by asking main for the folder', async () => {
@@ -110,7 +110,7 @@ describe('Auto-sleep in the Session card (#2143)', () => {
     window.clubhouse.project.list = vi.fn(async () => [{ id: 'p1', name: 'proj', path: '/work/proj' }]) as never;
     try {
       render(<AgentDetails agent={agent} chat={chat} />);
-      const card = openSession();
+      const card = openSettings();
       const select = await card.findByTestId('details-auto-sleep') as HTMLSelectElement;
       await waitFor(() => expect(select).not.toBeDisabled());
       fireEvent.change(select, { target: { value: '240' } });

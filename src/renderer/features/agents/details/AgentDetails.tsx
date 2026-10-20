@@ -4,12 +4,12 @@
  * replaces the old Agents and Changes side panels. There is no pane to pin or
  * resize; the chat column moves left so no card covers a message.
  *
- * The cards, each collapsed to a one-line answer until clicked: Changes,
- * Subagents, Canvases, Orchestrate, Helpers, Connections, Context window, MCP
- * servers and Session. Cards the runtime can't fill are left out (#2094):
- * Subagents when the agent doesn't report them (the terminal, or a driver
- * without subagents) and Context window until the agent reports how full it
- * is. The orchestration cards (#2232) are for local durable agents:
+ * The cards, each collapsed to a one-line answer until clicked: Settings
+ * (#2280), Changes, Subagents, Canvases, Orchestrate, Helpers, Connections,
+ * Context window, MCP servers and Session. Cards the runtime can't fill
+ * are left out (#2094): Subagents when the agent doesn't report them (the
+ * terminal, or a driver without subagents) and Context window until the
+ * agent reports how full it is. The orchestration cards (#2232) are for local durable agents:
  * Orchestrate for any that isn't itself a helper, Helpers once it
  * orchestrates or has helpers, Connections once it orchestrates or has wires.
  */
@@ -27,10 +27,10 @@ import { jumpToCanvas, useAgentCanvases } from './agent-canvases';
 import { getOrchestratorLabel } from '../orchestrator-colors';
 import { DRIVER_LABELS, limitLabel, limitName } from '../chat/ChatHeader';
 import { SubagentList, subagentSummary } from '../chat/AgentMapPanel';
-import { buildAgentMap, formatCost, formatDuration, formatTokens, LEVEL_LABELS } from '../chat/view-model';
+import { buildAgentMap, formatCost, formatDuration, formatTokens } from '../chat/view-model';
 import { ChangesCard, type ChangesScope } from './ChangesCard';
 import { CardNote, CardRow, DetailsCard, UsageBar } from './DetailsCard';
-import { AutoSleepRow } from './AutoSleepRow';
+import { SettingsCard } from './SettingsCard';
 import { McpCard } from './McpCard';
 import { useAgentDetailsStore } from './detailsStore';
 import { useMcpBindingStore } from '../../../stores/mcpBindingStore';
@@ -223,15 +223,13 @@ export function AgentDetails({ agent, chat, onShowInStream, missedSubagentId, on
   const ctx = chat && chat.capabilities && chat.capabilities.usage !== 'none' ? chat.usage.context : null;
   const ctxPct = ctx && ctx.size > 0 ? Math.min(100, Math.round((ctx.used / ctx.size) * 100)) : null;
 
-  // Session
-  const model = chat?.model ?? agent.model;
-  const shownModel = model && model !== 'default' ? model : null;
+  // Session: live stats only; the settings are in the Settings card.
   const session = chat?.usage.session;
   const cost = session?.costUsd !== undefined ? formatCost(session.costUsd, session.costIsEstimate) : null;
   // Drivers without a session total (ACP) report per turn: sum those.
   const tokens = tokensOf(session?.tokens ?? chat?.usage.turnTotal ?? undefined);
   const runningFor = running && spawnedAt ? formatDuration(now - spawnedAt) : null;
-  const sessionSummary = [shownModel, runningFor, cost].filter(Boolean).join(' · ');
+  const sessionSummary = [runningFor, cost].filter(Boolean).join(' · ');
   const limits = chat?.capabilities?.limits ? chat.usage.limits : [];
 
   return (
@@ -264,6 +262,8 @@ export function AgentDetails({ agent, chat, onShowInStream, missedSubagentId, on
           </button>
         </Tooltip>
       </div>
+
+      <SettingsCard agent={agent} chat={chat} projectPath={projectPath} provider={provider} />
 
       <ChangesCard
         open={open('changes')}
@@ -367,10 +367,6 @@ export function AgentDetails({ agent, chat, onShowInStream, missedSubagentId, on
           {provider}
           {chat?.driver ? <span className="text-ctp-overlay1"> · {DRIVER_LABELS[chat.driver] ?? chat.driver}{chat.cliVersion ? ` ${chat.cliVersion}` : ''}</span> : !chat ? <span className="text-ctp-overlay1"> · terminal</span> : null}
         </CardRow>
-        {/* Only chat agents idle-sleep; agents on another machine keep their config there. */}
-        {chat && agent.kind === 'durable' && projectPath && !isRemoteProjectId(agent.projectId) && <AutoSleepRow agent={agent} projectPath={projectPath} />}
-        {shownModel && <CardRow label="Model">{shownModel}{chat?.effort ? <span className="text-ctp-overlay1"> · {chat.effort} effort</span> : null}</CardRow>}
-        {chat?.level && <CardRow label="Level">{chat.levelNames?.[chat.level] ?? LEVEL_LABELS[chat.level]}</CardRow>}
         <CardRow label="Usage">
           {cost || tokens ? <>{cost}{cost && tokens ? <span className="text-ctp-overlay1"> · </span> : null}{tokens ? <span className={cost ? 'text-ctp-overlay1' : ''}>{formatTokens(tokens)} tokens</span> : null}</>
             : <span className="text-ctp-overlay1">{chat ? 'none yet' : 'not reported in the terminal'}</span>}
