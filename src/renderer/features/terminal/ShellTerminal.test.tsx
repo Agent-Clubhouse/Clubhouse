@@ -30,7 +30,6 @@ vi.mock('@xterm/xterm', () => {
     rows = 24;
     constructor(opts?: any) {
       (globalThis as any).__testTerminal = this;
-      (globalThis as any).__testTerminalOpts = opts;
       if (opts?.theme) this.options.theme = opts.theme;
     }
   }
@@ -126,7 +125,7 @@ describe('ShellTerminal', () => {
       window.clubhouse.windowsPty = { backend: 'conpty', buildNumber: 22631 };
       try {
         render(<ShellTerminal sessionId="shell-1" />);
-        expect(g.__testTerminalOpts.windowsPty).toEqual({ backend: 'conpty', buildNumber: 22631 });
+        expect(term().options.windowsPty).toEqual({ backend: 'conpty', buildNumber: 22631 });
       } finally {
         window.clubhouse.windowsPty = undefined;
       }
@@ -134,7 +133,20 @@ describe('ShellTerminal', () => {
 
     it('leaves windowsPty unset off Windows', () => {
       render(<ShellTerminal sessionId="shell-1" />);
-      expect(g.__testTerminalOpts).not.toHaveProperty('windowsPty');
+      expect(term().options).not.toHaveProperty('windowsPty');
+    });
+
+    it('drops the local Windows pty hint when the terminal switches to a remote IO', () => {
+      window.clubhouse.windowsPty = { backend: 'conpty', buildNumber: 22631 };
+      try {
+        const { rerender } = render(<ShellTerminal sessionId="shell-1" />);
+        expect(term().options.windowsPty).toEqual({ backend: 'conpty', buildNumber: 22631 });
+        const remoteIO = { ...window.clubhouse.pty };
+        rerender(<ShellTerminal sessionId="shell-1" io={remoteIO} />);
+        expect(term().options.windowsPty).toEqual({});
+      } finally {
+        window.clubhouse.windowsPty = undefined;
+      }
     });
 
     it('opens terminal on the container element', () => {

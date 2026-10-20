@@ -94,7 +94,6 @@ export function ShellTerminal({ sessionId, focused, io }: Props) {
       cursorStyle: 'bar',
       allowProposedApi: true,
       allowTransparency: true,
-      ...localWindowsPtyOptions(),
     });
 
     const fitAddon = new FitAddon();
@@ -177,6 +176,12 @@ export function ShellTerminal({ sessionId, focused, io }: Props) {
   useEffect(() => {
     const term = terminalRef.current;
     if (!term) return;
+
+    // Only a local PTY can be ConPTY. A remote (canvas satellite) PTY's
+    // platform is unknown, so it gets no hint (#2320). Set here rather than at
+    // creation because `io` can change while the terminal stays mounted.
+    const windowsPty = io ? {} : (localWindowsPtyOptions().windowsPty ?? {});
+    if (windowsPty.backend !== term.options.windowsPty?.backend) term.options.windowsPty = windowsPty;
 
     const pty = ptyRef.current;
 
