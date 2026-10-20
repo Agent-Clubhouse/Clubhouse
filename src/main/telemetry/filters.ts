@@ -49,8 +49,9 @@ export const USER_ACTIVITY = {
     'clubhouse.telemetry.enabled',
     'clubhouse.telemetry.disabled',
     'clubhouse.ui.feature_used',
-    // A hang the user felt (#2126); at most six a minute.
+    // A hang or slow interaction the user felt (#2126, #2307); at most six a minute between them.
     'clubhouse.ui.hang',
+    'clubhouse.ui.slow_interaction',
     'clubhouse.popout.opened',
     'clubhouse.settings.changed',
     'clubhouse.theme.changed',

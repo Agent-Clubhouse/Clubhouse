@@ -7,7 +7,7 @@ import * as http from 'http';
 import { randomUUID, timingSafeEqual } from 'crypto';
 import { appLog } from '../log-service';
 import { getAgentNonce, agentRegistry } from '../agent-registry';
-import { getScopedToolList, callTool, parseToolName, buildToolKey, isGlobalTool } from './tool-registry';
+import { getScopedToolList, callTool, parseToolName, buildToolKey, isGlobalTool, refusalReasonOf } from './tool-registry';
 import { bindingManager } from './binding-manager';
 import { onOrchestrationGateChange } from './orchestration-gate';
 import { emitAgentMcpConnected } from './connection-events';
@@ -201,15 +201,19 @@ async function handleToolsCall(
     return jsonRpcError(id, -32602, 'Missing tool name');
   }
 
+  // Argument names only: values carry message bodies and never go in any log tier (#2308).
   appLog('core:mcp', 'info', 'Tool call', {
-    meta: { agentId, toolName, args: Object.keys(args) },
+    meta: { agentId, toolName, argKeys: Object.keys(args) },
   });
 
   const callStartMs = Date.now();
   const isGlobal = isGlobalTool(toolName);
   try {
     const result = await callTool(agentId, toolName, args);
-    recordMcpToolCall(toolName, callStartMs, result.isError ? 'tool_error' : 'ok', isGlobal);
+    recordMcpToolCall(toolName, callStartMs, result.isError ? 'tool_error' : 'ok', isGlobal, {
+      agentId,
+      refusal: refusalReasonOf(result),
+    });
     const errorText = result.isError
       ? result.content?.find(c => c.type === 'text')?.text
       : undefined;
@@ -246,7 +250,7 @@ async function handleToolsCall(
 
     return jsonRpcSuccess(id, result);
   } catch (err) {
-    recordMcpToolCall(toolName, callStartMs, 'threw', isGlobal);
+    recordMcpToolCall(toolName, callStartMs, 'threw', isGlobal, { agentId });
     appLog('core:mcp', 'error', 'Tool call threw exception', {
       meta: { agentId, toolName, error: err instanceof Error ? err.message : String(err) },
     });

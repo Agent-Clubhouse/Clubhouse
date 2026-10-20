@@ -93,6 +93,21 @@ describe('agent signals', () => {
     expect(JSON.stringify(spans)).not.toContain('proj_x7q');
   });
 
+  it('puts the hashed agent and a refusal reason on the span only (#2308)', () => {
+    recordMcpToolCall('group__proj_x7q__send_message', Date.now(), 'tool_error', false, { agentId: 'agent-7', refusal: 'no_binding' });
+    recordMcpToolCall('notify_user', Date.now(), 'ok', true, { agentId: 'agent-7', refusal: 'group_off' });
+    const spans = (rt.replaySpan as ReturnType<typeof vi.fn>).mock.calls.map((c) => c[0]);
+    expect(spans[0].attrs).toEqual([
+      ATTR.mcpToolKind('group'), ATTR.mcpTool('send_message'), ATTR.mcpResult('tool_error'),
+      ATTR.agentIdHash('agent-7'), ATTR.mcpRefusalReason('no_binding'),
+    ]);
+    // A refusal only describes a call that came back as a tool error.
+    expect(spans[1].attrs).toEqual([ATTR.mcpToolKind('global'), ATTR.mcpTool('notify_user'), ATTR.mcpResult('ok'), ATTR.agentIdHash('agent-7')]);
+    const metricKeys = vi.mocked(rt.count).mock.calls.flatMap((c) => (c[2] ?? []).map((a: { key: string }) => a.key));
+    expect(metricKeys).not.toContain('clubhouse.agent.id_hash');
+    expect(metricKeys).not.toContain('clubhouse.mcp.refusal.reason');
+  });
+
   it('names global tools and never names plugin tools', () => {
     recordMcpToolCall('notify_user', Date.now(), 'ok', true);
     recordMcpToolCall('plugin__acme_tool__navigate', Date.now(), 'ok', false);

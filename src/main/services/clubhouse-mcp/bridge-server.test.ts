@@ -31,6 +31,12 @@ vi.mock('../log-service', () => ({
   appLog: vi.fn(),
 }));
 
+const mockRecordMcpToolCall = vi.hoisted(() => vi.fn());
+vi.mock('../../telemetry/agent-signals', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../telemetry/agent-signals')>()),
+  recordMcpToolCall: mockRecordMcpToolCall,
+}));
+
 const mockBroadcast = vi.fn();
 vi.mock('../../util/ipc-broadcast', () => ({
   broadcastToAllWindows: (...args: unknown[]) => mockBroadcast(...args),
@@ -41,6 +47,7 @@ import { bindingManager } from './binding-manager';
 import { registerToolTemplate, registerGlobalTool, buildToolName, _resetForTesting as resetTools } from './tool-registry';
 import { setOrchestrationEnabled, _resetOrchestrationGateForTesting } from './orchestration-gate';
 import { IPC } from '../../../shared/ipc-channels';
+import { appLog } from '../log-service';
 
 function makeRequest(port: number, method: string, path: string, body?: unknown, nonce?: string, rawBody?: string): Promise<{ statusCode: number; body: any }> {
   return new Promise((resolve, reject) => {
@@ -393,6 +400,56 @@ describe('BridgeServer', () => {
 
     expect(body.error.code).toBe(-32000);
     expect(body.error.message).toContain('handler exploded');
+  });
+
+  describe('tool call telemetry and logging (#2308)', () => {
+    const binding = { agentId: 'agent-1', targetId: 'agent-2', targetKind: 'agent' as const, label: 'A2', targetName: 'robin', projectName: 'app' };
+    const secret = 'top secret message body';
+
+    beforeEach(() => {
+      mockRecordMcpToolCall.mockReset();
+      vi.mocked(appLog).mockClear();
+    });
+
+    async function call(id: number, name: string) {
+      return makeRequest(port, 'POST', '/mcp/agent-1', {
+        jsonrpc: '2.0', id, method: 'tools/call', params: { name, arguments: { message: secret } },
+      }, 'test-nonce');
+    }
+
+    it('records the calling agent and no refusal for a handled call', async () => {
+      registerToolTemplate('agent', 'send_message', { description: 'Send', inputSchema: { type: 'object' } },
+        vi.fn().mockResolvedValue({ content: [{ type: 'text', text: 'sent' }] }));
+      bindingManager.bind('agent-1', binding);
+      await call(40, buildToolName(binding, 'send_message'));
+      expect(mockRecordMcpToolCall).toHaveBeenCalledWith(expect.any(String), expect.any(Number), 'ok', false, { agentId: 'agent-1', refusal: undefined });
+    });
+
+    it('records the refusal reason without sending it to the client', async () => {
+      const { body } = await call(41, 'not-a-scoped-tool');
+      expect(mockRecordMcpToolCall).toHaveBeenCalledWith('not-a-scoped-tool', expect.any(Number), 'tool_error', false, { agentId: 'agent-1', refusal: 'unparseable' });
+      expect(body.result).toEqual({ content: [{ type: 'text', text: 'Unknown tool: not-a-scoped-tool' }], isError: true });
+    });
+
+    it('records the agent when the handler throws', async () => {
+      registerToolTemplate('agent', 'fail_tool', { description: 'Fails', inputSchema: { type: 'object' } },
+        vi.fn().mockRejectedValue(new Error('boom')));
+      bindingManager.bind('agent-1', binding);
+      await call(42, buildToolName(binding, 'fail_tool'));
+      expect(mockRecordMcpToolCall).toHaveBeenCalledWith(expect.any(String), expect.any(Number), 'threw', false, { agentId: 'agent-1' });
+    });
+
+    it('never logs argument values, only their names', async () => {
+      registerToolTemplate('agent', 'send_message', { description: 'Send', inputSchema: { type: 'object' } },
+        vi.fn().mockResolvedValue({ content: [{ type: 'text', text: 'sent' }] }));
+      bindingManager.bind('agent-1', binding);
+      await call(43, buildToolName(binding, 'send_message'));
+      await call(44, 'not-a-scoped-tool');
+      const logged = JSON.stringify(vi.mocked(appLog).mock.calls);
+      expect(logged).not.toContain(secret);
+      expect(vi.mocked(appLog)).toHaveBeenCalledWith('core:mcp', 'info', 'Tool call', { meta: expect.objectContaining({ argKeys: ['message'] }) });
+      expect(JSON.stringify(mockRecordMcpToolCall.mock.calls)).not.toContain(secret);
+    });
   });
 
   it('returns 404 for /mcp/ with no agent ID', async () => {
