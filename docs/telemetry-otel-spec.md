@@ -700,7 +700,7 @@ The Windows path patterns are tested on the Windows CI runner with real `C:\User
 | `clubhouse.channel` | `stable` / `preview` |
 | `deployment.environment.name` | `production` / `development` (`app.isPackaged`) |
 | `os.type` | `darwin` / `windows` / `linux` |
-| `os.version` | major.minor only |
+| `os.version` | major.minor only. Windows 11 reports `10.0` like Windows 10, so a Windows build of 22000 or later is sent as `11.0` (this includes Server 2025) |
 | `host.arch` | `arm64` / `amd64` |
 | `process.runtime.version` | Node version |
 | `clubhouse.electron.version` | Electron version |

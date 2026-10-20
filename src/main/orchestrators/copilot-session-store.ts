@@ -76,11 +76,15 @@ async function readWorkspace(dir: string): Promise<CopilotWorkspace | null> {
 
 /**
  * A cwd in comparable form: resolved, without a trailing separator, and on
- * Windows with one separator style and case folded (its paths are
- * case-insensitive, and Copilot may record `c:\\` where Node has `C:\\`).
+ * Windows with one separator style, no `\\\\?\\` long-path prefix on a drive
+ * path, and case folded (its paths are case-insensitive, and a CLI may
+ * record `c:\\` where Node has `C:\\`).
  */
 export function cwdKey(p: string, platform: NodeJS.Platform = process.platform): string {
-  if (platform === 'win32') return path.win32.resolve(p.replace(/\//g, '\\')).replace(/\\+$/, '').toLowerCase();
+  if (platform === 'win32') {
+    const win = p.replace(/\//g, '\\').replace(/^\\\\\?\\(?=[a-z]:)/i, '');
+    return path.win32.resolve(win).replace(/\\+$/, '').toLowerCase();
+  }
   const r = path.posix.resolve(p);
   return r.length > 1 ? r.replace(/\/+$/, '') : r;
 }

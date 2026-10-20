@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { EventEmitter } from 'events';
 
 vi.mock('child_process', () => ({
@@ -1010,6 +1010,32 @@ describe('CodexChatDriver', () => {
     expect(probe).toMatchObject({ handshakeOk: false, errorCode });
     expect(probe.error).toContain(message);
     expect(probe.error).not.toContain(stderr);
+  });
+
+  describe('on Windows', () => {
+    const originalPlatform = process.platform;
+    beforeEach(() => Object.defineProperty(process, 'platform', { value: 'win32' }));
+    afterEach(() => Object.defineProperty(process, 'platform', { value: originalPlatform }));
+
+    it.each([
+      [9009, "'node' is not recognized as an internal or external command,\r\noperable program or batch file.", 'spawn_failed', 'Node.js was not found on the Codex launch PATH'],
+      [1, "'node' is not recognized as an internal or external command,", 'spawn_failed', 'Node.js was not found on the Codex launch PATH'],
+      // A localized cmd.exe still exits 9009.
+      [9009, "Der Befehl 'node' ist entweder falsch geschrieben oder konnte nicht gefunden werden.", 'spawn_failed', 'Node.js was not found on the Codex launch PATH'],
+      [1, 'invalid configuration', 'process_exited', 'Process exited with code 1'],
+      [9009, "'codex.cmd' is not recognized as an internal or external command,", 'process_exited', 'Process exited with code 9009'],
+      // A POSIX-style launcher (Git Bash, MSYS) still gets the hint on Windows.
+      [127, 'env: node: No such file or directory', 'spawn_failed', 'Node.js was not found on the Codex launch PATH'],
+    ])('classifies the npm shim exit %s (%s)', async (code, stderr, errorCode, message) => {
+      useServer({ initialize: () => {
+        server.proc.stderr.emit('data', stderr);
+        server.exit(code);
+        return { result: {} };
+      } });
+      const probe = await new CodexChatDriver().probe('codex');
+      expect(probe).toMatchObject({ handshakeOk: false, errorCode });
+      expect(probe.error).toContain(message);
+    });
   });
 
   it('classifies a missing executable as a spawn failure', async () => {

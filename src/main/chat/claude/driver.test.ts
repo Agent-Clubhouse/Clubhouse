@@ -118,11 +118,12 @@ describe.each<ClaudeChatDriverId>(['claude_agent_sdk', 'claude_stream_json'])('C
   describe('probe version when initialize omits claude_code_version (#2275)', () => {
     const OMIT = { FAKE_CLAUDE_OMIT_INIT_VERSION: '1' };
     let versionSpawns: number;
-    /** The real cached `--version` lookup, running the fake through node. */
+    /** The real cached `--version` lookup; it runs the .mjs fake as `node <fake> --version`, with this node. */
     const lookupVersion = vi.fn<ClaudeVersionLookup>((binary, opts) => lookupClaudeCliVersion(binary, opts, {
       spawn: (o) => {
         versionSpawns++;
-        return spawnClaude({ ...o, binary: process.execPath, args: [FAKE_CLAUDE, ...o.args] });
+        expect(o).toMatchObject({ binary: 'node', args: [FAKE_CLAUDE, '--version'] });
+        return spawnClaude({ ...o, binary: process.execPath });
       },
     }));
     const fallbackDriver = new ClaudeChatDriver(id, { createTransport: transportFactory, lookupVersion });

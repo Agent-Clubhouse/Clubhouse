@@ -60,6 +60,22 @@ export function majorMinor(version: string): string {
   return m[2] !== undefined ? `${m[1]}.${m[2]}` : m[1];
 }
 
+/** Windows 11 still reports `10.0.<build>`; its builds start at 22000. */
+const WINDOWS_11_FIRST_BUILD = 22000;
+
+/**
+ * `os.version`: major.minor, except that a Windows build of 22000 or later
+ * reports `11.0` so Windows 11 can be told from Windows 10. The build number
+ * itself is not sent.
+ */
+export function osVersion(platform: NodeJS.Platform, release: string): string {
+  if (platform === 'win32') {
+    const m = /^10\.0\.(\d+)/.exec(release);
+    if (m && Number(m[1]) >= WINDOWS_11_FIRST_BUILD) return '11.0';
+  }
+  return majorMinor(release);
+}
+
 export function channelForVersion(version: string): 'stable' | 'preview' {
   return /-(?:beta|alpha|rc|preview)/i.test(version) ? 'preview' : 'stable';
 }
@@ -76,7 +92,7 @@ export function buildResourceAttributes(input: ResourceInputs): Record<(typeof R
     'clubhouse.channel': channelForVersion(input.appVersion),
     'deployment.environment.name': input.isPackaged ? 'production' : 'development',
     'os.type': OS_TYPE[input.platform] ?? 'other',
-    'os.version': majorMinor(input.osRelease),
+    'os.version': osVersion(input.platform, input.osRelease),
     'host.arch': HOST_ARCH[input.arch] ?? 'other',
     'process.runtime.version': input.nodeVersion,
     'clubhouse.electron.version': input.electronVersion,

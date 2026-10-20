@@ -88,6 +88,26 @@ describe('sanitizeStack', () => {
     expect(out).toContain('at index.js:9:3');
   });
 
+  it('keeps only the basename when a Windows path contains " ("', () => {
+    const stack = [
+      'Error: x',
+      '    at C:\\Program Files (x86)\\Clubhouse\\resources\\app.asar\\main.js:1:2',
+      '    at C:\\Users\\Bob (Work)\\app\\index.js:3:4',
+      '    at readConfig (C:\\Users\\Bob (Work)\\app\\config.js:5:6)',
+      '    at new Store (C:\\Program Files (x86)\\Clubhouse\\store.js:7:8)',
+      '    at load (C:\\Users\\Bob (Work\\app\\loader.js:9:1)',
+    ].join('\r\n');
+    const out = sanitizeStack(stack, scrub) ?? '';
+    expect(out.split('\n')).toEqual([
+      'at main.js:1:2',
+      'at index.js:3:4',
+      'at readConfig (config.js:5:6)',
+      'at new Store (store.js:7:8)',
+      'at loader.js:9:1',
+    ]);
+    expect(out).not.toMatch(/Bob|Work|Program|Users/);
+  });
+
   it('returns undefined for missing or frameless stacks', () => {
     expect(sanitizeStack(undefined, scrub)).toBeUndefined();
     expect(sanitizeStack('just a message', scrub)).toBeUndefined();
