@@ -781,6 +781,7 @@ describe('app-handlers', () => {
 
   // --- Logging ---
 
+  // LOG_WRITE is the deprecated path to the legacy session log; these go with the writer (#2313).
   it('LOG_WRITE delegates to logService.log via on()', () => {
     const handler = onHandlers.get(IPC.LOG.LOG_WRITE)!;
     const entry = { ts: '2024-01-01', ns: 'app:test', level: 'info', msg: 'test' };

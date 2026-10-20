@@ -370,6 +370,20 @@ describe('local recorder diag lines (#2299)', () => {
     expect(records[3]).toMatchObject({ window: 'popout' });
   });
 
+  it('adds traceId/spanId to a diag line only while a flow is active', async () => {
+    const h = harness();
+    h.rec.writeDiag(line('no span'));
+    await h.rec.wrap('clubhouse.agent.spawn', {}, async () => {
+      h.rec.writeDiag(line('in span'));
+      return 'done';
+    })(ok());
+    await h.rec.flush();
+    const flow = h.records().find((r) => r.t === 'span')!;
+    const diag = h.records().filter((r) => r.t === 'diag');
+    expect(diag[0]).not.toHaveProperty('traceId');
+    expect(diag[1]).toMatchObject({ msg: 'in span', traceId: flow.traceId, spanId: flow.spanId });
+  });
+
   it('rotates and evicts diag lines with the signals, under one run budget', async () => {
     const onRotate = vi.fn();
     const h = harness({ maxChunkBytes: 400, maxSessionBytes: 1_500, onRotate });

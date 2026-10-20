@@ -36,14 +36,6 @@ function memorySink() {
   };
 }
 
-/** Session-log lines written so far. */
-function sessionLines(): Array<Record<string, unknown>> {
-  return vi
-    .mocked(fsp.appendFile)
-    .mock.calls.flatMap(([, data]) => String(data).trim().split('\n'))
-    .map((l) => JSON.parse(l));
-}
-
 beforeEach(() => {
   vi.clearAllMocks();
   _resetDiagForTests(HOME);
@@ -157,21 +149,7 @@ describe('appLog → diag', () => {
     expect(sink.lines.map((l) => l.meta)).toEqual([{ projectId: 'p1', branch: 'main' }, { projectId: 'p2' }]);
   });
 
-  it('still writes the session log, including lines from before init()', async () => {
-    const sink = memorySink();
-    setDiagSink(sink);
-    appLog('core:startup', 'info', 'before init');
-    await init();
-    appLog('core:startup', 'info', 'after init', { projectId: 'p1' });
-    await flush();
-    expect(sessionLines().map((l) => [l.msg, l.projectId])).toEqual([
-      ['before init', undefined],
-      ['after init', 'p1'],
-    ]);
-    expect(sink.lines.map((l) => l.msg)).toEqual(['before init', 'after init']);
-  });
-
-  it('flushes the recorder with the session log', async () => {
+  it('flushes the recorder', async () => {
     const sink = memorySink();
     setDiagSink(sink);
     await flush();

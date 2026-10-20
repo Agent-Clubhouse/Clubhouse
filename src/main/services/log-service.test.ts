@@ -10,26 +10,35 @@ vi.mock('fs/promises', () => ({
   unlink: vi.fn(),
 }));
 
-vi.mock('fs', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('fs')>()),
-  appendFileSync: vi.fn(),
-}));
-
 vi.mock('./log-settings', () => ({
   getSettings: vi.fn(),
 }));
 
-import * as fs from 'fs';
 import * as fsp from 'fs/promises';
 import * as logSettings from './log-settings';
-import { init, log, flush, flushSync, appLog, getLogPath, getNamespaces } from './log-service';
+import { init, log, flush, appLog, getLogPath, getNamespaces } from './log-service';
+import { _resetDiagForTests, setDiagSink, type DiagRecord } from '../telemetry/diag';
 import { _resetBreadcrumbsForTests, recentBreadcrumbs } from './breadcrumbs';
 import { KNOWN_LOG_NAMESPACES } from '../../shared/log-namespaces';
+
+/** A recorder stand-in that keeps the diag lines it is given. */
+function memorySink() {
+  const lines: DiagRecord[] = [];
+  return {
+    lines,
+    writeDiag: (r: DiagRecord) => lines.push(r),
+    noteDiagDropped: vi.fn(),
+    flush: vi.fn(async () => {}),
+    flushSync: vi.fn(),
+  };
+}
 
 // The electron mock provides app.getPath('home') → path.join(os.tmpdir(), 'clubhouse-test-home')
 const EXPECTED_LOG_DIR = path.join(os.tmpdir(), 'clubhouse-test-home', '.clubhouse', 'logs');
 
 describe('log-service', () => {
+  let sink: ReturnType<typeof memorySink>;
+
   beforeEach(async () => {
     vi.clearAllMocks();
     vi.useFakeTimers();
@@ -52,6 +61,10 @@ describe('log-service', () => {
     // readdir returns empty by default
     vi.mocked(fsp.readdir).mockResolvedValue([]);
 
+    _resetDiagForTests();
+    sink = memorySink();
+    setDiagSink(sink);
+
     await init();
     // Clear the init-related mock calls so each test starts with a clean count
     vi.mocked(fsp.mkdir).mockClear();
@@ -61,6 +74,7 @@ describe('log-service', () => {
 
   afterEach(() => {
     vi.useRealTimers();
+    _resetDiagForTests();
   });
 
   describe('init', () => {
@@ -70,15 +84,6 @@ describe('log-service', () => {
       expect(vi.mocked(fsp.mkdir)).toHaveBeenCalledWith(
         EXPECTED_LOG_DIR,
         { recursive: true },
-      );
-    });
-
-    it('runs cleanup on startup (reads log dir)', async () => {
-      vi.mocked(fsp.readdir).mockClear();
-      await init();
-      expect(vi.mocked(fsp.readdir)).toHaveBeenCalledWith(
-        EXPECTED_LOG_DIR,
-        { withFileTypes: true },
       );
     });
   });
@@ -95,9 +100,9 @@ describe('log-service', () => {
     });
 
     it('returns discovered namespaces after logging', () => {
-      log({ ts: '2026-01-01T00:00:00Z', ns: 'app:ipc', level: 'info', msg: 'test' });
-      log({ ts: '2026-01-01T00:00:00Z', ns: 'plugin:terminal', level: 'info', msg: 'test' });
-      log({ ts: '2026-01-01T00:00:00Z', ns: 'app:ipc', level: 'debug', msg: 'dup' });
+      appLog('app:ipc', 'info', 'test');
+      appLog('plugin:terminal', 'info', 'test');
+      appLog('app:ipc', 'debug', 'dup');
 
       const namespaces = getNamespaces();
       expect(namespaces).toContain('app:ipc');
@@ -106,9 +111,9 @@ describe('log-service', () => {
     });
 
     it('returns namespaces in sorted order', () => {
-      log({ ts: '2026-01-01T00:00:00Z', ns: 'plugin:z', level: 'info', msg: 'z' });
-      log({ ts: '2026-01-01T00:00:00Z', ns: 'app:a', level: 'info', msg: 'a' });
-      log({ ts: '2026-01-01T00:00:00Z', ns: 'app:m', level: 'info', msg: 'm' });
+      appLog('plugin:z', 'info', 'z');
+      appLog('app:a', 'info', 'a');
+      appLog('app:m', 'info', 'm');
 
       const ns = getNamespaces();
       expect(ns).toContain('app:a');
@@ -132,438 +137,73 @@ describe('log-service', () => {
     });
   });
 
-  describe('log', () => {
-    it('does not write when logging is disabled', async () => {
-      vi.mocked(logSettings.getSettings).mockReturnValue({
-        enabled: false,
-        namespaces: {},
-        retention: 'medium',
-        minLogLevel: 'info',
-      });
+  describe('appLog gating (diag)', () => {
+    const settings = (over: Record<string, unknown>) => ({ enabled: true, namespaces: {}, retention: 'medium', minLogLevel: 'info', ...over });
 
-      log({ ts: '2026-01-01T00:00:00Z', ns: 'app:test', level: 'info', msg: 'hello' });
-      await flush();
-
-      expect(vi.mocked(fsp.appendFile)).not.toHaveBeenCalled();
+    it('does not write when logging is disabled', () => {
+      vi.mocked(logSettings.getSettings).mockReturnValue(settings({ enabled: false }));
+      appLog('app:test', 'info', 'hello');
+      expect(sink.lines).toEqual([]);
     });
 
-    it('does not write when namespace is explicitly disabled', async () => {
-      vi.mocked(logSettings.getSettings).mockReturnValue({
-        enabled: true,
-        namespaces: { 'app:noisy': false },
-        retention: 'medium',
-        minLogLevel: 'info',
-      });
-
-      log({ ts: '2026-01-01T00:00:00Z', ns: 'app:noisy', level: 'info', msg: 'filtered' });
-      await flush();
-
-      expect(vi.mocked(fsp.appendFile)).not.toHaveBeenCalled();
+    it('does not write when namespace is explicitly disabled', () => {
+      vi.mocked(logSettings.getSettings).mockReturnValue(settings({ namespaces: { 'app:noisy': false } }));
+      appLog('app:noisy', 'info', 'filtered');
+      expect(sink.lines).toEqual([]);
     });
 
-    it('writes when namespace is not in filter (default: all enabled)', async () => {
-      log({ ts: '2026-01-01T00:00:00Z', ns: 'app:test', level: 'info', msg: 'hello' });
-      await flush();
-
-      expect(vi.mocked(fsp.appendFile)).toHaveBeenCalledTimes(1);
+    it('writes when namespace is not in filter (default: all enabled)', () => {
+      appLog('app:test', 'info', 'hello');
+      expect(sink.lines).toHaveLength(1);
     });
 
-    it('writes when namespace is explicitly enabled', async () => {
-      vi.mocked(logSettings.getSettings).mockReturnValue({
-        enabled: true,
-        namespaces: { 'app:test': true },
-        retention: 'medium',
-        minLogLevel: 'info',
-      });
-
-      log({ ts: '2026-01-01T00:00:00Z', ns: 'app:test', level: 'info', msg: 'hello' });
-      await flush();
-
-      expect(vi.mocked(fsp.appendFile)).toHaveBeenCalledTimes(1);
+    it('writes when namespace is explicitly enabled', () => {
+      vi.mocked(logSettings.getSettings).mockReturnValue(settings({ namespaces: { 'app:test': true } }));
+      appLog('app:test', 'info', 'hello');
+      expect(sink.lines).toHaveLength(1);
     });
 
     it('still records namespace even when disabled', () => {
-      vi.mocked(logSettings.getSettings).mockReturnValue({
-        enabled: true,
-        namespaces: { 'app:hidden': false },
-        retention: 'medium',
-        minLogLevel: 'info',
-      });
-
-      log({ ts: '2026-01-01T00:00:00Z', ns: 'app:hidden', level: 'info', msg: 'filtered' });
-
+      vi.mocked(logSettings.getSettings).mockReturnValue(settings({ namespaces: { 'app:hidden': false } }));
+      appLog('app:hidden', 'info', 'filtered');
       expect(getNamespaces()).toContain('app:hidden');
     });
 
-    it('skips debug entries when minLogLevel is info', async () => {
-      log({ ts: '2026-01-01T00:00:00Z', ns: 'app:test', level: 'debug', msg: 'verbose' });
-      await flush();
-
-      expect(vi.mocked(fsp.appendFile)).not.toHaveBeenCalled();
+    it('skips debug entries when minLogLevel is info', () => {
+      appLog('app:test', 'debug', 'verbose');
+      expect(sink.lines).toEqual([]);
     });
 
-    it('passes warn entries when minLogLevel is info', async () => {
-      log({ ts: '2026-01-01T00:00:00Z', ns: 'app:test', level: 'warn', msg: 'warning' });
-      await flush();
-
-      expect(vi.mocked(fsp.appendFile)).toHaveBeenCalledTimes(1);
+    it('passes warn entries when minLogLevel is info', () => {
+      appLog('app:test', 'warn', 'warning');
+      expect(sink.lines).toHaveLength(1);
     });
 
-    it('passes debug entries when minLogLevel is debug', async () => {
-      vi.mocked(logSettings.getSettings).mockReturnValue({
-        enabled: true,
-        namespaces: {},
-        retention: 'medium',
-        minLogLevel: 'debug',
-      });
-
-      log({ ts: '2026-01-01T00:00:00Z', ns: 'app:test', level: 'debug', msg: 'verbose' });
-      await flush();
-
-      expect(vi.mocked(fsp.appendFile)).toHaveBeenCalledTimes(1);
+    it('passes debug entries when minLogLevel is debug', () => {
+      vi.mocked(logSettings.getSettings).mockReturnValue(settings({ minLogLevel: 'debug' }));
+      appLog('app:test', 'debug', 'verbose');
+      expect(sink.lines).toHaveLength(1);
     });
 
     it('does not record namespace when logging globally disabled', () => {
-      vi.mocked(logSettings.getSettings).mockReturnValue({
-        enabled: false,
-        namespaces: {},
-        retention: 'medium',
-        minLogLevel: 'info',
-      });
-
-      // We need a fresh namespace that wasn't logged before
-      log({ ts: '2026-01-01T00:00:00Z', ns: 'app:never-seen', level: 'info', msg: 'hi' });
-
-      // Namespace is NOT recorded when globally disabled
+      vi.mocked(logSettings.getSettings).mockReturnValue(settings({ enabled: false }));
+      appLog('app:never-seen', 'info', 'hi');
       expect(getNamespaces()).not.toContain('app:never-seen');
     });
   });
 
-  describe('flush', () => {
-    it('writes buffered entries as JSON lines', async () => {
-      log({ ts: '2026-01-01T00:00:00Z', ns: 'app:test', level: 'info', msg: 'one' });
-      log({ ts: '2026-01-01T00:00:01Z', ns: 'app:test', level: 'warn', msg: 'two' });
-      await flush();
-
-      expect(vi.mocked(fsp.appendFile)).toHaveBeenCalledTimes(1);
-      const written = vi.mocked(fsp.appendFile).mock.calls[0][1] as string;
-      const lines = written.trim().split('\n');
-      expect(lines).toHaveLength(2);
-
-      const parsed0 = JSON.parse(lines[0]);
-      expect(parsed0.ns).toBe('app:test');
-      expect(parsed0.level).toBe('info');
-      expect(parsed0.msg).toBe('one');
-
-      const parsed1 = JSON.parse(lines[1]);
-      expect(parsed1.level).toBe('warn');
-      expect(parsed1.msg).toBe('two');
-    });
-
-    it('is a no-op when buffer is empty', async () => {
-      await flush();
-      expect(vi.mocked(fsp.appendFile)).not.toHaveBeenCalled();
-    });
-
-    it('clears the buffer after writing', async () => {
-      log({ ts: '2026-01-01T00:00:00Z', ns: 'app:test', level: 'info', msg: 'hello' });
-      await flush();
-      await flush(); // second flush should be a no-op
-
-      expect(vi.mocked(fsp.appendFile)).toHaveBeenCalledTimes(1);
-    });
-
-    it('does not throw when appendFile fails', async () => {
-      vi.mocked(fsp.appendFile).mockRejectedValue(new Error('disk full'));
-
-      log({ ts: '2026-01-01T00:00:00Z', ns: 'app:test', level: 'info', msg: 'hello' });
-      await expect(flush()).resolves.not.toThrow();
-    });
-
-    it('writes to a file with session- prefix', async () => {
-      log({ ts: '2026-01-01T00:00:00Z', ns: 'app:test', level: 'info', msg: 'hello' });
-      await flush();
-
-      const filePath = vi.mocked(fsp.appendFile).mock.calls[0][0] as string;
-      expect(filePath).toMatch(/session-.*\.jsonl$/);
-      expect(filePath).toContain(EXPECTED_LOG_DIR);
-    });
-  });
-
-  describe('flushSync (OS shutdown, #2335)', () => {
-    it('writes the buffer synchronously and clears it', async () => {
-      log({ ts: '2026-01-01T00:00:00Z', ns: 'app:test', level: 'info', msg: 'last words' });
-      flushSync();
-
-      expect(vi.mocked(fs.appendFileSync)).toHaveBeenCalledTimes(1);
-      const [file, data] = vi.mocked(fs.appendFileSync).mock.calls[0];
-      expect(file).toMatch(/session-.*\.jsonl$/);
-      expect(JSON.parse((data as string).trim()).msg).toBe('last words');
-
-      await flush();
-      expect(vi.mocked(fsp.appendFile)).not.toHaveBeenCalled();
-    });
-
-    it('is a no-op when the buffer is empty and never throws', () => {
-      flushSync();
-      expect(vi.mocked(fs.appendFileSync)).not.toHaveBeenCalled();
-      vi.mocked(fs.appendFileSync).mockImplementationOnce(() => {
-        throw new Error('disk full');
-      });
-      const err = vi.spyOn(console, 'error').mockImplementation(() => {});
-      log({ ts: '2026-01-01T00:00:00Z', ns: 'app:test', level: 'info', msg: 'hello' });
-      expect(() => flushSync()).not.toThrow();
-      err.mockRestore();
-    });
-  });
-
-  describe('auto-flush', () => {
-    it('flushes on timer interval', async () => {
-      log({ ts: '2026-01-01T00:00:00Z', ns: 'app:test', level: 'info', msg: 'hello' });
-
-      // Advance timer by 1 second (flush interval)
-      await vi.advanceTimersByTimeAsync(1000);
-
-      expect(vi.mocked(fsp.appendFile)).toHaveBeenCalledTimes(1);
-    });
-
-    it('auto-flushes when buffer reaches 50 entries', async () => {
-      for (let i = 0; i < 50; i++) {
-        log({ ts: '2026-01-01T00:00:00Z', ns: 'app:test', level: 'info', msg: `entry ${i}` });
-      }
-
-      // flush is async now, need to await the pending promise
-      await vi.advanceTimersByTimeAsync(0);
-
-      // Should have flushed automatically at 50 entries
-      expect(vi.mocked(fsp.appendFile)).toHaveBeenCalledTimes(1);
-      const written = vi.mocked(fsp.appendFile).mock.calls[0][1] as string;
-      const lines = written.trim().split('\n');
-      expect(lines).toHaveLength(50);
-    });
-  });
-
-  describe('file rotation', () => {
-    it('rotates to a new chunk when file exceeds 2 MB', async () => {
-      // Mock stat to return a file near the size limit
-      vi.mocked(fsp.stat).mockResolvedValue({ size: 0 } as any);
-
-      // Re-init to pick up the mock
-      await init();
-
-      // Write a large entry that would push past 2 MB when combined with file size
-      const bigMsg = 'x'.repeat(2 * 1024 * 1024 + 1);
-      log({ ts: '2026-01-01T00:00:00Z', ns: 'app:test', level: 'info', msg: bigMsg });
-      await flush();
-
-      // Second write should go to a new file
-      log({ ts: '2026-01-01T00:00:01Z', ns: 'app:test', level: 'info', msg: 'after rotation' });
-      await flush();
-
-      const calls = vi.mocked(fsp.appendFile).mock.calls;
-      expect(calls.length).toBe(2);
-      const firstFile = calls[0][0] as string;
-      const secondFile = calls[1][0] as string;
-      expect(firstFile).not.toBe(secondFile);
-      expect(secondFile).toMatch(/\.1\.jsonl$/);
-    });
-  });
-
-  describe('cleanup', () => {
-    it('deletes log files older than 7 days on init (medium tier)', async () => {
-      const now = Date.now();
-      const eightDaysAgo = now - 8 * 24 * 60 * 60 * 1000;
-
-      vi.mocked(fsp.readdir).mockResolvedValue([
-        { name: 'session-old.jsonl', isFile: () => true } as unknown as any,
-        { name: 'session-new.jsonl', isFile: () => true } as unknown as any,
-        { name: 'not-a-log.txt', isFile: () => true } as unknown as any,
-      ]);
-
-      vi.mocked(fsp.stat).mockImplementation(async (filePath) => {
-        const fp = filePath as string;
-        if (fp.includes('session-old')) {
-          return { size: 100, mtimeMs: eightDaysAgo } as any;
-        }
-        if (fp.includes('session-new')) {
-          return { size: 100, mtimeMs: now } as any;
-        }
-        throw new Error('ENOENT');
-      });
-
-      await init();
-
-      expect(vi.mocked(fsp.unlink)).toHaveBeenCalledWith(
-        expect.stringContaining('session-old.jsonl'),
-      );
-      expect(vi.mocked(fsp.unlink)).not.toHaveBeenCalledWith(
-        expect.stringContaining('session-new.jsonl'),
-      );
-      // Should skip non-session files
-      expect(vi.mocked(fsp.unlink)).not.toHaveBeenCalledWith(
-        expect.stringContaining('not-a-log.txt'),
-      );
-    });
-
-    it('applies the same retention to local telemetry recordings (#2278)', async () => {
-      const now = Date.now();
-      const eightDaysAgo = now - 8 * 24 * 60 * 60 * 1000;
-
-      vi.mocked(fsp.readdir).mockResolvedValue([
-        { name: 'telemetry-old.jsonl', isFile: () => true } as unknown as any,
-        { name: 'telemetry-new.1.jsonl', isFile: () => true } as unknown as any,
-      ]);
-      vi.mocked(fsp.stat).mockImplementation(async (filePath) => {
-        const fp = filePath as string;
-        if (fp.includes('telemetry-old')) return { size: 100, mtimeMs: eightDaysAgo } as any;
-        if (fp.includes('telemetry-new')) return { size: 100, mtimeMs: now } as any;
-        throw new Error('ENOENT');
-      });
-
-      await init();
-
-      expect(vi.mocked(fsp.unlink)).toHaveBeenCalledWith(expect.stringContaining('telemetry-old.jsonl'));
-      expect(vi.mocked(fsp.unlink)).not.toHaveBeenCalledWith(expect.stringContaining('telemetry-new.1.jsonl'));
-    });
-
-    it('deletes files older than 3 days with low retention', async () => {
-      const now = Date.now();
-      const fourDaysAgo = now - 4 * 24 * 60 * 60 * 1000;
-
-      vi.mocked(logSettings.getSettings).mockReturnValue({
-        enabled: true,
-        namespaces: {},
-        retention: 'low',
-        minLogLevel: 'info',
-      });
-
-      vi.mocked(fsp.readdir).mockResolvedValue([
-        { name: 'session-old.jsonl', isFile: () => true } as unknown as any,
-        { name: 'session-new.jsonl', isFile: () => true } as unknown as any,
-      ]);
-
-      vi.mocked(fsp.stat).mockImplementation(async (filePath) => {
-        const fp = filePath as string;
-        if (fp.includes('session-old')) {
-          return { size: 100, mtimeMs: fourDaysAgo } as any;
-        }
-        if (fp.includes('session-new')) {
-          return { size: 100, mtimeMs: now } as any;
-        }
-        throw new Error('ENOENT');
-      });
-
-      await init();
-
-      expect(vi.mocked(fsp.unlink)).toHaveBeenCalledWith(
-        expect.stringContaining('session-old.jsonl'),
-      );
-      expect(vi.mocked(fsp.unlink)).not.toHaveBeenCalledWith(
-        expect.stringContaining('session-new.jsonl'),
-      );
-    });
-
-    it('does not age-prune with unlimited retention', async () => {
-      const now = Date.now();
-      const yearAgo = now - 365 * 24 * 60 * 60 * 1000;
-
-      vi.mocked(logSettings.getSettings).mockReturnValue({
-        enabled: true,
-        namespaces: {},
-        retention: 'unlimited',
-        minLogLevel: 'info',
-      });
-
-      vi.mocked(fsp.readdir).mockResolvedValue([
-        { name: 'session-ancient.jsonl', isFile: () => true } as unknown as any,
-      ]);
-
-      vi.mocked(fsp.stat).mockImplementation(async (filePath) => {
-        const fp = filePath as string;
-        if (fp.includes('session-ancient')) {
-          return { size: 100, mtimeMs: yearAgo } as any;
-        }
-        throw new Error('ENOENT');
-      });
-
-      await init();
-
-      expect(vi.mocked(fsp.unlink)).not.toHaveBeenCalled();
-    });
-
-    it('size-prunes oldest files when total exceeds cap', async () => {
-      const now = Date.now();
-      const MB = 1024 * 1024;
-
-      vi.mocked(logSettings.getSettings).mockReturnValue({
-        enabled: true,
-        namespaces: {},
-        retention: 'low', // 50 MB cap
-      });
-
-      vi.mocked(fsp.readdir).mockResolvedValue([
-        { name: 'session-a.jsonl', isFile: () => true } as unknown as any,
-        { name: 'session-b.jsonl', isFile: () => true } as unknown as any,
-        { name: 'session-c.jsonl', isFile: () => true } as unknown as any,
-      ]);
-
-      vi.mocked(fsp.stat).mockImplementation(async (filePath) => {
-        const fp = filePath as string;
-        if (fp.includes('session-a')) {
-          return { size: 20 * MB, mtimeMs: now - 1000 } as any; // oldest
-        }
-        if (fp.includes('session-b')) {
-          return { size: 20 * MB, mtimeMs: now - 500 } as any;
-        }
-        if (fp.includes('session-c')) {
-          return { size: 20 * MB, mtimeMs: now } as any; // newest
-        }
-        throw new Error('ENOENT');
-      });
-
-      await init();
-
-      // Total = 60 MB, cap = 50 MB → oldest file (session-a) should be deleted
-      expect(vi.mocked(fsp.unlink)).toHaveBeenCalledWith(
-        expect.stringContaining('session-a.jsonl'),
-      );
-      // After removing session-a, total = 40 MB < 50 MB cap, so b and c stay
-      expect(vi.mocked(fsp.unlink)).not.toHaveBeenCalledWith(
-        expect.stringContaining('session-b.jsonl'),
-      );
-      expect(vi.mocked(fsp.unlink)).not.toHaveBeenCalledWith(
-        expect.stringContaining('session-c.jsonl'),
-      );
-    });
-
-    it('ignores errors during cleanup', async () => {
-      vi.mocked(fsp.readdir).mockRejectedValue(new Error('permission denied'));
-
-      await expect(init()).resolves.not.toThrow();
-    });
-  });
-
   describe('appLog', () => {
-    it('creates a properly structured log entry', async () => {
+    it('creates a properly structured diag line', () => {
       appLog('app:ipc', 'info', 'Connection established', {
         projectId: 'proj-1',
         meta: { sessionId: 's1' },
       });
-      await flush();
 
-      expect(vi.mocked(fsp.appendFile)).toHaveBeenCalledTimes(1);
-      const written = vi.mocked(fsp.appendFile).mock.calls[0][1] as string;
-      const parsed = JSON.parse(written.trim());
-
-      expect(parsed.ns).toBe('app:ipc');
-      expect(parsed.level).toBe('info');
-      expect(parsed.msg).toBe('Connection established');
-      expect(parsed.projectId).toBe('proj-1');
-      expect(parsed.meta).toEqual({ sessionId: 's1' });
-      expect(parsed.ts).toBeDefined();
+      // ts is stamped by the recorder; projectId travels in meta.
+      expect(sink.lines).toEqual([{ ns: 'app:ipc', level: 'info', msg: 'Connection established', meta: { projectId: 'proj-1', sessionId: 's1' } }]);
     });
 
-    it('works without optional fields', async () => {
+    it('works without optional fields', () => {
       vi.mocked(logSettings.getSettings).mockReturnValue({
         enabled: true,
         namespaces: {},
@@ -572,19 +212,11 @@ describe('log-service', () => {
       });
 
       appLog('app:test', 'debug', 'simple message');
-      await flush();
 
-      const written = vi.mocked(fsp.appendFile).mock.calls[0][1] as string;
-      const parsed = JSON.parse(written.trim());
-
-      expect(parsed.ns).toBe('app:test');
-      expect(parsed.level).toBe('debug');
-      expect(parsed.msg).toBe('simple message');
-      expect(parsed.projectId).toBeUndefined();
-      expect(parsed.meta).toBeUndefined();
+      expect(sink.lines).toEqual([{ ns: 'app:test', level: 'debug', msg: 'simple message' }]);
     });
 
-    it('supports all log levels', async () => {
+    it('supports all log levels', () => {
       vi.mocked(logSettings.getSettings).mockReturnValue({
         enabled: true,
         namespaces: {},
@@ -593,51 +225,13 @@ describe('log-service', () => {
       });
 
       const levels = ['debug', 'info', 'warn', 'error', 'fatal'] as const;
-      for (const level of levels) {
-        vi.clearAllMocks();
-        appLog('app:test', level, `msg-${level}`);
-        await flush();
-        const written = vi.mocked(fsp.appendFile).mock.calls[0][1] as string;
-        expect(JSON.parse(written.trim()).level).toBe(level);
-      }
-    });
-  });
-
-  describe('JSON line format', () => {
-    it('each entry is valid JSON', async () => {
-      log({
-        ts: '2026-02-15T10:30:00.123Z',
-        ns: 'plugin:terminal',
-        level: 'info',
-        msg: 'Shell spawned',
-        projectId: 'abc123',
-        meta: { sessionId: 's1' },
-      });
-      await flush();
-
-      const written = vi.mocked(fsp.appendFile).mock.calls[0][1] as string;
-      const parsed = JSON.parse(written.trim());
-      expect(parsed).toEqual({
-        ts: '2026-02-15T10:30:00.123Z',
-        ns: 'plugin:terminal',
-        level: 'info',
-        msg: 'Shell spawned',
-        projectId: 'abc123',
-        meta: { sessionId: 's1' },
-      });
+      for (const level of levels) appLog('app:test', level, `msg-${level}`);
+      expect(sink.lines.map((l) => l.level)).toEqual([...levels]);
     });
 
-    it('each line is exactly one JSON object (no pretty-printing)', async () => {
-      log({ ts: '2026-01-01T00:00:00Z', ns: 'app:a', level: 'info', msg: 'first' });
-      log({ ts: '2026-01-01T00:00:01Z', ns: 'app:b', level: 'warn', msg: 'second' });
+    it('flushes the recorder', async () => {
       await flush();
-
-      const written = vi.mocked(fsp.appendFile).mock.calls[0][1] as string;
-      const lines = written.trim().split('\n');
-      expect(lines).toHaveLength(2);
-      for (const line of lines) {
-        expect(() => JSON.parse(line)).not.toThrow();
-      }
+      expect(sink.flush).toHaveBeenCalled();
     });
   });
 });

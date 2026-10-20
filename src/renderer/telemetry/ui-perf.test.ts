@@ -49,18 +49,27 @@ afterEach(() => {
 });
 
 describe('hang log default sink (#2302)', () => {
-  it('writes a ui:perf warn diag line and the legacy log line', () => {
+  function logLongFrame(): Array<{ t: string; msg: string }> {
     vi.useFakeTimers();
-    const write = vi.fn();
-    vi.stubGlobal('clubhouse', { log: { write } });
     _setUiPerfSinkForTests(null);
     _setStateForTests({ enabled: false, level: null, diag: true });
     handleLongFrame({ duration: 640 });
     vi.advanceTimersByTime(COALESCE_MS);
     flushTelemetry();
-    const diags = emit.mock.calls.flatMap((c) => c[0].items).filter((i: { t: string }) => i.t === 'diag');
+    return emit.mock.calls.flatMap((c) => c[0].items).filter((i: { t: string }) => i.t === 'diag');
+  }
+
+  it('writes a ui:perf warn diag line', () => {
+    const diags = logLongFrame();
     expect(diags).toHaveLength(1);
     expect(diags[0]).toMatchObject({ t: 'diag', ns: 'ui:perf', level: 'warn', meta: { kind: 'long_frame', maxMs: 640 } });
+  });
+
+  // The legacy session log; delete with the writer (#2313).
+  it('also writes the legacy log line, until #2313', () => {
+    const write = vi.fn();
+    vi.stubGlobal('clubhouse', { log: { write } });
+    const diags = logLongFrame();
     expect(write).toHaveBeenCalledWith(expect.objectContaining({ ns: 'ui:perf', level: 'warn', msg: diags[0].msg }));
   });
 });
