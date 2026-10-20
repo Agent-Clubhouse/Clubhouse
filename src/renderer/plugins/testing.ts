@@ -1,10 +1,6 @@
 import { vi } from 'vitest';
 import type { PluginContext, PluginAPI } from '../../shared/plugin-types';
 
-export const mockLog = {
-  write: vi.fn(),
-};
-
 export const mockPlugin = {
   storageRead: vi.fn(),
   storageWrite: vi.fn(),
@@ -82,7 +78,6 @@ export function installMockWindowClubhouse(): void {
         git: mockGit,
         agent: mockAgent,
         pty: mockPty,
-        log: mockLog,
         process: mockProcess,
         window: mockWindow,
         agentSettings: mockAgentSettings,

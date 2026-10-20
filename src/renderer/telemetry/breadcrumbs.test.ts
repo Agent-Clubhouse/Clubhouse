@@ -1,9 +1,8 @@
 /**
  * The silent failure #2303 guards against: feedback breadcrumbs used to come
- * only through the legacy log path (`log:write` into log-service's tap), so
- * removing that path would empty them and no test would notice. Here the
- * legacy writer drops everything, and the preload bridge goes straight to
- * main's validator, as the `feedback:record-breadcrumb` handler does.
+ * only through the legacy log path (`log:write` into log-service's tap), and
+ * that path is gone (#2313). Here the preload bridge goes straight to main's
+ * validator, as the `feedback:record-breadcrumb` handler does.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { _resetBreadcrumbsForTests, recentBreadcrumbs, recordRendererBreadcrumb } from '../../main/services/breadcrumbs';
@@ -19,13 +18,11 @@ let restore: Array<() => void> = [];
 
 beforeEach(() => {
   _resetBreadcrumbsForTests(() => 1_000);
-  // The legacy log path is gone: whatever is written there is dropped.
-  const write = vi.spyOn(window.clubhouse.log, 'write').mockImplementation(() => {});
   // Over IPC, the way main's handler receives it.
   const record = vi.spyOn(window.clubhouse.feedback, 'recordBreadcrumb').mockImplementation((crumb) => {
     recordRendererBreadcrumb(structuredClone(crumb));
   });
-  restore = [() => write.mockRestore(), () => record.mockRestore()];
+  restore = [() => record.mockRestore()];
 });
 
 afterEach(() => {

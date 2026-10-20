@@ -87,15 +87,8 @@ export interface UiPerfLine {
 
 type Sink = (line: UiPerfLine) => void;
 
-// The diag tier (#2302), plus the legacy log for its writer and the feedback breadcrumb tap (#2303).
-const defaultSink: Sink = (line) => {
-  diag(UI_PERF_NS, 'warn', line.msg, line.meta);
-  try {
-    window.clubhouse?.log?.write({ ts: new Date().toISOString(), ns: UI_PERF_NS, level: 'warn', msg: line.msg, meta: line.meta });
-  } catch {
-    // The hang log must never throw into the page.
-  }
-};
+// The diag tier (#2302); diag never throws into the page.
+const defaultSink: Sink = (line) => diag(UI_PERF_NS, 'warn', line.msg, line.meta);
 
 let sink: Sink = defaultSink;
 let threshold = DEFAULT_HANG_THRESHOLD_MS;

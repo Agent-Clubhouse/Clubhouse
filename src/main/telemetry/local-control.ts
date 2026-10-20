@@ -66,7 +66,8 @@ let stopping: Promise<void> | null = null;
 let retentionTimer: ReturnType<typeof setInterval> | null = null;
 let pruning: Promise<unknown> | null = null;
 
-function logDir(): string {
+/** The local log folder: telemetry recordings, and session logs from before v0.42 until retention prunes them. */
+export function getLogDir(): string {
   return path.join(app.getPath('home'), '.clubhouse', 'logs');
 }
 
@@ -76,21 +77,14 @@ function logDir(): string {
  */
 export function runRetention(): Promise<unknown> {
   if (pruning) return pruning;
-  const protect = [...(recorder?.files().slice(-1) ?? [])];
-  try {
-    // Lazy: log-service is heavy for this module's tests, and only its current file is needed.
-    const current = (require('../services/log-service') as typeof import('../services/log-service')).getCurrentLogFile();
-    if (current) protect.push(current);
-  } catch {
-    // Logging not started.
-  }
+  const protect = recorder?.files().slice(-1) ?? [];
   let tier = LOG_RETENTION_TIERS.medium;
   try {
     tier = LOG_RETENTION_TIERS[logSettings.getSettings().retention] ?? tier;
   } catch {
     // Unreadable settings: the default tier.
   }
-  pruning = pruneLogDir(logDir(), tier, { protect })
+  pruning = pruneLogDir(getLogDir(), tier, { protect })
     .catch((): undefined => undefined)
     .finally(() => {
       pruning = null;
@@ -131,7 +125,7 @@ function start(level: LocalTelemetryLevel, signals: boolean): void {
   }
   const now = new Date();
   recorder = createLocalRecorder({
-    dir: logDir(),
+    dir: getLogDir(),
     // Milliseconds kept, so a recorder restarted within a second gets its own file.
     fileBase: now.toISOString().replace(/:/g, '-').replace(/Z$/, ''),
     level,
@@ -143,9 +137,10 @@ function start(level: LocalTelemetryLevel, signals: boolean): void {
   });
   if (signals) setLocalSink(recorder);
   setDiagSink(recorder);
-  // Hourly while recording, so a run that lasts days is pruned as it goes.
+  // Once when recording starts, then hourly while recording, so a run that lasts days is pruned as it goes.
   retentionTimer = setInterval(() => void runRetention(), RETENTION_INTERVAL_MS);
   retentionTimer.unref?.();
+  void runRetention();
 }
 
 async function stop(): Promise<void> {

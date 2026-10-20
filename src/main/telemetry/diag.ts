@@ -10,7 +10,7 @@
  * EXPORT_WITHOUT_LOCAL_RECORDING says, and they are never added to feedback
  * reports.
  *
- * Gated exactly like the legacy log (log-service.ts): logging `enabled`,
+ * Gated by the logging settings: logging `enabled`,
  * then `namespaces[ns] !== false`, then `minLogLevel`. Independent of
  * `telemetryRecording`, which gates the signal lines only. Every line is
  * redacted (diag-redaction.ts) before it is queued.
@@ -66,7 +66,7 @@ function cleanNamespace(ns: unknown): string {
   return s || 'unknown';
 }
 
-/** The logging settings' filters, exactly as log-service applies them. */
+/** The logging settings' filters. */
 function allowed(ns: string, level: DiagLevel): boolean {
   const settings = logSettings.getSettings();
   if (!settings.enabled) return false;

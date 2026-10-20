@@ -1,25 +1,17 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import * as os from 'os';
-import * as path from 'path';
-
-vi.mock('fs/promises', () => ({
-  mkdir: vi.fn(),
-  stat: vi.fn(),
-  appendFile: vi.fn(),
-  readdir: vi.fn(),
-  unlink: vi.fn(),
-}));
 
 vi.mock('./log-settings', () => ({
   getSettings: vi.fn(),
 }));
 
-import * as fsp from 'fs/promises';
 import * as logSettings from './log-settings';
-import { init, log, flush, appLog, getLogPath, getNamespaces } from './log-service';
-import { _resetDiagForTests, setDiagSink, type DiagRecord } from '../telemetry/diag';
+import { flush, appLog } from './log-service';
+import { _resetDiagForTests, getDiagNamespaces, setDiagSink, type DiagRecord } from '../telemetry/diag';
 import { _resetBreadcrumbsForTests, recentBreadcrumbs } from './breadcrumbs';
-import { KNOWN_LOG_NAMESPACES } from '../../shared/log-namespaces';
+import { KNOWN_LOG_NAMESPACES, listLogNamespaces } from '../../shared/log-namespaces';
+
+/** What Settings lists (app-handlers GET_LOG_NAMESPACES). */
+const getNamespaces = () => listLogNamespaces(getDiagNamespaces());
 
 /** A recorder stand-in that keeps the diag lines it is given. */
 function memorySink() {
@@ -33,65 +25,24 @@ function memorySink() {
   };
 }
 
-// The electron mock provides app.getPath('home') → path.join(os.tmpdir(), 'clubhouse-test-home')
-const EXPECTED_LOG_DIR = path.join(os.tmpdir(), 'clubhouse-test-home', '.clubhouse', 'logs');
-
 describe('log-service', () => {
   let sink: ReturnType<typeof memorySink>;
 
   beforeEach(async () => {
     vi.clearAllMocks();
-    vi.useFakeTimers();
-
-    // Flush any stale buffer from prior tests before resetting mocks
-    await flush();
-    vi.clearAllMocks();
-
-    // Default: logging enabled, no namespace filters, medium retention, info level
     vi.mocked(logSettings.getSettings).mockReturnValue({
       enabled: true,
       namespaces: {},
       retention: 'medium',
       minLogLevel: 'info',
     });
-
-    // stat rejects by default (file doesn't exist yet)
-    vi.mocked(fsp.stat).mockRejectedValue(new Error('ENOENT'));
-
-    // readdir returns empty by default
-    vi.mocked(fsp.readdir).mockResolvedValue([]);
-
     _resetDiagForTests();
     sink = memorySink();
     setDiagSink(sink);
-
-    await init();
-    // Clear the init-related mock calls so each test starts with a clean count
-    vi.mocked(fsp.mkdir).mockClear();
-    vi.mocked(fsp.readdir).mockClear();
-    vi.mocked(fsp.appendFile).mockClear();
   });
 
   afterEach(() => {
-    vi.useRealTimers();
     _resetDiagForTests();
-  });
-
-  describe('init', () => {
-    it('creates the log directory', async () => {
-      vi.mocked(fsp.mkdir).mockClear();
-      await init();
-      expect(vi.mocked(fsp.mkdir)).toHaveBeenCalledWith(
-        EXPECTED_LOG_DIR,
-        { recursive: true },
-      );
-    });
-  });
-
-  describe('getLogPath', () => {
-    it('returns the log directory path', () => {
-      expect(getLogPath()).toBe(EXPECTED_LOG_DIR);
-    });
   });
 
   describe('getNamespaces', () => {
@@ -129,9 +80,8 @@ describe('log-service', () => {
     beforeEach(() => { _resetBreadcrumbsForTests(() => 1_000); });
 
     it('are not taken from log lines; producers record them directly (#2303)', () => {
-      log({ ts: 't', ns: 'ui:perf', level: 'warn', msg: 'Long frames: 640ms in agent', meta: { kind: 'long_frame', maxMs: 640, count: 2 } });
-      log({ ts: 't', ns: 'ui:chat:switch', level: 'info', msg: 'Runtime switch requested', meta: { breadcrumb: { kind: 'event', code: 'runtime.switch.chat' } } });
-      // appLog too, so a hang (recorded by crash-handlers, then logged) counts once.
+      appLog('ui:chat:switch', 'info', 'Runtime switch requested', { meta: { breadcrumb: { kind: 'event', code: 'runtime.switch.chat' } } });
+      // A hang is recorded by crash-handlers, then logged: it counts once.
       appLog('ui:perf', 'warn', 'Window responsive again', { meta: { windowKind: 'main', durationMs: 2_500 } });
       expect(recentBreadcrumbs()).toEqual([]);
     });

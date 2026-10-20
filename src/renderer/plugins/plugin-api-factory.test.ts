@@ -1,4 +1,9 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+
+vi.mock('./renderer-logger', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('./renderer-logger')>();
+  return { rendererLog: vi.fn(actual.rendererLog) };
+});
 import { act } from '@testing-library/react';
 import { _resetPluginMcpStateForTests, createPluginAPI, _resetEnforcedViolations, computeDataDir } from './plugin-api-factory';
 import {
@@ -6,12 +11,12 @@ import {
   mockAgent,
   mockAgentSettings,
   mockFile,
-  mockLog,
   mockPlugin,
   mockPty,
   mockWindow,
 } from './testing';
 import { pluginEventBus } from './plugin-events';
+import { rendererLog } from './renderer-logger';
 import { pluginCommandRegistry } from './plugin-commands';
 import { pluginHotkeyRegistry } from './plugin-hotkeys';
 import { usePluginStore } from './plugin-store';
@@ -2693,41 +2698,36 @@ describe('plugin-api-factory', () => {
         expect(typeof api.logging.fatal).toBe('function');
       });
 
+      /** Each rendererLog call as the plugin's line: namespace, level, message, projectId, meta. */
+      const lines = () => vi.mocked(rendererLog).mock.calls.map(([ns, level, msg, opts]) => ({ ns, level, msg, projectId: opts?.projectId, meta: opts?.meta }));
+      beforeEach(() => vi.mocked(rendererLog).mockClear());
+
       it('sends log entries with plugin namespace', () => {
         const api = createPluginAPI(makeCtx({ pluginId: 'my-plugin' }), undefined, allPermsManifest);
         api.logging.info('test message');
 
-        expect(mockLog.write).toHaveBeenCalledTimes(1);
-        const entry = mockLog.write.mock.calls[0][0];
-        expect(entry.ns).toBe('plugin:my-plugin');
-        expect(entry.level).toBe('info');
-        expect(entry.msg).toBe('test message');
+        expect(lines()).toEqual([expect.objectContaining({ ns: 'plugin:my-plugin', level: 'info', msg: 'test message' })]);
       });
 
       it('includes projectId from context', () => {
         const api = createPluginAPI(makeCtx({ pluginId: 'test-plugin', projectId: 'proj-1' }), undefined, allPermsManifest);
         api.logging.warn('warning');
 
-        const entry = mockLog.write.mock.calls[0][0];
-        expect(entry.projectId).toBe('proj-1');
+        expect(lines()[0].projectId).toBe('proj-1');
       });
 
       it('passes meta through', () => {
         const api = createPluginAPI(makeCtx(), undefined, allPermsManifest);
         api.logging.error('failed', { code: 500, source: 'api' });
 
-        const entry = mockLog.write.mock.calls[0][0];
-        expect(entry.meta).toEqual({ code: 500, source: 'api' });
+        expect(lines()[0].meta).toEqual({ code: 500, source: 'api' });
       });
 
       it('each level method sends the correct level', () => {
         const api = createPluginAPI(makeCtx(), undefined, allPermsManifest);
         const levels = ['debug', 'info', 'warn', 'error', 'fatal'] as const;
-        for (const level of levels) {
-          mockLog.write.mockClear();
-          api.logging[level](`msg-${level}`);
-          expect(mockLog.write.mock.calls[0][0].level).toBe(level);
-        }
+        for (const level of levels) api.logging[level](`msg-${level}`);
+        expect(lines().map((l) => l.level)).toEqual([...levels]);
       });
 
       it('different plugins get different namespaces', () => {
@@ -2737,8 +2737,7 @@ describe('plugin-api-factory', () => {
         api1.logging.info('from a');
         api2.logging.info('from b');
 
-        expect(mockLog.write.mock.calls[0][0].ns).toBe('plugin:plugin-a');
-        expect(mockLog.write.mock.calls[1][0].ns).toBe('plugin:plugin-b');
+        expect(lines().map((l) => l.ns)).toEqual(['plugin:plugin-a', 'plugin:plugin-b']);
       });
 
       it('is available for all scopes', () => {

@@ -1135,18 +1135,6 @@ export const LOG_LEVEL_PRIORITY: Record<LogLevel, number> = {
   fatal: 4,
 };
 
-export interface LogEntry {
-  ts: string;
-  ns: string;
-  level: LogLevel;
-  msg: string;
-  projectId?: string;
-  meta?: Record<string, unknown>;
-  /** Present while telemetry is on: the active trace, to match a remote trace (spec §6.6). */
-  traceId?: string;
-  spanId?: string;
-}
-
 export type LogRetention = 'low' | 'medium' | 'high' | 'unlimited';
 
 export interface LogRetentionConfig {

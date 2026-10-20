@@ -356,7 +356,6 @@ export const IPC = {
     LIST_ORPHANED_PLUGIN_IDS: 'plugin:list-orphaned-plugin-ids',
   },
   LOG: {
-    LOG_WRITE: 'log:write',
     GET_LOG_SETTINGS: 'log:get-settings',
     SAVE_LOG_SETTINGS: 'log:save-settings',
     GET_LOG_NAMESPACES: 'log:get-namespaces',

@@ -30,3 +30,30 @@ export function isDiagNamespace(ns: unknown): ns is string {
 export function isDiagLevel(level: unknown): level is DiagLevel {
   return typeof level === 'string' && (DIAG_LEVELS as readonly string[]).includes(level);
 }
+
+const PLUGIN_NS_PREFIX = 'plugin:';
+/** `-` and 8 hex characters: the hash that keeps a cut plugin namespace unique. */
+const PLUGIN_NS_HASH_CHARS = 9;
+
+/** FNV-1a, 32 bits: no crypto, so the renderer and main get the same value. */
+function fnv1a(s: string): string {
+  let h = 0x811c9dc5;
+  for (let i = 0; i < s.length; i++) {
+    h ^= s.charCodeAt(i);
+    h = Math.imul(h, 0x01000193);
+  }
+  return (h >>> 0).toString(16).padStart(8, '0');
+}
+
+/**
+ * The diag namespace for a plugin's log lines, `plugin:<id>` (#2403). An id
+ * too long for the namespace limit is cut and given a hash of the whole id,
+ * so its lines are kept, not dropped, and two long ids stay apart.
+ */
+export function pluginDiagNamespace(pluginId: string): string {
+  const ns = PLUGIN_NS_PREFIX + pluginId;
+  if (isDiagNamespace(ns)) return ns;
+  const safe = pluginId.replace(/[^\w.@/-]/g, '_');
+  const keep = DIAG_MAX_NS_CHARS - PLUGIN_NS_PREFIX.length - PLUGIN_NS_HASH_CHARS;
+  return `${PLUGIN_NS_PREFIX}${safe.slice(0, keep)}-${fnv1a(pluginId)}`;
+}

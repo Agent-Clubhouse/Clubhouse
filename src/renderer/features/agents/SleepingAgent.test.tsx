@@ -6,6 +6,12 @@ import { useAgentStore } from '../../stores/agentStore';
 import { useProjectStore } from '../../stores/projectStore';
 import { useAgentDetailsStore } from './details/detailsStore';
 import type { Agent } from '../../../shared/types';
+import { rendererLog } from '../../plugins/renderer-logger';
+
+vi.mock('../../plugins/renderer-logger', async (orig) => {
+  const actual = await orig<typeof import('../../plugins/renderer-logger')>();
+  return { rendererLog: vi.fn(actual.rendererLog) };
+});
 
 vi.mock('./SleepingMascots', () => ({
   SleepingMascot: ({ orchestrator, size }: { orchestrator?: string; size?: number }) => (
@@ -264,14 +270,16 @@ describe('SleepingAgent', () => {
       window.clubhouse.agent.getSessionSummary = vi.fn().mockResolvedValue({
         summary: 'SECRET summary text', filesModified: ['/secret/file.ts'], totalDurationMs: 0, totalCostUsd: 0,
       });
-      const write = vi.spyOn(window.clubhouse.log, 'write');
+      const calls = vi.mocked(rendererLog).mock.calls;
       renderComponent({ orchestrator: 'copilot-cli' });
-      await waitFor(() => expect(write.mock.calls.some(([e]) => e.msg === 'Last session timing')).toBe(true));
-      const entry = write.mock.calls.find(([e]) => e.msg === 'Last session timing')![0];
-      expect(entry.level).toBe('debug');
-      expect(entry.meta).toMatchObject({ provider: 'copilot-cli', hasSession: true, summaryFound: true });
-      for (const k of ['configMs', 'summaryMs', 'gitMs', 'totalMs']) expect(typeof entry.meta![k]).toBe('number');
-      const logged = JSON.stringify(entry);
+      await waitFor(() => expect(calls.some(([, , msg]) => msg === 'Last session timing')).toBe(true));
+      const [ns, level, , opts] = calls.find(([, , msg]) => msg === 'Last session timing')!;
+      expect(ns).toBe('core:agents');
+      expect(level).toBe('debug');
+      const meta = opts?.meta ?? {};
+      expect(meta).toMatchObject({ provider: 'copilot-cli', hasSession: true, summaryFound: true });
+      for (const k of ['configMs', 'summaryMs', 'gitMs', 'totalMs']) expect(typeof meta[k]).toBe('number');
+      const logged = JSON.stringify(opts);
       expect(logged).not.toContain('SECRET');
       expect(logged).not.toContain('sess-1');
     });

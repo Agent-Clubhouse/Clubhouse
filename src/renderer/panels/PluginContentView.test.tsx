@@ -13,7 +13,7 @@ vi.mock('../plugins/renderer-logger', () => ({
 Object.defineProperty(globalThis, 'window', {
   value: {
     clubhouse: {
-      log: { write: vi.fn() },
+      log: {},
     },
   },
   writable: true,

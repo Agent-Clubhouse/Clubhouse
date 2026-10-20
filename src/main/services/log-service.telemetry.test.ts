@@ -1,11 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-vi.mock('fs/promises', () => ({ mkdir: vi.fn(), stat: vi.fn(), appendFile: vi.fn(), readdir: vi.fn(), unlink: vi.fn() }));
 vi.mock('./log-settings', () => ({ getSettings: vi.fn() }));
 
-import * as fsp from 'fs/promises';
 import * as logSettings from './log-settings';
-import { appLog, flush, init } from './log-service';
+import { appLog, flush } from './log-service';
 import { ATTR } from '../../shared/telemetry/attributes';
 import { abortPending } from '../telemetry/facade';
 import { setProducingRuntime } from '../telemetry/__test-utils__/producing-runtime';
@@ -14,13 +12,12 @@ import type { TelemetryRuntime } from '../telemetry/types';
 import { _resetDiagForTests, setDiagSink, type DiagRecord } from '../telemetry/diag';
 
 const events: Array<{ name: string; attrs: unknown; severity?: string }> = [];
-let traceIds: { traceId: string; spanId: string } | undefined;
 
 function runtime(): TelemetryRuntime {
   return {
     level: 'standard',
     event: (name: string, attrs: unknown, opts?: { severity?: string }) => events.push({ name, attrs, severity: opts?.severity }),
-    activeTraceIds: () => traceIds,
+    activeTraceIds: () => undefined,
     flow: vi.fn(), step: vi.fn(), count: vi.fn(), exception: vi.fn(), replaySpan: vi.fn(), replayTree: vi.fn(),
     preview: () => [], recentExports: () => [], forceFlush: async () => {}, shutdown: async () => {},
   } as unknown as TelemetryRuntime;
@@ -32,16 +29,10 @@ beforeEach(async () => {
   await flush();
   vi.clearAllMocks();
   events.length = 0;
-  traceIds = undefined;
   diagLines.length = 0;
   _resetDiagForTests();
   setDiagSink({ writeDiag: (r) => diagLines.push(r), noteDiagDropped: vi.fn(), flush: async () => {}, flushSync: vi.fn() });
   vi.mocked(logSettings.getSettings).mockReturnValue({ enabled: true, namespaces: {}, retention: 'medium', minLogLevel: 'info' });
-  // The session log is written only once init() has opened its file (#2301).
-  vi.mocked(fsp.stat).mockRejectedValue(new Error('ENOENT'));
-  vi.mocked(fsp.readdir).mockResolvedValue([]);
-  await init();
-  vi.mocked(fsp.appendFile).mockClear();
 });
 afterEach(() => {
   _resetDiagForTests();

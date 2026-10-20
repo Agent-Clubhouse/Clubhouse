@@ -11,6 +11,7 @@ import type { FileNode } from '../../shared/types';
 import { hasPermission, handlePermissionViolation } from './plugin-api-shared';
 import { resolvePath, computeWorkspaceRoot } from './plugin-api-files';
 import { rendererLog } from './renderer-logger';
+import { pluginDiagNamespace } from '../../shared/telemetry/diag';
 import { usePluginStore } from './plugin-store';
 import { useProjectStore } from '../stores/projectStore';
 
@@ -31,7 +32,7 @@ function createWorkspaceWatch(
   const fullGlob = `${basePath}/${glob}`;
 
   window.clubhouse.file.watchStart(watchId, fullGlob).catch((err: Error) => {
-    rendererLog(`plugin:${ctx.pluginId}`, 'error', `Failed to start workspace watch: ${err.message}`);
+    rendererLog(pluginDiagNamespace(ctx.pluginId), 'error', `Failed to start workspace watch: ${err.message}`);
   });
 
   const handler = (_event: unknown, data: { watchId: string; events: import('../../shared/plugin-types').FileEvent[] }) => {
