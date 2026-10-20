@@ -77,23 +77,6 @@ describe('resolveStructuredSpawn', () => {
       expect(() => resolveStructuredSpawn(binary, ['-p', 'line one\nline two']))
         .toThrow(/line break/);
     });
-
-    it.each(['copilot', 'claude.ps1'])(
-      'refuses to launch the %s path, which is not a Windows launcher',
-      (name) => {
-        setPlatform('win32');
-        const binary = path.join(npmDir, name);
-
-        expect(() => resolveStructuredSpawn(binary, ['--acp'])).toThrow(/Cannot launch .* on Windows/);
-        expect(() => resolveStructuredSpawn(binary, ['--acp'], 'call init.bat')).toThrow(/Cannot launch/);
-      },
-    );
-
-    it('leaves a bare command name to the OS', () => {
-      setPlatform('win32');
-
-      expect(resolveStructuredSpawn('node', ['x'])).toEqual({ binary: 'node', args: ['x'] });
-    });
   });
 
   describe('on POSIX', () => {

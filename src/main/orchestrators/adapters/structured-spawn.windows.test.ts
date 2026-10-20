@@ -83,7 +83,8 @@ describe.runIf(process.platform === 'win32')('discovery and launch of a real npm
       // The layout npm writes: a Unix shell script and its Windows batch shim.
       await fs.promises.writeFile(path.join(bin, name), '#!/bin/sh\nexit 1\n');
       await fs.promises.writeFile(path.join(bin, `${name}.cmd`), `@"${process.execPath}" "${echo}" %*\r\n`);
-      process.env.PATH = bin;
+      // Ahead of the real PATH, which cmd.exe itself is found on.
+      process.env.PATH = [bin, originalPATH].join(path.delimiter);
       clearBinaryCache();
 
       const found = findBinaryInPath([name], []);
@@ -98,7 +99,10 @@ describe.runIf(process.platform === 'win32')('discovery and launch of a real npm
       });
       let out = '';
       child.stdout!.on('data', (d) => { out += String(d); });
-      const code = await new Promise<number | null>((resolve) => child.on('close', resolve));
+      const code = await new Promise<number | null>((resolve, reject) => {
+        child.on('error', reject);
+        child.on('close', resolve);
+      });
 
       expect(code).toBe(0);
       expect(JSON.parse(out)).toEqual(args);

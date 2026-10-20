@@ -1,9 +1,8 @@
 import * as childProcess from 'child_process';
 import type { ChildProcess } from 'child_process';
-import * as path from 'path';
 import { winQuoteArg } from '../../util/shell';
 import { validateCommandPrefix } from '../../services/command-prefix-validation';
-import { isWindowsLauncher, WINDOWS_BATCH_RE } from '../../util/windows-launcher';
+import { WINDOWS_BATCH_RE } from '../../util/windows-launcher';
 
 export interface StructuredSpawnCommand {
   binary: string;
@@ -23,10 +22,6 @@ export interface StructuredSpawnCommand {
  *   prefix.  Each argument is quoted with winQuoteArg and passed verbatim,
  *   matching headless-manager's Windows launch.
  * - Otherwise the binary is spawned directly.
- *
- * On Windows a binary path that isn't a launcher (an extensionless Unix shell
- * script, a `.ps1`) throws, so a bad discovery result fails as a launch
- * error rather than a protocol one. A bare command name is left to the OS.
  */
 export function resolveStructuredSpawn(
   binary: string,
@@ -34,9 +29,6 @@ export function resolveStructuredSpawn(
   commandPrefix?: string,
 ): StructuredSpawnCommand {
   if (process.platform === 'win32') {
-    if (/[\\/]/.test(binary) && !isWindowsLauncher(binary)) {
-      throw new Error(`Cannot launch ${path.win32.basename(binary)} on Windows: it is not an .exe, .com, .cmd or .bat launcher`);
-    }
     if (!commandPrefix && !WINDOWS_BATCH_RE.test(binary)) {
       return { binary, args };
     }
