@@ -26,6 +26,7 @@ import {
   type ChatCapabilities,
   type ChatDriverId,
   type ChatDriverSession,
+  type ChatResumeTiming,
   type ChatEvent,
   type ChatEventDraft,
   type ChatEventDataMap,
@@ -161,6 +162,8 @@ export class ChatAgentRuntime implements AgentRuntime {
    */
   private readonly answeredHere = new Set<string>();
   private nativeSessionId: string | undefined;
+  /** How the last session open went with a requested resume, for chat start telemetry (#2304). */
+  private resumeOpen: { honored: boolean; timing?: ChatResumeTiming } | undefined;
   private capabilities: ChatCapabilities | undefined;
   private readonly queued: Array<{ content: ContentBlock[]; source: MessageSource }> = [];
   private readonly permissions = new Map<string, PendingPermission>();
@@ -222,6 +225,9 @@ export class ChatAgentRuntime implements AgentRuntime {
     this.recordLevel(this.opts.level, 'report');
     this.capabilities = session.capabilities;
     this.noteNativeSessionId(session.nativeSessionId ?? resumeNativeSessionId);
+    this.resumeOpen = resumeNativeSessionId
+      ? { honored: this.nativeSessionId === resumeNativeSessionId, ...(session.resumeTiming && { timing: session.resumeTiming }) }
+      : undefined;
     appLog('core:chat', 'info', 'Chat session open', {
       meta: {
         agentId: this.agentId,
@@ -229,7 +235,7 @@ export class ChatAgentRuntime implements AgentRuntime {
         nativeSessionId: this.nativeSessionId ?? null,
         requestedResumeId: resumeNativeSessionId ?? null,
         // False when the CLI started fresh instead of resuming (e.g. the old session was gone).
-        resumeHonored: resumeNativeSessionId ? this.nativeSessionId === resumeNativeSessionId : null,
+        resumeHonored: this.resumeOpen?.honored ?? null,
       },
     });
     await this.emit({
@@ -472,6 +478,11 @@ export class ChatAgentRuntime implements AgentRuntime {
 
   getSessionId(): string {
     return this.sessionId;
+  }
+
+  /** Set when the last session open was asked to resume: whether it did, and the load's timings. */
+  getResumeOpen(): { honored: boolean; timing?: ChatResumeTiming } | undefined {
+    return this.resumeOpen;
   }
 
   getNativeSessionId(): string | undefined {

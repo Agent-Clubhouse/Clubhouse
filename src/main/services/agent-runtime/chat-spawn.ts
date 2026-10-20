@@ -25,12 +25,12 @@ import { broadcastAgentExit } from '../agent-exit-broadcast';
 import { appLog } from '../log-service';
 import { resolveRuntimeMode } from '../chat-runtime-settings';
 import type { ChatDriver } from '../../../shared/chat';
-import type { McpHttpEndpoint } from '../../../shared/chat/runtime';
+import type { ChatResumeTiming, McpHttpEndpoint } from '../../../shared/chat/runtime';
 import { IPC } from '../../../shared/ipc-channels';
 import { broadcastToAllWindows } from '../../util/ipc-broadcast';
 import { listChatDrivers, resolveChatDriver } from './chat-drivers';
 import { driverHealthKey, driverPausedReason, probeDriver, recordDriverFailure, recordDriverSuccess } from './chat-driver-health';
-import { cliLabel, evaluateCliVersion } from './chat-version-policy';
+import { cliLabel, evaluateCliVersion, type CliVersionStatus } from './chat-version-policy';
 import { ChatAgentRuntime, ChatStartCancelledError } from './chat-runtime';
 import { listChatRuntimes, registerChatRuntime, unregisterChatRuntime } from './index';
 import { trackSessionCapture } from '../session-capture-barrier';
@@ -111,16 +111,67 @@ export function isLoginRequiredError(message: string): boolean {
   return /authentication required|not logged in|not authenticated|unauthori[sz]ed|please (run )?\S*\s*login/i.test(message);
 }
 
+/** A start error's own `code` (e.g. `rpc_timeout` from the Claude init deadline, #2283), when it has a string one. */
+function errorCodeOf(err: unknown): string | undefined {
+  const code = typeof err === 'object' && err !== null && 'code' in err ? (err as { code: unknown }).code : undefined;
+  return typeof code === 'string' ? code : undefined;
+}
+
 /** Tell the user (toast) and the log why an agent didn't get the chat it asked for. */
 function notifyFallback(agentId: string, notice: ChatRuntimeNotice): void {
   appLog('core:chat', 'warn', notice.message, { meta: { agentId, code: notice.code } });
   broadcastToAllWindows(IPC.CHAT.RUNTIME_NOTICE, agentId, notice);
 }
 
+/**
+ * Why a driver was skipped, or why a start ended where it did: a closed set
+ * for telemetry (#2304). The free-text reason stays in the log.
+ */
+export type ChatStartReason =
+  | 'no_driver' | 'binary_missing' | 'paused' | 'handshake_failed' | 'login_required' | 'version_below_min'
+  | 'version_known_bad' | 'start_failed' | 'failed_after_session_start' | 'killed' | 'superseded' | 'error';
+
+/** The CLI version verdict, or `lookup_failed` when no version could be read this time (#2275). */
+export type ChatCliVersionStatus = CliVersionStatus | 'lookup_failed';
+
+/** One driver a chat start checked, and started if its check passed. */
+export interface ChatDriverAttempt {
+  driver: ChatDriver['id'];
+  /** Why it was left; unset when the agent runs on it. */
+  reason?: ChatStartReason;
+  /** A bounded error code (the probe's `errorCode`, a start error's `code`); never the message. */
+  errorCode?: string;
+  versionStatus?: ChatCliVersionStatus;
+  checkMs: number;
+  /** Set when its session start ran. */
+  sessionStartMs?: number;
+}
+
+/**
+ * What a chat start learned on its way, for telemetry: plain data, so
+ * chat-spawn imports nothing from telemetry. The caller passes it in and
+ * records it once the start returns.
+ */
+export interface ChatStartFacts {
+  /** Every driver checked, in order. */
+  attempts: ChatDriverAttempt[];
+  /** Why the start went to the terminal, or was cancelled; unset when it runs in chat. */
+  reason?: ChatStartReason;
+  /** The first candidate driver, set even when none was checked (binary missing). */
+  preferredDriver?: ChatDriver['id'];
+  /** Set when the session opened with a requested resume. */
+  resumeHonored?: boolean;
+  resumeTiming?: ChatResumeTiming;
+}
+
 interface DriverCheck {
   ok: boolean;
   /** Why the driver was skipped. */
   reason?: string;
+  /** The same, as a closed code. */
+  why?: ChatStartReason;
+  errorCode?: string;
+  versionStatus?: ChatCliVersionStatus;
   /** Set when the CLI works but the user isn't logged in; the CLI's own hint, if any. */
   login?: { hint?: string };
   /** Notes for the transcript when it is used (e.g. an untested CLI version). */
@@ -130,23 +181,30 @@ interface DriverCheck {
 /** Paused after repeated failures, handshake, then version policy. Never spends tokens. */
 async function checkDriver(driver: ChatDriver, key: string, binaryPath: string, env?: Record<string, string>, commandPrefix?: string): Promise<DriverCheck> {
   const paused = driverPausedReason(key, Date.now(), binaryPath);
-  if (paused) return { ok: false, reason: `${driverLabel(driver)} chat is paused after repeated failures (${paused})`, notices: [] };
+  if (paused) return { ok: false, reason: `${driverLabel(driver)} chat is paused after repeated failures (${paused})`, why: 'paused', notices: [] };
   const probe = await probeDriver(driver, binaryPath, env, commandPrefix);
   if (!probe.handshakeOk) {
-    return { ok: false, reason: `${driverLabel(driver)} handshake failed: ${probe.error ?? 'unknown error'}`, notices: [] };
+    return {
+      ok: false,
+      reason: `${driverLabel(driver)} handshake failed: ${probe.error ?? 'unknown error'}`,
+      why: 'handshake_failed',
+      ...(probe.errorCode && { errorCode: probe.errorCode }),
+      notices: [],
+    };
   }
   if (probe.needsLogin) {
-    return { ok: false, reason: `${driverLabel(driver)} needs a login`, login: { hint: probe.loginHint }, notices: [] };
+    return { ok: false, reason: `${driverLabel(driver)} needs a login`, why: 'login_required', login: { hint: probe.loginHint }, notices: [] };
   }
   const verdict = evaluateCliVersion(driver.id, driver.provider, probe.cliVersion);
+  const versionStatus: ChatCliVersionStatus = verdict.status === 'unknown' && probe.versionTransient ? 'lookup_failed' : verdict.status;
   if (verdict.status === 'known_bad' || verdict.status === 'below_min') {
-    return { ok: false, reason: verdict.message, notices: [] };
+    return { ok: false, reason: verdict.message, why: verdict.status === 'known_bad' ? 'version_known_bad' : 'version_below_min', versionStatus, notices: [] };
   }
-  if (verdict.status !== 'untested' || !verdict.message) return { ok: true, notices: [] };
+  if (verdict.status !== 'untested' || !verdict.message) return { ok: true, versionStatus, notices: [] };
   // Expected whenever the CLI ships before chat is retested: log it; the view
   // shows it only alongside a real problem.
   appLog('core:chat', 'info', verdict.message, { meta: { driver: driver.id, cliVersion: verdict.version } });
-  return { ok: true, notices: [{ level: 'info', code: 'untested_cli_version', message: verdict.message }] };
+  return { ok: true, versionStatus, notices: [{ level: 'info', code: 'untested_cli_version', message: verdict.message }] };
 }
 
 /**
@@ -164,6 +222,8 @@ interface InflightStart {
   prepared: boolean;
   /** For the sleep reason when the start is killed before a runtime exists. */
   projectPath: string;
+  /** Set before the abort: a kill, or a newer start for the agent. */
+  cancelReason?: 'killed' | 'superseded';
 }
 
 /** One chat start at a time per agent. */
@@ -181,6 +241,7 @@ export async function cancelChatStart(agentId: string): Promise<boolean> {
   if (!start) return false;
   inflightStarts.delete(agentId);
   appLog('core:chat', 'info', 'Cancelling chat start', { meta: { agentId, reason: 'killed', runtimeRegistered: !!start.runtime } });
+  start.cancelReason = 'killed';
   start.controller.abort();
   if (start.runtime) {
     await start.runtime.stop();
@@ -236,6 +297,9 @@ export function hasChatStartInFlight(agentId: string): boolean {
  * minimum or known to be bad; a driver that fails to start counts a failure
  * and the next one is tried. Ending up on a lower driver or the terminal is
  * reported to the user with the reason.
+ *
+ * `facts`, when given, collects each driver tried and why the start ended
+ * where it did, for the caller's telemetry.
  */
 export async function tryStartChatAgent(
   params: ChatSpawnParams,
@@ -244,6 +308,7 @@ export async function tryStartChatAgent(
   commandPrefix: string | undefined,
   durableConfig: DurableAgentConfig | null | undefined,
   onStarting?: () => void,
+  facts: ChatStartFacts = { attempts: [] },
 ): Promise<ChatStartResult> {
   // Only durable agents get chat for now; quick agents stay fire-and-forget.
   if (params.kind !== 'durable') return 'terminal';
@@ -254,9 +319,14 @@ export async function tryStartChatAgent(
     appLog('core:chat', 'info', 'No chat driver registered for provider; using the terminal', {
       meta: { agentId: params.agentId, provider: provider.id },
     });
+    facts.reason = 'no_driver';
     return 'terminal';
   }
-  if (!provider.getBinaryPath) return 'terminal';
+  facts.preferredDriver = candidates[0].id;
+  if (!provider.getBinaryPath) {
+    facts.reason = 'binary_missing';
+    return 'terminal';
+  }
   let binaryPath: string;
   try {
     binaryPath = provider.getBinaryPath();
@@ -265,6 +335,7 @@ export async function tryStartChatAgent(
       meta: { agentId: params.agentId, provider: provider.id, error: err instanceof Error ? err.message : String(err) },
     });
     recordBreadcrumb('error', `chat.binary_missing.${codePart(provider.id)}`);
+    facts.reason = 'binary_missing';
     return 'terminal';
   }
 
@@ -273,6 +344,7 @@ export async function tryStartChatAgent(
   inflightStarts.set(params.agentId, start);
   if (previous) {
     appLog('core:chat', 'info', 'Cancelling chat start', { meta: { agentId: params.agentId, reason: 'superseded', runtimeRegistered: !!previous.runtime } });
+    previous.cancelReason = 'superseded';
     previous.controller.abort();
     // Close the old CLI without onEnded: this start owns the agent id now.
     if (previous.runtime) {
@@ -285,10 +357,14 @@ export async function tryStartChatAgent(
   }
   onStarting?.();
   try {
-    return await runChatStart(params, provider, profileEnv, commandPrefix, durableConfig, candidates, binaryPath, start);
+    return await runChatStart(params, provider, profileEnv, commandPrefix, durableConfig, candidates, binaryPath, start, facts);
   } catch (err) {
-    if (!(err instanceof ChatStartCancelledError)) throw err;
+    if (!(err instanceof ChatStartCancelledError)) {
+      facts.reason = 'error';
+      throw err;
+    }
     appLog('core:chat', 'info', 'Chat start cancelled; not opening the terminal', { meta: { agentId: params.agentId } });
+    facts.reason = start.cancelReason ?? 'killed';
     return 'cancelled';
   } finally {
     if (inflightStarts.get(params.agentId) === start) inflightStarts.delete(params.agentId);
@@ -304,6 +380,7 @@ async function runChatStart(
   candidates: ChatDriver[],
   binaryPath: string,
   start: InflightStart,
+  facts: ChatStartFacts,
 ): Promise<ChatStartResult> {
   const { signal } = start.controller;
   /** Called after every await: a cancelled start stops where it is. */
@@ -338,18 +415,26 @@ async function runChatStart(
     const checkStartedAt = Date.now();
     const check = await checkDriver(driver, key, binaryPath, launchEnv, commandPrefix);
     checkpoint();
+    const attempt: ChatDriverAttempt = {
+      driver: driver.id,
+      checkMs: Date.now() - checkStartedAt,
+      ...(check.versionStatus && { versionStatus: check.versionStatus }),
+    };
+    facts.attempts.push(attempt);
     appLog('core:chat', check.ok ? 'info' : 'warn', 'Chat driver check', {
       meta: {
         agentId: params.agentId,
         driver: driver.id,
         ok: check.ok,
-        durationMs: Date.now() - checkStartedAt,
+        durationMs: attempt.checkMs,
         ...(check.reason ? { reason: check.reason } : {}),
         ...(check.login ? { loginRequired: true } : {}),
         ...(check.notices.length ? { notices: check.notices.map((n) => n.code) } : {}),
       },
     });
     if (!check.ok) {
+      attempt.reason = check.why ?? 'handshake_failed';
+      if (check.errorCode) attempt.errorCode = check.errorCode;
       skipped.push(check.reason ?? `${driverLabel(driver)} is unavailable`);
       // Every driver of a provider shares its login; don't try the next one.
       if (check.login) { login = check.login; break; }
@@ -360,22 +445,33 @@ async function runChatStart(
     const fallbackNotice: ChatRuntimeNotice | undefined = index > 0
       ? { level: 'warn', code: 'fallback', message: `Using ${driverLabel(driver)}: ${skipped.join('; ')}` }
       : undefined;
+    const sessionStartedAt = Date.now();
     const outcome = await startChatRuntime(driver, [...(fallbackNotice ? [fallbackNotice] : []), ...check.notices], prepared);
+    attempt.sessionStartMs = Date.now() - sessionStartedAt;
     // Covers a start whose driver timed out after the cancel: it never counts
     // as a driver failure, tries the next driver or falls back.
     checkpoint();
     if (!('error' in outcome)) {
       recordDriverSuccess(key);
+      const resumeOpen = start.runtime?.getResumeOpen();
+      if (resumeOpen) {
+        facts.resumeHonored = resumeOpen.honored;
+        if (resumeOpen.timing) facts.resumeTiming = resumeOpen.timing;
+      }
       if (fallbackNotice) notifyFallback(params.agentId, fallbackNotice);
       return 'chat';
     }
+    if (outcome.errorCode) attempt.errorCode = outcome.errorCode;
     if (outcome.sessionStarted) {
+      attempt.reason = 'failed_after_session_start';
       // The CLI may already have the mission: don't hand it to another driver.
       skipped.push(`${driverLabel(driver)} failed after its session started: ${outcome.error}`);
       break;
     }
     if (isLoginRequiredError(outcome.error)) {
       // Not the driver's fault, and every driver of a provider shares the login.
+      attempt.reason = 'login_required';
+      attempt.errorCode ??= 'auth_required';
       skipped.push(`${driverLabel(driver)} needs a login: ${outcome.error}`);
       login = {};
       break;
@@ -383,6 +479,7 @@ async function runChatStart(
     // A stale resume id fails every driver alike; it says nothing about this one's health.
     if (!resumeNativeSessionId) recordDriverFailure(key, `session start failed: ${outcome.error}`, Date.now(), binaryPath);
     noteChatStartFailure(params.agentId, outcome.error);
+    attempt.reason = 'start_failed';
     skipped.push(`${driverLabel(driver)} failed to start: ${outcome.error}`);
   }
 
@@ -390,6 +487,7 @@ async function runChatStart(
     agentRegistry.setRuntime(params.agentId, 'pty');
     configPipeline.restoreForAgent(params.agentId);
   }
+  facts.reason = facts.attempts[facts.attempts.length - 1]?.reason ?? 'error';
   // The terminal is where the CLI's own login flow works.
   notifyFallback(params.agentId, login
     ? {
@@ -454,7 +552,7 @@ async function runChatStart(
     driver: ChatDriver,
     startNotices: ChatRuntimeNotice[],
     { env, mcpServers, mcpHttpEndpoints, continued }: NonNullable<typeof prepared>,
-  ): Promise<{ ok: true } | { ok: false; error: string; sessionStarted: boolean }> {
+  ): Promise<{ ok: true } | { ok: false; error: string; errorCode?: string; sessionStarted: boolean }> {
     let sessionStarted = false;
     const recordChatSession = (id: string) => {
       // Tracked so quit and update wait for it before the final config flush (#2053).
@@ -563,7 +661,8 @@ async function runChatStart(
       const message = err instanceof Error ? err.message : String(err);
       appLog('core:chat', 'warn', 'Chat start failed', { meta: { agentId: params.agentId, driver: driver.id, error: message, sessionStarted } });
       recordBreadcrumb('error', `chat.start_failed.${codePart(driver.id)}`);
-      return { ok: false, error: message, sessionStarted };
+      const code = errorCodeOf(err);
+      return { ok: false, error: message, ...(code && { errorCode: code }), sessionStarted };
     }
   }
 }

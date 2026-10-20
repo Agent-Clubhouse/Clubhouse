@@ -415,6 +415,39 @@ export const ATTR = {
   chatProtocolKind: enumAttr('clubhouse.chat.protocol.kind', ['request', 'notification', 'field']),
   permissionPath: enumAttr('clubhouse.permission.path', ['hook', 'chat']),
   permissionSource: enumAttr('clubhouse.permission.source', ['desktop', 'annex']),
+  // Chat start (#2304): how a chat start ended, and why it left its first driver.
+  /**
+   * `chat` on the first driver, `fallback` in chat on a lower driver,
+   * `terminal` opened in the terminal instead, `cancelled` killed or
+   * replaced by a newer start, `failed` the start threw.
+   */
+  chatStartResult: enumAttr('clubhouse.chat.start.result', ['chat', 'fallback', 'terminal', 'cancelled', 'failed']),
+  /** Why a driver was skipped or the start ended where it did. A closed set; the message itself goes to diag only. */
+  chatStartReason: enumAttr('clubhouse.chat.start.reason', [
+    'no_driver', 'binary_missing', 'paused', 'handshake_failed', 'login_required', 'version_below_min',
+    'version_known_bad', 'start_failed', 'failed_after_session_start', 'killed', 'superseded', 'error',
+  ]),
+  /** Where a fallback went: the provider's next driver, or the terminal. */
+  chatFallbackTo: enumAttr('clubhouse.chat.fallback.to', ['driver', 'terminal']),
+  /** The CLI version policy's verdict; `lookup_failed` when no version could be read this time (#2275). */
+  chatCliVersionStatus: enumAttr('clubhouse.chat.cli_version.status', [
+    'ok', 'untested', 'below_min', 'known_bad', 'unknown', 'lookup_failed',
+  ]),
+  chatDriversTried: intAttr('clubhouse.chat.drivers_tried'),
+  /** Time spent on driver checks (pause, handshake, version), in milliseconds. */
+  chatCheckMs: intAttr('clubhouse.chat.check_ms'),
+  /** The driver session start, through any resume, in milliseconds. */
+  chatSessionStartMs: intAttr('clubhouse.chat.session_start_ms'),
+  /**
+   * False when a requested resume opened a fresh native session instead. A
+   * false is reliable; a true can be optimistic for Claude, whose session
+   * reports the requested id until its init arrives.
+   */
+  chatResumeHonored: boolAttr('clubhouse.chat.resume_honored'),
+  /** A native session load (ACP `session/load`), request to answer or to giving up, in milliseconds (#2296). */
+  chatResumeLoadMs: intAttr('clubhouse.chat.resume.load_ms'),
+  /** The same load, request to its first replayed update, in milliseconds. */
+  chatResumeFirstReplyMs: intAttr('clubhouse.chat.resume.first_reply_ms'),
 
   // Agents (§4.4, Phase 4)
   agentExitClass: enumAttr('clubhouse.agent.exit.class', [
@@ -1202,6 +1235,12 @@ export interface EventDef {
 export const EVENTS = {
   /** Failed chat handshake; only driver and bounded error.type, never stderr or env. */
   'clubhouse.chat.probe_failed': { level: 'errors' },
+  /**
+   * A chat start left a driver: for the next one, or for the terminal (#2304).
+   * Attributes: driver, orchestrator, `clubhouse.chat.fallback.to`,
+   * `clubhouse.chat.start.reason`, `error.type`, version status, timings.
+   */
+  'clubhouse.chat.fallback': { level: 'standard' },
   'clubhouse.telemetry.test': { level: 'errors' },
   'clubhouse.telemetry.enabled': { level: 'errors' },
   'clubhouse.telemetry.disabled': { level: 'errors' },

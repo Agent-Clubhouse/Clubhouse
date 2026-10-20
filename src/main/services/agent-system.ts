@@ -36,7 +36,7 @@ import { broadcastToAllWindows } from '../util/ipc-broadcast';
 import { IPC } from '../../shared/ipc-channels';
 import * as os from 'os';
 import { getAgentRuntime, isChatAgent } from './agent-runtime';
-import { cancelChatStart, tryStartChatAgent, type ChatStartResult } from './agent-runtime/chat-spawn';
+import { cancelChatStart, tryStartChatAgent, type ChatStartFacts, type ChatStartResult } from './agent-runtime/chat-spawn';
 import { clearStaleResume, isSessionNotFound, takeChatStartFailure, type StaleResumeReason } from './agent-runtime/stale-session';
 import { noteKillRequest, recordSleep, sleepInfoForExit, takeKillRequest } from './agent-runtime/sleep-reason';
 import { onAgentExit } from './agent-exit-broadcast';
@@ -406,6 +406,8 @@ async function spawnAgentInner(inParams: SpawnAgentParams, facts: SpawnFacts): P
     // Chat and has a registered driver. Falls through to the terminal otherwise.
     let chatStartMs: number | undefined;
     let chatStart: ChatStartResult;
+    const chatFacts: ChatStartFacts = { attempts: [] };
+    const chatContext = { orchestrator: facts.orchestrator, resume: !!params.resume };
     takeChatStartFailure(params.agentId);
     // A kill that never produced an exit (the agent wasn't running) mustn't label this run's.
     takeKillRequest(params.agentId);
@@ -437,16 +439,16 @@ async function spawnAgentInner(inParams: SpawnAgentParams, facts: SpawnFacts): P
         permissionMode,
         resume: params.resume,
         sessionId: params.sessionId,
-      }, provider, profileEnv, commandPrefix, durableConfig, () => { chatStartMs = Date.now(); }));
+      }, provider, profileEnv, commandPrefix, durableConfig, () => { chatStartMs = Date.now(); }, chatFacts));
     } catch (err) {
-      recordChatStart(chatStartMs, false);
+      recordChatStart(chatStartMs, 'failed', chatFacts, chatContext);
       throw err;
     }
+    recordChatStart(chatStartMs, chatStart, chatFacts, chatContext);
     // Killed, or replaced by a newer start for this agent: that one owns the
     // agent now, so this spawn opens nothing (in particular no terminal).
     if (chatStart === 'cancelled') return;
     const startedInChat = chatStart === 'chat';
-    recordChatStart(chatStartMs, startedInChat);
     if (startedInChat) {
       facts.runtime = 'chat';
       broadcastToAllWindows(IPC.AGENT.AGENT_AWOKE, params.agentId);

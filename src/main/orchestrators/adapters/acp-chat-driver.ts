@@ -5,6 +5,7 @@ import type {
   ChatDriverProbe,
   ChatDriverSession,
   ChatDriverStartOptions,
+  ChatResumeTiming,
 } from '../../../shared/chat/runtime';
 import { AsyncQueue } from './async-queue';
 import { RpcError } from './acp-client';
@@ -32,6 +33,7 @@ const CLOSE_GRACE_MS = 5_000;
 class AcpChatDriverSession implements ChatDriverSession {
   readonly events: AsyncIterable<ChatEventDraft>;
   readonly capabilities: ChatCapabilities;
+  resumeTiming: ChatResumeTiming | undefined;
   private exited = false;
   private readonly exitWaiters: Array<() => void> = [];
   /** Called after an effort is chosen in the session (set once mapping starts). */
@@ -170,11 +172,11 @@ export class AcpChatDriver implements ChatDriver {
    */
   async start(opts: ChatDriverStartOptions): Promise<ChatDriverSession> {
     try {
-      return await this.open(opts, opts.resumeNativeSessionId, []);
+      return await this.open(opts, opts.resumeNativeSessionId, undefined, []);
     } catch (err) {
       if (!(err instanceof AcpResumeStalledError) || opts.signal?.aborted) throw err;
       this.log('warn', 'Native session resume stalled; starting a new one', { sessionId: err.sessionId, method: err.method, timeoutMs: err.timeoutMs });
-      return this.open(opts, undefined, [{
+      return this.open(opts, undefined, err.timing, [{
         type: 'notice',
         data: {
           level: 'info',
@@ -185,7 +187,13 @@ export class AcpChatDriver implements ChatDriver {
     }
   }
 
-  private async open(opts: ChatDriverStartOptions, resumeNativeSessionId: string | undefined, notices: ChatEventDraft[]): Promise<ChatDriverSession> {
+  /** `stalledTiming`: the timings of a resume that stalled, for the fresh session that replaces it. */
+  private async open(
+    opts: ChatDriverStartOptions,
+    resumeNativeSessionId: string | undefined,
+    stalledTiming: ChatResumeTiming | undefined,
+    notices: ChatEventDraft[],
+  ): Promise<ChatDriverSession> {
     if (opts.signal?.aborted) throw new Error('Chat start cancelled');
     const cmd = this.spec.spawn({ binary: opts.binaryPath, extraArgs: opts.extraArgs, commandPrefix: opts.commandPrefix });
     const queue = new AsyncQueue<ChatEventDraft>();
@@ -287,6 +295,7 @@ export class AcpChatDriver implements ChatDriver {
 
       const levels = session.agentProfile.permissionLevels;
       driverSession = new AcpChatDriverSession(session, queue, toChatCapabilities(caps, session.getState(), levels), this.log);
+      driverSession.resumeTiming = session.resumeTiming ?? stalledTiming;
       for (const draft of this.spec.handshakeNotices?.(session.initializeResponse!) ?? []) queue.push(draft);
 
       // Apply requested settings before mapping starts, so they aren't reported as changes.

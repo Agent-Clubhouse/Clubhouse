@@ -31,6 +31,7 @@ import {
 import { parseSessionUpdate } from './acp-updates';
 import { deriveAcpCapabilities, type AcpDriverCapabilities } from './acp-capabilities';
 import type { PermissionLevel } from '../../../shared/chat/capabilities';
+import type { ChatResumeTiming } from '../../../shared/chat/runtime';
 
 /** How long close() waits for an agent to answer `session/close` before killing it. */
 export const SESSION_CLOSE_TIMEOUT_MS = 2_000;
@@ -102,6 +103,9 @@ export class AcpResumeStalledError extends Error {
     );
     this.name = 'AcpResumeStalledError';
   }
+
+  /** The stalled load's timings, for telemetry. */
+  timing?: ChatResumeTiming;
 }
 
 /** One entry of an agent's task list. */
@@ -292,6 +296,8 @@ export class AcpSession {
   private resumeStats: { notifications: number; inboundChars: number } | null = null;
   /** When `initialize` answered, so the resume timing log can show the gap before the load request. */
   private initializedAt: number | null = null;
+  /** The last native session load's timings, however it ended. */
+  resumeTiming: ChatResumeTiming | null = null;
   /** Pending while a prompt turn runs; `exit` waits for it so `turn_ended` comes first. */
   private turnSettled: Promise<void> | null = null;
   /** Agents may announce a new session's updates before answering session/new. */
@@ -501,6 +507,10 @@ export class AcpSession {
       if (reported) return;
       reported = true;
       if (this.resumeStats === stats) this.resumeStats = null;
+      this.resumeTiming = {
+        loadMs: Date.now() - requestedAt,
+        ...(firstActivityAt !== null && { firstReplyMs: firstActivityAt - requestedAt }),
+      };
       this.log(outcome === 'ok' ? 'info' : 'warn', `ACP ${method} timing`, {
         sessionId,
         outcome,
@@ -521,7 +531,9 @@ export class AcpSession {
         settle();
         report(reason);
         this.log('warn', `ACP ${method} timed out`, { sessionId, timeoutMs, reason });
-        reject(new AcpResumeStalledError(method, sessionId, timeoutMs, reason));
+        const stalled = new AcpResumeStalledError(method, sessionId, timeoutMs, reason);
+        if (this.resumeTiming) stalled.timing = this.resumeTiming;
+        reject(stalled);
       };
       const arm = () => {
         clearTimeout(idle);
