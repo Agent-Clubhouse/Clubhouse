@@ -4,7 +4,10 @@ import * as path from 'path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createFramebriar } from '../../vendor/framebriar/adapters/node/index.mjs';
 import type { Framebriar, FramebriarAccessView, FramebriarOutboxView } from '../../vendor/framebriar/adapters/node/index.mjs';
-import { connectFailureReason, FeedbackService, pngSize, sdkVersion, toFeedbackStatus } from './feedback-service';
+import { ATTR } from '../../../shared/telemetry/attributes';
+import { setProducingRuntime } from '../../telemetry/__test-utils__/producing-runtime';
+import type { TelemetryRuntime } from '../../telemetry/types';
+import { connectFailureClass, connectFailureReason, FeedbackService, pngSize, sdkVersion, toFeedbackStatus } from './feedback-service';
 
 const ACCESS: FramebriarAccessView = { state: 'connected', connected: true, enrolled: true, canCapture: true, notice: null, expiresAt: '2026-11-15T00:00:00.000Z' };
 const OUTBOX: FramebriarOutboxView = { state: 'available', items: 2, bytes: 1234, maxItems: 10, maxBytes: 33554432, blocked: 1, retention: 'until-delivered-or-cleared' };
@@ -444,6 +447,159 @@ describe('FeedbackService (fake SDK)', () => {
     });
   });
 
+  describe('telemetry (#2309)', () => {
+    const INVITE = 'A'.repeat(43);
+    const NOTES = 'my private feedback words';
+    let rt: TelemetryRuntime;
+    beforeEach(() => {
+      rt = { level: 'detailed', event: vi.fn(), count: vi.fn() } as unknown as TelemetryRuntime;
+      setProducingRuntime(rt);
+    });
+    afterEach(() => setProducingRuntime(null));
+    const events = () => vi.mocked(rt.event).mock.calls.map(([name, attrs]) => [name, attrs ?? []]);
+    const named = (name: string) => events().filter(([n]) => n === name).map(([, a]) => a);
+
+    it('records a capture: screenshot, shot and window counts, trigger', async () => {
+      const { create } = fakeSdk();
+      const s = service(create);
+      await s.captureDraft([{ label: 'Main window', grab: async () => PNG }, { label: 'Pop-out', grab: async () => PNG }], 'shortcut');
+      await s.captureDraft(async () => null);
+      expect(named('clubhouse.feedback.captured')).toEqual([
+        [ATTR.feedbackScreenshot(true), ATTR.feedbackShots(2), ATTR.feedbackWindows(2), ATTR.feedbackTrigger('shortcut')],
+        [ATTR.feedbackScreenshot(false), ATTR.feedbackShots(0), ATTR.feedbackWindows(1), ATTR.feedbackTrigger('button')],
+      ]);
+    });
+
+    it('records a failed capture with its error class', async () => {
+      const { create } = fakeSdk();
+      const s = service(create);
+      await expect(s.captureDraft(async () => { throw new Error('gpu at /Users/someone'); })).rejects.toThrow();
+      await expect(s.captureDraft(async () => Buffer.from('not a png at all'))).rejects.toThrow();
+      expect(named('clubhouse.feedback.failed')).toEqual([
+        [ATTR.feedbackStage('capture'), ATTR.feedbackError('capture-failed')],
+        [ATTR.feedbackStage('capture'), ATTR.feedbackError('invalid-media')],
+      ]);
+    });
+
+    it('records a submit: screenshot, annotated, shot count and access state', async () => {
+      const { create } = fakeSdk();
+      const s = service(create);
+      const shot = pngOf(4, 3, 'shot');
+      const draft = await s.captureDraft([{ label: 'Main window', grab: async () => shot }, { label: 'Pop-out', grab: async () => shot }]);
+      await s.send({ draftId: draft.draftId, notes: NOTES, includeScreenshot: true, annotatedPng: pngOf(4, 3, 'ink').toString('base64') });
+      await s.send({ notes: NOTES, includeScreenshot: false });
+      expect(named('clubhouse.feedback.submitted')).toEqual([
+        [ATTR.feedbackScreenshot(true), ATTR.feedbackAnnotated(true), ATTR.feedbackShots(2), ATTR.feedbackAccessState('connected')],
+        [ATTR.feedbackScreenshot(false), ATTR.feedbackAnnotated(false), ATTR.feedbackShots(0), ATTR.feedbackAccessState('connected')],
+      ]);
+    });
+
+    it('records failed submits with an error class, never the message', async () => {
+      const { create, fb } = fakeSdk();
+      const s = service(create);
+      await expect(s.send({ notes: '  ', includeScreenshot: false })).rejects.toThrow();
+      await expect(s.send({ notes: NOTES, includeScreenshot: true })).rejects.toThrow();
+      const draft = await s.captureDraft(async () => PNG);
+      await expect(s.send({ draftId: draft.draftId, notes: NOTES, includeScreenshot: true, shotId: 's9' })).rejects.toThrow();
+      fb.feedback.submit.mockRejectedValueOnce(Object.assign(new Error('Local feedback storage is full'), { code: 'storage-full' }));
+      await expect(s.send({ notes: NOTES, includeScreenshot: false })).rejects.toThrow();
+      fb.feedback.submit.mockRejectedValueOnce(new Error('something odd at /Users/someone'));
+      await expect(s.send({ notes: NOTES, includeScreenshot: false })).rejects.toThrow();
+      expect(named('clubhouse.feedback.failed').map((a) => a[1])).toEqual([
+        ATTR.feedbackError('notes-required'),
+        ATTR.feedbackError('screenshot-expired'),
+        ATTR.feedbackError('shot-unavailable'),
+        ATTR.feedbackError('storage-full'),
+        ATTR.feedbackError('unknown'),
+      ]);
+      expect(named('clubhouse.feedback.failed').every((a) => a[0].value === 'submit')).toBe(true);
+    });
+
+    it('records delivery, undeliverable reports and an unusable outbox', async () => {
+      const { create, opts } = fakeSdk();
+      const s = service(create);
+      await s.start();
+      const box = (over: Partial<FramebriarOutboxView>) => ({ ...OUTBOX, items: 0, blocked: 0, ...over });
+      opts().onOutboxChange!(box({ state: 'available' }));
+      opts().onOutboxChange!(box({ items: 1 }));
+      opts().onReceipt!({ id: 'rep-9', status: 'accepted' });
+      opts().onOutboxChange!(box({ items: 1, blocked: 1 }));
+      opts().onOutboxChange!(box({ state: 'storage-unavailable', items: 1, blocked: 1 }));
+      expect(named('clubhouse.feedback.delivered')).toEqual([[]]);
+      expect(named('clubhouse.feedback.failed')).toEqual([
+        [ATTR.feedbackStage('deliver'), ATTR.feedbackError('undeliverable')],
+        [ATTR.feedbackStage('deliver'), ATTR.feedbackError('storage-unavailable')],
+      ]);
+    });
+
+    it('records connect success, a classified failure and a throw', async () => {
+      const { create, fb } = fakeSdk();
+      const s = service(create);
+      await s.connect(INVITE);
+      expect(named('clubhouse.feedback.connected')).toEqual([[]]);
+      let access = { ...ACCESS, state: 'disconnected' as const, connected: false };
+      fb.access.status = () => access as never;
+      fb.access.connect.mockImplementationOnce(async () => { access = { ...access, state: 'access-required' as never, notice: 'access-required' }; return false; });
+      await s.connect(INVITE);
+      fb.access.connect.mockRejectedValueOnce(Object.assign(new Error('keychain locked'), { code: 'secure-store-unavailable' }));
+      await expect(s.connect(INVITE)).rejects.toThrow();
+      expect(named('clubhouse.feedback.failed')).toEqual([
+        [ATTR.feedbackStage('connect'), ATTR.feedbackError('access-refused')],
+        [ATTR.feedbackStage('connect'), ATTR.feedbackError('secure-store-unavailable')],
+      ]);
+    });
+
+    it('records a failed start', async () => {
+      const { create, fb } = fakeSdk();
+      fb.start.mockRejectedValueOnce(Object.assign(new Error('locked'), { code: 'busy' }));
+      await expect(service(create).start()).rejects.toThrow();
+      expect(named('clubhouse.feedback.failed')).toEqual([[ATTR.feedbackStage('start'), ATTR.feedbackError('busy')]]);
+    });
+
+    it('counts a start failure once when a capture or a send started it', async () => {
+      for (const act of [(s: FeedbackService) => s.captureDraft(async () => PNG), (s: FeedbackService) => s.send({ notes: NOTES, includeScreenshot: false })]) {
+        vi.mocked(rt.event).mockClear();
+        const { create, fb } = fakeSdk();
+        fb.start.mockRejectedValueOnce(Object.assign(new Error('locked'), { code: 'busy' }));
+        await expect(act(service(create))).rejects.toThrow();
+        expect(named('clubhouse.feedback.failed')).toEqual([[ATTR.feedbackStage('start'), ATTR.feedbackError('busy')]]);
+      }
+    });
+
+    it('records settled access transitions once each', async () => {
+      const { create, opts } = fakeSdk();
+      await service(create).start();
+      const view = (state: string, notice: string | null = null) => ({ ...ACCESS, state, notice }) as FramebriarAccessView;
+      opts().onAccessChange!(view('checking'));
+      opts().onAccessChange!(view('disconnected'));
+      opts().onAccessChange!(view('connecting'));
+      opts().onAccessChange!(view('connected'));
+      opts().onAccessChange!(view('connected'));
+      opts().onAccessChange!(view('checking'));
+      opts().onAccessChange!(view('connected'));
+      opts().onAccessChange!(view('expired', 'expired'));
+      // `from` is the previous settled state, never an in-between one.
+      expect(named('clubhouse.feedback.access')).toEqual([
+        [ATTR.feedbackAccessState('disconnected'), ATTR.feedbackAccessFrom('none'), ATTR.feedbackNotice('none')],
+        [ATTR.feedbackAccessState('connected'), ATTR.feedbackAccessFrom('disconnected'), ATTR.feedbackNotice('none')],
+        [ATTR.feedbackAccessState('expired'), ATTR.feedbackAccessFrom('connected'), ATTR.feedbackNotice('expired')],
+      ]);
+    });
+
+    it('never puts notes, image bytes, the invitation or the report id in telemetry', async () => {
+      const { create, opts } = fakeSdk();
+      const s = service(create);
+      await s.connect(INVITE);
+      const draft = await s.captureDraft(async () => PNG);
+      const ink = PNG.toString('base64');
+      await s.send({ draftId: draft.draftId, notes: NOTES, includeScreenshot: true });
+      opts().onReceipt!({ id: 'rep-1' });
+      const all = JSON.stringify(events());
+      for (const secret of [NOTES, INVITE, 'rep-1', ink, PNG.toString('latin1'), draft.draftId, 'data:image']) expect(all).not.toContain(secret);
+      for (const [, attrs] of events()) for (const a of attrs as Array<{ kind: string }>) expect(['enum', 'int', 'bool']).toContain(a.kind);
+    });
+  });
+
   it('shuts the SDK down once', async () => {
     const { create, fb } = fakeSdk();
     const s = service(create);
@@ -607,6 +763,19 @@ describe('FeedbackService with the vendored Framebriar SDK (mocked transport)', 
     } finally {
       await s.shutdown();
     }
+  });
+});
+
+describe('connectFailureClass', () => {
+  const INVITE = 'A'.repeat(43);
+  it('classifies each failure for telemetry', () => {
+    expect(connectFailureClass('short', 'disconnected', 'disconnected', null, 0)).toBe('invitation-malformed');
+    expect(connectFailureClass(INVITE, 'disconnecting', 'disconnecting', null, 0)).toBe('busy');
+    expect(connectFailureClass(INVITE, 'disconnected', 'storage-unavailable', null, 300)).toBe('storage-unavailable');
+    expect(connectFailureClass(INVITE, 'disconnected', 'access-required', 'access-required', 300)).toBe('access-refused');
+    expect(connectFailureClass(INVITE, 'disconnected', 'connection-uncertain', 'connection-uncertain', 142_000)).toBe('timeout');
+    expect(connectFailureClass(INVITE, 'disconnected', 'connection-uncertain', 'connection-uncertain', 800)).toBe('connection-uncertain');
+    expect(connectFailureClass(INVITE, 'disconnected', 'disconnected', null, 800)).toBe('unknown');
   });
 });
 
