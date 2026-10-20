@@ -1,18 +1,27 @@
 import { useEffect } from 'react';
 import { useLoggingStore } from '../../stores/loggingStore';
 import type { LogLevel, LogRetention } from '../../../shared/types';
-import { LOG_LEVEL_PRIORITY } from '../../../shared/types';
+import { LOG_LEVEL_PRIORITY, LOG_RETENTION_TIERS } from '../../../shared/types';
 import { Toggle } from '../../components/Toggle';
 import { Spinner } from '../../components/Spinner';
 import { TelemetrySettingsSection } from './TelemetrySettingsSection';
-import { SettingsPage, SettingsSection, SettingsField } from './SettingsLayout';
+import { SettingsPage, SettingsSection, SettingsField, settingsHelp } from './SettingsLayout';
 
-const RETENTION_TIERS: { id: LogRetention; label: string; desc: string }[] = [
-  { id: 'low', label: 'Low', desc: '3 days, up to 50 MB' },
-  { id: 'medium', label: 'Medium', desc: '7 days, up to 200 MB' },
-  { id: 'high', label: 'High', desc: '30 days, up to 500 MB' },
-  { id: 'unlimited', label: 'Unlimited', desc: 'No limits on age or size' },
-];
+const RETENTION_LABELS: Record<LogRetention, string> = {
+  low: 'Low',
+  medium: 'Medium',
+  high: 'High',
+  unlimited: 'Unlimited',
+};
+
+/** Retention choices, described from the same tiers the cleanup applies. */
+const RETENTION_TIERS = (Object.keys(LOG_RETENTION_TIERS) as LogRetention[]).map((id) => {
+  const { retentionDays, maxTotalBytes } = LOG_RETENTION_TIERS[id];
+  const desc = retentionDays === 0 && maxTotalBytes === 0
+    ? 'No limits on age or size'
+    : `${retentionDays} days, up to ${Math.round(maxTotalBytes / (1024 * 1024))} MB`;
+  return { id, label: RETENTION_LABELS[id], desc };
+});
 
 /** A 28px segmented control, one choice at a time. */
 function Segmented<T extends string>({ value, options, onChange, disabled, 'aria-label': ariaLabel, mono }: {
@@ -69,11 +78,14 @@ export function LoggingSettingsView() {
   const retentionTier = RETENTION_TIERS.find((t) => t.id === settings.retention);
 
   return (
-    <SettingsPage title="Logging" description="Logs are stored on your local disk only and are never transmitted.">
+    <SettingsPage
+      title="Logging"
+      description="The diagnostic log and local telemetry are written to files on this computer. Clubhouse never sends the log folder anywhere."
+    >
       <div className="mt-[22px]">
         {logPath && (
           <SettingsField
-            label="Log location"
+            label="Log folder"
             help={
               <button
                 type="button"
@@ -86,16 +98,62 @@ export function LoggingSettingsView() {
           />
         )}
 
-        <SettingsField label="Write logs" help="Write structured log entries to disk.">
-          <Toggle aria-label="Write logs" checked={settings.enabled} onChange={(v) => saveSettings({ enabled: v })} />
+        <SettingsField
+          label="Record locally"
+          help="Write the diagnostic log and local telemetry to the log folder. While this is off nothing is recorded, and telemetry export has nothing to send."
+        >
+          <Toggle aria-label="Record locally" checked={settings.enabled} onChange={(v) => saveSettings({ enabled: v })} />
         </SettingsField>
 
+        <SettingsField label="Retention" help={retentionTier?.desc}>
+          <Segmented
+            aria-label="Retention"
+            value={settings.retention}
+            options={RETENTION_TIERS.map((t) => ({ id: t.id, label: t.label, title: t.desc }))}
+            onChange={(v) => saveSettings({ retention: v })}
+            disabled={!settings.enabled}
+          />
+        </SettingsField>
+      </div>
+
+      <SettingsSection title="Diagnostic log">
+        <p className={`${settingsHelp} mb-1`} data-testid="diagnostic-log-privacy">
+          Diagnostic lines keep file paths, error messages and session ids as written, so they are useful for debugging. They are not anonymized. Clubhouse never sends them.
+        </p>
+        <SettingsField label="Minimum level" help="Diagnostic lines below this level are not written.">
+          <Segmented
+            aria-label="Minimum level"
+            mono
+            value={settings.minLogLevel}
+            options={(Object.keys(LOG_LEVEL_PRIORITY) as LogLevel[]).map((level) => ({ id: level, label: level }))}
+            onChange={(v) => saveSettings({ minLogLevel: v })}
+            disabled={!settings.enabled}
+          />
+        </SettingsField>
+      </SettingsSection>
+
+      {namespaces.length > 0 && (
+        <SettingsSection title="Namespaces" meta="Turn one off to stop writing its diagnostic lines.">
+          {namespaces.map((ns) => (
+            <SettingsField key={ns} label={<span className="font-mono text-xs text-ctp-subtext1">{ns}</span>}>
+              <Toggle
+                aria-label={ns}
+                checked={isNamespaceEnabled(ns)}
+                onChange={(v) => handleNamespaceToggle(ns, v)}
+                disabled={!settings.enabled}
+              />
+            </SettingsField>
+          ))}
+        </SettingsSection>
+      )}
+
+      <SettingsSection title="Local telemetry">
         <SettingsField
-          label="Record telemetry locally"
-          help="Write flow timings, error types and metric totals to telemetry files in the log folder, anonymized the same way as export. Telemetry export, set up below, sends only what this records, so it sends nothing while this is off."
+          label="Record telemetry signals"
+          help="Write flow timings, error types and metric totals to the log folder. Signals are anonymized the same way as export. Telemetry export, set up below, sends only what this records."
         >
           <Toggle
-            aria-label="Record telemetry locally"
+            aria-label="Record telemetry signals"
             checked={settings.enabled && settings.telemetryRecording !== false}
             onChange={(v) => saveSettings({ telemetryRecording: v })}
             disabled={!settings.enabled}
@@ -117,43 +175,7 @@ export function LoggingSettingsView() {
             disabled={!settings.enabled || settings.telemetryRecording === false}
           />
         </SettingsField>
-
-        <SettingsField label="Retention" help={retentionTier?.desc}>
-          <Segmented
-            aria-label="Retention"
-            value={settings.retention}
-            options={RETENTION_TIERS.map((t) => ({ id: t.id, label: t.label, title: t.desc }))}
-            onChange={(v) => saveSettings({ retention: v })}
-            disabled={!settings.enabled}
-          />
-        </SettingsField>
-
-        <SettingsField label="Minimum level" help="Entries below this level are not written.">
-          <Segmented
-            aria-label="Minimum level"
-            mono
-            value={settings.minLogLevel}
-            options={(Object.keys(LOG_LEVEL_PRIORITY) as LogLevel[]).map((level) => ({ id: level, label: level }))}
-            onChange={(v) => saveSettings({ minLogLevel: v })}
-            disabled={!settings.enabled}
-          />
-        </SettingsField>
-      </div>
-
-      {namespaces.length > 0 && (
-        <SettingsSection title="Namespaces">
-          {namespaces.map((ns) => (
-            <SettingsField key={ns} label={<span className="font-mono text-xs text-ctp-subtext1">{ns}</span>}>
-              <Toggle
-                aria-label={ns}
-                checked={isNamespaceEnabled(ns)}
-                onChange={(v) => handleNamespaceToggle(ns, v)}
-                disabled={!settings.enabled}
-              />
-            </SettingsField>
-          ))}
-        </SettingsSection>
-      )}
+      </SettingsSection>
 
       <TelemetrySettingsSection />
     </SettingsPage>

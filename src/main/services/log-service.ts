@@ -6,6 +6,7 @@ import * as logSettings from './log-settings';
 import { bridgeLog, traceFieldsForLog, type LogTelemetry } from '../telemetry/log-bridge';
 import { recordBreadcrumb, recordBreadcrumbFrom } from './breadcrumbs';
 import { pruneLogDir } from '../telemetry/local-retention';
+import { listLogNamespaces } from '../../shared/log-namespaces';
 
 const MAX_FILE_SIZE = 2 * 1024 * 1024; // 2 MB
 const FLUSH_INTERVAL_MS = 1_000;
@@ -146,8 +147,9 @@ export function getLogPath(): string {
   return logDir;
 }
 
+/** Known namespaces plus those seen this run, so Settings can list them at startup (#2312). */
 export function getNamespaces(): string[] {
-  return [...seenNamespaces].sort();
+  return listLogNamespaces(seenNamespaces);
 }
 
 export async function init(): Promise<void> {

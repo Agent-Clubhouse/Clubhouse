@@ -18,6 +18,7 @@ import * as fsp from 'fs/promises';
 import * as logSettings from './log-settings';
 import { init, log, flush, appLog, getLogPath, getNamespaces } from './log-service';
 import { _resetBreadcrumbsForTests, recentBreadcrumbs } from './breadcrumbs';
+import { KNOWN_LOG_NAMESPACES } from '../../shared/log-namespaces';
 
 // The electron mock provides app.getPath('home') → path.join(os.tmpdir(), 'clubhouse-test-home')
 const EXPECTED_LOG_DIR = path.join(os.tmpdir(), 'clubhouse-test-home', '.clubhouse', 'logs');
@@ -83,8 +84,8 @@ describe('log-service', () => {
   });
 
   describe('getNamespaces', () => {
-    it('returns empty array initially', () => {
-      expect(getNamespaces()).toEqual([]);
+    it('lists the known namespaces before anything is logged (#2312)', () => {
+      expect(getNamespaces()).toEqual([...KNOWN_LOG_NAMESPACES].sort());
     });
 
     it('returns discovered namespaces after logging', () => {
@@ -95,7 +96,7 @@ describe('log-service', () => {
       const namespaces = getNamespaces();
       expect(namespaces).toContain('app:ipc');
       expect(namespaces).toContain('plugin:terminal');
-      expect(namespaces).toHaveLength(2);
+      expect(namespaces.filter((ns) => ns === 'app:ipc')).toHaveLength(1);
     });
 
     it('returns namespaces in sorted order', () => {
