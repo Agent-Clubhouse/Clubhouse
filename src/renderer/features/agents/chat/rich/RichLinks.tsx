@@ -43,11 +43,11 @@ export function useRichLinks(): RichLinkContextValue | null {
 
 // ── Token DOM ─────────────────────────────────────────────────────────────
 
-const SVG_NS = 'http://www.w3.org/2000/svg';
+const SVG_NAMESPACE = 'http://www.w3.org/2000/svg';
 
 /** 12px outline icons drawn with DOM APIs (no markup strings). */
 function tokenIcon(doc: Document, kind: GithubRef['kind']): SVGSVGElement {
-  const svg = doc.createElementNS(SVG_NS, 'svg');
+  const svg = doc.createElementNS(SVG_NAMESPACE, 'svg');
   svg.setAttribute('width', '12');
   svg.setAttribute('height', '12');
   svg.setAttribute('viewBox', '0 0 16 16');
@@ -56,7 +56,7 @@ function tokenIcon(doc: Document, kind: GithubRef['kind']): SVGSVGElement {
   svg.setAttribute('stroke-width', '1.6');
   svg.setAttribute('aria-hidden', 'true');
   const add = (tag: string, attrs: Record<string, string>) => {
-    const el = doc.createElementNS(SVG_NS, tag);
+    const el = doc.createElementNS(SVG_NAMESPACE, tag);
     for (const [k, v] of Object.entries(attrs)) el.setAttribute(k, v);
     svg.appendChild(el);
   };
