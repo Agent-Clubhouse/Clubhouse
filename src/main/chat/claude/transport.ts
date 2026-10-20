@@ -44,6 +44,11 @@ export interface ClaudeTransportOptions {
   /** Stream partial deltas (`message_chunk` / `thought_chunk`). Default true. */
   includePartialMessages?: boolean;
   log?: ClaudeTransportLog;
+  /**
+   * Cancels start(): once aborted nothing is spawned, and an abort during
+   * initialization kills the CLI and rejects. Not consulted after start().
+   */
+  signal?: AbortSignal;
 }
 
 export interface ClaudeImageInput {
