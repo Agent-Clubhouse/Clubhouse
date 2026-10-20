@@ -46,7 +46,7 @@ When troubleshooting:
 2. Set level to **Debug**
 3. Make sure the `core:startup`, `core:plugins` and `core:safe-mode` namespaces are on, plus `plugin:<id>` for the plugin you suspect
 4. Reproduce the problem
-5. Click the log folder path in Logging settings, open the newest `telemetry-*.jsonl` file, and look for `"t":"diag"` lines with level `error` or `warn`
+5. Click the log folder path in Logging settings, open the newest `telemetry-*.jsonl` file, and look for `"t":"diag"` lines with level `warn`, `error` or `fatal`
 
 The diagnostic lines show which plugin failed, which call threw, and where in the startup sequence the crash occurred.
 

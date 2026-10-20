@@ -43,7 +43,7 @@ Click **Close project** at the bottom of the project's settings, or select the p
 2. Set the level to **Debug**.
 3. Make sure `core:startup`, `core:plugins` and `core:safe-mode` are on, plus `plugin:<id>` for the plugin you suspect.
 4. Reproduce the problem.
-5. Click the log folder path on that page, open the newest `telemetry-*.jsonl` file, and look for `"t":"diag"` lines with level `error` or `warn`.
+5. Click the log folder path on that page, open the newest `telemetry-*.jsonl` file, and look for `"t":"diag"` lines with level `warn`, `error` or `fatal`.
 
 The diagnostic lines show which plugin failed, which call threw, and how far startup got.
 

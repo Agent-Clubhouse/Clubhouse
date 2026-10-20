@@ -4,7 +4,7 @@ Clubhouse keeps one local record of what it does, in the log folder on this comp
 
 ## Where the record is
 
-The log folder is `~/.clubhouse/logs` (on Windows, `%USERPROFILE%\.clubhouse\logs`). **Settings > Logging** shows the full path. Click it to open the folder.
+The log folder is `~/.clubhouse/logs` (on Windows, `%USERPROFILE%\.clubhouse\logs`). **Settings > Logging** shows the full path. Click it to show the folder in Finder or File Explorer.
 
 The record is a set of `telemetry-<start time>.jsonl` files. Each run of the app starts a new file, and so does turning recording off and on or changing the telemetry settings below. A file that reaches 2 MB continues in `.1.jsonl`, `.2.jsonl` and so on.
 
@@ -19,7 +19,7 @@ Each line is one JSON record. Its `t` field says what kind it is.
 | `session` | The first line of a run: app version, platform and detail level |
 | `dropped`, `evicted` | Counts of lines that were dropped or deleted to stay within the limits below |
 
-**Diagnostic lines** keep file paths, error messages and session ids as written, so they are useful for debugging. They are not anonymized. Before a line is written, your home folder is replaced by `<home>`, and prompts, chat messages, tool and command arguments, environment values and secrets such as tokens and API keys are removed.
+**Diagnostic lines** keep file paths, error messages and session ids as written, so they are useful for debugging. They are not anonymized. Before a line is written, your home folder is replaced by `<home>`, and prompts, chat messages, tool and command arguments, environment values and secrets such as tokens and API keys are replaced with a placeholder where Clubhouse can recognize them.
 
 **Telemetry signals** hold the same anonymized data that telemetry export would send. They never contain prompts, terminal output, file paths, names or error messages, and ids are hashed.
 
@@ -36,7 +36,7 @@ grep -v '"t":"diag"' telemetry-<start time>.jsonl > signals-only.jsonl
 On Windows, in PowerShell:
 
 ```
-Get-Content telemetry-<start time>.jsonl | Where-Object { $_ -notmatch '"t":"diag"' } | Set-Content signals-only.jsonl
+Get-Content telemetry-<start time>.jsonl | Where-Object { $_ -notmatch '"t":"diag"' } | Set-Content -Encoding utf8 signals-only.jsonl
 ```
 
 ## Quick setup
@@ -78,7 +78,7 @@ Settings lists every namespace Clubhouse writes to, plus any plugin namespaces (
 
 Diagnostic lines have a budget of 2 MB an hour. When it runs low, debug lines are dropped first (past half the budget), then info lines (past 80%). Warnings and errors use the rest. A `dropped` line counts what went.
 
-Each run keeps its newest 10 MB. Past that, the oldest file of the run is deleted and recording continues, so the most recent part of a long run is kept. An `evicted` line says which files went.
+Each run keeps its newest 10 MB. Past that, the oldest file of the run is deleted and recording continues, so the most recent part of a long run is kept. An `evicted` line says how many files and bytes went.
 
 The retention tier sets how long files are kept and how much space they can use in total:
 
@@ -89,15 +89,15 @@ The retention tier sets how long files are kept and how much space they can use 
 | **High** | 30 days | 500 MB |
 | **Unlimited** | No expiry | No cap |
 
-Retention runs at startup, every hour while recording, and each time a new file starts. The oldest files are deleted first, and a file that is being written is never deleted.
+Retention runs at startup, every hour while recording, and each time a file reaches 2 MB and continues in a new one. The oldest files are deleted first, and a file that is being written is never deleted.
 
 ## Feedback reports
 
-A feedback report never includes the log folder or any part of it. Each report has an id, and Clubhouse writes that id to a `core:feedback` diagnostic line when the report is saved and again when it is delivered. These lines are at the info level, so they are written while **Minimum level** is info or debug. If a maintainer asks for your record of a report, they find the matching lines by its id and the time you sent it.
+A feedback report never includes the log folder or any part of it. Each report has an id, and Clubhouse writes that id to a `core:feedback` diagnostic line when the report is saved and again when it is delivered. These lines are at the info level, so they are written while **Record locally** is on, the `core:feedback` namespace is on, and **Minimum level** is info or debug. If a maintainer asks for your record of a report, they find the matching lines by its id and the time you sent it.
 
 ## Legacy session logs (being retired)
 
-Earlier versions wrote the diagnostic log to `session-*.jsonl` files in the same folder. This version still writes them next to the telemetry files while the change finishes, and a later version stops. They hold the same diagnostic lines without the redaction described above, so they can contain details the telemetry files leave out, such as command arguments. You don't need them: use the `telemetry-*.jsonl` files instead. Retention deletes old session logs on the same schedule.
+Earlier versions wrote the diagnostic log to `session-*.jsonl` files in the same folder. This version still writes them next to the telemetry files, and a later version stops. They hold the same diagnostic lines without the redaction described above, so they can contain details the telemetry files leave out, such as command arguments. Use the `telemetry-*.jsonl` files instead. Retention deletes old session logs on the same schedule.
 
 ## Common diagnostic scenarios
 
