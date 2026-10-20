@@ -20,7 +20,8 @@ vi.mock('fs/promises', () => ({
   readFile: vi.fn(async () => { throw Object.assign(new Error('ENOENT'), { code: 'ENOENT' }); }),
 }));
 
-vi.mock('../util/shell', () => ({
+vi.mock('../util/shell', async (importOriginal) => ({
+  ...await importOriginal<typeof import('../util/shell')>(),
   getShellEnvironment: vi.fn(() => ({ PATH: `/usr/local/bin${path.delimiter}/usr/bin` })),
 }));
 
@@ -28,6 +29,8 @@ import * as fs from 'fs';
 import * as fsp from 'fs/promises';
 import { execSync, execFileSync } from 'child_process';
 import { app } from 'electron';
+import { getShellEnvironment } from '../util/shell';
+import { resolveStructuredSpawn } from './adapters/structured-spawn';
 import { findBinaryInPath, testBinaryOverride, homePath, humanizeModelId, parseModelChoicesFromHelp, buildSummaryInstruction, readQuickSummary, applyLaunchWrapper, validateHookUrl, buildHookCurlCommand, mergeHookEntries, resolveEncodedPathDir, parseJsonlFile, validateWrapperConfig, clearBinaryCache } from './shared';
 import type { LaunchWrapperConfig } from '../../shared/types';
 
@@ -80,23 +83,25 @@ describe('shared orchestrator utilities', () => {
   });
 
   describe('findBinaryInPath', () => {
-    it('finds binary via where/which (shell-native lookup)', () => {
-      const shellResult = process.platform === 'win32'
-        ? 'C:\\Program Files\\cli\\claude.exe\r\n'
-        : '/usr/local/bin/claude\n';
-      const expected = shellResult.trim().split(/\r?\n/)[0].trim();
-      if (process.platform === 'win32') {
-        vi.mocked(execSync).mockReturnValue(shellResult);
-      } else {
-        vi.mocked(execFileSync).mockReturnValue(shellResult);
-      }
-      vi.mocked(fs.existsSync).mockImplementation((p) => p === expected);
+    // POSIX rules on every host: an existing extensionless file is a valid
+    // launcher. The Windows rules are simulated in the block below.
+    const originalPlatform = process.platform;
+    beforeEach(() => {
+      clearBinaryCache();
+      Object.defineProperty(process, 'platform', { value: 'linux' });
+    });
+    afterEach(() => {
+      Object.defineProperty(process, 'platform', { value: originalPlatform });
+    });
+
+    it('finds binary via which (shell-native lookup)', () => {
+      vi.mocked(execFileSync).mockReturnValue('/usr/local/bin/claude\n');
+      vi.mocked(fs.existsSync).mockImplementation((p) => p === '/usr/local/bin/claude');
       const result = findBinaryInPath(['claude'], []);
-      expect(result).toBe(expected);
+      expect(result).toBe('/usr/local/bin/claude');
     });
 
     it('handles multi-line shell output (startup messages before path)', () => {
-      if (process.platform === 'win32') return; // Unix-only test
       // Simulates shell startup messages (e.g., nvm loading) appearing before `which` output
       const shellOutput = 'Loading nvm...\nnvm loaded\n/home/user/.nvm/versions/node/v20/bin/codex\n';
       vi.mocked(execFileSync).mockReturnValue(shellOutput);
@@ -151,15 +156,6 @@ describe('shared orchestrator utilities', () => {
         .toThrowError(/Could not find any of \[claude\] on PATH/);
     });
 
-    it('handles \\r\\n line endings from where on Windows', () => {
-      if (process.platform !== 'win32') return; // where output format is Windows-only
-      // Windows `where` outputs results with \r\n
-      vi.mocked(execSync).mockReturnValue('C:\\Users\\test\\AppData\\Roaming\\npm\\claude.cmd\r\nC:\\another\\claude.cmd\r\n');
-      vi.mocked(fs.existsSync).mockImplementation((p) => p === 'C:\\Users\\test\\AppData\\Roaming\\npm\\claude.cmd');
-      const result = findBinaryInPath(['claude'], []);
-      expect(result).toBe('C:\\Users\\test\\AppData\\Roaming\\npm\\claude.cmd');
-    });
-
     it('prioritizes extraPaths over PATH scan and where/which', () => {
       const whereResult = '/found/by/where/claude';
       const pathResult = path.join('/usr/local/bin', 'claude');
@@ -177,6 +173,151 @@ describe('shared orchestrator utilities', () => {
       vi.mocked(fs.existsSync).mockImplementation((p) => p === '/fallback/claude');
       const result = findBinaryInPath(['claude'], ['/fallback/claude']);
       expect(result).toBe('/fallback/claude');
+    });
+  });
+
+  describe('findBinaryInPath on Windows', () => {
+    // Simulated win32. Paths are built from os.tmpdir() with path.join so they
+    // are valid on every host, including windows-latest.
+    const originalPlatform = process.platform;
+    const originalPATH = process.env.PATH;
+    const originalPATHEXT = process.env.PATHEXT;
+    const root = path.join(os.tmpdir(), 'win discovery');
+    const npmDir = path.join(root, 'npm global');
+    const nativeDir = path.join(root, 'native');
+    let files: Set<string>;
+
+    const usePath = (...dirs: string[]) => {
+      process.env.PATH = dirs.join(SEP);
+    };
+
+    beforeEach(() => {
+      clearBinaryCache();
+      Object.defineProperty(process, 'platform', { value: 'win32' });
+      delete process.env.PATHEXT;
+      vi.mocked(getShellEnvironment).mockReturnValue({});
+      files = new Set();
+      vi.mocked(fs.existsSync).mockImplementation((p) => files.has(String(p)));
+    });
+    afterEach(() => {
+      Object.defineProperty(process, 'platform', { value: originalPlatform });
+      process.env.PATH = originalPATH;
+      if (originalPATHEXT === undefined) delete process.env.PATHEXT;
+      else process.env.PATHEXT = originalPATHEXT;
+    });
+
+    it.each(['copilot', 'claude', 'codex'])(
+      'picks %s.cmd over the extensionless shell script beside it, and launch agrees',
+      (name) => {
+        files.add(path.join(npmDir, name));
+        files.add(path.join(npmDir, `${name}.cmd`));
+        usePath(npmDir);
+
+        const found = findBinaryInPath([name], []);
+
+        expect(found).toBe(path.join(npmDir, `${name}.cmd`));
+        expect(resolveStructuredSpawn(found, ['--version']).binary).toBe('cmd.exe');
+      },
+    );
+
+    it('does not accept an extensionless shell script on its own', () => {
+      files.add(path.join(npmDir, 'copilot'));
+      usePath(npmDir);
+      expect(() => findBinaryInPath(['copilot'], [])).toThrow(/Could not find any of \[copilot\]/);
+    });
+
+    it('rejects .ps1, which neither launcher can run', () => {
+      files.add(path.join(npmDir, 'copilot.ps1'));
+      usePath(npmDir);
+      expect(() => findBinaryInPath(['copilot'], [])).toThrow(/Could not find any of \[copilot\]/);
+      expect(() => findBinaryInPath(['copilot.ps1'], [])).toThrow(/Could not find any of \[copilot\.ps1\]/);
+    });
+
+    it('prefers a native .exe over a .cmd in the same directory', () => {
+      files.add(path.join(npmDir, 'claude.cmd'));
+      files.add(path.join(npmDir, 'claude.exe'));
+      usePath(npmDir);
+      const found = findBinaryInPath(['claude'], []);
+      expect(found).toBe(path.join(npmDir, 'claude.exe'));
+      expect(resolveStructuredSpawn(found, ['-p']).binary).toBe(found);
+    });
+
+    it('keeps PATH directory order ahead of extension order', () => {
+      files.add(path.join(npmDir, 'codex'));
+      files.add(path.join(npmDir, 'codex.cmd'));
+      files.add(path.join(nativeDir, 'codex.exe'));
+      usePath(npmDir, nativeDir);
+      expect(findBinaryInPath(['codex'], [])).toBe(path.join(npmDir, 'codex.cmd'));
+    });
+
+    it('follows PATHEXT order and ignores non-launcher entries in it', () => {
+      process.env.PATHEXT = '.PS1;.CMD;.EXE';
+      files.add(path.join(npmDir, 'claude.ps1'));
+      files.add(path.join(npmDir, 'claude.cmd'));
+      files.add(path.join(npmDir, 'claude.exe'));
+      usePath(npmDir);
+      expect(findBinaryInPath(['claude'], [])).toBe(path.join(npmDir, 'claude.cmd'));
+    });
+
+    it('accepts a name that already carries a launcher extension', () => {
+      files.add(path.join(npmDir, 'wrapper.bat'));
+      usePath(npmDir);
+      expect(findBinaryInPath(['wrapper.bat'], [])).toBe(path.join(npmDir, 'wrapper.bat'));
+    });
+
+    it('skips an extensionless well-known path and expands it to its launcher', () => {
+      const shim = path.join(npmDir, 'claude');
+      const native = path.join(root, 'local bin', 'claude');
+      files.add(shim);
+      files.add(`${native}.exe`);
+      usePath();
+      expect(findBinaryInPath(['claude'], [native, shim])).toBe(`${native}.exe`);
+    });
+
+    it('takes a well-known .cmd path as is', () => {
+      const cmd = path.join(npmDir, 'copilot.cmd');
+      files.add(cmd);
+      usePath();
+      expect(findBinaryInPath(['copilot'], [cmd])).toBe(cmd);
+    });
+
+    it('drops a cached choice that is not a launcher', () => {
+      const shim = path.join(npmDir, 'codex');
+      files.add(shim);
+      usePath(npmDir);
+      // A POSIX lookup caches the extensionless file...
+      Object.defineProperty(process, 'platform', { value: 'linux' });
+      expect(findBinaryInPath(['codex'], [])).toBe(shim);
+      // ...which Windows must not reuse once a launcher is available.
+      Object.defineProperty(process, 'platform', { value: 'win32' });
+      files.add(`${shim}.cmd`);
+      expect(findBinaryInPath(['codex'], [])).toBe(`${shim}.cmd`);
+    });
+
+    it('reuses a cached launcher', () => {
+      const cmd = path.join(npmDir, 'codex.cmd');
+      files.add(cmd);
+      usePath(npmDir);
+      expect(findBinaryInPath(['codex'], [])).toBe(cmd);
+      usePath();
+      expect(findBinaryInPath(['codex'], [])).toBe(cmd);
+    });
+
+    it('takes the first launcher from where output, skipping the shell script', () => {
+      const shim = path.join(npmDir, 'copilot');
+      files.add(shim);
+      files.add(`${shim}.cmd`);
+      usePath();
+      vi.mocked(execSync).mockReturnValue(`${shim}\r\n${shim}.cmd\r\n`);
+      expect(findBinaryInPath(['copilot'], [])).toBe(`${shim}.cmd`);
+    });
+
+    it('handles \\r\\n line endings from where', () => {
+      const first = path.join(npmDir, 'claude.cmd');
+      files.add(first);
+      usePath();
+      vi.mocked(execSync).mockReturnValue(`${first}\r\n${path.join(nativeDir, 'claude.cmd')}\r\n`);
+      expect(findBinaryInPath(['claude'], [])).toBe(first);
     });
   });
 
