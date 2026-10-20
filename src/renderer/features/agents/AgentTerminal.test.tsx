@@ -307,6 +307,30 @@ describe('AgentTerminal', () => {
       expect(calls).toEqual(['write old-size output', 'write ', 'resize 100x25']);
     });
 
+    it('holds live output while a PTY resize is applied, then writes it at the new size (#2359)', async () => {
+      (window.clubhouse.pty.getBufferSnapshot as any).mockResolvedValue({
+        data: '', seq: 0, sizes: [{ offset: 0, cols: 120, rows: 30 }],
+      });
+      render(<AgentTerminal agentId="agent-1" />);
+      await act(async () => {});
+      const calls: string[] = [];
+      const parsed: Array<() => void> = [];
+      // xterm parses asynchronously: callbacks run when the test says so.
+      term().write.mockImplementation((data: string, cb?: () => void) => {
+        calls.push(`write ${data}`);
+        if (cb) parsed.push(cb);
+      });
+      term().resize.mockImplementation((c: number, r: number) => calls.push(`resize ${c}x${r}`));
+
+      act(() => {
+        mockOnResizedCallback!('agent-1', 100, 25);
+        mockOnDataCallback!('agent-1', 'new-size output');
+      });
+      expect(calls).toEqual(['write ']);
+      act(() => { parsed.shift()!(); });
+      expect(calls).toEqual(['write ', 'resize 100x25', 'write new-size output']);
+    });
+
     it('requests buffer content on mount', () => {
       render(<AgentTerminal agentId="agent-1" />);
       expect(window.clubhouse.pty.getBufferSnapshot).toHaveBeenCalledWith('agent-1');

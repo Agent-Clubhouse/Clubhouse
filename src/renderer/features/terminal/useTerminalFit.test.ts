@@ -631,8 +631,8 @@ describe('useTerminalFit', () => {
       expect(mockResize).toHaveBeenCalledWith('s1', 65, 30);
     });
 
-    it('syncToPty adopts the PTY size unless this view drives it', () => {
-      const hasFocus = vi.spyOn(document, 'hasFocus').mockReturnValue(true);
+    it('syncToPty adopts the PTY size in every view, owner included (#2359)', () => {
+      vi.spyOn(document, 'hasFocus').mockReturnValue(true);
       const main = makeView(120, 40);
       const card = makeView(50, 12);
       const ptySizeRef = { current: { cols: 90, rows: 30 } };
@@ -641,13 +641,28 @@ describe('useTerminalFit', () => {
 
       mainHook.result.current.syncToPty();
       cardHook.result.current.syncToPty();
-      expect(main.term.resize).not.toHaveBeenCalled();
-      expect([card.term.cols, card.term.rows]).toEqual([90, 30]);
-
-      // The owner in a background window follows too.
-      hasFocus.mockReturnValue(false);
-      mainHook.result.current.syncToPty();
       expect([main.term.cols, main.term.rows]).toEqual([90, 30]);
+      expect([card.term.cols, card.term.rows]).toEqual([90, 30]);
+    });
+
+    it('owner proposes its size to the PTY and resizes its xterm only when the PTY follows', () => {
+      vi.spyOn(document, 'hasFocus').mockReturnValue(true);
+      const main = makeView(120, 40);
+      (main.fitAddonRef.current as any).proposeDimensions = () => ({ cols: 60, rows: 20 });
+      const ptySizeRef = { current: { cols: 120, rows: 40 } };
+      const hook = renderHook(() => useTerminalFit('s1', main.terminalRef, main.fitAddonRef, main.containerRef, false, undefined, { ptySizeRef }));
+      mockResize.mockClear();
+
+      for (const listener of focusListeners) listener();
+      expect(mockResize).toHaveBeenCalledWith('s1', 60, 20);
+      // Output still in flight was produced at 120 columns: keep parsing it there.
+      expect(main.fit).not.toHaveBeenCalled();
+      expect([main.term.cols, main.term.rows]).toEqual([120, 40]);
+
+      // PTY.RESIZED arrives after that output.
+      ptySizeRef.current = { cols: 60, rows: 20 };
+      hook.result.current.syncToPty();
+      expect([main.term.cols, main.term.rows]).toEqual([60, 20]);
     });
   });
 

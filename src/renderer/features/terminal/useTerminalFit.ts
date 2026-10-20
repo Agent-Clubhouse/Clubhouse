@@ -3,6 +3,7 @@ import type { Terminal } from '@xterm/xterm';
 import type { FitAddon } from '@xterm/addon-fit';
 import { rendererLog } from '../../plugins/renderer-logger';
 import { claimSizeOwner, isSizeOwner, registerSizeOwner } from './pty-size-owner';
+import { resizeTerminal } from './inline-frame';
 
 const SCROLL_LOG_NS = 'ui:terminal:scroll';
 
@@ -79,14 +80,14 @@ export interface TerminalFitOptions {
 export interface TerminalFitControls {
   /** Fit and, if this terminal owns the PTY size and its window has focus, send it now. */
   refit: (trigger: string) => void;
-  /** After the PTY size changed: adopt it unless this terminal drives it. */
+  /** After the PTY size changed: adopt it (owner included, #2359). */
   syncToPty: () => void;
 }
 
 /** Resize `term` to the known PTY size.  False when no size is known. */
 function followPtySize(term: Terminal, size: PtySize | null | undefined): boolean {
   if (!size) return false;
-  if (term.cols !== size.cols || term.rows !== size.rows) term.resize(size.cols, size.rows);
+  resizeTerminal(term, size.cols, size.rows);
   return true;
 }
 
@@ -154,22 +155,35 @@ export function useTerminalFit(
             containerHeight: el.clientHeight,
           },
         });
-        if (drive || !followPtySize(term, ptySizeRef?.current)) {
+        // With a known PTY size the xterm only ever takes the PTY's size, on
+        // PTY.RESIZED (syncToPty), so output is always parsed at the width it
+        // was produced for; the owner just proposes its container's size.
+        // Unknown PTY size (remote agents): fit right away, as before.
+        const ptySize = ptySizeRef?.current;
+        let proposed: PtySize | undefined;
+        if (drive && ptySize) {
+          const dims = fitAddon.proposeDimensions?.();
+          if (dims && dims.cols > 0 && dims.rows > 0) proposed = { cols: dims.cols, rows: dims.rows };
+        }
+        if (proposed) {
+          // Already the PTY's size: main would skip it, so adopt it here.
+          if (proposed.cols === ptySize!.cols && proposed.rows === ptySize!.rows) followPtySize(term, ptySize);
+        } else if (drive || !followPtySize(term, ptySize)) {
           fitPreservingScroll(term, fitAddon, sessionId);
         }
         if (drive) {
+          const size = proposed ?? { cols: term.cols, rows: term.rows };
           if (debounceTimer) clearTimeout(debounceTimer);
           debounceTimer = null;
           if (debounce) {
             debounceTimer = setTimeout(() => {
               debounceTimer = null;
-              const current = terminalRef.current;
-              if (current && isSizeOwner(sessionId, token) && document.hasFocus()) {
-                doResize(sessionId, current.cols, current.rows);
+              if (terminalRef.current && isSizeOwner(sessionId, token) && document.hasFocus()) {
+                doResize(sessionId, size.cols, size.rows);
               }
             }, RESIZE_DEBOUNCE_MS);
           } else {
-            doResize(sessionId, term.cols, term.rows);
+            doResize(sessionId, size.cols, size.rows);
           }
         }
         after?.();
@@ -247,9 +261,8 @@ export function useTerminalFit(
   const syncToPty = useCallback(() => {
     const term = terminalRef.current;
     if (!term) return;
-    if (isSizeOwner(sessionId, tokenRef.current!) && document.hasFocus()) return;
     followPtySize(term, ptySizeRef?.current);
-  }, [sessionId]);
+  }, []);
 
   return { refit, syncToPty };
 }

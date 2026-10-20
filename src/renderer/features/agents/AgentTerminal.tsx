@@ -13,6 +13,7 @@ import { useFileDrop } from '../terminal/useFileDrop';
 import { useTerminalFit, isTerminalAtBottom, hasMeasurableSize, type PtySize, type TerminalFitControls } from '../terminal/useTerminalFit';
 import { unseenPtySuffix, isAsciiBinary, writeAsync } from '../terminal/pty-stream';
 import { writePtySnapshot, type PtyBufferSnapshot } from '../../../shared/pty-snapshot';
+import { attachInlineFrameGuard, beginErase, detachInlineFrameGuard, endErase, inlineFrameReplayHooks } from '../terminal/inline-frame';
 import { ptyResize } from '../../services/project-proxy';
 import { rendererLog } from '../../plugins/renderer-logger';
 import { Spinner } from '../../components/Spinner';
@@ -144,6 +145,9 @@ export function AgentTerminal({ agentId, focused, zoneThemeId }: Props) {
     const fitAddon = new FitAddon();
     term.loadAddon(fitAddon);
     term.open(xtermHostRef.current);
+    // Inline TUIs (Copilot, Claude Code) must not leave a stale frame copy
+    // when the terminal narrows (#2359).
+    attachInlineFrameGuard(term);
 
     // Blur watchdog — the "can scroll but can't type" recovery path.
     //
@@ -218,7 +222,7 @@ export function AgentTerminal({ agentId, focused, zoneThemeId }: Props) {
       // Without recorded sizes (a satellite's serialized screen) the best
       // guess is this pane's own size, so fit first (the PTY is sized later).
       if (!snapshot.sizes?.length && hasMeasurableSize(containerRef.current)) fitAddon.fit();
-      await writePtySnapshot(term, snapshot);
+      await writePtySnapshot(term, snapshot, inlineFrameReplayHooks(term));
       if (terminalRef.current !== term) return;
       appliedSeq = snapshot.seq;
       const last = snapshot.sizes?.[snapshot.sizes.length - 1];
@@ -323,6 +327,42 @@ export function AgentTerminal({ agentId, focused, zoneThemeId }: Props) {
       });
     };
 
+    /**
+     * Adopt `ptySizeRef` once the output written so far is parsed.  When
+     * narrowing over an inline TUI frame, erase it first (#2359).  Output
+     * that arrives meanwhile waits in the batch.
+     */
+    const applyPtyResize = () => {
+      resizing = true;
+      term.write('', () => {
+        const target = pendingPtySize;
+        const finish = () => {
+          if (terminalRef.current !== term) return;
+          if (target) ptySizeRef.current = target;
+          fitControlsRef.current?.syncToPty();
+          if (resizeAgain) {
+            resizeAgain = false;
+            applyPtyResize();
+            return;
+          }
+          resizing = false;
+          if (batchedData && !flushScheduled) {
+            flushScheduled = true;
+            flushId = requestAnimationFrame(flushBatch);
+          }
+        };
+        const erase = target ? beginErase(term, target.cols) : null;
+        if (!erase) {
+          finish();
+          return;
+        }
+        term.write(erase, () => {
+          endErase(term);
+          finish();
+        });
+      });
+    };
+
     let removeDataListener: () => void;
     let removeExitListener: () => void;
     let removeResizedListener: () => void = () => {};
@@ -333,17 +373,24 @@ export function AgentTerminal({ agentId, focused, zoneThemeId }: Props) {
     let flushScheduled = false;
     let flushId = 0;
 
+    // While a PTY resize is being applied, live output is held back so the
+    // inline-frame erase and the resize land exactly where the size changed.
+    let resizing = false;
+    let resizeAgain = false;
+    let pendingPtySize: PtySize | null = null;
+
     const flushBatch = () => {
+      flushScheduled = false;
+      if (resizing) return;
       const batch = batchedData;
       batchedData = '';
-      flushScheduled = false;
       term.write(batch);
     };
 
     const enqueueWrite = (source: 'local' | 'annex', data: string) => {
       logDataWrite(source, data.length);
       batchedData += data;
-      if (!flushScheduled) {
+      if (!flushScheduled && !resizing) {
         flushScheduled = true;
         flushId = requestAnimationFrame(flushBatch);
       }
@@ -374,14 +421,19 @@ export function AgentTerminal({ agentId, focused, zoneThemeId }: Props) {
           if (snapshotApplied) resizedDuringReplay = { cols, rows };
           return;
         }
-        ptySizeRef.current = { cols, rows };
+        // ptySizeRef only changes inside applyPtyResize, so other fit triggers
+        // can't resize ahead of the output (and erase) before this point.
+        pendingPtySize = { cols, rows };
+        if (resizing) {
+          // Applied after the current one, at the same point in the output.
+          resizeAgain = true;
+          return;
+        }
         if (flushScheduled) {
           cancelAnimationFrame(flushId);
           flushBatch();
         }
-        term.write('', () => {
-          if (terminalRef.current === term) fitControlsRef.current?.syncToPty();
-        });
+        applyPtyResize();
       }) ?? (() => {});
 
       removeExitListener = window.clubhouse.pty.onExit(
@@ -424,6 +476,7 @@ export function AgentTerminal({ agentId, focused, zoneThemeId }: Props) {
       removeResizedListener();
       ptySizeRef.current = null;
       helperTextarea?.removeEventListener('blur', onHelperBlur);
+      detachInlineFrameGuard(term);
       term.dispose();
       terminalRef.current = null;
       fitAddonRef.current = null;
