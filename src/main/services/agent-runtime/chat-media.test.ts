@@ -61,7 +61,8 @@ describe('decodeBase64Image', () => {
 describe('resolveAllowedPath', () => {
   it('allows files inside a root, relative ones against the first root', async () => {
     fs.writeFileSync(path.join(project, 'shots', 'a.png'), png());
-    const real = fs.realpathSync(path.join(project, 'shots', 'a.png'));
+    // Native realpath, as the code uses: it expands Windows 8.3 names (RUNNER~1) the JS one keeps.
+    const real = fs.realpathSync.native(path.join(project, 'shots', 'a.png'));
     expect(await resolveAllowedPath(path.join(project, 'shots', 'a.png'), [project])).toBe(real);
     expect(await resolveAllowedPath('shots/a.png', [project])).toBe(real);
   });
