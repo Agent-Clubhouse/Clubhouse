@@ -87,7 +87,8 @@ function buildResumedAgent(
     freeAgentMode: entry.freeAgentMode ?? durableConfig?.freeAgentMode ?? existing?.freeAgentMode ?? undefined,
     mcpIds: durableConfig?.mcpIds ?? existing?.mcpIds,
     // A helper keeps its orchestrator (#2224) so the sidebar keeps it nested (#2231).
-    parentAgentId: durableConfig?.parentAgentId ?? existing?.parentAgentId,
+    // agents.json is the source of truth when it loaded, so an unset link clears it.
+    parentAgentId: durableConfig ? durableConfig.parentAgentId : existing?.parentAgentId,
     // A running agent isn't asleep, failed or exited.
     lastSleep: undefined,
     exitCode: undefined,

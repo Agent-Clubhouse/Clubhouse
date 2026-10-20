@@ -428,6 +428,8 @@ describe('resume-queue', () => {
   });
 
   describe('the store record a resume writes (#2410)', () => {
+    beforeEach(() => mockGetDurableConfig.mockResolvedValue(null));
+
     // Run the resume and return the agent record it wrote, applied to a store
     // that already holds `existing` (as after loadDurableAgents) or is empty.
     async function resumedRecord(entry: RestartSessionEntry, existing?: Record<string, unknown>) {
@@ -458,6 +460,15 @@ describe('resume-queue', () => {
       mockGetDurableConfig.mockResolvedValue({ id: 'helper', name: 'helper', color: 'red', parentAgentId: 'lead' });
       const record = await resumedRecord(makeEntry({ agentId: 'helper' }));
       expect(record.parentAgentId).toBe('lead');
+    });
+
+    it('drops a parent link the saved config no longer has', async () => {
+      mockGetDurableConfig.mockResolvedValue({ id: 'helper', name: 'helper', color: 'red' });
+      const record = await resumedRecord(
+        makeEntry({ agentId: 'helper' }),
+        { id: 'helper', projectId: 'proj-1', kind: 'durable', status: 'sleeping', parentAgentId: 'lead' },
+      );
+      expect(record.parentAgentId).toBeUndefined();
     });
 
     it('keeps other fields the resume does not know, and drops stale sleep and error state', async () => {
