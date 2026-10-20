@@ -7,6 +7,7 @@ import type { Framebriar, FramebriarAccessView, FramebriarOutboxView } from '../
 import { ATTR } from '../../../shared/telemetry/attributes';
 import { setProducingRuntime } from '../../telemetry/__test-utils__/producing-runtime';
 import type { TelemetryRuntime } from '../../telemetry/types';
+import { createDiagRedactor } from '../../telemetry/diag-redaction';
 import { connectFailureClass, connectFailureReason, FeedbackService, pngSize, sdkVersion, toFeedbackStatus } from './feedback-service';
 
 const ACCESS: FramebriarAccessView = { state: 'connected', connected: true, enrolled: true, canCapture: true, notice: null, expiresAt: '2026-11-15T00:00:00.000Z' };
@@ -597,6 +598,36 @@ describe('FeedbackService (fake SDK)', () => {
       const all = JSON.stringify(events());
       for (const secret of [NOTES, INVITE, 'rep-1', ink, PNG.toString('latin1'), draft.draftId, 'data:image']) expect(all).not.toContain(secret);
       for (const [, attrs] of events()) for (const a of attrs as Array<{ kind: string }>) expect(['enum', 'int', 'bool']).toContain(a.kind);
+    });
+  });
+
+  describe('report-id correlation (#2309)', () => {
+    type Entry = [string, string, Record<string, unknown> | undefined];
+    function logged(create: ReturnType<typeof fakeSdk>['create']) {
+      const log: Entry[] = [];
+      const s = new FeedbackService({
+        safeStorage, dataDir: '/data', appVersion: '0.42.0', isOnline: () => true, create: create as never,
+        log: (...e) => log.push(e),
+      });
+      return { s, log };
+    }
+
+    it('logs the report id when saved and when delivered, and it survives diag redaction', async () => {
+      const id = '3f2b8c1e-9a4d-4e6f-b2c7-0d1e2f3a4b5c';
+      const { create, fb, opts } = fakeSdk();
+      fb.feedback.submit.mockResolvedValueOnce({ id, gameId: 'clubhouse', status: 'saved-local', sent: false, diagnostics: 'unavailable' });
+      const { s, log } = logged(create);
+      await s.send({ notes: 'private words', includeScreenshot: false });
+      opts().onReceipt!({ id, status: 'accepted' });
+      const lines = log.filter(([, m]) => m === 'Feedback saved for delivery' || m === 'Feedback delivered');
+      expect(lines.map(([l, m, meta]) => [l, m, meta?.id])).toEqual([
+        ['info', 'Feedback saved for delivery', id],
+        ['info', 'Feedback delivered', id],
+      ]);
+      // appLog writes these as diag lines (#2384); the redactor must keep the id.
+      const redactor = createDiagRedactor({ homeDir: '/Users/someone' });
+      for (const [, , meta] of lines) expect(redactor.meta(meta!).id).toBe(id);
+      expect(JSON.stringify(log)).not.toContain('private words');
     });
   });
 

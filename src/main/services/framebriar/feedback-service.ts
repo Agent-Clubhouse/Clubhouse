@@ -10,7 +10,9 @@
  * - Framebriar telemetry is off; Clubhouse's OpenTelemetry pipeline stays separate.
  * - Diagnostics go to the local log (`core:feedback`): access and outbox transitions, and
  *   each connect, capture and send with its outcome. Invitations, tokens, notes and
- *   screenshots are never logged; only states, counts, sizes, durations and report ids.
+ *   screenshots are never logged; only states, counts, sizes, durations and ids. In the
+ *   app this is appLog, which writes local-only diag lines (#2299, #2384): the saved and
+ *   delivered lines carry the report id maintainers match a Framebriar report by.
  * - The same lifecycle goes to telemetry (feedback-telemetry.ts, #2309) as states, counts
  *   and error classes only. The report id is never an attribute.
  */
@@ -369,10 +371,8 @@ export class FeedbackService {
     try {
       const result = await this.sendInner(input);
       const state = this.fb?.access.status().state;
-      // The report id is the link maintainers use between a Framebriar report and this
-      // user's local log; telemetry can't carry it.
-      // TODO(#2299): move this line to the local-only diag tier once it exists; until then
-      // it stays in the legacy core:feedback log. Don't drop the id.
+      // The report id links a Framebriar report to this user's local record (a diag line,
+      // through appLog); telemetry can't carry it. Don't drop it.
       this.log('info', 'Feedback saved for delivery', { ...meta, id: result.id, status: result.status, state });
       recordFeedbackSubmitted({ screenshot: input.includeScreenshot, annotated: input.includeScreenshot && input.annotatedPng !== undefined, shots, accessState: state ?? 'stopped' });
       return result;
@@ -524,7 +524,7 @@ export class FeedbackService {
 
   private noteReceipt(receipt: FramebriarReceipt): void {
     if (!receipt?.id) return;
-    // TODO(#2299): the report id moves to the local-only diag tier with the saved line above.
+    // The report id, as in the saved line above.
     this.log('info', 'Feedback delivered', { id: receipt.id, status: receipt.status ?? null });
     recordFeedbackDelivered();
     const i = this.received.indexOf(receipt.id);

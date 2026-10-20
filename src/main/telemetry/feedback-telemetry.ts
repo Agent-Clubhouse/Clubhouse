@@ -3,8 +3,8 @@
  * closed error class, connect and access transitions.
  *
  * Only booleans, counts, states and codes: never notes, screenshots, invitations,
- * error messages or the report id. The report id stays in the local `core:feedback`
- * log so maintainers can match a Framebriar report to the user's log.
+ * error messages or the report id. The report id goes to the local-only diag tier
+ * (`core:feedback`) so maintainers can match a Framebriar report to the user's record.
  *
  * No OpenTelemetry imports: part of the main bundle.
  */
