@@ -16,6 +16,8 @@ export interface ChatActions {
   send: (text: string, delivery?: 'auto' | MessageDelivery, attachmentIds?: string[]) => Promise<RuntimeSendResult | null>;
   /** Resolves false when the turn couldn't be stopped (a toast says why). */
   interrupt: () => Promise<boolean>;
+  /** Drop queued messages by id. Resolves false when nothing was removed (already sent). */
+  removeQueued?: (messageIds: string[]) => Promise<boolean>;
   /** Resolves false when the answer didn't reach the agent (a toast says why). */
   respondPermission: (requestId: string, optionId: string, extras?: PermissionResponseExtras) => Promise<boolean>;
   answerQuestion: (requestId: string, answers: ChatQuestionAnswers) => Promise<boolean>;
@@ -136,6 +138,13 @@ export function useChatActions(agentId: string): ChatActions {
       return r.ok ? r.value : null;
     },
     interrupt: async () => (await wrap("Couldn't stop the turn", store.getState().interrupt)(agentId)).ok,
+    removeQueued: async (messageIds) => {
+      const r = await wrap("Couldn't remove the queued message", store.getState().removeQueued)(agentId, messageIds);
+      if (!r.ok) return false;
+      // Too late: the turn ending already sent it.
+      if (r.value.length === 0) useToastStore.getState().addToast('Already sent, so not removed', 'info');
+      return r.value.length > 0;
+    },
     respondPermission: async (requestId, optionId, extras) =>
       (await wrap("Couldn't answer the request", store.getState().respondPermission)(agentId, requestId, optionId, extras)).ok,
     answerQuestion: async (requestId, answers) =>

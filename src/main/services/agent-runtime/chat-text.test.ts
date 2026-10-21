@@ -24,6 +24,14 @@ describe('chatEventsToText', () => {
     expect(text.endsWith('Still typing')).toBe(true);
   });
 
+  it('notes queued messages removed before delivery (#2413)', () => {
+    const text = chatEventsToText([
+      ev('user_message', { messageId: 'q', content: [{ type: 'text', text: 'later' }], source: 'user', delivery: 'queued' }),
+      ev('queue_removed', { messageIds: ['q'] }),
+    ], 50);
+    expect(text).toBe('> later\n[removed from queue] 1 message');
+  });
+
   it('keeps only the last N lines', () => {
     const text = chatEventsToText([ev('agent_message', { messageId: 'm', text: 'a\nb\nc\nd' })], 2);
     expect(text).toBe('c\nd');

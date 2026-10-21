@@ -457,6 +457,34 @@ describe('reduceChatEvent', () => {
       expect(delivered[0].turnId).toBe('t2');
     });
 
+    it('drops removed queued messages by id, so a later turn delivers the next one kept (#2413)', () => {
+      let s = fold([
+        sessionStarted(ev),
+        ev('turn_started', { trigger: 'prompt' }, { turnId: 't1' }),
+        ev('user_message', { messageId: 'q1', content: text('first'), source: 'user', delivery: 'queued' }, { turnId: 't1' }),
+        ev('user_message', { messageId: 'q2', content: text('second'), source: 'mcp', delivery: 'queued' }, { turnId: 't1' }),
+        ev('user_message', { messageId: 'q3', content: text('third'), source: 'mcp', delivery: 'queued' }, { turnId: 't1' }),
+        ev('queue_removed', { messageIds: ['q1', 'q3'] }),
+      ]);
+      expect(s.queued.map((q) => q.messageId)).toEqual(['q2']);
+      s = fold([
+        ev('turn_ended', { stopReason: 'end_turn' }, { turnId: 't1' }),
+        ev('turn_started', { trigger: 'queued' }, { turnId: 't2' }),
+      ], s);
+      expect(s.queued).toEqual([]);
+      expect(s.items.filter((i): i is UserMessageItem => i.kind === 'user_message').map((i) => i.text)).toEqual(['second']);
+    });
+
+    it('clears the queued entry with the delivered id before one with the same text', () => {
+      const s = fold([
+        sessionStarted(ev),
+        ev('user_message', { messageId: 'q1', content: text('continue'), source: 'mcp', delivery: 'queued' }),
+        ev('user_message', { messageId: 'q2', content: text('continue'), source: 'mcp', delivery: 'queued' }),
+        ev('user_message', { messageId: 'q2', content: text('continue'), source: 'mcp', delivery: 'steer' }),
+      ]);
+      expect(s.queued.map((q) => q.messageId)).toEqual(['q1']);
+    });
+
     it('clears a queued entry when the same text is later delivered', () => {
       const s = fold([
         sessionStarted(ev),
@@ -841,6 +869,7 @@ describe('useChatStore', () => {
     chat.answerQuestion = vi.fn().mockResolvedValue(undefined);
     chat.setLevel = vi.fn().mockResolvedValue(undefined);
     chat.setModel = vi.fn().mockResolvedValue(undefined);
+    chat.removeQueued = vi.fn().mockResolvedValue(['q1']);
 
     const store = useChatStore.getState();
     await expect(store.send(AGENT, 'hi', 'auto')).resolves.toEqual({ delivery: 'queued', messageId: 'm' });
@@ -858,6 +887,10 @@ describe('useChatStore', () => {
     expect(chat.answerQuestion).toHaveBeenCalledWith(AGENT, 'q1', { db: 'pg' });
     expect(chat.setLevel).toHaveBeenCalledWith(AGENT, 'plan');
     expect(chat.setModel).toHaveBeenCalledWith(AGENT, 'opus', 'high');
+    await expect(store.removeQueued(AGENT, ['q1'])).resolves.toEqual(['q1']);
+    expect(chat.removeQueued).toHaveBeenLastCalledWith(AGENT, ['q1']);
+    await store.removeQueued(AGENT);
+    expect(chat.removeQueued).toHaveBeenLastCalledWith(AGENT);
   });
 
   it('initChatEventListener applies bridged events and returns the unsubscribe', () => {

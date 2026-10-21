@@ -8,7 +8,7 @@
  * the slash menu takes Up/Down/Tab/Enter/Esc only while it's open.
  */
 
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ClipboardEvent, type DragEvent, type KeyboardEvent } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ClipboardEvent, type DragEvent, type KeyboardEvent, type MouseEvent } from 'react';
 import { CHAT_ATTACHMENTS_MAX, PERMISSION_LEVELS, type AvailableCommand, type ChatCapabilities, type ChatModelOption, type PermissionLevel } from '../../../../shared/chat';
 import type { PlanEntry } from '../../../../shared/chat';
 import type { QueuedMessage } from '../../../stores/chatStore';
@@ -67,19 +67,84 @@ export function TaskList({ entries }: { entries: PlanEntry[] }) {
 
 // ── Queue ───────────────────────────────────────────────────────────────────
 
-export function QueueList({ queued }: { queued: QueuedMessage[] }) {
+/** Rows shown before the list scrolls, and the length from which the header collapses it. */
+export const QUEUE_VISIBLE_ROWS = 5;
+
+/**
+ * Messages waiting for the running turn to end. The list scrolls past a few
+ * rows and folds to its header, so a long queue (an orchestrator with many
+ * helpers) never pushes the composer out of the dock (#2413). `onRemove`
+ * shows only where the runtime holds the queue and can drop from it.
+ */
+export function QueueList({ queued, onRemove }: {
+  queued: QueuedMessage[];
+  onRemove?: (messageIds: string[]) => void;
+}) {
+  const long = queued.length > QUEUE_VISIBLE_ROWS;
+  const [open, setOpen] = useState(true);
+  const shown = open || !long;
+  const summary = <span className="text-ctp-overlay1">{queued.length} · sent when this turn ends</span>;
+  const remove = (e: MouseEvent<HTMLButtonElement>, messageId: string) => {
+    // The row goes once main confirms; keep focus in the list rather than losing it with the row.
+    const row = e.currentTarget.closest('li');
+    const next = (row?.nextElementSibling ?? row?.previousElementSibling)?.querySelector<HTMLButtonElement>('button[data-remove]');
+    next?.focus();
+    onRemove?.([messageId]);
+  };
   return (
     <div className="border border-surface-0 rounded-lg bg-ctp-mantle flex flex-col overflow-hidden" data-testid="chat-queue">
-      <div className="flex items-center gap-2 px-3 py-1.5 text-[12px] border-b border-surface-0">
-        <span className="font-semibold text-ctp-text">Queued</span>
-        <span className="text-ctp-overlay1">{queued.length} · sent when this turn ends</span>
+      <div className={`flex items-center gap-2 px-3 py-1.5 text-[12px] ${shown ? 'border-b border-surface-0' : ''}`}>
+        {long ? (
+          <button type="button" className="flex items-center gap-2 min-w-0 text-left" onClick={() => setOpen((o) => !o)} aria-expanded={open} data-testid="chat-queue-toggle">
+            <ChevronDown className={`text-ctp-overlay0 transition-transform ${open ? '' : '-rotate-90'}`} />
+            <span className="font-semibold text-ctp-text">Queued</span>
+            {summary}
+          </button>
+        ) : (
+          <>
+            <span className="font-semibold text-ctp-text">Queued</span>
+            {summary}
+          </>
+        )}
+        {onRemove && queued.length > 1 && (
+          <button
+            type="button"
+            className="ml-auto text-ctp-overlay1 hover:text-ctp-text"
+            // Only what's listed: a message queued since this render stays.
+            onClick={() => onRemove(queued.map((q) => q.messageId))}
+            aria-label={`Clear all ${queued.length} queued messages`}
+            data-testid="chat-queue-clear"
+          >
+            Clear all
+          </button>
+        )}
       </div>
-      {queued.map((q, i) => (
-        <div key={q.messageId} className={`flex items-center gap-2.5 px-3 py-1.5 text-[12.5px] text-ctp-subtext1 ${i > 0 ? 'border-t border-surface-0' : ''}`}>
-          <span className="w-[18px] h-[18px] rounded bg-surface-0 grid place-items-center text-[11px] text-ctp-overlay1 flex-shrink-0">{i + 1}</span>
-          <span className="truncate min-w-0">{q.text || queuedAttachmentLabel(q)}</span>
-        </div>
-      ))}
+      {shown && (
+        // About QUEUE_VISIBLE_ROWS rows of 31px, then the list scrolls.
+        <ul className="m-0 p-0 list-none max-h-[155px] overflow-y-auto" data-testid="chat-queue-list">
+          {queued.map((q, i) => {
+            const label = q.text || queuedAttachmentLabel(q);
+            return (
+              <li key={q.messageId} className={`group flex items-center gap-2.5 px-3 py-1.5 text-[12.5px] text-ctp-subtext1 ${i > 0 ? 'border-t border-surface-0' : ''}`} data-testid="chat-queue-item">
+                <span className="w-[18px] h-[18px] rounded bg-surface-0 grid place-items-center text-[11px] text-ctp-overlay1 flex-shrink-0">{i + 1}</span>
+                <span className="truncate min-w-0 flex-1">{label}</span>
+                {onRemove && (
+                  <button
+                    type="button"
+                    data-remove
+                    className="flex-shrink-0 p-0.5 rounded text-ctp-overlay1 hover:text-ctp-text hover:bg-surface-0 opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 [@media(hover:none)]:opacity-100"
+                    onClick={(e) => remove(e, q.messageId)}
+                    title="Remove from queue"
+                    aria-label={`Remove from queue: ${label}`}
+                  >
+                    <XIcon size={13} />
+                  </button>
+                )}
+              </li>
+            );
+          })}
+        </ul>
+      )}
     </div>
   );
 }

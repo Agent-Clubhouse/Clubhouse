@@ -38,6 +38,7 @@ export const CHAT_EVENT_TYPES = [
   'turn_ended',
   // Messages
   'user_message',
+  'queue_removed',
   'agent_message_chunk',
   'agent_message',
   'agent_thought_chunk',
@@ -355,6 +356,8 @@ export interface ChatEventDataMap {
     source: MessageSource;
     delivery: MessageDelivery;
   };
+  /** Queued user messages taken out of the queue before delivery (removed or cleared). */
+  queue_removed: { messageIds: string[] };
   /** `subagentId` is set when the text comes from a subagent (Claude parent_tool_use_id, Codex child thread). */
   agent_message_chunk: { messageId: string; text: string; subagentId?: string };
   /** Final text of a message; replaces the accumulated chunks. */

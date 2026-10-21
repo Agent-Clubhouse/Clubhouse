@@ -260,6 +260,14 @@ export function registerChatHandlers(): void {
     async (_event, agentId) => requireChatRuntime(agentId).interrupt(),
   ));
 
+  ipcMain.handle(IPC.CHAT.REMOVE_QUEUED, withValidatedArgs(
+    [stringArg(), arrayArg(stringArg({ minLength: 1, maxLength: 128 }), { optional: true, maxLength: 1000 })],
+    async (_event, agentId, messageIds): Promise<string[]> => {
+      const runtime = requireChatRuntime(agentId);
+      return runtime.removeQueued ? runtime.removeQueued(messageIds) : [];
+    },
+  ));
+
   ipcMain.handle(IPC.CHAT.RESPOND_PERMISSION, withValidatedArgs(
     [stringArg(), stringArg(), stringArg(), objectArg<PermissionResponseExtras>({ optional: true })],
     async (_event, agentId, requestId, optionId, extras) => requireChatRuntime(agentId).respondPermission(requestId, optionId, extras),

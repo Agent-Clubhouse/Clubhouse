@@ -184,6 +184,55 @@ describe('ChatAgentRuntime', () => {
     expect(driver.last.sent).toEqual([{ content: [{ type: 'text', text: 'next: open a PR' }], delivery: 'prompt' }]);
   });
 
+  describe('queue editing (#2413)', () => {
+    async function queuedRuntime() {
+      const driver = new FakeChatDriver('copilot_acp', 'copilot-cli', STEERLESS);
+      const { runtime } = makeRuntime(driver);
+      await runtime.start();
+      driver.last.emit({ type: 'turn_started', data: { trigger: 'prompt' } });
+      await flush();
+      const ids: string[] = [];
+      for (const text of ['one', 'two', 'three']) ids.push((await runtime.sendMessage(text, { source: 'user', delivery: 'queued' })).messageId!);
+      return { driver, runtime, ids };
+    }
+    const sentTexts = (driver: FakeChatDriver) => driver.last.sent.map((s) => (s.content[0] as { text: string }).text);
+
+    it('removes a queued message by id, records it, and never delivers it', async () => {
+      const { driver, runtime, ids } = await queuedRuntime();
+      expect(await runtime.removeQueued([ids[1]])).toEqual([ids[1]]);
+      expect(transcript.at(-1)).toMatchObject({ type: 'queue_removed', data: { messageIds: [ids[1]] } });
+
+      driver.last.emit({ type: 'turn_ended', data: { stopReason: 'end_turn' } });
+      await flush();
+      driver.last.emit({ type: 'turn_started', data: { trigger: 'queued' } });
+      driver.last.emit({ type: 'turn_ended', data: { stopReason: 'end_turn' } });
+      await flush();
+      driver.last.emit({ type: 'turn_started', data: { trigger: 'queued' } });
+      driver.last.emit({ type: 'turn_ended', data: { stopReason: 'end_turn' } });
+      await flush();
+      expect(sentTexts(driver)).toEqual(['one', 'three']);
+    });
+
+    it('clears the whole queue with no ids, and ignores ids it does not hold', async () => {
+      const { driver, runtime, ids } = await queuedRuntime();
+      expect(await runtime.removeQueued(['not-queued'])).toEqual([]);
+      expect(types().filter((t) => t === 'queue_removed')).toHaveLength(0);
+      expect(await runtime.removeQueued()).toEqual(ids);
+      expect(await runtime.removeQueued()).toEqual([]);
+      driver.last.emit({ type: 'turn_ended', data: { stopReason: 'end_turn' } });
+      await flush();
+      expect(driver.last.sent).toHaveLength(0);
+    });
+
+    it('can no longer remove a message the turn end already sent', async () => {
+      const { driver, runtime, ids } = await queuedRuntime();
+      driver.last.emit({ type: 'turn_ended', data: { stopReason: 'end_turn' } });
+      await flush();
+      expect(await runtime.removeQueued([ids[0]])).toEqual([]);
+      expect(sentTexts(driver)).toEqual(['one']);
+    });
+  });
+
   it.each([true, false])('sends /compact through mid-turn delivery and records it (steer=%s)', async (steer) => {
     const driver = new FakeChatDriver('copilot_acp', 'copilot-cli', { ...STEERLESS, steer });
     const { runtime } = makeRuntime(driver);

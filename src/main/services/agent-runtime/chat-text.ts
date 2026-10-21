@@ -15,6 +15,9 @@ export function chatEventsToText(events: ChatEvent[], maxLines: number): string 
         lines.push(...`> ${text}`.split('\n'));
         break;
       }
+      case 'queue_removed':
+        lines.push(`[removed from queue] ${e.data.messageIds.length} message${e.data.messageIds.length === 1 ? '' : 's'}`);
+        break;
       case 'agent_message_chunk':
         partial.set(e.data.messageId, (partial.get(e.data.messageId) ?? '') + e.data.text);
         break;
