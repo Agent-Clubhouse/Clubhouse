@@ -1,7 +1,8 @@
 import { describe, it, expect, vi } from 'vitest';
-import { render, screen, within } from '@testing-library/react';
-import { PermissionCard } from './ApprovalDock';
-import type { PendingPermission } from '../../../stores/chatStore';
+import { fireEvent, render, screen, within } from '@testing-library/react';
+import { PermissionCard, QuestionCard } from './ApprovalDock';
+import type { PendingPermission, PendingQuestion } from '../../../stores/chatStore';
+import type { ChatQuestion } from '../../../../shared/chat';
 
 const request = (over: Partial<PendingPermission> = {}): PendingPermission => ({
   requestId: 'r1',
@@ -93,5 +94,127 @@ describe('PermissionCard', () => {
     render(<PermissionCard request={request({ title: 'Run a command', description: 'Lists the build folder' })} queueSize={1} agentName="a" onRespond={vi.fn(async () => true)} />);
     expect(screen.getByTestId('chat-permission-description')).toHaveTextContent('Lists the build folder');
     expect(screen.queryByTestId('chat-permission-preview')).toBeNull();
+  });
+});
+
+describe('QuestionCard', () => {
+  const long = 'A long description that explains the trade-offs of this option in enough detail that it would take several lines to read in full at the dock width.';
+  const questions = (n: number): ChatQuestion[] => Array.from({ length: n }, (_, i) => ({
+    id: `q${i + 1}`,
+    prompt: `Question ${i + 1}`,
+    allowFreeText: false,
+    options: [
+      { id: 'a', label: `Option ${i + 1}a`, description: long },
+      { id: 'b', label: `Option ${i + 1}b`, description: 'Short.' },
+      { id: 'c', label: `Option ${i + 1}c` },
+    ],
+  }));
+  const pending = (qs: ChatQuestion[]): PendingQuestion => ({ requestId: 'qr', questions: qs, ts: 0 });
+  const renderCard = (qs: ChatQuestion[]) => {
+    const onAnswer = vi.fn(async () => true);
+    render(<QuestionCard request={pending(qs)} onAnswer={onAnswer} />);
+    return { onAnswer, card: screen.getByTestId('chat-question') };
+  };
+
+  it('opens only the current question and collapses the rest behind a stepper', () => {
+    const { card } = renderCard(questions(6));
+    expect(screen.getAllByTestId('chat-question-current')).toHaveLength(1);
+    expect(screen.getByTestId('chat-question-current')).toHaveTextContent('Question 1');
+    expect(screen.getAllByTestId('chat-question-collapsed')).toHaveLength(5);
+    expect(screen.getByTestId('chat-question-step')).toHaveTextContent('1 of 6');
+    expect(within(card).queryByText('Option 2a')).toBeNull();
+    expect(screen.getByText('Previous')).toBeDisabled();
+
+    fireEvent.click(screen.getByText('Next'));
+    expect(screen.getByTestId('chat-question-step')).toHaveTextContent('2 of 6');
+    expect(screen.getByTestId('chat-question-current')).toHaveTextContent('Question 2');
+
+    // A collapsed row opens its question.
+    fireEvent.click(screen.getAllByTestId('chat-question-collapsed')[4]);
+    expect(screen.getByTestId('chat-question-step')).toHaveTextContent('6 of 6');
+    expect(screen.getByText('Next')).toBeDisabled();
+  });
+
+  it('moves on after a single choice and shows answers on the collapsed rows', () => {
+    const { card, onAnswer } = renderCard(questions(3));
+    const send = screen.getByText('Send answer');
+    fireEvent.click(screen.getByText('Option 1b'));
+    expect(screen.getByTestId('chat-question-step')).toHaveTextContent('2 of 3');
+    expect(screen.getAllByTestId('chat-question-collapsed')[0]).toHaveTextContent('Option 1b');
+    expect(screen.getAllByTestId('chat-question-collapsed')[1]).toHaveTextContent('Not answered');
+    // Number keys answer the open question.
+    fireEvent.keyDown(card, { key: '3' });
+    expect(screen.getByTestId('chat-question-step')).toHaveTextContent('3 of 3');
+    expect(send).toBeDisabled();
+    fireEvent.keyDown(card, { key: '1' });
+    expect(send).not.toBeDisabled();
+    fireEvent.click(send);
+    expect(onAnswer).toHaveBeenCalledWith('qr', { q1: 'b', q2: 'c', q3: 'a' });
+  });
+
+  it('keeps keyboard focus on the card after the open question changes', () => {
+    const { card } = renderCard(questions(3));
+    const option = screen.getByText('Option 1a').closest('button')!;
+    option.focus();
+    fireEvent.click(option);
+    expect(document.activeElement).toBe(card);
+    fireEvent.keyDown(card, { key: '2' });
+    expect(screen.getByTestId('chat-question-step')).toHaveTextContent('3 of 3');
+  });
+
+  it('advances to the next unanswered question, and not after a multi-select pick', () => {
+    const qs = questions(3);
+    qs[1] = { ...qs[1], multiSelect: true };
+    renderCard(qs);
+    fireEvent.click(screen.getAllByTestId('chat-question-collapsed')[1]);
+    fireEvent.click(screen.getByText('Option 3c'));
+    // Question 3 answered: back to the first unanswered one after it, else the next.
+    expect(screen.getByTestId('chat-question-step')).toHaveTextContent('3 of 3');
+    fireEvent.click(screen.getAllByTestId('chat-question-collapsed')[0]);
+    fireEvent.click(screen.getByText('Option 1a'));
+    expect(screen.getByTestId('chat-question-step')).toHaveTextContent('2 of 3');
+    fireEvent.click(screen.getByText('Option 2a'));
+    expect(screen.getByTestId('chat-question-step')).toHaveTextContent('2 of 3');
+    // Unticking every choice leaves the question unanswered.
+    fireEvent.click(screen.getByText('Option 2a'));
+    expect(screen.getByText('Send answer')).toBeDisabled();
+    fireEvent.click(screen.getByText('Next'));
+    expect(screen.getAllByTestId('chat-question-collapsed')[1]).toHaveTextContent('Not answered');
+  });
+
+  it('summarises a free-text answer on its collapsed row', () => {
+    const qs = questions(2).map((q) => ({ ...q, allowFreeText: true }));
+    renderCard(qs);
+    fireEvent.change(screen.getByLabelText(/^Answer:/), { target: { value: 'Something else' } });
+    fireEvent.click(screen.getByText('Next'));
+    expect(screen.getAllByTestId('chat-question-collapsed')[0]).toHaveTextContent('Something else');
+  });
+
+  it('keeps the send row outside the scrolling questions', () => {
+    const { card } = renderCard(questions(6));
+    const body = screen.getByTestId('chat-question-body');
+    expect(card).toHaveClass('min-h-0', 'flex', 'flex-col');
+    expect(body).toHaveClass('min-h-0', 'overflow-y-auto');
+    expect(body).not.toContainElement(screen.getByText('Send answer'));
+    expect(body).not.toContainElement(screen.getByTestId('chat-question-step'));
+  });
+
+  it('clamps long option descriptions behind a toggle', () => {
+    renderCard(questions(1));
+    const [longDesc, shortDesc] = screen.getAllByTestId('chat-question-description');
+    expect(longDesc).toHaveClass('line-clamp-2');
+    expect(shortDesc).not.toHaveClass('line-clamp-2');
+    const toggle = screen.getByText('Show more');
+    expect(toggle).toHaveAttribute('aria-expanded', 'false');
+    fireEvent.click(toggle);
+    expect(longDesc).not.toHaveClass('line-clamp-2');
+    expect(screen.getByText('Show less')).toHaveAttribute('aria-expanded', 'true');
+  });
+
+  it('shows no stepper for a single question', () => {
+    renderCard([{ ...questions(1)[0], multiSelect: true }]);
+    expect(screen.queryByTestId('chat-question-step')).toBeNull();
+    expect(screen.queryByTestId('chat-question-collapsed')).toBeNull();
+    expect(screen.getByText('Send answer')).toBeInTheDocument();
   });
 });

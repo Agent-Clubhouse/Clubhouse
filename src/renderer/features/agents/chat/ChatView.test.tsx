@@ -749,6 +749,30 @@ describe('ChatView review fixes', () => {
     expect(actions.answerQuestion).toHaveBeenLastCalledWith('q-b', { x: 'b' });
   });
 
+  it('caps the dock so a tall question request keeps the transcript in view (#2412)', () => {
+    const actions = makeActions();
+    const long = 'A long option description that runs well past a single line at the dock width.'.repeat(3);
+    const questions = Array.from({ length: 6 }, (_, i) => ({
+      id: `q${i}`,
+      prompt: `Question ${i}`,
+      allowFreeText: false,
+      options: ['a', 'b', 'c'].map((id) => ({ id, label: `${i}${id}`, description: long })),
+    }));
+    const state = fold(extend(chatFixture('codex', 'conversation'), { type: 'question', data: { requestId: 'q-tall', questions } }));
+    render(<ChatViewBody agent={agent} state={state} actions={actions} providerName="P" />);
+    const dock = screen.getByTestId('chat-dock');
+    expect(dock).toHaveClass('max-h-[60%]');
+    // The card shrinks inside the cap.
+    expect(screen.getByTestId('chat-question')).toHaveClass('min-h-0');
+    expect(dock).toContainElement(screen.getByText('Send answer'));
+    expect(screen.getByTestId('chat-question-step')).toHaveTextContent('1 of 6');
+  });
+
+  it('leaves the composer uncapped so its toolbar and menus are never clipped', () => {
+    renderFixture('codex', 'conversation');
+    expect(screen.getByTestId('chat-dock')).not.toHaveClass('max-h-[60%]');
+  });
+
   it('unlocks the approval card when the answer fails', async () => {
     const actions = makeActions();
     actions.respondPermission.mockResolvedValueOnce(false);
