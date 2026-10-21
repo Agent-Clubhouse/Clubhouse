@@ -101,6 +101,8 @@ If you delete an orchestrator that still has helpers, Clubhouse asks whether to 
 
 Each helper gets a two-way wire to its orchestrator when it starts. These wires survive restarts. The helper replies with `message_parent`.
 
+When several helper messages and Clubhouse notices arrive while the orchestrator is busy, it gets them as one message with a section for each, in order. A helper's question isn't held back.
+
 Helpers aren't wired to each other automatically. The orchestrator can connect them in two ways.
 
 | Tools | What they do |

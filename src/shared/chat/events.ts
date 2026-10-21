@@ -355,6 +355,11 @@ export interface ChatEventDataMap {
     content: ContentBlock[];
     source: MessageSource;
     delivery: MessageDelivery;
+    /**
+     * A queued MCP message that joined the queued item with this messageId
+     * (#2414) instead of starting its own: one row, one turn for both.
+     */
+    queuedWith?: string;
   };
   /** Queued user messages taken out of the queue before delivery (removed or cleared). */
   queue_removed: { messageIds: string[] };

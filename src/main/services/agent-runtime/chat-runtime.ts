@@ -22,6 +22,7 @@
 import { randomUUID } from 'crypto';
 import {
   CHAT_CONTRACT_VERSION,
+  coalesceUpdateContent,
   type AgentRuntime,
   type ChatCapabilities,
   type ChatDriverId,
@@ -142,6 +143,19 @@ export class ChatStartCancelledError extends Error {
   }
 }
 
+/**
+ * A message held for the next turn (client-side queue). Consecutive MCP
+ * messages share one item (#2414): `messageId` is the first one's, and
+ * `parts` holds each message's content, in order.
+ */
+interface QueuedMessage {
+  messageId: string;
+  source: MessageSource;
+  parts: ContentBlock[][];
+  /** The system prompt, for a driver that can't pass it natively, sent ahead of the first message. */
+  preamble: ContentBlock[];
+}
+
 interface PendingPermission {
   chatRequestId: string;
   options: PermissionOption[];
@@ -170,7 +184,9 @@ export class ChatAgentRuntime implements AgentRuntime {
   /** How the last session open went with a requested resume, for chat start telemetry (#2304). */
   private resumeOpen: { honored: boolean; timing?: ChatResumeTiming } | undefined;
   private capabilities: ChatCapabilities | undefined;
-  private readonly queued: Array<{ messageId: string; content: ContentBlock[]; source: MessageSource }> = [];
+  private readonly queued: QueuedMessage[] = [];
+  /** drainQueue is sending the next queued item: the turn it starts hasn't begun yet. */
+  private draining = false;
   private readonly permissions = new Map<string, PendingPermission>();
   /** Questions awaiting an answer, so a late or duplicate answer is ignored. */
   private readonly questions = new Set<string>();
@@ -520,7 +536,9 @@ export class ChatAgentRuntime implements AgentRuntime {
   async sendMessage(content: string | ContentBlock[], opts: RuntimeSendOptions): Promise<RuntimeSendResult> {
     const session = this.requireSession();
     const blocks: ContentBlock[] = typeof content === 'string' ? [{ type: 'text', text: content }] : content;
-    const running = this.state === 'running' || this.state === 'waiting_permission' || this.state === 'waiting_input';
+    // While the queue drains, the state still reads idle; a prompt now would race the drained one.
+    const running = this.draining
+      || this.state === 'running' || this.state === 'waiting_permission' || this.state === 'waiting_input';
     const caps = this.capabilities ?? session.capabilities;
 
     let wanted: MessageDelivery;
@@ -535,13 +553,26 @@ export class ChatAgentRuntime implements AgentRuntime {
       wanted = requested;
     }
 
-    const outgoing = this.withSystemPrompt(blocks, caps);
     const messageId = this.newId();
     if (wanted === 'queued' && caps.queue !== 'native') {
-      this.queued.push({ messageId, content: outgoing, source: opts.source });
+      // Helper reports and Clubhouse notices arriving mid-turn join the MCP
+      // item at the tail, so a burst becomes one turn. Never a user's message.
+      const tail = this.queued[this.queued.length - 1];
+      if (opts.source === 'mcp' && tail?.source === 'mcp') {
+        tail.parts.push(blocks);
+        await this.emit({
+          type: 'user_message',
+          data: { messageId, content: blocks, source: opts.source, delivery: 'queued', queuedWith: tail.messageId },
+        });
+        return { delivery: 'queued', messageId: tail.messageId };
+      }
+      const preamble = this.withSystemPrompt([], caps);
+      this.queued.push({ messageId, source: opts.source, parts: [blocks], preamble });
       await this.emit({ type: 'user_message', data: { messageId, content: blocks, source: opts.source, delivery: 'queued' } });
       return { delivery: 'queued', messageId };
     }
+
+    const outgoing = this.withSystemPrompt(blocks, caps);
 
     this.clearIdleTimer();
     if (wanted === 'prompt') await this.runBeforePrompt();
@@ -585,10 +616,15 @@ export class ChatAgentRuntime implements AgentRuntime {
   private async drainQueue(): Promise<void> {
     const next = this.queued.shift();
     if (!next || !this.session) return;
-    this.clearIdleTimer();
-    await this.runBeforePrompt();
-    if (!this.session) return;
-    await this.session.send(next.content, 'prompt');
+    this.draining = true;
+    try {
+      this.clearIdleTimer();
+      await this.runBeforePrompt();
+      if (!this.session) return;
+      await this.session.send([...next.preamble, ...coalesceUpdateContent(next.parts)], 'prompt');
+    } finally {
+      this.draining = false;
+    }
   }
 
   async interrupt(): Promise<void> {

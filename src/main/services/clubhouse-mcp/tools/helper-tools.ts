@@ -36,7 +36,6 @@ import { agentRegistry } from '../../agent-registry';
 import { startDurableCreation } from '../../agent-creation';
 import * as agentSystem from '../../agent-system';
 import { getAgentRuntime } from '../../agent-runtime';
-import { isAgentStoppingError } from '../../agent-runtime/agent-stopping';
 import { getGitInfo } from '../../git-service';
 import { withoutClubhouseOwnedChanges } from '../../clubhouse-owned-files';
 import { applyPersonaToAgent } from '../../persona-application';
@@ -69,6 +68,7 @@ import {
   takeStartRequest,
 } from '../../helper-start-requests';
 import { McpArgError, optionalString } from './validation';
+import { _resetHelperDeliveryForTesting, deliverHelperUpdate, deliverNow } from './helper-delivery';
 
 // ── Results ──────────────────────────────────────────────────────────────
 
@@ -141,39 +141,23 @@ async function resolveOwnHelper(caller: Caller, ref: string): Promise<DurableAge
 
 // ── Messages to agents ───────────────────────────────────────────────────
 
-type Delivery = 'delivered' | 'not_running' | 'stopping';
-
 /**
- * Deliver text to a running agent's input, as Clubhouse MCP send_message
- * does. A terminal agent that is shutting down refuses the text (its runtime
- * throws AgentStoppingError), which comes back as 'stopping'.
+ * Tell an orchestrator what happened to a helper. Never throws, and doesn't
+ * wait: a busy orchestrator's notices are batched (#2414), and no start, wake
+ * or user decision should be held for that.
  */
-async function deliverToAgent(targetId: string, text: string): Promise<Delivery> {
-  const runtime = getAgentRuntime(targetId);
-  if (!runtime) return 'not_running';
-  try {
-    await runtime.sendMessage(text, { source: 'mcp', taskId: `helper_${Date.now().toString(36)}` });
-  } catch (err) {
-    if (isAgentStoppingError(err)) return 'stopping';
-    throw err;
-  }
-  return 'delivered';
-}
-
-/** Tell an orchestrator what happened to a helper. Never throws. */
-async function notifyOrchestrator(orchestratorId: string, text: string): Promise<void> {
-  try {
-    const delivery = await deliverToAgent(orchestratorId, `[Clubhouse] ${text}`);
+function notifyOrchestrator(orchestratorId: string, text: string): void {
+  deliverHelperUpdate(orchestratorId, `[Clubhouse] ${text}`).then((delivery) => {
     if (delivery === 'delivered') return;
     appLog('core:mcp', 'warn', 'Helper update not delivered: the orchestrator is not running', {
       meta: { orchestratorId, delivery },
     });
-  } catch (err) {
+  }).catch((err: unknown) => {
     // telemetry-exempt: logged; an undelivered update must not fail the start
     appLog('core:mcp', 'warn', 'Helper update not delivered', {
       meta: { orchestratorId, error: errorText(err) },
     });
-  }
+  });
 }
 
 // ── Start state ──────────────────────────────────────────────────────────
@@ -285,13 +269,13 @@ async function finishHelperStart(
   try {
     const outcome = await done;
     if (outcome === 'cancelled') {
-      await notifyOrchestrator(orchestrator.id, `Helper "${helperName}" (${helperId}) was cancelled before it started.`);
+      notifyOrchestrator(orchestrator.id, `Helper "${helperName}" (${helperId}) was cancelled before it started.`);
       return;
     }
     let config = await agentConfig.getDurableConfig(projectPath, helperId).catch((): null => null);
     if (outcome === 'failed' || !config || config.creation) {
       const reason = config?.creation?.reason ?? 'its worktree could not be created.';
-      await notifyOrchestrator(orchestrator.id, `Helper "${helperName}" (${helperId}) failed to start: ${reason}`);
+      notifyOrchestrator(orchestrator.id, `Helper "${helperName}" (${helperId}) failed to start: ${reason}`);
       return;
     }
 
@@ -323,7 +307,7 @@ async function finishHelperStart(
       });
       if (config) await restoreTask(projectPath, helperId, task);
       taskTaken = false;
-      await notifyOrchestrator(orchestrator.id,
+      notifyOrchestrator(orchestrator.id,
         `Helper "${helperName}" (${helperId}) is ready but was not started because ${blocker}. ` +
         'Its task is saved: wake_helper delivers it.');
       return;
@@ -349,7 +333,7 @@ async function finishHelperStart(
       meta: { orchestratorId: orchestrator.id, helperId, access: finalLaunch.level },
     });
     const branch = config.branch ? ` on branch ${config.branch}` : '';
-    await notifyOrchestrator(orchestrator.id,
+    notifyOrchestrator(orchestrator.id,
       `Helper "${helperName}" (${helperId}) is ready${branch} with ${finalLaunch.level} access and has started its task.`);
   } catch (err) {
     // telemetry-exempt: the failure reaches the orchestrator and list_helpers
@@ -360,7 +344,7 @@ async function finishHelperStart(
     appLog('core:mcp', 'warn', 'start_helper: helper spawn failed', {
       meta: { orchestratorId: orchestrator.id, helperId, error: reason },
     });
-    await notifyOrchestrator(orchestrator.id,
+    notifyOrchestrator(orchestrator.id,
       `Helper "${helperName}" (${helperId}) was created but failed to start: ${reason} Its task is saved: wake_helper delivers it.`);
   } finally {
     spawning.delete(helperId);
@@ -621,14 +605,14 @@ export async function approveHelperStart(projectPath: string, requestId: string)
   }
   const what = `helper "${args.name}" (request ${request.requestId})`;
   if (outcome.kind === 'starting') {
-    await notifyOrchestrator(orchestratorId,
+    notifyOrchestrator(orchestratorId,
       `The user approved starting ${what}. It is being created as ${outcome.helperId} with ` +
       `${outcome.launch.level} access. You will get a message when it has started its task, or why it failed.`);
     return { ok: true, message: `Starting ${outcome.name}`, helperId: outcome.helperId };
   }
   const reason = outcome.kind === 'refused' ? outcome.reason : 'it could not be started.';
   appLog('core:mcp', 'info', 'Approved helper start refused', { meta: { orchestratorId, requestId, reason } });
-  await notifyOrchestrator(orchestratorId, `The user approved starting ${what}, but it was not started because ${reason}`);
+  notifyOrchestrator(orchestratorId, `The user approved starting ${what}, but it was not started because ${reason}`);
   return { ok: false, message: `Couldn’t start ${args.name} because ${reason}` };
 }
 
@@ -637,7 +621,7 @@ export async function declineHelperStart(projectPath: string, requestId: string)
   const request = takeStartRequest(projectPath, requestId);
   if (!request) return { ok: false, message: NOT_WAITING };
   appLog('core:mcp', 'info', 'Helper start declined', { meta: { orchestratorId: request.orchestratorId, requestId } });
-  await notifyOrchestrator(request.orchestratorId,
+  notifyOrchestrator(request.orchestratorId,
     `The user declined your request to start helper "${request.args.name}" (request ${request.requestId}). Nothing was created.`);
   return { ok: true, message: 'Declined' };
 }
@@ -840,7 +824,7 @@ async function wakeHelper(agentId: string, args: Record<string, unknown>): Promi
   if (agentSystem.isAgentRunning(helper.id)) {
     // A sleep that began while the helper was re-read.
     if (agentSystem.isAgentStopping(helper.id)) return stillStopping(helper, message);
-    const delivery = message ? await deliverToAgent(helper.id, `[FROM:${caller.config.name}] ${message}`) : undefined;
+    const delivery = message ? await deliverNow(helper.id, `[FROM:${caller.config.name}] ${message}`) : undefined;
     if (delivery === 'stopping') return stillStopping(helper, message);
     const delivered = delivery === 'delivered';
     return jsonResult({ helperId: helper.id, name: helper.name, status: 'already_running', ...(message && { messageDelivered: delivered }) });
@@ -909,7 +893,8 @@ async function messageParent(agentId: string, args: Record<string, unknown>): Pr
   }
   const parent = await agentConfig.getDurableConfig(registration.projectPath, self.parentAgentId);
   if (!parent || isDisposedAgent(parent)) throw new HelperToolError('Your parent agent no longer exists.');
-  const delivery = await deliverToAgent(parent.id, `[FROM HELPER:${self.name} (${self.id})] ${text}`);
+  // Batched with the parent's other helper updates (#2414).
+  const delivery = await deliverHelperUpdate(parent.id, `[FROM HELPER:${self.name} (${self.id})] ${text}`);
   if (delivery === 'stopping') {
     throw new HelperToolError(`${parent.name} is shutting down, so the message was not delivered.`);
   }
@@ -1026,4 +1011,5 @@ export function _resetHelperToolsForTesting(): void {
   inflight.clear();
   startChain = Promise.resolve();
   lastApprovalNotice.clear();
+  _resetHelperDeliveryForTesting();
 }

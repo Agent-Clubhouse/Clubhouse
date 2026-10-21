@@ -459,7 +459,7 @@ describe('agent-handlers', () => {
       beforeEach(() => {
         _resetStartRequestsForTesting();
         sendMessage = vi.fn(async () => {});
-        vi.mocked(getAgentRuntime).mockReturnValue({ sendMessage } as never);
+        vi.mocked(getAgentRuntime).mockReturnValue({ kind: 'chat', isRunning: () => true, getState: () => 'idle', sendMessage } as never);
       });
 
       it('validates the arguments in main', async () => {
@@ -499,7 +499,7 @@ describe('agent-handlers', () => {
       beforeEach(() => {
         _resetDisposeRequestsForTesting();
         sendMessage = vi.fn(async () => {});
-        vi.mocked(getAgentRuntime).mockReturnValue({ sendMessage } as never);
+        vi.mocked(getAgentRuntime).mockReturnValue({ kind: 'chat', isRunning: () => true, getState: () => 'idle', sendMessage } as never);
       });
 
       it('reports once to the parent main sent the request for, using the stored name', async () => {
