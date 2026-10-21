@@ -113,3 +113,58 @@ describe('resolveRenderedWires — zone wires', () => {
     expect(wires.map((w) => w.kind)).toEqual(['binding', 'zone']);
   });
 });
+
+describe('resolveRenderedWires — an agent with more than one card (#2415)', () => {
+  it('draws a binding wire from every card of the agent, not only the last', () => {
+    const first = makeAgent('v1', 'durable_1');
+    const second = makeAgent('v2', 'durable_1');
+    const gp = makeGroupProject('v3', 'gp_123');
+    const wires = resolveRenderedWires([first, second, gp], [binding('durable_1', 'gp_123', 'group-project')], []);
+    expect(wires.map((w) => w.source.id)).toEqual(['v1', 'v2']);
+    expect(wires.every((w) => w.target.id === 'v3')).toBe(true);
+    // The first card keeps the plain key; keys stay unique.
+    expect(wires[0].key).toBe('binding:durable_1--gp_123');
+    expect(new Set(wires.map((w) => w.key)).size).toBe(2);
+  });
+
+  it('draws agent→agent wires to every card of the target agent too', () => {
+    const src = makeAgent('v1', 'durable_1');
+    const tgtA = makeAgent('v2', 'durable_2');
+    const tgtB = makeAgent('v3', 'durable_2');
+    const wires = resolveRenderedWires([src, tgtA, tgtB], [binding('durable_1', 'durable_2', 'agent')], []);
+    expect(wires.map((w) => w.target.id)).toEqual(['v2', 'v3']);
+  });
+
+  it('indexes every card of an agent', () => {
+    const index = buildViewIndex([makeAgent('v1', 'durable_1'), makeAgent('v2', 'durable_1')]);
+    expect(index.byAgentId.get('durable_1')?.map((v) => v.id)).toEqual(['v1', 'v2']);
+  });
+});
+
+describe('resolveRenderedWires — a codex-cli agent on a group project (#2415)', () => {
+  function codexAgent(id: string, agentId: string): AgentCanvasView {
+    const v = makeAgent(id, agentId);
+    return { ...v, metadata: { agentId, orchestrator: 'codex-cli' } };
+  }
+
+  it('draws the wire for a single codex-cli card connected to a group project', () => {
+    const wires = resolveRenderedWires(
+      [codexAgent('v1', 'durable_codex'), makeGroupProject('v2', 'gp_123')],
+      [binding('durable_codex', 'gp_123', 'group-project')],
+      [],
+    );
+    expect(wires).toHaveLength(1);
+    expect(wires[0].source.id).toBe('v1');
+    expect(wires[0].target.id).toBe('v2');
+  });
+
+  it('draws it alongside a claude-code agent on the same group project', () => {
+    const claude = { ...makeAgent('v1', 'durable_claude'), metadata: { orchestrator: 'claude-code' } };
+    const wires = resolveRenderedWires(
+      [claude, codexAgent('v2', 'durable_codex'), makeGroupProject('v3', 'gp_123')],
+      [binding('durable_claude', 'gp_123', 'group-project'), binding('durable_codex', 'gp_123', 'group-project')],
+      [],
+    );
+    expect(wires.map((w) => w.source.id)).toEqual(['v1', 'v2']);
+  });
+});

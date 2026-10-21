@@ -21,6 +21,7 @@ interface ZoomedViewOverlayProps {
   onClose: () => void;
   onUpdateView: (viewId: string, updates: Partial<CanvasView>) => void;
   onCreateAgentCard?: (parentView: AgentCanvasViewType, agentId: string) => void;
+  onFocusAgentCard?: (pickerView: AgentCanvasViewType, agentId: string) => boolean;
 }
 
 export function ZoomedViewOverlay({
@@ -29,6 +30,7 @@ export function ZoomedViewOverlay({
   onClose,
   onUpdateView,
   onCreateAgentCard,
+  onFocusAgentCard,
 }: ZoomedViewOverlayProps) {
   return (
     <div
@@ -59,6 +61,7 @@ export function ZoomedViewOverlay({
               api={api}
               onUpdate={(u: Partial<CanvasView>) => onUpdateView(view.id, u)}
               onCreateAgentCard={onCreateAgentCard}
+              onFocusAgentCard={onFocusAgentCard}
             />
           )}
           {view.type === 'plugin' && (() => {

@@ -24,9 +24,15 @@ interface AgentCanvasViewProps {
    * to the current card.
    */
   onCreateAgentCard?: (parentView: AgentCanvasViewType, agentId: string) => void;
+  /**
+   * Picking an agent that already has a card on this canvas focuses that
+   * card instead (#2415). Returns true when it did, and this picker card is
+   * then gone; false when the agent isn't on the canvas yet.
+   */
+  onFocusAgentCard?: (pickerView: AgentCanvasViewType, agentId: string) => boolean;
 }
 
-export function AgentCanvasView({ view, api, onUpdate, zoneThemeId, onCreateAgentCard }: AgentCanvasViewProps) {
+export function AgentCanvasView({ view, api, onUpdate, zoneThemeId, onCreateAgentCard, onFocusAgentCard }: AgentCanvasViewProps) {
   const isAppMode = api.context.mode === 'app';
   const [agentTick, setAgentTick] = useState(0);
   const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null);
@@ -46,6 +52,7 @@ export function AgentCanvasView({ view, api, onUpdate, zoneThemeId, onCreateAgen
   );
 
   const handlePickAgent = useCallback((agent: AgentInfo) => {
+    if (onFocusAgentCard?.(view, agent.id)) return;
     const project = projects.find((p) => p.id === agent.projectId);
     const name = agent.name || agent.id;
     onUpdate({
@@ -62,7 +69,7 @@ export function AgentCanvasView({ view, api, onUpdate, zoneThemeId, onCreateAgen
         model: agent.model ?? null,
       },
     } as Partial<AgentCanvasViewType>);
-  }, [onUpdate, projects]);
+  }, [onUpdate, projects, onFocusAgentCard, view]);
 
   // Keep metadata in sync when the assigned agent's searchable properties change
   useEffect(() => {

@@ -4,6 +4,7 @@ import type { CanvasMutation } from '../../../../shared/types';
 import type { CanvasView, CanvasViewType, AgentCanvasView } from './canvas-types';
 import { createCanvasStore } from './canvas-store';
 import { queueAgentCard, takeAgentCards, subscribeAgentCards, placeAgentCard, canvasOfView, type PendingAgentCard } from './agent-card-queue';
+import { findAgentCard } from './canvas-operations';
 import { CanvasTabBar } from './CanvasTabBar';
 import { CanvasWorkspace } from './CanvasWorkspace';
 import { setCanvasQueryProvider } from '../../plugin-api-canvas';
@@ -49,6 +50,17 @@ export function findBindingsForView(view: CanvasView, bindings: McpBindingEntry[
     (agentId && b.agentId === agentId) ||
     targetIds.includes(b.targetId),
   );
+}
+
+/**
+ * The bindings to clean up when `view` is removed. None when it's an agent card
+ * whose agent has another card on the canvas (saved before #2415): the card
+ * that stays keeps the agent's wires.
+ */
+export function bindingsToCleanUpOnRemove(view: CanvasView, views: readonly CanvasView[], bindings: McpBindingEntry[]): McpBindingEntry[] {
+  const agentId = view.type === 'agent' ? (view as AgentCanvasView).agentId : null;
+  if (agentId && findAgentCard(views, agentId, view.id)) return [];
+  return findBindingsForView(view, bindings);
 }
 
 // App-mode canvas store: single instance shared across all projects
@@ -497,9 +509,10 @@ export function MainPanel({ api }: { api: PluginAPI }) {
   const handleRemoveView = useCallback((viewId: string) => {
     remoteForward({ type: 'removeView', viewId });
     // Unbind any MCP wires and remove wire definitions for this view
-    const view = store.getState().activeCanvas().views.find((v) => v.id === viewId);
+    const views = store.getState().activeCanvas().views;
+    const view = views.find((v) => v.id === viewId);
     if (view) {
-      const stale = findBindingsForView(view, bindingsRef.current);
+      const stale = bindingsToCleanUpOnRemove(view, views, bindingsRef.current);
       const unbind = useMcpBindingStore.getState().unbind;
       const { removeWireDefinition } = store.getState();
       for (const b of stale) {
@@ -549,6 +562,12 @@ export function MainPanel({ api }: { api: PluginAPI }) {
   }, [store]);
 
   const placeQueuedAgentCard = useCallback((card: PendingAgentCard) => {
+    // The agent already has a card here: focus it rather than add another (#2415).
+    const existing = findAgentCard(store.getState().views, card.agentId);
+    if (existing) {
+      handleFocusView(existing.id);
+      return;
+    }
     const { position, size: newSize } = placeAgentCard(card, store.getState().views);
 
     remoteForward({ type: 'addView', viewType: 'agent', position });
@@ -580,7 +599,7 @@ export function MainPanel({ api }: { api: PluginAPI }) {
       remoteForward({ type: 'resizeView', viewId: newViewId, size: newSize });
       store.getState().resizeView(newViewId, newSize);
     }
-  }, [store, remoteForward, api]);
+  }, [store, remoteForward, api, handleFocusView]);
 
   const [agentCardTick, setAgentCardTick] = useState(0);
   useEffect(() => subscribeAgentCards(store, () => setAgentCardTick((n) => n + 1)), [store]);

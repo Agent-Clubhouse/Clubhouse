@@ -95,6 +95,8 @@ interface CanvasViewComponentProps {
    * card instead of overwriting the parent.
    */
   onCreateAgentCard?: (parentView: AgentCanvasViewType, agentId: string) => void;
+  /** Focus an agent's existing card when its picker picks it again (#2415). */
+  onFocusAgentCard?: (pickerView: AgentCanvasViewType, agentId: string) => boolean;
   /** Right-click context menu handler for view-level actions. */
   onViewContextMenu?: (e: React.MouseEvent) => void;
   /** Whether this card is the radial layout center. */
@@ -125,6 +127,7 @@ export const CanvasViewComponent = memo(function CanvasViewComponent({
   onResizeEnd,
   onUpdate,
   onCreateAgentCard,
+  onFocusAgentCard,
   onViewContextMenu,
   isLayoutCenter,
 }: CanvasViewComponentProps) {
@@ -452,6 +455,7 @@ export const CanvasViewComponent = memo(function CanvasViewComponent({
             onUpdate={onUpdate}
             zoneThemeId={zoneThemeId}
             onCreateAgentCard={onCreateAgentCard}
+            onFocusAgentCard={onFocusAgentCard}
           />
         );
       case 'plugin': {

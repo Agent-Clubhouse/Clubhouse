@@ -531,6 +531,52 @@ describe('canvas main', () => {
       first.unmount();
     });
 
+    it('focuses the agent\'s existing card instead of placing a second one (#2415)', async () => {
+      const { store, storage, mountAndLoad } = setup('proj-card-queue-duplicate');
+      const view = await mountAndLoad();
+      const parent = await addParent(store, storage);
+      let existingId = '';
+      act(() => {
+        existingId = store.getState().addView('agent', { x: 900, y: 100 });
+        store.getState().updateView(existingId, { agentId: 'agent-on-canvas' } as Record<string, unknown>);
+      });
+
+      queueAgentCard(store, { canvasId: store.getState().activeCanvasId, parentViewId: parent.id, fallback: { position: parent.position, size: parent.size }, agentId: 'agent-on-canvas' });
+      await act(async () => { await Promise.resolve(); });
+
+      const cards = store.getState().views.filter((v) => (v as { agentId?: string }).agentId === 'agent-on-canvas');
+      expect(cards.map((v) => v.id)).toEqual([existingId]);
+      view.unmount();
+    });
+
+    it('picking an agent that already has a card focuses that card and closes the picker (#2415)', async () => {
+      const storage = memoryStorage();
+      const api = createMockAPI({
+        context: { mode: 'project', projectId: 'proj-picker-duplicate', projectPath: '/tmp/proj-picker-duplicate' },
+        storage: { project: storage, projectLocal: storage, global: storage },
+      });
+      const agent = { id: 'agent-on-canvas', name: 'on-canvas', kind: 'durable', status: 'sleeping', projectId: 'proj-picker-duplicate' };
+      api.agents.list = () => [agent] as unknown as ReturnType<typeof api.agents.list>;
+      const store = canvasModule.getProjectCanvasStore('proj-picker-duplicate');
+      const view = render(React.createElement(canvasModule.MainPanel, { api }));
+      await waitFor(() => expect(store.getState().loaded).toBe(true));
+
+      let existingId = '';
+      let pickerId = '';
+      act(() => {
+        existingId = store.getState().addView('agent', { x: 900, y: 100 });
+        store.getState().updateView(existingId, { agentId: agent.id } as Record<string, unknown>);
+        pickerId = store.getState().addView('agent', { x: 100, y: 100 });
+      });
+
+      fireEvent.click(await screen.findByTestId(`canvas-agent-pick-${agent.id}`));
+
+      await waitFor(() => expect(store.getState().views.find((v) => v.id === pickerId)).toBeUndefined());
+      const cards = store.getState().views.filter((v) => (v as { agentId?: string }).agentId === agent.id);
+      expect(cards.map((v) => v.id)).toEqual([existingId]);
+      view.unmount();
+    });
+
     it('keeps cards queued through a failed load and places them once the canvas loads', async () => {
       const storage = memoryStorage();
       const { store, mount, mountAndLoad } = setup('proj-card-queue-load-error', storage);

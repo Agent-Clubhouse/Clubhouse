@@ -28,6 +28,7 @@
  *   - source: agent view by `agentId`
  *   - target: view by `id` → agent view by `agentId` → plugin view by
  *     `metadata.groupProjectId`
+ *   An agent with more than one card gets a wire from each card (#2415).
  *
  * Zone wire (`kind: 'zone'`): rendered as a **single** wire to the zone itself
  * (not one wire per contained agent). Under the hood the zone wire expands to
@@ -67,18 +68,26 @@ export interface RenderedWire {
 /** O(1) lookup indexes over the view list. */
 export interface ViewIndex {
   byId: Map<string, CanvasView>;
-  byAgentId: Map<string, CanvasView>;
+  /**
+   * Every card of each agent, in view order. One agent can have more than one
+   * card on a canvas (saved before duplicates were prevented, #2415), and a
+   * binding draws a wire to each of them.
+   */
+  byAgentId: Map<string, CanvasView[]>;
   byGroupProjectId: Map<string, CanvasView>;
 }
 
 export function buildViewIndex(views: CanvasView[]): ViewIndex {
   const byId = new Map<string, CanvasView>();
-  const byAgentId = new Map<string, CanvasView>();
+  const byAgentId = new Map<string, CanvasView[]>();
   const byGroupProjectId = new Map<string, CanvasView>();
   for (const v of views) {
     byId.set(v.id, v);
     if (v.type === 'agent' && (v as AgentCanvasView).agentId) {
-      byAgentId.set((v as AgentCanvasView).agentId as string, v);
+      const agentId = (v as AgentCanvasView).agentId as string;
+      const cards = byAgentId.get(agentId);
+      if (cards) cards.push(v);
+      else byAgentId.set(agentId, [v]);
     }
     if (v.type === 'plugin') {
       const gpId = v.metadata?.groupProjectId;
@@ -88,24 +97,45 @@ export function buildViewIndex(views: CanvasView[]): ViewIndex {
   return { byId, byAgentId, byGroupProjectId };
 }
 
-/** Resolve a binding wire's source + target views, or null if unresolvable. */
+/**
+ * Resolve a binding wire to every source/target view pair it connects: one
+ * pair per card of the source agent (and per card of the target agent, for
+ * agent→agent bindings). Empty when either end is not on the canvas.
+ */
 export function resolveBindingWireViews(
   binding: McpBindingEntry,
   index: ViewIndex,
-): { source: CanvasView; target: CanvasView } | null {
-  const source = index.byAgentId.get(binding.agentId);
-  if (!source) return null;
+): Array<{ source: CanvasView; target: CanvasView }> {
+  const sources = index.byAgentId.get(binding.agentId);
+  if (!sources) return [];
 
-  let target = index.byId.get(binding.targetId);
-  if (!target && binding.targetKind === 'agent') {
-    target = index.byAgentId.get(binding.targetId);
+  let targets: CanvasView[] | undefined;
+  const byId = index.byId.get(binding.targetId);
+  if (byId) targets = [byId];
+  if (!targets && binding.targetKind === 'agent') {
+    targets = index.byAgentId.get(binding.targetId);
   }
-  if (!target && binding.targetKind === 'group-project') {
-    target = index.byGroupProjectId.get(binding.targetId);
+  if (!targets && binding.targetKind === 'group-project') {
+    const gp = index.byGroupProjectId.get(binding.targetId);
+    if (gp) targets = [gp];
   }
-  if (!target) return null;
+  if (!targets) return [];
 
-  return { source, target };
+  const pairs: Array<{ source: CanvasView; target: CanvasView }> = [];
+  for (const source of sources) {
+    for (const target of targets) pairs.push({ source, target });
+  }
+  return pairs;
+}
+
+/**
+ * Key for one drawn wire of a binding. The first pair keeps the plain
+ * `${agentId}--${targetId}` key that activity tracking uses; any further pair
+ * (a duplicate card) adds its view ids so every key stays unique.
+ */
+export function bindingWireKey(binding: McpBindingEntry, pair: { source: CanvasView; target: CanvasView }, pairIndex: number): string {
+  const base = `${binding.agentId}--${binding.targetId}`;
+  return pairIndex === 0 ? base : `${base}@${pair.source.id}--${pair.target.id}`;
 }
 
 /** Resolve a zone wire's source zone + target views, or null if unresolvable. */
@@ -123,7 +153,7 @@ export function resolveZoneWireViews(
       target = index.byId.get(wire.targetId);
       break;
     case 'agent':
-      target = index.byAgentId.get(wire.targetId) ?? index.byId.get(wire.targetId);
+      target = index.byAgentId.get(wire.targetId)?.[0] ?? index.byId.get(wire.targetId);
       break;
     case 'group-project':
       target = index.byGroupProjectId.get(wire.targetId) ?? index.byId.get(wire.targetId);
@@ -149,14 +179,14 @@ export function resolveRenderedWires(
   const out: RenderedWire[] = [];
 
   for (const binding of wireDefinitions) {
-    const resolved = resolveBindingWireViews(binding, index);
-    if (!resolved) continue;
-    out.push({
-      key: `binding:${binding.agentId}--${binding.targetId}`,
-      kind: 'binding',
-      source: resolved.source,
-      target: resolved.target,
-      binding,
+    resolveBindingWireViews(binding, index).forEach((pair, i) => {
+      out.push({
+        key: `binding:${bindingWireKey(binding, pair, i)}`,
+        kind: 'binding',
+        source: pair.source,
+        target: pair.target,
+        binding,
+      });
     });
   }
 
