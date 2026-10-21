@@ -170,7 +170,7 @@ export class ChatAgentRuntime implements AgentRuntime {
   /** How the last session open went with a requested resume, for chat start telemetry (#2304). */
   private resumeOpen: { honored: boolean; timing?: ChatResumeTiming } | undefined;
   private capabilities: ChatCapabilities | undefined;
-  private readonly queued: Array<{ content: ContentBlock[]; source: MessageSource }> = [];
+  private readonly queued: Array<{ messageId: string; content: ContentBlock[]; source: MessageSource }> = [];
   private readonly permissions = new Map<string, PendingPermission>();
   /** Questions awaiting an answer, so a late or duplicate answer is ignored. */
   private readonly questions = new Set<string>();
@@ -538,7 +538,7 @@ export class ChatAgentRuntime implements AgentRuntime {
     const outgoing = this.withSystemPrompt(blocks, caps);
     const messageId = this.newId();
     if (wanted === 'queued' && caps.queue !== 'native') {
-      this.queued.push({ content: outgoing, source: opts.source });
+      this.queued.push({ messageId, content: outgoing, source: opts.source });
       await this.emit({ type: 'user_message', data: { messageId, content: blocks, source: opts.source, delivery: 'queued' } });
       return { delivery: 'queued', messageId };
     }
@@ -548,6 +548,19 @@ export class ChatAgentRuntime implements AgentRuntime {
     const delivered = await session.send(outgoing, wanted);
     await this.emit({ type: 'user_message', data: { messageId, content: blocks, source: opts.source, delivery: delivered } });
     return { delivery: delivered, messageId };
+  }
+
+  async removeQueued(messageIds?: readonly string[]): Promise<string[]> {
+    const wanted = messageIds ? new Set(messageIds) : undefined;
+    const removed: string[] = [];
+    for (let i = this.queued.length - 1; i >= 0; i--) {
+      const { messageId } = this.queued[i];
+      if (wanted && !wanted.has(messageId)) continue;
+      this.queued.splice(i, 1);
+      removed.unshift(messageId);
+    }
+    if (removed.length) await this.emit({ type: 'queue_removed', data: { messageIds: removed } });
+    return removed;
   }
 
   private async runBeforePrompt(): Promise<void> {

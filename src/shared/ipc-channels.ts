@@ -193,6 +193,8 @@ export const IPC = {
     /** Rich chat content: reveal a file chip's file, or resolve it for Files. */
     FILE_ACTION: 'chat:file-action',
     INTERRUPT: 'chat:interrupt',
+    /** Drop queued messages by id (all when no ids), so they're never delivered. */
+    REMOVE_QUEUED: 'chat:remove-queued',
     RESPOND_PERMISSION: 'chat:respond-permission',
     ANSWER_QUESTION: 'chat:answer-question',
     SET_LEVEL: 'chat:set-level',

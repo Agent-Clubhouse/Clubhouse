@@ -619,7 +619,9 @@ export function reduceChatEvent(prev: ChatViewState | undefined, event: ChatEven
         return { ...state, queued: [...state.queued, q] };
       }
       // A delivered message with the same text (or id) supersedes a queued one.
-      const qIdx = state.queued.findIndex((q) => q.messageId === d.messageId || q.text === text);
+      // By id first, so of two queued messages with the same text the right one goes.
+      const byId = state.queued.findIndex((q) => q.messageId === d.messageId);
+      const qIdx = byId !== -1 ? byId : state.queued.findIndex((q) => q.text === text);
       const queued = qIdx === -1 ? state.queued : state.queued.filter((_, i) => i !== qIdx);
       const item: UserMessageItem = {
         ...itemBase(event, `user:${sid}:${d.messageId}`),
@@ -631,6 +633,12 @@ export function reduceChatEvent(prev: ChatViewState | undefined, event: ChatEven
         delivery: d.delivery,
       };
       return { ...state, queued, items: [...state.items, item] };
+    }
+
+    case 'queue_removed': {
+      const removed = new Set(event.data.messageIds);
+      const queued = state.queued.filter((q) => !removed.has(q.messageId));
+      return queued.length === state.queued.length ? state : { ...state, queued };
     }
 
     case 'agent_message_chunk':
@@ -901,6 +909,8 @@ interface ChatStoreState {
   /** `attachmentIds` are staged ids from window.clubhouse.chat.stageAttachment. */
   send: (agentId: string, text: string, delivery?: 'auto' | MessageDelivery, attachmentIds?: string[]) => Promise<RuntimeSendResult>;
   interrupt: (agentId: string) => Promise<void>;
+  /** All queued messages when `messageIds` is omitted. Resolves with the ids main removed. */
+  removeQueued: (agentId: string, messageIds?: string[]) => Promise<string[]>;
   respondPermission: (agentId: string, requestId: string, optionId: string, extras?: PermissionResponseExtras) => Promise<void>;
   answerQuestion: (agentId: string, requestId: string, answers: ChatQuestionAnswers) => Promise<void>;
   setLevel: (agentId: string, level: PermissionLevel) => Promise<void>;
@@ -1080,6 +1090,9 @@ export const useChatStore = create<ChatStoreState>((set, get) => {
       ? window.clubhouse.chat.sendMessage(agentId, text, delivery, attachmentIds)
       : window.clubhouse.chat.sendMessage(agentId, text, delivery)),
     interrupt: (agentId) => window.clubhouse.chat.interrupt(agentId),
+    removeQueued: (agentId, messageIds) => (messageIds
+      ? window.clubhouse.chat.removeQueued(agentId, messageIds)
+      : window.clubhouse.chat.removeQueued(agentId)),
     respondPermission: (agentId, requestId, optionId, extras) =>
       answerOnce(agentId, requestId, () => window.clubhouse.chat.respondPermission(agentId, requestId, optionId, extras)),
     answerQuestion: (agentId, requestId, answers) =>

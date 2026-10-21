@@ -49,6 +49,9 @@ export const chat = {
       ipcRenderer.invoke(IPC.CHAT.FILE_ACTION, agentId, filePath, action),
     interrupt: (agentId: string): Promise<void> =>
       ipcRenderer.invoke(IPC.CHAT.INTERRUPT, agentId),
+    /** Drop queued messages (all when `messageIds` is omitted); resolves with the ids main removed. */
+    removeQueued: (agentId: string, messageIds?: string[]): Promise<string[]> =>
+      ipcRenderer.invoke(IPC.CHAT.REMOVE_QUEUED, agentId, messageIds),
     respondPermission: (agentId: string, requestId: string, optionId: string, extras?: PermissionResponseExtras): Promise<void> =>
       ipcRenderer.invoke(IPC.CHAT.RESPOND_PERMISSION, agentId, requestId, optionId, extras),
     answerQuestion: (agentId: string, requestId: string, answers: ChatQuestionAnswers): Promise<void> =>

@@ -127,6 +127,8 @@ function PlanHandoff({ state, onImplement }: { state: ChatViewState; onImplement
 
 export function ChatViewBody({ agent, state, actions, loading, onSwitchToTerminal, switching, context = 'main', onShowEarlier, onBrowseHistory }: ChatViewBodyProps) {
   const running = isRunningState(state.state);
+  // Only a queue the runtime holds can be edited; a CLI that queues natively (Claude) already has the message.
+  const queueEditable = state.capabilities?.queue === 'client';
   const permission = state.pendingPermissions[0];
   const question = state.pendingQuestions[0];
   // An answer sent from another view of this agent disables the card here too.
@@ -326,7 +328,12 @@ export function ChatViewBody({ agent, state, actions, loading, onSwitchToTermina
               {(state.plan.length > 0 || state.queued.length > 0) && (
                 <div className="min-h-0 overflow-y-auto space-y-2" data-testid="chat-dock-lists">
                   {state.plan.length > 0 && <TaskList entries={state.plan} />}
-                  {state.queued.length > 0 && <QueueList queued={state.queued} />}
+                  {state.queued.length > 0 && (
+                    <QueueList
+                      queued={state.queued}
+                      onRemove={queueEditable && actions.removeQueued ? (ids) => { void actions.removeQueued?.(ids); } : undefined}
+                    />
+                  )}
                 </div>
               )}
               {dock}

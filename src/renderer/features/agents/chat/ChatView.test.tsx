@@ -25,6 +25,7 @@ function makeActions(): ChatActions & { [K in keyof ChatActions]: ReturnType<typ
     respondPermission: vi.fn(async () => true),
     answerQuestion: vi.fn(async () => true),
     setLevel: vi.fn(async () => true),
+    removeQueued: vi.fn(async () => true),
   };
 }
 
@@ -323,6 +324,67 @@ describe('ChatView composer', () => {
     const queue = screen.getByTestId('chat-queue');
     expect(queue).toHaveTextContent('2 · sent when this turn ends');
     expect(queue).toHaveTextContent('Then open a draft PR');
+  });
+
+  describe('queue editing (#2413)', () => {
+    function queueOf(n: number): ChatViewState['queued'] {
+      return Array.from({ length: n }, (_, i) => ({
+        messageId: `q-${i}`, content: [{ type: 'text' as const, text: `helper ${i} reports` }], text: `helper ${i} reports`,
+        source: 'mcp' as const, sessionId: 's', seq: 100 + i, ts: 0,
+      }));
+    }
+
+    it('offers remove on a queue without steering too (Copilot)', () => {
+      renderFixture('copilot', 'steer');
+      expect(within(screen.getAllByTestId('chat-queue-item')[0]).getByRole('button', { name: /^Remove from queue/ })).toBeInTheDocument();
+    });
+
+    it('moves focus to the next row when a row is removed', () => {
+      renderFixture('codex', 'steer');
+      const buttons = screen.getAllByRole('button', { name: /^Remove from queue/ });
+      fireEvent.click(buttons[0]);
+      expect(buttons[1]).toHaveFocus();
+    });
+
+    it('removes one queued message, or clears them all', () => {
+      const { actions } = renderFixture('codex', 'steer');
+      const items = screen.getAllByTestId('chat-queue-item');
+      fireEvent.click(within(items[1]).getByRole('button', { name: /^Remove from queue/ }));
+      expect(actions.removeQueued).toHaveBeenLastCalledWith(['q-2']);
+      fireEvent.click(screen.getByTestId('chat-queue-clear'));
+      // Only the messages listed, so one queued since this render isn't cleared unseen.
+      expect(actions.removeQueued).toHaveBeenLastCalledWith(['q-1', 'q-2']);
+    });
+
+    it('offers no editing for a queue the CLI holds itself (Claude)', () => {
+      renderFixture('claude', 'steer');
+      expect(screen.getByTestId('chat-queue')).toBeInTheDocument();
+      expect(screen.queryByRole('button', { name: /^Remove from queue/ })).not.toBeInTheDocument();
+      expect(screen.queryByTestId('chat-queue-clear')).not.toBeInTheDocument();
+    });
+
+    it('keeps the composer with 50 queued messages: the list scrolls within its cap and folds to its header', () => {
+      const state = fold(chatFixture('copilot', 'steer'));
+      renderState({ ...state, queued: queueOf(50) });
+      expect(screen.getByLabelText('Message')).toBeInTheDocument();
+      const list = screen.getByTestId('chat-queue-list');
+      expect(list.className).toMatch(/max-h-\[155px\]/);
+      expect(list.className).toContain('overflow-y-auto');
+      expect(screen.getByTestId('chat-queue')).toHaveTextContent('50 · sent when this turn ends');
+
+      const toggle = screen.getByTestId('chat-queue-toggle');
+      expect(toggle).toHaveAttribute('aria-expanded', 'true');
+      fireEvent.click(toggle);
+      expect(toggle).toHaveAttribute('aria-expanded', 'false');
+      expect(screen.queryByTestId('chat-queue-list')).not.toBeInTheDocument();
+      expect(screen.getByTestId('chat-queue')).toHaveTextContent('50 · sent when this turn ends');
+      expect(screen.getByLabelText('Message')).toBeInTheDocument();
+    });
+
+    it('has no fold toggle for a short queue', () => {
+      renderFixture('codex', 'steer');
+      expect(screen.queryByTestId('chat-queue-toggle')).not.toBeInTheDocument();
+    });
   });
 
   it('shows the model, effort and level', () => {

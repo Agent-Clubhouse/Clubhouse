@@ -12,6 +12,7 @@ const runtime = vi.hoisted(() => ({
   setModel: vi.fn(async () => {}),
   clearContext: vi.fn(async () => {}),
   compact: vi.fn(async () => {}),
+  removeQueued: vi.fn(async (ids?: readonly string[]) => [...(ids ?? ['all'])]),
   getCapabilities: () => runtime.caps,
 }));
 
@@ -146,6 +147,20 @@ describe('chat handlers: set model (#2136)', () => {
   });
 });
 
+
+describe('chat handlers: queue editing (#2413)', () => {
+  it('removes queued messages by id, or all of them with no ids', async () => {
+    await expect(call(IPC.CHAT.REMOVE_QUEUED, 'agent-1', ['q1', 'q2'])).resolves.toEqual(['q1', 'q2']);
+    await call(IPC.CHAT.REMOVE_QUEUED, 'agent-1');
+    expect(runtime.removeQueued.mock.calls).toEqual([[['q1', 'q2']], [undefined]]);
+  });
+
+  it('rejects ids that are not non-empty strings', async () => {
+    await expect(call(IPC.CHAT.REMOVE_QUEUED, 'agent-1', [''])).rejects.toThrow();
+    await expect(call(IPC.CHAT.REMOVE_QUEUED, 'agent-1', 'q1')).rejects.toThrow();
+    expect(runtime.removeQueued).not.toHaveBeenCalled();
+  });
+});
 
 describe('chat session commands', () => {
   it('preserves the driver compact busy guard through sendMessage', async () => {

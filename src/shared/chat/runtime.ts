@@ -124,6 +124,13 @@ export interface AgentRuntime {
    * that is still open. Chat runtimes only.
    */
   escalateQuestion?(requestId: string, notice: string): Promise<boolean>;
+  /**
+   * Drop messages from the runtime's own queue by message id, or all of them
+   * when `messageIds` is omitted, so they're never delivered. Returns the ids
+   * it removed: one already sent, or held by a CLI that queues natively,
+   * isn't. Chat runtimes only.
+   */
+  removeQueued?(messageIds?: readonly string[]): Promise<string[]>;
 
   /** Read the transcript; `afterSeq` returns only newer chat events of the current session. */
   readTranscript(opts?: { tail?: number; afterSeq?: number }): Promise<RuntimeTranscriptSlice>;
