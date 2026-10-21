@@ -1160,3 +1160,112 @@ describe('ChatAgentRuntime helper questions (#2366)', () => {
     expect(await runtime.escalateQuestion('q1', 'Orch')).toBe(false);
   });
 });
+
+describe('ChatAgentRuntime coalesced helper updates (#2414)', () => {
+  async function midTurn(caps: ChatCapabilities, extra: Partial<ConstructorParameters<typeof ChatAgentRuntime>[0]> = {}) {
+    const driver = new FakeChatDriver('copilot_acp', 'copilot-cli', caps);
+    const { runtime } = makeRuntime(driver, extra);
+    await runtime.start();
+    driver.last.emit({ type: 'turn_started', data: { trigger: 'prompt' } });
+    await flush();
+    return { driver, runtime };
+  }
+
+  function sentText(driver: FakeChatDriver): string[] {
+    return driver.last.sent.map((s) => s.content.map((b) => (b.type === 'text' ? b.text : '')).join('\n'));
+  }
+
+  it('merges ten MCP messages queued mid-turn into one item, sent as one turn in order', async () => {
+    const { driver, runtime } = await midTurn(STEERLESS);
+    const results = [];
+    for (let i = 1; i <= 10; i++) results.push(await runtime.sendMessage(`[FROM HELPER:h${i} (id-h${i})] update ${i}`, { source: 'mcp' }));
+
+    const itemId = results[0].messageId;
+    expect(results.every((r) => r.delivery === 'queued' && r.messageId === itemId)).toBe(true);
+    const queued = transcript.filter((e) => e.type === 'user_message');
+    expect(queued).toHaveLength(10);
+    expect(queued.map((e) => e.type === 'user_message' && e.data.queuedWith)).toEqual([undefined, ...Array(9).fill(itemId)]);
+    expect(new Set(queued.map((e) => e.type === 'user_message' && e.data.messageId)).size).toBe(10);
+
+    driver.last.emit({ type: 'turn_ended', data: { stopReason: 'end_turn' } });
+    await flush();
+    expect(driver.last.sent).toHaveLength(1);
+    const [text] = sentText(driver);
+    expect(text.startsWith('10 helper updates, oldest first:')).toBe(true);
+    const positions = Array.from({ length: 10 }, (_, i) => text.indexOf(`[FROM HELPER:h${i + 1} (id-h${i + 1})] update ${i + 1}`));
+    expect(positions.every((p) => p > 0)).toBe(true);
+    expect([...positions].sort((a, b) => a - b)).toEqual(positions);
+
+    driver.last.emit({ type: 'turn_started', data: { trigger: 'prompt' } });
+    driver.last.emit({ type: 'turn_ended', data: { stopReason: 'end_turn' } });
+    await flush();
+    expect(driver.last.sent).toHaveLength(1);
+  });
+
+  it('never merges a user message with MCP messages, and keeps the order', async () => {
+    const { driver, runtime } = await midTurn(STEERLESS);
+    await runtime.sendMessage('[Clubhouse] Helper "a" is ready.', { source: 'mcp' });
+    await runtime.sendMessage('[FROM HELPER:a (a1)] started', { source: 'mcp' });
+    await runtime.sendMessage('please also fix lint', { source: 'user' });
+    await runtime.sendMessage('[FROM HELPER:b (b1)] done', { source: 'mcp' });
+    await runtime.sendMessage('one more thing', { source: 'user' });
+
+    for (let i = 0; i < 4; i++) {
+      driver.last.emit({ type: 'turn_ended', data: { stopReason: 'end_turn' } });
+      await flush();
+      driver.last.emit({ type: 'turn_started', data: { trigger: 'prompt' } });
+      await flush();
+    }
+    expect(sentText(driver)).toEqual([
+      '2 helper updates, oldest first:\n\n--- 1 of 2 ---\n[Clubhouse] Helper "a" is ready.\n\n--- 2 of 2 ---\n[FROM HELPER:a (a1)] started',
+      'please also fix lint',
+      '[FROM HELPER:b (b1)] done',
+      'one more thing',
+    ]);
+  });
+
+  it('does not merge an MCP message into a queued user message', async () => {
+    const { driver, runtime } = await midTurn(STEERLESS);
+    const user = await runtime.sendMessage('user first', { source: 'user' });
+    const mcp = await runtime.sendMessage('[FROM HELPER:a (a1)] hi', { source: 'mcp' });
+    expect(mcp.messageId).not.toBe(user.messageId);
+    expect(transcript.filter((e) => e.type === 'user_message' && e.data.queuedWith)).toHaveLength(0);
+    driver.last.emit({ type: 'turn_ended', data: { stopReason: 'end_turn' } });
+    await flush();
+    expect(sentText(driver)).toEqual(['user first']);
+  });
+
+  it('sends the system prompt once, ahead of a merged first item', async () => {
+    const { driver, runtime } = await midTurn({ ...STEERLESS, systemPrompt: false }, { systemPrompt: 'You are the PM.' });
+    await runtime.sendMessage('[FROM HELPER:a (a1)] one', { source: 'mcp' });
+    await runtime.sendMessage('[FROM HELPER:b (b1)] two', { source: 'mcp' });
+    driver.last.emit({ type: 'turn_ended', data: { stopReason: 'end_turn' } });
+    await flush();
+    expect(driver.last.sent[0].content[0]).toEqual({ type: 'text', text: 'You are the PM.' });
+    expect(driver.last.sent[0].content).toHaveLength(2);
+    const userMessages = transcript.filter((e) => e.type === 'user_message');
+    expect(JSON.stringify(userMessages)).not.toContain('You are the PM.');
+  });
+
+  it.each([
+    ['Claude (steer, native queue)', { ...MINIMAL_CHAT_CAPABILITIES, steer: true, queue: 'native' as const }, 'steer'],
+    ['Codex (steer)', { ...MINIMAL_CHAT_CAPABILITIES, steer: true }, 'steer'],
+    ['native queue without steer', { ...MINIMAL_CHAT_CAPABILITIES, steer: false, queue: 'native' as const }, 'queued'],
+  ])('%s: hands each MCP message to the driver, leaving batching to the delivery window', async (_name, caps, delivery) => {
+    const { driver, runtime } = await midTurn(caps);
+    await runtime.sendMessage('[FROM HELPER:a (a1)] one', { source: 'mcp' });
+    await runtime.sendMessage('[FROM HELPER:b (b1)] two', { source: 'mcp' });
+    expect(driver.last.sent.map((s) => s.delivery)).toEqual([delivery, delivery]);
+    expect(transcript.filter((e) => e.type === 'user_message' && e.data.queuedWith)).toHaveLength(0);
+  });
+
+  it('forgets a merged item when the context is cleared', async () => {
+    const { driver, runtime } = await midTurn(STEERLESS);
+    await runtime.sendMessage('[FROM HELPER:a (a1)] one', { source: 'mcp' });
+    await runtime.clearContext();
+    await flush();
+    driver.last.emit({ type: 'turn_ended', data: { stopReason: 'end_turn' } });
+    await flush();
+    expect(driver.last.sent).toHaveLength(0);
+  });
+});

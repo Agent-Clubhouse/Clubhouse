@@ -67,6 +67,7 @@ import {
   routeHelperQuestion,
   _resetHelperQuestionsForTesting,
 } from './helper-question-tools';
+import { deliverHelperUpdate, _resetHelperDeliveryForTesting } from './helper-delivery';
 import { callTool, _resetForTesting } from '../tool-registry';
 import { agentRegistry } from '../../agent-registry';
 import { setOrchestrationEnabled, _resetOrchestrationGateForTesting } from '../orchestration-gate';
@@ -126,6 +127,7 @@ beforeEach(() => {
   _resetForTesting();
   _resetOrchestrationGateForTesting();
   _resetHelperQuestionsForTesting();
+  _resetHelperDeliveryForTesting();
   registerHelperQuestionTools();
 
   mockGetPolicy.mockResolvedValue({ orchestrate: true, access: 'same', control: 'hands-off', maxHelpers: 5 });
@@ -281,5 +283,18 @@ describe('formatHelperQuestion', () => {
       '   Options: "UI"; "API"',
       '   Pick one or more.',
     ].join('\n'));
+  });
+});
+
+describe('routeHelperQuestion with batched helper updates (#2414)', () => {
+  it('sends the question at once, after the updates still in the delivery window', async () => {
+    // The fake runtime isn't a chat runtime, so updates wait out the window, as for a terminal.
+    const update = deliverHelperUpdate('orch', '[FROM HELPER:Fixer (helper)] halfway');
+    expect(orch.sent).toEqual([]);
+    await ask(helper, 'q-batch', [BRANCH], orch);
+    await expect(update).resolves.toBe('delivered');
+    expect(orch.sent).toHaveLength(2);
+    expect(orch.sent[0]).toBe('[FROM HELPER:Fixer (helper)] halfway');
+    expect(orch.sent[1]).toMatch(/^\[QUESTION FROM HELPER:Fixer \(helper\)\]/);
   });
 });

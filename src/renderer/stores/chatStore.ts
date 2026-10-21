@@ -15,7 +15,7 @@
 import { useMemo } from 'react';
 import { create } from 'zustand';
 import { useShallow } from 'zustand/react/shallow';
-import { COMPACTION_SETTLED, COMPACTION_STARTED, MINIMAL_CHAT_CAPABILITIES } from '../../shared/chat';
+import { COMPACTION_SETTLED, COMPACTION_STARTED, MINIMAL_CHAT_CAPABILITIES, coalesceUpdateContent } from '../../shared/chat';
 import type {
   AvailableCommand,
   ChatCapabilities,
@@ -179,6 +179,8 @@ export interface QueuedMessage {
   sessionId: string;
   seq: number;
   ts: number;
+  /** Each message's content when several MCP messages share this item (#2414); `content` is them combined. */
+  parts?: ContentBlock[][];
 }
 
 export interface UsageSnapshot {
@@ -612,6 +614,15 @@ export function reduceChatEvent(prev: ChatViewState | undefined, event: ChatEven
       const d = event.data;
       const text = blocksToText(d.content);
       if (d.delivery === 'queued') {
+        // An MCP message that joined a queued item updates that row (#2414).
+        const joined = d.queuedWith ? state.queued.findIndex((q) => q.messageId === d.queuedWith) : -1;
+        if (joined !== -1) {
+          const target = state.queued[joined];
+          const parts = [...(target.parts ?? [target.content]), d.content];
+          const content = coalesceUpdateContent(parts);
+          const merged: QueuedMessage = { ...target, parts, content, text: blocksToText(content) };
+          return { ...state, queued: state.queued.map((q, i) => (i === joined ? merged : q)) };
+        }
         const q: QueuedMessage = {
           messageId: d.messageId, content: d.content, text, source: d.source,
           sessionId: sid, seq: event.seq, ts: event.ts,

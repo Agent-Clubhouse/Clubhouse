@@ -36,7 +36,6 @@ import { agentRegistry } from '../../agent-registry';
 import { startDurableCreation } from '../../agent-creation';
 import * as agentSystem from '../../agent-system';
 import { getAgentRuntime } from '../../agent-runtime';
-import { isAgentStoppingError } from '../../agent-runtime/agent-stopping';
 import { getGitInfo } from '../../git-service';
 import { withoutClubhouseOwnedChanges } from '../../clubhouse-owned-files';
 import { applyPersonaToAgent } from '../../persona-application';
@@ -69,6 +68,7 @@ import {
   takeStartRequest,
 } from '../../helper-start-requests';
 import { McpArgError, optionalString } from './validation';
+import { _resetHelperDeliveryForTesting, deliverHelperUpdate, deliverNow } from './helper-delivery';
 
 // ── Results ──────────────────────────────────────────────────────────────
 
@@ -141,29 +141,10 @@ async function resolveOwnHelper(caller: Caller, ref: string): Promise<DurableAge
 
 // ── Messages to agents ───────────────────────────────────────────────────
 
-type Delivery = 'delivered' | 'not_running' | 'stopping';
-
-/**
- * Deliver text to a running agent's input, as Clubhouse MCP send_message
- * does. A terminal agent that is shutting down refuses the text (its runtime
- * throws AgentStoppingError), which comes back as 'stopping'.
- */
-async function deliverToAgent(targetId: string, text: string): Promise<Delivery> {
-  const runtime = getAgentRuntime(targetId);
-  if (!runtime) return 'not_running';
-  try {
-    await runtime.sendMessage(text, { source: 'mcp', taskId: `helper_${Date.now().toString(36)}` });
-  } catch (err) {
-    if (isAgentStoppingError(err)) return 'stopping';
-    throw err;
-  }
-  return 'delivered';
-}
-
 /** Tell an orchestrator what happened to a helper. Never throws. */
 async function notifyOrchestrator(orchestratorId: string, text: string): Promise<void> {
   try {
-    const delivery = await deliverToAgent(orchestratorId, `[Clubhouse] ${text}`);
+    const delivery = await deliverHelperUpdate(orchestratorId, `[Clubhouse] ${text}`);
     if (delivery === 'delivered') return;
     appLog('core:mcp', 'warn', 'Helper update not delivered: the orchestrator is not running', {
       meta: { orchestratorId, delivery },
@@ -840,7 +821,7 @@ async function wakeHelper(agentId: string, args: Record<string, unknown>): Promi
   if (agentSystem.isAgentRunning(helper.id)) {
     // A sleep that began while the helper was re-read.
     if (agentSystem.isAgentStopping(helper.id)) return stillStopping(helper, message);
-    const delivery = message ? await deliverToAgent(helper.id, `[FROM:${caller.config.name}] ${message}`) : undefined;
+    const delivery = message ? await deliverNow(helper.id, `[FROM:${caller.config.name}] ${message}`) : undefined;
     if (delivery === 'stopping') return stillStopping(helper, message);
     const delivered = delivery === 'delivered';
     return jsonResult({ helperId: helper.id, name: helper.name, status: 'already_running', ...(message && { messageDelivered: delivered }) });
@@ -909,7 +890,8 @@ async function messageParent(agentId: string, args: Record<string, unknown>): Pr
   }
   const parent = await agentConfig.getDurableConfig(registration.projectPath, self.parentAgentId);
   if (!parent || isDisposedAgent(parent)) throw new HelperToolError('Your parent agent no longer exists.');
-  const delivery = await deliverToAgent(parent.id, `[FROM HELPER:${self.name} (${self.id})] ${text}`);
+  // Batched with the parent's other helper updates (#2414).
+  const delivery = await deliverHelperUpdate(parent.id, `[FROM HELPER:${self.name} (${self.id})] ${text}`);
   if (delivery === 'stopping') {
     throw new HelperToolError(`${parent.name} is shutting down, so the message was not delivered.`);
   }
@@ -1026,4 +1008,5 @@ export function _resetHelperToolsForTesting(): void {
   inflight.clear();
   startChain = Promise.resolve();
   lastApprovalNotice.clear();
+  _resetHelperDeliveryForTesting();
 }

@@ -485,6 +485,42 @@ describe('reduceChatEvent', () => {
       expect(s.queued.map((q) => q.messageId)).toEqual(['q1']);
     });
 
+    it('shows MCP messages merged into one queued item as one row, delivered as one (#2414)', () => {
+      let s = fold([
+        sessionStarted(ev),
+        ev('turn_started', { trigger: 'prompt' }, { turnId: 't1' }),
+        ev('user_message', { messageId: 'u1', content: text('mine'), source: 'user', delivery: 'queued' }),
+        ev('user_message', { messageId: 'm1', content: text('[FROM HELPER:a (a)] one'), source: 'mcp', delivery: 'queued' }),
+        ev('user_message', { messageId: 'm2', content: text('[FROM HELPER:b (b)] two'), source: 'mcp', delivery: 'queued', queuedWith: 'm1' }),
+        ev('user_message', { messageId: 'm3', content: text('[Clubhouse] three'), source: 'mcp', delivery: 'queued', queuedWith: 'm1' }),
+      ]);
+      expect(s.queued.map((q) => q.messageId)).toEqual(['u1', 'm1']);
+      expect(s.queued[1].text).toBe(
+        '3 helper updates, oldest first:\n\n--- 1 of 3 ---\n[FROM HELPER:a (a)] one\n\n' +
+        '--- 2 of 3 ---\n[FROM HELPER:b (b)] two\n\n--- 3 of 3 ---\n[Clubhouse] three',
+      );
+      expect(s.queued[0].text).toBe('mine');
+
+      s = fold([
+        ev('turn_ended', { stopReason: 'end_turn' }, { turnId: 't1' }),
+        ev('turn_started', { trigger: 'queued' }, { turnId: 't2' }),
+        ev('turn_ended', { stopReason: 'end_turn' }, { turnId: 't2' }),
+        ev('turn_started', { trigger: 'queued' }, { turnId: 't3' }),
+      ], s);
+      expect(s.queued).toEqual([]);
+      const delivered = s.items.filter((i): i is UserMessageItem => i.kind === 'user_message');
+      expect(delivered.map((d) => d.messageId)).toEqual(['u1', 'm1']);
+      expect(delivered[1].text).toContain('[Clubhouse] three');
+    });
+
+    it('adds a message whose merged item is gone as its own row', () => {
+      const s = fold([
+        sessionStarted(ev),
+        ev('user_message', { messageId: 'm2', content: text('two'), source: 'mcp', delivery: 'queued', queuedWith: 'missing' }),
+      ]);
+      expect(s.queued.map((q) => q.text)).toEqual(['two']);
+    });
+
     it('clears a queued entry when the same text is later delivered', () => {
       const s = fold([
         sessionStarted(ev),

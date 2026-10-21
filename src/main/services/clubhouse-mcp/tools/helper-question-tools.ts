@@ -30,6 +30,7 @@ import { appLog } from '../../log-service';
 import { isDisposedAgent } from '../../../../shared/agent-helpers';
 import type { ChatEventDataMap, ChatQuestion, ChatQuestionAnswers } from '../../../../shared/chat';
 import { McpArgError, optionalString } from './validation';
+import { flushHelperUpdates } from './helper-delivery';
 
 type QuestionData = ChatEventDataMap['question'];
 type QuestionRoute = NonNullable<QuestionData['routedTo']>;
@@ -105,6 +106,8 @@ export async function routeHelperQuestion(helperId: string, question: QuestionDa
     if (!runtime?.isRunning()) return null;
 
     const id = `hq_${randomUUID().replace(/-/g, '').slice(0, 12)}`;
+    // Updates still in the delivery window go first, so the question arrives after them, at once.
+    await flushHelperUpdates(parent.id);
     routed.set(id, {
       helperId, helperName: helper.name, parentId: parent.id, requestId: question.requestId, questions: question.questions,
     });

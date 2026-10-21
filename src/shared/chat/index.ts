@@ -4,3 +4,4 @@ export * from './runtime';
 export * from './attachments';
 export * from './sessions';
 export * from './media';
+export * from './coalesce';
