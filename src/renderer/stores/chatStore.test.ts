@@ -513,6 +513,16 @@ describe('reduceChatEvent', () => {
       expect(delivered[1].text).toContain('[Clubhouse] three');
     });
 
+    it('drops a merged row whole on queue_removed for its item id', () => {
+      const s = fold([
+        sessionStarted(ev),
+        ev('user_message', { messageId: 'm1', content: text('one'), source: 'mcp', delivery: 'queued' }),
+        ev('user_message', { messageId: 'm2', content: text('two'), source: 'mcp', delivery: 'queued', queuedWith: 'm1' }),
+        ev('queue_removed', { messageIds: ['m1'] }),
+      ]);
+      expect(s.queued).toEqual([]);
+    });
+
     it('rebuilds a merged item whose first message was cut off as one row under its id', () => {
       const s = fold([
         sessionStarted(ev),

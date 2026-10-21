@@ -1278,6 +1278,19 @@ describe('ChatAgentRuntime coalesced helper updates (#2414)', () => {
     expect(sentText(driver)).toEqual(['typed by the user', '[FROM HELPER:a (a1)] late']);
   });
 
+  it('removes a merged item whole by its id, and later MCP messages start a new item (#2413)', async () => {
+    const { driver, runtime } = await midTurn(STEERLESS);
+    const first = await runtime.sendMessage('[FROM HELPER:a (a1)] one', { source: 'mcp' });
+    await runtime.sendMessage('[FROM HELPER:b (b1)] two', { source: 'mcp' });
+    await expect(runtime.removeQueued([first.messageId])).resolves.toEqual([first.messageId]);
+    expect(transcript.at(-1)).toMatchObject({ type: 'queue_removed', data: { messageIds: [first.messageId] } });
+    const next = await runtime.sendMessage('[FROM HELPER:c (c1)] three', { source: 'mcp' });
+    expect(next.messageId).not.toBe(first.messageId);
+    driver.last.emit({ type: 'turn_ended', data: { stopReason: 'end_turn' } });
+    await flush();
+    expect(sentText(driver)).toEqual(['[FROM HELPER:c (c1)] three']);
+  });
+
   it('forgets a merged item when the context is cleared', async () => {
     const { driver, runtime } = await midTurn(STEERLESS);
     await runtime.sendMessage('[FROM HELPER:a (a1)] one', { source: 'mcp' });
