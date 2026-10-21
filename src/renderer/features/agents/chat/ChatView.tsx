@@ -221,8 +221,8 @@ export function ChatViewBody({ agent, state, actions, loading, onSwitchToTermina
     // move to a looser level from here. It sits outside the card so its keys never answer the request.
     dock = (
       <>
-        {dock}
-        <div className="flex items-center" data-testid="chat-permission-level">
+        <div key={permission.requestId} className="min-h-0 overflow-y-auto" data-testid="chat-permission-scroll">{dock}</div>
+        <div className="flex-shrink-0 flex items-center" data-testid="chat-permission-level">
           <LevelPill
             level={state.level}
             capabilities={state.capabilities}
@@ -307,7 +307,7 @@ export function ChatViewBody({ agent, state, actions, loading, onSwitchToTermina
       )}
       {/* Hidden, not unmounted, while reviewing: the stream keeps its scroll and the draft its focus. */}
       <div className={`flex-1 min-h-0 flex ${reviewing ? 'hidden' : ''}`}>
-        <div ref={columnRef} className="flex-1 min-w-0 flex flex-col">
+        <div ref={columnRef} className="flex-1 min-w-0 min-h-0 flex flex-col">
           {/* Canvas cards stay quiet: the focused view announces replies, not every card on the board. */}
           <ChatStream
             state={state}
@@ -317,12 +317,18 @@ export function ChatViewBody({ agent, state, actions, loading, onSwitchToTermina
             announce={context !== 'canvas'}
             onShowEarlier={onShowEarlier}
           />
-          <div className={`flex-shrink-0 flex justify-center ${narrow || short ? 'px-2 pb-2' : 'px-7 pb-4'}`} data-testid="chat-dock">
-            <div className="w-full max-w-[740px] flex flex-col gap-2">
+          {/* An approval card is capped so it can't squeeze the transcript out (#2412): the card and the lists
+              above it scroll inside the cap. The composer is never capped or wrapped: its menus open upward. */}
+          <div className={`flex-shrink-0 flex justify-center ${permission || question ? 'max-h-[60%]' : ''} ${narrow || short ? 'px-2 pb-2' : 'px-7 pb-4'}`} data-testid="chat-dock">
+            <div className="w-full max-w-[740px] min-h-0 flex flex-col gap-2">
               <ProtocolDriftNote state={state} compact={context === 'canvas' || narrow} />
               <LoginBanner state={state} onSwitchToTerminal={onSwitchToTerminal} />
-              {state.plan.length > 0 && <TaskList entries={state.plan} />}
-              {state.queued.length > 0 && <QueueList queued={state.queued} />}
+              {(state.plan.length > 0 || state.queued.length > 0) && (
+                <div className="min-h-0 overflow-y-auto space-y-2" data-testid="chat-dock-lists">
+                  {state.plan.length > 0 && <TaskList entries={state.plan} />}
+                  {state.queued.length > 0 && <QueueList queued={state.queued} />}
+                </div>
+              )}
               {dock}
             </div>
           </div>

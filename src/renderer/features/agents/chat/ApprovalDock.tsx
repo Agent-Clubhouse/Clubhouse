@@ -104,7 +104,7 @@ export function PermissionCard({ request, plan, queueSize, agentName, extras, on
 
   useEffect(() => {
     setAnswered(false);
-    ref.current?.focus();
+    ref.current?.focus({ preventScroll: true });
   }, [request.requestId]);
 
   /** Extras for this option: the feedback with a rejection, the edited plan with an approval. */
@@ -257,19 +257,44 @@ function isSimpleChoice(q: ChatQuestion): boolean {
   return !q.multiSelect && !q.allowFreeText && (q.options?.length ?? 0) > 0;
 }
 
+/** Descriptions longer than this start clamped to two lines, with a toggle. */
+const LONG_DESCRIPTION = 120;
+
+/** What a question is answered with, as the user would read it; null when unanswered. */
+function answerSummary(q: ChatQuestion, answer: string | string[] | undefined, freeText: string | undefined): string | null {
+  const label = (id: string) => q.options?.find((o) => o.id === id)?.label ?? id;
+  if (Array.isArray(answer) && answer.length > 0) return answer.map(label).join(', ');
+  if (typeof answer === 'string') return label(answer);
+  return freeText?.trim() || null;
+}
+
 export function QuestionCard({ request, onAnswer, busy }: QuestionCardProps) {
   const [answers, setAnswers] = useState<ChatQuestionAnswers>({});
   const [free, setFree] = useState<Record<string, string>>({});
   const [sentHere, setSent] = useState(false);
+  // With several questions only one is open at a time, so a long request can't outgrow the pane.
+  const [current, setCurrent] = useState(0);
+  const [expanded, setExpanded] = useState<ReadonlySet<string>>(new Set());
   const sent = sentHere || !!busy;
   const ref = useRef<HTMLDivElement>(null);
-  const single = request.questions.length === 1 && isSimpleChoice(request.questions[0]);
-  const first = request.questions[0];
+  const openRef = useRef<HTMLDivElement>(null);
+  const count = request.questions.length;
+  const stepped = count > 1;
+  const single = count === 1 && isSimpleChoice(request.questions[0]);
+  const active = request.questions[Math.min(current, count - 1)];
 
   useEffect(() => {
-    // Focus the card so number keys work at once; free text is a Tab away.
-    ref.current?.focus();
+    // Focus the card so number keys work at once; free text is a Tab away. No scroll: the dock owns that.
+    ref.current?.focus({ preventScroll: true });
   }, [request.requestId]);
+
+  const stepsTaken = useRef(false);
+  useEffect(() => {
+    if (!stepsTaken.current) { stepsTaken.current = true; return; }
+    // The clicked option or row unmounts as the open question changes: keep keys on the card.
+    if (ref.current && !ref.current.contains(document.activeElement)) ref.current.focus({ preventScroll: true });
+    openRef.current?.scrollIntoView?.({ block: 'nearest' });
+  }, [current]);
 
   const submit = (override?: ChatQuestionAnswers) => {
     if (sent) return;
@@ -282,30 +307,115 @@ export function QuestionCard({ request, onAnswer, busy }: QuestionCardProps) {
     void onAnswer(request.requestId, merged).then((ok) => { if (!ok) setSent(false); });
   };
 
-  const complete = request.questions.every((q) => answers[q.id] !== undefined || !!free[q.id]?.trim());
+  const answered = (q: ChatQuestion, from: ChatQuestionAnswers) => {
+    const a = from[q.id];
+    return (Array.isArray(a) ? a.length > 0 : a !== undefined) || !!free[q.id]?.trim();
+  };
+  const complete = request.questions.every((q) => answered(q, answers));
 
   const toggle = (q: ChatQuestion, optionId: string) => {
     if (single) { submit({ [q.id]: optionId }); return; }
-    setAnswers((prev) => {
-      if (!q.multiSelect) return { ...prev, [q.id]: optionId };
-      const cur = Array.isArray(prev[q.id]) ? (prev[q.id] as string[]) : [];
-      const next = cur.includes(optionId) ? cur.filter((x) => x !== optionId) : [...cur, optionId];
-      return { ...prev, [q.id]: next };
+    if (q.multiSelect) {
+      setAnswers((prev) => {
+        const cur = Array.isArray(prev[q.id]) ? (prev[q.id] as string[]) : [];
+        const next = cur.includes(optionId) ? cur.filter((x) => x !== optionId) : [...cur, optionId];
+        return { ...prev, [q.id]: next };
+      });
+      return;
+    }
+    const next = { ...answers, [q.id]: optionId };
+    setAnswers(next);
+    // A single choice settles its question: move on to the next unanswered one.
+    const at = request.questions.indexOf(q);
+    const later = request.questions.findIndex((x, i) => i > at && !answered(x, next));
+    setCurrent(later >= 0 ? later : Math.min(at + 1, count - 1));
+  };
+
+  const toggleDescription = (key: string) => {
+    setExpanded((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key); else next.add(key);
+      return next;
     });
   };
 
-  // 1-9 pick an option of the first question; Enter sends once every question is answered.
+  // 1-9 pick an option of the open question; Enter sends once every question is answered.
   const onKeyDown = (e: KeyboardEvent<HTMLDivElement>) => {
     if (sent || ownsKey(e)) return;
     if (e.key === 'Enter' && !single) {
       if (complete) { e.preventDefault(); submit(); }
       return;
     }
-    const i = first?.options ? digitIndex(e.key, first.options.length) : -1;
+    const i = active?.options ? digitIndex(e.key, active.options.length) : -1;
     if (i >= 0) {
       e.preventDefault();
-      toggle(first, first.options![i].id);
+      toggle(active, active.options![i].id);
     }
+  };
+
+  const renderQuestion = (q: ChatQuestion) => {
+    const picked = answers[q.id];
+    return (
+      <div key={q.id} className="flex flex-col gap-2" data-testid="chat-question-current">
+        <div className="flex items-center gap-2.5 font-semibold text-[13.5px] text-ctp-text">
+          <QuestionIcon className="text-ctp-accent" />
+          <span className="break-words min-w-0">{q.header ? `${q.header}: ` : ''}{q.prompt}</span>
+        </div>
+        {q.options && q.options.length > 0 && (
+          <div className="flex flex-col gap-0.5 pl-5">
+            {q.options.map((o, i) => {
+              const on = Array.isArray(picked) ? picked.includes(o.id) : picked === o.id;
+              const key = `${q.id}\u0000${o.id}`;
+              const long = (o.description?.length ?? 0) > LONG_DESCRIPTION;
+              const open = expanded.has(key);
+              return (
+                <div key={o.id} className="flex flex-col">
+                  <button
+                    type="button"
+                    disabled={sent}
+                    onClick={() => toggle(q, o.id)}
+                    aria-pressed={on}
+                    className={`flex items-center gap-2.5 min-h-[30px] px-2 rounded-md text-[12.5px] text-left disabled:opacity-50 ${on ? 'bg-surface-0 text-ctp-text ring-1 ring-surface-1' : 'text-ctp-subtext1 hover:bg-surface-0/60'}`}
+                  >
+                    <span className="w-[18px] h-[18px] rounded bg-ctp-crust grid place-items-center text-[11px] text-ctp-overlay1 flex-shrink-0">{i + 1}</span>
+                    <span className="flex flex-col min-w-0">
+                      <span>{o.label}</span>
+                      {o.description && (
+                        <span className={`text-[11.5px] text-ctp-overlay1 break-words ${long && !open ? 'line-clamp-2' : ''}`} data-testid="chat-question-description">
+                          {o.description}
+                        </span>
+                      )}
+                    </span>
+                  </button>
+                  {long && (
+                    <button
+                      type="button"
+                      onClick={() => toggleDescription(key)}
+                      aria-expanded={open}
+                      className="self-start ml-[36px] text-[11.5px] text-ctp-overlay1 hover:text-ctp-text"
+                    >
+                      {open ? 'Show less' : 'Show more'}
+                    </button>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        )}
+        {q.allowFreeText && (
+          <input
+            type="text"
+            disabled={sent}
+            value={free[q.id] ?? ''}
+            onChange={(e) => setFree((f) => ({ ...f, [q.id]: e.target.value }))}
+            onKeyDown={(e) => { if (e.key === 'Enter' && complete) { e.preventDefault(); submit(); } }}
+            placeholder={q.options?.length ? 'Or type an answer…' : 'Type an answer…'}
+            aria-label={`Answer: ${shortName(q.prompt)}`}
+            className="ml-5 h-[30px] rounded-md border border-surface-1 bg-transparent px-2.5 text-[12.5px] text-ctp-text placeholder:text-ctp-overlay0 focus:outline-none focus:border-ctp-accent/60"
+          />
+        )}
+      </div>
+    );
   };
 
   return (
@@ -313,69 +423,70 @@ export function QuestionCard({ request, onAnswer, busy }: QuestionCardProps) {
       ref={ref}
       tabIndex={-1}
       onKeyDown={onKeyDown}
-      className="rounded-xl border border-ctp-accent/50 bg-ctp-mantle px-3.5 py-3 flex flex-col gap-3 focus:outline-none"
+      className="min-h-0 flex flex-col rounded-xl border border-ctp-accent/50 bg-ctp-mantle focus:outline-none"
       data-testid="chat-question"
       role="group"
       aria-label="Question"
     >
-      {request.routedTo && (
-        <p className="text-[12px] text-ctp-subtext0" data-testid="chat-question-routed">
-          Sent to {request.routedTo.name} to answer. You can answer here instead.
-        </p>
-      )}
-      {request.questions.map((q) => {
-        const picked = answers[q.id];
-        return (
-          <div key={q.id} className="flex flex-col gap-2">
-            <div className="flex items-center gap-2.5 font-semibold text-[13.5px] text-ctp-text">
-              <QuestionIcon className="text-ctp-accent" />
-              <span className="break-words min-w-0">{q.header ? `${q.header}: ` : ''}{q.prompt}</span>
-            </div>
-            {q.options && q.options.length > 0 && (
-              <div className="flex flex-col gap-0.5 pl-5">
-                {q.options.map((o, i) => {
-                  const on = Array.isArray(picked) ? picked.includes(o.id) : picked === o.id;
-                  return (
-                    <button
-                      key={o.id}
-                      type="button"
-                      disabled={sent}
-                      onClick={() => toggle(q, o.id)}
-                      aria-pressed={on}
-                      className={`flex items-center gap-2.5 min-h-[30px] px-2 rounded-md text-[12.5px] text-left disabled:opacity-50 ${on ? 'bg-surface-0 text-ctp-text ring-1 ring-surface-1' : 'text-ctp-subtext1 hover:bg-surface-0/60'}`}
-                    >
-                      <span className="w-[18px] h-[18px] rounded bg-ctp-crust grid place-items-center text-[11px] text-ctp-overlay1 flex-shrink-0">{i + 1}</span>
-                      <span className="flex flex-col">
-                        <span>{o.label}</span>
-                        {o.description && <span className="text-[11.5px] text-ctp-overlay1">{o.description}</span>}
-                      </span>
-                    </button>
-                  );
-                })}
-              </div>
-            )}
-            {q.allowFreeText && (
-              <input
-                type="text"
-                disabled={sent}
-                value={free[q.id] ?? ''}
-                onChange={(e) => setFree((f) => ({ ...f, [q.id]: e.target.value }))}
-                onKeyDown={(e) => { if (e.key === 'Enter' && complete) { e.preventDefault(); submit(); } }}
-                placeholder={q.options?.length ? 'Or type an answer…' : 'Type an answer…'}
-                aria-label={`Answer: ${shortName(q.prompt)}`}
-                className="ml-5 h-[30px] rounded-md border border-surface-1 bg-transparent px-2.5 text-[12.5px] text-ctp-text placeholder:text-ctp-overlay0 focus:outline-none focus:border-ctp-accent/60"
-              />
-            )}
+      {/* The questions scroll; the send row below them stays in view. */}
+      <div className={`min-h-0 overflow-y-auto flex flex-col gap-3 px-3.5 pt-3 ${single ? 'pb-3' : 'pb-1'}`} data-testid="chat-question-body">
+        {request.routedTo && (
+          <p className="text-[12px] text-ctp-subtext0" data-testid="chat-question-routed">
+            Sent to {request.routedTo.name} to answer. You can answer here instead.
+          </p>
+        )}
+        {stepped ? (
+          <div className="flex flex-col gap-1">
+            {request.questions.map((q, i) => {
+              if (q === active) return <div key={q.id} ref={openRef} className="py-1.5">{renderQuestion(q)}</div>;
+              const summary = answerSummary(q, answers[q.id], free[q.id]);
+              return (
+                <button
+                  key={q.id}
+                  type="button"
+                  onClick={() => setCurrent(i)}
+                  className="flex items-center gap-2.5 min-h-[28px] px-2 -mx-2 rounded-md text-[12.5px] text-left text-ctp-subtext1 hover:bg-surface-0/60"
+                  data-testid="chat-question-collapsed"
+                >
+                  <span className="w-[18px] text-center text-[11px] text-ctp-overlay1 flex-shrink-0">{i + 1}</span>
+                  <span className="flex-1 min-w-0 truncate">{q.header ? `${q.header}: ` : ''}{q.prompt}</span>
+                  <span className={`max-w-[40%] truncate flex-shrink-0 ${summary ? 'text-ctp-text' : 'text-ctp-overlay0'}`}>{summary ?? 'Not answered'}</span>
+                </button>
+              );
+            })}
           </div>
-        );
-      })}
+        ) : (
+          active && renderQuestion(active)
+        )}
+      </div>
       {!single && (
-        <div className="flex justify-end">
+        <div className="flex-shrink-0 flex items-center gap-1.5 px-3.5 pt-2 pb-3">
+          {stepped && (
+            <>
+              <button
+                type="button"
+                disabled={current === 0}
+                onClick={() => setCurrent((i) => Math.max(i - 1, 0))}
+                className="h-7 px-2 rounded-md text-[12px] text-ctp-subtext0 hover:text-ctp-text hover:bg-surface-0/60 disabled:opacity-40 disabled:hover:bg-transparent"
+              >
+                Previous
+              </button>
+              <span className="text-[12px] text-ctp-overlay1 tabular-nums" data-testid="chat-question-step">{current + 1} of {count}</span>
+              <button
+                type="button"
+                disabled={current >= count - 1}
+                onClick={() => setCurrent((i) => Math.min(i + 1, count - 1))}
+                className="h-7 px-2 rounded-md text-[12px] text-ctp-subtext0 hover:text-ctp-text hover:bg-surface-0/60 disabled:opacity-40 disabled:hover:bg-transparent"
+              >
+                Next
+              </button>
+            </>
+          )}
           <button
             type="button"
             disabled={!complete || sent}
             onClick={() => submit()}
-            className="h-7 px-3 rounded-md bg-ctp-accent text-ctp-crust text-[12px] font-medium disabled:opacity-40"
+            className="ml-auto h-7 px-3 rounded-md bg-ctp-accent text-ctp-crust text-[12px] font-medium disabled:opacity-40"
           >
             Send answer
           </button>
