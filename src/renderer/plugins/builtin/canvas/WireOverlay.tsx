@@ -6,7 +6,7 @@
  */
 
 import React, { useMemo } from 'react';
-import type { CanvasView, AgentCanvasView as AgentCanvasViewType } from './canvas-types';
+import type { CanvasView } from './canvas-types';
 import type { McpBindingEntry } from '../../../stores/mcpBindingStore';
 import { computeWirePath, bezierPathWithOffsets, viewRect, closestEdgeMidpoint } from './wire-utils';
 import type { EdgeMidpoint } from './wire-utils';
@@ -14,7 +14,7 @@ import { WireFlowDots } from './WireFlowDots';
 import { useWirePhysics } from './useWirePhysics';
 import { useWireActivity } from './useWireActivity';
 import type { ZoneWireDefinition } from './zone-wire-store';
-import { buildViewIndex as buildContractIndex, resolveZoneWireViews } from './wire-render-contract';
+import { buildViewIndex, resolveBindingWireViews, resolveZoneWireViews, bindingWireKey } from './wire-render-contract';
 
 /**
  * Wires are plain 1.5px lines in a neutral color (#2020): no glow and no pulse.
@@ -91,56 +91,10 @@ const ZoneWireGroup = React.memo(function ZoneWireGroup({
   );
 });
 
-/** Index maps for O(1) binding resolution instead of linear scans. */
-interface ViewIndex {
-  viewMap: Map<string, CanvasView>;
-  agentIdToView: Map<string, CanvasView>;
-  groupProjectIdToView: Map<string, CanvasView>;
-}
-
-function buildViewIndex(viewMap: Map<string, CanvasView>): ViewIndex {
-  const agentIdToView = new Map<string, CanvasView>();
-  const groupProjectIdToView = new Map<string, CanvasView>();
-  for (const v of viewMap.values()) {
-    if (v.type === 'agent') {
-      agentIdToView.set((v as AgentCanvasViewType).agentId, v);
-    }
-    if (v.type === 'plugin' && v.metadata?.groupProjectId) {
-      groupProjectIdToView.set(v.metadata.groupProjectId as string, v);
-    }
-  }
-  return { viewMap, agentIdToView, groupProjectIdToView };
-}
-
-/**
- * Resolve a binding to its source and target views.
- * Source is the agent view (by agentId), target is looked up by targetId = view.id.
- */
-function resolveBindingViews(
-  binding: McpBindingEntry,
-  index: ViewIndex,
-): { source: CanvasView; target: CanvasView } | null {
-  // Find agent view by agentId — O(1) via index
-  const source = index.agentIdToView.get(binding.agentId);
-  if (!source) return null;
-
-  // Look up target by view id first, then by agentId for agent-to-agent bindings,
-  // then by metadata.groupProjectId for group-project bindings.
-  let target = index.viewMap.get(binding.targetId);
-  if (!target && binding.targetKind === 'agent') {
-    target = index.agentIdToView.get(binding.targetId);
-  }
-  if (!target && binding.targetKind === 'group-project') {
-    target = index.groupProjectIdToView.get(binding.targetId);
-  }
-  if (!target) return null;
-
-  return { source, target };
-}
-
 /** Per-wire group component — allows calling useWireActivity hook per wire. */
 const WireGroup = React.memo(function WireGroup({
   wireKey,
+  activityKey,
   path,
   binding,
   bidir,
@@ -148,6 +102,8 @@ const WireGroup = React.memo(function WireGroup({
   onWireClick,
 }: {
   wireKey: string;
+  /** The binding's activity key; differs from `wireKey` on a duplicate card's wire. */
+  activityKey: string;
   path: string;
   binding: McpBindingEntry;
   bidir: boolean;
@@ -155,7 +111,7 @@ const WireGroup = React.memo(function WireGroup({
   onWireClick?: (binding: McpBindingEntry, event: React.MouseEvent) => void;
 }) {
   // Keep alive=true so activity indicators fire even for sleeping wires (e.g. wake requests)
-  const activity = useWireActivity(wireKey, true);
+  const activity = useWireActivity(activityKey, true);
 
   // Dim wires when source or target agent is sleeping/error
   const isDimmed = sleepingAgentIds
@@ -216,20 +172,15 @@ export const WireOverlay = React.memo(function WireOverlay({
   onZoneWireClick,
   forceBidirectional,
 }: WireOverlayProps) {
-  const viewIndex = useMemo(() => {
-    const m = new Map<string, CanvasView>();
-    for (const v of views) m.set(v.id, v);
-    return buildViewIndex(m);
-  }, [views]);
+  // Shared with the wire rendering contract, so local and annex paths agree.
+  const viewIndex = useMemo(() => buildViewIndex(views), [views]);
 
-  // Zone wires render as a single bundled wire to the zone, resolved via the
-  // shared wire rendering contract so local and annex paths agree.
+  // Zone wires render as a single bundled wire to the zone.
   const zoneWires = useMemo(() => {
     if (!zoneWireDefinitions || zoneWireDefinitions.length === 0) return [];
-    const index = buildContractIndex(views);
     const result: Array<{ id: string; path: string }> = [];
     for (const wire of zoneWireDefinitions) {
-      const resolved = resolveZoneWireViews(wire, index);
+      const resolved = resolveZoneWireViews(wire, viewIndex);
       if (!resolved) continue;
       const { source, target } = resolved;
       const srcPos = viewPositions?.get(source.id) ?? source.position;
@@ -238,13 +189,14 @@ export const WireOverlay = React.memo(function WireOverlay({
       result.push({ id: wire.id, path });
     }
     return result;
-  }, [zoneWireDefinitions, views, viewPositions]);
+  }, [zoneWireDefinitions, viewIndex, viewPositions]);
 
   const wires = useMemo(() => {
     // Track already-rendered pairs so bidirectional bindings only emit one wire
     const rendered = new Set<string>();
     const result: Array<{
       key: string;
+      activityKey: string;
       path: string;
       from: EdgeMidpoint;
       to: EdgeMidpoint;
@@ -252,6 +204,7 @@ export const WireOverlay = React.memo(function WireOverlay({
       toViewId: string;
       binding: McpBindingEntry;
       bidir: boolean;
+      routed: boolean;
     }> = [];
 
     for (const binding of bindings) {
@@ -270,29 +223,33 @@ export const WireOverlay = React.memo(function WireOverlay({
         rendered.add(pairKey);
       }
 
-      const resolved = resolveBindingViews(binding, viewIndex);
-      if (!resolved) continue;
+      // One wire per card of the agent: a canvas saved with duplicate cards
+      // shows the wire on each of them, not only the last (#2415).
+      resolveBindingWireViews(binding, viewIndex).forEach((pair, i) => {
+        const { source, target } = pair;
+        const srcPos = viewPositions?.get(source.id) ?? source.position;
+        const tgtPos = viewPositions?.get(target.id) ?? target.position;
 
-      const { source, target } = resolved;
-      const srcPos = viewPositions?.get(source.id) ?? source.position;
-      const tgtPos = viewPositions?.get(target.id) ?? target.position;
+        const srcRect = viewRect(srcPos, source.size);
+        const tgtRect = viewRect(tgtPos, target.size);
+        // Use ELK-routed path when available, otherwise compute direct bezier.
+        // A routed path was laid out for one card, so other cards get a bezier.
+        const { path, from, to } = binding.routedPath && i === 0
+          ? { path: binding.routedPath, from: closestEdgeMidpoint(srcRect, tgtRect), to: closestEdgeMidpoint(tgtRect, srcRect) }
+          : computeWirePath(srcRect, tgtRect);
 
-      const srcRect = viewRect(srcPos, source.size);
-      const tgtRect = viewRect(tgtPos, target.size);
-      // Use ELK-routed path when available, otherwise compute direct bezier
-      const { path, from, to } = binding.routedPath
-        ? { path: binding.routedPath, from: closestEdgeMidpoint(srcRect, tgtRect), to: closestEdgeMidpoint(tgtRect, srcRect) }
-        : computeWirePath(srcRect, tgtRect);
-
-      result.push({
-        key: `${binding.agentId}--${binding.targetId}`,
-        path,
-        from,
-        to,
-        fromViewId: source.id,
-        toViewId: target.id,
-        binding,
-        bidir,
+        result.push({
+          key: bindingWireKey(binding, pair, i),
+          activityKey: bindingWireKey(binding, pair, 0),
+          path,
+          from,
+          to,
+          fromViewId: source.id,
+          toViewId: target.id,
+          binding,
+          bidir,
+          routed: !!binding.routedPath && i === 0,
+        });
       });
     }
 
@@ -317,10 +274,10 @@ export const WireOverlay = React.memo(function WireOverlay({
   // avoiding duplicate bezierPathWithOffsets calls for <defs> and <WireGroup>.
   const resolvedPaths = useMemo(() => {
     const result = new Map<string, string>();
-    for (const { key, path, from, to, binding } of wires) {
+    for (const { key, path, from, to, routed } of wires) {
       // When ELK has routed the path, use it directly — physics offsets
       // would replace the carefully-calculated route with a straight bezier.
-      if (binding.routedPath) {
+      if (routed) {
         result.set(key, path);
         continue;
       }
@@ -367,10 +324,11 @@ export const WireOverlay = React.memo(function WireOverlay({
       {zoneWires.map(({ id, path }) => (
         <ZoneWireGroup key={`zone-${id}`} wireId={id} path={path} onZoneWireClick={onZoneWireClick} />
       ))}
-      {wires.map(({ key, binding, bidir }) => (
+      {wires.map(({ key, activityKey, binding, bidir }) => (
         <WireGroup
           key={key}
           wireKey={key}
+          activityKey={activityKey}
           path={resolvedPaths.get(key)!}
           binding={binding}
           bidir={bidir}

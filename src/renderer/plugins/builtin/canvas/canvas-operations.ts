@@ -234,6 +234,15 @@ function viewToHandle(v: CanvasView): CanvasWidgetHandle {
   };
 }
 
+/**
+ * The card already showing `agentId` on a canvas, other than `exceptViewId`.
+ * An agent gets one card per canvas (#2415): adding it again focuses this one.
+ */
+export function findAgentCard(views: readonly CanvasView[], agentId: string, exceptViewId?: string): AgentCanvasView | undefined {
+  return views.find((v): v is AgentCanvasView =>
+    v.type === 'agent' && v.id !== exceptViewId && (v as AgentCanvasView).agentId === agentId);
+}
+
 export function removeView(views: CanvasView[], viewId: string): CanvasView[] {
   return views.filter((v) => v.id !== viewId);
 }

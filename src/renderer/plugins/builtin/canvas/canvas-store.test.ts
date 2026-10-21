@@ -1310,6 +1310,26 @@ describe('hydrateFromRemote', () => {
       const ids = store.getState().zoneWireDefinitions.map((w) => w.id);
       expect(ids).toEqual(['zw_b']);
     });
+
+    it('removeView keeps an agent\'s wires while another card of that agent stays (#2415)', () => {
+      const first = store.getState().addView('agent', { x: 0, y: 0 });
+      const second = store.getState().addView('agent', { x: 400, y: 0 });
+      store.getState().updateView(first, { agentId: 'durable_x' } as never);
+      store.getState().updateView(second, { agentId: 'durable_x' } as never);
+      store.setState({
+        wireDefinitions: [{ agentId: 'durable_x', targetId: 'gp_1', targetKind: 'group-project', label: 'GP' }],
+        zoneWireDefinitions: [{ id: 'zw_a', sourceZoneId: 'z1', targetId: 'durable_x', targetType: 'agent' }],
+      });
+
+      store.getState().removeView(second);
+      expect(store.getState().wireDefinitions).toHaveLength(1);
+      expect(store.getState().zoneWireDefinitions.map((w) => w.id)).toEqual(['zw_a']);
+
+      // Removing the last card cleans them up as before.
+      store.getState().removeView(first);
+      expect(store.getState().wireDefinitions).toEqual([]);
+      expect(store.getState().zoneWireDefinitions).toEqual([]);
+    });
   });
 });
 

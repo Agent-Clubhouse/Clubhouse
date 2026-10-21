@@ -554,3 +554,25 @@ describe('AgentCanvasView', () => {
     });
   });
 });
+
+describe('AgentCanvasView — one card per agent (#2415)', () => {
+  const agents = [{ id: 'agent-7', name: 'bold-falcon', status: 'sleeping', kind: 'durable', projectId: 'proj-1' }];
+
+  it('focuses the existing card instead of assigning the agent here', () => {
+    const view = makeView({ agentId: null });
+    const onUpdate = vi.fn();
+    const onFocusAgentCard = vi.fn(() => true);
+    render(<AgentCanvasView view={view} api={stubApi({ agents })} onUpdate={onUpdate} onFocusAgentCard={onFocusAgentCard} />);
+    fireEvent.click(screen.getByTestId('canvas-agent-pick-agent-7'));
+    expect(onFocusAgentCard).toHaveBeenCalledWith(expect.objectContaining({ id: view.id }), 'agent-7');
+    expect(onUpdate).not.toHaveBeenCalled();
+  });
+
+  it('assigns the agent when it has no card on the canvas yet', () => {
+    const view = makeView({ agentId: null });
+    const onUpdate = vi.fn();
+    render(<AgentCanvasView view={view} api={stubApi({ agents })} onUpdate={onUpdate} onFocusAgentCard={() => false} />);
+    fireEvent.click(screen.getByTestId('canvas-agent-pick-agent-7'));
+    expect(onUpdate).toHaveBeenCalledWith(expect.objectContaining({ agentId: 'agent-7' }));
+  });
+});

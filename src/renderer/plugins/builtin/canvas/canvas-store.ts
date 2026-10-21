@@ -23,6 +23,7 @@ import {
   createView as createViewOp,
   createPluginView as createPluginViewOp,
   removeView as removeViewOp,
+  findAgentCard,
   updateViewPosition as updateViewPosOp,
   updateViewSize as updateViewSizeOp,
   updateViewTitle as updateViewTitleOp,
@@ -909,6 +910,9 @@ export function createCanvasStore(): UseBoundStore<StoreApi<CanvasState>> {
       const wireId = (removedView?.type === 'agent' && (removedView as AgentCanvasView).agentId)
         ? (removedView as AgentCanvasView).agentId!
         : viewId;
+      // A duplicate agent card (saved before #2415): the agent's other card
+      // stays, and so do the wires it shares with this one.
+      const agentStays = wireId !== viewId && !!findAgentCard(get().views, wireId, viewId);
 
       // LB-CV-H01: atomic update — remove view and clean up orphaned wires in a single set()
       const canvasUpdate = updateActiveCanvas(get(), (canvas) => ({
@@ -921,12 +925,12 @@ export function createCanvasStore(): UseBoundStore<StoreApi<CanvasState>> {
 
       // LB-M07: remove orphaned wire definitions referencing the removed view
       const wires = get().wireDefinitions;
-      const filtered = wires.filter((w) => w.agentId !== wireId && w.targetId !== wireId);
+      const filtered = agentStays ? wires : wires.filter((w) => w.agentId !== wireId && w.targetId !== wireId);
 
       // Remove orphaned zone wires referencing the removed view. The view may be
       // referenced by its view id (zone/browser source/target) or by a resolved
       // id (agentId / groupProjectId) when it is a wire target.
-      const removedIds = new Set<string>([viewId, wireId]);
+      const removedIds = new Set<string>(agentStays ? [viewId] : [viewId, wireId]);
       const gpId = removedView?.metadata?.groupProjectId as string | undefined;
       if (gpId) removedIds.add(gpId);
       const zoneFiltered = get().zoneWireDefinitions.filter(

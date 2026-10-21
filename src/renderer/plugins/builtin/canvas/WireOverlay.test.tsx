@@ -675,3 +675,47 @@ describe('WireOverlay', () => {
     });
   });
 });
+
+describe('WireOverlay — an agent with more than one card (#2415)', () => {
+  it('draws the group-project wire to every card of the agent', () => {
+    const views: CanvasView[] = [
+      makeAgentView('a1', 'agent-1', 0, 0),
+      makeAgentView('a2', 'agent-1', 0, 600),
+      makeGroupProjectView('gp1', 'gp-1', 400, 0),
+    ];
+    const bindings: McpBindingEntry[] = [
+      { agentId: 'agent-1', targetId: 'gp-1', targetKind: 'group-project', label: 'GP' },
+    ];
+    const { container } = render(<WireOverlay views={views} bindings={bindings} />);
+    expect(container.querySelector('[data-testid="wire-path-agent-1--gp-1"]')).toBeTruthy();
+    expect(container.querySelector('[data-testid="wire-path-agent-1--gp-1@a2--gp1"]')).toBeTruthy();
+    expect(container.querySelectorAll('[data-testid^="wire-path-agent-1--gp-1"]')).toHaveLength(2);
+  });
+
+  it('keeps an ELK-routed path on the first card and draws the other card directly', () => {
+    const views: CanvasView[] = [
+      makeAgentView('a1', 'agent-1', 0, 0),
+      makeAgentView('a2', 'agent-1', 0, 600),
+      makeGroupProjectView('gp1', 'gp-1', 400, 0),
+    ];
+    const routedPath = 'M 200 100 L 400 100';
+    const bindings: McpBindingEntry[] = [
+      { agentId: 'agent-1', targetId: 'gp-1', targetKind: 'group-project', label: 'GP', routedPath },
+    ];
+    const { container } = render(<WireOverlay views={views} bindings={bindings} />);
+    expect(container.querySelector('[data-testid="wire-path-agent-1--gp-1"]')?.getAttribute('d')).toBe(routedPath);
+    expect(container.querySelector('[data-testid="wire-path-agent-1--gp-1@a2--gp1"]')?.getAttribute('d')).not.toBe(routedPath);
+  });
+});
+
+describe('WireOverlay — a codex-cli agent on a group project (#2415)', () => {
+  it('draws the wire from a single codex-cli card to the group project', () => {
+    const codex: AgentCanvasView = { ...makeAgentView('a1', 'agent-codex', 0, 0), metadata: { orchestrator: 'codex-cli' } };
+    const views: CanvasView[] = [codex, makeGroupProjectView('gp1', 'gp-1', 400, 0)];
+    const bindings: McpBindingEntry[] = [
+      { agentId: 'agent-codex', targetId: 'gp-1', targetKind: 'group-project', label: 'GP' },
+    ];
+    const { container } = render(<WireOverlay views={views} bindings={bindings} />);
+    expect(container.querySelector('[data-testid="wire-path-agent-codex--gp-1"]')).toBeTruthy();
+  });
+});

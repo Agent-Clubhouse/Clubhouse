@@ -2,7 +2,7 @@ import React, { useCallback, useMemo, useRef, useState, useEffect } from 'react'
 import type { CanvasView, CanvasViewType, ZoneCanvasView, AgentCanvasView as AgentCanvasViewType, Viewport, Position, Size, CanvasViewAttention } from './canvas-types';
 import { GRID_SIZE } from './canvas-types';
 import type { ResizeDirection } from './CanvasView';
-import { snapSize, snapPosition, screenToCanvas, viewportToCenterView } from './canvas-operations';
+import { snapSize, snapPosition, screenToCanvas, viewportToCenterView, findAgentCard } from './canvas-operations';
 import { ZoneBackground } from './ZoneBackground';
 import { ZoneCard } from './ZoneCard';
 import { ZoneDeleteDialog } from './ZoneDeleteDialog';
@@ -127,6 +127,7 @@ interface CanvasViewCardProps {
   onResizeEnd: (viewId: string, size: Size, position: Position) => void;
   onUpdateView: (viewId: string, updates: Partial<CanvasView>) => void;
   onCreateAgentCard?: (parentView: AgentCanvasViewType, agentId: string) => void;
+  onFocusAgentCard: (pickerView: AgentCanvasViewType, agentId: string) => boolean;
   onViewContextMenu: (viewId: string, event: React.MouseEvent) => void;
   isLayoutCenter: boolean;
 }
@@ -156,6 +157,7 @@ const CanvasViewCard = React.memo(function CanvasViewCard({
   onResizeEnd,
   onUpdateView,
   onCreateAgentCard,
+  onFocusAgentCard,
   onViewContextMenu,
   isLayoutCenter,
 }: CanvasViewCardProps) {
@@ -199,6 +201,7 @@ const CanvasViewCard = React.memo(function CanvasViewCard({
         onResizeEnd={onResizeEndForView}
         onUpdate={onUpdate}
         onCreateAgentCard={onCreateAgentCard}
+        onFocusAgentCard={onFocusAgentCard}
         onViewContextMenu={onContextMenu}
         isLayoutCenter={isLayoutCenter}
       />
@@ -582,6 +585,18 @@ export function CanvasWorkspace({
     }
   }, [views, viewport.zoom, zoomedViewId, onZoomView, onViewportChange]);
 
+  // An agent gets one card per canvas (#2415). Picking an agent that already
+  // has a card closes the empty picker card and brings the existing card into
+  // view, so its wires stay on the one card the user sees.
+  const handleFocusAgentCard = useCallback((pickerView: AgentCanvasViewType, agentId: string) => {
+    const existing = findAgentCard(views, agentId, pickerView.id);
+    if (!existing) return false;
+    if (zoomedViewId === pickerView.id) onZoomView(null);
+    onRemoveView(pickerView.id);
+    handleSearchSelect(existing.id);
+    return true;
+  }, [views, zoomedViewId, onZoomView, onRemoveView, handleSearchSelect]);
+
   // ── Merged positions for wire overlay ────────────────────────
   const wireViewPositions = useMemo(() => {
     const map = new Map<string, Position>();
@@ -706,6 +721,7 @@ export function CanvasWorkspace({
               onResizeEnd={handleViewResizeEnd}
               onUpdateView={onUpdateView}
               onCreateAgentCard={onCreateAgentCard}
+              onFocusAgentCard={handleFocusAgentCard}
               onViewContextMenu={handleViewContextMenu}
               isLayoutCenter={layoutCenterId === view.id}
             />
@@ -835,6 +851,7 @@ export function CanvasWorkspace({
           onClose={() => onZoomView(null)}
           onUpdateView={onUpdateView}
           onCreateAgentCard={onCreateAgentCard}
+          onFocusAgentCard={handleFocusAgentCard}
         />
       )}
 

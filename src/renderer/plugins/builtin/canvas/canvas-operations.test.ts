@@ -27,6 +27,7 @@ import {
   computeZoneBounds,
   recomputeZones,
   computeAdjacentPosition,
+  findAgentCard,
 } from './canvas-operations';
 import type { CanvasView, AgentCanvasView, StickyNoteCanvasView, ZoneCanvasView } from './canvas-types';
 import { GRID_SIZE, MIN_VIEW_WIDTH, MIN_VIEW_HEIGHT, MIN_ZOOM, MAX_ZOOM, CANVAS_SIZE, MIN_ZONE_WIDTH, MIN_ZONE_HEIGHT, ZONE_PADDING, DEFAULT_STICKY_WIDTH, DEFAULT_STICKY_HEIGHT } from './canvas-types';
@@ -757,5 +758,24 @@ describe('canvas-operations', () => {
       // right side with buffer 100: x = 200 + 300 + 100 = 600
       expect(result).toEqual({ x: 600, y: 200 });
     });
+  });
+});
+
+describe('findAgentCard (#2415)', () => {
+  const card = (id: string, agentId: string | null) => ({ ...createView('agent', { x: 0, y: 0 }, 1), id, agentId } as AgentCanvasView);
+
+  it('finds the card that already shows the agent', () => {
+    const views: CanvasView[] = [card('cv_a', 'agent-1'), card('cv_b', 'agent-2')];
+    expect(findAgentCard(views, 'agent-2')?.id).toBe('cv_b');
+  });
+
+  it('skips the excepted card, so a picker card never matches itself', () => {
+    const views: CanvasView[] = [card('cv_a', 'agent-1')];
+    expect(findAgentCard(views, 'agent-1', 'cv_a')).toBeUndefined();
+  });
+
+  it('ignores empty picker cards and other view types', () => {
+    const sticky = { ...createView('sticky-note', { x: 0, y: 0 }, 1), id: 'cv_s' } as CanvasView;
+    expect(findAgentCard([card('cv_a', null), sticky], 'agent-1')).toBeUndefined();
   });
 });

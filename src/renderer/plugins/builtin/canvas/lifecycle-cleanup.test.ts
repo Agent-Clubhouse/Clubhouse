@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { findBindingsForView } from './main';
+import { findBindingsForView, bindingsToCleanUpOnRemove } from './main';
 import type { McpBindingEntry } from '../../../stores/mcpBindingStore';
 import type { AgentCanvasView, PluginCanvasView } from './canvas-types';
 
@@ -83,5 +83,28 @@ describe('findBindingsForView', () => {
     };
     const result = findBindingsForView(view, bindings);
     expect(result).toHaveLength(0);
+  });
+});
+
+describe('bindingsToCleanUpOnRemove (#2415)', () => {
+  const bindings: McpBindingEntry[] = [
+    makeBinding('agent-A', 'gp_123', 'group-project'),
+    makeBinding('agent-B', 'agent-A', 'agent'),
+  ];
+
+  it('cleans up an agent\'s bindings when its only card is removed', () => {
+    const card = makeAgentView('cv1', 'agent-A');
+    expect(bindingsToCleanUpOnRemove(card, [card], bindings)).toHaveLength(2);
+  });
+
+  it('keeps the bindings when another card of the same agent stays', () => {
+    const removed = makeAgentView('cv1', 'agent-A');
+    const stays = makeAgentView('cv2', 'agent-A');
+    expect(bindingsToCleanUpOnRemove(removed, [removed, stays], bindings)).toEqual([]);
+  });
+
+  it('still cleans up a non-agent view', () => {
+    const gp = makeGroupProjectView('cv3', 'gp_123');
+    expect(bindingsToCleanUpOnRemove(gp, [gp], bindings)).toHaveLength(1);
   });
 });
