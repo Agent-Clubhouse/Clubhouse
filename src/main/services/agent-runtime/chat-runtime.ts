@@ -185,6 +185,8 @@ export class ChatAgentRuntime implements AgentRuntime {
   private resumeOpen: { honored: boolean; timing?: ChatResumeTiming } | undefined;
   private capabilities: ChatCapabilities | undefined;
   private readonly queued: QueuedMessage[] = [];
+  /** drainQueue is sending the next queued item: the turn it starts hasn't begun yet. */
+  private draining = false;
   private readonly permissions = new Map<string, PendingPermission>();
   /** Questions awaiting an answer, so a late or duplicate answer is ignored. */
   private readonly questions = new Set<string>();
@@ -534,7 +536,9 @@ export class ChatAgentRuntime implements AgentRuntime {
   async sendMessage(content: string | ContentBlock[], opts: RuntimeSendOptions): Promise<RuntimeSendResult> {
     const session = this.requireSession();
     const blocks: ContentBlock[] = typeof content === 'string' ? [{ type: 'text', text: content }] : content;
-    const running = this.state === 'running' || this.state === 'waiting_permission' || this.state === 'waiting_input';
+    // While the queue drains, the state still reads idle; a prompt now would race the drained one.
+    const running = this.draining
+      || this.state === 'running' || this.state === 'waiting_permission' || this.state === 'waiting_input';
     const caps = this.capabilities ?? session.capabilities;
 
     let wanted: MessageDelivery;
@@ -612,10 +616,15 @@ export class ChatAgentRuntime implements AgentRuntime {
   private async drainQueue(): Promise<void> {
     const next = this.queued.shift();
     if (!next || !this.session) return;
-    this.clearIdleTimer();
-    await this.runBeforePrompt();
-    if (!this.session) return;
-    await this.session.send([...next.preamble, ...coalesceUpdateContent(next.parts)], 'prompt');
+    this.draining = true;
+    try {
+      this.clearIdleTimer();
+      await this.runBeforePrompt();
+      if (!this.session) return;
+      await this.session.send([...next.preamble, ...coalesceUpdateContent(next.parts)], 'prompt');
+    } finally {
+      this.draining = false;
+    }
   }
 
   async interrupt(): Promise<void> {

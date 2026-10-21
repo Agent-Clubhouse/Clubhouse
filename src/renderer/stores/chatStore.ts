@@ -623,8 +623,10 @@ export function reduceChatEvent(prev: ChatViewState | undefined, event: ChatEven
           const merged: QueuedMessage = { ...target, parts, content, text: blocksToText(content) };
           return { ...state, queued: state.queued.map((q, i) => (i === joined ? merged : q)) };
         }
+        // A join whose item was cut off (a transcript read from its tail)
+        // takes the item's id, so later joins and the delivery still find one row.
         const q: QueuedMessage = {
-          messageId: d.messageId, content: d.content, text, source: d.source,
+          messageId: d.queuedWith ?? d.messageId, content: d.content, text, source: d.source,
           sessionId: sid, seq: event.seq, ts: event.ts,
         };
         return { ...state, queued: [...state.queued, q] };

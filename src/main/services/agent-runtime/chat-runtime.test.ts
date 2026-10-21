@@ -1191,7 +1191,7 @@ describe('ChatAgentRuntime coalesced helper updates (#2414)', () => {
     await flush();
     expect(driver.last.sent).toHaveLength(1);
     const [text] = sentText(driver);
-    expect(text.startsWith('10 helper updates, oldest first:')).toBe(true);
+    expect(text.startsWith('10 updates, oldest first:')).toBe(true);
     const positions = Array.from({ length: 10 }, (_, i) => text.indexOf(`[FROM HELPER:h${i + 1} (id-h${i + 1})] update ${i + 1}`));
     expect(positions.every((p) => p > 0)).toBe(true);
     expect([...positions].sort((a, b) => a - b)).toEqual(positions);
@@ -1217,7 +1217,7 @@ describe('ChatAgentRuntime coalesced helper updates (#2414)', () => {
       await flush();
     }
     expect(sentText(driver)).toEqual([
-      '2 helper updates, oldest first:\n\n--- 1 of 2 ---\n[Clubhouse] Helper "a" is ready.\n\n--- 2 of 2 ---\n[FROM HELPER:a (a1)] started',
+      '2 updates, oldest first:\n\n--- 1 of 2 ---\n[Clubhouse] Helper "a" is ready.\n\n--- 2 of 2 ---\n[FROM HELPER:a (a1)] started',
       'please also fix lint',
       '[FROM HELPER:b (b1)] done',
       'one more thing',
@@ -1257,6 +1257,25 @@ describe('ChatAgentRuntime coalesced helper updates (#2414)', () => {
     await runtime.sendMessage('[FROM HELPER:b (b1)] two', { source: 'mcp' });
     expect(driver.last.sent.map((s) => s.delivery)).toEqual([delivery, delivery]);
     expect(transcript.filter((e) => e.type === 'user_message' && e.data.queuedWith)).toHaveLength(0);
+  });
+
+  it('queues a message sent while the queue drains, instead of racing the drained prompt', async () => {
+    let release!: () => void;
+    const gate = new Promise<void>((r) => { release = r; });
+    const { driver, runtime } = await midTurn(STEERLESS, { beforePrompt: () => gate });
+    await runtime.sendMessage('typed by the user', { source: 'user' });
+    driver.last.emit({ type: 'turn_ended', data: { stopReason: 'end_turn' } });
+    await flush();
+    expect(runtime.getState()).toBe('idle');
+    const late = await runtime.sendMessage('[FROM HELPER:a (a1)] late', { source: 'mcp' });
+    expect(late.delivery).toBe('queued');
+    release();
+    await flush();
+    expect(sentText(driver)).toEqual(['typed by the user']);
+    driver.last.emit({ type: 'turn_started', data: { trigger: 'prompt' } });
+    driver.last.emit({ type: 'turn_ended', data: { stopReason: 'end_turn' } });
+    await flush();
+    expect(sentText(driver)).toEqual(['typed by the user', '[FROM HELPER:a (a1)] late']);
   });
 
   it('forgets a merged item when the context is cleared', async () => {

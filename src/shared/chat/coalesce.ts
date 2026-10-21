@@ -9,7 +9,7 @@
 import type { ContentBlock } from './events';
 
 function header(count: number): string {
-  return `${count} helper updates, oldest first:`;
+  return `${count} updates, oldest first:`;
 }
 
 function sectionLabel(index: number, count: number): string {

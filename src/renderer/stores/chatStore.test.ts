@@ -496,7 +496,7 @@ describe('reduceChatEvent', () => {
       ]);
       expect(s.queued.map((q) => q.messageId)).toEqual(['u1', 'm1']);
       expect(s.queued[1].text).toBe(
-        '3 helper updates, oldest first:\n\n--- 1 of 3 ---\n[FROM HELPER:a (a)] one\n\n' +
+        '3 updates, oldest first:\n\n--- 1 of 3 ---\n[FROM HELPER:a (a)] one\n\n' +
         '--- 2 of 3 ---\n[FROM HELPER:b (b)] two\n\n--- 3 of 3 ---\n[Clubhouse] three',
       );
       expect(s.queued[0].text).toBe('mine');
@@ -513,12 +513,14 @@ describe('reduceChatEvent', () => {
       expect(delivered[1].text).toContain('[Clubhouse] three');
     });
 
-    it('adds a message whose merged item is gone as its own row', () => {
+    it('rebuilds a merged item whose first message was cut off as one row under its id', () => {
       const s = fold([
         sessionStarted(ev),
-        ev('user_message', { messageId: 'm2', content: text('two'), source: 'mcp', delivery: 'queued', queuedWith: 'missing' }),
+        ev('user_message', { messageId: 'm2', content: text('two'), source: 'mcp', delivery: 'queued', queuedWith: 'cut' }),
+        ev('user_message', { messageId: 'm3', content: text('three'), source: 'mcp', delivery: 'queued', queuedWith: 'cut' }),
       ]);
-      expect(s.queued.map((q) => q.text)).toEqual(['two']);
+      expect(s.queued.map((q) => q.messageId)).toEqual(['cut']);
+      expect(s.queued[0].text).toBe('2 updates, oldest first:\n\n--- 1 of 2 ---\ntwo\n\n--- 2 of 2 ---\nthree');
     });
 
     it('clears a queued entry when the same text is later delivered', () => {

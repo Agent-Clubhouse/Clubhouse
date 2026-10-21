@@ -1,10 +1,10 @@
 /**
  * Helper updates to a parent, batched (#2414). message_parent reports and
  * Clubhouse's helper notices reach a busy parent as one message per short
- * window rather than one steer (Claude) or terminal injection each. Updates
- * for an idle parent go at once, and the window closes early when a chat
- * parent goes idle. A parent without steering also merges whatever its own
- * queue holds (ChatAgentRuntime), so the two don't fight.
+ * window rather than one steer (Claude, Codex) or terminal injection each.
+ * Updates for an idle parent go at once, and the window closes early when a
+ * chat parent goes idle. A chat parent that queues client-side (ACP) skips
+ * the window: its runtime merges queued updates itself.
  *
  * A terminal's turn state is only known in the renderer, so a terminal parent
  * always waits out the window.
@@ -33,9 +33,17 @@ const batches = new Map<string, Batch>();
 
 const BUSY: ReadonlySet<ChatSessionState> = new Set(['running', 'waiting_permission', 'waiting_input']);
 
+type Runtime = NonNullable<ReturnType<typeof getAgentRuntime>>;
+
 /** Busy: a chat parent mid-turn, or any terminal parent. */
-function isBusy(runtime: NonNullable<ReturnType<typeof getAgentRuntime>>): boolean {
+function isBusy(runtime: Runtime): boolean {
   return runtime.kind !== 'chat' || BUSY.has(runtime.getState());
+}
+
+/** A chat runtime that holds mid-turn messages in its own queue, merging MCP ones. */
+function mergesItsQueue(runtime: Runtime): boolean {
+  const caps = runtime.kind === 'chat' ? runtime.getCapabilities?.() : undefined;
+  return !!caps && !caps.steer && caps.queue === 'client';
 }
 
 /**
@@ -45,7 +53,8 @@ function isBusy(runtime: NonNullable<ReturnType<typeof getAgentRuntime>>): boole
  */
 export async function deliverNow(targetId: string, text: string): Promise<Delivery> {
   const runtime = getAgentRuntime(targetId);
-  if (!runtime) return 'not_running';
+  // A chat runtime that is ending is still registered for a moment.
+  if (!runtime?.isRunning()) return 'not_running';
   try {
     await runtime.sendMessage(text, { source: 'mcp', taskId: `helper_${Date.now().toString(36)}` });
   } catch (err) {
@@ -64,7 +73,7 @@ export function deliverHelperUpdate(targetId: string, text: string): Promise<Del
   const runtime = getAgentRuntime(targetId);
   if (!runtime) return Promise.resolve('not_running');
   const pending = batches.get(targetId);
-  if (!pending && !isBusy(runtime)) return deliverNow(targetId, text);
+  if (!pending && (!isBusy(runtime) || mergesItsQueue(runtime))) return deliverNow(targetId, text);
 
   return new Promise<Delivery>((resolve, reject) => {
     if (pending) {

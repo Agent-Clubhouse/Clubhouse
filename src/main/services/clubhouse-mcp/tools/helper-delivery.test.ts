@@ -5,6 +5,8 @@ import { AgentStoppingError } from '../../agent-runtime/agent-stopping';
 interface FakeRuntime {
   kind: 'chat' | 'pty';
   state: ChatSessionState;
+  caps?: { steer: boolean; queue: 'client' | 'native' | 'none' };
+  running: boolean;
   sent: string[];
   refuse: boolean;
   listeners: Set<(s: ChatSessionState) => void>;
@@ -15,7 +17,7 @@ const runtimes = new Map<string, FakeRuntime>();
 
 function addRuntime(id: string, kind: 'chat' | 'pty', state: ChatSessionState = 'idle'): FakeRuntime {
   const rt: FakeRuntime = {
-    kind, state, sent: [], refuse: false, listeners: new Set(),
+    kind, state, sent: [], refuse: false, listeners: new Set(), running: true,
     setState(s) { rt.state = s; for (const l of [...rt.listeners]) l(s); },
   };
   runtimes.set(id, rt);
@@ -29,7 +31,9 @@ vi.mock('../../agent-runtime', () => ({
     return {
       kind: rt.kind,
       agentId: id,
+      isRunning: () => rt.running,
       getState: () => (rt.kind === 'chat' ? rt.state : 'idle'),
+      getCapabilities: rt.kind === 'chat' ? () => rt.caps ?? { steer: true, queue: 'native' } : undefined,
       onStateChange: (l: (s: ChatSessionState) => void) => { rt.listeners.add(l); return () => { rt.listeners.delete(l); }; },
       sendMessage: async (text: string) => {
         if (rt.refuse) throw new AgentStoppingError(id);
@@ -74,7 +78,7 @@ describe('deliverHelperUpdate (#2414)', () => {
     await vi.advanceTimersByTimeAsync(1);
     await expect(Promise.all(results)).resolves.toEqual(['delivered', 'delivered', 'delivered']);
     expect(rt.sent).toEqual([
-      '3 helper updates, oldest first:\n\n' +
+      '3 updates, oldest first:\n\n' +
       '--- 1 of 3 ---\n[FROM HELPER:a (a)] hi\n\n--- 2 of 3 ---\n[FROM HELPER:b (b)] hi\n\n--- 3 of 3 ---\n[FROM HELPER:c (c)] hi',
     ]);
   });
@@ -138,7 +142,7 @@ describe('deliverHelperUpdate (#2414)', () => {
     expect(rt.listeners.size).toBe(0);
     await vi.advanceTimersByTimeAsync(HELPER_UPDATE_WINDOW_MS);
     await expect(Promise.all(results)).resolves.toEqual(['delivered', 'delivered']);
-    expect(rt.sent).toEqual(['2 helper updates, oldest first:\n\n--- 1 of 2 ---\none\n\n--- 2 of 2 ---\ntwo']);
+    expect(rt.sent).toEqual(['2 updates, oldest first:\n\n--- 1 of 2 ---\none\n\n--- 2 of 2 ---\ntwo']);
   });
 
   it('reports a terminal that is shutting down as stopping, for every update in the batch', async () => {
@@ -147,6 +151,23 @@ describe('deliverHelperUpdate (#2414)', () => {
     rt.refuse = true;
     await vi.advanceTimersByTimeAsync(HELPER_UPDATE_WINDOW_MS);
     await expect(Promise.all(results)).resolves.toEqual(['stopping', 'stopping']);
+  });
+
+  it('skips the window for a chat parent that merges its own queue (ACP)', async () => {
+    const rt = addRuntime('p', 'chat', 'running');
+    rt.caps = { steer: false, queue: 'client' };
+    await expect(deliverHelperUpdate('p', 'one')).resolves.toBe('delivered');
+    await expect(deliverHelperUpdate('p', 'two')).resolves.toBe('delivered');
+    expect(rt.sent).toEqual(['one', 'two']);
+  });
+
+  it('reports a parent that stops during the window as not running', async () => {
+    const rt = addRuntime('p', 'chat', 'running');
+    const result = deliverHelperUpdate('p', 'one');
+    rt.running = false;
+    rt.setState('sleeping');
+    await expect(result).resolves.toBe('not_running');
+    expect(rt.sent).toEqual([]);
   });
 
   it('reports a parent that exits during the window as not running', async () => {
