@@ -25,6 +25,7 @@ vi.mock('../agent-config', () => ({
 
 import { agentRoots, clearAgentRootsCache, importChatImage, readChatFilePreview, resolveChatFile, statChatPaths } from './chat-files';
 import { agentMediaDir } from './chat-transcript';
+import { copilotSessionStateDir } from '../../orchestrators/adapters/copilot-acp';
 import { CHAT_FILE_PREVIEW_TEXT_MAX_BYTES } from '../../../shared/chat';
 
 const PNG = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0, 13, 0x49, 0x48, 0x44, 0x52, 0, 0, 0, 1, 0, 0, 0, 1, 8, 6, 0, 0, 0]);
@@ -207,7 +208,26 @@ describe('importChatImage (local markdown images, #2422)', () => {
     live.outputDirs.set('a1', sessionOutput);
     clearAgentRootsCache();
     expect(await importChatImage('a1', path.join(sessionOutput, 'screenshot.png'))).toEqual(stored);
-    expect(await importChatImage('a1', path.join(path.dirname(sessionOutput), 'sess-2', 'other.png'))).toEqual({ ok: false, reason: 'outside' });
+    // Another session's folder is never allowed (it reads as an ended session).
+    expect(await importChatImage('a1', path.join(path.dirname(sessionOutput), 'sess-2', 'other.png'))).toEqual({ ok: false, reason: 'session-ended' });
+  });
+
+  it("says the session ended for an image in a session folder that isn't live, without allowing it", async () => {
+    fs.mkdirSync(sessionOutput, { recursive: true });
+    fs.writeFileSync(path.join(sessionOutput, 'screenshot.png'), PNG);
+    const other = path.join(path.dirname(sessionOutput), 'sess-2');
+    fs.mkdirSync(other, { recursive: true });
+    fs.writeFileSync(path.join(other, 'old.png'), PNG);
+    live.outputDirs.set('a1', sessionOutput);
+    // An earlier session of the same CLI: denied, with the right reason.
+    expect(await importChatImage('a1', path.join(other, 'old.png'))).toEqual({ ok: false, reason: 'session-ended' });
+    expect(await importChatImage('a1', pathToFileURL(path.join(other, 'old.png')).href)).toEqual({ ok: false, reason: 'session-ended' });
+    // Copilot's default session-state, for an agent with no live session.
+    const defaultState = copilotSessionStateDir(process.env);
+    expect(await importChatImage('a1', path.join(defaultState, 'abc-123', 'shot.png'))).toEqual({ ok: false, reason: 'session-ended' });
+    // The folder list itself and non-token ids aren't a session's file.
+    expect(await importChatImage('a1', path.join(defaultState, 'shot.png'))).toEqual({ ok: false, reason: 'outside' });
+    expect(await importChatImage('a1', path.join(outside, 'shot.png'))).toEqual({ ok: false, reason: 'outside' });
   });
 
   it('ignores a session-output folder that is a symlink', async () => {
@@ -215,6 +235,6 @@ describe('importChatImage (local markdown images, #2422)', () => {
     fs.symlinkSync(outside, sessionOutput, 'dir');
     live.outputDirs.set('a1', sessionOutput);
     expect(await agentRoots('a1')).not.toContain(sessionOutput);
-    expect(await importChatImage('a1', path.join(sessionOutput, 'shot.png'))).toEqual({ ok: false, reason: 'outside' });
+    expect(await importChatImage('a1', path.join(sessionOutput, 'shot.png'))).toMatchObject({ ok: false });
   });
 });

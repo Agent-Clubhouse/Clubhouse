@@ -156,7 +156,7 @@ export interface ChatFilePreview {
 // ── Local images in agent markdown (#2422) ──────────────────────────────────
 
 /** Why a local markdown image isn't shown. */
-export type ChatLocalImageDenial = 'outside' | 'missing' | 'unsupported' | 'too-large' | 'unavailable';
+export type ChatLocalImageDenial = 'outside' | 'session-ended' | 'missing' | 'unsupported' | 'too-large' | 'unavailable';
 
 /** A local markdown image stored as media, or why it wasn't. */
 export type ChatLocalImageResult =

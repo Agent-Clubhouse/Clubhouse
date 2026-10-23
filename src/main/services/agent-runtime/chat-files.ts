@@ -19,7 +19,7 @@ import { CHAT_FILE_PREVIEW_MEDIA_MAX_BYTES, CHAT_FILE_PREVIEW_TEXT_MAX_BYTES, CH
 import { agentRegistry } from '../agent-registry';
 import { checkAllowedPath, resolveAllowedPath, storeMedia } from './chat-media';
 import { agentMediaDir } from './chat-transcript';
-import { agentSessionOutputRoots } from './session-output';
+import { agentSessionOutputRoots, inSessionOutputArea } from './session-output';
 
 /** More candidates than this in one request are ignored. */
 export const MAX_STAT_PATHS = 200;
@@ -250,7 +250,11 @@ async function importOne(agentId: string, src: string): Promise<ChatLocalImageRe
     const second = await checkAllowedPath(decoded, roots);
     if ('real' in second || checked.denied === 'outside') checked = second;
   }
-  if ('denied' in checked) return { ok: false, reason: checked.denied };
+  if ('denied' in checked) {
+    // A screenshot from a session that is no longer live: say so rather than "outside the project".
+    if (checked.denied === 'outside' && [cleaned, decoded].some((p) => p && inSessionOutputArea(agentId, p))) return { ok: false, reason: 'session-ended' };
+    return { ok: false, reason: checked.denied };
+  }
   const opened = await openFile(checked.real);
   if (!opened) return { ok: false, reason: 'missing' };
   let data: Uint8Array;

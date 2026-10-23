@@ -67,6 +67,7 @@ export function isLocalImageSrc(src: string): boolean {
 
 const NOT_SHOWN: Record<ChatLocalImageDenial | 'error' | 'scheme', string> = {
   outside: "Image not shown. It's outside the project.",
+  'session-ended': "Image not shown. The agent's session has ended.",
   missing: 'Image not found.',
   unsupported: 'Not an image chat can show.',
   'too-large': 'Image too large to show.',

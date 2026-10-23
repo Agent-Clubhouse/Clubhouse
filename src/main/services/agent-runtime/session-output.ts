@@ -56,6 +56,28 @@ export async function verifySessionOutputDir(dir: string): Promise<string | unde
 }
 
 /**
+ * True when `absolutePath` is, by name, inside some session's output folder
+ * of the kind the agent's CLI keeps (its live one's siblings, or Copilot's
+ * default session-state), so a denial can say the session ended rather than
+ * that the file is outside the project. Wording only: it grants nothing, and
+ * the filesystem isn't asked.
+ */
+export function inSessionOutputArea(agentId: string, absolutePath: string): boolean {
+  if (!path.isAbsolute(absolutePath)) return false;
+  const live = getAgentRuntime(agentId)?.getSessionOutputDir?.();
+  const parents = new Set([copilotSessionStateDir(process.env), ...(live ? [path.dirname(path.resolve(live))] : [])]);
+  const target = path.resolve(absolutePath);
+  for (const parent of parents) {
+    const rel = path.relative(parent, target);
+    if (!rel || rel.startsWith('..') || path.isAbsolute(rel)) continue;
+    // `<session-state>/<id>/...`: a file in one session's folder, not the folder list itself.
+    const [id, ...rest] = rel.split(path.sep);
+    if (SESSION_ID_RE.test(id) && rest.length > 0) return true;
+  }
+  return false;
+}
+
+/**
  * The live agent's session-output folder, checked, as a root list (empty
  * when it has none: no chat runtime, no session yet, or a provider without
  * one). Sleeping agents have none: their env isn't known. The folder keeps
