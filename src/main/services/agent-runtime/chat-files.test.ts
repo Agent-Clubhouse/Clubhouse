@@ -80,7 +80,7 @@ describe('statChatPaths', () => {
     const out = await statChatPaths('a1', [abs, path.join('CH media probe', 'tone sample.wav:4:2'), url, decodeURI(url), path.join(worktree, 'CH'), path.join('probe', 'tone sample.wav')]);
     expect(out.map((f) => f.exists)).toEqual([true, true, true, true, false, false]);
     expect(out[0]).toMatchObject({ kind: 'audio', name: 'tone sample.wav' });
-    expect(await resolveChatFile('a1', decodeURI(url))).toBe(fs.realpathSync(abs));
+    expect(await resolveChatFile('a1', decodeURI(url))).toBe(fs.realpathSync.native(abs));
   });
 
   it('says nothing about missing files, folders, or files outside the agent folders', async () => {
