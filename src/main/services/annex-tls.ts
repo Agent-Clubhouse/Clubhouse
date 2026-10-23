@@ -11,6 +11,7 @@
  * Certificate and key are stored alongside the identity in annex-identity.json.
  */
 import * as tls from 'tls';
+import { X509Certificate } from 'crypto';
 import * as fs from 'fs';
 import * as path from 'path';
 import forge from 'node-forge';
@@ -197,4 +198,16 @@ export function deleteCert(): void {
  */
 export function resetForTests(): void {
   cachedCert = null;
+}
+
+/** Fingerprint of an already loaded/generated cert. Never provisions identity. */
+export function getCertificateFingerprint(): string | undefined {
+  if (!cachedCert) return undefined;
+  return new X509Certificate(cachedCert.certPem).fingerprint256;
+}
+
+/** Hash actual certificate bytes, never the self-asserted subject CN. */
+export function extractPeerCertificateFingerprint(socket: tls.TLSSocket): string | undefined {
+  const raw = socket.getPeerCertificate()?.raw;
+  return raw?.length ? new X509Certificate(raw).fingerprint256 : undefined;
 }

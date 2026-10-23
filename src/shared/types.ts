@@ -957,6 +957,8 @@ export interface AnnexSettings {
 }
 
 export interface AnnexStatus {
+  /** SHA-256 of the active TLS leaf certificate DER, for mobile pin verification. */
+  tlsCertificateFingerprint?: string;
   advertising: boolean;
   port: number;
   pin: string;
@@ -977,6 +979,8 @@ export interface AnnexStatus {
 export type AnnexPeerRole = 'controller' | 'satellite';
 
 export interface AnnexPeer {
+  /** Certificate bound during HTTPS PIN pairing; required by mobile control. */
+  tlsCertificateFingerprint?: string;
   /** SHA-256 fingerprint of the peer's public key */
   fingerprint: string;
   /** Base64-encoded Ed25519 public key (DER/SPKI) */

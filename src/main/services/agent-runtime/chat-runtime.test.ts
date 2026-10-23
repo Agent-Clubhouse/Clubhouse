@@ -118,6 +118,17 @@ describe('ChatAgentRuntime rich media', () => {
 });
 
 describe('ChatAgentRuntime', () => {
+  it.each(['prompt', 'steer', 'queued'] as const)('correlates mobile %s sends with authoritative message IDs before receipt delivery', async (delivery) => {
+    const driver = new FakeChatDriver();
+    const { runtime } = makeRuntime(driver);
+    await runtime.start();
+    const seen: ChatEvent[] = []; runtime.onEvent((event) => seen.push(event));
+    const result = await runtime.sendMessage('hello', { source: 'annex', delivery, clientCommandId: 'mobile-command-1' });
+    const message = seen.find((event) => event.type === 'user_message');
+    expect(message?.data).toMatchObject({ messageId: result.messageId, clientCommandId: 'mobile-command-1', delivery: result.delivery });
+    expect(result.messageId).toBeTruthy();
+    await runtime.stop();
+  });
   it('starts a session, stamps envelopes in order and sends the mission as a prompt', async () => {
     const driver = new FakeChatDriver();
     const published: ChatEvent[] = [];

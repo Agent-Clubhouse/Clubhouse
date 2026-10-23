@@ -352,6 +352,8 @@ export interface ChatEventDataMap {
 
   user_message: {
     messageId: string;
+    /** Mobile optimistic-send correlation. Absent for local/legacy sends. */
+    clientCommandId?: string;
     content: ContentBlock[];
     source: MessageSource;
     delivery: MessageDelivery;

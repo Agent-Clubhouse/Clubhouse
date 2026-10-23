@@ -663,6 +663,10 @@ export const ATTR = {
    */
   ipcChannel: enumAttr('clubhouse.ipc.channel', [...ipcChannelNames(), 'other']),
   annexRoute: enumAttr('clubhouse.annex.route', [
+    'GET /api/v1/mobile/capabilities',
+    'GET /api/v1/mobile/agents/:id/chat',
+    'GET /api/v1/mobile/agents/:id/chat/sessions',
+    'POST /api/v1/mobile/commands',
     'GET /api/v1/identity',
     'GET /api/v1/status',
     'GET /api/v1/projects',

@@ -554,6 +554,7 @@ export class ChatAgentRuntime implements AgentRuntime {
     }
 
     const messageId = this.newId();
+    const correlation = opts.clientCommandId ? { clientCommandId: opts.clientCommandId } : {};
     if (wanted === 'queued' && caps.queue !== 'native') {
       // Helper reports and Clubhouse notices arriving mid-turn join the MCP
       // item at the tail, so a burst becomes one turn. Never a user's message.
@@ -562,13 +563,13 @@ export class ChatAgentRuntime implements AgentRuntime {
         tail.parts.push(blocks);
         await this.emit({
           type: 'user_message',
-          data: { messageId, content: blocks, source: opts.source, delivery: 'queued', queuedWith: tail.messageId },
+          data: { messageId, ...correlation, content: blocks, source: opts.source, delivery: 'queued', queuedWith: tail.messageId },
         });
         return { delivery: 'queued', messageId: tail.messageId };
       }
       const preamble = this.withSystemPrompt([], caps);
       this.queued.push({ messageId, source: opts.source, parts: [blocks], preamble });
-      await this.emit({ type: 'user_message', data: { messageId, content: blocks, source: opts.source, delivery: 'queued' } });
+      await this.emit({ type: 'user_message', data: { messageId, ...correlation, content: blocks, source: opts.source, delivery: 'queued' } });
       return { delivery: 'queued', messageId };
     }
 
@@ -577,7 +578,7 @@ export class ChatAgentRuntime implements AgentRuntime {
     this.clearIdleTimer();
     if (wanted === 'prompt') await this.runBeforePrompt();
     const delivered = await session.send(outgoing, wanted);
-    await this.emit({ type: 'user_message', data: { messageId, content: blocks, source: opts.source, delivery: delivered } });
+    await this.emit({ type: 'user_message', data: { messageId, ...correlation, content: blocks, source: opts.source, delivery: delivered } });
     return { delivery: delivered, messageId };
   }
 

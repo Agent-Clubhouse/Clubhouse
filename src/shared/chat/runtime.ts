@@ -36,6 +36,8 @@ export type AgentRuntimeKind = 'pty' | 'chat';
 
 export interface RuntimeSendOptions {
   source: MessageSource;
+  /** Optional remote command correlation, echoed in the authoritative user_message event. */
+  clientCommandId?: string;
   /**
    * 'auto' steers when a turn is running and the runtime can steer, queues
    * when it can't, and prompts when idle. Default 'auto'.
@@ -94,6 +96,8 @@ export interface AgentRuntime {
   isSwappingSession?(): boolean;
   /** Coarse state for status badges; chat runtimes derive it from events. */
   getState(): ChatSessionState;
+  /** Clubhouse chat session identity, used to reject stale remote commands. */
+  getSessionId?(): string;
   /** When the running turn started (ms), or null between turns. Chat runtimes only. */
   getTurnStartedAt?(): number | null;
 

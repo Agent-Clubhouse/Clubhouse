@@ -7,6 +7,11 @@ import * as os from 'os';
 import { randomInt, randomUUID, timingSafeEqual } from 'crypto';
 import { WebSocketServer, WebSocket } from 'ws';
 import * as annexTls from './annex-tls';
+import { MOBILE_COMMAND_TYPES, type MobileCommand } from '../../shared/mobile-control';
+import { MobileCommandService, MobileControlError, executeChatCommand, pendingInteractions, MOBILE_COMMAND_MAX_ENTRIES, MOBILE_COMMAND_TTL_MS } from './mobile-control';
+import { isRevertRunning } from './agent-runtime/checkpoint-tracker';
+import { readChatTranscript, listChatSessions } from './agent-runtime/chat-transcript';
+
 import Bonjour, { Service } from 'bonjour-service';
 import * as annexEventBus from './annex-event-bus';
 import * as annexSettings from './annex-settings';
@@ -37,7 +42,7 @@ import { chatDetailedStatus } from '../../shared/chat-agent-status';
 import type { ChatEvent, ChatSessionState } from '../../shared/chat';
 import { injectPtyText } from './agent-runtime/pty-input';
 import { AgentStoppingError } from './agent-runtime/agent-stopping';
-import { spawnAgent, getAvailableOrchestrators, isHeadlessAgent, resolveOrchestrator, resolveProfileEnv } from './agent-system';
+import { spawnAgent, killAgent, getAvailableOrchestrators, isHeadlessAgent, resolveOrchestrator, resolveProfileEnv } from './agent-system';
 import { appLog } from './log-service';
 
 /**
@@ -77,6 +82,7 @@ import { ANNEX_BUFFER_HEADERS, annexPtyHost } from '../../shared/annex-pty';
 import { detectWindowsPty } from '../util/windows-pty';
 import type {
   AnnexStatus,
+  AnnexPeer,
   AgentHookEvent,
   AgentDetailedStatus,
   AgentDetailedState,
@@ -102,6 +108,14 @@ function isAllowedCorsOrigin(origin: string): boolean {
 }
 
 // Pairing port (plain HTTP): POST /pair, GET /api/v1/identity, OPTIONS
+const mobileCommands = new MobileCommandService();
+/** Explicit session-only mobile pairing never writes the peer store. */
+const mobileSessionPeers = new Map<string, AnnexPeer>();
+function findPairedPeer(fingerprint: string): AnnexPeer | undefined {
+  return mobileSessionPeers.get(fingerprint) ?? annexPeers.getPeer(fingerprint);
+}
+const mobileStartingAgents = new Set<string>();
+const mobileCancelledStarts = new Set<string>();
 let pairingServer: http.Server | null = null;
 let pairingPort = 0;
 
@@ -114,7 +128,7 @@ let bonjourService: Service | null = null;
 let serverPort = 0; // Main TLS port
 let currentPin = '';
 const TOKEN_TTL_MS = 24 * 60 * 60 * 1000; // 24 hours
-const sessionTokens = new Map<string, { issuedAt: number }>();
+const sessionTokens = new Map<string, { issuedAt: number; peerFingerprint?: string }>();
 /** Tokens revoked on peer removal — checked during validation, cleaned on TTL expiry. */
 const revokedTokens = new Set<string>();
 
@@ -428,6 +442,10 @@ function isValidToken(token: string | undefined): boolean {
   if (revokedTokens.has(token)) return false;
   const entry = sessionTokens.get(token);
   if (!entry) return false;
+  if (entry.peerFingerprint) {
+    const peer = findPairedPeer(entry.peerFingerprint);
+    if (!peer || (peer.role && peer.role !== 'controller')) { sessionTokens.delete(token); return false; }
+  }
   if (Date.now() - entry.issuedAt > TOKEN_TTL_MS) {
     sessionTokens.delete(token);
     revokedTokens.delete(token);
@@ -1275,6 +1293,20 @@ async function handlePairingRequest(req: http.IncomingMessage, res: http.ServerR
         return;
       }
 
+      const securePair = (req.socket as tls.TLSSocket).encrypted === true;
+      let clientCertificateFingerprint: string | undefined;
+      const sessionOnly = securePair && body.pairingMode === 'session';
+      if (securePair && body.pairingMode !== undefined && body.pairingMode !== 'session' && body.pairingMode !== 'persistent') {
+        pairReply(400, { error: 'invalid_pairing_mode' }); return;
+      }
+      if (securePair) {
+        clientCertificateFingerprint = annexTls.extractPeerCertificateFingerprint(req.socket as tls.TLSSocket);
+        if (typeof body.publicKey !== 'string' || !clientCertificateFingerprint
+          || annexTls.extractPeerFingerprint(req.socket as tls.TLSSocket) !== annexIdentity.computeFingerprint(body.publicKey)) {
+          pairReply(400, { error: 'client_certificate_required' });
+          return;
+        }
+      }
       annexPeers.recordSuccessfulAttempt(source);
       const token = randomUUID();
       sessionTokens.set(token, { issuedAt: Date.now() });
@@ -1296,7 +1328,7 @@ async function handlePairingRequest(req: http.IncomingMessage, res: http.ServerR
           pairReply(400, { error: 'invalid_public_key' });
           return;
         }
-        annexPeers.addPeer({
+        const pairedPeer: AnnexPeer = {
           fingerprint: annexIdentity.computeFingerprint(clientPublicKey),
           publicKey: clientPublicKey,
           alias: (body.alias as string) || 'Unknown',
@@ -1304,12 +1336,19 @@ async function handlePairingRequest(req: http.IncomingMessage, res: http.ServerR
           color: (body.color as string) || 'indigo',
           pairedAt: new Date().toISOString(),
           lastSeen: new Date().toISOString(),
+          ...(clientCertificateFingerprint ? { tlsCertificateFingerprint: clientCertificateFingerprint } : {}),
           role: 'controller', // This peer initiated pairing → they control us
-        });
+        };
+        if (sessionOnly) mobileSessionPeers.set(pairedPeer.fingerprint, pairedPeer);
+        else { mobileSessionPeers.delete(pairedPeer.fingerprint); annexPeers.addPeer(pairedPeer); }
       }
 
+      if (clientCertificateFingerprint && typeof clientPublicKey === 'string') {
+        sessionTokens.set(token, { issuedAt: Date.now(), peerFingerprint: annexIdentity.computeFingerprint(clientPublicKey) });
+      }
       pairReply(200, {
         token,
+        ...(clientCertificateFingerprint ? { tlsCertificateFingerprint: annexTls.getCertificateFingerprint(), mobileProtocolVersion: 1, pairingMode: sessionOnly ? 'session' : 'persistent' } : {}),
         publicKey: identity.publicKey,
         alias: settings.alias,
         icon: settings.icon,
@@ -1334,6 +1373,7 @@ type AnnexRouteContext = {
   url: string;
   method: string;
   requireMtls: () => boolean;
+  mobilePrincipal?: string;
 };
 
 type AnnexHttpRoute = {
@@ -2084,7 +2124,148 @@ async function handleProjectIconRoute(ctx: AnnexRouteContext): Promise<void> {
   sendJson(ctx.res, 404, { error: 'icon_not_found' });
 }
 
+async function handleMobileCapabilitiesRoute(ctx: AnnexRouteContext): Promise<void> {
+  sendJson(ctx.res, 200, {
+    version: 1, epoch: mobileCommands.epoch, controlAuth: 'mtls-pinned-client',
+    controlAvailable: !!ctx.mobilePrincipal, commands: MOBILE_COMMAND_TYPES,
+    events: { transport: 'annex-websocket', replayRequest: 'mobile:replay' },
+    idempotency: { scope: 'peer-and-epoch', maxEntries: MOBILE_COMMAND_MAX_ENTRIES, ttlMs: MOBILE_COMMAND_TTL_MS },
+  });
+}
+
+async function handleMobileChatRoute(ctx: AnnexRouteContext, match: RegExpMatchArray): Promise<void> {
+  try {
+    const agentId = decodeURIComponent(match[1]);
+    if (!await findAgentAcrossProjects(agentId) && !trackedQuickAgents.has(agentId)) {
+      sendJson(ctx.res, 404, { error: 'agent_not_found' }); return;
+    }
+    const query = new URL(ctx.url, 'http://localhost').searchParams;
+    const requestedSession = query.get('sessionId') ?? undefined;
+    const beforeSeq = query.has('beforeSeq') ? Number(query.get('beforeSeq')) : undefined;
+    const limit = query.has('limit') ? Number(query.get('limit')) : 2000;
+    if (!Number.isSafeInteger(limit) || limit < 1 || limit > 2000
+      || (beforeSeq !== undefined && (!Number.isSafeInteger(beforeSeq) || beforeSeq < 1))
+      || (requestedSession !== undefined && (requestedSession.length === 0 || requestedSession.length > 256))) {
+      sendJson(ctx.res, 400, { error: 'invalid_query' }); return;
+    }
+    const runtime = getAgentRuntime(agentId);
+    const live = runtime?.kind === 'chat' && runtime.isRunning() && (requestedSession === undefined || runtime.getSessionId?.() === requestedSession);
+    const events = live ? (await runtime.readTranscript()).events ?? [] : await readChatTranscript(agentId, { sessionId: requestedSession });
+    const sessionId = requestedSession ?? (live ? runtime.getSessionId?.() : events[events.length - 1]?.sessionId);
+    const current = events.filter((e) => e.sessionId === sessionId);
+    const eligible = beforeSeq === undefined ? current : current.filter((e) => e.seq < beforeSeq);
+    const page = eligible.slice(-limit);
+    sendJson(ctx.res, 200, {
+      version: 1, epoch: mobileCommands.epoch, agentId, sessionId: sessionId ?? null,
+      currentSessionId: runtime?.kind === 'chat' ? runtime.getSessionId?.() ?? null : null, readOnly: !live,
+      state: live ? runtime.getState() : 'sleeping', capabilities: live ? runtime.getCapabilities?.() ?? null : null,
+      events: page, lastSeq: current[current.length - 1]?.seq ?? 0, truncated: eligible.length > limit,
+      nextBeforeSeq: eligible.length > limit ? page[0]?.seq ?? null : null,
+      ...(live ? pendingInteractions(current) : { pendingPermissions: [], pendingQuestions: [] }),
+    });
+  } catch {
+    // telemetry-exempt: do not export transcript content; caller receives a bounded error.
+    sendJson(ctx.res, 500, { error: 'chat_snapshot_failed' });
+  }
+}
+
+async function handleMobileChatSessionsRoute(ctx: AnnexRouteContext, match: RegExpMatchArray): Promise<void> {
+  try {
+    const agentId = decodeURIComponent(match[1]);
+    if (!await findAgentAcrossProjects(agentId) && !trackedQuickAgents.has(agentId)) {
+      sendJson(ctx.res, 404, { error: 'agent_not_found' }); return;
+    }
+    sendJson(ctx.res, 200, { version: 1, epoch: mobileCommands.epoch, agentId, sessions: await listChatSessions(agentId) });
+  } catch {
+    // telemetry-exempt: session storage errors are bounded in the API response.
+    sendJson(ctx.res, 500, { error: 'chat_sessions_failed' });
+  }
+}
+
+async function runMobileCommand(command: MobileCommand): Promise<unknown> {
+  if ('sessionId' in command) {
+    return executeChatCommand(command, getAgentRuntime(command.agentId), async () => !await isRevertRunning(command.agentId));
+  }
+  if (command.type === 'agent.spawn') {
+    const project = await findProjectById(command.projectId);
+    if (!project) throw new MobileControlError('project_not_found', 404);
+    const id = generateQuickAgentId();
+    const name = generateQuickName();
+    const orchestrator = command.orchestrator ?? project.orchestrator ?? 'claude-code';
+    // All paths come from the registered project. Remote commands cannot elevate permissions.
+    const tracked: TrackedQuickAgent = { id, name, kind: 'quick', status: 'starting', prompt: command.prompt,
+      model: command.model ?? null, orchestrator, freeAgentMode: false, parentAgentId: null, projectId: project.id, spawnedAt: Date.now() };
+    setTrackedQuickAgent(id, tracked);
+    broadcastAndBuffer('agent:spawned', tracked);
+    try {
+      await spawnAgent({ agentId: id, projectPath: project.path, cwd: project.path, kind: 'quick',
+        mission: command.prompt, model: command.model, orchestrator, freeAgentMode: false });
+      tracked.status = isAgentRunning(id) ? 'running' : 'sleeping';
+      broadcastToAllWindows(IPC.ANNEX.AGENT_SPAWNED, { ...tracked, headless: true });
+      broadcastSnapshotRefresh();
+      return { agentId: id, name, state: tracked.status, executionMode: getAgentExecutionMode(id) };
+    } catch (err) {
+      trackedQuickAgents.delete(id);
+      broadcastSnapshotRefresh();
+      throw err;
+    }
+  }
+  const info = await findAgentAcrossProjects(command.agentId);
+  const quick = trackedQuickAgents.get(command.agentId);
+  const project = info?.project ?? (quick ? await findProjectById(quick.projectId) : undefined);
+  if (!project) throw new MobileControlError('agent_not_found', 404);
+  if (command.type === 'agent.stop') {
+    if (mobileStartingAgents.has(command.agentId)) mobileCancelledStarts.add(command.agentId);
+    await killAgent(command.agentId, project.path, info?.config.orchestrator);
+    broadcastSnapshotRefresh();
+    return { agentId: command.agentId, stopRequested: true };
+  }
+  if (!info) throw new MobileControlError('agent_not_found', 404);
+  if (isAgentRunning(command.agentId) || mobileStartingAgents.has(command.agentId)) throw new MobileControlError('agent_already_running');
+  mobileStartingAgents.add(command.agentId);
+  try {
+    const { config } = info;
+    const resume = command.resume === true && !!config.lastSessionId;
+    await spawnAgent({ agentId: config.id, projectPath: project.path, cwd: config.worktreePath || project.path,
+      kind: 'durable', mission: command.message, model: config.model, orchestrator: config.orchestrator,
+      freeAgentMode: config.freeAgentMode, resume, sessionId: resume ? config.lastSessionId : undefined });
+    if (mobileCancelledStarts.has(command.agentId)) {
+      await killAgent(command.agentId, project.path, config.orchestrator);
+      throw new MobileControlError('start_cancelled');
+    }
+    broadcastAndBuffer('agent:woken', { agentId: config.id, source: 'annex-mobile' });
+    broadcastSnapshotRefresh();
+    return { agentId: config.id, executionMode: getAgentExecutionMode(config.id) };
+  } finally { mobileStartingAgents.delete(command.agentId); mobileCancelledStarts.delete(command.agentId); }
+}
+
+async function handleMobileCommandRoute(ctx: AnnexRouteContext): Promise<void> {
+  // Mobile requires pinned mTLS even on the legacy HTTP fallback listener.
+  if (!ctx.mobilePrincipal) {
+    const response = mobileCommands.reject('client_certificate_required', 403);
+    sendJson(ctx.res, response.statusCode, response.body); return;
+  }
+  try {
+    const input: unknown = JSON.parse(await readBody(ctx.req));
+    // A peer can be revoked while its body is streaming; recheck before execution.
+    const peer = findPairedPeer(ctx.mobilePrincipal);
+    const principal = peer && (peer.role === 'controller' || !peer.role)
+      && peer.tlsCertificateFingerprint === annexTls.extractPeerCertificateFingerprint(ctx.req.socket as tls.TLSSocket)
+      ? ctx.mobilePrincipal : undefined;
+    const response = await mobileCommands.execute(principal, input, runMobileCommand);
+    sendJson(ctx.res, response.statusCode, response.body);
+  } catch {
+    // telemetry-exempt: invalid JSON/body is reported to the caller without logging its content.
+    const response = mobileCommands.reject('invalid_command', 400);
+    sendJson(ctx.res, response.statusCode, response.body);
+  }
+}
+
 const ANNEX_HTTP_ROUTE_TABLE: AnnexHttpRoute[] = [
+  { method: 'GET', pattern: /^\/api\/v1\/mobile\/capabilities$/, handler: handleMobileCapabilitiesRoute },
+  { method: 'GET', pattern: /^\/api\/v1\/mobile\/agents\/([^/]+)\/chat(\?.*)?$/, handler: handleMobileChatRoute },
+  { method: 'GET', pattern: /^\/api\/v1\/mobile\/agents\/([^/]+)\/chat\/sessions$/, handler: handleMobileChatSessionsRoute },
+  { method: 'POST', pattern: /^\/api\/v1\/mobile\/commands$/, handler: handleMobileCommandRoute },
   { method: 'GET', pattern: /^\/api\/v1\/identity$/, handler: handleIdentityRoute },
   { method: 'GET', pattern: /^\/api\/v1\/status$/, handler: handleStatusRoute },
   { method: 'GET', pattern: /^\/api\/v1\/projects$/, handler: handleProjectsRoute },
@@ -2159,19 +2340,28 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
     return;
   }
 
+  // Mobile bootstrap: only PIN pairing, only over TLS. All control remains authenticated.
+  if (method === 'POST' && url === '/pair' && (req.socket as tls.TLSSocket).encrypted) {
+    await handlePairingRequest(req, res);
+    return;
+  }
+
   // All endpoints on the main server require auth (mTLS or bearer token).
   // Check mTLS first (matching the WebSocket upgrade handler), then fall back
   // to bearer token. Without this, REST calls from the controller using only
   // mTLS certs (e.g. buffer fetch) would be rejected with 401.
   let authenticated = false;
   let isMtlsAuthenticated = false;
+  let mobilePrincipal: string | undefined;
   if (req.socket && 'getPeerCertificate' in req.socket) {
     const peerFingerprint = annexTls.extractPeerFingerprint(req.socket as tls.TLSSocket);
     if (peerFingerprint) {
-      const peer = annexPeers.getPeer(peerFingerprint);
-      if (peer && (peer.role === 'controller' || !peer.role)) {
+      const peer = findPairedPeer(peerFingerprint);
+      if (peer && (peer.role === 'controller' || !peer.role)
+        && (!peer.tlsCertificateFingerprint || peer.tlsCertificateFingerprint === annexTls.extractPeerCertificateFingerprint(req.socket as tls.TLSSocket))) {
         authenticated = true;
         isMtlsAuthenticated = true;
+        if (peer.tlsCertificateFingerprint && peer.tlsCertificateFingerprint === annexTls.extractPeerCertificateFingerprint(req.socket as tls.TLSSocket)) mobilePrincipal = peerFingerprint;
         annexPeers.updateLastSeen(peerFingerprint);
       }
     }
@@ -2204,7 +2394,7 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
     const match = url.match(route.pattern);
     if (match) {
       await withRemoteParent(restTraceparent(req.headers.traceparent, isMtlsAuthenticated), () =>
-        annexRestFlow(method, route.pattern, () => res.statusCode, () => route.handler({ req, res, url, method, requireMtls }, match)),
+        annexRestFlow(method, route.pattern, () => res.statusCode, () => route.handler({ req, res, url, method, requireMtls, mobilePrincipal }, match)),
       );
       return;
     }
@@ -2230,7 +2420,7 @@ function safeSend(ws: WebSocket, data: string): boolean {
 
 function handleWsMessage(ws: WebSocket, data: string): void {
   // `tc`: optional W3C traceparent from a controller with telemetry on (spec §7).
-  let msg: { type?: string; payload?: Record<string, unknown>; since?: number; tc?: unknown };
+  let msg: { type?: string; payload?: Record<string, unknown>; since?: number; epoch?: unknown; tc?: unknown };
   try {
     msg = JSON.parse(data);
   } catch {
@@ -2240,7 +2430,23 @@ function handleWsMessage(ws: WebSocket, data: string): void {
     return;
   }
 
+  if (!msg || typeof msg !== 'object' || Array.isArray(msg)) return;
   const type = msg.type;
+  if (type === 'mobile:replay') {
+    const epoch = mobileCommands.epoch;
+    const since = msg.since;
+    const events = msg.epoch === epoch && Number.isSafeInteger(since) && since! >= 0 && since! <= eventReplay.getLastSeq()
+      ? eventReplay.getEventsSince(since!) : null;
+    // An empty, evicted buffer is also a gap when the client is behind.
+    if (events === null || (events.length === 0 && since !== eventReplay.getLastSeq())) {
+      safeSend(ws, JSON.stringify({ type: 'replay:gap', epoch, oldestAvailable: eventReplay.getOldestSeq(), lastSeq: eventReplay.getLastSeq() }));
+      return;
+    }
+    safeSend(ws, JSON.stringify({ type: 'replay:start', epoch, fromSeq: events[0]?.seq ?? since, toSeq: eventReplay.getLastSeq(), count: events.length }));
+    for (const event of events) safeSend(ws, JSON.stringify({ type: event.type, payload: event.payload, seq: event.seq, replayed: true }));
+    safeSend(ws, JSON.stringify({ type: 'replay:end', epoch }));
+    return;
+  }
 
   // --- Replay (available to all authenticated connections) ---
   if (type === 'replay' && typeof msg.since === 'number') {
@@ -2645,9 +2851,10 @@ export function start(): void {
     if (tlsServer && socket instanceof tls.TLSSocket) {
       const peerFingerprint = annexTls.extractPeerFingerprint(socket);
       if (peerFingerprint) {
-        const peer = annexPeers.getPeer(peerFingerprint);
+        const peer = findPairedPeer(peerFingerprint);
         // Only grant mTLS auth to peers with role 'controller' (or legacy peers without a role)
-        if (peer && (peer.role === 'controller' || !peer.role)) {
+        if (peer && (peer.role === 'controller' || !peer.role)
+        && (!peer.tlsCertificateFingerprint || peer.tlsCertificateFingerprint === annexTls.extractPeerCertificateFingerprint(req.socket as tls.TLSSocket))) {
           authType = 'mtls';
           peerFingerprintForWs = peerFingerprint;
           annexPeers.updateLastSeen(peerFingerprint);
@@ -2699,7 +2906,7 @@ export function start(): void {
     // buildSnapshot() so the satellite UI locks without waiting for snapshot I/O to complete.
     if (authType === 'mtls') {
       const fingerprint = wsPeerFingerprints.get(ws);
-      const peer = fingerprint ? annexPeers.getPeer(fingerprint) : null;
+      const peer = fingerprint ? findPairedPeer(fingerprint) : null;
       // Track the latest connecting controller as lock owner.
       sessionPauseOwner = fingerprint || null;
       broadcastToAllWindows(IPC.ANNEX.LOCK_STATE_CHANGED, {
@@ -3007,6 +3214,10 @@ export function stop(): void {
   trackedQuickAgents.clear();
   eventReplay.reset();
   permissionQueue.reset();
+  mobileCommands.reset();
+  mobileSessionPeers.clear();
+  mobileStartingAgents.clear();
+  mobileCancelledStarts.clear();
 
   appLog('core:annex', 'info', 'Annex server stopped');
 }
@@ -3025,6 +3236,7 @@ export function getStatus(): AnnexStatus & { pairingPort: number; tlsEnabled: bo
     color: settings.color,
     pairingPort,
     tlsEnabled: !!tlsServer,
+    ...(tlsServer ? { tlsCertificateFingerprint: annexTls.getCertificateFingerprint() } : {}),
   };
 }
 
@@ -3351,7 +3563,11 @@ export function regeneratePin(): void {
 
 /** Disconnect a specific peer's WebSocket connection by fingerprint and revoke their tokens. */
 export function disconnectPeer(fingerprint: string): void {
+  mobileSessionPeers.delete(fingerprint);
   appLog('core:annex', 'info', `disconnectPeer called`, { meta: { fingerprint } });
+  for (const [token, session] of sessionTokens) {
+    if (session.peerFingerprint === fingerprint) { revokedTokens.add(token); sessionTokens.delete(token); }
+  }
   if (!wss) return;
   for (const client of wss.clients) {
     if (wsPeerFingerprints.get(client) === fingerprint) {

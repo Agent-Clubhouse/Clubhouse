@@ -75,6 +75,8 @@ vi.mock('./annex-tls', () => ({
     throw new Error('TLS not available in test');
   }),
   extractPeerFingerprint: vi.fn().mockReturnValue(null),
+  extractPeerCertificateFingerprint: vi.fn().mockReturnValue(undefined),
+  getCertificateFingerprint: vi.fn().mockReturnValue(undefined),
 }));
 
 // Mock annex-peers
@@ -180,6 +182,7 @@ vi.mock('./annex-identity', () => ({
 vi.mock('./agent-system', () => ({
   getAvailableOrchestrators: vi.fn().mockReturnValue([]),
   spawnAgent: vi.fn().mockResolvedValue(undefined),
+  killAgent: vi.fn().mockResolvedValue(undefined),
   isHeadlessAgent: vi.fn().mockReturnValue(false),
 }));
 
@@ -325,6 +328,144 @@ describe('annex-server', () => {
   // -------------------------------------------------------------------------
   // Original tests (pairing, auth, lifecycle)
   // -------------------------------------------------------------------------
+
+  it('advertises mobile capabilities only after authentication', async () => {
+    const { port, token } = await startAndPair();
+    expect((await request(port, 'GET', '/api/v1/mobile/capabilities')).status).toBe(401);
+    const res = await request(port, 'GET', '/api/v1/mobile/capabilities', undefined, authHeaders(token));
+    expect(res.status).toBe(200);
+    expect(JSON.parse(res.body)).toMatchObject({ version: 1, controlAuth: 'mtls-pinned-client', controlAvailable: false, commands: expect.arrayContaining(['chat.send', 'agent.stop']) });
+  });
+
+  it('rejects mobile bearer control even on HTTP fallback and leaves legacy reads working', async () => {
+    const { port, token } = await startAndPair();
+    const response = await request(port, 'POST', '/api/v1/mobile/commands', { type: 'agent.stop' }, authHeaders(token));
+    expect(response.status).toBe(403);
+    expect(JSON.parse(response.body).error.code).toBe('client_certificate_required');
+    expect(agentSystem.killAgent).not.toHaveBeenCalled();
+    expect((await request(port, 'GET', '/api/v1/projects', undefined, authHeaders(token))).status).toBe(200);
+  });
+
+  it('rejects a mobile chat snapshot for unknown agents', async () => {
+    const { port, token } = await startAndPair();
+    expect((await request(port, 'GET', '/api/v1/mobile/agents/missing/chat', undefined, authHeaders(token))).status).toBe(404);
+  });
+
+  describe('mobile transport contract', () => {
+    it('paginates rich chat while preserving pending interactions outside the visible page', async () => {
+      vi.mocked(projectStore.list).mockReturnValue([{ id: 'p', name: 'Project', path: '/test/project' }] as any);
+      vi.mocked(agentConfigModule.listDurable).mockReturnValue([{ id: 'a', name: 'agent', color: 'blue', createdAt: '2026-01-01' }] as any);
+      const events = [
+        { type: 'permission_request', agentId: 'a', sessionId: 's', seq: 1, data: { requestId: 'approval', options: [] } },
+        { type: 'text_delta', agentId: 'a', sessionId: 's', seq: 2, data: { text: 'hello' } },
+        { type: 'text_delta', agentId: 'a', sessionId: 's', seq: 3, data: { text: 'world' } },
+      ];
+      registerChatRuntime({ kind: 'chat', agentId: 'a', isRunning: () => true, getState: () => 'waiting_permission',
+        getSessionId: () => 's', getCapabilities: () => ({ steer: true }), readTranscript: async () => ({ events }),
+      } as any);
+      try {
+        const { port, token } = await startAndPair();
+        const response = await request(port, 'GET', '/api/v1/mobile/agents/a/chat?limit=1', undefined, authHeaders(token));
+        expect(response.status).toBe(200);
+        expect(JSON.parse(response.body)).toMatchObject({ sessionId: 's', currentSessionId: 's', readOnly: false,
+          state: 'waiting_permission', events: [events[2]], lastSeq: 3, truncated: true, nextBeforeSeq: 3,
+          pendingPermissions: [events[0]], pendingQuestions: [],
+        });
+        const older = await request(port, 'GET', '/api/v1/mobile/agents/a/chat?beforeSeq=3&limit=1', undefined, authHeaders(token));
+        expect(JSON.parse(older.body)).toMatchObject({ events: [events[1]], lastSeq: 3, nextBeforeSeq: 2 });
+        expect((await request(port, 'GET', '/api/v1/mobile/agents/a/chat?limit=0', undefined, authHeaders(token))).status).toBe(400);
+      } finally { clearChatRuntimes(); }
+    });
+    it('uses epoch-aware top-level replay metadata without changing legacy replay', async () => {
+      const { port, token } = await startAndPair();
+      const capability = JSON.parse((await request(port, 'GET', '/api/v1/mobile/capabilities', undefined, authHeaders(token))).body);
+      const { EventEmitter } = await import('events');
+      const ws = Object.assign(new EventEmitter(), { readyState: 1, send: vi.fn(), ping: vi.fn() });
+      annexServer._testing.wss!.emit('connection', ws);
+      await new Promise((resolve) => setTimeout(resolve, 20));
+      ws.send.mockClear();
+      const seq = _eventReplay.pushEvent('chat:event', { agentId: 'a', event: { type: 'turn_ended' } });
+      ws.emit('message', JSON.stringify({ type: 'mobile:replay', epoch: capability.epoch, since: seq - 1 }));
+      let frames = ws.send.mock.calls.map(([data]) => JSON.parse(data));
+      expect(frames).toEqual([
+        { type: 'replay:start', epoch: capability.epoch, fromSeq: seq, toSeq: seq, count: 1 },
+        { type: 'chat:event', seq, payload: { agentId: 'a', event: { type: 'turn_ended' } }, replayed: true },
+        { type: 'replay:end', epoch: capability.epoch },
+      ]);
+      for (const cursor of [{ epoch: 'old', since: seq }, { epoch: capability.epoch, since: seq + 1 }, { epoch: capability.epoch, since: -1 }]) {
+        ws.send.mockClear(); ws.emit('message', JSON.stringify({ type: 'mobile:replay', ...cursor }));
+        expect(JSON.parse(ws.send.mock.calls[0][0])).toMatchObject({ type: 'replay:gap', epoch: capability.epoch, lastSeq: seq });
+      }
+      ws.send.mockClear(); ws.emit('message', JSON.stringify({ type: 'replay', since: seq - 1 }));
+      frames = ws.send.mock.calls.map(([data]) => JSON.parse(data));
+      expect(frames[0]).toEqual({ type: 'replay:start', fromSeq: seq, toSeq: seq, count: 1 });
+      expect(frames[frames.length - 1]).toEqual({ type: 'replay:end' });
+    });
+
+    it('binds HTTPS PIN pairing to the real client certificate and rejects same-CN impersonation', async () => {
+      const forge = (await import('node-forge')).default;
+      const https = await import('https');
+      const crypto = await import('crypto');
+      const actualTls = await vi.importActual<typeof import('./annex-tls')>('./annex-tls');
+      const makeCertificate = () => {
+        const keys = forge.pki.rsa.generateKeyPair(2048);
+        const cert = forge.pki.createCertificate(); cert.publicKey = keys.publicKey;
+        cert.serialNumber = forge.util.bytesToHex(forge.random.getBytesSync(16));
+        cert.validity.notBefore = new Date(Date.now() - 1000); cert.validity.notAfter = new Date(Date.now() + 86400000);
+        cert.setSubject([{ name: 'commonName', value: 'mobile-test-identity' }]); cert.setIssuer(cert.subject.attributes);
+        cert.sign(keys.privateKey, forge.md.sha256.create());
+        return { cert: forge.pki.certificateToPem(cert), key: forge.pki.privateKeyToPem(keys.privateKey) };
+      };
+      const credentials = makeCertificate(); const impostor = makeCertificate();
+      const publicKey = crypto.generateKeyPairSync('ed25519').publicKey.export({ format: 'der', type: 'spki' }).toString('base64');
+      vi.mocked(annexTls.createTlsServerOptions).mockReturnValue({ ...credentials, requestCert: true, rejectUnauthorized: false });
+      vi.mocked(annexTls.extractPeerFingerprint).mockImplementation(actualTls.extractPeerFingerprint);
+      vi.mocked(annexTls.extractPeerCertificateFingerprint).mockImplementation(actualTls.extractPeerCertificateFingerprint);
+      vi.mocked(annexTls.getCertificateFingerprint).mockReturnValue(new crypto.X509Certificate(credentials.cert).fingerprint256);
+      vi.mocked(annexIdentity.computeFingerprint).mockReturnValue('mobile-test-identity');
+      const peers = new Map<string, import('../../shared/types').AnnexPeer>();
+      vi.mocked(annexPeers.addPeer).mockImplementation((peer) => { peers.set(peer.fingerprint, peer); });
+      vi.mocked(annexPeers.getPeer).mockImplementation((fp) => peers.get(fp));
+      annexServer.start(); await new Promise((resolve) => setTimeout(resolve, 100));
+      const status = annexServer.getStatus();
+      const secureRequest = (method: string, route: string, body: object | undefined, client = credentials) => new Promise<{ status: number; body: any }>((resolve, reject) => {
+        const req = https.request({ host: '127.0.0.1', port: status.port, path: route, method, ...client,
+          // Test-only loopback self-signed fixtures. Production iOS compares the server certificate pin.
+          rejectUnauthorized: false, agent: false, headers: { 'Content-Type': 'application/json' } }, (res) => {
+          let data = ''; res.on('data', (chunk) => { data += chunk; });
+          res.on('end', () => resolve({ status: res.statusCode!, body: JSON.parse(data) }));
+        }); req.on('error', reject); if (body) req.write(JSON.stringify(body)); req.end();
+      });
+      const pair = await secureRequest('POST', '/pair', { pin: status.pin, publicKey });
+      expect(pair.status).toBe(200);
+      expect(peers.get('mobile-test-identity')?.tlsCertificateFingerprint).toBe(new crypto.X509Certificate(credentials.cert).fingerprint256);
+      const capability = await secureRequest('GET', '/api/v1/mobile/capabilities', undefined);
+      expect(capability.body.controlAvailable).toBe(true);
+      const input = { version: 1, epoch: capability.body.epoch, commandId: 'tls-command', type: 'agent.spawn', projectId: 'test-project', prompt: 'hello' };
+      vi.mocked(projectStore.list).mockReturnValue([{ id: 'test-project', name: 'Test', path: '/test/project' }] as any);
+      const accepted = await secureRequest('POST', '/api/v1/mobile/commands', input);
+      expect(accepted.status).toBe(200); expect(accepted.body.status).toBe('completed');
+      expect(agentSystem.spawnAgent).toHaveBeenCalledWith(expect.objectContaining({ projectPath: '/test/project', freeAgentMode: false }));
+      expect(await secureRequest('POST', '/api/v1/mobile/commands', input)).toEqual(accepted);
+      expect(agentSystem.spawnAgent).toHaveBeenCalledTimes(1);
+      const forged = await secureRequest('POST', '/api/v1/mobile/commands', { ...input, commandId: 'forged' }, impostor);
+      expect(forged.status).toBe(401); expect(forged.body.error).toBe('unauthorized');
+      expect((await secureRequest('POST', '/api/v1/agents/a/wake', {}, impostor)).status).toBe(401);
+      expect(annexServer._testing.isValidToken(pair.body.token)).toBe(true);
+      peers.clear();
+      expect(annexServer._testing.isValidToken(pair.body.token)).toBe(false);
+      expect((await secureRequest('POST', '/api/v1/mobile/commands', { ...input, commandId: 'revoked' })).status).toBe(401);
+      expect(agentSystem.spawnAgent).toHaveBeenCalledTimes(1);
+      vi.mocked(annexPeers.addPeer).mockClear();
+      const sessionPair = await secureRequest('POST', '/pair', { pin: status.pin, publicKey, pairingMode: 'session' });
+      expect(sessionPair.status).toBe(200); expect(sessionPair.body.pairingMode).toBe('session');
+      expect(annexPeers.addPeer).not.toHaveBeenCalled();
+      expect((await secureRequest('GET', '/api/v1/mobile/capabilities', undefined)).body.controlAvailable).toBe(true);
+      annexServer.disconnectPeer('mobile-test-identity');
+      expect((await secureRequest('GET', '/api/v1/mobile/capabilities', undefined)).status).toBe(401);
+      expect(annexServer._testing.isValidToken(sessionPair.body.token)).toBe(false);
+    }, 15000);
+  });
 
   it('starts and stops without error', async () => {
     annexServer.start();
