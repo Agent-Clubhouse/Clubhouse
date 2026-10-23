@@ -3,7 +3,7 @@ import type { AgentRuntime, ChatEvent } from '../../shared/chat';
 import { MOBILE_COMMAND_TYPES, type MobileCommand, type MobileResponse } from '../../shared/mobile-control';
 
 export class MobileControlError extends Error {
-  constructor(readonly code: string, readonly statusCode = 409) { super(code); }
+  constructor(readonly code: string, readonly statusCode = 409, readonly outcome: 'rejected' | 'failed' = 'rejected') { super(code); }
 }
 
 const FIELDS: Record<MobileCommand['type'], string[]> = {
@@ -80,7 +80,7 @@ export class MobileCommandService {
         // telemetry-exempt: the receipt reports failure; runtime operations own detailed error telemetry.
         const known = err instanceof MobileControlError;
         const code = known ? err.code : 'command_failed';
-        return { statusCode: known ? err.statusCode : 500, body: { version: 1 as const, commandId: command.commandId, epoch, status: known ? 'rejected' as const : 'failed' as const, error: { code, message: code } } };
+        return { statusCode: known ? err.statusCode : 500, body: { version: 1 as const, commandId: command.commandId, epoch, status: known ? err.outcome : 'failed' as const, error: { code, message: code } } };
       } finally { entry.settled = true; entry.expires = this.now() + MOBILE_COMMAND_TTL_MS; }
     }) };
     this.entries.set(key, entry);
@@ -101,11 +101,13 @@ export function pendingInteractions(events: ChatEvent[]) {
   return { pendingPermissions: [...permissions.values()], pendingQuestions: [...questions.values()] };
 }
 
-export async function executeChatCommand(command: Extract<MobileCommand, { sessionId: string }>, runtime: AgentRuntime | undefined, canSend: () => Promise<boolean>): Promise<unknown> {
+export async function executeChatCommand(command: Extract<MobileCommand, { sessionId: string }>, runtime: AgentRuntime | undefined, canSend: () => Promise<boolean>, assertCurrent: () => void = () => {}): Promise<unknown> {
+  assertCurrent();
   if (!runtime || runtime.kind !== 'chat' || !runtime.isRunning()) throw new MobileControlError('not_chat');
   if (runtime.getSessionId?.() !== command.sessionId) throw new MobileControlError('session_mismatch');
   if (command.type === 'chat.send') {
     if (!await canSend()) throw new MobileControlError('revert_in_progress');
+    assertCurrent();
     // A session can change while waiting for a revert check.
     if (runtime.getSessionId?.() !== command.sessionId) throw new MobileControlError('session_mismatch');
     return runtime.sendMessage([{ type: 'text', text: command.text }], { source: 'annex', delivery: command.delivery ?? 'auto', clientCommandId: command.commandId });
@@ -116,12 +118,14 @@ export async function executeChatCommand(command: Extract<MobileCommand, { sessi
     return { removed: await runtime.removeQueued(command.messageIds) };
   }
   const { events = [] } = await runtime.readTranscript();
+  assertCurrent();
   if (runtime.getSessionId?.() !== command.sessionId) throw new MobileControlError('session_mismatch');
   const pending = pendingInteractions(events);
   if (command.type === 'chat.permission') {
     const request = pending.pendingPermissions.find((e) => e.data.requestId === command.requestId);
     const option = request?.data.options.find((o) => o.optionId === command.optionId);
-    if (!option) throw new MobileControlError('pending_request_not_found');
+    const activeOption = runtime.getPendingPermissionOptions?.(command.requestId)?.find((o) => o.optionId === command.optionId);
+    if (!option || !activeOption || activeOption.kind !== option.kind) throw new MobileControlError('pending_request_not_found');
     if (!['allow_once', 'reject_once', 'cancel_turn'].includes(option.kind)) throw new MobileControlError('persistent_approval_not_supported', 403);
     await runtime.respondPermission(command.requestId, command.optionId);
   } else {

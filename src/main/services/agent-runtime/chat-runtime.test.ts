@@ -293,6 +293,21 @@ describe('ChatAgentRuntime', () => {
     expect(runtime.getState()).toBe('running');
   });
 
+  it('exposes only unsettled approval options while an answer is in flight', async () => {
+    const driver = new FakeChatDriver(); const { runtime } = makeRuntime(driver);
+    await runtime.start();
+    const options = [{ optionId: 'once', kind: 'allow_once' as const, label: 'Allow once' }];
+    driver.last.emit({ type: 'permission_request', data: { requestId: 'pending', title: 'Run tool', options } });
+    await flush(); expect(runtime.getPendingPermissionOptions('pending')).toEqual(options);
+    let finish!: () => void;
+    driver.last.respondPermission = vi.fn(() => new Promise<void>((resolve) => { finish = resolve; }));
+    const answering = runtime.respondPermission('pending', 'once');
+    expect(runtime.getPendingPermissionOptions('pending')).toBeUndefined();
+    finish(); await answering;
+    expect(runtime.getPendingPermissionOptions('pending')).toBeUndefined();
+    await runtime.stop();
+  });
+
   it('answers a permission directly and drops the mirrored queue entry', async () => {
     const driver = new FakeChatDriver();
     const { runtime } = makeRuntime(driver);

@@ -16,7 +16,7 @@ New `POST https://host:mainPort/pair` uses existing `{pin, publicKey, alias, ico
 Authenticated `GET /api/v1/mobile/capabilities` returns:
 
 ```json
-{"version":1,"epoch":"uuid","controlAuth":"mtls-pinned-client","commands":["chat.send","chat.interrupt","chat.permission","chat.question","chat.queue.remove","agent.start","agent.stop","agent.spawn"],"events":{"transport":"annex-websocket","replayRequest":"mobile:replay"},"idempotency":{"scope":"peer-and-epoch","maxEntries":2048,"ttlMs":3600000}}
+{"version":1,"epoch":"uuid","controlAuth":"mtls-pinned-client","controlAvailable":true,"commands":["chat.send","chat.interrupt","chat.permission","chat.question","chat.queue.remove","agent.start","agent.stop","agent.spawn"],"pairing":{"sessionRevokePath":"/api/v1/mobile/pairing"},"events":{"transport":"annex-websocket","replayRequest":"mobile:replay"},"idempotency":{"scope":"peer-and-epoch","maxEntries":2048,"ttlMs":3600000}}
 ```
 
 A 404 means unsupported: do not send mobile commands. A new epoch invalidates command retries and replay cursors. No permission-level changes, raw shell commands, arbitrary filesystem paths, credentials, or gateway provisioning commands exist.
@@ -49,3 +49,15 @@ Existing WebSocket `{type:"chat:event",payload:{agentId,event:ChatEvent},seq}` s
 Send `{type:"mobile:replay",epoch:"capabilities epoch",since:123}`. Replies use existing top-level `replay:start`, original event frames with `replayed:true`, and `replay:end`; each replay control frame includes `epoch`. Invalid/stale epoch, cursor beyond lastSeq, or missing retained events produces top-level `{type:"replay:gap",epoch,oldestAvailable,lastSeq}`. Resnapshot chat and project state on gap. Buffer live events while applying a snapshot/replay and deduplicate; do not advance the cursor to a snapshot's lastSeq before its data has been applied.
 
 Chat event definitions: src/shared/chat/events.ts. Driver capabilities: src/shared/chat/capabilities.ts. Existing snapshots/projects/agents: src/main/services/annex-server.ts. Read runtime state/driver capabilities before presenting steer/approval actions. Errors, cancellation, waiting_input, waiting_permission, turn_ended and session_ended remain normal rich events.
+
+## Review clarifications
+
+- Transport loss does not cancel an accepted command. Reconnect and retry its exact commandId within the receipt window. Use chat.interrupt or agent.stop to cancel work deliberately.
+- `failed/start_cancelled` means a stop or Annex shutdown interrupted startup; the process may briefly have existed. Reconcile agent state, and never treat this as a no-effect rejection.
+- `rejected/authorization_revoked` means peer trust or the server epoch changed before a command reached its next side-effect boundary. Authorization and runtime identity are rechecked after asynchronous prerequisites.
+- Mobile replay treats interior holes (including events purged when an agent exits) as replay:gap and requires resnapshot. Legacy replay behavior remains unchanged.
+- A paired mobile certificate is a full Annex controller identity, not a restricted role. Its certificate pin applies across legacy routes too, but those routes retain their existing controller powers. Enrollment UI must describe that trust; no persistent enrollment is performed by this implementation work.
+
+### Session-only self-revocation
+
+Capabilities now includes `pairing: {sessionRevokePath:"/api/v1/mobile/pairing"}`. `DELETE` that path using the paired pinned client certificate to revoke **only the caller's in-memory session pairing**. Response: `{version:1,epoch,revoked:true,pairingMode:"session"}`. It invalidates that peer's bearer tokens and closes its mTLS and bearer WebSockets. No body or target identity is accepted. A persistent peer (including one shadowed by a session peer) receives HTTP 409 `{error:"persistent_pairing_requires_desktop"}` with no trust change; remove it in desktop settings. An unpaired caller receives 401, and bearer-only callers receive 403. If the phone is offline, local removal alone cannot revoke desktop memory: explain that it lasts until explicit desktop disconnect or Annex stop. Repeated DELETE after success is unauthorized because trust is already gone.

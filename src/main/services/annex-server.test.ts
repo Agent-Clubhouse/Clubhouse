@@ -400,6 +400,13 @@ describe('annex-server', () => {
       frames = ws.send.mock.calls.map(([data]) => JSON.parse(data));
       expect(frames[0]).toEqual({ type: 'replay:start', fromSeq: seq, toSeq: seq, count: 1 });
       expect(frames[frames.length - 1]).toEqual({ type: 'replay:end' });
+      // An exited agent removes interior replay entries while other agents retain older events.
+      const other = _eventReplay.pushEvent('chat:event', { agentId: 'retained' });
+      _eventReplay.pushEvent('chat:event', { agentId: 'exited' });
+      _eventReplay.pushEvent('pty:exit', { agentId: 'retained' });
+      _eventReplay.clearForAgent('exited');
+      ws.send.mockClear(); ws.emit('message', JSON.stringify({ type: 'mobile:replay', epoch: capability.epoch, since: other }));
+      expect(JSON.parse(ws.send.mock.calls[0][0])).toMatchObject({ type: 'replay:gap', epoch: capability.epoch });
     });
 
     it('binds HTTPS PIN pairing to the real client certificate and rejects same-CN impersonation', async () => {
@@ -416,6 +423,8 @@ describe('annex-server', () => {
         cert.sign(keys.privateKey, forge.md.sha256.create());
         return { cert: forge.pki.certificateToPem(cert), key: forge.pki.privateKeyToPem(keys.privateKey) };
       };
+      let nextQuickId = 0;
+      vi.mocked(agentIdModule.generateQuickAgentId).mockImplementation(() => `quick_mobile_${++nextQuickId}`);
       const credentials = makeCertificate(); const impostor = makeCertificate();
       const publicKey = crypto.generateKeyPairSync('ed25519').publicKey.export({ format: 'der', type: 'spki' }).toString('base64');
       vi.mocked(annexTls.createTlsServerOptions).mockReturnValue({ ...credentials, requestCert: true, rejectUnauthorized: false });
@@ -441,6 +450,8 @@ describe('annex-server', () => {
       expect(peers.get('mobile-test-identity')?.tlsCertificateFingerprint).toBe(new crypto.X509Certificate(credentials.cert).fingerprint256);
       const capability = await secureRequest('GET', '/api/v1/mobile/capabilities', undefined);
       expect(capability.body.controlAvailable).toBe(true);
+      expect((await secureRequest('DELETE', '/api/v1/mobile/pairing', undefined)).status).toBe(409);
+      expect(peers.has('mobile-test-identity')).toBe(true);
       const input = { version: 1, epoch: capability.body.epoch, commandId: 'tls-command', type: 'agent.spawn', projectId: 'test-project', prompt: 'hello' };
       vi.mocked(projectStore.list).mockReturnValue([{ id: 'test-project', name: 'Test', path: '/test/project' }] as any);
       const accepted = await secureRequest('POST', '/api/v1/mobile/commands', input);
@@ -464,6 +475,46 @@ describe('annex-server', () => {
       annexServer.disconnectPeer('mobile-test-identity');
       expect((await secureRequest('GET', '/api/v1/mobile/capabilities', undefined)).status).toBe(401);
       expect(annexServer._testing.isValidToken(sessionPair.body.token)).toBe(false);
+      // A bearer-authenticated WebSocket has no mTLS peer tag, but still belongs to its token's peer.
+      const secondPair = await secureRequest('POST', '/pair', { pin: status.pin, publicKey, pairingMode: 'session' });
+      const { EventEmitter } = await import('events');
+      const bearerWs = Object.assign(new EventEmitter(), { readyState: 1, close: vi.fn(), send: vi.fn() });
+      annexServer._testing.wss!.clients.add(bearerWs as any);
+      annexServer._testing.wsBearerTokens.set(bearerWs as any, secondPair.body.token);
+      annexServer.disconnectPeer('mobile-test-identity');
+      expect(bearerWs.close).toHaveBeenCalledWith(1000, 'disconnected_by_satellite');
+      await secureRequest('POST', '/pair', { pin: status.pin, publicKey, pairingMode: 'session' });
+      let finishSpawn!: () => void;
+      vi.mocked(agentSystem.spawnAgent).mockImplementationOnce(() => new Promise<void>((resolve) => { finishSpawn = resolve; }));
+      const spawning = secureRequest('POST', '/api/v1/mobile/commands', { ...input, commandId: 'slow-spawn' });
+      await vi.waitFor(() => expect(finishSpawn).toBeTypeOf('function'));
+      const startingId = vi.mocked(agentSystem.spawnAgent).mock.calls[1][0].agentId;
+      const stopStarting = await secureRequest('POST', '/api/v1/mobile/commands', {
+        version: 1, epoch: input.epoch, commandId: 'stop-starting', type: 'agent.stop', agentId: startingId,
+      });
+      finishSpawn();
+      expect(stopStarting.body.error).toBeUndefined();
+      expect(stopStarting.body).toMatchObject({ status: 'completed', result: { stopRequested: true } });
+      const cancelled = await spawning;
+      expect(cancelled.body).toMatchObject({ status: 'failed', error: { code: 'start_cancelled' } });
+      expect(agentSystem.killAgent).toHaveBeenCalledTimes(2);
+
+      vi.mocked(agentConfigModule.listDurable).mockReturnValue([{ id: 'disposed', name: 'Old helper', disposedAt: '2026-01-01' }] as any);
+      const disposed = await secureRequest('POST', '/api/v1/mobile/commands', {
+        version: 1, epoch: input.epoch, commandId: 'disposed-start', type: 'agent.start', agentId: 'disposed',
+      });
+      expect(disposed.status).toBe(404); expect(disposed.body.error.code).toBe('agent_not_found');
+      expect(agentSystem.spawnAgent).toHaveBeenCalledTimes(2);
+
+      let finishLookup!: (projects: any[]) => void;
+      vi.mocked(projectStore.list).mockImplementationOnce(() => new Promise((resolve) => { finishLookup = resolve; }));
+      const revokedDuringLookup = secureRequest('POST', '/api/v1/mobile/commands', { ...input, commandId: 'revocation-race' });
+      await vi.waitFor(() => expect(finishLookup).toBeTypeOf('function'));
+      const selfRevoke = await secureRequest('DELETE', '/api/v1/mobile/pairing', undefined);
+      expect(selfRevoke).toMatchObject({ status: 200, body: { revoked: true, pairingMode: 'session' } });
+      finishLookup([{ id: 'test-project', name: 'Test', path: '/test/project' }]);
+      expect((await revokedDuringLookup).body).toMatchObject({ status: 'rejected', error: { code: 'authorization_revoked' } });
+      expect(agentSystem.spawnAgent).toHaveBeenCalledTimes(2);
     }, 15000);
   });
 

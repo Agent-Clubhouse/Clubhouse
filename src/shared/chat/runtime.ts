@@ -20,6 +20,7 @@
 
 import type { ChatCapabilities, ChatDriverId, PermissionLevel } from './capabilities';
 import type {
+  PermissionOption,
   ChatEvent,
   ChatEventDraft,
   ChatQuestionAnswers,
@@ -122,6 +123,8 @@ export interface AgentRuntime {
   answerQuestion(requestId: string, answers: ChatQuestionAnswers): Promise<void>;
   /** True while a question is waiting for an answer. Chat runtimes only. */
   hasPendingQuestion?(requestId: string): boolean;
+  /** Current unsettled approval options; excludes responses already in flight. */
+  getPendingPermissionOptions?(requestId: string): readonly PermissionOption[] | undefined;
   /**
    * Hand a question that went to the parent orchestrator to the user instead
    * (#2366), with `notice` saying why. False when it isn't a routed question

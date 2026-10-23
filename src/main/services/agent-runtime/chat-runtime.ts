@@ -712,6 +712,11 @@ export class ChatAgentRuntime implements AgentRuntime {
     await this.requireSession().compact();
   }
 
+  getPendingPermissionOptions(requestId: string): readonly PermissionOption[] | undefined {
+    const pending = this.permissions.get(requestId);
+    return pending && !pending.settled ? pending.options : undefined;
+  }
+
   async respondPermission(requestId: string, optionId: string, extras?: PermissionResponseExtras): Promise<void> {
     const session = this.requireSession();
     const pending = this.permissions.get(requestId);

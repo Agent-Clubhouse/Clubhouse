@@ -114,8 +114,10 @@ const mobileSessionPeers = new Map<string, AnnexPeer>();
 function findPairedPeer(fingerprint: string): AnnexPeer | undefined {
   return mobileSessionPeers.get(fingerprint) ?? annexPeers.getPeer(fingerprint);
 }
-const mobileStartingAgents = new Set<string>();
-const mobileCancelledStarts = new Set<string>();
+const mobileStartingAgents = new Map<string, { cancelled: boolean }>();
+function finishMobileStart(agentId: string, start: { cancelled: boolean }): void {
+  if (mobileStartingAgents.get(agentId) === start) mobileStartingAgents.delete(agentId);
+}
 let pairingServer: http.Server | null = null;
 let pairingPort = 0;
 
@@ -1339,6 +1341,8 @@ async function handlePairingRequest(req: http.IncomingMessage, res: http.ServerR
           ...(clientCertificateFingerprint ? { tlsCertificateFingerprint: clientCertificateFingerprint } : {}),
           role: 'controller', // This peer initiated pairing → they control us
         };
+        const previous = findPairedPeer(pairedPeer.fingerprint);
+        if (previous?.tlsCertificateFingerprint && previous.tlsCertificateFingerprint !== pairedPeer.tlsCertificateFingerprint) disconnectPeer(pairedPeer.fingerprint);
         if (sessionOnly) mobileSessionPeers.set(pairedPeer.fingerprint, pairedPeer);
         else { mobileSessionPeers.delete(pairedPeer.fingerprint); annexPeers.addPeer(pairedPeer); }
       }
@@ -2128,9 +2132,21 @@ async function handleMobileCapabilitiesRoute(ctx: AnnexRouteContext): Promise<vo
   sendJson(ctx.res, 200, {
     version: 1, epoch: mobileCommands.epoch, controlAuth: 'mtls-pinned-client',
     controlAvailable: !!ctx.mobilePrincipal, commands: MOBILE_COMMAND_TYPES,
+    pairing: { sessionRevokePath: '/api/v1/mobile/pairing' },
     events: { transport: 'annex-websocket', replayRequest: 'mobile:replay' },
     idempotency: { scope: 'peer-and-epoch', maxEntries: MOBILE_COMMAND_MAX_ENTRIES, ttlMs: MOBILE_COMMAND_TTL_MS },
   });
+}
+
+async function handleMobilePairingDeleteRoute(ctx: AnnexRouteContext): Promise<void> {
+  const fingerprint = ctx.mobilePrincipal;
+  if (!fingerprint) { sendJson(ctx.res, 403, { error: 'client_certificate_required' }); return; }
+  // Never let a session-only action silently remove persistent desktop trust.
+  if (!mobileSessionPeers.has(fingerprint) || annexPeers.getPeer(fingerprint)) {
+    sendJson(ctx.res, 409, { error: 'persistent_pairing_requires_desktop' }); return;
+  }
+  disconnectPeer(fingerprint);
+  sendJson(ctx.res, 200, { version: 1, epoch: mobileCommands.epoch, revoked: true, pairingMode: 'session' });
 }
 
 async function handleMobileChatRoute(ctx: AnnexRouteContext, match: RegExpMatchArray): Promise<void> {
@@ -2182,13 +2198,21 @@ async function handleMobileChatSessionsRoute(ctx: AnnexRouteContext, match: RegE
   }
 }
 
-async function runMobileCommand(command: MobileCommand): Promise<unknown> {
+async function runMobileCommand(command: MobileCommand, assertAuthorized: () => void): Promise<unknown> {
+  assertAuthorized();
   if ('sessionId' in command) {
-    return executeChatCommand(command, getAgentRuntime(command.agentId), async () => !await isRevertRunning(command.agentId));
+    const info = await findAgentAcrossProjects(command.agentId);
+    if ((!info || isDisposedAgent(info.config)) && !trackedQuickAgents.has(command.agentId)) throw new MobileControlError('agent_not_found', 404);
+    const runtime = getAgentRuntime(command.agentId);
+    return executeChatCommand(command, runtime, async () => !await isRevertRunning(command.agentId), () => {
+      assertAuthorized();
+      if (getAgentRuntime(command.agentId) !== runtime) throw new MobileControlError('session_mismatch');
+    });
   }
   if (command.type === 'agent.spawn') {
     const project = await findProjectById(command.projectId);
     if (!project) throw new MobileControlError('project_not_found', 404);
+    assertAuthorized();
     const id = generateQuickAgentId();
     const name = generateQuickName();
     const orchestrator = command.orchestrator ?? project.orchestrator ?? 'claude-code';
@@ -2197,9 +2221,15 @@ async function runMobileCommand(command: MobileCommand): Promise<unknown> {
       model: command.model ?? null, orchestrator, freeAgentMode: false, parentAgentId: null, projectId: project.id, spawnedAt: Date.now() };
     setTrackedQuickAgent(id, tracked);
     broadcastAndBuffer('agent:spawned', tracked);
+    const starting = { cancelled: false };
+    mobileStartingAgents.set(id, starting);
     try {
       await spawnAgent({ agentId: id, projectPath: project.path, cwd: project.path, kind: 'quick',
         mission: command.prompt, model: command.model, orchestrator, freeAgentMode: false });
+      if (starting.cancelled) {
+        await killAgent(id, project.path, orchestrator);
+        throw new MobileControlError('start_cancelled', 409, 'failed');
+      }
       tracked.status = isAgentRunning(id) ? 'running' : 'sleeping';
       broadcastToAllWindows(IPC.ANNEX.AGENT_SPAWNED, { ...tracked, headless: true });
       broadcastSnapshotRefresh();
@@ -2208,35 +2238,38 @@ async function runMobileCommand(command: MobileCommand): Promise<unknown> {
       trackedQuickAgents.delete(id);
       broadcastSnapshotRefresh();
       throw err;
-    }
+    } finally { finishMobileStart(id, starting); }
   }
   const info = await findAgentAcrossProjects(command.agentId);
   const quick = trackedQuickAgents.get(command.agentId);
   const project = info?.project ?? (quick ? await findProjectById(quick.projectId) : undefined);
-  if (!project) throw new MobileControlError('agent_not_found', 404);
+  if (!project || (info && isDisposedAgent(info.config))) throw new MobileControlError('agent_not_found', 404);
+  assertAuthorized();
   if (command.type === 'agent.stop') {
-    if (mobileStartingAgents.has(command.agentId)) mobileCancelledStarts.add(command.agentId);
+    const starting = mobileStartingAgents.get(command.agentId);
+    if (starting) starting.cancelled = true;
     await killAgent(command.agentId, project.path, info?.config.orchestrator);
     broadcastSnapshotRefresh();
     return { agentId: command.agentId, stopRequested: true };
   }
   if (!info) throw new MobileControlError('agent_not_found', 404);
   if (isAgentRunning(command.agentId) || mobileStartingAgents.has(command.agentId)) throw new MobileControlError('agent_already_running');
-  mobileStartingAgents.add(command.agentId);
+  const starting = { cancelled: false };
+  mobileStartingAgents.set(command.agentId, starting);
   try {
     const { config } = info;
     const resume = command.resume === true && !!config.lastSessionId;
     await spawnAgent({ agentId: config.id, projectPath: project.path, cwd: config.worktreePath || project.path,
       kind: 'durable', mission: command.message, model: config.model, orchestrator: config.orchestrator,
       freeAgentMode: config.freeAgentMode, resume, sessionId: resume ? config.lastSessionId : undefined });
-    if (mobileCancelledStarts.has(command.agentId)) {
+    if (starting.cancelled) {
       await killAgent(command.agentId, project.path, config.orchestrator);
-      throw new MobileControlError('start_cancelled');
+      throw new MobileControlError('start_cancelled', 409, 'failed');
     }
     broadcastAndBuffer('agent:woken', { agentId: config.id, source: 'annex-mobile' });
     broadcastSnapshotRefresh();
     return { agentId: config.id, executionMode: getAgentExecutionMode(config.id) };
-  } finally { mobileStartingAgents.delete(command.agentId); mobileCancelledStarts.delete(command.agentId); }
+  } finally { finishMobileStart(command.agentId, starting); }
 }
 
 async function handleMobileCommandRoute(ctx: AnnexRouteContext): Promise<void> {
@@ -2252,7 +2285,14 @@ async function handleMobileCommandRoute(ctx: AnnexRouteContext): Promise<void> {
     const principal = peer && (peer.role === 'controller' || !peer.role)
       && peer.tlsCertificateFingerprint === annexTls.extractPeerCertificateFingerprint(ctx.req.socket as tls.TLSSocket)
       ? ctx.mobilePrincipal : undefined;
-    const response = await mobileCommands.execute(principal, input, runMobileCommand);
+    const epoch = mobileCommands.epoch;
+    const pin = peer?.tlsCertificateFingerprint;
+    const assertAuthorized = () => {
+      const current = principal ? findPairedPeer(principal) : undefined;
+      if (mobileCommands.epoch !== epoch || !current || current.tlsCertificateFingerprint !== pin
+        || (current.role && current.role !== 'controller')) throw new MobileControlError('authorization_revoked', 403);
+    };
+    const response = await mobileCommands.execute(principal, input, (command) => runMobileCommand(command, assertAuthorized));
     sendJson(ctx.res, response.statusCode, response.body);
   } catch {
     // telemetry-exempt: invalid JSON/body is reported to the caller without logging its content.
@@ -2263,6 +2303,7 @@ async function handleMobileCommandRoute(ctx: AnnexRouteContext): Promise<void> {
 
 const ANNEX_HTTP_ROUTE_TABLE: AnnexHttpRoute[] = [
   { method: 'GET', pattern: /^\/api\/v1\/mobile\/capabilities$/, handler: handleMobileCapabilitiesRoute },
+  { method: 'DELETE', pattern: /^\/api\/v1\/mobile\/pairing$/, handler: handleMobilePairingDeleteRoute },
   { method: 'GET', pattern: /^\/api\/v1\/mobile\/agents\/([^/]+)\/chat(\?.*)?$/, handler: handleMobileChatRoute },
   { method: 'GET', pattern: /^\/api\/v1\/mobile\/agents\/([^/]+)\/chat\/sessions$/, handler: handleMobileChatSessionsRoute },
   { method: 'POST', pattern: /^\/api\/v1\/mobile\/commands$/, handler: handleMobileCommandRoute },
@@ -2437,8 +2478,9 @@ function handleWsMessage(ws: WebSocket, data: string): void {
     const since = msg.since;
     const events = msg.epoch === epoch && Number.isSafeInteger(since) && since! >= 0 && since! <= eventReplay.getLastSeq()
       ? eventReplay.getEventsSince(since!) : null;
-    // An empty, evicted buffer is also a gap when the client is behind.
-    if (events === null || (events.length === 0 && since !== eventReplay.getLastSeq())) {
+    // Agent cleanup can remove interior events; never claim a partial replay is complete.
+    if (events === null || events.length !== eventReplay.getLastSeq() - since!
+      || events.some((event, index) => event.seq !== since! + index + 1)) {
       safeSend(ws, JSON.stringify({ type: 'replay:gap', epoch, oldestAvailable: eventReplay.getOldestSeq(), lastSeq: eventReplay.getLastSeq() }));
       return;
     }
@@ -3216,8 +3258,8 @@ export function stop(): void {
   permissionQueue.reset();
   mobileCommands.reset();
   mobileSessionPeers.clear();
-  mobileStartingAgents.clear();
-  mobileCancelledStarts.clear();
+  // Starts already accepted may still be awaiting a driver; stop them on completion.
+  for (const starting of mobileStartingAgents.values()) starting.cancelled = true;
 
   appLog('core:annex', 'info', 'Annex server stopped');
 }
@@ -3564,13 +3606,14 @@ export function regeneratePin(): void {
 /** Disconnect a specific peer's WebSocket connection by fingerprint and revoke their tokens. */
 export function disconnectPeer(fingerprint: string): void {
   mobileSessionPeers.delete(fingerprint);
+  const peerTokens = new Set<string>();
   appLog('core:annex', 'info', `disconnectPeer called`, { meta: { fingerprint } });
   for (const [token, session] of sessionTokens) {
-    if (session.peerFingerprint === fingerprint) { revokedTokens.add(token); sessionTokens.delete(token); }
+    if (session.peerFingerprint === fingerprint) { peerTokens.add(token); revokedTokens.add(token); sessionTokens.delete(token); }
   }
   if (!wss) return;
   for (const client of wss.clients) {
-    if (wsPeerFingerprints.get(client) === fingerprint) {
+    if (wsPeerFingerprints.get(client) === fingerprint || peerTokens.has(wsBearerTokens.get(client) ?? '')) {
       // Revoke the bearer token used by this connection
       const token = wsBearerTokens.get(client);
       if (token) {
@@ -3601,6 +3644,7 @@ export const _testing = {
   wsAlive,
   wsAuthTypes,
   wsPeerFingerprints,
+  wsBearerTokens,
   get wss() { return wss; },
   get heartbeatInterval() { return heartbeatInterval; },
   get trackedQuickAgents() { return trackedQuickAgents; },

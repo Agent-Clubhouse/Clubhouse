@@ -8,6 +8,7 @@ function runtime(events: ChatEvent[] = []): AgentRuntime {
   return { kind: 'chat', agentId: 'agent-1', isRunning: () => true, getSessionId: () => 'session-1',
     getState: () => 'idle', sendMessage: vi.fn().mockResolvedValue({ delivery: 'queued', messageId: 'message-1' }),
     interrupt: vi.fn().mockResolvedValue(undefined), readTranscript: vi.fn().mockResolvedValue({ kind: 'chat', events }),
+    getPendingPermissionOptions: (requestId: string) => pendingInteractions(events).pendingPermissions.find((e) => e.data.requestId === requestId)?.data.options,
     respondPermission: vi.fn().mockResolvedValue(undefined), answerQuestion: vi.fn().mockResolvedValue(undefined), hasPendingQuestion: () => true,
   } as unknown as AgentRuntime;
 }
@@ -90,6 +91,28 @@ describe('mobile validation and chat dispatch', () => {
     await expect(executeChatCommand({ ...cmd, optionId: 'bogus' } as any, rt, async () => true)).rejects.toMatchObject({ code: 'pending_request_not_found' });
     await executeChatCommand({ ...cmd, optionId: 'once' } as any, rt, async () => true);
     expect(rt.respondPermission).toHaveBeenCalledExactlyOnceWith('p', 'once');
+  });
+  it('rejects approval already settled while its transcript entry is still pending', async () => {
+    const rt = runtime([event('permission_request', { requestId: 'p', options: [{ optionId: 'once', kind: 'allow_once' }] })]);
+    rt.getPendingPermissionOptions = () => undefined;
+    const cmd = command(new MobileCommandService(), { type: 'chat.permission', requestId: 'p', optionId: 'once' });
+    await expect(executeChatCommand(cmd as any, rt, async () => true)).rejects.toMatchObject({ code: 'pending_request_not_found' });
+    expect(rt.respondPermission).not.toHaveBeenCalled();
+  });
+  it('rechecks authorization after awaiting a send prerequisite', async () => {
+    const rt = runtime(); let authorized = true;
+    const guard = () => { if (!authorized) throw new MobileControlError('authorization_revoked', 403); };
+    await expect(executeChatCommand(command(new MobileCommandService()) as any, rt, async () => { authorized = false; return true; }, guard)).rejects.toMatchObject({ code: 'authorization_revoked' });
+    expect(rt.sendMessage).not.toHaveBeenCalled();
+  });
+  it('rechecks runtime identity after awaiting an approval transcript', async () => {
+    const rt = runtime(); let current = true;
+    rt.readTranscript = vi.fn().mockImplementation(async () => { current = false; return { events: [] }; });
+    const cmd = command(new MobileCommandService(), { type: 'chat.permission', requestId: 'p', optionId: 'once' });
+    await expect(executeChatCommand(cmd as any, rt, async () => true, () => {
+      if (!current) throw new MobileControlError('session_mismatch');
+    })).rejects.toMatchObject({ code: 'session_mismatch' });
+    expect(rt.respondPermission).not.toHaveBeenCalled();
   });
   it('removes only the requested queued messages and reports actual removal', async () => {
     const rt = runtime(); rt.removeQueued = vi.fn().mockResolvedValue(['queued-1']);
