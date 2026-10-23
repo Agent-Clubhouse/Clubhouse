@@ -58,7 +58,7 @@
     "@vitest/coverage-v8": "^4.1.12",
     "copy-webpack-plugin": "^14.0.0",
     "css-loader": "^7.1.5",
-    "electron": "43.8.3",
+    "electron": "45.0.0",
     "eslint": "^9.39.5",
     "eslint-plugin-import-x": "^4.17.1",
     "fork-ts-checker-webpack-plugin": "^9.1.0",
@@ -118,6 +118,12 @@
     "dompurify": "^3.4.17",
     "tinyglobby": {
       "picomatch": "^4.0.4"
+    },
+    "@electron/rebuild": {
+      "tar": "7.5.22"
+    },
+    "@electron/packager": {
+      "extract-zip": "npm:@electron-internal/extract-zip@1.0.6"
     }
   }
 }

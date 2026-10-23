@@ -4,7 +4,7 @@
  * cleanly instead of reaching a PTY.
  */
 import * as fsp from 'fs/promises';
-import { BrowserWindow, clipboard, ipcMain, nativeImage, net, shell, type IpcMainInvokeEvent } from 'electron';
+import { BrowserWindow, clipboard, ClipboardItem, ipcMain, nativeImage, net, shell, type IpcMainInvokeEvent } from 'electron';
 import { IPC } from '../../shared/ipc-channels';
 import type { ChatAgentRuntimeInfo, ChatDriverId, ChatQuestionAnswers, ChatRuntimeSettings, ContentBlock, MessageDelivery, PermissionLevel, PermissionResponseExtras } from '../../shared/chat';
 import { CHAT_ATTACHMENTS_MAX, CHAT_IMAGE_MAX_BYTES, PERMISSION_LEVELS, RICH_CHAT_CONTENT_FLAG, isMediaRef } from '../../shared/chat';
@@ -203,7 +203,9 @@ export function registerChatHandlers(): void {
         const { data } = await readMedia(agentId, mediaRef);
         const image = nativeImage.createFromBuffer(Buffer.from(data));
         if (image.isEmpty()) throw new Error("This image can't be copied");
-        clipboard.writeImage(image);
+        await clipboard.write([new ClipboardItem({
+          'image/png': new Blob([new Uint8Array(image.toPNG())], { type: 'image/png' }),
+        })]);
         return;
       }
       throw new Error(`Unknown media action: ${action}`);

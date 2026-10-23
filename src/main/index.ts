@@ -21,6 +21,7 @@ import { preWarmShellEnvironment } from './util/shell';
 import { initializeRipgrep } from './services/search-service';
 import { loadPendingResume } from './services/restart-session-service';
 import { applyWindowSecurityGuards } from './window-security-guards';
+import { installClientCertificatePolicy } from './client-certificate-policy';
 import { generateCspNonce, getCspNonce, buildProductionCsp } from './csp-nonce';
 import { createBeforeQuitHandler } from './shutdown-guard';
 import { runAppShutdown, setShutdownBegin } from './services/app-shutdown';
@@ -230,6 +231,8 @@ const createWindow = (): void => {
     mainWindow.webContents.openDevTools({ mode: 'detach' });
   }
 };
+
+installClientCertificatePolicy(app);
 
 app.on('ready', () => {
   void cleanupTranscriptStaging();

@@ -39,7 +39,7 @@ test('reports the locked runtime and preserves TLS verification and fetch decodi
     })));
     const tlsUrl = `https://127.0.0.1:${(secure.address() as AddressInfo).port}`;
     const fetchUrl = `http://127.0.0.1:${(compressed.address() as AddressInfo).port}`;
-    const result = await electronApp.evaluate(async (_electron, input) => {
+    const result = await electronApp.evaluate(async ({ app, net }, input) => {
       const https = process.getBuiltinModule('https');
       const get = (ca?: string) => new Promise<{ body?: string; error?: string }>((resolve) => {
         const req = https.get(input.tlsUrl, { ca, timeout: 5_000 }, (res) => {
@@ -54,20 +54,25 @@ test('reports the locked runtime and preserves TLS verification and fetch decodi
       });
       return {
         versions: { ...process.versions },
+        packaged: app.isPackaged,
         untrusted: await get(),
         trusted: await get(input.ca),
+        chromiumUntrusted: await net.fetch(input.tlsUrl, { signal: AbortSignal.timeout(5_000) })
+          .then(() => ({ error: '' }), (error: Error) => ({ error: error.message })),
         // A valid Brotli response establishes the marketplace fetch decoding
         // path without sending a malformed exploit payload to the runtime.
         decoded: await (await fetch(input.fetchUrl, { signal: AbortSignal.timeout(5_000) })).text(),
       };
     }, { tlsUrl, fetchUrl, ca });
-    await testInfo.attach('embedded-runtime.json', {
-      body: JSON.stringify(result.versions, null, 2), contentType: 'application/json',
+    await testInfo.attach('runtime-security.json', {
+      body: JSON.stringify(result, null, 2), contentType: 'application/json',
     });
     expect(result.versions.electron).toBe(devDependencies.electron);
     expect(result.versions.node).toMatch(/^\d+\.\d+\.\d+$/);
     expect(result.versions.chrome).toMatch(/^\d+\./);
+    expect(result.packaged).toBe(false); // This helper launches the development Electron.
     expect(result.untrusted.error).toBe('DEPTH_ZERO_SELF_SIGNED_CERT');
+    expect(result.chromiumUntrusted.error).toContain('ERR_CERT_AUTHORITY_INVALID');
     expect(result.trusted).toEqual({ body: payload });
     expect(result.decoded).toBe(payload);
   } finally {

@@ -1,5 +1,7 @@
 # Core, build and test dependency sweep — 2026-10-23
 
+**Follow-up:** the newer [Electron 45 / residual tooling ledger](electron45-security-2026-10-23.md) supersedes the runtime selection and residual audit counts below; earlier validation remains historical evidence.
+
 Baseline for this extension: security branch commit `b96213e9c8717224bc040e4a3640610e265b4004`.
 Original main baseline: `8e0903616ee45bff75c04f9bb62dc35feafce7f2`.
 Official npm metadata, `npm outdated`, a fresh audit and upstream release notes
