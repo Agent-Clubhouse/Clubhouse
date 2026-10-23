@@ -19,8 +19,8 @@ import * as fsp from 'fs/promises';
 import * as path from 'path';
 import { createHash, randomUUID } from 'crypto';
 import { promises as dns } from 'dns';
-import type { ChatEventDraft, ChatImage } from '../../../shared/chat';
-import { CHAT_MEDIA_MAX_BYTES, CHAT_MEDIA_MAX_PIXELS, CHAT_MEDIA_TYPES, isMediaRef, mediaDimensions, sniffMediaType } from '../../../shared/chat';
+import type { ChatEventDraft, ChatImage, ChatMediaAssetResult } from '../../../shared/chat';
+import { CHAT_MEDIA_MAX_BYTES, CHAT_MEDIA_MAX_PIXELS, CHAT_MEDIA_TYPES, isMediaAssetId, isMediaRef, mediaDimensions, sniffMediaType } from '../../../shared/chat';
 import { agentMediaDir } from './chat-transcript';
 import { appLog } from '../log-service';
 
@@ -187,6 +187,8 @@ export interface ChatMediaPolicyOptions {
   enabled: () => boolean;
   /** Folders a `sourcePath` may be read from (agent cwd, project). */
   roots: () => readonly string[];
+  /** Bytes for an image's `assetId`, from the current driver session's own store (#2421). */
+  resolveAsset?: (assetId: string) => Promise<ChatMediaAssetResult | undefined>;
 }
 
 /**
@@ -249,6 +251,7 @@ export class ChatMediaPolicy {
   }
 
   private async storeOne(image: ChatImage): Promise<ChatImage | undefined> {
+    if (image.assetId !== undefined || image.unavailable === true) return this.storeAsset(image);
     const sourcePath = typeof image.sourcePath === 'string' ? image.sourcePath : undefined;
     let bytes: Uint8Array | undefined;
     if (typeof image.data === 'string') bytes = decodeBase64Image(image.data);
@@ -263,6 +266,36 @@ export class ChatMediaPolicy {
       return { type: 'image', mimeType: typeof image.mimeType === 'string' ? image.mimeType.slice(0, 100) : 'image/*', uri: image.uri };
     }
     return undefined;
+  }
+
+  /**
+   * An image the driver referenced by asset id (Copilot, #2421), stored like
+   * any other. One that can't be resolved stays on the call, marked
+   * unavailable, so chat shows that an image was there.
+   */
+  private async storeAsset(image: ChatImage): Promise<ChatImage> {
+    const mimeType = typeof image.mimeType === 'string' ? image.mimeType.slice(0, 100) : 'image/*';
+    const assetId = isMediaAssetId(image.assetId) ? image.assetId : undefined;
+    let reason: string;
+    if (!assetId) reason = image.unavailable === true ? 'omitted' : 'bad_asset_id';
+    else {
+      try {
+        const resolved = this.opts.resolveAsset ? await this.opts.resolveAsset(assetId) : undefined;
+        if (!resolved) reason = 'unsupported';
+        else if (!resolved.ok) reason = resolved.reason;
+        else {
+          const stored = await storeMedia(this.opts.agentId, resolved.bytes);
+          if (stored) return { ...stored, assetId };
+          reason = 'not_an_image';
+        }
+      } catch (err) {
+        // telemetry-exempt: becomes the image's unavailable reason, logged locally below.
+        reason = `read_failed: ${err instanceof Error ? err.message : String(err)}`;
+      }
+    }
+    // telemetry-exempt: a missing image shows as unavailable in chat; logged locally for diagnosis.
+    appLog('core:chat', 'warn', 'Chat image asset not available', { meta: { agentId: this.opts.agentId, ...(assetId && { assetId }), reason } });
+    return { type: 'image', mimeType, ...(assetId && { assetId }), unavailable: true };
   }
 }
 

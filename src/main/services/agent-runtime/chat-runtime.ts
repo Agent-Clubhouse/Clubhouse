@@ -223,6 +223,7 @@ export class ChatAgentRuntime implements AgentRuntime {
       agentId: opts.agentId,
       enabled: () => opts.richMedia?.() === true,
       roots: () => [opts.cwd, ...(opts.projectPath ? [opts.projectPath] : [])],
+      resolveAsset: async (assetId) => this.session?.resolveMediaAsset?.(assetId),
     });
   }
 

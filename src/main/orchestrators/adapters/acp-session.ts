@@ -31,7 +31,7 @@ import {
 import { parseSessionUpdate } from './acp-updates';
 import { deriveAcpCapabilities, type AcpDriverCapabilities } from './acp-capabilities';
 import type { PermissionLevel } from '../../../shared/chat/capabilities';
-import type { ChatResumeTiming } from '../../../shared/chat/runtime';
+import type { ChatMediaAssetResult, ChatResumeTiming } from '../../../shared/chat/runtime';
 
 /** How long close() waits for an agent to answer `session/close` before killing it. */
 export const SESSION_CLOSE_TIMEOUT_MS = 2_000;
@@ -166,6 +166,12 @@ export interface AcpAgentProfile {
    * sends its input budget (#2178). Default 'total'.
    */
   contextWindow?: 'input' | 'total';
+  /**
+   * Bytes for a binary asset a tool result referenced by id (Copilot's
+   * `binaryResultsForLlm`, #2421), read from the session's own store. Bound
+   * once per driver session so its lookups share an index.
+   */
+  binaryAssets?(env: Record<string, string | undefined>): (sessionId: string | null, assetId: string) => Promise<ChatMediaAssetResult>;
   /** A cost hint for a model option, from the agent's private `_meta`. */
   modelCostHint?(meta: Meta | undefined): string | undefined;
   /**

@@ -29,6 +29,13 @@ export function isMediaRef(value: unknown): value is string {
   return typeof value === 'string' && MEDIA_REF_RE.test(value);
 }
 
+const MEDIA_ASSET_ID_RE = /^sha256:[0-9a-f]{64}$/;
+
+/** A content-addressed asset id (`sha256:<hex>`), as Copilot's binary tool results carry. */
+export function isMediaAssetId(value: unknown): value is string {
+  return typeof value === 'string' && MEDIA_ASSET_ID_RE.test(value);
+}
+
 function ascii(b: Uint8Array, start: number, end: number): string {
   let s = '';
   for (let i = start; i < Math.min(end, b.length); i++) s += String.fromCharCode(b[i]);

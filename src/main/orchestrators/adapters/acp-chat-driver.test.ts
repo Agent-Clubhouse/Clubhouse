@@ -345,6 +345,49 @@ describe('ACP → chat contract mapping', () => {
       .toEqual([{ type: 'permission_resolved', data: { requestId: '2', decision: 'cancelled', by: 'user' } }]);
   });
 
+  it('maps Copilot binary image results to asset references, keeping the tool output (#2421)', () => {
+    const mapper = new AcpChatEventMapper('copilot_acp');
+    const u = (update: Record<string, unknown>) => mapper.map({ type: 'update', sessionId: 's1', replay: false, update: update as never }, state());
+    mapper.map({ type: 'turn_started', sessionId: 's1' }, state());
+    const assetId = `sha256:${'ab'.repeat(32)}`;
+    // The persisted payload shape from the issue (Copilot CLI 1.0.103).
+    const rawOutput = {
+      content: 'Viewed image file successfully.',
+      binaryResultsForLlm: [{ type: 'image', assetId, mimeType: 'image/png', byteLength: 212249 }],
+    };
+    u({ sessionUpdate: 'tool_call', toolCallId: 'v', title: 'View image', kind: 'read' });
+    const [done] = u({ sessionUpdate: 'tool_call_update', toolCallId: 'v', status: 'completed', content: [{ type: 'content', content: { type: 'text', text: 'Viewed image file successfully.' } }], rawOutput });
+    expect(done).toMatchObject({
+      type: 'tool_call_update',
+      data: {
+        toolCallId: 'v',
+        status: 'completed',
+        content: [{ type: 'text', text: 'Viewed image file successfully.' }],
+        media: [{ type: 'image', mimeType: 'image/png', assetId }],
+        rawOutput,
+      },
+    });
+    // Content images come first, then binary results; inline bytes and omitted ones map too; junk is ignored.
+    const [mixed] = u({
+      sessionUpdate: 'tool_call_update', toolCallId: 'v', status: 'completed',
+      content: [{ type: 'content', content: { type: 'image', mimeType: 'image/gif', data: 'R0lGODlh' } }],
+      rawOutput: { binaryResultsForLlm: [
+        { type: 'image', mimeType: 'image/webp', data: 'UklGRg==' },
+        { type: 'image', mimeType: 'image/png', omittedReason: 'asset_unavailable' },
+        { type: 'resource', assetId, mimeType: 'application/pdf' },
+        { type: 'image', assetId: '../../etc/passwd', mimeType: 'image/png' },
+        null,
+      ] },
+    });
+    expect((mixed.data as { media: unknown[] }).media).toEqual([
+      { type: 'image', mimeType: 'image/gif', data: 'R0lGODlh' },
+      { type: 'image', mimeType: 'image/webp', data: 'UklGRg==' },
+      { type: 'image', mimeType: 'image/png', unavailable: true },
+    ]);
+    // No binary results: no media field, as before.
+    expect(u({ sessionUpdate: 'tool_call_update', toolCallId: 'v', status: 'completed', rawOutput: { content: 'ok', binaryResultsForLlm: [] } })[0].data).not.toHaveProperty('media');
+  });
+
   it('starts a new message id after a tool call interrupts the text', () => {
     const mapper = new AcpChatEventMapper('copilot_acp');
     const chunk = (text: string) => ({ type: 'update' as const, sessionId: 's1', replay: false, update: { sessionUpdate: 'agent_message_chunk' as const, content: { type: 'text' as const, text } } });
