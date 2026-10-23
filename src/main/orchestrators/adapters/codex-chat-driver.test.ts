@@ -205,6 +205,28 @@ describe('CodexChatDriver', () => {
     });
   });
 
+  it('requests and verifies an explicitly ephemeral thread', async () => {
+    useServer({ 'thread/start': () => ({ result: {
+      ...fx.threadStartResult, thread: { ...fx.threadStartResult.thread, ephemeral: true },
+    } }) });
+    const session = await new CodexChatDriver({ ephemeralThread: true }).start(baseOpts);
+    expect(server.requests('thread/start')[0].params).toMatchObject({ ephemeral: true });
+    await session.close();
+  });
+
+  it('rejects resume before spawning when ephemeral mode is required', async () => {
+    await expect(new CodexChatDriver({ ephemeralThread: true }).start({
+      ...baseOpts, resumeNativeSessionId: 'existing-user-thread',
+    })).rejects.toThrow('cannot resume');
+    expect(mockSpawn).not.toHaveBeenCalled();
+  });
+
+  it('stops the process if Codex does not confirm ephemeral mode', async () => {
+    await expect(new CodexChatDriver({ ephemeralThread: true }).start(baseOpts))
+      .rejects.toThrow('did not confirm an ephemeral thread');
+    expect(server.proc.kill).toHaveBeenCalled();
+  });
+
   it('passes translated MCP servers and reports the ones Codex cannot run', async () => {
     const onLog = vi.fn();
     const session = await new CodexChatDriver({ onLog }).start({
