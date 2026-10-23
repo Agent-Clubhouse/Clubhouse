@@ -181,6 +181,10 @@ describe('CopilotAssetReader', () => {
     expect(await reader().read(SESSION, idOf(bytes).toUpperCase())).toEqual({ ok: false, reason: 'bad_asset_id' });
   });
 
+  it('never uses a Windows device name as a session folder', async () => {
+    for (const id of ['CON', 'nul', 'COM1', 'lpt9', 'AUX']) expect(await reader().read(id, idOf(png()))).toEqual({ ok: false, reason: 'no_session' });
+  });
+
   it('says the journal is unreadable when the session has none', async () => {
     expect(await reader().read('no-such-session', idOf(png()))).toEqual({ ok: false, reason: 'journal_unreadable' });
   });

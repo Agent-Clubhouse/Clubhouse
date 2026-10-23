@@ -42,6 +42,7 @@ import { noteChatStartFailure } from './stale-session';
 import { chatResumeResult, recordResumeOutcome, recordSessionCapture } from '../../telemetry/session-telemetry';
 import { chatSleepInfo, recordSleep, takeKillRequest } from './sleep-reason';
 import { waitsOnPollingGroupProject } from './idle-policy';
+import { sessionOutputDir } from './session-output';
 import { chatIdleTimeoutMs, onAgentIdleSleepChange, setAgentIdleSleep } from '../chat-idle-settings';
 import { codePart, recordBreadcrumb } from '../breadcrumbs';
 import { routeHelperQuestion } from '../clubhouse-mcp/tools/helper-question-tools';
@@ -597,6 +598,8 @@ async function runChatStart(
       cwd: params.cwd,
       projectPath: params.projectPath,
       richMedia: () => getExperimentalSettings()[RICH_CHAT_CONTENT_FLAG] === true,
+      // Read from the env the CLI runs with: a profile's COPILOT_HOME moves it.
+      sessionOutputDir: (nativeSessionId) => sessionOutputDir(provider.id, nativeSessionId, env),
       level,
       // A resumed session already has its instructions; only new sessions need them.
       systemPrompt: resumeNativeSessionId ? undefined : params.systemPrompt,

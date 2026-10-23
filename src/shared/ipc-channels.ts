@@ -192,6 +192,8 @@ export const IPC = {
     READ_FILE_PREVIEW: 'chat:read-file-preview',
     /** Rich chat content: reveal a file chip's file, or resolve it for Files. */
     FILE_ACTION: 'chat:file-action',
+    /** Rich chat content: store a local image named in agent markdown, by its path (#2422). */
+    IMPORT_LOCAL_IMAGE: 'chat:import-local-image',
     INTERRUPT: 'chat:interrupt',
     /** Drop queued messages by id (all when no ids), so they're never delivered. */
     REMOVE_QUEUED: 'chat:remove-queued',

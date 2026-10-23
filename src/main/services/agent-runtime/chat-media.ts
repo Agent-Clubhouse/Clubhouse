@@ -58,21 +58,32 @@ function isInside(target: string, root: string): boolean {
  * `roots`, else undefined. Relative paths resolve against the first root.
  */
 export async function resolveAllowedPath(filePath: string, roots: readonly string[]): Promise<string | undefined> {
-  if (!filePath || filePath.includes('\0') || roots.length === 0) return undefined;
+  const checked = await checkAllowedPath(filePath, roots);
+  return 'real' in checked ? checked.real : undefined;
+}
+
+/**
+ * resolveAllowedPath, saying why a path isn't allowed: `outside` the roots
+ * (decided by name before the filesystem is asked, so it says nothing about
+ * files elsewhere) or `missing` inside them.
+ */
+export async function checkAllowedPath(filePath: string, roots: readonly string[]): Promise<{ real: string } | { denied: 'outside' | 'missing' }> {
+  const outside = { denied: 'outside' as const };
+  if (!filePath || filePath.includes('\0') || roots.length === 0) return outside;
   // UNC and device paths (\\host\share, //host/share, \\?\, \\.\) would reach the network
   // or a device before any check: never touch them.
-  if (isNetworkOrDevicePath(filePath)) return undefined;
+  if (isNetworkOrDevicePath(filePath)) return outside;
   const absolute = path.isAbsolute(filePath) ? path.resolve(filePath) : path.resolve(roots[0], filePath);
-  if (isNetworkOrDevicePath(absolute)) return undefined;
+  if (isNetworkOrDevicePath(absolute)) return outside;
   const usable = roots.filter((r) => r && path.isAbsolute(r));
   const realRoots = await Promise.all(usable.map((r) => fsp.realpath(r).catch((): null => null)));
   // Lexically inside a root first, so the filesystem is only asked about paths
   // there (an automount like /net/<host> is never touched)...
-  if (!usable.some((r, i) => isInside(absolute, path.resolve(r)) || (realRoots[i] && isInside(absolute, realRoots[i]!)))) return undefined;
+  if (!usable.some((r, i) => isInside(absolute, path.resolve(r)) || (realRoots[i] && isInside(absolute, realRoots[i]!)))) return outside;
   const real = await fsp.realpath(absolute).catch((): null => null);
-  if (!real) return undefined;
+  if (!real) return { denied: 'missing' };
   // ...then really inside one, with symlinks resolved.
-  return realRoots.some((r) => r && isInside(real, r)) ? real : undefined;
+  return realRoots.some((r) => r && isInside(real, r)) ? { real } : outside;
 }
 
 /** `\\host\share`, `//host/share`, `\\?\…`, `\\.\…`: paths that name a network share or a device. */
