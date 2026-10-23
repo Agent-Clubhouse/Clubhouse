@@ -231,6 +231,7 @@ vi.mock('./stores/toastStore', () => ({
 vi.mock('./plugins/builtin/files/state', () => ({
   fileState: {
     openTab: vi.fn(),
+    navigateToMatch: vi.fn(),
   },
 }));
 
@@ -903,6 +904,21 @@ describe('handleProtocolAction', () => {
       expect(fileState.openTab).not.toHaveBeenCalled();
       vi.runAllTimers();
       expect(fileState.openTab).toHaveBeenCalledWith('src/a.ts', { preview: false });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('open-file with a line and column goes there', () => {
+    vi.useFakeTimers();
+    try {
+      vi.mocked(useProjectStore.getState).mockReturnValue({ setActiveProject: vi.fn() } as never);
+      vi.mocked(useUIStore.getState).mockReturnValue({ setExplorerTab: vi.fn() } as never);
+
+      handleProtocolAction({ kind: 'open-file', projectId: 'p1', relativePath: 'src/a.ts', line: 12, column: 5 });
+      vi.runAllTimers();
+      expect(fileState.navigateToMatch).toHaveBeenCalledWith('src/a.ts', 12, 5);
+      expect(fileState.openTab).not.toHaveBeenCalled();
     } finally {
       vi.useRealTimers();
     }

@@ -1,8 +1,11 @@
 /**
  * Path-like text in agent messages and tool output (rich chat content, #2350):
  * absolute POSIX and Windows paths, relative paths, `file://` URLs, each with
- * an optional `:line[:col]`. Detection is generous on purpose; a chip appears
- * only once main confirms the file exists inside the agent's folders.
+ * an optional `:line[:col]` or `#Lline`. Detection is generous on purpose; a
+ * chip appears only once main confirms the file exists inside the agent's
+ * folders. In prose a path ends at whitespace; a path with spaces is taken
+ * whole only where its ends are unambiguous: quoted, or a whole code span
+ * (#2423).
  */
 
 export interface FilePathMatch {
@@ -47,40 +50,83 @@ function isPathLike(p: string): boolean {
   return /^[A-Za-z_][\w.-]*[^\\/.]\.[A-Za-z][A-Za-z0-9]{1,9}$/.test(p);
 }
 
+/** Split a `:line[:col]` or `#Lline` suffix off `token`. */
+function parseLocation(token: string): { path: string; line?: number; col?: number } {
+  const am = ANCHOR_RE.exec(token);
+  if (am && am[1]) return { path: am[1], line: Number(am[2]) };
+  const lm = am ? null : LINE_RE.exec(token);
+  // `C:12` is a drive letter, not a line.
+  if (lm && lm[1] && !/^[A-Za-z]$/.test(lm[1])) {
+    return { path: lm[1], line: Number(lm[2]), ...(lm[3] === ':' && lm[4] && { col: Number(lm[4]) }) };
+  }
+  return { path: token };
+}
+
+function matchAt(start: number, token: string, loc: { path: string; line?: number; col?: number }): FilePathMatch {
+  return { start, end: start + token.length, path: loc.path, ...(loc.line !== undefined && { line: loc.line }), ...(loc.col !== undefined && { col: loc.col }) };
+}
+
+/** Starts that pin a path down: absolute, home, `./` or `../`, a drive, or a `file://` URL. */
+const ANCHORED_RE = /^(?:\/|~[\\/]|\.\.?[\\/]|[A-Za-z]:[\\/]|file:\/\/)/i;
+
+/**
+ * `text` as one path that has spaces in it, when its ends are already known
+ * (quoted, or a whole code span). Still strict: no newlines or tabs, no
+ * space beside a separator, and a bare relative path keeps its first folder
+ * free of spaces, so `npm run src/main.ts` stays a command. A non-final word
+ * that is itself a path with an extension means two paths, not one.
+ */
+function spacedPath(text: string): { path: string; line?: number; col?: number } | null {
+  if (!/ /.test(text) || /[\t\n\r"`<>|]/.test(text) || /\s[\\/]|[\\/]\s|^\s|\s$/.test(text)) return null;
+  const loc = parseLocation(text);
+  const { path } = loc;
+  if (!ANCHORED_RE.test(path) && (/\s/.test(path.split(/[\\/]/)[0]) || !/[\\/]/.test(path))) return null;
+  const words = path.split(/ +/);
+  // With its punctuation and location off: `"src/a.ts:3, src/b.ts"` is a list.
+  const ends = (w: string) => parseLocation(w.replace(TRAILING_RE, '')).path;
+  if (words.slice(0, -1).some((w) => /[\\/]/.test(w) && HAS_EXTENSION.test(ends(w)))) return null;
+  // Checked as written, with the spaces standing in for any other name character.
+  return isPathLike(path.replace(/ /g, '_')) ? loc : null;
+}
+
+/** Quoted text: `"..."`, `'...'`, a backtick pair left in plain text, or curly quotes. */
+const QUOTED_RE = /(?<![\w])(?:"([^"\n]{2,1024})"|'([^'\n]{2,1024})'|`([^`\n]{2,1024})`|\u201c([^\u201d\n]{2,1024})\u201d|\u2018([^\u2019\n]{2,1024})\u2019)(?![\w])/g;
+
 /** Paths in `text`, in order. */
 export function findFilePaths(text: string): FilePathMatch[] {
   const out: FilePathMatch[] = [];
+  // Quoted paths with spaces first: the words inside them are not paths of their own.
+  for (const m of text.matchAll(QUOTED_RE)) {
+    const inner = m.slice(1).find((g) => g !== undefined) ?? '';
+    const loc = spacedPath(inner);
+    if (loc) out.push(matchAt((m.index ?? 0) + 1, inner, loc));
+  }
+  const quoted = out.slice();
   for (const m of text.matchAll(TOKEN_RE)) {
     let token = m[0];
     let start = m.index ?? 0;
+    if (quoted.some((q) => start < q.end && start + token.length > q.start)) continue;
     // Leading and trailing `*` (emphasis left in plain text). Not `_` or `~`:
     // they start real names (`__init__.py`, `~/notes.md`).
     const lead = /^\*+/.exec(token)?.[0].length ?? 0;
     token = token.slice(lead);
     start += lead;
     token = token.replace(TRAILING_RE, '').replace(/\*+$/, '').replace(TRAILING_RE, '');
-    let path = token;
-    let line: number | undefined;
-    let col: number | undefined;
-    const am = ANCHOR_RE.exec(token);
-    const lm = am ? null : LINE_RE.exec(token);
-    if (am && am[1]) {
-      path = am[1];
-      line = Number(am[2]);
-    } else if (lm && lm[1] && !/^[A-Za-z]$/.test(lm[1])) {
-      path = lm[1];
-      line = Number(lm[2]);
-      if (lm[3] === ':' && lm[4]) col = Number(lm[4]);
-    }
-    if (!isPathLike(path)) continue;
-    out.push({ start, end: start + token.length, path, ...(line !== undefined && { line }), ...(col !== undefined && { col }) });
+    const loc = parseLocation(token);
+    if (!isPathLike(loc.path)) continue;
+    out.push(matchAt(start, token, loc));
   }
-  return out;
+  return out.sort((a, b) => a.start - b.start);
 }
 
-/** The whole of `text` as one path (an inline code span holding just a path), or null. */
+/**
+ * The whole of `text` as one path (an inline code span holding just a path),
+ * or null. The span's ends are the path's, so it may have spaces in it.
+ */
 export function wholeFilePath(text: string): FilePathMatch | null {
   const trimmed = text.trim();
   const [match] = findFilePaths(trimmed);
-  return match && match.start === 0 && match.end === trimmed.length ? match : null;
+  if (match && match.start === 0 && match.end === trimmed.length) return match;
+  const loc = spacedPath(trimmed);
+  return loc ? matchAt(0, trimmed, loc) : null;
 }

@@ -458,3 +458,18 @@ describe('fileState — tab management', () => {
     });
   });
 });
+
+describe('fileState — navigateToMatch', () => {
+  beforeEach(() => {
+    fileState.reset();
+  });
+
+  it('opens the file and leaves a target with its line and column', () => {
+    fileState.navigateToMatch('src/a.ts', 12, 5);
+    expect(fileState.getActiveTab()?.filePath).toBe('src/a.ts');
+    expect(fileState.scrollTarget).toEqual({ filePath: 'src/a.ts', line: 12, column: 5 });
+    fileState.clearScrollTarget();
+    fileState.navigateToMatch('src/b.ts', 3);
+    expect(fileState.scrollTarget).toEqual({ filePath: 'src/b.ts', line: 3 });
+  });
+});

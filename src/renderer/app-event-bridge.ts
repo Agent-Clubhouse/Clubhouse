@@ -706,7 +706,8 @@ let previousCleanup: (() => void) | null = null;
  *   - open-file: focus the owning project, switch to the file browser, and
  *     open the file. The openTab is deferred so the files panel finishes
  *     (re)mounting — and any previous panel finishes deactivating, which
- *     resets fileState — before we set the active tab.
+ *     resets fileState — before we set the active tab. With a line, it goes
+ *     to that line (and column).
  *   - open-folder: add the folder as a new project (which activates it) and
  *     switch to its file browser.
  *   - open-file-not-found: surface an error toast.
@@ -716,9 +717,10 @@ export function handleProtocolAction(action: ResolvedProtocolAction): void {
     case 'open-file': {
       useProjectStore.getState().setActiveProject(action.projectId);
       useUIStore.getState().setExplorerTab('plugin:files', action.projectId);
-      const { relativePath } = action;
+      const { relativePath, line, column } = action;
       setTimeout(() => {
-        fileState.openTab(relativePath, { preview: false });
+        if (line !== undefined) fileState.navigateToMatch(relativePath, line, column);
+        else fileState.openTab(relativePath, { preview: false });
       }, 0);
       break;
     }

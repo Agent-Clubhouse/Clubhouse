@@ -7,12 +7,14 @@ import { formatShortcut } from '../../../components/Tooltip';
 
 // Track the last onSave callback passed to MonacoEditor so tests can trigger saves
 let lastOnSave: ((content: string) => unknown) | null = null;
+let lastOnScrolledTo: (() => void) | null = null;
 
 // Mock MonacoEditor and MarkdownPreview to avoid themes/require issues in jsdom
 vi.mock('./MonacoEditor', () => ({
-  MonacoEditor: ({ value: _value, language, onSave }: { value: string; language: string; onSave?: (content: string) => unknown; onCursorChange?: (line: number, column: number) => void }) => {
+  MonacoEditor: ({ value: _value, language, onSave, scrollTo, onScrolledTo }: { value: string; language: string; onSave?: (content: string) => unknown; onCursorChange?: (line: number, column: number) => void; scrollTo?: { line: number; column?: number } | null; onScrolledTo?: () => void }) => {
     lastOnSave = onSave || null;
-    return React.createElement('div', { 'data-testid': 'monaco-editor' }, `Monaco: ${language}`);
+    lastOnScrolledTo = onScrolledTo || null;
+    return React.createElement('div', { 'data-testid': 'monaco-editor', 'data-scroll-to': scrollTo ? `${scrollTo.line}:${scrollTo.column ?? ''}` : undefined }, `Monaco: ${language}`);
   },
   disposeModel: vi.fn(),
   disposeAllModels: vi.fn(),
@@ -105,6 +107,27 @@ describe('FileViewer', () => {
       expect(screen.getByText('Preview')).toBeInTheDocument();
       expect(screen.getByText('Source')).toBeInTheDocument();
     });
+  });
+
+  it('goes to a line and column asked for before it mounted, and forgets it on another file', async () => {
+    const api = createViewerAPI();
+    act(() => { fileState.navigateToMatch('hello.ts', 12, 5); });
+    render(<FileViewer api={api} />);
+    await waitFor(() => expect(screen.getByTestId('monaco-editor').getAttribute('data-scroll-to')).toBe('12:5'));
+    act(() => { fileState.openTab('other.ts'); });
+    await waitFor(() => expect(api.files.readFile).toHaveBeenCalledWith('other.ts'));
+    await waitFor(() => expect(screen.getByTestId('monaco-editor').getAttribute('data-scroll-to')).toBeNull());
+  });
+
+  it('shows a markdown file\'s source to go to a line in it', async () => {
+    const api = createViewerAPI();
+    render(<FileViewer api={api} />);
+    act(() => { fileState.navigateToMatch('readme.md', 2); });
+    await waitFor(() => expect(screen.getByTestId('monaco-editor').getAttribute('data-scroll-to')).toBe('2:'));
+    expect(screen.queryByTestId('markdown-preview')).toBeNull();
+    // Once the editor has gone there, the target is spent: a remount (Preview, then Source) stays put.
+    act(() => { lastOnScrolledTo!(); });
+    await waitFor(() => expect(screen.getByTestId('monaco-editor').getAttribute('data-scroll-to')).toBeNull());
   });
 
   it('shows image preview for image files', async () => {

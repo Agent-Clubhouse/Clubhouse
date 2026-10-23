@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useCallback, useState } from 'react';
 import { loadMonaco, ensureThemes, applyMonacoTheme, monacoThemeName } from './monaco-theme';
 import { useThemeStore } from '../../../stores/themeStore';
 import type { ScrollState } from './state';
+import { revealLocation, type EditorLocation } from './reveal-location';
 
 // ── Model Cache ──────────────────────────────────────────────────────
 // Maintain one ITextModel per file path for efficient tab switching.
@@ -122,15 +123,17 @@ interface MonacoEditorProps {
   filePath: string;
   initialScrollState?: ScrollState | null;
   onScrollStateChange?: (state: ScrollState) => void;
-  /** When set, scroll to this line and briefly highlight it */
-  scrollToLine?: number | null;
+  /** When set, go to this place and highlight it (also once the editor is ready, if it isn't yet) */
+  scrollTo?: EditorLocation | null;
+  /** Called once `scrollTo` has been applied, so a later remount doesn't apply it again */
+  onScrolledTo?: () => void;
   /** Called when the cursor position changes (line, column) */
   onCursorChange?: (line: number, column: number) => void;
 }
 
 export function MonacoEditor({
   value, language, onSave, onDirtyChange, filePath,
-  initialScrollState, onScrollStateChange, scrollToLine, onCursorChange,
+  initialScrollState, onScrollStateChange, scrollTo, onScrolledTo, onCursorChange,
 }: MonacoEditorProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const editorRef = useRef<any>(null);
@@ -143,6 +146,10 @@ export function MonacoEditor({
   // Latest props for the async editor creation — props can change while Monaco is loading
   const latestPropsRef = useRef({ filePath, value, language, initialScrollState });
   latestPropsRef.current = { filePath, value, language, initialScrollState };
+  const scrollToRef = useRef(scrollTo);
+  scrollToRef.current = scrollTo;
+  const onScrolledToRef = useRef(onScrolledTo);
+  onScrolledToRef.current = onScrolledTo;
   const wordWrapRef = useRef<'off' | 'on'>('off');
   // The applied theme, not the selection: they differ while a plugin theme is unregistered.
   const themeId = useThemeStore((s) => s.theme.id);
@@ -312,6 +319,12 @@ export function MonacoEditor({
           column: scrollState.cursorColumn,
         });
       }
+      // A place asked for while Monaco was loading wins over the restored one.
+      if (scrollToRef.current) {
+        revealLocation(editor, scrollToRef.current);
+        editor.focus();
+        onScrolledToRef.current?.();
+      }
       checkDirty();
       setLoading(false);
     }).catch((err) => {
@@ -393,20 +406,13 @@ export function MonacoEditor({
     }
   }, [value, filePath]);
 
-  // Scroll to line when requested (from search results)
+  // Go to a place when asked (search results, file chips in chat)
   useEffect(() => {
-    if (!scrollToLine || !editorRef.current) return;
-
-    const editor = editorRef.current;
-    editor.revealLineInCenter(scrollToLine);
-    editor.setSelection({
-      startLineNumber: scrollToLine,
-      startColumn: 1,
-      endLineNumber: scrollToLine,
-      endColumn: 1000,
-    });
-    editor.focus();
-  }, [scrollToLine]);
+    if (!scrollTo || !editorRef.current) return;
+    revealLocation(editorRef.current, scrollTo);
+    editorRef.current.focus();
+    onScrolledToRef.current?.();
+  }, [scrollTo]);
 
   return React.createElement('div', {
     ref: containerRef,

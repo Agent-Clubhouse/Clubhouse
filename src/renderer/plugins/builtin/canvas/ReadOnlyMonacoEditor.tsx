@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { loadMonaco, ensureThemes, applyMonacoTheme, monacoThemeName } from '../files/monaco-theme';
 import { EXT_TO_LANG } from '../files/file-icons';
+import { revealLocation, type EditorLocation } from '../files/reveal-location';
 import { useThemeStore } from '../../../stores/themeStore';
 
 /** Detect Monaco language from a file path's extension */
@@ -18,9 +19,11 @@ interface ReadOnlyMonacoEditorProps {
   filePath: string;
   readOnly?: boolean;
   onSave?: (content: string) => void | Promise<void>;
+  /** A place to show and select: past the end it stops at the last line. */
+  reveal?: EditorLocation;
 }
 
-export function ReadOnlyMonacoEditor({ value, filePath, readOnly = true, onSave }: ReadOnlyMonacoEditorProps) {
+export function ReadOnlyMonacoEditor({ value, filePath, readOnly = true, onSave, reveal }: ReadOnlyMonacoEditorProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const editorRef = useRef<any>(null);
   const monacoRef = useRef<any>(null);
@@ -29,8 +32,8 @@ export function ReadOnlyMonacoEditor({ value, filePath, readOnly = true, onSave 
   const themeIdRef = useRef(themeId);
   // Latest props for the async editor creation and the Cmd+S handler — props can
   // change while Monaco is loading, and the keybinding outlives the mount render.
-  const latestPropsRef = useRef({ value, filePath, readOnly, onSave });
-  latestPropsRef.current = { value, filePath, readOnly, onSave };
+  const latestPropsRef = useRef({ value, filePath, readOnly, onSave, reveal });
+  latestPropsRef.current = { value, filePath, readOnly, onSave, reveal };
   /** File the editor's current model was created for. */
   const modelPathRef = useRef<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -100,6 +103,7 @@ export function ReadOnlyMonacoEditor({ value, filePath, readOnly = true, onSave 
       });
 
       editorRef.current = editor;
+      if (latest.reveal) revealLocation(editor, latest.reveal);
       setLoading(false);
     }).catch((err) => {
       if (disposed) return;
@@ -141,7 +145,15 @@ export function ReadOnlyMonacoEditor({ value, filePath, readOnly = true, onSave 
     // Reset scroll position for new file
     editor.setScrollTop(0);
     editor.setScrollLeft(0);
+    const target = latestPropsRef.current.reveal;
+    if (target) revealLocation(editor, target);
   }, [filePath, value]);
+
+  // A new place in the same file
+  useEffect(() => {
+    if (!editorRef.current || !reveal) return;
+    revealLocation(editorRef.current, reveal);
+  }, [reveal?.line, reveal?.column]);
 
   // React to theme changes
   useEffect(() => {

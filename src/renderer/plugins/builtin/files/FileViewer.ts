@@ -2,6 +2,7 @@ import React, { useState, useEffect, useCallback, useRef } from 'react';
 import type { PluginAPI } from '../../../../shared/plugin-types';
 import { fileState } from './state';
 import type { Tab, ScrollState } from './state';
+import type { EditorLocation } from './reveal-location';
 import { TabBar } from './TabBar';
 import { MonacoEditor, disposeModel, disposeCleanModels, updateSavedContent, getModelContent } from './MonacoEditor';
 import { useFilesScope } from './filesScope';
@@ -183,24 +184,40 @@ export function FileViewer({ api: rawApi }: { api: PluginAPI }) {
   const [previewMode, setPreviewMode] = useState<'preview' | 'source'>('preview');
   const [loading, setLoading] = useState(false);
   const [unsavedDialog, setUnsavedDialog] = useState<{ tabId: string; pendingAction: () => void } | null>(null);
-  const [scrollToLine, setScrollToLine] = useState<number | null>(null);
+  // A place to go to in a file (search results, file chips in chat), until another file is shown.
+  const [scrollTarget, setScrollTarget] = useState<({ filePath: string } & EditorLocation) | null>(null);
+  const scrollTargetRef = useRef(scrollTarget);
+  scrollTargetRef.current = scrollTarget;
+  // Applied once: switching a markdown file to Preview and back doesn't jump there again.
+  const clearScrollTarget = useCallback(() => {
+    scrollTargetRef.current = null;
+    setScrollTarget(null);
+  }, []);
   const [cursorLine, setCursorLine] = useState(1);
   const [cursorColumn, setCursorColumn] = useState(1);
 
   // ── Subscribe to tab state changes ────────────────────────────────
 
   useEffect(() => {
-    return fileState.subscribe(() => {
+    const sync = () => {
       const newActiveTab = fileState.getActiveTab();
       setActiveTab(newActiveTab ? { ...newActiveTab } : undefined);
 
-      // Handle scroll-to-line from search results
-      const lineTarget = fileState.scrollToLine;
-      if (lineTarget) {
-        setTimeout(() => setScrollToLine(lineTarget), 100);
-        fileState.clearScrollToLine();
+      const target = fileState.scrollTarget;
+      if (target) {
+        fileState.clearScrollTarget();
+        scrollTargetRef.current = target;
+        setScrollTarget(target);
+        // A line in a markdown or SVG file is in its source.
+        setPreviewMode('source');
+      } else if (scrollTargetRef.current && scrollTargetRef.current.filePath !== newActiveTab?.filePath) {
+        scrollTargetRef.current = null;
+        setScrollTarget(null);
       }
-    });
+    };
+    // A target may have been set before this panel mounted (opened from chat).
+    if (fileState.scrollTarget) sync();
+    return fileState.subscribe(sync);
   }, []);
 
   // ── Load file when active tab changes ─────────────────────────────
@@ -268,9 +285,9 @@ export function FileViewer({ api: rawApi }: { api: PluginAPI }) {
     loadFile(activeTab.filePath).then((result) => {
       if (!cancelled) {
         setLoadedFile(result);
-        // Reset preview mode for markdown/svg
+        // Reset preview mode for markdown/svg, unless a line in it was asked for
         if (result.fileType === 'markdown' || result.fileType === 'svg') {
-          setPreviewMode('preview');
+          setPreviewMode(scrollTargetRef.current?.filePath === result.filePath ? 'source' : 'preview');
         }
         setLoading(false);
       }
@@ -651,7 +668,8 @@ export function FileViewer({ api: rawApi }: { api: PluginAPI }) {
             filePath: keyOf(activeTab.filePath),
             initialScrollState: activeTab.scrollState,
             onScrollStateChange: handleScrollStateChange,
-            scrollToLine,
+            scrollTo: scrollTarget?.filePath === activeTab.filePath ? scrollTarget : null,
+            onScrolledTo: clearScrollTarget,
             onCursorChange: handleCursorChange,
           }),
         );
@@ -674,7 +692,8 @@ export function FileViewer({ api: rawApi }: { api: PluginAPI }) {
             filePath: keyOf(activeTab.filePath),
             initialScrollState: activeTab.scrollState,
             onScrollStateChange: handleScrollStateChange,
-            scrollToLine,
+            scrollTo: scrollTarget?.filePath === activeTab.filePath ? scrollTarget : null,
+            onScrolledTo: clearScrollTarget,
             onCursorChange: handleCursorChange,
           }),
         );
@@ -692,7 +711,8 @@ export function FileViewer({ api: rawApi }: { api: PluginAPI }) {
           filePath: keyOf(activeTab.filePath),
           initialScrollState: activeTab.scrollState,
           onScrollStateChange: handleScrollStateChange,
-          scrollToLine,
+          scrollTo: scrollTarget?.filePath === activeTab.filePath ? scrollTarget : null,
+          onScrolledTo: clearScrollTarget,
           onCursorChange: handleCursorChange,
         }),
       );
