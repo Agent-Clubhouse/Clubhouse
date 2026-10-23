@@ -27,7 +27,7 @@
  * watchdog tick, so switching between two Clubhouse windows doesn't flap.
  * Nothing runs while telemetry is off.
  */
-import { monitorEventLoopDelay, performance, type IntervalHistogram } from 'perf_hooks';
+import { monitorEventLoopDelay, performance } from 'perf_hooks';
 import { app, BrowserWindow, powerMonitor } from 'electron';
 import { ATTR, blockedFlowAttr } from '../../shared/telemetry/attributes';
 import { currentFlow, isTelemetryActive, onRuntimeChange, tel } from './facade';
@@ -91,7 +91,7 @@ type ProcessType = Parameters<typeof ATTR.processType>[0];
 
 let running = false;
 let mode: HealthMode = 'idle';
-let histogram: IntervalHistogram | null = null;
+let histogram: ReturnType<typeof monitorEventLoopDelay> | null = null;
 let histogramResolutionMs = 0;
 /** The minute's p99 and max lateness (ns), across mode switches. */
 let foldedP99 = 0;
