@@ -137,6 +137,12 @@ export interface AgentRuntime {
 
   /** The CLI's own session id, for resume (PTY runtimes read it from the terminal when the provider prints one). */
   getNativeSessionId(): string | undefined;
+  /**
+   * The CLI's own output folder for the current session (Copilot's
+   * session-state dir), by name only, when the provider has one (#2422).
+   * Chat runtimes only.
+   */
+  getSessionOutputDir?(): string | undefined;
 
   /**
    * Push notifications, each returning an unsubscribe function. PTY runtimes

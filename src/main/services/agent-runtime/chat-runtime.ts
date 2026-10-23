@@ -126,6 +126,8 @@ export interface ChatAgentRuntimeOptions {
   onEnded?: (reason: SessionEndReason, exitCode: number) => void;
   /** Called whenever the CLI reports a native session id (for resume on the next wake). */
   onNativeSessionId?: (nativeSessionId: string) => void;
+  /** The CLI's output folder for a native session, by name only (#2422). */
+  sessionOutputDir?: (nativeSessionId: string) => string | undefined;
   /** Notices written right after the first session_started (untested CLI version, driver fallback). */
   startNotices?: Array<ChatEventDataMap['notice']>;
   now?: () => number;
@@ -517,6 +519,10 @@ export class ChatAgentRuntime implements AgentRuntime {
 
   getNativeSessionId(): string | undefined {
     return this.nativeSessionId;
+  }
+
+  getSessionOutputDir(): string | undefined {
+    return this.nativeSessionId ? this.opts.sessionOutputDir?.(this.nativeSessionId) : undefined;
   }
 
   onStateChange(listener: (state: ChatSessionState) => void): () => void {

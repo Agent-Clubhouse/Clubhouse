@@ -3,7 +3,7 @@ import { IPC } from '../shared/ipc-channels';
 import type { CheckpointTurn, ChangesResult, RevertResult } from '../shared/chat-checkpoints';
 import type { ChatAgentRuntimeInfo, ChatEvent, ChatQuestionAnswers, ChatRuntimeSettings, MessageDelivery, PermissionLevel, PermissionResponseExtras, RuntimeSendResult, StagedChatAttachment } from '../shared/chat';
 import { CHAT_IMAGE_MAX_BYTES } from '../shared/chat';
-import type { ChatFileInfo, ChatFilePreview, ChatSessionSummary } from '../shared/chat';
+import type { ChatFileInfo, ChatFilePreview, ChatLocalImageResult, ChatSessionSummary } from '../shared/chat';
 import type { ResolvedProtocolAction } from '../shared/types';
 
 export const chat = {
@@ -47,6 +47,9 @@ export const chat = {
     /** 'open' resolves the file to its project for the Files view; 'reveal' shows it in the file manager. */
     fileAction: (agentId: string, filePath: string, action: 'open' | 'reveal'): Promise<ResolvedProtocolAction | null> =>
       ipcRenderer.invoke(IPC.CHAT.FILE_ACTION, agentId, filePath, action),
+    /** A local image from agent markdown: main checks the path and stores it, answering with a media reference or why not. */
+    importLocalImage: (agentId: string, src: string): Promise<ChatLocalImageResult> =>
+      ipcRenderer.invoke(IPC.CHAT.IMPORT_LOCAL_IMAGE, agentId, src),
     interrupt: (agentId: string): Promise<void> =>
       ipcRenderer.invoke(IPC.CHAT.INTERRUPT, agentId),
     /** Drop queued messages (all when `messageIds` is omitted); resolves with the ids main removed. */

@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { renderMarkdownSafe } from '../../../utils/safe-markdown';
 import { useSafeMarkdownLinks } from '../../../utils/safe-markdown-links';
 import type {
@@ -15,7 +15,8 @@ import type { ChatCapabilities, ContentBlock } from '../../../../shared/chat';
 import { attachmentName } from './attachments';
 import { enrichMarkdownLinks, useRichLinks, useTokenHandlers } from './rich/RichLinks';
 import { useRichChatContent } from './rich/rich-flag';
-import { handleRemoteImageClick, rewriteMarkdownImages } from './rich/markdown-images';
+import { handleRemoteImageClick, hydrateLocalImages, mediaTargetOf, renderChatMarkdown } from './rich/markdown-images';
+import { ChatMediaContext, ImageLightbox } from './rich/ChatImages';
 import { fileMatcher, hydrateFileChips, markCodePaths, useFileChips } from './rich/FileChips';
 import { AlertIcon, BrainIcon, ChevronDown, ChevronRight, FileIcon, ImageIcon, PlanIcon, QuestionIcon } from './icons';
 import { formatCost, formatDuration, formatTokens } from './view-model';
@@ -45,9 +46,11 @@ export function Markdown({ text, streaming = false, className = '' }: { text: st
   }, [text, streaming]);
   useEffect(() => () => { if (timer.current) clearTimeout(timer.current); }, []);
 
-  // Rich chat content (#2350): web images wait for a click and local ones don't load; off, the HTML is as before.
+  // Rich chat content (#2350): web images wait for a click and local ones go through main (#2422); off, the HTML is as before.
   const rich = useRichChatContent();
-  const html = useMemo(() => (rich ? rewriteMarkdownImages(renderMarkdownSafe(shown)) : renderMarkdownSafe(shown)), [shown, rich]);
+  const html = useMemo(() => (rich ? renderChatMarkdown(shown) : renderMarkdownSafe(shown)), [shown, rich]);
+  const mediaAgent = useContext(ChatMediaContext);
+  const [viewing, setViewing] = useState<{ mediaRef: string; mimeType: string } | null>(null);
   // Rich links (#2351) rework the rendered, sanitized DOM; off, the element is exactly as before.
   const richLinks = useRichLinks();
   const richHandlers = useTokenHandlers(richLinks);
@@ -55,21 +58,35 @@ export function Markdown({ text, streaming = false, className = '' }: { text: st
   const el = useRef<HTMLDivElement>(null);
   const enriched = useRef<string | null>(null);
   useLayoutEffect(() => {
-    if (!richLinks || !el.current) return;
-    // Same HTML, new context (the repo resolved): start again from React's markup.
-    if (enriched.current === html) el.current.innerHTML = html;
-    enrichMarkdownLinks(el.current, richLinks.repo, fileAgent && !streaming ? [fileMatcher] : []);
-    // Chips wait for the message to finish: a streaming message re-renders every few frames.
-    if (fileAgent && !streaming) {
-      markCodePaths(el.current);
-      void hydrateFileChips(el.current, fileAgent);
+    if (!el.current) return;
+    if (richLinks) {
+      // Same HTML, new context (the repo resolved): start again from React's markup.
+      if (enriched.current === html) el.current.innerHTML = html;
+      enrichMarkdownLinks(el.current, richLinks.repo, fileAgent && !streaming ? [fileMatcher] : []);
+      // Chips wait for the message to finish: a streaming message re-renders every few frames.
+      if (fileAgent && !streaming) {
+        markCodePaths(el.current);
+        void hydrateFileChips(el.current, fileAgent);
+      }
+      enriched.current = html;
     }
-    enriched.current = html;
-  }, [html, richLinks, fileAgent, streaming]);
+    // Local images wait too, then load as they near the viewport.
+    if (rich && !streaming) return hydrateLocalImages(el.current, mediaAgent);
+    return undefined;
+  }, [html, rich, richLinks, fileAgent, streaming, mediaAgent]);
   if (rich || richLinks) {
     const linkClick = richHandlers.onClick ?? onClick;
-    const onRichClick = (e: React.MouseEvent<HTMLDivElement>) => { if (!handleRemoteImageClick(e)) linkClick(e); };
-    return <div ref={el} className={`chat-markdown ${className}`} {...richHandlers} onClick={onRichClick} dangerouslySetInnerHTML={{ __html: html }} />;
+    const onRichClick = (e: React.MouseEvent<HTMLDivElement>) => {
+      const media = mediaAgent ? mediaTargetOf(e) : null;
+      if (media) { e.preventDefault(); setViewing(media); return; }
+      if (!handleRemoteImageClick(e)) linkClick(e);
+    };
+    return (
+      <>
+        <div ref={el} className={`chat-markdown ${className}`} {...richHandlers} onClick={onRichClick} dangerouslySetInnerHTML={{ __html: html }} />
+        {viewing && mediaAgent && <ImageLightbox agentId={mediaAgent} target={{ kind: 'stored', ...viewing }} onClose={() => setViewing(null)} />}
+      </>
+    );
   }
   return <div className={`chat-markdown ${className}`} onClick={onClick} dangerouslySetInnerHTML={{ __html: html }} />;
 }

@@ -18,7 +18,7 @@ import { broadcastToAllWindows } from '../util/ipc-broadcast';
 import { withValidatedArgs, stringArg, numberArg, objectArg, arrayArg, booleanArg, type ArgValidator } from './validation';
 import { resolveAttachments, stageAttachmentData, stageAttachmentPath } from '../services/agent-runtime/chat-attachments';
 import { fetchRemoteImage, mediaFilePath, readMedia } from '../services/agent-runtime/chat-media';
-import { MAX_STAT_PATHS, readChatFilePreview, resolveChatFile, statChatPaths } from '../services/agent-runtime/chat-files';
+import { importChatImage, MAX_STAT_PATHS, readChatFilePreview, resolveChatFile, statChatPaths } from '../services/agent-runtime/chat-files';
 import { getSettings as getExperimentalSettings } from '../services/experimental-settings';
 
 /** An effort: a level, omitted to keep the current one, or null for the provider's default. */
@@ -233,6 +233,16 @@ export function registerChatHandlers(): void {
     async (event, agentId, filePath) => {
       assertRichMedia(event);
       return readChatFilePreview(agentId, filePath);
+    },
+  ));
+
+  // Local images in agent markdown (#2422): stored as media when allowed, so
+  // the renderer shows them by reference and never loads the path itself.
+  ipcMain.handle(IPC.CHAT.IMPORT_LOCAL_IMAGE, withValidatedArgs(
+    [stringArg(), stringArg({ maxLength: 1024 })],
+    async (event, agentId, src) => {
+      assertRichMedia(event);
+      return importChatImage(agentId, src);
     },
   ));
 

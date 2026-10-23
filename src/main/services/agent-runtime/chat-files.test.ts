@@ -9,10 +9,13 @@ const project = path.join(tmpRoot, 'project');
 const worktree = path.join(project, '.clubhouse', 'agents', 'a1');
 const outside = path.join(tmpRoot, 'outside');
 
-const live = vi.hoisted(() => ({ agents: new Map<string, { projectPath: string; cwd?: string }>() }));
+const sessionOutput = path.join(tmpRoot, 'copilot', 'session-state', 'sess-1');
+
+const live = vi.hoisted(() => ({ agents: new Map<string, { projectPath: string; cwd?: string }>(), outputDirs: new Map<string, string>() }));
 vi.mock('electron', () => ({ app: { getPath: () => path.join(tmpRoot, 'userData') } }));
 vi.mock('../log-service', () => ({ appLog: vi.fn() }));
 vi.mock('../agent-registry', () => ({ agentRegistry: { get: (id: string) => live.agents.get(id) } }));
+vi.mock('./index', () => ({ getAgentRuntime: (id: string) => (live.outputDirs.has(id) ? { getSessionOutputDir: () => live.outputDirs.get(id) } : undefined) }));
 vi.mock('../project-store', () => ({ list: async () => [{ id: 'p1', path: project }] }));
 vi.mock('../agent-config', () => ({
   getDurableConfig: async (_projectPath: string, agentId: string) => (
@@ -20,7 +23,8 @@ vi.mock('../agent-config', () => ({
       : agentId === 'escaper' ? { id: 'escaper', worktreePath: outside } : null),
 }));
 
-import { agentRoots, clearAgentRootsCache, readChatFilePreview, resolveChatFile, statChatPaths } from './chat-files';
+import { agentRoots, clearAgentRootsCache, importChatImage, readChatFilePreview, resolveChatFile, statChatPaths } from './chat-files';
+import { agentMediaDir } from './chat-transcript';
 import { CHAT_FILE_PREVIEW_TEXT_MAX_BYTES } from '../../../shared/chat';
 
 const PNG = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0, 13, 0x49, 0x48, 0x44, 0x52, 0, 0, 0, 1, 0, 0, 0, 1, 8, 6, 0, 0, 0]);
@@ -36,7 +40,9 @@ beforeEach(() => {
   fs.writeFileSync(path.join(worktree, 'blob.bin'), Buffer.from([1, 0, 2, 0]));
   fs.writeFileSync(path.join(project, 'README.md'), '# Project\n');
   fs.writeFileSync(path.join(outside, 'secret.txt'), 'nope');
+  fs.rmSync(path.join(tmpRoot, 'copilot'), { recursive: true, force: true });
   live.agents.clear();
+  live.outputDirs.clear();
   clearAgentRootsCache();
   live.agents.set('a1', { projectPath: project, cwd: worktree });
 });
@@ -130,5 +136,85 @@ describe('readChatFilePreview', () => {
     await expect(readChatFilePreview('a1', path.join(outside, 'secret.txt'))).rejects.toThrow('not available');
     await expect(resolveChatFile('a1', path.join(outside, 'secret.txt'))).rejects.toThrow('not available');
     expect(await resolveChatFile('a1', 'src/main.ts')).toBe(fs.realpathSync.native(path.join(worktree, 'src', 'main.ts')));
+  });
+});
+
+describe('importChatImage (local markdown images, #2422)', () => {
+  beforeEach(() => {
+    // storeMedia writes only next to an existing transcript folder.
+    fs.mkdirSync(path.dirname(agentMediaDir('a1')), { recursive: true });
+    fs.mkdirSync(path.join(worktree, 'assets'), { recursive: true });
+    fs.writeFileSync(path.join(worktree, 'assets', 'icon.png'), PNG);
+    fs.writeFileSync(path.join(worktree, 'assets', 'my shot.png'), PNG);
+    fs.writeFileSync(path.join(outside, 'shot.png'), PNG);
+  });
+
+  const stored = expect.objectContaining({ ok: true, mimeType: 'image/png', mediaRef: expect.stringMatching(/^[0-9a-f]{64}\.png$/) });
+
+  it('stores absolute, cwd-relative and file: URL images as media', async () => {
+    for (const src of [path.join(worktree, 'assets', 'icon.png'), './assets/icon.png', 'assets/icon.png', pathToFileURL(path.join(worktree, 'assets', 'icon.png')).href]) {
+      expect(await importChatImage('a1', src)).toEqual(stored);
+    }
+    const result = await importChatImage('a1', './assets/icon.png');
+    if (!result.ok) throw new Error('not stored');
+    expect(fs.readFileSync(path.join(agentMediaDir('a1'), result.mediaRef))).toEqual(PNG);
+    expect(result).toMatchObject({ width: 1, height: 1 });
+  });
+
+  it('answers every one of many images asked at once (they take turns)', async () => {
+    const out = await Promise.all(Array.from({ length: 7 }, (_, i) => importChatImage('a1', i % 2 ? './assets/icon.png' : './assets/none.png')));
+    expect(out.filter((r) => r.ok)).toHaveLength(3);
+    expect(out.filter((r) => !r.ok)).toHaveLength(4);
+  });
+
+  it('decodes URL-encoded spaces, in paths and file: URLs', async () => {
+    expect(await importChatImage('a1', './assets/my%20shot.png')).toEqual(stored);
+    expect(await importChatImage('a1', './assets/my shot.png')).toEqual(stored);
+    expect(await importChatImage('a1', pathToFileURL(path.join(worktree, 'assets', 'my shot.png')).href)).toEqual(stored);
+  });
+
+  it('says missing for a nonexistent path inside the roots', async () => {
+    expect(await importChatImage('a1', './assets/nope.png')).toEqual({ ok: false, reason: 'missing' });
+    expect(await importChatImage('a1', './assets/no%20pe.png')).toEqual({ ok: false, reason: 'missing' });
+  });
+
+  it('says outside for paths beyond the roots, existing or not, and through symlinks', async () => {
+    expect(await importChatImage('a1', path.join(outside, 'shot.png'))).toEqual({ ok: false, reason: 'outside' });
+    expect(await importChatImage('a1', path.join(outside, 'nope.png'))).toEqual({ ok: false, reason: 'outside' });
+    expect(await importChatImage('a1', '../../../../outside/shot.png')).toEqual({ ok: false, reason: 'outside' });
+    expect(await importChatImage('a1', pathToFileURL(path.join(outside, 'shot.png')).href)).toEqual({ ok: false, reason: 'outside' });
+    expect(await importChatImage('a1', '~/shot.png')).toEqual({ ok: false, reason: 'outside' });
+    fs.symlinkSync(path.join(outside, 'shot.png'), path.join(worktree, 'assets', 'link.png'));
+    expect(await importChatImage('a1', './assets/link.png')).toEqual({ ok: false, reason: 'outside' });
+    expect(await importChatImage('unknown', path.join(worktree, 'assets', 'icon.png'))).toEqual({ ok: false, reason: 'outside' });
+  });
+
+  it('says unsupported for files that are not images, and too-large for a huge canvas', async () => {
+    expect(await importChatImage('a1', 'src/main.ts')).toEqual({ ok: false, reason: 'unsupported' });
+    const huge = Buffer.from(PNG);
+    huge.writeUInt32BE(100_000, 16);
+    huge.writeUInt32BE(100_000, 20);
+    fs.writeFileSync(path.join(worktree, 'assets', 'huge.png'), huge);
+    expect(await importChatImage('a1', './assets/huge.png')).toEqual({ ok: false, reason: 'too-large' });
+  });
+
+  it("reads from the live session's own output folder, and only that session's", async () => {
+    fs.mkdirSync(sessionOutput, { recursive: true });
+    fs.writeFileSync(path.join(sessionOutput, 'screenshot.png'), PNG);
+    fs.mkdirSync(path.join(path.dirname(sessionOutput), 'sess-2'), { recursive: true });
+    fs.writeFileSync(path.join(path.dirname(sessionOutput), 'sess-2', 'other.png'), PNG);
+    expect(await importChatImage('a1', path.join(sessionOutput, 'screenshot.png'))).toEqual({ ok: false, reason: 'outside' });
+    live.outputDirs.set('a1', sessionOutput);
+    clearAgentRootsCache();
+    expect(await importChatImage('a1', path.join(sessionOutput, 'screenshot.png'))).toEqual(stored);
+    expect(await importChatImage('a1', path.join(path.dirname(sessionOutput), 'sess-2', 'other.png'))).toEqual({ ok: false, reason: 'outside' });
+  });
+
+  it('ignores a session-output folder that is a symlink', async () => {
+    fs.mkdirSync(path.dirname(sessionOutput), { recursive: true });
+    fs.symlinkSync(outside, sessionOutput, 'dir');
+    live.outputDirs.set('a1', sessionOutput);
+    expect(await agentRoots('a1')).not.toContain(sessionOutput);
+    expect(await importChatImage('a1', path.join(sessionOutput, 'shot.png'))).toEqual({ ok: false, reason: 'outside' });
   });
 });
