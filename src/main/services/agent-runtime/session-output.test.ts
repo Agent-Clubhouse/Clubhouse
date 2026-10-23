@@ -31,7 +31,7 @@ describe('verifySessionOutputDir', () => {
   it('accepts a real directory', async () => {
     const dir = path.join(tmpRoot, 'state', 's1');
     fs.mkdirSync(dir, { recursive: true });
-    expect(await verifySessionOutputDir(dir)).toBe(fs.realpathSync(dir));
+    expect(await verifySessionOutputDir(dir)).toBe(fs.realpathSync.native(dir));
   });
 
   it('refuses missing folders, files, symlinks, relative paths, the root and the home folder or its parents', async () => {
