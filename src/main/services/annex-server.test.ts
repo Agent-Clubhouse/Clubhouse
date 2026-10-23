@@ -4,6 +4,8 @@ import net from 'net';
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
+import { readMobileChatContent } from './annex-chat-content';
+vi.mock('./annex-chat-content', () => ({ readMobileChatContent: vi.fn() }));
 
 // Real HTTP sockets in this suite must never expose test fixtures to the LAN.
 // Bonjour itself is mocked below; retain its branch coverage independently.
@@ -350,6 +352,8 @@ describe('annex-server', () => {
     expect(response.status).toBe(403);
     expect(JSON.parse(response.body).error.code).toBe('client_certificate_required');
     expect(agentSystem.killAgent).not.toHaveBeenCalled();
+    expect((await request(port, 'GET', '/api/v1/mobile/agents/a/content?path=src/a.ts', undefined, authHeaders(token))).status).toBe(403);
+    expect(readMobileChatContent).not.toHaveBeenCalled();
     expect((await request(port, 'GET', '/api/v1/projects', undefined, authHeaders(token))).status).toBe(200);
   });
 
@@ -376,7 +380,7 @@ describe('annex-server', () => {
         const response = await request(port, 'GET', '/api/v1/mobile/agents/a/chat?limit=1', undefined, authHeaders(token));
         expect(response.status).toBe(200);
         expect(JSON.parse(response.body)).toMatchObject({ sessionId: 's', currentSessionId: 's', readOnly: false,
-          state: 'waiting_permission', events: [events[2]], lastSeq: 3, truncated: true, nextBeforeSeq: 3,
+          state: 'waiting_permission', canStart: false, events: [events[2]], lastSeq: 3, truncated: true, nextBeforeSeq: 3,
           pendingPermissions: [events[0]], pendingQuestions: [],
           queuedMessageIds: ['q1'], queueStateSeq: 2, queueRemovalSupported: true,
         });
@@ -463,6 +467,16 @@ describe('annex-server', () => {
       expect(peers.has('mobile-test-identity')).toBe(true);
       const input = { version: 1, epoch: capability.body.epoch, commandId: 'tls-command', type: 'agent.spawn', projectId: 'test-project', prompt: 'hello' };
       vi.mocked(projectStore.list).mockReturnValue([{ id: 'test-project', name: 'Test', path: '/test/project' }] as any);
+      vi.mocked(agentConfigModule.listDurable).mockReturnValue([{ id: 'a', name: 'agent', color: 'blue', createdAt: '2026-01-01' }] as any);
+      vi.mocked(readMobileChatContent).mockResolvedValue({ kind: 'text', name: 'a.ts', text: 'safe preview' } as any);
+      expect((await secureRequest('GET', '/api/v1/mobile/agents/a/content?path=src/a.ts', undefined)).body.text).toBe('safe preview');
+      expect((await secureRequest('GET', '/api/v1/mobile/agents/a/content?path=src/a.ts', undefined, impostor)).status).toBe(401);
+      expect((await secureRequest('GET', '/api/v1/mobile/agents/missing/content?path=src/a.ts', undefined)).status).toBe(404);
+      expect((await secureRequest('GET', '/api/v1/mobile/agents/a/chat', undefined)).body.canStart).toBe(true);
+      const wake = { version: 1, epoch: capability.body.epoch, commandId: 'wake-mobile', type: 'agent.start', agentId: 'a', resume: true };
+      expect((await secureRequest('POST', '/api/v1/mobile/commands', wake)).status).toBe(200);
+      expect(agentSystem.spawnAgent).toHaveBeenCalledWith(expect.objectContaining({ agentId: 'a', kind: 'durable' }));
+      vi.mocked(agentSystem.spawnAgent).mockClear();
       const accepted = await secureRequest('POST', '/api/v1/mobile/commands', input);
       expect(accepted.status).toBe(200); expect(accepted.body.status).toBe('completed');
       expect(agentSystem.spawnAgent).toHaveBeenCalledWith(expect.objectContaining({ projectPath: '/test/project', freeAgentMode: false }));
@@ -523,6 +537,16 @@ describe('annex-server', () => {
       expect(selfRevoke).toMatchObject({ status: 200, body: { revoked: true, pairingMode: 'session' } });
       finishLookup([{ id: 'test-project', name: 'Test', path: '/test/project' }]);
       expect((await revokedDuringLookup).body).toMatchObject({ status: 'rejected', error: { code: 'authorization_revoked' } });
+      await secureRequest('POST', '/pair', { pin: status.pin, publicKey, pairingMode: 'session' });
+      vi.mocked(agentConfigModule.listDurable).mockReturnValue([{ id: 'a', name: 'agent', color: 'blue', createdAt: '2026-01-01' }] as any);
+      vi.mocked(readMobileChatContent).mockImplementationOnce(async () => {
+        annexServer.disconnectPeer('mobile-test-identity');
+        return { kind: 'text', name: 'secret.txt', text: 'must never return after revocation' } as any;
+      });
+      const revokedContent = await secureRequest('GET', '/api/v1/mobile/agents/a/content?path=src/a.ts', undefined);
+      expect(revokedContent).toMatchObject({ status: 403, body: { error: 'authorization_revoked' } });
+      expect(JSON.stringify(revokedContent.body)).not.toContain('must never return');
+
       expect(agentSystem.spawnAgent).toHaveBeenCalledTimes(2);
     }, 15000);
   });

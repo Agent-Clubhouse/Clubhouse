@@ -11,6 +11,8 @@ import { MOBILE_COMMAND_TYPES, type MobileCommand } from '../../shared/mobile-co
 import { MobileCommandService, MobileControlError, executeChatCommand, pendingInteractions, MOBILE_COMMAND_MAX_ENTRIES, MOBILE_COMMAND_TTL_MS } from './mobile-control';
 import { isRevertRunning } from './agent-runtime/checkpoint-tracker';
 import { readChatTranscript, listChatSessions } from './agent-runtime/chat-transcript';
+import { getSettings as getExperimentalSettings } from './experimental-settings';
+import { readMobileChatContent } from './annex-chat-content';
 
 import Bonjour, { Service } from 'bonjour-service';
 import * as annexEventBus from './annex-event-bus';
@@ -2133,6 +2135,7 @@ async function handleMobileCapabilitiesRoute(ctx: AnnexRouteContext): Promise<vo
     version: 1, epoch: mobileCommands.epoch, controlAuth: 'mtls-pinned-client',
     controlAvailable: !!ctx.mobilePrincipal, commands: MOBILE_COMMAND_TYPES,
     pairing: { sessionRevokePath: '/api/v1/mobile/pairing' },
+    richContent: { version: 1, enabled: getExperimentalSettings().richChatContent === true, maximumBytes: 8 * 1024 * 1024 },
     events: { transport: 'annex-websocket', replayRequest: 'mobile:replay', queueState: 'queue_state' },
     idempotency: { scope: 'peer-and-epoch', maxEntries: MOBILE_COMMAND_MAX_ENTRIES, ttlMs: MOBILE_COMMAND_TTL_MS },
   });
@@ -2152,7 +2155,8 @@ async function handleMobilePairingDeleteRoute(ctx: AnnexRouteContext): Promise<v
 async function handleMobileChatRoute(ctx: AnnexRouteContext, match: RegExpMatchArray): Promise<void> {
   try {
     const agentId = decodeURIComponent(match[1]);
-    if (!await findAgentAcrossProjects(agentId) && !trackedQuickAgents.has(agentId)) {
+    const durable = await findAgentAcrossProjects(agentId);
+    if ((!durable || isDisposedAgent(durable.config)) && !trackedQuickAgents.has(agentId)) {
       sendJson(ctx.res, 404, { error: 'agent_not_found' }); return;
     }
     const query = new URL(ctx.url, 'http://localhost').searchParams;
@@ -2175,6 +2179,7 @@ async function handleMobileChatRoute(ctx: AnnexRouteContext, match: RegExpMatchA
     const page = eligible.slice(-limit);
     sendJson(ctx.res, 200, {
       version: 1, epoch: mobileCommands.epoch, agentId, sessionId: sessionId ?? null,
+      canStart: !!durable && !isAgentRunning(agentId) && !mobileStartingAgents.has(agentId),
       currentSessionId: runtime?.kind === 'chat' ? runtime.getSessionId?.() ?? null : null, readOnly: !live,
       state: live ? runtime.getState() : 'sleeping', capabilities: live ? runtime.getCapabilities?.() ?? null : null,
       events: page, lastSeq: current[current.length - 1]?.seq ?? 0, truncated: eligible.length > limit,
@@ -2186,6 +2191,35 @@ async function handleMobileChatRoute(ctx: AnnexRouteContext, match: RegExpMatchA
   } catch {
     // telemetry-exempt: do not export transcript content; caller receives a bounded error.
     sendJson(ctx.res, 500, { error: 'chat_snapshot_failed' });
+  }
+}
+
+/** Rich content stays behind the desktop experimental opt-in and pinned mobile mTLS.
+ * Recheck authorization after filesystem IO; revocation may race a preview read. */
+async function handleMobileContentRoute(ctx: AnnexRouteContext, match: RegExpMatchArray): Promise<void> {
+  const principal = ctx.mobilePrincipal;
+  if (!principal) { sendJson(ctx.res, 403, { error: 'client_certificate_required' }); return; }
+  const epoch = mobileCommands.epoch;
+  const pin = findPairedPeer(principal)?.tlsCertificateFingerprint;
+  const authorized = () => {
+    const peer = findPairedPeer(principal);
+    return mobileCommands.epoch === epoch && !!peer && peer.tlsCertificateFingerprint === pin
+      && (!peer.role || peer.role === 'controller');
+  };
+  try {
+    const agentId = decodeURIComponent(match[1]);
+    const info = await findAgentAcrossProjects(agentId);
+    if ((!info || isDisposedAgent(info.config)) && !trackedQuickAgents.has(agentId)) {
+      sendJson(ctx.res, 404, { error: 'agent_not_found' }); return;
+    }
+    const query = new URL(ctx.url, 'http://localhost').searchParams;
+    const result = await readMobileChatContent(query, agentId, () => getExperimentalSettings().richChatContent === true);
+    if (!authorized()) { sendJson(ctx.res, 403, { error: 'authorization_revoked' }); return; }
+    ctx.res.setHeader('Cache-Control', 'no-store');
+    sendJson(ctx.res, 200, result);
+  } catch {
+    // telemetry-exempt: paths, bytes and credentials must never enter telemetry.
+    sendJson(ctx.res, 404, { error: 'content_unavailable' });
   }
 }
 
@@ -2306,6 +2340,7 @@ async function handleMobileCommandRoute(ctx: AnnexRouteContext): Promise<void> {
 }
 
 const ANNEX_HTTP_ROUTE_TABLE: AnnexHttpRoute[] = [
+  { method: 'GET', pattern: /^\/api\/v1\/mobile\/agents\/([^/]+)\/content(\?.*)?$/, handler: handleMobileContentRoute },
   { method: 'GET', pattern: /^\/api\/v1\/mobile\/capabilities$/, handler: handleMobileCapabilitiesRoute },
   { method: 'DELETE', pattern: /^\/api\/v1\/mobile\/pairing$/, handler: handleMobilePairingDeleteRoute },
   { method: 'GET', pattern: /^\/api\/v1\/mobile\/agents\/([^/]+)\/chat(\?.*)?$/, handler: handleMobileChatRoute },
