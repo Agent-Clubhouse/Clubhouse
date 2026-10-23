@@ -12,13 +12,14 @@
  */
 
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
-import { createPortal } from 'react-dom';
+import { createPortal, flushSync } from 'react-dom';
 import { Button } from '../../../../components/Button';
 import { AudioIcon, FullscreenIcon, PlayIcon, PopOutIcon, PreviewIcon, VideoIcon, XIcon } from '../icons';
 import { useOpenFilePreview } from './FileChips';
 import {
   formatDuration,
   installSinglePlayback,
+  MEDIA_SUPERSEDED,
   loadMediaMeta,
   loadMediaSource,
   placeMediaCards,
@@ -48,7 +49,8 @@ function useLazyMeta(card: MediaCardHost, agentId: string, el: React.RefObject<H
     const io = new IntersectionObserver((entries) => {
       if (!entries.some((e) => e.isIntersecting)) return;
       io.disconnect();
-      void loadMediaMeta(agentId, card.path, card.kind, card.size).then((m) => { if (!cancelled) setMeta(m); });
+      // Skipped if the card is gone before its turn in the queue (scrolled past quickly).
+      void loadMediaMeta(agentId, card.path, card.kind, card.size, () => !cancelled).then((m) => { if (!cancelled) setMeta(m); });
     }, { rootMargin: NEAR_VIEWPORT });
     io.observe(node);
     return () => { cancelled = true; io.disconnect(); };
@@ -76,17 +78,27 @@ export function MediaCard({ card, agentId }: { card: MediaCardHost; agentId: str
   const [resumeAt, setResumeAt] = useState<number | undefined>(() => savedPosition(agentId, card.path));
   const openPreview = useOpenFilePreview();
   const alive = useRef(true);
-  useEffect(() => { installSinglePlayback(); alive.current = true; return () => { alive.current = false; }; }, []);
+  const loading = useRef(false);
+  const playButton = useRef<HTMLButtonElement>(null);
+  /** Where keyboard focus goes after the next render: the opened player, or Play once it closes. */
+  const focusNext = useRef<'player' | 'play' | null>(null);
+  useEffect(() => { alive.current = true; return () => { alive.current = false; }; }, []);
 
   const shownDuration = formatDuration(duration ?? meta?.duration);
   const group = { role: 'group', 'aria-label': `${card.kind === 'audio' ? 'Audio' : 'Video'}: ${card.name}` };
   const Icon = card.kind === 'audio' ? AudioIcon : VideoIcon;
 
   const play = async () => {
-    if (playback.state === 'loading' || playback.state === 'open') return;
+    // A ref, not state: a double-click lands before the re-render that disables Play.
+    if (loading.current || playback.state === 'open') return;
+    loading.current = true;
+    // Asked now: by the time the source loads, focus may have moved on (or the button been disabled).
+    const keyboard = !!root.current?.contains(document.activeElement);
     setPlayback({ state: 'loading' });
     const source = await loadMediaSource(agentId, card.path);
+    loading.current = false;
     if (!alive.current) return;
+    if (source.status === 'ok' && keyboard && (document.activeElement === document.body || root.current?.contains(document.activeElement))) focusNext.current = 'player';
     setPlayback(source.status === 'ok' ? { state: 'open', src: source.src } : { state: source.status });
   };
 
@@ -102,7 +114,18 @@ export function MediaCard({ card, agentId }: { card: MediaCardHost; agentId: str
     try { el.load(); } catch { /* telemetry-exempt: freeing the buffer is best-effort. */ }
   }, [agentId, card.path]);
 
-  const close = () => { release(); setPlayback({ state: 'idle' }); };
+  const close = (refocus = true) => {
+    if (refocus && root.current?.contains(document.activeElement)) focusNext.current = 'play';
+    release();
+    setPlayback({ state: 'idle' });
+  };
+  const closeRef = useRef(close);
+  closeRef.current = close;
+  useEffect(() => {
+    const target = focusNext.current === 'player' ? player.current : focusNext.current === 'play' ? playButton.current : null;
+    focusNext.current = null;
+    target?.focus();
+  });
   // Scrolled out of the transcript's window, or the transcript closed. A layout
   // cleanup runs before React detaches the player's ref.
   useLayoutEffect(() => () => release(), [release]);
@@ -112,10 +135,14 @@ export function MediaCard({ card, agentId }: { card: MediaCardHost; agentId: str
   useEffect(() => {
     const el = player.current;
     if (!src || !el) return;
+    // Another chat player started: this one closes, so its source doesn't stay in memory.
+    const superseded = () => closeRef.current(false);
+    el.addEventListener(MEDIA_SUPERSEDED, superseded);
     // Started by the Play click; never on load.
     const started = el.play();
     // telemetry-exempt: if the runtime refuses, the controls are there to start it.
     if (started && typeof started.catch === 'function') started.catch((): undefined => undefined);
+    return () => el.removeEventListener(MEDIA_SUPERSEDED, superseded);
   }, [src]);
 
   const onLoadedMetadata = (e: React.SyntheticEvent<HTMLMediaElement>) => {
@@ -150,12 +177,13 @@ export function MediaCard({ card, agentId }: { card: MediaCardHost; agentId: str
             <span className="w-7 h-7 flex items-center justify-center text-ctp-overlay1 flex-shrink-0"><Icon /></span>
           ) : (
             <button
+              ref={playButton}
               type="button"
               onClick={() => void play()}
-              disabled={playback.state === 'loading'}
+              aria-busy={playback.state === 'loading'}
               aria-label={playLabel}
               title={playLabel}
-              className="w-7 h-7 rounded-full bg-surface-1 text-ctp-text flex items-center justify-center flex-shrink-0 hover:bg-surface-2 disabled:opacity-60"
+              className="w-7 h-7 rounded-full bg-surface-1 text-ctp-text flex items-center justify-center flex-shrink-0 hover:bg-surface-2 aria-busy:opacity-60"
             >
               <PlayIcon size={12} />
             </button>
@@ -167,12 +195,12 @@ export function MediaCard({ card, agentId }: { card: MediaCardHost; agentId: str
             {playback.state !== 'loading' && resumeAt !== undefined && !open && <span className="text-[11.5px] text-ctp-overlay1 tabular-nums">{formatDuration(resumeAt)} /</span>}
             {shownDuration && playback.state !== 'loading' && <span className="text-[11.5px] text-ctp-overlay1 tabular-nums" data-testid="chat-media-duration">{shownDuration}</span>}
             {previewButton}
-            {open && <Button kind="quiet" icon={<XIcon />} aria-label={`Close the player for ${card.name}`} title="Close" onClick={close} />}
+            {open && <Button kind="quiet" icon={<XIcon />} aria-label={`Close the player for ${card.name}`} title="Close" onClick={() => close()} />}
           </span>
         </div>
         {open && (
           <div className="px-2 pb-2">
-            <audio ref={attach} src={src ?? undefined} controls preload="metadata" className="w-full h-9" aria-label={card.name} {...mediaEvents} />
+            <audio ref={attach} src={src ?? undefined} controls tabIndex={0} preload="metadata" className="w-full h-9" aria-label={card.name} {...mediaEvents} />
           </div>
         )}
         {(playback.state === 'error' || playback.state === 'too-large' || meta?.tooLarge) && (
@@ -198,13 +226,14 @@ export function MediaCard({ card, agentId }: { card: MediaCardHost; agentId: str
           className="w-full max-h-[420px] [aspect-ratio:var(--chat-media-aspect)] rounded-lg overflow-hidden bg-black flex items-center justify-center"
           style={{ '--chat-media-aspect': String(aspect) } as React.CSSProperties}
         >
-          <video ref={attach} src={src ?? undefined} controls preload="metadata" className="w-full h-full" aria-label={card.name} {...mediaEvents} />
+          <video ref={attach} src={src ?? undefined} controls tabIndex={0} preload="metadata" className="w-full h-full" aria-label={card.name} {...mediaEvents} />
         </div>
       ) : (
         <button
+          ref={playButton}
           type="button"
           onClick={() => void play()}
-          disabled={playback.state === 'loading'}
+          aria-busy={playback.state === 'loading'}
           aria-label={playLabel}
           title={playLabel}
           className="group relative block w-full aspect-video rounded-lg overflow-hidden border border-surface-1 bg-ctp-crust"
@@ -248,7 +277,7 @@ export function MediaCard({ card, agentId }: { card: MediaCardHost; agentId: str
             />
           )}
           {previewButton}
-          {open && <Button kind="quiet" icon={<XIcon />} aria-label={`Close the player for ${card.name}`} title="Close" onClick={close} />}
+          {open && <Button kind="quiet" icon={<XIcon />} aria-label={`Close the player for ${card.name}`} title="Close" onClick={() => close()} />}
         </span>
       </div>
       <Status playback={playback} meta={meta} onPreview={preview} />
@@ -261,11 +290,15 @@ export function MediaCard({ card, agentId }: { card: MediaCardHost; agentId: str
  * message's chips are hydrated (and after every rebuild of its DOM); the
  * returned portals render each card into its place in the message.
  */
-export function useMediaCards(agentId: string | null): { scan: (root: Element | null) => void; portals: ReactNode } {
+export function useMediaCards(agentId: string | null): { scan: (root: Element | null, async?: boolean) => void; portals: ReactNode } {
   const [cards, setCards] = useState<MediaCardHost[]>([]);
-  const scan = useCallback((root: Element | null) => {
+  useEffect(() => { if (agentId) installSinglePlayback(); }, [agentId]);
+  const scan = useCallback((root: Element | null, async = false) => {
     const next = root && agentId ? placeMediaCards(root) : [];
-    setCards((prev) => (prev.length === next.length && prev.every((c, i) => c === next[i]) ? prev : next));
+    const update = () => setCards((prev) => (prev.length === next.length && prev.every((c, i) => c === next[i]) ? prev : next));
+    // After hydration (a promise), commit the cards before the next paint: the
+    // paragraph a card replaces is already hidden, so there's no frame without either.
+    if (async) flushSync(update); else update();
   }, [agentId]);
   const portals = agentId && cards.length
     ? cards.map((c) => createPortal(<MediaCard card={c} agentId={agentId} />, c.host, c.key))

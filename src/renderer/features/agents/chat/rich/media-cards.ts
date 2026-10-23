@@ -141,6 +141,8 @@ export interface MediaMeta {
 
 const POSTER_PX = 480;
 const PROBE_TIMEOUT_MS = 8000;
+/** A whole metadata load (read, encode, probe) gives up after this, so one stuck file can't hold the queue. */
+const META_TIMEOUT_MS = 20_000;
 const META_CACHE_MAX = 200;
 const metas = new Map<string, Promise<MediaMeta>>();
 /** Metadata loads one file at a time: each is a read of up to 16 MB. */
@@ -196,21 +198,36 @@ async function probe(src: string, kind: MediaKind): Promise<MediaMeta> {
   }
 }
 
-/** A file's duration and poster, loaded once per file version for the app session. */
-export function loadMediaMeta(agentId: string, path: string, kind: MediaKind, size?: number): Promise<MediaMeta> {
+function withTimeout<T>(work: Promise<T>, ms: number, fallback: T): Promise<T> {
+  return new Promise((resolve) => {
+    const timer = setTimeout(() => resolve(fallback), ms);
+    void work.then((v) => { clearTimeout(timer); resolve(v); }, () => { clearTimeout(timer); resolve(fallback); });
+  });
+}
+
+/**
+ * A file's duration and poster, loaded once per file (and size) for the app
+ * session. `wanted` is asked when the load's turn comes: a card that has gone
+ * by then costs nothing.
+ */
+export function loadMediaMeta(agentId: string, path: string, kind: MediaKind, size?: number, wanted: () => boolean = () => true): Promise<MediaMeta> {
   const key = `${agentId}\0${path}\0${size ?? ''}`;
   const hit = metas.get(key);
   if (hit) return hit;
-  const loading = queue.then(async (): Promise<MediaMeta> => {
-    const source = await loadMediaSource(agentId, path);
-    if (source.status === 'too-large') return { tooLarge: true };
-    if (source.status === 'error') return { failed: true };
-    // telemetry-exempt: an unreadable header leaves the card without a duration; playing shows the real error.
-    return probe(source.src, kind).catch((): MediaMeta => ({}));
+  const loading = queue.then((): Promise<MediaMeta> => {
+    if (!wanted()) return Promise.resolve({ failed: true });
+    return withTimeout((async (): Promise<MediaMeta> => {
+      const source = await loadMediaSource(agentId, path);
+      if (source.status === 'too-large') return { tooLarge: true };
+      if (source.status === 'error') return { failed: true };
+      // telemetry-exempt: an unreadable header leaves the card without a duration; playing shows the real error.
+      return probe(source.src, kind).catch((): MediaMeta => ({ failed: true }));
+    })(), META_TIMEOUT_MS, { failed: true });
   });
-  queue = loading.catch((): undefined => undefined);
+  // Never rejects: every path above resolves.
+  queue = loading;
   metas.set(key, loading);
-  // A failure may be the file still being written: ask again next time.
+  // A failure may be the file still being written, or a skipped load: ask again next time.
   void loading.then((m) => { if (m.failed && metas.get(key) === loading) metas.delete(key); });
   while (metas.size > META_CACHE_MAX) metas.delete(metas.keys().next().value as string);
   return loading;
@@ -244,6 +261,9 @@ let listening = false;
  * Once installed, a chat player starting to play pauses every other chat
  * player, cards and popover alike. Media elsewhere in the app is left alone.
  */
+/** Fired on a card's player when another chat player starts, so the card can let its source go. */
+export const MEDIA_SUPERSEDED = 'chat-media-superseded';
+
 export function installSinglePlayback(doc: Document = document): void {
   if (listening) return;
   listening = true;
@@ -252,7 +272,10 @@ export function installSinglePlayback(doc: Document = document): void {
     const playing = e.target;
     if (!(playing instanceof HTMLMediaElement) || !playing.closest(CHAT_MEDIA_SELECTOR)) return;
     for (const other of Array.from(doc.querySelectorAll<HTMLMediaElement>('audio, video'))) {
-      if (other !== playing && !other.paused && other.closest(CHAT_MEDIA_SELECTOR)) other.pause();
+      if (other === playing || !other.closest(CHAT_MEDIA_SELECTOR)) continue;
+      if (!other.paused) other.pause();
+      // A paused card still holds its source: it closes too.
+      if (other.closest('[data-chat-media]') && other.hasAttribute('src')) other.dispatchEvent(new Event(MEDIA_SUPERSEDED));
     }
   }, true);
 }

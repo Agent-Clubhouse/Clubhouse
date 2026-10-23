@@ -145,6 +145,7 @@ describe('media cards on', () => {
     expect((container.querySelector('[data-chat-path="out/talk.wav"]')!.closest('p') as HTMLElement).hidden).toBe(false);
     // Nothing plays, or loads, until asked (no IntersectionObserver here).
     expect(play).not.toHaveBeenCalled();
+    expect(loadMediaMeta).not.toHaveBeenCalled();
     expect(readFilePreview).not.toHaveBeenCalled();
     expect(container.querySelector('audio, video')).toBeNull();
   });
@@ -175,11 +176,29 @@ describe('media cards on', () => {
     await waitFor(() => expect(container.querySelectorAll('audio')).toHaveLength(1));
     const first = container.querySelector('audio')!;
     await waitFor(() => expect(first.paused).toBe(false));
+    first.currentTime = 9;
     fireEvent.click(screen.getByRole('button', { name: 'Play song.mp3' }));
-    await waitFor(() => expect(container.querySelectorAll('audio')).toHaveLength(2));
-    const second = container.querySelectorAll('audio')[1];
-    await waitFor(() => expect(second.paused).toBe(false));
-    expect(first.paused).toBe(true);
+    // The first pauses and closes, letting its source go; the second plays.
+    await waitFor(() => expect(first.paused).toBe(true));
+    await waitFor(() => expect(container.querySelectorAll('audio')).toHaveLength(1));
+    expect(first.hasAttribute('src')).toBe(false);
+    const second = container.querySelector('audio')!;
+    expect(second.getAttribute('aria-label')).toBe('song.mp3');
+    expect(second.paused).toBe(false);
+    expect(screen.getByRole('button', { name: 'Resume talk.wav from 0:09' })).toBeTruthy();
+  });
+
+  it('moves focus into the player on Play and back to Play on Close, and a double-click loads once', async () => {
+    const { container } = await renderRich('out/talk.wav');
+    const playButton = await screen.findByRole('button', { name: 'Play talk.wav' });
+    playButton.focus();
+    fireEvent.click(playButton);
+    fireEvent.click(playButton);
+    const audio = await waitFor(() => { const el = container.querySelector('audio'); expect(el).not.toBeNull(); return el!; });
+    expect(readFilePreview).toHaveBeenCalledTimes(1);
+    await waitFor(() => expect(document.activeElement).toBe(audio));
+    fireEvent.click(screen.getByRole('button', { name: 'Close the player for talk.wav' }));
+    await waitFor(() => expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Play talk.wav' })));
   });
 
   it('pauses and remembers the position when the message unmounts, and resumes there', async () => {
@@ -215,7 +234,7 @@ describe('media cards on', () => {
     expect(loadMediaMeta).not.toHaveBeenCalled();
     await act(async () => { fire!(); });
     await waitFor(() => expect(screen.getByTestId('chat-media-duration').textContent).toBe('1:05'));
-    expect(loadMediaMeta).toHaveBeenCalledWith('a1', 'out/demo.webm', 'video', 4);
+    expect(loadMediaMeta).toHaveBeenCalledWith('a1', 'out/demo.webm', 'video', 4, expect.any(Function));
     expect(screen.getByTestId('chat-media-poster').getAttribute('src')).toBe('data:image/webp;base64,AA');
 
     fireEvent.click(screen.getByRole('button', { name: 'Play demo.webm' }));
@@ -252,5 +271,22 @@ describe('media cards on', () => {
     expect(container.querySelector('audio, video')).toBeNull();
     fireEvent.click(large.querySelector('button')!);
     expect(await screen.findByTestId('chat-file-preview')).toBeTruthy();
+  });
+});
+
+describe('loadMediaMeta', () => {
+  it('skips a queued load whose card has gone, and asks again next time', async () => {
+    const { loadMediaMeta: real } = await vi.importActual<typeof import('./media-cards')>('./media-cards');
+    Object.assign(window.clubhouse.chat, { readFilePreview });
+    readFilePreview.mockClear();
+    const skipped = await real('a1', 'out/huge.mp4', 'video', 4, () => false);
+    expect(skipped.failed).toBe(true);
+    expect(readFilePreview).not.toHaveBeenCalled();
+    const loaded = await real('a1', 'out/huge.mp4', 'video', 4);
+    expect(loaded).toEqual({ tooLarge: true });
+    expect(readFilePreview).toHaveBeenCalledTimes(1);
+    // Cached once it succeeded.
+    await real('a1', 'out/huge.mp4', 'video', 4);
+    expect(readFilePreview).toHaveBeenCalledTimes(1);
   });
 });
