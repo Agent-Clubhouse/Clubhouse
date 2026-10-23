@@ -16,6 +16,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import forge from 'node-forge';
 import { app } from 'electron';
+import { annexEphemeralSession } from './annex-network-profile';
 import { appLog } from './log-service';
 import type { AnnexIdentity } from './annex-identity';
 
@@ -119,7 +120,13 @@ function saveCert(cert: TlsCertificateInfo): void {
  * Get or create the TLS certificate for this instance.
  */
 export function getOrCreateCert(identity: AnnexIdentity): TlsCertificateInfo {
+  const ephemeral = annexEphemeralSession();
   if (cachedCert) return cachedCert;
+
+  if (ephemeral) {
+    cachedCert = generateSelfSignedCert(identity.fingerprint);
+    return cachedCert;
+  }
 
   cachedCert = loadCert();
   if (cachedCert) {
@@ -183,7 +190,9 @@ export function extractPeerFingerprint(socket: tls.TLSSocket): string | null {
  * After this, a new cert will be generated on next getOrCreateCert().
  */
 export function deleteCert(): void {
+  const ephemeral = annexEphemeralSession();
   cachedCert = null;
+  if (ephemeral) return;
   try {
     const certPath = path.join(app.getPath('userData'), TLS_CERT_FILENAME);
     fs.unlinkSync(certPath);
