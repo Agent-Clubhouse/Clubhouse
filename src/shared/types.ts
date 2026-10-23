@@ -737,9 +737,10 @@ export type ExplorerTab = string;
  * renderer. `open-file` is resolved to its owning project in main (where the
  * project list and path logic live); `open-file-not-found` reports a file that
  * no open project contains; `open-folder` asks the renderer to add a project.
+ * An `open-file` may carry a 1-based line (and column) to go to.
  */
 export type ResolvedProtocolAction =
-  | { kind: 'open-file'; projectId: string; relativePath: string }
+  | { kind: 'open-file'; projectId: string; relativePath: string; line?: number; column?: number }
   | { kind: 'open-file-not-found'; filePath: string }
   | { kind: 'open-folder'; folderPath: string };
 

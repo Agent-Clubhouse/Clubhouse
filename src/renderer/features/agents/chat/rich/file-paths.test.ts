@@ -69,3 +69,59 @@ describe('wholeFilePath', () => {
     expect(wholeFilePath('const x = 1')).toBeNull();
   });
 });
+
+describe('paths with spaces (#2423)', () => {
+  it('splits them in prose, which stays conservative', () => {
+    expect(paths('Wrote /tmp/CH media probe/image.png')).toEqual([
+      ['/tmp/CH', undefined, undefined], ['probe/image.png', undefined, undefined],
+    ]);
+  });
+
+  it('takes a whole code span with spaces as one path, keeping the text as written', () => {
+    expect(wholeFilePath('/tmp/CH media probe/image.png')).toEqual({ start: 0, end: 29, path: '/tmp/CH media probe/image.png' });
+    expect(wholeFilePath('~/Library/Application Support/Code/settings.json:12:4')).toMatchObject({
+      path: '~/Library/Application Support/Code/settings.json', line: 12, col: 4,
+    });
+    expect(wholeFilePath('.clubhouse/.local/rich-preview-probes/tone sample.wav')).toMatchObject({ path: '.clubhouse/.local/rich-preview-probes/tone sample.wav' });
+    expect(wholeFilePath('./My Docs/notes.md#L7')).toMatchObject({ path: './My Docs/notes.md', line: 7 });
+    expect(wholeFilePath('C:\\Program Files\\App\\config.json:3')).toMatchObject({ path: 'C:\\Program Files\\App\\config.json', line: 3 });
+    expect(wholeFilePath('file:///tmp/CH media probe/image.png')).toMatchObject({ path: 'file:///tmp/CH media probe/image.png' });
+  });
+
+  it('leaves commands, lists and prose in code spans alone', () => {
+    expect(wholeFilePath('npm run src/main.ts')).toBeNull();
+    expect(wholeFilePath('git diff src/a.ts')).toBeNull();
+    expect(wholeFilePath('src/a.ts src/b.ts')).toBeNull();
+    expect(wholeFilePath('/src/a.ts and /src/b.ts')).toBeNull();
+    expect(wholeFilePath('node server.js')).toBeNull();
+    expect(wholeFilePath('a / b')).toBeNull();
+    expect(wholeFilePath('/tmp/x\tother')).toBeNull();
+  });
+
+  it('takes a quoted path with spaces as one path, the quotes outside the match', () => {
+    const text = 'Saved to "/tmp/CH media probe/image.png" and \'docs/My Notes.md:4:2\'.';
+    const found = findFilePaths(text);
+    expect(found.map((m) => [m.path, m.line, m.col])).toEqual([
+      ['/tmp/CH media probe/image.png', undefined, undefined],
+      ['docs/My Notes.md', 4, 2],
+    ]);
+    expect(text.slice(found[0].start, found[0].end)).toBe('/tmp/CH media probe/image.png');
+    expect(text.slice(found[1].start, found[1].end)).toBe('docs/My Notes.md:4:2');
+    expect(paths('see `C:\\Users\\me\\My Project\\a.ts:9`')).toEqual([['C:\\Users\\me\\My Project\\a.ts', 9, undefined]]);
+    expect(paths('\u201c~/Media Files/clip.mov\u201d')).toEqual([['~/Media Files/clip.mov', undefined, undefined]]);
+  });
+
+  it('keeps ordinary quotes and apostrophes to the usual tokens', () => {
+    expect(paths('"src/a.ts and lib/b.ts" are done')).toEqual([['src/a.ts', undefined, undefined], ['lib/b.ts', undefined, undefined]]);
+    expect(paths("it's in 'src/a.ts', isn't it")).toEqual([['src/a.ts', undefined, undefined]]);
+    expect(paths('"see the docs" for src/a.ts')).toEqual([['src/a.ts', undefined, undefined]]);
+    expect(paths('Changed "src/a.ts, src/b.ts" and `src/c.ts:12; lib/d.ts:4`')).toEqual([
+      ['src/a.ts', undefined, undefined], ['src/b.ts', undefined, undefined], ['src/c.ts', 12, undefined], ['lib/d.ts', 4, undefined],
+    ]);
+    expect(wholeFilePath('src/a.ts, src/b.ts')).toBeNull();
+  });
+
+  it('still takes encoded file URLs as one token', () => {
+    expect(paths('file:///tmp/CH%20media%20probe/image.png:3')).toEqual([['file:///tmp/CH%20media%20probe/image.png', 3, undefined]]);
+  });
+});

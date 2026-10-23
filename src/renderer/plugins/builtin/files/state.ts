@@ -6,6 +6,8 @@
  * tab state, dirty state, and refresh signals.
  */
 
+import type { EditorLocation } from './reveal-location';
+
 // ── Types ────────────────────────────────────────────────────────────
 
 export interface ScrollState {
@@ -74,8 +76,8 @@ export const fileState = {
   isDirty: false,                     // Aggregate: any tab dirty?
   refreshCount: 0,
   searchMode: false,
-  /** When set, FileViewer should navigate to this line and highlight it */
-  scrollToLine: null as number | null,
+  /** When set, FileViewer should go to this place in this file and highlight it */
+  scrollTarget: null as ({ filePath: string } & EditorLocation) | null,
   listeners: new Set<() => void>(),
 
   // ── Tab queries ──────────────────────────────────────────────────
@@ -453,14 +455,14 @@ export const fileState = {
     this.notify();
   },
 
-  navigateToMatch(filePath: string, line: number): void {
+  navigateToMatch(filePath: string, line: number, column?: number): void {
     this.openTab(filePath, { preview: false });
-    this.scrollToLine = line;
+    this.scrollTarget = { filePath, line, ...(column !== undefined && { column }) };
     this.notify();
   },
 
-  clearScrollToLine(): void {
-    this.scrollToLine = null;
+  clearScrollTarget(): void {
+    this.scrollTarget = null;
   },
 
   subscribe(fn: () => void): () => void {
@@ -530,7 +532,7 @@ export const fileState = {
     this.isDirty = false;
     this.refreshCount = 0;
     this.searchMode = false;
-    this.scrollToLine = null;
+    this.scrollTarget = null;
     this.listeners.clear();
   },
 };

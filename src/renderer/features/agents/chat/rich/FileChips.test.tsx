@@ -11,21 +11,29 @@ import { FileChipProvider, clearFileChipCache } from './FileChips';
 import { resetRichChatContentFlag } from './rich-flag';
 
 vi.mock('../../../../plugins/builtin/canvas/ReadOnlyMonacoEditor', () => ({
-  ReadOnlyMonacoEditor: ({ value, filePath }: { value: string; filePath: string }) => <pre data-testid="monaco" data-path={filePath}>{value}</pre>,
+  ReadOnlyMonacoEditor: ({ value, filePath, reveal }: { value: string; filePath: string; reveal?: { line: number; column?: number } }) => (
+    <pre data-testid="monaco" data-path={filePath} data-reveal={reveal ? `${reveal.line}:${reveal.column ?? ''}` : undefined}>{value}</pre>
+  ),
 }));
+const bridge = vi.hoisted(() => ({ handleProtocolAction: vi.fn() }));
+vi.mock('../../../../app-event-bridge', () => bridge);
 
 const MD = 'Changed `src/main.ts:12` and src/missing.ts, see /repo/README.md and https://example.com/a.ts.\n\n```\nsrc/main.ts in a block\n```';
 const EXISTING: Record<string, ChatFileInfo> = {
   'src/main.ts': { path: 'src/main.ts', exists: true, kind: 'text', size: 20, name: 'main.ts' },
   '/repo/README.md': { path: '/repo/README.md', exists: true, kind: 'text', size: 9, name: 'README.md' },
   'shots/a.png': { path: 'shots/a.png', exists: true, kind: 'image', size: 11, name: 'a.png' },
+  '/tmp/CH media probe/notes.md': { path: '/tmp/CH media probe/notes.md', exists: true, kind: 'text', size: 20, name: 'notes.md' },
+  'docs/My Notes.md': { path: 'docs/My Notes.md', exists: true, kind: 'text', size: 20, name: 'My Notes.md' },
+  'big.log': { path: 'big.log', exists: true, kind: 'text', size: 900_000, name: 'big.log' },
 };
 
 const statPaths = vi.fn(async (_agent: string, paths: string[]) => paths.map((p) => EXISTING[p] ?? { path: p, exists: false }));
 const readFilePreview = vi.fn(async (_agent: string, p: string): Promise<ChatFilePreview> => (p === 'shots/a.png'
   ? { kind: 'image', name: 'a.png', size: 11, mimeType: 'image/png', data: new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 1, 2, 3]) }
-  : { kind: 'text', name: 'main.ts', size: 20, text: 'export const x = 1;\n', truncated: false }));
-const fileAction = vi.fn(async () => null);
+  : p === 'big.log' ? { kind: 'text', name: 'big.log', size: 900_000, text: 'a\nb\nc', truncated: true }
+    : { kind: 'text', name: 'main.ts', size: 20, text: 'export const x = 1;\n', truncated: false }));
+const fileAction = vi.fn(async (..._args: unknown[]): Promise<unknown> => null);
 
 function setFlag(on: boolean) {
   window.clubhouse.app.getExperimentalSettings = vi.fn(async () => (on ? { richChatContent: true } : {}));
@@ -42,7 +50,9 @@ beforeEach(() => {
   clearFileChipCache();
   statPaths.mockClear();
   readFilePreview.mockClear();
-  fileAction.mockClear();
+  fileAction.mockReset();
+  fileAction.mockImplementation(async () => null);
+  bridge.handleProtocolAction.mockClear();
   Object.assign(window.clubhouse.chat, { statPaths, readFilePreview, fileAction });
   window.clubhouse.git.githubRepo = vi.fn(async () => null);
   useAgentStore.setState({ agents: { a1: { id: 'a1', projectId: 'p1', name: 'a', kind: 'durable', status: 'running', color: 'indigo' } as never } });
@@ -122,5 +132,67 @@ describe('file chips on', () => {
     const img = await screen.findByTestId('chat-file-preview-image');
     expect(img.tagName).toBe('IMG');
     expect(img.getAttribute('src')).toMatch(/^data:image\/png;base64,/);
+  });
+
+  it('chips a whole code span or a quoted path with spaces, and not its fragments (#2423)', async () => {
+    const { container } = await renderRich(<Markdown text={'See `/tmp/CH media probe/notes.md` and "docs/My Notes.md:4:2", not /tmp/CH media probe/notes.md.'} />);
+    await waitFor(() => expect(container.querySelectorAll('[data-chat-file]')).toHaveLength(2));
+    const chips = [...container.querySelectorAll('[data-chat-file]')];
+    expect(chips.map((c) => [c.tagName, c.textContent, c.getAttribute('data-chat-path'), c.getAttribute('data-chat-line'), c.getAttribute('data-chat-col')])).toEqual([
+      ['CODE', '/tmp/CH media probe/notes.md', '/tmp/CH media probe/notes.md', null, null],
+      ['SPAN', 'docs/My Notes.md:4:2', 'docs/My Notes.md', '4', '2'],
+    ]);
+    // The prose copy is split, and its pieces are only asked about, never chips.
+    expect(statPaths.mock.calls.flatMap((c) => c[1])).toEqual(expect.arrayContaining(['/tmp/CH', 'probe/notes.md']));
+    expect(container.textContent).toContain('"docs/My Notes.md:4:2"');
+  });
+});
+
+describe('file chip locations (#2424)', () => {
+  beforeEach(() => setFlag(true));
+
+  async function openChip(md: string) {
+    const { container } = await renderRich(<Markdown text={md} />);
+    const chip = await waitFor(() => { const el = container.querySelector('[data-chat-file]'); expect(el).not.toBeNull(); return el!; });
+    fireEvent.click(chip);
+    return screen.findByTestId('monaco');
+  }
+
+  it('reveals the line, and the column, in the preview', async () => {
+    expect((await openChip('`src/main.ts:12:5`')).getAttribute('data-reveal')).toBe('12:5');
+    expect(screen.getByTestId('chat-file-preview').textContent).toContain('src/main.ts:12:5');
+  });
+
+  it('reads #L anchors', async () => {
+    expect((await openChip('`src/main.ts#L7`')).getAttribute('data-reveal')).toBe('7:');
+  });
+
+  it('leaves a plain path where it was', async () => {
+    expect((await openChip('`src/main.ts`')).getAttribute('data-reveal')).toBeNull();
+    expect(screen.queryByTestId('chat-file-preview-note')).toBeNull();
+  });
+
+  it('says when the line is past the end of the file, or of a truncated preview', async () => {
+    await openChip('`src/main.ts:40`');
+    expect(screen.getByTestId('chat-file-preview-note').textContent).toBe('Line 40 is past the end of this file, which has 2 lines.');
+    fireEvent.keyDown(window, { key: 'Escape' });
+    await waitFor(() => expect(screen.queryByTestId('chat-file-preview')).toBeNull());
+    await openChip('`big.log:500`');
+    expect(screen.getByTestId('chat-file-preview-note').textContent).toMatch(/^Line 500 is past the first .* shown here\. Open it in Files to go there\.$/);
+  });
+
+  it('opens Files at the same line and column', async () => {
+    fileAction.mockImplementation(async () => ({ kind: 'open-file', projectId: 'p1', relativePath: 'src/main.ts' }));
+    await openChip('`src/main.ts:12:5`');
+    fireEvent.click(screen.getByRole('button', { name: 'Open in Files' }));
+    await waitFor(() => expect(bridge.handleProtocolAction).toHaveBeenCalledWith({ kind: 'open-file', projectId: 'p1', relativePath: 'src/main.ts', line: 12, column: 5 }));
+    expect(fileAction).toHaveBeenCalledWith('a1', 'src/main.ts', 'open');
+  });
+
+  it('opens Files at the top for a plain path', async () => {
+    fileAction.mockImplementation(async () => ({ kind: 'open-file', projectId: 'p1', relativePath: 'src/main.ts' }));
+    await openChip('`src/main.ts`');
+    fireEvent.click(screen.getByRole('button', { name: 'Open in Files' }));
+    await waitFor(() => expect(bridge.handleProtocolAction).toHaveBeenCalledWith({ kind: 'open-file', projectId: 'p1', relativePath: 'src/main.ts' }));
   });
 });

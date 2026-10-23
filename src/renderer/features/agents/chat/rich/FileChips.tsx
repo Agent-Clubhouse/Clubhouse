@@ -14,16 +14,23 @@ import type { ChatFileInfo, ChatFilePreview } from '../../../../../shared/chat';
 import { LAYER_PORTAL_ATTR } from '../../../../components/layers';
 import { Button } from '../../../../components/Button';
 import { ReadOnlyMonacoEditor } from '../../../../plugins/builtin/canvas/ReadOnlyMonacoEditor';
-import { findFilePaths, wholeFilePath } from './file-paths';
+import { findFilePaths, wholeFilePath, type FilePathMatch } from './file-paths';
 import { dataUrlOf } from './media';
 import type { TextMatcher } from './text-enrich';
 
 const PATH_ATTR = 'data-chat-path';
 const LINE_ATTR = 'data-chat-line';
+const COL_ATTR = 'data-chat-col';
 /** Set once main confirmed the file: its kind. */
 const FILE_ATTR = 'data-chat-file';
 
 // ── Candidates ────────────────────────────────────────────────────────────
+
+function markCandidate(el: Element, m: FilePathMatch): void {
+  el.setAttribute(PATH_ATTR, m.path);
+  if (m.line !== undefined) el.setAttribute(LINE_ATTR, String(m.line));
+  if (m.line !== undefined && m.col !== undefined) el.setAttribute(COL_ATTR, String(m.col));
+}
 
 /** The text-pass matcher: each path becomes a candidate span holding the text as written. */
 export const fileMatcher: TextMatcher = (text) => findFilePaths(text).map((m) => ({
@@ -31,8 +38,7 @@ export const fileMatcher: TextMatcher = (text) => findFilePaths(text).map((m) =>
   end: m.end,
   make: (doc: Document) => {
     const span = doc.createElement('span');
-    span.setAttribute(PATH_ATTR, m.path);
-    if (m.line !== undefined) span.setAttribute(LINE_ATTR, String(m.line));
+    markCandidate(span, m);
     span.textContent = text.slice(m.start, m.end);
     return span;
   },
@@ -44,9 +50,7 @@ export function markCodePaths(root: Element): void {
     // Not in code blocks, and not inside a link: the link already goes somewhere.
     if (code.closest('pre, a') || code.hasAttribute(PATH_ATTR) || code.children.length) continue;
     const match = wholeFilePath(code.textContent ?? '');
-    if (!match) continue;
-    code.setAttribute(PATH_ATTR, match.path);
-    if (match.line !== undefined) code.setAttribute(LINE_ATTR, String(match.line));
+    if (match) markCandidate(code, match);
   }
 }
 
@@ -92,7 +96,7 @@ function formatSize(bytes: number): string {
 
 function demote(el: Element): void {
   if (el.tagName === 'SPAN') el.replaceWith(el.ownerDocument.createTextNode(el.textContent ?? ''));
-  else { el.removeAttribute(PATH_ATTR); el.removeAttribute(LINE_ATTR); }
+  else { el.removeAttribute(PATH_ATTR); el.removeAttribute(LINE_ATTR); el.removeAttribute(COL_ATTR); }
 }
 
 /**
@@ -123,7 +127,13 @@ export function clearFileChipCache(): void {
 
 // ── Preview ───────────────────────────────────────────────────────────────
 
-interface Target { path: string; line?: number; kind: string; anchor: DOMRect }
+interface Target { path: string; line?: number; col?: number; kind: string; anchor: DOMRect }
+
+/** `:line` or `:line:col`, as the chip wrote it. */
+function locationSuffix(target: Target): string {
+  if (target.line === undefined) return '';
+  return target.col !== undefined ? `:${target.line}:${target.col}` : `:${target.line}`;
+}
 
 const FileChipContext = createContext<string | null>(null);
 
@@ -139,7 +149,7 @@ function revealLabel(): string {
 const POPOVER_W = 560;
 const POPOVER_H = 420;
 
-function PreviewBody({ preview, path }: { preview: ChatFilePreview; path: string }) {
+function PreviewBody({ preview, target }: { preview: ChatFilePreview; target: Target }) {
   const [src, setSrc] = useState<string | null>(null);
   useEffect(() => {
     if (!preview.data || !preview.mimeType) return;
@@ -149,10 +159,19 @@ function PreviewBody({ preview, path }: { preview: ChatFilePreview; path: string
     return () => { cancelled = true; };
   }, [preview]);
   if (preview.kind === 'text' && preview.text !== undefined) {
+    const lines = preview.text.split('\n').length;
+    // Past the end of what's shown: the editor stops at its last line, and this says why.
+    const past = target.line !== undefined && target.line > lines;
+    const note = past && preview.truncated
+      ? `Line ${target.line} is past the first ${formatSize(preview.text.length)} shown here. Open it in Files to go there.`
+      : past ? `Line ${target.line} is past the end of this file, which has ${lines} lines.`
+        : preview.truncated ? `Showing the first ${formatSize(preview.text.length)}. Open it in Files to see the rest.` : null;
     return (
       <div className="flex flex-col min-h-0 flex-1">
-        <div className="flex-1 min-h-[200px]" data-testid="chat-file-preview-text"><ReadOnlyMonacoEditor value={preview.text} filePath={path} /></div>
-        {preview.truncated && <div className="px-3 py-1 text-[11.5px] text-ctp-overlay1 border-t border-surface-0">Showing the first {formatSize(preview.text.length)}. Open it in Files to see the rest.</div>}
+        <div className="flex-1 min-h-[200px]" data-testid="chat-file-preview-text">
+          <ReadOnlyMonacoEditor value={preview.text} filePath={target.path} {...(target.line !== undefined && { reveal: { line: target.line, ...(target.col !== undefined && { column: target.col }) } })} />
+        </div>
+        {note && <div className="px-3 py-1 text-[11.5px] text-ctp-overlay1 border-t border-surface-0" data-testid="chat-file-preview-note">{note}</div>}
       </div>
     );
   }
@@ -213,7 +232,10 @@ function FilePreviewPopover({ agentId, target, onClose }: { agentId: string; tar
         if (result.kind === 'open-file-not-found') { setError('That file is not in an open project'); return; }
         // Loaded on use: the bridge pulls in most of the app's stores.
         const { handleProtocolAction } = await import('../../../../app-event-bridge');
-        handleProtocolAction(result);
+        // The location stays here: main only resolves which project holds the file.
+        handleProtocolAction(result.kind === 'open-file' && target.line !== undefined
+          ? { ...result, line: target.line, ...(target.col !== undefined && { column: target.col }) }
+          : result);
         onClose();
       }
     } catch {
@@ -239,12 +261,12 @@ function FilePreviewPopover({ agentId, target, onClose }: { agentId: string; tar
     >
       <div className="flex items-center gap-2 h-9 px-3 border-b border-surface-0 text-[12.5px] min-w-0">
         <span className="font-medium text-ctp-text flex-shrink-0">{name}</span>
-        <span className="font-mono text-[11px] text-ctp-overlay1 truncate min-w-0" title={target.path}>{target.path}{target.line !== undefined ? `:${target.line}` : ''}</span>
+        <span className="font-mono text-[11px] text-ctp-overlay1 truncate min-w-0" title={target.path}>{target.path}{locationSuffix(target)}</span>
         {preview && <span className="ml-auto text-[11.5px] text-ctp-overlay0 flex-shrink-0">{formatSize(preview.size)}</span>}
       </div>
       {preview === undefined && <div className="p-4 text-[12.5px] text-ctp-overlay1 flex-1">Loading…</div>}
       {preview === null && <div className="p-4 text-[12.5px] text-ctp-subtext0 flex-1">This file is no longer available.</div>}
-      {preview && <PreviewBody preview={preview} path={target.path} />}
+      {preview && <PreviewBody preview={preview} target={target} />}
       <div className="flex items-center gap-2 px-3 py-2 border-t border-surface-0">
         {error && <span className="mr-auto text-[12px] text-ctp-error" role="status">{error}</span>}
         <span className="ml-auto" />
@@ -274,8 +296,14 @@ export function FileChipProvider({ agentId, children }: { agentId: string | null
   const open = (chip: Element) => {
     const path = chip.getAttribute(PATH_ATTR);
     if (!path) return;
-    const line = chip.getAttribute(LINE_ATTR);
-    setTarget({ path, kind: chip.getAttribute(FILE_ATTR) ?? 'other', anchor: chip.getBoundingClientRect(), ...(line && { line: Number(line) }) });
+    const line = Number(chip.getAttribute(LINE_ATTR));
+    const col = Number(chip.getAttribute(COL_ATTR));
+    setTarget({
+      path,
+      kind: chip.getAttribute(FILE_ATTR) ?? 'other',
+      anchor: chip.getBoundingClientRect(),
+      ...(line >= 1 && { line, ...(col >= 1 && { col }) }),
+    });
   };
   return (
     <FileChipContext.Provider value={agentId}>

@@ -19,7 +19,8 @@ vi.mock('../files/monaco-theme', () => ({
       editor: {
         createModel: (value: string, language: string) => {
           fake.createdModels.push({ value, language });
-          return { getValue: () => value, dispose: () => {} };
+          const lines = value.split('\n');
+          return { getValue: () => value, getLineCount: () => lines.length, getLineMaxColumn: (n: number) => lines[n - 1].length + 1, dispose: () => {} };
         },
         create: (_el: HTMLElement, options: any) => {
           let model = options.model;
@@ -33,6 +34,10 @@ vi.mock('../files/monaco-theme', () => ({
             updateOptions: vi.fn(),
             setScrollTop: () => {},
             setScrollLeft: () => {},
+            setSelection: vi.fn(),
+            setPosition: vi.fn(),
+            revealLineInCenter: vi.fn(),
+            revealPositionInCenter: vi.fn(),
             dispose: () => {},
           };
           fake.editors.push(ed);
@@ -75,6 +80,17 @@ describe('ReadOnlyMonacoEditor — async initialization', () => {
     fake.editors[0].commands.get(SAVE)!();
     expect(firstSave).not.toHaveBeenCalled();
     expect(latestSave).toHaveBeenCalledWith('new');
+  });
+
+  it('reveals a place asked for while Monaco was loading, and a new one after', async () => {
+    const { rerender } = render(<ReadOnlyMonacoEditor value={'a\nhello\nc'} filePath="a.ts" reveal={{ line: 2, column: 3 }} />);
+    await waitFor(() => expect(fake.release).not.toBeNull());
+    await act(async () => { fake.release!(); });
+    await waitFor(() => expect(fake.editors.length).toBe(1));
+    expect(fake.editors[0].setPosition).toHaveBeenCalledWith({ lineNumber: 2, column: 3 });
+    expect(fake.editors[0].revealPositionInCenter).toHaveBeenCalledWith({ lineNumber: 2, column: 3 });
+    rerender(<ReadOnlyMonacoEditor value={'a\nhello\nc'} filePath="a.ts" reveal={{ line: 9 }} />);
+    expect(fake.editors[0].revealLineInCenter).toHaveBeenLastCalledWith(3);
   });
 
   it('does not save while read-only', async () => {
