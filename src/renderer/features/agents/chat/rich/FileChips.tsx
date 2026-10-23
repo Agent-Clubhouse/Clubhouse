@@ -136,10 +136,17 @@ function locationSuffix(target: Target): string {
 }
 
 const FileChipContext = createContext<string | null>(null);
+/** Opens a file's preview popover by a given element (media cards use it as their fallback). */
+const FilePreviewContext = createContext<((path: string, kind: string, anchor: Element) => void) | null>(null);
 
 /** The agent whose file chips this transcript shows, or null when they're off. */
 export function useFileChips(): string | null {
   return useContext(FileChipContext);
+}
+
+/** Opens the preview popover for a confirmed file, placed by `anchor`; null outside a FileChipProvider. */
+export function useOpenFilePreview(): ((path: string, kind: string, anchor: Element) => void) | null {
+  return useContext(FilePreviewContext);
 }
 
 function revealLabel(): string {
@@ -292,6 +299,9 @@ function chipOf(target: EventTarget | null): Element | null {
 export function FileChipProvider({ agentId, children }: { agentId: string | null; children: ReactNode }) {
   const [target, setTarget] = useState<Target | null>(null);
   const close = useCallback(() => setTarget(null), []);
+  const openPath = useCallback((path: string, kind: string, anchor: Element) => {
+    setTarget({ path, kind, anchor: anchor.getBoundingClientRect() });
+  }, []);
   if (!agentId) return <>{children}</>;
   const open = (chip: Element) => {
     const path = chip.getAttribute(PATH_ATTR);
@@ -307,6 +317,7 @@ export function FileChipProvider({ agentId, children }: { agentId: string | null
   };
   return (
     <FileChipContext.Provider value={agentId}>
+    <FilePreviewContext.Provider value={openPath}>
       <div
         className="contents"
         onClick={(e) => { const chip = chipOf(e.target); if (chip) { e.preventDefault(); open(chip); } }}
@@ -315,6 +326,7 @@ export function FileChipProvider({ agentId, children }: { agentId: string | null
         {children}
       </div>
       {target && <FilePreviewPopover agentId={agentId} target={target} onClose={close} />}
+    </FilePreviewContext.Provider>
     </FileChipContext.Provider>
   );
 }

@@ -18,6 +18,7 @@ import { useRichChatContent } from './rich/rich-flag';
 import { handleRemoteImageClick, hydrateLocalImages, mediaTargetOf, renderChatMarkdown } from './rich/markdown-images';
 import { ChatMediaContext, ImageLightbox } from './rich/ChatImages';
 import { fileMatcher, hydrateFileChips, markCodePaths, useFileChips } from './rich/FileChips';
+import { useMediaCards } from './rich/MediaCards';
 import { AlertIcon, BrainIcon, ChevronDown, ChevronRight, FileIcon, ImageIcon, PlanIcon, QuestionIcon } from './icons';
 import { formatCost, formatDuration, formatTokens } from './view-model';
 
@@ -55,25 +56,31 @@ export function Markdown({ text, streaming = false, className = '' }: { text: st
   const richLinks = useRichLinks();
   const richHandlers = useTokenHandlers(richLinks);
   const fileAgent = useFileChips();
+  // Returned audio and video become inline cards (#2425), placed once their chips are confirmed.
+  const mediaCards = useMediaCards(fileAgent);
+  const { scan: scanMedia } = mediaCards;
   const el = useRef<HTMLDivElement>(null);
   const enriched = useRef<string | null>(null);
   useLayoutEffect(() => {
     if (!el.current) return;
+    const root = el.current;
     if (richLinks) {
       // Same HTML, new context (the repo resolved): start again from React's markup.
-      if (enriched.current === html) el.current.innerHTML = html;
-      enrichMarkdownLinks(el.current, richLinks.repo, fileAgent && !streaming ? [fileMatcher] : []);
+      if (enriched.current === html) root.innerHTML = html;
+      enrichMarkdownLinks(root, richLinks.repo, fileAgent && !streaming ? [fileMatcher] : []);
       // Chips wait for the message to finish: a streaming message re-renders every few frames.
       if (fileAgent && !streaming) {
-        markCodePaths(el.current);
-        void hydrateFileChips(el.current, fileAgent);
+        markCodePaths(root);
+        void hydrateFileChips(root, fileAgent).then(() => { if (root.isConnected) scanMedia(root, true); });
       }
       enriched.current = html;
     }
+    // The rebuilt DOM has no card hosts yet: drop the old cards (pausing them).
+    scanMedia(root);
     // Local images wait too, then load as they near the viewport.
-    if (rich && !streaming) return hydrateLocalImages(el.current, mediaAgent);
+    if (rich && !streaming) return hydrateLocalImages(root, mediaAgent);
     return undefined;
-  }, [html, rich, richLinks, fileAgent, streaming, mediaAgent]);
+  }, [html, rich, richLinks, fileAgent, streaming, mediaAgent, scanMedia]);
   if (rich || richLinks) {
     const linkClick = richHandlers.onClick ?? onClick;
     const onRichClick = (e: React.MouseEvent<HTMLDivElement>) => {
@@ -85,6 +92,7 @@ export function Markdown({ text, streaming = false, className = '' }: { text: st
       <>
         <div ref={el} className={`chat-markdown ${className}`} {...richHandlers} onClick={onRichClick} dangerouslySetInnerHTML={{ __html: html }} />
         {viewing && mediaAgent && <ImageLightbox agentId={mediaAgent} target={{ kind: 'stored', ...viewing }} onClose={() => setViewing(null)} />}
+        {mediaCards.portals}
       </>
     );
   }
