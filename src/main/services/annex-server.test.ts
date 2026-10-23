@@ -5,6 +5,13 @@ import fs from 'fs';
 import os from 'os';
 import path from 'path';
 
+// Real HTTP sockets in this suite must never expose test fixtures to the LAN.
+// Bonjour itself is mocked below; retain its branch coverage independently.
+vi.mock('./annex-network-profile', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('./annex-network-profile')>();
+  return { ...actual, annexNetworkProfile: () => ({ host: '127.0.0.1' as const, advertise: true }) };
+});
+
 const mockBonjourService = { stop: vi.fn() };
 const mockBonjour = {
   publish: vi.fn().mockReturnValue(mockBonjourService),
