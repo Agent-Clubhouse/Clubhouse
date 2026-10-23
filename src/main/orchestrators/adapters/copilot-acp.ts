@@ -14,7 +14,8 @@ import type {
   SessionUpdate,
 } from './acp-schema';
 import { resolveStructuredSpawn, type StructuredSpawnCommand } from './structured-spawn';
-import { COPILOT_SESSION_ID_RE, CopilotAssetReader } from './copilot-assets';
+import { CopilotAssetReader } from './copilot-assets';
+import { isPlainSessionId } from '../../services/agent-runtime/session-output-dir';
 
 /**
  * Copilot CLI over ACP (`copilot --acp`), public preview.
@@ -266,15 +267,13 @@ function expandHome(p: string | undefined): string | undefined {
   return p;
 }
 
-const SESSION_ID_RE = COPILOT_SESSION_ID_RE;
-
 /**
  * Copilot answers session/load for a session it doesn't have by hanging, not
  * with an error (#2155), so look on disk first. Ids that aren't a plain
  * token can't be Copilot's and are never used as a path.
  */
 export async function copilotNativeSessionExists(sessionId: string, env: Record<string, string | undefined>): Promise<boolean | undefined> {
-  if (!SESSION_ID_RE.test(sessionId)) return false;
+  if (!isPlainSessionId(sessionId)) return false;
   try {
     await fs.promises.stat(path.join(copilotSessionStateDir(env), sessionId));
     return true;
@@ -299,7 +298,7 @@ export function copilotPlanFilePath(
   paths: readonly string[],
   ctx: { sessionId: string | null; env: Record<string, string | undefined> },
 ): string | undefined {
-  if (!ctx.sessionId || !SESSION_ID_RE.test(ctx.sessionId)) return undefined;
+  if (!isPlainSessionId(ctx.sessionId)) return undefined;
   const planFile = samePath(path.join(copilotSessionStateDir(ctx.env), ctx.sessionId, 'plan.md'));
   return paths.find((p) => path.isAbsolute(p) && samePath(p) === planFile);
 }

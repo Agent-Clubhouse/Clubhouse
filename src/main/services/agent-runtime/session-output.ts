@@ -6,53 +6,25 @@
  *
  * The folder comes from the native session id Clubhouse tracks for the live
  * runtime and the env it launched with, never from agent text. It is always
- * one session's own folder: a session id that isn't a plain token, or a
+ * one session's own folder: a session id that isn't a plain token (or is a
+ * Windows device name), or a
  * folder that is a symlink or holds the home folder, gives none.
  */
 
-import * as fsp from 'fs/promises';
-import * as os from 'os';
 import * as path from 'path';
 import { copilotSessionStateDir } from '../../orchestrators/adapters/copilot-acp';
 import { getAgentRuntime } from './index';
+import { isPlainSessionId, sessionFolderIn, verifySessionOutputDir } from './session-output-dir';
 
-const SESSION_ID_RE = /^[A-Za-z0-9_-]{1,128}$/;
+export { verifySessionOutputDir };
 
 /**
  * The session-output folder for a provider's native session, by name only
  * (nothing is checked on disk). Undefined for providers without one.
  */
 export function sessionOutputDir(provider: string, nativeSessionId: string | undefined, env: Record<string, string | undefined>): string | undefined {
-  if (!nativeSessionId || !SESSION_ID_RE.test(nativeSessionId)) return undefined;
-  if (provider === 'copilot-cli') return path.join(copilotSessionStateDir(env), nativeSessionId);
+  if (provider === 'copilot-cli') return sessionFolderIn(copilotSessionStateDir(env), nativeSessionId);
   return undefined;
-}
-
-/** True when `target` is `root` or inside it. Both resolved. */
-function isInside(target: string, root: string): boolean {
-  const rel = path.relative(root, target);
-  return rel === '' || (!!rel && !rel.startsWith('..') && !path.isAbsolute(rel));
-}
-
-/**
- * `dir`'s real path when it is safe to read from: an existing directory that
- * isn't a symlink, sits in a real parent under its own name, and is neither
- * the filesystem root nor the home folder or one of its parents.
- */
-export async function verifySessionOutputDir(dir: string): Promise<string | undefined> {
-  if (!path.isAbsolute(dir)) return undefined;
-  const resolved = path.resolve(dir);
-  const st = await fsp.lstat(resolved).catch((): null => null);
-  if (!st?.isDirectory()) return undefined;
-  const [real, realParent] = await Promise.all([
-    fsp.realpath(resolved).catch((): null => null),
-    fsp.realpath(path.dirname(resolved)).catch((): null => null),
-  ]);
-  if (!real || !realParent || real !== path.join(realParent, path.basename(resolved))) return undefined;
-  if (path.parse(real).root === real) return undefined;
-  const home = await fsp.realpath(os.homedir()).catch(() => path.resolve(os.homedir()));
-  if (isInside(home, real)) return undefined;
-  return real;
 }
 
 /**
@@ -72,7 +44,7 @@ export function inSessionOutputArea(agentId: string, absolutePath: string): bool
     if (!rel || rel.startsWith('..') || path.isAbsolute(rel)) continue;
     // `<session-state>/<id>/...`: a file in one session's folder, not the folder list itself.
     const [id, ...rest] = rel.split(path.sep);
-    if (SESSION_ID_RE.test(id) && rest.length > 0) return true;
+    if (isPlainSessionId(id) && rest.length > 0) return true;
   }
   return false;
 }

@@ -9,8 +9,10 @@
  * `tool.execution_complete`. The asset id is the sha256 of the decoded bytes.
  *
  * Only the agent's own session journal is read: the directory comes from the
- * session id main already tracks, must be a direct child of the session-state
- * folder after symlinks, and the journal must be a regular file. Nothing the
+ * session id main already tracks and passes the same check as chat's
+ * session-output root (verifySessionOutputDir: a real directory, not a
+ * symlink, directly in the session-state folder), and the journal must be a
+ * regular file. Nothing the
  * agent wrote (a `description` path, say) is ever used as a path.
  *
  * Journals grow large, so reads are async and bounded: each lookup scans only
@@ -24,9 +26,7 @@ import * as path from 'path';
 import { createHash } from 'crypto';
 import type { ChatMediaAssetResult } from '../../../shared/chat/runtime';
 import { CHAT_MEDIA_MAX_BYTES, isMediaAssetId } from '../../../shared/chat/media';
-
-/** A plain token: anything else can't be Copilot's session id and is never used as a path. */
-export const COPILOT_SESSION_ID_RE = /^[A-Za-z0-9_-]{1,128}$/;
+import { isPlainSessionId, sessionFolderIn, verifySessionOutputDir } from '../../services/agent-runtime/session-output-dir';
 
 /** Most journal bytes one lookup reads while indexing. */
 const SCAN_BUDGET_BYTES = 64 * 1024 * 1024;
@@ -106,7 +106,7 @@ export class CopilotAssetReader {
 
   private async readWithRetry(sessionId: string | null | undefined, assetId: string): Promise<ChatMediaAssetResult> {
     if (!isMediaAssetId(assetId)) return fail('bad_asset_id');
-    if (!sessionId || !COPILOT_SESSION_ID_RE.test(sessionId)) return fail('no_session');
+    if (!isPlainSessionId(sessionId)) return fail('no_session');
     let result = await this.readOnce(sessionId, assetId);
     // The tool's result can reach us before Copilot's journal write does.
     if (!result.ok && result.reason === 'not_found' && (this.fruitless.get(sessionId) ?? 0) < MAX_FRUITLESS_RETRIES) {
@@ -124,12 +124,11 @@ export class CopilotAssetReader {
 
   /** The session's journal, opened only if it really is that session's. */
   private async openJournal(sessionId: string): Promise<fsp.FileHandle | CopilotAssetFailure> {
-    const realRoot = await fsp.realpath(this.stateDir).catch((): null => null);
-    if (!realRoot) return 'journal_unreadable';
-    const realDir = await fsp.realpath(path.join(this.stateDir, sessionId)).catch((): null => null);
-    if (!realDir) return 'journal_unreadable';
-    // A symlinked session folder pointing anywhere else is refused.
-    if (path.dirname(realDir) !== realRoot) return 'session_dir_rejected';
+    const dir = sessionFolderIn(this.stateDir, sessionId);
+    if (!dir || !await fsp.lstat(dir).catch((): null => null)) return 'journal_unreadable';
+    // A symlinked session folder (pointing anywhere) is refused.
+    const realDir = await verifySessionOutputDir(dir);
+    if (!realDir) return 'session_dir_rejected';
     const file = path.join(realDir, 'events.jsonl');
     const st = await fsp.lstat(file, { bigint: true }).catch((): null => null);
     if (!st) return 'journal_unreadable';

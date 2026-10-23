@@ -7,6 +7,7 @@ import { vi } from 'vitest';
 vi.mock('./index', () => ({ getAgentRuntime: () => undefined }));
 
 import { agentSessionOutputRoots, sessionOutputDir, verifySessionOutputDir } from './session-output';
+import { isPlainSessionId } from './session-output-dir';
 
 const tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'session-output-'));
 
@@ -24,6 +25,15 @@ describe('sessionOutputDir', () => {
     for (const id of ['', '..', '../x', 'a/b', 'a\\b', '.', undefined]) expect(sessionOutputDir('copilot-cli', id, {})).toBeUndefined();
     expect(sessionOutputDir('claude-code', 'abc', {})).toBeUndefined();
     expect(sessionOutputDir('codex-cli', 'abc', {})).toBeUndefined();
+  });
+
+  it('is nothing for Windows device names, in any case, with or without an extension', () => {
+    for (const id of ['CON', 'con', 'Prn', 'AUX', 'nul', 'COM1', 'com9', 'LPT1', 'lpt9', 'NUL.txt', 'con.jsonl', 'COM3.x.y']) {
+      expect(isPlainSessionId(id)).toBe(false);
+      expect(sessionOutputDir('copilot-cli', id, {})).toBeUndefined();
+    }
+    // Only the exact device names: longer tokens and COM0 / LPT10 are ordinary ids.
+    for (const id of ['CONSOLE', 'nul_1', 'auxiliary', 'COM0', 'LPT10', 'com1-session', 'abc-123']) expect(isPlainSessionId(id)).toBe(true);
   });
 });
 
