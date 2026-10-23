@@ -285,6 +285,7 @@ app.on('ready', () => {
       arch: process.arch,
       electron: process.versions.electron,
       node: process.versions.node,
+      chrome: process.versions.chrome,
       packaged: app.isPackaged,
     },
   });
