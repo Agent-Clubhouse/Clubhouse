@@ -148,6 +148,14 @@ export interface ChatImage {
   uri?: string;
   /** Base64 bytes from the driver. Never written or published. */
   data?: string;
+  /**
+   * A content-addressed asset (`sha256:<hex>`) the driver can resolve: a
+   * Copilot binary tool result (#2421). Main reads the bytes from the
+   * agent's own session and stores them as `mediaRef`.
+   */
+  assetId?: string;
+  /** The image couldn't be resolved or stored: chat says so instead of dropping it. */
+  unavailable?: boolean;
 }
 
 /** Normalized permission option kinds. `label` keeps the provider's own wording. */

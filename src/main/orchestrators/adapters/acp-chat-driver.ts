@@ -3,6 +3,7 @@ import type { ChatEventDraft, ContentBlock, MessageDelivery } from '../../../sha
 import type {
   ChatDriver,
   ChatDriverProbe,
+  ChatMediaAssetResult,
   ChatDriverSession,
   ChatDriverStartOptions,
   ChatResumeTiming,
@@ -42,15 +43,25 @@ class AcpChatDriverSession implements ChatDriverSession {
   onModelChosen: (() => void) | undefined;
   /** Why a requested resume started fresh instead (see ChatDriverSession). */
   resumeFallback: 'not_found' | 'stalled' | undefined;
+  /** The profile's binary-asset lookup for this session, when it has one (#2421). */
+  private readonly assets: ((sessionId: string | null, assetId: string) => Promise<ChatMediaAssetResult>) | undefined;
 
   constructor(
     private readonly session: AcpSession,
     queue: AsyncQueue<ChatEventDraft>,
     capabilities: ChatCapabilities,
     private readonly log: Log,
+    env: Record<string, string | undefined> = {},
   ) {
     this.events = queue;
     this.capabilities = capabilities;
+    this.assets = session.agentProfile.binaryAssets?.(env);
+  }
+
+  /** Bytes for an asset id, from this session's own store only: the id it was opened with, never a path. */
+  async resolveMediaAsset(assetId: string): Promise<ChatMediaAssetResult> {
+    if (!this.assets) return { ok: false, reason: 'unsupported' };
+    return this.assets(this.session.getState().sessionId, assetId);
   }
 
   get nativeSessionId(): string | undefined {
@@ -300,7 +311,7 @@ export class AcpChatDriver implements ChatDriver {
       }
 
       const levels = session.agentProfile.permissionLevels;
-      driverSession = new AcpChatDriverSession(session, queue, toChatCapabilities(caps, session.getState(), levels), this.log);
+      driverSession = new AcpChatDriverSession(session, queue, toChatCapabilities(caps, session.getState(), levels), this.log, { ...process.env, ...opts.env });
       driverSession.resumeTiming = session.resumeTiming ?? stalledTiming;
       driverSession.resumeFallback = resumeFallback;
       for (const draft of this.spec.handshakeNotices?.(session.initializeResponse!) ?? []) queue.push(draft);

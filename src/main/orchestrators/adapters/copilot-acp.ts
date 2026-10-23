@@ -14,6 +14,7 @@ import type {
   SessionUpdate,
 } from './acp-schema';
 import { resolveStructuredSpawn, type StructuredSpawnCommand } from './structured-spawn';
+import { COPILOT_SESSION_ID_RE, CopilotAssetReader } from './copilot-assets';
 
 /**
  * Copilot CLI over ACP (`copilot --acp`), public preview.
@@ -265,7 +266,7 @@ function expandHome(p: string | undefined): string | undefined {
   return p;
 }
 
-const SESSION_ID_RE = /^[A-Za-z0-9_-]{1,128}$/;
+const SESSION_ID_RE = COPILOT_SESSION_ID_RE;
 
 /**
  * Copilot answers session/load for a session it doesn't have by hanging, not
@@ -301,6 +302,12 @@ export function copilotPlanFilePath(
   if (!ctx.sessionId || !SESSION_ID_RE.test(ctx.sessionId)) return undefined;
   const planFile = samePath(path.join(copilotSessionStateDir(ctx.env), ctx.sessionId, 'plan.md'));
   return paths.find((p) => path.isAbsolute(p) && samePath(p) === planFile);
+}
+
+/** Binary tool results' bytes, from this session's own journal only (#2421). */
+export function copilotBinaryAssets(env: Record<string, string | undefined>): (sessionId: string | null, assetId: string) => ReturnType<CopilotAssetReader['read']> {
+  const reader = new CopilotAssetReader(copilotSessionStateDir(env));
+  return (sessionId, assetId) => reader.read(sessionId, assetId);
 }
 
 /** Copilot's todo statuses → task statuses. */
@@ -556,6 +563,7 @@ export const COPILOT_ACP_PROFILE: AcpAgentProfile = {
   contextWindow: 'input',
   nativeSessionExists: copilotNativeSessionExists,
   modelCostHint: copilotModelCostHint,
+  binaryAssets: copilotBinaryAssets,
   // session/new answers with Copilot's built-in default; settings.json's model applies at the first prompt (#2293).
   newSessionModelUnresolved: true,
   capabilities: copilotAcpCapabilities,

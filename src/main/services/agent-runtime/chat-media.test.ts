@@ -4,7 +4,8 @@ import * as os from 'os';
 import * as path from 'path';
 import * as fsp from 'fs/promises';
 import { createHash } from 'crypto';
-import type { ChatEventDraft, ChatImage } from '../../../shared/chat';
+import type { ChatEventDraft, ChatImage, ChatMediaAssetResult } from '../../../shared/chat';
+import { appLog } from '../log-service';
 
 const tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'chat-media-'));
 vi.mock('../log-service', () => ({ appLog: vi.fn() }));
@@ -250,6 +251,76 @@ describe('ChatMediaPolicy', () => {
   it('drops a media-only call whose image could not be stored', async () => {
     const out = await policy(true).apply({ type: 'tool_call', data: { toolCallId: 'i1', kind: 'other', title: 'Image', status: 'completed', toolName: 'image', mediaOnly: true, media: [{ type: 'image', mimeType: 'image/png', data: 'bm9wZQ==' }] } });
     expect(out).toBeNull();
+  });
+});
+
+describe('ChatMediaPolicy: Copilot binary asset results (#2421)', () => {
+  const assetId = `sha256:${'cd'.repeat(32)}`;
+  // The persisted payload shape from the issue, as the ACP mapper passes it on.
+  const rawOutput = {
+    content: 'Viewed image file successfully.',
+    binaryResultsForLlm: [{ type: 'image', assetId, mimeType: 'image/png', byteLength: 212249 }],
+  };
+  const withResolver = (resolveAsset: (id: string) => Promise<ChatMediaAssetResult | undefined>, enabled = true) =>
+    new ChatMediaPolicy({ agentId: AGENT, enabled: () => enabled, roots: () => [project], resolveAsset });
+
+  beforeEach(() => vi.mocked(appLog).mockClear());
+
+  it('stores the resolved bytes and keeps the tool output as it was', async () => {
+    const bytes = png(6, 7);
+    const resolveAsset = vi.fn(async () => ({ ok: true as const, bytes }));
+    const draft = update([{ type: 'image', mimeType: 'image/png', assetId }], { content: [{ type: 'content', content: { type: 'text', text: 'Viewed image file successfully.' } }], rawOutput });
+    const out = await withResolver(resolveAsset).apply(draft);
+    expect(resolveAsset).toHaveBeenCalledWith(assetId);
+    const data = out!.data as { media: ChatImage[]; rawOutput: unknown; content: unknown };
+    const ref = `${createHash('sha256').update(bytes).digest('hex')}.png`;
+    expect(data.media).toEqual([{ type: 'image', mimeType: 'image/png', mediaRef: ref, width: 6, height: 7, assetId }]);
+    expect(data.rawOutput).toEqual(rawOutput);
+    expect(data.content).toEqual((draft.data as { content: unknown }).content);
+    expect(fs.readFileSync(path.join(agentMediaDir(AGENT), ref))).toEqual(Buffer.from(bytes));
+    // No bytes in the event itself.
+    expect(JSON.stringify(out)).not.toContain(Buffer.from(bytes).toString('base64'));
+  });
+
+  it('marks an asset it cannot resolve as unavailable and logs why', async () => {
+    const out = await withResolver(async () => ({ ok: false, reason: 'not_found' })).apply(update([{ type: 'image', mimeType: 'image/png', assetId }], { rawOutput }));
+    expect((out!.data as { media: ChatImage[] }).media).toEqual([{ type: 'image', mimeType: 'image/png', assetId, unavailable: true }]);
+    expect(appLog).toHaveBeenCalledWith('core:chat', 'warn', 'Chat image asset not available', { meta: { agentId: AGENT, assetId, reason: 'not_found' } });
+  });
+
+  it('marks resolved bytes that are not an image, a resolver that throws, and a driver without one as unavailable', async () => {
+    const cases: Array<[ChatMediaPolicy, string]> = [
+      [withResolver(async () => ({ ok: true, bytes: new Uint8Array(Buffer.from('<html>')) })), 'not_an_image'],
+      [withResolver(async () => { throw new Error('boom'); }), 'read_failed: boom'],
+      [withResolver(async () => undefined), 'unsupported'],
+      [policy(true), 'unsupported'],
+    ];
+    for (const [p, reason] of cases) {
+      const out = await p.apply(update([{ type: 'image', mimeType: 'image/png', assetId }]));
+      expect((out!.data as { media: ChatImage[] }).media).toEqual([{ type: 'image', mimeType: 'image/png', assetId, unavailable: true }]);
+      expect(appLog).toHaveBeenLastCalledWith('core:chat', 'warn', 'Chat image asset not available', { meta: { agentId: AGENT, assetId, reason } });
+    }
+  });
+
+  it('never asks the resolver for an id that is not sha256, and keeps an omitted image as unavailable', async () => {
+    const resolveAsset = vi.fn(async () => ({ ok: true as const, bytes: png() }));
+    const out = await withResolver(resolveAsset).apply(update([
+      { type: 'image', mimeType: 'image/png', assetId: '../../etc/passwd' },
+      { type: 'image', mimeType: 'image/png', unavailable: true },
+    ]));
+    expect(resolveAsset).not.toHaveBeenCalled();
+    expect((out!.data as { media: ChatImage[] }).media).toEqual([
+      { type: 'image', mimeType: 'image/png', unavailable: true },
+      { type: 'image', mimeType: 'image/png', unavailable: true },
+    ]);
+  });
+
+  it('with the flag off, resolves nothing and leaves the event as before', async () => {
+    const resolveAsset = vi.fn(async () => ({ ok: true as const, bytes: png() }));
+    const out = await withResolver(resolveAsset, false).apply(update([{ type: 'image', mimeType: 'image/png', assetId }], { rawOutput }));
+    expect(resolveAsset).not.toHaveBeenCalled();
+    expect(out).toEqual({ type: 'tool_call_update', data: { toolCallId: 't1', status: 'completed', rawOutput } });
+    expect(fs.existsSync(agentMediaDir(AGENT))).toBe(false);
   });
 });
 

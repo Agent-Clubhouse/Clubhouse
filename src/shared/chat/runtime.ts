@@ -218,6 +218,9 @@ export interface ChatResumeTiming {
   firstReplyMs?: number;
 }
 
+/** Bytes for an image asset a driver referenced, or why there are none. */
+export type ChatMediaAssetResult = { ok: true; bytes: Uint8Array; reason?: undefined } | { ok: false; bytes?: undefined; reason: string };
+
 export interface ChatDriverSession {
   /**
    * Values known at start. Either may change later: the driver then emits a
@@ -254,6 +257,11 @@ export interface ChatDriverSession {
    */
   setModel(modelId: string, effort?: string | null): Promise<void>;
   compact(): Promise<void>;
+  /**
+   * Bytes for a ChatImage `assetId` from this session's own native store
+   * (Copilot binary tool results, #2421). Absent when the driver has none.
+   */
+  resolveMediaAsset?(assetId: string): Promise<ChatMediaAssetResult>;
   /** Stop the CLI process. Resolves when it has exited. */
   close(): Promise<void>;
 }

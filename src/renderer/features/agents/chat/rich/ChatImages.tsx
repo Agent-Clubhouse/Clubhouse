@@ -60,6 +60,15 @@ function ViewChip({ onOpen }: { onOpen: () => void }) {
   );
 }
 
+/** An image that was returned but can't be shown (not found, not stored). */
+function UnavailableChip() {
+  return (
+    <span className="h-7 flex items-center gap-1.5 px-2 rounded-md bg-surface-0 text-[12px] text-ctp-overlay1" data-testid="chat-image-unavailable">
+      <ImageIcon size={13} /> Image unavailable
+    </span>
+  );
+}
+
 function StoredThumb({ agentId, image, onOpen }: { agentId: string; image: ChatImage & { mediaRef: string }; onOpen: () => void }) {
   const [loaded, setLoaded] = useState<Thumbnail | null | undefined>(undefined);
   const [ref, near] = useNearViewport();
@@ -72,13 +81,7 @@ function StoredThumb({ agentId, image, onOpen }: { agentId: string; image: ChatI
   const box = boxFor(image);
   const src = loaded?.thumb;
   if (loaded && !loaded.thumb) return <ViewChip onOpen={onOpen} />;
-  if (loaded === null) {
-    return (
-      <span className="h-7 flex items-center gap-1.5 px-2 rounded-md bg-surface-0 text-[12px] text-ctp-overlay1" data-testid="chat-image-unavailable">
-        <ImageIcon size={13} /> Image unavailable
-      </span>
-    );
-  }
+  if (loaded === null) return <UnavailableChip />;
   return (
     <button
       ref={ref}
@@ -224,6 +227,7 @@ export function ToolImages({ media, className = '' }: { media: ChatImage[] | und
           const uri = image.uri;
           return <RemoteThumb key={`${uri}:${i}`} image={{ ...image, uri }} onOpen={(bytes) => setViewing({ kind: 'remote', bytes })} />;
         }
+        if (image.unavailable) return <UnavailableChip key={`unavailable:${i}`} />;
         return null;
       })}
       {viewing && <ImageLightbox agentId={agentId} target={viewing} onClose={() => setViewing(null)} />}

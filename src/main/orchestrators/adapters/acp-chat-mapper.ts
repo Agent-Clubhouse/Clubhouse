@@ -5,6 +5,7 @@ import * as path from 'path';
 import type { ChatCapabilities, ChatDriverId, PermissionLevel } from '../../../shared/chat/capabilities';
 import type { McpHttpEndpoint } from '../../../shared/chat/runtime';
 import { MINIMAL_CHAT_CAPABILITIES } from '../../../shared/chat/capabilities';
+import { isMediaAssetId } from '../../../shared/chat/media';
 import type {
   ChatErrorCode,
   ChatEventDraft,
@@ -245,8 +246,32 @@ function imageOf(block: ContentBlock): ChatImage | undefined {
   return block.uri ? { type: 'image', mimeType: block.mimeType, uri: block.uri } : undefined;
 }
 
-/** Images in a tool call's content. */
-function toolImages(content: ToolCallContent[] | null | undefined): ChatImage[] {
+/**
+ * Copilot's binary tool results (`rawOutput.binaryResultsForLlm`, #2421):
+ * asset references main resolves from the session's own journal, inline
+ * bytes, or a placeholder when Copilot left the bytes out.
+ */
+function binaryResultImages(rawOutput: unknown): ChatImage[] {
+  const results = rawOutput && typeof rawOutput === 'object' ? (rawOutput as { binaryResultsForLlm?: unknown }).binaryResultsForLlm : undefined;
+  if (!Array.isArray(results)) return [];
+  return results.flatMap((r): ChatImage[] => {
+    if (!r || typeof r !== 'object') return [];
+    const { type, assetId, mimeType: declared, data, omittedReason } = r as Record<string, unknown>;
+    if (type !== 'image') return [];
+    const mimeType = typeof declared === 'string' ? declared.slice(0, 100) : 'image/*';
+    if (isMediaAssetId(assetId)) return [{ type: 'image', mimeType, assetId }];
+    if (typeof data === 'string' && data) return [{ type: 'image', mimeType, data }];
+    if (typeof omittedReason === 'string') return [{ type: 'image', mimeType, unavailable: true }];
+    return [];
+  });
+}
+
+/** Images in a tool call's content, then its binary results. */
+function toolImages(content: ToolCallContent[] | null | undefined, rawOutput?: unknown): ChatImage[] {
+  return [...contentImages(content), ...binaryResultImages(rawOutput)];
+}
+
+function contentImages(content: ToolCallContent[] | null | undefined): ChatImage[] {
   if (!Array.isArray(content)) return [];
   return content.flatMap((c) => {
     const image = c.type === 'content' ? imageOf(c.content) : undefined;
@@ -661,7 +686,7 @@ export class AcpChatEventMapper {
           return [this.scoped({ type: 'plan_document', data: { planId: planFile, markdown, status: 'streaming', toolCallId: u.toolCallId } })];
         }
         const title = toolTitle(u.title, u.name, u.kind);
-        const media = toolImages(u.content);
+        const media = toolImages(u.content, u.rawOutput);
         this.toolCalls.set(u.toolCallId, { locations: locations(u.locations), content, title, name: u.name, kind: u.kind });
         return [this.scoped({
           type: 'tool_call',
@@ -715,7 +740,7 @@ export class AcpChatEventMapper {
           : readable(tu.title) ? tu.title
           : known?.title ?? toolTitle(tu.title, tu.name ?? known?.name, tu.kind ?? known?.kind);
         const content = toolContent(tu.content, tu.rawOutput);
-        const media = toolImages(tu.content);
+        const media = toolImages(tu.content, tu.rawOutput);
         const out: ChatEventDraft[] = [];
         if (tu.status === 'completed' && this.profile?.tasksAfterToolCall) {
           const tasks = this.profile.tasksAfterToolCall(this.toolInputs.get(tu.toolCallId) ?? tu.rawInput, this.tasks);

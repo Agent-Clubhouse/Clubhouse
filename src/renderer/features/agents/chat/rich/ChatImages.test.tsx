@@ -131,6 +131,14 @@ describe('rich chat content on', () => {
     expect(await screen.findByTestId('chat-image-unavailable')).toBeTruthy();
   });
 
+  it('shows an image that could not be resolved as unavailable, next to the ones that could (#2421)', async () => {
+    const missing: ChatImage = { type: 'image', mimeType: 'image/png', assetId: `sha256:${'cd'.repeat(32)}`, unavailable: true };
+    render(withMedia(<ToolCallView tool={tool({ media: [stored, missing] })} />));
+    expect(await screen.findByTestId('chat-image-thumb')).toBeTruthy();
+    expect(screen.getByTestId('chat-image-unavailable').textContent).toContain('Image unavailable');
+    expect(readMedia).toHaveBeenCalledTimes(1);
+  });
+
   it('never fetches a remote image until the user clicks Load image', async () => {
     render(withMedia(<ToolCallView tool={tool({ media: [{ type: 'image', mimeType: 'image/png', uri: 'https://example.com/a.png' }] })} />));
     const button = screen.getByRole('button', { name: /Load image/ });
@@ -170,6 +178,17 @@ describe('chat store media', () => {
     const item = state.items.find((i) => i.kind === 'tool_call') as ToolCallItem;
     expect(item.media).toEqual([stored, second]);
     expect(item.content).toEqual([{ type: 'text', text: 'ok' }]);
+  });
+
+  it('adds an unavailable image once, however often the update is resent', () => {
+    const missing: ChatImage = { type: 'image', mimeType: 'image/png', assetId: `sha256:${'cd'.repeat(32)}`, unavailable: true };
+    const omitted: ChatImage = { type: 'image', mimeType: 'image/png', unavailable: true };
+    const state = foldChatEvents(undefined, 'a', [
+      env(1, 'tool_call', { toolCallId: 't', kind: 'read', title: 'x', status: 'pending' }),
+      env(2, 'tool_call_update', { toolCallId: 't', status: 'completed', media: [missing, omitted] }),
+      env(3, 'tool_call_update', { toolCallId: 't', status: 'completed', media: [missing, omitted] }),
+    ]);
+    expect((state.items.find((i) => i.kind === 'tool_call') as ToolCallItem).media).toEqual([missing, omitted]);
   });
 
   it('leaves items without images as they were', () => {

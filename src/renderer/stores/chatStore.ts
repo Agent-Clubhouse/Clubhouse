@@ -328,9 +328,10 @@ function findItemIndex(items: ChatItem[], id: string): number {
 
 /** A call's images plus new ones; a stored image or link already there isn't added twice. */
 function mergeMedia(existing: ChatImage[] | undefined, added: ChatImage[]): ChatImage[] {
-  const key = (m: ChatImage) => m.mediaRef ?? m.uri ?? '';
+  // An unavailable image keys by its asset id, else its place in the update, so a resent update adds nothing.
+  const key = (m: ChatImage, i: number) => m.mediaRef ?? m.uri ?? (m.unavailable ? `unavailable:${m.assetId ?? i}` : '');
   const seen = new Set((existing ?? []).map(key));
-  const fresh = added.filter((m) => { const k = key(m); if (!k || seen.has(k)) return false; seen.add(k); return true; });
+  const fresh = added.filter((m, i) => { const k = key(m, i); if (!k || seen.has(k)) return false; seen.add(k); return true; });
   return fresh.length ? [...(existing ?? []), ...fresh] : existing ?? [];
 }
 
