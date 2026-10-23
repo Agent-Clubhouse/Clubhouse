@@ -369,6 +369,7 @@ describe('annex-server', () => {
       ];
       registerChatRuntime({ kind: 'chat', agentId: 'a', isRunning: () => true, getState: () => 'waiting_permission',
         getSessionId: () => 's', getCapabilities: () => ({ steer: true }), readTranscript: async () => ({ events }),
+        getQueueState: () => ({ queuedMessageIds: ['q1'], queueStateSeq: 2, queueRemovalSupported: true }),
       } as any);
       try {
         const { port, token } = await startAndPair();
@@ -377,6 +378,7 @@ describe('annex-server', () => {
         expect(JSON.parse(response.body)).toMatchObject({ sessionId: 's', currentSessionId: 's', readOnly: false,
           state: 'waiting_permission', events: [events[2]], lastSeq: 3, truncated: true, nextBeforeSeq: 3,
           pendingPermissions: [events[0]], pendingQuestions: [],
+          queuedMessageIds: ['q1'], queueStateSeq: 2, queueRemovalSupported: true,
         });
         const older = await request(port, 'GET', '/api/v1/mobile/agents/a/chat?beforeSeq=3&limit=1', undefined, authHeaders(token));
         expect(JSON.parse(older.body)).toMatchObject({ events: [events[1]], lastSeq: 3, nextBeforeSeq: 2 });

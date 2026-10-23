@@ -185,6 +185,7 @@ export class ChatAgentRuntime implements AgentRuntime {
   private resumeOpen: { honored: boolean; timing?: ChatResumeTiming } | undefined;
   private capabilities: ChatCapabilities | undefined;
   private readonly queued: QueuedMessage[] = [];
+  private publishedQueueState = { queuedMessageIds: [] as string[], queueStateSeq: 0 };
   /** drainQueue is sending the next queued item: the turn it starts hasn't begun yet. */
   private draining = false;
   private readonly permissions = new Map<string, PendingPermission>();
@@ -570,6 +571,7 @@ export class ChatAgentRuntime implements AgentRuntime {
       const preamble = this.withSystemPrompt([], caps);
       this.queued.push({ messageId, source: opts.source, parts: [blocks], preamble });
       await this.emit({ type: 'user_message', data: { messageId, ...correlation, content: blocks, source: opts.source, delivery: 'queued' } });
+      await this.emitQueueState([messageId], 'queued');
       return { delivery: 'queued', messageId };
     }
 
@@ -591,8 +593,20 @@ export class ChatAgentRuntime implements AgentRuntime {
       this.queued.splice(i, 1);
       removed.unshift(messageId);
     }
-    if (removed.length) await this.emit({ type: 'queue_removed', data: { messageIds: removed } });
+    if (removed.length) {
+      await this.emit({ type: 'queue_removed', data: { messageIds: removed } });
+      await this.emitQueueState(removed, 'removed');
+    }
     return removed;
+  }
+
+  getQueueState(): { queuedMessageIds: string[]; queueStateSeq: number; queueRemovalSupported: boolean } {
+    return { ...this.publishedQueueState, queuedMessageIds: [...this.publishedQueueState.queuedMessageIds],
+      queueRemovalSupported: this.isRunning() && this.getCapabilities()?.queue !== 'native' };
+  }
+
+  private emitQueueState(messageIds: string[], status: ChatEventDataMap['queue_state']['transition']['status']): Promise<void> {
+    return this.emit({ type: 'queue_state', data: { queuedMessageIds: this.queued.map((item) => item.messageId), transition: { messageIds, status } } });
   }
 
   private async runBeforePrompt(): Promise<void> {
@@ -615,14 +629,21 @@ export class ChatAgentRuntime implements AgentRuntime {
   }
 
   private async drainQueue(): Promise<void> {
+    const session = this.session;
+    if (!session) return;
     const next = this.queued.shift();
-    if (!next || !this.session) return;
+    if (!next) return;
     this.draining = true;
     try {
       this.clearIdleTimer();
+      await this.emitQueueState([next.messageId], 'dispatching');
       await this.runBeforePrompt();
-      if (!this.session) return;
-      await this.session.send([...next.preamble, ...coalesceUpdateContent(next.parts)], 'prompt');
+      if (this.session !== session) return;
+      await session.send([...next.preamble, ...coalesceUpdateContent(next.parts)], 'prompt');
+      if (this.session === session) await this.emitQueueState([next.messageId], 'delivered');
+    } catch (err) {
+      if (this.session === session) await this.emitQueueState([next.messageId], 'failed');
+      throw err;
     } finally {
       this.draining = false;
     }
@@ -699,6 +720,7 @@ export class ChatAgentRuntime implements AgentRuntime {
       await this.emitChain;
       this.sessionId = this.newId();
       this.seq = 0;
+      this.publishedQueueState = { queuedMessageIds: [], queueStateSeq: 0 };
       this.systemPromptApplied = false;
       this.nativeSessionId = undefined;
       await this.emit({ type: 'notice', data: { level: 'info', code: 'context_cleared', message: 'Started a new conversation.' } });
@@ -862,6 +884,7 @@ export class ChatAgentRuntime implements AgentRuntime {
         type: draft.type,
         data: draft.data,
       } as ChatEvent;
+      if (event.type === 'queue_state') this.publishedQueueState = { queuedMessageIds: [...event.data.queuedMessageIds], queueStateSeq: event.seq };
       try {
         await appendChatEvent(event);
       } catch (err) {

@@ -208,10 +208,53 @@ describe('ChatAgentRuntime', () => {
     }
     const sentTexts = (driver: FakeChatDriver) => driver.last.sent.map((s) => (s.content[0] as { text: string }).text);
 
+    it('publishes exact queue IDs, removal, and dispatch/delivery without guessing from turns', async () => {
+      const { driver, runtime, ids } = await queuedRuntime();
+      expect(runtime.getQueueState()).toMatchObject({ queuedMessageIds: ids, queueRemovalSupported: true });
+      await runtime.removeQueued([ids[1]]);
+      expect(transcript.at(-1)).toMatchObject({ type: 'queue_state', data: {
+        queuedMessageIds: [ids[0], ids[2]], transition: { messageIds: [ids[1]], status: 'removed' },
+      } });
+      let release!: () => void;
+      vi.spyOn(driver.last, 'send').mockImplementationOnce(() => new Promise((resolve) => { release = () => resolve('prompt'); }));
+      driver.last.emit({ type: 'turn_ended', data: { stopReason: 'end_turn' } });
+      await flush();
+      expect(runtime.getQueueState()).toEqual({ queuedMessageIds: [ids[2]], queueRemovalSupported: true, queueStateSeq: transcript.at(-1)!.seq });
+      expect(transcript.at(-1)).toMatchObject({ type: 'queue_state', data: { transition: { messageIds: [ids[0]], status: 'dispatching' } } });
+      expect(await runtime.removeQueued([ids[0]])).toEqual([]);
+      release();
+      await flush();
+      expect(transcript.at(-1)).toMatchObject({ type: 'queue_state', data: {
+        queuedMessageIds: [ids[2]], transition: { messageIds: [ids[0]], status: 'delivered' },
+      } });
+    });
+
+    it('records failed queue dispatch without claiming delivery or requeueing', async () => {
+      const { driver, runtime, ids } = await queuedRuntime();
+      vi.spyOn(driver.last, 'send').mockRejectedValueOnce(new Error('send failed'));
+      driver.last.emit({ type: 'turn_ended', data: { stopReason: 'end_turn' } });
+      await flush();
+      expect(transcript.filter((e) => e.type === 'queue_state').at(-1)).toMatchObject({ data: {
+        queuedMessageIds: ids.slice(1), transition: { messageIds: [ids[0]], status: 'failed' },
+      } });
+      expect(runtime.getQueueState().queueRemovalSupported).toBe(false);
+    });
+
+    it('does not claim native provider queued messages are locally removable', async () => {
+      const driver = new FakeChatDriver('copilot_acp', 'copilot-cli', { ...STEERLESS, queue: 'native' });
+      const { runtime } = makeRuntime(driver);
+      await runtime.start();
+      const result = await runtime.sendMessage('provider-owned', { source: 'annex', delivery: 'queued' });
+      expect(result.delivery).toBe('queued');
+      expect(runtime.getQueueState()).toEqual({ queuedMessageIds: [], queueStateSeq: 0, queueRemovalSupported: false });
+      expect(await runtime.removeQueued([result.messageId!])).toEqual([]);
+      expect(transcript.some((e) => e.type === 'queue_state')).toBe(false);
+    });
+
     it('removes a queued message by id, records it, and never delivers it', async () => {
       const { driver, runtime, ids } = await queuedRuntime();
       expect(await runtime.removeQueued([ids[1]])).toEqual([ids[1]]);
-      expect(transcript.at(-1)).toMatchObject({ type: 'queue_removed', data: { messageIds: [ids[1]] } });
+      expect(transcript.filter((e) => e.type === 'queue_removed').at(-1)).toMatchObject({ type: 'queue_removed', data: { messageIds: [ids[1]] } });
 
       driver.last.emit({ type: 'turn_ended', data: { stopReason: 'end_turn' } });
       await flush();
@@ -1309,7 +1352,7 @@ describe('ChatAgentRuntime coalesced helper updates (#2414)', () => {
     const first = await runtime.sendMessage('[FROM HELPER:a (a1)] one', { source: 'mcp' });
     await runtime.sendMessage('[FROM HELPER:b (b1)] two', { source: 'mcp' });
     await expect(runtime.removeQueued([first.messageId])).resolves.toEqual([first.messageId]);
-    expect(transcript.at(-1)).toMatchObject({ type: 'queue_removed', data: { messageIds: [first.messageId] } });
+    expect(transcript.filter((e) => e.type === 'queue_removed').at(-1)).toMatchObject({ type: 'queue_removed', data: { messageIds: [first.messageId] } });
     const next = await runtime.sendMessage('[FROM HELPER:c (c1)] three', { source: 'mcp' });
     expect(next.messageId).not.toBe(first.messageId);
     driver.last.emit({ type: 'turn_ended', data: { stopReason: 'end_turn' } });
@@ -1322,8 +1365,26 @@ describe('ChatAgentRuntime coalesced helper updates (#2414)', () => {
     await runtime.sendMessage('[FROM HELPER:a (a1)] one', { source: 'mcp' });
     await runtime.clearContext();
     await flush();
+    expect(runtime.getQueueState()).toEqual({ queuedMessageIds: [], queueStateSeq: 0, queueRemovalSupported: true });
     driver.last.emit({ type: 'turn_ended', data: { stopReason: 'end_turn' } });
     await flush();
     expect(driver.last.sent).toHaveLength(0);
+  });
+
+  it('does not deliver an old queued item into a replacement session during a prompt hook', async () => {
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => { release = resolve; });
+    const { driver, runtime } = await midTurn(STEERLESS, { beforePrompt: () => gate });
+    await runtime.sendMessage('old session only', { source: 'user' });
+    driver.last.emit({ type: 'turn_ended', data: { stopReason: 'end_turn' } });
+    await flush();
+    const oldSessionId = runtime.getSessionId();
+    await runtime.clearContext();
+    release();
+    await flush();
+    expect(runtime.getSessionId()).not.toBe(oldSessionId);
+    expect(runtime.getQueueState()).toEqual({ queuedMessageIds: [], queueStateSeq: 0, queueRemovalSupported: true });
+    expect(driver.last.sent).toHaveLength(0);
+    expect(transcript.some((e) => e.sessionId === runtime.getSessionId() && e.type === 'queue_state')).toBe(false);
   });
 });

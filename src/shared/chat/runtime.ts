@@ -138,6 +138,8 @@ export interface AgentRuntime {
    * isn't. Chat runtimes only.
    */
   removeQueued?(messageIds?: readonly string[]): Promise<string[]>;
+  /** Last published queue state and its session-local event sequence. */
+  getQueueState?(): { queuedMessageIds: string[]; queueStateSeq: number; queueRemovalSupported: boolean };
 
   /** Read the transcript; `afterSeq` returns only newer chat events of the current session. */
   readTranscript(opts?: { tail?: number; afterSeq?: number }): Promise<RuntimeTranscriptSlice>;
