@@ -10,6 +10,7 @@ import * as annexTls from './annex-tls';
 import Bonjour, { Service } from 'bonjour-service';
 import * as annexEventBus from './annex-event-bus';
 import * as annexSettings from './annex-settings';
+import { annexNetworkProfile } from './annex-network-profile';
 import * as annexIdentity from './annex-identity';
 import * as annexPeers from './annex-peers';
 import * as projectStore from './project-store';
@@ -2581,6 +2582,7 @@ export function start(): void {
 
   appLog('core:annex', 'info', 'Annex server starting...');
   const serverStartMs = Date.now();
+  const networkProfile = annexNetworkProfile();
 
   // Generate identity on first enable (lazy creation)
   const identity = annexIdentity.getOrCreateIdentity();
@@ -2864,6 +2866,10 @@ export function start(): void {
 
   function publishBonjour() {
     if (!mainReady || !pairingReady) return;
+    if (!networkProfile.advertise) {
+      broadcastToAllWindows(IPC.ANNEX.STATUS_CHANGED, getStatus());
+      return;
+    }
     try {
       appLog('core:annex', 'info', 'Creating Bonjour instance for mDNS advertisement...');
       bonjour = new Bonjour();
@@ -2907,22 +2913,22 @@ export function start(): void {
     }
   }
 
-  mainServer.listen(0, '0.0.0.0', () => {
+  mainServer.listen(0, networkProfile.host, () => {
     const addr = mainServer.address();
     if (addr && typeof addr === 'object') {
       serverPort = addr.port;
-      appLog('core:annex', 'info', `Annex main server listening on 0.0.0.0:${serverPort} (${tlsServer ? 'TLS' : 'HTTP'})`);
+      appLog('core:annex', 'info', `Annex main server listening on ${networkProfile.host}:${serverPort} (${tlsServer ? 'TLS' : 'HTTP'})`);
       mainReady = true;
       if (pairingReady) recordServerStarted(serverStartMs, !!tlsServer);
       publishBonjour();
     }
   });
 
-  pairingServer.listen(0, '0.0.0.0', () => {
+  pairingServer.listen(0, networkProfile.host, () => {
     const addr = pairingServer?.address();
     if (addr && typeof addr === 'object') {
       pairingPort = addr.port;
-      appLog('core:annex', 'info', `Annex pairing server listening on 0.0.0.0:${pairingPort} (HTTP)`);
+      appLog('core:annex', 'info', `Annex pairing server listening on ${networkProfile.host}:${pairingPort} (HTTP)`);
       pairingReady = true;
       if (mainReady) recordServerStarted(serverStartMs, !!tlsServer);
       publishBonjour();
