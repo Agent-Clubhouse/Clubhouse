@@ -2133,7 +2133,7 @@ async function handleMobileCapabilitiesRoute(ctx: AnnexRouteContext): Promise<vo
     version: 1, epoch: mobileCommands.epoch, controlAuth: 'mtls-pinned-client',
     controlAvailable: !!ctx.mobilePrincipal, commands: MOBILE_COMMAND_TYPES,
     pairing: { sessionRevokePath: '/api/v1/mobile/pairing' },
-    events: { transport: 'annex-websocket', replayRequest: 'mobile:replay' },
+    events: { transport: 'annex-websocket', replayRequest: 'mobile:replay', queueState: 'queue_state' },
     idempotency: { scope: 'peer-and-epoch', maxEntries: MOBILE_COMMAND_MAX_ENTRIES, ttlMs: MOBILE_COMMAND_TTL_MS },
   });
 }
@@ -2165,9 +2165,11 @@ async function handleMobileChatRoute(ctx: AnnexRouteContext, match: RegExpMatchA
       sendJson(ctx.res, 400, { error: 'invalid_query' }); return;
     }
     const runtime = getAgentRuntime(agentId);
-    const live = runtime?.kind === 'chat' && runtime.isRunning() && (requestedSession === undefined || runtime.getSessionId?.() === requestedSession);
+    const liveSessionId = runtime?.kind === 'chat' ? runtime.getSessionId?.() : undefined;
+    let live = runtime?.kind === 'chat' && runtime.isRunning() && (requestedSession === undefined || liveSessionId === requestedSession);
     const events = live ? (await runtime.readTranscript()).events ?? [] : await readChatTranscript(agentId, { sessionId: requestedSession });
-    const sessionId = requestedSession ?? (live ? runtime.getSessionId?.() : events[events.length - 1]?.sessionId);
+    const sessionId = requestedSession ?? (live ? liveSessionId : events[events.length - 1]?.sessionId);
+    live = live && getAgentRuntime(agentId) === runtime && runtime.isRunning() && runtime.getSessionId?.() === sessionId;
     const current = events.filter((e) => e.sessionId === sessionId);
     const eligible = beforeSeq === undefined ? current : current.filter((e) => e.seq < beforeSeq);
     const page = eligible.slice(-limit);
@@ -2177,6 +2179,8 @@ async function handleMobileChatRoute(ctx: AnnexRouteContext, match: RegExpMatchA
       state: live ? runtime.getState() : 'sleeping', capabilities: live ? runtime.getCapabilities?.() ?? null : null,
       events: page, lastSeq: current[current.length - 1]?.seq ?? 0, truncated: eligible.length > limit,
       nextBeforeSeq: eligible.length > limit ? page[0]?.seq ?? null : null,
+      ...(live ? runtime.getQueueState?.() ?? { queuedMessageIds: [], queueStateSeq: 0, queueRemovalSupported: false }
+        : { queuedMessageIds: [], queueStateSeq: 0, queueRemovalSupported: false }),
       ...(live ? pendingInteractions(current) : { pendingPermissions: [], pendingQuestions: [] }),
     });
   } catch {
