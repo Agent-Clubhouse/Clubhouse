@@ -26,6 +26,15 @@ beforeEach(() => {
 afterEach(() => resetFeedbackStore());
 
 describe('FeedbackReviewDialog', () => {
+  it('reviews the opening correlation summary and lets the user remove it', async () => {
+    render(<FeedbackReviewDialog draft={{ ...DRAFT, correlation: { scope: 'incident', capturedAt: '2026-10-24T00:00:00.000Z', traceCount: 2, hostCount: 1, phoneCount: 1, connectionCount: 1 } }} onClose={() => {}} />);
+    const choice = screen.getByRole('checkbox', { name: /Include tracing references/ });
+    expect((choice as HTMLInputElement).checked).toBe(true);
+    expect(screen.getByText(/2 trace\/span references/)).toBeTruthy();
+    fireEvent.click(choice);
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Send' })); });
+    expect(send).toHaveBeenCalledWith(expect.objectContaining({ includeCorrelation: false }));
+  });
   it('shows the screenshot and sends it with notes and the scene', async () => {
     const onClose = vi.fn();
     render(<FeedbackReviewDialog draft={DRAFT} onClose={onClose} />);

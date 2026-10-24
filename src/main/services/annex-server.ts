@@ -63,6 +63,7 @@ import { generateQuickName } from '../../shared/name-generator';
 import { generateQuickAgentId } from '../../shared/agent-id';
 import { ANNEX_PROTOCOL_VERSION } from '../../shared/types';
 import { handshakeAttributes, parseTelemetryHello, telemetryHelloAck } from '../telemetry/annex-handshake';
+import { rememberAnnexIncidentPhone, rememberAnnexIncidentTrace } from '../telemetry/feedback-incident';
 import { currentRequestTraceparent, tel, withRemoteParent } from '../telemetry/facade';
 import { annexCommandFlow } from '../telemetry/annex-telemetry';
 import { traceHttpResponse } from '../telemetry/annex-request';
@@ -2510,6 +2511,7 @@ function safeSend(ws: WebSocket, data: string): boolean {
 }
 
 const wsTelemetryHandshakes = new WeakMap<WebSocket, ReturnType<typeof telemetryHelloAck>>();
+const wsTelemetryPeerServices = new WeakMap<WebSocket, string>();
 
 function handleWsMessage(ws: WebSocket, data: string): void {
   // `tc`: optional W3C traceparent from a controller with telemetry on (spec §7).
@@ -2532,13 +2534,18 @@ function handleWsMessage(ws: WebSocket, data: string): void {
     const peer = parseTelemetryHello(msg.payload);
     if (!peer) return;
     const prior = wsTelemetryHandshakes.get(ws);
-    if (prior && (prior.peerServiceInstanceId !== peer.serviceInstanceId
+    if (prior && (wsTelemetryPeerServices.get(ws) !== peer.serviceName || prior.peerServiceInstanceId !== peer.serviceInstanceId
       || prior.connectionAttemptId !== peer.connectionAttemptId)) return;
     const ack = prior ?? telemetryHelloAck(peer);
     wsTelemetryHandshakes.set(ws, ack);
+    wsTelemetryPeerServices.set(ws, peer.serviceName);
     withRemoteParent(validatedTraceparent(msg.tc), () => tel.flow('clubhouse.annex.command', {
       attrs: handshakeAttributes(ack),
-    }, () => safeSend(ws, JSON.stringify({ type: 'telemetry:hello:ack', payload: ack }))), true);
+    }, () => {
+      rememberAnnexIncidentPhone(peer.serviceName, peer.serviceInstanceId, ack.connectionId);
+      rememberAnnexIncidentTrace();
+      return safeSend(ws, JSON.stringify({ type: 'telemetry:hello:ack', payload: ack }));
+    }), true);
     return;
   }
 
@@ -2611,6 +2618,8 @@ function handleWsMessage(ws: WebSocket, data: string): void {
 
   const payload = msg.payload || {};
   const traceparent = wsTraceparent(type, msg.tc);
+  const handshake = isMtls ? wsTelemetryHandshakes.get(ws) : undefined;
+  if (handshake && traceparent) rememberAnnexIncidentPhone(wsTelemetryPeerServices.get(ws) ?? '', handshake.peerServiceInstanceId, handshake.connectionId);
 
   switch (type) {
     case 'pty:input': {

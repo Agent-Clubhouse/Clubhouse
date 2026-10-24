@@ -51,6 +51,16 @@ export interface FeedbackCaptureResult {
   preview: string | null;
   /** Every window captured; the first is the window feedback started from. */
   shots: FeedbackShot[];
+  correlation?: FeedbackCorrelationSummary;
+}
+
+export interface FeedbackCorrelationSummary {
+  scope: 'incident' | 'trace-only';
+  capturedAt: string;
+  traceCount: number;
+  phoneCount: number;
+  hostCount: number;
+  connectionCount: number;
 }
 
 export interface FeedbackSendInput {
@@ -59,6 +69,8 @@ export interface FeedbackSendInput {
   notes: string;
   /** false sends the notes without the captured screenshot. */
   includeScreenshot: boolean;
+  /** false removes the opening snapshot's incident and legacy trace/span references. */
+  includeCorrelation?: boolean;
   /** Where in Clubhouse feedback was given, e.g. 'agents' or 'settings'. A code, never user text. */
   scene?: string;
   /**

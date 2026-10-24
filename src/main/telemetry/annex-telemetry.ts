@@ -13,6 +13,7 @@ import { isIP } from 'net';
 import { ATTR, type TelAttr } from '../../shared/telemetry/attributes';
 import { isTelemetryActive, replaySpan, tel, withRemoteParent } from './facade';
 import type { ErrorType } from './types';
+import { rememberAnnexIncidentTrace } from './feedback-incident';
 
 type PairResult = Parameters<typeof ATTR.annexPairResult>[0];
 type DisconnectReason = Parameters<typeof ATTR.annexDisconnectReason>[0];
@@ -67,6 +68,7 @@ function httpClass(status: number): Parameters<typeof ATTR.httpClass>[0] {
  */
 export function annexRestFlow<T>(method: string, pattern: RegExp, statusOf: () => number, fn: () => Promise<T>): Promise<T> {
   return tel.flow('clubhouse.annex.rest', { attrs: [ATTR.annexRoute(routeTemplate(method, pattern))] }, async (span) => {
+    rememberAnnexIncidentTrace();
     const result = await fn();
     span.set(ATTR.httpClass(httpClass(statusOf())));
     return result;
@@ -78,7 +80,10 @@ export function annexRestFlow<T>(method: string, pattern: RegExp, statusOf: () =
  * remote spawn/wake messages carry one (they are mTLS-gated before this runs).
  */
 export function annexCommandFlow<T>(tc: string | undefined, fn: () => Promise<T>): Promise<T> {
-  return withRemoteParent(tc, () => tel.flow('clubhouse.annex.command', {}, fn), true);
+  return withRemoteParent(tc, () => tel.flow('clubhouse.annex.command', {}, () => {
+    rememberAnnexIncidentTrace();
+    return fn();
+  }), true);
 }
 
 export function wsTraceparent(type: string | undefined, tc: unknown): string | undefined {

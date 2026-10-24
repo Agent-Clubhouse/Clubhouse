@@ -87,12 +87,13 @@ function requireEnabled(event: Electron.IpcMainInvokeEvent): BrowserWindow {
 }
 
 export function validateSendInput(value: FeedbackSendInput, argName: string): void {
-  const allowed = new Set(['draftId', 'notes', 'includeScreenshot', 'scene', 'annotatedPng', 'shotId']);
+  const allowed = new Set(['draftId', 'notes', 'includeScreenshot', 'includeCorrelation', 'scene', 'annotatedPng', 'shotId']);
   for (const key of Object.keys(value)) {
     if (!allowed.has(key)) throw new Error(`${argName}.${key} is not a recognized field`);
   }
   if (typeof value.notes !== 'string' || value.notes.length > MAX_NOTES) throw new Error(`${argName}.notes must be a string of at most ${MAX_NOTES} characters`);
   if (typeof value.includeScreenshot !== 'boolean') throw new Error(`${argName}.includeScreenshot must be a boolean`);
+  if (value.includeCorrelation !== undefined && typeof value.includeCorrelation !== 'boolean') throw new Error(`${argName}.includeCorrelation must be a boolean`);
   if (value.draftId !== undefined && (typeof value.draftId !== 'string' || !DRAFT_ID.test(value.draftId))) throw new Error(`${argName}.draftId is invalid`);
   if (value.scene !== undefined && (typeof value.scene !== 'string' || value.scene.length > 40)) throw new Error(`${argName}.scene is invalid`);
   if (value.shotId !== undefined && (typeof value.shotId !== 'string' || !SHOT_ID.test(value.shotId))) throw new Error(`${argName}.shotId is invalid`);

@@ -112,7 +112,7 @@ describe('FeedbackService (fake SDK)', () => {
   }
 
   function service(create: ReturnType<typeof fakeSdk>['create']) {
-    return new FeedbackService({ safeStorage, dataDir: '/data', appVersion: '0.42.0-beta.1', isOnline: () => true, create: create as never });
+    return new FeedbackService({ safeStorage, dataDir: '/data', appVersion: '0.42.0-beta.1', isOnline: () => true, create: create as never, now: () => Date.parse('2026-10-17T10:00:00.000Z') });
   }
 
   it('starts once with the app id, version, window capture and telemetry off', async () => {
@@ -203,6 +203,7 @@ describe('FeedbackService (fake SDK)', () => {
   it('freezes the app trace at capture, including text-only review and failed-submit retry', async () => {
     const facade = await import('../../telemetry/facade');
     const trace = vi.spyOn(facade, 'currentTraceparent');
+    const active = vi.spyOn(facade, 'isTelemetryActive').mockReturnValue(true);
     const original = '00-0123456789abcdef0123456789abcdef-0123456789abcdef-01';
     trace.mockReturnValue(original);
     const { fb, create } = fakeSdk();
@@ -216,7 +217,7 @@ describe('FeedbackService (fake SDK)', () => {
       for (const [input] of fb.feedback.prepare.mock.calls) expect(input).toMatchObject({
         traceId: original.slice(3, 35), spanId: original.slice(36, 52), png: null,
       });
-    } finally { trace.mockRestore(); await svc.shutdown(); }
+    } finally { trace.mockRestore(); active.mockRestore(); await svc.shutdown(); }
   });
 
   it('sends with the captured screenshot, or text-only without it', async () => {
@@ -233,6 +234,26 @@ describe('FeedbackService (fake SDK)', () => {
 
     await s.send({ notes: 'no capture at all', includeScreenshot: false });
     expect(fb.feedback.prepare).toHaveBeenLastCalledWith(expect.objectContaining({ png: null }));
+  });
+
+  it('snapshots incident context before asynchronous startup and honors removal in text-only review', async () => {
+    const { create, fb } = fakeSdk();
+    let resume!: () => void;
+    fb.start.mockImplementationOnce(() => new Promise<void>(resolve => { resume = resolve; }));
+    const captureCorrelation = vi.fn(() => ({ data: {
+      capturedAt: incidentFixture.incident.capturedAt, traceId: incidentFixture.traceId, spanId: incidentFixture.spanId,
+      incident: structuredClone(incidentFixture.incident) as FramebriarIncident,
+    }, summary: { scope: 'incident' as const, capturedAt: incidentFixture.incident.capturedAt, traceCount: 1, hostCount: 1, phoneCount: 1, connectionCount: 1 } }));
+    const svc = new FeedbackService({ safeStorage, dataDir: '/data', appVersion: '1.0.0', isOnline: () => true, create: create as never, captureCorrelation });
+    const opening = svc.captureDraft(async () => PNG);
+    expect(captureCorrelation).toHaveBeenCalledTimes(1);
+    resume();
+    const draft = await opening;
+    expect(draft.correlation?.scope).toBe('incident');
+    await svc.send({ draftId: draft.draftId, notes: 'reviewed', includeScreenshot: false, includeCorrelation: false });
+    expect(fb.feedback.prepare).toHaveBeenLastCalledWith(expect.objectContaining({ incident: null, traceId: undefined, spanId: undefined, png: null }));
+    expect(captureCorrelation).toHaveBeenCalledTimes(1);
+    await svc.shutdown();
   });
 
   describe('several windows (#2100)', () => {

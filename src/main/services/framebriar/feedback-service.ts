@@ -18,8 +18,7 @@
  */
 
 import { createHash, randomUUID } from 'crypto';
-import { currentTraceparent } from '../../telemetry/facade';
-import { parseWireTraceparent } from '../../telemetry/trace-context';
+import { captureFeedbackCorrelation, type FeedbackCorrelationSnapshot } from '../../telemetry/feedback-incident';
 import type {
   Framebriar,
   FramebriarAccessView,
@@ -104,6 +103,8 @@ export interface FeedbackServiceDeps {
   /** For tests: the SDK factory (defaults to the vendored createFramebriar). */
   create?: typeof createFramebriar;
   now?: () => number;
+  /** Synchronous opening snapshot; the default uses only bounded, validated local references. */
+  captureCorrelation?: (now: number) => FeedbackCorrelationSnapshot;
   /** Local diagnostics; defaults to none. */
   log?: FeedbackLog;
 }
@@ -332,7 +333,7 @@ export class FeedbackService {
   private async captureDraftInner(sources: CaptureSource[]): Promise<FeedbackCaptureResult> {
     // Snapshot the app pipeline before async capture/review. The feedback SDK
     // deliberately has its own telemetry off and cannot supply this context.
-    const trace = parseWireTraceparent(currentTraceparent());
+    const correlation = (this.deps.captureCorrelation ?? captureFeedbackCorrelation)(this.now());
     await this.start();
     this.pruneDrafts();
     // open() checks eligibility and records the moment (and trace) feedback opened.
@@ -359,12 +360,12 @@ export class FeedbackService {
       }
       shots.push({ shotId: `s${i}`, label: source.label, png });
     }
-    const snapshot: FramebriarSnapshot = { ...opened, ...(trace ?? {}), png: shots[0]?.png ?? null };
+    const snapshot: FramebriarSnapshot = { ...opened, ...correlation.data, png: shots[0]?.png ?? null };
     const draftId = randomUUID();
     this.drafts.set(draftId, { snapshot, shots, createdAt: this.now() });
     while (this.drafts.size > MAX_DRAFTS) this.drafts.delete(this.drafts.keys().next().value as string);
     const previews = shots.map((shot) => ({ shotId: shot.shotId, label: shot.label, preview: `data:image/png;base64,${shot.png.toString('base64')}` }));
-    return { draftId, preview: previews[0]?.preview ?? null, shots: previews };
+    return { draftId, preview: previews[0]?.preview ?? null, shots: previews, ...(correlation.summary && { correlation: correlation.summary }) };
   }
 
   /**
@@ -405,7 +406,7 @@ export class FeedbackService {
     const breadcrumbs = (this.deps.breadcrumbs?.() ?? []).slice(0, MAX_REPORT_BREADCRUMBS);
     // The hash is memory-only and never logged/exported. It prevents a retry from
     // silently replacing a possibly saved report with a different reviewed payload.
-    const key = createHash('sha256').update(JSON.stringify({ notes, scene, png: png ? createHash('sha256').update(png).digest('hex') : null })).digest('hex');
+    const key = createHash('sha256').update(JSON.stringify({ notes, scene, includeCorrelation: input.includeCorrelation !== false, png: png ? createHash('sha256').update(png).digest('hex') : null })).digest('hex');
     if (draft?.prepared && draft.prepared.key !== key) {
       throw Object.assign(new Error('Retry the feedback unchanged, or close it and open a new report to make changes.'), { code: 'feedback-review-changed' });
     }
@@ -415,6 +416,7 @@ export class FeedbackService {
       ...(input.includeScreenshot && draft
         ? { ...draft.snapshot, png }
         : { ...(draft?.snapshot ?? {}), png: null }),
+      ...(input.includeCorrelation === false && { incident: null, traceId: undefined, spanId: undefined }),
     });
     if (draft && !draft.prepared) {
       const cached = { key, value: prepare() };
