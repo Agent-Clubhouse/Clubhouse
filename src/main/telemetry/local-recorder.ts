@@ -165,6 +165,7 @@ export function createLocalRecorder(opts: LocalRecorderOptions): LocalRecorder {
   });
 
   const als = new AsyncLocalStorage<TraceIds>();
+  const activeSpans = new WeakSet<TraceIds>();
   const remote = new AsyncLocalStorage<{ ids: TraceIds; used: boolean; active: boolean; requestScope: boolean }>();
   let caps = new SessionCaps(opts.sessionCaps ?? DEFAULT_SESSION_CAPS);
   const capsWindow = opts.capsWindowMs ?? LOCAL_CAPS_WINDOW_MS;
@@ -432,6 +433,7 @@ export function createLocalRecorder(opts: LocalRecorderOptions): LocalRecorder {
     return (outer) => {
       if (stopped || !levelAllows(spanLevel, SPANS[name].level)) return fn(outer);
       const { ids, parentSpanId } = idsFor(name, als.getStore());
+      activeSpans.add(ids);
       const startMs = now();
       const attrs: TelAttr[] = [...(flowOpts.attrs ?? [])];
       const handle: SpanHandle = {
@@ -441,6 +443,7 @@ export function createLocalRecorder(opts: LocalRecorderOptions): LocalRecorder {
         },
       };
       const end = (c: Classification): void => {
+        activeSpans.delete(ids);
         try {
           const { outcome, errorType } = flowOpts.signal?.aborted ? { outcome: 'cancelled' as const, errorType: undefined } : outcomeOf(c);
           writeSpan(name, ids, parentSpanId, startMs, now(), attrs, outcome, errorType);
@@ -726,7 +729,8 @@ export function createLocalRecorder(opts: LocalRecorderOptions): LocalRecorder {
     },
 
     activeTraceIds() {
-      return als.getStore();
+      const ids = als.getStore();
+      return ids && activeSpans.has(ids) ? ids : undefined;
     },
 
     async flush() {

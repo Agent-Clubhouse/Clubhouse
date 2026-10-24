@@ -522,7 +522,10 @@ describe('local-only distributed tracing', () => {
     await h.rec.withRemoteParent!(tc, async () => {
       await h.rec.wrap('clubhouse.annex.rest', {}, async () => {
         const resource = new AsyncResource('late-request');
-        late = () => resource.runInAsyncScope(() => h.rec.wrap('clubhouse.agent.spawn', {}, () => {})(ok()));
+        late = () => resource.runInAsyncScope(() => {
+          expect(h.rec.activeTraceIds()).toBeUndefined();
+          h.rec.wrap('clubhouse.agent.spawn', {}, () => {})(ok());
+        });
         h.rec.wrap('clubhouse.agent.spawn', {}, () => {})(ok());
       })(ok());
     }, true);
