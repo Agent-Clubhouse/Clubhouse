@@ -26,7 +26,7 @@ import type { ChatDriverId, ChatEvent, ChatEventDataMap, TokenUsage } from '../.
 import { ATTR, type TelAttr } from '../../shared/telemetry/attributes';
 import { onChatEvent } from '../services/agent-runtime/chat-event-bus';
 import { agentOutput, agentRunStarted, discardRun, hasActiveRun, toolBucket } from './agent-telemetry';
-import { isTelemetryActive, replaySpan, tel } from './facade';
+import { getRecordingGeneration, isTelemetryActive, replaySpan, tel } from './facade';
 import { chatEventTraceparent } from './chat-trace-context';
 import type { ErrorType } from './types';
 
@@ -45,6 +45,7 @@ interface Session {
 }
 
 interface Turn {
+  recordingGeneration: number;
   traceparent?: string;
   turnId: string | undefined;
   startMs: number;
@@ -139,6 +140,7 @@ function dropSession(sessionId: string): void {
 }
 
 function endTurn(session: Session, turn: Turn, data: ChatEventDataMap['turn_ended'], atMs: number): void {
+  if (turn.recordingGeneration !== getRecordingGeneration()) return;
   const reason = endReasonFor(data.stopReason);
   const durationMs = data.durationMs ?? atMs - turn.startMs;
   const tokens = data.usage ?? turn.tokens;
@@ -219,7 +221,7 @@ export function handleChatEvent(event: ChatEvent): void {
     }
 
     case 'turn_started':
-      turns.set(sid, { traceparent: chatEventTraceparent(event), turnId: event.turnId, startMs: event.ts, lastEventMs: event.ts, toolIds: new Set(), waiting: false, stalled: false });
+      turns.set(sid, { recordingGeneration: getRecordingGeneration(), traceparent: chatEventTraceparent(event), turnId: event.turnId, startMs: event.ts, lastEventMs: event.ts, toolIds: new Set(), waiting: false, stalled: false });
       ensureStallTimer();
       return;
     case 'turn_ended': {

@@ -360,6 +360,39 @@ describe('annex-server', () => {
       return ws;
     }
 
+    it('binds telemetry hello identities to one authenticated socket and ignores bearer/legacy input', async () => {
+      const fixture = JSON.parse(fs.readFileSync(path.resolve(__dirname, '../../..', 'docs/fixtures/annex-tracing-v1.json'), 'utf8'));
+      const ws = await connect();
+      ws.emit('message', JSON.stringify(fixture.hello));
+      const first = JSON.parse(ws.send.mock.calls[0][0]);
+      expect(first.type).toBe('telemetry:hello:ack');
+      expect(first.payload).toMatchObject({ serviceName: 'clubhouse', peerServiceInstanceId: fixture.hello.payload.serviceInstanceId,
+        connectionAttemptId: fixture.hello.payload.connectionAttemptId });
+      ws.send.mockClear();
+      ws.emit('message', JSON.stringify(fixture.hello));
+      expect(JSON.parse(ws.send.mock.calls[0][0]).payload.connectionId).toBe(first.payload.connectionId);
+      ws.send.mockClear();
+      ws.emit('message', JSON.stringify({ ...fixture.hello, payload: { ...fixture.hello.payload,
+        serviceInstanceId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa' } }));
+      expect(ws.send).not.toHaveBeenCalled();
+      annexServer._testing.wsAuthTypes.set(ws as any, 'bearer');
+      ws.emit('message', JSON.stringify(fixture.hello));
+      expect(ws.send).not.toHaveBeenCalled();
+      ws.emit('message', 'null');
+      expect(ws.send).not.toHaveBeenCalled();
+      // New socket, same process: connection changes; process identity does not.
+      const { EventEmitter } = await import('events');
+      const reconnected = Object.assign(new EventEmitter(), { readyState: 1, send: vi.fn(), ping: vi.fn() });
+      annexServer._testing.wsAuthTypes.set(reconnected as any, 'mtls');
+      annexServer._testing.wss!.emit('connection', reconnected);
+      await vi.waitFor(() => expect(reconnected.send).toHaveBeenCalled());
+      reconnected.send.mockClear();
+      reconnected.emit('message', JSON.stringify(fixture.hello));
+      const second = JSON.parse(reconnected.send.mock.calls[0][0]);
+      expect(second.payload.connectionId).not.toBe(first.payload.connectionId);
+      expect(second.payload.serviceInstanceId).toBe(first.payload.serviceInstanceId);
+    });
+
     it.each(['chat', 'pty', 'headless'])('awaits runtime-aware %s shutdown before the kill acknowledgement', async (mode) => {
       const ws = await connect();
       let running = true;

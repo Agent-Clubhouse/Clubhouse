@@ -129,6 +129,9 @@ describe('startSdk', () => {
       await rt.flow('clubhouse.agent.spawn', {}, async () => undefined);
     });
     await rt.forceFlush(1000);
+    rt.replaySpan({ name: 'clubhouse.agent.turn', startMs: 1, endMs: 2, attrs: [], outcome: 'ok', traceparent: remote });
+    await rt.forceFlush(1000);
+    // Delayed turns retain the same local sampling decision too.
     // Declined at this install's rate: continued unsampled, so nothing is recorded.
     expect(spans.getFinishedSpans()).toHaveLength(0);
   });
