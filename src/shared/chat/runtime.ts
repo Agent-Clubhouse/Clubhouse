@@ -107,7 +107,7 @@ export interface AgentRuntime {
   /** Cancel the running turn. Chat keeps the session; PTY sends the provider's interrupt key. */
   interrupt(): Promise<void>;
   /** End the process. Chat sessions remain resumable by native session id. */
-  stop(opts?: { graceful?: boolean }): Promise<void>;
+  stop(opts?: { graceful?: boolean; throwOnFailure?: boolean }): Promise<void>;
   /** Start a fresh context (Claude /clear, a new Codex thread, a new ACP session). */
   clearContext(): Promise<void>;
   /** Compact the context (Claude /compact, Codex thread/compact/start, ACP /compact). */

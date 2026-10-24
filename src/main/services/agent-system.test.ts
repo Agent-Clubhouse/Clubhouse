@@ -1132,11 +1132,24 @@ describe('agent-system', () => {
         const killed = killAgent('chat-stop', '/project', undefined, 'user', { waitForExit: true, throwOnFailure: true })
           .then(() => { settled = true; });
         await vi.waitFor(() => expect(stop).toHaveBeenCalledOnce());
+        expect(stop).toHaveBeenCalledWith({ throwOnFailure: true });
         expect(settled).toBe(false);
         expect(mockPtyGracefulKill).not.toHaveBeenCalled();
         finish();
         await killed;
       } finally { clearChatRuntimes(); }
+    });
+
+    it('waits for a headless exit before confirming a strict stop', async () => {
+      mockIsHeadless.mockReturnValue(true);
+      let settled = false;
+      const killed = killAgent('headless-stop', '/project', undefined, 'user', { waitForExit: true, throwOnFailure: true })
+        .then(() => { settled = true; });
+      await vi.waitFor(() => expect(mockHeadlessKill).toHaveBeenCalledWith('headless-stop'));
+      expect(settled).toBe(false);
+      broadcastAgentExit('headless-stop', 0);
+      await killed;
+      expect(mockPtyGracefulKill).not.toHaveBeenCalled();
     });
 
     it('does not reject for unknown orchestrator', async () => {

@@ -924,12 +924,16 @@ export async function killAgent(
     const tracked = agentRegistry.get(agentId);
 
     if (tracked?.runtime === 'chat' || isChatAgent(agentId)) {
-      await getAgentRuntime(agentId)?.stop();
+      const runtime = getAgentRuntime(agentId);
+      if (opts.throwOnFailure) await runtime?.stop({ throwOnFailure: true });
+      else await runtime?.stop();
       return;
     }
     if (tracked?.runtime === 'headless' || (!tracked && headlessManager.isHeadless(agentId))) {
+      const exited = opts.waitForExit && headlessManager.isHeadless(agentId) ? waitForAgentExit(agentId) : undefined;
       untrackAgent(agentId);
       headlessManager.kill(agentId);
+      if (exited && !await exited && opts.throwOnFailure) throw new Error('Timed out waiting for agent exit');
       return;
     }
     const provider = await resolveOrchestrator(projectPath, tracked?.orchestrator || orchestrator);
