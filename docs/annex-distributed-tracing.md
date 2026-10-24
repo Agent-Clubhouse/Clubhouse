@@ -102,3 +102,47 @@ it does not replace that turn's original parent. Native queue/steering causal
 links need provider acknowledgement support before complete coverage can be
 claimed. Phone-host physical-device integration and a common approved ingestion
 adapter/query remain unverified. A green draft is not evidence those gaps closed.
+
+## Feedback links to an independent tracing backend
+
+Feedback upload and tracing are separate configurations. The feedback adapter
+keeps its own telemetry disabled. Clubhouse snapshots the currently active app
+trace/span at capture time and passes the supported pair to the existing immutable
+report/outbox, including text-only review and retries. If no active context exists,
+no synthetic incident trace is created. This pair alone does not establish that a
+backend retained the trace or that it represents an earlier failure.
+
+Current Framebriar service `masra91/framebriar` main
+`ed77256a614a17a7e7e7c7e75aff84d1d5bcb480`, `src/protocol.mjs::normalizeReport`,
+only accepts the top-level `traceId` / `spanId` pair and `capturedAt` for this use.
+Unknown incident metadata would be dropped. Required follow-up schema work:
+
+- Add a versioned bounded `incidentCorrelation` report field in service and SDK
+  normalizers/types. Recommended v1: a fresh incident UUID, fixed capture time,
+  bounded incident time window, at most four observed trace/span references,
+  originating `clubhouse`/`clubhouse-go` process UUIDs, optional connection UUID,
+  and an optional configured nonsecret logical backend key (not a URL).
+- Explicitly record unavailable/unknown trace coverage. Do not infer ingestion or
+  sampling success from a trace ID; do not substitute the feedback-upload span.
+- Snapshot before review; show the correlation summary in review; normalize once
+  into the immutable prepared report; retain it through encrypted/offline outbox
+  serialization and retries. Report ID, incident ID and upload request trace are
+  separate identities.
+- Update `src/service.mjs` report summaries/export and media-removal transitions
+  (which reconstruct allowlisted report fields), plus owner views and
+  `src/admin-logs.mjs` so external-backend references are visible rather than
+  incorrectly querying only Framebriar's telemetry instance.
+- Cover service protocol, SDK prepare/outbox reload, retry immutability, absent
+  context, and multiple phone/host identities with deterministic fixtures.
+
+No unsupported field is transmitted by this PR. This extension and the matching
+mobile SDK adapter remain pending; they are required for the richer incident
+correlation request.
+
+Separately, optional Framebriar *telemetry ingestion* currently strips
+`service.instance.id` in `src/telemetry.mjs::sanitizeSignal` / `trustedResource`.
+It prefixes `service.name` with the authenticated app scope. Its Azure forwarder
+encodes OTLP protobuf to Azure Monitor's native OTLP endpoint. Preserving a
+validated process UUID requires a gateway change and forwarding tests; actual
+Azure ingestion/query mapping still needs approved environment verification.
+That gateway issue does not block using a separately configured tracing backend.

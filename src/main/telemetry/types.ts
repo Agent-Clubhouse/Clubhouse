@@ -106,7 +106,8 @@ export interface TelemetryRuntime {
   traceparent(): string | undefined;
   /**
    * Run `fn` so that the next root flow it starts continues the remote trace
-   * in `traceparent` (once; later root flows start their own traces).
+   * in `traceparent` (once by default). requestScope keeps nested roots in
+   * that trace only until fn settles; retained callbacks are fenced afterward.
    */
   withRemoteParent<T>(traceparent: string, fn: () => T, requestScope?: boolean): T;
   preview(): PreviewItem[];
