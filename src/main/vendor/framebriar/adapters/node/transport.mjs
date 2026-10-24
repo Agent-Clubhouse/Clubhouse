@@ -12,7 +12,7 @@ export const PNG_SIGNATURE=Buffer.from([137,80,78,71,13,10,26,10]);
 export const sha256=bytes=>createHash('sha256').update(bytes).digest('hex');
 export const isPng=bytes=>Buffer.isBuffer(bytes)&&bytes.length>PNG_SIGNATURE.length&&bytes.subarray(0,8).equals(PNG_SIGNATURE);
 
-export async function sendReport({report,png=null,endpoint,getToken,fetchImpl=(...a)=>fetch(...a),signal}){
+export async function sendReport({report,png=null,endpoint,getToken,getAuthorization,fetchImpl=(...a)=>fetch(...a),signal}){
   let frozen;
   try{frozen=normalizeReport(structuredClone(report));}catch{fail('invalid-input','Invalid reviewed report.');}
   const textOnly=frozen.media===null;
@@ -21,8 +21,14 @@ export async function sendReport({report,png=null,endpoint,getToken,fetchImpl=(.
   const checkAbort=()=>{if(signal?.aborted)fail('cancelled','Submission cancelled; retry this same report.');};
   checkAbort();
   let token;
-  try{token=await getToken();}catch{token=undefined;}
+  let authorization;
+  try{
+    if(frozen.incident){authorization=await getAuthorization?.();token=authorization?.token;}
+    else token=await getToken();
+  }catch{token=undefined;}
   checkAbort();
+  if(frozen.incident&&authorization?.feedbackCorrelationVersion!==1)
+    fail('correlation-unsupported','Incident feedback is retained until the current service supports it.');
   if(typeof token!=='string'||!/^[A-Za-z0-9_-]{16,256}$/.test(token))fail('access-required','Feedback access is unavailable.');
   const base=`${endpoint}/v1/reports`;
   async function request(path,init){

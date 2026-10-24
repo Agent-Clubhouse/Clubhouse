@@ -25,6 +25,8 @@ export interface FramebriarAccessView {
   notice: FramebriarNotice | null;
   /** ISO time: the 30-day enrollment deadline. */
   expiresAt: string | null;
+  /** Only the current, unexpired access token can advertise incident support. */
+  feedbackCorrelationVersion?: 1 | null;
 }
 
 export interface FramebriarOutboxView {
@@ -34,6 +36,7 @@ export interface FramebriarOutboxView {
   maxItems: number;
   maxBytes: number;
   blocked: number;
+  correlationWaiting?: number;
   retention: 'until-delivered-or-cleared';
 }
 
@@ -69,6 +72,22 @@ export interface FramebriarSnapshot {
   readonly capturedAt: string;
   readonly traceId?: string;
   readonly spanId?: string;
+  readonly incident?: FramebriarIncident | null;
+}
+
+/** Upstream incident v1. Desktop-origin support is pending; never invent a phone identity. */
+export interface FramebriarIncident {
+  readonly version: 1;
+  readonly id: string;
+  readonly capturedAt: string;
+  readonly windowStart: string;
+  readonly windowEnd: string;
+  readonly availability: 'recorded' | 'unavailable' | 'collection_off';
+  readonly phoneInstanceId: string;
+  readonly hostInstanceIds: readonly string[];
+  readonly connectionIds: readonly string[];
+  readonly traces: readonly { readonly traceId: string; readonly spanId: string }[];
+  readonly backendRef?: string;
 }
 
 export interface FramebriarPrepared {
@@ -95,6 +114,7 @@ export interface FramebriarFeedback {
     capturedAt?: string;
     traceId?: string;
     spanId?: string;
+    incident?: FramebriarIncident | null;
   }): Promise<FramebriarPrepared>;
   submit(prepared: FramebriarPrepared, opts?: { includeDiagnostics?: boolean }): Promise<FramebriarSubmitAck>;
 }
@@ -129,6 +149,8 @@ export interface CreateFramebriarOptions {
   endpoint?: string;
   telemetry?: 'continuous' | 'excerpt-only' | 'off';
   capture?: () => Promise<Buffer | Uint8Array | null>;
+  /** Synchronous, copied/frozen at explicit feedback open; never an upload-time provider. */
+  incidentProvider?: () => FramebriarIncident | null | undefined;
   fetchImpl?: typeof fetch;
   isOnline?: () => boolean;
   captureErrors?: boolean;

@@ -33,7 +33,8 @@ export function createAccess({accessTimeoutMs=ACCESS_TIMEOUT_MS,retryDelay=ms=>n
   let view=Object.freeze({state:'disconnected',connected:false,enrolled:false,canCapture:false,notice:null,expiresAt:null});
   const listeners=new Set([onChange]);
   const emit=(state,expiresAt=session?.refreshExpiresAt??null)=>{
-    view=Object.freeze({state,connected:state==='connected',enrolled:optedIn,canCapture:optedIn,notice:notice?.state??null,expiresAt:expiresAt??notice?.expiresAt??null});
+    view=Object.freeze({state,connected:state==='connected',enrolled:optedIn,canCapture:optedIn,notice:notice?.state??null,expiresAt:expiresAt??notice?.expiresAt??null,
+      feedbackCorrelationVersion:session?.token&&Date.parse(session.expiresAt)>now()&&session.feedbackCorrelationVersion===1?1:null});
     for(const fn of listeners)try{fn(view);}catch{/* UI cannot change enrollment */}
     return view;
   };
@@ -95,7 +96,7 @@ export function createAccess({accessTimeoutMs=ACCESS_TIMEOUT_MS,retryDelay=ms=>n
     if(!current(ticket))return false;
     if(next===null){session=undefined;await adoptStored(ticket);return false;}
     revision=next;
-    session={token:value.token,refreshToken:value.refreshToken,expiresAt:value.expiresAt,refreshExpiresAt:iso(value.refreshExpiresAt)};
+    session={token:value.token,refreshToken:value.refreshToken,expiresAt:value.expiresAt,refreshExpiresAt:iso(value.refreshExpiresAt),feedbackCorrelationVersion:value.feedbackCorrelationVersion===1?1:null};
     notice=null;optedIn=true;failures=0;emit('connected');
     if(!current(ticket))return false;
     const end=Date.parse(session.refreshExpiresAt),expiry=Date.parse(session.expiresAt);
@@ -131,8 +132,21 @@ export function createAccess({accessTimeoutMs=ACCESS_TIMEOUT_MS,retryDelay=ms=>n
     const ticket=generation,work=restoreOrRefresh(ticket).then(()=>view);
     const result=work.finally(()=>{if(inflight===result)inflight=undefined;});inflight=result;return result;
   }
+  async function getToken(){
+      if(!running||disposed||operation)return undefined;
+      // Another process (or a disconnect elsewhere) may have replaced the record.
+      const ticket=generation,seen=writes;
+      try{
+        const saved=await load();if(!current(ticket)||operation)return undefined;
+        // Our own write (e.g. a coalesced refresh) landed during this read: memory is newer.
+        if(writes===seen&&(saved.revision!==revision||saved.session?.refreshToken!==session?.refreshToken)){session=undefined;revision=saved.revision;}
+        if(writes===seen&&!saved.session){notice=noticeOf(saved.notice);optedIn=!!notice&&notice.enrolled!==false;emit(notice?.state??'disconnected',null);return undefined;}
+      }catch{if(current(ticket)){session=undefined;emit('storage-unavailable',null);}return undefined;}
+      if(session?.token&&Date.parse(session.expiresAt)-now()>5*60000)return session.token;
+      await refresh();return session?.token&&Date.parse(session.expiresAt)>now()?session.token:undefined;
+    }
   return Object.freeze({endpoint,gameId,
-    status:()=>view,
+    status:()=>Object.freeze({...view,feedbackCorrelationVersion:session?.token&&Date.parse(session.expiresAt)>now()&&session.feedbackCorrelationVersion===1?1:null}),
     subscribe(fn){listeners.add(fn);try{fn(view);}catch{}return()=>listeners.delete(fn);},
     // Restores the encrypted enrollment and silently refreshes; never redeems an invitation.
     async start(){
@@ -176,18 +190,13 @@ export function createAccess({accessTimeoutMs=ACCESS_TIMEOUT_MS,retryDelay=ms=>n
         return false;
       }finally{invitation=undefined;if(ticket===generation)operation=undefined;}
     },
-    async getToken(){
-      if(!running||disposed||operation)return undefined;
-      // Another process (or a disconnect elsewhere) may have replaced the record.
-      const ticket=generation,seen=writes;
-      try{
-        const saved=await load();if(!current(ticket)||operation)return undefined;
-        // Our own write (e.g. a coalesced refresh) landed during this read: memory is newer.
-        if(writes===seen&&(saved.revision!==revision||saved.session?.refreshToken!==session?.refreshToken)){session=undefined;revision=saved.revision;}
-        if(writes===seen&&!saved.session){notice=noticeOf(saved.notice);optedIn=!!notice&&notice.enrolled!==false;emit(notice?.state??'disconnected',null);return undefined;}
-      }catch{if(current(ticket)){session=undefined;emit('storage-unavailable',null);}return undefined;}
-      if(session?.token&&Date.parse(session.expiresAt)-now()>5*60000)return session.token;
-      await refresh();return session?.token&&Date.parse(session.expiresAt)>now()?session.token:undefined;
+    getToken,
+    // One atomic in-memory snapshot after renewal: the capability belongs to this token.
+    // Never restore it from encrypted enrollment or infer it from an earlier session.
+    async getFeedbackAuthorization(){
+      const token=await getToken();
+      if(!token||session?.token!==token||Date.parse(session.expiresAt)<=now())return undefined;
+      return Object.freeze({token,feedbackCorrelationVersion:session.feedbackCorrelationVersion===1?1:null});
     },
     // Forgets locally (reports stay queued) and attempts server revocation.
     async disconnect(){

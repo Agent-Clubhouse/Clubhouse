@@ -14,8 +14,8 @@ export function parseTelemetryHello(value: unknown): TelemetryHello | undefined 
   if (!value || typeof value !== 'object' || Array.isArray(value)) return undefined;
   const p = value as Record<string, unknown>;
   if (p.version !== 1 || (p.serviceName !== 'clubhouse-go' && p.serviceName !== 'clubhouse')
-    || p.traceContext !== 'w3c-v00' || typeof p.serviceInstanceId !== 'string' || !UUID4.test(p.serviceInstanceId)
-    || typeof p.connectionAttemptId !== 'string' || !UUID4.test(p.connectionAttemptId)) return undefined;
+    || p.traceContext !== 'w3c-v00' || typeof p.serviceInstanceId !== 'string' || p.serviceInstanceId.length !== 36 || !UUID4.test(p.serviceInstanceId)
+    || typeof p.connectionAttemptId !== 'string' || p.connectionAttemptId.length !== 36 || !UUID4.test(p.connectionAttemptId)) return undefined;
   return { version: 1, serviceName: p.serviceName, serviceInstanceId: p.serviceInstanceId,
     connectionAttemptId: p.connectionAttemptId, traceContext: 'w3c-v00' };
 }

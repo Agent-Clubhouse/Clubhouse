@@ -17,16 +17,16 @@ import {unrefTimer} from './access.mjs';
 
 const UUID=/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const terminal=new Set(['conflict','invalid-input','invalid-media','permanent']);
-const retryable=['access-required','quota','network','invalid-ack','unavailable'];
+const retryable=['access-required','quota','network','invalid-ack','unavailable','correlation-unsupported'];
 const storageError=(code,message)=>Object.assign(Error(message),{code});
 
 export function createOutbox({dir,access,appId=access?.gameId,gameId=appId,endpoint=access?.endpoint,getToken=()=>access?.getToken(),
-  fetchImpl=(...a)=>fetch(...a),send=sendReport,now=()=>Date.now(),setTimer=unrefTimer,clearTimer=clearTimeout,random=Math.random,
+  getAuthorization=()=>access?.getFeedbackAuthorization?.(),fetchImpl=(...a)=>fetch(...a),send=sendReport,now=()=>Date.now(),setTimer=unrefTimer,clearTimer=clearTimeout,random=Math.random,
   isOnline=()=>true,onReceipt=()=>{},onChange=()=>{},lock:lockOptions}={}){
   if(typeof dir!=='string'||!dir||!/^[a-z0-9-]{1,60}$/.test(gameId??''))throw Error('Invalid outbox configuration');
   const reportsDir=join(dir,'reports'),lock=createFileLock(join(dir,'outbox.lock'),lockOptions);
   let running=false,timer,inflight,controller,clearing=false,generation=0,prepared;
-  let view=Object.freeze({state:'checking',items:0,bytes:0,maxItems:LIMITS.queueItems,maxBytes:LIMITS.queueBytes,blocked:0,retention:'until-delivered-or-cleared'});
+  let view=Object.freeze({state:'checking',items:0,bytes:0,maxItems:LIMITS.queueItems,maxBytes:LIMITS.queueBytes,blocked:0,correlationWaiting:0,retention:'until-delivered-or-cleared'});
   const listeners=new Set([onChange]),receiptListeners=new Set([onReceipt]);
   const safeReceipt=ack=>{for(const fn of receiptListeners)try{fn(ack);}catch{/* host callbacks cannot alter delivery */}};
 
@@ -65,7 +65,8 @@ export function createOutbox({dir,access,appId=access?.gameId,gameId=appId,endpo
   }
   async function changed(){
     try{const rows=await all();view=Object.freeze({state:'available',items:rows.length,bytes:rows.reduce((n,x)=>n+x.bytes,0),
-      maxItems:LIMITS.queueItems,maxBytes:LIMITS.queueBytes,blocked:rows.filter(x=>x.code==='permanent').length,retention:'until-delivered-or-cleared'});}
+      maxItems:LIMITS.queueItems,maxBytes:LIMITS.queueBytes,blocked:rows.filter(x=>x.code==='permanent').length,
+      correlationWaiting:rows.filter(x=>x.report?.incident&&access?.status?.().feedbackCorrelationVersion!==1).length,retention:'until-delivered-or-cleared'});}
     catch{view=Object.freeze({...view,state:'storage-unavailable'});}
     for(const fn of listeners)try{fn(view);}catch{}
     return view;
@@ -89,17 +90,32 @@ export function createOutbox({dir,access,appId=access?.gameId,gameId=appId,endpo
     if(!isOnline()||typeof endpoint!=='string')return;
     for(const item of await all()){
       if(!running||ticket!==generation)return;
-      if(item.code==='permanent'||(item.nextAttemptAt||0)>now())continue;
+      if(item.code==='permanent'||((item.nextAttemptAt||0)>now()&&
+        !(item.code==='correlation-unsupported'&&access?.status?.().feedbackCorrelationVersion===1)))continue;
       const abort=new AbortController();controller=abort;
       try{
+        let authorization;
+        if(item.report.incident){
+          authorization=await getAuthorization();
+          if(!running||ticket!==generation)return;
+          if(authorization?.feedbackCorrelationVersion!==1||typeof authorization.token!=='string')
+            throw Object.assign(Error('Incident service support required'),{code:'correlation-unsupported'});
+        }
         const png=item.report.media===null?null:await readFile(join(reportsDir,item.id,'media.png'));
-        const ack=await send({report:item.report,png,endpoint,getToken,fetchImpl,signal:abort.signal});
+        const ack=await send({report:item.report,png,endpoint,getToken,getAuthorization:()=>authorization,fetchImpl,signal:abort.signal});
         if(!running||ticket!==generation)return;
         if(ack?.id!==item.id||ack.gameId!==gameId||!['ready','processed'].includes(ack.status))throw Object.assign(Error(),{code:'invalid-ack'});
         await remove(item.id);safeReceipt(Object.freeze({id:ack.id,gameId,status:ack.status}));
       }catch(e){
         if(!running||ticket!==generation)return;
-        const attempts=Math.min(32,(item.attempts||0)+1),code=typeof e?.code==='string'?e.code:'network';
+        const code=typeof e?.code==='string'?e.code:'network';
+        // Capability hold is not a failed upload. Keep the reviewed report byte-for-byte,
+        // do not consume attempts, and avoid a tight polling loop while ordinary work flows.
+        if(code==='correlation-unsupported'){
+          await defer(item.id,{attempts:item.attempts||0,code,nextAttemptAt:now()+300000}).catch(()=>{});
+          continue;
+        }
+        const attempts=Math.min(32,(item.attempts||0)+1);
         const backoff=Math.min(300000,2000*2**Math.min(attempts,8))+Math.floor(random()*1000);
         // Access may refresh/reconnect later; never mint new access here.
         const delay=code==='access-required'?300000:Math.max(backoff,e?.retryAfterMs||0,code==='quota'?60000:0);

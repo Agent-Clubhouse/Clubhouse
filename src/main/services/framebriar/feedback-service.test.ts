@@ -3,7 +3,8 @@ import * as os from 'os';
 import * as path from 'path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createFramebriar } from '../../vendor/framebriar/adapters/node/index.mjs';
-import type { Framebriar, FramebriarAccessView, FramebriarOutboxView } from '../../vendor/framebriar/adapters/node/index.mjs';
+import type { Framebriar, FramebriarAccessView, FramebriarOutboxView, FramebriarIncident } from '../../vendor/framebriar/adapters/node/index.mjs';
+import incidentFixture from './fixtures/incident-report-v1.json';
 import { ATTR } from '../../../shared/telemetry/attributes';
 import { setProducingRuntime } from '../../telemetry/__test-utils__/producing-runtime';
 import type { TelemetryRuntime } from '../../telemetry/types';
@@ -67,6 +68,12 @@ describe('toFeedbackStatus', () => {
     expect(viaAccess).toMatchObject({ canCapture: false, storage: { available: false, reason: 'storage-unavailable' } });
   });
 
+  it('surfaces incident capability holds without labelling them permanently rejected', () => {
+    expect(toFeedbackStatus(true, { available: true }, ACCESS, { ...OUTBOX, blocked: 0, correlationWaiting: 2 }, [])).toMatchObject({
+      outbox: { pending: 2, blocked: 0, correlationWaiting: 2 },
+    });
+  });
+
   it('keeps notices and expiry for a lapsed enrollment', () => {
     const s = toFeedbackStatus(true, { available: true }, { state: 'expired', connected: false, enrolled: true, canCapture: true, notice: 'expired', expiresAt: null }, OUTBOX, []);
     expect(s).toMatchObject({ connected: false, canCapture: true, notice: 'expired' });
@@ -95,7 +102,7 @@ describe('FeedbackService (fake SDK)', () => {
       feedback: {
         open: vi.fn(async () => ({ png: (await options!.capture!()) as Buffer | null, capturedAt: '2026-10-17T10:00:00.000Z' })),
         prepare: vi.fn(async (input: Record<string, unknown>) => ({ report: { id: 'rep-1' }, png: (input.png as Buffer | null) ?? null, input })),
-        submit: vi.fn(async () => ({ id: 'rep-1', gameId: 'clubhouse', status: 'saved-local' as const, sent: false as const, diagnostics: 'unavailable' as const })),
+        submit: vi.fn(async (_prepared: unknown) => ({ id: 'rep-1', gameId: 'clubhouse', status: 'saved-local' as const, sent: false as const, diagnostics: 'unavailable' as const })),
       },
       start: vi.fn(async () => {}),
       shutdown: vi.fn(async () => {}),
@@ -105,7 +112,7 @@ describe('FeedbackService (fake SDK)', () => {
   }
 
   function service(create: ReturnType<typeof fakeSdk>['create']) {
-    return new FeedbackService({ safeStorage, dataDir: '/data', appVersion: '0.42.0-beta.1', isOnline: () => true, create: create as never });
+    return new FeedbackService({ safeStorage, dataDir: '/data', appVersion: '0.42.0-beta.1', isOnline: () => true, create: create as never, now: () => Date.parse('2026-10-17T10:00:00.000Z') });
   }
 
   it('starts once with the app id, version, window capture and telemetry off', async () => {
@@ -196,6 +203,7 @@ describe('FeedbackService (fake SDK)', () => {
   it('freezes the app trace at capture, including text-only review and failed-submit retry', async () => {
     const facade = await import('../../telemetry/facade');
     const trace = vi.spyOn(facade, 'currentTraceparent');
+    const active = vi.spyOn(facade, 'isTelemetryActive').mockReturnValue(true);
     const original = '00-0123456789abcdef0123456789abcdef-0123456789abcdef-01';
     trace.mockReturnValue(original);
     const { fb, create } = fakeSdk();
@@ -209,7 +217,7 @@ describe('FeedbackService (fake SDK)', () => {
       for (const [input] of fb.feedback.prepare.mock.calls) expect(input).toMatchObject({
         traceId: original.slice(3, 35), spanId: original.slice(36, 52), png: null,
       });
-    } finally { trace.mockRestore(); await svc.shutdown(); }
+    } finally { trace.mockRestore(); active.mockRestore(); await svc.shutdown(); }
   });
 
   it('sends with the captured screenshot, or text-only without it', async () => {
@@ -226,6 +234,26 @@ describe('FeedbackService (fake SDK)', () => {
 
     await s.send({ notes: 'no capture at all', includeScreenshot: false });
     expect(fb.feedback.prepare).toHaveBeenLastCalledWith(expect.objectContaining({ png: null }));
+  });
+
+  it('snapshots incident context before asynchronous startup and honors removal in text-only review', async () => {
+    const { create, fb } = fakeSdk();
+    let resume!: () => void;
+    fb.start.mockImplementationOnce(() => new Promise<void>(resolve => { resume = resolve; }));
+    const captureCorrelation = vi.fn(() => ({ data: {
+      capturedAt: incidentFixture.incident.capturedAt, traceId: incidentFixture.traceId, spanId: incidentFixture.spanId,
+      incident: structuredClone(incidentFixture.incident) as FramebriarIncident,
+    }, summary: { scope: 'incident' as const, capturedAt: incidentFixture.incident.capturedAt, traceCount: 1, hostCount: 1, phoneCount: 1, connectionCount: 1 } }));
+    const svc = new FeedbackService({ safeStorage, dataDir: '/data', appVersion: '1.0.0', isOnline: () => true, create: create as never, captureCorrelation });
+    const opening = svc.captureDraft(async () => PNG);
+    expect(captureCorrelation).toHaveBeenCalledTimes(1);
+    resume();
+    const draft = await opening;
+    expect(draft.correlation?.scope).toBe('incident');
+    await svc.send({ draftId: draft.draftId, notes: 'reviewed', includeScreenshot: false, includeCorrelation: false });
+    expect(fb.feedback.prepare).toHaveBeenLastCalledWith(expect.objectContaining({ incident: null, traceId: undefined, spanId: undefined, png: null }));
+    expect(captureCorrelation).toHaveBeenCalledTimes(1);
+    await svc.shutdown();
   });
 
   describe('several windows (#2100)', () => {
@@ -327,9 +355,25 @@ describe('FeedbackService (fake SDK)', () => {
     const draft = await s.captureDraft(async () => PNG);
     fb.feedback.submit.mockRejectedValueOnce(Object.assign(new Error('Local feedback storage is full'), { code: 'storage-full' }));
     await expect(s.send({ draftId: draft.draftId, notes: 'n', includeScreenshot: true })).rejects.toThrow(/full/);
+    const original = fb.feedback.submit.mock.calls[0][0];
+    await expect(s.send({ draftId: draft.draftId, notes: 'edited after uncertain save', includeScreenshot: true })).rejects.toThrow(/Retry the feedback unchanged/);
     await expect(s.send({ draftId: draft.draftId, notes: 'n', includeScreenshot: true })).resolves.toMatchObject({ status: 'saved-local' });
+    expect(fb.feedback.prepare).toHaveBeenCalledTimes(1);
+    expect(fb.feedback.submit.mock.calls[1][0]).toBe(original);
     // Consumed now.
     await expect(s.send({ draftId: draft.draftId, notes: 'n', includeScreenshot: true })).rejects.toThrow(/expired/);
+    await expect(s.send({ draftId: draft.draftId, notes: 'n', includeScreenshot: false })).rejects.toThrow(/expired/);
+  });
+
+  it('allows correcting a draft when preparation failed before any save', async () => {
+    const { create, fb } = fakeSdk();
+    const s = service(create);
+    const draft = await s.captureDraft(async () => PNG);
+    fb.feedback.prepare.mockRejectedValueOnce(new Error('Invalid reviewed input'));
+    await expect(s.send({ draftId: draft.draftId, notes: 'before', includeScreenshot: true })).rejects.toThrow(/Invalid/);
+    await expect(s.send({ draftId: draft.draftId, notes: 'corrected', includeScreenshot: true })).resolves.toMatchObject({ status: 'saved-local' });
+    expect(fb.feedback.submit).toHaveBeenCalledTimes(1);
+    expect(fb.feedback.prepare).toHaveBeenLastCalledWith(expect.objectContaining({ notes: 'corrected' }));
   });
 
   it('tracks receipts as received and notifies listeners', async () => {
@@ -667,15 +711,15 @@ describe('FeedbackService with the vendored Framebriar SDK (mocked transport)', 
   afterEach(() => { fs.rmSync(dataDir, { recursive: true, force: true }); });
 
   /** A tiny Framebriar service: access redeem/refresh/disconnect and two-step report upload. */
-  function server() {
+  function server(feedbackCorrelationVersion?: 1, refreshExpiresAt = new Date(Date.now() + 29 * 86400_000).toISOString()) {
     const tok = (c: string) => c.repeat(43);
     const calls: string[] = [];
     const reports = new Map<string, { report: Record<string, unknown>; media?: Buffer }>();
     const json = (body: unknown) => new Response(JSON.stringify(body), { status: 200, headers: { 'content-type': 'application/json' } });
     const grant = () => {
       const now = Date.now();
-      return { v: 1, gameId: 'clubhouse', scopeVersion: 2, token: tok('t'), refreshToken: tok('r'),
-        expiresAt: new Date(now + 50 * 60_000).toISOString(), refreshExpiresAt: new Date(now + 29 * 86400_000).toISOString() };
+      return { v: 1, gameId: 'clubhouse', scopeVersion: 2, token: tok('t'), refreshToken: tok('r'), feedbackCorrelationVersion,
+        expiresAt: new Date(now + 50 * 60_000).toISOString(), refreshExpiresAt };
     };
     const fetchImpl = (async (input: string | URL, init?: RequestInit) => {
       const url = new URL(String(input));
@@ -695,7 +739,7 @@ describe('FeedbackService with the vendored Framebriar SDK (mocked transport)', 
       }
       return new Response('not found', { status: 404 });
     }) as typeof fetch;
-    return { fetchImpl, calls, reports };
+    return { fetchImpl, calls, reports, refreshExpiresAt };
   }
 
   async function until(check: () => boolean, ms = 5000): Promise<void> {
@@ -705,6 +749,40 @@ describe('FeedbackService with the vendored Framebriar SDK (mocked transport)', 
       await new Promise((r) => setTimeout(r, 20));
     }
   }
+
+  it('preserves the shared incident fixture across old-service hold, restart and capable delivery', async () => {
+    const old = server();
+    const value = structuredClone(incidentFixture.incident);
+    const options = { safeStorage, dataDir, appId: 'clubhouse', telemetry: 'off' as const,
+      endpoint: 'https://fb.example/api', isOnline: () => true, capture: async () => null };
+    let sdk = createFramebriar({ ...options, fetchImpl: old.fetchImpl,
+      incidentProvider: () => value as FramebriarIncident });
+    try {
+      await sdk.start();
+      await sdk.access.connect('i'.repeat(43));
+      const snapshot = await sdk.feedback.open();
+      expect(snapshot.incident).toEqual(incidentFixture.incident);
+      expect(Object.isFrozen(snapshot.incident?.traces[0])).toBe(true);
+      value.traces[0].spanId = '3333333333333333';
+      const prepared = await sdk.feedback.prepare({ ...snapshot, notes: 'incident' });
+      const ack = await sdk.feedback.submit(prepared, { includeDiagnostics: false });
+      const legacy = await sdk.feedback.prepare({ png: null, notes: 'ordinary report' });
+      await sdk.feedback.submit(legacy, { includeDiagnostics: false });
+      await until(() => old.reports.has(legacy.report.id));
+      expect(old.reports.has(ack.id)).toBe(false);
+      expect(sdk.outbox.status().correlationWaiting).toBe(1);
+      await sdk.shutdown();
+
+      const current = server(1, old.refreshExpiresAt);
+      sdk = createFramebriar({ ...options, fetchImpl: current.fetchImpl });
+      await sdk.start();
+      await until(() => current.reports.has(ack.id));
+      expect(current.reports.get(ack.id)?.report).toMatchObject({
+        incident: incidentFixture.incident, traceId: incidentFixture.traceId, spanId: incidentFixture.spanId,
+      });
+      expect(sdk.access.status().feedbackCorrelationVersion).toBe(1);
+    } finally { await sdk.shutdown(); }
+  });
 
   it('connects with an invitation, then delivers feedback with and without a screenshot', async () => {
     const srv = server();

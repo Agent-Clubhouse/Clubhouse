@@ -22,9 +22,12 @@ describe('Annex telemetry handshake v1 cross-client fixture', () => {
     for (const value of [null, [], {}, { ...fixture.hello.payload, version: 2 },
       { ...fixture.hello.payload, serviceName: 'secret-hostname' },
       { ...fixture.hello.payload, serviceInstanceId: 'private-machine' },
+      { ...fixture.hello.payload, serviceInstanceId: fixture.hello.payload.serviceInstanceId + '\n' },
+      { ...fixture.hello.payload, connectionAttemptId: fixture.hello.payload.connectionAttemptId + '\n' },
       { ...fixture.hello.payload, connectionAttemptId: '00000000-0000-0000-0000-000000000000' }]) {
       expect(parseTelemetryHello(value)).toBeUndefined();
     }
     expect(sanitizeAttribute('clubhouse.annex.peer.instance_id', 'private-machine', createScrubber({}))).toBeUndefined();
+    expect(sanitizeAttribute('clubhouse.annex.peer.instance_id', fixture.hello.payload.serviceInstanceId + '\n', createScrubber({}))).toBeUndefined();
   });
 });

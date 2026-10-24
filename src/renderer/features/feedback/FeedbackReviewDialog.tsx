@@ -35,6 +35,7 @@ export function FeedbackReviewDialog({ draft, onClose }: Props) {
   const [phase, setPhase] = useState<Phase>('review');
   const [reportId, setReportId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [includeCorrelation, setIncludeCorrelation] = useState(true);
   const received = useFeedbackStore((s) => (reportId ? s.status?.received.includes(reportId) === true : false));
   const shots = shotsOf(draft);
   const [shotIndex, setShotIndex] = useState(0);
@@ -76,6 +77,7 @@ export function FeedbackReviewDialog({ draft, onClose }: Props) {
         draftId: draft.draftId,
         notes,
         includeScreenshot,
+        ...(draft.correlation && { includeCorrelation }),
         scene: currentScene(),
         ...(annotatedPng !== undefined && { annotatedPng }),
         ...(includeScreenshot && shot?.shotId && { shotId: shot.shotId }),
@@ -142,6 +144,17 @@ export function FeedbackReviewDialog({ draft, onClose }: Props) {
             <p className="text-xs text-ctp-subtext0">
               Only Clubhouse windows are captured, and only the one you choose is sent. Links, email addresses and file paths in notes are removed before sending.
             </p>
+            {draft.correlation && (
+              <label className="block text-xs text-ctp-subtext0">
+                <input type="checkbox" checked={includeCorrelation} disabled={phase === 'sending'} onChange={e => setIncludeCorrelation(e.target.checked)} />{' '}
+                Include tracing references captured when feedback opened
+                <span className="block mt-1">
+                  {draft.correlation.traceCount} trace/span references
+                  {draft.correlation.scope === 'incident' && `, ${draft.correlation.phoneCount} phone process, ${draft.correlation.hostCount} host process and ${draft.correlation.connectionCount} connections`}.
+                  {' '}These contain no chat or network payloads and do not guarantee the tracing backend retained the traces.
+                </span>
+              </label>
+            )}
             {error && <p className="text-sm text-ctp-error" role="alert" data-testid="feedback-error">{error}</p>}
             <div className="flex items-center justify-end gap-2">
               <button type="button" onClick={cancel} disabled={phase === 'sending'} className="px-3 py-1.5 text-sm rounded-md text-ctp-subtext1 hover:text-ctp-text hover:bg-surface-0 disabled:opacity-50">

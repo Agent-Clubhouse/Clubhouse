@@ -106,44 +106,50 @@ adapter/query remain unverified. A green draft is not evidence those gaps closed
 
 ## Feedback links to an independent tracing backend
 
-Feedback upload and tracing are separate configurations. The feedback adapter
-keeps its own telemetry disabled. Clubhouse snapshots the currently active app
-trace/span at capture time and passes the supported pair to the existing immutable
-report/outbox, including text-only review and retries. If no active context exists,
-no synthetic incident trace is created. This pair alone does not establish that a
-backend retained the trace or that it represents an earlier failure.
+Feedback upload and tracing remain separate configurations. The feedback adapter
+keeps its own telemetry disabled. Desktop vendors the canonical Framebriar Node
+SDK at `25c05f76e8ae05e5ff4b13d2caaf71a7abcfd17e` (service #11, SDK #12), with
+unchanged upstream files and SHA-256 provenance in `VENDORED.json`. No npm release
+is assumed to contain these APIs.
 
-Current Framebriar service `masra91/framebriar` main
-`ed77256a614a17a7e7e7c7e75aff84d1d5bcb480`, `src/protocol.mjs::normalizeReport`,
-only accepts the top-level `traceId` / `spanId` pair and `capturedAt` for this use.
-Unknown incident metadata would be dropped. Required follow-up schema work:
+Desktop snapshots references synchronously at feedback opening, before async
+SDK startup or screenshot capture. A bounded memory-only window keeps up to 32
+recent Annex span references and 32 validated phone/socket observations for at
+most five minutes. Recording disable/re-enable fences old references by recording
+generation. Only the last eight trace/span references and four connection UUIDs
+can enter an incident. References describe the recent window, not proof that each
+span was caused by a particular connection. No logs, request bodies, chat,
+addresses, account identifiers or exporter credentials are stored in this window.
 
-- Add a versioned bounded `incidentCorrelation` report field in service and SDK
-  normalizers/types. Recommended v1: a fresh incident UUID, fixed capture time,
-  bounded incident time window, at most four observed trace/span references,
-  originating `clubhouse`/`clubhouse-go` process UUIDs, optional connection UUID,
-  and an optional configured nonsecret logical backend key (not a URL).
-- Explicitly record unavailable/unknown trace coverage. Do not infer ingestion or
-  sampling success from a trace ID; do not substitute the feedback-upload span.
-- Snapshot before review; show the correlation summary in review; normalize once
-  into the immutable prepared report; retain it through encrypted/offline outbox
-  serialization and retries. Report ID, incident ID and upload request trace are
-  separate identities.
-- Update `src/service.mjs` report summaries/export and media-removal transitions
-  (which reconstruct allowlisted report fields), plus owner views and
-  `src/admin-logs.mjs` so external-backend references are visible rather than
-  incorrectly querying only Framebriar's telemetry instance.
-- Cover service protocol, SDK prepare/outbox reload, retry immutability, absent
-  context, and multiple phone/host identities with deterministic fixtures.
+Incident v1 requires a real `phoneInstanceId`. When exactly one validated phone
+process is known in the window, desktop includes the frozen v1 incident: its own
+host process UUID, observed socket UUIDs, capture/window times, and bounded trace
+references. Multiple phone processes, peer-cache overflow, no phone, or expired
+context do not produce an invented phone identity: they fall back to the real
+legacy trace/span pair if available. Desktop-only rich incident metadata is not
+supported by the current upstream v1 schema. No configured logical backend UUID
+currently exists on desktop, so `backendRef` is omitted, never derived from a URL.
+Known phone context without spans uses `availability: unavailable`; no context
+creates no synthetic trace. Local recording does not prove remote retention.
 
-No unsupported field is transmitted by this PR. This extension and the matching
-mobile SDK adapter remain pending; they are required for the richer incident
-correlation request.
+The review shows a summary and lets the user remove correlation independently of
+the screenshot. Removal passes `incident:null` and removes the flat trace/span
+pair too. The renderer can only choose inclusion; it cannot supply incident IDs
+or metadata. A prepared report is reused unchanged after a failed/uncertain save,
+including its report ID. Editing after preparation requires opening a new report.
+The SDK persists reviewed metadata through restart and retries without replacing
+it with the upload-request trace or current process/socket identities.
 
-Separately, optional Framebriar *telemetry ingestion* currently strips
-`service.instance.id` in `src/telemetry.mjs::sanitizeSignal` / `trustedResource`.
-It prefixes `service.name` with the authenticated app scope. Its Azure forwarder
-encodes OTLP protobuf to Azure Monitor's native OTLP endpoint. Preserving a
-validated process UUID requires a gateway change and forwarding tests; actual
-Azure ingestion/query mapping still needs approved environment verification.
-That gateway issue does not block using a separately configured tracing backend.
+The SDK binds `feedbackCorrelationVersion: 1` to the current, unexpired access
+response. Unsupported incident-bearing reports stay queued unchanged while
+ordinary reports continue. Settings show this hold separately from permanent
+rejections. Capability is not persisted across access refresh/restart, and no
+metadata is stripped to force delivery. The service needs a separately approved
+deployment before clients can receive the capability; source merges and consumer
+pins do not deploy it. The shared service fixture and mocked-transport tests cover
+immutability, old-service hold, ordinary delivery and restart/capable delivery.
+
+Physical-device feedback and live common-backend queries remain unverified.
+Separately, optional Framebriar telemetry ingestion currently strips
+`service.instance.id` and prefixes `service.name` with authenticated app scope.
+That gateway limitation does not block a separately configured tracing backend.

@@ -67,7 +67,7 @@ export function sanitizeAttribute(key: string, value: unknown, scrub: Scrubber):
     case 'hash':
       return typeof value === 'string' && HASH_RE.test(value) ? value : undefined;
     case 'uuid':
-      return typeof value === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/.test(value) ? value : undefined;
+      return typeof value === 'string' && value.length === 36 && /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/.test(value) ? value : undefined;
     case 'version':
       return typeof value === 'string' && VERSION_RE.test(value) ? cap(scrub(value), MAX_STRING_LENGTH) : undefined;
     default:

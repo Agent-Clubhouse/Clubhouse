@@ -1,18 +1,18 @@
 {
   "repo": "https://github.com/masra91/framebriar",
-  "commit": "4bd23032b840368c77cd50bf96bc484517d81143",
-  "vendoredAt": "2026-10-17",
+  "commit": "25c05f76e8ae05e5ff4b13d2caaf71a7abcfd17e",
+  "vendoredAt": "2026-10-24",
   "files": {
     "adapters/browser/otel-exporter.mjs": "8daf0ec59417a724ab82614c83397c20f330a22978f864927cdb6459b5f1857b",
     "adapters/browser/telemetry.mjs": "eb8b37abc4169ab17ef988c5521eb025370e65d4e006c74bcc66e2fd09dc1e0e",
-    "adapters/node/access.mjs": "cabdcc4e721f8202d866edce82e62fa481ff94b8201bd87c79e1e67d8a35603b",
-    "adapters/node/feedback.mjs": "84464c1344d9e9879606d0fd3522a36131529b56da29e2d3b9b895443332990b",
+    "adapters/node/access.mjs": "34535e2594f5b7104e47fc650003a421d746610ffd78c9f10f05ff0c6fe00884",
+    "adapters/node/feedback.mjs": "117e63e7f5eee49b8512d4818dd8fe459046cf25f37eda1143fc1fc1a1b42573",
     "adapters/node/files.mjs": "430a1f606963ef020bfa635d09f45e91dda7eddb2c36c0133d90507bb604494a",
-    "adapters/node/index.mjs": "a1dae0c54775cd76a2617dde39a8c8e80243598509d3359631de2b09092e6e5e",
-    "adapters/node/outbox.mjs": "b9775127364524afe95ee596ee3657dc23a0a0b461b6eafb63b931b6269f0b5f",
+    "adapters/node/index.mjs": "813e92b2f9ea55b24f2565c253857a190ba3a155a85db41d3f1a711697191f81",
+    "adapters/node/outbox.mjs": "97c4750bbf0dd886f86c3d3dd37d71880dab20758431681675942c8dfc90eed2",
     "adapters/node/secure-store.mjs": "d517a6b2d09065773d327b76d99d48974dd975b0a6696ed1c854e22363215a49",
     "adapters/node/telemetry.mjs": "b3a90d3bf3cc94e190d31cbf17a140a52fbe91d6d5c9cf1b3b77531216362c8a",
-    "adapters/node/transport.mjs": "206c83ea1f5b4e9297da4d7fda8eaef9bfba0a13554d382b33d6c82dfdc39869",
-    "src/protocol.mjs": "391484f847761b1cc7d765497fbbf547a8a97511f920ebfe1d7a71e3d99d9b27"
+    "adapters/node/transport.mjs": "2cba628268867fed2c67b2099c663444f55c6728b857fe4cf0ebeaa591a446ae",
+    "src/protocol.mjs": "92b7d3e4a64259b02ad04bbec8f1b5cdb67a4de43968b1fbabbc8178094b7f94"
   }
 }
