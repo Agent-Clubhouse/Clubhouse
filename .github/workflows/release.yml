@@ -137,7 +137,7 @@ jobs:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v7
         with:
-          node-version: 22
+          node-version: '22.23.4'
           cache: npm
       - run: npm ci
       - name: Run update script integration tests
@@ -166,7 +166,7 @@ jobs:
 
       - uses: actions/setup-node@v7
         with:
-          node-version: 22
+          node-version: '22.23.4'
           cache: npm
 
       - name: Install dependencies
@@ -263,7 +263,7 @@ jobs:
 
       - uses: actions/setup-node@v7
         with:
-          node-version: 22
+          node-version: '22.23.4'
           cache: npm
 
       - name: Install dependencies
@@ -456,7 +456,7 @@ jobs:
 
       - uses: actions/setup-node@v7
         with:
-          node-version: 22
+          node-version: '22.23.4'
           cache: npm
 
       - name: Install dependencies
