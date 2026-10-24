@@ -95,7 +95,7 @@ describe('FeedbackService (fake SDK)', () => {
       feedback: {
         open: vi.fn(async () => ({ png: (await options!.capture!()) as Buffer | null, capturedAt: '2026-10-17T10:00:00.000Z' })),
         prepare: vi.fn(async (input: Record<string, unknown>) => ({ report: { id: 'rep-1' }, png: (input.png as Buffer | null) ?? null, input })),
-        submit: vi.fn(async () => ({ id: 'rep-1', gameId: 'clubhouse', status: 'saved-local' as const, sent: false as const, diagnostics: 'unavailable' as const })),
+        submit: vi.fn(async (_prepared: unknown) => ({ id: 'rep-1', gameId: 'clubhouse', status: 'saved-local' as const, sent: false as const, diagnostics: 'unavailable' as const })),
       },
       start: vi.fn(async () => {}),
       shutdown: vi.fn(async () => {}),
@@ -327,9 +327,25 @@ describe('FeedbackService (fake SDK)', () => {
     const draft = await s.captureDraft(async () => PNG);
     fb.feedback.submit.mockRejectedValueOnce(Object.assign(new Error('Local feedback storage is full'), { code: 'storage-full' }));
     await expect(s.send({ draftId: draft.draftId, notes: 'n', includeScreenshot: true })).rejects.toThrow(/full/);
+    const original = fb.feedback.submit.mock.calls[0][0];
+    await expect(s.send({ draftId: draft.draftId, notes: 'edited after uncertain save', includeScreenshot: true })).rejects.toThrow(/Retry the feedback unchanged/);
     await expect(s.send({ draftId: draft.draftId, notes: 'n', includeScreenshot: true })).resolves.toMatchObject({ status: 'saved-local' });
+    expect(fb.feedback.prepare).toHaveBeenCalledTimes(1);
+    expect(fb.feedback.submit.mock.calls[1][0]).toBe(original);
     // Consumed now.
     await expect(s.send({ draftId: draft.draftId, notes: 'n', includeScreenshot: true })).rejects.toThrow(/expired/);
+    await expect(s.send({ draftId: draft.draftId, notes: 'n', includeScreenshot: false })).rejects.toThrow(/expired/);
+  });
+
+  it('allows correcting a draft when preparation failed before any save', async () => {
+    const { create, fb } = fakeSdk();
+    const s = service(create);
+    const draft = await s.captureDraft(async () => PNG);
+    fb.feedback.prepare.mockRejectedValueOnce(new Error('Invalid reviewed input'));
+    await expect(s.send({ draftId: draft.draftId, notes: 'before', includeScreenshot: true })).rejects.toThrow(/Invalid/);
+    await expect(s.send({ draftId: draft.draftId, notes: 'corrected', includeScreenshot: true })).resolves.toMatchObject({ status: 'saved-local' });
+    expect(fb.feedback.submit).toHaveBeenCalledTimes(1);
+    expect(fb.feedback.prepare).toHaveBeenLastCalledWith(expect.objectContaining({ notes: 'corrected' }));
   });
 
   it('tracks receipts as received and notifies listeners', async () => {
