@@ -19,14 +19,14 @@ export {otlpExporterOptions,otlpEndpoint} from '../browser/otel-exporter.mjs';
 // One-call wiring. dataDir is app-private (e.g. join(app.getPath('userData'), 'framebriar')).
 // telemetry: 'continuous' | 'excerpt-only' | 'off'.
 export function createFramebriar({safeStorage,dataDir,appId,appVersion,buildSha=null,endpoint=FRAMEBRIAR_ENDPOINT,
-  telemetry:telemetryMode='continuous',capture,fetchImpl,isOnline,captureErrors=false,now,onAccessChange,onOutboxChange,onReceipt}={}){
+  telemetry:telemetryMode='continuous',capture,incidentProvider,fetchImpl,isOnline,captureErrors=false,now,onAccessChange,onOutboxChange,onReceipt}={}){
   if(typeof dataDir!=='string'||!dataDir)throw Error('createFramebriar requires dataDir');
   const opts=x=>Object.fromEntries(Object.entries(x).filter(([,v])=>v!==undefined));
   const store=createSecureStore({safeStorage,file:join(dataDir,'enrollment.json'),scope:`${endpoint}|${appId}`});
   const access=createAccess(opts({endpoint,appId,buildSha,store,fetchImpl,now,onChange:onAccessChange}));
   const outbox=createOutbox(opts({dir:join(dataDir,'outbox'),access,fetchImpl,now,isOnline,onChange:onOutboxChange,onReceipt}));
   const telemetry=telemetryMode==='off'?undefined:createTelemetry(opts({access,buildSha,mode:telemetryMode,fetchImpl,now,captureErrors}));
-  const feedback=createFeedback(opts({access,outbox,telemetry,capture,buildSha,appVersion,now}));
+  const feedback=createFeedback(opts({access,outbox,telemetry,capture,incidentProvider,buildSha,appVersion,now}));
   return Object.freeze({store,access,outbox,telemetry,feedback,
     // Access restores first so queued reports get a token; storage starts regardless.
     async start(){await access.start().catch(()=>{});await outbox.start().catch(()=>{});},

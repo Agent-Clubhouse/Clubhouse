@@ -3,7 +3,8 @@ import * as os from 'os';
 import * as path from 'path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createFramebriar } from '../../vendor/framebriar/adapters/node/index.mjs';
-import type { Framebriar, FramebriarAccessView, FramebriarOutboxView } from '../../vendor/framebriar/adapters/node/index.mjs';
+import type { Framebriar, FramebriarAccessView, FramebriarOutboxView, FramebriarIncident } from '../../vendor/framebriar/adapters/node/index.mjs';
+import incidentFixture from './fixtures/incident-report-v1.json';
 import { ATTR } from '../../../shared/telemetry/attributes';
 import { setProducingRuntime } from '../../telemetry/__test-utils__/producing-runtime';
 import type { TelemetryRuntime } from '../../telemetry/types';
@@ -683,14 +684,14 @@ describe('FeedbackService with the vendored Framebriar SDK (mocked transport)', 
   afterEach(() => { fs.rmSync(dataDir, { recursive: true, force: true }); });
 
   /** A tiny Framebriar service: access redeem/refresh/disconnect and two-step report upload. */
-  function server() {
+  function server(feedbackCorrelationVersion?: 1) {
     const tok = (c: string) => c.repeat(43);
     const calls: string[] = [];
     const reports = new Map<string, { report: Record<string, unknown>; media?: Buffer }>();
     const json = (body: unknown) => new Response(JSON.stringify(body), { status: 200, headers: { 'content-type': 'application/json' } });
     const grant = () => {
       const now = Date.now();
-      return { v: 1, gameId: 'clubhouse', scopeVersion: 2, token: tok('t'), refreshToken: tok('r'),
+      return { v: 1, gameId: 'clubhouse', scopeVersion: 2, token: tok('t'), refreshToken: tok('r'), feedbackCorrelationVersion,
         expiresAt: new Date(now + 50 * 60_000).toISOString(), refreshExpiresAt: new Date(now + 29 * 86400_000).toISOString() };
     };
     const fetchImpl = (async (input: string | URL, init?: RequestInit) => {
@@ -721,6 +722,40 @@ describe('FeedbackService with the vendored Framebriar SDK (mocked transport)', 
       await new Promise((r) => setTimeout(r, 20));
     }
   }
+
+  it('preserves the shared incident fixture across old-service hold, restart and capable delivery', async () => {
+    const old = server();
+    const value = structuredClone(incidentFixture.incident);
+    const options = { safeStorage, dataDir, appId: 'clubhouse', telemetry: 'off' as const,
+      endpoint: 'https://fb.example/api', isOnline: () => true, capture: async () => null };
+    let sdk = createFramebriar({ ...options, fetchImpl: old.fetchImpl,
+      incidentProvider: () => value as FramebriarIncident });
+    try {
+      await sdk.start();
+      await sdk.access.connect('i'.repeat(43));
+      const snapshot = await sdk.feedback.open();
+      expect(snapshot.incident).toEqual(incidentFixture.incident);
+      expect(Object.isFrozen(snapshot.incident?.traces[0])).toBe(true);
+      value.traces[0].spanId = '3333333333333333';
+      const prepared = await sdk.feedback.prepare({ ...snapshot, notes: 'incident' });
+      const ack = await sdk.feedback.submit(prepared, { includeDiagnostics: false });
+      const legacy = await sdk.feedback.prepare({ png: null, notes: 'ordinary report' });
+      await sdk.feedback.submit(legacy, { includeDiagnostics: false });
+      await until(() => old.reports.has(legacy.report.id));
+      expect(old.reports.has(ack.id)).toBe(false);
+      expect(sdk.outbox.status().correlationWaiting).toBe(1);
+      await sdk.shutdown();
+
+      const current = server(1);
+      sdk = createFramebriar({ ...options, fetchImpl: current.fetchImpl });
+      await sdk.start();
+      await until(() => current.reports.has(ack.id));
+      expect(current.reports.get(ack.id)?.report).toMatchObject({
+        incident: incidentFixture.incident, traceId: incidentFixture.traceId, spanId: incidentFixture.spanId,
+      });
+      expect(sdk.access.status().feedbackCorrelationVersion).toBe(1);
+    } finally { await sdk.shutdown(); }
+  });
 
   it('connects with an invitation, then delivers feedback with and without a screenshot', async () => {
     const srv = server();
