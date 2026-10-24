@@ -933,9 +933,13 @@ export async function killAgent(
     }
     if (tracked?.runtime === 'headless' || (!tracked && headlessManager.isHeadless(agentId))) {
       const exited = opts.waitForExit && headlessManager.isHeadless(agentId) ? waitForAgentExit(agentId) : undefined;
-      untrackAgent(agentId);
+      if (!exited) untrackAgent(agentId);
       headlessManager.kill(agentId);
-      if (exited && !await exited && opts.throwOnFailure) throw new Error('Timed out waiting for agent exit');
+      if (exited) {
+        const didExit = await exited;
+        if (didExit) untrackAgent(agentId);
+        else if (opts.throwOnFailure) throw new Error('Timed out waiting for agent exit');
+      }
       return;
     }
     const exitCmd = opts.exitCommand ?? (await resolveOrchestrator(projectPath, tracked?.orchestrator || orchestrator)).getExitCommand();

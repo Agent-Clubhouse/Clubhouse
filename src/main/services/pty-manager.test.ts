@@ -744,6 +744,22 @@ describe('pty-manager', () => {
       vi.useRealTimers();
     });
 
+    it('keeps a PTY tracked without an exit broadcast when the final kill fails', async () => {
+      vi.useFakeTimers();
+      try {
+        await spawnShell('shell-kill-failed', '/project');
+        mockProcess.kill.mockImplementation(() => { throw new Error('signal denied'); });
+        gracefulKill('shell-kill-failed', 'exit\r');
+        vi.advanceTimersByTime(9000);
+        expect(isRunning('shell-kill-failed')).toBe(true);
+        expect(annexEventBus.emitPtyExit).not.toHaveBeenCalled();
+        mockProcess.kill.mockReset();
+        gracefulKill('shell-kill-failed', 'exit\r');
+        vi.advanceTimersByTime(9000);
+        expect(isRunning('shell-kill-failed')).toBe(false);
+      } finally { vi.useRealTimers(); }
+    });
+
     it('broadcasts PTY.EXIT when the 9s kill timer fires on a stuck process', async () => {
       vi.useFakeTimers();
       await spawn('agent_gk_exit', '/test', '/usr/local/bin/claude', []);

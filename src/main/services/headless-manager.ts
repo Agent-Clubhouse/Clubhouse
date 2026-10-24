@@ -650,7 +650,14 @@ export function kill(agentId: string): void {
     const current = sessions.get(agentId);
     if (current && current.process === proc) {
       agentKillStage(agentId, 'sigkill');
-      try { proc.kill('SIGKILL'); } catch { /* dead */ }
+      try {
+        if (proc.kill('SIGKILL') === false) throw new Error('Kill signal was not delivered');
+      } catch (error) {
+        appLog('core:headless', 'warn', 'Failed to kill headless process', {
+          meta: { agentId, error: error instanceof Error ? error.message : String(error) },
+        });
+        return; // Retain the live session for strict stop failure/retry.
+      }
       cleanupHeadlessSession(agentId);
     }
   }, 5000);

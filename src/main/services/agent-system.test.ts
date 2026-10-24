@@ -1165,6 +1165,23 @@ describe('agent-system', () => {
       expect(mockPtyGracefulKill).not.toHaveBeenCalled();
     });
 
+    it('retains a headless registration when strict shutdown cannot confirm exit', async () => {
+      vi.useFakeTimers();
+      agentRegistry.register('headless-timeout', { projectPath: '/project', orchestrator: 'claude-code', runtime: 'headless' });
+      mockIsHeadless.mockReturnValue(true);
+      try {
+        const stopped = expect(killAgent('headless-timeout', '/project', undefined, 'user', {
+          waitForExit: true, throwOnFailure: true,
+        })).rejects.toThrow('Timed out waiting for agent exit');
+        await vi.advanceTimersByTimeAsync(12_000);
+        await stopped;
+        expect(agentRegistry.get('headless-timeout')?.projectPath).toBe('/project');
+      } finally {
+        untrackAgent('headless-timeout');
+        vi.useRealTimers();
+      }
+    });
+
     it('does not reject for unknown orchestrator', async () => {
       await expect(killAgent('agent-1', '/project', 'nonexistent' as any)).resolves.toBeUndefined();
     });

@@ -763,7 +763,15 @@ export function gracefulKill(agentId: string, exitCommand: string = '/exit\r'): 
     const current = sessions.get(agentId);
     if (current && current.process === proc) {
       agentKillStage(agentId, 'sigkill');
-      try { proc.kill(); } catch { /* dead */ }
+      try { proc.kill(); } catch (error) {
+        // A failed signal is not an exit. Keep the process tracked so strict
+        // callers time out instead of acknowledging/deleting a live runtime.
+        current.killing = false;
+        diag('core:pty', 'warn', 'Failed to kill PTY', {
+          agentId, error: error instanceof Error ? error.message : String(error),
+        });
+        return;
+      }
       const { onExitCallback } = current;
       cleanupSession(agentId);
       broadcastAgentExit(agentId, 1, '');

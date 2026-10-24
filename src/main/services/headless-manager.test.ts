@@ -1348,6 +1348,21 @@ describe('headless-manager', () => {
   // kill() timer race condition (Issue #326)
   // ============================================================
   describe('kill() — process identity guard', () => {
+    it.each(['throws', 'returns false'])('keeps a headless session tracked when its final kill %s', async (failure) => {
+      await spawnHeadless('test-agent', '/project', '/usr/bin/claude', ['-p', 'test']);
+      mockProcess.kill.mockImplementation(() => {
+        if (failure === 'throws') throw new Error('signal denied');
+        return false;
+      });
+      kill('test-agent');
+      vi.advanceTimersByTime(5000);
+      expect(isHeadless('test-agent')).toBe(true);
+      mockProcess.kill.mockReset();
+      kill('test-agent');
+      vi.advanceTimersByTime(5000);
+      expect(isHeadless('test-agent')).toBe(false);
+    });
+
     it('does not delete replacement session when old kill timer fires', async () => {
       // Spawn agent → kill it → spawn replacement
       const proc1 = createMockProcess();
