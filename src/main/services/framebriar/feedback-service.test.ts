@@ -193,6 +193,25 @@ describe('FeedbackService (fake SDK)', () => {
     await expect(s.send({ draftId: drafts[5].draftId, notes: 'n', includeScreenshot: true })).resolves.toMatchObject({ status: 'saved-local' });
   });
 
+  it('freezes the app trace at capture, including text-only review and failed-submit retry', async () => {
+    const facade = await import('../../telemetry/facade');
+    const trace = vi.spyOn(facade, 'currentTraceparent');
+    const original = '00-0123456789abcdef0123456789abcdef-0123456789abcdef-01';
+    trace.mockReturnValue(original);
+    const { fb, create } = fakeSdk();
+    const svc = service(create);
+    try {
+      const draft = await svc.captureDraft(async () => PNG);
+      trace.mockReturnValue('00-abcdef0123456789abcdef0123456789-abcdef0123456789-01');
+      fb.feedback.submit.mockRejectedValueOnce(new Error('outbox unavailable'));
+      await expect(svc.send({ draftId: draft.draftId, notes: 'reviewed', includeScreenshot: false })).rejects.toThrow();
+      await svc.send({ draftId: draft.draftId, notes: 'reviewed', includeScreenshot: false });
+      for (const [input] of fb.feedback.prepare.mock.calls) expect(input).toMatchObject({
+        traceId: original.slice(3, 35), spanId: original.slice(36, 52), png: null,
+      });
+    } finally { trace.mockRestore(); await svc.shutdown(); }
+  });
+
   it('sends with the captured screenshot, or text-only without it', async () => {
     const { create, fb } = fakeSdk();
     const s = service(create);

@@ -24,6 +24,9 @@ import {
   type TelAttr,
   type TelemetryLevel,
 } from '../../shared/telemetry/attributes';
+import { AsyncLocalStorage } from 'async_hooks';
+import { scoped } from './trace-context';
+import { wireTraceparent } from './trace-context';
 import { getDiagSink } from './diag-sink';
 import {
   NOOP_SPAN,
@@ -280,7 +283,9 @@ export function replaySpanTree(tree: ReplayTree): void {
  * or nothing is recording. Only random ids and the sampled flag (spec §7).
  */
 export function currentTraceparent(): string | undefined {
-  return runtime?.traceparent?.();
+  if (!local) return undefined;
+  const ids = local.activeTraceIds();
+  return runtime?.traceparent?.() ?? (ids && wireTraceparent(ids));
 }
 
 /**
@@ -288,9 +293,20 @@ export function currentTraceparent(): string | undefined {
  * Annex peer. A no-op wrapper when telemetry is off or `traceparent` is
  * missing or malformed: this install's own settings decide (spec §7 rule 2).
  */
-export function withRemoteParent<T>(traceparent: string | undefined, fn: () => T): T {
-  if (!runtime?.withRemoteParent || typeof traceparent !== 'string') return fn();
-  return runtime.withRemoteParent(traceparent, fn);
+const requestScopeStorage = new AsyncLocalStorage<{ active: boolean }>();
+
+/** Only explicitly bounded request work may label a reply; retained process callbacks cannot. */
+export function currentRequestTraceparent(): string | undefined {
+  return requestScopeStorage.getStore()?.active ? currentTraceparent() : undefined;
+}
+
+export function withRemoteParent<T>(traceparent: string | undefined, fn: () => T, requestScope = false): T {
+  if (!local || typeof traceparent !== 'string') return fn();
+  const body = () => local?.withRemoteParent ? local.withRemoteParent(traceparent, fn, requestScope) : fn();
+  const run = () => runtime?.withRemoteParent ? runtime.withRemoteParent(traceparent, body, requestScope) : body();
+  if (!requestScope) return run();
+  const state = { active: true };
+  return requestScopeStorage.run(state, () => scoped(run, () => { state.active = false; }));
 }
 
 /**
@@ -391,9 +407,13 @@ export function getRuntime(): TelemetryRuntime | null {
 }
 
 /** Install or remove the local recorder (local-control.ts). */
+let recordingGeneration = 0;
+export function getRecordingGeneration(): number { return recordingGeneration; }
+
 export function setLocalSink(sink: LocalTelemetrySink | null): void {
   if (sink === local) return;
   local = sink;
+  recordingGeneration++;
   notifyRuntimeChange();
 }
 

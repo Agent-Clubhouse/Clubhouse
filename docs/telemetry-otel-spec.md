@@ -1596,3 +1596,7 @@ These recur across hot spots. No single span catches them, so each gets a rule i
 | Other log records (bridged appLog) | `traces` | `severityLevel` per §6.6 |
 | Metrics | `customMetrics` | `valueCount`/`valueSum`/`valueMin`/`valueMax`; dimensions in `customDimensions` |
 | Resource | `cloud_RoleName` = `service.name`, `cloud_RoleInstance` = `service.instance.id`, `application_Version` = `service.version`, `user_Id` = `enduser.pseudo.id` (install ID) | App Insights masks client IPs by default (stored as `0.0.0.0`) but derives coarse geo from them at ingestion. Document this in the help topic. |
+
+## Annex tracing v1 amendment
+
+The authenticated host tracing changes in [annex-distributed-tracing.md](annex-distributed-tracing.md) supersede the Detailed-only REST span and export-only propagation descriptions above. REST and bounded WS command spans now record at Standard. Ephemeral UUID v4 peer-instance/connection/attempt span attributes are permitted; hardware, account and stable host identities remain excluded.

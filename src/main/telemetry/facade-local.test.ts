@@ -9,6 +9,9 @@ import {
   EXPORT_WITHOUT_LOCAL_RECORDING,
   abortPending,
   currentTraceIds,
+  currentTraceparent,
+  currentRequestTraceparent,
+  withRemoteParent,
   flushForOsSessionEnd,
   forceFlushTelemetry,
   isTelemetryActive,
@@ -284,4 +287,22 @@ describe('facade export path with local recording on', () => {
     expect(withLocal.forceFlush).toHaveBeenCalled();
     expect(records().some((r) => r.t === 'span')).toBe(true);
   });
+});
+
+it('propagates with export off and respects local recording being disabled', async () => {
+  const rec = installRecorder();
+  const tc = '00-0123456789abcdef0123456789abcdef-0123456789abcdef-01';
+  let response: string | undefined;
+  await withRemoteParent(tc, () => tel.flow('clubhouse.annex.rest', {}, async () => {
+    response = currentRequestTraceparent();
+    expect(currentTraceparent()?.slice(3, 35)).toBe(tc.slice(3, 35));
+    await Promise.resolve();
+    tel.flow('clubhouse.agent.spawn', {}, () => expect(currentTraceparent()?.slice(3, 35)).toBe(tc.slice(3, 35)));
+  }), true);
+  expect(response).toMatch(/^00-/);
+  expect(currentRequestTraceparent()).toBeUndefined();
+  await rec.flush();
+  expect(records().filter((r) => r.t === 'span').every((r) => r.traceId === tc.slice(3, 35))).toBe(true);
+  setLocalSink(null);
+  withRemoteParent(tc, () => tel.flow('clubhouse.annex.rest', {}, () => expect(currentTraceparent()).toBeUndefined()), true);
 });

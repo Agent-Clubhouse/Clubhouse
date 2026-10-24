@@ -11,7 +11,7 @@
  */
 import { isIP } from 'net';
 import { ATTR, type TelAttr } from '../../shared/telemetry/attributes';
-import { isTelemetryActive, replaySpan, tel } from './facade';
+import { isTelemetryActive, replaySpan, tel, withRemoteParent } from './facade';
 import type { ErrorType } from './types';
 
 type PairResult = Parameters<typeof ATTR.annexPairResult>[0];
@@ -62,7 +62,7 @@ function httpClass(status: number): Parameters<typeof ATTR.httpClass>[0] {
 }
 
 /**
- * Detailed level: one `clubhouse.annex.rest` span per request, named by route
+ * Standard level: one `clubhouse.annex.rest` span per request, named by route
  * template. `statusOf` reads the response status after the handler ran.
  */
 export function annexRestFlow<T>(method: string, pattern: RegExp, statusOf: () => number, fn: () => Promise<T>): Promise<T> {
@@ -77,14 +77,18 @@ export function annexRestFlow<T>(method: string, pattern: RegExp, statusOf: () =
  * The trace context a satellite may continue from a WS message: only the
  * remote spawn/wake messages carry one (they are mTLS-gated before this runs).
  */
+export function annexCommandFlow<T>(tc: string | undefined, fn: () => Promise<T>): Promise<T> {
+  return withRemoteParent(tc, () => tel.flow('clubhouse.annex.command', {}, fn), true);
+}
+
 export function wsTraceparent(type: string | undefined, tc: unknown): string | undefined {
-  if (type !== 'agent:spawn' && type !== 'agent:wake') return undefined;
+  if (type !== 'agent:spawn' && type !== 'agent:wake' && type !== 'agent:kill') return undefined;
   return typeof tc === 'string' ? tc : undefined;
 }
 
 /**
  * The trace context a satellite may continue from a REST request: only from
- * an mTLS-authenticated desktop controller, never a bearer (mobile) client.
+ * an mTLS-authenticated controller (desktop or pinned mobile), never a bearer client.
  */
 export function restTraceparent(header: string | string[] | undefined, mtls: boolean): string | undefined {
   return mtls && typeof header === 'string' ? header : undefined;

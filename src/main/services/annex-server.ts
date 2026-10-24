@@ -62,7 +62,12 @@ import { THEMES } from '../../renderer/themes';
 import { generateQuickName } from '../../shared/name-generator';
 import { generateQuickAgentId } from '../../shared/agent-id';
 import { ANNEX_PROTOCOL_VERSION } from '../../shared/types';
-import { withRemoteParent } from '../telemetry/facade';
+import { handshakeAttributes, parseTelemetryHello, telemetryHelloAck } from '../telemetry/annex-handshake';
+import { currentRequestTraceparent, tel, withRemoteParent } from '../telemetry/facade';
+import { annexCommandFlow } from '../telemetry/annex-telemetry';
+import { traceHttpResponse } from '../telemetry/annex-request';
+import { validatedTraceparent } from '../telemetry/trace-context';
+import { chatEventTraceparent } from '../telemetry/chat-trace-context';
 import {
   annexRestFlow,
   pairResultFor,
@@ -510,7 +515,7 @@ function readJsonBody(
       sendJson(res, 400, { error: 'invalid_json' });
       return;
     }
-    handler(body);
+    return handler(body);
   }).catch((err) => {
     appLog('core:annex', 'error', 'readBody failed', { meta: { error: err instanceof Error ? err.message : String(err) } });
     res.writeHead(400);
@@ -803,9 +808,10 @@ function broadcastWs(message: object): void {
 }
 
 /** Broadcast a message and push it to the replay buffer. */
-function broadcastAndBuffer(type: string, payload: unknown): void {
-  const seq = eventReplay.pushEvent(type, payload);
-  const message = { type, payload, seq };
+function broadcastAndBuffer(type: string, payload: unknown, context?: string): void {
+  const tc = validatedTraceparent(type === 'chat:event' ? context : context ?? currentRequestTraceparent());
+  const seq = eventReplay.pushEvent(type, payload, tc);
+  const message = { type, payload, seq, ...(tc && { tc }) };
   broadcastWs(message);
 }
 
@@ -2471,7 +2477,9 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
     const match = url.match(route.pattern);
     if (match) {
       await withRemoteParent(restTraceparent(req.headers.traceparent, isMtlsAuthenticated), () =>
-        annexRestFlow(method, route.pattern, () => res.statusCode, () => route.handler({ req, res, url, method, requireMtls, mobilePrincipal }, match)),
+        annexRestFlow(method, route.pattern, () => res.statusCode, () =>
+          traceHttpResponse(res, () => route.handler({ req, res, url, method, requireMtls, mobilePrincipal }, match))),
+        true,
       );
       return;
     }
@@ -2489,11 +2497,19 @@ const MAX_PTY_INPUT_SIZE = 64 * 1024; // 64KB
 /** Send data over a WebSocket only if the connection is still open. */
 function safeSend(ws: WebSocket, data: string): boolean {
   if (ws.readyState === WebSocket.OPEN) {
+    const tc = currentRequestTraceparent();
+    if (tc) {
+      const message = JSON.parse(data);
+      // Replay carries the original event context, never this request's context.
+      if (!message.replayed) data = JSON.stringify({ ...message, tc });
+    }
     ws.send(data);
     return true;
   }
   return false;
 }
+
+const wsTelemetryHandshakes = new WeakMap<WebSocket, ReturnType<typeof telemetryHelloAck>>();
 
 function handleWsMessage(ws: WebSocket, data: string): void {
   // `tc`: optional W3C traceparent from a controller with telemetry on (spec §7).
@@ -2502,13 +2518,30 @@ function handleWsMessage(ws: WebSocket, data: string): void {
     msg = JSON.parse(data);
   } catch {
     appLog('core:annex', 'warn', 'Malformed JSON in WebSocket message', {
-      meta: { preview: data.slice(0, 200) },
+      meta: { bytes: Buffer.byteLength(data) },
     });
     return;
   }
 
   if (!msg || typeof msg !== 'object' || Array.isArray(msg)) return;
+  if (!msg || typeof msg !== 'object' || Array.isArray(msg)) return;
   const type = msg.type;
+  // Optional, authenticated capability handshake. One identity per socket; no resource mutation.
+  if (type === 'telemetry:hello') {
+    if (wsAuthTypes.get(ws) !== 'mtls') return;
+    const peer = parseTelemetryHello(msg.payload);
+    if (!peer) return;
+    const prior = wsTelemetryHandshakes.get(ws);
+    if (prior && (prior.peerServiceInstanceId !== peer.serviceInstanceId
+      || prior.connectionAttemptId !== peer.connectionAttemptId)) return;
+    const ack = prior ?? telemetryHelloAck(peer);
+    wsTelemetryHandshakes.set(ws, ack);
+    withRemoteParent(validatedTraceparent(msg.tc), () => tel.flow('clubhouse.annex.command', {
+      attrs: handshakeAttributes(ack),
+    }, () => safeSend(ws, JSON.stringify({ type: 'telemetry:hello:ack', payload: ack }))), true);
+    return;
+  }
+
   if (type === 'mobile:replay') {
     const epoch = mobileCommands.epoch;
     const since = msg.since;
@@ -2521,7 +2554,7 @@ function handleWsMessage(ws: WebSocket, data: string): void {
       return;
     }
     safeSend(ws, JSON.stringify({ type: 'replay:start', epoch, fromSeq: events[0]?.seq ?? since, toSeq: eventReplay.getLastSeq(), count: events.length }));
-    for (const event of events) safeSend(ws, JSON.stringify({ type: event.type, payload: event.payload, seq: event.seq, replayed: true }));
+    for (const event of events) safeSend(ws, JSON.stringify({ type: event.type, payload: event.payload, seq: event.seq, ...(event.tc && { tc: event.tc }), replayed: true }));
     safeSend(ws, JSON.stringify({ type: 'replay:end', epoch }));
     return;
   }
@@ -2553,6 +2586,7 @@ function handleWsMessage(ws: WebSocket, data: string): void {
         type: event.type,
         payload: event.payload,
         seq: event.seq,
+        ...(event.tc && { tc: event.tc }),
         replayed: true,
       }))) {
         replayed = false;
@@ -2649,7 +2683,7 @@ function handleWsMessage(ws: WebSocket, data: string): void {
           safeSend(ws, JSON.stringify({ type: 'error', payload: { message: 'project_not_found' } }));
           return;
         }
-        withRemoteParent(traceparent, () => handleSpawnQuickAgentWs(ws, project, payload));
+        return annexCommandFlow(traceparent, () => handleSpawnQuickAgentWs(ws, project, payload));
       }).catch((err) => {
         appLog('core:annex', 'error', 'agent:spawn lookup failed', {
           meta: { projectId, error: err instanceof Error ? err.message : String(err) },
@@ -2662,7 +2696,7 @@ function handleWsMessage(ws: WebSocket, data: string): void {
     case 'agent:wake': {
       const agentId = payload.agentId as string;
       if (!agentId) break;
-      withRemoteParent(traceparent, () => handleWakeAgentWs(ws, agentId, {
+      annexCommandFlow(traceparent, () => handleWakeAgentWs(ws, agentId, {
         resume: !!payload.resume,
         mission: payload.mission as string | undefined,
         model: payload.model as string | undefined,
@@ -2673,7 +2707,7 @@ function handleWsMessage(ws: WebSocket, data: string): void {
     case 'agent:kill': {
       const agentId = payload.agentId as string;
       if (!agentId) break;
-      void withRemoteParent(traceparent, () => handleKillAgentWs(ws, agentId));
+      void annexCommandFlow(traceparent, () => handleKillAgentWs(ws, agentId));
       break;
     }
 
@@ -3078,7 +3112,7 @@ export function start(): void {
   });
 
   unsubChatEvent = onChatEvent((event) => {
-    broadcastAndBuffer('chat:event', { agentId: event.agentId, event });
+    broadcastAndBuffer('chat:event', { agentId: event.agentId, event }, chatEventTraceparent(event));
     pushChatStatus(event);
   });
 

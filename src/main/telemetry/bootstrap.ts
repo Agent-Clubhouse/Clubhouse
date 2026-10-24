@@ -9,7 +9,7 @@
  * loads the SDK asynchronously so it never blocks `ready`.
  */
 import * as os from 'os';
-import { randomUUID } from 'crypto';
+import { telemetryInstanceId as instanceId } from './instance';
 import { app } from 'electron';
 import { appLog } from '../services/log-service';
 import { ATTR } from '../../shared/telemetry/attributes';
@@ -53,8 +53,6 @@ import { previousSessionVersion, setStartupKind } from './lifecycle';
 
 const LOG_NS = 'core:telemetry';
 
-/** One id per app run; exported as service.instance.id. */
-const instanceId = randomUUID();
 
 let starting: Promise<boolean> | null = null;
 let pruneTimer: NodeJS.Timeout | null = null;

@@ -18,6 +18,8 @@
  */
 
 import { randomUUID } from 'crypto';
+import { currentTraceparent } from '../../telemetry/facade';
+import { parseWireTraceparent } from '../../telemetry/trace-context';
 import type {
   Framebriar,
   FramebriarAccessView,
@@ -324,6 +326,9 @@ export class FeedbackService {
   }
 
   private async captureDraftInner(sources: CaptureSource[]): Promise<FeedbackCaptureResult> {
+    // Snapshot the app pipeline before async capture/review. The feedback SDK
+    // deliberately has its own telemetry off and cannot supply this context.
+    const trace = parseWireTraceparent(currentTraceparent());
     await this.start();
     this.pruneDrafts();
     // open() checks eligibility and records the moment (and trace) feedback opened.
@@ -350,7 +355,7 @@ export class FeedbackService {
       }
       shots.push({ shotId: `s${i}`, label: source.label, png });
     }
-    const snapshot: FramebriarSnapshot = { ...opened, png: shots[0]?.png ?? null };
+    const snapshot: FramebriarSnapshot = { ...opened, ...(trace ?? {}), png: shots[0]?.png ?? null };
     const draftId = randomUUID();
     this.drafts.set(draftId, { snapshot, shots, createdAt: this.now() });
     while (this.drafts.size > MAX_DRAFTS) this.drafts.delete(this.drafts.keys().next().value as string);
@@ -398,7 +403,7 @@ export class FeedbackService {
       context: { scene, breadcrumbs },
       ...(input.includeScreenshot && draft
         ? { ...draft.snapshot, png }
-        : { png: null, ...(draft ? { capturedAt: draft.snapshot.capturedAt } : {}) }),
+        : { ...(draft?.snapshot ?? {}), png: null }),
     });
     const ack = await fb.feedback.submit(prepared, { includeDiagnostics: false });
     // Only a committed report consumes the draft: a failed save (e.g. storage full) keeps

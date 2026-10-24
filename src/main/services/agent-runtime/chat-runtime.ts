@@ -46,6 +46,8 @@ import {
   type SessionEndReason,
 } from '../../../shared/chat';
 import { appendChatEvent, readChatTranscript } from './chat-transcript';
+import { currentRequestTraceparent } from '../../telemetry/facade';
+import { captureChatTrace, stampChatTrace, type ChatTraceContext } from '../../telemetry/chat-trace-context';
 import { publishChatEvent } from './chat-event-bus';
 import * as permissionQueue from '../annex-permission-queue';
 import { broadcastToAllWindows } from '../../util/ipc-broadcast';
@@ -151,6 +153,7 @@ export class ChatStartCancelledError extends Error {
  * `parts` holds each message's content, in order.
  */
 interface QueuedMessage {
+  trace?: ChatTraceContext;
   messageId: string;
   source: MessageSource;
   parts: ContentBlock[][];
@@ -186,6 +189,9 @@ export class ChatAgentRuntime implements AgentRuntime {
   /** How the last session open went with a requested resume, for chat start telemetry (#2304). */
   private resumeOpen: { honored: boolean; timing?: ChatResumeTiming } | undefined;
   private capabilities: ChatCapabilities | undefined;
+  private pendingTrace?: ChatTraceContext;
+  private pendingTraceAssigned = false;
+  private turnTrace?: ChatTraceContext;
   private readonly queued: QueuedMessage[] = [];
   private publishedQueueState = { queuedMessageIds: [] as string[], queueStateSeq: 0 };
   /** drainQueue is sending the next queued item: the turn it starts hasn't begun yet. */
@@ -392,6 +398,9 @@ export class ChatAgentRuntime implements AgentRuntime {
   private async observe(draft: ChatEventDraft): Promise<void> {
     switch (draft.type) {
       case 'turn_started':
+        this.turnTrace = this.pendingTrace;
+        this.pendingTrace = undefined;
+        this.pendingTraceAssigned = false;
         this.turnId = draft.turnId ?? this.newId();
         this.turnStartedAt = this.now();
         this.clearIdleTimer();
@@ -425,6 +434,7 @@ export class ChatAgentRuntime implements AgentRuntime {
         await this.setState('running');
         break;
       case 'turn_ended':
+        this.turnTrace = undefined;
         this.turnId = undefined;
         this.turnStartedAt = null;
         await this.setState('idle');
@@ -561,6 +571,7 @@ export class ChatAgentRuntime implements AgentRuntime {
       wanted = requested;
     }
 
+    const traceContext = captureChatTrace(currentRequestTraceparent());
     const messageId = this.newId();
     const correlation = opts.clientCommandId ? { clientCommandId: opts.clientCommandId } : {};
     if (wanted === 'queued' && caps.queue !== 'native') {
@@ -576,7 +587,7 @@ export class ChatAgentRuntime implements AgentRuntime {
         return { delivery: 'queued', messageId: tail.messageId };
       }
       const preamble = this.withSystemPrompt([], caps);
-      this.queued.push({ messageId, source: opts.source, parts: [blocks], preamble });
+      this.queued.push({ messageId, source: opts.source, parts: [blocks], preamble, trace: traceContext });
       await this.emit({ type: 'user_message', data: { messageId, ...correlation, content: blocks, source: opts.source, delivery: 'queued' } });
       await this.emitQueueState([messageId], 'queued');
       return { delivery: 'queued', messageId };
@@ -586,7 +597,24 @@ export class ChatAgentRuntime implements AgentRuntime {
 
     this.clearIdleTimer();
     if (wanted === 'prompt') await this.runBeforePrompt();
-    const delivered = await session.send(outgoing, wanted);
+    // A steer belongs to the existing turn; native queued delivery has no reliable
+    // dispatch boundary, so do not invent a parent for its later turn.
+    if (wanted === 'prompt') {
+      // Two dispatches before a driver turn boundary are ambiguous. Do not
+      // attribute the first turn to whichever request happened to arrive last.
+      this.pendingTrace = this.pendingTraceAssigned ? undefined : traceContext;
+      this.pendingTraceAssigned = true;
+    }
+    let delivered: MessageDelivery;
+    try { delivered = await session.send(outgoing, wanted); }
+    catch (error) {
+      if (this.pendingTrace === traceContext) { this.pendingTrace = undefined; this.pendingTraceAssigned = false; }
+      throw error;
+    }
+    if (wanted === 'prompt' && delivered !== 'prompt' && this.pendingTrace === traceContext) {
+      this.pendingTrace = undefined;
+      this.pendingTraceAssigned = false;
+    }
     await this.emit({ type: 'user_message', data: { messageId, ...correlation, content: blocks, source: opts.source, delivery: delivered } });
     return { delivery: delivered, messageId };
   }
@@ -646,9 +674,12 @@ export class ChatAgentRuntime implements AgentRuntime {
       await this.emitQueueState([next.messageId], 'dispatching');
       await this.runBeforePrompt();
       if (this.session !== session) return;
+      this.pendingTrace = this.pendingTraceAssigned ? undefined : next.trace;
+      this.pendingTraceAssigned = true;
       await session.send([...next.preamble, ...coalesceUpdateContent(next.parts)], 'prompt');
       if (this.session === session) await this.emitQueueState([next.messageId], 'delivered');
     } catch (err) {
+      if (this.pendingTrace === next.trace) { this.pendingTrace = undefined; this.pendingTraceAssigned = false; }
       if (this.session === session) await this.emitQueueState([next.messageId], 'failed');
       throw err;
     } finally {
@@ -727,6 +758,9 @@ export class ChatAgentRuntime implements AgentRuntime {
     try {
       this.settleAllPermissions();
       this.queued.length = 0;
+      this.pendingTrace = undefined;
+      this.pendingTraceAssigned = false;
+      this.turnTrace = undefined;
       this.turnId = undefined;
       if (old) await old.close();
       // Finish queued writes under the old id before starting its replacement.
@@ -879,6 +913,8 @@ export class ChatAgentRuntime implements AgentRuntime {
   }
 
   private emit(draft: ChatEventDraft): Promise<void> {
+    const traceContext = draft.type === 'user_message'
+      ? captureChatTrace(currentRequestTraceparent()) : this.turnTrace;
     const next = this.emitChain.then(async () => {
       const prepared = await this.media.apply(draft).catch((err: unknown) => {
         // Never lose the event: write it without its images instead.
@@ -905,6 +941,7 @@ export class ChatAgentRuntime implements AgentRuntime {
           meta: { agentId: this.agentId, error: err instanceof Error ? err.message : String(err) },
         });
       }
+      stampChatTrace(event, traceContext);
       publishChatEvent(event);
       for (const listener of this.eventListeners) {
         try { listener(event); } catch { /* consumers must not break the runtime */ }

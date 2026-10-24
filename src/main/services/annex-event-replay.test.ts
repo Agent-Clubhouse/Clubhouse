@@ -162,3 +162,14 @@ describe('annex-event-replay', () => {
     expect(events![1].seq).toBe(10_005);
   });
 });
+
+  it('retains original validated context across replay, with legacy events unchanged', () => {
+    replay.reset();
+    const tc = '00-0123456789abcdef0123456789abcdef-0123456789abcdef-01';
+    replay.pushEvent('chat:event', {}, tc);
+    replay.pushEvent('chat:event', {}, 'secret invalid context');
+    replay.pushEvent('pty:data', {});
+    const events = replay.getEventsSince(0)!;
+    expect(events.map((e) => e.tc)).toEqual([tc, undefined, undefined]);
+    expect(JSON.stringify(events)).not.toContain('secret');
+  });

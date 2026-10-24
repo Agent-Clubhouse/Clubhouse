@@ -144,14 +144,17 @@ function isPromiseLike<T>(value: unknown): value is PromiseLike<T> {
   return !!value && typeof (value as { then?: unknown }).then === 'function';
 }
 
+import { parseWireTraceparent, scoped } from './trace-context';
+
 const REMOTE_PARENT = createContextKey('clubhouse.telemetry.remote_parent');
 
 interface RemoteParent {
   spanContext: SpanContext;
   used: boolean;
+  requestScope?: boolean;
+  active?: boolean;
 }
 
-const TRACEPARENT = /^00-([0-9a-f]{32})-([0-9a-f]{16})-([0-9a-f]{2})$/;
 
 /**
  * Parse a W3C traceparent from an Annex peer. Only version 00, non-zero ids
@@ -161,12 +164,8 @@ const TRACEPARENT = /^00-([0-9a-f]{32})-([0-9a-f]{16})-([0-9a-f]{2})$/;
  * withRemoteParent still applies this install's own rate.
  */
 export function parseTraceparent(value: string): SpanContext | undefined {
-  const m = TRACEPARENT.exec(value);
-  if (!m) return undefined;
-  const [, traceId, spanId, flags] = m;
-  if (/^0+$/.test(traceId) || /^0+$/.test(spanId)) return undefined;
-  if ((parseInt(flags, 16) & TraceFlags.SAMPLED) === 0) return undefined;
-  return { traceId, spanId, traceFlags: TraceFlags.SAMPLED, isRemote: true };
+  const ids = parseWireTraceparent(value);
+  return ids && { ...ids, traceFlags: TraceFlags.SAMPLED, isRemote: true };
 }
 
 export function formatTraceparent(sc: SpanContext): string {
@@ -178,6 +177,20 @@ export function startSdk(opts: SdkOptions): TelemetryRuntime {
   const level = opts.level;
   // Same clamp as FlowSampler: anything outside (0, 1] means record everything.
   const remoteSampleRate = opts.sampleRate > 0 && opts.sampleRate <= 1 ? opts.sampleRate : 1;
+  // One bounded local decision per remote trace, including delayed turn replay.
+  // Otherwise an explicitly sampled replay parent could bypass this install's rate.
+  const remoteDecisions = new Map<string, { keep: boolean; expires: number }>();
+  function sampledRemote(remote: SpanContext): SpanContext {
+    const now = Date.now();
+    for (const [id, decision] of remoteDecisions) if (decision.expires <= now) remoteDecisions.delete(id);
+    let decision = remoteDecisions.get(remote.traceId);
+    if (!decision) {
+      while (remoteDecisions.size >= 2048) remoteDecisions.delete(remoteDecisions.keys().next().value!);
+      decision = { keep: remoteSampleRate >= 1 || Math.random() < remoteSampleRate, expires: now + 60 * 60_000 };
+      remoteDecisions.set(remote.traceId, decision);
+    }
+    return decision.keep ? remote : { ...remote, traceFlags: TraceFlags.NONE };
+  }
   // At Errors level, flow spans are still recorded so the tail processor can
   // keep the ones that fail; Detailed-only spans are never recorded below Detailed.
   const spanLevel: TelemetryLevel = level === 'errors' ? 'standard' : level;
@@ -418,9 +431,10 @@ export function startSdk(opts: SdkOptions): TelemetryRuntime {
    */
   function rootFlowParent() {
     const holder = context.active().getValue(REMOTE_PARENT) as RemoteParent | undefined;
-    if (!holder || holder.used) return ROOT_CONTEXT;
+    if (holder?.requestScope && holder.active && holder.used) return context.active();
+    if (!holder || holder.used || holder.active === false) return ROOT_CONTEXT;
     holder.used = true;
-    return trace.setSpanContext(ROOT_CONTEXT, holder.spanContext);
+    return trace.setSpanContext(ROOT_CONTEXT.setValue(REMOTE_PARENT, holder), holder.spanContext);
   }
 
   /**
@@ -532,7 +546,8 @@ export function startSdk(opts: SdkOptions): TelemetryRuntime {
         kind: SPANS[s.name].root ? SpanKind.SERVER : SpanKind.INTERNAL,
         startTime: s.startMs,
         attributes: { ...toAttributes(s.attrs), ...userAttrs },
-      }, parentFor(s.name));
+      }, s.traceparent && parseTraceparent(s.traceparent)
+        ? trace.setSpanContext(ROOT_CONTEXT, sampledRemote(parseTraceparent(s.traceparent)!)) : parentFor(s.name));
       const attrs = [ATTR.outcome(s.outcome)];
       if (s.errorType) attrs.push(ATTR.errorType(s.errorType));
       span.setAttributes(toAttributes(attrs));
@@ -574,7 +589,7 @@ export function startSdk(opts: SdkOptions): TelemetryRuntime {
       return formatTraceparent(span.spanContext());
     },
 
-    withRemoteParent(traceparent, fn) {
+    withRemoteParent(traceparent, fn, requestScope = false) {
       const remote = parseTraceparent(traceparent);
       if (!remote) return fn();
       // ParentBased sampling would record every sampled remote trace, while
@@ -582,10 +597,10 @@ export function startSdk(opts: SdkOptions): TelemetryRuntime {
       // install's own decision at its own rate: kept traces continue the
       // remote one, the rest continue it unsampled (and so are dropped). Either
       // way this install records traces at exactly its configured rate.
-      const keep = remoteSampleRate >= 1 || Math.random() < remoteSampleRate;
-      const spanContext = keep ? remote : { ...remote, traceFlags: TraceFlags.NONE };
-      const holder: RemoteParent = { spanContext, used: false };
-      return context.with(context.active().setValue(REMOTE_PARENT, holder), fn);
+      const spanContext = sampledRemote(remote);
+      const holder: RemoteParent = { spanContext, used: false, requestScope, active: true };
+      return context.with(context.active().setValue(REMOTE_PARENT, holder), () =>
+        scoped(fn, () => { if (requestScope) holder.active = false; }));
     },
 
     preview: () => [...tees.values()].flatMap((t) => t.snapshot()).sort((a, b) => a.time - b.time),

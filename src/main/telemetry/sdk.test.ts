@@ -129,6 +129,9 @@ describe('startSdk', () => {
       await rt.flow('clubhouse.agent.spawn', {}, async () => undefined);
     });
     await rt.forceFlush(1000);
+    rt.replaySpan({ name: 'clubhouse.agent.turn', startMs: 1, endMs: 2, attrs: [], outcome: 'ok', traceparent: remote });
+    await rt.forceFlush(1000);
+    // Delayed turns retain the same local sampling decision too.
     // Declined at this install's rate: continued unsampled, so nothing is recorded.
     expect(spans.getFinishedSpans()).toHaveLength(0);
   });
@@ -393,5 +396,23 @@ describe('PreviewTee', () => {
     expect(tee.snapshot().map((i) => i.name)).toEqual(['e2', 'e3', 'e4']);
     tee.clear();
     expect(tee.snapshot()).toEqual([]);
+  });
+});
+
+describe('bounded remote request scope', () => {
+  it('parents nested roots but fences callbacks after request completion', async () => {
+    const { rt, spans } = setup(); active = rt;
+    const tc = '00-0123456789abcdef0123456789abcdef-0123456789abcdef-01';
+    const { context } = await import('@opentelemetry/api');
+    let late!: () => void;
+    await rt.withRemoteParent(tc, () => rt.flow('clubhouse.annex.rest', {}, async () => {
+      late = context.bind(context.active(), () => rt.flow('clubhouse.agent.spawn', {}, () => {}));
+      rt.flow('clubhouse.agent.spawn', {}, () => {});
+    }), true);
+    late();
+    await rt.forceFlush(1000);
+    const finished = spans.getFinishedSpans();
+    expect(finished.map((s) => s.spanContext().traceId === tc.slice(3, 35))).toEqual([true, true, false]);
+    expect(finished[0].parentSpanContext?.spanId).toBe(finished[1].spanContext().spanId);
   });
 });

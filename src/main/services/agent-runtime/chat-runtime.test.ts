@@ -1408,3 +1408,65 @@ describe('ChatAgentRuntime coalesced helper updates (#2414)', () => {
     expect(transcript.some((e) => e.sessionId === runtime.getSessionId() && e.type === 'queue_state')).toBe(false);
   });
 });
+
+describe('Annex request to asynchronous chat trace', () => {
+  it('retains a queued request context without storing it in the transcript or leaking to the next turn', async () => {
+    const { createLocalRecorder } = await import('../../telemetry/local-recorder');
+    const { createScrubber } = await import('../../telemetry/scrubber');
+    const { setLocalSink, tel, withRemoteParent } = await import('../../telemetry/facade');
+    const { chatEventTraceparent } = await import('../../telemetry/chat-trace-context');
+    const rec = createLocalRecorder({ dir: '/unused', fileBase: 'trace', level: 'standard', hashSalt: Buffer.alloc(32),
+      scrub: createScrubber({}), session: { appVersion: '1.0.0', platform: 'linux', arch: 'x64' },
+      mkdir: async () => {}, appendFile: async () => {} });
+    setLocalSink(rec);
+    const driver = new FakeChatDriver('claude_stream_json', 'claude-code', STEERLESS);
+    const { runtime } = makeRuntime(driver);
+    const tc = '00-abcdef0123456789abcdef0123456789-abcdef0123456789-01';
+    const seen: Array<{ type: string; tc?: string }> = [];
+    onChatEvent((e) => seen.push({ type: e.type, tc: chatEventTraceparent(e) }));
+    try {
+      await runtime.start();
+      driver.last.emit({ type: 'turn_started', data: { trigger: 'prompt' } }); await flush();
+      await withRemoteParent(tc, () => tel.flow('clubhouse.annex.rest', {}, () =>
+        runtime.sendMessage('private prompt', { source: 'annex', delivery: 'queued' })), true);
+      driver.last.emit({ type: 'turn_ended', data: { stopReason: 'end_turn' } }); await flush();
+      driver.last.emit({ type: 'turn_started', data: { trigger: 'queued' } });
+      driver.last.emit({ type: 'agent_message', data: { messageId: 'm1', text: 'private answer' } });
+      driver.last.emit({ type: 'turn_ended', data: { stopReason: 'end_turn' } }); await flush();
+      expect(seen.find((e) => e.type === 'agent_message')?.tc?.slice(3, 35)).toBe(tc.slice(3, 35));
+      expect(JSON.stringify(transcript)).not.toContain(tc.slice(3, 35));
+      driver.last.emit({ type: 'turn_started', data: { trigger: 'system' } });
+      driver.last.emit({ type: 'agent_message', data: { messageId: 'm2', text: 'later' } }); await flush();
+      expect(seen.filter((e) => e.type === 'agent_message').at(-1)?.tc).toBeUndefined();
+    } finally { await runtime.stop(); setLocalSink(null); await rec.stop(); }
+  });
+});
+
+describe('ambiguous provider turn attribution', () => {
+  it.each(['native-queue', 'overlap'])('does not guess the causal request for %s dispatch', async (mode) => {
+    const { createLocalRecorder } = await import('../../telemetry/local-recorder');
+    const { createScrubber } = await import('../../telemetry/scrubber');
+    const { setLocalSink, tel, withRemoteParent } = await import('../../telemetry/facade');
+    const { chatEventTraceparent } = await import('../../telemetry/chat-trace-context');
+    const rec = createLocalRecorder({ dir: '/unused', fileBase: 'ambiguous', level: 'standard', hashSalt: Buffer.alloc(32),
+      scrub: createScrubber({}), session: { appVersion: '1.0.0', platform: 'linux', arch: 'x64' },
+      mkdir: async () => {}, appendFile: async () => {} });
+    setLocalSink(rec);
+    const driver = new FakeChatDriver();
+    const { runtime } = makeRuntime(driver);
+    const contexts: Array<string | undefined> = [];
+    onChatEvent((event) => { if (event.type === 'agent_message') contexts.push(chatEventTraceparent(event)); });
+    try {
+      await runtime.start();
+      if (mode === 'native-queue') driver.last.send = async () => 'queued';
+      const send = (parent: string) => withRemoteParent(parent, () => tel.flow('clubhouse.annex.rest', {}, () =>
+        runtime.sendMessage('private prompt', { source: 'annex', delivery: 'prompt' })), true);
+      await send('00-0123456789abcdef0123456789abcdef-0123456789abcdef-01');
+      if (mode === 'overlap') await send('00-abcdef0123456789abcdef0123456789-abcdef0123456789-01');
+      driver.last.emit({ type: 'turn_started', data: { trigger: mode === 'native-queue' ? 'queued' : 'prompt' } });
+      driver.last.emit({ type: 'agent_message', data: { messageId: 'm', text: 'result' } });
+      await flush();
+      expect(contexts).toEqual([undefined]);
+    } finally { await runtime.stop(); setLocalSink(null); await rec.stop(); }
+  });
+});
