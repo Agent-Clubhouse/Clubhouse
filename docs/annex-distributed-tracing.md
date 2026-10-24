@@ -98,7 +98,8 @@ app launches, pairing or live exports are part of this work.
 A raw PTY stream has no reliable per-turn boundary and is not assigned a guessed
 chat trace. Native provider-managed queue dispatch currently lacks an exact
 message-to-turn correlation signal. Steering contributes to an existing turn;
-it does not replace that turn's original parent. Native queue/steering causal
+it does not replace that turn's original parent. Overlapping prompt dispatches before a driver turn boundary are treated as
+ambiguous and receive no guessed parent. Native queue/steering causal
 links need provider acknowledgement support before complete coverage can be
 claimed. Phone-host physical-device integration and a common approved ingestion
 adapter/query remain unverified. A green draft is not evidence those gaps closed.

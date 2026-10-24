@@ -1441,3 +1441,32 @@ describe('Annex request to asynchronous chat trace', () => {
     } finally { await runtime.stop(); setLocalSink(null); await rec.stop(); }
   });
 });
+
+describe('ambiguous provider turn attribution', () => {
+  it.each(['native-queue', 'overlap'])('does not guess the causal request for %s dispatch', async (mode) => {
+    const { createLocalRecorder } = await import('../../telemetry/local-recorder');
+    const { createScrubber } = await import('../../telemetry/scrubber');
+    const { setLocalSink, tel, withRemoteParent } = await import('../../telemetry/facade');
+    const { chatEventTraceparent } = await import('../../telemetry/chat-trace-context');
+    const rec = createLocalRecorder({ dir: '/unused', fileBase: 'ambiguous', level: 'standard', hashSalt: Buffer.alloc(32),
+      scrub: createScrubber({}), session: { appVersion: '1.0.0', platform: 'linux', arch: 'x64' },
+      mkdir: async () => {}, appendFile: async () => {} });
+    setLocalSink(rec);
+    const driver = new FakeChatDriver();
+    const { runtime } = makeRuntime(driver);
+    const contexts: Array<string | undefined> = [];
+    onChatEvent((event) => { if (event.type === 'agent_message') contexts.push(chatEventTraceparent(event)); });
+    try {
+      await runtime.start();
+      if (mode === 'native-queue') driver.last.send = async () => 'queued';
+      const send = (parent: string) => withRemoteParent(parent, () => tel.flow('clubhouse.annex.rest', {}, () =>
+        runtime.sendMessage('private prompt', { source: 'annex', delivery: 'prompt' })), true);
+      await send('00-0123456789abcdef0123456789abcdef-0123456789abcdef-01');
+      if (mode === 'overlap') await send('00-abcdef0123456789abcdef0123456789-abcdef0123456789-01');
+      driver.last.emit({ type: 'turn_started', data: { trigger: mode === 'native-queue' ? 'queued' : 'prompt' } });
+      driver.last.emit({ type: 'agent_message', data: { messageId: 'm', text: 'result' } });
+      await flush();
+      expect(contexts).toEqual([undefined]);
+    } finally { await runtime.stop(); setLocalSink(null); await rec.stop(); }
+  });
+});
