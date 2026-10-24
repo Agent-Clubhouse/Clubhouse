@@ -175,3 +175,9 @@ Gating the `build` job on `complete`, as #1984 did, gives a lean PR:
 
 - **Webpack-only build:** E2E only needs `.webpack/`, but `electron-forge package` also packages the app into `out/`. A webpack-only build, or a webpack filesystem cache, would take a minute or two off each `build` job, which is the critical path.
 - **Shard balancing:** the per-shard JUnit artifacts will give real spec timings, so the shards can be balanced by duration instead of by file.
+
+## Unsigned desktop integration artifacts
+
+The existing hosted macOS packaging jobs also upload `clubhouse-integration-<arch>-<commit>` for seven days. `scripts/ci/package-integration.mjs` registers a Forge configuration object directly; a separate config filename can be overridden by Forge auto-discovery. The artifact uses the Clubhouse Integration display name, a distinct bundle identifier and a run-specific integration version. The script asserts the resolved configuration disables explicit signing, notarization and the fuse plugin's implicit ARM64 ad-hoc signing. All six production hardening fuses are retained and checked on the output. Production packaging configuration remains unchanged.
+
+The archive contains the app, source-commit/ASAR-hash/fuse provenance and instructions. It is uploaded only as a CI artifact, never a release. No URL-scheme association is declared by the test bundle. Packaging does not launch it or verify its executed embedded runtime; the provenance explicitly records those limits. Any later launch requires separate authorization, a disposable profile, updates disabled and loopback-only ephemeral Annex settings. No local build/test/app invocation is required to produce this artifact.

@@ -11,10 +11,12 @@
  * Certificate and key are stored alongside the identity in annex-identity.json.
  */
 import * as tls from 'tls';
+import { X509Certificate } from 'crypto';
 import * as fs from 'fs';
 import * as path from 'path';
 import forge from 'node-forge';
 import { app } from 'electron';
+import { annexEphemeralSession } from './annex-network-profile';
 import { appLog } from './log-service';
 import type { AnnexIdentity } from './annex-identity';
 
@@ -118,7 +120,13 @@ function saveCert(cert: TlsCertificateInfo): void {
  * Get or create the TLS certificate for this instance.
  */
 export function getOrCreateCert(identity: AnnexIdentity): TlsCertificateInfo {
+  const ephemeral = annexEphemeralSession();
   if (cachedCert) return cachedCert;
+
+  if (ephemeral) {
+    cachedCert = generateSelfSignedCert(identity.fingerprint);
+    return cachedCert;
+  }
 
   cachedCert = loadCert();
   if (cachedCert) {
@@ -182,7 +190,9 @@ export function extractPeerFingerprint(socket: tls.TLSSocket): string | null {
  * After this, a new cert will be generated on next getOrCreateCert().
  */
 export function deleteCert(): void {
+  const ephemeral = annexEphemeralSession();
   cachedCert = null;
+  if (ephemeral) return;
   try {
     const certPath = path.join(app.getPath('userData'), TLS_CERT_FILENAME);
     fs.unlinkSync(certPath);
@@ -197,4 +207,16 @@ export function deleteCert(): void {
  */
 export function resetForTests(): void {
   cachedCert = null;
+}
+
+/** Fingerprint of an already loaded/generated cert. Never provisions identity. */
+export function getCertificateFingerprint(): string | undefined {
+  if (!cachedCert) return undefined;
+  return new X509Certificate(cachedCert.certPem).fingerprint256;
+}
+
+/** Hash actual certificate bytes, never the self-asserted subject CN. */
+export function extractPeerCertificateFingerprint(socket: tls.TLSSocket): string | undefined {
+  const raw = socket.getPeerCertificate()?.raw;
+  return raw?.length ? new X509Certificate(raw).fingerprint256 : undefined;
 }

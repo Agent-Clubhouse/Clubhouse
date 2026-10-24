@@ -127,6 +127,10 @@ export function initProtocolHandler(deps: ProtocolHandlerDeps): boolean {
 }
 
 function registerScheme(): void {
+  // Isolated test/Annex instances must not take the installed application's
+  // global clubhouse:// association away from the user's normal profile.
+  if (process.env.CLUBHOUSE_USER_DATA) return;
+
   // In development the app runs via the Electron binary, so the OS must be told
   // how to relaunch us with the right script path. Packaged builds register the
   // bundle directly.
