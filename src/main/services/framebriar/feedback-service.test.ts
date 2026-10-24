@@ -711,7 +711,7 @@ describe('FeedbackService with the vendored Framebriar SDK (mocked transport)', 
   afterEach(() => { fs.rmSync(dataDir, { recursive: true, force: true }); });
 
   /** A tiny Framebriar service: access redeem/refresh/disconnect and two-step report upload. */
-  function server(feedbackCorrelationVersion?: 1) {
+  function server(feedbackCorrelationVersion?: 1, refreshExpiresAt = new Date(Date.now() + 29 * 86400_000).toISOString()) {
     const tok = (c: string) => c.repeat(43);
     const calls: string[] = [];
     const reports = new Map<string, { report: Record<string, unknown>; media?: Buffer }>();
@@ -719,7 +719,7 @@ describe('FeedbackService with the vendored Framebriar SDK (mocked transport)', 
     const grant = () => {
       const now = Date.now();
       return { v: 1, gameId: 'clubhouse', scopeVersion: 2, token: tok('t'), refreshToken: tok('r'), feedbackCorrelationVersion,
-        expiresAt: new Date(now + 50 * 60_000).toISOString(), refreshExpiresAt: new Date(now + 29 * 86400_000).toISOString() };
+        expiresAt: new Date(now + 50 * 60_000).toISOString(), refreshExpiresAt };
     };
     const fetchImpl = (async (input: string | URL, init?: RequestInit) => {
       const url = new URL(String(input));
@@ -739,7 +739,7 @@ describe('FeedbackService with the vendored Framebriar SDK (mocked transport)', 
       }
       return new Response('not found', { status: 404 });
     }) as typeof fetch;
-    return { fetchImpl, calls, reports };
+    return { fetchImpl, calls, reports, refreshExpiresAt };
   }
 
   async function until(check: () => boolean, ms = 5000): Promise<void> {
@@ -773,7 +773,7 @@ describe('FeedbackService with the vendored Framebriar SDK (mocked transport)', 
       expect(sdk.outbox.status().correlationWaiting).toBe(1);
       await sdk.shutdown();
 
-      const current = server(1);
+      const current = server(1, old.refreshExpiresAt);
       sdk = createFramebriar({ ...options, fetchImpl: current.fetchImpl });
       await sdk.start();
       await until(() => current.reports.has(ack.id));

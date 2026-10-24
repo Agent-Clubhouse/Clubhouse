@@ -59,4 +59,10 @@ describe('feedback incident snapshot', () => {
     }
     expect(captureFeedbackCorrelation(now + 41).data.incident?.traces).toHaveLength(8);
   });
+  it('does not claim a unique phone after the bounded peer cache overflows', () => {
+    state.tc = tc;
+    for (let i = 1; i <= 33; i++) rememberAnnexIncidentPhone('clubhouse-go', phone, `00000000-0000-4000-8000-${i.toString(16).padStart(12, '0')}`, now);
+    expect(captureFeedbackCorrelation(now)).toMatchObject({ summary: { scope: 'trace-only' } });
+    expect(captureFeedbackCorrelation(now).data.incident).toBeUndefined();
+  });
 });
