@@ -54,6 +54,7 @@ vi.mock('./pty-manager', () => ({
   getSerializedBufferSnapshot: vi.fn().mockResolvedValue({ data: '', seq: 0 }),
   isRunning: vi.fn().mockReturnValue(false),
   isStopping: vi.fn().mockReturnValue(false),
+  getShellCwd: vi.fn(),
   write: vi.fn(),
 }));
 
@@ -337,6 +338,112 @@ describe('annex-server', () => {
   // -------------------------------------------------------------------------
   // Original tests (pairing, auth, lifecycle)
   // -------------------------------------------------------------------------
+
+  describe('legacy remote stop safety (#2394)', () => {
+    beforeEach(() => {
+      clearChatRuntimes();
+      vi.mocked(projectStore.list).mockReturnValue([{ id: 'p', name: 'Project', path: '/project' }] as any);
+      vi.mocked(agentConfigModule.listDurable).mockReturnValue([
+        { id: 'remote-agent', name: 'Agent', orchestrator: 'claude-code' },
+      ] as any);
+    });
+    afterEach(() => clearChatRuntimes());
+
+    async function connect(auth: 'mtls' | 'bearer' = 'mtls') {
+      await startAndPair();
+      const { EventEmitter } = await import('events');
+      const ws = Object.assign(new EventEmitter(), { readyState: 1, send: vi.fn(), ping: vi.fn() });
+      annexServer._testing.wsAuthTypes.set(ws as any, auth);
+      annexServer._testing.wss!.emit('connection', ws);
+      await vi.waitFor(() => expect(ws.send).toHaveBeenCalled());
+      ws.send.mockClear();
+      return ws;
+    }
+
+    it.each(['chat', 'pty', 'headless'])('awaits runtime-aware %s shutdown before the kill acknowledgement', async (mode) => {
+      const ws = await connect();
+      let running = true;
+      if (mode === 'chat') registerChatRuntime({ agentId: 'remote-agent', kind: 'chat', isRunning: () => running } as never);
+      if (mode === 'pty') vi.mocked(ptyManagerModule.isRunning).mockImplementation(() => running);
+      if (mode === 'headless') vi.mocked(agentSystem.isHeadlessAgent).mockImplementation(() => running);
+      let finish!: () => void;
+      vi.mocked(agentSystem.killAgent).mockImplementation(() => new Promise<void>(resolve => {
+        finish = () => { running = false; resolve(); };
+      }));
+      ws.emit('message', JSON.stringify({ type: 'agent:kill', payload: { agentId: 'remote-agent' } }));
+      await vi.waitFor(() => expect(agentSystem.killAgent).toHaveBeenCalledWith(
+        'remote-agent', '/project', 'claude-code', 'user', { waitForExit: true, throwOnFailure: true },
+      ));
+      expect(ws.send).not.toHaveBeenCalledWith(expect.stringContaining('agent:kill:ack'));
+      finish();
+      await vi.waitFor(() => expect(ws.send).toHaveBeenCalledWith(JSON.stringify({ type: 'agent:kill:ack', payload: { agentId: 'remote-agent' } })));
+    });
+
+    it('returns an error without an acknowledgement when shutdown fails', async () => {
+      const ws = await connect();
+      vi.mocked(agentSystem.killAgent).mockRejectedValue(new Error('stop failed'));
+      ws.emit('message', JSON.stringify({ type: 'agent:kill', payload: { agentId: 'remote-agent' } }));
+      await vi.waitFor(() => expect(ws.send).toHaveBeenCalledWith(JSON.stringify({ type: 'error', payload: { message: 'stop failed' } })));
+      expect(ws.send).not.toHaveBeenCalledWith(expect.stringContaining('agent:kill:ack'));
+    });
+
+    it('stops an owned plain shell without requiring an agent registration', async () => {
+      const ws = await connect();
+      vi.mocked(ptyManagerModule.getShellCwd).mockReturnValue('/shell-cwd');
+      vi.mocked(agentSystem.killAgent).mockResolvedValue(undefined);
+      ws.emit('message', JSON.stringify({ type: 'agent:kill', payload: { agentId: 'shell-terminal' } }));
+      await vi.waitFor(() => expect(agentSystem.killAgent).toHaveBeenCalledWith(
+        'shell-terminal', '/shell-cwd', undefined, 'user',
+        { waitForExit: true, throwOnFailure: true, exitCommand: 'exit\r' },
+      ));
+      await vi.waitFor(() => expect(ws.send).toHaveBeenCalledWith(JSON.stringify({ type: 'agent:kill:ack', payload: { agentId: 'shell-terminal' } })));
+    });
+
+    it('does not acknowledge a stop while the runtime is still running', async () => {
+      const ws = await connect();
+      registerChatRuntime({ agentId: 'remote-agent', kind: 'chat', isRunning: () => true } as never);
+      vi.mocked(agentSystem.killAgent).mockResolvedValue(undefined);
+      ws.emit('message', JSON.stringify({ type: 'agent:kill', payload: { agentId: 'remote-agent' } }));
+      await vi.waitFor(() => expect(ws.send).toHaveBeenCalledWith(JSON.stringify({ type: 'error', payload: { message: 'agent_still_running' } })));
+      expect(ws.send).not.toHaveBeenCalledWith(expect.stringContaining('agent:kill:ack'));
+    });
+
+    it('does not acknowledge unknown agents or allow bearer control', async () => {
+      const ws = await connect();
+      ws.emit('message', JSON.stringify({ type: 'agent:kill', payload: { agentId: 'missing' } }));
+      await vi.waitFor(() => expect(ws.send).toHaveBeenCalledWith(JSON.stringify({ type: 'error', payload: { message: 'agent_not_found' } })));
+      annexServer._testing.wsAuthTypes.set(ws as any, 'bearer');
+      ws.emit('message', JSON.stringify({ type: 'agent:kill', payload: { agentId: 'remote-agent' } }));
+      expect(ws.send).toHaveBeenCalledWith(expect.stringContaining('Control messages require mTLS authentication'));
+      expect(agentSystem.killAgent).not.toHaveBeenCalled();
+    });
+
+    it('waits for a chat stop before deleting its worktree', async () => {
+      const { port, token } = await startAndPair();
+      let running = true;
+      registerChatRuntime({ agentId: 'remote-agent', kind: 'chat', isRunning: () => running } as never);
+      let finish!: () => void;
+      vi.mocked(agentSystem.killAgent).mockImplementation(() => new Promise<void>(resolve => {
+        finish = () => { running = false; resolve(); };
+      }));
+      const response = request(port, 'POST', '/api/v1/projects/p/agents/remote-agent/delete', { mode: 'force' }, authHeaders(token));
+      await vi.waitFor(() => expect(agentSystem.killAgent).toHaveBeenCalled());
+      expect(agentConfigModule.deleteForce).not.toHaveBeenCalled();
+      finish();
+      expect((await response).status).toBe(200);
+      expect(agentConfigModule.deleteForce).toHaveBeenCalledWith('/project', 'remote-agent');
+    });
+
+    it('leaves the worktree intact on a failed chat stop', async () => {
+      const { port, token } = await startAndPair();
+      registerChatRuntime({ agentId: 'remote-agent', kind: 'chat', isRunning: () => true } as never);
+      vi.mocked(agentSystem.killAgent).mockRejectedValue(new Error('stop failed'));
+      const response = await request(port, 'POST', '/api/v1/projects/p/agents/remote-agent/delete', { mode: 'force' }, authHeaders(token));
+      expect(response.status).toBe(500);
+      expect(JSON.parse(response.body)).toEqual({ error: 'stop failed' });
+      expect(agentConfigModule.deleteForce).not.toHaveBeenCalled();
+    });
+  });
 
   it('advertises mobile capabilities only after authentication', async () => {
     const { port, token } = await startAndPair();

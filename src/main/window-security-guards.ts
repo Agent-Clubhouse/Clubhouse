@@ -20,13 +20,12 @@ export function applyWindowSecurityGuards(win: BrowserWindow): void {
     }
   });
 
-  // Block window.open() and <a target="_blank"> from opening external URLs
+  // Renderer-created children inherit the privileged preload, even for local
+  // files and localhost. App popouts are created explicitly in the main process;
+  // no renderer URL is allowed to mint another privileged app window (#2081).
   win.webContents.setWindowOpenHandler(({ url }) => {
-    if (!isAllowedNavigation(url)) {
-      appLog('core:security', 'warn', `Blocked window.open to external URL: ${url}`);
-      return { action: 'deny' };
-    }
-    return { action: 'allow' };
+    appLog('core:security', 'warn', `Blocked renderer window.open: ${url}`);
+    return { action: 'deny' };
   });
 
   // Restrict webview creation to safe URL schemes

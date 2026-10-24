@@ -1025,6 +1025,18 @@ describe('agent-system', () => {
         await killAgent('agent-1', '/project', undefined, 'user', { waitForExit: true });
         expect(mockPtyGracefulKill).toHaveBeenCalledWith('agent-1', '/exit\r');
       });
+
+      it('rejects an unconfirmed exit when the caller must not delete or acknowledge', async () => {
+        await spawnDurable();
+        mockPtyIsRunning.mockReturnValueOnce(true);
+        vi.useFakeTimers();
+        try {
+          const killed = killAgent('agent-1', '/project', undefined, 'user', { waitForExit: true, throwOnFailure: true });
+          const rejected = expect(killed).rejects.toThrow('Timed out waiting for agent exit');
+          await vi.advanceTimersByTimeAsync(12_000);
+          await rejected;
+        } finally { vi.useRealTimers(); }
+      });
     });
 
     it('uses orchestrator from agentOrchestratorMap set at spawn time', async () => {
@@ -1103,6 +1115,71 @@ describe('agent-system', () => {
     it('does not reject when gracefulKill throws (process already dead)', async () => {
       mockPtyGracefulKill.mockImplementationOnce(() => { throw new Error('process already dead'); });
       await expect(killAgent('agent-1', '/project')).resolves.toBeUndefined();
+    });
+
+    it('reports a failed PTY stop to strict callers', async () => {
+      mockPtyGracefulKill.mockImplementationOnce(() => { throw new Error('stop failed'); });
+      await expect(killAgent('agent-1', '/project', undefined, 'user', { throwOnFailure: true })).rejects.toThrow('stop failed');
+    });
+
+    it('uses a known shell exit command and waits for its confirmed exit', async () => {
+      mockPtyIsRunning.mockReturnValue(true);
+      let settled = false;
+      const killed = killAgent('plain-shell', '/shell-cwd', undefined, 'user', {
+        waitForExit: true, throwOnFailure: true, exitCommand: 'exit\r',
+      }).then(() => { settled = true; });
+      await vi.waitFor(() => expect(mockPtyGracefulKill).toHaveBeenCalledWith('plain-shell', 'exit\r'));
+      expect(settled).toBe(false);
+      broadcastAgentExit('plain-shell', 0);
+      await killed;
+      expect(settled).toBe(true);
+    });
+
+    it('awaits the chat runtime stop instead of falling through to PTY shutdown', async () => {
+      const { registerChatRuntime, clearChatRuntimes } = await import('./agent-runtime');
+      let finish!: () => void;
+      const stop = vi.fn(() => new Promise<void>(resolve => { finish = resolve; }));
+      registerChatRuntime({ agentId: 'chat-stop', kind: 'chat', isRunning: () => true, stop } as never);
+      try {
+        let settled = false;
+        const killed = killAgent('chat-stop', '/project', undefined, 'user', { waitForExit: true, throwOnFailure: true })
+          .then(() => { settled = true; });
+        await vi.waitFor(() => expect(stop).toHaveBeenCalledOnce());
+        expect(stop).toHaveBeenCalledWith({ throwOnFailure: true });
+        expect(settled).toBe(false);
+        expect(mockPtyGracefulKill).not.toHaveBeenCalled();
+        finish();
+        await killed;
+      } finally { clearChatRuntimes(); }
+    });
+
+    it('waits for a headless exit before confirming a strict stop', async () => {
+      mockIsHeadless.mockReturnValue(true);
+      let settled = false;
+      const killed = killAgent('headless-stop', '/project', undefined, 'user', { waitForExit: true, throwOnFailure: true })
+        .then(() => { settled = true; });
+      await vi.waitFor(() => expect(mockHeadlessKill).toHaveBeenCalledWith('headless-stop'));
+      expect(settled).toBe(false);
+      broadcastAgentExit('headless-stop', 0);
+      await killed;
+      expect(mockPtyGracefulKill).not.toHaveBeenCalled();
+    });
+
+    it('retains a headless registration when strict shutdown cannot confirm exit', async () => {
+      vi.useFakeTimers();
+      agentRegistry.register('headless-timeout', { projectPath: '/project', orchestrator: 'claude-code', runtime: 'headless' });
+      mockIsHeadless.mockReturnValue(true);
+      try {
+        const stopped = expect(killAgent('headless-timeout', '/project', undefined, 'user', {
+          waitForExit: true, throwOnFailure: true,
+        })).rejects.toThrow('Timed out waiting for agent exit');
+        await vi.advanceTimersByTimeAsync(12_000);
+        await stopped;
+        expect(agentRegistry.get('headless-timeout')?.projectPath).toBe('/project');
+      } finally {
+        untrackAgent('headless-timeout');
+        vi.useRealTimers();
+      }
     });
 
     it('does not reject for unknown orchestrator', async () => {

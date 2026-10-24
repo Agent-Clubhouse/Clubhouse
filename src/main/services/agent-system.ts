@@ -902,6 +902,10 @@ export interface KillAgentOptions {
    * a stale lastSessionId, and replacing the live PTY drops its exit capture.
    */
   waitForExit?: boolean;
+  /** Surface stop failures to callers that must not acknowledge or delete yet. */
+  throwOnFailure?: boolean;
+  /** Main-process override for a known plain shell, which uses exit, not /exit. */
+  exitCommand?: string;
   /** For an agent_tool kill: the name of the agent that asked, shown as the sleep reason. */
   by?: string;
 }
@@ -918,27 +922,38 @@ export async function killAgent(
   noteKillRequest(agentId, { trigger, ...(opts.by ? { by: opts.by } : {}) });
   try {
     // A chat start in progress is cancelled (and its runtime stopped) here.
-    if (await cancelChatStart(agentId)) return;
+    if (await cancelChatStart(agentId, { throwOnFailure: opts.throwOnFailure })) return;
     const tracked = agentRegistry.get(agentId);
 
     if (tracked?.runtime === 'chat' || isChatAgent(agentId)) {
-      await getAgentRuntime(agentId)?.stop();
+      const runtime = getAgentRuntime(agentId);
+      if (opts.throwOnFailure) await runtime?.stop({ throwOnFailure: true });
+      else await runtime?.stop();
       return;
     }
     if (tracked?.runtime === 'headless' || (!tracked && headlessManager.isHeadless(agentId))) {
-      untrackAgent(agentId);
+      const exited = opts.waitForExit && headlessManager.isHeadless(agentId) ? waitForAgentExit(agentId) : undefined;
+      if (!exited) untrackAgent(agentId);
       headlessManager.kill(agentId);
+      if (exited) {
+        const didExit = await exited;
+        if (didExit) untrackAgent(agentId);
+        else if (opts.throwOnFailure) throw new Error('Timed out waiting for agent exit');
+      }
       return;
     }
-    const provider = await resolveOrchestrator(projectPath, tracked?.orchestrator || orchestrator);
-    const exitCmd = provider.getExitCommand();
+    const exitCmd = opts.exitCommand ?? (await resolveOrchestrator(projectPath, tracked?.orchestrator || orchestrator)).getExitCommand();
     const exited = opts.waitForExit && ptyManager.isRunning(agentId) ? waitForAgentExit(agentId) : undefined;
     ptyManager.gracefulKill(agentId, exitCmd);
-    if (exited) await settleKill(agentId, exited);
+    if (exited) {
+      const didExit = await settleKill(agentId, exited);
+      if (!didExit && opts.throwOnFailure) throw new Error('Timed out waiting for agent exit');
+    }
   } catch (err) {
     appLog('core:agent', 'warn', 'killAgent failed (process may already be dead)', {
       meta: { agentId, error: err instanceof Error ? err.message : String(err) },
     });
+    if (opts.throwOnFailure) throw err;
   }
 }
 
@@ -955,7 +970,7 @@ function waitForAgentExit(agentId: string): Promise<boolean> {
 }
 
 /** Await the PTY exit, then the session id it captured. */
-async function settleKill(agentId: string, exited: Promise<boolean>): Promise<void> {
+async function settleKill(agentId: string, exited: Promise<boolean>): Promise<boolean> {
   const startedAt = Date.now();
   const didExit = await exited;
   // The exit callback runs in the same tick as the exit broadcast (before it
@@ -966,6 +981,7 @@ async function settleKill(agentId: string, exited: Promise<boolean>): Promise<vo
   appLog('core:agent', didExit ? 'info' : 'warn', didExit ? 'Agent exited after kill' : 'Timed out waiting for agent exit after kill', {
     meta: { agentId, waitedMs: Date.now() - startedAt, sessionCaptured: capture !== undefined },
   });
+  return didExit;
 }
 
 export async function checkAvailability(

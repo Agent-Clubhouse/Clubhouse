@@ -33,8 +33,20 @@ export async function captureSessionState(
     const provider = getProvider(reg.orchestrator);
     if (!provider) continue;
 
-    const meta0 = agentMeta?.get(agentId);
-    const cwd = meta0?.worktreePath || reg.projectPath;
+    const meta = agentMeta?.get(agentId);
+    // The renderer can miss a live chat agent during restart. Resolve durable
+    // identity before session discovery so lookup and resume use the same cwd.
+    let config: Awaited<ReturnType<typeof getDurableConfig>>;
+    try {
+      config = await getDurableConfig(reg.projectPath, agentId);
+    } catch {
+      config = null;
+    }
+    const worktreePath = meta?.worktreePath || config?.worktreePath;
+    const cwd = worktreePath || reg.projectPath;
+    const suppliedName = agentNames.get(agentId);
+    const agentName = suppliedName && suppliedName !== agentId
+      ? suppliedName : config?.name || suppliedName || agentId;
 
     let sessionId: string | null = null;
     // Whether the agent ever started a CLI session (#2074): true with an id,
@@ -73,38 +85,27 @@ export async function captureSessionState(
     }
 
     const canResume = resumeStrategyFor(reg.orchestrator) === 'auto';
-    const meta = meta0;
 
     // Capture the permission mode the agent was running with.
     // Prefer per-agent meta (future-proofing), fall back to project-level setting.
     const permissionMode = meta?.permissionMode ?? freeAgentSettings.getPermissionMode(reg.projectPath);
 
-    // Capture freeAgentMode from the durable config so it can be restored
-    // during resume without relying solely on the main-process fallback.
-    let freeAgentMode: boolean | undefined;
-    try {
-      const config = await getDurableConfig(reg.projectPath, agentId);
-      freeAgentMode = config?.freeAgentMode;
-    } catch {
-      // Config unavailable — omit freeAgentMode from the entry
-    }
-
     sessions.push({
       agentId,
-      agentName: agentNames.get(agentId) || agentId,
+      agentName,
       projectPath: reg.projectPath,
       orchestrator: reg.orchestrator,
       sessionId,
       sessionStarted: sessionId ? true : sessionStarted,
       resumeStrategy: canResume ? 'auto' : 'manual',
-      worktreePath: meta?.worktreePath,
+      worktreePath,
       kind: meta?.kind || 'durable',
       // For display after the restart only. The resume queue must not send it
       // to the resumed CLI, which would run it again as a new turn (#2074).
       mission: meta?.mission,
       model: meta?.model,
       permissionMode,
-      freeAgentMode,
+      freeAgentMode: config?.freeAgentMode,
     });
   }
 

@@ -688,7 +688,7 @@ export class ChatAgentRuntime implements AgentRuntime {
     }
   }
 
-  async stop(): Promise<void> {
+  async stop(opts: { throwOnFailure?: boolean } = {}): Promise<void> {
     const session = this.session;
     appLog('core:chat', 'info', 'Stopping chat session', {
       meta: { agentId: this.agentId, driver: this.opts.driverId, nativeSessionId: this.nativeSessionId ?? null, sessionOpen: !!session },
@@ -705,6 +705,12 @@ export class ChatAgentRuntime implements AgentRuntime {
         appLog('core:chat', 'warn', 'Driver close failed', {
           meta: { agentId: this.agentId, error: err instanceof Error ? err.message : String(err) },
         });
+        if (opts.throwOnFailure) {
+          // Keep a still-live session reachable for a retry. Reporting it as
+          // asleep would let a later delete skip shutdown after this failure.
+          if (!this.ended) this.session = session;
+          throw err;
+        }
       }
     }
     await this.end('stopped', 0);

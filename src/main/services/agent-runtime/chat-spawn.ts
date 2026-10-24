@@ -240,7 +240,7 @@ const inflightStarts = new Map<string, InflightStart>();
  * cancelled start then returns 'cancelled' and never falls back. Returns
  * false when no start was in progress.
  */
-export async function cancelChatStart(agentId: string): Promise<boolean> {
+export async function cancelChatStart(agentId: string, opts: { throwOnFailure?: boolean } = {}): Promise<boolean> {
   const start = inflightStarts.get(agentId);
   if (!start) return false;
   inflightStarts.delete(agentId);
@@ -248,7 +248,7 @@ export async function cancelChatStart(agentId: string): Promise<boolean> {
   start.cancelReason = 'killed';
   start.controller.abort();
   if (start.runtime) {
-    await start.runtime.stop();
+    await start.runtime.stop(opts);
   } else {
     if (start.prepared) configPipeline.restoreForAgent(agentId);
     untrackAgent(agentId);

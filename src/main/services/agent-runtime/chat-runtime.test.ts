@@ -118,6 +118,26 @@ describe('ChatAgentRuntime rich media', () => {
 });
 
 describe('ChatAgentRuntime', () => {
+  it('reports driver close failure to callers that must not delete the worktree', async () => {
+    const driver = new FakeChatDriver();
+    const { runtime } = makeRuntime(driver);
+    await runtime.start();
+    const close = vi.spyOn(driver.sessions[0], 'close').mockRejectedValue(new Error('driver close failed'));
+    await expect(runtime.stop({ throwOnFailure: true })).rejects.toThrow('driver close failed');
+    expect(runtime.isRunning()).toBe(true);
+    close.mockRestore();
+    await runtime.stop({ throwOnFailure: true });
+    expect(runtime.isRunning()).toBe(false);
+  });
+
+  it('preserves best-effort stop for existing callers', async () => {
+    const driver = new FakeChatDriver();
+    const { runtime } = makeRuntime(driver);
+    await runtime.start();
+    vi.spyOn(driver.sessions[0], 'close').mockRejectedValue(new Error('driver close failed'));
+    await expect(runtime.stop()).resolves.toBeUndefined();
+  });
+
   it.each(['prompt', 'steer', 'queued'] as const)('correlates mobile %s sends with authoritative message IDs before receipt delivery', async (delivery) => {
     const driver = new FakeChatDriver();
     const { runtime } = makeRuntime(driver);

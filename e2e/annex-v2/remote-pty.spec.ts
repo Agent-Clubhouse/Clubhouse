@@ -176,7 +176,7 @@ test('spawn shell, send echo command, receive output back', async () => {
       type: 'agent:kill',
       payload: { agentId: shellId },
     }));
-    await waitForMessage(ws, 'agent:kill:ack', 5_000);
+    await waitForMessage(ws, 'agent:kill:ack', 15_000);
   } finally {
     ws.close();
   }
@@ -217,7 +217,7 @@ test('pty:resize accepted without error', async () => {
       payload: { agentId: shellId },
     }));
     // The kill ack may or may not arrive depending on timing
-    await waitForMessage(ws, 'agent:kill:ack', 5_000).catch(() => {});
+    await waitForMessage(ws, 'agent:kill:ack', 15_000).catch(() => {});
   } finally {
     ws.close();
   }
@@ -240,20 +240,18 @@ test('agent:kill terminates remote shell', async () => {
     await waitForOpen(ws, 10_000);
     await waitForMessage(ws, 'snapshot', 10_000);
 
-    // Kill the shell
+    // Subscribe before sending: confirmed shutdown broadcasts exit before ack.
+    const stopped = Promise.all([
+      waitForMessage(ws, 'pty:exit', 15_000),
+      waitForMessage(ws, 'agent:kill:ack', 15_000),
+    ]);
     ws.send(JSON.stringify({
       type: 'agent:kill',
       payload: { agentId: shellId },
     }));
-
-    const ack = await waitForMessage(ws, 'agent:kill:ack', 10_000);
-    expect(ack.type).toBe('agent:kill:ack');
-    const ackPayload = ack.payload as Record<string, unknown>;
-    expect(ackPayload.agentId).toBe(shellId);
-
-    // pty:exit may or may not arrive depending on timing, but the ack confirms the kill was sent
-    const exitMsg = await waitForMessage(ws, 'pty:exit', 5_000).catch(() => null);
-    console.log(`Shell kill ack received, pty:exit=${exitMsg !== null}`);
+    const [exit, ack] = await stopped;
+    expect((exit.payload as Record<string, unknown>).agentId).toBe(shellId);
+    expect((ack.payload as Record<string, unknown>).agentId).toBe(shellId);
   } finally {
     ws.close();
   }
@@ -340,7 +338,7 @@ test('buffer endpoint returns output after shell produces data', async () => {
       type: 'agent:kill',
       payload: { agentId: shellId },
     }));
-    await waitForMessage(ws, 'agent:kill:ack', 5_000).catch(() => {});
+    await waitForMessage(ws, 'agent:kill:ack', 15_000).catch(() => {});
   } finally {
     ws.close();
   }

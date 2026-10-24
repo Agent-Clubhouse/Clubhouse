@@ -95,6 +95,8 @@ import type { TelemetryRuntime } from '../telemetry/types';
 import { getBuffer, getBufferSnapshot, getSerializedBuffer, getSerializedBufferSnapshot, getLastActivity, isRunning, spawn, spawnShell, resize, write, writeBinary, gracefulKill, isShellBusy, kill, killAll, startStaleSweep, stopStaleSweep, validateSpawnCwd } from './pty-manager';
 import { broadcastToAllWindows, flushPendingFor } from '../util/ipc-broadcast';
 import * as annexEventBus from './annex-event-bus';
+import { getShellCwd } from './pty-manager';
+import { onAgentExit } from './agent-exit-broadcast';
 import * as headlessTerminal from './pty-headless-terminal';
 import { appLog } from './log-service';
 import { PTY_RENDER_LOG_NS, _resetForTests as resetRenderDiag } from './pty-render-diagnostics';
@@ -420,6 +422,20 @@ describe('pty-manager', () => {
   });
 
   describe('spawnShell', () => {
+    it('tracks only owned shell identity and broadcasts its confirmed exit to Annex', async () => {
+      await spawnShell('shell-confirmed-exit', '/project');
+      expect(getShellCwd('shell-confirmed-exit')).toBe('/project');
+      expect(getShellCwd('unknown')).toBeUndefined();
+      const exited = vi.fn();
+      const off = onAgentExit(exited);
+      try {
+        mockProcess.onExit.mock.calls.at(-1)![0]({ exitCode: 0 });
+        expect(isRunning('shell-confirmed-exit')).toBe(false);
+        expect(getShellCwd('shell-confirmed-exit')).toBeUndefined();
+        expect(exited).toHaveBeenCalledWith('shell-confirmed-exit', 0);
+        expect(annexEventBus.emitPtyExit).toHaveBeenCalledWith('shell-confirmed-exit', 0);
+      } finally { off(); }
+    });
     it('spawns a shell without pendingCommand', async () => {
       await spawnShell('shell-1', '/project');
       // onData should work immediately (no pendingCommand suppression)
@@ -726,6 +742,22 @@ describe('pty-manager', () => {
       expect(mockProcess.kill).not.toHaveBeenCalledWith('SIGTERM');
 
       vi.useRealTimers();
+    });
+
+    it('keeps a PTY tracked without an exit broadcast when the final kill fails', async () => {
+      vi.useFakeTimers();
+      try {
+        await spawnShell('shell-kill-failed', '/project');
+        mockProcess.kill.mockImplementation(() => { throw new Error('signal denied'); });
+        gracefulKill('shell-kill-failed', 'exit\r');
+        vi.advanceTimersByTime(9000);
+        expect(isRunning('shell-kill-failed')).toBe(true);
+        expect(annexEventBus.emitPtyExit).not.toHaveBeenCalled();
+        mockProcess.kill.mockReset();
+        gracefulKill('shell-kill-failed', 'exit\r');
+        vi.advanceTimersByTime(9000);
+        expect(isRunning('shell-kill-failed')).toBe(false);
+      } finally { vi.useRealTimers(); }
     });
 
     it('broadcasts PTY.EXIT when the 9s kill timer fires on a stuck process', async () => {
