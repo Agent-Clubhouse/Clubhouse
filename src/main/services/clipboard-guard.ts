@@ -1,14 +1,13 @@
-import { clipboard } from 'electron';
+import { clipboard, nativeImage } from 'electron';
 
 /**
- * Guard against synchronous clipboard reads that hang the main thread after
- * macOS wake-from-sleep.  The native pasteboard daemon can take 25+ seconds
- * to respond, causing a Mach message deadlock.
+ * Avoid contacting the pasteboard immediately after macOS wake-from-sleep,
+ * when its daemon can be slow or unavailable. Electron 44+ reads are async;
+ * retain the wake cooldown and the existing PNG result contract.
  *
  * Primary defense: tracks wake-from-sleep via `notifyResume()` and skips
  * clipboard reads for a cooldown window after wake, returning `null`
- * immediately.  This prevents the synchronous `clipboard.readImage()` call
- * from ever reaching the stale pasteboard daemon.
+ * immediately, without contacting the stale pasteboard daemon.
  *
  * Secondary defense: wraps the read in try/catch so unexpected native errors
  * don't crash the handler.
@@ -50,13 +49,21 @@ export interface ClipboardImageResult {
  *  - The native read throws
  *  - The clipboard contains no image
  */
-export function readImageSafe(): ClipboardImageResult | null {
+export async function readImageSafe(): Promise<ClipboardImageResult | null> {
   if (isInWakeCooldown()) {
     return null;
   }
 
   try {
-    const image = clipboard.readImage();
+    const items = await clipboard.read();
+    // Prefer PNG across all items, then JPEG; always normalize to PNG as the
+    // old readImage API did, so existing paste and Annex consumers are stable.
+    const type = ['image/png', 'image/jpeg'].find((mime) => items.some((item) => item.types.includes(mime)));
+    if (!type) return null;
+    const item = items.find((candidate) => candidate.types.includes(type))!;
+    const blob = await item.getType(type);
+    if (!('arrayBuffer' in blob)) return null;
+    const image = nativeImage.createFromBuffer(Buffer.from(await blob.arrayBuffer()));
     if (image.isEmpty()) return null;
     const png = image.toPNG();
     return { base64: png.toString('base64'), mimeType: 'image/png' };

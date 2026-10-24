@@ -21,6 +21,7 @@ import { preWarmShellEnvironment } from './util/shell';
 import { initializeRipgrep } from './services/search-service';
 import { loadPendingResume } from './services/restart-session-service';
 import { applyWindowSecurityGuards } from './window-security-guards';
+import { installClientCertificatePolicy } from './client-certificate-policy';
 import { generateCspNonce, getCspNonce, buildProductionCsp } from './csp-nonce';
 import { createBeforeQuitHandler } from './shutdown-guard';
 import { runAppShutdown, setShutdownBegin } from './services/app-shutdown';
@@ -231,6 +232,8 @@ const createWindow = (): void => {
   }
 };
 
+installClientCertificatePolicy(app);
+
 app.on('ready', () => {
   void cleanupTranscriptStaging();
   // Pre-warm the shell environment cache in background so the first agent
@@ -285,6 +288,7 @@ app.on('ready', () => {
       arch: process.arch,
       electron: process.versions.electron,
       node: process.versions.node,
+      chrome: process.versions.chrome,
       packaged: app.isPackaged,
     },
   });

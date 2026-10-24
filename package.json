@@ -43,35 +43,36 @@
     "@electron-forge/plugin-webpack": "^7.11.2",
     "@electron/fuses": "^1.8.0",
     "@eslint/js": "^9.39.5",
-    "@playwright/test": "^1.64.0",
+    "@playwright/test": "^1.64.1",
     "@tailwindcss/postcss": "^4.3.3",
     "@testing-library/dom": "^10.4.2",
     "@testing-library/jest-dom": "^7.0.1",
     "@testing-library/react": "^16.3.3",
-    "@testing-library/user-event": "^14.6.7",
+    "@testing-library/user-event": "^14.6.8",
     "@types/adm-zip": "^0.6.0",
+    "@types/node": "^24.19.2",
     "@types/picomatch": "^4.0.3",
     "@types/react": "^19.3.0",
     "@types/react-dom": "^19.3.0",
     "@vercel/webpack-asset-relocator-loader": "1.7.3",
-    "@vitest/coverage-v8": "^4.1.11",
+    "@vitest/coverage-v8": "^4.1.12",
     "copy-webpack-plugin": "^14.0.0",
     "css-loader": "^7.1.5",
-    "electron": "43.7.9",
-    "eslint": "^9.39.2",
+    "electron": "45.0.0",
+    "eslint": "^9.39.5",
     "eslint-plugin-import-x": "^4.17.1",
     "fork-ts-checker-webpack-plugin": "^9.1.0",
     "jsdom": "^28.1.0",
     "monaco-editor-webpack-plugin": "^7.1.1",
     "node-loader": "^2.1.0",
-    "postcss": "^8.5.29",
+    "postcss": "^8.5.31",
     "postcss-loader": "^8.2.1",
     "style-loader": "^4.0.0",
     "tailwindcss": "^4.1.18",
     "ts-loader": "^9.6.2",
     "typescript": "~5.9.3",
-    "typescript-eslint": "^8.71.1",
-    "vitest": "^4.1.11"
+    "typescript-eslint": "^8.72.0",
+    "vitest": "^4.1.12"
   },
   "dependencies": {
     "@anthropic-ai/claude-agent-sdk": "0.3.302",
@@ -95,28 +96,34 @@
     "@xterm/xterm": "^6.0.0",
     "adm-zip": "^0.6.1",
     "bonjour-service": "^1.4.4",
-    "dompurify": "^3.4.8",
+    "dompurify": "^3.4.17",
     "electron-squirrel-startup": "^1.0.1",
     "elkjs": "^0.12.0",
     "highlight.js": "^11.12.0",
-    "marked": "^18.1.0",
+    "marked": "^18.1.1",
     "mermaid": "^12.1.0",
     "monaco-editor": "^0.55.1",
     "node-pty": "^1.1.0",
     "picomatch": "^4.0.7",
-    "react": "^19.3.0",
-    "react-dom": "^19.3.0",
+    "react": "^19.3.1",
+    "react-dom": "^19.3.1",
     "ws": "^8.22.0",
-    "zustand": "^5.0.15"
+    "zustand": "^5.0.16"
   },
   "overrides": {
     "vite": "^8.0.5",
     "webpack-dev-server": "^5.2.1",
     "selfsigned": "^2.4.1",
     "@inquirer/prompts": "^7.10.1",
-    "dompurify": "^3.4.8",
+    "dompurify": "^3.4.17",
     "tinyglobby": {
       "picomatch": "^4.0.4"
+    },
+    "@electron/rebuild": {
+      "tar": "7.5.22"
+    },
+    "@electron/packager": {
+      "extract-zip": "npm:@electron-internal/extract-zip@1.0.6"
     }
   }
 }

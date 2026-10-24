@@ -17,10 +17,19 @@ const runtime = vi.hoisted(() => ({
 }));
 
 const windows = vi.hoisted(() => ({ known: new Set<unknown>() }));
+const clipboardWrite = vi.hoisted(() => vi.fn());
 vi.mock('electron', () => ({
   ipcMain: { handle: vi.fn() },
   app: { getPath: () => paths.userData },
   BrowserWindow: { fromWebContents: (wc: unknown) => (windows.known.has(wc) ? {} : null) },
+  clipboard: { write: clipboardWrite },
+  ClipboardItem: class { constructor(public data: Record<string, Blob>) {} },
+  nativeImage: { createFromBuffer: () => ({ isEmpty: () => false, toPNG: () => Buffer.from('encoded-png') }) },
+}));
+vi.mock('../services/experimental-settings', () => ({ getSettings: () => ({ richChatContent: true }) }));
+vi.mock('../services/agent-runtime/chat-media', async (importOriginal) => ({
+  ...await importOriginal<typeof import('../services/agent-runtime/chat-media')>(),
+  readMedia: async () => ({ data: new Uint8Array([1, 2]), mimeType: 'image/png' }),
 }));
 vi.mock('../services/agent-runtime', () => ({
   getAgentRuntime: () => runtime,
@@ -71,6 +80,28 @@ beforeEach(() => {
 
 afterEach(() => {
   fs.rmSync(dir, { recursive: true, force: true });
+});
+
+describe('chat image clipboard on Electron 45', () => {
+  const ref = `${'a'.repeat(64)}.png`;
+  it('waits for the asynchronous PNG write before completing the IPC', async () => {
+    let finish!: () => void;
+    clipboardWrite.mockImplementation(() => new Promise<void>((resolve) => { finish = resolve; }));
+    let completed = false;
+    const result = call(IPC.CHAT.MEDIA_ACTION, 'agent-1', ref, 'copy').then(() => { completed = true; });
+    await vi.waitFor(() => expect(clipboardWrite).toHaveBeenCalledOnce());
+    expect(completed).toBe(false);
+    const blob = clipboardWrite.mock.calls[0][0][0].data['image/png'] as Blob;
+    expect(blob.type).toBe('image/png');
+    expect(await blob.text()).toBe('encoded-png');
+    finish();
+    await result;
+  });
+
+  it('propagates a rejected clipboard write', async () => {
+    clipboardWrite.mockRejectedValue(new Error('pasteboard unavailable'));
+    await expect(call(IPC.CHAT.MEDIA_ACTION, 'agent-1', ref, 'copy')).rejects.toThrow('pasteboard unavailable');
+  });
 });
 
 describe('chat handlers: attachments', () => {

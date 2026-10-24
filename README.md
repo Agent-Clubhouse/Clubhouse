@@ -8,7 +8,7 @@ Three ideas shape how Clubhouse is built and how contributions are evaluated:
 
 **Agent-first development.** Agents are first-class contributors. Each durable agent gets its own git worktree, standby branch, and isolated configuration. Agents branch, implement, validate, and open PRs — the same workflow a human follows. The codebase, tooling, and documentation should be equally useful to both human and agent contributors. See the [full principles](PRINCIPLES.md) for details.
 
-**Extreme bias for test coverage.** Every PR must include tests. Unit and component tests run on all three platforms (macOS, Windows, Linux) in CI. End-to-end tests run Playwright against the packaged Electron app on every platform. The Annex dual-instance E2E suite launches two Clubhouse instances and tests real-time remote control over the local network. If a feature is hard to test, that is a design problem, not an excuse to skip tests.
+**Extreme bias for test coverage.** Every PR must include tests. Unit and component tests run on all three platforms (macOS, Windows, Linux) in CI. End-to-end tests run Playwright against the built app bundles in development Electron on every platform. Packaged executable validation is a separate check. The Annex dual-instance E2E suite launches two Clubhouse instances and tests real-time remote control over the local network. If a feature is hard to test, that is a design problem, not an excuse to skip tests.
 
 **Opinions belong in plugins, not core.** The core host provides capabilities without assuming how you use them. Opinionated workflows — review flows, auto-organization, approval gates — are plugins that users choose to enable. The plugin API is versioned: new features land in the latest version, older versions are fully supported or cleanly dropped, never quietly broken. See [PRINCIPLES.md](PRINCIPLES.md) for the full extensibility contract.
 
@@ -16,10 +16,10 @@ Three ideas shape how Clubhouse is built and how contributions are evaluated:
 
 ### Prerequisites
 
-- **Node.js 22+** and **npm**
+- **Node.js 22.12+ (22.x) or 24.x** and **npm**; use a current security-patched release.
 - **Git**
 - **Platform-specific:**
-  - **macOS:** Xcode Command Line Tools (`xcode-select --install`)
+  - **macOS:** macOS 13 or later and Xcode Command Line Tools (`xcode-select --install`)
   - **Windows:** Visual Studio Build Tools with the "Desktop development with C++" workload (for native module compilation). The `postinstall` script handles `node-pty` setup automatically.
   - **Linux:** `build-essential`, `python3`, `dpkg`, `fakeroot`, `rpm` (for packaging). E2E tests require `xvfb` for headless display.
 
@@ -67,7 +67,7 @@ npm run validate         # Full pipeline: typecheck → test → make → e2e
 | `integration` | `test/**/*.test.ts` | Node |
 
 **E2E notes:**
-- E2E tests use Playwright against the packaged Electron app — run `npm run package` first, or use `npm run validate` which does it all.
+- E2E tests use Playwright against the built app bundles in development Electron — run `npm run package` first, or use `npm run validate` which does it all.
 - On Linux, E2E tests need a virtual display: `xvfb-run --auto-servernum npx playwright test`
 - Annex dual-instance tests (in `e2e/annex-v2/`) launch two Clubhouse instances and test pairing, remote PTY, and lifecycle over loopback.
 
@@ -125,7 +125,7 @@ Built-in plugins: Files (Monaco editor + file browser), Terminal, Canvas (visual
 
 | Layer | Technology |
 |-------|------------|
-| Desktop framework | Electron 40 |
+| Desktop framework | Electron 45 |
 | UI | React 19, Tailwind CSS 4 |
 | State management | Zustand 5 |
 | Code editor | Monaco Editor |
