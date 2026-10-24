@@ -5,7 +5,7 @@ import { parseTelemetryHello, telemetryHelloAck, handshakeAttributes } from './a
 import { telemetryInstanceId } from './instance';
 import { sanitizeAttribute } from './redaction';
 import { createScrubber } from './scrubber';
-const fixture = JSON.parse(readFileSync(resolve(__dirname, '../../../..', 'docs/fixtures/annex-tracing-v1.json'), 'utf8'));
+const fixture = JSON.parse(readFileSync(resolve(__dirname, '../../..', 'docs/fixtures/annex-tracing-v1.json'), 'utf8'));
 describe('Annex telemetry handshake v1 cross-client fixture', () => {
   it('keeps local resource identity separate and echoes only validated peer identity', () => {
     const peer = parseTelemetryHello({ ...fixture.hello.payload, hostname: 'private-machine' })!;

@@ -420,7 +420,7 @@ export function startSdk(opts: SdkOptions): TelemetryRuntime {
     if (holder?.requestScope && holder.active && holder.used) return context.active();
     if (!holder || holder.used || holder.active === false) return ROOT_CONTEXT;
     holder.used = true;
-    return trace.setSpanContext(ROOT_CONTEXT, holder.spanContext);
+    return trace.setSpanContext(ROOT_CONTEXT.setValue(REMOTE_PARENT, holder), holder.spanContext);
   }
 
   /**

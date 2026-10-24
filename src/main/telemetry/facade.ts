@@ -407,9 +407,13 @@ export function getRuntime(): TelemetryRuntime | null {
 }
 
 /** Install or remove the local recorder (local-control.ts). */
+let recordingGeneration = 0;
+export function getRecordingGeneration(): number { return recordingGeneration; }
+
 export function setLocalSink(sink: LocalTelemetrySink | null): void {
   if (sink === local) return;
   local = sink;
+  recordingGeneration++;
   notifyRuntimeChange();
 }
 
