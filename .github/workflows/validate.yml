@@ -259,7 +259,18 @@ jobs:
       - run: npm ci
       # E2E only needs webpack output, not distributable installers.
       - name: Build app
+        if: runner.os != 'macOS'
         run: npx electron-forge package
+      - name: Build unsigned isolated macOS test artifact
+        if: runner.os == 'macOS'
+        run: node scripts/ci/package-integration.mjs
+      - uses: actions/upload-artifact@v7
+        if: runner.os == 'macOS'
+        with:
+          name: clubhouse-integration-${{ runner.arch }}-${{ github.sha }}
+          path: integration-artifact/
+          retention-days: 7
+          if-no-files-found: error
       - uses: actions/upload-artifact@v7
         with:
           name: webpack-${{ matrix.os }}
@@ -449,8 +460,14 @@ jobs:
           path: ~/Library/Caches/electron
           key: electron-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
       - run: npm ci
-      - name: Build app (macOS packaging)
-        run: npx electron-forge package
+      - name: Build unsigned isolated macOS test artifact
+        run: node scripts/ci/package-integration.mjs
+      - uses: actions/upload-artifact@v7
+        with:
+          name: clubhouse-integration-${{ runner.arch }}-${{ github.sha }}
+          path: integration-artifact/
+          retention-days: 7
+          if-no-files-found: error
       - name: E2E smoke (window chrome, Cmd shortcuts, terminal)
         run: >-
           npx playwright test --reporter=line,junit
