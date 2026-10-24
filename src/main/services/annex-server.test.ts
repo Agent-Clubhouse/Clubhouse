@@ -54,6 +54,7 @@ vi.mock('./pty-manager', () => ({
   getSerializedBufferSnapshot: vi.fn().mockResolvedValue({ data: '', seq: 0 }),
   isRunning: vi.fn().mockReturnValue(false),
   isStopping: vi.fn().mockReturnValue(false),
+  getShellCwd: vi.fn(),
   write: vi.fn(),
 }));
 
@@ -384,6 +385,18 @@ describe('annex-server', () => {
       ws.emit('message', JSON.stringify({ type: 'agent:kill', payload: { agentId: 'remote-agent' } }));
       await vi.waitFor(() => expect(ws.send).toHaveBeenCalledWith(JSON.stringify({ type: 'error', payload: { message: 'stop failed' } })));
       expect(ws.send).not.toHaveBeenCalledWith(expect.stringContaining('agent:kill:ack'));
+    });
+
+    it('stops an owned plain shell without requiring an agent registration', async () => {
+      const ws = await connect();
+      vi.mocked(ptyManagerModule.getShellCwd).mockReturnValue('/shell-cwd');
+      vi.mocked(agentSystem.killAgent).mockResolvedValue(undefined);
+      ws.emit('message', JSON.stringify({ type: 'agent:kill', payload: { agentId: 'shell-terminal' } }));
+      await vi.waitFor(() => expect(agentSystem.killAgent).toHaveBeenCalledWith(
+        'shell-terminal', '/shell-cwd', undefined, 'user',
+        { waitForExit: true, throwOnFailure: true, exitCommand: 'exit\r' },
+      ));
+      await vi.waitFor(() => expect(ws.send).toHaveBeenCalledWith(JSON.stringify({ type: 'agent:kill:ack', payload: { agentId: 'shell-terminal' } })));
     });
 
     it('does not acknowledge a stop while the runtime is still running', async () => {

@@ -904,6 +904,8 @@ export interface KillAgentOptions {
   waitForExit?: boolean;
   /** Surface stop failures to callers that must not acknowledge or delete yet. */
   throwOnFailure?: boolean;
+  /** Main-process override for a known plain shell, which uses exit, not /exit. */
+  exitCommand?: string;
   /** For an agent_tool kill: the name of the agent that asked, shown as the sleep reason. */
   by?: string;
 }
@@ -936,8 +938,7 @@ export async function killAgent(
       if (exited && !await exited && opts.throwOnFailure) throw new Error('Timed out waiting for agent exit');
       return;
     }
-    const provider = await resolveOrchestrator(projectPath, tracked?.orchestrator || orchestrator);
-    const exitCmd = provider.getExitCommand();
+    const exitCmd = opts.exitCommand ?? (await resolveOrchestrator(projectPath, tracked?.orchestrator || orchestrator)).getExitCommand();
     const exited = opts.waitForExit && ptyManager.isRunning(agentId) ? waitForAgentExit(agentId) : undefined;
     ptyManager.gracefulKill(agentId, exitCmd);
     if (exited) {

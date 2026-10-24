@@ -1122,6 +1122,19 @@ describe('agent-system', () => {
       await expect(killAgent('agent-1', '/project', undefined, 'user', { throwOnFailure: true })).rejects.toThrow('stop failed');
     });
 
+    it('uses a known shell exit command and waits for its confirmed exit', async () => {
+      mockPtyIsRunning.mockReturnValue(true);
+      let settled = false;
+      const killed = killAgent('plain-shell', '/shell-cwd', undefined, 'user', {
+        waitForExit: true, throwOnFailure: true, exitCommand: 'exit\r',
+      }).then(() => { settled = true; });
+      await vi.waitFor(() => expect(mockPtyGracefulKill).toHaveBeenCalledWith('plain-shell', 'exit\r'));
+      expect(settled).toBe(false);
+      broadcastAgentExit('plain-shell', 0);
+      await killed;
+      expect(settled).toBe(true);
+    });
+
     it('awaits the chat runtime stop instead of falling through to PTY shutdown', async () => {
       const { registerChatRuntime, clearChatRuntimes } = await import('./agent-runtime');
       let finish!: () => void;

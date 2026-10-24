@@ -2779,8 +2779,10 @@ async function handleSpawnQuickAgentWs(
   }
 }
 
-async function stopAgentForAnnex(agentId: string, projectPath: string, orchestrator?: string): Promise<void> {
-  await killAgent(agentId, projectPath, orchestrator, 'user', { waitForExit: true, throwOnFailure: true });
+async function stopAgentForAnnex(agentId: string, projectPath: string, orchestrator?: string, plainShell = false): Promise<void> {
+  await killAgent(agentId, projectPath, orchestrator, 'user', {
+    waitForExit: true, throwOnFailure: true, ...(plainShell ? { exitCommand: 'exit\r' } : {}),
+  });
   if (isAgentRunning(agentId)) throw new Error('agent_still_running');
 }
 
@@ -2790,12 +2792,13 @@ async function handleKillAgentWs(ws: WebSocket, agentId: string): Promise<void> 
     // Quick agents have no durable config; their running registration carries
     // the same project/provider identity used by the main-process stop path.
     const registration = agentRegistry.get(agentId);
-    const projectPath = info?.project.path || registration?.projectPath;
+    const shellCwd = ptyManager.getShellCwd(agentId);
+    const projectPath = info?.project.path || registration?.projectPath || shellCwd;
     if (!projectPath) {
       safeSend(ws, JSON.stringify({ type: 'error', payload: { message: 'agent_not_found' } }));
       return;
     }
-    await stopAgentForAnnex(agentId, projectPath, registration?.orchestrator || info?.config.orchestrator);
+    await stopAgentForAnnex(agentId, projectPath, registration?.orchestrator || info?.config.orchestrator, shellCwd !== undefined);
     safeSend(ws, JSON.stringify({ type: 'agent:kill:ack', payload: { agentId } }));
   } catch (err) {
     appLog('core:annex', 'warn', 'Failed to stop remote agent', {

@@ -70,6 +70,8 @@ interface ManagedSession {
   /** UTF-16 code units evicted from the head of the buffer so far. */
   evictedChars: number;
   pendingCommand?: string;
+  /** Present only for a plain shell terminal owned by this PTY manager. */
+  shellCwd?: string;
   eofTimer?: ReturnType<typeof setTimeout>;
   termTimer?: ReturnType<typeof setTimeout>;
   killTimer?: ReturnType<typeof setTimeout>;
@@ -580,6 +582,7 @@ export async function spawnShell(id: string, projectPath: string): Promise<void>
   }
 
   const session = createSession(proc, id);
+  session.shellCwd = projectPath;
   sessions.set(id, session);
   broadcastToAllWindows(IPC.PTY.RESIZED, id, SPAWN_COLS, SPAWN_ROWS);
   renderDiag.recordSpawn(id, 'shell', SPAWN_COLS, SPAWN_ROWS);
@@ -607,8 +610,13 @@ export async function spawnShell(id: string, projectPath: string): Promise<void>
       headlessTerminal.dispose(id);
     }
     cleanupSession(id);
-    broadcastToAllWindows(IPC.PTY.EXIT, id, exitCode);
+    broadcastAgentExit(id, exitCode);
   });
+}
+
+/** Plain terminals have no agent registration, but remain valid Annex targets. */
+export function getShellCwd(id: string): string | undefined {
+  return sessions.get(id)?.shellCwd;
 }
 
 /**
