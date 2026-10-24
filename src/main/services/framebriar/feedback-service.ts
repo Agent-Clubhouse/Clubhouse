@@ -144,6 +144,7 @@ export function toFeedbackStatus(
       state: outbox.state,
       pending: outbox.items,
       blocked: outbox.blocked,
+      ...(outbox.correlationWaiting ? { correlationWaiting: outbox.correlationWaiting } : {}),
       bytes: outbox.bytes,
       maxItems: outbox.maxItems,
       maxBytes: outbox.maxBytes,

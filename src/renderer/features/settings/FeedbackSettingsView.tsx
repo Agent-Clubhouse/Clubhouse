@@ -230,6 +230,7 @@ export function FeedbackSettingsView() {
         <p className={`${settingsHelp} mt-2`} data-testid="feedback-outbox">
           {status.outbox.pending > 0 && `${status.outbox.pending} ${status.outbox.pending === 1 ? 'report is' : 'reports are'} saved and waiting to send.`}
           {status.outbox.blocked > 0 && ` ${status.outbox.blocked} couldn't be delivered and are kept on this computer.`}
+          {(status.outbox.correlationWaiting ?? 0) > 0 && ` ${status.outbox.correlationWaiting} are waiting for the feedback service to support their tracing references. Their reviewed contents are kept unchanged.`}
         </p>
       )}
     </SettingsPage>

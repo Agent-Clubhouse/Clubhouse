@@ -26,6 +26,8 @@ export interface FeedbackStatus {
     pending: number;
     /** Reports the server rejected permanently (kept, never retried in a loop). */
     blocked: number;
+    /** Retained unchanged until the current service session supports incident metadata. */
+    correlationWaiting?: number;
     bytes: number;
     maxItems: number;
     maxBytes: number;

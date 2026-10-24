@@ -68,6 +68,12 @@ describe('toFeedbackStatus', () => {
     expect(viaAccess).toMatchObject({ canCapture: false, storage: { available: false, reason: 'storage-unavailable' } });
   });
 
+  it('surfaces incident capability holds without labelling them permanently rejected', () => {
+    expect(toFeedbackStatus(true, { available: true }, ACCESS, { ...OUTBOX, blocked: 0, correlationWaiting: 2 }, [])).toMatchObject({
+      outbox: { pending: 2, blocked: 0, correlationWaiting: 2 },
+    });
+  });
+
   it('keeps notices and expiry for a lapsed enrollment', () => {
     const s = toFeedbackStatus(true, { available: true }, { state: 'expired', connected: false, enrolled: true, canCapture: true, notice: 'expired', expiresAt: null }, OUTBOX, []);
     expect(s).toMatchObject({ connected: false, canCapture: true, notice: 'expired' });
