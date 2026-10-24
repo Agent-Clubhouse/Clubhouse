@@ -27,6 +27,7 @@ import { ATTR, type TelAttr } from '../../shared/telemetry/attributes';
 import { onChatEvent } from '../services/agent-runtime/chat-event-bus';
 import { agentOutput, agentRunStarted, discardRun, hasActiveRun, toolBucket } from './agent-telemetry';
 import { isTelemetryActive, replaySpan, tel } from './facade';
+import { chatEventTraceparent } from './chat-trace-context';
 import type { ErrorType } from './types';
 
 type Orchestrator = Parameters<typeof ATTR.orchestrator>[0];
@@ -44,6 +45,7 @@ interface Session {
 }
 
 interface Turn {
+  traceparent?: string;
   turnId: string | undefined;
   startMs: number;
   lastEventMs: number;
@@ -151,6 +153,7 @@ function endTurn(session: Session, turn: Turn, data: ChatEventDataMap['turn_ende
   const errorType = reason === 'error' ? errorTypeFor(data.stopReason, turn) : undefined;
   replaySpan({
     name: 'clubhouse.agent.turn',
+    ...(turn.traceparent && { traceparent: turn.traceparent }),
     startMs: atMs - durationMs,
     endMs: atMs,
     attrs,
@@ -216,7 +219,7 @@ export function handleChatEvent(event: ChatEvent): void {
     }
 
     case 'turn_started':
-      turns.set(sid, { turnId: event.turnId, startMs: event.ts, lastEventMs: event.ts, toolIds: new Set(), waiting: false, stalled: false });
+      turns.set(sid, { traceparent: chatEventTraceparent(event), turnId: event.turnId, startMs: event.ts, lastEventMs: event.ts, toolIds: new Set(), waiting: false, stalled: false });
       ensureStallTimer();
       return;
     case 'turn_ended': {

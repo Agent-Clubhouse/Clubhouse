@@ -15,6 +15,8 @@
  *
  * No OpenTelemetry imports: part of the main bundle.
  */
+import { telemetryInstanceId, telemetryServiceName } from './instance';
+import { parseWireTraceparent, scoped } from './trace-context';
 import { AsyncLocalStorage } from 'async_hooks';
 import { randomBytes } from 'crypto';
 import * as fs from 'fs';
@@ -163,6 +165,7 @@ export function createLocalRecorder(opts: LocalRecorderOptions): LocalRecorder {
   });
 
   const als = new AsyncLocalStorage<TraceIds>();
+  const remote = new AsyncLocalStorage<{ ids: TraceIds; used: boolean; active: boolean; requestScope: boolean }>();
   let caps = new SessionCaps(opts.sessionCaps ?? DEFAULT_SESSION_CAPS);
   const capsWindow = opts.capsWindowMs ?? LOCAL_CAPS_WINDOW_MS;
 
@@ -409,6 +412,12 @@ export function createLocalRecorder(opts: LocalRecorderOptions): LocalRecorder {
 
   /** Ids for a new span: a registered root starts its own trace, anything else joins the active one. */
   function idsFor(name: SpanName, parent: TraceIds | undefined): { ids: TraceIds; parentSpanId?: string } {
+    const holder = remote.getStore();
+    if (SPANS[name].root && holder?.active) {
+      if (!holder.used) { parent = holder.ids; holder.used = true; }
+      else if (!holder.requestScope) parent = undefined;
+      if (parent) return { ids: { traceId: parent.traceId, spanId: newSpanId() }, parentSpanId: parent.spanId };
+    }
     if (SPANS[name].root || !parent) return { ids: { traceId: newTraceId(), spanId: newSpanId() } };
     return { ids: { traceId: parent.traceId, spanId: newSpanId() }, parentSpanId: parent.spanId };
   }
@@ -474,6 +483,7 @@ export function createLocalRecorder(opts: LocalRecorderOptions): LocalRecorder {
 
   function replaySpan(s: ReplaySpan, parent?: TraceIds): TraceIds | undefined {
     if (stopped || !levelAllows(spanLevel, SPANS[s.name].level)) return undefined;
+    parent ??= parseWireTraceparent(s.traceparent);
     const { ids, parentSpanId } = parent
       ? { ids: { traceId: parent.traceId, spanId: newSpanId() }, parentSpanId: parent.spanId }
       : idsFor(s.name, als.getStore());
@@ -631,6 +641,8 @@ export function createLocalRecorder(opts: LocalRecorderOptions): LocalRecorder {
     headerWritten = true;
     const record: Record<string, unknown> = {
       t: 'session',
+      serviceName: telemetryServiceName,
+      serviceInstanceId: telemetryInstanceId,
       v: LOCAL_FORMAT_VERSION,
       ts: iso(startedAt),
       appVersion: opts.session.appVersion,
@@ -704,6 +716,13 @@ export function createLocalRecorder(opts: LocalRecorderOptions): LocalRecorder {
       const rootIds = replaySpan(root);
       if (!rootIds) return;
       for (const c of children) replaySpan(c, rootIds);
+    },
+
+    withRemoteParent(traceparent, fn, requestScope = false) {
+      const ids = parseWireTraceparent(traceparent);
+      if (!ids || stopped) return fn();
+      const holder = { ids, used: false, active: true, requestScope };
+      return remote.run(holder, () => scoped(fn, () => { if (requestScope) holder.active = false; }));
     },
 
     activeTraceIds() {

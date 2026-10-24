@@ -16,7 +16,11 @@
  * and front-eviction, avoiding the O(n) cost of Array.shift().
  */
 
+import { validatedTraceparent } from '../telemetry/trace-context';
+
 export interface BufferedEvent {
+  /** Original causal context, retained unchanged across reconnect/replay. */
+  tc?: string;
   seq: number;
   type: string;
   payload: unknown;
@@ -106,13 +110,15 @@ let globalSeq = 0;
 const buffer = new RingBuffer<BufferedEvent>(MAX_EVENTS);
 
 /** Push an event into the replay buffer and return its sequence number. */
-export function pushEvent(type: string, payload: unknown): number {
+export function pushEvent(type: string, payload: unknown, context?: string): number {
+  const tc = validatedTraceparent(context);
   globalSeq += 1;
   buffer.push({
     seq: globalSeq,
     type,
     payload,
     timestamp: Date.now(),
+    ...(tc && { tc }),
   });
   return globalSeq;
 }

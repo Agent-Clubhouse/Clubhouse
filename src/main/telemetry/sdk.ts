@@ -144,14 +144,17 @@ function isPromiseLike<T>(value: unknown): value is PromiseLike<T> {
   return !!value && typeof (value as { then?: unknown }).then === 'function';
 }
 
+import { parseWireTraceparent, scoped } from './trace-context';
+
 const REMOTE_PARENT = createContextKey('clubhouse.telemetry.remote_parent');
 
 interface RemoteParent {
   spanContext: SpanContext;
   used: boolean;
+  requestScope?: boolean;
+  active?: boolean;
 }
 
-const TRACEPARENT = /^00-([0-9a-f]{32})-([0-9a-f]{16})-([0-9a-f]{2})$/;
 
 /**
  * Parse a W3C traceparent from an Annex peer. Only version 00, non-zero ids
@@ -161,12 +164,8 @@ const TRACEPARENT = /^00-([0-9a-f]{32})-([0-9a-f]{16})-([0-9a-f]{2})$/;
  * withRemoteParent still applies this install's own rate.
  */
 export function parseTraceparent(value: string): SpanContext | undefined {
-  const m = TRACEPARENT.exec(value);
-  if (!m) return undefined;
-  const [, traceId, spanId, flags] = m;
-  if (/^0+$/.test(traceId) || /^0+$/.test(spanId)) return undefined;
-  if ((parseInt(flags, 16) & TraceFlags.SAMPLED) === 0) return undefined;
-  return { traceId, spanId, traceFlags: TraceFlags.SAMPLED, isRemote: true };
+  const ids = parseWireTraceparent(value);
+  return ids && { ...ids, traceFlags: TraceFlags.SAMPLED, isRemote: true };
 }
 
 export function formatTraceparent(sc: SpanContext): string {
@@ -418,7 +417,8 @@ export function startSdk(opts: SdkOptions): TelemetryRuntime {
    */
   function rootFlowParent() {
     const holder = context.active().getValue(REMOTE_PARENT) as RemoteParent | undefined;
-    if (!holder || holder.used) return ROOT_CONTEXT;
+    if (holder?.requestScope && holder.active && holder.used) return context.active();
+    if (!holder || holder.used || holder.active === false) return ROOT_CONTEXT;
     holder.used = true;
     return trace.setSpanContext(ROOT_CONTEXT, holder.spanContext);
   }
@@ -532,7 +532,8 @@ export function startSdk(opts: SdkOptions): TelemetryRuntime {
         kind: SPANS[s.name].root ? SpanKind.SERVER : SpanKind.INTERNAL,
         startTime: s.startMs,
         attributes: { ...toAttributes(s.attrs), ...userAttrs },
-      }, parentFor(s.name));
+      }, s.traceparent && parseTraceparent(s.traceparent)
+        ? trace.setSpanContext(ROOT_CONTEXT, parseTraceparent(s.traceparent)!) : parentFor(s.name));
       const attrs = [ATTR.outcome(s.outcome)];
       if (s.errorType) attrs.push(ATTR.errorType(s.errorType));
       span.setAttributes(toAttributes(attrs));
@@ -574,7 +575,7 @@ export function startSdk(opts: SdkOptions): TelemetryRuntime {
       return formatTraceparent(span.spanContext());
     },
 
-    withRemoteParent(traceparent, fn) {
+    withRemoteParent(traceparent, fn, requestScope = false) {
       const remote = parseTraceparent(traceparent);
       if (!remote) return fn();
       // ParentBased sampling would record every sampled remote trace, while
@@ -584,8 +585,9 @@ export function startSdk(opts: SdkOptions): TelemetryRuntime {
       // way this install records traces at exactly its configured rate.
       const keep = remoteSampleRate >= 1 || Math.random() < remoteSampleRate;
       const spanContext = keep ? remote : { ...remote, traceFlags: TraceFlags.NONE };
-      const holder: RemoteParent = { spanContext, used: false };
-      return context.with(context.active().setValue(REMOTE_PARENT, holder), fn);
+      const holder: RemoteParent = { spanContext, used: false, requestScope, active: true };
+      return context.with(context.active().setValue(REMOTE_PARENT, holder), () =>
+        scoped(fn, () => { if (requestScope) holder.active = false; }));
     },
 
     preview: () => [...tees.values()].flatMap((t) => t.snapshot()).sort((a, b) => a.time - b.time),

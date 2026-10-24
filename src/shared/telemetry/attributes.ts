@@ -32,7 +32,7 @@ export function levelAllows(configured: TelemetryLevel, itemLevel: TelemetryLeve
   return TELEMETRY_LEVELS.indexOf(itemLevel) <= TELEMETRY_LEVELS.indexOf(configured);
 }
 
-export type AttrKind = 'enum' | 'int' | 'bool' | 'hash' | 'version';
+export type AttrKind = 'enum' | 'int' | 'bool' | 'hash' | 'version' | 'uuid';
 
 export interface AttrSpec {
   readonly key: string;
@@ -66,6 +66,12 @@ export function enumAttr<const V extends readonly string[]>(key: string, values:
     kind: 'enum',
     value: allowed.has(value) ? value : OTHER,
   });
+}
+
+/** Ephemeral random correlation identity. Main process revalidates UUID v4. Never hardware/account IDs. */
+export function uuidAttr(key: string) {
+  register({ key, kind: 'uuid' });
+  return (value: string): TelAttr => ({ key, kind: 'uuid', value });
 }
 
 export function intAttr(key: string) {
@@ -591,6 +597,9 @@ export const ATTR = {
 
   // Annex (§4.12, §7, Phase 6). Peer identity is never an attribute: no
   // fingerprints, aliases, hosts, addresses or ports.
+  annexPeerInstanceId: uuidAttr('clubhouse.annex.peer.instance_id'),
+  annexConnectionId: uuidAttr('clubhouse.annex.connection_id'),
+  annexAttemptId: uuidAttr('clubhouse.annex.attempt_id'),
   annexRole: enumAttr('clubhouse.annex.role', ['satellite', 'controller']),
   annexTls: boolAttr('clubhouse.annex.tls'),
   annexAuthMode: enumAttr('clubhouse.annex.auth_mode', ['mtls', 'bearer']),
@@ -821,8 +830,9 @@ export const SPANS = {
   'clubhouse.annex.connect': { level: 'standard', root: true },
   /** Controller: agent:spawn / agent:wake sent to a satellite; carries traceparent. */
   'clubhouse.annex.remote_spawn': { level: 'standard', root: true },
-  /** Satellite REST request, per route template. Detailed only. */
-  'clubhouse.annex.rest': { level: 'detailed', root: true },
+  /** Authenticated satellite request, per bounded route template. */
+  'clubhouse.annex.command': { level: 'standard', root: true },
+  'clubhouse.annex.rest': { level: 'standard', root: true },
   /** killAgent → exit. Replayed at exit; carries the trigger and the stage reached. */
   'clubhouse.agent.kill': { level: 'standard', root: true },
   /** One shoulder tap (direct or broadcast) to group-project members. */

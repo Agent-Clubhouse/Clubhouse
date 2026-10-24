@@ -86,7 +86,8 @@ vi.mock('../services/log-service', async (importActual) => {
 });
 
 import { disableTelemetry, getActiveDestinations, initTelemetry, recordAppSession, sendTestEvent, whenStarted } from './bootstrap';
-import { tel } from './facade';
+import { tel, withRemoteParent } from './facade';
+import { telemetryInstanceId } from './instance';
 import { appLog } from '../services/log-service';
 import { diag, isDiagActive } from './diag';
 import { createAzureExporters, isOneSettingsNeutralized, STATSBEAT_ENV_FLAGS } from './destinations/azure';
@@ -227,6 +228,8 @@ async function exerciseAllSignals(): Promise<void> {
   initTelemetry();
   expect(await whenStarted()).toBe(true);
   recordAppSession();
+  withRemoteParent('00-0123456789abcdef0123456789abcdef-0123456789abcdef-01', () =>
+    tel.flow('clubhouse.annex.rest', {}, () => undefined), true);
   // Recorded locally while the exporter runs, then flushed with it below.
   expect(isDiagActive()).toBe(true);
   diag('core:test', 'error', `${DIAG_CANARY} failed`, { error: new Error(DIAG_CANARY), lastOutput: DIAG_CANARY });
@@ -272,6 +275,10 @@ describe('telemetry egress allowlist', () => {
     expect(bodies).toContain('clubhouse.telemetry.test');
     expect(bodies).toContain('clubhouse.app.sessions');
     expect(bodies).toContain('ExceptionData');
+    expect(bodies).toContain(telemetryInstanceId);
+    expect(bodies).toContain('ai.cloud.roleInstance');
+    expect(bodies).toContain('0123456789abcdef0123456789abcdef');
+    expect(bodies).toContain('ai.operation.id');
     expect(bodies).toContain(state.settings.installId as string);
 
     expect(isOneSettingsNeutralized()).toBe(true);

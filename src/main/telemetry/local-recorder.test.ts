@@ -512,3 +512,29 @@ describe('local recorder diag lines (#2299)', () => {
     expect(h.raw()).toBe(before);
   });
 });
+
+describe('local-only distributed tracing', () => {
+  it('continues nested request work, closes leaked request scope, and replays causal work', async () => {
+    const h = harness();
+    const tc = '00-0123456789abcdef0123456789abcdef-0123456789abcdef-01';
+    let late!: () => void;
+    const { AsyncResource } = await import('async_hooks');
+    await h.rec.withRemoteParent!(tc, async () => {
+      await h.rec.wrap('clubhouse.annex.rest', {}, async () => {
+        const resource = new AsyncResource('late-request');
+        late = () => resource.runInAsyncScope(() => h.rec.wrap('clubhouse.agent.spawn', {}, () => {})(ok()));
+        h.rec.wrap('clubhouse.agent.spawn', {}, () => {})(ok());
+      })(ok());
+    }, true);
+    late();
+    h.rec.replaySpan({ name: 'clubhouse.agent.turn', startMs: 1, endMs: 2, attrs: [], outcome: 'ok', traceparent: tc });
+    await h.rec.flush();
+    const spans = h.records().filter((r) => r.t === 'span');
+    expect(spans).toHaveLength(4);
+    expect(spans[0].traceId).toBe(tc.slice(3, 35));
+    expect(spans[1].traceId).toBe(tc.slice(3, 35));
+    expect(spans[2].traceId).not.toBe(tc.slice(3, 35));
+    expect(spans[3].traceId).toBe(tc.slice(3, 35));
+    expect(spans[3].parentSpanId).toBe(tc.slice(36, 52));
+  });
+});

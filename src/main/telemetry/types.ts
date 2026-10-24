@@ -60,6 +60,8 @@ export interface ReplaySpan {
   attrs: TelAttr[];
   outcome: Outcome;
   errorType?: ErrorType;
+  /** Explicit causal parent for asynchronous work; never a connection identity. */
+  traceparent?: string;
 }
 
 /** One exporter result, kept briefly for the Settings test event. */
@@ -106,7 +108,7 @@ export interface TelemetryRuntime {
    * Run `fn` so that the next root flow it starts continues the remote trace
    * in `traceparent` (once; later root flows start their own traces).
    */
-  withRemoteParent<T>(traceparent: string, fn: () => T): T;
+  withRemoteParent<T>(traceparent: string, fn: () => T, requestScope?: boolean): T;
   preview(): PreviewItem[];
   /** Export results that arrived at or after `sinceMs`, oldest first. */
   recentExports(sinceMs: number): ExportRecord[];
@@ -130,6 +132,7 @@ export interface LocalTelemetrySink {
   replaySpan(span: ReplaySpan): void;
   replayTree(tree: ReplayTree): void;
   activeTraceIds(): TraceIds | undefined;
+  withRemoteParent?<T>(traceparent: string, fn: () => T, requestScope?: boolean): T;
   flush(): Promise<void>;
   /** Write what is queued synchronously, for an OS shutdown that won't wait (#2335). */
   flushSync?(): void;
