@@ -48,7 +48,7 @@ import { spawnAgent, killAgent, getAvailableOrchestrators, isHeadlessAgent, reso
 import { appLog } from './log-service';
 
 /**
- * Check if an agent is currently running in any execution mode (PTY or headless).
+ * Check if an agent is currently running in any execution mode.
  * Centralises the compound check so new execution modes only need updating here.
  */
 function isAgentRunning(agentId: string): boolean {
@@ -62,7 +62,6 @@ import { THEMES } from '../../renderer/themes';
 import { generateQuickName } from '../../shared/name-generator';
 import { generateQuickAgentId } from '../../shared/agent-id';
 import { ANNEX_PROTOCOL_VERSION } from '../../shared/types';
-import { agentKillRequested } from '../telemetry/agent-telemetry';
 import { withRemoteParent } from '../telemetry/facade';
 import {
   annexRestFlow,
@@ -78,7 +77,6 @@ import {
   restTraceparent,
   wsTraceparent,
 } from '../telemetry/annex-telemetry';
-import { noteKillRequest } from './agent-runtime/sleep-reason';
 import { validateAgentGitName } from '../../shared/agent-name';
 import { ANNEX_BUFFER_HEADERS, annexPtyHost } from '../../shared/annex-pty';
 import { detectWindowsPty } from '../util/windows-pty';
@@ -1847,12 +1845,11 @@ async function handleDurableDeleteRoute(ctx: AnnexRouteContext, match: RegExpMat
   if (!project) { sendJson(ctx.res, 404, { error: 'project_not_found' }); return; }
   readJsonBody(ctx.req, ctx.res, async (body) => {
     const mode = (body.mode as string) || 'force';
-    if (ptyManager.isRunning(agentId) || isHeadlessAgent(agentId)) {
-      agentKillRequested(agentId, 'annex');
-      noteKillRequest(agentId, { trigger: 'user' });
-      ptyManager.gracefulKill(agentId);
-    }
     try {
+      if (isAgentRunning(agentId)) {
+        const config = (await agentConfig.listDurable(project.path)).find(agent => agent.id === agentId);
+        await stopAgentForAnnex(agentId, project.path, config?.orchestrator);
+      }
       let result: { ok: boolean; message: string };
       switch (mode) {
         case 'commit-push': result = await agentConfig.deleteCommitAndPush(project.path, agentId); break;
@@ -2676,11 +2673,7 @@ function handleWsMessage(ws: WebSocket, data: string): void {
     case 'agent:kill': {
       const agentId = payload.agentId as string;
       if (!agentId) break;
-      agentKillRequested(agentId, 'annex');
-      // A kill from a controller or the Annex app is the user's, for the sleep reason.
-      noteKillRequest(agentId, { trigger: 'user' });
-      ptyManager.gracefulKill(agentId);
-      safeSend(ws, JSON.stringify({ type: 'agent:kill:ack', payload: { agentId } }));
+      void withRemoteParent(traceparent, () => handleKillAgentWs(ws, agentId));
       break;
     }
 
@@ -2783,6 +2776,32 @@ async function handleSpawnQuickAgentWs(
     tracked.status = 'failed';
     trackedQuickAgents.delete(agentId);
     safeSend(ws, JSON.stringify({ type: 'error', payload: { message: 'spawn_failed' } }));
+  }
+}
+
+async function stopAgentForAnnex(agentId: string, projectPath: string, orchestrator?: string): Promise<void> {
+  await killAgent(agentId, projectPath, orchestrator, 'user', { waitForExit: true, throwOnFailure: true });
+  if (isAgentRunning(agentId)) throw new Error('agent_still_running');
+}
+
+async function handleKillAgentWs(ws: WebSocket, agentId: string): Promise<void> {
+  try {
+    const info = await findAgentAcrossProjects(agentId);
+    // Quick agents have no durable config; their running registration carries
+    // the same project/provider identity used by the main-process stop path.
+    const registration = agentRegistry.get(agentId);
+    const projectPath = info?.project.path || registration?.projectPath;
+    if (!projectPath) {
+      safeSend(ws, JSON.stringify({ type: 'error', payload: { message: 'agent_not_found' } }));
+      return;
+    }
+    await stopAgentForAnnex(agentId, projectPath, registration?.orchestrator || info?.config.orchestrator);
+    safeSend(ws, JSON.stringify({ type: 'agent:kill:ack', payload: { agentId } }));
+  } catch (err) {
+    appLog('core:annex', 'warn', 'Failed to stop remote agent', {
+      meta: { agentId, error: err instanceof Error ? err.message : String(err) },
+    });
+    safeSend(ws, JSON.stringify({ type: 'error', payload: { message: err instanceof Error ? err.message : 'stop_failed' } }));
   }
 }
 

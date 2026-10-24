@@ -902,6 +902,8 @@ export interface KillAgentOptions {
    * a stale lastSessionId, and replacing the live PTY drops its exit capture.
    */
   waitForExit?: boolean;
+  /** Surface stop failures to callers that must not acknowledge or delete yet. */
+  throwOnFailure?: boolean;
   /** For an agent_tool kill: the name of the agent that asked, shown as the sleep reason. */
   by?: string;
 }
@@ -934,11 +936,15 @@ export async function killAgent(
     const exitCmd = provider.getExitCommand();
     const exited = opts.waitForExit && ptyManager.isRunning(agentId) ? waitForAgentExit(agentId) : undefined;
     ptyManager.gracefulKill(agentId, exitCmd);
-    if (exited) await settleKill(agentId, exited);
+    if (exited) {
+      const didExit = await settleKill(agentId, exited);
+      if (!didExit && opts.throwOnFailure) throw new Error('Timed out waiting for agent exit');
+    }
   } catch (err) {
     appLog('core:agent', 'warn', 'killAgent failed (process may already be dead)', {
       meta: { agentId, error: err instanceof Error ? err.message : String(err) },
     });
+    if (opts.throwOnFailure) throw err;
   }
 }
 
@@ -955,7 +961,7 @@ function waitForAgentExit(agentId: string): Promise<boolean> {
 }
 
 /** Await the PTY exit, then the session id it captured. */
-async function settleKill(agentId: string, exited: Promise<boolean>): Promise<void> {
+async function settleKill(agentId: string, exited: Promise<boolean>): Promise<boolean> {
   const startedAt = Date.now();
   const didExit = await exited;
   // The exit callback runs in the same tick as the exit broadcast (before it
@@ -966,6 +972,7 @@ async function settleKill(agentId: string, exited: Promise<boolean>): Promise<vo
   appLog('core:agent', didExit ? 'info' : 'warn', didExit ? 'Agent exited after kill' : 'Timed out waiting for agent exit after kill', {
     meta: { agentId, waitedMs: Date.now() - startedAt, sessionCaptured: capture !== undefined },
   });
+  return didExit;
 }
 
 export async function checkAvailability(

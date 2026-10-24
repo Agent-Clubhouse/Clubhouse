@@ -101,7 +101,6 @@ async function resumeAgent(entry: RestartSessionEntry): Promise<void> {
   useAgentStore.getState().setResumeStatus(entry.agentId, 'resuming');
 
   try {
-    const cwd = entry.worktreePath || entry.projectPath;
     const projectId = resolveProjectId(entry.projectPath);
 
     // Fetch the durable config so we can restore settings that aren't
@@ -119,6 +118,17 @@ async function resumeAgent(entry: RestartSessionEntry): Promise<void> {
         // Config unavailable — fall back to entry-only values
       }
     }
+
+    // Also repair incomplete state captured by an older app before this update.
+    // A configured worktree must not silently resume in the project root.
+    if (durableConfig) {
+      entry = {
+        ...entry,
+        agentName: !entry.agentName || entry.agentName === entry.agentId ? durableConfig.name : entry.agentName,
+        worktreePath: entry.worktreePath || durableConfig.worktreePath,
+      };
+    }
+    const cwd = entry.worktreePath || entry.projectPath;
 
     // Add the agent to the renderer store BEFORE calling spawnAgent.
     // This mirrors how spawnDurableAgent works in agentLifecycleSlice —

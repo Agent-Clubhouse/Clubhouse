@@ -245,6 +245,7 @@ describe('resume-queue', () => {
     it('passes worktreePath as cwd when available', async () => {
       const entry = makeEntry({
         agentId: 'worktree-agent',
+        agentName: 'packing-pm',
         projectPath: '/projects/main',
         worktreePath: '/projects/worktree-branch',
         resumeStrategy: 'auto',
@@ -264,6 +265,9 @@ describe('resume-queue', () => {
           projectPath: '/projects/main',
         }),
       );
+      const states = mockSetState.mock.calls.map(([update]) => typeof update === 'function'
+        ? update({ agents: {}, agentSpawnedAt: {} } as never) : update);
+      expect(states.some((state) => state.agents?.['worktree-agent']?.name === 'packing-pm')).toBe(true);
     });
 
     it('falls back to projectPath as cwd when worktreePath is absent', async () => {
@@ -287,6 +291,25 @@ describe('resume-queue', () => {
           cwd: '/projects/main',
         }),
       );
+    });
+
+    it('repairs an old capture missing durable name and worktree before spawning', async () => {
+      mockGetDurableConfig.mockResolvedValueOnce({
+        id: 'durable_missing', name: 'packing-pm', worktreePath: '/projects/test/.clubhouse/agents/packing-pm',
+        color: 'blue', createdAt: '2026-10-24',
+      });
+      vi.mocked(useAgentStore.subscribe).mockImplementation(callback => {
+        mockAgents.durable_missing = { status: 'running' };
+        setTimeout(() => (callback as () => void)(), 0);
+        return vi.fn();
+      });
+      await processResumeQueue(makeState([makeEntry({ agentId: 'durable_missing', agentName: 'durable_missing' })]));
+      expect(mockSpawnAgent).toHaveBeenCalledWith(expect.objectContaining({
+        cwd: '/projects/test/.clubhouse/agents/packing-pm', projectPath: '/projects/test',
+      }));
+      const states = mockSetState.mock.calls.map(([update]) => typeof update === 'function'
+        ? update({ agents: {}, agentSpawnedAt: {} } as never) : update);
+      expect(states.some(state => state.agents?.durable_missing?.name === 'packing-pm')).toBe(true);
     });
   });
 

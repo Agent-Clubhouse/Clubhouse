@@ -84,6 +84,58 @@ describe('restart-session-service', () => {
   });
 
   describe('captureSessionState', () => {
+    it.each(['pty', 'chat'] as const)('recovers durable identity for a live %s agent missing from the renderer', async (runtime) => {
+      vi.mocked(pathExists).mockResolvedValue(true);
+      const agentId = 'durable_missing';
+      agentRegistry.register(agentId, { projectPath: '/projects/club', orchestrator: 'claude-code', runtime });
+      const worktreePath = '/projects/club/.clubhouse/agents/packing-pm';
+      vi.mocked(getDurableConfig).mockResolvedValue({
+        id: agentId, name: 'packing-pm', worktreePath, color: 'blue', createdAt: '2026-10-24', freeAgentMode: true,
+      });
+      const listSessions = vi.fn().mockResolvedValue([{ sessionId: 'existing-session' }]);
+      vi.mocked(getProvider).mockReturnValue({
+        capabilities: { sessionResume: true }, extractSessionId: () => null, listSessions,
+      } as never);
+      vi.mocked(isSessionCapable).mockReturnValue(true);
+      vi.mocked(getAgentRuntime).mockReturnValue(runtime === 'chat'
+        ? { kind: 'chat', getNativeSessionId: () => 'existing-session' } as AgentRuntime : undefined);
+
+      await captureSessionState(new Map());
+      const state = await loadPendingResume();
+      expect(state?.sessions).toEqual([expect.objectContaining({
+        agentId, agentName: 'packing-pm', worktreePath, projectPath: '/projects/club',
+        sessionId: 'existing-session', kind: 'durable', freeAgentMode: true,
+      })]);
+      expect(pathExists).toHaveBeenCalledWith(worktreePath);
+      if (runtime === 'pty') expect(listSessions).toHaveBeenCalledWith(worktreePath);
+      else expect(listSessions).not.toHaveBeenCalled();
+      expect(getDurableConfig).toHaveBeenCalledTimes(1);
+    });
+
+    it('uses configured name when the renderer supplies its missing-agent ID fallback', async () => {
+      vi.mocked(getProvider).mockReturnValue({ capabilities: { sessionResume: true } } as never);
+      vi.mocked(getAgentRuntime).mockReturnValue({ kind: 'chat', getNativeSessionId: () => 'existing-session' } as AgentRuntime);
+      agentRegistry.register('durable_missing', { projectPath: '/p', orchestrator: 'claude-code', runtime: 'chat' });
+      vi.mocked(getDurableConfig).mockResolvedValue({
+        id: 'durable_missing', name: 'real-name', color: 'blue', createdAt: '2026-10-24', worktreePath: '/p/worktree',
+      });
+      await captureSessionState(new Map([['durable_missing', 'durable_missing']]));
+      expect(JSON.parse(await fsp.readFile(statePath, 'utf-8')).sessions[0]).toMatchObject({ agentName: 'real-name', worktreePath: '/p/worktree' });
+    });
+
+    it('preserves explicit renderer identity overrides', async () => {
+      vi.mocked(getProvider).mockReturnValue({ capabilities: { sessionResume: true } } as never);
+      vi.mocked(getAgentRuntime).mockReturnValue({ kind: 'chat', getNativeSessionId: () => 'existing-session' } as AgentRuntime);
+      agentRegistry.register('durable_one', { projectPath: '/p', orchestrator: 'claude-code', runtime: 'chat' });
+      vi.mocked(getDurableConfig).mockResolvedValue({
+        id: 'durable_one', name: 'old-name', color: 'blue', createdAt: '2026-10-24', worktreePath: '/p/old',
+      });
+      await captureSessionState(new Map([['durable_one', 'new-name']]), new Map([
+        ['durable_one', { kind: 'durable', worktreePath: '/p/current' }],
+      ]));
+      expect(JSON.parse(await fsp.readFile(statePath, 'utf-8')).sessions[0]).toMatchObject({ agentName: 'new-name', worktreePath: '/p/current' });
+    });
+
     it('writes state file with PTY agents only', async () => {
       agentRegistry.register('darling-gazelle', {
         projectPath: '/projects/club',

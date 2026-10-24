@@ -1025,6 +1025,18 @@ describe('agent-system', () => {
         await killAgent('agent-1', '/project', undefined, 'user', { waitForExit: true });
         expect(mockPtyGracefulKill).toHaveBeenCalledWith('agent-1', '/exit\r');
       });
+
+      it('rejects an unconfirmed exit when the caller must not delete or acknowledge', async () => {
+        await spawnDurable();
+        mockPtyIsRunning.mockReturnValueOnce(true);
+        vi.useFakeTimers();
+        try {
+          const killed = killAgent('agent-1', '/project', undefined, 'user', { waitForExit: true, throwOnFailure: true });
+          const rejected = expect(killed).rejects.toThrow('Timed out waiting for agent exit');
+          await vi.advanceTimersByTimeAsync(12_000);
+          await rejected;
+        } finally { vi.useRealTimers(); }
+      });
     });
 
     it('uses orchestrator from agentOrchestratorMap set at spawn time', async () => {
@@ -1103,6 +1115,28 @@ describe('agent-system', () => {
     it('does not reject when gracefulKill throws (process already dead)', async () => {
       mockPtyGracefulKill.mockImplementationOnce(() => { throw new Error('process already dead'); });
       await expect(killAgent('agent-1', '/project')).resolves.toBeUndefined();
+    });
+
+    it('reports a failed PTY stop to strict callers', async () => {
+      mockPtyGracefulKill.mockImplementationOnce(() => { throw new Error('stop failed'); });
+      await expect(killAgent('agent-1', '/project', undefined, 'user', { throwOnFailure: true })).rejects.toThrow('stop failed');
+    });
+
+    it('awaits the chat runtime stop instead of falling through to PTY shutdown', async () => {
+      const { registerChatRuntime, clearChatRuntimes } = await import('./agent-runtime');
+      let finish!: () => void;
+      const stop = vi.fn(() => new Promise<void>(resolve => { finish = resolve; }));
+      registerChatRuntime({ agentId: 'chat-stop', kind: 'chat', isRunning: () => true, stop } as never);
+      try {
+        let settled = false;
+        const killed = killAgent('chat-stop', '/project', undefined, 'user', { waitForExit: true, throwOnFailure: true })
+          .then(() => { settled = true; });
+        await vi.waitFor(() => expect(stop).toHaveBeenCalledOnce());
+        expect(settled).toBe(false);
+        expect(mockPtyGracefulKill).not.toHaveBeenCalled();
+        finish();
+        await killed;
+      } finally { clearChatRuntimes(); }
     });
 
     it('does not reject for unknown orchestrator', async () => {
