@@ -61,7 +61,7 @@ jobs:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v7
         with:
-          node-version: 22
+          node-version: '22.23.4'
           cache: npm
       - name: Check the install graph resolves for Dependabot updates
         run: node scripts/dependabot-preflight.mjs
@@ -88,7 +88,7 @@ jobs:
           fetch-depth: 0
       - uses: actions/setup-node@v7
         with:
-          node-version: 22
+          node-version: '22.23.4'
       # Before any Windows job: a path Windows can't create fails their checkout
       # with no clear message (#2347).
       - name: Check paths are valid on Windows
@@ -141,7 +141,7 @@ jobs:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v7
         with:
-          node-version: 22
+          node-version: '22.23.4'
           cache: npm
       - run: npm ci
       # This repo currently has a large warning backlog; the gate is intentionally
@@ -160,7 +160,7 @@ jobs:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v7
         with:
-          node-version: 22
+          node-version: '22.23.4'
       # Regenerates the vendored bindings from the version recorded in
       # codex-protocol/generated-meta.ts (`codex app-server generate-ts`: no
       # login, no model request) and fails if they differ from what is committed.
@@ -182,7 +182,7 @@ jobs:
           fetch-depth: 0
       - uses: actions/setup-node@v7
         with:
-          node-version: 22
+          node-version: '22.23.4'
           cache: npm
       - run: npm ci
       # Includes the frozen v0.4 plugin-API snapshot.
@@ -215,7 +215,7 @@ jobs:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v7
         with:
-          node-version: 22
+          node-version: '22.23.4'
           cache: npm
       - run: npm ci
       - run: npm test -- --shard=${{ matrix.shard }}/2 --passWithNoTests --reporter=default --reporter=junit --outputFile.junit=test-results.xml
@@ -247,7 +247,7 @@ jobs:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v7
         with:
-          node-version: 22
+          node-version: '22.23.4'
           cache: npm
       - name: Exclude workspace from Windows Defender
         if: runner.os == 'Windows'
@@ -284,7 +284,7 @@ jobs:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v7
         with:
-          node-version: 22
+          node-version: '22.23.4'
           cache: npm
       - name: Exclude workspace from Windows Defender
         if: runner.os == 'Windows'
@@ -334,7 +334,7 @@ jobs:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v7
         with:
-          node-version: 22
+          node-version: '22.23.4'
           cache: npm
       - name: Exclude workspace from Windows Defender
         if: runner.os == 'Windows'
@@ -388,7 +388,7 @@ jobs:
           fetch-depth: 0
       - uses: actions/setup-node@v7
         with:
-          node-version: 22
+          node-version: '22.23.4'
           cache: npm
       - run: npm ci
       - name: macOS-specific unit tests
@@ -442,7 +442,7 @@ jobs:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v7
         with:
-          node-version: 22
+          node-version: '22.23.4'
           cache: npm
       - uses: actions/cache@v6
         with:
@@ -475,7 +475,7 @@ jobs:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v7
         with:
-          node-version: 22
+          node-version: '22.23.4'
           cache: npm
       - run: npm ci
       - name: Install Linux build dependencies
