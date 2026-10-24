@@ -920,7 +920,7 @@ export async function killAgent(
   noteKillRequest(agentId, { trigger, ...(opts.by ? { by: opts.by } : {}) });
   try {
     // A chat start in progress is cancelled (and its runtime stopped) here.
-    if (await cancelChatStart(agentId)) return;
+    if (await cancelChatStart(agentId, { throwOnFailure: opts.throwOnFailure })) return;
     const tracked = agentRegistry.get(agentId);
 
     if (tracked?.runtime === 'chat' || isChatAgent(agentId)) {

@@ -698,11 +698,13 @@ export class ChatAgentRuntime implements AgentRuntime {
     // Stopped mid-start: cancel the driver start so it can't open a session
     // (or time out and fall back) after this runtime has ended.
     this.cancelOpening();
+    let closeFailed = false;
     let closeFailure: unknown;
     if (session) {
       try {
         await session.close();
       } catch (err) {
+        closeFailed = true;
         closeFailure = err;
         appLog('core:chat', 'warn', 'Driver close failed', {
           meta: { agentId: this.agentId, error: err instanceof Error ? err.message : String(err) },
@@ -710,7 +712,7 @@ export class ChatAgentRuntime implements AgentRuntime {
       }
     }
     await this.end('stopped', 0);
-    if (closeFailure && opts.throwOnFailure) throw closeFailure;
+    if (closeFailed && opts.throwOnFailure) throw closeFailure;
   }
 
   /** Starts a new conversation: new Clubhouse session id, fresh native session. */
