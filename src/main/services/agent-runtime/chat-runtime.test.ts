@@ -122,8 +122,12 @@ describe('ChatAgentRuntime', () => {
     const driver = new FakeChatDriver();
     const { runtime } = makeRuntime(driver);
     await runtime.start();
-    vi.spyOn(driver.sessions[0], 'close').mockRejectedValue(new Error('driver close failed'));
+    const close = vi.spyOn(driver.sessions[0], 'close').mockRejectedValue(new Error('driver close failed'));
     await expect(runtime.stop({ throwOnFailure: true })).rejects.toThrow('driver close failed');
+    expect(runtime.isRunning()).toBe(true);
+    close.mockRestore();
+    await runtime.stop({ throwOnFailure: true });
+    expect(runtime.isRunning()).toBe(false);
   });
 
   it('preserves best-effort stop for existing callers', async () => {
