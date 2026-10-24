@@ -264,13 +264,13 @@ jobs:
       - name: Build unsigned isolated macOS test artifact
         if: runner.os == 'macOS'
         run: node scripts/ci/package-integration.mjs
-      - name: Verify actual packaged Linux runtime
-        if: runner.os == 'Linux'
-        run: xvfb-run --auto-servernum node scripts/ci/smoke-packaged.mjs
+      - name: Verify actual packaged Windows runtime
+        if: runner.os == 'Windows'
+        run: node scripts/ci/smoke-packaged.mjs
       - uses: actions/upload-artifact@v7
-        if: always() && runner.os == 'Linux'
+        if: always() && runner.os == 'Windows'
         with:
-          name: packaged-runtime-${{ runner.arch }}-${{ github.sha }}
+          name: packaged-runtime-${{ runner.os }}-${{ runner.arch }}-${{ github.sha }}
           path: packaged-runtime-evidence/
           retention-days: 7
       - uses: actions/upload-artifact@v7

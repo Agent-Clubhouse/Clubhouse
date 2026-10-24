@@ -1,4 +1,4 @@
-// Hosted Linux only: execute the real hardened package, never the dev entry.
+// Hosted Windows only: execute the real hardened package, never the dev entry.
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
@@ -10,10 +10,9 @@ import { getCurrentFuseWire } from '@electron/fuses';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 assert.equal(process.env.GITHUB_ACTIONS, 'true', 'Hosted CI only');
-assert.equal(process.platform, 'linux');
+assert.equal(process.platform, 'win32');
 assert.equal(path.resolve(process.env.GITHUB_WORKSPACE || ''), root);
-assert.notEqual(process.getuid(), 0, 'Do not disable the sandbox to run as root');
-const binary = path.join(root, 'out', `Clubhouse-linux-${process.arch}`, 'clubhouse');
+const binary = path.join(root, 'out', `Clubhouse-win32-${process.arch}`, 'Clubhouse.exe');
 const pkg = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8'));
 const fuses = await getCurrentFuseWire(binary);
 // Fuse wire values are ASCII '0'/'1'. Do not modify the binary to test it.
@@ -26,7 +25,7 @@ seed('experimental-settings.json', { telemetry: false });
 seed('logging-settings.json', { enabled: true, minLogLevel: 'info', telemetryRecording: false });
 seed('annex-settings.json', { enabled: false, enableServer: false, enableClient: false });
 // Keep only basic display/runtime variables; never pass CI credentials to the app.
-const env = Object.fromEntries(['PATH', 'DISPLAY', 'XAUTHORITY', 'XDG_RUNTIME_DIR', 'LANG', 'LD_LIBRARY_PATH']
+const env = Object.fromEntries(['PATH', 'SystemRoot', 'WINDIR', 'COMSPEC', 'TEMP', 'TMP', 'USERPROFILE', 'LOCALAPPDATA', 'APPDATA']
   .filter(key => process.env[key]).map(key => [key, process.env[key]]));
 Object.assign(env, {
   CLUBHOUSE_USER_DATA: profile, CLUBHOUSE_DISABLE_AUTO_UPDATE: '1',
@@ -70,16 +69,16 @@ try {
   const evidence = {
     sourceCommit: execFileSync('git', ['rev-parse', 'HEAD'], { cwd: root, encoding: 'utf8' }).trim(),
     runtime, fuses, binarySha256: createHash('sha256').update(fs.readFileSync(binary)).digest('hex'),
-    scope: 'Actual packaged Linux startup; no renderer automation, Annex pairing or network probe',
+    scope: 'Actual packaged Windows startup; no renderer automation, Annex pairing or network probe',
   };
   fs.writeFileSync(path.join(output, 'runtime.json'), JSON.stringify(evidence, null, 2) + '\n');
   console.log(JSON.stringify(evidence, null, 2));
 } finally {
   if (child.pid) {
-    try { process.kill(-child.pid, 'SIGTERM'); } catch { /* owned group already exited */ }
+    // Target only this owned packaged process and its descendants, never an image name.
+    try { execFileSync('taskkill', ['/PID', String(child.pid), '/T', '/F'], { stdio: 'ignore' }); } catch { /* already exited */ }
     await Promise.race([exited, pause(5000)]);
-    try { process.kill(-child.pid, 'SIGKILL'); } catch { /* owned group already exited */ }
   }
   fs.writeFileSync(path.join(output, 'console.log'), consoleOutput);
-  fs.rmSync(profile, { recursive: true, force: true });
+  fs.rmSync(profile, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
 }
