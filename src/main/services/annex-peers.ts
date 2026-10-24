@@ -7,6 +7,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { app } from 'electron';
+import { annexEphemeralSession } from './annex-network-profile';
 import { appLog } from './log-service';
 import type { AnnexPeer } from '../../shared/types';
 
@@ -44,6 +45,7 @@ function getPeersPath(): string {
 }
 
 function loadPeers(): AnnexPeer[] {
+  if (annexEphemeralSession()) return cachedPeers ?? (cachedPeers = []);
   if (cachedPeers) return cachedPeers;
 
   try {
@@ -57,7 +59,9 @@ function loadPeers(): AnnexPeer[] {
 }
 
 function savePeers(peers: AnnexPeer[]): void {
+  const ephemeral = annexEphemeralSession();
   cachedPeers = peers;
+  if (ephemeral) return;
   fs.writeFileSync(getPeersPath(), JSON.stringify(peers, null, 2), 'utf-8');
 }
 

@@ -39,6 +39,7 @@ export const CHAT_EVENT_TYPES = [
   // Messages
   'user_message',
   'queue_removed',
+  'queue_state',
   'agent_message_chunk',
   'agent_message',
   'agent_thought_chunk',
@@ -360,6 +361,8 @@ export interface ChatEventDataMap {
 
   user_message: {
     messageId: string;
+    /** Mobile optimistic-send correlation. Absent for local/legacy sends. */
+    clientCommandId?: string;
     content: ContentBlock[];
     source: MessageSource;
     delivery: MessageDelivery;
@@ -371,6 +374,11 @@ export interface ChatEventDataMap {
   };
   /** Queued user messages taken out of the queue before delivery (removed or cleared). */
   queue_removed: { messageIds: string[] };
+  /** Authoritative runtime-owned queue; native provider queues are not represented. */
+  queue_state: {
+    queuedMessageIds: string[];
+    transition: { messageIds: string[]; status: 'queued' | 'dispatching' | 'delivered' | 'failed' | 'removed' };
+  };
   /** `subagentId` is set when the text comes from a subagent (Claude parent_tool_use_id, Codex child thread). */
   agent_message_chunk: { messageId: string; text: string; subagentId?: string };
   /** Final text of a message; replaces the accumulated chunks. */

@@ -20,6 +20,7 @@
 
 import type { ChatCapabilities, ChatDriverId, PermissionLevel } from './capabilities';
 import type {
+  PermissionOption,
   ChatEvent,
   ChatEventDraft,
   ChatQuestionAnswers,
@@ -36,6 +37,8 @@ export type AgentRuntimeKind = 'pty' | 'chat';
 
 export interface RuntimeSendOptions {
   source: MessageSource;
+  /** Optional remote command correlation, echoed in the authoritative user_message event. */
+  clientCommandId?: string;
   /**
    * 'auto' steers when a turn is running and the runtime can steer, queues
    * when it can't, and prompts when idle. Default 'auto'.
@@ -94,6 +97,8 @@ export interface AgentRuntime {
   isSwappingSession?(): boolean;
   /** Coarse state for status badges; chat runtimes derive it from events. */
   getState(): ChatSessionState;
+  /** Clubhouse chat session identity, used to reject stale remote commands. */
+  getSessionId?(): string;
   /** When the running turn started (ms), or null between turns. Chat runtimes only. */
   getTurnStartedAt?(): number | null;
 
@@ -118,6 +123,8 @@ export interface AgentRuntime {
   answerQuestion(requestId: string, answers: ChatQuestionAnswers): Promise<void>;
   /** True while a question is waiting for an answer. Chat runtimes only. */
   hasPendingQuestion?(requestId: string): boolean;
+  /** Current unsettled approval options; excludes responses already in flight. */
+  getPendingPermissionOptions?(requestId: string): readonly PermissionOption[] | undefined;
   /**
    * Hand a question that went to the parent orchestrator to the user instead
    * (#2366), with `notice` saying why. False when it isn't a routed question
@@ -131,6 +138,8 @@ export interface AgentRuntime {
    * isn't. Chat runtimes only.
    */
   removeQueued?(messageIds?: readonly string[]): Promise<string[]>;
+  /** Last published queue state and its session-local event sequence. */
+  getQueueState?(): { queuedMessageIds: string[]; queueStateSeq: number; queueRemovalSupported: boolean };
 
   /** Read the transcript; `afterSeq` returns only newer chat events of the current session. */
   readTranscript(opts?: { tail?: number; afterSeq?: number }): Promise<RuntimeTranscriptSlice>;

@@ -10,6 +10,7 @@ import * as crypto from 'crypto';
 import * as fs from 'fs';
 import * as path from 'path';
 import { app } from 'electron';
+import { annexEphemeralSession } from './annex-network-profile';
 import { appLog } from './log-service';
 import { recordIdentityRegenerated } from '../telemetry/annex-telemetry';
 
@@ -170,7 +171,13 @@ function loadIdentity(): { status: 'missing' | 'corrupt' | 'valid'; identity: An
  * Subsequent calls return the cached identity.
  */
 export function getOrCreateIdentity(): AnnexIdentity {
+  const ephemeral = annexEphemeralSession();
   if (cachedIdentity) return cachedIdentity;
+
+  if (ephemeral) {
+    cachedIdentity = generateIdentity();
+    return cachedIdentity;
+  }
 
   const loadResult = loadIdentity();
   if (loadResult.status === 'valid' && loadResult.identity) {
@@ -208,6 +215,7 @@ export function getOrCreateIdentity(): AnnexIdentity {
  * has been generated yet.
  */
 export function getIdentity(): AnnexIdentity | null {
+  if (annexEphemeralSession()) return cachedIdentity;
   if (cachedIdentity) return cachedIdentity;
 
   const loadResult = loadIdentity();
@@ -230,7 +238,9 @@ export function getPublicIdentity(): { publicKey: string; fingerprint: string } 
  * After this, a new identity will be generated on next getOrCreateIdentity().
  */
 export function deleteIdentity(): void {
+  const ephemeral = annexEphemeralSession();
   cachedIdentity = null;
+  if (ephemeral) return;
   try {
     fs.unlinkSync(getIdentityPath());
     identityWasReset = true;

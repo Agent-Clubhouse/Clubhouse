@@ -208,7 +208,7 @@ export class CodexChatDriver implements ChatDriver {
   readonly id = 'codex_app_server' as const;
   readonly provider = 'codex-cli';
 
-  constructor(private readonly deps: { onLog?: LogFn } = {}) {}
+  constructor(private readonly deps: { onLog?: LogFn; ephemeralThread?: boolean } = {}) {}
 
   async probe(binaryPath: string, env?: Record<string, string>, opts?: { commandPrefix?: string }): Promise<ChatDriverProbe> {
     const spawnCmd = resolveStructuredSpawn(binaryPath, ['app-server'], opts?.commandPrefix);
@@ -245,7 +245,10 @@ export class CodexChatDriver implements ChatDriver {
 
   async start(opts: ChatDriverStartOptions): Promise<ChatDriverSession> {
     throwIfStartAborted(opts.signal);
-    const session = new CodexChatSession(opts, this.deps.onLog);
+    if (this.deps.ephemeralThread && opts.resumeNativeSessionId) {
+      throw new Error('Ephemeral Codex sessions cannot resume an existing thread');
+    }
+    const session = new CodexChatSession(opts, this.deps.onLog, this.deps.ephemeralThread ?? false);
     // A cancelled start kills app-server; open() then fails and is ignored.
     await untilStartAborted(session.open(), opts.signal, () => session.abortStart());
     return session;
@@ -285,7 +288,7 @@ class CodexChatSession implements ChatDriverSession {
   /** `effort` is the model's default, not one chosen in the session (#2136). */
   private effortIsDefault = false;
 
-  constructor(private readonly opts: ChatDriverStartOptions, private readonly log?: LogFn) {
+  constructor(private readonly opts: ChatDriverStartOptions, private readonly log?: LogFn, private readonly ephemeralThread = false) {
     const { args, dropped } = appServerArgs(opts.extraArgs ?? []);
     if (dropped.length > 0) {
       log?.('warn', 'Ignoring extraArgs that codex app-server does not accept', { dropped });
@@ -383,7 +386,10 @@ class CodexChatSession implements ChatDriverSession {
       };
       result = opts.resumeNativeSessionId
         ? await this.client.threadResume({ threadId: opts.resumeNativeSessionId, excludeTurns: true, ...shared })
-        : await this.client.threadStart(shared);
+        : await this.client.threadStart({ ...shared, ...(this.ephemeralThread && { ephemeral: true }) });
+      if (this.ephemeralThread && result.thread.ephemeral !== true) {
+        throw new Error('Codex did not confirm an ephemeral thread');
+      }
     } catch (err) {
       this.closing = true;
       this.client.kill();

@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { IPC } from '../../shared/ipc-channels';
 import { Project } from '../../shared/types';
 
@@ -21,6 +21,7 @@ vi.mock('./log-service', () => ({
 }));
 
 import {
+  initProtocolHandler,
   dispatchProtocolUrl,
   consumePendingProtocolAction,
   _resetPendingProtocolActionForTests,
@@ -145,5 +146,25 @@ describe('dispatchProtocolUrl', () => {
       kind: 'open-file-not-found',
       filePath: '/Users/me/projects/alpha/src/a.ts',
     });
+  });
+});
+
+describe('isolated protocol registration', () => {
+  afterEach(() => { vi.unstubAllEnvs(); vi.clearAllMocks(); });
+
+  it('keeps the global scheme association unchanged for an isolated profile', async () => {
+    const { app } = await import('electron');
+    vi.stubEnv('CLUBHOUSE_USER_DATA', '/tmp/clubhouse-isolated-profile');
+    expect(initProtocolHandler({ getWindow: () => null, listProjects: async () => [] })).toBe(true);
+    expect(app.setAsDefaultProtocolClient).not.toHaveBeenCalled();
+    expect(app.requestSingleInstanceLock).toHaveBeenCalledOnce();
+    expect(app.on).toHaveBeenCalledWith('open-url', expect.any(Function));
+  });
+
+  it('continues registering the normal profile for clubhouse links', async () => {
+    const { app } = await import('electron');
+    vi.stubEnv('CLUBHOUSE_USER_DATA', '');
+    initProtocolHandler({ getWindow: () => null, listProjects: async () => [] });
+    expect(app.setAsDefaultProtocolClient).toHaveBeenCalledWith('clubhouse');
   });
 });
