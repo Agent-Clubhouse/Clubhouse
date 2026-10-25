@@ -1,6 +1,6 @@
 import { ipcRenderer } from 'electron';
 import { IPC } from '../shared/ipc-channels';
-import type { NotificationSettings, BadgeSettings, ResolvedProtocolAction } from '../shared/types';
+import type { NotificationSettings, BadgeSettings, ResolvedProtocolAction, TerminalColors, ThemeColors, ThemeGradients } from '../shared/types';
 
 export const app = {
   app: {
@@ -48,6 +48,14 @@ export const app = {
   },
   syncPluginThemes: (themes: Array<{ id: string; name: string; type: 'dark' | 'light' }>) =>
     ipcRenderer.invoke(IPC.APP.SYNC_PLUGIN_THEMES, themes),
+  syncActiveTheme: (theme: {
+    id: string;
+    type: 'dark' | 'light';
+    colors: ThemeColors;
+    terminal?: TerminalColors;
+    gradients?: ThemeGradients;
+  }) =>
+    ipcRenderer.invoke(IPC.APP.SYNC_ACTIVE_THEME, theme),
   updateTitleBarOverlay: (colors: { color: string; symbolColor: string }) =>
     ipcRenderer.invoke(IPC.APP.UPDATE_TITLE_BAR_OVERLAY, colors),
   getOrchestratorSettings: (): Promise<{ enabled: string[]; hookServerEnabled?: Record<string, boolean> }> =>

@@ -39,3 +39,19 @@ export async function saveSettings(settings: AnnexSettings): Promise<void> {
 }
 
 export const updateSettings = store.update;
+
+/** Ports the Annex servers last bound, so a phone's remembered pairing survives a relaunch. */
+export interface AnnexLastPorts {
+  mainPort: number;
+  pairingPort: number;
+}
+
+// Kept apart from AnnexSettings: the renderer saves that object whole, and
+// would drop server-owned fields it never loaded.
+const portsStore = createSettingsStore<AnnexLastPorts>('annex-ports.json', {
+  mainPort: 0,
+  pairingPort: 0,
+});
+
+export const getLastPorts = portsStore.get;
+export const saveLastPorts = portsStore.save;

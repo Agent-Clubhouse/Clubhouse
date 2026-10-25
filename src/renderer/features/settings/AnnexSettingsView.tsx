@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { useAnnexStore } from '../../stores/annexStore';
 import { Toggle } from '../../components/Toggle';
 import { AnnexIdentitySection } from './AnnexIdentitySection';
+import { AnnexPairingQr } from './AnnexPairingQr';
 import { SettingsPage, SettingsSection, SettingsField, settingsInput } from './SettingsLayout';
 import { Button } from '../../components/Button';
 
@@ -62,6 +63,9 @@ export function AnnexSettingsView() {
                 Regenerate
               </Button>
             </SettingsField>
+            {status.pairingUrl && (
+              <AnnexPairingQr url={status.pairingUrl} hosts={status.pairingHosts ?? []} port={status.port} />
+            )}
           </>
         )}
       </SettingsSection>

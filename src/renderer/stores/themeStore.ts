@@ -11,6 +11,30 @@ function syncTitleBarOverlay(theme: ThemeDefinition): void {
   }).catch(() => { /* not on Windows or window not available */ });
 }
 
+/**
+ * Push the applied theme to main. Main can't look plugin or custom themes up
+ * by id, and Annex sends these colors to phones.
+ */
+function syncActiveThemeToMain(theme: ThemeDefinition): void {
+  try {
+    Promise.resolve(window.clubhouse.app.syncActiveTheme({
+      id: theme.id,
+      type: theme.type,
+      colors: theme.colors,
+      terminal: theme.terminal,
+      ...(theme.gradients ? { gradients: theme.gradients } : {}),
+    })).catch(() => { /* main process not ready yet — the next apply resyncs */ });
+  } catch {
+    /* preload bridge not available yet — the next apply resyncs */
+  }
+}
+
+/** Main-process side effects of applying a theme. */
+function syncAppliedTheme(theme: ThemeDefinition): void {
+  syncTitleBarOverlay(theme);
+  syncActiveThemeToMain(theme);
+}
+
 function resolveTheme(id: ThemeId): ThemeDefinition {
   return getTheme(id) || BUILTIN_THEMES['catppuccin-mocha'];
 }
@@ -44,7 +68,7 @@ export const useThemeStore = create<ThemeState>((set, get) => ({
       const theme = resolveTheme(id);
       const experimentalGradients = !!experimental?.themeGradients;
       applyTheme(theme, { experimentalGradients });
-      syncTitleBarOverlay(theme);
+      syncAppliedTheme(theme);
       set({ themeId: id, theme, experimentalGradients, availableThemeIds: getAllThemeIds() });
     } catch {
       // Use default on error
@@ -57,7 +81,7 @@ export const useThemeStore = create<ThemeState>((set, get) => ({
     if (!theme) return;
     const { experimentalGradients } = get();
     applyTheme(theme, { experimentalGradients });
-    syncTitleBarOverlay(theme);
+    syncAppliedTheme(theme);
     set({ themeId: id, theme });
     await window.clubhouse.app.saveTheme({ themeId: id });
   },
@@ -101,7 +125,7 @@ export const unsubscribeThemeRegistryListener = onRegistryChange(() => {
     if (store.theme.id !== fallback.id) {
       try { localStorage.removeItem('clubhouse-theme-vars'); } catch { /* ignore */ }
       applyTheme(fallback, { experimentalGradients: store.experimentalGradients });
-      syncTitleBarOverlay(fallback);
+      syncAppliedTheme(fallback);
       useThemeStore.setState({ theme: fallback });
     }
   } else {
@@ -109,7 +133,7 @@ export const unsubscribeThemeRegistryListener = onRegistryChange(() => {
     // plugin themes. applyTheme atomically re-writes the flash-prevention cache so it stays
     // consistent with the CSS variables that were just written to the document.
     applyTheme(currentTheme, { experimentalGradients: store.experimentalGradients });
-    syncTitleBarOverlay(currentTheme);
+    syncAppliedTheme(currentTheme);
     if (currentTheme !== store.theme) {
       // A previously unavailable theme is now registered, or the active one was
       // re-registered with new colours under the same id (a pack update, #2123):

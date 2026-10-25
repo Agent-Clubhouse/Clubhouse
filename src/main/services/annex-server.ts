@@ -18,6 +18,8 @@ import Bonjour, { Service } from 'bonjour-service';
 import * as annexEventBus from './annex-event-bus';
 import * as annexSettings from './annex-settings';
 import { annexNetworkProfile } from './annex-network-profile';
+import { listenPreferringPort, type ListenFn } from './annex-listen';
+import { buildPairingUrl, pairingHosts } from './annex-pairing-url';
 import * as annexIdentity from './annex-identity';
 import * as annexPeers from './annex-peers';
 import * as projectStore from './project-store';
@@ -25,6 +27,7 @@ import * as agentConfig from './agent-config';
 import { isDisposedAgent } from '../../shared/agent-helpers';
 import * as ptyManager from './pty-manager';
 import * as themeService from './theme-service';
+import { getActiveTheme, resolveAnnexTheme, type AnnexTheme } from './active-theme-store';
 import * as eventReplay from './annex-event-replay';
 import * as permissionQueue from './annex-permission-queue';
 import * as pluginManifestRegistry from './plugin-manifest-registry';
@@ -95,6 +98,7 @@ import type {
   AgentExecutionMode,
   HookEventKind,
   ThemeColors,
+  ThemeGradients,
 } from '../../shared/types';
 
 // ---------------------------------------------------------------------------
@@ -134,6 +138,7 @@ let wss: WebSocketServer | null = null;
 let bonjour: InstanceType<typeof Bonjour> | null = null;
 let bonjourService: Service | null = null;
 let serverPort = 0; // Main TLS port
+let boundHost = ''; // networkProfile.host while running
 let currentPin = '';
 const TOKEN_TTL_MS = 24 * 60 * 60 * 1000; // 24 hours
 const sessionTokens = new Map<string, { issuedAt: number; peerFingerprint?: string }>();
@@ -334,6 +339,7 @@ function pushChatStatus(event: ChatEvent): void {
     status: 'running',
     ...(quick ? { projectId: quick.projectId, parentAgentId: quick.parentAgentId } : {}),
     detailedStatus,
+    lastActivityAt: noteAgentActivity(agentId, event.ts),
   });
 }
 
@@ -421,6 +427,29 @@ function setTrackedQuickAgent(agentId: string, entry: TrackedQuickAgent): void {
   const existing = trackedQuickAgents.get(agentId);
   if (existing?.timerId !== undefined) clearTimeout(existing.timerId);
   trackedQuickAgents.set(agentId, entry);
+  noteAgentActivity(agentId, entry.spawnedAt);
+}
+
+// ---------------------------------------------------------------------------
+// Last activity per agent, so phones can sort by it
+// ---------------------------------------------------------------------------
+
+/** ms since epoch of each agent's latest chat event, status change, spawn or wake while the server runs. */
+const agentLastActivity = new Map<string, number>();
+
+/** Record activity (never moving the time backwards) and return the agent's latest. */
+function noteAgentActivity(agentId: string, at: number = Date.now()): number {
+  const latest = Math.max(at, agentLastActivity.get(agentId) ?? 0);
+  agentLastActivity.set(agentId, latest);
+  return latest;
+}
+
+/** Latest activity, else when the agent was created (0 if unknown). */
+function lastActivityAt(agentId: string, createdAt?: string | number): number {
+  const recorded = agentLastActivity.get(agentId);
+  if (recorded !== undefined) return recorded;
+  const created = typeof createdAt === 'number' ? createdAt : Date.parse(createdAt ?? '');
+  return Number.isFinite(created) ? created : 0;
 }
 
 // ---------------------------------------------------------------------------
@@ -524,16 +553,19 @@ function readJsonBody(
   });
 }
 
-function getThemeColors(): ThemeColors {
-  const { themeId } = themeService.getSettings();
-  const theme = THEMES[themeId];
-  return theme ? theme.colors : THEMES['catppuccin-mocha'].colors;
+/** The selected theme, with the renderer's synced colors for plugin and custom themes. */
+function getAnnexTheme(): AnnexTheme {
+  return resolveAnnexTheme(themeService.getSettings().themeId, getActiveTheme(), THEMES);
+}
+
+/** The snapshot's `theme`: the colors plus, additively, `gradients` when the theme has any. */
+function getThemeColors(): ThemeColors & { gradients?: ThemeGradients } {
+  const { colors, gradients } = getAnnexTheme();
+  return { ...colors, ...(gradients ? { gradients } : {}) };
 }
 
 function getTerminalColors(): import('../../shared/types').TerminalColors {
-  const { themeId } = themeService.getSettings();
-  const theme = THEMES[themeId];
-  return theme ? theme.terminal : THEMES['catppuccin-mocha'].terminal;
+  return getAnnexTheme().terminal;
 }
 
 function getOrchestratorsMap(): Record<string, { displayName: string; shortName: string; badge?: string }> {
@@ -569,6 +601,7 @@ function mapDurableAgent(d: Awaited<ReturnType<typeof agentConfig.listDurable>>[
     executionMode: isRunning ? getAgentExecutionMode(agentId) : null,
     /** There's a CLI session to resume, so a controller's default Wake can ask for one. */
     hasSession: !!d.lastSessionId,
+    lastActivityAt: lastActivityAt(agentId, d.createdAt),
   };
 }
 
@@ -624,6 +657,7 @@ async function buildSnapshotData(): Promise<object> {
     quickAgents[qa.projectId].push({
       ...qa,
       detailedStatus: getDetailedStatus(qa.id),
+      lastActivityAt: lastActivityAt(qa.id, qa.spawnedAt),
     });
   }
 
@@ -1144,6 +1178,7 @@ async function handleWakeAgent(
     });
 
     // Broadcast agent:woken event immediately
+    noteAgentActivity(config.id);
     broadcastAndBuffer('agent:woken', {
       agentId: config.id,
       message,
@@ -2308,6 +2343,7 @@ async function runMobileCommand(command: MobileCommand, assertAuthorized: () => 
       await killAgent(command.agentId, project.path, config.orchestrator);
       throw new MobileControlError('start_cancelled', 409, 'failed');
     }
+    noteAgentActivity(config.id);
     broadcastAndBuffer('agent:woken', { agentId: config.id, source: 'annex-mobile' });
     broadcastSnapshotRefresh();
     return { agentId: config.id, executionMode: getAgentExecutionMode(config.id) };
@@ -2905,6 +2941,7 @@ async function handleWakeAgentWs(
       meta: { agentId, agentName: config.name },
     });
 
+    noteAgentActivity(config.id);
     broadcastAndBuffer('agent:woken', { agentId: config.id, source: 'annex-v2' });
 
     // Wait for the agent to be registered as running before refreshing the
@@ -2935,6 +2972,7 @@ export function start(): void {
   appLog('core:annex', 'info', 'Annex server starting...');
   const serverStartMs = Date.now();
   const networkProfile = annexNetworkProfile();
+  boundHost = networkProfile.host;
 
   // Generate identity on first enable (lazy creation)
   const identity = annexIdentity.getOrCreateIdentity();
@@ -3121,6 +3159,7 @@ export function start(): void {
   });
 
   unsubChatEvent = onChatEvent((event) => {
+    noteAgentActivity(event.agentId, event.ts);
     broadcastAndBuffer('chat:event', { agentId: event.agentId, event }, chatEventTraceparent(event));
     pushChatStatus(event);
   });
@@ -3128,6 +3167,7 @@ export function start(): void {
   unsubHookEvent = annexEventBus.onHookEvent((agentId, event) => {
     const detailedStatus = hookEventToDetailedStatus(event);
     detailedStatusCache.set(agentId, detailedStatus);
+    noteAgentActivity(agentId);
     broadcastAndBuffer('hook:event', { agentId, event, detailedStatus });
   });
 
@@ -3135,6 +3175,7 @@ export function start(): void {
     detailedStatusCache.delete(agentId);
     permissionQueue.clearForAgent(agentId);
     eventReplay.clearForAgent(agentId);
+    noteAgentActivity(agentId);
 
     broadcastAndBuffer('pty:exit', { agentId, exitCode });
 
@@ -3149,11 +3190,15 @@ export function start(): void {
         projectId: tracked.projectId,
         parentAgentId: tracked.parentAgentId,
       });
-      tracked.timerId = setTimeout(() => { trackedQuickAgents.delete(agentId); }, 60_000);
+      tracked.timerId = setTimeout(() => {
+        trackedQuickAgents.delete(agentId);
+        agentLastActivity.delete(agentId);
+      }, 60_000);
     }
   });
 
   unsubAgentSpawned = annexEventBus.onAgentSpawned((agentId, kind, projectId, meta) => {
+    noteAgentActivity(agentId);
     broadcastAndBuffer('agent:spawned', { id: agentId, kind, projectId, ...meta });
   });
 
@@ -3219,6 +3264,7 @@ export function start(): void {
 
   function publishBonjour() {
     if (!mainReady || !pairingReady) return;
+    rememberBoundPorts();
     if (!networkProfile.advertise) {
       broadcastToAllWindows(IPC.ANNEX.STATUS_CHANGED, getStatus());
       return;
@@ -3266,26 +3312,63 @@ export function start(): void {
     }
   }
 
-  mainServer.listen(0, networkProfile.host, () => {
-    const addr = mainServer.address();
-    if (addr && typeof addr === 'object') {
-      serverPort = addr.port;
-      appLog('core:annex', 'info', `Annex main server listening on ${networkProfile.host}:${serverPort} (${tlsServer ? 'TLS' : 'HTTP'})`);
-      mainReady = true;
-      if (pairingReady) recordServerStarted(serverStartMs, !!tlsServer);
-      publishBonjour();
-    }
+  // Reuse last launch's ports so a paired phone can reconnect without re-pairing.
+  const lastPorts = annexSettings.getLastPorts();
+  const pairing = pairingServer;
+
+  listenPreferringPort(listenServer(mainServer, networkProfile.host), lastPorts.mainPort).then((port) => {
+    if (mainServer !== (tlsServer || httpServer)) return; // stopped while binding
+    serverPort = port;
+    appLog('core:annex', 'info', `Annex main server listening on ${networkProfile.host}:${serverPort} (${tlsServer ? 'TLS' : 'HTTP'})`);
+    mainReady = true;
+    if (pairingReady) recordServerStarted(serverStartMs, !!tlsServer);
+    publishBonjour();
+  }).catch((err) => {
+    appLog('core:annex', 'error', 'Annex main server failed to listen', {
+      meta: { error: err instanceof Error ? err.message : String(err) },
+    });
   });
 
-  pairingServer.listen(0, networkProfile.host, () => {
-    const addr = pairingServer?.address();
-    if (addr && typeof addr === 'object') {
-      pairingPort = addr.port;
-      appLog('core:annex', 'info', `Annex pairing server listening on ${networkProfile.host}:${pairingPort} (HTTP)`);
-      pairingReady = true;
-      if (mainReady) recordServerStarted(serverStartMs, !!tlsServer);
-      publishBonjour();
-    }
+  listenPreferringPort(listenServer(pairing, networkProfile.host), lastPorts.pairingPort).then((port) => {
+    if (pairing !== pairingServer) return; // stopped while binding
+    pairingPort = port;
+    appLog('core:annex', 'info', `Annex pairing server listening on ${networkProfile.host}:${pairingPort} (HTTP)`);
+    pairingReady = true;
+    if (mainReady) recordServerStarted(serverStartMs, !!tlsServer);
+    publishBonjour();
+  }).catch((err) => {
+    appLog('core:annex', 'error', 'Annex pairing server failed to listen', {
+      meta: { error: err instanceof Error ? err.message : String(err) },
+    });
+  });
+}
+
+/** A ListenFn for `server`. On error the server is closed, so it can listen again. */
+function listenServer(server: http.Server | https.Server, host: string): ListenFn {
+  return (port) => new Promise((resolve, reject) => {
+    const onError = (err: Error) => {
+      server.close();
+      reject(err);
+    };
+    server.once('error', onError);
+    server.listen(port, host, () => {
+      server.removeListener('error', onError);
+      const addr = server.address();
+      if (addr && typeof addr === 'object') resolve(addr.port);
+      else reject(new Error('Annex server has no address after listen'));
+    });
+  });
+}
+
+/** Persist the bound ports for the next launch's listenPreferringPort. */
+function rememberBoundPorts(): void {
+  const ports = { mainPort: serverPort, pairingPort };
+  const last = annexSettings.getLastPorts();
+  if (last.mainPort === ports.mainPort && last.pairingPort === ports.pairingPort) return;
+  Promise.resolve().then(() => annexSettings.saveLastPorts(ports)).catch((err) => {
+    appLog('core:annex', 'warn', 'Failed to remember Annex ports', {
+      meta: { error: err instanceof Error ? err.message : String(err) },
+    });
   });
 }
 
@@ -3352,12 +3435,14 @@ export function stop(): void {
 
   serverPort = 0;
   pairingPort = 0;
+  boundHost = '';
   currentPin = '';
   sessionTokens.clear();
   revokedTokens.clear();
   detailedStatusCache.clear();
   lastChatStatusPush.clear();
   trackedQuickAgents.clear();
+  agentLastActivity.clear();
   eventReplay.reset();
   permissionQueue.reset();
   mobileCommands.reset();
@@ -3371,6 +3456,7 @@ export function stop(): void {
 export function getStatus(): AnnexStatus & { pairingPort: number; tlsEnabled: boolean } {
   const settings = annexSettings.getSettings();
   const identity = annexIdentity.getPublicIdentity();
+  const certFingerprint = tlsServer ? annexTls.getCertificateFingerprint() : undefined;
   return {
     advertising: !!bonjourService,
     port: serverPort,
@@ -3382,8 +3468,21 @@ export function getStatus(): AnnexStatus & { pairingPort: number; tlsEnabled: bo
     color: settings.color,
     pairingPort,
     tlsEnabled: !!tlsServer,
-    ...(tlsServer ? { tlsCertificateFingerprint: annexTls.getCertificateFingerprint() } : {}),
+    ...(certFingerprint ? { tlsCertificateFingerprint: certFingerprint } : {}),
+    ...pairingLink(identity?.fingerprint || '', certFingerprint, settings.alias || settings.deviceName),
   };
+}
+
+/**
+ * The QR pairing link for Annex settings. Phones only pair over TLS, so it is
+ * left out until the TLS server is listening; the PIN and ports are read
+ * fresh, so each status broadcast carries the current link.
+ */
+function pairingLink(fingerprint: string, certFingerprint: string | undefined, name: string): Pick<AnnexStatus, 'pairingUrl' | 'pairingHosts'> {
+  if (!tlsServer || !certFingerprint || !serverPort) return {};
+  const hosts = pairingHosts(os.networkInterfaces(), boundHost);
+  const url = buildPairingUrl({ hosts, port: serverPort, fingerprint, certFingerprint, pin: currentPin, name });
+  return url ? { pairingUrl: url, pairingHosts: hosts } : {};
 }
 
 /**
@@ -3761,4 +3860,6 @@ export const _testing = {
   pushChatStatus,
   lastChatStatusPush,
   buildSnapshot,
+  agentLastActivity,
+  noteAgentActivity,
 };
