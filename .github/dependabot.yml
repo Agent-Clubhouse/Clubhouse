@@ -71,7 +71,7 @@ updates:
       # Electron and its Forge packages require coordinated Chromium, native
       # module, and packaging migrations before adopting a new major version.
       - dependency-name: "electron"
-        versions: [">=44.0.0"]
+        update-types: ["version-update:semver-major"]
       - dependency-name: "@electron-forge/*"
         versions: [">=8.0.0"]
       # The OTel packages and the Azure exporter move as one pinned train
