@@ -4,6 +4,17 @@ Checked 2026-10-23. Extends local commit `9bcdef0ecbd6e2d3aded0a77b00fb30f3f58fe
 The original main baseline is `8e0903616ee45bff75c04f9bb62dc35feafce7f2`.
 This is a reviewable local change, not a release clearance or a hosted CI result.
 
+## Node security follow-up — 2026-10-26
+
+Electron remains pinned to 45.0.0. Dependabot now defers only Electron major
+updates, allowing fixes on the current major to be proposed instead of ignoring
+all versions >=44.0.0. This policy change does not patch the shipped runtime.
+The [stable distribution](https://releases.electronjs.org/release/v45.0.0)
+still reports Node 24.22.0; a stable distribution covering the full October Node
+security batch remains unverified. Evaluate vendor backports per advisory:
+Electron uses Chromium's Brotli, so its Node version alone does not establish
+Brotli exposure. Do not substitute an alpha for a verified stable security update.
+
 ## Runtime migration
 
 The user requested the newest stable Electron to reduce the distance to future
