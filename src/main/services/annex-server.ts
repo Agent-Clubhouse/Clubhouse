@@ -2177,7 +2177,20 @@ async function handleMobileCapabilitiesRoute(ctx: AnnexRouteContext): Promise<vo
     richContent: { version: 1, enabled: getExperimentalSettings().richChatContent === true, maximumBytes: 8 * 1024 * 1024 },
     events: { transport: 'annex-websocket', replayRequest: 'mobile:replay', queueState: 'queue_state' },
     idempotency: { scope: 'peer-and-epoch', maxEntries: MOBILE_COMMAND_MAX_ENTRIES, ttlMs: MOBILE_COMMAND_TTL_MS },
+    ...phoneRoutes(),
   });
+}
+
+/**
+ * Every address this desktop answers on (LAN first, then Tailscale), so a
+ * paired phone can move between home Wi-Fi and Tailscale, and one paired before
+ * Tailscale was set up learns it. Phones only connect over TLS and check the
+ * pinned certificate at each address, so this is a hint, never trust.
+ */
+function phoneRoutes(): { routes?: { hosts: string[]; port: number } } {
+  if (!tlsServer || !serverPort) return {};
+  const hosts = pairingHosts(os.networkInterfaces(), boundHost);
+  return hosts.length > 0 ? { routes: { hosts, port: serverPort } } : {};
 }
 
 async function handleMobilePairingDeleteRoute(ctx: AnnexRouteContext): Promise<void> {

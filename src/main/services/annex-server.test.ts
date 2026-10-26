@@ -655,6 +655,8 @@ describe('annex-server', () => {
     const res = await request(port, 'GET', '/api/v1/mobile/capabilities', undefined, authHeaders(token));
     expect(res.status).toBe(200);
     expect(JSON.parse(res.body)).toMatchObject({ version: 1, controlAuth: 'mtls-pinned-client', controlAvailable: false, commands: expect.arrayContaining(['chat.send', 'agent.stop']) });
+    // Phones only connect over TLS, so the HTTP fallback offers them no routes.
+    expect(JSON.parse(res.body).routes).toBeUndefined();
   });
 
   it('rejects mobile bearer control even on HTTP fallback and leaves legacy reads working', async () => {
@@ -774,6 +776,9 @@ describe('annex-server', () => {
       expect(peers.get('mobile-test-identity')?.tlsCertificateFingerprint).toBe(new crypto.X509Certificate(credentials.cert).fingerprint256);
       const capability = await secureRequest('GET', '/api/v1/mobile/capabilities', undefined);
       expect(capability.body.controlAvailable).toBe(true);
+      // A paired phone learns the routes it can use (pairingHosts orders LAN before Tailscale);
+      // this server is bound to loopback, so that is its only one.
+      expect(capability.body.routes).toEqual({ hosts: ['127.0.0.1'], port: status.port });
       expect((await secureRequest('DELETE', '/api/v1/mobile/pairing', undefined)).status).toBe(409);
       expect(peers.has('mobile-test-identity')).toBe(true);
       const input = { version: 1, epoch: capability.body.epoch, commandId: 'tls-command', type: 'agent.spawn', projectId: 'test-project', prompt: 'hello' };
