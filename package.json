@@ -77,7 +77,7 @@
     "vitest": "^4.1.12"
   },
   "dependencies": {
-    "@anthropic-ai/claude-agent-sdk": "0.3.302",
+    "@anthropic-ai/claude-agent-sdk": "0.3.303",
     "@azure/monitor-opentelemetry-exporter": "1.0.0-beta.46",
     "@monaco-editor/react": "^4.7.0",
     "@opentelemetry/api": "1.9.1",
