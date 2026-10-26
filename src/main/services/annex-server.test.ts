@@ -790,7 +790,7 @@ describe('annex-server', () => {
       vi.mocked(agentSystem.spawnAgent).mockClear();
       const accepted = await secureRequest('POST', '/api/v1/mobile/commands', input);
       expect(accepted.status).toBe(200); expect(accepted.body.status).toBe('completed');
-      expect(agentSystem.spawnAgent).toHaveBeenCalledWith(expect.objectContaining({ projectPath: '/test/project', freeAgentMode: false }));
+      expect(agentSystem.spawnAgent).toHaveBeenCalledWith(expect.objectContaining({ projectPath: '/test/project', freeAgentMode: false, kind: 'quick', interactive: true }));
       expect(await secureRequest('POST', '/api/v1/mobile/commands', input)).toEqual(accepted);
       expect(agentSystem.spawnAgent).toHaveBeenCalledTimes(1);
       const forged = await secureRequest('POST', '/api/v1/mobile/commands', { ...input, commandId: 'forged' }, impostor);

@@ -2103,6 +2103,21 @@ describe('agent-system', () => {
       expect(mockPtySpawn).not.toHaveBeenCalled();
     });
 
+    it('does not spawn headless for an interactive quick agent (started from a phone)', async () => {
+      await spawnAgent({
+        agentId: 'test-interactive',
+        projectPath: '/project',
+        cwd: '/project/worktree',
+        kind: 'quick',
+        mission: 'test mission',
+        interactive: true,
+      });
+
+      expect(mockHeadlessSpawn).not.toHaveBeenCalled();
+      expect(mockTryStartChatAgent.mock.calls.at(-1)?.[0]).toMatchObject({ agentId: 'test-interactive', kind: 'quick', interactive: true });
+      expect(mockPtySpawn).toHaveBeenCalled();
+    });
+
     it('does not spawn headless for durable agents', async () => {
       await spawnAgent({
         agentId: 'test-headless',

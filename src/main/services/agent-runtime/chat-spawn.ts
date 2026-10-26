@@ -61,6 +61,8 @@ export interface ChatSpawnParams {
   resume?: boolean;
   sessionId?: string;
   extraArgs?: string[];
+  /** A quick agent someone will talk to (started from a phone) gets chat like a durable one. */
+  interactive?: boolean;
 }
 
 /** Free Agent Mode maps onto the permission ladder; otherwise ask first. */
@@ -314,8 +316,9 @@ export async function tryStartChatAgent(
   onStarting?: () => void,
   facts: ChatStartFacts = { attempts: [] },
 ): Promise<ChatStartResult> {
-  // Only durable agents get chat for now; quick agents stay fire-and-forget.
-  if (params.kind !== 'durable') return 'terminal';
+  // Durable agents get chat; quick agents stay fire-and-forget unless someone
+  // started them to talk to (from a phone), when they follow the same setting.
+  if (params.kind !== 'durable' && !(params.kind === 'quick' && params.interactive)) return 'terminal';
   const resolved = resolveRuntimeMode(provider.id, durableConfig?.runtimeMode);
   if (resolved.mode !== 'chat') return 'terminal';
   const candidates = chatDriverCandidates(provider.id, resolved.driver);

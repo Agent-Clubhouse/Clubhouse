@@ -84,6 +84,12 @@ export interface SpawnAgentParams {
   companionWorkspace?: string;
   /** Permission mode override for resume (preserves pre-restart mode) */
   permissionMode?: FreeAgentPermissionMode;
+  /**
+   * Started for a person to talk to, e.g. from a phone. A quick agent then
+   * follows the provider's Chat / Terminal setting like a durable one,
+   * instead of the project's headless spawn mode.
+   */
+  interactive?: boolean;
   /** CLI agent name to load (e.g. --agent k8s-assistant) */
   agentFile?: string;
   /** Source directory for agent file (e.g. --source ~/.copilot/agents/) */
@@ -449,6 +455,7 @@ async function spawnAgentInner(inParams: SpawnAgentParams, facts: SpawnFacts): P
           permissionMode,
           resume: p.resume,
           sessionId: p.sessionId,
+          interactive: p.interactive,
         }, provider, profileEnv, commandPrefix, durableConfig, () => { chatStartMs = Date.now(); }, chatFacts));
         recordChatStart(chatStartMs, result, chatFacts, chatContext);
         return result;
@@ -484,7 +491,7 @@ async function spawnAgentInner(inParams: SpawnAgentParams, facts: SpawnFacts): P
     }
 
     // Try headless path for quick agents when enabled
-    if (spawnMode === 'headless' && params.kind === 'quick' && isHeadlessCapable(provider)) {
+    if (spawnMode === 'headless' && params.kind === 'quick' && !params.interactive && isHeadlessCapable(provider)) {
       const headlessResult = await provider.buildHeadlessCommand({
         cwd: params.cwd,
         model: params.model,

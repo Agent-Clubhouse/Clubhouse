@@ -2302,13 +2302,15 @@ async function runMobileCommand(command: MobileCommand, assertAuthorized: () => 
     mobileStartingAgents.set(id, starting);
     try {
       await spawnAgent({ agentId: id, projectPath: project.path, cwd: project.path, kind: 'quick',
-        mission: command.prompt, model: command.model, orchestrator, freeAgentMode: false });
+        // A phone starts an agent to follow and talk to: chat or terminal per the
+        // provider setting, never a headless one-shot it couldn't see.
+        mission: command.prompt, model: command.model, orchestrator, freeAgentMode: false, interactive: true });
       if (starting.cancelled) {
         await killAgent(id, project.path, orchestrator);
         throw new MobileControlError('start_cancelled', 409, 'failed');
       }
       tracked.status = isAgentRunning(id) ? 'running' : 'sleeping';
-      broadcastToAllWindows(IPC.ANNEX.AGENT_SPAWNED, { ...tracked, headless: true });
+      broadcastToAllWindows(IPC.ANNEX.AGENT_SPAWNED, { ...tracked, headless: getAgentExecutionMode(id) === 'headless' });
       broadcastSnapshotRefresh();
       return { agentId: id, name, state: tracked.status, executionMode: getAgentExecutionMode(id) };
     } catch (err) {
