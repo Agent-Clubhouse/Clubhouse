@@ -1700,6 +1700,35 @@ describe('agent-system', () => {
         }
       });
 
+      it('chat could not resume a gone session: retries a fresh chat before the terminal', async () => {
+        const { noteChatStartFailure } = await import('./agent-runtime/stale-session');
+        const realStart = mockTryStartChatAgent.getMockImplementation()!;
+        const resumes: Array<boolean | undefined> = [];
+        mockTryStartChatAgent.mockImplementationOnce(async (params: { agentId: string; resume?: boolean }) => {
+          resumes.push(params.resume);
+          noteChatStartFailure(params.agentId, `RPC error: no rollout found for thread id ${DEAD}`);
+          return 'terminal';
+        }).mockImplementationOnce(async (params: { resume?: boolean }) => {
+          resumes.push(params.resume);
+          return 'chat';
+        });
+        try {
+          mockPtySpawn.mockClear();
+          await spawnAgent({
+            agentId: 'agent-1', projectPath: '/project', cwd: '/project', kind: 'durable',
+            orchestrator: 'codex-cli', resume: true, sessionId: DEAD,
+          });
+          expect(resumes).toEqual([true, false]);
+          expect(mockPtySpawn).not.toHaveBeenCalled();
+          expect(recorded('clubhouse.agent.session_stale_cleared')).toEqual([expect.objectContaining({ 'clubhouse.session.stale.reason': 'chat_not_found' })]);
+          expect(recorded('clubhouse.agent.resume_outcome')).toEqual([
+            expect.objectContaining({ 'clubhouse.agent.runtime': 'chat', 'clubhouse.session.resume.result': 'fresh_not_found' }),
+          ]);
+        } finally {
+          mockTryStartChatAgent.mockImplementation(realStart);
+        }
+      });
+
       it('a wake the user started fresh although a session exists: fresh_user', async () => {
         await spawnAgent({ agentId: 'agent-1', projectPath: '/project', cwd: '/project', kind: 'durable', orchestrator: 'claude-code', resume: false });
         expect(recorded('clubhouse.agent.resume_outcome')).toEqual([
