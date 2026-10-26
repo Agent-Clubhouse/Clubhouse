@@ -34,15 +34,31 @@ import { ORCHESTRATOR_CONNECTION_SOURCE_ID, orchestratorConnectionSource, watchO
 import { broadcastToAllWindows } from '../util/ipc-broadcast';
 import { withValidatedArgs, stringArg, objectArg, arrayArg } from './validation';
 
-/** Valid values for BindingTargetKind. */
+/**
+ * Target kinds the renderer may bind. 'plugin' is left out (#2082): plugins
+ * share the main window's renderer, so any plugin could bind an agent to its
+ * own or another plugin's tools. No app UI creates plugin bindings yet.
+ */
 const VALID_TARGET_KINDS = new Set<BindingTargetKind>([
-  'browser', 'agent', 'terminal', 'group-project', 'plugin',
+  'browser', 'agent', 'terminal', 'group-project',
 ]);
 
 /** Validate that a targetKind string is a known BindingTargetKind. */
 function assertValidTargetKind(kind: string): asserts kind is BindingTargetKind {
   if (!VALID_TARGET_KINDS.has(kind as BindingTargetKind)) {
     throw new Error(`Invalid targetKind "${kind}". Must be one of: ${[...VALID_TARGET_KINDS].join(', ')}`);
+  }
+}
+
+/**
+ * Reject a renderer change to an existing plugin binding (#2082): unbind,
+ * instructions and disabled tools go through the same shared renderer as bind.
+ */
+function assertNotPluginBinding(agentId: string, targetId: string): void {
+  const binding = bindingManager.getBindingsForAgent(agentId).find((b) => b.targetId === targetId);
+  if (binding?.targetKind === 'plugin') {
+    appLog('core:mcp', 'warn', 'Rejected MCP binding request for a plugin target', { meta: { agentId, targetId } });
+    throw new Error('MCP binding operation rejected — plugin bindings cannot be changed from the renderer');
   }
 }
 
@@ -140,6 +156,7 @@ export function registerMcpBindingHandlers(): void {
     [stringArg(), stringArg(), stringArg({ optional: true })],
     (event, agentId, targetId, cause): { kept: boolean } => {
       assertCallerIsAppWindow(event);
+      assertNotPluginBinding(agentId as string, targetId as string);
       // Canvas cleanup (a card or canvas tab closed, a zone member left) only
       // hides a wire the canvas displays. A helper wire (#2225) stays: closing
       // a card must not cut orchestration. Deleting the wire itself sends no
@@ -170,6 +187,7 @@ export function registerMcpBindingHandlers(): void {
     [stringArg(), stringArg(), objectArg<Record<string, string>>()],
     (event, agentId, targetId, instructions) => {
       assertCallerIsAppWindow(event);
+      assertNotPluginBinding(agentId as string, targetId as string);
       // Allow setting instructions for sleeping (unregistered) durable agents.
       // Binding metadata is stored in memory and will be active when the agent
       // wakes up and connects to the MCP bridge. Blocking this for sleeping
@@ -187,6 +205,7 @@ export function registerMcpBindingHandlers(): void {
     [stringArg(), stringArg(), arrayArg(stringArg())],
     (event, agentId, targetId, disabledTools) => {
       assertCallerIsAppWindow(event);
+      assertNotPluginBinding(agentId as string, targetId as string);
       // Allow modifying disabled tools for sleeping agents (same rationale as
       // SET_INSTRUCTIONS above — binding metadata is just stored, not executed).
       if (!agentRegistry.get(agentId as string)) {

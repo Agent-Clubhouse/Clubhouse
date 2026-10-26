@@ -84,6 +84,20 @@ describe('claimSourceBinding', () => {
   it('rejects an invalid binding', () => {
     expect(claimSourceBinding('mine', { ...wire('a', 'b'), targetKind: 'nope' as never })).toBe('invalid');
   });
+
+  it('rejects a plugin binding (#2082)', () => {
+    expect(claimSourceBinding('mine', { ...wire('a', 'p'), targetKind: 'plugin' })).toBe('invalid');
+    expect(pairs()).toEqual([]);
+  });
+});
+
+describe('persisted plugin bindings (#2082)', () => {
+  it('skips a persisted plugin binding and still restores the rest', async () => {
+    const listed = listSource('canvas', false);
+    listed.push({ ...wire('a', 'p'), targetKind: 'plugin' }, wire('a', 'b'));
+    expect((await rebuildPersistedBindings()).sources[0]).toMatchObject({ collected: 2, created: 1, invalid: 1 });
+    expect(pairs()).toEqual(['a->b']);
+  });
 });
 
 describe('releaseSourceBinding', () => {
