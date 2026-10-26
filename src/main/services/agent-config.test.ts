@@ -1033,7 +1033,7 @@ describe('getWorktreeStatus', () => {
     expect(status.isValid).toBe(false);
   });
 
-  it('missing .git returns isValid:false', async () => {
+  it('a worktree folder without .git is reported as not checked', async () => {
     const agents = [{ id: 'durable_nogit', name: 'nogit', color: 'indigo', branch: 'nogit/standby', worktreePath: '/test/wt', createdAt: '2024-01-01' }];
     vi.mocked(pathExists).mockImplementation(async (p: any) => {
       const s = String(p);
@@ -1045,7 +1045,9 @@ describe('getWorktreeStatus', () => {
     vi.mocked(fsp.readFile).mockResolvedValue(JSON.stringify(agents));
 
     const status = await getWorktreeStatus(PROJECT_PATH, 'durable_nogit');
-    expect(status.isValid).toBe(false);
+    expect(status.checkError).toMatch(/its folder is not a git worktree/);
+    expect(status.uncommittedFiles).toEqual([]);
+    expect(status.unpushedCommits).toEqual([]);
   });
 
   it('non-worktree agent returns isValid:false', async () => {
@@ -1060,66 +1062,140 @@ describe('getWorktreeStatus', () => {
     expect(status.isValid).toBe(false);
   });
 
-  it('valid worktree runs git commands async and returns parsed status', async () => {
-    const agents = [{ id: 'durable_wt', name: 'wt', color: 'indigo', branch: 'wt/standby', worktreePath: '/test/wt', createdAt: '2024-01-01' }];
+  function mockWorktree(id: string, folder: boolean) {
+    const agents = [{ id, name: 'wt', color: 'indigo', branch: 'wt/standby', worktreePath: '/test/wt', createdAt: '2024-01-01' }];
     vi.mocked(pathExists).mockImplementation(async (p: any) => {
       const s = String(p);
       if (s.endsWith('agents.json')) return true;
-      if (s === '/test/wt') return true;
-      if (s === path.join('/test/wt', '.git')) return true;
+      if (s === '/test/wt' || s === path.join('/test/wt', '.git')) return folder;
       return false;
     });
     vi.mocked(fsp.readFile).mockResolvedValue(JSON.stringify(agents));
+  }
 
-    // Mock exec to simulate git commands
-    vi.mocked(execFile).mockImplementation((_file: any, args: any, _opts: any, cb: any) => {
-      const cmdStr = args.join(' ');
-      if (cmdStr.includes('status --porcelain')) {
-        cb(null, ' M src/file.ts\n?? newfile.ts\n', '');
-      } else if (cmdStr.includes('rev-parse --verify main')) {
-        cb(null, 'abc123\n', '');
-      } else if (cmdStr.includes('remote')) {
-        cb(null, 'origin\n', '');
-      } else if (cmdStr.includes('log')) {
-        cb(null, 'abc123|abc1|fix bug|Author|2024-01-01 00:00:00 +0000\n', '');
-      } else {
-        cb(null, '', '');
-      }
+  /** Routes git by subcommand: `status`, `log` and so on map to their output, or to an Error. */
+  function mockGitBy(outputs: Record<string, string | Error>) {
+    vi.mocked(execFile).mockImplementation(((_file: string, args: string[], _opts: unknown, cb: (...a: unknown[]) => void) => {
+      const out = outputs[args[0]] ?? '';
+      if (out instanceof Error) cb(out, '', '');
+      else cb(null, out, '');
       return {} as any;
+    }) as any);
+  }
+
+  const COMMIT = 'abc123|abc1|fix bug|Author|2024-01-01 00:00:00 +0000\n';
+
+  it('valid worktree runs git commands async and returns parsed status', async () => {
+    mockWorktree('durable_wt', true);
+    mockGitBy({
+      'status': ' M src/file.ts\n?? newfile.ts\n',
+      'remote': 'origin\n',
+      'for-each-ref': 'refs/remotes/origin/main\n',
+      'symbolic-ref': 'refs/heads/wt/standby\n',
+      'log': COMMIT,
     });
 
     const status = await getWorktreeStatus(PROJECT_PATH, 'durable_wt');
     expect(status.isValid).toBe(true);
+    expect(status.checkError).toBeUndefined();
+    expect(status.worktreeMissing).toBeUndefined();
     expect(status.branch).toBe('wt/standby');
     expect(status.hasRemote).toBe(true);
     expect(status.uncommittedFiles).toHaveLength(2);
     expect(status.uncommittedFiles[0].path).toBe('src/file.ts');
     expect(status.unpushedCommits).toHaveLength(1);
     expect(status.unpushedCommits[0].shortHash).toBe('abc1');
+    // The same commits the dispose checks count: on the branch and HEAD, on no remote.
+    expect(gitArgv().find((a) => a[0] === 'log')).toEqual([
+      'log', '--format=%H|%h|%s|%an|%ai', 'refs/heads/wt/standby', 'HEAD', '--not', '--remotes',
+    ]);
   });
 
-  it('handles git command failures gracefully', async () => {
-    const agents = [{ id: 'durable_fail', name: 'fail', color: 'indigo', branch: 'fail/standby', worktreePath: '/test/wt', createdAt: '2024-01-01' }];
-    vi.mocked(pathExists).mockImplementation(async (p: any) => {
-      const s = String(p);
-      if (s.endsWith('agents.json')) return true;
-      if (s === '/test/wt') return true;
-      if (s === path.join('/test/wt', '.git')) return true;
-      return false;
-    });
-    vi.mocked(fsp.readFile).mockResolvedValue(JSON.stringify(agents));
+  it('a clean worktree has nothing to report', async () => {
+    mockWorktree('durable_clean', true);
+    mockGitBy({ 'symbolic-ref': 'refs/heads/wt/standby\n' });
 
-    // All git commands fail
-    vi.mocked(execFile).mockImplementation((_file: any, _args: any, _opts: any, cb: any) => {
-      cb(new Error('git failed'), '', '');
-      return {} as any;
-    });
+    const status = await getWorktreeStatus(PROJECT_PATH, 'durable_clean');
+    expect(status).toEqual({ isValid: true, branch: 'wt/standby', uncommittedFiles: [], unpushedCommits: [], hasRemote: false });
+    // Without a remote, work counts as saved only on a branch that stays.
+    expect(gitArgv().find((a) => a[0] === 'log')).toEqual([
+      'log', '--format=%H|%h|%s|%an|%ai', 'refs/heads/wt/standby', 'HEAD', '--not', '--exclude=wt/standby', '--branches',
+    ]);
+  });
+
+  it('reports git failures as not checked, never as a clean worktree', async () => {
+    mockWorktree('durable_fail', true);
+    mockGitBy({ 'status': new Error('git failed') });
 
     const status = await getWorktreeStatus(PROJECT_PATH, 'durable_fail');
-    expect(status.isValid).toBe(true);
+    expect(status.checkError).toBe("couldn't read its uncommitted files: git failed");
     expect(status.uncommittedFiles).toHaveLength(0);
     expect(status.unpushedCommits).toHaveLength(0);
-    expect(status.hasRemote).toBe(false);
+  });
+
+  it('reports a failed commit listing with the reason', async () => {
+    mockWorktree('durable_logfail', true);
+    mockGitBy({ 'log': new Error('fatal: bad object') });
+
+    const status = await getWorktreeStatus(PROJECT_PATH, 'durable_logfail');
+    expect(status.checkError).toBe("couldn't list the commits deleting it would lose: fatal: bad object");
+    expect(status.unpushedCommits).toEqual([]);
+  });
+
+  it('blocks on a remote that has never been fetched', async () => {
+    mockWorktree('durable_nofetch', true);
+    mockGitBy({ 'remote': 'origin\n', 'for-each-ref': '' });
+
+    const status = await getWorktreeStatus(PROJECT_PATH, 'durable_nofetch');
+    expect(status.checkError).toMatch(/its remote has never been fetched/);
+  });
+
+  it('checks the branch from the project when the worktree folder is missing', async () => {
+    mockWorktree('durable_gone', false);
+    mockGitBy({ 'rev-parse': 'true\n', 'log': COMMIT });
+
+    const status = await getWorktreeStatus(PROJECT_PATH, 'durable_gone');
+    expect(status).toMatchObject({ isValid: true, worktreeMissing: true, branch: 'wt/standby', uncommittedFiles: [] });
+    expect(status.unpushedCommits.map((c) => c.shortHash)).toEqual(['abc1']);
+    const log = vi.mocked(execFile).mock.calls.find((c) => (c[1] as unknown as string[])[0] === 'log')!;
+    expect((log[2] as { cwd: string }).cwd).toBe(PROJECT_PATH);
+    expect(log[1]).toEqual(['log', '--format=%H|%h|%s|%an|%ai', 'refs/heads/wt/standby', '--not', '--exclude=wt/standby', '--branches']);
+    // No status of a folder that isn't there.
+    expect(gitArgv().some((a) => a[0] === 'status')).toBe(false);
+  });
+
+  it('reports nothing at risk when the worktree folder and branch are both gone', async () => {
+    mockWorktree('durable_allgone', false);
+    mockGitBy({ 'rev-parse': 'true\n', 'show-ref': Object.assign(new Error('missing'), { code: 1 }) });
+
+    const status = await getWorktreeStatus(PROJECT_PATH, 'durable_allgone');
+    expect(status.isValid).toBe(false);
+    expect(status.checkError).toBeUndefined();
+  });
+
+  it('reports nothing at risk when the folder is missing and the project is not a repository', async () => {
+    mockWorktree('durable_norepo', false);
+    mockGitBy({ 'rev-parse': new Error('fatal: not a git repository (or any of the parent directories): .git') });
+
+    const status = await getWorktreeStatus(PROJECT_PATH, 'durable_norepo');
+    expect(status.isValid).toBe(false);
+    expect(status.checkError).toBeUndefined();
+  });
+
+  it('reports a failed repository probe as not checked when the folder is missing', async () => {
+    mockWorktree('durable_probefail', false);
+    mockGitBy({ 'rev-parse': new Error('spawn git ENOENT') });
+
+    const status = await getWorktreeStatus(PROJECT_PATH, 'durable_probefail');
+    expect(status).toMatchObject({ worktreeMissing: true, checkError: "couldn't read the project's repository: spawn git ENOENT" });
+  });
+
+  it('reports a failed branch check as not checked when the folder is missing', async () => {
+    mockWorktree('durable_refsfail', false);
+    mockGitBy({ 'rev-parse': 'true\n', 'show-ref': Object.assign(new Error('fatal: bad ref'), { code: 128 }) });
+
+    const status = await getWorktreeStatus(PROJECT_PATH, 'durable_refsfail');
+    expect(status).toMatchObject({ worktreeMissing: true, checkError: "couldn't list the commits deleting it would lose: fatal: bad ref" });
   });
 });
 

@@ -2277,52 +2277,60 @@ export async function getWorktreeStatus(projectPath: string, agentId: string): P
     return { isValid: false, branch: '', uncommittedFiles: [], unpushedCommits: [], hasRemote: false };
   }
 
+  // Fails closed like the dispose checks (#2245): a check that can't run is
+  // reported as such, never as a clean or already-removed worktree.
   const wt = agent.worktreePath;
+  const branch = agent.branch || '';
   const [wtExists, wtGitExists] = await Promise.all([
     pathExists(wt),
     pathExists(path.join(wt, '.git')),
   ]);
-  if (!wtExists || !wtGitExists) {
-    return { isValid: false, branch: agent.branch || '', uncommittedFiles: [], unpushedCommits: [], hasRemote: false };
+  const nothing = { branch, uncommittedFiles: [] as GitStatusFile[], unpushedCommits: [] as GitLogEntry[], hasRemote: false };
+  const couldNotCheck = (why: string, err: unknown): WorktreeStatus => {
+    const error = errorText(err);
+    appLog('core:agent-config', 'warn', 'Could not check worktree before delete', { meta: { agentId, error } });
+    return { isValid: wtExists, ...nothing, ...(!wtExists && { worktreeMissing: true }), checkError: `${why}: ${error}` };
+  };
+  if (wtExists && !wtGitExists) {
+    return couldNotCheck('its folder is not a git worktree', new Error(`${wt} has no .git`));
   }
+  if (!wtExists) {
+    try {
+      // No worktree and no repository: nothing on disk to lose.
+      if (!(await probeGitWorkTree(projectPath))) return { isValid: false, ...nothing };
+    } catch (err) {
+      return couldNotCheck("couldn't read the project's repository", err);
+    }
+  }
+  // With the folder gone, the branch is checked from the project.
+  const cwd = wtExists ? wt : projectPath;
 
-  // Run git status, base branch detection, and remote check in parallel
-  // Clubhouse's own config in the worktree is not the agent's work. A status
-  // that can't be read is reported as such, never as a clean worktree.
-  const [statusResult, base, remoteResult] = await Promise.all([
-    uncommittedPorcelain(wt).then(
-      (lines) => ({ lines, error: undefined as string | undefined }),
-      (err: unknown) => ({ lines: [] as string[], error: errorText(err) }),
-    ),
-    detectBaseBranch(projectPath),
-    execGitFileAsync(['remote'], wt).catch(() => ''),
+  // Clubhouse's own config in the worktree is not the agent's work.
+  const [statusResult, commitsResult] = await Promise.allSettled([
+    wtExists ? uncommittedPorcelain(wt) : Promise.resolve([] as string[]),
+    (async () => {
+      const { refs, own } = await refsDeletedWith(agent, cwd, wtExists);
+      if (refs.length === 0) return null;
+      const { range, hasRemote } = await lostCommitsRange(refs, own, cwd);
+      const logOut = await execGitFileAsync(['log', '--format=%H|%h|%s|%an|%ai', ...range], cwd);
+      const commits = logOut.trim().split('\n').filter(Boolean)
+        .map(parseLogLine)
+        .filter((e): e is GitLogEntry => e !== null);
+      return { commits, hasRemote };
+    })(),
   ]);
-  if (statusResult.error) {
-    appLog('core:agent-config', 'warn', 'Could not read worktree status', { meta: { agentId, error: statusResult.error } });
-  }
-  const uncommittedFiles = statusResult.lines.map(parseStatusLine);
-
-  // Get unpushed commits (depends on base branch result)
-  let unpushedCommits: GitLogEntry[] = [];
-  try {
-    const logOut = await execGitFileAsync(
-      ['log', `${base}..HEAD`, '--format=%H|%h|%s|%an|%ai'],
-      wt,
-    );
-    unpushedCommits = logOut.trim().split('\n').filter(Boolean)
-      .map(parseLogLine)
-      .filter((e): e is GitLogEntry => e !== null);
-  } catch {
-    // ignore
-  }
+  if (statusResult.status === 'rejected') return couldNotCheck("couldn't read its uncommitted files", statusResult.reason);
+  if (commitsResult.status === 'rejected') return couldNotCheck("couldn't list the commits deleting it would lose", commitsResult.reason);
+  // The worktree folder and the branch are both gone already.
+  if (!commitsResult.value) return { isValid: false, ...nothing };
 
   return {
     isValid: true,
-    branch: agent.branch || '',
-    uncommittedFiles,
-    unpushedCommits,
-    hasRemote: remoteResult.trim().length > 0,
-    ...(statusResult.error && { checkError: `couldn't read its uncommitted files: ${statusResult.error}` }),
+    branch,
+    uncommittedFiles: statusResult.value.map(parseStatusLine),
+    unpushedCommits: commitsResult.value.commits,
+    hasRemote: commitsResult.value.hasRemote,
+    ...(!wtExists && { worktreeMissing: true }),
   };
 }
 
@@ -2816,6 +2824,58 @@ async function branchesDisposedWith(agent: DurableAgentConfig): Promise<string[]
 }
 
 /**
+ * The refs deleting an agent destroys: the worktree's HEAD (while its folder
+ * is there) and the agent's branch. `own` holds their short branch names.
+ * Throws when git can't answer.
+ */
+async function refsDeletedWith(
+  agent: DurableAgentConfig,
+  cwd: string,
+  wtExists: boolean,
+): Promise<{ refs: string[]; own: string[] }> {
+  const refs: string[] = [];
+  const own: string[] = [];
+  if (agent.branch && await localBranchExists(agent.branch, cwd)) {
+    refs.push(`refs/heads/${agent.branch}`);
+    own.push(agent.branch);
+  }
+  if (wtExists) {
+    refs.push('HEAD');
+    try {
+      const head = (await execGitFileAsync(['symbolic-ref', '--quiet', 'HEAD'], cwd)).trim();
+      if (head.startsWith('refs/heads/')) own.push(head.slice('refs/heads/'.length));
+    } catch (err) {
+      // symbolic-ref exits 1 on a detached HEAD; anything else is a failure.
+      if ((err as { code?: unknown } | null)?.code !== 1) throw err;
+    }
+  }
+  return { refs, own };
+}
+
+/**
+ * The rev-list arguments selecting the commits on `refs` that deleting them
+ * would destroy. With a remote, pushed work survives. Without one, work
+ * survives only on a local branch that stays: not one named in `excluded`.
+ * Throws when git can't answer.
+ */
+async function lostCommitsRange(
+  refs: string[],
+  excluded: string[],
+  cwd: string,
+): Promise<{ range: string[]; hasRemote: boolean }> {
+  const remotes = (await execGitFileAsync(['remote'], cwd)).trim();
+  if (remotes) {
+    // A remote with no remote-tracking refs was never fetched; every commit
+    // would read as unpushed, which says nothing useful.
+    const tracking = (await execGitFileAsync(['for-each-ref', '--count=1', '--format=%(refname)', 'refs/remotes'], cwd)).trim();
+    if (!tracking) throw new Error('its remote has never been fetched');
+    return { range: [...refs, '--not', '--remotes'], hasRemote: true };
+  }
+  const exclusions = [...new Set(excluded)].map((r) => `--exclude=${r}`);
+  return { range: [...refs, '--not', ...exclusions, '--branches'], hasRemote: false };
+}
+
+/**
  * `alsoDisposed` names the branches of every other helper disposed in the
  * same cascade. Work that survives only on one of those branches is not safe.
  */
@@ -2836,46 +2896,16 @@ async function runDisposeChecks(
   }
   const cwd = wtExists ? wt : projectPath;
 
-  // The refs disposal would destroy: the worktree's HEAD and the agent's
-  // branch. `own` holds their short branch names, left out of --branches.
-  const refs: string[] = [];
-  const own: string[] = [];
-  if (agent.branch && await localBranchExists(agent.branch, cwd)) {
-    refs.push(`refs/heads/${agent.branch}`);
-    own.push(agent.branch);
-  }
-  let dirty = 0;
-  if (wtExists) {
-    refs.push('HEAD');
-    // Without Clubhouse's own config (clubhouse-owned-files.ts); throws, and so blocks, if git fails.
-    dirty = (await uncommittedPorcelain(cwd)).length;
-    try {
-      const head = (await execGitFileAsync(['symbolic-ref', '--quiet', 'HEAD'], cwd)).trim();
-      if (head.startsWith('refs/heads/')) own.push(head.slice('refs/heads/'.length));
-    } catch (err) {
-      // symbolic-ref exits 1 on a detached HEAD; anything else is a failure.
-      if ((err as { code?: unknown } | null)?.code !== 1) throw err;
-    }
-  }
+  const { refs, own } = await refsDeletedWith(agent, cwd, wtExists);
+  // Without Clubhouse's own config (clubhouse-owned-files.ts); throws, and so blocks, if git fails.
+  const dirty = wtExists ? (await uncommittedPorcelain(cwd)).length : 0;
   if (refs.length === 0) {
     // The worktree folder and the branch are both gone already.
     return { dirty: 0, unpushed: 0, unmerged: 0 };
   }
 
-  const remotes = (await execGitFileAsync(['remote'], cwd)).trim();
-  if (remotes) {
-    // A remote with no remote-tracking refs was never fetched; every commit
-    // would read as unpushed, which says nothing useful.
-    const tracking = (await execGitFileAsync(['for-each-ref', '--count=1', '--format=%(refname)', 'refs/remotes'], cwd)).trim();
-    if (!tracking) throw new Error('its remote has never been fetched');
-  }
-  // With a remote, pushed work survives disposal. Without one, work survives
-  // only on a local branch that stays: not this agent's, and not one of the
-  // other helpers disposed with it.
-  const excluded = [...new Set([...own, ...alsoDisposed])];
-  const unpushed = remotes
-    ? await gitCount(['rev-list', '--count', ...refs, '--not', '--remotes'], cwd)
-    : await gitCount(['rev-list', '--count', ...refs, '--not', ...excluded.map((r) => `--exclude=${r}`), '--branches'], cwd);
+  const { range } = await lostCommitsRange(refs, [...own, ...alsoDisposed], cwd);
+  const unpushed = await gitCount(['rev-list', '--count', ...range], cwd);
 
   // Information only: merged into main/master, else into the parent's branch.
   const parentBranch = agent.parentAgentId ? agentsById.get(agent.parentAgentId)?.branch : undefined;
