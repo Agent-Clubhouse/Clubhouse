@@ -20,6 +20,7 @@ vi.mock('../services/clubhouse-mcp', () => ({
     setInstructions: vi.fn(),
     setDisabledTools: vi.fn(),
     getAllBindings: vi.fn(() => []),
+    getBindingsForAgent: vi.fn(() => []),
     onChange: vi.fn(),
   },
   bridgeServer: { start: vi.fn(async () => 0), getAgentConnection: vi.fn(() => null) },
@@ -81,6 +82,7 @@ vi.mock('../services/orchestrator-connections', () => ({
 
 import { ipcMain, BrowserWindow } from 'electron';
 import { IPC } from '../../shared/ipc-channels';
+import { MCP_UNBIND_CANVAS_CLEANUP } from '../../shared/mcp-unbind';
 import { bindingManager, bridgeServer } from '../services/clubhouse-mcp';
 import { agentRegistry } from '../services/agent-registry';
 import { registerWebview, unregisterWebview } from '../services/clubhouse-mcp/tools/browser-tools';
@@ -131,6 +133,7 @@ beforeEach(() => {
   vi.mocked(bindingManager.unbind).mockClear();
   vi.mocked(bindingManager.setInstructions).mockClear();
   vi.mocked(bindingManager.setDisabledTools).mockClear();
+  vi.mocked(bindingManager.getBindingsForAgent).mockReturnValue([]);
 });
 
 function getHandler(channel: string): HandlerFn {
@@ -362,6 +365,65 @@ describe('SEC-06: MCP binding IPC authorization', () => {
       expect(() => handler(fakeEvent, 'agent-4', 'target-1', ['tool-a'])).toThrow('unauthorized caller');
       expect(bindingManager.setDisabledTools).not.toHaveBeenCalled();
     });
+  });
+});
+
+// ── #2082: plugin bindings ──────────────────────────────────────────────
+
+describe('plugin bindings are not renderer-controlled (#2082)', () => {
+  const pluginBinding = { agentId: 'agent-1', targetId: 'some-plugin', targetKind: 'plugin', label: 'Plugin' };
+
+  it('rejects bind with the plugin targetKind', () => {
+    mockGet.mockReturnValue(undefined);
+    const handler = getHandler(IPC.MCP_BINDING.BIND);
+    const target = { targetId: 'some-plugin', targetKind: 'plugin', label: 'Plugin' };
+    expect(() => handler(fakeEvent, 'agent-1', target)).toThrow(/Invalid targetKind/);
+    expect(bindingManager.bind).not.toHaveBeenCalled();
+    expect(clearBindingRemovedByUser).not.toHaveBeenCalled();
+  });
+
+  it('still binds every non-plugin targetKind', () => {
+    mockGet.mockReturnValue(undefined);
+    const handler = getHandler(IPC.MCP_BINDING.BIND);
+    for (const targetKind of ['browser', 'agent', 'terminal', 'group-project']) {
+      const target = { targetId: `t-${targetKind}`, targetKind, label: targetKind };
+      expect(() => handler(fakeEvent, 'agent-1', target)).not.toThrow();
+      expect(bindingManager.bind).toHaveBeenCalledWith('agent-1', target);
+    }
+  });
+
+  it('rejects unbind of an existing plugin binding', () => {
+    vi.mocked(bindingManager.getBindingsForAgent).mockReturnValue([pluginBinding] as any);
+    const handler = getHandler(IPC.MCP_BINDING.UNBIND);
+    expect(() => handler(fakeEvent, 'agent-1', 'some-plugin')).toThrow(/plugin bindings/);
+    expect(() => handler(fakeEvent, 'agent-1', 'some-plugin', MCP_UNBIND_CANVAS_CLEANUP)).toThrow(/plugin bindings/);
+    expect(bindingManager.unbind).not.toHaveBeenCalled();
+    expect(markBindingRemovedByUser).not.toHaveBeenCalled();
+  });
+
+  it('rejects setInstructions on an existing plugin binding', () => {
+    vi.mocked(bindingManager.getBindingsForAgent).mockReturnValue([pluginBinding] as any);
+    const handler = getHandler(IPC.MCP_BINDING.SET_INSTRUCTIONS);
+    expect(() => handler(fakeEvent, 'agent-1', 'some-plugin', { '*': 'do this' })).toThrow(/plugin bindings/);
+    expect(bindingManager.setInstructions).not.toHaveBeenCalled();
+  });
+
+  it('rejects setDisabledTools on an existing plugin binding', () => {
+    vi.mocked(bindingManager.getBindingsForAgent).mockReturnValue([pluginBinding] as any);
+    const handler = getHandler(IPC.MCP_BINDING.SET_DISABLED_TOOLS);
+    expect(() => handler(fakeEvent, 'agent-1', 'some-plugin', ['tool-a'])).toThrow(/plugin bindings/);
+    expect(bindingManager.setDisabledTools).not.toHaveBeenCalled();
+  });
+
+  it('still changes the agent\'s other bindings', () => {
+    const browserBinding = { agentId: 'agent-1', targetId: 'w1', targetKind: 'browser', label: 'Widget' };
+    vi.mocked(bindingManager.getBindingsForAgent).mockReturnValue([pluginBinding, browserBinding] as any);
+    getHandler(IPC.MCP_BINDING.SET_INSTRUCTIONS)(fakeEvent, 'agent-1', 'w1', { '*': 'x' });
+    getHandler(IPC.MCP_BINDING.SET_DISABLED_TOOLS)(fakeEvent, 'agent-1', 'w1', ['tool-a']);
+    getHandler(IPC.MCP_BINDING.UNBIND)(fakeEvent, 'agent-1', 'w1');
+    expect(bindingManager.setInstructions).toHaveBeenCalledWith('agent-1', 'w1', { '*': 'x' });
+    expect(bindingManager.setDisabledTools).toHaveBeenCalledWith('agent-1', 'w1', ['tool-a']);
+    expect(bindingManager.unbind).toHaveBeenCalledWith('agent-1', 'w1');
   });
 });
 

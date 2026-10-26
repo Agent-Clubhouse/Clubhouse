@@ -40,8 +40,9 @@ import { bindingManager } from './clubhouse-mcp/binding-manager';
 import type { BindingTargetKind } from './clubhouse-mcp/types';
 import { appLog } from './log-service';
 
+/** 'plugin' is left out (#2082): no source persists plugin wires, and one that does is skipped. */
 const VALID_TARGET_KINDS: ReadonlySet<string> = new Set<BindingTargetKind>([
-  'browser', 'agent', 'terminal', 'group-project', 'plugin',
+  'browser', 'agent', 'terminal', 'group-project',
 ]);
 
 /** A binding as a source persists it. */
