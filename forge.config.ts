@@ -13,6 +13,7 @@ import fs from 'fs';
 
 import { mainConfig } from './webpack.main.config';
 import { rendererConfig } from './webpack.renderer.config';
+import webpack, { type Configuration } from 'webpack';
 import { buildDevCsp } from './src/main/csp-nonce';
 
 function copyNativeModule(srcRoot: string, destRoot: string, moduleName: string): void {
@@ -129,6 +130,20 @@ export function packagerExecutableName(
 ): { executableName?: string } {
   return platform === 'linux' ? { executableName: 'clubhouse' } : {};
 }
+
+// Forge leaves `events` external for sandboxed preloads, expecting Electron to
+// provide it, but Electron 45's sandboxed preload `require` no longer does. In
+// dev, webpack-dev-server's hot client (webpack/hot/emitter.js) imports
+// `events`, so the whole preload failed to load ("module not found: events")
+// and `window.clubhouse` was undefined. Swap that emitter for one that bundles
+// the npm polyfill by path. Production preloads have no hot client.
+const preloadConfig: Configuration = {
+  ...rendererConfig,
+  plugins: [
+    ...(rendererConfig.plugins ?? []),
+    new webpack.NormalModuleReplacementPlugin(/webpack[\\/]hot[\\/]emitter\.js$/, path.join(__dirname, 'webpack.preload-hot-emitter.js')),
+  ],
+};
 
 const config: ForgeConfig = {
   packagerConfig: {
@@ -261,6 +276,7 @@ const config: ForgeConfig = {
             name: 'main_window',
             preload: {
               js: './src/preload/index.ts',
+              config: preloadConfig,
             },
           },
         ],
