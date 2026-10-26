@@ -1451,9 +1451,14 @@ export interface WorktreeStatus {
   hasRemote: boolean;
   /**
    * Set when a check could not run: the worktree is not known to be clean,
-   * and the delete dialog says so instead of offering a plain delete.
+   * and the delete dialog blocks deleting it (#2245).
    */
   checkError?: string;
+  /**
+   * The worktree folder is gone. The agent's branch was checked from the
+   * project instead, so `unpushedCommits` are the ones deleting it would lose.
+   */
+  worktreeMissing?: boolean;
 }
 
 export interface DeleteResult {

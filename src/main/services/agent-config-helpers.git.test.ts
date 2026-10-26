@@ -166,3 +166,36 @@ describe('worktree status when git fails', () => {
     expect((await getDisposeChecks(project, 'durable_3_b')).error).toBeTruthy();
   });
 });
+
+describe('worktree status before delete (#2245)', () => {
+  it('reports a clean worktree as clean', async () => {
+    const status = await getWorktreeStatus(project, 'durable_3_b');
+    expect(status).toEqual({ isValid: true, branch: 'helper-b/standby', uncommittedFiles: [], unpushedCommits: [], hasRemote: false });
+  });
+
+  it('lists uncommitted files and commits on no other branch', async () => {
+    commit(worktree('helper-b'), 'x.txt');
+    fs.writeFileSync(path.join(worktree('helper-b'), 'notes.txt'), 'draft\n');
+    const status = await getWorktreeStatus(project, 'durable_3_b');
+    expect(status.uncommittedFiles.map((f) => f.path)).toEqual(['notes.txt']);
+    expect(status.unpushedCommits.map((c) => c.subject)).toEqual(['add x.txt']);
+    expect(status.checkError).toBeUndefined();
+  });
+
+  it('checks the branch from the project when the worktree folder is missing', async () => {
+    commit(worktree('helper-b'), 'x.txt');
+    fs.rmSync(worktree('helper-b'), { recursive: true, force: true });
+    const status = await getWorktreeStatus(project, 'durable_3_b');
+    expect(status).toMatchObject({ isValid: true, worktreeMissing: true, uncommittedFiles: [] });
+    expect(status.unpushedCommits.map((c) => c.subject)).toEqual(['add x.txt']);
+    expect(status.checkError).toBeUndefined();
+  });
+
+  it('reports a missing folder whose branch is saved elsewhere as having nothing to lose', async () => {
+    commit(worktree('helper-b'), 'x.txt');
+    git(['merge', '-q', '--ff-only', 'helper-b/standby']);
+    fs.rmSync(worktree('helper-b'), { recursive: true, force: true });
+    const status = await getWorktreeStatus(project, 'durable_3_b');
+    expect(status).toMatchObject({ isValid: true, worktreeMissing: true, unpushedCommits: [] });
+  });
+});

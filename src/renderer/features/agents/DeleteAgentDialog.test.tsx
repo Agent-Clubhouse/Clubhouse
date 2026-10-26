@@ -62,7 +62,7 @@ describe('DeleteAgentDialog', () => {
     expect(screen.getByText(/No uncommitted changes detected/)).toBeInTheDocument();
   });
 
-  it('says it could not check, instead of calling the worktree clean, when git failed', async () => {
+  it('says it could not check, and blocks deleting, when git failed', async () => {
     window.clubhouse.agent.getWorktreeStatus = vi.fn().mockResolvedValue({
       isValid: true,
       uncommittedFiles: [],
@@ -75,11 +75,86 @@ describe('DeleteAgentDialog', () => {
       expect(screen.getByText(/Couldn't check bold-falcon's worktree for unsaved work/)).toBeInTheDocument();
     });
     expect(screen.queryByText(/No uncommitted changes detected/)).not.toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Delete anyway' })).toBeInTheDocument();
+    // Force is never offered over an unknown (#2245); Leave files keeps everything.
+    expect(screen.queryByRole('button', { name: /Delete/ })).not.toBeInTheDocument();
+    expect(screen.queryByText('Force delete')).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Leave files' }));
+    await waitFor(() => expect(mockExecuteDelete).toHaveBeenCalledWith('unregister', '/home/user/project'));
     // Git's own output is in the tooltip, not the sentence.
     const note = screen.getByTestId('delete-check-note');
     expect(note).not.toHaveTextContent('fatal');
     expect(note).toHaveAttribute('title', "couldn't read its uncommitted files: fatal: not a git repository");
+  });
+
+  it('blocks deleting when the branch of a missing worktree folder could not be checked', async () => {
+    window.clubhouse.agent.getWorktreeStatus = vi.fn().mockResolvedValue({
+      isValid: false,
+      branch: 'bold-falcon/standby',
+      uncommittedFiles: [],
+      unpushedCommits: [],
+      hasRemote: false,
+      worktreeMissing: true,
+      checkError: "couldn't list the commits deleting it would lose: fatal: bad ref",
+    });
+    render(<DeleteAgentDialog />);
+    await waitFor(() => {
+      expect(screen.getByText(/Couldn't check bold-falcon's branch for unsaved work, because its worktree folder is missing/)).toBeInTheDocument();
+    });
+    expect(screen.queryByText(/may have already been removed/)).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Delete/ })).not.toBeInTheDocument();
+    expect(screen.getByTestId('delete-check-note')).toHaveAttribute('title', "couldn't list the commits deleting it would lose: fatal: bad ref");
+  });
+
+  it('blocks deleting when the status could not be fetched', async () => {
+    window.clubhouse.agent.getWorktreeStatus = vi.fn().mockRejectedValue(new Error('IPC timed out'));
+    render(<DeleteAgentDialog />);
+    await waitFor(() => {
+      expect(screen.getByText(/Couldn't check bold-falcon's worktree for unsaved work/)).toBeInTheDocument();
+    });
+    expect(screen.queryByRole('button', { name: /Delete/ })).not.toBeInTheDocument();
+    expect(screen.getByTestId('delete-check-note')).toHaveAttribute('title', "couldn't get its status: IPC timed out");
+  });
+
+  it('offers only Leave files when a missing worktree folder leaves unpushed commits on the branch', async () => {
+    window.clubhouse.agent.getWorktreeStatus = vi.fn().mockResolvedValue({
+      isValid: true,
+      branch: 'bold-falcon/standby',
+      uncommittedFiles: [],
+      unpushedCommits: [{ hash: 'abc123', shortHash: 'abc1', subject: 'Add feature' }],
+      hasRemote: false,
+      worktreeMissing: true,
+    });
+    render(<DeleteAgentDialog />);
+    await waitFor(() => {
+      expect(screen.getByTestId('delete-dirty-note')).toHaveTextContent(
+        'Its worktree folder is missing, but its branch bold-falcon/standby has commits that deleting it would lose.',
+      );
+    });
+    expect(screen.getByText('Add feature')).toBeInTheDocument();
+    expect(screen.queryByText('Force delete')).not.toBeInTheDocument();
+    expect(screen.queryByText('Commit & push')).not.toBeInTheDocument();
+    expect(screen.queryByText('Cleanup branch')).not.toBeInTheDocument();
+    expect(screen.queryByText('Save as patch')).not.toBeInTheDocument();
+    fireEvent.click(screen.getByText('Leave files'));
+    await waitFor(() => expect(mockExecuteDelete).toHaveBeenCalledWith('unregister', '/home/user/project'));
+    expect(mockExecuteDelete).not.toHaveBeenCalledWith('force', expect.anything());
+  });
+
+  it('offers a plain delete when a missing worktree folder leaves nothing at risk', async () => {
+    window.clubhouse.agent.getWorktreeStatus = vi.fn().mockResolvedValue({
+      isValid: true,
+      branch: 'bold-falcon/standby',
+      uncommittedFiles: [],
+      unpushedCommits: [],
+      hasRemote: true,
+      worktreeMissing: true,
+    });
+    render(<DeleteAgentDialog />);
+    await waitFor(() => {
+      expect(screen.getByText(/Its worktree folder is already gone. This will remove its branch/)).toBeInTheDocument();
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Delete' }));
+    await waitFor(() => expect(mockExecuteDelete).toHaveBeenCalledWith('force', '/home/user/project'));
   });
 
   it('shows simple dialog for non-worktree agent', async () => {

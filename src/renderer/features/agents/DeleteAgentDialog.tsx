@@ -117,8 +117,13 @@ export function DeleteAgentDialog() {
         setStatus(s);
         setHelperCount(helpers.length);
       }
-    } catch {
-      setStatus(null);
+    } catch (err) {
+      // telemetry-exempt: the failure blocks deleting and reaches the user in the dialog.
+      // A status that couldn't be fetched blocks deleting, like a git failure (#2245).
+      setStatus({
+        isValid: false, branch: '', uncommittedFiles: [], unpushedCommits: [], hasRemote: false,
+        checkError: `couldn't get its status: ${err instanceof Error ? err.message : String(err)}`,
+      });
     }
     setLoading(false);
   }, [deleteDialogAgent, activeProject, isRemote, remoteParts, remoteProjectParts, requestWorktreeStatus]);
@@ -267,10 +272,17 @@ export function DeleteAgentDialog() {
     );
   }
 
-  const isDirty = status?.isValid &&
-    (status.uncommittedFiles.length > 0 || status.unpushedCommits.length > 0);
   // The check could not run, so the worktree is not known to be clean.
-  const checkFailed = !!status?.isValid && !!status.checkError;
+  // Deleting is blocked, never offered "anyway" (#2245).
+  const checkFailed = !!status?.checkError;
+  const isDirty = !checkFailed && status?.isValid &&
+    (status.uncommittedFiles.length > 0 || status.unpushedCommits.length > 0);
+  // With the folder gone only the branch is left; nothing can be saved from
+  // it here, so Leave files (which keeps the branch) is the only way out.
+  const worktreeMissing = !!status?.worktreeMissing;
+  const dirtyOptions = DIRTY_OPTIONS.filter((opt) =>
+    worktreeMissing ? opt.mode === 'unregister' : !isRemote || opt.mode !== 'save-patch',
+  );
 
   const handleSimpleDelete = () => handleExecute('force');
   const handleLeaveFiles = () => handleExecute('unregister');
@@ -295,7 +307,9 @@ export function DeleteAgentDialog() {
             {/* Git's own output stays in the tooltip. */}
             <p className="text-sm text-ctp-subtext0 mb-4" title={checkFailed ? status!.checkError : undefined} data-testid="delete-check-note">
               {checkFailed
-                ? `Couldn't check ${agent.name}'s worktree for unsaved work, because git couldn't read it. Deleting it could lose changes.`
+                ? `Couldn't check ${agent.name}'s ${worktreeMissing ? 'branch' : 'worktree'} for unsaved work, because ${worktreeMissing ? 'its worktree folder is missing and git couldn\'t read the branch' : 'git couldn\'t read it'}. It can't be deleted until the check runs. Leave files keeps everything on disk.`
+                : worktreeMissing
+                ? 'Its worktree folder is already gone. This will remove its branch. No unpushed commits detected.'
                 : status?.isValid
                 ? 'This will remove the worktree and branch. No uncommitted changes detected.'
                 : 'This agent\'s worktree could not be inspected. It may have already been removed.'}
@@ -324,15 +338,17 @@ export function DeleteAgentDialog() {
               >
                 Leave files
               </button>
-              <button
-                onClick={handleSimpleDelete}
-                disabled={executing}
-                className="px-4 py-1.5 text-xs rounded bg-ctp-error/80 text-white
-                  hover:bg-ctp-error cursor-pointer font-medium disabled:opacity-50 flex items-center gap-1.5"
-              >
-                {executing && <Spinner size="xs" />}
-                {checkFailed ? 'Delete anyway' : 'Delete'}
-              </button>
+              {!checkFailed && (
+                <button
+                  onClick={handleSimpleDelete}
+                  disabled={executing}
+                  className="px-4 py-1.5 text-xs rounded bg-ctp-error/80 text-white
+                    hover:bg-ctp-error cursor-pointer font-medium disabled:opacity-50 flex items-center gap-1.5"
+                >
+                  {executing && <Spinner size="xs" />}
+                  Delete
+                </button>
+              )}
             </div>
           </>
         ) : (
@@ -341,8 +357,10 @@ export function DeleteAgentDialog() {
             <h2 className="text-base font-semibold text-ctp-text mb-1">
               Delete {agent.name}?
             </h2>
-            <p className="text-xs text-ctp-subtext0 mb-3">
-              This agent has unsaved work. Choose how to handle it{!status.hasRemote ? ' (local only — no remote)' : ''}.
+            <p className="text-xs text-ctp-subtext0 mb-3" data-testid="delete-dirty-note">
+              {worktreeMissing
+                ? `Its worktree folder is missing, but its branch ${status.branch} has commits that deleting it would lose. Leave files keeps the branch.`
+                : `This agent has unsaved work. Choose how to handle it${!status.hasRemote ? ' (local only — no remote)' : ''}.`}
             </p>
 
             {error && (
@@ -393,7 +411,7 @@ export function DeleteAgentDialog() {
 
               {/* Option cards — save-patch requires local file dialog, unavailable for remote */}
               <div className="space-y-1.5">
-                {DIRTY_OPTIONS.filter((opt) => !isRemote || opt.mode !== 'save-patch').map((opt) => (
+                {dirtyOptions.map((opt) => (
                   <button
                     key={opt.mode}
                     onClick={() => handleExecute(opt.mode)}
