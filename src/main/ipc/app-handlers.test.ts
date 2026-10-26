@@ -190,6 +190,8 @@ import { getLogDir } from '../telemetry/local-control';
 import { KNOWN_LOG_NAMESPACES, listLogNamespaces } from '../../shared/log-namespaces';
 import * as logSettings from '../services/log-settings';
 import * as annexServer from '../services/annex-server';
+import { _reset as resetActiveTheme, getActiveTheme } from '../services/active-theme-store';
+import { THEMES } from '../../renderer/themes';
 import { ensureDefaultTemplates, enableExclusions, disableExclusions } from '../services/materialization-service';
 import { resolveOrchestrator } from '../services/agent-system';
 
@@ -218,7 +220,7 @@ describe('app-handlers', () => {
       IPC.APP.OPEN_EXTERNAL_URL, IPC.APP.GET_VERSION, IPC.APP.GET_ARCH_INFO,
       IPC.APP.GET_NOTIFICATION_SETTINGS, IPC.APP.SAVE_NOTIFICATION_SETTINGS,
       IPC.APP.SEND_NOTIFICATION, IPC.APP.CLOSE_NOTIFICATION,
-      IPC.APP.GET_THEME, IPC.APP.SAVE_THEME, IPC.APP.SYNC_PLUGIN_THEMES, IPC.APP.UPDATE_TITLE_BAR_OVERLAY,
+      IPC.APP.GET_THEME, IPC.APP.SAVE_THEME, IPC.APP.SYNC_PLUGIN_THEMES, IPC.APP.SYNC_ACTIVE_THEME, IPC.APP.UPDATE_TITLE_BAR_OVERLAY,
       IPC.APP.GET_ORCHESTRATOR_SETTINGS, IPC.APP.SAVE_ORCHESTRATOR_SETTINGS, IPC.APP.SET_ORCHESTRATOR_HOOK_SERVER,
       IPC.APP.GET_HEADLESS_SETTINGS, IPC.APP.SAVE_HEADLESS_SETTINGS,
       IPC.APP.GET_BADGE_SETTINGS, IPC.APP.SAVE_BADGE_SETTINGS,
@@ -381,6 +383,49 @@ describe('app-handlers', () => {
     ];
     await handler({}, themes);
     expect(mockSyncPluginThemes).toHaveBeenCalledWith(themes);
+  });
+
+  describe('SYNC_ACTIVE_THEME', () => {
+    const workshop = {
+      id: 'dark',
+      type: 'dark' as const,
+      colors: { ...THEMES['catppuccin-mocha'].colors, accent: '#ff8800' },
+      gradients: { accent: 'linear-gradient(90deg, #ff8800, #ffcc00)' },
+    };
+
+    beforeEach(() => resetActiveTheme());
+
+    it('stores the applied theme and tells Annex when it is the selected one', async () => {
+      const handler = handleHandlers.get(IPC.APP.SYNC_ACTIVE_THEME)!;
+      await handler({}, workshop);
+      expect(getActiveTheme()).toEqual(workshop);
+      expect(annexServer.broadcastThemeChanged).toHaveBeenCalledTimes(1);
+    });
+
+    it('does not re-broadcast an unchanged theme', async () => {
+      const handler = handleHandlers.get(IPC.APP.SYNC_ACTIVE_THEME)!;
+      await handler({}, workshop);
+      await handler({}, { ...workshop });
+      expect(annexServer.broadcastThemeChanged).toHaveBeenCalledTimes(1);
+    });
+
+    it('stores but does not broadcast a theme that is not the selected one', async () => {
+      const handler = handleHandlers.get(IPC.APP.SYNC_ACTIVE_THEME)!;
+      await handler({}, { ...workshop, id: 'catppuccin-mocha' });
+      expect(getActiveTheme()?.id).toBe('catppuccin-mocha');
+      expect(annexServer.broadcastThemeChanged).not.toHaveBeenCalled();
+    });
+
+    it.each([
+      ['a missing color', { ...workshop, colors: { ...workshop.colors, base: undefined } }],
+      ['a non-string color', { ...workshop, colors: { ...workshop.colors, text: 3 } }],
+      ['an unknown type', { ...workshop, type: 'sepia' }],
+      ['an unknown gradient', { ...workshop, gradients: { glow: 'x' } }],
+    ])('rejects %s', (_label, theme) => {
+      const handler = handleHandlers.get(IPC.APP.SYNC_ACTIVE_THEME)!;
+      expect(() => handler({}, theme)).toThrow();
+      expect(getActiveTheme()).toBeNull();
+    });
   });
 
   it('UPDATE_TITLE_BAR_OVERLAY sets overlay on ALL windows on win32', async () => {

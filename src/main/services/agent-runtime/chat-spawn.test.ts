@@ -213,6 +213,8 @@ require('readline').createInterface({ input: process.stdin }).on('line', line =>
     expect(await tryStartChatAgent(params, provider, undefined, undefined, null, onStarting)).toBe('terminal');
     mode.value = { mode: 'chat' };
     expect(await tryStartChatAgent({ ...params, kind: 'quick' }, provider, undefined, undefined, null, onStarting)).toBe('terminal');
+    // A companion stays in the terminal even when flagged interactive; only quick agents opt in.
+    expect(await tryStartChatAgent({ ...params, kind: 'companion', interactive: true }, provider, undefined, undefined, null, onStarting)).toBe('terminal');
     clearChatDrivers();
     expect(await tryStartChatAgent(params, provider, undefined, undefined, null, onStarting)).toBe('terminal');
     expect(registry.setRuntime).not.toHaveBeenCalled();
@@ -245,6 +247,12 @@ require('readline').createInterface({ input: process.stdin }).on('line', line =>
     expect(getAgentRuntime('agent-1')).toBeUndefined();
     await new Promise((r) => setTimeout(r, 20));
     expect(exitBroadcast.broadcastAgentExit).not.toHaveBeenCalled();
+  });
+
+  it('starts chat for a quick agent started to talk to (interactive)', async () => {
+    registerChatDriver(new FakeChatDriver());
+    mode.value = { mode: 'chat' };
+    expect(await tryStartChatAgent({ ...params, kind: 'quick', interactive: true }, provider, undefined, undefined, null)).toBe('chat');
   });
 
   it('starts a chat runtime with the user binary, the Clubhouse MCP bridge and agent env', async () => {

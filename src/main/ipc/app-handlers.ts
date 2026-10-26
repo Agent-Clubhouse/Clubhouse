@@ -34,6 +34,7 @@ import { cancelAppShutdown, runAppShutdown } from '../services/app-shutdown';
 import { getAgentRuntime } from '../services/agent-runtime';
 import * as agentSystem from '../services/agent-system';
 import { syncPluginThemes, PluginThemeSummary } from '../services/plugin-theme-store';
+import { syncActiveTheme, validateActiveThemeSnapshot, type ActiveThemeSnapshot } from '../services/active-theme-store';
 import { consumePendingProtocolAction } from '../services/protocol-service';
 import { flushBeforeExit } from '../telemetry/facade';
 import { getLogDir, syncLocalRecording } from '../telemetry/local-control';
@@ -181,6 +182,20 @@ export function registerAppHandlers(): void {
     }))],
     (_event, themes) => {
       syncPluginThemes(themes);
+    },
+  ));
+
+  // Receive the theme the renderer applied, so Annex can send phones the real
+  // colors of plugin and custom themes (main can't resolve those by id).
+  ipcMain.handle(IPC.APP.SYNC_ACTIVE_THEME, withValidatedArgs(
+    [objectArg<ActiveThemeSnapshot>({ validate: validateActiveThemeSnapshot })],
+    (_event, theme) => {
+      const changed = syncActiveTheme(theme);
+      // SAVE_THEME broadcasts a newly selected theme; this covers colors that
+      // change under the same id (a plugin pack update, a late registration).
+      if (changed && theme.id === themeService.getSettings().themeId) {
+        annexServer.broadcastThemeChanged();
+      }
     },
   ));
 

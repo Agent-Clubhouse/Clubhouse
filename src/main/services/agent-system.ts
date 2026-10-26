@@ -84,6 +84,12 @@ export interface SpawnAgentParams {
   companionWorkspace?: string;
   /** Permission mode override for resume (preserves pre-restart mode) */
   permissionMode?: FreeAgentPermissionMode;
+  /**
+   * Started for a person to talk to, e.g. from a phone. A quick agent then
+   * follows the provider's Chat / Terminal setting like a durable one,
+   * instead of the project's headless spawn mode.
+   */
+  interactive?: boolean;
   /** CLI agent name to load (e.g. --agent k8s-assistant) */
   agentFile?: string;
   /** Source directory for agent file (e.g. --source ~/.copilot/agents/) */
@@ -435,46 +441,57 @@ async function spawnAgentInner(inParams: SpawnAgentParams, facts: SpawnFacts): P
     // Again here and before each runtime start below: a spawn can pass the
     // entry check, then reach its runtime after shutdown began (#2053).
     assertLaunchesOpen();
-    try {
-      chatStart = await withErrorType('chat_start_failed', () => tryStartChatAgent({
-        agentId: params.agentId,
-        projectPath: params.projectPath,
-        cwd: params.cwd,
-        kind: params.kind,
-        model: params.model,
-        mission: params.mission,
-        systemPrompt: params.systemPrompt,
-        freeAgentMode: params.freeAgentMode,
-        permissionMode,
-        resume: params.resume,
-        sessionId: params.sessionId,
-      }, provider, profileEnv, commandPrefix, durableConfig, () => { chatStartMs = Date.now(); }, chatFacts));
-    } catch (err) {
-      recordChatStart(chatStartMs, 'failed', chatFacts, chatContext);
-      throw err;
+    const startChat = async (p: SpawnAgentParams): Promise<ChatStartResult> => {
+      try {
+        const result = await withErrorType('chat_start_failed', () => tryStartChatAgent({
+          agentId: p.agentId,
+          projectPath: p.projectPath,
+          cwd: p.cwd,
+          kind: p.kind,
+          model: p.model,
+          mission: p.mission,
+          systemPrompt: p.systemPrompt,
+          freeAgentMode: p.freeAgentMode,
+          permissionMode,
+          resume: p.resume,
+          sessionId: p.sessionId,
+          interactive: p.interactive,
+        }, provider, profileEnv, commandPrefix, durableConfig, () => { chatStartMs = Date.now(); }, chatFacts));
+        recordChatStart(chatStartMs, result, chatFacts, chatContext);
+        return result;
+      } catch (err) {
+        recordChatStart(chatStartMs, 'failed', chatFacts, chatContext);
+        throw err;
+      }
+    };
+    chatStart = await startChat(params);
+
+    // Chat couldn't resume because the session is gone: don't let anything
+    // retry the same dead id (#2086). The chat runtime still works, so start a
+    // fresh chat session before falling back to a fresh terminal. Without this,
+    // waking a chat agent whose session expired (from the app or a phone)
+    // silently lands it in the terminal.
+    if (chatStart !== 'chat' && chatStart !== 'cancelled') {
+      const chatFailure = takeChatStartFailure(params.agentId);
+      if (params.kind === 'durable' && params.resume && params.sessionId && isSessionNotFound(chatFailure)) {
+        await clearResume(params.projectPath, provider.id, params.agentId, params.sessionId, 'chat_not_found');
+        params = { ...params, resume: false, sessionId: undefined };
+        assertLaunchesOpen();
+        chatStart = await startChat(params);
+        recordResumeOutcome(provider.id, params.agentId, 'fresh_not_found', chatStart === 'chat' ? 'chat' : 'pty');
+      }
     }
-    recordChatStart(chatStartMs, chatStart, chatFacts, chatContext);
     // Killed, or replaced by a newer start for this agent: that one owns the
     // agent now, so this spawn opens nothing (in particular no terminal).
     if (chatStart === 'cancelled') return;
-    const startedInChat = chatStart === 'chat';
-    if (startedInChat) {
+    if (chatStart === 'chat') {
       facts.runtime = 'chat';
       broadcastToAllWindows(IPC.AGENT.AGENT_AWOKE, params.agentId);
       return;
     }
 
-    // Chat couldn't resume because the session is gone: don't make the
-    // terminal try the same dead id (#2086). Start it fresh instead.
-    const chatFailure = takeChatStartFailure(params.agentId);
-    if (params.kind === 'durable' && params.resume && params.sessionId && isSessionNotFound(chatFailure)) {
-      await clearResume(params.projectPath, provider.id, params.agentId, params.sessionId, 'chat_not_found');
-      recordResumeOutcome(provider.id, params.agentId, 'fresh_not_found', 'pty');
-      params = { ...params, resume: false, sessionId: undefined };
-    }
-
     // Try headless path for quick agents when enabled
-    if (spawnMode === 'headless' && params.kind === 'quick' && isHeadlessCapable(provider)) {
+    if (spawnMode === 'headless' && params.kind === 'quick' && !params.interactive && isHeadlessCapable(provider)) {
       const headlessResult = await provider.buildHeadlessCommand({
         cwd: params.cwd,
         model: params.model,

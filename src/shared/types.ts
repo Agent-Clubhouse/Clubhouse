@@ -972,6 +972,10 @@ export interface AnnexStatus {
   icon: string;
   /** Color identifier */
   color: string;
+  /** `clubhousego://pair` link for the settings QR code; set while the TLS server is up. */
+  pairingUrl?: string;
+  /** The hosts in pairingUrl, best first, for manual pairing. */
+  pairingHosts?: string[];
 }
 
 // ── Annex peer types ──────────────────────────────────────────────────

@@ -160,6 +160,8 @@ vi.mock('./theme-service', () => ({
 vi.mock('./annex-settings', () => ({
   getSettings: vi.fn().mockReturnValue({ enableServer: false, enableClient: false, deviceName: 'Test Machine', alias: 'Test Machine', icon: 'computer', color: 'indigo', autoReconnect: false }),
   saveSettings: vi.fn(),
+  getLastPorts: vi.fn().mockReturnValue({ mainPort: 0, pairingPort: 0 }),
+  saveLastPorts: vi.fn().mockResolvedValue(undefined),
 }));
 
 // Mock plugin-manifest-registry
@@ -274,6 +276,8 @@ describe('annex-server', () => {
   beforeEach(() => {
     // Re-apply mock return values after mockReset clears them
     vi.mocked(annexSettings.getSettings).mockReturnValue({ enabled: false, deviceName: 'Test Machine', alias: 'Test Machine', icon: 'computer', color: 'indigo', autoReconnect: false });
+    vi.mocked(annexSettings.getLastPorts).mockReturnValue({ mainPort: 0, pairingPort: 0 });
+    vi.mocked(annexSettings.saveLastPorts).mockResolvedValue(undefined);
     vi.mocked(annexIdentity.getOrCreateIdentity).mockReturnValue({
       publicKey: 'mock-public-key',
       privateKey: 'mock-private-key',
@@ -338,6 +342,173 @@ describe('annex-server', () => {
   // -------------------------------------------------------------------------
   // Original tests (pairing, auth, lifecycle)
   // -------------------------------------------------------------------------
+
+  describe('stable ports (#go-device-readiness)', () => {
+    async function freePort(): Promise<number> {
+      const srv = net.createServer();
+      await new Promise<void>((r) => srv.listen(0, '127.0.0.1', () => r()));
+      const { port } = srv.address() as net.AddressInfo;
+      await new Promise((r) => srv.close(r));
+      return port;
+    }
+
+    it('binds the ports remembered from the last launch', async () => {
+      const [mainPort, pairingPort] = [await freePort(), await freePort()];
+      vi.mocked(annexSettings.getLastPorts).mockReturnValue({ mainPort, pairingPort });
+      annexServer.start();
+      await vi.waitFor(() => expect(annexServer.getStatus().pairingPort).toBe(pairingPort));
+      expect(annexServer.getStatus().port).toBe(mainPort);
+      // Nothing changed, so nothing is written.
+      expect(annexSettings.saveLastPorts).not.toHaveBeenCalled();
+    });
+
+    it('takes a new port when the remembered one is taken, and remembers the new pair', async () => {
+      const blocker = net.createServer();
+      await new Promise<void>((r) => blocker.listen(0, '127.0.0.1', () => r()));
+      const taken = (blocker.address() as net.AddressInfo).port;
+      try {
+        vi.mocked(annexSettings.getLastPorts).mockReturnValue({ mainPort: taken, pairingPort: 0 });
+        annexServer.start();
+        await vi.waitFor(() => expect(annexSettings.saveLastPorts).toHaveBeenCalled());
+        const status = annexServer.getStatus();
+        expect(status.port).toBeGreaterThan(0);
+        expect(status.port).not.toBe(taken);
+        expect(annexSettings.saveLastPorts).toHaveBeenCalledWith({ mainPort: status.port, pairingPort: status.pairingPort });
+      } finally {
+        blocker.close();
+      }
+    });
+  });
+
+  describe('pairing link in status (#go-device-readiness)', () => {
+    const CERT = Array(32).fill('AB').join(':');
+
+    it('is absent while the main server runs without TLS', async () => {
+      await startAndPair();
+      expect(annexServer.getStatus().pairingUrl).toBeUndefined();
+    });
+
+    it('carries the TLS port, normalized cert, identity, PIN and alias, and follows a new PIN', async () => {
+      // An https server with no certificate still listens; no handshake happens here.
+      vi.mocked(annexTls.createTlsServerOptions).mockReturnValue({} as any);
+      vi.mocked(annexTls.getCertificateFingerprint).mockReturnValue(CERT);
+      annexServer.start();
+      await vi.waitFor(() => expect(annexServer.getStatus().pairingUrl).toBeDefined());
+
+      const status = annexServer.getStatus();
+      const url = new URL(status.pairingUrl!);
+      expect(url.protocol).toBe('clubhousego:');
+      expect(url.searchParams.get('v')).toBe('1');
+      // The suite binds loopback only, so that's the one host.
+      expect(url.searchParams.getAll('host')).toEqual(['127.0.0.1']);
+      expect(status.pairingHosts).toEqual(['127.0.0.1']);
+      expect(url.searchParams.get('port')).toBe(String(status.port));
+      expect(url.searchParams.get('id')).toBe('AA:BB:CC:DD');
+      expect(url.searchParams.get('cert')).toBe('ab'.repeat(32));
+      expect(url.searchParams.get('pin')).toBe(status.pin);
+      expect(url.searchParams.get('name')).toBe('Test Machine');
+
+      annexServer.regeneratePin();
+      const next = annexServer.getStatus();
+      expect(new URL(next.pairingUrl!).searchParams.get('pin')).toBe(next.pin);
+    });
+  });
+
+  describe('lastActivityAt (#go-device-readiness)', () => {
+    const NOW = 1_800_000_000_000;
+
+    beforeEach(async () => {
+      vi.mocked(pluginManifestRegistry.listAllManifests).mockReturnValue([]);
+      const { groupProjectRegistry } = await import('./group-project-registry');
+      vi.mocked(groupProjectRegistry.list).mockResolvedValue([]);
+      const themeService = await import('./theme-service');
+      vi.mocked(themeService.getSettings).mockReturnValue({ themeId: 'catppuccin-mocha' } as any);
+      vi.mocked(projectStore.list).mockReturnValue([{ id: 'proj_1', name: 'test', path: '/tmp/test' }] as any);
+      vi.mocked(agentConfigModule.listDurable).mockReturnValue([
+        { id: 'durable_1', name: 'agent-1', color: 'indigo', createdAt: '2025-01-01T00:00:00.000Z' },
+      ] as any);
+    });
+
+    async function snapshotAgents() {
+      const snapshot = await annexServer._testing.buildSnapshot() as { agents: Record<string, any[]>; quickAgents: Record<string, any[]> };
+      return snapshot;
+    }
+
+    it('falls back to the creation time, then reports the latest recorded activity', async () => {
+      expect((await snapshotAgents()).agents.proj_1[0].lastActivityAt).toBe(Date.parse('2025-01-01T00:00:00.000Z'));
+      annexServer._testing.noteAgentActivity('durable_1', NOW);
+      // An older event never moves it backwards.
+      annexServer._testing.noteAgentActivity('durable_1', NOW - 5_000);
+      expect((await snapshotAgents()).agents.proj_1[0].lastActivityAt).toBe(NOW);
+    });
+
+    it('records chat events, hook status changes and spawns from the event subscriptions', async () => {
+      const { onAgentSpawned, onHookEvent } = annexEventBus;
+      await startAndPair();
+      const hookListener = vi.mocked(onHookEvent).mock.calls.at(-1)![0];
+      const spawnListener = vi.mocked(onAgentSpawned).mock.calls.at(-1)![0];
+      vi.spyOn(Date, 'now').mockReturnValue(NOW);
+      hookListener('durable_1', { kind: 'pre_tool', toolName: 'Bash', timestamp: NOW } as any);
+      expect(annexServer._testing.agentLastActivity.get('durable_1')).toBe(NOW);
+      vi.mocked(Date.now).mockReturnValue(NOW + 1_000);
+      spawnListener('quick_x', 'quick', 'proj_1', {} as any);
+      expect(annexServer._testing.agentLastActivity.get('quick_x')).toBe(NOW + 1_000);
+      vi.mocked(Date.now).mockRestore();
+    });
+
+    it('is on quick agents in the snapshot, from their spawn time', async () => {
+      annexServer._testing.trackedQuickAgents.set('quick_1', {
+        id: 'quick_1', name: 'swift-fox', kind: 'quick', status: 'running', prompt: 'p', model: null, orchestrator: null,
+        freeAgentMode: false, parentAgentId: null, projectId: 'proj_1', spawnedAt: NOW,
+      });
+      try {
+        expect((await snapshotAgents()).quickAgents.proj_1[0].lastActivityAt).toBe(NOW);
+      } finally {
+        annexServer._testing.trackedQuickAgents.delete('quick_1');
+      }
+    });
+
+    it('is in the REST agents response', async () => {
+      const { port, token } = await startAndPair();
+      annexServer._testing.noteAgentActivity('durable_1', NOW);
+      const res = await request(port, 'GET', '/api/v1/projects/proj_1/agents', undefined, authHeaders(token));
+      expect(JSON.parse(res.body)[0].lastActivityAt).toBe(NOW);
+    });
+  });
+
+  describe('theme for plugin and custom themes (#go-device-readiness)', () => {
+    beforeEach(async () => {
+      vi.mocked(projectStore.list).mockReturnValue([]);
+      vi.mocked(pluginManifestRegistry.listAllManifests).mockReturnValue([]);
+      const { groupProjectRegistry } = await import('./group-project-registry');
+      vi.mocked(groupProjectRegistry.list).mockResolvedValue([]);
+    });
+
+    it('sends the synced colors and gradients of the selected plugin theme', async () => {
+      const themeService = await import('./theme-service');
+      const activeThemeStore = await import('./active-theme-store');
+      const { THEMES } = await import('../../renderer/themes');
+      const id = 'plugin:workshop:forge';
+      vi.mocked(themeService.getSettings).mockReturnValue({ themeId: id } as any);
+      const colors = { ...THEMES['catppuccin-mocha'].colors, accent: '#ff8800' };
+      const gradients = { accent: 'linear-gradient(90deg, #ff8800, #ffcc00)' };
+      activeThemeStore.syncActiveTheme({ id, type: 'dark', colors, gradients });
+      try {
+        const snapshot = await annexServer._testing.buildSnapshot() as { theme: Record<string, unknown> };
+        expect(snapshot.theme).toEqual({ ...colors, gradients });
+      } finally {
+        activeThemeStore._reset();
+      }
+    });
+
+    it('keeps the built-in colors, without gradients, for a built-in theme', async () => {
+      const themeService = await import('./theme-service');
+      const { THEMES } = await import('../../renderer/themes');
+      vi.mocked(themeService.getSettings).mockReturnValue({ themeId: 'dracula' } as any);
+      const snapshot = await annexServer._testing.buildSnapshot() as { theme: Record<string, unknown> };
+      expect(snapshot.theme).toEqual(THEMES.dracula.colors);
+    });
+  });
 
   describe('legacy remote stop safety (#2394)', () => {
     beforeEach(() => {
@@ -619,7 +790,7 @@ describe('annex-server', () => {
       vi.mocked(agentSystem.spawnAgent).mockClear();
       const accepted = await secureRequest('POST', '/api/v1/mobile/commands', input);
       expect(accepted.status).toBe(200); expect(accepted.body.status).toBe('completed');
-      expect(agentSystem.spawnAgent).toHaveBeenCalledWith(expect.objectContaining({ projectPath: '/test/project', freeAgentMode: false }));
+      expect(agentSystem.spawnAgent).toHaveBeenCalledWith(expect.objectContaining({ projectPath: '/test/project', freeAgentMode: false, kind: 'quick', interactive: true }));
       expect(await secureRequest('POST', '/api/v1/mobile/commands', input)).toEqual(accepted);
       expect(agentSystem.spawnAgent).toHaveBeenCalledTimes(1);
       const forged = await secureRequest('POST', '/api/v1/mobile/commands', { ...input, commandId: 'forged' }, impostor);
@@ -1030,6 +1201,8 @@ describe('annex-server', () => {
         detailedStatus: null,
         executionMode: null,
         hasSession: false,
+        // No activity since the server started: when the agent was created.
+        lastActivityAt: Date.parse('2025-01-01'),
       });
     });
 
@@ -3545,6 +3718,8 @@ describe('annex-server chat status push', () => {
     expect(pushes).toHaveLength(1);
     expect(pushes[0]).toMatchObject({ id: 'chat_a', kind: 'durable', status: 'running' });
     expect(pushes[0].detailedStatus).toEqual({ state: 'working', message: 'Working', timestamp: NOW - 1_000 });
+    // The turn_started event that produced this push is its activity time.
+    expect((pushes[0] as { lastActivityAt?: number }).lastActivityAt).toBe(NOW - 1_000);
     // The same status a snapshot reports.
     expect(pushes[0].detailedStatus).toEqual(annexServer._testing.getDetailedStatus('chat_a'));
   });

@@ -1,4 +1,4 @@
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { AnnexSettingsView } from './AnnexSettingsView';
 import { useAnnexStore } from '../../stores/annexStore';
 
@@ -108,5 +108,44 @@ describe('AnnexSettingsView', () => {
     const input = screen.getByDisplayValue('Old Name');
     fireEvent.change(input, { target: { value: 'New Name' } });
     expect(mockSaveSettings).toHaveBeenCalledWith({ enableServer: true, enableClient: false, deviceName: 'New Name' });
+  });
+  describe('Pair a phone', () => {
+    const pairingUrl = 'clubhousego://pair?v=1&host=192.168.1.20&port=53123&id=AA&cert=' + 'ab'.repeat(32) + '&pin=042917&name=Mac';
+
+    it('stays hidden until the status carries a pairing link', () => {
+      useAnnexStore.setState({
+        settings: { enableServer: true, enableClient: false, deviceName: '' },
+        status: { advertising: true, port: 53123, pin: '042917', connectedCount: 0 },
+      });
+      render(<AnnexSettingsView />);
+      expect(screen.queryByText('Pair a phone')).not.toBeInTheDocument();
+    });
+
+    it('shows the QR code, its copy and the primary address', async () => {
+      useAnnexStore.setState({
+        settings: { enableServer: true, enableClient: false, deviceName: '' },
+        status: { advertising: true, port: 53123, pin: '042917', connectedCount: 0, pairingUrl, pairingHosts: ['192.168.1.20', '100.64.0.2'] },
+      });
+      render(<AnnexSettingsView />);
+      expect(screen.getByText('Pair a phone')).toBeInTheDocument();
+      expect(screen.getByText(/Scan with Clubhouse Go, or with the iPhone Camera/)).toBeInTheDocument();
+      expect(screen.getByText('192.168.1.20 · port 53123')).toBeInTheDocument();
+      const img = await screen.findByAltText('QR code for pairing Clubhouse Go with this machine');
+      expect(img.getAttribute('src')).toMatch(/^data:image\/svg\+xml/);
+    });
+
+    it('redraws the code when the link changes (a new PIN)', async () => {
+      useAnnexStore.setState({
+        settings: { enableServer: true, enableClient: false, deviceName: '' },
+        status: { advertising: true, port: 53123, pin: '042917', connectedCount: 0, pairingUrl, pairingHosts: ['192.168.1.20'] },
+      });
+      render(<AnnexSettingsView />);
+      const alt = 'QR code for pairing Clubhouse Go with this machine';
+      const first = (await screen.findByAltText(alt)).getAttribute('src');
+      useAnnexStore.setState({
+        status: { advertising: true, port: 53123, pin: '771204', connectedCount: 0, pairingUrl: pairingUrl.replace('042917', '771204'), pairingHosts: ['192.168.1.20'] },
+      });
+      await waitFor(() => expect(screen.getByAltText(alt).getAttribute('src')).not.toBe(first));
+    });
   });
 });

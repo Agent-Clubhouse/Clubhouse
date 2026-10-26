@@ -13,6 +13,7 @@ const mockApp = {
   updateTitleBarOverlay: vi.fn().mockResolvedValue(undefined),
   getExperimentalSettings: vi.fn().mockResolvedValue({} as Record<string, boolean>),
   syncPluginThemes: vi.fn().mockResolvedValue(undefined),
+  syncActiveTheme: vi.fn(),
 };
 
 vi.stubGlobal('window', {
@@ -290,6 +291,48 @@ describe('themeStore', () => {
   });
 
   // ---- plugin theme sync to main ----
+  describe('active theme sync (Annex colors)', () => {
+    const workshop: ThemeDefinition = {
+      id: 'plugin:workshop:forge',
+      name: 'Forge',
+      type: 'dark',
+      colors: { ...THEMES['catppuccin-mocha'].colors, accent: '#ff8800' },
+      hljs: THEMES['catppuccin-mocha'].hljs,
+      terminal: THEMES['catppuccin-mocha'].terminal,
+      gradients: { accent: 'linear-gradient(90deg, #ff8800, #ffcc00)' },
+    };
+
+    afterEach(() => {
+      unregisterTheme(workshop.id);
+    });
+
+    it('pushes the applied theme, with gradients, when one is selected', async () => {
+      registerTheme(workshop);
+      mockApp.syncActiveTheme.mockClear();
+      await getState().setTheme(workshop.id as ThemeId);
+      expect(mockApp.syncActiveTheme).toHaveBeenCalledWith({
+        id: workshop.id,
+        type: 'dark',
+        colors: workshop.colors,
+        terminal: workshop.terminal,
+        gradients: workshop.gradients,
+      });
+    });
+
+    it('pushes a selected plugin theme once it registers after a fallback load', () => {
+      useThemeStore.setState({ themeId: workshop.id as ThemeId, theme: THEMES['catppuccin-mocha'] });
+      mockApp.syncActiveTheme.mockClear();
+      registerTheme(workshop);
+      expect(mockApp.syncActiveTheme).toHaveBeenLastCalledWith(expect.objectContaining({ id: workshop.id, colors: workshop.colors }));
+    });
+
+    it('leaves gradients out for a theme without them', async () => {
+      mockApp.syncActiveTheme.mockClear();
+      await getState().setTheme('dracula');
+      expect(mockApp.syncActiveTheme.mock.calls[0][0]).not.toHaveProperty('gradients');
+    });
+  });
+
   describe('plugin theme sync', () => {
     const fakePluginTheme: ThemeDefinition = {
       id: 'plugin:test:ocean',

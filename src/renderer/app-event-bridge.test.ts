@@ -82,7 +82,7 @@ vi.stubGlobal('window', {
       listHelperStartRequests: vi.fn(async () => []),
       readTranscript: vi.fn(),
       readQuickSummary: vi.fn(),
-      killAgent: vi.fn(),
+      killAgent: vi.fn(async () => undefined),
       listPendingPermissions: vi.fn(async () => []),
       resolvePendingPermission: vi.fn(async () => ({ status: 'resolved' })),
       onPermissionPending: vi.fn(() => mockRemovers.onPermissionPending),
@@ -116,6 +116,7 @@ vi.stubGlobal('window', {
     chat: {
       onEvent: vi.fn(() => mockRemovers.onChatEvent),
       onRuntimeNotice: vi.fn(() => mockRemovers.onChatRuntimeNotice),
+      getAgentRuntime: vi.fn(async () => ({ chat: false })),
     },
   },
   addEventListener: vi.fn(),
@@ -699,6 +700,33 @@ describe('initAppEventBridge', () => {
     });
 
     expect(mockAddToast).not.toHaveBeenCalled();
+  });
+
+  describe('quick agent auto-exit on stop', () => {
+    const stopQuickAgent = async () => {
+      const agent = { ...createAgent('q1', 'proj-1'), kind: 'quick' };
+      vi.mocked(useAgentStore.getState).mockReturnValue({
+        agents: { q1: agent }, activeAgentId: null, agentDetailedStatus: {}, agentIcons: {},
+        handleHookEvent: vi.fn(),
+      } as any);
+      vi.mocked(useProjectStore.getState).mockReturnValue({ projects: [{ id: 'proj-1', path: '/p' }] } as never);
+      const hookCallback = vi.mocked(window.clubhouse.agent.onHookEvent).mock.calls[0][0];
+      hookCallback('q1', { kind: 'stop', timestamp: Date.now() });
+      await vi.advanceTimersByTimeAsync(2000);
+    };
+    beforeEach(() => { vi.useFakeTimers(); });
+    afterEach(() => { vi.useRealTimers(); });
+
+    it('closes a terminal quick agent once it finishes', async () => {
+      await stopQuickAgent();
+      expect(window.clubhouse.agent.killAgent).toHaveBeenCalledWith('q1', '/p');
+    });
+
+    it('keeps a quick agent in chat open: the turn ended, not the conversation', async () => {
+      vi.mocked(window.clubhouse.chat.getAgentRuntime).mockResolvedValueOnce({ chat: true } as never);
+      await stopQuickAgent();
+      expect(window.clubhouse.agent.killAgent).not.toHaveBeenCalled();
+    });
   });
 
   it('routes agent attention (notify_user) to checkAndNotify with the attention kind', () => {

@@ -469,9 +469,13 @@ function initHookEventListener(): () => void {
         // Delay gives the agent time to write the summary file before we send /exit.
         // Re-fetch project inside the callback to avoid stale closure capture.
         const projectId = agent.projectId;
-        setTimeout(() => {
+        setTimeout(async () => {
           const currentAgent = useAgentStore.getState().agents[agentId];
           if (currentAgent?.status !== 'running') return; // already exited
+          // A quick agent in chat was started to talk to (from a phone): the end
+          // of a turn is the agent waiting for its person, not the end of the run.
+          const runtime = await window.clubhouse.chat.getAgentRuntime(agentId).catch((): null => null);
+          if (runtime?.chat) return;
           const project = useProjectStore.getState().projects.find((p) => p.id === projectId);
           if (project) {
             window.clubhouse.agent.killAgent(agentId, project.path).catch(() => {});
