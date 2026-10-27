@@ -112,6 +112,7 @@ export async function injectPersona(projectPath: string, agentId: string, person
       applyPersonaToAgent(projectPath, agentId, persona, { appendToExisting: true }));
     return true;
   } catch (err) {
+    // telemetry-exempt: the clubhouse.agent.persona_inject step records the failure; the agent is created without the persona.
     appLog('agents', 'warn', 'Failed to inject persona instructions on create', {
       meta: { agentName, persona, error: err instanceof Error ? err.message : String(err) },
     });

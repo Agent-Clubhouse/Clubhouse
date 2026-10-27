@@ -677,7 +677,7 @@ describe('annex-server', () => {
   });
 
   it('serves create options per registered project', async () => {
-    vi.mocked(projectStore.list).mockReturnValue([{ id: 'p', name: 'Project', path: '/test/project' }] as any);
+    vi.mocked(projectStore.list).mockReturnValue([{ id: 'p', name: 'Project', path: '/test/project' }] as never);
     const { port, token } = await startAndPair();
     expect((await request(port, 'GET', '/api/v1/mobile/projects/p/create-options')).status).toBe(401);
     const res = await request(port, 'GET', '/api/v1/mobile/projects/p/create-options', undefined, authHeaders(token));
@@ -692,8 +692,8 @@ describe('annex-server', () => {
   });
 
   it('serves a durable agent its settings and options, live state included', async () => {
-    vi.mocked(projectStore.list).mockReturnValue([{ id: 'p', name: 'Project', path: '/test/project' }] as any);
-    vi.mocked(agentConfigModule.listDurable).mockReturnValue([{ id: 'a', name: 'agent', color: 'indigo', createdAt: '2026-01-01' }] as any);
+    vi.mocked(projectStore.list).mockReturnValue([{ id: 'p', name: 'Project', path: '/test/project' }] as never);
+    vi.mocked(agentConfigModule.listDurable).mockReturnValue([{ id: 'a', name: 'agent', color: 'indigo', createdAt: '2026-01-01' }] as never);
     const { port, token } = await startAndPair();
     const res = await request(port, 'GET', '/api/v1/mobile/agents/a/settings', undefined, authHeaders(token));
     expect(res.status).toBe(200);
@@ -704,8 +704,8 @@ describe('annex-server', () => {
   });
 
   it('dispatches agent.create and agent.update to the durable agent services', async () => {
-    vi.mocked(projectStore.list).mockReturnValue([{ id: 'p', name: 'Project', path: '/test/project' }] as any);
-    vi.mocked(agentConfigModule.listDurable).mockReturnValue([{ id: 'a', name: 'agent', color: 'indigo', createdAt: '2026-01-01' }] as any);
+    vi.mocked(projectStore.list).mockReturnValue([{ id: 'p', name: 'Project', path: '/test/project' }] as never);
+    vi.mocked(agentConfigModule.listDurable).mockReturnValue([{ id: 'a', name: 'agent', color: 'indigo', createdAt: '2026-01-01' }] as never);
     const { runMobileCommand } = annexServer._testing;
     const base = { version: 1 as const, epoch: 'e', commandId: 'c' };
     const allow = vi.fn();
