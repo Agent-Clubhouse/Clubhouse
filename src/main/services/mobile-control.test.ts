@@ -75,6 +75,18 @@ describe('mobile validation and chat dispatch', () => {
       { type: 'project.setInactive', projectId: 'p', pinned: true },
     ]) expect(() => parseMobileCommand({ ...head, ...bad })).toThrow(MobileControlError);
   });
+  it('parses quick.dismiss and quick.clear, with ids and nothing else (#2467)', () => {
+    const head = { version: 1, epoch: 'e', commandId: 'c' };
+    expect(parseMobileCommand({ ...head, type: 'quick.dismiss', projectId: 'p', agentId: 'quick_1' })).toMatchObject({ projectId: 'p', agentId: 'quick_1' });
+    expect(parseMobileCommand({ ...head, type: 'quick.clear', projectId: 'p' })).toMatchObject({ type: 'quick.clear', projectId: 'p' });
+    for (const bad of [
+      { type: 'quick.dismiss', projectId: 'p' },
+      { type: 'quick.dismiss', projectId: 'p', agentId: '' },
+      { type: 'quick.dismiss', projectId: 'p', agentId: 7 },
+      { type: 'quick.clear' },
+      { type: 'quick.clear', projectId: 'p', agentId: 'quick_1' },
+    ]) expect(() => parseMobileCommand({ ...head, ...bad })).toThrow(MobileControlError);
+  });
   it('parses helper.approve and helper.decline (#159)', () => {
     const service = new MobileCommandService();
     const base = { version: 1, epoch: service.epoch, commandId: 'h-1' };

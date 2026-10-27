@@ -2,6 +2,7 @@ import { ipcRenderer } from 'electron';
 import { IPC } from '../shared/ipc-channels';
 import type { AgentHookEvent, AgentSleepInfo, DurableAgentConfig, DurableConfigUpdates, DurableCreationEvent, DurableWorktreeOptions, DeleteResult, HelperCascadeResult, HelperDeleteChoice, HelperDisposeChecks, HelperDisposeDecision, HelperDisposeRequest, HelperDisposeResult, HelperStartDecisionResult, HelperStartRequest, StartDurableCreationParams } from '../shared/types';
 import type { HelperAccessResolution, HelperLimitCheck, OrchestrationOffChoice, OrchestrationPolicyPatch, ResolvedOrchestrationPolicy, SetOrchestrationPolicyResult, TurnOffOrchestrationResult } from '../shared/orchestration-policy';
+import type { FinishedQuickAgentOp, FinishedQuickAgents, FinishedQuickAgentsChange } from '../shared/finished-quick-agents';
 import type { PendingPermissionInfo, PermissionSettledInfo, PermissionResolveOutcome } from '../shared/permission-types';
 
 export const agent = {
@@ -138,6 +139,17 @@ export const agent = {
     ipcRenderer.invoke(IPC.AGENT.CHECK_HELPER_LIMIT, projectPath, agentId),
   readQuickSummary: (agentId: string, projectPath?: string) =>
     ipcRenderer.invoke(IPC.AGENT.READ_QUICK_SUMMARY, agentId, projectPath),
+  /** The stored finished quick agents; the first window ever hands over `legacy`, its localStorage copy (#2467). */
+  hydrateFinishedQuick: (legacy: FinishedQuickAgents): Promise<FinishedQuickAgents> =>
+    ipcRenderer.invoke(IPC.AGENT.FINISHED_QUICK_HYDRATE, legacy),
+  /** Apply one op in main. `seq` counts up per window; broadcasts acknowledge it. */
+  applyFinishedQuickOp: (clientId: string, seq: number, op: FinishedQuickAgentOp): Promise<void> =>
+    ipcRenderer.invoke(IPC.AGENT.FINISHED_QUICK_APPLY, clientId, seq, op),
+  onFinishedQuickChanged: (callback: (change: FinishedQuickAgentsChange) => void) => {
+    const listener = (_event: Electron.IpcRendererEvent, change: FinishedQuickAgentsChange) => callback(change);
+    ipcRenderer.on(IPC.AGENT.FINISHED_QUICK_CHANGED, listener);
+    return () => { ipcRenderer.removeListener(IPC.AGENT.FINISHED_QUICK_CHANGED, listener); };
+  },
   getDurableConfig: (projectPath: string, agentId: string) =>
     ipcRenderer.invoke(IPC.AGENT.GET_DURABLE_CONFIG, projectPath, agentId),
   updateDurableConfig: (projectPath: string, agentId: string, updates: DurableConfigUpdates) =>

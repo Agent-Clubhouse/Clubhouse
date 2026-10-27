@@ -92,6 +92,11 @@ export const IPC = {
     RENAME_DURABLE: 'agent:rename-durable',
     UPDATE_DURABLE: 'agent:update-durable',
     READ_QUICK_SUMMARY: 'agent:read-quick-summary',
+    /** Finished quick agents ("Finished, waiting on you"), kept by main (#2467). */
+    FINISHED_QUICK_HYDRATE: 'agent:finished-quick-hydrate',
+    FINISHED_QUICK_APPLY: 'agent:finished-quick-apply',
+    /** main → renderer: the lists after a change from any window or a phone. */
+    FINISHED_QUICK_CHANGED: 'agent:finished-quick-changed',
     GET_DURABLE_CONFIG: 'agent:get-durable-config',
     UPDATE_DURABLE_CONFIG: 'agent:update-durable-config',
     LIST_AGENT_TEMPLATES: 'agent:list-agent-templates',
