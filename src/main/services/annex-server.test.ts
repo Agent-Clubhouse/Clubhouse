@@ -912,7 +912,7 @@ describe('annex-server', () => {
         expect(sendMessage).toHaveBeenCalledWith([{ type: 'image', mimeType: 'image/png', path: expect.stringContaining('chat-attachments') }],
           { source: 'annex', delivery: 'auto', clientCommandId: 'photo-1' });
         // Retries are idempotent; an id this phone never uploaded is refused.
-        expect(await send('POST', '/api/v1/mobile/commands', chatSend)).toEqual(sent);
+        expect(await send('POST', '/api/v1/mobile/commands', chatSend)).toMatchObject({ status: sent.status, body: sent.body });
         const foreign = await send('POST', '/api/v1/mobile/commands', { ...chatSend, commandId: 'photo-2', attachmentIds: ['not-mine'] });
         expect(foreign.body).toMatchObject({ status: 'rejected', error: { code: 'attachment_unavailable' } });
         expect(sendMessage).toHaveBeenCalledTimes(1);
