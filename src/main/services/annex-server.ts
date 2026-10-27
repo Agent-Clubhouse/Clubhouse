@@ -16,7 +16,7 @@ import { readChatTranscript, listChatSessions } from './agent-runtime/chat-trans
 import { getSettings as getExperimentalSettings } from './experimental-settings';
 import { readMobileChatContent } from './annex-chat-content';
 import { agentRoots } from './agent-runtime/chat-files';
-import { buildAgentSettings, buildAgentSettingsOptions, buildCreateOptions, createMobileAgent, updateMobileAgent } from './mobile-agents';
+import { buildAgentDetails, buildAgentSettings, buildAgentSettingsOptions, buildCreateOptions, createMobileAgent, updateMobileAgent } from './mobile-agents';
 import { remoteChatEvent } from './annex-chat-echo';
 import { buildMobileHelperRequests, runHelperCommand } from './mobile-helper-requests';
 import { onStartRequestsChanged } from './helper-start-requests';
@@ -2395,11 +2395,12 @@ async function handleMobileAgentSettingsRoute(ctx: AnnexRouteContext, match: Reg
     const info = await findAgentAcrossProjects(decodeURIComponent(match[1]));
     if (!info || isDisposedAgent(info.config)) { sendJson(ctx.res, 404, { error: 'agent_not_found' }); return; }
     const project = { id: info.project.id, path: info.project.path };
-    const [settings, options] = await Promise.all([
+    const [settings, options, details] = await Promise.all([
       buildAgentSettings(project, info.config, mobileLiveState(info.config.id)),
       buildAgentSettingsOptions(project.path),
+      buildAgentDetails(project, info.config),
     ]);
-    sendJson(ctx.res, 200, { version: 1, epoch: mobileCommands.epoch, ...settings, options });
+    sendJson(ctx.res, 200, { version: 1, epoch: mobileCommands.epoch, ...settings, options, details });
   } catch {
     // telemetry-exempt: config read errors are bounded in the API response.
     sendJson(ctx.res, 500, { error: 'agent_settings_failed' });

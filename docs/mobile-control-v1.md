@@ -253,10 +253,19 @@ We chose a route rather than snapshot fields. The settings need disk and CLI rea
   "clubhouseMode":{"value":true|false|null,"projectEnabled":true,"editable":"sleeping"|"never"},
   "freeAgentMode":{"value":false,"editable":"sleeping"|"never"},
   "idleSleep":{"value":"inherit"|"never"|30,"minutes":30,"source":"agent"|"app","applies":true,"editable":"always"}},
- "options":{"orchestrators":[…],"personas":[…],"colors":[…],"idleSleep":{"minutes":[15,30,60,240],"appMinutes":30}}}
+ "options":{"orchestrators":[…],"personas":[…],"colors":[…],"idleSleep":{"minutes":[15,30,60,240],"appMinutes":30}},
+ "details":{"branch":"brave-otter/standby","worktreePath":"/work/app/.clubhouse/agents/brave-otter","worktree":".clubhouse/agents/brave-otter",
+  "mcpIds":["github"],
+  "changes":{"available":true,"base":"main","noBase":false,"files":6,"additions":94,"deletions":51,"ahead":2,"uncommitted":1}}}
 ```
 
 `options` uses the same shapes as create options.
+
+`details` is what Agent details shows besides the settings: the agent's hover card and Changes card. Older desktops leave it out, so treat it as optional:
+
+- **branch**, **worktreePath**: null when the agent has no worktree. **worktree** is the worktree relative to the project folder, as the hover card shows it, or the whole path when it's elsewhere.
+- **mcpIds**: the MCP servers set for the agent in Clubhouse. Which ones a running chat agent loaded, with their status, comes from the chat session's `session_info.mcpServers`.
+- **changes**: the branch against main, as the Changes card's summary: counts only, never file names or diffs. `available` is false outside a git work tree; `noBase` means there's no main line to compare with. `ahead` is commits since the branch left main, `uncommitted` is uncommitted and untracked files. `null` while the agent is being created or when git can't be read. It isn't part of the `agent.update` result.
 
 `editable` says when a setting can change:
 
