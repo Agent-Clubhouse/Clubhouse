@@ -6,7 +6,8 @@ export const MOBILE_COMMAND_TYPES = ['chat.send', 'chat.interrupt', 'chat.permis
 interface CommandBase { version: 1; commandId: string; epoch: string }
 interface ChatTarget { agentId: string; sessionId: string }
 export type MobileCommand = CommandBase & (
-  | (ChatTarget & { type: 'chat.send'; text: string; delivery?: 'auto' | 'prompt' | 'steer' | 'queued' })
+  // `text` may be empty when `attachmentIds` (from POST /mobile/agents/:id/attachments) carries images.
+  | (ChatTarget & { type: 'chat.send'; text: string; delivery?: 'auto' | 'prompt' | 'steer' | 'queued'; attachmentIds?: string[] })
   | (ChatTarget & { type: 'chat.interrupt' })
   | (ChatTarget & { type: 'chat.queue.remove'; messageIds: string[] })
   | (ChatTarget & { type: 'chat.permission'; requestId: string; optionId: string })

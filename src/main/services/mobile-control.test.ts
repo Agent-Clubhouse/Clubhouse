@@ -69,6 +69,48 @@ describe('mobile validation and chat dispatch', () => {
     expect(await executeChatCommand(cmd as any, rt, async () => true)).toEqual({ delivery: 'queued', messageId: 'message-1' });
     expect(rt.sendMessage).toHaveBeenCalledWith([{ type: 'text', text: 'hello' }], { source: 'annex', delivery: 'steer', clientCommandId: 'cmd-1' });
   });
+  it.each([{ attachmentIds: [] }, { attachmentIds: 'a' }, { attachmentIds: [''] }, { attachmentIds: ['a', 'a'] },
+    { attachmentIds: Array.from({ length: 11 }, (_, i) => `a${i}`) }, { attachmentIds: ['x'.repeat(129)] }, { text: '', attachmentIds: [] },
+  ])('rejects malformed attachmentIds %j', (bad) => {
+    expect(() => parseMobileCommand({ ...command(new MobileCommandService()), ...bad })).toThrow();
+  });
+  it('sends image-only and captioned messages with resolved attachments (#2453)', async () => {
+    const service = new MobileCommandService();
+    const rt = Object.assign(runtime(), { getCapabilities: () => ({ images: true }) });
+    const image = { type: 'image', mimeType: 'image/png', path: '/staged/x.png' } as const;
+    const resolve = vi.fn().mockResolvedValue([image]);
+    const imageOnly = parseMobileCommand(command(service, { text: '', attachmentIds: ['att-1'] }));
+    await executeChatCommand(imageOnly as any, rt, async () => true, () => {}, resolve);
+    expect(resolve).toHaveBeenCalledWith(['att-1'], { images: true });
+    expect(rt.sendMessage).toHaveBeenLastCalledWith([image], { source: 'annex', delivery: 'auto', clientCommandId: 'cmd-1' });
+    const captioned = parseMobileCommand(command(service, { attachmentIds: ['att-1'] }));
+    await executeChatCommand(captioned as any, rt, async () => true, () => {}, resolve);
+    expect(rt.sendMessage).toHaveBeenLastCalledWith([{ type: 'text', text: 'hello' }, image], expect.anything());
+  });
+  it('refuses attachments for agents without image support, and unusable ids, sending nothing', async () => {
+    const cmd = parseMobileCommand(command(new MobileCommandService(), { attachmentIds: ['att-1'] }));
+    const resolve = vi.fn().mockResolvedValue([]);
+    for (const caps of [undefined, { images: false }]) {
+      const rt = Object.assign(runtime(), { getCapabilities: () => caps });
+      await expect(executeChatCommand(cmd as any, rt, async () => true, () => {}, resolve)).rejects.toMatchObject({ code: 'images_not_supported' });
+      expect(rt.sendMessage).not.toHaveBeenCalled();
+    }
+    expect(resolve).not.toHaveBeenCalled();
+    const rt = Object.assign(runtime(), { getCapabilities: () => ({ images: true }) });
+    const failing = vi.fn().mockRejectedValue(new Error('/Users/me/secret.png moved'));
+    const err = await executeChatCommand(cmd as any, rt, async () => true, () => {}, failing).catch((e) => e);
+    expect(err).toMatchObject({ code: 'attachment_unavailable' });
+    expect(err.message).not.toContain('/Users');
+    expect(rt.sendMessage).not.toHaveBeenCalled();
+  });
+  it('fingerprints attachmentIds: a retry with other images is a conflict', async () => {
+    const service = new MobileCommandService(); const run = vi.fn().mockResolvedValue({});
+    const first = await service.execute('a', command(service, { attachmentIds: ['x', 'y'] }), run);
+    expect(await service.execute('a', command(service, { attachmentIds: ['x', 'y'] }), run)).toEqual(first);
+    expect((await service.execute('a', command(service, { attachmentIds: ['y', 'x'] }), run)).body.error?.code).toBe('command_conflict');
+    expect((await service.execute('a', command(service), run)).body.error?.code).toBe('command_conflict');
+    expect(run).toHaveBeenCalledTimes(1);
+  });
   it('does not fall through to terminal input', async () => {
     const cmd = command(new MobileCommandService()); const rt = runtime(); Object.assign(rt, { kind: 'pty' });
     await expect(executeChatCommand(cmd as any, rt, async () => true)).rejects.toMatchObject({ code: 'not_chat' });

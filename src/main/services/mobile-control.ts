@@ -1,5 +1,6 @@
 import { createHash, randomUUID } from 'crypto';
-import type { AgentRuntime, ChatEvent } from '../../shared/chat';
+import type { AgentRuntime, ChatCapabilities, ChatEvent, ContentBlock } from '../../shared/chat';
+import { CHAT_ATTACHMENTS_MAX } from '../../shared/chat';
 import { MOBILE_COMMAND_TYPES, type MobileCommand, type MobileResponse } from '../../shared/mobile-control';
 import { AGENT_IDLE_SLEEP_MINUTES } from '../../shared/idle-sleep';
 
@@ -9,7 +10,7 @@ export class MobileControlError extends Error {
 }
 
 const FIELDS: Record<MobileCommand['type'], string[]> = {
-  'chat.send': ['agentId', 'sessionId', 'text', 'delivery'],
+  'chat.send': ['agentId', 'sessionId', 'text', 'delivery', 'attachmentIds'],
   'chat.interrupt': ['agentId', 'sessionId'],
   'chat.queue.remove': ['agentId', 'sessionId', 'messageIds'],
   'chat.permission': ['agentId', 'sessionId', 'requestId', 'optionId'],
@@ -21,7 +22,7 @@ const FIELDS: Record<MobileCommand['type'], string[]> = {
   'agent.update': ['agentId', 'name', 'color', 'emoji', 'orchestrator', 'model', 'runtime', 'persona', 'clubhouseMode', 'idleSleep'],
 };
 /** Fields a command may leave out. Every agent.update setting is optional, but it needs at least one. */
-const OPTIONAL = new Set(['delivery', 'message', 'resume', 'model', 'orchestrator']);
+const OPTIONAL = new Set(['delivery', 'message', 'resume', 'model', 'orchestrator', 'attachmentIds']);
 const CREATE_OPTIONAL = new Set(['orchestrator', 'model', 'persona', 'useWorktree', 'mcpIds', 'branchName', 'branchFrom', 'folderName']);
 const isOptional = (type: MobileCommand['type'], key: string): boolean =>
   type === 'agent.update' ? key !== 'agentId' : type === 'agent.create' ? CREATE_OPTIONAL.has(key) : OPTIONAL.has(key);
@@ -45,6 +46,9 @@ export function parseMobileCommand(value: unknown): MobileCommand {
     if (isOptional(type, key) && v === undefined) continue;
     if (type === 'agent.update' && NULLABLE_ON_UPDATE.has(key) && v === null) continue;
     if (BOOLEAN_FIELDS.has(key)) { if (typeof v !== 'boolean') throw new MobileControlError('invalid_command', 400); }
+    else if (key === 'attachmentIds') {
+      if (!Array.isArray(v) || v.length === 0 || v.length > CHAT_ATTACHMENTS_MAX || v.some((id) => !text(id, 128)) || new Set(v).size !== v.length) throw new MobileControlError('invalid_command', 400);
+    } else if (key === 'text' && value.type === 'chat.send' && v === '' && value.attachmentIds !== undefined) continue; // image-only message
     else if (key === 'messageIds') {
       if (!Array.isArray(v) || v.length === 0 || v.length > 1000 || v.some((id) => !text(id, 128))) throw new MobileControlError('invalid_command', 400);
     } else if (key === 'mcpIds') {
@@ -124,7 +128,10 @@ export function pendingInteractions(events: ChatEvent[]) {
   return { pendingPermissions: [...permissions.values()], pendingQuestions: [...questions.values()] };
 }
 
-export async function executeChatCommand(command: Extract<MobileCommand, { sessionId: string }>, runtime: AgentRuntime | undefined, canSend: () => Promise<boolean>, assertCurrent: () => void = () => {}): Promise<unknown> {
+/** Content blocks for a peer's uploaded attachment ids; throws when one isn't usable. */
+export type MobileAttachmentResolver = (ids: string[], caps: ChatCapabilities | undefined) => Promise<ContentBlock[]>;
+
+export async function executeChatCommand(command: Extract<MobileCommand, { sessionId: string }>, runtime: AgentRuntime | undefined, canSend: () => Promise<boolean>, assertCurrent: () => void = () => {}, resolveAttachments?: MobileAttachmentResolver): Promise<unknown> {
   assertCurrent();
   if (!runtime || runtime.kind !== 'chat' || !runtime.isRunning()) throw new MobileControlError('not_chat');
   if (runtime.getSessionId?.() !== command.sessionId) throw new MobileControlError('session_mismatch');
@@ -133,7 +140,18 @@ export async function executeChatCommand(command: Extract<MobileCommand, { sessi
     assertCurrent();
     // A session can change while waiting for a revert check.
     if (runtime.getSessionId?.() !== command.sessionId) throw new MobileControlError('session_mismatch');
-    return runtime.sendMessage([{ type: 'text', text: command.text }], { source: 'annex', delivery: command.delivery ?? 'auto', clientCommandId: command.commandId });
+    const blocks: ContentBlock[] = command.text ? [{ type: 'text', text: command.text }] : [];
+    if (command.attachmentIds?.length) {
+      const caps = runtime.getCapabilities?.();
+      if (caps?.images !== true) throw new MobileControlError('images_not_supported');
+      if (!resolveAttachments) throw new MobileControlError('attachment_unavailable');
+      try { blocks.push(...await resolveAttachments(command.attachmentIds, caps)); }
+      catch { // telemetry-exempt: expired or foreign ids are a bounded caller error; no content is logged.
+        throw new MobileControlError('attachment_unavailable'); }
+      assertCurrent();
+      if (runtime.getSessionId?.() !== command.sessionId) throw new MobileControlError('session_mismatch');
+    }
+    return runtime.sendMessage(blocks, { source: 'annex', delivery: command.delivery ?? 'auto', clientCommandId: command.commandId });
   }
   if (command.type === 'chat.interrupt') { await runtime.interrupt(); return { interrupted: true }; }
   if (command.type === 'chat.queue.remove') {
