@@ -59,8 +59,11 @@ export function onProjectStateChange(listener: (change: ProjectStateChange) => v
   return () => { listeners.delete(listener); };
 }
 
+/** The latest write, for tests to wait on. */
+let lastWrite: Promise<void> = Promise.resolve();
+
 function save(next: StoredProjectState): void {
-  store.save(next).catch((err) => {
+  lastWrite = store.save(next).catch((err) => {
     appLog('core:project-state', 'error', 'Failed to save project state', {
       meta: { error: err instanceof Error ? err.message : String(err) },
     });
@@ -115,6 +118,11 @@ export function applyProjectStateChange(op: ProjectStateOp, source?: { clientId:
   // A window's op is acknowledged even when it changed nothing here.
   if (changed || source) notify();
   return changed;
+}
+
+/** For tests: resolves once the latest write has finished. */
+export function flushProjectStateForTests(): Promise<void> {
+  return lastWrite;
 }
 
 /** For tests. */

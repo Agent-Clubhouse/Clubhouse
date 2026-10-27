@@ -10,6 +10,7 @@ vi.mock('./log-service', () => ({ appLog: vi.fn() }));
 import { resetAllSettingsStoresForTests } from './settings-store';
 import {
   applyProjectStateChange,
+  flushProjectStateForTests,
   getProjectState,
   hydrateProjectState,
   isProjectStateReady,
@@ -21,8 +22,7 @@ import { DEFAULT_PROJECT_STATE } from '../../shared/project-state';
 const file = () => path.join(userData.dir, 'project-state.json');
 /** Writes are queued after the in-memory change; wait for the file. */
 async function stored(): Promise<Record<string, unknown>> {
-  await vi.waitFor(() => expect(fs.existsSync(file())).toBe(true));
-  await new Promise((r) => setTimeout(r, 20));
+  await flushProjectStateForTests();
   return JSON.parse(fs.readFileSync(file(), 'utf-8'));
 }
 /** A restart: the in-memory cache goes, the file stays. */
@@ -36,7 +36,8 @@ describe('project-state-store (#2458)', () => {
     userData.dir = fs.mkdtempSync(path.join(os.tmpdir(), 'project-state-'));
     restart();
   });
-  afterEach(() => {
+  afterEach(async () => {
+    await flushProjectStateForTests();
     fs.rmSync(userData.dir, { recursive: true, force: true });
   });
 
