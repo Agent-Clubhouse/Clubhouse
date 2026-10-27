@@ -27,6 +27,10 @@ export interface MobileAgentUpdate {
   agentId: string; name?: string; color?: string; emoji?: string | null; orchestrator?: string; model?: string;
   runtime?: 'default' | 'chat' | 'terminal'; persona?: string | null; clubhouseMode?: boolean; idleSleep?: AgentIdleSleep;
 }
+/** What the desktop windows patch into their agent list after a phone's agent.update. */
+export interface AnnexAgentUpdate {
+  agentId: string; name: string; color: string; emoji: string | null; model: string | null; orchestrator: string | null;
+}
 /** When a setting can change: at any time, only while the agent sleeps, or not from a phone. */
 export type MobileSettingEditable = 'always' | 'sleeping' | 'never';
 export interface MobileReceipt {

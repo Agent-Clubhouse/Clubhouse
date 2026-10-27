@@ -518,6 +518,31 @@ function initAnnexSpawnListener(): () => void {
   return removeAnnexSpawnListener;
 }
 
+/** A phone changed a durable agent's settings (#2452): show its name, colour, icon and runtime here too. */
+function initAnnexAgentUpdateListener(): () => void {
+  return window.clubhouse.annex.onAgentUpdated((update) => {
+    useAgentStore.setState((s) => {
+      const existing = s.agents[update.agentId];
+      if (!existing) return s;
+      return {
+        agents: {
+          ...s.agents,
+          [update.agentId]: {
+            ...existing,
+            name: update.name,
+            color: update.color,
+            emoji: update.emoji ?? undefined,
+            // Emoji and image icon are mutually exclusive, as updateDurable saves them.
+            icon: update.emoji ? undefined : existing.icon,
+            model: update.model ?? undefined,
+            orchestrator: update.orchestrator ?? undefined,
+          },
+        },
+      };
+    });
+  });
+}
+
 // ─── Agent State Broadcasting (popout sync) ─────────────────────────────────
 
 function initAgentStateBroadcast(): () => void {
@@ -780,6 +805,7 @@ export function initAppEventBridge(): () => void {
   cleanups.push(initHookEventListener());
   cleanups.push(initPermissionQueueListener());
   cleanups.push(initAnnexSpawnListener());
+  cleanups.push(initAnnexAgentUpdateListener());
   cleanups.push(initAgentStateBroadcast());
   cleanups.push(initAgentStatusEmitter());
   cleanups.push(initActiveAgentSound());

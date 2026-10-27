@@ -1,5 +1,6 @@
 import { ipcRenderer } from 'electron';
 import { IPC } from '../shared/ipc-channels';
+import type { AnnexAgentUpdate } from '../shared/mobile-control';
 
 export const annex = {
   annex: {
@@ -41,6 +42,11 @@ export const annex = {
     const listener = (_event: Electron.IpcRendererEvent, agent: Parameters<typeof callback>[0]) => callback(agent);
     ipcRenderer.on(IPC.ANNEX.AGENT_SPAWNED, listener);
     return () => { ipcRenderer.removeListener(IPC.ANNEX.AGENT_SPAWNED, listener); };
+  },
+  onAgentUpdated: (callback: (update: AnnexAgentUpdate) => void) => {
+    const listener = (_event: Electron.IpcRendererEvent, update: AnnexAgentUpdate) => callback(update);
+    ipcRenderer.on(IPC.ANNEX.AGENT_UPDATED, listener);
+    return () => { ipcRenderer.removeListener(IPC.ANNEX.AGENT_UPDATED, listener); };
   },
   listPeers: () =>
     ipcRenderer.invoke(IPC.ANNEX.LIST_PEERS),

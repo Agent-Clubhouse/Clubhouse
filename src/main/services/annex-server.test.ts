@@ -6,6 +6,15 @@ import os from 'os';
 import path from 'path';
 import { readMobileChatContent } from './annex-chat-content';
 vi.mock('./annex-chat-content', () => ({ readMobileChatContent: vi.fn() }));
+import * as mobileAgents from './mobile-agents';
+vi.mock('./mobile-agents', () => ({
+  buildCreateOptions: vi.fn(async (project: { id: string }) => ({ projectId: project.id, orchestrators: [], suggestedName: 'brave-otter' })),
+  buildAgentSettings: vi.fn(async (project: { id: string }, config: { id: string }, live?: string) => ({ agentId: config.id, projectId: project.id, state: live ?? 'sleeping', settings: {} })),
+  buildAgentSettingsOptions: vi.fn(async () => ({ orchestrators: [], idleSleep: { minutes: [15, 30, 60, 240], appMinutes: 30 } })),
+  createMobileAgent: vi.fn(async () => ({ agentId: 'durable_new', state: 'creating' })),
+  updateMobileAgent: vi.fn(async () => ({ agentId: 'a', settings: { name: { value: 'calm-otter' }, color: { value: 'rose' }, emoji: { value: null },
+    model: { value: 'default' }, orchestrator: { value: 'codex-cli' } } })),
+}));
 
 // Real HTTP sockets in this suite must never expose test fixtures to the LAN.
 // Bonjour itself is mocked below; retain its branch coverage independently.
@@ -657,6 +666,61 @@ describe('annex-server', () => {
     expect(JSON.parse(res.body)).toMatchObject({ version: 1, controlAuth: 'mtls-pinned-client', controlAvailable: false, commands: expect.arrayContaining(['chat.send', 'agent.stop']) });
     // Phones only connect over TLS, so the HTTP fallback offers them no routes.
     expect(JSON.parse(res.body).routes).toBeUndefined();
+  });
+
+  it('advertises agent.create, agent.update and their option and settings routes (#2451, #2452)', async () => {
+    const { port, token } = await startAndPair();
+    const body = JSON.parse((await request(port, 'GET', '/api/v1/mobile/capabilities', undefined, authHeaders(token))).body);
+    expect(body.commands).toEqual(expect.arrayContaining(['agent.spawn', 'agent.create', 'agent.update']));
+    expect(body.createOptions).toEqual({ version: 1, path: '/api/v1/mobile/projects/{projectId}/create-options' });
+    expect(body.agentSettings).toEqual({ version: 1, path: '/api/v1/mobile/agents/{agentId}/settings' });
+  });
+
+  it('serves create options per registered project', async () => {
+    vi.mocked(projectStore.list).mockReturnValue([{ id: 'p', name: 'Project', path: '/test/project' }] as any);
+    const { port, token } = await startAndPair();
+    expect((await request(port, 'GET', '/api/v1/mobile/projects/p/create-options')).status).toBe(401);
+    const res = await request(port, 'GET', '/api/v1/mobile/projects/p/create-options', undefined, authHeaders(token));
+    expect(res.status).toBe(200);
+    expect(JSON.parse(res.body)).toMatchObject({ version: 1, epoch: expect.any(String), projectId: 'p', suggestedName: 'brave-otter' });
+    expect(mobileAgents.buildCreateOptions).toHaveBeenCalledWith({ id: 'p', path: '/test/project' });
+    expect((await request(port, 'GET', '/api/v1/mobile/projects/missing/create-options', undefined, authHeaders(token))).status).toBe(404);
+    vi.mocked(mobileAgents.buildCreateOptions).mockRejectedValueOnce(new Error('/secret/path'));
+    const failed = await request(port, 'GET', '/api/v1/mobile/projects/p/create-options', undefined, authHeaders(token));
+    expect(failed.status).toBe(500);
+    expect(JSON.parse(failed.body)).toEqual({ error: 'create_options_failed' });
+  });
+
+  it('serves a durable agent its settings and options, live state included', async () => {
+    vi.mocked(projectStore.list).mockReturnValue([{ id: 'p', name: 'Project', path: '/test/project' }] as any);
+    vi.mocked(agentConfigModule.listDurable).mockReturnValue([{ id: 'a', name: 'agent', color: 'indigo', createdAt: '2026-01-01' }] as any);
+    const { port, token } = await startAndPair();
+    const res = await request(port, 'GET', '/api/v1/mobile/agents/a/settings', undefined, authHeaders(token));
+    expect(res.status).toBe(200);
+    expect(JSON.parse(res.body)).toMatchObject({ version: 1, agentId: 'a', projectId: 'p', state: 'sleeping', options: { idleSleep: { minutes: [15, 30, 60, 240] } } });
+    vi.mocked(ptyManagerModule.isRunning).mockReturnValue(true);
+    expect(JSON.parse((await request(port, 'GET', '/api/v1/mobile/agents/a/settings', undefined, authHeaders(token))).body).state).toBe('running');
+    expect((await request(port, 'GET', '/api/v1/mobile/agents/missing/settings', undefined, authHeaders(token))).status).toBe(404);
+  });
+
+  it('dispatches agent.create and agent.update to the durable agent services', async () => {
+    vi.mocked(projectStore.list).mockReturnValue([{ id: 'p', name: 'Project', path: '/test/project' }] as any);
+    vi.mocked(agentConfigModule.listDurable).mockReturnValue([{ id: 'a', name: 'agent', color: 'indigo', createdAt: '2026-01-01' }] as any);
+    const { runMobileCommand } = annexServer._testing;
+    const base = { version: 1 as const, epoch: 'e', commandId: 'c' };
+    const allow = vi.fn();
+    await expect(runMobileCommand({ ...base, type: 'agent.create', projectId: 'missing', name: 'x', color: 'indigo' }, allow)).rejects.toMatchObject({ code: 'project_not_found', statusCode: 404 });
+    const create = { ...base, type: 'agent.create' as const, projectId: 'p', name: 'brave-otter', color: 'indigo' };
+    expect(await runMobileCommand(create, allow)).toEqual({ agentId: 'durable_new', state: 'creating' });
+    expect(mobileAgents.createMobileAgent).toHaveBeenCalledWith({ id: 'p', path: '/test/project' }, create, allow);
+    await expect(runMobileCommand({ ...base, type: 'agent.update', agentId: 'missing', idleSleep: 30 }, allow)).rejects.toMatchObject({ code: 'agent_not_found' });
+    vi.mocked(ptyManagerModule.isRunning).mockReturnValue(true);
+    const update = { ...base, type: 'agent.update' as const, agentId: 'a', idleSleep: 30 as const };
+    await runMobileCommand(update, allow);
+    expect(mobileAgents.updateMobileAgent).toHaveBeenCalledWith({ id: 'p', path: '/test/project' }, expect.objectContaining({ id: 'a' }), update,
+      { live: 'running', assertAuthorized: allow });
+    expect(mockBroadcastToAllWindows).toHaveBeenCalledWith('annex:agent-updated',
+      { agentId: 'a', name: 'calm-otter', color: 'rose', emoji: null, model: null, orchestrator: 'codex-cli' });
   });
 
   it('rejects mobile bearer control even on HTTP fallback and leaves legacy reads working', async () => {

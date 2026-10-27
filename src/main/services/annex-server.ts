@@ -7,7 +7,7 @@ import * as os from 'os';
 import { randomInt, randomUUID, timingSafeEqual } from 'crypto';
 import { WebSocketServer, WebSocket } from 'ws';
 import * as annexTls from './annex-tls';
-import { MOBILE_COMMAND_TYPES, type MobileCommand } from '../../shared/mobile-control';
+import { MOBILE_COMMAND_TYPES, type AnnexAgentUpdate, type MobileCommand } from '../../shared/mobile-control';
 import { MobileCommandService, MobileControlError, executeChatCommand, pendingInteractions, MOBILE_COMMAND_MAX_ENTRIES, MOBILE_COMMAND_TTL_MS } from './mobile-control';
 import { isRevertRunning } from './agent-runtime/checkpoint-tracker';
 import { readChatTranscript, listChatSessions } from './agent-runtime/chat-transcript';
@@ -2384,6 +2384,11 @@ async function runMobileCommand(command: MobileCommand, assertAuthorized: () => 
     assertAuthorized();
     const updated = await updateMobileAgent({ id: durable.project.id, path: durable.project.path }, durable.config, command,
       { live: mobileLiveState(command.agentId), assertAuthorized });
+    // The desktop's agent list reads names and colours once; tell it what the phone changed.
+    const { settings } = updated;
+    const update: AnnexAgentUpdate = { agentId: updated.agentId, name: settings.name.value, color: settings.color.value, emoji: settings.emoji.value,
+      model: settings.model.value === 'default' ? null : settings.model.value, orchestrator: settings.orchestrator.value };
+    broadcastToAllWindows(IPC.ANNEX.AGENT_UPDATED, update);
     broadcastSnapshotRefresh();
     return updated;
   }

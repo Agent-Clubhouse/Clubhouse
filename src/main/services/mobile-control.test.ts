@@ -127,3 +127,61 @@ describe('mobile validation and chat dispatch', () => {
     expect(pendingInteractions([...events, event('session_ended', {})])).toEqual({ pendingPermissions: [], pendingQuestions: [] });
   });
 });
+
+describe('agent.create and agent.update parsing (#2451, #2452)', () => {
+  const base = { version: 1, epoch: 'e', commandId: 'c' };
+  const create = (extra: object = {}) => ({ ...base, type: 'agent.create', projectId: 'p', name: 'brave-otter', color: 'indigo', ...extra });
+  const update = (extra: object = {}) => ({ ...base, type: 'agent.update', agentId: 'a', ...extra });
+  const code = (input: unknown) => { try { parseMobileCommand(input); return 'ok'; } catch (e) { return (e as MobileControlError).code; } };
+
+  it('accepts every New agent page field', () => {
+    expect(code(create())).toBe('ok');
+    expect(code(create({ orchestrator: 'codex-cli', model: 'default', persona: 'qa', useWorktree: true, mcpIds: [], branchName: 'feat/x', branchFrom: 'main', folderName: 'otter' }))).toBe('ok');
+  });
+  it('requires name and color, and types each field', () => {
+    for (const bad of [{ name: undefined }, { color: undefined }, { name: '' }, { useWorktree: 'yes' }, { mcpIds: 'ado' }, { mcpIds: ['a', 'a'] }, { mcpIds: [''] }, { persona: null }, { branchName: 7 }]) {
+      expect(code(create(bad))).toBe('invalid_command');
+    }
+  });
+  it('rejects unknown fields on both commands', () => {
+    expect(code(create({ mcpConfigs: {} }))).toBe('invalid_command');
+    expect(code(create({ parentAgentId: 'x' }))).toBe('invalid_command');
+    expect(code(update({ icon: 'x.png' }))).toBe('invalid_command');
+    expect(code(update({ instructions: 'x' }))).toBe('invalid_command');
+  });
+  it('never accepts Free Agent Mode from a phone, whatever its value', () => {
+    for (const freeAgentMode of [true, false, null]) {
+      expect(code(create({ freeAgentMode }))).toBe('free_agent_mode_not_allowed');
+      expect(code(update({ idleSleep: 30, freeAgentMode }))).toBe('free_agent_mode_not_allowed');
+    }
+    try { parseMobileCommand(create({ freeAgentMode: true })); } catch (e) { expect((e as MobileControlError).statusCode).toBe(403); }
+  });
+  it('needs at least one setting on agent.update and validates each', () => {
+    expect(code(update())).toBe('invalid_command');
+    expect(code(update({ agentId: undefined, idleSleep: 30 }))).toBe('invalid_command');
+    for (const ok of [{ idleSleep: 'inherit' }, { idleSleep: 'never' }, { idleSleep: 240 }, { emoji: null }, { emoji: '🦦' }, { persona: null },
+      { runtime: 'default' }, { runtime: 'chat' }, { clubhouseMode: false }, { name: 'x', color: 'rose', model: 'opus', orchestrator: 'claude-code' }]) {
+      expect(code(update(ok))).toBe('ok');
+    }
+    for (const bad of [{ idleSleep: 45 }, { idleSleep: 0 }, { idleSleep: '30' }, { runtime: 'headless' }, { clubhouseMode: 'on' }, { name: null },
+      { model: null }, { emoji: 'x'.repeat(17) }, { color: '' }]) {
+      expect(code(update(bad))).toBe('invalid_command');
+    }
+  });
+  it('fingerprints every create field, so a retry with any change conflicts', async () => {
+    const service = new MobileCommandService(); const run = vi.fn().mockResolvedValue({ agentId: 'durable_1' });
+    const first = { ...create(), epoch: service.epoch, mcpIds: ['ado'], branchFrom: 'main' };
+    expect((await service.execute('peer', first, run)).statusCode).toBe(200);
+    expect((await service.execute('peer', { ...first }, run)).statusCode).toBe(200);
+    for (const change of [{ mcpIds: ['kusto'] }, { branchFrom: 'dev' }, { useWorktree: false }, { persona: 'qa' }]) {
+      expect((await service.execute('peer', { ...first, ...change }, run)).body.error?.code).toBe('command_conflict');
+    }
+    expect(run).toHaveBeenCalledTimes(1);
+  });
+  it('reports a refusal sentence in the receipt message', async () => {
+    const service = new MobileCommandService();
+    const response = await service.execute('peer', { ...update({ name: 'x y' }), epoch: service.epoch },
+      async () => { throw new MobileControlError('invalid_name', 400, 'rejected', 'Names cannot contain spaces'); });
+    expect(response).toMatchObject({ statusCode: 400, body: { status: 'rejected', error: { code: 'invalid_name', message: 'Names cannot contain spaces' } } });
+  });
+});

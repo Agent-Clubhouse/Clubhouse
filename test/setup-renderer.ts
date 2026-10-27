@@ -384,6 +384,7 @@ vi.stubGlobal('clubhouse', {
     regeneratePin: asyncNoop,
     onStatusChanged: () => noop,
     onAgentSpawned: () => noop,
+    onAgentUpdated: () => noop,
     listPeers: async () => [],
     removePeer: asyncNoop,
     removeAllPeers: asyncNoop,

@@ -423,6 +423,8 @@ export const IPC = {
     REGENERATE_PIN: 'annex:regenerate-pin',
     STATUS_CHANGED: 'annex:status-changed',
     AGENT_SPAWNED: 'annex:agent-spawned',
+    /** A phone changed a durable agent's settings (#2452). */
+    AGENT_UPDATED: 'annex:agent-updated',
     LIST_PEERS: 'annex:list-peers',
     REMOVE_PEER: 'annex:remove-peer',
     REMOVE_ALL_PEERS: 'annex:remove-all-peers',
