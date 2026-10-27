@@ -357,6 +357,8 @@ export const ATTR = {
     'add_project', 'reorder_projects', 'chrome_state_save', 'tab_order_save', 'agent_create', 'agent_start', 'shortcut_save', 'reorder_agents',
     'agent_stop', 'agent_wake',
     'agent_settings_save',
+    // Pins, marks and activity reaching main (#2458).
+    'project_state_sync',
   ]),
   // App lifecycle (§4.1, Phase 3b)
   shutdownStep: enumAttr('clubhouse.shutdown.step', [

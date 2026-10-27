@@ -8,6 +8,8 @@ import { randomInt, randomUUID, timingSafeEqual } from 'crypto';
 import { WebSocketServer, WebSocket } from 'ws';
 import * as annexTls from './annex-tls';
 import { MOBILE_COMMAND_TYPES, type AnnexAgentUpdate, type MobileCommand } from '../../shared/mobile-control';
+import { applyProjectStateChange, getProjectState, isProjectStateReady, onProjectStateChange } from './project-state-store';
+import { isProjectIdle } from '../../shared/project-state';
 import { MobileCommandService, MobileControlError, executeChatCommand, pendingInteractions, MOBILE_COMMAND_MAX_ENTRIES, MOBILE_COMMAND_TTL_MS } from './mobile-control';
 import { isRevertRunning } from './agent-runtime/checkpoint-tracker';
 import { readChatTranscript, listChatSessions } from './agent-runtime/chat-transcript';
@@ -596,6 +598,42 @@ function getOrchestratorsMap(): Record<string, { displayName: string; shortName:
 // Agent mapping (Issue 1 — defaults + runtime status)
 // ---------------------------------------------------------------------------
 
+/**
+ * One project's pins, inactive mark and activity for a phone (#2458). `idle` is
+ * the desktop's rule, so the phone doesn't re-implement it; the desktop's own
+ * selection exemption doesn't apply to a phone.
+ */
+function projectStateEntry(projectId: string, runningIds: ReadonlySet<string>, now = Date.now()) {
+  const state = getProjectState();
+  return {
+    lastActivityAt: state.projectActivity[projectId] ?? null,
+    pinned: state.pinnedProjectIds.includes(projectId),
+    inactive: state.inactiveProjectIds.includes(projectId),
+    idle: isProjectIdle(projectId, {
+      activity: state.projectActivity, pinnedIds: state.pinnedProjectIds, inactiveIds: state.inactiveProjectIds,
+      runningIds, activeProjectId: null, idleDays: state.idleDays, now,
+    }),
+  };
+}
+
+/** The snapshot's `projectState` and `idleDays`, or nothing before the state has moved into main. */
+function projectStateSnapshot(projectIds: string[], agents: Record<string, unknown[]>, quickAgents: Record<string, unknown[]>) {
+  if (!isProjectStateReady()) return {};
+  // Running as the sidebar counts it: a project with an agent whose status is running.
+  const runningIds = new Set(projectIds.filter((id) => [...(agents[id] ?? []), ...(quickAgents[id] ?? [])]
+    .some((a) => (a as { status?: string }).status === 'running')));
+  const now = Date.now();
+  return {
+    projectState: Object.fromEntries(projectIds.map((id) => [id, projectStateEntry(id, runningIds, now)])),
+    idleDays: getProjectState().idleDays,
+  };
+}
+
+// Pins, marks or activity changed on the desktop or from a phone: tell connected phones.
+onProjectStateChange(() => {
+  if (wss && wss.clients.size > 0) broadcastSnapshotRefresh();
+});
+
 function mapDurableAgent(d: Awaited<ReturnType<typeof agentConfig.listDurable>>[number], projectId: string) {
   const agentId = d.id;
   const isRunning = isAgentRunning(agentId);
@@ -815,6 +853,7 @@ async function buildSnapshotData(): Promise<object> {
     lastSeq: eventReplay.getLastSeq(),
     plugins,
     projectIcons,
+    ...projectStateSnapshot(projects.map((p) => p.id), agents, quickAgents),
     agentIcons,
     canvasState,
     appCanvasState,
@@ -2199,6 +2238,7 @@ async function handleMobileCapabilitiesRoute(ctx: AnnexRouteContext): Promise<vo
     createOptions: { version: 1, path: '/api/v1/mobile/projects/{projectId}/create-options' },
     agentSettings: { version: 1, path: '/api/v1/mobile/agents/{agentId}/settings' },
     idempotency: { scope: 'peer-and-epoch', maxEntries: MOBILE_COMMAND_MAX_ENTRIES, ttlMs: MOBILE_COMMAND_TTL_MS },
+    projectState: { version: 1 },
     ...phoneRoutes(),
   });
 }
@@ -2360,6 +2400,26 @@ async function runMobileCommand(command: MobileCommand, assertAuthorized: () => 
       assertAuthorized();
       if (getAgentRuntime(command.agentId) !== runtime) throw new MobileControlError('session_mismatch');
     }, (ids, caps) => mobileAttachments.resolveFor(principal, command.agentId, ids, caps));
+  }
+  if (command.type === 'project.setPinned' || command.type === 'project.setInactive') {
+    const project = await findProjectById(command.projectId);
+    if (!project) throw new MobileControlError('project_not_found', 404);
+    // Until a desktop window has moved its saved pins into main, a change here would replace them.
+    if (!isProjectStateReady()) throw new MobileControlError('project_state_unavailable');
+    assertAuthorized();
+    // The desktop's rules: a pinned project can't be marked inactive (unpin first); marking active is activity now.
+    if (command.type === 'project.setInactive' && command.inactive && getProjectState().pinnedProjectIds.includes(project.id)) {
+      throw new MobileControlError('project_pinned');
+    }
+    const changed = applyProjectStateChange(command.type === 'project.setPinned'
+      ? { type: 'setPinned', projectId: project.id, pinned: command.pinned }
+      : { type: 'setInactive', projectId: project.id, inactive: command.inactive, at: Date.now() });
+    // A change refreshes the snapshot through onProjectStateChange; a no-op still confirms the state.
+    if (!changed) broadcastSnapshotRefresh();
+    const durables = (await agentConfig.listDurable(project.path)).filter((d) => !isDisposedAgent(d));
+    const running = durables.some((d) => isAgentRunning(d.id))
+      || [...trackedQuickAgents.values()].some((qa) => qa.projectId === project.id && qa.status === 'running');
+    return { projectId: project.id, ...projectStateEntry(project.id, running ? new Set([project.id]) : new Set()) };
   }
   if (command.type === 'agent.spawn') {
     const project = await findProjectById(command.projectId);

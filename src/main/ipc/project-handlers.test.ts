@@ -81,6 +81,14 @@ vi.mock('fs/promises', () => ({
   rm: vi.fn(() => Promise.resolve(undefined)),
 }));
 
+vi.mock('../services/project-state-store', () => ({
+  hydrateProjectState: vi.fn(() => ({ pinnedProjectIds: ['p'], inactiveProjectIds: [], projectActivity: {}, idleDays: 7 })),
+  applyProjectStateChange: vi.fn(() => true),
+  onProjectStateChange: vi.fn(),
+}));
+
+vi.mock('../util/ipc-broadcast', () => ({ broadcastToAllWindows: vi.fn() }));
+
 vi.mock('../services/path-sandbox', () => ({
   assertAllowedPath: vi.fn(async () => undefined),
 }));
@@ -95,6 +103,8 @@ import { isInsideGitRepo } from '../services/git-service';
 import { assertAllowedPath } from '../services/path-sandbox';
 import * as settingsService from '../services/agent-settings-service';
 import { registerProjectHandlers } from './project-handlers';
+import * as projectStateStore from '../services/project-state-store';
+import { broadcastToAllWindows } from '../util/ipc-broadcast';
 
 describe('project-handlers', () => {
   let handlers: Map<string, (...args: any[]) => any>;
@@ -779,5 +789,40 @@ describe('project-handlers', () => {
       await expect(handler({}, '/etc')).rejects.toThrow('Access denied');
       expect(fsp.readdir).not.toHaveBeenCalled();
     });
+  });
+});
+
+describe('project state handlers (#2458)', () => {
+  let handlers: Map<string, (...args: any[]) => any>;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    handlers = new Map();
+    vi.mocked(ipcMain.handle).mockImplementation((channel: string, handler: any) => {
+      handlers.set(channel, handler);
+    });
+    registerProjectHandlers();
+  });
+
+  it('hands the window\'s localStorage copy to the store and returns the stored state', async () => {
+    const legacy = { pinnedProjectIds: ['p'], inactiveProjectIds: [], projectActivity: {}, idleDays: 7 };
+    expect(await handlers.get(IPC.PROJECT.STATE_HYDRATE)!({}, legacy)).toEqual(legacy);
+    expect(projectStateStore.hydrateProjectState).toHaveBeenCalledWith(legacy);
+  });
+
+  it('applies a valid op with its window and sequence, and refuses anything else', async () => {
+    const op = { type: 'setPinned', projectId: 'p', pinned: true };
+    await handlers.get(IPC.PROJECT.STATE_APPLY)!({}, 'window-1', 3, op);
+    expect(projectStateStore.applyProjectStateChange).toHaveBeenCalledWith(op, { clientId: 'window-1', seq: 3 });
+    await expect(async () => handlers.get(IPC.PROJECT.STATE_APPLY)!({}, 'window-1', 4, { type: 'setPinned', projectId: 'p' })).rejects.toThrow();
+    await expect(async () => handlers.get(IPC.PROJECT.STATE_APPLY)!({}, 'window-1', 0, op)).rejects.toThrow();
+    expect(projectStateStore.applyProjectStateChange).toHaveBeenCalledTimes(1);
+  });
+
+  it('broadcasts every change to the windows', () => {
+    const listener = vi.mocked(projectStateStore.onProjectStateChange).mock.calls.at(-1)![0];
+    const change = { state: { pinnedProjectIds: [], inactiveProjectIds: [], projectActivity: {}, idleDays: 7 }, acked: { w: 1 } };
+    listener(change);
+    expect(broadcastToAllWindows).toHaveBeenCalledWith(IPC.PROJECT.STATE_CHANGED, change);
   });
 });

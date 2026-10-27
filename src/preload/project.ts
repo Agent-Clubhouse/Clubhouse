@@ -2,6 +2,7 @@ import { ipcRenderer } from 'electron';
 import { IPC } from '../shared/ipc-channels';
 import type { LaunchWrapperConfig, McpCatalogEntry, WrapperCatalogSnapshot } from '../shared/types';
 import { typedInvoke } from '../shared/ipc-types';
+import type { ProjectState, ProjectStateChange, ProjectStateOp } from '../shared/project-state';
 
 export const project = {
   project: {
@@ -51,5 +52,16 @@ export const project = {
     ipcRenderer.invoke(IPC.PROJECT.READ_WRAPPER_CATALOG_SNAPSHOT, projectPath),
   writeWrapperCatalogSnapshot: (projectPath: string, snapshot: WrapperCatalogSnapshot | undefined): Promise<void> =>
     ipcRenderer.invoke(IPC.PROJECT.WRITE_WRAPPER_CATALOG_SNAPSHOT, projectPath, snapshot),
+  /** The stored pins, inactive marks and activity; the first window ever hands over `legacy`, its localStorage copy (#2458). */
+  hydrateState: (legacy: ProjectState): Promise<ProjectState> =>
+    ipcRenderer.invoke(IPC.PROJECT.STATE_HYDRATE, legacy),
+  /** Apply one op in main. `seq` counts up per window; broadcasts acknowledge it. */
+  applyStateOp: (clientId: string, seq: number, op: ProjectStateOp): Promise<void> =>
+    ipcRenderer.invoke(IPC.PROJECT.STATE_APPLY, clientId, seq, op),
+  onStateChanged: (callback: (change: ProjectStateChange) => void) => {
+    const listener = (_event: Electron.IpcRendererEvent, change: ProjectStateChange) => callback(change);
+    ipcRenderer.on(IPC.PROJECT.STATE_CHANGED, listener);
+    return () => { ipcRenderer.removeListener(IPC.PROJECT.STATE_CHANGED, listener); };
+  },
   },
 };
