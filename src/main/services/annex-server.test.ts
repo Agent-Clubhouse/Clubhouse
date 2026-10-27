@@ -18,6 +18,7 @@ vi.mock('./mobile-agents', () => ({
   buildCreateOptions: vi.fn(async (project: { id: string }) => ({ projectId: project.id, orchestrators: [], suggestedName: 'brave-otter' })),
   buildAgentSettings: vi.fn(async (project: { id: string }, config: { id: string }, live?: string) => ({ agentId: config.id, projectId: project.id, state: live ?? 'sleeping', settings: {} })),
   buildAgentSettingsOptions: vi.fn(async () => ({ orchestrators: [], idleSleep: { minutes: [15, 30, 60, 240], appMinutes: 30 } })),
+  buildAgentDetails: vi.fn(async () => ({ branch: 'agent/standby', worktreePath: null, worktree: null, mcpIds: [], changes: null })),
   createMobileAgent: vi.fn(async () => ({ agentId: 'durable_new', state: 'creating' })),
   updateMobileAgent: vi.fn(async () => ({ agentId: 'a', settings: { name: { value: 'calm-otter' }, color: { value: 'rose' }, emoji: { value: null },
     model: { value: 'default' }, orchestrator: { value: 'codex-cli' } } })),
@@ -726,7 +727,9 @@ describe('annex-server', () => {
     const { port, token } = await startAndPair();
     const res = await request(port, 'GET', '/api/v1/mobile/agents/a/settings', undefined, authHeaders(token));
     expect(res.status).toBe(200);
-    expect(JSON.parse(res.body)).toMatchObject({ version: 1, agentId: 'a', projectId: 'p', state: 'sleeping', options: { idleSleep: { minutes: [15, 30, 60, 240] } } });
+    expect(JSON.parse(res.body)).toMatchObject({ version: 1, agentId: 'a', projectId: 'p', state: 'sleeping', options: { idleSleep: { minutes: [15, 30, 60, 240] } },
+      details: { branch: 'agent/standby', mcpIds: [], changes: null } });
+    expect(mobileAgents.buildAgentDetails).toHaveBeenCalledWith({ id: 'p', path: '/test/project' }, expect.objectContaining({ id: 'a' }));
     vi.mocked(ptyManagerModule.isRunning).mockReturnValue(true);
     expect(JSON.parse((await request(port, 'GET', '/api/v1/mobile/agents/a/settings', undefined, authHeaders(token))).body).state).toBe('running');
     expect((await request(port, 'GET', '/api/v1/mobile/agents/missing/settings', undefined, authHeaders(token))).status).toBe(404);

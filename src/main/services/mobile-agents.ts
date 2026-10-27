@@ -23,7 +23,7 @@ import { chatIdleSettings } from './chat-idle-settings';
 import { isChatEnabled, resolveRuntimeMode } from './chat-runtime-settings';
 import { resolveChatDriver } from './agent-runtime/chat-drivers';
 import { isChatAgent } from './agent-runtime';
-import { isInsideGitRepo } from './git-service';
+import { getBranchChanges, isInsideGitRepo } from './git-service';
 import { MobileControlError } from './mobile-control';
 
 export interface MobileAgentProject { id: string; path: string }
@@ -149,6 +149,62 @@ export async function buildAgentSettings(project: MobileAgentProject, config: Du
       // Only chat agents idle-sleep; the value is kept either way.
       idleSleep: { ...field(idle, 'always'), minutes: resolved.minutes, source: resolved.source, applies: runtime === 'chat' },
     },
+  };
+}
+
+/** The branch against main as a phone shows it: counts only, never file names or diffs. */
+export interface MobileAgentChanges {
+  /** False when the agent's folder isn't in a git work tree. */
+  available: boolean;
+  /** Short name of the main line ("main"). */
+  base: string | null;
+  /** No main line to compare with. */
+  noBase: boolean;
+  files: number;
+  additions: number;
+  deletions: number;
+  /** Commits on the branch since it left main. */
+  ahead: number | null;
+  /** Uncommitted and untracked files. */
+  uncommitted: number | null;
+}
+
+/** `path` under `root` as the hover card shows it, or the path itself when it's elsewhere. */
+function underProject(root: string, path: string): string {
+  const norm = (p: string) => p.replace(/\\/g, '/').replace(/\/+$/, '');
+  const r = norm(root);
+  const p = norm(path);
+  return r && p.startsWith(`${r}/`) ? p.slice(r.length + 1) : path;
+}
+
+/**
+ * What Agent details shows besides the settings (#157): the branch and
+ * worktree, the MCP servers set for the agent, and its branch's changes
+ * against main as on the Changes card. Changes are null while the agent is
+ * still being created or when git can't be read.
+ */
+export async function buildAgentDetails(project: MobileAgentProject, config: DurableAgentConfig) {
+  const creating = config.creation?.state === 'creating';
+  const changes = creating ? null : await getBranchChanges(config.worktreePath || project.path, undefined, true).then(
+    (c): MobileAgentChanges => ({
+      available: c.available,
+      base: c.base ?? null,
+      noBase: !!c.noBase,
+      files: c.files.length,
+      additions: c.files.reduce((n, f) => n + f.additions, 0),
+      deletions: c.files.reduce((n, f) => n + f.deletions, 0),
+      ahead: c.ahead ?? null,
+      uncommitted: c.uncommitted ?? null,
+    }),
+    // telemetry-exempt: the phone shows the changes as unavailable.
+    (): null => null,
+  );
+  return {
+    branch: config.branch ?? null,
+    worktreePath: config.worktreePath ?? null,
+    worktree: config.worktreePath ? underProject(project.path, config.worktreePath) : null,
+    mcpIds: config.mcpIds ?? [],
+    changes,
   };
 }
 

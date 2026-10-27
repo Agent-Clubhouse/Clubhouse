@@ -36,7 +36,7 @@ vi.mock('./chat-runtime-settings', () => ({
 }));
 vi.mock('./agent-runtime/chat-drivers', () => ({ resolveChatDriver: vi.fn((provider: string) => (provider === 'claude-code' ? {} : undefined)) }));
 vi.mock('./agent-runtime', () => ({ isChatAgent: vi.fn(() => false) }));
-vi.mock('./git-service', () => ({ isInsideGitRepo: vi.fn(async () => true) }));
+vi.mock('./git-service', () => ({ isInsideGitRepo: vi.fn(async () => true), getBranchChanges: vi.fn() }));
 vi.mock('./persona-application', () => ({ applyPersonaToAgent: vi.fn(async () => undefined) }));
 vi.mock('./log-service', () => ({ appLog: vi.fn() }));
 
@@ -48,10 +48,10 @@ import { getProfile } from './profile-settings';
 import { isClubhouseModeEnabled } from './clubhouse-mode-settings';
 import { isChatEnabled } from './chat-runtime-settings';
 import { isChatAgent } from './agent-runtime';
-import { isInsideGitRepo } from './git-service';
+import { getBranchChanges, isInsideGitRepo } from './git-service';
 import { applyPersonaToAgent } from './persona-application';
 import { MobileControlError } from './mobile-control';
-import { buildAgentSettings, buildAgentSettingsOptions, buildCreateOptions, createMobileAgent, updateMobileAgent } from './mobile-agents';
+import { buildAgentDetails, buildAgentSettings, buildAgentSettingsOptions, buildCreateOptions, createMobileAgent, updateMobileAgent } from './mobile-agents';
 
 const project = { id: 'p1', path: '/work/app' };
 const orchestrator = (id: string, permissions = true) => ({ id, displayName: id, shortName: id.slice(0, 2), capabilities: { permissions } });
@@ -191,6 +191,43 @@ describe('agent settings', () => {
     const options = await buildAgentSettingsOptions('/work/app');
     expect(options.idleSleep).toEqual({ minutes: [15, 30, 60, 240], appMinutes: 30 });
     expect(options.orchestrators.map((o) => o.id)).toEqual(['claude-code', 'codex-cli']);
+  });
+});
+
+describe('agent details', () => {
+  it('sends the branch, worktree, MCP servers and a count-only summary of the branch changes', async () => {
+    vi.mocked(getBranchChanges).mockResolvedValueOnce({
+      available: true, branch: 'brave-otter/standby', base: 'main', ahead: 2, uncommitted: 1,
+      files: [
+        { path: 'src/a.ts', status: 'modified', additions: 10, deletions: 4 },
+        { path: 'src/b.ts', status: 'added', additions: 5, deletions: 0 },
+      ],
+    });
+    const result = await buildAgentDetails(project, agent({ branch: 'brave-otter/standby', mcpIds: ['github', 'linear'] }));
+    expect(getBranchChanges).toHaveBeenCalledWith('/work/app/.clubhouse/agents/brave-otter', undefined, true);
+    expect(result).toEqual({
+      branch: 'brave-otter/standby',
+      worktreePath: '/work/app/.clubhouse/agents/brave-otter',
+      worktree: '.clubhouse/agents/brave-otter',
+      mcpIds: ['github', 'linear'],
+      changes: { available: true, base: 'main', noBase: false, files: 2, additions: 15, deletions: 4, ahead: 2, uncommitted: 1 },
+    });
+  });
+  it('reads the project folder without a worktree, and keeps a worktree outside the project whole', async () => {
+    vi.mocked(getBranchChanges).mockResolvedValueOnce({ available: false, files: [] });
+    const plain = await buildAgentDetails(project, agent({ worktreePath: undefined }));
+    expect(getBranchChanges).toHaveBeenCalledWith('/work/app', undefined, true);
+    expect(plain).toMatchObject({ branch: null, worktreePath: null, worktree: null, mcpIds: [],
+      changes: { available: false, base: null, files: 0, ahead: null, uncommitted: null } });
+    vi.mocked(getBranchChanges).mockResolvedValueOnce({ available: true, noBase: true, files: [] });
+    const elsewhere = await buildAgentDetails(project, agent({ worktreePath: '/elsewhere/brave-otter' }));
+    expect(elsewhere).toMatchObject({ worktree: '/elsewhere/brave-otter', changes: { noBase: true } });
+  });
+  it('leaves changes out while the agent is created or when git fails', async () => {
+    expect((await buildAgentDetails(project, agent({ creation: { state: 'creating', startedAt: 'now' } }))).changes).toBeNull();
+    expect(getBranchChanges).not.toHaveBeenCalled();
+    vi.mocked(getBranchChanges).mockRejectedValueOnce(new Error('git missing'));
+    expect((await buildAgentDetails(project, agent())).changes).toBeNull();
   });
 });
 
