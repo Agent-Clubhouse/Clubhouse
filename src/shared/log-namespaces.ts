@@ -44,6 +44,7 @@ export const KNOWN_LOG_NAMESPACES: readonly string[] = [
   'core:plugins',
   'core:process',
   'core:project',
+  'core:project-state',
   'core:project-store',
   'core:protocol',
   'core:pty',

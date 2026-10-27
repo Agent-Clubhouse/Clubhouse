@@ -13,6 +13,26 @@ vi.mock('./agent-runtime/chat-files', async (importOriginal) => ({
 }));
 import { getSettings as getExperimentalSettings } from './experimental-settings';
 vi.mock('./experimental-settings', () => ({ getSettings: vi.fn(() => ({})), saveSettings: vi.fn() }));
+import * as projectStateStore from './project-state-store';
+// An in-memory main store running the real shared rules (#2458).
+vi.mock('./project-state-store', async () => {
+  const shared = await import('../../shared/project-state');
+  let state = shared.DEFAULT_PROJECT_STATE;
+  const listeners = new Set<(change: unknown) => void>();
+  return {
+    isProjectStateReady: vi.fn(() => false),
+    getProjectState: () => state,
+    onProjectStateChange: (listener: (change: unknown) => void) => { listeners.add(listener); return () => listeners.delete(listener); },
+    applyProjectStateChange: vi.fn((op: import('../../shared/project-state').ProjectStateOp) => {
+      const next = shared.applyProjectStateOp(state, op);
+      if (next === state) return false;
+      state = next;
+      for (const listener of listeners) listener({ state, acked: {} });
+      return true;
+    }),
+    setForTests: (next: import('../../shared/project-state').ProjectState) => { state = next; },
+  };
+});
 import * as mobileAgents from './mobile-agents';
 vi.mock('./mobile-agents', () => ({
   buildCreateOptions: vi.fn(async (project: { id: string }) => ({ projectId: project.id, orchestrators: [], suggestedName: 'brave-otter' })),
@@ -511,6 +531,97 @@ describe('annex-server', () => {
       } finally {
         annexServer._testing.trackedQuickAgents.delete('quick_1');
       }
+    });
+  });
+
+  describe('project pins, marks and idle state (#2458)', () => {
+    const DAY = 24 * 60 * 60 * 1000;
+    const NOW = 1_800_000_000_000;
+    const base = { version: 1 as const, epoch: 'e', commandId: 'c' };
+    const setState = (projectStateStore as unknown as { setForTests: (s: object) => void }).setForTests;
+
+    beforeEach(async () => {
+      vi.mocked(pluginManifestRegistry.listAllManifests).mockReturnValue([]);
+      const { groupProjectRegistry } = await import('./group-project-registry');
+      vi.mocked(groupProjectRegistry.list).mockResolvedValue([]);
+      const themeService = await import('./theme-service');
+      vi.mocked(themeService.getSettings).mockReturnValue({ themeId: 'catppuccin-mocha' } as any);
+      vi.mocked(projectStore.list).mockReturnValue([
+        { id: 'p_pinned', name: 'a', path: '/a' }, { id: 'p_old', name: 'b', path: '/b' },
+        { id: 'p_marked', name: 'c', path: '/c' }, { id: 'p_busy', name: 'd', path: '/d' }, { id: 'p_new', name: 'e', path: '/e' },
+      ] as any);
+      vi.mocked(agentConfigModule.listDurable).mockImplementation(async (projectPath: string) =>
+        (projectPath === '/d' ? [{ id: 'busy_agent', name: 'busy', color: 'indigo', createdAt: '2025-01-01' }] : []) as any);
+      vi.mocked(ptyManagerModule.isRunning).mockImplementation((id: string) => id === 'busy_agent');
+      vi.mocked(projectStateStore.isProjectStateReady).mockReturnValue(true);
+      setState({
+        pinnedProjectIds: ['p_pinned'], inactiveProjectIds: ['p_marked'],
+        projectActivity: { p_pinned: NOW - 30 * DAY, p_old: NOW - 8 * DAY, p_marked: NOW, p_busy: NOW - 30 * DAY },
+        idleDays: 7,
+      });
+      vi.spyOn(Date, 'now').mockReturnValue(NOW);
+    });
+    afterEach(() => {
+      vi.mocked(Date.now).mockRestore();
+      vi.mocked(projectStateStore.isProjectStateReady).mockReturnValue(false);
+      vi.mocked(ptyManagerModule.isRunning).mockReset();
+    });
+
+    it('sends each project\'s state, with idle worked out by the desktop\'s rule, and idleDays', async () => {
+      const snapshot = await annexServer._testing.buildSnapshot() as { projectState: Record<string, unknown>; idleDays: number };
+      expect(snapshot.idleDays).toBe(7);
+      expect(snapshot.projectState).toEqual({
+        p_pinned: { lastActivityAt: NOW - 30 * DAY, pinned: true, inactive: false, idle: false },
+        p_old: { lastActivityAt: NOW - 8 * DAY, pinned: false, inactive: false, idle: true },
+        p_marked: { lastActivityAt: NOW, pinned: false, inactive: true, idle: true },
+        // An agent running keeps it out of the idle section.
+        p_busy: { lastActivityAt: NOW - 30 * DAY, pinned: false, inactive: false, idle: false },
+        p_new: { lastActivityAt: null, pinned: false, inactive: false, idle: false },
+      });
+    });
+
+    it('leaves the fields out until the state has moved into main', async () => {
+      vi.mocked(projectStateStore.isProjectStateReady).mockReturnValue(false);
+      const snapshot = await annexServer._testing.buildSnapshot() as Record<string, unknown>;
+      expect(snapshot).not.toHaveProperty('projectState');
+      expect(snapshot).not.toHaveProperty('idleDays');
+    });
+
+    it('pins and unpins from a phone', async () => {
+      const { runMobileCommand } = annexServer._testing;
+      expect(await runMobileCommand({ ...base, type: 'project.setPinned', projectId: 'p_old', pinned: true }, vi.fn()))
+        .toEqual({ projectId: 'p_old', lastActivityAt: NOW - 8 * DAY, pinned: true, inactive: false, idle: false });
+      expect(await runMobileCommand({ ...base, type: 'project.setPinned', projectId: 'p_pinned', pinned: false }, vi.fn()))
+        .toMatchObject({ projectId: 'p_pinned', pinned: false, idle: true });
+    });
+
+    it('marks inactive and active with the desktop\'s rules', async () => {
+      const { runMobileCommand } = annexServer._testing;
+      expect(await runMobileCommand({ ...base, type: 'project.setInactive', projectId: 'p_new', inactive: true }, vi.fn()))
+        .toMatchObject({ inactive: true, idle: true });
+      // A pinned project can't be marked inactive.
+      await expect(runMobileCommand({ ...base, type: 'project.setInactive', projectId: 'p_pinned', inactive: true }, vi.fn()))
+        .rejects.toMatchObject({ code: 'project_pinned', statusCode: 409 });
+      // Marking active is activity now, so an old project stops being idle.
+      expect(await runMobileCommand({ ...base, type: 'project.setInactive', projectId: 'p_old', inactive: false }, vi.fn()))
+        .toEqual({ projectId: 'p_old', lastActivityAt: NOW, pinned: false, inactive: false, idle: false });
+    });
+
+    it('refuses unknown projects, and changes before the state has moved into main', async () => {
+      const { runMobileCommand } = annexServer._testing;
+      await expect(runMobileCommand({ ...base, type: 'project.setPinned', projectId: 'missing', pinned: true }, vi.fn()))
+        .rejects.toMatchObject({ code: 'project_not_found', statusCode: 404 });
+      vi.mocked(projectStateStore.isProjectStateReady).mockReturnValue(false);
+      await expect(runMobileCommand({ ...base, type: 'project.setPinned', projectId: 'p_old', pinned: true }, vi.fn()))
+        .rejects.toMatchObject({ code: 'project_state_unavailable', statusCode: 409 });
+      expect(projectStateStore.applyProjectStateChange).not.toHaveBeenCalled();
+    });
+
+    it('advertises the projectState capability and both commands', async () => {
+      const { port, token } = await startAndPair();
+      const capabilities = JSON.parse((await request(port, 'GET', '/api/v1/mobile/capabilities', undefined, authHeaders(token))).body);
+      expect(capabilities.projectState).toEqual({ version: 1 });
+      expect(capabilities.commands).toEqual(expect.arrayContaining(['project.setPinned', 'project.setInactive']));
     });
   });
 

@@ -2,7 +2,7 @@
 import type { ChatQuestionAnswers } from './chat';
 import type { AgentIdleSleep } from './idle-sleep';
 export const MOBILE_PROTOCOL_VERSION = 1;
-export const MOBILE_COMMAND_TYPES = ['chat.send', 'chat.interrupt', 'chat.permission', 'chat.question', 'chat.queue.remove', 'agent.start', 'agent.stop', 'agent.spawn', 'agent.create', 'agent.update'] as const;
+export const MOBILE_COMMAND_TYPES = ['chat.send', 'chat.interrupt', 'chat.permission', 'chat.question', 'chat.queue.remove', 'agent.start', 'agent.stop', 'agent.spawn', 'agent.create', 'agent.update', 'project.setPinned', 'project.setInactive'] as const;
 interface CommandBase { version: 1; commandId: string; epoch: string }
 interface ChatTarget { agentId: string; sessionId: string }
 export type MobileCommand = CommandBase & (
@@ -17,6 +17,8 @@ export type MobileCommand = CommandBase & (
   | { type: 'agent.spawn'; projectId: string; prompt: string; model?: string; orchestrator?: string }
   | ({ type: 'agent.create' } & MobileAgentCreate)
   | ({ type: 'agent.update' } & MobileAgentUpdate)
+  | { type: 'project.setPinned'; projectId: string; pinned: boolean }
+  | { type: 'project.setInactive'; projectId: string; inactive: boolean }
 );
 /** A durable agent, as the New agent page makes one. Free Agent Mode is never accepted from a phone. */
 export interface MobileAgentCreate {

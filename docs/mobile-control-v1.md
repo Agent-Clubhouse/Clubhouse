@@ -19,7 +19,7 @@ Authenticated `GET /api/v1/mobile/capabilities` returns:
 {"version":1,"epoch":"uuid","controlAuth":"mtls-pinned-client","controlAvailable":true,"commands":["chat.send","chat.interrupt","chat.permission","chat.question","chat.queue.remove","agent.start","agent.stop","agent.spawn","agent.create","agent.update"],"pairing":{"sessionRevokePath":"/api/v1/mobile/pairing"},"attachments":{"version":1,"imageTypes":["image/png","image/jpeg","image/gif","image/webp"],"maxImageBytes":3932160,"maxCount":10},"events":{"transport":"annex-websocket","replayRequest":"mobile:replay","queueState":"queue_state"},"createOptions":{"version":1,"path":"/api/v1/mobile/projects/{projectId}/create-options"},"agentSettings":{"version":1,"path":"/api/v1/mobile/agents/{agentId}/settings"},"idempotency":{"scope":"peer-and-epoch","maxEntries":2048,"ttlMs":3600000}}
 ```
 
-A 404 means unsupported: do not send mobile commands. Gate durable-agent creation on `commands` including `agent.create` and `createOptions.version >= 1`, and settings on `agent.update` and `agentSettings.version >= 1`; older desktops offer quick agents (`agent.spawn`) only. A new epoch invalidates command retries and replay cursors. No permission-level changes, raw shell commands, arbitrary filesystem paths, credentials, or gateway provisioning commands exist.
+A 404 means unsupported: do not send mobile commands. Gate durable-agent creation on `commands` including `agent.create` and `createOptions.version >= 1`, and settings on `agent.update` and `agentSettings.version >= 1`; older desktops offer quick agents (`agent.spawn`) only. Gate project pins and inactive marks on `projectState.version >= 1` (`projectState:{version:1}`); without it, keep them on the phone. See [Project state](#project-state). A new epoch invalidates command retries and replay cursors. No permission-level changes, raw shell commands, arbitrary filesystem paths, credentials, or gateway provisioning commands exist.
 
 ## Commands
 
@@ -35,6 +35,8 @@ A 404 means unsupported: do not send mobile commands. Gate durable-agent creatio
 - `agent.spawn`: `{projectId, prompt, model?, orchestrator?}`; quick agent under registered project with ask-first permission mode.
 - `agent.create`: `{projectId, name, color, orchestrator?, model?, persona?, useWorktree?, mcpIds?, branchName?, branchFrom?, folderName?}`; durable agent, as the desktop New agent page makes one. See [Durable agents](#durable-agents).
 - `agent.update`: `{agentId, name?, color?, emoji?, orchestrator?, model?, runtime?, persona?, clubhouseMode?, idleSleep?}`; at least one setting. See [Durable agents](#durable-agents).
+- `project.setPinned`: `{projectId, pinned}`; pin or unpin a project in the desktop sidebar. See [Project state](#project-state).
+- `project.setInactive`: `{projectId, inactive}`; mark a project inactive (idle until marked active) or active. See [Project state](#project-state).
 
 For `chat.send`, `result` is `{delivery:"prompt"|"steer"|"queued",messageId:"authoritative runtime ID"}`. The matching `user_message.data` additionally echoes `clientCommandId` equal to the request commandId, including queued/steered sends. The event may arrive before the receipt: reconcile by clientCommandId immediately, then by messageId; never guess by text or timestamps. Local/legacy sends omit the optional field.
 
@@ -216,3 +218,25 @@ Rejections:
 
 The receipt `result` is the settings payload above, without `version`, `epoch` and `options`. The desktop windows and other clients are told about the change through `snapshot:refresh`.
 
+## Project state
+
+The desktop sidebar folds projects into "N idle projects" (docs/chrome-redesign-spec.md §5.4). The state behind it now lives in the desktop's main process (`project-state.json` in userData), not renderer localStorage, so a phone sees the same pins, inactive marks and idle projects. Older desktops don't advertise `projectState` and don't send these fields; keep local pins and idle there.
+
+The snapshot adds, for every project in `projects`:
+
+```json
+"projectState": {"proj_1": {"lastActivityAt": 1800000000000, "pinned": false, "inactive": false, "idle": true}},
+"idleDays": 7
+```
+
+- `lastActivityAt`: epoch ms of the last project activity (an agent running or waking, a quick agent starting, a desktop tab opened), or `null` before the desktop has seen the project. Written at most once a minute per project.
+- `idle`: computed by the desktop, so the phone doesn't re-implement the rule. A project is idle when it is unpinned, has no agent with status `running`, and is either marked inactive or had no activity for more than `idleDays` days. `idleDays` 0 means only marked projects are idle. The desktop also keeps its own selected project out of the idle section; that doesn't apply to a phone.
+- Both fields are left out until the desktop has moved the state out of localStorage. That happens once, when a desktop window first opens after the update.
+
+Commands follow the desktop's rules:
+
+- `project.setPinned {projectId, pinned}`: pinning puts the project last among the pinned.
+- `project.setInactive {projectId, inactive:true}`: refused with 409 `project_pinned` for a pinned project (unpin it first).
+- `project.setInactive {projectId, inactive:false}`: clears the mark and counts as activity now, as on the desktop, so the project stops being idle.
+
+Both return the project's entry, `{projectId, lastActivityAt, pinned, inactive, idle}`. Asking for the state the project already has succeeds. Errors: 404 `project_not_found`; 409 `project_state_unavailable` before the state has moved into main. After each command, and after every change made on the desktop, connected clients get a fresh `snapshot`.

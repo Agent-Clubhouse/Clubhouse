@@ -63,6 +63,18 @@ describe('mobile validation and chat dispatch', () => {
     const service = new MobileCommandService();
     expect(() => parseMobileCommand(bad === null || Array.isArray(bad) ? bad : { ...command(service), ...bad })).toThrow();
   });
+  it('parses project.setPinned and project.setInactive, with a boolean and nothing else (#2458)', () => {
+    const head = { version: 1, epoch: 'e', commandId: 'c' };
+    expect(parseMobileCommand({ ...head, type: 'project.setPinned', projectId: 'p', pinned: true })).toMatchObject({ pinned: true });
+    expect(parseMobileCommand({ ...head, type: 'project.setInactive', projectId: 'p', inactive: false })).toMatchObject({ inactive: false });
+    for (const bad of [
+      { type: 'project.setPinned', projectId: 'p' },
+      { type: 'project.setPinned', projectId: 'p', pinned: 'yes' },
+      { type: 'project.setPinned', projectId: '', pinned: true },
+      { type: 'project.setInactive', projectId: 'p', inactive: true, at: 1 },
+      { type: 'project.setInactive', projectId: 'p', pinned: true },
+    ]) expect(() => parseMobileCommand({ ...head, ...bad })).toThrow(MobileControlError);
+  });
   it('preserves requested delivery and reports actual delivery', async () => {
     const service = new MobileCommandService(); const rt = runtime();
     const cmd = parseMobileCommand(command(service, { delivery: 'steer' }));

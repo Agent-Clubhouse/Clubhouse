@@ -9,11 +9,30 @@ import { readLaunchWrapper, writeLaunchWrapper, readMcpCatalog, writeMcpCatalog,
 import { appLog } from '../services/log-service';
 import { isInsideGitRepo } from '../services/git-service';
 import { tel } from '../telemetry/facade';
-import { arrayArg, objectArg, stringArg, withValidatedArgs } from './validation';
+import { arrayArg, numberArg, objectArg, stringArg, withValidatedArgs } from './validation';
 import { assertAllowedPath } from '../services/path-sandbox';
 import type { IpcResponse } from '../../shared/ipc-types';
+import { applyProjectStateChange, hydrateProjectState, onProjectStateChange } from '../services/project-state-store';
+import { parseProjectStateOp } from '../../shared/project-state';
+import { broadcastToAllWindows } from '../util/ipc-broadcast';
 
 export function registerProjectHandlers(): void {
+  // Pins, inactive marks and activity (#2458). Every window, and Annex, hears each change.
+  onProjectStateChange((change) => broadcastToAllWindows(IPC.PROJECT.STATE_CHANGED, change));
+
+  ipcMain.handle(IPC.PROJECT.STATE_HYDRATE, withValidatedArgs([objectArg()], (_event, legacy: unknown) =>
+    hydrateProjectState(legacy),
+  ));
+
+  ipcMain.handle(IPC.PROJECT.STATE_APPLY, withValidatedArgs(
+    [stringArg({ maxLength: 128 }), numberArg({ integer: true, min: 1 }), objectArg()],
+    (_event, clientId: string, seq: number, rawOp: unknown) => {
+      const op = parseProjectStateOp(rawOp);
+      if (!op) throw new Error('Invalid project state op');
+      applyProjectStateChange(op, { clientId, seq });
+    },
+  ));
+
   ipcMain.handle(IPC.PROJECT.LIST, async () => {
     return projectStore.list();
   });

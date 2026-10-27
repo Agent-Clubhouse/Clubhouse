@@ -194,6 +194,7 @@ The legacy key `clubhouse_keyboard_shortcut_overrides` is a flat `Record<string,
 - Order stays in `projects.json`, through the existing `reorderProjects`.
 - Pins, the per-project collapsed state, and the idle window (default 7 days) live in `clubhouse_chrome_v2`.
 - Activity timestamps are derived at runtime from agent and quick-agent events and from tab opens. They are cached in `clubhouse_chrome_v2`, so idle state survives a restart.
+- Pins, inactive marks, activity and the idle window are owned by main (`project-state.json`, #2458), so Annex can sync them with a phone (docs/mobile-control-v1.md, Project state). The sidebar applies each change at once and sends it to main; `clubhouse_chrome_v2` keeps a copy for startup, and is what the first window hands to main, once, as the migration.
 
 ### 5.5 Not migrated
 

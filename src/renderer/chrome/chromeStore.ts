@@ -5,6 +5,8 @@ import { isNewChromeEnabled } from './chromeFlag';
 import { useAgentStore } from '../stores/agentStore';
 import { touchMru } from './titlebar/overflow';
 import { ACTIVITY_WRITE_INTERVAL_MS, DEFAULT_IDLE_DAYS } from './projectActivity';
+import { applyProjectStateOp, sanitizeProjectState, type ProjectState, type ProjectStateOp } from '../../shared/project-state';
+import { startProjectStateSync, type ProjectStateSync } from './projectStateSync';
 
 /**
  * State for the new chrome shell. Persisted under its own key so the legacy
@@ -207,6 +209,8 @@ export interface ChromeState {
   forgetProjects: (projectIds: string[]) => void;
   /** The same for every stored project id with a prefix: an unpaired satellite's projects. */
   forgetProjectsWithPrefix: (prefix: string) => void;
+  /** For the main-process sync (#2458): show main's pins, marks and activity without sending them back. */
+  replaceProjectState: (state: ProjectState) => void;
 }
 
 type PersistedFields = Pick<ChromeState,
@@ -342,6 +346,19 @@ export const useChromeStore = create<ChromeState>((set, get) => {
       persistChromeState(get());
     }, PERSIST_DEBOUNCE_MS);
   };
+  /**
+   * Pins, inactive marks, activity and the idle window change through the
+   * shared ops (#2458): applied here at once, then sent to main, which keeps
+   * them for the phone. localStorage keeps a copy for the next startup.
+   */
+  const projectOp = (op: ProjectStateOp) => {
+    const current = pickProjectState(get());
+    const next = applyProjectStateOp(current, op);
+    if (next === current) return;
+    set(next);
+    schedulePersist();
+    projectStateSync?.send(op);
+  };
 
   return {
     // With the flag off the legacy shell runs and only the agent list's fold
@@ -410,25 +427,11 @@ export const useChromeStore = create<ChromeState>((set, get) => {
       schedulePersist();
     },
 
-    markActivity: (projectId, at = Date.now()) => {
-      const last = get().projectActivity[projectId];
-      if (last !== undefined && at - last < ACTIVITY_WRITE_INTERVAL_MS) return;
-      set({ projectActivity: { ...get().projectActivity, [projectId]: at } });
-      schedulePersist();
-    },
+    markActivity: (projectId, at = Date.now()) => projectOp({ type: 'markActivity', projectId, at }),
 
-    seedActivity: (projectIds, at = Date.now()) => {
-      const current = get().projectActivity;
-      const missing = projectIds.filter((id) => current[id] === undefined);
-      if (missing.length === 0) return;
-      set({ projectActivity: { ...current, ...Object.fromEntries(missing.map((id) => [id, at])) } });
-      schedulePersist();
-    },
+    seedActivity: (projectIds, at = Date.now()) => projectOp({ type: 'seedActivity', projectIds, at }),
 
-    setIdleDays: (days) => {
-      set({ idleDays: Math.max(0, Math.round(days)) });
-      schedulePersist();
-    },
+    setIdleDays: (days) => projectOp({ type: 'setIdleDays', days }),
 
     setProjectSort: (sort) => {
       if (get().projectSort === sort) return;
@@ -442,22 +445,9 @@ export const useChromeStore = create<ChromeState>((set, get) => {
       schedulePersist();
     },
 
-    markProjectInactive: (projectId) => {
-      const s = get();
-      if (s.pinnedProjectIds.includes(projectId) || s.inactiveProjectIds.includes(projectId)) return;
-      set({ inactiveProjectIds: [...s.inactiveProjectIds, projectId] });
-      schedulePersist();
-    },
+    markProjectInactive: (projectId) => projectOp({ type: 'setInactive', projectId, inactive: true, at: Date.now() }),
 
-    markProjectActive: (projectId, at = Date.now()) => {
-      const s = get();
-      // Unthrottled, unlike markActivity: the user asked for it now.
-      set({
-        inactiveProjectIds: s.inactiveProjectIds.filter((id) => id !== projectId),
-        projectActivity: { ...s.projectActivity, [projectId]: at },
-      });
-      schedulePersist();
-    },
+    markProjectActive: (projectId, at = Date.now()) => projectOp({ type: 'setInactive', projectId, inactive: false, at }),
 
     markAgentActivity: (agentId, at = Date.now()) => {
       const last = get().agentActivity[agentId];
@@ -487,11 +477,7 @@ export const useChromeStore = create<ChromeState>((set, get) => {
       schedulePersist();
     },
 
-    togglePinned: (projectId) => {
-      const pinned = get().pinnedProjectIds;
-      set({ pinnedProjectIds: pinned.includes(projectId) ? pinned.filter((id) => id !== projectId) : [...pinned, projectId] });
-      schedulePersist();
-    },
+    togglePinned: (projectId) => projectOp({ type: 'setPinned', projectId, pinned: !get().pinnedProjectIds.includes(projectId) }),
 
     toggleProjectCollapsed: (projectId) => {
       get().setProjectCollapsed(projectId, !get().collapsedProjectIds.includes(projectId));
@@ -572,19 +558,51 @@ export const useChromeStore = create<ChromeState>((set, get) => {
       if (projectIds.length === 0) return;
       const gone = new Set(projectIds);
       const s = get();
+      projectOp({ type: 'forget', projectIds });
       set({
-        pinnedProjectIds: s.pinnedProjectIds.filter((id) => !gone.has(id)),
         collapsedProjectIds: s.collapsedProjectIds.filter((id) => !gone.has(id)),
         expandedFolds: s.expandedFolds.filter((key) => !gone.has(key.slice(0, key.lastIndexOf(':')))),
         lastProjectId: s.lastProjectId && gone.has(s.lastProjectId) ? null : s.lastProjectId,
         tabMru: Object.fromEntries(Object.entries(s.tabMru).filter(([id]) => !gone.has(id))),
-        projectActivity: Object.fromEntries(Object.entries(s.projectActivity).filter(([id]) => !gone.has(id))),
-        inactiveProjectIds: s.inactiveProjectIds.filter((id) => !gone.has(id)),
       });
+      schedulePersist();
+    },
+
+    replaceProjectState: (state) => {
+      // Load the saved state first (new layout off), so its older copy can't land on top of main's later.
+      ensureChromeStateLoaded();
+      const current = pickProjectState(get());
+      if (JSON.stringify(current) === JSON.stringify(state)) return;
+      set(state);
       schedulePersist();
     },
   };
 });
+
+function pickProjectState(s: ProjectState): ProjectState {
+  return { pinnedProjectIds: s.pinnedProjectIds, inactiveProjectIds: s.inactiveProjectIds, projectActivity: s.projectActivity, idleDays: s.idleDays };
+}
+
+/** The sync with main (#2458), when this window has the bridge (not in unit tests). */
+let projectStateSync: ProjectStateSync | null = null;
+
+/** Start (or restart) syncing pins, marks and activity with main. Exported for tests; the store starts it on load. */
+export function connectProjectStateSync(api: Parameters<typeof startProjectStateSync>[0] | undefined): ProjectStateSync | null {
+  projectStateSync?.stop();
+  projectStateSync = api ? startProjectStateSync(api, {
+    // localStorage, whichever layout is on: the copy to hand over the first time.
+    legacy: () => pickProjectState(loadChromeState()),
+    replace: (state) => useChromeStore.getState().replaceProjectState(sanitizeProjectState(state)),
+    onError: (err) => reportChromeActionFailed('project_state_sync', err),
+  }) : null;
+  return projectStateSync;
+}
+
+{
+  const project = (globalThis as { clubhouse?: { project?: Partial<Parameters<typeof startProjectStateSync>[0]> } }).clubhouse?.project;
+  connectProjectStateSync(project?.hydrateState && project.applyStateOp && project.onStateChanged
+    ? project as Parameters<typeof startProjectStateSync>[0] : undefined);
+}
 
 /**
  * Agents running or waking, and quick agents starting, are project activity

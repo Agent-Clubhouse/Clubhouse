@@ -38,6 +38,11 @@ export const IPC = {
     WRITE_MCP_CONFIGS: 'project:write-mcp-configs',
     READ_WRAPPER_CATALOG_SNAPSHOT: 'project:read-wrapper-catalog-snapshot',
     WRITE_WRAPPER_CATALOG_SNAPSHOT: 'project:write-wrapper-catalog-snapshot',
+    /** Pins, inactive marks, activity and the idle window, kept by main (#2458). */
+    STATE_HYDRATE: 'project:state-hydrate',
+    STATE_APPLY: 'project:state-apply',
+    /** main → renderer: the state after a change from any window or a phone. */
+    STATE_CHANGED: 'project:state-changed',
   },
   AGENT: {
     CREATE_DURABLE: 'agent:create-durable',
