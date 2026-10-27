@@ -483,6 +483,28 @@ describe('annex-server', () => {
       const res = await request(port, 'GET', '/api/v1/projects/proj_1/agents', undefined, authHeaders(token));
       expect(JSON.parse(res.body)[0].lastActivityAt).toBe(NOW);
     });
+
+    it('sends a durable agent emoji, or null when it has none (#2456)', async () => {
+      vi.mocked(agentConfigModule.listDurable).mockReturnValue([
+        { id: 'durable_1', name: 'agent-1', color: 'indigo', emoji: '🦊', createdAt: '2025-01-01T00:00:00.000Z' },
+        { id: 'durable_2', name: 'agent-2', color: 'teal', createdAt: '2025-01-01T00:00:00.000Z' },
+      ] as any);
+      const [withEmoji, without] = (await snapshotAgents()).agents.proj_1;
+      expect(withEmoji.emoji).toBe('🦊');
+      expect(without.emoji).toBeNull();
+    });
+
+    it('sends the gray colour the desktop draws quick agents with (#2456)', async () => {
+      annexServer._testing.trackedQuickAgents.set('quick_1', {
+        id: 'quick_1', name: 'swift-fox', kind: 'quick', status: 'running', prompt: 'p', model: null, orchestrator: null,
+        freeAgentMode: false, parentAgentId: 'durable_1', projectId: 'proj_1', spawnedAt: NOW,
+      });
+      try {
+        expect((await snapshotAgents()).quickAgents.proj_1[0].color).toBe('gray');
+      } finally {
+        annexServer._testing.trackedQuickAgents.delete('quick_1');
+      }
+    });
   });
 
   describe('theme for plugin and custom themes (#go-device-readiness)', () => {
@@ -1406,6 +1428,7 @@ describe('annex-server', () => {
         name: 'agent-1',
         kind: 'durable',
         color: 'indigo',
+        emoji: null,
         branch: null,
         model: null,
         orchestrator: null,

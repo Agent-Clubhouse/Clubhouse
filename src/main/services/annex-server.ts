@@ -435,6 +435,9 @@ interface TrackedQuickAgent {
 
 const trackedQuickAgents = new Map<string, TrackedQuickAgent>();
 
+/** Quick agents don't inherit a colour: the desktop always draws them gray. */
+const QUICK_AGENT_COLOR = 'gray';
+
 function setTrackedQuickAgent(agentId: string, entry: TrackedQuickAgent): void {
   const existing = trackedQuickAgents.get(agentId);
   if (existing?.timerId !== undefined) clearTimeout(existing.timerId);
@@ -603,6 +606,8 @@ function mapDurableAgent(d: Awaited<ReturnType<typeof agentConfig.listDurable>>[
     name: d.name,
     kind: 'durable' as const,
     color: d.color,
+    /** The agent's emoji avatar, which the desktop draws in place of initials when set. */
+    emoji: d.emoji || null,
     branch: d.branch || null,
     model: d.model || null,
     orchestrator: d.orchestrator || null,
@@ -668,6 +673,7 @@ async function buildSnapshotData(): Promise<object> {
     }
     quickAgents[qa.projectId].push({
       ...qa,
+      color: QUICK_AGENT_COLOR,
       detailedStatus: getDetailedStatus(qa.id),
       lastActivityAt: lastActivityAt(qa.id, qa.spawnedAt),
     });
