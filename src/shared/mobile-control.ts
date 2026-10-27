@@ -2,7 +2,7 @@
 import type { ChatCapabilities, ChatModelOption, ChatQuestionAnswers, PermissionLevel } from './chat';
 import type { AgentIdleSleep } from './idle-sleep';
 export const MOBILE_PROTOCOL_VERSION = 1;
-export const MOBILE_COMMAND_TYPES = ['chat.send', 'chat.interrupt', 'chat.permission', 'chat.question', 'chat.queue.remove', 'agent.start', 'agent.stop', 'agent.spawn', 'agent.create', 'agent.update', 'project.setPinned', 'project.setInactive', 'helper.approve', 'helper.decline', 'chat.setModel', 'chat.setLevel'] as const;
+export const MOBILE_COMMAND_TYPES = ['chat.send', 'chat.interrupt', 'chat.permission', 'chat.question', 'chat.queue.remove', 'agent.start', 'agent.stop', 'agent.spawn', 'agent.create', 'agent.update', 'project.setPinned', 'project.setInactive', 'helper.approve', 'helper.decline', 'chat.setModel', 'chat.setLevel', 'quick.dismiss', 'quick.clear'] as const;
 interface CommandBase { version: 1; commandId: string; epoch: string }
 interface ChatTarget { agentId: string; sessionId: string }
 export type MobileCommand = CommandBase & (
@@ -25,6 +25,9 @@ export type MobileCommand = CommandBase & (
   // A helper start or dispose waiting on the user (#159). `force` approves a dispose that would lose work ("Dispose anyway").
   | { type: 'helper.approve'; requestId: string; force?: boolean }
   | { type: 'helper.decline'; requestId: string }
+  // The start page's "Finished, waiting on you" list (#2467).
+  | { type: 'quick.dismiss'; projectId: string; agentId: string }
+  | { type: 'quick.clear'; projectId: string }
 );
 /** A durable agent, as the New agent page makes one. */
 export interface MobileAgentCreate {

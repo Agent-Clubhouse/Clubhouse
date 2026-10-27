@@ -32,6 +32,8 @@ import { cancelDurableCreation, injectPersona, onDurableCreationEvent, parseStar
 
 export { parseStartCreationParams };
 import { broadcastToAllWindows } from '../util/ipc-broadcast';
+import { applyFinishedQuickAgentChange, hydrateFinishedQuickAgents, onFinishedQuickAgentsChange } from '../services/finished-quick-agents-store';
+import { parseFinishedQuickAgentOp } from '../../shared/finished-quick-agents';
 
 type DeleteMode = Parameters<typeof ATTR.deleteMode>[0];
 
@@ -524,6 +526,22 @@ export function registerAgentHandlers(): void {
     [stringArg()],
     async (_event, agentId) => {
       return readQuickSummary(agentId);
+    },
+  ));
+
+  // Finished quick agents (#2467). Every window, and Annex, hears each change.
+  onFinishedQuickAgentsChange((change) => broadcastToAllWindows(IPC.AGENT.FINISHED_QUICK_CHANGED, change));
+
+  ipcMain.handle(IPC.AGENT.FINISHED_QUICK_HYDRATE, withValidatedArgs([objectArg()], (_event, legacy: unknown) =>
+    hydrateFinishedQuickAgents(legacy),
+  ));
+
+  ipcMain.handle(IPC.AGENT.FINISHED_QUICK_APPLY, withValidatedArgs(
+    [stringArg({ maxLength: 128 }), numberArg({ integer: true, min: 1 }), objectArg()],
+    (_event, clientId: string, seq: number, rawOp: unknown) => {
+      const op = parseFinishedQuickAgentOp(rawOp);
+      if (!op) throw new Error('Invalid finished quick agent op');
+      applyFinishedQuickAgentChange(op, { clientId, seq });
     },
   ));
 

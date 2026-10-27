@@ -10,6 +10,8 @@ import * as annexTls from './annex-tls';
 import { MOBILE_COMMAND_TYPES, type AnnexAgentUpdate, type MobileCommand } from '../../shared/mobile-control';
 import { applyProjectStateChange, getProjectState, isProjectStateReady, onProjectStateChange } from './project-state-store';
 import { isProjectIdle } from '../../shared/project-state';
+import { applyFinishedQuickAgentChange, getFinishedQuickAgents, isFinishedQuickAgentsReady, onFinishedQuickAgentsChange } from './finished-quick-agents-store';
+import type { CompletedQuickAgent } from '../../shared/types';
 import { MobileCommandService, MobileControlError, chatControls, executeChatCommand, pendingInteractions, MOBILE_COMMAND_MAX_ENTRIES, MOBILE_COMMAND_TTL_MS } from './mobile-control';
 import { isRevertRunning } from './agent-runtime/checkpoint-tracker';
 import { readChatTranscript, listChatSessions } from './agent-runtime/chat-transcript';
@@ -640,6 +642,39 @@ onProjectStateChange(() => {
   if (wss && wss.clients.size > 0) broadcastSnapshotRefresh();
 });
 
+/**
+ * One entry of the start page's "Finished, waiting on you" list for a phone
+ * (#2467). No paths, transcripts or stderr: only what the list shows.
+ */
+function finishedQuickAgentEntry(r: CompletedQuickAgent) {
+  return {
+    agentId: r.id,
+    name: r.name,
+    prompt: r.mission,
+    summary: r.summary,
+    exitCode: r.exitCode,
+    finishedAt: r.completedAt,
+    ...(r.parentAgentId && { parentAgentId: r.parentAgentId }),
+    ...(r.cancelled && { cancelled: true }),
+  };
+}
+
+function finishedQuickAgentList(projectId: string, all = getFinishedQuickAgents()) {
+  return (all[projectId] ?? []).map(finishedQuickAgentEntry);
+}
+
+/** The snapshot's `finishedQuickAgents`, every project newest first, or nothing before the lists have moved into main. */
+function finishedQuickAgentsSnapshot(projectIds: string[]) {
+  if (!isFinishedQuickAgentsReady()) return {};
+  const all = getFinishedQuickAgents();
+  return { finishedQuickAgents: Object.fromEntries(projectIds.map((id) => [id, finishedQuickAgentList(id, all)])) };
+}
+
+// A quick agent finished, or one was dismissed, on the desktop or from a phone: tell connected phones.
+onFinishedQuickAgentsChange(() => {
+  if (wss && wss.clients.size > 0) broadcastSnapshotRefresh();
+});
+
 function mapDurableAgent(d: Awaited<ReturnType<typeof agentConfig.listDurable>>[number], projectId: string) {
   const agentId = d.id;
   const isRunning = isAgentRunning(agentId);
@@ -864,6 +899,7 @@ async function buildSnapshotData(): Promise<object> {
     plugins,
     projectIcons,
     ...projectStateSnapshot(projects.map((p) => p.id), agents, quickAgents),
+    ...finishedQuickAgentsSnapshot(projects.map((p) => p.id)),
     agentIcons,
     canvasState,
     appCanvasState,
@@ -2253,6 +2289,7 @@ async function handleMobileCapabilitiesRoute(ctx: AnnexRouteContext): Promise<vo
     permissions: { version: 1, persistentApprovals: true, freeAgentMode: true },
     idempotency: { scope: 'peer-and-epoch', maxEntries: MOBILE_COMMAND_MAX_ENTRIES, ttlMs: MOBILE_COMMAND_TTL_MS },
     projectState: { version: 1 },
+    finishedQuickAgents: { version: 1 },
     ...phoneRoutes(),
   });
 }
@@ -2437,6 +2474,19 @@ async function runMobileCommand(command: MobileCommand, assertAuthorized: () => 
     const running = durables.some((d) => isAgentRunning(d.id))
       || [...trackedQuickAgents.values()].some((qa) => qa.projectId === project.id && qa.status === 'running');
     return { projectId: project.id, ...projectStateEntry(project.id, running ? new Set([project.id]) : new Set()) };
+  }
+  if (command.type === 'quick.dismiss' || command.type === 'quick.clear') {
+    const project = await findProjectById(command.projectId);
+    if (!project) throw new MobileControlError('project_not_found', 404);
+    // Until a desktop window has moved its saved list into main, a change here would replace it.
+    if (!isFinishedQuickAgentsReady()) throw new MobileControlError('finished_quick_agents_unavailable');
+    assertAuthorized();
+    const changed = applyFinishedQuickAgentChange(command.type === 'quick.dismiss'
+      ? { type: 'dismiss', projectId: project.id, agentId: command.agentId }
+      : { type: 'clear', projectId: project.id });
+    // A change refreshes the snapshot through onFinishedQuickAgentsChange; a no-op still confirms the list.
+    if (!changed) broadcastSnapshotRefresh();
+    return { projectId: project.id, finishedQuickAgents: finishedQuickAgentList(project.id) };
   }
   if (command.type === 'agent.spawn') {
     const project = await findProjectById(command.projectId);

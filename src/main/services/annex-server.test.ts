@@ -37,6 +37,26 @@ vi.mock('./project-state-store', async () => {
     setForTests: (next: import('../../shared/project-state').ProjectState) => { state = next; },
   };
 });
+import * as finishedQuickStore from './finished-quick-agents-store';
+// An in-memory main store running the real shared rules (#2467).
+vi.mock('./finished-quick-agents-store', async () => {
+  const shared = await import('../../shared/finished-quick-agents');
+  let state: import('../../shared/finished-quick-agents').FinishedQuickAgents = {};
+  const listeners = new Set<(change: unknown) => void>();
+  return {
+    isFinishedQuickAgentsReady: vi.fn(() => false),
+    getFinishedQuickAgents: () => state,
+    onFinishedQuickAgentsChange: (listener: (change: unknown) => void) => { listeners.add(listener); return () => listeners.delete(listener); },
+    applyFinishedQuickAgentChange: vi.fn((op: import('../../shared/finished-quick-agents').FinishedQuickAgentOp) => {
+      const next = shared.applyFinishedQuickAgentOp(state, op);
+      if (next === state) return false;
+      state = next;
+      for (const listener of listeners) listener({ state, acked: {} });
+      return true;
+    }),
+    setForTests: (next: import('../../shared/finished-quick-agents').FinishedQuickAgents) => { state = next; },
+  };
+});
 import * as mobileAgents from './mobile-agents';
 vi.mock('./mobile-agents', () => ({
   buildCreateOptions: vi.fn(async (project: { id: string }) => ({ projectId: project.id, orchestrators: [], suggestedName: 'brave-otter' })),
@@ -627,6 +647,92 @@ describe('annex-server', () => {
       const capabilities = JSON.parse((await request(port, 'GET', '/api/v1/mobile/capabilities', undefined, authHeaders(token))).body);
       expect(capabilities.projectState).toEqual({ version: 1 });
       expect(capabilities.commands).toEqual(expect.arrayContaining(['project.setPinned', 'project.setInactive']));
+    });
+  });
+
+  describe('finished quick agents (#2467)', () => {
+    const base = { version: 1 as const, epoch: 'e', commandId: 'c' };
+    const setLists = (finishedQuickStore as unknown as { setForTests: (s: object) => void }).setForTests;
+    const record = (id: string, extra: object = {}) => ({
+      id, projectId: 'proj_1', name: `name-${id}`, mission: `do ${id}`, summary: `did ${id}`, filesModified: ['/Users/me/secret.ts'],
+      exitCode: 0, completedAt: 1000, transcriptPath: '/tmp/t.jsonl', cwd: '/Users/me/proj', stderrTail: 'boom', costUsd: 1, ...extra,
+    });
+
+    beforeEach(async () => {
+      vi.mocked(pluginManifestRegistry.listAllManifests).mockReturnValue([]);
+      const { groupProjectRegistry } = await import('./group-project-registry');
+      vi.mocked(groupProjectRegistry.list).mockResolvedValue([]);
+      const themeService = await import('./theme-service');
+      vi.mocked(themeService.getSettings).mockReturnValue({ themeId: 'catppuccin-mocha' } as any);
+      vi.mocked(projectStore.list).mockReturnValue([{ id: 'proj_1', name: 'a', path: '/a' }, { id: 'proj_2', name: 'b', path: '/b' }] as any);
+      vi.mocked(agentConfigModule.listDurable).mockResolvedValue([]);
+      vi.mocked(finishedQuickStore.isFinishedQuickAgentsReady).mockReturnValue(true);
+      vi.mocked(finishedQuickStore.applyFinishedQuickAgentChange).mockClear();
+      setLists({
+        proj_1: [
+          record('quick_new', { completedAt: 3000, parentAgentId: 'durable_1' }),
+          record('quick_old', { completedAt: 2000, exitCode: 137, summary: null, cancelled: true }),
+        ],
+        gone_project: [record('quick_x')],
+      });
+    });
+    afterEach(() => {
+      vi.mocked(finishedQuickStore.isFinishedQuickAgentsReady).mockReturnValue(false);
+      setLists({});
+    });
+
+    it('sends every project\'s list, newest first, with only the fields the list shows', async () => {
+      const snapshot = await annexServer._testing.buildSnapshot() as { finishedQuickAgents: Record<string, unknown[]> };
+      expect(snapshot.finishedQuickAgents).toEqual({
+        proj_1: [
+          { agentId: 'quick_new', name: 'name-quick_new', prompt: 'do quick_new', summary: 'did quick_new', exitCode: 0, finishedAt: 3000, parentAgentId: 'durable_1' },
+          { agentId: 'quick_old', name: 'name-quick_old', prompt: 'do quick_old', summary: null, exitCode: 137, finishedAt: 2000, cancelled: true },
+        ],
+        // A project with nothing finished still gets its (empty) list; a removed project isn't sent.
+        proj_2: [],
+      });
+      // No desktop paths, transcripts or stderr reach a phone.
+      expect(JSON.stringify(snapshot.finishedQuickAgents)).not.toMatch(/\/Users|\/tmp|boom|costUsd/);
+    });
+
+    it('leaves the field out until the lists have moved into main', async () => {
+      vi.mocked(finishedQuickStore.isFinishedQuickAgentsReady).mockReturnValue(false);
+      expect(await annexServer._testing.buildSnapshot()).not.toHaveProperty('finishedQuickAgents');
+    });
+
+    it('dismisses one from a phone and returns the project\'s list', async () => {
+      const { runMobileCommand } = annexServer._testing;
+      expect(await runMobileCommand({ ...base, type: 'quick.dismiss', projectId: 'proj_1', agentId: 'quick_new' }, vi.fn()))
+        .toEqual({ projectId: 'proj_1', finishedQuickAgents: [expect.objectContaining({ agentId: 'quick_old' })] });
+      expect(finishedQuickStore.applyFinishedQuickAgentChange).toHaveBeenCalledWith({ type: 'dismiss', projectId: 'proj_1', agentId: 'quick_new' });
+      // Dismissing one that's already gone succeeds.
+      expect(await runMobileCommand({ ...base, type: 'quick.dismiss', projectId: 'proj_1', agentId: 'quick_new' }, vi.fn()))
+        .toEqual({ projectId: 'proj_1', finishedQuickAgents: [expect.objectContaining({ agentId: 'quick_old' })] });
+    });
+
+    it('clears a project\'s list from a phone', async () => {
+      const { runMobileCommand } = annexServer._testing;
+      expect(await runMobileCommand({ ...base, type: 'quick.clear', projectId: 'proj_1' }, vi.fn()))
+        .toEqual({ projectId: 'proj_1', finishedQuickAgents: [] });
+      const snapshot = await annexServer._testing.buildSnapshot() as { finishedQuickAgents: Record<string, unknown[]> };
+      expect(snapshot.finishedQuickAgents.proj_1).toEqual([]);
+    });
+
+    it('refuses unknown projects, and changes before the lists have moved into main', async () => {
+      const { runMobileCommand } = annexServer._testing;
+      await expect(runMobileCommand({ ...base, type: 'quick.clear', projectId: 'missing' }, vi.fn()))
+        .rejects.toMatchObject({ code: 'project_not_found', statusCode: 404 });
+      vi.mocked(finishedQuickStore.isFinishedQuickAgentsReady).mockReturnValue(false);
+      await expect(runMobileCommand({ ...base, type: 'quick.dismiss', projectId: 'proj_1', agentId: 'quick_new' }, vi.fn()))
+        .rejects.toMatchObject({ code: 'finished_quick_agents_unavailable', statusCode: 409 });
+      expect(finishedQuickStore.applyFinishedQuickAgentChange).not.toHaveBeenCalled();
+    });
+
+    it('advertises the finishedQuickAgents capability and both commands', async () => {
+      const { port, token } = await startAndPair();
+      const capabilities = JSON.parse((await request(port, 'GET', '/api/v1/mobile/capabilities', undefined, authHeaders(token))).body);
+      expect(capabilities.finishedQuickAgents).toEqual({ version: 1 });
+      expect(capabilities.commands).toEqual(expect.arrayContaining(['quick.dismiss', 'quick.clear']));
     });
   });
 

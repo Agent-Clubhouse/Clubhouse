@@ -26,6 +26,8 @@ const FIELDS: Record<MobileCommand['type'], string[]> = {
   'project.setInactive': ['projectId', 'inactive'],
   'helper.approve': ['requestId', 'force'],
   'helper.decline': ['requestId'],
+  'quick.dismiss': ['projectId', 'agentId'],
+  'quick.clear': ['projectId'],
 };
 /** Fields a command may leave out. Every agent.update setting is optional, but it needs at least one. */
 const OPTIONAL = new Set(['delivery', 'message', 'resume', 'model', 'orchestrator', 'attachmentIds', 'force', 'effort']);

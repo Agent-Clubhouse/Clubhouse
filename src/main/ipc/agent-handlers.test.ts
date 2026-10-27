@@ -109,6 +109,12 @@ vi.mock('../services/clubhouse-mode-settings', () => ({
   isClubhouseModeEnabled: vi.fn(() => false),
 }));
 
+vi.mock('../services/finished-quick-agents-store', () => ({
+  hydrateFinishedQuickAgents: vi.fn(() => ({ p: [] })),
+  applyFinishedQuickAgentChange: vi.fn(() => true),
+  onFinishedQuickAgentsChange: vi.fn(),
+}));
+
 import { ipcMain, dialog, BrowserWindow } from 'electron';
 import { IPC } from '../../shared/ipc-channels';
 import { CONFIG_CHANGE_DEBOUNCE_MS, registerAgentHandlers } from './agent-handlers';
@@ -129,6 +135,7 @@ import { _resetDisposeRequestsForTesting, recordDisposeRequest } from '../servic
 import { broadcastSnapshotRefresh } from '../services/annex-server';
 import { agentRegistry } from '../services/agent-registry';
 import * as permissionQueue from '../services/annex-permission-queue';
+import * as finishedQuickStore from '../services/finished-quick-agents-store';
 
 describe('agent-handlers', () => {
   let handlers: Map<string, (...args: any[]) => any>;
@@ -159,6 +166,7 @@ describe('agent-handlers', () => {
       IPC.AGENT.READ_TRANSCRIPT_PAGE, IPC.AGENT.READ_TRANSCRIPT_FROM, IPC.AGENT.IS_HEADLESS_AGENT,
       IPC.AGENT.GET_RUNNING_STATUSES,
       IPC.AGENT.START_DURABLE_CREATION, IPC.AGENT.CANCEL_DURABLE_CREATION,
+      IPC.AGENT.FINISHED_QUICK_HYDRATE, IPC.AGENT.FINISHED_QUICK_APPLY,
     ];
     for (const channel of expectedChannels) {
       expect(handlers.has(channel)).toBe(true);
@@ -1088,5 +1096,43 @@ describe('agent-handlers', () => {
       const call = vi.mocked(appLog).mock.calls.find((c) => c[2] === 'Session summary timing');
       expect(call?.[3]?.meta).toMatchObject({ provider: 'copilot-cli' });
     });
+  });
+});
+
+describe('agent-handlers: finished quick agents (#2467)', () => {
+  let handlers: Map<string, (...args: any[]) => any>;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    handlers = new Map();
+    vi.mocked(ipcMain.handle).mockImplementation((channel: string, handler: any) => {
+      handlers.set(channel, handler);
+    });
+    registerAgentHandlers();
+  });
+
+  it('hands the window\'s localStorage lists to the store and returns the stored lists', async () => {
+    const legacy = { p: [] };
+    expect(await handlers.get(IPC.AGENT.FINISHED_QUICK_HYDRATE)!({}, legacy)).toEqual({ p: [] });
+    expect(finishedQuickStore.hydrateFinishedQuickAgents).toHaveBeenCalledWith(legacy);
+  });
+
+  it('applies a valid op with its window and sequence, and refuses anything else', async () => {
+    const op = { type: 'dismiss', projectId: 'p', agentId: 'quick_1' };
+    await handlers.get(IPC.AGENT.FINISHED_QUICK_APPLY)!({}, 'window-1', 3, op);
+    expect(finishedQuickStore.applyFinishedQuickAgentChange).toHaveBeenCalledWith(op, { clientId: 'window-1', seq: 3 });
+    await expect(async () => handlers.get(IPC.AGENT.FINISHED_QUICK_APPLY)!({}, 'window-1', 4, { type: 'dismiss', projectId: 'p' })).rejects.toThrow();
+    await expect(async () => handlers.get(IPC.AGENT.FINISHED_QUICK_APPLY)!({}, 'window-1', 4, { type: 'add', record: { id: 'x' } })).rejects.toThrow();
+    await expect(async () => handlers.get(IPC.AGENT.FINISHED_QUICK_APPLY)!({}, 'window-1', 0, op)).rejects.toThrow();
+    expect(finishedQuickStore.applyFinishedQuickAgentChange).toHaveBeenCalledTimes(1);
+  });
+
+  it('broadcasts every change to the windows', () => {
+    const send = vi.fn();
+    vi.mocked(BrowserWindow.getAllWindows).mockReturnValue([{ isDestroyed: () => false, webContents: { isDestroyed: () => false, send } }] as never);
+    const listener = vi.mocked(finishedQuickStore.onFinishedQuickAgentsChange).mock.calls.at(-1)![0];
+    const change = { state: { p: [] }, acked: { w: 1 } };
+    listener(change);
+    expect(send).toHaveBeenCalledWith(IPC.AGENT.FINISHED_QUICK_CHANGED, change);
   });
 });

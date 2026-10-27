@@ -16,10 +16,10 @@ New `POST https://host:mainPort/pair` uses existing `{pin, publicKey, alias, ico
 Authenticated `GET /api/v1/mobile/capabilities` returns:
 
 ```json
-{"version":1,"epoch":"uuid","controlAuth":"mtls-pinned-client","controlAvailable":true,"commands":["chat.send","chat.interrupt","chat.permission","chat.question","chat.queue.remove","agent.start","agent.stop","agent.spawn","agent.create","agent.update","helper.approve","helper.decline","chat.setModel","chat.setLevel"],"pairing":{"sessionRevokePath":"/api/v1/mobile/pairing"},"attachments":{"version":1,"imageTypes":["image/png","image/jpeg","image/gif","image/webp"],"maxImageBytes":3932160,"maxCount":10},"events":{"transport":"annex-websocket","replayRequest":"mobile:replay","queueState":"queue_state"},"createOptions":{"version":1,"path":"/api/v1/mobile/projects/{projectId}/create-options"},"agentSettings":{"version":1,"path":"/api/v1/mobile/agents/{agentId}/settings"},"helperRequests":{"version":1,"snapshotField":"helperRequests","commands":["helper.approve","helper.decline"]},"chatControls":{"version":1},"permissions":{"version":1,"persistentApprovals":true,"freeAgentMode":true},"idempotency":{"scope":"peer-and-epoch","maxEntries":2048,"ttlMs":3600000}}
+{"version":1,"epoch":"uuid","controlAuth":"mtls-pinned-client","controlAvailable":true,"commands":["chat.send","chat.interrupt","chat.permission","chat.question","chat.queue.remove","agent.start","agent.stop","agent.spawn","agent.create","agent.update","project.setPinned","project.setInactive","helper.approve","helper.decline","chat.setModel","chat.setLevel","quick.dismiss","quick.clear"],"pairing":{"sessionRevokePath":"/api/v1/mobile/pairing"},"attachments":{"version":1,"imageTypes":["image/png","image/jpeg","image/gif","image/webp"],"maxImageBytes":3932160,"maxCount":10},"events":{"transport":"annex-websocket","replayRequest":"mobile:replay","queueState":"queue_state"},"createOptions":{"version":1,"path":"/api/v1/mobile/projects/{projectId}/create-options"},"agentSettings":{"version":1,"path":"/api/v1/mobile/agents/{agentId}/settings"},"helperRequests":{"version":1,"snapshotField":"helperRequests","commands":["helper.approve","helper.decline"]},"chatControls":{"version":1},"permissions":{"version":1,"persistentApprovals":true,"freeAgentMode":true},"idempotency":{"scope":"peer-and-epoch","maxEntries":2048,"ttlMs":3600000},"projectState":{"version":1},"finishedQuickAgents":{"version":1}}
 ```
 
-A 404 means unsupported: do not send mobile commands. Gate durable-agent creation on `commands` including `agent.create` and `createOptions.version >= 1`, settings on `agent.update` and `agentSettings.version >= 1`, and helper requests on `helperRequests.version >= 1`; older desktops offer quick agents (`agent.spawn`) only. Gate project pins and inactive marks on `projectState.version >= 1` (`projectState:{version:1}`); without it, keep them on the phone. See [Project state](#project-state). Gate the composer's model, effort and level controls on `chat.setModel` / `chat.setLevel` and `chatControls.version >= 1` ([Chat controls](#chat-controls)). A new epoch invalidates command retries and replay cursors. No raw shell commands, arbitrary filesystem paths, credentials, or gateway provisioning commands exist.
+A 404 means unsupported: do not send mobile commands. Gate durable-agent creation on `commands` including `agent.create` and `createOptions.version >= 1`, settings on `agent.update` and `agentSettings.version >= 1`, and helper requests on `helperRequests.version >= 1`; older desktops offer quick agents (`agent.spawn`) only. Gate project pins and inactive marks on `projectState.version >= 1` (`projectState:{version:1}`); without it, keep them on the phone. See [Project state](#project-state). Gate the finished quick agents list ("Finished, waiting on you") on `finishedQuickAgents.version >= 1`; without it, keep the phone's own list of quick agents it saw exit. See [Finished quick agents](#finished-quick-agents). Gate the composer's model, effort and level controls on `chat.setModel` / `chat.setLevel` and `chatControls.version >= 1` ([Chat controls](#chat-controls)). A new epoch invalidates command retries and replay cursors. No raw shell commands, arbitrary filesystem paths, credentials, or gateway provisioning commands exist.
 
 ## Commands
 
@@ -39,6 +39,8 @@ A 404 means unsupported: do not send mobile commands. Gate durable-agent creatio
 - `agent.update`: `{agentId, name?, color?, emoji?, orchestrator?, model?, runtime?, persona?, clubhouseMode?, freeAgentMode?, idleSleep?}`; at least one setting. See [Durable agents](#durable-agents).
 - `project.setPinned`: `{projectId, pinned}`; pin or unpin a project in the desktop sidebar. See [Project state](#project-state).
 - `project.setInactive`: `{projectId, inactive}`; mark a project inactive (idle until marked active) or active. See [Project state](#project-state).
+- `quick.dismiss`: `{projectId, agentId}`; dismiss one finished quick agent. See [Finished quick agents](#finished-quick-agents).
+- `quick.clear`: `{projectId}`; dismiss all of a project's finished quick agents. See [Finished quick agents](#finished-quick-agents).
 
 - `helper.approve`: `{requestId, force?}`; approve a helper start or dispose an orchestrator asked the user to decide. `force:true` is the desktop's "Dispose anyway". See [Helper requests](#helper-requests).
 - `helper.decline`: `{requestId}`; decline it. The orchestrator is told, as from the desktop.
@@ -327,3 +329,27 @@ Commands follow the desktop's rules:
 - `project.setInactive {projectId, inactive:false}`: clears the mark and counts as activity now, as on the desktop, so the project stops being idle.
 
 Both return the project's entry, `{projectId, lastActivityAt, pinned, inactive, idle}`. Asking for the state the project already has succeeds. Errors: 404 `project_not_found`; 409 `project_state_unavailable` before the state has moved into main. After each command, and after every change made on the desktop, connected clients get a fresh `snapshot`.
+
+## Finished quick agents
+
+The desktop's project start page lists quick agents that have exited under "Finished, waiting on you", with Dismiss and Clear all. The list now lives in the desktop's main process (`finished-quick-agents.json` in userData), not renderer localStorage, so a phone sees the same list. It covers every quick agent, whether started on the desktop, by another agent, or from a phone, and outlives the ~60 s that an exited quick agent stays in `quickAgents`. Older desktops don't advertise `finishedQuickAgents` and don't send the field; keep the phone's own list there.
+
+The snapshot adds, for every project in `projects` (an empty array when it has none):
+
+```json
+"finishedQuickAgents": {"proj_1": [{"agentId": "quick_1", "name": "swift-fox", "prompt": "Fix the flaky test", "summary": "Fixed the race in …", "exitCode": 0, "finishedAt": 1800000000000, "parentAgentId": "durable_1"}]}
+```
+
+- Newest first, at most 50 per project; older ones drop off, as on the desktop.
+- `prompt` is the mission the agent was started with. `summary` is the agent's own summary, or `null` when it left none.
+- `exitCode` is 0 when the agent left a summary, whatever its process exit code (quick agents are often stopped after finishing). `cancelled: true` is added when the user stopped it.
+- `parentAgentId` is present when another agent started it.
+- `finishedAt` is epoch ms.
+- The field is left out until the desktop has moved the list out of localStorage. That happens once, when a desktop window first opens after the update.
+
+Commands:
+
+- `quick.dismiss {projectId, agentId}`: removes one entry. Dismissing one that isn't in the list succeeds.
+- `quick.clear {projectId}`: empties the project's list.
+
+Both return `{projectId, finishedQuickAgents: [...]}`, the project's list after the change. Errors: 404 `project_not_found`; 409 `finished_quick_agents_unavailable` before the list has moved into main. After each command, and after every change on the desktop (an agent finishing, a dismissal), connected clients get a fresh `snapshot`.

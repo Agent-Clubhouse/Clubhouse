@@ -93,7 +93,7 @@ Status as of 2026-10-16:
 | `sidebar/FinishedQuickAgents.tsx` | The fold row, per-item Dismiss and Clear all. Backed by `quickAgentStore.dismissCompleted` / `clearCompleted`. |
 | `sidebar/ListBody.tsx` | Hosts a plugin's `SidebarPanel` (the `sidebar-content` layout) or the settings navigation, with a breadcrumb. Owns ⌘1 to return to Agents. |
 | `sidebar/SettingsNav.tsx` | App categories, then a Projects section with each project's categories. Replaces `SettingsCategoryNav` and `SettingsContextPicker` in the new shell. |
-| `pages/ProjectStartPage.tsx` | The composer (quick or durable, orchestrator and model, base branch, Start) and the “Finished, waiting on you” list. |
+| `pages/ProjectStartPage.tsx` | The composer (quick or durable, orchestrator and model, base branch, Start) and the “Finished, waiting on you” list. The list is owned by main (`finished-quick-agents.json`, #2467) so Annex can share it with a phone (docs/mobile-control-v1.md, Finished quick agents); `quick_completed_<projectId>` in localStorage is the startup copy and the one-time migration source. |
 | `pages/FirstRun.tsx` | The no-projects state. |
 | `chromeStore.ts` | Selection (`{kind: 'agent', id} \| {kind: 'project', id}`), sidebar width and collapsed state, per-project collapsed state, pins, the idle window, the tab MRU per project, and the sleeping/finished fold state. Persisted under `clubhouse_chrome_v2`. |
 | `selectors/needsAttention.ts` | Blocked agents across the local host and every connected satellite (`annexClientStore` / `remoteProjectStore`). |
