@@ -209,7 +209,6 @@ export async function executeChatCommand(command: Extract<MobileCommand, { sessi
     const option = request?.data.options.find((o) => o.optionId === command.optionId);
     const activeOption = runtime.getPendingPermissionOptions?.(command.requestId)?.find((o) => o.optionId === command.optionId);
     if (!option || !activeOption || activeOption.kind !== option.kind) throw new MobileControlError('pending_request_not_found');
-    if (!['allow_once', 'reject_once', 'cancel_turn'].includes(option.kind)) throw new MobileControlError('persistent_approval_not_supported', 403);
     await runtime.respondPermission(command.requestId, command.optionId);
   } else {
     if (!pending.pendingQuestions.some((e) => e.data.requestId === command.requestId) || !runtime.hasPendingQuestion?.(command.requestId)) throw new MobileControlError('pending_request_not_found');

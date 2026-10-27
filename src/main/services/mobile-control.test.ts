@@ -152,13 +152,15 @@ describe('mobile validation and chat dispatch', () => {
     const rt = runtime(); const cmd = command(new MobileCommandService(), { type: 'chat.interrupt' });
     await executeChatCommand(cmd as any, rt, async () => true); expect(rt.interrupt).toHaveBeenCalledOnce();
   });
-  it('requires an exact pending option and rejects persistent permission escalation', async () => {
-    const rt = runtime([event('permission_request', { requestId: 'p', options: [{ optionId: 'once', kind: 'allow_once' }, { optionId: 'always', kind: 'allow_always' }] })]);
+  it('requires an exact pending option and answers persistent ones as the approval dock does', async () => {
+    const options = [{ optionId: 'once', kind: 'allow_once' }, { optionId: 'session', kind: 'allow_session' }, { optionId: 'always', kind: 'allow_always' }, { optionId: 'never', kind: 'reject_always' }];
+    const rt = runtime([event('permission_request', { requestId: 'p', options })]);
     const cmd = command(new MobileCommandService(), { type: 'chat.permission', requestId: 'p', optionId: 'always' });
-    await expect(executeChatCommand(cmd as any, rt, async () => true)).rejects.toMatchObject({ code: 'persistent_approval_not_supported' });
     await expect(executeChatCommand({ ...cmd, optionId: 'bogus' } as any, rt, async () => true)).rejects.toMatchObject({ code: 'pending_request_not_found' });
-    await executeChatCommand({ ...cmd, optionId: 'once' } as any, rt, async () => true);
-    expect(rt.respondPermission).toHaveBeenCalledExactlyOnceWith('p', 'once');
+    for (const { optionId } of options) {
+      expect(await executeChatCommand({ ...cmd, optionId } as any, rt, async () => true)).toEqual({ answered: true, requestId: 'p' });
+    }
+    expect(vi.mocked(rt.respondPermission).mock.calls).toEqual(options.map((o) => ['p', o.optionId]));
   });
   it('rejects approval already settled while its transcript entry is still pending', async () => {
     const rt = runtime([event('permission_request', { requestId: 'p', options: [{ optionId: 'once', kind: 'allow_once' }] })]);

@@ -853,6 +853,7 @@ describe('annex-server', () => {
     const body = JSON.parse((await request(port, 'GET', '/api/v1/mobile/capabilities', undefined, authHeaders(token))).body);
     expect(body.commands).toEqual(expect.arrayContaining(['chat.setModel', 'chat.setLevel']));
     expect(body.chatControls).toEqual({ version: 1 });
+    expect(body.permissions).toMatchObject({ version: 1, persistentApprovals: true });
   });
 
   it('serves create options per registered project', async () => {

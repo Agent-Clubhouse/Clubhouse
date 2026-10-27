@@ -2249,6 +2249,8 @@ async function handleMobileCapabilitiesRoute(ctx: AnnexRouteContext): Promise<vo
     agentSettings: { version: 1, path: '/api/v1/mobile/agents/{agentId}/settings' },
     helperRequests: { version: 1, snapshotField: 'helperRequests', commands: ['helper.approve', 'helper.decline'] },
     chatControls: { version: 1 },
+    // A paired phone has full control (#2462): it answers persistent approvals as the desktop does.
+    permissions: { version: 1, persistentApprovals: true },
     idempotency: { scope: 'peer-and-epoch', maxEntries: MOBILE_COMMAND_MAX_ENTRIES, ttlMs: MOBILE_COMMAND_TTL_MS },
     projectState: { version: 1 },
     ...phoneRoutes(),

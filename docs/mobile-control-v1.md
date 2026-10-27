@@ -16,7 +16,7 @@ New `POST https://host:mainPort/pair` uses existing `{pin, publicKey, alias, ico
 Authenticated `GET /api/v1/mobile/capabilities` returns:
 
 ```json
-{"version":1,"epoch":"uuid","controlAuth":"mtls-pinned-client","controlAvailable":true,"commands":["chat.send","chat.interrupt","chat.permission","chat.question","chat.queue.remove","agent.start","agent.stop","agent.spawn","agent.create","agent.update","helper.approve","helper.decline","chat.setModel","chat.setLevel"],"pairing":{"sessionRevokePath":"/api/v1/mobile/pairing"},"attachments":{"version":1,"imageTypes":["image/png","image/jpeg","image/gif","image/webp"],"maxImageBytes":3932160,"maxCount":10},"events":{"transport":"annex-websocket","replayRequest":"mobile:replay","queueState":"queue_state"},"createOptions":{"version":1,"path":"/api/v1/mobile/projects/{projectId}/create-options"},"agentSettings":{"version":1,"path":"/api/v1/mobile/agents/{agentId}/settings"},"helperRequests":{"version":1,"snapshotField":"helperRequests","commands":["helper.approve","helper.decline"]},"chatControls":{"version":1},"idempotency":{"scope":"peer-and-epoch","maxEntries":2048,"ttlMs":3600000}}
+{"version":1,"epoch":"uuid","controlAuth":"mtls-pinned-client","controlAvailable":true,"commands":["chat.send","chat.interrupt","chat.permission","chat.question","chat.queue.remove","agent.start","agent.stop","agent.spawn","agent.create","agent.update","helper.approve","helper.decline","chat.setModel","chat.setLevel"],"pairing":{"sessionRevokePath":"/api/v1/mobile/pairing"},"attachments":{"version":1,"imageTypes":["image/png","image/jpeg","image/gif","image/webp"],"maxImageBytes":3932160,"maxCount":10},"events":{"transport":"annex-websocket","replayRequest":"mobile:replay","queueState":"queue_state"},"createOptions":{"version":1,"path":"/api/v1/mobile/projects/{projectId}/create-options"},"agentSettings":{"version":1,"path":"/api/v1/mobile/agents/{agentId}/settings"},"helperRequests":{"version":1,"snapshotField":"helperRequests","commands":["helper.approve","helper.decline"]},"chatControls":{"version":1},"permissions":{"version":1,"persistentApprovals":true},"idempotency":{"scope":"peer-and-epoch","maxEntries":2048,"ttlMs":3600000}}
 ```
 
 A 404 means unsupported: do not send mobile commands. Gate durable-agent creation on `commands` including `agent.create` and `createOptions.version >= 1`, settings on `agent.update` and `agentSettings.version >= 1`, and helper requests on `helperRequests.version >= 1`; older desktops offer quick agents (`agent.spawn`) only. Gate project pins and inactive marks on `projectState.version >= 1` (`projectState:{version:1}`); without it, keep them on the phone. See [Project state](#project-state). Gate the composer's model, effort and level controls on `chat.setModel` / `chat.setLevel` and `chatControls.version >= 1` ([Chat controls](#chat-controls)). A new epoch invalidates command retries and replay cursors. No raw shell commands, arbitrary filesystem paths, credentials, or gateway provisioning commands exist.
@@ -28,7 +28,7 @@ A 404 means unsupported: do not send mobile commands. Gate durable-agent creatio
 - `chat.send`: `{agentId, sessionId, text, delivery?, attachmentIds?}`; delivery `auto|prompt|steer|queued` (default auto). `attachmentIds` (1–10 distinct ids from the upload route below) sends images; `text` may then be `""` for an image-only message. See [Image attachments](#image-attachments).
 - `chat.queue.remove`: `{agentId, sessionId, messageIds:["id"]}`; removes only messages still held in the runtime queue, returns `{removed:["id"]}`. A native-provider queue may return no removed IDs.
 - `chat.interrupt`: `{agentId, sessionId}`; cancels the turn and keeps the session.
-- `chat.permission`: `{agentId, sessionId, requestId, optionId}`; exact pending option required. Mobile only permits one-time allow/reject/cancel options, not persistent approval changes.
+- `chat.permission`: `{agentId, sessionId, requestId, optionId}`; exact pending option required. Any offered option, persistent ones (`allow_session`, `allow_always`, `reject_always`) included, is answered as the desktop's approval dock answers it, when capabilities have `permissions.persistentApprovals`. Older desktops refuse persistent options with 403 `persistent_approval_not_supported`.
 - `chat.question`: `{agentId, sessionId, requestId, answers}`; question-ID to string/string-array map.
 - `chat.setModel`: `{agentId, sessionId, model, effort?}`; the composer's model and effort pills. See [Chat controls](#chat-controls).
 - `chat.setLevel`: `{agentId, sessionId, level}`; the composer's permission level menu. See [Chat controls](#chat-controls).
@@ -176,6 +176,15 @@ Desktops that support them (#2462) advertise `chat.setModel` and `chat.setLevel`
 **`chat.setLevel {agentId, sessionId, level}`.** `level` is one of `plan|ask|auto_edit|auto|full_access` (400 otherwise). Any level in `liveLevels`, raising included, is accepted: see [Permissions from a phone](#permissions-from-a-phone). Result: `{level, changed}`; the current level is `changed:false`. Refusals (409): `level_not_live` (not in `liveLevels`), `level_switch_not_supported`.
 
 Both are idempotent like every command; every field is part of the fingerprint.
+
+## Permissions from a phone
+
+A paired phone has full control of the desktop's permission settings, the same as the desktop's own controls. A paired phone can already approve every request one by one, so these controls don't widen what it can do; they save it the taps. Pinned mTLS, idempotency and capability gating are unchanged.
+
+Capabilities advertise what the desktop accepts: `permissions: {version:1, persistentApprovals}`.
+
+- `persistentApprovals`: `chat.permission` answers persistent options (allow for the session, always allow, always reject).
+- `chat.setLevel` accepts any live level, raising included (`chatControls.version >= 1`).
 
 ## Durable agents
 
