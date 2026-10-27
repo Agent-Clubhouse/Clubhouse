@@ -93,7 +93,7 @@ Create (#2451) and settings (#2452) follow the desktop New agent page and the De
  "freeAgentMode":{"allowed":false}}
 ```
 
-`orchestrators` are the enabled ones, narrowed to the project's profile when it covers any, in the desktop's order; the first is the default. `available:false` (with `unavailableReason`) means the CLI isn't found; the desktop still lets you create such an agent. `permissions:false` means the CLI sets access itself. `chat` means the agent can run in chat (Chat preview on, and the provider has a chat driver). `models` may include custom IDs; any model string is accepted. `badge` and `unavailableReason` are omitted when absent. `suggestedName` is a fresh random name per request. The MCP catalog is empty when the project has no launch wrapper.
+`orchestrators` are the enabled ones, narrowed to the project's profile when it covers any, in the desktop's order; the first is the default. `available:false` (with `unavailableReason`) means the CLI isn't found; the desktop still lets you create such an agent. `permissions:false` means the CLI sets access itself. `chat` means the agent can run in chat (Chat preview on, and the provider has a chat driver). `models` may include custom IDs; any model string is accepted. `badge` and `unavailableReason` are omitted when absent. `suggestedName` is a fresh random name per request.
 
 ### agent.create
 
