@@ -25,6 +25,7 @@ const mockRemovers = {
   onAgentSleepReason: vi.fn(),
   onDurableCreationEvent: vi.fn(),
   onHelperDisposeRequest: vi.fn(),
+  onHelperDisposeRequestClosed: vi.fn(),
   onHelperStartRequest: vi.fn(),
   onHelperStartRequestsClosed: vi.fn(),
   onAgentSpawned: vi.fn(),
@@ -78,6 +79,7 @@ vi.stubGlobal('window', {
       onAgentSleepReason: vi.fn(() => mockRemovers.onAgentSleepReason),
       onDurableCreationEvent: vi.fn(() => mockRemovers.onDurableCreationEvent),
       onHelperDisposeRequest: vi.fn(() => mockRemovers.onHelperDisposeRequest),
+      onHelperDisposeRequestClosed: vi.fn(() => mockRemovers.onHelperDisposeRequestClosed),
       onHelperStartRequest: vi.fn(() => mockRemovers.onHelperStartRequest),
       onHelperStartRequestsClosed: vi.fn(() => mockRemovers.onHelperStartRequestsClosed),
       listHelperStartRequests: vi.fn(async () => []),
@@ -829,6 +831,17 @@ describe('initAppEventBridge', () => {
         message: 'Orchestrator asked to dispose this helper (forced). 2 uncommitted files, 1 unpushed commit.',
       },
     );
+  });
+
+  it('drops a dispose request that was answered from a paired phone (#159)', () => {
+    useHelperDisposeRequestStore.setState({ requests: {} });
+    useHelperDisposeRequestStore.getState().add({
+      projectPath: '/p', orchestratorId: 'orch', helperId: 'helper', helperName: 'Docs',
+      checks: { dirty: 0, unpushed: 0, unmerged: 0 }, forceRequested: false,
+    }, 'Orchestrator');
+    const closed = vi.mocked(window.clubhouse.agent.onHelperDisposeRequestClosed).mock.calls[0][0];
+    closed('helper');
+    expect(useHelperDisposeRequestStore.getState().requests).toEqual({});
   });
 
   it('ignores a dispose request for a helper this window does not have', () => {

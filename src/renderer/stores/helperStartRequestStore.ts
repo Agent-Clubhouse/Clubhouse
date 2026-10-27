@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import type { HelperStartRequest } from '../../shared/types';
+import { describeHelperStart } from '../../shared/helper-request-copy';
 
 /**
  * Helper starts waiting on the user (#2234): an orchestrator whose control
@@ -44,6 +45,6 @@ export function startRequestsByOrchestrator(requests: Readonly<Record<string, He
 
 /** The Needs you line for an orchestrator's waiting starts. */
 export function describeHelperStarts(list: readonly HelperStartRequest[]): string {
-  if (list.length === 1) return `Wants to start the helper ${list[0].args.name}`;
+  if (list.length === 1) return describeHelperStart(list[0].args.name);
   return `Wants to start ${list.length} helpers`;
 }

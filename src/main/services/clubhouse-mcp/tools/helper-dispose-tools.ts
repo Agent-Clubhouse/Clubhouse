@@ -127,7 +127,7 @@ function requestUserDispose(request: HelperDisposeRequest): boolean {
   if (!main) return false;
   main.webContents.send(IPC.AGENT.HELPER_DISPOSE_REQUEST, request);
   // So the user's answer can be reported to this orchestrator, once (#2232).
-  recordDisposeRequest(request.projectPath, request.helperId, request.orchestratorId);
+  recordDisposeRequest(request.projectPath, request.helperId, request.orchestratorId, request);
   return true;
 }
 

@@ -18,6 +18,9 @@ import { readMobileChatContent } from './annex-chat-content';
 import { agentRoots } from './agent-runtime/chat-files';
 import { buildAgentSettings, buildAgentSettingsOptions, buildCreateOptions, createMobileAgent, updateMobileAgent } from './mobile-agents';
 import { remoteChatEvent } from './annex-chat-echo';
+import { buildMobileHelperRequests, runHelperCommand } from './mobile-helper-requests';
+import { onStartRequestsChanged } from './helper-start-requests';
+import { onDisposeRequestsChanged } from './helper-dispose-requests';
 import { MOBILE_ATTACHMENTS_CAPABILITY, MobileAttachmentService, MobileUploadError, isUploadContentType, readCappedBody } from './mobile-attachments';
 import { sniffImage } from './agent-runtime/chat-attachments';
 
@@ -170,6 +173,7 @@ let unsubPermissionRequest: (() => void) | null = null;
 let unsubGroupProjectChanged: (() => void) | null = null;
 let unsubBulletinMessage: (() => void) | null = null;
 let unsubGroupProjectRegistry: (() => void) | null = null;
+let unsubHelperRequests: (() => void) | null = null;
 let staleEvictionInterval: ReturnType<typeof setInterval> | null = null;
 let heartbeatInterval: ReturnType<typeof setInterval> | null = null;
 
@@ -209,6 +213,7 @@ function unsubscribeEventBus(): void {
   unsubGroupProjectChanged?.();
   unsubBulletinMessage?.();
   unsubGroupProjectRegistry?.();
+  unsubHelperRequests?.();
   unsubPtyData = null;
   unsubHookEvent = null;
   unsubChatEvent = null;
@@ -218,6 +223,7 @@ function unsubscribeEventBus(): void {
   unsubGroupProjectChanged = null;
   unsubBulletinMessage = null;
   unsubGroupProjectRegistry = null;
+  unsubHelperRequests = null;
 }
 
 // ---------------------------------------------------------------------------
@@ -680,6 +686,7 @@ async function buildSnapshotData(): Promise<object> {
   const quickAgents: Record<string, unknown[]> = {};
   const projectIcons: Record<string, string> = {};
   const agentIcons: Record<string, string> = {};
+  const durablesByProject: Record<string, Awaited<ReturnType<typeof agentConfig.listDurable>>> = {};
 
   // Fetch project icons in parallel
   await Promise.all(projects.map(async (proj) => {
@@ -693,6 +700,7 @@ async function buildSnapshotData(): Promise<object> {
   await Promise.all(projects.map(async (proj) => {
     // Disposed helpers (#2224) keep a config row but are not agents to show.
     const durables = (await agentConfig.listDurable(proj.path)).filter((d) => !isDisposedAgent(d));
+    durablesByProject[proj.id] = durables;
     agents[proj.id] = durables.map((d) => mapDurableAgent(d, proj.id));
     quickAgents[proj.id] = [];
 
@@ -850,6 +858,8 @@ async function buildSnapshotData(): Promise<object> {
     terminalColors: getTerminalColors(),
     orchestrators: getOrchestratorsMap(),
     pendingPermissions: permissionQueue.listPending(),
+    // Helper starts and disposes waiting on the user (#159); gated by capabilities.helperRequests.
+    helperRequests: buildMobileHelperRequests(projects, durablesByProject),
     lastSeq: eventReplay.getLastSeq(),
     plugins,
     projectIcons,
@@ -2237,6 +2247,7 @@ async function handleMobileCapabilitiesRoute(ctx: AnnexRouteContext): Promise<vo
     events: { transport: 'annex-websocket', replayRequest: 'mobile:replay', queueState: 'queue_state' },
     createOptions: { version: 1, path: '/api/v1/mobile/projects/{projectId}/create-options' },
     agentSettings: { version: 1, path: '/api/v1/mobile/agents/{agentId}/settings' },
+    helperRequests: { version: 1, snapshotField: 'helperRequests', commands: ['helper.approve', 'helper.decline'] },
     idempotency: { scope: 'peer-and-epoch', maxEntries: MOBILE_COMMAND_MAX_ENTRIES, ttlMs: MOBILE_COMMAND_TTL_MS },
     projectState: { version: 1 },
     ...phoneRoutes(),
@@ -2475,6 +2486,17 @@ async function runMobileCommand(command: MobileCommand, assertAuthorized: () => 
     broadcastToAllWindows(IPC.ANNEX.AGENT_UPDATED, update);
     broadcastSnapshotRefresh();
     return updated;
+  }
+  if (command.type === 'helper.approve' || command.type === 'helper.decline') {
+    const result = await runHelperCommand(command, { assertAuthorized, reloadProject: (projectPath) => {
+      // The desktop's rail drops the disposed helper, as after its own dispose dialog.
+      void Promise.resolve(projectStore.list()).then((projects) => {
+        const project = projects.find((p) => path.resolve(p.path) === path.resolve(projectPath));
+        if (project) broadcastToAllWindows(IPC.WINDOW.REQUEST_DURABLE_RELOAD, project.id);
+      }).catch(() => { /* telemetry-exempt: the rail catches up on its next load */ });
+    } });
+    broadcastSnapshotRefresh();
+    return result;
   }
   const info = await findAgentAcrossProjects(command.agentId);
   const quick = trackedQuickAgents.get(command.agentId);
@@ -3438,6 +3460,11 @@ export function start(): void {
   unsubBulletinMessage = annexEventBus.onBulletinMessage((projectId, message) => {
     broadcastWs({ type: 'bulletin:message', payload: { projectId, message } });
   });
+
+  // Helper starts and disposes waiting on the user (#159) are in the snapshot.
+  const offStarts = onStartRequestsChanged(() => broadcastSnapshotRefresh());
+  const offDisposes = onDisposeRequestsChanged(() => broadcastSnapshotRefresh());
+  unsubHelperRequests = () => { offStarts(); offDisposes(); };
 
   // Listen for group project registry changes and broadcast them
   unsubGroupProjectRegistry = groupProjectRegistry.onChange(() => {

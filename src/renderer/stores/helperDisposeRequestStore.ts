@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import type { HelperDisposeRequest } from '../../shared/types';
+import { describeHelperDisposeRequest } from '../../shared/helper-request-copy';
 
 /**
  * Helper disposes waiting on the user (#2229): an orchestrator whose control
@@ -41,18 +42,7 @@ export const useHelperDisposeRequestStore = create<HelperDisposeRequestState>((s
   review: (helperId) => set((s) => (s.requests[helperId] ? { reviewing: helperId } : s)),
 }));
 
-function plural(n: number, one: string, many: string): string {
-  return `${n} ${n === 1 ? one : many}`;
-}
-
 /** The Needs you line for a pending dispose: who asked, and what the checks found. */
 export function describeHelperDispose(pending: PendingHelperDispose): string {
-  const { checks, forceRequested } = pending.request;
-  const facts: string[] = [];
-  if (checks.dirty > 0) facts.push(plural(checks.dirty, 'uncommitted file', 'uncommitted files'));
-  if (checks.unpushed > 0) facts.push(plural(checks.unpushed, 'unpushed commit', 'unpushed commits'));
-  if (checks.unmerged) facts.push(plural(checks.unmerged, 'unmerged commit', 'unmerged commits'));
-  if (checks.error) facts.push(checks.error);
-  const what = facts.length > 0 ? facts.join(', ') : 'nothing would be lost';
-  return `${pending.orchestratorName} asked to dispose this helper${forceRequested ? ' (forced)' : ''}. ${what[0].toUpperCase()}${what.slice(1)}.`;
+  return describeHelperDisposeRequest(pending.orchestratorName, pending.request);
 }

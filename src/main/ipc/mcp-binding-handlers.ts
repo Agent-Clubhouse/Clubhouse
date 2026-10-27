@@ -15,6 +15,7 @@ import { registerHelperDisposeTools } from '../services/clubhouse-mcp/tools/help
 import { registerHelperQuestionTools } from '../services/clubhouse-mcp/tools/helper-question-tools';
 import { findMainWindow } from './window-handlers';
 import { registerHelperTools, watchHelperStartRequests } from '../services/clubhouse-mcp/tools/helper-tools';
+import { onDisposeRequestsChanged } from '../services/helper-dispose-requests';
 import { registerConnectionTools } from '../services/clubhouse-mcp/tools/connection-tools';
 import { agentRegistry } from '../services/agent-registry';
 import { bootstrapGroupProjectAdmin } from '../services/group-project-admin-service';
@@ -99,6 +100,10 @@ export function registerMcpBindingHandlers(): void {
   // Held helper starts (#2234) go to the main window only, for Needs you.
   watchHelperStartRequests((channel, payload) => {
     findMainWindow()?.webContents.send(channel, payload);
+  });
+  // A dispose request answered from a paired phone (#159) leaves Needs you too.
+  onDisposeRequestsChanged((change) => {
+    if (change.kind === 'closed' && !change.replaced) findMainWindow()?.webContents.send(IPC.AGENT.HELPER_DISPOSE_REQUEST_CLOSED, change.helperId);
   });
   registerConnectionTools();
 

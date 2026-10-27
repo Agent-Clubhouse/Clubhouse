@@ -2,7 +2,7 @@
 import type { ChatQuestionAnswers } from './chat';
 import type { AgentIdleSleep } from './idle-sleep';
 export const MOBILE_PROTOCOL_VERSION = 1;
-export const MOBILE_COMMAND_TYPES = ['chat.send', 'chat.interrupt', 'chat.permission', 'chat.question', 'chat.queue.remove', 'agent.start', 'agent.stop', 'agent.spawn', 'agent.create', 'agent.update', 'project.setPinned', 'project.setInactive'] as const;
+export const MOBILE_COMMAND_TYPES = ['chat.send', 'chat.interrupt', 'chat.permission', 'chat.question', 'chat.queue.remove', 'agent.start', 'agent.stop', 'agent.spawn', 'agent.create', 'agent.update', 'project.setPinned', 'project.setInactive', 'helper.approve', 'helper.decline'] as const;
 interface CommandBase { version: 1; commandId: string; epoch: string }
 interface ChatTarget { agentId: string; sessionId: string }
 export type MobileCommand = CommandBase & (
@@ -19,6 +19,9 @@ export type MobileCommand = CommandBase & (
   | ({ type: 'agent.update' } & MobileAgentUpdate)
   | { type: 'project.setPinned'; projectId: string; pinned: boolean }
   | { type: 'project.setInactive'; projectId: string; inactive: boolean }
+  // A helper start or dispose waiting on the user (#159). `force` approves a dispose that would lose work ("Dispose anyway").
+  | { type: 'helper.approve'; requestId: string; force?: boolean }
+  | { type: 'helper.decline'; requestId: string }
 );
 /** A durable agent, as the New agent page makes one. Free Agent Mode is never accepted from a phone. */
 export interface MobileAgentCreate {
@@ -45,3 +48,32 @@ export interface MobileReceipt {
   error?: { code: string; message: string };
 }
 export interface MobileResponse { statusCode: number; body: MobileReceipt }
+
+/**
+ * A helper start or dispose an orchestrator asked the user to decide (#159),
+ * as the Annex snapshot's `helperRequests` lists it. The desktop's Needs you
+ * shows the same requests with `summary` as its line.
+ */
+export interface MobileHelperRequest {
+  requestId: string;
+  kind: 'start' | 'dispose';
+  projectId: string;
+  /** The orchestrator that asked. */
+  requester: { agentId: string; name: string };
+  /** The helper to start or dispose. A start's helper has no id until it is approved. */
+  helper: { agentId: string | null; name: string };
+  /** ISO times. A start expires; a dispose waits until it is answered. */
+  requestedAt: string;
+  expiresAt: string | null;
+  /** The desktop's Needs you line. */
+  summary: string;
+  /** For a start: what the helper is asked to do and how. */
+  start?: { task: string; persona: string | null; model: string | null; access: string | null; branchFrom: string | null };
+  /**
+   * For a dispose: what disposing would lose. `canDispose` is false when a
+   * check couldn't run (only Decline then); `workAtRisk` means approving
+   * needs `force: true`, the desktop's "Dispose anyway".
+   */
+  dispose?: { uncommittedFiles: number; unpushedCommits: number; unmergedCommits: number | null; checkError: string | null;
+    forceRequested: boolean; workAtRisk: boolean; canDispose: boolean };
+}

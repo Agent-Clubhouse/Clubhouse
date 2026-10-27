@@ -63,6 +63,12 @@ export const agent = {
     ipcRenderer.on(IPC.AGENT.HELPER_DISPOSE_REQUEST, listener);
     return () => { ipcRenderer.removeListener(IPC.AGENT.HELPER_DISPOSE_REQUEST, listener); };
   },
+  /** A dispose request answered elsewhere, e.g. from a paired phone (#159). */
+  onHelperDisposeRequestClosed: (callback: (helperId: string) => void) => {
+    const listener = (_event: Electron.IpcRendererEvent, helperId: string) => callback(helperId);
+    ipcRenderer.on(IPC.AGENT.HELPER_DISPOSE_REQUEST_CLOSED, listener);
+    return () => { ipcRenderer.removeListener(IPC.AGENT.HELPER_DISPOSE_REQUEST_CLOSED, listener); };
+  },
   /** What disposing a helper would lose: dirty files, unpushed and unmerged commits (#2232). */
   getDisposeChecks: (projectPath: string, agentId: string): Promise<HelperDisposeChecks> =>
     ipcRenderer.invoke(IPC.AGENT.GET_DISPOSE_CHECKS, projectPath, agentId),
