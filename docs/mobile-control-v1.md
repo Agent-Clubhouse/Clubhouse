@@ -16,10 +16,10 @@ New `POST https://host:mainPort/pair` uses existing `{pin, publicKey, alias, ico
 Authenticated `GET /api/v1/mobile/capabilities` returns:
 
 ```json
-{"version":1,"epoch":"uuid","controlAuth":"mtls-pinned-client","controlAvailable":true,"commands":["chat.send","chat.interrupt","chat.permission","chat.question","chat.queue.remove","agent.start","agent.stop","agent.spawn","agent.create","agent.update"],"pairing":{"sessionRevokePath":"/api/v1/mobile/pairing"},"attachments":{"version":1,"imageTypes":["image/png","image/jpeg","image/gif","image/webp"],"maxImageBytes":3932160,"maxCount":10},"events":{"transport":"annex-websocket","replayRequest":"mobile:replay","queueState":"queue_state"},"createOptions":{"version":1,"path":"/api/v1/mobile/projects/{projectId}/create-options"},"agentSettings":{"version":1,"path":"/api/v1/mobile/agents/{agentId}/settings"},"idempotency":{"scope":"peer-and-epoch","maxEntries":2048,"ttlMs":3600000}}
+{"version":1,"epoch":"uuid","controlAuth":"mtls-pinned-client","controlAvailable":true,"commands":["chat.send","chat.interrupt","chat.permission","chat.question","chat.queue.remove","agent.start","agent.stop","agent.spawn","agent.create","agent.update","helper.approve","helper.decline"],"pairing":{"sessionRevokePath":"/api/v1/mobile/pairing"},"attachments":{"version":1,"imageTypes":["image/png","image/jpeg","image/gif","image/webp"],"maxImageBytes":3932160,"maxCount":10},"events":{"transport":"annex-websocket","replayRequest":"mobile:replay","queueState":"queue_state"},"createOptions":{"version":1,"path":"/api/v1/mobile/projects/{projectId}/create-options"},"agentSettings":{"version":1,"path":"/api/v1/mobile/agents/{agentId}/settings"},"helperRequests":{"version":1,"snapshotField":"helperRequests","commands":["helper.approve","helper.decline"]},"idempotency":{"scope":"peer-and-epoch","maxEntries":2048,"ttlMs":3600000}}
 ```
 
-A 404 means unsupported: do not send mobile commands. Gate durable-agent creation on `commands` including `agent.create` and `createOptions.version >= 1`, and settings on `agent.update` and `agentSettings.version >= 1`; older desktops offer quick agents (`agent.spawn`) only. Gate project pins and inactive marks on `projectState.version >= 1` (`projectState:{version:1}`); without it, keep them on the phone. See [Project state](#project-state). A new epoch invalidates command retries and replay cursors. No permission-level changes, raw shell commands, arbitrary filesystem paths, credentials, or gateway provisioning commands exist.
+A 404 means unsupported: do not send mobile commands. Gate durable-agent creation on `commands` including `agent.create` and `createOptions.version >= 1`, settings on `agent.update` and `agentSettings.version >= 1`, and helper requests on `helperRequests.version >= 1`; older desktops offer quick agents (`agent.spawn`) only. Gate project pins and inactive marks on `projectState.version >= 1` (`projectState:{version:1}`); without it, keep them on the phone. See [Project state](#project-state). A new epoch invalidates command retries and replay cursors. No permission-level changes, raw shell commands, arbitrary filesystem paths, credentials, or gateway provisioning commands exist.
 
 ## Commands
 
@@ -38,9 +38,43 @@ A 404 means unsupported: do not send mobile commands. Gate durable-agent creatio
 - `project.setPinned`: `{projectId, pinned}`; pin or unpin a project in the desktop sidebar. See [Project state](#project-state).
 - `project.setInactive`: `{projectId, inactive}`; mark a project inactive (idle until marked active) or active. See [Project state](#project-state).
 
+- `helper.approve`: `{requestId, force?}`; approve a helper start or dispose an orchestrator asked the user to decide. `force:true` is the desktop's "Dispose anyway". See [Helper requests](#helper-requests).
+- `helper.decline`: `{requestId}`; decline it. The orchestrator is told, as from the desktop.
+
 For `chat.send`, `result` is `{delivery:"prompt"|"steer"|"queued",messageId:"authoritative runtime ID"}`. The matching `user_message.data` additionally echoes `clientCommandId` equal to the request commandId, including queued/steered sends. The event may arrive before the receipt: reconcile by clientCommandId immediately, then by messageId; never guess by text or timestamps. Local/legacy sends omit the optional field.
 
 Receipt on success: `{version:1,commandId,epoch,status:"completed",result:{...}}`. Completion means command dispatch completed, not agent turn completion. Errors: `{version:1,commandId?,epoch,status:"rejected"|"failed",error:{code,message}}`. `message` is the code, or for some refusals (`invalid_name`, `create_refused`, `agent_running`) a sentence the desktop would show; branch on `code` only. HTTP 400 invalid_command/unsupported_version; 403 client_certificate_required; 404 agent_not_found/project_not_found; 409 epoch_mismatch/command_conflict/session_mismatch/not_chat/pending_request_not_found/images_not_supported/attachment_unavailable; 429 command_capacity; 500 command_failed. A failed command can have partial effects; retain its receipt and reconcile.
+
+## Helper requests
+
+An orchestrator whose control level asks before starting or disposing helpers sends those requests to the user (#159). The desktop shows them under Needs you; desktops that advertise `helperRequests: {version:1}` also list them in the Annex snapshot as `helperRequests`, and accept `helper.approve` / `helper.decline`. A paired phone has the desktop's full say. Without the capability, don't show them and don't send the commands.
+
+`helperRequests` is every waiting request in a registered project, oldest first. A fresh snapshot is broadcast whenever one is added, answered (from the desktop or a phone), expires, or changes; replace the whole list from each snapshot.
+
+```json
+{"requestId":"hstart_…","kind":"start","projectId":"proj_1",
+ "requester":{"agentId":"durable_orch","name":"Planner"},"helper":{"agentId":null,"name":"impl-ipc"},
+ "requestedAt":"2026-10-26T09:00:00.000Z","expiresAt":"2026-10-27T09:00:00.000Z",
+ "summary":"Wants to start the helper impl-ipc",
+ "start":{"task":"Wire the IPC","persona":null,"model":"opus","access":null,"branchFrom":null}}
+{"requestId":"hdispose_…","kind":"dispose","projectId":"proj_1",
+ "requester":{"agentId":"durable_orch","name":"Planner"},"helper":{"agentId":"durable_docs","name":"Docs"},
+ "requestedAt":"2026-10-26T10:00:00.000Z","expiresAt":null,
+ "summary":"Planner asked to dispose this helper (forced). 2 uncommitted files, 1 unpushed commit.",
+ "dispose":{"uncommittedFiles":2,"unpushedCommits":1,"unmergedCommits":0,"checkError":null,"forceRequested":true,"workAtRisk":true,"canDispose":true}}
+```
+
+`summary` is the desktop's Needs you line. A start's helper has no id until it is approved; `start.access` is `null` for "same as the orchestrator". A start expires at `expiresAt` (24 hours); a dispose waits until it is answered. Unmerged commits are information only: disposing never deletes a remote branch.
+
+The rules are the desktop's:
+
+- **Start.** Approve runs every start check except the control level. If the orchestrator isn't running, or orchestration is off for it, the request stays waiting and the command is rejected with `helper_start_blocked`; wake the orchestrator and approve again. Result `{requestId, kind:"start", approved:true, helperId}`.
+- **Dispose.** The desktop checks the helper again, stops it if it runs (waiting for it to exit), checks once more, then disposes. `canDispose:false` (a check couldn't run, `checkError`) means only Decline; approve is rejected with `helper_check_failed`. `workAtRisk:true` (uncommitted files or unpushed commits) needs `force:true`, labelled "Dispose anyway"; without it approve is rejected with `helper_work_at_risk`. Never send `force` because the orchestrator asked for it (`forceRequested`): only the user's own Dispose anyway counts. If more is at risk than the phone was shown, nothing is disposed (`helper_work_changed`). Result `{requestId, kind:"dispose", approved:true, stopped}`.
+- **Decline.** Nothing changes. Result `{requestId, kind, declined:true}`.
+
+When a dispose finds new facts the request is reissued under a **new `requestId`** with the new checks, and a snapshot is broadcast. An answer to the old id is `helper_request_not_found`, so a phone can never confirm facts it didn't show. Refetch the snapshot after any `helper_*` rejection.
+
+Errors (`message` is the desktop's sentence for all but `helper_request_not_found`): 404 `helper_request_not_found` (answered, expired, dropped or reissued); 409 `helper_start_blocked`, `helper_check_failed`, `helper_work_at_risk`, `helper_work_changed` (`status:"rejected"`, the request still waits); 409 `helper_start_refused`, `helper_dispose_failed` (`status:"failed"`; a refused start was used up; a failed dispose may have stopped the helper).
 
 ## Image attachments
 
