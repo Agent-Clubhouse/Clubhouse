@@ -71,6 +71,13 @@ An `attachmentId` belongs to the peer and agent that uploaded it and lives 24 ho
 
 **Echo:** the `user_message` event carries the images as content blocks `{type:"image", mimeType, mediaRef?, width?, height?, path?}`. `path` is only the file name. Fetch the bytes through `/content?mediaRef=` ([mobile-phone-content.md](mobile-phone-content.md)). Reconcile with your optimistic bubble by `clientCommandId` as for text.
 
+## Snapshot agent avatars
+
+The Annex snapshot carries what the desktop's `AgentAvatar` draws, so a phone can match it. These fields are additive; older desktops omit them.
+
+- Durable agents (`agents[projectId][]`, and `GET /api/v1/projects/:id/agents`): `color`, `emoji` (a string, or `null` when unset; set through `agent.update`), and the icon as `agentIcons[agentId]`. When `emoji` is set the desktop draws it in place of initials.
+- Quick agents (`quickAgents[projectId][]`): `color`, always `"gray"`. Quick agents don't inherit their parent's colour.
+
 ## Chat state and history
 
 Authenticated `GET /api/v1/mobile/agents/:agentId/chat` returns `{version:1,epoch,agentId,sessionId,state,capabilities,events,lastSeq,truncated,pendingPermissions,pendingQuestions}`. Events use the existing ChatEvent schema. LastSeq here is **session-local**, distinct from Annex's global WS seq. Returned history is a bounded tail; pending interactions are included separately even when their events predate the tail. GET `/api/v1/mobile/agents/:agentId/chat/sessions` returns `{version,epoch,agentId,sessions:ChatSessionSummary[]}`. The chat snapshot accepts `sessionId` (optional), `beforeSeq` (exclusive, positive integer) and `limit` (1–2000, default 2000). It also returns `currentSessionId`, `readOnly`, and `nextBeforeSeq` (null when no older page). `lastSeq` always describes the full session, not the current page. Never send actions for a readOnly historical session. Pending interactions are independent of the requested page.
