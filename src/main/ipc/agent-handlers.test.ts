@@ -41,7 +41,8 @@ vi.mock('../services/agent-config', () => ({
   disposeHelper: vi.fn(async () => ({ ok: true, message: 'Disposed' })),
 }));
 
-vi.mock('../services/agent-creation', () => ({
+vi.mock('../services/agent-creation', async (importOriginal) => ({
+  ...await importOriginal<typeof import('../services/agent-creation')>(),
   startDurableCreation: vi.fn(async () => ({ agentId: 'agent-2', config: { id: 'agent-2', name: 'Helper', creation: { state: 'creating' } }, done: Promise.resolve('ready') })),
   cancelDurableCreation: vi.fn(async () => true),
   onDurableCreationEvent: vi.fn(() => () => {}),
