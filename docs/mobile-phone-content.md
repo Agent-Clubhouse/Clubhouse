@@ -8,6 +8,16 @@ Depends on mobile-control-v1 from PR2430 and the isolated integration support fr
 
 `GET /api/v1/mobile/agents/:id/content?mediaRef=<sha256.ext>` reads a stored image; alternatively `?path=<agent-relative-or-contained-path>` uses the existing desktop file-preview policy. Exactly one selector is required. All responses require the pinned mobile client certificate, a known agent and the experimental feature. Authorization is rechecked after IO. There is no remote URL fetch, shell/reveal action, custom root or bearer-only access. Errors return bounded `content_unavailable`/authorization responses without logging paths or bytes.
 
+### Absolute paths: `contentRoots`
+
+The chat snapshot (`GET /api/v1/mobile/agents/:id/chat`) adds `contentRoots: string[]`, the folders `?path=` serves from for that agent: its working folder or worktree first, then its project, its chat media folder and the live session's output folder. These are the roots desktop file chips use (`agentRoots` in `chat-files.ts`). The list is empty while rich content is off, or when the roots can't be found. Older desktops omit the field: offer relative paths only.
+
+A phone may offer a link for an absolute path that equals a root or starts with a root plus the host's path separator (compare whole path segments, so `/a/proj` does not cover `/a/project`). Relative paths resolve against the first root. Roots are host paths: on a Windows desktop (`ptyHost.platform` is `win32`) they use drive letters and backslashes, and match case-insensitively.
+
+The roots are a hint. The desktop still resolves every requested path, symlinks included, and refuses anything outside the roots, so a link can still come back `content_unavailable`.
+
+We chose roots in the snapshot over marking servable paths in each `tool_call` event. The roots already exist for the desktop's own file chips. Marking paths would mean finding and stat-ing paths in every tool event on the event path, and older events in history would carry no marks.
+
 Response metadata follows desktop previews: kind, name, optional mimeType/text/truncated/tooLarge, and optional base64 binary. Binary is capped at8MiB to fit the existing16MiB mobile HTTP limit. Cache-Control is no-store. Existing path containment, symlink, regular-file, type and size policy is reused.
 
 The opt-in process-local `CLUBHOUSE_ANNEX_BIND_ADDRESS` accepts only an existing non-loopback IPv4 interface address. It conflicts with LOOPBACK_ONLY, disables Bonjour and permits EPHEMERAL only with an isolated USER_DATA profile. No default setting is changed. Configuring source is not permission to start that listener; physical tests need specific approval. Normal existing desktop Bonjour publication remains available for an approved LAN test.
