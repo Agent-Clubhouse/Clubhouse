@@ -68,6 +68,8 @@ export const IPC = {
     RESOLVE_HELPERS_FOR_DELETE: 'agent:resolve-helpers-for-delete',
     /** Main → renderer (#2229): a helper dispose the user has to decide (control "ask-everything"). */
     HELPER_DISPOSE_REQUEST: 'agent:helper-dispose-request',
+    /** A dispose request was answered elsewhere (a paired phone); the main window drops it. */
+    HELPER_DISPOSE_REQUEST_CLOSED: 'agent:helper-dispose-request-closed',
     GET_DISPOSE_CHECKS: 'agent:get-dispose-checks',
     DISPOSE_HELPER: 'agent:dispose-helper',
     REMOVE_DISPOSED: 'agent:remove-disposed',

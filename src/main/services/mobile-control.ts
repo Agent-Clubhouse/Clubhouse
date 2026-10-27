@@ -22,13 +22,15 @@ const FIELDS: Record<MobileCommand['type'], string[]> = {
   'agent.update': ['agentId', 'name', 'color', 'emoji', 'orchestrator', 'model', 'runtime', 'persona', 'clubhouseMode', 'idleSleep'],
   'project.setPinned': ['projectId', 'pinned'],
   'project.setInactive': ['projectId', 'inactive'],
+  'helper.approve': ['requestId', 'force'],
+  'helper.decline': ['requestId'],
 };
 /** Fields a command may leave out. Every agent.update setting is optional, but it needs at least one. */
-const OPTIONAL = new Set(['delivery', 'message', 'resume', 'model', 'orchestrator', 'attachmentIds']);
+const OPTIONAL = new Set(['delivery', 'message', 'resume', 'model', 'orchestrator', 'attachmentIds', 'force']);
 const CREATE_OPTIONAL = new Set(['orchestrator', 'model', 'persona', 'useWorktree', 'mcpIds', 'branchName', 'branchFrom', 'folderName']);
 const isOptional = (type: MobileCommand['type'], key: string): boolean =>
   type === 'agent.update' ? key !== 'agentId' : type === 'agent.create' ? CREATE_OPTIONAL.has(key) : OPTIONAL.has(key);
-const BOOLEAN_FIELDS = new Set(['resume', 'useWorktree', 'clubhouseMode', 'pinned', 'inactive']);
+const BOOLEAN_FIELDS = new Set(['resume', 'useWorktree', 'clubhouseMode', 'pinned', 'inactive', 'force']);
 /** Fields agent.update clears with null. */
 const NULLABLE_ON_UPDATE = new Set(['emoji', 'persona']);
 const record = (v: unknown): v is Record<string, unknown> => !!v && typeof v === 'object' && !Array.isArray(v);

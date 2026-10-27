@@ -362,7 +362,10 @@ export function handleHelperDisposeRequest(request: HelperDisposeRequest): void 
 function initHelperDisposeRequestListener(): () => void {
   // Main sends these to the main window only; a pop-out never subscribes.
   if (window.clubhouse.window.isPopout()) return () => {};
-  return window.clubhouse.agent.onHelperDisposeRequest(handleHelperDisposeRequest);
+  const offRequest = window.clubhouse.agent.onHelperDisposeRequest(handleHelperDisposeRequest);
+  // Answered from a paired phone (#159): drop it here too.
+  const offClosed = window.clubhouse.agent.onHelperDisposeRequestClosed((helperId) => useHelperDisposeRequestStore.getState().dismiss(helperId));
+  return () => { offRequest(); offClosed(); };
 }
 
 /**

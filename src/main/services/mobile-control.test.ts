@@ -75,6 +75,20 @@ describe('mobile validation and chat dispatch', () => {
       { type: 'project.setInactive', projectId: 'p', pinned: true },
     ]) expect(() => parseMobileCommand({ ...head, ...bad })).toThrow(MobileControlError);
   });
+  it('parses helper.approve and helper.decline (#159)', () => {
+    const service = new MobileCommandService();
+    const base = { version: 1, epoch: service.epoch, commandId: 'h-1' };
+    expect(parseMobileCommand({ ...base, type: 'helper.approve', requestId: 'hdispose_1', force: true })).toMatchObject({ type: 'helper.approve', force: true });
+    expect(parseMobileCommand({ ...base, type: 'helper.approve', requestId: 'hstart_1' })).toMatchObject({ requestId: 'hstart_1' });
+    expect(parseMobileCommand({ ...base, type: 'helper.decline', requestId: 'hstart_1' })).toMatchObject({ type: 'helper.decline' });
+    for (const bad of [
+      { type: 'helper.approve' },
+      { type: 'helper.approve', requestId: '' },
+      { type: 'helper.approve', requestId: 'hstart_1', force: 'yes' },
+      { type: 'helper.decline', requestId: 'hstart_1', force: true },
+      { type: 'helper.approve', requestId: 'hstart_1', helperId: 'h' },
+    ]) expect(() => parseMobileCommand({ ...base, ...bad })).toThrow(MobileControlError);
+  });
   it('preserves requested delivery and reports actual delivery', async () => {
     const service = new MobileCommandService(); const rt = runtime();
     const cmd = parseMobileCommand(command(service, { delivery: 'steer' }));

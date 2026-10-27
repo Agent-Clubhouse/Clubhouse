@@ -12,6 +12,10 @@ vi.mock('./agent-runtime/chat-files', async (importOriginal) => ({
   agentRoots: vi.fn(async () => ['/test/project/.clubhouse/agents/a', '/test/project']),
 }));
 import { getSettings as getExperimentalSettings } from './experimental-settings';
+vi.mock('./mobile-helper-requests', () => ({
+  buildMobileHelperRequests: vi.fn(() => []),
+  runHelperCommand: vi.fn(async () => ({ requestId: 'hstart_1', kind: 'start', declined: true })),
+}));
 vi.mock('./experimental-settings', () => ({ getSettings: vi.fn(() => ({})), saveSettings: vi.fn() }));
 import * as projectStateStore from './project-state-store';
 // An in-memory main store running the real shared rules (#2458).
@@ -816,6 +820,34 @@ describe('annex-server', () => {
     expect(body.agentSettings).toEqual({ version: 1, path: '/api/v1/mobile/agents/{agentId}/settings' });
   });
 
+  it('advertises helper requests and their commands (#159)', async () => {
+    const { port, token } = await startAndPair();
+    const body = JSON.parse((await request(port, 'GET', '/api/v1/mobile/capabilities', undefined, authHeaders(token))).body);
+    expect(body.commands).toEqual(expect.arrayContaining(['helper.approve', 'helper.decline']));
+    expect(body.helperRequests).toEqual({ version: 1, snapshotField: 'helperRequests', commands: ['helper.approve', 'helper.decline'] });
+  });
+
+  it('lists helper requests in the snapshot from the projects and their agents (#159)', async () => {
+    vi.mocked(pluginManifestRegistry.listAllManifests).mockReturnValue([]);
+    const { groupProjectRegistry } = await import('./group-project-registry');
+    vi.mocked(groupProjectRegistry.list).mockResolvedValue([]);
+    const themeService = await import('./theme-service');
+    vi.mocked(themeService.getSettings).mockReturnValue({ themeId: 'catppuccin-mocha' } as any);
+    const { buildMobileHelperRequests } = await import('./mobile-helper-requests');
+    const listed = [{ requestId: 'hstart_1', kind: 'start' }];
+    vi.mocked(buildMobileHelperRequests).mockReturnValueOnce(listed as never);
+    vi.mocked(projectStore.list).mockReturnValue([{ id: 'p', name: 'Project', path: '/test/project' }] as never);
+    vi.mocked(agentConfigModule.listDurable).mockReturnValue([
+      { id: 'orch', name: 'Planner', color: 'blue', createdAt: '2026-01-01' },
+      { id: 'gone', name: 'Old', color: 'blue', createdAt: '2026-01-01', disposedAt: '2026-01-02' },
+    ] as never);
+    const snapshot = await annexServer._testing.buildSnapshot() as { helperRequests: unknown };
+    expect(snapshot.helperRequests).toBe(listed);
+    const [projects, agents] = vi.mocked(buildMobileHelperRequests).mock.calls.at(-1)!;
+    expect(projects).toEqual([expect.objectContaining({ id: 'p', path: '/test/project' })]);
+    expect((agents as Record<string, Array<{ id: string }>>).p.map((a) => a.id)).toEqual(['orch']);
+  });
+
   it('serves create options per registered project', async () => {
     vi.mocked(projectStore.list).mockReturnValue([{ id: 'p', name: 'Project', path: '/test/project' }] as never);
     const { port, token } = await startAndPair();
@@ -1159,6 +1191,13 @@ describe('annex-server', () => {
       expect((await secureRequest('POST', '/api/v1/mobile/commands', wake)).status).toBe(200);
       expect(agentSystem.spawnAgent).toHaveBeenCalledWith(expect.objectContaining({ agentId: 'a', kind: 'durable' }));
       vi.mocked(agentSystem.spawnAgent).mockClear();
+      // Helper requests (#159) go to their own runner, with the authorization check.
+      const { runHelperCommand } = await import('./mobile-helper-requests');
+      const decline = { version: 1, epoch: capability.body.epoch, commandId: 'helper-decline', type: 'helper.decline', requestId: 'hstart_1' };
+      const declined = await secureRequest('POST', '/api/v1/mobile/commands', decline);
+      expect(declined.body).toMatchObject({ status: 'completed', result: { requestId: 'hstart_1', kind: 'start', declined: true } });
+      expect(runHelperCommand).toHaveBeenCalledWith(expect.objectContaining({ type: 'helper.decline', requestId: 'hstart_1' }),
+        expect.objectContaining({ assertAuthorized: expect.any(Function), reloadProject: expect.any(Function) }));
       const accepted = await secureRequest('POST', '/api/v1/mobile/commands', input);
       expect(accepted.status).toBe(200); expect(accepted.body.status).toBe('completed');
       expect(agentSystem.spawnAgent).toHaveBeenCalledWith(expect.objectContaining({ projectPath: '/test/project', freeAgentMode: false, kind: 'quick', interactive: true }));
