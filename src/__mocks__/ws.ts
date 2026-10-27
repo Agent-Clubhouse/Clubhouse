@@ -5,10 +5,12 @@ import { EventEmitter } from 'events';
 
 export class WebSocketServer extends EventEmitter {
   clients: Set<WebSocket>;
+  options: Record<string, unknown>;
 
-  constructor(_opts?: Record<string, unknown>) {
+  constructor(opts?: Record<string, unknown>) {
     super();
     this.clients = new Set();
+    this.options = opts ?? {};
   }
 
   handleUpgrade(

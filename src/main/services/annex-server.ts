@@ -14,6 +14,9 @@ import { readChatTranscript, listChatSessions } from './agent-runtime/chat-trans
 import { getSettings as getExperimentalSettings } from './experimental-settings';
 import { readMobileChatContent } from './annex-chat-content';
 import { buildAgentSettings, buildAgentSettingsOptions, buildCreateOptions, createMobileAgent, updateMobileAgent } from './mobile-agents';
+import { remoteChatEvent } from './annex-chat-echo';
+import { MOBILE_ATTACHMENTS_CAPABILITY, MobileAttachmentService, MobileUploadError, isUploadContentType, readCappedBody } from './mobile-attachments';
+import { sniffImage } from './agent-runtime/chat-attachments';
 
 import Bonjour, { Service } from 'bonjour-service';
 import * as annexEventBus from './annex-event-bus';
@@ -45,7 +48,7 @@ import { normalizeSessionEvents, buildSessionSummary, paginateEvents, SUMMARY_TR
 import { isSessionCapable, getProvider } from '../orchestrators';
 import { getAgentRuntime, isChatAgent, onChatEvent } from './agent-runtime';
 import { chatDetailedStatus } from '../../shared/chat-agent-status';
-import type { ChatEvent, ChatSessionState } from '../../shared/chat';
+import { CHAT_IMAGE_MAX_BYTES, type ChatEvent, type ChatSessionState } from '../../shared/chat';
 import { injectPtyText } from './agent-runtime/pty-input';
 import { AgentStoppingError } from './agent-runtime/agent-stopping';
 import { spawnAgent, killAgent, getAvailableOrchestrators, isHeadlessAgent, resolveOrchestrator, resolveProfileEnv } from './agent-system';
@@ -120,6 +123,7 @@ function isAllowedCorsOrigin(origin: string): boolean {
 
 // Pairing port (plain HTTP): POST /pair, GET /api/v1/identity, OPTIONS
 const mobileCommands = new MobileCommandService();
+const mobileAttachments = new MobileAttachmentService();
 /** Explicit session-only mobile pairing never writes the peer store. */
 const mobileSessionPeers = new Map<string, AnnexPeer>();
 function findPairedPeer(fingerprint: string): AnnexPeer | undefined {
@@ -362,22 +366,29 @@ const CLIPBOARD_IMAGE_CLEANUP_MS = 30 * 60 * 1000; // 30 minutes
  * the error to send back when the terminal is shutting down (nothing is
  * written then), else undefined.
  */
-export function handleClipboardImage(agentId: string, base64: string, mimeType: string): { code: string; message: string } | undefined {
+export function handleClipboardImage(agentId: string, base64: string, _mimeType: string): { code: string; message: string } | undefined {
+  // Chat agents have no terminal to paste a path into; they take images through
+  // POST /api/v1/mobile/agents/:id/attachments and chat.send (#2453).
+  if (isChatAgent(agentId)) {
+    return { code: 'chat_agent_unsupported', message: 'Chat agents take images as chat attachments, not clipboard pastes' };
+  }
   if (ptyManager.isStopping(agentId)) {
     // The process is exiting and would swallow the pasted path.
     return { code: 'agent_stopping', message: new AgentStoppingError(agentId).message };
   }
-  const ext = mimeType === 'image/png' ? '.png'
-    : mimeType === 'image/jpeg' ? '.jpg'
-    : mimeType === 'image/gif' ? '.gif'
-    : mimeType === 'image/webp' ? '.webp'
-    : '.png';
+  const buffer = Buffer.from(base64, 'base64');
+  // The bytes decide the type: the claimed mimeType is never trusted.
+  const sniffed = sniffImage(buffer.subarray(0, 16));
+  if (!sniffed) return { code: 'unsupported_image', message: 'Only PNG, JPEG, GIF or WebP images can be pasted' };
+  const ext = sniffed === 'image/png' ? '.png'
+    : sniffed === 'image/jpeg' ? '.jpg'
+    : sniffed === 'image/gif' ? '.gif'
+    : '.webp';
   const fileName = `clipboard-paste-${randomUUID().slice(0, 8)}${ext}`;
   const tmpDir = os.tmpdir();
   const filePath = path.join(tmpDir, fileName);
 
   try {
-    const buffer = Buffer.from(base64, 'base64');
     fs.writeFileSync(filePath, buffer);
 
     appLog('core:annex-server', 'info', 'clipboard:image — wrote temp file', {
@@ -2176,6 +2187,7 @@ async function handleMobileCapabilitiesRoute(ctx: AnnexRouteContext): Promise<vo
     controlAvailable: !!ctx.mobilePrincipal, commands: MOBILE_COMMAND_TYPES,
     pairing: { sessionRevokePath: '/api/v1/mobile/pairing' },
     richContent: { version: 1, enabled: getExperimentalSettings().richChatContent === true, maximumBytes: 8 * 1024 * 1024 },
+    attachments: MOBILE_ATTACHMENTS_CAPABILITY,
     events: { transport: 'annex-websocket', replayRequest: 'mobile:replay', queueState: 'queue_state' },
     createOptions: { version: 1, path: '/api/v1/mobile/projects/{projectId}/create-options' },
     agentSettings: { version: 1, path: '/api/v1/mobile/agents/{agentId}/settings' },
@@ -2237,7 +2249,7 @@ async function handleMobileChatRoute(ctx: AnnexRouteContext, match: RegExpMatchA
       canStart: !!durable && !isAgentRunning(agentId) && !mobileStartingAgents.has(agentId),
       currentSessionId: runtime?.kind === 'chat' ? runtime.getSessionId?.() ?? null : null, readOnly: !live,
       state: live ? runtime.getState() : 'sleeping', capabilities: live ? runtime.getCapabilities?.() ?? null : null,
-      events: page, lastSeq: current[current.length - 1]?.seq ?? 0, truncated: eligible.length > limit,
+      events: page.map(remoteChatEvent), lastSeq: current[current.length - 1]?.seq ?? 0, truncated: eligible.length > limit,
       nextBeforeSeq: eligible.length > limit ? page[0]?.seq ?? null : null,
       ...(live ? runtime.getQueueState?.() ?? { queuedMessageIds: [], queueStateSeq: 0, queueRemovalSupported: false }
         : { queuedMessageIds: [], queueStateSeq: 0, queueRemovalSupported: false }),
@@ -2326,7 +2338,7 @@ async function handleMobileAgentSettingsRoute(ctx: AnnexRouteContext, match: Reg
   }
 }
 
-async function runMobileCommand(command: MobileCommand, assertAuthorized: () => void): Promise<unknown> {
+async function runMobileCommand(command: MobileCommand, assertAuthorized: () => void, principal: string): Promise<unknown> {
   assertAuthorized();
   if ('sessionId' in command) {
     const info = await findAgentAcrossProjects(command.agentId);
@@ -2335,7 +2347,7 @@ async function runMobileCommand(command: MobileCommand, assertAuthorized: () => 
     return executeChatCommand(command, runtime, async () => !await isRevertRunning(command.agentId), () => {
       assertAuthorized();
       if (getAgentRuntime(command.agentId) !== runtime) throw new MobileControlError('session_mismatch');
-    });
+    }, (ids, caps) => mobileAttachments.resolveFor(principal, command.agentId, ids, caps));
   }
   if (command.type === 'agent.spawn') {
     const project = await findProjectById(command.projectId);
@@ -2445,7 +2457,7 @@ async function handleMobileCommandRoute(ctx: AnnexRouteContext): Promise<void> {
       if (mobileCommands.epoch !== epoch || !current || current.tlsCertificateFingerprint !== pin
         || (current.role && current.role !== 'controller')) throw new MobileControlError('authorization_revoked', 403);
     };
-    const response = await mobileCommands.execute(principal, input, (command) => runMobileCommand(command, assertAuthorized));
+    const response = await mobileCommands.execute(principal, input, (command) => runMobileCommand(command, assertAuthorized, principal!));
     sendJson(ctx.res, response.statusCode, response.body);
   } catch {
     // telemetry-exempt: invalid JSON/body is reported to the caller without logging its content.
@@ -2454,7 +2466,57 @@ async function handleMobileCommandRoute(ctx: AnnexRouteContext): Promise<void> {
   }
 }
 
+/**
+ * A phone uploads one image (raw bytes, image/* or application/octet-stream)
+ * for a chat agent that takes images; chat.send then names it in
+ * `attachmentIds` (#2453). Pinned mTLS like /mobile/commands, its own body
+ * cap (the 1 MB readBody cap stays for everything else), and per-peer limits.
+ */
+async function handleMobileAttachmentRoute(ctx: AnnexRouteContext, match: RegExpMatchArray): Promise<void> {
+  const principal = ctx.mobilePrincipal;
+  if (!principal) { sendJson(ctx.res, 403, { error: 'client_certificate_required' }); return; }
+  const epoch = mobileCommands.epoch;
+  const pin = findPairedPeer(principal)?.tlsCertificateFingerprint;
+  const authorized = () => {
+    const peer = findPairedPeer(principal);
+    return mobileCommands.epoch === epoch && !!peer && peer.tlsCertificateFingerprint === pin
+      && (!peer.role || peer.role === 'controller');
+  };
+  let bodyRead = false;
+  const refuse = (status: number, error: string, retryAfterMs?: number) => {
+    if (retryAfterMs !== undefined) ctx.res.setHeader('Retry-After', String(Math.max(1, Math.ceil(retryAfterMs / 1000))));
+    if (!bodyRead) {
+      // Discard a body within the cap so the client reads this answer; never read a bigger one.
+      const declared = Number(ctx.req.headers['content-length']);
+      if (Number.isFinite(declared) && declared <= CHAT_IMAGE_MAX_BYTES && status !== 413) ctx.req.resume();
+      else ctx.res.setHeader('Connection', 'close');
+    }
+    sendJson(ctx.res, status, { version: 1, error });
+  };
+  try {
+    const agentId = decodeURIComponent(match[1]);
+    if (!isUploadContentType(ctx.req.headers['content-type'])) { refuse(415, 'unsupported_media_type'); return; }
+    mobileAttachments.checkLimits(principal, Math.min(Number(ctx.req.headers['content-length']) || 0, CHAT_IMAGE_MAX_BYTES));
+    const info = await findAgentAcrossProjects(agentId);
+    if ((!info || isDisposedAgent(info.config)) && !trackedQuickAgents.has(agentId)) { refuse(404, 'agent_not_found'); return; }
+    const runtime = getAgentRuntime(agentId);
+    if (!runtime || runtime.kind !== 'chat' || !runtime.isRunning()) { refuse(409, 'not_chat'); return; }
+    if (runtime.getCapabilities?.()?.images !== true) { refuse(409, 'images_not_supported'); return; }
+    const body = await readCappedBody(ctx.req, CHAT_IMAGE_MAX_BYTES);
+    bodyRead = true;
+    // A peer can be revoked while its body is streaming.
+    if (!authorized()) { refuse(403, 'authorization_revoked'); return; }
+    const result = await mobileAttachments.upload(principal, agentId, body);
+    sendJson(ctx.res, 200, result);
+  } catch (err) {
+    // telemetry-exempt: bounded upload errors go to the caller; image bytes are never logged.
+    if (err instanceof MobileUploadError) refuse(err.statusCode, err.code, err.retryAfterMs);
+    else refuse(400, 'upload_failed');
+  }
+}
+
 const ANNEX_HTTP_ROUTE_TABLE: AnnexHttpRoute[] = [
+  { method: 'POST', pattern: /^\/api\/v1\/mobile\/agents\/([^/]+)\/attachments$/, handler: handleMobileAttachmentRoute },
   { method: 'GET', pattern: /^\/api\/v1\/mobile\/agents\/([^/]+)\/content(\?.*)?$/, handler: handleMobileContentRoute },
   { method: 'GET', pattern: /^\/api\/v1\/mobile\/capabilities$/, handler: handleMobileCapabilitiesRoute },
   { method: 'DELETE', pattern: /^\/api\/v1\/mobile\/pairing$/, handler: handleMobilePairingDeleteRoute },
@@ -2607,6 +2669,11 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
 // ---------------------------------------------------------------------------
 
 const MAX_PTY_INPUT_SIZE = 64 * 1024; // 64KB
+/**
+ * Largest WebSocket frame accepted (the ws default is 100 MiB). The biggest
+ * legitimate message is a legacy clipboard:image: 10 MB of base64 plus its envelope.
+ */
+export const WS_MAX_PAYLOAD = 11 * 1024 * 1024;
 
 /** Send data over a WebSocket only if the connection is still open. */
 function safeSend(ws: WebSocket, data: string): boolean {
@@ -3082,7 +3149,7 @@ export function start(): void {
     httpServer = mainServer as http.Server;
   }
 
-  wss = new WebSocketServer({ noServer: true });
+  wss = new WebSocketServer({ noServer: true, maxPayload: WS_MAX_PAYLOAD });
 
   // WebSocket upgrade handler for the main server
   mainServer.on('upgrade', (req: http.IncomingMessage, socket: any, head: Buffer) => {
@@ -3237,7 +3304,8 @@ export function start(): void {
 
   unsubChatEvent = onChatEvent((event) => {
     noteAgentActivity(event.agentId, event.ts);
-    broadcastAndBuffer('chat:event', { agentId: event.agentId, event }, chatEventTraceparent(event));
+    // Remote clients never get desktop paths or inline image bytes (#2453).
+    broadcastAndBuffer('chat:event', { agentId: event.agentId, event: remoteChatEvent(event) }, chatEventTraceparent(event));
     pushChatStatus(event);
   });
 
@@ -3523,6 +3591,7 @@ export function stop(): void {
   eventReplay.reset();
   permissionQueue.reset();
   mobileCommands.reset();
+  mobileAttachments.reset();
   mobileSessionPeers.clear();
   // Starts already accepted may still be awaiting a driver; stop them on completion.
   for (const starting of mobileStartingAgents.values()) starting.cancelled = true;

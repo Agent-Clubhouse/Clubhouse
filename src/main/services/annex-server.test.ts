@@ -242,7 +242,7 @@ import { generateQuickName } from '../../shared/name-generator';
 import * as agentIdModule from '../../shared/agent-id';
 import { appLog } from './log-service';
 import Bonjour from 'bonjour-service';
-import { registerChatRuntime, clearChatRuntimes } from './agent-runtime';
+import { registerChatRuntime, clearChatRuntimes, publishChatEvent } from './agent-runtime';
 
 function request(port: number, method: string, path: string, body?: object, headers?: Record<string, string>): Promise<{ status: number; body: string }> {
   return new Promise((resolve, reject) => {
@@ -797,6 +797,151 @@ describe('annex-server', () => {
       _eventReplay.clearForAgent('exited');
       ws.send.mockClear(); ws.emit('message', JSON.stringify({ type: 'mobile:replay', epoch: capability.epoch, since: other }));
       expect(JSON.parse(ws.send.mock.calls[0][0])).toMatchObject({ type: 'replay:gap', epoch: capability.epoch });
+    });
+
+    it('echoes user images to remote clients as mediaRefs without desktop paths (#2453)', async () => {
+      const ref = `${'ab'.repeat(32)}.png`;
+      const userMessage = { v: 1, type: 'user_message', agentId: 'a', sessionId: 's', seq: 1, ts: 1, data: { messageId: 'm', clientCommandId: 'c', source: 'annex', delivery: 'prompt', content: [
+        { type: 'text', text: 'look' },
+        { type: 'image', mimeType: 'image/png', path: '/Users/me/Library/Application Support/Clubhouse/chat-attachments/a/x.png', mediaRef: ref, width: 4, height: 5 },
+      ] } };
+      const remote = [{ type: 'text', text: 'look' }, { type: 'image', mimeType: 'image/png', mediaRef: ref, width: 4, height: 5, path: 'x.png' }];
+      vi.mocked(projectStore.list).mockReturnValue([{ id: 'p', name: 'Project', path: '/test/project' }] as any);
+      vi.mocked(agentConfigModule.listDurable).mockReturnValue([{ id: 'a', name: 'agent', color: 'blue', createdAt: '2026-01-01' }] as any);
+      registerChatRuntime({ kind: 'chat', agentId: 'a', isRunning: () => true, getState: () => 'idle', getSessionId: () => 's',
+        getCapabilities: () => ({ images: true }), readTranscript: async () => ({ events: [userMessage] }) } as any);
+      try {
+        const { port, token } = await startAndPair();
+        const snapshot = await request(port, 'GET', '/api/v1/mobile/agents/a/chat', undefined, authHeaders(token));
+        expect(JSON.parse(snapshot.body).events[0].data.content).toEqual(remote);
+        expect(snapshot.body).not.toContain('/Users/me');
+        // Broadcast frames are what the replay buffer holds.
+        const before = _eventReplay.getLastSeq();
+        publishChatEvent(userMessage as any);
+        const frames = (_eventReplay.getEventsSince(before) ?? []).filter((f) => f.type === 'chat:event');
+        expect(frames).toHaveLength(1);
+        expect((frames[0].payload as any).event.data.content).toEqual(remote);
+        expect(JSON.stringify(frames)).not.toContain('/Users/me');
+      } finally { clearChatRuntimes(); }
+    });
+
+    it('caps WebSocket frames and advertises attachments (#2453)', async () => {
+      const { port, token } = await startAndPair();
+      expect(annexServer._testing.wss!.options.maxPayload).toBe(annexServer.WS_MAX_PAYLOAD);
+      expect(annexServer.WS_MAX_PAYLOAD).toBeLessThan(16 * 1024 * 1024);
+      const capability = JSON.parse((await request(port, 'GET', '/api/v1/mobile/capabilities', undefined, authHeaders(token))).body);
+      expect(capability.attachments).toEqual({ version: 1, imageTypes: ['image/png', 'image/jpeg', 'image/gif', 'image/webp'], maxImageBytes: 3932160, maxCount: 10 });
+    });
+
+    it('uploads phone images over pinned mTLS and sends them with chat.send (#2453)', async () => {
+      const forge = (await import('node-forge')).default;
+      const https = await import('https');
+      const crypto = await import('crypto');
+      const actualTls = await vi.importActual<typeof import('./annex-tls')>('./annex-tls');
+      const makeCertificate = () => {
+        const keys = forge.pki.rsa.generateKeyPair(2048);
+        const cert = forge.pki.createCertificate(); cert.publicKey = keys.publicKey;
+        cert.serialNumber = forge.util.bytesToHex(forge.random.getBytesSync(16));
+        cert.validity.notBefore = new Date(Date.now() - 1000); cert.validity.notAfter = new Date(Date.now() + 86400000);
+        cert.setSubject([{ name: 'commonName', value: 'mobile-test-identity' }]); cert.setIssuer(cert.subject.attributes);
+        cert.sign(keys.privateKey, forge.md.sha256.create());
+        return { cert: forge.pki.certificateToPem(cert), key: forge.pki.privateKeyToPem(keys.privateKey) };
+      };
+      const credentials = makeCertificate(); const impostor = makeCertificate();
+      const publicKey = crypto.generateKeyPairSync('ed25519').publicKey.export({ format: 'der', type: 'spki' }).toString('base64');
+      vi.mocked(annexTls.createTlsServerOptions).mockReturnValue({ ...credentials, requestCert: true, rejectUnauthorized: false });
+      vi.mocked(annexTls.extractPeerFingerprint).mockImplementation(actualTls.extractPeerFingerprint);
+      vi.mocked(annexTls.extractPeerCertificateFingerprint).mockImplementation(actualTls.extractPeerCertificateFingerprint);
+      vi.mocked(annexTls.getCertificateFingerprint).mockReturnValue(new crypto.X509Certificate(credentials.cert).fingerprint256);
+      vi.mocked(annexIdentity.computeFingerprint).mockReturnValue('mobile-test-identity');
+      const peers = new Map<string, import('../../shared/types').AnnexPeer>();
+      vi.mocked(annexPeers.addPeer).mockImplementation((peer) => { peers.set(peer.fingerprint, peer); });
+      vi.mocked(annexPeers.getPeer).mockImplementation((fp) => peers.get(fp));
+      annexServer.start(); await new Promise((resolve) => setTimeout(resolve, 100));
+      const status = annexServer.getStatus();
+      const send = (method: string, route: string, body: Buffer | object | undefined, opts: { client?: { cert: string; key: string } | null; headers?: Record<string, string> } = {}) =>
+        new Promise<{ status: number; body: any; headers: Record<string, unknown> }>((resolve, reject) => {
+          const raw = Buffer.isBuffer(body) ? body : body ? Buffer.from(JSON.stringify(body)) : undefined;
+          const req = https.request({ host: '127.0.0.1', port: status.port, path: route, method, ...(opts.client === null ? {} : opts.client ?? credentials),
+            // Test-only loopback self-signed fixtures. Production iOS compares the server certificate pin.
+            rejectUnauthorized: false, agent: false,
+            headers: { 'Content-Type': 'application/json', ...(raw && { 'Content-Length': String(raw.length) }), ...opts.headers } }, (res) => {
+            let data = ''; res.on('data', (chunk) => { data += chunk; });
+            res.on('end', () => resolve({ status: res.statusCode!, body: JSON.parse(data), headers: res.headers }));
+          }); req.on('error', reject); if (raw) req.write(raw); req.end();
+        });
+      const pair = await send('POST', '/pair', { pin: status.pin, publicKey });
+      expect(pair.status).toBe(200);
+      vi.mocked(projectStore.list).mockReturnValue([{ id: 'p', name: 'Project', path: '/test/project' }] as any);
+      vi.mocked(agentConfigModule.listDurable).mockReturnValue([{ id: 'a', name: 'agent', color: 'blue', createdAt: '2026-01-01' }] as any);
+      let images = true;
+      const sendMessage = vi.fn().mockResolvedValue({ delivery: 'prompt', messageId: 'm1' });
+      registerChatRuntime({ kind: 'chat', agentId: 'a', isRunning: () => true, getState: () => 'idle', getSessionId: () => 's',
+        getCapabilities: () => ({ images }), sendMessage, readTranscript: async () => ({ events: [] }) } as any);
+      try {
+        const png = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0, 13, 0x49, 0x48, 0x44, 0x52, 0, 0, 0, 3, 0, 0, 0, 2, 8, 6, 0, 0, 0]);
+        const route = '/api/v1/mobile/agents/a/attachments';
+        const image = { headers: { 'Content-Type': 'image/png' } };
+        // Auth: a bearer token alone is not enough, and a certificate must be the pinned one.
+        const bearerOnly = await send('POST', route, png, { client: null, headers: { 'Content-Type': 'image/png', Authorization: `Bearer ${pair.body.token}` } });
+        expect(bearerOnly).toMatchObject({ status: 403, body: { error: 'client_certificate_required' } });
+        expect((await send('POST', route, png, { ...image, client: impostor })).status).toBe(401);
+        // Content checks: declared type, sniffed bytes, size cap, agent capability.
+        expect((await send('POST', route, { base64: 'x' })).body).toMatchObject({ error: 'unsupported_media_type' });
+        expect(await send('POST', route, Buffer.from('<svg xmlns="http://www.w3.org/2000/svg"/>'), image)).toMatchObject({ status: 415, body: { error: 'unsupported_image' } });
+        // Over the cap: refused from the declared length, before the body is sent.
+        const oversized = await new Promise<{ status: number; connection: unknown; body: any }>((resolve, reject) => {
+          const req = https.request({ host: '127.0.0.1', port: status.port, path: route, method: 'POST', ...credentials, rejectUnauthorized: false, agent: false,
+            headers: { 'Content-Type': 'image/png', 'Content-Length': '3932161' } }, (res) => {
+            let data = ''; res.on('data', (chunk) => { data += chunk; });
+            res.on('end', () => { resolve({ status: res.statusCode!, connection: res.headers.connection, body: JSON.parse(data) }); req.destroy(); });
+          }); req.on('error', reject); req.flushHeaders();
+        });
+        expect(oversized).toEqual({ status: 413, connection: 'close', body: { version: 1, error: 'too_large' } });
+        expect((await send('POST', '/api/v1/mobile/agents/missing/attachments', png, image)).status).toBe(404);
+        images = false;
+        expect(await send('POST', route, png, image)).toMatchObject({ status: 409, body: { error: 'images_not_supported' } });
+        images = true;
+
+        const uploaded = await send('POST', route, png, { headers: { 'Content-Type': 'application/octet-stream' } });
+        expect(uploaded).toMatchObject({ status: 200, body: { version: 1, attachmentId: expect.any(String), mimeType: 'image/png', bytes: png.length, width: 3, height: 2 } });
+        const capability = await send('GET', '/api/v1/mobile/capabilities', undefined);
+        const chatSend = { version: 1, epoch: capability.body.epoch, commandId: 'photo-1', type: 'chat.send', agentId: 'a', sessionId: 's', text: '', attachmentIds: [uploaded.body.attachmentId] };
+        const sent = await send('POST', '/api/v1/mobile/commands', chatSend);
+        expect(sent.body).toMatchObject({ status: 'completed', result: { messageId: 'm1' } });
+        expect(sendMessage).toHaveBeenCalledWith([{ type: 'image', mimeType: 'image/png', path: expect.stringContaining('chat-attachments') }],
+          { source: 'annex', delivery: 'auto', clientCommandId: 'photo-1' });
+        // Retries are idempotent; an id this phone never uploaded is refused.
+        expect(await send('POST', '/api/v1/mobile/commands', chatSend)).toEqual(sent);
+        const foreign = await send('POST', '/api/v1/mobile/commands', { ...chatSend, commandId: 'photo-2', attachmentIds: ['not-mine'] });
+        expect(foreign.body).toMatchObject({ status: 'rejected', error: { code: 'attachment_unavailable' } });
+        expect(sendMessage).toHaveBeenCalledTimes(1);
+
+        // Per-peer rate limit, with Retry-After.
+        let limited: Awaited<ReturnType<typeof send>> | undefined;
+        for (let i = 0; i < 25 && !limited; i++) {
+          const res = await send('POST', route, png, image);
+          if (res.status === 429) limited = res;
+        }
+        expect(limited).toMatchObject({ body: { error: 'rate_limited' } });
+        expect(Number(limited!.headers['retry-after'])).toBeGreaterThan(0);
+      } finally { clearChatRuntimes(); }
+    }, 15000);
+
+    it('refuses clipboard:image for chat agents and sniffs the bytes for terminal agents (#2453)', () => {
+      vi.mocked(ptyManagerModule.write).mockClear();
+      registerChatRuntime({ kind: 'chat', agentId: 'chat-1', isRunning: () => true } as any);
+      try {
+        const png = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 1, 2, 3]).toString('base64');
+        expect(annexServer.handleClipboardImage('chat-1', png, 'image/png')).toMatchObject({ code: 'chat_agent_unsupported' });
+        expect(annexServer.handleClipboardImage('pty-1', Buffer.from('#!/bin/sh').toString('base64'), 'image/png')).toMatchObject({ code: 'unsupported_image' });
+        expect(ptyManagerModule.write).not.toHaveBeenCalled();
+        // A PNG claimed to be a JPEG is saved as what it is.
+        expect(annexServer.handleClipboardImage('pty-1', png, 'image/jpeg')).toBeUndefined();
+        const pasted = vi.mocked(ptyManagerModule.write).mock.calls[0][1];
+        expect(pasted).toMatch(/clipboard-paste-[0-9a-f]{8}\.png/);
+        expect(pasted.endsWith('.png\u001b[201~')).toBe(true);
+      } finally { clearChatRuntimes(); }
     });
 
     it('binds HTTPS PIN pairing to the real client certificate and rejects same-CN impersonation', async () => {
