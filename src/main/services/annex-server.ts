@@ -13,6 +13,7 @@ import { isRevertRunning } from './agent-runtime/checkpoint-tracker';
 import { readChatTranscript, listChatSessions } from './agent-runtime/chat-transcript';
 import { getSettings as getExperimentalSettings } from './experimental-settings';
 import { readMobileChatContent } from './annex-chat-content';
+import { buildAgentSettings, buildAgentSettingsOptions, buildCreateOptions, createMobileAgent, updateMobileAgent } from './mobile-agents';
 
 import Bonjour, { Service } from 'bonjour-service';
 import * as annexEventBus from './annex-event-bus';
@@ -2176,6 +2177,8 @@ async function handleMobileCapabilitiesRoute(ctx: AnnexRouteContext): Promise<vo
     pairing: { sessionRevokePath: '/api/v1/mobile/pairing' },
     richContent: { version: 1, enabled: getExperimentalSettings().richChatContent === true, maximumBytes: 8 * 1024 * 1024 },
     events: { transport: 'annex-websocket', replayRequest: 'mobile:replay', queueState: 'queue_state' },
+    createOptions: { version: 1, path: '/api/v1/mobile/projects/{projectId}/create-options' },
+    agentSettings: { version: 1, path: '/api/v1/mobile/agents/{agentId}/settings' },
     idempotency: { scope: 'peer-and-epoch', maxEntries: MOBILE_COMMAND_MAX_ENTRIES, ttlMs: MOBILE_COMMAND_TTL_MS },
     ...phoneRoutes(),
   });
@@ -2288,6 +2291,41 @@ async function handleMobileChatSessionsRoute(ctx: AnnexRouteContext, match: RegE
   }
 }
 
+/** A durable agent awake, or being woken from a phone; undefined while it sleeps. */
+function mobileLiveState(agentId: string): 'running' | 'starting' | undefined {
+  if (mobileStartingAgents.has(agentId)) return 'starting';
+  return isAgentRunning(agentId) ? 'running' : undefined;
+}
+
+/** The New agent page's options for one project (#2451). */
+async function handleMobileCreateOptionsRoute(ctx: AnnexRouteContext, match: RegExpMatchArray): Promise<void> {
+  try {
+    const project = await findProjectById(decodeURIComponent(match[1]));
+    if (!project) { sendJson(ctx.res, 404, { error: 'project_not_found' }); return; }
+    sendJson(ctx.res, 200, { version: 1, epoch: mobileCommands.epoch, ...await buildCreateOptions({ id: project.id, path: project.path }) });
+  } catch {
+    // telemetry-exempt: settings and catalog read errors are bounded in the API response.
+    sendJson(ctx.res, 500, { error: 'create_options_failed' });
+  }
+}
+
+/** A durable agent's editable settings and what each can be set to (#2452). */
+async function handleMobileAgentSettingsRoute(ctx: AnnexRouteContext, match: RegExpMatchArray): Promise<void> {
+  try {
+    const info = await findAgentAcrossProjects(decodeURIComponent(match[1]));
+    if (!info || isDisposedAgent(info.config)) { sendJson(ctx.res, 404, { error: 'agent_not_found' }); return; }
+    const project = { id: info.project.id, path: info.project.path };
+    const [settings, options] = await Promise.all([
+      buildAgentSettings(project, info.config, mobileLiveState(info.config.id)),
+      buildAgentSettingsOptions(project.path),
+    ]);
+    sendJson(ctx.res, 200, { version: 1, epoch: mobileCommands.epoch, ...settings, options });
+  } catch {
+    // telemetry-exempt: config read errors are bounded in the API response.
+    sendJson(ctx.res, 500, { error: 'agent_settings_failed' });
+  }
+}
+
 async function runMobileCommand(command: MobileCommand, assertAuthorized: () => void): Promise<unknown> {
   assertAuthorized();
   if ('sessionId' in command) {
@@ -2331,6 +2369,23 @@ async function runMobileCommand(command: MobileCommand, assertAuthorized: () => 
       broadcastSnapshotRefresh();
       throw err;
     } finally { finishMobileStart(id, starting); }
+  }
+  if (command.type === 'agent.create') {
+    const project = await findProjectById(command.projectId);
+    if (!project) throw new MobileControlError('project_not_found', 404);
+    assertAuthorized();
+    const created = await createMobileAgent({ id: project.id, path: project.path }, command, assertAuthorized);
+    broadcastSnapshotRefresh();
+    return created;
+  }
+  if (command.type === 'agent.update') {
+    const durable = await findAgentAcrossProjects(command.agentId);
+    if (!durable || isDisposedAgent(durable.config)) throw new MobileControlError('agent_not_found', 404);
+    assertAuthorized();
+    const updated = await updateMobileAgent({ id: durable.project.id, path: durable.project.path }, durable.config, command,
+      { live: mobileLiveState(command.agentId), assertAuthorized });
+    broadcastSnapshotRefresh();
+    return updated;
   }
   const info = await findAgentAcrossProjects(command.agentId);
   const quick = trackedQuickAgents.get(command.agentId);
@@ -2401,6 +2456,8 @@ const ANNEX_HTTP_ROUTE_TABLE: AnnexHttpRoute[] = [
   { method: 'GET', pattern: /^\/api\/v1\/mobile\/agents\/([^/]+)\/chat(\?.*)?$/, handler: handleMobileChatRoute },
   { method: 'GET', pattern: /^\/api\/v1\/mobile\/agents\/([^/]+)\/chat\/sessions$/, handler: handleMobileChatSessionsRoute },
   { method: 'POST', pattern: /^\/api\/v1\/mobile\/commands$/, handler: handleMobileCommandRoute },
+  { method: 'GET', pattern: /^\/api\/v1\/mobile\/projects\/([^/]+)\/create-options$/, handler: handleMobileCreateOptionsRoute },
+  { method: 'GET', pattern: /^\/api\/v1\/mobile\/agents\/([^/]+)\/settings$/, handler: handleMobileAgentSettingsRoute },
   { method: 'GET', pattern: /^\/api\/v1\/identity$/, handler: handleIdentityRoute },
   { method: 'GET', pattern: /^\/api\/v1\/status$/, handler: handleStatusRoute },
   { method: 'GET', pattern: /^\/api\/v1\/projects$/, handler: handleProjectsRoute },
@@ -3854,6 +3911,7 @@ export function getWsAuthType(ws: WebSocket): WsAuthType {
 
 /** @internal Exposed for testing only. */
 export const _testing = {
+  runMobileCommand,
   get sessionTokens() { return sessionTokens; },
   isValidToken,
   readBody,

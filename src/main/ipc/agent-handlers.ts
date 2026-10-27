@@ -14,7 +14,6 @@ import { appLog } from '../services/log-service';
 import { broadcastSnapshotRefresh } from '../services/annex-server';
 import { bindingManager } from '../services/clubhouse-mcp/binding-manager';
 import { refreshClubhouseModeReadme } from '../services/materialization-service';
-import { applyPersonaToAgent } from '../services/persona-application';
 import * as orchestrationPolicy from '../services/orchestration-policy';
 import * as clubhouseModeSettings from '../services/clubhouse-mode-settings';
 import * as permissionQueue from '../services/annex-permission-queue';
@@ -30,8 +29,10 @@ import { tel, tagError, withErrorType } from '../telemetry/facade';
 import { orchestratorAttr } from '../telemetry/spawn-telemetry';
 import { assertAgentGitName } from '../../shared/agent-name';
 import { isDisposedAgent } from '../../shared/agent-helpers';
-import type { DurableWorktreeOptions, StartDurableCreationParams } from '../../shared/types';
-import { cancelDurableCreation, onDurableCreationEvent, startDurableCreation } from '../services/agent-creation';
+import type { DurableWorktreeOptions } from '../../shared/types';
+import { cancelDurableCreation, injectPersona, onDurableCreationEvent, parseStartCreationParams, parseWorktreeOptions, personaInjection, startDurableCreation } from '../services/agent-creation';
+
+export { parseStartCreationParams };
 import { broadcastToAllWindows } from '../util/ipc-broadcast';
 
 type DeleteMode = Parameters<typeof ATTR.deleteMode>[0];
@@ -160,25 +161,6 @@ function deleteFlow<T extends DeleteResult | void>(mode: DeleteMode, fn: () => P
 type DurableConfigUpdates = Parameters<typeof agentConfig.updateDurableConfig>[2];
 
 
-/**
- * Apply the persona (layered project > user > built-in lookup, plus any
- * front-matter settings) the same way "Apply persona" does, keeping the
- * project-default instructions the worktree was just seeded with. Failures are
- * logged, not thrown. Returns true when the persona was applied.
- */
-async function injectPersona(projectPath: string, agentId: string, persona: string, agentName: string): Promise<boolean> {
-  try {
-    await tel.step('clubhouse.agent.persona_inject', () =>
-      applyPersonaToAgent(projectPath, agentId, persona, { appendToExisting: true }));
-    return true;
-  } catch (err) {
-    appLog('agents', 'warn', 'Failed to inject persona instructions on create', {
-      meta: { agentName, persona, error: err instanceof Error ? err.message : String(err) },
-    });
-    return false;
-  }
-}
-
 async function createDurableAgent(
   projectPath: string,
   name: string,
@@ -217,62 +199,6 @@ async function createDurableAgent(
 
   broadcastSnapshotRefresh();
   return config;
-}
-
-function optionalString(raw: Record<string, unknown>, key: string): string | undefined {
-  const value = raw[key];
-  if (value === undefined) return undefined;
-  if (typeof value !== 'string') throw new Error(`params.${key} must be a string`);
-  return value;
-}
-
-function optionalBoolean(raw: Record<string, unknown>, key: string): boolean | undefined {
-  const value = raw[key];
-  if (value === undefined) return undefined;
-  if (typeof value !== 'boolean') throw new Error(`params.${key} must be a boolean`);
-  return value;
-}
-
-/** Validate the fields of a START_DURABLE_CREATION request; the folder and branch fields are checked again by agent-config (#2221). */
-function parseWorktreeOptions(raw: Record<string, unknown>): DurableWorktreeOptions {
-  const folderName = optionalString(raw, 'folderName');
-  const branchName = optionalString(raw, 'branchName');
-  const branchFrom = optionalString(raw, 'branchFrom');
-  return {
-    ...(folderName !== undefined ? { folderName } : {}),
-    ...(branchName !== undefined ? { branchName } : {}),
-    ...(branchFrom !== undefined ? { branchFrom } : {}),
-  };
-}
-
-export function parseStartCreationParams(raw: Record<string, unknown>): StartDurableCreationParams {
-  const name = raw.name;
-  const color = raw.color;
-  if (typeof name !== 'string' || name.length === 0) throw new Error('params.name must be a non-empty string');
-  if (typeof color !== 'string' || color.length === 0) throw new Error('params.color must be a non-empty string');
-  const mcpIds = raw.mcpIds;
-  if (mcpIds !== undefined && (!Array.isArray(mcpIds) || mcpIds.some((id) => typeof id !== 'string'))) {
-    throw new Error('params.mcpIds must be an array of strings');
-  }
-  const mcpConfigs = raw.mcpConfigs;
-  if (mcpConfigs !== undefined && (typeof mcpConfigs !== 'object' || mcpConfigs === null || Array.isArray(mcpConfigs))) {
-    throw new Error('params.mcpConfigs must be an object');
-  }
-  const model = optionalString(raw, 'model');
-  return {
-    name,
-    color,
-    ...(model !== undefined && model !== 'default' ? { model } : {}),
-    useWorktree: optionalBoolean(raw, 'useWorktree'),
-    orchestrator: optionalString(raw, 'orchestrator') as OrchestratorId | undefined,
-    freeAgentMode: optionalBoolean(raw, 'freeAgentMode'),
-    mcpIds: mcpIds as string[] | undefined,
-    mcpConfigs: mcpConfigs as Record<string, Record<string, string>> | undefined,
-    persona: optionalString(raw, 'persona'),
-    parentAgentId: optionalString(raw, 'parentAgentId'),
-    disposable: optionalBoolean(raw, 'disposable'),
-    ...parseWorktreeOptions(raw),
-  };
 }
 
 let creationEventsForwarded = false;
@@ -366,12 +292,7 @@ export function registerAgentHandlers(): void {
     [stringArg(), objectArg<Record<string, unknown>>()],
     async (_event, projectPath, rawParams) => {
       const params = parseStartCreationParams(rawParams);
-      const { persona, name } = params;
-      const { agentId, config } = await startDurableCreation(projectPath, params, {
-        inject: persona
-          ? async (created) => { if (created.worktreePath) await injectPersona(projectPath, created.id, persona, name); }
-          : undefined,
-      });
+      const { agentId, config } = await startDurableCreation(projectPath, params, personaInjection(projectPath, params));
       return { agentId, config };
     },
   ));
