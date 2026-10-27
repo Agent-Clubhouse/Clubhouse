@@ -2,8 +2,8 @@
  * Durable agents from a phone (#2451, #2452): what the New agent page and the
  * Details → Settings card offer, and the agent.create / agent.update mobile
  * commands. Validation and writes go through the same services the desktop
- * uses; Free Agent Mode is read-only here, since remote commands cannot
- * elevate permissions.
+ * uses. A paired phone has full control, Free Agent Mode included (#2462):
+ * it can already approve every request one by one.
  */
 
 import type { DurableAgentConfig, DurableConfigUpdates, McpCatalogEntry, StartDurableCreationParams } from '../../shared/types';
@@ -49,6 +49,9 @@ export async function effectiveOrchestrators(projectPath: string) {
 }
 
 const chatAvailable = (orchestrator: string): boolean => isChatEnabled() && !!resolveChatDriver(orchestrator);
+/** Free Agent Mode needs a CLI with permission support, as the New agent page and Settings card require. */
+const permissionsSupported = (orchestrator: string): boolean =>
+  getAvailableOrchestrators().find((o) => o.id === orchestrator)?.capabilities?.permissions ?? false;
 
 async function modelOptions(projectPath: string, orchestrator: string): Promise<Array<{ id: string; label: string }>> {
   try {
@@ -103,7 +106,8 @@ export async function buildCreateOptions(project: MobileAgentProject) {
       model: 'default',
       useWorktree: isGitRepo,
     },
-    freeAgentMode: { allowed: false },
+    // Offered for orchestrators with `permissions`, as on the desktop page.
+    freeAgentMode: { allowed: true },
   };
 }
 
@@ -145,7 +149,7 @@ export async function buildAgentSettings(project: MobileAgentProject, config: Du
       runtime: { ...field(config.runtimeMode ?? 'default', runtimeEditable), resolved: runtime },
       persona: field(config.persona ?? null, 'sleeping'),
       clubhouseMode: { ...field(clubhouseProject ? !config.clubhouseModeOverride : null, clubhouseProject ? 'sleeping' : 'never'), projectEnabled: clubhouseProject },
-      freeAgentMode: field(!!config.freeAgentMode, 'never'),
+      freeAgentMode: field(!!config.freeAgentMode, permissionsSupported(orchestrator) ? 'sleeping' : 'never'),
       // Only chat agents idle-sleep; the value is kept either way.
       idleSleep: { ...field(idle, 'always'), minutes: resolved.minutes, source: resolved.source, applies: runtime === 'chat' },
     },
@@ -200,6 +204,7 @@ export async function createMobileAgent(project: MobileAgentProject, command: Mo
   if (branchName !== undefined) assertGitName(branchName, 'branch', 'invalid_branch_name');
   const orchestrator = command.orchestrator ?? (await effectiveOrchestrators(project.path))[0]?.id ?? DEFAULT_ORCHESTRATOR;
   await assertOrchestrator(project.path, orchestrator);
+  if (command.freeAgentMode && !permissionsSupported(orchestrator)) throw new MobileControlError('free_agent_mode_unavailable');
   if (command.persona !== undefined) await assertPersona(project.path, command.persona);
   if (command.mcpIds?.length) {
     const catalog = new Set((await readMcpCatalog(project.path).catch((): McpCatalogEntry[] => [])).map((m) => m.id));
@@ -208,7 +213,7 @@ export async function createMobileAgent(project: MobileAgentProject, command: Mo
   let params: StartDurableCreationParams;
   try {
     params = parseStartCreationParams({
-      name, color: command.color, model: command.model, useWorktree, orchestrator,
+      name, color: command.color, model: command.model, useWorktree, orchestrator, freeAgentMode: command.freeAgentMode,
       mcpIds: command.mcpIds?.length ? command.mcpIds : undefined, persona: command.persona,
       folderName, branchName, branchFrom,
     });
@@ -278,6 +283,11 @@ export async function updateMobileAgent(
     // Only an agent in a Clubhouse mode project can opt out of it.
     if (!isClubhouseModeEnabled(project.path)) throw new MobileControlError('clubhouse_mode_unavailable');
     updates.clubhouseModeOverride = !command.clubhouseMode;
+  }
+  if (command.freeAgentMode !== undefined) {
+    // Turning it off is always allowed; on needs a CLI with permission support.
+    if (command.freeAgentMode && !permissionsSupported(orchestrator)) throw new MobileControlError('free_agent_mode_unavailable');
+    updates.freeAgentMode = command.freeAgentMode;
   }
   if (idleSleep !== undefined) updates.idleSleep = idleSleep === 'inherit' ? null : idleSleep;
 

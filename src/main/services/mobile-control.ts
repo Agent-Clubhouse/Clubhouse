@@ -20,8 +20,8 @@ const FIELDS: Record<MobileCommand['type'], string[]> = {
   'agent.start': ['agentId', 'message', 'resume'],
   'agent.stop': ['agentId'],
   'agent.spawn': ['projectId', 'prompt', 'model', 'orchestrator'],
-  'agent.create': ['projectId', 'name', 'color', 'orchestrator', 'model', 'persona', 'useWorktree', 'mcpIds', 'branchName', 'branchFrom', 'folderName'],
-  'agent.update': ['agentId', 'name', 'color', 'emoji', 'orchestrator', 'model', 'runtime', 'persona', 'clubhouseMode', 'idleSleep'],
+  'agent.create': ['projectId', 'name', 'color', 'orchestrator', 'model', 'persona', 'freeAgentMode', 'useWorktree', 'mcpIds', 'branchName', 'branchFrom', 'folderName'],
+  'agent.update': ['agentId', 'name', 'color', 'emoji', 'orchestrator', 'model', 'runtime', 'persona', 'clubhouseMode', 'freeAgentMode', 'idleSleep'],
   'project.setPinned': ['projectId', 'pinned'],
   'project.setInactive': ['projectId', 'inactive'],
   'helper.approve': ['requestId', 'force'],
@@ -29,11 +29,11 @@ const FIELDS: Record<MobileCommand['type'], string[]> = {
 };
 /** Fields a command may leave out. Every agent.update setting is optional, but it needs at least one. */
 const OPTIONAL = new Set(['delivery', 'message', 'resume', 'model', 'orchestrator', 'attachmentIds', 'force', 'effort']);
-const CREATE_OPTIONAL = new Set(['orchestrator', 'model', 'persona', 'useWorktree', 'mcpIds', 'branchName', 'branchFrom', 'folderName']);
+const CREATE_OPTIONAL = new Set(['orchestrator', 'model', 'persona', 'freeAgentMode', 'useWorktree', 'mcpIds', 'branchName', 'branchFrom', 'folderName']);
 const isOptional = (type: MobileCommand['type'], key: string): boolean =>
   type === 'agent.update' ? key !== 'agentId' : type === 'agent.create' ? CREATE_OPTIONAL.has(key)
     : type === 'chat.setModel' && key === 'model' ? false : OPTIONAL.has(key);
-const BOOLEAN_FIELDS = new Set(['resume', 'useWorktree', 'clubhouseMode', 'pinned', 'inactive', 'force']);
+const BOOLEAN_FIELDS = new Set(['resume', 'useWorktree', 'clubhouseMode', 'pinned', 'inactive', 'force', 'freeAgentMode']);
 /** Fields agent.update clears with null. */
 const NULLABLE_ON_UPDATE = new Set(['emoji', 'persona']);
 const record = (v: unknown): v is Record<string, unknown> => !!v && typeof v === 'object' && !Array.isArray(v);
@@ -44,8 +44,6 @@ export function parseMobileCommand(value: unknown): MobileCommand {
   if (value.version !== 1) throw new MobileControlError('unsupported_version', 400);
   if (!text(value.commandId, 128) || !text(value.epoch, 128) || !MOBILE_COMMAND_TYPES.includes(value.type as MobileCommand['type'])) throw new MobileControlError('invalid_command', 400);
   const type = value.type as MobileCommand['type'];
-  // Remote commands cannot elevate permissions: say so, rather than a bare unknown field.
-  if ((type === 'agent.create' || type === 'agent.update') && 'freeAgentMode' in value) throw new MobileControlError('free_agent_mode_not_allowed', 403);
   const fields = FIELDS[type];
   if (Object.keys(value).some((k) => !['version', 'commandId', 'epoch', 'type', ...fields].includes(k))) throw new MobileControlError('invalid_command', 400);
   for (const key of fields) {

@@ -26,19 +26,20 @@ export type MobileCommand = CommandBase & (
   | { type: 'helper.approve'; requestId: string; force?: boolean }
   | { type: 'helper.decline'; requestId: string }
 );
-/** A durable agent, as the New agent page makes one. Free Agent Mode is never accepted from a phone. */
+/** A durable agent, as the New agent page makes one. */
 export interface MobileAgentCreate {
   projectId: string; name: string; color: string; orchestrator?: string; model?: string; persona?: string;
-  useWorktree?: boolean; mcpIds?: string[]; branchName?: string; branchFrom?: string; folderName?: string;
+  freeAgentMode?: boolean; useWorktree?: boolean; mcpIds?: string[]; branchName?: string; branchFrom?: string; folderName?: string;
 }
-/** Settings a phone may change; null clears. Free Agent Mode is never accepted from a phone. */
+/** Settings a phone may change; null clears. */
 export interface MobileAgentUpdate {
   agentId: string; name?: string; color?: string; emoji?: string | null; orchestrator?: string; model?: string;
-  runtime?: 'default' | 'chat' | 'terminal'; persona?: string | null; clubhouseMode?: boolean; idleSleep?: AgentIdleSleep;
+  runtime?: 'default' | 'chat' | 'terminal'; persona?: string | null; clubhouseMode?: boolean; freeAgentMode?: boolean; idleSleep?: AgentIdleSleep;
 }
 /** What the desktop windows patch into their agent list after a phone's agent.update. */
 export interface AnnexAgentUpdate {
   agentId: string; name: string; color: string; emoji: string | null; model: string | null; orchestrator: string | null;
+  freeAgentMode: boolean;
 }
 /**
  * The chat snapshot's `chatControls`: what the composer's level, model and

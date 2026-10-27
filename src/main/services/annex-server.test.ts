@@ -44,7 +44,7 @@ vi.mock('./mobile-agents', () => ({
   buildAgentSettingsOptions: vi.fn(async () => ({ orchestrators: [], idleSleep: { minutes: [15, 30, 60, 240], appMinutes: 30 } })),
   createMobileAgent: vi.fn(async () => ({ agentId: 'durable_new', state: 'creating' })),
   updateMobileAgent: vi.fn(async () => ({ agentId: 'a', settings: { name: { value: 'calm-otter' }, color: { value: 'rose' }, emoji: { value: null },
-    model: { value: 'default' }, orchestrator: { value: 'codex-cli' } } })),
+    model: { value: 'default' }, orchestrator: { value: 'codex-cli' }, freeAgentMode: { value: true } } })),
 }));
 
 // Real HTTP sockets in this suite must never expose test fixtures to the LAN.
@@ -853,7 +853,7 @@ describe('annex-server', () => {
     const body = JSON.parse((await request(port, 'GET', '/api/v1/mobile/capabilities', undefined, authHeaders(token))).body);
     expect(body.commands).toEqual(expect.arrayContaining(['chat.setModel', 'chat.setLevel']));
     expect(body.chatControls).toEqual({ version: 1 });
-    expect(body.permissions).toMatchObject({ version: 1, persistentApprovals: true });
+    expect(body.permissions).toEqual({ version: 1, persistentApprovals: true, freeAgentMode: true });
   });
 
   it('serves create options per registered project', async () => {
@@ -900,7 +900,7 @@ describe('annex-server', () => {
     expect(mobileAgents.updateMobileAgent).toHaveBeenCalledWith({ id: 'p', path: '/test/project' }, expect.objectContaining({ id: 'a' }), update,
       { live: 'running', assertAuthorized: allow });
     expect(mockBroadcastToAllWindows).toHaveBeenCalledWith('annex:agent-updated',
-      { agentId: 'a', name: 'calm-otter', color: 'rose', emoji: null, model: null, orchestrator: 'codex-cli' });
+      { agentId: 'a', name: 'calm-otter', color: 'rose', emoji: null, model: null, orchestrator: 'codex-cli', freeAgentMode: true });
   });
 
   it('rejects mobile bearer control even on HTTP fallback and leaves legacy reads working', async () => {

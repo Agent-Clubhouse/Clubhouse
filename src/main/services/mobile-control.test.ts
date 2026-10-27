@@ -219,12 +219,15 @@ describe('agent.create and agent.update parsing (#2451, #2452)', () => {
     expect(code(update({ icon: 'x.png' }))).toBe('invalid_command');
     expect(code(update({ instructions: 'x' }))).toBe('invalid_command');
   });
-  it('never accepts Free Agent Mode from a phone, whatever its value', () => {
-    for (const freeAgentMode of [true, false, null]) {
-      expect(code(create({ freeAgentMode }))).toBe('free_agent_mode_not_allowed');
-      expect(code(update({ idleSleep: 30, freeAgentMode }))).toBe('free_agent_mode_not_allowed');
+  it('accepts Free Agent Mode as a boolean on both commands (#2462)', () => {
+    for (const freeAgentMode of [true, false]) {
+      expect(code(create({ freeAgentMode }))).toBe('ok');
+      expect(code(update({ freeAgentMode }))).toBe('ok');
     }
-    try { parseMobileCommand(create({ freeAgentMode: true })); } catch (e) { expect((e as MobileControlError).statusCode).toBe(403); }
+    for (const freeAgentMode of [null, 'yes', 1]) {
+      expect(code(create({ freeAgentMode }))).toBe('invalid_command');
+      expect(code(update({ freeAgentMode }))).toBe('invalid_command');
+    }
   });
   it('needs at least one setting on agent.update and validates each', () => {
     expect(code(update())).toBe('invalid_command');
