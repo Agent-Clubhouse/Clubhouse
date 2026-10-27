@@ -678,6 +678,8 @@ export const ATTR = {
     'GET /api/v1/mobile/agents/:id/chat',
     'GET /api/v1/mobile/agents/:id/chat/sessions',
     'POST /api/v1/mobile/commands',
+    'GET /api/v1/mobile/projects/:id/create-options',
+    'GET /api/v1/mobile/agents/:id/settings',
     'GET /api/v1/identity',
     'GET /api/v1/status',
     'GET /api/v1/projects',
