@@ -6,6 +6,13 @@ import os from 'os';
 import path from 'path';
 import { readMobileChatContent } from './annex-chat-content';
 vi.mock('./annex-chat-content', () => ({ readMobileChatContent: vi.fn() }));
+import { agentRoots } from './agent-runtime/chat-files';
+vi.mock('./agent-runtime/chat-files', async (importOriginal) => ({
+  ...await importOriginal<typeof import('./agent-runtime/chat-files')>(),
+  agentRoots: vi.fn(async () => ['/test/project/.clubhouse/agents/a', '/test/project']),
+}));
+import { getSettings as getExperimentalSettings } from './experimental-settings';
+vi.mock('./experimental-settings', () => ({ getSettings: vi.fn(() => ({})), saveSettings: vi.fn() }));
 import * as mobileAgents from './mobile-agents';
 vi.mock('./mobile-agents', () => ({
   buildCreateOptions: vi.fn(async (project: { id: string }) => ({ projectId: project.id, orchestrators: [], suggestedName: 'brave-otter' })),
@@ -787,6 +794,23 @@ describe('annex-server', () => {
         expect(JSON.parse(older.body)).toMatchObject({ events: [events[1]], lastSeq: 3, nextBeforeSeq: 2 });
         expect((await request(port, 'GET', '/api/v1/mobile/agents/a/chat?limit=0', undefined, authHeaders(token))).status).toBe(400);
       } finally { clearChatRuntimes(); }
+    });
+
+    it('sends the folders the content route serves from only while rich content is on (#2457)', async () => {
+      vi.mocked(projectStore.list).mockReturnValue([{ id: 'p', name: 'Project', path: '/test/project' }] as any);
+      vi.mocked(agentConfigModule.listDurable).mockReturnValue([{ id: 'a', name: 'agent', color: 'blue', createdAt: '2026-01-01' }] as any);
+      const { port, token } = await startAndPair();
+      const chat = async () => JSON.parse((await request(port, 'GET', '/api/v1/mobile/agents/a/chat', undefined, authHeaders(token))).body);
+      expect((await chat()).contentRoots).toEqual([]);
+      expect(agentRoots).not.toHaveBeenCalled();
+      vi.mocked(getExperimentalSettings).mockReturnValue({ richChatContent: true } as any);
+      try {
+        expect((await chat()).contentRoots).toEqual(['/test/project/.clubhouse/agents/a', '/test/project']);
+        expect(agentRoots).toHaveBeenCalledWith('a');
+        // A failed lookup offers no absolute links rather than failing the snapshot.
+        vi.mocked(agentRoots).mockRejectedValueOnce(new Error('boom'));
+        expect((await chat()).contentRoots).toEqual([]);
+      } finally { vi.mocked(getExperimentalSettings).mockReturnValue({} as any); }
     });
     it('uses epoch-aware top-level replay metadata without changing legacy replay', async () => {
       const { port, token } = await startAndPair();

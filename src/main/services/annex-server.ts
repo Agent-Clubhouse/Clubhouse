@@ -13,6 +13,7 @@ import { isRevertRunning } from './agent-runtime/checkpoint-tracker';
 import { readChatTranscript, listChatSessions } from './agent-runtime/chat-transcript';
 import { getSettings as getExperimentalSettings } from './experimental-settings';
 import { readMobileChatContent } from './annex-chat-content';
+import { agentRoots } from './agent-runtime/chat-files';
 import { buildAgentSettings, buildAgentSettingsOptions, buildCreateOptions, createMobileAgent, updateMobileAgent } from './mobile-agents';
 import { remoteChatEvent } from './annex-chat-echo';
 import { MOBILE_ATTACHMENTS_CAPABILITY, MobileAttachmentService, MobileUploadError, isUploadContentType, readCappedBody } from './mobile-attachments';
@@ -2250,6 +2251,10 @@ async function handleMobileChatRoute(ctx: AnnexRouteContext, match: RegExpMatchA
     const current = events.filter((e) => e.sessionId === sessionId);
     const eligible = beforeSeq === undefined ? current : current.filter((e) => e.seq < beforeSeq);
     const page = eligible.slice(-limit);
+    // The folders `/content?path=` serves from (#2457), so the phone can link absolute
+    // paths under them. A hint: the content route still checks every path.
+    const contentRoots = getExperimentalSettings().richChatContent === true
+      ? await agentRoots(agentId).catch((): string[] => []) : [];
     sendJson(ctx.res, 200, {
       version: 1, epoch: mobileCommands.epoch, agentId, sessionId: sessionId ?? null,
       canStart: !!durable && !isAgentRunning(agentId) && !mobileStartingAgents.has(agentId),
@@ -2257,6 +2262,7 @@ async function handleMobileChatRoute(ctx: AnnexRouteContext, match: RegExpMatchA
       state: live ? runtime.getState() : 'sleeping', capabilities: live ? runtime.getCapabilities?.() ?? null : null,
       events: page.map(remoteChatEvent), lastSeq: current[current.length - 1]?.seq ?? 0, truncated: eligible.length > limit,
       nextBeforeSeq: eligible.length > limit ? page[0]?.seq ?? null : null,
+      contentRoots,
       ...(live ? runtime.getQueueState?.() ?? { queuedMessageIds: [], queueStateSeq: 0, queueRemovalSupported: false }
         : { queuedMessageIds: [], queueStateSeq: 0, queueRemovalSupported: false }),
       ...(live ? pendingInteractions(current) : { pendingPermissions: [], pendingQuestions: [] }),
