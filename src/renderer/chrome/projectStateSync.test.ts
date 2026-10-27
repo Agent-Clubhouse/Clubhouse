@@ -108,6 +108,22 @@ describe('chromeStore with the main-process sync (#2458)', () => {
     expect(JSON.parse(localStorage.getItem(CHROME_STORAGE_KEY)!)).toMatchObject({ sidebarWidth: 300, pinnedProjectIds: ['saved', 'phone'] });
   });
 
+  it('with the new layout off, a later lazy load keeps main\'s state over the older localStorage copy', async () => {
+    vi.resetModules();
+    const flag = await import('./chromeFlag');
+    flag.useChromeFlagStore.setState({ enabled: false });
+    const fresh = await import('./chromeStore');
+    localStorage.setItem(CHROME_STORAGE_KEY, JSON.stringify({ version: 2, pinnedProjectIds: ['stale'], sidebarWidth: 300 }));
+    const main = fakeMain();
+    fresh.connectProjectStateSync(main.api);
+    // Main holds no pins (unpinned since): the same as this window's untouched defaults.
+    main.hydrates[0].resolve(state());
+    await flush();
+    fresh.ensureChromeStateLoaded();
+    expect(fresh.useChromeStore.getState()).toMatchObject({ pinnedProjectIds: [], sidebarWidth: 300 });
+    fresh.connectProjectStateSync(undefined);
+  });
+
   it('applies desktop actions at once and sends each one to main', async () => {
     const main = fakeMain();
     connectProjectStateSync(main.api);

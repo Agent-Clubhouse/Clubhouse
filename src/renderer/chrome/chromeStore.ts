@@ -569,6 +569,8 @@ export const useChromeStore = create<ChromeState>((set, get) => {
     },
 
     replaceProjectState: (state) => {
+      // Load the saved state first (new layout off), so its older copy can't land on top of main's later.
+      ensureChromeStateLoaded();
       const current = pickProjectState(get());
       if (JSON.stringify(current) === JSON.stringify(state)) return;
       set(state);
