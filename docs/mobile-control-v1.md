@@ -16,7 +16,7 @@ New `POST https://host:mainPort/pair` uses existing `{pin, publicKey, alias, ico
 Authenticated `GET /api/v1/mobile/capabilities` returns:
 
 ```json
-{"version":1,"epoch":"uuid","controlAuth":"mtls-pinned-client","controlAvailable":true,"commands":["chat.send","chat.interrupt","chat.permission","chat.question","chat.queue.remove","agent.start","agent.stop","agent.spawn","agent.create","agent.update"],"pairing":{"sessionRevokePath":"/api/v1/mobile/pairing"},"events":{"transport":"annex-websocket","replayRequest":"mobile:replay","queueState":"queue_state"},"createOptions":{"version":1,"path":"/api/v1/mobile/projects/{projectId}/create-options"},"agentSettings":{"version":1,"path":"/api/v1/mobile/agents/{agentId}/settings"},"idempotency":{"scope":"peer-and-epoch","maxEntries":2048,"ttlMs":3600000}}
+{"version":1,"epoch":"uuid","controlAuth":"mtls-pinned-client","controlAvailable":true,"commands":["chat.send","chat.interrupt","chat.permission","chat.question","chat.queue.remove","agent.start","agent.stop","agent.spawn","agent.create","agent.update"],"pairing":{"sessionRevokePath":"/api/v1/mobile/pairing"},"attachments":{"version":1,"imageTypes":["image/png","image/jpeg","image/gif","image/webp"],"maxImageBytes":3932160,"maxCount":10},"events":{"transport":"annex-websocket","replayRequest":"mobile:replay","queueState":"queue_state"},"createOptions":{"version":1,"path":"/api/v1/mobile/projects/{projectId}/create-options"},"agentSettings":{"version":1,"path":"/api/v1/mobile/agents/{agentId}/settings"},"idempotency":{"scope":"peer-and-epoch","maxEntries":2048,"ttlMs":3600000}}
 ```
 
 A 404 means unsupported: do not send mobile commands. Gate durable-agent creation on `commands` including `agent.create` and `createOptions.version >= 1`, and settings on `agent.update` and `agentSettings.version >= 1`; older desktops offer quick agents (`agent.spawn`) only. A new epoch invalidates command retries and replay cursors. No permission-level changes, raw shell commands, arbitrary filesystem paths, credentials, or gateway provisioning commands exist.
@@ -25,7 +25,7 @@ A 404 means unsupported: do not send mobile commands. Gate durable-agent creatio
 
 `POST /api/v1/mobile/commands` JSON base `{version:1, commandId:"UUID-or-other-unique-id", epoch:"capabilities epoch", type:"..."}`. Commands reject unknown fields. Retry identical JSON with the same commandId; never assign a new ID after a lost reply. IDs are scoped to paired client identity and epoch. Reusing an ID for different content returns conflict. Receipts are retained for one hour, bounded at 2048 entries; capacity rejects new commands instead of evicting valid receipts. After expiry or host restart the result can be uncertain: reconcile state, do not blindly retry.
 
-- `chat.send`: `{agentId, sessionId, text, delivery?}`; delivery `auto|prompt|steer|queued` (default auto).
+- `chat.send`: `{agentId, sessionId, text, delivery?, attachmentIds?}`; delivery `auto|prompt|steer|queued` (default auto). `attachmentIds` (1–10 distinct ids from the upload route below) sends images; `text` may then be `""` for an image-only message. See [Image attachments](#image-attachments).
 - `chat.queue.remove`: `{agentId, sessionId, messageIds:["id"]}`; removes only messages still held in the runtime queue, returns `{removed:["id"]}`. A native-provider queue may return no removed IDs.
 - `chat.interrupt`: `{agentId, sessionId}`; cancels the turn and keeps the session.
 - `chat.permission`: `{agentId, sessionId, requestId, optionId}`; exact pending option required. Mobile only permits one-time allow/reject/cancel options, not persistent approval changes.
@@ -38,7 +38,38 @@ A 404 means unsupported: do not send mobile commands. Gate durable-agent creatio
 
 For `chat.send`, `result` is `{delivery:"prompt"|"steer"|"queued",messageId:"authoritative runtime ID"}`. The matching `user_message.data` additionally echoes `clientCommandId` equal to the request commandId, including queued/steered sends. The event may arrive before the receipt: reconcile by clientCommandId immediately, then by messageId; never guess by text or timestamps. Local/legacy sends omit the optional field.
 
-Receipt on success: `{version:1,commandId,epoch,status:"completed",result:{...}}`. Completion means command dispatch completed, not agent turn completion. Errors: `{version:1,commandId?,epoch,status:"rejected"|"failed",error:{code,message}}`. `message` is the code, or for some refusals (`invalid_name`, `create_refused`, `agent_running`) a sentence the desktop would show; branch on `code` only. HTTP 400 invalid_command/unsupported_version; 403 client_certificate_required; 404 agent_not_found/project_not_found; 409 epoch_mismatch/command_conflict/session_mismatch/not_chat/pending_request_not_found; 429 command_capacity; 500 command_failed. A failed command can have partial effects; retain its receipt and reconcile.
+Receipt on success: `{version:1,commandId,epoch,status:"completed",result:{...}}`. Completion means command dispatch completed, not agent turn completion. Errors: `{version:1,commandId?,epoch,status:"rejected"|"failed",error:{code,message}}`. `message` is the code, or for some refusals (`invalid_name`, `create_refused`, `agent_running`) a sentence the desktop would show; branch on `code` only. HTTP 400 invalid_command/unsupported_version; 403 client_certificate_required; 404 agent_not_found/project_not_found; 409 epoch_mismatch/command_conflict/session_mismatch/not_chat/pending_request_not_found/images_not_supported/attachment_unavailable; 429 command_capacity; 500 command_failed. A failed command can have partial effects; retain its receipt and reconcile.
+
+## Image attachments
+
+Desktops that support them advertise `attachments: {version:1, imageTypes, maxImageBytes, maxCount}` in capabilities; without it, send text only. Images go in two steps: upload each one, then name the ids in `chat.send`.
+
+**Upload:** `POST /api/v1/mobile/agents/:agentId/attachments` with the raw image bytes as the body and `Content-Type` set to one of `imageTypes` or `application/octet-stream`. Same pinned client certificate as commands (a bearer token alone gets 403). No JSON wrapper, no base64. The desktop sniffs the bytes (the declared type never counts) and stores the image exactly as a desktop paste. Success, HTTP 200:
+
+```json
+{"version":1,"attachmentId":"uuid","mimeType":"image/png","bytes":123456,"width":1179,"height":2556}
+```
+
+`width`/`height` are omitted when the header can't be read. Errors are `{version:1,error:"code"}`:
+
+| HTTP | error | meaning |
+| --- | --- | --- |
+| 400 | `empty_body` / `upload_failed` | no bytes / unreadable request |
+| 403 | `client_certificate_required` / `authorization_revoked` | not the pinned client certificate, or trust changed mid-upload |
+| 404 | `agent_not_found` | unknown or disposed agent |
+| 409 | `not_chat` | the agent isn't a running chat agent (start it first) |
+| 409 | `images_not_supported` | the agent's `capabilities.images` isn't `true` |
+| 413 | `too_large` | over `maxImageBytes` (3.75 MB; checked from Content-Length before reading, the connection then closes) |
+| 415 | `unsupported_media_type` / `unsupported_image` | wrong Content-Type / bytes aren't PNG, JPEG, GIF or WebP |
+| 429 | `rate_limited` / `quota_exceeded` | per-peer limits below; honor `Retry-After` (seconds) |
+
+Limits per paired peer: 20 uploads a minute, and 200 uploads or 256 MB per rolling 24 hours (refused uploads with a valid Content-Type count too). Downscale or recompress on the phone to fit `maxImageBytes`; the desktop never resizes.
+
+An `attachmentId` belongs to the peer and agent that uploaded it and lives 24 hours (or until desktop restart). It can be sent more than once. Uploading is not idempotent: retrying an upload after a lost reply gives a new id, which is harmless.
+
+**Send:** `chat.send` with `attachmentIds`. The ids are part of the command fingerprint, so a retry must repeat them in the same order. Rejections (`status:"rejected"`, HTTP 409): `images_not_supported` (the running session can't take images; check `capabilities.images` in the chat snapshot), and `attachment_unavailable` (an id that is unknown, expired, another peer's or another agent's, or whose file vanished). Nothing is sent when any id fails.
+
+**Echo:** the `user_message` event carries the images as content blocks `{type:"image", mimeType, mediaRef?, width?, height?, path?}`. `path` is only the file name. Fetch the bytes through `/content?mediaRef=` ([mobile-phone-content.md](mobile-phone-content.md)). Reconcile with your optimistic bubble by `clientCommandId` as for text.
 
 ## Chat state and history
 
