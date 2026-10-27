@@ -91,7 +91,12 @@ export type MessageDelivery =
 
 export type ContentBlock =
   | { type: 'text'; text: string }
-  | { type: 'image'; mimeType: string; data?: string; path?: string; uri?: string }
+  /**
+   * `mediaRef`, `width` and `height` are added when a user's image is
+   * echoed: the runtime stores a copy in the agent's media folder so remote
+   * clients can read it by reference (Annex never sends them `path` or `data`).
+   */
+  | { type: 'image'; mimeType: string; data?: string; path?: string; uri?: string; mediaRef?: string; width?: number; height?: number }
   | { type: 'resource'; uri: string; mimeType?: string; text?: string }
   | { type: 'file'; path: string };
 

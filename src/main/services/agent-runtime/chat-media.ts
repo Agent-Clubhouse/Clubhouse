@@ -19,7 +19,7 @@ import * as fsp from 'fs/promises';
 import * as path from 'path';
 import { createHash, randomUUID } from 'crypto';
 import { promises as dns } from 'dns';
-import type { ChatEventDraft, ChatImage, ChatMediaAssetResult } from '../../../shared/chat';
+import type { ChatEventDraft, ChatImage, ChatMediaAssetResult, ContentBlock } from '../../../shared/chat';
 import { CHAT_MEDIA_MAX_BYTES, CHAT_MEDIA_MAX_PIXELS, CHAT_MEDIA_TYPES, isMediaAssetId, isMediaRef, mediaDimensions, sniffMediaType } from '../../../shared/chat';
 import { agentMediaDir } from './chat-transcript';
 import { appLog } from '../log-service';
@@ -137,7 +137,11 @@ export async function readMedia(agentId: string, mediaRef: string): Promise<{ mi
 /** Read a local image the agent named, if it's allowed and an image. */
 async function readSourceImage(sourcePath: string, roots: readonly string[]): Promise<Uint8Array | undefined> {
   const real = await resolveAllowedPath(sourcePath, roots);
-  if (!real) return undefined;
+  return real ? readImageFile(real) : undefined;
+}
+
+/** A regular file's bytes, up to the media cap; undefined when it isn't one or is too large. */
+async function readImageFile(real: string): Promise<Uint8Array | undefined> {
   // One handle for the check and the read: no swapping the file in between, and
   // non-blocking so a FIFO can't stall the agent's event chain.
   const handle = await fsp.open(real, fs.constants.O_RDONLY | (fs.constants.O_NONBLOCK ?? 0)).catch((): null => null);
@@ -223,6 +227,7 @@ export class ChatMediaPolicy {
   }
 
   async apply(draft: ChatEventDraft): Promise<ChatEventDraft | null> {
+    if (draft.type === 'user_message') return this.withUserImages(draft);
     if (draft.type !== 'tool_call' && draft.type !== 'tool_call_update') return draft;
     const { toolCallId } = draft.data;
     if (this.dropped.has(toolCallId)) return null;
@@ -245,6 +250,33 @@ export class ChatMediaPolicy {
     if (lost && draft.type === 'tool_call_update' && this.mediaOnly.has(toolCallId) && !draft.data.error) data.error = 'The image could not be shown';
     if (draft.type === 'tool_call_update' && draft.data.rawOutput !== undefined) data.rawOutput = scrubRawOutput(draft.data.rawOutput);
     return { ...draft, data } as ChatEventDraft;
+  }
+
+  /**
+   * A user's attached images (composer or phone) get a stored copy and its
+   * `mediaRef`, so a phone can show them by reference instead of by desktop
+   * path (#2453). Done whatever the rich content flag says: the image is the
+   * user's own, and Annex serves media only through its flag-gated content
+   * route. Only user and Annex messages: their image paths come from
+   * attachment staging, which already checked them.
+   */
+  private async withUserImages(draft: Extract<ChatEventDraft, { type: 'user_message' }>): Promise<ChatEventDraft> {
+    const { content, source } = draft.data;
+    if ((source !== 'user' && source !== 'annex') || !content.some((b) => b.type === 'image' && b.path && !b.mediaRef)) return draft;
+    const out: ContentBlock[] = [];
+    for (const block of content) {
+      if (block.type !== 'image' || !block.path || block.mediaRef) { out.push(block); continue; }
+      let stored: ChatImage | undefined;
+      try {
+        const bytes = await readImageFile(block.path);
+        stored = bytes && await storeMedia(this.opts.agentId, bytes);
+      } catch (err) {
+        // telemetry-exempt: the echo only loses its thumbnail; logged locally.
+        appLog('core:chat', 'warn', 'Could not store a sent image', { meta: { agentId: this.opts.agentId, error: err instanceof Error ? err.message : String(err) } });
+      }
+      out.push(stored?.mediaRef ? { ...block, mediaRef: stored.mediaRef, ...(stored.width && stored.height && { width: stored.width, height: stored.height }) } : block);
+    }
+    return { ...draft, data: { ...draft.data, content: out } };
   }
 
   private async store(images: ChatImage[]): Promise<ChatImage[]> {

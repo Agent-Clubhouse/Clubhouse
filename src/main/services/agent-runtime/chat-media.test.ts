@@ -254,6 +254,41 @@ describe('ChatMediaPolicy', () => {
   });
 });
 
+describe('ChatMediaPolicy: user images (#2453)', () => {
+  const sent = (source: 'user' | 'annex' | 'mcp', file: string): ChatEventDraft => ({ type: 'user_message', data: {
+    messageId: 'm1', source, delivery: 'prompt',
+    content: [{ type: 'text', text: 'look' }, { type: 'image', mimeType: 'image/png', path: file }, { type: 'file', path: '/tmp/notes.txt' }],
+  } });
+
+  it('stores a sent image and adds its mediaRef, flag on or off, keeping the desktop path in the transcript', async () => {
+    fs.mkdirSync(outside, { recursive: true });
+    const file = path.join(outside, 'phone.png');
+    const bytes = png(4, 5);
+    fs.writeFileSync(file, bytes);
+    const ref = `${createHash('sha256').update(bytes).digest('hex')}.png`;
+    for (const enabled of [false, true]) {
+      const out = await policy(enabled).apply(sent('annex', file));
+      expect(out).toEqual({ type: 'user_message', data: { messageId: 'm1', source: 'annex', delivery: 'prompt', content: [
+        { type: 'text', text: 'look' },
+        { type: 'image', mimeType: 'image/png', path: file, mediaRef: ref, width: 4, height: 5 },
+        { type: 'file', path: '/tmp/notes.txt' },
+      ] } });
+    }
+    expect(fs.readFileSync(path.join(agentMediaDir(AGENT), ref))).toEqual(Buffer.from(bytes));
+  });
+
+  it('leaves other sources, and an image it cannot read, as they were', async () => {
+    fs.mkdirSync(outside, { recursive: true });
+    const file = path.join(outside, 'agent.png');
+    fs.writeFileSync(file, png());
+    const mcp = sent('mcp', file);
+    expect(await policy(true).apply(mcp)).toBe(mcp);
+    const missing = sent('user', path.join(outside, 'gone.png'));
+    expect(await policy(true).apply(missing)).toEqual(missing);
+    expect(fs.existsSync(agentMediaDir(AGENT))).toBe(false);
+  });
+});
+
 describe('ChatMediaPolicy: Copilot binary asset results (#2421)', () => {
   const assetId = `sha256:${'cd'.repeat(32)}`;
   // The persisted payload shape from the issue, as the ACP mapper passes it on.
