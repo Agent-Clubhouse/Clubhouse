@@ -848,6 +848,13 @@ describe('annex-server', () => {
     expect((agents as Record<string, Array<{ id: string }>>).p.map((a) => a.id)).toEqual(['orch']);
   });
 
+  it('advertises chat.setModel, chat.setLevel and chatControls (#2462)', async () => {
+    const { port, token } = await startAndPair();
+    const body = JSON.parse((await request(port, 'GET', '/api/v1/mobile/capabilities', undefined, authHeaders(token))).body);
+    expect(body.commands).toEqual(expect.arrayContaining(['chat.setModel', 'chat.setLevel']));
+    expect(body.chatControls).toEqual({ version: 1 });
+  });
+
   it('serves create options per registered project', async () => {
     vi.mocked(projectStore.list).mockReturnValue([{ id: 'p', name: 'Project', path: '/test/project' }] as never);
     const { port, token } = await startAndPair();
@@ -936,6 +943,30 @@ describe('annex-server', () => {
         const older = await request(port, 'GET', '/api/v1/mobile/agents/a/chat?beforeSeq=3&limit=1', undefined, authHeaders(token));
         expect(JSON.parse(older.body)).toMatchObject({ events: [events[1]], lastSeq: 3, nextBeforeSeq: 2 });
         expect((await request(port, 'GET', '/api/v1/mobile/agents/a/chat?limit=0', undefined, authHeaders(token))).status).toBe(400);
+      } finally { clearChatRuntimes(); }
+    });
+
+    it('sends the composer\'s level, model and effort state while the session is live (#2462)', async () => {
+      vi.mocked(projectStore.list).mockReturnValue([{ id: 'p', name: 'Project', path: '/test/project' }] as any);
+      vi.mocked(agentConfigModule.listDurable).mockReturnValue([{ id: 'a', name: 'agent', color: 'blue', createdAt: '2026-01-01' }] as any);
+      const events = [
+        { type: 'session_started', agentId: 'a', sessionId: 's', seq: 1, data: { model: 'opus', level: 'ask' } },
+        { type: 'session_info', agentId: 'a', sessionId: 's', seq: 2, data: { models: [{ id: 'opus', label: 'Opus' }], efforts: ['low', 'high'], levelNames: { ask: 'default' } } },
+        { type: 'model_changed', agentId: 'a', sessionId: 's', seq: 3, data: { modelId: 'opus', effort: 'high', effortIsDefault: true } },
+      ];
+      const caps = { modelSwitch: 'live', effortSwitch: 'per_turn', effortDefault: true, liveLevels: ['plan', 'ask', 'full_access'] };
+      const { port, token } = await startAndPair();
+      const chat = async () => JSON.parse((await request(port, 'GET', '/api/v1/mobile/agents/a/chat', undefined, authHeaders(token))).body);
+      expect((await chat()).chatControls).toBeNull();
+      registerChatRuntime({ kind: 'chat', agentId: 'a', isRunning: () => true, getState: () => 'idle',
+        getSessionId: () => 's', getCapabilities: () => caps, readTranscript: async () => ({ events }) } as any);
+      try {
+        expect((await chat()).chatControls).toEqual({
+          model: 'opus', modelUnknown: false, effort: 'high', effortIsDefault: true, effortReported: true, level: 'ask',
+          models: [{ id: 'opus', label: 'Opus' }], efforts: ['low', 'high'], levelNames: { ask: 'default' },
+          liveLevels: ['plan', 'ask', 'full_access'], modelSwitch: 'live', effortSwitch: 'per_turn', effortDefault: true,
+          switchNote: 'Model changes apply now; effort changes from the next message.',
+        });
       } finally { clearChatRuntimes(); }
     });
 

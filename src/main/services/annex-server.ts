@@ -10,7 +10,7 @@ import * as annexTls from './annex-tls';
 import { MOBILE_COMMAND_TYPES, type AnnexAgentUpdate, type MobileCommand } from '../../shared/mobile-control';
 import { applyProjectStateChange, getProjectState, isProjectStateReady, onProjectStateChange } from './project-state-store';
 import { isProjectIdle } from '../../shared/project-state';
-import { MobileCommandService, MobileControlError, executeChatCommand, pendingInteractions, MOBILE_COMMAND_MAX_ENTRIES, MOBILE_COMMAND_TTL_MS } from './mobile-control';
+import { MobileCommandService, MobileControlError, chatControls, executeChatCommand, pendingInteractions, MOBILE_COMMAND_MAX_ENTRIES, MOBILE_COMMAND_TTL_MS } from './mobile-control';
 import { isRevertRunning } from './agent-runtime/checkpoint-tracker';
 import { readChatTranscript, listChatSessions } from './agent-runtime/chat-transcript';
 import { getSettings as getExperimentalSettings } from './experimental-settings';
@@ -2248,6 +2248,7 @@ async function handleMobileCapabilitiesRoute(ctx: AnnexRouteContext): Promise<vo
     createOptions: { version: 1, path: '/api/v1/mobile/projects/{projectId}/create-options' },
     agentSettings: { version: 1, path: '/api/v1/mobile/agents/{agentId}/settings' },
     helperRequests: { version: 1, snapshotField: 'helperRequests', commands: ['helper.approve', 'helper.decline'] },
+    chatControls: { version: 1 },
     idempotency: { scope: 'peer-and-epoch', maxEntries: MOBILE_COMMAND_MAX_ENTRIES, ttlMs: MOBILE_COMMAND_TTL_MS },
     projectState: { version: 1 },
     ...phoneRoutes(),
@@ -2317,6 +2318,8 @@ async function handleMobileChatRoute(ctx: AnnexRouteContext, match: RegExpMatchA
       ...(live ? runtime.getQueueState?.() ?? { queuedMessageIds: [], queueStateSeq: 0, queueRemovalSupported: false }
         : { queuedMessageIds: [], queueStateSeq: 0, queueRemovalSupported: false }),
       ...(live ? pendingInteractions(current) : { pendingPermissions: [], pendingQuestions: [] }),
+      // The composer's level, model and effort pills, for chat.setLevel / chat.setModel (#2462).
+      chatControls: live ? chatControls(current, runtime.getCapabilities?.()) : null,
     });
   } catch {
     // telemetry-exempt: do not export transcript content; caller receives a bounded error.

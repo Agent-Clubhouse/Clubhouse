@@ -1,8 +1,8 @@
 /** Additive mobile control contract. Annex's existing protocol remains v2. */
-import type { ChatQuestionAnswers } from './chat';
+import type { ChatCapabilities, ChatModelOption, ChatQuestionAnswers, PermissionLevel } from './chat';
 import type { AgentIdleSleep } from './idle-sleep';
 export const MOBILE_PROTOCOL_VERSION = 1;
-export const MOBILE_COMMAND_TYPES = ['chat.send', 'chat.interrupt', 'chat.permission', 'chat.question', 'chat.queue.remove', 'agent.start', 'agent.stop', 'agent.spawn', 'agent.create', 'agent.update', 'project.setPinned', 'project.setInactive', 'helper.approve', 'helper.decline'] as const;
+export const MOBILE_COMMAND_TYPES = ['chat.send', 'chat.interrupt', 'chat.permission', 'chat.question', 'chat.queue.remove', 'agent.start', 'agent.stop', 'agent.spawn', 'agent.create', 'agent.update', 'project.setPinned', 'project.setInactive', 'helper.approve', 'helper.decline', 'chat.setModel', 'chat.setLevel'] as const;
 interface CommandBase { version: 1; commandId: string; epoch: string }
 interface ChatTarget { agentId: string; sessionId: string }
 export type MobileCommand = CommandBase & (
@@ -12,6 +12,9 @@ export type MobileCommand = CommandBase & (
   | (ChatTarget & { type: 'chat.queue.remove'; messageIds: string[] })
   | (ChatTarget & { type: 'chat.permission'; requestId: string; optionId: string })
   | (ChatTarget & { type: 'chat.question'; requestId: string; answers: ChatQuestionAnswers })
+  // `effort` omitted keeps a chosen effort the new model offers; null is the provider's default (capabilities.effortDefault).
+  | (ChatTarget & { type: 'chat.setModel'; model: string; effort?: string | null })
+  | (ChatTarget & { type: 'chat.setLevel'; level: PermissionLevel })
   | { type: 'agent.start'; agentId: string; message?: string; resume?: boolean }
   | { type: 'agent.stop'; agentId: string }
   | { type: 'agent.spawn'; projectId: string; prompt: string; model?: string; orchestrator?: string }
@@ -36,6 +39,29 @@ export interface MobileAgentUpdate {
 /** What the desktop windows patch into their agent list after a phone's agent.update. */
 export interface AnnexAgentUpdate {
   agentId: string; name: string; color: string; emoji: string | null; model: string | null; orchestrator: string | null;
+}
+/**
+ * The chat snapshot's `chatControls`: what the composer's level, model and
+ * effort pills show, for chat.setLevel and chat.setModel. `efforts` are the
+ * current model's. `switchNote` is the pills' "Applies from the next message."
+ */
+export interface MobileChatControls {
+  model: string | null;
+  /** The session runs the provider's default model and hasn't named it yet ("Default model"). */
+  modelUnknown: boolean;
+  effort: string | null;
+  effortIsDefault: boolean;
+  /** False until the session reports its effort; hide the effort chip until then. */
+  effortReported: boolean;
+  level: PermissionLevel | null;
+  models: ChatModelOption[];
+  efforts: string[];
+  levelNames: Partial<Record<PermissionLevel, string>>;
+  liveLevels: PermissionLevel[];
+  modelSwitch: ChatCapabilities['modelSwitch'];
+  effortSwitch: ChatCapabilities['effortSwitch'];
+  effortDefault: boolean;
+  switchNote: string | null;
 }
 /** When a setting can change: at any time, only while the agent sleeps, or not from a phone. */
 export type MobileSettingEditable = 'always' | 'sleeping' | 'never';

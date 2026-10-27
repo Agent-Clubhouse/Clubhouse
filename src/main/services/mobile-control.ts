@@ -1,7 +1,7 @@
 import { createHash, randomUUID } from 'crypto';
-import type { AgentRuntime, ChatCapabilities, ChatEvent, ContentBlock } from '../../shared/chat';
-import { CHAT_ATTACHMENTS_MAX } from '../../shared/chat';
-import { MOBILE_COMMAND_TYPES, type MobileCommand, type MobileResponse } from '../../shared/mobile-control';
+import type { AgentRuntime, ChatCapabilities, ChatEvent, ContentBlock, PermissionLevel } from '../../shared/chat';
+import { CHAT_ATTACHMENTS_MAX, PERMISSION_LEVELS, switchNote } from '../../shared/chat';
+import { MOBILE_COMMAND_TYPES, type MobileChatControls, type MobileCommand, type MobileResponse } from '../../shared/mobile-control';
 import { AGENT_IDLE_SLEEP_MINUTES } from '../../shared/idle-sleep';
 
 export class MobileControlError extends Error {
@@ -15,6 +15,8 @@ const FIELDS: Record<MobileCommand['type'], string[]> = {
   'chat.queue.remove': ['agentId', 'sessionId', 'messageIds'],
   'chat.permission': ['agentId', 'sessionId', 'requestId', 'optionId'],
   'chat.question': ['agentId', 'sessionId', 'requestId', 'answers'],
+  'chat.setModel': ['agentId', 'sessionId', 'model', 'effort'],
+  'chat.setLevel': ['agentId', 'sessionId', 'level'],
   'agent.start': ['agentId', 'message', 'resume'],
   'agent.stop': ['agentId'],
   'agent.spawn': ['projectId', 'prompt', 'model', 'orchestrator'],
@@ -26,10 +28,11 @@ const FIELDS: Record<MobileCommand['type'], string[]> = {
   'helper.decline': ['requestId'],
 };
 /** Fields a command may leave out. Every agent.update setting is optional, but it needs at least one. */
-const OPTIONAL = new Set(['delivery', 'message', 'resume', 'model', 'orchestrator', 'attachmentIds', 'force']);
+const OPTIONAL = new Set(['delivery', 'message', 'resume', 'model', 'orchestrator', 'attachmentIds', 'force', 'effort']);
 const CREATE_OPTIONAL = new Set(['orchestrator', 'model', 'persona', 'useWorktree', 'mcpIds', 'branchName', 'branchFrom', 'folderName']);
 const isOptional = (type: MobileCommand['type'], key: string): boolean =>
-  type === 'agent.update' ? key !== 'agentId' : type === 'agent.create' ? CREATE_OPTIONAL.has(key) : OPTIONAL.has(key);
+  type === 'agent.update' ? key !== 'agentId' : type === 'agent.create' ? CREATE_OPTIONAL.has(key)
+    : type === 'chat.setModel' && key === 'model' ? false : OPTIONAL.has(key);
 const BOOLEAN_FIELDS = new Set(['resume', 'useWorktree', 'clubhouseMode', 'pinned', 'inactive', 'force']);
 /** Fields agent.update clears with null. */
 const NULLABLE_ON_UPDATE = new Set(['emoji', 'persona']);
@@ -60,6 +63,8 @@ export function parseMobileCommand(value: unknown): MobileCommand {
     } else if (key === 'answers') {
       if (!record(v) || Object.keys(v).length > 100 || Object.entries(v).some(([k, a]) => !text(k) || !(text(a, 65536) || (Array.isArray(a) && a.length <= 100 && a.every((x) => text(x, 65536)))))) throw new MobileControlError('invalid_command', 400);
     } else if (key === 'idleSleep') { if (!idleSleep(v)) throw new MobileControlError('invalid_command', 400); }
+    else if (key === 'effort') { if (v !== null && !text(v, 64)) throw new MobileControlError('invalid_command', 400); }
+    else if (key === 'level') { if (!(PERMISSION_LEVELS as readonly unknown[]).includes(v)) throw new MobileControlError('invalid_command', 400); }
     else if (key === 'runtime') { if (!['default', 'chat', 'terminal'].includes(v as string)) throw new MobileControlError('invalid_command', 400); }
     else if (!text(v, ['text', 'message', 'prompt'].includes(key) ? 65536 : key === 'emoji' ? 16 : 256)) throw new MobileControlError('invalid_command', 400);
   }
@@ -132,6 +137,37 @@ export function pendingInteractions(events: ChatEvent[]) {
   return { pendingPermissions: [...permissions.values()], pendingQuestions: [...questions.values()] };
 }
 
+/**
+ * The composer's level, model and effort state for a session (#2462), folded
+ * from its events the way the desktop chat store folds them.
+ */
+export function chatControls(events: ChatEvent[], caps: ChatCapabilities | undefined): MobileChatControls {
+  let model: string | null = null; let modelUnknown = false;
+  let effort: string | null = null; let effortIsDefault = false; let effortReported = false;
+  let level: PermissionLevel | null = null;
+  let models: MobileChatControls['models'] = []; let efforts: string[] = []; let levelNames: MobileChatControls['levelNames'] = {};
+  for (const event of events) {
+    if (event.type === 'session_started') {
+      model = event.data.model ?? model; modelUnknown = false; level = event.data.level ?? level;
+      models = []; efforts = []; levelNames = {};
+    } else if (event.type === 'session_info') {
+      const d = event.data;
+      if (d.model !== undefined) { model = d.model; modelUnknown = d.model === null; }
+      models = d.models ?? models; efforts = d.efforts ?? efforts; levelNames = d.levelNames ?? levelNames;
+    } else if (event.type === 'model_changed') {
+      model = event.data.modelId; modelUnknown = false;
+      effort = event.data.effort ?? null; effortIsDefault = event.data.effortIsDefault === true; effortReported = true;
+    } else if (event.type === 'mode_changed') level = event.data.level;
+  }
+  const modelSwitch = caps?.modelSwitch ?? 'none';
+  const effortSwitch = caps?.effortSwitch ?? 'none';
+  return {
+    model, modelUnknown, effort, effortIsDefault, effortReported, level, models, efforts, levelNames,
+    liveLevels: [...(caps?.liveLevels ?? [])], modelSwitch, effortSwitch, effortDefault: caps?.effortDefault === true,
+    switchNote: switchNote(modelSwitch, effortSwitch) ?? null,
+  };
+}
+
 /** Content blocks for a peer's uploaded attachment ids; throws when one isn't usable. */
 export type MobileAttachmentResolver = (ids: string[], caps: ChatCapabilities | undefined) => Promise<ContentBlock[]>;
 
@@ -165,6 +201,8 @@ export async function executeChatCommand(command: Extract<MobileCommand, { sessi
   const { events = [] } = await runtime.readTranscript();
   assertCurrent();
   if (runtime.getSessionId?.() !== command.sessionId) throw new MobileControlError('session_mismatch');
+  if (command.type === 'chat.setModel') return setModel(command, runtime, chatControls(events, runtime.getCapabilities?.()));
+  if (command.type === 'chat.setLevel') return setLevel(command, runtime, chatControls(events, runtime.getCapabilities?.()));
   const pending = pendingInteractions(events);
   if (command.type === 'chat.permission') {
     const request = pending.pendingPermissions.find((e) => e.data.requestId === command.requestId);
@@ -178,4 +216,31 @@ export async function executeChatCommand(command: Extract<MobileCommand, { sessi
     await runtime.answerQuestion(command.requestId, command.answers);
   }
   return { answered: true, requestId: command.requestId };
+}
+
+/** The composer's model and effort pills (#2462): only what they would offer. */
+async function setModel(command: Extract<MobileCommand, { type: 'chat.setModel' }>, runtime: AgentRuntime, now: MobileChatControls) {
+  if (!runtime.setModel) throw new MobileControlError('model_switch_not_supported');
+  const switching = command.model !== now.model;
+  if (switching && (now.modelSwitch === 'none' || now.models.length === 0)) throw new MobileControlError('model_switch_not_supported');
+  if (switching && !now.models.some((m) => m.id === command.model)) throw new MobileControlError('unknown_model');
+  let effort = command.effort;
+  if (effort !== undefined && now.effortSwitch === 'none') throw new MobileControlError('effort_switch_not_supported');
+  if (effort === null && !now.effortDefault) throw new MobileControlError('effort_default_not_supported');
+  // The current model's list; another model's efforts are only known once it runs.
+  if (typeof effort === 'string' && !switching && !now.efforts.includes(effort)) throw new MobileControlError('unknown_effort');
+  // Omitted, as the model menu does: keep a chosen effort the list still offers; a default one follows the new model's default.
+  if (effort === undefined && switching) effort = now.effort && !now.effortIsDefault && now.efforts.includes(now.effort) ? now.effort : undefined;
+  if (!switching && effort === undefined) return { model: command.model, effort: now.effortIsDefault ? null : now.effort, changed: false };
+  await runtime.setModel(command.model, effort);
+  return { model: command.model, effort: effort ?? null, changed: true };
+}
+
+/** The composer's level menu (#2462): any level the driver switches to live. A paired phone has full control. */
+async function setLevel(command: Extract<MobileCommand, { type: 'chat.setLevel' }>, runtime: AgentRuntime, now: MobileChatControls) {
+  if (!runtime.setLevel) throw new MobileControlError('level_switch_not_supported');
+  if (command.level === now.level) return { level: command.level, changed: false };
+  if (!now.liveLevels.includes(command.level)) throw new MobileControlError('level_not_live');
+  await runtime.setLevel(command.level);
+  return { level: command.level, changed: true };
 }

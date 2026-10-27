@@ -9,7 +9,7 @@
  */
 
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ClipboardEvent, type DragEvent, type KeyboardEvent, type MouseEvent } from 'react';
-import { CHAT_ATTACHMENTS_MAX, PERMISSION_LEVELS, type AvailableCommand, type ChatCapabilities, type ChatModelOption, type PermissionLevel } from '../../../../shared/chat';
+import { CHAT_ATTACHMENTS_MAX, PERMISSION_LEVELS, switchNote, type AvailableCommand, type ChatCapabilities, type ChatModelOption, type PermissionLevel } from '../../../../shared/chat';
 import type { PlanEntry } from '../../../../shared/chat';
 import type { QueuedMessage } from '../../../stores/chatStore';
 import { CheckIcon, ChevronDown, FileIcon, PaperclipIcon, PlanIcon, PlusIcon, ShieldIcon, StopIcon, UpIcon, XIcon } from './icons';
@@ -220,23 +220,8 @@ export function LevelPill({ level, capabilities, levelNames, onChange, compact }
 
 // ── Model menu ──────────────────────────────────────────────────────────────
 
-const SWITCH_TIMING: Record<string, string> = {
-  per_turn: 'from the next message',
-  restart: 'the next time the agent starts',
-};
-
-/** When model and effort changes take effect; one sentence when they match. */
-export function switchNote(modelSwitch: string, effortSwitch: string): string | undefined {
-  const model = SWITCH_TIMING[modelSwitch];
-  const effort = SWITCH_TIMING[effortSwitch];
-  if (modelSwitch === effortSwitch || effortSwitch === 'none') return model ? `Applies ${model}.` : undefined;
-  if (modelSwitch === 'none') return effort ? `Effort applies ${effort}.` : undefined;
-  const parts = [
-    model ? `Model changes apply ${model}` : 'Model changes apply now',
-    effort ? `effort changes ${effort}` : 'effort changes now',
-  ];
-  return model || effort ? `${parts.join('; ')}.` : undefined;
-}
+// Shared with the Annex chat snapshot, which sends the same note to phones.
+export { switchNote };
 
 /** Closes an open menu on any mousedown outside it (the menu stops its own). */
 function useCloseOnMouseDown(open: boolean, close: () => void) {
