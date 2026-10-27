@@ -10,7 +10,7 @@ import * as annexTls from './annex-tls';
 import { MOBILE_COMMAND_TYPES, type AnnexAgentUpdate, type MobileCommand } from '../../shared/mobile-control';
 import { applyProjectStateChange, getProjectState, isProjectStateReady, onProjectStateChange } from './project-state-store';
 import { isProjectIdle } from '../../shared/project-state';
-import { MobileCommandService, MobileControlError, executeChatCommand, pendingInteractions, MOBILE_COMMAND_MAX_ENTRIES, MOBILE_COMMAND_TTL_MS } from './mobile-control';
+import { MobileCommandService, MobileControlError, chatControls, executeChatCommand, pendingInteractions, MOBILE_COMMAND_MAX_ENTRIES, MOBILE_COMMAND_TTL_MS } from './mobile-control';
 import { isRevertRunning } from './agent-runtime/checkpoint-tracker';
 import { readChatTranscript, listChatSessions } from './agent-runtime/chat-transcript';
 import { getSettings as getExperimentalSettings } from './experimental-settings';
@@ -2248,6 +2248,9 @@ async function handleMobileCapabilitiesRoute(ctx: AnnexRouteContext): Promise<vo
     createOptions: { version: 1, path: '/api/v1/mobile/projects/{projectId}/create-options' },
     agentSettings: { version: 1, path: '/api/v1/mobile/agents/{agentId}/settings' },
     helperRequests: { version: 1, snapshotField: 'helperRequests', commands: ['helper.approve', 'helper.decline'] },
+    chatControls: { version: 1 },
+    // A paired phone has full control (#2462): persistent approvals and Free Agent Mode, as on the desktop.
+    permissions: { version: 1, persistentApprovals: true, freeAgentMode: true },
     idempotency: { scope: 'peer-and-epoch', maxEntries: MOBILE_COMMAND_MAX_ENTRIES, ttlMs: MOBILE_COMMAND_TTL_MS },
     projectState: { version: 1 },
     ...phoneRoutes(),
@@ -2317,6 +2320,8 @@ async function handleMobileChatRoute(ctx: AnnexRouteContext, match: RegExpMatchA
       ...(live ? runtime.getQueueState?.() ?? { queuedMessageIds: [], queueStateSeq: 0, queueRemovalSupported: false }
         : { queuedMessageIds: [], queueStateSeq: 0, queueRemovalSupported: false }),
       ...(live ? pendingInteractions(current) : { pendingPermissions: [], pendingQuestions: [] }),
+      // The composer's level, model and effort pills, for chat.setLevel / chat.setModel (#2462).
+      chatControls: live ? chatControls(current, runtime.getCapabilities?.()) : null,
     });
   } catch {
     // telemetry-exempt: do not export transcript content; caller receives a bounded error.
@@ -2439,7 +2444,7 @@ async function runMobileCommand(command: MobileCommand, assertAuthorized: () => 
     const id = generateQuickAgentId();
     const name = generateQuickName();
     const orchestrator = command.orchestrator ?? project.orchestrator ?? 'claude-code';
-    // All paths come from the registered project. Remote commands cannot elevate permissions.
+    // All paths come from the registered project. A quick agent from a phone asks first.
     const tracked: TrackedQuickAgent = { id, name, kind: 'quick', status: 'starting', prompt: command.prompt,
       model: command.model ?? null, orchestrator, freeAgentMode: false, parentAgentId: null, projectId: project.id, spawnedAt: Date.now() };
     setTrackedQuickAgent(id, tracked);
@@ -2482,7 +2487,8 @@ async function runMobileCommand(command: MobileCommand, assertAuthorized: () => 
     // The desktop's agent list reads names and colours once; tell it what the phone changed.
     const { settings } = updated;
     const update: AnnexAgentUpdate = { agentId: updated.agentId, name: settings.name.value, color: settings.color.value, emoji: settings.emoji.value,
-      model: settings.model.value === 'default' ? null : settings.model.value, orchestrator: settings.orchestrator.value };
+      model: settings.model.value === 'default' ? null : settings.model.value, orchestrator: settings.orchestrator.value,
+      freeAgentMode: settings.freeAgentMode.value };
     broadcastToAllWindows(IPC.ANNEX.AGENT_UPDATED, update);
     broadcastSnapshotRefresh();
     return updated;

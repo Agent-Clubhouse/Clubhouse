@@ -539,6 +539,7 @@ function initAnnexAgentUpdateListener(): () => void {
             icon: update.emoji ? undefined : existing.icon,
             model: update.model ?? undefined,
             orchestrator: update.orchestrator ?? undefined,
+            freeAgentMode: update.freeAgentMode || undefined,
           },
         },
       };

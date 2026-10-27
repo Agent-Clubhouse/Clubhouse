@@ -16,10 +16,10 @@ New `POST https://host:mainPort/pair` uses existing `{pin, publicKey, alias, ico
 Authenticated `GET /api/v1/mobile/capabilities` returns:
 
 ```json
-{"version":1,"epoch":"uuid","controlAuth":"mtls-pinned-client","controlAvailable":true,"commands":["chat.send","chat.interrupt","chat.permission","chat.question","chat.queue.remove","agent.start","agent.stop","agent.spawn","agent.create","agent.update","helper.approve","helper.decline"],"pairing":{"sessionRevokePath":"/api/v1/mobile/pairing"},"attachments":{"version":1,"imageTypes":["image/png","image/jpeg","image/gif","image/webp"],"maxImageBytes":3932160,"maxCount":10},"events":{"transport":"annex-websocket","replayRequest":"mobile:replay","queueState":"queue_state"},"createOptions":{"version":1,"path":"/api/v1/mobile/projects/{projectId}/create-options"},"agentSettings":{"version":1,"path":"/api/v1/mobile/agents/{agentId}/settings"},"helperRequests":{"version":1,"snapshotField":"helperRequests","commands":["helper.approve","helper.decline"]},"idempotency":{"scope":"peer-and-epoch","maxEntries":2048,"ttlMs":3600000}}
+{"version":1,"epoch":"uuid","controlAuth":"mtls-pinned-client","controlAvailable":true,"commands":["chat.send","chat.interrupt","chat.permission","chat.question","chat.queue.remove","agent.start","agent.stop","agent.spawn","agent.create","agent.update","helper.approve","helper.decline","chat.setModel","chat.setLevel"],"pairing":{"sessionRevokePath":"/api/v1/mobile/pairing"},"attachments":{"version":1,"imageTypes":["image/png","image/jpeg","image/gif","image/webp"],"maxImageBytes":3932160,"maxCount":10},"events":{"transport":"annex-websocket","replayRequest":"mobile:replay","queueState":"queue_state"},"createOptions":{"version":1,"path":"/api/v1/mobile/projects/{projectId}/create-options"},"agentSettings":{"version":1,"path":"/api/v1/mobile/agents/{agentId}/settings"},"helperRequests":{"version":1,"snapshotField":"helperRequests","commands":["helper.approve","helper.decline"]},"chatControls":{"version":1},"permissions":{"version":1,"persistentApprovals":true,"freeAgentMode":true},"idempotency":{"scope":"peer-and-epoch","maxEntries":2048,"ttlMs":3600000}}
 ```
 
-A 404 means unsupported: do not send mobile commands. Gate durable-agent creation on `commands` including `agent.create` and `createOptions.version >= 1`, settings on `agent.update` and `agentSettings.version >= 1`, and helper requests on `helperRequests.version >= 1`; older desktops offer quick agents (`agent.spawn`) only. Gate project pins and inactive marks on `projectState.version >= 1` (`projectState:{version:1}`); without it, keep them on the phone. See [Project state](#project-state). A new epoch invalidates command retries and replay cursors. No permission-level changes, raw shell commands, arbitrary filesystem paths, credentials, or gateway provisioning commands exist.
+A 404 means unsupported: do not send mobile commands. Gate durable-agent creation on `commands` including `agent.create` and `createOptions.version >= 1`, settings on `agent.update` and `agentSettings.version >= 1`, and helper requests on `helperRequests.version >= 1`; older desktops offer quick agents (`agent.spawn`) only. Gate project pins and inactive marks on `projectState.version >= 1` (`projectState:{version:1}`); without it, keep them on the phone. See [Project state](#project-state). Gate the composer's model, effort and level controls on `chat.setModel` / `chat.setLevel` and `chatControls.version >= 1` ([Chat controls](#chat-controls)). A new epoch invalidates command retries and replay cursors. No raw shell commands, arbitrary filesystem paths, credentials, or gateway provisioning commands exist.
 
 ## Commands
 
@@ -28,13 +28,15 @@ A 404 means unsupported: do not send mobile commands. Gate durable-agent creatio
 - `chat.send`: `{agentId, sessionId, text, delivery?, attachmentIds?}`; delivery `auto|prompt|steer|queued` (default auto). `attachmentIds` (1–10 distinct ids from the upload route below) sends images; `text` may then be `""` for an image-only message. See [Image attachments](#image-attachments).
 - `chat.queue.remove`: `{agentId, sessionId, messageIds:["id"]}`; removes only messages still held in the runtime queue, returns `{removed:["id"]}`. A native-provider queue may return no removed IDs.
 - `chat.interrupt`: `{agentId, sessionId}`; cancels the turn and keeps the session.
-- `chat.permission`: `{agentId, sessionId, requestId, optionId}`; exact pending option required. Mobile only permits one-time allow/reject/cancel options, not persistent approval changes.
+- `chat.permission`: `{agentId, sessionId, requestId, optionId}`; exact pending option required. Any offered option, persistent ones (`allow_session`, `allow_always`, `reject_always`) included, is answered as the desktop's approval dock answers it, when capabilities have `permissions.persistentApprovals`. Older desktops refuse persistent options with 403 `persistent_approval_not_supported`.
 - `chat.question`: `{agentId, sessionId, requestId, answers}`; question-ID to string/string-array map.
+- `chat.setModel`: `{agentId, sessionId, model, effort?}`; the composer's model and effort pills. See [Chat controls](#chat-controls).
+- `chat.setLevel`: `{agentId, sessionId, level}`; the composer's permission level menu. See [Chat controls](#chat-controls).
 - `agent.start`: `{agentId, message?, resume?}`; wake durable agent using desktop's configured runtime and permissions.
 - `agent.stop`: `{agentId}`; stops agent process, including a start in progress.
 - `agent.spawn`: `{projectId, prompt, model?, orchestrator?}`; quick agent under registered project with ask-first permission mode.
-- `agent.create`: `{projectId, name, color, orchestrator?, model?, persona?, useWorktree?, mcpIds?, branchName?, branchFrom?, folderName?}`; durable agent, as the desktop New agent page makes one. See [Durable agents](#durable-agents).
-- `agent.update`: `{agentId, name?, color?, emoji?, orchestrator?, model?, runtime?, persona?, clubhouseMode?, idleSleep?}`; at least one setting. See [Durable agents](#durable-agents).
+- `agent.create`: `{projectId, name, color, orchestrator?, model?, persona?, freeAgentMode?, useWorktree?, mcpIds?, branchName?, branchFrom?, folderName?}`; durable agent, as the desktop New agent page makes one. See [Durable agents](#durable-agents).
+- `agent.update`: `{agentId, name?, color?, emoji?, orchestrator?, model?, runtime?, persona?, clubhouseMode?, freeAgentMode?, idleSleep?}`; at least one setting. See [Durable agents](#durable-agents).
 - `project.setPinned`: `{projectId, pinned}`; pin or unpin a project in the desktop sidebar. See [Project state](#project-state).
 - `project.setInactive`: `{projectId, inactive}`; mark a project inactive (idle until marked active) or active. See [Project state](#project-state).
 
@@ -43,7 +45,7 @@ A 404 means unsupported: do not send mobile commands. Gate durable-agent creatio
 
 For `chat.send`, `result` is `{delivery:"prompt"|"steer"|"queued",messageId:"authoritative runtime ID"}`. The matching `user_message.data` additionally echoes `clientCommandId` equal to the request commandId, including queued/steered sends. The event may arrive before the receipt: reconcile by clientCommandId immediately, then by messageId; never guess by text or timestamps. Local/legacy sends omit the optional field.
 
-Receipt on success: `{version:1,commandId,epoch,status:"completed",result:{...}}`. Completion means command dispatch completed, not agent turn completion. Errors: `{version:1,commandId?,epoch,status:"rejected"|"failed",error:{code,message}}`. `message` is the code, or for some refusals (`invalid_name`, `create_refused`, `agent_running`) a sentence the desktop would show; branch on `code` only. HTTP 400 invalid_command/unsupported_version; 403 client_certificate_required; 404 agent_not_found/project_not_found; 409 epoch_mismatch/command_conflict/session_mismatch/not_chat/pending_request_not_found/images_not_supported/attachment_unavailable; 429 command_capacity; 500 command_failed. A failed command can have partial effects; retain its receipt and reconcile.
+Receipt on success: `{version:1,commandId,epoch,status:"completed",result:{...}}`. Completion means command dispatch completed, not agent turn completion. Errors: `{version:1,commandId?,epoch,status:"rejected"|"failed",error:{code,message}}`. `message` is the code, or for some refusals (`invalid_name`, `create_refused`, `agent_running`) a sentence the desktop would show; branch on `code` only. HTTP 400 invalid_command/unsupported_version; 403 client_certificate_required; 404 agent_not_found/project_not_found; 409 epoch_mismatch/command_conflict/session_mismatch/not_chat/pending_request_not_found/images_not_supported/attachment_unavailable, and the [chat controls](#chat-controls) refusals; 429 command_capacity; 500 command_failed. A failed command can have partial effects; retain its receipt and reconcile.
 
 ## Helper requests
 
@@ -146,11 +148,50 @@ Chat event definitions: src/shared/chat/events.ts. Driver capabilities: src/shar
 
 Capabilities now includes `pairing: {sessionRevokePath:"/api/v1/mobile/pairing"}`. `DELETE` that path using the paired pinned client certificate to revoke **only the caller's in-memory session pairing**. Response: `{version:1,epoch,revoked:true,pairingMode:"session"}`. It invalidates that peer's bearer tokens and closes its mTLS and bearer WebSockets. No body or target identity is accepted. A persistent peer (including one shadowed by a session peer) receives HTTP 409 `{error:"persistent_pairing_requires_desktop"}` with no trust change; remove it in desktop settings. An unpaired caller receives 401, and bearer-only callers receive 403. If the phone is offline, local removal alone cannot revoke desktop memory: explain that it lasts until explicit desktop disconnect or Annex stop. Repeated DELETE after success is unauthorized because trust is already gone.
 
+## Chat controls
+
+Desktops that support them (#2462) advertise `chat.setModel` and `chat.setLevel` in `commands` and `chatControls: {version:1}` in capabilities. They are the desktop composer's level, model and effort pills.
+
+**Read.** A live chat snapshot carries `chatControls`; it is `null` for a sleeping agent or a readOnly historical session:
+
+```json
+"chatControls":{"model":"opus","modelUnknown":false,"effort":"high","effortIsDefault":false,"effortReported":true,
+ "level":"ask","models":[{"id":"opus","label":"Opus","description":"…","costHint":"1x"}],"efforts":["low","medium","high"],
+ "levelNames":{"ask":"default","plan":"plan"},"liveLevels":["plan","ask","auto_edit","full_access"],
+ "modelSwitch":"live"|"per_turn"|"restart"|"none","effortSwitch":"live"|"per_turn"|"restart"|"none","effortDefault":true,
+ "switchNote":"Applies from the next message."|null}
+```
+
+- `model` is `null` with `modelUnknown:true` while the session runs the provider's default and hasn't named it: show "Default model".
+- `efforts` belong to the current model. Another model's efforts are only known once the session runs it (a `session_info` replaces the list).
+- `effortReported:false`: the session hasn't reported its effort yet; hide the effort chip rather than show "Default effort".
+- `effortIsDefault`: `effort` is the level the provider picked, not one chosen. The menu checks "Default" when `effortDefault` is true.
+- `level` labels are the desktop's: Plan, Ask first, Auto-accept edits, Auto, Full access. `levelNames` is the provider's own name for a level, shown under it. Offer the current level plus `liveLevels`, in that ladder order; the current level stays listed even when it can't be re-entered.
+- Offer the model menu only when `models` is non-empty and `modelSwitch` isn't `none`; the effort menu only when `efforts` is non-empty and `effortSwitch` isn't `none`. Show `switchNote` under them.
+
+**Live updates.** These fields change with the session's own chat events, which every client receives: `session_info` (lists, capabilities, `model`), `model_changed` (`modelId`, `effort`, `effortIsDefault`) and `mode_changed` (`level`). Fold them in the same way, or resnapshot. A change made from a phone or the desktop arrives the same way, once the driver applies it.
+
+**`chat.setModel {agentId, sessionId, model, effort?}`.** `effort` is a string, `null` (the provider's default, only when `effortDefault`), or omitted. Omitted while switching model does what the desktop menu does: a chosen effort the current list still offers is kept; a default effort follows the new model's default. Result: `{model, effort, changed}`, where `effort` is what was sent (`null`: the provider's default) and `changed:false` means nothing was asked of the agent (same model, no effort). The change takes effect per `modelSwitch` / `effortSwitch`. Refusals (409): `model_switch_not_supported` (no model menu: `modelSwitch:"none"` or no `models`), `unknown_model` (not in `models`), `effort_switch_not_supported`, `effort_default_not_supported` (`null` without `effortDefault`), `unknown_effort` (not in the current model's `efforts`; checked only when the model stays the same).
+
+**`chat.setLevel {agentId, sessionId, level}`.** `level` is one of `plan|ask|auto_edit|auto|full_access` (400 otherwise). Any level in `liveLevels`, raising included, is accepted: see [Permissions from a phone](#permissions-from-a-phone). Result: `{level, changed}`; the current level is `changed:false`. Refusals (409): `level_not_live` (not in `liveLevels`), `level_switch_not_supported`.
+
+Both are idempotent like every command; every field is part of the fingerprint.
+
+## Permissions from a phone
+
+A paired phone has full control of the desktop's permission settings, the same as the desktop's own controls. A paired phone can already approve every request one by one, so these controls don't widen what it can do; they save it the taps. Pinned mTLS, idempotency and capability gating are unchanged.
+
+Capabilities advertise what the desktop accepts: `permissions: {version:1, persistentApprovals, freeAgentMode}`. Older desktops have no `permissions`: they refuse persistent options (403 `persistent_approval_not_supported`) and `freeAgentMode` (403 `free_agent_mode_not_allowed`), and have no `chat.setLevel`.
+
+- `persistentApprovals`: `chat.permission` answers persistent options (allow for the session, always allow, always reject).
+- `chat.setLevel` accepts any live level, raising included (`chatControls.version >= 1`).
+- `freeAgentMode`: `agent.create` and `agent.update` accept `freeAgentMode` (boolean), with the desktop's rules: see [Durable agents](#durable-agents).
+
 ## Durable agents
 
 Create (#2451) and settings (#2452) follow the desktop New agent page and the Details → Settings card. Both reads need an authenticated client; the commands need the pinned client certificate like every mobile command.
 
-**Free Agent Mode is never settable from a phone.** `agent.create` and `agent.update` reject a `freeAgentMode` field, with any value, with 403 `free_agent_mode_not_allowed`: remote commands cannot elevate permissions. Created agents ask before edits. The current value is readable, as `editable:"never"`; change it on the desktop.
+**Free Agent Mode** (skip all permission prompts) is settable from a phone when capabilities have `permissions.freeAgentMode` ([Permissions from a phone](#permissions-from-a-phone)). As on the desktop, it needs an orchestrator with `permissions:true`: turning it on for one without is 409 `free_agent_mode_unavailable`; turning it off is always allowed. Omitted on create, the agent follows the project's agent defaults, as on the desktop. Older desktops refuse the field with 403 `free_agent_mode_not_allowed`.
 
 ### Create options
 
@@ -164,10 +205,10 @@ Create (#2451) and settings (#2452) follow the desktop New agent page and the De
  "mcp":{"catalog":[{"id":"ado","name":"Azure DevOps","description":"…"}],"defaults":["ado"]},
  "isGitRepo":true,"suggestedName":"brave-otter",
  "defaults":{"orchestrator":"claude-code","color":"indigo","model":"default","useWorktree":true},
- "freeAgentMode":{"allowed":false}}
+ "freeAgentMode":{"allowed":true}}
 ```
 
-`orchestrators` are the enabled ones, narrowed to the project's profile when it covers any, in the desktop's order; the first is the default. `available:false` (with `unavailableReason`) means the CLI isn't found; the desktop still lets you create such an agent. `permissions:false` means the CLI sets access itself. `chat` means the agent can run in chat (Chat preview on, and the provider has a chat driver). `models` may include custom IDs; any model string is accepted. `badge` and `unavailableReason` are omitted when absent. `suggestedName` is a fresh random name per request.
+`orchestrators` are the enabled ones, narrowed to the project's profile when it covers any, in the desktop's order; the first is the default. `available:false` (with `unavailableReason`) means the CLI isn't found; the desktop still lets you create such an agent. `permissions:false` means the CLI sets access itself. `chat` means the agent can run in chat (Chat preview on, and the provider has a chat driver). `models` may include custom IDs; any model string is accepted. `badge` and `unavailableReason` are omitted when absent. `suggestedName` is a fresh random name per request. `freeAgentMode.allowed` means `agent.create` takes `freeAgentMode`; offer the toggle only for orchestrators with `permissions:true`, as the desktop page does ("Free Agent Mode (skip all permissions)", otherwise "(not supported)").
 
 ### agent.create
 
@@ -177,6 +218,7 @@ Validation matches the desktop. All of it runs before anything is created:
 - **color**: one of the `colors` ids (400 `invalid_color`).
 - **orchestrator**: one of `orchestrators` (409 `orchestrator_unavailable`). The default is `defaults.orchestrator`.
 - **model**: `"default"` or omitted means the provider default.
+- **freeAgentMode**: `true` skips all permission prompts. Needs an orchestrator with `permissions:true` (409 `free_agent_mode_unavailable`). Omitted follows the project defaults.
 - **persona**: one of `personas` (400 `unknown_persona`). It is applied to the new worktree as the desktop does.
 - **mcpIds**: unique catalog ids (400 `unknown_mcp`). Omitted means the project defaults when the agent starts.
 - **useWorktree**: defaults to `isGitRepo`. `true` outside a git repo is 409 `not_git_repo`.
@@ -209,7 +251,7 @@ We chose a route rather than snapshot fields. The settings need disk and CLI rea
   "runtime":{"value":"default"|"chat"|"terminal","resolved":"chat"|"terminal","editable":"sleeping"|"never"},
   "persona":{"value":null,"editable":"sleeping"},
   "clubhouseMode":{"value":true|false|null,"projectEnabled":true,"editable":"sleeping"|"never"},
-  "freeAgentMode":{"value":false,"editable":"never"},
+  "freeAgentMode":{"value":false,"editable":"sleeping"|"never"},
   "idleSleep":{"value":"inherit"|"never"|30,"minutes":30,"source":"agent"|"app","applies":true,"editable":"always"}},
  "options":{"orchestrators":[…],"personas":[…],"colors":[…],"idleSleep":{"minutes":[15,30,60,240],"appMinutes":30}}}
 ```
@@ -228,6 +270,7 @@ Field notes:
 - **runtime**: `resolved` is the runtime the agent runs in now (awake), or the one its next wake uses (asleep). It is `never` when chat isn't available for the agent's CLI.
 - **clubhouseMode**: `true` means Clubhouse mode manages the agent. `false` means it keeps local overrides. `null` with `never` means the project isn't in Clubhouse mode.
 - **idleSleep**: `minutes` and `source` are the resolved timeout, where 0 means never. An inherited value follows the app's chat idle timeout (`options.idleSleep.appMinutes`). Desktop copy: "After 30 min idle" / "Never", summary "Sleeps after 30 min" / "Never sleeps". Only chat agents idle-sleep (`applies`), but the value is kept either way.
+- **freeAgentMode**: `sleeping` when the agent's orchestrator has permission support, else `never` (the Settings card's Access row: "Free agent" / "Ask before edits").
 - **hasImageIcon**: image icons are read-only from a phone. Setting an emoji replaces an image icon.
 
 ### agent.update
@@ -242,13 +285,14 @@ Send only what changed:
 - **runtime**: `default`, `chat` or `terminal`. `chat` and `terminal` need chat to be available (409 `runtime_unavailable`).
 - **persona**: one of `personas`, or `null` for the project default.
 - **clubhouseMode**: boolean. Needs a Clubhouse mode project (409 `clubhouse_mode_unavailable`).
+- **freeAgentMode**: boolean. `true` needs an orchestrator with permission support (409 `free_agent_mode_unavailable`).
 - **idleSleep**: `"inherit"`, `"never"`, or one of `options.idleSleep.minutes`.
 
 Rejections:
 
 - A `sleeping` setting on an awake or starting agent is 409 `agent_running`, and nothing is saved.
 - An agent still being created is 409 `agent_creating`.
-- Instructions, skills, agent definitions, MCP JSON, permissions, the launch wrapper, helpers and Free Agent Mode are not accepted. Any unknown field is 400 `invalid_command`.
+- Instructions, skills, agent definitions, MCP JSON, permission rules, the launch wrapper and helpers are not accepted. Any unknown field is 400 `invalid_command`.
 
 The receipt `result` is the settings payload above, without `version`, `epoch` and `options`. The desktop windows and other clients are told about the change through `snapshot:refresh`.
 

@@ -98,3 +98,21 @@ export const MINIMAL_CHAT_CAPABILITIES: ChatCapabilities = Object.freeze({
   login: 'terminal',
   systemPrompt: false,
 }) as ChatCapabilities;
+
+const SWITCH_TIMING: Record<string, string> = {
+  per_turn: 'from the next message',
+  restart: 'the next time the agent starts',
+};
+
+/** When model and effort changes take effect; one sentence when they match. */
+export function switchNote(modelSwitch: string, effortSwitch: string): string | undefined {
+  const model = SWITCH_TIMING[modelSwitch];
+  const effort = SWITCH_TIMING[effortSwitch];
+  if (modelSwitch === effortSwitch || effortSwitch === 'none') return model ? `Applies ${model}.` : undefined;
+  if (modelSwitch === 'none') return effort ? `Effort applies ${effort}.` : undefined;
+  const parts = [
+    model ? `Model changes apply ${model}` : 'Model changes apply now',
+    effort ? `effort changes ${effort}` : 'effort changes now',
+  ];
+  return model || effort ? `${parts.join('; ')}.` : undefined;
+}

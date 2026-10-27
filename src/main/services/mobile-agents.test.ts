@@ -85,7 +85,7 @@ describe('create options', () => {
       projectId: 'p1', personas: [{ id: 'qa', name: 'QA', source: 'builtin' }], isGitRepo: true,
       mcp: { catalog: [{ id: 'ado', name: 'Azure DevOps', description: 'Work items' }], defaults: ['ado'] },
       defaults: { orchestrator: 'claude-code', color: 'indigo', model: 'default', useWorktree: true },
-      freeAgentMode: { allowed: false },
+      freeAgentMode: { allowed: true },
     });
     expect(options.colors).toContainEqual({ id: 'rose', label: 'Rose', hex: '#f43f5e' });
     expect(options.suggestedName).toMatch(/^[a-z]+-[a-z]+$/);
@@ -150,6 +150,35 @@ describe('agent.create', () => {
   });
 });
 
+describe('Free Agent Mode from a phone (#2462)', () => {
+  const create = (extra = {}) => ({ projectId: 'p1', name: 'brave-otter', color: 'indigo', ...extra });
+  const live = { live: undefined, assertAuthorized: allow };
+
+  it('creates a free agent on a CLI with permission support', async () => {
+    await createMobileAgent(project, create({ freeAgentMode: true }), allow);
+    expect(vi.mocked(startDurableCreation).mock.calls[0][1].freeAgentMode).toBe(true);
+  });
+  it('refuses it on a CLI that sets access itself, as the New agent page does', async () => {
+    expect(await refusal(createMobileAgent(project, create({ orchestrator: 'codex-cli', freeAgentMode: true }), allow))).toMatchObject({ code: 'free_agent_mode_unavailable', statusCode: 409 });
+    expect(startDurableCreation).not.toHaveBeenCalled();
+    await createMobileAgent(project, create({ orchestrator: 'codex-cli', freeAgentMode: false }), allow);
+  });
+  it('turns it on and off while the agent sleeps', async () => {
+    await updateMobileAgent(project, agent(), { agentId: 'durable_1', freeAgentMode: true }, live);
+    await updateMobileAgent(project, agent({ freeAgentMode: true }), { agentId: 'durable_1', freeAgentMode: false }, live);
+    expect(vi.mocked(agentConfig.updateDurableConfig).mock.calls.map((c) => c[2])).toEqual([{ freeAgentMode: true }, { freeAgentMode: false }]);
+  });
+  it('is a spawn setting: refused while the agent runs, and on a CLI without permission support', async () => {
+    expect((await refusal(updateMobileAgent(project, agent(), { agentId: 'durable_1', freeAgentMode: true }, { live: 'running', assertAuthorized: allow }))).code).toBe('agent_running');
+    expect((await refusal(updateMobileAgent(project, agent({ orchestrator: 'codex-cli' }), { agentId: 'durable_1', freeAgentMode: true }, live))).code).toBe('free_agent_mode_unavailable');
+    await updateMobileAgent(project, agent({ orchestrator: 'codex-cli', freeAgentMode: true }), { agentId: 'durable_1', freeAgentMode: false }, live);
+    expect(agentConfig.updateDurableConfig).toHaveBeenCalledTimes(1);
+  });
+  it('reads as never editable on a CLI without permission support', async () => {
+    expect((await buildAgentSettings(project, agent({ orchestrator: 'codex-cli' }), undefined)).settings.freeAgentMode).toEqual({ value: false, editable: 'never' });
+  });
+});
+
 describe('agent settings', () => {
   it('reads each setting with when it can change', async () => {
     const result = await buildAgentSettings(project, agent({ idleSleep: 60, persona: 'qa', model: 'opus', freeAgentMode: true }), undefined);
@@ -165,7 +194,7 @@ describe('agent settings', () => {
         runtime: { value: 'default', editable: 'sleeping', resolved: 'chat' },
         persona: { value: 'qa', editable: 'sleeping' },
         clubhouseMode: { value: null, editable: 'never', projectEnabled: false },
-        freeAgentMode: { value: true, editable: 'never' },
+        freeAgentMode: { value: true, editable: 'sleeping' },
         idleSleep: { value: 60, editable: 'always', minutes: 60, source: 'agent', applies: true },
       },
     });

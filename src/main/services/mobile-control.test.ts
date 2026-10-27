@@ -152,13 +152,15 @@ describe('mobile validation and chat dispatch', () => {
     const rt = runtime(); const cmd = command(new MobileCommandService(), { type: 'chat.interrupt' });
     await executeChatCommand(cmd as any, rt, async () => true); expect(rt.interrupt).toHaveBeenCalledOnce();
   });
-  it('requires an exact pending option and rejects persistent permission escalation', async () => {
-    const rt = runtime([event('permission_request', { requestId: 'p', options: [{ optionId: 'once', kind: 'allow_once' }, { optionId: 'always', kind: 'allow_always' }] })]);
+  it('requires an exact pending option and answers persistent ones as the approval dock does', async () => {
+    const options = [{ optionId: 'once', kind: 'allow_once' }, { optionId: 'session', kind: 'allow_session' }, { optionId: 'always', kind: 'allow_always' }, { optionId: 'never', kind: 'reject_always' }];
+    const rt = runtime([event('permission_request', { requestId: 'p', options })]);
     const cmd = command(new MobileCommandService(), { type: 'chat.permission', requestId: 'p', optionId: 'always' });
-    await expect(executeChatCommand(cmd as any, rt, async () => true)).rejects.toMatchObject({ code: 'persistent_approval_not_supported' });
     await expect(executeChatCommand({ ...cmd, optionId: 'bogus' } as any, rt, async () => true)).rejects.toMatchObject({ code: 'pending_request_not_found' });
-    await executeChatCommand({ ...cmd, optionId: 'once' } as any, rt, async () => true);
-    expect(rt.respondPermission).toHaveBeenCalledExactlyOnceWith('p', 'once');
+    for (const { optionId } of options) {
+      expect(await executeChatCommand({ ...cmd, optionId } as any, rt, async () => true)).toEqual({ answered: true, requestId: 'p' });
+    }
+    expect(vi.mocked(rt.respondPermission).mock.calls).toEqual(options.map((o) => ['p', o.optionId]));
   });
   it('rejects approval already settled while its transcript entry is still pending', async () => {
     const rt = runtime([event('permission_request', { requestId: 'p', options: [{ optionId: 'once', kind: 'allow_once' }] })]);
@@ -217,12 +219,15 @@ describe('agent.create and agent.update parsing (#2451, #2452)', () => {
     expect(code(update({ icon: 'x.png' }))).toBe('invalid_command');
     expect(code(update({ instructions: 'x' }))).toBe('invalid_command');
   });
-  it('never accepts Free Agent Mode from a phone, whatever its value', () => {
-    for (const freeAgentMode of [true, false, null]) {
-      expect(code(create({ freeAgentMode }))).toBe('free_agent_mode_not_allowed');
-      expect(code(update({ idleSleep: 30, freeAgentMode }))).toBe('free_agent_mode_not_allowed');
+  it('accepts Free Agent Mode as a boolean on both commands (#2462)', () => {
+    for (const freeAgentMode of [true, false]) {
+      expect(code(create({ freeAgentMode }))).toBe('ok');
+      expect(code(update({ freeAgentMode }))).toBe('ok');
     }
-    try { parseMobileCommand(create({ freeAgentMode: true })); } catch (e) { expect((e as MobileControlError).statusCode).toBe(403); }
+    for (const freeAgentMode of [null, 'yes', 1]) {
+      expect(code(create({ freeAgentMode }))).toBe('invalid_command');
+      expect(code(update({ freeAgentMode }))).toBe('invalid_command');
+    }
   });
   it('needs at least one setting on agent.update and validates each', () => {
     expect(code(update())).toBe('invalid_command');

@@ -516,10 +516,10 @@ describe('initAppEventBridge', () => {
 
   it('patches a durable agent a phone changed into the agent list (#2452)', () => {
     const onAgentUpdated = vi.mocked(window.clubhouse.annex.onAgentUpdated).mock.calls[0][0];
-    onAgentUpdated({ agentId: 'd1', name: 'calm-otter', color: 'rose', emoji: '🦦', model: null, orchestrator: 'codex-cli' });
+    onAgentUpdated({ agentId: 'd1', name: 'calm-otter', color: 'rose', emoji: '🦦', model: null, orchestrator: 'codex-cli', freeAgentMode: true });
     const patch = vi.mocked(useAgentStore.setState).mock.calls.at(-1)![0] as (s: unknown) => { agents: Record<string, unknown> };
     const before = { agents: { d1: { id: 'd1', name: 'brave-otter', color: 'indigo', icon: 'd1.png', model: 'opus', status: 'sleeping' } } };
-    expect(patch(before).agents.d1).toEqual({ id: 'd1', name: 'calm-otter', color: 'rose', emoji: '🦦', icon: undefined, model: undefined, orchestrator: 'codex-cli', status: 'sleeping' });
+    expect(patch(before).agents.d1).toEqual({ id: 'd1', name: 'calm-otter', color: 'rose', emoji: '🦦', icon: undefined, model: undefined, orchestrator: 'codex-cli', freeAgentMode: true, status: 'sleeping' });
     // An agent this window doesn't know is left alone.
     expect(patch({ agents: {} })).toEqual({ agents: {} });
   });
