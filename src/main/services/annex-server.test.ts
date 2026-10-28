@@ -761,6 +761,31 @@ describe('annex-server', () => {
       }
     });
 
+    it('sends a pack theme that omits accent2 and overlay*, with derived colors, in the snapshot and theme:changed (#2472)', async () => {
+      const themeService = await import('./theme-service');
+      const activeThemeStore = await import('./active-theme-store');
+      const { NEON_CYBERPUNK_THEME } = await import('../../shared/__fixtures__/neon-cyberpunk-theme');
+      const id = 'plugin:neon-themes:cyberpunk';
+      vi.mocked(themeService.getSettings).mockReturnValue({ themeId: id } as never);
+      const { colors, terminal, gradients } = NEON_CYBERPUNK_THEME;
+      activeThemeStore.syncActiveTheme({ id, type: 'dark', colors, terminal, gradients });
+      const expected = { ...colors, accent2: '#ff2090', overlay: '#5d5d83', overlay0: '#434365', overlay1: '#5d5d83', gradients };
+      await startAndPair();
+      const ws = { readyState: 1, send: vi.fn() };
+      annexServer._testing.wss!.clients.add(ws as never);
+      try {
+        const snapshot = await annexServer._testing.buildSnapshot() as { theme: Record<string, unknown> };
+        expect(snapshot.theme).toEqual(expected);
+        annexServer.broadcastThemeChanged();
+        const changed = ws.send.mock.calls.map(([data]) => JSON.parse(data)).find((m) => m.type === 'theme:changed');
+        expect(changed.payload).toEqual({ ...expected, terminalColors: terminal });
+      } finally {
+        annexServer._testing.wss!.clients.delete(ws as never);
+        activeThemeStore._reset();
+        vi.mocked(themeService.getSettings).mockReturnValue({ themeId: 'catppuccin-mocha' } as never);
+      }
+    });
+
     it('keeps the built-in colors, without gradients, for a built-in theme', async () => {
       const themeService = await import('./theme-service');
       const { THEMES } = await import('../../renderer/themes');

@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { THEMES } from '../../renderer/themes';
-import { _reset, getActiveTheme, resolveAnnexTheme, syncActiveTheme, type ActiveThemeSnapshot } from './active-theme-store';
+import { _reset, getActiveTheme, resolveAnnexTheme, syncActiveTheme, validateActiveThemeSnapshot, type ActiveThemeSnapshot } from './active-theme-store';
+import { NEON_CYBERPUNK_THEME } from '../../shared/__fixtures__/neon-cyberpunk-theme';
 
 const mocha = THEMES['catppuccin-mocha'];
 const workshop: ActiveThemeSnapshot = {
@@ -53,5 +54,35 @@ describe('resolveAnnexTheme', () => {
   it('omits gradients when the theme defines none', () => {
     expect(resolveAnnexTheme(workshop.id, { ...workshop, gradients: {} }, THEMES)).not.toHaveProperty('gradients');
     expect(resolveAnnexTheme('catppuccin-mocha', null, THEMES).gradients).toEqual(mocha.gradients);
+  });
+});
+
+describe('plugin pack themes without accent2/overlay* (#2472)', () => {
+  const cyberpunk: ActiveThemeSnapshot = {
+    id: 'plugin:neon-themes:cyberpunk',
+    type: 'dark',
+    colors: NEON_CYBERPUNK_THEME.colors,
+    terminal: NEON_CYBERPUNK_THEME.terminal,
+    gradients: NEON_CYBERPUNK_THEME.gradients,
+  };
+
+  it('passes validation', () => {
+    expect(() => validateActiveThemeSnapshot(cyberpunk, 'theme')).not.toThrow();
+  });
+
+  it('rejects a theme missing an essential color, naming it', () => {
+    const { surface2: _omit, ...colors } = NEON_CYBERPUNK_THEME.colors;
+    expect(() => validateActiveThemeSnapshot({ ...cyberpunk, colors } as ActiveThemeSnapshot, 'theme'))
+      .toThrow('theme.colors is missing surface2');
+  });
+
+  it('resolves with the derived colors', () => {
+    expect(resolveAnnexTheme(cyberpunk.id, cyberpunk, THEMES).colors).toEqual({
+      ...NEON_CYBERPUNK_THEME.colors,
+      accent2: '#ff2090',
+      overlay: '#5d5d83',
+      overlay0: '#434365',
+      overlay1: '#5d5d83',
+    });
   });
 });

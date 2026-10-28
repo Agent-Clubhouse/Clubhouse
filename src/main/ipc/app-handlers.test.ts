@@ -192,6 +192,7 @@ import * as logSettings from '../services/log-settings';
 import * as annexServer from '../services/annex-server';
 import { _reset as resetActiveTheme, getActiveTheme } from '../services/active-theme-store';
 import { THEMES } from '../../renderer/themes';
+import { NEON_CYBERPUNK_THEME } from '../../shared/__fixtures__/neon-cyberpunk-theme';
 import { ensureDefaultTemplates, enableExclusions, disableExclusions } from '../services/materialization-service';
 import { resolveOrchestrator } from '../services/agent-system';
 
@@ -425,6 +426,31 @@ describe('app-handlers', () => {
       const handler = handleHandlers.get(IPC.APP.SYNC_ACTIVE_THEME)!;
       expect(() => handler({}, theme)).toThrow();
       expect(getActiveTheme()).toBeNull();
+    });
+
+    it('stores and broadcasts a pack theme that omits accent2 and overlay* (#2472)', async () => {
+      const pack = {
+        id: 'plugin:neon-themes:cyberpunk',
+        type: 'dark' as const,
+        colors: NEON_CYBERPUNK_THEME.colors,
+        terminal: NEON_CYBERPUNK_THEME.terminal,
+      };
+      vi.mocked(themeService.getSettings).mockReturnValueOnce({ themeId: pack.id } as never);
+      const handler = handleHandlers.get(IPC.APP.SYNC_ACTIVE_THEME)!;
+      await handler({}, pack);
+      expect(getActiveTheme()).toEqual(pack);
+      expect(annexServer.broadcastThemeChanged).toHaveBeenCalledTimes(1);
+      expect(logService.appLog).not.toHaveBeenCalledWith('core:theme', expect.anything(), expect.anything(), expect.anything());
+    });
+
+    it('logs a rejected sync with the missing keys (#2472)', () => {
+      const { surface2: _omit, ...colors } = NEON_CYBERPUNK_THEME.colors;
+      const handler = handleHandlers.get(IPC.APP.SYNC_ACTIVE_THEME)!;
+      expect(() => handler({}, { id: 'plugin:neon-themes:cyberpunk', type: 'dark', colors })).toThrow();
+      expect(getActiveTheme()).toBeNull();
+      expect(logService.appLog).toHaveBeenCalledWith('core:theme', 'warn', 'Rejected active theme sync', {
+        meta: { themeId: 'plugin:neon-themes:cyberpunk', error: expect.stringContaining('missing surface2') },
+      });
     });
   });
 

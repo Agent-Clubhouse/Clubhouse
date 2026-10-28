@@ -7,11 +7,13 @@
  * of falling back to Catppuccin Mocha (the same pattern as plugin-theme-store).
  */
 import type { TerminalColors, ThemeColors, ThemeDefinition, ThemeGradients } from '../../shared/types';
+import { missingEssentialColors, withColorFallbacks, type ThemeColorsInput } from '../../shared/theme-colors';
 
 export interface ActiveThemeSnapshot {
   id: string;
   type: 'dark' | 'light';
-  colors: ThemeColors;
+  /** May lack the derivable keys (accent2, overlay*); resolveAnnexTheme fills them. */
+  colors: ThemeColorsInput;
   terminal?: TerminalColors;
   gradients?: ThemeGradients;
 }
@@ -57,7 +59,8 @@ export function resolveAnnexTheme(
   if (synced && synced.id === selectedId) {
     const gradients = nonEmptyGradients(synced.gradients);
     return {
-      colors: synced.colors,
+      // An older renderer or pack may sync without the derivable keys.
+      colors: withColorFallbacks(synced.colors),
       terminal: synced.terminal ?? builtin.terminal,
       ...(gradients ? { gradients } : {}),
     };
@@ -66,11 +69,6 @@ export function resolveAnnexTheme(
   return { colors: builtin.colors, terminal: builtin.terminal, ...(gradients ? { gradients } : {}) };
 }
 
-/** The ThemeColors keys a phone needs; the rest of ThemeColors is optional. */
-const REQUIRED_COLOR_KEYS: ReadonlyArray<keyof ThemeColors> = [
-  'base', 'mantle', 'crust', 'text', 'subtext0', 'subtext1', 'surface0', 'surface1', 'surface2',
-  'accent', 'link', 'warning', 'error', 'info', 'success', 'accent2', 'overlay', 'overlay0', 'overlay1',
-];
 const GRADIENT_KEYS: ReadonlyArray<keyof ThemeGradients> = ['background', 'surface', 'accent'];
 
 function assertStringRecord(value: unknown, name: string): asserts value is Record<string, string> {
@@ -85,9 +83,9 @@ export function validateActiveThemeSnapshot(v: ActiveThemeSnapshot, name: string
   if (typeof v.id !== 'string' || !v.id) throw new Error(`${name}.id must be a non-empty string`);
   if (v.type !== 'dark' && v.type !== 'light') throw new Error(`${name}.type must be 'dark' or 'light'`);
   assertStringRecord(v.colors, `${name}.colors`);
-  for (const key of REQUIRED_COLOR_KEYS) {
-    if (!v.colors[key]) throw new Error(`${name}.colors.${key} must be a non-empty string`);
-  }
+  // Only the keys nothing derives: resolveAnnexTheme fills accent2 and overlay* (#2472).
+  const missing = missingEssentialColors(v.colors);
+  if (missing.length) throw new Error(`${name}.colors is missing ${missing.join(', ')}`);
   if (v.terminal !== undefined) assertStringRecord(v.terminal, `${name}.terminal`);
   if (v.gradients !== undefined) {
     assertStringRecord(v.gradients, `${name}.gradients`);

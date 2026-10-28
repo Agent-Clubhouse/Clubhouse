@@ -1,6 +1,7 @@
 import { describe, it, expect, afterEach } from 'vitest';
 import { THEMES, THEME_IDS, registerTheme, unregisterTheme, getTheme, getAllThemeIds, onRegistryChange } from './index';
 import { ThemeId, ThemeDefinition } from '../../shared/types';
+import { NEON_CYBERPUNK_THEME } from '../../shared/__fixtures__/neon-cyberpunk-theme';
 
 /**
  * Convert a hex color (#rrggbb) to its WCAG relative luminance.
@@ -239,6 +240,22 @@ describe('theme registry', () => {
       expect(mocha.terminal.red).toBe('#f38ba8');
       expect(mocha.terminal.green).toBe('#a6e3a1');
       expect(mocha.terminal.blue).toBe('#89b4fa');
+    });
+  });
+});
+
+describe('registerTheme color fallbacks (#2472)', () => {
+  const id = 'plugin:neon-themes:cyberpunk' as ThemeId;
+  afterEach(() => unregisterTheme(id));
+
+  it('derives the colors a pack theme omits', () => {
+    registerTheme({ ...NEON_CYBERPUNK_THEME, id } as unknown as ThemeDefinition);
+    expect(getTheme(id)?.colors).toMatchObject({
+      ...NEON_CYBERPUNK_THEME.colors,
+      accent2: '#ff2090',
+      overlay: '#5d5d83',
+      overlay0: '#434365',
+      overlay1: '#5d5d83',
     });
   });
 });

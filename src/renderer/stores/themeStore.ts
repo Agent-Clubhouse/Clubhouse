@@ -2,6 +2,7 @@ import { create } from 'zustand';
 import { ThemeId, ThemeDefinition } from '../../shared/types';
 import { getTheme, getAllThemeIds, getAllThemes, BUILTIN_THEMES, onRegistryChange } from '../themes';
 import { applyTheme } from '../themes/apply-theme';
+import { rendererLog } from '../plugins/renderer-logger';
 
 /** Notify the main process to update the Windows title bar overlay colors. */
 function syncTitleBarOverlay(theme: ThemeDefinition): void {
@@ -23,7 +24,12 @@ function syncActiveThemeToMain(theme: ThemeDefinition): void {
       colors: theme.colors,
       terminal: theme.terminal,
       ...(theme.gradients ? { gradients: theme.gradients } : {}),
-    })).catch(() => { /* main process not ready yet — the next apply resyncs */ });
+    })).catch((err: unknown) => {
+      // Main rejected it (or isn't ready yet); phones keep the previous theme (#2472).
+      rendererLog('core:theme', 'warn', 'Active theme sync failed', {
+        meta: { themeId: theme.id, error: err instanceof Error ? err.message : String(err) },
+      });
+    });
   } catch {
     /* preload bridge not available yet — the next apply resyncs */
   }

@@ -57,6 +57,7 @@ export const KNOWN_LOG_NAMESPACES: readonly string[] = [
   'core:shutdown',
   'core:startup',
   'core:telemetry',
+  'core:theme',
   'core:window',
   'marketplace',
   'marketplace:custom',

@@ -8,6 +8,7 @@ import { dracula } from './dracula';
 import { tokyoNight } from './tokyo-night';
 import { gruvboxDark } from './gruvbox-dark';
 import { cyberpunk } from './cyberpunk';
+import { withColorFallbacks } from '../../shared/theme-colors';
 
 /** Built-in themes — static, never mutated. */
 export const BUILTIN_THEMES: Record<BuiltinThemeId, ThemeDefinition> = {
@@ -42,9 +43,14 @@ function notifyListeners(): void {
   }
 }
 
-/** Register a plugin-contributed theme. */
+/**
+ * Register a plugin-contributed theme. Colors it leaves out (packs predate
+ * `accent2` and `overlay*`) are derived, so it applies and syncs like a
+ * built-in (#2472).
+ */
 export function registerTheme(theme: ThemeDefinition): void {
-  themeRegistry.set(theme.id, theme);
+  const colors = withColorFallbacks(theme.colors);
+  themeRegistry.set(theme.id, colors === theme.colors ? theme : { ...theme, colors });
   notifyListeners();
 }
 
