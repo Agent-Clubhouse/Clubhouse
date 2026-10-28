@@ -13,7 +13,6 @@ import { rendererLog } from './renderer-logger';
 import { dynamicImportModule } from './dynamic-import';
 import { buildPluginModuleUrl } from '../../shared/plugin-protocol-url';
 import { registerTheme, unregisterTheme } from '../themes';
-import { missingEssentialColors } from '../../shared/theme-colors';
 import { RETIRED_EXPERIMENTAL_FLAGS, stripRetiredPluginIds } from './retired-plugins';
 import { ATTR, isTelemetryEnabled, tel } from '../telemetry';
 import type { Classification } from '../telemetry/facade';
@@ -202,13 +201,6 @@ function packThemeId(pluginId: string, themeId: string): string {
 /** Convert a plugin theme declaration to a ThemeDefinition and register it. */
 function registerPackThemes(pluginId: string, themes: PluginThemeDeclaration[]): void {
   for (const decl of themes) {
-    // registerTheme derives the optional colors; nothing derives these (#2472).
-    const missing = missingEssentialColors(decl.colors ?? {});
-    if (missing.length) {
-      rendererLog('core:plugins', 'warn', `Pack theme "${decl.id}" is missing colors; it won't reach phones`, {
-        meta: { pluginId, themeId: decl.id, missing },
-      });
-    }
     const def: ThemeDefinition = {
       id: packThemeId(pluginId, decl.id),
       name: decl.name,

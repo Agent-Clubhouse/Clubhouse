@@ -8,7 +8,7 @@ import { dracula } from './dracula';
 import { tokyoNight } from './tokyo-night';
 import { gruvboxDark } from './gruvbox-dark';
 import { cyberpunk } from './cyberpunk';
-import { withColorFallbacks } from '../../shared/theme-colors';
+import { completeThemePalette } from '../../shared/theme-colors';
 
 /** Built-in themes — static, never mutated. */
 export const BUILTIN_THEMES: Record<BuiltinThemeId, ThemeDefinition> = {
@@ -44,13 +44,14 @@ function notifyListeners(): void {
 }
 
 /**
- * Register a plugin-contributed theme. Colors it leaves out (packs predate
- * `accent2` and `overlay*`) are derived, so it applies and syncs like a
- * built-in (#2472).
+ * Register a plugin-contributed theme. Missing or malformed colors are derived
+ * or filled from the base theme for its type, so every theme applies and
+ * syncs with a full palette (#2472). A complete theme is stored as is.
  */
 export function registerTheme(theme: ThemeDefinition): void {
-  const colors = withColorFallbacks(theme.colors);
-  themeRegistry.set(theme.id, colors === theme.colors ? theme : { ...theme, colors });
+  const { colors, hljs, terminal } = completeThemePalette(theme);
+  const unchanged = colors === theme.colors && hljs === theme.hljs && terminal === theme.terminal;
+  themeRegistry.set(theme.id, unchanged ? theme : { ...theme, colors, hljs, terminal });
   notifyListeners();
 }
 

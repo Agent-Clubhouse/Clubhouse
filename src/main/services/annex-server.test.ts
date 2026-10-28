@@ -761,29 +761,56 @@ describe('annex-server', () => {
       }
     });
 
-    it('sends a pack theme that omits accent2 and overlay*, with derived colors, in the snapshot and theme:changed (#2472)', async () => {
+    /** Sync `theme` as the selected one; return what a phone gets in the snapshot and in theme:changed. */
+    async function phoneTheme(theme: Omit<import('./active-theme-store').ActiveThemeSnapshot, 'id'>) {
       const themeService = await import('./theme-service');
       const activeThemeStore = await import('./active-theme-store');
-      const { NEON_CYBERPUNK_THEME } = await import('../../shared/__fixtures__/neon-cyberpunk-theme');
       const id = 'plugin:neon-themes:cyberpunk';
       vi.mocked(themeService.getSettings).mockReturnValue({ themeId: id } as never);
-      const { colors, terminal, gradients } = NEON_CYBERPUNK_THEME;
-      activeThemeStore.syncActiveTheme({ id, type: 'dark', colors, terminal, gradients });
-      const expected = { ...colors, accent2: '#ff2090', overlay: '#5d5d83', overlay0: '#434365', overlay1: '#5d5d83', gradients };
+      activeThemeStore.syncActiveTheme({ id, ...theme });
       await startAndPair();
       const ws = { readyState: 1, send: vi.fn() };
       annexServer._testing.wss!.clients.add(ws as never);
       try {
         const snapshot = await annexServer._testing.buildSnapshot() as { theme: Record<string, unknown> };
-        expect(snapshot.theme).toEqual(expected);
         annexServer.broadcastThemeChanged();
         const changed = ws.send.mock.calls.map(([data]) => JSON.parse(data)).find((m) => m.type === 'theme:changed');
-        expect(changed.payload).toEqual({ ...expected, terminalColors: terminal });
+        return { snapshot: snapshot.theme, changed: changed.payload as Record<string, unknown> };
       } finally {
         annexServer._testing.wss!.clients.delete(ws as never);
         activeThemeStore._reset();
         vi.mocked(themeService.getSettings).mockReturnValue({ themeId: 'catppuccin-mocha' } as never);
       }
+    }
+
+    it('sends a pack theme that omits accent2 and overlay*, with derived colors (#2472)', async () => {
+      const { NEON_CYBERPUNK_THEME } = await import('../../shared/__fixtures__/neon-cyberpunk-theme');
+      const { colors, terminal, gradients } = NEON_CYBERPUNK_THEME;
+      const { snapshot, changed } = await phoneTheme({ type: 'dark', colors, terminal, gradients });
+      const expected = { ...colors, accent2: '#ff2090', overlay: '#5d5d83', overlay0: '#434365', overlay1: '#5d5d83', gradients };
+      expect(snapshot).toEqual(expected);
+      expect(changed).toEqual({ ...expected, terminalColors: terminal });
+    });
+
+    it('sends a full palette for a theme with only base, text and accent (#2472)', async () => {
+      const { THEMES } = await import('../../renderer/themes');
+      const mocha = THEMES['catppuccin-mocha'];
+      const { snapshot, changed } = await phoneTheme({ type: 'dark', colors: { base: '#101820', text: '#e0f0ff', accent: '#ff8800' } });
+      expect(Object.keys(snapshot).sort()).toEqual(Object.keys(mocha.colors).sort());
+      expect(snapshot).toMatchObject({ base: '#101820', text: '#e0f0ff', accent: '#ff8800', link: '#ff8800', success: mocha.colors.success });
+      for (const value of Object.values(snapshot)) expect(value).toMatch(/^#[0-9a-f]{6}$/);
+      const { terminalColors, ...changedColors } = changed;
+      expect(changedColors).toEqual(snapshot);
+      expect(terminalColors).toMatchObject({ background: '#101820', foreground: '#e0f0ff', cursor: '#ff8800' });
+      expect(Object.keys(terminalColors as object).sort()).toEqual(Object.keys(mocha.terminal).sort());
+    });
+
+    it('sends the Latte palette for a light theme with empty colors (#2472)', async () => {
+      const { THEMES } = await import('../../renderer/themes');
+      const latte = THEMES['catppuccin-latte'];
+      const { snapshot, changed } = await phoneTheme({ type: 'light', colors: {} });
+      expect(snapshot).toEqual(latte.colors);
+      expect(changed).toEqual({ ...latte.colors, terminalColors: latte.terminal });
     });
 
     it('keeps the built-in colors, without gradients, for a built-in theme', async () => {

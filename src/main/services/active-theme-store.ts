@@ -7,15 +7,15 @@
  * of falling back to Catppuccin Mocha (the same pattern as plugin-theme-store).
  */
 import type { TerminalColors, ThemeColors, ThemeDefinition, ThemeGradients } from '../../shared/types';
-import { missingEssentialColors, withColorFallbacks, type ThemeColorsInput } from '../../shared/theme-colors';
+import { completeThemePalette, type ColorsInput } from '../../shared/theme-colors';
 
 export interface ActiveThemeSnapshot {
   id: string;
   type: 'dark' | 'light';
-  /** May lack the derivable keys (accent2, overlay*); resolveAnnexTheme fills them. */
-  colors: ThemeColorsInput;
-  terminal?: TerminalColors;
-  gradients?: ThemeGradients;
+  /** Any key may be missing or malformed: resolveAnnexTheme completes them (#2472). */
+  colors: ColorsInput;
+  terminal?: ColorsInput;
+  gradients?: object;
 }
 
 /** What Annex sends phones for the selected theme. */
@@ -41,58 +41,47 @@ export function getActiveTheme(): ActiveThemeSnapshot | null {
   return activeTheme;
 }
 
-function nonEmptyGradients(gradients: ThemeGradients | undefined): ThemeGradients | undefined {
-  return gradients && Object.values(gradients).some((g) => typeof g === 'string' && g) ? gradients : undefined;
+const GRADIENT_KEYS: ReadonlyArray<keyof ThemeGradients> = ['background', 'surface', 'accent'];
+
+/** The known, non-empty gradients, or undefined when there are none. */
+function nonEmptyGradients(gradients: object | undefined): ThemeGradients | undefined {
+  const g = (gradients ?? {}) as Record<string, unknown>;
+  const known = GRADIENT_KEYS.filter((key) => typeof g[key] === 'string' && g[key]);
+  return known.length ? Object.fromEntries(known.map((key) => [key, g[key]])) as ThemeGradients : undefined;
 }
 
 /**
- * The synced theme when it is the selected one, else the built-in for the id
- * (Mocha for an unknown id). A synced theme that is not the selected one is
- * stale or a fallback the renderer applied while a plugin theme loads.
+ * The synced theme when it is the selected one, completed so a phone always
+ * gets a full palette (#2472); else the built-in for the id (Mocha for an
+ * unknown id). A synced theme that is not the selected one is stale or a
+ * fallback the renderer applied while a plugin theme loads.
  */
 export function resolveAnnexTheme(
   selectedId: string,
   synced: ActiveThemeSnapshot | null,
   builtins: Record<string, ThemeDefinition>,
 ): AnnexTheme {
-  const builtin = builtins[selectedId] ?? builtins[FALLBACK_THEME_ID];
-  if (synced && synced.id === selectedId) {
-    const gradients = nonEmptyGradients(synced.gradients);
-    return {
-      // An older renderer or pack may sync without the derivable keys.
-      colors: withColorFallbacks(synced.colors),
-      terminal: synced.terminal ?? builtin.terminal,
-      ...(gradients ? { gradients } : {}),
-    };
-  }
-  const gradients = nonEmptyGradients(builtin.gradients);
-  return { colors: builtin.colors, terminal: builtin.terminal, ...(gradients ? { gradients } : {}) };
+  const theme = synced && synced.id === selectedId ? synced : builtins[selectedId] ?? builtins[FALLBACK_THEME_ID];
+  const { colors, terminal } = completeThemePalette(theme);
+  const gradients = nonEmptyGradients(theme.gradients);
+  return { colors, terminal, ...(gradients ? { gradients } : {}) };
 }
 
-const GRADIENT_KEYS: ReadonlyArray<keyof ThemeGradients> = ['background', 'surface', 'accent'];
-
-function assertStringRecord(value: unknown, name: string): asserts value is Record<string, string> {
+function assertObject(value: unknown, name: string): void {
   if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error(`${name} must be an object`);
-  for (const [key, v] of Object.entries(value)) {
-    if (typeof v !== 'string') throw new Error(`${name}.${key} must be a string`);
-  }
 }
 
-/** IPC validation for SYNC_ACTIVE_THEME (withValidatedArgs' objectArg validate). */
+/**
+ * IPC validation for SYNC_ACTIVE_THEME (withValidatedArgs' objectArg validate).
+ * Checks only the shape: missing or malformed colors and gradients are
+ * completed or dropped by resolveAnnexTheme, never refused (#2472).
+ */
 export function validateActiveThemeSnapshot(v: ActiveThemeSnapshot, name: string): void {
   if (typeof v.id !== 'string' || !v.id) throw new Error(`${name}.id must be a non-empty string`);
   if (v.type !== 'dark' && v.type !== 'light') throw new Error(`${name}.type must be 'dark' or 'light'`);
-  assertStringRecord(v.colors, `${name}.colors`);
-  // Only the keys nothing derives: resolveAnnexTheme fills accent2 and overlay* (#2472).
-  const missing = missingEssentialColors(v.colors);
-  if (missing.length) throw new Error(`${name}.colors is missing ${missing.join(', ')}`);
-  if (v.terminal !== undefined) assertStringRecord(v.terminal, `${name}.terminal`);
-  if (v.gradients !== undefined) {
-    assertStringRecord(v.gradients, `${name}.gradients`);
-    for (const key of Object.keys(v.gradients)) {
-      if (!GRADIENT_KEYS.includes(key as keyof ThemeGradients)) throw new Error(`${name}.gradients.${key} is not a known gradient`);
-    }
-  }
+  assertObject(v.colors, `${name}.colors`);
+  if (v.terminal !== undefined) assertObject(v.terminal, `${name}.terminal`);
+  if (v.gradients !== undefined) assertObject(v.gradients, `${name}.gradients`);
 }
 
 /** Reset store state — useful for testing. */

@@ -258,4 +258,19 @@ describe('registerTheme color fallbacks (#2472)', () => {
       overlay1: '#5d5d83',
     });
   });
+
+  it('completes a theme with only base, text and accent, and no terminal or syntax colors', () => {
+    registerTheme({ id, name: 'Minimal', type: 'light', colors: { base: '#fafafa', text: '#202020', accent: '#0066cc' } } as unknown as ThemeDefinition);
+    const theme = getTheme(id)!;
+    expect(Object.keys(theme.colors).sort()).toEqual(Object.keys(THEMES['catppuccin-latte'].colors).sort());
+    expect(theme.colors).toMatchObject({ base: '#fafafa', accent2: '#0066cc', error: THEMES['catppuccin-latte'].colors.error });
+    expect(theme.terminal).toMatchObject({ background: '#fafafa', foreground: '#202020' });
+    expect(theme.hljs).toMatchObject({ keyword: '#0066cc', variable: '#202020' });
+  });
+
+  it('stores a complete theme as is', () => {
+    const complete = { ...THEMES.dracula, id };
+    registerTheme(complete);
+    expect(getTheme(id)).toBe(complete);
+  });
 });

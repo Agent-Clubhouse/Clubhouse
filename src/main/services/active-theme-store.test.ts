@@ -46,9 +46,26 @@ describe('resolveAnnexTheme', () => {
     expect(resolved.terminal).toEqual(THEMES['catppuccin-latte'].terminal);
   });
 
-  it('fills a missing synced terminal palette from the built-in', () => {
+  it('derives a missing synced terminal palette from the theme, the rest from the built-in', () => {
     const { terminal: _omit, ...noTerminal } = workshop;
-    expect(resolveAnnexTheme(workshop.id, noTerminal, THEMES).terminal).toEqual(mocha.terminal);
+    expect(resolveAnnexTheme(workshop.id, noTerminal, THEMES).terminal).toEqual({
+      ...mocha.terminal,
+      background: workshop.colors.base,
+      cursor: workshop.colors.accent,
+      cursorAccent: workshop.colors.base,
+      foreground: mocha.colors.text,
+      selectionBackground: mocha.colors.surface2,
+      selectionForeground: mocha.colors.text,
+      red: mocha.colors.error,
+      green: mocha.colors.success,
+      yellow: mocha.colors.warning,
+      blue: mocha.colors.info,
+    });
+  });
+
+  it('drops unknown and empty gradients', () => {
+    expect(resolveAnnexTheme(workshop.id, { ...workshop, gradients: { glow: 'x', surface: '', accent: 'a' } }, THEMES).gradients)
+      .toEqual({ accent: 'a' });
   });
 
   it('omits gradients when the theme defines none', () => {
@@ -70,10 +87,39 @@ describe('plugin pack themes without accent2/overlay* (#2472)', () => {
     expect(() => validateActiveThemeSnapshot(cyberpunk, 'theme')).not.toThrow();
   });
 
-  it('rejects a theme missing an essential color, naming it', () => {
-    const { surface2: _omit, ...colors } = NEON_CYBERPUNK_THEME.colors;
-    expect(() => validateActiveThemeSnapshot({ ...cyberpunk, colors } as ActiveThemeSnapshot, 'theme'))
-      .toThrow('theme.colors is missing surface2');
+  it.each([
+    ['colors with only base, text and accent', { base: '#101820', text: '#e0f0ff', accent: '#ff8800' }],
+    ['empty colors', {}],
+    ['malformed colors', { base: 'black', text: 3, accent: null }],
+  ])('accepts %s', (_label, colors) => {
+    expect(() => validateActiveThemeSnapshot({ ...cyberpunk, colors }, 'theme')).not.toThrow();
+  });
+
+  it.each([
+    ['a missing id', { ...cyberpunk, id: '' }],
+    ['an unknown type', { ...cyberpunk, type: 'sepia' }],
+    ['colors that are not an object', { ...cyberpunk, colors: 'neon' }],
+  ])('refuses a payload with %s', (_label, theme) => {
+    expect(() => validateActiveThemeSnapshot(theme as ActiveThemeSnapshot, 'theme')).toThrow();
+  });
+
+  it('resolves a theme with only base, text and accent to a full palette', () => {
+    const resolved = resolveAnnexTheme(cyberpunk.id, { ...cyberpunk, colors: { base: '#101820', text: '#e0f0ff', accent: '#ff8800' }, terminal: undefined }, THEMES);
+    expect(Object.keys(resolved.colors).sort()).toEqual(Object.keys(mocha.colors).sort());
+    expect(Object.keys(resolved.terminal).sort()).toEqual(Object.keys(mocha.terminal).sort());
+    expect(resolved.colors).toMatchObject({ base: '#101820', text: '#e0f0ff', accent: '#ff8800', accent2: '#ff8800' });
+  });
+
+  it('resolves empty light colors to Latte', () => {
+    const resolved = resolveAnnexTheme(cyberpunk.id, { id: cyberpunk.id, type: 'light', colors: {} }, THEMES);
+    expect(resolved.colors).toEqual(THEMES['catppuccin-latte'].colors);
+    expect(resolved.terminal).toEqual(THEMES['catppuccin-latte'].terminal);
+  });
+
+  it.each(Object.keys(THEMES))('resolves built-in %s unchanged', (id) => {
+    const resolved = resolveAnnexTheme(id, null, THEMES);
+    expect(resolved.colors).toBe(THEMES[id].colors);
+    expect(resolved.terminal).toBe(THEMES[id].terminal);
   });
 
   it('resolves with the derived colors', () => {

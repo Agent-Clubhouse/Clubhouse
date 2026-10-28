@@ -194,7 +194,7 @@ export function registerAppHandlers(): void {
         try {
           validateActiveThemeSnapshot(theme, name);
         } catch (err) {
-          // Phones keep the previous theme, so say why (#2472).
+          // Only a malformed payload gets here; phones keep the previous theme (#2472).
           appLog('core:theme', 'warn', 'Rejected active theme sync', {
             meta: { themeId: theme.id, error: err instanceof Error ? err.message : String(err) },
           });
