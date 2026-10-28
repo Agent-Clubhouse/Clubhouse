@@ -192,6 +192,7 @@ import * as logSettings from '../services/log-settings';
 import * as annexServer from '../services/annex-server';
 import { _reset as resetActiveTheme, getActiveTheme } from '../services/active-theme-store';
 import { THEMES } from '../../renderer/themes';
+import { NEON_CYBERPUNK_THEME } from '../../shared/__fixtures__/neon-cyberpunk-theme';
 import { ensureDefaultTemplates, enableExclusions, disableExclusions } from '../services/materialization-service';
 import { resolveOrchestrator } from '../services/agent-system';
 
@@ -417,14 +418,50 @@ describe('app-handlers', () => {
     });
 
     it.each([
-      ['a missing color', { ...workshop, colors: { ...workshop.colors, base: undefined } }],
-      ['a non-string color', { ...workshop, colors: { ...workshop.colors, text: 3 } }],
-      ['an unknown type', { ...workshop, type: 'sepia' }],
-      ['an unknown gradient', { ...workshop, gradients: { glow: 'x' } }],
-    ])('rejects %s', (_label, theme) => {
+      ['a missing id', { ...workshop, id: '' }],
+      ['colors that are not an object', { ...workshop, colors: 'neon' }],
+    ])('refuses a malformed payload: %s', (_label, theme) => {
       const handler = handleHandlers.get(IPC.APP.SYNC_ACTIVE_THEME)!;
       expect(() => handler({}, theme)).toThrow();
       expect(getActiveTheme()).toBeNull();
+    });
+
+    it.each([
+      ['a missing color', { ...workshop, colors: { ...workshop.colors, base: undefined } }],
+      ['a non-string color', { ...workshop, colors: { ...workshop.colors, text: 3 } }],
+      ['an unknown gradient', { ...workshop, gradients: { glow: 'x' } }],
+      ['only base, text and accent', { ...workshop, colors: { base: '#101820', text: '#e0f0ff', accent: '#ff8800' } }],
+      ['empty colors', { ...workshop, colors: {} }],
+      ['an unknown type', { ...workshop, type: 'sepia' }],
+      ['no type', { id: workshop.id, colors: workshop.colors }],
+    ])('accepts a theme with %s, without logging (#2472)', async (_label, theme) => {
+      const handler = handleHandlers.get(IPC.APP.SYNC_ACTIVE_THEME)!;
+      await handler({}, theme);
+      expect(getActiveTheme()).toEqual(theme);
+      expect(logService.appLog).not.toHaveBeenCalledWith('core:theme', expect.anything(), expect.anything(), expect.anything());
+    });
+
+    it('stores and broadcasts a pack theme that omits accent2 and overlay* (#2472)', async () => {
+      const pack = {
+        id: 'plugin:neon-themes:cyberpunk',
+        type: 'dark' as const,
+        colors: NEON_CYBERPUNK_THEME.colors,
+        terminal: NEON_CYBERPUNK_THEME.terminal,
+      };
+      vi.mocked(themeService.getSettings).mockReturnValueOnce({ themeId: pack.id } as never);
+      const handler = handleHandlers.get(IPC.APP.SYNC_ACTIVE_THEME)!;
+      await handler({}, pack);
+      expect(getActiveTheme()).toEqual(pack);
+      expect(annexServer.broadcastThemeChanged).toHaveBeenCalledTimes(1);
+      expect(logService.appLog).not.toHaveBeenCalledWith('core:theme', expect.anything(), expect.anything(), expect.anything());
+    });
+
+    it('logs a refused payload (#2472)', () => {
+      const handler = handleHandlers.get(IPC.APP.SYNC_ACTIVE_THEME)!;
+      expect(() => handler({}, { id: 'plugin:neon-themes:cyberpunk', type: 'dark', colors: 'neon' })).toThrow();
+      expect(logService.appLog).toHaveBeenCalledWith('core:theme', 'warn', 'Rejected active theme sync', {
+        meta: { themeId: 'plugin:neon-themes:cyberpunk', error: expect.stringContaining('colors must be an object') },
+      });
     });
   });
 

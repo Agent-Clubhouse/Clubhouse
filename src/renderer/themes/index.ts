@@ -8,6 +8,7 @@ import { dracula } from './dracula';
 import { tokyoNight } from './tokyo-night';
 import { gruvboxDark } from './gruvbox-dark';
 import { cyberpunk } from './cyberpunk';
+import { completeThemePalette } from '../../shared/theme-colors';
 
 /** Built-in themes — static, never mutated. */
 export const BUILTIN_THEMES: Record<BuiltinThemeId, ThemeDefinition> = {
@@ -42,9 +43,15 @@ function notifyListeners(): void {
   }
 }
 
-/** Register a plugin-contributed theme. */
+/**
+ * Register a plugin-contributed theme. Missing or malformed colors are derived
+ * or filled from the base theme for its type, so every theme applies and
+ * syncs with a full palette (#2472). A complete theme is stored as is.
+ */
 export function registerTheme(theme: ThemeDefinition): void {
-  themeRegistry.set(theme.id, theme);
+  const { colors, hljs, terminal } = completeThemePalette(theme);
+  const unchanged = colors === theme.colors && hljs === theme.hljs && terminal === theme.terminal;
+  themeRegistry.set(theme.id, unchanged ? theme : { ...theme, colors, hljs, terminal });
   notifyListeners();
 }
 

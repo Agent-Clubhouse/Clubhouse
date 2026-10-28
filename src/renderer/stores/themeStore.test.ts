@@ -6,6 +6,10 @@ vi.mock('../themes/apply-theme', () => ({
   applyTheme: vi.fn(),
 }));
 
+vi.mock('../plugins/renderer-logger', () => ({
+  rendererLog: vi.fn(),
+}));
+
 // ---------- IPC mock ----------
 const mockApp = {
   getTheme: vi.fn<() => Promise<{ themeId: string } | null>>(),
@@ -32,6 +36,8 @@ vi.stubGlobal('localStorage', {
 import { useThemeStore } from './themeStore';
 import { THEMES, registerTheme, unregisterTheme } from '../themes';
 import { applyTheme } from '../themes/apply-theme';
+import { rendererLog } from '../plugins/renderer-logger';
+import { NEON_CYBERPUNK_THEME } from '../../shared/__fixtures__/neon-cyberpunk-theme';
 
 // ---------- helpers ----------
 function getState() {
@@ -324,6 +330,32 @@ describe('themeStore', () => {
       mockApp.syncActiveTheme.mockClear();
       registerTheme(workshop);
       expect(mockApp.syncActiveTheme).toHaveBeenLastCalledWith(expect.objectContaining({ id: workshop.id, colors: workshop.colors }));
+    });
+
+    it('pushes a pack theme with the colors it omits derived (#2472)', async () => {
+      const id = 'plugin:neon-themes:cyberpunk' as ThemeId;
+      registerTheme({ ...NEON_CYBERPUNK_THEME, id } as unknown as ThemeDefinition);
+      try {
+        mockApp.syncActiveTheme.mockClear();
+        await getState().setTheme(id);
+        expect(mockApp.syncActiveTheme.mock.calls[0][0].colors).toEqual({
+          ...NEON_CYBERPUNK_THEME.colors,
+          accent2: '#ff2090',
+          overlay: '#5d5d83',
+          overlay0: '#434365',
+          overlay1: '#5d5d83',
+        });
+      } finally {
+        unregisterTheme(id);
+      }
+    });
+
+    it('logs a sync main rejects instead of swallowing it (#2472)', async () => {
+      mockApp.syncActiveTheme.mockRejectedValueOnce(new Error('theme.colors is missing surface2'));
+      await getState().setTheme('dracula');
+      await vi.waitFor(() => expect(rendererLog).toHaveBeenCalledWith('core:theme', 'warn', 'Active theme sync failed', {
+        meta: { themeId: 'dracula', error: 'theme.colors is missing surface2' },
+      }));
     });
 
     it('leaves gradients out for a theme without them', async () => {
