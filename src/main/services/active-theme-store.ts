@@ -11,7 +11,8 @@ import { completeThemePalette, type ColorsInput } from '../../shared/theme-color
 
 export interface ActiveThemeSnapshot {
   id: string;
-  type: 'dark' | 'light';
+  /** Anything but 'light' (including missing) is treated as dark (#2472). */
+  type?: 'dark' | 'light' | (string & {});
   /** Any key may be missing or malformed: resolveAnnexTheme completes them (#2472). */
   colors: ColorsInput;
   terminal?: ColorsInput;
@@ -74,11 +75,12 @@ function assertObject(value: unknown, name: string): void {
 /**
  * IPC validation for SYNC_ACTIVE_THEME (withValidatedArgs' objectArg validate).
  * Checks only the shape: missing or malformed colors and gradients are
- * completed or dropped by resolveAnnexTheme, never refused (#2472).
+ * completed or dropped by resolveAnnexTheme, and an unknown or missing type
+ * is treated as dark, so nothing but an empty id or non-object parts is
+ * refused (#2472).
  */
 export function validateActiveThemeSnapshot(v: ActiveThemeSnapshot, name: string): void {
   if (typeof v.id !== 'string' || !v.id) throw new Error(`${name}.id must be a non-empty string`);
-  if (v.type !== 'dark' && v.type !== 'light') throw new Error(`${name}.type must be 'dark' or 'light'`);
   assertObject(v.colors, `${name}.colors`);
   if (v.terminal !== undefined) assertObject(v.terminal, `${name}.terminal`);
   if (v.gradients !== undefined) assertObject(v.gradients, `${name}.gradients`);

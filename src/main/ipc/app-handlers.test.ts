@@ -419,7 +419,6 @@ describe('app-handlers', () => {
 
     it.each([
       ['a missing id', { ...workshop, id: '' }],
-      ['an unknown type', { ...workshop, type: 'sepia' }],
       ['colors that are not an object', { ...workshop, colors: 'neon' }],
     ])('refuses a malformed payload: %s', (_label, theme) => {
       const handler = handleHandlers.get(IPC.APP.SYNC_ACTIVE_THEME)!;
@@ -433,6 +432,8 @@ describe('app-handlers', () => {
       ['an unknown gradient', { ...workshop, gradients: { glow: 'x' } }],
       ['only base, text and accent', { ...workshop, colors: { base: '#101820', text: '#e0f0ff', accent: '#ff8800' } }],
       ['empty colors', { ...workshop, colors: {} }],
+      ['an unknown type', { ...workshop, type: 'sepia' }],
+      ['no type', { id: workshop.id, colors: workshop.colors }],
     ])('accepts a theme with %s, without logging (#2472)', async (_label, theme) => {
       const handler = handleHandlers.get(IPC.APP.SYNC_ACTIVE_THEME)!;
       await handler({}, theme);

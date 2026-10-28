@@ -97,7 +97,6 @@ describe('plugin pack themes without accent2/overlay* (#2472)', () => {
 
   it.each([
     ['a missing id', { ...cyberpunk, id: '' }],
-    ['an unknown type', { ...cyberpunk, type: 'sepia' }],
     ['colors that are not an object', { ...cyberpunk, colors: 'neon' }],
   ])('refuses a payload with %s', (_label, theme) => {
     expect(() => validateActiveThemeSnapshot(theme as ActiveThemeSnapshot, 'theme')).toThrow();
@@ -108,6 +107,17 @@ describe('plugin pack themes without accent2/overlay* (#2472)', () => {
     expect(Object.keys(resolved.colors).sort()).toEqual(Object.keys(mocha.colors).sort());
     expect(Object.keys(resolved.terminal).sort()).toEqual(Object.keys(mocha.terminal).sort());
     expect(resolved.colors).toMatchObject({ base: '#101820', text: '#e0f0ff', accent: '#ff8800', accent2: '#ff8800' });
+  });
+
+  it.each([
+    ['an unknown type', 'sepia'],
+    ['a missing type', undefined],
+  ])('accepts %s and completes it as dark', (_label, type) => {
+    const theme = { id: cyberpunk.id, type, colors: {} } as ActiveThemeSnapshot;
+    expect(() => validateActiveThemeSnapshot(theme, 'theme')).not.toThrow();
+    const resolved = resolveAnnexTheme(cyberpunk.id, theme, THEMES);
+    expect(resolved.colors).toEqual(mocha.colors);
+    expect(resolved.terminal).toEqual(mocha.terminal);
   });
 
   it('resolves empty light colors to Latte', () => {
