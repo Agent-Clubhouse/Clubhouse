@@ -4,6 +4,52 @@ Checked 2026-10-23. Extends local commit `9bcdef0ecbd6e2d3aded0a77b00fb30f3f58fe
 The original main baseline is `8e0903616ee45bff75c04f9bb62dc35feafce7f2`.
 This is a reviewable local change, not a release clearance or a hosted CI result.
 
+## Stable security pickup — 2026-10-28
+
+The exact manifest and lockfile pin now selects **Electron 45.1.0**, replacing
+45.0.0, on main baseline `6df7cb86e`. No other dependency versions changed.
+The [Electron release notes](https://github.com/electron/electron/releases/tag/v45.1.0)
+and [release manifest](https://releases.electronjs.org/release/v45.1.0) identify
+**Node 24.22.1** and **Chromium 156.0.8078.49**, picking up the
+[October Node security release](https://nodejs.org/en/blog/release/v24.22.1).
+Electron uses Chromium's Brotli: the
+[Chromium dependency pin](https://github.com/chromium/chromium/blob/156.0.8078.49/third_party/brotli/README.chromium)
+is `cfa184a997ac19454d5a3ae97f6d600aac2445a6`, containing upstream fix
+`0ed4268a4401abcb4472096340477cf4af7d1a2b`. The reported Brotli version remains
+1.2.0; that string alone does not identify the backport.
+
+Local macOS ARM64 validation (host Node 24.22.1 / npm 11.19.1):
+
+- Clean dependency installation, typecheck, coverage ratchet (29/29), and lint
+  passed; lint reports 0 errors and 3,048 warnings.
+- Full suite: **816 files / 18,653 tests passed**, 4 files / 37 tests skipped.
+- `npm run package` passed, including all six hardened fuse assertions.
+- **96 development-Electron E2E tests passed** across startup, blank-screen
+  prevention, popouts, command palette, find/replace, and native terminal
+  input, resize, restart and cleanup.
+- Executed development runtime reports **45.1.0 / Node 24.22.1 /
+  Chromium 156.0.8078.49 / Undici 7.30.1 / Brotli 1.2.0 / modules ABI 150**.
+  Benign Brotli round-trip, Node global fetch and Chromium net.fetch decoding,
+  DNS NUL-input rejection, and the compiled preload bridge passed.
+
+**Packaged application acceptance remains incomplete.** The initial local
+package failed macOS signature verification and was killed at the modified fuse
+page. Existing 45.0.0 crash evidence shows the same failure mechanism, so this
+is not established as a 45.1.0 regression. A disposable copy signed through
+Electron's signer passed strict/deep verification with unchanged fuses, ASAR and
+repository entitlements, and executed JavaScript. Its custom startup probe then
+waited on Keychain initialization because it incorrectly replaced OS `HOME`;
+the repository's supported profile isolation preserves `HOME`. Full startup was
+not revalidated with the corrected environment. No production signing or
+notarization was validated.
+
+Packaged renderer/native PTY/Annex/network acceptance, updater apply/relaunch,
+and hosted Windows/Linux validation remain outstanding. Local signing is not a
+prerequisite for opening this PR; these limitations must remain distinct from
+the passing development-runtime checks. The installed application was not
+replaced or restarted. Earlier dated findings below are historical and are
+superseded by this section for the selected runtime and current validation.
+
 ## Node security follow-up — 2026-10-26
 
 Electron remains pinned to 45.0.0. Dependabot now defers only Electron major
