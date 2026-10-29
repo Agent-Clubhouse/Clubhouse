@@ -16,10 +16,10 @@ New `POST https://host:mainPort/pair` uses existing `{pin, publicKey, alias, ico
 Authenticated `GET /api/v1/mobile/capabilities` returns:
 
 ```json
-{"version":1,"epoch":"uuid","controlAuth":"mtls-pinned-client","controlAvailable":true,"commands":["chat.send","chat.interrupt","chat.permission","chat.question","chat.queue.remove","agent.start","agent.stop","agent.spawn","agent.create","agent.update","project.setPinned","project.setInactive","helper.approve","helper.decline","chat.setModel","chat.setLevel","quick.dismiss","quick.clear"],"pairing":{"sessionRevokePath":"/api/v1/mobile/pairing"},"attachments":{"version":1,"imageTypes":["image/png","image/jpeg","image/gif","image/webp"],"maxImageBytes":3932160,"maxCount":10},"events":{"transport":"annex-websocket","replayRequest":"mobile:replay","queueState":"queue_state"},"createOptions":{"version":1,"path":"/api/v1/mobile/projects/{projectId}/create-options"},"agentSettings":{"version":1,"path":"/api/v1/mobile/agents/{agentId}/settings"},"helperRequests":{"version":1,"snapshotField":"helperRequests","commands":["helper.approve","helper.decline"]},"chatControls":{"version":1},"permissions":{"version":1,"persistentApprovals":true,"freeAgentMode":true},"idempotency":{"scope":"peer-and-epoch","maxEntries":2048,"ttlMs":3600000},"projectState":{"version":1},"finishedQuickAgents":{"version":1}}
+{"version":1,"epoch":"uuid","controlAuth":"mtls-pinned-client","controlAvailable":true,"commands":["chat.send","chat.interrupt","chat.permission","chat.question","chat.queue.remove","agent.start","agent.stop","agent.spawn","agent.create","agent.update","project.setPinned","project.setInactive","helper.approve","helper.decline","chat.setModel","chat.setLevel","quick.dismiss","quick.clear"],"pairing":{"sessionRevokePath":"/api/v1/mobile/pairing"},"attachments":{"version":1,"imageTypes":["image/png","image/jpeg","image/gif","image/webp"],"maxImageBytes":3932160,"maxCount":10},"events":{"transport":"annex-websocket","replayRequest":"mobile:replay","queueState":"queue_state"},"createOptions":{"version":1,"path":"/api/v1/mobile/projects/{projectId}/create-options"},"agentSettings":{"version":1,"path":"/api/v1/mobile/agents/{agentId}/settings"},"helperRequests":{"version":1,"snapshotField":"helperRequests","commands":["helper.approve","helper.decline"]},"chatControls":{"version":1},"permissions":{"version":1,"persistentApprovals":true,"freeAgentMode":true},"idempotency":{"scope":"peer-and-epoch","maxEntries":2048,"ttlMs":3600000},"projectState":{"version":1},"finishedQuickAgents":{"version":1},"terminal":{"version":1,"projectShell":true,"agentShell":true,"agentAttach":true,"maxShellsPerConnection":8,"maxInputLength":65536}}
 ```
 
-A 404 means unsupported: do not send mobile commands. Gate durable-agent creation on `commands` including `agent.create` and `createOptions.version >= 1`, settings on `agent.update` and `agentSettings.version >= 1`, and helper requests on `helperRequests.version >= 1`; older desktops offer quick agents (`agent.spawn`) only. Gate project pins and inactive marks on `projectState.version >= 1` (`projectState:{version:1}`); without it, keep them on the phone. See [Project state](#project-state). Gate the finished quick agents list ("Finished, waiting on you") on `finishedQuickAgents.version >= 1`; without it, keep the phone's own list of quick agents it saw exit. See [Finished quick agents](#finished-quick-agents). Gate the composer's model, effort and level controls on `chat.setModel` / `chat.setLevel` and `chatControls.version >= 1` ([Chat controls](#chat-controls)). A new epoch invalidates command retries and replay cursors. No raw shell commands, arbitrary filesystem paths, credentials, or gateway provisioning commands exist.
+A 404 means unsupported: do not send mobile commands. Gate durable-agent creation on `commands` including `agent.create` and `createOptions.version >= 1`, settings on `agent.update` and `agentSettings.version >= 1`, and helper requests on `helperRequests.version >= 1`; older desktops offer quick agents (`agent.spawn`) only. Gate project pins and inactive marks on `projectState.version >= 1` (`projectState:{version:1}`); without it, keep them on the phone. See [Project state](#project-state). Gate the finished quick agents list ("Finished, waiting on you") on `finishedQuickAgents.version >= 1`; without it, keep the phone's own list of quick agents it saw exit. See [Finished quick agents](#finished-quick-agents). Gate the composer's model, effort and level controls on `chat.setModel` / `chat.setLevel` and `chatControls.version >= 1` ([Chat controls](#chat-controls)). Gate terminals on `terminal.version >= 1` ([Terminals](#terminals)). A new epoch invalidates command retries and replay cursors. A paired phone is a full controller, so it may open a shell on the desktop; there are still no arbitrary filesystem paths (a shell's directory comes from a registered project or agent), credentials, or gateway provisioning commands.
 
 ## Commands
 
@@ -353,3 +353,49 @@ Commands:
 - `quick.clear {projectId}`: empties the project's list.
 
 Both return `{projectId, finishedQuickAgents: [...]}`, the project's list after the change. Errors: 404 `project_not_found`; 409 `finished_quick_agents_unavailable` before the list has moved into main. After each command, and after every change on the desktop (an agent finishing, a dismissal), connected clients get a fresh `snapshot`.
+
+## Terminals
+
+A paired phone is a full controller (maintainer decision, #2476), so it can open the same terminals as the desktop's Terminal tab: a shell at a project root or at an agent's worktree. It can also view and type into a terminal-mode agent's own PTY. Everything here is WebSocket-only and needs the pinned mTLS connection; a bearer connection gets `error {message: "Control messages require mTLS authentication"}`.
+
+Capabilities: `terminal: {version:1, projectShell:true, agentShell:true, agentAttach:true, maxShellsPerConnection:8, maxInputLength:65536}`. Older desktops have no `terminal`. They accept `pty:spawn-shell` at the project root only (an `agentId` is ignored), send shell output to every client through replay, and have no `pty:close` or `pty:attach`.
+
+### Shells
+
+- `pty:spawn-shell {sessionId, projectId, agentId?}` → `pty:spawn-shell:ack {sessionId, cwd}`.
+  - The phone picks `sessionId`: any string of 1–128 characters, unique among its open shells. A random UUID is a good choice.
+  - The shell opens where the desktop's Terminal tab opens for the same selection. Without `agentId`, that's the project root. A durable agent opens at its worktree, or at the project root when it has none. A quick agent opens at the folder it runs in. `cwd` is the resolved absolute directory.
+  - It's an interactive login shell (`$SHELL -il`, or the default shell on Windows), starting at 120×30. Send `pty:resize` once the view knows its size.
+  - Spawning a `sessionId` the phone already owns replaces that shell.
+- `pty:input {agentId: sessionId, data}` and `pty:resize {agentId: sessionId, cols, rows}`. These are the existing messages, keyed by `agentId`. `data` is at most `maxInputLength` UTF-16 code units.
+- `pty:data {agentId: sessionId, data, outputSeq}` and `pty:exit {agentId: sessionId, exitCode}` go **only to the connection that spawned the shell**. They carry no top-level `seq` and are never kept for replay, so `replay` and `mobile:replay` never return shell output.
+- `pty:close {sessionId}` → `pty:close:ack {sessionId}`. The shell is killed, and no `pty:exit` follows.
+- Lifetime: a shell lives until it exits (`pty:exit`), the phone closes it, or **its connection drops**. Shells are not carried across reconnects; after one, spawn again. They also end when Annex stops.
+- At most `maxShellsPerConnection` shells per connection.
+
+### Attaching to an agent's PTY
+
+For agents running in a terminal (`executionMode: "pty"`; chat and headless agents have no PTY):
+
+- `pty:attach {agentId}` → `pty:attach:ack {agentId, buffer, outputSeq, cols?, rows?}`. `buffer` is the agent's current screen and scrollback, serialized as terminal output. `cols`/`rows` is the PTY's size, when known.
+- Live output is the existing broadcast `pty:data {agentId, data, outputSeq}`, which every controller already receives. There is no subscription and no `pty:detach`: to stop viewing, stop rendering. `outputSeq` counts output in UTF-16 code units and is the count after its chunk. Drop frames with `outputSeq <= ack.outputSeq`; of a frame that straddles it, only the last `outputSeq - ack.outputSeq` units are new. Frames may arrive before the ack, so buffer them until it does.
+- `pty:input {agentId, data}` types into the agent. `pty:resize {agentId, cols, rows}` resizes the agent's **real** PTY, and the desktop's view reflows with it. A phone shouldn't resize an agent PTY unless the user asks to; render at the snapshot's `cols`/`rows` instead.
+- `pty:exit {agentId, exitCode}` (broadcast, as before) ends the view.
+
+### Errors
+
+Errors use the existing envelope with correlation fields: `error {message, op, sessionId?, agentId?}`. `op` is the request type. Shell errors carry `sessionId`, except input and resize, which carry the `agentId` they were sent with. Attach errors carry `agentId`.
+
+| `message` | `op` | Meaning |
+| --- | --- | --- |
+| `invalid_session_id` | `pty:spawn-shell` | `sessionId` is missing, not a string, or longer than 128 characters. |
+| `project_not_found` | `pty:spawn-shell` | No such project. |
+| `agent_not_found` | `pty:spawn-shell`, `pty:attach` | Spawn: the agent isn't a durable agent of the project or a running quick agent in it. Attach: `agentId` is missing. |
+| `session_in_use` | `pty:spawn-shell` | The id belongs to an agent, a desktop terminal, or another connection's shell. |
+| `too_many_shells` | `pty:spawn-shell` | The connection already has `maxShellsPerConnection` shells. |
+| *(spawn error text)* | `pty:spawn-shell` | The shell failed to start, for example when the worktree folder is missing. |
+| `internal_error` | `pty:spawn-shell`, `pty:attach` | An unexpected desktop failure. |
+| `session_not_found` | `pty:close`, `pty:input`, `pty:resize` | Close: the connection doesn't own this shell. Input/resize: it's another connection's shell. |
+| `pty:input data exceeds 64KB limit` | `pty:input` | `data` is longer than `maxInputLength`. |
+| `agent_not_terminal` | `pty:attach` | A chat or headless agent. |
+| `agent_not_running` | `pty:attach` | No running PTY by that id, or the id is a shell rather than an agent. |
