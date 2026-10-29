@@ -92,7 +92,7 @@ import type { TelemetryRuntime } from '../telemetry/types';
 // But the module has state (Maps), so we need to handle that.
 // We'll use dynamic imports or reset between tests.
 
-import { getBuffer, getBufferSnapshot, getSerializedBuffer, getSerializedBufferSnapshot, getLastActivity, isRunning, spawn, spawnShell, resize, write, writeBinary, gracefulKill, isShellBusy, kill, killAll, startStaleSweep, stopStaleSweep, validateSpawnCwd } from './pty-manager';
+import { getBuffer, getBufferSnapshot, getSerializedBuffer, getSerializedBufferSnapshot, getLastActivity, isRunning, spawn, spawnShell, resize, write, writeBinary, gracefulKill, isShellBusy, kill, killAll, killShell, startStaleSweep, stopStaleSweep, validateSpawnCwd } from './pty-manager';
 import { broadcastToAllWindows, flushPendingFor } from '../util/ipc-broadcast';
 import * as annexEventBus from './annex-event-bus';
 import { getShellCwd } from './pty-manager';
@@ -455,6 +455,30 @@ describe('pty-manager', () => {
     it('registers onExit handler', async () => {
       await spawnShell('shell-exit', '/project');
       expect(mockProcess.onExit).toHaveBeenCalled();
+    });
+  });
+
+  describe('killShell', () => {
+    it('ends a shell at once without an exit broadcast', async () => {
+      await spawnShell('shell-close', '/project');
+      vi.mocked(annexEventBus.emitPtyExit).mockClear();
+      mockProcess.kill.mockClear();
+      expect(killShell('shell-close')).toBe(true);
+      expect(mockProcess.kill).toHaveBeenCalled();
+      expect(isRunning('shell-close')).toBe(false);
+      // The process's own exit afterwards belongs to a dead session.
+      mockProcess.onExit.mock.calls.at(-1)![0]({ exitCode: 0 });
+      expect(annexEventBus.emitPtyExit).not.toHaveBeenCalled();
+    });
+
+    it('leaves agents and unknown ids alone', async () => {
+      await spawn('agent_ks', '/test', '/usr/local/bin/claude', []);
+      mockProcess.kill.mockClear();
+      expect(killShell('agent_ks')).toBe(false);
+      expect(killShell('nope')).toBe(false);
+      expect(mockProcess.kill).not.toHaveBeenCalled();
+      expect(isRunning('agent_ks')).toBe(true);
+      kill('agent_ks');
     });
   });
 

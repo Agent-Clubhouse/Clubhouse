@@ -117,6 +117,9 @@ vi.mock('./pty-manager', () => ({
   isStopping: vi.fn().mockReturnValue(false),
   getShellCwd: vi.fn(),
   write: vi.fn(),
+  resize: vi.fn(),
+  spawnShell: vi.fn().mockResolvedValue(undefined),
+  killShell: vi.fn().mockReturnValue(true),
 }));
 
 // Mock file-service
@@ -286,6 +289,7 @@ import * as agentConfigModule from './agent-config';
 import * as ptyManagerModule from './pty-manager';
 import * as agentSystem from './agent-system';
 import * as _eventReplay from './annex-event-replay';
+import { agentRegistry } from './agent-registry';
 import * as permissionQueue from './annex-permission-queue';
 import * as pluginManifestRegistry from './plugin-manifest-registry';
 import * as pluginStorage from './plugin-storage';
@@ -819,6 +823,243 @@ describe('annex-server', () => {
       vi.mocked(themeService.getSettings).mockReturnValue({ themeId: 'dracula' } as any);
       const snapshot = await annexServer._testing.buildSnapshot() as { theme: Record<string, unknown> };
       expect(snapshot.theme).toEqual(THEMES.dracula.colors);
+    });
+  });
+
+  describe('controller terminals (#2476)', () => {
+    const project = { id: 'p', name: 'Project', path: '/project' };
+    beforeEach(() => {
+      clearChatRuntimes();
+      annexServer._testing.shellOwners.clear();
+      vi.mocked(projectStore.list).mockReturnValue([project] as any);
+      vi.mocked(agentConfigModule.listDurable).mockReturnValue([
+        { id: 'durable-wt', name: 'Worktree', worktreePath: '/project/.clubhouse/agents/wt' },
+        { id: 'durable-root', name: 'Rooted' },
+      ] as any);
+      vi.mocked(ptyManagerModule.spawnShell).mockResolvedValue(undefined);
+      vi.mocked(ptyManagerModule.killShell).mockReturnValue(true);
+      vi.mocked(ptyManagerModule.getShellCwd).mockReturnValue(undefined);
+    });
+    afterEach(() => {
+      clearChatRuntimes();
+      agentRegistry.untrack('quick-1');
+      agentRegistry.untrack('quick-other');
+    });
+
+    async function connect(auth: 'mtls' | 'bearer' = 'mtls') {
+      const { EventEmitter } = await import('events');
+      const ws = Object.assign(new EventEmitter(), { readyState: 1, send: vi.fn(), ping: vi.fn() });
+      annexServer._testing.wsAuthTypes.set(ws as any, auth);
+      annexServer._testing.wss!.emit('connection', ws);
+      await vi.waitFor(() => expect(ws.send).toHaveBeenCalled());
+      ws.send.mockClear();
+      return ws;
+    }
+
+    const sent = (ws: { send: ReturnType<typeof vi.fn> }) => ws.send.mock.calls.map((c) => JSON.parse(c[0] as string));
+
+    async function spawn(ws: Awaited<ReturnType<typeof connect>>, payload: object) {
+      ws.emit('message', JSON.stringify({ type: 'pty:spawn-shell', payload }));
+      await vi.waitFor(() => expect(ws.send).toHaveBeenCalled());
+      const reply = sent(ws).at(-1);
+      ws.send.mockClear();
+      return reply;
+    }
+
+    it.each([
+      ['the project root without an agent', undefined, '/project'],
+      ['a durable agent\'s worktree', 'durable-wt', '/project/.clubhouse/agents/wt'],
+      ['the project root for a durable agent without a worktree', 'durable-root', '/project'],
+      ['a quick agent\'s working folder', 'quick-1', '/project/.clubhouse/agents/wt'],
+    ])('opens %s', async (_label, agentId, cwd) => {
+      agentRegistry.register('quick-1', { projectPath: '/project', cwd: '/project/.clubhouse/agents/wt', orchestrator: 'claude-code', runtime: 'pty' });
+      await startAndPair();
+      const ws = await connect();
+      const reply = await spawn(ws, { sessionId: 's1', projectId: 'p', ...(agentId && { agentId }) });
+      expect(reply).toEqual({ type: 'pty:spawn-shell:ack', payload: { sessionId: 's1', cwd } });
+      expect(ptyManagerModule.spawnShell).toHaveBeenCalledWith('s1', cwd);
+    });
+
+    it('rejects unknown agents, agents of another project, and unknown projects', async () => {
+      agentRegistry.register('quick-other', { projectPath: '/elsewhere', orchestrator: 'claude-code', runtime: 'pty' });
+      await startAndPair();
+      const ws = await connect();
+      expect(await spawn(ws, { sessionId: 's1', projectId: 'p', agentId: 'nope' }))
+        .toEqual({ type: 'error', payload: { message: 'agent_not_found', op: 'pty:spawn-shell', sessionId: 's1' } });
+      expect(await spawn(ws, { sessionId: 's1', projectId: 'p', agentId: 'quick-other' }))
+        .toMatchObject({ payload: { message: 'agent_not_found', sessionId: 's1' } });
+      expect(await spawn(ws, { sessionId: 's1', projectId: 'missing' }))
+        .toMatchObject({ payload: { message: 'project_not_found', sessionId: 's1' } });
+      expect(await spawn(ws, { projectId: 'p' })).toMatchObject({ payload: { message: 'invalid_session_id', op: 'pty:spawn-shell' } });
+      expect(ptyManagerModule.spawnShell).not.toHaveBeenCalled();
+      expect(annexServer._testing.shellOwners.size).toBe(0);
+    });
+
+    it('reports a failed spawn with its session and forgets it', async () => {
+      vi.mocked(ptyManagerModule.spawnShell).mockRejectedValue(new Error('cwd_invalid'));
+      await startAndPair();
+      const ws = await connect();
+      expect(await spawn(ws, { sessionId: 's1', projectId: 'p' }))
+        .toEqual({ type: 'error', payload: { message: 'cwd_invalid', op: 'pty:spawn-shell', sessionId: 's1' } });
+      expect(annexServer._testing.shellOwners.size).toBe(0);
+    });
+
+    it('never spawns over an agent or another controller\'s shell', async () => {
+      await startAndPair();
+      const a = await connect();
+      const b = await connect();
+      await spawn(a, { sessionId: 's1', projectId: 'p' });
+      vi.mocked(ptyManagerModule.isRunning).mockImplementation((id) => id === 's1' || id === 'agent-pty');
+      expect(await spawn(b, { sessionId: 's1', projectId: 'p' })).toMatchObject({ payload: { message: 'session_in_use', sessionId: 's1' } });
+      expect(await spawn(b, { sessionId: 'agent-pty', projectId: 'p' })).toMatchObject({ payload: { message: 'session_in_use' } });
+      // Its own shell, a controller may replace.
+      expect(await spawn(a, { sessionId: 's1', projectId: 'p' })).toMatchObject({ type: 'pty:spawn-shell:ack' });
+      expect(ptyManagerModule.spawnShell).toHaveBeenCalledTimes(2);
+    });
+
+    it('answers a failed project lookup with internal_error', async () => {
+      await startAndPair();
+      const ws = await connect();
+      vi.mocked(projectStore.list).mockRejectedValue(new Error('disk gone'));
+      expect(await spawn(ws, { sessionId: 's1', projectId: 'p' }))
+        .toEqual({ type: 'error', payload: { message: 'internal_error', op: 'pty:spawn-shell', sessionId: 's1' } });
+      expect(appLog).toHaveBeenCalledWith('core:annex', 'error', 'pty:spawn-shell failed', expect.anything());
+    });
+
+    it('caps shells per connection', async () => {
+      await startAndPair();
+      const ws = await connect();
+      for (let i = 0; i < 8; i++) expect(await spawn(ws, { sessionId: `s${i}`, projectId: 'p' })).toMatchObject({ type: 'pty:spawn-shell:ack' });
+      expect(await spawn(ws, { sessionId: 's8', projectId: 'p' })).toMatchObject({ payload: { message: 'too_many_shells' } });
+    });
+
+    it('sends shell output and exit only to the controller that spawned it, outside replay', async () => {
+      await startAndPair();
+      const a = await connect();
+      const b = await connect();
+      await spawn(a, { sessionId: 's1', projectId: 'p' });
+      const onData = vi.mocked(annexEventBus.onPtyData).mock.calls.at(-1)![0];
+      const onExit = vi.mocked(annexEventBus.onPtyExit).mock.calls.at(-1)![0];
+      const before = _eventReplay.getLastSeq();
+
+      onData('s1', 'secret', 6);
+      onExit('s1', 0);
+
+      expect(sent(a)).toEqual([
+        { type: 'pty:data', payload: { agentId: 's1', data: 'secret', outputSeq: 6 } },
+        { type: 'pty:exit', payload: { agentId: 's1', exitCode: 0 } },
+      ]);
+      expect(b.send).not.toHaveBeenCalled();
+      expect(_eventReplay.getLastSeq()).toBe(before);
+      expect(annexServer._testing.shellOwners.has('s1')).toBe(false);
+
+      // Agent output is still broadcast, through replay.
+      onData('agent-1', 'hello', 5);
+      expect(_eventReplay.getEventsSince(before)?.map((e) => e.payload)).toEqual([{ agentId: 'agent-1', data: 'hello', outputSeq: 5 }]);
+    });
+
+    it('keeps another controller\'s shell input and size private', async () => {
+      await startAndPair();
+      const a = await connect();
+      const b = await connect();
+      await spawn(a, { sessionId: 's1', projectId: 'p' });
+      b.emit('message', JSON.stringify({ type: 'pty:input', payload: { agentId: 's1', data: 'rm -rf ~\r' } }));
+      b.emit('message', JSON.stringify({ type: 'pty:resize', payload: { agentId: 's1', cols: 10, rows: 5 } }));
+      expect(sent(b)).toEqual([
+        { type: 'error', payload: { message: 'session_not_found', op: 'pty:input', agentId: 's1' } },
+        { type: 'error', payload: { message: 'session_not_found', op: 'pty:resize', agentId: 's1' } },
+      ]);
+      a.emit('message', JSON.stringify({ type: 'pty:input', payload: { agentId: 's1', data: 'ls\r' } }));
+      a.emit('message', JSON.stringify({ type: 'pty:resize', payload: { agentId: 's1', cols: 80, rows: 24 } }));
+      expect(ptyManagerModule.write).toHaveBeenCalledTimes(1);
+      expect(ptyManagerModule.write).toHaveBeenCalledWith('s1', 'ls\r');
+      expect(ptyManagerModule.resize).toHaveBeenCalledWith('s1', 80, 24);
+    });
+
+    it('closes a shell on pty:close and only for its owner', async () => {
+      await startAndPair();
+      const a = await connect();
+      const b = await connect();
+      await spawn(a, { sessionId: 's1', projectId: 'p' });
+      b.emit('message', JSON.stringify({ type: 'pty:close', payload: { sessionId: 's1' } }));
+      expect(sent(b)).toEqual([{ type: 'error', payload: { message: 'session_not_found', op: 'pty:close', sessionId: 's1' } }]);
+      expect(ptyManagerModule.killShell).not.toHaveBeenCalled();
+      a.emit('message', JSON.stringify({ type: 'pty:close', payload: { sessionId: 's1' } }));
+      expect(sent(a)).toEqual([{ type: 'pty:close:ack', payload: { sessionId: 's1' } }]);
+      expect(ptyManagerModule.killShell).toHaveBeenCalledWith('s1');
+      expect(annexServer._testing.shellOwners.size).toBe(0);
+    });
+
+    it('ends a controller\'s shells when it disconnects, and only its own', async () => {
+      await startAndPair();
+      const a = await connect();
+      const b = await connect();
+      await spawn(a, { sessionId: 's1', projectId: 'p' });
+      await spawn(a, { sessionId: 's2', projectId: 'p' });
+      await spawn(b, { sessionId: 's3', projectId: 'p' });
+      a.emit('close', 1000, Buffer.from(''));
+      expect(vi.mocked(ptyManagerModule.killShell).mock.calls.map((c) => c[0]).sort()).toEqual(['s1', 's2']);
+      expect([...annexServer._testing.shellOwners.keys()]).toEqual(['s3']);
+    });
+
+    it('ends a shell that started after its controller left', async () => {
+      await startAndPair();
+      const ws = await connect();
+      let finish!: () => void;
+      vi.mocked(ptyManagerModule.spawnShell).mockImplementation(() => new Promise<void>((resolve) => { finish = resolve; }));
+      ws.emit('message', JSON.stringify({ type: 'pty:spawn-shell', payload: { sessionId: 's1', projectId: 'p' } }));
+      await vi.waitFor(() => expect(ptyManagerModule.spawnShell).toHaveBeenCalled());
+      ws.readyState = 3;
+      ws.emit('close', 1006, Buffer.from(''));
+      vi.mocked(ptyManagerModule.killShell).mockClear();
+      finish();
+      await vi.waitFor(() => expect(ptyManagerModule.killShell).toHaveBeenCalledWith('s1'));
+      expect(annexServer._testing.shellOwners.size).toBe(0);
+      expect(ws.send).not.toHaveBeenCalled();
+    });
+
+    it('attaches to a terminal-mode agent with its screen and output seq', async () => {
+      vi.mocked(ptyManagerModule.isRunning).mockImplementation((id) => id === 'agent-1');
+      vi.mocked(ptyManagerModule.getSerializedBufferSnapshot).mockResolvedValue({ data: 'screen', seq: 42, cols: 120, rows: 40 });
+      await startAndPair();
+      const ws = await connect();
+      ws.emit('message', JSON.stringify({ type: 'pty:attach', payload: { agentId: 'agent-1' } }));
+      await vi.waitFor(() => expect(ws.send).toHaveBeenCalled());
+      expect(sent(ws)).toEqual([{ type: 'pty:attach:ack', payload: { agentId: 'agent-1', buffer: 'screen', outputSeq: 42, cols: 120, rows: 40 } }]);
+      expect(ptyManagerModule.getSerializedBufferSnapshot).toHaveBeenCalledWith('agent-1');
+    });
+
+    it('refuses to attach to chat agents, stopped agents and shells', async () => {
+      registerChatRuntime({ agentId: 'chat-1', kind: 'chat', isRunning: () => true } as never);
+      vi.mocked(ptyManagerModule.isRunning).mockImplementation((id) => id === 'desk-shell');
+      vi.mocked(ptyManagerModule.getShellCwd).mockImplementation((id) => (id === 'desk-shell' ? '/project' : undefined));
+      await startAndPair();
+      const ws = await connect();
+      for (const agentId of ['chat-1', 'sleeping', 'desk-shell']) {
+        ws.emit('message', JSON.stringify({ type: 'pty:attach', payload: { agentId } }));
+      }
+      await vi.waitFor(() => expect(ws.send).toHaveBeenCalledTimes(3));
+      expect(sent(ws).map((m) => m.payload)).toEqual([
+        { message: 'agent_not_terminal', op: 'pty:attach', agentId: 'chat-1' },
+        { message: 'agent_not_running', op: 'pty:attach', agentId: 'sleeping' },
+        { message: 'agent_not_running', op: 'pty:attach', agentId: 'desk-shell' },
+      ]);
+    });
+
+    it('requires mTLS for every terminal message', async () => {
+      await startAndPair();
+      const ws = await connect('bearer');
+      for (const type of ['pty:spawn-shell', 'pty:close', 'pty:attach']) {
+        ws.emit('message', JSON.stringify({ type, payload: { sessionId: 's1', projectId: 'p', agentId: 'agent-1' } }));
+      }
+      expect(sent(ws).map((m) => m.payload.message)).toEqual(Array(3).fill('Control messages require mTLS authentication'));
+      expect(ptyManagerModule.spawnShell).not.toHaveBeenCalled();
+    });
+
+    it('advertises the terminal capability', async () => {
+      const { port, token } = await startAndPair();
+      const body = JSON.parse((await request(port, 'GET', '/api/v1/mobile/capabilities', undefined, authHeaders(token))).body);
+      expect(body.terminal).toEqual({ version: 1, projectShell: true, agentShell: true, agentAttach: true, maxShellsPerConnection: 8, maxInputLength: 65536 });
     });
   });
 
@@ -3466,16 +3707,6 @@ describe('annex-server', () => {
         path.resolve(__dirname, 'annex-server.ts'),
         'utf-8',
       );
-    });
-
-    it('pty:spawn-shell handler catches findProjectById rejection', () => {
-      const block = source.slice(
-        source.indexOf("case 'pty:spawn-shell':"),
-        source.indexOf("case 'agent:spawn':"),
-      );
-      expect(block).toContain('findProjectById');
-      expect(block).toContain('.catch(');
-      expect(block).toContain('appLog');
     });
 
     it('agent:spawn handler catches findProjectById rejection', () => {

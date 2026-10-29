@@ -620,6 +620,21 @@ export function getShellCwd(id: string): string | undefined {
 }
 
 /**
+ * End a plain shell now, without the agent stop path or its telemetry. No exit
+ * is broadcast: the caller already knows. False when `id` is not a shell.
+ */
+export function killShell(id: string): boolean {
+  const session = sessions.get(id);
+  if (!session || session.shellCwd === undefined) return false;
+  try { session.process.kill(); } catch { /* dead */ }
+  if (annexEventBus.isActive()) {
+    headlessTerminal.dispose(id);
+  }
+  cleanupSession(id);
+  return true;
+}
+
+/**
  * Whether a shell session is running something other than the shell itself
  * (a dev server, an editor, a build), so closing it would interrupt work.
  * Unknown answers are true: Windows does not report the foreground process,

@@ -165,6 +165,13 @@ const wsAuthTypes = new WeakMap<WebSocket, WsAuthType>();
 const wsPeerFingerprints = new WeakMap<WebSocket, string>();
 // Track bearer token per WebSocket connection (for revocation on peer removal)
 const wsBearerTokens = new WeakMap<WebSocket, string>();
+/**
+ * Shells a controller spawned over `pty:spawn-shell`, by session id (#2476).
+ * Their output goes to that controller only, and they end when it disconnects.
+ */
+const shellOwners = new Map<string, WebSocket>();
+const MAX_SHELLS_PER_CONNECTION = 8;
+const MAX_SHELL_SESSION_ID_LENGTH = 128;
 
 let unsubPtyData: (() => void) | null = null;
 let unsubHookEvent: (() => void) | null = null;
@@ -1074,6 +1081,140 @@ async function findAgentAcrossProjects(agentId: string): Promise<{ config: Await
     if (agent) return { config: agent, project: proj };
   }
   return null;
+}
+
+// ---------------------------------------------------------------------------
+// Controller terminals (#2476)
+// ---------------------------------------------------------------------------
+
+/**
+ * Where a controller's shell opens, scoped like the desktop's Terminal tab
+ * (resolveChromeScope): the project root, or an agent's worktree when it has
+ * one. A quick agent opens in the folder it runs in. Null for an agent that
+ * is not in `project`.
+ */
+async function resolveShellCwd(project: { path: string }, agentId?: string): Promise<string | null> {
+  if (!agentId) return project.path;
+  const durable = (await agentConfig.listDurable(project.path)).find((d) => d.id === agentId);
+  if (durable) return durable.worktreePath || project.path;
+  const registration = agentRegistry.get(agentId);
+  if (registration && registration.projectPath === project.path) return registration.cwd || project.path;
+  return null;
+}
+
+function sendPtyError(ws: WebSocket, op: string, message: string, target: { sessionId?: string; agentId?: string }): void {
+  safeSend(ws, JSON.stringify({ type: 'error', payload: { message, op, ...target } }));
+}
+
+/** A shell another controller spawned: private to it, like its output. */
+function isOtherControllersShell(ws: WebSocket, id: string): boolean {
+  const owner = shellOwners.get(id);
+  return owner !== undefined && owner !== ws;
+}
+
+function shellCountFor(ws: WebSocket): number {
+  let count = 0;
+  for (const owner of shellOwners.values()) if (owner === ws) count++;
+  return count;
+}
+
+/** End every shell `ws` spawned; on disconnect nobody is left to read them. */
+function closeShellsFor(ws: WebSocket): void {
+  for (const [sessionId, owner] of [...shellOwners]) {
+    if (owner !== ws) continue;
+    shellOwners.delete(sessionId);
+    ptyManager.killShell(sessionId);
+  }
+}
+
+async function handleSpawnShellWs(ws: WebSocket, payload: Record<string, unknown>): Promise<void> {
+  const op = 'pty:spawn-shell';
+  const sessionId = payload.sessionId;
+  if (typeof sessionId !== 'string' || !sessionId || sessionId.length > MAX_SHELL_SESSION_ID_LENGTH) {
+    sendPtyError(ws, op, 'invalid_session_id', {});
+    return;
+  }
+  const projectId = payload.projectId;
+  const agentId = typeof payload.agentId === 'string' && payload.agentId ? payload.agentId : undefined;
+  const owner = shellOwners.get(sessionId);
+  // Spawning over a live session kills it, so only a controller's own shell may be replaced.
+  if (owner ? owner !== ws : ptyManager.isRunning(sessionId)) {
+    sendPtyError(ws, op, 'session_in_use', { sessionId });
+    return;
+  }
+  if (!owner && shellCountFor(ws) >= MAX_SHELLS_PER_CONNECTION) {
+    sendPtyError(ws, op, 'too_many_shells', { sessionId });
+    return;
+  }
+  const project = typeof projectId === 'string' ? await findProjectById(projectId) : undefined;
+  if (!project) {
+    sendPtyError(ws, op, 'project_not_found', { sessionId });
+    return;
+  }
+  const cwd = await resolveShellCwd(project, agentId);
+  if (!cwd) {
+    sendPtyError(ws, op, 'agent_not_found', { sessionId });
+    return;
+  }
+  // The checks above awaited: a second spawn for the same id may have taken it.
+  const current = shellOwners.get(sessionId);
+  if (current ? current !== ws : ptyManager.isRunning(sessionId)) {
+    sendPtyError(ws, op, 'session_in_use', { sessionId });
+    return;
+  }
+  // Owned before it starts, so its first output already goes to this controller only.
+  shellOwners.set(sessionId, ws);
+  try {
+    await ptyManager.spawnShell(sessionId, cwd);
+  } catch (err) {
+    if (shellOwners.get(sessionId) === ws && !ptyManager.isRunning(sessionId)) shellOwners.delete(sessionId);
+    sendPtyError(ws, op, err instanceof Error ? err.message : 'spawn_failed', { sessionId });
+    return;
+  }
+  if (ws.readyState !== WebSocket.OPEN) {
+    // The controller left while the shell started; its close handler ran too early to end it.
+    const current = shellOwners.get(sessionId);
+    if (current === undefined || current === ws) {
+      shellOwners.delete(sessionId);
+      ptyManager.killShell(sessionId);
+    }
+    return;
+  }
+  safeSend(ws, JSON.stringify({ type: 'pty:spawn-shell:ack', payload: { sessionId, cwd } }));
+}
+
+function handleCloseShellWs(ws: WebSocket, payload: Record<string, unknown>): void {
+  const sessionId = payload.sessionId;
+  if (typeof sessionId !== 'string' || shellOwners.get(sessionId) !== ws) {
+    sendPtyError(ws, 'pty:close', 'session_not_found', typeof sessionId === 'string' ? { sessionId } : {});
+    return;
+  }
+  shellOwners.delete(sessionId);
+  ptyManager.killShell(sessionId);
+  safeSend(ws, JSON.stringify({ type: 'pty:close:ack', payload: { sessionId } }));
+}
+
+/** A terminal-mode agent's own PTY: its screen now; live `pty:data` follows by broadcast. */
+async function handleAttachWs(ws: WebSocket, payload: Record<string, unknown>): Promise<void> {
+  const op = 'pty:attach';
+  const agentId = payload.agentId;
+  if (typeof agentId !== 'string' || !agentId) {
+    sendPtyError(ws, op, 'agent_not_found', {});
+    return;
+  }
+  if (getAgentExecutionMode(agentId) !== 'pty') {
+    sendPtyError(ws, op, 'agent_not_terminal', { agentId });
+    return;
+  }
+  // Shells are not agents: a desktop terminal or another controller's shell stays private.
+  if (!ptyManager.isRunning(agentId) || ptyManager.getShellCwd(agentId) !== undefined) {
+    sendPtyError(ws, op, 'agent_not_running', { agentId });
+    return;
+  }
+  const { data, seq, cols, rows } = await ptyManager.getSerializedBufferSnapshot(agentId);
+  safeSend(ws, JSON.stringify({ type: 'pty:attach:ack', payload: {
+    agentId, buffer: data, outputSeq: seq, ...(cols !== undefined && rows !== undefined && { cols, rows }),
+  } }));
 }
 
 async function handleSpawnQuickAgent(
@@ -2290,6 +2431,9 @@ async function handleMobileCapabilitiesRoute(ctx: AnnexRouteContext): Promise<vo
     idempotency: { scope: 'peer-and-epoch', maxEntries: MOBILE_COMMAND_MAX_ENTRIES, ttlMs: MOBILE_COMMAND_TTL_MS },
     projectState: { version: 1 },
     finishedQuickAgents: { version: 1 },
+    // Shells at the project root or an agent's worktree, and an agent's own PTY (#2476).
+    terminal: { version: 1, projectShell: true, agentShell: true, agentAttach: true,
+      maxShellsPerConnection: MAX_SHELLS_PER_CONNECTION, maxInputLength: MAX_PTY_INPUT_SIZE },
     ...phoneRoutes(),
   });
 }
@@ -2941,7 +3085,7 @@ function handleWsMessage(ws: WebSocket, data: string): void {
   const authType = wsAuthTypes.get(ws);
   const isMtls = authType === 'mtls';
 
-  if (!isMtls && (type === 'pty:input' || type === 'pty:resize' || type === 'pty:spawn-shell' || type === 'agent:spawn' || type === 'agent:wake' || type === 'agent:kill' || type === 'agent:reorder' || type === 'clipboard:image')) {
+  if (!isMtls && (type === 'pty:input' || type === 'pty:resize' || type === 'pty:spawn-shell' || type === 'pty:close' || type === 'pty:attach' || type === 'agent:spawn' || type === 'agent:wake' || type === 'agent:kill' || type === 'agent:reorder' || type === 'clipboard:image')) {
     recordControlDenied('ws');
     safeSend(ws, JSON.stringify({ type: 'error', payload: { message: 'Control messages require mTLS authentication' } }));
     return;
@@ -2958,7 +3102,11 @@ function handleWsMessage(ws: WebSocket, data: string): void {
       const inputData = payload.data as string;
       if (!agentId || typeof inputData !== 'string') break;
       if (inputData.length > MAX_PTY_INPUT_SIZE) {
-        safeSend(ws, JSON.stringify({ type: 'error', payload: { message: 'pty:input data exceeds 64KB limit' } }));
+        sendPtyError(ws, 'pty:input', 'pty:input data exceeds 64KB limit', { agentId });
+        break;
+      }
+      if (isOtherControllersShell(ws, agentId)) {
+        sendPtyError(ws, 'pty:input', 'session_not_found', { agentId });
         break;
       }
       ptyManager.write(agentId, inputData);
@@ -2970,6 +3118,10 @@ function handleWsMessage(ws: WebSocket, data: string): void {
       const cols = payload.cols as number;
       const rows = payload.rows as number;
       if (!agentId || typeof cols !== 'number' || typeof rows !== 'number') break;
+      if (isOtherControllersShell(ws, agentId)) {
+        sendPtyError(ws, 'pty:resize', 'session_not_found', { agentId });
+        break;
+      }
       ptyManager.resize(agentId, cols, rows);
       break;
     }
@@ -2990,25 +3142,26 @@ function handleWsMessage(ws: WebSocket, data: string): void {
     }
 
     case 'pty:spawn-shell': {
-      const sessionId = payload.sessionId as string;
-      const projectId = payload.projectId as string;
-      if (!sessionId || !projectId) break;
-      findProjectById(projectId).then(async (project) => {
-        if (!project) {
-          safeSend(ws, JSON.stringify({ type: 'error', payload: { message: 'project_not_found' } }));
-          return;
-        }
-        try {
-          await ptyManager.spawnShell(sessionId, project.path);
-          safeSend(ws, JSON.stringify({ type: 'pty:spawn-shell:ack', payload: { sessionId } }));
-        } catch (err) {
-          safeSend(ws, JSON.stringify({ type: 'error', payload: { message: err instanceof Error ? err.message : 'spawn_failed' } }));
-        }
-      }).catch((err) => {
-        appLog('core:annex', 'error', 'pty:spawn-shell lookup failed', {
-          meta: { projectId, error: err instanceof Error ? err.message : String(err) },
+      handleSpawnShellWs(ws, payload).catch((err) => {
+        appLog('core:annex', 'error', 'pty:spawn-shell failed', {
+          meta: { projectId: payload.projectId, error: err instanceof Error ? err.message : String(err) },
         });
-        safeSend(ws, JSON.stringify({ type: 'error', payload: { message: 'internal_error' } }));
+        sendPtyError(ws, 'pty:spawn-shell', 'internal_error', typeof payload.sessionId === 'string' ? { sessionId: payload.sessionId } : {});
+      });
+      break;
+    }
+
+    case 'pty:close': {
+      handleCloseShellWs(ws, payload);
+      break;
+    }
+
+    case 'pty:attach': {
+      handleAttachWs(ws, payload).catch((err) => {
+        appLog('core:annex', 'error', 'pty:attach failed', {
+          meta: { agentId: payload.agentId, error: err instanceof Error ? err.message : String(err) },
+        });
+        sendPtyError(ws, 'pty:attach', 'internal_error', typeof payload.agentId === 'string' ? { agentId: payload.agentId } : {});
       });
       break;
     }
@@ -3405,6 +3558,7 @@ export function start(): void {
         meta: { authType, code, reason: reason?.toString() || '' },
       });
       reportClientCounts();
+      closeShellsFor(ws);
       if (authType === 'mtls') {
         // Check if any other mTLS connections are still open
         const hasMtlsClient = Array.from(wss?.clients || []).some(
@@ -3449,6 +3603,12 @@ export function start(): void {
   annexEventBus.setActive(true);
 
   unsubPtyData = annexEventBus.onPtyData((agentId, data, outputSeq) => {
+    // A controller's shell is private: only it reads the output, and replay keeps none (#2476).
+    const shellOwner = shellOwners.get(agentId);
+    if (shellOwner) {
+      safeSend(shellOwner, JSON.stringify({ type: 'pty:data', payload: { agentId, data, ...(outputSeq !== undefined && { outputSeq }) } }));
+      return;
+    }
     // `outputSeq` lets a controller stitch this onto a /buffer snapshot (#2324).
     broadcastAndBuffer('pty:data', { agentId, data, ...(outputSeq !== undefined && { outputSeq }) });
   });
@@ -3468,6 +3628,12 @@ export function start(): void {
   });
 
   unsubPtyExit = annexEventBus.onPtyExit((agentId, exitCode) => {
+    const shellOwner = shellOwners.get(agentId);
+    if (shellOwner) {
+      shellOwners.delete(agentId);
+      safeSend(shellOwner, JSON.stringify({ type: 'pty:exit', payload: { agentId, exitCode } }));
+      return;
+    }
     detailedStatusCache.delete(agentId);
     permissionQueue.clearForAgent(agentId);
     eventReplay.clearForAgent(agentId);
@@ -3688,6 +3854,12 @@ export function stop(): void {
   }
 
   annexEventBus.setActive(false);
+
+  // Controllers' shells end with their connections, which end here.
+  for (const sessionId of [...shellOwners.keys()]) {
+    shellOwners.delete(sessionId);
+    ptyManager.killShell(sessionId);
+  }
 
   // Close all WebSocket clients
   if (wss) {
@@ -4151,6 +4323,7 @@ export const _testing = {
   wsAuthTypes,
   wsPeerFingerprints,
   wsBearerTokens,
+  shellOwners,
   get wss() { return wss; },
   get heartbeatInterval() { return heartbeatInterval; },
   get trackedQuickAgents() { return trackedQuickAgents; },
