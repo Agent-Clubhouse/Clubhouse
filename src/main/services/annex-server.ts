@@ -1172,8 +1172,12 @@ async function handleSpawnShellWs(ws: WebSocket, payload: Record<string, unknown
     return;
   }
   if (ws.readyState !== WebSocket.OPEN) {
-    // The controller left while the shell started.
-    closeShellsFor(ws);
+    // The controller left while the shell started; its close handler ran too early to end it.
+    const current = shellOwners.get(sessionId);
+    if (current === undefined || current === ws) {
+      shellOwners.delete(sessionId);
+      ptyManager.killShell(sessionId);
+    }
     return;
   }
   safeSend(ws, JSON.stringify({ type: 'pty:spawn-shell:ack', payload: { sessionId, cwd } }));

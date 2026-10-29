@@ -1011,6 +1011,7 @@ describe('annex-server', () => {
       await vi.waitFor(() => expect(ptyManagerModule.spawnShell).toHaveBeenCalled());
       ws.readyState = 3;
       ws.emit('close', 1006, Buffer.from(''));
+      vi.mocked(ptyManagerModule.killShell).mockClear();
       finish();
       await vi.waitFor(() => expect(ptyManagerModule.killShell).toHaveBeenCalledWith('s1'));
       expect(annexServer._testing.shellOwners.size).toBe(0);
