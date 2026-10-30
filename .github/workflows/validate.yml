@@ -299,6 +299,8 @@ jobs:
         shard: [1, 2, 3]
     env:
       PLAYWRIGHT_IGNORE_ANNEX: '1'
+      # e2e/chat-rich runs in the e2e-chat job (Linux and Windows only).
+      PLAYWRIGHT_IGNORE_CHAT_RICH: '1'
       PLAYWRIGHT_JUNIT_OUTPUT_NAME: test-results/junit.xml
     steps:
       - uses: actions/checkout@v7
@@ -387,6 +389,61 @@ jobs:
         if: always()
         with:
           name: annex-traces-${{ matrix.os }}
+          path: test-results/
+
+  # Rich chat content and chat UX specs (e2e/chat-rich, #2480), in a job of
+  # their own so they never lengthen the E2E shards, the run's long pole.
+  # Linux and Windows only, full-ci included: nothing in them differs on
+  # macOS (docs/testing/chat-e2e-plan.md). Add shards here as the folder grows.
+  e2e-chat:
+    needs: [changes, build]
+    if: ${{ !cancelled() && needs.build.result == 'success' }}
+    name: Chat E2E Tests (${{ matrix.os }}, ${{ matrix.shard }}/1)
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-2022]
+        shard: [1]
+    env:
+      PLAYWRIGHT_JUNIT_OUTPUT_NAME: test-results/junit.xml
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '22.23.4'
+          cache: npm
+      - name: Exclude workspace from Windows Defender
+        if: runner.os == 'Windows'
+        continue-on-error: true
+        run: Add-MpPreference -ExclusionPath "${{ github.workspace }}"
+        shell: pwsh
+      # The Electron binary npm ci downloads (~100 MB), in its default cache dir per OS.
+      - uses: actions/cache@v6
+        with:
+          path: |
+            ~/.cache/electron
+            ~/Library/Caches/electron
+            ~/AppData/Local/electron/Cache
+          key: electron-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
+      - run: npm ci
+      - uses: actions/download-artifact@v8
+        with:
+          name: webpack-${{ matrix.os }}
+          path: .webpack/
+      - name: Run chat E2E tests
+        if: runner.os != 'Linux'
+        run: npx playwright test e2e/chat-rich/ --shard=${{ matrix.shard }}/1 --reporter=line,junit
+      - name: Run chat E2E tests (Linux — requires virtual display)
+        if: runner.os == 'Linux'
+        run: xvfb-run --auto-servernum npx playwright test e2e/chat-rich/ --shard=${{ matrix.shard }}/1 --reporter=line,junit
+        env:
+          # chrome-sandbox is not SUID root on GitHub runners
+          ELECTRON_DISABLE_SANDBOX: '1'
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: chat-e2e-traces-${{ matrix.os }}-${{ matrix.shard }}
           path: test-results/
 
   # macOS job 1 of 2: every code PR, ~3 min. The unit tests for code that

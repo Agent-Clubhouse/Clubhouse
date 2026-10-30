@@ -12,10 +12,10 @@ The rules, in short:
 | Trigger | Linux + Windows | macOS |
 |---|---|---|
 | PR, docs only | nothing (`paths-ignore`) | nothing |
-| PR, code | lint; Codex schema drift; typecheck + API surface (one Linux job); unit tests (2 shards per OS); **one build per OS, then E2E (3 shards per OS) and Annex E2E from that build** | **macOS unit** (~2.5 min), plus **macOS build + E2E smoke** (~9 min) only if the change touches packaging, dependencies or window/keyboard chrome |
+| PR, code | lint; Codex schema drift; typecheck + API surface (one Linux job); unit tests (2 shards per OS); **one build per OS, then E2E (3 shards per OS), Annex E2E and Chat E2E from that build** | **macOS unit** (~2.5 min), plus **macOS build + E2E smoke** (~9 min) only if the change touches packaging, dependencies or window/keyboard chrome |
 | PR touching only unit tests | lint, typecheck, unit | macOS unit |
 | Dependabot PR | as a code PR, plus the Linux package smoke test | as a code PR. Electron and native-module bumps trigger macOS build |
-| `full-ci` label, manual dispatch | everything | everything (unit, build, sharded E2E, Annex E2E) |
+| `full-ci` label, manual dispatch | everything | everything (unit, build, sharded E2E, Annex E2E), except Chat E2E, which stays on Linux and Windows |
 | Push to `main` | everything, plus the Linux package smoke test | macOS unit, plus macOS build if the push is macOS-relevant |
 | Daily, 07:00 UTC | everything | macOS unit and macOS build. This catches runner-image and Xcode drift that no change would trigger, for about 12 macOS minutes a day. |
 
@@ -90,6 +90,7 @@ The table below shows where every behaviour the old macOS legs tested is covered
 | E2E specs, all ~33 files (core UI, terminal, agents, plugins, canvas, settings, onboarding, …) | Linux and Windows E2E, 3 shards each, every PR | The same specs; their only platform branch is Meta versus Control, which Linux and Windows run with Control |
 | macOS-specific E2E behaviour: traffic lights, title bar, app menu, Cmd shortcuts, node-pty spawn helper | macOS build smoke set, when chrome or keyboard code changes; also daily | Those specs on a real Mac, triggered by the changes that can break them |
 | Annex E2E (dual instance, `bonjour-service` discovery) | Linux and Windows Annex E2E, every PR | `bonjour-service` is pure-JS multicast DNS, and Annex has no darwin code path |
+| (new) Rich chat content and chat UX specs, `e2e/chat-rich` (#2480) | Linux and Windows Chat E2E, every PR; never macOS, not even on `full-ci` | Paths, pdf.js, media playback and IPC have no darwin branch; see docs/testing/chat-e2e-plan.md |
 
 The one narrowing: a change that touches none of the triggers can't break the macOS-specific UI and packaging checks by construction. Even so, if a runner image or Xcode update changes behaviour, the daily run surfaces it within a day, and `full-ci` runs the complete macOS matrix on demand.
 
@@ -97,7 +98,7 @@ The one narrowing: a change that touches none of the triggers can't break the ma
 
 The E2E specs launch `.webpack/<arch>/main` with Electron from `node_modules` (`e2e/launch.ts`). Forge rebuilds no native modules (`rebuildConfig.onlyModules` is empty, and node-pty ships N-API prebuilds). So the `build` job runs `electron-forge package` once per OS and uploads `.webpack/` as an artifact.
 
-The three E2E shards and the Annex E2E job for that OS each run `npm ci`, download the artifact and run. Before, every E2E and Annex E2E job packaged the app itself.
+The three E2E shards, the Annex E2E job and the Chat E2E job for that OS each run `npm ci`, download the artifact and run. The sharded E2E job skips `e2e/chat-rich` (`PLAYWRIGHT_IGNORE_CHAT_RICH`), so the chat specs add a parallel job instead of lengthening a shard. Before, every E2E and Annex E2E job packaged the app itself.
 
 ## Caching and skipped downloads
 
