@@ -4,6 +4,7 @@ import {
   type GithubChecks, type GithubRefDetails, type GithubRefKind, type GithubRefResult, type GithubRefState,
 } from '../../shared/github-ref';
 import { ghExec } from './git-service';
+import { testGithubRefRunner } from './github-ref-test-seam';
 
 /**
  * Pull request, issue and commit details for chat's GitHub tokens (#2351).
@@ -140,6 +141,7 @@ export function createGithubRefService(run: Runner = (args) => ghExec(os.homedir
 let shared: ReturnType<typeof createGithubRefService> | null = null;
 
 export function getGithubRef(repo: string, kind: GithubRefKind, id: string): Promise<GithubRefResult> {
-  shared ??= createGithubRefService();
+  // Unpackaged test builds can answer from a stub folder instead of gh (github-ref-test-seam.ts).
+  shared ??= createGithubRefService(testGithubRefRunner());
   return shared.get(repo, kind, id);
 }

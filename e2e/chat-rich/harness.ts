@@ -1,4 +1,5 @@
 import { expect, type Locator, type Page } from '@playwright/test';
+import { execFileSync } from 'child_process';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
@@ -37,6 +38,11 @@ export const TURN_TIMEOUT = 20_000;
 /** Where main puts the helper delivery seam (helper-delivery-seam.ts; importing it here would load Electron). */
 const HELPER_SEAM_GLOBAL = '__clubhouseTestDeliverHelperUpdate';
 
+// The GitHub lookup seam's variable and files (src/main/services/github-ref-test-seam.ts).
+const GITHUB_REFS_ENV = 'CLUBHOUSE_TEST_GITHUB_REFS';
+const GITHUB_REFS_STUBS_FILE = 'refs.json';
+const GITHUB_REFS_REQUESTS_FILE = 'requests.jsonl';
+
 export interface RichChatOptions {
   cli: ChatFixtureCli;
   /**
@@ -50,6 +56,28 @@ export interface RichChatOptions {
   projectFiles?: Record<string, SeedFile>;
   /** Files to create in a folder outside the project, keyed by relative path. */
   outsideFiles?: Record<string, SeedFile>;
+  /**
+   * Answers for GitHub reference lookups, keyed `owner/repo#123` or
+   * `owner/repo@sha` (lowercase), each what `gh api graphql` would print.
+   * Every launch answers from these (none by default), so no spec reaches gh
+   * or the network: see github-ref-test-seam.ts.
+   */
+  githubRefs?: Record<string, unknown>;
+  /**
+   * Make the project a git repo with this `origin` (say, a github.com URL,
+   * which turns on bare `#123`). Nothing is fetched, and the repo is left
+   * with no commits, so nothing that needs a branch (the review's pull
+   * request lookup) gets as far as gh.
+   */
+  gitRemote?: string;
+}
+
+/** One GitHub reference lookup the app made, as the seam recorded it. */
+export interface GithubRefRequest {
+  /** The stub key it asked for. */
+  ref: string;
+  /** What would have gone to gh. */
+  args: string[];
 }
 
 /** File content, or `{ copy }` to copy a file (say, one from test/chat-media). */
@@ -67,6 +95,8 @@ export interface RichChat {
   /** Copilot only: the COPILOT_HOME the app was launched with (the script's session journal lives here). */
   copilotHome?: string;
   fakes: FakeClis;
+  /** Every GitHub reference lookup so far, in order. */
+  githubRefRequests(): Promise<GithubRefRequest[]>;
   send(text: string): Promise<void>;
   /** Send with the composer's secondary action: Queue while a turn runs. */
   queue(text: string): Promise<void>;
@@ -110,7 +140,8 @@ export async function openRichChat(opts: RichChatOptions): Promise<RichChat> {
   const projectDir = path.join(root, 'project');
   const outsideDir = path.join(root, 'outside');
   const scriptDir = path.join(root, 'script');
-  await Promise.all([projectDir, outsideDir, scriptDir].map((d) => fs.promises.mkdir(d, { recursive: true })));
+  const githubRefsDir = path.join(root, 'github-refs');
+  await Promise.all([projectDir, outsideDir, scriptDir, githubRefsDir].map((d) => fs.promises.mkdir(d, { recursive: true })));
   const seed = async (dir: string, files: Record<string, SeedFile> = {}) => {
     for (const [rel, content] of Object.entries(files)) {
       const file = path.join(dir, rel);
@@ -121,6 +152,16 @@ export async function openRichChat(opts: RichChatOptions): Promise<RichChat> {
   };
   await seed(projectDir, opts.projectFiles);
   await seed(outsideDir, opts.outsideFiles);
+  await fs.promises.writeFile(path.join(githubRefsDir, GITHUB_REFS_STUBS_FILE), JSON.stringify(opts.githubRefs ?? {}));
+  if (opts.gitRemote) {
+    try {
+      execFileSync('git', ['init', '-q'], { cwd: projectDir });
+      execFileSync('git', ['remote', 'add', 'origin', opts.gitRemote], { cwd: projectDir });
+    } catch (err) {
+      await fs.promises.rm(root, { recursive: true, force: true });
+      throw err;
+    }
+  }
 
   let fixture: string;
   let copilotHome: string | undefined;
@@ -148,7 +189,7 @@ export async function openRichChat(opts: RichChatOptions): Promise<RichChat> {
     const app = await launchApp({
       experimental: { chat: true },
       userDataFiles: USER_DATA_FILES,
-      env: { ...fakes.env, CLUBHOUSE_TEST_HELPER_SEAM: '1', ...(copilotHome && { COPILOT_HOME: copilotHome }) },
+      env: { ...fakes.env, CLUBHOUSE_TEST_HELPER_SEAM: '1', [GITHUB_REFS_ENV]: githubRefsDir, ...(copilotHome && { COPILOT_HOME: copilotHome }) },
     });
     electronApp = app.electronApp;
     const { window } = app;
@@ -178,6 +219,11 @@ export async function openRichChat(opts: RichChatOptions): Promise<RichChat> {
     const launched = electronApp;
     return {
       electronApp, window, chat, agentId, projectDir, outsideDir, copilotHome, fakes,
+      async githubRefRequests() {
+        const raw = await fs.promises.readFile(path.join(githubRefsDir, GITHUB_REFS_REQUESTS_FILE), 'utf8').catch(() => '');
+        // A line still being written has no newline yet: leave it for the next read.
+        return raw.slice(0, raw.lastIndexOf('\n') + 1).split('\n').filter(Boolean).map((l) => JSON.parse(l) as GithubRefRequest);
+      },
       async send(text) {
         const box = window.getByRole('textbox', { name: 'Message' });
         await box.fill(text);
@@ -246,6 +292,14 @@ export function chatDom(window: Page) {
     markdownImage: (alt: string) => window.getByRole('button', { name: `Open image: ${alt}`, exact: true }),
     /** A Markdown image that isn't shown: its caption and the reason. */
     markdownImageNotShown: window.locator('.chat-image-not-shown'),
+
+    /** A GitHub token (pull request, issue or commit) by the page it links to. */
+    githubToken: (href: string) => window.locator(`a[data-gh-token][href=${cssString(href)}]`),
+    /** A link that isn't a GitHub token, by its href. */
+    plainLink: (href: string) => window.locator(`a[href=${cssString(href)}]:not([data-gh-token])`),
+    githubCard: byId('gh-ref-card'),
+    githubCardTitle: byId('gh-card-title'),
+    githubCardState: byId('gh-card-state'),
 
     /** Inline audio and video cards; `data-state` says whether one is playing. */
     mediaCards: window.locator('[data-chat-media]'),
