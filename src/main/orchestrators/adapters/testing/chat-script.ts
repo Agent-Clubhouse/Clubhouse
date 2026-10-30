@@ -69,6 +69,8 @@ export type ScriptStep =
   | { type: 'text'; text: string }
   /** A tool call whose result carries an image. */
   | { type: 'image-tool'; image: ScriptImage; variant?: ImageVariant }
+  /** A shell command that ran and printed `output` (Claude Bash, Codex commandExecution). */
+  | { type: 'command'; command: string; output: string }
   /**
    * AskUserQuestion (Claude only): the questions reach the dock as a
    * permission request, and the fixture waits for exactly `answers`
@@ -114,6 +116,10 @@ export const md = {
   path(p: string, line?: number, col?: number): string {
     const loc = line === undefined ? '' : col === undefined ? `:${line}` : `:${line}:${col}`;
     return `\`${p}${loc}\``;
+  },
+  /** A path in double quotes in prose, Markdown-escaped so Windows backslashes stay (`\\_temp` would lose one). */
+  quotedPath(p: string): string {
+    return `"${p.replace(/[\\`*_~&[\]<>]/g, '\\$&')}"`;
   },
   /** A local image as a `file:` URL, which reads the same on every OS. */
   image(alt: string, p: string): string {
@@ -254,6 +260,11 @@ function claudeTurn(turn: ScriptTurn, index: number, ctx: TurnContext): Entry[] 
         ctx.synthesized.add('Read tool_use_result { type: "image", file: { base64, type } } with no image block');
         out.push(toolResult(id, 'Read image', { tool_use_result: { type: 'image', file: { base64: img.data, type: step.image.mimeType, originalSize: img.byteLength } } }));
       }
+    } else if (step.type === 'command') {
+      const id = `toolu_script_${++ctx.seq}`;
+      ctx.synthesized.add('Bash tool_use_result { stdout, stderr, interrupted, isImage }: no committed capture of a Bash run');
+      out.push(assistant([{ type: 'tool_use', id, name: 'Bash', input: { command: step.command, description: 'Run a command' } }]));
+      out.push(toolResult(id, step.output, { tool_use_result: { stdout: step.output, stderr: '', interrupted: false, isImage: false } }));
     } else {
       const id = `toolu_script_${++ctx.seq}`;
       const requestId = `perm-script-${ctx.seq}`;
@@ -321,6 +332,10 @@ function codexTurn(turn: ScriptTurn, index: number, ctx: TurnContext): Entry[] {
       } else {
         unsupported('codex', `${variant} image`);
       }
+    } else if (step.type === 'command') {
+      ctx.synthesized.add('commandExecution completed with exit 0 (fields as codex/interrupt)');
+      const cmd: Entry = { type: 'commandExecution', id: `call_script_${ctx.seq}`, pluginId: null, scriptPath: null, command: `/bin/sh -lc '${step.command}'`, cwd: '/workspace/project', processId: '4242', source: 'agent', status: 'inProgress', commandActions: [{ type: 'unknown', command: step.command }], aggregatedOutput: null, exitCode: null, durationMs: null };
+      out.push(item('item/started', cmd), item('item/completed', { ...cmd, status: 'completed', aggregatedOutput: step.output, exitCode: 0, durationMs: 100 }));
     } else {
       unsupported('codex', 'question');
     }
@@ -374,6 +389,8 @@ function copilotTurn(turn: ScriptTurn, index: number, ctx: TurnContext): Entry[]
         update({ sessionUpdate: 'tool_call', toolCallId, title: 'View image', kind: 'read', status: 'pending', rawInput: { path: step.image.path }, locations: [{ path: step.image.path }] }),
         update({ sessionUpdate: 'tool_call_update', toolCallId, status: 'completed', rawOutput: { content: 'Viewed image', binaryResultsForLlm: [binary] } }),
       );
+    } else if (step.type === 'command') {
+      unsupported('copilot', 'command');
     } else {
       unsupported('copilot', 'question');
     }

@@ -9,6 +9,7 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { claudeToolContent } from '../../../chat/claude/driver';
 import { ClaudeStreamTransport } from '../../../chat/claude/stream-transport';
 import type { ClaudeChatEvent } from '../../../chat/claude/events';
 import { sniffMediaType } from '../../../../shared/chat';
@@ -164,14 +165,40 @@ describe('buildChatScript', () => {
     ]);
   });
 
+  for (const cli of ['claude', 'codex'] as const) {
+    it(`${cli}: a command step replays, and its output is what the command card shows`, async () => {
+      const output = 'Wrote /tmp/out dir/report.txt\nsrc/app.ts:7:3: warning';
+      const built = buildChatScript(cli, { description: 'one command', turns: [{ steps: [{ type: 'command', command: 'ls', output }] }] });
+      type Msg = {
+        type?: string; tool_use_result?: unknown; method?: string;
+        message?: { content: Array<{ name: string; input: Record<string, unknown> }> };
+        params?: { item: { type: string } };
+      };
+      const msgs = built.lines.map((l) => l.msg as Msg | undefined);
+      if (cli === 'claude') {
+        const use = msgs.find((m) => m?.type === 'assistant')!.message!.content[0];
+        const result = msgs.find((m) => m?.type === 'user' && m.tool_use_result)!;
+        expect(claudeToolContent(use.name, use.input, result.tool_use_result, output, '/w')).toEqual([{ type: 'terminal', command: 'ls', cwd: '/w', output }]);
+      } else {
+        const done = msgs.find((m) => m?.method === 'item/completed' && m.params?.item.type === 'commandExecution')!;
+        expect(done.params!.item).toMatchObject({ status: 'completed', aggregatedOutput: output, exitCode: 0 });
+      }
+      const { fake } = await fakeFor(built);
+      await playClientSide(built, fake);
+      await expectComplete(fake);
+    });
+  }
+
   it('refuses a step a provider has no shape for', () => {
     const questions = { type: 'questions' as const, questions: [{ question: 'Q?', header: 'Q', options: [{ label: 'A' }] }], answers: { 'Q?': 'A' } };
     expect(() => buildChatScript('codex', { description: 'x', turns: [{ steps: [questions] }] })).toThrow(/codex has no question shape/);
     expect(() => buildChatScript('claude', { description: 'x', turns: [{ steps: [{ type: 'image-tool', image: PNG, variant: 'asset' }] }] })).toThrow(/claude has no asset image shape/);
+    expect(() => buildChatScript('copilot', { description: 'x', turns: [{ steps: [{ type: 'command', command: 'ls', output: '' }] }] })).toThrow(/copilot has no command shape/);
   });
 
-  it('md.image writes a file: URL and md.path a code span with its location', () => {
+  it('md.image writes a file: URL, md.path a code span with its location, md.quotedPath escaped prose', () => {
     expect(md.path('/tmp/a b.ts', 4, 2)).toBe('`/tmp/a b.ts:4:2`');
+    expect(md.quotedPath('C:\\a\\_temp\\b c.md')).toBe('"C:\\\\a\\\\\\_temp\\\\b c.md"');
     expect(md.image('chart', path.resolve('/tmp/chart.png'))).toMatch(/^!\[chart\]\(file:\/\/\/.*chart\.png\)$/);
   });
 });
