@@ -56,6 +56,8 @@ export interface RichChat {
   electronApp: ElectronApp;
   window: Page;
   chat: Locator;
+  /** The durable agent's id, for main-side APIs such as Annex. */
+  agentId: string;
   projectDir: string;
   /** A temp folder outside the project, removed with it. */
   outsideDir: string;
@@ -141,6 +143,7 @@ export async function openRichChat(opts: RichChatOptions): Promise<RichChat> {
     await window.locator('button:has-text("Create Agent")').click();
     const item = window.locator(`[data-agent-name="${name}"][data-testid^="agent-item-durable_"]`);
     await expect(item).toBeVisible({ timeout: 20_000 });
+    const agentId = (await item.getAttribute('data-testid'))!.slice('agent-item-'.length);
     await item.click();
 
     const chat = window.locator('[data-testid="chat-view"]');
@@ -154,7 +157,7 @@ export async function openRichChat(opts: RichChatOptions): Promise<RichChat> {
 
     const launched = electronApp;
     return {
-      electronApp, window, chat, projectDir, outsideDir, fakes,
+      electronApp, window, chat, agentId, projectDir, outsideDir, fakes,
       async send(text) {
         const box = window.getByRole('textbox', { name: 'Message' });
         await box.fill(text);
