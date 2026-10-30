@@ -4,14 +4,14 @@
       "name": "accepted",
       "request": {
         "agentId": "durable_term",
-        "commandId": "cmd_036",
+        "commandId": "cmd_037",
         "epoch": "00000000-0000-4000-8000-000000000001",
         "type": "agent.stop",
         "version": 1
       },
       "response": {
         "body": {
-          "commandId": "cmd_036",
+          "commandId": "cmd_037",
           "epoch": "00000000-0000-4000-8000-000000000001",
           "result": {
             "agentId": "durable_term",
@@ -27,14 +27,14 @@
       "name": "agent_not_found",
       "request": {
         "agentId": "missing",
-        "commandId": "cmd_037",
+        "commandId": "cmd_038",
         "epoch": "00000000-0000-4000-8000-000000000001",
         "type": "agent.stop",
         "version": 1
       },
       "response": {
         "body": {
-          "commandId": "cmd_037",
+          "commandId": "cmd_038",
           "epoch": "00000000-0000-4000-8000-000000000001",
           "error": {
             "code": "agent_not_found",

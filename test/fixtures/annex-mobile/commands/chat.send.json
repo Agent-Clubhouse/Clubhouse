@@ -239,7 +239,7 @@
         "attachmentIds": [
           "00000000-0000-4000-8000-000000000002"
         ],
-        "commandId": "cmd_105",
+        "commandId": "cmd_106",
         "epoch": "00000000-0000-4000-8000-000000000001",
         "sessionId": "sess_live",
         "text": "",
@@ -248,7 +248,7 @@
       },
       "response": {
         "body": {
-          "commandId": "cmd_105",
+          "commandId": "cmd_106",
           "epoch": "00000000-0000-4000-8000-000000000001",
           "result": {
             "delivery": "prompt",

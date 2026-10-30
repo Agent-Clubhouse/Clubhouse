@@ -640,6 +640,8 @@ describe('Annex mobile contract fixtures', () => {
 
   it('agent commands', async () => {
     await command('accepted', { type: 'agent.start', agentId: 'durable_sleepy', message: 'Pick up where you left off', resume: true });
+    // The phone's Wake: resume the last session, no first message.
+    await command('accepted wake', { type: 'agent.start', agentId: 'durable_sleepy', resume: true });
     await command('agent_already_running', { type: 'agent.start', agentId: 'durable_chat' });
     await command('agent_not_found', { type: 'agent.start', agentId: 'missing' });
     await command('accepted', { type: 'agent.stop', agentId: 'durable_term' });

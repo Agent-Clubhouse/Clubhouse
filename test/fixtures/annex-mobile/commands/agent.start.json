@@ -26,17 +26,41 @@
       }
     },
     {
-      "name": "agent_already_running",
+      "name": "accepted wake",
       "request": {
-        "agentId": "durable_chat",
+        "agentId": "durable_sleepy",
         "commandId": "cmd_034",
         "epoch": "00000000-0000-4000-8000-000000000001",
+        "resume": true,
         "type": "agent.start",
         "version": 1
       },
       "response": {
         "body": {
           "commandId": "cmd_034",
+          "epoch": "00000000-0000-4000-8000-000000000001",
+          "result": {
+            "agentId": "durable_sleepy",
+            "executionMode": "pty"
+          },
+          "status": "completed",
+          "version": 1
+        },
+        "status": 200
+      }
+    },
+    {
+      "name": "agent_already_running",
+      "request": {
+        "agentId": "durable_chat",
+        "commandId": "cmd_035",
+        "epoch": "00000000-0000-4000-8000-000000000001",
+        "type": "agent.start",
+        "version": 1
+      },
+      "response": {
+        "body": {
+          "commandId": "cmd_035",
           "epoch": "00000000-0000-4000-8000-000000000001",
           "error": {
             "code": "agent_already_running",
@@ -52,14 +76,14 @@
       "name": "agent_not_found",
       "request": {
         "agentId": "missing",
-        "commandId": "cmd_035",
+        "commandId": "cmd_036",
         "epoch": "00000000-0000-4000-8000-000000000001",
         "type": "agent.start",
         "version": 1
       },
       "response": {
         "body": {
-          "commandId": "cmd_035",
+          "commandId": "cmd_036",
           "epoch": "00000000-0000-4000-8000-000000000001",
           "error": {
             "code": "agent_not_found",

@@ -3,7 +3,7 @@
     {
       "name": "accepted",
       "request": {
-        "commandId": "cmd_038",
+        "commandId": "cmd_039",
         "epoch": "00000000-0000-4000-8000-000000000001",
         "model": "sonnet",
         "orchestrator": "claude-code",
@@ -14,7 +14,7 @@
       },
       "response": {
         "body": {
-          "commandId": "cmd_038",
+          "commandId": "cmd_039",
           "epoch": "00000000-0000-4000-8000-000000000001",
           "result": {
             "agentId": "quick_new",
@@ -31,7 +31,7 @@
     {
       "name": "project_not_found",
       "request": {
-        "commandId": "cmd_039",
+        "commandId": "cmd_040",
         "epoch": "00000000-0000-4000-8000-000000000001",
         "projectId": "missing",
         "prompt": "x",
@@ -40,7 +40,7 @@
       },
       "response": {
         "body": {
-          "commandId": "cmd_039",
+          "commandId": "cmd_040",
           "epoch": "00000000-0000-4000-8000-000000000001",
           "error": {
             "code": "project_not_found",

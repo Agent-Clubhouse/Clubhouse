@@ -3,7 +3,7 @@
     {
       "name": "accepted",
       "request": {
-        "commandId": "cmd_083",
+        "commandId": "cmd_084",
         "epoch": "00000000-0000-4000-8000-000000000001",
         "projectId": "proj_app",
         "type": "quick.clear",
@@ -11,7 +11,7 @@
       },
       "response": {
         "body": {
-          "commandId": "cmd_083",
+          "commandId": "cmd_084",
           "epoch": "00000000-0000-4000-8000-000000000001",
           "result": {
             "finishedQuickAgents": [],
@@ -26,7 +26,7 @@
     {
       "name": "project_not_found",
       "request": {
-        "commandId": "cmd_084",
+        "commandId": "cmd_085",
         "epoch": "00000000-0000-4000-8000-000000000001",
         "projectId": "missing",
         "type": "quick.clear",
@@ -34,7 +34,7 @@
       },
       "response": {
         "body": {
-          "commandId": "cmd_084",
+          "commandId": "cmd_085",
           "epoch": "00000000-0000-4000-8000-000000000001",
           "error": {
             "code": "project_not_found",
@@ -49,7 +49,7 @@
     {
       "name": "finished_quick_agents_unavailable",
       "request": {
-        "commandId": "cmd_086",
+        "commandId": "cmd_087",
         "epoch": "00000000-0000-4000-8000-000000000001",
         "projectId": "proj_app",
         "type": "quick.clear",
@@ -57,7 +57,7 @@
       },
       "response": {
         "body": {
-          "commandId": "cmd_086",
+          "commandId": "cmd_087",
           "epoch": "00000000-0000-4000-8000-000000000001",
           "error": {
             "code": "finished_quick_agents_unavailable",

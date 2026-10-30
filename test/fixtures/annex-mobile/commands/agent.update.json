@@ -5,7 +5,7 @@
       "request": {
         "agentId": "durable_sleepy",
         "color": "rose",
-        "commandId": "cmd_056",
+        "commandId": "cmd_057",
         "emoji": "🦦",
         "epoch": "00000000-0000-4000-8000-000000000001",
         "freeAgentMode": true,
@@ -19,7 +19,7 @@
       },
       "response": {
         "body": {
-          "commandId": "cmd_056",
+          "commandId": "cmd_057",
           "epoch": "00000000-0000-4000-8000-000000000001",
           "result": {
             "agentId": "durable_sleepy",
@@ -86,7 +86,7 @@
       "name": "accepted clear",
       "request": {
         "agentId": "durable_sleepy",
-        "commandId": "cmd_057",
+        "commandId": "cmd_058",
         "emoji": null,
         "epoch": "00000000-0000-4000-8000-000000000001",
         "idleSleep": "inherit",
@@ -97,7 +97,7 @@
       },
       "response": {
         "body": {
-          "commandId": "cmd_057",
+          "commandId": "cmd_058",
           "epoch": "00000000-0000-4000-8000-000000000001",
           "result": {
             "agentId": "durable_sleepy",
@@ -164,7 +164,7 @@
       "name": "accepted orchestrator",
       "request": {
         "agentId": "durable_sleepy",
-        "commandId": "cmd_058",
+        "commandId": "cmd_059",
         "epoch": "00000000-0000-4000-8000-000000000001",
         "orchestrator": "claude-code",
         "type": "agent.update",
@@ -172,7 +172,7 @@
       },
       "response": {
         "body": {
-          "commandId": "cmd_058",
+          "commandId": "cmd_059",
           "epoch": "00000000-0000-4000-8000-000000000001",
           "result": {
             "agentId": "durable_sleepy",
@@ -239,7 +239,7 @@
       "name": "accepted while running (idleSleep)",
       "request": {
         "agentId": "durable_chat",
-        "commandId": "cmd_059",
+        "commandId": "cmd_060",
         "epoch": "00000000-0000-4000-8000-000000000001",
         "idleSleep": "never",
         "type": "agent.update",
@@ -247,7 +247,7 @@
       },
       "response": {
         "body": {
-          "commandId": "cmd_059",
+          "commandId": "cmd_060",
           "epoch": "00000000-0000-4000-8000-000000000001",
           "result": {
             "agentId": "durable_chat",
@@ -314,7 +314,7 @@
       "name": "agent_not_found",
       "request": {
         "agentId": "missing",
-        "commandId": "cmd_060",
+        "commandId": "cmd_061",
         "epoch": "00000000-0000-4000-8000-000000000001",
         "idleSleep": 30,
         "type": "agent.update",
@@ -322,7 +322,7 @@
       },
       "response": {
         "body": {
-          "commandId": "cmd_060",
+          "commandId": "cmd_061",
           "epoch": "00000000-0000-4000-8000-000000000001",
           "error": {
             "code": "agent_not_found",
@@ -338,7 +338,7 @@
       "name": "agent_running",
       "request": {
         "agentId": "durable_chat",
-        "commandId": "cmd_061",
+        "commandId": "cmd_062",
         "epoch": "00000000-0000-4000-8000-000000000001",
         "name": "renamed",
         "type": "agent.update",
@@ -346,7 +346,7 @@
       },
       "response": {
         "body": {
-          "commandId": "cmd_061",
+          "commandId": "cmd_062",
           "epoch": "00000000-0000-4000-8000-000000000001",
           "error": {
             "code": "agent_running",
@@ -362,7 +362,7 @@
       "name": "agent_creating",
       "request": {
         "agentId": "durable_fresh",
-        "commandId": "cmd_062",
+        "commandId": "cmd_063",
         "epoch": "00000000-0000-4000-8000-000000000001",
         "name": "renamed",
         "type": "agent.update",
@@ -370,7 +370,7 @@
       },
       "response": {
         "body": {
-          "commandId": "cmd_062",
+          "commandId": "cmd_063",
           "epoch": "00000000-0000-4000-8000-000000000001",
           "error": {
             "code": "agent_creating",
@@ -386,7 +386,7 @@
       "name": "invalid_name",
       "request": {
         "agentId": "durable_sleepy",
-        "commandId": "cmd_063",
+        "commandId": "cmd_064",
         "epoch": "00000000-0000-4000-8000-000000000001",
         "name": "bad..name",
         "type": "agent.update",
@@ -394,7 +394,7 @@
       },
       "response": {
         "body": {
-          "commandId": "cmd_063",
+          "commandId": "cmd_064",
           "epoch": "00000000-0000-4000-8000-000000000001",
           "error": {
             "code": "invalid_name",
@@ -410,7 +410,7 @@
       "name": "orchestrator_unavailable",
       "request": {
         "agentId": "durable_sleepy",
-        "commandId": "cmd_064",
+        "commandId": "cmd_065",
         "epoch": "00000000-0000-4000-8000-000000000001",
         "orchestrator": "copilot-cli",
         "type": "agent.update",
@@ -418,7 +418,7 @@
       },
       "response": {
         "body": {
-          "commandId": "cmd_064",
+          "commandId": "cmd_065",
           "epoch": "00000000-0000-4000-8000-000000000001",
           "error": {
             "code": "orchestrator_unavailable",
@@ -434,7 +434,7 @@
       "name": "runtime_unavailable",
       "request": {
         "agentId": "durable_sleepy",
-        "commandId": "cmd_065",
+        "commandId": "cmd_066",
         "epoch": "00000000-0000-4000-8000-000000000001",
         "orchestrator": "codex-cli",
         "runtime": "chat",
@@ -443,7 +443,7 @@
       },
       "response": {
         "body": {
-          "commandId": "cmd_065",
+          "commandId": "cmd_066",
           "epoch": "00000000-0000-4000-8000-000000000001",
           "error": {
             "code": "runtime_unavailable",
@@ -459,7 +459,7 @@
       "name": "free_agent_mode_unavailable",
       "request": {
         "agentId": "durable_sleepy",
-        "commandId": "cmd_066",
+        "commandId": "cmd_067",
         "epoch": "00000000-0000-4000-8000-000000000001",
         "freeAgentMode": true,
         "orchestrator": "codex-cli",
@@ -468,7 +468,7 @@
       },
       "response": {
         "body": {
-          "commandId": "cmd_066",
+          "commandId": "cmd_067",
           "epoch": "00000000-0000-4000-8000-000000000001",
           "error": {
             "code": "free_agent_mode_unavailable",
@@ -485,14 +485,14 @@
       "request": {
         "agentId": "durable_sleepy",
         "clubhouseMode": true,
-        "commandId": "cmd_067",
+        "commandId": "cmd_068",
         "epoch": "00000000-0000-4000-8000-000000000001",
         "type": "agent.update",
         "version": 1
       },
       "response": {
         "body": {
-          "commandId": "cmd_067",
+          "commandId": "cmd_068",
           "epoch": "00000000-0000-4000-8000-000000000001",
           "error": {
             "code": "clubhouse_mode_unavailable",
@@ -508,7 +508,7 @@
       "name": "unknown_persona",
       "request": {
         "agentId": "durable_sleepy",
-        "commandId": "cmd_068",
+        "commandId": "cmd_069",
         "epoch": "00000000-0000-4000-8000-000000000001",
         "persona": "pirate",
         "type": "agent.update",
@@ -516,7 +516,7 @@
       },
       "response": {
         "body": {
-          "commandId": "cmd_068",
+          "commandId": "cmd_069",
           "epoch": "00000000-0000-4000-8000-000000000001",
           "error": {
             "code": "unknown_persona",
@@ -533,14 +533,14 @@
       "request": {
         "agentId": "durable_sleepy",
         "color": "chartreuse",
-        "commandId": "cmd_069",
+        "commandId": "cmd_070",
         "epoch": "00000000-0000-4000-8000-000000000001",
         "type": "agent.update",
         "version": 1
       },
       "response": {
         "body": {
-          "commandId": "cmd_069",
+          "commandId": "cmd_070",
           "epoch": "00000000-0000-4000-8000-000000000001",
           "error": {
             "code": "invalid_color",
@@ -556,7 +556,7 @@
       "name": "invalid_command (no settings)",
       "request": {
         "agentId": "durable_sleepy",
-        "commandId": "cmd_070",
+        "commandId": "cmd_071",
         "epoch": "00000000-0000-4000-8000-000000000001",
         "type": "agent.update",
         "version": 1
@@ -578,7 +578,7 @@
       "name": "invalid_command (unknown field)",
       "request": {
         "agentId": "durable_sleepy",
-        "commandId": "cmd_071",
+        "commandId": "cmd_072",
         "epoch": "00000000-0000-4000-8000-000000000001",
         "instructions": "be nice",
         "type": "agent.update",

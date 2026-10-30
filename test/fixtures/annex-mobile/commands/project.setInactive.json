@@ -3,7 +3,7 @@
     {
       "name": "accepted",
       "request": {
-        "commandId": "cmd_075",
+        "commandId": "cmd_076",
         "epoch": "00000000-0000-4000-8000-000000000001",
         "inactive": true,
         "projectId": "proj_docs",
@@ -12,7 +12,7 @@
       },
       "response": {
         "body": {
-          "commandId": "cmd_075",
+          "commandId": "cmd_076",
           "epoch": "00000000-0000-4000-8000-000000000001",
           "result": {
             "idle": true,
@@ -30,7 +30,7 @@
     {
       "name": "accepted mark active",
       "request": {
-        "commandId": "cmd_076",
+        "commandId": "cmd_077",
         "epoch": "00000000-0000-4000-8000-000000000001",
         "inactive": false,
         "projectId": "proj_docs",
@@ -39,7 +39,7 @@
       },
       "response": {
         "body": {
-          "commandId": "cmd_076",
+          "commandId": "cmd_077",
           "epoch": "00000000-0000-4000-8000-000000000001",
           "result": {
             "idle": false,
@@ -57,7 +57,7 @@
     {
       "name": "project_pinned",
       "request": {
-        "commandId": "cmd_077",
+        "commandId": "cmd_078",
         "epoch": "00000000-0000-4000-8000-000000000001",
         "inactive": true,
         "projectId": "proj_app",
@@ -66,7 +66,7 @@
       },
       "response": {
         "body": {
-          "commandId": "cmd_077",
+          "commandId": "cmd_078",
           "epoch": "00000000-0000-4000-8000-000000000001",
           "error": {
             "code": "project_pinned",
@@ -81,7 +81,7 @@
     {
       "name": "project_state_unavailable",
       "request": {
-        "commandId": "cmd_079",
+        "commandId": "cmd_080",
         "epoch": "00000000-0000-4000-8000-000000000001",
         "inactive": false,
         "projectId": "proj_app",
@@ -90,7 +90,7 @@
       },
       "response": {
         "body": {
-          "commandId": "cmd_079",
+          "commandId": "cmd_080",
           "epoch": "00000000-0000-4000-8000-000000000001",
           "error": {
             "code": "project_state_unavailable",
