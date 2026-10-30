@@ -1,0 +1,302 @@
+{
+  "direction": "desktop-to-phone",
+  "frame": {
+    "payload": {
+      "agentIcons": {
+        "durable_chat": "data:image/png;base64,R0lGODlhAQABAAAAACw="
+      },
+      "agents": {
+        "proj_app": [
+          {
+            "branch": "planner/standby",
+            "color": "indigo",
+            "detailedStatus": {
+              "message": "Needs permission",
+              "state": "needs_permission",
+              "timestamp": 1800000000000
+            },
+            "emoji": "🦊",
+            "executionMode": "chat",
+            "freeAgentMode": false,
+            "hasSession": true,
+            "icon": "durable_chat.png",
+            "id": "durable_chat",
+            "kind": "durable",
+            "lastActivityAt": 1790845200000,
+            "model": "opus",
+            "name": "planner",
+            "orchestrator": "claude-code",
+            "projectId": "proj_app",
+            "status": "running"
+          },
+          {
+            "branch": null,
+            "color": "teal",
+            "detailedStatus": {
+              "message": "Needs permission",
+              "state": "needs_permission",
+              "timestamp": 1800000000000
+            },
+            "emoji": null,
+            "executionMode": "chat",
+            "freeAgentMode": false,
+            "hasSession": true,
+            "icon": null,
+            "id": "durable_basic",
+            "kind": "durable",
+            "lastActivityAt": 1790931600000,
+            "model": null,
+            "name": "reviewer",
+            "orchestrator": "codex-cli",
+            "projectId": "proj_app",
+            "status": "running"
+          },
+          {
+            "branch": "brave-otter/standby",
+            "color": "amber",
+            "detailedStatus": null,
+            "emoji": null,
+            "executionMode": null,
+            "freeAgentMode": false,
+            "hasSession": true,
+            "icon": null,
+            "id": "durable_sleepy",
+            "kind": "durable",
+            "lastActivityAt": 1791018000000,
+            "model": null,
+            "name": "brave-otter",
+            "orchestrator": null,
+            "projectId": "proj_app",
+            "status": "sleeping"
+          },
+          {
+            "branch": null,
+            "color": "rose",
+            "detailedStatus": null,
+            "emoji": null,
+            "executionMode": "pty",
+            "freeAgentMode": false,
+            "hasSession": false,
+            "icon": null,
+            "id": "durable_term",
+            "kind": "durable",
+            "lastActivityAt": 1791104400000,
+            "model": null,
+            "name": "shell-runner",
+            "orchestrator": "claude-code",
+            "projectId": "proj_app",
+            "status": "running"
+          },
+          {
+            "branch": null,
+            "color": "cyan",
+            "detailedStatus": null,
+            "emoji": null,
+            "executionMode": null,
+            "freeAgentMode": false,
+            "hasSession": false,
+            "icon": null,
+            "id": "durable_fresh",
+            "kind": "durable",
+            "lastActivityAt": 1791190800000,
+            "model": null,
+            "name": "fresh",
+            "orchestrator": null,
+            "projectId": "proj_app",
+            "status": "sleeping"
+          },
+          {
+            "branch": null,
+            "color": "violet",
+            "detailedStatus": null,
+            "emoji": null,
+            "executionMode": null,
+            "freeAgentMode": false,
+            "hasSession": false,
+            "icon": null,
+            "id": "durable_docs",
+            "kind": "durable",
+            "lastActivityAt": 1791277200000,
+            "model": null,
+            "name": "Docs",
+            "orchestrator": null,
+            "projectId": "proj_app",
+            "status": "sleeping"
+          }
+        ],
+        "proj_docs": []
+      },
+      "agentsMeta": {
+        "durable_basic": {
+          "detailedStatus": {
+            "message": "Needs permission",
+            "state": "needs_permission",
+            "timestamp": 1800000000000
+          },
+          "executionMode": "chat"
+        },
+        "durable_chat": {
+          "detailedStatus": {
+            "message": "Needs permission",
+            "state": "needs_permission",
+            "timestamp": 1800000000000
+          },
+          "executionMode": "chat"
+        },
+        "durable_term": {
+          "detailedStatus": null,
+          "executionMode": "pty"
+        }
+      },
+      "appCanvasState": null,
+      "bulletinDigests": {},
+      "canvasState": {},
+      "finishedQuickAgents": {
+        "proj_app": [
+          {
+            "agentId": "quick_done",
+            "exitCode": 0,
+            "finishedAt": 1799996400000,
+            "name": "calm-heron",
+            "parentAgentId": "durable_chat",
+            "prompt": "Write the release notes",
+            "summary": "Wrote docs/release.md"
+          },
+          {
+            "agentId": "quick_stopped",
+            "cancelled": true,
+            "exitCode": 130,
+            "finishedAt": 1799992800000,
+            "name": "bold-lynx",
+            "prompt": "Profile the build",
+            "summary": null
+          }
+        ],
+        "proj_docs": []
+      },
+      "groupProjectMembers": {},
+      "groupProjects": [],
+      "helperRequests": [],
+      "idleDays": 7,
+      "lastSeq": 0,
+      "orchestrators": {
+        "claude-code": {
+          "badge": "Beta",
+          "displayName": "Claude Code",
+          "shortName": "CC"
+        },
+        "codex-cli": {
+          "displayName": "Codex",
+          "shortName": "CX"
+        }
+      },
+      "pendingPermissions": [],
+      "plugins": [],
+      "projectIcons": {
+        "proj_app": "data:image/png;base64,iVBORw0KGgo="
+      },
+      "projectState": {
+        "proj_app": {
+          "idle": false,
+          "inactive": false,
+          "lastActivityAt": 1799999700000,
+          "pinned": true
+        },
+        "proj_docs": {
+          "idle": true,
+          "inactive": false,
+          "lastActivityAt": 1799222400000,
+          "pinned": false
+        }
+      },
+      "projects": [
+        {
+          "color": "indigo",
+          "displayName": "App",
+          "icon": "proj_app.png",
+          "id": "proj_app",
+          "name": "app",
+          "path": "/work/app"
+        },
+        {
+          "id": "proj_docs",
+          "name": "docs",
+          "path": "/work/docs"
+        }
+      ],
+      "protocolVersion": 2,
+      "ptyHost": {
+        "platform": "darwin",
+        "ptyBackend": null
+      },
+      "quickAgents": {
+        "proj_app": [
+          {
+            "color": "gray",
+            "detailedStatus": null,
+            "freeAgentMode": false,
+            "id": "quick_1",
+            "kind": "quick",
+            "lastActivityAt": 1799999880000,
+            "model": null,
+            "name": "swift-fox",
+            "orchestrator": "claude-code",
+            "parentAgentId": "durable_chat",
+            "projectId": "proj_app",
+            "prompt": "Fix the flaky test",
+            "spawnedAt": 1799999880000,
+            "status": "running"
+          }
+        ],
+        "proj_docs": []
+      },
+      "sessionPaused": false,
+      "terminalColors": {
+        "background": "#1e1e2e",
+        "black": "#45475a",
+        "blue": "#89b4fa",
+        "brightBlack": "#585b70",
+        "brightBlue": "#89b4fa",
+        "brightCyan": "#94e2d5",
+        "brightGreen": "#a6e3a1",
+        "brightMagenta": "#f5c2e7",
+        "brightRed": "#f38ba8",
+        "brightWhite": "#a6adc8",
+        "brightYellow": "#f9e2af",
+        "cursor": "#f5e0dc",
+        "cursorAccent": "#1e1e2e",
+        "cyan": "#94e2d5",
+        "foreground": "#cdd6f4",
+        "green": "#a6e3a1",
+        "magenta": "#f5c2e7",
+        "red": "#f38ba8",
+        "selectionBackground": "#585b7066",
+        "selectionForeground": "#cdd6f4",
+        "white": "#bac2de",
+        "yellow": "#f9e2af"
+      },
+      "theme": {
+        "accent": "#89b4fa",
+        "accent2": "#74c7ec",
+        "base": "#1e1e2e",
+        "crust": "#11111b",
+        "error": "#f38ba8",
+        "info": "#89b4fa",
+        "link": "#89b4fa",
+        "mantle": "#181825",
+        "overlay": "#7f849c",
+        "overlay0": "#6c7086",
+        "overlay1": "#7f849c",
+        "subtext0": "#a6adc8",
+        "subtext1": "#bac2de",
+        "success": "#a6e3a1",
+        "surface0": "#313244",
+        "surface1": "#45475a",
+        "surface2": "#585b70",
+        "text": "#cdd6f4",
+        "warning": "#f9e2af"
+      }
+    },
+    "type": "snapshot"
+  }
+}

@@ -1,0 +1,409 @@
+{
+  "cases": [
+    {
+      "name": "accepted",
+      "request": {
+        "branchFrom": "main",
+        "color": "emerald",
+        "commandId": "cmd_040",
+        "epoch": "00000000-0000-4000-8000-000000000001",
+        "freeAgentMode": true,
+        "mcpIds": [
+          "github"
+        ],
+        "model": "opus",
+        "name": "calm-otter",
+        "orchestrator": "claude-code",
+        "persona": "qa",
+        "projectId": "proj_app",
+        "type": "agent.create",
+        "useWorktree": true,
+        "version": 1
+      },
+      "response": {
+        "body": {
+          "commandId": "cmd_040",
+          "epoch": "00000000-0000-4000-8000-000000000001",
+          "result": {
+            "agentId": "durable_created",
+            "branch": "calm-otter/standby",
+            "name": "calm-otter",
+            "projectId": "proj_app",
+            "state": "creating",
+            "worktreePath": "/work/app/.clubhouse/agents/calm-otter"
+          },
+          "status": "completed",
+          "version": 1
+        },
+        "status": 200
+      }
+    },
+    {
+      "name": "accepted minimal",
+      "request": {
+        "color": "emerald",
+        "commandId": "cmd_041",
+        "epoch": "00000000-0000-4000-8000-000000000001",
+        "name": "quiet-wren",
+        "projectId": "proj_app",
+        "type": "agent.create",
+        "version": 1
+      },
+      "response": {
+        "body": {
+          "commandId": "cmd_041",
+          "epoch": "00000000-0000-4000-8000-000000000001",
+          "result": {
+            "agentId": "durable_created",
+            "branch": "quiet-wren/standby",
+            "name": "quiet-wren",
+            "projectId": "proj_app",
+            "state": "creating",
+            "worktreePath": "/work/app/.clubhouse/agents/quiet-wren"
+          },
+          "status": "completed",
+          "version": 1
+        },
+        "status": 200
+      }
+    },
+    {
+      "name": "project_not_found",
+      "request": {
+        "color": "emerald",
+        "commandId": "cmd_042",
+        "epoch": "00000000-0000-4000-8000-000000000001",
+        "name": "calm-otter",
+        "projectId": "missing",
+        "type": "agent.create",
+        "version": 1
+      },
+      "response": {
+        "body": {
+          "commandId": "cmd_042",
+          "epoch": "00000000-0000-4000-8000-000000000001",
+          "error": {
+            "code": "project_not_found",
+            "message": "project_not_found"
+          },
+          "status": "rejected",
+          "version": 1
+        },
+        "status": 404
+      }
+    },
+    {
+      "name": "invalid_name",
+      "request": {
+        "color": "emerald",
+        "commandId": "cmd_043",
+        "epoch": "00000000-0000-4000-8000-000000000001",
+        "name": "bad..name",
+        "projectId": "proj_app",
+        "type": "agent.create",
+        "version": 1
+      },
+      "response": {
+        "body": {
+          "commandId": "cmd_043",
+          "epoch": "00000000-0000-4000-8000-000000000001",
+          "error": {
+            "code": "invalid_name",
+            "message": "Remove the \"..\" from the agent name."
+          },
+          "status": "rejected",
+          "version": 1
+        },
+        "status": 400
+      }
+    },
+    {
+      "name": "invalid_color",
+      "request": {
+        "color": "chartreuse",
+        "commandId": "cmd_044",
+        "epoch": "00000000-0000-4000-8000-000000000001",
+        "name": "calm-otter",
+        "projectId": "proj_app",
+        "type": "agent.create",
+        "version": 1
+      },
+      "response": {
+        "body": {
+          "commandId": "cmd_044",
+          "epoch": "00000000-0000-4000-8000-000000000001",
+          "error": {
+            "code": "invalid_color",
+            "message": "invalid_color"
+          },
+          "status": "rejected",
+          "version": 1
+        },
+        "status": 400
+      }
+    },
+    {
+      "name": "not_git_repo",
+      "request": {
+        "color": "emerald",
+        "commandId": "cmd_045",
+        "epoch": "00000000-0000-4000-8000-000000000001",
+        "name": "calm-otter",
+        "projectId": "proj_docs",
+        "type": "agent.create",
+        "useWorktree": true,
+        "version": 1
+      },
+      "response": {
+        "body": {
+          "commandId": "cmd_045",
+          "epoch": "00000000-0000-4000-8000-000000000001",
+          "error": {
+            "code": "not_git_repo",
+            "message": "not_git_repo"
+          },
+          "status": "rejected",
+          "version": 1
+        },
+        "status": 409
+      }
+    },
+    {
+      "name": "worktree_options_require_worktree",
+      "request": {
+        "branchName": "feature/x",
+        "color": "emerald",
+        "commandId": "cmd_046",
+        "epoch": "00000000-0000-4000-8000-000000000001",
+        "name": "calm-otter",
+        "projectId": "proj_app",
+        "type": "agent.create",
+        "useWorktree": false,
+        "version": 1
+      },
+      "response": {
+        "body": {
+          "commandId": "cmd_046",
+          "epoch": "00000000-0000-4000-8000-000000000001",
+          "error": {
+            "code": "worktree_options_require_worktree",
+            "message": "worktree_options_require_worktree"
+          },
+          "status": "rejected",
+          "version": 1
+        },
+        "status": 400
+      }
+    },
+    {
+      "name": "invalid_folder_name",
+      "request": {
+        "color": "emerald",
+        "commandId": "cmd_047",
+        "epoch": "00000000-0000-4000-8000-000000000001",
+        "folderName": "bad..folder",
+        "name": "calm-otter",
+        "projectId": "proj_app",
+        "type": "agent.create",
+        "version": 1
+      },
+      "response": {
+        "body": {
+          "commandId": "cmd_047",
+          "epoch": "00000000-0000-4000-8000-000000000001",
+          "error": {
+            "code": "invalid_folder_name",
+            "message": "Remove the \"..\" from the agent name."
+          },
+          "status": "rejected",
+          "version": 1
+        },
+        "status": 400
+      }
+    },
+    {
+      "name": "invalid_branch_name",
+      "request": {
+        "branchName": "bad..branch",
+        "color": "emerald",
+        "commandId": "cmd_048",
+        "epoch": "00000000-0000-4000-8000-000000000001",
+        "name": "calm-otter",
+        "projectId": "proj_app",
+        "type": "agent.create",
+        "version": 1
+      },
+      "response": {
+        "body": {
+          "commandId": "cmd_048",
+          "epoch": "00000000-0000-4000-8000-000000000001",
+          "error": {
+            "code": "invalid_branch_name",
+            "message": "Remove the \"..\" from the branch name."
+          },
+          "status": "rejected",
+          "version": 1
+        },
+        "status": 400
+      }
+    },
+    {
+      "name": "orchestrator_unavailable",
+      "request": {
+        "color": "emerald",
+        "commandId": "cmd_049",
+        "epoch": "00000000-0000-4000-8000-000000000001",
+        "name": "calm-otter",
+        "orchestrator": "copilot-cli",
+        "projectId": "proj_app",
+        "type": "agent.create",
+        "version": 1
+      },
+      "response": {
+        "body": {
+          "commandId": "cmd_049",
+          "epoch": "00000000-0000-4000-8000-000000000001",
+          "error": {
+            "code": "orchestrator_unavailable",
+            "message": "orchestrator_unavailable"
+          },
+          "status": "rejected",
+          "version": 1
+        },
+        "status": 409
+      }
+    },
+    {
+      "name": "free_agent_mode_unavailable",
+      "request": {
+        "color": "emerald",
+        "commandId": "cmd_050",
+        "epoch": "00000000-0000-4000-8000-000000000001",
+        "freeAgentMode": true,
+        "name": "calm-otter",
+        "orchestrator": "codex-cli",
+        "projectId": "proj_app",
+        "type": "agent.create",
+        "version": 1
+      },
+      "response": {
+        "body": {
+          "commandId": "cmd_050",
+          "epoch": "00000000-0000-4000-8000-000000000001",
+          "error": {
+            "code": "free_agent_mode_unavailable",
+            "message": "free_agent_mode_unavailable"
+          },
+          "status": "rejected",
+          "version": 1
+        },
+        "status": 409
+      }
+    },
+    {
+      "name": "unknown_persona",
+      "request": {
+        "color": "emerald",
+        "commandId": "cmd_051",
+        "epoch": "00000000-0000-4000-8000-000000000001",
+        "name": "calm-otter",
+        "persona": "pirate",
+        "projectId": "proj_app",
+        "type": "agent.create",
+        "version": 1
+      },
+      "response": {
+        "body": {
+          "commandId": "cmd_051",
+          "epoch": "00000000-0000-4000-8000-000000000001",
+          "error": {
+            "code": "unknown_persona",
+            "message": "unknown_persona"
+          },
+          "status": "rejected",
+          "version": 1
+        },
+        "status": 400
+      }
+    },
+    {
+      "name": "unknown_mcp",
+      "request": {
+        "color": "emerald",
+        "commandId": "cmd_052",
+        "epoch": "00000000-0000-4000-8000-000000000001",
+        "mcpIds": [
+          "jira"
+        ],
+        "name": "calm-otter",
+        "projectId": "proj_app",
+        "type": "agent.create",
+        "version": 1
+      },
+      "response": {
+        "body": {
+          "commandId": "cmd_052",
+          "epoch": "00000000-0000-4000-8000-000000000001",
+          "error": {
+            "code": "unknown_mcp",
+            "message": "unknown_mcp"
+          },
+          "status": "rejected",
+          "version": 1
+        },
+        "status": 400
+      }
+    },
+    {
+      "name": "create_refused",
+      "request": {
+        "color": "emerald",
+        "commandId": "cmd_053",
+        "epoch": "00000000-0000-4000-8000-000000000001",
+        "name": "taken",
+        "projectId": "proj_app",
+        "type": "agent.create",
+        "version": 1
+      },
+      "response": {
+        "body": {
+          "commandId": "cmd_053",
+          "epoch": "00000000-0000-4000-8000-000000000001",
+          "error": {
+            "code": "create_refused",
+            "message": "A folder named taken already exists in .clubhouse/agents"
+          },
+          "status": "rejected",
+          "version": 1
+        },
+        "status": 409
+      }
+    },
+    {
+      "name": "invalid_command (unknown field)",
+      "request": {
+        "color": "emerald",
+        "commandId": "cmd_054",
+        "epoch": "00000000-0000-4000-8000-000000000001",
+        "instructions": "be nice",
+        "name": "calm-otter",
+        "projectId": "proj_app",
+        "type": "agent.create",
+        "version": 1
+      },
+      "response": {
+        "body": {
+          "epoch": "00000000-0000-4000-8000-000000000001",
+          "error": {
+            "code": "invalid_command",
+            "message": "invalid_command"
+          },
+          "status": "rejected",
+          "version": 1
+        },
+        "status": 400
+      }
+    }
+  ],
+  "type": "agent.create"
+}

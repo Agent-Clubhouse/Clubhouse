@@ -1,0 +1,74 @@
+{
+  "cases": [
+    {
+      "name": "accepted",
+      "request": {
+        "commandId": "cmd_081",
+        "epoch": "00000000-0000-4000-8000-000000000001",
+        "projectId": "proj_app",
+        "type": "quick.clear",
+        "version": 1
+      },
+      "response": {
+        "body": {
+          "commandId": "cmd_081",
+          "epoch": "00000000-0000-4000-8000-000000000001",
+          "result": {
+            "finishedQuickAgents": [],
+            "projectId": "proj_app"
+          },
+          "status": "completed",
+          "version": 1
+        },
+        "status": 200
+      }
+    },
+    {
+      "name": "project_not_found",
+      "request": {
+        "commandId": "cmd_082",
+        "epoch": "00000000-0000-4000-8000-000000000001",
+        "projectId": "missing",
+        "type": "quick.clear",
+        "version": 1
+      },
+      "response": {
+        "body": {
+          "commandId": "cmd_082",
+          "epoch": "00000000-0000-4000-8000-000000000001",
+          "error": {
+            "code": "project_not_found",
+            "message": "project_not_found"
+          },
+          "status": "rejected",
+          "version": 1
+        },
+        "status": 404
+      }
+    },
+    {
+      "name": "finished_quick_agents_unavailable",
+      "request": {
+        "commandId": "cmd_084",
+        "epoch": "00000000-0000-4000-8000-000000000001",
+        "projectId": "proj_app",
+        "type": "quick.clear",
+        "version": 1
+      },
+      "response": {
+        "body": {
+          "commandId": "cmd_084",
+          "epoch": "00000000-0000-4000-8000-000000000001",
+          "error": {
+            "code": "finished_quick_agents_unavailable",
+            "message": "finished_quick_agents_unavailable"
+          },
+          "status": "rejected",
+          "version": 1
+        },
+        "status": 409
+      }
+    }
+  ],
+  "type": "quick.clear"
+}

@@ -1,0 +1,165 @@
+{
+  "agents": {
+    "request": {
+      "method": "GET",
+      "path": "/api/v1/projects/proj_app/agents"
+    },
+    "response": {
+      "body": [
+        {
+          "branch": "planner/standby",
+          "color": "indigo",
+          "detailedStatus": {
+            "message": "Needs permission",
+            "state": "needs_permission",
+            "timestamp": 1800000000000
+          },
+          "emoji": "🦊",
+          "executionMode": "chat",
+          "freeAgentMode": false,
+          "hasSession": true,
+          "icon": "durable_chat.png",
+          "id": "durable_chat",
+          "kind": "durable",
+          "lastActivityAt": 1790845200000,
+          "model": "opus",
+          "name": "planner",
+          "orchestrator": "claude-code",
+          "projectId": "proj_app",
+          "status": "running"
+        },
+        {
+          "branch": null,
+          "color": "teal",
+          "detailedStatus": {
+            "message": "Needs permission",
+            "state": "needs_permission",
+            "timestamp": 1800000000000
+          },
+          "emoji": null,
+          "executionMode": "chat",
+          "freeAgentMode": false,
+          "hasSession": true,
+          "icon": null,
+          "id": "durable_basic",
+          "kind": "durable",
+          "lastActivityAt": 1790931600000,
+          "model": null,
+          "name": "reviewer",
+          "orchestrator": "codex-cli",
+          "projectId": "proj_app",
+          "status": "running"
+        },
+        {
+          "branch": "brave-otter/standby",
+          "color": "amber",
+          "detailedStatus": null,
+          "emoji": null,
+          "executionMode": null,
+          "freeAgentMode": false,
+          "hasSession": true,
+          "icon": null,
+          "id": "durable_sleepy",
+          "kind": "durable",
+          "lastActivityAt": 1791018000000,
+          "model": null,
+          "name": "brave-otter",
+          "orchestrator": null,
+          "projectId": "proj_app",
+          "status": "sleeping"
+        },
+        {
+          "branch": null,
+          "color": "rose",
+          "detailedStatus": null,
+          "emoji": null,
+          "executionMode": "pty",
+          "freeAgentMode": false,
+          "hasSession": false,
+          "icon": null,
+          "id": "durable_term",
+          "kind": "durable",
+          "lastActivityAt": 1791104400000,
+          "model": null,
+          "name": "shell-runner",
+          "orchestrator": "claude-code",
+          "projectId": "proj_app",
+          "status": "running"
+        },
+        {
+          "branch": null,
+          "color": "cyan",
+          "detailedStatus": null,
+          "emoji": null,
+          "executionMode": null,
+          "freeAgentMode": false,
+          "hasSession": false,
+          "icon": null,
+          "id": "durable_fresh",
+          "kind": "durable",
+          "lastActivityAt": 1791190800000,
+          "model": null,
+          "name": "fresh",
+          "orchestrator": null,
+          "projectId": "proj_app",
+          "status": "sleeping"
+        },
+        {
+          "branch": null,
+          "color": "violet",
+          "detailedStatus": null,
+          "emoji": null,
+          "executionMode": null,
+          "freeAgentMode": false,
+          "hasSession": false,
+          "icon": null,
+          "id": "durable_docs",
+          "kind": "durable",
+          "lastActivityAt": 1791277200000,
+          "model": null,
+          "name": "Docs",
+          "orchestrator": null,
+          "projectId": "proj_app",
+          "status": "sleeping"
+        }
+      ],
+      "status": 200
+    }
+  },
+  "projects": {
+    "request": {
+      "method": "GET",
+      "path": "/api/v1/projects"
+    },
+    "response": {
+      "body": [
+        {
+          "color": "indigo",
+          "displayName": "App",
+          "icon": "proj_app.png",
+          "id": "proj_app",
+          "name": "app",
+          "path": "/work/app"
+        },
+        {
+          "id": "proj_docs",
+          "name": "docs",
+          "path": "/work/docs"
+        }
+      ],
+      "status": 200
+    }
+  },
+  "unknownProject": {
+    "request": {
+      "method": "GET",
+      "path": "/api/v1/projects/missing/agents"
+    },
+    "response": {
+      "body": {
+        "error": "project_not_found"
+      },
+      "status": 404
+    }
+  }
+}

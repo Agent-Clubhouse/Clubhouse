@@ -1,0 +1,26 @@
+{
+  "agentNotFound": {
+    "request": {
+      "method": "GET",
+      "path": "/api/v1/mobile/agents/missing/chat"
+    },
+    "response": {
+      "body": {
+        "error": "agent_not_found"
+      },
+      "status": 404
+    }
+  },
+  "invalidQuery": {
+    "request": {
+      "method": "GET",
+      "path": "/api/v1/mobile/agents/durable_chat/chat?limit=0"
+    },
+    "response": {
+      "body": {
+        "error": "invalid_query"
+      },
+      "status": 400
+    }
+  }
+}

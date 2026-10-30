@@ -1,0 +1,437 @@
+{
+  "cases": [
+    {
+      "name": "spawn project shell",
+      "replies": [
+        {
+          "payload": {
+            "cwd": "/work/app",
+            "sessionId": "shell_1"
+          },
+          "type": "pty:spawn-shell:ack"
+        }
+      ],
+      "request": {
+        "payload": {
+          "projectId": "proj_app",
+          "sessionId": "shell_1"
+        },
+        "type": "pty:spawn-shell"
+      }
+    },
+    {
+      "name": "spawn agent worktree shell",
+      "replies": [
+        {
+          "payload": {
+            "cwd": "/work/app/.clubhouse/agents/brave-otter",
+            "sessionId": "shell_2"
+          },
+          "type": "pty:spawn-shell:ack"
+        }
+      ],
+      "request": {
+        "payload": {
+          "agentId": "durable_sleepy",
+          "projectId": "proj_app",
+          "sessionId": "shell_2"
+        },
+        "type": "pty:spawn-shell"
+      }
+    },
+    {
+      "name": "spawn: invalid_session_id",
+      "replies": [
+        {
+          "payload": {
+            "message": "invalid_session_id",
+            "op": "pty:spawn-shell"
+          },
+          "type": "error"
+        }
+      ],
+      "request": {
+        "payload": {
+          "projectId": "proj_app"
+        },
+        "type": "pty:spawn-shell"
+      }
+    },
+    {
+      "name": "spawn: project_not_found",
+      "replies": [
+        {
+          "payload": {
+            "message": "project_not_found",
+            "op": "pty:spawn-shell",
+            "sessionId": "shell_3"
+          },
+          "type": "error"
+        }
+      ],
+      "request": {
+        "payload": {
+          "projectId": "missing",
+          "sessionId": "shell_3"
+        },
+        "type": "pty:spawn-shell"
+      }
+    },
+    {
+      "name": "spawn: agent_not_found",
+      "replies": [
+        {
+          "payload": {
+            "message": "agent_not_found",
+            "op": "pty:spawn-shell",
+            "sessionId": "shell_3"
+          },
+          "type": "error"
+        }
+      ],
+      "request": {
+        "payload": {
+          "agentId": "missing",
+          "projectId": "proj_app",
+          "sessionId": "shell_3"
+        },
+        "type": "pty:spawn-shell"
+      }
+    },
+    {
+      "name": "spawn: session_in_use",
+      "replies": [
+        {
+          "payload": {
+            "message": "session_in_use",
+            "op": "pty:spawn-shell",
+            "sessionId": "durable_term"
+          },
+          "type": "error"
+        }
+      ],
+      "request": {
+        "payload": {
+          "projectId": "proj_app",
+          "sessionId": "durable_term"
+        },
+        "type": "pty:spawn-shell"
+      }
+    },
+    {
+      "name": "spawn: spawn error text",
+      "replies": [
+        {
+          "payload": {
+            "message": "cwd_invalid",
+            "op": "pty:spawn-shell",
+            "sessionId": "shell_3"
+          },
+          "type": "error"
+        }
+      ],
+      "request": {
+        "payload": {
+          "projectId": "proj_app",
+          "sessionId": "shell_3"
+        },
+        "type": "pty:spawn-shell"
+      }
+    },
+    {
+      "name": "spawn: internal_error",
+      "replies": [
+        {
+          "payload": {
+            "message": "internal_error",
+            "op": "pty:spawn-shell",
+            "sessionId": "shell_3"
+          },
+          "type": "error"
+        }
+      ],
+      "request": {
+        "payload": {
+          "projectId": "proj_app",
+          "sessionId": "shell_3"
+        },
+        "type": "pty:spawn-shell"
+      }
+    },
+    {
+      "name": "spawn: too_many_shells",
+      "replies": [
+        {
+          "payload": {
+            "message": "too_many_shells",
+            "op": "pty:spawn-shell",
+            "sessionId": "shell_9"
+          },
+          "type": "error"
+        }
+      ],
+      "request": {
+        "payload": {
+          "projectId": "proj_app",
+          "sessionId": "shell_9"
+        },
+        "type": "pty:spawn-shell"
+      }
+    },
+    {
+      "name": "input",
+      "replies": [],
+      "request": {
+        "payload": {
+          "agentId": "shell_1",
+          "data": "ls\r"
+        },
+        "type": "pty:input"
+      }
+    },
+    {
+      "name": "resize",
+      "replies": [],
+      "request": {
+        "payload": {
+          "agentId": "shell_1",
+          "cols": 80,
+          "rows": 24
+        },
+        "type": "pty:resize"
+      }
+    },
+    {
+      "name": "input: session_not_found",
+      "replies": [
+        {
+          "payload": {
+            "agentId": "shell_1",
+            "message": "session_not_found",
+            "op": "pty:input"
+          },
+          "type": "error"
+        }
+      ],
+      "request": {
+        "payload": {
+          "agentId": "shell_1",
+          "data": "ls\r"
+        },
+        "type": "pty:input"
+      }
+    },
+    {
+      "name": "resize: session_not_found",
+      "replies": [
+        {
+          "payload": {
+            "agentId": "shell_1",
+            "message": "session_not_found",
+            "op": "pty:resize"
+          },
+          "type": "error"
+        }
+      ],
+      "request": {
+        "payload": {
+          "agentId": "shell_1",
+          "cols": 80,
+          "rows": 24
+        },
+        "type": "pty:resize"
+      }
+    },
+    {
+      "name": "input: too long",
+      "replies": [
+        {
+          "payload": {
+            "agentId": "shell_1",
+            "message": "pty:input data exceeds 64KB limit",
+            "op": "pty:input"
+          },
+          "type": "error"
+        }
+      ],
+      "request": {
+        "payload": {
+          "agentId": "shell_1",
+          "data": "<65537 × \"x\">"
+        },
+        "type": "pty:input"
+      }
+    },
+    {
+      "name": "shell output and exit (owner only, no seq)",
+      "replies": [
+        {
+          "payload": {
+            "agentId": "shell_1",
+            "data": "a.ts\r\nb.ts\r\n",
+            "outputSeq": 12
+          },
+          "type": "pty:data"
+        },
+        {
+          "payload": {
+            "agentId": "shell_2",
+            "exitCode": 0
+          },
+          "type": "pty:exit"
+        }
+      ]
+    },
+    {
+      "name": "agent output and exit (broadcast)",
+      "replies": [
+        {
+          "payload": {
+            "agentId": "durable_term",
+            "data": "npm test\r\n",
+            "outputSeq": 52
+          },
+          "seq": 36,
+          "type": "pty:data"
+        },
+        {
+          "payload": {
+            "agentId": "durable_term",
+            "exitCode": 0
+          },
+          "seq": 37,
+          "type": "pty:exit"
+        }
+      ]
+    },
+    {
+      "name": "close",
+      "replies": [
+        {
+          "payload": {
+            "sessionId": "shell_1"
+          },
+          "type": "pty:close:ack"
+        }
+      ],
+      "request": {
+        "payload": {
+          "sessionId": "shell_1"
+        },
+        "type": "pty:close"
+      }
+    },
+    {
+      "name": "close: session_not_found",
+      "replies": [
+        {
+          "payload": {
+            "message": "session_not_found",
+            "op": "pty:close",
+            "sessionId": "shell_3"
+          },
+          "type": "error"
+        }
+      ],
+      "request": {
+        "payload": {
+          "sessionId": "shell_3"
+        },
+        "type": "pty:close"
+      }
+    },
+    {
+      "name": "attach",
+      "replies": [
+        {
+          "payload": {
+            "agentId": "durable_term",
+            "buffer": "\u001b[1mready\u001b[0m\r\n$ ",
+            "cols": 120,
+            "outputSeq": 42,
+            "rows": 40
+          },
+          "type": "pty:attach:ack"
+        }
+      ],
+      "request": {
+        "payload": {
+          "agentId": "durable_term"
+        },
+        "type": "pty:attach"
+      }
+    },
+    {
+      "name": "attach: agent_not_terminal",
+      "replies": [
+        {
+          "payload": {
+            "agentId": "durable_chat",
+            "message": "agent_not_terminal",
+            "op": "pty:attach"
+          },
+          "type": "error"
+        }
+      ],
+      "request": {
+        "payload": {
+          "agentId": "durable_chat"
+        },
+        "type": "pty:attach"
+      }
+    },
+    {
+      "name": "attach: agent_not_running",
+      "replies": [
+        {
+          "payload": {
+            "agentId": "durable_sleepy",
+            "message": "agent_not_running",
+            "op": "pty:attach"
+          },
+          "type": "error"
+        }
+      ],
+      "request": {
+        "payload": {
+          "agentId": "durable_sleepy"
+        },
+        "type": "pty:attach"
+      }
+    },
+    {
+      "name": "attach: agent_not_found",
+      "replies": [
+        {
+          "payload": {
+            "message": "agent_not_found",
+            "op": "pty:attach"
+          },
+          "type": "error"
+        }
+      ],
+      "request": {
+        "payload": {},
+        "type": "pty:attach"
+      }
+    },
+    {
+      "name": "bearer connection refused",
+      "replies": [
+        {
+          "payload": {
+            "message": "Control messages require mTLS authentication"
+          },
+          "type": "error"
+        }
+      ],
+      "request": {
+        "payload": {
+          "projectId": "proj_app",
+          "sessionId": "shell_b"
+        },
+        "type": "pty:spawn-shell"
+      }
+    }
+  ]
+}

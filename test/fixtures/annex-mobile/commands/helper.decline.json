@@ -1,0 +1,76 @@
+{
+  "cases": [
+    {
+      "name": "accepted start",
+      "request": {
+        "commandId": "cmd_095",
+        "epoch": "00000000-0000-4000-8000-000000000001",
+        "requestId": "hstart_00000000-0000-4000-8000-000000000015",
+        "type": "helper.decline",
+        "version": 1
+      },
+      "response": {
+        "body": {
+          "commandId": "cmd_095",
+          "epoch": "00000000-0000-4000-8000-000000000001",
+          "result": {
+            "declined": true,
+            "kind": "start",
+            "requestId": "hstart_00000000-0000-4000-8000-000000000015"
+          },
+          "status": "completed",
+          "version": 1
+        },
+        "status": 200
+      }
+    },
+    {
+      "name": "accepted dispose",
+      "request": {
+        "commandId": "cmd_096",
+        "epoch": "00000000-0000-4000-8000-000000000001",
+        "requestId": "hdispose_00000000-0000-4000-8000-000000000016",
+        "type": "helper.decline",
+        "version": 1
+      },
+      "response": {
+        "body": {
+          "commandId": "cmd_096",
+          "epoch": "00000000-0000-4000-8000-000000000001",
+          "result": {
+            "declined": true,
+            "kind": "dispose",
+            "requestId": "hdispose_00000000-0000-4000-8000-000000000016"
+          },
+          "status": "completed",
+          "version": 1
+        },
+        "status": 200
+      }
+    },
+    {
+      "name": "helper_request_not_found",
+      "request": {
+        "commandId": "cmd_097",
+        "epoch": "00000000-0000-4000-8000-000000000001",
+        "requestId": "hdispose_gone",
+        "type": "helper.decline",
+        "version": 1
+      },
+      "response": {
+        "body": {
+          "commandId": "cmd_097",
+          "epoch": "00000000-0000-4000-8000-000000000001",
+          "error": {
+            "code": "helper_request_not_found",
+            "message": "helper_request_not_found"
+          },
+          "status": "rejected",
+          "version": 1
+        },
+        "status": 404
+      }
+    }
+  ],
+  "type": "helper.decline"
+}

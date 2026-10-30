@@ -1,0 +1,78 @@
+{
+  "request": {
+    "method": "GET",
+    "path": "/api/v1/mobile/agents/durable_sleepy/chat"
+  },
+  "response": {
+    "body": {
+      "agentId": "durable_sleepy",
+      "canStart": true,
+      "capabilities": null,
+      "chatControls": null,
+      "contentAnyPath": true,
+      "contentRoots": [
+        "/work/app/.clubhouse/agents/planner",
+        "/work/app"
+      ],
+      "currentSessionId": null,
+      "epoch": "00000000-0000-4000-8000-000000000001",
+      "events": [
+        {
+          "agentId": "durable_sleepy",
+          "data": {
+            "content": [
+              {
+                "text": "Rename the module",
+                "type": "text"
+              }
+            ],
+            "delivery": "prompt",
+            "messageId": "old_1",
+            "source": "user"
+          },
+          "seq": 1,
+          "sessionId": "sess_old",
+          "ts": 1799999941000,
+          "type": "user_message",
+          "v": 2
+        },
+        {
+          "agentId": "durable_sleepy",
+          "data": {
+            "messageId": "old_2",
+            "text": "Renamed."
+          },
+          "seq": 2,
+          "sessionId": "sess_old",
+          "ts": 1799999942000,
+          "type": "agent_message",
+          "v": 2
+        },
+        {
+          "agentId": "durable_sleepy",
+          "data": {
+            "reason": "idle_timeout"
+          },
+          "seq": 3,
+          "sessionId": "sess_old",
+          "ts": 1799999943000,
+          "type": "session_ended",
+          "v": 2
+        }
+      ],
+      "lastSeq": 3,
+      "nextBeforeSeq": null,
+      "pendingPermissions": [],
+      "pendingQuestions": [],
+      "queueRemovalSupported": false,
+      "queueStateSeq": 0,
+      "queuedMessageIds": [],
+      "readOnly": true,
+      "sessionId": "sess_old",
+      "state": "sleeping",
+      "truncated": false,
+      "version": 1
+    },
+    "status": 200
+  }
+}

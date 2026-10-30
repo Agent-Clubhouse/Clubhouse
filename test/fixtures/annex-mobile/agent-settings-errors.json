@@ -1,0 +1,14 @@
+{
+  "agentNotFound": {
+    "request": {
+      "method": "GET",
+      "path": "/api/v1/mobile/agents/missing/settings"
+    },
+    "response": {
+      "body": {
+        "error": "agent_not_found"
+      },
+      "status": 404
+    }
+  }
+}

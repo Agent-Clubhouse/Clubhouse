@@ -1,0 +1,527 @@
+{
+  "cases": [
+    {
+      "name": "accepted",
+      "request": {
+        "agentId": "durable_sleepy",
+        "color": "rose",
+        "commandId": "cmd_055",
+        "emoji": "🦦",
+        "epoch": "00000000-0000-4000-8000-000000000001",
+        "freeAgentMode": true,
+        "idleSleep": 30,
+        "model": "sonnet",
+        "name": "bright-otter",
+        "persona": "architect",
+        "runtime": "chat",
+        "type": "agent.update",
+        "version": 1
+      },
+      "response": {
+        "body": {
+          "commandId": "cmd_055",
+          "epoch": "00000000-0000-4000-8000-000000000001",
+          "result": {
+            "agentId": "durable_sleepy",
+            "projectId": "proj_app",
+            "settings": {
+              "clubhouseMode": {
+                "editable": "never",
+                "projectEnabled": false,
+                "value": null
+              },
+              "color": {
+                "editable": "sleeping",
+                "value": "rose"
+              },
+              "emoji": {
+                "editable": "sleeping",
+                "value": "🦦"
+              },
+              "freeAgentMode": {
+                "editable": "sleeping",
+                "value": true
+              },
+              "hasImageIcon": false,
+              "idleSleep": {
+                "applies": true,
+                "editable": "always",
+                "minutes": 30,
+                "source": "agent",
+                "value": 30
+              },
+              "model": {
+                "editable": "sleeping",
+                "value": "sonnet"
+              },
+              "name": {
+                "editable": "sleeping",
+                "value": "bright-otter"
+              },
+              "orchestrator": {
+                "editable": "sleeping",
+                "resolved": "claude-code",
+                "value": null
+              },
+              "persona": {
+                "editable": "sleeping",
+                "value": "architect"
+              },
+              "runtime": {
+                "editable": "sleeping",
+                "resolved": "chat",
+                "value": "chat"
+              }
+            },
+            "sleeping": true,
+            "state": "sleeping"
+          },
+          "status": "completed",
+          "version": 1
+        },
+        "status": 200
+      }
+    },
+    {
+      "name": "accepted clear",
+      "request": {
+        "agentId": "durable_sleepy",
+        "commandId": "cmd_056",
+        "emoji": null,
+        "epoch": "00000000-0000-4000-8000-000000000001",
+        "idleSleep": "inherit",
+        "persona": null,
+        "runtime": "default",
+        "type": "agent.update",
+        "version": 1
+      },
+      "response": {
+        "body": {
+          "commandId": "cmd_056",
+          "epoch": "00000000-0000-4000-8000-000000000001",
+          "result": {
+            "agentId": "durable_sleepy",
+            "projectId": "proj_app",
+            "settings": {
+              "clubhouseMode": {
+                "editable": "never",
+                "projectEnabled": false,
+                "value": null
+              },
+              "color": {
+                "editable": "sleeping",
+                "value": "rose"
+              },
+              "emoji": {
+                "editable": "sleeping",
+                "value": null
+              },
+              "freeAgentMode": {
+                "editable": "sleeping",
+                "value": true
+              },
+              "hasImageIcon": false,
+              "idleSleep": {
+                "applies": true,
+                "editable": "always",
+                "minutes": 30,
+                "source": "app",
+                "value": "inherit"
+              },
+              "model": {
+                "editable": "sleeping",
+                "value": "sonnet"
+              },
+              "name": {
+                "editable": "sleeping",
+                "value": "bright-otter"
+              },
+              "orchestrator": {
+                "editable": "sleeping",
+                "resolved": "claude-code",
+                "value": null
+              },
+              "persona": {
+                "editable": "sleeping",
+                "value": ""
+              },
+              "runtime": {
+                "editable": "sleeping",
+                "resolved": "chat",
+                "value": "default"
+              }
+            },
+            "sleeping": true,
+            "state": "sleeping"
+          },
+          "status": "completed",
+          "version": 1
+        },
+        "status": 200
+      }
+    },
+    {
+      "name": "accepted while running (idleSleep)",
+      "request": {
+        "agentId": "durable_chat",
+        "commandId": "cmd_057",
+        "epoch": "00000000-0000-4000-8000-000000000001",
+        "idleSleep": "never",
+        "type": "agent.update",
+        "version": 1
+      },
+      "response": {
+        "body": {
+          "commandId": "cmd_057",
+          "epoch": "00000000-0000-4000-8000-000000000001",
+          "result": {
+            "agentId": "durable_chat",
+            "projectId": "proj_app",
+            "settings": {
+              "clubhouseMode": {
+                "editable": "never",
+                "projectEnabled": false,
+                "value": null
+              },
+              "color": {
+                "editable": "sleeping",
+                "value": "indigo"
+              },
+              "emoji": {
+                "editable": "sleeping",
+                "value": "🦊"
+              },
+              "freeAgentMode": {
+                "editable": "sleeping",
+                "value": false
+              },
+              "hasImageIcon": true,
+              "idleSleep": {
+                "applies": true,
+                "editable": "always",
+                "minutes": 0,
+                "source": "agent",
+                "value": "never"
+              },
+              "model": {
+                "editable": "sleeping",
+                "value": "opus"
+              },
+              "name": {
+                "editable": "sleeping",
+                "value": "planner"
+              },
+              "orchestrator": {
+                "editable": "sleeping",
+                "resolved": "claude-code",
+                "value": "claude-code"
+              },
+              "persona": {
+                "editable": "sleeping",
+                "value": null
+              },
+              "runtime": {
+                "editable": "sleeping",
+                "resolved": "chat",
+                "value": "default"
+              }
+            },
+            "sleeping": false,
+            "state": "running"
+          },
+          "status": "completed",
+          "version": 1
+        },
+        "status": 200
+      }
+    },
+    {
+      "name": "agent_not_found",
+      "request": {
+        "agentId": "missing",
+        "commandId": "cmd_058",
+        "epoch": "00000000-0000-4000-8000-000000000001",
+        "idleSleep": 30,
+        "type": "agent.update",
+        "version": 1
+      },
+      "response": {
+        "body": {
+          "commandId": "cmd_058",
+          "epoch": "00000000-0000-4000-8000-000000000001",
+          "error": {
+            "code": "agent_not_found",
+            "message": "agent_not_found"
+          },
+          "status": "rejected",
+          "version": 1
+        },
+        "status": 404
+      }
+    },
+    {
+      "name": "agent_running",
+      "request": {
+        "agentId": "durable_chat",
+        "commandId": "cmd_059",
+        "epoch": "00000000-0000-4000-8000-000000000001",
+        "name": "renamed",
+        "type": "agent.update",
+        "version": 1
+      },
+      "response": {
+        "body": {
+          "commandId": "cmd_059",
+          "epoch": "00000000-0000-4000-8000-000000000001",
+          "error": {
+            "code": "agent_running",
+            "message": "Sleep the agent to change these"
+          },
+          "status": "rejected",
+          "version": 1
+        },
+        "status": 409
+      }
+    },
+    {
+      "name": "agent_creating",
+      "request": {
+        "agentId": "durable_fresh",
+        "commandId": "cmd_060",
+        "epoch": "00000000-0000-4000-8000-000000000001",
+        "name": "renamed",
+        "type": "agent.update",
+        "version": 1
+      },
+      "response": {
+        "body": {
+          "commandId": "cmd_060",
+          "epoch": "00000000-0000-4000-8000-000000000001",
+          "error": {
+            "code": "agent_creating",
+            "message": "agent_creating"
+          },
+          "status": "rejected",
+          "version": 1
+        },
+        "status": 409
+      }
+    },
+    {
+      "name": "invalid_name",
+      "request": {
+        "agentId": "durable_sleepy",
+        "commandId": "cmd_061",
+        "epoch": "00000000-0000-4000-8000-000000000001",
+        "name": "bad..name",
+        "type": "agent.update",
+        "version": 1
+      },
+      "response": {
+        "body": {
+          "commandId": "cmd_061",
+          "epoch": "00000000-0000-4000-8000-000000000001",
+          "error": {
+            "code": "invalid_name",
+            "message": "Remove the \"..\" from the agent name."
+          },
+          "status": "rejected",
+          "version": 1
+        },
+        "status": 400
+      }
+    },
+    {
+      "name": "orchestrator_unavailable",
+      "request": {
+        "agentId": "durable_sleepy",
+        "commandId": "cmd_062",
+        "epoch": "00000000-0000-4000-8000-000000000001",
+        "orchestrator": "copilot-cli",
+        "type": "agent.update",
+        "version": 1
+      },
+      "response": {
+        "body": {
+          "commandId": "cmd_062",
+          "epoch": "00000000-0000-4000-8000-000000000001",
+          "error": {
+            "code": "orchestrator_unavailable",
+            "message": "orchestrator_unavailable"
+          },
+          "status": "rejected",
+          "version": 1
+        },
+        "status": 409
+      }
+    },
+    {
+      "name": "runtime_unavailable",
+      "request": {
+        "agentId": "durable_sleepy",
+        "commandId": "cmd_063",
+        "epoch": "00000000-0000-4000-8000-000000000001",
+        "orchestrator": "codex-cli",
+        "runtime": "chat",
+        "type": "agent.update",
+        "version": 1
+      },
+      "response": {
+        "body": {
+          "commandId": "cmd_063",
+          "epoch": "00000000-0000-4000-8000-000000000001",
+          "error": {
+            "code": "runtime_unavailable",
+            "message": "runtime_unavailable"
+          },
+          "status": "rejected",
+          "version": 1
+        },
+        "status": 409
+      }
+    },
+    {
+      "name": "free_agent_mode_unavailable",
+      "request": {
+        "agentId": "durable_sleepy",
+        "commandId": "cmd_064",
+        "epoch": "00000000-0000-4000-8000-000000000001",
+        "freeAgentMode": true,
+        "orchestrator": "codex-cli",
+        "type": "agent.update",
+        "version": 1
+      },
+      "response": {
+        "body": {
+          "commandId": "cmd_064",
+          "epoch": "00000000-0000-4000-8000-000000000001",
+          "error": {
+            "code": "free_agent_mode_unavailable",
+            "message": "free_agent_mode_unavailable"
+          },
+          "status": "rejected",
+          "version": 1
+        },
+        "status": 409
+      }
+    },
+    {
+      "name": "clubhouse_mode_unavailable",
+      "request": {
+        "agentId": "durable_sleepy",
+        "clubhouseMode": true,
+        "commandId": "cmd_065",
+        "epoch": "00000000-0000-4000-8000-000000000001",
+        "type": "agent.update",
+        "version": 1
+      },
+      "response": {
+        "body": {
+          "commandId": "cmd_065",
+          "epoch": "00000000-0000-4000-8000-000000000001",
+          "error": {
+            "code": "clubhouse_mode_unavailable",
+            "message": "clubhouse_mode_unavailable"
+          },
+          "status": "rejected",
+          "version": 1
+        },
+        "status": 409
+      }
+    },
+    {
+      "name": "unknown_persona",
+      "request": {
+        "agentId": "durable_sleepy",
+        "commandId": "cmd_066",
+        "epoch": "00000000-0000-4000-8000-000000000001",
+        "persona": "pirate",
+        "type": "agent.update",
+        "version": 1
+      },
+      "response": {
+        "body": {
+          "commandId": "cmd_066",
+          "epoch": "00000000-0000-4000-8000-000000000001",
+          "error": {
+            "code": "unknown_persona",
+            "message": "unknown_persona"
+          },
+          "status": "rejected",
+          "version": 1
+        },
+        "status": 400
+      }
+    },
+    {
+      "name": "invalid_color",
+      "request": {
+        "agentId": "durable_sleepy",
+        "color": "chartreuse",
+        "commandId": "cmd_067",
+        "epoch": "00000000-0000-4000-8000-000000000001",
+        "type": "agent.update",
+        "version": 1
+      },
+      "response": {
+        "body": {
+          "commandId": "cmd_067",
+          "epoch": "00000000-0000-4000-8000-000000000001",
+          "error": {
+            "code": "invalid_color",
+            "message": "invalid_color"
+          },
+          "status": "rejected",
+          "version": 1
+        },
+        "status": 400
+      }
+    },
+    {
+      "name": "invalid_command (no settings)",
+      "request": {
+        "agentId": "durable_sleepy",
+        "commandId": "cmd_068",
+        "epoch": "00000000-0000-4000-8000-000000000001",
+        "type": "agent.update",
+        "version": 1
+      },
+      "response": {
+        "body": {
+          "epoch": "00000000-0000-4000-8000-000000000001",
+          "error": {
+            "code": "invalid_command",
+            "message": "invalid_command"
+          },
+          "status": "rejected",
+          "version": 1
+        },
+        "status": 400
+      }
+    },
+    {
+      "name": "invalid_command (unknown field)",
+      "request": {
+        "agentId": "durable_sleepy",
+        "commandId": "cmd_069",
+        "epoch": "00000000-0000-4000-8000-000000000001",
+        "instructions": "be nice",
+        "type": "agent.update",
+        "version": 1
+      },
+      "response": {
+        "body": {
+          "epoch": "00000000-0000-4000-8000-000000000001",
+          "error": {
+            "code": "invalid_command",
+            "message": "invalid_command"
+          },
+          "status": "rejected",
+          "version": 1
+        },
+        "status": 400
+      }
+    }
+  ],
+  "type": "agent.update"
+}

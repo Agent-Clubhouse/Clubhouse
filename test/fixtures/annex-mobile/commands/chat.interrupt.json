@@ -1,0 +1,52 @@
+{
+  "cases": [
+    {
+      "name": "accepted",
+      "request": {
+        "agentId": "durable_chat",
+        "commandId": "cmd_010",
+        "epoch": "00000000-0000-4000-8000-000000000001",
+        "sessionId": "sess_live",
+        "type": "chat.interrupt",
+        "version": 1
+      },
+      "response": {
+        "body": {
+          "commandId": "cmd_010",
+          "epoch": "00000000-0000-4000-8000-000000000001",
+          "result": {
+            "interrupted": true
+          },
+          "status": "completed",
+          "version": 1
+        },
+        "status": 200
+      }
+    },
+    {
+      "name": "not_chat",
+      "request": {
+        "agentId": "durable_sleepy",
+        "commandId": "cmd_011",
+        "epoch": "00000000-0000-4000-8000-000000000001",
+        "sessionId": "sess_old",
+        "type": "chat.interrupt",
+        "version": 1
+      },
+      "response": {
+        "body": {
+          "commandId": "cmd_011",
+          "epoch": "00000000-0000-4000-8000-000000000001",
+          "error": {
+            "code": "not_chat",
+            "message": "not_chat"
+          },
+          "status": "rejected",
+          "version": 1
+        },
+        "status": 409
+      }
+    }
+  ],
+  "type": "chat.interrupt"
+}

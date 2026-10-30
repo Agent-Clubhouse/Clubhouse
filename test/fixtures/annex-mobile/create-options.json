@@ -1,0 +1,140 @@
+{
+  "request": {
+    "method": "GET",
+    "path": "/api/v1/mobile/projects/proj_app/create-options"
+  },
+  "response": {
+    "body": {
+      "colors": [
+        {
+          "hex": "#6366f1",
+          "id": "indigo",
+          "label": "Indigo"
+        },
+        {
+          "hex": "#10b981",
+          "id": "emerald",
+          "label": "Emerald"
+        },
+        {
+          "hex": "#f59e0b",
+          "id": "amber",
+          "label": "Amber"
+        },
+        {
+          "hex": "#f43f5e",
+          "id": "rose",
+          "label": "Rose"
+        },
+        {
+          "hex": "#06b6d4",
+          "id": "cyan",
+          "label": "Cyan"
+        },
+        {
+          "hex": "#8b5cf6",
+          "id": "violet",
+          "label": "Violet"
+        },
+        {
+          "hex": "#f97316",
+          "id": "orange",
+          "label": "Orange"
+        },
+        {
+          "hex": "#14b8a6",
+          "id": "teal",
+          "label": "Teal"
+        }
+      ],
+      "defaults": {
+        "color": "indigo",
+        "model": "default",
+        "orchestrator": "claude-code",
+        "useWorktree": true
+      },
+      "epoch": "00000000-0000-4000-8000-000000000001",
+      "freeAgentMode": {
+        "allowed": true
+      },
+      "isGitRepo": true,
+      "mcp": {
+        "catalog": [
+          {
+            "description": "Issues and pull requests",
+            "id": "github",
+            "name": "GitHub"
+          },
+          {
+            "description": "Work items",
+            "id": "ado",
+            "name": "Azure DevOps"
+          }
+        ],
+        "defaults": [
+          "github"
+        ]
+      },
+      "orchestrators": [
+        {
+          "available": true,
+          "badge": "Beta",
+          "chat": true,
+          "displayName": "Claude Code",
+          "id": "claude-code",
+          "models": [
+            {
+              "id": "default",
+              "label": "Default"
+            },
+            {
+              "id": "opus",
+              "label": "Opus"
+            },
+            {
+              "id": "sonnet",
+              "label": "Sonnet"
+            }
+          ],
+          "permissions": true,
+          "shortName": "CC"
+        },
+        {
+          "available": false,
+          "chat": false,
+          "displayName": "Codex",
+          "id": "codex-cli",
+          "models": [
+            {
+              "id": "default",
+              "label": "Default"
+            },
+            {
+              "id": "gpt-5",
+              "label": "GPT-5"
+            }
+          ],
+          "permissions": false,
+          "shortName": "CX",
+          "unavailableReason": "Codex CLI not found"
+        }
+      ],
+      "personas": [
+        {
+          "id": "qa",
+          "name": "QA",
+          "source": "builtin"
+        },
+        {
+          "id": "architect",
+          "name": "Architect",
+          "source": "project"
+        }
+      ],
+      "projectId": "proj_app",
+      "suggestedName": "brave-otter",
+      "version": 1
+    },
+    "status": 200
+  }
+}

@@ -1,0 +1,108 @@
+{
+  "request": {
+    "method": "GET",
+    "path": "/api/v1/mobile/capabilities"
+  },
+  "response": {
+    "body": {
+      "agentSettings": {
+        "path": "/api/v1/mobile/agents/{agentId}/settings",
+        "version": 1
+      },
+      "attachments": {
+        "imageTypes": [
+          "image/png",
+          "image/jpeg",
+          "image/gif",
+          "image/webp"
+        ],
+        "maxCount": 10,
+        "maxImageBytes": 3932160,
+        "version": 1
+      },
+      "chatControls": {
+        "version": 1
+      },
+      "commands": [
+        "chat.send",
+        "chat.interrupt",
+        "chat.permission",
+        "chat.question",
+        "chat.queue.remove",
+        "agent.start",
+        "agent.stop",
+        "agent.spawn",
+        "agent.create",
+        "agent.update",
+        "project.setPinned",
+        "project.setInactive",
+        "helper.approve",
+        "helper.decline",
+        "chat.setModel",
+        "chat.setLevel",
+        "quick.dismiss",
+        "quick.clear"
+      ],
+      "controlAuth": "mtls-pinned-client",
+      "controlAvailable": true,
+      "createOptions": {
+        "path": "/api/v1/mobile/projects/{projectId}/create-options",
+        "version": 1
+      },
+      "epoch": "00000000-0000-4000-8000-000000000001",
+      "events": {
+        "queueState": "queue_state",
+        "replayRequest": "mobile:replay",
+        "transport": "annex-websocket"
+      },
+      "finishedQuickAgents": {
+        "version": 1
+      },
+      "helperRequests": {
+        "commands": [
+          "helper.approve",
+          "helper.decline"
+        ],
+        "snapshotField": "helperRequests",
+        "version": 1
+      },
+      "idempotency": {
+        "maxEntries": 2048,
+        "scope": "peer-and-epoch",
+        "ttlMs": 3600000
+      },
+      "pairing": {
+        "sessionRevokePath": "/api/v1/mobile/pairing"
+      },
+      "permissions": {
+        "freeAgentMode": true,
+        "persistentApprovals": true,
+        "version": 1
+      },
+      "projectState": {
+        "version": 1
+      },
+      "richContent": {
+        "enabled": true,
+        "maximumBytes": 8388608,
+        "version": 1
+      },
+      "routes": {
+        "hosts": [
+          "127.0.0.1"
+        ],
+        "port": 7432
+      },
+      "terminal": {
+        "agentAttach": true,
+        "agentShell": true,
+        "maxInputLength": 65536,
+        "maxShellsPerConnection": 8,
+        "projectShell": true,
+        "version": 1
+      },
+      "version": 1
+    },
+    "status": 200
+  }
+}

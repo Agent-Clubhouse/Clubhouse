@@ -1,0 +1,54 @@
+{
+  "direction": "desktop-to-phone",
+  "field": "helperRequests",
+  "value": [
+    {
+      "expiresAt": "2027-01-16T07:50:00.000Z",
+      "helper": {
+        "agentId": null,
+        "name": "impl-ipc"
+      },
+      "kind": "start",
+      "projectId": "proj_app",
+      "requestId": "hstart_00000000-0000-4000-8000-000000000018",
+      "requestedAt": "2027-01-15T07:50:00.000Z",
+      "requester": {
+        "agentId": "durable_chat",
+        "name": "planner"
+      },
+      "start": {
+        "access": null,
+        "branchFrom": null,
+        "model": "opus",
+        "persona": null,
+        "task": "Wire the IPC"
+      },
+      "summary": "Wants to start the helper impl-ipc"
+    },
+    {
+      "dispose": {
+        "canDispose": true,
+        "checkError": null,
+        "forceRequested": true,
+        "uncommittedFiles": 2,
+        "unmergedCommits": 0,
+        "unpushedCommits": 1,
+        "workAtRisk": true
+      },
+      "expiresAt": null,
+      "helper": {
+        "agentId": "durable_docs",
+        "name": "Docs"
+      },
+      "kind": "dispose",
+      "projectId": "proj_app",
+      "requestId": "hdispose_00000000-0000-4000-8000-000000000019",
+      "requestedAt": "2027-01-15T07:55:00.000Z",
+      "requester": {
+        "agentId": "durable_chat",
+        "name": "planner"
+      },
+      "summary": "planner asked to dispose this helper (forced). 2 uncommitted files, 1 unpushed commit."
+    }
+  ]
+}

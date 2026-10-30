@@ -1,0 +1,121 @@
+{
+  "cases": [
+    {
+      "name": "accepted",
+      "request": {
+        "agentId": "quick_done",
+        "commandId": "cmd_078",
+        "epoch": "00000000-0000-4000-8000-000000000001",
+        "projectId": "proj_app",
+        "type": "quick.dismiss",
+        "version": 1
+      },
+      "response": {
+        "body": {
+          "commandId": "cmd_078",
+          "epoch": "00000000-0000-4000-8000-000000000001",
+          "result": {
+            "finishedQuickAgents": [
+              {
+                "agentId": "quick_stopped",
+                "cancelled": true,
+                "exitCode": 130,
+                "finishedAt": 1799992800000,
+                "name": "bold-lynx",
+                "prompt": "Profile the build",
+                "summary": null
+              }
+            ],
+            "projectId": "proj_app"
+          },
+          "status": "completed",
+          "version": 1
+        },
+        "status": 200
+      }
+    },
+    {
+      "name": "accepted not listed",
+      "request": {
+        "agentId": "quick_unknown",
+        "commandId": "cmd_079",
+        "epoch": "00000000-0000-4000-8000-000000000001",
+        "projectId": "proj_app",
+        "type": "quick.dismiss",
+        "version": 1
+      },
+      "response": {
+        "body": {
+          "commandId": "cmd_079",
+          "epoch": "00000000-0000-4000-8000-000000000001",
+          "result": {
+            "finishedQuickAgents": [
+              {
+                "agentId": "quick_stopped",
+                "cancelled": true,
+                "exitCode": 130,
+                "finishedAt": 1799992800000,
+                "name": "bold-lynx",
+                "prompt": "Profile the build",
+                "summary": null
+              }
+            ],
+            "projectId": "proj_app"
+          },
+          "status": "completed",
+          "version": 1
+        },
+        "status": 200
+      }
+    },
+    {
+      "name": "project_not_found",
+      "request": {
+        "agentId": "quick_done",
+        "commandId": "cmd_080",
+        "epoch": "00000000-0000-4000-8000-000000000001",
+        "projectId": "missing",
+        "type": "quick.dismiss",
+        "version": 1
+      },
+      "response": {
+        "body": {
+          "commandId": "cmd_080",
+          "epoch": "00000000-0000-4000-8000-000000000001",
+          "error": {
+            "code": "project_not_found",
+            "message": "project_not_found"
+          },
+          "status": "rejected",
+          "version": 1
+        },
+        "status": 404
+      }
+    },
+    {
+      "name": "finished_quick_agents_unavailable",
+      "request": {
+        "agentId": "quick_done",
+        "commandId": "cmd_083",
+        "epoch": "00000000-0000-4000-8000-000000000001",
+        "projectId": "proj_app",
+        "type": "quick.dismiss",
+        "version": 1
+      },
+      "response": {
+        "body": {
+          "commandId": "cmd_083",
+          "epoch": "00000000-0000-4000-8000-000000000001",
+          "error": {
+            "code": "finished_quick_agents_unavailable",
+            "message": "finished_quick_agents_unavailable"
+          },
+          "status": "rejected",
+          "version": 1
+        },
+        "status": 409
+      }
+    }
+  ],
+  "type": "quick.dismiss"
+}

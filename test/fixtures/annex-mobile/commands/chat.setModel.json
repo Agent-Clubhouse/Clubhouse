@@ -1,0 +1,212 @@
+{
+  "cases": [
+    {
+      "name": "accepted switch",
+      "request": {
+        "agentId": "durable_chat",
+        "commandId": "cmd_020",
+        "epoch": "00000000-0000-4000-8000-000000000001",
+        "model": "sonnet",
+        "sessionId": "sess_live",
+        "type": "chat.setModel",
+        "version": 1
+      },
+      "response": {
+        "body": {
+          "commandId": "cmd_020",
+          "epoch": "00000000-0000-4000-8000-000000000001",
+          "result": {
+            "changed": true,
+            "effort": "high",
+            "model": "sonnet"
+          },
+          "status": "completed",
+          "version": 1
+        },
+        "status": 200
+      }
+    },
+    {
+      "name": "accepted effort",
+      "request": {
+        "agentId": "durable_chat",
+        "commandId": "cmd_021",
+        "effort": "low",
+        "epoch": "00000000-0000-4000-8000-000000000001",
+        "model": "opus",
+        "sessionId": "sess_live",
+        "type": "chat.setModel",
+        "version": 1
+      },
+      "response": {
+        "body": {
+          "commandId": "cmd_021",
+          "epoch": "00000000-0000-4000-8000-000000000001",
+          "result": {
+            "changed": true,
+            "effort": "low",
+            "model": "opus"
+          },
+          "status": "completed",
+          "version": 1
+        },
+        "status": 200
+      }
+    },
+    {
+      "name": "unchanged",
+      "request": {
+        "agentId": "durable_chat",
+        "commandId": "cmd_022",
+        "epoch": "00000000-0000-4000-8000-000000000001",
+        "model": "opus",
+        "sessionId": "sess_live",
+        "type": "chat.setModel",
+        "version": 1
+      },
+      "response": {
+        "body": {
+          "commandId": "cmd_022",
+          "epoch": "00000000-0000-4000-8000-000000000001",
+          "result": {
+            "changed": false,
+            "effort": "high",
+            "model": "opus"
+          },
+          "status": "completed",
+          "version": 1
+        },
+        "status": 200
+      }
+    },
+    {
+      "name": "unknown_model",
+      "request": {
+        "agentId": "durable_chat",
+        "commandId": "cmd_023",
+        "epoch": "00000000-0000-4000-8000-000000000001",
+        "model": "gpt-9",
+        "sessionId": "sess_live",
+        "type": "chat.setModel",
+        "version": 1
+      },
+      "response": {
+        "body": {
+          "commandId": "cmd_023",
+          "epoch": "00000000-0000-4000-8000-000000000001",
+          "error": {
+            "code": "unknown_model",
+            "message": "unknown_model"
+          },
+          "status": "rejected",
+          "version": 1
+        },
+        "status": 409
+      }
+    },
+    {
+      "name": "unknown_effort",
+      "request": {
+        "agentId": "durable_chat",
+        "commandId": "cmd_024",
+        "effort": "max",
+        "epoch": "00000000-0000-4000-8000-000000000001",
+        "model": "opus",
+        "sessionId": "sess_live",
+        "type": "chat.setModel",
+        "version": 1
+      },
+      "response": {
+        "body": {
+          "commandId": "cmd_024",
+          "epoch": "00000000-0000-4000-8000-000000000001",
+          "error": {
+            "code": "unknown_effort",
+            "message": "unknown_effort"
+          },
+          "status": "rejected",
+          "version": 1
+        },
+        "status": 409
+      }
+    },
+    {
+      "name": "effort_default_not_supported",
+      "request": {
+        "agentId": "durable_chat",
+        "commandId": "cmd_025",
+        "effort": null,
+        "epoch": "00000000-0000-4000-8000-000000000001",
+        "model": "opus",
+        "sessionId": "sess_live",
+        "type": "chat.setModel",
+        "version": 1
+      },
+      "response": {
+        "body": {
+          "commandId": "cmd_025",
+          "epoch": "00000000-0000-4000-8000-000000000001",
+          "error": {
+            "code": "effort_default_not_supported",
+            "message": "effort_default_not_supported"
+          },
+          "status": "rejected",
+          "version": 1
+        },
+        "status": 409
+      }
+    },
+    {
+      "name": "model_switch_not_supported",
+      "request": {
+        "agentId": "durable_basic",
+        "commandId": "cmd_026",
+        "epoch": "00000000-0000-4000-8000-000000000001",
+        "model": "o3",
+        "sessionId": "sess_basic",
+        "type": "chat.setModel",
+        "version": 1
+      },
+      "response": {
+        "body": {
+          "commandId": "cmd_026",
+          "epoch": "00000000-0000-4000-8000-000000000001",
+          "error": {
+            "code": "model_switch_not_supported",
+            "message": "model_switch_not_supported"
+          },
+          "status": "rejected",
+          "version": 1
+        },
+        "status": 409
+      }
+    },
+    {
+      "name": "effort_switch_not_supported",
+      "request": {
+        "agentId": "durable_basic",
+        "commandId": "cmd_027",
+        "effort": "high",
+        "epoch": "00000000-0000-4000-8000-000000000001",
+        "model": "gpt-5",
+        "sessionId": "sess_basic",
+        "type": "chat.setModel",
+        "version": 1
+      },
+      "response": {
+        "body": {
+          "commandId": "cmd_027",
+          "epoch": "00000000-0000-4000-8000-000000000001",
+          "error": {
+            "code": "effort_switch_not_supported",
+            "message": "effort_switch_not_supported"
+          },
+          "status": "rejected",
+          "version": 1
+        },
+        "status": 409
+      }
+    }
+  ],
+  "type": "chat.setModel"
+}

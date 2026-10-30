@@ -283,12 +283,16 @@ describe('agent.update', () => {
     const running = { live: 'running' as const, assertAuthorized: allow };
     await updateMobileAgent(project, agent(), { agentId: 'durable_1', idleSleep: 15 }, running);
     expect(agentConfig.updateDurableConfig).toHaveBeenCalledWith('/work/app', 'durable_1', { idleSleep: 15 });
+    // As annex-server passes it: the whole command, with its version, epoch and id.
+    const command = { version: 1, epoch: 'e', commandId: 'c', type: 'agent.update', agentId: 'durable_1', idleSleep: 30 } as const;
+    await updateMobileAgent(project, agent(), command, running);
+    expect(agentConfig.updateDurableConfig).toHaveBeenLastCalledWith('/work/app', 'durable_1', { idleSleep: 30 });
     for (const change of [{ name: 'calm-otter' }, { model: 'opus' }, { color: 'rose' }, { idleSleep: 15 as const, persona: 'qa' }]) {
       const err = await refusal(updateMobileAgent(project, agent(), { agentId: 'durable_1', ...change }, running));
       expect(err).toMatchObject({ code: 'agent_running', statusCode: 409, detail: 'Sleep the agent to change these' });
     }
     expect((await refusal(updateMobileAgent(project, agent(), { agentId: 'durable_1', model: 'opus' }, { live: 'starting', assertAuthorized: allow }))).code).toBe('agent_running');
-    expect(agentConfig.updateDurableConfig).toHaveBeenCalledTimes(1);
+    expect(agentConfig.updateDurableConfig).toHaveBeenCalledTimes(2);
   });
   it('refuses changes the desktop would not allow, before writing anything', async () => {
     const refuse = async (change: object, cfg = agent()) => (await refusal(updateMobileAgent(project, cfg, { agentId: 'durable_1', idleSleep: 30, ...change }, live))).code;

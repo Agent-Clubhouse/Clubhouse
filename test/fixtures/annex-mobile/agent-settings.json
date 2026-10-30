@@ -1,0 +1,191 @@
+{
+  "request": {
+    "method": "GET",
+    "path": "/api/v1/mobile/agents/durable_sleepy/settings"
+  },
+  "response": {
+    "body": {
+      "agentId": "durable_sleepy",
+      "details": {
+        "branch": "brave-otter/standby",
+        "changes": {
+          "additions": 94,
+          "ahead": 2,
+          "available": true,
+          "base": "main",
+          "deletions": 51,
+          "files": 2,
+          "noBase": false,
+          "uncommitted": 1
+        },
+        "mcpIds": [],
+        "worktree": ".clubhouse/agents/brave-otter",
+        "worktreePath": "/work/app/.clubhouse/agents/brave-otter"
+      },
+      "epoch": "00000000-0000-4000-8000-000000000001",
+      "options": {
+        "colors": [
+          {
+            "hex": "#6366f1",
+            "id": "indigo",
+            "label": "Indigo"
+          },
+          {
+            "hex": "#10b981",
+            "id": "emerald",
+            "label": "Emerald"
+          },
+          {
+            "hex": "#f59e0b",
+            "id": "amber",
+            "label": "Amber"
+          },
+          {
+            "hex": "#f43f5e",
+            "id": "rose",
+            "label": "Rose"
+          },
+          {
+            "hex": "#06b6d4",
+            "id": "cyan",
+            "label": "Cyan"
+          },
+          {
+            "hex": "#8b5cf6",
+            "id": "violet",
+            "label": "Violet"
+          },
+          {
+            "hex": "#f97316",
+            "id": "orange",
+            "label": "Orange"
+          },
+          {
+            "hex": "#14b8a6",
+            "id": "teal",
+            "label": "Teal"
+          }
+        ],
+        "idleSleep": {
+          "appMinutes": 30,
+          "minutes": [
+            15,
+            30,
+            60,
+            240
+          ]
+        },
+        "orchestrators": [
+          {
+            "available": true,
+            "badge": "Beta",
+            "chat": true,
+            "displayName": "Claude Code",
+            "id": "claude-code",
+            "models": [
+              {
+                "id": "default",
+                "label": "Default"
+              },
+              {
+                "id": "opus",
+                "label": "Opus"
+              },
+              {
+                "id": "sonnet",
+                "label": "Sonnet"
+              }
+            ],
+            "permissions": true,
+            "shortName": "CC"
+          },
+          {
+            "available": false,
+            "chat": false,
+            "displayName": "Codex",
+            "id": "codex-cli",
+            "models": [
+              {
+                "id": "default",
+                "label": "Default"
+              },
+              {
+                "id": "gpt-5",
+                "label": "GPT-5"
+              }
+            ],
+            "permissions": false,
+            "shortName": "CX",
+            "unavailableReason": "Codex CLI not found"
+          }
+        ],
+        "personas": [
+          {
+            "id": "qa",
+            "name": "QA",
+            "source": "builtin"
+          },
+          {
+            "id": "architect",
+            "name": "Architect",
+            "source": "project"
+          }
+        ]
+      },
+      "projectId": "proj_app",
+      "settings": {
+        "clubhouseMode": {
+          "editable": "never",
+          "projectEnabled": false,
+          "value": null
+        },
+        "color": {
+          "editable": "sleeping",
+          "value": "amber"
+        },
+        "emoji": {
+          "editable": "sleeping",
+          "value": null
+        },
+        "freeAgentMode": {
+          "editable": "sleeping",
+          "value": false
+        },
+        "hasImageIcon": false,
+        "idleSleep": {
+          "applies": true,
+          "editable": "always",
+          "minutes": 60,
+          "source": "agent",
+          "value": 60
+        },
+        "model": {
+          "editable": "sleeping",
+          "value": "default"
+        },
+        "name": {
+          "editable": "sleeping",
+          "value": "brave-otter"
+        },
+        "orchestrator": {
+          "editable": "sleeping",
+          "resolved": "claude-code",
+          "value": null
+        },
+        "persona": {
+          "editable": "sleeping",
+          "value": null
+        },
+        "runtime": {
+          "editable": "sleeping",
+          "resolved": "chat",
+          "value": "default"
+        }
+      },
+      "sleeping": true,
+      "state": "sleeping",
+      "version": 1
+    },
+    "status": 200
+  }
+}

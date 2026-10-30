@@ -1,0 +1,265 @@
+{
+  "cases": [
+    {
+      "name": "accepted",
+      "request": {
+        "agentId": "durable_chat",
+        "commandId": "cmd_001",
+        "delivery": "auto",
+        "epoch": "00000000-0000-4000-8000-000000000001",
+        "sessionId": "sess_live",
+        "text": "Run the tests",
+        "type": "chat.send",
+        "version": 1
+      },
+      "response": {
+        "body": {
+          "commandId": "cmd_001",
+          "epoch": "00000000-0000-4000-8000-000000000001",
+          "result": {
+            "delivery": "prompt",
+            "messageId": "msg_auto"
+          },
+          "status": "completed",
+          "version": 1
+        },
+        "status": 200
+      }
+    },
+    {
+      "name": "accepted queued",
+      "request": {
+        "agentId": "durable_chat",
+        "commandId": "cmd_002",
+        "delivery": "queued",
+        "epoch": "00000000-0000-4000-8000-000000000001",
+        "sessionId": "sess_live",
+        "text": "Then the linter",
+        "type": "chat.send",
+        "version": 1
+      },
+      "response": {
+        "body": {
+          "commandId": "cmd_002",
+          "epoch": "00000000-0000-4000-8000-000000000001",
+          "result": {
+            "delivery": "queued",
+            "messageId": "msg_queued"
+          },
+          "status": "completed",
+          "version": 1
+        },
+        "status": 200
+      }
+    },
+    {
+      "name": "session_mismatch",
+      "request": {
+        "agentId": "durable_chat",
+        "commandId": "cmd_003",
+        "epoch": "00000000-0000-4000-8000-000000000001",
+        "sessionId": "sess_stale",
+        "text": "hi",
+        "type": "chat.send",
+        "version": 1
+      },
+      "response": {
+        "body": {
+          "commandId": "cmd_003",
+          "epoch": "00000000-0000-4000-8000-000000000001",
+          "error": {
+            "code": "session_mismatch",
+            "message": "session_mismatch"
+          },
+          "status": "rejected",
+          "version": 1
+        },
+        "status": 409
+      }
+    },
+    {
+      "name": "not_chat",
+      "request": {
+        "agentId": "durable_sleepy",
+        "commandId": "cmd_004",
+        "epoch": "00000000-0000-4000-8000-000000000001",
+        "sessionId": "sess_old",
+        "text": "hi",
+        "type": "chat.send",
+        "version": 1
+      },
+      "response": {
+        "body": {
+          "commandId": "cmd_004",
+          "epoch": "00000000-0000-4000-8000-000000000001",
+          "error": {
+            "code": "not_chat",
+            "message": "not_chat"
+          },
+          "status": "rejected",
+          "version": 1
+        },
+        "status": 409
+      }
+    },
+    {
+      "name": "agent_not_found",
+      "request": {
+        "agentId": "missing",
+        "commandId": "cmd_005",
+        "epoch": "00000000-0000-4000-8000-000000000001",
+        "sessionId": "s",
+        "text": "hi",
+        "type": "chat.send",
+        "version": 1
+      },
+      "response": {
+        "body": {
+          "commandId": "cmd_005",
+          "epoch": "00000000-0000-4000-8000-000000000001",
+          "error": {
+            "code": "agent_not_found",
+            "message": "agent_not_found"
+          },
+          "status": "rejected",
+          "version": 1
+        },
+        "status": 404
+      }
+    },
+    {
+      "name": "revert_in_progress",
+      "request": {
+        "agentId": "durable_chat",
+        "commandId": "cmd_006",
+        "epoch": "00000000-0000-4000-8000-000000000001",
+        "sessionId": "sess_live",
+        "text": "hi",
+        "type": "chat.send",
+        "version": 1
+      },
+      "response": {
+        "body": {
+          "commandId": "cmd_006",
+          "epoch": "00000000-0000-4000-8000-000000000001",
+          "error": {
+            "code": "revert_in_progress",
+            "message": "revert_in_progress"
+          },
+          "status": "rejected",
+          "version": 1
+        },
+        "status": 409
+      }
+    },
+    {
+      "name": "images_not_supported",
+      "request": {
+        "agentId": "durable_basic",
+        "attachmentIds": [
+          "att_x"
+        ],
+        "commandId": "cmd_007",
+        "epoch": "00000000-0000-4000-8000-000000000001",
+        "sessionId": "sess_basic",
+        "text": "",
+        "type": "chat.send",
+        "version": 1
+      },
+      "response": {
+        "body": {
+          "commandId": "cmd_007",
+          "epoch": "00000000-0000-4000-8000-000000000001",
+          "error": {
+            "code": "images_not_supported",
+            "message": "images_not_supported"
+          },
+          "status": "rejected",
+          "version": 1
+        },
+        "status": 409
+      }
+    },
+    {
+      "name": "attachment_unavailable",
+      "request": {
+        "agentId": "durable_chat",
+        "attachmentIds": [
+          "not-uploaded"
+        ],
+        "commandId": "cmd_008",
+        "epoch": "00000000-0000-4000-8000-000000000001",
+        "sessionId": "sess_live",
+        "text": "",
+        "type": "chat.send",
+        "version": 1
+      },
+      "response": {
+        "body": {
+          "commandId": "cmd_008",
+          "epoch": "00000000-0000-4000-8000-000000000001",
+          "error": {
+            "code": "attachment_unavailable",
+            "message": "attachment_unavailable"
+          },
+          "status": "rejected",
+          "version": 1
+        },
+        "status": 409
+      }
+    },
+    {
+      "name": "invalid_command (empty text without images)",
+      "request": {
+        "agentId": "durable_chat",
+        "commandId": "cmd_009",
+        "epoch": "00000000-0000-4000-8000-000000000001",
+        "sessionId": "sess_live",
+        "text": "",
+        "type": "chat.send",
+        "version": 1
+      },
+      "response": {
+        "body": {
+          "epoch": "00000000-0000-4000-8000-000000000001",
+          "error": {
+            "code": "invalid_command",
+            "message": "invalid_command"
+          },
+          "status": "rejected",
+          "version": 1
+        },
+        "status": 400
+      }
+    },
+    {
+      "name": "accepted with images",
+      "request": {
+        "agentId": "durable_chat",
+        "attachmentIds": [
+          "00000000-0000-4000-8000-000000000002"
+        ],
+        "commandId": "cmd_103",
+        "epoch": "00000000-0000-4000-8000-000000000001",
+        "sessionId": "sess_live",
+        "text": "",
+        "type": "chat.send",
+        "version": 1
+      },
+      "response": {
+        "body": {
+          "commandId": "cmd_103",
+          "epoch": "00000000-0000-4000-8000-000000000001",
+          "result": {
+            "delivery": "prompt",
+            "messageId": "msg_auto"
+          },
+          "status": "completed",
+          "version": 1
+        },
+        "status": 200
+      }
+    }
+  ],
+  "type": "chat.send"
+}

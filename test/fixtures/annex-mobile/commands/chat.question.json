@@ -1,0 +1,92 @@
+{
+  "cases": [
+    {
+      "name": "accepted",
+      "request": {
+        "agentId": "durable_chat",
+        "answers": {
+          "which": "main"
+        },
+        "commandId": "cmd_017",
+        "epoch": "00000000-0000-4000-8000-000000000001",
+        "requestId": "q_1",
+        "sessionId": "sess_live",
+        "type": "chat.question",
+        "version": 1
+      },
+      "response": {
+        "body": {
+          "commandId": "cmd_017",
+          "epoch": "00000000-0000-4000-8000-000000000001",
+          "result": {
+            "answered": true,
+            "requestId": "q_1"
+          },
+          "status": "completed",
+          "version": 1
+        },
+        "status": 200
+      }
+    },
+    {
+      "name": "accepted multiple choices",
+      "request": {
+        "agentId": "durable_chat",
+        "answers": {
+          "which": [
+            "main",
+            "dev"
+          ]
+        },
+        "commandId": "cmd_018",
+        "epoch": "00000000-0000-4000-8000-000000000001",
+        "requestId": "q_1",
+        "sessionId": "sess_live",
+        "type": "chat.question",
+        "version": 1
+      },
+      "response": {
+        "body": {
+          "commandId": "cmd_018",
+          "epoch": "00000000-0000-4000-8000-000000000001",
+          "result": {
+            "answered": true,
+            "requestId": "q_1"
+          },
+          "status": "completed",
+          "version": 1
+        },
+        "status": 200
+      }
+    },
+    {
+      "name": "pending_request_not_found",
+      "request": {
+        "agentId": "durable_chat",
+        "answers": {
+          "which": "main"
+        },
+        "commandId": "cmd_019",
+        "epoch": "00000000-0000-4000-8000-000000000001",
+        "requestId": "q_gone",
+        "sessionId": "sess_live",
+        "type": "chat.question",
+        "version": 1
+      },
+      "response": {
+        "body": {
+          "commandId": "cmd_019",
+          "epoch": "00000000-0000-4000-8000-000000000001",
+          "error": {
+            "code": "pending_request_not_found",
+            "message": "pending_request_not_found"
+          },
+          "status": "rejected",
+          "version": 1
+        },
+        "status": 409
+      }
+    }
+  ],
+  "type": "chat.question"
+}

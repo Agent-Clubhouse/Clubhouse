@@ -1,0 +1,14 @@
+{
+  "persistent": {
+    "request": {
+      "method": "DELETE",
+      "path": "/api/v1/mobile/pairing"
+    },
+    "response": {
+      "body": {
+        "error": "persistent_pairing_requires_desktop"
+      },
+      "status": 409
+    }
+  }
+}

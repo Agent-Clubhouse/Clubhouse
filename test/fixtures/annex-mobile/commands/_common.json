@@ -1,0 +1,232 @@
+{
+  "cases": [
+    {
+      "name": "invalid_command (unknown type)",
+      "request": {
+        "agentId": "durable_term",
+        "commandId": "cmd_098",
+        "epoch": "00000000-0000-4000-8000-000000000001",
+        "type": "agent.teleport",
+        "version": 1
+      },
+      "response": {
+        "body": {
+          "epoch": "00000000-0000-4000-8000-000000000001",
+          "error": {
+            "code": "invalid_command",
+            "message": "invalid_command"
+          },
+          "status": "rejected",
+          "version": 1
+        },
+        "status": 400
+      }
+    },
+    {
+      "name": "invalid_command (unknown field)",
+      "request": {
+        "agentId": "durable_term",
+        "commandId": "cmd_099",
+        "epoch": "00000000-0000-4000-8000-000000000001",
+        "extra": true,
+        "type": "agent.stop",
+        "version": 1
+      },
+      "response": {
+        "body": {
+          "epoch": "00000000-0000-4000-8000-000000000001",
+          "error": {
+            "code": "invalid_command",
+            "message": "invalid_command"
+          },
+          "status": "rejected",
+          "version": 1
+        },
+        "status": 400
+      }
+    },
+    {
+      "name": "invalid_command (wrong field type)",
+      "request": {
+        "commandId": "cmd_100",
+        "epoch": "00000000-0000-4000-8000-000000000001",
+        "pinned": "yes",
+        "projectId": "proj_app",
+        "type": "project.setPinned",
+        "version": 1
+      },
+      "response": {
+        "body": {
+          "epoch": "00000000-0000-4000-8000-000000000001",
+          "error": {
+            "code": "invalid_command",
+            "message": "invalid_command"
+          },
+          "status": "rejected",
+          "version": 1
+        },
+        "status": 400
+      }
+    },
+    {
+      "name": "unsupported_version",
+      "request": {
+        "agentId": "durable_term",
+        "commandId": "cmd_101",
+        "epoch": "00000000-0000-4000-8000-000000000001",
+        "type": "agent.stop",
+        "version": 2
+      },
+      "response": {
+        "body": {
+          "epoch": "00000000-0000-4000-8000-000000000001",
+          "error": {
+            "code": "unsupported_version",
+            "message": "unsupported_version"
+          },
+          "status": "rejected",
+          "version": 1
+        },
+        "status": 400
+      }
+    },
+    {
+      "name": "epoch_mismatch",
+      "request": {
+        "agentId": "durable_term",
+        "commandId": "cmd_102",
+        "epoch": "previous-epoch",
+        "type": "agent.stop",
+        "version": 1
+      },
+      "response": {
+        "body": {
+          "commandId": "cmd_102",
+          "epoch": "00000000-0000-4000-8000-000000000001",
+          "error": {
+            "code": "epoch_mismatch",
+            "message": "epoch_mismatch"
+          },
+          "status": "rejected",
+          "version": 1
+        },
+        "status": 409
+      }
+    },
+    {
+      "name": "retry returns the first receipt",
+      "request": {
+        "agentId": "durable_term",
+        "commandId": "cmd_retry",
+        "epoch": "00000000-0000-4000-8000-000000000001",
+        "type": "agent.stop",
+        "version": 1
+      },
+      "response": {
+        "body": {
+          "commandId": "cmd_retry",
+          "epoch": "00000000-0000-4000-8000-000000000001",
+          "result": {
+            "agentId": "durable_term",
+            "stopRequested": true
+          },
+          "status": "completed",
+          "version": 1
+        },
+        "status": 200
+      }
+    },
+    {
+      "name": "retry returns the first receipt",
+      "request": {
+        "agentId": "durable_term",
+        "commandId": "cmd_retry",
+        "epoch": "00000000-0000-4000-8000-000000000001",
+        "type": "agent.stop",
+        "version": 1
+      },
+      "response": {
+        "body": {
+          "commandId": "cmd_retry",
+          "epoch": "00000000-0000-4000-8000-000000000001",
+          "result": {
+            "agentId": "durable_term",
+            "stopRequested": true
+          },
+          "status": "completed",
+          "version": 1
+        },
+        "status": 200
+      }
+    },
+    {
+      "name": "command_conflict",
+      "request": {
+        "agentId": "durable_chat",
+        "commandId": "cmd_retry",
+        "epoch": "00000000-0000-4000-8000-000000000001",
+        "type": "agent.stop",
+        "version": 1
+      },
+      "response": {
+        "body": {
+          "commandId": "cmd_retry",
+          "epoch": "00000000-0000-4000-8000-000000000001",
+          "error": {
+            "code": "command_conflict",
+            "message": "command_conflict"
+          },
+          "status": "rejected",
+          "version": 1
+        },
+        "status": 409
+      }
+    },
+    {
+      "name": "client_certificate_required (bearer token, no client certificate)",
+      "request": {
+        "agentId": "durable_term",
+        "commandId": "cmd_bearer",
+        "epoch": "00000000-0000-4000-8000-000000000001",
+        "type": "agent.stop",
+        "version": 1
+      },
+      "response": {
+        "body": {
+          "epoch": "00000000-0000-4000-8000-000000000001",
+          "error": {
+            "code": "client_certificate_required",
+            "message": "client_certificate_required"
+          },
+          "status": "rejected",
+          "version": 1
+        },
+        "status": 403
+      }
+    },
+    {
+      "name": "command_capacity (MobileCommandService at capacity)",
+      "request": {
+        "agentId": "durable_term",
+        "commandId": "cmd_full",
+        "epoch": "00000000-0000-4000-8000-000000000005",
+        "type": "agent.stop",
+        "version": 1
+      },
+      "response": {
+        "body": {
+          "commandId": "cmd_full",
+          "epoch": "00000000-0000-4000-8000-000000000005",
+          "error": {
+            "code": "command_capacity",
+            "message": "command_capacity"
+          },
+          "status": "rejected",
+          "version": 1
+        },
+        "status": 429
+      }
+    }
+  ],
+  "type": null
+}

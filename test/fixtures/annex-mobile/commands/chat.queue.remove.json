@@ -1,0 +1,60 @@
+{
+  "cases": [
+    {
+      "name": "accepted",
+      "request": {
+        "agentId": "durable_chat",
+        "commandId": "cmd_012",
+        "epoch": "00000000-0000-4000-8000-000000000001",
+        "messageIds": [
+          "msg_q"
+        ],
+        "sessionId": "sess_live",
+        "type": "chat.queue.remove",
+        "version": 1
+      },
+      "response": {
+        "body": {
+          "commandId": "cmd_012",
+          "epoch": "00000000-0000-4000-8000-000000000001",
+          "result": {
+            "removed": [
+              "msg_q"
+            ]
+          },
+          "status": "completed",
+          "version": 1
+        },
+        "status": 200
+      }
+    },
+    {
+      "name": "queue_removal_not_supported",
+      "request": {
+        "agentId": "durable_basic",
+        "commandId": "cmd_013",
+        "epoch": "00000000-0000-4000-8000-000000000001",
+        "messageIds": [
+          "msg_q"
+        ],
+        "sessionId": "sess_basic",
+        "type": "chat.queue.remove",
+        "version": 1
+      },
+      "response": {
+        "body": {
+          "commandId": "cmd_013",
+          "epoch": "00000000-0000-4000-8000-000000000001",
+          "error": {
+            "code": "queue_removal_not_supported",
+            "message": "queue_removal_not_supported"
+          },
+          "status": "rejected",
+          "version": 1
+        },
+        "status": 409
+      }
+    }
+  ],
+  "type": "chat.queue.remove"
+}
