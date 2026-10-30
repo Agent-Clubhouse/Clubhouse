@@ -23,10 +23,10 @@ vi.mock('../agent-config', () => ({
       : agentId === 'escaper' ? { id: 'escaper', worktreePath: outside } : null),
 }));
 
-import { agentRoots, clearAgentRootsCache, importChatImage, readChatFilePreview, resolveChatFile, statChatPaths } from './chat-files';
+import { agentFolders, clearAgentFoldersCache, importChatImage, readChatFilePreview, resolveChatFile, statChatPaths } from './chat-files';
 import { agentMediaDir } from './chat-transcript';
-import { copilotSessionStateDir } from '../../orchestrators/adapters/copilot-acp';
-import { CHAT_FILE_PREVIEW_TEXT_MAX_BYTES } from '../../../shared/chat';
+import { CHAT_FILE_PREVIEW_PDF_MAX_BYTES, CHAT_FILE_PREVIEW_TEXT_MAX_BYTES } from '../../../shared/chat';
+import { execFileSync } from 'child_process';
 
 const PNG = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0, 13, 0x49, 0x48, 0x44, 0x52, 0, 0, 0, 1, 0, 0, 0, 1, 8, 6, 0, 0, 0]);
 
@@ -44,7 +44,7 @@ beforeEach(() => {
   fs.rmSync(path.join(tmpRoot, 'copilot'), { recursive: true, force: true });
   live.agents.clear();
   live.outputDirs.clear();
-  clearAgentRootsCache();
+  clearAgentFoldersCache();
   live.agents.set('a1', { projectPath: project, cwd: worktree });
 });
 
@@ -52,25 +52,25 @@ afterAll(() => {
   fs.rmSync(tmpRoot, { recursive: true, force: true });
 });
 
-describe('agentRoots', () => {
+const PDF_TEXT = '%PDF-1.7\n1 0 obj << /Type /Catalog >> endobj\ntrailer << /Root 1 0 R >>\n%%EOF\n';
+/** A PDF whose header comment has the binary marker bytes and a NUL, as many writers emit. */
+const PDF_BINARY = Buffer.concat([Buffer.from('%PDF-1.4\n%'), Buffer.from([0xe2, 0xe3, 0xcf, 0xd3, 0x00, 0x0a]), Buffer.from('1 0 obj\n')]);
+
+describe('agentFolders', () => {
   it('uses the running agent, or a sleeping one from its durable config', async () => {
-    expect((await agentRoots('a1')).slice(0, 2)).toEqual([worktree, project]);
-    expect((await agentRoots('sleeping')).slice(0, 2)).toEqual([worktree, project]);
-    expect(await agentRoots('unknown')).toEqual([]);
+    expect((await agentFolders('a1')).slice(0, 2)).toEqual([worktree, project]);
+    expect((await agentFolders('sleeping')).slice(0, 2)).toEqual([worktree, project]);
+    expect(await agentFolders('unknown')).toEqual([]);
   });
 
-  it("drops a working folder outside the agent's project (an edited agent config can't widen the allowlist)", async () => {
-    const roots = await agentRoots('escaper');
-    expect(roots[0]).toBe(project);
-    expect(roots).not.toContain(outside);
-    expect(await statChatPaths('escaper', [path.join(outside, 'secret.txt')])).toEqual([{ path: path.join(outside, 'secret.txt'), exists: false }]);
-    live.agents.set('live-escaper', { projectPath: project, cwd: '/' });
-    expect(await agentRoots('live-escaper')).not.toContain('/');
+  it('puts the working folder first wherever it is: relative paths resolve against it (#2478)', async () => {
+    expect((await agentFolders('escaper'))[0]).toBe(outside);
+    expect(await statChatPaths('escaper', ['secret.txt'])).toEqual([expect.objectContaining({ path: 'secret.txt', exists: true, kind: 'text' })]);
   });
 });
 
 describe('statChatPaths', () => {
-  it('confirms files inside the agent folders, relative to its cwd, with line suffixes', async () => {
+  it('confirms files relative to the agent cwd, with line suffixes', async () => {
     const out = await statChatPaths('a1', ['src/main.ts:3', path.join(project, 'README.md'), 'shot.png', 'clip.mp4', 'blob.bin', pathToFileURL(path.join(worktree, 'src', 'main.ts')).href]);
     expect(out.map((f) => [f.exists, f.kind])).toEqual([
       [true, 'text'], [true, 'text'], [true, 'image'], [true, 'video'], [true, 'other'], [true, 'text'],
@@ -90,25 +90,67 @@ describe('statChatPaths', () => {
     expect(await resolveChatFile('a1', decodeURI(url))).toBe(fs.realpathSync.native(abs));
   });
 
-  it('says nothing about missing files, folders, or files outside the agent folders', async () => {
-    const out = await statChatPaths('a1', ['src/missing.ts', 'src', path.join(outside, 'secret.txt'), '../../../../outside/secret.txt', '']);
+  it('confirms files outside the project, absolute, relative or file: URL (#2478)', async () => {
+    const secret = path.join(outside, 'secret.txt');
+    const out = await statChatPaths('a1', [secret, '../../../../outside/secret.txt', pathToFileURL(secret).href]);
+    expect(out).toEqual([secret, '../../../../outside/secret.txt', pathToFileURL(secret).href].map((p) => ({ path: p, exists: true, kind: 'text', size: 4, name: 'secret.txt' })));
+  });
+
+  it('says why a path has no chip: missing, a folder, or empty', async () => {
+    const out = await statChatPaths('a1', ['src/missing.ts', 'src', path.join(outside, 'nope.txt'), '']);
     expect(out).toEqual([
-      { path: 'src/missing.ts', exists: false },
-      { path: 'src', exists: false },
-      { path: path.join(outside, 'secret.txt'), exists: false },
-      { path: '../../../../outside/secret.txt', exists: false },
-      { path: '', exists: false },
+      { path: 'src/missing.ts', exists: false, reason: 'missing' },
+      { path: 'src', exists: false, reason: 'folder' },
+      { path: path.join(outside, 'nope.txt'), exists: false, reason: 'missing' },
+      { path: '', exists: false, reason: 'missing' },
     ]);
   });
 
-  // Windows CI can't create symlinks without Developer Mode.
-  it.skipIf(process.platform === 'win32')('does not follow a symlink out of the agent folders', async () => {
-    fs.symlinkSync(path.join(outside, 'secret.txt'), path.join(worktree, 'link.txt'));
-    expect(await statChatPaths('a1', ['link.txt'])).toEqual([{ path: 'link.txt', exists: false }]);
+  it('never looks up network or device paths', async () => {
+    expect(await statChatPaths('a1', ['//host/share/a.txt', '\\\\host\\share\\a.txt'])).toEqual([
+      { path: '//host/share/a.txt', exists: false, reason: 'missing' },
+      { path: '\\\\host\\share\\a.txt', exists: false, reason: 'missing' },
+    ]);
   });
 
-  it('confirms nothing for an agent it does not know', async () => {
-    expect(await statChatPaths('unknown', [path.join(project, 'README.md')])).toEqual([{ path: path.join(project, 'README.md'), exists: false }]);
+  it.skipIf(process.platform === 'win32')('calls a FIFO not a regular file, without blocking on it', async () => {
+    const fifo = path.join(outside, 'pipe');
+    execFileSync('mkfifo', [fifo]);
+    expect(await statChatPaths('a1', [fifo])).toEqual([{ path: fifo, exists: false, reason: 'not-a-file' }]);
+    await expect(readChatFilePreview('a1', fifo)).rejects.toThrow('not available');
+  });
+
+  // Windows CI can't create symlinks without Developer Mode.
+  it.skipIf(process.platform === 'win32')('follows a symlink and names the real file', async () => {
+    fs.symlinkSync(path.join(outside, 'secret.txt'), path.join(worktree, 'link.txt'));
+    expect(await statChatPaths('a1', ['link.txt'])).toEqual([{ path: 'link.txt', exists: true, kind: 'text', size: 4, name: 'secret.txt' }]);
+  });
+
+  it('confirms absolute paths for an agent it does not know, but has nothing to resolve relative ones against', async () => {
+    expect(await statChatPaths('unknown', [path.join(project, 'README.md'), 'README.md'])).toEqual([
+      expect.objectContaining({ path: path.join(project, 'README.md'), exists: true, kind: 'text' }),
+      { path: 'README.md', exists: false, reason: 'missing' },
+    ]);
+  });
+
+  it('detects a PDF by its header, NUL bytes or not, before the text check', async () => {
+    fs.writeFileSync(path.join(outside, 'plain.pdf'), PDF_TEXT);
+    fs.writeFileSync(path.join(outside, 'binary.pdf'), PDF_BINARY);
+    // Named .pdf but not one, and a text file that only mentions the header.
+    fs.writeFileSync(path.join(outside, 'fake.pdf'), 'not a pdf');
+    fs.writeFileSync(path.join(outside, 'notes.md'), 'A header looks like %PDF-1.7\n');
+    const out = await statChatPaths('a1', ['plain.pdf', 'binary.pdf', 'fake.pdf', 'notes.md'].map((n) => path.join(outside, n)));
+    expect(out.map((f) => f.kind)).toEqual(['pdf', 'pdf', 'text', 'text']);
+  });
+
+  it('marks a file over its preview cap', async () => {
+    const big = path.join(outside, 'big.pdf');
+    fs.writeFileSync(big, PDF_TEXT);
+    fs.truncateSync(big, CHAT_FILE_PREVIEW_PDF_MAX_BYTES + 1);
+    expect(await statChatPaths('a1', [big, path.join(outside, 'secret.txt')])).toEqual([
+      { path: big, exists: true, kind: 'pdf', size: CHAT_FILE_PREVIEW_PDF_MAX_BYTES + 1, name: 'big.pdf', tooLarge: true },
+      expect.not.objectContaining({ tooLarge: true }),
+    ]);
   });
 });
 
@@ -133,9 +175,24 @@ describe('readChatFilePreview', () => {
     expect(await readChatFilePreview('a1', 'bomb.png')).toEqual({ kind: 'image', name: 'bomb.png', size: 29, tooLarge: true });
   });
 
-  it('refuses files outside the agent folders', async () => {
-    await expect(readChatFilePreview('a1', path.join(outside, 'secret.txt'))).rejects.toThrow('not available');
-    await expect(resolveChatFile('a1', path.join(outside, 'secret.txt'))).rejects.toThrow('not available');
+  it('returns PDF bytes, never PDF text, and not over the cap', async () => {
+    fs.writeFileSync(path.join(outside, 'plain.pdf'), PDF_TEXT);
+    fs.writeFileSync(path.join(outside, 'binary.pdf'), PDF_BINARY);
+    const plain = await readChatFilePreview('a1', path.join(outside, 'plain.pdf'));
+    expect(plain).toEqual({ kind: 'pdf', name: 'plain.pdf', size: PDF_TEXT.length, mimeType: 'application/pdf', data: new Uint8Array(Buffer.from(PDF_TEXT)) });
+    expect(plain.text).toBeUndefined();
+    expect(await readChatFilePreview('a1', path.join(outside, 'binary.pdf'))).toMatchObject({ kind: 'pdf', data: new Uint8Array(PDF_BINARY) });
+    const big = path.join(outside, 'big.pdf');
+    fs.writeFileSync(big, PDF_TEXT);
+    fs.truncateSync(big, CHAT_FILE_PREVIEW_PDF_MAX_BYTES + 1);
+    expect(await readChatFilePreview('a1', big)).toEqual({ kind: 'pdf', name: 'big.pdf', size: CHAT_FILE_PREVIEW_PDF_MAX_BYTES + 1, tooLarge: true });
+  });
+
+  it('reads files outside the project, and refuses missing ones', async () => {
+    expect(await readChatFilePreview('a1', path.join(outside, 'secret.txt'))).toMatchObject({ kind: 'text', text: 'nope' });
+    expect(await resolveChatFile('a1', path.join(outside, 'secret.txt'))).toBe(fs.realpathSync.native(path.join(outside, 'secret.txt')));
+    await expect(readChatFilePreview('a1', path.join(outside, 'nope.txt'))).rejects.toThrow('not available');
+    await expect(resolveChatFile('a1', path.join(outside, 'nope.txt'))).rejects.toThrow('not available');
     expect(await resolveChatFile('a1', 'src/main.ts')).toBe(fs.realpathSync.native(path.join(worktree, 'src', 'main.ts')));
   });
 });
@@ -174,20 +231,22 @@ describe('importChatImage (local markdown images, #2422)', () => {
     expect(await importChatImage('a1', pathToFileURL(path.join(worktree, 'assets', 'my shot.png')).href)).toEqual(stored);
   });
 
-  it('says missing for a nonexistent path inside the roots', async () => {
+  it('says missing for a nonexistent path, a folder, or a network path', async () => {
     expect(await importChatImage('a1', './assets/nope.png')).toEqual({ ok: false, reason: 'missing' });
     expect(await importChatImage('a1', './assets/no%20pe.png')).toEqual({ ok: false, reason: 'missing' });
+    expect(await importChatImage('a1', path.join(outside, 'nope.png'))).toEqual({ ok: false, reason: 'missing' });
+    expect(await importChatImage('a1', '//host/share/shot.png')).toEqual({ ok: false, reason: 'missing' });
+    expect(await importChatImage('a1', './assets')).toEqual({ ok: false, reason: 'unsupported' });
   });
 
-  it('says outside for paths beyond the roots, existing or not, and through symlinks', async () => {
-    expect(await importChatImage('a1', path.join(outside, 'shot.png'))).toEqual({ ok: false, reason: 'outside' });
-    expect(await importChatImage('a1', path.join(outside, 'nope.png'))).toEqual({ ok: false, reason: 'outside' });
-    expect(await importChatImage('a1', '../../../../outside/shot.png')).toEqual({ ok: false, reason: 'outside' });
-    expect(await importChatImage('a1', pathToFileURL(path.join(outside, 'shot.png')).href)).toEqual({ ok: false, reason: 'outside' });
-    expect(await importChatImage('a1', '~/shot.png')).toEqual({ ok: false, reason: 'outside' });
-    fs.symlinkSync(path.join(outside, 'shot.png'), path.join(worktree, 'assets', 'link.png'));
-    expect(await importChatImage('a1', './assets/link.png')).toEqual({ ok: false, reason: 'outside' });
-    expect(await importChatImage('unknown', path.join(worktree, 'assets', 'icon.png'))).toEqual({ ok: false, reason: 'outside' });
+  it('stores images outside the project too, through symlinks as well (#2478)', async () => {
+    expect(await importChatImage('a1', path.join(outside, 'shot.png'))).toEqual(stored);
+    expect(await importChatImage('a1', '../../../../outside/shot.png')).toEqual(stored);
+    expect(await importChatImage('a1', pathToFileURL(path.join(outside, 'shot.png')).href)).toEqual(stored);
+    if (process.platform !== 'win32') {
+      fs.symlinkSync(path.join(outside, 'shot.png'), path.join(worktree, 'assets', 'link.png'));
+      expect(await importChatImage('a1', './assets/link.png')).toEqual(stored);
+    }
   });
 
   it('says unsupported for files that are not images, and too-large for a huge canvas', async () => {
@@ -199,42 +258,24 @@ describe('importChatImage (local markdown images, #2422)', () => {
     expect(await importChatImage('a1', './assets/huge.png')).toEqual({ ok: false, reason: 'too-large' });
   });
 
-  it("reads from the live session's own output folder, and only that session's", async () => {
+  it("reads from any session's output folder, live or not", async () => {
     fs.mkdirSync(sessionOutput, { recursive: true });
     fs.writeFileSync(path.join(sessionOutput, 'screenshot.png'), PNG);
     fs.mkdirSync(path.join(path.dirname(sessionOutput), 'sess-2'), { recursive: true });
     fs.writeFileSync(path.join(path.dirname(sessionOutput), 'sess-2', 'other.png'), PNG);
-    expect(await importChatImage('a1', path.join(sessionOutput, 'screenshot.png'))).toEqual({ ok: false, reason: 'outside' });
-    live.outputDirs.set('a1', sessionOutput);
-    clearAgentRootsCache();
     expect(await importChatImage('a1', path.join(sessionOutput, 'screenshot.png'))).toEqual(stored);
-    // Another session's folder is never allowed (it reads as an ended session).
-    expect(await importChatImage('a1', path.join(path.dirname(sessionOutput), 'sess-2', 'other.png'))).toEqual({ ok: false, reason: 'session-ended' });
+    live.outputDirs.set('a1', sessionOutput);
+    clearAgentFoldersCache();
+    expect(await importChatImage('a1', path.join(path.dirname(sessionOutput), 'sess-2', 'other.png'))).toEqual(stored);
   });
 
-  it("says the session ended for an image in a session folder that isn't live, without allowing it", async () => {
+  it.skipIf(process.platform === 'win32')('lists the live session-output folder among the agent folders, unless it is a symlink', async () => {
     fs.mkdirSync(sessionOutput, { recursive: true });
-    fs.writeFileSync(path.join(sessionOutput, 'screenshot.png'), PNG);
-    const other = path.join(path.dirname(sessionOutput), 'sess-2');
-    fs.mkdirSync(other, { recursive: true });
-    fs.writeFileSync(path.join(other, 'old.png'), PNG);
     live.outputDirs.set('a1', sessionOutput);
-    // An earlier session of the same CLI: denied, with the right reason.
-    expect(await importChatImage('a1', path.join(other, 'old.png'))).toEqual({ ok: false, reason: 'session-ended' });
-    expect(await importChatImage('a1', pathToFileURL(path.join(other, 'old.png')).href)).toEqual({ ok: false, reason: 'session-ended' });
-    // Copilot's default session-state, for an agent with no live session.
-    const defaultState = copilotSessionStateDir(process.env);
-    expect(await importChatImage('a1', path.join(defaultState, 'abc-123', 'shot.png'))).toEqual({ ok: false, reason: 'session-ended' });
-    // The folder list itself and non-token ids aren't a session's file.
-    expect(await importChatImage('a1', path.join(defaultState, 'shot.png'))).toEqual({ ok: false, reason: 'outside' });
-    expect(await importChatImage('a1', path.join(outside, 'shot.png'))).toEqual({ ok: false, reason: 'outside' });
-  });
-
-  it('ignores a session-output folder that is a symlink', async () => {
-    fs.mkdirSync(path.dirname(sessionOutput), { recursive: true });
+    expect(await agentFolders('a1')).toContain(sessionOutput);
+    fs.rmSync(sessionOutput, { recursive: true });
     fs.symlinkSync(outside, sessionOutput, 'dir');
-    live.outputDirs.set('a1', sessionOutput);
-    expect(await agentRoots('a1')).not.toContain(sessionOutput);
-    expect(await importChatImage('a1', path.join(sessionOutput, 'shot.png'))).toMatchObject({ ok: false });
+    clearAgentFoldersCache();
+    expect(await agentFolders('a1')).not.toContain(sessionOutput);
   });
 });

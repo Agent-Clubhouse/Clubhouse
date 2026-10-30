@@ -9,7 +9,7 @@
  *   data: URL;
  * - local images (paths, relative to the agent's folder or absolute, and
  *   file: URLs, #2422) become a placeholder. Once the message settles, main
- *   checks the path against the agent's roots and stores the image as media
+ *   resolves the path (anywhere the user can read, #2478) and stores the image as media
  *   (window.clubhouse.chat.importLocalImage); the placeholder becomes a
  *   thumbnail of the stored copy, or says why the image isn't shown. The
  *   renderer never loads the path itself;
@@ -66,8 +66,6 @@ export function isLocalImageSrc(src: string): boolean {
 }
 
 const NOT_SHOWN: Record<ChatLocalImageDenial | 'error' | 'scheme', string> = {
-  outside: "Image not shown. It's outside the project.",
-  'session-ended': "Image not shown. The agent's session has ended.",
   missing: 'Image not found.',
   unsupported: 'Not an image chat can show.',
   'too-large': 'Image too large to show.',

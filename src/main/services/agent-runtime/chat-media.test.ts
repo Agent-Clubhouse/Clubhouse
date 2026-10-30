@@ -17,7 +17,7 @@ vi.mock('fs/promises', async (importActual) => {
 
 import {
   ChatMediaPolicy, RAW_IMAGE_PLACEHOLDER, decodeBase64Image, fetchRemoteImage, isPrivateHost,
-  readMedia, resolveAllowedPath, scrubRawOutput, storeMedia,
+  readMedia, resolveLocalPath, scrubRawOutput, storeMedia,
 } from './chat-media';
 import { agentMediaDir } from './chat-transcript';
 
@@ -47,7 +47,7 @@ afterAll(() => {
 });
 
 function policy(enabled: boolean): ChatMediaPolicy {
-  return new ChatMediaPolicy({ agentId: AGENT, enabled: () => enabled, roots: () => [project] });
+  return new ChatMediaPolicy({ agentId: AGENT, enabled: () => enabled, cwd: () => project });
 }
 
 function update(media: ChatImage[], extra: Record<string, unknown> = {}): ChatEventDraft {
@@ -64,51 +64,46 @@ describe('decodeBase64Image', () => {
   });
 });
 
-describe('resolveAllowedPath', () => {
-  it('allows files inside a root, relative ones against the first root', async () => {
+describe('resolveLocalPath', () => {
+  it('resolves absolute paths anywhere, and relative ones against the base (#2478)', async () => {
     fs.writeFileSync(path.join(project, 'shots', 'a.png'), png());
+    fs.writeFileSync(path.join(outside, 'secret.png'), png());
     // Native realpath, as the code uses: it expands Windows 8.3 names (RUNNER~1) the JS one keeps.
     const real = fs.realpathSync.native(path.join(project, 'shots', 'a.png'));
-    expect(await resolveAllowedPath(path.join(project, 'shots', 'a.png'), [project])).toBe(real);
-    expect(await resolveAllowedPath('shots/a.png', [project])).toBe(real);
+    expect(await resolveLocalPath(path.join(project, 'shots', 'a.png'))).toBe(real);
+    expect(await resolveLocalPath('shots/a.png', project)).toBe(real);
+    expect(await resolveLocalPath(path.join(outside, 'secret.png'), project)).toBe(fs.realpathSync.native(path.join(outside, 'secret.png')));
+    expect(await resolveLocalPath('../outside/secret.png', project)).toBe(fs.realpathSync.native(path.join(outside, 'secret.png')));
   });
 
-  it('rejects paths outside the roots, traversal and missing files', async () => {
-    fs.writeFileSync(path.join(outside, 'secret.png'), png());
-    expect(await resolveAllowedPath(path.join(outside, 'secret.png'), [project])).toBeUndefined();
-    expect(await resolveAllowedPath('../outside/secret.png', [project])).toBeUndefined();
-    expect(await resolveAllowedPath(path.join(project, 'nope.png'), [project])).toBeUndefined();
-    expect(await resolveAllowedPath(`${project}\0/x`, [project])).toBeUndefined();
-    expect(await resolveAllowedPath(path.join(project, 'x'), [])).toBeUndefined();
+  it('resolves nothing for missing files, NUL bytes, or a relative path with no base', async () => {
+    expect(await resolveLocalPath(path.join(project, 'nope.png'))).toBeUndefined();
+    expect(await resolveLocalPath(`${project}\0/x`)).toBeUndefined();
+    expect(await resolveLocalPath('shots', undefined)).toBeUndefined();
+    expect(await resolveLocalPath('shots', 'relative/base')).toBeUndefined();
+    expect(await resolveLocalPath('')).toBeUndefined();
   });
 
   // Windows CI can't create symlinks without Developer Mode.
-  it.skipIf(process.platform === 'win32')('rejects a symlink inside a root that points outside it', async () => {
+  it.skipIf(process.platform === 'win32')('resolves symlinks to the real file', async () => {
     fs.writeFileSync(path.join(outside, 'secret.png'), png());
     fs.symlinkSync(path.join(outside, 'secret.png'), path.join(project, 'link.png'));
     fs.symlinkSync(outside, path.join(project, 'linkdir'), 'dir');
-    expect(await resolveAllowedPath(path.join(project, 'link.png'), [project])).toBeUndefined();
-    expect(await resolveAllowedPath(path.join(project, 'linkdir', 'secret.png'), [project])).toBeUndefined();
+    const real = fs.realpathSync.native(path.join(outside, 'secret.png'));
+    expect(await resolveLocalPath(path.join(project, 'link.png'))).toBe(real);
+    expect(await resolveLocalPath(path.join('linkdir', 'secret.png'), project)).toBe(real);
   });
 
-  it('never touches network or device paths, or anything lexically outside the roots', async () => {
+  it('never touches network or device paths', async () => {
     const realpath = vi.mocked(fsp.realpath);
     realpath.mockClear();
     for (const p of ['\\\\attacker.example\\x\\a.png', '//attacker.example/x/a.png', '\\\\?\\C:\\a.png', '\\\\.\\pipe\\x']) {
-      expect(await resolveAllowedPath(p, [project])).toBeUndefined();
+      expect(await resolveLocalPath(p, project)).toBeUndefined();
     }
-    expect(await resolveAllowedPath('/net/attacker.example/x/a.png', [project])).toBeUndefined();
-    // Only the roots were resolved; no candidate path reached the filesystem.
-    expect(realpath).toHaveBeenCalled();
-    expect(realpath.mock.calls.map((c) => String(c[0]))).toEqual(realpath.mock.calls.map(() => project));
-  });
-
-  it('does not treat a sibling with the root as a name prefix as inside', async () => {
-    const sibling = `${project}-evil`;
-    fs.mkdirSync(sibling, { recursive: true });
-    fs.writeFileSync(path.join(sibling, 'a.png'), png());
-    expect(await resolveAllowedPath(path.join(sibling, 'a.png'), [project])).toBeUndefined();
-    fs.rmSync(sibling, { recursive: true, force: true });
+    // A relative path can't climb into one either.
+    expect(await resolveLocalPath('x/a.png', '//attacker.example/share')).toBeUndefined();
+    if (process.platform !== 'win32') expect(await resolveLocalPath('/net/attacker.example/x/a.png')).toBeUndefined();
+    expect(realpath).not.toHaveBeenCalled();
   });
 });
 
@@ -219,15 +214,19 @@ describe('ChatMediaPolicy', () => {
     expect((out!.data as { media: ChatImage[] }).media).toEqual([expect.objectContaining({ mimeType: 'image/png' })]);
   });
 
-  it('reads a source path only inside the agent roots', async () => {
+  it('reads a source path anywhere, relative ones against the cwd, and skips missing or non-image files (#2478)', async () => {
     fs.writeFileSync(path.join(project, 'shots', 'in.png'), png(4, 4));
     fs.writeFileSync(path.join(outside, 'out.png'), png(5, 5));
+    fs.writeFileSync(path.join(outside, 'notes.txt'), 'text');
     const out = await policy(true).apply(update([
-      { type: 'image', mimeType: 'image/*', sourcePath: path.join(project, 'shots', 'in.png') },
+      { type: 'image', mimeType: 'image/*', sourcePath: path.join('shots', 'in.png') },
       { type: 'image', mimeType: 'image/*', sourcePath: path.join(outside, 'out.png') },
+      { type: 'image', mimeType: 'image/*', sourcePath: path.join(outside, 'nope.png') },
+      { type: 'image', mimeType: 'image/*', sourcePath: path.join(outside, 'notes.txt') },
     ]));
     expect((out!.data as { media: ChatImage[] }).media).toEqual([
-      expect.objectContaining({ width: 4, height: 4, sourcePath: path.join(project, 'shots', 'in.png') }),
+      expect.objectContaining({ width: 4, height: 4, sourcePath: path.join('shots', 'in.png') }),
+      expect.objectContaining({ width: 5, height: 5, sourcePath: path.join(outside, 'out.png') }),
     ]);
   });
 
@@ -297,7 +296,7 @@ describe('ChatMediaPolicy: Copilot binary asset results (#2421)', () => {
     binaryResultsForLlm: [{ type: 'image', assetId, mimeType: 'image/png', byteLength: 212249 }],
   };
   const withResolver = (resolveAsset: (id: string) => Promise<ChatMediaAssetResult | undefined>, enabled = true) =>
-    new ChatMediaPolicy({ agentId: AGENT, enabled: () => enabled, roots: () => [project], resolveAsset });
+    new ChatMediaPolicy({ agentId: AGENT, enabled: () => enabled, cwd: () => project, resolveAsset });
 
   beforeEach(() => vi.mocked(appLog).mockClear());
 

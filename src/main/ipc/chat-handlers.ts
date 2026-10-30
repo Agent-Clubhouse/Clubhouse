@@ -221,7 +221,7 @@ export function registerChatHandlers(): void {
   ));
 
   // File chips: the renderer names paths it saw in the agent's text; main
-  // answers only for files inside that agent's own folders.
+  // answers for any regular file the user can read (#2478), or says why not.
   ipcMain.handle(IPC.CHAT.STAT_PATHS, withValidatedArgs(
     [stringArg(), arrayArg(stringArg({ maxLength: 1024 }), { maxLength: MAX_STAT_PATHS })],
     async (event, agentId, paths) => {
@@ -238,7 +238,7 @@ export function registerChatHandlers(): void {
     },
   ));
 
-  // Local images in agent markdown (#2422): stored as media when allowed, so
+  // Local images in agent markdown (#2422): stored as media when they're images, so
   // the renderer shows them by reference and never loads the path itself.
   ipcMain.handle(IPC.CHAT.IMPORT_LOCAL_IMAGE, withValidatedArgs(
     [stringArg(), stringArg({ maxLength: 1024 })],

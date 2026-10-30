@@ -128,7 +128,6 @@ describe('Markdown local images (#2422)', () => {
   });
 
   it.each([
-    ['outside', "Image not shown. It's outside the project."],
     ['missing', 'Image not found.'],
     ['unsupported', 'Not an image chat can show.'],
     ['too-large', 'Image too large to show.'],

@@ -5,8 +5,8 @@ import { readChatFilePreview } from './agent-runtime/chat-files';
 /** Base64 plus metadata stays below mobile's 16 MiB HTTP response cap. */
 export const MOBILE_CONTENT_MAX_BYTES = 8 * 1024 * 1024;
 
-/** No URLs, shell actions, or caller-selected filesystem roots. Existing desktop
- * preview policy performs containment, symlink, type and size checks. */
+/** No URLs or shell actions. The desktop preview policy resolves the path
+ * (symlinks included) and performs the regular-file, type and size checks. */
 export async function readMobileChatContent(query: URLSearchParams, agentId: string, enabled: () => boolean) {
   if (!enabled()) throw new Error('Rich content disabled');
   const mediaRef = query.get('mediaRef');

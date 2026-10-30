@@ -599,7 +599,6 @@ async function runChatStart(
       provider: provider.id,
       driverId: driver.id,
       cwd: params.cwd,
-      projectPath: params.projectPath,
       richMedia: () => getExperimentalSettings()[RICH_CHAT_CONTENT_FLAG] === true,
       // Read from the env the CLI runs with: a profile's COPILOT_HOME moves it.
       sessionOutputDir: (nativeSessionId) => sessionOutputDir(provider.id, nativeSessionId, env),

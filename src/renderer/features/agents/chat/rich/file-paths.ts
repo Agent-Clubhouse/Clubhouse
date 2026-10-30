@@ -70,6 +70,18 @@ function matchAt(start: number, token: string, loc: { path: string; line?: numbe
 const ANCHORED_RE = /^(?:\/|~[\\/]|\.\.?[\\/]|[A-Za-z]:[\\/]|file:\/\/)/i;
 
 /**
+ * True when text clearly names a file, so a missing one is worth saying so:
+ * it ends in an extension and its start pins it down (absolute, home, `./`,
+ * a drive, `file://`), or, for a whole code span, it has a folder in it.
+ * `/tmp/CH` (the first word of a spaced path in prose) and `console.log`
+ * (code, not a file) are not.
+ */
+export function namesFileClearly(path: string, codeSpan = false): boolean {
+  if (!HAS_EXTENSION.test(path)) return false;
+  return ANCHORED_RE.test(path) || (codeSpan && /[\\/]/.test(path));
+}
+
+/**
  * `text` as one path that has spaces in it, when its ends are already known
  * (quoted, or a whole code span). Still strict: no newlines or tabs, no
  * space beside a separator, and a bare relative path keeps its first folder
