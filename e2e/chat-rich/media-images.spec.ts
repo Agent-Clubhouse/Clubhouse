@@ -133,3 +133,64 @@ test.describe('claude: images in one session', () => {
     await shared.expectScriptComplete();
   });
 });
+
+test('codex: a viewed image and a generated one both show as thumbnails', async () => {
+  session = await openRichChat({
+    cli: 'codex',
+    // Main reads an imageView's file only inside the agent's folders.
+    projectFiles: { [path.join('shots', 'view.png')]: { copy: CHAT_MEDIA.png } },
+    script: ({ projectDir }) => ({
+      description: 'imageView of a project file, then imageGeneration with base64 bytes',
+      turns: [{
+        steps: [
+          { type: 'image-tool', image: { path: path.join(projectDir, 'shots', 'view.png'), mimeType: 'image/png' }, variant: 'view' },
+          { type: 'image-tool', image: { path: CHAT_MEDIA.png, mimeType: 'image/png' }, variant: 'generated' },
+          { type: 'text', text: 'Viewed one, made one.' },
+        ],
+      }],
+    }),
+  });
+  const dom = chatDom(session.window);
+  await session.send('View the screenshot and draw another.');
+  await expect(dom.turnFooters).toHaveCount(1, { timeout: TURN_TIMEOUT });
+
+  await expect(dom.imageThumbs).toHaveCount(2, { timeout: TURN_TIMEOUT });
+  for (const thumb of await dom.imageThumbs.all()) {
+    await expect(thumb).toHaveAttribute('data-media-ref', /^[0-9a-f]{64}\.png$/);
+    await expectImageLoaded(thumb);
+  }
+  await expect(dom.imageUnavailable).toHaveCount(0);
+
+  await session.expectScriptComplete();
+});
+
+test('copilot: asset and inline images show as thumbnails; an omitted one says unavailable', async () => {
+  session = await openRichChat({
+    cli: 'copilot',
+    script: {
+      description: 'binaryResultsForLlm: an asset in the session journal, inline bytes, and bytes Copilot left out',
+      turns: [{
+        steps: [
+          { type: 'image-tool', image: { path: CHAT_MEDIA.png, mimeType: 'image/png' }, variant: 'asset' },
+          { type: 'image-tool', image: { path: CHAT_MEDIA.png, mimeType: 'image/png' }, variant: 'inline' },
+          { type: 'image-tool', image: { path: CHAT_MEDIA.png, mimeType: 'image/png' }, variant: 'omitted' },
+          { type: 'text', text: 'Three images.' },
+        ],
+      }],
+    },
+  });
+  const dom = chatDom(session.window);
+  await session.send('Show me the images.');
+  await expect(dom.turnFooters).toHaveCount(1, { timeout: TURN_TIMEOUT });
+
+  // The asset resolved from COPILOT_HOME's journal (its id is the bytes' sha256), and inline bytes were stored.
+  await expect(dom.imageThumbs).toHaveCount(2, { timeout: TURN_TIMEOUT });
+  for (const thumb of await dom.imageThumbs.all()) {
+    await expect(thumb).toHaveAttribute('data-media-ref', /^[0-9a-f]{64}\.png$/);
+    await expectImageLoaded(thumb);
+  }
+  await expect(dom.imageUnavailable).toHaveCount(1);
+  await expect(dom.imageUnavailable).toHaveText('Image unavailable');
+
+  await session.expectScriptComplete();
+});
