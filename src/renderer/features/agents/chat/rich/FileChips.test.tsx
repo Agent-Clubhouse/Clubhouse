@@ -17,6 +17,14 @@ vi.mock('../../../../plugins/builtin/canvas/ReadOnlyMonacoEditor', () => ({
 }));
 const bridge = vi.hoisted(() => ({ handleProtocolAction: vi.fn() }));
 vi.mock('../../../../app-event-bridge', () => bridge);
+// pdf.js needs a real canvas and worker: the preview is tested against a stand-in.
+const pdfjs = vi.hoisted(() => ({
+  renderPage: vi.fn((_n: number) => ({ done: Promise.resolve(), cancel: () => undefined })),
+  close: vi.fn(),
+  openPdf: vi.fn(),
+  loadPdfDocument: vi.fn(),
+}));
+vi.mock('./pdf-loader', () => ({ loadPdfDocument: pdfjs.loadPdfDocument }));
 
 const MD = 'Changed `src/main.ts:12` and src/missing.ts, see /repo/README.md and https://example.com/a.ts.\n\n```\nsrc/main.ts in a block\n```';
 const EXISTING: Record<string, ChatFileInfo> = {
@@ -26,10 +34,24 @@ const EXISTING: Record<string, ChatFileInfo> = {
   '/tmp/CH media probe/notes.md': { path: '/tmp/CH media probe/notes.md', exists: true, kind: 'text', size: 20, name: 'notes.md' },
   'docs/My Notes.md': { path: 'docs/My Notes.md', exists: true, kind: 'text', size: 20, name: 'My Notes.md' },
   'big.log': { path: 'big.log', exists: true, kind: 'text', size: 900_000, name: 'big.log' },
+  '/elsewhere/report.pdf': { path: '/elsewhere/report.pdf', exists: true, kind: 'pdf', size: 2048, name: 'report.pdf' },
+  '/elsewhere/locked.pdf': { path: '/elsewhere/locked.pdf', exists: true, kind: 'pdf', size: 2048, name: 'locked.pdf' },
+  '/elsewhere/huge.pdf': { path: '/elsewhere/huge.pdf', exists: true, kind: 'pdf', size: 40_000_000, name: 'huge.pdf', tooLarge: true },
 };
+/** Paths main can't show, and why. */
+const UNAVAILABLE: Record<string, ChatFileInfo> = {
+  '/gone/report.pdf': { path: '/gone/report.pdf', exists: false, reason: 'missing' },
+  'src/old.ts': { path: 'src/old.ts', exists: false, reason: 'missing' },
+  '/dev/thing.sock': { path: '/dev/thing.sock', exists: false, reason: 'not-a-file' },
+  '/repo/src': { path: '/repo/src', exists: false, reason: 'folder' },
+  '/repo/later.md': { path: '/repo/later.md', exists: false, reason: 'missing' },
+};
+const PDF_BYTES = new Uint8Array([0x25, 0x50, 0x44, 0x46, 0x2d, 0x31, 0x2e, 0x37]);
 
-const statPaths = vi.fn(async (_agent: string, paths: string[]) => paths.map((p) => EXISTING[p] ?? { path: p, exists: false }));
-const readFilePreview = vi.fn(async (_agent: string, p: string): Promise<ChatFilePreview> => (p === 'shots/a.png'
+const statPaths = vi.fn(async (_agent: string, paths: string[]) => paths.map((p) => EXISTING[p] ?? UNAVAILABLE[p] ?? { path: p, exists: false }));
+const readFilePreview = vi.fn(async (_agent: string, p: string): Promise<ChatFilePreview> => (p.endsWith('.pdf')
+  ? EXISTING[p]?.tooLarge ? { kind: 'pdf', name: 'huge.pdf', size: 40_000_000, tooLarge: true } : { kind: 'pdf', name: p.split('/').pop()!, size: 2048, mimeType: 'application/pdf', data: PDF_BYTES }
+  : p === 'shots/a.png'
   ? { kind: 'image', name: 'a.png', size: 11, mimeType: 'image/png', data: new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 1, 2, 3]) }
   : p === 'big.log' ? { kind: 'text', name: 'big.log', size: 900_000, text: 'a\nb\nc', truncated: true }
     : { kind: 'text', name: 'main.ts', size: 20, text: 'export const x = 1;\n', truncated: false }));
@@ -53,6 +75,12 @@ beforeEach(() => {
   fileAction.mockReset();
   fileAction.mockImplementation(async () => null);
   bridge.handleProtocolAction.mockClear();
+  pdfjs.renderPage.mockClear();
+  pdfjs.close.mockClear();
+  pdfjs.openPdf.mockReset();
+  pdfjs.openPdf.mockImplementation(async () => ({ numPages: 3, renderPage: pdfjs.renderPage, close: pdfjs.close }));
+  pdfjs.loadPdfDocument.mockReset();
+  pdfjs.loadPdfDocument.mockImplementation(async () => ({ openPdf: pdfjs.openPdf }));
   Object.assign(window.clubhouse.chat, { statPaths, readFilePreview, fileAction });
   window.clubhouse.git.githubRepo = vi.fn(async () => null);
   useAgentStore.setState({ agents: { a1: { id: 'a1', projectId: 'p1', name: 'a', kind: 'durable', status: 'running', color: 'indigo' } as never } });
@@ -194,5 +222,116 @@ describe('file chip locations (#2424)', () => {
     await openChip('`src/main.ts`');
     fireEvent.click(screen.getByRole('button', { name: 'Open in Files' }));
     await waitFor(() => expect(bridge.handleProtocolAction).toHaveBeenCalledWith({ kind: 'open-file', projectId: 'p1', relativePath: 'src/main.ts' }));
+  });
+});
+
+describe('files chat cannot show (#2478)', () => {
+  beforeEach(() => setFlag(true));
+
+  it('keeps a clear path that main cannot show as a muted chip with its reason', async () => {
+    const { container } = await renderRich(<Markdown text={'Wrote /gone/report.pdf and `src/old.ts`, see /dev/thing.sock.'} />);
+    await waitFor(() => expect(container.querySelectorAll('[data-chat-file-unavailable]')).toHaveLength(3));
+    const muted = [...container.querySelectorAll('[data-chat-file-unavailable]')];
+    expect(muted.map((m) => [m.tagName, m.textContent, m.getAttribute('data-chat-file-unavailable'), m.getAttribute('title')])).toEqual([
+      ['SPAN', '/gone/report.pdf', 'missing', 'File not found'],
+      ['CODE', 'src/old.ts', 'missing', 'File not found'],
+      ['SPAN', '/dev/thing.sock', 'not-a-file', 'Not a regular file'],
+    ]);
+    expect(muted.every((m) => m.classList.contains('chat-file-chip-muted') && !m.hasAttribute('data-chat-file') && !m.hasAttribute('role'))).toBe(true);
+    // Not a button: clicking opens nothing.
+    fireEvent.click(muted[0]);
+    expect(screen.queryByTestId('chat-file-preview')).toBeNull();
+  });
+
+  it('leaves folders, loose prose matches and failed lookups as plain text', async () => {
+    statPaths.mockImplementationOnce(async (_a: string, paths: string[]) => paths.map((p) => UNAVAILABLE[p] ?? { path: p, exists: false, reason: 'missing' as const }));
+    const { container } = await renderRich(<Markdown text={'See /repo/src and src/also/missing.ts here.'} />);
+    await waitFor(() => expect(statPaths).toHaveBeenCalled());
+    await waitFor(() => expect(container.querySelector('[data-chat-path]')).toBeNull());
+    expect(container.querySelector('[data-chat-file-unavailable]')).toBeNull();
+    expect(container.textContent).toContain('See /repo/src and src/also/missing.ts here.');
+  });
+
+  it('turns a muted chip into a chip once the file is there', async () => {
+    const { hydrateFileChips } = await import('./FileChips');
+    const root = document.createElement('div');
+    root.innerHTML = '<p><code data-chat-path="/repo/later.md">/repo/later.md</code></p>';
+    document.body.append(root);
+    await hydrateFileChips(root, 'a1');
+    const code = root.querySelector('code')!;
+    expect(code.getAttribute('data-chat-file-unavailable')).toBe('missing');
+    clearFileChipCache();
+    statPaths.mockImplementationOnce(async () => [{ path: '/repo/later.md', exists: true, kind: 'text', size: 3, name: 'later.md' }]);
+    await hydrateFileChips(root, 'a1');
+    expect(code.getAttribute('data-chat-file')).toBe('text');
+    expect(code.hasAttribute('data-chat-file-unavailable')).toBe(false);
+    expect(code.classList.contains('chat-file-chip-muted')).toBe(false);
+    expect(code.getAttribute('title')).toBe('later.md · 3 B');
+    root.remove();
+  });
+
+  it('says on the chip when a file is too large to preview', async () => {
+    const { container } = await renderRich(<Markdown text={'`/elsewhere/huge.pdf`'} />);
+    const chip = await waitFor(() => { const el = container.querySelector('[data-chat-file="pdf"]'); expect(el).not.toBeNull(); return el!; });
+    expect(chip.getAttribute('title')).toBe('huge.pdf · 38.1 MB · Too large to preview');
+    fireEvent.click(chip);
+    expect((await screen.findByTestId('chat-file-preview-none')).textContent).toBe('This file is too large to preview here.');
+    expect(pdfjs.loadPdfDocument).not.toHaveBeenCalled();
+  });
+});
+
+describe('PDF previews (#2478)', () => {
+  beforeEach(() => setFlag(true));
+
+  async function openPdfChip(p: string) {
+    const { container } = await renderRich(<Markdown text={`Saved \`${p}\`.`} />);
+    const chip = await waitFor(() => { const el = container.querySelector('[data-chat-file="pdf"]'); expect(el).not.toBeNull(); return el!; });
+    fireEvent.click(chip);
+  }
+
+  it('loads pdf.js only when a PDF preview opens, and shows page 1 with the page count', async () => {
+    const { container } = await renderRich(<Markdown text={'`/elsewhere/report.pdf`'} />);
+    await waitFor(() => expect(container.querySelector('[data-chat-file="pdf"]')).not.toBeNull());
+    expect(pdfjs.loadPdfDocument).not.toHaveBeenCalled();
+    fireEvent.click(container.querySelector('[data-chat-file="pdf"]')!);
+    expect((await screen.findByTestId('chat-file-preview-pdf-page')).textContent).toBe('Page 1 of 3');
+    expect(pdfjs.openPdf).toHaveBeenCalledWith(PDF_BYTES);
+    await waitFor(() => expect(pdfjs.renderPage).toHaveBeenCalledWith(1, expect.any(HTMLCanvasElement), expect.any(Number), expect.any(Number)));
+    expect(screen.queryByTestId('chat-file-preview-text')).toBeNull();
+    expect(screen.getByRole('button', { name: 'Open in Files' })).toBeTruthy();
+  });
+
+  it('pages with Previous and Next, within the document', async () => {
+    await openPdfChip('/elsewhere/report.pdf');
+    await screen.findByText('Page 1 of 3');
+    const prev = screen.getByRole('button', { name: 'Previous' }) as HTMLButtonElement;
+    const next = screen.getByRole('button', { name: 'Next' }) as HTMLButtonElement;
+    expect(prev.disabled).toBe(true);
+    fireEvent.click(next);
+    fireEvent.click(next);
+    expect(screen.getByText('Page 3 of 3')).toBeTruthy();
+    expect(next.disabled).toBe(true);
+    await waitFor(() => expect(pdfjs.renderPage).toHaveBeenLastCalledWith(3, expect.anything(), expect.any(Number), expect.any(Number)));
+    fireEvent.click(prev);
+    expect(screen.getByText('Page 2 of 3')).toBeTruthy();
+  });
+
+  it('closes the document with the preview', async () => {
+    await openPdfChip('/elsewhere/report.pdf');
+    await screen.findByText('Page 1 of 3');
+    fireEvent.keyDown(window, { key: 'Escape' });
+    await waitFor(() => expect(pdfjs.close).toHaveBeenCalled());
+  });
+
+  it('says when a PDF is password protected or unreadable', async () => {
+    pdfjs.openPdf.mockRejectedValueOnce(new Error('password'));
+    await openPdfChip('/elsewhere/locked.pdf');
+    expect((await screen.findByTestId('chat-file-preview-pdf-error')).textContent).toBe('This PDF is password protected.');
+    fireEvent.keyDown(window, { key: 'Escape' });
+    await waitFor(() => expect(screen.queryByTestId('chat-file-preview')).toBeNull());
+    clearFileChipCache();
+    pdfjs.openPdf.mockRejectedValueOnce(new Error('invalid'));
+    await openPdfChip('/elsewhere/report.pdf');
+    expect((await screen.findByTestId('chat-file-preview-pdf-error')).textContent).toBe("Couldn't read this PDF.");
   });
 });

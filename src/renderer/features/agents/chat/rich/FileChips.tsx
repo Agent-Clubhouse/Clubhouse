@@ -2,20 +2,24 @@
  * File chips in chat (experimental rich chat content, #2350). Paths in agent
  * messages and tool output are matched in the shared text pass (before URLs),
  * and an inline code span that is just a path counts too. Each is only a
- * candidate until main confirms the file exists inside the agent's folders;
- * then it becomes a chip, otherwise it goes back to plain text. A chip opens a
- * preview: read-only Monaco for text, the image, a player for video and audio,
- * and Open in Files / Show in Finder for everything.
+ * candidate until main confirms the file exists, wherever it is (#2478); then
+ * it becomes a chip. One clearly meant as a file (a whole code span, or an
+ * absolute, `~/` or `./` path with an extension) that main can't show
+ * becomes a muted chip that says why;
+ * a loose match in prose goes back to plain text. A chip opens a preview:
+ * read-only Monaco for text, the image, a player for video and audio, pdf.js
+ * pages for a PDF, and Open in Files / Show in Finder for everything.
  */
 
 import { createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
-import type { ChatFileInfo, ChatFilePreview } from '../../../../../shared/chat';
+import type { ChatFileInfo, ChatFilePreview, ChatFileUnavailable } from '../../../../../shared/chat';
 import { LAYER_PORTAL_ATTR } from '../../../../components/layers';
 import { Button } from '../../../../components/Button';
 import { ReadOnlyMonacoEditor } from '../../../../plugins/builtin/canvas/ReadOnlyMonacoEditor';
-import { findFilePaths, wholeFilePath, type FilePathMatch } from './file-paths';
+import { findFilePaths, namesFileClearly, wholeFilePath, type FilePathMatch } from './file-paths';
 import { dataUrlOf } from './media';
+import { PdfPreview } from './PdfPreview';
 import type { TextMatcher } from './text-enrich';
 
 const PATH_ATTR = 'data-chat-path';
@@ -23,6 +27,15 @@ const LINE_ATTR = 'data-chat-line';
 const COL_ATTR = 'data-chat-col';
 /** Set once main confirmed the file: its kind. */
 const FILE_ATTR = 'data-chat-file';
+/** Set on a muted chip: why main can't show it. */
+const UNAVAILABLE_ATTR = 'data-chat-file-unavailable';
+const MUTED_CLASS = 'chat-file-chip-muted';
+
+const UNAVAILABLE_TEXT: Record<Exclude<ChatFileUnavailable, 'folder'>, string> = {
+  missing: 'File not found',
+  'not-a-file': 'Not a regular file',
+  unreadable: "Can't read this file",
+};
 
 // ── Candidates ────────────────────────────────────────────────────────────
 
@@ -97,11 +110,22 @@ function formatSize(bytes: number): string {
 function demote(el: Element): void {
   if (el.tagName === 'SPAN') el.replaceWith(el.ownerDocument.createTextNode(el.textContent ?? ''));
   else { el.removeAttribute(PATH_ATTR); el.removeAttribute(LINE_ATTR); el.removeAttribute(COL_ATTR); }
+  el.removeAttribute(UNAVAILABLE_ATTR);
+  el.classList.remove(MUTED_CLASS);
+  el.removeAttribute('title');
+}
+
+/** A path main can't show, kept visible with why. It stays a candidate: asked again later, it may be there. */
+function mute(el: Element, reason: Exclude<ChatFileUnavailable, 'folder'>): void {
+  el.setAttribute(UNAVAILABLE_ATTR, reason);
+  el.classList.add(MUTED_CLASS);
+  el.setAttribute('title', UNAVAILABLE_TEXT[reason]);
 }
 
 /**
- * Turn the candidates under `root` into chips once main confirms them, and
- * back into plain text otherwise. Safe to call again on the same root.
+ * Turn the candidates under `root` into chips once main confirms them. One
+ * main can't show becomes a muted chip with its reason when it's clearly a
+ * path, and plain text otherwise. Safe to call again on the same root.
  */
 export async function hydrateFileChips(root: Element, agentId: string): Promise<void> {
   const candidates = Array.from(root.querySelectorAll(`[${PATH_ATTR}]:not([${FILE_ATTR}])`));
@@ -110,13 +134,21 @@ export async function hydrateFileChips(root: Element, agentId: string): Promise<
   await Promise.all(candidates.map(async (el) => {
     const info = await answers.get(el.getAttribute(PATH_ATTR) ?? '');
     if (!el.isConnected) return;
-    if (!info?.exists || !info.kind) { demote(el); return; }
+    if (!info?.exists || !info.kind) {
+      const path = el.getAttribute(PATH_ATTR) ?? '';
+      // A folder is no file to show, and a loose prose match may not be a path at all.
+      if (info?.reason && info.reason !== 'folder' && (el.tagName === 'CODE' || namesFileClearly(path))) mute(el, info.reason);
+      else demote(el);
+      return;
+    }
+    el.removeAttribute(UNAVAILABLE_ATTR);
+    el.classList.remove(MUTED_CLASS);
     el.setAttribute(FILE_ATTR, info.kind);
     el.classList.add('chat-file-chip');
     el.setAttribute('role', 'button');
     el.setAttribute('aria-haspopup', 'dialog');
     el.setAttribute('tabindex', '0');
-    el.setAttribute('title', [info.name, info.size !== undefined ? formatSize(info.size) : null].filter(Boolean).join(' · '));
+    el.setAttribute('title', [info.name, info.size !== undefined ? formatSize(info.size) : null, info.tooLarge ? 'Too large to preview' : null].filter(Boolean).join(' · '));
   }));
 }
 
@@ -159,7 +191,8 @@ const POPOVER_H = 420;
 function PreviewBody({ preview, target }: { preview: ChatFilePreview; target: Target }) {
   const [src, setSrc] = useState<string | null>(null);
   useEffect(() => {
-    if (!preview.data || !preview.mimeType) return;
+    // A PDF's bytes go to pdf.js, not a data: URL.
+    if (!preview.data || !preview.mimeType || preview.kind === 'pdf') return;
     let cancelled = false;
     // telemetry-exempt: a preview that won't encode shows the fallback text.
     void dataUrlOf({ mimeType: preview.mimeType, data: preview.data }).then((v) => { if (!cancelled) setSrc(v); }, (): undefined => undefined);
@@ -188,6 +221,7 @@ function PreviewBody({ preview, target }: { preview: ChatFilePreview; target: Ta
   if (src && preview.kind === 'video') {
     return <div className="flex-1 min-h-0 flex items-center justify-center bg-ctp-crust"><video src={src} controls className="max-w-full max-h-[340px]" data-testid="chat-file-preview-video" /></div>;
   }
+  if (preview.kind === 'pdf' && preview.data) return <PdfPreview data={preview.data} />;
   if (src && preview.kind === 'audio') {
     return <div className="p-4"><audio src={src} controls className="w-full" data-testid="chat-file-preview-audio" /></div>;
   }

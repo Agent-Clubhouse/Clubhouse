@@ -9,9 +9,10 @@
  * `rawOutput`. With the flag off it drops `media` and media-only calls, so
  * events are what they were before the feature existed.
  *
- * Files are read here only: a `sourcePath` must resolve (symlinks included)
- * inside the agent's roots, and bytes must sniff as a supported image under
- * the size cap. The renderer asks for media by reference, never by path.
+ * Files are read here only: a `sourcePath` is resolved (symlinks included)
+ * and must be a regular file whose bytes sniff as a supported image under the
+ * size cap. It may be anywhere the user can read (#2478). The renderer asks
+ * for media by reference, never by path.
  */
 
 import * as fs from 'fs';
@@ -47,48 +48,31 @@ export function decodeBase64Image(value: string): Uint8Array | undefined {
   return new Uint8Array(Buffer.from(clean, 'base64'));
 }
 
-/** True when `target` is `root` or inside it. Both must be resolved already. */
-function isInside(target: string, root: string): boolean {
-  const rel = path.relative(root, target);
-  return rel === '' || (!!rel && !rel.startsWith('..') && !path.isAbsolute(rel));
-}
-
 /**
- * The real path of `filePath` when it (after symlinks) is inside one of
- * `roots`, else undefined. Relative paths resolve against the first root.
+ * The real path of `filePath` (symlinks resolved), or undefined when nothing
+ * is there. Relative paths resolve against `base`; without one they don't
+ * resolve. Any readable path counts: an agent with a terminal can reach the
+ * file anyway (#2478). Callers still open it non-blocking and check it is a
+ * regular file before reading.
  */
-export async function resolveAllowedPath(filePath: string, roots: readonly string[]): Promise<string | undefined> {
-  const checked = await checkAllowedPath(filePath, roots);
-  return 'real' in checked ? checked.real : undefined;
-}
-
-/**
- * resolveAllowedPath, saying why a path isn't allowed: `outside` the roots
- * (decided by name before the filesystem is asked, so it says nothing about
- * files elsewhere) or `missing` inside them.
- */
-export async function checkAllowedPath(filePath: string, roots: readonly string[]): Promise<{ real: string } | { denied: 'outside' | 'missing' }> {
-  const outside = { denied: 'outside' as const };
-  if (!filePath || filePath.includes('\0') || roots.length === 0) return outside;
+export async function resolveLocalPath(filePath: string, base?: string): Promise<string | undefined> {
+  if (!filePath || filePath.includes('\0')) return undefined;
   // UNC and device paths (\\host\share, //host/share, \\?\, \\.\) would reach the network
-  // or a device before any check: never touch them.
-  if (isNetworkOrDevicePath(filePath)) return outside;
-  const absolute = path.isAbsolute(filePath) ? path.resolve(filePath) : path.resolve(roots[0], filePath);
-  if (isNetworkOrDevicePath(absolute)) return outside;
-  const usable = roots.filter((r) => r && path.isAbsolute(r));
-  const realRoots = await Promise.all(usable.map((r) => fsp.realpath(r).catch((): null => null)));
-  // Lexically inside a root first, so the filesystem is only asked about paths
-  // there (an automount like /net/<host> is never touched)...
-  if (!usable.some((r, i) => isInside(absolute, path.resolve(r)) || (realRoots[i] && isInside(absolute, realRoots[i]!)))) return outside;
-  const real = await fsp.realpath(absolute).catch((): null => null);
-  if (!real) return { denied: 'missing' };
-  // ...then really inside one, with symlinks resolved.
-  return realRoots.some((r) => r && isInside(real, r)) ? { real } : outside;
+  // or a device before any check (a stalled share blocks the lookup): never touch them.
+  if (isNetworkOrDevicePath(filePath)) return undefined;
+  if (!path.isAbsolute(filePath) && !(base && path.isAbsolute(base) && !isNetworkOrDevicePath(base))) return undefined;
+  const absolute = path.isAbsolute(filePath) ? path.resolve(filePath) : path.resolve(base!, filePath);
+  if (isNetworkOrDevicePath(absolute)) return undefined;
+  return (await fsp.realpath(absolute).catch((): null => null)) ?? undefined;
 }
 
-/** `\\host\share`, `//host/share`, `\\?\…`, `\\.\…`: paths that name a network share or a device. */
+/**
+ * `\\host\share`, `//host/share`, `\\?\…`, `\\.\…`: paths that name a network
+ * share or a device. Also macOS's `/net/<host>` automount, which a lookup
+ * would mount.
+ */
 export function isNetworkOrDevicePath(p: string): boolean {
-  return /^[\\/]{2}/.test(p);
+  return /^[\\/]{2}/.test(p) || (process.platform === 'darwin' && /^\/net(\/|$)/.test(p));
 }
 
 /** Store image bytes for an agent; undefined unless they sniff as a supported image under the cap. */
@@ -134,9 +118,9 @@ export async function readMedia(agentId: string, mediaRef: string): Promise<{ mi
   return { mimeType, data };
 }
 
-/** Read a local image the agent named, if it's allowed and an image. */
-async function readSourceImage(sourcePath: string, roots: readonly string[]): Promise<Uint8Array | undefined> {
-  const real = await resolveAllowedPath(sourcePath, roots);
+/** Read a local image the agent named, if it's there and an image. */
+async function readSourceImage(sourcePath: string, cwd: string | undefined): Promise<Uint8Array | undefined> {
+  const real = await resolveLocalPath(sourcePath, cwd);
   return real ? readImageFile(real) : undefined;
 }
 
@@ -200,8 +184,8 @@ export interface ChatMediaPolicyOptions {
   agentId: string;
   /** Whether rich chat content is on; read for each event. */
   enabled: () => boolean;
-  /** Folders a `sourcePath` may be read from (agent cwd, project). */
-  roots: () => readonly string[];
+  /** The agent's working folder: a relative `sourcePath` resolves against it. */
+  cwd: () => string | undefined;
   /** Bytes for an image's `assetId`, from the current driver session's own store (#2421). */
   resolveAsset?: (assetId: string) => Promise<ChatMediaAssetResult | undefined>;
 }
@@ -299,7 +283,7 @@ export class ChatMediaPolicy {
     let bytes: Uint8Array | undefined;
     if (typeof image.data === 'string') bytes = decodeBase64Image(image.data);
     else if (typeof image.uri === 'string' && image.uri.startsWith('data:')) bytes = decodeBase64Image(image.uri);
-    else if (sourcePath) bytes = await readSourceImage(sourcePath, this.opts.roots());
+    else if (sourcePath) bytes = await readSourceImage(sourcePath, this.opts.cwd());
     if (bytes) {
       const stored = await storeMedia(this.opts.agentId, bytes);
       return stored && { ...stored, ...(sourcePath && { sourcePath }) };

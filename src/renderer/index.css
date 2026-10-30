@@ -778,6 +778,8 @@
 .chat-file-chip { cursor: pointer; text-decoration: underline dotted rgb(var(--ctp-overlay1)); text-underline-offset: 2px; border-radius: 3px; }
 .chat-file-chip:hover, .chat-file-chip:focus-visible { color: rgb(var(--ctp-accent)); text-decoration-color: currentColor; outline: none; }
 code.chat-file-chip:hover { background: rgb(var(--ctp-surface1)); }
+/* A path chat can't show (missing, not a regular file): visible, not clickable; the title says why. */
+.chat-file-chip-muted { color: rgb(var(--ctp-overlay1)); text-decoration: underline dashed rgb(var(--ctp-surface2)); text-underline-offset: 2px; cursor: help; }
 .chat-markdown strong { color: rgb(var(--ctp-text)); font-weight: 600; }
 .chat-markdown blockquote { border-left: 2px solid rgb(var(--ctp-surface1)); padding-left: 0.75rem; color: rgb(var(--ctp-subtext0)); margin: 0 0 0.5rem; }
 .chat-markdown table { display: block; width: max-content; max-width: 100%; overflow-x: auto; border-collapse: collapse; margin: 0 0 0.5rem; font-size: 0.8125rem; }

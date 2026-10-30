@@ -81,8 +81,6 @@ export interface ChatAgentRuntimeOptions {
   provider: string;
   driverId: ChatDriverId;
   cwd: string;
-  /** The agent's project, a root rich-content images may be read from besides `cwd`. */
-  projectPath?: string;
   /** Whether rich chat content (inline images) is on; read per event. Off when absent. */
   richMedia?: () => boolean;
   /**
@@ -231,7 +229,7 @@ export class ChatAgentRuntime implements AgentRuntime {
     this.media = new ChatMediaPolicy({
       agentId: opts.agentId,
       enabled: () => opts.richMedia?.() === true,
-      roots: () => [opts.cwd, ...(opts.projectPath ? [opts.projectPath] : [])],
+      cwd: () => opts.cwd,
       resolveAsset: async (assetId) => this.session?.resolveMediaAsset?.(assetId),
     });
   }

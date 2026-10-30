@@ -126,10 +126,18 @@ export function mediaDimensions(b: Uint8Array, mimeType: string): { width: numbe
 export const CHAT_FILE_PREVIEW_TEXT_MAX_BYTES = 512 * 1024;
 /** Video and audio previews play from a data: URL (the CSP allows no blob: media), so they stop at this size. */
 export const CHAT_FILE_PREVIEW_MEDIA_MAX_BYTES = 16 * 1024 * 1024;
+/** PDF previews are read whole and rendered by pdf.js in the renderer, so they stop at this size. */
+export const CHAT_FILE_PREVIEW_PDF_MAX_BYTES = 16 * 1024 * 1024;
 
-export type ChatFileKind = 'text' | 'image' | 'video' | 'audio' | 'other';
+export type ChatFileKind = 'text' | 'image' | 'video' | 'audio' | 'pdf' | 'other';
 
-/** What main confirmed about a path an agent mentioned. Unconfirmed paths carry only `exists: false`. */
+/**
+ * Why a mentioned path has no chip: nothing there, a folder, something that
+ * isn't a regular file (a FIFO or device), or a file that can't be opened.
+ */
+export type ChatFileUnavailable = 'missing' | 'folder' | 'not-a-file' | 'unreadable';
+
+/** What main confirmed about a path an agent mentioned. Paths it can't show carry `exists: false` and why. */
 export interface ChatFileInfo {
   /** The path as asked (the agent's text). */
   path: string;
@@ -137,6 +145,10 @@ export interface ChatFileInfo {
   kind?: ChatFileKind;
   size?: number;
   name?: string;
+  /** Too large for its preview (it still opens in Files). */
+  tooLarge?: boolean;
+  /** Set when `exists` is false. */
+  reason?: ChatFileUnavailable;
 }
 
 /** A file's preview: text, or bytes for an image or player; otherwise only what it is. */
@@ -156,7 +168,7 @@ export interface ChatFilePreview {
 // ── Local images in agent markdown (#2422) ──────────────────────────────────
 
 /** Why a local markdown image isn't shown. */
-export type ChatLocalImageDenial = 'outside' | 'session-ended' | 'missing' | 'unsupported' | 'too-large' | 'unavailable';
+export type ChatLocalImageDenial = 'missing' | 'unsupported' | 'too-large' | 'unavailable';
 
 /** A local markdown image stored as media, or why it wasn't. */
 export type ChatLocalImageResult =

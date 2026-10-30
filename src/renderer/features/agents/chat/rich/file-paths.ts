@@ -70,6 +70,15 @@ function matchAt(start: number, token: string, loc: { path: string; line?: numbe
 const ANCHORED_RE = /^(?:\/|~[\\/]|\.\.?[\\/]|[A-Za-z]:[\\/]|file:\/\/)/i;
 
 /**
+ * True when prose clearly names a file: its start pins it down (absolute,
+ * home, `./`, a drive, `file://`) and it ends in an extension. `/tmp/CH`,
+ * the first word of a spaced path in prose, is not.
+ */
+export function namesFileClearly(path: string): boolean {
+  return ANCHORED_RE.test(path) && HAS_EXTENSION.test(path);
+}
+
+/**
  * `text` as one path that has spaces in it, when its ends are already known
  * (quoted, or a whole code span). Still strict: no newlines or tabs, no
  * space beside a separator, and a bare relative path keeps its first folder
