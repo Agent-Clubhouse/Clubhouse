@@ -167,9 +167,40 @@ describe('buildChatScript', () => {
     expect(report.mismatch?.reason).toMatch(/did not contain/);
   });
 
-  it('steers need Claude and a held turn', () => {
+  it('codex: a held turn takes turn/steer requests, matched on their text', async () => {
+    const built = buildChatScript('codex', {
+      description: 'steers into a held Codex turn',
+      turns: [{ steps: [], end: 'held', steers: [{ text: 'Use tabs.' }, {}] }],
+    });
+    const steers = built.lines.filter((l) => l.from === 'client' && (l.msg as { method?: string }).method === 'turn/steer');
+    expect(steers.map((l) => l.match)).toEqual([{ params: { input: [{ type: 'text', text: 'Use tabs.' }] } }, undefined]);
+    const { fake } = await fakeFor(built);
+    await playClientSide(built, fake);
+    await expectComplete(fake);
+  });
+
+  for (const cli of ['claude', 'codex', 'copilot'] as const) {
+    it(`${cli}: a pinned prompt completes only with its own text`, async () => {
+      const script: ChatScript = { description: 'pinned', turns: [{ prompt: 'Keep me.', pinPrompt: true, steps: [{ type: 'text', text: 'Kept.' }] }] };
+      const built = buildChatScript(cli, script);
+      const { fake } = await fakeFor(built);
+      await playClientSide(built, fake);
+      await expectComplete(fake);
+
+      // A client that sends another message's text, against the pinned script.
+      const wrong = buildChatScript(cli, { ...script, turns: [{ ...script.turns[0], pinPrompt: false, prompt: 'Removed.' }] });
+      const second = await fakeFor(built, 'pinned-again');
+      void playClientSide(wrong, second.fake).catch(() => undefined);
+      const report = await second.fake.waitForReport((r) => r.mismatch !== null);
+      expect(report.mismatch?.reason).toMatch(/did not contain/);
+    });
+  }
+
+  it('steers need a held turn, and a provider that can take them', () => {
     expect(() => buildChatScript('copilot', { description: 'x', turns: [{ steps: [], end: 'held', steers: [{}] }] })).toThrow(/copilot has no steer shape/);
+    expect(() => buildChatScript('codex', { description: 'x', turns: [{ steps: [], end: 'held', steers: [{ priority: 'later' }] }] })).toThrow(/codex has no later steer shape/);
     expect(() => buildChatScript('claude', { description: 'x', turns: [{ steps: [], steers: [{}] }] })).toThrow(/steers need a held turn/);
+    expect(() => buildChatScript('claude', { description: 'x', turns: [{ steps: [], pinPrompt: true }] })).toThrow(/pinPrompt needs a prompt/);
   });
 
   it('claude: an approval reaches the client with its title and description, and only an allow completes it', async () => {
