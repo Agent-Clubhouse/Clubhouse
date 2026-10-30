@@ -54,6 +54,7 @@ import { NEW_CHROME_ARG } from '../shared/chrome-flag';
 import { windowsPtyLaunchArgs } from './util/windows-pty';
 import { newChromeEnabled, titleBarOptions } from './window-chrome';
 import { shutdownFeedback, startFeedback } from './services/framebriar';
+import { installHelperDeliverySeam } from './services/clubhouse-mcp/tools/helper-delivery-seam';
 
 // On macOS, Electron's readable PTY handles can occupy the default four libuv
 // workers indefinitely, starving every fs.promises operation after an agent
@@ -266,6 +267,8 @@ app.on('ready', () => {
     entryUrl: MAIN_WINDOW_WEBPACK_ENTRY,
   });
   markStartup('register_ipc_end');
+  // E2E only: a no-op unless unpackaged and asked for (#2490).
+  installHelperDeliverySeam();
   buildMenu();
 
   // Resume satellite connections when the machine wakes from sleep

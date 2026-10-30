@@ -141,6 +141,36 @@ describe('buildChatScript', () => {
     expect(report.mismatch).not.toBeNull();
   });
 
+  it('claude: a held turn takes its steers in order, and only the scripted ones', async () => {
+    const built = buildChatScript('claude', {
+      description: 'steers into a held turn',
+      turns: [{ steps: [], end: 'held', steers: [{ text: 'Use tabs.' }, { priority: 'later', text: 'Then lint.' }, {}] }],
+    });
+    const steers = built.lines.filter((l) => l.from === 'client' && (l.msg as { priority?: string }).priority);
+    expect(steers.map((l) => l.match)).toEqual([
+      { priority: 'next', message: { content: 'Use tabs.' } },
+      { priority: 'later', message: { content: 'Then lint.' } },
+      { priority: 'next' },
+    ]);
+    const { fake } = await fakeFor(built);
+    await playClientSide(built, fake);
+    await expectComplete(fake);
+
+    // Two steers merged into one, or a steer the script didn't expect, is a mismatch.
+    const merged = structuredClone(built);
+    const first = merged.lines.find((l) => l.from === 'client' && (l.msg as { priority?: string }).priority) as { msg: { message: { content: string } } };
+    first.msg.message.content = 'Use tabs.\n\nThen lint.';
+    const second = await fakeFor(merged, 'merged');
+    void playClientSide(merged, second.fake).catch(() => undefined);
+    const report = await second.fake.waitForReport((r) => r.mismatch !== null);
+    expect(report.mismatch?.reason).toMatch(/did not contain/);
+  });
+
+  it('steers need Claude and a held turn', () => {
+    expect(() => buildChatScript('copilot', { description: 'x', turns: [{ steps: [], end: 'held', steers: [{}] }] })).toThrow(/copilot has no steer shape/);
+    expect(() => buildChatScript('claude', { description: 'x', turns: [{ steps: [], steers: [{}] }] })).toThrow(/steers need a held turn/);
+  });
+
   it('copilot: the binary result names an asset the session journal holds', async () => {
     const built = buildChatScript('copilot', { description: 'one asset', turns: [{ steps: [{ type: 'image-tool', image: PNG }] }] });
     const update = built.lines.find((l) => JSON.stringify(l).includes('binaryResultsForLlm')) as { msg: { params: { update: { rawOutput: { binaryResultsForLlm: Array<{ assetId: string }> } } } } };
