@@ -34,6 +34,9 @@ const USER_DATA_FILES = {
 
 export const TURN_TIMEOUT = 20_000;
 
+/** Where main puts the helper delivery seam (helper-delivery-seam.ts; importing it here would load Electron). */
+const HELPER_SEAM_GLOBAL = '__clubhouseTestDeliverHelperUpdate';
+
 export interface RichChatOptions {
   cli: ChatFixtureCli;
   /**
@@ -63,6 +66,15 @@ export interface RichChat {
   outsideDir: string;
   fakes: FakeClis;
   send(text: string): Promise<void>;
+  /** Send with the composer's secondary action: Queue while a turn runs. */
+  queue(text: string): Promise<void>;
+  /**
+   * Hand `texts` to this agent as helper updates, through the same delivery
+   * message_parent uses (batching window, queue merging, the driver's send).
+   * Returns once they're handed over, not delivered: a busy parent's batch
+   * goes when its window closes.
+   */
+  sendHelperUpdates(texts: string[]): Promise<void>;
   /** The fake replayed the whole script with no unexpected message. */
   expectScriptComplete(): Promise<void>;
   close(): Promise<void>;
@@ -128,7 +140,7 @@ export async function openRichChat(opts: RichChatOptions): Promise<RichChat> {
     const app = await launchApp({
       experimental: { chat: true },
       userDataFiles: USER_DATA_FILES,
-      env: { ...fakes.env, ...(copilotHome && { COPILOT_HOME: copilotHome }) },
+      env: { ...fakes.env, CLUBHOUSE_TEST_HELPER_SEAM: '1', ...(copilotHome && { COPILOT_HOME: copilotHome }) },
     });
     electronApp = app.electronApp;
     const { window } = app;
@@ -163,6 +175,18 @@ export async function openRichChat(opts: RichChatOptions): Promise<RichChat> {
         await box.fill(text);
         await box.press('Enter');
       },
+      async queue(text) {
+        await window.getByRole('textbox', { name: 'Message' }).fill(text);
+        await window.locator('[data-testid="chat-send-secondary"]').click();
+      },
+      async sendHelperUpdates(texts) {
+        await launched.evaluate((_electron, { name, agentId, texts }) => {
+          const deliver = (globalThis as Record<string, unknown>)[name] as ((id: string, text: string) => Promise<unknown>) | undefined;
+          if (!deliver) throw new Error('the helper delivery seam is not installed');
+          // Not awaited: a busy parent's batch resolves when its window closes.
+          for (const text of texts) void deliver(agentId, text).catch((err: unknown) => console.error('helper update failed', err));
+        }, { name: HELPER_SEAM_GLOBAL, agentId, texts });
+      },
       async expectScriptComplete() {
         await expect.poll(async () => {
           const r = await fakes.report(opts.cli).catch((): undefined => undefined);
@@ -192,6 +216,8 @@ export function chatDom(window: Page) {
   return {
     turnFooters: byId('chat-turn-footer'),
     agentMessages: byId('chat-agent-message'),
+    /** User bubbles; `data-source` (`user`, `mcp`, …) and `data-delivery` (`prompt`, `steer`, `queued`) say how each came. */
+    userMessages: byId('chat-user-message'),
     toolRows: byId('chat-tool-row'),
 
     /** A confirmed file chip for `writtenPath` (as the message wrote it, without `:line`). */
@@ -225,6 +251,10 @@ export function chatDom(window: Page) {
     queueToggle: byId('chat-queue-toggle'),
     queueItems: byId('chat-queue-item'),
     queueClear: byId('chat-queue-clear'),
+    queueList: byId('chat-queue-list'),
+    /** Per-row remove buttons (client-side queues only). */
+    queueRemove: window.getByRole('button', { name: /^Remove from queue: / }),
+    stop: byId('chat-stop'),
     composer: byId('chat-composer'),
   };
 }

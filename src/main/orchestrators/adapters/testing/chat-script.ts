@@ -11,7 +11,8 @@
  * protocol's own shapes:
  *
  * - Claude stream-json: `assistant` messages, `tool_use` and `tool_result`
- *   blocks, `can_use_tool` control requests, one `result` per turn.
+ *   blocks, `can_use_tool` control requests, one `result` per turn, and
+ *   mid-turn `user` messages (steers) on held turns.
  * - Codex app-server: `turn/start`, `item/*` notifications, `turn/completed`.
  * - Copilot ACP: `session/prompt`, `session/update` notifications, and for
  *   images `rawOutput.binaryResultsForLlm` with the bytes in a session-state
@@ -89,6 +90,21 @@ export interface ScriptTurn {
    * long as a test needs, to fill the queue or the dock.
    */
   end?: 'end_turn' | 'held';
+  /**
+   * Claude, held turns only: messages the CLI takes while the turn runs, in
+   * the order they must arrive, before the Stop that ends it. Claude steers
+   * natively, so these are what Steer, Queue and a parent's helper updates
+   * send mid-turn. Anything else that arrives mid-turn is a mismatch.
+   */
+  steers?: ScriptSteer[];
+}
+
+/** A message sent into a running Claude turn (stream-json `user` with a `priority`). */
+export interface ScriptSteer {
+  /** `next` (default) steers at the next tool boundary; `later` is Claude's own queue for the next turn. */
+  priority?: 'next' | 'later';
+  /** Exactly what the CLI must receive; leave it out to take any text. */
+  text?: string;
 }
 
 export interface ChatScript {
@@ -177,6 +193,8 @@ const clientEntry = (msg: Entry, match?: Entry): Entry => ({ from: 'client', msg
 
 /** Build `script` for `cli`. Throws on a step the provider has no shape for. */
 export function buildChatScript(cli: ChatFixtureCli, script: ChatScript): BuiltChatScript {
+  if (cli !== 'claude' && script.turns.some((t) => t.steers?.length)) unsupported(cli, 'steer');
+  if (script.turns.some((t) => t.steers?.length && t.end !== 'held')) throw new Error('chat-script: steers need a held turn');
   const hs = handshake(cli, script.base ?? 'multi-turn');
   const synthesized = new Set<string>();
   const journal: Entry[] = [];
@@ -294,6 +312,15 @@ function claudeTurn(turn: ScriptTurn, index: number, ctx: TurnContext): Entry[] 
   // Held: a shell command that runs until the client interrupts (as claude/interrupt).
   const id = `toolu_script_${++ctx.seq}`;
   out.push(assistant([{ type: 'tool_use', id, name: 'Bash', input: { command: 'sleep 600', description: 'Wait' } }]));
+  if (turn.steers?.length) ctx.synthesized.add('mid-turn user messages with priority next/later, matched on priority and text');
+  for (const steer of turn.steers ?? []) {
+    const priority = steer.priority ?? 'next';
+    const message = { role: 'user', content: steer.text ?? `Steer ${++ctx.seq}.` };
+    out.push(clientEntry(
+      { type: 'user', message, parent_tool_use_id: null, session_id: sid, priority },
+      { priority, ...(steer.text !== undefined && { message: { content: steer.text } }) },
+    ));
+  }
   out.push(clientEntry({ type: 'control_request', request_id: 'req_interrupt', request: { subtype: 'interrupt' } }));
   out.push(cliEntry({ type: 'control_response', response: { subtype: 'success', request_id: 'req_interrupt', response: { still_queued: [] } } }));
   out.push(toolResult(id, 'Interrupted by user', { is_error: true, tool_use_result: 'Error: Interrupted by user' }));
