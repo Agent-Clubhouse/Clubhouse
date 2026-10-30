@@ -99,7 +99,7 @@ export async function openRichChat(opts: RichChatOptions): Promise<RichChat> {
     for (const [rel, content] of Object.entries(files)) {
       const file = path.join(dir, rel);
       await fs.promises.mkdir(path.dirname(file), { recursive: true });
-      if (typeof content === 'object' && 'copy' in content) await fs.promises.copyFile(content.copy, file);
+      if (typeof content === 'object' && !Buffer.isBuffer(content)) await fs.promises.copyFile(content.copy, file);
       else await fs.promises.writeFile(file, content);
     }
   };
@@ -163,8 +163,8 @@ export async function openRichChat(opts: RichChatOptions): Promise<RichChat> {
       async expectScriptComplete() {
         await expect.poll(async () => {
           const r = await fakes.report(opts.cli).catch((): undefined => undefined);
-          return r && { mismatch: r.mismatch, complete: r.complete };
-        }, { timeout: TURN_TIMEOUT }).toEqual({ mismatch: null, complete: true });
+          return r && { mismatch: r.mismatch, complete: r.complete, unexpected: r.unexpected };
+        }, { timeout: TURN_TIMEOUT }).toEqual({ mismatch: null, complete: true, unexpected: [] });
       },
       async close() {
         await launched.close();

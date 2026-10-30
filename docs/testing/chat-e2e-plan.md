@@ -27,6 +27,7 @@ These come from the maintainer and apply to all #2480 work.
 - The `e2e-chat` matrix is fixed to Linux and Windows. Unlike the other E2E jobs, it doesn't add `macos-latest` on `full-ci` or manual runs either.
 - The full macOS E2E matrix (on `full-ci`) is the sharded `e2e` job, which ignores `e2e/chat-rich`.
 - The macOS build smoke set is an explicit file list (`app-launch`, `smoke-blank-screen`, `popout-window`, `command-palette`, `find-replace`, `terminal`). Never add a chat-rich spec to it.
+- **Media and fixture-only PRs skip E2E.** `classify-changes.mjs` treats `test/` as unit-test-only, so a PR that only touches `test/chat-media` or `test/chat-fixtures` runs no build and no Chat E2E. Such a PR must also touch the spec that uses the file, or add the `full-ci` label.
 - Nothing under `e2e/` counts toward `scripts/ci/classify-changes.mjs`'s macOS markers, which only read `src/` lines. A chat-rich PR triggers the macOS build job only if it also edits a macOS trigger (the workflow itself, chrome, packaging, dependencies).
 - Why that's safe: the rich content code has no darwin branch except the "Show in Finder" label. Paths, pdf.js, media playback and IPC behave the same on macOS as on Linux. The macOS unit job already covers the macOS-specific bits, and daily and `full-ci` runs cover the rest of the app on macOS.
 

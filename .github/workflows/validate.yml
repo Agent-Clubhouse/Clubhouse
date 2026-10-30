@@ -423,6 +423,7 @@ jobs:
         with:
           path: |
             ~/.cache/electron
+            ~/Library/Caches/electron
             ~/AppData/Local/electron/Cache
           key: electron-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
       - run: npm ci
