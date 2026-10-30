@@ -105,6 +105,7 @@ Recording costs tokens, and a recording names your machine's paths, so area fixt
 - **`setExperimentalFlags(window, flags)`:** saves through `window.clubhouse.app.saveExperimentalSettings`, as the Settings toggle does, then reads the flags back. The renderer reads `richChatContent` once, when the first chat pane mounts, so set flags before opening a chat, or `window.reload()` after changing them mid-session.
 - **`chatDom(window)`:** locators for file chips (`fileChip(path)`, `mutedChip(path)`), the preview popover and PDF canvas, tool images, the lightbox, media cards, the permission and question dock, the queue, and the composer.
 - **`expectImageLoaded`, `expectCanvasPainted`, `expectNoPageScroll`:** state checks that poll until true. "Painted" means not every pixel is the same, which proves pdf.js drew the page.
+- **`richChatCalls(electronApp)`:** calls per rich `chat:*` channel that main's handlers have received, counted before validation and the flag check. The counter is a test seam in `chat-handlers.ts` that exists only in unpackaged builds, and the helper throws if it's missing, so a zero can't come from a missing counter.
 - **`session.expectScriptComplete()`:** the fake replayed every line with no mismatch. End every test with it, or a driver that stops early still passes.
 
 ## Assertion conventions
