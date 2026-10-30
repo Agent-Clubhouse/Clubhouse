@@ -274,6 +274,7 @@ import { registerChatRuntime, clearChatRuntimes, publishChatEvent } from './agen
 import { MOBILE_COMMAND_FIELDS, MobileCommandService, NULLABLE_ON_UPDATE, isOptionalCommandField } from './mobile-control';
 import { MOBILE_COMMAND_TYPES } from '../../shared/mobile-control';
 import { CHAT_EVENT_TYPES, type ChatEvent } from '../../shared/chat';
+import { annexPtyHost } from '../../shared/annex-pty';
 
 // ── Fixture output ───────────────────────────────────────────────────────────
 
@@ -552,7 +553,7 @@ describe('Annex mobile contract fixtures', () => {
     expect(snapshot.payload).toHaveProperty('finishedQuickAgents');
     // The host platform is the machine's; record it as a Mac's so the file is the same on every CI runner.
     expect(snapshot.payload.ptyHost.platform).toBe(process.platform);
-    snapshot.payload.ptyHost = { ...snapshot.payload.ptyHost, platform: 'darwin', ptyBackend: null };
+    snapshot.payload.ptyHost = annexPtyHost('darwin', undefined);
     fixtures.set('snapshot.json', { direction: 'desktop-to-phone', frame: snapshot });
     // Helper requests, both kinds, as the snapshot lists them.
     helperStart(); helperDispose();
@@ -958,6 +959,14 @@ describe('Annex mobile contract fixtures', () => {
     const onDisk = fs.existsSync(FIXTURE_DIR) ? fs.readdirSync(FIXTURE_DIR, { recursive: true }).map(String).filter((f) => f.endsWith('.json') && f !== 'index.json').map((f) => f.split(path.sep).join('/')).sort() : [];
     const stale = [...rendered].filter(([name, text]) => !fs.existsSync(path.join(FIXTURE_DIR, name)) || fs.readFileSync(path.join(FIXTURE_DIR, name), 'utf8') !== text).map(([name]) => name);
     const extra = onDisk.filter((name) => !rendered.has(name));
-    expect({ stale, extra }, 'Annex mobile fixtures are out of date: run `npm run fixtures:annex-mobile` and commit the result').toEqual({ stale: [], extra: [] });
+    // The first line that differs in each stale file, so a CI failure says what changed.
+    const firstDifference = Object.fromEntries(stale.map((name) => {
+      const file = path.join(FIXTURE_DIR, name);
+      const was = fs.existsSync(file) ? fs.readFileSync(file, 'utf8').split('\n') : [];
+      const now = rendered.get(name)!.split('\n');
+      const line = now.findIndex((text, i) => text !== was[i]);
+      return [name, { line: line + 1, onDisk: was[line] ?? null, generated: now[line] ?? null }];
+    }));
+    expect({ stale, extra, firstDifference }, 'Annex mobile fixtures are out of date: run `npm run fixtures:annex-mobile` and commit the result').toEqual({ stale: [], extra: [], firstDifference: {} });
   });
 });
