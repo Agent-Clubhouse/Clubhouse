@@ -550,6 +550,9 @@ describe('Annex mobile contract fixtures', () => {
     expect(snapshot.type).toBe('snapshot');
     expect(snapshot.payload).toHaveProperty('projectState');
     expect(snapshot.payload).toHaveProperty('finishedQuickAgents');
+    // The host platform is the machine's; record it as a Mac's so the file is the same on every CI runner.
+    expect(snapshot.payload.ptyHost.platform).toBe(process.platform);
+    snapshot.payload.ptyHost = { ...snapshot.payload.ptyHost, platform: 'darwin', ptyBackend: null };
     fixtures.set('snapshot.json', { direction: 'desktop-to-phone', frame: snapshot });
     // Helper requests, both kinds, as the snapshot lists them.
     helperStart(); helperDispose();
