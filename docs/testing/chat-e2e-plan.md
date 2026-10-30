@@ -64,9 +64,9 @@ Legend: **E** is an example spec landed in Phase 1. **P2** is Phase 2 work. **·
 | 5. Question and approval dock (#2412) | Many long questions: composer and transcript stay usable, stepper works, submit stays reachable | P2 | n/a | n/a |
 | | Focus moves don't scroll the page | P2 | · | · |
 | | A long approval keeps the dock bounded | P2 | P2 | P2 |
-| 6. Queue (#2413) and helper merging (#2414) | 30+ queued items stay capped | P2 (native steering) | P2 (client queue) | P2 (client queue) |
-| | Remove and Clear all never deliver | P2 | P2 | P2 |
-| | A burst of helper messages merges into one item; user messages never merge | P2 | P2 | P2 |
+| 6. Queue (#2413) and helper merging (#2414) | 30+ queued items stay capped | done (native queue, no remove) | done (client queue) | done (client queue) |
+| | Remove and Clear all never deliver | n/a (native queue) | done | done |
+| | A burst of helper messages merges into one item; user messages never merge | done (one steer) | done (one steer) | done (one queued turn) |
 | 7. Flag off | Everything renders as plain text, with no rich IPC | P2 | · | · |
 | 8. Annex | Rich content over a controller connection (`contentAnyPath`, the `pdf` kind) | P2 | · | · |
 
