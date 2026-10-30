@@ -18,9 +18,10 @@ const runtime = vi.hoisted(() => ({
 
 const windows = vi.hoisted(() => ({ known: new Set<unknown>() }));
 const clipboardWrite = vi.hoisted(() => vi.fn());
+const electronApp = vi.hoisted(() => ({ isPackaged: false }));
 vi.mock('electron', () => ({
   ipcMain: { handle: vi.fn() },
-  app: { getPath: () => paths.userData },
+  app: { getPath: () => paths.userData, get isPackaged() { return electronApp.isPackaged; } },
   BrowserWindow: { fromWebContents: (wc: unknown) => (windows.known.has(wc) ? {} : null) },
   clipboard: { write: clipboardWrite },
   ClipboardItem: class { constructor(public data: Record<string, Blob>) {} },
@@ -118,6 +119,18 @@ describe('chat handlers: rich call counts (unpackaged test seam, #2491)', () => 
     await call(IPC.CHAT.SEND_MESSAGE, 'agent-1', 'hi').catch(() => {});
     expect(counts()).toMatchObject({ [IPC.CHAT.STAT_PATHS]: 1, [IPC.CHAT.READ_MEDIA]: 1, [IPC.CHAT.FETCH_REMOTE_IMAGE]: 1, [IPC.CHAT.READ_FILE_PREVIEW]: 0 });
     expect(counts()).not.toHaveProperty(IPC.CHAT.SEND_MESSAGE);
+  });
+
+  it('is not installed in a packaged build', async () => {
+    delete (globalThis as Record<string, unknown>)[RICH_CHAT_CALLS_GLOBAL];
+    electronApp.isPackaged = true;
+    try {
+      registerChatHandlers();
+      await call(IPC.CHAT.STAT_PATHS, 'agent-1', ['/tmp/a.txt']).catch(() => {});
+      expect(counts()).toBeUndefined();
+    } finally {
+      electronApp.isPackaged = false;
+    }
   });
 });
 

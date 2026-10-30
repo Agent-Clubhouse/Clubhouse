@@ -8,7 +8,8 @@ import { chatDom, openRichChat, richChatCalls, TURN_TIMEOUT, type RichChat } fro
  * (tool images, file chips, Markdown images, media, GitHub links) with
  * `richChatContent` off render as before: plain text and code spans, with no
  * chips, thumbnails, cards or tokens. Main's rich `chat:*` handlers count
- * every call, and must see none.
+ * every call, and must see none. (Main also drops tool images when the flag
+ * is off, so the tool steps check that side; the rest checks the renderer.)
  */
 
 let session: RichChat | undefined;
@@ -21,8 +22,10 @@ test.afterEach(async () => {
 const RICH_SELECTOR = [
   '[data-chat-file]', '[data-chat-file-unavailable]', '[data-chat-path]',
   '[data-chat-media]', '[data-chat-media-card]', '[data-chat-media-ref]',
-  '[data-gh-token]', '.chat-rich-link',
+  '[data-chat-local-image]', '[data-chat-remote-image]', '.chat-file-chip-muted',
+  '[data-gh-token]', '.chat-rich-link', '[data-testid="gh-ref-card"]',
   '[data-testid="chat-tool-images"]', '[data-testid="chat-image-thumb"]', '[data-testid="chat-image-unavailable"]',
+  '[data-testid="chat-image-view"]', '[data-testid="chat-image-remote"]',
 ].join(', ');
 
 const PR_URL = 'https://github.com/Agent-Clubhouse/Clubhouse/pull/2482';
@@ -88,7 +91,8 @@ test('claude: with rich content off, rich shapes stay plain text and main gets n
   await expect(reply).toContainText('Agent-Clubhouse/Clubhouse#2480');
   await expect(reply.locator(`a[href="${PR_URL}"]`)).toHaveText(PR_URL);
 
-  // Clicking a path does nothing rich.
+  // Hovering the link and clicking a path do nothing rich.
+  await reply.locator(`a[href="${PR_URL}"]`).hover();
   await reply.locator('code', { hasText: written.pdf }).click();
   await expect(dom.filePreview).toHaveCount(0);
   await expect(dom.lightbox).toHaveCount(0);
