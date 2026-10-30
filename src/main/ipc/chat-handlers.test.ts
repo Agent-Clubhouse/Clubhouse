@@ -49,7 +49,7 @@ vi.mock('../util/ipc-broadcast', () => ({ broadcastToAllWindows: vi.fn() }));
 
 import { ipcMain } from 'electron';
 import { IPC } from '../../shared/ipc-channels';
-import { registerChatHandlers } from './chat-handlers';
+import { registerChatHandlers, RICH_CHAT_CALLS_GLOBAL, RICH_CHAT_CHANNELS } from './chat-handlers';
 import { listChatSessions, readChatTranscript } from '../services/agent-runtime';
 import { clearStagedAttachments } from '../services/agent-runtime/chat-attachments';
 import { getAgentRuntimeInfo } from '../services/agent-runtime/runtime-info';
@@ -101,6 +101,23 @@ describe('chat image clipboard on Electron 45', () => {
   it('propagates a rejected clipboard write', async () => {
     clipboardWrite.mockRejectedValue(new Error('pasteboard unavailable'));
     await expect(call(IPC.CHAT.MEDIA_ACTION, 'agent-1', ref, 'copy')).rejects.toThrow('pasteboard unavailable');
+  });
+});
+
+describe('chat handlers: rich call counts (unpackaged test seam, #2491)', () => {
+  const counts = () => (globalThis as Record<string, unknown>)[RICH_CHAT_CALLS_GLOBAL] as Record<string, number>;
+
+  it('starts every rich channel at zero, and no other channel', () => {
+    expect(counts()).toEqual(Object.fromEntries(RICH_CHAT_CHANNELS.map((c) => [c, 0])));
+  });
+
+  it('counts a call before validation and the flag check, including ones that fail', async () => {
+    await call(IPC.CHAT.STAT_PATHS, 'agent-1', ['/tmp/a.txt']).catch(() => {});
+    await expect(call(IPC.CHAT.READ_MEDIA, 'agent-1', 'not-a-ref')).rejects.toThrow(/media reference/);
+    await expect(callFrom({ sender: {}, senderFrame: {} }, IPC.CHAT.FETCH_REMOTE_IMAGE, 'https://example.com/a.png')).rejects.toThrow();
+    await call(IPC.CHAT.SEND_MESSAGE, 'agent-1', 'hi').catch(() => {});
+    expect(counts()).toMatchObject({ [IPC.CHAT.STAT_PATHS]: 1, [IPC.CHAT.READ_MEDIA]: 1, [IPC.CHAT.FETCH_REMOTE_IMAGE]: 1, [IPC.CHAT.READ_FILE_PREVIEW]: 0 });
+    expect(counts()).not.toHaveProperty(IPC.CHAT.SEND_MESSAGE);
   });
 });
 

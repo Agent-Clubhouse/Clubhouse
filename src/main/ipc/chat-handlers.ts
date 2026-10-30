@@ -4,7 +4,7 @@
  * cleanly instead of reaching a PTY.
  */
 import * as fsp from 'fs/promises';
-import { BrowserWindow, clipboard, ClipboardItem, ipcMain, nativeImage, net, shell, type IpcMainInvokeEvent } from 'electron';
+import { app, BrowserWindow, clipboard, ClipboardItem, ipcMain, nativeImage, net, shell, type IpcMainInvokeEvent } from 'electron';
 import { IPC } from '../../shared/ipc-channels';
 import type { ChatAgentRuntimeInfo, ChatDriverId, ChatQuestionAnswers, ChatRuntimeSettings, ContentBlock, MessageDelivery, PermissionLevel, PermissionResponseExtras } from '../../shared/chat';
 import { CHAT_ATTACHMENTS_MAX, CHAT_IMAGE_MAX_BYTES, PERMISSION_LEVELS, RICH_CHAT_CONTENT_FLAG, isMediaRef } from '../../shared/chat';
@@ -116,6 +116,31 @@ const DRIVER_IDS: ReadonlySet<ChatDriverId> = new Set<ChatDriverId>([
 
 let unsubscribe: (() => void) | null = null;
 
+/** The rich chat content channels: each is gated by the flag (assertRichMedia). */
+export const RICH_CHAT_CHANNELS = [
+  IPC.CHAT.READ_MEDIA, IPC.CHAT.MEDIA_ACTION, IPC.CHAT.FETCH_REMOTE_IMAGE, IPC.CHAT.STAT_PATHS,
+  IPC.CHAT.READ_FILE_PREVIEW, IPC.CHAT.IMPORT_LOCAL_IMAGE, IPC.CHAT.FILE_ACTION,
+] as const;
+
+/**
+ * Test seam, unpackaged builds only: calls per rich channel, counted before
+ * validation or the flag check, so the flag-off E2E (#2491) can show the
+ * renderer never asked. Read with `electronApp.evaluate`.
+ */
+export const RICH_CHAT_CALLS_GLOBAL = '__clubhouseRichChatCalls';
+
+type InvokeHandler = (event: IpcMainInvokeEvent, ...args: unknown[]) => unknown;
+
+function richHandlerRegistrar(): (channel: typeof RICH_CHAT_CHANNELS[number], handler: InvokeHandler) => void {
+  if (app.isPackaged) return (channel, handler) => ipcMain.handle(channel, handler);
+  const calls = Object.fromEntries(RICH_CHAT_CHANNELS.map((c) => [c, 0])) as Record<string, number>;
+  (globalThis as Record<string, unknown>)[RICH_CHAT_CALLS_GLOBAL] = calls;
+  return (channel, handler) => ipcMain.handle(channel, (event, ...args) => {
+    calls[channel]++;
+    return handler(event, ...args);
+  });
+}
+
 export function registerChatHandlers(): void {
   // Fan stamped chat events out to renderer windows and derive hook-shaped
   // status for the agent list, notifications and Annex.
@@ -129,6 +154,7 @@ export function registerChatHandlers(): void {
     statusBridge(event);
     handleChatEventForCheckpoints(event);
   });
+  const handleRich = richHandlerRegistrar();
 
   ipcMain.handle(IPC.CHAT.READ_TRANSCRIPT, withValidatedArgs(
     [stringArg(), numberArg({ integer: true, min: 1, optional: true }), stringArg({ optional: true })],
@@ -183,7 +209,7 @@ export function registerChatHandlers(): void {
   ));
 
   // Stored images are named by reference only; main maps it to the agent's media folder.
-  ipcMain.handle(IPC.CHAT.READ_MEDIA, withValidatedArgs(
+  handleRich(IPC.CHAT.READ_MEDIA, withValidatedArgs(
     [stringArg(), mediaRefArg],
     async (event, agentId, mediaRef) => {
       assertRichMedia(event);
@@ -191,7 +217,7 @@ export function registerChatHandlers(): void {
     },
   ));
 
-  ipcMain.handle(IPC.CHAT.MEDIA_ACTION, withValidatedArgs(
+  handleRich(IPC.CHAT.MEDIA_ACTION, withValidatedArgs(
     [stringArg(), mediaRefArg, stringArg()],
     async (event, agentId, mediaRef, action) => {
       assertRichMedia(event);
@@ -212,7 +238,7 @@ export function registerChatHandlers(): void {
     },
   ));
 
-  ipcMain.handle(IPC.CHAT.FETCH_REMOTE_IMAGE, withValidatedArgs(
+  handleRich(IPC.CHAT.FETCH_REMOTE_IMAGE, withValidatedArgs(
     [stringArg({ maxLength: 2048 })],
     async (event, url) => {
       assertRichMedia(event);
@@ -222,7 +248,7 @@ export function registerChatHandlers(): void {
 
   // File chips: the renderer names paths it saw in the agent's text; main
   // answers for any regular file the user can read (#2478), or says why not.
-  ipcMain.handle(IPC.CHAT.STAT_PATHS, withValidatedArgs(
+  handleRich(IPC.CHAT.STAT_PATHS, withValidatedArgs(
     [stringArg(), arrayArg(stringArg({ maxLength: 1024 }), { maxLength: MAX_STAT_PATHS })],
     async (event, agentId, paths) => {
       assertRichMedia(event);
@@ -230,7 +256,7 @@ export function registerChatHandlers(): void {
     },
   ));
 
-  ipcMain.handle(IPC.CHAT.READ_FILE_PREVIEW, withValidatedArgs(
+  handleRich(IPC.CHAT.READ_FILE_PREVIEW, withValidatedArgs(
     [stringArg(), stringArg({ maxLength: 1024 })],
     async (event, agentId, filePath) => {
       assertRichMedia(event);
@@ -240,7 +266,7 @@ export function registerChatHandlers(): void {
 
   // Local images in agent markdown (#2422): stored as media when they're images, so
   // the renderer shows them by reference and never loads the path itself.
-  ipcMain.handle(IPC.CHAT.IMPORT_LOCAL_IMAGE, withValidatedArgs(
+  handleRich(IPC.CHAT.IMPORT_LOCAL_IMAGE, withValidatedArgs(
     [stringArg(), stringArg({ maxLength: 1024 })],
     async (event, agentId, src) => {
       assertRichMedia(event);
@@ -248,7 +274,7 @@ export function registerChatHandlers(): void {
     },
   ));
 
-  ipcMain.handle(IPC.CHAT.FILE_ACTION, withValidatedArgs(
+  handleRich(IPC.CHAT.FILE_ACTION, withValidatedArgs(
     [stringArg(), stringArg({ maxLength: 1024 }), stringArg()],
     async (event, agentId, filePath, action) => {
       assertRichMedia(event);

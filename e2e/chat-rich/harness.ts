@@ -248,3 +248,17 @@ export async function expectCanvasPainted(canvas: Locator): Promise<void> {
 export async function expectNoPageScroll(window: Page): Promise<void> {
   expect(await window.evaluate(() => [document.scrollingElement?.scrollTop ?? 0, document.body.scrollTop])).toEqual([0, 0]);
 }
+
+/**
+ * Calls main's rich `chat:*` handlers have received, by channel, from the
+ * unpackaged-only seam in chat-handlers.ts. Throws if the seam isn't there,
+ * so a zero count can't come from a missing counter.
+ */
+export async function richChatCalls(electronApp: ElectronApp): Promise<Record<string, number>> {
+  const calls = await electronApp.evaluate(() => {
+    const counts = (globalThis as Record<string, unknown>).__clubhouseRichChatCalls as Record<string, number> | undefined;
+    return counts && { ...counts };
+  });
+  if (!calls) throw new Error('No rich chat call counts in main: is this an unpackaged build?');
+  return calls;
+}
