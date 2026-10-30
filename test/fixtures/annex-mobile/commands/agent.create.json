@@ -68,10 +68,42 @@
       }
     },
     {
+      "name": "accepted with folder and branch",
+      "request": {
+        "branchName": "feature/otter",
+        "color": "emerald",
+        "commandId": "cmd_042",
+        "epoch": "00000000-0000-4000-8000-000000000001",
+        "folderName": "otter",
+        "name": "calm-otter",
+        "projectId": "proj_app",
+        "type": "agent.create",
+        "useWorktree": true,
+        "version": 1
+      },
+      "response": {
+        "body": {
+          "commandId": "cmd_042",
+          "epoch": "00000000-0000-4000-8000-000000000001",
+          "result": {
+            "agentId": "durable_created",
+            "branch": "calm-otter/standby",
+            "name": "calm-otter",
+            "projectId": "proj_app",
+            "state": "creating",
+            "worktreePath": "/work/app/.clubhouse/agents/calm-otter"
+          },
+          "status": "completed",
+          "version": 1
+        },
+        "status": 200
+      }
+    },
+    {
       "name": "project_not_found",
       "request": {
         "color": "emerald",
-        "commandId": "cmd_042",
+        "commandId": "cmd_043",
         "epoch": "00000000-0000-4000-8000-000000000001",
         "name": "calm-otter",
         "projectId": "missing",
@@ -80,7 +112,7 @@
       },
       "response": {
         "body": {
-          "commandId": "cmd_042",
+          "commandId": "cmd_043",
           "epoch": "00000000-0000-4000-8000-000000000001",
           "error": {
             "code": "project_not_found",
@@ -96,7 +128,7 @@
       "name": "invalid_name",
       "request": {
         "color": "emerald",
-        "commandId": "cmd_043",
+        "commandId": "cmd_044",
         "epoch": "00000000-0000-4000-8000-000000000001",
         "name": "bad..name",
         "projectId": "proj_app",
@@ -105,7 +137,7 @@
       },
       "response": {
         "body": {
-          "commandId": "cmd_043",
+          "commandId": "cmd_044",
           "epoch": "00000000-0000-4000-8000-000000000001",
           "error": {
             "code": "invalid_name",
@@ -121,7 +153,7 @@
       "name": "invalid_color",
       "request": {
         "color": "chartreuse",
-        "commandId": "cmd_044",
+        "commandId": "cmd_045",
         "epoch": "00000000-0000-4000-8000-000000000001",
         "name": "calm-otter",
         "projectId": "proj_app",
@@ -130,7 +162,7 @@
       },
       "response": {
         "body": {
-          "commandId": "cmd_044",
+          "commandId": "cmd_045",
           "epoch": "00000000-0000-4000-8000-000000000001",
           "error": {
             "code": "invalid_color",
@@ -146,7 +178,7 @@
       "name": "not_git_repo",
       "request": {
         "color": "emerald",
-        "commandId": "cmd_045",
+        "commandId": "cmd_046",
         "epoch": "00000000-0000-4000-8000-000000000001",
         "name": "calm-otter",
         "projectId": "proj_docs",
@@ -156,7 +188,7 @@
       },
       "response": {
         "body": {
-          "commandId": "cmd_045",
+          "commandId": "cmd_046",
           "epoch": "00000000-0000-4000-8000-000000000001",
           "error": {
             "code": "not_git_repo",
@@ -173,7 +205,7 @@
       "request": {
         "branchName": "feature/x",
         "color": "emerald",
-        "commandId": "cmd_046",
+        "commandId": "cmd_047",
         "epoch": "00000000-0000-4000-8000-000000000001",
         "name": "calm-otter",
         "projectId": "proj_app",
@@ -183,7 +215,7 @@
       },
       "response": {
         "body": {
-          "commandId": "cmd_046",
+          "commandId": "cmd_047",
           "epoch": "00000000-0000-4000-8000-000000000001",
           "error": {
             "code": "worktree_options_require_worktree",
@@ -199,7 +231,7 @@
       "name": "invalid_folder_name",
       "request": {
         "color": "emerald",
-        "commandId": "cmd_047",
+        "commandId": "cmd_048",
         "epoch": "00000000-0000-4000-8000-000000000001",
         "folderName": "bad..folder",
         "name": "calm-otter",
@@ -209,7 +241,7 @@
       },
       "response": {
         "body": {
-          "commandId": "cmd_047",
+          "commandId": "cmd_048",
           "epoch": "00000000-0000-4000-8000-000000000001",
           "error": {
             "code": "invalid_folder_name",
@@ -226,7 +258,7 @@
       "request": {
         "branchName": "bad..branch",
         "color": "emerald",
-        "commandId": "cmd_048",
+        "commandId": "cmd_049",
         "epoch": "00000000-0000-4000-8000-000000000001",
         "name": "calm-otter",
         "projectId": "proj_app",
@@ -235,7 +267,7 @@
       },
       "response": {
         "body": {
-          "commandId": "cmd_048",
+          "commandId": "cmd_049",
           "epoch": "00000000-0000-4000-8000-000000000001",
           "error": {
             "code": "invalid_branch_name",
@@ -251,7 +283,7 @@
       "name": "orchestrator_unavailable",
       "request": {
         "color": "emerald",
-        "commandId": "cmd_049",
+        "commandId": "cmd_050",
         "epoch": "00000000-0000-4000-8000-000000000001",
         "name": "calm-otter",
         "orchestrator": "copilot-cli",
@@ -261,7 +293,7 @@
       },
       "response": {
         "body": {
-          "commandId": "cmd_049",
+          "commandId": "cmd_050",
           "epoch": "00000000-0000-4000-8000-000000000001",
           "error": {
             "code": "orchestrator_unavailable",
@@ -277,7 +309,7 @@
       "name": "free_agent_mode_unavailable",
       "request": {
         "color": "emerald",
-        "commandId": "cmd_050",
+        "commandId": "cmd_051",
         "epoch": "00000000-0000-4000-8000-000000000001",
         "freeAgentMode": true,
         "name": "calm-otter",
@@ -288,7 +320,7 @@
       },
       "response": {
         "body": {
-          "commandId": "cmd_050",
+          "commandId": "cmd_051",
           "epoch": "00000000-0000-4000-8000-000000000001",
           "error": {
             "code": "free_agent_mode_unavailable",
@@ -304,7 +336,7 @@
       "name": "unknown_persona",
       "request": {
         "color": "emerald",
-        "commandId": "cmd_051",
+        "commandId": "cmd_052",
         "epoch": "00000000-0000-4000-8000-000000000001",
         "name": "calm-otter",
         "persona": "pirate",
@@ -314,7 +346,7 @@
       },
       "response": {
         "body": {
-          "commandId": "cmd_051",
+          "commandId": "cmd_052",
           "epoch": "00000000-0000-4000-8000-000000000001",
           "error": {
             "code": "unknown_persona",
@@ -330,7 +362,7 @@
       "name": "unknown_mcp",
       "request": {
         "color": "emerald",
-        "commandId": "cmd_052",
+        "commandId": "cmd_053",
         "epoch": "00000000-0000-4000-8000-000000000001",
         "mcpIds": [
           "jira"
@@ -342,7 +374,7 @@
       },
       "response": {
         "body": {
-          "commandId": "cmd_052",
+          "commandId": "cmd_053",
           "epoch": "00000000-0000-4000-8000-000000000001",
           "error": {
             "code": "unknown_mcp",
@@ -358,7 +390,7 @@
       "name": "create_refused",
       "request": {
         "color": "emerald",
-        "commandId": "cmd_053",
+        "commandId": "cmd_054",
         "epoch": "00000000-0000-4000-8000-000000000001",
         "name": "taken",
         "projectId": "proj_app",
@@ -367,7 +399,7 @@
       },
       "response": {
         "body": {
-          "commandId": "cmd_053",
+          "commandId": "cmd_054",
           "epoch": "00000000-0000-4000-8000-000000000001",
           "error": {
             "code": "create_refused",
@@ -383,7 +415,7 @@
       "name": "invalid_command (unknown field)",
       "request": {
         "color": "emerald",
-        "commandId": "cmd_054",
+        "commandId": "cmd_055",
         "epoch": "00000000-0000-4000-8000-000000000001",
         "instructions": "be nice",
         "name": "calm-otter",

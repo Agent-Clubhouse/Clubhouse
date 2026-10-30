@@ -3,7 +3,7 @@
     {
       "name": "accepted start",
       "request": {
-        "commandId": "cmd_085",
+        "commandId": "cmd_087",
         "epoch": "00000000-0000-4000-8000-000000000001",
         "requestId": "hstart_00000000-0000-4000-8000-000000000006",
         "type": "helper.approve",
@@ -11,7 +11,7 @@
       },
       "response": {
         "body": {
-          "commandId": "cmd_085",
+          "commandId": "cmd_087",
           "epoch": "00000000-0000-4000-8000-000000000001",
           "result": {
             "approved": true,
@@ -28,7 +28,7 @@
     {
       "name": "helper_start_blocked",
       "request": {
-        "commandId": "cmd_086",
+        "commandId": "cmd_088",
         "epoch": "00000000-0000-4000-8000-000000000001",
         "requestId": "hstart_00000000-0000-4000-8000-000000000007",
         "type": "helper.approve",
@@ -36,7 +36,7 @@
       },
       "response": {
         "body": {
-          "commandId": "cmd_086",
+          "commandId": "cmd_088",
           "epoch": "00000000-0000-4000-8000-000000000001",
           "error": {
             "code": "helper_start_blocked",
@@ -51,7 +51,7 @@
     {
       "name": "helper_start_refused",
       "request": {
-        "commandId": "cmd_087",
+        "commandId": "cmd_089",
         "epoch": "00000000-0000-4000-8000-000000000001",
         "requestId": "hstart_00000000-0000-4000-8000-000000000008",
         "type": "helper.approve",
@@ -59,7 +59,7 @@
       },
       "response": {
         "body": {
-          "commandId": "cmd_087",
+          "commandId": "cmd_089",
           "epoch": "00000000-0000-4000-8000-000000000001",
           "error": {
             "code": "helper_start_refused",
@@ -74,7 +74,7 @@
     {
       "name": "accepted dispose anyway",
       "request": {
-        "commandId": "cmd_088",
+        "commandId": "cmd_090",
         "epoch": "00000000-0000-4000-8000-000000000001",
         "force": true,
         "requestId": "hdispose_00000000-0000-4000-8000-000000000009",
@@ -83,7 +83,7 @@
       },
       "response": {
         "body": {
-          "commandId": "cmd_088",
+          "commandId": "cmd_090",
           "epoch": "00000000-0000-4000-8000-000000000001",
           "result": {
             "approved": true,
@@ -100,7 +100,7 @@
     {
       "name": "accepted dispose (nothing at risk)",
       "request": {
-        "commandId": "cmd_089",
+        "commandId": "cmd_091",
         "epoch": "00000000-0000-4000-8000-000000000001",
         "requestId": "hdispose_00000000-0000-4000-8000-000000000010",
         "type": "helper.approve",
@@ -108,7 +108,7 @@
       },
       "response": {
         "body": {
-          "commandId": "cmd_089",
+          "commandId": "cmd_091",
           "epoch": "00000000-0000-4000-8000-000000000001",
           "result": {
             "approved": true,
@@ -125,7 +125,7 @@
     {
       "name": "helper_work_at_risk",
       "request": {
-        "commandId": "cmd_090",
+        "commandId": "cmd_092",
         "epoch": "00000000-0000-4000-8000-000000000001",
         "requestId": "hdispose_00000000-0000-4000-8000-000000000011",
         "type": "helper.approve",
@@ -133,7 +133,7 @@
       },
       "response": {
         "body": {
-          "commandId": "cmd_090",
+          "commandId": "cmd_092",
           "epoch": "00000000-0000-4000-8000-000000000001",
           "error": {
             "code": "helper_work_at_risk",
@@ -148,7 +148,7 @@
     {
       "name": "helper_check_failed",
       "request": {
-        "commandId": "cmd_091",
+        "commandId": "cmd_093",
         "epoch": "00000000-0000-4000-8000-000000000001",
         "requestId": "hdispose_00000000-0000-4000-8000-000000000012",
         "type": "helper.approve",
@@ -156,7 +156,7 @@
       },
       "response": {
         "body": {
-          "commandId": "cmd_091",
+          "commandId": "cmd_093",
           "epoch": "00000000-0000-4000-8000-000000000001",
           "error": {
             "code": "helper_check_failed",
@@ -171,7 +171,7 @@
     {
       "name": "helper_work_changed",
       "request": {
-        "commandId": "cmd_092",
+        "commandId": "cmd_094",
         "epoch": "00000000-0000-4000-8000-000000000001",
         "force": true,
         "requestId": "hdispose_00000000-0000-4000-8000-000000000013",
@@ -180,7 +180,7 @@
       },
       "response": {
         "body": {
-          "commandId": "cmd_092",
+          "commandId": "cmd_094",
           "epoch": "00000000-0000-4000-8000-000000000001",
           "error": {
             "code": "helper_work_changed",
@@ -195,7 +195,7 @@
     {
       "name": "helper_dispose_failed",
       "request": {
-        "commandId": "cmd_093",
+        "commandId": "cmd_095",
         "epoch": "00000000-0000-4000-8000-000000000001",
         "force": true,
         "requestId": "hdispose_00000000-0000-4000-8000-000000000014",
@@ -204,7 +204,7 @@
       },
       "response": {
         "body": {
-          "commandId": "cmd_093",
+          "commandId": "cmd_095",
           "epoch": "00000000-0000-4000-8000-000000000001",
           "error": {
             "code": "helper_dispose_failed",
@@ -219,7 +219,7 @@
     {
       "name": "helper_request_not_found",
       "request": {
-        "commandId": "cmd_094",
+        "commandId": "cmd_096",
         "epoch": "00000000-0000-4000-8000-000000000001",
         "requestId": "hstart_gone",
         "type": "helper.approve",
@@ -227,7 +227,7 @@
       },
       "response": {
         "body": {
-          "commandId": "cmd_094",
+          "commandId": "cmd_096",
           "epoch": "00000000-0000-4000-8000-000000000001",
           "error": {
             "code": "helper_request_not_found",

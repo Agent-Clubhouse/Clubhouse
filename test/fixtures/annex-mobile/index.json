@@ -13,6 +13,7 @@
     "chat-snapshot-sleeping.json",
     "chat-snapshot.json",
     "commands/_common.json",
+    "commands/_fields.json",
     "commands/agent.create.json",
     "commands/agent.spawn.json",
     "commands/agent.start.json",

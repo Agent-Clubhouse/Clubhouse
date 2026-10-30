@@ -271,7 +271,7 @@ import * as eventReplay from './annex-event-replay';
 import { recordStartRequest, _resetStartRequestsForTesting } from './helper-start-requests';
 import { listDisposeRequests, recordDisposeRequest, _resetDisposeRequestsForTesting } from './helper-dispose-requests';
 import { registerChatRuntime, clearChatRuntimes, publishChatEvent } from './agent-runtime';
-import { MobileCommandService } from './mobile-control';
+import { MOBILE_COMMAND_FIELDS, MobileCommandService, NULLABLE_ON_UPDATE, isOptionalCommandField } from './mobile-control';
 import { MOBILE_COMMAND_TYPES } from '../../shared/mobile-control';
 import { CHAT_EVENT_TYPES, type ChatEvent } from '../../shared/chat';
 
@@ -648,6 +648,7 @@ describe('Annex mobile contract fixtures', () => {
     const create = { type: 'agent.create', projectId: 'proj_app', name: 'calm-otter', color: 'emerald' };
     await command('accepted', { ...create, orchestrator: 'claude-code', model: 'opus', persona: 'qa', freeAgentMode: true, useWorktree: true, mcpIds: ['github'], branchFrom: 'main' });
     await command('accepted minimal', { ...create, name: 'quiet-wren' });
+    await command('accepted with folder and branch', { ...create, name: 'calm-otter', folderName: 'otter', branchName: 'feature/otter', useWorktree: true });
     await command('project_not_found', { ...create, projectId: 'missing' });
     await command('invalid_name', { ...create, name: 'bad..name' });
     await command('invalid_color', { ...create, color: 'chartreuse' });
@@ -664,6 +665,7 @@ describe('Annex mobile contract fixtures', () => {
 
     await command('accepted', { type: 'agent.update', agentId: 'durable_sleepy', name: 'bright-otter', color: 'rose', emoji: '🦦', model: 'sonnet', persona: 'architect', freeAgentMode: true, runtime: 'chat', idleSleep: 30 });
     await command('accepted clear', { type: 'agent.update', agentId: 'durable_sleepy', emoji: null, persona: null, runtime: 'default', idleSleep: 'inherit' });
+    await command('accepted orchestrator', { type: 'agent.update', agentId: 'durable_sleepy', orchestrator: 'claude-code' });
     await command('accepted while running (idleSleep)', { type: 'agent.update', agentId: 'durable_chat', idleSleep: 'never' });
     await command('agent_not_found', { type: 'agent.update', agentId: 'missing', idleSleep: 30 });
     await command('agent_running', { type: 'agent.update', agentId: 'durable_chat', name: 'renamed' });
@@ -926,6 +928,15 @@ describe('Annex mobile contract fixtures', () => {
       fixtures.set(`commands/${type}.json`, { type, cases: list });
     }
     fixtures.set('commands/_common.json', { type: null, cases: commandFixtures.get('_common') });
+    // What parseMobileCommand accepts: anything else is invalid_command, so the phone checks its encoder against this.
+    fixtures.set('commands/_fields.json', {
+      base: ['version', 'commandId', 'epoch', 'type'],
+      commands: Object.fromEntries(MOBILE_COMMAND_TYPES.map((type) => [type, {
+        fields: [...MOBILE_COMMAND_FIELDS[type]],
+        required: MOBILE_COMMAND_FIELDS[type].filter((k) => !isOptionalCommandField(type, k)),
+        ...(type === 'agent.update' && { nullable: [...NULLABLE_ON_UPDATE], atLeastOne: MOBILE_COMMAND_FIELDS[type].filter((k) => k !== 'agentId') }),
+      }])),
+    });
   });
 
   it('fixtures on disk match (npm run fixtures:annex-mobile to update)', () => {
