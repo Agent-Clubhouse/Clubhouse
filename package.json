@@ -21,6 +21,7 @@
     "codex:check-types": "node scripts/generate-codex-app-server-types.mjs --check",
     "framebriar:vendor": "node scripts/vendor-framebriar.mjs --from",
     "framebriar:check": "node scripts/vendor-framebriar.mjs --check",
+    "fixtures:annex-mobile": "node scripts/annex-mobile-fixtures.mjs",
     "typecheck": "tsc --noEmit",
     "validate": "npm run lint && npm run typecheck && npm test && npm run make && npm run test:e2e",
     "postinstall": "node scripts/fix-node-pty.js"

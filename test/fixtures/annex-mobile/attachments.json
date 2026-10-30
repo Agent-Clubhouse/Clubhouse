@@ -1,0 +1,235 @@
+{
+  "cases": [
+    {
+      "name": "accepted",
+      "request": {
+        "body": "<29 bytes>",
+        "headers": {
+          "Content-Type": "image/png"
+        },
+        "method": "POST",
+        "path": "/api/v1/mobile/agents/durable_chat/attachments"
+      },
+      "response": {
+        "body": {
+          "attachmentId": "00000000-0000-4000-8000-000000000002",
+          "bytes": 29,
+          "height": 2556,
+          "mimeType": "image/png",
+          "version": 1,
+          "width": 1179
+        },
+        "status": 200
+      }
+    },
+    {
+      "name": "accepted (octet-stream, sniffed)",
+      "request": {
+        "body": "<29 bytes>",
+        "headers": {
+          "Content-Type": "application/octet-stream"
+        },
+        "method": "POST",
+        "path": "/api/v1/mobile/agents/durable_chat/attachments"
+      },
+      "response": {
+        "body": {
+          "attachmentId": "00000000-0000-4000-8000-000000000003",
+          "bytes": 29,
+          "height": 2556,
+          "mimeType": "image/png",
+          "version": 1,
+          "width": 1179
+        },
+        "status": 200
+      }
+    },
+    {
+      "name": "accepted without dimensions",
+      "request": {
+        "body": "<12 bytes>",
+        "headers": {
+          "Content-Type": "image/jpeg"
+        },
+        "method": "POST",
+        "path": "/api/v1/mobile/agents/durable_chat/attachments"
+      },
+      "response": {
+        "body": {
+          "attachmentId": "00000000-0000-4000-8000-000000000004",
+          "bytes": 12,
+          "mimeType": "image/jpeg",
+          "version": 1
+        },
+        "status": 200
+      }
+    },
+    {
+      "name": "empty_body",
+      "request": {
+        "body": "<0 bytes>",
+        "headers": {
+          "Content-Type": "image/png"
+        },
+        "method": "POST",
+        "path": "/api/v1/mobile/agents/durable_chat/attachments"
+      },
+      "response": {
+        "body": {
+          "error": "empty_body",
+          "version": 1
+        },
+        "status": 400
+      }
+    },
+    {
+      "name": "unsupported_media_type",
+      "request": {
+        "body": {
+          "base64": "x"
+        },
+        "headers": {
+          "Content-Type": "application/json"
+        },
+        "method": "POST",
+        "path": "/api/v1/mobile/agents/durable_chat/attachments"
+      },
+      "response": {
+        "body": {
+          "error": "unsupported_media_type",
+          "version": 1
+        },
+        "status": 415
+      }
+    },
+    {
+      "name": "unsupported_image",
+      "request": {
+        "body": "<41 bytes>",
+        "headers": {
+          "Content-Type": "image/png"
+        },
+        "method": "POST",
+        "path": "/api/v1/mobile/agents/durable_chat/attachments"
+      },
+      "response": {
+        "body": {
+          "error": "unsupported_image",
+          "version": 1
+        },
+        "status": 415
+      }
+    },
+    {
+      "name": "agent_not_found",
+      "request": {
+        "body": "<29 bytes>",
+        "headers": {
+          "Content-Type": "image/png"
+        },
+        "method": "POST",
+        "path": "/api/v1/mobile/agents/missing/attachments"
+      },
+      "response": {
+        "body": {
+          "error": "agent_not_found",
+          "version": 1
+        },
+        "status": 404
+      }
+    },
+    {
+      "name": "not_chat",
+      "request": {
+        "body": "<29 bytes>",
+        "headers": {
+          "Content-Type": "image/png"
+        },
+        "method": "POST",
+        "path": "/api/v1/mobile/agents/durable_sleepy/attachments"
+      },
+      "response": {
+        "body": {
+          "error": "not_chat",
+          "version": 1
+        },
+        "status": 409
+      }
+    },
+    {
+      "name": "images_not_supported",
+      "request": {
+        "body": "<29 bytes>",
+        "headers": {
+          "Content-Type": "image/png"
+        },
+        "method": "POST",
+        "path": "/api/v1/mobile/agents/durable_basic/attachments"
+      },
+      "response": {
+        "body": {
+          "error": "images_not_supported",
+          "version": 1
+        },
+        "status": 409
+      }
+    },
+    {
+      "name": "client_certificate_required (bearer token, no client certificate)",
+      "request": {
+        "body": "<29 bytes>",
+        "headers": {
+          "Authorization": "Bearer <token>",
+          "Content-Type": "image/png"
+        },
+        "method": "POST",
+        "path": "/api/v1/mobile/agents/durable_chat/attachments"
+      },
+      "response": {
+        "body": {
+          "error": "client_certificate_required"
+        },
+        "status": 403
+      }
+    },
+    {
+      "name": "too_large",
+      "request": {
+        "headers": {
+          "Content-Length": "3932161",
+          "Content-Type": "image/png"
+        },
+        "method": "POST",
+        "path": "/api/v1/mobile/agents/durable_chat/attachments"
+      },
+      "response": {
+        "body": {
+          "error": "too_large",
+          "version": 1
+        },
+        "status": 413
+      }
+    },
+    {
+      "name": "rate_limited",
+      "request": {
+        "body": "<29 bytes>",
+        "headers": {
+          "Content-Type": "image/png"
+        },
+        "method": "POST",
+        "path": "/api/v1/mobile/agents/durable_chat/attachments"
+      },
+      "response": {
+        "body": {
+          "error": "rate_limited",
+          "version": 1
+        },
+        "headers": {
+          "retry-after": "<seconds>"
+        },
+        "status": 429
+      }
+    }
+  ]
+}

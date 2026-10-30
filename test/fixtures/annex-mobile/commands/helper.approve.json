@@ -1,0 +1,244 @@
+{
+  "cases": [
+    {
+      "name": "accepted start",
+      "request": {
+        "commandId": "cmd_088",
+        "epoch": "00000000-0000-4000-8000-000000000001",
+        "requestId": "hstart_00000000-0000-4000-8000-000000000006",
+        "type": "helper.approve",
+        "version": 1
+      },
+      "response": {
+        "body": {
+          "commandId": "cmd_088",
+          "epoch": "00000000-0000-4000-8000-000000000001",
+          "result": {
+            "approved": true,
+            "helperId": "durable_helper_new",
+            "kind": "start",
+            "requestId": "hstart_00000000-0000-4000-8000-000000000006"
+          },
+          "status": "completed",
+          "version": 1
+        },
+        "status": 200
+      }
+    },
+    {
+      "name": "helper_start_blocked",
+      "request": {
+        "commandId": "cmd_089",
+        "epoch": "00000000-0000-4000-8000-000000000001",
+        "requestId": "hstart_00000000-0000-4000-8000-000000000007",
+        "type": "helper.approve",
+        "version": 1
+      },
+      "response": {
+        "body": {
+          "commandId": "cmd_089",
+          "epoch": "00000000-0000-4000-8000-000000000001",
+          "error": {
+            "code": "helper_start_blocked",
+            "message": "Planner isn’t running. Wake it, then approve again."
+          },
+          "status": "rejected",
+          "version": 1
+        },
+        "status": 409
+      }
+    },
+    {
+      "name": "helper_start_refused",
+      "request": {
+        "commandId": "cmd_090",
+        "epoch": "00000000-0000-4000-8000-000000000001",
+        "requestId": "hstart_00000000-0000-4000-8000-000000000008",
+        "type": "helper.approve",
+        "version": 1
+      },
+      "response": {
+        "body": {
+          "commandId": "cmd_090",
+          "epoch": "00000000-0000-4000-8000-000000000001",
+          "error": {
+            "code": "helper_start_refused",
+            "message": "A helper named impl-ipc already exists."
+          },
+          "status": "failed",
+          "version": 1
+        },
+        "status": 409
+      }
+    },
+    {
+      "name": "accepted dispose anyway",
+      "request": {
+        "commandId": "cmd_091",
+        "epoch": "00000000-0000-4000-8000-000000000001",
+        "force": true,
+        "requestId": "hdispose_00000000-0000-4000-8000-000000000009",
+        "type": "helper.approve",
+        "version": 1
+      },
+      "response": {
+        "body": {
+          "commandId": "cmd_091",
+          "epoch": "00000000-0000-4000-8000-000000000001",
+          "result": {
+            "approved": true,
+            "kind": "dispose",
+            "requestId": "hdispose_00000000-0000-4000-8000-000000000009",
+            "stopped": true
+          },
+          "status": "completed",
+          "version": 1
+        },
+        "status": 200
+      }
+    },
+    {
+      "name": "accepted dispose (nothing at risk)",
+      "request": {
+        "commandId": "cmd_092",
+        "epoch": "00000000-0000-4000-8000-000000000001",
+        "requestId": "hdispose_00000000-0000-4000-8000-000000000010",
+        "type": "helper.approve",
+        "version": 1
+      },
+      "response": {
+        "body": {
+          "commandId": "cmd_092",
+          "epoch": "00000000-0000-4000-8000-000000000001",
+          "result": {
+            "approved": true,
+            "kind": "dispose",
+            "requestId": "hdispose_00000000-0000-4000-8000-000000000010",
+            "stopped": true
+          },
+          "status": "completed",
+          "version": 1
+        },
+        "status": 200
+      }
+    },
+    {
+      "name": "helper_work_at_risk",
+      "request": {
+        "commandId": "cmd_093",
+        "epoch": "00000000-0000-4000-8000-000000000001",
+        "requestId": "hdispose_00000000-0000-4000-8000-000000000011",
+        "type": "helper.approve",
+        "version": 1
+      },
+      "response": {
+        "body": {
+          "commandId": "cmd_093",
+          "epoch": "00000000-0000-4000-8000-000000000001",
+          "error": {
+            "code": "helper_work_at_risk",
+            "message": "Docs has work that disposing would lose. Dispose anyway to delete it."
+          },
+          "status": "rejected",
+          "version": 1
+        },
+        "status": 409
+      }
+    },
+    {
+      "name": "helper_check_failed",
+      "request": {
+        "commandId": "cmd_094",
+        "epoch": "00000000-0000-4000-8000-000000000001",
+        "requestId": "hdispose_00000000-0000-4000-8000-000000000012",
+        "type": "helper.approve",
+        "version": 1
+      },
+      "response": {
+        "body": {
+          "commandId": "cmd_094",
+          "epoch": "00000000-0000-4000-8000-000000000001",
+          "error": {
+            "code": "helper_check_failed",
+            "message": "Docs can’t be disposed because it couldn’t be checked (git status failed). Check again on the desktop, or decline."
+          },
+          "status": "rejected",
+          "version": 1
+        },
+        "status": 409
+      }
+    },
+    {
+      "name": "helper_work_changed",
+      "request": {
+        "commandId": "cmd_095",
+        "epoch": "00000000-0000-4000-8000-000000000001",
+        "force": true,
+        "requestId": "hdispose_00000000-0000-4000-8000-000000000013",
+        "type": "helper.approve",
+        "version": 1
+      },
+      "response": {
+        "body": {
+          "commandId": "cmd_095",
+          "epoch": "00000000-0000-4000-8000-000000000001",
+          "error": {
+            "code": "helper_work_changed",
+            "message": "Docs has new work. Review what would be lost and confirm again. Docs is stopped."
+          },
+          "status": "rejected",
+          "version": 1
+        },
+        "status": 409
+      }
+    },
+    {
+      "name": "helper_dispose_failed",
+      "request": {
+        "commandId": "cmd_096",
+        "epoch": "00000000-0000-4000-8000-000000000001",
+        "force": true,
+        "requestId": "hdispose_00000000-0000-4000-8000-000000000014",
+        "type": "helper.approve",
+        "version": 1
+      },
+      "response": {
+        "body": {
+          "commandId": "cmd_096",
+          "epoch": "00000000-0000-4000-8000-000000000001",
+          "error": {
+            "code": "helper_dispose_failed",
+            "message": "Couldn’t remove the worktree. Docs is stopped."
+          },
+          "status": "failed",
+          "version": 1
+        },
+        "status": 409
+      }
+    },
+    {
+      "name": "helper_request_not_found",
+      "request": {
+        "commandId": "cmd_097",
+        "epoch": "00000000-0000-4000-8000-000000000001",
+        "requestId": "hstart_gone",
+        "type": "helper.approve",
+        "version": 1
+      },
+      "response": {
+        "body": {
+          "commandId": "cmd_097",
+          "epoch": "00000000-0000-4000-8000-000000000001",
+          "error": {
+            "code": "helper_request_not_found",
+            "message": "helper_request_not_found"
+          },
+          "status": "rejected",
+          "version": 1
+        },
+        "status": 404
+      }
+    }
+  ],
+  "type": "helper.approve"
+}

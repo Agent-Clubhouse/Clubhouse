@@ -1,0 +1,107 @@
+{
+  "cases": [
+    {
+      "name": "accepted",
+      "request": {
+        "commandId": "cmd_073",
+        "epoch": "00000000-0000-4000-8000-000000000001",
+        "pinned": true,
+        "projectId": "proj_docs",
+        "type": "project.setPinned",
+        "version": 1
+      },
+      "response": {
+        "body": {
+          "commandId": "cmd_073",
+          "epoch": "00000000-0000-4000-8000-000000000001",
+          "result": {
+            "idle": false,
+            "inactive": false,
+            "lastActivityAt": 1799222400000,
+            "pinned": true,
+            "projectId": "proj_docs"
+          },
+          "status": "completed",
+          "version": 1
+        },
+        "status": 200
+      }
+    },
+    {
+      "name": "accepted unpin",
+      "request": {
+        "commandId": "cmd_074",
+        "epoch": "00000000-0000-4000-8000-000000000001",
+        "pinned": false,
+        "projectId": "proj_docs",
+        "type": "project.setPinned",
+        "version": 1
+      },
+      "response": {
+        "body": {
+          "commandId": "cmd_074",
+          "epoch": "00000000-0000-4000-8000-000000000001",
+          "result": {
+            "idle": true,
+            "inactive": false,
+            "lastActivityAt": 1799222400000,
+            "pinned": false,
+            "projectId": "proj_docs"
+          },
+          "status": "completed",
+          "version": 1
+        },
+        "status": 200
+      }
+    },
+    {
+      "name": "project_not_found",
+      "request": {
+        "commandId": "cmd_075",
+        "epoch": "00000000-0000-4000-8000-000000000001",
+        "pinned": true,
+        "projectId": "missing",
+        "type": "project.setPinned",
+        "version": 1
+      },
+      "response": {
+        "body": {
+          "commandId": "cmd_075",
+          "epoch": "00000000-0000-4000-8000-000000000001",
+          "error": {
+            "code": "project_not_found",
+            "message": "project_not_found"
+          },
+          "status": "rejected",
+          "version": 1
+        },
+        "status": 404
+      }
+    },
+    {
+      "name": "project_state_unavailable",
+      "request": {
+        "commandId": "cmd_079",
+        "epoch": "00000000-0000-4000-8000-000000000001",
+        "pinned": false,
+        "projectId": "proj_app",
+        "type": "project.setPinned",
+        "version": 1
+      },
+      "response": {
+        "body": {
+          "commandId": "cmd_079",
+          "epoch": "00000000-0000-4000-8000-000000000001",
+          "error": {
+            "code": "project_state_unavailable",
+            "message": "project_state_unavailable"
+          },
+          "status": "rejected",
+          "version": 1
+        },
+        "status": 409
+      }
+    }
+  ],
+  "type": "project.setPinned"
+}

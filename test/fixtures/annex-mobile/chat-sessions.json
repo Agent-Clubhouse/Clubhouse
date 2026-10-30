@@ -1,0 +1,34 @@
+{
+  "request": {
+    "method": "GET",
+    "path": "/api/v1/mobile/agents/durable_chat/chat/sessions"
+  },
+  "response": {
+    "body": {
+      "agentId": "durable_chat",
+      "epoch": "00000000-0000-4000-8000-000000000001",
+      "sessions": [
+        {
+          "driver": "claude_agent_sdk",
+          "lastActiveAt": 1799999951000,
+          "lastSeq": 11,
+          "nativeSessionId": "native-live",
+          "provider": "claude-code",
+          "sessionId": "sess_live",
+          "startedAt": 1799999941000,
+          "title": "Wire the IPC"
+        },
+        {
+          "endedAt": 1799914000000,
+          "lastActiveAt": 1799914000000,
+          "lastSeq": 40,
+          "provider": "claude-code",
+          "sessionId": "sess_prev",
+          "startedAt": 1799913600000
+        }
+      ],
+      "version": 1
+    },
+    "status": 200
+  }
+}

@@ -1,0 +1,853 @@
+{
+  "direction": "desktop-to-phone",
+  "frames": [
+    {
+      "payload": {
+        "agentId": "durable_chat",
+        "event": {
+          "agentId": "durable_chat",
+          "data": {
+            "capabilities": {
+              "effortDefault": false,
+              "effortSwitch": "per_turn",
+              "images": true,
+              "interrupt": true,
+              "limits": true,
+              "liveLevels": [
+                "plan",
+                "ask",
+                "auto_edit",
+                "full_access"
+              ],
+              "login": "terminal",
+              "modelSwitch": "per_turn",
+              "planApproval": true,
+              "questions": true,
+              "queue": "client",
+              "resume": "native",
+              "slashCommands": true,
+              "steer": true,
+              "subagents": "full",
+              "systemPrompt": true,
+              "usage": "cost"
+            },
+            "cliVersion": "2.1.0",
+            "cwd": "/work/app/.clubhouse/agents/planner",
+            "driver": "claude_agent_sdk",
+            "level": "ask",
+            "model": "opus",
+            "nativeSessionId": "native-live",
+            "provider": "claude-code",
+            "resumed": true
+          },
+          "seq": 101,
+          "sessionId": "sess_live",
+          "ts": 1800000041000,
+          "type": "session_started",
+          "v": 2
+        }
+      },
+      "seq": 4,
+      "type": "chat:event"
+    },
+    {
+      "payload": {
+        "agentId": "durable_chat",
+        "event": {
+          "agentId": "durable_chat",
+          "data": {
+            "capabilities": {
+              "images": true
+            },
+            "cliVersion": "2.1.0",
+            "efforts": [
+              "low",
+              "high"
+            ],
+            "levelNames": {
+              "ask": "default"
+            },
+            "mcpServers": [
+              {
+                "name": "github",
+                "status": "needs_auth"
+              }
+            ],
+            "model": null,
+            "models": [
+              {
+                "id": "opus",
+                "label": "Opus"
+              }
+            ],
+            "nativeSessionId": "native-live",
+            "title": "Wire the IPC"
+          },
+          "seq": 102,
+          "sessionId": "sess_live",
+          "ts": 1800000042000,
+          "type": "session_info",
+          "v": 2
+        }
+      },
+      "seq": 5,
+      "type": "chat:event"
+    },
+    {
+      "payload": {
+        "agentId": "durable_chat",
+        "event": {
+          "agentId": "durable_chat",
+          "data": {
+            "state": "running"
+          },
+          "seq": 103,
+          "sessionId": "sess_live",
+          "ts": 1800000043000,
+          "type": "session_state",
+          "v": 2
+        }
+      },
+      "seq": 6,
+      "type": "chat:event"
+    },
+    {
+      "payload": {
+        "agentId": "durable_chat",
+        "event": {
+          "agentId": "durable_chat",
+          "data": {
+            "exitCode": 1,
+            "message": "CLI exited",
+            "reason": "process_exit"
+          },
+          "seq": 104,
+          "sessionId": "sess_live",
+          "ts": 1800000044000,
+          "type": "session_ended",
+          "v": 2
+        }
+      },
+      "seq": 8,
+      "type": "chat:event"
+    },
+    {
+      "payload": {
+        "agentId": "durable_chat",
+        "event": {
+          "agentId": "durable_chat",
+          "data": {
+            "nativeTurnId": "native-turn",
+            "trigger": "prompt"
+          },
+          "seq": 105,
+          "sessionId": "sess_live",
+          "ts": 1800000045000,
+          "turnId": "turn_2",
+          "type": "turn_started",
+          "v": 2
+        }
+      },
+      "seq": 9,
+      "type": "chat:event"
+    },
+    {
+      "payload": {
+        "agentId": "durable_chat",
+        "event": {
+          "agentId": "durable_chat",
+          "data": {
+            "costUsd": 0.02,
+            "durationMs": 4200,
+            "stopReason": "end_turn",
+            "usage": {
+              "input": 1000,
+              "output": 200
+            }
+          },
+          "seq": 106,
+          "sessionId": "sess_live",
+          "ts": 1800000046000,
+          "turnId": "turn_2",
+          "type": "turn_ended",
+          "v": 2
+        }
+      },
+      "seq": 11,
+      "type": "chat:event"
+    },
+    {
+      "payload": {
+        "agentId": "durable_chat",
+        "event": {
+          "agentId": "durable_chat",
+          "data": {
+            "clientCommandId": "cmd_photo",
+            "content": [
+              {
+                "text": "Like this?",
+                "type": "text"
+              },
+              {
+                "height": 480,
+                "mediaRef": "cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd.jpg",
+                "mimeType": "image/jpeg",
+                "path": "p.jpg",
+                "type": "image",
+                "width": 640
+              },
+              {
+                "mimeType": "text/markdown",
+                "text": "# App",
+                "type": "resource",
+                "uri": "file:///work/app/README.md"
+              },
+              {
+                "path": "main.ts",
+                "type": "file"
+              }
+            ],
+            "delivery": "steer",
+            "messageId": "msg_10",
+            "queuedWith": "msg_9",
+            "source": "annex"
+          },
+          "seq": 107,
+          "sessionId": "sess_live",
+          "ts": 1800000047000,
+          "turnId": "turn_2",
+          "type": "user_message",
+          "v": 2
+        }
+      },
+      "seq": 13,
+      "type": "chat:event"
+    },
+    {
+      "payload": {
+        "agentId": "durable_chat",
+        "event": {
+          "agentId": "durable_chat",
+          "data": {
+            "messageIds": [
+              "msg_q"
+            ]
+          },
+          "seq": 108,
+          "sessionId": "sess_live",
+          "ts": 1800000048000,
+          "type": "queue_removed",
+          "v": 2
+        }
+      },
+      "seq": 14,
+      "type": "chat:event"
+    },
+    {
+      "payload": {
+        "agentId": "durable_chat",
+        "event": {
+          "agentId": "durable_chat",
+          "data": {
+            "queuedMessageIds": [],
+            "transition": {
+              "messageIds": [
+                "msg_q"
+              ],
+              "status": "dispatching"
+            }
+          },
+          "seq": 109,
+          "sessionId": "sess_live",
+          "ts": 1800000049000,
+          "type": "queue_state",
+          "v": 2
+        }
+      },
+      "seq": 15,
+      "type": "chat:event"
+    },
+    {
+      "payload": {
+        "agentId": "durable_chat",
+        "event": {
+          "agentId": "durable_chat",
+          "data": {
+            "messageId": "amsg_2",
+            "subagentId": "sub_1",
+            "text": "Look"
+          },
+          "seq": 110,
+          "sessionId": "sess_live",
+          "ts": 1800000050000,
+          "turnId": "turn_2",
+          "type": "agent_message_chunk",
+          "v": 2
+        }
+      },
+      "seq": 16,
+      "type": "chat:event"
+    },
+    {
+      "payload": {
+        "agentId": "durable_chat",
+        "event": {
+          "agentId": "durable_chat",
+          "data": {
+            "messageId": "amsg_2",
+            "text": "Looks good. See `src/main.ts:12`."
+          },
+          "seq": 111,
+          "sessionId": "sess_live",
+          "ts": 1800000051000,
+          "turnId": "turn_2",
+          "type": "agent_message",
+          "v": 2
+        }
+      },
+      "seq": 17,
+      "type": "chat:event"
+    },
+    {
+      "payload": {
+        "agentId": "durable_chat",
+        "event": {
+          "agentId": "durable_chat",
+          "data": {
+            "messageId": "th_1",
+            "text": "Considering"
+          },
+          "seq": 112,
+          "sessionId": "sess_live",
+          "ts": 1800000052000,
+          "turnId": "turn_2",
+          "type": "agent_thought_chunk",
+          "v": 2
+        }
+      },
+      "seq": 18,
+      "type": "chat:event"
+    },
+    {
+      "payload": {
+        "agentId": "durable_chat",
+        "event": {
+          "agentId": "durable_chat",
+          "data": {
+            "durationMs": 900,
+            "messageId": "th_1",
+            "text": "Considering the options"
+          },
+          "seq": 113,
+          "sessionId": "sess_live",
+          "ts": 1800000053000,
+          "turnId": "turn_2",
+          "type": "agent_thought",
+          "v": 2
+        }
+      },
+      "seq": 19,
+      "type": "chat:event"
+    },
+    {
+      "payload": {
+        "agentId": "durable_chat",
+        "event": {
+          "agentId": "durable_chat",
+          "data": {
+            "content": [
+              {
+                "text": "Captured",
+                "type": "text"
+              },
+              {
+                "newText": "b",
+                "oldText": "a",
+                "path": "src/a.ts",
+                "type": "diff"
+              },
+              {
+                "command": "ls",
+                "cwd": "/work/app",
+                "exitCode": 0,
+                "output": "a.ts\n",
+                "type": "terminal"
+              }
+            ],
+            "kind": "read",
+            "locations": [
+              {
+                "line": 12,
+                "path": "src/main.ts"
+              }
+            ],
+            "media": [
+              {
+                "height": 600,
+                "mediaRef": "abababababababababababababababababababababababababababababababab.png",
+                "mimeType": "image/png",
+                "sourcePath": "/work/app/shot.png",
+                "type": "image",
+                "width": 800
+              }
+            ],
+            "mediaOnly": false,
+            "status": "completed",
+            "title": "Screenshot",
+            "toolCallId": "tool_2",
+            "toolName": "mcp__browser__screenshot"
+          },
+          "seq": 114,
+          "sessionId": "sess_live",
+          "ts": 1800000054000,
+          "turnId": "turn_2",
+          "type": "tool_call",
+          "v": 2
+        }
+      },
+      "seq": 20,
+      "type": "chat:event"
+    },
+    {
+      "payload": {
+        "agentId": "durable_chat",
+        "event": {
+          "agentId": "durable_chat",
+          "data": {
+            "content": [
+              {
+                "text": "done",
+                "type": "text"
+              }
+            ],
+            "contentMode": "append",
+            "durationMs": 1200,
+            "media": [
+              {
+                "height": 10,
+                "mediaRef": "efefefefefefefefefefefefefefefefefefefefefefefefefefefefefefefef.png",
+                "mimeType": "image/png",
+                "type": "image",
+                "width": 10
+              },
+              {
+                "mimeType": "image/png",
+                "type": "image",
+                "unavailable": true
+              }
+            ],
+            "rawOutput": {
+              "ok": true
+            },
+            "status": "completed",
+            "title": "Screenshot",
+            "toolCallId": "tool_2"
+          },
+          "seq": 115,
+          "sessionId": "sess_live",
+          "ts": 1800000055000,
+          "turnId": "turn_2",
+          "type": "tool_call_update",
+          "v": 2
+        }
+      },
+      "seq": 21,
+      "type": "chat:event"
+    },
+    {
+      "payload": {
+        "agentId": "durable_chat",
+        "event": {
+          "agentId": "durable_chat",
+          "data": {
+            "content": [
+              {
+                "newText": "b",
+                "oldText": "a",
+                "path": "src/a.ts",
+                "type": "diff"
+              }
+            ],
+            "description": "src/a.ts",
+            "options": [
+              {
+                "kind": "allow_once",
+                "label": "Allow",
+                "optionId": "allow"
+              },
+              {
+                "kind": "allow_always",
+                "label": "Always allow",
+                "optionId": "always",
+                "scope": "npm test:*"
+              },
+              {
+                "kind": "reject_once",
+                "label": "Deny",
+                "optionId": "deny"
+              }
+            ],
+            "requestId": "perm_2",
+            "title": "Edit src/a.ts",
+            "toolCallId": "tool_3",
+            "toolName": "Edit"
+          },
+          "seq": 116,
+          "sessionId": "sess_live",
+          "ts": 1800000056000,
+          "turnId": "turn_2",
+          "type": "permission_request",
+          "v": 2
+        }
+      },
+      "seq": 22,
+      "type": "chat:event"
+    },
+    {
+      "payload": {
+        "agentId": "durable_chat",
+        "event": {
+          "agentId": "durable_chat",
+          "data": {
+            "by": "annex",
+            "decision": "allow",
+            "optionId": "allow",
+            "requestId": "perm_2"
+          },
+          "seq": 117,
+          "sessionId": "sess_live",
+          "ts": 1800000057000,
+          "turnId": "turn_2",
+          "type": "permission_resolved",
+          "v": 2
+        }
+      },
+      "seq": 23,
+      "type": "chat:event"
+    },
+    {
+      "payload": {
+        "agentId": "durable_chat",
+        "event": {
+          "agentId": "durable_chat",
+          "data": {
+            "questions": [
+              {
+                "allowFreeText": true,
+                "id": "name",
+                "prompt": "Name it?"
+              }
+            ],
+            "requestId": "q_2",
+            "routedTo": {
+              "agentId": "durable_chat",
+              "name": "planner"
+            }
+          },
+          "seq": 118,
+          "sessionId": "sess_live",
+          "ts": 1800000058000,
+          "turnId": "turn_2",
+          "type": "question",
+          "v": 2
+        }
+      },
+      "seq": 24,
+      "type": "chat:event"
+    },
+    {
+      "payload": {
+        "agentId": "durable_chat",
+        "event": {
+          "agentId": "durable_chat",
+          "data": {
+            "answers": {
+              "name": "otter"
+            },
+            "requestId": "q_2"
+          },
+          "seq": 119,
+          "sessionId": "sess_live",
+          "ts": 1800000059000,
+          "turnId": "turn_2",
+          "type": "question_resolved",
+          "v": 2
+        }
+      },
+      "seq": 25,
+      "type": "chat:event"
+    },
+    {
+      "payload": {
+        "agentId": "durable_chat",
+        "event": {
+          "agentId": "durable_chat",
+          "data": {
+            "entries": [
+              {
+                "content": "Write tests",
+                "id": "p1",
+                "priority": "high",
+                "status": "completed"
+              },
+              {
+                "content": "Ship",
+                "status": "pending"
+              }
+            ]
+          },
+          "seq": 120,
+          "sessionId": "sess_live",
+          "ts": 1800000060000,
+          "turnId": "turn_2",
+          "type": "plan",
+          "v": 2
+        }
+      },
+      "seq": 26,
+      "type": "chat:event"
+    },
+    {
+      "payload": {
+        "agentId": "durable_chat",
+        "event": {
+          "agentId": "durable_chat",
+          "data": {
+            "markdown": "# Plan\n\n1. Tests",
+            "planId": "plan_1",
+            "status": "ready",
+            "toolCallId": "tool_4"
+          },
+          "seq": 121,
+          "sessionId": "sess_live",
+          "ts": 1800000061000,
+          "turnId": "turn_2",
+          "type": "plan_document",
+          "v": 2
+        }
+      },
+      "seq": 27,
+      "type": "chat:event"
+    },
+    {
+      "payload": {
+        "agentId": "durable_chat",
+        "event": {
+          "agentId": "durable_chat",
+          "data": {
+            "description": "Find usages",
+            "name": "Explore",
+            "parentToolCallId": "tool_5",
+            "status": "completed",
+            "subagentId": "sub_1",
+            "toolCount": 4,
+            "usage": {
+              "input": 100,
+              "output": 20
+            }
+          },
+          "seq": 122,
+          "sessionId": "sess_live",
+          "ts": 1800000062000,
+          "turnId": "turn_2",
+          "type": "subagent",
+          "v": 2
+        }
+      },
+      "seq": 28,
+      "type": "chat:event"
+    },
+    {
+      "payload": {
+        "agentId": "durable_chat",
+        "event": {
+          "agentId": "durable_chat",
+          "data": {
+            "context": {
+              "size": 400000,
+              "used": 272000,
+              "window": "input"
+            },
+            "costIsEstimate": true,
+            "costUsd": 0.01,
+            "limits": [
+              {
+                "resetsAt": 1800003600000,
+                "utilization": 0.42,
+                "window": "5h"
+              },
+              {
+                "status": "warning",
+                "window": "week"
+              }
+            ],
+            "scope": "turn",
+            "tokens": {
+              "cacheWrite": 100,
+              "cachedInput": 800,
+              "input": 1000,
+              "output": 200,
+              "reasoning": 50,
+              "total": 1200
+            }
+          },
+          "seq": 123,
+          "sessionId": "sess_live",
+          "ts": 1800000063000,
+          "type": "usage",
+          "v": 2
+        }
+      },
+      "seq": 29,
+      "type": "chat:event"
+    },
+    {
+      "payload": {
+        "agentId": "durable_chat",
+        "event": {
+          "agentId": "durable_chat",
+          "data": {
+            "level": "auto_edit",
+            "nativeMode": "acceptEdits"
+          },
+          "seq": 124,
+          "sessionId": "sess_live",
+          "ts": 1800000064000,
+          "type": "mode_changed",
+          "v": 2
+        }
+      },
+      "seq": 30,
+      "type": "chat:event"
+    },
+    {
+      "payload": {
+        "agentId": "durable_chat",
+        "event": {
+          "agentId": "durable_chat",
+          "data": {
+            "effort": "medium",
+            "effortIsDefault": true,
+            "modelId": "sonnet"
+          },
+          "seq": 125,
+          "sessionId": "sess_live",
+          "ts": 1800000065000,
+          "type": "model_changed",
+          "v": 2
+        }
+      },
+      "seq": 31,
+      "type": "chat:event"
+    },
+    {
+      "payload": {
+        "agentId": "durable_chat",
+        "event": {
+          "agentId": "durable_chat",
+          "data": {
+            "commands": [
+              {
+                "description": "Compact the context",
+                "name": "compact",
+                "startOnly": true
+              },
+              {
+                "inputHint": "<pr>",
+                "name": "review"
+              }
+            ]
+          },
+          "seq": 126,
+          "sessionId": "sess_live",
+          "ts": 1800000066000,
+          "type": "commands_available",
+          "v": 2
+        }
+      },
+      "seq": 32,
+      "type": "chat:event"
+    },
+    {
+      "payload": {
+        "agentId": "durable_chat",
+        "event": {
+          "agentId": "durable_chat",
+          "data": {
+            "branch": "planner/standby",
+            "reason": "vcs",
+            "vcsKind": "commit"
+          },
+          "seq": 127,
+          "sessionId": "sess_live",
+          "ts": 1800000067000,
+          "type": "workspace_changed",
+          "v": 2
+        }
+      },
+      "seq": 33,
+      "type": "chat:event"
+    },
+    {
+      "payload": {
+        "agentId": "durable_chat",
+        "event": {
+          "agentId": "durable_chat",
+          "data": {
+            "code": "compaction_in_progress",
+            "level": "info",
+            "message": "Compacting the conversation"
+          },
+          "seq": 128,
+          "sessionId": "sess_live",
+          "ts": 1800000068000,
+          "type": "notice",
+          "v": 2
+        }
+      },
+      "seq": 34,
+      "type": "chat:event"
+    },
+    {
+      "payload": {
+        "agentId": "durable_chat",
+        "event": {
+          "agentId": "durable_chat",
+          "data": {
+            "code": "rate_limited",
+            "fatal": false,
+            "message": "Rate limited",
+            "willRetry": true
+          },
+          "seq": 129,
+          "sessionId": "sess_live",
+          "ts": 1800000069000,
+          "type": "error",
+          "v": 2
+        }
+      },
+      "seq": 35,
+      "type": "chat:event"
+    },
+    {
+      "payload": {
+        "agentId": "durable_chat",
+        "event": {
+          "agentId": "durable_chat",
+          "data": {
+            "driver": "claude_agent_sdk",
+            "kind": "notification",
+            "name": "future/thing"
+          },
+          "seq": 130,
+          "sessionId": "sess_live",
+          "ts": 1800000070000,
+          "type": "protocol_unknown",
+          "v": 2
+        }
+      },
+      "seq": 36,
+      "type": "chat:event"
+    }
+  ]
+}

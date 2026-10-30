@@ -32,6 +32,8 @@ export interface MobileAgentProject { id: string; path: string }
 export type MobileAgentState = 'creating' | 'failed' | 'starting' | 'running' | 'sleeping';
 
 const DEFAULT_ORCHESTRATOR = 'claude-code';
+/** agent.update settings read at spawn: everything but auto-sleep. */
+const SPAWN_SETTINGS = ['name', 'color', 'emoji', 'orchestrator', 'model', 'runtime', 'persona', 'clubhouseMode', 'freeAgentMode'] as const satisfies ReadonlyArray<keyof MobileAgentUpdate>;
 /** Shown when a spawn setting changes on an awake agent, as on the Settings card. */
 const LOCKED_DETAIL = 'Sleep the agent to change these';
 
@@ -305,9 +307,10 @@ export async function updateMobileAgent(
 ) {
   const state = stateOf(config, live);
   if (state === 'creating') throw new MobileControlError('agent_creating');
-  const { idleSleep, agentId: _agentId, ...spawnSettings } = command;
+  const { idleSleep } = command;
   const awake = state === 'running' || state === 'starting';
-  if (awake && Object.values(spawnSettings).some((v) => v !== undefined)) throw new MobileControlError('agent_running', 409, 'rejected', LOCKED_DETAIL);
+  // Only the settings themselves: the server passes the whole command, with its version, epoch and id.
+  if (awake && SPAWN_SETTINGS.some((k) => command[k] !== undefined)) throw new MobileControlError('agent_running', 409, 'rejected', LOCKED_DETAIL);
 
   const identity: { name?: string; color?: string; emoji?: string | null } = {};
   const updates: DurableConfigUpdates = {};

@@ -1,0 +1,78 @@
+{
+  "cases": [
+    {
+      "name": "replay",
+      "replies": [
+        {
+          "count": 1,
+          "epoch": "00000000-0000-4000-8000-000000000001",
+          "fromSeq": 1001,
+          "toSeq": 1001,
+          "type": "replay:start"
+        },
+        {
+          "payload": {
+            "agentId": "durable_chat",
+            "event": {
+              "agentId": "durable_chat",
+              "data": {
+                "messageId": "amsg_r",
+                "text": "replayed"
+              },
+              "seq": 200,
+              "sessionId": "sess_live",
+              "ts": 1800000140000,
+              "type": "agent_message",
+              "v": 2
+            }
+          },
+          "replayed": true,
+          "seq": 1001,
+          "type": "chat:event"
+        },
+        {
+          "epoch": "00000000-0000-4000-8000-000000000001",
+          "type": "replay:end"
+        }
+      ],
+      "request": {
+        "epoch": "00000000-0000-4000-8000-000000000001",
+        "since": 1000,
+        "type": "mobile:replay"
+      }
+    },
+    {
+      "name": "gap: stale epoch",
+      "replies": [
+        {
+          "epoch": "00000000-0000-4000-8000-000000000001",
+          "lastSeq": 1001,
+          "oldestAvailable": 1,
+          "type": "replay:gap"
+        }
+      ],
+      "request": {
+        "epoch": "previous-epoch",
+        "since": 1000,
+        "type": "mobile:replay"
+      }
+    },
+    {
+      "name": "gap: cursor ahead of lastSeq",
+      "replies": [
+        {
+          "epoch": "00000000-0000-4000-8000-000000000001",
+          "lastSeq": 1001,
+          "oldestAvailable": 1,
+          "type": "replay:gap"
+        }
+      ],
+      "request": {
+        "epoch": "00000000-0000-4000-8000-000000000001",
+        "since": 2000,
+        "type": "mobile:replay"
+      }
+    }
+  ],
+  "note": "Sequence numbers are renumbered so the cursor sent is 1000."
+}

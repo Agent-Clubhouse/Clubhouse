@@ -1,0 +1,57 @@
+{
+  "cases": [
+    {
+      "name": "accepted",
+      "request": {
+        "commandId": "cmd_039",
+        "epoch": "00000000-0000-4000-8000-000000000001",
+        "model": "sonnet",
+        "orchestrator": "claude-code",
+        "projectId": "proj_app",
+        "prompt": "Fix the flaky test",
+        "type": "agent.spawn",
+        "version": 1
+      },
+      "response": {
+        "body": {
+          "commandId": "cmd_039",
+          "epoch": "00000000-0000-4000-8000-000000000001",
+          "result": {
+            "agentId": "quick_new",
+            "executionMode": "pty",
+            "name": "swift-fox",
+            "state": "sleeping"
+          },
+          "status": "completed",
+          "version": 1
+        },
+        "status": 200
+      }
+    },
+    {
+      "name": "project_not_found",
+      "request": {
+        "commandId": "cmd_040",
+        "epoch": "00000000-0000-4000-8000-000000000001",
+        "projectId": "missing",
+        "prompt": "x",
+        "type": "agent.spawn",
+        "version": 1
+      },
+      "response": {
+        "body": {
+          "commandId": "cmd_040",
+          "epoch": "00000000-0000-4000-8000-000000000001",
+          "error": {
+            "code": "project_not_found",
+            "message": "project_not_found"
+          },
+          "status": "rejected",
+          "version": 1
+        },
+        "status": 404
+      }
+    }
+  ],
+  "type": "agent.spawn"
+}

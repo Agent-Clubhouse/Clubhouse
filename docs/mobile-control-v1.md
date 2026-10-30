@@ -399,3 +399,16 @@ Errors use the existing envelope with correlation fields: `error {message, op, s
 | `pty:input data exceeds 64KB limit` | `pty:input` | `data` is longer than `maxInputLength`. |
 | `agent_not_terminal` | `pty:attach` | A chat or headless agent. |
 | `agent_not_running` | `pty:attach` | No running PTY by that id, or the id is a shell rather than an agent. |
+
+## Contract fixtures
+
+`test/fixtures/annex-mobile/` holds a canonical example of every message in this document: capabilities, the WebSocket snapshot (agents, quick agents, `projectState`, `finishedQuickAgents`, `helperRequests`, theme), the chat snapshot with `chatControls` and `contentRoots`, create options and agent settings, a request and receipt for every `MOBILE_COMMAND_TYPES` command with each refusal its code path can reach, one `chat:event` of every chat event type, every `pty:*` message and error, `mobile:replay`, and the attachment upload's answers. The phone (Clubhouse Go) vendors these files and decodes each one in its contract tests, and checks that the commands it builds match the requests here. Neither side tests only against its own fakes.
+
+`src/main/services/annex-mobile-contract.test.ts` writes them. It runs the real annex-server, mobile-control, mobile-agents, mobile-helper-requests, mobile-attachments and chat echo code over pinned mTLS and the WebSocket handler. Only the leaves are faked (disk, git, CLIs, PTYs, the orchestrator side of helper requests). The output is deterministic: fixed ids and clock, sorted keys, and random UUIDs (epochs, tokens, attachment and helper request ids) renumbered `00000000-0000-4000-8000-<n>` in order of first appearance.
+
+- `npm run fixtures:annex-mobile` rewrites the files. Commit them with the change that caused them.
+- `npm run fixtures:annex-mobile -- --check` (and the suite itself, in `npm test`) fails when a file is stale or extra.
+- A changed fixture is a protocol change: keep it additive, update this document, and tell the phone side.
+- A new command type or chat event type fails the suite until it has an example.
+
+`commands/<type>.json` lists `cases` of `{name, request, response:{status, body}}`; `name` is `accepted…` or the error code. `commands/_common.json` has the refusals any command can get (`invalid_command`, `unsupported_version`, `epoch_mismatch`, `command_conflict`, `client_certificate_required`, `command_capacity`) and an identical retry. Not covered: `authorization_revoked`, `start_cancelled` and the upload `quota_exceeded` / `authorization_revoked`, which need races or a day of uploads; `/content` previews and git routes.

@@ -1,0 +1,208 @@
+{
+  "request": {
+    "method": "GET",
+    "path": "/api/v1/mobile/agents/durable_chat/chat?beforeSeq=6&limit=2"
+  },
+  "response": {
+    "body": {
+      "agentId": "durable_chat",
+      "canStart": false,
+      "capabilities": {
+        "effortDefault": false,
+        "effortSwitch": "per_turn",
+        "images": true,
+        "interrupt": true,
+        "limits": true,
+        "liveLevels": [
+          "plan",
+          "ask",
+          "auto_edit",
+          "full_access"
+        ],
+        "login": "terminal",
+        "modelSwitch": "per_turn",
+        "planApproval": true,
+        "questions": true,
+        "queue": "client",
+        "resume": "native",
+        "slashCommands": true,
+        "steer": true,
+        "subagents": "full",
+        "systemPrompt": true,
+        "usage": "cost"
+      },
+      "chatControls": {
+        "effort": "high",
+        "effortDefault": false,
+        "effortIsDefault": false,
+        "effortReported": true,
+        "effortSwitch": "per_turn",
+        "efforts": [
+          "low",
+          "medium",
+          "high"
+        ],
+        "level": "ask",
+        "levelNames": {
+          "ask": "default",
+          "plan": "plan"
+        },
+        "liveLevels": [
+          "plan",
+          "ask",
+          "auto_edit",
+          "full_access"
+        ],
+        "model": "opus",
+        "modelSwitch": "per_turn",
+        "modelUnknown": false,
+        "models": [
+          {
+            "costHint": "1x",
+            "description": "Most capable",
+            "id": "opus",
+            "label": "Opus"
+          },
+          {
+            "id": "sonnet",
+            "label": "Sonnet"
+          }
+        ],
+        "switchNote": "Applies from the next message."
+      },
+      "contentAnyPath": true,
+      "contentRoots": [
+        "/work/app/.clubhouse/agents/planner",
+        "/work/app"
+      ],
+      "currentSessionId": "sess_live",
+      "epoch": "00000000-0000-4000-8000-000000000001",
+      "events": [
+        {
+          "agentId": "durable_chat",
+          "data": {
+            "trigger": "prompt"
+          },
+          "seq": 4,
+          "sessionId": "sess_live",
+          "ts": 1799999944000,
+          "turnId": "turn_1",
+          "type": "turn_started",
+          "v": 2
+        },
+        {
+          "agentId": "durable_chat",
+          "data": {
+            "clientCommandId": "cmd_photo",
+            "content": [
+              {
+                "text": "What is on this screen?",
+                "type": "text"
+              },
+              {
+                "height": 2556,
+                "mediaRef": "abababababababababababababababababababababababababababababababab.png",
+                "mimeType": "image/png",
+                "path": "shot.png",
+                "type": "image",
+                "width": 1179
+              }
+            ],
+            "delivery": "prompt",
+            "messageId": "msg_1",
+            "source": "annex"
+          },
+          "seq": 5,
+          "sessionId": "sess_live",
+          "ts": 1799999945000,
+          "turnId": "turn_1",
+          "type": "user_message",
+          "v": 2
+        }
+      ],
+      "lastSeq": 11,
+      "nextBeforeSeq": 4,
+      "pendingPermissions": [
+        {
+          "agentId": "durable_chat",
+          "data": {
+            "description": "npm test",
+            "options": [
+              {
+                "kind": "allow_once",
+                "label": "Allow",
+                "optionId": "allow"
+              },
+              {
+                "kind": "allow_always",
+                "label": "Always allow",
+                "optionId": "always",
+                "scope": "npm test:*"
+              },
+              {
+                "kind": "reject_once",
+                "label": "Deny",
+                "optionId": "deny"
+              }
+            ],
+            "requestId": "perm_1",
+            "title": "Run npm test",
+            "toolCallId": "tool_1",
+            "toolName": "Bash"
+          },
+          "seq": 8,
+          "sessionId": "sess_live",
+          "ts": 1799999948000,
+          "turnId": "turn_1",
+          "type": "permission_request",
+          "v": 2
+        }
+      ],
+      "pendingQuestions": [
+        {
+          "agentId": "durable_chat",
+          "data": {
+            "questions": [
+              {
+                "allowFreeText": true,
+                "header": "Branch",
+                "id": "which",
+                "multiSelect": false,
+                "options": [
+                  {
+                    "id": "main",
+                    "label": "main"
+                  },
+                  {
+                    "description": "Next release",
+                    "id": "dev",
+                    "label": "dev"
+                  }
+                ],
+                "prompt": "Which branch?"
+              }
+            ],
+            "requestId": "q_1"
+          },
+          "seq": 9,
+          "sessionId": "sess_live",
+          "ts": 1799999949000,
+          "turnId": "turn_1",
+          "type": "question",
+          "v": 2
+        }
+      ],
+      "queueRemovalSupported": true,
+      "queueStateSeq": 11,
+      "queuedMessageIds": [
+        "msg_q"
+      ],
+      "readOnly": false,
+      "sessionId": "sess_live",
+      "state": "waiting_permission",
+      "truncated": true,
+      "version": 1
+    },
+    "status": 200
+  }
+}

@@ -1,0 +1,107 @@
+{
+  "cases": [
+    {
+      "name": "accepted",
+      "request": {
+        "commandId": "cmd_076",
+        "epoch": "00000000-0000-4000-8000-000000000001",
+        "inactive": true,
+        "projectId": "proj_docs",
+        "type": "project.setInactive",
+        "version": 1
+      },
+      "response": {
+        "body": {
+          "commandId": "cmd_076",
+          "epoch": "00000000-0000-4000-8000-000000000001",
+          "result": {
+            "idle": true,
+            "inactive": true,
+            "lastActivityAt": 1799222400000,
+            "pinned": false,
+            "projectId": "proj_docs"
+          },
+          "status": "completed",
+          "version": 1
+        },
+        "status": 200
+      }
+    },
+    {
+      "name": "accepted mark active",
+      "request": {
+        "commandId": "cmd_077",
+        "epoch": "00000000-0000-4000-8000-000000000001",
+        "inactive": false,
+        "projectId": "proj_docs",
+        "type": "project.setInactive",
+        "version": 1
+      },
+      "response": {
+        "body": {
+          "commandId": "cmd_077",
+          "epoch": "00000000-0000-4000-8000-000000000001",
+          "result": {
+            "idle": false,
+            "inactive": false,
+            "lastActivityAt": 1800000000000,
+            "pinned": false,
+            "projectId": "proj_docs"
+          },
+          "status": "completed",
+          "version": 1
+        },
+        "status": 200
+      }
+    },
+    {
+      "name": "project_pinned",
+      "request": {
+        "commandId": "cmd_078",
+        "epoch": "00000000-0000-4000-8000-000000000001",
+        "inactive": true,
+        "projectId": "proj_app",
+        "type": "project.setInactive",
+        "version": 1
+      },
+      "response": {
+        "body": {
+          "commandId": "cmd_078",
+          "epoch": "00000000-0000-4000-8000-000000000001",
+          "error": {
+            "code": "project_pinned",
+            "message": "project_pinned"
+          },
+          "status": "rejected",
+          "version": 1
+        },
+        "status": 409
+      }
+    },
+    {
+      "name": "project_state_unavailable",
+      "request": {
+        "commandId": "cmd_080",
+        "epoch": "00000000-0000-4000-8000-000000000001",
+        "inactive": false,
+        "projectId": "proj_app",
+        "type": "project.setInactive",
+        "version": 1
+      },
+      "response": {
+        "body": {
+          "commandId": "cmd_080",
+          "epoch": "00000000-0000-4000-8000-000000000001",
+          "error": {
+            "code": "project_state_unavailable",
+            "message": "project_state_unavailable"
+          },
+          "status": "rejected",
+          "version": 1
+        },
+        "status": 409
+      }
+    }
+  ],
+  "type": "project.setInactive"
+}

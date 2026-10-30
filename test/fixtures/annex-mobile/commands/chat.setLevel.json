@@ -1,0 +1,129 @@
+{
+  "cases": [
+    {
+      "name": "accepted",
+      "request": {
+        "agentId": "durable_chat",
+        "commandId": "cmd_028",
+        "epoch": "00000000-0000-4000-8000-000000000001",
+        "level": "full_access",
+        "sessionId": "sess_live",
+        "type": "chat.setLevel",
+        "version": 1
+      },
+      "response": {
+        "body": {
+          "commandId": "cmd_028",
+          "epoch": "00000000-0000-4000-8000-000000000001",
+          "result": {
+            "changed": true,
+            "level": "full_access"
+          },
+          "status": "completed",
+          "version": 1
+        },
+        "status": 200
+      }
+    },
+    {
+      "name": "unchanged",
+      "request": {
+        "agentId": "durable_chat",
+        "commandId": "cmd_029",
+        "epoch": "00000000-0000-4000-8000-000000000001",
+        "level": "ask",
+        "sessionId": "sess_live",
+        "type": "chat.setLevel",
+        "version": 1
+      },
+      "response": {
+        "body": {
+          "commandId": "cmd_029",
+          "epoch": "00000000-0000-4000-8000-000000000001",
+          "result": {
+            "changed": false,
+            "level": "ask"
+          },
+          "status": "completed",
+          "version": 1
+        },
+        "status": 200
+      }
+    },
+    {
+      "name": "level_not_live",
+      "request": {
+        "agentId": "durable_chat",
+        "commandId": "cmd_030",
+        "epoch": "00000000-0000-4000-8000-000000000001",
+        "level": "auto",
+        "sessionId": "sess_live",
+        "type": "chat.setLevel",
+        "version": 1
+      },
+      "response": {
+        "body": {
+          "commandId": "cmd_030",
+          "epoch": "00000000-0000-4000-8000-000000000001",
+          "error": {
+            "code": "level_not_live",
+            "message": "level_not_live"
+          },
+          "status": "rejected",
+          "version": 1
+        },
+        "status": 409
+      }
+    },
+    {
+      "name": "level_switch_not_supported",
+      "request": {
+        "agentId": "durable_basic",
+        "commandId": "cmd_031",
+        "epoch": "00000000-0000-4000-8000-000000000001",
+        "level": "plan",
+        "sessionId": "sess_basic",
+        "type": "chat.setLevel",
+        "version": 1
+      },
+      "response": {
+        "body": {
+          "commandId": "cmd_031",
+          "epoch": "00000000-0000-4000-8000-000000000001",
+          "error": {
+            "code": "level_switch_not_supported",
+            "message": "level_switch_not_supported"
+          },
+          "status": "rejected",
+          "version": 1
+        },
+        "status": 409
+      }
+    },
+    {
+      "name": "invalid_command (unknown level)",
+      "request": {
+        "agentId": "durable_chat",
+        "commandId": "cmd_032",
+        "epoch": "00000000-0000-4000-8000-000000000001",
+        "level": "yolo",
+        "sessionId": "sess_live",
+        "type": "chat.setLevel",
+        "version": 1
+      },
+      "response": {
+        "body": {
+          "epoch": "00000000-0000-4000-8000-000000000001",
+          "error": {
+            "code": "invalid_command",
+            "message": "invalid_command"
+          },
+          "status": "rejected",
+          "version": 1
+        },
+        "status": 400
+      }
+    }
+  ],
+  "type": "chat.setLevel"
+}

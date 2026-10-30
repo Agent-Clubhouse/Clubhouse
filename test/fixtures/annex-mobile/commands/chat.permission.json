@@ -1,0 +1,83 @@
+{
+  "cases": [
+    {
+      "name": "accepted",
+      "request": {
+        "agentId": "durable_chat",
+        "commandId": "cmd_014",
+        "epoch": "00000000-0000-4000-8000-000000000001",
+        "optionId": "allow",
+        "requestId": "perm_1",
+        "sessionId": "sess_live",
+        "type": "chat.permission",
+        "version": 1
+      },
+      "response": {
+        "body": {
+          "commandId": "cmd_014",
+          "epoch": "00000000-0000-4000-8000-000000000001",
+          "result": {
+            "answered": true,
+            "requestId": "perm_1"
+          },
+          "status": "completed",
+          "version": 1
+        },
+        "status": 200
+      }
+    },
+    {
+      "name": "accepted persistent option",
+      "request": {
+        "agentId": "durable_chat",
+        "commandId": "cmd_015",
+        "epoch": "00000000-0000-4000-8000-000000000001",
+        "optionId": "always",
+        "requestId": "perm_1",
+        "sessionId": "sess_live",
+        "type": "chat.permission",
+        "version": 1
+      },
+      "response": {
+        "body": {
+          "commandId": "cmd_015",
+          "epoch": "00000000-0000-4000-8000-000000000001",
+          "result": {
+            "answered": true,
+            "requestId": "perm_1"
+          },
+          "status": "completed",
+          "version": 1
+        },
+        "status": 200
+      }
+    },
+    {
+      "name": "pending_request_not_found",
+      "request": {
+        "agentId": "durable_chat",
+        "commandId": "cmd_016",
+        "epoch": "00000000-0000-4000-8000-000000000001",
+        "optionId": "allow",
+        "requestId": "perm_gone",
+        "sessionId": "sess_live",
+        "type": "chat.permission",
+        "version": 1
+      },
+      "response": {
+        "body": {
+          "commandId": "cmd_016",
+          "epoch": "00000000-0000-4000-8000-000000000001",
+          "error": {
+            "code": "pending_request_not_found",
+            "message": "pending_request_not_found"
+          },
+          "status": "rejected",
+          "version": 1
+        },
+        "status": 409
+      }
+    }
+  ],
+  "type": "chat.permission"
+}

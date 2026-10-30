@@ -1,0 +1,51 @@
+{
+  "cases": [
+    {
+      "name": "accepted",
+      "request": {
+        "agentId": "durable_term",
+        "commandId": "cmd_037",
+        "epoch": "00000000-0000-4000-8000-000000000001",
+        "type": "agent.stop",
+        "version": 1
+      },
+      "response": {
+        "body": {
+          "commandId": "cmd_037",
+          "epoch": "00000000-0000-4000-8000-000000000001",
+          "result": {
+            "agentId": "durable_term",
+            "stopRequested": true
+          },
+          "status": "completed",
+          "version": 1
+        },
+        "status": 200
+      }
+    },
+    {
+      "name": "agent_not_found",
+      "request": {
+        "agentId": "missing",
+        "commandId": "cmd_038",
+        "epoch": "00000000-0000-4000-8000-000000000001",
+        "type": "agent.stop",
+        "version": 1
+      },
+      "response": {
+        "body": {
+          "commandId": "cmd_038",
+          "epoch": "00000000-0000-4000-8000-000000000001",
+          "error": {
+            "code": "agent_not_found",
+            "message": "agent_not_found"
+          },
+          "status": "rejected",
+          "version": 1
+        },
+        "status": 404
+      }
+    }
+  ],
+  "type": "agent.stop"
+}

@@ -1,0 +1,239 @@
+{
+  "base": [
+    "version",
+    "commandId",
+    "epoch",
+    "type"
+  ],
+  "commands": {
+    "agent.create": {
+      "fields": [
+        "projectId",
+        "name",
+        "color",
+        "orchestrator",
+        "model",
+        "persona",
+        "freeAgentMode",
+        "useWorktree",
+        "mcpIds",
+        "branchName",
+        "branchFrom",
+        "folderName"
+      ],
+      "required": [
+        "projectId",
+        "name",
+        "color"
+      ]
+    },
+    "agent.spawn": {
+      "fields": [
+        "projectId",
+        "prompt",
+        "model",
+        "orchestrator"
+      ],
+      "required": [
+        "projectId",
+        "prompt"
+      ]
+    },
+    "agent.start": {
+      "fields": [
+        "agentId",
+        "message",
+        "resume"
+      ],
+      "required": [
+        "agentId"
+      ]
+    },
+    "agent.stop": {
+      "fields": [
+        "agentId"
+      ],
+      "required": [
+        "agentId"
+      ]
+    },
+    "agent.update": {
+      "atLeastOne": [
+        "name",
+        "color",
+        "emoji",
+        "orchestrator",
+        "model",
+        "runtime",
+        "persona",
+        "clubhouseMode",
+        "freeAgentMode",
+        "idleSleep"
+      ],
+      "fields": [
+        "agentId",
+        "name",
+        "color",
+        "emoji",
+        "orchestrator",
+        "model",
+        "runtime",
+        "persona",
+        "clubhouseMode",
+        "freeAgentMode",
+        "idleSleep"
+      ],
+      "nullable": [
+        "emoji",
+        "persona"
+      ],
+      "required": [
+        "agentId"
+      ]
+    },
+    "chat.interrupt": {
+      "fields": [
+        "agentId",
+        "sessionId"
+      ],
+      "required": [
+        "agentId",
+        "sessionId"
+      ]
+    },
+    "chat.permission": {
+      "fields": [
+        "agentId",
+        "sessionId",
+        "requestId",
+        "optionId"
+      ],
+      "required": [
+        "agentId",
+        "sessionId",
+        "requestId",
+        "optionId"
+      ]
+    },
+    "chat.question": {
+      "fields": [
+        "agentId",
+        "sessionId",
+        "requestId",
+        "answers"
+      ],
+      "required": [
+        "agentId",
+        "sessionId",
+        "requestId",
+        "answers"
+      ]
+    },
+    "chat.queue.remove": {
+      "fields": [
+        "agentId",
+        "sessionId",
+        "messageIds"
+      ],
+      "required": [
+        "agentId",
+        "sessionId",
+        "messageIds"
+      ]
+    },
+    "chat.send": {
+      "fields": [
+        "agentId",
+        "sessionId",
+        "text",
+        "delivery",
+        "attachmentIds"
+      ],
+      "required": [
+        "agentId",
+        "sessionId",
+        "text"
+      ]
+    },
+    "chat.setLevel": {
+      "fields": [
+        "agentId",
+        "sessionId",
+        "level"
+      ],
+      "required": [
+        "agentId",
+        "sessionId",
+        "level"
+      ]
+    },
+    "chat.setModel": {
+      "fields": [
+        "agentId",
+        "sessionId",
+        "model",
+        "effort"
+      ],
+      "required": [
+        "agentId",
+        "sessionId",
+        "model"
+      ]
+    },
+    "helper.approve": {
+      "fields": [
+        "requestId",
+        "force"
+      ],
+      "required": [
+        "requestId"
+      ]
+    },
+    "helper.decline": {
+      "fields": [
+        "requestId"
+      ],
+      "required": [
+        "requestId"
+      ]
+    },
+    "project.setInactive": {
+      "fields": [
+        "projectId",
+        "inactive"
+      ],
+      "required": [
+        "projectId",
+        "inactive"
+      ]
+    },
+    "project.setPinned": {
+      "fields": [
+        "projectId",
+        "pinned"
+      ],
+      "required": [
+        "projectId",
+        "pinned"
+      ]
+    },
+    "quick.clear": {
+      "fields": [
+        "projectId"
+      ],
+      "required": [
+        "projectId"
+      ]
+    },
+    "quick.dismiss": {
+      "fields": [
+        "projectId",
+        "agentId"
+      ],
+      "required": [
+        "projectId",
+        "agentId"
+      ]
+    }
+  }
+}
