@@ -1,11 +1,14 @@
 import { test, expect } from '@playwright/test';
-import { CHAT_MEDIA } from '../../src/main/orchestrators/adapters/testing/chat-script';
+import * as path from 'path';
+import { CHAT_MEDIA, md } from '../../src/main/orchestrators/adapters/testing/chat-script';
 import { chatDom, expectImageLoaded, openRichChat, TURN_TIMEOUT, type RichChat } from './harness';
 
 /**
- * Rich media (#2480 area 1). Phase 1 example: one Claude tool result with an
- * image becomes a stored thumbnail that opens in the viewer. Phase 2 adds the
- * Codex and Copilot shapes, Markdown images and the missing-image cases.
+ * Rich media (#2480 area 1). One Claude tool result with an image becomes a
+ * stored thumbnail that opens in the viewer (the Phase 1 example). Then one
+ * shared Claude launch covers the other image shapes: Read's
+ * `tool_use_result` image, Markdown images inside and outside the project, a
+ * missing one, and the viewer's fit, actual size, Escape and focus return.
  */
 
 let session: RichChat | undefined;
@@ -39,4 +42,94 @@ test('claude: an image in a tool result shows as a thumbnail and opens in the vi
   await expect(dom.lightbox).toHaveCount(0);
 
   await session.expectScriptComplete();
+});
+
+test.describe('claude: images in one session', () => {
+  // One launch for the whole group (the plan's main lever on shard time): each test sends the next turn.
+  test.describe.configure({ mode: 'serial' });
+
+  let shared: RichChat;
+  let insidePath = '';
+  let outsidePath = '';
+  let missingPath = '';
+  test.beforeAll(async () => {
+    shared = await openRichChat({
+      cli: 'claude',
+      projectFiles: { [path.join('shots', 'inside.png')]: { copy: CHAT_MEDIA.png } },
+      outsideFiles: { 'outside.png': { copy: CHAT_MEDIA.png } },
+      script: ({ projectDir, outsideDir }) => {
+        insidePath = path.join(projectDir, 'shots', 'inside.png');
+        outsidePath = path.join(outsideDir, 'outside.png');
+        missingPath = path.join(projectDir, 'shots', 'missing.png');
+        return {
+          description: 'Read returns an image without an image block; a reply with Markdown images',
+          turns: [
+            { prompt: 'Read the image.', steps: [{ type: 'image-tool', image: { path: CHAT_MEDIA.png, mimeType: 'image/png' }, variant: 'read-result' }, { type: 'text', text: 'Read it.' }] },
+            {
+              prompt: 'Show me the screenshots.',
+              steps: [{
+                type: 'text',
+                text: [
+                  `In the project: ${md.image('inside shot', insidePath)}`,
+                  `Outside it: ${md.image('outside shot', outsidePath)}`,
+                  `Not written yet: ${md.image('missing shot', missingPath)}`,
+                ].join('\n\n'),
+              }],
+            },
+          ],
+        };
+      },
+    });
+  });
+  test.afterAll(async () => {
+    await shared?.close();
+  });
+
+  test('a Read result image with no image block still shows as a thumbnail', async () => {
+    const dom = chatDom(shared.window);
+    await shared.send('Read the image.');
+    await expect(dom.turnFooters).toHaveCount(1, { timeout: TURN_TIMEOUT });
+
+    const thumb = dom.toolImages.locator('[data-testid="chat-image-thumb"]');
+    await expect(thumb).toHaveCount(1, { timeout: TURN_TIMEOUT });
+    await expect(thumb).toHaveAttribute('data-media-ref', /^[0-9a-f]{64}\.png$/);
+    await expectImageLoaded(thumb);
+  });
+
+  test('Markdown images inside and outside the project show; a missing one says why', async () => {
+    const dom = chatDom(shared.window);
+    await shared.send('Show me the screenshots.');
+    await expect(dom.turnFooters).toHaveCount(2, { timeout: TURN_TIMEOUT });
+
+    // Main resolved each path and stored a copy: the thumbnail names the stored media, never the path.
+    for (const alt of ['inside shot', 'outside shot']) {
+      const thumb = dom.markdownImage(alt);
+      await expect(thumb).toBeVisible({ timeout: TURN_TIMEOUT });
+      await expect(thumb).toHaveAttribute('data-chat-media-ref', /^[0-9a-f]{64}\.png$/);
+      await expectImageLoaded(thumb);
+    }
+    await expect(dom.markdownImageNotShown).toHaveCount(1, { timeout: TURN_TIMEOUT });
+    await expect(dom.markdownImageNotShown).toContainText('missing shot');
+    await expect(dom.markdownImageNotShown).toContainText('Image not found.');
+  });
+
+  test('the viewer fits, toggles actual size, closes on Escape and returns focus', async () => {
+    const dom = chatDom(shared.window);
+    const thumb = dom.markdownImage('inside shot');
+    await thumb.click();
+    await expect(dom.lightbox).toBeVisible();
+    await expectImageLoaded(dom.lightboxImage);
+
+    const toggle = dom.lightbox.getByRole('button', { name: 'Actual size' });
+    await toggle.click();
+    await expect(dom.lightbox.getByRole('button', { name: 'Fit to window' })).toBeVisible();
+    await dom.lightbox.getByRole('button', { name: 'Fit to window' }).click();
+    await expect(toggle).toBeVisible();
+
+    await shared.window.keyboard.press('Escape');
+    await expect(dom.lightbox).toHaveCount(0);
+    await expect(thumb).toBeFocused();
+
+    await shared.expectScriptComplete();
+  });
 });

@@ -208,6 +208,10 @@ export function chatDom(window: Page) {
     imageUnavailable: byId('chat-image-unavailable'),
     lightbox: byId('chat-image-viewer'),
     lightboxImage: byId('chat-image-full'),
+    /** A Markdown image main stored, as its thumbnail button (named by its alt text). */
+    markdownImage: (alt: string) => window.getByRole('button', { name: `Open image: ${alt}`, exact: true }),
+    /** A Markdown image that isn't shown: its caption and the reason. */
+    markdownImageNotShown: window.locator('.chat-image-not-shown'),
 
     /** Inline audio and video cards; `data-state` says whether one is playing. */
     mediaCards: window.locator('[data-chat-media]'),
