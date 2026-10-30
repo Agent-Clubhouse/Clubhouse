@@ -48,13 +48,13 @@ Legend: **E** is an example spec landed in Phase 1. **P2** is Phase 2 work. **·
 | | Missing or unreadable image says why | P2 | · | · |
 | | Lightbox opens, fits, toggles actual size, closes, returns focus | **E** (open and close) | · | · |
 | 2. File chips | Outside-project PDF chip opens page 1 | **E** | · | · |
-| | PDF paging (Next, Previous, page count) | P2 | · | · |
-| | Path with spaces (quoted, code span) | P2 | · | · |
-| | `:line:col` opens the preview there, and Open in Files at that location | P2 | · | · |
-| | Outside-project text file | P2 | · | · |
-| | Too-large and missing files show their reasons | P2 | · | · |
-| | A binary-ish file named `.pdf` is never shown as text | P2 | · | · |
-| | Paths in tool output (command output) chip too | P2 | P2 | · |
+| | PDF paging (Next, Previous, page count) | done (`file-chips.spec.ts`) | · | · |
+| | Path with spaces (quoted, code span) | done (`file-chips.spec.ts`) | · | · |
+| | `:line:col` opens the preview there, and Open in Files at that location | done (`file-chips.spec.ts`) | · | · |
+| | Outside-project text file | done (`file-chips.spec.ts`) | · | · |
+| | Too-large and missing files show their reasons | done (`file-chips.spec.ts`) | · | · |
+| | A binary-ish file named `.pdf` is never shown as text | done (`file-chips.spec.ts`) | · | · |
+| | Paths in tool output (command output) chip too | done (`file-chips.spec.ts`) | done (`file-chips.spec.ts`) | · |
 | 3. Media cards | Audio and video cards play and pause | P2 | · | · |
 | | Only one player is active at a time | P2 | · | · |
 | | Playback survives virtualization and unmount | P2 | · | · |

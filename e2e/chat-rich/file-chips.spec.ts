@@ -9,7 +9,8 @@ import { chatDom, expectCanvasPainted, openRichChat, TURN_TIMEOUT, type RichChat
  * confirms the file, wherever it is, and its preview shows what the file
  * holds: Monaco at `:line:col` for text, pdf.js pages for a PDF, or why it
  * can't. The Phase 1 example opens one PDF on its own launch; the Phase 2
- * cases share one launch and one reply that names every file.
+ * Claude cases share one launch and one reply that names every file. Codex
+ * has its own launch, for a path in command output.
  */
 
 let session: RichChat | undefined;
@@ -264,4 +265,35 @@ test.describe('claude: file chips in one reply', () => {
 
     await chat.expectScriptComplete();
   });
+});
+
+test('codex: a path in command output becomes a chip that previews the file', async () => {
+  let filePath = '';
+  session = await openRichChat({
+    cli: 'codex',
+    projectFiles: { [path.join('src', 'util.ts')]: 'export const CODEX_MARKER = 1;\n' },
+    script: ({ projectDir }) => {
+      filePath = path.join(projectDir, 'src', 'util.ts');
+      return {
+        description: 'a command whose output names a project file',
+        turns: [{ steps: [{ type: 'command', command: 'ls src', output: `${filePath}\n` }, { type: 'text', text: 'That is the only file.' }] }],
+      };
+    },
+  });
+  const dom = chatDom(session.window);
+  await session.send('What is in src?');
+  await expect(dom.turnFooters).toHaveCount(1, { timeout: TURN_TIMEOUT });
+
+  const card = session.window.getByTestId('chat-command-card');
+  await expect(card).toHaveAttribute('data-status', 'completed');
+  // A finished command is collapsed; Codex names it `/bin/sh -lc '…'`.
+  await card.getByRole('button', { name: /^Expand command / }).click();
+  const chip = card.locator('pre').locator('[data-chat-file="text"]');
+  await expect(chip).toHaveAttribute('data-chat-path', filePath, { timeout: TURN_TIMEOUT });
+  await chip.click();
+  await expect(dom.filePreview.getByTestId('chat-file-preview-text').locator('.view-lines')).toContainText('CODEX_MARKER', { timeout: TURN_TIMEOUT });
+  await session.window.keyboard.press('Escape');
+  await expect(dom.filePreview).toHaveCount(0);
+
+  await session.expectScriptComplete();
 });
