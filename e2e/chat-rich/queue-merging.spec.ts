@@ -40,7 +40,7 @@ test('claude: 30 queued messages stay in a capped list, the composer stays usabl
 
   // The list scrolls within its cap, and the composer stays on screen and takes input.
   const list = await dom.queueList.evaluate((el) => ({ client: el.clientHeight, scroll: el.scrollHeight }));
-  expect(list.client).toBeLessThanOrEqual(160);
+  expect(list.client).toBeLessThanOrEqual(155);
   expect(list.scroll).toBeGreaterThan(list.client);
   const box = window.getByRole('textbox', { name: 'Message' });
   await expect(dom.composer).toBeInViewport();
