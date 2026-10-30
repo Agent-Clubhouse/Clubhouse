@@ -179,10 +179,13 @@ test('copilot: a burst of helper updates becomes one queued turn, and user messa
 
   await session.queue(users[0]);
   await expect(dom.queueItems).toHaveCount(1, { timeout: TURN_TIMEOUT });
-  // The burst joins one item; a user message after it starts a new one, and so does the next update.
-  await session.sendHelperUpdates(burst);
-  await expect(dom.queueItems).toHaveCount(2, { timeout: TURN_TIMEOUT });
-  await expect(dom.queueItems.nth(1)).toContainText(burst[2], { timeout: TURN_TIMEOUT });
+  // Updates sent one by one each join the item at the tail (the runtime's merge, #2414);
+  // a user message after them starts a new item, and so does the next update.
+  for (const text of burst) {
+    await session.sendHelperUpdates([text]);
+    await expect(dom.queueItems.nth(1)).toContainText(text, { timeout: TURN_TIMEOUT });
+    await expect(dom.queueItems).toHaveCount(2);
+  }
   await session.queue(users[1]);
   await expect(dom.queueItems).toHaveCount(3, { timeout: TURN_TIMEOUT });
   await session.sendHelperUpdates([late]);
