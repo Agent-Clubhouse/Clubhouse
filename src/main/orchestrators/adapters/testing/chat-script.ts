@@ -80,8 +80,13 @@ export type ScriptStep =
   | { type: 'questions'; questions: ScriptQuestion[]; answers: Record<string, string> };
 
 export interface ScriptTurn {
-  /** What the prompt says, for readability only: replay matches the method, not the text. */
+  /** What the prompt says. For readability only unless `pinPrompt`: replay matches the method, not the text. */
   prompt?: string;
+  /**
+   * The CLI must receive exactly `prompt` (a text-only message). Pins which
+   * message a turn the client started from its queue carried.
+   */
+  pinPrompt?: boolean;
   steps: ScriptStep[];
   /**
    * `end_turn` (default) finishes the turn. `held` leaves it running on a
@@ -91,17 +96,20 @@ export interface ScriptTurn {
    */
   end?: 'end_turn' | 'held';
   /**
-   * Claude, held turns only: messages the CLI takes while the turn runs, in
-   * the order they must arrive, before the Stop that ends it. Claude steers
-   * natively, so these are what Steer, Queue and a parent's helper updates
-   * send mid-turn. Anything else that arrives mid-turn is a mismatch.
+   * Claude and Codex, held turns only: messages the CLI takes while the turn
+   * runs, in the order they must arrive, before the Stop that ends it. These
+   * are what Steer, Claude's Queue and a parent's helper updates send
+   * mid-turn. Anything else that arrives mid-turn is a mismatch.
    */
   steers?: ScriptSteer[];
 }
 
-/** A message sent into a running Claude turn (stream-json `user` with a `priority`). */
+/** A message sent into a running turn: a Claude `user` with a `priority`, or a Codex `turn/steer`. */
 export interface ScriptSteer {
-  /** `next` (default) steers at the next tool boundary; `later` is Claude's own queue for the next turn. */
+  /**
+   * `next` (default) steers at the next tool boundary; `later` (Claude only)
+   * is Claude's own queue for the next turn.
+   */
   priority?: 'next' | 'later';
   /** Exactly what the CLI must receive; leave it out to take any text. */
   text?: string;
@@ -193,7 +201,9 @@ const clientEntry = (msg: Entry, match?: Entry): Entry => ({ from: 'client', msg
 
 /** Build `script` for `cli`. Throws on a step the provider has no shape for. */
 export function buildChatScript(cli: ChatFixtureCli, script: ChatScript): BuiltChatScript {
-  if (cli !== 'claude' && script.turns.some((t) => t.steers?.length)) unsupported(cli, 'steer');
+  if (cli === 'copilot' && script.turns.some((t) => t.steers?.length)) unsupported(cli, 'steer');
+  if (cli === 'codex' && script.turns.some((t) => t.steers?.some((st) => st.priority === 'later'))) unsupported(cli, 'later steer');
+  if (script.turns.some((t) => t.pinPrompt && t.prompt === undefined)) throw new Error('chat-script: pinPrompt needs a prompt');
   if (script.turns.some((t) => t.steers?.length && t.end !== 'held')) throw new Error('chat-script: steers need a held turn');
   const hs = handshake(cli, script.base ?? 'multi-turn');
   const synthesized = new Set<string>();
@@ -259,7 +269,12 @@ function claudeTurn(turn: ScriptTurn, index: number, ctx: TurnContext): Entry[] 
     parent_tool_use_id: null, session_id: sid, uuid: uuid(),
     ...(extra.tool_use_result !== undefined && { tool_use_result: extra.tool_use_result }),
   });
-  const out: Entry[] = [clientEntry({ type: 'user', session_id: '', message: { role: 'user', content: [{ type: 'text', text: turn.prompt ?? `Turn ${index + 1}.` }] }, parent_tool_use_id: null })];
+  // The driver sends text-only content as a plain string (toWireUserMessage), which a pinned prompt matches.
+  const content = turn.pinPrompt ? turn.prompt : [{ type: 'text', text: turn.prompt ?? `Turn ${index + 1}.` }];
+  const out: Entry[] = [clientEntry(
+    { type: 'user', session_id: '', message: { role: 'user', content }, parent_tool_use_id: null },
+    turn.pinPrompt ? { message: { content: turn.prompt } } : undefined,
+  )];
   if (index === 0 && ctx.claudeInit) out.push(cliEntry({ ...ctx.claudeInit, uuid: uuid() }));
   let lastText = '';
   for (const step of turn.steps) {
@@ -338,7 +353,10 @@ function codexTurn(turn: ScriptTurn, index: number, ctx: TurnContext): Entry[] {
   const item = (method: 'item/started' | 'item/completed', it: Entry) => cliEntry({ method, params: { item: it, threadId, turnId } });
   const id = ctx.nextId++;
   const out: Entry[] = [
-    clientEntry({ id, method: 'turn/start', params: { threadId, input: [{ type: 'text', text: turn.prompt ?? `Turn ${index + 1}.`, text_elements: [] }] } }),
+    clientEntry(
+      { id, method: 'turn/start', params: { threadId, input: [{ type: 'text', text: turn.prompt ?? `Turn ${index + 1}.`, text_elements: [] }] } },
+      turn.pinPrompt ? { params: { input: [{ type: 'text', text: turn.prompt }] } } : undefined,
+    ),
     cliEntry({ id, result: { turn: turnObj('inProgress') } }),
     cliEntry({ method: 'turn/started', params: { threadId, turn: turnObj('inProgress') } }),
   ];
@@ -374,9 +392,18 @@ function codexTurn(turn: ScriptTurn, index: number, ctx: TurnContext): Entry[] {
   // Held (as codex/interrupt).
   const cmdId = `call_script_${++ctx.seq}`;
   const cmd: Entry = { type: 'commandExecution', id: cmdId, command: "/bin/sh -lc 'sleep 600'", cwd: '/workspace/project', processId: '4242', source: 'agent', status: 'inProgress', commandActions: [{ type: 'unknown', command: 'sleep 600' }], aggregatedOutput: null, exitCode: null, durationMs: null };
+  out.push(item('item/started', cmd));
+  if (turn.steers?.length) ctx.synthesized.add('turn/steer requests and responses: fields from the generated v2 schema, matched on input text');
+  for (const steer of turn.steers ?? []) {
+    const steerId = ctx.nextId++;
+    const input = [{ type: 'text', text: steer.text ?? `Steer ${++ctx.seq}.`, text_elements: [] as unknown[] }];
+    out.push(
+      clientEntry({ id: steerId, method: 'turn/steer', params: { threadId, input, expectedTurnId: turnId } }, steer.text !== undefined ? { params: { input: [{ type: 'text', text: steer.text }] } } : undefined),
+      cliEntry({ id: steerId, result: { turnId } }),
+    );
+  }
   const stopId = ctx.nextId++;
   out.push(
-    item('item/started', cmd),
     clientEntry({ id: stopId, method: 'turn/interrupt', params: { threadId, turnId } }, { params: { turnId } }),
     cliEntry({ id: stopId, result: {} }),
     item('item/completed', { ...cmd, status: 'failed', aggregatedOutput: '', durationMs: 1000 }),
@@ -391,7 +418,10 @@ function copilotTurn(turn: ScriptTurn, index: number, ctx: TurnContext): Entry[]
   const sessionId = ctx.sessionId;
   const update = (u: Entry) => cliEntry({ jsonrpc: '2.0', method: 'session/update', params: { sessionId, update: u } });
   const id = ctx.nextId++;
-  const out: Entry[] = [clientEntry({ jsonrpc: '2.0', id, method: 'session/prompt', params: { sessionId, prompt: [{ type: 'text', text: turn.prompt ?? `Turn ${index + 1}.` }] } })];
+  const out: Entry[] = [clientEntry(
+    { jsonrpc: '2.0', id, method: 'session/prompt', params: { sessionId, prompt: [{ type: 'text', text: turn.prompt ?? `Turn ${index + 1}.` }] } },
+    turn.pinPrompt ? { params: { prompt: [{ type: 'text', text: turn.prompt }] } } : undefined,
+  )];
   for (const step of turn.steps) {
     if (step.type === 'text') {
       out.push(update({ sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: step.text } }));
