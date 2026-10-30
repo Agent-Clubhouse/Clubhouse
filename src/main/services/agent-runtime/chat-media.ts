@@ -68,11 +68,11 @@ export async function resolveLocalPath(filePath: string, base?: string): Promise
 
 /**
  * `\\host\share`, `//host/share`, `\\?\…`, `\\.\…`: paths that name a network
- * share or a device. Also macOS's `/net/<host>` automount, which a lookup
- * would mount.
+ * share or a device. Also the `/net/<host>` automount (macOS, and Linux
+ * autofs's hosts map), which a lookup would mount.
  */
 export function isNetworkOrDevicePath(p: string): boolean {
-  return /^[\\/]{2}/.test(p) || (process.platform === 'darwin' && /^\/net(\/|$)/.test(p));
+  return /^[\\/]{2}/.test(p) || (process.platform !== 'win32' && /^\/net(\/|$)/.test(p));
 }
 
 /** Store image bytes for an agent; undefined unless they sniff as a supported image under the cap. */

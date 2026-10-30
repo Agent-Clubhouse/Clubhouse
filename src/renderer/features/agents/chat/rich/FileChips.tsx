@@ -3,8 +3,8 @@
  * messages and tool output are matched in the shared text pass (before URLs),
  * and an inline code span that is just a path counts too. Each is only a
  * candidate until main confirms the file exists, wherever it is (#2478); then
- * it becomes a chip. One clearly meant as a file (a whole code span, or an
- * absolute, `~/` or `./` path with an extension) that main can't show
+ * it becomes a chip. One clearly meant as a file (an absolute, `~/` or `./`
+ * path, or a code span with a folder in it, ending in an extension) that main can't show
  * becomes a muted chip that says why;
  * a loose match in prose goes back to plain text. A chip opens a preview:
  * read-only Monaco for text, the image, a player for video and audio, pdf.js
@@ -137,7 +137,7 @@ export async function hydrateFileChips(root: Element, agentId: string): Promise<
     if (!info?.exists || !info.kind) {
       const path = el.getAttribute(PATH_ATTR) ?? '';
       // A folder is no file to show, and a loose prose match may not be a path at all.
-      if (info?.reason && info.reason !== 'folder' && (el.tagName === 'CODE' || namesFileClearly(path))) mute(el, info.reason);
+      if (info?.reason && info.reason !== 'folder' && namesFileClearly(path, el.tagName === 'CODE')) mute(el, info.reason);
       else demote(el);
       return;
     }

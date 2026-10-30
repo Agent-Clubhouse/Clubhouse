@@ -102,7 +102,7 @@ describe('resolveLocalPath', () => {
     }
     // A relative path can't climb into one either.
     expect(await resolveLocalPath('x/a.png', '//attacker.example/share')).toBeUndefined();
-    if (process.platform === 'darwin') expect(await resolveLocalPath('/net/attacker.example/x/a.png')).toBeUndefined();
+    if (process.platform !== 'win32') expect(await resolveLocalPath('/net/attacker.example/x/a.png')).toBeUndefined();
     expect(realpath).not.toHaveBeenCalled();
   });
 });

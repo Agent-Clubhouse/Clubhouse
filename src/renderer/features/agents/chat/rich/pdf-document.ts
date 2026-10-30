@@ -13,13 +13,23 @@ import { createPdfWorker } from './pdf-loader';
 /** A page is drawn at most this many device pixels: its own size can be anything. */
 const MAX_CANVAS_PIXELS = 4096 * 4096;
 
-let workerReady = false;
+/** Opening a PDF gives up after this long: a worker that never starts would otherwise leave it loading. */
+const OPEN_TIMEOUT_MS = 20_000;
 
-/** One worker for every preview: starting one costs more than parsing a small PDF. */
+let worker: Worker | undefined;
+
+/** One worker for every preview: starting one costs more than parsing a small PDF. One that fails is replaced next time. */
 function ensureWorker(): void {
-  if (workerReady) return;
-  GlobalWorkerOptions.workerPort = createPdfWorker();
-  workerReady = true;
+  if (worker) return;
+  const started = createPdfWorker();
+  started.addEventListener('error', () => {
+    if (worker !== started) return;
+    worker = undefined;
+    GlobalWorkerOptions.workerPort = null;
+    started.terminate();
+  });
+  worker = started;
+  GlobalWorkerOptions.workerPort = started;
 }
 
 export type PdfOpenError = 'password' | 'invalid';
@@ -37,11 +47,15 @@ export async function openPdf(data: Uint8Array): Promise<OpenedPdf> {
   // pdf.js moves the buffer to its worker: give it a copy, the caller keeps theirs.
   const task = getDocument({ data: data.slice(), isOffscreenCanvasSupported: false, enableXfa: false, stopAtErrors: false });
   let doc: PDFDocumentProxy;
+  let timer: ReturnType<typeof setTimeout> | undefined;
   try {
-    doc = await task.promise;
+    doc = await Promise.race([task.promise, new Promise<never>((_, reject) => { timer = setTimeout(() => reject(new Error('timeout')), OPEN_TIMEOUT_MS); })]);
   } catch (err) {
+    void task.destroy();
     // With no onPassword handler pdf.js rejects a protected file: a prompt would need a UI of its own.
     throw new Error(err instanceof Error && err.name === 'PasswordException' ? 'password' : 'invalid');
+  } finally {
+    clearTimeout(timer);
   }
   return {
     numPages: doc.numPages,

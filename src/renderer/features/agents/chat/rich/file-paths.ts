@@ -70,12 +70,15 @@ function matchAt(start: number, token: string, loc: { path: string; line?: numbe
 const ANCHORED_RE = /^(?:\/|~[\\/]|\.\.?[\\/]|[A-Za-z]:[\\/]|file:\/\/)/i;
 
 /**
- * True when prose clearly names a file: its start pins it down (absolute,
- * home, `./`, a drive, `file://`) and it ends in an extension. `/tmp/CH`,
- * the first word of a spaced path in prose, is not.
+ * True when text clearly names a file, so a missing one is worth saying so:
+ * it ends in an extension and its start pins it down (absolute, home, `./`,
+ * a drive, `file://`), or, for a whole code span, it has a folder in it.
+ * `/tmp/CH` (the first word of a spaced path in prose) and `console.log`
+ * (code, not a file) are not.
  */
-export function namesFileClearly(path: string): boolean {
-  return ANCHORED_RE.test(path) && HAS_EXTENSION.test(path);
+export function namesFileClearly(path: string, codeSpan = false): boolean {
+  if (!HAS_EXTENSION.test(path)) return false;
+  return ANCHORED_RE.test(path) || (codeSpan && /[\\/]/.test(path));
 }
 
 /**

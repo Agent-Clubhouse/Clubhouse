@@ -245,11 +245,11 @@ describe('files chat cannot show (#2478)', () => {
 
   it('leaves folders, loose prose matches and failed lookups as plain text', async () => {
     statPaths.mockImplementationOnce(async (_a: string, paths: string[]) => paths.map((p) => UNAVAILABLE[p] ?? { path: p, exists: false, reason: 'missing' as const }));
-    const { container } = await renderRich(<Markdown text={'See /repo/src and src/also/missing.ts here.'} />);
+    const { container } = await renderRich(<Markdown text={'See /repo/src and src/also/missing.ts here, then `console.log` and `package.json`.'} />);
     await waitFor(() => expect(statPaths).toHaveBeenCalled());
     await waitFor(() => expect(container.querySelector('[data-chat-path]')).toBeNull());
     expect(container.querySelector('[data-chat-file-unavailable]')).toBeNull();
-    expect(container.textContent).toContain('See /repo/src and src/also/missing.ts here.');
+    expect(container.textContent).toContain('See /repo/src and src/also/missing.ts here, then console.log and package.json.');
   });
 
   it('turns a muted chip into a chip once the file is there', async () => {
