@@ -29,6 +29,10 @@ export interface FakeClis {
   cleanup(): Promise<void>;
 }
 
+/**
+ * `fixtures` maps each CLI to a committed fixture's name, or to the absolute
+ * path of one built at run time (e2e/chat-rich/harness.ts).
+ */
 export async function installFakeClis(fixtures: Partial<Record<ChatFixtureCli, string>>): Promise<FakeClis> {
   const root = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'clubhouse-e2e-fake-cli-'));
   const binDir = path.join(root, 'bin');
@@ -36,7 +40,7 @@ export async function installFakeClis(fixtures: Partial<Record<ChatFixtureCli, s
   const shims: Record<string, { fixture: string; report: string }> = {};
   for (const [cli, name] of Object.entries(fixtures) as Array<[ChatFixtureCli, string]>) {
     reports[cli] = path.join(root, `${cli}-report.json`);
-    shims[cli] = { fixture: chatFixturePath(cli, name), report: reports[cli] as string };
+    shims[cli] = { fixture: path.isAbsolute(name) ? name : chatFixturePath(cli, name), report: reports[cli] as string };
   }
   const written = await writeFakeCliShims(binDir, shims);
 
