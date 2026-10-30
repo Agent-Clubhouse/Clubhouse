@@ -398,13 +398,17 @@ jobs:
   e2e-chat:
     needs: [changes, build]
     if: ${{ !cancelled() && needs.build.result == 'success' }}
-    name: Chat E2E Tests (${{ matrix.os }}, ${{ matrix.shard }}/1)
+    name: Chat E2E Tests (${{ matrix.os }}, ${{ matrix.shard }}/3)
     runs-on: ${{ matrix.os }}
+    # Three shards, sized for all nine area specs (docs/testing/chat-e2e-plan.md,
+    # "Shard-time budget"). --fully-parallel shards by test rather than by file,
+    # so one big spec doesn't land in a single shard; serial groups stay
+    # together, and workers stay at 1. An area spec only needs a new file.
     strategy:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, windows-2022]
-        shard: [1]
+        shard: [1, 2, 3]
     env:
       PLAYWRIGHT_JUNIT_OUTPUT_NAME: test-results/junit.xml
     steps:
@@ -433,10 +437,10 @@ jobs:
           path: .webpack/
       - name: Run chat E2E tests
         if: runner.os != 'Linux'
-        run: npx playwright test e2e/chat-rich/ --shard=${{ matrix.shard }}/1 --reporter=line,junit
+        run: npx playwright test e2e/chat-rich/ --fully-parallel --shard=${{ matrix.shard }}/3 --pass-with-no-tests --reporter=line,junit
       - name: Run chat E2E tests (Linux — requires virtual display)
         if: runner.os == 'Linux'
-        run: xvfb-run --auto-servernum npx playwright test e2e/chat-rich/ --shard=${{ matrix.shard }}/1 --reporter=line,junit
+        run: xvfb-run --auto-servernum npx playwright test e2e/chat-rich/ --fully-parallel --shard=${{ matrix.shard }}/3 --pass-with-no-tests --reporter=line,junit
         env:
           # chrome-sandbox is not SUID root on GitHub runners
           ELECTRON_DISABLE_SANDBOX: '1'

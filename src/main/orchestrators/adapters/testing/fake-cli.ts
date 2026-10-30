@@ -32,6 +32,8 @@ export interface FakeCliReport {
   protocol: 'claude-stream-json' | 'codex-app-server' | 'acp';
   /** Arguments the fake was launched with, minus its own `--fake-*` options. */
   argv: string[];
+  /** The CLIs' state-dir variables as the fake was launched with them (COPILOT_HOME, CODEX_HOME, CLAUDE_CONFIG_DIR), null if unset. */
+  env: Record<string, string | null>;
   total: number;
   consumed: number;
   /** Every fixture line was replayed or matched. */
@@ -266,10 +268,11 @@ export class NdjsonPeer {
     });
   }
 
-  static start(binary: string, args: string[], opts: { windowsVerbatimArguments?: boolean } = {}): NdjsonPeer {
+  static start(binary: string, args: string[], opts: { windowsVerbatimArguments?: boolean; env?: NodeJS.ProcessEnv } = {}): NdjsonPeer {
     return new NdjsonPeer(spawn(binary, args, {
       stdio: ['pipe', 'pipe', 'pipe'],
       ...(opts.windowsVerbatimArguments && { windowsVerbatimArguments: true }),
+      ...(opts.env && { env: opts.env }),
     }));
   }
 

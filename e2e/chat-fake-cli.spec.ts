@@ -35,8 +35,9 @@ interface ProviderCase {
 
 const PROVIDERS: ProviderCase[] = [
   { cli: 'claude', orchestrator: 'claude-code', registered: true },
-  // Registered by #1966 (CodexChatDriver) and #1961 (copilot_acp); flip
-  // these to true when each lands.
+  // Both drivers are registered (#1966, #1961). Their chat runs in
+  // e2e/chat-rich/providers.spec.ts, in the Chat E2E job, because six more
+  // launches here would lengthen the sharded E2E long pole (#2484).
   { cli: 'codex', orchestrator: 'codex-cli', registered: false },
   { cli: 'copilot', orchestrator: 'copilot-cli', registered: false },
 ];
