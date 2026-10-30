@@ -12,6 +12,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { claudeToolContent } from '../../../chat/claude/driver';
 import { ClaudeStreamTransport } from '../../../chat/claude/stream-transport';
 import type { ClaudeChatEvent } from '../../../chat/claude/events';
+import { permissionRequestFromWire } from '../../../chat/claude/normalizer';
 import { sniffMediaType } from '../../../../shared/chat';
 import { CopilotAssetReader } from '../copilot-assets';
 import { CHAT_MEDIA, buildChatScript, md, writeChatScript, type BuiltChatScript, type ChatScript } from './chat-script';
@@ -171,6 +172,44 @@ describe('buildChatScript', () => {
     expect(() => buildChatScript('claude', { description: 'x', turns: [{ steps: [], steers: [{}] }] })).toThrow(/steers need a held turn/);
   });
 
+  it('claude: an approval reaches the client with its title and description, and only an allow completes it', async () => {
+    const approval = { tool: 'Bash', input: { command: 'npm run build', description: 'Build' }, title: 'Run the build?', description: 'It writes to out/.' };
+    const built = buildChatScript('claude', { description: 'one approval', turns: [{ steps: [{ type: 'approval', approval }, { type: 'text', text: 'Built.' }] }] });
+    const ask = built.lines.find((l) => l.from === 'cli' && (l.msg as { type?: string } | undefined)?.type === 'control_request') as { msg: { request_id: string; request: Record<string, unknown> } };
+    expect(ask.msg.request.subtype).toBe('can_use_tool');
+    // What the Claude driver reads from it.
+    expect(permissionRequestFromWire(ask.msg.request_id, ask.msg.request)).toMatchObject({
+      kind: 'permission_request', toolName: 'Bash', input: approval.input, title: approval.title, description: approval.description,
+    });
+    const { fake } = await fakeFor(built);
+    await playClientSide(built, fake);
+    await expectComplete(fake);
+
+    const denied = structuredClone(built);
+    const reply = denied.lines.find((l) => l.from === 'client' && (l.msg as { type?: string }).type === 'control_response') as { msg: { response: { response: Record<string, unknown> } } };
+    reply.msg.response.response = { behavior: 'deny', message: 'No.' };
+    const second = await fakeFor(denied, 'denied');
+    void playClientSide(denied, second.fake).catch(() => undefined);
+    const report = await second.fake.waitForReport((r) => r.mismatch !== null);
+    expect(report.mismatch).not.toBeNull();
+  });
+
+  for (const cli of ['codex', 'copilot'] as const) {
+    it(`${cli}: two command approvals in a script replay to the end with their allows`, async () => {
+      const approval = (n: number) => ({ type: 'approval' as const, approval: { tool: 'Bash', input: { command: `echo 'step ${n}'` }, title: `Run step ${n}`, description: `Step ${n} writes to out/.` } });
+      const built = buildChatScript(cli, {
+        description: 'two approvals over two turns',
+        turns: [{ steps: [approval(1), { type: 'text', text: 'One.' }] }, { steps: [approval(2)] }],
+      });
+      const requests = built.lines.filter((l) => l.from === 'cli' && /requestApproval|request_permission/.test(String((l.msg as { method?: string }).method)));
+      expect(requests.map((l) => (l.msg as { id: number }).id)).toEqual([0, 1]);
+      expect(JSON.stringify(requests[0])).toContain('Step 1 writes to out/.');
+      const { fake } = await fakeFor(built);
+      await playClientSide(built, fake);
+      await expectComplete(fake);
+    });
+  }
+
   it('copilot: the binary result names an asset the session journal holds', async () => {
     const built = buildChatScript('copilot', { description: 'one asset', turns: [{ steps: [{ type: 'image-tool', image: PNG }] }] });
     const update = built.lines.find((l) => JSON.stringify(l).includes('binaryResultsForLlm')) as { msg: { params: { update: { rawOutput: { binaryResultsForLlm: Array<{ assetId: string }> } } } } };
@@ -224,6 +263,8 @@ describe('buildChatScript', () => {
     expect(() => buildChatScript('codex', { description: 'x', turns: [{ steps: [questions] }] })).toThrow(/codex has no question shape/);
     expect(() => buildChatScript('claude', { description: 'x', turns: [{ steps: [{ type: 'image-tool', image: PNG, variant: 'asset' }] }] })).toThrow(/claude has no asset image shape/);
     expect(() => buildChatScript('copilot', { description: 'x', turns: [{ steps: [{ type: 'command', command: 'ls', output: '' }] }] })).toThrow(/copilot has no command shape/);
+    const edit = { type: 'approval' as const, approval: { tool: 'Edit', input: { file_path: '/tmp/a.ts' } } };
+    expect(() => buildChatScript('copilot', { description: 'x', turns: [{ steps: [edit] }] })).toThrow(/copilot has no approval without input.command shape/);
   });
 
   it('md.image writes a file: URL, md.path a code span with its location, md.quotedPath escaped prose', () => {

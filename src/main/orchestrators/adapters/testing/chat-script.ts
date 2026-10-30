@@ -77,7 +77,32 @@ export type ScriptStep =
    * permission request, and the fixture waits for exactly `answers`
    * (keyed by question text, multiSelect labels joined with ", ").
    */
-  | { type: 'questions'; questions: ScriptQuestion[]; answers: Record<string, string> };
+  | { type: 'questions'; questions: ScriptQuestion[]; answers: Record<string, string> }
+  /**
+   * A tool call that asks for approval before it runs; the fixture waits for
+   * an allow, so a denial fails the replay.
+   */
+  | { type: 'approval'; approval: ScriptApproval };
+
+/**
+ * A tool call that needs the user's approval (see the `approval` step).
+ * Claude asks for any tool; Codex and Copilot for a shell command, so they
+ * need `input.command`.
+ */
+export interface ScriptApproval {
+  /** Claude: the tool name (Bash, Edit, ...). Codex and Copilot run `input.command`. */
+  tool: string;
+  input: Record<string, unknown>;
+  /**
+   * The request's title: Claude's `can_use_tool` title, Copilot's tool call
+   * title. Codex has none; the app titles it "Run <command>".
+   */
+  title?: string;
+  /** Why it asks: Claude's description, Codex's `reason`, Copilot's `rawInput.description`. */
+  description?: string;
+  /** The tool's result once approved. Default: "Done." */
+  result?: string;
+}
 
 export interface ScriptTurn {
   /** What the prompt says, for readability only: replay matches the method, not the text. */
@@ -200,7 +225,7 @@ export function buildChatScript(cli: ChatFixtureCli, script: ChatScript): BuiltC
   const journal: Entry[] = [];
   const out: Entry[] = [...hs.prefix];
   const build = { claude: claudeTurn, codex: codexTurn, copilot: copilotTurn }[cli];
-  const ctx: TurnContext = { sessionId: hs.sessionId, nextId: hs.nextId, seq: 0, synthesized, journal, claudeInit: hs.claudeInit };
+  const ctx: TurnContext = { sessionId: hs.sessionId, nextId: hs.nextId, seq: 0, synthesized, journal, claudeInit: hs.claudeInit, cliRequestId: 0 };
   script.turns.forEach((turn, i) => out.push(...build(turn, i, ctx)));
   const header: Entry = {
     ...hs.header,
@@ -236,10 +261,19 @@ interface TurnContext {
   synthesized: Set<string>;
   journal: Entry[];
   claudeInit?: Entry;
+  /** Ids of requests the CLI sends (Codex and Copilot approvals), from 0 as the fixtures number them. */
+  cliRequestId: number;
 }
 
 function unsupported(cli: string, what: string): never {
   throw new Error(`chat-script: ${cli} has no ${what} shape yet`);
+}
+
+/** The shell command a Codex or Copilot approval runs. */
+function approvalCommand(cli: string, approval: ScriptApproval): string {
+  const command = approval.input.command;
+  if (typeof command !== 'string') unsupported(cli, 'approval without input.command');
+  return command;
 }
 
 // ── Claude stream-json ──────────────────────────────────────────────────────
@@ -283,6 +317,22 @@ function claudeTurn(turn: ScriptTurn, index: number, ctx: TurnContext): Entry[] 
       ctx.synthesized.add('Bash tool_use_result { stdout, stderr, interrupted, isImage }: no committed capture of a Bash run');
       out.push(assistant([{ type: 'tool_use', id, name: 'Bash', input: { command: step.command, description: 'Run a command' } }]));
       out.push(toolResult(id, step.output, { tool_use_result: { stdout: step.output, stderr: '', interrupted: false, isImage: false } }));
+    } else if (step.type === 'approval') {
+      const { tool, input, title, description, result: said = 'Done.' } = step.approval;
+      const id = `toolu_script_${++ctx.seq}`;
+      const requestId = `perm-script-${ctx.seq}`;
+      ctx.synthesized.add('can_use_tool title and description text, and a plain-text tool_result (fields as claude/permission-approve-edit)');
+      out.push(assistant([{ type: 'tool_use', id, name: tool, input }]));
+      out.push(cliEntry({
+        type: 'control_request', request_id: requestId,
+        request: { subtype: 'can_use_tool', tool_name: tool, input, tool_use_id: id, permission_suggestions: [], ...(title && { title }), ...(description && { description }) },
+      }));
+      // As claude/permission-approve-edit: allow echoes the input back as updatedInput.
+      out.push(clientEntry(
+        { type: 'control_response', response: { subtype: 'success', request_id: requestId, response: { behavior: 'allow', updatedInput: input } } },
+        { response: { request_id: requestId, response: { behavior: 'allow' } } },
+      ));
+      out.push(toolResult(id, said));
     } else {
       const id = `toolu_script_${++ctx.seq}`;
       const requestId = `perm-script-${ctx.seq}`;
@@ -363,6 +413,23 @@ function codexTurn(turn: ScriptTurn, index: number, ctx: TurnContext): Entry[] {
       ctx.synthesized.add('commandExecution completed with exit 0 (fields as codex/interrupt)');
       const cmd: Entry = { type: 'commandExecution', id: `call_script_${ctx.seq}`, pluginId: null, scriptPath: null, command: `/bin/sh -lc '${step.command}'`, cwd: '/workspace/project', processId: '4242', source: 'agent', status: 'inProgress', commandActions: [{ type: 'unknown', command: step.command }], aggregatedOutput: null, exitCode: null, durationMs: null };
       out.push(item('item/started', cmd), item('item/completed', { ...cmd, status: 'completed', aggregatedOutput: step.output, exitCode: 0, durationMs: 100 }));
+    } else if (step.type === 'approval') {
+      // As codex/permission-deny, with an accept.
+      const command = approvalCommand('codex', step.approval);
+      const requestId = ctx.cliRequestId++;
+      const actions = [{ type: 'unknown', command }];
+      const cmd: Entry = { type: 'commandExecution', id: itemId, command: `/bin/sh -lc '${command.replace(/'/g, `'\\''`)}'`, cwd: '/workspace/project', processId: null, source: 'agent', status: 'inProgress', commandActions: actions, aggregatedOutput: null, exitCode: null, durationMs: null };
+      out.push(
+        item('item/started', cmd),
+        cliEntry({ id: requestId, method: 'item/commandExecution/requestApproval', params: {
+          kind: 'command', threadId, turnId, itemId, startedAtMs: 1792180000500, approvalId: null, environmentId: null,
+          reason: step.approval.description ?? null, command, cwd: '/workspace/project', commandActions: actions,
+          availableDecisions: ['accept', 'acceptForSession', 'decline', 'cancel'],
+        } }),
+        clientEntry({ id: requestId, result: { decision: 'accept' } }, { id: requestId, result: { decision: 'accept' } }),
+        cliEntry({ method: 'serverRequest/resolved', params: { threadId, requestId } }),
+        item('item/completed', { ...cmd, status: 'completed', aggregatedOutput: step.approval.result ?? 'Done.', exitCode: 0, durationMs: 1000 }),
+      );
     } else {
       unsupported('codex', 'question');
     }
@@ -418,6 +485,30 @@ function copilotTurn(turn: ScriptTurn, index: number, ctx: TurnContext): Entry[]
       );
     } else if (step.type === 'command') {
       unsupported('copilot', 'command');
+    } else if (step.type === 'approval') {
+      // As copilot/permission-deny, with allow_once.
+      const command = approvalCommand('copilot', step.approval);
+      const requestId = ctx.cliRequestId++;
+      const toolCallId = `call_script_${++ctx.seq}`;
+      const rawInput = { command, ...(step.approval.description && { description: step.approval.description }) };
+      const title = step.approval.title ?? `Run ${command}`;
+      out.push(
+        update({ sessionUpdate: 'tool_call', toolCallId, title, kind: 'execute', status: 'pending', rawInput }),
+        cliEntry({ jsonrpc: '2.0', id: requestId, method: 'session/request_permission', params: {
+          sessionId,
+          toolCall: { toolCallId, title, kind: 'execute', status: 'pending', rawInput },
+          options: [
+            { optionId: 'allow_once', kind: 'allow_once', name: 'Allow once' },
+            { optionId: 'allow_always', kind: 'allow_always', name: 'Always allow' },
+            { optionId: 'reject_once', kind: 'reject_once', name: 'Deny' },
+          ],
+        } }),
+        clientEntry(
+          { jsonrpc: '2.0', id: requestId, result: { outcome: { outcome: 'selected', optionId: 'allow_once' } } },
+          { id: requestId, result: { outcome: { outcome: 'selected', optionId: 'allow_once' } } },
+        ),
+        update({ sessionUpdate: 'tool_call_update', toolCallId, status: 'completed', rawOutput: { content: step.approval.result ?? 'Done.' } }),
+      );
     } else {
       unsupported('copilot', 'question');
     }
