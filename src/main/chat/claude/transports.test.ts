@@ -156,6 +156,13 @@ describe.each<Kind>(['sdk', 'stream-json'])('Claude %s transport (fake claude)',
     expect(second.turnId).toBe(2);
   });
 
+  it('sends images as content blocks the CLI receives', async () => {
+    const t = await start();
+    t.send({ text: 'look', images: [{ mediaType: 'image/png', data: 'iVBORw0KGgo=' }, { mediaType: 'image/jpeg', data: '/9j/4AAQ' }] });
+    const ended = await collector.waitFor('turn_ended');
+    expect(ended.result).toBe('echo:look|priority:none|shouldQuery:unset|images:2:image/png,image/jpeg');
+  });
+
   it('surfaces can_use_tool with suggestions and applies "always allow"', async () => {
     const t = await start();
     t.send({ text: 'tool' });

@@ -22,7 +22,9 @@
 //   crash  exit 3 mid-turn
 //   /model <m>, /effort <e>  change the applied model or effort, as the local commands do (no model call)
 //   quit   a large final assistant message and result, then exit 0 at once
-//   other  result.result = "echo:<text>|priority:<p>|shouldQuery:<b>"
+//   other  result.result = "echo:<text>|priority:<p>|shouldQuery:<b>". With images, that plus
+//          "|images:<n>:<media types>", as assistant text and the result (Clubhouse Go's live E2E checks a phone
+//          upload reaches the CLI this way)
 //
 // A `priority: "later"` message sent while a turn runs waits for that turn to
 // end, as the CLI's queue does. Any other message sent mid-turn is a steer: it
@@ -55,6 +57,7 @@ let effort = argValue('--effort') ?? 'medium';
 const sessionId = argValue('--resume') && !argv.includes('--fork-session') ? argValue('--resume') : 'fake-session-1';
 let initSent = false;
 let msgCounter = 0;
+let helloCount = 0;
 let ctlCounter = 0;
 /** request_id → resolver for outstanding can_use_tool requests. */
 const pendingPermissions = new Map();
@@ -140,11 +143,13 @@ async function runTurn(msg) {
   }
 
   if (text === 'hello') {
-    out({ type: 'stream_event', event: { type: 'message_start', message: { id: 'msg_hello' } }, parent_tool_use_id: null, ...base() });
+    // Each hello is its own message, so a UI that keys messages by id shows every reply.
+    const id = ++helloCount === 1 ? 'msg_hello' : `msg_hello_${helloCount}`;
+    out({ type: 'stream_event', event: { type: 'message_start', message: { id } }, parent_tool_use_id: null, ...base() });
     for (const t of ['Hel', 'lo']) {
       out({ type: 'stream_event', event: { type: 'content_block_delta', index: 0, delta: { type: 'text_delta', text: t } }, parent_tool_use_id: null, ...base() });
     }
-    out({ type: 'assistant', message: { id: 'msg_hello', role: 'assistant', model, content: [{ type: 'text', text: 'Hello' }], usage: ASSISTANT_USAGE }, parent_tool_use_id: null, ...base() });
+    out({ type: 'assistant', message: { id, role: 'assistant', model, content: [{ type: 'text', text: 'Hello' }], usage: ASSISTANT_USAGE }, parent_tool_use_id: null, ...base() });
     result('Hello');
     return;
   }
@@ -220,7 +225,11 @@ async function runTurn(msg) {
     process.exit(3);
   }
 
-  result(`echo:${text}|priority:${msg.priority ?? 'none'}|shouldQuery:${msg.shouldQuery ?? 'unset'}`);
+  const echo = `echo:${text}|priority:${msg.priority ?? 'none'}|shouldQuery:${msg.shouldQuery ?? 'unset'}`;
+  const images = typeof content === 'string' ? [] : (content ?? []).filter((b) => b.type === 'image');
+  // With images, reply as assistant text too, so a chat UI shows what arrived.
+  if (images.length) say(`${echo}|images:${images.length}:${images.map((b) => b.source?.media_type).join(',')}`);
+  else result(echo);
 }
 
 function respond(requestId, response) {
