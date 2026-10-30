@@ -19,7 +19,7 @@ These come from the maintainer and apply to all #2480 work.
 - **Specs:** `e2e/chat-rich/*.spec.ts`, one file per area below.
 - **Harness:** `e2e/chat-rich/harness.ts` (launch, flags, DOM helpers) and `src/main/orchestrators/adapters/testing/chat-script.ts` (scripted turns).
 - **Media:** `test/chat-media/` (see its README).
-- **CI job:** `e2e-chat` in `.github/workflows/validate.yml`, "Chat E2E Tests (os, shard)". It runs on `ubuntu-latest` and `windows-2022` from the same `build` artifact as the other E2E jobs, in parallel with the three E2E shards and Annex E2E.
+- **CI job:** `e2e-chat` in `.github/workflows/validate.yml`, "Chat E2E Tests (os, shard)". It runs on `ubuntu-latest` and `windows-2022` from the same `build` artifact as the other E2E jobs, in parallel with the three E2E shards and Annex E2E. It has three shards per OS (`--shard=N/3 --fully-parallel`), so tests rather than files are spread across shards; a `serial` group stays in one shard. A new area spec needs no workflow change.
 - **Kept out of everything else:** the sharded E2E job sets `PLAYWRIGHT_IGNORE_CHAT_RICH=1`, which `playwright.config.ts` turns into a `testIgnore` for `**/chat-rich/**`. That keeps the existing shards exactly as long as before.
 
 ### How specs avoid macOS runners
@@ -41,7 +41,7 @@ Legend: **E** is an example spec landed in Phase 1. **P2** is Phase 2 work. **·
 
 | Area | Case | Claude | Codex | Copilot |
 |---|---|---|---|---|
-| 0. Provider bring-up | Codex and Copilot open in chat over the fake CLI, with the existing four scenarios | already on | P2 | P2 |
+| 0. Provider bring-up | Codex and Copilot open in chat over the fake CLI, with the existing four scenarios | already on | done (`providers.spec.ts`) | done (`providers.spec.ts`) |
 | 1. Rich media | Tool-result image becomes a thumbnail | **E** (`content`) | P2 (`view`) | P2 (`asset`) |
 | | Other image shapes | P2 (`read-result`) | P2 (`generated`) | P2 (`inline`, `omitted`) |
 | | Markdown image inside and outside the project | P2 | · | · |
@@ -70,7 +70,7 @@ Legend: **E** is an example spec landed in Phase 1. **P2** is Phase 2 work. **·
 | 7. Flag off | Everything renders as plain text, with no rich IPC | P2 | · | · |
 | 8. Annex | Rich content over a controller connection (`contentAnyPath`, the `pdf` kind) | P2 | · | · |
 
-Area 0 is new: `e2e/chat-fake-cli.spec.ts` still marks Codex and Copilot `registered: false`, though both drivers are now registered in `builtin-chat-drivers.ts` (#1966, #1961). So their chat UI has never run end to end. Their handshake fixtures may have drifted from what the drivers send, and nothing has checked that `COPILOT_HOME` reaches the Copilot driver's environment. Areas 1, 5 and 6 need area 0 first for those providers.
+Area 0 (#2484) is done: `e2e/chat-rich/providers.spec.ts` runs the four `chat-fake-cli` scenarios for Codex and Copilot over their committed fixtures. `e2e/chat-fake-cli.spec.ts` still marks them `registered: false`, on purpose: it runs in the sharded E2E job. The harness gives every Copilot chat its own `COPILOT_HOME`, and the fake CLI's report records the `COPILOT_HOME`, `CODEX_HOME` and `CLAUDE_CONFIG_DIR` it was launched with (`report.env`), so a spec can check the app passed them through.
 
 ## Fixture inventory
 
@@ -132,7 +132,7 @@ Recording costs tokens, and a recording names your machine's paths, so area fixt
 **Budget:**
 
 - A chat shard must finish within the slowest existing Windows E2E shard's p50, about **4 minutes** of job time, so it never becomes the long pole. Job overhead (checkout, `npm ci`, artifact download) is about 1.3 minutes on Windows, which leaves about 2.5 minutes of tests per shard.
-- **Add a shard** (`shard: [1, 2]` and `--shard=N/M` in `e2e-chat`) when a chat shard's measured run time passes 3.5 minutes on either OS. Shards are runners in parallel, so they add CI minutes but not wall clock.
+- **Add a shard** (`shard: [1, 2, 3, 4]` and `--shard=N/4` in `e2e-chat`) when a chat shard's measured run time passes 3.5 minutes on either OS. Shards are runners in parallel, so they add CI minutes but not wall clock.
 - Phase 2 estimate: about 35 tests at 25 to 35 s each on Windows (each launches the app), so 15 to 20 minutes of tests, which is 6 to 8 shards at one launch per test. Sharing one launch per area where tests allow cuts that to about 4. Each area PR reports its measured time in the job and adjusts the shard count.
 - **Phase 1:** the two example specs fit in one shard. The measured delta is in the Phase 1 PR body.
 

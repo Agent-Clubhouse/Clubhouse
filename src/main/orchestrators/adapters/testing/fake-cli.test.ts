@@ -21,7 +21,11 @@ describe('writeFakeCliShims', () => {
 
     // On Windows this routes through cmd.exe, like an npm-installed codex.cmd.
     const command = resolveStructuredSpawn(shims.codex, ['app-server']);
-    const peer = NdjsonPeer.start(command.binary, command.args, { windowsVerbatimArguments: command.windowsVerbatimArguments });
+    const codexHome = path.join(dir, 'codex-home');
+    const peer = NdjsonPeer.start(command.binary, command.args, {
+      windowsVerbatimArguments: command.windowsVerbatimArguments,
+      env: { ...process.env, CODEX_HOME: codexHome, COPILOT_HOME: undefined },
+    });
     peer.send({ id: 1, method: 'initialize', params: { clientInfo: { name: 'clubhouse', title: 'Clubhouse', version: '1.0.0' }, capabilities: {} } });
     const init = await peer.waitFor({ id: 1 });
     expect(init).toMatchObject({ result: { userAgent: expect.stringContaining('0.159.3') } });
@@ -31,6 +35,8 @@ describe('writeFakeCliShims', () => {
     const written = JSON.parse(await fs.promises.readFile(report, 'utf8'));
     expect(written.argv).toEqual(['app-server']);
     expect(written.stdinClosed).toBe(true);
+    // The state-dir variables it was launched with, so E2E can check the app passed them on.
+    expect(written.env).toMatchObject({ CODEX_HOME: codexHome, COPILOT_HOME: null });
   });
 });
 

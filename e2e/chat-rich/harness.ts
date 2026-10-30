@@ -61,6 +61,8 @@ export interface RichChat {
   projectDir: string;
   /** A temp folder outside the project, removed with it. */
   outsideDir: string;
+  /** Copilot only: the COPILOT_HOME the app was launched with (the script's session journal lives here). */
+  copilotHome?: string;
   fakes: FakeClis;
   send(text: string): Promise<void>;
   /** The fake replayed the whole script with no unexpected message. */
@@ -116,6 +118,12 @@ export async function openRichChat(opts: RichChatOptions): Promise<RichChat> {
     const script = typeof opts.script === 'function' ? opts.script({ projectDir, outsideDir }) : opts.script;
     ({ fixture, copilotHome } = await writeChatScript(scriptDir, 'script', buildChatScript(opts.cli, script)));
   }
+  // Copilot always gets a home of its own, so the app never reads the
+  // runner's real ~/.copilot (session journals, resume checks).
+  if (opts.cli === 'copilot' && !copilotHome) {
+    copilotHome = path.join(root, 'copilot-home');
+    await fs.promises.mkdir(path.join(copilotHome, 'session-state'), { recursive: true });
+  }
   const fakes = await installFakeClis({ [opts.cli]: fixture });
   const removeAll = async () => {
     await fakes.cleanup();
@@ -157,7 +165,7 @@ export async function openRichChat(opts: RichChatOptions): Promise<RichChat> {
 
     const launched = electronApp;
     return {
-      electronApp, window, chat, agentId, projectDir, outsideDir, fakes,
+      electronApp, window, chat, agentId, projectDir, outsideDir, copilotHome, fakes,
       async send(text) {
         const box = window.getByRole('textbox', { name: 'Message' });
         await box.fill(text);

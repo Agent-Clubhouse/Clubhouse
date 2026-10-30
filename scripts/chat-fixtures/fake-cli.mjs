@@ -10,6 +10,8 @@
 // driver actually used. A mismatch exits with code 3 and a diagnostic on
 // stderr. Every other argument (`-p`, `app-server`, `--acp`, …) is accepted
 // and recorded in the report, so a test can assert how the CLI was launched.
+// The report also records the CLIs' state-dir variables (REPORTED_ENV), so a
+// test can check the app passed them through to the CLI's environment.
 //
 // Standing queries: read-only requests a driver may send at any point (the
 // applied model and effort, plan usage, the model list) are answered with an empty result
@@ -37,6 +39,9 @@ import {
 } from './fixture-format.mjs';
 
 const MISMATCH_EXIT_CODE = 3;
+
+/** Where each real CLI keeps its state; reported as launched (null if unset). */
+const REPORTED_ENV = ['COPILOT_HOME', 'CODEX_HOME', 'CLAUDE_CONFIG_DIR'];
 
 function parseArgs(argv) {
   const env = process.env;
@@ -98,6 +103,7 @@ const report = {
   fixture: opts.fixture,
   protocol,
   argv: opts.cliArgs,
+  env: Object.fromEntries(REPORTED_ENV.map((name) => [name, process.env[name] ?? null])),
   total: entries.length,
   consumed: 0,
   complete: false,
