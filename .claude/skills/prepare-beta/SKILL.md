@@ -187,22 +187,36 @@ Once the user confirms:
 
 ## Phase 6: Provide Tag Commands
 
-After the PR is created, provide two command blocks:
+The release pipeline takes the notes from the PR that bumped `package.json` to the tag's version, and **fails when the tag isn't on that bump commit** (other PRs merged after the bump would ship without being in the notes). So the tag must name the bump PR's merge commit, not `main`.
 
 ### Beta Tag (run after PR merge)
 
+Once the PR has merged, look up its merge commit and check whether `main` has moved past it:
+
 ```bash
-git checkout main && git pull origin main && git tag -s v<full-version> -m "<Release Title> (Beta)" && git push origin v<full-version>
+git fetch origin main
+BUMP_SHA=$(gh pr view <pr-number> --json mergeCommit --jq .mergeCommit.oid)
+git log --oneline "$BUMP_SHA"..origin/main
 ```
 
-This triggers the preview release pipeline: builds are published to the preview channel (`preview.json`) and the GitHub release is marked as a prerelease.
+Then print the exact tag command, with the real sha filled in (not a variable):
+
+```bash
+git tag -s v<full-version> -m "<Release Title> (Beta)" <bump-merge-sha> && git push origin v<full-version>
+```
+
+If `git log` listed any commits, warn the user: `main` has moved past the bump commit, so those PRs are **not** in this beta. Tagging `<bump-merge-sha>` is still correct; don't tag `main` instead. If they want the later PRs in this beta, they need another bump PR (or to edit this PR's notes and use the `RELEASE_NOTES_ALLOW_PAST_BUMP` override described in `.github/workflows/release.yml`).
+
+The tag must be signed (`-s`); the pipeline rejects unsigned tags. Pushing it triggers the preview release pipeline: builds are published to the preview channel (`preview.json`) and the GitHub release is marked as a prerelease.
+
+If notes need fixing after a release has shipped, use the **Republish Release Notes** workflow (`.github/workflows/republish-notes.yml`) instead of cutting a new version.
 
 ### Stable Promotion (run after beta validation)
 
-Once the beta has been tested and validated, the same base version can be promoted to stable. This requires a separate version bump PR (use the `prepare-release` skill) to set `package.json` to the clean version (e.g., `0.34.0`) before tagging:
+Once the beta has been tested and validated, the same base version can be promoted to stable. This requires a separate version bump PR (use the `prepare-release` skill) to set `package.json` to the clean version (e.g., `0.34.0`) before tagging. That skill prints the tag command for its bump merge commit, in the same form:
 
 ```bash
-git checkout main && git pull origin main && git tag -s v<base-version> -m "<Release Title>" && git push origin v<base-version>
+git tag -s v<base-version> -m "<Release Title>" <stable-bump-merge-sha> && git push origin v<base-version>
 ```
 
 This triggers the stable release pipeline: builds are published to the stable channel (`latest.json`), `history.json` is updated, and the GitHub release is created as a full release.
@@ -220,8 +234,9 @@ git checkout <agent-name>/standby
 2. **Never propose a major version bump.**
 3. **Non-User changes never appear in the release title, release notes table, or PR body.**
 4. **Internal changes appear in the table and PR body (as "Improvements") but not in the release title.**
-5. **The PR body format is load-bearing** — the release pipeline parses `Release: <title>` from the first line and the section content as release notes. Do not add extra markdown, emoji, test plans, or co-authored-by lines to the PR body.
+5. **The PR body format is load-bearing** — the release pipeline parses `Release: <title>` from the first line and the section content as release notes. Do not add extra markdown, emoji, test plans, or co-authored-by lines to the PR body. The pipeline fails unless the notes start with `# New Features`, `# Bug Fixes` or `# Improvements`, and fails on PR-description content such as `Fixes #N`, `## Validation`, `npm run` or checklists.
 6. **Version bump commits from previous releases must be skipped** during classification.
 7. **Iterate with the user** — do not open the PR until the user explicitly confirms the version, title, and notes.
 8. **The full version including `-beta.N` is stored in `package.json`** — the release pipeline verifies the tag version matches `package.json` for beta tags (unlike legacy RC tags which skipped this check).
 9. **Beta tags trigger the preview pipeline** — the release workflow detects `*-beta.*` patterns as preview releases.
+10. **Tag the bump PR's merge commit, never the tip of `main`** — the release pipeline fails when the tag sits past the bump commit.
