@@ -151,6 +151,30 @@ export async function isInsideGitRepo(dirPath: string): Promise<boolean> {
 }
 
 /**
+ * The repository's shared git directory (`git rev-parse --git-common-dir`),
+ * absolute and with symlinks resolved, or null when `dirPath` is not in a git
+ * work tree. Every worktree of one repository gives the same answer, so two
+ * projects with the same common dir are the same repository (#2511).
+ */
+export async function findGitCommonDir(dirPath: string): Promise<string | null> {
+  let out: string;
+  try {
+    out = (await gitExec(['rev-parse', '--git-common-dir'], dirPath)).trim();
+  } catch {
+    // telemetry-exempt: not a repository (or no git) means there is no common dir.
+    return null;
+  }
+  if (!out) return null;
+  const resolved = path.resolve(dirPath, out);
+  try {
+    return await fs.promises.realpath(resolved);
+  } catch {
+    // telemetry-exempt: git named it, so it exists; a failed realpath keeps the plain path.
+    return resolved;
+  }
+}
+
+/**
  * Polled every few seconds per git widget. Never a span (spec §4.8): a
  * duration histogram bucketed by changed-file count, a poll counter, and a
  * Detailed-level exemplar span only when one poll takes over 2 s.

@@ -164,6 +164,11 @@ vi.mock('./agent-settings-service', () => ({
 }));
 vi.mock('./agent-system', () => ({ resolveOrchestrator: vi.fn() }));
 vi.mock('./chat-idle-settings', () => ({ setAgentIdleSleep: vi.fn() }));
+/** Project paths the project store lists (#2511). */
+const registeredProjects: string[] = [];
+vi.mock('./project-store', () => ({
+  list: vi.fn(async () => registeredProjects.map((p, i) => ({ id: `proj_${i}`, name: path.basename(p), path: p }))),
+}));
 
 import {
   clearAgentConfigCache,
@@ -196,8 +201,8 @@ const OTHER_PROJECT_PATH = path.resolve('helpers-other-project');
 const OTHER_CONFIG_PATH = path.join(OTHER_PROJECT_PATH, '.clubhouse', 'agents.json');
 const DISPOSED_AT = '2026-10-18T01:00:00.000Z';
 
-function worktree(name: string): string {
-  return path.join(PROJECT_PATH, '.clubhouse', 'agents', name);
+function worktree(name: string, projectPath = PROJECT_PATH): string {
+  return path.join(projectPath, '.clubhouse', 'agents', name);
 }
 
 function agent(id: string, extra: Partial<DurableAgentConfig> = {}): DurableAgentConfig {
@@ -205,8 +210,8 @@ function agent(id: string, extra: Partial<DurableAgentConfig> = {}): DurableAgen
 }
 
 /** An agent with a worktree and branch whose git state is `repo`. */
-function withWorktree(id: string, repo: Partial<FakeRepo> = {}, extra: Partial<DurableAgentConfig> = {}): DurableAgentConfig {
-  const wt = worktree(id);
+function withWorktree(id: string, repo: Partial<FakeRepo> = {}, extra: Partial<DurableAgentConfig> = {}, projectPath = PROJECT_PATH): DurableAgentConfig {
+  const wt = worktree(id, projectPath);
   const branch = `${id}/standby`;
   dirs.add(wt);
   dirs.add(path.join(wt, '.git'));
@@ -251,6 +256,7 @@ beforeEach(() => {
   remoteFetched = true;
   probeError = null;
   gitCalls.length = 0;
+  registeredProjects.length = 0;
 });
 
 describe('helper fields round-trip', () => {
@@ -982,5 +988,125 @@ describe('disposed rows', () => {
     await deleteDurable(PROJECT_PATH, 'durable_2_gone');
     expect((await listDurable(PROJECT_PATH)).map((a) => a.id)).toEqual(['durable_1_orch']);
     expect(gitCalls).toEqual([]);
+  });
+});
+
+describe('helpers in another project (#2511)', () => {
+  /** The orchestrator in PROJECT_PATH, one helper beside it, one in OTHER_PROJECT_PATH with a helper of its own. */
+  function seedAcross(otherRepo: Partial<FakeRepo> = {}): void {
+    registeredProjects.push(PROJECT_PATH, OTHER_PROJECT_PATH);
+    dirs.add(PROJECT_PATH);
+    dirs.add(OTHER_PROJECT_PATH);
+    seed([
+      withWorktree('durable_1_orch'),
+      withWorktree('durable_2_local', {}, { parentAgentId: 'durable_1_orch', disposable: true }),
+    ]);
+    seed([
+      withWorktree('durable_3_far', otherRepo, { parentAgentId: 'durable_1_orch', parentProjectPath: PROJECT_PATH, disposable: true }, OTHER_PROJECT_PATH),
+      withWorktree('durable_4_nested', {}, { parentAgentId: 'durable_3_far' }, OTHER_PROJECT_PATH),
+      agent('durable_5_own'),
+    ], OTHER_CONFIG_PATH);
+  }
+
+  const otherOnDisk = (id: string) => disk(OTHER_CONFIG_PATH).find((a) => a.id === id);
+
+  it('keeps the link across a reload and does not rewrite the file', async () => {
+    seedAcross();
+    const before = files.get(OTHER_CONFIG_PATH);
+    const loaded = await listDurable(OTHER_PROJECT_PATH);
+    expect(loaded.find((a) => a.id === 'durable_3_far')).toMatchObject({ parentAgentId: 'durable_1_orch', parentProjectPath: PROJECT_PATH });
+
+    clearAgentConfigCache();
+    await listDurable(OTHER_PROJECT_PATH);
+    await flushAllAgentConfigs();
+    expect(files.get(OTHER_CONFIG_PATH)).toBe(before);
+    expect(await getParentAgent(OTHER_PROJECT_PATH, 'durable_3_far')).toMatchObject({ id: 'durable_1_orch' });
+  });
+
+  it('never unparents a helper whose parent project was removed', async () => {
+    seedAcross();
+    registeredProjects.splice(0);
+    dirs.delete(PROJECT_PATH);
+    files.delete(CONFIG_PATH);
+
+    const loaded = await listDurable(OTHER_PROJECT_PATH);
+    await flushAllAgentConfigs();
+    expect(loaded.find((a) => a.id === 'durable_3_far')?.parentAgentId).toBe('durable_1_orch');
+    expect(otherOnDisk('durable_3_far')).toMatchObject({ parentAgentId: 'durable_1_orch', parentProjectPath: PROJECT_PATH });
+    expect(await getParentAgent(OTHER_PROJECT_PATH, 'durable_3_far')).toBeNull();
+  });
+
+  it('normalizeHelperFields drops a malformed parent project and one without a parent', () => {
+    const agents = [
+      agent('durable_1_a', { parentProjectPath: PROJECT_PATH }),
+      agent('durable_2_b', { parentAgentId: 'durable_9_far', parentProjectPath: '' }),
+      agent('durable_3_c', { parentAgentId: 'durable_9_far', parentProjectPath: PROJECT_PATH }),
+    ];
+    expect(normalizeHelperFields(agents)).toBe(2);
+    expect(agents[0]).toEqual(agent('durable_1_a'));
+    // Without a parent project the link is local, and dangling, so it is released.
+    expect(agents[1]).toEqual(agent('durable_2_b'));
+    expect(agents[2]).toMatchObject({ parentAgentId: 'durable_9_far', parentProjectPath: PROJECT_PATH });
+  });
+
+  it('local helper lists leave out helpers in other projects', async () => {
+    seedAcross();
+    expect((await listHelpers(PROJECT_PATH, 'durable_1_orch')).map((a) => a.id)).toEqual(['durable_2_local']);
+    expect((await listHelpers(OTHER_PROJECT_PATH, 'durable_1_orch')).map((a) => a.id)).toEqual([]);
+  });
+
+  it('dispose: the cascade disposes helpers in every project, helpers of helpers too', async () => {
+    seedAcross();
+    const result = await resolveHelpersForDelete(PROJECT_PATH, 'durable_1_orch', 'dispose');
+    await flushAllAgentConfigs();
+
+    expect(result).toMatchObject({ ok: true, helperIds: ['durable_2_local', 'durable_3_far', 'durable_4_nested'] });
+    expect(worktreeRemovals()).toEqual([
+      worktree('durable_2_local'),
+      worktree('durable_3_far', OTHER_PROJECT_PATH),
+      worktree('durable_4_nested', OTHER_PROJECT_PATH),
+    ]);
+    expect(otherOnDisk('durable_3_far')?.disposedAt).toEqual(expect.any(String));
+    expect(otherOnDisk('durable_4_nested')?.disposedAt).toEqual(expect.any(String));
+    expect(otherOnDisk('durable_5_own')).toEqual(agent('durable_5_own'));
+  });
+
+  it('dispose: a helper at risk in another project blocks the whole cascade before anything is disposed', async () => {
+    seedAcross({ dirty: 2 });
+    const dry = await resolveHelpersForDelete(PROJECT_PATH, 'durable_1_orch', 'dispose', { dryRun: true });
+    const result = await resolveHelpersForDelete(PROJECT_PATH, 'durable_1_orch', 'dispose');
+
+    expect(dry).toMatchObject({ ok: false, blocked: [{ agentId: 'durable_3_far', checks: { dirty: 2 } }] });
+    expect(result).toMatchObject({ ok: false, blocked: [{ agentId: 'durable_3_far' }] });
+    expect(worktreeRemovals()).toEqual([]);
+  });
+
+  it('keep: releases direct helpers in every project; their own helpers stay attached', async () => {
+    seedAcross();
+    const result = await resolveHelpersForDelete(PROJECT_PATH, 'durable_1_orch', 'keep');
+    await flushAllAgentConfigs();
+
+    expect(result).toMatchObject({ ok: true, helperIds: ['durable_2_local', 'durable_3_far'] });
+    expect(onDisk('durable_2_local')).not.toHaveProperty('parentAgentId');
+    expect(otherOnDisk('durable_3_far')).not.toHaveProperty('parentAgentId');
+    expect(otherOnDisk('durable_3_far')).not.toHaveProperty('parentProjectPath');
+    expect(otherOnDisk('durable_4_nested')?.parentAgentId).toBe('durable_3_far');
+    expect(worktreeRemovals()).toEqual([]);
+  });
+
+  it('a delete without a choice releases helpers in other projects too', async () => {
+    seedAcross();
+    await deleteUnregister(PROJECT_PATH, 'durable_1_orch');
+    await flushAllAgentConfigs();
+    expect(otherOnDisk('durable_3_far')).not.toHaveProperty('parentAgentId');
+    expect(otherOnDisk('durable_3_far')).not.toHaveProperty('parentProjectPath');
+  });
+
+  it('setParentAgent with a local parent drops the parent project', async () => {
+    seedAcross();
+    await setParentAgent(OTHER_PROJECT_PATH, 'durable_3_far', 'durable_5_own');
+    await flushAllAgentConfigs();
+    expect(otherOnDisk('durable_3_far')?.parentAgentId).toBe('durable_5_own');
+    expect(otherOnDisk('durable_3_far')).not.toHaveProperty('parentProjectPath');
   });
 });

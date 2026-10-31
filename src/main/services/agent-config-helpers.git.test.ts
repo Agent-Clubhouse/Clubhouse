@@ -22,6 +22,7 @@ import {
   getWorktreeStatus,
   resolveHelpersForDelete,
 } from './agent-config';
+import { findGitCommonDir } from './git-service';
 import type { DurableAgentConfig } from '../../shared/types';
 
 let root: string;
@@ -197,5 +198,29 @@ describe('worktree status before delete (#2245)', () => {
     fs.rmSync(worktree('helper-b'), { recursive: true, force: true });
     const status = await getWorktreeStatus(project, 'durable_3_b');
     expect(status).toMatchObject({ isValid: true, worktreeMissing: true, unpushedCommits: [] });
+  });
+});
+
+describe('findGitCommonDir (#2511)', () => {
+  it('gives the project and each of its worktrees the same common dir', async () => {
+    const common = await findGitCommonDir(project);
+    expect(common).toBe(fs.realpathSync(path.join(project, '.git')));
+    expect(await findGitCommonDir(worktree('helper-a'))).toBe(common);
+    expect(await findGitCommonDir(path.join(project, '.clubhouse'))).toBe(common);
+  });
+
+  it('tells another repository apart, and gives null outside any repository', async () => {
+    const otherRepo = path.join(root, 'other');
+    fs.mkdirSync(otherRepo);
+    git(['init', '-q'], otherRepo);
+    expect(await findGitCommonDir(otherRepo)).toBe(fs.realpathSync(path.join(otherRepo, '.git')));
+    expect(await findGitCommonDir(otherRepo)).not.toBe(await findGitCommonDir(project));
+
+    const plain = fs.mkdtempSync(path.join(os.tmpdir(), 'clubhouse-not-a-repo-'));
+    try {
+      expect(await findGitCommonDir(plain)).toBeNull();
+    } finally {
+      fs.rmSync(plain, { recursive: true, force: true });
+    }
   });
 });

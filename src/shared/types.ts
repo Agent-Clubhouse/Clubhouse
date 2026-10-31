@@ -297,6 +297,12 @@ export interface DurableAgentConfig {
    * ordinary durable agent with a parent; unset means a top-level agent.
    */
   parentAgentId?: string;
+  /**
+   * Cross-project helpers (#2511): the project path the parent lives in, set
+   * only when that is another project. Unset means the parent is in this
+   * project. A path, not a project id: project ids change on every re-add.
+   */
+  parentProjectPath?: string;
   /** Helpers (#2224): the parent may dispose this agent when its work is done. */
   disposable?: boolean;
   /**
@@ -530,6 +536,11 @@ export interface StartDurableCreationParams extends DurableWorktreeOptions {
   persona?: string;
   /** Helpers (#2224): make the new agent a helper of this durable agent. */
   parentAgentId?: string;
+  /**
+   * Cross-project helpers (#2511): the project the parent lives in, when it
+   * is not the project the agent is created in. Ignored without parentAgentId.
+   */
+  parentProjectPath?: string;
   /** Helpers (#2224): the parent may dispose the new agent when its work is done. */
   disposable?: boolean;
 }
