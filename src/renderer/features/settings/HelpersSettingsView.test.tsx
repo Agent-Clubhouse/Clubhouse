@@ -42,6 +42,25 @@ afterEach(() => {
 });
 
 describe('Helpers settings page (#2232)', () => {
+  it('counts a disposed helper whose orchestrator is in another project as reachable while it is there (#2514)', async () => {
+    byProject[BETA] = [
+      ...byProject[BETA],
+      // Orchestrator `lead` is in alpha: reachable from its Helpers card.
+      row('x1', 'annex-ui', { parentAgentId: 'lead', parentProjectPath: ALPHA, disposedAt: '2026-10-18T10:00:00Z' }),
+      // Orchestrator deleted from alpha.
+      row('x2', 'annex-old', { parentAgentId: 'gone', parentProjectPath: ALPHA, disposedAt: '2026-10-18T10:00:00Z' }),
+      // Its project was removed from Clubhouse.
+      row('x3', 'annex-lost', { parentAgentId: 'lead', parentProjectPath: path.join('/work', 'removed'), disposedAt: '2026-10-18T10:00:00Z' }),
+    ];
+    render(<HelpersSettingsView />);
+    const list = await screen.findByTestId('helpers-orphans');
+    const names = within(list).getAllByTestId('helpers-orphan-row').map((r) => r.textContent);
+    expect(names).toEqual([
+      expect.stringContaining('impl-old'), expect.stringContaining('qa-old'), expect.stringContaining('annex-old'), expect.stringContaining('annex-lost'),
+    ]);
+    expect(list).not.toHaveTextContent('annex-ui');
+  });
+
   it('saves the app-wide cap within 1 to 100', async () => {
     render(<HelpersSettingsView />);
     const input = await screen.findByTestId('helpers-global-cap') as HTMLInputElement;

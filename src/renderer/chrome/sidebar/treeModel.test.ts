@@ -310,6 +310,13 @@ describe('buildAgentForest', () => {
     expect(ids(forest)).toEqual(['a', { b: ['h'] }, 'c']);
   });
 
+  it('makes a helper whose parent is in another project a root, even beside an agent with that id (#2514)', () => {
+    const forest = buildAgentForest([
+      agent('a'), agent('x', { parentAgentId: 'a', parentProjectPath: '/elsewhere' }), agent('h', { parentAgentId: 'x' }),
+    ]);
+    expect(ids(forest)).toEqual(['a', { x: ['h'] }]);
+  });
+
   it('gives the reorder groups: the roots, then each agent\'s helpers', () => {
     const forest = buildAgentForest([
       agent('a'), agent('h1', { parentAgentId: 'a' }), agent('b', { status: 'sleeping' }),

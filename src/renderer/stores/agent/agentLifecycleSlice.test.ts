@@ -1,4 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import * as os from 'os';
+import * as path from 'path';
 import { createLifecycleSlice } from './agentLifecycleSlice';
 import type { AgentState } from './types';
 import { buildProjectTree } from '../../chrome/sidebar/treeModel';
@@ -226,6 +228,21 @@ describe('agentLifecycleSlice – spawnDurableAgent', () => {
     await slice.spawnDurableAgent(PROJECT_ID, PROJECT_PATH, DURABLE_CONFIG, false);
 
     expect(state().agents['durable-1']?.model).toBe('claude-3');
+  });
+
+  it('keeps a woken helper\'s parent in another project, so it stays a root here (#2514)', async () => {
+    const other = path.join(os.tmpdir(), 'annex');
+    const { state, slice } = createTestStore({
+      agents: {
+        lead: { id: 'lead', projectId: PROJECT_ID, name: 'lead', kind: 'durable', status: 'running', color: 'blue' },
+      } as any,
+    });
+
+    await slice.spawnDurableAgent(PROJECT_ID, PROJECT_PATH, { ...DURABLE_CONFIG, parentAgentId: 'lead', parentProjectPath: other }, false);
+
+    expect(state().agents['durable-1']).toMatchObject({ parentAgentId: 'lead', parentProjectPath: other });
+    const tree = buildProjectTree(Object.values(state().agents));
+    expect(tree.awake.map((n) => n.agent.id)).toEqual(['lead', 'durable-1']);
   });
 
   it('keeps a woken helper nested under its parent (#2231)', async () => {

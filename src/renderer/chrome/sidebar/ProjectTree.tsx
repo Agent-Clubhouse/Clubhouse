@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useSta
 import type { Agent, AgentDetailedStatus, CompletedQuickAgent, Project } from '../../../shared/types';
 import { useChromeStore, foldKey, type ProjectFold } from '../chromeStore';
 import { ProjectGroup } from './ProjectGroup';
-import { buildProjectTree, descendants, holdOrder, moveProject, orderProjects } from './treeModel';
+import { buildProjectTree, descendants, holdOrder, localParentId, moveProject, orderProjects } from './treeModel';
 import { useAgentStore } from '../../stores/agentStore';
 import { PopupMenu, type MenuItem } from '../../components/PopupMenu';
 import { useToastStore } from '../../stores/toastStore';
@@ -225,15 +225,17 @@ export function ProjectTree(props: ProjectTreeProps) {
     // Not loaded yet: try again when the agents arrive.
     if (!target) return;
     pendingReveal.current = null;
-    if (!target.parentAgentId || !byId.has(target.parentAgentId)) return;
+    // A helper whose orchestrator is in another project (#2514) is a root
+    // here, with no parents to unfold, but it can still be in the sleeping fold.
+    if (!target.parentAgentId || (!target.parentProjectPath && !byId.has(target.parentAgentId))) return;
     const chrome = useChromeStore.getState();
     const collapsed = new Set(chrome.collapsedAgentIds);
     const seen = new Set<string>();
-    let parent: string | undefined = target.parentAgentId;
+    let parent: string | undefined = localParentId(target);
     while (parent && byId.has(parent) && !seen.has(parent)) {
       seen.add(parent);
       if (collapsed.has(parent)) toggleAgentCollapsed(parent);
-      parent = byId.get(parent)!.parentAgentId;
+      parent = localParentId(byId.get(parent)!);
     }
     const inSleepingFold = buildProjectTree(list).sleeping.some((root) => root.agent.id === agentId || descendants(root).some((a) => a.id === agentId));
     if (inSleepingFold && !chrome.expandedFolds.includes(foldKey(activeProjectId, 'sleeping'))) toggleFold(activeProjectId, 'sleeping');

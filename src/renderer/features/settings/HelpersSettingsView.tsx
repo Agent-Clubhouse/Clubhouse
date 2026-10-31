@@ -13,6 +13,7 @@ import { isRemoteProjectId } from '../../stores/remoteProjectStore';
 import { Button } from '../../components/Button';
 import { ConfirmDestructiveAction } from '../../components/ConfirmDestructiveAction';
 import { orphanedDisposed } from '../agents/helpers/helper-model';
+import { sameProjectPath } from '../../utils/project-path';
 import { parseHelperCount, useGlobalHelperCap } from '../agents/helpers/orchestration-hooks';
 import { SettingsBlock, SettingsField, SettingsPage, SettingsSection, settingsHelp, settingsInput } from './SettingsLayout';
 
@@ -61,15 +62,28 @@ export function HelpersSettingsView() {
   useEffect(() => {
     let alive = true;
     const local = projects.filter((p) => !isRemoteProjectId(p.id));
-    Promise.all(local.map(async (p): Promise<OrphanRow[]> => {
+    Promise.all(local.map(async (p): Promise<DurableAgentConfig[] | null> => {
       try {
         const configs: DurableAgentConfig[] = await window.clubhouse.agent.listDurable(p.path);
-        return orphanedDisposed(configs ?? []).map((config) => ({ projectId: p.id, projectName: p.displayName || p.name, projectPath: p.path, config }));
+        return configs ?? [];
       } catch {
         // telemetry-exempt: a project that can't be read lists nothing here.
-        return [];
+        return null;
       }
-    })).then((rows) => { if (alive) setOrphans(rows.flat()); });
+    })).then((lists) => {
+      if (!alive) return;
+      // A helper whose orchestrator is in another project (#2514) is reachable
+      // while that orchestrator is there. A project that couldn't be read
+      // counts as still holding it, so nothing is listed by mistake.
+      const hasParentElsewhere = (c: DurableAgentConfig) => {
+        const i = local.findIndex((p) => sameProjectPath(p.path, c.parentProjectPath!));
+        if (i < 0) return false;
+        const other = lists[i];
+        return other === null || other.some((o) => o.id === c.parentAgentId);
+      };
+      setOrphans(local.flatMap((p, i) => orphanedDisposed(lists[i] ?? [], hasParentElsewhere)
+        .map((config) => ({ projectId: p.id, projectName: p.displayName || p.name, projectPath: p.path, config }))));
+    });
     return () => { alive = false; };
   }, [projects, nonce]);
 

@@ -7,6 +7,7 @@ import { useProjectStore } from '../../../stores/projectStore';
 import { HelperHeader } from './HelperHeader';
 
 const PROJECT = path.join('/work', 'proj');
+const OTHER = path.join('/work', 'annex');
 const lead: Agent = { id: 'lead', projectId: 'p1', name: 'epic-lead', kind: 'durable', status: 'running', color: 'teal' };
 const helper: Agent = { id: 'h1', projectId: 'p1', name: 'impl-ipc', kind: 'durable', status: 'running', color: 'teal' };
 
@@ -48,6 +49,24 @@ describe('Helper header (#2232)', () => {
     render(<HelperHeader agent={lead} />);
     await waitFor(() => expect(window.clubhouse.agent.getDurableConfig).toHaveBeenCalledWith(PROJECT, 'lead'));
     expect(screen.queryByTestId('helper-header')).not.toBeInTheDocument();
+  });
+
+  it('names the orchestrator\'s project when it is in another one, and the link switches to it (#2514)', async () => {
+    useProjectStore.setState({ projects: [{ id: 'p1', name: 'proj', path: PROJECT }, { id: 'p2', name: 'annex', displayName: 'Annex', path: OTHER }] } as never);
+    useAgentStore.setState({ agents: { lead: { ...lead, projectId: 'p2' }, h1: helper }, activeAgentId: 'h1' } as never);
+    configs.h1 = { ...configs.h1, parentProjectPath: OTHER };
+    render(<HelperHeader agent={helper} />);
+    expect(await screen.findByTestId('helper-header-parent-project')).toHaveTextContent('in Annex');
+    expect(screen.getByTestId('helper-header-parent')).toHaveTextContent('epic-lead');
+    fireEvent.click(screen.getByTestId('helper-header-parent'));
+    expect(useProjectStore.getState().activeProjectId).toBe('p2');
+    expect(useAgentStore.getState().activeAgentId).toBe('lead');
+  });
+
+  it('names no project when the orchestrator is in the same one', async () => {
+    render(<HelperHeader agent={helper} />);
+    await screen.findByTestId('helper-header-parent');
+    expect(screen.queryByTestId('helper-header-parent-project')).not.toBeInTheDocument();
   });
 
   it('uses the rail\'s parent link when it has one (#2231)', async () => {
