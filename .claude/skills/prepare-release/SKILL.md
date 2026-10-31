@@ -180,17 +180,32 @@ Once the user confirms:
 
 ## Phase 6: Provide Tag Command
 
-After the PR is created, provide the user with a single copy-pasteable command block:
+The release pipeline takes the notes from the PR that bumped `package.json` to the tag's version, and **fails when the tag isn't on that bump commit** (other PRs merged after the bump would ship without being in the notes). So the tag must name the bump PR's merge commit, not `main`.
+
+Once the PR has merged, look up its merge commit and check whether `main` has moved past it:
 
 ```bash
-git checkout main && git pull origin main && git tag -s v<new-version> -m "<Release Title>" && git push origin v<new-version>
+git fetch origin main
+BUMP_SHA=$(gh pr view <pr-number> --json mergeCommit --jq .mergeCommit.oid)
+git log --oneline "$BUMP_SHA"..origin/main
+```
+
+Then give the user a single copy-pasteable command, with the real sha filled in (not a variable):
+
+```bash
+git tag -s v<new-version> -m "<Release Title>" <bump-merge-sha> && git push origin v<new-version>
 ```
 
 Where:
 - `<new-version>` is the confirmed version (e.g., `0.27.0`)
 - `<Release Title>` is the confirmed release title (e.g., `New KanBoss Plugin`)
+- `<bump-merge-sha>` is the bump PR's merge commit
 
-**Clearly instruct the user:** "Run this command only after the PR is merged to main."
+If `git log` listed any commits, warn the user: `main` has moved past the bump commit, so those PRs are **not** in this release. Tagging `<bump-merge-sha>` is still correct; don't tag `main` instead. The tag must be signed (`-s`); the pipeline rejects unsigned tags.
+
+**Clearly instruct the user:** "Run this command only after the PR is merged to main." If the PR hasn't merged yet, say you'll provide the command with the sha once it has.
+
+If notes need fixing after a release has shipped, use the **Republish Release Notes** workflow (`.github/workflows/republish-notes.yml`) instead of cutting a new version.
 
 Then return to your standby branch:
 ```bash
@@ -203,6 +218,7 @@ git checkout <agent-name>/standby
 2. **Never propose a major version bump.**
 3. **Non-User changes never appear in the release title, release notes table, or PR body.**
 4. **Internal changes appear in the table and PR body (as "Improvements") but not in the release title.**
-5. **The PR body format is load-bearing** — the release pipeline parses `Release: <title>` from the first line and the section content as release notes. Do not add extra markdown, emoji, test plans, or co-authored-by lines to the PR body.
+5. **The PR body format is load-bearing** — the release pipeline parses `Release: <title>` from the first line and the section content as release notes. Do not add extra markdown, emoji, test plans, or co-authored-by lines to the PR body. The pipeline fails unless the notes start with `# New Features`, `# Bug Fixes` or `# Improvements`, and fails on PR-description content such as `Fixes #N`, `## Validation`, `npm run` or checklists.
 6. **Version bump commits from previous releases must be skipped** during classification.
 7. **Iterate with the user** — do not open the PR until the user explicitly confirms the version, title, and notes.
+8. **Tag the bump PR's merge commit, never the tip of `main`** — the release pipeline fails when the tag sits past the bump commit.

@@ -1,0 +1,249 @@
+name: Republish Release Notes
+
+# Fixes the notes of a release that has already shipped (#2508): the GitHub
+# release body and that version's notes in the update manifests, without
+# rebuilding anything. Every other manifest field keeps its exact bytes.
+#
+# Re-extract the notes from the bump PR (after editing its body):
+#   gh workflow run republish-notes.yml -f tag=v0.42.0-beta.10 -f allow_past_bump=true
+# or pass them from a file:
+#   gh workflow run republish-notes.yml -f tag=v0.42.0-beta.10 -F notes=@notes.md
+# Runs are dry by default; add -f dry_run=false to publish.
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Release tag to fix, such as v0.42.0-beta.10
+        required: true
+        type: string
+      notes:
+        description: Replacement notes (markdown). Leave empty to re-extract them from the bump PR
+        required: false
+        type: string
+      message:
+        description: Replacement release message (the update banner title). Leave empty to keep the current one
+        required: false
+        type: string
+      allow_past_bump:
+        description: When re-extracting, accept a tag that sits past its bump commit
+        type: boolean
+        default: false
+      dry_run:
+        description: Show what would change without publishing it
+        type: boolean
+        default: true
+
+concurrency:
+  group: republish-notes
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+env:
+  TAG: ${{ inputs.tag }}
+  ACCOUNT: stclubhousereleases
+  CONTAINER: releases
+
+jobs:
+  prepare:
+    name: Prepare notes
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read
+    outputs:
+      version: ${{ steps.tag.outputs.version }}
+      blobs: ${{ steps.tag.outputs.blobs }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Resolve tag
+        id: tag
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          if ! [[ "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-beta\.[0-9]+|rc)?$ ]]; then
+            echo "::error::\"$TAG\" is not a release tag"
+            exit 1
+          fi
+          git rev-parse --verify --quiet "refs/tags/${TAG}^{commit}" > /dev/null \
+            || { echo "::error::Tag $TAG does not exist"; exit 1; }
+          gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json tagName > /dev/null \
+            || { echo "::error::There is no GitHub release for $TAG"; exit 1; }
+
+          VERSION="${TAG#v}"
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+          # The same manifests the release workflow publishes for this channel.
+          if [[ "$VERSION" == *rc ]] || [[ "$VERSION" == *-beta.* ]]; then
+            echo "blobs=updates/v2/preview.json updates/preview.json" >> "$GITHUB_OUTPUT"
+          else
+            echo "blobs=updates/v2/latest.json updates/latest.json updates/v2/history.json updates/history.json" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Get notes
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          NOTES_INPUT: ${{ inputs.notes }}
+          MESSAGE_INPUT: ${{ inputs.message }}
+          ALLOW_PAST_BUMP: ${{ inputs.allow_past_bump }}
+        run: |
+          mkdir -p republish
+          if [ -n "$NOTES_INPUT" ]; then
+            printf '%s\n' "$NOTES_INPUT" > republish/notes.md
+            node scripts/ci/release-notes.mjs validate --notes-file republish/notes.md
+          else
+            ARGS=(extract --tag "$TAG" --repo "$GITHUB_REPOSITORY" --notes-out republish/notes.md)
+            if [ "$ALLOW_PAST_BUMP" = "true" ]; then
+              ARGS+=(--allow-past-bump)
+            fi
+            node scripts/ci/release-notes.mjs "${ARGS[@]}"
+          fi
+          if [ -n "$MESSAGE_INPUT" ]; then
+            printf '%s\n' "$MESSAGE_INPUT" > republish/message.txt
+            node scripts/ci/release-notes.mjs validate-message --message-file republish/message.txt
+          fi
+
+      - name: Show changes
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ steps.tag.outputs.version }}
+          BLOBS: ${{ steps.tag.outputs.blobs }}
+        run: |
+          # Manifests are public, so the preview needs no Azure login. The
+          # publish job re-reads them through Azure before writing.
+          WORK="$(mktemp -d)"
+          ARGS=(--version "$VERSION" --notes-file republish/notes.md)
+          if [ -f republish/message.txt ]; then
+            ARGS+=(--message-file republish/message.txt)
+          fi
+
+          echo "::group::GitHub release body"
+          gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json body --jq .body > "$WORK/body.md"
+          diff -u "$WORK/body.md" republish/notes.md || true
+          echo "::endgroup::"
+
+          for BLOB in $BLOBS; do
+            FILE="$WORK/$(echo "$BLOB" | tr / _)"
+            curl -fsSL "https://${ACCOUNT}.blob.core.windows.net/${CONTAINER}/${BLOB}" -o "$FILE"
+            HISTORY=()
+            FILTER='.'
+            if [[ "$BLOB" == *history.json ]]; then
+              HISTORY=(--history)
+              FILTER='.[] | select(.version == $v)'
+            fi
+            STATUS=$(node scripts/ci/release-notes.mjs rewrite-manifest --file "$FILE" --out "$FILE.new" "${ARGS[@]}" "${HISTORY[@]}")
+            echo "::group::${BLOB}: ${STATUS//$'\n'/, }"
+            if [[ "$STATUS" == status=updated* ]]; then
+              diff -u <(jq -r --arg v "$VERSION" "$FILTER | .releaseMessage, .releaseNotes" "$FILE") \
+                      <(jq -r --arg v "$VERSION" "$FILTER | .releaseMessage, .releaseNotes" "$FILE.new") || true
+              echo "$(wc -c < "$FILE") -> $(wc -c < "$FILE.new") bytes; only the fields above changed"
+            fi
+            echo "::endgroup::"
+          done
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: republish-notes
+          path: republish/
+          if-no-files-found: error
+
+  publish:
+    name: Publish notes
+    needs: prepare
+    if: ${{ !inputs.dry_run }}
+    runs-on: ubuntu-latest
+    environment: release
+    permissions:
+      actions: read
+      contents: write
+      id-token: write
+    steps:
+      - name: Wait for no release in progress
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # A running release downloads history.json early and uploads it
+          # minutes later without an ETag check, which would silently undo
+          # this run's edit. Refuse to publish while one is active.
+          ACTIVE=$(gh run list --repo "$GITHUB_REPOSITORY" --workflow release.yml --limit 20 \
+            --json status --jq '[.[] | select(.status != "completed")] | length')
+          if [ "$ACTIVE" != "0" ]; then
+            echo "::error::A Release run is in progress or queued. Re-run this job once it finishes."
+            exit 1
+          fi
+
+      - uses: actions/checkout@v7
+
+      - uses: actions/download-artifact@v8
+        with:
+          name: republish-notes
+          path: republish
+
+      - name: Authenticate to Azure
+        uses: azure/login@v3
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Update manifests
+        env:
+          VERSION: ${{ needs.prepare.outputs.version }}
+          BLOBS: ${{ needs.prepare.outputs.blobs }}
+        run: |
+          WORK="$(mktemp -d)"
+          ARGS=(--version "$VERSION" --notes-file republish/notes.md)
+          if [ -f republish/message.txt ]; then
+            ARGS+=(--message-file republish/message.txt)
+          fi
+
+          for BLOB in $BLOBS; do
+            FILE="$WORK/$(echo "$BLOB" | tr / _)"
+            # Pin the blob's ETag so a release publishing at the same time
+            # makes the upload fail instead of being overwritten.
+            ETAG=$(az storage blob show \
+              --account-name "$ACCOUNT" \
+              --container-name "$CONTAINER" \
+              --name "$BLOB" \
+              --auth-mode login \
+              --query properties.etag --output tsv)
+            az storage blob download \
+              --account-name "$ACCOUNT" \
+              --container-name "$CONTAINER" \
+              --name "$BLOB" \
+              --file "$FILE" \
+              --if-match "$ETAG" \
+              --auth-mode login > /dev/null
+            HISTORY=()
+            if [[ "$BLOB" == *history.json ]]; then
+              HISTORY=(--history)
+            fi
+            STATUS=$(node scripts/ci/release-notes.mjs rewrite-manifest --file "$FILE" --out "$FILE.new" "${ARGS[@]}" "${HISTORY[@]}")
+            echo "${BLOB}: ${STATUS//$'\n'/, }"
+            if [[ "$STATUS" == status=updated* ]]; then
+              az storage blob upload \
+                --account-name "$ACCOUNT" \
+                --container-name "$CONTAINER" \
+                --name "$BLOB" \
+                --file "$FILE.new" \
+                --overwrite \
+                --if-match "$ETAG" \
+                --content-type "application/json" \
+                --auth-mode login
+            fi
+          done
+
+      - name: Update GitHub release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ needs.prepare.outputs.version }}
+        run: |
+          ARGS=(--repo "$GITHUB_REPOSITORY" --notes-file republish/notes.md)
+          if [ -f republish/message.txt ]; then
+            ARGS+=(--title "v${VERSION} — $(cat republish/message.txt)")
+          fi
+          gh release edit "$TAG" "${ARGS[@]}"

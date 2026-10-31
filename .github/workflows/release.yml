@@ -55,6 +55,7 @@ jobs:
         id: meta
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          ALLOW_PAST_BUMP: ${{ vars.RELEASE_NOTES_ALLOW_PAST_BUMP }}
         run: |
           VERSION="${GITHUB_REF_NAME#v}"
           echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
@@ -78,47 +79,18 @@ jobs:
             fi
           fi
 
-          # Find the merge commit the tag points to, then find its PR
-          COMMIT_SHA=$(git rev-list -n 1 "${GITHUB_REF_NAME}")
-          PR_NUMBER=$(gh api "repos/${{ github.repository }}/commits/${COMMIT_SHA}/pulls" --jq '.[0].number // empty')
-
-          # Tag subject as fallback for release message
-          TAG_SUBJECT=$(git tag -l --format='%(subject)' "${GITHUB_REF_NAME}")
-
-          if [ -z "$PR_NUMBER" ]; then
-            echo "::warning::No PR found for tagged commit — release notes will be empty"
-            RELEASE_MESSAGE="$TAG_SUBJECT"
-            RELEASE_NOTES=""
-          else
-            PR_BODY=$(gh api "repos/${{ github.repository }}/pulls/${PR_NUMBER}" --jq '.body // ""')
-
-            # Release message: extract from PR body "Release: ..." line, fall back to tag subject
-            PR_FIRST_LINE=$(echo "$PR_BODY" | head -1)
-            if echo "$PR_FIRST_LINE" | grep -q '^Release: '; then
-              RELEASE_MESSAGE=$(echo "$PR_FIRST_LINE" | sed 's/^Release: //')
-            else
-              RELEASE_MESSAGE="$TAG_SUBJECT"
-            fi
-
-            # Release notes: strip release title line, test plan, and metadata
-            RELEASE_NOTES=$(echo "$PR_BODY" \
-              | sed '1{/^Release: /d}' \
-              | sed '/./,$!d' \
-              | sed '/^## Test [Pp]lan/,$d' \
-              | sed '/Co-[Aa]uthored-[Bb]y:/d' \
-              | sed '/Generated with \[Claude Code\]/d' \
-              | sed '/^🤖/d' \
-              | sed -e :a -e '/^[[:space:]]*$/{ $d; N; ba; }' \
-            )
+          # Notes come from the PR that bumped package.json to this version,
+          # not from whatever PR the tag sits on (#2508). This fails when the
+          # tag is past the bump commit (listing the PRs in between), when
+          # there's no bump commit or PR, or when the notes don't validate.
+          # To release a tag past its bump anyway, update the bump PR's notes
+          # to cover the extra PRs, set the repository variable
+          # RELEASE_NOTES_ALLOW_PAST_BUMP to the tag name and re-run.
+          ARGS=(extract --tag "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --github-output)
+          if [ -n "$ALLOW_PAST_BUMP" ] && [ "$ALLOW_PAST_BUMP" = "$GITHUB_REF_NAME" ]; then
+            ARGS+=(--allow-past-bump)
           fi
-
-          echo "release_message=${RELEASE_MESSAGE}" >> "$GITHUB_OUTPUT"
-
-          {
-            echo "release_notes<<RELEASE_NOTES_EOF"
-            echo "$RELEASE_NOTES"
-            echo "RELEASE_NOTES_EOF"
-          } >> "$GITHUB_OUTPUT"
+          node scripts/ci/release-notes.mjs "${ARGS[@]}"
 
   validate-update-scripts:
     name: Validate Update Scripts (${{ matrix.os }})
