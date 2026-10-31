@@ -24,6 +24,7 @@ import { injectClubhouseMcp } from './clubhouse-mcp/injection';
 import { bindingManager } from './clubhouse-mcp/binding-manager';
 import { isMcpEnabled } from './mcp-settings';
 import { resolveHelperLaunchSettings, syncOrchestrationGate } from './orchestration-policy';
+import { findParent } from './helper-index';
 import {
   isLowerAccess,
   launchAccessFor,
@@ -165,8 +166,9 @@ export async function whenSpawnsSettled(): Promise<void> {
  * pass no permission mode, so without this a helper started at Auto would
  * come back at the project's setting (possibly skip-all).
  *
- * The ceiling is the orchestrator's live level. An orchestrator that isn't
- * running (or can't be read) counts as standard, so a helper the user wakes
+ * The ceiling is the orchestrator's live level, read from the orchestrator's
+ * own project, which may not be the helper's (#2513). An orchestrator that
+ * isn't running (or can't be found or read) counts as standard, so a helper the user wakes
  * while its orchestrator sleeps starts at standard. That is deliberate. A
  * user can raise a chat helper afterwards from the chat level menu
  * (setUserLaunchAccess); a terminal (PTY) helper has no such path and stays
@@ -175,13 +177,15 @@ export async function whenSpawnsSettled(): Promise<void> {
 async function capHelperLaunch(
   projectPath: string,
   agentId: string,
-  helper: { parentAgentId: string; requestedAccess?: string },
+  helper: DurableAgentConfig & { parentAgentId: string },
   providerId: string,
   asked: AgentLaunchAccess,
 ): Promise<AgentLaunchAccess> {
   let cap: Pick<HelperLaunch, 'freeAgentMode' | 'permissionMode' | 'level'>;
   try {
-    const resolved = await resolveHelperLaunchSettings(projectPath, helper.parentAgentId, { helperProvider: providerId });
+    const parent = await findParent(projectPath, helper);
+    if (!parent) throw new Error('Orchestrator not found');
+    const resolved = await resolveHelperLaunchSettings(parent.projectPath, helper.parentAgentId, { helperProvider: providerId });
     cap = rankHelperLaunch(resolved, helper.requestedAccess, providerId);
   } catch (err) {
     // telemetry-exempt: fails safe to standard and is logged; the spawn goes on.
@@ -383,7 +387,7 @@ async function spawnAgentInner(inParams: SpawnAgentParams, facts: SpawnFacts): P
     }
     // A helper never starts above its orchestrator's ceiling, whoever wakes it.
     if (params.kind === 'durable' && durableConfig?.parentAgentId) {
-      const capped = await capHelperLaunch(params.projectPath, params.agentId, { parentAgentId: durableConfig.parentAgentId, requestedAccess: durableConfig.requestedAccess }, provider.id, {
+      const capped = await capHelperLaunch(params.projectPath, params.agentId, { ...durableConfig, parentAgentId: durableConfig.parentAgentId }, provider.id, {
         freeAgentMode: params.freeAgentMode === true,
         permissionMode,
       });

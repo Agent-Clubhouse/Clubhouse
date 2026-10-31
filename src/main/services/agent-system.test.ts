@@ -281,6 +281,14 @@ const mockResolveHelperLaunchSettings = vi.fn(
   async (_projectPath: string, _orchestratorId: string, options: { helperProvider?: string } = {}) =>
     resolveHelperAccess(orchestratorLive, 'same', options.helperProvider),
 );
+// A helper's parent, in parentProjectPath when set (#2513), else the helper's project.
+const mockFindParent = vi.fn(
+  async (helperPath: string, helper: { parentAgentId?: string; parentProjectPath?: string }) =>
+    helper.parentAgentId ? { projectPath: helper.parentProjectPath || helperPath, config: { id: helper.parentAgentId } } : null,
+);
+vi.mock('./helper-index', () => ({
+  findParent: (...args: Parameters<typeof mockFindParent>) => mockFindParent(...args),
+}));
 vi.mock('./orchestration-policy', async (importOriginal) => ({
   ...(await importOriginal<typeof import('./orchestration-policy')>()),
   resolveHelperLaunchSettings: (...args: Parameters<typeof mockResolveHelperLaunchSettings>) => mockResolveHelperLaunchSettings(...args),
@@ -2949,6 +2957,24 @@ describe('helper launch ceiling on the normal spawn path', () => {
     expect(mockResolveHelperLaunchSettings).toHaveBeenCalledWith(projectPath, 'orch-1', { helperProvider: 'claude-code' });
     expect(lastBuild()).toMatchObject({ freeAgentMode: true, permissionMode: 'auto' });
     expect(getAgentLaunchAccess('helper-1')).toEqual({ freeAgentMode: true, permissionMode: 'auto' });
+  });
+
+  it('a helper whose orchestrator is in another project gets the orchestrator\'s ceiling from there', async () => {
+    const orchestratorProject = path.join(path.sep, 'orchestrator-project');
+    mockGetDurableConfig.mockImplementation((async () => helper({ parentProjectPath: orchestratorProject })) as never);
+    await wake();
+    expect(mockFindParent).toHaveBeenCalledWith(projectPath, expect.objectContaining({ parentAgentId: 'orch-1', parentProjectPath: orchestratorProject }));
+    expect(mockResolveHelperLaunchSettings).toHaveBeenCalledWith(orchestratorProject, 'orch-1', { helperProvider: 'claude-code' });
+    expect(lastBuild()).toMatchObject({ freeAgentMode: true, permissionMode: 'auto' });
+    expect(getAgentLaunchAccess('helper-1')).toEqual({ freeAgentMode: true, permissionMode: 'auto' });
+  });
+
+  it('starts at standard when the orchestrator can\'t be found in any project', async () => {
+    mockFindParent.mockResolvedValueOnce(null);
+    mockGetDurableConfig.mockImplementation((async () => helper({ parentProjectPath: path.join(path.sep, 'gone') })) as never);
+    await wake();
+    expect(mockResolveHelperLaunchSettings).not.toHaveBeenCalled();
+    expect(lastBuild()).toMatchObject({ freeAgentMode: false, permissionMode: 'auto' });
   });
 
   it('also lowers an explicit skip-all a caller passes', async () => {

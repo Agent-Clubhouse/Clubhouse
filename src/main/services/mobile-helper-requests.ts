@@ -93,7 +93,10 @@ export function buildMobileHelperRequests(
     const list = agents[project.id] ?? [];
     const helper = list.find((a) => a.id === request.helperId);
     if (!helper || isDisposedAgent(helper)) continue;
-    const requesterName = list.find((a) => a.id === request.orchestratorId)?.name ?? UNNAMED_ORCHESTRATOR;
+    // The request records the helper's project; its orchestrator may be in another one (#2513).
+    const parentProject = helper.parentProjectPath ? projectFor(projects, helper.parentProjectPath) : project;
+    const parentList = parentProject ? agents[parentProject.id] ?? [] : [];
+    const requesterName = parentList.find((a) => a.id === request.orchestratorId)?.name ?? UNNAMED_ORCHESTRATOR;
     out.push({
       requestId,
       kind: 'dispose',

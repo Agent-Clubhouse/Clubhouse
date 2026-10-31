@@ -43,6 +43,7 @@ vi.mock('../../agent-config', () => {
   const isDisposed = (a: DurableAgentConfig) => !!a.disposedAt;
   return {
     listDurable: vi.fn(async (p: string) => configs.get(p) ?? []),
+    projectKey: vi.fn(async (p: string) => p),
     getDurableConfig: vi.fn(async (p: string, id: string) => (configs.get(p) ?? []).find((a) => a.id === id) ?? null),
     listHelpers: vi.fn(async (p: string, id: string) =>
       (configs.get(p) ?? []).filter((a) => a.parentAgentId === id && !isDisposed(a))),
@@ -52,6 +53,19 @@ vi.mock('../../agent-config', () => {
     }),
   };
 });
+// Direct helpers in every project: same-project rows, or rows whose parentProjectPath names the home project.
+vi.mock('../../helper-index', () => ({
+  listHelpersEverywhere: vi.fn(async (home: string, id: string) => {
+    const out: Array<{ projectPath: string; config: DurableAgentConfig }> = [];
+    for (const [p, agents] of configs) {
+      for (const a of agents) {
+        const parentPath = a.parentProjectPath ?? p;
+        if (a.parentAgentId === id && parentPath === home && !a.disposedAt) out.push({ projectPath: p, config: a });
+      }
+    }
+    return out;
+  }),
+}));
 // Anything that would announce a member or start polling goes through these.
 vi.mock('../../pty-manager', () => ({ write: ptyWrite, isRunning: vi.fn(() => true) }));
 vi.mock('../../group-project-bulletin', () => ({
@@ -604,6 +618,80 @@ describe('scope over time', () => {
     restart();
     await rebuildPersistedBindings();
     expect(boundPairs()).toEqual(['durable_h1->durable_lead', 'durable_h1->gp_1', 'durable_lead->durable_h1', 'durable_lead->gp_1']);
+  });
+});
+
+describe('a helper in another project (#2513)', () => {
+  let farPath: string;
+  beforeEach(() => {
+    farPath = path.join(root, 'annex');
+    fs.mkdirSync(farPath, { recursive: true });
+    projects.list = [...projects.list, { id: 'proj_a', name: 'annex', displayName: 'Annex', path: farPath }];
+    configs.set(farPath, [
+      agent('durable_far', { parentAgentId: 'durable_lead', parentProjectPath: projectPath }),
+      agent('durable_local'),
+    ]);
+  });
+  const setFar = (agents: DurableAgentConfig[]) => {
+    configs.set(farPath, agents);
+    for (const listener of configListeners) listener(farPath);
+  };
+
+  it('connects it, records its project, and labels each wire with its target\'s project', async () => {
+    const res = await call('connect_agents', { from: 'h1', to: 'far', twoWay: true });
+    expect(res.isError).toBe(false);
+    expect(boundPairs()).toEqual(['durable_far->durable_h1', 'durable_h1->durable_far']);
+    expect(bindingManager.getBindingsForAgent('durable_h1')[0]).toMatchObject({ targetName: 'far', projectName: 'Annex' });
+    expect(bindingManager.getBindingsForAgent('durable_far')[0]).toMatchObject({ targetName: 'h1', projectName: 'Wardfall' });
+    const stored = await readConnections(projectPath);
+    expect(stored.find((c) => c.agentId === 'durable_h1')).toMatchObject({ targetProjectPath: farPath });
+    expect(stored.find((c) => c.agentId === 'durable_h1')).not.toHaveProperty('agentProjectPath');
+    expect(stored.find((c) => c.agentId === 'durable_far')).toMatchObject({ agentProjectPath: farPath });
+
+    restart();
+    await rebuildPersistedBindings();
+    expect(boundPairs()).toEqual(['durable_far->durable_h1', 'durable_h1->durable_far']);
+  });
+
+  it('refuses an agent in another project that is not the caller\'s helper', async () => {
+    const res = await call('connect_agents', { from: 'lead', to: 'local' });
+    expect(res.isError).toBe(true);
+    expect(res.text).toMatch(/not you or one of your helpers/);
+  });
+
+  it('does not prune the connection when either project\'s agents change', async () => {
+    await call('connect_agents', { from: 'lead', to: 'far' });
+    await call('add_to_group_project', { project: (await call('create_group_project', { name: 'Raid' })).text.match(/id (gp_\d+)/)![1], helper: 'far' });
+    const { stop } = watchWithRebuilds();
+    setAgents(configs.get(projectPath)!.map((a) => ({ ...a, lastSessionId: 'x' } as DurableAgentConfig)));
+    setFar(configs.get(farPath)!.map((a) => ({ ...a, lastSessionId: 'y' } as DurableAgentConfig)));
+    await new Promise((r) => setTimeout(r, 150));
+    stop();
+    expect((await readConnections(projectPath)).map(pairKey).sort()).toEqual(['durable_far->gp_1', 'durable_lead->durable_far']);
+    expect(boundPairs()).toEqual(['durable_far->gp_1', 'durable_lead->durable_far']);
+  });
+
+  it('drops the connection once the helper is disposed in its own project', async () => {
+    await call('connect_agents', { from: 'lead', to: 'far' });
+    const { stop, rebuilt } = watchWithRebuilds();
+    setFar(configs.get(farPath)!.map((a) => (a.id === 'durable_far' ? { ...a, disposedAt: '2026-10-31T00:00:00.000Z' } : a)));
+    await rebuilt(1);
+    stop();
+    expect(await readConnections(projectPath)).toEqual([]);
+    expect(boundPairs()).toEqual([]);
+  });
+
+  it('keeps the connection and its binding while the helper\'s project folder is gone', async () => {
+    await call('connect_agents', { from: 'lead', to: 'far' });
+    fs.rmSync(farPath, { recursive: true, force: true });
+    configs.delete(farPath);
+    const { stop } = watchWithRebuilds();
+    setAgents(configs.get(projectPath)!.map((a) => ({ ...a, lastSessionId: 'x' } as DurableAgentConfig)));
+    await new Promise((r) => setTimeout(r, 150));
+    stop();
+    await rebuildPersistedBindings();
+    expect((await readConnections(projectPath)).map(pairKey)).toEqual(['durable_lead->durable_far']);
+    expect(boundPairs()).toEqual(['durable_lead->durable_far']);
   });
 });
 

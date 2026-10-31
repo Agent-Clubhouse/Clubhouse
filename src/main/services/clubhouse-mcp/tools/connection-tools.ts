@@ -4,7 +4,7 @@
  * only an agent with orchestration on sees them.
  *
  * Scope: every agent named must be the caller or one of its (live, direct)
- * helpers, and only group projects the caller created through these tools or
+ * helpers, in its project or another (#2513), and only group projects the caller created through these tools or
  * already belongs to can be changed. Group projects created here record the
  * caller as `metadata.createdByAgentId`.
  *
@@ -24,6 +24,7 @@ import { McpArgError, optionalBoolean, requireString } from './validation';
 import { getAgentProjectPath } from '../../agent-registry';
 import * as agentConfig from '../../agent-config';
 import * as projectStore from '../../project-store';
+import { listHelpersEverywhere } from '../../helper-index';
 import { groupProjectRegistry } from '../../group-project-registry';
 import { bootstrapGroupProjectAdmin } from '../../group-project-admin-service';
 import {
@@ -61,10 +62,13 @@ function text(message: string, isError = false): McpToolResult {
 
 interface CallerScope {
   projectPath: string;
-  projectName?: string;
   caller: DurableAgentConfig;
-  /** The caller and its live direct helpers. */
+  /** The caller and its live direct helpers, in every project. */
   agents: DurableAgentConfig[];
+  /** agent id → the name of the project holding it. */
+  projectNames: Map<string, string | undefined>;
+  /** agent id → the project holding it, for helpers in other projects only. */
+  otherProjects: Map<string, string>;
 }
 
 async function callerScope(callerId: string): Promise<CallerScope> {
@@ -72,13 +76,18 @@ async function callerScope(callerId: string): Promise<CallerScope> {
   if (!projectPath) throw new ConnectionScopeError('Could not find your project. Connection tools need a running durable agent.');
   const caller = await agentConfig.getDurableConfig(projectPath, callerId);
   if (!caller) throw new ConnectionScopeError('Connection tools are only for durable agents.');
-  const helpers = await agentConfig.listHelpers(projectPath, callerId);
-  const project = (await projectStore.list()).find((p) => p.path === projectPath);
+  const [helpers, projects] = await Promise.all([listHelpersEverywhere(projectPath, callerId), projectStore.list()]);
+  const nameOf = (p: string) => {
+    const project = projects.find((candidate) => candidate.path === p);
+    return project ? project.displayName || project.name : undefined;
+  };
+  const projectName = nameOf(projectPath);
   return {
     projectPath,
-    projectName: project ? project.displayName || project.name : undefined,
     caller,
-    agents: [caller, ...helpers],
+    agents: [caller, ...helpers.map((h) => h.config)],
+    projectNames: new Map([[caller.id, projectName], ...helpers.map((h) => [h.config.id, nameOf(h.projectPath)] as const)]),
+    otherProjects: new Map(helpers.filter((h) => h.projectPath !== projectPath).map((h) => [h.config.id, h.projectPath])),
   };
 }
 
@@ -126,10 +135,12 @@ async function resolveGroupProject(callerId: string, ref: string): Promise<Group
   return candidates[0];
 }
 
+/** A wire from one agent to another, labelled with the target's project as a canvas wire is. */
 function agentWire(scope: CallerScope, from: DurableAgentConfig, to: DurableAgentConfig): PersistedBinding {
+  const projectName = scope.projectNames.get(to.id);
   return {
     agentId: from.id, targetId: to.id, targetKind: 'agent', label: to.name,
-    agentName: from.name, targetName: to.name, ...(scope.projectName ? { projectName: scope.projectName } : {}),
+    agentName: from.name, targetName: to.name, ...(projectName ? { projectName } : {}),
   };
 }
 
@@ -137,13 +148,18 @@ function membership(agent: DurableAgentConfig, project: GroupProject): Persisted
   return { agentId: agent.id, targetId: project.id, targetKind: 'group-project', label: project.name, agentName: agent.name, targetName: project.name };
 }
 
-function entryFor(callerId: string, binding: PersistedBinding): OrchestratorConnection {
+function entryFor(callerId: string, scope: CallerScope, binding: PersistedBinding): OrchestratorConnection {
+  const agentProjectPath = scope.otherProjects.get(binding.agentId);
+  const targetProjectPath = binding.targetKind === 'agent' ? scope.otherProjects.get(binding.targetId) : undefined;
   return {
     ownerId: callerId,
     agentId: binding.agentId,
     targetId: binding.targetId,
     targetKind: binding.targetKind as OrchestratorConnection['targetKind'],
     createdAt: new Date().toISOString(),
+    // An end in another project is recorded, so its entry is only pruned once that project says it's gone.
+    ...(agentProjectPath ? { agentProjectPath } : {}),
+    ...(targetProjectPath ? { targetProjectPath } : {}),
   };
 }
 
@@ -157,7 +173,7 @@ async function connect(callerId: string, scope: CallerScope, bindings: Persisted
   if (refused) {
     throw new ConnectionScopeError(`The user removed this connection. ${refused.agentName} → ${refused.targetName} stays disconnected until the user connects it again.`);
   }
-  await addConnections(scope.projectPath, bindings.map((b) => entryFor(callerId, b)));
+  await addConnections(scope.projectPath, bindings.map((b) => entryFor(callerId, scope, b)));
   const outcomes = bindings.map((b) => {
     const outcome = claimSourceBinding(ORCHESTRATOR_CONNECTION_SOURCE_ID, b);
     // Same as a group-project join the user draws: the first member leads.
