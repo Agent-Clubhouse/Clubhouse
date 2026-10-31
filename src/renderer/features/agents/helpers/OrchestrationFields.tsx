@@ -13,8 +13,12 @@ import {
   type OrchestrationAccess,
   type OrchestrationControl,
 } from '../../../../shared/orchestration-policy';
+import { Toggle } from '../../../components/Toggle';
 import { ACCESS_LEVEL_LABELS, CONTROL_LABELS, aboveCeiling, accessLabel } from './helper-model';
 import { parseHelperCount } from './orchestration-hooks';
+
+/** The help line under the "Cross-project helpers" switch (#2512). */
+export const CROSS_PROJECT_HELP = 'Let this agent start helpers in other projects.';
 
 /** The note under the access control: the live ceiling, or the rule when it isn't running. */
 export function accessNote(access: HelperAccessResolution | null, running: boolean, name: string): string {
@@ -107,6 +111,27 @@ export function HelperCountInput({ id, value, ceiling, disabled, className, onCo
         if (e.key === 'Escape' && draft !== String(value)) { e.preventDefault(); setDraft(String(value)); onError(null); }
       }}
       className={className}
+      data-testid={testId}
+    />
+  );
+}
+
+/** "Cross-project helpers" (#2512): may this agent start helpers in other registered projects. */
+export function CrossProjectToggle({ id, checked, name, disabled, onChange, testId }: {
+  id?: string;
+  checked: boolean;
+  name: string;
+  disabled?: boolean;
+  onChange: (on: boolean) => void;
+  testId?: string;
+}) {
+  return (
+    <Toggle
+      id={id}
+      checked={checked}
+      disabled={disabled}
+      onChange={onChange}
+      aria-label={`Let ${name} start helpers in other projects`}
       data-testid={testId}
     />
   );

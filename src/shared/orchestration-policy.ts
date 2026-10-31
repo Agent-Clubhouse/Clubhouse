@@ -42,6 +42,8 @@ export interface OrchestrationPolicy {
   control: OrchestrationControl;
   /** Live helpers this agent may have at once. */
   maxHelpers: number;
+  /** "Cross-project helpers" (#2512): may start helpers in other registered projects. */
+  crossProjectHelpers: boolean;
 }
 
 /**
@@ -62,10 +64,14 @@ export const ORCHESTRATION_DEFAULTS: Readonly<OrchestrationPolicy> = Object.free
   access: 'same',
   control: 'hands-off',
   maxHelpers: DEFAULT_MAX_HELPERS,
+  crossProjectHelpers: false,
 });
 
 /** The refusal an orchestration tool returns for an agent with orchestration off. */
 export const ORCHESTRATION_OFF_MESSAGE = 'Orchestration is turned off for this agent.';
+
+/** The refusal a cross-project tool returns for an agent with cross-project helpers off. */
+export const CROSS_PROJECT_OFF_MESSAGE = 'Cross-project helpers are turned off for this agent.';
 
 /** Where each field of a resolved policy came from. */
 export type OrchestrationPolicySource = 'agent' | 'persona' | 'default';
@@ -98,6 +104,7 @@ export function normalizeOrchestrationConfig(raw: unknown): OrchestrationPolicyC
   if (isAccess(r.access)) out.access = r.access;
   if (isControl(r.control)) out.control = r.control;
   if (isLimit(r.maxHelpers)) out.maxHelpers = r.maxHelpers;
+  if (typeof r.crossProjectHelpers === 'boolean') out.crossProjectHelpers = r.crossProjectHelpers;
   return Object.keys(out).length > 0 ? out : undefined;
 }
 
@@ -128,6 +135,10 @@ export function validateOrchestrationPatch(raw: unknown): { [K in keyof Orchestr
       case 'maxHelpers':
         if (value !== null && !isLimit(value)) throw new Error(`maxHelpers must be a whole number from 1 to ${MAX_HELPER_LIMIT}`);
         out.maxHelpers = value as number | null;
+        break;
+      case 'crossProjectHelpers':
+        if (value !== null && typeof value !== 'boolean') throw new Error('crossProjectHelpers must be a boolean');
+        out.crossProjectHelpers = value as boolean | null;
         break;
       default:
         throw new Error(`Unknown orchestration policy field: ${key}`);
@@ -379,6 +390,19 @@ export function checkHelperLimit(counts: {
 /** What happens to an agent's helpers when orchestration is turned off. */
 export type OrchestrationOffChoice = 'keep' | 'dispose' | 'cancel';
 
+/** An orchestrator's live direct helpers in one project. */
+export interface HelperProjectGroup {
+  projectPath: string;
+  helperIds: string[];
+}
+
+/** An orchestrator's live direct helpers in every project, home project first. */
+export interface HelperSummary {
+  hasHelpers: boolean;
+  helperIds: string[];
+  projects: HelperProjectGroup[];
+}
+
 export interface SetOrchestrationPolicyResult {
   ok: boolean;
   message: string;
@@ -387,7 +411,13 @@ export interface SetOrchestrationPolicyResult {
    * Set when the patch turns orchestration off while the agent has live
    * helpers. Nothing changed; call turnOffOrchestration with a choice.
    */
-  needsHelperChoice?: { helperIds: string[] };
+  needsHelperChoice?: { helperIds: string[]; projects: HelperProjectGroup[] };
+  /**
+   * Set when the patch turned cross-project helpers off while the agent has
+   * live helpers in other projects: how many. Nothing is settled; they keep
+   * running and can still be managed.
+   */
+  crossProjectHelpersKept?: number;
 }
 
 /**
