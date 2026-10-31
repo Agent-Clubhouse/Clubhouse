@@ -19,7 +19,7 @@ import { getSettings as getExperimentalSettings } from './experimental-settings'
 import { readMobileChatContent } from './annex-chat-content';
 import { agentFolders } from './agent-runtime/chat-files';
 import { buildAgentDetails, buildAgentSettings, buildAgentSettingsOptions, buildCreateOptions, createMobileAgent, updateMobileAgent } from './mobile-agents';
-import { remoteChatEvent } from './annex-chat-echo';
+import { MOBILE_SLASH_COMMANDS_MAX, latestSlashCommands, remoteChatEvent } from './annex-chat-echo';
 import { buildMobileHelperRequests, runHelperCommand } from './mobile-helper-requests';
 import { onStartRequestsChanged } from './helper-start-requests';
 import { onDisposeRequestsChanged } from './helper-dispose-requests';
@@ -2428,6 +2428,8 @@ async function handleMobileCapabilitiesRoute(ctx: AnnexRouteContext): Promise<vo
     agentState: { version: 1, path: '/api/v1/mobile/agents/state' },
     helperRequests: { version: 1, snapshotField: 'helperRequests', commands: ['helper.approve', 'helper.decline'] },
     chatControls: { version: 1 },
+    // The composer's / menu: a live chat snapshot's `slashCommands`, updated by `commands_available` events.
+    slashCommands: { version: 1, snapshotField: 'slashCommands', event: 'commands_available', maxCommands: MOBILE_SLASH_COMMANDS_MAX },
     // A paired phone has full control (#2462): persistent approvals and Free Agent Mode, as on the desktop.
     permissions: { version: 1, persistentApprovals: true, freeAgentMode: true },
     idempotency: { scope: 'peer-and-epoch', maxEntries: MOBILE_COMMAND_MAX_ENTRIES, ttlMs: MOBILE_COMMAND_TTL_MS },
@@ -2550,6 +2552,8 @@ async function handleMobileChatRoute(ctx: AnnexRouteContext, match: RegExpMatchA
       ...(live ? pendingInteractions(current) : { pendingPermissions: [], pendingQuestions: [] }),
       // The composer's level, model and effort pills, for chat.setLevel / chat.setModel (#2462).
       chatControls: live ? chatControls(current, runtime.getCapabilities?.()) : null,
+      // The composer's / menu; a page may not reach back to the session's commands_available.
+      slashCommands: live ? latestSlashCommands(current) : null,
     });
   } catch {
     // telemetry-exempt: do not export transcript content; caller receives a bounded error.

@@ -69,6 +69,7 @@
       "queuedMessageIds": [],
       "readOnly": true,
       "sessionId": "sess_old",
+      "slashCommands": null,
       "state": "sleeping",
       "truncated": false,
       "version": 1
