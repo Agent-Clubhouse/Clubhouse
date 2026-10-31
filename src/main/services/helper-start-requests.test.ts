@@ -49,11 +49,14 @@ describe('helper start requests (#2234)', () => {
     const first = recordStartRequest(PROJECT, 'orch', 'Orch', args('a'));
     const same = recordStartRequest(PROJECT, 'orch', 'Orch', args('a'));
     const differs = recordStartRequest(PROJECT, 'orch', 'Orch', { ...args('a'), model: 'm' });
+    // The target project (#2515) is part of the request too.
+    const elsewhere = recordStartRequest(PROJECT, 'orch', 'Orch', { ...args('a'), project: path.join(path.sep, 'tmp', 'far') });
     expect(same).toMatchObject({ ok: true, reused: true });
-    if (!first.ok || !same.ok || !differs.ok) throw new Error('unexpected refusal');
+    if (!first.ok || !same.ok || !differs.ok || !elsewhere.ok) throw new Error('unexpected refusal');
     expect(same.request.requestId).toBe(first.request.requestId);
     expect(differs.request.requestId).not.toBe(first.request.requestId);
-    expect(listStartRequests()).toHaveLength(2);
+    expect(elsewhere.request.requestId).not.toBe(first.request.requestId);
+    expect(listStartRequests()).toHaveLength(3);
   });
 
   it('caps the requests waiting per orchestrator, not across orchestrators', () => {

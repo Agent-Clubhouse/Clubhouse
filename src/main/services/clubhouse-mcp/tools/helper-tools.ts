@@ -25,6 +25,16 @@
  *
  * Every tool is scoped to the caller's direct children: one orchestrator
  * never sees or touches another's helpers.
+ *
+ * Helpers in other projects (#2515): start_helper's `project` names another
+ * registered local project, allowed only while the caller's cross-project
+ * switch is on (#2512). The start then has two paths. The orchestrator's
+ * home path is used for the limits, the policy, a held start request and the
+ * launch access; the helper's path is used for its config, its creation
+ * (with `parentProjectPath` pointing home) and its spawn. The other tools
+ * find the caller's helpers in every project through the helper index
+ * (#2511) and act on each one in the project its row is in. list_projects,
+ * in the `crossProject` tool group, lists the projects a helper can go to.
  */
 
 import * as path from 'path';
@@ -33,15 +43,18 @@ import { isOrchestrationEnabled, onOrchestrationGateChange } from '../orchestrat
 import type { McpToolResult } from '../types';
 import * as agentConfig from '../../agent-config';
 import { agentRegistry } from '../../agent-registry';
-import { startDurableCreation } from '../../agent-creation';
+import { personaInjection, startDurableCreation } from '../../agent-creation';
 import * as agentSystem from '../../agent-system';
 import { getAgentRuntime } from '../../agent-runtime';
-import { getGitInfo } from '../../git-service';
+import { findGitCommonDir, getDefaultBranch, getGitInfo } from '../../git-service';
 import { withoutClubhouseOwnedChanges } from '../../clubhouse-owned-files';
-import { applyPersonaToAgent } from '../../persona-application';
+import { findParent, listHelpersEverywhere, type HelperEntry } from '../../helper-index';
+import { listAvailablePersonas } from '../../materialization-service';
+import * as projectStore from '../../project-store';
 import {
   checkHelperLimitFor,
   getOrchestrationPolicy,
+  isCrossProjectAllowed,
   resolveHelperLaunchSettings,
 } from '../../orchestration-policy';
 import { getAllProviders, getProvider } from '../../../orchestrators';
@@ -53,12 +66,20 @@ import { AGENT_COLORS } from '../../../../shared/name-generator';
 import { isDisposedAgent } from '../../../../shared/agent-helpers';
 import {
   ACCESS_LEVELS,
+  CROSS_PROJECT_OFF_MESSAGE,
   isAccessLevel,
   rankHelperLaunch,
   type HelperLaunch,
   type OrchestrationControl,
 } from '../../../../shared/orchestration-policy';
-import type { DurableAgentConfig, HelperStartArgs, HelperStartDecisionResult, HelperStartRequest } from '../../../../shared/types';
+import type {
+  DurableAgentConfig,
+  HelperStartArgs,
+  HelperStartDecisionResult,
+  HelperStartRequest,
+  Project,
+  StartDurableCreationParams,
+} from '../../../../shared/types';
 import {
   dropStartRequestsFor,
   onStartRequestsChanged,
@@ -127,16 +148,81 @@ async function resolveCaller(agentId: string): Promise<Caller> {
   return { projectPath: registration.projectPath, config };
 }
 
-/** One of the caller's live direct helpers, by id or (case-insensitive) name. */
-async function resolveOwnHelper(caller: Caller, ref: string): Promise<DurableAgentConfig> {
-  const helpers = await agentConfig.listHelpers(caller.projectPath, caller.config.id);
-  const byId = helpers.find((h) => h.id === ref);
+/** One of the caller's live direct helpers in any project, by id or (case-insensitive) name. */
+async function resolveOwnHelper(caller: Caller, ref: string): Promise<HelperEntry> {
+  const helpers = await listHelpersEverywhere(caller.projectPath, caller.config.id);
+  const byId = helpers.find((h) => h.config.id === ref);
   if (byId) return byId;
   const lower = ref.toLowerCase();
-  const byName = helpers.filter((h) => h.name.toLowerCase() === lower);
+  const byName = helpers.filter((h) => h.config.name.toLowerCase() === lower);
   if (byName.length === 1) return byName[0];
   if (byName.length > 1) throw new HelperToolError(`More than one of your helpers is named "${ref}". Use its id.`);
   throw new HelperToolError(`"${ref}" is not one of your helpers. Call list_helpers to see them.`);
+}
+
+// ── Projects (#2515) ─────────────────────────────────────────────────────
+
+function projectName(project: Project): string {
+  return project.displayName || project.name;
+}
+
+/** The registered local project at `projectPath`, if any. */
+async function registeredProjectAt(projects: readonly Project[], projectPath: string): Promise<Project | undefined> {
+  const exact = projects.find((p) => samePath(p.path, projectPath));
+  if (exact) return exact;
+  for (const p of projects) {
+    if (await agentConfig.isSameProject(p.path, projectPath)) return p;
+  }
+  return undefined;
+}
+
+/** A project's name for messages and results: its registered name, else its folder name. */
+async function nameOfProject(projects: readonly Project[], projectPath: string): Promise<string> {
+  const project = await registeredProjectAt(projects, projectPath);
+  return project ? projectName(project) : path.basename(projectPath);
+}
+
+/** The project a helper is created in. */
+interface TargetProject {
+  path: string;
+  name: string;
+  /** Not the orchestrator's own project. */
+  cross: boolean;
+}
+
+/**
+ * The project start_helper's `project` names (a registered local project, by
+ * name or path), checked for a helper of `orchestratorId` (an agent in
+ * `homePath`). No `project`, or one that is the home project, is the home
+ * project. Another project needs the cross-project switch, a git repository
+ * and a repository other than the home project's. Throws HelperToolError.
+ */
+async function resolveTargetProject(homePath: string, orchestratorId: string, ref: string | undefined): Promise<TargetProject> {
+  const projects = await projectStore.list();
+  const home: TargetProject = { path: homePath, name: await nameOfProject(projects, homePath), cross: false };
+  if (!ref) return home;
+
+  const lower = ref.toLowerCase();
+  const byPath = projects.filter((p) => samePath(p.path, ref));
+  const byName = projects.filter((p) => p.name.toLowerCase() === lower || p.displayName?.toLowerCase() === lower);
+  const matches = byPath.length > 0 ? byPath : byName;
+  if (matches.length > 1) throw new HelperToolError(`More than one project is named "${ref}". Use its path from list_projects.`);
+  if (matches.length === 0) {
+    if (samePath(ref, homePath)) return home;
+    throw new HelperToolError(`"${ref}" is not a project in Clubhouse. Call list_projects to see them.`);
+  }
+  const target = matches[0];
+  if (await agentConfig.isSameProject(target.path, homePath)) return home;
+
+  const name = projectName(target);
+  if (!(await isCrossProjectAllowed(homePath, orchestratorId))) throw new HelperToolError(CROSS_PROJECT_OFF_MESSAGE);
+  const [targetGit, homeGit] = await Promise.all([findGitCommonDir(target.path), findGitCommonDir(homePath)]);
+  if (!targetGit) throw new HelperToolError(`${name} is not a git repository, so a helper can't get a worktree there.`);
+  if (homeGit && samePath(targetGit, homeGit)) {
+    throw new HelperToolError(
+      `${name} is in the same git repository as your project. Start the helper without project to give it a worktree of this repository.`);
+  }
+  return { path: target.path, name, cross: true };
 }
 
 // ── Messages to agents ───────────────────────────────────────────────────
@@ -255,9 +341,13 @@ async function restoreTask(projectPath: string, helperId: string, task: string):
  * config (a persona may have changed its CLI), the orchestrator's gate and
  * liveness, and the access, ranked for the helper's CLI. The helper is in
  * `spawning` from the record write until this settles. Never throws.
+ *
+ * `homePath` is the orchestrator's project (its liveness and the launch
+ * access); `helperPath` is the project the helper's row is in.
  */
 async function finishHelperStart(
-  projectPath: string,
+  homePath: string,
+  helperPath: string,
   orchestrator: DurableAgentConfig,
   helperId: string,
   helperName: string,
@@ -272,7 +362,7 @@ async function finishHelperStart(
       notifyOrchestrator(orchestrator.id, `Helper "${helperName}" (${helperId}) was cancelled before it started.`);
       return;
     }
-    let config = await agentConfig.getDurableConfig(projectPath, helperId).catch((): null => null);
+    let config = await agentConfig.getDurableConfig(helperPath, helperId).catch((): null => null);
     if (outcome === 'failed' || !config || config.creation) {
       const reason = config?.creation?.reason ?? 'its worktree could not be created.';
       notifyOrchestrator(orchestrator.id, `Helper "${helperName}" (${helperId}) failed to start: ${reason}`);
@@ -282,30 +372,30 @@ async function finishHelperStart(
     // The task and the requested level stay on the helper: a helper left
     // asleep gets the task on its next wake, and no wake goes above the level.
     const asked = requestedAccess && isAccessLevel(requestedAccess) ? requestedAccess : null;
-    await agentConfig.setHelperStartFields(projectPath, helperId, { pendingTask: task, requestedAccess: asked });
+    await agentConfig.setHelperStartFields(helperPath, helperId, { pendingTask: task, requestedAccess: asked });
     const provider = config.orchestrator ?? orchestrator.orchestrator;
-    const launch = await resolveLaunchFor(projectPath, orchestrator.id, provider, requestedAccess);
-    config = await agentConfig.getDurableConfig(projectPath, helperId).catch((): null => null);
+    const launch = await resolveLaunchFor(homePath, orchestrator.id, provider, requestedAccess);
+    config = await agentConfig.getDurableConfig(helperPath, helperId).catch((): null => null);
     // A persona applied during creation may have switched the CLI: rank again for it.
     const finalProvider = config?.orchestrator ?? provider;
     const finalLaunch = finalProvider === provider
       ? launch
-      : await resolveLaunchFor(projectPath, orchestrator.id, finalProvider, requestedAccess);
+      : await resolveLaunchFor(homePath, orchestrator.id, finalProvider, requestedAccess);
 
     // Taken off before the spawn, so a wake can't deliver it a second time;
     // put back below if the helper doesn't start.
-    await agentConfig.setHelperStartFields(projectPath, helperId, { pendingTask: null });
+    await agentConfig.setHelperStartFields(helperPath, helperId, { pendingTask: null });
     taskTaken = true;
 
     // The last read: nothing is awaited between it, the checks and the spawn.
-    config = await agentConfig.getDurableConfig(projectPath, helperId).catch((): null => null);
-    const blocker = spawnBlocker(projectPath, orchestrator.id, config)
+    config = await agentConfig.getDurableConfig(helperPath, helperId).catch((): null => null);
+    const blocker = spawnBlocker(homePath, orchestrator.id, config)
       ?? ((config?.orchestrator ?? provider) !== finalProvider ? 'its CLI changed while it was starting' : null);
     if (blocker) {
       appLog('core:mcp', 'info', 'start_helper: helper left asleep', {
         meta: { orchestratorId: orchestrator.id, helperId, reason: blocker },
       });
-      if (config) await restoreTask(projectPath, helperId, task);
+      if (config) await restoreTask(helperPath, helperId, task);
       taskTaken = false;
       notifyOrchestrator(orchestrator.id,
         `Helper "${helperName}" (${helperId}) is ready but was not started because ${blocker}. ` +
@@ -316,8 +406,8 @@ async function finishHelperStart(
     broadcastToAllWindows(IPC.AGENT.AGENT_WAKING, helperId);
     await agentSystem.spawnAgent({
       agentId: helperId,
-      projectPath,
-      cwd: config.worktreePath || projectPath,
+      projectPath: helperPath,
+      cwd: config.worktreePath || helperPath,
       kind: 'durable',
       model: config.model,
       mission: helperMission(orchestrator.name, task),
@@ -338,7 +428,7 @@ async function finishHelperStart(
   } catch (err) {
     // telemetry-exempt: the failure reaches the orchestrator and list_helpers
     const reason = errorText(err);
-    if (taskTaken) await restoreTask(projectPath, helperId, task);
+    if (taskTaken) await restoreTask(helperPath, helperId, task);
     spawnFailures.set(helperId, reason);
     broadcastToAllWindows(IPC.AGENT.AGENT_WAKE_FAILED, helperId, reason);
     appLog('core:mcp', 'warn', 'start_helper: helper spawn failed', {
@@ -365,7 +455,7 @@ function validateStartArgs(args: HelperStartArgs): void {
 
 function parseStartArgs(args: Record<string, unknown>): HelperStartArgs {
   const parsed: HelperStartArgs = { name: requireText(args, 'name'), task: requireText(args, 'task') };
-  for (const key of ['persona', 'cli', 'model', 'access', 'branchFrom', 'folder'] as const) {
+  for (const key of ['persona', 'cli', 'model', 'access', 'branchFrom', 'folder', 'project'] as const) {
     const value = optionalText(args, key);
     if (value) parsed[key] = value;
   }
@@ -378,7 +468,7 @@ type StartOutcome =
   | { kind: 'refused'; message: string; reason: string }
   | { kind: 'too_many'; waiting: number }
   | { kind: 'needs_approval'; control: OrchestrationControl; request: HelperStartRequest; reused: boolean }
-  | { kind: 'starting'; helperId: string; name: string; branch?: string; launch: HelperLaunch };
+  | { kind: 'starting'; helperId: string; name: string; branch?: string; launch: HelperLaunch; project: TargetProject };
 
 /** A sentence as the tail of "…because <reason>": its first letter lowered unless it starts an acronym or name. */
 function asReason(text: string): string {
@@ -391,13 +481,13 @@ function refused(message: string): StartOutcome {
 }
 
 /** Raise the desktop notice for a held start, at most once a minute per orchestrator. */
-function noticeApprovalNeeded(orchestrator: DurableAgentConfig, args: HelperStartArgs): void {
+function noticeApprovalNeeded(orchestrator: DurableAgentConfig, args: HelperStartArgs, target: TargetProject): void {
   const now = Date.now();
   const last = lastApprovalNotice.get(orchestrator.id);
   if (last !== undefined && now - last < APPROVAL_NOTICE_INTERVAL_MS) return;
   lastApprovalNotice.set(orchestrator.id, now);
   broadcastToAllWindows(IPC.APP.AGENT_ATTENTION, orchestrator.id, {
-    title: `${orchestrator.name} wants to start a helper`,
+    title: `${orchestrator.name} wants to start a helper${target.cross ? ` in ${target.name}` : ''}`,
     message: `Helper "${args.name}": ${args.task}`.slice(0, 240),
   });
 }
@@ -405,10 +495,15 @@ function noticeApprovalNeeded(orchestrator: DurableAgentConfig, args: HelperStar
 /**
  * The start path, for start_helper and for a start the user approved
  * (#2234). Every check runs both ways: orchestration on and the orchestrator
- * running, the limits under the start lock, the name, folder and branch rules
- * of the creation, and access clamped to the orchestrator's ceiling and to
- * what was asked. `approvedIn` (the request's project) skips only the
- * control-level gate, and requires the orchestrator to run in that project.
+ * running, the limits under the start lock, the target project (#2515), the
+ * name, folder, branch and persona rules of the creation, and access clamped
+ * to the orchestrator's ceiling and to what was asked. `approvedIn` (the
+ * request's project) skips only the control-level gate, and requires the
+ * orchestrator to run in that project.
+ *
+ * The orchestrator's project (`homePath`) holds the limits, the policy, a
+ * held request and the launch access. The helper's project (`target.path`)
+ * gets the creation, with `parentProjectPath` when it is another project.
  */
 async function runHelperStart(orchestratorId: string, args: HelperStartArgs, approvedIn?: string): Promise<StartOutcome> {
   validateStartArgs(args);
@@ -419,13 +514,20 @@ async function runHelperStart(orchestratorId: string, args: HelperStartArgs, app
     }
   }
   if (!isOrchestrationEnabled(orchestratorId)) return refused('orchestration is off for its orchestrator.');
-  const { projectPath, config: orchestrator } = await resolveCaller(orchestratorId);
+  const { projectPath: homePath, config: orchestrator } = await resolveCaller(orchestratorId);
   const { name, task, persona, cli, model, access, branchFrom, folder } = args;
 
   return withStartLock(async (): Promise<StartOutcome> => {
     // Read again under the lock: a turn-off may have run while this waited.
     if (!isOrchestrationEnabled(orchestratorId)) return refused('orchestration is off for its orchestrator.');
-    const limit = await checkHelperLimitFor(projectPath, orchestratorId);
+    let target: TargetProject;
+    try {
+      target = await resolveTargetProject(homePath, orchestratorId, args.project);
+    } catch (err) {
+      if (!(err instanceof HelperToolError)) throw err;
+      return refused(err.message);
+    }
+    const limit = await checkHelperLimitFor(homePath, orchestratorId);
     if (limit.ok === false) {
       appLog('core:mcp', 'info', 'start_helper refused by the helper limit', {
         meta: { agentId: orchestratorId, reason: limit.reason, helperCount: limit.helperCount, maxHelpers: limit.maxHelpers },
@@ -433,76 +535,64 @@ async function runHelperStart(orchestratorId: string, args: HelperStartArgs, app
       return refused(limit.message);
     }
 
+    const creation: StartDurableCreationParams = {
+      name,
+      color: pickColor(limit.helperCount),
+      ...(persona && { persona }),
+      parentAgentId: orchestratorId,
+      ...(target.cross && { parentProjectPath: homePath }),
+      disposable: true,
+      ...(folder && { folderName: folder }),
+      ...(branchFrom && { branchFrom }),
+    };
+
     if (approvedIn === undefined) {
-      const policy = await getOrchestrationPolicy(projectPath, orchestratorId);
+      const policy = await getOrchestrationPolicy(homePath, orchestratorId);
       if (policy && policy.control !== 'hands-off') {
         // Refuse now what the start would refuse after approval (a bad or taken
-        // name, folder or branch), so the user is never asked about one that
-        // can't start. Approving runs every check again.
+        // name, folder or branch, or an unknown persona), so the user is never
+        // asked about one that can't start. Approving runs every check again.
         try {
-          await agentConfig.checkDurableCreation(projectPath, {
-            name,
-            color: pickColor(limit.helperCount),
-            parentAgentId: orchestratorId,
-            disposable: true,
-            ...(folder && { folderName: folder }),
-            ...(branchFrom && { branchFrom }),
-          });
+          await agentConfig.checkDurableCreation(target.path, creation);
         } catch (err) {
           // telemetry-exempt: the refusal reaches the calling agent as the tool result
           return { kind: 'refused', message: `Could not start helper "${name}": ${errorText(err)}`, reason: asReason(errorText(err)) };
         }
-        const recorded = recordStartRequest(projectPath, orchestratorId, orchestrator.name, args);
+        // The project is held by path, so an approval finds the same one.
+        const { project: _asked, ...rest } = args;
+        const held: HelperStartArgs = target.cross ? { ...rest, project: target.path } : rest;
+        const recorded = recordStartRequest(homePath, orchestratorId, orchestrator.name, held);
         if (recorded.ok === false) return { kind: 'too_many', waiting: recorded.waiting };
-        noticeApprovalNeeded(orchestrator, args);
+        noticeApprovalNeeded(orchestrator, args, target);
         appLog('core:mcp', 'info', 'start_helper needs user approval', {
-          meta: { agentId: orchestratorId, control: policy.control, requestId: recorded.request.requestId, reused: recorded.reused },
+          meta: { agentId: orchestratorId, control: policy.control, requestId: recorded.request.requestId, reused: recorded.reused, crossProject: target.cross },
         });
         return { kind: 'needs_approval', control: policy.control, request: recorded.request, reused: recorded.reused };
       }
     }
 
     const helperProvider = cli ?? orchestrator.orchestrator ?? agentRegistry.get(orchestratorId)?.orchestrator;
-    const launch = await resolveLaunchFor(projectPath, orchestratorId, helperProvider, access);
+    const launch = await resolveLaunchFor(homePath, orchestratorId, helperProvider, access);
 
     let started: Awaited<ReturnType<typeof startDurableCreation>>;
     try {
-      started = await startDurableCreation(projectPath, {
-        name,
-        color: pickColor(limit.helperCount),
+      const params: StartDurableCreationParams = {
+        ...creation,
         ...(model && { model }),
         ...(helperProvider && { orchestrator: helperProvider as OrchestratorId }),
         freeAgentMode: launch.freeAgentMode,
-        ...(persona && { persona }),
-        parentAgentId: orchestratorId,
-        disposable: true,
-        ...(folder && { folderName: folder }),
-        ...(branchFrom && { branchFrom }),
-      }, {
-        inject: persona
-          ? async (created) => {
-            if (!created.worktreePath) return;
-            try {
-              await applyPersonaToAgent(projectPath, created.id, persona, { appendToExisting: true });
-            } catch (err) {
-              // telemetry-exempt: logged; the helper starts without the persona
-              appLog('core:mcp', 'warn', 'start_helper: persona not applied', {
-                meta: { helperId: created.id, persona, error: errorText(err) },
-              });
-            }
-          }
-          : undefined,
-      });
+      };
+      started = await startDurableCreation(target.path, params, personaInjection(target.path, params));
     } catch (err) {
       // telemetry-exempt: the refusal reaches the calling agent as the tool result
-      // Refused up front: a bad or taken name, folder, branch or base.
+      // Refused up front: a bad or taken name, folder, branch or base, or an unknown persona.
       return { kind: 'refused', message: `Could not start helper "${name}": ${errorText(err)}`, reason: asReason(errorText(err)) };
     }
 
     const { agentId: helperId, config, done } = started;
     // Before anything is awaited: no wake may spawn it while this start owns it.
     spawning.add(helperId);
-    const background = finishHelperStart(projectPath, orchestrator, helperId, name, task, access, done)
+    const background = finishHelperStart(homePath, target.path, orchestrator, helperId, name, task, access, done)
       .catch((err) => {
         appLog('core:mcp', 'error', 'start_helper: background start failed', { meta: { helperId, error: errorText(err) } });
       });
@@ -510,9 +600,12 @@ async function runHelperStart(orchestratorId: string, args: HelperStartArgs, app
     void background.finally(() => inflight.delete(background));
 
     appLog('core:mcp', 'info', 'start_helper: creating helper', {
-      meta: { agentId: orchestratorId, helperId, access: launch.level, clamped: launch.clamped, approved: approvedIn !== undefined },
+      meta: {
+        agentId: orchestratorId, helperId, access: launch.level, clamped: launch.clamped,
+        approved: approvedIn !== undefined, crossProject: target.cross,
+      },
     });
-    return { kind: 'starting', helperId, name: config.name, ...(config.branch && { branch: config.branch }), launch };
+    return { kind: 'starting', helperId, name: config.name, ...(config.branch && { branch: config.branch }), launch, project: target };
   });
 }
 
@@ -549,11 +642,13 @@ async function startHelper(agentId: string, args: Record<string, unknown>): Prom
         helperId: outcome.helperId,
         name: outcome.name,
         state: 'starting',
+        project: outcome.project.name,
+        ...(outcome.project.cross && { projectPath: outcome.project.path }),
         ...(outcome.branch && { branch: outcome.branch }),
         access: outcome.launch.level,
         ...(outcome.launch.clamped && { accessNote: `Access lowered to ${outcome.launch.level}: a helper never gets more than you run with or than its CLI allows at that level.` }),
         message:
-          `Helper "${outcome.name}" is being created. Its worktree can take up to a minute; ` +
+          `Helper "${outcome.name}" is being created${outcome.project.cross ? ` in ${outcome.project.name}` : ''}. Its worktree can take up to a minute; ` +
           'you will get a message when it has started its task, or why it failed. Its access is checked again at start.',
       });
   }
@@ -581,14 +676,37 @@ function approvalBlocker(request: HelperStartRequest): string | null {
 }
 
 /**
+ * Why a held start in another project can't be approved now (#2515): the
+ * project was removed, or the orchestrator's cross-project switch was turned
+ * off, since it asked. Null when it can, or the start is in its own project.
+ */
+async function targetBlocker(request: HelperStartRequest): Promise<string | null> {
+  if (!request.args.project) return null;
+  try {
+    await resolveTargetProject(request.projectPath, request.orchestratorId, request.args.project);
+    return null;
+  } catch (err) {
+    // telemetry-exempt: the reason reaches the user, and the request stays waiting
+    return `${request.args.name} can't be started now because ${asReason(errorText(err))} Decline it, or fix that and approve again.`;
+  }
+}
+
+/**
  * The user approved a held start. The orchestrator must be running with
- * orchestration on, else the request stays waiting. Then the request is used
- * up (nothing is awaited between the check and the take), so it runs once,
+ * orchestration on, and a start in another project must still be allowed
+ * there, else the request stays waiting. Then the request is used up
+ * (nothing is awaited between the last check and the take), so it runs once,
  * and the normal start path runs with every check but the control level. The
  * orchestrator is told the outcome in a fixed message built from what main
  * recorded.
  */
 export async function approveHelperStart(projectPath: string, requestId: string): Promise<HelperStartDecisionResult> {
+  const asked = peekStartRequest(projectPath, requestId);
+  if (!asked) return { ok: false, message: NOT_WAITING };
+  const early = approvalBlocker(asked);
+  if (early) return { ok: false, message: early };
+  const target = await targetBlocker(asked);
+  if (target) return { ok: false, message: target };
   const waiting = peekStartRequest(projectPath, requestId);
   if (!waiting) return { ok: false, message: NOT_WAITING };
   const blocker = approvalBlocker(waiting);
@@ -713,16 +831,18 @@ function lastActivity(helper: DurableAgentConfig): string | undefined {
   return times.reduce((a, b) => (Date.parse(a) >= Date.parse(b) ? a : b));
 }
 
-async function describeHelper(helper: DurableAgentConfig): Promise<Record<string, unknown>> {
+async function describeHelper({ projectPath, config: helper }: HelperEntry, projects: readonly Project[]): Promise<Record<string, unknown>> {
   const { status, reason } = helperStatus(helper);
   const out: Record<string, unknown> = {
     helperId: helper.id,
     name: helper.name,
+    project: await nameOfProject(projects, projectPath),
     status,
     ...(reason && { reason }),
     ...(helper.orchestrator && { cli: helper.orchestrator }),
     ...(helper.persona && { persona: helper.persona }),
     branch: helper.branch ?? null,
+    worktreePath: helper.worktreePath ?? null,
     lastActivity: lastActivity(helper) ?? null,
     ...(helper.pendingTask && !spawning.has(helper.id) && {
       taskPending: true,
@@ -751,8 +871,9 @@ async function describeHelper(helper: DurableAgentConfig): Promise<Record<string
 
 async function listOwnHelpers(agentId: string): Promise<McpToolResult> {
   const caller = await resolveCaller(agentId);
-  const helpers = (await agentConfig.listHelpers(caller.projectPath, agentId)).filter((h) => !isDisposedAgent(h));
-  const described = await Promise.all(helpers.map(describeHelper));
+  const helpers = await listHelpersEverywhere(caller.projectPath, agentId);
+  const projects = await projectStore.list();
+  const described = await Promise.all(helpers.map((h) => describeHelper(h, projects)));
   return jsonResult({ helpers: described });
 }
 
@@ -761,7 +882,7 @@ async function listOwnHelpers(agentId: string): Promise<McpToolResult> {
 async function sleepHelper(agentId: string, args: Record<string, unknown>): Promise<McpToolResult> {
   const ref = requireText(args, 'helper');
   const caller = await resolveCaller(agentId);
-  const helper = await resolveOwnHelper(caller, ref);
+  const { projectPath: helperPath, config: helper } = await resolveOwnHelper(caller, ref);
   if (helper.creation) {
     throw new HelperToolError(helper.creation.state === 'creating'
       ? `${helper.name} is still being created.`
@@ -775,7 +896,7 @@ async function sleepHelper(agentId: string, args: Record<string, unknown>): Prom
   if (agentSystem.isAgentStopping(helper.id)) {
     await agentSystem.waitForAgentStopped(helper.id);
   } else {
-    await agentSystem.killAgent(helper.id, caller.projectPath, helper.orchestrator, 'agent_tool', { by: caller.config.name, waitForExit: true });
+    await agentSystem.killAgent(helper.id, helperPath, helper.orchestrator, 'agent_tool', { by: caller.config.name, waitForExit: true });
   }
   if (agentSystem.isAgentRunning(helper.id)) {
     appLog('core:mcp', 'warn', 'sleep_helper: helper has not exited', { meta: { agentId, helperId: helper.id } });
@@ -802,13 +923,15 @@ async function wakeHelper(agentId: string, args: Record<string, unknown>): Promi
   const ref = requireText(args, 'helper');
   const message = optionalText(args, 'message');
   const caller = await resolveCaller(agentId);
-  let helper = await resolveOwnHelper(caller, ref);
+  const found = await resolveOwnHelper(caller, ref);
+  const helperPath = found.projectPath;
+  let helper = found.config;
   if (agentSystem.isAgentStopping(helper.id)) {
     // Asleep in a moment: wait for the exit, then wake it for real, so the
     // message goes to a new session instead of the one that is exiting.
     if (!(await agentSystem.waitForAgentStopped(helper.id))) return stillStopping(helper, message);
     // Re-read: the exit just saved the session id the wake resumes.
-    helper = await resolveOwnHelper(caller, helper.id);
+    helper = (await resolveOwnHelper(caller, helper.id)).config;
   }
   if (helper.creation) {
     throw new HelperToolError(helper.creation.state === 'creating'
@@ -843,18 +966,18 @@ async function wakeHelper(agentId: string, args: Record<string, unknown>): Promi
   let taskTaken = false;
   try {
     const provider = helper.orchestrator ?? caller.config.orchestrator;
-    // Never above what start_helper asked for.
+    // Never above what start_helper asked for. The access is the orchestrator's, from its project.
     launch = await resolveLaunchFor(caller.projectPath, agentId, provider, helper.requestedAccess);
     if (helper.pendingTask) {
       // Taken off first so it is delivered once; put back if the spawn fails.
-      await agentConfig.setHelperStartFields(caller.projectPath, helper.id, { pendingTask: null });
+      await agentConfig.setHelperStartFields(helperPath, helper.id, { pendingTask: null });
       taskTaken = true;
     }
     broadcastToAllWindows(IPC.AGENT.AGENT_WAKING, helper.id);
     await agentSystem.spawnAgent({
       agentId: helper.id,
-      projectPath: caller.projectPath,
-      cwd: helper.worktreePath || caller.projectPath,
+      projectPath: helperPath,
+      cwd: helper.worktreePath || helperPath,
       kind: 'durable',
       model: helper.model,
       ...(mission && { mission }),
@@ -866,7 +989,7 @@ async function wakeHelper(agentId: string, args: Record<string, unknown>): Promi
     });
   } catch (err) {
     const reason = errorText(err);
-    if (taskTaken && helper.pendingTask) await restoreTask(caller.projectPath, helper.id, helper.pendingTask);
+    if (taskTaken && helper.pendingTask) await restoreTask(helperPath, helper.id, helper.pendingTask);
     spawnFailures.set(helper.id, reason);
     broadcastToAllWindows(IPC.AGENT.AGENT_WAKE_FAILED, helper.id, reason);
     throw new HelperToolError(`Could not wake ${helper.name}: ${reason}`);
@@ -891,7 +1014,8 @@ async function messageParent(agentId: string, args: Record<string, unknown>): Pr
   if (!registration || !self?.parentAgentId) {
     throw new HelperToolError('message_parent is only for helper agents, and you have no parent agent.');
   }
-  const parent = await agentConfig.getDurableConfig(registration.projectPath, self.parentAgentId);
+  // The parent may be in another project (#2511).
+  const parent = (await findParent(registration.projectPath, self))?.config;
   if (!parent || isDisposedAgent(parent)) throw new HelperToolError('Your parent agent no longer exists.');
   // Batched with the parent's other helper updates (#2414).
   const delivery = await deliverHelperUpdate(parent.id, `[FROM HELPER:${self.name} (${self.id})] ${text}`);
@@ -901,6 +1025,38 @@ async function messageParent(agentId: string, args: Record<string, unknown>): Pr
   if (delivery !== 'delivered') throw new HelperToolError(`${parent.name} is asleep, so the message was not delivered.`);
   appLog('core:mcp', 'info', 'message_parent: delivered', { meta: { agentId, parentId: parent.id, length: text.length } });
   return textResult(`Message sent to ${parent.name}.`);
+}
+
+// ── list_projects (#2515) ────────────────────────────────────────────────
+
+/** One local project's entry: what start_helper's `project` and `persona` can name there. */
+async function describeProject(project: Project, homePath: string, homeGit: string | null): Promise<Record<string, unknown>> {
+  const [yours, git, defaultBranch, personas] = await Promise.all([
+    agentConfig.isSameProject(project.path, homePath),
+    findGitCommonDir(project.path),
+    getDefaultBranch(project.path).catch((): null => null),
+    // The same layered lookup a persona is applied with: project, user, built-in.
+    listAvailablePersonas(project.path).catch((err: unknown): Array<{ id: string }> => {
+      // telemetry-exempt: logged; the project is listed without its personas
+      appLog('core:mcp', 'warn', 'list_projects: could not list personas', { meta: { projectPath: project.path, error: errorText(err) } });
+      return [];
+    }),
+  ]);
+  return {
+    name: projectName(project),
+    path: project.path,
+    defaultBranch,
+    personas: personas.map((p) => p.id),
+    ...(yours && { yours: true }),
+    ...(!yours && !git && { notGit: true }),
+    ...(!yours && git && homeGit && samePath(git, homeGit) && { sameRepository: true }),
+  };
+}
+
+async function listProjects(agentId: string): Promise<McpToolResult> {
+  const caller = await resolveCaller(agentId);
+  const [projects, homeGit] = await Promise.all([projectStore.list(), findGitCommonDir(caller.projectPath)]);
+  return jsonResult({ projects: await Promise.all(projects.map((p) => describeProject(p, caller.projectPath, homeGit))) });
 }
 
 // ── Registration ─────────────────────────────────────────────────────────
@@ -916,18 +1072,25 @@ export function registerHelperTools(): void {
         'reply with message_parent, and you can message it over the wire Clubhouse adds between you. ' +
         'Its access is never more than yours. If you are set to ask the user before starting helpers, ' +
         'it returns "needs_approval" with a requestId instead, and you get a message when the user ' +
-        'approves or declines.',
+        'approves or declines. With project, the helper is created in another Clubhouse project ' +
+        '(see list_projects); that needs cross-project helpers turned on for you.',
       inputSchema: {
         type: 'object',
         properties: {
           name: { type: 'string', description: 'The helper\'s name (also its default folder).' },
           task: { type: 'string', description: 'The task, sent as the helper\'s first message.' },
-          persona: { type: 'string', description: 'Optional persona id to apply.' },
+          persona: { type: 'string', description: 'Optional persona id to apply, from the project the helper is created in.' },
           cli: { type: 'string', description: 'Optional CLI provider id (e.g. claude-code, codex-cli, copilot-cli). Defaults to yours.' },
           model: { type: 'string', description: 'Optional model for the helper.' },
           access: { type: 'string', enum: ['same', ...ACCESS_LEVELS], description: 'Access level: same (default) or a lower one. Never more than yours.' },
           branchFrom: { type: 'string', description: 'Optional branch or commit the helper\'s branch starts from. Defaults to HEAD.' },
           folder: { type: 'string', description: 'Optional folder name under .clubhouse/agents/. Defaults to the name.' },
+          project: {
+            type: 'string',
+            description:
+              'Optional project name or path from list_projects, to start the helper in another project. ' +
+              'Defaults to yours. A project in the same git repository as yours is refused.',
+          },
         },
         required: ['name', 'task'],
       },
@@ -940,8 +1103,9 @@ export function registerHelperTools(): void {
     'list_helpers',
     {
       description:
-        'List your helpers: status (creating, starting, running, idle, waiting, stopping, sleeping or failed), ' +
-        'branch, commits ahead of and behind its remote branch, uncommitted files, last commit and last activity.',
+        'List your helpers in every project: project, status (creating, starting, running, idle, waiting, stopping, ' +
+        'sleeping or failed), branch, worktree, commits ahead of and behind its remote branch, uncommitted files, ' +
+        'last commit and last activity.',
       inputSchema: { type: 'object', properties: {} },
     },
     (agentId) => guarded('list_helpers', agentId, () => listOwnHelpers(agentId)),
@@ -979,6 +1143,19 @@ export function registerHelperTools(): void {
     },
     (agentId, args) => guarded('wake_helper', agentId, () => wakeHelper(agentId, args)),
     { group: 'orchestration' },
+  );
+
+  registerGlobalTool(
+    'list_projects',
+    {
+      description:
+        'List the Clubhouse projects on this machine that start_helper can create a helper in: name, path, ' +
+        'default branch and the persona ids each one has. Your own project is marked "yours". ' +
+        'Projects marked "sameRepository" (the same git repository as yours) or "notGit" can\'t take a helper from you.',
+      inputSchema: { type: 'object', properties: {} },
+    },
+    (agentId) => guarded('list_projects', agentId, () => listProjects(agentId)),
+    { group: 'crossProject' },
   );
 
   registerGlobalTool(

@@ -7,6 +7,12 @@ import { resolveHelperAccess, type AgentLaunchAccess } from '../../../../shared/
 // ── Mocks: no CLI, git or disk is touched ──────────────────────────────────
 
 const agents = new Map<string, DurableAgentConfig>();
+/**
+ * The project an agent's row is in, for agents in another project (#2515).
+ * Reads and writes for those agents only find them at that path.
+ */
+const where = new Map<string, string>();
+const isAt = (projectPath: string, id: string) => !where.has(id) || where.get(id) === projectPath;
 const configListeners = new Set<(projectPath: string) => void>();
 
 const mockCheckDurableCreation = vi.fn(async (_projectPath: string, _params: Record<string, unknown>) => {});
@@ -16,12 +22,11 @@ vi.mock('../../agent-config', () => ({
     configListeners.add(listener);
     return () => { configListeners.delete(listener); };
   }),
-  getDurableConfig: vi.fn(async (_projectPath: string, id: string) => agents.get(id) ?? null),
-  listHelpers: vi.fn(async (_projectPath: string, id: string) =>
-    [...agents.values()].filter((a) => a.parentAgentId === id && !a.disposedAt)),
-  setHelperStartFields: vi.fn(async (_projectPath: string, id: string, fields: { pendingTask?: string | null; requestedAccess?: string | null }) => {
+  getDurableConfig: vi.fn(async (projectPath: string, id: string) => (isAt(projectPath, id) ? agents.get(id) ?? null : null)),
+  isSameProject: vi.fn(async (a: string, b: string) => path.resolve(a) === path.resolve(b)),
+  setHelperStartFields: vi.fn(async (projectPath: string, id: string, fields: { pendingTask?: string | null; requestedAccess?: string | null }) => {
     const agent = agents.get(id);
-    if (!agent) return;
+    if (!agent || !isAt(projectPath, id)) return;
     const next: Record<string, unknown> = { ...agent };
     for (const key of ['pendingTask', 'requestedAccess'] as const) {
       if (fields[key] === undefined) continue;
@@ -33,9 +38,33 @@ vi.mock('../../agent-config', () => ({
 }));
 
 const mockStartDurableCreation = vi.fn();
+const mockPersonaInjection = vi.fn((projectPath: string, params: { persona?: string }) => ({
+  inject: params.persona ? async (created: DurableAgentConfig) => mockApplyPersona(projectPath, created.id, params.persona) : undefined,
+}));
 vi.mock('../../agent-creation', () => ({
   startDurableCreation: (...args: unknown[]) => mockStartDurableCreation(...args),
+  personaInjection: (projectPath: string, params: { persona?: string }) => mockPersonaInjection(projectPath, params),
 }));
+
+const helperPathOf = (id: string) => where.get(id) ?? PROJECT;
+vi.mock('../../helper-index', () => ({
+  // A helper's parent is in its parentProjectPath, else in the helper's own project.
+  listHelpersEverywhere: vi.fn(async (home: string, id: string) => [...agents.values()]
+    .filter((a) => a.parentAgentId === id && !a.disposedAt && (a.parentProjectPath ?? helperPathOf(a.id)) === home)
+    .map((config) => ({ projectPath: helperPathOf(config.id), config }))),
+  findParent: vi.fn(async (helperPath: string, config: DurableAgentConfig) => {
+    const parentPath = config.parentProjectPath ?? helperPath;
+    const parent = config.parentAgentId ? agents.get(config.parentAgentId) : undefined;
+    return parent && isAt(parentPath, parent.id) ? { projectPath: parentPath, config: parent } : null;
+  }),
+}));
+
+/** Registered local projects (#2515), and the git common dir of each path (null: not a repository). */
+const projects: Array<{ id: string; name: string; path: string; displayName?: string }> = [];
+const gitDirs = new Map<string, string | null>();
+vi.mock('../../project-store', () => ({ list: async () => [...projects] }));
+const mockListPersonas = vi.fn();
+vi.mock('../../materialization-service', () => ({ listAvailablePersonas: (...args: unknown[]) => mockListPersonas(...args) }));
 
 const running = new Set<string>();
 /** Helpers told to stop whose process has not exited: id → the exit the test triggers. */
@@ -88,7 +117,11 @@ vi.mock('../../agent-runtime', () => ({
 }));
 
 const mockGetGitInfo = vi.fn();
-vi.mock('../../git-service', () => ({ getGitInfo: (...args: unknown[]) => mockGetGitInfo(...args) }));
+vi.mock('../../git-service', () => ({
+  getGitInfo: (...args: unknown[]) => mockGetGitInfo(...args),
+  findGitCommonDir: async (dir: string) => (gitDirs.has(dir) ? gitDirs.get(dir) : path.join(dir, '.git')),
+  getDefaultBranch: async (dir: string) => (gitDirs.get(dir) === null ? null : 'main'),
+}));
 
 const mockApplyPersona = vi.fn();
 vi.mock('../../persona-application', () => ({ applyPersonaToAgent: (...args: unknown[]) => mockApplyPersona(...args) }));
@@ -96,7 +129,9 @@ vi.mock('../../persona-application', () => ({ applyPersonaToAgent: (...args: unk
 const mockCheckLimit = vi.fn();
 const mockGetPolicy = vi.fn();
 const mockResolveLaunch = vi.fn();
+const mockCrossAllowed = vi.fn();
 vi.mock('../../orchestration-policy', () => ({
+  isCrossProjectAllowed: (...args: unknown[]) => mockCrossAllowed(...args),
   checkHelperLimitFor: (...args: unknown[]) => mockCheckLimit(...args),
   getOrchestrationPolicy: (...args: unknown[]) => mockGetPolicy(...args),
   resolveHelperLaunchSettings: (...args: unknown[]) => mockResolveLaunch(...args),
@@ -131,6 +166,8 @@ import { setOrchestrationEnabled, _resetOrchestrationGateForTesting } from '../o
 let live: AgentLaunchAccess;
 
 const PROJECT = path.join(path.sep, 'tmp', 'project');
+/** Another registered project, in another repository (#2515). */
+const FAR = path.join(path.sep, 'tmp', 'far-project');
 const worktreeOf = (folder: string) => path.join(PROJECT, '.clubhouse', 'agents', folder);
 
 function addAgent(config: Partial<DurableAgentConfig> & { id: string }): DurableAgentConfig {
@@ -160,15 +197,17 @@ function parse(result: { content: Array<{ text: string }> }): Record<string, unk
 function controllableCreation() {
   let finish!: (outcome: 'ready' | 'failed' | 'cancelled') => void;
   const done = new Promise<'ready' | 'failed' | 'cancelled'>((resolve) => { finish = resolve; });
-  mockStartDurableCreation.mockImplementation(async (_projectPath: string, params: { name: string; folderName?: string; parentAgentId: string }) => {
+  mockStartDurableCreation.mockImplementation(async (projectPath: string, params: { name: string; folderName?: string; parentAgentId: string; parentProjectPath?: string }) => {
     const folder = params.folderName ?? params.name;
+    if (projectPath !== PROJECT) where.set(`helper_${params.name}`, projectPath);
     const config = addAgent({
       id: `helper_${params.name}`,
       name: params.name,
       parentAgentId: params.parentAgentId,
+      ...(params.parentProjectPath && { parentProjectPath: params.parentProjectPath }),
       disposable: true,
       branch: `${folder}/standby`,
-      worktreePath: worktreeOf(folder),
+      worktreePath: path.join(projectPath, '.clubhouse', 'agents', folder),
       creation: { state: 'creating', startedAt: '2026-10-18T10:00:00.000Z' },
     });
     return { agentId: config.id, config, done };
@@ -189,6 +228,11 @@ function controllableCreation() {
 beforeEach(() => {
   vi.clearAllMocks();
   agents.clear();
+  where.clear();
+  gitDirs.clear();
+  projects.splice(0, projects.length,
+    { id: 'proj_home', name: 'home', path: PROJECT },
+    { id: 'proj_far', name: 'far', displayName: 'Far Away', path: FAR });
   running.clear();
   stopping.clear();
   refusing.clear();
@@ -201,6 +245,8 @@ beforeEach(() => {
   configListeners.clear();
   registerHelperTools();
 
+  mockCrossAllowed.mockResolvedValue(true);
+  mockListPersonas.mockResolvedValue([{ id: 'workhorse', name: 'Workhorse', source: 'builtin' }]);
   mockCheckLimit.mockResolvedValue({ ok: true, helperCount: 0, totalHelperCount: 0, maxHelpers: 5, globalCap: 20 });
   mockGetPolicy.mockResolvedValue({ orchestrate: true, access: 'same', control: 'hands-off', maxHelpers: 5 });
   live = { freeAgentMode: true, permissionMode: 'auto' };
@@ -358,8 +404,9 @@ describe('start_helper', () => {
     await callTool('orch', 'start_helper', { name: 'h', task: 't', persona: 'workhorse' });
     const [, params, options] = mockStartDurableCreation.mock.calls[0];
     expect(params.persona).toBe('workhorse');
+    expect(mockPersonaInjection).toHaveBeenCalledWith(PROJECT, params);
     await options.inject(agents.get('helper_h'));
-    expect(mockApplyPersona).toHaveBeenCalledWith(PROJECT, 'helper_h', 'workhorse', { appendToExisting: true });
+    expect(mockApplyPersona).toHaveBeenCalledWith(PROJECT, 'helper_h', 'workhorse');
   });
 });
 
@@ -1016,5 +1063,182 @@ describe('message_parent', () => {
     const result = await callTool('mine', 'message_parent', { text: 'hi' });
     expect(result.isError).toBe(true);
     expect(result.content[0].text).toContain('asleep');
+  });
+});
+
+// ── Helpers in another project (#2515) ─────────────────────────────────────
+
+describe('helpers in another project', () => {
+  /** A ready helper of orch whose row is in FAR. */
+  function farHelper(extra: Partial<DurableAgentConfig> = {}): DurableAgentConfig {
+    where.set('far', FAR);
+    return addAgent({
+      id: 'far', name: 'Far', parentAgentId: 'orch', parentProjectPath: PROJECT, disposable: true,
+      branch: 'far/standby', worktreePath: path.join(FAR, '.clubhouse', 'agents', 'far'), ...extra,
+    });
+  }
+
+  describe('start_helper with project', () => {
+    it('creates and spawns the helper in the target project, with limits and launch from home', async () => {
+      const creation = controllableCreation();
+      const body = parse(await callTool('orch', 'start_helper', { name: 'api', task: 'Build it', project: 'Far Away', persona: 'workhorse' }));
+      expect(body).toMatchObject({ state: 'starting', helperId: 'helper_api', project: 'Far Away', projectPath: FAR });
+      expect(body.message).toContain('in Far Away');
+
+      expect(mockCrossAllowed).toHaveBeenCalledWith(PROJECT, 'orch');
+      expect(mockCheckLimit).toHaveBeenCalledWith(PROJECT, 'orch');
+      const [createdIn, params, options] = mockStartDurableCreation.mock.calls[0];
+      expect(createdIn).toBe(FAR);
+      expect(params).toMatchObject({ name: 'api', parentAgentId: 'orch', parentProjectPath: PROJECT, persona: 'workhorse' });
+      expect(mockPersonaInjection).toHaveBeenCalledWith(FAR, params);
+      expect(options).toBe(mockPersonaInjection.mock.results[0].value);
+
+      creation.ready('helper_api');
+      await _settleHelperStartsForTesting();
+      expect(mockResolveLaunch).toHaveBeenCalledWith(PROJECT, 'orch', expect.anything());
+      expect(mockSpawnAgent).toHaveBeenCalledWith(expect.objectContaining({
+        agentId: 'helper_api', projectPath: FAR, cwd: path.join(FAR, '.clubhouse', 'agents', 'api'),
+      }));
+      expect(sent.get('orch')?.[0]).toContain('is ready');
+    });
+
+    it('takes the project by path, and treats the home project as same-project', async () => {
+      controllableCreation();
+      await callTool('orch', 'start_helper', { name: 'a', task: 't', project: FAR });
+      expect(mockStartDurableCreation.mock.calls[0][0]).toBe(FAR);
+
+      await callTool('orch', 'start_helper', { name: 'b', task: 't', project: 'home' });
+      const [createdIn, params] = mockStartDurableCreation.mock.calls[1];
+      expect(createdIn).toBe(PROJECT);
+      expect(params.parentProjectPath).toBeUndefined();
+      expect(mockCrossAllowed).toHaveBeenCalledTimes(1);
+    });
+
+    it('is refused while cross-project helpers are off', async () => {
+      mockCrossAllowed.mockResolvedValue(false);
+      const result = await callTool('orch', 'start_helper', { name: 'a', task: 't', project: 'far' });
+      expect(result.isError).toBe(true);
+      expect(result.content[0].text).toBe('Cross-project helpers are turned off for this agent.');
+      expect(mockStartDurableCreation).not.toHaveBeenCalled();
+    });
+
+    it('is refused for an unknown project, a non-git target and the same repository', async () => {
+      const unknown = await callTool('orch', 'start_helper', { name: 'a', task: 't', project: 'nowhere' });
+      expect(unknown.content[0].text).toContain('"nowhere" is not a project in Clubhouse');
+
+      gitDirs.set(FAR, null);
+      const notGit = await callTool('orch', 'start_helper', { name: 'a', task: 't', project: 'far' });
+      expect(notGit.content[0].text).toContain('Far Away is not a git repository');
+
+      gitDirs.set(FAR, path.join(PROJECT, '.git'));
+      const sameRepo = await callTool('orch', 'start_helper', { name: 'a', task: 't', project: 'far' });
+      expect(sameRepo.content[0].text).toContain('same git repository');
+
+      for (const r of [unknown, notGit, sameRepo]) expect(r.isError).toBe(true);
+      expect(mockStartDurableCreation).not.toHaveBeenCalled();
+    });
+
+    it('passes an unknown persona to the creation, which refuses it', async () => {
+      mockStartDurableCreation.mockRejectedValueOnce(new Error('Unknown persona "nope".'));
+      const result = await callTool('orch', 'start_helper', { name: 'a', task: 't', project: 'far', persona: 'nope' });
+      expect(result.isError).toBe(true);
+      expect(result.content[0].text).toBe('Could not start helper "a": Unknown persona "nope".');
+      expect(mockStartDurableCreation.mock.calls[0][0]).toBe(FAR);
+    });
+  });
+
+  describe('approvals', () => {
+    beforeEach(() => {
+      mockGetPolicy.mockResolvedValue({ orchestrate: true, access: 'same', control: 'ask-before-start', maxHelpers: 5 });
+    });
+
+    it('holds the start by the target\'s path, checked in the target, and starts it there on approval', async () => {
+      const body = parse(await callTool('orch', 'start_helper', { name: 'api', task: 't', project: 'Far Away' }));
+      expect(body.state).toBe('needs_approval');
+      expect(mockCheckDurableCreation).toHaveBeenCalledWith(FAR, expect.objectContaining({ parentProjectPath: PROJECT }));
+      const [request] = listStartRequests();
+      expect(request).toMatchObject({ projectPath: PROJECT, args: { name: 'api', task: 't', project: FAR } });
+
+      controllableCreation();
+      expect(await approveHelperStart(PROJECT, request.requestId)).toMatchObject({ ok: true, helperId: 'helper_api' });
+      expect(mockStartDurableCreation.mock.calls[0][0]).toBe(FAR);
+    });
+
+    it('re-checks the target on approval and leaves the request waiting when it is refused', async () => {
+      const { requestId } = parse(await callTool('orch', 'start_helper', { name: 'api', task: 't', project: 'far' })) as { requestId: string };
+      mockCrossAllowed.mockResolvedValue(false);
+      const off = await approveHelperStart(PROJECT, requestId);
+      expect(off.ok).toBe(false);
+      expect(off.message).toContain('cross-project helpers are turned off');
+
+      mockCrossAllowed.mockResolvedValue(true);
+      projects.splice(1, 1);
+      const removed = await approveHelperStart(PROJECT, requestId);
+      expect(removed.ok).toBe(false);
+      expect(removed.message).toContain('is not a project in Clubhouse');
+      expect(listStartRequests().map((r) => r.requestId)).toEqual([requestId]);
+      expect(mockStartDurableCreation).not.toHaveBeenCalled();
+    });
+  });
+
+  it('lists helpers in every project with their project and worktree', async () => {
+    farHelper();
+    addAgent({ id: 'near', name: 'Near', parentAgentId: 'orch', worktreePath: worktreeOf('near') });
+    const helpers = parse(await callTool('orch', 'list_helpers', {})).helpers as Array<Record<string, unknown>>;
+    expect(helpers).toEqual(expect.arrayContaining([
+      expect.objectContaining({ helperId: 'far', project: 'Far Away', worktreePath: path.join(FAR, '.clubhouse', 'agents', 'far') }),
+      expect.objectContaining({ helperId: 'near', project: 'home', worktreePath: worktreeOf('near') }),
+    ]));
+  });
+
+  it('sleeps and wakes a helper in its own project, with the access from home', async () => {
+    farHelper({ lastSessionId: 'sess-far', pendingTask: 'Do it' });
+    running.add('far');
+    await callTool('orch', 'sleep_helper', { helper: 'Far' });
+    expect(mockKillAgent).toHaveBeenCalledWith('far', FAR, 'claude-code', 'agent_tool', { by: 'Orch', waitForExit: true });
+
+    const woke = parse(await callTool('orch', 'wake_helper', { helper: 'far', message: 'go' }));
+    expect(woke).toMatchObject({ status: 'running', resumed: true, taskDelivered: true });
+    expect(mockResolveLaunch).toHaveBeenCalledWith(PROJECT, 'orch', expect.anything());
+    expect(mockSpawnAgent).toHaveBeenCalledWith(expect.objectContaining({ agentId: 'far', projectPath: FAR, cwd: path.join(FAR, '.clubhouse', 'agents', 'far') }));
+    expect(agents.get('far')?.pendingTask).toBeUndefined();
+  });
+
+  it('a helper in another project reaches its parent with message_parent', async () => {
+    farHelper();
+    agentRegistry.register('far', { projectPath: FAR, orchestrator: 'claude-code', runtime: 'chat' });
+    const result = await callTool('far', 'message_parent', { text: 'done' });
+    expect(result.isError).toBeFalsy();
+    expect(sent.get('orch')?.[0]).toContain('[FROM HELPER:Far (far)] done');
+  });
+
+  describe('list_projects', () => {
+    it('is listed and callable only with the cross-project gate open', async () => {
+      expect(getScopedToolList('orch').map((t) => t.name)).not.toContain('list_projects');
+      const refused = await callTool('orch', 'list_projects', {});
+      expect(refused.isError).toBe(true);
+
+      setOrchestrationEnabled('orch', true, { crossProject: true });
+      expect(getScopedToolList('orch').map((t) => t.name)).toContain('list_projects');
+    });
+
+    it('lists each project with its default branch and personas, and marks the caller\'s', async () => {
+      setOrchestrationEnabled('orch', true, { crossProject: true });
+      const same = path.join(path.sep, 'tmp', 'project-wt');
+      const plain = path.join(path.sep, 'tmp', 'plain-folder');
+      projects.push({ id: 'proj_wt', name: 'wt', path: same }, { id: 'proj_plain', name: 'plain', path: plain });
+      gitDirs.set(same, path.join(PROJECT, '.git'));
+      gitDirs.set(plain, null);
+      mockListPersonas.mockImplementation(async (p: string) =>
+        (p === FAR ? [{ id: 'far-only', name: 'Far only', source: 'project' }, { id: 'workhorse', name: 'Workhorse', source: 'builtin' }] : []));
+
+      const body = parse(await callTool('orch', 'list_projects', {}));
+      expect(body.projects).toEqual([
+        { name: 'home', path: PROJECT, defaultBranch: 'main', personas: [], yours: true },
+        { name: 'Far Away', path: FAR, defaultBranch: 'main', personas: ['far-only', 'workhorse'] },
+        { name: 'wt', path: same, defaultBranch: 'main', personas: [], sameRepository: true },
+        { name: 'plain', path: plain, defaultBranch: null, personas: [], notGit: true },
+      ]);
+    });
   });
 });

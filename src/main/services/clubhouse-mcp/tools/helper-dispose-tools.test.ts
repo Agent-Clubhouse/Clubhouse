@@ -9,6 +9,8 @@ const OTHER_PROJECT = path.join(process.cwd(), 'dispose-tools-other');
 
 const mocks = vi.hoisted(() => ({
   agents: [] as DurableAgentConfig[],
+  /** The project each agent's row is in, when not PROJECT (#2515). */
+  where: new Map<string, string>(),
   checks: new Map<string, HelperDisposeChecks>(),
   /** Checks disposeHelper sees after the stop, when they differ. */
   checksAfterStop: new Map<string, HelperDisposeChecks>(),
@@ -26,10 +28,19 @@ function clean(): HelperDisposeChecks {
   return { dirty: 0, unpushed: 0, unmerged: 0 };
 }
 
+const projectOf = (id: string) => mocks.where.get(id) ?? PROJECT;
+
+vi.mock('../../helper-index', () => ({
+  // A helper's parent is in its parentProjectPath, else in the helper's own project.
+  listHelpersEverywhere: vi.fn(async (home: string, parentId: string, opts: { includeDisposed?: boolean } = {}) =>
+    mocks.agents
+      .filter((a) => a.parentAgentId === parentId && (a.parentProjectPath ?? projectOf(a.id)) === home
+        && (opts.includeDisposed || !a.disposedAt))
+      .map((config) => ({ projectPath: projectOf(config.id), config }))),
+}));
+
 vi.mock('../../agent-config', () => ({
-  // Every seeded agent lives in PROJECT.
-  listHelpers: vi.fn(async (p: string, parentId: string, opts: { includeDisposed?: boolean } = {}) =>
-    p !== PROJECT ? [] : mocks.agents.filter((a) => a.parentAgentId === parentId && (opts.includeDisposed || !a.disposedAt))),
+  isSameProject: vi.fn(async (a: string, b: string) => path.resolve(a) === path.resolve(b)),
   getDisposeChecks: vi.fn(async (_p: string, id: string) => mocks.checks.get(id) ?? clean()),
   getWorktreeStatus: vi.fn(async (_p: string, id: string) => ({
     isValid: true,
@@ -61,7 +72,7 @@ vi.mock('../../agent-system', () => ({
 }));
 
 vi.mock('../../project-store', () => ({
-  list: vi.fn(async () => [{ id: 'proj_1', name: 'p', path: PROJECT }]),
+  list: vi.fn(async () => [{ id: 'proj_1', name: 'p', path: PROJECT }, { id: 'proj_2', name: 'o', path: OTHER_PROJECT }]),
 }));
 
 vi.mock('../../../util/ipc-broadcast', () => ({
@@ -73,7 +84,8 @@ import { registerHelperDisposeTools } from './helper-dispose-tools';
 import { callTool, getScopedToolList, _resetForTesting } from '../tool-registry';
 import { setOrchestrationEnabled, _resetOrchestrationGateForTesting } from '../orchestration-gate';
 import { agentRegistry } from '../../agent-registry';
-import { withAgentLock } from '../../orchestration-policy';
+import { getOrchestrationPolicy, withAgentLock } from '../../orchestration-policy';
+import * as agentConfig from '../../agent-config';
 import { _resetDisposeRequestsForTesting, takeDisposeRequest } from '../../helper-dispose-requests';
 
 function agent(id: string, extra: Partial<DurableAgentConfig> = {}): DurableAgentConfig {
@@ -106,6 +118,7 @@ beforeEach(() => {
     agent('their_helper', { parentAgentId: 'other_orch' }),
     agent('plain'),
   ];
+  mocks.where.clear();
   mocks.checks.clear();
   mocks.checksAfterStop.clear();
   mocks.control = 'hands-off';
@@ -355,5 +368,55 @@ describe('hand_off', () => {
     const { result } = await call('hand_off', { helper: 'helper', how: 'pushed' });
     expect(result.isError).toBe(true);
     expect(mocks.setHelperHandoff).not.toHaveBeenCalled();
+  });
+});
+
+describe('helpers in another project (#2515)', () => {
+  beforeEach(() => {
+    mocks.agents.push(agent('far', { parentAgentId: 'orch', parentProjectPath: PROJECT, disposable: true }));
+    mocks.where.set('far', OTHER_PROJECT);
+  });
+
+  it('disposes it in its own project, under the orchestrator\'s policy', async () => {
+    mocks.running.add('far');
+    const { json } = await call('dispose_helper', { helper: 'far' });
+    expect(json).toMatchObject({ status: 'disposed' });
+    expect(vi.mocked(getOrchestrationPolicy)).toHaveBeenCalledWith(PROJECT, 'orch');
+    expect(vi.mocked(agentConfig.getDisposeChecks)).toHaveBeenCalledWith(OTHER_PROJECT, 'far');
+    expect(mocks.killAgent).toHaveBeenCalledWith('far', OTHER_PROJECT, undefined, 'agent_tool', { waitForExit: true });
+    expect(mocks.disposeHelper).toHaveBeenCalledWith(OTHER_PROJECT, 'far', { force: false, expectedParentId: 'orch' });
+    expect(mocks.broadcast).toHaveBeenCalledWith(IPC.WINDOW.REQUEST_DURABLE_RELOAD, 'proj_2');
+  });
+
+  it('sends an ask-everything dispose with both projects', async () => {
+    mocks.control = 'ask-everything';
+    const { json } = await call('dispose_helper', { helper: 'far' });
+    expect(json).toMatchObject({ status: 'sent-to-user', delivered: true });
+    expect(mocks.mainWindowSend).toHaveBeenCalledWith(IPC.AGENT.HELPER_DISPOSE_REQUEST, expect.objectContaining({
+      projectPath: OTHER_PROJECT, orchestratorProjectPath: PROJECT, helperId: 'far', orchestratorId: 'orch',
+    }));
+    expect(takeDisposeRequest(OTHER_PROJECT, 'far', 'orch')).toBe(true);
+  });
+
+  it('records a pushed hand-off in its own project', async () => {
+    const { result } = await call('hand_off', { helper: 'far', how: 'pushed', note: 'PR #3' });
+    expect(result.isError).toBe(false);
+    expect(mocks.setHelperHandoff).toHaveBeenCalledWith(OTHER_PROJECT, 'far', 'orch', { how: 'pushed', note: 'PR #3' });
+  });
+
+  it('refuses a merged hand-off and says to hand off as pushed', async () => {
+    const { result, text } = await call('hand_off', { helper: 'far', how: 'merged' });
+    expect(result.isError).toBe(true);
+    expect(text).toMatch(/another project/);
+    expect(text).toMatch(/"pushed"/);
+    expect(mocks.setHelperHandoff).not.toHaveBeenCalled();
+  });
+
+  it('does not find a helper of the same id whose parent is in another project', async () => {
+    mocks.agents.push(agent('stray', { parentAgentId: 'orch' }));
+    mocks.where.set('stray', OTHER_PROJECT);
+    const { result, text } = await call('dispose_helper', { helper: 'stray' });
+    expect(result.isError).toBe(true);
+    expect(text).toMatch(/not one of your helpers/);
   });
 });

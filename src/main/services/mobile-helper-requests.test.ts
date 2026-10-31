@@ -105,6 +105,14 @@ describe('buildMobileHelperRequests', () => {
     expect(dispose.summary).toMatch(/^Planner asked/);
   });
 
+  it('names the project a start in another project would go to (#2515)', () => {
+    recordStartRequest('/p', 'orch', 'Planner', { name: 'api', task: 't', project: '/far' });
+    recordStartRequest('/p', 'orch', 'Planner', { name: 'web', task: 't', project: '/gone/site' });
+    const [far, gone] = buildMobileHelperRequests([...projects, { id: 'far', path: '/far', name: 'far', displayName: 'Far Away' }], agents);
+    expect(far).toMatchObject({ kind: 'start', projectId: 'proj', summary: 'Wants to start the helper api in Far Away' });
+    expect(gone.summary).toBe('Wants to start the helper web in site');
+  });
+
   it('names an orchestrator it cannot find as the desktop does', () => {
     disposeRequest();
     startRequest();

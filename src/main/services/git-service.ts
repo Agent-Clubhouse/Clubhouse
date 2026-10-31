@@ -175,6 +175,17 @@ export async function findGitCommonDir(dirPath: string): Promise<string | null> 
 }
 
 /**
+ * A repository's default branch: origin's (origin/HEAD) when known, else the
+ * branch checked out in `dirPath`. Null when neither is there (not a
+ * repository, or a detached HEAD with no origin/HEAD).
+ */
+export async function getDefaultBranch(dirPath: string): Promise<string | null> {
+  const originHead = await tryGitExec(['symbolic-ref', '--quiet', '--short', 'refs/remotes/origin/HEAD'], dirPath, 'other');
+  if (originHead) return originHead.replace(/^origin\//, '');
+  return (await tryGitExec(['symbolic-ref', '--quiet', '--short', 'HEAD'], dirPath, 'other')) || null;
+}
+
+/**
  * Polled every few seconds per git widget. Never a span (spec §4.8): a
  * duration histogram bucketed by changed-file count, a poll counter, and a
  * Detailed-level exemplar span only when one poll takes over 2 s.

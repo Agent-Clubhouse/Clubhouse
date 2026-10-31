@@ -46,7 +46,7 @@ function emit(change: StartRequestChange): void {
 }
 
 /** The fields that make two starts the same request. */
-const ARG_KEYS: ReadonlyArray<keyof HelperStartArgs> = ['name', 'task', 'persona', 'cli', 'model', 'access', 'branchFrom', 'folder'];
+const ARG_KEYS: ReadonlyArray<keyof HelperStartArgs> = ['name', 'task', 'persona', 'cli', 'model', 'access', 'branchFrom', 'folder', 'project'];
 
 function sameArgs(a: HelperStartArgs, b: HelperStartArgs): boolean {
   return ARG_KEYS.every((k) => (a[k] ?? null) === (b[k] ?? null));

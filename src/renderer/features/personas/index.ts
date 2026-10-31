@@ -126,7 +126,7 @@ export const PERSONA_TEMPLATES: PersonaTemplate[] = [
     content: orchestrator,
     tools: [
       'start_helper', 'list_helpers', 'sleep_helper', 'wake_helper', 'answer_helper_question', 'hand_off', 'dispose_helper',
-      'create_group_project', 'add_to_group_project', 'remove_from_group_project', 'connect_agents', 'disconnect_agents',
+      'create_group_project', 'add_to_group_project', 'remove_from_group_project', 'connect_agents', 'disconnect_agents', 'list_projects',
     ],
     skills: [],
   },

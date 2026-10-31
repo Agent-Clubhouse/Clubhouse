@@ -30,7 +30,7 @@ import * as agentConfig from './agent-config';
 /** What the desktop calls an orchestrator it can't name (app-event-bridge). */
 const UNNAMED_ORCHESTRATOR = 'An orchestrator';
 
-export interface HelperRequestProject { id: string; path: string }
+export interface HelperRequestProject { id: string; path: string; name?: string; displayName?: string }
 
 function samePath(a: string, b: string): boolean {
   const ra = path.resolve(a);
@@ -40,6 +40,13 @@ function samePath(a: string, b: string): boolean {
 
 function projectFor(projects: readonly HelperRequestProject[], projectPath: string): HelperRequestProject | undefined {
   return projects.find((p) => samePath(p.path, projectPath));
+}
+
+/** The name of the project a held start would create its helper in, when that is another project (#2515). */
+function startProjectName(projects: readonly HelperRequestProject[], target: string | undefined): string | undefined {
+  if (!target) return undefined;
+  const project = projectFor(projects, target);
+  return project?.displayName || project?.name || path.basename(target);
 }
 
 function disposeFacts(checks: HelperDisposeChecks, forceRequested: boolean): NonNullable<MobileHelperRequest['dispose']> {
@@ -77,7 +84,7 @@ export function buildMobileHelperRequests(
       helper: { agentId: null, name: r.args.name },
       requestedAt: r.createdAt,
       expiresAt: r.expiresAt,
-      summary: describeHelperStart(r.args.name),
+      summary: describeHelperStart(r.args.name, startProjectName(projects, r.args.project)),
       start: {
         task: r.args.task,
         persona: r.args.persona ?? null,
@@ -93,7 +100,7 @@ export function buildMobileHelperRequests(
     const list = agents[project.id] ?? [];
     const helper = list.find((a) => a.id === request.helperId);
     if (!helper || isDisposedAgent(helper)) continue;
-    // The request records the helper's project; its orchestrator may be in another one (#2513).
+    // The request records the helper's project, so the dispose runs there; its orchestrator may be in another one (#2513).
     const parentProject = helper.parentProjectPath ? projectFor(projects, helper.parentProjectPath) : project;
     const parentList = parentProject ? agents[parentProject.id] ?? [] : [];
     const requesterName = parentList.find((a) => a.id === request.orchestratorId)?.name ?? UNNAMED_ORCHESTRATOR;
