@@ -139,9 +139,16 @@ describe('persona templates', () => {
       for (const tool of [
         'start_helper', 'list_helpers', 'sleep_helper', 'wake_helper', 'message_parent', 'answer_helper_question', 'hand_off', 'dispose_helper',
         'create_group_project', 'add_to_group_project', 'remove_from_group_project', 'connect_agents', 'disconnect_agents',
+        'list_projects',
       ]) {
         expect(body, tool).toContain(`\`${tool}\``);
       }
+    });
+
+    it('explains helpers in other projects and says to hand them off as pushed (#2515)', () => {
+      const body = stripPersonaFrontMatter(orchestrator().content);
+      expect(body).toContain('`project`');
+      expect(body).toMatch(/hand it off as pushed or copied, never merged/);
     });
 
     it('tells helpers to push their work and report through message_parent', () => {

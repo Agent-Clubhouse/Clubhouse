@@ -496,6 +496,8 @@ export const ATTR = {
     'hand_off', 'dispose_helper',
     // helpers (#2227)
     'start_helper', 'list_helpers', 'sleep_helper', 'wake_helper', 'message_parent',
+    // helpers in other projects (#2515)
+    'list_projects',
     // helper questions (#2366)
     'answer_helper_question',
     // orchestration: connection tools (#2230)

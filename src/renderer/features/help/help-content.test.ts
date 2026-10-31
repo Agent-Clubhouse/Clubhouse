@@ -107,9 +107,19 @@ describe('help-content', () => {
       for (const tool of [
         'start_helper', 'list_helpers', 'sleep_helper', 'wake_helper', 'message_parent', 'answer_helper_question', 'hand_off', 'dispose_helper',
         'create_group_project', 'add_to_group_project', 'remove_from_group_project', 'connect_agents', 'disconnect_agents',
+        'list_projects',
       ]) {
         expect(content, tool).toContain(`\`${tool}\``);
       }
+    });
+
+    it('covers helpers in other projects (#2515)', () => {
+      const content = find(HELP_SECTIONS, 'agents-orchestrated-helpers').content;
+      expect(content).toContain('## Helpers in other projects');
+      expect(content).toContain('**Cross-project helpers**');
+      expect(content).toContain('`project`');
+      expect(content).toContain('| `crossProjectHelpers` |');
+      expect(content).toMatch(/older version of Clubhouse/);
     });
 
     it('shows persona bodies without their settings front-matter', () => {
