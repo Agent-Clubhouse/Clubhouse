@@ -1253,6 +1253,7 @@ describe('annex-server', () => {
     const body = JSON.parse((await request(port, 'GET', '/api/v1/mobile/capabilities', undefined, authHeaders(token))).body);
     expect(body.commands).toEqual(expect.arrayContaining(['chat.setModel', 'chat.setLevel']));
     expect(body.chatControls).toEqual({ version: 1 });
+    expect(body.slashCommands).toEqual({ version: 1, snapshotField: 'slashCommands', event: 'commands_available', maxCommands: 200 });
     expect(body.permissions).toEqual({ version: 1, persistentApprovals: true, freeAgentMode: true });
   });
 
@@ -1370,6 +1371,27 @@ describe('annex-server', () => {
           liveLevels: ['plan', 'ask', 'full_access'], modelSwitch: 'live', effortSwitch: 'per_turn', effortDefault: true,
           switchNote: 'Model changes apply now; effort changes from the next message.',
         });
+      } finally { clearChatRuntimes(); }
+    });
+
+    it('sends the live session\'s slash commands, bounded, and null when not live', async () => {
+      vi.mocked(projectStore.list).mockReturnValue([{ id: 'p', name: 'Project', path: '/test/project' }] as any);
+      vi.mocked(agentConfigModule.listDurable).mockReturnValue([{ id: 'a', name: 'agent', color: 'blue', createdAt: '2026-01-01' }] as any);
+      const events = [
+        { type: 'commands_available', agentId: 'a', sessionId: 's', seq: 1, data: { commands: [{ name: 'old' }] } },
+        { type: 'commands_available', agentId: 'a', sessionId: 's', seq: 2, data: { commands: [{ name: 'compact', description: 'Compact', startOnly: true }, { name: 'bad name' }] } },
+        { type: 'agent_message', agentId: 'a', sessionId: 's', seq: 3, data: { messageId: 'm', text: 'hi' } },
+      ];
+      const { port, token } = await startAndPair();
+      const chat = async (q = '') => JSON.parse((await request(port, 'GET', `/api/v1/mobile/agents/a/chat${q}`, undefined, authHeaders(token))).body);
+      expect((await chat()).slashCommands).toBeNull();
+      registerChatRuntime({ kind: 'chat', agentId: 'a', isRunning: () => true, getState: () => 'idle',
+        getSessionId: () => 's', getCapabilities: () => ({ slashCommands: true }), readTranscript: async () => ({ events }) } as any);
+      try {
+        // A page that ends before the session's commands_available still carries them.
+        const body = await chat('?limit=1');
+        expect(body.events.map((e: { seq: number }) => e.seq)).toEqual([3]);
+        expect(body.slashCommands).toEqual([{ name: 'compact', description: 'Compact', startOnly: true }]);
       } finally { clearChatRuntimes(); }
     });
 

@@ -93,6 +93,12 @@
         ],
         "port": 7432
       },
+      "slashCommands": {
+        "event": "commands_available",
+        "maxCommands": 200,
+        "snapshotField": "slashCommands",
+        "version": 1
+      },
       "terminal": {
         "agentAttach": true,
         "agentShell": true,

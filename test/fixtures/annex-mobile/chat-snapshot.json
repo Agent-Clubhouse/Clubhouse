@@ -347,9 +347,36 @@
           "ts": 1799999951000,
           "type": "queue_state",
           "v": 2
+        },
+        {
+          "agentId": "durable_chat",
+          "data": {
+            "commands": [
+              {
+                "description": "Clear conversation history but keep a summary in context",
+                "inputHint": "<optional custom summarization instructions>",
+                "name": "compact",
+                "startOnly": true
+              },
+              {
+                "description": "Review a pull request",
+                "inputHint": "<pr>",
+                "name": "review"
+              },
+              {
+                "description": "Create distinctive, production-grade frontend interfaces",
+                "name": "frontend-design"
+              }
+            ]
+          },
+          "seq": 12,
+          "sessionId": "sess_live",
+          "ts": 1799999952000,
+          "type": "commands_available",
+          "v": 2
         }
       ],
-      "lastSeq": 11,
+      "lastSeq": 12,
       "nextBeforeSeq": null,
       "pendingPermissions": [
         {
@@ -428,6 +455,23 @@
       ],
       "readOnly": false,
       "sessionId": "sess_live",
+      "slashCommands": [
+        {
+          "description": "Clear conversation history but keep a summary in context",
+          "inputHint": "<optional custom summarization instructions>",
+          "name": "compact",
+          "startOnly": true
+        },
+        {
+          "description": "Review a pull request",
+          "inputHint": "<pr>",
+          "name": "review"
+        },
+        {
+          "description": "Create distinctive, production-grade frontend interfaces",
+          "name": "frontend-design"
+        }
+      ],
       "state": "waiting_permission",
       "truncated": false,
       "version": 1

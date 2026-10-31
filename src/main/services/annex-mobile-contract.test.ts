@@ -351,6 +351,8 @@ const LIVE_TRANSCRIPT: ChatEvent[] = [
   envelope(9, 'question', { requestId: 'q_1', questions: [{ id: 'which', prompt: 'Which branch?', header: 'Branch', options: [{ id: 'main', label: 'main' }, { id: 'dev', label: 'dev', description: 'Next release' }], multiSelect: false, allowFreeText: true }] }, { turnId: 'turn_1' }),
   envelope(10, 'usage', { scope: 'session', tokens: { input: 1200, output: 300, total: 1500 }, costUsd: 0.04, context: { used: 30000, size: 200000 } }),
   envelope(11, 'queue_state', { queuedMessageIds: ['msg_q'], transition: { messageIds: ['msg_q'], status: 'queued' } }),
+  envelope(12, 'commands_available', { commands: [{ name: 'compact', description: 'Clear conversation history but keep a summary in context', inputHint: '<optional custom summarization instructions>', startOnly: true },
+    { name: 'review', description: 'Review a pull request', inputHint: '<pr>' }, { name: 'frontend-design', description: 'Create distinctive, production-grade frontend interfaces' }] }),
 ];
 
 function chatRuntime(agentId: string, sessionId: string, caps: Record<string, unknown>, events: ChatEvent[], full: boolean) {
@@ -572,6 +574,7 @@ describe('Annex mobile contract fixtures', () => {
   it('chat snapshots and sessions', async () => {
     const live = await exchange('GET', '/api/v1/mobile/agents/durable_chat/chat');
     expect(live.response.body.chatControls).not.toBeNull();
+    expect(live.response.body.slashCommands).toHaveLength(3);
     expect(JSON.stringify(live)).not.toContain('/Users/me');
     fixtures.set('chat-snapshot.json', live);
     const sleeping = await exchange('GET', '/api/v1/mobile/agents/durable_sleepy/chat');
