@@ -21,6 +21,7 @@ vi.mock('./log-service', () => ({ appLog: vi.fn() }));
 vi.mock('./project-store', () => ({ list: vi.fn(async () => projects.list) }));
 vi.mock('./agent-config', () => ({
   listDurable: vi.fn(async (projectPath: string) => configs.get(projectPath) ?? []),
+  projectKey: vi.fn(async (projectPath: string) => path.resolve(projectPath)),
   onAgentConfigChanged: vi.fn((listener: (projectPath: string) => void) => {
     configListeners.add(listener);
     return () => configListeners.delete(listener);
@@ -360,6 +361,73 @@ describe('watchHelperWires', () => {
     await vi.waitFor(() => expect(boundPairs()).not.toContain('durable_lead->durable_h2'));
     expect(boundPairs()).not.toContain('durable_h2->durable_lead');
     expect(boundPairs()).toContain('durable_lead->durable_h1');
+  });
+});
+
+describe('a helper whose orchestrator is in another project (#2513)', () => {
+  /** The lead in Wardfall gets a helper in the other project. */
+  const withFarHelper = (extra: Partial<DurableAgentConfig> = {}) => [
+    ...configs.get(otherProjectPath)!,
+    agent('durable_far', { parentAgentId: 'durable_lead', parentProjectPath: projectPath, ...extra }),
+  ];
+
+  it('wires the orchestrator and the helper both ways, each labelled with its target\'s project', async () => {
+    configs.set(otherProjectPath, withFarHelper());
+    registerPersistedBindingSource(helperWireBindingSource);
+    await rebuildPersistedBindings();
+
+    expect(boundPairs()).toContain('durable_lead->durable_far');
+    expect(boundPairs()).toContain('durable_far->durable_lead');
+    const toFar = bindingManager.getBindingsForAgent('durable_lead').find((b) => b.targetId === 'durable_far');
+    const toLead = bindingManager.getBindingsForAgent('durable_far').find((b) => b.targetId === 'durable_lead');
+    expect(toFar).toMatchObject({ agentName: 'lead', targetName: 'far', projectName: 'other' });
+    expect(toLead).toMatchObject({ agentName: 'far', targetName: 'lead', projectName: 'Wardfall' });
+  });
+
+  it('does not wire a parent link to a project that is not registered, or to a same-id agent in the helper\'s project', async () => {
+    configs.set(otherProjectPath, [
+      ...configs.get(otherProjectPath)!,
+      agent('durable_lost', { parentAgentId: 'durable_lead', parentProjectPath: path.join(os.tmpdir(), 'clubhouse-helper-wires', 'gone') }),
+      agent('durable_twin', { parentAgentId: 'durable_o1', parentProjectPath: projectPath }),
+    ]);
+    registerPersistedBindingSource(helperWireBindingSource);
+    await rebuildPersistedBindings();
+
+    expect(boundPairs().filter((p) => p.includes('durable_lost') || p.includes('durable_twin'))).toEqual([]);
+  });
+
+  it('rebuilds when the orchestrator\'s project changes, though the helper\'s project did not', async () => {
+    vi.useFakeTimers();
+    configs.set(otherProjectPath, withFarHelper());
+    registerPersistedBindingSource(helperWireBindingSource);
+    await rebuildPersistedBindings();
+    const onChange = vi.fn(() => rebuildPersistedBindings());
+    watchHelperWires(onChange);
+
+    // The orchestrator is deleted from Wardfall; the helper's row in the other project is untouched.
+    setAgents(projectPath, configs.get(projectPath)!.filter((a) => a.id !== 'durable_lead'));
+    await vi.advanceTimersByTimeAsync(100);
+    expect(onChange).toHaveBeenCalledTimes(1);
+    expect(boundPairs().filter((p) => p.includes('durable_far'))).toEqual([]);
+  });
+
+  it('keeps the wires while the orchestrator\'s project cannot be read', async () => {
+    configs.set(otherProjectPath, withFarHelper());
+    registerPersistedBindingSource(helperWireBindingSource);
+    await rebuildPersistedBindings();
+
+    const { listDurable } = await import('./agent-config');
+    vi.mocked(listDurable).mockImplementation(async (p: string) => {
+      if (p === projectPath) throw new Error('EACCES');
+      return configs.get(p) ?? [];
+    });
+    try {
+      await rebuildPersistedBindings();
+      expect(boundPairs()).toContain('durable_lead->durable_far');
+      expect(boundPairs()).toContain('durable_far->durable_lead');
+    } finally {
+      vi.mocked(listDurable).mockImplementation(async (p: string) => configs.get(p) ?? []);
+    }
   });
 });
 
