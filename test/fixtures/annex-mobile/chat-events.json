@@ -47,7 +47,7 @@
           "v": 2
         }
       },
-      "seq": 4,
+      "seq": 6,
       "type": "chat:event"
     },
     {
@@ -90,7 +90,7 @@
           "v": 2
         }
       },
-      "seq": 5,
+      "seq": 7,
       "type": "chat:event"
     },
     {
@@ -108,7 +108,7 @@
           "v": 2
         }
       },
-      "seq": 6,
+      "seq": 8,
       "type": "chat:event"
     },
     {
@@ -128,7 +128,7 @@
           "v": 2
         }
       },
-      "seq": 8,
+      "seq": 10,
       "type": "chat:event"
     },
     {
@@ -148,7 +148,7 @@
           "v": 2
         }
       },
-      "seq": 9,
+      "seq": 11,
       "type": "chat:event"
     },
     {
@@ -173,7 +173,7 @@
           "v": 2
         }
       },
-      "seq": 11,
+      "seq": 13,
       "type": "chat:event"
     },
     {
@@ -220,7 +220,7 @@
           "v": 2
         }
       },
-      "seq": 13,
+      "seq": 15,
       "type": "chat:event"
     },
     {
@@ -240,7 +240,7 @@
           "v": 2
         }
       },
-      "seq": 14,
+      "seq": 16,
       "type": "chat:event"
     },
     {
@@ -264,7 +264,7 @@
           "v": 2
         }
       },
-      "seq": 15,
+      "seq": 17,
       "type": "chat:event"
     },
     {
@@ -285,7 +285,7 @@
           "v": 2
         }
       },
-      "seq": 16,
+      "seq": 18,
       "type": "chat:event"
     },
     {
@@ -305,7 +305,7 @@
           "v": 2
         }
       },
-      "seq": 17,
+      "seq": 19,
       "type": "chat:event"
     },
     {
@@ -325,7 +325,7 @@
           "v": 2
         }
       },
-      "seq": 18,
+      "seq": 20,
       "type": "chat:event"
     },
     {
@@ -346,7 +346,7 @@
           "v": 2
         }
       },
-      "seq": 19,
+      "seq": 21,
       "type": "chat:event"
     },
     {
@@ -405,7 +405,7 @@
           "v": 2
         }
       },
-      "seq": 20,
+      "seq": 22,
       "type": "chat:event"
     },
     {
@@ -451,7 +451,7 @@
           "v": 2
         }
       },
-      "seq": 21,
+      "seq": 23,
       "type": "chat:event"
     },
     {
@@ -500,7 +500,7 @@
           "v": 2
         }
       },
-      "seq": 22,
+      "seq": 24,
       "type": "chat:event"
     },
     {
@@ -522,7 +522,7 @@
           "v": 2
         }
       },
-      "seq": 23,
+      "seq": 25,
       "type": "chat:event"
     },
     {
@@ -552,7 +552,7 @@
           "v": 2
         }
       },
-      "seq": 24,
+      "seq": 26,
       "type": "chat:event"
     },
     {
@@ -574,7 +574,7 @@
           "v": 2
         }
       },
-      "seq": 25,
+      "seq": 27,
       "type": "chat:event"
     },
     {
@@ -604,7 +604,7 @@
           "v": 2
         }
       },
-      "seq": 26,
+      "seq": 28,
       "type": "chat:event"
     },
     {
@@ -626,7 +626,7 @@
           "v": 2
         }
       },
-      "seq": 27,
+      "seq": 29,
       "type": "chat:event"
     },
     {
@@ -654,7 +654,7 @@
           "v": 2
         }
       },
-      "seq": 28,
+      "seq": 30,
       "type": "chat:event"
     },
     {
@@ -698,7 +698,7 @@
           "v": 2
         }
       },
-      "seq": 29,
+      "seq": 31,
       "type": "chat:event"
     },
     {
@@ -717,7 +717,7 @@
           "v": 2
         }
       },
-      "seq": 30,
+      "seq": 32,
       "type": "chat:event"
     },
     {
@@ -737,7 +737,7 @@
           "v": 2
         }
       },
-      "seq": 31,
+      "seq": 33,
       "type": "chat:event"
     },
     {
@@ -765,7 +765,7 @@
           "v": 2
         }
       },
-      "seq": 32,
+      "seq": 34,
       "type": "chat:event"
     },
     {
@@ -785,7 +785,7 @@
           "v": 2
         }
       },
-      "seq": 33,
+      "seq": 35,
       "type": "chat:event"
     },
     {
@@ -805,7 +805,7 @@
           "v": 2
         }
       },
-      "seq": 34,
+      "seq": 36,
       "type": "chat:event"
     },
     {
@@ -826,7 +826,7 @@
           "v": 2
         }
       },
-      "seq": 35,
+      "seq": 37,
       "type": "chat:event"
     },
     {
@@ -846,7 +846,7 @@
           "v": 2
         }
       },
-      "seq": 36,
+      "seq": 38,
       "type": "chat:event"
     }
   ]

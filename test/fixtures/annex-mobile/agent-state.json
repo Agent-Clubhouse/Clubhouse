@@ -1,0 +1,114 @@
+{
+  "request": {
+    "method": "GET",
+    "path": "/api/v1/mobile/agents/state"
+  },
+  "response": {
+    "body": {
+      "agents": [
+        {
+          "agentId": "durable_chat",
+          "detailedStatus": {
+            "message": "Needs permission",
+            "state": "needs_permission",
+            "timestamp": 1800000000000
+          },
+          "hasSession": true,
+          "kind": "durable",
+          "lastActivityAt": 1790845200000,
+          "pendingPermission": true,
+          "pendingQuestion": false,
+          "projectId": "proj_app",
+          "sessionId": "sess_live",
+          "sessionState": "waiting_permission",
+          "status": "running"
+        },
+        {
+          "agentId": "durable_basic",
+          "detailedStatus": {
+            "message": "Needs permission",
+            "state": "needs_permission",
+            "timestamp": 1800000000000
+          },
+          "hasSession": true,
+          "kind": "durable",
+          "lastActivityAt": 1790931600000,
+          "pendingPermission": true,
+          "pendingQuestion": false,
+          "projectId": "proj_app",
+          "sessionId": "sess_basic",
+          "sessionState": "waiting_permission",
+          "status": "running"
+        },
+        {
+          "agentId": "durable_sleepy",
+          "detailedStatus": null,
+          "hasSession": true,
+          "kind": "durable",
+          "lastActivityAt": 1791018000000,
+          "pendingPermission": false,
+          "pendingQuestion": false,
+          "projectId": "proj_app",
+          "sessionId": null,
+          "sessionState": null,
+          "status": "sleeping"
+        },
+        {
+          "agentId": "durable_term",
+          "detailedStatus": null,
+          "hasSession": false,
+          "kind": "durable",
+          "lastActivityAt": 1791104400000,
+          "pendingPermission": false,
+          "pendingQuestion": false,
+          "projectId": "proj_app",
+          "sessionId": null,
+          "sessionState": null,
+          "status": "running"
+        },
+        {
+          "agentId": "durable_fresh",
+          "detailedStatus": null,
+          "hasSession": false,
+          "kind": "durable",
+          "lastActivityAt": 1791190800000,
+          "pendingPermission": false,
+          "pendingQuestion": false,
+          "projectId": "proj_app",
+          "sessionId": null,
+          "sessionState": null,
+          "status": "sleeping"
+        },
+        {
+          "agentId": "durable_docs",
+          "detailedStatus": null,
+          "hasSession": false,
+          "kind": "durable",
+          "lastActivityAt": 1791277200000,
+          "pendingPermission": false,
+          "pendingQuestion": false,
+          "projectId": "proj_app",
+          "sessionId": null,
+          "sessionState": null,
+          "status": "sleeping"
+        },
+        {
+          "agentId": "quick_1",
+          "detailedStatus": null,
+          "hasSession": false,
+          "kind": "quick",
+          "lastActivityAt": 1799999880000,
+          "pendingPermission": false,
+          "pendingQuestion": false,
+          "projectId": "proj_app",
+          "sessionId": null,
+          "sessionState": null,
+          "status": "running"
+        }
+      ],
+      "epoch": "00000000-0000-4000-8000-000000000001",
+      "version": 1
+    },
+    "status": 200
+  }
+}

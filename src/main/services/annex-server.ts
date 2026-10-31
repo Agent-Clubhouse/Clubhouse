@@ -2424,6 +2424,8 @@ async function handleMobileCapabilitiesRoute(ctx: AnnexRouteContext): Promise<vo
     events: { transport: 'annex-websocket', replayRequest: 'mobile:replay', queueState: 'queue_state' },
     createOptions: { version: 1, path: '/api/v1/mobile/projects/{projectId}/create-options' },
     agentSettings: { version: 1, path: '/api/v1/mobile/agents/{agentId}/settings' },
+    // Every agent's live state in one read, for catching up after a reconnect.
+    agentState: { version: 1, path: '/api/v1/mobile/agents/state' },
     helperRequests: { version: 1, snapshotField: 'helperRequests', commands: ['helper.approve', 'helper.decline'] },
     chatControls: { version: 1 },
     // A paired phone has full control (#2462): persistent approvals and Free Agent Mode, as on the desktop.
@@ -2459,6 +2461,50 @@ async function handleMobilePairingDeleteRoute(ctx: AnnexRouteContext): Promise<v
   }
   disconnectPeer(fingerprint);
   sendJson(ctx.res, 200, { version: 1, epoch: mobileCommands.epoch, revoked: true, pairingMode: 'session' });
+}
+
+/**
+ * Every agent's live state in one read, for a phone catching up after a reconnect: what it missed
+ * while away (a sleep, a turn's end, an answered request) never reaches it as events. Cheap: in-memory
+ * runtime state and agent configs only, no transcripts.
+ */
+async function handleMobileAgentStateRoute(ctx: AnnexRouteContext): Promise<void> {
+  try {
+    const state = (agentId: string) => {
+      const runtime = getAgentRuntime(agentId);
+      const chat = runtime?.kind === 'chat' && runtime.isRunning() ? runtime : null;
+      const sessionState = chat ? chat.getState() : null;
+      return {
+        sessionId: chat ? chat.getSessionId?.() ?? null : null,
+        sessionState,
+        detailedStatus: isAgentRunning(agentId) ? getDetailedStatus(agentId) : null,
+        pendingPermission: permissionQueue.listPendingForAgent(agentId).length > 0 || sessionState === 'waiting_permission',
+        pendingQuestion: sessionState === 'waiting_input',
+      };
+    };
+    const agents: object[] = [];
+    for (const project of await projectStore.list()) {
+      for (const d of (await agentConfig.listDurable(project.path)).filter((a) => !isDisposedAgent(a))) {
+        agents.push({
+          agentId: d.id, projectId: project.id, kind: 'durable',
+          status: isAgentRunning(d.id) ? 'running' : 'sleeping',
+          hasSession: !!d.lastSessionId, lastActivityAt: lastActivityAt(d.id, d.createdAt),
+          ...state(d.id),
+        });
+      }
+    }
+    for (const quick of trackedQuickAgents.values()) {
+      agents.push({
+        agentId: quick.id, projectId: quick.projectId, kind: 'quick', status: quick.status,
+        hasSession: false, lastActivityAt: lastActivityAt(quick.id, quick.spawnedAt),
+        ...state(quick.id),
+      });
+    }
+    sendJson(ctx.res, 200, { version: 1, epoch: mobileCommands.epoch, agents });
+  } catch {
+    // telemetry-exempt: the phone keeps its catalog status and retries on the next reconnect.
+    sendJson(ctx.res, 500, { error: 'agent_state_failed' });
+  }
 }
 
 async function handleMobileChatRoute(ctx: AnnexRouteContext, match: RegExpMatchArray): Promise<void> {
@@ -2816,6 +2862,7 @@ const ANNEX_HTTP_ROUTE_TABLE: AnnexHttpRoute[] = [
   { method: 'GET', pattern: /^\/api\/v1\/mobile\/agents\/([^/]+)\/content(\?.*)?$/, handler: handleMobileContentRoute },
   { method: 'GET', pattern: /^\/api\/v1\/mobile\/capabilities$/, handler: handleMobileCapabilitiesRoute },
   { method: 'DELETE', pattern: /^\/api\/v1\/mobile\/pairing$/, handler: handleMobilePairingDeleteRoute },
+  { method: 'GET', pattern: /^\/api\/v1\/mobile\/agents\/state$/, handler: handleMobileAgentStateRoute },
   { method: 'GET', pattern: /^\/api\/v1\/mobile\/agents\/([^/]+)\/chat(\?.*)?$/, handler: handleMobileChatRoute },
   { method: 'GET', pattern: /^\/api\/v1\/mobile\/agents\/([^/]+)\/chat\/sessions$/, handler: handleMobileChatSessionsRoute },
   { method: 'POST', pattern: /^\/api\/v1\/mobile\/commands$/, handler: handleMobileCommandRoute },

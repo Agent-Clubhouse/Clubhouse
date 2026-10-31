@@ -1,0 +1,25 @@
+{
+  "direction": "desktop-to-phone",
+  "frames": [
+    {
+      "payload": {
+        "agentId": "durable_chat",
+        "exitCode": 0
+      },
+      "seq": 1,
+      "type": "pty:exit"
+    },
+    {
+      "payload": {
+        "agentId": "durable_chat",
+        "detailedStatus": null,
+        "id": "durable_chat",
+        "kind": "durable",
+        "lastActivityAt": 1800000000000,
+        "status": "sleeping"
+      },
+      "seq": 2,
+      "type": "agent:status"
+    }
+  ]
+}

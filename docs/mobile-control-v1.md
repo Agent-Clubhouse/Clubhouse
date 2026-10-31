@@ -122,6 +122,12 @@ The Annex snapshot carries what the desktop's `AgentAvatar` draws, so a phone ca
 
 Authenticated `GET /api/v1/mobile/agents/:agentId/chat` returns `{version:1,epoch,agentId,sessionId,state,capabilities,events,lastSeq,truncated,pendingPermissions,pendingQuestions}`. Events use the existing ChatEvent schema. LastSeq here is **session-local**, distinct from Annex's global WS seq. Returned history is a bounded tail; pending interactions are included separately even when their events predate the tail. GET `/api/v1/mobile/agents/:agentId/chat/sessions` returns `{version,epoch,agentId,sessions:ChatSessionSummary[]}`. The chat snapshot accepts `sessionId` (optional), `beforeSeq` (exclusive, positive integer) and `limit` (1–2000, default 2000). It also returns `currentSessionId`, `readOnly`, and `nextBeforeSeq` (null when no older page). `lastSeq` always describes the full session, not the current page. Never send actions for a readOnly historical session. Pending interactions are independent of the requested page.
 
+### Agent state
+
+Capabilities advertise `agentState:{version:1,path:"/api/v1/mobile/agents/state"}`. Authenticated `GET /api/v1/mobile/agents/state` returns every agent's live state in one read: `{version:1,epoch,agents:[{agentId,projectId,kind,status,sessionId,sessionState,hasSession,detailedStatus,pendingPermission,pendingQuestion,lastActivityAt}]}`. `status` is `running` or `sleeping` for a durable agent and the run status for a tracked quick agent. `sessionId` and `sessionState` (a `ChatSessionState`) are null without a live chat session. It reads runtime state and agent configs only, never transcripts, so a phone can call it after every reconnect: events it missed while away (a sleep, a turn's end, a resolved request) never reach it, and replay starts from the reconnect snapshot. Treat it as newer than any status cached from chat events; reload history only for conversations on screen.
+
+When a durable agent's process exits (stopped, idle-slept, crashed; terminal or chat), the desktop broadcasts `pty:exit` and then `{type:"agent:status",payload:{id,agentId,kind:"durable",status:"sleeping",detailedStatus:null,lastActivityAt},seq}`. Exiting drops the agent's earlier events from replay, so this frame is what a replaying phone sees.
+
 ## Live events and replay
 
 ### Authoritative local queue
