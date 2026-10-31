@@ -958,6 +958,21 @@ describe('annex-server', () => {
       expect(_eventReplay.getEventsSince(before)?.map((e) => e.payload)).toEqual([{ agentId: 'agent-1', data: 'hello', outputSeq: 5 }]);
     });
 
+    it('says a durable agent is asleep when it exits, and replay keeps that', async () => {
+      await startAndPair();
+      const onExit = vi.mocked(annexEventBus.onPtyExit).mock.calls.at(-1)![0];
+      const before = _eventReplay.pushEvent('test:marker', null);
+      // Its chat's end is dropped when it exits (clearForAgent), so the status is what a reconnecting phone replays.
+      _eventReplay.pushEvent('chat:event', { agentId: 'durable-1', event: { type: 'session_ended' } });
+
+      onExit('durable-1', 0);
+
+      expect(_eventReplay.getEventsSince(before)?.map(({ type, payload }) => ({ type, payload }))).toEqual([
+        { type: 'pty:exit', payload: { agentId: 'durable-1', exitCode: 0 } },
+        { type: 'agent:status', payload: { id: 'durable-1', agentId: 'durable-1', kind: 'durable', status: 'sleeping', detailedStatus: null, lastActivityAt: expect.any(Number) } },
+      ]);
+    });
+
     it('keeps another controller\'s shell input and size private', async () => {
       await startAndPair();
       const a = await connect();

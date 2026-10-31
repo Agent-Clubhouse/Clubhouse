@@ -678,6 +678,7 @@ export const ATTR = {
     'GET /api/v1/mobile/agents/:id/content',
     'GET /api/v1/mobile/capabilities',
     'DELETE /api/v1/mobile/pairing',
+    'GET /api/v1/mobile/agents/state',
     'GET /api/v1/mobile/agents/:id/chat',
     'GET /api/v1/mobile/agents/:id/chat/sessions',
     'POST /api/v1/mobile/commands',

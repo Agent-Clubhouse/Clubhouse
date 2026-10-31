@@ -4,6 +4,8 @@
     "agent-settings-errors.json",
     "agent-settings-running.json",
     "agent-settings.json",
+    "agent-sleep.json",
+    "agent-state.json",
     "attachments.json",
     "capabilities.json",
     "chat-events.json",

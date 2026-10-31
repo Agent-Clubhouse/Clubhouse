@@ -9,6 +9,10 @@
         "path": "/api/v1/mobile/agents/{agentId}/settings",
         "version": 1
       },
+      "agentState": {
+        "path": "/api/v1/mobile/agents/state",
+        "version": 1
+      },
       "attachments": {
         "imageTypes": [
           "image/png",

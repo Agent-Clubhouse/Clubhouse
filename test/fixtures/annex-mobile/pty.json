@@ -291,7 +291,7 @@
             "data": "npm test\r\n",
             "outputSeq": 52
           },
-          "seq": 37,
+          "seq": 39,
           "type": "pty:data"
         },
         {
@@ -299,8 +299,20 @@
             "agentId": "durable_term",
             "exitCode": 0
           },
-          "seq": 38,
+          "seq": 40,
           "type": "pty:exit"
+        },
+        {
+          "payload": {
+            "agentId": "durable_term",
+            "detailedStatus": null,
+            "id": "durable_term",
+            "kind": "durable",
+            "lastActivityAt": 1800000000000,
+            "status": "sleeping"
+          },
+          "seq": 41,
+          "type": "agent:status"
         }
       ]
     },

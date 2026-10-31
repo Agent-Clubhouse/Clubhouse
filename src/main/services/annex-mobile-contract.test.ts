@@ -585,6 +585,22 @@ describe('Annex mobile contract fixtures', () => {
     fixtures.set('chat-sessions.json', await exchange('GET', '/api/v1/mobile/agents/durable_chat/chat/sessions'));
   });
 
+  it('agent state, for catching up after a reconnect', async () => {
+    const state = await exchange('GET', '/api/v1/mobile/agents/state');
+    const agents = state.response.body.agents as Array<{ agentId: string; status: string; sessionState: string | null }>;
+    expect(agents.find((a) => a.agentId === 'durable_sleepy')).toMatchObject({ status: 'sleeping', sessionState: null });
+    expect(agents.find((a) => a.agentId === 'durable_chat')?.sessionState).not.toBeNull();
+    fixtures.set('agent-state.json', state);
+  });
+
+  it('a durable agent going to sleep', async () => {
+    const ws = await connect();
+    ws.send.mockClear();
+    W.ptyExit.at(-1)!('durable_chat', 0);
+    // pty:exit reaches the phone's terminal only; agent:status is what its agent list hears.
+    fixtures.set('agent-sleep.json', { direction: 'desktop-to-phone', frames: frames(ws) });
+  });
+
   it('create options and agent settings', async () => {
     fixtures.set('create-options.json', await exchange('GET', '/api/v1/mobile/projects/proj_app/create-options'));
     fixtures.set('create-options-errors.json', { projectNotFound: await exchange('GET', '/api/v1/mobile/projects/missing/create-options') });
