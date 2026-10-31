@@ -3638,7 +3638,7 @@ export function start(): void {
     detailedStatusCache.delete(agentId);
     permissionQueue.clearForAgent(agentId);
     eventReplay.clearForAgent(agentId);
-    noteAgentActivity(agentId);
+    const lastActivityAt = noteAgentActivity(agentId);
 
     broadcastAndBuffer('pty:exit', { agentId, exitCode });
 
@@ -3657,6 +3657,19 @@ export function start(): void {
         trackedQuickAgents.delete(agentId);
         agentLastActivity.delete(agentId);
       }, 60_000);
+    } else {
+      // A durable agent asleep: stopped, idle-slept or exited, terminal or chat. The iOS app takes pty:* frames
+      // only into its terminal, and the chat events that said so were just dropped from replay, so without this
+      // a phone kept showing it awake until the next catalog read.
+      lastChatStatusPush.delete(agentId);
+      broadcastAndBuffer('agent:status', {
+        id: agentId,
+        agentId,
+        kind: 'durable',
+        status: 'sleeping',
+        detailedStatus: null,
+        lastActivityAt,
+      });
     }
   });
 
