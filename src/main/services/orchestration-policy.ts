@@ -32,6 +32,13 @@
  * Policy writes for one agent (set, turn-off, persona reconcile) run one at
  * a time under a per-agent lock, each on a fresh read of the config.
  *
+ * Cross-project helpers (#2512): with `crossProjectHelpers` on (and
+ * orchestration), the crossProject gate opens too, and the agent may start
+ * helpers in other registered projects. Limits, the helper summary and
+ * turn-off count and settle helpers in every project. Turning only
+ * `crossProjectHelpers` off settles nothing: helpers already in other
+ * projects keep running and can still be managed.
+ *
  * Control levels and limits are stored and exposed here; the tools that
  * start and dispose helpers (#2227, #2229) enforce them.
  */
@@ -44,7 +51,13 @@ import * as orchestrationSettings from './orchestration-settings';
 import * as projectStore from './project-store';
 import { readProjectAgentDefaults } from './agent-settings-service';
 import { readLayeredPersonaRaw, resolvePersonaId } from './materialization-service';
-import { isOrchestrationEnabled, setOrchestrationEnabled } from './clubhouse-mcp/orchestration-gate';
+import { listHelpersEverywhere, type HelperEntry } from './helper-index';
+import {
+  closeCrossProject,
+  isCrossProjectEnabled,
+  isOrchestrationEnabled,
+  setOrchestrationEnabled,
+} from './clubhouse-mcp/orchestration-gate';
 import { appLog } from './log-service';
 import { setPersonaChangeHook, type PersonaChange } from './persona-change-hook';
 import { isDisposedAgent } from '../../shared/agent-helpers';
@@ -60,6 +73,8 @@ import {
   validateOrchestrationPatch,
   type HelperAccessResolution,
   type HelperLimitCheck,
+  type HelperProjectGroup,
+  type HelperSummary,
   type OrchestrationOffChoice,
   type OrchestrationPolicyConfig,
   type ResolvedOrchestrationPolicy,
@@ -98,9 +113,13 @@ const locks = new Map<string, Promise<unknown>>();
  * Run `fn` after every earlier locked call for this agent has settled. Policy
  * writes and the helper dispose tools (#2229) share it, so a turn-off can't
  * release a helper in the middle of its dispose. Not reentrant.
+ *
+ * Keyed on the agent id alone (ids are unique across the app), so a caller
+ * that names the agent's project by another path, such as a helper's project
+ * for a parent in another project, takes the same lock (#2512).
  */
-export async function withAgentLock<T>(projectPath: string, agentId: string, fn: () => Promise<T>): Promise<T> {
-  const key = `${pathKey(projectPath)}\0${agentId}`;
+export async function withAgentLock<T>(_projectPath: string, agentId: string, fn: () => Promise<T>): Promise<T> {
+  const key = agentId;
   const previous = locks.get(key) ?? Promise.resolve();
   const run = previous.catch((): undefined => undefined).then(fn);
   const settled = run.catch((): undefined => undefined);
@@ -176,12 +195,25 @@ async function resolveWithPersona(
 
 /** Open or close the gate from a policy. Only spawn and setOrchestrationPolicy call this. */
 function applyGate(projectPath: string, agent: DurableAgentConfig, policy: ResolvedOrchestrationPolicy): void {
-  setOrchestrationEnabled(agent.id, policy.orchestrate && !isDisposedAgent(agent) && isLiveIn(projectPath, agent.id));
+  setOrchestrationEnabled(agent.id, policy.orchestrate && !isDisposedAgent(agent) && isLiveIn(projectPath, agent.id), {
+    crossProject: policy.crossProjectHelpers,
+  });
 }
 
-/** Close the gate when the policy is off. Never opens it. */
+/** Close the gate, or only the crossProject gate, when the policy is off. Never opens either. */
 function closeGateIfOff(agent: DurableAgentConfig, policy: ResolvedOrchestrationPolicy): void {
   if (!policy.orchestrate || isDisposedAgent(agent)) setOrchestrationEnabled(agent.id, false);
+  else if (!policy.crossProjectHelpers) closeCrossProject(agent.id);
+}
+
+/**
+ * Whether an agent may start a helper in another project now: orchestration
+ * and cross-project helpers on in its policy and open in the gate. For
+ * start_helper's `project` (#2515). Never opens the gate.
+ */
+export async function isCrossProjectAllowed(homePath: string, agentId: string): Promise<boolean> {
+  const policy = await getOrchestrationPolicy(homePath, agentId);
+  return !!policy?.orchestrate && policy.crossProjectHelpers && isCrossProjectEnabled(agentId);
 }
 
 /**
@@ -246,10 +278,37 @@ export async function syncOrchestrationGate(projectPath: string, agentId: string
   }
 }
 
-/** An agent's live direct helpers, so the UI can warn before orchestration is turned off. */
-export async function getHelperSummary(projectPath: string, agentId: string): Promise<{ hasHelpers: boolean; helperIds: string[] }> {
-  const helpers = await agentConfig.listHelpers(projectPath, agentId);
-  return { hasHelpers: helpers.length > 0, helperIds: helpers.map((h) => h.id) };
+/** Group helpers by the project holding them, keeping their order. */
+function groupByProject(helpers: HelperEntry[]): HelperProjectGroup[] {
+  const groups = new Map<string, HelperProjectGroup>();
+  for (const { projectPath, config } of helpers) {
+    const group = groups.get(projectPath) ?? { projectPath, helperIds: [] };
+    group.helperIds.push(config.id);
+    groups.set(projectPath, group);
+  }
+  return [...groups.values()];
+}
+
+/**
+ * An agent's live direct helpers in every project, grouped by project (home
+ * first), so the UI can warn before orchestration is turned off.
+ */
+export async function getHelperSummary(projectPath: string, agentId: string): Promise<HelperSummary> {
+  const helpers = await listHelpersEverywhere(projectPath, agentId);
+  return {
+    hasHelpers: helpers.length > 0,
+    helperIds: helpers.map(({ config }) => config.id),
+    projects: groupByProject(helpers),
+  };
+}
+
+/** How many of the agent's live direct helpers are in another project than its own. */
+async function countHelpersElsewhere(projectPath: string, agentId: string): Promise<number> {
+  let count = 0;
+  for (const helper of await listHelpersEverywhere(projectPath, agentId)) {
+    if (!await agentConfig.isSameProject(helper.projectPath, projectPath)) count++;
+  }
+  return count;
 }
 
 // ── Changing the policy ──────────────────────────────────────────────────
@@ -278,13 +337,13 @@ export async function setOrchestrationPolicy(
     }
 
     if (current.orchestrate && !next.orchestrate) {
-      const { helperIds } = await getHelperSummary(projectPath, agentId);
+      const { helperIds, projects } = await getHelperSummary(projectPath, agentId);
       if (helperIds.length > 0) {
         return {
           ok: false,
           message: `${agent.name} has ${helperIds.length} helper(s). Choose whether to keep or dispose them first.`,
           policy: current,
-          needsHelperChoice: { helperIds },
+          needsHelperChoice: { helperIds, projects },
         };
       }
     }
@@ -292,13 +351,27 @@ export async function setOrchestrationPolicy(
     await agentConfig.setOrchestrationConfig(projectPath, agentId, stored);
     applyGate(projectPath, agent, next);
     appLog('core:orchestration', 'info', 'Orchestration policy changed', {
-      meta: { agentId, orchestrate: next.orchestrate, access: next.access, control: next.control, maxHelpers: next.maxHelpers },
+      meta: {
+        agentId,
+        orchestrate: next.orchestrate,
+        access: next.access,
+        control: next.control,
+        maxHelpers: next.maxHelpers,
+        crossProjectHelpers: next.crossProjectHelpers,
+      },
     });
-    return { ok: true, message: 'Saved', policy: next };
+    // Turning only cross-project helpers off settles nothing; say what keeps running.
+    const kept = current.crossProjectHelpers && !next.crossProjectHelpers && next.orchestrate
+      ? await countHelpersElsewhere(projectPath, agentId)
+      : 0;
+    return { ok: true, message: 'Saved', policy: next, ...(kept > 0 && { crossProjectHelpersKept: kept }) };
   });
 }
 
-/** Settle an agent's helpers with `choice`, stopping running ones before a dispose. */
+/**
+ * Settle an agent's helpers in every project with `choice`, stopping running
+ * ones (each in its own project) before a dispose.
+ */
 async function settleHelpers(
   projectPath: string,
   agentId: string,
@@ -309,14 +382,14 @@ async function settleHelpers(
   const preview = await agentConfig.resolveHelpersForDelete(projectPath, agentId, 'dispose', { dryRun: true, force });
   if (!preview.ok) return preview;
   // Stop running helpers so none holds its worktree open (EBUSY on Windows).
-  for (const helper of await agentConfig.listHelpers(projectPath, agentId, { recursive: true })) {
-    if (isAgentRunning(helper.id)) await killAgent(helper.id, projectPath, undefined, 'user', { waitForExit: true });
+  for (const { projectPath: helperPath, config: helper } of await listHelpersEverywhere(projectPath, agentId, { recursive: true })) {
+    if (isAgentRunning(helper.id)) await killAgent(helper.id, helperPath, undefined, 'user', { waitForExit: true });
   }
   return agentConfig.resolveHelpersForDelete(projectPath, agentId, 'dispose', { force });
 }
 
 /**
- * Turn orchestration off for an agent that may have helpers.
+ * Turn orchestration off for an agent that may have helpers, in any project.
  * - `keep`: its direct helpers become ordinary agents (parentAgentId cleared).
  * - `dispose`: every live helper below it is disposed through the helper
  *   dispose flow and its checks. Work at risk blocks it and nothing changes,
@@ -370,7 +443,7 @@ export async function turnOffOrchestration(
     setOrchestrationEnabled(agentId, false);
     const policy = await resolveFor(projectPath, fresh, stored);
 
-    const late = await agentConfig.listHelpers(projectPath, agentId);
+    const late = (await listHelpersEverywhere(projectPath, agentId)).map(({ config }) => config);
     if (late.length > 0) {
       const again = await settleHelpers(projectPath, agentId, choice, options.force);
       if (!again.ok) {
@@ -473,8 +546,8 @@ async function countLiveHelpers(projectPath: string): Promise<number> {
 
 /**
  * Whether an orchestrator may start another helper: orchestration must be on
- * (policy and gate), its live helpers (awake or asleep, not disposed) under
- * its policy's `maxHelpers`, and live helpers across `projectPaths`
+ * (policy and gate), its live helpers (awake or asleep, not disposed) in
+ * every project under its policy's `maxHelpers`, and live helpers across `projectPaths`
  * (default: every project in the project store plus this one, each path
  * counted once) under the global cap. A project that can't be read is
  * skipped.
@@ -487,7 +560,7 @@ export async function checkHelperLimitFor(
   const policy = await getOrchestrationPolicy(projectPath, orchestratorId);
   if (!policy) throw new Error('Orchestrator not found');
   const globalCap = orchestrationSettings.getGlobalHelperCap();
-  const helperCount = (await agentConfig.listHelpers(projectPath, orchestratorId)).length;
+  const helperCount = (await listHelpersEverywhere(projectPath, orchestratorId)).length;
   if (!policy.orchestrate || !isOrchestrationEnabled(orchestratorId)) {
     return {
       ok: false,

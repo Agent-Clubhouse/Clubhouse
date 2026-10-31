@@ -4,22 +4,33 @@
  * runs #2241's checks for every helper first. When work would be lost the
  * dialog lists it and offers "Dispose anyway"; a helper whose checks couldn't
  * run can never be forced, so then only Keep and Cancel remain.
+ *
+ * Helpers in other projects (#2512) are listed with their project's name,
+ * and every project holding one is reloaded after the choice.
  */
 
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import type { Agent, DurableAgentConfig, HelperDisposeBlock } from '../../../../shared/types';
-import type { OrchestrationOffChoice, ResolvedOrchestrationPolicy, TurnOffOrchestrationResult } from '../../../../shared/orchestration-policy';
+import type {
+  HelperProjectGroup,
+  OrchestrationOffChoice,
+  ResolvedOrchestrationPolicy,
+  TurnOffOrchestrationResult,
+} from '../../../../shared/orchestration-policy';
 import { Modal } from '../../../components/Modal';
 import { Button } from '../../../components/Button';
 import { useAgentStore } from '../../../stores/agentStore';
+import { useProjectStore } from '../../../stores/projectStore';
 import { HELPER_STATE_LABEL, checkLines, helperState, joinNames, plainFailure, plural } from './helper-model';
-import { reloadProjectAgents } from './orchestration-hooks';
+import { reloadProjectAgents, sameProjectPath } from './orchestration-hooks';
 import { CheckList } from './CheckList';
 
 interface Props {
   agent: Pick<Agent, 'id' | 'name' | 'projectId'>;
   projectPath: string;
   helperIds: string[];
+  /** The helpers by the project they're in. Defaults to all of them in `projectPath`. */
+  helperProjects?: HelperProjectGroup[];
   /** Closed: `policy` is set when orchestration went off. */
   onDone: (policy?: ResolvedOrchestrationPolicy) => void;
 }
@@ -56,20 +67,53 @@ export function blockedSummary(blocked: readonly HelperDisposeBlock[]): string {
   return `${parts.join(' and ')}, so nothing was disposed and orchestration is still on.`;
 }
 
-export function TurnOffOrchestrationDialog({ agent, projectPath, helperIds, onDone }: Props) {
+interface ListedHelper {
+  config: DurableAgentConfig;
+  /** The project's name when the helper is in another project than the agent. */
+  projectName?: string;
+}
+
+export function TurnOffOrchestrationDialog({ agent, projectPath, helperIds, helperProjects, onDone }: Props) {
   const rail = useAgentStore((s) => s.agents);
-  const [helpers, setHelpers] = useState<DurableAgentConfig[]>([]);
+  const projects = useProjectStore((s) => s.projects);
+  const [helpers, setHelpers] = useState<ListedHelper[]>([]);
   const [phase, setPhase] = useState<Phase>({ kind: 'choose' });
+  const groups = useMemo(
+    () => (helperProjects && helperProjects.length > 0 ? helperProjects : [{ projectPath, helperIds }]),
+    [helperProjects, projectPath, helperIds],
+  );
+  const projectFor = useCallback(
+    (p: string) => projects.find((proj) => sameProjectPath(proj.path, p)),
+    [projects],
+  );
 
   useEffect(() => {
     let alive = true;
-    Promise.resolve().then(() => window.clubhouse.agent.listDurable(projectPath)).then(
-      (list: DurableAgentConfig[]) => { if (alive) setHelpers((list ?? []).filter((c) => helperIds.includes(c.id))); },
-      // telemetry-exempt: the dialog still works with the count alone.
-      () => { if (alive) setHelpers([]); },
-    );
+    Promise.all(groups.map(async (group): Promise<ListedHelper[]> => {
+      const home = sameProjectPath(group.projectPath, projectPath);
+      const project = home ? undefined : projectFor(group.projectPath);
+      try {
+        const list: DurableAgentConfig[] = await window.clubhouse.agent.listDurable(group.projectPath);
+        return (list ?? [])
+          .filter((c) => group.helperIds.includes(c.id))
+          .map((config) => ({ config, ...(!home && { projectName: project?.displayName || project?.name || group.projectPath }) }));
+      } catch {
+        // telemetry-exempt: the dialog still works with the count alone.
+        return [];
+      }
+    })).then((lists) => { if (alive) setHelpers(lists.flat()); });
     return () => { alive = false; };
-  }, [projectPath, helperIds]);
+  }, [groups, projectPath, projectFor]);
+
+  /** Reload the rail of every project holding one of the helpers, the agent's own first. */
+  const reloadAll = async (disposedIds: readonly string[] = []) => {
+    await reloadProjectAgents(agent.projectId, projectPath, disposedIds);
+    for (const group of groups) {
+      if (sameProjectPath(group.projectPath, projectPath)) continue;
+      const project = projectFor(group.projectPath);
+      if (project) await reloadProjectAgents(project.id, project.path);
+    }
+  };
 
   const working = phase.kind === 'working';
   const count = helperIds.length;
@@ -95,17 +139,17 @@ export function TurnOffOrchestrationDialog({ agent, projectPath, helperIds, onDo
       return;
     }
     if (result.ok) {
-      await reloadProjectAgents(agent.projectId, projectPath, choice === 'dispose' ? result.helperIds ?? [] : []);
+      await reloadAll(choice === 'dispose' ? result.helperIds ?? [] : []);
       onDone(result.policy);
       return;
     }
     // Some helpers may have gone before one failed; the rail drops those.
     if (choice === 'dispose' && (result.helperIds?.length ?? 0) > 0) {
-      await reloadProjectAgents(agent.projectId, projectPath, result.helperIds);
+      await reloadAll(result.helperIds);
     }
     // Off even so: main turned orchestration off and only some helpers failed.
     if (result.policy && !result.policy.orchestrate) {
-      if (choice !== 'dispose' || !result.helperIds?.length) await reloadProjectAgents(agent.projectId, projectPath);
+      if (choice !== 'dispose' || !result.helperIds?.length) await reloadAll();
       const names = result.failed?.map((f) => `${f.name} (${failureReason(f.reason)})`);
       setPhase({
         kind: 'partial',
@@ -185,10 +229,13 @@ export function TurnOffOrchestrationDialog({ agent, projectPath, helperIds, onDo
           </p>
           {helpers.length > 0 && (
             <ul className="flex flex-col gap-1 text-xs" data-testid="turn-off-helpers">
-              {helpers.map((h) => (
+              {helpers.map(({ config: h, projectName }) => (
                 <li key={h.id} className="flex items-center gap-2">
                   <span className="text-ctp-text">{h.name}</span>
-                  <span className="text-ctp-overlay1">{HELPER_STATE_LABEL[helperState(h, rail[h.id])].toLowerCase()}</span>
+                  <span className="text-ctp-overlay1">
+                    {HELPER_STATE_LABEL[helperState(h, rail[h.id])].toLowerCase()}
+                    {projectName && <span data-testid="turn-off-helper-project">, in {projectName}</span>}
+                  </span>
                 </li>
               ))}
             </ul>
