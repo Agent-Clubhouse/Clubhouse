@@ -119,6 +119,12 @@ vi.mock('./agent-config', () => {
     getWorktreeStatus: async () => ({ isValid: true, branch: 'main', uncommittedFiles: [], unpushedCommits: [], hasRemote: true }),
   };
 });
+// Helpers across projects (#2511), for the policy service: the fixture's helpers are all in their parent's project.
+vi.mock('./helper-index', () => ({
+  listHelpersEverywhere: async (projectPath: string, id: string) => (W.durables[projectPath] ?? [])
+    .filter((d) => d.parentAgentId === id && !d.disposedAt)
+    .map((config) => ({ projectPath, config })),
+}));
 vi.mock('./pty-manager', () => ({
   getBuffer: () => '',
   getSerializedBufferSnapshot: async () => ({ data: '\u001b[1mready\u001b[0m\r\n$ ', seq: 42, cols: 120, rows: 40 }),
