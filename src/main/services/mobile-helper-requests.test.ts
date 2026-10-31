@@ -94,6 +94,17 @@ describe('buildMobileHelperRequests', () => {
     expect(buildMobileHelperRequests(projects, disposed).map((r) => r.kind)).toEqual(['start']);
   });
 
+  it('names an orchestrator in another project from that project\'s agents', () => {
+    recordDisposeRequest('/far', 'farhelper', 'orch', { projectPath: '/far', orchestratorId: 'orch', helperId: 'farhelper', helperName: 'Far', checks: clean, forceRequested: false });
+    const both = [...projects, { id: 'far', path: '/far' }];
+    const [dispose] = buildMobileHelperRequests(both, {
+      ...agents,
+      far: [agent('orch', 'Same id, wrong project'), agent('farhelper', 'Far', { parentAgentId: 'orch', parentProjectPath: '/p' })],
+    });
+    expect(dispose).toMatchObject({ projectId: 'far', requester: { agentId: 'orch', name: 'Planner' }, helper: { agentId: 'farhelper', name: 'Far' } });
+    expect(dispose.summary).toMatch(/^Planner asked/);
+  });
+
   it('names an orchestrator it cannot find as the desktop does', () => {
     disposeRequest();
     startRequest();

@@ -26,6 +26,7 @@ import { agentRegistry } from '../../agent-registry';
 import { getAgentRuntime } from '../../agent-runtime';
 import { isAgentStoppingError } from '../../agent-runtime/agent-stopping';
 import { getOrchestrationPolicy } from '../../orchestration-policy';
+import { findParent } from '../../helper-index';
 import { appLog } from '../../log-service';
 import { isDisposedAgent } from '../../../../shared/agent-helpers';
 import type { ChatEventDataMap, ChatQuestion, ChatQuestionAnswers } from '../../../../shared/chat';
@@ -98,9 +99,11 @@ export async function routeHelperQuestion(helperId: string, question: QuestionDa
     if (!projectPath) return null;
     const helper = await agentConfig.getDurableConfig(projectPath, helperId);
     if (!helper?.parentAgentId) return null;
-    const parent = await agentConfig.getDurableConfig(projectPath, helper.parentAgentId);
-    if (!parent || isDisposedAgent(parent)) return null;
-    const policy = await getOrchestrationPolicy(projectPath, parent.id);
+    // The parent may be in another project (#2513); its policy is read from there.
+    const found = await findParent(projectPath, helper);
+    if (!found || isDisposedAgent(found.config)) return null;
+    const parent = found.config;
+    const policy = await getOrchestrationPolicy(found.projectPath, parent.id);
     if (!policy?.orchestrate || policy.control !== 'hands-off') return null;
     const runtime = getAgentRuntime(parent.id);
     if (!runtime?.isRunning()) return null;

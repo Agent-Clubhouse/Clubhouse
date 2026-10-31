@@ -10,6 +10,14 @@ vi.mock('../../agent-config', () => ({
   getDurableConfig: vi.fn(async (_projectPath: string, id: string) => agents.get(id) ?? null),
 }));
 
+// The parent is read from its own project: parentProjectPath when set (#2513).
+vi.mock('../../helper-index', () => ({
+  findParent: vi.fn(async (helperPath: string, helper: DurableAgentConfig) => {
+    const config = helper.parentAgentId ? agents.get(helper.parentAgentId) : undefined;
+    return config ? { projectPath: helper.parentProjectPath || helperPath, config } : null;
+  }),
+}));
+
 const mockGetPolicy = vi.fn();
 vi.mock('../../orchestration-policy', () => ({
   getOrchestrationPolicy: (...args: unknown[]) => mockGetPolicy(...args),
@@ -169,6 +177,15 @@ describe('routeHelperQuestion', () => {
     addAgent({ id: 'orch', name: 'Orch', disposedAt: '2026-10-19T11:00:00.000Z' });
     expect(await routeHelperQuestion('helper', question('q1', [BRANCH]))).toBeNull();
     expect(orch.sent).toEqual([]);
+  });
+
+  it('sends the question to a parent in another project, under that project\'s policy', async () => {
+    const orchProject = path.join(path.sep, 'tmp', 'orchestrator-project');
+    addAgent({ id: 'helper', name: 'Fixer', parentAgentId: 'orch', parentProjectPath: orchProject });
+    await ask(helper, 'q1', [BRANCH], orch);
+    expect(mockGetPolicy).toHaveBeenCalledWith(orchProject, 'orch');
+    expect(mockGetPolicy).not.toHaveBeenCalledWith(PROJECT, 'orch');
+    expect(orch.sent[0]).toContain('[QUESTION FROM HELPER:Fixer (helper)]');
   });
 
   it('asks the user when the parent is asleep or shutting down', async () => {

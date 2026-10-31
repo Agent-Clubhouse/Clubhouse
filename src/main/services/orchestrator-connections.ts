@@ -12,9 +12,11 @@
  * (at a restore, or through {@link claimSourceBinding} when a tool connects),
  * so a canvas wire, a zone or a helper wire for the same pair is never
  * removed by it. Entries are scoped to their owner: once the owner is gone or
- * an end is no longer the owner or one of its live direct helpers, the entry
- * is skipped at restore and dropped from the store when the project's agents
- * change ({@link watchOrchestratorConnections}). A pair the user deletes in
+ * an end is no longer the owner or one of its live direct helpers (in any
+ * project, #2513), the entry is skipped at restore and dropped from the store
+ * when agents change ({@link watchOrchestratorConnections}). An end in
+ * another project is recorded with that project's path; while that project
+ * can't be read, its entry is kept and its binding left as it is. A pair the user deletes in
  * the UI is dropped from the store too, so it stays deleted across restarts.
  *
  * The store is written atomically (temp file, then rename) and read and
@@ -26,7 +28,9 @@ import * as fsp from 'fs/promises';
 import * as path from 'path';
 import { randomUUID } from 'crypto';
 import * as projectStore from './project-store';
-import { listDurable, onAgentConfigChanged } from './agent-config';
+import { listDurable, onAgentConfigChanged, projectKey } from './agent-config';
+import { listHelpersEverywhere } from './helper-index';
+import { pathExists } from './fs-utils';
 import { groupProjectRegistry } from './group-project-registry';
 import { onBindingRemovedByUser, type CollectedBindings, type PersistedBinding, type PersistedBindingSource } from './persisted-bindings';
 import { isDisposedAgent } from '../../shared/agent-helpers';
@@ -45,6 +49,10 @@ export interface OrchestratorConnection {
   targetId: string;
   targetKind: 'agent' | 'group-project';
   createdAt: string;
+  /** The project holding `agentId`, set only when it isn't the store's project (#2513). */
+  agentProjectPath?: string;
+  /** The project holding agent `targetId`, set only when it isn't the store's project (#2513). */
+  targetProjectPath?: string;
 }
 
 /** The store format this build writes. */
@@ -65,8 +73,10 @@ export function connectionsStorePath(projectPath: string): string {
 function isConnection(value: unknown): value is OrchestratorConnection {
   if (!value || typeof value !== 'object') return false;
   const c = value as Record<string, unknown>;
+  const optionalPath = (v: unknown) => v === undefined || typeof v === 'string';
   return typeof c.ownerId === 'string' && typeof c.agentId === 'string' && typeof c.targetId === 'string'
-    && (c.targetKind === 'agent' || c.targetKind === 'group-project');
+    && (c.targetKind === 'agent' || c.targetKind === 'group-project')
+    && optionalPath(c.agentProjectPath) && optionalPath(c.targetProjectPath);
 }
 
 /** Move an unreadable store aside so the next write starts clean, and say so in the log. */
@@ -211,50 +221,135 @@ export async function removeStoredPair(agentId: string, targetId: string): Promi
   return dropped;
 }
 
+/** An agent a connection can name, and the name of the project holding it. */
+export interface ScopedAgent {
+  config: DurableAgentConfig;
+  projectName?: string;
+}
+
 /**
- * Whether a connection is still within its owner's reach: the owner exists
- * and is not disposed, and each agent end is the owner or one of its live
- * direct helpers. A helper that was disposed, deleted, reparented or released
- * (an orchestrator turned off or deleted with "keep helpers") falls out.
+ * The agents a project's stored connections can name: the project's own, and
+ * the live direct helpers its agents have in other projects (#2513).
  */
-export function isConnectionInScope(c: OrchestratorConnection, agentsById: ReadonlyMap<string, DurableAgentConfig>): boolean {
-  const owner = agentsById.get(c.ownerId);
-  if (!owner || isDisposedAgent(owner)) return false;
-  const reachable = (id: string): boolean => {
-    if (id === owner.id) return true;
-    const agent = agentsById.get(id);
-    return !!agent && !isDisposedAgent(agent) && agent.parentAgentId === owner.id;
+export interface ConnectionScope {
+  /** The store's project's agents, by id. */
+  local: ReadonlyMap<string, DurableAgentConfig>;
+  /** The store's project's name, for bindings to its agents. */
+  projectName?: string;
+  /** owner id → its live direct helpers in other projects, by id. */
+  foreign: ReadonlyMap<string, ReadonlyMap<string, ScopedAgent>>;
+  /** Recorded end projects (agentProjectPath, targetProjectPath) that are gone or can't be read. */
+  unreadable: ReadonlySet<string>;
+}
+
+/** Whether a project's agents can be read now. A folder that is gone counts as unreadable. */
+async function isReadable(projectPath: string): Promise<boolean> {
+  try {
+    if (!await pathExists(projectPath)) return false;
+    await listDurable(projectPath);
+    return true;
+  } catch {
+    // telemetry-exempt: an unreadable project only means its entries are kept as they are
+    return false;
+  }
+}
+
+/**
+ * Build the scope for `connections`, stored in `projectPath` whose agents are
+ * `agents`. Other projects are only read when an entry has an end in one.
+ */
+export async function loadConnectionScope(
+  projectPath: string,
+  agents: readonly DurableAgentConfig[],
+  connections: readonly OrchestratorConnection[],
+  projectName?: string,
+): Promise<ConnectionScope> {
+  const local = new Map(agents.map((a) => [a.id, a]));
+  const foreign = new Map<string, Map<string, ScopedAgent>>();
+  const unreadable = new Set<string>();
+  const endProjects = new Set(connections.flatMap((c) => [c.agentProjectPath, c.targetProjectPath]).filter((p): p is string => !!p));
+  if (endProjects.size === 0) return { local, projectName, foreign, unreadable };
+  for (const p of endProjects) {
+    if (!await isReadable(p)) unreadable.add(p);
+  }
+  const homeKey = await projectKey(projectPath);
+  const names = new Map((await projectStore.list()).map((p) => [p.path, p.displayName || p.name]));
+  const owners = new Set(connections.filter((c) => c.agentProjectPath || c.targetProjectPath).map((c) => c.ownerId));
+  for (const ownerId of owners) {
+    if (!local.has(ownerId)) continue;
+    const helpers = new Map<string, ScopedAgent>();
+    for (const entry of await listHelpersEverywhere(projectPath, ownerId)) {
+      if (await projectKey(entry.projectPath) === homeKey) continue;
+      helpers.set(entry.config.id, { config: entry.config, projectName: names.get(entry.projectPath) });
+    }
+    if (helpers.size > 0) foreign.set(ownerId, helpers);
+  }
+  return { local, projectName, foreign, unreadable };
+}
+
+/**
+ * Whether a connection is still within its owner's reach: `in` when the owner
+ * exists and is not disposed and each agent end is the owner or one of its
+ * live direct helpers, in this project or the one recorded for it. A helper
+ * that was disposed, deleted, reparented or released (an orchestrator turned
+ * off or deleted with "keep helpers") makes it `out`. `unknown` when an end's
+ * recorded project can't be read.
+ */
+export function connectionStatus(c: OrchestratorConnection, scope: ConnectionScope): 'in' | 'out' | 'unknown' {
+  const owner = scope.local.get(c.ownerId);
+  if (!owner || isDisposedAgent(owner)) return 'out';
+  const reach = (id: string, recordedProject: string | undefined): 'in' | 'out' | 'unknown' => {
+    if (id === owner.id) return 'in';
+    if (!recordedProject) {
+      const agent = scope.local.get(id);
+      return agent && !isDisposedAgent(agent) && agent.parentAgentId === owner.id && !agent.parentProjectPath ? 'in' : 'out';
+    }
+    if (scope.foreign.get(owner.id)?.has(id)) return 'in';
+    return scope.unreadable.has(recordedProject) ? 'unknown' : 'out';
   };
-  if (!reachable(c.agentId)) return false;
-  return c.targetKind !== 'agent' || reachable(c.targetId);
+  const from = reach(c.agentId, c.agentProjectPath);
+  const to = c.targetKind === 'agent' ? reach(c.targetId, c.targetProjectPath) : 'in';
+  if (from === 'out' || to === 'out') return 'out';
+  return from === 'unknown' || to === 'unknown' ? 'unknown' : 'in';
+}
+
+/** An agent in the scope, and the name of its project. */
+function scopedAgent(scope: ConnectionScope, ownerId: string, id: string, recordedProject: string | undefined): ScopedAgent | undefined {
+  if (recordedProject) return scope.foreign.get(ownerId)?.get(id);
+  const local = scope.local.get(id);
+  return local ? { config: local, projectName: scope.projectName } : undefined;
 }
 
 /**
  * The bindings for a project's stored connections. Drops entries that are out
- * of scope ({@link isConnectionInScope}) and memberships of group projects
- * that no longer exist (`groupProjects`: id → name; null when the registry
- * can't be read, which keeps them).
+ * of scope ({@link connectionStatus}) and memberships of group projects that
+ * no longer exist (`groupProjects`: id → name; null when the registry can't
+ * be read, which keeps them). Pairs whose scope is unknown come back in
+ * `unknown`, to be kept as they are. An agent wire is labelled with its
+ * target's project.
  */
 export function bindingsFromConnections(
   connections: readonly OrchestratorConnection[],
-  agents: readonly DurableAgentConfig[],
+  scope: ConnectionScope,
   groupProjects: ReadonlyMap<string, string> | null,
-  projectName?: string,
-): PersistedBinding[] {
-  const byId = new Map(agents.map((a) => [a.id, a]));
+): { bindings: PersistedBinding[]; unknown: Array<{ agentId: string; targetId: string }> } {
   const out: PersistedBinding[] = [];
+  const unknown: Array<{ agentId: string; targetId: string }> = [];
   const seen = new Set<string>();
   for (const c of connections) {
-    if (c.agentId === c.targetId || !isConnectionInScope(c, byId)) continue;
-    const from = byId.get(c.agentId)!;
+    if (c.agentId === c.targetId) continue;
+    const status = connectionStatus(c, scope);
+    if (status === 'unknown') unknown.push({ agentId: c.agentId, targetId: c.targetId });
+    if (status !== 'in') continue;
+    const from = scopedAgent(scope, c.ownerId, c.agentId, c.agentProjectPath)!.config;
     const pair = `${c.agentId}\u0000${c.targetId}`;
     if (seen.has(pair)) continue;
     if (c.targetKind === 'agent') {
-      const to = byId.get(c.targetId)!;
+      const to = scopedAgent(scope, c.ownerId, c.targetId, c.targetProjectPath)!;
       seen.add(pair);
       out.push({
-        agentId: from.id, targetId: to.id, targetKind: 'agent', label: to.name,
-        agentName: from.name, targetName: to.name, ...(projectName ? { projectName } : {}),
+        agentId: from.id, targetId: to.config.id, targetKind: 'agent', label: to.config.name,
+        agentName: from.name, targetName: to.config.name, ...(to.projectName ? { projectName: to.projectName } : {}),
       });
     } else {
       let name = c.targetId;
@@ -267,7 +362,7 @@ export function bindingsFromConnections(
       out.push({ agentId: from.id, targetId: c.targetId, targetKind: 'group-project', label: name, agentName: from.name, targetName: name });
     }
   }
-  return out;
+  return { bindings: out, unknown };
 }
 
 async function readGroupProjectNames(): Promise<Map<string, string> | null> {
@@ -291,12 +386,19 @@ export const orchestratorConnectionSource: PersistedBindingSource = {
     const bindings: PersistedBinding[] = [];
     const unverified: Array<{ agentId: string; targetId: string }> = [];
     for (const project of projects) {
-      let projectBindings: PersistedBinding[];
+      let projectBindings: PersistedBinding[] = [];
+      let unknown: Array<{ agentId: string; targetId: string }> = [];
       try {
         const connections = await readConnections(project.path);
-        projectBindings = connections.length === 0
-          ? []
-          : bindingsFromConnections(connections, await listDurable(project.path), groupProjects, project.displayName || project.name);
+        if (connections.length > 0) {
+          const name = project.displayName || project.name;
+          const scope = await loadConnectionScope(project.path, await listDurable(project.path), connections, name);
+          const result = bindingsFromConnections(connections, scope, groupProjects);
+          projectBindings = result.bindings;
+          // An end in a project that can't be read: keep the pair as it is.
+          unknown = result.unknown;
+          unverified.push(...unknown);
+        }
       } catch (err) {
         // telemetry-exempt: logged; the project's connections are kept unverified until a read succeeds
         appLog('core:mcp', 'warn', 'Could not read orchestrator connections; keeping that project\'s connections as they are', {
@@ -305,7 +407,7 @@ export const orchestratorConnectionSource: PersistedBindingSource = {
         unverified.push(...(lastPairs.get(project.path) ?? []));
         continue;
       }
-      lastPairs.set(project.path, projectBindings.map((b) => ({ agentId: b.agentId, targetId: b.targetId })));
+      lastPairs.set(project.path, [...projectBindings.map((b) => ({ agentId: b.agentId, targetId: b.targetId })), ...unknown]);
       bindings.push(...projectBindings);
     }
     return { bindings, unverified };
@@ -314,19 +416,21 @@ export const orchestratorConnectionSource: PersistedBindingSource = {
 
 /**
  * Drop the stored connections that fell out of scope
- * ({@link isConnectionInScope}), group-project memberships included. An empty
+ * ({@link connectionStatus}), group-project memberships included. An empty
  * agent list deletes nothing: it is more likely a failed read than a project
- * whose every agent is gone. Returns the connections removed.
+ * whose every agent is gone. Neither does an end whose recorded project
+ * can't be read. Returns the connections removed.
  */
 export async function pruneOutOfScopeConnections(projectPath: string): Promise<OrchestratorConnection[]> {
   const agents = await listDurable(projectPath);
   if (agents.length === 0) return [];
-  const byId = new Map(agents.map((a) => [a.id, a]));
   return withStoreLock(projectPath, async () => {
     const state = await loadStore(projectPath);
-    const removed = state.connections.filter((c) => !isConnectionInScope(c, byId));
+    if (state.connections.length === 0) return [];
+    const scope = await loadConnectionScope(projectPath, agents, state.connections);
+    const removed = state.connections.filter((c) => connectionStatus(c, scope) === 'out');
     if (removed.length > 0) {
-      await saveStore(projectPath, { ...state, connections: state.connections.filter((c) => isConnectionInScope(c, byId)) });
+      await saveStore(projectPath, { ...state, connections: state.connections.filter((c) => !removed.includes(c)) });
     }
     return removed;
   });
@@ -334,10 +438,11 @@ export async function pruneOutOfScopeConnections(projectPath: string): Promise<O
 
 /**
  * Keep the stores in step. When the user removes a pair through the UI, drop
- * its stored entries so it stays removed after a restart. When a project's
- * agents change, drop the connections that fell out of
- * scope (a helper disposed, deleted, reparented or released) and call `onConnectionsChanged` (a rebuild, which
- * prunes their bindings). Returns an unsubscribe function.
+ * its stored entries so it stays removed after a restart. When any project's
+ * agents change, drop the connections in every project that fell out of
+ * scope (a helper disposed, deleted, reparented or released) and call
+ * `onConnectionsChanged` (a rebuild, which prunes their bindings). Returns an
+ * unsubscribe function.
  */
 export function watchOrchestratorConnections(onConnectionsChanged: () => unknown): () => void {
   const dirty = new Set<string>();
@@ -347,6 +452,18 @@ export function watchOrchestratorConnections(onConnectionsChanged: () => unknown
   const check = async (): Promise<void> => {
     const paths = [...dirty];
     dirty.clear();
+    // A store in one project lists helpers in others (#2513): a change
+    // anywhere can put any project's entries out of scope.
+    try {
+      for (const project of await projectStore.list()) {
+        if (!paths.includes(project.path)) paths.push(project.path);
+      }
+    } catch (err) {
+      // telemetry-exempt: logged; the changed projects are still checked
+      appLog('core:mcp', 'warn', 'Could not list projects after an agent change', {
+        meta: { error: err instanceof Error ? err.message : String(err) },
+      });
+    }
     let changed = false;
     for (const projectPath of paths) {
       try {
