@@ -54,6 +54,9 @@ vi.mock('./git-service', () => ({ isInsideGitRepo: vi.fn(async () => true) }));
 vi.mock('./agent-settings-service', () => ({
   applyAgentDefaults: vi.fn(async () => undefined),
   readProjectAgentDefaults: vi.fn(async () => ({})),
+  // Project personas only; the in-memory fs has no user personas.
+  readSourcePersonaContent: vi.fn(async (projectPath: string, personaId: string, scope: string) =>
+    (scope === 'project' && files.get(path.join(projectPath, '.clubhouse', 'personas', `${personaId}.md`))) || ''),
 }));
 vi.mock('./agent-system', () => ({
   resolveOrchestrator: vi.fn(async () => ({ writeInstructions: vi.fn(), conventions: {} })),
@@ -531,6 +534,63 @@ describe('helpers (#2224) created asynchronously', () => {
     expect(result).toMatchObject({ ok: true, helperIds: [started.agentId] });
     expect(await started.done).toBe('cancelled');
     expect(dirs.has(agentPath('helper'))).toBe(false);
+  });
+});
+
+describe('helpers in another project (#2511)', () => {
+  const PARENT_PROJECT = path.resolve('test-parent-project');
+
+  it('looks the parent up in its own project and records that project on the helper', async () => {
+    const orch = await createDurable(PARENT_PROJECT, 'orch', 'indigo');
+    const params = { name: 'helper', color: 'indigo', parentAgentId: orch.id, parentProjectPath: PARENT_PROJECT, disposable: true };
+    await expect(checkDurableCreation(PROJECT_PATH, params)).resolves.toBeUndefined();
+    const started = await startDurableCreation(PROJECT_PATH, params);
+    expect(await started.done).toBe('ready');
+    expect(diskAgents().find((a) => a.id === started.agentId))
+      .toMatchObject({ parentAgentId: orch.id, parentProjectPath: PARENT_PROJECT, disposable: true });
+  });
+
+  it('refuses a parent missing from the named project, even when the target has it', async () => {
+    const orch = await createDurable(PROJECT_PATH, 'orch', 'indigo');
+    const params = { name: 'helper', color: 'indigo', parentAgentId: orch.id, parentProjectPath: PARENT_PROJECT };
+    await expect(checkDurableCreation(PROJECT_PATH, params)).rejects.toThrow(/Parent agent not found/);
+    await expect(startDurableCreation(PROJECT_PATH, params)).rejects.toThrow(/Parent agent not found/);
+  });
+
+  it('treats a parent project that is the target project as the same project', async () => {
+    const orch = await createDurable(PROJECT_PATH, 'orch', 'indigo');
+    const started = await startDurableCreation(PROJECT_PATH, {
+      name: 'helper', color: 'indigo', parentAgentId: orch.id, parentProjectPath: path.join(PROJECT_PATH, '.'),
+    });
+    expect(await started.done).toBe('ready');
+    const row = diskAgents().find((a) => a.id === started.agentId);
+    expect(row?.parentAgentId).toBe(orch.id);
+    expect(row).not.toHaveProperty('parentProjectPath');
+  });
+});
+
+describe('persona ids (#2511)', () => {
+  it('refuses an unknown persona id by name, before anything is created', async () => {
+    const params = { name: 'agent', color: 'indigo', persona: 'no-such-persona' };
+    await expect(checkDurableCreation(PROJECT_PATH, params)).rejects.toThrow(/Unknown persona "no-such-persona"/);
+    await expect(startDurableCreation(PROJECT_PATH, params)).rejects.toThrow(/Unknown persona "no-such-persona"/);
+    await expect(createDurable(PROJECT_PATH, 'agent', 'indigo', undefined, true, undefined, undefined, undefined, undefined, 'no-such-persona'))
+      .rejects.toThrow(/Unknown persona/);
+    expect(execFile).not.toHaveBeenCalled();
+    expect(diskAgents()).toEqual([]);
+  });
+
+  it('accepts a built-in persona id', async () => {
+    const params = { name: 'agent', color: 'indigo', persona: 'qa' };
+    await expect(checkDurableCreation(PROJECT_PATH, params)).resolves.toBeUndefined();
+    const started = await startDurableCreation(PROJECT_PATH, params);
+    expect(await started.done).toBe('ready');
+    expect(diskAgents().find((a) => a.id === started.agentId)?.persona).toBe('qa');
+  });
+
+  it('accepts a persona defined in the project', async () => {
+    files.set(path.join(PROJECT_PATH, '.clubhouse', 'personas', 'house-style.md'), '# House style');
+    await expect(checkDurableCreation(PROJECT_PATH, { name: 'agent', color: 'indigo', persona: 'house-style' })).resolves.toBeUndefined();
   });
 });
 
