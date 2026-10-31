@@ -9,8 +9,8 @@ import { agentRegistry } from '../agent-registry';
 import { groupProjectRegistry } from '../group-project-registry';
 import { deniedGroupProjectTools } from '../../../shared/group-project-admin';
 import { appLog } from '../log-service';
-import { isOrchestrationEnabled, onOrchestrationGateChange } from './orchestration-gate';
-import { ORCHESTRATION_OFF_MESSAGE } from '../../../shared/orchestration-policy';
+import { isCrossProjectEnabled, isOrchestrationEnabled, onOrchestrationGateChange } from './orchestration-gate';
+import { CROSS_PROJECT_OFF_MESSAGE, ORCHESTRATION_OFF_MESSAGE } from '../../../shared/orchestration-policy';
 import type { McpRefusalReason } from '../../telemetry/agent-signals';
 
 /** Check if a value matches a JSON Schema type (handles array vs object correctly). */
@@ -26,8 +26,10 @@ function matchesJsonSchemaType(value: unknown, schemaType: string): boolean {
  * holding a stale tool list can't reach them either.
  * - `orchestration` (#2228): helper and connection tools, on when the agent's
  *   "Let this agent orchestrate" policy is on.
+ * - `crossProject` (#2512): tools that reach other projects (list_projects),
+ *   on when orchestration and the agent's "Cross-project helpers" are both on.
  */
-export type ToolGroup = 'orchestration';
+export type ToolGroup = 'orchestration' | 'crossProject';
 
 interface ToolGroupGate {
   isEnabled: (agentId: string) => boolean;
@@ -36,6 +38,7 @@ interface ToolGroupGate {
 
 const toolGroupGates: Record<ToolGroup, ToolGroupGate> = {
   orchestration: { isEnabled: isOrchestrationEnabled, refusal: ORCHESTRATION_OFF_MESSAGE },
+  crossProject: { isEnabled: isCrossProjectEnabled, refusal: CROSS_PROJECT_OFF_MESSAGE },
 };
 
 /** Whether a tool in `group` (or in no group) is available to an agent. */
@@ -524,7 +527,7 @@ function matchScopedToolName(
 groupProjectRegistry.onChange(() => invalidateToolListCache());
 
 // Tool groups are not bindings either: drop the agent's cached list when its
-// orchestration gate flips. The bridge server sends tools/list_changed.
+// orchestration or crossProject gate flips. The bridge server sends tools/list_changed.
 onOrchestrationGateChange((agentId) => { toolListCache.delete(agentId); });
 
 /** For testing: clear all registered templates and global tools. */

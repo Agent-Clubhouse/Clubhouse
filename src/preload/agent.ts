@@ -1,7 +1,7 @@
 import { ipcRenderer } from 'electron';
 import { IPC } from '../shared/ipc-channels';
 import type { AgentHookEvent, AgentSleepInfo, DurableAgentConfig, DurableConfigUpdates, DurableCreationEvent, DurableWorktreeOptions, DeleteResult, HelperCascadeResult, HelperDeleteChoice, HelperDisposeChecks, HelperDisposeDecision, HelperDisposeRequest, HelperDisposeResult, HelperInProject, HelperStartDecisionResult, HelperStartRequest, StartDurableCreationParams } from '../shared/types';
-import type { HelperAccessResolution, HelperLimitCheck, OrchestrationOffChoice, OrchestrationPolicyPatch, ResolvedOrchestrationPolicy, SetOrchestrationPolicyResult, TurnOffOrchestrationResult } from '../shared/orchestration-policy';
+import type { HelperAccessResolution, HelperLimitCheck, HelperSummary, OrchestrationOffChoice, OrchestrationPolicyPatch, ResolvedOrchestrationPolicy, SetOrchestrationPolicyResult, TurnOffOrchestrationResult } from '../shared/orchestration-policy';
 import type { FinishedQuickAgentOp, FinishedQuickAgents, FinishedQuickAgentsChange } from '../shared/finished-quick-agents';
 import type { PendingPermissionInfo, PermissionSettledInfo, PermissionResolveOutcome } from '../shared/permission-types';
 
@@ -132,8 +132,8 @@ export const agent = {
   /** Turn orchestration off, keeping or disposing the helpers; cancel changes nothing. */
   turnOffOrchestration: (projectPath: string, agentId: string, choice: OrchestrationOffChoice, force?: boolean): Promise<TurnOffOrchestrationResult> =>
     ipcRenderer.invoke(IPC.AGENT.TURN_OFF_ORCHESTRATION, projectPath, agentId, choice, force),
-  /** Whether an agent has live direct helpers, for the turn-off warning. */
-  getHelperSummary: (projectPath: string, agentId: string): Promise<{ hasHelpers: boolean; helperIds: string[] }> =>
+  /** An agent's live direct helpers in every project, for the turn-off warning. */
+  getHelperSummary: (projectPath: string, agentId: string): Promise<HelperSummary> =>
     ipcRenderer.invoke(IPC.AGENT.GET_HELPER_SUMMARY, projectPath, agentId),
   /** The launch access this orchestrator's helpers would get now, ranked for `helperProvider` (default: its own). */
   resolveHelperAccess: (projectPath: string, agentId: string, helperProvider?: string): Promise<HelperAccessResolution> =>

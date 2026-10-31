@@ -12,6 +12,7 @@ import {
   DEFAULT_GLOBAL_HELPER_CAP,
   MAX_HELPER_LIMIT,
   type HelperAccessResolution,
+  type HelperProjectGroup,
   type OrchestrationPolicyPatch,
   type ResolvedOrchestrationPolicy,
 } from '../../../../shared/orchestration-policy';
@@ -140,6 +141,16 @@ export function useHelperLink(agent: Agent, projectPath: string | undefined): { 
 
 // ── Orchestration policy ────────────────────────────────────────────────
 
+/** Shown after turning cross-project helpers off while helpers run in other projects. */
+export const CROSS_PROJECT_KEPT_NOTE = 'Existing helpers in other projects keep running.';
+
+/** Helpers that must be kept or disposed before orchestration can go off, by project. */
+export interface TurnOffRequest {
+  helperIds: string[];
+  /** Grouped by the project each helper is in, home project first. */
+  projects: HelperProjectGroup[];
+}
+
 export interface OrchestrationState {
   /** Null while loading, or for an agent main doesn't know. */
   policy: ResolvedOrchestrationPolicy | null;
@@ -152,9 +163,10 @@ export interface OrchestrationState {
   /** Set after turning orchestration on for an agent that isn't running. */
   note: string | null;
   /** Helpers that must be kept or disposed before orchestration can go off. */
-  turnOff: { helperIds: string[] } | null;
+  turnOff: TurnOffRequest | null;
   setPolicy: (patch: OrchestrationPolicyPatch) => Promise<boolean>;
   setOrchestrate: (on: boolean) => Promise<void>;
+  setCrossProjectHelpers: (on: boolean) => Promise<void>;
   /** The turn-off dialog finished; `policy` is the new one when it went off. */
   finishTurnOff: (policy?: ResolvedOrchestrationPolicy) => void;
   reload: () => void;
@@ -170,7 +182,7 @@ export function useOrchestration(projectPath: string | undefined, agent: Pick<Ag
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [note, setNote] = useState<string | null>(null);
-  const [turnOff, setTurnOff] = useState<{ helperIds: string[] } | null>(null);
+  const [turnOff, setTurnOff] = useState<TurnOffRequest | null>(null);
   const [nonce, setNonce] = useState(0);
   const { cap: globalCap } = useGlobalHelperCap();
   const running = agent.status === 'running';
@@ -210,7 +222,8 @@ export function useOrchestration(projectPath: string | undefined, agent: Pick<Ag
     try {
       const result = await window.clubhouse.agent.setOrchestrationPolicy(projectPath, agent.id, patch);
       if (result.needsHelperChoice) {
-        setTurnOff({ helperIds: result.needsHelperChoice.helperIds });
+        const { helperIds, projects } = result.needsHelperChoice;
+        setTurnOff({ helperIds, projects: projects ?? [{ projectPath, helperIds }] });
         return false;
       }
       if (!result.ok) {
@@ -218,6 +231,7 @@ export function useOrchestration(projectPath: string | undefined, agent: Pick<Ag
         return false;
       }
       if (result.policy) setPolicyState(result.policy);
+      if (result.crossProjectHelpersKept) setNote(CROSS_PROJECT_KEPT_NOTE);
       return true;
     } catch (err) {
       // telemetry-exempt: shown in the card or settings row, which keep the saved value.
@@ -236,6 +250,11 @@ export function useOrchestration(projectPath: string | undefined, agent: Pick<Ag
     }
   }, [setPolicy]);
 
+  const setCrossProjectHelpers = useCallback(async (on: boolean) => {
+    setNote(null);
+    await setPolicy({ crossProjectHelpers: on });
+  }, [setPolicy]);
+
   const finishTurnOff = useCallback((next?: ResolvedOrchestrationPolicy) => {
     setTurnOff(null);
     if (next) setPolicyState(next);
@@ -245,8 +264,8 @@ export function useOrchestration(projectPath: string | undefined, agent: Pick<Ag
   const reload = useCallback(() => setNonce((n) => n + 1), []);
 
   return useMemo(() => ({
-    policy, access, globalCap, saving, error, note, turnOff, setPolicy, setOrchestrate, finishTurnOff, reload,
-  }), [policy, access, globalCap, saving, error, note, turnOff, setPolicy, setOrchestrate, finishTurnOff, reload]);
+    policy, access, globalCap, saving, error, note, turnOff, setPolicy, setOrchestrate, setCrossProjectHelpers, finishTurnOff, reload,
+  }), [policy, access, globalCap, saving, error, note, turnOff, setPolicy, setOrchestrate, setCrossProjectHelpers, finishTurnOff, reload]);
 }
 
 // ── Start approvals (#2234) ─────────────────────────────────────────────
