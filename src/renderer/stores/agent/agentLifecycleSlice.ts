@@ -1,4 +1,4 @@
-import { Agent, DeleteResult, DurableAgentConfig, HelperCascadeResult, HelperDisposeBlock } from '../../../shared/types';
+import { Agent, DeleteResult, HelperCascadeResult, HelperDisposeBlock, HelperInProject } from '../../../shared/types';
 import { generateQuickAgentId } from '../../../shared/agent-id';
 import { generateQuickName } from '../../../shared/name-generator';
 import { expandTemplate, AgentContext } from '../../../shared/template-engine';
@@ -339,10 +339,11 @@ export function createLifecycleSlice(set: SetAgentState, get: GetAgentState): Ag
           if (!preview.ok) return { ok: false, message: describeHelperBlock(preview) };
           if (helperChoice === 'dispose') {
             for (const helper of helpers) {
-              if (get().agents[helper.id]?.status === 'running') {
+              if (get().agents[helper.config.id]?.status === 'running') {
                 // Wait for the process to exit so it no longer holds the
-                // worktree folder open (EBUSY on Windows).
-                await window.clubhouse.agent.killAgent(helper.id, projectPath, true);
+                // worktree folder open (EBUSY on Windows). A helper can be in
+                // another project (#2514), so it stops under its own.
+                await window.clubhouse.agent.killAgent(helper.config.id, helper.projectPath, true);
               }
             }
           }
@@ -442,11 +443,12 @@ export function describeHelperBlock(result: HelperCascadeResult): string {
 }
 
 /**
- * The live helpers of a durable agent (#2224): every one below it, or only
- * its direct helpers with `recursive` false. A failed lookup reads as none:
- * main then keeps any helpers as ordinary agents when the parent goes.
+ * The live helpers of a durable agent (#2224) in every project (#2514), each
+ * with the project it is in: every one below it, or only its direct helpers
+ * with `recursive` false. A failed lookup reads as none: main then keeps any
+ * helpers as ordinary agents when the parent goes.
  */
-export async function listLiveHelpers(projectPath: string, agentId: string, recursive = true): Promise<DurableAgentConfig[]> {
+export async function listLiveHelpers(projectPath: string, agentId: string, recursive = true): Promise<HelperInProject[]> {
   try {
     const helpers = await window.clubhouse.agent.listHelpers(projectPath, agentId, recursive);
     return Array.isArray(helpers) ? helpers : [];

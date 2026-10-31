@@ -371,6 +371,8 @@ describe('Orchestration cards in Agent details', () => {
   it('shows Orchestrate for a top-level agent, and Helpers and Connections once it orchestrates', async () => {
     stored.orchestrate = true;
     configs = [config('lead', 'epic-lead'), config('h1', 'impl-ipc', { parentAgentId: 'lead', branch: 'impl-ipc/work' })];
+    // The Helpers card lists helpers from every project through main (#2514).
+    window.clubhouse.agent.listHelpers = vi.fn(async () => [{ projectId: 'p1', projectPath: PROJECT, config: configs[1] }]) as never;
     render(<AgentDetails agent={lead} />);
     expect(await screen.findByTestId('details-card-orchestrate')).toBeInTheDocument();
     expect(await screen.findByTestId('details-card-helpers')).toBeInTheDocument();

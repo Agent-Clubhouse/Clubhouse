@@ -2,7 +2,8 @@
  * The Helpers card in Agent details (#2232): the orchestrator's direct
  * helpers with their state, branch and unsaved work, and what you can do
  * with each (open, sleep or wake, dispose). Disposed helpers keep their row
- * until removed; they're under "Disposed" at the end, collapsed.
+ * until removed; they're under "Disposed" at the end, collapsed. Helpers can
+ * be in other projects (#2514): each row acts in its own project and names it.
  *
  * Hooks for the orchestration tools:
  * - `approvals` (#2234): the starts the orchestrator is waiting on the user
@@ -16,9 +17,11 @@
  */
 
 import { useEffect, useMemo, useState } from 'react';
-import type { Agent, DurableAgentConfig, HelperDisposeChecks, HelperStartDecisionResult, HelperStartRequest } from '../../../../shared/types';
+import type { Agent, HelperDisposeChecks, HelperInProject, HelperStartDecisionResult, HelperStartRequest } from '../../../../shared/types';
 import { ConfirmDestructiveAction } from '../../../components/ConfirmDestructiveAction';
 import { useAgentStore } from '../../../stores/agentStore';
+import { useProjectStore } from '../../../stores/projectStore';
+import { sameProjectPath } from '../../../utils/project-path';
 import { useAgentStatuses } from '../agent-status-store';
 import { agentDot, StatusDot } from '../agent-status';
 import { wakeDurableAgent } from '../wake-durable-agent';
@@ -26,6 +29,7 @@ import { CardNote, DetailsCard } from '../details/DetailsCard';
 import { HELPER_STATE_LABEL, checkFailureReason, helperDot, helperState, plainFailure, splitHelpers, workSummary, type HelperState } from './helper-model';
 import { openAgent } from './orchestration-hooks';
 import { DisposeHelperDialog, type DisposeHelperTarget } from './DisposeHelperDialog';
+import { projectLabel } from './cross-project';
 
 export interface HelperApprovals {
   /** Helper starts waiting on the user, oldest first. */
@@ -50,13 +54,16 @@ function formatWhen(iso: string | undefined): string {
   return new Date(t).toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
 }
 
+/** A helper to dispose and the project it is in, which may not be the orchestrator's (#2514). */
+type DisposeTarget = DisposeHelperTarget & { projectPath: string };
+
 const LINK = 'text-xs text-ctp-overlay1 hover:text-ctp-text disabled:opacity-50 cursor-pointer';
 
-export function HelpersCard({ agent, projectPath, configs, maxHelpers, orchestrating, open, onToggle, approvals, onRemoved }: {
+export function HelpersCard({ agent, projectPath, helpers, maxHelpers, orchestrating, open, onToggle, approvals, onRemoved }: {
   agent: Agent;
   projectPath: string;
-  /** Every config in the project (useProjectAgentConfigs), disposed ones included. */
-  configs: DurableAgentConfig[];
+  /** The agent's direct helpers in every project (useHelpersEverywhere), disposed ones included. */
+  helpers: HelperInProject[];
   maxHelpers?: number;
   orchestrating: boolean;
   open: boolean;
@@ -68,28 +75,36 @@ export function HelpersCard({ agent, projectPath, configs, maxHelpers, orchestra
   const rail = useAgentStore((s) => s.agents);
   const killAgent = useAgentStore((s) => s.killAgent);
   const statuses = useAgentStatuses();
-  const { live, disposed } = useMemo(() => splitHelpers(configs, agent.id), [configs, agent.id]);
+  const projects = useProjectStore((s) => s.projects);
+  const { live, disposed } = useMemo(() => splitHelpers(helpers, agent.id), [helpers, agent.id]);
+  /** A row's project id, for opening and waking it there. */
+  const projectIdOf = (h: HelperInProject) => h.projectId
+    ?? (sameProjectPath(h.projectPath, projectPath) ? agent.projectId : projects.find((p) => sameProjectPath(p.path, h.projectPath))?.id);
+  /** The project a row from another project is in, as muted text; nothing for this project. */
+  const elsewhere = (h: HelperInProject) => (sameProjectPath(h.projectPath, projectPath)
+    ? null
+    : projectLabel(projects.find((p) => p.id === h.projectId) ?? projects.find((p) => sameProjectPath(p.path, h.projectPath)), h.projectPath));
   const [showDisposed, setShowDisposed] = useState(false);
-  const [disposing, setDisposing] = useState<DisposeHelperTarget | null>(null);
-  const [removing, setRemoving] = useState<DurableAgentConfig | null>(null);
+  const [disposing, setDisposing] = useState<DisposeTarget | null>(null);
+  const [removing, setRemoving] = useState<HelperInProject | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  const states = useMemo(() => new Map(live.map((h) => [h.id, helperState(h, rail[h.id])] as const)), [live, rail]);
+  const states = useMemo(() => new Map(live.map(({ config: h }) => [h.id, helperState(h, rail[h.id])] as const)), [live, rail]);
   const starting = [...states.values()].filter((s) => s === 'starting').length;
   const waiting = approvals?.pending ?? [];
   // Main approves a start only while the orchestrator runs; until then the request keeps waiting.
   const orchestratorRunning = agent.status === 'running';
 
   // What each helper's folder holds that isn't saved, read while the card is open.
-  const checkable = live.filter((h) => { const s = states.get(h.id); return s !== 'starting' && s !== 'failed' && s !== 'awaiting-approval'; });
-  const checkKey = checkable.map((h) => `${h.id}:${rail[h.id]?.status ?? ''}`).join(',');
+  const checkable = live.filter(({ config: h }) => { const s = states.get(h.id); return s !== 'starting' && s !== 'failed' && s !== 'awaiting-approval'; });
+  const checkKey = checkable.map(({ config: h, projectPath: where }) => `${h.id}:${where}:${rail[h.id]?.status ?? ''}`).join(',');
   const [checks, setChecks] = useState<Record<string, HelperDisposeChecks>>({});
   useEffect(() => {
     if (!open || !checkKey) return;
     let alive = true;
-    for (const h of checkable) {
-      Promise.resolve().then(() => window.clubhouse.agent.getDisposeChecks(projectPath, h.id)).then(
+    for (const { config: h, projectPath: where } of checkable) {
+      Promise.resolve().then(() => window.clubhouse.agent.getDisposeChecks(where, h.id)).then(
         (c) => { if (alive && c) setChecks((prev) => ({ ...prev, [h.id]: c })); },
         // telemetry-exempt: the row leaves out the unsaved-work line.
         () => {},
@@ -97,14 +112,15 @@ export function HelpersCard({ agent, projectPath, configs, maxHelpers, orchestra
     }
     return () => { alive = false; };
     // checkKey stands for `checkable`.
-  }, [open, checkKey, projectPath]);
+  }, [open, checkKey]);
 
-  const sleepOrWake = async (h: DurableAgentConfig, state: HelperState) => {
+  const sleepOrWake = async (entry: HelperInProject, state: HelperState) => {
+    const h = entry.config;
     setBusy(h.id);
     setError(null);
     try {
-      if (state === 'running') await killAgent(h.id, projectPath);
-      else await wakeDurableAgent(agent.projectId, projectPath, h.id);
+      if (state === 'running') await killAgent(h.id, entry.projectPath);
+      else await wakeDurableAgent(projectIdOf(entry) ?? agent.projectId, entry.projectPath, h.id);
     } catch (err) {
       // telemetry-exempt: shown in the card.
       setError(`Couldn’t ${state === 'running' ? 'stop' : 'wake'} ${h.name}. ${err instanceof Error ? err.message : String(err)}`);
@@ -113,11 +129,11 @@ export function HelpersCard({ agent, projectPath, configs, maxHelpers, orchestra
     }
   };
 
-  const remove = async (h: DurableAgentConfig) => {
+  const remove = async (entry: HelperInProject) => {
     setRemoving(null);
     setError(null);
     try {
-      const result = await window.clubhouse.agent.removeDisposed(projectPath, h.id);
+      const result = await window.clubhouse.agent.removeDisposed(entry.projectPath, entry.config.id);
       if (!result.ok) setError(result.message);
     } catch (err) {
       // telemetry-exempt: shown in the card.
@@ -141,10 +157,14 @@ export function HelpersCard({ agent, projectPath, configs, maxHelpers, orchestra
     }
   };
 
-  const handedOff = live.filter((h) => states.get(h.id) === 'handed-off');
-  const target = (h: DurableAgentConfig): DisposeHelperTarget => ({
-    id: h.id, name: h.name, projectId: agent.projectId, worktreePath: h.worktreePath, status: rail[h.id]?.status,
-  });
+  const handedOff = live.filter((h) => states.get(h.config.id) === 'handed-off');
+  const target = (entry: HelperInProject): DisposeTarget => {
+    const h = entry.config;
+    return {
+      id: h.id, name: h.name, projectId: projectIdOf(entry) ?? agent.projectId, worktreePath: h.worktreePath, status: rail[h.id]?.status,
+      projectPath: entry.projectPath,
+    };
+  };
 
   return (
     <>
@@ -190,7 +210,9 @@ export function HelpersCard({ agent, projectPath, configs, maxHelpers, orchestra
                 </div>
               </li>
             ))}
-            {live.map((h) => {
+            {live.map((entry) => {
+              const h = entry.config;
+              const otherProject = elsewhere(entry);
               const state = states.get(h.id) ?? 'sleeping';
               const railAgent = rail[h.id];
               const dot = helperDot(state, railAgent ? agentDot(railAgent, statuses[h.id]) : undefined);
@@ -212,7 +234,7 @@ export function HelpersCard({ agent, projectPath, configs, maxHelpers, orchestra
                     <StatusDot dot={dot} />
                     <button
                       type="button"
-                      onClick={() => openAgent(agent.projectId, h.id)}
+                      onClick={() => openAgent(projectIdOf(entry) ?? agent.projectId, h.id)}
                       disabled={!railAgent}
                       className="min-w-0 truncate text-[12.5px] font-medium text-ctp-text hover:underline disabled:no-underline disabled:cursor-default text-left"
                       title={railAgent ? `Open ${h.name}` : undefined}
@@ -220,6 +242,9 @@ export function HelpersCard({ agent, projectPath, configs, maxHelpers, orchestra
                     >
                       {h.name}
                     </button>
+                    {otherProject && (
+                      <span className="min-w-0 truncate text-xs text-ctp-overlay1" title={`In ${otherProject}`} data-testid="helper-project">in {otherProject}</span>
+                    )}
                     <span className={`ml-auto flex-shrink-0 text-xs ${state === 'failed' ? 'text-ctp-error' : 'text-ctp-overlay1'}`} data-testid="helper-state">{word}</span>
                   </div>
                   <div className="flex items-center gap-2 min-h-[20px] text-xs text-ctp-overlay1">
@@ -230,12 +255,12 @@ export function HelpersCard({ agent, projectPath, configs, maxHelpers, orchestra
                     </span>
                     <span className="ml-auto flex-shrink-0 flex items-center gap-2.5">
                       {canRun && railAgent && (
-                        <button type="button" className={LINK} disabled={busy === h.id} onClick={() => void sleepOrWake(h, isRunning ? 'running' : 'sleeping')} data-testid="helper-sleep-wake">
+                        <button type="button" className={LINK} disabled={busy === h.id} onClick={() => void sleepOrWake(entry, isRunning ? 'running' : 'sleeping')} data-testid="helper-sleep-wake">
                           {isRunning ? 'Sleep' : 'Wake'}
                         </button>
                       )}
                       {state !== 'awaiting-approval' && (
-                        <button type="button" className={LINK} onClick={() => setDisposing(target(h))} data-testid="helper-dispose">Dispose</button>
+                        <button type="button" className={LINK} onClick={() => setDisposing(target(entry))} data-testid="helper-dispose">Dispose</button>
                       )}
                     </span>
                   </div>
@@ -247,7 +272,7 @@ export function HelpersCard({ agent, projectPath, configs, maxHelpers, orchestra
         {handedOff.length > 0 && (
           <div className="mt-1 mx-1 px-2.5 pl-[22px] pt-1.5 border-t border-surface-0 flex items-center gap-2 text-xs text-ctp-overlay1" data-testid="helpers-ready">
             <span className="min-w-0 truncate">
-              {handedOff.length === 1 ? `${handedOff[0].name} is handed off and ready to dispose` : `${handedOff.length} helpers are handed off and ready to dispose`}
+              {handedOff.length === 1 ? `${handedOff[0].config.name} is handed off and ready to dispose` : `${handedOff.length} helpers are handed off and ready to dispose`}
             </span>
             <button type="button" className="ml-auto text-ctp-accent hover:underline cursor-pointer" onClick={() => setDisposing(target(handedOff[0]))}>Review</button>
           </div>
@@ -268,13 +293,14 @@ export function HelpersCard({ agent, projectPath, configs, maxHelpers, orchestra
             </button>
             {showDisposed && (
               <ul className="flex flex-col" data-testid="helpers-disposed">
-                {disposed.map((h) => (
+                {disposed.map((entry) => { const h = entry.config; const otherProject = elsewhere(entry); return (
                   <li key={h.id} className="h-[26px] flex items-center gap-2 pl-[22px] pr-2.5 text-xs" data-testid={`disposed-row-${h.id}`}>
                     <span className="min-w-0 truncate text-ctp-subtext1">{h.name}</span>
+                    {otherProject && <span className="min-w-0 truncate text-ctp-overlay1" data-testid="helper-project">in {otherProject}</span>}
                     <span className="text-ctp-overlay1 whitespace-nowrap">{formatWhen(h.disposedAt)}</span>
-                    <button type="button" className={`ml-auto ${LINK}`} onClick={() => setRemoving(h)} data-testid="disposed-remove">Remove</button>
+                    <button type="button" className={`ml-auto ${LINK}`} onClick={() => setRemoving(entry)} data-testid="disposed-remove">Remove</button>
                   </li>
-                ))}
+                ); })}
               </ul>
             )}
           </div>
@@ -284,15 +310,15 @@ export function HelpersCard({ agent, projectPath, configs, maxHelpers, orchestra
       {disposing && (
         <DisposeHelperDialog
           helper={disposing}
-          projectPath={projectPath}
+          projectPath={disposing.projectPath}
           onClose={() => setDisposing(null)}
           onDisposed={onRemoved}
         />
       )}
       <ConfirmDestructiveAction
         open={removing !== null}
-        title={`Remove ${removing?.name ?? ''} for good?`}
-        description={`Its folder is already gone. This removes ${removing?.name ?? 'it'} and its session list from Clubhouse. It can’t be undone.`}
+        title={`Remove ${removing?.config.name ?? ''} for good?`}
+        description={`Its folder is already gone. This removes ${removing?.config.name ?? 'it'} and its session list from Clubhouse. It can’t be undone.`}
         confirmLabel="Remove"
         onCancel={() => setRemoving(null)}
         onConfirm={() => { if (removing) void remove(removing); }}

@@ -1,6 +1,6 @@
 import { ipcRenderer } from 'electron';
 import { IPC } from '../shared/ipc-channels';
-import type { AgentHookEvent, AgentSleepInfo, DurableAgentConfig, DurableConfigUpdates, DurableCreationEvent, DurableWorktreeOptions, DeleteResult, HelperCascadeResult, HelperDeleteChoice, HelperDisposeChecks, HelperDisposeDecision, HelperDisposeRequest, HelperDisposeResult, HelperStartDecisionResult, HelperStartRequest, StartDurableCreationParams } from '../shared/types';
+import type { AgentHookEvent, AgentSleepInfo, DurableAgentConfig, DurableConfigUpdates, DurableCreationEvent, DurableWorktreeOptions, DeleteResult, HelperCascadeResult, HelperDeleteChoice, HelperDisposeChecks, HelperDisposeDecision, HelperDisposeRequest, HelperDisposeResult, HelperInProject, HelperStartDecisionResult, HelperStartRequest, StartDurableCreationParams } from '../shared/types';
 import type { HelperAccessResolution, HelperLimitCheck, OrchestrationOffChoice, OrchestrationPolicyPatch, ResolvedOrchestrationPolicy, SetOrchestrationPolicyResult, TurnOffOrchestrationResult } from '../shared/orchestration-policy';
 import type { FinishedQuickAgentOp, FinishedQuickAgents, FinishedQuickAgentsChange } from '../shared/finished-quick-agents';
 import type { PendingPermissionInfo, PermissionSettledInfo, PermissionResolveOutcome } from '../shared/permission-types';
@@ -52,9 +52,13 @@ export const agent = {
     ipcRenderer.invoke(IPC.AGENT.DELETE_FORCE, projectPath, agentId),
   deleteUnregister: (projectPath: string, agentId: string) =>
     ipcRenderer.invoke(IPC.AGENT.DELETE_UNREGISTER, projectPath, agentId),
-  /** Live helpers of a durable agent, or every one below it with `recursive` (#2224). */
-  listHelpers: (projectPath: string, agentId: string, recursive?: boolean): Promise<DurableAgentConfig[]> =>
-    ipcRenderer.invoke(IPC.AGENT.LIST_HELPERS, projectPath, agentId, recursive),
+  /**
+   * Live helpers of a durable agent, or every one below it with `recursive`
+   * (#2224), in every project, each with its own project (#2514). Disposed
+   * direct helpers too with `includeDisposed`.
+   */
+  listHelpers: (projectPath: string, agentId: string, recursive?: boolean, includeDisposed?: boolean): Promise<HelperInProject[]> =>
+    ipcRenderer.invoke(IPC.AGENT.LIST_HELPERS, projectPath, agentId, recursive, includeDisposed),
   /** Dispose or keep an orchestrator's helpers before it is deleted (#2224). */
   resolveHelpersForDelete: (projectPath: string, agentId: string, choice: HelperDeleteChoice, dryRun?: boolean): Promise<HelperCascadeResult> =>
     ipcRenderer.invoke(IPC.AGENT.RESOLVE_HELPERS_FOR_DELETE, projectPath, agentId, choice, dryRun),

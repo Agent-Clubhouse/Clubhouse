@@ -39,12 +39,24 @@ describe('splitHelpers and orphanedDisposed', () => {
     row('d3', { disposedAt: '2026-10-18T10:00:00Z' }),
   ];
   it('splits direct helpers into live and disposed', () => {
-    const { live, disposed } = splitHelpers(configs, 'lead');
-    expect(live.map((c) => c.id)).toEqual(['h1']);
-    expect(disposed.map((c) => c.id)).toEqual(['d1']);
+    const { live, disposed } = splitHelpers(configs.map((config) => ({ projectPath: 'p', config })), 'lead');
+    expect(live.map((h) => h.config.id)).toEqual(['h1']);
+    expect(disposed.map((h) => h.config.id)).toEqual(['d1']);
   });
   it('finds disposed helpers no Helpers card can reach', () => {
     expect(orphanedDisposed(configs).map((c) => c.id)).toEqual(['d2', 'd3']);
+  });
+  it('counts a helper whose orchestrator is in another project as reachable while that orchestrator is there (#2514)', () => {
+    const elsewhere = [
+      row('x1', { parentAgentId: 'remote-lead', parentProjectPath: 'other', disposedAt: '2026-10-18T10:00:00Z' }),
+      row('x2', { parentAgentId: 'gone', parentProjectPath: 'other', disposedAt: '2026-10-18T10:00:00Z' }),
+      // Same id as an agent in this file, but its parent is in the other project.
+      row('x3', { parentAgentId: 'lead', parentProjectPath: 'other', disposedAt: '2026-10-18T10:00:00Z' }),
+    ];
+    const list = [...configs, ...elsewhere];
+    expect(orphanedDisposed(list, (c) => c.parentAgentId === 'remote-lead').map((c) => c.id)).toEqual(['d2', 'd3', 'x2', 'x3']);
+    // Without a lookup, every cross-project link counts as gone.
+    expect(orphanedDisposed(list).map((c) => c.id)).toEqual(['d2', 'd3', 'x1', 'x2', 'x3']);
   });
 });
 

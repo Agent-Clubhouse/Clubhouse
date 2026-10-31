@@ -470,6 +470,17 @@ export interface HelperStartDecisionResult {
   helperId?: string;
 }
 
+/**
+ * A helper and the project its row is in (#2514), from LIST_HELPERS: an
+ * orchestrator's helpers can be in any registered project. `projectId` is the
+ * project store's id for `projectPath`, when it has one.
+ */
+export interface HelperInProject {
+  projectId?: string;
+  projectPath: string;
+  config: DurableAgentConfig;
+}
+
 /** Result of resolving an orchestrator's helpers before it is deleted (#2224). */
 export interface HelperCascadeResult {
   ok: boolean;

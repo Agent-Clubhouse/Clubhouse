@@ -3,7 +3,8 @@
  * stays in its own project; these name the project its orchestrator is in.
  */
 
-import type { Agent, Project } from '../../../../shared/types';
+import { useCallback, useEffect, useState } from 'react';
+import type { Agent, HelperInProject, Project } from '../../../../shared/types';
 import { useAgentStore } from '../../../stores/agentStore';
 import { useProjectStore } from '../../../stores/projectStore';
 import { findProjectByPath } from '../../../utils/project-path';
@@ -34,4 +35,39 @@ export function useOtherProjectParentText(agent: Pick<Agent, 'parentAgentId' | '
   const projectName = useParentProjectName(agent);
   const parentName = useAgentStore((s) => (agent.parentAgentId ? s.agents[agent.parentAgentId]?.name : undefined));
   return agent.parentAgentId && projectName ? otherProjectParentText(parentName, projectName) : undefined;
+}
+
+/**
+ * An orchestrator's direct helpers in every project, disposed ones included,
+ * each with its own project. Re-read when any project's agent configs change
+ * (a helper can be in any of them), when a helper on the rail starts, wakes,
+ * sleeps or goes, and on `reload`.
+ */
+export function useHelpersEverywhere(projectPath: string | undefined, agentId: string): {
+  helpers: HelperInProject[] | null;
+  reload: () => void;
+} {
+  // A string, so the hook re-reads only when one of its helpers changes.
+  const railKey = useAgentStore((s) => Object.values(s.agents)
+    .filter((a) => a.kind === 'durable' && a.parentAgentId === agentId)
+    .map((a) => `${a.id}:${a.projectId}:${a.status}:${a.creationFailed ? 'f' : ''}`)
+    .join(','));
+  const [helpers, setHelpers] = useState<HelperInProject[] | null>(null);
+  const [nonce, setNonce] = useState(0);
+  useEffect(() => {
+    if (!projectPath) return;
+    return window.clubhouse.agent.onConfigsChanged?.(() => setNonce((n) => n + 1));
+  }, [projectPath]);
+  useEffect(() => {
+    if (!projectPath) { setHelpers(null); return; }
+    let alive = true;
+    Promise.resolve().then(() => window.clubhouse.agent.listHelpers(projectPath, agentId, false, true)).then(
+      (list) => { if (alive) setHelpers(Array.isArray(list) ? list : []); },
+      // telemetry-exempt: the card says there are no helpers rather than break details.
+      () => { if (alive) setHelpers([]); },
+    );
+    return () => { alive = false; };
+  }, [projectPath, agentId, railKey, nonce]);
+  const reload = useCallback(() => setNonce((n) => n + 1), []);
+  return { helpers, reload };
 }
