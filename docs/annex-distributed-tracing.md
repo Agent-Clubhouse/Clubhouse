@@ -108,9 +108,9 @@ adapter/query remain unverified. A green draft is not evidence those gaps closed
 
 Feedback upload and tracing remain separate configurations. The feedback adapter
 keeps its own telemetry disabled. Desktop vendors the canonical Framebriar Node
-SDK at `25c05f76e8ae05e5ff4b13d2caaf71a7abcfd17e` (service #11, SDK #12), with
-unchanged upstream files and SHA-256 provenance in `VENDORED.json`. No npm release
-is assumed to contain these APIs.
+SDK at release `v0.5.1` (`7572776830a65688403c59806621154a2458099c`), with
+unchanged upstream files and SHA-256 provenance in `VENDORED.json`. See
+`docs/framebriar-sdk-drop-20261031.md`.
 
 Desktop snapshots references synchronously at feedback opening, before async
 SDK startup or screenshot capture. A bounded memory-only window keeps up to 32
