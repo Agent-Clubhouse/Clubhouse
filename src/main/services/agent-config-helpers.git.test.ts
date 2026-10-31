@@ -204,7 +204,7 @@ describe('worktree status before delete (#2245)', () => {
 describe('findGitCommonDir (#2511)', () => {
   it('gives the project and each of its worktrees the same common dir', async () => {
     const common = await findGitCommonDir(project);
-    expect(common).toBe(fs.realpathSync(path.join(project, '.git')));
+    expect(common).toBe(fs.realpathSync.native(path.join(project, '.git')));
     expect(await findGitCommonDir(worktree('helper-a'))).toBe(common);
     expect(await findGitCommonDir(path.join(project, '.clubhouse'))).toBe(common);
   });
@@ -213,7 +213,7 @@ describe('findGitCommonDir (#2511)', () => {
     const otherRepo = path.join(root, 'other');
     fs.mkdirSync(otherRepo);
     git(['init', '-q'], otherRepo);
-    expect(await findGitCommonDir(otherRepo)).toBe(fs.realpathSync(path.join(otherRepo, '.git')));
+    expect(await findGitCommonDir(otherRepo)).toBe(fs.realpathSync.native(path.join(otherRepo, '.git')));
     expect(await findGitCommonDir(otherRepo)).not.toBe(await findGitCommonDir(project));
 
     const plain = fs.mkdtempSync(path.join(os.tmpdir(), 'clubhouse-not-a-repo-'));
