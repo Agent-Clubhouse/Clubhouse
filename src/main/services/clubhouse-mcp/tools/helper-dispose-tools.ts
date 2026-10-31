@@ -16,6 +16,11 @@
  * branch (only a branch Clubhouse created and that has not moved, see
  * deleteAgentBranch), and keeps its row with `disposedAt`. It never deletes a
  * remote branch.
+ *
+ * Both find the caller's helpers in every project (#2515) and act on each in
+ * the project its row is in; the caller's policy is read from its own
+ * project. A helper in another project is in another repository, so its work
+ * is handed off as pushed or copied, never merged.
  */
 
 import * as path from 'path';
@@ -26,6 +31,7 @@ import * as agentConfig from '../../agent-config';
 import { getOrchestrationPolicy, withAgentLock } from '../../orchestration-policy';
 import { isAgentRunning, killAgent } from '../../agent-system';
 import { recordDisposeRequest } from '../../helper-dispose-requests';
+import { listHelpersEverywhere, type HelperEntry } from '../../helper-index';
 import * as projectStore from '../../project-store';
 import { appLog } from '../../log-service';
 import { broadcastToAllWindows } from '../../../util/ipc-broadcast';
@@ -63,23 +69,25 @@ function callerProject(agentId: string): string | null {
 }
 
 /**
- * One of the caller's direct helpers, by id or (unambiguous, case-insensitive)
- * name. Disposed helpers are included so a repeated dispose answers plainly.
+ * One of the caller's direct helpers in any project, by id or (unambiguous,
+ * case-insensitive) name, with the project its row is in. Disposed helpers
+ * are included so a repeated dispose answers plainly.
  */
 async function findOwnHelper(
-  projectPath: string,
+  homePath: string,
   callerId: string,
   ref: string,
-): Promise<{ helper: DurableAgentConfig } | { error: string }> {
-  const helpers = await agentConfig.listHelpers(projectPath, callerId, { includeDisposed: true });
-  const byId = helpers.find((h) => h.id === ref);
-  if (byId) return { helper: byId };
+): Promise<{ helper: DurableAgentConfig; helperPath: string } | { error: string }> {
+  const helpers = await listHelpersEverywhere(homePath, callerId, { includeDisposed: true });
+  const found = (entry: HelperEntry) => ({ helper: entry.config, helperPath: entry.projectPath });
+  const byId = helpers.find((h) => h.config.id === ref);
+  if (byId) return found(byId);
   const wanted = ref.trim().toLowerCase();
-  const byName = helpers.filter((h) => h.name.toLowerCase() === wanted);
-  const live = byName.filter((h) => !isDisposedAgent(h));
-  if (live.length === 1) return { helper: live[0] };
+  const byName = helpers.filter((h) => h.config.name.toLowerCase() === wanted);
+  const live = byName.filter((h) => !isDisposedAgent(h.config));
+  if (live.length === 1) return found(live[0]);
   if (live.length > 1) return { error: `More than one of your helpers is named "${ref}". Use its id.` };
-  if (byName.length === 1) return { helper: byName[0] };
+  if (byName.length === 1) return found(byName[0]);
   return { error: `"${ref}" is not one of your helpers. Only an agent's own direct helpers can be handed off or disposed.` };
 }
 
@@ -157,13 +165,20 @@ export async function handOff(callerId: string, args: Record<string, unknown>): 
   return withAgentLock(projectPath, callerId, () => handOffLocked(projectPath, callerId, ref, how as HelperHandoffHow, note));
 }
 
-async function handOffLocked(projectPath: string, callerId: string, ref: string, how: HelperHandoffHow, note: string): Promise<McpToolResult> {
+async function handOffLocked(homePath: string, callerId: string, ref: string, how: HelperHandoffHow, note: string): Promise<McpToolResult> {
   try {
-    const found = await findOwnHelper(projectPath, callerId, ref);
+    const found = await findOwnHelper(homePath, callerId, ref);
     if ('error' in found) return textResult(found.error, true);
-    const { helper } = found;
+    const { helper, helperPath } = found;
     if (isDisposedAgent(helper)) return textResult(`${helper.name} was already disposed.`, true);
-    const handoff = await agentConfig.setHelperHandoff(projectPath, helper.id, callerId, { how, note });
+    if (how === 'merged' && !(await agentConfig.isSameProject(helperPath, homePath))) {
+      return textResult(
+        `${helper.name} is in another project and repository, so its branch can't be merged into yours. `
+          + 'Have it push its branch or open a PR there, then hand off as "pushed" (or "copied" if you copied its changes).',
+        true,
+      );
+    }
+    const handoff = await agentConfig.setHelperHandoff(helperPath, helper.id, callerId, { how, note });
     appLog('core:orchestration', 'info', 'Helper handed off', {
       meta: { orchestratorId: callerId, helperId: helper.id, how },
     });
@@ -193,22 +208,23 @@ export async function disposeHelperTool(callerId: string, args: Record<string, u
   return withAgentLock(projectPath, callerId, () => disposeLocked(projectPath, callerId, ref, force));
 }
 
-async function disposeLocked(projectPath: string, callerId: string, ref: string, force: boolean): Promise<McpToolResult> {
+async function disposeLocked(homePath: string, callerId: string, ref: string, force: boolean): Promise<McpToolResult> {
   try {
-    const found = await findOwnHelper(projectPath, callerId, ref);
+    const found = await findOwnHelper(homePath, callerId, ref);
     if ('error' in found) return textResult(found.error, true);
-    const { helper } = found;
+    const { helper, helperPath } = found;
+    const elsewhere = !(await agentConfig.isSameProject(helperPath, homePath));
     const who = { id: helper.id, name: helper.name };
     if (isDisposedAgent(helper)) {
       return jsonResult({ status: 'disposed', helper: who, message: `${helper.name} was already disposed.` });
     }
 
-    const policy = await getOrchestrationPolicy(projectPath, callerId);
+    const policy = await getOrchestrationPolicy(homePath, callerId);
     if (!policy) return textResult('Clubhouse could not read your orchestration settings.', true);
 
     // Helpers of helpers come later in the epic; until then their parent has
     // to settle them, so one with helpers of its own is never disposed here.
-    const nested = await agentConfig.listHelpers(projectPath, helper.id);
+    const nested = await listHelpersEverywhere(helperPath, helper.id);
     if (nested.length > 0) {
       return jsonResult({
         status: 'held',
@@ -219,12 +235,13 @@ async function disposeLocked(projectPath: string, callerId: string, ref: string,
       });
     }
 
-    const checks = await agentConfig.getDisposeChecks(projectPath, helper.id);
-    const facts = await factsFor(projectPath, helper.id, checks);
+    const checks = await agentConfig.getDisposeChecks(helperPath, helper.id);
+    const facts = await factsFor(helperPath, helper.id, checks);
 
     if (policy.control === 'ask-everything') {
       const delivered = requestUserDispose({
-        projectPath,
+        projectPath: helperPath,
+        ...(elsewhere && { orchestratorProjectPath: homePath }),
         orchestratorId: callerId,
         helperId: helper.id,
         helperName: helper.name,
@@ -272,12 +289,12 @@ async function disposeLocked(projectPath: string, callerId: string, ref: string,
     // Stop it so it no longer holds its worktree open (EBUSY on Windows).
     const wasRunning = isAgentRunning(helper.id);
     if (wasRunning) {
-      await killAgent(helper.id, projectPath, undefined, 'agent_tool', { waitForExit: true });
+      await killAgent(helper.id, helperPath, undefined, 'agent_tool', { waitForExit: true });
     }
 
     // disposeHelper checks again now the helper is stopped; force never
     // overrides a check that couldn't run.
-    const result = await agentConfig.disposeHelper(projectPath, helper.id, { force, expectedParentId: callerId });
+    const result = await agentConfig.disposeHelper(helperPath, helper.id, { force, expectedParentId: callerId });
     if (!result.ok) {
       const after = result.checks;
       if (after && (after.error || workAtRisk(after))) {
@@ -287,12 +304,12 @@ async function disposeLocked(projectPath: string, callerId: string, ref: string,
           reason: after.error ? 'check-failed' : 'work-at-risk',
           canForce: !after.error,
           stopped: wasRunning,
-          ...(await factsFor(projectPath, helper.id, after)),
+          ...(await factsFor(helperPath, helper.id, after)),
           message: `${result.message}.${wasRunning ? ` ${helper.name} was stopped but not disposed.` : ''}`,
         });
       }
       if (result.worktreeRemoved) {
-        await refreshRenderer(projectPath);
+        await refreshRenderer(helperPath);
         return textResult(
           `dispose_helper failed: ${helper.name} stopped being your helper while it was being disposed. `
             + 'Its worktree folder was already removed, so it was not marked disposed and is now an ordinary agent without a worktree.',
@@ -302,7 +319,7 @@ async function disposeLocked(projectPath: string, callerId: string, ref: string,
       return textResult(`dispose_helper failed: ${result.message}`, true);
     }
 
-    await refreshRenderer(projectPath);
+    await refreshRenderer(helperPath);
     // Report what the re-check after the stop found: that is what was lost.
     const final = result.checks ?? checks;
     const forced = force && workAtRisk(final);
@@ -313,7 +330,7 @@ async function disposeLocked(projectPath: string, callerId: string, ref: string,
       status: 'disposed',
       helper: who,
       forced,
-      ...(await factsFor(projectPath, helper.id, final, false)),
+      ...(await factsFor(helperPath, helper.id, final, false)),
       message: `${helper.name} was ${wasRunning ? 'stopped and ' : ''}disposed. Its worktree folder and local branch are gone; any pushed remote branch was kept.`,
     });
   } catch (err) {
@@ -330,6 +347,7 @@ export function registerHelperDisposeTools(): void {
       description:
         'Record how you took one of your helpers\' work: "pushed" (it pushed a branch or PR), ' +
         '"merged" (you merged its branch) or "copied" (you copied its changes). ' +
+        'A helper in another project can\'t be "merged": hand it off as "pushed" or "copied". ' +
         'This does not dispose the helper; call dispose_helper afterwards.',
       inputSchema: {
         type: 'object',

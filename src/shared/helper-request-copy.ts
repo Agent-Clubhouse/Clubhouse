@@ -20,7 +20,7 @@ export function describeHelperDisposeRequest(orchestratorName: string, request: 
   return `${orchestratorName} asked to dispose this helper${forceRequested ? ' (forced)' : ''}. ${what[0].toUpperCase()}${what.slice(1)}.`;
 }
 
-/** The Needs you line for one waiting start. */
-export function describeHelperStart(helperName: string): string {
-  return `Wants to start the helper ${helperName}`;
+/** The Needs you line for one waiting start; `projectName` when it is in another project (#2515). */
+export function describeHelperStart(helperName: string, projectName?: string): string {
+  return `Wants to start the helper ${helperName}${projectName ? ` in ${projectName}` : ''}`;
 }
