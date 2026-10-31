@@ -16,7 +16,7 @@ import { useOrchestration } from './orchestration-hooks';
 const PROJECT = path.join('/work', 'proj');
 
 function resolved(p: OrchestrationPolicy): ResolvedOrchestrationPolicy {
-  return { ...p, sources: { orchestrate: 'agent', access: 'default', control: 'default', maxHelpers: 'default' } };
+  return { ...p, sources: { orchestrate: 'agent', access: 'default', control: 'default', maxHelpers: 'default', crossProjectHelpers: 'default' } };
 }
 
 const lead: Agent = {
@@ -27,14 +27,20 @@ const lead: Agent = {
 let stored: OrchestrationPolicy;
 let helperIds: string[];
 let configs: DurableAgentConfig[];
+/** Helpers grouped by project, as main's needsHelperChoice reports them. */
+let helperProjects: Array<{ projectPath: string; helperIds: string[] }> | undefined;
+/** Live helpers in other projects main reports when cross-project helpers go off. */
+let keptElsewhere: number;
 
 function config(id: string, name: string, extra: Partial<DurableAgentConfig> = {}): DurableAgentConfig {
   return { id, name, color: 'teal', createdAt: '2026-10-18T09:00:00Z', ...extra };
 }
 
 beforeEach(() => {
-  stored = { orchestrate: false, access: 'same', control: 'hands-off', maxHelpers: 5 };
+  stored = { orchestrate: false, access: 'same', control: 'hands-off', maxHelpers: 5, crossProjectHelpers: false };
   helperIds = [];
+  helperProjects = undefined;
+  keptElsewhere = 0;
   configs = [config('lead', 'epic-lead')];
   useProjectStore.setState({ projects: [{ id: 'p1', name: 'proj', path: PROJECT }] as never });
   useAgentStore.setState({ agents: { lead } } as never);
@@ -46,10 +52,11 @@ beforeEach(() => {
   window.clubhouse.app.getOrchestrationSettings = vi.fn(async () => ({ globalHelperCap: 8 }));
   window.clubhouse.agent.setOrchestrationPolicy = vi.fn(async (_p: string, _id: string, patch: OrchestrationPolicyPatch) => {
     if (patch.orchestrate === false && helperIds.length > 0) {
-      return { ok: true, message: 'Choose', needsHelperChoice: { helperIds } };
+      return { ok: true, message: 'Choose', needsHelperChoice: { helperIds, projects: helperProjects ?? [{ projectPath: PROJECT, helperIds }] } };
     }
     stored = { ...stored, ...Object.fromEntries(Object.entries(patch).filter(([, v]) => v !== null)) } as OrchestrationPolicy;
-    return { ok: true, message: 'Saved', policy: resolved(stored) };
+    const kept = patch.crossProjectHelpers === false && keptElsewhere > 0 ? { crossProjectHelpersKept: keptElsewhere } : {};
+    return { ok: true, message: 'Saved', policy: resolved(stored), ...kept };
   });
   window.clubhouse.agent.turnOffOrchestration = vi.fn(async () => ({ ok: true, message: 'Cancelled', cancelled: true }));
 });
@@ -74,8 +81,8 @@ async function renderCard(agent?: Agent) {
 describe('orchestrateSummary', () => {
   it('answers in one line', () => {
     expect(orchestrateSummary({ policy: null })).toBe('');
-    expect(orchestrateSummary({ policy: resolved({ orchestrate: false, access: 'same', control: 'hands-off', maxHelpers: 5 }) })).toBe('off');
-    expect(orchestrateSummary({ policy: resolved({ orchestrate: true, access: 'same', control: 'ask-before-start', maxHelpers: 3 }) })).toBe('ask before starting · up to 3');
+    expect(orchestrateSummary({ policy: resolved({ orchestrate: false, access: 'same', control: 'hands-off', maxHelpers: 5, crossProjectHelpers: false }) })).toBe('off');
+    expect(orchestrateSummary({ policy: resolved({ orchestrate: true, access: 'same', control: 'ask-before-start', maxHelpers: 3, crossProjectHelpers: false }) })).toBe('ask before starting · up to 3');
   });
 });
 
@@ -166,6 +173,39 @@ describe('Orchestrate card (#2232)', () => {
     fireEvent.change(await screen.findByTestId('orchestrate-control'), { target: { value: 'ask-everything' } });
     expect(await screen.findByTestId('orchestrate-error')).toHaveTextContent('Orchestration policy is locked');
     expect(screen.getByTestId('details-card-orchestrate-summary')).toHaveTextContent('hands-off');
+  });
+
+  it('shows the cross-project switch only while orchestrating, and saves it', async () => {
+    await renderCard();
+    expect(screen.queryByTestId('orchestrate-cross-project')).not.toBeInTheDocument();
+    fireEvent.click(screen.getByTestId('orchestrate-toggle'));
+    const cross = await screen.findByTestId('orchestrate-cross-project');
+    expect(cross).toHaveAttribute('aria-checked', 'false');
+    expect(screen.getByText('Let this agent start helpers in other projects.')).toBeInTheDocument();
+    fireEvent.click(cross);
+    await waitFor(() => expect(cross).toHaveAttribute('aria-checked', 'true'));
+    expect(window.clubhouse.agent.setOrchestrationPolicy).toHaveBeenLastCalledWith(PROJECT, 'lead', { crossProjectHelpers: true });
+  });
+
+  it('says helpers in other projects keep running when cross-project helpers go off', async () => {
+    stored = { ...stored, orchestrate: true, crossProjectHelpers: true };
+    keptElsewhere = 2;
+    await renderCard({ ...lead, status: 'running' });
+    const cross = await screen.findByTestId('orchestrate-cross-project');
+    await waitFor(() => expect(cross).toHaveAttribute('aria-checked', 'true'));
+    fireEvent.click(cross);
+    await waitFor(() => expect(cross).toHaveAttribute('aria-checked', 'false'));
+    expect(screen.getByTestId('orchestrate-note')).toHaveTextContent('Existing helpers in other projects keep running.');
+  });
+
+  it('says nothing more when no helper runs in another project', async () => {
+    stored = { ...stored, orchestrate: true, crossProjectHelpers: true };
+    await renderCard({ ...lead, status: 'running' });
+    const cross = await screen.findByTestId('orchestrate-cross-project');
+    await waitFor(() => expect(cross).toHaveAttribute('aria-checked', 'true'));
+    fireEvent.click(cross);
+    await waitFor(() => expect(cross).toHaveAttribute('aria-checked', 'false'));
+    expect(screen.queryByTestId('orchestrate-note')).not.toBeInTheDocument();
   });
 
   it('turns off at once when there are no helpers', async () => {
@@ -364,6 +404,48 @@ describe('Turning orchestration off with helpers (#2232)', () => {
     fireEvent.click(screen.getByTestId('turn-off-dispose'));
     const partial = await screen.findByTestId('turn-off-partial');
     expect(partial.textContent).toBe('Orchestration is off, but late-helper has work that disposing would lose, or couldn\'t be checked.');
+  });
+
+  describe('with helpers in other projects (#2512)', () => {
+    const SITE = path.join('/work', 'site');
+    const loadDurableAgents = useAgentStore.getState().loadDurableAgents;
+
+    afterEach(() => { useAgentStore.setState({ loadDurableAgents }); });
+
+    beforeEach(() => {
+      helperIds = ['h1', 'x1'];
+      helperProjects = [{ projectPath: PROJECT, helperIds: ['h1'] }, { projectPath: SITE, helperIds: ['x1'] }];
+      configs = [config('lead', 'epic-lead'), config('h1', 'impl-ipc', { parentAgentId: 'lead' })];
+      const siteConfigs = [config('x1', 'site-docs', { parentAgentId: 'lead', parentProjectPath: PROJECT })];
+      window.clubhouse.agent.listDurable = vi.fn(async (p: string) => (p === SITE ? siteConfigs : configs)) as never;
+      useProjectStore.setState({
+        projects: [{ id: 'p1', name: 'proj', path: PROJECT }, { id: 'p2', name: 'site', path: SITE }] as never,
+      });
+    });
+
+    it('names each helper in another project with its project', async () => {
+      const { dialog } = await openDialog();
+      expect(dialog).toHaveTextContent('epic-lead has 2 helpers.');
+      const list = await within(dialog).findByTestId('turn-off-helpers');
+      await waitFor(() => expect(list).toHaveTextContent('site-docs'));
+      expect(list).toHaveTextContent('impl-ipc');
+      const projects = within(list).getAllByTestId('turn-off-helper-project');
+      expect(projects).toHaveLength(1);
+      expect(projects[0]).toHaveTextContent(', in site');
+    });
+
+    it('reloads every project that held a helper', async () => {
+      const load = vi.fn(async () => undefined);
+      useAgentStore.setState({ loadDurableAgents: load } as never);
+      window.clubhouse.agent.turnOffOrchestration = vi.fn(async () => ({
+        ok: true, message: 'Kept 2 helper(s)', helperIds: ['h1', 'x1'], policy: resolved({ ...stored, orchestrate: false }),
+      }));
+      const { toggle } = await openDialog();
+      fireEvent.click(screen.getByTestId('turn-off-keep'));
+      await waitFor(() => expect(toggle).toHaveAttribute('aria-checked', 'false'));
+      expect(load).toHaveBeenCalledWith('p1', PROJECT);
+      expect(load).toHaveBeenCalledWith('p2', SITE);
+    });
   });
 });
 

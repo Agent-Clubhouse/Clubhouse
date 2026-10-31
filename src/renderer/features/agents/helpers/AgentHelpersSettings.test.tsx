@@ -12,11 +12,11 @@ let stored: OrchestrationPolicy;
 let helperIds: string[];
 
 function resolved(p: OrchestrationPolicy): ResolvedOrchestrationPolicy {
-  return { ...p, sources: { orchestrate: 'agent', access: 'default', control: 'default', maxHelpers: 'default' } };
+  return { ...p, sources: { orchestrate: 'agent', access: 'default', control: 'default', maxHelpers: 'default', crossProjectHelpers: 'default' } };
 }
 
 beforeEach(() => {
-  stored = { orchestrate: false, access: 'same', control: 'hands-off', maxHelpers: 5 };
+  stored = { orchestrate: false, access: 'same', control: 'hands-off', maxHelpers: 5, crossProjectHelpers: false };
   helperIds = [];
   window.clubhouse.agent.getOrchestrationPolicy = vi.fn(async () => resolved(stored));
   window.clubhouse.agent.listDurable = vi.fn(async () => []) as never;
@@ -46,6 +46,19 @@ describe('Agent Helpers settings page (#2232)', () => {
     fireEvent.change(count, { target: { value: '7' } });
     fireEvent.blur(count);
     await waitFor(() => expect(window.clubhouse.agent.setOrchestrationPolicy).toHaveBeenLastCalledWith(PROJECT, 'lead', { maxHelpers: 7 }));
+  });
+
+  it('shows the cross-project switch once orchestrating, and saves it', async () => {
+    render(<AgentHelpersSettings agent={lead} projectPath={PROJECT} />);
+    const toggle = await screen.findByTestId('settings-orchestrate-toggle');
+    expect(screen.queryByTestId('settings-orchestrate-cross-project')).not.toBeInTheDocument();
+    fireEvent.click(toggle);
+    const cross = await screen.findByTestId('settings-orchestrate-cross-project');
+    expect(screen.getByText('Cross-project helpers')).toBeInTheDocument();
+    expect(screen.getByText('Let this agent start helpers in other projects.')).toBeInTheDocument();
+    fireEvent.click(cross);
+    await waitFor(() => expect(cross).toHaveAttribute('aria-checked', 'true'));
+    expect(window.clubhouse.agent.setOrchestrationPolicy).toHaveBeenLastCalledWith(PROJECT, 'lead', { crossProjectHelpers: true });
   });
 
   it('asks about helpers before turning off, as the card does', async () => {
