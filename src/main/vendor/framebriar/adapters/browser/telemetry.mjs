@@ -116,14 +116,19 @@ export function createExponentialHistogram({maxScale=L.histogramScale,maxSize=L.
   };
 }
 
-// One session ID per page run, shared with feedback reports. It lives in a global symbol slot
-// so local-export.mjs (protocol-only imports) and duplicate bundles agree on one value.
+// One session ID per page run, shared with feedback reports and replay manifests. It lives in a
+// global symbol slot so local-export.mjs (protocol-only imports) and duplicate bundles agree on one
+// value. Since 0.5.0 the default is a UUID v4 (replay requires one); older `s-<24 hex>` IDs and
+// host-adopted IDs stay valid everywhere they were accepted before.
 const SESSION=/^[A-Za-z0-9_-]{1,64}$/,SESSION_SLOT=Symbol.for('framebriar.page-session');
+export function uuidV4(getRandomValues=a=>crypto.getRandomValues(a)){
+  const b=new Uint8Array(16);getRandomValues(b);b[6]=b[6]&0x0f|0x40;b[8]=b[8]&0x3f|0x80;
+  const h=Array.from(b,x=>x.toString(16).padStart(2,'0')).join('');
+  return `${h.slice(0,8)}-${h.slice(8,12)}-${h.slice(12,16)}-${h.slice(16,20)}-${h.slice(20)}`;
+}
 export function pageSessionId(){
   if(SESSION.test(globalThis[SESSION_SLOT]??''))return globalThis[SESSION_SLOT];
-  const b=new Uint8Array(12);
-  do crypto.getRandomValues(b);while(b.every(x=>x===0));
-  return globalThis[SESSION_SLOT]=`s-${Array.from(b,x=>x.toString(16).padStart(2,'0')).join('')}`;
+  return globalThis[SESSION_SLOT]=uuidV4();
 }
 // Hosts that already have a run ID may adopt it; call before creating telemetry or reports.
 export function setPageSessionId(id){
