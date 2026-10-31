@@ -23,7 +23,8 @@ import type { PersonaTemplate } from '../personas';
 import { EmptyState } from '../../components/EmptyState';
 import { requestLeaveAgentSettings } from './agentSettingsPages';
 import { createDurableAgent, createDurableAgentFromTemplate } from './create-agent';
-import { buildAgentForest, forestSiblingGroups, helperRollup, moveWithinGroup, type AgentNode } from '../../chrome/sidebar/treeModel';
+import { buildAgentForest, forestSiblingGroups, helperRollup, localParentId, moveWithinGroup, type AgentNode } from '../../chrome/sidebar/treeModel';
+import { OtherProjectParentLine } from './helpers/OtherProjectParentLine';
 import { useAgentStatuses } from './agent-status-store';
 import { useChromeStore, syncCollapsedAgentsWithAgents, ensureChromeStateLoaded } from '../../chrome/chromeStore';
 
@@ -302,11 +303,13 @@ function AgentListInner() {
     const collapsed = new Set(useChromeStore.getState().collapsedAgentIds);
     const folded: string[] = [];
     const seen = new Set<string>();
-    let parentId = all[activeAgentId]?.parentAgentId;
+    // Only parents in this project: one in another project (#2514) isn't in this list.
+    const local = (id: string | undefined) => (id && all[id] ? localParentId(all[id]) : undefined);
+    let parentId = local(activeAgentId);
     while (parentId && !seen.has(parentId) && all[parentId]?.kind === 'durable') {
       seen.add(parentId);
       if (collapsed.has(parentId)) folded.push(parentId);
-      parentId = all[parentId]?.parentAgentId;
+      parentId = local(parentId);
     }
     if (folded.length > 0) useChromeStore.getState().expandAgents(folded);
   }, [activeAgentId]);
@@ -666,6 +669,10 @@ function AgentListInner() {
               </span>
             )}
           </div>
+          {durable.parentProjectPath && (
+            // Under the name: past the avatar and its gap.
+            <OtherProjectParentLine agent={durable} paddingLeft={indent + 48} className="-mt-2 pb-2" />
+          )}
           {/* Inline mission input targeting this durable */}
           {isMissionTarget && renderMissionInput(true, depth > 0 ? indent + QUICK_INDENT : undefined)}
           {/* Child quick agents (indented). Completed children are not

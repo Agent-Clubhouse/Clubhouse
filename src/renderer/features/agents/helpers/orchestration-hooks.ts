@@ -19,6 +19,7 @@ import { useAgentStore } from '../../../stores/agentStore';
 import { useProjectStore } from '../../../stores/projectStore';
 import { useUIStore } from '../../../stores/uiStore';
 import { startRequestsFor, useHelperStartRequestStore } from '../../../stores/helperStartRequestStore';
+import { sameProjectPath } from '../../../utils/project-path';
 
 function errorText(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
@@ -66,14 +67,7 @@ export function openHelpersSettings(): void {
 
 // ── Project agent configs ───────────────────────────────────────────────
 
-/** Two spellings of one project folder: trailing separators and, on Windows, case don't matter. */
-export function sameProjectPath(a: string, b: string): boolean {
-  const norm = (p: string) => {
-    const trimmed = p.replace(/[\\/]+$/, '');
-    return window.clubhouse?.platform === 'win32' ? trimmed.replace(/\\/g, '/').toLowerCase() : trimmed;
-  };
-  return norm(a) === norm(b);
-}
+export { sameProjectPath };
 
 /**
  * Every durable config in a project, disposed ones included. Re-read when

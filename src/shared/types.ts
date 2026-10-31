@@ -93,6 +93,14 @@ export interface Agent {
    * (#2224): their orchestrator, which the sidebar nests them under (#2231).
    */
   parentAgentId?: string;
+  /**
+   * Durable helpers whose orchestrator is in another project (#2514): that
+   * project's path, from the config's `parentProjectPath`. Unset means the
+   * parent is in this agent's own project.
+   */
+  parentProjectPath?: string;
+  /** The open project at `parentProjectPath`, when there is one. */
+  parentProjectId?: string;
   /** Durable agents: creating the agent failed (#2226); `errorMessage` says why. */
   creationFailed?: boolean;
   orchestrator?: OrchestratorId;

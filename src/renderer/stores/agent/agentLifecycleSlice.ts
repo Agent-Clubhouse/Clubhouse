@@ -6,6 +6,7 @@ import { useHeadlessStore } from '../headlessStore';
 import { useProjectStore } from '../projectStore';
 import { AgentLifecycleSlice, GetAgentState, SetAgentState } from './types';
 import { omitRecordKey } from './agentUtils';
+import { parentLinkFields } from './parentLink';
 
 export function createLifecycleSlice(set: SetAgentState, get: GetAgentState): AgentLifecycleSlice {
   return {
@@ -190,7 +191,7 @@ export function createLifecycleSlice(set: SetAgentState, get: GetAgentState): Ag
         resuming: resume || undefined,
         // Also config-only, and replaced with the rest: a helper keeps its
         // parent (#2224) so the sidebar keeps it nested after a wake (#2231).
-        parentAgentId: config.parentAgentId,
+        ...parentLinkFields(config),
         creationFailed: config.creation?.state === 'failed' || undefined,
       };
 

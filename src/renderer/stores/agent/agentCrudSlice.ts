@@ -3,6 +3,7 @@ import { isDisposedAgent } from '../../../shared/agent-helpers';
 import { AgentCrudSlice, GetAgentState, SetAgentState } from './types';
 import { removeAgentsFromState } from './agentUtils';
 import { clearPendingActivityTimer } from './activityTimers';
+import { parentLinkFields } from './parentLink';
 
 /** A loaded durable agent's status: creating or failed while its creation is unfinished (#2226), else asleep. */
 function creationStatus(config: DurableAgentConfig): Pick<Agent, 'status' | 'errorMessage' | 'creationFailed'> {
@@ -93,7 +94,7 @@ export function createCrudSlice(set: SetAgentState, get: GetAgentState): AgentCr
             freeAgentMode: config.freeAgentMode,
             mcpIds: config.mcpIds,
             lastSleep: config.lastSleep,
-            parentAgentId: config.parentAgentId,
+            ...parentLinkFields(config),
           };
         } else {
           // Always update projectId — the same agents.json may be loaded
@@ -107,7 +108,7 @@ export function createCrudSlice(set: SetAgentState, get: GetAgentState): AgentCr
           // The parent link (#2224) is config-only, so it follows agents.json too.
           agents[config.id] = {
             ...agents[config.id], projectId, model: config.model, lastSleep: agents[config.id].lastSleep ?? config.lastSleep,
-            parentAgentId: config.parentAgentId,
+            ...parentLinkFields(config),
           };
           // An unfinished creation (#2226) is ground truth for status; a finished
           // one moves an agent still shown as creating or failed to asleep, and
@@ -210,7 +211,7 @@ export function createCrudSlice(set: SetAgentState, get: GetAgentState): AgentCr
               orchestrator: config.orchestrator,
               freeAgentMode: config.freeAgentMode,
               mcpIds: config.mcpIds,
-              parentAgentId: config.parentAgentId,
+              ...parentLinkFields(config),
             };
           }
         }
