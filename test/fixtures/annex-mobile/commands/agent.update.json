@@ -5,7 +5,7 @@
       "request": {
         "agentId": "durable_sleepy",
         "color": "rose",
-        "commandId": "cmd_057",
+        "commandId": "cmd_061",
         "emoji": "🦦",
         "epoch": "00000000-0000-4000-8000-000000000001",
         "freeAgentMode": true,
@@ -19,10 +19,34 @@
       },
       "response": {
         "body": {
-          "commandId": "cmd_057",
+          "commandId": "cmd_061",
           "epoch": "00000000-0000-4000-8000-000000000001",
           "result": {
             "agentId": "durable_sleepy",
+            "orchestration": {
+              "access": "same",
+              "accessLevels": [
+                "same",
+                "standard",
+                "auto",
+                "bypass"
+              ],
+              "control": "ask-before-start",
+              "controls": [
+                "hands-off",
+                "ask-before-start",
+                "ask-everything"
+              ],
+              "maxHelpers": 4,
+              "maxHelpersCap": 20,
+              "orchestrate": false,
+              "sources": {
+                "access": "default",
+                "control": "persona",
+                "maxHelpers": "persona",
+                "orchestrate": "default"
+              }
+            },
             "projectId": "proj_app",
             "settings": {
               "clubhouseMode": {
@@ -86,7 +110,7 @@
       "name": "accepted clear",
       "request": {
         "agentId": "durable_sleepy",
-        "commandId": "cmd_058",
+        "commandId": "cmd_062",
         "emoji": null,
         "epoch": "00000000-0000-4000-8000-000000000001",
         "idleSleep": "inherit",
@@ -97,10 +121,34 @@
       },
       "response": {
         "body": {
-          "commandId": "cmd_058",
+          "commandId": "cmd_062",
           "epoch": "00000000-0000-4000-8000-000000000001",
           "result": {
             "agentId": "durable_sleepy",
+            "orchestration": {
+              "access": "same",
+              "accessLevels": [
+                "same",
+                "standard",
+                "auto",
+                "bypass"
+              ],
+              "control": "hands-off",
+              "controls": [
+                "hands-off",
+                "ask-before-start",
+                "ask-everything"
+              ],
+              "maxHelpers": 5,
+              "maxHelpersCap": 20,
+              "orchestrate": false,
+              "sources": {
+                "access": "default",
+                "control": "default",
+                "maxHelpers": "default",
+                "orchestrate": "default"
+              }
+            },
             "projectId": "proj_app",
             "settings": {
               "clubhouseMode": {
@@ -164,7 +212,7 @@
       "name": "accepted orchestrator",
       "request": {
         "agentId": "durable_sleepy",
-        "commandId": "cmd_059",
+        "commandId": "cmd_063",
         "epoch": "00000000-0000-4000-8000-000000000001",
         "orchestrator": "claude-code",
         "type": "agent.update",
@@ -172,10 +220,34 @@
       },
       "response": {
         "body": {
-          "commandId": "cmd_059",
+          "commandId": "cmd_063",
           "epoch": "00000000-0000-4000-8000-000000000001",
           "result": {
             "agentId": "durable_sleepy",
+            "orchestration": {
+              "access": "same",
+              "accessLevels": [
+                "same",
+                "standard",
+                "auto",
+                "bypass"
+              ],
+              "control": "hands-off",
+              "controls": [
+                "hands-off",
+                "ask-before-start",
+                "ask-everything"
+              ],
+              "maxHelpers": 5,
+              "maxHelpersCap": 20,
+              "orchestrate": false,
+              "sources": {
+                "access": "default",
+                "control": "default",
+                "maxHelpers": "default",
+                "orchestrate": "default"
+              }
+            },
             "projectId": "proj_app",
             "settings": {
               "clubhouseMode": {
@@ -239,7 +311,7 @@
       "name": "accepted while running (idleSleep)",
       "request": {
         "agentId": "durable_chat",
-        "commandId": "cmd_060",
+        "commandId": "cmd_064",
         "epoch": "00000000-0000-4000-8000-000000000001",
         "idleSleep": "never",
         "type": "agent.update",
@@ -247,10 +319,34 @@
       },
       "response": {
         "body": {
-          "commandId": "cmd_060",
+          "commandId": "cmd_064",
           "epoch": "00000000-0000-4000-8000-000000000001",
           "result": {
             "agentId": "durable_chat",
+            "orchestration": {
+              "access": "same",
+              "accessLevels": [
+                "same",
+                "standard",
+                "auto",
+                "bypass"
+              ],
+              "control": "hands-off",
+              "controls": [
+                "hands-off",
+                "ask-before-start",
+                "ask-everything"
+              ],
+              "maxHelpers": 3,
+              "maxHelpersCap": 20,
+              "orchestrate": true,
+              "sources": {
+                "access": "default",
+                "control": "default",
+                "maxHelpers": "agent",
+                "orchestrate": "agent"
+              }
+            },
             "projectId": "proj_app",
             "settings": {
               "clubhouseMode": {
@@ -314,7 +410,7 @@
       "name": "agent_not_found",
       "request": {
         "agentId": "missing",
-        "commandId": "cmd_061",
+        "commandId": "cmd_065",
         "epoch": "00000000-0000-4000-8000-000000000001",
         "idleSleep": 30,
         "type": "agent.update",
@@ -322,7 +418,7 @@
       },
       "response": {
         "body": {
-          "commandId": "cmd_061",
+          "commandId": "cmd_065",
           "epoch": "00000000-0000-4000-8000-000000000001",
           "error": {
             "code": "agent_not_found",
@@ -338,7 +434,7 @@
       "name": "agent_running",
       "request": {
         "agentId": "durable_chat",
-        "commandId": "cmd_062",
+        "commandId": "cmd_066",
         "epoch": "00000000-0000-4000-8000-000000000001",
         "name": "renamed",
         "type": "agent.update",
@@ -346,7 +442,7 @@
       },
       "response": {
         "body": {
-          "commandId": "cmd_062",
+          "commandId": "cmd_066",
           "epoch": "00000000-0000-4000-8000-000000000001",
           "error": {
             "code": "agent_running",
@@ -362,7 +458,7 @@
       "name": "agent_creating",
       "request": {
         "agentId": "durable_fresh",
-        "commandId": "cmd_063",
+        "commandId": "cmd_067",
         "epoch": "00000000-0000-4000-8000-000000000001",
         "name": "renamed",
         "type": "agent.update",
@@ -370,7 +466,7 @@
       },
       "response": {
         "body": {
-          "commandId": "cmd_063",
+          "commandId": "cmd_067",
           "epoch": "00000000-0000-4000-8000-000000000001",
           "error": {
             "code": "agent_creating",
@@ -386,7 +482,7 @@
       "name": "invalid_name",
       "request": {
         "agentId": "durable_sleepy",
-        "commandId": "cmd_064",
+        "commandId": "cmd_068",
         "epoch": "00000000-0000-4000-8000-000000000001",
         "name": "bad..name",
         "type": "agent.update",
@@ -394,7 +490,7 @@
       },
       "response": {
         "body": {
-          "commandId": "cmd_064",
+          "commandId": "cmd_068",
           "epoch": "00000000-0000-4000-8000-000000000001",
           "error": {
             "code": "invalid_name",
@@ -410,7 +506,7 @@
       "name": "orchestrator_unavailable",
       "request": {
         "agentId": "durable_sleepy",
-        "commandId": "cmd_065",
+        "commandId": "cmd_069",
         "epoch": "00000000-0000-4000-8000-000000000001",
         "orchestrator": "copilot-cli",
         "type": "agent.update",
@@ -418,7 +514,7 @@
       },
       "response": {
         "body": {
-          "commandId": "cmd_065",
+          "commandId": "cmd_069",
           "epoch": "00000000-0000-4000-8000-000000000001",
           "error": {
             "code": "orchestrator_unavailable",
@@ -434,7 +530,7 @@
       "name": "runtime_unavailable",
       "request": {
         "agentId": "durable_sleepy",
-        "commandId": "cmd_066",
+        "commandId": "cmd_070",
         "epoch": "00000000-0000-4000-8000-000000000001",
         "orchestrator": "codex-cli",
         "runtime": "chat",
@@ -443,7 +539,7 @@
       },
       "response": {
         "body": {
-          "commandId": "cmd_066",
+          "commandId": "cmd_070",
           "epoch": "00000000-0000-4000-8000-000000000001",
           "error": {
             "code": "runtime_unavailable",
@@ -459,7 +555,7 @@
       "name": "free_agent_mode_unavailable",
       "request": {
         "agentId": "durable_sleepy",
-        "commandId": "cmd_067",
+        "commandId": "cmd_071",
         "epoch": "00000000-0000-4000-8000-000000000001",
         "freeAgentMode": true,
         "orchestrator": "codex-cli",
@@ -468,7 +564,7 @@
       },
       "response": {
         "body": {
-          "commandId": "cmd_067",
+          "commandId": "cmd_071",
           "epoch": "00000000-0000-4000-8000-000000000001",
           "error": {
             "code": "free_agent_mode_unavailable",
@@ -485,14 +581,14 @@
       "request": {
         "agentId": "durable_sleepy",
         "clubhouseMode": true,
-        "commandId": "cmd_068",
+        "commandId": "cmd_072",
         "epoch": "00000000-0000-4000-8000-000000000001",
         "type": "agent.update",
         "version": 1
       },
       "response": {
         "body": {
-          "commandId": "cmd_068",
+          "commandId": "cmd_072",
           "epoch": "00000000-0000-4000-8000-000000000001",
           "error": {
             "code": "clubhouse_mode_unavailable",
@@ -508,7 +604,7 @@
       "name": "unknown_persona",
       "request": {
         "agentId": "durable_sleepy",
-        "commandId": "cmd_069",
+        "commandId": "cmd_073",
         "epoch": "00000000-0000-4000-8000-000000000001",
         "persona": "pirate",
         "type": "agent.update",
@@ -516,7 +612,7 @@
       },
       "response": {
         "body": {
-          "commandId": "cmd_069",
+          "commandId": "cmd_073",
           "epoch": "00000000-0000-4000-8000-000000000001",
           "error": {
             "code": "unknown_persona",
@@ -533,14 +629,14 @@
       "request": {
         "agentId": "durable_sleepy",
         "color": "chartreuse",
-        "commandId": "cmd_070",
+        "commandId": "cmd_074",
         "epoch": "00000000-0000-4000-8000-000000000001",
         "type": "agent.update",
         "version": 1
       },
       "response": {
         "body": {
-          "commandId": "cmd_070",
+          "commandId": "cmd_074",
           "epoch": "00000000-0000-4000-8000-000000000001",
           "error": {
             "code": "invalid_color",
@@ -556,7 +652,7 @@
       "name": "invalid_command (no settings)",
       "request": {
         "agentId": "durable_sleepy",
-        "commandId": "cmd_071",
+        "commandId": "cmd_075",
         "epoch": "00000000-0000-4000-8000-000000000001",
         "type": "agent.update",
         "version": 1
@@ -578,9 +674,439 @@
       "name": "invalid_command (unknown field)",
       "request": {
         "agentId": "durable_sleepy",
-        "commandId": "cmd_072",
+        "commandId": "cmd_076",
         "epoch": "00000000-0000-4000-8000-000000000001",
         "instructions": "be nice",
+        "type": "agent.update",
+        "version": 1
+      },
+      "response": {
+        "body": {
+          "epoch": "00000000-0000-4000-8000-000000000001",
+          "error": {
+            "code": "invalid_command",
+            "message": "invalid_command"
+          },
+          "status": "rejected",
+          "version": 1
+        },
+        "status": 400
+      }
+    },
+    {
+      "name": "accepted orchestration",
+      "request": {
+        "agentId": "durable_chat",
+        "commandId": "cmd_077",
+        "epoch": "00000000-0000-4000-8000-000000000001",
+        "orchestration": {
+          "access": "auto",
+          "control": "ask-everything",
+          "maxHelpers": 20
+        },
+        "type": "agent.update",
+        "version": 1
+      },
+      "response": {
+        "body": {
+          "commandId": "cmd_077",
+          "epoch": "00000000-0000-4000-8000-000000000001",
+          "result": {
+            "agentId": "durable_chat",
+            "orchestration": {
+              "access": "auto",
+              "accessLevels": [
+                "same",
+                "standard",
+                "auto",
+                "bypass"
+              ],
+              "control": "ask-everything",
+              "controls": [
+                "hands-off",
+                "ask-before-start",
+                "ask-everything"
+              ],
+              "maxHelpers": 20,
+              "maxHelpersCap": 20,
+              "orchestrate": true,
+              "sources": {
+                "access": "agent",
+                "control": "agent",
+                "maxHelpers": "agent",
+                "orchestrate": "agent"
+              }
+            },
+            "projectId": "proj_app",
+            "settings": {
+              "clubhouseMode": {
+                "editable": "never",
+                "projectEnabled": false,
+                "value": null
+              },
+              "color": {
+                "editable": "sleeping",
+                "value": "indigo"
+              },
+              "emoji": {
+                "editable": "sleeping",
+                "value": "🦊"
+              },
+              "freeAgentMode": {
+                "editable": "sleeping",
+                "value": false
+              },
+              "hasImageIcon": true,
+              "idleSleep": {
+                "applies": true,
+                "editable": "always",
+                "minutes": 0,
+                "source": "agent",
+                "value": "never"
+              },
+              "model": {
+                "editable": "sleeping",
+                "value": "opus"
+              },
+              "name": {
+                "editable": "sleeping",
+                "value": "planner"
+              },
+              "orchestrator": {
+                "editable": "sleeping",
+                "resolved": "claude-code",
+                "value": "claude-code"
+              },
+              "persona": {
+                "editable": "sleeping",
+                "value": null
+              },
+              "runtime": {
+                "editable": "sleeping",
+                "resolved": "chat",
+                "value": "default"
+              }
+            },
+            "sleeping": false,
+            "state": "running"
+          },
+          "status": "completed",
+          "version": 1
+        },
+        "status": 200
+      }
+    },
+    {
+      "name": "accepted orchestration clear field",
+      "request": {
+        "agentId": "durable_chat",
+        "commandId": "cmd_078",
+        "epoch": "00000000-0000-4000-8000-000000000001",
+        "orchestration": {
+          "maxHelpers": null
+        },
+        "type": "agent.update",
+        "version": 1
+      },
+      "response": {
+        "body": {
+          "commandId": "cmd_078",
+          "epoch": "00000000-0000-4000-8000-000000000001",
+          "result": {
+            "agentId": "durable_chat",
+            "orchestration": {
+              "access": "auto",
+              "accessLevels": [
+                "same",
+                "standard",
+                "auto",
+                "bypass"
+              ],
+              "control": "ask-everything",
+              "controls": [
+                "hands-off",
+                "ask-before-start",
+                "ask-everything"
+              ],
+              "maxHelpers": 5,
+              "maxHelpersCap": 20,
+              "orchestrate": true,
+              "sources": {
+                "access": "agent",
+                "control": "agent",
+                "maxHelpers": "default",
+                "orchestrate": "agent"
+              }
+            },
+            "projectId": "proj_app",
+            "settings": {
+              "clubhouseMode": {
+                "editable": "never",
+                "projectEnabled": false,
+                "value": null
+              },
+              "color": {
+                "editable": "sleeping",
+                "value": "indigo"
+              },
+              "emoji": {
+                "editable": "sleeping",
+                "value": "🦊"
+              },
+              "freeAgentMode": {
+                "editable": "sleeping",
+                "value": false
+              },
+              "hasImageIcon": true,
+              "idleSleep": {
+                "applies": true,
+                "editable": "always",
+                "minutes": 0,
+                "source": "agent",
+                "value": "never"
+              },
+              "model": {
+                "editable": "sleeping",
+                "value": "opus"
+              },
+              "name": {
+                "editable": "sleeping",
+                "value": "planner"
+              },
+              "orchestrator": {
+                "editable": "sleeping",
+                "resolved": "claude-code",
+                "value": "claude-code"
+              },
+              "persona": {
+                "editable": "sleeping",
+                "value": null
+              },
+              "runtime": {
+                "editable": "sleeping",
+                "resolved": "chat",
+                "value": "default"
+              }
+            },
+            "sleeping": false,
+            "state": "running"
+          },
+          "status": "completed",
+          "version": 1
+        },
+        "status": 200
+      }
+    },
+    {
+      "name": "accepted orchestration clear all",
+      "request": {
+        "agentId": "durable_sleepy",
+        "commandId": "cmd_079",
+        "epoch": "00000000-0000-4000-8000-000000000001",
+        "orchestration": null,
+        "type": "agent.update",
+        "version": 1
+      },
+      "response": {
+        "body": {
+          "commandId": "cmd_079",
+          "epoch": "00000000-0000-4000-8000-000000000001",
+          "result": {
+            "agentId": "durable_sleepy",
+            "orchestration": {
+              "access": "same",
+              "accessLevels": [
+                "same",
+                "standard",
+                "auto",
+                "bypass"
+              ],
+              "control": "hands-off",
+              "controls": [
+                "hands-off",
+                "ask-before-start",
+                "ask-everything"
+              ],
+              "maxHelpers": 5,
+              "maxHelpersCap": 20,
+              "orchestrate": false,
+              "sources": {
+                "access": "default",
+                "control": "default",
+                "maxHelpers": "default",
+                "orchestrate": "default"
+              }
+            },
+            "projectId": "proj_app",
+            "settings": {
+              "clubhouseMode": {
+                "editable": "never",
+                "projectEnabled": false,
+                "value": null
+              },
+              "color": {
+                "editable": "sleeping",
+                "value": "rose"
+              },
+              "emoji": {
+                "editable": "sleeping",
+                "value": null
+              },
+              "freeAgentMode": {
+                "editable": "sleeping",
+                "value": true
+              },
+              "hasImageIcon": false,
+              "idleSleep": {
+                "applies": true,
+                "editable": "always",
+                "minutes": 30,
+                "source": "app",
+                "value": "inherit"
+              },
+              "model": {
+                "editable": "sleeping",
+                "value": "sonnet"
+              },
+              "name": {
+                "editable": "sleeping",
+                "value": "bright-otter"
+              },
+              "orchestrator": {
+                "editable": "sleeping",
+                "resolved": "claude-code",
+                "value": "claude-code"
+              },
+              "persona": {
+                "editable": "sleeping",
+                "value": ""
+              },
+              "runtime": {
+                "editable": "sleeping",
+                "resolved": "chat",
+                "value": "default"
+              }
+            },
+            "sleeping": true,
+            "state": "sleeping"
+          },
+          "status": "completed",
+          "version": 1
+        },
+        "status": 200
+      }
+    },
+    {
+      "name": "invalid_orchestration (maxHelpers above the cap)",
+      "request": {
+        "agentId": "durable_chat",
+        "commandId": "cmd_080",
+        "epoch": "00000000-0000-4000-8000-000000000001",
+        "orchestration": {
+          "maxHelpers": 21
+        },
+        "type": "agent.update",
+        "version": 1
+      },
+      "response": {
+        "body": {
+          "commandId": "cmd_080",
+          "epoch": "00000000-0000-4000-8000-000000000001",
+          "error": {
+            "code": "invalid_orchestration",
+            "message": "maxHelpers must be a whole number from 1 to 20"
+          },
+          "status": "rejected",
+          "version": 1
+        },
+        "status": 400
+      }
+    },
+    {
+      "name": "invalid_orchestration (control)",
+      "request": {
+        "agentId": "durable_chat",
+        "commandId": "cmd_081",
+        "epoch": "00000000-0000-4000-8000-000000000001",
+        "orchestration": {
+          "control": "yolo"
+        },
+        "type": "agent.update",
+        "version": 1
+      },
+      "response": {
+        "body": {
+          "commandId": "cmd_081",
+          "epoch": "00000000-0000-4000-8000-000000000001",
+          "error": {
+            "code": "invalid_orchestration",
+            "message": "control must be one of hands-off, ask-before-start, ask-everything"
+          },
+          "status": "rejected",
+          "version": 1
+        },
+        "status": 400
+      }
+    },
+    {
+      "name": "invalid_orchestration (unknown field)",
+      "request": {
+        "agentId": "durable_chat",
+        "commandId": "cmd_082",
+        "epoch": "00000000-0000-4000-8000-000000000001",
+        "orchestration": {
+          "helpers": 2
+        },
+        "type": "agent.update",
+        "version": 1
+      },
+      "response": {
+        "body": {
+          "commandId": "cmd_082",
+          "epoch": "00000000-0000-4000-8000-000000000001",
+          "error": {
+            "code": "invalid_orchestration",
+            "message": "Unknown orchestration policy field: helpers"
+          },
+          "status": "rejected",
+          "version": 1
+        },
+        "status": 400
+      }
+    },
+    {
+      "name": "orchestration_has_helpers",
+      "request": {
+        "agentId": "durable_chat",
+        "commandId": "cmd_083",
+        "epoch": "00000000-0000-4000-8000-000000000001",
+        "orchestration": {
+          "orchestrate": false
+        },
+        "type": "agent.update",
+        "version": 1
+      },
+      "response": {
+        "body": {
+          "commandId": "cmd_083",
+          "epoch": "00000000-0000-4000-8000-000000000001",
+          "error": {
+            "code": "orchestration_has_helpers",
+            "message": "planner has 1 helper(s). Choose whether to keep or dispose them first."
+          },
+          "status": "rejected",
+          "version": 1
+        },
+        "status": 409
+      }
+    },
+    {
+      "name": "invalid_command (orchestration not an object)",
+      "request": {
+        "agentId": "durable_chat",
+        "commandId": "cmd_084",
+        "epoch": "00000000-0000-4000-8000-000000000001",
+        "orchestration": "on",
         "type": "agent.update",
         "version": 1
       },

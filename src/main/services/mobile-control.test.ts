@@ -253,6 +253,16 @@ describe('agent.create and agent.update parsing (#2451, #2452)', () => {
       expect(code(update(bad))).toBe('invalid_command');
     }
   });
+  it('takes an orchestration object on both commands, and null only on update (#2228)', () => {
+    expect(code(create({ orchestration: { orchestrate: true, maxHelpers: 3 } }))).toBe('ok');
+    expect(code(update({ orchestration: { control: null } }))).toBe('ok');
+    expect(code(update({ orchestration: null }))).toBe('ok');
+    expect(code(create({ orchestration: null }))).toBe('invalid_command');
+    for (const bad of ['on', true, [], 3]) {
+      expect(code(create({ orchestration: bad }))).toBe('invalid_command');
+      expect(code(update({ orchestration: bad }))).toBe('invalid_command');
+    }
+  });
   it('fingerprints every create field, so a retry with any change conflicts', async () => {
     const service = new MobileCommandService(); const run = vi.fn().mockResolvedValue({ agentId: 'durable_1' });
     const first = { ...create(), epoch: service.epoch, mcpIds: ['ado'], branchFrom: 'main' };

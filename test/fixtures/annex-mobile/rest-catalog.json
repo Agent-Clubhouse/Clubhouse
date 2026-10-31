@@ -24,6 +24,30 @@
           "lastActivityAt": 1790845200000,
           "model": "opus",
           "name": "planner",
+          "orchestration": {
+            "access": "same",
+            "accessLevels": [
+              "same",
+              "standard",
+              "auto",
+              "bypass"
+            ],
+            "control": "hands-off",
+            "controls": [
+              "hands-off",
+              "ask-before-start",
+              "ask-everything"
+            ],
+            "maxHelpers": 3,
+            "maxHelpersCap": 20,
+            "orchestrate": true,
+            "sources": {
+              "access": "default",
+              "control": "default",
+              "maxHelpers": "agent",
+              "orchestrate": "agent"
+            }
+          },
           "orchestrator": "claude-code",
           "projectId": "proj_app",
           "status": "running"
@@ -46,6 +70,30 @@
           "lastActivityAt": 1790931600000,
           "model": null,
           "name": "reviewer",
+          "orchestration": {
+            "access": "same",
+            "accessLevels": [
+              "same",
+              "standard",
+              "auto",
+              "bypass"
+            ],
+            "control": "hands-off",
+            "controls": [
+              "hands-off",
+              "ask-before-start",
+              "ask-everything"
+            ],
+            "maxHelpers": 5,
+            "maxHelpersCap": 20,
+            "orchestrate": false,
+            "sources": {
+              "access": "default",
+              "control": "default",
+              "maxHelpers": "default",
+              "orchestrate": "default"
+            }
+          },
           "orchestrator": "codex-cli",
           "projectId": "proj_app",
           "status": "running"
@@ -64,6 +112,30 @@
           "lastActivityAt": 1791018000000,
           "model": null,
           "name": "brave-otter",
+          "orchestration": {
+            "access": "same",
+            "accessLevels": [
+              "same",
+              "standard",
+              "auto",
+              "bypass"
+            ],
+            "control": "hands-off",
+            "controls": [
+              "hands-off",
+              "ask-before-start",
+              "ask-everything"
+            ],
+            "maxHelpers": 5,
+            "maxHelpersCap": 20,
+            "orchestrate": false,
+            "sources": {
+              "access": "default",
+              "control": "default",
+              "maxHelpers": "default",
+              "orchestrate": "default"
+            }
+          },
           "orchestrator": null,
           "projectId": "proj_app",
           "status": "sleeping"
@@ -82,6 +154,30 @@
           "lastActivityAt": 1791104400000,
           "model": null,
           "name": "shell-runner",
+          "orchestration": {
+            "access": "same",
+            "accessLevels": [
+              "same",
+              "standard",
+              "auto",
+              "bypass"
+            ],
+            "control": "hands-off",
+            "controls": [
+              "hands-off",
+              "ask-before-start",
+              "ask-everything"
+            ],
+            "maxHelpers": 5,
+            "maxHelpersCap": 20,
+            "orchestrate": false,
+            "sources": {
+              "access": "default",
+              "control": "default",
+              "maxHelpers": "default",
+              "orchestrate": "default"
+            }
+          },
           "orchestrator": "claude-code",
           "projectId": "proj_app",
           "status": "running"
@@ -100,6 +196,30 @@
           "lastActivityAt": 1791190800000,
           "model": null,
           "name": "fresh",
+          "orchestration": {
+            "access": "same",
+            "accessLevels": [
+              "same",
+              "standard",
+              "auto",
+              "bypass"
+            ],
+            "control": "hands-off",
+            "controls": [
+              "hands-off",
+              "ask-before-start",
+              "ask-everything"
+            ],
+            "maxHelpers": 5,
+            "maxHelpersCap": 20,
+            "orchestrate": false,
+            "sources": {
+              "access": "default",
+              "control": "default",
+              "maxHelpers": "default",
+              "orchestrate": "default"
+            }
+          },
           "orchestrator": null,
           "projectId": "proj_app",
           "status": "sleeping"
@@ -118,6 +238,30 @@
           "lastActivityAt": 1791277200000,
           "model": null,
           "name": "Docs",
+          "orchestration": {
+            "access": "same",
+            "accessLevels": [
+              "same",
+              "standard",
+              "auto",
+              "bypass"
+            ],
+            "control": "hands-off",
+            "controls": [
+              "hands-off",
+              "ask-before-start",
+              "ask-everything"
+            ],
+            "maxHelpers": 5,
+            "maxHelpersCap": 20,
+            "orchestrate": false,
+            "sources": {
+              "access": "default",
+              "control": "default",
+              "maxHelpers": "default",
+              "orchestrate": "default"
+            }
+          },
           "orchestrator": null,
           "projectId": "proj_app",
           "status": "sleeping"

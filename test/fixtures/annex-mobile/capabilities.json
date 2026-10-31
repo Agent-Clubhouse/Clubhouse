@@ -75,6 +75,9 @@
         "scope": "peer-and-epoch",
         "ttlMs": 3600000
       },
+      "orchestration": {
+        "version": 1
+      },
       "pairing": {
         "sessionRevokePath": "/api/v1/mobile/pairing"
       },

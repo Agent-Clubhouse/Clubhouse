@@ -4,7 +4,7 @@
       "name": "accepted",
       "request": {
         "agentId": "quick_done",
-        "commandId": "cmd_081",
+        "commandId": "cmd_093",
         "epoch": "00000000-0000-4000-8000-000000000001",
         "projectId": "proj_app",
         "type": "quick.dismiss",
@@ -12,7 +12,7 @@
       },
       "response": {
         "body": {
-          "commandId": "cmd_081",
+          "commandId": "cmd_093",
           "epoch": "00000000-0000-4000-8000-000000000001",
           "result": {
             "finishedQuickAgents": [
@@ -38,7 +38,7 @@
       "name": "accepted not listed",
       "request": {
         "agentId": "quick_unknown",
-        "commandId": "cmd_082",
+        "commandId": "cmd_094",
         "epoch": "00000000-0000-4000-8000-000000000001",
         "projectId": "proj_app",
         "type": "quick.dismiss",
@@ -46,7 +46,7 @@
       },
       "response": {
         "body": {
-          "commandId": "cmd_082",
+          "commandId": "cmd_094",
           "epoch": "00000000-0000-4000-8000-000000000001",
           "result": {
             "finishedQuickAgents": [
@@ -72,7 +72,7 @@
       "name": "project_not_found",
       "request": {
         "agentId": "quick_done",
-        "commandId": "cmd_083",
+        "commandId": "cmd_095",
         "epoch": "00000000-0000-4000-8000-000000000001",
         "projectId": "missing",
         "type": "quick.dismiss",
@@ -80,7 +80,7 @@
       },
       "response": {
         "body": {
-          "commandId": "cmd_083",
+          "commandId": "cmd_095",
           "epoch": "00000000-0000-4000-8000-000000000001",
           "error": {
             "code": "project_not_found",
@@ -96,7 +96,7 @@
       "name": "finished_quick_agents_unavailable",
       "request": {
         "agentId": "quick_done",
-        "commandId": "cmd_086",
+        "commandId": "cmd_098",
         "epoch": "00000000-0000-4000-8000-000000000001",
         "projectId": "proj_app",
         "type": "quick.dismiss",
@@ -104,7 +104,7 @@
       },
       "response": {
         "body": {
-          "commandId": "cmd_086",
+          "commandId": "cmd_098",
           "epoch": "00000000-0000-4000-8000-000000000001",
           "error": {
             "code": "finished_quick_agents_unavailable",

@@ -16,10 +16,10 @@ New `POST https://host:mainPort/pair` uses existing `{pin, publicKey, alias, ico
 Authenticated `GET /api/v1/mobile/capabilities` returns:
 
 ```json
-{"version":1,"epoch":"uuid","controlAuth":"mtls-pinned-client","controlAvailable":true,"commands":["chat.send","chat.interrupt","chat.permission","chat.question","chat.queue.remove","agent.start","agent.stop","agent.spawn","agent.create","agent.update","project.setPinned","project.setInactive","helper.approve","helper.decline","chat.setModel","chat.setLevel","quick.dismiss","quick.clear"],"pairing":{"sessionRevokePath":"/api/v1/mobile/pairing"},"attachments":{"version":1,"imageTypes":["image/png","image/jpeg","image/gif","image/webp"],"maxImageBytes":3932160,"maxCount":10},"events":{"transport":"annex-websocket","replayRequest":"mobile:replay","queueState":"queue_state"},"createOptions":{"version":1,"path":"/api/v1/mobile/projects/{projectId}/create-options"},"agentSettings":{"version":1,"path":"/api/v1/mobile/agents/{agentId}/settings"},"helperRequests":{"version":1,"snapshotField":"helperRequests","commands":["helper.approve","helper.decline"]},"chatControls":{"version":1},"slashCommands":{"version":1,"snapshotField":"slashCommands","event":"commands_available","maxCommands":200},"permissions":{"version":1,"persistentApprovals":true,"freeAgentMode":true},"idempotency":{"scope":"peer-and-epoch","maxEntries":2048,"ttlMs":3600000},"projectState":{"version":1},"finishedQuickAgents":{"version":1},"terminal":{"version":1,"projectShell":true,"agentShell":true,"agentAttach":true,"maxShellsPerConnection":8,"maxInputLength":65536}}
+{"version":1,"epoch":"uuid","controlAuth":"mtls-pinned-client","controlAvailable":true,"commands":["chat.send","chat.interrupt","chat.permission","chat.question","chat.queue.remove","agent.start","agent.stop","agent.spawn","agent.create","agent.update","project.setPinned","project.setInactive","helper.approve","helper.decline","chat.setModel","chat.setLevel","quick.dismiss","quick.clear"],"pairing":{"sessionRevokePath":"/api/v1/mobile/pairing"},"attachments":{"version":1,"imageTypes":["image/png","image/jpeg","image/gif","image/webp"],"maxImageBytes":3932160,"maxCount":10},"events":{"transport":"annex-websocket","replayRequest":"mobile:replay","queueState":"queue_state"},"createOptions":{"version":1,"path":"/api/v1/mobile/projects/{projectId}/create-options"},"agentSettings":{"version":1,"path":"/api/v1/mobile/agents/{agentId}/settings"},"helperRequests":{"version":1,"snapshotField":"helperRequests","commands":["helper.approve","helper.decline"]},"chatControls":{"version":1},"slashCommands":{"version":1,"snapshotField":"slashCommands","event":"commands_available","maxCommands":200},"permissions":{"version":1,"persistentApprovals":true,"freeAgentMode":true},"orchestration":{"version":1},"idempotency":{"scope":"peer-and-epoch","maxEntries":2048,"ttlMs":3600000},"projectState":{"version":1},"finishedQuickAgents":{"version":1},"terminal":{"version":1,"projectShell":true,"agentShell":true,"agentAttach":true,"maxShellsPerConnection":8,"maxInputLength":65536}}
 ```
 
-A 404 means unsupported: do not send mobile commands. Gate durable-agent creation on `commands` including `agent.create` and `createOptions.version >= 1`, settings on `agent.update` and `agentSettings.version >= 1`, and helper requests on `helperRequests.version >= 1`; older desktops offer quick agents (`agent.spawn`) only. Gate project pins and inactive marks on `projectState.version >= 1` (`projectState:{version:1}`); without it, keep them on the phone. See [Project state](#project-state). Gate the finished quick agents list ("Finished, waiting on you") on `finishedQuickAgents.version >= 1`; without it, keep the phone's own list of quick agents it saw exit. See [Finished quick agents](#finished-quick-agents). Gate the composer's model, effort and level controls on `chat.setModel` / `chat.setLevel` and `chatControls.version >= 1` ([Chat controls](#chat-controls)). Gate terminals on `terminal.version >= 1` ([Terminals](#terminals)). Gate the composer's `/` menu on `slashCommands.version >= 1` ([Slash commands](#slash-commands)). A new epoch invalidates command retries and replay cursors. A paired phone is a full controller, so it may open a shell on the desktop; there are still no arbitrary filesystem paths (a shell's directory comes from a registered project or agent), credentials, or gateway provisioning commands.
+A 404 means unsupported: do not send mobile commands. Gate durable-agent creation on `commands` including `agent.create` and `createOptions.version >= 1`, settings on `agent.update` and `agentSettings.version >= 1`, and helper requests on `helperRequests.version >= 1`; older desktops offer quick agents (`agent.spawn`) only. Gate project pins and inactive marks on `projectState.version >= 1` (`projectState:{version:1}`); without it, keep them on the phone. See [Project state](#project-state). Gate the finished quick agents list ("Finished, waiting on you") on `finishedQuickAgents.version >= 1`; without it, keep the phone's own list of quick agents it saw exit. See [Finished quick agents](#finished-quick-agents). Gate the composer's model, effort and level controls on `chat.setModel` / `chat.setLevel` and `chatControls.version >= 1` ([Chat controls](#chat-controls)). Gate terminals on `terminal.version >= 1` ([Terminals](#terminals)). Gate the composer's `/` menu on `slashCommands.version >= 1` ([Slash commands](#slash-commands)). Gate an agent's orchestration policy on `orchestration.version >= 1` ([Orchestration](#orchestration)). A new epoch invalidates command retries and replay cursors. A paired phone is a full controller, so it may open a shell on the desktop; there are still no arbitrary filesystem paths (a shell's directory comes from a registered project or agent), credentials, or gateway provisioning commands.
 
 ## Commands
 
@@ -35,8 +35,8 @@ A 404 means unsupported: do not send mobile commands. Gate durable-agent creatio
 - `agent.start`: `{agentId, message?, resume?}`; wake durable agent using desktop's configured runtime and permissions.
 - `agent.stop`: `{agentId}`; stops agent process, including a start in progress.
 - `agent.spawn`: `{projectId, prompt, model?, orchestrator?}`; quick agent under registered project with ask-first permission mode.
-- `agent.create`: `{projectId, name, color, orchestrator?, model?, persona?, freeAgentMode?, useWorktree?, mcpIds?, branchName?, branchFrom?, folderName?}`; durable agent, as the desktop New agent page makes one. See [Durable agents](#durable-agents).
-- `agent.update`: `{agentId, name?, color?, emoji?, orchestrator?, model?, runtime?, persona?, clubhouseMode?, freeAgentMode?, idleSleep?}`; at least one setting. See [Durable agents](#durable-agents).
+- `agent.create`: `{projectId, name, color, orchestrator?, model?, persona?, freeAgentMode?, useWorktree?, mcpIds?, branchName?, branchFrom?, folderName?, orchestration?}`; durable agent, as the desktop New agent page makes one. See [Durable agents](#durable-agents).
+- `agent.update`: `{agentId, name?, color?, emoji?, orchestrator?, model?, runtime?, persona?, clubhouseMode?, freeAgentMode?, idleSleep?, orchestration?}`; at least one setting. See [Durable agents](#durable-agents).
 - `project.setPinned`: `{projectId, pinned}`; pin or unpin a project in the desktop sidebar. See [Project state](#project-state).
 - `project.setInactive`: `{projectId, inactive}`; mark a project inactive (idle until marked active) or active. See [Project state](#project-state).
 - `quick.dismiss`: `{projectId, agentId}`; dismiss one finished quick agent. See [Finished quick agents](#finished-quick-agents).
@@ -250,6 +250,7 @@ Validation matches the desktop. All of it runs before anything is created:
 - **mcpIds**: unique catalog ids (400 `unknown_mcp`). Omitted means the project defaults when the agent starts.
 - **useWorktree**: defaults to `isGitRepo`. `true` outside a git repo is 409 `not_git_repo`.
 - **folderName, branchName, branchFrom**: need a worktree (400 `worktree_options_require_worktree`). They are git-name checked (400 `invalid_folder_name` / `invalid_branch_name`).
+- **orchestration**: the policy fields to set, without nulls ([Orchestration](#orchestration)); 400 `invalid_orchestration` before anything is created.
 
 A conflict found at creation, such as a folder or branch already in use or a missing base branch, is 409 `create_refused` with the reason in `message`.
 
@@ -280,6 +281,7 @@ We chose a route rather than snapshot fields. The settings need disk and CLI rea
   "clubhouseMode":{"value":true|false|null,"projectEnabled":true,"editable":"sleeping"|"never"},
   "freeAgentMode":{"value":false,"editable":"sleeping"|"never"},
   "idleSleep":{"value":"inherit"|"never"|30,"minutes":30,"source":"agent"|"app","applies":true,"editable":"always"}},
+ "orchestration":{…},
  "options":{"orchestrators":[…],"personas":[…],"colors":[…],"idleSleep":{"minutes":[15,30,60,240],"appMinutes":30}},
  "details":{"branch":"brave-otter/standby","worktreePath":"/work/app/.clubhouse/agents/brave-otter","worktree":".clubhouse/agents/brave-otter",
   "mcpIds":["github"],
@@ -323,6 +325,7 @@ Send only what changed:
 - **clubhouseMode**: boolean. Needs a Clubhouse mode project (409 `clubhouse_mode_unavailable`).
 - **freeAgentMode**: boolean. `true` needs an orchestrator with permission support (409 `free_agent_mode_unavailable`).
 - **idleSleep**: `"inherit"`, `"never"`, or one of `options.idleSleep.minutes`.
+- **orchestration**: a partial policy, or `null` to clear every override ([Orchestration](#orchestration)). It changes at any time, also while the agent runs, and is written first: a refused policy change saves nothing else.
 
 Rejections:
 
@@ -331,6 +334,32 @@ Rejections:
 - Instructions, skills, agent definitions, MCP JSON, permission rules, the launch wrapper and helpers are not accepted. Any unknown field is 400 `invalid_command`.
 
 The receipt `result` is the settings payload above, without `version`, `epoch` and `options`. The desktop windows and other clients are told about the change through `snapshot:refresh`.
+
+## Orchestration
+
+An agent's orchestration policy (#2228), as the desktop's Orchestrate card and the agent's Helpers settings edit it. Gated on `orchestration: {version: 1}` in capabilities.
+
+Every durable agent in the snapshot (`agents[projectId][]`), `GET /api/v1/projects/:id/agents` and the [Settings](#settings) payload (so the `agent.update` result) has:
+
+```json
+"orchestration":{"orchestrate":false,"access":"same","control":"hands-off","maxHelpers":5,
+ "sources":{"orchestrate":"default","access":"default","control":"persona","maxHelpers":"agent"},
+ "maxHelpersCap":20,"controls":["hands-off","ask-before-start","ask-everything"],"accessLevels":["same","standard","auto","bypass"]}
+```
+
+- **orchestrate**: "Let this agent orchestrate".
+- **access**: "Helpers get": one of `accessLevels`. `same` follows the orchestrator; a fixed level is a ceiling request, and a helper never gets more than its orchestrator runs with.
+- **control**: one of `controls` (hands-off, ask before starting helpers, ask about everything).
+- **maxHelpers**: "Helpers at once", a whole number from 1 to `maxHelpersCap` (the app-wide helper cap, at most 100).
+- **sources**: where each field comes from. `agent` is an override on the agent, which `null` clears; `persona` is the persona's front-matter; `default` is the built-in default.
+
+`agent.update` takes `orchestration` as a partial object: `{"orchestrate"?: bool|null, "access"?: string|null, "control"?: string|null, "maxHelpers"?: int|null}`. Each key sets that field; `null` clears it back to the persona or default. `"orchestration": null` clears all four. `agent.create` takes the same object without nulls. Writes go through the desktop's own policy service, so the desktop UI updates live.
+
+Rejections:
+
+- 400 `invalid_orchestration`, with the reason in `message`: an unknown field, a bad `access` or `control`, `maxHelpers` outside 1 to `maxHelpersCap`, an empty object, or a null on create.
+- 409 `orchestration_has_helpers`: turning `orchestrate` off while the agent has live helpers. Nothing changes; the desktop asks whether to keep or dispose them.
+- A non-object `orchestration` (or `null` on create) is 400 `invalid_command`.
 
 ## Project state
 

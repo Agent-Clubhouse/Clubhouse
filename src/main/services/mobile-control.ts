@@ -21,8 +21,8 @@ export const MOBILE_COMMAND_FIELDS: Readonly<Record<MobileCommand['type'], reado
   'agent.start': ['agentId', 'message', 'resume'],
   'agent.stop': ['agentId'],
   'agent.spawn': ['projectId', 'prompt', 'model', 'orchestrator'],
-  'agent.create': ['projectId', 'name', 'color', 'orchestrator', 'model', 'persona', 'freeAgentMode', 'useWorktree', 'mcpIds', 'branchName', 'branchFrom', 'folderName'],
-  'agent.update': ['agentId', 'name', 'color', 'emoji', 'orchestrator', 'model', 'runtime', 'persona', 'clubhouseMode', 'freeAgentMode', 'idleSleep'],
+  'agent.create': ['projectId', 'name', 'color', 'orchestrator', 'model', 'persona', 'freeAgentMode', 'useWorktree', 'mcpIds', 'branchName', 'branchFrom', 'folderName', 'orchestration'],
+  'agent.update': ['agentId', 'name', 'color', 'emoji', 'orchestrator', 'model', 'runtime', 'persona', 'clubhouseMode', 'freeAgentMode', 'idleSleep', 'orchestration'],
   'project.setPinned': ['projectId', 'pinned'],
   'project.setInactive': ['projectId', 'inactive'],
   'helper.approve': ['requestId', 'force'],
@@ -32,13 +32,13 @@ export const MOBILE_COMMAND_FIELDS: Readonly<Record<MobileCommand['type'], reado
 };
 /** Fields a command may leave out. Every agent.update setting is optional, but it needs at least one. */
 const OPTIONAL = new Set(['delivery', 'message', 'resume', 'model', 'orchestrator', 'attachmentIds', 'force', 'effort']);
-const CREATE_OPTIONAL = new Set(['orchestrator', 'model', 'persona', 'freeAgentMode', 'useWorktree', 'mcpIds', 'branchName', 'branchFrom', 'folderName']);
+const CREATE_OPTIONAL = new Set(['orchestrator', 'model', 'persona', 'freeAgentMode', 'useWorktree', 'mcpIds', 'branchName', 'branchFrom', 'folderName', 'orchestration']);
 export const isOptionalCommandField = (type: MobileCommand['type'], key: string): boolean =>
   type === 'agent.update' ? key !== 'agentId' : type === 'agent.create' ? CREATE_OPTIONAL.has(key)
     : type === 'chat.setModel' && key === 'model' ? false : OPTIONAL.has(key);
 const BOOLEAN_FIELDS = new Set(['resume', 'useWorktree', 'clubhouseMode', 'pinned', 'inactive', 'force', 'freeAgentMode']);
 /** Fields agent.update clears with null. */
-export const NULLABLE_ON_UPDATE = new Set(['emoji', 'persona']);
+export const NULLABLE_ON_UPDATE = new Set(['emoji', 'persona', 'orchestration']);
 const record = (v: unknown): v is Record<string, unknown> => !!v && typeof v === 'object' && !Array.isArray(v);
 const text = (v: unknown, max = 256): v is string => typeof v === 'string' && v.length > 0 && v.length <= max;
 const idleSleep = (v: unknown): boolean => v === 'inherit' || v === 'never' || (AGENT_IDLE_SLEEP_MINUTES as readonly unknown[]).includes(v);
@@ -63,6 +63,9 @@ export function parseMobileCommand(value: unknown): MobileCommand {
       if (!Array.isArray(v) || v.length > 100 || v.some((id) => !text(id, 128)) || new Set(v).size !== v.length) throw new MobileControlError('invalid_command', 400);
     } else if (key === 'answers') {
       if (!record(v) || Object.keys(v).length > 100 || Object.entries(v).some(([k, a]) => !text(k) || !(text(a, 65536) || (Array.isArray(a) && a.length <= 100 && a.every((x) => text(x, 65536)))))) throw new MobileControlError('invalid_command', 400);
+    } else if (key === 'orchestration') {
+      // The fields are checked against the policy rules (and the app-wide cap) when the command runs, so errors can say why.
+      if (!record(v) || Object.keys(v).length > 16) throw new MobileControlError('invalid_command', 400);
     } else if (key === 'idleSleep') { if (!idleSleep(v)) throw new MobileControlError('invalid_command', 400); }
     else if (key === 'effort') { if (v !== null && !text(v, 64)) throw new MobileControlError('invalid_command', 400); }
     else if (key === 'level') { if (!(PERMISSION_LEVELS as readonly unknown[]).includes(v)) throw new MobileControlError('invalid_command', 400); }

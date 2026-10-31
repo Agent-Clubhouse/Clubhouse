@@ -200,6 +200,28 @@ export async function getOrchestrationPolicy(projectPath: string, agentId: strin
 }
 
 /**
+ * Resolved policies for many agents of one project, for the mobile catalog.
+ * Reads project defaults once and each persona once. Never touches the gate.
+ */
+export async function resolveOrchestrationPolicies(
+  projectPath: string,
+  agents: DurableAgentConfig[],
+): Promise<Map<string, ResolvedOrchestrationPolicy>> {
+  const defaults = await readProjectAgentDefaults(projectPath).catch((): undefined => undefined);
+  const personas = new Map<string | undefined, Promise<OrchestrationPolicyConfig | undefined>>();
+  const out = new Map<string, ResolvedOrchestrationPolicy>();
+  await Promise.all(agents.map(async (agent) => {
+    let personaId = agent.persona;
+    if (defaults) {
+      try { personaId = resolvePersonaId(agent, defaults); } catch { /* telemetry-exempt: as effectivePersonaId, the agent's own persona */ }
+    }
+    if (!personas.has(personaId)) personas.set(personaId, personaDefaultsFor(projectPath, personaId));
+    out.set(agent.id, resolveOrchestrationPolicy(agent.orchestration, await personas.get(personaId)));
+  }));
+  return out;
+}
+
+/**
  * Set the gate for an agent that is starting (called at spawn, after it is
  * registered for `projectPath`). Never throws; on failure orchestration
  * reads as off.

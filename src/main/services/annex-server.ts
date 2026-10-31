@@ -18,7 +18,8 @@ import { readChatTranscript, listChatSessions } from './agent-runtime/chat-trans
 import { getSettings as getExperimentalSettings } from './experimental-settings';
 import { readMobileChatContent } from './annex-chat-content';
 import { agentFolders } from './agent-runtime/chat-files';
-import { buildAgentDetails, buildAgentSettings, buildAgentSettingsOptions, buildCreateOptions, createMobileAgent, updateMobileAgent } from './mobile-agents';
+import { buildAgentDetails, buildAgentSettings, buildAgentSettingsOptions, buildCreateOptions, createMobileAgent, mobileOrchestration, updateMobileAgent } from './mobile-agents';
+import { resolveOrchestrationPolicies } from './orchestration-policy';
 import { MOBILE_SLASH_COMMANDS_MAX, latestSlashCommands, remoteChatEvent } from './annex-chat-echo';
 import { buildMobileHelperRequests, runHelperCommand } from './mobile-helper-requests';
 import { onStartRequestsChanged } from './helper-start-requests';
@@ -682,7 +683,21 @@ onFinishedQuickAgentsChange(() => {
   if (wss && wss.clients.size > 0) broadcastSnapshotRefresh();
 });
 
-function mapDurableAgent(d: Awaited<ReturnType<typeof agentConfig.listDurable>>[number], projectId: string) {
+type DurableConfigs = Awaited<ReturnType<typeof agentConfig.listDurable>>;
+
+/** Each agent's orchestration policy for the catalog (#2228); none when it can't be read, so the list still loads. */
+async function catalogOrchestration(projectPath: string, durables: DurableConfigs) {
+  try {
+    return await resolveOrchestrationPolicies(projectPath, durables);
+  } catch (err) {
+    appLog('core:annex', 'warn', 'Could not resolve orchestration policies for the mobile catalog', {
+      meta: { error: err instanceof Error ? err.message : String(err) },
+    });
+    return new Map<string, never>();
+  }
+}
+
+function mapDurableAgent(d: DurableConfigs[number], projectId: string, policies?: Awaited<ReturnType<typeof catalogOrchestration>>) {
   const agentId = d.id;
   const isRunning = isAgentRunning(agentId);
   const status = isRunning ? 'running' : 'sleeping';
@@ -706,6 +721,8 @@ function mapDurableAgent(d: Awaited<ReturnType<typeof agentConfig.listDurable>>[
     /** There's a CLI session to resume, so a controller's default Wake can ask for one. */
     hasSession: !!d.lastSessionId,
     lastActivityAt: lastActivityAt(agentId, d.createdAt),
+    /** The Orchestrate card's policy; agent.update's `orchestration` changes it. */
+    ...(policies?.has(agentId) && { orchestration: mobileOrchestration(policies.get(agentId)!) }),
   };
 }
 
@@ -743,7 +760,8 @@ async function buildSnapshotData(): Promise<object> {
     // Disposed helpers (#2224) keep a config row but are not agents to show.
     const durables = (await agentConfig.listDurable(proj.path)).filter((d) => !isDisposedAgent(d));
     durablesByProject[proj.id] = durables;
-    agents[proj.id] = durables.map((d) => mapDurableAgent(d, proj.id));
+    const policies = await catalogOrchestration(proj.path, durables);
+    agents[proj.id] = durables.map((d) => mapDurableAgent(d, proj.id, policies));
     quickAgents[proj.id] = [];
 
     // Fetch agent icons in parallel within this project
@@ -1702,7 +1720,8 @@ async function handleProjectAgentsRoute(ctx: AnnexRouteContext, match: RegExpMat
     return;
   }
   const durables = (await agentConfig.listDurable(project.path)).filter((d) => !isDisposedAgent(d));
-  sendJson(ctx.res, 200, durables.map((d) => mapDurableAgent(d, projectId)));
+  const policies = await catalogOrchestration(project.path, durables);
+  sendJson(ctx.res, 200, durables.map((d) => mapDurableAgent(d, projectId, policies)));
 }
 
 async function handleAgentBufferRoute(ctx: AnnexRouteContext, match: RegExpMatchArray): Promise<void> {
@@ -2432,6 +2451,8 @@ async function handleMobileCapabilitiesRoute(ctx: AnnexRouteContext): Promise<vo
     slashCommands: { version: 1, snapshotField: 'slashCommands', event: 'commands_available', maxCommands: MOBILE_SLASH_COMMANDS_MAX },
     // A paired phone has full control (#2462): persistent approvals and Free Agent Mode, as on the desktop.
     permissions: { version: 1, persistentApprovals: true, freeAgentMode: true },
+    // Durable agents' `orchestration` in the catalog and settings; agent.create and agent.update take it (#2228).
+    orchestration: { version: 1 },
     idempotency: { scope: 'peer-and-epoch', maxEntries: MOBILE_COMMAND_MAX_ENTRIES, ttlMs: MOBILE_COMMAND_TTL_MS },
     projectState: { version: 1 },
     finishedQuickAgents: { version: 1 },

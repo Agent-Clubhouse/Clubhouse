@@ -4,7 +4,7 @@
       "name": "invalid_command (unknown type)",
       "request": {
         "agentId": "durable_term",
-        "commandId": "cmd_101",
+        "commandId": "cmd_113",
         "epoch": "00000000-0000-4000-8000-000000000001",
         "type": "agent.teleport",
         "version": 1
@@ -26,7 +26,7 @@
       "name": "invalid_command (unknown field)",
       "request": {
         "agentId": "durable_term",
-        "commandId": "cmd_102",
+        "commandId": "cmd_114",
         "epoch": "00000000-0000-4000-8000-000000000001",
         "extra": true,
         "type": "agent.stop",
@@ -48,7 +48,7 @@
     {
       "name": "invalid_command (wrong field type)",
       "request": {
-        "commandId": "cmd_103",
+        "commandId": "cmd_115",
         "epoch": "00000000-0000-4000-8000-000000000001",
         "pinned": "yes",
         "projectId": "proj_app",
@@ -72,7 +72,7 @@
       "name": "unsupported_version",
       "request": {
         "agentId": "durable_term",
-        "commandId": "cmd_104",
+        "commandId": "cmd_116",
         "epoch": "00000000-0000-4000-8000-000000000001",
         "type": "agent.stop",
         "version": 2
@@ -94,14 +94,14 @@
       "name": "epoch_mismatch",
       "request": {
         "agentId": "durable_term",
-        "commandId": "cmd_105",
+        "commandId": "cmd_117",
         "epoch": "previous-epoch",
         "type": "agent.stop",
         "version": 1
       },
       "response": {
         "body": {
-          "commandId": "cmd_105",
+          "commandId": "cmd_117",
           "epoch": "00000000-0000-4000-8000-000000000001",
           "error": {
             "code": "epoch_mismatch",

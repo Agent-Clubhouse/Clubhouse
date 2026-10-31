@@ -435,6 +435,121 @@
         },
         "status": 400
       }
+    },
+    {
+      "name": "accepted with orchestration",
+      "request": {
+        "color": "emerald",
+        "commandId": "cmd_057",
+        "epoch": "00000000-0000-4000-8000-000000000001",
+        "name": "lead-otter",
+        "orchestration": {
+          "control": "ask-before-start",
+          "maxHelpers": 4,
+          "orchestrate": true
+        },
+        "projectId": "proj_app",
+        "type": "agent.create",
+        "version": 1
+      },
+      "response": {
+        "body": {
+          "commandId": "cmd_057",
+          "epoch": "00000000-0000-4000-8000-000000000001",
+          "result": {
+            "agentId": "durable_created",
+            "branch": "lead-otter/standby",
+            "name": "lead-otter",
+            "projectId": "proj_app",
+            "state": "creating",
+            "worktreePath": "/work/app/.clubhouse/agents/lead-otter"
+          },
+          "status": "completed",
+          "version": 1
+        },
+        "status": 200
+      }
+    },
+    {
+      "name": "invalid_orchestration (maxHelpers above the cap)",
+      "request": {
+        "color": "emerald",
+        "commandId": "cmd_058",
+        "epoch": "00000000-0000-4000-8000-000000000001",
+        "name": "calm-otter",
+        "orchestration": {
+          "maxHelpers": 21
+        },
+        "projectId": "proj_app",
+        "type": "agent.create",
+        "version": 1
+      },
+      "response": {
+        "body": {
+          "commandId": "cmd_058",
+          "epoch": "00000000-0000-4000-8000-000000000001",
+          "error": {
+            "code": "invalid_orchestration",
+            "message": "maxHelpers must be a whole number from 1 to 20"
+          },
+          "status": "rejected",
+          "version": 1
+        },
+        "status": 400
+      }
+    },
+    {
+      "name": "invalid_orchestration (clear on create)",
+      "request": {
+        "color": "emerald",
+        "commandId": "cmd_059",
+        "epoch": "00000000-0000-4000-8000-000000000001",
+        "name": "calm-otter",
+        "orchestration": {
+          "access": null
+        },
+        "projectId": "proj_app",
+        "type": "agent.create",
+        "version": 1
+      },
+      "response": {
+        "body": {
+          "commandId": "cmd_059",
+          "epoch": "00000000-0000-4000-8000-000000000001",
+          "error": {
+            "code": "invalid_orchestration",
+            "message": "A new agent has no orchestration overrides to clear"
+          },
+          "status": "rejected",
+          "version": 1
+        },
+        "status": 400
+      }
+    },
+    {
+      "name": "invalid_command (orchestration null)",
+      "request": {
+        "color": "emerald",
+        "commandId": "cmd_060",
+        "epoch": "00000000-0000-4000-8000-000000000001",
+        "name": "calm-otter",
+        "orchestration": null,
+        "projectId": "proj_app",
+        "type": "agent.create",
+        "version": 1
+      },
+      "response": {
+        "body": {
+          "epoch": "00000000-0000-4000-8000-000000000001",
+          "error": {
+            "code": "invalid_command",
+            "message": "invalid_command"
+          },
+          "status": "rejected",
+          "version": 1
+        },
+        "status": 400
+      }
     }
   ],
   "type": "agent.create"
