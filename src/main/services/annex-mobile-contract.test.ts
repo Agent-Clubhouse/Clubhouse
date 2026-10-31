@@ -108,6 +108,14 @@ vi.mock('./agent-config', () => {
     getDurableConfig: async (projectPath: string, id: string) => find(projectPath, id),
     updateDurableConfig: async (projectPath: string, id: string, updates: Record<string, unknown>) => { Object.assign(find(projectPath, id) ?? {}, updates); },
     updateDurable: async (projectPath: string, id: string, updates: Record<string, unknown>) => { Object.assign(find(projectPath, id) ?? {}, updates); },
+    // The orchestration policy service's own writes (#2228).
+    setOrchestrationConfig: async (projectPath: string, id: string, config?: Record<string, unknown>) => {
+      const agent = find(projectPath, id);
+      if (!agent) throw new Error('Agent not found');
+      if (config && Object.keys(config).length > 0) agent.orchestration = { ...config };
+      else delete agent.orchestration;
+    },
+    listHelpers: async (projectPath: string, id: string) => (W.durables[projectPath] ?? []).filter((d) => d.parentAgentId === id && !d.disposedAt),
     getWorktreeStatus: async () => ({ isValid: true, branch: 'main', uncommittedFiles: [], unpushedCommits: [], hasRemote: true }),
   };
 });
@@ -204,8 +212,11 @@ vi.mock('./agent-creation', async (importOriginal) => ({
   ...await importOriginal<typeof import('./agent-creation')>(),
   startDurableCreation: async (_path: string, params: { name: string; color: string }) => {
     if (params.name === 'taken') throw new Error('A folder named taken already exists in .clubhouse/agents');
-    return { agentId: 'durable_created', done: Promise.resolve('ready'), config: { id: 'durable_created', name: params.name, color: params.color,
-      createdAt: '2026-10-30T00:00:00.000Z', branch: `${params.name}/standby`, worktreePath: `/work/app/.clubhouse/agents/${params.name}`, creation: { state: 'creating', startedAt: '2026-10-30T00:00:00.000Z' } } };
+    const config = { id: 'durable_created', name: params.name, color: params.color,
+      createdAt: '2026-10-30T00:00:00.000Z', branch: `${params.name}/standby`, worktreePath: `/work/app/.clubhouse/agents/${params.name}`, creation: { state: 'creating', startedAt: '2026-10-30T00:00:00.000Z' } };
+    // Recorded, as startDurableCreation does, so a create's orchestration policy has an agent to land on.
+    W.durables[_path] = [...(W.durables[_path] ?? []).filter((d) => d.id !== config.id), config];
+    return { agentId: 'durable_created', done: Promise.resolve('ready'), config };
   },
 }));
 vi.mock('./agent-settings-service', () => ({
@@ -218,7 +229,12 @@ vi.mock('./agent-settings-service', () => ({
 }));
 vi.mock('./materialization-service', () => ({
   listAvailablePersonas: async () => [{ id: 'qa', name: 'QA', source: 'builtin' }, { id: 'architect', name: 'Architect', source: 'project' }],
+  // Orchestration defaults from persona front-matter: only the architect sets any.
+  resolvePersonaId: (agent: { persona?: string }, defaults: { persona?: string }) => agent.persona || defaults.persona,
+  readLayeredPersonaRaw: async (_projectPath: string, personaId: string) =>
+    (personaId === 'architect' ? '---\norchestration: {"control": "ask-before-start", "maxHelpers": 4}\n---\n\n# Architect' : undefined),
 }));
+vi.mock('./orchestration-settings', () => ({ getSettings: () => ({ globalHelperCap: 20 }), getGlobalHelperCap: () => 20 }));
 vi.mock('./orchestrator-settings', () => ({ getSettings: () => ({ enabled: ['claude-code', 'codex-cli'] }) }));
 vi.mock('./profile-settings', () => ({ getProfile: () => undefined }));
 vi.mock('./clubhouse-mode-settings', () => ({ isClubhouseModeEnabled: () => false }));
@@ -378,7 +394,8 @@ function resetWorld() {
   W.durables = {
     [APP]: [
       { id: 'durable_chat', name: 'planner', color: 'indigo', emoji: '🦊', icon: 'durable_chat.png', orchestrator: 'claude-code', model: 'opus',
-        branch: 'planner/standby', worktreePath: `${APP}/.clubhouse/agents/planner`, createdAt: '2026-10-01T09:00:00.000Z', lastSessionId: 'sess_live', mcpIds: ['github'] },
+        branch: 'planner/standby', worktreePath: `${APP}/.clubhouse/agents/planner`, createdAt: '2026-10-01T09:00:00.000Z', lastSessionId: 'sess_live', mcpIds: ['github'],
+        orchestration: { orchestrate: true, maxHelpers: 3 } },
       { id: 'durable_basic', name: 'reviewer', color: 'teal', orchestrator: 'codex-cli', createdAt: '2026-10-02T09:00:00.000Z', lastSessionId: 'sess_basic' },
       { id: 'durable_sleepy', name: 'brave-otter', color: 'amber', branch: 'brave-otter/standby', worktreePath: `${APP}/.clubhouse/agents/brave-otter`,
         createdAt: '2026-10-03T09:00:00.000Z', lastSessionId: 'sess_old', idleSleep: 60 },
@@ -687,6 +704,11 @@ describe('Annex mobile contract fixtures', () => {
     await command('unknown_mcp', { ...create, mcpIds: ['jira'] });
     await command('create_refused', { ...create, name: 'taken' });
     await command('invalid_command (unknown field)', { ...create, instructions: 'be nice' });
+    await command('accepted with orchestration', { ...create, name: 'lead-otter', orchestration: { orchestrate: true, control: 'ask-before-start', maxHelpers: 4 } });
+    await command('invalid_orchestration (maxHelpers above the cap)', { ...create, orchestration: { maxHelpers: 21 } });
+    await command('invalid_orchestration (clear on create)', { ...create, orchestration: { access: null } });
+    await command('invalid_command (orchestration null)', { ...create, orchestration: null });
+    W.durables[APP] = W.durables[APP].filter((d) => d.id !== 'durable_created');
 
     await command('accepted', { type: 'agent.update', agentId: 'durable_sleepy', name: 'bright-otter', color: 'rose', emoji: '🦦', model: 'sonnet', persona: 'architect', freeAgentMode: true, runtime: 'chat', idleSleep: 30 });
     await command('accepted clear', { type: 'agent.update', agentId: 'durable_sleepy', emoji: null, persona: null, runtime: 'default', idleSleep: 'inherit' });
@@ -704,6 +726,18 @@ describe('Annex mobile contract fixtures', () => {
     await command('invalid_color', { type: 'agent.update', agentId: 'durable_sleepy', color: 'chartreuse' });
     await command('invalid_command (no settings)', { type: 'agent.update', agentId: 'durable_sleepy' });
     await command('invalid_command (unknown field)', { type: 'agent.update', agentId: 'durable_sleepy', instructions: 'be nice' });
+
+    // Orchestration (#2228): changes while the agent runs, as on the Orchestrate card.
+    const chatPolicy = { ...W.durables[APP][0].orchestration };
+    await command('accepted orchestration', { type: 'agent.update', agentId: 'durable_chat', orchestration: { access: 'auto', control: 'ask-everything', maxHelpers: 20 } });
+    await command('accepted orchestration clear field', { type: 'agent.update', agentId: 'durable_chat', orchestration: { maxHelpers: null } });
+    await command('accepted orchestration clear all', { type: 'agent.update', agentId: 'durable_sleepy', orchestration: null });
+    await command('invalid_orchestration (maxHelpers above the cap)', { type: 'agent.update', agentId: 'durable_chat', orchestration: { maxHelpers: 21 } });
+    await command('invalid_orchestration (control)', { type: 'agent.update', agentId: 'durable_chat', orchestration: { control: 'yolo' } });
+    await command('invalid_orchestration (unknown field)', { type: 'agent.update', agentId: 'durable_chat', orchestration: { helpers: 2 } });
+    await command('orchestration_has_helpers', { type: 'agent.update', agentId: 'durable_chat', orchestration: { orchestrate: false } });
+    await command('invalid_command (orchestration not an object)', { type: 'agent.update', agentId: 'durable_chat', orchestration: 'on' });
+    W.durables[APP][0].orchestration = chatPolicy;
   });
 
   it('project, finished quick agent and helper commands', async () => {

@@ -1,6 +1,7 @@
 /** Additive mobile control contract. Annex's existing protocol remains v2. */
 import type { ChatCapabilities, ChatModelOption, ChatQuestionAnswers, PermissionLevel } from './chat';
 import type { AgentIdleSleep } from './idle-sleep';
+import type { OrchestrationPolicy, OrchestrationPolicyPatch } from './orchestration-policy';
 export const MOBILE_PROTOCOL_VERSION = 1;
 export const MOBILE_COMMAND_TYPES = ['chat.send', 'chat.interrupt', 'chat.permission', 'chat.question', 'chat.queue.remove', 'agent.start', 'agent.stop', 'agent.spawn', 'agent.create', 'agent.update', 'project.setPinned', 'project.setInactive', 'helper.approve', 'helper.decline', 'chat.setModel', 'chat.setLevel', 'quick.dismiss', 'quick.clear'] as const;
 interface CommandBase { version: 1; commandId: string; epoch: string }
@@ -33,11 +34,15 @@ export type MobileCommand = CommandBase & (
 export interface MobileAgentCreate {
   projectId: string; name: string; color: string; orchestrator?: string; model?: string; persona?: string;
   freeAgentMode?: boolean; useWorktree?: boolean; mcpIds?: string[]; branchName?: string; branchFrom?: string; folderName?: string;
+  /** The agent's orchestration policy fields to set (#2228); unset ones follow the persona or defaults. */
+  orchestration?: Partial<OrchestrationPolicy>;
 }
 /** Settings a phone may change; null clears. */
 export interface MobileAgentUpdate {
   agentId: string; name?: string; color?: string; emoji?: string | null; orchestrator?: string; model?: string;
   runtime?: 'default' | 'chat' | 'terminal'; persona?: string | null; clubhouseMode?: boolean; freeAgentMode?: boolean; idleSleep?: AgentIdleSleep;
+  /** Orchestration policy fields; a field set to null, or the whole object null, goes back to the persona or default. */
+  orchestration?: OrchestrationPolicyPatch | null;
 }
 /** What the desktop windows patch into their agent list after a phone's agent.update. */
 export interface AnnexAgentUpdate {

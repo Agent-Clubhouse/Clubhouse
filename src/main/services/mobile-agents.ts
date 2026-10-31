@@ -25,6 +25,12 @@ import { resolveChatDriver } from './agent-runtime/chat-drivers';
 import { isChatAgent } from './agent-runtime';
 import { getBranchChanges, isInsideGitRepo } from './git-service';
 import { MobileControlError } from './mobile-control';
+import * as orchestrationPolicy from './orchestration-policy';
+import * as orchestrationSettings from './orchestration-settings';
+import {
+  ACCESS_LEVELS, MAX_HELPER_LIMIT, ORCHESTRATION_CONTROLS, ORCHESTRATION_DEFAULTS, validateOrchestrationPatch,
+  type OrchestrationAccess, type OrchestrationPolicyPatch, type ResolvedOrchestrationPolicy,
+} from '../../shared/orchestration-policy';
 
 export interface MobileAgentProject { id: string; path: string }
 
@@ -113,6 +119,65 @@ export async function buildCreateOptions(project: MobileAgentProject) {
   };
 }
 
+/** The most helpers one agent may have: the app-wide cap, never above the hard limit (as the desktop's Helpers at once). */
+export function maxHelpersCap(): number {
+  return Math.max(1, Math.min(MAX_HELPER_LIMIT, orchestrationSettings.getGlobalHelperCap()));
+}
+
+const ACCESS_CHOICES: readonly OrchestrationAccess[] = ['same', ...ACCESS_LEVELS];
+
+/**
+ * An agent's orchestration policy as a phone shows and edits it: the resolved
+ * fields, where each came from (`agent` is an override agent.update can clear
+ * with null), and the choices the Orchestrate card offers.
+ */
+export function mobileOrchestration(policy: ResolvedOrchestrationPolicy) {
+  const { orchestrate, access, control, maxHelpers, sources } = policy;
+  return {
+    orchestrate, access, control, maxHelpers, sources: { ...sources },
+    maxHelpersCap: maxHelpersCap(), controls: [...ORCHESTRATION_CONTROLS], accessLevels: [...ACCESS_CHOICES],
+  };
+}
+export type MobileOrchestration = ReturnType<typeof mobileOrchestration>;
+
+/** Every policy field, for agent.update's `orchestration: null` (clear every override). */
+const CLEAR_ALL: OrchestrationPolicyPatch = Object.fromEntries(Object.keys(ORCHESTRATION_DEFAULTS).map((k): [string, null] => [k, null]));
+
+/**
+ * A phone's orchestration patch, checked with the desktop's rules: the shared
+ * validator, and Helpers at once no higher than the app-wide cap. `null`
+ * clears a field on update; create only sets fields.
+ */
+export function parseMobileOrchestration(raw: unknown, mode: 'update' | 'create'): OrchestrationPolicyPatch {
+  if (raw === null && mode === 'update') return { ...CLEAR_ALL };
+  const cap = maxHelpersCap();
+  const capMessage = `maxHelpers must be a whole number from 1 to ${cap}`;
+  let patch: OrchestrationPolicyPatch;
+  try {
+    patch = validateOrchestrationPatch(raw);
+  } catch (err) {
+    const message = err instanceof Error ? err.message : undefined;
+    throw invalid('invalid_orchestration', message?.startsWith('maxHelpers ') ? capMessage : message);
+  }
+  if (Object.keys(patch).length === 0) throw invalid('invalid_orchestration', 'Set at least one orchestration field');
+  if (mode === 'create' && Object.values(patch).some((v) => v === null)) throw invalid('invalid_orchestration', 'A new agent has no orchestration overrides to clear');
+  if (typeof patch.maxHelpers === 'number' && patch.maxHelpers > cap) throw invalid('invalid_orchestration', capMessage);
+  return patch;
+}
+
+/** Write a policy patch through the desktop's own service; a refused change is a command error. */
+async function writeOrchestration(projectPath: string, agentId: string, patch: OrchestrationPolicyPatch): Promise<void> {
+  const result = await orchestrationPolicy.setOrchestrationPolicy(projectPath, agentId, patch);
+  if (result.ok) return;
+  if (result.needsHelperChoice) throw new MobileControlError('orchestration_has_helpers', 409, 'rejected', result.message);
+  throw new MobileControlError('orchestration_refused', 409, 'rejected', result.message);
+}
+
+async function orchestrationOf(projectPath: string, config: DurableAgentConfig): Promise<MobileOrchestration> {
+  const policies = await orchestrationPolicy.resolveOrchestrationPolicies(projectPath, [config]);
+  return mobileOrchestration(policies.get(config.id)!);
+}
+
 function stateOf(config: DurableAgentConfig, live: 'running' | 'starting' | undefined): MobileAgentState {
   if (config.creation?.state === 'creating') return 'creating';
   if (live) return live;
@@ -135,6 +200,7 @@ export async function buildAgentSettings(project: MobileAgentProject, config: Du
   const idle = normalizeIdleSleep(config.idleSleep);
   const resolved = resolveIdleSleep(idle, appMinutes);
   const clubhouseProject = isClubhouseModeEnabled(project.path);
+  const orchestration = await orchestrationOf(project.path, config);
   return {
     agentId: config.id,
     projectId: project.id,
@@ -155,6 +221,8 @@ export async function buildAgentSettings(project: MobileAgentProject, config: Du
       // Only chat agents idle-sleep; the value is kept either way.
       idleSleep: { ...field(idle, 'always'), minutes: resolved.minutes, source: resolved.source, applies: runtime === 'chat' },
     },
+    /** Changes at any time, as on the Orchestrate card; agent.update's `orchestration`. */
+    orchestration,
   };
 }
 
@@ -264,6 +332,7 @@ export async function createMobileAgent(project: MobileAgentProject, command: Mo
   await assertOrchestrator(project.path, orchestrator);
   if (command.freeAgentMode && !permissionsSupported(orchestrator)) throw new MobileControlError('free_agent_mode_unavailable');
   if (command.persona !== undefined) await assertPersona(project.path, command.persona);
+  const orchestration = command.orchestration !== undefined ? parseMobileOrchestration(command.orchestration, 'create') : undefined;
   if (command.mcpIds?.length) {
     const catalog = new Set((await readMcpCatalog(project.path).catch((): McpCatalogEntry[] => [])).map((m) => m.id));
     if (command.mcpIds.some((id) => !catalog.has(id))) throw invalid('unknown_mcp');
@@ -287,6 +356,8 @@ export async function createMobileAgent(project: MobileAgentProject, command: Mo
     throw new MobileControlError('create_refused', 409, 'rejected', err instanceof Error ? err.message : undefined);
   }
   const { config } = started;
+  // Checked above; a new agent has no helpers, so the desktop's service saves it as the Orchestrate card would.
+  if (orchestration) await writeOrchestration(project.path, config.id, orchestration);
   return {
     agentId: config.id, projectId: project.id, name: config.name,
     branch: config.branch ?? null, worktreePath: config.worktreePath ?? null,
@@ -349,8 +420,11 @@ export async function updateMobileAgent(
     updates.freeAgentMode = command.freeAgentMode;
   }
   if (idleSleep !== undefined) updates.idleSleep = idleSleep === 'inherit' ? null : idleSleep;
+  const orchestration = command.orchestration !== undefined ? parseMobileOrchestration(command.orchestration, 'update') : undefined;
 
   assertAuthorized();
+  // First, so a refused policy change (helpers to settle) leaves the other settings unwritten too.
+  if (orchestration) await writeOrchestration(project.path, config.id, orchestration);
   if (Object.keys(updates).length > 0) await agentConfig.updateDurableConfig(project.path, config.id, updates);
   if (Object.keys(identity).length > 0) await agentConfig.updateDurable(project.path, config.id, identity);
   const saved = (await agentConfig.getDurableConfig(project.path, config.id)) ?? config;

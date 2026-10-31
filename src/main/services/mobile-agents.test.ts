@@ -39,6 +39,15 @@ vi.mock('./agent-runtime', () => ({ isChatAgent: vi.fn(() => false) }));
 vi.mock('./git-service', () => ({ isInsideGitRepo: vi.fn(async () => true), getBranchChanges: vi.fn() }));
 vi.mock('./persona-application', () => ({ applyPersonaToAgent: vi.fn(async () => undefined) }));
 vi.mock('./log-service', () => ({ appLog: vi.fn() }));
+vi.mock('./orchestration-settings', () => ({ getGlobalHelperCap: vi.fn(() => 8) }));
+vi.mock('./orchestration-policy', async () => {
+  const shared = await import('../../shared/orchestration-policy');
+  return {
+    resolveOrchestrationPolicies: vi.fn(async (_path: string, agents: DurableAgentConfig[]) =>
+      new Map(agents.map((a) => [a.id, shared.resolveOrchestrationPolicy(a.orchestration, { maxHelpers: 3 })]))),
+    setOrchestrationPolicy: vi.fn(async () => ({ ok: true, message: 'Saved' })),
+  };
+});
 
 import * as agentConfig from './agent-config';
 import { startDurableCreation } from './agent-creation';
@@ -51,7 +60,9 @@ import { isChatAgent } from './agent-runtime';
 import { getBranchChanges, isInsideGitRepo } from './git-service';
 import { applyPersonaToAgent } from './persona-application';
 import { MobileControlError } from './mobile-control';
-import { buildAgentDetails, buildAgentSettings, buildAgentSettingsOptions, buildCreateOptions, createMobileAgent, updateMobileAgent } from './mobile-agents';
+import { setOrchestrationPolicy } from './orchestration-policy';
+import * as orchestrationSettings from './orchestration-settings';
+import { buildAgentDetails, buildAgentSettings, buildAgentSettingsOptions, buildCreateOptions, createMobileAgent, maxHelpersCap, updateMobileAgent } from './mobile-agents';
 
 const project = { id: 'p1', path: '/work/app' };
 const orchestrator = (id: string, permissions = true) => ({ id, displayName: id, shortName: id.slice(0, 2), capabilities: { permissions } });
@@ -197,6 +208,11 @@ describe('agent settings', () => {
         freeAgentMode: { value: true, editable: 'sleeping' },
         idleSleep: { value: 60, editable: 'always', minutes: 60, source: 'agent', applies: true },
       },
+      orchestration: {
+        orchestrate: false, access: 'same', control: 'hands-off', maxHelpers: 3,
+        sources: { orchestrate: 'default', access: 'default', control: 'default', maxHelpers: 'persona' },
+        maxHelpersCap: 8, controls: ['hands-off', 'ask-before-start', 'ask-everything'], accessLevels: ['same', 'standard', 'auto', 'bypass'],
+      },
     });
   });
   it('resolves inherited auto-sleep from the app setting, and runtime from the live agent', async () => {
@@ -317,5 +333,67 @@ describe('agent.update', () => {
     const revoked = () => { throw new MobileControlError('authorization_revoked', 403); };
     expect((await refusal(updateMobileAgent(project, agent(), { agentId: 'durable_1', idleSleep: 30 }, { live: undefined, assertAuthorized: revoked }))).code).toBe('authorization_revoked');
     expect(agentConfig.updateDurableConfig).not.toHaveBeenCalled();
+  });
+});
+
+describe('orchestration policy from a phone (#2228)', () => {
+  beforeEach(() => { vi.mocked(agentConfig.getDurableConfig).mockResolvedValue(null); });
+
+  it('shows the resolved policy, which fields the agent overrides, and the choices', async () => {
+    const { orchestration } = await buildAgentSettings(project, agent({ orchestration: { orchestrate: true, control: 'ask-everything' } }), undefined);
+    expect(orchestration).toMatchObject({
+      orchestrate: true, control: 'ask-everything', access: 'same', maxHelpers: 3, maxHelpersCap: 8,
+      sources: { orchestrate: 'agent', control: 'agent', access: 'default', maxHelpers: 'persona' },
+    });
+  });
+
+  it('caps the helper limit at the hard limit even when the app-wide cap is higher', async () => {
+    vi.mocked(orchestrationSettings.getGlobalHelperCap).mockReturnValueOnce(500);
+    expect(maxHelpersCap()).toBe(100);
+  });
+
+  it('writes a partial patch through the desktop service, while the agent runs too', async () => {
+    await updateMobileAgent(project, agent(), { agentId: 'durable_1', orchestration: { orchestrate: true, maxHelpers: 8, control: 'ask-before-start', access: 'auto' } }, { live: 'running', assertAuthorized: allow });
+    expect(setOrchestrationPolicy).toHaveBeenCalledWith('/work/app', 'durable_1', { orchestrate: true, maxHelpers: 8, control: 'ask-before-start', access: 'auto' });
+    expect(agentConfig.updateDurableConfig).not.toHaveBeenCalled();
+  });
+
+  it('clears a field with null, and every override with a null object', async () => {
+    await updateMobileAgent(project, agent(), { agentId: 'durable_1', orchestration: { control: null } }, { live: undefined, assertAuthorized: allow });
+    expect(setOrchestrationPolicy).toHaveBeenLastCalledWith('/work/app', 'durable_1', { control: null });
+    await updateMobileAgent(project, agent(), { agentId: 'durable_1', orchestration: null }, { live: undefined, assertAuthorized: allow });
+    expect(setOrchestrationPolicy).toHaveBeenLastCalledWith('/work/app', 'durable_1', { orchestrate: null, access: null, control: null, maxHelpers: null });
+  });
+
+  it('refuses invalid fields with the reason, before writing anything', async () => {
+    const update = (orchestration: unknown) => refusal(updateMobileAgent(project, agent(), { agentId: 'durable_1', name: 'calm-otter', orchestration } as never, { live: undefined, assertAuthorized: allow }));
+    expect(await update({ maxHelpers: 9 })).toMatchObject({ code: 'invalid_orchestration', statusCode: 400, detail: 'maxHelpers must be a whole number from 1 to 8' });
+    expect(await update({ maxHelpers: 0 })).toMatchObject({ code: 'invalid_orchestration', detail: 'maxHelpers must be a whole number from 1 to 8' });
+    expect(await update({ maxHelpers: 2.5 })).toMatchObject({ code: 'invalid_orchestration' });
+    expect(await update({ control: 'yolo' })).toMatchObject({ code: 'invalid_orchestration', detail: 'control must be one of hands-off, ask-before-start, ask-everything' });
+    expect(await update({ access: 'root' })).toMatchObject({ code: 'invalid_orchestration', detail: 'access must be one of same, standard, auto, bypass' });
+    expect(await update({ orchestrate: 'yes' })).toMatchObject({ code: 'invalid_orchestration', detail: 'orchestrate must be a boolean' });
+    expect(await update({ instructions: 'x' })).toMatchObject({ code: 'invalid_orchestration', detail: 'Unknown orchestration policy field: instructions' });
+    expect(await update({})).toMatchObject({ code: 'invalid_orchestration' });
+    expect(setOrchestrationPolicy).not.toHaveBeenCalled();
+    expect(agentConfig.updateDurable).not.toHaveBeenCalled();
+  });
+
+  it('refuses turning orchestration off while helpers are live, and writes nothing else', async () => {
+    vi.mocked(setOrchestrationPolicy).mockResolvedValueOnce({ ok: false, message: 'brave-otter has 2 helper(s). Choose whether to keep or dispose them first.', needsHelperChoice: { helperIds: ['h1', 'h2'] } });
+    const err = await refusal(updateMobileAgent(project, agent(), { agentId: 'durable_1', idleSleep: 30, orchestration: { orchestrate: false } }, { live: undefined, assertAuthorized: allow }));
+    expect(err).toMatchObject({ code: 'orchestration_has_helpers', statusCode: 409, detail: expect.stringContaining('2 helper(s)') });
+    expect(agentConfig.updateDurableConfig).not.toHaveBeenCalled();
+  });
+
+  it('sets the policy on a new agent, and refuses a bad one before creating it', async () => {
+    const create = { projectId: 'p1', name: 'calm-otter', color: 'indigo' };
+    await createMobileAgent(project, { ...create, orchestration: { orchestrate: true, maxHelpers: 4 } }, allow);
+    expect(setOrchestrationPolicy).toHaveBeenCalledWith('/work/app', 'durable_new', { orchestrate: true, maxHelpers: 4 });
+    vi.mocked(startDurableCreation).mockClear();
+    expect(await refusal(createMobileAgent(project, { ...create, orchestration: { control: 'nope' } } as never, allow))).toMatchObject({ code: 'invalid_orchestration' });
+    expect(await refusal(createMobileAgent(project, { ...create, orchestration: { control: null } } as never, allow))).toMatchObject({ code: 'invalid_orchestration' });
+    expect(await refusal(createMobileAgent(project, { ...create, orchestration: { maxHelpers: 50 } }, allow))).toMatchObject({ code: 'invalid_orchestration' });
+    expect(startDurableCreation).not.toHaveBeenCalled();
   });
 });

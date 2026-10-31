@@ -66,6 +66,7 @@ vi.mock('./mobile-agents', () => ({
   createMobileAgent: vi.fn(async () => ({ agentId: 'durable_new', state: 'creating' })),
   updateMobileAgent: vi.fn(async () => ({ agentId: 'a', settings: { name: { value: 'calm-otter' }, color: { value: 'rose' }, emoji: { value: null },
     model: { value: 'default' }, orchestrator: { value: 'codex-cli' }, freeAgentMode: { value: true } } })),
+  mobileOrchestration: vi.fn(({ orchestrate, access, control, maxHelpers }: Record<string, unknown>) => ({ orchestrate, access, control, maxHelpers })),
 }));
 
 // Real HTTP sockets in this suite must never expose test fixtures to the LAN.
@@ -2085,6 +2086,8 @@ describe('annex-server', () => {
         hasSession: false,
         // No activity since the server started: when the agent was created.
         lastActivityAt: Date.parse('2025-01-01'),
+        // The defaults when the agent and its persona set no orchestration policy (#2228).
+        orchestration: { orchestrate: false, access: 'same', control: 'hands-off', maxHelpers: 5 },
       });
     });
 

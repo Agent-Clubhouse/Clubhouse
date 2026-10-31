@@ -19,7 +19,8 @@
         "mcpIds",
         "branchName",
         "branchFrom",
-        "folderName"
+        "folderName",
+        "orchestration"
       ],
       "required": [
         "projectId",
@@ -68,7 +69,8 @@
         "persona",
         "clubhouseMode",
         "freeAgentMode",
-        "idleSleep"
+        "idleSleep",
+        "orchestration"
       ],
       "fields": [
         "agentId",
@@ -81,11 +83,13 @@
         "persona",
         "clubhouseMode",
         "freeAgentMode",
-        "idleSleep"
+        "idleSleep",
+        "orchestration"
       ],
       "nullable": [
         "emoji",
-        "persona"
+        "persona",
+        "orchestration"
       ],
       "required": [
         "agentId"

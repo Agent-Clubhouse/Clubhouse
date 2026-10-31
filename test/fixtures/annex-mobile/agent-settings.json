@@ -132,6 +132,30 @@
           }
         ]
       },
+      "orchestration": {
+        "access": "same",
+        "accessLevels": [
+          "same",
+          "standard",
+          "auto",
+          "bypass"
+        ],
+        "control": "hands-off",
+        "controls": [
+          "hands-off",
+          "ask-before-start",
+          "ask-everything"
+        ],
+        "maxHelpers": 5,
+        "maxHelpersCap": 20,
+        "orchestrate": false,
+        "sources": {
+          "access": "default",
+          "control": "default",
+          "maxHelpers": "default",
+          "orchestrate": "default"
+        }
+      },
       "projectId": "proj_app",
       "settings": {
         "clubhouseMode": {

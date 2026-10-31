@@ -92,6 +92,7 @@ import {
   getOrchestrationPolicy,
   reconcileAfterPersonaChange,
   resolveHelperLaunchSettings,
+  resolveOrchestrationPolicies,
   setOrchestrationPolicy,
   syncOrchestrationGate,
   turnOffOrchestration,
@@ -203,6 +204,26 @@ describe('getOrchestrationPolicy', () => {
 
   it('returns null for an unknown agent', async () => {
     expect(await getOrchestrationPolicy(PROJECT, 'nope')).toBeNull();
+  });
+});
+
+describe('resolveOrchestrationPolicies (mobile catalog)', () => {
+  it('resolves each agent like getOrchestrationPolicy, reading each persona once, without touching the gate', async () => {
+    const { readLayeredPersonaRaw } = await import('./materialization-service');
+    state.projectDefaults = { persona: 'lead' };
+    state.personas.set('lead', persona({ orchestrate: true, control: 'ask-before-start' }));
+    state.personas.set('orchestrator', persona({ maxHelpers: 2 }));
+    const agents = [agent('a'), agent('b', { orchestration: { control: 'ask-everything', maxHelpers: 7 } }), agent('c', { persona: 'dev' })];
+    setAgents(PROJECT, agents);
+    setOrchestrationEnabled('a', true);
+    vi.mocked(readLayeredPersonaRaw).mockClear();
+    const policies = await resolveOrchestrationPolicies(PROJECT, agents);
+    // Two personas (lead, dev), each read with the Orchestrator persona's limits.
+    expect(readLayeredPersonaRaw).toHaveBeenCalledTimes(4);
+    for (const a of agents) expect(policies.get(a.id)).toEqual(await getOrchestrationPolicy(PROJECT, a.id));
+    expect(policies.get('b')).toMatchObject({ orchestrate: true, control: 'ask-everything', maxHelpers: 7, sources: { orchestrate: 'persona', control: 'agent' } });
+    expect(policies.get('c')).toMatchObject({ orchestrate: false, maxHelpers: 2, sources: { maxHelpers: 'persona' } });
+    expect(isOrchestrationEnabled('a')).toBe(true);
   });
 });
 
