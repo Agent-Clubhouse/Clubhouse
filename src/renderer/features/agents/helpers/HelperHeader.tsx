@@ -2,8 +2,9 @@
  * The helper header (#2232, decided 18 October): a helper's view is a normal
  * agent view, in chat or terminal, with this one line under the toolbar
  * naming its orchestrator, with a link to it. A disposable helper gets a
- * quiet note that its orchestrator may dispose of it. Renders nothing for an
- * agent without a parent.
+ * quiet note that its orchestrator may dispose of it. An orchestrator in
+ * another project (#2514) is named with its project, and the link switches to
+ * it. Renders nothing for an agent without a parent.
  */
 
 import type { Agent } from '../../../../shared/types';
@@ -11,12 +12,14 @@ import { useAgentStore } from '../../../stores/agentStore';
 import { useProjectPath } from '../details/AgentDetails';
 import { AgentAvatar } from '../AgentAvatar';
 import { openAgent, useHelperLink } from './orchestration-hooks';
+import { useParentProjectName } from './cross-project';
 
 export function HelperHeader({ agent }: { agent: Agent }) {
   const projectPath = useProjectPath(agent.projectId);
   const link = useHelperLink(agent, projectPath);
   const parent = useAgentStore((s) => (link ? s.agents[link.parentAgentId] : undefined));
   const iconUrl = useAgentStore((s) => (parent ? s.agentIcons[parent.id] : undefined));
+  const parentProject = useParentProjectName({ parentProjectPath: link?.parentProjectPath, parentProjectId: agent.parentProjectId });
   if (!link) return null;
   return (
     <div
@@ -36,6 +39,9 @@ export function HelperHeader({ agent }: { agent: Agent }) {
         </button>
       ) : (
         <span className="text-ctp-subtext1" data-testid="helper-header-parent-missing">an agent that’s no longer here</span>
+      )}
+      {parentProject && (
+        <span className="min-w-0 truncate" data-testid="helper-header-parent-project">in {parentProject}</span>
       )}
       {link.disposable && parent && (
         <span className="min-w-0 truncate" data-testid="helper-header-disposable">

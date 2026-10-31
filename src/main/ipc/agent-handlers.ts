@@ -15,11 +15,13 @@ import { broadcastSnapshotRefresh } from '../services/annex-server';
 import { bindingManager } from '../services/clubhouse-mcp/binding-manager';
 import { refreshClubhouseModeReadme } from '../services/materialization-service';
 import * as orchestrationPolicy from '../services/orchestration-policy';
+import * as projectStore from '../services/project-store';
+import { listHelpersEverywhere } from '../services/helper-index';
 import * as clubhouseModeSettings from '../services/clubhouse-mode-settings';
 import * as permissionQueue from '../services/annex-permission-queue';
 import { withValidatedArgs, stringArg, objectArg, arrayArg, numberArg, booleanArg } from './validation';
 import { ATTR } from '../../shared/telemetry/attributes';
-import type { DeleteResult, HelperDisposeChecks } from '../../shared/types';
+import type { DeleteResult, HelperDisposeChecks, HelperInProject, Project } from '../../shared/types';
 import { disposeHelperForUser, reportDisposeDecision } from '../services/helper-dispose-decisions';
 import { listStartRequests } from '../services/helper-start-requests';
 import { approveHelperStart, declineHelperStart } from '../services/clubhouse-mcp/tools/helper-tools';
@@ -363,9 +365,18 @@ export function registerAgentHandlers(): void {
 
   // --- Helpers (#2224) ---
 
+  // Helpers in every registered project (#2514), each with the project its row is in.
   ipcMain.handle(IPC.AGENT.LIST_HELPERS, withValidatedArgs(
-    [stringArg(), stringArg(), booleanArg({ optional: true })],
-    async (_event, projectPath, agentId, recursive) => agentConfig.listHelpers(projectPath, agentId, { recursive }),
+    [stringArg(), stringArg(), booleanArg({ optional: true }), booleanArg({ optional: true })],
+    async (_event, projectPath, agentId, recursive, includeDisposed): Promise<HelperInProject[]> => {
+      const entries = await listHelpersEverywhere(projectPath, agentId, { recursive, includeDisposed });
+      if (entries.length === 0) return [];
+      // telemetry-exempt: without the project list the rows carry their paths only.
+      const projects = await projectStore.list().catch((): Project[] => []);
+      const key = (p: string) => (process.platform === 'win32' ? path.resolve(p).toLowerCase() : path.resolve(p));
+      const ids = new Map(projects.map((p) => [key(p.path), p.id] as const));
+      return entries.map((e) => ({ projectId: ids.get(key(e.projectPath)), projectPath: e.projectPath, config: e.config }));
+    },
   ));
 
   ipcMain.handle(IPC.AGENT.RESOLVE_HELPERS_FOR_DELETE, withValidatedArgs(

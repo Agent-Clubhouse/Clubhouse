@@ -4,7 +4,8 @@ import type { Agent, DurableAgentConfig } from '../../shared/types';
 import type { RestartSessionEntry, RestartSessionState } from '../../shared/types';
 import { isAssistantAgent } from '../../shared/assistant-utils';
 import type { ResumeStatus } from '../features/app/ResumeBanner';
-import { sameProjectPath } from '../features/agents/helpers/orchestration-hooks';
+import { findProjectByPath } from '../utils/project-path';
+import { parentLinkFields } from '../stores/agent/parentLink';
 
 /**
  * Process pending resume entries after an update restart.
@@ -52,7 +53,7 @@ async function processWorkspaceQueue(entries: RestartSessionEntry[]): Promise<vo
  */
 function resolveProjectId(projectPath: string): string {
   const projects = useProjectStore.getState().projects;
-  const match = projects.find((p) => sameProjectPath(p.path, projectPath));
+  const match = findProjectByPath(projects, projectPath);
   return match?.id || projectPath;
 }
 
@@ -88,7 +89,7 @@ function buildResumedAgent(
     mcpIds: durableConfig?.mcpIds ?? existing?.mcpIds,
     // A helper keeps its orchestrator (#2224) so the sidebar keeps it nested (#2231).
     // agents.json is the source of truth when it loaded, so an unset link clears it.
-    parentAgentId: durableConfig ? durableConfig.parentAgentId : existing?.parentAgentId,
+    ...(durableConfig ? parentLinkFields(durableConfig) : {}),
     // A running agent isn't asleep, failed or exited.
     lastSleep: undefined,
     exitCode: undefined,

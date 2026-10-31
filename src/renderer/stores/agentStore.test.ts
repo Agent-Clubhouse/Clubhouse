@@ -1,4 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import * as os from 'os';
+import * as path from 'path';
 
 const mockPlaySound = vi.fn();
 
@@ -1556,7 +1558,7 @@ describe('agentStore', () => {
       ];
 
       beforeEach(() => {
-        vi.mocked(window.clubhouse.agent.listHelpers).mockResolvedValue(helperConfigs);
+        vi.mocked(window.clubhouse.agent.listHelpers).mockResolvedValue(helperConfigs.map((config) => ({ projectId: 'proj_1', projectPath, config })));
         vi.mocked(window.clubhouse.agent.resolveHelpersForDelete).mockImplementation(async (_p, _id, choice) => ({
           ok: true, message: '', helperIds: choice === 'dispose' ? ['helper_1', 'helper_2'] : ['helper_1', 'helper_2'],
         }));
@@ -1633,6 +1635,23 @@ describe('agentStore', () => {
         expect(getState().agents['helper_1']).toBeDefined();
         expect(getState().agents['target']).toBeDefined();
         expect(window.clubhouse.agent.deleteForce).not.toHaveBeenCalled();
+      });
+
+      it('dispose: stops a running helper in another project under that project (#2514)', async () => {
+        const otherPath = path.join(os.tmpdir(), 'other-project');
+        vi.mocked(window.clubhouse.agent.listHelpers).mockResolvedValue([
+          { projectId: 'proj_1', projectPath, config: helperConfigs[0] },
+          { projectId: 'proj_2', projectPath: otherPath, config: { id: 'helper_x', name: 'annex-ui', color: 'teal', createdAt: 'x', parentAgentId: 'target', parentProjectPath: projectPath } },
+        ]);
+        vi.mocked(window.clubhouse.agent.resolveHelpersForDelete).mockResolvedValue({ ok: true, message: '', helperIds: ['helper_1', 'helper_x'] });
+        seedAgent({ id: 'helper_x', projectId: 'proj_2', status: 'running', kind: 'durable' });
+
+        const result = await getState().executeDelete('force', projectPath, 'dispose');
+
+        expect(result.ok).toBe(true);
+        expect(window.clubhouse.agent.killAgent).toHaveBeenCalledWith('helper_1', projectPath, true);
+        expect(window.clubhouse.agent.killAgent).toHaveBeenCalledWith('helper_x', otherPath, true);
+        expect(getState().agents['helper_x']).toBeUndefined();
       });
 
       it('keep: releases helpers without stopping them, then deletes', async () => {
