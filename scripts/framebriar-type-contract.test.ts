@@ -21,6 +21,10 @@ it('typechecks the public Framebriar surface used by Clubhouse', () => {
         onAccessChange: (view: FramebriarAccessView) => { const expiry: string | null = view.expiresAt; void expiry; },
       };
       const fb = createFramebriar(options);
+      // Electron 46 has only the async safeStorage API.
+      createFramebriar({ ...options, safeStorage: { isAsyncEncryptionAvailable: async () => true,
+        encryptStringAsync: async (s: string) => Buffer.from(s),
+        decryptStringAsync: async (b: Buffer) => ({ result: b.toString(), shouldReEncrypt: false }) } });
       async function contract() {
         const connected: boolean = await fb.access.connect('fixture');
         const token: string | undefined = await fb.access.getToken();
@@ -29,13 +33,14 @@ it('typechecks the public Framebriar surface used by Clubhouse', () => {
         const prepared = await fb.feedback.prepare({ notes: 'fixture', png: null });
         const ack: FramebriarSubmitAck = await fb.feedback.submit(prepared, { includeDiagnostics: false });
         const retention: 'until-delivered-or-cleared' = fb.outbox.status().retention;
+        const storage: { available: boolean; reason?: string } = await fb.store.probeAsync();
         // @ts-expect-error Credentials are never present in the renderer-facing access view.
         fb.access.status().refreshToken;
         // @ts-expect-error The convenience factory does not forward low-level access options.
         createFramebriar({ ...options, accessTimeoutMs: 1 });
         // @ts-expect-error Enrollment is explicit and takes one invitation string.
         fb.access.connect({ invitation: 'fixture' });
-        void [connected, token, result, headers, ack, retention];
+        void [connected, token, result, headers, ack, retention, storage];
       }
       void contract;
     `);

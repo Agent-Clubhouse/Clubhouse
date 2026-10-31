@@ -50,8 +50,7 @@ export function captureSources(first: BrowserWindow | null): CaptureSource[] {
 export async function captureFromShortcut(from?: BrowserWindow | null): Promise<void> {
   if (!isFeedbackEnabled()) return;
   const service = getFeedbackService();
-  await service.start();
-  if (!service.status().canCapture) {
+  if (!(await service.currentStatus()).canCapture) {
     appLog('core:feedback', 'info', 'Feedback shortcut ignored: feedback is not set up');
     recordFeedbackRefused('not-configured');
     return;
@@ -107,9 +106,7 @@ export function registerFeedbackHandlers(): void {
   ipcMain.handle(IPC.FEEDBACK.GET_STATUS, async (event) => {
     callerWindow(event);
     if (!isFeedbackEnabled()) return stoppedFeedbackStatus();
-    const service = getFeedbackService();
-    await service.start();
-    return service.status();
+    return getFeedbackService().currentStatus();
   });
 
   ipcMain.handle(IPC.FEEDBACK.CONNECT, withValidatedArgs([stringArg({ maxLength: 256 })], async (event, invitation) => {

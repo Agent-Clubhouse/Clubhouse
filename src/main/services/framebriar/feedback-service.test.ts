@@ -7,6 +7,7 @@ import type { Framebriar, FramebriarAccessView, FramebriarOutboxView, Framebriar
 import incidentFixture from './fixtures/incident-report-v1.json';
 import { ATTR } from '../../../shared/telemetry/attributes';
 import { setProducingRuntime } from '../../telemetry/__test-utils__/producing-runtime';
+import { asyncOnlySafeStorage, bothApisSafeStorage, fakeKeychain, syncOnlySafeStorage } from '../../telemetry/__test-utils__/fake-safe-storage';
 import type { TelemetryRuntime } from '../../telemetry/types';
 import { createDiagRedactor } from '../../telemetry/diag-redaction';
 import { connectFailureClass, connectFailureReason, FeedbackService, pngSize, sdkVersion, toFeedbackStatus } from './feedback-service';
@@ -36,13 +37,8 @@ describe('pngSize', () => {
   });
 });
 
-/** In-memory safeStorage, like Electron's (Linux reports a real keyring backend). */
-const safeStorage = {
-  isEncryptionAvailable: () => true,
-  encryptString: (s: string) => Buffer.from(`enc:${s}`),
-  decryptString: (b: Buffer) => b.toString().replace(/^enc:/, ''),
-  getSelectedStorageBackend: () => 'gnome_libsecret',
-};
+/** In-memory safeStorage with only the async API, like Electron 46 (Linux reports a real keyring). */
+const safeStorage = asyncOnlySafeStorage(fakeKeychain());
 
 describe('toFeedbackStatus', () => {
   it('maps access and outbox views', () => {
@@ -91,7 +87,8 @@ describe('FeedbackService (fake SDK)', () => {
     const calls: Array<[string, unknown?]> = [];
     let options: Parameters<typeof createFramebriar>[0] | undefined;
     const fb = {
-      store: { probe: () => ({ available: true }) },
+      // No sync probe(): it reports safe-storage-missing on Electron 46.
+      store: { probeAsync: vi.fn(async (): Promise<{ available: boolean; reason?: string }> => ({ available: true })) },
       access: {
         endpoint: 'https://fb.example', gameId: 'clubhouse',
         status: () => access,
@@ -247,6 +244,8 @@ describe('FeedbackService (fake SDK)', () => {
     const svc = new FeedbackService({ safeStorage, dataDir: '/data', appVersion: '1.0.0', isOnline: () => true, create: create as never, captureCorrelation });
     const opening = svc.captureDraft(async () => PNG);
     expect(captureCorrelation).toHaveBeenCalledTimes(1);
+    // Start probes secure storage before it restores the enrollment.
+    await vi.waitFor(() => expect(resume).toBeTypeOf('function'));
     resume();
     const draft = await opening;
     expect(draft.correlation?.scope).toBe('incident');
@@ -703,6 +702,59 @@ describe('FeedbackService (fake SDK)', () => {
     expect(fb.shutdown).toHaveBeenCalledTimes(1);
     expect(s.isStarted).toBe(false);
   });
+
+  it('probes secure storage before restoring the enrollment', async () => {
+    const { create, fb } = fakeSdk();
+    const order: string[] = [];
+    fb.store.probeAsync.mockImplementation(async () => { order.push('probe'); return { available: true }; });
+    fb.start.mockImplementation(async () => { order.push('start'); });
+    await service(create).start();
+    expect(order).toEqual(['probe', 'start']);
+  });
+
+  it('shows the probed storage state, and a failed probe as unavailable', async () => {
+    const { create, fb } = fakeSdk();
+    fb.store.probeAsync.mockResolvedValueOnce({ available: false, reason: 'plaintext-backend' });
+    const s = service(create);
+    await s.start();
+    expect(s.status()).toMatchObject({ canCapture: false, storage: { available: false, reason: 'plaintext-backend' } });
+    fb.store.probeAsync.mockRejectedValueOnce(new Error('boom'));
+    expect(await s.currentStatus()).toMatchObject({ canCapture: false, storage: { available: false, reason: 'probe-failed' } });
+    expect(await s.currentStatus()).toMatchObject({ canCapture: true, storage: { available: true } });
+  });
+
+  it('probes again on status requests and actions, and tells listeners when it changed', async () => {
+    const { create, fb } = fakeSdk();
+    const s = service(create);
+    await s.start();
+    const seen: boolean[] = [];
+    s.onChange((status) => seen.push(status.storage.available));
+    fb.store.probeAsync.mockResolvedValueOnce({ available: false, reason: 'encryption-unavailable' });
+    await s.connect('i'.repeat(43));
+    expect(seen).toEqual([false]);
+    await s.currentStatus();
+    expect(seen).toEqual([false, true]);
+    await s.currentStatus();
+    expect(seen).toEqual([false, true]);
+    const before = fb.store.probeAsync.mock.calls.length;
+    await s.disconnect();
+    await s.captureDraft(async () => PNG).catch(() => {});
+    await s.send({ notes: 'x', includeScreenshot: false }).catch(() => {});
+    expect(fb.store.probeAsync.mock.calls.length).toBe(before + 3);
+  });
+
+  it('drops a probe that resolves after shutdown', async () => {
+    const { create, fb } = fakeSdk();
+    const s = service(create);
+    await s.start();
+    let resolve!: (v: { available: boolean }) => void;
+    fb.store.probeAsync.mockImplementationOnce(() => new Promise((r) => { resolve = r; }));
+    const pending = s.currentStatus();
+    await vi.waitFor(() => expect(resolve).toBeTypeOf('function'));
+    await s.shutdown();
+    resolve({ available: false });
+    expect(await pending).toMatchObject({ started: false });
+  });
 });
 
 describe('FeedbackService with the vendored Framebriar SDK (mocked transport)', () => {
@@ -823,6 +875,8 @@ describe('FeedbackService with the vendored Framebriar SDK (mocked transport)', 
       expect(s.status().outbox.pending).toBe(0);
       // Reports and telemetry share one session, so they correlate.
       expect(srv.reports.get(withShot.id)!.report.sessionId).toBe(exp.sessionId);
+      // SDK 0.5.0+: a UUID v4, not `s-<24 hex>`. Clubhouse passes it through as `session.id` unparsed.
+      expect(exp.sessionId).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/);
 
       const out = await s.disconnect();
       expect(out).toMatchObject({ forgotten: true, revoked: true, status: { connected: false, canCapture: false } });
@@ -832,10 +886,13 @@ describe('FeedbackService with the vendored Framebriar SDK (mocked transport)', 
     }
   });
 
-  it('refuses to store anything without secure storage', async () => {
+  it.each([
+    ['async', asyncOnlySafeStorage],
+    ['sync', syncOnlySafeStorage],
+  ] as const)('refuses to store anything without secure storage (%s API)', async (_api, make) => {
     const srv = server();
     const s = new FeedbackService({
-      safeStorage: { ...safeStorage, isEncryptionAvailable: () => false }, dataDir, appVersion: '1.0.0', isOnline: () => true,
+      safeStorage: make(fakeKeychain({ available: false })), dataDir, appVersion: '1.0.0', isOnline: () => true,
       create: ((opts: Parameters<typeof createFramebriar>[0]) => createFramebriar({ ...opts, endpoint: 'https://fb.example/api', fetchImpl: srv.fetchImpl })) as typeof createFramebriar,
     });
     try {
@@ -846,6 +903,66 @@ describe('FeedbackService with the vendored Framebriar SDK (mocked transport)', 
       expect(fs.existsSync(path.join(dataDir, 'enrollment.json'))).toBe(false);
     } finally {
       await s.shutdown();
+    }
+  });
+
+  it.each(['basic_text', 'unknown'])('refuses the Linux %s backend through the async API', async (backend) => {
+    const platform = Object.getOwnPropertyDescriptor(process, 'platform')!;
+    Object.defineProperty(process, 'platform', { value: 'linux' });
+    const srv = server();
+    const s = new FeedbackService({
+      safeStorage: asyncOnlySafeStorage(fakeKeychain(), { backend }), dataDir, appVersion: '1.0.0', isOnline: () => true,
+      create: ((opts: Parameters<typeof createFramebriar>[0]) => createFramebriar({ ...opts, endpoint: 'https://fb.example/api', fetchImpl: srv.fetchImpl })) as typeof createFramebriar,
+    });
+    try {
+      await s.start();
+      expect(s.status()).toMatchObject({ canCapture: false, storage: { available: false, reason: 'plaintext-backend' } });
+      await s.connect('i'.repeat(43));
+      expect(s.status().canCapture).toBe(false);
+      expect(fs.existsSync(path.join(dataDir, 'enrollment.json'))).toBe(false);
+    } finally {
+      Object.defineProperty(process, 'platform', platform);
+      await s.shutdown();
+    }
+  });
+
+  it.each([
+    ['async only (Electron 46)', asyncOnlySafeStorage],
+    ['both APIs (Electron 45)', bothApisSafeStorage],
+  ] as const)('restores an enrollment saved through the sync API, with %s, and keeps it readable by a rollback', async (_name, make) => {
+    const chain = fakeKeychain();
+    const srv = server();
+    const service = (storage: typeof safeStorage | ReturnType<typeof syncOnlySafeStorage>) => new FeedbackService({
+      safeStorage: storage, dataDir, appVersion: '1.0.0', isOnline: () => true,
+      create: ((opts: Parameters<typeof createFramebriar>[0]) => createFramebriar({ ...opts, endpoint: 'https://fb.example/api', fetchImpl: srv.fetchImpl })) as typeof createFramebriar,
+    });
+    const before = service(syncOnlySafeStorage(chain));
+    try {
+      expect(await before.connect('i'.repeat(43))).toMatchObject({ connected: true });
+    } finally {
+      await before.shutdown();
+    }
+    const written = fs.readFileSync(path.join(dataDir, 'enrollment.json'), 'utf8');
+    expect(written).not.toContain('r'.repeat(43));
+
+    const after = service(make(chain));
+    try {
+      await after.start();
+      await until(() => after.status().connected);
+      expect(after.status()).toMatchObject({ enrolled: true, canCapture: true, storage: { available: true } });
+      expect(srv.calls).toContain('POST /v1/access/refresh');
+      expect(srv.calls).not.toContain('POST /v1/access/disconnect');
+    } finally {
+      await after.shutdown();
+    }
+
+    // A rollback to a build with only the sync API still has the enrollment.
+    const rollback = service(syncOnlySafeStorage(chain));
+    try {
+      await rollback.start();
+      expect(rollback.status()).toMatchObject({ enrolled: true });
+    } finally {
+      await rollback.shutdown();
     }
   });
 

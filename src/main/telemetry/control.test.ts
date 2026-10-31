@@ -49,7 +49,7 @@ vi.mock('./secret-store', () => ({
     state.secrets = JSON.parse(JSON.stringify(fn(state.secrets)));
     return state.secrets;
   },
-  getSecureStorageState: () => state.storage,
+  getSecureStorageState: async () => state.storage,
 }));
 
 vi.mock('./bootstrap', () => ({

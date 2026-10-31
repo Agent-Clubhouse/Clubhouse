@@ -195,6 +195,12 @@ export class FeedbackService {
   private lastSettledAccess: { state: string; notice: string | null } | null = null;
   /** Start failures already recorded, so a capture or send waiting on start isn't counted again. */
   private readonly startFailures = new WeakSet<object>();
+  /**
+   * The last secure-storage probe. The check is async (Electron 46 has only the async
+   * safeStorage API), so status() reads this copy. Start probes before it restores the
+   * enrollment; actions and status requests probe again.
+   */
+  private storage: { available: boolean; reason?: string } | null = null;
 
   constructor(private readonly deps: FeedbackServiceDeps) {
     this.now = deps.now ?? Date.now;
@@ -230,6 +236,7 @@ export class FeedbackService {
       });
       this.fb = fb;
       const t0 = this.now();
+      await this.probeStorage(fb);
       await fb.start();
       const { state, notice, outbox } = this.status();
       this.log('info', 'Feedback started', { state, notice, pending: outbox.pending, blocked: outbox.blocked, durationMs: this.now() - t0 });
@@ -250,18 +257,43 @@ export class FeedbackService {
   status(): FeedbackStatus {
     const fb = this.fb;
     if (!fb) return toFeedbackStatus(false, { available: true }, DISCONNECTED_ACCESS, EMPTY_OUTBOX, this.received);
-    let storage: { available: boolean; reason?: string };
+    // Not probed yet only while start is probing: the enrollment isn't restored, so
+    // canCapture is still false.
+    return toFeedbackStatus(true, this.storage ?? { available: true }, fb.access.status(), fb.outbox.status(), this.received);
+  }
+
+  /** status() after starting and probing secure storage again (the IPC status request). */
+  async currentStatus(): Promise<FeedbackStatus> {
+    await this.start();
+    await this.recheckStorage();
+    return this.status();
+  }
+
+  /** Probes secure storage for status(); true when the result changed. */
+  private async probeStorage(fb: Framebriar): Promise<boolean> {
+    let next: { available: boolean; reason?: string };
     try {
-      storage = fb.store.probe();
+      const { available, reason } = await fb.store.probeAsync();
+      next = available ? { available } : { available, reason };
     } catch { // telemetry-exempt: shown to the user as storage-unavailable
-      storage = { available: false, reason: 'probe-failed' };
+      next = { available: false, reason: 'probe-failed' };
     }
-    return toFeedbackStatus(true, storage, fb.access.status(), fb.outbox.status(), this.received);
+    // Shut down while probing: the result belongs to a stopped SDK.
+    if (this.fb !== fb) return false;
+    const prev = this.storage;
+    this.storage = next;
+    return !prev || prev.available !== next.available || prev.reason !== next.reason;
+  }
+
+  private async recheckStorage(): Promise<void> {
+    const fb = this.fb;
+    if (fb && await this.probeStorage(fb)) this.emit();
   }
 
   /** Explicit enrollment; the SDK retries transient failures twice with the same attempt id. */
   async connect(invitation: string): Promise<{ connected: boolean; status: FeedbackStatus }> {
     await this.start();
+    await this.recheckStorage();
     const access = this.sdk().access;
     const trimmed = invitation.trim();
     const before = access.status().state;
@@ -293,6 +325,7 @@ export class FeedbackService {
   /** Forget locally (queued feedback stays and is delivered after a later enrollment) and revoke. */
   async disconnect(): Promise<{ forgotten: boolean; revoked: boolean | null; status: FeedbackStatus }> {
     await this.start();
+    await this.recheckStorage();
     const result = await this.sdk().access.disconnect();
     this.log(result.forgotten ? 'info' : 'warn', 'Feedback disconnect', { forgotten: result.forgotten, revoked: result.revoked });
     return { ...result, status: this.status() };
@@ -335,6 +368,7 @@ export class FeedbackService {
     // deliberately has its own telemetry off and cannot supply this context.
     const correlation = (this.deps.captureCorrelation ?? captureFeedbackCorrelation)(this.now());
     await this.start();
+    await this.recheckStorage();
     this.pruneDrafts();
     // open() checks eligibility and records the moment (and trace) feedback opened.
     const opened = await this.sdk().feedback.open();
@@ -395,6 +429,7 @@ export class FeedbackService {
 
   private async sendInner(input: FeedbackSendInput): Promise<FeedbackSendResult> {
     await this.start();
+    await this.recheckStorage();
     const fb = this.sdk();
     const draft = input.draftId ? this.drafts.get(input.draftId) : undefined;
     if (input.draftId && !draft) throw Object.assign(new Error('This feedback draft expired. Open feedback again.'), { code: 'screenshot-expired' });
@@ -495,6 +530,7 @@ export class FeedbackService {
     this.listeners.clear();
     const fb = this.fb;
     this.fb = null;
+    this.storage = null;
     if (fb) this.log('info', 'Feedback stopping', { pending: fb.outbox.status().items });
     await fb?.shutdown();
   }

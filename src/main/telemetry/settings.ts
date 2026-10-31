@@ -244,7 +244,7 @@ export function legacySecrets(settings: TelemetrySettings = getTelemetrySettings
 export async function migrateLegacySecrets(): Promise<boolean> {
   const settings = getTelemetrySettings();
   if (!settings.legacyDestination) return true;
-  if (getSecureStorageState() === 'unavailable') return false;
+  if ((await getSecureStorageState()) === 'unavailable') return false;
   const legacy = legacySecrets(settings);
   await updateSecrets((current) => ({
     connectionString: current.connectionString ?? legacy.connectionString,
