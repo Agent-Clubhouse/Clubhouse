@@ -19,8 +19,8 @@ import type { FreeAgentPermissionMode } from './types';
 
 describe('orchestration policy', () => {
   describe('defaults', () => {
-    it('is off, same access, hands-off, five helpers', () => {
-      expect(ORCHESTRATION_DEFAULTS).toEqual({ orchestrate: false, access: 'same', control: 'hands-off', maxHelpers: 5 });
+    it('is off, same access, hands-off, five helpers, no cross-project helpers', () => {
+      expect(ORCHESTRATION_DEFAULTS).toEqual({ orchestrate: false, access: 'same', control: 'hands-off', maxHelpers: 5, crossProjectHelpers: false });
     });
   });
 
@@ -29,6 +29,11 @@ describe('orchestration policy', () => {
       expect(normalizeOrchestrationConfig({
         orchestrate: true, access: 'root', control: 'ask-everything', maxHelpers: 0, extra: 1,
       })).toEqual({ orchestrate: true, control: 'ask-everything' });
+    });
+
+    it('keeps a boolean crossProjectHelpers only', () => {
+      expect(normalizeOrchestrationConfig({ crossProjectHelpers: true })).toEqual({ crossProjectHelpers: true });
+      expect(normalizeOrchestrationConfig({ crossProjectHelpers: 'yes' })).toBeUndefined();
     });
 
     it('returns undefined for nothing valid', () => {
@@ -43,6 +48,8 @@ describe('orchestration policy', () => {
     it('accepts valid fields and null resets', () => {
       expect(validateOrchestrationPatch({ orchestrate: true, access: 'auto', control: null, maxHelpers: 3 }))
         .toEqual({ orchestrate: true, access: 'auto', control: null, maxHelpers: 3 });
+      expect(validateOrchestrationPatch({ crossProjectHelpers: true })).toEqual({ crossProjectHelpers: true });
+      expect(validateOrchestrationPatch({ crossProjectHelpers: null })).toEqual({ crossProjectHelpers: null });
     });
 
     it('throws on an invalid or unknown field', () => {
@@ -50,6 +57,7 @@ describe('orchestration policy', () => {
       expect(() => validateOrchestrationPatch({ control: 'sometimes' })).toThrow(/control/);
       expect(() => validateOrchestrationPatch({ maxHelpers: 1000 })).toThrow(/maxHelpers/);
       expect(() => validateOrchestrationPatch({ orchestrate: 'yes' })).toThrow(/orchestrate/);
+      expect(() => validateOrchestrationPatch({ crossProjectHelpers: 1 })).toThrow(/crossProjectHelpers/);
       expect(() => validateOrchestrationPatch({ bypass: true })).toThrow(/Unknown/);
       expect(() => validateOrchestrationPatch(null)).toThrow();
     });
@@ -70,7 +78,15 @@ describe('orchestration policy', () => {
     it('layers agent over persona over defaults and reports sources', () => {
       const policy = resolveOrchestrationPolicy({ control: 'ask-everything' }, { orchestrate: true, control: 'hands-off', maxHelpers: 2 });
       expect(policy).toMatchObject({ orchestrate: true, access: 'same', control: 'ask-everything', maxHelpers: 2 });
-      expect(policy.sources).toEqual({ orchestrate: 'persona', access: 'default', control: 'agent', maxHelpers: 'persona' });
+      expect(policy.sources).toEqual({
+        orchestrate: 'persona', access: 'default', control: 'agent', maxHelpers: 'persona', crossProjectHelpers: 'default',
+      });
+    });
+
+    it('takes crossProjectHelpers from persona front-matter', () => {
+      const policy = resolveOrchestrationPolicy(undefined, { orchestrate: true, crossProjectHelpers: true });
+      expect(policy.crossProjectHelpers).toBe(true);
+      expect(policy.sources.crossProjectHelpers).toBe('persona');
     });
 
     it('lets an agent turn off what its persona turns on', () => {

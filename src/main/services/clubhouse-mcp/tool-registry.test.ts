@@ -13,7 +13,14 @@ vi.mock('fs/promises', () => ({
 
 import { registerToolTemplate, registerGlobalTool, getScopedToolList, callTool, refusalReasonOf, buildToolName, buildToolKey, parseToolName, shortHash, invalidateToolListCache, sanitizeWireInstruction, _resetForTesting } from './tool-registry';
 import { bindingManager } from './binding-manager';
-import { setOrchestrationEnabled, onOrchestrationGateChange, _resetOrchestrationGateForTesting } from './orchestration-gate';
+import {
+  closeCrossProject,
+  isCrossProjectEnabled,
+  isOrchestrationEnabled,
+  onOrchestrationGateChange,
+  setOrchestrationEnabled,
+  _resetOrchestrationGateForTesting,
+} from './orchestration-gate';
 import { agentRegistry } from '../agent-registry';
 import { groupProjectRegistry } from '../group-project-registry';
 import type { McpBinding } from './types';
@@ -1045,6 +1052,70 @@ describe('ToolRegistry', () => {
       off();
       setOrchestrationEnabled('agent-1', true);
       expect(listener.mock.calls).toEqual([['agent-1'], ['agent-1']]);
+    });
+  });
+
+  describe('crossProject tool group (#2512)', () => {
+    const OFF = 'Cross-project helpers are turned off for this agent.';
+
+    function registerCrossProjectTool() {
+      const handler = vi.fn().mockResolvedValue({ content: [{ type: 'text', text: 'ok' }] });
+      registerGlobalTool('test_list_projects', { description: 'List projects', inputSchema: { type: 'object' } }, handler, { group: 'crossProject' });
+      return handler;
+    }
+
+    function names(agentId: string): string[] {
+      return getScopedToolList(agentId).map((t) => t.name);
+    }
+
+    it('lists and runs the group\'s tools only with orchestration and cross-project helpers both on', async () => {
+      const handler = registerCrossProjectTool();
+      expect(names('agent-1')).toEqual([]);
+      setOrchestrationEnabled('agent-1', true);
+      expect(names('agent-1')).toEqual([]);
+      const refused = await callTool('agent-1', 'test_list_projects', {});
+      expect(refused).toEqual({ content: [{ type: 'text', text: OFF }], isError: true });
+      expect(refusalReasonOf(refused)).toBe('group_off');
+      expect(handler).not.toHaveBeenCalled();
+
+      setOrchestrationEnabled('agent-1', true, { crossProject: true });
+      expect(names('agent-1')).toEqual(['test_list_projects']);
+      expect((await callTool('agent-1', 'test_list_projects', {})).isError).toBeFalsy();
+      expect(handler).toHaveBeenCalledWith('agent-1', {});
+    });
+
+    it('a crossProject request without orchestration opens nothing', () => {
+      registerCrossProjectTool();
+      setOrchestrationEnabled('agent-1', false, { crossProject: true });
+      expect(isCrossProjectEnabled('agent-1')).toBe(false);
+      expect(names('agent-1')).toEqual([]);
+    });
+
+    it('closing orchestration or only cross-project helpers drops the cached list', () => {
+      registerCrossProjectTool();
+      setOrchestrationEnabled('agent-1', true, { crossProject: true });
+      expect(names('agent-1')).toEqual(['test_list_projects']);
+      closeCrossProject('agent-1');
+      expect(names('agent-1')).toEqual([]);
+      expect(isOrchestrationEnabled('agent-1')).toBe(true);
+
+      setOrchestrationEnabled('agent-1', true, { crossProject: true });
+      expect(names('agent-1')).toEqual(['test_list_projects']);
+      setOrchestrationEnabled('agent-1', false);
+      expect(names('agent-1')).toEqual([]);
+      expect(isCrossProjectEnabled('agent-1')).toBe(false);
+    });
+
+    it('notifies gate listeners when only the crossProject gate changes', () => {
+      const listener = vi.fn();
+      const off = onOrchestrationGateChange(listener);
+      setOrchestrationEnabled('agent-1', true);
+      setOrchestrationEnabled('agent-1', true, { crossProject: true });
+      setOrchestrationEnabled('agent-1', true, { crossProject: true });
+      closeCrossProject('agent-1');
+      closeCrossProject('agent-1');
+      off();
+      expect(listener).toHaveBeenCalledTimes(3);
     });
   });
 });

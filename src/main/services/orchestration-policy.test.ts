@@ -51,7 +51,41 @@ vi.mock('./agent-config', () => ({
   getDisposeChecks: mocks.getDisposeChecks,
   getWorktreeStatus: vi.fn(async () => ({ isValid: false, branch: '', uncommittedFiles: [], unpushedCommits: [], hasRemote: true })),
   disposeHelper: mocks.disposeHelper,
+  isSameProject: vi.fn(async (a: string, b: string) => path.resolve(a) === path.resolve(b)),
 }));
+
+/**
+ * The helper index (#2511) over every project in `state.agents`, home first:
+ * a row in another project is a helper of the home agent when its
+ * parentProjectPath names the home project.
+ */
+vi.mock('./helper-index', () => {
+  const homeOf = (projectPath: string, row: DurableAgentConfig) => row.parentProjectPath ?? projectPath;
+  const all = (homePath: string) => {
+    const paths = [homePath, ...[...state.agents.keys()].filter((p) => p !== homePath)];
+    return paths.flatMap((projectPath) => agentsOf(projectPath).map((config) => ({ projectPath, config })));
+  };
+  return {
+    listHelpersEverywhere: vi.fn(async (homePath: string, orchestratorId: string, options: { includeDisposed?: boolean; recursive?: boolean } = {}) => {
+      const rows = all(homePath);
+      const childrenOf = (parentPath: string, parentId: string) => rows.filter(({ projectPath, config }) =>
+        config.parentAgentId === parentId && homeOf(projectPath, config) === parentPath);
+      if (!options.recursive) {
+        return childrenOf(homePath, orchestratorId).filter(({ config }) => options.includeDisposed || !config.disposedAt);
+      }
+      const out: Array<{ projectPath: string; config: DurableAgentConfig }> = [];
+      const queue = [{ projectPath: homePath, id: orchestratorId }];
+      while (queue.length) {
+        const parent = queue.shift()!;
+        for (const row of childrenOf(parent.projectPath, parent.id)) {
+          queue.push({ projectPath: row.projectPath, id: row.config.id });
+          if (!row.config.disposedAt) out.push(row);
+        }
+      }
+      return out;
+    }),
+  };
+});
 
 vi.mock('./clubhouse-mcp/tool-registry', () => ({ registerGlobalTool: vi.fn() }));
 vi.mock('../util/ipc-broadcast', () => ({ broadcastToAllWindows: vi.fn() }));
@@ -90,14 +124,16 @@ import {
   checkHelperLimitFor,
   getHelperSummary,
   getOrchestrationPolicy,
+  isCrossProjectAllowed,
   reconcileAfterPersonaChange,
   resolveHelperLaunchSettings,
   resolveOrchestrationPolicies,
   setOrchestrationPolicy,
   syncOrchestrationGate,
   turnOffOrchestration,
+  withAgentLock,
 } from './orchestration-policy';
-import { isOrchestrationEnabled, setOrchestrationEnabled, _resetOrchestrationGateForTesting } from './clubhouse-mcp/orchestration-gate';
+import { isCrossProjectEnabled, isOrchestrationEnabled, setOrchestrationEnabled, _resetOrchestrationGateForTesting } from './clubhouse-mcp/orchestration-gate';
 import { notifyPersonaChanged, notifyProjectDefaultPersonaChanged } from './persona-change-hook';
 import * as agentConfig from './agent-config';
 import { disposeHelperTool } from './clubhouse-mcp/tools/helper-dispose-tools';
@@ -300,10 +336,20 @@ describe('setOrchestrationPolicy', () => {
     live('orch');
     await syncOrchestrationGate(PROJECT, 'orch');
     const result = await setOrchestrationPolicy(PROJECT, 'orch', { orchestrate: false });
-    expect(result).toMatchObject({ ok: false, needsHelperChoice: { helperIds: ['h1'] } });
+    expect(result).toMatchObject({ ok: false, needsHelperChoice: { helperIds: ['h1'], projects: [{ projectPath: PROJECT, helperIds: ['h1'] }] } });
     expect(find('orch').orchestration).toEqual({ orchestrate: true });
     expect(isOrchestrationEnabled('orch')).toBe(true);
     expect(agentConfig.setOrchestrationConfig).not.toHaveBeenCalled();
+  });
+
+  it('asks for a helper choice when the only helpers are in another project', async () => {
+    setAgents(PROJECT, [agent('orch', { orchestration: { orchestrate: true } })]);
+    setAgents(OTHER_PROJECT, [agent('x1', { parentAgentId: 'orch', parentProjectPath: PROJECT })]);
+    const result = await setOrchestrationPolicy(PROJECT, 'orch', { orchestrate: false });
+    expect(result).toMatchObject({
+      ok: false,
+      needsHelperChoice: { helperIds: ['x1'], projects: [{ projectPath: OTHER_PROJECT, helperIds: ['x1'] }] },
+    });
   });
 
   it('applies concurrent patches one after another, losing none', async () => {
@@ -413,8 +459,23 @@ describe('getHelperSummary', () => {
       agent('h1a', { parentAgentId: 'h1' }),
       agent('gone', { parentAgentId: 'orch', disposedAt: '2026-10-18T00:00:00Z' }),
     ]);
-    expect(await getHelperSummary(PROJECT, 'orch')).toEqual({ hasHelpers: true, helperIds: ['h1'] });
-    expect(await getHelperSummary(PROJECT, 'h1a')).toEqual({ hasHelpers: false, helperIds: [] });
+    expect(await getHelperSummary(PROJECT, 'orch')).toEqual({ hasHelpers: true, helperIds: ['h1'], projects: [{ projectPath: PROJECT, helperIds: ['h1'] }] });
+    expect(await getHelperSummary(PROJECT, 'h1a')).toEqual({ hasHelpers: false, helperIds: [], projects: [] });
+  });
+
+  it('includes helpers in other projects, grouped by project, home first', async () => {
+    setAgents(PROJECT, [agent('orch'), agent('h1', { parentAgentId: 'orch' })]);
+    setAgents(OTHER_PROJECT, [
+      agent('x1', { parentAgentId: 'orch', parentProjectPath: PROJECT }),
+      agent('x2', { parentAgentId: 'orch', parentProjectPath: PROJECT }),
+      // Same id, but a parent in its own project: not ours.
+      agent('x3', { parentAgentId: 'orch' }),
+    ]);
+    expect(await getHelperSummary(PROJECT, 'orch')).toEqual({
+      hasHelpers: true,
+      helperIds: ['h1', 'x1', 'x2'],
+      projects: [{ projectPath: PROJECT, helperIds: ['h1'] }, { projectPath: OTHER_PROJECT, helperIds: ['x1', 'x2'] }],
+    });
   });
 });
 
@@ -603,6 +664,148 @@ describe('turnOffOrchestration', () => {
 
   it('rejects an unknown choice', async () => {
     await expect(turnOffOrchestration(PROJECT, 'orch', 'maybe' as never)).rejects.toThrow(/Unknown choice/);
+  });
+});
+
+describe('cross-project helpers (#2512)', () => {
+  it('opens the crossProject gate only when orchestration and cross-project helpers are both on', async () => {
+    setAgents(PROJECT, [agent('orch')]);
+    live('orch');
+    await setOrchestrationPolicy(PROJECT, 'orch', { crossProjectHelpers: true });
+    expect(isOrchestrationEnabled('orch')).toBe(false);
+    expect(isCrossProjectEnabled('orch')).toBe(false);
+
+    await setOrchestrationPolicy(PROJECT, 'orch', { orchestrate: true });
+    expect(isOrchestrationEnabled('orch')).toBe(true);
+    expect(isCrossProjectEnabled('orch')).toBe(true);
+    expect(await isCrossProjectAllowed(PROJECT, 'orch')).toBe(true);
+
+    await setOrchestrationPolicy(PROJECT, 'orch', { orchestrate: false });
+    expect(isCrossProjectEnabled('orch')).toBe(false);
+    expect(await isCrossProjectAllowed(PROJECT, 'orch')).toBe(false);
+  });
+
+  it('opens it at spawn from the saved policy or persona front-matter', async () => {
+    state.personas.set('xp', persona({ orchestrate: true, crossProjectHelpers: true }));
+    setAgents(PROJECT, [agent('orch', { persona: 'xp' }), agent('plain', { orchestration: { orchestrate: true } })]);
+    live('orch');
+    live('plain');
+    await syncOrchestrationGate(PROJECT, 'orch');
+    await syncOrchestrationGate(PROJECT, 'plain');
+    expect(isCrossProjectEnabled('orch')).toBe(true);
+    expect(isOrchestrationEnabled('plain')).toBe(true);
+    expect(isCrossProjectEnabled('plain')).toBe(false);
+  });
+
+  it('turning only cross-project helpers off closes that gate and keeps orchestration', async () => {
+    setAgents(PROJECT, [agent('orch', { orchestration: { orchestrate: true, crossProjectHelpers: true } })]);
+    live('orch');
+    await syncOrchestrationGate(PROJECT, 'orch');
+    const result = await setOrchestrationPolicy(PROJECT, 'orch', { crossProjectHelpers: false });
+    expect(result.ok).toBe(true);
+    expect(result.crossProjectHelpersKept).toBeUndefined();
+    expect(isOrchestrationEnabled('orch')).toBe(true);
+    expect(isCrossProjectEnabled('orch')).toBe(false);
+  });
+
+  it('turning cross-project helpers off settles nothing and reports the helpers that keep running', async () => {
+    setAgents(PROJECT, [
+      agent('orch', { orchestration: { orchestrate: true, crossProjectHelpers: true } }),
+      agent('h1', { parentAgentId: 'orch' }),
+    ]);
+    setAgents(OTHER_PROJECT, [
+      agent('x1', { parentAgentId: 'orch', parentProjectPath: PROJECT }),
+      agent('x2', { parentAgentId: 'orch', parentProjectPath: PROJECT }),
+    ]);
+    live('orch');
+    await syncOrchestrationGate(PROJECT, 'orch');
+    const result = await setOrchestrationPolicy(PROJECT, 'orch', { crossProjectHelpers: false });
+    expect(result).toMatchObject({ ok: true, crossProjectHelpersKept: 2 });
+    expect(mocks.resolveHelpersForDelete).not.toHaveBeenCalled();
+    expect(find('x1', OTHER_PROJECT).parentAgentId).toBe('orch');
+  });
+
+  it('a read closes the crossProject gate when the setting is now off on disk, never opens it', async () => {
+    setAgents(PROJECT, [agent('orch', { orchestration: { orchestrate: true, crossProjectHelpers: true } })]);
+    live('orch');
+    await syncOrchestrationGate(PROJECT, 'orch');
+    find('orch').orchestration = { orchestrate: true };
+    await getOrchestrationPolicy(PROJECT, 'orch');
+    expect(isOrchestrationEnabled('orch')).toBe(true);
+    expect(isCrossProjectEnabled('orch')).toBe(false);
+    find('orch').orchestration = { orchestrate: true, crossProjectHelpers: true };
+    await getOrchestrationPolicy(PROJECT, 'orch');
+    expect(isCrossProjectEnabled('orch')).toBe(false);
+  });
+
+  it('isCrossProjectAllowed is false for an unknown agent or a closed gate', async () => {
+    expect(await isCrossProjectAllowed(PROJECT, 'nobody')).toBe(false);
+    setAgents(PROJECT, [agent('orch', { orchestration: { orchestrate: true, crossProjectHelpers: true } })]);
+    expect(await isCrossProjectAllowed(PROJECT, 'orch')).toBe(false);
+  });
+
+  it('turn-off dispose stops each running helper in its own project', async () => {
+    setAgents(PROJECT, [agent('orch', { orchestration: { orchestrate: true } }), agent('h1', { parentAgentId: 'orch' })]);
+    setAgents(OTHER_PROJECT, [agent('x1', { parentAgentId: 'orch', parentProjectPath: PROJECT })]);
+    state.running.add('h1');
+    state.running.add('x1');
+    mocks.resolveHelpersForDelete.mockImplementation(async (_p: string, _id: string, _c: string, opts: { dryRun?: boolean } = {}) => {
+      if (!opts.dryRun) {
+        delete find('h1').parentAgentId;
+        delete find('x1', OTHER_PROJECT).parentAgentId;
+      }
+      return { ok: true, message: 'Disposed', helperIds: ['h1', 'x1'] };
+    });
+    const result = await turnOffOrchestration(PROJECT, 'orch', 'dispose');
+    expect(result).toMatchObject({ ok: true, helperIds: ['h1', 'x1'] });
+    expect(mocks.killAgent).toHaveBeenCalledWith('h1', PROJECT, undefined, 'user', { waitForExit: true });
+    expect(mocks.killAgent).toHaveBeenCalledWith('x1', OTHER_PROJECT, undefined, 'user', { waitForExit: true });
+  });
+
+  it('turn-off keep settles a helper that appeared in another project meanwhile', async () => {
+    setAgents(PROJECT, [agent('orch', { orchestration: { orchestrate: true } }), agent('h1', { parentAgentId: 'orch' })]);
+    setAgents(OTHER_PROJECT, []);
+    let calls = 0;
+    mocks.resolveHelpersForDelete.mockImplementation(async () => {
+      calls++;
+      if (calls === 1) {
+        delete find('h1').parentAgentId;
+        agentsOf(OTHER_PROJECT).push(agent('late', { parentAgentId: 'orch', parentProjectPath: PROJECT }));
+        return { ok: true, message: 'Kept', helperIds: ['h1'] };
+      }
+      delete find('late', OTHER_PROJECT).parentAgentId;
+      return { ok: true, message: 'Kept', helperIds: ['late'] };
+    });
+    const result = await turnOffOrchestration(PROJECT, 'orch', 'keep');
+    expect(calls).toBe(2);
+    expect(result).toMatchObject({ ok: true, helperIds: ['h1', 'late'] });
+  });
+
+  it('the helper limit counts helpers in other projects', async () => {
+    setAgents(PROJECT, [
+      agent('orch', { orchestration: { orchestrate: true, maxHelpers: 2 } }),
+      agent('h1', { parentAgentId: 'orch' }),
+    ]);
+    setAgents(OTHER_PROJECT, [agent('x1', { parentAgentId: 'orch', parentProjectPath: PROJECT })]);
+    live('orch');
+    await syncOrchestrationGate(PROJECT, 'orch');
+    expect(await checkHelperLimitFor(PROJECT, 'orch')).toMatchObject({ ok: false, reason: 'agent-limit', helperCount: 2 });
+  });
+});
+
+describe('withAgentLock', () => {
+  it('keys on the agent id alone, so two project paths for one agent share the lock', async () => {
+    const order: string[] = [];
+    let release!: () => void;
+    const held = new Promise<void>((r) => { release = r; });
+    const first = withAgentLock(PROJECT, 'orch', async () => { order.push('first start'); await held; order.push('first end'); });
+    const second = withAgentLock(OTHER_PROJECT, 'orch', async () => { order.push('second'); });
+    const other = withAgentLock(PROJECT, 'someone-else', async () => { order.push('other agent'); });
+    await other;
+    expect(order).toEqual(['first start', 'other agent']);
+    release();
+    await Promise.all([first, second]);
+    expect(order).toEqual(['first start', 'other agent', 'first end', 'second']);
   });
 });
 

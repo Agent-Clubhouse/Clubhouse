@@ -28,7 +28,7 @@ import { MobileControlError } from './mobile-control';
 import * as orchestrationPolicy from './orchestration-policy';
 import * as orchestrationSettings from './orchestration-settings';
 import {
-  ACCESS_LEVELS, MAX_HELPER_LIMIT, ORCHESTRATION_CONTROLS, ORCHESTRATION_DEFAULTS, validateOrchestrationPatch,
+  ACCESS_LEVELS, MAX_HELPER_LIMIT, ORCHESTRATION_CONTROLS, validateOrchestrationPatch,
   type OrchestrationAccess, type OrchestrationPolicyPatch, type ResolvedOrchestrationPolicy,
 } from '../../shared/orchestration-policy';
 
@@ -134,14 +134,19 @@ const ACCESS_CHOICES: readonly OrchestrationAccess[] = ['same', ...ACCESS_LEVELS
 export function mobileOrchestration(policy: ResolvedOrchestrationPolicy) {
   const { orchestrate, access, control, maxHelpers, sources } = policy;
   return {
-    orchestrate, access, control, maxHelpers, sources: { ...sources },
+    orchestrate, access, control, maxHelpers,
+    sources: { orchestrate: sources.orchestrate, access: sources.access, control: sources.control, maxHelpers: sources.maxHelpers },
     maxHelpersCap: maxHelpersCap(), controls: [...ORCHESTRATION_CONTROLS], accessLevels: [...ACCESS_CHOICES],
   };
 }
 export type MobileOrchestration = ReturnType<typeof mobileOrchestration>;
 
-/** Every policy field, for agent.update's `orchestration: null` (clear every override). */
-const CLEAR_ALL: OrchestrationPolicyPatch = Object.fromEntries(Object.keys(ORCHESTRATION_DEFAULTS).map((k): [string, null] => [k, null]));
+/**
+ * Every policy field a phone shows, for agent.update's `orchestration: null`
+ * (clear every override). Cross-project helpers (#2512) isn't on the phone
+ * yet, so a phone never clears it unseen.
+ */
+const CLEAR_ALL: OrchestrationPolicyPatch = { orchestrate: null, access: null, control: null, maxHelpers: null };
 
 /**
  * A phone's orchestration patch, checked with the desktop's rules: the shared

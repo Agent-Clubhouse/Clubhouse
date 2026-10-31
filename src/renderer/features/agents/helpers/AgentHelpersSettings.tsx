@@ -11,12 +11,12 @@ import { Toggle } from '../../../components/Toggle';
 import { Field, SectionHeading, inputClass, selectClass } from '../agentSettingsUi';
 import { controlHelp } from './helper-model';
 import { maxHelpersCeiling, useOrchestration } from './orchestration-hooks';
-import { AccessSelect, ControlSelect, HelperCountInput, accessNote } from './OrchestrationFields';
+import { AccessSelect, CROSS_PROJECT_HELP, ControlSelect, CrossProjectToggle, HelperCountInput, accessNote } from './OrchestrationFields';
 import { TurnOffOrchestrationDialog } from './TurnOffOrchestrationDialog';
 
 export function AgentHelpersSettings({ agent, projectPath }: { agent: Agent; projectPath: string | undefined }) {
   const orch = useOrchestration(projectPath, agent);
-  const ids = { toggle: useId(), access: useId(), control: useId(), count: useId() };
+  const ids = { toggle: useId(), access: useId(), control: useId(), count: useId(), crossProject: useId() };
   const [countError, setCountError] = useState<string | null>(null);
   const { policy, access, saving } = orch;
   const running = agent.status === 'running';
@@ -70,6 +70,18 @@ export function AgentHelpersSettings({ agent, projectPath }: { agent: Agent; pro
           testId="settings-orchestrate-max-helpers"
         />
       </Field>
+      {policy.orchestrate && (
+        <Field label="Cross-project helpers" htmlFor={ids.crossProject} help={CROSS_PROJECT_HELP}>
+          <CrossProjectToggle
+            id={ids.crossProject}
+            checked={policy.crossProjectHelpers}
+            name={agent.name}
+            disabled={saving}
+            onChange={(on) => void orch.setCrossProjectHelpers(on)}
+            testId="settings-orchestrate-cross-project"
+          />
+        </Field>
+      )}
 
       <SectionHeading title="Defaults for new helpers" />
       <Field
@@ -92,7 +104,13 @@ export function AgentHelpersSettings({ agent, projectPath }: { agent: Agent; pro
       {orch.error && <p className="py-1.5 text-xs text-ctp-error" role="alert" data-testid="settings-orchestrate-error">{orch.error}</p>}
 
       {orch.turnOff && (
-        <TurnOffOrchestrationDialog agent={agent} projectPath={projectPath} helperIds={orch.turnOff.helperIds} onDone={orch.finishTurnOff} />
+        <TurnOffOrchestrationDialog
+          agent={agent}
+          projectPath={projectPath}
+          helperIds={orch.turnOff.helperIds}
+          helperProjects={orch.turnOff.projects}
+          onDone={orch.finishTurnOff}
+        />
       )}
     </div>
   );
