@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach, vi } from 'vitest';
 import React from 'react';
 import { render, screen, fireEvent, within, act } from '@testing-library/react';
 import { useAgentStore } from '../../stores/agentStore';
+import { useProjectStore } from '../../stores/projectStore';
 import { ProjectTree, type ProjectTreeProps } from './ProjectTree';
 import { useChromeStore } from '../chromeStore';
 import type { Agent, Project } from '../../../shared/types';
@@ -635,5 +636,42 @@ describe('ProjectTree helpers nested under their parent (#2231)', () => {
     expect(within(row('h1')).getByRole('img', { name: 'Starting' })).toBeTruthy();
     expect(within(row('h2')).getByTestId('agent-row-note')).toHaveTextContent("couldn't start");
     expect(within(row('h2')).getByTestId('agent-row-note')).toHaveClass('text-ctp-error');
+  });
+});
+
+describe('ProjectTree helpers whose orchestrator is in another project (#2514)', () => {
+  const order = () => [...document.querySelectorAll('[data-agent-id]')].map((el) => el.getAttribute('data-agent-id'));
+  // The orchestrator `boss` is in project b; its helper `ui` is in project a, beside an agent of the same id.
+  const cross = (over: Partial<Agent> = {}) => agent('ui', 'a', { parentAgentId: 'boss', parentProjectPath: '/src/b', parentProjectId: 'b', ...over });
+
+  beforeEach(() => {
+    useChromeStore.setState({ collapsedAgentIds: [], expandedFolds: [] });
+    useProjectStore.setState({ projects: [project('a'), { ...project('b'), displayName: 'Annex' }] } as never);
+    useAgentStore.setState({ agents: { boss: agent('boss', 'b') } } as never);
+  });
+
+  it('shows the helper as a root with plain "Helper of" text, never nested under an agent here', () => {
+    setup({ agentsByProject: { a: [agent('lead', 'a'), agent('boss', 'a'), cross()] } });
+    expect(order()).toEqual(['lead', 'boss', 'ui']);
+    expect(screen.queryByTestId('helper-of-boss')).toBeNull();
+    expect(screen.queryByTestId('helpers-toggle-boss')).toBeNull();
+    expect(screen.getByTestId('other-project-parent-ui')).toHaveTextContent('Helper of boss in Annex');
+    // Top-level agents here get no such line.
+    expect(screen.queryByTestId('other-project-parent-lead')).toBeNull();
+  });
+
+  it('names the project by its folder when it isn\'t open, and the orchestrator generically when it isn\'t loaded', () => {
+    useAgentStore.setState({ agents: {} } as never);
+    setup({ agentsByProject: { a: [cross({ parentProjectPath: '/src/gone', parentProjectId: undefined })] } });
+    expect(screen.getByTestId('other-project-parent-ui')).toHaveTextContent('Helper of an agent in gone');
+  });
+
+  it('opens the sleeping fold when the chosen helper is asleep in it', () => {
+    const { rerender } = render(<ProjectTree {...baseProps()} agentsByProject={{ a: [agent('lead', 'a'), cross({ status: 'sleeping' })] }} activeAgentId="lead" />);
+    expect(order()).toEqual(['lead']);
+    act(() => useAgentStore.getState().setActiveAgent('ui', 'a'));
+    rerender(<ProjectTree {...baseProps()} agentsByProject={{ a: [agent('lead', 'a'), cross({ status: 'sleeping' })] }} activeAgentId="ui" />);
+    expect(useChromeStore.getState().expandedFolds).toContain('a:sleeping');
+    expect(order()).toEqual(['lead', 'ui']);
   });
 });
