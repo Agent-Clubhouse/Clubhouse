@@ -5,14 +5,13 @@
 import {randomUUID} from 'node:crypto';
 import {LIMITS,normalizeReport,normalizeIncident} from '../../src/protocol.mjs';
 import {isPng,sha256} from './transport.mjs';
-import {randomHex} from './telemetry.mjs';
 
 const fault=(code,message)=>Object.assign(Error(message),{code});
 const freeze=value=>{if(value&&typeof value==='object'&&!Buffer.isBuffer(value)){for(const child of Object.values(value))freeze(child);Object.freeze(value);}return value;};
 const traceOf=x=>/^[0-9a-f]{32}$/.test(x?.traceId??'')&&/^[0-9a-f]{16}$/.test(x?.spanId??'')?{traceId:x.traceId,spanId:x.spanId}:{};
 
 export function createFeedback({access,outbox,telemetry,capture,incidentProvider,appId=access?.gameId,gameId=appId,buildSha=null,appVersion,
-  sessionId=telemetry?.sessionId??`s-${randomHex(12)}`,platform=`${process.platform}-${process.arch}`,now=()=>Date.now()}={}){
+  sessionId=telemetry?.sessionId??randomUUID(),platform=`${process.platform}-${process.arch}`,now=()=>Date.now()}={}){
   if(!access||!outbox||typeof outbox.enqueue!=='function')throw Error('createFeedback requires access and outbox');
   if(!/^[a-z0-9-]{1,60}$/.test(gameId??'')||(buildSha!==null&&!/^[a-f0-9]{7,40}$/.test(buildSha))||
     (appVersion!=null&&!/^[A-Za-z0-9._+-]{1,40}$/.test(appVersion))||!/^[A-Za-z0-9_-]{1,64}$/.test(sessionId))throw Error('Invalid feedback configuration');

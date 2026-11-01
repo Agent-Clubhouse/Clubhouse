@@ -16,17 +16,25 @@ export const app = {
   },
 };
 
-/** Reversible stand-in for OS-backed encryption; never use in production code. */
+const testDecrypt = (buf: Buffer) => {
+  const text = buf.toString('utf8');
+  if (!text.startsWith('test-enc:')) throw new Error('Error while decrypting the ciphertext provided to safeStorage.decryptString.');
+  return text.slice('test-enc:'.length);
+};
+
+/**
+ * Reversible stand-in for OS-backed encryption; never use in production code. Like
+ * Electron 45 it has both the sync and the async API, sharing one ciphertext format.
+ */
 export const safeStorage = {
   isEncryptionAvailable: () => true,
+  isAsyncEncryptionAvailable: async () => true,
   getSelectedStorageBackend: () => 'gnome_libsecret',
   setUsePlainTextEncryption: (_usePlainText: boolean) => {},
   encryptString: (plain: string) => Buffer.from(`test-enc:${plain}`, 'utf8'),
-  decryptString: (buf: Buffer) => {
-    const text = buf.toString('utf8');
-    if (!text.startsWith('test-enc:')) throw new Error('Error while decrypting the ciphertext provided to safeStorage.decryptString.');
-    return text.slice('test-enc:'.length);
-  },
+  encryptStringAsync: async (plain: string) => Buffer.from(`test-enc:${plain}`, 'utf8'),
+  decryptString: testDecrypt,
+  decryptStringAsync: async (buf: Buffer) => ({ result: testDecrypt(buf), shouldReEncrypt: false }),
 };
 
 export const BrowserWindow = {

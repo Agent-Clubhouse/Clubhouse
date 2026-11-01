@@ -3,8 +3,8 @@
  * Vendors the Framebriar Node/Electron SDK (github.com/masra91/framebriar)
  * into src/main/vendor/framebriar/, keeping its relative layout, and pins it.
  *
- *   node scripts/vendor-framebriar.mjs --from ~/source/framebriar [--commit <sha>]
- *       Copy the files at <sha> (default: the checkout's HEAD) and rewrite the manifest.
+ *   node scripts/vendor-framebriar.mjs --from ~/source/framebriar [--commit <sha or tag>]
+ *       Copy the files at that commit (default: the checkout's HEAD) and rewrite the manifest.
  *   node scripts/vendor-framebriar.mjs --check [--from ~/source/framebriar]
  *       Fail if a vendored file was edited locally (hash differs from the manifest), or,
  *       with --from, if the pinned commit's files differ from what's vendored.
@@ -69,7 +69,8 @@ export function checkUpstream(src) {
 }
 
 function vendor(src, commit) {
-  const sha = git(src, 'rev-parse', commit).toString('utf8').trim();
+  // Peel annotated tags (`--commit v0.5.1`) to the commit they point at.
+  const sha = git(src, 'rev-parse', `${commit}^{commit}`).toString('utf8').trim();
   const files = filesAt(src, sha);
   // Drop files the previous pin vendored that the new one doesn't. Clubhouse-owned
   // files next to them (the *.d.mts typings) are left alone.

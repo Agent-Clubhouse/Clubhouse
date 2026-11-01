@@ -9,7 +9,7 @@
 // ring; feedbackSubmitted({includeDiagnostics:true}) sends that report's excerpt.
 // Memory only: nothing is written to disk and nothing survives a restart.
 import {TELEMETRY_LIMITS,scrubTelemetryText,telemetryAttributes,createExponentialHistogram} from '../browser/telemetry.mjs';
-import {randomFillSync} from 'node:crypto';
+import {randomFillSync,randomUUID} from 'node:crypto';
 import {unrefTimer} from './access.mjs';
 
 export {TELEMETRY_LIMITS,scrubTelemetryText,telemetryAttributes};
@@ -44,7 +44,7 @@ export function createTelemetry({access,endpoint=access?.endpoint,appId=access?.
   if(!/^[a-z0-9-]{1,60}$/.test(gameId??''))throw Error('Invalid telemetry app');
   if(buildSha!==null&&!/^[a-f0-9]{7,40}$/.test(buildSha))throw Error('Invalid telemetry build');
   if(!['continuous','excerpt-only'].includes(mode))throw Error('Invalid telemetry mode');
-  sessionId??=`s-${randomHex(12)}`;
+  sessionId??=randomUUID();
   if(!/^[A-Za-z0-9_-]{1,64}$/.test(sessionId))throw Error('Invalid telemetry session');
   const continuous=mode==='continuous';
   const url=`${endpoint.replace(/\/$/,'')}/v1/telemetry`;

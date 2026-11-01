@@ -174,7 +174,7 @@ export async function getStatus(): Promise<TelemetryStatus> {
     },
     installId: settings.installId,
     consentAccepted: consented,
-    secureStorage: getSecureStorageState(),
+    secureStorage: await getSecureStorageState(),
     weakStorageAccepted: settings.weakStorageAccepted === true,
     offlineItems: azureEntry ? await countOfflineItems(getOfflineDir()) : 0,
     lastError: anyEnabled && !isRunning() ? getLastStartError() : undefined,
@@ -209,7 +209,7 @@ async function applyRuntime({ clearOffline = false } = {}): Promise<boolean> {
 
 /** Secure storage gate shared by both secret-saving actions. */
 async function checkStorage(ack: TelemetryAcknowledgements | undefined, settings: TelemetrySettings): Promise<TelemetryEnableResult | 'weak_ok' | 'ok'> {
-  const state = getSecureStorageState();
+  const state = await getSecureStorageState();
   if (state === 'unavailable') {
     return fail('secure_storage_unavailable', 'Secure storage is not available on this system, so secrets cannot be saved.');
   }
@@ -410,7 +410,7 @@ export async function setEnabled(
   // have connected while the dialog was open).
   else if (followNeedsConfirm && !followConfirmed) needs.push('destination');
   const usesSecrets = entry.kind === 'azure' || Object.keys((config as { headers?: Record<string, string> }).headers ?? {}).length > 0;
-  if (usesSecrets && getSecureStorageState() === 'weak' && !settings.weakStorageAccepted && !ack.weakStorage) {
+  if (usesSecrets && (await getSecureStorageState()) === 'weak' && !settings.weakStorageAccepted && !ack.weakStorage) {
     needs.push('weak_storage');
   }
   if (needs.length) {

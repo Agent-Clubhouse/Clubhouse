@@ -31,6 +31,8 @@ const svc = vi.hoisted(() => ({
   service: {
     start: vi.fn(async () => {}),
     status: vi.fn(() => ({ started: true, canCapture: true })),
+    // Like the service: start, probe secure storage again, then status().
+    currentStatus: vi.fn(async () => { await svc.service.start(); return svc.service.status(); }),
     connect: vi.fn(async (inv: string) => ({ connected: inv === 'good', status: {} })),
     disconnect: vi.fn(async () => ({ forgotten: true, revoked: true, status: {} })),
     captureDraft: vi.fn(async (sources: Array<{ label: string; grab: () => Promise<Buffer | null> }>) => ({

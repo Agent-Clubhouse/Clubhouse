@@ -4,12 +4,23 @@
 
 export declare const FRAMEBRIAR_ENDPOINT: string;
 
-export interface SafeStorageLike {
+/** Electron 42+. The store uses it when all three methods exist (the only API in Electron 46+). */
+export interface AsyncSafeStorageLike {
+  isAsyncEncryptionAvailable(): Promise<boolean>;
+  encryptStringAsync(plain: string): Promise<Buffer>;
+  decryptStringAsync(encrypted: Buffer): Promise<{ result: string; shouldReEncrypt: boolean }>;
+  getSelectedStorageBackend?(): string;
+}
+
+/** The sync API (deprecated in Electron 45, removed in 46): the store's fallback. */
+export interface SyncSafeStorageLike {
   isEncryptionAvailable(): boolean;
   encryptString(plain: string): Buffer;
   decryptString(encrypted: Buffer): string;
   getSelectedStorageBackend?(): string;
 }
+
+export type SafeStorageLike = AsyncSafeStorageLike | SyncSafeStorageLike;
 
 export type FramebriarAccessState =
   | 'disconnected' | 'checking' | 'connecting' | 'connected' | 'offline' | 'stopped' | 'disconnecting'
@@ -126,8 +137,17 @@ export interface FramebriarTelemetry {
   shutdown(): Promise<void>;
 }
 
+export interface FramebriarStorageAvailability {
+  available: boolean;
+  reason?: string;
+  backend?: string | null;
+}
+
 export interface FramebriarStore {
-  probe(): { available: boolean; reason?: string; backend?: string | null };
+  /** @deprecated Sync safeStorage API only: reports `safe-storage-missing` on Electron 46+. Use probeAsync. */
+  probe(): FramebriarStorageAvailability;
+  /** `api` is the safeStorage API the store reads and writes with. */
+  probeAsync(): Promise<FramebriarStorageAvailability & { api?: 'async' | 'sync' }>;
 }
 
 export interface Framebriar {

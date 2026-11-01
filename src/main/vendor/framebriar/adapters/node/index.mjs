@@ -7,7 +7,7 @@ import {createOutbox} from './outbox.mjs';
 import {createTelemetry} from './telemetry.mjs';
 import {createFeedback} from './feedback.mjs';
 
-export {createSecureStore,secureStorageAvailability,SecureStoreError} from './secure-store.mjs';
+export {createSecureStore,secureStorageAvailability,secureStorageAvailabilityAsync,safeStorageApi,SecureStoreError} from './secure-store.mjs';
 export {createAccess,FRAMEBRIAR_ENDPOINT,validEndpoint} from './access.mjs';
 export {createOutbox} from './outbox.mjs';
 export {sendReport,FeedbackDeliveryError} from './transport.mjs';

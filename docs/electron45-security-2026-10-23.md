@@ -101,6 +101,9 @@ were compared with source and packaging:
 - safeStorage's synchronous API still works in 45 but is deprecated for removal
   in 46. CH and vendored Framebriar need an asynchronous storage migration before
   the next major; no encryption fallback or keychain setting was changed here.
+  **Done (#2521):** both stores now use the async API when Electron has it, with
+  the sync API as a fallback. Existing files decrypt unchanged. See
+  `docs/framebriar-sdk-drop-20261031.md`.
 
 ## Patched build archive dependencies
 

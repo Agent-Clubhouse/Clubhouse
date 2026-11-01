@@ -1003,7 +1003,7 @@ Telemetry export                                ← new (v1 layout; see §6.11 f
 - **Connection string handling:**
   - It is parsed locally. `InstrumentationKey` must be a GUID and `IngestionEndpoint` must be an `https:` URL whose host ends in `.applicationinsights.azure.com` or a sovereign-cloud equivalent. The allowlist lives in code. Any other host requires the Other (OTLP) destination.
   - Bare instrumentation keys are rejected with a message that IKey-only ingestion was retired in 2025.
-  - It is stored with **`safeStorage.encryptString`** in `userData/telemetry-secret.bin`, mode 0600. This is the first use of `safeStorage` in the codebase.
+  - It is stored with **`safeStorage.encryptStringAsync`** (the sync `encryptString` where Electron lacks the async API, #2521) in `userData/telemetry-secret.bin`, mode 0600. This is the first use of `safeStorage` in the codebase.
   - On Linux, if `safeStorage.getSelectedStorageBackend()` returns `basic_text`, the UI warns that the string will be stored with weak protection, and asks the user to confirm. Electron reports encryption as unavailable on `basic_text` until the app calls `safeStorage.setUsePlainTextEncryption(true)`, so the backend is checked first and the app opts in before reading or writing (#2336).
   - After saving, **the renderer only ever receives a masked form** (the last 4 characters of the IKey plus the ingestion host). The full string never crosses back into the renderer.
   - The connection string is not truly secret: it is an ingestion-only credential and cannot read data. It is still treated as one, because it lets anyone write into the user's resource and bill them.

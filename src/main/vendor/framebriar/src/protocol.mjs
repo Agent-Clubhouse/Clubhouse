@@ -73,6 +73,8 @@ export function normalizeReport(x) {
   // Correlation with telemetry (docs/correlation.md): active trace/span at feedback open.
   if(x.traceId!=null||x.spanId!=null){out.traceId=str(x.traceId,32,/^[0-9a-f]{32}$/);out.spanId=str(x.spanId,16,/^[0-9a-f]{16}$/);}
   if(x.appVersion!=null)out.appVersion=str(x.appVersion,40,/^[A-Za-z0-9._+-]+$/);
+  // Multiplayer match (SDK 0.5.0): the UUID shared by every seat's telemetry, feedback and replay.
+  if(x.matchId!=null)out.matchId=str(x.matchId,36,/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/);
   if(x.incident!=null){
     out.incident=normalizeIncident(x.incident);
     check(out.incident.id!==out.id.toLowerCase(),'Incident and report identifiers must differ');

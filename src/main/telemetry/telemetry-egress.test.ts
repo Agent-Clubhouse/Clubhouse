@@ -68,7 +68,7 @@ vi.mock('./settings', async (importActual) => {
 
 vi.mock('./secret-store', () => ({
   readSecrets: async () => state.secrets,
-  getSecureStorageState: () => 'available',
+  getSecureStorageState: async () => 'available',
   getSecretPath: () => '/nonexistent/telemetry-secret.bin',
 }));
 
