@@ -17,11 +17,17 @@
  * in none. The source prunes: once an agent's resolved switch goes off, or
  * the Dispatcher is turned off, the wires it created go. A project whose agents can't be read keeps its wires as they are for
  * that run.
+ *
+ * The switch resolves off where Clubhouse MCP is off for the agent (#2589), so
+ * an MCP change moves wires too. The Dispatcher turning MCP on for itself
+ * (mcpOverride, isMcpEnabledForAny) gives no other agent MCP, so it gives none
+ * of them a wire.
  */
 
 import * as projectStore from './project-store';
 import { listDurable, onAgentConfigChanged } from './agent-config';
 import { resolveOrchestrationPolicies } from './orchestration-policy';
+import { onMcpEnablementChanged } from './mcp-settings';
 import { onPersonaChanged } from './persona-change-hook';
 import {
   DISPATCHER_NAME,
@@ -191,14 +197,15 @@ const RETRY_DELAYS_MS = [1_000, 5_000, 15_000, 60_000];
 /**
  * Call `onWiresChanged` when the Dispatcher wires change: the Dispatcher is
  * turned on or off, an agent's policy changes (its switch, its orchestration,
- * its persona, a project default persona), or a project is
+ * its persona, a project default persona), MCP changes for it (its own setting,
+ * its project's, the app's, or Clubhouse Mode), or a project is
  * added or removed. Changes that leave the wires as they were are ignored. A
  * change counts as handled only once a rebuild commits it; until then the
  * check is retried a few times, and the next change retries it again.
  *
  * A project's wires depend only on its own agents, defaults and personas, so
  * an agent or persona change reads only that project. The Dispatcher
- * changing, the project list changing, a retry, and a path that matches no
+ * changing, the project list changing, an MCP setting changing, a retry, and a path that matches no
  * registered project read every project. Returns an unsubscribe function.
  */
 export function watchDispatcherWires(onWiresChanged: () => unknown): () => void {
@@ -307,6 +314,8 @@ export function watchDispatcherWires(onWiresChanged: () => unknown): () => void 
     // Both kinds of persona change are scoped to one project's agents.
     onPersonaChanged((change) => projectChanged(change.projectPath)),
     onDispatcherChanged(allChanged),
+    // Any project's agents may follow the setting that changed.
+    onMcpEnablementChanged(allChanged),
     // Rare (add, remove, rename): read every project, and drop the wires of one that went.
     projectStore.onProjectsChanged(allChanged),
   ];

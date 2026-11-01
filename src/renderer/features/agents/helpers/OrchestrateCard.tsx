@@ -12,7 +12,7 @@ import { CardNote, CardRow, DetailsCard } from '../details/DetailsCard';
 import { CONTROL_LABELS, controlHelp } from './helper-model';
 import { maxHelpersCeiling, openHelpersSettings, type OrchestrationState } from './orchestration-hooks';
 import {
-  AccessSelect, CROSS_PROJECT_HELP, ControlSelect, CrossProjectToggle, DISPATCHER_HELP, DispatcherToggle, HelperCountInput, accessNote,
+  AccessSelect, CROSS_PROJECT_HELP, ControlSelect, CrossProjectToggle, DISPATCHER_HELP, DispatcherToggle, HelperCountInput, accessNote, mcpOffNote,
 } from './OrchestrationFields';
 import { useDispatcherEnabled } from '../../dispatcher/useDispatcherEnabled';
 import { TurnOffOrchestrationDialog } from './TurnOffOrchestrationDialog';
@@ -25,6 +25,7 @@ const LINK_CLASS = 'text-ctp-link hover:underline cursor-pointer focus-ring roun
 export function orchestrateSummary(orch: Pick<OrchestrationState, 'policy'>): string {
   const p = orch.policy;
   if (!p) return '';
+  if (p.mcpOff) return 'needs Clubhouse MCP';
   if (!p.orchestrate) return 'off';
   return `${CONTROL_LABELS[p.control].toLowerCase()} · up to ${p.maxHelpers}`;
 }
@@ -55,7 +56,7 @@ export function OrchestrateCard({ agent, projectPath, orch, open, onToggle }: {
         action={policy ? (
           <Toggle
             checked={policy.orchestrate}
-            disabled={saving}
+            disabled={saving || !!policy.mcpOff}
             onChange={(on) => void orch.setOrchestrate(on)}
             aria-label={`Let ${agent.name} orchestrate`}
             data-testid="orchestrate-toggle"
@@ -64,6 +65,8 @@ export function OrchestrateCard({ agent, projectPath, orch, open, onToggle }: {
       >
         {!policy ? (
           <CardNote>Couldn’t read this agent’s orchestration settings.</CardNote>
+        ) : policy.mcpOff ? (
+          <CardNote><span data-testid="orchestrate-mcp-off">{mcpOffNote(agent.name)}</span></CardNote>
         ) : !policy.orchestrate ? (
           <CardNote>Turn this on to give {agent.name} the tools to start, message and dispose of helper agents.</CardNote>
         ) : (
@@ -146,7 +149,7 @@ export function OrchestrateCard({ agent, projectPath, orch, open, onToggle }: {
                 id={ids.dispatcher}
                 checked={policy.connectToDispatcher}
                 name={agent.name}
-                disabled={saving}
+                disabled={saving || !!policy.mcpOff}
                 onChange={(on) => void orch.setConnectToDispatcher(on)}
                 testId="orchestrate-dispatcher"
               />

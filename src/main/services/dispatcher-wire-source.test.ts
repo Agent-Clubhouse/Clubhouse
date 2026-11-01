@@ -52,7 +52,10 @@ vi.mock('./orchestration-policy', async () => {
   return {
     resolveOrchestrationPolicies: vi.fn(async (projectPath: string, agents: DurableAgentConfig[]) => {
       if (unreadablePolicies.has(projectPath)) throw new Error('persona unreadable');
-      return new Map(agents.map((a) => [a.id, resolveOrchestrationPolicy(a.orchestration, undefined, { helper: !!a.parentAgentId })]));
+      return new Map(agents.map((a) => [a.id, resolveOrchestrationPolicy(a.orchestration, undefined, {
+        helper: !!a.parentAgentId,
+        mcpOff: !(a.mcpOverride ?? mcp.projects.get(projectPath) ?? mcp.app),
+      })]));
     }),
   };
 });
@@ -67,6 +70,16 @@ vi.mock('./dispatcher/dispatcher-service', () => ({
   },
 }));
 vi.mock('./pty-manager', () => ({ write: vi.fn(), isRunning: vi.fn(() => true) }));
+/** App and project MCP settings, with isMcpEnabled's real precedence over them. */
+const mcp = vi.hoisted(() => ({ app: true, projects: new Map<string, boolean>(), listeners: new Set<() => void>() }));
+vi.mock('./mcp-settings', () => ({
+  isMcpEnabled: (projectPath?: string, agentOverride?: boolean) =>
+    agentOverride ?? (projectPath ? mcp.projects.get(projectPath) : undefined) ?? mcp.app,
+  onMcpEnablementChanged: (listener: () => void) => {
+    mcp.listeners.add(listener);
+    return () => mcp.listeners.delete(listener);
+  },
+}));
 
 import { bindingManager } from './clubhouse-mcp/binding-manager';
 import { buildToolKey } from './clubhouse-mcp/tool-registry';
@@ -129,6 +142,9 @@ beforeEach(() => {
   configs.clear();
   configListeners.clear();
   unreadablePolicies.clear();
+  mcp.app = true;
+  mcp.projects.clear();
+  mcp.listeners.clear();
   dispatcher.enabled = true;
   dispatcher.id = DISPATCHER;
   dispatcher.path = path.join(os.tmpdir(), 'clubhouse-dispatcher-wires', 'dispatcher');
@@ -563,5 +579,70 @@ describe('watchDispatcherWires', () => {
     expect(onChange).toHaveBeenCalledTimes(2);
     await vi.advanceTimersByTimeAsync(120_000);
     expect(onChange).toHaveBeenCalledTimes(5);
+  });
+});
+
+describe('no Clubhouse MCP, no wire (#2589)', () => {
+  const lead = [`${DISPATCHER}->durable_lead`, `durable_lead->${DISPATCHER}`].sort();
+  const changeMcp = (apply: () => void) => {
+    apply();
+    for (const listener of mcp.listeners) listener();
+  };
+
+  it.each<[string, () => void]>([
+    ['app', () => { mcp.app = false; }],
+    ['project', () => { mcp.projects.set(projectPath, false); }],
+    ['agent', () => { configs.get(projectPath)![0].mcpOverride = false; }],
+  ])('gives no wire with MCP off at %s level, and the saved switch brings it back', async (_level, off) => {
+    await rebuild();
+    expect(boundPairs()).toEqual(lead);
+    off();
+    await rebuild();
+    expect(boundPairs()).toEqual([]);
+    expect(configs.get(projectPath)![0].orchestration).toEqual(connected);
+    mcp.app = true;
+    mcp.projects.clear();
+    delete configs.get(projectPath)![0].mcpOverride;
+    await rebuild();
+    expect(boundPairs()).toEqual(lead);
+  });
+
+  it('keeps the wire of an agent turned on when its project and the app are off', async () => {
+    configs.get(projectPath)![0].mcpOverride = true;
+    mcp.app = false;
+    mcp.projects.set(projectPath, false);
+    await rebuild();
+    expect(boundPairs()).toEqual(lead);
+  });
+
+  it('rebuilds live when an app or project MCP setting changes', async () => {
+    await rebuild();
+    expect(boundPairs()).toEqual(lead);
+    const onChanged = vi.fn(() => rebuild());
+    stops.push(watchDispatcherWires(onChanged));
+
+    changeMcp(() => { mcp.projects.set(projectPath, false); });
+    await vi.waitFor(() => expect(boundPairs()).toEqual([]));
+
+    changeMcp(() => { mcp.projects.clear(); });
+    await vi.waitFor(() => expect(boundPairs()).toEqual(lead));
+
+    changeMcp(() => { mcp.app = false; });
+    await vi.waitFor(() => expect(boundPairs()).toEqual([]));
+  });
+
+  it('rebuilds live when an agent\'s own MCP setting changes', async () => {
+    await rebuild();
+    stops.push(watchDispatcherWires(() => rebuild()));
+    const [first, ...rest] = configs.get(projectPath)!;
+    setAgents(projectPath, [{ ...first, mcpOverride: false }, ...rest]);
+    await vi.waitFor(() => expect(boundPairs()).toEqual([]));
+  });
+
+  it('stops listening once unsubscribed', async () => {
+    const stop = watchDispatcherWires(() => undefined);
+    expect(mcp.listeners.size).toBe(1);
+    stop();
+    expect(mcp.listeners.size).toBe(0);
   });
 });

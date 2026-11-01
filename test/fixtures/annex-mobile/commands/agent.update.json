@@ -41,6 +41,7 @@
               "crossProjectHelpers": false,
               "maxHelpers": 4,
               "maxHelpersCap": 20,
+              "mcpEnabled": true,
               "orchestrate": false,
               "sources": {
                 "access": "default",
@@ -148,6 +149,7 @@
               "crossProjectHelpers": false,
               "maxHelpers": 5,
               "maxHelpersCap": 20,
+              "mcpEnabled": true,
               "orchestrate": false,
               "sources": {
                 "access": "default",
@@ -252,6 +254,7 @@
               "crossProjectHelpers": false,
               "maxHelpers": 5,
               "maxHelpersCap": 20,
+              "mcpEnabled": true,
               "orchestrate": false,
               "sources": {
                 "access": "default",
@@ -356,6 +359,7 @@
               "crossProjectHelpers": false,
               "maxHelpers": 3,
               "maxHelpersCap": 20,
+              "mcpEnabled": true,
               "orchestrate": true,
               "sources": {
                 "access": "default",
@@ -751,6 +755,7 @@
               "crossProjectHelpers": false,
               "maxHelpers": 20,
               "maxHelpersCap": 20,
+              "mcpEnabled": true,
               "orchestrate": true,
               "sources": {
                 "access": "agent",
@@ -857,6 +862,7 @@
               "crossProjectHelpers": false,
               "maxHelpers": 5,
               "maxHelpersCap": 20,
+              "mcpEnabled": true,
               "orchestrate": true,
               "sources": {
                 "access": "agent",
@@ -961,6 +967,7 @@
               "crossProjectHelpers": false,
               "maxHelpers": 5,
               "maxHelpersCap": 20,
+              "mcpEnabled": true,
               "orchestrate": false,
               "sources": {
                 "access": "default",
@@ -1501,6 +1508,7 @@
               "crossProjectHelpers": true,
               "maxHelpers": 3,
               "maxHelpersCap": 20,
+              "mcpEnabled": true,
               "orchestrate": true,
               "sources": {
                 "access": "default",
@@ -1569,6 +1577,32 @@
           "version": 1
         },
         "status": 200
+      }
+    },
+    {
+      "name": "mcp_off",
+      "request": {
+        "agentId": "durable_chat",
+        "commandId": "cmd_138",
+        "epoch": "00000000-0000-4000-8000-000000000001",
+        "orchestration": {
+          "orchestrate": true
+        },
+        "type": "agent.update",
+        "version": 1
+      },
+      "response": {
+        "body": {
+          "commandId": "cmd_138",
+          "epoch": "00000000-0000-4000-8000-000000000001",
+          "error": {
+            "code": "mcp_off",
+            "message": "This needs Clubhouse MCP, which is off for this agent. Turn it on first."
+          },
+          "status": "rejected",
+          "version": 1
+        },
+        "status": 409
       }
     }
   ],

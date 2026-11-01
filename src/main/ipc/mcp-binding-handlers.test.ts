@@ -11,6 +11,12 @@ vi.mock('electron', () => ({
 
 vi.mock('../services/mcp-settings', () => ({
   isMcpEnabledForAny: vi.fn(() => true),
+  notifyMcpEnablementChanged: vi.fn(),
+  mcpSettingsStore: { get: vi.fn(() => ({})), save: vi.fn() },
+}));
+
+vi.mock('../services/orchestration-policy', () => ({
+  watchMcpForOrchestration: vi.fn(() => () => undefined),
 }));
 
 vi.mock('../services/clubhouse-mcp', () => ({
@@ -91,7 +97,7 @@ import { MCP_UNBIND_CANVAS_CLEANUP } from '../../shared/mcp-unbind';
 import { bindingManager, bridgeServer } from '../services/clubhouse-mcp';
 import { agentRegistry } from '../services/agent-registry';
 import { registerWebview, unregisterWebview } from '../services/clubhouse-mcp/tools/browser-tools';
-import { isMcpEnabledForAny } from '../services/mcp-settings';
+import { isMcpEnabledForAny, notifyMcpEnablementChanged } from '../services/mcp-settings';
 import { broadcastToAllWindows } from '../util/ipc-broadcast';
 import {
   registerPersistedBindingSource,
@@ -549,6 +555,13 @@ describe('onMcpSettingsChanged', () => {
     onMcpSettingsChanged();
     // No new handler registrations since MCP is disabled
     expect(bridgeServer.start).not.toHaveBeenCalled();
+  });
+
+  it('tells whatever follows MCP even when MCP just went off everywhere (#2589)', () => {
+    vi.mocked(notifyMcpEnablementChanged).mockClear();
+    vi.mocked(isMcpEnabledForAny).mockReturnValue(false);
+    onMcpSettingsChanged();
+    expect(notifyMcpEnablementChanged).toHaveBeenCalledTimes(1);
   });
 
   it('registers handlers and starts bridge when MCP becomes enabled', () => {

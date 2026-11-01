@@ -10,6 +10,7 @@ import { useUIStore } from '../../../stores/uiStore';
 import { useAgentDetailsStore } from '../details/detailsStore';
 import { AgentDetails } from '../details/AgentDetails';
 import { OrchestrateCard, orchestrateSummary } from './OrchestrateCard';
+import { SleepingOrchestration } from './OrchestrationCards';
 import { blockedSummary } from './TurnOffOrchestrationDialog';
 import { useOrchestration } from './orchestration-hooks';
 
@@ -545,5 +546,88 @@ describe('blockedSummary', () => {
     expect(blockedSummary([unread('a')])).toBe(`a couldn’t be checked${tail}`);
     expect(blockedSummary([unread('a'), unread('b')])).toBe(`a and b couldn’t be checked${tail}`);
     expect(blockedSummary([risk('a'), unread('b')])).toBe(`a has work that disposing would lose and b couldn’t be checked${tail}`);
+  });
+});
+
+describe('Orchestration card with Clubhouse MCP off (#2589)', () => {
+  const saved = { orchestrate: true, crossProjectHelpers: true, connectToDispatcher: true };
+
+  beforeEach(() => {
+    dispatcherOn = true;
+    window.clubhouse.agent.getOrchestrationPolicy = vi.fn(async () => ({
+      ...resolved({ ...stored, orchestrate: false, crossProjectHelpers: false, connectToDispatcher: false }),
+      mcpOff: saved,
+    }));
+  });
+
+  it('disables the switches and says they need Clubhouse MCP', async () => {
+    const toggle = await renderCard();
+    await waitFor(() => expect(screen.getByTestId('orchestrate-mcp-off')).toHaveTextContent('need Clubhouse MCP, which is off for epic-lead'));
+    expect(toggle).toHaveAttribute('aria-checked', 'false');
+    expect(toggle).toBeDisabled();
+    expect(screen.getByTestId('orchestrate-dispatcher')).toBeDisabled();
+    expect(screen.getByTestId('orchestrate-dispatcher')).toHaveAttribute('aria-checked', 'false');
+    // The policy rows wait for orchestration.
+    expect(screen.queryByTestId('orchestrate-access')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('orchestrate-cross-project')).not.toBeInTheDocument();
+    fireEvent.click(toggle);
+    expect(window.clubhouse.agent.setOrchestrationPolicy).not.toHaveBeenCalled();
+    expect(screen.getByTestId('details-card-orchestrate-summary')).toHaveTextContent('needs Clubhouse MCP');
+  });
+
+  it('keeps the note free of em dashes', async () => {
+    await renderCard();
+    const note = await screen.findByTestId('orchestrate-mcp-off');
+    expect(note.textContent).not.toMatch(/\u2014/);
+  });
+
+  it('follows MCP live, without leaving the card', async () => {
+    let onMcp: () => void = () => undefined;
+    window.clubhouse.agent.onMcpEnablementChanged = vi.fn((cb: () => void) => { onMcp = cb; return () => undefined; });
+    const toggle = await renderCard();
+    await waitFor(() => expect(toggle).toBeDisabled());
+    window.clubhouse.agent.getOrchestrationPolicy = vi.fn(async () => resolved({ ...stored, ...saved }));
+    onMcp();
+    await waitFor(() => expect(toggle).toHaveAttribute('aria-checked', 'true'));
+    expect(toggle).not.toBeDisabled();
+    expect(screen.queryByTestId('orchestrate-mcp-off')).not.toBeInTheDocument();
+  });
+
+  it('follows an agent-level change arriving as a config change for its project only', async () => {
+    let onConfigs: (projectPath: string) => void = () => undefined;
+    window.clubhouse.agent.onConfigsChanged = vi.fn((cb: (projectPath: string) => void) => { onConfigs = cb; return () => undefined; }) as never;
+    const toggle = await renderCard();
+    await waitFor(() => expect(toggle).toBeDisabled());
+    const reads = vi.mocked(window.clubhouse.agent.getOrchestrationPolicy).mock.calls.length;
+    onConfigs(path.join('/work', 'other'));
+    await new Promise((r) => setTimeout(r, 0));
+    expect(vi.mocked(window.clubhouse.agent.getOrchestrationPolicy).mock.calls.length).toBe(reads);
+    window.clubhouse.agent.getOrchestrationPolicy = vi.fn(async () => resolved({ ...stored, ...saved }));
+    onConfigs(PROJECT);
+    await waitFor(() => expect(toggle).not.toBeDisabled());
+  });
+});
+
+describe('Sleeping view with Clubhouse MCP off (#2589)', () => {
+  const offWith = (savedOn: boolean) => vi.fn(async () => ({
+    ...resolved({ ...stored, orchestrate: false, connectToDispatcher: false }),
+    mcpOff: { orchestrate: savedOn, crossProjectHelpers: false, connectToDispatcher: savedOn },
+  }));
+
+  beforeEach(() => { window.clubhouse.agent.listHelpers = vi.fn(async () => []) as never; });
+
+  it('still shows the card for a saved orchestrator, so it can say why it reads off', async () => {
+    window.clubhouse.agent.getOrchestrationPolicy = offWith(true);
+    render(<SleepingOrchestration agent={lead} projectPath={PROJECT} />);
+    expect(await screen.findByTestId('sleeping-orchestration')).toBeInTheDocument();
+    expect(screen.getByTestId('orchestrate-toggle')).toBeDisabled();
+  });
+
+  it('stays out of the way for an agent that never orchestrated', async () => {
+    window.clubhouse.agent.getOrchestrationPolicy = offWith(false);
+    render(<SleepingOrchestration agent={lead} projectPath={PROJECT} />);
+    await waitFor(() => expect(window.clubhouse.agent.getOrchestrationPolicy).toHaveBeenCalled());
+    await new Promise((r) => setTimeout(r, 0));
+    expect(screen.queryByTestId('sleeping-orchestration')).not.toBeInTheDocument();
   });
 });

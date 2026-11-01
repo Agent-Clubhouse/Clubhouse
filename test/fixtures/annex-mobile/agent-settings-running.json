@@ -152,6 +152,7 @@
         "crossProjectHelpers": false,
         "maxHelpers": 3,
         "maxHelpersCap": 20,
+        "mcpEnabled": true,
         "orchestrate": true,
         "sources": {
           "access": "default",

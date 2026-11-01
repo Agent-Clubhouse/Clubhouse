@@ -13,10 +13,36 @@ import { MCP_SETTINGS } from '../../shared/settings-definitions';
 import { isDispatcherEnabled } from './dispatcher/dispatcher-settings';
 import type { McpSettings } from '../../shared/types';
 
-const store = createSettingsStore<McpSettings>(MCP_SETTINGS.filename, MCP_SETTINGS.defaults);
+/**
+ * The one store for this file. The settings IPC (ipc/settings-handlers) shares
+ * it, so isMcpEnabled sees a change from the Settings page at once.
+ */
+export const mcpSettingsStore = createSettingsStore<McpSettings>(MCP_SETTINGS.filename, MCP_SETTINGS.defaults);
 
-export const getSettings = store.get;
-export const saveSettings = store.save;
+export const getSettings = mcpSettingsStore.get;
+export const saveSettings = mcpSettingsStore.save;
+
+const enablementListeners = new Set<() => void>();
+
+/**
+ * Listen for changes that can move isMcpEnabled at app or project level: the
+ * MCP settings and Clubhouse Mode, the fallback. An agent's own `mcpOverride`
+ * arrives through onAgentConfigChanged. Returns an unsubscribe function.
+ */
+export function onMcpEnablementChanged(listener: () => void): () => void {
+  enablementListeners.add(listener);
+  return () => { enablementListeners.delete(listener); };
+}
+
+export function notifyMcpEnablementChanged(): void {
+  for (const listener of [...enablementListeners]) {
+    try {
+      listener();
+    } catch {
+      // telemetry-exempt: one listener failing must not stop the others
+    }
+  }
+}
 
 /**
  * Determine whether the Clubhouse MCP bridge is enabled, following the

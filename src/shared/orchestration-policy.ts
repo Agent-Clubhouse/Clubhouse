@@ -80,11 +80,33 @@ export const ORCHESTRATION_OFF_MESSAGE = 'Orchestration is turned off for this a
 /** The refusal a cross-project tool returns for an agent with cross-project helpers off. */
 export const CROSS_PROJECT_OFF_MESSAGE = 'Cross-project helpers are turned off for this agent.';
 
+/** The refusal for turning orchestration or the Dispatcher connection on where Clubhouse MCP is off (#2589). */
+export const MCP_REQUIRED_MESSAGE = 'This needs Clubhouse MCP, which is off for this agent. Turn it on first.';
+
 /** Where each field of a resolved policy came from. */
 export type OrchestrationPolicySource = 'agent' | 'persona' | 'default';
 
+/** The switches that need Clubhouse MCP (#2589). */
+export type McpDependentSwitches = Pick<OrchestrationPolicy, 'orchestrate' | 'crossProjectHelpers' | 'connectToDispatcher'>;
+
 export interface ResolvedOrchestrationPolicy extends OrchestrationPolicy {
   sources: Record<keyof OrchestrationPolicy, OrchestrationPolicySource>;
+  /**
+   * Set only while Clubhouse MCP is off for this agent (#2589). The switches
+   * above then read false, and this holds what they resolve to from the saved
+   * settings, which come back when MCP does.
+   */
+  mcpOff?: McpDependentSwitches;
+}
+
+/** What `orchestrate` resolves to from the saved settings, MCP on or off. */
+export function savedOrchestrate(policy: Pick<ResolvedOrchestrationPolicy, 'orchestrate' | 'mcpOff'>): boolean {
+  return policy.mcpOff ? policy.mcpOff.orchestrate : policy.orchestrate;
+}
+
+/** Whether a patch sets one of the switches that need Clubhouse MCP to on. Clearing or turning off never does. */
+export function patchTurnsOnMcpSwitch(patch: { [K in keyof McpDependentSwitches]?: boolean | null }): boolean {
+  return patch.orchestrate === true || patch.crossProjectHelpers === true || patch.connectToDispatcher === true;
 }
 
 function isAccess(value: unknown): value is OrchestrationAccess {
@@ -183,11 +205,16 @@ export function applyOrchestrationPatch(
  * A helper talks only to its parent, so with `helper` it is always false,
  * whatever the agent or persona says. Its source is `default` then, since no
  * stored value is in effect.
+ *
+ * No Clubhouse MCP, no orchestration (#2589): with `mcpOff`, `orchestrate`,
+ * `crossProjectHelpers` and `connectToDispatcher` read false and `mcpOff` holds
+ * what they would otherwise be. Sources still describe the saved settings,
+ * which stay in place and can still be cleared.
  */
 export function resolveOrchestrationPolicy(
   agentConfig: OrchestrationPolicyConfig | undefined,
   personaDefaults: OrchestrationPolicyConfig | undefined,
-  options: { helper?: boolean } = {},
+  options: { helper?: boolean; mcpOff?: boolean } = {},
 ): ResolvedOrchestrationPolicy {
   const agent = normalizeOrchestrationConfig(agentConfig) ?? {};
   const persona = normalizeOrchestrationConfig(personaDefaults) ?? {};
@@ -210,6 +237,13 @@ export function resolveOrchestrationPolicy(
     sources.connectToDispatcher = 'default';
   } else if (sources.connectToDispatcher === 'default') {
     policy.connectToDispatcher = policy.orchestrate;
+  }
+  if (options.mcpOff) {
+    const { orchestrate, crossProjectHelpers, connectToDispatcher } = policy;
+    return {
+      ...policy, orchestrate: false, crossProjectHelpers: false, connectToDispatcher: false, sources,
+      mcpOff: { orchestrate, crossProjectHelpers, connectToDispatcher },
+    };
   }
   return { ...policy, sources };
 }
@@ -445,6 +479,8 @@ export interface SetOrchestrationPolicyResult {
    * running and can still be managed.
    */
   crossProjectHelpersKept?: number;
+  /** Set when the patch turns on a switch that needs Clubhouse MCP while it is off. Nothing changed. */
+  mcpRequired?: boolean;
 }
 
 /**

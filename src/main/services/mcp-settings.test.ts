@@ -29,7 +29,7 @@ vi.mock('./dispatcher/dispatcher-settings', () => ({
   isDispatcherEnabled: vi.fn(() => dispatcherOn),
 }));
 
-import { isMcpEnabled, isMcpEnabledForAny, saveSettings } from './mcp-settings';
+import { isMcpEnabled, isMcpEnabledForAny, notifyMcpEnablementChanged, onMcpEnablementChanged, saveSettings } from './mcp-settings';
 import { isClubhouseModeEnabled } from './clubhouse-mode-settings';
 import { resetAllSettingsStoresForTests } from './settings-store';
 
@@ -157,5 +157,20 @@ describe('mcp-settings', () => {
       cmStored = { enabled: false, projectOverrides: { '/x': false } };
       expect(isMcpEnabledForAny()).toBe(false);
     });
+  });
+});
+
+describe('onMcpEnablementChanged (#2589)', () => {
+  it('tells every listener, past one that throws, until unsubscribed', () => {
+    const bad = vi.fn(() => { throw new Error('boom'); });
+    const good = vi.fn();
+    const offBad = onMcpEnablementChanged(bad);
+    const offGood = onMcpEnablementChanged(good);
+    notifyMcpEnablementChanged();
+    expect(good).toHaveBeenCalledTimes(1);
+    offBad();
+    offGood();
+    notifyMcpEnablementChanged();
+    expect(good).toHaveBeenCalledTimes(1);
   });
 });

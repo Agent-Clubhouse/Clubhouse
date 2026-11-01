@@ -666,6 +666,12 @@ describe('Annex mobile contract fixtures', () => {
     fixtures.set('agent-settings.json', settings);
     fixtures.set('agent-settings-running.json', await exchange('GET', '/api/v1/mobile/agents/durable_chat/settings'));
     fixtures.set('agent-settings-errors.json', { agentNotFound: await exchange('GET', '/api/v1/mobile/agents/missing/settings') });
+    // Clubhouse MCP off for the agent (#2589): its switches read off, with the reason.
+    W.durables[APP][0].mcpOverride = false;
+    const mcpOff = await exchange('GET', '/api/v1/mobile/agents/durable_chat/settings');
+    delete W.durables[APP][0].mcpOverride;
+    expect(mcpOff.response.body.orchestration).toMatchObject({ mcpEnabled: false, orchestrate: false });
+    fixtures.set('agent-settings-mcp-off.json', mcpOff);
   });
 
   it('chat commands', async () => {
@@ -1078,6 +1084,12 @@ describe('Annex mobile contract fixtures', () => {
     fixtures.set('dispatcher-routes.json', routes);
     W.dispatcher = { flagOn: false, enabled: false, newLayout: true };
     W.durables[DISPATCHER_PATH][0] = { ...W.durables[DISPATCHER_PATH][0], model: undefined, orchestrator: 'claude-code' };
+  });
+
+  it('Clubhouse MCP off refuses turning orchestration on (#2589)', async () => {
+    W.durables[APP][0].mcpOverride = false;
+    await command('mcp_off', { type: 'agent.update', agentId: 'durable_chat', orchestration: { orchestrate: true } });
+    delete W.durables[APP][0].mcpOverride;
   });
 
   it('session pairing revocation', async () => {

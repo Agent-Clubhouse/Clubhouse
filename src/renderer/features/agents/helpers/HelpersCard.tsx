@@ -59,13 +59,15 @@ type DisposeTarget = DisposeHelperTarget & { projectPath: string };
 
 const LINK = 'text-xs text-ctp-overlay1 hover:text-ctp-text disabled:opacity-50 cursor-pointer';
 
-export function HelpersCard({ agent, projectPath, helpers, maxHelpers, orchestrating, open, onToggle, approvals, onRemoved }: {
+export function HelpersCard({ agent, projectPath, helpers, maxHelpers, orchestrating, mcpOff, open, onToggle, approvals, onRemoved }: {
   agent: Agent;
   projectPath: string;
   /** The agent's direct helpers in every project (useHelpersEverywhere), disposed ones included. */
   helpers: HelperInProject[];
   maxHelpers?: number;
   orchestrating: boolean;
+  /** Clubhouse MCP is off for this agent: helpers keep running, it can't manage them with its tools (#2589). */
+  mcpOff?: boolean;
   open: boolean;
   onToggle: () => void;
   approvals?: HelperApprovals;
@@ -179,7 +181,14 @@ export function HelpersCard({ agent, projectPath, helpers, maxHelpers, orchestra
           <CardNote>
             {orchestrating
               ? `No helpers yet. ${agent.name} starts them with its Clubhouse MCP tools.`
-              : `Orchestration is off, so ${agent.name} can’t start helpers.`}
+              : mcpOff
+                ? `Clubhouse MCP is off, so ${agent.name} can’t start helpers.`
+                : `Orchestration is off, so ${agent.name} can’t start helpers.`}
+          </CardNote>
+        )}
+        {mcpOff && live.length > 0 && (
+          <CardNote>
+            <span data-testid="helpers-mcp-off">These helpers keep running. {agent.name} can’t message or dispose of them until Clubhouse MCP is back on, but you still can.</span>
           </CardNote>
         )}
         {(live.length > 0 || waiting.length > 0) && (

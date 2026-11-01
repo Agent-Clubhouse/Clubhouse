@@ -26,6 +26,7 @@ import {
   SECURITY_SETTINGS,
 } from '../../shared/settings-definitions';
 import { onMcpSettingsChanged } from './mcp-binding-handlers';
+import { mcpSettingsStore } from '../services/mcp-settings';
 import { goobersService } from '../services/goobers-service';
 import { chatIdleSettings } from '../services/chat-idle-settings';
 
@@ -43,6 +44,7 @@ export const clipboardSettings = createManagedSettings(CLIPBOARD_SETTINGS, {
 export const editorSettings = createManagedSettings(EDITOR_SETTINGS);
 
 export const mcpSettings = createManagedSettings(MCP_SETTINGS, {
+  store: mcpSettingsStore,
   onSave: () => onMcpSettingsChanged(),
 });
 

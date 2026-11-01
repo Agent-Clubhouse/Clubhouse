@@ -109,3 +109,31 @@ describe('Agent Helpers settings page (#2232)', () => {
     expect(await screen.findByTestId('agent-helpers-settings-unavailable')).toBeInTheDocument();
   });
 });
+
+describe('Agent Helpers settings with Clubhouse MCP off (#2589)', () => {
+  it('disables every control and says they need Clubhouse MCP', async () => {
+    dispatcherOn = true;
+    window.clubhouse.agent.getOrchestrationPolicy = vi.fn(async () => ({
+      ...resolved({ ...stored, orchestrate: false, connectToDispatcher: false }),
+      mcpOff: { orchestrate: true, crossProjectHelpers: true, connectToDispatcher: true },
+    }));
+    render(<AgentHelpersSettings agent={lead} projectPath={PROJECT} />);
+    const toggle = await screen.findByTestId('settings-orchestrate-toggle');
+    expect(screen.getByTestId('settings-orchestrate-mcp-off')).toHaveTextContent('need Clubhouse MCP, which is off for epic-lead');
+    expect(toggle).toBeDisabled();
+    expect(toggle).toHaveAttribute('aria-checked', 'false');
+    expect(screen.getByTestId('settings-orchestrate-dispatcher')).toBeDisabled();
+    expect(screen.getByTestId('settings-orchestrate-control')).toBeDisabled();
+    expect(screen.getByTestId('settings-orchestrate-access')).toBeDisabled();
+    expect(screen.getByTestId('settings-orchestrate-max-helpers')).toBeDisabled();
+    expect(screen.queryByTestId('settings-orchestrate-cross-project')).not.toBeInTheDocument();
+    fireEvent.click(toggle);
+    expect(window.clubhouse.agent.setOrchestrationPolicy).not.toHaveBeenCalled();
+  });
+
+  it('shows no note while MCP is on', async () => {
+    render(<AgentHelpersSettings agent={lead} projectPath={PROJECT} />);
+    await screen.findByTestId('settings-orchestrate-toggle');
+    expect(screen.queryByTestId('settings-orchestrate-mcp-off')).not.toBeInTheDocument();
+  });
+});

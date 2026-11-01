@@ -10,6 +10,8 @@ import {
   providerAccessLevel,
   rankHelperLaunch,
   normalizeOrchestrationConfig,
+  patchTurnsOnMcpSwitch,
+  savedOrchestrate,
   resolveHelperAccess,
   resolveOrchestrationPolicy,
   validateOrchestrationPatch,
@@ -272,5 +274,39 @@ describe('rankHelperLaunch', () => {
   it('ranks for the provider: Copilot under an Auto ceiling gets standard', () => {
     const launch = rankHelperLaunch(resolveHelperAccess(launchAccessFor('auto'), 'same', 'copilot-cli'), undefined, 'copilot-cli');
     expect(launch).toMatchObject({ freeAgentMode: false, permissionMode: 'auto', level: 'standard' });
+  });
+});
+
+describe('no Clubhouse MCP, no orchestration (#2589)', () => {
+  const saved = { orchestrate: true, crossProjectHelpers: true, connectToDispatcher: true, maxHelpers: 3 };
+
+  it('reads the switches off and keeps what is saved', () => {
+    const policy = resolveOrchestrationPolicy(saved, undefined, { mcpOff: true });
+    expect(policy).toMatchObject({ orchestrate: false, crossProjectHelpers: false, connectToDispatcher: false, maxHelpers: 3 });
+    expect(policy.mcpOff).toEqual({ orchestrate: true, crossProjectHelpers: true, connectToDispatcher: true });
+    expect(savedOrchestrate(policy)).toBe(true);
+    // Sources describe the saved settings, which can still be cleared.
+    expect(policy.sources.orchestrate).toBe('agent');
+  });
+
+  it('saves a Connect to Dispatcher that follows orchestrate as it would resolve', () => {
+    const policy = resolveOrchestrationPolicy({ orchestrate: true }, undefined, { mcpOff: true });
+    expect(policy.connectToDispatcher).toBe(false);
+    expect(policy.mcpOff?.connectToDispatcher).toBe(true);
+  });
+
+  it('adds nothing while MCP is on', () => {
+    const policy = resolveOrchestrationPolicy(saved, undefined, { mcpOff: false });
+    expect(policy).not.toHaveProperty('mcpOff');
+    expect(policy.orchestrate).toBe(true);
+    expect(savedOrchestrate(policy)).toBe(true);
+  });
+
+  it('counts only setting a switch to on as turning it on', () => {
+    expect(patchTurnsOnMcpSwitch({ orchestrate: true })).toBe(true);
+    expect(patchTurnsOnMcpSwitch({ crossProjectHelpers: true })).toBe(true);
+    expect(patchTurnsOnMcpSwitch({ connectToDispatcher: true })).toBe(true);
+    expect(patchTurnsOnMcpSwitch({ orchestrate: false, connectToDispatcher: null })).toBe(false);
+    expect(patchTurnsOnMcpSwitch({})).toBe(false);
   });
 });

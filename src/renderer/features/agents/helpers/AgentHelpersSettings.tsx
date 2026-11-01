@@ -12,7 +12,7 @@ import { Field, SectionHeading, inputClass, selectClass } from '../agentSettings
 import { controlHelp } from './helper-model';
 import { maxHelpersCeiling, useOrchestration } from './orchestration-hooks';
 import {
-  AccessSelect, CROSS_PROJECT_HELP, ControlSelect, CrossProjectToggle, DISPATCHER_HELP, DispatcherToggle, HelperCountInput, accessNote,
+  AccessSelect, CROSS_PROJECT_HELP, ControlSelect, CrossProjectToggle, DISPATCHER_HELP, DispatcherToggle, HelperCountInput, accessNote, mcpOffNote,
 } from './OrchestrationFields';
 import { useDispatcherEnabled } from '../../dispatcher/useDispatcherEnabled';
 import { TurnOffOrchestrationDialog } from './TurnOffOrchestrationDialog';
@@ -34,6 +34,7 @@ export function AgentHelpersSettings({ agent, projectPath }: { agent: Agent; pro
   return (
     <div data-testid="agent-helpers-settings">
       <SectionHeading title="Orchestrating" />
+      {policy.mcpOff && <p className="py-1.5 text-xs text-ctp-subtext1" data-testid="settings-orchestrate-mcp-off">{mcpOffNote(agent.name)}</p>}
       <Field
         label="Let this agent orchestrate"
         htmlFor={ids.toggle}
@@ -42,7 +43,7 @@ export function AgentHelpersSettings({ agent, projectPath }: { agent: Agent; pro
         <Toggle
           id={ids.toggle}
           checked={policy.orchestrate}
-          disabled={saving}
+          disabled={saving || !!policy.mcpOff}
           onChange={(on) => void orch.setOrchestrate(on)}
           aria-label={`Let ${agent.name} orchestrate`}
           data-testid="settings-orchestrate-toggle"
@@ -93,7 +94,7 @@ export function AgentHelpersSettings({ agent, projectPath }: { agent: Agent; pro
             id={ids.dispatcher}
             checked={policy.connectToDispatcher}
             name={agent.name}
-            disabled={saving}
+            disabled={saving || !!policy.mcpOff}
             onChange={(on) => void orch.setConnectToDispatcher(on)}
             testId="settings-orchestrate-dispatcher"
           />
