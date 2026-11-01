@@ -657,6 +657,44 @@ describe('BridgeServer', () => {
       stream.close();
     });
 
+    it('a wire target waking or sleeping sends tools/list_changed to the agents wired to it (#2564)', async () => {
+      registerToolTemplate('agent', 'send_message', { description: 'Send', inputSchema: { type: 'object' } }, vi.fn());
+      registerToolTemplate('agent', 'get_status', { description: 'Status', inputSchema: { type: 'object' } }, vi.fn());
+      bindingManager.bind('agent-1', { targetId: 'agent-2', targetKind: 'agent', label: 'A2' });
+      const awake = new Set<string>();
+      mockAgentRegistryGet.mockImplementation((id: string) =>
+        awake.has(id) ? { runtime: 'pty', projectPath: '/test', orchestrator: 'claude-code' } : undefined,
+      );
+      const sid = await initialize();
+      const headers = { ...NONCE, 'Mcp-Session-Id': sid };
+      const list = async () => JSON.parse((await rawRequest(port, 'POST', '/mcp/agent-1', headers, { jsonrpc: '2.0', id: 2, method: 'tools/list' })).body).result.tools.map((t: { name: string }) => t.name.split('__').pop());
+      expect(await list()).toEqual(['get_status']);
+
+      const stream = await openStream(port, '/mcp/agent-1', { ...SSE, 'Mcp-Session-Id': sid });
+      const unrelatedSid = await initialize('agent-3');
+      const unrelated = await openStream(port, '/mcp/agent-3', { ...SSE, 'Mcp-Session-Id': unrelatedSid });
+      await new Promise((r) => setTimeout(r, 30));
+      const notifications = () => stream.chunks.join('').split('list_changed').length - 1;
+
+      // Wakes: registered, then a new nonce. No binding changes.
+      const version = bindingManager.getVersion();
+      awake.add('agent-2');
+      emitAuthChange('agent-2');
+      await vi.waitFor(() => expect(notifications()).toBe(1), { timeout: 2000 });
+      expect(await list()).toEqual(['send_message', 'get_status']);
+
+      // Sleeps: untracked.
+      awake.delete('agent-2');
+      emitAuthChange('agent-2');
+      await vi.waitFor(() => expect(notifications()).toBe(2), { timeout: 2000 });
+      expect(await list()).toEqual(['get_status']);
+      expect(bindingManager.getVersion()).toBe(version);
+      expect(unrelated.chunks.join('')).not.toContain('list_changed');
+      stream.close();
+      unrelated.close();
+      mockAgentRegistryGet.mockReset();
+    });
+
     it('toggling orchestration sends tools/list_changed and a stale call is refused (#2228)', async () => {
       const handler = vi.fn().mockResolvedValue({ content: [{ type: 'text', text: 'started' }] });
       registerGlobalTool('test_start_helper', { description: 'Test', inputSchema: { type: 'object' } }, handler, { group: 'orchestration' });

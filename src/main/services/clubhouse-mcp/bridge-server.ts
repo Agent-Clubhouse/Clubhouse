@@ -7,7 +7,7 @@ import * as http from 'http';
 import { randomUUID, timingSafeEqual } from 'crypto';
 import { appLog } from '../log-service';
 import { getAgentNonce, agentRegistry } from '../agent-registry';
-import { getScopedToolList, callTool, parseToolName, buildToolKey, isGlobalTool, refusalReasonOf } from './tool-registry';
+import { getScopedToolList, callTool, parseToolName, buildToolKey, isGlobalTool, refusalReasonOf, agentsWiredTo } from './tool-registry';
 import { bindingManager } from './binding-manager';
 import { onOrchestrationGateChange } from './orchestration-gate';
 import { emitAgentMcpConnected } from './connection-events';
@@ -478,8 +478,12 @@ export function start(): Promise<number> {
   });
   // Turning orchestration on or off adds or removes the orchestration tools (#2228).
   unsubscribeOrchestrationGate = onOrchestrationGateChange(notifyToolsChanged);
-  // A new nonce or an untracked agent invalidates its sessions.
-  unsubscribeAgentAuth = agentRegistry.onAuthChange(endAgentSessions);
+  // A new nonce or an untracked agent invalidates its sessions, and wakes or
+  // sleeps it as a wire target: the agents wired to it have a new tool list (#2564).
+  unsubscribeAgentAuth = agentRegistry.onAuthChange((agentId) => {
+    endAgentSessions(agentId);
+    for (const boundAgentId of agentsWiredTo(agentId)) notifyToolsChanged(boundAgentId);
+  });
 
   readyPromise = new Promise((resolve, reject) => {
     server = http.createServer(handleRequest);

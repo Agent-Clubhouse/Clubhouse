@@ -311,9 +311,10 @@ export function parseToolName(name: string): { prefix: string; toolKey: string; 
 
 // ── Tool list cache ─────────────────────────────────────────────────
 // Caches getScopedToolList() results per agent. Uses the binding manager's
-// internal version to detect when the cache is stale.
+// internal version, plus which agent targets are awake, to detect when the
+// cache is stale.
 
-const toolListCache = new Map<string, { tools: McpToolDefinition[]; bindingVersion: number }>();
+const toolListCache = new Map<string, { tools: McpToolDefinition[]; bindingVersion: number; wakeKey: string }>();
 
 /** Invalidate all cached tool lists. */
 export function invalidateToolListCache(): void {
@@ -321,16 +322,35 @@ export function invalidateToolListCache(): void {
 }
 
 /**
+ * The agents wired to the agent `targetId`. That target starting or stopping
+ * changes their tool lists (a sleeping target exposes only get_status) without
+ * changing any binding (#2564).
+ */
+export function agentsWiredTo(targetId: string): string[] {
+  const agentIds = new Set<string>();
+  for (const binding of bindingManager.getAllBindings()) {
+    if (binding.targetKind === 'agent' && binding.targetId === targetId) agentIds.add(binding.agentId);
+  }
+  return [...agentIds];
+}
+
+/** Which agent targets are awake, one character per binding: part of the cache key (#2564). */
+function wakeKey(bindings: McpBinding[]): string {
+  return bindings.map((b) => (b.targetKind !== 'agent' ? '-' : agentRegistry.get(b.targetId) ? '1' : '0')).join('');
+}
+
+/**
  * Get the scoped tool list for an agent based on its current bindings.
- * Results are cached and invalidated when bindings change.
+ * Results are cached and invalidated when bindings change or a target wakes or sleeps.
  */
 export function getScopedToolList(agentId: string): McpToolDefinition[] {
   const currentVersion = bindingManager.getVersion();
+  const bindings = bindingManager.getBindingsForAgent(agentId);
+  const currentWakeKey = wakeKey(bindings);
   const cached = toolListCache.get(agentId);
-  if (cached && cached.bindingVersion === currentVersion) {
+  if (cached && cached.bindingVersion === currentVersion && cached.wakeKey === currentWakeKey) {
     return cached.tools;
   }
-  const bindings = bindingManager.getBindingsForAgent(agentId);
   const tools: McpToolDefinition[] = [];
   const seenNames = new Set<string>();
 
@@ -397,7 +417,7 @@ export function getScopedToolList(agentId: string): McpToolDefinition[] {
   }
 
   // Cache the result
-  toolListCache.set(agentId, { tools, bindingVersion: currentVersion });
+  toolListCache.set(agentId, { tools, bindingVersion: currentVersion, wakeKey: currentWakeKey });
 
   return tools;
 }
