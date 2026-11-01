@@ -8,6 +8,8 @@ vi.mock('./pages/ProjectStartPage', () => ({ ProjectStartPage: ({ project }: { p
 vi.mock('./sidebar/ChromeAgentDialogs', () => ({ ChromeAgentDialogs: () => <div data-testid="chrome-agent-dialogs" />, useChromeDialogStore: { getState: () => ({}) } }));
 vi.mock('./pages/FirstRun', () => ({ FirstRun: () => <div data-testid="first-run" /> }));
 vi.mock('./pages/SatelliteStartPage', () => ({ SatelliteStartPage: ({ activeHostId }: { activeHostId: string }) => <div data-testid="satellite-start-page">{activeHostId}</div> }));
+vi.mock('../features/dispatcher/DispatcherView', () => ({ DispatcherView: () => <div data-testid="dispatcher-view" /> }));
+vi.mock('../features/dispatcher/useDispatcherSync', () => ({ useDispatcherSync: () => {} }));
 vi.mock('./pages/NewAgentPage', () => ({ NewAgentPage: ({ request }: { request: { kind: string } }) => <div data-testid="new-agent-page">{request.kind}</div> }));
 
 import { ChromeBody } from './ChromeBody';
@@ -17,6 +19,9 @@ import { useUIStore } from '../stores/uiStore';
 import { useProjectStore } from '../stores/projectStore';
 import { useAgentStore } from '../stores/agentStore';
 import { useQuickAgentStore } from '../stores/quickAgentStore';
+import { useDispatcherStore } from '../features/dispatcher/dispatcherStore';
+import { openDispatcher } from '../features/dispatcher/dispatcherNav';
+import { DISPATCHER_OFF } from '../../shared/dispatcher-types';
 
 beforeEach(() => {
   useChromeFlagStore.setState({ enabled: true });
@@ -31,6 +36,82 @@ beforeEach(() => {
 });
 
 afterEach(() => useChromeFlagStore.setState({ enabled: false }));
+
+describe('ChromeBody Dispatcher view (#2538)', () => {
+  beforeEach(() => {
+    useUIStore.setState({ dispatcherOpen: false });
+    useDispatcherStore.getState().setState({ enabled: true, agentId: 'disp', path: 'dispatcher-dir', config: null });
+  });
+  afterEach(() => useDispatcherStore.getState().setState(DISPATCHER_OFF));
+
+  it('takes precedence over the project pane, without changing the active project', () => {
+    render(<ChromeBody />);
+    expect(screen.getByTestId('main-content')).toBeTruthy();
+    act(() => openDispatcher());
+    expect(screen.getByTestId('dispatcher-view')).toBeTruthy();
+    expect(screen.queryByTestId('main-content')).toBeNull();
+    expect(useProjectStore.getState().activeProjectId).toBe('p1');
+    expect(useAgentStore.getState().activeAgentId).toBe('a1');
+  });
+
+  it('closes back to the project when another agent, project or tab opens', () => {
+    useAgentStore.setState((s) => ({ agents: { ...s.agents, a2: { id: 'a2', projectId: 'p1', name: 'other', kind: 'durable', status: 'running', color: 'blue' } as never } }));
+    render(<ChromeBody />);
+    act(() => openDispatcher());
+    act(() => useAgentStore.setState({ activeAgentId: 'a2' }));
+    expect(useUIStore.getState().dispatcherOpen).toBe(false);
+    expect(screen.getByTestId('main-content')).toBeTruthy();
+
+    act(() => openDispatcher());
+    act(() => useUIStore.getState().setExplorerTab('plugin:files', 'p1'));
+    expect(useUIStore.getState().dispatcherOpen).toBe(false);
+  });
+
+  it('leaves Settings to open, and Settings closes it again', () => {
+    useUIStore.setState({ explorerTab: 'settings', previousExplorerTab: 'agents' });
+    render(<ChromeBody />);
+    act(() => openDispatcher());
+    expect(useUIStore.getState().explorerTab).toBe('agents');
+    expect(screen.getByTestId('dispatcher-view')).toBeTruthy();
+    act(() => useUIStore.getState().toggleSettings());
+    expect(useUIStore.getState().dispatcherOpen).toBe(false);
+  });
+
+  it('closes when the New agent page opens', () => {
+    render(<ChromeBody />);
+    act(() => openDispatcher());
+    act(() => useChromeStore.getState().openNewAgent('durable'));
+    expect(useUIStore.getState().dispatcherOpen).toBe(false);
+    expect(screen.getByTestId('new-agent-page')).toBeTruthy();
+  });
+
+  it('stays reachable on a fresh install, and closes back to first run', () => {
+    useProjectStore.setState({ projects: [], activeProjectId: null });
+    render(<ChromeBody />);
+    expect(screen.getByTestId('first-run')).toBeTruthy();
+    act(() => openDispatcher());
+    expect(screen.getByTestId('dispatcher-view')).toBeTruthy();
+    act(() => useUIStore.getState().setDispatcherOpen(false));
+    expect(screen.getByTestId('first-run')).toBeTruthy();
+  });
+
+  it('keeps the project fallback from closing it', () => {
+    useProjectStore.setState({ activeProjectId: null });
+    useUIStore.setState({ dispatcherOpen: true });
+    render(<ChromeBody />);
+    expect(screen.getByTestId('dispatcher-view')).toBeTruthy();
+    expect(useProjectStore.getState().activeProjectId).toBeNull();
+  });
+
+  it('shows nothing of it while the Dispatcher is off', () => {
+    useDispatcherStore.getState().setState(DISPATCHER_OFF);
+    useUIStore.setState({ dispatcherOpen: true });
+    render(<ChromeBody />);
+    expect(screen.queryByTestId('dispatcher-view')).toBeNull();
+    act(() => openDispatcher());
+    expect(screen.queryByTestId('dispatcher-view')).toBeNull();
+  });
+});
 
 describe('ChromeBody', () => {
   it('shows the New agent page over the pane until something else opens', () => {

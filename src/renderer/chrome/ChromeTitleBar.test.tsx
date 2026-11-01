@@ -31,7 +31,7 @@ const originalInnerWidth = window.innerWidth;
 beforeEach(() => {
   localStorage.clear();
   window.innerWidth = 1400;
-  useUIStore.setState({ explorerTab: 'agents' });
+  useUIStore.setState({ explorerTab: 'agents', dispatcherOpen: false });
   useProjectStore.setState({ projects: [{ id: 'p1', name: 'Clubhouse', path: '/tmp/ch' }] as never, activeProjectId: 'p1' });
   usePluginStore.setState({ plugins: {}, pluginTitles: {}, projectEnabled: {}, appEnabled: [] });
   useChromeStore.setState({ sidebarWidth: SIDEBAR_DEFAULT, sidebarCollapsed: false, tabMru: {} });
@@ -81,6 +81,13 @@ describe('ChromeTitleBar', () => {
     render(<ChromeTitleBar />);
     expect(screen.queryByTestId('explorer-tab-agents')).toBeNull();
     expect(screen.getByTestId('title-bar').textContent).toBe('Settings');
+  });
+
+  it("hides project tabs in the Dispatcher's view, which is in no project (#2538)", () => {
+    useUIStore.setState({ dispatcherOpen: true });
+    render(<ChromeTitleBar />);
+    expect(screen.queryByTestId('explorer-tab-agents')).toBeNull();
+    expect(screen.getByTestId('title-bar').textContent).toBe('Dispatcher');
   });
 
   it('names the agent in the breadcrumb while its settings are open', () => {
