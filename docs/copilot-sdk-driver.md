@@ -1,6 +1,6 @@
 # Copilot SDK chat driver: spike results and plan
 
-Status: spike done, phases 0 and 1 done (opt-in driver, off by default) · Date: 2026-11-01 · Issue: [#2616](https://github.com/Agent-Clubhouse/Clubhouse/issues/2616) · Context: [docs/structured-chat-research.md](structured-chat-research.md) §7 and §8 (Phase 5)
+Status: spike done, phases 0 to 2 done (opt-in driver, off by default) · Date: 2026-11-01 · Issue: [#2616](https://github.com/Agent-Clubhouse/Clubhouse/issues/2616) · Context: [docs/structured-chat-research.md](structured-chat-research.md) §7 and §8 (Phase 5)
 
 Copilot chat runs today on the ACP driver (`copilot_acp`, `src/main/orchestrators/adapters/acp-chat-driver.ts`). This note records what the SDK does on real CLI versions and how to move to it. Codex is covered in [its own section](#codex-stay-on-app-server).
 
@@ -62,6 +62,11 @@ SDK 1.0.28 with CLI 1.0.105 and 1.0.106-2. "Since" is the oldest version where t
 | CLI dies mid-turn | `sendAndWait` rejects in about 50 ms and the client state becomes `disconnected`. No session event fires, so the driver must end the session itself. | 1.0.105 only |
 
 These matter for the normalizer:
+
+- **A subagent's events carry `agentId`, and include its own `session.model_change` and `user.message`.** Without a filter, the chip shows the subagent's model. Tie them to the `task` call through `subagent.started`.
+- **A queued message arrives as `user.message` with `delivery: "queued"`.** No idle fires between it and the turn before.
+- **`exit_plan_mode` always offers `autopilot` among its actions**, whatever the model asked for. Approving picks `interactive`.
+- **`session.mcp_servers_loaded` fires as each turn starts**, not at session open, so server status appears with the first turn.
 
 - **`assistant.turn_start` and `turn_end` mark model rounds, not user turns.** A steered run had two rounds and one `session.idle`. A turn in the chat contract ends on `session.idle`, and a queued message starts at its `user.message`.
 - **A `reject` without feedback ends the run**, with no further model call. With `feedback`, the model sees the reason and continues. The UI's plain Deny and "Deny with a reason" map onto this.
@@ -185,7 +190,7 @@ Levels: `plan` is `mode.set('plan')`, `ask` is the handler, `full_access` is `se
 
 ## Trying it
 
-Phase 1 is off by default. To turn it on, in a beta or dev build:
+The driver is off by default. To turn it on, in a beta or dev build:
 
 1. Settings › Experimental: turn on Chat.
 2. Settings › Orchestrators & agents › Copilot CLI: leave Runtime on Chat, and set **Chat driver** to **Copilot SDK (experimental)**.
@@ -203,7 +208,13 @@ Phase 1 is off by default. To turn it on, in a beta or dev build:
 | `core:chat:copilot` | `Copilot session error` | Error type, status code and message |
 | `core:chat:copilot` | `Copilot CLI exited` | Exit code and the end of stderr |
 
-**What phase 1 doesn't do yet:** steering and the native queue (messages sent during a turn wait for it to end), Plan and Auto levels (they ask first, and say so), plan approval, questions (the CLI's `ask_user` isn't offered, since no handler is set), subagent cards, images, and the model menu. A saved model still applies at start.
+**What it doesn't do yet:**
+
+- An Auto level. It asks first and says so, because Copilot's autopilot keeps going on its own, which isn't what Auto means elsewhere.
+- Editing a plan while approving it. Send it back with a reason instead.
+- MCP elicitation. The session doesn't offer it, so a server can't ask the user for input (*from the SDK's types*).
+- Slash commands: the composer offers none.
+- Credits. Usage shows tokens only until a real login confirms the fields (phase 4).
 
 ## Plan
 

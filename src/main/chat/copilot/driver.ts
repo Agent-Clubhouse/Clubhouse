@@ -1,6 +1,8 @@
-import type { CopilotClient, CopilotSession, MCPServerConfig, PermissionRequest, PermissionRequestResult, SessionConfig, SessionEvent } from '@github/copilot-sdk';
+import * as fsp from 'fs/promises';
+import { fileURLToPath } from 'url';
+import type { CopilotClient, CopilotSession, ExitPlanModeRequest, ExitPlanModeResult, MCPServerConfig, MessageOptions, ModelInfo, PermissionRequest, PermissionRequestResult, SessionConfig, SessionEvent } from '@github/copilot-sdk';
 import { MINIMAL_CHAT_CAPABILITIES, type ChatCapabilities, type PermissionLevel } from '../../../shared/chat/capabilities';
-import type { ChatEventDraft, ContentBlock, MessageDelivery, TokenUsage } from '../../../shared/chat/events';
+import { COMPACTION_STARTED, type ChatEventDraft, type ChatMcpServerStatus, type ChatQuestionAnswers, type ContentBlock, type MessageDelivery, type TokenUsage } from '../../../shared/chat/events';
 import type { ChatDriver, ChatDriverProbe, ChatDriverSession, ChatDriverStartOptions, McpHttpEndpoint, PermissionResponseExtras } from '../../../shared/chat/runtime';
 import { AsyncQueue } from '../../orchestrators/adapters/async-queue';
 import { CopilotLaunchError, launchCopilotServer, type CopilotServer } from './launch';
@@ -22,6 +24,10 @@ import { loadCopilotSdk } from './sdk-loader';
 
 type ReasoningEffort = NonNullable<NonNullable<Parameters<CopilotSession['setModel']>[1]>['reasoningEffort']>;
 
+type UserInputHandler = NonNullable<SessionConfig['onUserInputRequest']>;
+type UserInputRequest = Parameters<UserInputHandler>[0];
+type UserInputResponse = Awaited<ReturnType<UserInputHandler>>;
+
 type Log = (level: 'debug' | 'info' | 'warn' | 'error', message: string, meta?: Record<string, unknown>) => void;
 
 const PROVIDER = 'copilot-cli';
@@ -31,26 +37,35 @@ export const COPILOT_PROBE_TIMEOUT_MS = 15_000;
 /** Connecting and opening a session also loads the user's MCP servers. */
 const START_TIMEOUT_MS = 60_000;
 const CLOSE_GRACE_MS = 5_000;
+const MODEL_LIST_TIMEOUT_MS = 15_000;
 
 const LOGIN_MESSAGE = 'Not logged in to Copilot. Run copilot and use /login.';
 const LOGIN_HINT = 'Run copilot and use /login';
 
 /**
- * Phase 1 (docs/copilot-sdk-driver.md "Plan"): text, tools, permissions and
- * interrupt. Steering, the native queue, plan approval, questions and the model
- * menu come in phase 2, so messages sent during a turn queue in the runtime.
+ * Credits stay out until confirmed on a real login, so usage is tokens only
+ * (docs/copilot-sdk-driver.md "Features"). There is no Auto level: Copilot's
+ * autopilot keeps going on its own, which isn't what Auto means elsewhere.
  */
 export const COPILOT_SDK_CAPABILITIES: ChatCapabilities = Object.freeze({
   ...MINIMAL_CHAT_CAPABILITIES,
+  steer: true,
+  queue: 'native',
   interrupt: true,
   resume: 'native',
+  planApproval: true,
+  questions: true,
+  subagents: 'full',
   usage: 'tokens',
-  liveLevels: ['ask', 'auto_edit', 'full_access'],
+  images: true,
+  modelSwitch: 'live',
+  effortSwitch: 'live',
+  liveLevels: ['plan', 'ask', 'auto_edit', 'full_access'],
   // A reject with feedback lets the model continue; updatedInput has no equivalent.
   permissionExtras: { denyMessage: true, updatedInput: false },
 }) as ChatCapabilities;
 
-const LEVEL_NAMES: Partial<Record<PermissionLevel, string>> = { ask: 'Agent', auto_edit: 'Agent, allow edits', full_access: 'Agent, allow all' };
+const LEVEL_NAMES: Partial<Record<PermissionLevel, string>> = { plan: 'Plan', ask: 'Agent', auto_edit: 'Agent, allow edits', full_access: 'Agent, allow all' };
 
 const ignore = (): void => undefined;
 
@@ -131,9 +146,43 @@ export function toSdkMcpServers(
   return { servers: out, skipped };
 }
 
-interface PendingPermission {
-  resolve: (result: PermissionRequestResult) => void;
-  toolCallId?: string;
+/** An open approval: `answer` throws on an option it doesn't have, `cancel` says no without a person. */
+interface PendingApproval {
+  answer(optionId: string, message: string | undefined): void;
+  cancel(): void;
+}
+
+const PLAN_OPTION_APPROVE = 'approve';
+const PLAN_OPTION_REJECT = 'reject';
+/** The one question an `ask_user` call carries. */
+const QUESTION_ID = 'answer';
+
+/**
+ * What approving a plan continues as. The CLI offers autopilot among the
+ * actions: approving a plan never turns it on.
+ */
+export function copilotPlanAction(request: Pick<ExitPlanModeRequest, 'actions' | 'recommendedAction'>): string | undefined {
+  const safe = (action: string | undefined) => (action && !action.startsWith('autopilot') ? action : undefined);
+  return request.actions.includes('interactive') ? 'interactive' : safe(request.recommendedAction) ?? request.actions.find((a) => safe(a));
+}
+
+function mcpStatus(status: string | undefined): ChatMcpServerStatus {
+  switch (status) {
+    case 'connected': return 'connected';
+    case 'pending': return 'pending';
+    case 'needs-auth': return 'needs_auth';
+    case 'failed': return 'failed';
+    case 'disabled': case 'stopped': case 'not_configured': return 'disabled';
+    default: return 'unknown';
+  }
+}
+
+async function imageAttachment(block: Extract<ContentBlock, { type: 'image' }>): Promise<NonNullable<MessageOptions['attachments']>[number]> {
+  const mimeType = block.mimeType;
+  if (block.data) return { type: 'blob', data: block.data, mimeType };
+  const file = block.path ?? (block.uri?.startsWith('file:') ? fileURLToPath(block.uri) : undefined);
+  if (!file) throw new Error(`Copilot chat can't attach an image from ${block.uri ?? 'nowhere'}: only inline data or local files`);
+  return { type: 'blob', data: (await fsp.readFile(file)).toString('base64'), mimeType };
 }
 
 /** The model's own status line to the CLI, not a step of the work. */
@@ -153,17 +202,26 @@ export class CopilotSdkChatSession implements ChatDriverSession {
   readonly capabilities = COPILOT_SDK_CAPABILITIES;
   resumeFallback: 'not_found' | undefined;
   private readonly queue = new AsyncQueue<ChatEventDraft>();
-  private readonly pending = new Map<string, PendingPermission>();
-  /** Calls in progress, for the result's title and arguments. */
-  private readonly tools = new Map<string, { name: string; args: unknown }>();
+  private readonly pending = new Map<string, PendingApproval>();
+  private readonly pendingQuestions = new Map<string, { resolve: (r: UserInputResponse) => void; choices: string[] }>();
+  /** Calls in progress, for the result's arguments and to tie a handler's request to its call. */
+  private readonly tools = new Map<string, { name: string; args: unknown; parent?: string }>();
+  /** Subagent's `agentId` → the tool call that started it, which is its id in the contract. */
+  private readonly agents = new Map<string, string>();
   private sdk: CopilotSession | undefined;
   private level: PermissionLevel;
+  /** What approving a plan returns to. */
+  private actingLevel: PermissionLevel = 'ask';
+  private model: string | undefined;
+  private effort: string | undefined;
+  private models: ModelInfo[] = [];
+  private mcpReported = '';
   private turn = 0;
   private turnRunning = false;
   private interrupting = false;
   private closing = false;
   private finished = false;
-  private nextPermission = 0;
+  private nextRequest = 0;
   private turnTokens: TokenUsage | undefined;
   private sessionTokens: TokenUsage | undefined;
   private context: { used: number; size: number } | undefined;
@@ -175,8 +233,9 @@ export class CopilotSdkChatSession implements ChatDriverSession {
     private readonly log: Log,
     private readonly overrides: Partial<SessionConfig> = {},
   ) {
-    // Plan and Auto arrive in phase 2. Until then they ask first: never more access than asked for.
+    // Auto has no equivalent, so it asks first: never more access than asked for.
     this.level = COPILOT_SDK_CAPABILITIES.liveLevels.includes(opts.level) ? opts.level : 'ask';
+    if (this.level !== 'plan') this.actingLevel = this.level;
     void server.exited.then(() => this.onExit());
   }
 
@@ -203,6 +262,8 @@ export class CopilotSdkChatSession implements ChatDriverSession {
       ...(model && { model }),
       ...(Object.keys(servers).length && { mcpServers: servers }),
       onPermissionRequest: (request) => this.onPermission(request),
+      onUserInputRequest: (request) => this.onQuestion(request),
+      onExitPlanModeRequest: (request) => this.onPlan(request),
       onEvent: (event) => this.onEvent(event),
       ...this.overrides,
     };
@@ -218,23 +279,31 @@ export class CopilotSdkChatSession implements ChatDriverSession {
       }
     }
     this.sdk ??= await this.client.createSession(config);
-    // A session opened on another driver can still be in Plan or Autopilot.
-    await this.sdk.rpc.mode.set({ mode: 'interactive' }).catch((err: Error) => this.log('warn', 'Could not set the session mode', { error: err.message }));
-    if (this.opts.effort && model) {
-      await this.sdk.setModel(model, { reasoningEffort: this.opts.effort as ReasoningEffort }).catch((err: Error) => this.log('warn', 'Effort not applied', { error: err.message }));
+    // Always sent, even if it looks right: a session opened on another driver or
+    // an earlier process can be in any mode, and ACP's stale values cost us #2174.
+    await this.sdk.rpc.mode.set({ mode: this.level === 'plan' ? 'plan' : 'interactive' }).catch((err: Error) => this.log('warn', 'Could not set the session mode', { error: err.message }));
+    this.model = model ?? await this.sdk.rpc.model.getCurrent().then((c) => c.modelId, (err: Error): undefined => {
+      this.log('warn', 'Could not read the current model', { error: err.message });
+      return undefined;
+    });
+    if (this.opts.effort && this.model) {
+      await this.sdk.setModel(this.model, { reasoningEffort: this.opts.effort as ReasoningEffort }).then(
+        () => { this.effort = this.opts.effort; },
+        (err: Error) => this.log('warn', 'Effort not applied', { error: err.message }),
+      );
     }
     this.push({
       type: 'session_info',
       data: {
         nativeSessionId: this.sdk.sessionId,
         ...(cliVersion && { cliVersion }),
-        ...(model && { model }),
+        ...(this.model && { model: this.model }),
         levelNames: LEVEL_NAMES,
       },
     });
     if (this.level !== this.opts.level) {
       this.push({ type: 'mode_changed', data: { level: this.level, nativeMode: 'interactive' } });
-      this.push({ type: 'notice', data: { level: 'info', code: 'level_unavailable', message: 'The Copilot SDK driver has no Plan or Auto level yet, so this session asks first.' } });
+      this.push({ type: 'notice', data: { level: 'info', code: 'level_unavailable', message: 'The Copilot SDK driver has no Auto level, so this session asks first.' } });
     }
     this.log('info', 'Copilot SDK session opened', {
       agentId: this.opts.agentId,
@@ -251,17 +320,51 @@ export class CopilotSdkChatSession implements ChatDriverSession {
       type: 'notice',
       data: { level: 'info', code: 'copilot_sdk_active', message: `This chat runs on the experimental Copilot SDK driver${cliVersion ? ` with Copilot CLI ${cliVersion}` : ''}.` },
     });
+    void this.loadModels();
+  }
+
+  /** The model menu. It needs a real login, so it's best-effort and never holds a start up. */
+  private async loadModels(): Promise<void> {
+    try {
+      this.models = await withTimeout(this.client.listModels(), MODEL_LIST_TIMEOUT_MS, 'Listing models');
+    } catch (err) {
+      this.log('info', 'Could not list Copilot models', { error: err instanceof Error ? err.message : String(err) });
+      return;
+    }
+    this.push({
+      type: 'session_info',
+      data: {
+        models: this.models.map((m) => ({
+          id: m.id,
+          label: m.name || m.id,
+          ...(m.billing?.multiplier !== undefined && { costHint: `${m.billing.multiplier}x` }),
+        })),
+        efforts: this.effortsOf(this.model),
+      },
+    });
+  }
+
+  private effortsOf(model: string | undefined): string[] {
+    return this.models.find((m) => m.id === model)?.supportedReasoningEfforts ?? [];
   }
 
   async send(content: ContentBlock[], delivery: MessageDelivery): Promise<MessageDelivery> {
-    if (this.turnRunning) throw new Error(`Cannot ${delivery} into a running Copilot turn yet; queue it until the turn ends`);
     const prompt = content
       .map((b) => (b.type === 'text' ? b.text : b.type === 'file' ? b.path : b.type === 'resource' ? b.text ?? b.uri : ''))
       .filter(Boolean)
       .join('\n');
+    const images = await Promise.all(content.filter((b): b is Extract<ContentBlock, { type: 'image' }> => b.type === 'image').map(imageAttachment));
+    const attachments = images.length ? { attachments: images } : {};
+    if (this.turnRunning) {
+      // 'immediate' reaches the next model request of this run; 'enqueue' waits for it to finish.
+      const actual: MessageDelivery = delivery === 'queued' ? 'queued' : 'steer';
+      await this.requireSession().send({ prompt, ...attachments, mode: actual === 'queued' ? 'enqueue' : 'immediate' });
+      return actual;
+    }
+    // Idle: whatever was asked, the message starts a turn.
     this.beginTurn('prompt');
     try {
-      await this.requireSession().send({ prompt });
+      await this.requireSession().send({ prompt, ...attachments });
     } catch (err) {
       this.endTurn('error');
       throw err;
@@ -278,34 +381,51 @@ export class CopilotSdkChatSession implements ChatDriverSession {
   async respondPermission(requestId: string, optionId: string, extras?: PermissionResponseExtras): Promise<void> {
     const pending = this.pending.get(requestId);
     if (!pending) throw new Error(`No pending Copilot permission request ${requestId}`);
-    let result: PermissionRequestResult;
-    if (optionId === COPILOT_OPTION_ALLOW) result = { kind: 'approve-once' };
-    else if (optionId === COPILOT_OPTION_ALLOW_SESSION) result = { kind: 'approve-for-session' };
-    else if (optionId === COPILOT_OPTION_DENY) result = { kind: 'reject', ...(extras?.message && { feedback: extras.message }) };
-    else throw new Error(`Unknown Copilot permission option ${optionId}`);
+    pending.answer(optionId, extras?.message);
     this.pending.delete(requestId);
-    pending.resolve(result);
-    this.push({ type: 'permission_resolved', data: { requestId, optionId, decision: optionId === COPILOT_OPTION_DENY ? 'deny' : 'allow', by: 'user' } }, true);
+    const denied = optionId === COPILOT_OPTION_DENY || optionId === PLAN_OPTION_REJECT;
+    this.push({ type: 'permission_resolved', data: { requestId, optionId, decision: denied ? 'deny' : 'allow', by: 'user' } }, true);
   }
 
-  async answerQuestion(): Promise<void> {
-    throw new Error('The Copilot SDK driver does not ask structured questions yet');
+  async answerQuestion(requestId: string, answers: ChatQuestionAnswers): Promise<void> {
+    const pending = this.pendingQuestions.get(requestId);
+    if (!pending) throw new Error(`No pending Copilot question ${requestId}`);
+    this.pendingQuestions.delete(requestId);
+    const raw = answers[QUESTION_ID] ?? '';
+    const answer = Array.isArray(raw) ? raw.join(', ') : raw;
+    pending.resolve({ answer, wasFreeform: !pending.choices.includes(answer) });
+    this.push({ type: 'question_resolved', data: { requestId, answers } }, true);
   }
 
   async setLevel(level: PermissionLevel): Promise<void> {
-    if (!this.capabilities.liveLevels.includes(level)) throw new Error(`The Copilot SDK driver has no ${level} level yet`);
-    if (level === this.level) return;
+    if (!this.capabilities.liveLevels.includes(level)) throw new Error(`The Copilot SDK driver has no ${level} level`);
+    const previous = this.level;
+    if (level === previous) return;
+    // Set first, so the mode_changed event this causes reads as nothing new.
     this.level = level;
-    this.push({ type: 'mode_changed', data: { level, nativeMode: 'interactive' } });
+    if (level !== 'plan') this.actingLevel = level;
+    if (level === 'plan' || previous === 'plan') {
+      try {
+        await this.requireSession().rpc.mode.set({ mode: level === 'plan' ? 'plan' : 'interactive' });
+      } catch (err) {
+        this.level = previous;
+        throw err;
+      }
+    }
+    this.push({ type: 'mode_changed', data: { level, nativeMode: level === 'plan' ? 'plan' : 'interactive' } });
   }
 
   async setModel(modelId: string, effort?: string | null): Promise<void> {
-    await this.requireSession().setModel(modelId, effort ? { reasoningEffort: effort as ReasoningEffort } : undefined);
+    // Copilot has no "unset", so there's no default to return to (no effortDefault).
+    if (effort === null) throw new Error("Copilot can't return effort to its default");
+    const wanted = effort ?? this.effort;
+    // The session.model_change event reports what the CLI applied.
+    await this.requireSession().setModel(modelId, wanted ? { reasoningEffort: wanted as ReasoningEffort } : undefined);
   }
 
   async compact(): Promise<void> {
+    // session.compaction_start and _complete report it.
     await this.requireSession().rpc.history.compact();
-    this.push({ type: 'notice', data: { level: 'info', code: 'compacted', message: 'Context compacted' } }, true);
   }
 
   async close(): Promise<void> {
@@ -332,14 +452,22 @@ export class CopilotSdkChatSession implements ChatDriverSession {
     }
     if (this.closing || this.finished) return { kind: 'reject' };
     if (!this.turnRunning) this.beginTurn('system');
-    const requestId = `perm-${++this.nextPermission}`;
+    const requestId = `perm-${++this.nextRequest}`;
     const view = copilotPermissionView(request);
     const toolCallId = 'toolCallId' in request ? request.toolCallId : undefined;
     if (toolCallId && view.content) {
       this.push({ type: 'tool_call_update', data: { toolCallId, content: view.content } }, true);
     }
     return new Promise((resolve) => {
-      this.pending.set(requestId, { resolve, toolCallId });
+      this.pending.set(requestId, {
+        answer(optionId, message) {
+          if (optionId === COPILOT_OPTION_ALLOW) resolve({ kind: 'approve-once' });
+          else if (optionId === COPILOT_OPTION_ALLOW_SESSION) resolve({ kind: 'approve-for-session' });
+          else if (optionId === COPILOT_OPTION_DENY) resolve({ kind: 'reject', ...(message && { feedback: message }) });
+          else throw new Error(`Unknown Copilot permission option ${optionId}`);
+        },
+        cancel: () => resolve({ kind: 'reject' }),
+      });
       this.push({
         type: 'permission_request',
         data: {
@@ -350,18 +478,90 @@ export class CopilotSdkChatSession implements ChatDriverSession {
           toolName: view.toolName,
           rawInput: request,
           options: copilotPermissionOptions(request),
+          ...(toolCallId && this.tools.get(toolCallId)?.parent && { subagentId: this.tools.get(toolCallId)?.parent }),
         },
       }, true);
     });
   }
 
-  /** Answer every open request "no" and tell the UI, so nothing waits on a turn that has gone. */
+  /** The running call of this tool. A handler's request doesn't name its call, but runs right after it starts. */
+  private openCall(name: string): string | undefined {
+    return [...this.tools].reverse().find(([, t]) => t.name === name)?.[0];
+  }
+
+  private onQuestion(request: UserInputRequest): Promise<UserInputResponse> | UserInputResponse {
+    if (this.closing || this.finished) return { answer: '', wasFreeform: true };
+    if (!this.turnRunning) this.beginTurn('system');
+    const requestId = `question-${++this.nextRequest}`;
+    const choices = request.choices ?? [];
+    const toolCallId = this.openCall('ask_user');
+    return new Promise((resolve) => {
+      this.pendingQuestions.set(requestId, { resolve, choices });
+      this.push({
+        type: 'question',
+        data: {
+          requestId,
+          questions: [{
+            id: QUESTION_ID,
+            prompt: request.question,
+            ...(choices.length && { options: choices.map((c) => ({ id: c, label: c })) }),
+            allowFreeText: request.allowFreeform ?? true,
+          }],
+          toolCallId,
+          ...(toolCallId && this.tools.get(toolCallId)?.parent && { subagentId: this.tools.get(toolCallId)?.parent }),
+        },
+      }, true);
+    });
+  }
+
+  /** Approval rides on a permission request, with the plan shown as a document, as for Claude's ExitPlanMode. */
+  private onPlan(request: ExitPlanModeRequest): Promise<ExitPlanModeResult> | ExitPlanModeResult {
+    if (this.closing || this.finished) return { approved: false };
+    if (!this.turnRunning) this.beginTurn('system');
+    const requestId = `plan-${++this.nextRequest}`;
+    const toolCallId = this.openCall('exit_plan_mode');
+    const markdown = request.planContent || request.summary;
+    const action = copilotPlanAction(request);
+    this.push({ type: 'plan_document', data: { planId: toolCallId ?? requestId, markdown, status: 'ready', toolCallId } }, true);
+    return new Promise((resolve) => {
+      this.pending.set(requestId, {
+        answer(optionId, message) {
+          if (optionId === PLAN_OPTION_APPROVE) resolve({ approved: true, ...(action && { selectedAction: action }) });
+          else if (optionId === PLAN_OPTION_REJECT) resolve({ approved: false, ...(message && { feedback: message }) });
+          else throw new Error(`Unknown Copilot plan option ${optionId}`);
+        },
+        cancel: () => resolve({ approved: false }),
+      });
+      this.push({
+        type: 'permission_request',
+        data: {
+          requestId,
+          title: 'Plan ready for review',
+          description: request.summary,
+          toolCallId,
+          toolName: 'exit_plan_mode',
+          rawInput: { plan: markdown },
+          options: [
+            { optionId: PLAN_OPTION_APPROVE, kind: 'allow_once', label: 'Approve' },
+            { optionId: PLAN_OPTION_REJECT, kind: 'reject_once', label: 'Keep planning' },
+          ],
+        },
+      }, true);
+    });
+  }
+
+  /** Answer everything open "no" and tell the UI, so nothing waits on a turn that has gone. */
   private settlePending(by: 'agent'): void {
     for (const [requestId, pending] of this.pending) {
-      pending.resolve({ kind: 'reject' });
+      pending.cancel();
       this.push({ type: 'permission_resolved', data: { requestId, decision: 'cancelled', by } }, true);
     }
     this.pending.clear();
+    for (const [requestId, pending] of this.pendingQuestions) {
+      pending.resolve({ answer: '', wasFreeform: true });
+      this.push({ type: 'question_resolved', data: { requestId, answers: {}, cancelled: true } }, true);
+    }
+    this.pendingQuestions.clear();
   }
 
   private get turnId(): string | undefined {
@@ -409,17 +609,31 @@ export class CopilotSdkChatSession implements ChatDriverSession {
   }
 
   private onEvent(event: SessionEvent): void {
+    // A subagent's own session events (agentId set) don't speak for the session:
+    // its idle isn't the turn's, and its model isn't the one the user chose.
+    const fromSubagent = !!(event as { agentId?: string }).agentId;
+    const subagentOf = (parentToolCallId: string | undefined) => parentToolCallId ?? this.agents.get((event as { agentId?: string }).agentId ?? '');
     if (TURN_OPENING_EVENTS.has(event.type) && !this.turnRunning) this.beginTurn('system');
     switch (event.type) {
+      case 'user.message':
+        // A queued message starts here, with no idle in between: the run goes
+        // idle once, after everything queued. Steers stay in the running turn.
+        if (!fromSubagent && event.data.delivery === 'queued') {
+          this.endTurn('end_turn');
+          this.beginTurn('queued');
+        }
+        return;
       case 'assistant.message_delta': {
         const { messageId, deltaContent, parentToolCallId } = event.data;
-        this.push({ type: 'agent_message_chunk', data: { messageId, text: deltaContent, ...(parentToolCallId && { subagentId: parentToolCallId }) } }, true);
+        const subagentId = subagentOf(parentToolCallId);
+        this.push({ type: 'agent_message_chunk', data: { messageId, text: deltaContent, ...(subagentId && { subagentId }) } }, true);
         return;
       }
       case 'assistant.message': {
         const { messageId, content, parentToolCallId } = event.data;
         // A round that only calls tools has an empty message.
-        if (content) this.push({ type: 'agent_message', data: { messageId, text: content, ...(parentToolCallId && { subagentId: parentToolCallId }) } }, true);
+        const subagentId = subagentOf(parentToolCallId);
+        if (content) this.push({ type: 'agent_message', data: { messageId, text: content, ...(subagentId && { subagentId }) } }, true);
         return;
       }
       case 'assistant.reasoning_delta':
@@ -431,7 +645,8 @@ export class CopilotSdkChatSession implements ChatDriverSession {
       case 'tool.execution_start': {
         const { toolCallId, toolName, arguments: args, toolTitle, parentToolCallId } = event.data;
         if (HIDDEN_TOOLS.has(toolName)) return;
-        this.tools.set(toolCallId, { name: toolName, args });
+        const subagentId = subagentOf(parentToolCallId);
+        this.tools.set(toolCallId, { name: toolName, args, ...(subagentId && { parent: subagentId }) });
         this.push({
           type: 'tool_call',
           data: {
@@ -442,7 +657,7 @@ export class CopilotSdkChatSession implements ChatDriverSession {
             toolName,
             rawInput: args,
             locations: copilotToolLocations(args),
-            ...(parentToolCallId && { subagentId: parentToolCallId }),
+            ...(subagentId && { subagentId }),
           },
         }, true);
         return;
@@ -473,17 +688,18 @@ export class CopilotSdkChatSession implements ChatDriverSession {
         return;
       }
       case 'session.usage_info':
-        this.context = { used: event.data.currentTokens, size: event.data.tokenLimit };
+        if (!fromSubagent) this.context = { used: event.data.currentTokens, size: event.data.tokenLimit };
         return;
       case 'session.idle':
+        if (fromSubagent) return;
         this.endTurn(event.data.aborted || this.interrupting ? 'cancelled' : 'end_turn');
         return;
       case 'abort':
         this.interrupting = true;
         return;
       case 'session.error':
-        // An error during an interrupt is the interrupt.
-        if (this.interrupting) return;
+        // An error during an interrupt is the interrupt. A subagent's failure arrives as subagent.failed.
+        if (this.interrupting || fromSubagent) return;
         this.log('warn', 'Copilot session error', { agentId: this.opts.agentId, errorType: event.data.errorType, errorCode: event.data.errorCode, statusCode: event.data.statusCode, message: event.data.message });
         this.push({ type: 'error', data: { code: copilotErrorCode(event.data), message: event.data.message, fatal: false } }, true);
         this.endTurn('error');
@@ -497,9 +713,67 @@ export class CopilotSdkChatSession implements ChatDriverSession {
       case 'session.title_changed':
         this.push({ type: 'session_info', data: { title: event.data.title } });
         return;
-      case 'session.model_change':
-        this.push({ type: 'model_changed', data: { modelId: event.data.newModel, ...(event.data.reasoningEffort && { effort: event.data.reasoningEffort }) } });
+      case 'session.model_change': {
+        if (fromSubagent) return;
+        const efforts = this.effortsOf(this.model).join();
+        this.model = event.data.newModel;
+        this.effort = event.data.reasoningEffort ?? undefined;
+        this.push({ type: 'model_changed', data: { modelId: this.model, ...(this.effort && { effort: this.effort }) } });
+        if (this.effortsOf(this.model).join() !== efforts) this.push({ type: 'session_info', data: { efforts: this.effortsOf(this.model) } });
         return;
+      }
+      case 'session.mode_changed': {
+        if (fromSubagent) return;
+        // Approving a plan returns the CLI to interactive: back to the level the user acted at.
+        const level: PermissionLevel = event.data.newMode === 'plan' ? 'plan' : this.level === 'plan' ? this.actingLevel : this.level;
+        if (level === this.level) return;
+        this.level = level;
+        this.push({ type: 'mode_changed', data: { level, nativeMode: event.data.newMode } });
+        return;
+      }
+      case 'subagent.started': {
+        const { toolCallId, agentDisplayName, agentName, agentDescription } = event.data;
+        const agentId = (event as { agentId?: string }).agentId;
+        if (agentId) this.agents.set(agentId, toolCallId);
+        this.push({ type: 'subagent', data: { subagentId: toolCallId, name: agentDisplayName || agentName, description: agentDescription, status: 'running', parentToolCallId: toolCallId } }, true);
+        return;
+      }
+      case 'subagent.completed':
+      case 'subagent.failed': {
+        const { toolCallId, agentDisplayName, agentName, totalToolCalls, totalTokens } = event.data;
+        const failed = event.type === 'subagent.failed';
+        const status = failed ? 'failed' : event.data.cancelled ? 'cancelled' : 'completed';
+        this.push({
+          type: 'subagent',
+          data: {
+            subagentId: toolCallId,
+            name: agentDisplayName || agentName,
+            status,
+            parentToolCallId: toolCallId,
+            ...(totalToolCalls !== undefined && { toolCount: totalToolCalls }),
+            ...(totalTokens !== undefined && { usage: { total: totalTokens } }),
+          },
+        }, true);
+        return;
+      }
+      case 'session.compaction_start':
+        this.push({ type: 'notice', data: { level: 'info', code: COMPACTION_STARTED, message: 'Compacting context…' } }, true);
+        return;
+      case 'session.compaction_complete':
+        this.push(event.data.success
+          ? { type: 'notice', data: { level: 'info', code: 'compacted', message: 'Context compacted' } }
+          : { type: 'notice', data: { level: 'warn', code: 'compaction_failed', message: event.data.error ? `Context compaction failed: ${event.data.error}` : 'Context compaction failed' } }, true);
+        return;
+      case 'session.mcp_servers_loaded': {
+        if (fromSubagent) return;
+        // Repeats before every turn; report changes only.
+        const servers = event.data.servers.map((m) => ({ name: m.name, status: mcpStatus(m.status) }));
+        const reported = JSON.stringify(servers);
+        if (reported === this.mcpReported) return;
+        this.mcpReported = reported;
+        this.push({ type: 'session_info', data: { mcpServers: servers } });
+        return;
+      }
       default:
         // Sessions emit far more than the contract shows, including types the
         // SDK doesn't declare, so an unhandled type isn't drift.
