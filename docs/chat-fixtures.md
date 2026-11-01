@@ -105,6 +105,8 @@ Each CLI has seven hand-made fixtures, plus two Claude-only ones, shaped on the 
 | `ask-user-question` (Claude) | `AskUserQuestion` with two questions, the second `multiSelect`, answered through `can_use_tool` with `answers` in `updatedInput` |
 | `subagent-task` (Claude) | A `Task` subagent: `task_started`/`task_progress`/`task_notification`, and its messages, partials and tool calls tagged with `parent_tool_use_id` |
 
+Each CLI also has a recorded `model-list` fixture (2026-10-31: Claude Code 2.1.312, Codex 0.163.0, Copilot 1.0.103). It is handshake only, with no prompt: Claude's `initialize`, Codex's `initialize` and `model/list`, and Copilot's `initialize`, `session/new` and `session/close`. `list_models` and `start_helper`'s model check read these lists (#2569), and `src/main/orchestrators/model-probes.test.ts` replays them. Claude's commands, agents and account are trimmed, and so are Copilot's command lists.
+
 Hand-made fixtures are approximations: field sets were taken from real captures, but they weren't recorded end to end. Replace them with recordings as each driver lands, and keep the hand-made `schema-drift` ones, since no real session produces those on purpose.
 
 ### Synthesized, not recorded

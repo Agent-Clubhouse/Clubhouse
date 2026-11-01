@@ -126,6 +126,7 @@ export function parseCodexModelList(data: ReadonlyArray<Partial<Model>>): ModelI
 const CODEX_MAX_PAGES = 5;
 
 export async function probeCodexModels(ctx: ModelProbeContext): Promise<ModelInfo[] | null> {
+  ctx.signal.throwIfAborted();
   const client = new CodexAppServerClient({
     ...resolveStructuredSpawn(ctx.binary, ['app-server']),
     cwd: ctx.cwd,
@@ -174,6 +175,7 @@ export function acpSessionModels(
 }
 
 export async function probeCopilotModels(ctx: ModelProbeContext): Promise<ModelInfo[] | null> {
+  ctx.signal.throwIfAborted();
   const session = new AcpSession({
     ...resolveCopilotAcpSpawn({ binary: ctx.binary }),
     cwd: ctx.cwd,

@@ -104,7 +104,7 @@ describe('fixture format', () => {
   });
 
   it('every committed fixture parses, and each CLI covers the shared scenarios', async () => {
-    const shared = ['interrupt', 'multi-turn', 'permission-approve-edit', 'permission-deny', 'schema-drift', 'session-info', 'turn-error'];
+    const shared = ['interrupt', 'model-list', 'multi-turn', 'permission-approve-edit', 'permission-deny', 'schema-drift', 'session-info', 'turn-error'];
     const extra: Record<string, string[]> = { claude: ['ask-user-question', 'subagent-task'], codex: [], copilot: ['handshake-1.0.82'] };
     for (const [cli, protocol] of [['claude', 'claude-stream-json'], ['codex', 'codex-app-server'], ['copilot', 'acp']]) {
       const names = (await fs.promises.readdir(path.join(FIXTURES, cli))).map((f) => f.replace(/\.jsonl$/, '')).sort();

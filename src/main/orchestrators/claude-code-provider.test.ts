@@ -26,6 +26,7 @@ vi.mock('../util/shell', () => ({
 import * as fs from 'fs';
 import * as fsp from 'fs/promises';
 import { ClaudeCodeProvider } from './claude-code-provider';
+import type { ModelList } from './types';
 
 /** Match any path whose basename is 'claude' (with or without .exe/.cmd) */
 function isClaudePath(p: string | Buffer | URL): boolean {
@@ -352,6 +353,39 @@ describe('ClaudeCodeProvider', () => {
 
     it('returns undefined for unknown tools', () => {
       expect(provider.toolVerb('UnknownTool')).toBeUndefined();
+    });
+  });
+
+  describe('acceptsModel (#2569)', () => {
+    const live: ModelList = {
+      source: 'live',
+      via: 'handshake',
+      fetchedAt: 0,
+      models: [
+        { id: 'default', label: 'Default', isDefault: true, resolvedId: 'claude-opus-5-5' },
+        { id: 'opus', label: 'Opus 5.5', resolvedId: 'claude-opus-5-5' },
+        { id: 'claude-opus-4-8', label: 'Opus 4.8' },
+      ],
+    };
+
+    it('takes listed ids and their resolved ids', () => {
+      expect(provider.acceptsModel('opus', live)).toBe(true);
+      expect(provider.acceptsModel('claude-opus-4-8', live)).toBe(true);
+      expect(provider.acceptsModel('claude-opus-5-5', live)).toBe(true);
+    });
+
+    it('takes the aliases Claude resolves itself, and the [1m] suffix', () => {
+      expect(provider.acceptsModel('sonnet', live)).toBe(true);
+      expect(provider.acceptsModel('opusplan', live)).toBe(true);
+      expect(provider.acceptsModel('opus[1m]', live)).toBe(true);
+      expect(provider.acceptsModel('claude-opus-4-8[1m]', live)).toBe(true);
+      expect(provider.acceptsModel('Opus', live)).toBe(true);
+    });
+
+    it('refuses anything else', () => {
+      expect(provider.acceptsModel('gpt-6.1-sol', live)).toBe(false);
+      expect(provider.acceptsModel('claude-opus-9', live)).toBe(false);
+      expect(provider.acceptsModel('[1m]', live)).toBe(false);
     });
   });
 
