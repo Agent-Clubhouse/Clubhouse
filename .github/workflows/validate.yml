@@ -472,7 +472,8 @@ jobs:
         with:
           node-version: '22.23.4'
           cache: npm
-      # The Electron binary npm ci downloads (~100 MB), in its default cache dir per OS.
+      # The Electron binary (~100 MB), which the check downloads when it first requires
+      # `electron`, in its default cache dir per OS.
       - uses: actions/cache@v6
         with:
           path: |

@@ -1,6 +1,6 @@
 # Copilot SDK chat driver: spike results and plan
 
-Status: spike done, driver not started · Date: 2026-11-01 · Issue: [#2616](https://github.com/Agent-Clubhouse/Clubhouse/issues/2616) · Context: [docs/structured-chat-research.md](structured-chat-research.md) §7 and §8 (Phase 5)
+Status: spike done, dependency added (phase 0), driver not started · Date: 2026-11-01 · Issue: [#2616](https://github.com/Agent-Clubhouse/Clubhouse/issues/2616) · Context: [docs/structured-chat-research.md](structured-chat-research.md) §7 and §8 (Phase 5)
 
 Copilot chat runs today on the ACP driver (`copilot_acp`, `src/main/orchestrators/adapters/acp-chat-driver.ts`). This note records what the SDK does on real CLI versions and how to move to it. Codex is covered in [its own section](#codex-stay-on-app-server).
 
@@ -32,10 +32,9 @@ Everything below is **observed** on macOS arm64 unless marked *docs claim* or *f
 
 **Not tested:**
 
-- Windows and Linux. Packaging and launch still need CI runs there.
-- A packaged app, or the chunk running inside Electron. Bundled code ran on Node 24.22.1, the version the Electron 45.1.0 release notes list (*docs claim*).
+- A packaged app. Phase 0 ran the chunk under Electron's Node, with `ELECTRON_RUN_AS_NODE`, not inside a running Electron main process with the hardened fuses. Nothing in the app imports the SDK yet, so phase 1 has to prove that.
+- The user's own `copilot` on Windows and Linux. Phase 0 ran only the SDK's bundled runtime there, and only as far as creating a session.
 - Anything that needs a real login: `models.list` (models and billing for the menus), credit usage (`copilotUsage`, `quotaSnapshots`), `account.getQuota`, and how real models use steering.
-- `koffi`'s install script. It was read but not run.
 
 ## Features
 
@@ -84,7 +83,17 @@ The repo's production main webpack config built a smoke entry that loads the SDK
 
 **The bundled CLI is a separate package.** `@github/copilot-sdk-<platform>` is an optional dependency of 159 MB on macOS arm64. It's only resolved when no connection path is given. With a path set, the SDK's runtime cache directory was never created. Webpack doesn't pull it in, and `forge.config.ts` copies only `node-pty` into the package, so it never ships. It costs developer and CI disk, less than the 239 MB the Claude SDK's binary already takes.
 
-**`koffi` stays in the dependency tree and it isn't optional.** Its install script (`cnoke --prebuild`) checks that a prebuilt binary from an optional `@koromix/koffi-<platform>` package loads, and tries to compile with CMake if not (*from reading the code*). It loaded on macOS arm64 without the script running. Confirm `npm ci` on the three CI platforms in phase 0.
+**`koffi` stays in the dependency tree and it isn't optional.** Its install script (`cnoke --prebuild`) runs `node -e "require(...)"` on the koffi package, which checks that a prebuilt binary from an optional `@koromix/koffi-<platform>` package loads. If it doesn't, the script tries to compile with CMake. It downloads nothing.
+
+| Where (npm 10.9.9, Node 22.23.4) | Prebuilt package | Script |
+|---|---|---|
+| Linux x64 | `koffi-linux-x64` | Loaded, about 0.1 s, nothing compiled |
+| Windows x64 (windows-2022) | `koffi-win32-x64` | Loaded, about 0.1 s, nothing compiled |
+| macOS arm64 | `koffi-darwin-arm64` | Loaded, about 0.1 s, nothing compiled |
+
+The one way it breaks an install: with no loadable prebuilt binary and no CMake, the script exits 1 and `npm ci` fails. Run by hand with the optional package missing, it failed with `CMake does not seem to be available`. So `--omit=optional` would break the install, and nothing in this repo uses it. The release's macOS x64 and Windows arm64 builds have prebuilt packages in the lockfile, but no PR run covers those targets.
+
+**Phase 0 results.** `scripts/check-copilot-sdk-chunk.mjs` runs in the `copilot-sdk-chunk` CI job on all three platforms. On each one the chunk is 0.21 MB, no binary is emitted, and the bundled chunk completes a handshake and creates a session against runtime 1.0.105 with no credentials, under Node 22.23.4 and under Electron 45.1.0's Node. With the alias removed, the check fails on `koffi.node`. `npm ci` didn't get measurably slower (median 49 s against 46 s on Linux, 58 s against 55 s on Windows, on a first run with a cold npm cache), and the npm cache grew by about 65 MB per platform.
 
 **Handshake with no credentials works.** `start()`, `getStatus()` and `getAuthStatus()` succeeded with no tokens, no network and no login, and sent no model request. `createSession` works too. So the nightly handshake (research §8, decision 4) can include this driver.
 
@@ -180,7 +189,7 @@ Sizes are engineer-days. Each phase ships on its own, behind the Experimental ch
 
 | Phase | Work | Size |
 |---|---|---|
-| **0. Dependency** | Add the pinned SDK, the loader and the `koffi` alias. Add `scripts/check-copilot-sdk-chunk.mjs`, like the Claude one. Confirm `npm ci` and the bundled smoke on macOS, Windows and Linux in CI. | 1 to 2 |
+| **0. Dependency** (done, #2624) | Add the pinned SDK, the loader and the `koffi` alias. Add `scripts/check-copilot-sdk-chunk.mjs`, like the Claude one. Confirm `npm ci` and the bundled smoke on macOS, Windows and Linux in CI. | 1 to 2 |
 | **1. Driver, opt-in** | Launch, transport, probe with timeout, version policy, auth check. Text, tools, permissions and interrupt. Registered after ACP. | 3 to 4 |
 | **2. Full features** | Steer, native queue, plan approval, questions, subagents, usage, model and effort, stdio MCP. Add the Windows launch and resume-level checks. | 4 to 5 |
 | **3. Fixtures and CI** | Teach `scripts/chat-fixtures/fake-cli.mjs` and the recorder a `copilot-sdk` protocol: `Content-Length` framing over TCP. Replay through the driver in unit tests. Add the driver to the nightly handshake. No prompts in CI. | 2 to 3 |
