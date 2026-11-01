@@ -100,7 +100,7 @@ The one way it breaks an install: with no loadable prebuilt binary and no CMake,
 
 **Phase 0 results.** `scripts/check-copilot-sdk-chunk.mjs` runs in the `copilot-sdk-chunk` CI job on all three platforms. On each one the chunk is 0.21 MB, no binary is emitted, and the bundled chunk completes a handshake and creates a session against runtime 1.0.105 with no credentials, under Node 22.23.4 and under Electron 45.1.0's Node. With the alias removed, the check fails on `koffi.node`. `npm ci` didn't get measurably slower (median 49 s against 46 s on Linux, 58 s against 55 s on Windows, on a first run with a cold npm cache), and the npm cache grew by about 65 MB per platform.
 
-**Handshake with no credentials works.** `start()`, `getStatus()` and `getAuthStatus()` succeeded with no tokens, no network and no login, and sent no model request. `createSession` works too. So the nightly handshake (research §8, decision 4) can include this driver.
+**Handshake with no credentials works.** `start()`, `getStatus()` and `getAuthStatus()` succeeded with no tokens, no network and no login, and sent no model request. `createSession` works too. So the nightly handshake (research §8, decision 4) includes this driver, as does the fake-model Dispatcher smoke.
 
 ## Running the user's CLI
 
@@ -227,7 +227,7 @@ Sizes are engineer-days. Each phase ships on its own, behind the Experimental ch
 | **0. Dependency** (done, #2624) | Add the pinned SDK, the loader and the `koffi` alias. Add `scripts/check-copilot-sdk-chunk.mjs`, like the Claude one. Confirm `npm ci` and the bundled smoke on macOS, Windows and Linux in CI. | 1 to 2 |
 | **1. Driver, opt-in** | Launch, transport, probe with timeout, version policy, auth check. Text, tools, permissions and interrupt. Registered after ACP. | 3 to 4 |
 | **2. Full features** | Steer, native queue, plan approval, questions, subagents, usage, model and effort, stdio MCP. Add the Windows launch and resume-level checks. | 4 to 5 |
-| **3. Fixtures and CI** | Teach `scripts/chat-fixtures/fake-cli.mjs` and the recorder a `copilot-sdk` protocol: `Content-Length` framing over TCP. Replay through the driver in unit tests. Add the driver to the nightly handshake. No prompts in CI. | 2 to 3 |
+| **3. Fixtures and CI** (#2632) | Teach `scripts/chat-fixtures/fake-cli.mjs` and the recorder a `copilot-sdk` protocol: `Content-Length` framing over TCP. Replay through the driver in unit tests. Add the driver to the nightly handshake. No prompts in CI. | 2 to 3 |
 | **4. Default** | Maintainer QA with a real login on the three platforms, covering credits, the model list and real steering. Record real fixtures. Register SDK first. | 1 to 2 |
 
 Total: 11 to 16 days. **The earlier 1.5 to 2 weeks was light.** The features need less investigation than expected, but it didn't count the launch path or the new fixture protocol.

@@ -1,0 +1,2 @@
+{"kind":"header","format":"clubhouse-chat-fixture","version":1,"protocol":"copilot-sdk","cli":{"name":"copilot","version":"1.0.105"},"source":"hand-made","args":["--headless","--port","0"],"description":"The CLI opens its port, then never answers connect."}
+{"from":"client","t":15,"msg":{"jsonrpc":"2.0","id":0,"method":"connect","params":{"token":"REDACTED_CONNECTION_TOKEN","supportedTaskKinds":["agent","client","shell"]}}}
