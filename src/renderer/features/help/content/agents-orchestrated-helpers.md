@@ -14,7 +14,7 @@ A helper in another project sits in that project's list, not under its orchestra
 
 ## Making an agent an orchestrator
 
-Turn on **Let this agent orchestrate** for a durable agent. The switch is in the **Orchestrate** card in the agent's details, and on the **Helpers** page of the agent's settings. Both change the same setting, and they also hold the agent's access, control and limit settings. Neither is shown for a helper.
+Turn on **Let this agent orchestrate** for a durable agent. The switch is in the **Orchestration** card in the agent's details, and on the **Helpers** page of the agent's settings. Both change the same setting, and they also hold the agent's access, control and limit settings. Neither is shown for a helper.
 
 When it's on, the agent's Clubhouse MCP gets the helper and connection tools. If the agent isn't running, the tools appear the next time it starts.
 
@@ -28,7 +28,7 @@ Turn on **Cross-project helpers** to let the agent start helpers in other projec
 
 Agents using the **Orchestrator** persona start with the switch on. The persona also tells the agent how to plan, start helpers, hand off and dispose. Give helpers the **Workhorse** persona when no other role fits.
 
-While the Dispatcher is turned on, a **Connect to Dispatcher** switch sits next to **Cross-project helpers**. Turn it on to let the Dispatcher message this orchestrator and get its reports. It is off by default and only shows while orchestration is on.
+While the Dispatcher is turned on, a **Connect to Dispatcher** switch shows in the same places, with orchestration on or off. It lets the Dispatcher message the agent and get its reports. Agents that orchestrate are connected by default. Turn the switch off and the agent stays off. You can also turn it on for an agent that doesn't orchestrate, which adds no helper tools. Helpers aren't connected by default and don't have this switch.
 
 ## Starting helpers
 
@@ -83,7 +83,7 @@ Under **Ask before starting** and **Ask for everything**, `start_helper` creates
 
 ## Limits
 
-- **Helpers at once** caps how many helpers one orchestrator can have. The default is 5. The Orchestrate card shortens the label to **At once**.
+- **Helpers at once** caps how many helpers one orchestrator can have. The default is 5. The Orchestration card shortens the label to **At once**.
 - **Helpers running at once** in **Settings > Helpers** sets a cap across every orchestrator in every project. The default is 20, and no agent can be set above it.
 
 Both count helpers in every project, so a helper in another project counts against its orchestrator's limit.
@@ -153,4 +153,4 @@ orchestration: {"orchestrate": true, "access": "same", "control": "hands-off", "
 | `control` | `hands-off`, `ask-before-start` or `ask-everything` |
 | `maxHelpers` | How many helpers at once |
 | `crossProjectHelpers` | `true` or `false`. Whether the agent can start helpers in other projects. |
-| `connectToDispatcher` | `true` or `false`. Whether the Dispatcher can message the agent and get its reports. Like `orchestrate`, from the Orchestrator persona it only applies to agents using that persona. |
+| `connectToDispatcher` | `true` or `false`. Whether the Dispatcher can message the agent and get its reports. If it isn't set, it follows `orchestrate`. Like `orchestrate`, from the Orchestrator persona it only applies to agents using that persona. |

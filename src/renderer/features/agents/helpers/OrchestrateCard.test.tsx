@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import * as path from 'path';
 import { useState } from 'react';
-import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import type { Agent, DurableAgentConfig, HelperCascadeResult } from '../../../../shared/types';
 import type { OrchestrationPolicy, OrchestrationPolicyPatch, ResolvedOrchestrationPolicy } from '../../../../shared/orchestration-policy';
 import { useAgentStore } from '../../../stores/agentStore';
@@ -91,7 +91,7 @@ describe('orchestrateSummary', () => {
   });
 });
 
-describe('Orchestrate card (#2232)', () => {
+describe('Orchestration card (#2232)', () => {
   it('shows its whole summary on hover, since it truncates beside the switch', async () => {
     stored = { ...stored, orchestrate: true, control: 'ask-everything', maxHelpers: 3 };
     await renderCard();
@@ -192,11 +192,24 @@ describe('Orchestrate card (#2232)', () => {
     expect(window.clubhouse.agent.setOrchestrationPolicy).toHaveBeenLastCalledWith(PROJECT, 'lead', { crossProjectHelpers: true });
   });
 
-  it('shows Connect to Dispatcher only while orchestrating with the Dispatcher on, and saves it (#2534)', async () => {
+  it('titles the card Orchestration (#2578)', async () => {
+    await renderCard();
+    expect(screen.getByText('Orchestration')).toBeInTheDocument();
+    expect(screen.queryByText('Orchestrate')).not.toBeInTheDocument();
+  });
+
+  it('shows Connect to Dispatcher with orchestration on as well as off', async () => {
+    dispatcherOn = true;
+    stored = { ...stored, orchestrate: true, connectToDispatcher: true };
+    await renderCard();
+    expect(await screen.findByTestId('orchestrate-dispatcher')).toHaveAttribute('aria-checked', 'true');
+    expect(screen.getByTestId('orchestrate-cross-project')).toBeInTheDocument();
+  });
+
+  it('lets a plain agent connect to the Dispatcher, with orchestration left off (#2578)', async () => {
     dispatcherOn = true;
     await renderCard();
-    expect(screen.queryByTestId('orchestrate-dispatcher')).not.toBeInTheDocument();
-    fireEvent.click(screen.getByTestId('orchestrate-toggle'));
+    expect(screen.queryByTestId('orchestrate-cross-project')).not.toBeInTheDocument();
     const sw = await screen.findByTestId('orchestrate-dispatcher');
     expect(sw).toHaveAttribute('aria-checked', 'false');
     expect(screen.getByText('Connect to Dispatcher')).toBeInTheDocument();
@@ -204,12 +217,17 @@ describe('Orchestrate card (#2232)', () => {
     fireEvent.click(sw);
     await waitFor(() => expect(sw).toHaveAttribute('aria-checked', 'true'));
     expect(window.clubhouse.agent.setOrchestrationPolicy).toHaveBeenLastCalledWith(PROJECT, 'lead', { connectToDispatcher: true });
+    expect(screen.getByTestId('orchestrate-toggle')).toHaveAttribute('aria-checked', 'false');
   });
 
   it('hides Connect to Dispatcher while the Dispatcher is off (#2534)', async () => {
     stored = { ...stored, orchestrate: true, connectToDispatcher: true };
     await renderCard();
     await screen.findByTestId('orchestrate-cross-project');
+    expect(screen.queryByTestId('orchestrate-dispatcher')).not.toBeInTheDocument();
+    stored = { ...stored, orchestrate: false };
+    cleanup();
+    await renderCard();
     expect(screen.queryByTestId('orchestrate-dispatcher')).not.toBeInTheDocument();
   });
 

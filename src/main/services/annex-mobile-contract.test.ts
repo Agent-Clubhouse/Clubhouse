@@ -764,7 +764,7 @@ describe('Annex mobile contract fixtures', () => {
     await command('invalid_command (no settings)', { type: 'agent.update', agentId: 'durable_sleepy' });
     await command('invalid_command (unknown field)', { type: 'agent.update', agentId: 'durable_sleepy', instructions: 'be nice' });
 
-    // Orchestration (#2228): changes while the agent runs, as on the Orchestrate card.
+    // Orchestration (#2228): changes while the agent runs, as on the Orchestration card.
     const chatPolicy = { ...W.durables[APP][0].orchestration };
     await command('accepted orchestration', { type: 'agent.update', agentId: 'durable_chat', orchestration: { access: 'auto', control: 'ask-everything', maxHelpers: 20 } });
     await command('accepted orchestration clear field', { type: 'agent.update', agentId: 'durable_chat', orchestration: { maxHelpers: null } });

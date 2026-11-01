@@ -318,6 +318,43 @@ describe('setOrchestrationPolicy', () => {
     expect(isOrchestrationEnabled('orch')).toBe(true);
   });
 
+  it('connects an agent through its own orchestrate, not through the Orchestrator persona (#2578)', async () => {
+    state.personas.set('orchestrator', persona({ orchestrate: true }));
+    setAgents(PROJECT, [
+      agent('orch', { persona: 'orchestrator' }),
+      agent('dev', { persona: 'developer' }),
+      agent('off', { persona: 'orchestrator', orchestration: { connectToDispatcher: false } }),
+      agent('helper', { persona: 'orchestrator', parentAgentId: 'orch' }),
+    ]);
+    expect(await getOrchestrationPolicy(PROJECT, 'orch')).toMatchObject({ orchestrate: true, connectToDispatcher: true, sources: { connectToDispatcher: 'default' } });
+    expect((await getOrchestrationPolicy(PROJECT, 'dev'))?.connectToDispatcher).toBe(false);
+    expect((await getOrchestrationPolicy(PROJECT, 'off'))?.connectToDispatcher).toBe(false);
+    // A helper has no switch to turn this off, so the default leaves it out.
+    const all = await resolveOrchestrationPolicies(PROJECT, agentsOf(PROJECT));
+    expect((await getOrchestrationPolicy(PROJECT, 'helper'))?.connectToDispatcher).toBe(false);
+    expect(Object.fromEntries([...all].map(([id, p]) => [id, p.connectToDispatcher]))).toEqual({ orch: true, dev: false, off: false, helper: false });
+  });
+
+  it('turning orchestrate off takes an unset connection with it, and leaves an explicit one (#2578)', async () => {
+    setAgents(PROJECT, [
+      agent('follows', { orchestration: { orchestrate: true } }),
+      agent('explicit', { orchestration: { orchestrate: true, connectToDispatcher: true } }),
+    ]);
+    expect(await setOrchestrationPolicy(PROJECT, 'follows', { orchestrate: false })).toMatchObject({ ok: true, policy: { connectToDispatcher: false } });
+    expect(await setOrchestrationPolicy(PROJECT, 'explicit', { orchestrate: false })).toMatchObject({ ok: true, policy: { connectToDispatcher: true } });
+  });
+
+  it('a connected plain agent gets no orchestration tools (#2578)', async () => {
+    setAgents(PROJECT, [agent('plain')]);
+    live('plain');
+    const result = await setOrchestrationPolicy(PROJECT, 'plain', { connectToDispatcher: true });
+    expect(result).toMatchObject({ ok: true, policy: { orchestrate: false, connectToDispatcher: true } });
+    expect(isOrchestrationEnabled('plain')).toBe(false);
+    await syncOrchestrationGate(PROJECT, 'plain');
+    expect(isOrchestrationEnabled('plain')).toBe(false);
+    expect(await checkHelperLimitFor(PROJECT, 'plain')).toMatchObject({ ok: false, reason: 'orchestration-off' });
+  });
+
   it('saves connectToDispatcher and logs it (#2534)', async () => {
     const { appLog } = await import('./log-service');
     setAgents(PROJECT, [agent('orch', { orchestration: { orchestrate: true } })]);

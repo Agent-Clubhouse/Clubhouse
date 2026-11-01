@@ -133,7 +133,7 @@ const ACCESS_CHOICES: readonly OrchestrationAccess[] = ['same', ...ACCESS_LEVELS
 /**
  * An agent's orchestration policy as a phone shows and edits it: the resolved
  * fields, where each came from (`agent` is an override agent.update can clear
- * with null), and the choices the Orchestrate card offers.
+ * with null), and the choices the Orchestration card offers.
  */
 export function mobileOrchestration(policy: ResolvedOrchestrationPolicy) {
   const { orchestrate, access, control, maxHelpers, crossProjectHelpers, connectToDispatcher, sources } = policy;
@@ -177,7 +177,7 @@ export function parseMobileOrchestration(raw: unknown, mode: 'update' | 'create'
   if (Object.keys(patch).length === 0) throw invalid('invalid_orchestration', 'Set at least one orchestration field');
   if (mode === 'create' && Object.values(patch).some((v) => v === null)) throw invalid('invalid_orchestration', 'A new agent has no orchestration overrides to clear');
   if (typeof patch.maxHelpers === 'number' && patch.maxHelpers > cap) throw invalid('invalid_orchestration', capMessage);
-  // The Orchestrate card offers Connect to Dispatcher only while the Dispatcher is on (#2534); off is always allowed.
+  // The Orchestration card offers Connect to Dispatcher only while the Dispatcher is on (#2534); off is always allowed.
   if (patch.connectToDispatcher === true && !isDispatcherEnabled()) {
     throw new MobileControlError('dispatcher_off', 409, 'rejected', 'Turn on the Dispatcher first.');
   }
@@ -255,7 +255,7 @@ export async function buildAgentSettings(
       // Only chat agents idle-sleep; the value is kept either way.
       idleSleep: { ...field(idle, 'always'), minutes: resolved.minutes, source: resolved.source, applies: runtime === 'chat' },
     },
-    /** Changes at any time, as on the Orchestrate card; agent.update's `orchestration`. Null for the Dispatcher. */
+    /** Changes at any time, as on the Orchestration card; agent.update's `orchestration`. Null for the Dispatcher. */
     orchestration,
   };
 }
@@ -391,7 +391,7 @@ export async function createMobileAgent(project: MobileAgentProject, command: Mo
     throw new MobileControlError('create_refused', 409, 'rejected', err instanceof Error ? err.message : undefined);
   }
   const { config } = started;
-  // Checked above; a new agent has no helpers, so the desktop's service saves it as the Orchestrate card would.
+  // Checked above; a new agent has no helpers, so the desktop's service saves it as the Orchestration card would.
   if (orchestration) await writeOrchestration(project.path, config.id, orchestration);
   return {
     agentId: config.id, projectId: project.id, name: config.name,

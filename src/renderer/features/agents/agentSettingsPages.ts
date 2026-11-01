@@ -164,7 +164,7 @@ export function useAgentSettingsTarget(explorerTab: string): Agent | null {
 /**
  * The pages an agent leaves out (#2232): Helpers for a helper, which can't
  * orchestrate in v1, and for an agent on another machine, whose policy lives
- * there. The same rule as the Orchestrate card.
+ * there. The same rule as the Orchestration card.
  */
 export function hiddenAgentSettingsPages(agent: Pick<Agent, 'parentAgentId' | 'projectId'>, remote: boolean): AgentSettingsPage[] {
   return agent.parentAgentId || remote ? ['helpers'] : [];

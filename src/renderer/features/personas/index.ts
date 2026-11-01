@@ -152,7 +152,7 @@ export const HIDDEN_PERSONA_TEMPLATES: PersonaTemplate[] = [
     name: 'Dispatcher',
     description: 'Coordinates the orchestrators in each project. Does not write code or start helpers.',
     content: dispatcher,
-    tools: ['list_orchestrators', 'list_projects', 'send_message', 'get_status', 'read_output', 'wake_agent', 'sleep_agent'],
+    tools: ['list_agents', 'list_projects', 'send_message', 'get_status', 'read_output', 'wake_agent', 'sleep_agent'],
     skills: [],
   },
 ];

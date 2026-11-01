@@ -16,7 +16,7 @@ export function DetailsCard({ id, title, summary, open, onToggle, right, action,
   right?: ReactNode;
   /**
    * A control at the end of the header, outside the toggle button so it can
-   * be interactive itself (the Orchestrate card's switch).
+   * be interactive itself (the Orchestration card's switch).
    */
   action?: ReactNode;
   children?: ReactNode;

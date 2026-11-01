@@ -91,6 +91,27 @@ describe('orchestration policy', () => {
       });
     });
 
+    describe('connectToDispatcher (#2578)', () => {
+      it('follows the resolved orchestrate while unset, with default as its source', () => {
+        expect(resolveOrchestrationPolicy({ orchestrate: true }, undefined)).toMatchObject({ connectToDispatcher: true, sources: { connectToDispatcher: 'default' } });
+        expect(resolveOrchestrationPolicy(undefined, { orchestrate: true })).toMatchObject({ connectToDispatcher: true, sources: { connectToDispatcher: 'default' } });
+        expect(resolveOrchestrationPolicy({ orchestrate: false }, { orchestrate: true })).toMatchObject({ connectToDispatcher: false, sources: { connectToDispatcher: 'default' } });
+        expect(resolveOrchestrationPolicy(undefined, undefined).connectToDispatcher).toBe(false);
+      });
+
+      it('lets an explicit value win over orchestrate, from the agent or its persona', () => {
+        expect(resolveOrchestrationPolicy({ orchestrate: true, connectToDispatcher: false }, undefined)).toMatchObject({ connectToDispatcher: false, sources: { connectToDispatcher: 'agent' } });
+        expect(resolveOrchestrationPolicy({ connectToDispatcher: true }, undefined)).toMatchObject({ orchestrate: false, connectToDispatcher: true, sources: { connectToDispatcher: 'agent' } });
+        expect(resolveOrchestrationPolicy({ orchestrate: true }, { connectToDispatcher: false })).toMatchObject({ connectToDispatcher: false, sources: { connectToDispatcher: 'persona' } });
+        expect(resolveOrchestrationPolicy({ connectToDispatcher: true }, { connectToDispatcher: false }).connectToDispatcher).toBe(true);
+      });
+
+      it('keeps a helper off while unset, and honours an explicit value on one', () => {
+        expect(resolveOrchestrationPolicy(undefined, { orchestrate: true }, { helper: true })).toMatchObject({ orchestrate: true, connectToDispatcher: false, sources: { connectToDispatcher: 'default' } });
+        expect(resolveOrchestrationPolicy({ connectToDispatcher: true }, undefined, { helper: true }).connectToDispatcher).toBe(true);
+      });
+    });
+
     it('takes crossProjectHelpers from persona front-matter', () => {
       const policy = resolveOrchestrationPolicy(undefined, { orchestrate: true, crossProjectHelpers: true });
       expect(policy.crossProjectHelpers).toBe(true);

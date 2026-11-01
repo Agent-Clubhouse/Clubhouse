@@ -44,7 +44,11 @@ export interface OrchestrationPolicy {
   maxHelpers: number;
   /** "Cross-project helpers" (#2512): may start helpers in other registered projects. */
   crossProjectHelpers: boolean;
-  /** "Connect to Dispatcher" (#2534): the Dispatcher may message this agent and get its reports. */
+  /**
+   * "Connect to Dispatcher" (#2534): the Dispatcher may message this agent and
+   * get its reports. Independent of `orchestrate`, which only supplies its
+   * default (#2578): see resolveOrchestrationPolicy.
+   */
   connectToDispatcher: boolean;
 }
 
@@ -171,10 +175,16 @@ export function applyOrchestrationPatch(
 /**
  * Layer a policy: the agent's own fields, then its persona's front-matter,
  * then ORCHESTRATION_DEFAULTS.
+ *
+ * An unset `connectToDispatcher` follows the resolved `orchestrate` (#2578),
+ * with `default` as its source, so agents that orchestrate connect without a
+ * bulk write. Not for a helper: it reports to its orchestrator and has no
+ * settings to switch this off, so `helper` keeps its default off.
  */
 export function resolveOrchestrationPolicy(
   agentConfig: OrchestrationPolicyConfig | undefined,
   personaDefaults: OrchestrationPolicyConfig | undefined,
+  options: { helper?: boolean } = {},
 ): ResolvedOrchestrationPolicy {
   const agent = normalizeOrchestrationConfig(agentConfig) ?? {};
   const persona = normalizeOrchestrationConfig(personaDefaults) ?? {};
@@ -192,6 +202,7 @@ export function resolveOrchestrationPolicy(
       sources[key] = 'default';
     }
   }
+  if (sources.connectToDispatcher === 'default' && !options.helper) policy.connectToDispatcher = policy.orchestrate;
   return { ...policy, sources };
 }
 
