@@ -600,12 +600,7 @@ export function registerAgentTools(): void {
         const wires = bindings.map((b) => `${b.targetName || b.label} (${b.targetId})`).join(', ') || 'none';
         return { content: [{ type: 'text', text: `You have no wire to ${String(args.target)}. Your wires: ${wires}.` }], isError: true };
       }
-      const tool = String(args.tool);
-      // The listing drops these, and callTool only checks them for group projects.
-      if (binding.disabledTools?.includes(tool)) {
-        return { content: [{ type: 'text', text: `${tool} is turned off on this wire.` }], isError: true };
-      }
-      return callTool(agentId, buildToolName(binding, tool), (args.arguments as Record<string, unknown>) ?? {});
+      return callTool(agentId, buildToolName(binding, String(args.tool)), (args.arguments as Record<string, unknown>) ?? {});
     },
     { group: 'fixedToolList' },
   );

@@ -1197,6 +1197,13 @@ describe('message_parent', () => {
 
 // ── Helpers in another project (#2515) ─────────────────────────────────────
 
+describe('start_helper description', () => {
+  it('says how to reach the wire from a CLI with a fixed tool list (#2603)', () => {
+    const start = getScopedToolList('orch').find((t) => t.name === 'start_helper');
+    expect(start?.description).toContain('If you have call_wire_tool');
+  });
+});
+
 describe('helpers in another project', () => {
   /** A ready helper of orch whose row is in FAR. */
   function farHelper(extra: Partial<DurableAgentConfig> = {}): DurableAgentConfig {
