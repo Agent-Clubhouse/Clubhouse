@@ -566,7 +566,7 @@ require('readline').createInterface({ input: process.stdin }).on('line', line =>
       expect(await tryStartChatAgent(params, provider, undefined, undefined, null)).toBe('chat');
       expect(sdk.sessions).toHaveLength(1);
       expect(toasts()).toEqual([]);
-      expect(notices()).toEqual([{ level: 'info', code: 'untested_cli_version', message: 'Claude Code 2.1.900 is newer than the version chat was tested with (2.1.302).' }]);
+      expect(notices()).toEqual([{ level: 'info', code: 'untested_cli_version', message: 'Claude Code 2.1.900 is newer than the version chat was tested with (2.1.316).' }]);
     });
 
     it('tries the next driver when a session fails to start, and pauses a driver that keeps failing', async () => {
