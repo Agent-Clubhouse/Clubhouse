@@ -36,6 +36,7 @@ import { telemetrySettings } from './telemetrySettings';
 import { feedback } from './feedback';
 import { telemetry } from './telemetry';
 import { chat } from './chat';
+import { dispatcher } from './dispatcher';
 import { plugin } from './plugin';
 import { profile } from './profile';
 import { marketplace } from './marketplace';
