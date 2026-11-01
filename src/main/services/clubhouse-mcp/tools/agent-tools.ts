@@ -8,7 +8,7 @@ import { app } from 'electron';
 import { buildToolName } from '../tool-registry';
 import { mcpAdapter } from '../mcp-adapter';
 import { bindingManager } from '../binding-manager';
-import { isTrackedDispatcher } from '../dispatcher-gate';
+import { isDispatcherAgent, isTrackedDispatcher } from '../dispatcher-gate';
 import { agentRegistry } from '../../agent-registry';
 import type { McpToolResult } from '../types';
 import { appLog } from '../../log-service';
@@ -19,6 +19,7 @@ import { writeLineThenEnter } from '../../agent-runtime/pty-input';
 import { DEFAULT_PASTE_TIMING } from '../../agent-runtime/pty-runtime';
 import { isAgentStoppingError } from '../../agent-runtime/agent-stopping';
 import { getProvider } from '../../../orchestrators';
+import { sleepAgent, wakeWiredAgent } from './agent-lifecycle';
 
 // PTY input helpers moved to agent-runtime/pty-input; re-exported for existing importers.
 export { sleep, writeChunkedBracketedPaste, waitForBufferQuiescence, submitAfterPaste } from '../../agent-runtime/pty-input';
@@ -33,6 +34,36 @@ export { sleep, writeChunkedBracketedPaste, waitForBufferQuiescence, submitAfter
 export function buildSenderLabel(agentId: string, senderName: string, projectName?: string): string {
   if (!projectName || isTrackedDispatcher(agentId)) return senderName;
   return `${senderName}@${projectName}`;
+}
+
+/**
+ * A message as the target receives it: tagged with its task and sender, and
+ * with reply instructions when the target has a wire back to the sender.
+ */
+function buildTaggedMessage(agentId: string, targetId: string, message: string, taskId: string): { text: string; senderLabel: string; targetName: string; isBidirectional: boolean } {
+  const sourceBinding = bindingManager.getBindingsForAgent(agentId).find(b => b.targetId === targetId);
+  const senderName = sourceBinding?.agentName || agentId;
+  const senderLabel = buildSenderLabel(agentId, senderName, sourceBinding?.projectName);
+  const targetName = sourceBinding?.targetName || targetId;
+
+  // Check if the target has a reverse binding back to the caller
+  const reverseBinding = bindingManager.getBindingsForAgent(targetId).find(b => b.targetId === agentId);
+
+  let text = `[TASK:${taskId}] [FROM:${senderLabel}] ${message}`;
+
+  // If bidirectional, append reply instructions so the target knows how to respond
+  if (reverseBinding) {
+    const replyToolName = buildToolName(reverseBinding, 'send_message');
+    text += `\n\n---\nReply to ${senderName} via tool "${replyToolName}" with task_id="${taskId}". ` +
+      `Prefix your response with TASK_RESULT:${taskId}.`;
+  }
+  return { text, senderLabel, targetName, isBidirectional: !!reverseBinding };
+}
+
+/** The error for a tool that needs the target awake. The Dispatcher wakes targets itself. */
+function sleepingError(agentId: string, targetId: string, action: string): McpToolResult {
+  const hint = isDispatcherAgent(agentId) ? `Call its wake_agent tool before ${action}.` : `Start it from Clubhouse before ${action}.`;
+  return { content: [{ type: 'text', text: `Agent ${targetId} is sleeping. ${hint}` }], isError: true };
 }
 
 // ── File-backed message helpers ─────────────────────────────────────────────
@@ -118,33 +149,14 @@ export function registerAgentTools(): void {
         appLog('core:mcp', 'warn', 'send_message: target agent not found in registry', {
           meta: { sourceAgent: agentId, targetAgent: targetId },
         });
-        return { content: [{ type: 'text', text: `Agent ${targetId} is sleeping. Start it from Clubhouse before sending messages.` }], isError: true };
+        return sleepingError(agentId, targetId, 'sending messages');
       }
 
-      // Resolve sender identity from the binding
-      const sourceBinding = bindingManager.getBindingsForAgent(agentId).find(b => b.targetId === targetId);
-      const senderName = sourceBinding?.agentName || agentId;
-      const senderLabel = buildSenderLabel(agentId, senderName, sourceBinding?.projectName);
-      const targetName = sourceBinding?.targetName || targetId;
-
-      // Check if the target has a reverse binding back to the caller
-      const reverseBindings = bindingManager.getBindingsForAgent(targetId);
-      const reverseBinding = reverseBindings.find(b => b.targetId === agentId);
-      const isBidirectional = !!reverseBinding;
+      const { text: taggedMessage, senderLabel, targetName, isBidirectional } = buildTaggedMessage(agentId, targetId, message, taskId);
 
       appLog('core:mcp', 'info', 'send_message: target resolved', {
         meta: { sourceAgent: agentId, targetAgent: targetId, runtime: reg.runtime, taskId, senderLabel, isBidirectional },
       });
-
-      // Build the tagged message with sender identification
-      let taggedMessage = `[TASK:${taskId}] [FROM:${senderLabel}] ${message}`;
-
-      // If bidirectional, append reply instructions so the target knows how to respond
-      if (isBidirectional && reverseBinding) {
-        const replyToolName = buildToolName(reverseBinding, 'send_message');
-        taggedMessage += `\n\n---\nReply to ${senderName} via tool "${replyToolName}" with task_id="${taskId}". ` +
-          `Prefix your response with TASK_RESULT:${taskId}.`;
-      }
 
       try {
         const runtime = getAgentRuntime(targetId);
@@ -198,7 +210,9 @@ export function registerAgentTools(): void {
         runtime: reg?.runtime || null,
         message: running
           ? 'Agent is running and available for interaction.'
-          : 'Agent is sleeping. Start it from Clubhouse or a group project wake_agent tool.',
+          : isDispatcherAgent(agentId)
+            ? 'Agent is sleeping. Call its wake_agent tool to start it.'
+            : 'Agent is sleeping. Start it from Clubhouse or a group project wake_agent tool.',
       };
 
       appLog('core:mcp', 'info', 'get_status: resolved', {
@@ -240,7 +254,7 @@ export function registerAgentTools(): void {
         appLog('core:mcp', 'warn', 'read_output: target agent not found in registry', {
           meta: { sourceAgent: agentId, targetAgent: targetId },
         });
-        return { content: [{ type: 'text', text: `Agent ${targetId} is sleeping. Start it from Clubhouse before reading output.` }], isError: true };
+        return sleepingError(agentId, targetId, 'reading output');
       }
 
       let lines = numberWithDefault(args, 'lines', 50);
@@ -288,7 +302,7 @@ export function registerAgentTools(): void {
     handler: async (targetId, agentId, _args): Promise<McpToolResult> => {
       const reg = agentRegistry.get(targetId);
       if (!reg) {
-        return { content: [{ type: 'text', text: `Agent ${targetId} is sleeping. Start it from Clubhouse before compacting.` }], isError: true };
+        return sleepingError(agentId, targetId, 'checking connectivity');
       }
 
       // Check if the target has a binding back to the caller
@@ -380,7 +394,7 @@ export function registerAgentTools(): void {
 
       const reg = agentRegistry.get(targetId);
       if (!reg) {
-        return { content: [{ type: 'text', text: `Agent ${targetId} is sleeping. Start it from Clubhouse before sending files.` }], isError: true };
+        return sleepingError(agentId, targetId, 'sending files');
       }
 
       const sourceBinding = bindingManager.getBindingsForAgent(agentId).find(b => b.targetId === targetId);
@@ -449,7 +463,7 @@ export function registerAgentTools(): void {
     handler: async (targetId, agentId, _args): Promise<McpToolResult> => {
       const reg = agentRegistry.get(targetId);
       if (!reg) {
-        return { content: [{ type: 'text', text: `Agent ${targetId} is sleeping. Start it from Clubhouse before clearing context.` }], isError: true };
+        return sleepingError(agentId, targetId, 'clearing context');
       }
 
       try {
@@ -485,7 +499,7 @@ export function registerAgentTools(): void {
     handler: async (targetId, agentId, _args): Promise<McpToolResult> => {
       const reg = agentRegistry.get(targetId);
       if (!reg) {
-        return { content: [{ type: 'text', text: `Agent ${targetId} is sleeping. Start it from Clubhouse before compacting context.` }], isError: true };
+        return sleepingError(agentId, targetId, 'compacting context');
       }
 
       try {
@@ -500,6 +514,61 @@ export function registerAgentTools(): void {
       } catch (err) {
         return { content: [{ type: 'text', text: `Failed to send /compact: ${err instanceof Error ? err.message : String(err)}` }], isError: true };
       }
+    },
+  });
+
+  // clubhouse__<project>_<name>_<hash>__wake_agent
+  mcpAdapter.registerMcpCommand({
+    id: 'agent.wakeAgent',
+    category: 'agent',
+    label: 'Wake Agent',
+    mcp: { targetKind: 'agent', nameSuffix: 'wake_agent', group: 'dispatcher' },
+    description:
+      'Wake the linked agent, which is sleeping. It resumes its last session when it has one, at its own access level.\n\n' +
+      'An optional message is delivered as its first prompt, tagged like send_message, so include what to do and why. ' +
+      'The result says whether it is running, already_running, starting or still stopping, and, ' +
+      'when you sent a message, messageDelivered.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        message: {
+          type: 'string',
+          description: 'Optional first prompt for the agent.',
+        },
+      },
+    },
+    handler: async (targetId, agentId, args): Promise<McpToolResult> => {
+      const message = optionalString(args, 'message');
+      const targetName = bindingManager.getBindingsForAgent(agentId).find(b => b.targetId === targetId)?.targetName || targetId;
+      const taskId = `t_${Date.now().toString(36)}`;
+      const mission = message ? buildTaggedMessage(agentId, targetId, message, taskId).text : undefined;
+      return wakeWiredAgent({ callerId: agentId, targetId, targetName, mission });
+    },
+  });
+
+  // clubhouse__<project>_<name>_<hash>__sleep_agent
+  mcpAdapter.registerMcpCommand({
+    id: 'agent.sleepAgent',
+    category: 'agent',
+    label: 'Sleep Agent',
+    mcp: { targetKind: 'agent', nameSuffix: 'sleep_agent', group: 'dispatcher' },
+    description:
+      'Put the linked agent to sleep. Returns once it has stopped. Its session stays; wake_agent resumes it.\n\n' +
+      'Without force, this refuses a chat agent that is mid-turn and any terminal agent, whose turn state is unknown. ' +
+      'Only use force when losing the turn in progress is fine, and ask the user if you are not sure. ' +
+      'Running helpers of the agent are listed in the result; they keep running.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        force: {
+          type: 'boolean',
+          description: 'Stop it even if it is mid-turn or its turn state is unknown. The turn in progress is lost. Defaults to false.',
+        },
+      },
+    },
+    handler: async (targetId, agentId, args): Promise<McpToolResult> => {
+      const targetName = bindingManager.getBindingsForAgent(agentId).find(b => b.targetId === targetId)?.targetName || targetId;
+      return sleepAgent({ callerId: agentId, targetId, targetName, force: args.force === true });
     },
   });
 

@@ -40,8 +40,18 @@ vi.mock('../../../orchestrators', () => ({
   getProvider: (id: string) => mockGetProvider(id),
 }));
 
+vi.mock('../../dispatcher/dispatcher-settings', () => ({
+  isDispatcherEnabled: () => true,
+}));
+
+const lifecycle = vi.hoisted(() => ({
+  sleepAgent: vi.fn(),
+  wakeWiredAgent: vi.fn(),
+}));
+vi.mock('./agent-lifecycle', () => lifecycle);
+
 import { registerAgentTools, writeChunkedBracketedPaste, waitForBufferQuiescence } from './agent-tools';
-import { getScopedToolList, callTool, buildToolName, _resetForTesting as resetTools } from '../tool-registry';
+import { getScopedToolList, callTool, buildToolName, invalidateToolListCache, _resetForTesting as resetTools } from '../tool-registry';
 import { mcpAdapter } from '../mcp-adapter';
 import { bindingManager } from '../binding-manager';
 import { setDispatcherAgent, _resetDispatcherGateForTesting } from '../dispatcher-gate';
@@ -725,6 +735,81 @@ describe('AgentTools', () => {
       // After post-end-marker delay, promise resolves — safe to send \r
       await vi.advanceTimersByTimeAsync(postEndMarkerDelayMs);
       await promise;
+    });
+  });
+
+  describe('Dispatcher wake and sleep (#2577)', () => {
+    const toTarget = makeBinding({
+      agentId: 'dispatcher-1', targetId: 'orch-1', targetKind: 'agent',
+      label: 'boss', agentName: 'Dispatcher', targetName: 'boss', projectName: 'myapp',
+    });
+    const back = makeBinding({
+      agentId: 'orch-1', targetId: 'dispatcher-1', targetKind: 'agent',
+      label: 'Dispatcher', agentName: 'boss', targetName: 'Dispatcher', projectName: 'myapp',
+    });
+    const ok = { content: [{ type: 'text' as const, text: '{}' }] };
+    const suffixes = (agentId: string) => getScopedToolList(agentId).map((t) => t.name.split('__').pop());
+
+    beforeEach(() => {
+      lifecycle.sleepAgent.mockReset().mockResolvedValue(ok);
+      lifecycle.wakeWiredAgent.mockReset().mockResolvedValue(ok);
+      _resetDispatcherGateForTesting();
+      setDispatcherAgent('dispatcher-1', true);
+      bindingManager.bind('dispatcher-1', {
+        targetId: 'orch-1', targetKind: 'agent', label: 'boss', agentName: 'Dispatcher', targetName: 'boss', projectName: 'myapp',
+      });
+      bindingManager.bind('orch-1', {
+        targetId: 'dispatcher-1', targetKind: 'agent', label: 'Dispatcher', agentName: 'boss', targetName: 'Dispatcher', projectName: 'myapp',
+      });
+    });
+
+    afterEach(() => { _resetDispatcherGateForTesting(); });
+
+    it('are registered in the dispatcher group: the Dispatcher sees them by target state', () => {
+      expect(suffixes('dispatcher-1')).toEqual(['get_status', 'wake_agent']);
+      mockAgentRegistryGet.mockImplementation((id: string) => (id === 'orch-1' ? { runtime: 'chat' } : undefined));
+      invalidateToolListCache();
+      expect(suffixes('dispatcher-1')).toContain('sleep_agent');
+      expect(suffixes('dispatcher-1')).not.toContain('wake_agent');
+    });
+
+    it('are not listed for a caller that is not the Dispatcher', () => {
+      expect(suffixes('agent-1')).not.toContain('sleep_agent');
+      expect(suffixes('agent-1')).not.toContain('wake_agent');
+    });
+
+    it('wake_agent tags the message like send_message, with reply instructions', async () => {
+      await callTool('dispatcher-1', agentToolName(toTarget, 'wake_agent'), { message: 'ship it' });
+      const request = lifecycle.wakeWiredAgent.mock.calls[0][0];
+      expect(request).toMatchObject({ callerId: 'dispatcher-1', targetId: 'orch-1', targetName: 'boss' });
+      expect(request.mission).toMatch(/^\[TASK:t_\w+\] \[FROM:Dispatcher\] ship it/);
+      expect(request.mission).toContain(agentToolName(back, 'send_message'));
+    });
+
+    it('wake_agent without a message sends no first prompt', async () => {
+      await callTool('dispatcher-1', agentToolName(toTarget, 'wake_agent'), {});
+      expect(lifecycle.wakeWiredAgent.mock.calls[0][0].mission).toBeUndefined();
+    });
+
+    it.each([[{}, false], [{ force: true }, true], [{ force: false }, false]])('sleep_agent %j passes force %s', async (args, force) => {
+      await callTool('dispatcher-1', agentToolName(toTarget, 'sleep_agent'), args);
+      expect(lifecycle.sleepAgent).toHaveBeenCalledWith({ callerId: 'dispatcher-1', targetId: 'orch-1', targetName: 'boss', force });
+    });
+
+    it('sleeping hints point the Dispatcher at wake_agent', async () => {
+      const status = JSON.parse((await callTool('dispatcher-1', agentToolName(toTarget, 'get_status'), {})).content[0].text!);
+      expect(status.message).toContain('wake_agent');
+      expect(status.message).not.toContain('group project');
+      const refused = await callTool('dispatcher-1', agentToolName(toTarget, 'send_message'), { message: 'hi' });
+      expect(refused.content[0].text).toContain('Call its wake_agent tool');
+    });
+
+    it('sleeping hints stay on Clubhouse for other callers', async () => {
+      bindingManager.bind('agent-1', { targetId: 'orch-1', targetKind: 'agent', label: 'boss', targetName: 'boss', projectName: 'myapp' });
+      const status = JSON.parse((await callTool('agent-1', agentToolName(toTarget, 'get_status'), {})).content[0].text!);
+      expect(status.message).toContain('Start it from Clubhouse');
+      const refused = await callTool('agent-1', agentToolName(toTarget, 'send_message'), { message: 'hi' });
+      expect(refused.content[0].text).toContain('Start it from Clubhouse');
     });
   });
 

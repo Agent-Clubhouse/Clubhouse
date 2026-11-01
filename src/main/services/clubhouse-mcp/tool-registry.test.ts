@@ -1186,6 +1186,73 @@ describe('ToolRegistry', () => {
       expect((await callTool('dispatcher', 'test_list_orchestrators', {})).isError).toBe(true);
     });
 
+    describe('wake_agent and sleep_agent wire templates (#2577)', () => {
+      const def = { description: 'Wire tool', inputSchema: { type: 'object' as const } };
+      const handler = vi.fn().mockResolvedValue(ok);
+      const wire = (agentId: string) => bindingManager.bind(agentId, {
+        targetId: 'target', targetKind: 'agent', label: 'Boss', targetName: 'boss', projectName: 'app',
+      });
+      const suffixes = (agentId: string) => getScopedToolList(agentId).map((t) => t.name.split('__').pop());
+
+      beforeEach(() => {
+        handler.mockClear();
+        registerToolTemplate('agent', 'get_status', def, handler);
+        registerToolTemplate('agent', 'send_message', def, handler);
+        registerToolTemplate('agent', 'wake_agent', def, handler, { group: 'dispatcher' });
+        registerToolTemplate('agent', 'sleep_agent', def, handler, { group: 'dispatcher' });
+        setDispatcherAgent('dispatcher', true);
+        wire('dispatcher');
+        wire('agent-1');
+      });
+
+      it('lists wake_agent beside get_status while the target sleeps', () => {
+        expect(suffixes('dispatcher')).toEqual(['get_status', 'wake_agent']);
+      });
+
+      it('lists sleep_agent, not wake_agent, while the target runs', () => {
+        agentRegistry.register('target', { runtime: 'chat', projectPath: '/test', orchestrator: 'claude-code' });
+        expect(suffixes('dispatcher')).toEqual(['get_status', 'send_message', 'sleep_agent']);
+        agentRegistry.untrack('target');
+        expect(suffixes('dispatcher')).toEqual(['get_status', 'wake_agent']);
+      });
+
+      it('never lists them for any other caller, and refuses a stale call', async () => {
+        expect(suffixes('agent-1')).toEqual(['get_status']);
+        agentRegistry.register('target', { runtime: 'chat', projectPath: '/test', orchestrator: 'claude-code' });
+        expect(suffixes('agent-1')).toEqual(['get_status', 'send_message']);
+        const binding = bindingManager.getBindingsForAgent('agent-1')[0];
+        for (const suffix of ['wake_agent', 'sleep_agent']) {
+          const refused = await callTool('agent-1', buildToolName(binding, suffix), {});
+          expect(refused).toEqual({ content: [{ type: 'text', text: ONLY }], isError: true });
+        }
+        expect(handler).not.toHaveBeenCalled();
+        agentRegistry.untrack('target');
+      });
+
+      it('drops them when the Dispatcher is turned off', () => {
+        dispatcherState.enabled = false;
+        invalidateToolListCache();
+        expect(suffixes('dispatcher')).toEqual(['get_status']);
+      });
+
+      it('only reaches agents wired to the Dispatcher', async () => {
+        const result = await callTool('dispatcher', 'clubhouse__app_stranger_abcd__wake_agent', {});
+        expect(result.isError).toBe(true);
+        expect(handler).not.toHaveBeenCalled();
+      });
+
+      it('leaves a group project wake_agent listed whatever the target is doing', () => {
+        registerToolTemplate('group-project', 'wake_agent', def, handler);
+        bindingManager.bind('agent-1', { targetId: 'gp_1', targetKind: 'group-project', label: 'GP', targetName: 'GP' });
+        groupProjectRegistry._setForTesting({
+          id: 'gp_1', name: 'GP', description: '', instructions: '',
+          createdAt: '2020-01-01T00:00:00Z', metadata: { admins: ['agent-1'] },
+        });
+        invalidateToolListCache();
+        expect(getScopedToolList('agent-1').map((t) => t.name)).toContainEqual(expect.stringMatching(/^group__.*__wake_agent$/));
+      });
+    });
+
     it('never gives the Dispatcher the orchestration tools, even with orchestration open', async () => {
       const handler = registerGroupedTools();
       setDispatcherAgent('dispatcher', true);

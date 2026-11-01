@@ -34,7 +34,8 @@ import {
 /** Turns of history kept per agent. */
 export const CHECKPOINT_TURNS_KEPT = 50;
 
-const BUSY_STATES: ReadonlySet<ChatSessionState> = new Set(['starting', 'running', 'waiting_permission', 'waiting_input']);
+/** A chat agent in one of these is mid-turn. */
+export const BUSY_STATES: ReadonlySet<ChatSessionState> = new Set(['starting', 'running', 'waiting_permission', 'waiting_input']);
 
 const rootCache = new Map<string, string | null>();
 /** Snapshots taken just before a prompt was sent, waiting for that turn's id. */

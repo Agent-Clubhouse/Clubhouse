@@ -150,6 +150,9 @@ export function clearTargetToolTemplates(targetKind: BindingTargetKind, targetId
   invalidateToolListCache();
 }
 
+/** The only tools a sleeping agent target lists. wake_agent is listed for nothing else. */
+const SLEEPING_TARGET_TOOLS: ReadonlySet<string> = new Set(['get_status', 'wake_agent']);
+
 /**
  * Global tools — available to ALL agents regardless of bindings.
  * Used for core platform capabilities like canvas operations.
@@ -358,7 +361,7 @@ export function getScopedToolList(agentId: string): McpToolDefinition[] {
     const templates = templatesFor(binding);
     if (!templates) continue;
 
-    // When target agent is sleeping (not in registry), only expose status tools.
+    // When target agent is sleeping (not in registry), only expose status and wake tools.
     const isTargetSleeping = binding.targetKind === 'agent' && !agentRegistry.get(binding.targetId);
 
     // For group projects, the project's admin role governs the privileged
@@ -373,7 +376,10 @@ export function getScopedToolList(agentId: string): McpToolDefinition[] {
       : new Set<string>(binding.disabledTools ?? []);
 
     for (const template of templates) {
-      if (isTargetSleeping && template.nameSuffix !== 'get_status') {
+      if (isTargetSleeping && !SLEEPING_TARGET_TOOLS.has(template.nameSuffix)) {
+        continue;
+      }
+      if (binding.targetKind === 'agent' && !isTargetSleeping && template.nameSuffix === 'wake_agent') {
         continue;
       }
 

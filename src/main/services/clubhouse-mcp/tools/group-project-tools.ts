@@ -12,15 +12,14 @@ import { isAgentAlive, injectPtyMessage } from '../../group-project-lifecycle';
 import { getAgentRuntime } from '../../agent-runtime';
 import { executeShoulderTap } from '../../group-project-shoulder-tap';
 import * as agentSystem from '../../agent-system';
-import { listDurable } from '../../agent-config';
-import * as projectStore from '../../project-store';
-import { agentRegistry, getAgentOrchestrator } from '../../agent-registry';
+import { getAgentOrchestrator } from '../../agent-registry';
 import { pollingNudgeMsg } from '../../../../shared/polling-messages';
 import { setProjectPolling, getProjectPollingState } from '../../group-project-polling';
 import * as annexEventBus from '../../annex-event-bus';
 import { appLog } from '../../log-service';
 import type { McpToolResult } from '../types';
 import { requireString, optionalString, optionalNumber, optionalBoolean } from './validation';
+import { findDurableAgentConfig, sleepAgent } from './agent-lifecycle';
 import { broadcastToAllWindows } from '../../../util/ipc-broadcast';
 import { IPC } from '../../../../shared/ipc-channels';
 
@@ -34,21 +33,6 @@ function findProjectMember(targetId: string, targetAgentId: string) {
   return allBindings.find(
     b => b.targetKind === 'group-project' && b.targetId === targetId && b.agentId === targetAgentId,
   );
-}
-
-async function findDurableAgentConfig(targetAgentId: string): Promise<{
-  agentConfig: Awaited<ReturnType<typeof listDurable>>[number];
-  projectPath: string;
-} | null> {
-  const projects = await projectStore.list();
-  for (const proj of projects) {
-    const durables = await listDurable(proj.path);
-    const found = durables.find(d => d.id === targetAgentId);
-    if (found) {
-      return { agentConfig: found, projectPath: proj.path };
-    }
-  }
-  return null;
 }
 
 /**
@@ -601,7 +585,9 @@ export function registerGroupProjectTools(): void {
     mcp: { targetKind: 'group-project', nameSuffix: 'sleep_agent' },
       description:
         'Put a connected agent in this group project to sleep.\n\n' +
-        'Gracefully stops the target agent using the same lifecycle path as the Clubhouse UI stop action. ' +
+        'Gracefully stops the target agent using the same lifecycle path as the Clubhouse UI stop action, ' +
+        'and returns once it has exited. Without force, it refuses a chat agent that is mid-turn and any ' +
+        'terminal agent, whose turn state is unknown. Running helpers of the target are listed in the result. ' +
         'Use list_members first; the target_agent_id must be a member of this project.',
       inputSchema: {
         type: 'object',
@@ -610,10 +596,14 @@ export function registerGroupProjectTools(): void {
             type: 'string',
             description: 'The agentId of the connected agent to stop (from list_members).',
           },
+          force: {
+            type: 'boolean',
+            description: 'Stop it even if it is mid-turn or its turn state is unknown. The turn in progress is lost. Defaults to false.',
+          },
         },
         required: ['target_agent_id'],
       },
-    handler: async (targetId: string, _agentId: string, args: Record<string, unknown>): Promise<McpToolResult> => {
+    handler: async (targetId: string, agentId: string, args: Record<string, unknown>): Promise<McpToolResult> => {
       const targetAgentId = requireString(args, 'target_agent_id');
       if (!targetAgentId) {
         return { content: [{ type: 'text', text: 'target_agent_id is required.' }], isError: true };
@@ -627,52 +617,12 @@ export function registerGroupProjectTools(): void {
         };
       }
 
-      if (!isAgentAlive(targetAgentId)) {
-        return {
-          content: [{
-            type: 'text',
-            text: JSON.stringify({
-              agentId: targetAgentId,
-              agentName: memberBinding.agentName || targetAgentId,
-              status: 'already_sleeping',
-            }),
-          }],
-        };
-      }
-
-      try {
-        const tracked = agentRegistry.get(targetAgentId);
-        const durable = tracked ? null : await findDurableAgentConfig(targetAgentId);
-        const projectPath = tracked?.projectPath || durable?.projectPath;
-        if (!projectPath) {
-          return {
-            content: [{ type: 'text', text: `Could not determine project path for agent ${targetAgentId}.` }],
-            isError: true,
-          };
-        }
-
-        // The caller's name becomes the target's sleep reason ("put to sleep by …").
-        const caller = bindingManager.getAllBindings().find((b) => b.agentId === _agentId)?.agentName;
-        await agentSystem.killAgent(targetAgentId, projectPath, tracked?.orchestrator || durable?.agentConfig.orchestrator, 'agent_tool', caller ? { by: caller } : {});
-        broadcastToAllWindows(IPC.AGENT.AGENT_SLEEPING, targetAgentId);
-
-        return {
-          content: [{
-            type: 'text',
-            text: JSON.stringify({
-              agentId: targetAgentId,
-              agentName: memberBinding.agentName || targetAgentId,
-              action: 'sleep_agent',
-              delivered: true,
-            }),
-          }],
-        };
-      } catch (err) {
-        return {
-          content: [{ type: 'text', text: `Failed to sleep agent: ${err instanceof Error ? err.message : String(err)}` }],
-          isError: true,
-        };
-      }
+      return sleepAgent({
+        callerId: agentId,
+        targetId: targetAgentId,
+        targetName: memberBinding.agentName || targetAgentId,
+        force: args.force === true,
+      });
     },
   });
 

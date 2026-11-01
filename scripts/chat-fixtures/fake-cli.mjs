@@ -10,8 +10,9 @@
 // driver actually used. A mismatch exits with code 3 and a diagnostic on
 // stderr. Every other argument (`-p`, `app-server`, `--acp`, …) is accepted
 // and recorded in the report, so a test can assert how the CLI was launched.
-// The report also records the CLIs' state-dir variables (REPORTED_ENV), so a
-// test can check the app passed them through to the CLI's environment.
+// The report also records the CLIs' state-dir variables and Clubhouse's bridge
+// variables (REPORTED_ENV), so a test can check the app passed them through to
+// the CLI's environment, and call MCP tools as the agent.
 //
 // Standing queries: read-only requests a driver may send at any point (the
 // applied model and effort, plan usage, the model list) are answered with an empty result
@@ -41,7 +42,7 @@ import {
 const MISMATCH_EXIT_CODE = 3;
 
 /** Where each real CLI keeps its state; reported as launched (null if unset). */
-const REPORTED_ENV = ['COPILOT_HOME', 'CODEX_HOME', 'CLAUDE_CONFIG_DIR'];
+const REPORTED_ENV = ['COPILOT_HOME', 'CODEX_HOME', 'CLAUDE_CONFIG_DIR', 'CLUBHOUSE_AGENT_ID', 'CLUBHOUSE_HOOK_NONCE', 'CLUBHOUSE_MCP_PORT'];
 
 function parseArgs(argv) {
   const env = process.env;
