@@ -249,6 +249,8 @@ export async function buildAgentSettings(
     agentId: config.id,
     projectId: project.id,
     ...(dispatcher && { isDispatcher: true as const }),
+    /** The agent that started it, so a controller can tell a helper. Absent on a top-level agent. */
+    ...(config.parentAgentId && { parentAgentId: config.parentAgentId }),
     state,
     /** Settings marked `sleeping` can change now. */
     sleeping: state === 'sleeping' || state === 'failed',

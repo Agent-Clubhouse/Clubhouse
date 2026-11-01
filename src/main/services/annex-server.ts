@@ -730,6 +730,8 @@ function mapDurableAgent(d: DurableConfigs[number], projectId: string, policies?
     /** There's a CLI session to resume, so a controller's default Wake can ask for one. */
     hasSession: !!d.lastSessionId,
     lastActivityAt: lastActivityAt(agentId, d.createdAt),
+    /** The agent that started it, so a controller can tell a helper. Absent on a top-level agent. */
+    ...(d.parentAgentId && { parentAgentId: d.parentAgentId }),
     /** The Orchestration card's policy; agent.update's `orchestration` changes it. */
     ...(policies?.has(agentId) && { orchestration: mobileOrchestration(policies.get(agentId)!) }),
   };

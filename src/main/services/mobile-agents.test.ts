@@ -199,6 +199,11 @@ describe('Free Agent Mode from a phone (#2462)', () => {
 });
 
 describe('agent settings', () => {
+  it('names a helper\'s parent, and leaves it out for a top-level agent', async () => {
+    expect(await buildAgentSettings(project, agent({ parentAgentId: 'durable_parent' }), undefined)).toMatchObject({ parentAgentId: 'durable_parent' });
+    expect(await buildAgentSettings(project, agent(), undefined)).not.toHaveProperty('parentAgentId');
+  });
+
   it('reads each setting with when it can change', async () => {
     const result = await buildAgentSettings(project, agent({ idleSleep: 60, persona: 'qa', model: 'opus', freeAgentMode: true }), undefined);
     expect(result).toEqual({
