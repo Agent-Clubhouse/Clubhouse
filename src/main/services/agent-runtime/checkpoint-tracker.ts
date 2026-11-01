@@ -128,7 +128,7 @@ async function startCheckpoint(agentId: string, turn: OpenTurn): Promise<string 
     await pointRef(root, ref, prepared);
     await deleteRef(root, pendingRef(agentId));
     return prepared;
-  } catch (err) {
+  } catch (err) { // telemetry-exempt: logged; a missing checkpoint only costs Changes-panel history
     warn('Checkpoint failed', { agentId, turnId: turn.turnId, phase: 'start' }, err);
     return undefined;
   }
@@ -154,7 +154,7 @@ export function handleChatEventForCheckpoints(event: ChatEvent): void {
       if (!(await turn.start) || !turn.root) return;
       try {
         await markNeighbours(turn.root, agentId, turn);
-      } catch (err) {
+      } catch (err) { // telemetry-exempt: logged; a missing shared mark only drops the revert warning
         warn('Checkpoint failed', { agentId, turnId, phase: 'start' }, err);
       }
     })());
@@ -173,7 +173,7 @@ export function handleChatEventForCheckpoints(event: ChatEvent): void {
       await markNeighbours(root, agentId, ending);
       await createCheckpoint(root, checkpointRef(agentId, sessionId, turnId, 'end'), `Clubhouse checkpoint: end of turn ${turnId}`);
       await pruneCheckpoints(root, agentId, CHECKPOINT_TURNS_KEPT);
-    } catch (err) {
+    } catch (err) { // telemetry-exempt: logged; a missing checkpoint only costs Changes-panel history
       warn('Checkpoint failed', { agentId, turnId, phase: 'end' }, err);
     }
   })());
