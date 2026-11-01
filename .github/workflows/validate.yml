@@ -451,6 +451,48 @@ jobs:
           name: chat-e2e-traces-${{ matrix.os }}-${{ matrix.shard }}
           path: test-results/
 
+  # Packaging guard for @github/copilot-sdk (docs/copilot-sdk-driver.md). A job of
+  # its own so it never lengthens a unit shard or the build. It needs the Electron
+  # binary, which the unit jobs skip, to run the bundled chunk under Electron's
+  # Node. Linux and Windows on every PR that changes the app; macOS only on the
+  # complete matrix, so an SDK bump should carry `full-ci`. No prompt is ever sent.
+  copilot-sdk-chunk:
+    needs: changes
+    if: ${{ !cancelled() && needs.changes.result == 'success' && needs.changes.outputs.e2e == 'true' }}
+    name: Copilot SDK chunk (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        os: ${{ fromJSON(needs.changes.outputs.complete == 'true' && '["ubuntu-latest","windows-2022","macos-latest"]' || '["ubuntu-latest","windows-2022"]') }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '22.23.4'
+          cache: npm
+      # The Electron binary npm ci downloads (~100 MB), in its default cache dir per OS.
+      - uses: actions/cache@v6
+        with:
+          path: |
+            ~/.cache/electron
+            ~/Library/Caches/electron
+            ~/AppData/Local/electron/Cache
+          key: electron-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
+      # Foreground, so the log shows what koffi's install script did.
+      - run: npm ci --foreground-scripts
+      # koffi isn't optional: its script falls back to a CMake build when the
+      # prebuilt binary doesn't load, and fails the install if it can't compile.
+      - name: Check koffi used its prebuilt binary
+        shell: bash
+        run: |
+          npm --version
+          ls node_modules/@koromix
+          node -e "require('koffi'); console.log('koffi loads')"
+          if [ -n "$(find node_modules/koffi -type d -name build)" ]; then echo "::error::koffi was compiled from source"; exit 1; fi
+      - run: node scripts/check-copilot-sdk-chunk.mjs --require-electron
+
   # macOS job 1 of 2: every code PR, ~3 min. The unit tests for code that
   # behaves differently on macOS (Squirrel.Mac apply, keychain, login shell,
   # /opt/homebrew CLI paths, FSEvents watchers, window chrome and the app
