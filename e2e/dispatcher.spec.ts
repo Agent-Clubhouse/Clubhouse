@@ -219,6 +219,10 @@ test('turn on, wire an orchestrator, restart, turn off and back on', async () =>
   await rowItem(w).click();
   await w.locator('[data-testid="dispatcher-view"] [data-testid="wake-button"]').click();
   await expect.poll(async () => (await fakes!.report('claude').catch(() => undefined))?.consumed ?? 0, { timeout: 20_000 }).toBeGreaterThan(0);
+  // Waking it from its view keeps the view, with its chat, and no project in the title (#2563).
+  await expect(w.locator('[data-testid="dispatcher-view"] [data-testid="chat-view"]')).toBeVisible({ timeout: 15_000 });
+  await expect(w.locator('[data-testid="title-bar"]')).toContainText('Dispatcher');
+  await expect(w.locator('[data-testid="title-bar"]')).not.toContainText('dispatcher-e2e-');
   await openSettingsPage(w, 'Experimental');
   const flag = w.locator('[role="switch"][aria-label="Dispatcher"]');
   await flag.click();
