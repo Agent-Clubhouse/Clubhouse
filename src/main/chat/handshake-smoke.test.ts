@@ -3,7 +3,7 @@
  * real-CLI workflow (docs/structured-chat-research.md §8 decision 4). Each
  * chat driver's probe() spawns the CLI, completes the protocol handshake
  * (Claude's `initialize` control request, Codex app-server `initialize`, ACP
- * `initialize`) and exits. No prompt is ever sent, so no tokens are spent.
+ * `initialize`, the Copilot SDK's `connect`, `status.get` and `auth.getStatus`) and exits. No prompt is ever sent, so no tokens are spent.
  *
  * Skipped unless CLUBHOUSE_CHAT_HANDSHAKE_SMOKE=1.
  *   CLUBHOUSE_CHAT_HANDSHAKE_PROVIDERS  comma list of provider ids (default: all three)
@@ -17,6 +17,7 @@ import { CodexChatDriver } from '../orchestrators/adapters/codex-chat-driver';
 import { createCopilotAcpChatDriver } from '../orchestrators/adapters/acp-chat-driver';
 import { evaluateCliVersion, TESTED_CLI_VERSIONS } from '../services/agent-runtime/chat-version-policy';
 import { ClaudeChatDriver } from './claude';
+import { CopilotSdkChatDriver } from './copilot/driver';
 
 const enabled = process.env.CLUBHOUSE_CHAT_HANDSHAKE_SMOKE === '1';
 const PROBE_TIMEOUT_MS = 90_000;
@@ -24,7 +25,7 @@ const PROBE_TIMEOUT_MS = 90_000;
 const DRIVERS: Record<string, () => ChatDriver[]> = {
   'claude-code': () => [new ClaudeChatDriver('claude_agent_sdk'), new ClaudeChatDriver('claude_stream_json')],
   'codex-cli': () => [new CodexChatDriver()],
-  'copilot-cli': () => [createCopilotAcpChatDriver()],
+  'copilot-cli': () => [createCopilotAcpChatDriver(), new CopilotSdkChatDriver()],
 };
 
 const providers = (process.env.CLUBHOUSE_CHAT_HANDSHAKE_PROVIDERS ?? Object.keys(DRIVERS).join(','))

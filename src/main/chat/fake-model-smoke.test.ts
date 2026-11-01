@@ -39,6 +39,7 @@ vi.mock('../services/agent-runtime', async (importOriginal) => ({
 }));
 
 import { ClaudeChatDriver } from './claude';
+import { CopilotSdkChatDriver } from './copilot/driver';
 import { getProvider, registerBuiltinProviders, type OrchestratorId } from '../orchestrators';
 import { CodexChatDriver } from '../orchestrators/adapters/codex-chat-driver';
 import { createCopilotAcpChatDriver } from '../orchestrators/adapters/acp-chat-driver';
@@ -167,6 +168,7 @@ describe.skipIf(!enabled)('Dispatcher flow (real CLI, fake model)', () => {
     { driver: () => new ClaudeChatDriver('claude_stream_json'), provider: 'claude-code', bin: 'claude', env: claudeEnv },
     { driver: () => new CodexChatDriver(), provider: 'codex-cli', bin: 'codex', env: codexEnv },
     { driver: () => createCopilotAcpChatDriver(), provider: 'copilot-cli', bin: 'copilot', env: copilotEnv },
+    { driver: () => new CopilotSdkChatDriver(), provider: 'copilot-cli', bin: 'copilot', env: copilotEnv },
   ];
 
   const only = process.env.CLUBHOUSE_FAKE_MODEL_PROVIDERS?.split(',').map((p) => p.trim());

@@ -1,7 +1,7 @@
 /**
  * Test helpers for driving protocol clients against the fake CLI
  * (scripts/chat-fixtures/fake-cli.mjs), which replays a recorded or hand-made
- * fixture over stdio. Nothing here spends tokens or needs a real CLI.
+ * fixture over stdio, or over TCP for `copilot-sdk`. Nothing here spends tokens or needs a real CLI.
  *
  * Test-only: production code must not import this module.
  */
@@ -20,7 +20,7 @@ export const CHAT_FIXTURES_DIR = path.join(REPO_ROOT, 'test', 'chat-fixtures');
 
 export type ChatFixtureCli = 'claude' | 'codex' | 'copilot';
 
-export function chatFixturePath(cli: ChatFixtureCli, name: string): string {
+export function chatFixturePath(cli: ChatFixtureCli | 'copilot-sdk', name: string): string {
   return path.join(CHAT_FIXTURES_DIR, cli, `${name}.jsonl`);
 }
 
@@ -29,7 +29,7 @@ export interface FakeCliReport {
   /** The fake's own process id (under a Windows .cmd shim, not the cmd.exe one). */
   pid: number;
   fixture: string;
-  protocol: 'claude-stream-json' | 'codex-app-server' | 'acp';
+  protocol: 'claude-stream-json' | 'codex-app-server' | 'acp' | 'copilot-sdk';
   /** Arguments the fake was launched with, minus its own `--fake-*` options. */
   argv: string[];
   /**

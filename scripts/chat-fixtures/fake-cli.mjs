@@ -1,6 +1,8 @@
 #!/usr/bin/env node
-// Fake coding CLI: replays a chat fixture over stdio so protocol drivers and
-// E2E tests run against real protocol traffic without spending tokens.
+// Fake coding CLI: replays a chat fixture so protocol drivers and E2E tests run
+// against real protocol traffic without spending tokens. Most protocols run over
+// stdio. `copilot-sdk` runs like `copilot --headless --port 0`: it prints
+// "listening on port <n>", then speaks `Content-Length` frames over TCP.
 //
 //   node scripts/chat-fixtures/fake-cli.mjs --fake-fixture <file.jsonl> [real CLI args…]
 //
@@ -28,14 +30,24 @@
 //   --fake-speed <n>           CLUBHOUSE_FAKE_CLI_SPEED     timing multiplier; 0 (default) replays instantly, 1 is real time
 //   --fake-max-delay-ms <n>    CLUBHOUSE_FAKE_CLI_MAX_DELAY_MS  cap for any single recorded gap (default 2000)
 //   --fake-lenient             CLUBHOUSE_FAKE_CLI_LENIENT=1 skip client messages that don't match instead of failing
+//
+// For `copilot-sdk`, a recorded session id is replaced with the one the driver
+// chose, since clients pick their own. A `connect` with the wrong
+// COPILOT_CONNECTION_TOKEN is refused. A header with `"listen": false` never opens the port.
 
 import { renameSync, writeFileSync } from 'node:fs';
+import { createServer } from 'node:net';
 import {
+  TCP_PROTOCOLS,
   clientRequestId,
+  clientSessionId,
+  encodeFrame,
   loadFixture,
   matchClientMessage,
   messageKey,
   remapCliMessage,
+  remapSessionIds,
+  splitFrames,
   splitLines,
 } from './fixture-format.mjs';
 
@@ -85,6 +97,9 @@ const STANDING_QUERIES = {
   'codex-app-server': {
     'request:model/list': (msg) => ({ id: msg.id, result: { data: [], nextCursor: null } }),
   },
+  'copilot-sdk': {
+    'request:models.list': (msg) => ({ jsonrpc: '2.0', id: msg.id, result: { models: [] } }),
+  },
 };
 const recordedKeys = new Set(entries.filter((e) => e.from === 'client' && e.msg).map((e) => messageKey(protocol, e.msg)));
 const standing = Object.fromEntries(
@@ -95,7 +110,7 @@ const standing = Object.fromEntries(
 function answerStandingQuery(msg) {
   const answer = standing[messageKey(protocol, msg)];
   if (!answer) return false;
-  process.stdout.write(JSON.stringify(answer(msg)) + '\n');
+  wire.write(answer(msg));
   return true;
 }
 
@@ -113,6 +128,8 @@ const report = {
   unexpected: [],
   exitCode: null,
 };
+
+let wire;
 
 const reportTmp = opts.report ? `${opts.report}.${process.pid}.tmp` : undefined;
 
@@ -142,8 +159,10 @@ function writeReport() {
 function finish(code) {
   report.exitCode = code;
   writeReport();
-  // Exit only once everything already written to stdout has been handed off.
-  process.stdout.write('', () => process.exit(code));
+  // Exit only once everything already written has been handed off.
+  const exit = () => process.stdout.write('', () => process.exit(code));
+  if (wire?.drain) wire.drain(exit);
+  else exit();
 }
 
 process.stdout.on('error', () => finish(0));
@@ -152,6 +171,9 @@ process.stdout.on('error', () => finish(0));
 if (opts.cliArgs.includes('--version') && header.cli?.version) {
   process.stdout.write(`${header.cli.versionOutput ?? header.cli.version}\n`);
   finish(0);
+} else if (TCP_PROTOCOLS.includes(protocol) && !(opts.cliArgs.includes('--headless') && opts.cliArgs.includes('--port'))) {
+  process.stderr.write('fake-cli: copilot-sdk needs --headless --port <n>\n');
+  finish(2);
 } else {
   watchParent();
   writeReport();
@@ -176,9 +198,94 @@ function watchParent() {
   timer.unref();
 }
 
+/** One JSON message per line on stdin and stdout. The CLI exits when stdin closes. */
+function stdioWire(onLine, onClose) {
+  let buffer = '';
+  process.stdin.setEncoding('utf8');
+  process.stdin.on('data', (chunk) => {
+    const { lines, rest } = splitLines(buffer + chunk);
+    buffer = rest;
+    for (const line of lines) onLine(line);
+  });
+  process.stdin.on('end', onClose);
+  return {
+    ready: async () => {},
+    write: (msg) => process.stdout.write(JSON.stringify(msg) + '\n'),
+    exitsWhenClosed: true,
+  };
+}
+
+/**
+ * `Content-Length` frames over TCP, on 127.0.0.1 like the real CLI. It starts
+ * listening at the first entry that needs a connection, so a fixture can exit
+ * during launch without ever printing the port. The CLI outlives a client that
+ * disconnects: only being killed stops it.
+ */
+function tcpWire(onLine, onClose) {
+  const portArg = opts.cliArgs.indexOf('--port');
+  let socket = null;
+  const backlog = [];
+  const server = createServer((connection) => {
+    socket = connection;
+    let buffer = Buffer.alloc(0);
+    connection.on('error', () => {});
+    connection.on('data', (chunk) => {
+      let bodies;
+      try {
+        ({ bodies, rest: buffer } = splitFrames(Buffer.concat([buffer, chunk])));
+      } catch (err) {
+        onLine(err.message);
+        return;
+      }
+      for (const body of bodies) onLine(body);
+    });
+    connection.on('close', () => {
+      if (socket === connection) socket = null;
+      onClose();
+    });
+    for (const msg of backlog.splice(0)) connection.write(encodeFrame(msg));
+  });
+  let listening;
+  return {
+    ready() {
+      listening ??= new Promise((resolve) => {
+        if (header.listen === false) {
+          // A CLI stuck in launch: stay up, and never print the port.
+          setInterval(() => {}, 60_000);
+          return;
+        }
+        server.listen(Number(opts.cliArgs[portArg + 1]), '127.0.0.1', () => {
+          process.stdout.write(`CLI server listening on port ${server.address().port}\n`);
+          resolve();
+        });
+      });
+      return listening;
+    },
+    write(msg) {
+      if (socket) socket.write(encodeFrame(msg));
+      else backlog.push(msg);
+    },
+    drain(done) {
+      if (socket) socket.write('', done);
+      else done();
+    },
+    exitsWhenClosed: false,
+  };
+}
+
+/** A wrong or missing connection token gets what the real CLI answers, and the fixture stops there. */
+function refuseConnection(msg) {
+  const token = process.env.COPILOT_CONNECTION_TOKEN;
+  if (protocol !== 'copilot-sdk' || msg.method !== 'connect' || !token || msg.params?.token === token) return false;
+  wire.write({ jsonrpc: '2.0', id: msg.id, error: { code: -32603, message: 'AUTHENTICATION_FAILED: Invalid connection token' } });
+  report.mismatch = { line: 0, reason: 'connect had the wrong connection token', actual: { method: msg.method } };
+  process.stderr.write('fake-cli: connect had the wrong connection token\n');
+  finish(MISMATCH_EXIT_CODE);
+  return true;
+}
+
 async function replay() {
   const inbox = [];
-  let stdinBuffer = '';
   let wake = null;
   const notify = () => {
     const w = wake;
@@ -186,23 +293,19 @@ async function replay() {
     w?.();
   };
 
-  process.stdin.setEncoding('utf8');
-  process.stdin.on('data', (chunk) => {
-    const { lines, rest } = splitLines(stdinBuffer + chunk);
-    stdinBuffer = rest;
-    for (const line of lines) {
-      let msg;
-      try {
-        msg = JSON.parse(line);
-      } catch {
-        inbox.push({ __unparsed: line });
-        continue;
-      }
-      if (!answerStandingQuery(msg)) inbox.push(msg);
+  const makeWire = TCP_PROTOCOLS.includes(protocol) ? tcpWire : stdioWire;
+  wire = makeWire((line) => {
+    let msg;
+    try {
+      msg = JSON.parse(line);
+    } catch {
+      inbox.push({ __unparsed: line });
+      notify();
+      return;
     }
+    if (!refuseConnection(msg) && !answerStandingQuery(msg)) inbox.push(msg);
     notify();
-  });
-  process.stdin.on('end', () => {
+  }, () => {
     report.stdinClosed = true;
     notify();
   });
@@ -216,7 +319,15 @@ async function replay() {
     return inbox.shift();
   }
 
+  /** The driver hung up. A real CLI on stdio exits quietly; one on TCP waits to be killed. */
+  async function clientGone() {
+    writeReport();
+    if (wire.exitsWhenClosed) finish(0);
+    else await new Promise(() => {});
+  }
+
   const idMap = new Map();
+  const sessionIds = new Map();
   let lastT;
 
   for (const entry of entries) {
@@ -227,6 +338,8 @@ async function replay() {
       }
       lastT = entry.t;
     }
+
+    if (entry.from === 'client' || 'msg' in entry) await wire.ready();
 
     if (entry.from === 'cli') {
       // Count the line before writing it: a driver may kill the CLI the
@@ -239,7 +352,7 @@ async function replay() {
       }
       writeReport();
       if ('msg' in entry) {
-        process.stdout.write(JSON.stringify(remapCliMessage(protocol, entry.msg, idMap)) + '\n');
+        wire.write(remapSessionIds(remapCliMessage(protocol, entry.msg, idMap), sessionIds));
       } else if ('raw' in entry) {
         process.stdout.write(entry.raw + '\n');
       } else if ('stderr' in entry) {
@@ -252,8 +365,7 @@ async function replay() {
     for (;;) {
       const actual = await nextClientMessage();
       if (actual === null) {
-        // The driver hung up mid-fixture. A real CLI exits quietly here.
-        finish(0);
+        await clientGone();
         return;
       }
       const reason = '__unparsed' in actual
@@ -263,6 +375,9 @@ async function replay() {
         const recordedId = clientRequestId(protocol, entry.msg);
         const liveId = clientRequestId(protocol, actual);
         if (recordedId !== undefined && liveId !== undefined) idMap.set(recordedId, liveId);
+        const recordedSession = clientSessionId(protocol, entry.msg);
+        const liveSession = clientSessionId(protocol, actual);
+        if (recordedSession && liveSession && recordedSession !== liveSession) sessionIds.set(recordedSession, liveSession);
         break;
       }
       if (opts.lenient) {
@@ -280,10 +395,11 @@ async function replay() {
     writeReport();
   }
 
+  await wire.ready();
   report.complete = true;
   writeReport();
 
-  // Like a real CLI, stay up until the driver closes stdin. Anything it sends
+  // Like a real CLI, stay up until the driver hangs up. Anything it sends
   // after the fixture ends is kept for the test to inspect.
   for (;;) {
     const extra = await nextClientMessage();
@@ -291,5 +407,5 @@ async function replay() {
     report.unexpected.push(extra);
     writeReport();
   }
-  finish(0);
+  await clientGone();
 }

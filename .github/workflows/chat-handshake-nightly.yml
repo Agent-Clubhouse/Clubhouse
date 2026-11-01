@@ -19,8 +19,8 @@ concurrency:
 
 jobs:
   # Zero-token protocol handshake for every chat driver (docs/structured-chat-research.md
-  # §8 decision 4). Each driver's probe() spawns the pinned CLI, completes the
-  # `initialize` handshake and exits: no prompt is sent and no credentials are
+  # §8 decision 4), including both Copilot drivers (ACP and SDK). Each driver's
+  # probe() spawns the pinned CLI, completes the handshake and exits: no prompt is sent and no credentials are
   # configured, so nothing can spend tokens. Pins match testedMax in
   # chat-version-policy.ts TESTED_CLI_VERSIONS; raise them together. After the
   # handshake, the fake-model smoke runs the Dispatcher flow against a model server

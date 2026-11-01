@@ -8,7 +8,16 @@ export const FIXTURE_FORMAT = 'clubhouse-chat-fixture';
 export const FIXTURE_VERSION = 1;
 
 /** Wire protocols a fixture can hold. */
-export const PROTOCOLS = ['claude-stream-json', 'codex-app-server', 'acp'];
+export const PROTOCOLS = ['claude-stream-json', 'codex-app-server', 'acp', 'copilot-sdk'];
+
+/** Drivers reach this protocol over TCP, not stdio: `--headless --port 0`, then `Content-Length` frames. */
+export const TCP_PROTOCOLS = ['copilot-sdk'];
+
+/** The line a headless Copilot prints once it accepts connections. Launchers read the port from it. */
+export const LISTENING_RE = /listening on port (\d+)/i;
+
+/** Stands in for the per-launch connection token in a recording. */
+export const REDACTED_CONNECTION_TOKEN = 'REDACTED_CONNECTION_TOKEN';
 
 /**
  * Parse fixture text. Returns `{ header, entries }` where entries are the
@@ -149,6 +158,21 @@ export function remapCliMessage(protocol, msg, idMap) {
 }
 
 /**
+ * The session id a client message names (`copilot-sdk`). The client picks these
+ * itself, so a replay has to answer with the live one.
+ */
+export function clientSessionId(protocol, msg) {
+  if (protocol !== 'copilot-sdk') return undefined;
+  const id = msg?.params?.sessionId;
+  return typeof id === 'string' ? id : undefined;
+}
+
+/** Put the live session ids in a recorded CLI message. `sessionIds` maps recorded ids to live ones. */
+export function remapSessionIds(value, sessionIds) {
+  return sessionIds.size === 0 ? value : redactValue(value, [...sessionIds]);
+}
+
+/**
  * Key- and identity-shaped strings scrubbed from every recording by default:
  * API keys, GitHub tokens, bearer tokens, JWTs and email addresses (other
  * than the example.com placeholders fixtures use). Replacements avoid the
@@ -224,4 +248,31 @@ export function splitLines(buffer) {
   const parts = buffer.split('\n');
   const rest = parts.pop() ?? '';
   return { lines: parts.map((l) => l.replace(/\r$/, '')).filter((l) => l.trim()), rest };
+}
+
+/** One message as a `Content-Length` frame. The length counts bytes, not characters. */
+export function encodeFrame(msg) {
+  const body = Buffer.from(JSON.stringify(msg), 'utf8');
+  return Buffer.concat([Buffer.from(`Content-Length: ${body.length}\r\n\r\n`, 'ascii'), body]);
+}
+
+/**
+ * Take the complete `Content-Length` frames off a growing buffer. Returns their
+ * bodies as text and the unfinished remainder. A header with no length throws,
+ * since nothing after it can be found.
+ */
+export function splitFrames(buffer) {
+  const bodies = [];
+  let rest = buffer;
+  for (;;) {
+    const end = rest.indexOf('\r\n\r\n');
+    if (end === -1) return { bodies, rest };
+    const header = rest.subarray(0, end).toString('ascii');
+    const length = /^content-length:\s*(\d+)\s*$/im.exec(header)?.[1];
+    if (length === undefined) throw new Error(`frame header has no Content-Length: ${header.slice(0, 200)}`);
+    const start = end + 4;
+    if (rest.length < start + Number(length)) return { bodies, rest };
+    bodies.push(rest.subarray(start, start + Number(length)).toString('utf8'));
+    rest = rest.subarray(start + Number(length));
+  }
 }

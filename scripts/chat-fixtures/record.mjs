@@ -18,8 +18,14 @@
 //     and "{{name.path}}" placeholders in a sent message read from saved
 //     messages ("last" is always the most recent await).
 //
+// `copilot-sdk` runs over TCP: `-- copilot --headless --port 0`. The recorder
+// reads the CLI's port and connects to it. As a proxy it opens its own port and
+// prints "listening on port <n>", so a driver can use it as the binary. The
+// connection token comes from COPILOT_CONNECTION_TOKEN, or is generated in
+// script mode as "{{connectionToken}}", and is always redacted.
+//
 // Options:
-//   --protocol claude-stream-json | codex-app-server | acp   (required)
+//   --protocol claude-stream-json | codex-app-server | acp | copilot-sdk   (required)
 //   --out <path>                fixture to write (required)
 //   --description <text>        what the session covers
 //   --cli-name <name> --cli-version <version>   recorded in the header
@@ -34,18 +40,25 @@
 // MCP server names and slash commands come from your machine.
 
 import { spawn } from 'node:child_process';
+import { randomBytes } from 'node:crypto';
 import { realpathSync } from 'node:fs';
 import { readFile, writeFile } from 'node:fs/promises';
+import { connect, createServer } from 'node:net';
 import { homedir, tmpdir } from 'node:os';
 import {
   FIXTURE_FORMAT,
   FIXTURE_VERSION,
+  LISTENING_RE,
   PROTOCOLS,
+  REDACTED_CONNECTION_TOKEN,
   SECRET_REDACTIONS,
+  TCP_PROTOCOLS,
   deepSubset,
+  encodeFrame,
   fillTemplate,
   redactValue,
   serializeFixture,
+  splitFrames,
   splitLines,
 } from './fixture-format.mjs';
 
@@ -129,26 +142,42 @@ function redactionPairs(opts) {
   return [...literals, ...patterns];
 }
 
+/** Call `onBody` with each `Content-Length` frame body read from a stream. */
+function readFrames(stream, onBody) {
+  let buffer = Buffer.alloc(0);
+  stream.on('data', (chunk) => {
+    const { bodies, rest } = splitFrames(Buffer.concat([buffer, chunk]));
+    buffer = rest;
+    for (const body of bodies) onBody(body);
+  });
+}
+
 /**
  * npm-installed CLIs are .cmd shims on Windows, which only cmd.exe can run,
  * so route through it there with each argument quoted.
  */
-function spawnCli(command, args) {
+function spawnCli(command, args, options = {}) {
+  const stdio = [options.stdin ?? 'pipe', 'pipe', 'pipe'];
+  const env = options.env ?? process.env;
   if (process.platform !== 'win32') {
-    return spawn(command, args, { stdio: ['pipe', 'pipe', 'pipe'] });
+    return spawn(command, args, { stdio, env });
   }
   const quote = (a) => (/^[\w@%+=:,./\\-]+$/.test(a) ? a : `"${a.replace(/"/g, '""')}"`);
   const line = [command, ...args].map(quote).join(' ');
   return spawn('cmd.exe', ['/d', '/s', '/c', `"${line}"`], {
-    stdio: ['pipe', 'pipe', 'pipe'],
+    stdio,
+    env,
     windowsVerbatimArguments: true,
   });
 }
 
 async function main() {
   const opts = parseArgs(process.argv.slice(2));
-  const pairs = redactionPairs(opts);
+  const tcp = TCP_PROTOCOLS.includes(opts.protocol);
   const scriptMode = Boolean(opts.script);
+  const connectionToken = tcp ? process.env.COPILOT_CONNECTION_TOKEN ?? (scriptMode ? randomBytes(32).toString('hex') : undefined) : undefined;
+  if (connectionToken) opts.redactions.push([connectionToken, REDACTED_CONNECTION_TOKEN]);
+  const pairs = redactionPairs(opts);
   const steps = scriptMode
     ? (await readFile(opts.script, 'utf8')).split(/\r?\n/).filter((l) => l.trim()).map((l) => JSON.parse(l))
     : [];
@@ -164,11 +193,17 @@ async function main() {
     w?.();
   };
 
-  const child = spawnCli(opts.command, opts.commandArgs);
+  const child = spawnCli(opts.command, opts.commandArgs, tcp
+    ? { stdin: 'ignore', env: { ...process.env, ...(connectionToken && { COPILOT_CONNECTION_TOKEN: connectionToken }) } }
+    : {});
   // Writes after the CLI has gone (or never started) are dropped, not fatal.
-  child.stdin.on('error', () => {});
+  child.stdin?.on('error', () => {});
 
   let outBuffer = '';
+  let announcePort;
+  const cliPort = new Promise((resolve) => { announcePort = resolve; });
+  // We stopped the CLI ourselves, so its exit isn't part of the session.
+  let stopping = false;
   const recordLine = (line) => {
     let msg;
     try {
@@ -182,10 +217,23 @@ async function main() {
   };
   child.stdout.setEncoding('utf8');
   child.stdout.on('data', (chunk) => {
-    if (!scriptMode) process.stdout.write(chunk);
+    if (!scriptMode && !tcp) process.stdout.write(chunk);
     const { lines, rest } = splitLines(outBuffer + chunk);
     outBuffer = rest;
-    for (const line of lines) recordLine(line);
+    for (const line of lines) {
+      // On TCP, stdout is only launch output. Each run has its own port.
+      const port = tcp ? LISTENING_RE.exec(line)?.[1] : undefined;
+      if (port) {
+        announcePort(Number(port));
+        continue;
+      }
+      if (!tcp) {
+        recordLine(line);
+        continue;
+      }
+      if (!scriptMode) process.stdout.write(line + '\n');
+      entries.push({ from: 'cli', t: t(), raw: line });
+    }
     notify();
   });
 
@@ -198,8 +246,8 @@ async function main() {
     const settle = (entry) => {
       if (exited) return;
       exited = true;
-      exitCode = entry.exit.code;
-      entries.push(entry);
+      exitCode = stopping ? 0 : entry.exit.code;
+      if (!stopping) entries.push(entry);
       notify();
       resolve();
     };
@@ -220,9 +268,11 @@ async function main() {
     entries.push({ from: 'cli', t: t(), stderr: chunk });
   });
 
+  let cliSocket = null;
   const sendToCli = (line) => {
-    if (!child.stdin.writable) return;
-    child.stdin.write(line.endsWith('\n') ? line : line + '\n');
+    if (tcp) cliSocket?.write(encodeFrame(JSON.parse(line)));
+    else if (!child.stdin.writable) return;
+    else child.stdin.write(line.endsWith('\n') ? line : line + '\n');
     const trimmed = line.trim();
     if (!trimmed) return;
     try {
@@ -232,8 +282,23 @@ async function main() {
     }
   };
 
+  /** Connect to the CLI's port, recording what it sends. Null if it exited first. */
+  const connectToCli = async () => {
+    const port = await Promise.race([cliPort, exitPromise]);
+    if (port === undefined) return null;
+    const socket = connect(port, '127.0.0.1');
+    socket.on('error', () => {});
+    readFrames(socket, (body) => {
+      recordLine(body);
+      notify();
+    });
+    await new Promise((resolve) => socket.once('connect', resolve));
+    return socket;
+  };
+
   if (scriptMode) {
-    const scope = {};
+    if (tcp) cliSocket = await connectToCli();
+    const scope = connectionToken ? { connectionToken } : {};
     let cursor = 0; // index into cliMessages already considered by awaits
     for (const step of steps) {
       if ('send' in step) {
@@ -265,15 +330,56 @@ async function main() {
       } else if ('sleep' in step) {
         await new Promise((resolve) => setTimeout(resolve, step.sleep));
       } else if (step.close) {
-        child.stdin.end();
+        child.stdin?.end();
       } else {
         throw new Error(`unknown script step ${JSON.stringify(step)}`);
       }
     }
-    child.stdin.end();
+    child.stdin?.end();
+    if (tcp) {
+      stopping = true;
+      cliSocket?.destroy();
+      child.kill();
+    }
     const grace = setTimeout(() => child.kill(), 10_000);
     await exitPromise;
     clearTimeout(grace);
+  } else if (tcp) {
+    // Each direction goes through untouched, and is recorded on the way.
+    const proxy = createServer((client) => {
+      client.on('error', () => {});
+      void connectToCli().then((upstream) => {
+        if (!upstream) {
+          client.destroy();
+          return;
+        }
+        cliSocket = upstream;
+        upstream.on('data', (chunk) => client.write(chunk));
+        upstream.on('close', () => client.destroy());
+        // A driver makes one connection, so its hanging up ends the session. Windows
+        // has no SIGTERM to catch. If the CLI went first, that exit is part of the recording.
+        client.on('close', () => {
+          if (upstream.destroyed) return;
+          stopping = true;
+          upstream.destroy();
+          child.kill();
+        });
+        const forward = (chunk) => upstream.write(chunk);
+        client.on('data', forward);
+        readFrames(client, (body) => entries.push({ from: 'client', t: t(), msg: JSON.parse(body) }));
+      });
+    });
+    void Promise.race([cliPort, exitPromise]).then((port) => {
+      if (port === undefined) return;
+      proxy.listen(0, '127.0.0.1', () => process.stdout.write(`CLI server listening on port ${proxy.address().port}\n`));
+    });
+    for (const signal of ['SIGINT', 'SIGTERM']) {
+      process.on(signal, () => {
+        stopping = true;
+        child.kill(signal);
+      });
+    }
+    await exitPromise;
   } else {
     let inBuffer = '';
     process.stdin.setEncoding('utf8');
@@ -310,6 +416,8 @@ async function main() {
   await writeFile(opts.out, serializeFixture(header, redactValue(entries, pairs)));
   process.stderr.write(`record: wrote ${entries.length} entries to ${opts.out}\n`);
   process.exitCode = exitCode;
+  // The proxy's listener would keep the process up.
+  if (tcp) process.exit(exitCode);
 }
 
 main().catch((err) => {

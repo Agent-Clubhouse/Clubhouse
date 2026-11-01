@@ -1,0 +1,3 @@
+{"kind":"header","format":"clubhouse-chat-fixture","version":1,"protocol":"copilot-sdk","cli":{"name":"copilot","version":"1.0.105"},"source":"hand-made","args":["--headless","--port","0"],"description":"The CLI rejects --headless and exits, as 0.0.400 and older do, without opening a port."}
+{"from":"cli","stderr":"error: unknown option '--headless'"}
+{"from":"cli","exit":{"code":1}}
