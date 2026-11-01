@@ -8,7 +8,7 @@
  * Phase 2 of the CommandRegistry migration (Mission 58).
  */
 
-import { registerToolTemplate } from './tool-registry';
+import { registerToolTemplate, type ToolGroups } from './tool-registry';
 import { commandRegistry } from '../../../shared/command-registry';
 import type { CommandDefinition, CommandResult, Disposable, ExecutionContext } from '../../../shared/command-registry';
 import type { McpToolResult, BindingTargetKind } from './types';
@@ -38,6 +38,8 @@ export interface McpCommandDefinition {
     targetKind: BindingTargetKind;
     /** Tool name suffix (e.g. "send_message", "get_status") */
     nameSuffix: string;
+    /** Gate the tool behind a tool group, or several. */
+    group?: ToolGroups;
   };
   /** Handler — receives targetId + agentId + args, returns MCP result */
   handler: (targetId: string, agentId: string, args: Record<string, unknown>) => Promise<McpToolResult>;
@@ -85,6 +87,7 @@ class McpCommandAdapter {
         inputSchema: def.inputSchema as McpToolDefinitionSchema,
       },
       def.handler,
+      def.mcp.group ? { group: def.mcp.group } : {},
     );
 
     // Register in CommandRegistry for discoverability

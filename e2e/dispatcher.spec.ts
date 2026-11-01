@@ -4,6 +4,7 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import { createDisposableProfile, type DisposableProfile } from './app-profile';
+import { chatFixturePath } from '../src/main/orchestrators/adapters/testing/fake-cli';
 import { installFakeClis, type FakeClis } from './chat-fake-cli';
 import { launchApp, type LaunchedApp } from './launch';
 import { addProject } from './smoke-helpers';
@@ -17,7 +18,9 @@ import { addProject } from './smoke-helpers';
  *   restart;
  * - turning it off (the setting, then the flag while it runs) stops it and
  *   drops its row and wires, keeps its folder, and it comes back with the
- *   same id.
+ *   same id;
+ * - the Dispatcher wakes a connected agent with a message over MCP, and can't
+ *   sleep it mid-turn without force.
  *
  * Runs in the Chat E2E job (Linux and Windows), not the sharded E2E run:
  * nothing here differs on macOS, and it would lengthen the E2E long pole.
@@ -58,6 +61,44 @@ function makeProject(): string {
   const env = { ...process.env, GIT_AUTHOR_NAME: 'E2E', GIT_AUTHOR_EMAIL: 'e2e@test.local', GIT_COMMITTER_NAME: 'E2E', GIT_COMMITTER_EMAIL: 'e2e@test.local' };
   execSync('git init -q && git add -A && git commit -qm init', { cwd: dir, env, stdio: 'pipe' });
   return dir;
+}
+
+/**
+ * A fixture that opens a session and then goes quiet: a prompt is recorded in
+ * the report as `unexpected` and never answered, so the agent stays mid-turn.
+ */
+async function writeQuietFixture(dir: string): Promise<string> {
+  const lines = (await fs.promises.readFile(chatFixturePath('claude', 'session-info'), 'utf8')).split('\n').slice(0, 3);
+  const file = path.join(dir, 'quiet.jsonl');
+  await fs.promises.writeFile(file, `${lines.join('\n')}\n`);
+  return file;
+}
+
+/** A minimal MCP client over the bridge, as the agent the credentials belong to. */
+async function connectMcp(env: Record<string, string | null>) {
+  const url = `http://127.0.0.1:${env.CLUBHOUSE_MCP_PORT}/mcp/${env.CLUBHOUSE_AGENT_ID}`;
+  let sessionId: string | null = null;
+  let id = 0;
+  const rpc = async (method: string, params: Record<string, unknown> = {}) => {
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Clubhouse-Nonce': env.CLUBHOUSE_HOOK_NONCE ?? '',
+        ...(sessionId && { 'Mcp-Session-Id': sessionId }),
+      },
+      body: JSON.stringify({ jsonrpc: '2.0', id: ++id, method, params }),
+    });
+    sessionId = res.headers.get('mcp-session-id') ?? sessionId;
+    return (await res.json()).result;
+  };
+  await rpc('initialize', { protocolVersion: '2024-11-05', capabilities: {}, clientInfo: { name: 'e2e', version: '1' } });
+  const toolNames = async (): Promise<string[]> => (await rpc('tools/list')).tools.map((t: { name: string }) => t.name);
+  const call = async (name: string, args: Record<string, unknown> = {}) => {
+    const result = await rpc('tools/call', { name, arguments: args });
+    return { isError: !!result.isError, body: JSON.parse(result.content[0].text) };
+  };
+  return { toolNames, call };
 }
 
 async function launch(experimental: Record<string, boolean>): Promise<LaunchedApp> {
@@ -237,4 +278,68 @@ test('turn on, wire an orchestrator, restart, turn off and back on', async () =>
   await closeSettings(w);
   await rowItem(w).click();
   await expect(w.locator('[data-testid="dispatcher-view"] [data-testid="wake-button"]')).toBeVisible();
+});
+
+test('the Dispatcher wakes a connected agent with a message and sleeps it again', async () => {
+  projectDir = makeProject();
+  const fixtureDir = fs.mkdtempSync(path.join(os.tmpdir(), 'dispatcher-e2e-fixture-'));
+  try {
+    fakes = await installFakeClis({ claude: await writeQuietFixture(fixtureDir) });
+    profile = createDisposableProfile({ label: 'dispatcher-wake' });
+    const w = (await launch({ dispatcher: true })).window;
+
+    await openSettingsPage(w, 'Dispatcher');
+    await w.locator('[data-testid="dispatcher-enabled"]').click();
+    await expect(row(w)).toBeVisible();
+    await closeSettings(w);
+    await expect.poll(async () => (await dispatcherConfigs()).length).toBe(1);
+    const dispatcherId = (await dispatcherConfigs())[0].id;
+
+    await addProject(app!.electronApp, w, projectDir);
+    await openOrchestrateCard(w);
+    await w.locator('[data-testid="orchestrate-dispatcher"]').click();
+    await expect.poll(() => hasWire(w, dispatcherId)).toBe(true);
+
+    // Start the Dispatcher. The fake reports the bridge credentials it was given.
+    await rowItem(w).click();
+    await w.locator('[data-testid="dispatcher-view"] [data-testid="wake-button"]').click();
+    await expect.poll(async () => (await fakes!.report('claude').catch(() => undefined))?.env.CLUBHOUSE_AGENT_ID, { timeout: 20_000 }).toBe(dispatcherId);
+    const mcp = await connectMcp((await fakes!.report('claude')).env);
+
+    const toolFor = (names: string[], suffix: string) => names.find((n) => n.endsWith(`__${suffix}`) && n.includes('conductor'));
+
+    // Sleeping: only status and wake.
+    const asleep = await mcp.toolNames();
+    expect(toolFor(asleep, 'get_status')).toBeTruthy();
+    expect(toolFor(asleep, 'send_message')).toBeUndefined();
+    expect(toolFor(asleep, 'sleep_agent')).toBeUndefined();
+
+    // Wake with a message, which reaches the CLI as the first prompt.
+    const woken = await mcp.call(toolFor(asleep, 'wake_agent')!, { message: 'first prompt from dispatcher' });
+    expect(woken.isError).toBe(false);
+    expect(woken.body).toMatchObject({ status: 'running', messageDelivered: true });
+    await expect.poll(async () => {
+      const report = await fakes!.report('claude').catch(() => undefined);
+      return report?.env.CLUBHOUSE_AGENT_ID === ORCHESTRATOR_ID && JSON.stringify(report.unexpected).includes('first prompt from dispatcher');
+    }, { timeout: 20_000 }).toBe(true);
+
+    // Awake: sleep_agent instead of wake_agent.
+    const awake = await mcp.toolNames();
+    expect(toolFor(awake, 'wake_agent')).toBeUndefined();
+    const sleepTool = toolFor(awake, 'sleep_agent')!;
+    expect(sleepTool).toBeTruthy();
+
+    // The fake never answers, so it is mid-turn: refused without force.
+    const refused = await mcp.call(sleepTool);
+    expect(refused.isError).toBe(true);
+    expect(refused.body).toMatchObject({ status: 'refused', reason: 'mid_turn' });
+    expect((await mcp.call(toolFor(awake, 'get_status')!)).body.running).toBe(true);
+
+    const slept = await mcp.call(sleepTool, { force: true });
+    expect(slept.body.status).toBe('sleeping');
+    expect((await mcp.call(toolFor(awake, 'get_status')!)).body.running).toBe(false);
+    expect(toolFor(await mcp.toolNames(), 'wake_agent')).toBeTruthy();
+  } finally {
+    await fs.promises.rm(fixtureDir, { recursive: true, force: true, maxRetries: 20, retryDelay: 100 });
+  }
 });

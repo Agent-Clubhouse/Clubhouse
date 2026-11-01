@@ -32,7 +32,11 @@ export interface FakeCliReport {
   protocol: 'claude-stream-json' | 'codex-app-server' | 'acp';
   /** Arguments the fake was launched with, minus its own `--fake-*` options. */
   argv: string[];
-  /** The CLIs' state-dir variables as the fake was launched with them (COPILOT_HOME, CODEX_HOME, CLAUDE_CONFIG_DIR), null if unset. */
+  /**
+   * As the fake was launched with them, null if unset: the CLIs' state-dir
+   * variables (COPILOT_HOME, CODEX_HOME, CLAUDE_CONFIG_DIR) and Clubhouse's
+   * bridge variables, so an E2E can call MCP tools as the agent.
+   */
   env: Record<string, string | null>;
   total: number;
   consumed: number;

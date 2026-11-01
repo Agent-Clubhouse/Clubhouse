@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 
 const mockIsStopping = vi.hoisted(() => vi.fn((_id?: unknown) => false));
 vi.mock('electron', () => ({
@@ -43,6 +43,14 @@ vi.mock('../../agent-system', () => ({
   spawnAgent: (...args: unknown[]) => mockSpawnAgent(...args),
   killAgent: (...args: unknown[]) => mockKillAgent(...args),
   isHeadlessAgent: vi.fn().mockReturnValue(false),
+  isAgentRunning: (...args: unknown[]) => mockIsRunning(...args),
+  isAgentStopping: (...args: unknown[]) => mockIsStopping(...args),
+  waitForAgentStopped: vi.fn().mockResolvedValue(true),
+}));
+
+const mockListHelpers = vi.fn().mockResolvedValue([]);
+vi.mock('../../helper-index', () => ({
+  listHelpersEverywhere: (...args: unknown[]) => mockListHelpers(...args),
 }));
 
 const mockBroadcastToAllWindows = vi.fn();
@@ -67,9 +75,11 @@ import { commandRegistry } from '../../../../shared/command-registry';
 import { _resetAllBoardsForTesting } from '../../group-project-bulletin';
 import { groupProjectRegistry } from '../../group-project-registry';
 import { agentRegistry } from '../../agent-registry';
+import { clearChatRuntimes, registerChatRuntime } from '../../agent-runtime';
 import { registerGroupProjectTools } from './group-project-tools';
 import { getScopedToolList, callTool, buildToolName } from '../tool-registry';
 import type { McpBinding } from '../types';
+import type { AgentRuntime, ChatSessionState } from '../../../../shared/chat';
 
 function makeBinding(overrides: Partial<McpBinding> & { agentId: string; targetId: string }): McpBinding {
   return { label: 'Test', targetKind: 'group-project', ...overrides };
@@ -906,17 +916,73 @@ describe('GroupProjectTools', () => {
 
     const binding = makeBinding({ agentId: 'agent-1', targetId: project.id, targetName: 'SleepAgent' });
     const toolName = buildToolName(binding, 'sleep_agent');
-    const result = await callTool('agent-1', toolName, { target_agent_id: 'agent-2' });
+    // A terminal agent's turn state is unknown: it needs force.
+    mockKillAgent.mockImplementation(async () => { mockIsRunning.mockReturnValue(false); });
+    const result = await callTool('agent-1', toolName, { target_agent_id: 'agent-2', force: true });
 
     expect(result.isError).toBeFalsy();
     const parsed = JSON.parse(result.content[0].text!);
-    expect(parsed.action).toBe('sleep_agent');
-    expect(parsed.delivered).toBe(true);
+    expect(parsed).toEqual({ agentId: 'agent-2', agentName: 'falcon', status: 'sleeping' });
     // The caller's name becomes the target's sleep reason (#2104).
-    expect(mockKillAgent).toHaveBeenCalledWith('agent-2', '/test/proj', 'claude-code', 'agent_tool', { by: 'robin' });
+    expect(mockKillAgent).toHaveBeenCalledWith('agent-2', '/test/proj', 'claude-code', 'agent_tool', { by: 'robin', waitForExit: true });
     expect(mockBroadcastToAllWindows).toHaveBeenCalledWith('agent:agent-sleeping', 'agent-2');
 
     agentRegistry.untrack('agent-2');
+  });
+
+  describe('sleep_agent without force (#2577)', () => {
+    const fakeChatRuntime = (state: ChatSessionState) =>
+      ({ agentId: 'agent-2', kind: 'chat', isRunning: () => true, getState: () => state }) as unknown as AgentRuntime;
+
+    async function callSleep(args: Record<string, unknown> = {}) {
+      const project = await groupProjectRegistry.create('SleepForce');
+      await groupProjectRegistry.update(project.id, { metadata: { admins: ['agent-1'] } });
+      mockIsRunning.mockImplementation((id: string) => id === 'agent-2');
+      mockKillAgent.mockImplementation(async () => { mockIsRunning.mockReturnValue(false); });
+      for (const [id, agentName] of [['agent-1', 'robin'], ['agent-2', 'falcon']]) {
+        bindingManager.bind(id, { targetId: project.id, targetKind: 'group-project', label: 'SF', agentName, targetName: 'SleepForce' });
+      }
+      const binding = makeBinding({ agentId: 'agent-1', targetId: project.id, targetName: 'SleepForce' });
+      return callTool('agent-1', buildToolName(binding, 'sleep_agent'), { target_agent_id: 'agent-2', ...args });
+    }
+
+    beforeEach(() => {
+      agentRegistry.register('agent-2', { projectPath: '/test/proj', orchestrator: 'claude-code', runtime: 'chat' });
+    });
+
+    afterEach(() => {
+      clearChatRuntimes();
+      agentRegistry.untrack('agent-2');
+    });
+
+    it('refuses an admin stopping a chat member mid-turn', async () => {
+      registerChatRuntime(fakeChatRuntime('running'));
+      const result = await callSleep();
+      expect(result.isError).toBe(true);
+      expect(JSON.parse(result.content[0].text!)).toMatchObject({ status: 'refused', reason: 'mid_turn', state: 'running' });
+      expect(mockKillAgent).not.toHaveBeenCalled();
+    });
+
+    it('stops a chat member mid-turn with force', async () => {
+      registerChatRuntime(fakeChatRuntime('waiting_permission'));
+      const result = await callSleep({ force: true });
+      expect(JSON.parse(result.content[0].text!).status).toBe('sleeping');
+      expect(mockKillAgent).toHaveBeenCalledTimes(1);
+    });
+
+    it('stops an idle chat member without force', async () => {
+      registerChatRuntime(fakeChatRuntime('idle'));
+      const result = await callSleep();
+      expect(JSON.parse(result.content[0].text!).status).toBe('sleeping');
+    });
+
+    it('refuses a terminal member without force: its turn state is unknown', async () => {
+      agentRegistry.setRuntime('agent-2', 'pty');
+      const result = await callSleep();
+      expect(result.isError).toBe(true);
+      expect(JSON.parse(result.content[0].text!)).toMatchObject({ status: 'refused', reason: 'turn_state_unknown' });
+      expect(mockKillAgent).not.toHaveBeenCalled();
+    });
   });
 
   it('sleep_agent reports already_sleeping for a sleeping member', async () => {
