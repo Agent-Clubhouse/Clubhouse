@@ -564,7 +564,7 @@ async function spawnAgentInner(inParams: SpawnAgentParams, facts: SpawnFacts): P
         const nonce = randomUUID();
         agentRegistry.setNonce(params.agentId, nonce);
         const mcpPort = await waitMcpBridgeReady().catch(() => 0);
-        const spawnEnv = {
+        const spawnEnv: Record<string, string> = {
           ...headlessResult.env,
           ...profileEnv,
           ...(wrapperApplied ? wrapperConfig?.env : undefined),
@@ -573,6 +573,8 @@ async function spawnAgentInner(inParams: SpawnAgentParams, facts: SpawnFacts): P
           ...hookPortEnv(),
           ...(mcpPort > 0 ? { CLUBHOUSE_MCP_PORT: String(mcpPort) } : {}),
         };
+        // No bridge here: never point the agent at a port from its base env (#2620).
+        if (mcpPort <= 0) delete spawnEnv.CLUBHOUSE_MCP_PORT;
         noteSpawnKind(params.agentId, params.kind);
         assertLaunchesOpen();
         await tel.step('clubhouse.headless.spawn', () => headlessManager.spawnHeadless(
@@ -766,6 +768,8 @@ async function spawnPtyAgent(
     ...hookPortEnv(),
     ...(mcpPort > 0 ? { CLUBHOUSE_MCP_PORT: String(mcpPort) } : {}),
   };
+  // No bridge here: never point the agent at a port from its base env (#2620).
+  if (mcpPort <= 0) delete spawnEnv.CLUBHOUSE_MCP_PORT;
 
   if (profileEnv) {
     appLog('core:agent', 'info', 'Profile env injected', {

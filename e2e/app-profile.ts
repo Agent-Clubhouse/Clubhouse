@@ -142,9 +142,11 @@ export interface LaunchEnvOptions {
 }
 
 /**
- * Build the app's environment. Inherited profile/plugin redirects are dropped
- * so the developer's shell cannot leak a real directory into a run, and the
- * primitive's own keys are applied last so nothing can override them.
+ * Build the app's environment. Every inherited CLUBHOUSE_* variable is dropped,
+ * so the developer's shell cannot leak a real directory into a run and an agent
+ * running the tests cannot leak its bridge credentials (#2620). A test that
+ * needs one passes it in `env`, and the primitive's own keys are applied last
+ * so nothing can override them.
  */
 export function buildLaunchEnv(baseEnv: NodeJS.ProcessEnv, opts: LaunchEnvOptions): NodeJS.ProcessEnv {
   for (const key of RESERVED_ENV_KEYS) {
@@ -153,8 +155,10 @@ export function buildLaunchEnv(baseEnv: NodeJS.ProcessEnv, opts: LaunchEnvOption
     }
   }
   const env: NodeJS.ProcessEnv = { ...baseEnv };
-  delete env.CLUBHOUSE_USER_DATA;
-  delete env.CLUBHOUSE_PLUGINS_DIR;
+  // Case-insensitive for Windows, where the variable's spelling is not fixed.
+  for (const key of Object.keys(env)) {
+    if (key.toUpperCase().startsWith('CLUBHOUSE_')) delete env[key];
+  }
   Object.assign(env, opts.env);
   if (opts.pluginsDir) env.CLUBHOUSE_PLUGINS_DIR = opts.pluginsDir;
   env.CLUBHOUSE_USER_DATA = opts.profile.userDataDir;

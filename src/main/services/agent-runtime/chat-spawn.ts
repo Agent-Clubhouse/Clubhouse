@@ -553,6 +553,8 @@ async function runChatStart(
       CLUBHOUSE_HOOK_NONCE: nonce,
       ...(mcpPort > 0 ? { CLUBHOUSE_MCP_PORT: String(mcpPort) } : {}),
     };
+    // No bridge here: never point the agent at a port from its base env (#2620).
+    if (mcpPort <= 0) delete env.CLUBHOUSE_MCP_PORT;
     const continued = resumeNativeSessionId ? await findChatSessionFor(params.agentId, resumeNativeSessionId) : undefined;
     return { env, mcpServers, mcpHttpEndpoints, continued };
   }

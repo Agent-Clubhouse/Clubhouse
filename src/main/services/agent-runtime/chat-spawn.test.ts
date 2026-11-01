@@ -72,6 +72,7 @@ import { appendChatEvent, listChatSessions, readChatTranscript } from './chat-tr
 import { broadcastToAllWindows } from '../../util/ipc-broadcast';
 import { noteKillRequest } from './sleep-reason';
 import { IPC } from '../../../shared/ipc-channels';
+import { waitReady as waitMcpBridgeReady } from '../clubhouse-mcp/bridge-server';
 import { setProducingRuntime } from '../../telemetry/__test-utils__/producing-runtime';
 import type { TelemetryRuntime } from '../../telemetry/types';
 import type { OrchestratorProvider } from '../../orchestrators';
@@ -315,6 +316,25 @@ require('readline').createInterface({ input: process.stdin }).on('line', line =>
     } finally {
       vi.mocked(isMcpEnabled).mockImplementation(() => true);
     }
+  });
+
+  it('with no bridge, the agent has no CLUBHOUSE_MCP_PORT rather than one from its base env (#2620)', async () => {
+    vi.mocked(waitMcpBridgeReady).mockRejectedValueOnce(new Error('MCP bridge server not started'));
+    const driver = new FakeChatDriver();
+    registerChatDriver(driver);
+    expect(await tryStartChatAgent(params, provider, { CLUBHOUSE_MCP_PORT: '40001' }, undefined, null)).toBe('chat');
+    const opts = driver.last.startOptions!;
+    expect(opts.env).not.toHaveProperty('CLUBHOUSE_MCP_PORT');
+    expect(opts.env).toMatchObject({ CLUBHOUSE_AGENT_ID: 'agent-1' });
+    expect(opts.mcpServers).not.toHaveProperty('clubhouse');
+    expect(opts.mcpHttpEndpoints).toEqual({});
+  });
+
+  it('with a bridge, the agent gets the bridge\'s port over one from its base env (#2620)', async () => {
+    const driver = new FakeChatDriver();
+    registerChatDriver(driver);
+    expect(await tryStartChatAgent(params, provider, { CLUBHOUSE_MCP_PORT: '40001' }, undefined, null)).toBe('chat');
+    expect(driver.last.startOptions!.env).toMatchObject({ CLUBHOUSE_MCP_PORT: '4321' });
   });
 
   it.each([

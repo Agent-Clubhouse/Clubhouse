@@ -150,6 +150,35 @@ describe('buildLaunchEnv', () => {
     expect(env).not.toHaveProperty('CLUBHOUSE_PLUGINS_DIR');
   });
 
+  it('drops every inherited CLUBHOUSE_* variable, so a parent instance\'s bridge credentials never reach the app (#2620)', () => {
+    const profile = createDisposableProfile({ tmpDir: sandbox });
+    const env = buildLaunchEnv(
+      {
+        PATH: '/bin',
+        CLUBHOUSE_AGENT_ID: 'parent-agent',
+        CLUBHOUSE_HOOK_NONCE: 'parent-nonce',
+        CLUBHOUSE_MCP_PORT: '40001',
+        CLUBHOUSE_HOOK_PORT: '40002',
+        CLUBHOUSE_CLI_DEV: '1',
+        CLUBHOUSE_SAFE_MODE: '1',
+        clubhouse_hook_nonce: 'windows-spelling',
+      },
+      { profile },
+    );
+    expect(Object.keys(env).filter((key) => /^clubhouse_/i.test(key)).sort()).toEqual(['CLUBHOUSE_DISABLE_AUTO_UPDATE', 'CLUBHOUSE_USER_DATA']);
+    expect(env.PATH).toBe('/bin');
+  });
+
+  it('keeps a CLUBHOUSE_* variable the test passes itself', () => {
+    const profile = createDisposableProfile({ tmpDir: sandbox });
+    const env = buildLaunchEnv(
+      { CLUBHOUSE_TEST_HELPER_SEAM: 'inherited', CLUBHOUSE_TEST_NO_MODEL_PROBES: 'inherited' },
+      { profile, env: { CLUBHOUSE_TEST_HELPER_SEAM: '1' } },
+    );
+    expect(env.CLUBHOUSE_TEST_HELPER_SEAM).toBe('1');
+    expect(env).not.toHaveProperty('CLUBHOUSE_TEST_NO_MODEL_PROBES');
+  });
+
   it('applies pluginsDir and extra env', () => {
     const profile = createDisposableProfile({ tmpDir: sandbox });
     const env = buildLaunchEnv({}, { profile, pluginsDir: '/sandbox/plugins', env: { PATH: '/fakes:/bin' } });
@@ -214,6 +243,21 @@ describe('launchApp', () => {
     // Onboarding is dismissed by default.
     expect(page.evaluate).toHaveBeenCalled();
     launched.profile.dispose();
+  });
+
+  it('does not hand the app the bridge credentials of the agent running the tests (#2620)', async () => {
+    vi.stubEnv('CLUBHOUSE_AGENT_ID', 'parent-agent');
+    vi.stubEnv('CLUBHOUSE_HOOK_NONCE', 'parent-nonce');
+    vi.stubEnv('CLUBHOUSE_MCP_PORT', '40001');
+    try {
+      launchMock.mockResolvedValue(fakeApp([fakePage()]));
+      const launched = await launchApp();
+      const { env } = launchMock.mock.calls[0][0];
+      for (const key of ['CLUBHOUSE_AGENT_ID', 'CLUBHOUSE_HOOK_NONCE', 'CLUBHOUSE_MCP_PORT']) expect(env).not.toHaveProperty(key);
+      launched.profile.dispose();
+    } finally {
+      vi.unstubAllEnvs();
+    }
   });
 
   it('gives two launches two distinct profiles', async () => {
