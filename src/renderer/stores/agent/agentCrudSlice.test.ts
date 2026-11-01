@@ -1,5 +1,8 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import * as os from 'os';
+import * as path from 'path';
 import { createCrudSlice } from './agentCrudSlice';
+import { useProjectStore } from '../projectStore';
 import type { AgentState } from './types';
 
 function createMinimalState(overrides: Partial<AgentState> = {}): AgentState {
@@ -133,6 +136,28 @@ describe('agentCrudSlice – loadDurableAgents', () => {
     expect(state().agents['durable-2']).toMatchObject({ parentAgentId: 'lead', status: 'error', creationFailed: true, errorMessage: 'The branch already exists' });
     expect(state().agents['durable-3']).toMatchObject({ status: 'creating' });
     expect(state().agents['durable-3']?.creationFailed).toBeFalsy();
+  });
+
+  it('carries a parent in another project, with that project\'s id when it is open (#2514)', async () => {
+    const other = path.join(os.tmpdir(), 'annex');
+    useProjectStore.setState({ projects: [{ id: PROJECT_ID, name: 'p', path: PROJECT_PATH }, { id: 'proj-2', name: 'annex', path: other }] } as never);
+    (window as any).clubhouse.agent.listDurable = vi.fn().mockResolvedValue([
+      { ...CONFIG, parentAgentId: 'lead', parentProjectPath: other },
+      { ...CONFIG, id: 'durable-2', parentAgentId: 'lead', parentProjectPath: path.join(os.tmpdir(), 'not-open') },
+      { ...CONFIG, id: 'durable-3', parentAgentId: 'lead' },
+    ]);
+    const { state, slice } = createTestStore({
+      // A stale cross-project link on the rail is cleared when agents.json no longer has it.
+      agents: { 'durable-3': { id: 'durable-3', projectId: PROJECT_ID, name: 'x', kind: 'durable', status: 'sleeping', color: 'blue', parentProjectPath: other, parentProjectId: 'proj-2' } as any },
+    });
+
+    await slice.loadDurableAgents(PROJECT_ID, PROJECT_PATH);
+
+    expect(state().agents['durable-1']).toMatchObject({ parentAgentId: 'lead', parentProjectPath: other, parentProjectId: 'proj-2' });
+    expect(state().agents['durable-2']).toMatchObject({ parentAgentId: 'lead', parentProjectId: undefined });
+    expect(state().agents['durable-2']?.parentProjectPath).toBe(path.join(os.tmpdir(), 'not-open'));
+    expect(state().agents['durable-3']).toMatchObject({ parentAgentId: 'lead', parentProjectPath: undefined, parentProjectId: undefined });
+    useProjectStore.setState({ projects: [] });
   });
 
   it('drops the failed mark once the config no longer has a creation (#2231)', async () => {

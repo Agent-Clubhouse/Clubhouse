@@ -10,17 +10,21 @@ Helpers sit under their orchestrator, joined by a thin guide line. The caret on 
 
 While its worktree is being made, a helper's row says **starting**. If that fails, the row says **couldn't start**, and its hover card shows the reason.
 
+A helper in another project sits in that project's list, not under its orchestrator. A line under its name says which orchestrator it helps and which project that orchestrator is in.
+
 ## Making an agent an orchestrator
 
 Turn on **Let this agent orchestrate** for a durable agent. The switch is in the **Orchestrate** card in the agent's details, and on the **Helpers** page of the agent's settings. Both change the same setting, and they also hold the agent's access, control and limit settings. Neither is shown for a helper.
 
 When it's on, the agent's Clubhouse MCP gets the helper and connection tools. If the agent isn't running, the tools appear the next time it starts.
 
-If you turn it off while the agent has helpers, Clubhouse asks what to do with them.
+If you turn it off while the agent has helpers, Clubhouse asks what to do with them, including helpers in other projects.
 
 - **Keep helpers as normal agents** clears their link to the orchestrator and leaves them as they are.
 - **Dispose helpers** runs the dispose checks for each one. If a helper would lose work, the dialog lists it, and **Dispose anyway** appears only when every blocked helper has work at risk. If a check couldn't run, only keeping or cancelling is offered.
 - **Cancel** changes nothing.
+
+Turn on **Cross-project helpers** to let the agent start helpers in other projects you have added to Clubhouse. It sits with the other orchestration settings, is off by default, and only shows while orchestration is on. Turning it off stops new starts in other projects. Helpers already started there keep running, and the orchestrator can still manage them.
 
 Agents using the **Orchestrator** persona start with the switch on. The persona also tells the agent how to plan, start helpers, hand off and dispose. Give helpers the **Workhorse** persona when no other role fits.
 
@@ -30,9 +34,21 @@ The orchestrator calls `start_helper` with a name, a task and, if it wants, a pe
 
 Creating a worktree can take up to a minute on a large repository, so `start_helper` returns at once with the helper starting. If the orchestrator's control level asks before starting, it waits for you first, as **Control levels** describes. When it's ready, Clubhouse starts it with its task and tells the orchestrator. If it fails, the orchestrator is told why. If the helper was made but its task couldn't be delivered, the task is saved, and `wake_helper` delivers it.
 
-The orchestrator keeps track of its helpers with `list_helpers`, which shows each one's status, branch and uncommitted work. It can pause a helper with `sleep_helper` and resume it with `wake_helper`, with an optional message.
+The orchestrator keeps track of its helpers with `list_helpers`, which shows each one's project, status, branch, worktree and uncommitted work. It can pause a helper with `sleep_helper` and resume it with `wake_helper`, with an optional message.
 
 The **Helpers** card in the orchestrator's details lists its helpers with their status, branch and unsaved work. From there you can open a helper, put it to sleep, wake it, or dispose of it.
+
+## Helpers in other projects
+
+With **Cross-project helpers** on, the orchestrator can pass `project` to `start_helper` with the name or path of another project. The helper is created there like any agent of that project, with a worktree of that project's repository, and the persona comes from that project's personas. `list_projects` lists the projects it can use, with each one's path, default branch and personas, and marks the orchestrator's own. It only appears while the switch is on.
+
+Remote projects and group projects can't take helpers. A project in the same Git repository as the orchestrator's, such as another worktree of it, is refused, and so is a folder that isn't a Git repository.
+
+The orchestrator's own settings still apply. Its access, control level and limits decide what the helper gets, and approvals show on the orchestrator. Everything else works across projects too, including messages, questions, sleeping, waking, handing off and disposing.
+
+A helper in another project works in another repository, so its branch can't be merged into the orchestrator's. It pushes its branch or opens a pull request, and the orchestrator hands it off as pushed or copied.
+
+The link from a helper to an orchestrator in another project is saved in the helper's project. An older version of Clubhouse that opens that project removes the link, and the helper becomes a normal agent there.
 
 ## Access
 
@@ -65,6 +81,8 @@ Under **Ask before starting** and **Ask for everything**, `start_helper` creates
 
 - **Helpers at once** caps how many helpers one orchestrator can have. The default is 5. The Orchestrate card shortens the label to **At once**.
 - **Helpers running at once** in **Settings > Helpers** sets a cap across every orchestrator in every project. The default is 20, and no agent can be set above it.
+
+Both count helpers in every project, so a helper in another project counts against its orchestrator's limit.
 
 Running helpers count against your plan's usage limits, and every message between agents costs a turn on both sides. Sleep helpers that are waiting, and dispose of them when their work is in.
 
@@ -99,7 +117,7 @@ If you delete an orchestrator that still has helpers, Clubhouse asks whether to 
 
 ## Connections
 
-Each helper gets a two-way wire to its orchestrator when it starts. These wires survive restarts. The helper replies with `message_parent`.
+Each helper gets a two-way wire to its orchestrator when it starts, also when it is in another project. These wires survive restarts. The helper replies with `message_parent`.
 
 When several helper messages and Clubhouse notices arrive while the orchestrator is busy, it gets them as one message with a section for each, in order. A helper's question isn't held back.
 
@@ -110,7 +128,7 @@ Helpers aren't wired to each other automatically. The orchestrator can connect t
 | `connect_agents`, `disconnect_agents` | Add or remove a wire between two of its helpers, or between itself and a helper |
 | `create_group_project`, `add_to_group_project`, `remove_from_group_project` | Create a named group project and choose which helpers are in it |
 
-These tools only reach the orchestrator and its own helpers. Connections and memberships they make are saved and come back after a restart. `disconnect_agents` only removes wires made with `connect_agents`. Wires drawn on the canvas, and the wires between an orchestrator and its helpers, stay.
+These tools only reach the orchestrator and its own helpers, in any project. Connections and memberships they make are saved and come back after a restart. `disconnect_agents` only removes wires made with `connect_agents`. Wires drawn on the canvas, and the wires between an orchestrator and its helpers, stay.
 
 The **Connections** card in an agent's details lists its wires. Wires made by the connection tools have **Disconnect**. Others are read-only. A connection you remove stays removed, even after a restart.
 
@@ -130,3 +148,4 @@ orchestration: {"orchestrate": true, "access": "same", "control": "hands-off", "
 | `access` | `same`, `standard`, `auto` or `bypass` |
 | `control` | `hands-off`, `ask-before-start` or `ask-everything` |
 | `maxHelpers` | How many helpers at once |
+| `crossProjectHelpers` | `true` or `false`. Whether the agent can start helpers in other projects. |

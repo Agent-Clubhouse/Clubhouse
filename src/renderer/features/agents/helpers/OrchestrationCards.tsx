@@ -6,7 +6,7 @@
  * Decline still works.
  */
 
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { Agent } from '../../../../shared/types';
 import { isRemoteProjectId } from '../../../stores/remoteProjectStore';
 import { useAgentDetailsStore } from '../details/detailsStore';
@@ -15,6 +15,7 @@ import { OrchestrateCard } from './OrchestrateCard';
 import { HelpersCard } from './HelpersCard';
 import { splitHelpers } from './helper-model';
 import { useHelperStartApprovals, useOrchestration, useProjectAgentConfigs } from './orchestration-hooks';
+import { useHelpersEverywhere } from './cross-project';
 
 /** What the orchestration cards need, and whether each one shows. */
 export function useOrchestrationCards(agent: Agent, projectPath: string | undefined) {
@@ -24,15 +25,18 @@ export function useOrchestrationCards(agent: Agent, projectPath: string | undefi
   const { configs, reload: reloadConfigs } = useProjectAgentConfigs(orchestrationPath, agent.projectId);
   const ownConfig = configs?.find((c) => c.id === agent.id);
   const isHelper = !!(ownConfig?.parentAgentId ?? agent.parentAgentId);
-  const helpers = useMemo(() => (configs ? splitHelpers(configs, agent.id) : { live: [], disposed: [] }), [configs, agent.id]);
-  const helperIds = useMemo(() => new Set(helpers.live.map((h) => h.id)), [helpers.live]);
+  // Helpers can be in any project (#2514), so the card lists them from main's index, not this project's configs.
+  const { helpers: everywhere, reload: reloadHelpers } = useHelpersEverywhere(orchestrationPath, agent.id);
+  const helpers = useMemo(() => (everywhere ? splitHelpers(everywhere, agent.id) : { live: [], disposed: [] }), [everywhere, agent.id]);
+  const helperIds = useMemo(() => new Set(helpers.live.map((h) => h.config.id)), [helpers.live]);
   const orchestrating = !!orch.policy?.orchestrate;
-  const approvals = useHelperStartApprovals(agent.id, orchestrationPath, reloadConfigs);
+  const reloadAll = useCallback(() => { reloadConfigs(); reloadHelpers(); }, [reloadConfigs, reloadHelpers]);
+  const approvals = useHelperStartApprovals(agent.id, orchestrationPath, reloadAll);
   const showOrchestrate = !!orchestrationPath && !!orch.policy && !!ownConfig && !isHelper;
   const showHelpers = !!orchestrationPath
     && (orchestrating || helpers.live.length > 0 || helpers.disposed.length > 0 || approvals.pending.length > 0);
   return {
-    orchestrationPath, orch, configs, reloadConfigs, ownConfig, isHelper, helpers, helperIds,
+    orchestrationPath, orch, configs, reloadConfigs: reloadAll, ownConfig, isHelper, helpers, everywhere, helperIds,
     orchestrating, approvals, showOrchestrate, showHelpers,
   };
 }
@@ -46,18 +50,18 @@ export function OrchestrationCardPair({ agent, model, isOpen, onToggle }: {
   isOpen: (card: 'orchestrate' | 'helpers') => boolean;
   onToggle: (card: 'orchestrate' | 'helpers') => void;
 }) {
-  const { orchestrationPath, orch, configs, orchestrating, approvals, reloadConfigs, showOrchestrate, showHelpers } = model;
+  const { orchestrationPath, orch, everywhere, orchestrating, approvals, reloadConfigs, showOrchestrate, showHelpers } = model;
   if (!orchestrationPath) return null;
   return (
     <>
       {showOrchestrate && (
         <OrchestrateCard agent={agent} projectPath={orchestrationPath} orch={orch} open={isOpen('orchestrate')} onToggle={() => onToggle('orchestrate')} />
       )}
-      {showHelpers && configs && (
+      {showHelpers && everywhere && (
         <HelpersCard
           agent={agent}
           projectPath={orchestrationPath}
-          configs={configs}
+          helpers={everywhere}
           maxHelpers={orch.policy?.maxHelpers}
           orchestrating={orchestrating}
           open={isOpen('helpers')}

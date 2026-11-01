@@ -1049,6 +1049,23 @@ describe('AgentList helper nesting (legacy layout)', () => {
     expect(within(screen.getByTestId('durable-drag-1').parentElement!).queryByTestId('helper-guide-line')).toBeNull();
   });
 
+  it('shows a helper whose orchestrator is in another project as a root with plain "Helper of" text (#2514)', () => {
+    useProjectStore.setState({
+      projects: [{ id: 'proj-1', name: 'my-app', path: '/project' }, { id: 'proj-2', name: 'annex', displayName: 'Annex', path: '/annex' }],
+    } as never);
+    // `orch` is also the id of an agent here; the link points at proj-2's.
+    seed({
+      boss: { ...durable('boss'), projectId: 'proj-2' },
+      x1: durable('x1', { parentAgentId: 'boss', parentProjectPath: '/annex', parentProjectId: 'proj-2' }),
+      x2: durable('x2', { parentAgentId: 'orch', parentProjectPath: '/annex', parentProjectId: 'proj-2' }),
+    });
+    render(<AgentList />);
+    expect(screen.queryByTestId('helper-drag-x1')).toBeNull();
+    expect(screen.queryByTestId('helper-drag-x2')).toBeNull();
+    expect(screen.getByTestId('other-project-parent-x1')).toHaveTextContent('Helper of boss in Annex');
+    expect(screen.queryByTestId('other-project-parent-h1')).toBeNull();
+  });
+
   it('folds and unfolds helpers with the caret, in the fold state both layouts share', () => {
     seed();
     const { unmount } = render(<AgentList />);

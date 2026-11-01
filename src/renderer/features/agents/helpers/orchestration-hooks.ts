@@ -20,6 +20,7 @@ import { useAgentStore } from '../../../stores/agentStore';
 import { useProjectStore } from '../../../stores/projectStore';
 import { useUIStore } from '../../../stores/uiStore';
 import { startRequestsFor, useHelperStartRequestStore } from '../../../stores/helperStartRequestStore';
+import { sameProjectPath } from '../../../utils/project-path';
 
 function errorText(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
@@ -67,14 +68,7 @@ export function openHelpersSettings(): void {
 
 // ── Project agent configs ───────────────────────────────────────────────
 
-/** Two spellings of one project folder: trailing separators and, on Windows, case don't matter. */
-export function sameProjectPath(a: string, b: string): boolean {
-  const norm = (p: string) => {
-    const trimmed = p.replace(/[\\/]+$/, '');
-    return window.clubhouse?.platform === 'win32' ? trimmed.replace(/\\/g, '/').toLowerCase() : trimmed;
-  };
-  return norm(a) === norm(b);
-}
+export { sameProjectPath };
 
 /**
  * Every durable config in a project, disposed ones included. Re-read when
@@ -116,26 +110,33 @@ export function useProjectAgentConfigs(projectPath: string | undefined, projectI
 
 /**
  * The agent's parent link, from the rail's agent when it carries one (#2231)
- * or its config. Null for a top-level agent and until loaded.
+ * or its config. `parentProjectPath` is set when the parent is in another
+ * project (#2514). Null for a top-level agent and until loaded.
  */
-export function useHelperLink(agent: Agent, projectPath: string | undefined): { parentAgentId: string; disposable: boolean } | null {
-  const [link, setLink] = useState<{ id: string; parentAgentId?: string; disposable: boolean } | null>(null);
+export function useHelperLink(agent: Agent, projectPath: string | undefined): { parentAgentId: string; parentProjectPath?: string; disposable: boolean } | null {
+  const [link, setLink] = useState<{ id: string; parentAgentId?: string; parentProjectPath?: string; disposable: boolean } | null>(null);
   const local = agent.kind === 'durable' && !!projectPath;
   useEffect(() => {
     if (!local || !projectPath) { setLink(null); return; }
     let alive = true;
     Promise.resolve().then(() => window.clubhouse.agent.getDurableConfig(projectPath, agent.id)).then(
       (config: DurableAgentConfig | null | undefined) => {
-        if (alive) setLink({ id: agent.id, parentAgentId: config?.parentAgentId, disposable: !!config?.disposable });
+        if (alive) {
+          setLink({
+            id: agent.id, parentAgentId: config?.parentAgentId, parentProjectPath: config?.parentProjectPath || undefined, disposable: !!config?.disposable,
+          });
+        }
       },
       // telemetry-exempt: no helper header; the agent's view still works.
       () => { if (alive) setLink(null); },
     );
     return () => { alive = false; };
-  }, [local, projectPath, agent.id, agent.parentAgentId]);
-  const parentAgentId = (link?.id === agent.id ? link.parentAgentId : undefined) ?? (local ? agent.parentAgentId : undefined);
+  }, [local, projectPath, agent.id, agent.parentAgentId, agent.parentProjectPath]);
+  const loaded = link?.id === agent.id;
+  const parentAgentId = (loaded ? link.parentAgentId : undefined) ?? (local ? agent.parentAgentId : undefined);
   if (!parentAgentId) return null;
-  return { parentAgentId, disposable: link?.id === agent.id ? link.disposable : false };
+  const parentProjectPath = loaded && link.parentAgentId ? link.parentProjectPath : agent.parentProjectPath;
+  return { parentAgentId, parentProjectPath, disposable: loaded ? link.disposable : false };
 }
 
 // ── Orchestration policy ────────────────────────────────────────────────

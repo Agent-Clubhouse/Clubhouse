@@ -208,7 +208,15 @@ export function groupProjectAgents(agents: Agent[]): ProjectAgentGroups {
   return { durable, sleeping, quick };
 }
 
-type NestableAgent = Pick<Agent, 'id' | 'kind' | 'status' | 'parentAgentId'>;
+type NestableAgent = Pick<Agent, 'id' | 'kind' | 'status' | 'parentAgentId' | 'parentProjectPath'>;
+
+/**
+ * The parent an agent can nest under in its own project's list: a parent in
+ * another project (#2514) never nests here, so the helper is a root.
+ */
+export function localParentId(agent: Pick<Agent, 'parentAgentId' | 'parentProjectPath'>): string | undefined {
+  return agent.parentProjectPath ? undefined : agent.parentAgentId;
+}
 
 /** A durable agent and the helpers nested under it (#2231). */
 export interface AgentNode<A extends NestableAgent = Agent> {
@@ -228,7 +236,8 @@ export interface ProjectAgentTree<A extends NestableAgent = Agent> {
 /**
  * A project's durable agents as a forest (#2231): helpers nest under their
  * parent, at any depth, keeping the given order among siblings. A helper whose
- * parent isn't in the list (or a parent link that loops) is a root. Roots come
+ * parent isn't in the list, is in another project (#2514), or whose parent link
+ * loops is a root. Roots come
  * back in the given order, awake and asleep together, as the legacy agent list
  * shows them; buildProjectTree splits them for the new sidebar.
  */
@@ -240,13 +249,14 @@ export function buildAgentForest<A extends NestableAgent>(agents: readonly A[]):
   for (const agent of durable) {
     // Walk up the links; an agent the walk comes back to is in a loop, and shows at the top.
     const seen = new Set<string>();
-    let parent = agent.parentAgentId;
+    const own = localParentId(agent);
+    let parent = own;
     while (parent && byId.has(parent) && !seen.has(parent) && parent !== agent.id) {
       seen.add(parent);
-      parent = byId.get(parent)!.parentAgentId;
+      parent = localParentId(byId.get(parent)!);
     }
     const inLoop = parent === agent.id;
-    parentOf.set(agent.id, !inLoop && agent.parentAgentId && byId.has(agent.parentAgentId) ? agent.parentAgentId : undefined);
+    parentOf.set(agent.id, !inLoop && own && byId.has(own) ? own : undefined);
   }
   const childrenOf = new Map<string | undefined, A[]>();
   for (const agent of durable) {

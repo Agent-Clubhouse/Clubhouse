@@ -2,16 +2,20 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import * as path from 'path';
 import { useState } from 'react';
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
-import type { Agent, DurableAgentConfig, HelperDisposeChecks } from '../../../../shared/types';
+import type { Agent, DurableAgentConfig, HelperDisposeChecks, HelperInProject } from '../../../../shared/types';
 import { useAgentStore } from '../../../stores/agentStore';
 import { useProjectStore } from '../../../stores/projectStore';
 import { useUIStore } from '../../../stores/uiStore';
 import { HelpersCard, helpersSummary } from './HelpersCard';
-import { useHelperStartApprovals, useProjectAgentConfigs } from './orchestration-hooks';
+import { useHelperStartApprovals } from './orchestration-hooks';
+import { useHelpersEverywhere } from './cross-project';
+import { isDisposedAgent } from '../../../../shared/agent-helpers';
 import { useHelperStartRequestStore } from '../../../stores/helperStartRequestStore';
 import type { HelperStartRequest } from '../../../../shared/types';
 
 const PROJECT = path.join('/work', 'proj');
+// Another registered project, holding a helper of lead (#2514).
+const OTHER = path.join('/work', 'annex');
 const folder = (name: string) => path.join(PROJECT, '.clubhouse', 'agents', name);
 
 const lead: Agent = { id: 'lead', projectId: 'p1', name: 'epic-lead', kind: 'durable', status: 'running', color: 'teal' };
@@ -25,6 +29,8 @@ function railAgent(id: string, name: string, status: Agent['status'], extra: Par
 }
 
 let configs: DurableAgentConfig[];
+/** Agents in OTHER. */
+let otherConfigs: DurableAgentConfig[];
 let checks: Record<string, HelperDisposeChecks>;
 
 beforeEach(() => {
@@ -37,11 +43,12 @@ beforeEach(() => {
     config('d1', 'merge-1', { disposedAt: '2026-10-18T11:00:00Z' }),
     config('other', 'not-mine', { parentAgentId: 'someone-else' }),
   ];
+  otherConfigs = [];
   checks = {
     h1: { dirty: 3, unpushed: 2, unmerged: 2 },
     h2: { dirty: 0, unpushed: 0, unmerged: 0 },
   };
-  useProjectStore.setState({ projects: [{ id: 'p1', name: 'proj', path: PROJECT }], activeProjectId: 'p1' } as never);
+  useProjectStore.setState({ projects: [{ id: 'p1', name: 'proj', path: PROJECT }, { id: 'p2', name: 'annex', displayName: 'Annex', path: OTHER }], activeProjectId: 'p1' } as never);
   useAgentStore.setState({
     agents: {
       lead,
@@ -52,14 +59,21 @@ beforeEach(() => {
     },
     activeAgentId: 'lead',
   } as never);
-  window.clubhouse.agent.listDurable = vi.fn(async () => configs) as never;
+  window.clubhouse.agent.listDurable = vi.fn(async (p: string) => (p === OTHER ? otherConfigs : configs)) as never;
+  // Main's LIST_HELPERS: direct helpers in every project, each with its own project.
+  window.clubhouse.agent.listHelpers = vi.fn(async (_p: string, id: string, _recursive?: boolean, includeDisposed?: boolean): Promise<HelperInProject[]> => [
+    ...configs.map((config) => ({ projectId: 'p1', projectPath: PROJECT, config })),
+    ...otherConfigs.map((config) => ({ projectId: 'p2', projectPath: OTHER, config })),
+  ].filter((e) => e.config.parentAgentId === id && (includeDisposed || !isDisposedAgent(e.config)))) as never;
   window.clubhouse.agent.getDisposeChecks = vi.fn(async (_p: string, id: string) => checks[id] ?? { dirty: 0, unpushed: 0, unmerged: 0 });
   window.clubhouse.agent.disposeHelper = vi.fn(async (_p: string, id: string) => {
     configs = configs.map((c) => (c.id === id ? { ...c, disposedAt: '2026-10-18T12:00:00Z' } : c));
+    otherConfigs = otherConfigs.map((c) => (c.id === id ? { ...c, disposedAt: '2026-10-18T12:00:00Z' } : c));
     return { ok: true, message: 'Disposed' };
   });
   window.clubhouse.agent.removeDisposed = vi.fn(async (_p: string, id: string) => {
     configs = configs.filter((c) => c.id !== id);
+    otherConfigs = otherConfigs.filter((c) => c.id !== id);
     return { ok: true, message: 'Removed' };
   });
   window.clubhouse.agent.killAgent = vi.fn(async () => {});
@@ -72,7 +86,7 @@ afterEach(() => {
 });
 
 function Harness({ orchestrating = true, agentOverride }: { orchestrating?: boolean; agentOverride?: Agent }) {
-  const { configs: list, reload } = useProjectAgentConfigs(PROJECT, 'p1');
+  const { helpers: list, reload } = useHelpersEverywhere(PROJECT, 'lead');
   const approvals = useHelperStartApprovals('lead', PROJECT, reload);
   const [open, setOpen] = useState(true);
   if (!list) return null;
@@ -80,7 +94,7 @@ function Harness({ orchestrating = true, agentOverride }: { orchestrating?: bool
     <HelpersCard
       agent={agentOverride ?? lead}
       projectPath={PROJECT}
-      configs={list}
+      helpers={list}
       maxHelpers={5}
       orchestrating={orchestrating}
       open={open}
@@ -337,11 +351,73 @@ describe('HelpersCard stays current when the configs change', () => {
     await waitFor(() => expect(screen.getByTestId('helper-row-h2')).toHaveAttribute('data-state', 'handed-off'));
   });
 
-  it('ignores changes to another project', async () => {
+  it('re-reads when another project changes, since a helper can be in any project (#2514)', async () => {
     await renderCard();
-    const reads = vi.mocked(window.clubhouse.agent.listDurable).mock.calls.length;
-    act(() => configListener?.(path.join('/work', 'other')));
-    await new Promise((r) => setTimeout(r, 0));
-    expect(vi.mocked(window.clubhouse.agent.listDurable).mock.calls.length).toBe(reads);
+    expect(screen.queryByTestId('helper-row-x1')).not.toBeInTheDocument();
+    otherConfigs = [config('x1', 'annex-ui')];
+    act(() => configListener?.(OTHER));
+    await waitFor(() => expect(screen.getByTestId('helper-row-x1')).toBeInTheDocument());
+  });
+});
+
+describe('HelpersCard with a helper in another project (#2514)', () => {
+  beforeEach(() => {
+    otherConfigs = [
+      { id: 'other-lead', name: 'annex-lead', color: 'teal', createdAt: '2026-10-18T09:00:00Z' },
+      config('x1', 'annex-ui', { branch: 'annex-ui/work', worktreePath: path.join(OTHER, '.clubhouse', 'agents', 'annex-ui'), parentProjectPath: PROJECT }),
+      config('x2', 'annex-old', { disposedAt: '2026-10-18T11:00:00Z', parentProjectPath: PROJECT }),
+    ];
+    useAgentStore.setState((s) => ({
+      agents: { ...s.agents, x1: { ...railAgent('x1', 'annex-ui', 'running'), projectId: 'p2', parentAgentId: 'lead', parentProjectPath: PROJECT } },
+    }));
+  });
+
+  it('lists it with its project as plain text, and leaves this project\'s rows unmarked', async () => {
+    await renderCard();
+    const x1 = screen.getByTestId('helper-row-x1');
+    expect(within(x1).getByTestId('helper-project')).toHaveTextContent('in Annex');
+    expect(within(screen.getByTestId('helper-row-h1')).queryByTestId('helper-project')).not.toBeInTheDocument();
+    expect(screen.getByTestId('details-card-helpers-summary')).toHaveTextContent('5 of 5 · 1 starting');
+    await waitFor(() => expect(window.clubhouse.agent.getDisposeChecks).toHaveBeenCalledWith(OTHER, 'x1'));
+    expect(window.clubhouse.agent.getDisposeChecks).not.toHaveBeenCalledWith(PROJECT, 'x1');
+  });
+
+  it('sleeps, wakes, opens and disposes it in its own project', async () => {
+    const spawn = vi.fn(async () => 'x1');
+    useAgentStore.setState({ spawnDurableAgent: spawn } as never);
+    await renderCard();
+    fireEvent.click(within(screen.getByTestId('helper-row-x1')).getByTestId('helper-sleep-wake'));
+    await waitFor(() => expect(window.clubhouse.agent.killAgent).toHaveBeenCalledWith('x1', OTHER, undefined));
+
+    act(() => {
+      useAgentStore.setState((s) => ({ agents: { ...s.agents, x1: { ...s.agents.x1, status: 'sleeping' } } }));
+    });
+    const wake = await waitFor(() => {
+      const button = within(screen.getByTestId('helper-row-x1')).getByTestId('helper-sleep-wake');
+      expect(button).toHaveTextContent('Wake');
+      return button;
+    });
+    fireEvent.click(wake);
+    await waitFor(() => expect(spawn).toHaveBeenCalledWith('p2', OTHER, expect.objectContaining({ id: 'x1' }), false));
+
+    fireEvent.click(within(screen.getByTestId('helper-row-x1')).getByTestId('helper-open'));
+    expect(useAgentStore.getState().activeAgentId).toBe('x1');
+    expect(useProjectStore.getState().activeProjectId).toBe('p2');
+
+    fireEvent.click(within(screen.getByTestId('helper-row-x1')).getByTestId('helper-dispose'));
+    await screen.findByTestId('dispose-helper-dialog');
+    await waitFor(() => expect(screen.getByTestId('dispose-confirm')).not.toBeDisabled());
+    fireEvent.click(screen.getByTestId('dispose-confirm'));
+    await waitFor(() => expect(window.clubhouse.agent.disposeHelper).toHaveBeenCalledWith(OTHER, 'x1', undefined, expect.anything()));
+  });
+
+  it('removes a disposed helper from its own project', async () => {
+    await renderCard();
+    fireEvent.click(screen.getByTestId('helpers-disposed-toggle'));
+    const row = screen.getByTestId('disposed-row-x2');
+    expect(within(row).getByTestId('helper-project')).toHaveTextContent('in Annex');
+    fireEvent.click(within(row).getByTestId('disposed-remove'));
+    fireEvent.click(screen.getByTestId('confirm-destructive-confirm'));
+    await waitFor(() => expect(window.clubhouse.agent.removeDisposed).toHaveBeenCalledWith(OTHER, 'x2'));
   });
 });

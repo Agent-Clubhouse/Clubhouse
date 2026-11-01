@@ -93,6 +93,14 @@ export interface Agent {
    * (#2224): their orchestrator, which the sidebar nests them under (#2231).
    */
   parentAgentId?: string;
+  /**
+   * Durable helpers whose orchestrator is in another project (#2514): that
+   * project's path, from the config's `parentProjectPath`. Unset means the
+   * parent is in this agent's own project.
+   */
+  parentProjectPath?: string;
+  /** The open project at `parentProjectPath`, when there is one. */
+  parentProjectId?: string;
   /** Durable agents: creating the agent failed (#2226); `errorMessage` says why. */
   creationFailed?: boolean;
   orchestrator?: OrchestratorId;
@@ -370,7 +378,10 @@ export interface HelperHandoff {
  * under Needs you; selecting it opens the dispose confirmation (#2232).
  */
 export interface HelperDisposeRequest {
+  /** The project the helper's row is in. */
   projectPath: string;
+  /** The orchestrator's project, when it is not the helper's (#2515). */
+  orchestratorProjectPath?: string;
   orchestratorId: string;
   helperId: string;
   helperName: string;
@@ -435,6 +446,12 @@ export interface HelperStartArgs {
   access?: string;
   branchFrom?: string;
   folder?: string;
+  /**
+   * Another registered project to start the helper in (#2515), by name or
+   * path. A held request keeps the resolved path; unset for the
+   * orchestrator's own project.
+   */
+  project?: string;
 }
 
 /**
@@ -460,6 +477,17 @@ export interface HelperStartDecisionResult {
   message: string;
   /** The new helper, when an approved start began creating it. */
   helperId?: string;
+}
+
+/**
+ * A helper and the project its row is in (#2514), from LIST_HELPERS: an
+ * orchestrator's helpers can be in any registered project. `projectId` is the
+ * project store's id for `projectPath`, when it has one.
+ */
+export interface HelperInProject {
+  projectId?: string;
+  projectPath: string;
+  config: DurableAgentConfig;
 }
 
 /** Result of resolving an orchestrator's helpers before it is deleted (#2224). */

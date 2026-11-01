@@ -2,7 +2,7 @@ import React, { useCallback, useMemo, useRef, useState } from 'react';
 import type { Agent, AgentDetailedStatus, CompletedQuickAgent, Project } from '../../../shared/types';
 import { getAgentColorHex } from '../../../shared/name-generator';
 import { AgentRow } from './AgentRow';
-import { agentDot, buildProjectTree, countDescendants, helperRollup, moveWithinGroup, projectRollup, siblingGroups, type AgentNode } from './treeModel';
+import { agentDot, buildProjectTree, countDescendants, helperRollup, localParentId, moveWithinGroup, projectRollup, siblingGroups, type AgentNode } from './treeModel';
 import type { ProjectFold } from '../chromeStore';
 import { PopupMenu, type MenuItem } from '../../components/PopupMenu';
 import { reportChromeFeature } from '../telemetry';
@@ -12,6 +12,7 @@ import { useRefocusAfterMove } from './useRefocusAfterMove';
 import { Tooltip } from '../../components/Tooltip';
 import { TruncatedLabel } from '../../components/TruncatedLabel';
 import { markdownToPlainText } from '../../utils/safe-markdown';
+import { OtherProjectParentLine } from '../../features/agents/helpers/OtherProjectParentLine';
 
 /**
  * One project in the sidebar tree: a header (chevron, square, name, roll-up,
@@ -24,7 +25,9 @@ import { markdownToPlainText } from '../../utils/safe-markdown';
  * Helpers (#2231) nest under their parent agent at any depth, hanging off a
  * thin guide line from under the parent's status dot. The parent's caret
  * folds them away (remembered per agent), and a folded parent shows how many
- * helpers it has and whether any needs you or is working.
+ * helpers it has and whether any needs you or is working. A helper whose
+ * orchestrator is in another project (#2514) is a root here, with a muted line
+ * naming the orchestrator and its project; it never nests across projects.
  */
 
 const Chevron = ({ open }: { open: boolean }) => (
@@ -184,7 +187,7 @@ export const ProjectGroup = React.memo(function ProjectGroup(props: ProjectGroup
   // group's new order goes back into the saved order at the same places
   // (moveWithinGroup). Memoized on the order, sleep and parent links, so
   // memoized rows don't re-render on every status change.
-  const durableKey = JSON.stringify(agents.filter((a) => a.kind === 'durable').map((a) => [a.id, a.status === 'sleeping', a.parentAgentId ?? null]));
+  const durableKey = JSON.stringify(agents.filter((a) => a.kind === 'durable').map((a) => [a.id, a.status === 'sleeping', localParentId(a) ?? null]));
   const reorder = useMemo(() => {
     const entries = (JSON.parse(durableKey) as [string, boolean, string | null][]).map(([id, sleeping, parent]) => ({
       id, kind: 'durable' as const, status: sleeping ? 'sleeping' as const : 'running' as const, parentAgentId: parent ?? undefined,
@@ -299,6 +302,8 @@ export const ProjectGroup = React.memo(function ProjectGroup(props: ProjectGroup
     return (
       <React.Fragment key={agent.id}>
         {renderAgent(agent, indent, parentKey, depth, node)}
+        {/* Lines up with the avatar, after the 8px status dot and its gap. */}
+        {agent.parentProjectPath && <OtherProjectParentLine agent={agent} paddingLeft={indent + 16} className="-mt-1 pb-1" />}
         {open && children.map((child, i) => (
           <div key={child.agent.id} data-testid={`helper-of-${agent.id}`} className="relative flex flex-col gap-px">
             {/* The line sits under the middle of the parent's 8px status dot. */}

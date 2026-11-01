@@ -105,6 +105,14 @@ vi.mock('../services/orchestration-policy', () => ({
   withAgentLock: vi.fn(async (_p: string, _id: string, fn: () => Promise<unknown>) => fn()),
 }));
 
+vi.mock('../services/helper-index', () => ({
+  listHelpersEverywhere: vi.fn(async () => []),
+}));
+
+vi.mock('../services/project-store', () => ({
+  list: vi.fn(async () => []),
+}));
+
 vi.mock('../services/clubhouse-mode-settings', () => ({
   isClubhouseModeEnabled: vi.fn(() => false),
 }));
@@ -136,6 +144,10 @@ import { broadcastSnapshotRefresh } from '../services/annex-server';
 import { agentRegistry } from '../services/agent-registry';
 import * as permissionQueue from '../services/annex-permission-queue';
 import * as finishedQuickStore from '../services/finished-quick-agents-store';
+import * as helperIndex from '../services/helper-index';
+import * as projectStore from '../services/project-store';
+import * as os from 'os';
+import * as nodePath from 'path';
 
 describe('agent-handlers', () => {
   let handlers: Map<string, (...args: any[]) => any>;
@@ -347,6 +359,38 @@ describe('agent-handlers', () => {
     const handler = handlers.get(IPC.AGENT.UPDATE_DURABLE_CONFIG)!;
     await handler({}, '/project', 'agent-1', { model: 'opus' });
     expect(agentConfig.updateDurableConfig).toHaveBeenCalledWith('/project', 'agent-1', { model: 'opus' });
+  });
+
+  describe('LIST_HELPERS across projects (#2514)', () => {
+    const home = nodePath.join(os.tmpdir(), 'home');
+    const other = nodePath.join(os.tmpdir(), 'annex');
+    const removed = nodePath.join(os.tmpdir(), 'removed');
+    const helper = (id: string) => ({ id, name: id, color: 'teal', createdAt: 'x', parentAgentId: 'lead' });
+
+    it('returns helpers from every project through the helper index, each with its project id', async () => {
+      vi.mocked(helperIndex.listHelpersEverywhere).mockResolvedValueOnce([
+        { projectPath: home, config: helper('h1') },
+        { projectPath: other, config: { ...helper('x1'), parentProjectPath: home } },
+        { projectPath: removed, config: helper('x2') },
+      ]);
+      vi.mocked(projectStore.list).mockResolvedValueOnce([
+        { id: 'p-home', name: 'home', path: home }, { id: 'p-annex', name: 'annex', path: other },
+      ]);
+      const result = await handlers.get(IPC.AGENT.LIST_HELPERS)!({}, home, 'lead', true, false);
+      expect(helperIndex.listHelpersEverywhere).toHaveBeenCalledWith(home, 'lead', { recursive: true, includeDisposed: false });
+      expect(result).toEqual([
+        { projectId: 'p-home', projectPath: home, config: helper('h1') },
+        { projectId: 'p-annex', projectPath: other, config: { ...helper('x1'), parentProjectPath: home } },
+        { projectId: undefined, projectPath: removed, config: helper('x2') },
+      ]);
+    });
+
+    it('passes includeDisposed through and skips the project list when there are none', async () => {
+      const result = await handlers.get(IPC.AGENT.LIST_HELPERS)!({}, home, 'lead', undefined, true);
+      expect(result).toEqual([]);
+      expect(helperIndex.listHelpersEverywhere).toHaveBeenCalledWith(home, 'lead', { recursive: undefined, includeDisposed: true });
+      expect(projectStore.list).not.toHaveBeenCalled();
+    });
   });
 
   describe('disposing helpers from the UI (#2232)', () => {

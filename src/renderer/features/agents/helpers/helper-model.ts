@@ -94,22 +94,35 @@ export function helperDot(state: HelperState, liveDot: AgentDot | undefined): Ag
   }
 }
 
-/** Direct live helpers and disposed helpers of an agent, in sidebar order. */
-export function splitHelpers(configs: readonly DurableAgentConfig[], parentId: string): { live: DurableAgentConfig[]; disposed: DurableAgentConfig[] } {
-  const mine = configs.filter((c) => c.parentAgentId === parentId);
+/**
+ * Direct live helpers and disposed helpers of an agent, from every project
+ * (#2514), in the order main lists them: its own project first.
+ */
+export function splitHelpers<H extends { config: DurableAgentConfig }>(helpers: readonly H[], parentId: string): { live: H[]; disposed: H[] } {
+  const mine = helpers.filter((h) => h.config.parentAgentId === parentId);
   return {
-    live: mine.filter((c) => !isDisposedAgent(c)),
-    disposed: mine.filter((c) => isDisposedAgent(c)),
+    live: mine.filter((h) => !isDisposedAgent(h.config)),
+    disposed: mine.filter((h) => isDisposedAgent(h.config)),
   };
 }
 
 /**
  * Disposed helpers nobody can reach from a Helpers card: their orchestrator is
- * gone, or they were released before being disposed.
+ * gone, or they were released before being disposed. `configs` is one
+ * project's; a helper whose orchestrator is in another project (#2514) is
+ * reachable from that orchestrator's card when `hasParentElsewhere` says the
+ * orchestrator is still there, and orphaned otherwise.
  */
-export function orphanedDisposed(configs: readonly DurableAgentConfig[]): DurableAgentConfig[] {
+export function orphanedDisposed(
+  configs: readonly DurableAgentConfig[],
+  hasParentElsewhere: (config: DurableAgentConfig) => boolean = () => false,
+): DurableAgentConfig[] {
   const ids = new Set(configs.map((c) => c.id));
-  return configs.filter((c) => isDisposedAgent(c) && (!c.parentAgentId || !ids.has(c.parentAgentId)));
+  return configs.filter((c) => {
+    if (!isDisposedAgent(c)) return false;
+    if (!c.parentAgentId) return true;
+    return c.parentProjectPath ? !hasParentElsewhere(c) : !ids.has(c.parentAgentId);
+  });
 }
 
 // ── Dispose checks ──────────────────────────────────────────────────────
