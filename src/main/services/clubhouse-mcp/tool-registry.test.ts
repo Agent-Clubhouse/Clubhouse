@@ -16,7 +16,7 @@ vi.mock('../dispatcher/dispatcher-settings', () => ({
   isDispatcherEnabled: () => dispatcherState.enabled,
 }));
 
-import { registerToolTemplate, registerGlobalTool, getScopedToolList, callTool, refusalReasonOf, buildToolName, buildToolKey, parseToolName, shortHash, invalidateToolListCache, sanitizeWireInstruction, _resetForTesting } from './tool-registry';
+import { registerToolTemplate, registerGlobalTool, getScopedToolList, callTool, refusalReasonOf, buildToolName, buildToolKey, parseToolName, shortHash, invalidateToolListCache, agentsWiredTo, sanitizeWireInstruction, _resetForTesting } from './tool-registry';
 import { bindingManager } from './binding-manager';
 import {
   closeCrossProject,
@@ -698,6 +698,28 @@ describe('ToolRegistry', () => {
       const suffixes = tools.map(t => t.name.split('__').pop());
       expect(suffixes).toEqual(['send_message', 'get_status', 'wake', 'read_output']);
       agentRegistry.untrack('agent-2');
+    });
+
+    it('follows the target waking and sleeping without a binding change (#2564)', () => {
+      const suffixes = () => getScopedToolList('agent-1').map(t => t.name.split('__').pop());
+      const version = bindingManager.getVersion();
+      expect(suffixes()).toEqual(['get_status']);
+
+      // Spawn: register, then a new nonce (what agent-system does).
+      agentRegistry.register('agent-2', { runtime: 'pty', projectPath: '/test', orchestrator: 'claude-code' });
+      agentRegistry.setNonce('agent-2', 'nonce-1');
+      expect(suffixes()).toEqual(['send_message', 'get_status', 'wake', 'read_output']);
+
+      agentRegistry.untrack('agent-2');
+      expect(suffixes()).toEqual(['get_status']);
+      expect(bindingManager.getVersion()).toBe(version);
+    });
+
+    it('agentsWiredTo returns only the agents wired to that agent target', () => {
+      bindingManager.bind('agent-3', { targetId: 'agent-1', targetKind: 'agent', label: 'Agent 1' });
+      bindingManager.bind('agent-4', { targetId: 'widget-2', targetKind: 'browser', label: 'Browser' });
+      expect(agentsWiredTo('agent-2')).toEqual(['agent-1']);
+      expect(agentsWiredTo('widget-2')).toEqual([]);
     });
 
     it('does not filter non-agent target tools', () => {
