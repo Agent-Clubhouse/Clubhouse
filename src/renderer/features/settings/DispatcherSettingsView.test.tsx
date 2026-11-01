@@ -69,6 +69,18 @@ describe('DispatcherSettingsView', () => {
     expect(window.clubhouse.agent.updateDurableConfig).toHaveBeenCalledWith(FOLDER, 'disp', { orchestrator: 'claude-code', model: 'default' });
   });
 
+  it('warns before a new CLI drops its saved session (#2593)', async () => {
+    state = ON;
+    window.clubhouse.agent.getDurableConfig = vi.fn(async () => ({ id: 'disp', lastSessionId: 's1' })) as never;
+    render(<DispatcherSettingsView />);
+    const select = await screen.findByLabelText('CLI') as HTMLSelectElement;
+    await act(async () => { fireEvent.change(select, { target: { value: 'claude-code' } }); });
+    expect(screen.getByText(/The Dispatcher starts a new session on .* the next time it wakes/)).toBeInTheDocument();
+    expect(window.clubhouse.agent.updateDurableConfig).not.toHaveBeenCalled();
+    await act(async () => { fireEvent.click(screen.getByTestId('confirm-destructive-confirm')); });
+    expect(window.clubhouse.agent.updateDurableConfig).toHaveBeenCalledWith(FOLDER, 'disp', { orchestrator: 'claude-code', model: 'default' });
+  });
+
   it('saves auto-sleep and access to the Dispatcher config', async () => {
     state = ON;
     render(<DispatcherSettingsView />);

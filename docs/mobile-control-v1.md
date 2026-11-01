@@ -305,7 +305,7 @@ We chose a route rather than snapshot fields. The settings need disk and CLI rea
 
 Field notes:
 
-- **orchestrator**: `value` null means the project default. `resolved` is what it runs on.
+- **orchestrator**: `value` null means the project default. `resolved` is what it runs on. `changeStartsNewSession` is true when the agent has a saved session that a new CLI can't resume. Warn before sending the change, as the desktop does: "<Agent> starts a new session on <CLI> the next time it wakes. Its current conversation can't move to another CLI." Older desktops omit the field.
 - **runtime**: `resolved` is the runtime the agent runs in now (awake), or the one its next wake uses (asleep). It is `never` when chat isn't available for the agent's CLI.
 - **clubhouseMode**: `true` means Clubhouse mode manages the agent. `false` means it keeps local overrides. `null` with `never` means the project isn't in Clubhouse mode.
 - **idleSleep**: `minutes` and `source` are the resolved timeout, where 0 means never. An inherited value follows the app's chat idle timeout (`options.idleSleep.appMinutes`). Desktop copy: "After 30 min idle" / "Never", summary "Sleeps after 30 min" / "Never sleeps". Only chat agents idle-sleep (`applies`), but the value is kept either way.
@@ -319,7 +319,7 @@ Send only what changed:
 - **name**: trimmed. Git-name checked when the agent has a worktree (400 `invalid_name`).
 - **color**: a `colors` id.
 - **emoji**: up to 16 UTF-16 units. `null` clears it.
-- **orchestrator**: one of `orchestrators` (409 `orchestrator_unavailable`).
+- **orchestrator**: one of `orchestrators` (409 `orchestrator_unavailable`). A different CLI resets the model to default unless `model` is in the same command, and starts a new session on the next wake. No conversation or context moves over, and the agent's `hasSession` becomes false. When that drops a saved session, the result has `sessionReset:true`; otherwise the field is absent.
 - **model**: `"default"` clears it.
 - **runtime**: `default`, `chat` or `terminal`. `chat` and `terminal` need chat to be available (409 `runtime_unavailable`).
 - **persona**: one of `personas`, or `null` for the project default.

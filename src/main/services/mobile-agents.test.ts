@@ -206,7 +206,7 @@ describe('agent settings', () => {
         color: { value: 'indigo', editable: 'sleeping' },
         emoji: { value: null, editable: 'sleeping' },
         hasImageIcon: false,
-        orchestrator: { value: null, editable: 'sleeping', resolved: 'claude-code' },
+        orchestrator: { value: null, editable: 'sleeping', resolved: 'claude-code', changeStartsNewSession: false },
         model: { value: 'opus', editable: 'sleeping' },
         runtime: { value: 'default', editable: 'sleeping', resolved: 'chat' },
         persona: { value: 'qa', editable: 'sleeping' },
@@ -293,6 +293,23 @@ describe('agent.update', () => {
       { orchestrator: 'claude-code', model: 'opus', runtimeMode: 'terminal', persona: 'qa', idleSleep: 'never' });
     expect(agentConfig.updateDurable).toHaveBeenCalledWith('/work/app', 'durable_1', { name: 'calm-otter', color: 'rose', emoji: '🦦' });
     expect(result.settings).toMatchObject({ name: { value: 'calm-otter' }, model: { value: 'opus' }, idleSleep: { value: 'never', minutes: 0 } });
+  });
+  it('says a new CLI starts a new session, before and after the change (#2593)', async () => {
+    const withSession = agent({ orchestrator: 'claude-code', lastSessionId: 's1' });
+    expect((await buildAgentSettings(project, withSession, undefined)).settings.orchestrator.changeStartsNewSession).toBe(true);
+    expect((await buildAgentSettings(project, agent(), undefined)).settings.orchestrator.changeStartsNewSession).toBe(false);
+
+    vi.mocked(agentConfig.getDurableConfig).mockResolvedValueOnce(agent({ orchestrator: 'codex-cli' }));
+    const changed = await updateMobileAgent(project, withSession, { agentId: 'durable_1', orchestrator: 'codex-cli' }, live);
+    expect(changed.sessionReset).toBe(true);
+    expect(changed.settings.orchestrator.changeStartsNewSession).toBe(false);
+  });
+  it('reports no session reset when a session stayed or there was none', async () => {
+    const withSession = agent({ orchestrator: 'claude-code', lastSessionId: 's1' });
+    vi.mocked(agentConfig.getDurableConfig).mockResolvedValueOnce(withSession);
+    expect(await updateMobileAgent(project, withSession, { agentId: 'durable_1', orchestrator: 'claude-code' }, live)).not.toHaveProperty('sessionReset');
+    vi.mocked(agentConfig.getDurableConfig).mockResolvedValueOnce(agent({ orchestrator: 'codex-cli' }));
+    expect(await updateMobileAgent(project, agent(), { agentId: 'durable_1', orchestrator: 'codex-cli' }, live)).not.toHaveProperty('sessionReset');
   });
   it('clears with null, default and inherit', async () => {
     vi.mocked(isClubhouseModeEnabled).mockReturnValueOnce(true);

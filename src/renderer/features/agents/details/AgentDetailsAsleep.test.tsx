@@ -163,6 +163,75 @@ describe('CLI row (#2593)', () => {
     expect((settings().getByRole('combobox', { name: 'Model' }) as HTMLSelectElement).value).toBe('opus');
   });
 
+  describe('with a saved session', () => {
+    const dialog = () => screen.queryByText(/starts a new session on Codex the next time it wakes/);
+    const pick = async () => {
+      await waitFor(() => expect(cli()).toBeInTheDocument());
+      fireEvent.change(cli()!, { target: { value: 'codex-cli' } });
+    };
+
+    beforeEach(() => { saved.lastSessionId = 's1'; saved.model = 'opus'; });
+
+    it('warns and saves nothing until confirmed', async () => {
+      render(<AgentDetails agent={sleeping} />);
+      await pick();
+      await waitFor(() => expect(dialog()).toHaveTextContent('faithful-urchin starts a new session on Codex the next time it wakes. Its current conversation can’t move to another CLI.'));
+      expect(window.clubhouse.agent.updateDurableConfig).not.toHaveBeenCalled();
+      expect(cli()!.value).toBe('claude-code');
+
+      fireEvent.click(screen.getByTestId('confirm-destructive-confirm'));
+      await waitFor(() => expect(window.clubhouse.agent.updateDurableConfig).toHaveBeenCalledWith('/work/proj', 'a1', { orchestrator: 'codex-cli', model: 'default' }));
+      await waitFor(() => expect(useAgentStore.getState().agents.a1.orchestrator).toBe('codex-cli'));
+      expect(dialog()).not.toBeInTheDocument();
+    });
+
+    it('keeps everything when cancelled', async () => {
+      render(<AgentDetails agent={sleeping} />);
+      await pick();
+      await waitFor(() => expect(dialog()).toBeInTheDocument());
+      fireEvent.click(screen.getByTestId('confirm-destructive-cancel'));
+      expect(dialog()).not.toBeInTheDocument();
+      expect(window.clubhouse.agent.updateDurableConfig).not.toHaveBeenCalled();
+      expect(cli()!.value).toBe('claude-code');
+      expect(useAgentStore.getState().agents.a1.orchestrator).toBe('claude-code');
+    });
+
+    it('sees a session saved after the card read the config', async () => {
+      delete saved.lastSessionId;
+      render(<AgentDetails agent={sleeping} />);
+      await waitFor(() => expect(cli()).toBeInTheDocument());
+      saved.lastSessionId = 's2';
+      await pick();
+      await waitFor(() => expect(dialog()).toBeInTheDocument());
+    });
+
+    it('warns when it can\'t tell whether there is a session', async () => {
+      render(<AgentDetails agent={sleeping} />);
+      await waitFor(() => expect(cli()).toBeInTheDocument());
+      window.clubhouse.agent.getDurableConfig = vi.fn(async () => { throw new Error('locked'); }) as never;
+      await pick();
+      await waitFor(() => expect(dialog()).toBeInTheDocument());
+      expect(window.clubhouse.agent.updateDurableConfig).not.toHaveBeenCalled();
+    });
+
+    it('drops the question if the agent wakes while it is open', async () => {
+      const { rerender } = render(<AgentDetails agent={sleeping} />);
+      await pick();
+      await waitFor(() => expect(dialog()).toBeInTheDocument());
+      rerender(<AgentDetails agent={{ ...sleeping, status: 'running' }} />);
+      expect(dialog()).not.toBeInTheDocument();
+      expect(window.clubhouse.agent.updateDurableConfig).not.toHaveBeenCalled();
+    });
+  });
+
+  it('asks nothing when there is no saved session', async () => {
+    render(<AgentDetails agent={sleeping} />);
+    await waitFor(() => expect(cli()).toBeInTheDocument());
+    fireEvent.change(cli()!, { target: { value: 'codex-cli' } });
+    await waitFor(() => expect(window.clubhouse.agent.updateDurableConfig).toHaveBeenCalled());
+    expect(screen.queryByTestId('confirm-destructive-confirm')).not.toBeInTheDocument();
+  });
+
   it('locks while awake and shows no select', async () => {
     render(<AgentDetails agent={{ ...sleeping, status: 'running' }} />);
     const row = settings().getByTestId('details-setting-cli');

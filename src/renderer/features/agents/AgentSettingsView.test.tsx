@@ -409,6 +409,25 @@ describe('AgentSettingsView', () => {
       await waitFor(() => expect(model.value).toBe('default'));
     });
 
+    it('warns before changing the CLI of an agent with a saved session (#2593)', async () => {
+      setupMultiOrch();
+      (window.clubhouse.agent as any).getDurableConfig = vi.fn().mockResolvedValue({ lastSessionId: 's1' });
+      renderSettings({ orchestrator: 'claude-code' });
+      fireEvent.change(screen.getByLabelText('Runs on'), { target: { value: 'github-copilot' } });
+      await screen.findByText(/starts a new session on GitHub Copilot the next time it wakes/);
+      expect(window.clubhouse.agent.updateDurableConfig).not.toHaveBeenCalled();
+
+      fireEvent.click(screen.getByTestId('confirm-destructive-cancel'));
+      expect(window.clubhouse.agent.updateDurableConfig).not.toHaveBeenCalled();
+      expect((screen.getByLabelText('Runs on') as HTMLSelectElement).value).toBe('claude-code');
+
+      fireEvent.change(screen.getByLabelText('Runs on'), { target: { value: 'github-copilot' } });
+      fireEvent.click(await screen.findByTestId('confirm-destructive-confirm'));
+      await waitFor(() => expect(window.clubhouse.agent.updateDurableConfig).toHaveBeenCalledWith(
+        '/project', 'agent-1', { orchestrator: 'github-copilot', model: 'default' },
+      ));
+    });
+
     it('labels the CLI picker "Runs on" (#2233)', () => {
       setupMultiOrch();
       renderSettings({ orchestrator: 'claude-code' });

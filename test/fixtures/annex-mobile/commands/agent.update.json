@@ -87,6 +87,7 @@
                 "value": "bright-otter"
               },
               "orchestrator": {
+                "changeStartsNewSession": true,
                 "editable": "sleeping",
                 "resolved": "claude-code",
                 "value": null
@@ -193,6 +194,7 @@
                 "value": "bright-otter"
               },
               "orchestrator": {
+                "changeStartsNewSession": true,
                 "editable": "sleeping",
                 "resolved": "claude-code",
                 "value": null
@@ -296,6 +298,7 @@
                 "value": "bright-otter"
               },
               "orchestrator": {
+                "changeStartsNewSession": true,
                 "editable": "sleeping",
                 "resolved": "claude-code",
                 "value": "claude-code"
@@ -399,6 +402,7 @@
                 "value": "planner"
               },
               "orchestrator": {
+                "changeStartsNewSession": true,
                 "editable": "sleeping",
                 "resolved": "claude-code",
                 "value": "claude-code"
@@ -793,6 +797,7 @@
                 "value": "planner"
               },
               "orchestrator": {
+                "changeStartsNewSession": true,
                 "editable": "sleeping",
                 "resolved": "claude-code",
                 "value": "claude-code"
@@ -898,6 +903,7 @@
                 "value": "planner"
               },
               "orchestrator": {
+                "changeStartsNewSession": true,
                 "editable": "sleeping",
                 "resolved": "claude-code",
                 "value": "claude-code"
@@ -1001,6 +1007,7 @@
                 "value": "bright-otter"
               },
               "orchestrator": {
+                "changeStartsNewSession": true,
                 "editable": "sleeping",
                 "resolved": "claude-code",
                 "value": "claude-code"
@@ -1257,6 +1264,7 @@
                 "value": "Dispatcher"
               },
               "orchestrator": {
+                "changeStartsNewSession": true,
                 "editable": "always",
                 "resolved": "claude-code",
                 "value": "claude-code"
@@ -1334,6 +1342,7 @@
                 "value": "Dispatcher"
               },
               "orchestrator": {
+                "changeStartsNewSession": true,
                 "editable": "always",
                 "resolved": "codex-cli",
                 "value": "codex-cli"
@@ -1538,6 +1547,7 @@
                 "value": "planner"
               },
               "orchestrator": {
+                "changeStartsNewSession": true,
                 "editable": "sleeping",
                 "resolved": "claude-code",
                 "value": "claude-code"

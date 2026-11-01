@@ -4,6 +4,7 @@ import { AGENT_COLORS } from '../../../shared/name-generator';
 import { useModelOptions } from '../../hooks/useModelOptions';
 import { useEffectiveOrchestrators } from '../../hooks/useEffectiveOrchestrators';
 import { buildOrchestratorOptions } from './orchestrator-options';
+import { useCliChangeConfirm } from './useCliChangeConfirm';
 import { useAgentStore } from '../../stores/agentStore';
 import { useProjectStore } from '../../stores/projectStore';
 import { useOrchestratorStore } from '../../stores/orchestratorStore';
@@ -315,6 +316,14 @@ export function AgentSettingsView({ agent }: Props) {
       };
     });
   };
+
+  const { requestCliChange, cliChangeDialog } = useCliChangeConfirm({
+    projectPath,
+    agentId: agent.id,
+    agentName: agent.name,
+    enabled: !isRunning,
+    apply: handleOrchestratorChange,
+  });
 
   // Agent model state.
   //
@@ -1058,7 +1067,7 @@ export function AgentSettingsView({ agent }: Props) {
           <select
             id="agent-settings-orchestrator"
             value={agentOrchestrator}
-            onChange={(e) => handleOrchestratorChange(e.target.value)}
+            onChange={(e) => void requestCliChange(e.target.value)}
             disabled={isRunning}
             title={stopFirst}
             className={selectClass}
@@ -1599,6 +1608,7 @@ export function AgentSettingsView({ agent }: Props) {
         />
       )}
 
+      {cliChangeDialog}
       <ConfirmDestructiveAction
         open={pendingLeave !== null}
         title="Leave with unsaved changes?"

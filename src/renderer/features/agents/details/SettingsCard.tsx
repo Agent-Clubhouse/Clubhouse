@@ -10,7 +10,8 @@
  * the agent runs; the rows here only reflect them. Asleep (#2281), the spawn
  * settings are native selects and switches, saved for the next wake; an
  * agent on another machine is read-only here. A new CLI (#2593) resets the
- * model and starts a new session; main does both, whichever path changed it.
+ * model and starts a new session; main does both, whichever path changed it,
+ * and an agent with a session to lose asks first.
  */
 
 import { useEffect, useId, useMemo, useRef, useState, type ReactNode } from 'react';
@@ -27,6 +28,7 @@ import { useModelOptions } from '../../../hooks/useModelOptions';
 import { getPersonaTemplate } from '../../personas';
 import { useAgentSettingsPages } from '../agentSettingsPages';
 import { buildOrchestratorOptions } from '../orchestrator-options';
+import { useCliChangeConfirm } from '../useCliChangeConfirm';
 import { LEVEL_LABELS } from '../chat/view-model';
 import { useChatFlag } from '../chat/chat-flag';
 import { normalizeIdleSleep } from '../../../../shared/idle-sleep';
@@ -273,6 +275,14 @@ export function SettingsCard({ agent, chat, projectPath, provider }: {
     [effectiveOrchestrators, allOrchestrators, orchestrator],
   );
 
+  const { requestCliChange, cliChangeDialog } = useCliChangeConfirm({
+    projectPath,
+    agentId: agent.id,
+    agentName: agent.name,
+    enabled: editing,
+    apply: (v) => save('cli', { orchestrator: v, model: 'default' }, { orchestrator: v, model: undefined }),
+  });
+
   const rows: SettingRow[] = [
     {
       id: 'cli', label: 'CLI', editable: 'sleeping',
@@ -282,10 +292,7 @@ export function SettingsCard({ agent, chat, projectPath, provider }: {
           label="CLI"
           value={orchestrator}
           disabled={busy('cli')}
-          onChange={(v) => {
-            if (v === orchestrator) return;
-            void save('cli', { orchestrator: v, model: 'default' }, { orchestrator: v, model: undefined });
-          }}
+          onChange={(v) => { if (v !== orchestrator) void requestCliChange(v); }}
           options={cliOptions}
         />
       ) : undefined,
@@ -386,6 +393,7 @@ export function SettingsCard({ agent, chat, projectPath, provider }: {
           <Button kind="ghost" onClick={() => (isDispatcherAgent(agent) ? openDispatcherSettings() : openAllSettings(agent.id))} data-testid="details-all-settings">All settings</Button>
         </div>
       )}
+      {cliChangeDialog}
     </DetailsCard>
   );
 }
