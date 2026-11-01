@@ -28,7 +28,7 @@ Turn on **Cross-project helpers** to let the agent start helpers in other projec
 
 Agents using the **Orchestrator** persona start with the switch on. The persona also tells the agent how to plan, start helpers, hand off and dispose. Give helpers the **Workhorse** persona when no other role fits.
 
-While the Dispatcher is turned on, a **Connect to Dispatcher** switch shows in the same places, with orchestration on or off. It lets the Dispatcher message the agent and get its reports. Agents that orchestrate are connected by default. Turn the switch off and the agent stays off. You can also turn it on for an agent that doesn't orchestrate, which adds no helper tools. Helpers aren't connected by default and don't have this switch.
+While the Dispatcher is turned on, a **Connect to Dispatcher** switch shows in the same places, with orchestration on or off. It lets the Dispatcher message the agent and get its reports. Agents that orchestrate are connected by default. Turn the switch off and the agent stays off. You can also turn it on for an agent that doesn't orchestrate, which adds no helper tools. Helpers talk only to their orchestrator, so they never connect to the Dispatcher and don't have this switch.
 
 ## Starting helpers
 
@@ -153,4 +153,4 @@ orchestration: {"orchestrate": true, "access": "same", "control": "hands-off", "
 | `control` | `hands-off`, `ask-before-start` or `ask-everything` |
 | `maxHelpers` | How many helpers at once |
 | `crossProjectHelpers` | `true` or `false`. Whether the agent can start helpers in other projects. |
-| `connectToDispatcher` | `true` or `false`. Whether the Dispatcher can message the agent and get its reports. If it isn't set, it follows `orchestrate`. Like `orchestrate`, from the Orchestrator persona it only applies to agents using that persona. |
+| `connectToDispatcher` | `true` or `false`. Whether the Dispatcher can message the agent and get its reports. If it isn't set, it follows `orchestrate`. A helper is never connected, whatever this says. Like `orchestrate`, from the Orchestrator persona it only applies to agents using that persona. |

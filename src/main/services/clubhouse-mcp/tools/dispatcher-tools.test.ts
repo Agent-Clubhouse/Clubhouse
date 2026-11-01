@@ -97,6 +97,7 @@ import { onOrchestrationGateChange, setOrchestrationEnabled, _resetOrchestration
 import { isDispatcherAgent, syncDispatcherGate, _resetDispatcherGateForTesting } from '../dispatcher-gate';
 import * as agentConfig from '../../agent-config';
 import { getOrchestrationPolicy, resolveOrchestrationPolicies } from '../../orchestration-policy';
+import { resolveOrchestrationPolicy } from '../../../../shared/orchestration-policy';
 
 // ── Fixtures ───────────────────────────────────────────────────────────────
 
@@ -281,6 +282,17 @@ describe('list_agents', () => {
     policies.set('lead', policy({ connectToDispatcher: true }));
     const rows = parse(await callTool('dispatcher', 'list_agents', {})).agents as Array<Record<string, unknown>>;
     expect(rows.map((r) => [r.id, r.orchestrates])).toEqual([['plain', false], ['lead', true]]);
+  });
+
+  it('leaves out a helper with the switch set, resolved by the real policy (#2578)', async () => {
+    await runDispatcher();
+    addAgent(PROJECT_A, { id: 'lead', orchestration: { orchestrate: true } });
+    addAgent(PROJECT_A, { id: 'h', parentAgentId: 'lead', orchestration: { connectToDispatcher: true } });
+    // Once: only the project with agents resolves.
+    vi.mocked(resolveOrchestrationPolicies).mockImplementationOnce(async (_p, agents) =>
+      new Map(agents.map((a) => [a.id, resolveOrchestrationPolicy(a.orchestration, undefined, { helper: !!a.parentAgentId })])));
+    const rows = parse(await callTool('dispatcher', 'list_agents', {})).agents as Array<{ id: string }>;
+    expect(rows.map((r) => r.id)).toEqual(['lead']);
   });
 
   it('leaves out agents with the switch off, policies without the field, and disposed agents', async () => {

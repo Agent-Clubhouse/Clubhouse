@@ -47,7 +47,7 @@ export interface OrchestrationPolicy {
   /**
    * "Connect to Dispatcher" (#2534): the Dispatcher may message this agent and
    * get its reports. Independent of `orchestrate`, which only supplies its
-   * default (#2578): see resolveOrchestrationPolicy.
+   * default (#2578), and always false on a helper: see resolveOrchestrationPolicy.
    */
   connectToDispatcher: boolean;
 }
@@ -178,8 +178,11 @@ export function applyOrchestrationPatch(
  *
  * An unset `connectToDispatcher` follows the resolved `orchestrate` (#2578),
  * with `default` as its source, so agents that orchestrate connect without a
- * bulk write. Not for a helper: it reports to its orchestrator and has no
- * settings to switch this off, so `helper` keeps its default off.
+ * bulk write.
+ *
+ * A helper talks only to its parent, so with `helper` it is always false,
+ * whatever the agent or persona says. Its source is `default` then, since no
+ * stored value is in effect.
  */
 export function resolveOrchestrationPolicy(
   agentConfig: OrchestrationPolicyConfig | undefined,
@@ -202,7 +205,12 @@ export function resolveOrchestrationPolicy(
       sources[key] = 'default';
     }
   }
-  if (sources.connectToDispatcher === 'default' && !options.helper) policy.connectToDispatcher = policy.orchestrate;
+  if (options.helper) {
+    policy.connectToDispatcher = false;
+    sources.connectToDispatcher = 'default';
+  } else if (sources.connectToDispatcher === 'default') {
+    policy.connectToDispatcher = policy.orchestrate;
+  }
   return { ...policy, sources };
 }
 

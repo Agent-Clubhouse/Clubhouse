@@ -21,7 +21,7 @@
  * or connects the Dispatcher, for everyone.
  *
  * An unset `connectToDispatcher` follows the agent's resolved `orchestrate`,
- * except on a helper (#2578). It never opens the tool gate, which reads only
+ * and a helper's is always false, whatever is set (#2578). It never opens the tool gate, which reads only
  * `orchestrate`: a connected plain agent gets no orchestration tools.
  *
  * The tool gate. Only two things open it: a spawn (syncOrchestrationGate)

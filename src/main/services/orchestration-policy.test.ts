@@ -329,10 +329,31 @@ describe('setOrchestrationPolicy', () => {
     expect(await getOrchestrationPolicy(PROJECT, 'orch')).toMatchObject({ orchestrate: true, connectToDispatcher: true, sources: { connectToDispatcher: 'default' } });
     expect((await getOrchestrationPolicy(PROJECT, 'dev'))?.connectToDispatcher).toBe(false);
     expect((await getOrchestrationPolicy(PROJECT, 'off'))?.connectToDispatcher).toBe(false);
-    // A helper has no switch to turn this off, so the default leaves it out.
+    // A helper talks only to its parent.
     const all = await resolveOrchestrationPolicies(PROJECT, agentsOf(PROJECT));
     expect((await getOrchestrationPolicy(PROJECT, 'helper'))?.connectToDispatcher).toBe(false);
     expect(Object.fromEntries([...all].map(([id, p]) => [id, p.connectToDispatcher]))).toEqual({ orch: true, dev: false, off: false, helper: false });
+  });
+
+  it('never connects a helper, from its own setting or its persona, in either read (#2578)', async () => {
+    state.personas.set('lead', persona({ connectToDispatcher: true }));
+    setAgents(PROJECT, [
+      agent('orch', { orchestration: { orchestrate: true } }),
+      agent('explicit', { parentAgentId: 'orch', orchestration: { connectToDispatcher: true } }),
+      agent('from-persona', { parentAgentId: 'orch', persona: 'lead' }),
+    ]);
+    const off = { connectToDispatcher: false, sources: { connectToDispatcher: 'default' } };
+    expect(await getOrchestrationPolicy(PROJECT, 'explicit')).toMatchObject(off);
+    expect(await getOrchestrationPolicy(PROJECT, 'from-persona')).toMatchObject(off);
+    const all = await resolveOrchestrationPolicies(PROJECT, agentsOf(PROJECT));
+    expect(all.get('explicit')).toMatchObject(off);
+    expect(all.get('from-persona')).toMatchObject(off);
+  });
+
+  it('a phone or IPC write of true on a helper still resolves false (#2578)', async () => {
+    setAgents(PROJECT, [agent('orch'), agent('h', { parentAgentId: 'orch' })]);
+    const result = await setOrchestrationPolicy(PROJECT, 'h', { connectToDispatcher: true });
+    expect(result).toMatchObject({ ok: true, policy: { connectToDispatcher: false, sources: { connectToDispatcher: 'default' } } });
   });
 
   it('turning orchestrate off takes an unset connection with it, and leaves an explicit one (#2578)', async () => {

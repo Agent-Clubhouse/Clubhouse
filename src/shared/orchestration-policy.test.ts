@@ -106,9 +106,17 @@ describe('orchestration policy', () => {
         expect(resolveOrchestrationPolicy({ connectToDispatcher: true }, { connectToDispatcher: false }).connectToDispatcher).toBe(true);
       });
 
-      it('keeps a helper off while unset, and honours an explicit value on one', () => {
-        expect(resolveOrchestrationPolicy(undefined, { orchestrate: true }, { helper: true })).toMatchObject({ orchestrate: true, connectToDispatcher: false, sources: { connectToDispatcher: 'default' } });
-        expect(resolveOrchestrationPolicy({ connectToDispatcher: true }, undefined, { helper: true }).connectToDispatcher).toBe(true);
+      it('is always false on a helper, whatever is set, with default as its source', () => {
+        const off = { connectToDispatcher: false, sources: { connectToDispatcher: 'default' } };
+        expect(resolveOrchestrationPolicy(undefined, { orchestrate: true }, { helper: true })).toMatchObject({ orchestrate: true, ...off });
+        expect(resolveOrchestrationPolicy({ connectToDispatcher: true }, undefined, { helper: true })).toMatchObject(off);
+        expect(resolveOrchestrationPolicy(undefined, { connectToDispatcher: true }, { helper: true })).toMatchObject(off);
+        expect(resolveOrchestrationPolicy({ connectToDispatcher: false }, undefined, { helper: true })).toMatchObject(off);
+      });
+
+      it('leaves a helper\'s other fields layered as usual', () => {
+        const policy = resolveOrchestrationPolicy({ control: 'ask-everything' }, { maxHelpers: 2 }, { helper: true });
+        expect(policy).toMatchObject({ control: 'ask-everything', maxHelpers: 2, sources: { control: 'agent', maxHelpers: 'persona' } });
       });
     });
 

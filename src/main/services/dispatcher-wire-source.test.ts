@@ -39,6 +39,7 @@ vi.mock('./agent-config', () => ({
     if (!agents) throw new Error('EACCES');
     return agents;
   }),
+  projectKey: (p: string) => p,
   onAgentConfigChanged: vi.fn((listener: (projectPath: string) => void) => {
     configListeners.add(listener);
     return () => configListeners.delete(listener);
@@ -80,6 +81,7 @@ import {
   watchDispatcherWires,
   _resetDispatcherWireSourceForTesting,
 } from './dispatcher-wire-source';
+import { helperWireBindingSource, _resetHelperWireSourceForTesting } from './helper-wire-source';
 import { notifyPersonaChanged, notifyProjectDefaultPersonaChanged } from './persona-change-hook';
 import { listDurable } from './agent-config';
 import { resolveOrchestrationPolicies } from './orchestration-policy';
@@ -170,9 +172,16 @@ describe('dispatcherWiresForProject', () => {
       agent('durable_plain', { orchestration: { connectToDispatcher: true } }),
       agent('durable_off', { orchestration: optedOut }),
       agent('durable_none'),
-      agent('durable_helper', { orchestration: { orchestrate: true }, parentAgentId: 'durable_default' }),
     ]);
     expect(out.filter((b) => b.agentId === DISPATCHER).map((b) => b.targetId)).toEqual(['durable_default', 'durable_plain']);
+  });
+
+  it('never wires a helper, whatever its policy says (#2578)', async () => {
+    const out = await dispatcherWiresForProject(DISPATCHER, projectPath, [
+      agent('durable_unset', { orchestration: { orchestrate: true }, parentAgentId: 'durable_lead' }),
+      agent('durable_explicit', { orchestration: connected, parentAgentId: 'durable_lead' }),
+    ]);
+    expect(out).toEqual([]);
   });
 
   it('skips disposed agents and the Dispatcher itself', async () => {
@@ -275,6 +284,34 @@ describe('Dispatcher wire rebuild', () => {
     _resetDispatcherWireSourceForTesting();
     await rebuild();
     expect(boundPairs()).toEqual([`${DISPATCHER}->durable_lead`, `durable_lead->${DISPATCHER}`]);
+  });
+});
+
+describe('a helper with the switch set, alongside the helper wires', () => {
+  it('keeps both wires to its orchestrator and has none to the Dispatcher (#2578)', async () => {
+    _resetHelperWireSourceForTesting();
+    configs.set(projectPath, [
+      agent('durable_lead', { orchestration: connected }),
+      agent('durable_h', { orchestration: connected, parentAgentId: 'durable_lead' }),
+    ]);
+    registerPersistedBindingSource(helperWireBindingSource);
+    await rebuild();
+    expect(boundPairs()).toEqual([
+      `${DISPATCHER}->durable_lead`,
+      `durable_h->durable_lead`,
+      `durable_lead->${DISPATCHER}`,
+      `durable_lead->durable_h`,
+    ].sort());
+  });
+});
+
+describe('an agent that becomes a helper', () => {
+  it('loses its Dispatcher wire on the next rebuild (#2578)', async () => {
+    await rebuild();
+    expect(boundPairs()).toContain(`durable_lead->${DISPATCHER}`);
+    configs.set(projectPath, [agent('durable_lead', { orchestration: connected, parentAgentId: 'durable_boss' })]);
+    await rebuild();
+    expect(boundPairs()).toEqual([]);
   });
 });
 
