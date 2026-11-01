@@ -58,6 +58,11 @@ describe('ExperimentalSettingsView', () => {
     });
   });
 
+  it('points the Dispatcher flag at Settings > Dispatcher', async () => {
+    render(<ExperimentalSettingsView />);
+    expect(await screen.findByText(/After turning this on, switch it on in Settings > Dispatcher\./)).toBeInTheDocument();
+  });
+
   it('renders the Chat feature toggle and saves it under the chat id', async () => {
     mockGetExperimentalSettings.mockResolvedValue({ goobers: true });
     render(<ExperimentalSettingsView />);

@@ -92,6 +92,7 @@ describe('settings helpers', () => {
     expect(accessLabel(undefined, false, true)).toBe('Ask before edits');
     expect(accessLabel(undefined, true, false)).toBe('Set by the CLI');
     expect(instructionsLabel('project-manager', null)).toBe('Project Manager');
+    expect(instructionsLabel('dispatcher', null)).toBe('Dispatcher');
     expect(instructionsLabel(undefined, 'a\nb\n')).toBe('Custom, 2 lines');
     expect(instructionsLabel(undefined, 'a')).toBe('Custom, 1 line');
     expect(instructionsLabel(undefined, '  \n')).toBeNull();

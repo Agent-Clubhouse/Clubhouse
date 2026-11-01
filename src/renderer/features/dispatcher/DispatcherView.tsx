@@ -4,7 +4,8 @@ import { AgentTerminal } from '../agents/AgentTerminal';
 import { AgentRuntimePane } from '../agents/chat/AgentRuntimePane';
 import { SleepingAgent } from '../agents/SleepingAgent';
 import { HeadlessAgentView } from '../agents/HeadlessAgentView';
-import { useDispatcherAgentId } from './dispatcherStore';
+import { Button } from '../../components/Button';
+import { useDispatcherAgentId, useDispatcherStore } from './dispatcherStore';
 
 /**
  * The Dispatcher's own view (#2538): the same agent pane a project agent
@@ -15,6 +16,8 @@ import { useDispatcherAgentId } from './dispatcherStore';
 export function DispatcherView() {
   const agentId = useDispatcherAgentId();
   const agent = useAgentStore((s) => (agentId ? s.agents[agentId] : undefined));
+  const loadError = useDispatcherStore((s) => s.loadError);
+  const retryLoad = useDispatcherStore((s) => s.retryLoad);
 
   // A false→true change is what moves focus into the terminal (AgentTerminal).
   const [focused, setFocused] = useState(false);
@@ -25,8 +28,17 @@ export function DispatcherView() {
 
   if (!agent) {
     return (
-      <div className="h-full flex items-center justify-center bg-ctp-base" data-testid="dispatcher-view">
-        <p className="text-sm text-ctp-subtext0">Loading the Dispatcher</p>
+      <div className="h-full flex flex-col items-center justify-center gap-3 bg-ctp-base" data-testid="dispatcher-view">
+        {loadError ? (
+          <>
+            <p role="alert" className="max-w-md text-center text-sm text-ctp-error" data-testid="dispatcher-load-error">
+              Couldn’t load the Dispatcher. {loadError}
+            </p>
+            <Button onClick={retryLoad}>Retry</Button>
+          </>
+        ) : (
+          <p className="text-sm text-ctp-subtext0" role="status">Loading the Dispatcher</p>
+        )}
       </div>
     );
   }

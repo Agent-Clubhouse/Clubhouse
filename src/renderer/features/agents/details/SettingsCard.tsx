@@ -22,7 +22,7 @@ import { isRemoteProjectId, useRemoteProjectStore } from '../../../stores/remote
 import { Button } from '../../../components/Button';
 import { Toggle } from '../../../components/Toggle';
 import { useModelOptions } from '../../../hooks/useModelOptions';
-import { PERSONA_TEMPLATES } from '../../personas';
+import { getPersonaTemplate } from '../../personas';
 import { useAgentSettingsPages } from '../agentSettingsPages';
 import { LEVEL_LABELS } from '../chat/view-model';
 import { useChatFlag } from '../chat/chat-flag';
@@ -78,7 +78,8 @@ export function accessLabel(
 
 /** "Custom, 12 lines", or null for none. */
 export function instructionsLabel(persona: string | undefined, text: string | null): string | null {
-  if (persona) return PERSONA_TEMPLATES.find((p) => p.id === persona)?.name ?? persona;
+  // Hidden personas too, so the Dispatcher's reads "Dispatcher" (#2557).
+  if (persona) return getPersonaTemplate(persona)?.name ?? persona;
   if (!text || !text.trim()) return null;
   const lines = text.trimEnd().split(/\r?\n/).length;
   return `Custom, ${lines} ${lines === 1 ? 'line' : 'lines'}`;

@@ -21,12 +21,20 @@ export interface LocalProject {
 interface DispatcherStoreState {
   state: DispatcherState | null;
   project: LocalProject | null;
+  /** Why its agent didn't load into the agent store, shown by the view with Retry. */
+  loadError: string | null;
+  /** Bumped by Retry; useDispatcherSync loads again when it changes. */
+  loadAttempt: number;
   setState: (state: DispatcherState | null) => void;
+  setLoadError: (error: string | null) => void;
+  retryLoad: () => void;
 }
 
 export const useDispatcherStore = create<DispatcherStoreState>((set, get) => ({
   state: null,
   project: null,
+  loadError: null,
+  loadAttempt: 0,
   setState: (state) => {
     const path = state?.enabled && state.agentId ? state.path : null;
     // Keep the same object while the folder is the same, so selectors stay stable.
@@ -34,6 +42,8 @@ export const useDispatcherStore = create<DispatcherStoreState>((set, get) => ({
     const project = !path ? null : current?.path === path ? current : { id: DISPATCHER_PROJECT_ID, name: 'Dispatcher', path };
     set({ state, project });
   },
+  setLoadError: (loadError) => set({ loadError }),
+  retryLoad: () => set((s) => ({ loadError: null, loadAttempt: s.loadAttempt + 1 })),
 }));
 
 export function isDispatcherProjectId(projectId: string | null | undefined): boolean {

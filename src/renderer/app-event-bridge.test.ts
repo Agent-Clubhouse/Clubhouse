@@ -1015,4 +1015,16 @@ describe('handleProtocolAction', () => {
 
     expect(addToast).toHaveBeenCalledWith('No open project contains /x/y.ts', 'error');
   });
+
+  it("says a file in the Dispatcher's folder doesn't open in Files, and opens no project (#2557)", () => {
+    const addToast = vi.fn();
+    const setActiveProject = vi.fn();
+    vi.mocked(useToastStore.getState).mockReturnValue({ addToast } as never);
+    vi.mocked(useProjectStore.getState).mockReturnValue({ setActiveProject } as never);
+
+    handleProtocolAction({ kind: 'open-file', projectId: '__dispatcher__', relativePath: 'notes/plan.md' });
+
+    expect(addToast).toHaveBeenCalledWith('notes/plan.md is in the Dispatcher’s folder, which doesn’t open in Files.', 'error');
+    expect(setActiveProject).not.toHaveBeenCalled();
+  });
 });

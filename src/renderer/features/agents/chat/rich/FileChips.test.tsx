@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import type { ChatFileInfo, ChatFilePreview } from '../../../../../shared/chat';
 import { useAgentStore } from '../../../../stores/agentStore';
@@ -7,7 +7,9 @@ import { Markdown } from '../MessageBlocks';
 import { CommandCard } from '../ToolBlocks';
 import type { ToolCallItem } from '../../../../stores/chatStore';
 import { RichLinkProvider } from './RichLinks';
-import { FileChipProvider, clearFileChipCache } from './FileChips';
+import { DISPATCHER_OFF, DISPATCHER_PROJECT_ID } from '../../../../../shared/dispatcher-types';
+import { useDispatcherStore } from '../../../dispatcher/dispatcherStore';
+import { FileChipProvider, clearFileChipCache, inDispatcherFolder } from './FileChips';
 import { resetRichChatContentFlag } from './rich-flag';
 
 vi.mock('../../../../plugins/builtin/canvas/ReadOnlyMonacoEditor', () => ({
@@ -32,6 +34,7 @@ const EXISTING: Record<string, ChatFileInfo> = {
   '/repo/README.md': { path: '/repo/README.md', exists: true, kind: 'text', size: 9, name: 'README.md' },
   'shots/a.png': { path: 'shots/a.png', exists: true, kind: 'image', size: 11, name: 'a.png' },
   '/tmp/CH media probe/notes.md': { path: '/tmp/CH media probe/notes.md', exists: true, kind: 'text', size: 20, name: 'notes.md' },
+  'notes/plan.md': { path: 'notes/plan.md', exists: true, kind: 'text', size: 20, name: 'plan.md' },
   'docs/My Notes.md': { path: 'docs/My Notes.md', exists: true, kind: 'text', size: 20, name: 'My Notes.md' },
   'big.log': { path: 'big.log', exists: true, kind: 'text', size: 900_000, name: 'big.log' },
   '/elsewhere/report.pdf': { path: '/elsewhere/report.pdf', exists: true, kind: 'pdf', size: 2048, name: 'report.pdf' },
@@ -333,5 +336,40 @@ describe('PDF previews (#2478)', () => {
     pdfjs.openPdf.mockRejectedValueOnce(new Error('invalid'));
     await openPdfChip('/elsewhere/report.pdf');
     expect((await screen.findByTestId('chat-file-preview-pdf-error')).textContent).toBe("Couldn't read this PDF.");
+  });
+});
+
+describe("the Dispatcher's notes (#2557)", () => {
+  const FOLDER = 'C:\\Users\\me\\.clubhouse\\dispatcher';
+  beforeEach(() => {
+    useDispatcherStore.getState().setState({ enabled: true, flagOn: true, agentId: 'disp', path: FOLDER, config: null });
+    useAgentStore.setState({ agents: { disp: { id: 'disp', projectId: DISPATCHER_PROJECT_ID, name: 'Dispatcher', kind: 'durable', status: 'running', color: 'indigo' } as never } });
+  });
+  afterEach(() => useDispatcherStore.getState().setState(DISPATCHER_OFF));
+
+  it('tells files in its folder apart from files elsewhere', () => {
+    expect(inDispatcherFolder('disp', 'notes/plan.md')).toBe(true);
+    expect(inDispatcherFolder('a1', 'notes/plan.md')).toBe(false);
+    expect(inDispatcherFolder('a1', `${FOLDER}\\notes\\plan.md`)).toBe(true);
+    expect(inDispatcherFolder('disp', `${FOLDER}-old\\plan.md`)).toBe(false);
+    expect(inDispatcherFolder('disp', 'D:\\repo\\src\\main.ts')).toBe(false);
+    useDispatcherStore.getState().setState({ ...DISPATCHER_OFF, agentId: 'disp' });
+    expect(inDispatcherFolder('disp', 'notes/plan.md')).toBe(false);
+  });
+
+  it('previews and reveals a notes file, and says why Open in Files is off', async () => {
+    const { container } = await renderRich(<Markdown text={'Plan in `notes/plan.md`.'} />, 'disp');
+    const chip = await waitFor(() => { const el = container.querySelector('code[data-chat-file]'); expect(el).not.toBeNull(); return el!; });
+    fireEvent.click(chip);
+    expect(await screen.findByTestId('monaco')).toBeTruthy();
+    expect(readFilePreview).toHaveBeenCalledWith('disp', 'notes/plan.md');
+    const open = screen.getByRole('button', { name: 'Open in Files' }) as HTMLButtonElement;
+    expect(open.disabled).toBe(true);
+    const note = screen.getByTestId('chat-file-no-open');
+    expect(open.getAttribute('aria-describedby')).toBe(note.id);
+    expect(note.textContent).toBe('The Dispatcher’s folder isn’t a project, so this doesn’t open in Files.');
+    fireEvent.click(screen.getByRole('button', { name: /Show in|Open in Finder/ }));
+    await waitFor(() => expect(fileAction).toHaveBeenCalledWith('disp', 'notes/plan.md', 'reveal'));
+    expect(fileAction).not.toHaveBeenCalledWith('disp', 'notes/plan.md', 'open');
   });
 });

@@ -4,21 +4,26 @@ import { useAgentStore } from '../../stores/agentStore';
 import { useUIStore } from '../../stores/uiStore';
 import { rendererLog } from '../../plugins/renderer-logger';
 import { useDispatcherState } from './useDispatcherEnabled';
+import { ipcErrorMessage } from '../../utils/ipc-error';
 import { useDispatcherStore } from './dispatcherStore';
 
 /**
  * Keeps the renderer's Dispatcher in step with main (#2538): the shared
  * state, and its agent in the agent store under DISPATCHER_PROJECT_ID with
  * its folder as the project path, loaded the way a project's agents are.
- * Turning it off drops the agent and closes its view. Mounted once, by the
- * shell.
+ * Turning it off drops the agent and closes its view. A failed load is kept
+ * in the store for the view to show, and Retry loads again. Mounted once, by
+ * the shell.
  */
 export function useDispatcherSync(): void {
   const state = useDispatcherState();
   const loadedId = useRef<string | null>(null);
+  const loadAttempt = useDispatcherStore((s) => s.loadAttempt);
 
   useEffect(() => {
-    useDispatcherStore.getState().setState(state);
+    const store = useDispatcherStore.getState();
+    store.setState(state);
+    store.setLoadError(null);
     const on = !!state?.enabled && !!state.agentId && !!state.path;
     if (!on) {
       if (loadedId.current) useAgentStore.getState().removeAgent(loadedId.current);
@@ -34,10 +39,18 @@ export function useDispatcherSync(): void {
       useAgentStore.setState((s) => ({ agents: { ...s.agents, [loaded.id]: { ...s.agents[loaded.id], projectId: DISPATCHER_PROJECT_ID } } }));
     }
     // A config change (model, runtime) arrives as a new state, and reloading picks it up.
-    useAgentStore.getState().loadDurableAgents(DISPATCHER_PROJECT_ID, state.path!).catch((err) => {
+    let current = true;
+    const agentId = state.agentId!;
+    useAgentStore.getState().loadDurableAgents(DISPATCHER_PROJECT_ID, state.path!).then(() => {
+      if (current && !useAgentStore.getState().agents[agentId]) {
+        useDispatcherStore.getState().setLoadError('Its agent wasn’t found in its folder.');
+      }
+    }).catch((err) => {
       rendererLog('core:agents', 'error', 'Failed to load the Dispatcher agent', {
         meta: { error: err instanceof Error ? err.message : String(err) },
       });
+      if (current) useDispatcherStore.getState().setLoadError(ipcErrorMessage(err));
     });
-  }, [state]);
+    return () => { current = false; };
+  }, [state, loadAttempt]);
 }
