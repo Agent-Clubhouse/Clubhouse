@@ -168,6 +168,8 @@ test('copilot: a burst of helper updates becomes one queued turn, and user messa
   const late = fromHelper('helper-4', 'Docs updated.');
   const users = ['First user message.', 'Second user message.'];
   const prompts = [users[0], coalesceUpdateTexts(burst), users[1], late];
+  // The CLI gets the tagged text above; the queue shows each sender and message (#2599).
+  const burstRows = ['helper-1: Tests pass.', 'helper-2: Lint is clean.', 'Clubhouse: Helper helper-3 is ready.'];
   session = await openRichChat({
     cli: 'copilot',
     script: {
@@ -187,9 +189,9 @@ test('copilot: a burst of helper updates becomes one queued turn, and user messa
   await expect(dom.queueItems).toHaveCount(1, { timeout: TURN_TIMEOUT });
   // Updates sent one by one each join the item at the tail (the runtime's merge, #2414);
   // a user message after them starts a new item, and so does the next update.
-  for (const text of burst) {
+  for (const [i, text] of burst.entries()) {
     await session.sendHelperUpdates([text]);
-    await expect(dom.queueItems.nth(1)).toContainText(text, { timeout: TURN_TIMEOUT });
+    await expect(dom.queueItems.nth(1)).toContainText(burstRows[i], { timeout: TURN_TIMEOUT });
     await expect(dom.queueItems).toHaveCount(2);
   }
   await session.queue(users[1]);
@@ -197,9 +199,10 @@ test('copilot: a burst of helper updates becomes one queued turn, and user messa
   await session.sendHelperUpdates([late]);
   await expect(dom.queueItems).toHaveCount(4, { timeout: TURN_TIMEOUT });
   await expect(dom.queueItems.nth(0)).toContainText(users[0]);
-  for (const text of burst) await expect(dom.queueItems.nth(1)).toContainText(text);
+  for (const row of burstRows) await expect(dom.queueItems.nth(1)).toContainText(row);
+  await expect(dom.queueItems.nth(1)).not.toContainText('[FROM HELPER');
   await expect(dom.queueItems.nth(2)).toContainText(users[1]);
-  await expect(dom.queueItems.nth(3)).toContainText(late);
+  await expect(dom.queueItems.nth(3)).toContainText('helper-4: Docs updated.');
 
   await dom.stop.click();
   // One turn per queued item, in order, each with exactly its own text.
