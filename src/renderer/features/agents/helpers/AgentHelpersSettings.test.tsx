@@ -5,6 +5,10 @@ import type { Agent } from '../../../../shared/types';
 import type { OrchestrationPolicy, OrchestrationPolicyPatch, ResolvedOrchestrationPolicy } from '../../../../shared/orchestration-policy';
 import { AgentHelpersSettings } from './AgentHelpersSettings';
 
+/** Whether the Dispatcher is turned on, for the "Connect to Dispatcher" switch (#2534). */
+let dispatcherOn = false;
+vi.mock('../../dispatcher/useDispatcherEnabled', () => ({ useDispatcherEnabled: () => dispatcherOn }));
+
 const PROJECT = path.join('/work', 'proj');
 const lead: Agent = { id: 'lead', projectId: 'p1', name: 'epic-lead', kind: 'durable', status: 'sleeping', color: 'teal' };
 
@@ -12,11 +16,12 @@ let stored: OrchestrationPolicy;
 let helperIds: string[];
 
 function resolved(p: OrchestrationPolicy): ResolvedOrchestrationPolicy {
-  return { ...p, sources: { orchestrate: 'agent', access: 'default', control: 'default', maxHelpers: 'default', crossProjectHelpers: 'default' } };
+  return { ...p, sources: { orchestrate: 'agent', access: 'default', control: 'default', maxHelpers: 'default', crossProjectHelpers: 'default', connectToDispatcher: 'default' } };
 }
 
 beforeEach(() => {
-  stored = { orchestrate: false, access: 'same', control: 'hands-off', maxHelpers: 5, crossProjectHelpers: false };
+  dispatcherOn = false;
+  stored = { orchestrate: false, access: 'same', control: 'hands-off', maxHelpers: 5, crossProjectHelpers: false, connectToDispatcher: false };
   helperIds = [];
   window.clubhouse.agent.getOrchestrationPolicy = vi.fn(async () => resolved(stored));
   window.clubhouse.agent.listDurable = vi.fn(async () => []) as never;
@@ -59,6 +64,27 @@ describe('Agent Helpers settings page (#2232)', () => {
     fireEvent.click(cross);
     await waitFor(() => expect(cross).toHaveAttribute('aria-checked', 'true'));
     expect(window.clubhouse.agent.setOrchestrationPolicy).toHaveBeenLastCalledWith(PROJECT, 'lead', { crossProjectHelpers: true });
+  });
+
+  it('shows Connect to Dispatcher only while orchestrating with the Dispatcher on, and saves it (#2534)', async () => {
+    dispatcherOn = true;
+    render(<AgentHelpersSettings agent={lead} projectPath={PROJECT} />);
+    const toggle = await screen.findByTestId('settings-orchestrate-toggle');
+    expect(screen.queryByTestId('settings-orchestrate-dispatcher')).not.toBeInTheDocument();
+    fireEvent.click(toggle);
+    const sw = await screen.findByTestId('settings-orchestrate-dispatcher');
+    expect(screen.getByText('Connect to Dispatcher')).toBeInTheDocument();
+    expect(screen.getByText('Let the Dispatcher message this agent and get its reports.')).toBeInTheDocument();
+    fireEvent.click(sw);
+    await waitFor(() => expect(sw).toHaveAttribute('aria-checked', 'true'));
+    expect(window.clubhouse.agent.setOrchestrationPolicy).toHaveBeenLastCalledWith(PROJECT, 'lead', { connectToDispatcher: true });
+  });
+
+  it('hides Connect to Dispatcher while the Dispatcher is off (#2534)', async () => {
+    stored = { ...stored, orchestrate: true };
+    render(<AgentHelpersSettings agent={lead} projectPath={PROJECT} />);
+    await screen.findByTestId('settings-orchestrate-cross-project');
+    expect(screen.queryByTestId('settings-orchestrate-dispatcher')).not.toBeInTheDocument();
   });
 
   it('asks about helpers before turning off, as the card does', async () => {

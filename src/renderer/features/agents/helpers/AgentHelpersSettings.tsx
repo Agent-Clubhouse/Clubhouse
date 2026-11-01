@@ -11,12 +11,17 @@ import { Toggle } from '../../../components/Toggle';
 import { Field, SectionHeading, inputClass, selectClass } from '../agentSettingsUi';
 import { controlHelp } from './helper-model';
 import { maxHelpersCeiling, useOrchestration } from './orchestration-hooks';
-import { AccessSelect, CROSS_PROJECT_HELP, ControlSelect, CrossProjectToggle, HelperCountInput, accessNote } from './OrchestrationFields';
+import {
+  AccessSelect, CROSS_PROJECT_HELP, ControlSelect, CrossProjectToggle, DISPATCHER_HELP, DispatcherToggle, HelperCountInput, accessNote,
+} from './OrchestrationFields';
+import { useDispatcherEnabled } from '../../dispatcher/useDispatcherEnabled';
 import { TurnOffOrchestrationDialog } from './TurnOffOrchestrationDialog';
 
 export function AgentHelpersSettings({ agent, projectPath }: { agent: Agent; projectPath: string | undefined }) {
   const orch = useOrchestration(projectPath, agent);
-  const ids = { toggle: useId(), access: useId(), control: useId(), count: useId(), crossProject: useId() };
+  const ids = { toggle: useId(), access: useId(), control: useId(), count: useId(), crossProject: useId(), dispatcher: useId() };
+  // Connect to Dispatcher shows only while the Dispatcher is turned on (#2534).
+  const showDispatcher = useDispatcherEnabled();
   const [countError, setCountError] = useState<string | null>(null);
   const { policy, access, saving } = orch;
   const running = agent.status === 'running';
@@ -79,6 +84,18 @@ export function AgentHelpersSettings({ agent, projectPath }: { agent: Agent; pro
             disabled={saving}
             onChange={(on) => void orch.setCrossProjectHelpers(on)}
             testId="settings-orchestrate-cross-project"
+          />
+        </Field>
+      )}
+      {policy.orchestrate && showDispatcher && (
+        <Field label="Connect to Dispatcher" htmlFor={ids.dispatcher} help={DISPATCHER_HELP}>
+          <DispatcherToggle
+            id={ids.dispatcher}
+            checked={policy.connectToDispatcher}
+            name={agent.name}
+            disabled={saving}
+            onChange={(on) => void orch.setConnectToDispatcher(on)}
+            testId="settings-orchestrate-dispatcher"
           />
         </Field>
       )}

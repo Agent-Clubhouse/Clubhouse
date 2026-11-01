@@ -167,6 +167,8 @@ export interface OrchestrationState {
   setPolicy: (patch: OrchestrationPolicyPatch) => Promise<boolean>;
   setOrchestrate: (on: boolean) => Promise<void>;
   setCrossProjectHelpers: (on: boolean) => Promise<void>;
+  /** "Connect to Dispatcher" (#2534). */
+  setConnectToDispatcher: (on: boolean) => Promise<void>;
   /** The turn-off dialog finished; `policy` is the new one when it went off. */
   finishTurnOff: (policy?: ResolvedOrchestrationPolicy) => void;
   reload: () => void;
@@ -255,6 +257,11 @@ export function useOrchestration(projectPath: string | undefined, agent: Pick<Ag
     await setPolicy({ crossProjectHelpers: on });
   }, [setPolicy]);
 
+  const setConnectToDispatcher = useCallback(async (on: boolean) => {
+    setNote(null);
+    await setPolicy({ connectToDispatcher: on });
+  }, [setPolicy]);
+
   const finishTurnOff = useCallback((next?: ResolvedOrchestrationPolicy) => {
     setTurnOff(null);
     if (next) setPolicyState(next);
@@ -264,8 +271,8 @@ export function useOrchestration(projectPath: string | undefined, agent: Pick<Ag
   const reload = useCallback(() => setNonce((n) => n + 1), []);
 
   return useMemo(() => ({
-    policy, access, globalCap, saving, error, note, turnOff, setPolicy, setOrchestrate, setCrossProjectHelpers, finishTurnOff, reload,
-  }), [policy, access, globalCap, saving, error, note, turnOff, setPolicy, setOrchestrate, setCrossProjectHelpers, finishTurnOff, reload]);
+    policy, access, globalCap, saving, error, note, turnOff, setPolicy, setOrchestrate, setCrossProjectHelpers, setConnectToDispatcher, finishTurnOff, reload,
+  }), [policy, access, globalCap, saving, error, note, turnOff, setPolicy, setOrchestrate, setCrossProjectHelpers, setConnectToDispatcher, finishTurnOff, reload]);
 }
 
 // ── Start approvals (#2234) ─────────────────────────────────────────────

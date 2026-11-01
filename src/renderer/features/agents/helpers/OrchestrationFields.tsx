@@ -17,6 +17,9 @@ import { Toggle } from '../../../components/Toggle';
 import { ACCESS_LEVEL_LABELS, CONTROL_LABELS, aboveCeiling, accessLabel } from './helper-model';
 import { parseHelperCount } from './orchestration-hooks';
 
+/** The help line under the "Connect to Dispatcher" switch (#2534). */
+export const DISPATCHER_HELP = 'Let the Dispatcher message this agent and get its reports.';
+
 /** The help line under the "Cross-project helpers" switch (#2512). */
 export const CROSS_PROJECT_HELP = 'Let this agent start helpers in other projects.';
 
@@ -132,6 +135,27 @@ export function CrossProjectToggle({ id, checked, name, disabled, onChange, test
       disabled={disabled}
       onChange={onChange}
       aria-label={`Let ${name} start helpers in other projects`}
+      data-testid={testId}
+    />
+  );
+}
+
+/** "Connect to Dispatcher" (#2534): may the Dispatcher message this agent and get its reports. */
+export function DispatcherToggle({ id, checked, name, disabled, onChange, testId }: {
+  id?: string;
+  checked: boolean;
+  name: string;
+  disabled?: boolean;
+  onChange: (on: boolean) => void;
+  testId?: string;
+}) {
+  return (
+    <Toggle
+      id={id}
+      checked={checked}
+      disabled={disabled}
+      onChange={onChange}
+      aria-label={`Connect ${name} to the Dispatcher`}
       data-testid={testId}
     />
   );

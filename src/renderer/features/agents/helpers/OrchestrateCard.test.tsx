@@ -13,10 +13,14 @@ import { OrchestrateCard, orchestrateSummary } from './OrchestrateCard';
 import { blockedSummary } from './TurnOffOrchestrationDialog';
 import { useOrchestration } from './orchestration-hooks';
 
+/** Whether the Dispatcher is turned on, for the "Connect to Dispatcher" switch (#2534). */
+let dispatcherOn = false;
+vi.mock('../../dispatcher/useDispatcherEnabled', () => ({ useDispatcherEnabled: () => dispatcherOn }));
+
 const PROJECT = path.join('/work', 'proj');
 
 function resolved(p: OrchestrationPolicy): ResolvedOrchestrationPolicy {
-  return { ...p, sources: { orchestrate: 'agent', access: 'default', control: 'default', maxHelpers: 'default', crossProjectHelpers: 'default' } };
+  return { ...p, sources: { orchestrate: 'agent', access: 'default', control: 'default', maxHelpers: 'default', crossProjectHelpers: 'default', connectToDispatcher: 'default' } };
 }
 
 const lead: Agent = {
@@ -37,7 +41,8 @@ function config(id: string, name: string, extra: Partial<DurableAgentConfig> = {
 }
 
 beforeEach(() => {
-  stored = { orchestrate: false, access: 'same', control: 'hands-off', maxHelpers: 5, crossProjectHelpers: false };
+  dispatcherOn = false;
+  stored = { orchestrate: false, access: 'same', control: 'hands-off', maxHelpers: 5, crossProjectHelpers: false, connectToDispatcher: false };
   helperIds = [];
   helperProjects = undefined;
   keptElsewhere = 0;
@@ -81,8 +86,8 @@ async function renderCard(agent?: Agent) {
 describe('orchestrateSummary', () => {
   it('answers in one line', () => {
     expect(orchestrateSummary({ policy: null })).toBe('');
-    expect(orchestrateSummary({ policy: resolved({ orchestrate: false, access: 'same', control: 'hands-off', maxHelpers: 5, crossProjectHelpers: false }) })).toBe('off');
-    expect(orchestrateSummary({ policy: resolved({ orchestrate: true, access: 'same', control: 'ask-before-start', maxHelpers: 3, crossProjectHelpers: false }) })).toBe('ask before starting · up to 3');
+    expect(orchestrateSummary({ policy: resolved({ orchestrate: false, access: 'same', control: 'hands-off', maxHelpers: 5, crossProjectHelpers: false, connectToDispatcher: false }) })).toBe('off');
+    expect(orchestrateSummary({ policy: resolved({ orchestrate: true, access: 'same', control: 'ask-before-start', maxHelpers: 3, crossProjectHelpers: false, connectToDispatcher: false }) })).toBe('ask before starting · up to 3');
   });
 });
 
@@ -185,6 +190,27 @@ describe('Orchestrate card (#2232)', () => {
     fireEvent.click(cross);
     await waitFor(() => expect(cross).toHaveAttribute('aria-checked', 'true'));
     expect(window.clubhouse.agent.setOrchestrationPolicy).toHaveBeenLastCalledWith(PROJECT, 'lead', { crossProjectHelpers: true });
+  });
+
+  it('shows Connect to Dispatcher only while orchestrating with the Dispatcher on, and saves it (#2534)', async () => {
+    dispatcherOn = true;
+    await renderCard();
+    expect(screen.queryByTestId('orchestrate-dispatcher')).not.toBeInTheDocument();
+    fireEvent.click(screen.getByTestId('orchestrate-toggle'));
+    const sw = await screen.findByTestId('orchestrate-dispatcher');
+    expect(sw).toHaveAttribute('aria-checked', 'false');
+    expect(screen.getByText('Connect to Dispatcher')).toBeInTheDocument();
+    expect(screen.getByText('Let the Dispatcher message this agent and get its reports.')).toBeInTheDocument();
+    fireEvent.click(sw);
+    await waitFor(() => expect(sw).toHaveAttribute('aria-checked', 'true'));
+    expect(window.clubhouse.agent.setOrchestrationPolicy).toHaveBeenLastCalledWith(PROJECT, 'lead', { connectToDispatcher: true });
+  });
+
+  it('hides Connect to Dispatcher while the Dispatcher is off (#2534)', async () => {
+    stored = { ...stored, orchestrate: true, connectToDispatcher: true };
+    await renderCard();
+    await screen.findByTestId('orchestrate-cross-project');
+    expect(screen.queryByTestId('orchestrate-dispatcher')).not.toBeInTheDocument();
   });
 
   it('says helpers in other projects keep running when cross-project helpers go off', async () => {

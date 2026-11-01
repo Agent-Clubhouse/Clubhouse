@@ -122,6 +122,12 @@ describe('help-content', () => {
       expect(content).toMatch(/older version of Clubhouse/);
     });
 
+    it('covers the Connect to Dispatcher switch (#2534)', () => {
+      const content = find(HELP_SECTIONS, 'agents-orchestrated-helpers').content;
+      expect(content).toContain('**Connect to Dispatcher**');
+      expect(content).toContain('| `connectToDispatcher` |');
+    });
+
     it('shows persona bodies without their settings front-matter', () => {
       for (const sections of [HELP_SECTIONS, CHROME_HELP_SECTIONS]) {
         const orchestrator = find(sections, 'persona-orchestrator').content;
