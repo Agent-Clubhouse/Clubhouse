@@ -80,6 +80,11 @@ vi.mock('../services/orchestrator-connections', () => ({
   watchOrchestratorConnections: vi.fn(() => () => undefined),
 }));
 
+vi.mock('../services/dispatcher-wire-source', () => ({
+  dispatcherWireBindingSource: { id: 'dispatcher-wires', prune: true, collect: vi.fn(async () => []) },
+  watchDispatcherWires: vi.fn(() => () => undefined),
+}));
+
 import { ipcMain, BrowserWindow } from 'electron';
 import { IPC } from '../../shared/ipc-channels';
 import { MCP_UNBIND_CANVAS_CLEANUP } from '../../shared/mcp-unbind';
@@ -99,6 +104,7 @@ import {
 import { canvasWireBindingSource } from '../services/canvas-wire-source';
 import { helperWireBindingSource, watchHelperWires } from '../services/helper-wire-source';
 import { orchestratorConnectionSource, watchOrchestratorConnections } from '../services/orchestrator-connections';
+import { dispatcherWireBindingSource, watchDispatcherWires } from '../services/dispatcher-wire-source';
 import { registerConnectionTools } from '../services/clubhouse-mcp/tools/connection-tools';
 import {
   registerMcpBindingHandlers,
@@ -560,13 +566,14 @@ describe('restorePersistedBindings (#1544)', () => {
     expect(rebuildPersistedBindings).not.toHaveBeenCalled();
   });
 
-  it('registers the canvas, helper wire and orchestrator connection sources once and rebuilds on every call', () => {
+  it('registers the canvas, helper wire, orchestrator connection and Dispatcher wire sources once and rebuilds on every call', () => {
     restorePersistedBindings();
     restorePersistedBindings();
     expect(vi.mocked(registerPersistedBindingSource).mock.calls.map(([source]) => source)).toEqual([
       canvasWireBindingSource,
       helperWireBindingSource,
       orchestratorConnectionSource,
+      dispatcherWireBindingSource,
     ]);
     expect(rebuildPersistedBindings).toHaveBeenCalledTimes(2);
   });
@@ -589,6 +596,22 @@ describe('restorePersistedBindings (#1544)', () => {
     const onWiresChanged = vi.mocked(watchHelperWires).mock.calls.at(-1)![0];
     onWiresChanged();
     expect(rebuildPersistedBindings).toHaveBeenCalledTimes(2);
+  });
+
+  it('rebuilds again when the Dispatcher wires change (#2537)', () => {
+    restorePersistedBindings();
+    expect(watchDispatcherWires).toHaveBeenCalledTimes(1);
+    const onWiresChanged = vi.mocked(watchDispatcherWires).mock.calls.at(-1)![0];
+    onWiresChanged();
+    expect(rebuildPersistedBindings).toHaveBeenCalledTimes(2);
+  });
+
+  it('stops watching the Dispatcher wires on reset (#2537)', () => {
+    const stop = vi.fn();
+    vi.mocked(watchDispatcherWires).mockReturnValueOnce(stop);
+    restorePersistedBindings();
+    _resetHandlersForTesting();
+    expect(stop).toHaveBeenCalledTimes(1);
   });
 
   it('runs when MCP is turned on later', () => {

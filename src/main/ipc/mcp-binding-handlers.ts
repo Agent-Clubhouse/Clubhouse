@@ -33,6 +33,7 @@ import { canvasWireBindingSource } from '../services/canvas-wire-source';
 import { MCP_UNBIND_CANVAS_CLEANUP } from '../../shared/mcp-unbind';
 import { helperWireBindingSource, watchHelperWires } from '../services/helper-wire-source';
 import { ORCHESTRATOR_CONNECTION_SOURCE_ID, orchestratorConnectionSource, watchOrchestratorConnections } from '../services/orchestrator-connections';
+import { dispatcherWireBindingSource, watchDispatcherWires } from '../services/dispatcher-wire-source';
 import { broadcastToAllWindows } from '../util/ipc-broadcast';
 import { withValidatedArgs, stringArg, objectArg, arrayArg } from './validation';
 
@@ -282,11 +283,13 @@ export function onMcpSettingsChanged(): void {
 let persistedSourcesRegistered = false;
 let stopWatchingHelperWires: (() => void) | null = null;
 let stopWatchingOrchestratorConnections: (() => void) | null = null;
+let stopWatchingDispatcherWires: (() => void) | null = null;
 
 /**
  * Rebuild bindings from every persisted wire store (canvas wires, #1544,
  * orchestrator ↔ helper wires from the agent config, #2225, and connections
- * made with the orchestrator connection tools, #2230) so tools and
+ * made with the orchestrator connection tools, #2230, and Dispatcher ↔
+ * orchestrator wires from the orchestration policy, #2537) so tools and
  * group-project membership don't wait for a canvas to be opened. Runs only
  * once MCP is on, and again whenever a project's helper wires change.
  * Idempotent: bindings that already exist are left alone, so calling it again
@@ -301,6 +304,8 @@ export function restorePersistedBindings(): Promise<void> {
     stopWatchingHelperWires = watchHelperWires(() => restorePersistedBindings());
     registerPersistedBindingSource(orchestratorConnectionSource);
     stopWatchingOrchestratorConnections = watchOrchestratorConnections(() => restorePersistedBindings());
+    registerPersistedBindingSource(dispatcherWireBindingSource);
+    stopWatchingDispatcherWires = watchDispatcherWires(() => restorePersistedBindings());
   }
   return rebuildPersistedBindings().then((): void => undefined, (err): void => {
     appLog('core:mcp', 'error', 'Persisted binding rebuild failed', {
@@ -317,5 +322,7 @@ export function _resetHandlersForTesting(): void {
   stopWatchingHelperWires = null;
   stopWatchingOrchestratorConnections?.();
   stopWatchingOrchestratorConnections = null;
+  stopWatchingDispatcherWires?.();
+  stopWatchingDispatcherWires = null;
   bridgeState = 'idle';
 }
