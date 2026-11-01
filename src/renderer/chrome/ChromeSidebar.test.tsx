@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import React from 'react';
-import { render, screen, fireEvent, within, act } from '@testing-library/react';
+import { render, screen, fireEvent, within, act, waitFor } from '@testing-library/react';
 
 vi.mock('../panels/AccessoryPanel', async (orig) => ({
   ...(await orig<typeof import('../panels/AccessoryPanel')>()),
@@ -38,7 +38,10 @@ import { useChromeFlagStore } from './chromeFlag';
 import { useHelperStartRequestStore } from '../stores/helperStartRequestStore';
 import { useAgentDetailsStore } from '../features/agents/details/detailsStore';
 import { useDispatcherStore } from '../features/dispatcher/dispatcherStore';
-import { DISPATCHER_PROJECT_ID, DISPATCHER_OFF } from '../../shared/dispatcher-types';
+import { useDispatcherSync } from '../features/dispatcher/useDispatcherSync';
+import { DispatcherView } from '../features/dispatcher/DispatcherView';
+import { DISPATCHER_PROJECT_ID, DISPATCHER_OFF, type DispatcherState } from '../../shared/dispatcher-types';
+import type { DurableAgentConfig } from '../../shared/types';
 
 function registerAppPlugin(id: string, label: string, position: 'top' | 'bottom' = 'top') {
   usePluginStore.getState().registerPlugin(
@@ -746,6 +749,73 @@ describe('ChromeSidebar Dispatcher (#2538)', () => {
     useDispatcherStore.getState().setState({ ...DISPATCHER_OFF, agentId: 'disp', path: 'dispatcher-dir' });
     render(<ChromeSidebar />);
     expect(screen.queryByTestId('needs-you-row-disp')).toBeNull();
+  });
+
+  describe('when its agent fails to load (#2572)', () => {
+    const config = { id: 'disp', name: 'Dispatcher', color: 'indigo', createdAt: '2026-10-31T00:00:00.000Z' } as DurableAgentConfig;
+    const ON: DispatcherState = { enabled: true, flagOn: true, agentId: 'disp', path: 'dispatcher-dir', config };
+    const originals = { get: window.clubhouse.dispatcher.get, listDurable: window.clubhouse.agent.listDurable };
+    /** The shell's pieces: the sync hook, the sidebar, and the view while it's open. */
+    function Shell() {
+      useDispatcherSync();
+      const open = useUIStore((s) => s.dispatcherOpen);
+      return <><ChromeSidebar />{open && <DispatcherView />}</>;
+    }
+    beforeEach(() => {
+      useAgentStore.setState((s) => {
+        const { disp: _gone, ...agents } = s.agents;
+        return { agents };
+      });
+      window.clubhouse.dispatcher.get = vi.fn().mockResolvedValue(ON);
+    });
+    afterEach(() => {
+      window.clubhouse.dispatcher.get = originals.get;
+      window.clubhouse.agent.listDurable = originals.listDurable;
+      useDispatcherStore.setState({ loadError: null });
+    });
+
+    it('still shows the row, which opens the view with the error and Retry, and Retry recovers', async () => {
+      window.clubhouse.agent.listDurable = vi.fn()
+        .mockRejectedValueOnce(new Error('disk unavailable'))
+        .mockResolvedValue([config]);
+      render(<Shell />);
+      await waitFor(() => expect(useDispatcherStore.getState().loadError).toBe('disk unavailable'));
+
+      const row = within(screen.getByTestId('dispatcher-row')).getByTestId('dispatcher-row-pending');
+      const item = within(row).getByRole('treeitem', { name: 'Dispatcher' });
+      expect(item.tabIndex).toBe(0);
+      expect(item.getAttribute('aria-selected')).toBe('false');
+      expect(within(item).getByRole('img', { name: 'Error' })).toBeTruthy();
+      expect(item.getAttribute('aria-describedby')).toBeTruthy();
+      expect(document.getElementById(item.getAttribute('aria-describedby')!)!.textContent).toBe('couldn’t load');
+
+      fireEvent.keyDown(item, { key: 'Enter' });
+      expect(useUIStore.getState().dispatcherOpen).toBe(true);
+      expect(item.getAttribute('aria-selected')).toBe('true');
+      expect(screen.getByRole('alert').textContent).toBe('Couldn’t load the Dispatcher. disk unavailable');
+
+      fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
+      await waitFor(() => expect(screen.getByTestId('agent-item-disp')).toBeTruthy());
+      expect(screen.queryByTestId('dispatcher-row-pending')).toBeNull();
+      expect(screen.queryByRole('alert')).toBeNull();
+      expect(screen.getByTestId('dispatcher-view').getAttribute('data-agent-id')).toBe('disp');
+    });
+
+    it('shows a neutral loading status while the load is pending', () => {
+      window.clubhouse.agent.listDurable = vi.fn(() => new Promise<never>(() => {}));
+      useDispatcherStore.getState().setState(ON);
+      render(<ChromeSidebar />);
+      const item = within(screen.getByTestId('dispatcher-row-pending')).getByRole('treeitem', { name: 'Dispatcher' });
+      expect(within(item).getByRole('img', { name: 'Starting' })).toBeTruthy();
+      expect(item.textContent).toContain('loading');
+    });
+
+    it('shows no row while the Dispatcher is off, even with an agent id', () => {
+      useDispatcherStore.getState().setState({ ...DISPATCHER_OFF, agentId: 'disp', path: 'dispatcher-dir' });
+      useDispatcherStore.getState().setLoadError('disk unavailable');
+      render(<ChromeSidebar />);
+      expect(screen.queryByTestId('dispatcher-row')).toBeNull();
+    });
   });
 
   it('offers no delete, duplicate, persona or pop out in its menu, and Settings opens Settings > Dispatcher', () => {

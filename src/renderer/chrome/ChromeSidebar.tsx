@@ -325,7 +325,9 @@ export function ChromeSidebar() {
   const dispatcherAgentId = useDispatcherAgentId();
   const dispatcherAgent = dispatcherAgentId ? agents[dispatcherAgentId] : undefined;
   const dispatcherPath = useDispatcherStore((s) => s.project?.path);
-  const dispatcherShown = useUIStore((s) => s.dispatcherOpen) && !!dispatcherAgent;
+  const dispatcherLoadError = useDispatcherStore((s) => s.loadError);
+  // Shown from its state, so a failed agent load still opens the view with its error (#2572).
+  const dispatcherShown = useUIStore((s) => s.dispatcherOpen) && !!dispatcherAgentId;
 
   // The filter narrows the tree in place (#2031); it applies only while the tree is shown.
   const [filter, setFilter] = useState('');
@@ -678,12 +680,13 @@ export function ChromeSidebar() {
 
       <AppRow inline={inlineItems} overflow={overflowItems} explorerTab={explorerTab} onOpen={openAppItem} />
 
-      {dispatcherAgent && (
+      {dispatcherAgentId && (
         <DispatcherRow
           agent={dispatcherAgent}
-          detailed={detailed[dispatcherAgent.id]}
+          detailed={detailed[dispatcherAgentId]}
           active={dispatcherShown}
           projectPath={dispatcherPath}
+          loadError={dispatcherLoadError}
           onSelect={openDispatcherRow}
         />
       )}

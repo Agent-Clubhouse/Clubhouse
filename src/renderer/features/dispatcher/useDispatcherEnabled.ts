@@ -59,7 +59,25 @@ export function useDispatcherEnabled(): boolean {
   return useDispatcherState()?.enabled ?? false;
 }
 
-/** True while the experimental flag is on, which shows Settings > Dispatcher. */
+/**
+ * True while the experimental flag is on, which shows Settings > Dispatcher.
+ * Follows `dispatcher:changed`. If the read fails before any state arrives,
+ * the flag is read from the experimental settings instead, so the page and
+ * its error and Retry can still be reached (#2572).
+ */
 export function useDispatcherFlagOn(): boolean {
-  return useDispatcherState()?.flagOn ?? false;
+  const { state, error } = useDispatcherRead();
+  const [fallback, setFallback] = useState(false);
+  const failed = !state && !!error;
+  useEffect(() => {
+    if (!failed) return;
+    let cancelled = false;
+    window.clubhouse.app.getExperimentalSettings().then((s) => {
+      if (!cancelled) setFallback(!!s.dispatcher);
+    }).catch(() => {
+      // telemetry-exempt: the item stays hidden, as it was.
+    });
+    return () => { cancelled = true; };
+  }, [failed]);
+  return state ? state.flagOn : failed && fallback;
 }

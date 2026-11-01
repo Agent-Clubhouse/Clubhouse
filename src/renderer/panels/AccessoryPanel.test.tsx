@@ -1,4 +1,4 @@
-import { act, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { useUIStore } from '../stores/uiStore';
 import { useUpdateStore } from '../stores/updateStore';
@@ -8,6 +8,7 @@ import { useRemoteProjectStore } from '../stores/remoteProjectStore';
 import type { DispatcherState } from '../../shared/dispatcher-types';
 import { DISPATCHER_OFF } from '../../shared/dispatcher-types';
 import { AccessoryPanel } from './AccessoryPanel';
+import { DispatcherSettingsView } from '../features/settings/DispatcherSettingsView';
 
 vi.mock('../plugins/plugin-loader', () => ({
   getActiveContext: () => null,
@@ -126,6 +127,59 @@ describe('SettingsCategoryNav (via AccessoryPanel)', () => {
     expect(screen.getByText('Dispatcher')).toBeInTheDocument();
     act(() => emit?.(DISPATCHER_OFF));
     expect(screen.queryByText('Dispatcher')).not.toBeInTheDocument();
+  });
+
+  describe('when the first Dispatcher read fails (#2572)', () => {
+    let emit: ((s: DispatcherState) => void) | null;
+    let failing: boolean;
+    const FLAG_ON: DispatcherState = { ...DISPATCHER_OFF, flagOn: true };
+    /** The nav, and Settings > Dispatcher once it's picked. */
+    function Settings() {
+      const page = useUIStore((s) => s.settingsSubPage);
+      return <><AccessoryPanel />{page === 'dispatcher' && <DispatcherSettingsView />}</>;
+    }
+    beforeEach(() => {
+      emit = null;
+      failing = true;
+      window.clubhouse.app.isPreviewEligible = vi.fn().mockResolvedValue(false);
+      window.clubhouse.dispatcher.get = vi.fn(async () => {
+        if (failing) throw new Error("Error invoking remote method 'dispatcher:get': Error: IPC down");
+        return FLAG_ON;
+      });
+      window.clubhouse.dispatcher.onChanged = vi.fn((cb) => { emit = cb; return () => { emit = null; }; });
+    });
+
+    it('shows the item from the flag, whose page shows the error, and Retry recovers', async () => {
+      window.clubhouse.app.getExperimentalSettings = vi.fn().mockResolvedValue({ dispatcher: true });
+      render(<Settings />);
+      const item = await screen.findByRole('button', { name: 'Dispatcher' });
+      item.focus();
+      fireEvent.click(item);
+      expect(useUIStore.getState().settingsSubPage).toBe('dispatcher');
+      const alert = await screen.findByRole('alert');
+      expect(alert.textContent).toBe('Couldn’t load the Dispatcher’s settings. IPC down');
+
+      failing = false;
+      await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Retry' })); });
+      expect(await screen.findByRole('switch', { name: 'Turn on Dispatcher' })).toBeTruthy();
+      expect(screen.queryByRole('alert')).toBeNull();
+      expect(screen.getByRole('button', { name: 'Dispatcher' })).toBeInTheDocument();
+    });
+
+    it('keeps the item hidden while the flag is off', async () => {
+      window.clubhouse.app.getExperimentalSettings = vi.fn().mockResolvedValue({});
+      render(<AccessoryPanel />);
+      await waitFor(() => expect(window.clubhouse.app.getExperimentalSettings).toHaveBeenCalledTimes(2));
+      expect(screen.queryByText('Dispatcher')).not.toBeInTheDocument();
+    });
+
+    it('still follows the flag live once a change arrives', async () => {
+      window.clubhouse.app.getExperimentalSettings = vi.fn().mockResolvedValue({ dispatcher: true });
+      render(<AccessoryPanel />);
+      expect(await screen.findByText('Dispatcher')).toBeInTheDocument();
+      act(() => emit?.(DISPATCHER_OFF));
+      expect(screen.queryByText('Dispatcher')).not.toBeInTheDocument();
+    });
   });
 });
 
