@@ -292,6 +292,20 @@ describe('BindingManager', () => {
       expect(listener).toHaveBeenCalledWith('agent-1');
     });
 
+    it('patches the label fields it is given and leaves the rest (#2561)', () => {
+      bindingManager.bind('agent-1', { targetId: 'a-2', targetKind: 'agent', label: 'Lead', agentName: 'Me', targetName: 'Lead', projectName: 'Old' });
+      expect(bindingManager.updateBinding('agent-1', 'a-2', { label: 'Boss', targetName: 'Boss' })).toBe(true);
+      expect(bindingManager.getBindingsForAgent('agent-1')[0]).toMatchObject({ label: 'Boss', agentName: 'Me', targetName: 'Boss', projectName: 'Old' });
+    });
+
+    it('does not notify when nothing changed', () => {
+      bindingManager.bind('agent-1', { targetId: 'gp-1', targetKind: 'group-project', label: 'GP', projectName: 'Same' });
+      const listener = vi.fn();
+      bindingManager.onChange(listener);
+      expect(bindingManager.updateBinding('agent-1', 'gp-1', { projectName: 'Same', label: 'GP' })).toBe(false);
+      expect(listener).not.toHaveBeenCalled();
+    });
+
     it('is a no-op for non-existent agent', () => {
       const listener = vi.fn();
       bindingManager.onChange(listener);

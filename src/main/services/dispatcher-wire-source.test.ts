@@ -184,6 +184,22 @@ describe('Dispatcher wire rebuild', () => {
     expect(result.sources.find((s) => s.id === 'dispatcher-wires')).toMatchObject({ collected: 2, created: 2 });
   });
 
+  it('relabels the live wires in place when the project is renamed (#2561)', async () => {
+    await rebuild();
+    const toLead = () => bindingManager.getBindingsForAgent(DISPATCHER).find((b) => b.targetId === 'durable_lead')!;
+    const fromLead = () => bindingManager.getBindingsForAgent('durable_lead').find((b) => b.targetId === DISPATCHER)!;
+    const before = toLead();
+    expect(before.projectName).toBe('Wardfall');
+
+    projects.list = projects.list.map((p) => (p.id === 'proj_w' ? { ...p, displayName: 'Wardfall Two' } : p));
+    const result = await rebuild();
+    expect(result.sources.find((s) => s.id === 'dispatcher-wires')).toMatchObject({ created: 0, existing: 2, pruned: 0 });
+    // The same bindings, relabelled: the wires never dropped.
+    expect(toLead()).toBe(before);
+    expect(toLead().projectName).toBe('Wardfall Two');
+    expect(fromLead().projectName).toBe('Wardfall Two');
+  });
+
   it('binds nothing while the Dispatcher is off, and removes its wires when it turns off', async () => {
     dispatcher.enabled = false;
     await rebuild();

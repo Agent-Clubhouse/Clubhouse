@@ -10,9 +10,12 @@
  * the renderer's IPC path uses.
  *
  * Applying is idempotent: a binding that already exists (the renderer bound it
- * first, or a second rebuild runs) is left untouched, so a later canvas
+ * first, or a second rebuild runs) is not created again, so a later canvas
  * hydrate can't double-create one and the rebuild never overwrites
- * instructions edited since. Sources only read their stores; this module never
+ * instructions edited since. A pruning source derives its labels from live
+ * state, so when it lists a binding that already exists under an old label (a
+ * renamed project, #2561) the label fields are updated in place
+ * ({@link relabelBinding}); the wire stays up. Sources only read their stores; this module never
  * writes them.
  *
  * A restore is silent: it brings back tools and wires only. Each binding it
@@ -264,10 +267,26 @@ export function getPersistedBindingSourceIds(): string[] {
 }
 
 /**
- * Create one persisted binding if it does not exist yet, with its
- * instructions and disabled tools. An existing binding is left as it is.
+ * Bring an existing binding's label fields up to date with `binding` (a
+ * renamed project or agent, #2561). Updated in place, never unbound and bound
+ * again, so a live wire doesn't drop; a change refreshes the agent's tool
+ * list through the binding manager's change listeners.
  */
-export function applyPersistedBinding(binding: PersistedBinding): ApplyOutcome {
+function relabelBinding(binding: PersistedBinding): void {
+  bindingManager.updateBinding(binding.agentId, binding.targetId, {
+    label: binding.label,
+    agentName: binding.agentName,
+    targetName: binding.targetName,
+    projectName: binding.projectName,
+  });
+}
+
+/**
+ * Create one persisted binding if it does not exist yet, with its
+ * instructions and disabled tools. An existing binding keeps its instructions
+ * and disabled tools; with `relabel` its label fields are brought up to date.
+ */
+export function applyPersistedBinding(binding: PersistedBinding, options: { relabel?: boolean } = {}): ApplyOutcome {
   if (!binding || !binding.agentId || !binding.targetId || !binding.label || !VALID_TARGET_KINDS.has(binding.targetKind)) {
     return 'invalid';
   }
@@ -286,6 +305,7 @@ export function applyPersistedBinding(binding: PersistedBinding): ApplyOutcome {
   });
   if (!created) {
     if (!alreadyRestored) restoredPairs.delete(key);
+    if (options.relabel) relabelBinding(binding);
     return 'existing';
   }
   if (binding.instructions && Object.keys(binding.instructions).length > 0) {
@@ -306,7 +326,8 @@ export function applyPersistedBinding(binding: PersistedBinding): ApplyOutcome {
  * Follows the #2246 ownership rules: the source owns the binding only when
  * this call created it, so a binding a canvas wire, zone or another source
  * made first is never the source's to remove. A pair the user removed this
- * session is not bound ('removed'): only the user can draw it again.
+ * session is not bound ('removed'): only the user can draw it again. A pair
+ * already bound keeps its binding, with its label fields updated ('existing').
  */
 export function claimSourceBinding(sourceId: string, binding: PersistedBinding): 'created' | 'existing' | 'removed' | 'invalid' {
   if (!binding || !binding.agentId || !binding.targetId || !binding.label || !VALID_TARGET_KINDS.has(binding.targetKind)) {
@@ -330,7 +351,10 @@ export function claimSourceBinding(sourceId: string, binding: PersistedBinding):
     claimed.add(key);
   }
   const alreadyBound = bindingManager.getBindingsForAgent(binding.agentId).some((b) => b.targetId === binding.targetId);
-  if (alreadyBound) return 'existing';
+  if (alreadyBound) {
+    relabelBinding(binding);
+    return 'existing';
+  }
   // Not a restore: the lifecycle must announce this join. Only cleared for a
   // pair that is not bound, so a restore whose join is still pending stays silent.
   restoredPairs.delete(key);
@@ -411,7 +435,8 @@ async function rebuildSource(source: PersistedBindingSource): Promise<SourceRun>
     ownedBySource.set(source.id, owned);
   }
   for (const binding of bindings) {
-    const outcome = applyPersistedBinding(binding);
+    // Pruning sources derive labels from live state: theirs are current.
+    const outcome = applyPersistedBinding(binding, { relabel: source.prune });
     result[outcome]++;
     if (outcome === 'invalid') continue;
     const key = pairKey(binding.agentId, binding.targetId);

@@ -74,18 +74,30 @@ class BindingManager {
     this.notifyChange(agentId);
   }
 
-  /** Update metadata on a binding (e.g. refreshed projectName from the registry). */
-  updateBinding(agentId: string, targetId: string, updates: { projectName?: string }): void {
-    const agentBindings = this.bindings.get(agentId);
-    if (!agentBindings) return;
+  /**
+   * Update the label fields of a binding in place (a renamed project or
+   * agent), keeping the binding itself. Fields left undefined stay as they
+   * are. Listeners are notified only when something changed, so the agent's
+   * tool list refreshes without the wire dropping. Returns true on a change.
+   */
+  updateBinding(
+    agentId: string,
+    targetId: string,
+    updates: { label?: string; agentName?: string; targetName?: string; projectName?: string },
+  ): boolean {
+    const binding = this.bindings.get(agentId)?.find(b => b.targetId === targetId);
+    if (!binding) return false;
 
-    const binding = agentBindings.find(b => b.targetId === targetId);
-    if (!binding) return;
-
-    if (updates.projectName !== undefined) {
-      binding.projectName = updates.projectName;
+    let changed = false;
+    for (const field of ['label', 'agentName', 'targetName', 'projectName'] as const) {
+      const value = updates[field];
+      if (value !== undefined && binding[field] !== value) {
+        binding[field] = value;
+        changed = true;
+      }
     }
-    this.notifyChange(agentId);
+    if (changed) this.notifyChange(agentId);
+    return changed;
   }
 
   /** Set disabled tools on a binding. */
