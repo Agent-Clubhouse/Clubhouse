@@ -863,6 +863,40 @@ describe('agent-system', () => {
     });
   });
 
+  describe('CLUBHOUSE_MCP_PORT follows this bridge, not the base env (#2620)', () => {
+    const spawnHeadless = async () => {
+      mockGetSpawnMode.mockReturnValueOnce('headless');
+      const headlessProvider = mockProvider as unknown as { buildHeadlessCommand?: unknown };
+      headlessProvider.buildHeadlessCommand = vi.fn(() => Promise.resolve({
+        binary: '/usr/local/bin/claude', args: ['-p', 'mission'], env: { CLUBHOUSE_MCP_PORT: '40001' }, outputKind: 'stream-json' as const,
+      }));
+      try {
+        await spawnAgent({ agentId: 'quick-1', projectPath: '/project', cwd: '/project/wt', kind: 'quick', mission: 'do thing' });
+      } finally {
+        delete headlessProvider.buildHeadlessCommand;
+      }
+      return mockHeadlessSpawn.mock.calls.at(-1)![4] as Record<string, string>;
+    };
+    const spawnPty = async () => {
+      (mockProvider.buildSpawnCommand as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
+        binary: '/usr/local/bin/claude', args: [], env: { CLUBHOUSE_MCP_PORT: '40001' },
+      });
+      await spawnAgent({ agentId: 'agent-1', projectPath: '/project', cwd: '/project/wt', kind: 'durable' });
+      return mockPtySpawn.mock.calls.at(-1)![4] as unknown as Record<string, string>;
+    };
+
+    it.each([['headless', spawnHeadless], ['PTY', spawnPty]] as const)('%s: removed when there is no bridge', async (_label, spawn) => {
+      const env = await spawn();
+      expect(env).not.toHaveProperty('CLUBHOUSE_MCP_PORT');
+      expect(env.CLUBHOUSE_HOOK_NONCE).toBeTruthy();
+    });
+
+    it.each([['headless', spawnHeadless], ['PTY', spawnPty]] as const)('%s: the bridge\'s port wins when there is one', async (_label, spawn) => {
+      mockMcpWaitReady.mockResolvedValueOnce(23456);
+      expect((await spawn()).CLUBHOUSE_MCP_PORT).toBe('23456');
+    });
+  });
+
   describe('MCP arg injection ordering (spawnPtyAgent)', () => {
     beforeEach(() => { mockIsMcpEnabled.mockReturnValue(true); });
 

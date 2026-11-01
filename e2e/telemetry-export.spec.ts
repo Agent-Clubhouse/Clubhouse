@@ -159,12 +159,12 @@ test.describe('Telemetry export', () => {
 
     const prevCa = process.env.NODE_EXTRA_CA_CERTS;
     process.env.NODE_EXTRA_CA_CERTS = caFile;
-    // Unpackaged-only override of the App Insights host allowlist (settings.ts).
-    process.env.CLUBHOUSE_TELEMETRY_TEST_AZURE_HOST = `127.0.0.1:${mock.port}`;
     let launched: Awaited<ReturnType<typeof launchApp>> | undefined;
     try {
       launched = await launchApp({
         experimental: { telemetry: true },
+        // Unpackaged-only override of the App Insights host allowlist (settings.ts).
+        env: { CLUBHOUSE_TELEMETRY_TEST_AZURE_HOST: `127.0.0.1:${mock.port}` },
         userDataFiles: {
           'telemetry-settings.json': {
             enabled: true,
@@ -194,7 +194,6 @@ test.describe('Telemetry export', () => {
       // The seeded file is the Phase 1 shape with a plaintext secret.
       await expectLegacySecretHandled(launched.userDataDir!, encryption);
     } finally {
-      delete process.env.CLUBHOUSE_TELEMETRY_TEST_AZURE_HOST;
       if (prevCa === undefined) delete process.env.NODE_EXTRA_CA_CERTS;
       else process.env.NODE_EXTRA_CA_CERTS = prevCa;
       await launched?.electronApp.close().catch(() => {});

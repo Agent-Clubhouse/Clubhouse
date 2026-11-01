@@ -290,6 +290,27 @@ describe('BridgeServer', () => {
     expect(statusCode).toBe(403);
   });
 
+  // What another Clubhouse instance's bridge does with a child's credentials (#2620).
+  describe('credentials from another instance', () => {
+    const toolsList = { jsonrpc: '2.0', id: 11, method: 'tools/list' };
+
+    beforeEach(() => {
+      mockGetAgentNonce.mockImplementation((id) => (id === 'real-agent' ? 'real-nonce' : undefined));
+    });
+
+    it('refuses an agent id it never issued, nonce or not', async () => {
+      expect((await makeRequest(port, 'POST', '/mcp/test-app-agent', toolsList, 'test-app-nonce')).statusCode).toBe(403);
+    });
+
+    it('refuses its own agent id with another instance\'s nonce', async () => {
+      expect((await makeRequest(port, 'POST', '/mcp/real-agent', toolsList, 'test-app-nonce')).statusCode).toBe(403);
+    });
+
+    it('accepts all three inherited real values: only the caller\'s isolation stops them', async () => {
+      expect((await makeRequest(port, 'POST', '/mcp/real-agent', toolsList, 'real-nonce')).statusCode).toBe(200);
+    });
+  });
+
   it('rejects requests when agent has no registered nonce (nonce bypass fix)', async () => {
     mockGetAgentNonce.mockReturnValue(undefined); // Agent not in registry
     const { statusCode } = await makeRequest(port, 'POST', '/mcp/unknown-agent', {
