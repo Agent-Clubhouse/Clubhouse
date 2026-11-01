@@ -187,6 +187,9 @@ describe('Agent details for a sleeping agent (#2281)', () => {
     expect(window.clubhouse.agent.updateDurableConfig).not.toHaveBeenCalled();
     expect(saved.model).toBe('opus');
 
+    // The select shows as loading when it renders; the request goes out from an
+    // effect after that commit, which a loaded runner may not have run yet.
+    await waitFor(() => expect(window.clubhouse.agent.getModelOptions).toHaveBeenCalled());
     list([{ id: 'default', label: 'Default' }, { id: 'sonnet', label: 'Sonnet' }, { id: 'opus', label: 'Opus' }]);
     await loadedModelSelect('sonnet');
     expect(model.value).toBe('opus');
