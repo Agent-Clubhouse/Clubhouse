@@ -187,5 +187,14 @@ describe('persona templates', () => {
       expect(body).toMatch(/say so plainly\. You don't create projects, agents or connections/);
       expect(body).not.toContain('\u2014');
     });
+
+    it('keeps helper access read-only: ask the orchestrator first, and don\'t poll (#2579)', () => {
+      const { content, tools } = dispatcher();
+      expect(tools).toContain('inspect_helper');
+      expect(content).toContain('`inspect_helper`');
+      expect(content).toMatch(/Helpers talk only to their parent/);
+      expect(content).toMatch(/Ask the orchestrator first/);
+      expect(content).toMatch(/Don't poll/);
+    });
   });
 });

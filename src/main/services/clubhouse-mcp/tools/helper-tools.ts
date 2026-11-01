@@ -855,7 +855,7 @@ function lastActivity(helper: DurableAgentConfig): string | undefined {
   return times.reduce((a, b) => (Date.parse(a) >= Date.parse(b) ? a : b));
 }
 
-async function describeHelper({ projectPath, config: helper }: HelperEntry, projects: readonly Project[]): Promise<Record<string, unknown>> {
+export async function describeHelper({ projectPath, config: helper }: HelperEntry, projects: readonly Project[]): Promise<Record<string, unknown>> {
   const { status, reason } = helperStatus(helper);
   const out: Record<string, unknown> = {
     helperId: helper.id,
