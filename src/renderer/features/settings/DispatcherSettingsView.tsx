@@ -2,8 +2,9 @@
  * App settings, Dispatcher (#2535): the switch that turns the app-wide
  * Dispatcher on, and its agent settings once it exists. Listed only while the
  * experimental flag is on; reached with the flag off, the switch is disabled
- * and says why (#2555). Its persona, orchestration settings and folder can't
- * change here or anywhere else.
+ * and says why (#2555). Its row and view are in the new layout only, so on the
+ * classic layout the switch is disabled too (#2565). Its persona,
+ * orchestration settings and folder can't change here or anywhere else.
  */
 
 import { useEffect, useState } from 'react';
@@ -12,6 +13,7 @@ import { AGENT_IDLE_SLEEP_MINUTES, formatIdleMinutes, normalizeIdleSleep } from 
 import { Button } from '../../components/Button';
 import { Toggle } from '../../components/Toggle';
 import { useModelOptions } from '../../hooks/useModelOptions';
+import { useChromeFlagStore } from '../../chrome/chromeFlag';
 import { useOrchestratorStore } from '../../stores/orchestratorStore';
 import { ipcErrorMessage } from '../../utils/ipc-error';
 import { useAppIdleMinutes, SELECT_CLASS } from '../agents/details/AutoSleepRow';
@@ -23,6 +25,7 @@ const DESCRIPTION = 'One agent for the whole app that coordinates the orchestrat
 
 export function DispatcherSettingsView() {
   const { state, error: readError, retry } = useDispatcherRead();
+  const newLayout = useChromeFlagStore((s) => s.enabled);
   const [switching, setSwitching] = useState(false);
   const [switchError, setSwitchError] = useState<string | null>(null);
   const [saveError, setSaveError] = useState<string | null>(null);
@@ -102,17 +105,20 @@ export function DispatcherSettingsView() {
           label="Turn on Dispatcher"
           help={(
             <span id="dispatcher-enabled-help">
-              {state.flagOn
-                ? 'Turning it off stops it. Its folder and notes are kept, so turning it back on carries on where it left off.'
-                : 'Turn on Dispatcher in Settings > Experimental first.'}
+              {!state.flagOn
+                ? 'Turn on Dispatcher in Settings > Experimental first.'
+                : !newLayout
+                  ? 'The Dispatcher needs the new layout. Turn on New layout in Settings > Experimental.'
+                  : 'Turning it off stops it. Its folder and notes are kept, so turning it back on carries on where it left off.'}
             </span>
           )}
         >
+          {/* On the classic layout one that's still on can be turned off, not on (#2565). */}
           <Toggle
             aria-label="Turn on Dispatcher"
             aria-describedby="dispatcher-enabled-help"
             checked={state.enabled}
-            disabled={switching || !state.flagOn}
+            disabled={switching || !state.flagOn || (!newLayout && !state.enabled)}
             onChange={(on) => void turn(on)}
             data-testid="dispatcher-enabled"
           />

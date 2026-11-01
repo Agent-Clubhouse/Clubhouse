@@ -67,6 +67,17 @@ describe('ChromeBody Dispatcher view (#2538)', () => {
     expect(useUIStore.getState().dispatcherOpen).toBe(false);
   });
 
+  it("stays open when its own agent becomes active, as on Wake, and still closes for another agent (#2563)", () => {
+    useAgentStore.setState((s) => ({ agents: { ...s.agents, a2: { id: 'a2', projectId: 'p1', name: 'other', kind: 'durable', status: 'running', color: 'blue' } as never } }));
+    render(<ChromeBody />);
+    act(() => openDispatcher());
+    act(() => useAgentStore.setState({ activeAgentId: 'disp' }));
+    expect(useUIStore.getState().dispatcherOpen).toBe(true);
+    expect(screen.getByTestId('dispatcher-view')).toBeTruthy();
+    act(() => useAgentStore.setState({ activeAgentId: 'a2' }));
+    expect(useUIStore.getState().dispatcherOpen).toBe(false);
+  });
+
   it('leaves Settings to open, and Settings closes it again', () => {
     useUIStore.setState({ explorerTab: 'settings', previousExplorerTab: 'agents' });
     render(<ChromeBody />);

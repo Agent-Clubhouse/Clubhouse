@@ -1,8 +1,9 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import type { DispatcherState } from '../../../shared/dispatcher-types';
 import type { OrchestratorInfo } from '../../../shared/types';
 import { useOrchestratorStore } from '../../stores/orchestratorStore';
+import { useChromeFlagStore } from '../../chrome/chromeFlag';
 import { DispatcherSettingsView } from './DispatcherSettingsView';
 
 const FOLDER = 'dispatcher-folder';
@@ -21,6 +22,7 @@ let state: DispatcherState;
 let emit: ((s: DispatcherState) => void) | null;
 
 beforeEach(() => {
+  useChromeFlagStore.setState({ enabled: true });
   state = OFF;
   emit = null;
   window.clubhouse.dispatcher.get = vi.fn(async () => state);
@@ -38,6 +40,8 @@ beforeEach(() => {
     loadSettings: async () => {},
   });
 });
+
+afterEach(() => useChromeFlagStore.setState({ enabled: false }));
 
 describe('DispatcherSettingsView', () => {
   it('turns the Dispatcher on and then shows its agent settings', async () => {
@@ -133,5 +137,24 @@ describe('DispatcherSettingsView', () => {
     const saveAlert = await screen.findByRole('alert');
     expect(saveAlert.textContent).toBe('Couldn’t save. read-only');
     expect(saveAlert.className).toContain('text-ctp-error');
+  });
+
+  it('needs the new layout to turn on, and can still be turned off without it (#2565)', async () => {
+    useChromeFlagStore.setState({ enabled: false });
+    const { unmount } = render(<DispatcherSettingsView />);
+    const toggle = await screen.findByRole('switch', { name: 'Turn on Dispatcher' });
+    expect((toggle as HTMLButtonElement).disabled).toBe(true);
+    expect(document.getElementById('dispatcher-enabled-help')?.textContent)
+      .toBe('The Dispatcher needs the new layout. Turn on New layout in Settings > Experimental.');
+    fireEvent.click(toggle);
+    expect(window.clubhouse.dispatcher.setEnabled).not.toHaveBeenCalled();
+    unmount();
+
+    state = ON;
+    render(<DispatcherSettingsView />);
+    const on = await screen.findByRole('switch', { name: 'Turn on Dispatcher' });
+    expect((on as HTMLButtonElement).disabled).toBe(false);
+    await act(async () => { fireEvent.click(on); });
+    expect(window.clubhouse.dispatcher.setEnabled).toHaveBeenCalledWith(false);
   });
 });
