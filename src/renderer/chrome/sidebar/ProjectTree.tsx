@@ -4,7 +4,7 @@ import { useChromeStore, foldKey, type ProjectFold } from '../chromeStore';
 import { ProjectGroup } from './ProjectGroup';
 import { buildProjectTree, descendants, holdOrder, localParentId, moveProject, orderProjects } from './treeModel';
 import { useAgentStore } from '../../stores/agentStore';
-import { PopupMenu, type MenuItem } from '../../components/PopupMenu';
+import { PopupMenu, type MenuEntry } from '../../components/PopupMenu';
 import { useToastStore } from '../../stores/toastStore';
 import { partitionIdle } from '../projectActivity';
 import { reportChromeFeature } from '../telemetry';
@@ -328,9 +328,10 @@ export function ProjectTree(props: ProjectTreeProps) {
   const onAgentReorderHint = useCallback(() => showReorderHint('agent'), []);
 
   const [sortMenu, setSortMenu] = useState<{ x: number; y: number } | null>(null);
-  const sortItems: MenuItem[] = [
+  const sortItems: MenuEntry[] = [
     { id: 'projects-manual', label: 'Projects in manual order', selected: projectSort === 'manual', onSelect: () => setProjectSort('manual') },
     { id: 'projects-recent', label: 'Projects most recent first', selected: projectSort === 'recent', onSelect: () => setProjectSort('recent') },
+    { id: 'sort-separator', separator: true },
     { id: 'agents-manual', label: 'Agents in manual order', selected: agentSort === 'manual', onSelect: () => setAgentSort('manual') },
     { id: 'agents-recent', label: 'Agents most recent first', selected: agentSort === 'recent', onSelect: () => setAgentSort('recent') },
   ];
