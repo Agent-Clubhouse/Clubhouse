@@ -12,7 +12,7 @@ The rules, in short:
 | Trigger | Linux + Windows | macOS |
 |---|---|---|
 | PR, docs only | nothing (`paths-ignore`) | nothing |
-| PR, code | lint; Codex schema drift; typecheck + API surface (one Linux job); unit tests (2 shards per OS); **one build per OS, then E2E (3 shards per OS), Annex E2E and Chat E2E from that build** | **macOS unit** (~2.5 min), plus **macOS build + E2E smoke** (~9 min) only if the change touches packaging, dependencies or window/keyboard chrome |
+| PR, code | lint; Codex schema drift; typecheck + API surface (one Linux job); unit tests (2 shards per OS); Copilot SDK chunk (one job per OS); **one build per OS, then E2E (3 shards per OS), Annex E2E and Chat E2E from that build** | **macOS unit** (~2.5 min), plus **macOS build + E2E smoke** (~9 min) only if the change touches packaging, dependencies or window/keyboard chrome |
 | PR touching only unit tests | lint, typecheck, unit | macOS unit |
 | Dependabot PR | as a code PR, plus the Linux package smoke test | as a code PR. Electron and native-module bumps trigger macOS build |
 | `full-ci` label, manual dispatch | everything | everything (unit, build, sharded E2E, Annex E2E), except Chat E2E, which stays on Linux and Windows |
@@ -51,6 +51,12 @@ Over the 67 PRs measured below, macOS build would have run on **12 (18%)**:
 - darwin lines in telemetry install-kind, resource and bootstrap code: 3;
 - the Electron bump in #1941;
 - CI changes: 3.
+
+## The Copilot SDK chunk
+
+The `copilot-sdk-chunk` job runs `scripts/check-copilot-sdk-chunk.mjs` (docs/copilot-sdk-driver.md, Packaging): it fails if a CLI or native binary reaches the bundle, and it runs the bundled SDK under Node and Electron's Node against the runtime in `node_modules`, with no credentials and no prompt. It also fails if `koffi` was compiled from source during `npm ci`. Nothing depends on it, so it can't lengthen the long pole.
+
+It runs on Linux and Windows for any change that affects the app, and on macOS only with `full-ci` or a manual run. A bump of `@github/copilot-sdk` should carry `full-ci`.
 
 ## Paths Windows can't check out
 

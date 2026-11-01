@@ -35,6 +35,11 @@ export const mainConfig: Configuration = {
   ],
   resolve: {
     extensions: ['.js', '.ts', '.jsx', '.tsx', '.css', '.json'],
+    alias: {
+      // Native FFI for the Copilot SDK's in-process transport, which we don't use.
+      // Left alone, it emits koffi.node into the bundle (docs/copilot-sdk-driver.md).
+      koffi: false,
+    },
   },
   externals: {
     'node-pty': 'commonjs node-pty',
