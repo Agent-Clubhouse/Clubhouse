@@ -108,6 +108,7 @@ describe('AgentTools', () => {
 
     // Default provider mock — returns Claude Code timing with chunking
     mockGetProvider.mockReturnValue({
+      getCapabilities: () => ({}),
       getPasteSubmitTiming: () => ({ initialDelayMs: 500, retryDelayMs: 300, finalCheckDelayMs: 250, chunkSize: 512, chunkDelayMs: 50, postEndMarkerDelayMs: 150 }),
     });
 
@@ -306,6 +307,7 @@ describe('AgentTools', () => {
     it('uses provider-specific paste timing for copilot-cli agents', async () => {
       mockAgentRegistryGet.mockReturnValue({ runtime: 'pty', orchestrator: 'copilot-cli' });
       mockGetProvider.mockReturnValue({
+        getCapabilities: () => ({}),
         getPasteSubmitTiming: () => ({ initialDelayMs: 1200, retryDelayMs: 600, finalCheckDelayMs: 400 }),
       });
 
@@ -372,6 +374,7 @@ describe('AgentTools', () => {
     it('uses quiescence wait instead of fixed initialDelayMs when quiescenceMs is set', async () => {
       mockAgentRegistryGet.mockReturnValue({ runtime: 'pty', orchestrator: 'copilot-cli' });
       mockGetProvider.mockReturnValue({
+        getCapabilities: () => ({}),
         getPasteSubmitTiming: () => ({
           initialDelayMs: 2000,         // large cap; quiescence should fire well before
           retryDelayMs: 200,
@@ -810,6 +813,143 @@ describe('AgentTools', () => {
       expect(status.message).toContain('Start it from Clubhouse');
       const refused = await callTool('agent-1', agentToolName(toTarget, 'send_message'), { message: 'hi' });
       expect(refused.content[0].text).toContain('Start it from Clubhouse');
+    });
+  });
+
+  describe('a client that lists every wire tool (#2603)', () => {
+    const wire = makeBinding({
+      agentId: 'dispatcher', targetId: 'target', targetKind: 'agent',
+      label: 'Boss', agentName: 'Dispatcher', targetName: 'boss', projectName: 'app',
+    });
+    const call = (suffix: string, args: Record<string, unknown> = {}) => callTool('dispatcher', agentToolName(wire, suffix), args);
+
+    beforeEach(() => {
+      setDispatcherAgent('dispatcher', true);
+      bindingManager.bind('dispatcher', wire);
+      mockAgentRegistryGet.mockImplementation((id: string) => (id === 'dispatcher' ? { orchestrator: 'codex-cli' } : undefined));
+      mockGetProvider.mockImplementation((id: string) => ({
+        getCapabilities: () => ({ ignoresToolListChanged: id === 'codex-cli' }),
+        getPasteSubmitTiming: () => ({ initialDelayMs: 500, retryDelayMs: 300, finalCheckDelayMs: 250, chunkSize: 512, chunkDelayMs: 50, postEndMarkerDelayMs: 150 }),
+      }));
+      lifecycle.sleepAgent.mockReset();
+      lifecycle.wakeWiredAgent.mockReset();
+    });
+
+    afterEach(() => _resetDispatcherGateForTesting());
+
+    it('lists them all for a sleeping target', () => {
+      const suffixes = getScopedToolList('dispatcher').filter((t) => t.name.startsWith('clubhouse__')).map((t) => t.name.split('__').pop());
+      expect(suffixes).toEqual(expect.arrayContaining([
+        'send_message', 'get_status', 'read_output', 'check_connectivity', 'send_file', 'clear_agent', 'compact_agent', 'wake_agent', 'sleep_agent',
+      ]));
+    });
+
+    it.each([
+      ['send_message', { message: 'hi' }, 'sending messages'],
+      ['read_output', {}, 'reading output'],
+      ['check_connectivity', {}, 'checking connectivity'],
+      ['send_file', { content: 'x' }, 'sending files'],
+      ['clear_agent', {}, 'clearing context'],
+      ['compact_agent', {}, 'compacting context'],
+    ])('%s on a sleeping target says to call wake_agent', async (suffix, args, action) => {
+      const result = await call(suffix, args);
+      expect(result.isError).toBe(true);
+      expect(result.content[0].text).toBe(`Agent target is sleeping. Call its wake_agent tool before ${action}.`);
+      expect(mockMkdir).not.toHaveBeenCalled();
+    });
+
+    it('get_status on a sleeping target reports it and points at wake_agent', async () => {
+      const status = JSON.parse((await call('get_status')).content[0].text as string);
+      expect(status).toMatchObject({ status: 'sleeping', running: false });
+      expect(status.message).toContain('wake_agent');
+    });
+
+    it('wake_agent and sleep_agent reach the handlers in either state', async () => {
+      lifecycle.wakeWiredAgent.mockResolvedValue({ content: [{ type: 'text', text: 'already_running' }] });
+      lifecycle.sleepAgent.mockResolvedValue({ content: [{ type: 'text', text: 'already_sleeping' }] });
+      expect((await call('wake_agent')).content[0].text).toBe('already_running');
+      expect((await call('sleep_agent')).content[0].text).toBe('already_sleeping');
+      expect(lifecycle.wakeWiredAgent).toHaveBeenCalledWith(expect.objectContaining({ callerId: 'dispatcher', targetId: 'target' }));
+      expect(lifecycle.sleepAgent).toHaveBeenCalledWith(expect.objectContaining({ callerId: 'dispatcher', targetId: 'target', force: false }));
+    });
+
+    it('send_message from the first list works after the target wakes, repeatedly', async () => {
+      const listed = getScopedToolList('dispatcher').map((t) => t.name);
+      const sendTool = agentToolName(wire, 'send_message');
+      expect(listed).toContain(sendTool);
+
+      mockAgentRegistryGet.mockImplementation((id: string) =>
+        id === 'dispatcher' ? { orchestrator: 'codex-cli' } : { runtime: 'pty', orchestrator: 'claude-code' });
+
+      for (const message of ['message one', 'message two']) {
+        const result = await sendMessage('dispatcher', sendTool, { message });
+        expect(result.isError).toBeUndefined();
+      }
+      const written = mockPtyWrite.mock.calls.map(([, data]) => data).join('');
+      expect(written).toContain('message one');
+      expect(written).toContain('message two');
+    });
+
+    describe('call_wire_tool', () => {
+      const via = (target: string, tool: string, args?: Record<string, unknown>) =>
+        callTool('dispatcher', 'call_wire_tool', { target, tool, ...(args && { arguments: args }) });
+
+      it('reaches a wire added after the session listed its tools', async () => {
+        const first = getScopedToolList('dispatcher').map((t) => t.name);
+        expect(first).toContain('call_wire_tool');
+        const late = makeBinding({ agentId: 'dispatcher', targetId: 'late', targetKind: 'agent', label: 'Late', targetName: 'late', projectName: 'app' });
+        bindingManager.bind('dispatcher', late);
+        expect(first).not.toContain(agentToolName(late, 'get_status'));
+
+        const status = JSON.parse((await via('late', 'get_status')).content[0].text as string);
+        expect(status.status).toBe('sleeping');
+        expect((await via('late', 'send_message', { message: 'hi' })).content[0].text).toContain('wake_agent');
+      });
+
+      it('validates the inner tool\'s arguments', async () => {
+        const result = await via('target', 'send_message');
+        expect(result.isError).toBe(true);
+        expect(result.content[0].text).toBe('Missing required argument: message');
+      });
+
+      it('lists the caller\'s wires when it has none to that target', async () => {
+        const result = await via('stranger', 'get_status');
+        expect(result.isError).toBe(true);
+        expect(result.content[0].text).toBe('You have no wire to stranger. Your wires: boss (target).');
+      });
+
+      it('refuses a tool turned off on the wire', async () => {
+        bindingManager.setDisabledTools('dispatcher', 'target', ['send_message']);
+        const result = await via('target', 'send_message', { message: 'hi' });
+        expect(result.isError).toBe(true);
+        expect(result.content[0].text).toBe('send_message is turned off on this wire.');
+      });
+
+      it('refuses an unknown tool, and itself', async () => {
+        expect((await via('target', 'no_such_tool')).content[0].text).toBe('Unknown tool action: no_such_tool');
+        expect((await via('target', 'call_wire_tool')).content[0].text).toBe('Unknown tool action: call_wire_tool');
+      });
+
+      it('is not listed for, and refuses, a CLI that refreshes', async () => {
+        mockAgentRegistryGet.mockImplementation((id: string) => (id === 'dispatcher' ? { orchestrator: 'claude-code' } : undefined));
+        expect(getScopedToolList('dispatcher').map((t) => t.name)).not.toContain('call_wire_tool');
+        const result = await via('target', 'get_status');
+        expect(result.isError).toBe(true);
+        expect(result.content[0].text).toContain('refreshes its tool list');
+      });
+    });
+
+    it('tells a target on such a CLI how to reply if it lacks the reply tool', async () => {
+      const reply = (agent: { runtime: string; orchestrator: string }) => {
+        mockPtyWrite.mockClear();
+        mockAgentRegistryGet.mockImplementation(() => agent);
+        return sendMessage('dispatcher', agentToolName(wire, 'send_message'), { message: 'hi' })
+          .then(() => mockPtyWrite.mock.calls.map(([, data]) => data).join(''));
+      };
+      bindingManager.bind('target', makeBinding({ agentId: 'target', targetId: 'dispatcher', targetKind: 'agent', label: 'D', targetName: 'Dispatcher' }));
+
+      expect(await reply({ runtime: 'pty', orchestrator: 'codex-cli' })).toContain('use call_wire_tool with target="dispatcher" and tool="send_message"');
+      expect(await reply({ runtime: 'pty', orchestrator: 'claude-code' })).not.toContain('call_wire_tool');
     });
   });
 

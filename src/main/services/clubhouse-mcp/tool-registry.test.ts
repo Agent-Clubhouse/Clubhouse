@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 vi.mock('electron', () => ({
   app: { isPackaged: false, getPath: () => '/tmp/test-clubhouse' },
@@ -18,6 +18,7 @@ vi.mock('../dispatcher/dispatcher-settings', () => ({
 
 import { registerToolTemplate, registerGlobalTool, getScopedToolList, callTool, refusalReasonOf, buildToolName, buildToolKey, parseToolName, shortHash, invalidateToolListCache, agentsWiredTo, sanitizeWireInstruction, _resetForTesting } from './tool-registry';
 import { bindingManager } from './binding-manager';
+import { registerBuiltinProviders } from '../../orchestrators';
 import {
   closeCrossProject,
   isCrossProjectEnabled,
@@ -1214,6 +1215,56 @@ describe('ToolRegistry', () => {
         expect(suffixes('dispatcher')).toEqual(['get_status', 'send_message', 'sleep_agent']);
         agentRegistry.untrack('target');
         expect(suffixes('dispatcher')).toEqual(['get_status', 'wake_agent']);
+      });
+
+      describe('a CLI that keeps its first tool list (#2603)', () => {
+        const all = ['get_status', 'send_message', 'wake_agent', 'sleep_agent'];
+        const registerCaller = (orchestrator: string) =>
+          agentRegistry.register('dispatcher', { runtime: 'chat', projectPath: '/test', orchestrator });
+        beforeEach(() => registerBuiltinProviders());
+        afterEach(() => agentRegistry.untrack('dispatcher'));
+
+        it('lists every wire tool on Codex whatever the target is doing', () => {
+          registerCaller('codex-cli');
+          expect(suffixes('dispatcher')).toEqual(all);
+          agentRegistry.register('target', { runtime: 'chat', projectPath: '/test', orchestrator: 'claude-code' });
+          expect(suffixes('dispatcher')).toEqual(all);
+          agentRegistry.untrack('target');
+          expect(suffixes('dispatcher')).toEqual(all);
+        });
+
+        it.each(['claude-code', 'copilot-cli'])('keeps the state-based listing on %s', (orchestrator) => {
+          registerCaller(orchestrator);
+          expect(suffixes('dispatcher')).toEqual(['get_status', 'wake_agent']);
+          agentRegistry.register('target', { runtime: 'chat', projectPath: '/test', orchestrator: 'claude-code' });
+          expect(suffixes('dispatcher')).toEqual(['get_status', 'send_message', 'sleep_agent']);
+          agentRegistry.untrack('target');
+        });
+
+        it('does not serve a cached list after the caller restarts on another CLI', () => {
+          registerCaller('claude-code');
+          expect(suffixes('dispatcher')).toEqual(['get_status', 'wake_agent']);
+          registerCaller('codex-cli');
+          expect(suffixes('dispatcher')).toEqual(all);
+        });
+
+        it('still applies the tool group and per-wire disables', () => {
+          agentRegistry.register('agent-1', { runtime: 'chat', projectPath: '/test', orchestrator: 'codex-cli' });
+          expect(suffixes('agent-1')).toEqual(['get_status', 'send_message']);
+          bindingManager.setDisabledTools('agent-1', 'target', ['send_message']);
+          expect(suffixes('agent-1')).toEqual(['get_status']);
+          agentRegistry.untrack('agent-1');
+        });
+
+        it('opens the fixedToolList group only on that CLI', async () => {
+          registerGlobalTool('fixed_only', def, async () => ok, { group: 'fixedToolList' });
+          registerCaller('codex-cli');
+          expect(suffixes('dispatcher')).toContain('fixed_only');
+          expect((await callTool('dispatcher', 'fixed_only', {})).isError).toBeUndefined();
+          registerCaller('claude-code');
+          expect(suffixes('dispatcher')).not.toContain('fixed_only');
+          expect(refusalReasonOf(await callTool('dispatcher', 'fixed_only', {}))).toBe('group_off');
+        });
       });
 
       it('never lists them for any other caller, and refuses a stale call', async () => {

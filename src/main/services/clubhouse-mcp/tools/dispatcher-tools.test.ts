@@ -71,7 +71,7 @@ vi.mock('../../orchestration-policy', () => ({
   resolveHelperLaunchSettings: vi.fn(),
 }));
 vi.mock('../../../orchestrators', () => ({
-  getProvider: (id: string) => ({ id }),
+  getProvider: (id: string) => ({ id, getCapabilities: () => ({}) }),
   getAllProviders: () => [{ id: 'claude-code' }],
 }));
 vi.mock('../../../util/ipc-broadcast', () => ({ broadcastToAllWindows: vi.fn() }));

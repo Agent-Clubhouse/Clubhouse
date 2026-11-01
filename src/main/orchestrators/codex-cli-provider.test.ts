@@ -137,6 +137,10 @@ describe('CodexCliProvider', () => {
       expect(provider.getCapabilities().permissions).toBe(true);
     });
 
+    it('ignores tools/list_changed (#2603)', () => {
+      expect(provider.getCapabilities().ignoresToolListChanged).toBe(true);
+    });
+
     it('returns object with all required keys', () => {
       const caps = provider.getCapabilities();
       expect(typeof caps.headless).toBe('boolean');
