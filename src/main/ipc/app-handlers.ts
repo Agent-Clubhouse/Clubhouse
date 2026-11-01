@@ -526,6 +526,10 @@ export function registerAppHandlers(): void {
     async (_event, settings) => {
       await experimentalSettings.saveSettings(settings);
       settingsChanged('experimental');
+      // The Dispatcher's flag may have flipped: create it, or stop it (#2535).
+      // Loaded on use: the service pulls in the agent system.
+      const dispatcher = await import('../services/dispatcher/dispatcher-service');
+      await dispatcher.onExperimentalSettingsChanged();
     },
   ));
 

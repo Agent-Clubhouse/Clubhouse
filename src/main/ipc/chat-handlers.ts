@@ -20,6 +20,8 @@ import { resolveAttachments, stageAttachmentData, stageAttachmentPath } from '..
 import { fetchRemoteImage, mediaFilePath, readMedia } from '../services/agent-runtime/chat-media';
 import { importChatImage, MAX_STAT_PATHS, readChatFilePreview, resolveChatFile, statChatPaths } from '../services/agent-runtime/chat-files';
 import { getSettings as getExperimentalSettings } from '../services/experimental-settings';
+import type { Project } from '../../shared/types';
+import { DISPATCHER_PROJECT_ID } from '../../shared/dispatcher-types';
 
 /** An effort: a level, omitted to keep the current one, or null for the provider's default. */
 const effortArg: ArgValidator<string | null | undefined> = (value, argName) => (value === null ? null : stringArg({ optional: true })(value, argName));
@@ -139,6 +141,14 @@ function richHandlerRegistrar(): (channel: typeof RICH_CHAT_CHANNELS[number], ha
     calls[channel]++;
     return handler(event, ...args);
   });
+}
+
+/** The Dispatcher's folder as a pseudo project, while it is on, so its files open from chat. */
+async function dispatcherProjects(): Promise<Project[]> {
+  const dispatcher = await import('../services/dispatcher/dispatcher-service');
+  const state = dispatcher.getDispatcherState();
+  if (!state.enabled || !state.path) return [];
+  return [{ id: DISPATCHER_PROJECT_ID, name: 'Dispatcher', path: state.path }];
 }
 
 export function registerChatHandlers(): void {
@@ -284,7 +294,8 @@ export function registerChatHandlers(): void {
       if (action === 'open') {
         const [{ resolveProtocolCommand }, projectStore] = await Promise.all([import('../protocol-handler'), import('../services/project-store')]);
         // Match against the projects' real paths too: `real` has symlinks resolved.
-        const projects = await projectStore.list();
+        // The Dispatcher's folder is in no project, so it opts in here (#2535).
+        const projects = [...await projectStore.list(), ...await dispatcherProjects()];
         const realProjects = await Promise.all(projects.map(async (p) => ({ ...p, path: p.path ? await fsp.realpath(p.path).catch(() => p.path) : p.path })));
         const action = resolveProtocolCommand({ kind: 'open-file', filePath: real }, realProjects);
         return action.kind === 'open-file-not-found' ? resolveProtocolCommand({ kind: 'open-file', filePath: real }, projects) : action;

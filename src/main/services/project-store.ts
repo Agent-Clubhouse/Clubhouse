@@ -2,13 +2,13 @@ import * as fsp from 'fs/promises';
 import * as path from 'path';
 import * as crypto from 'crypto';
 import { randomUUID } from 'crypto';
-import { app } from 'electron';
 import { Project } from '../../shared/types';
 import { appLog } from './log-service';
 import { getSettings as getBadgeSettings, saveSettings as saveBadgeSettings } from './badge-settings';
 import { getSettings as getSoundSettings, saveSettings as saveSoundSettings } from './sound-service';
 import { pathExists } from './fs-utils';
 import { persist } from '../telemetry/persist';
+import { getBaseDirPath } from './base-dir';
 
 const CURRENT_VERSION = 1;
 
@@ -18,8 +18,7 @@ interface ProjectStoreV1 {
 }
 
 async function getBaseDir(): Promise<string> {
-  const dirName = app.isPackaged ? '.clubhouse' : '.clubhouse-dev';
-  const dir = path.join(app.getPath('home'), dirName);
+  const dir = getBaseDirPath();
   await fsp.mkdir(dir, { recursive: true });
   return dir;
 }

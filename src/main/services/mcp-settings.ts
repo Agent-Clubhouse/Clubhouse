@@ -10,6 +10,7 @@
 import { createSettingsStore } from './settings-store';
 import { isClubhouseModeEnabled, getSettings as getClubhouseModeSettings } from './clubhouse-mode-settings';
 import { MCP_SETTINGS } from '../../shared/settings-definitions';
+import { isDispatcherEnabled } from './dispatcher/dispatcher-settings';
 import type { McpSettings } from '../../shared/types';
 
 const store = createSettingsStore<McpSettings>(MCP_SETTINGS.filename, MCP_SETTINGS.defaults);
@@ -49,11 +50,13 @@ export function isMcpEnabled(projectPath?: string, agentOverride?: boolean): boo
  *
  * Returns true if the global MCP toggle is on, any MCP project override is
  * true, the global Clubhouse Mode toggle is on, or any Clubhouse Mode project
- * override is true.
+ * override is true. The Dispatcher (#2535) needs MCP for its tools, so it
+ * turns it on while it is enabled.
  */
 export function isMcpEnabledForAny(): boolean {
   const mcpSettings = getSettings();
   if (mcpSettings.enabled) return true;
+  if (isDispatcherEnabled()) return true;
 
   if (mcpSettings.projectOverrides) {
     for (const enabled of Object.values(mcpSettings.projectOverrides)) {

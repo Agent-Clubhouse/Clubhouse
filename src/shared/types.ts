@@ -642,6 +642,8 @@ export interface DurableConfigUpdates {
   lastSleep?: AgentSleepInfo | null;
   mcpIds?: string[] | null;
   mcpConfigs?: Record<string, Record<string, string>> | null;
+  /** Per-agent Clubhouse MCP bridge override; null clears it (project and app settings decide). */
+  mcpOverride?: boolean | null;
   /** Per-agent Chat / Terminal override; null clears it (provider default). */
   runtimeMode?: import('./chat').AgentRuntimeMode | null;
   /** Per-agent auto-sleep; 'inherit' or null clears it (app default). */

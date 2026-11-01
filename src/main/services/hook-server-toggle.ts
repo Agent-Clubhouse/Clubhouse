@@ -31,6 +31,8 @@ import * as projectStore from './project-store';
 import * as agentConfig from './agent-config';
 import { broadcastToAllWindows } from '../util/ipc-broadcast';
 import { IPC } from '../../shared/ipc-channels';
+import { getDispatcherPath } from './dispatcher/dispatcher-paths';
+import { pathExists } from './fs-utils';
 
 const NS = 'core:hook-server-toggle';
 
@@ -120,7 +122,13 @@ async function reconcileStoppedDurableAgents(
     return affected;
   }
 
-  for (const project of projects) {
+  // The Dispatcher's folder is in no project, so it opts in here (#2535).
+  // It has no worktree: the folder itself is where its CLI runs.
+  const dispatcherPath = getDispatcherPath();
+  const roots: Array<{ path: string; agentsRunInRoot?: boolean }> = [...projects];
+  if (await pathExists(dispatcherPath)) roots.push({ path: dispatcherPath, agentsRunInRoot: true });
+
+  for (const project of roots) {
     // A durable agent with no explicit orchestrator inherits the project's
     // setting, falling back to the app default.
     const projectOrchestrator = (await readProjectOrchestrator(project.path)) || DEFAULT_ORCHESTRATOR;
@@ -136,12 +144,13 @@ async function reconcileStoppedDurableAgents(
     }
 
     for (const durable of durables) {
-      if (!durable.worktreePath) continue;
+      const agentDir = durable.worktreePath ?? (project.agentsRunInRoot ? project.path : undefined);
+      if (!agentDir) continue;
       const effectiveOrchestrator = durable.orchestrator || projectOrchestrator;
       if (effectiveOrchestrator !== orchestratorId) continue;
-      if (runningCwds.has(path.resolve(durable.worktreePath))) continue; // handled as a running agent
+      if (runningCwds.has(path.resolve(agentDir))) continue; // handled as a running agent
 
-      const hookConfigPath = configPipeline.getHooksConfigPath(provider, durable.worktreePath);
+      const hookConfigPath = configPipeline.getHooksConfigPath(provider, agentDir);
       if (!hookConfigPath) continue;
 
       try {

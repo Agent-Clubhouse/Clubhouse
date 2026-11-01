@@ -36,6 +36,11 @@ const EXPERIMENTAL_FEATURES: Array<{
     description: 'Show images agents return inline in chat, links as links, and GitHub pull requests, issues and commits as references with a hover card. Images from the web load only when you click them, and GitHub details load through the gh CLI only when you hover one.',
   },
   {
+    id: 'dispatcher',
+    label: 'Dispatcher',
+    description: 'One app-wide agent that coordinates the orchestrators in your projects. Turn it on in Settings, Dispatcher, after turning this on.',
+  },
+  {
     id: 'telemetry',
     label: 'Telemetry export',
     description: 'Send anonymized telemetry to your own Application Insights resource or OTLP collector (Settings, Logging), or to the Clubhouse developer with your feedback (Settings, Feedback).',
