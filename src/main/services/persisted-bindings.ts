@@ -267,6 +267,16 @@ export function getPersistedBindingSourceIds(): string[] {
 }
 
 /**
+ * Stable description of one binding for a source's change check: the pair and
+ * its label fields, so a rename (a new label, same pair) counts as a change
+ * and the rebuild that follows relabels the live binding (#2561).
+ */
+export function bindingSignature(binding: PersistedBinding): string {
+  const { agentId, targetId, label, agentName, targetName, projectName } = binding;
+  return [agentId, targetId, label, agentName ?? '', targetName ?? '', projectName ?? ''].join('\u0000');
+}
+
+/**
  * Bring an existing binding's label fields up to date with `binding` (a
  * renamed project or agent, #2561). Updated in place, never unbound and bound
  * again, so a live wire doesn't drop; a change refreshes the agent's tool

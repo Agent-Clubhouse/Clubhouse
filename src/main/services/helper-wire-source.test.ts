@@ -338,6 +338,25 @@ describe('watchHelperWires', () => {
     stop();
   });
 
+  it('end to end: renaming a project relabels its live helper wires in place (#2561)', async () => {
+    vi.useFakeTimers();
+    registerPersistedBindingSource(helperWireBindingSource);
+    await rebuildPersistedBindings();
+    const toHelper = () => bindingManager.getBindingsForAgent('durable_lead').find((b) => b.targetId === 'durable_h1')!;
+    const binding = toHelper();
+    expect(binding.projectName).toBe('Wardfall');
+    const onChange = vi.fn(rebuild);
+    const stop = watchHelperWires(onChange);
+
+    projects.list = projects.list.map((p) => (p.path === projectPath ? { ...p, displayName: 'Renamed' } : p));
+    for (const listener of projects.listeners) listener();
+    await vi.advanceTimersByTimeAsync(100);
+    expect(onChange).toHaveBeenCalledTimes(1);
+    expect(toHelper()).toBe(binding);
+    expect(toHelper().projectName).toBe('Renamed');
+    stop();
+  });
+
   it('keeps a change pending until a rebuild commits it, and retries', async () => {
     vi.useFakeTimers();
     let canvasFails = false;
