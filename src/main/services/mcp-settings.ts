@@ -22,6 +22,30 @@ export const mcpSettingsStore = createSettingsStore<McpSettings>(MCP_SETTINGS.fi
 export const getSettings = mcpSettingsStore.get;
 export const saveSettings = mcpSettingsStore.save;
 
+/** An agent resolved MCP on at start, whatever the app and project settings say (#2610). Kept until quit. */
+let agentNeedsBridge = false;
+let startBridge: (() => void) | null = null;
+
+/** Set by the IPC layer, which owns the bridge's start and its tool registration. */
+export function setMcpBridgeStarter(starter: () => void): void {
+  startBridge = starter;
+}
+
+/**
+ * An agent that resolves MCP on is starting: make sure the bridge is up, even
+ * with MCP off everywhere else. Idempotent, and retries a bridge that failed.
+ */
+export function ensureMcpBridgeForAgent(): void {
+  agentNeedsBridge = true;
+  startBridge?.();
+}
+
+/** For testing. */
+export function _resetAgentBridgeNeedForTesting(): void {
+  agentNeedsBridge = false;
+  startBridge = null;
+}
+
 const enablementListeners = new Set<() => void>();
 
 /**
@@ -77,9 +101,12 @@ export function isMcpEnabled(projectPath?: string, agentOverride?: boolean): boo
  * Returns true if the global MCP toggle is on, any MCP project override is
  * true, the global Clubhouse Mode toggle is on, or any Clubhouse Mode project
  * override is true. The Dispatcher (#2535) needs MCP for its tools, so it
- * turns it on while it is enabled.
+ * turns it on while it is enabled. Agent-level settings live in each project's
+ * agents.json, so they count from when such an agent starts: see
+ * ensureMcpBridgeForAgent.
  */
 export function isMcpEnabledForAny(): boolean {
+  if (agentNeedsBridge) return true;
   const mcpSettings = getSettings();
   if (mcpSettings.enabled) return true;
   if (isDispatcherEnabled()) return true;

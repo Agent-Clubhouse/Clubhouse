@@ -42,6 +42,8 @@
 import * as path from 'path';
 import { registerGlobalTool } from '../tool-registry';
 import { isOrchestrationEnabled, onOrchestrationGateChange } from '../orchestration-gate';
+import { waitReady as waitBridgeReady } from '../bridge-server';
+import { ensureMcpBridgeForAgent } from '../../mcp-settings';
 import type { McpToolResult } from '../types';
 import * as agentConfig from '../../agent-config';
 import { agentRegistry } from '../../agent-registry';
@@ -551,6 +553,15 @@ async function runHelperStart(orchestratorId: string, args: HelperStartArgs, app
         meta: { agentId: orchestratorId, reason: limit.reason, helperCount: limit.helperCount, maxHelpers: limit.maxHelpers },
       });
       return refused(limit.message);
+    }
+    // A helper can't work without reaching its parent (#2610): refuse rather than start one that can't report.
+    try {
+      ensureMcpBridgeForAgent();
+      await waitBridgeReady();
+    } catch (err) {
+      // telemetry-exempt: the refusal reaches the calling agent as the tool result
+      appLog('core:mcp', 'warn', 'start_helper refused: the MCP bridge is not running', { meta: { agentId: orchestratorId, error: errorText(err) } });
+      return refused(`the Clubhouse MCP bridge isn't running, so the helper couldn't report to you (${errorText(err)}).`);
     }
 
     const creation: StartDurableCreationParams = {

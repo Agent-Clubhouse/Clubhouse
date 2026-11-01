@@ -117,8 +117,7 @@ import {
   maybeStartMcpBridge,
   onMcpSettingsChanged,
   restorePersistedBindings,
-  _resetHandlersForTesting,
-} from './mcp-binding-handlers';
+  _resetHandlersForTesting, startMcpBridgeForAgent } from './mcp-binding-handlers';
 
 type HandlerFn = (...args: unknown[]) => unknown;
 const handlers = new Map<string, HandlerFn>();
@@ -547,6 +546,16 @@ describe('maybeStartMcpBridge', () => {
 });
 
 // ── Settings Change ─────────────────────────────────────────────────────
+
+describe('startMcpBridgeForAgent (#2610)', () => {
+  it('starts the bridge once and leaves bindings alone when handlers already ran', () => {
+    vi.mocked(rebuildPersistedBindings).mockClear();
+    vi.mocked(isMcpEnabledForAny).mockReturnValue(true);
+    startMcpBridgeForAgent();
+    expect(bridgeServer.start).toHaveBeenCalled();
+    expect(rebuildPersistedBindings).not.toHaveBeenCalled();
+  });
+});
 
 describe('onMcpSettingsChanged', () => {
   it('does nothing when MCP is disabled', () => {

@@ -11,6 +11,18 @@ export function isDisposedAgent(config: Pick<DurableAgentConfig, 'disposedAt'> |
 }
 
 /**
+ * The agent-level input to isMcpEnabled for the Clubhouse MCP bridge. A helper
+ * can't work without reaching its parent, so it is always on while it is a
+ * helper, whatever its project or its own `mcpOverride` says (#2610). It comes
+ * from the parent link rather than a stored value, so existing helpers have it
+ * and a helper handed off goes back to the normal settings at its next start.
+ * Project MCP servers don't follow this: they keep reading `mcpOverride`.
+ */
+export function clubhouseMcpOverride(config: Pick<DurableAgentConfig, 'parentAgentId' | 'mcpOverride'> | null | undefined): boolean | undefined {
+  return config?.parentAgentId ? true : config?.mcpOverride;
+}
+
+/**
  * Why `childId` can't take `parentId` as its parent, or null when it can.
  * Rejects self-parenting, unknown agents and any link that would make the
  * child its own ancestor.

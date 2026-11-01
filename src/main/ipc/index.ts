@@ -11,7 +11,8 @@ import { registerPluginMcpHandlers } from './plugin-mcp-handlers';
 import { registerProcessHandlers } from './process-handlers';
 import { registerWindowHandlers } from './window-handlers';
 import { registerAnnexHandlers, maybeStartAnnex, maybeStartAnnexClient } from './annex-handlers';
-import { registerMcpBindingHandlers, maybeStartMcpBridge, restorePersistedBindings } from './mcp-binding-handlers';
+import { registerMcpBindingHandlers, maybeStartMcpBridge, restorePersistedBindings, startMcpBridgeForAgent } from './mcp-binding-handlers';
+import { setMcpBridgeStarter } from '../services/mcp-settings';
 import { registerCanvasIndexHandlers } from './canvas-index-handlers';
 import { registerGroupProjectHandlers } from './group-project-handlers';
 import { registerAnnexClientHandlers } from './annex-client-handlers';
@@ -73,6 +74,7 @@ export function registerAllHandlers(): void {
   registerMarketplaceHandlers();
   registerProfileHandlers();
   registerSettingsHandlers();
+  setMcpBridgeStarter(startMcpBridgeForAgent);
   registerMcpBindingHandlers();
   registerGroupProjectHandlers();
   registerCanvasIndexHandlers();

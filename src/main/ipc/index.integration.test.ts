@@ -409,7 +409,7 @@ vi.mock('../title-bar-colors', () => ({
 // MCP flag on to check the flag-gated binding handlers.
 vi.mock('../services/mcp-settings', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../services/mcp-settings')>();
-  return { ...actual, isMcpEnabledForAny: vi.fn(actual.isMcpEnabledForAny) };
+  return { ...actual, isMcpEnabledForAny: vi.fn(actual.isMcpEnabledForAny), setMcpBridgeStarter: vi.fn(actual.setMcpBridgeStarter) };
 });
 
 // ── Imports ────────────────────────────────────────────────────────────
@@ -420,8 +420,8 @@ import * as notificationService from '../services/notification-service';
 import * as projectStore from '../services/project-store';
 import * as profileSettings from '../services/profile-settings';
 import { getAllowedCommands } from '../services/plugin-manifest-registry';
-import { isMcpEnabledForAny } from '../services/mcp-settings';
-import { registerMcpBindingHandlers } from './mcp-binding-handlers';
+import { isMcpEnabledForAny, setMcpBridgeStarter } from '../services/mcp-settings';
+import { registerMcpBindingHandlers, startMcpBridgeForAgent } from './mcp-binding-handlers';
 import { registerTelemetryRendererHandlers } from './telemetry-renderer-handlers';
 
 // ════════════════════════════════════════════════════════════════════════
@@ -434,6 +434,10 @@ describe('registerAllHandlers — integration', () => {
     handleHandlers.clear();
     onHandlers.clear();
     registerAllHandlers();
+  });
+
+  it('lets a starting agent bring up the MCP bridge, whatever the settings say (#2610)', () => {
+    expect(setMcpBridgeStarter).toHaveBeenCalledWith(startMcpBridgeForAgent);
   });
 
   // ── Smoke: handlers are actually registered ─────────────────────────

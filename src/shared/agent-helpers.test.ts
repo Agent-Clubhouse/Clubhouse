@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { isDisposedAgent, parentLinkError } from './agent-helpers';
+import { clubhouseMcpOverride, isDisposedAgent, parentLinkError } from './agent-helpers';
 
 describe('isDisposedAgent', () => {
   it('is true only when disposedAt is set', () => {
@@ -40,5 +40,19 @@ describe('parentLinkError', () => {
   it('terminates on a cycle already present above the parent', () => {
     const looped = [{ id: 'x', parentAgentId: 'y' }, { id: 'y', parentAgentId: 'x' }, { id: 'n' }];
     expect(parentLinkError(looped, 'n', 'x')).toBeNull();
+  });
+});
+
+describe('clubhouseMcpOverride (#2610)', () => {
+  it('is on for a helper, whatever its own setting says', () => {
+    expect(clubhouseMcpOverride({ parentAgentId: 'p' })).toBe(true);
+    expect(clubhouseMcpOverride({ parentAgentId: 'p', mcpOverride: false })).toBe(true);
+  });
+
+  it('is the agent\'s own setting otherwise', () => {
+    expect(clubhouseMcpOverride({ mcpOverride: false })).toBe(false);
+    expect(clubhouseMcpOverride({ mcpOverride: true })).toBe(true);
+    expect(clubhouseMcpOverride({})).toBeUndefined();
+    expect(clubhouseMcpOverride(null)).toBeUndefined();
   });
 });

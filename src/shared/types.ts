@@ -284,7 +284,7 @@ export interface DurableAgentConfig {
   mcpIds?: string[];
   /** Per-MCP configuration values keyed by MCP ID then flag name */
   mcpConfigs?: Record<string, Record<string, string>>;
-  /** Per-agent override for the Clubhouse MCP bridge feature. */
+  /** Per-agent override for the Clubhouse MCP bridge feature. A helper always gets the bridge: see clubhouseMcpOverride. */
   mcpOverride?: boolean;
   /** Persona template ID applied at creation. Used to re-inject instructions on materialization. */
   persona?: string;
