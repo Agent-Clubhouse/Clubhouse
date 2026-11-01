@@ -17,7 +17,9 @@ export interface FakeModelStep {
 export interface FakeModel {
   baseUrl: string;
   /** Every completion request, with the text of its messages. */
-  requests: Array<{ model: string; text: string }>;
+  requests: Array<{ model: string; effort?: string; text: string }>;
+  /** The tool names offered by each request that offered any. */
+  tools: string[][];
   script(...steps: FakeModelStep[]): void;
   /** A request is waiting on release(). */
   holding(): boolean;
@@ -29,6 +31,7 @@ export interface FakeModel {
 
 export async function startFakeModel(): Promise<FakeModel> {
   const requests: FakeModel['requests'] = [];
+  const tools: string[][] = [];
   const queue: FakeModelStep[] = [];
   const held = new Set<() => void>();
   const server = http.createServer((req, res) => {
@@ -36,8 +39,9 @@ export async function startFakeModel(): Promise<FakeModel> {
     req.on('data', (c) => { body += c; });
     req.on('end', async () => {
       if (!req.url?.includes('chat/completions')) { res.statusCode = 404; res.end('{}'); return; }
-      const json = JSON.parse(body) as { model: string; tools?: unknown[]; messages?: unknown };
-      requests.push({ model: json.model, text: JSON.stringify(json.messages ?? '') });
+      const json = JSON.parse(body) as { model: string; reasoning_effort?: string; tools?: Array<{ function?: { name?: string } }>; messages?: unknown };
+      requests.push({ model: json.model, effort: json.reasoning_effort, text: JSON.stringify(json.messages ?? '') });
+      if (json.tools?.length) tools.push(json.tools.map((t) => t.function?.name ?? ''));
       const step: FakeModelStep = json.tools?.length ? queue.shift() ?? {} : {};
       if (step.status) {
         res.statusCode = step.status;
@@ -65,6 +69,7 @@ export async function startFakeModel(): Promise<FakeModel> {
   return {
     baseUrl: `http://127.0.0.1:${(server.address() as { port: number }).port}/v1`,
     requests,
+    tools,
     script: (...steps) => queue.push(...steps),
     holding: () => held.size > 0,
     release: () => { for (const r of held) r(); held.clear(); },

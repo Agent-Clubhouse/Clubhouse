@@ -7,10 +7,10 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
-import type { ChatEventDraft } from '../../../shared/chat/events';
+import { COMPACTION_STARTED, type ChatEventDraft } from '../../../shared/chat/events';
 import type { ChatDriverSession, ChatDriverStartOptions } from '../../../shared/chat/runtime';
 import { COPILOT_OPTION_ALLOW, COPILOT_OPTION_DENY } from './normalizer';
-import { COPILOT_SDK_CAPABILITIES, CopilotSdkChatDriver, toSdkMcpServers } from './driver';
+import { COPILOT_SDK_CAPABILITIES, copilotPlanAction, CopilotSdkChatDriver, toSdkMcpServers } from './driver';
 import { startFakeModel, type FakeModel } from './__fixtures__/fake-model';
 
 const platform = `${process.platform}-${process.arch}`;
@@ -58,7 +58,7 @@ describe.skipIf(!fs.existsSync(runtime))('CopilotSdkChatDriver on the real runti
 
   beforeAll(async () => {
     model = await startFakeModel();
-    driver = new CopilotSdkChatDriver({ sessionOverrides: { model: 'fake-model', provider: { type: 'openai', baseUrl: model.baseUrl, apiKey: 'fake' } } });
+    driver = new CopilotSdkChatDriver();
   });
   afterEach(async () => {
     model.reset();
@@ -69,10 +69,13 @@ describe.skipIf(!fs.existsSync(runtime))('CopilotSdkChatDriver on the real runti
     try { fs.rmSync(tmp, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 }); } catch { /* the CLI can still be flushing logs */ }
   });
 
-  // The BYOK variable stands in for a login, so the driver gets past its login check.
+  // Someone's own model key, set the way they'd set it for the CLI. It's what gets the driver past its login check.
+  const byokEnv = (): Record<string, string> => ({
+    ...baseEnv, COPILOT_PROVIDER_BASE_URL: model.baseUrl, COPILOT_PROVIDER_TYPE: 'openai', COPILOT_PROVIDER_API_KEY: 'fake-key', COPILOT_MODEL: 'fake-model',
+  });
   const options = (overrides: Partial<ChatDriverStartOptions> = {}): ChatDriverStartOptions => ({
     agentId: 'a1', provider: 'copilot-cli', cwd: tmp, binaryPath: runtime, level: 'ask',
-    env: { ...baseEnv, COPILOT_PROVIDER_BASE_URL: model.baseUrl }, extraArgs: ['--no-auto-login'], ...overrides,
+    env: byokEnv(), extraArgs: ['--no-auto-login'], ...overrides,
   });
   const open = async (overrides?: Partial<ChatDriverStartOptions>) => {
     const session = await driver.start(options(overrides));
@@ -85,9 +88,38 @@ describe.skipIf(!fs.existsSync(runtime))('CopilotSdkChatDriver on the real runti
     const loggedOut = await driver.probe(runtime, baseEnv);
     expect(loggedOut).toMatchObject({ handshakeOk: true, needsLogin: true, capabilities: COPILOT_SDK_CAPABILITIES });
     expect(loggedOut.cliVersion).toMatch(/^\d+\.\d+\.\d+/);
-    expect((await driver.probe(runtime, { ...baseEnv, COPILOT_PROVIDER_BASE_URL: model.baseUrl })).needsLogin).toBeUndefined();
+    expect((await driver.probe(runtime, byokEnv())).needsLogin).toBeUndefined();
     expect(model.requests.length).toBe(before);
   }, 60_000);
+
+  it('honors COPILOT_PROVIDER_* as the CLI does: a probe that passes means a send reaches the model', async () => {
+    expect((await driver.probe(runtime, byokEnv())).needsLogin).toBeUndefined();
+    const { session, of, endedTurns } = await open();
+    const seen = model.requests.length;
+    model.script({ text: 'from your own key' });
+    await session.send([{ type: 'text', text: 'hi' }], 'prompt');
+    const [ended] = await endedTurns(1);
+    expect(ended.data.stopReason).toBe('end_turn');
+    expect(of('error')).toEqual([]);
+    expect(model.requests.length).toBeGreaterThan(seen);
+    expect(model.requests.at(-1)?.model).toBe('fake-model');
+  }, 90_000);
+
+  it('does not count a provider variable without a base URL as a login', async () => {
+    const env = { ...baseEnv, COPILOT_PROVIDER_API_KEY: 'k', COPILOT_PROVIDER_TYPE: 'openai', COPILOT_MODEL: 'm' };
+    expect((await driver.probe(runtime, env)).needsLogin).toBe(true);
+    await expect(driver.start(options({ env }))).rejects.toThrow(/not logged in/i);
+  }, 60_000);
+
+  it('asks for a model when a provider has none, as the CLI does', async () => {
+    const { COPILOT_MODEL: _unset, ...env } = byokEnv();
+    await expect(driver.start(options({ env }))).rejects.toThrow(/needs a model/);
+    const saved = await open({ env, model: 'saved-model' });
+    model.script({ text: 'ok' });
+    await saved.session.send([{ type: 'text', text: 'hi' }], 'prompt');
+    await saved.endedTurns(1);
+    expect(model.requests.at(-1)?.model).toBe('saved-model');
+  }, 90_000);
 
   it('refuses to start logged out, in the words the fallback code reads as a login', async () => {
     await expect(driver.start(options({ env: baseEnv }))).rejects.toThrow(/not logged in/i);
@@ -211,6 +243,248 @@ describe.skipIf(!fs.existsSync(runtime))('CopilotSdkChatDriver on the real runti
     expect(missing.session.resumeFallback).toBe('not_found');
     expect(missing.session.nativeSessionId).not.toBe('00000000-0000-4000-8000-000000000000');
     expect(missing.of('notice').map((n) => n.data.code)).toContain('resume_unavailable');
+  }, 120_000);
+
+  it('steers a running turn: the message reaches the next model request, and the turn ends once', async () => {
+    const { session, of, until, endedTurns } = await open({ level: 'full_access' });
+    model.script({ hold: true, tools: [{ name: 'no_such_tool' }] }, { text: 'after' });
+    await session.send([{ type: 'text', text: 'ORIGINAL' }], 'prompt');
+    await until(() => (model.holding() ? true : undefined));
+    expect(await session.send([{ type: 'text', text: 'STEER-TEXT' }], 'steer')).toBe('steer');
+    model.release();
+    await endedTurns(1);
+    expect(model.requests.at(-1)?.text).toContain('STEER-TEXT');
+    expect(of('turn_started')).toHaveLength(1);
+  }, 90_000);
+
+  it('queues natively: the message runs as its own turn after the first', async () => {
+    const { session, of, until, endedTurns } = await open();
+    model.script({ hold: true, text: 'one' }, { text: 'two' });
+    await session.send([{ type: 'text', text: 'FIRST' }], 'prompt');
+    await until(() => (model.holding() ? true : undefined));
+    expect(await session.send([{ type: 'text', text: 'QUEUED-TEXT' }], 'queued')).toBe('queued');
+    await new Promise((r) => setTimeout(r, 200));
+    model.release();
+    await endedTurns(2);
+    expect(of('turn_started').map((t) => t.data.trigger)).toEqual(['prompt', 'queued']);
+    expect(of('turn_ended').map((t) => t.data.stopReason)).toEqual(['end_turn', 'end_turn']);
+    expect(model.requests.at(-1)?.text).toContain('QUEUED-TEXT');
+    expect(of('agent_message').find((m) => m.data.text === 'two')?.turnId).toBe('turn-2');
+  }, 90_000);
+
+  it('asks the user a question and gives the model the answer', async () => {
+    const { session, of, until, endedTurns } = await open();
+    model.script({ tools: [{ name: 'ask_user', args: { question: 'Colour?', choices: ['blue', 'red'] } }] }, { text: 'ok' });
+    await session.send([{ type: 'text', text: 'ask me' }], 'prompt');
+    const question = await until(() => of('question')[0]);
+    expect(question.data.questions[0]).toMatchObject({ prompt: 'Colour?', allowFreeText: true, options: [{ id: 'blue', label: 'blue' }, { id: 'red', label: 'red' }] });
+    expect(question.data.toolCallId).toBe(of('tool_call')[0].data.toolCallId);
+    await session.answerQuestion(question.data.requestId, { [question.data.questions[0].id]: 'red' });
+    await endedTurns(1);
+    expect(of('question_resolved')[0].data.answers).toEqual({ answer: 'red' });
+    expect(model.requests.at(-1)?.text).toContain('red');
+  }, 90_000);
+
+  it('cancels an open question when interrupted', async () => {
+    const { session, of, until, endedTurns } = await open();
+    model.script({ tools: [{ name: 'ask_user', args: { question: 'Colour?' } }] }, { text: 'after' });
+    await session.send([{ type: 'text', text: 'ask me' }], 'prompt');
+    await until(() => of('question')[0]);
+    await session.interrupt();
+    await endedTurns(1);
+    expect(of('question_resolved')[0].data.cancelled).toBe(true);
+  }, 90_000);
+
+  const PLAN_TOOL = { name: 'exit_plan_mode', args: { summary: 'THE-PLAN', actions: ['interactive'], recommendedAction: 'interactive' } };
+
+  it('shows a plan for approval, and approving returns to the level the user acted at', async () => {
+    const { session, of, until, endedTurns } = await open({ level: 'auto_edit' });
+    await session.setLevel('plan');
+    expect(of('mode_changed').at(-1)?.data.level).toBe('plan');
+    model.script({ tools: [PLAN_TOOL] }, { text: 'ok' });
+    await session.send([{ type: 'text', text: 'plan it' }], 'prompt');
+    const request = await until(() => of('permission_request')[0]);
+    expect(request.data.toolName).toBe('exit_plan_mode');
+    expect(of('plan_document')[0].data).toMatchObject({ markdown: 'THE-PLAN', status: 'ready', toolCallId: request.data.toolCallId });
+    await session.respondPermission(request.data.requestId, 'approve');
+    await endedTurns(1);
+    expect(of('permission_resolved')[0].data.decision).toBe('allow');
+    expect(of('mode_changed').at(-1)?.data).toMatchObject({ level: 'auto_edit', nativeMode: 'interactive' });
+  }, 90_000);
+
+  it('keeps planning when a plan is sent back with a reason', async () => {
+    const { session, of, until, endedTurns } = await open({ level: 'plan' });
+    model.script({ tools: [PLAN_TOOL] }, { text: 'ok' });
+    await session.send([{ type: 'text', text: 'plan it' }], 'prompt');
+    const request = await until(() => of('permission_request')[0]);
+    await session.respondPermission(request.data.requestId, 'reject', { message: 'ADD-TESTS' });
+    await endedTurns(1);
+    expect(of('permission_resolved')[0].data.decision).toBe('deny');
+    expect(of('mode_changed').filter((m) => m.data.level !== 'plan')).toEqual([]);
+    expect(model.requests.at(-1)?.text).toContain('ADD-TESTS');
+  }, 90_000);
+
+  it('never picks autopilot when approving a plan', () => {
+    expect(copilotPlanAction({ actions: ['autopilot', 'interactive', 'exit_only'], recommendedAction: 'autopilot' })).toBe('interactive');
+    expect(copilotPlanAction({ actions: ['autopilot', 'exit_only'], recommendedAction: 'autopilot' })).toBe('exit_only');
+    expect(copilotPlanAction({ actions: ['autopilot'], recommendedAction: 'autopilot' })).toBeUndefined();
+  });
+
+  it('puts a subagent\'s work under it, and its own idle and model don\'t speak for the session', async () => {
+    const { session, of, endedTurns } = await open({ level: 'full_access' });
+    model.script(
+      { tools: [{ name: 'task', args: { description: 'look', prompt: 'SUB', agent_type: 'explore', name: 'scout' } }] },
+      { tools: [{ name: 'grep', args: { pattern: 'zzz-no-match' } }] },
+      { text: 'sub result' },
+      { text: 'done' },
+    );
+    await session.send([{ type: 'text', text: 'delegate' }], 'prompt');
+    await endedTurns(1);
+    const task = of('tool_call').find((t) => t.data.toolName === 'task')!;
+    const statuses = of('subagent').map((s) => s.data.status);
+    expect(statuses[0]).toBe('running');
+    expect(statuses.at(-1)).toBe('completed');
+    expect(of('subagent')[0].data).toMatchObject({ subagentId: task.data.toolCallId, name: 'scout', description: 'look' });
+    expect(of('tool_call').find((t) => t.data.toolName === 'grep')?.data.subagentId).toBe(task.data.toolCallId);
+    expect(of('agent_message').find((m) => m.data.text === 'sub result')?.data.subagentId).toBe(task.data.toolCallId);
+    expect(of('agent_message').at(-1)?.data).toMatchObject({ text: 'done' });
+    expect(of('agent_message').at(-1)?.data.subagentId).toBeUndefined();
+    expect(of('turn_ended')).toHaveLength(1);
+    expect(of('model_changed')).toEqual([]);
+  }, 90_000);
+
+  it('changes model and effort live, and reports what the CLI applied', async () => {
+    const { session, of, until, endedTurns } = await open();
+    expect(of('session_info')[0].data.model).toBe('fake-model');
+    await session.setModel('fake-model-2', 'high');
+    await until(() => of('model_changed')[0]);
+    expect(of('model_changed')[0].data).toMatchObject({ modelId: 'fake-model-2', effort: 'high' });
+    model.script({ text: 'ok' });
+    await session.send([{ type: 'text', text: 'hi' }], 'prompt');
+    await endedTurns(1);
+    expect(model.requests.at(-1)?.model).toBe('fake-model-2');
+    expect(model.requests.at(-1)?.effort).toBe('high');
+    await expect(session.setModel('fake-model-2', null)).rejects.toThrow(/default/);
+  }, 90_000);
+
+  it('applies the agent\'s saved effort at start', async () => {
+    const { session, endedTurns } = await open({ effort: 'low' });
+    model.script({ text: 'ok' });
+    await session.send([{ type: 'text', text: 'hi' }], 'prompt');
+    await endedTurns(1);
+    expect(model.requests.at(-1)?.effort).toBe('low');
+  }, 90_000);
+
+  it('applies the level again after a resume, as the CLI\'s own record can be stale', async () => {
+    const first = await open({ level: 'plan' });
+    model.script({ text: 'noted' });
+    await first.session.send([{ type: 'text', text: 'hi' }], 'prompt');
+    await first.endedTurns(1);
+    const id = first.session.nativeSessionId;
+    await first.session.close();
+    sessions.splice(sessions.indexOf(first.session), 1);
+
+    const asks = await open({ resumeNativeSessionId: id, level: 'ask' });
+    model.script({ tools: [RUN_TOOL] }, { text: 'done' });
+    await asks.session.send([{ type: 'text', text: 'run it' }], 'prompt');
+    const request = await asks.until(() => asks.of('permission_request')[0]);
+    expect(request.data.toolName).toBe('bash');
+    await asks.session.respondPermission(request.data.requestId, COPILOT_OPTION_ALLOW);
+    await asks.endedTurns(1);
+    await asks.session.close();
+    sessions.splice(sessions.indexOf(asks.session), 1);
+
+    const full = await open({ resumeNativeSessionId: id, level: 'full_access' });
+    model.script({ tools: [RUN_TOOL] }, { text: 'done' });
+    await full.session.send([{ type: 'text', text: 'run it' }], 'prompt');
+    await full.endedTurns(1);
+    expect(full.of('permission_request')).toEqual([]);
+  }, 120_000);
+
+  it('loads a stdio MCP server, and sees a tool it adds mid-session', async () => {
+    const dir = fs.mkdtempSync(path.join(tmp, 'mcp-'));
+    const script = path.join(dir, 'server.js');
+    fs.writeFileSync(script, `
+      const send = (o) => process.stdout.write(JSON.stringify(o) + '\\n');
+      const tool = (name) => ({ name, description: name, inputSchema: { type: 'object', properties: {} } });
+      let flipped = false;
+      require('readline').createInterface({ input: process.stdin }).on('line', (line) => {
+        const m = JSON.parse(line);
+        const reply = (result) => send({ jsonrpc: '2.0', id: m.id, result });
+        if (m.method === 'initialize') return reply({ protocolVersion: m.params.protocolVersion, capabilities: { tools: { listChanged: true } }, serverInfo: { name: 'fake', version: '1' } });
+        if (m.method === 'tools/list') return reply({ tools: [tool('flip'), ...(flipped ? [tool('beta')] : [])] });
+        if (m.method === 'tools/call') { flipped = true; send({ jsonrpc: '2.0', method: 'notifications/tools/list_changed' }); return reply({ content: [{ type: 'text', text: 'flipped' }] }); }
+        if (m.id !== undefined) reply({});
+      });
+    `);
+    const { session, of, endedTurns } = await open({ level: 'full_access', mcpServers: { fake: { command: process.execPath, args: [script] } } });
+    // The CLI reports its servers as a turn starts, and may still be connecting on the first.
+    await new Promise((r) => setTimeout(r, 1_500));
+    model.script({ text: 'ready' });
+    await session.send([{ type: 'text', text: 'hi' }], 'prompt');
+    await endedTurns(1);
+    expect(of('session_info').some((i) => i.data.mcpServers?.some((m) => m.name === 'fake'))).toBe(true);
+    const flip = model.tools.at(-1)?.find((n) => n.endsWith('flip'));
+    expect(flip).toBeDefined();
+    model.script({ tools: [{ name: flip! }] }, { text: 'ok' });
+    await session.send([{ type: 'text', text: 'flip' }], 'prompt');
+    await endedTurns(2);
+    expect(of('notice').map((n) => n.data.code)).not.toContain('mcp_servers_unsupported');
+    expect(of('tool_call_update').some((u) => JSON.stringify(u.data.content).includes('flipped'))).toBe(true);
+    await new Promise((r) => setTimeout(r, 1_000));
+    model.script({ text: 'ok' });
+    await session.send([{ type: 'text', text: 'next' }], 'prompt');
+    await endedTurns(3);
+    expect(model.tools.at(-1)?.some((n) => n.endsWith('beta'))).toBe(true);
+  }, 120_000);
+
+  it('sends an image, inline or from a file', async () => {
+    const png = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==';
+    const file = path.join(tmp, 'pixel.png');
+    fs.writeFileSync(file, Buffer.from(png, 'base64'));
+    const vision = new CopilotSdkChatDriver({
+      sessionOverrides: { modelCapabilities: { supports: { vision: true } } },
+    });
+    const session = await vision.start(options());
+    sessions.push(session);
+    const { endedTurns } = watch(session);
+    model.script({ text: 'seen' });
+    await session.send([{ type: 'text', text: 'look' }, { type: 'image', mimeType: 'image/png', data: png }], 'prompt');
+    await endedTurns(1);
+    expect(model.requests.at(-1)?.text).toContain('image_url');
+    model.script({ text: 'seen' });
+    await session.send([{ type: 'text', text: 'again' }, { type: 'image', mimeType: 'image/png', path: file }], 'prompt');
+    await endedTurns(2);
+    expect(model.requests.at(-1)?.text.match(/image_url/g)?.length).toBeGreaterThanOrEqual(2);
+    await expect(session.send([{ type: 'image', mimeType: 'image/png', uri: 'https://example.com/x.png' }], 'prompt')).rejects.toThrow(/only inline data or local files/);
+  }, 90_000);
+
+  it('compacts on request, and says so', async () => {
+    const { session, of, until, endedTurns } = await open();
+    model.script({ text: 'one' });
+    await session.send([{ type: 'text', text: 'hi' }], 'prompt');
+    await endedTurns(1);
+    await session.compact();
+    await until(() => of('notice').find((n) => n.data.code === 'compacted'));
+    expect(of('notice').map((n) => n.data.code)).toContain(COMPACTION_STARTED);
+  }, 90_000);
+
+  it('launches through a shim and a command prefix', async () => {
+    const dir = fs.mkdtempSync(path.join(tmp, 'shim-'));
+    const shim = process.platform === 'win32' ? path.join(dir, 'copilot.cmd') : path.join(dir, 'copilot');
+    fs.writeFileSync(shim, process.platform === 'win32' ? `@"${runtime}" %*\r\n` : `#!/bin/sh\nexec "${runtime}" "$@"\n`, { mode: 0o755 });
+    const viaShim = await driver.start(options({ binaryPath: shim }));
+    sessions.push(viaShim);
+    const a = watch(viaShim);
+    model.script({ text: 'through the shim' });
+    await viaShim.send([{ type: 'text', text: 'hi' }], 'prompt');
+    await a.endedTurns(1);
+    expect(a.of('agent_message').at(-1)?.data.text).toBe('through the shim');
+    expect((await driver.probe(shim, byokEnv())).handshakeOk).toBe(true);
+    expect((await driver.probe(runtime, byokEnv(), { commandPrefix: process.platform === 'win32' ? 'set CLUBHOUSE_PREFIX_RAN=1' : 'export CLUBHOUSE_PREFIX_RAN=1' })).handshakeOk).toBe(true);
+    await viaShim.close();
+    sessions.splice(sessions.indexOf(viaShim), 1);
+    await a.pumped;
   }, 120_000);
 
   it('passes an HTTP MCP server with its header from the environment', () => {
