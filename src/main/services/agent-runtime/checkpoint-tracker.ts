@@ -39,7 +39,14 @@ const BUSY_STATES: ReadonlySet<ChatSessionState> = new Set(['starting', 'running
 const rootCache = new Map<string, string | null>();
 /** Snapshots taken just before a prompt was sent, waiting for that turn's id. */
 const pendingStart = new Map<string, Promise<string | undefined>>();
-type OpenTurn = { root: string; sessionId: string; turnId: string; start?: string };
+type OpenTurn = {
+  sessionId: string;
+  turnId: string;
+  /** Set once the agent's repository root is known. */
+  root?: string;
+  /** The start checkpoint, once written; undefined if it couldn't be. */
+  start?: Promise<string | undefined>;
+};
 /** Chat turns in progress, for spotting agents that share a worktree. */
 const openTurns = new Map<string, OpenTurn>();
 
@@ -72,12 +79,6 @@ function warn(message: string, meta: Record<string, unknown>, err: unknown): voi
   appLog('core:chat', 'warn', message, { meta: { ...meta, error: err instanceof Error ? err.message : String(err) } });
 }
 
-/** Mark a turn as shared with another agent. The ref points at the turn's start checkpoint. */
-async function markShared(root: string, agentId: string, turn: OpenTurn | undefined): Promise<void> {
-  if (!turn?.start) return;
-  await pointRef(root, checkpointRef(agentId, turn.sessionId, turn.turnId, 'shared'), turn.start);
-}
-
 /**
  * Snapshot the working tree right before a prompt goes to the CLI, so the
  * turn's start checkpoint can't include the agent's first edits. The chat
@@ -98,47 +99,82 @@ export async function captureBeforePrompt(agentId: string): Promise<void> {
   await snapshot;
 }
 
-/** Chat bus listener: checkpoint at turn boundaries. Failures are logged, never thrown. */
+/** Mark a turn as shared with another agent. The ref points at the turn's start checkpoint. */
+async function markShared(root: string, agentId: string, turn: OpenTurn | undefined): Promise<void> {
+  const start = await turn?.start;
+  if (!turn || !start) return;
+  await pointRef(root, checkpointRef(agentId, turn.sessionId, turn.turnId, 'shared'), start);
+}
+
+/** Mark the agent's turn, and the open turns of agents beside it, as shared if anyone else works in `root`. */
+async function markNeighbours(root: string, agentId: string, turn: OpenTurn | undefined): Promise<void> {
+  const others = await neighbours(agentId, root);
+  if (!others.length) return;
+  await markShared(root, agentId, turn);
+  for (const other of others) await markShared(root, other, openTurns.get(other));
+}
+
+/** Name the turn's start checkpoint: the pre-prompt snapshot if there is one, else a fresh one. */
+async function startCheckpoint(agentId: string, turn: OpenTurn): Promise<string | undefined> {
+  const root = await rootFor(agentId);
+  if (!root) return undefined;
+  turn.root = root;
+  const ref = checkpointRef(agentId, turn.sessionId, turn.turnId, 'start');
+  try {
+    const pending = pendingStart.get(agentId);
+    if (pending) pendingStart.delete(agentId);
+    const prepared = pending ? await pending : undefined;
+    if (!prepared) return await createCheckpoint(root, ref, `Clubhouse checkpoint: start of turn ${turn.turnId}`);
+    await pointRef(root, ref, prepared);
+    await deleteRef(root, pendingRef(agentId));
+    return prepared;
+  } catch (err) { // telemetry-exempt: logged; a missing checkpoint only costs Changes-panel history
+    warn('Checkpoint failed', { agentId, turnId: turn.turnId, phase: 'start' }, err);
+    return undefined;
+  }
+}
+
+/**
+ * Chat bus listener: checkpoint at turn boundaries. Failures are logged, never thrown.
+ *
+ * The open turn is recorded before anything is awaited, so a turn_ended that
+ * arrives while the start checkpoint is still being written finds it, waits
+ * for it, and closes it.
+ */
 export function handleChatEventForCheckpoints(event: ChatEvent): void {
   if (event.type !== 'turn_started' && event.type !== 'turn_ended') return;
   if (!event.turnId) return;
-  const phase = event.type === 'turn_started' ? 'start' : 'end';
   const { agentId, sessionId } = event;
   const turnId = event.turnId;
+  if (event.type === 'turn_started') {
+    const turn: OpenTurn = { sessionId, turnId };
+    turn.start = startCheckpoint(agentId, turn);
+    openTurns.set(agentId, turn);
+    track((async () => {
+      if (!(await turn.start) || !turn.root) return;
+      try {
+        await markNeighbours(turn.root, agentId, turn);
+      } catch (err) { // telemetry-exempt: logged; a missing shared mark only drops the revert warning
+        warn('Checkpoint failed', { agentId, turnId, phase: 'start' }, err);
+      }
+    })());
+    return;
+  }
   // Close the turn as soon as it ends, so a revert right after isn't refused.
-  const ending = phase === 'end' ? openTurns.get(agentId) : undefined;
+  const ending = openTurns.get(agentId);
   if (ending) openTurns.delete(agentId);
   track((async () => {
+    // The end checkpoint must not land before the start.
+    await ending?.start;
     const root = await rootFor(agentId);
     if (!root) return;
     try {
-      const ref = checkpointRef(agentId, sessionId, turnId, phase);
-      if (phase === 'start') {
-        openTurns.set(agentId, { root, sessionId, turnId });
-        const pending = pendingStart.get(agentId);
-        if (pending) pendingStart.delete(agentId);
-        const prepared = pending ? await pending : undefined;
-        let start: string;
-        if (prepared) {
-          await pointRef(root, ref, prepared);
-          await deleteRef(root, pendingRef(agentId));
-          start = prepared;
-        } else {
-          start = await createCheckpoint(root, ref, `Clubhouse checkpoint: start of turn ${turnId}`);
-        }
-        const open = openTurns.get(agentId);
-        if (open?.turnId === turnId) open.start = start;
-      } else {
-        await createCheckpoint(root, ref, `Clubhouse checkpoint: end of turn ${turnId}`);
-      }
-      const others = await neighbours(agentId, root);
-      if (others.length) {
-        await markShared(root, agentId, phase === 'end' ? ending : openTurns.get(agentId));
-        for (const other of others) await markShared(root, other, openTurns.get(other));
-      }
-      if (phase === 'end') await pruneCheckpoints(root, agentId, CHECKPOINT_TURNS_KEPT);
-    } catch (err) {
-      warn('Checkpoint failed', { agentId, turnId, phase }, err);
+      // Shared before end: once a turn has its end checkpoint, its shared mark is settled.
+      await markNeighbours(root, agentId, ending);
+      await createCheckpoint(root, checkpointRef(agentId, sessionId, turnId, 'end'), `Clubhouse checkpoint: end of turn ${turnId}`);
+      await pruneCheckpoints(root, agentId, CHECKPOINT_TURNS_KEPT);
+    } catch (err) { // telemetry-exempt: logged; a missing checkpoint only costs Changes-panel history
+      warn('Checkpoint failed', { agentId, turnId, phase: 'end' }, err);
     }
   })());
 }
