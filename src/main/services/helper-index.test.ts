@@ -18,7 +18,7 @@ vi.mock('./project-store', () => ({
   list: vi.fn(async () => registered.map((p, i) => ({ id: `proj_${i}`, name: path.basename(p), path: p }))),
 }));
 
-import { clearAgentConfigCache, flushAllAgentConfigs, listDurable, setParentAgent } from './agent-config';
+import { clearAgentConfigCache, flushAllAgentConfigs, listDurable, projectKey, setParentAgent } from './agent-config';
 import { clearHelperIndexCache, findParent, listHelpersEverywhere } from './helper-index';
 import type { DurableAgentConfig } from '../../shared/types';
 
@@ -67,6 +67,31 @@ afterEach(async () => {
   await flushAllAgentConfigs();
   clearAgentConfigCache();
   fs.rmSync(root, { recursive: true, force: true });
+});
+
+// On this machine's real filesystem, so Windows CI checks real NTFS IDs and paths (#2628).
+describe('projectKey', () => {
+  it('reads the folder\'s exact file ID', async () => {
+    const { dev, ino } = fs.statSync(home, { bigint: true });
+    expect(await projectKey(home)).toBe(`ino:${dev}:${ino}`);
+    expect(await projectKey(other)).not.toBe(await projectKey(home));
+  });
+
+  it('is the same for every spelling of a folder, short and long names included', async () => {
+    const key = await projectKey(home);
+    expect(await projectKey(path.join(other, '..', 'home'))).toBe(key);
+    expect(await projectKey(fs.realpathSync.native(home))).toBe(key);
+  });
+
+  it('falls back to the resolved path for a folder that is gone', async () => {
+    const missing = path.join(root, 'Missing');
+    expect(await projectKey(missing)).toBe(process.platform === 'win32' ? `path:${missing.toLowerCase()}` : `path:${missing}`);
+    expect(await projectKey(path.join(root, 'also-missing'))).not.toBe(await projectKey(missing));
+  });
+
+  it.runIf(process.platform === 'win32')('folds case in a fallback path on Windows', async () => {
+    expect(await projectKey(path.join(root, 'MISSING'))).toBe(await projectKey(path.join(root, 'missing')));
+  });
 });
 
 describe('listHelpersEverywhere', () => {

@@ -164,11 +164,13 @@ const agentIdOwners = new Map<string, string>();
 
 /**
  * Stable identity for a project directory: device + inode when available,
- * otherwise the resolved path.
+ * otherwise the resolved path. Read as bigint because an NTFS file ID can pass
+ * 2^53, where neighboring folders would round to one Number (#2628). Held only
+ * in memory, so a change of format here needs no migration.
  */
 async function projectIdentity(projectPath: string): Promise<string> {
   try {
-    const stats = await fsp.stat(projectPath);
+    const stats = await fsp.stat(projectPath, { bigint: true });
     if (stats && stats.ino) return `ino:${stats.dev}:${stats.ino}`;
   } catch {
     // Fall through — directory may not exist yet (or stat is unavailable).
