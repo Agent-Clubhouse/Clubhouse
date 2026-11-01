@@ -1,4 +1,4 @@
-export type { OrchestratorId, OrchestratorProvider, OrchestratorConventions, ProviderCapabilities, PasteSubmitTiming, SpawnOpts, HeadlessOpts, NormalizedHookEvent, AgentExecutionMode, HookCapable, HeadlessCapable, SessionCapable, AgentFileCapable, TranscriptReadOptions, TranscriptReadStats } from './types';
+export type { OrchestratorId, OrchestratorProvider, OrchestratorConventions, ProviderCapabilities, PasteSubmitTiming, SpawnOpts, HeadlessOpts, NormalizedHookEvent, AgentExecutionMode, HookCapable, HeadlessCapable, SessionCapable, AgentFileCapable, TranscriptReadOptions, TranscriptReadStats, ModelInfo, ModelList, ModelListSource, ListModelsOptions } from './types';
 export { isHookCapable, isHeadlessCapable, isSessionCapable, isAgentFileCapable, supportsPositionalMission, supportsAutoResumeAfterUpdate } from './types';
 export { BaseProvider } from './base-provider';
 export type { ModelFetchConfig } from './base-provider';

@@ -598,7 +598,9 @@ export function registerAgentHandlers(): void {
     [stringArg(), stringArg({ optional: true })],
     async (_event, projectPath, orchestrator) => {
       const provider = await agentSystem.resolveOrchestrator(projectPath, orchestrator);
-      return provider.getModelOptions();
+      // A profile can change the CLI's login, and so the models it lists (#2569).
+      const env = await agentSystem.resolveProfileEnv(projectPath, provider.id);
+      return provider.getModelOptions(env ? { env } : undefined);
     },
   ));
 

@@ -15,6 +15,7 @@ import { registerHelperDisposeTools } from '../services/clubhouse-mcp/tools/help
 import { registerHelperQuestionTools } from '../services/clubhouse-mcp/tools/helper-question-tools';
 import { findMainWindow } from './window-handlers';
 import { registerHelperTools, watchHelperStartRequests } from '../services/clubhouse-mcp/tools/helper-tools';
+import { registerModelTools } from '../services/clubhouse-mcp/tools/model-tools';
 import { registerDispatcherTools } from '../services/clubhouse-mcp/tools/dispatcher-tools';
 import { onDisposeRequestsChanged } from '../services/helper-dispose-requests';
 import { registerConnectionTools } from '../services/clubhouse-mcp/tools/connection-tools';
@@ -98,6 +99,7 @@ export function registerMcpBindingHandlers(): void {
   registerNotifyTools();
   registerHelperDisposeTools();
   registerHelperTools();
+  registerModelTools();
   registerDispatcherTools();
   registerHelperQuestionTools();
   // Held helper starts (#2234) go to the main window only, for Needs you.

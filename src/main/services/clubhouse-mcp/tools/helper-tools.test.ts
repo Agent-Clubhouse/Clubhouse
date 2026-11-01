@@ -1,6 +1,7 @@
 import * as path from 'path';
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, beforeAll } from 'vitest';
 import type { DurableAgentConfig } from '../../../../shared/types';
+import type { ModelList } from '../../../orchestrators/types';
 import { IPC } from '../../../../shared/ipc-channels';
 import { resolveHelperAccess, type AgentLaunchAccess } from '../../../../shared/orchestration-policy';
 
@@ -78,6 +79,7 @@ const stopping = new Map<string, { exited: Promise<void>; exit: () => void }>();
 const mockSpawnAgent = vi.fn();
 const mockKillAgent = vi.fn();
 vi.mock('../../agent-system', () => ({
+  resolveProfileEnv: (...args: unknown[]) => mockResolveProfileEnv(...args),
   spawnAgent: (...args: unknown[]) => mockSpawnAgent(...args),
   killAgent: (...args: unknown[]) => mockKillAgent(...args),
   isAgentRunning: (id: string) => running.has(id),
@@ -143,8 +145,19 @@ vi.mock('../../orchestration-policy', () => ({
   resolveHelperLaunchSettings: (...args: unknown[]) => mockResolveLaunch(...args),
 }));
 
+/** Model lists per provider id (#2569); a provider without one can't list models. */
+const modelLists = new Map<string, ModelList>();
+/** Claude Code's real alias rules, loaded in beforeAll. */
+let claudeAcceptsModel: (model: string, list: ModelList) => boolean;
+const mockResolveProfileEnv = vi.fn(async (..._args: unknown[]): Promise<Record<string, string> | undefined> => undefined);
 vi.mock('../../../orchestrators', () => ({
-  getProvider: (id: string) => (['claude-code', 'codex-cli', 'copilot-cli'].includes(id) ? { id } : undefined),
+  getProvider: (id: string) => (['claude-code', 'codex-cli', 'copilot-cli'].includes(id)
+    ? {
+      id,
+      ...(modelLists.has(id) && { listModels: async () => modelLists.get(id) }),
+      ...(id === 'claude-code' && { acceptsModel: (m: string, l: ModelList) => claudeAcceptsModel(m, l) }),
+    }
+    : undefined),
   getAllProviders: () => [{ id: 'claude-code' }, { id: 'codex-cli' }, { id: 'copilot-cli' }],
 }));
 
@@ -231,8 +244,16 @@ function controllableCreation() {
   };
 }
 
+beforeAll(async () => {
+  const { ClaudeCodeProvider } = await vi.importActual<typeof import('../../../orchestrators/claude-code-provider')>(
+    '../../../orchestrators/claude-code-provider',
+  );
+  claudeAcceptsModel = (m, l) => ClaudeCodeProvider.prototype.acceptsModel.call(null, m, l);
+});
+
 beforeEach(() => {
   vi.clearAllMocks();
+  modelLists.clear();
   agents.clear();
   where.clear();
   gitDirs.clear();
@@ -426,6 +447,89 @@ describe('start_helper', () => {
 });
 
 // ── start_helper: what changes during creation ─────────────────────────────
+
+describe('start_helper model check (#2569)', () => {
+  const claudeLive: ModelList = {
+    source: 'live', via: 'handshake', fetchedAt: 0,
+    models: [
+      { id: 'default', label: 'Default', isDefault: true, resolvedId: 'claude-opus-5-5' },
+      { id: 'opus', label: 'Opus 5.5', resolvedId: 'claude-opus-5-5' },
+      { id: 'haiku', label: 'Haiku 5.5', resolvedId: 'claude-haiku-5-5' },
+    ],
+  };
+  const codexFallback: ModelList = {
+    source: 'fallback', via: 'static', fetchedAt: 0, liveError: 'model handshake timed out after 10000ms',
+    models: [{ id: 'default', label: 'Default' }, { id: 'gpt-5.6-sol', label: 'GPT-5.6-Sol' }],
+  };
+
+  it('starts a helper with a model the CLI\'s live list has', async () => {
+    controllableCreation();
+    modelLists.set('claude-code', claudeLive);
+    const body = parse(await callTool('orch', 'start_helper', { name: 'h', task: 't', model: 'haiku' }));
+    expect(body).toMatchObject({ state: 'starting' });
+    expect(body.modelWarning).toBeUndefined();
+    expect(mockStartDurableCreation.mock.calls[0][1]).toMatchObject({ model: 'haiku' });
+  });
+
+  it('refuses a model missing from a live list, naming the valid ids, and creates nothing', async () => {
+    modelLists.set('claude-code', claudeLive);
+    const result = await callTool('orch', 'start_helper', { name: 'h', task: 't', model: 'gpt-5.6-sol' });
+    expect(result.isError).toBe(true);
+    expect(result.content[0].text).toBe(
+      'Model "gpt-5.6-sol" is not one claude-code accepts. Valid ids: default, opus, haiku. Call list_models for details.',
+    );
+    expect(mockStartDurableCreation).not.toHaveBeenCalled();
+  });
+
+  it('only warns for a model missing from a fallback list', async () => {
+    controllableCreation();
+    modelLists.set('codex-cli', codexFallback);
+    const body = parse(await callTool('orch', 'start_helper', { name: 'h', task: 't', cli: 'codex-cli', model: 'gpt-7' }));
+    expect(body).toMatchObject({ state: 'starting' });
+    expect(body.modelWarning).toContain('Model "gpt-7" is not in codex-cli\'s fallback model list (default, gpt-5.6-sol)');
+    expect(body.modelWarning).toContain('model handshake timed out');
+    expect(mockStartDurableCreation.mock.calls[0][1]).toMatchObject({ model: 'gpt-7', orchestrator: 'codex-cli' });
+  });
+
+  it('accepts an alias the CLI resolves itself', async () => {
+    controllableCreation();
+    modelLists.set('claude-code', claudeLive);
+    for (const model of ['opus[1m]', 'sonnet', 'claude-opus-5-5']) {
+      const result = await callTool('orch', 'start_helper', { name: `h-${model.replace(/\W/g, '')}`, task: 't', model });
+      expect(result.isError, model).toBeFalsy();
+    }
+  });
+
+  it('checks against the helper\'s CLI, not the orchestrator\'s', async () => {
+    modelLists.set('claude-code', claudeLive);
+    modelLists.set('codex-cli', { ...codexFallback, source: 'live', via: 'handshake' });
+    const result = await callTool('orch', 'start_helper', { name: 'h', task: 't', cli: 'codex-cli', model: 'opus' });
+    expect(result.isError).toBe(true);
+    expect(result.content[0].text).toContain('not one codex-cli accepts');
+  });
+
+  it('lists under the profile of the project the helper is created in', async () => {
+    controllableCreation();
+    modelLists.set('claude-code', claudeLive);
+    await callTool('orch', 'start_helper', { name: 'h', task: 't', model: 'opus', project: 'far' });
+    expect(mockResolveProfileEnv).toHaveBeenCalledWith(FAR, 'claude-code');
+  });
+
+  it('refuses before holding a start for approval', async () => {
+    mockGetPolicy.mockResolvedValue({ orchestrate: true, access: 'same', control: 'ask-before-start', maxHelpers: 5 });
+    modelLists.set('claude-code', claudeLive);
+    const result = await callTool('orch', 'start_helper', { name: 'h', task: 't', model: 'nope' });
+    expect(result.isError).toBe(true);
+    expect(listStartRequests()).toEqual([]);
+  });
+
+  it('skips the check for a CLI that can\'t list models', async () => {
+    controllableCreation();
+    const body = parse(await callTool('orch', 'start_helper', { name: 'h', task: 't', model: 'anything' }));
+    expect(body).toMatchObject({ state: 'starting' });
+    expect(body.modelWarning).toBeUndefined();
+  });
+});
 
 describe('start_helper re-checks at spawn time', () => {
   it('ranks access again when a persona switched the CLI during creation', async () => {

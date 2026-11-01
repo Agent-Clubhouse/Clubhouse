@@ -126,7 +126,7 @@ export const PERSONA_TEMPLATES: PersonaTemplate[] = [
     description: 'Breaks an epic into tasks, starts helper agents to do them, accepts their work and disposes of them.',
     content: orchestrator,
     tools: [
-      'start_helper', 'list_helpers', 'sleep_helper', 'wake_helper', 'answer_helper_question', 'hand_off', 'dispose_helper',
+      'start_helper', 'list_models', 'list_helpers', 'sleep_helper', 'wake_helper', 'answer_helper_question', 'hand_off', 'dispose_helper',
       'create_group_project', 'add_to_group_project', 'remove_from_group_project', 'connect_agents', 'disconnect_agents', 'list_projects',
     ],
     skills: [],
