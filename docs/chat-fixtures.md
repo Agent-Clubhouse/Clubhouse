@@ -214,7 +214,7 @@ CLUBHOUSE_RECORD_COPILOT_SDK=1 sandbox-exec -p "$PROFILE" \
 
 It removes the CLI's system prompt and built-in skills, which a driver doesn't read, and adds `match` to permission answers.
 
-To use the recorder by hand, pass the launch after `--`. It reads the CLI's port, leaves the port line and its own kill out of the fixture, and always redacts the connection token. In script mode it generates the token, available as `{{connectionToken}}`:
+To use the recorder by hand, pass the launch after `--`. It reads the CLI's port, stops the CLI when a proxied client disconnects, leaves the port line and its own kill out of the fixture, and always redacts the connection token. In script mode it generates the token, available as `{{connectionToken}}`:
 
 ```jsonl
 {"send":{"jsonrpc":"2.0","id":1,"method":"connect","params":{"token":"{{connectionToken}}"}}}

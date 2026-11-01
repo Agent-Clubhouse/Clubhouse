@@ -469,7 +469,7 @@ describe('fake-cli and record over TCP (copilot-sdk)', () => {
     expect(client.received[2].params.sessionId).toBe('live-id');
 
     const exited = new Promise((resolve) => child.once('exit', resolve));
-    child.kill();
+    client.socket.destroy();
     expect(await exited).toBe(0);
     const text = await fs.promises.readFile(out, 'utf8');
     expect(text).not.toContain('secret-token-value');
@@ -482,7 +482,22 @@ describe('fake-cli and record over TCP (copilot-sdk)', () => {
     replay.send(rpc(7, 'connect', { token: 'x' }));
     replay.send(rpc(8, 'session.create', { sessionId: 'another-id' }));
     await replay.until(3);
-    expect(replay.received[2].params.sessionId).toBe('another-id');
+    expect(replay.received[2].params?.sessionId).toBe('another-id');
+  });
+
+  it('proxy mode: a CLI that dies mid-session is recorded as an exit', async () => {
+    const dies = await writeFixture('dies.jsonl', [
+      header('copilot-sdk'),
+      { from: 'client', msg: rpc(1, 'connect', {}) },
+      { from: 'cli', exit: { code: 7 } },
+    ]);
+    const out = path.join(tmp, 'died.jsonl');
+    const { child, port } = await launch([RECORD, '--protocol', 'copilot-sdk', '--out', out, '--', process.execPath, FAKE_CLI, '--fake-fixture', dies, '--headless', '--port', '0']);
+    const exited = new Promise((resolve) => child.once('exit', resolve));
+    const client = await dial(port);
+    client.send(rpc(1, 'connect', {}));
+    expect(await exited).toBe(7);
+    expect((await loadFixture(out)).entries.at(-1)).toMatchObject({ from: 'cli', exit: { code: 7 } });
   });
 });
 

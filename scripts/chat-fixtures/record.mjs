@@ -356,7 +356,14 @@ async function main() {
         cliSocket = upstream;
         upstream.on('data', (chunk) => client.write(chunk));
         upstream.on('close', () => client.destroy());
-        client.on('close', () => upstream.destroy());
+        // A driver makes one connection, so its hanging up ends the session. Windows
+        // has no SIGTERM to catch. If the CLI went first, that exit is part of the recording.
+        client.on('close', () => {
+          if (upstream.destroyed) return;
+          stopping = true;
+          upstream.destroy();
+          child.kill();
+        });
         const forward = (chunk) => upstream.write(chunk);
         client.on('data', forward);
         readFrames(client, (body) => entries.push({ from: 'client', t: t(), msg: JSON.parse(body) }));
