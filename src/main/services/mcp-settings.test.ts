@@ -24,6 +24,11 @@ vi.mock('./clubhouse-mode-settings', () => ({
   getSettings: vi.fn(() => ({ ...cmStored })),
 }));
 
+let dispatcherOn = false;
+vi.mock('./dispatcher/dispatcher-settings', () => ({
+  isDispatcherEnabled: vi.fn(() => dispatcherOn),
+}));
+
 import { isMcpEnabled, isMcpEnabledForAny, saveSettings } from './mcp-settings';
 import { isClubhouseModeEnabled } from './clubhouse-mode-settings';
 import { resetAllSettingsStoresForTests } from './settings-store';
@@ -33,6 +38,7 @@ describe('mcp-settings', () => {
     vi.clearAllMocks();
     resetAllSettingsStoresForTests();
     cmStored = { enabled: false };
+    dispatcherOn = false;
   });
 
   describe('isMcpEnabled', () => {
@@ -131,6 +137,19 @@ describe('mcp-settings', () => {
       await saveSettings({ enabled: false });
       cmStored = { enabled: false, projectOverrides: { '/x': false, '/y': true } };
       expect(isMcpEnabledForAny()).toBe(true);
+    });
+
+    it('returns true while the Dispatcher is on, with everything else off (#2535)', async () => {
+      await saveSettings({ enabled: false });
+      expect(isMcpEnabledForAny()).toBe(false);
+      dispatcherOn = true;
+      expect(isMcpEnabledForAny()).toBe(true);
+    });
+
+    it('lets the Dispatcher\'s mcpOverride turn MCP on for its folder', async () => {
+      await saveSettings({ enabled: false });
+      expect(isMcpEnabled('/dispatcher')).toBe(false);
+      expect(isMcpEnabled('/dispatcher', true)).toBe(true);
     });
 
     it('returns false when all Clubhouse Mode project overrides are false', async () => {

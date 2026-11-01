@@ -165,6 +165,7 @@ async function stopAgent(agent: DurableAgentConfig): Promise<void> {
 
 /** Bring the agent in line with the gate: create and write instructions when on, stop when off. */
 async function reconcile(): Promise<void> {
+  watchConfig();
   if (isDispatcherEnabled()) {
     config = await ensureCreated();
     await writeInstructions(config);
@@ -201,7 +202,6 @@ function watchConfig(): void {
  * profile that never turned it on.
  */
 export function initDispatcher(): Promise<void> {
-  watchConfig();
   return enqueue(reconcile).catch((err) => {
     appLog(NS, 'error', 'Dispatcher start-up failed', {
       meta: { error: err instanceof Error ? err.message : String(err) },
@@ -223,6 +223,15 @@ export function onExperimentalSettingsChanged(): Promise<void> {
       meta: { error: err instanceof Error ? err.message : String(err) },
     });
   });
+}
+
+/** For tests: resolves once every queued change has run. */
+export async function _whenIdleForTesting(): Promise<void> {
+  let seen: Promise<unknown> | null = null;
+  while (seen !== queue) {
+    seen = queue;
+    await queue;
+  }
 }
 
 /** For tests. */

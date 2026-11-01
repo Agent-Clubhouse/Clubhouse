@@ -32,6 +32,7 @@ import { ExperimentalSettingsView } from '../features/settings/ExperimentalSetti
 import { McpSettingsView } from '../features/settings/McpSettingsView';
 import { GoobersSettingsView } from '../features/settings/GoobersSettingsView';
 import { HelpersSettingsView } from '../features/settings/HelpersSettingsView';
+import { DispatcherSettingsView } from '../features/settings/DispatcherSettingsView';
 import { useRemoteProjectStore, isRemoteProjectId, parseNamespacedId } from '../stores/remoteProjectStore';
 import { AnnexDisabledView } from './AnnexDisabledView';
 import { SatelliteDisconnectedOverlay } from './SatelliteDisconnectedOverlay';
@@ -280,6 +281,7 @@ export function MainContentView() {
     if (settingsSubPage === 'experimental') return <ExperimentalSettingsView />;
     if (settingsSubPage === 'goobers') return <GoobersSettingsView />;
     if (settingsSubPage === 'helpers') return <HelpersSettingsView />;
+    if (settingsSubPage === 'dispatcher') return <DispatcherSettingsView />;
     if (settingsSubPage === 'feedback') return <FeedbackSettingsView />;
     if (settingsSubPage === 'about') return <AboutSettingsView />;
     return <ProjectSettings projectId={projectId} />;

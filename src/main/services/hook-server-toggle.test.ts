@@ -66,6 +66,15 @@ vi.mock('./hook-server', () => ({
   getPort: () => mockGetPort(),
 }));
 
+const DISPATCHER_DIR = 'dispatcher-folder';
+const mockPathExists = vi.fn((_p: string) => Promise.resolve(false));
+vi.mock('./fs-utils', () => ({
+  pathExists: (p: string) => mockPathExists(p),
+}));
+vi.mock('./dispatcher/dispatcher-paths', () => ({
+  getDispatcherPath: () => DISPATCHER_DIR,
+}));
+
 import {
   applyDisabledForOrchestrator,
   applyEnabledForOrchestrator,
@@ -253,6 +262,35 @@ describe('hook-server-toggle', () => {
       const affected = await applyDisabledForOrchestrator('copilot-cli');
 
       expect(affected).toEqual(['dur-b']);
+    });
+  });
+
+  describe('applyDisabledForOrchestrator — the Dispatcher (#2535)', () => {
+    beforeEach(() => {
+      mockGetProvider.mockReturnValue({ id: 'copilot-cli', writeHooksConfig: vi.fn() });
+      mockIsHookCapable.mockReturnValue(true);
+      mockGetHooksConfigPath.mockImplementation((_provider: unknown, cwd: string) => `${cwd}|hooks`);
+      mockStripClubhouseHooksFromFile.mockResolvedValue(true);
+      mockGetAllRegistrations.mockReturnValue(new Map());
+      mockProjectStoreList.mockResolvedValue([]);
+    });
+
+    it('strips the stopped Dispatcher in its own folder, which is in no project', async () => {
+      mockPathExists.mockResolvedValueOnce(true);
+      mockListDurable.mockImplementationOnce((dir: unknown) => Promise.resolve(dir === DISPATCHER_DIR
+        ? [{ id: 'disp', name: 'Dispatcher', color: 'indigo', orchestrator: 'copilot-cli' }]
+        : []));
+
+      const affected = await applyDisabledForOrchestrator('copilot-cli');
+
+      expect(mockStripClubhouseHooksFromFile).toHaveBeenCalledWith(`${DISPATCHER_DIR}|hooks`);
+      expect(affected).toEqual(['disp']);
+    });
+
+    it('skips the Dispatcher folder when it was never created', async () => {
+      mockPathExists.mockResolvedValueOnce(false);
+      await applyDisabledForOrchestrator('copilot-cli');
+      expect(mockListDurable).not.toHaveBeenCalledWith(DISPATCHER_DIR);
     });
   });
 

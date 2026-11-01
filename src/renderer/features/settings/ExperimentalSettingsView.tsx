@@ -38,7 +38,7 @@ const EXPERIMENTAL_FEATURES: Array<{
   {
     id: 'dispatcher',
     label: 'Dispatcher',
-    description: 'One app-wide agent that coordinates the orchestrators in your projects. Turn it on in Settings, Dispatcher, after turning this on.',
+    description: 'One app-wide agent that coordinates the orchestrators in your projects. Once this is on, turn the Dispatcher on in Settings, Dispatcher.',
   },
   {
     id: 'telemetry',

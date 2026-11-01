@@ -123,6 +123,12 @@ vi.mock('../services/finished-quick-agents-store', () => ({
   onFinishedQuickAgentsChange: vi.fn(),
 }));
 
+vi.mock('../services/dispatcher/dispatcher-service', () => ({
+  DISPATCHER_PERSONA: 'dispatcher',
+  isDispatcherPath: (p: string) => p === 'dispatcher-folder',
+  isDispatcherAgentId: (id: string) => id === 'disp',
+}));
+
 import { ipcMain, dialog, BrowserWindow } from 'electron';
 import { IPC } from '../../shared/ipc-channels';
 import { CONFIG_CHANGE_DEBOUNCE_MS, registerAgentHandlers } from './agent-handlers';
@@ -283,6 +289,47 @@ describe('agent-handlers', () => {
       const handler = handlers.get(IPC.AGENT.CANCEL_DURABLE_CREATION)!;
       expect(await handler({}, '/project', 'agent-2')).toBe(true);
       expect(agentCreation.cancelDurableCreation).toHaveBeenCalledWith('/project', 'agent-2');
+    });
+  });
+
+  describe('Dispatcher singleton guards (#2535)', () => {
+    const deletes = [
+      IPC.AGENT.DELETE_DURABLE, IPC.AGENT.DELETE_COMMIT_PUSH, IPC.AGENT.DELETE_CLEANUP_BRANCH,
+      IPC.AGENT.DELETE_SAVE_PATCH, IPC.AGENT.DELETE_FORCE, IPC.AGENT.DELETE_UNREGISTER,
+    ];
+
+    it.each(deletes)('%s refuses the Dispatcher by id or by folder', async (channel) => {
+      await expect(handlers.get(channel)!({}, 'dispatcher-folder', 'any')).rejects.toThrow("The Dispatcher can't be deleted.");
+      await expect(handlers.get(channel)!({}, 'project', 'disp')).rejects.toThrow("The Dispatcher can't be deleted.");
+      expect(agentConfig.deleteDurable).not.toHaveBeenCalled();
+    });
+
+    it('refuses orchestration changes', async () => {
+      await expect(handlers.get(IPC.AGENT.SET_ORCHESTRATION_POLICY)!({}, 'dispatcher-folder', 'disp', { orchestrate: true })).rejects.toThrow(/orchestration/);
+      await expect(handlers.get(IPC.AGENT.TURN_OFF_ORCHESTRATION)!({}, 'dispatcher-folder', 'disp', 'keep')).rejects.toThrow(/orchestration/);
+      expect(orchestrationPolicy.setOrchestrationPolicy).not.toHaveBeenCalled();
+      expect(orchestrationPolicy.turnOffOrchestration).not.toHaveBeenCalled();
+    });
+
+    it('refuses a duplicate in its folder and the dispatcher persona anywhere else', async () => {
+      const start = handlers.get(IPC.AGENT.START_DURABLE_CREATION)!;
+      await expect(start({}, 'dispatcher-folder', { name: 'copy', color: 'indigo' })).rejects.toThrow(/duplicated/);
+      await expect(start({}, 'project', { name: 'imposter', color: 'indigo', persona: 'dispatcher' })).rejects.toThrow(/only for the Dispatcher/);
+      const create = handlers.get(IPC.AGENT.CREATE_DURABLE)!;
+      await expect(create({}, 'dispatcher-folder', 'copy', 'indigo')).rejects.toThrow(/duplicated/);
+      expect(agentCreation.startDurableCreation).not.toHaveBeenCalled();
+      expect(agentConfig.createDurable).not.toHaveBeenCalled();
+    });
+
+    it('refuses a persona change but allows CLI, model, runtime, auto-sleep and access', async () => {
+      const update = handlers.get(IPC.AGENT.UPDATE_DURABLE_CONFIG)!;
+      await expect(update({}, 'dispatcher-folder', 'disp', { persona: 'workhorse' })).rejects.toThrow("The Dispatcher's persona can't be changed.");
+      await expect(update({}, 'project', 'agent-1', { persona: 'dispatcher' })).rejects.toThrow(/only for the Dispatcher/);
+      expect(agentConfig.updateDurableConfig).not.toHaveBeenCalled();
+
+      const allowed = { orchestrator: 'codex-cli', model: 'gpt-5', runtimeMode: 'terminal', idleSleep: 30, freeAgentMode: false };
+      await update({}, 'dispatcher-folder', 'disp', allowed);
+      expect(agentConfig.updateDurableConfig).toHaveBeenCalledWith('dispatcher-folder', 'disp', allowed);
     });
   });
 

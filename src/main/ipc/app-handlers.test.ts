@@ -149,6 +149,10 @@ vi.mock('../services/experimental-settings', () => ({
   saveSettings: vi.fn(),
 }));
 
+vi.mock('../services/dispatcher/dispatcher-service', () => ({
+  onExperimentalSettingsChanged: vi.fn(async () => undefined),
+}));
+
 vi.mock('../services/preview-eligible', () => ({
   isPreviewEligible: vi.fn(() => true),
 }));
@@ -335,6 +339,12 @@ describe('app-handlers', () => {
   ])('%s reports clubhouse.settings.changed with key %s', async (channel, key) => {
     await handleHandlers.get(channel)!({}, {});
     expect(settingsChanged).toHaveBeenCalledWith(key);
+  });
+
+  it('SAVE_EXPERIMENTAL_SETTINGS lets the Dispatcher follow its flag (#2535)', async () => {
+    const dispatcher = await import('../services/dispatcher/dispatcher-service');
+    await handleHandlers.get(IPC.APP.SAVE_EXPERIMENTAL_SETTINGS)!({}, { dispatcher: true });
+    expect(dispatcher.onExperimentalSettingsChanged).toHaveBeenCalled();
   });
 
   it('SAVE_THEME reports the theme change', async () => {
