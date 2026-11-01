@@ -71,13 +71,17 @@ describe('chat CLI version policy', () => {
   });
 
   it('covers the Copilot versions that actually run, including Homebrew\'s pinned 1.0.82', () => {
-    for (const driver of ['copilot_acp', 'copilot_sdk'] as const) {
-      expect(evaluateCliVersion(driver, 'copilot-cli', '1.0.82').status).toBe('ok');
-      expect(evaluateCliVersion(driver, 'copilot-cli', '1.0.98').status).toBe('ok');
-    }
+    expect(evaluateCliVersion('copilot_acp', 'copilot-cli', '1.0.82').status).toBe('ok');
+    expect(evaluateCliVersion('copilot_acp', 'copilot-cli', '1.0.98').status).toBe('ok');
     expect(evaluateCliVersion('copilot_acp', 'copilot-cli', '1.0.105').status).toBe('ok');
     expect(evaluateCliVersion('copilot_acp', 'copilot-cli', '1.0.106').status).toBe('untested');
-    expect(evaluateCliVersion('copilot_sdk', 'copilot-cli', '1.0.99').status).toBe('untested');
+  });
+
+  it('keeps the Copilot SDK driver off CLIs below its floor, which fall back to ACP', () => {
+    expect(evaluateCliVersion('copilot_sdk', 'copilot-cli', '1.0.82').status).toBe('below_min');
+    expect(evaluateCliVersion('copilot_sdk', 'copilot-cli', '1.0.83').status).toBe('ok');
+    expect(evaluateCliVersion('copilot_sdk', 'copilot-cli', '1.0.106-2').status).toBe('ok');
+    expect(evaluateCliVersion('copilot_sdk', 'copilot-cli', '1.0.106').status).toBe('untested');
   });
 
   it('notes a newer-than-tested version without failing it', () => {

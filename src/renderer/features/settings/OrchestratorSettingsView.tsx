@@ -13,7 +13,7 @@ import { noteExplicitTerminalChoice } from '../agents/chat/chat-default-tip';
 import { ProjectAgentDefaultsSection } from './ProjectAgentDefaultsSection';
 import { SettingsPage, SettingsSection, SettingsField, SettingsBlock, settingsInput, settingsHelp } from './SettingsLayout';
 import type { FreeAgentPermissionMode, SourceControlProvider } from '../../../shared/types';
-import type { AgentRuntimeMode, ChatRuntimeSettings } from '../../../shared/chat';
+import type { AgentRuntimeMode, ChatDriverId, ChatRuntimeSettings } from '../../../shared/chat';
 import { Button } from '../../components/Button';
 import { useChatIdleSettingsStore } from '../../stores/chatIdleSettingsStore';
 import { CHAT_IDLE_TIMEOUT_CHOICES } from '../../../shared/settings-definitions';
@@ -88,8 +88,29 @@ function useChatRuntimeSettings() {
     }
   };
 
-  return { chatEnabled, chatResolved, runtimeSettings, setRuntimeMode };
+  const setChatDriver = async (orchestratorId: string, mode: AgentRuntimeMode, driver: ChatDriverId | undefined) => {
+    const withDriver = (prev: ChatRuntimeSettings): ChatRuntimeSettings => {
+      const { driver: _old, ...rest } = prev[orchestratorId] ?? { mode };
+      return { ...prev, [orchestratorId]: { ...rest, mode: rest.mode ?? mode, ...(driver && { driver }) } };
+    };
+    setRuntimeSettings(withDriver);
+    try {
+      await window.clubhouse.chat.saveRuntimeSettings(withDriver((await window.clubhouse.chat.getRuntimeSettings()) ?? {}));
+    } catch {
+      // Best-effort; the optimistic value stays until the next load.
+    }
+  };
+
+  return { chatEnabled, chatResolved, runtimeSettings, setRuntimeMode, setChatDriver };
 }
+
+/** Chat drivers a provider lets you choose between. The first is what it gets when nothing is chosen. */
+const CHAT_DRIVER_CHOICES: Readonly<Record<string, ReadonlyArray<{ value: ChatDriverId; label: string }>>> = {
+  'copilot-cli': [
+    { value: 'copilot_acp', label: 'ACP (default)' },
+    { value: 'copilot_sdk', label: 'Copilot SDK (experimental)' },
+  ],
+};
 
 /** The offered choices, plus a hand-edited value that isn't one of them, so the select shows it. */
 function idleChoices(current: number): number[] {
@@ -156,7 +177,7 @@ function AppAgentSettings() {
   const setFreeAgentDefaultMode = useFreeAgentSettingsStore((s) => s.setDefaultMode);
   const loadFreeAgentSettings = useFreeAgentSettingsStore((s) => s.loadSettings);
   const [showConfirm, setShowConfirm] = useState(false);
-  const { chatEnabled, chatResolved, runtimeSettings, setRuntimeMode } = useChatRuntimeSettings();
+  const { chatEnabled, chatResolved, runtimeSettings, setRuntimeMode, setChatDriver } = useChatRuntimeSettings();
   const idleMinutes = useChatIdleSettingsStore((st) => st.idleTimeoutMinutes as number);
   const saveIdle = useChatIdleSettingsStore((st) => st.saveSettings);
   const loadIdle = useChatIdleSettingsStore((st) => st.loadSettings);
@@ -414,6 +435,26 @@ function AppAgentSettings() {
                           onChange={(mode) => setRuntimeMode(o.id, mode)}
                         />
                       </SettingsField>
+                      {runtimeMode === 'chat' && CHAT_DRIVER_CHOICES[o.id] && (
+                        <SettingsField
+                          label="Chat driver"
+                          help="How chat talks to the CLI. Applies the next time an agent starts, and the chat says when it runs on the Copilot SDK. If the SDK can't start, the agent uses ACP and tells you why."
+                          htmlFor={`${idBase}-driver-${o.id}`}
+                        >
+                          <select
+                            id={`${idBase}-driver-${o.id}`}
+                            data-testid={`chat-driver-${o.id}`}
+                            value={runtimeSettings[o.id]?.driver ?? CHAT_DRIVER_CHOICES[o.id][0].value}
+                            onChange={(e) => {
+                              const value = e.target.value as ChatDriverId;
+                              void setChatDriver(o.id, runtimeMode, value === CHAT_DRIVER_CHOICES[o.id][0].value ? undefined : value);
+                            }}
+                            className={SELECT_CLASS}
+                          >
+                            {CHAT_DRIVER_CHOICES[o.id].map((choice) => <option key={choice.value} value={choice.value}>{choice.label}</option>)}
+                          </select>
+                        </SettingsField>
+                      )}
                     </div>
                   )}
                   {hookCapable && (

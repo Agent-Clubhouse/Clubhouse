@@ -313,6 +313,11 @@ export interface ChatDriver {
   readonly id: ChatDriverId;
   readonly provider: string;
   /**
+   * Only used when chosen for its provider (ProviderRuntimeSetting.driver):
+   * never the provider's default, and never a fallback from another driver.
+   */
+  readonly optIn?: boolean;
+  /**
    * Zero-token handshake used for availability checks, fallback decisions and
    * the nightly smoke test. `commandPrefix` launches the CLI the same way
    * start() will.

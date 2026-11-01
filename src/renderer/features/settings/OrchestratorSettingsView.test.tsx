@@ -373,6 +373,54 @@ describe('OrchestratorSettingsView', () => {
       expect(getRuntimeSettings).not.toHaveBeenCalled();
     });
 
+    describe('the Copilot chat driver choice', () => {
+      beforeEach(() => {
+        useOrchestratorStore.setState({
+          enabled: ['claude-code', 'copilot-cli'],
+          allOrchestrators: [
+            { id: 'claude-code', displayName: 'Claude Code', shortName: 'CC', capabilities: { headless: true, structuredOutput: true, hooks: true, sessionResume: true, permissions: true } },
+            { id: 'copilot-cli', displayName: 'Copilot CLI', shortName: 'CP', capabilities: { headless: true, structuredOutput: true, hooks: true, sessionResume: true, permissions: true } },
+          ],
+          availability: { 'claude-code': { available: true }, 'copilot-cli': { available: true } },
+        });
+      });
+
+      it('defaults to ACP, and only Copilot offers it', async () => {
+        setChatFlag(true);
+        render(<OrchestratorSettingsView />);
+        const select = await screen.findByTestId('chat-driver-copilot-cli');
+        expect(select).toHaveValue('copilot_acp');
+        expect(screen.queryByTestId('chat-driver-claude-code')).not.toBeInTheDocument();
+      });
+
+      it('saves the SDK when chosen, and clears the choice on going back', async () => {
+        setChatFlag(true);
+        getRuntimeSettings.mockResolvedValue({ 'claude-code': { mode: 'terminal' } });
+        render(<OrchestratorSettingsView />);
+        const select = await screen.findByTestId('chat-driver-copilot-cli');
+        fireEvent.change(select, { target: { value: 'copilot_sdk' } });
+        await waitFor(() => expect(saveRuntimeSettings).toHaveBeenCalledWith({ 'claude-code': { mode: 'terminal' }, 'copilot-cli': { mode: 'chat', driver: 'copilot_sdk' } }));
+        expect(select).toHaveValue('copilot_sdk');
+
+        getRuntimeSettings.mockResolvedValue({ 'copilot-cli': { mode: 'chat', driver: 'copilot_sdk' } });
+        fireEvent.change(select, { target: { value: 'copilot_acp' } });
+        await waitFor(() => expect(saveRuntimeSettings).toHaveBeenLastCalledWith({ 'copilot-cli': { mode: 'chat' } }));
+      });
+
+      it('is hidden when the agent opens in the CLI, and when chat is off', async () => {
+        setChatFlag(true);
+        getRuntimeSettings.mockResolvedValue({ 'copilot-cli': { mode: 'terminal' } });
+        const { unmount } = render(<OrchestratorSettingsView />);
+        await screen.findByTestId('runtime-mode-copilot-cli');
+        await waitFor(() => expect(screen.queryByTestId('chat-driver-copilot-cli')).not.toBeInTheDocument());
+        unmount();
+        setChatFlag(false);
+        render(<OrchestratorSettingsView />);
+        await waitFor(() => expect(window.clubhouse.app.getExperimentalSettings).toHaveBeenCalled());
+        expect(screen.queryByTestId('chat-driver-copilot-cli')).not.toBeInTheDocument();
+      });
+    });
+
     it('shows Chat selected by default when the flag is on and nothing is saved', async () => {
       setChatFlag(true);
       render(<OrchestratorSettingsView />);

@@ -506,6 +506,65 @@ require('readline').createInterface({ input: process.stdin }).on('line', line =>
       return { sdk, stream };
     }
 
+    describe('the opt-in Copilot SDK driver', () => {
+      const copilot = { ...provider, id: 'copilot-cli' } as unknown as OrchestratorProvider;
+      function copilotDrivers() {
+        const acp = new FakeChatDriver('copilot_acp', 'copilot-cli');
+        const sdk = Object.assign(new FakeChatDriver('copilot_sdk', 'copilot-cli'), { optIn: true });
+        registerChatDriver(acp);
+        registerChatDriver(sdk);
+        return { acp, sdk };
+      }
+
+      it('is not used when nothing is chosen', async () => {
+        const { acp, sdk } = copilotDrivers();
+        expect(await tryStartChatAgent(params, copilot, undefined, undefined, null)).toBe('chat');
+        expect(acp.sessions).toHaveLength(1);
+        expect(sdk.sessions).toHaveLength(0);
+      });
+
+      it('is not a fallback for someone on ACP', async () => {
+        const { acp, sdk } = copilotDrivers();
+        const probe = vi.spyOn(sdk, 'probe');
+        acp.probe = async () => ({ handshakeOk: false, capabilities: acp.capabilities, error: 'no' });
+        expect(await tryStartChatAgent(params, copilot, undefined, undefined, null)).toBe('terminal');
+        expect(probe).not.toHaveBeenCalled();
+        expect(sdk.sessions).toHaveLength(0);
+      });
+
+      it('runs when chosen', async () => {
+        const { acp, sdk } = copilotDrivers();
+        mode.value = { mode: 'chat', driver: 'copilot_sdk' };
+        expect(await tryStartChatAgent(params, copilot, undefined, undefined, null)).toBe('chat');
+        expect(sdk.sessions).toHaveLength(1);
+        expect(acp.sessions).toHaveLength(0);
+      });
+
+      it.each([
+        ['a failed handshake', { handshakeOk: false, error: 'protocol mismatch' }, 'handshake failed: protocol mismatch'],
+        ['a CLI below its floor', { handshakeOk: true, cliVersion: '1.0.82' }, 'older than chat supports (1.0.83 or newer)'],
+      ])('falls back to ACP on %s, and says why', async (_name, probe, why) => {
+        const { acp, sdk } = copilotDrivers();
+        mode.value = { mode: 'chat', driver: 'copilot_sdk' };
+        sdk.probe = async () => ({ capabilities: sdk.capabilities, ...probe }) as never;
+        expect(await tryStartChatAgent(params, copilot, undefined, undefined, null)).toBe('chat');
+        expect(sdk.sessions).toHaveLength(0);
+        expect(acp.sessions).toHaveLength(1);
+        expect(toasts()[0].message).toContain('Using Copilot CLI (ACP): ');
+        expect(toasts()[0].message).toContain(why);
+        const logged = vi.mocked(appLog).mock.calls.map(([, , msg, opts]) => ({ msg, meta: opts?.meta as Record<string, unknown> }));
+        expect(logged.find((l) => l.msg === 'Chat driver check' && l.meta.driver === 'copilot_sdk')?.meta).toMatchObject({ ok: false, reason: expect.stringContaining(why) });
+      });
+
+      it('sends a missing login to the CLI view rather than ACP', async () => {
+        const { acp, sdk } = copilotDrivers();
+        mode.value = { mode: 'chat', driver: 'copilot_sdk' };
+        sdk.probe = async () => ({ handshakeOk: true, capabilities: sdk.capabilities, needsLogin: true, loginHint: 'Run copilot and use /login' });
+        expect(await tryStartChatAgent(params, copilot, undefined, undefined, null)).toBe('terminal');
+        expect(acp.sessions).toHaveLength(0);
+      });
+    });
+
     it('drops from the Agent SDK to stream-json when the SDK handshake fails, and says why', async () => {
       const { sdk, stream } = drivers();
       sdk.probe = async () => ({ handshakeOk: false, capabilities: sdk.capabilities, error: 'initialize timed out' });

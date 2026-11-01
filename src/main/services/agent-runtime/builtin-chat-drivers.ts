@@ -6,6 +6,7 @@
  */
 
 import { registerClaudeChatDrivers } from '../../chat/claude';
+import { registerCopilotSdkChatDriver } from '../../chat/copilot/driver';
 import { CodexChatDriver } from '../../orchestrators/adapters/codex-chat-driver';
 import { registerCopilotChatDrivers } from '../../orchestrators/adapters/acp-chat-driver';
 import { appLog } from '../log-service';
@@ -22,8 +23,9 @@ export function registerBuiltinChatDrivers(): () => void {
     registerChatDriver(new CodexChatDriver({
       onLog: (level, message, meta) => appLog('core:chat:codex', level, message, meta && { meta }),
     })),
-    // Copilot: ACP (copilot_acp); the Copilot SDK driver will register after it.
+    // Copilot: ACP (copilot_acp), then the opt-in Copilot SDK driver.
     registerCopilotChatDrivers(registerChatDriver, (level, message, meta) => appLog('core:chat:copilot', level, message, meta && { meta })),
+    registerCopilotSdkChatDriver(registerChatDriver, (level, message, meta) => appLog('core:chat:copilot', level, message, meta && { meta })),
   ];
   return () => unregister.forEach((u) => u());
 }

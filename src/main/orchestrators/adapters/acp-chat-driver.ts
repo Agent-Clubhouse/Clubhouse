@@ -420,8 +420,8 @@ export function createCopilotAcpChatDriver(log?: Log): AcpChatDriver {
 /**
  * Register Copilot's chat driver with the chat runtime's registry
  * (`registerChatDriver` in services/agent-runtime/chat-drivers.ts). Copilot
- * has one chat mode today; the Copilot SDK driver will register ahead of it
- * (docs/copilot-sdk-driver.md). Returns the unregister function.
+ * also has an opt-in SDK driver, registered after this one until it becomes
+ * the default (docs/copilot-sdk-driver.md). Returns the unregister function.
  */
 export function registerCopilotChatDrivers(
   register: (driver: ChatDriver) => () => void,
