@@ -308,7 +308,8 @@ export class CodexCliProvider extends BaseProvider implements HeadlessCapable, H
       supportsPositionalMission: false,
       supportsAutoResumeAfterUpdate: true,
       permissions: true,
-      // Probed on 0.163.0 and 0.166.0: the next turn still offers the old tools (#2603).
+      // Probed on 0.163.0 and 0.166.0, and checked by the nightly fake-model smoke:
+      // the next turn still offers the old tools (#2603).
       ignoresToolListChanged: true,
     };
   }

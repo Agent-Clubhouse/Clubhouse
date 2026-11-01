@@ -41,10 +41,10 @@ export const COPILOT_ACP_ARGS: readonly string[] = ['--acp', '--stdio'];
 /**
  * Versions whose ACP behaviour the fixtures and probes cover: 1.0.82 (a
  * recorded handshake, test/chat-fixtures/copilot/handshake-1.0.82.jsonl, from
- * the shim's bundled runtime), 1.0.92 and 1.0.98. Newer is "untested", not
- * broken.
+ * the shim's bundled runtime), 1.0.92, 1.0.98 and 1.0.105 (handshake and a
+ * fake-model round trip, no live prompt). Newer is "untested", not broken.
  */
-export const COPILOT_ACP_TESTED_RANGE = { min: '1.0.82', max: '1.0.98' } as const;
+export const COPILOT_ACP_TESTED_RANGE = { min: '1.0.82', max: '1.0.105' } as const;
 
 /** Copilot's ACP mode ids are URIs ending in one of these fragments. */
 export type CopilotModeKind = 'agent' | 'plan' | 'autopilot';

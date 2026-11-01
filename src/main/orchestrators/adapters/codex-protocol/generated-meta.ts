@@ -1,16 +1,17 @@
 // Written by scripts/generate-codex-app-server-types.mjs. Do not edit by hand.
 
 /** Codex CLI version the vendored app-server bindings in ./generated came from. */
-export const CODEX_APP_SERVER_SCHEMA_VERSION = '0.153.4';
+export const CODEX_APP_SERVER_SCHEMA_VERSION = '0.166.0';
 
 /** Command that produced ./generated (stable surface; no --experimental). */
-export const CODEX_APP_SERVER_GENERATE_COMMAND = 'npx -y @openai/codex@0.153.4 app-server generate-ts --out <dir>';
+export const CODEX_APP_SERVER_GENERATE_COMMAND = 'npx -y @openai/codex@0.166.0 app-server generate-ts --out <dir>';
 
 /** Runtime list of `ServerNotification` methods (the generated bindings are type-only). */
 export const CODEX_SERVER_NOTIFICATION_METHODS = [
   'error',
   'thread/started',
   'thread/status/changed',
+  'thread/readState/changed',
   'thread/archived',
   'thread/deleted',
   'thread/unarchived',
@@ -18,7 +19,9 @@ export const CODEX_SERVER_NOTIFICATION_METHODS = [
   'thread/reverted',
   'skills/changed',
   'thread/name/updated',
+  'thread/attachment/updated',
   'thread/goal/updated',
+  'thread/prediction/updated',
   'thread/goal/cleared',
   'thread/queue/changed',
   'project/changed',
@@ -55,6 +58,7 @@ export const CODEX_SERVER_NOTIFICATION_METHODS = [
   'mcpServer/startupStatus/updated',
   'mcpServer/event/stream/notification',
   'account/updated',
+  'account/gatewayOAuth/changed',
   'account/rateLimits/updated',
   'app/list/updated',
   'remoteControl/status/changed',

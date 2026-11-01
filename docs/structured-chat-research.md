@@ -113,6 +113,16 @@ Open parity epics: #1534 (Copilot) and #1535 (Codex).
 
 ## 3. The CLIs today (probed 2026-10-16)
 
+### Latest pass (2026-11-01, #2615)
+
+No live prompt. Each row is a handshake and a round trip with a fake model through `src/main/chat/fake-model-smoke.test.ts`, which the nightly workflow also runs. The per-CLI sections below are the older 2026-10-16 probe.
+
+| CLI | Version | `tools/list_changed`, chat | `tools/list_changed`, terminal | Changes found |
+|---|---|---|---|---|
+| Claude Code, Agent SDK 0.3.316 | 2.1.316 | Re-lists. With tool search on (default), the next turn reports tools added and removed. With it off, added tools arrive next turn and removed ones stay offered until a resume | Added tools arrive next turn | Additive SDK types |
+| Codex | 0.166.0 | Ignored: `ignoresToolListChanged` stands, and `call_wire_tool` reaches a new wire | Inconclusive: the probe's MCP tools weren't offered at all | `thread/rollback` removed (unused here). A generated image can carry `fileId` instead of `result` |
+| Copilot (`copilot_acp`) | 1.0.105 | Re-lists: added and removed tools both apply next turn | Added tools arrive on the first turn after the wire is added | `initialize` capabilities match 1.0.98 |
+
 Each CLI was checked with `--help`, schema generators and handshakes. Each got at most two tiny paid prompts on the cheapest models.
 
 ### Claude Code: 2.1.300, Agent SDK 0.3.301

@@ -574,15 +574,24 @@ export class CodexChatEventMapper {
       case 'webSearch':
         return [{ type: 'tool_call_update', data: { toolCallId: item.id, status: 'completed' } }];
       case 'imageGeneration': {
-        // `result` is the image as base64; `savedPath` is Codex's own copy, kept for "reveal".
-        const failed = !!item.failure || !item.result;
+        // `result` is the image as base64. Since 0.166 the item may carry `fileId`
+        // instead, and then `savedPath` (Codex's own copy) is the only local source.
+        const bytes = 'result' in item ? item.result : '';
+        const media: ChatImage | undefined = bytes
+          ? { type: 'image', mimeType: 'image/png', data: bytes }
+          : item.savedPath
+            ? { type: 'image', mimeType: 'image/png', sourcePath: item.savedPath }
+            : 'fileId' in item && item.fileId
+              ? { type: 'image', mimeType: 'image/png', unavailable: true }
+              : undefined;
+        const failed = !!item.failure || !media;
         return [{
           type: 'tool_call_update',
           data: {
             toolCallId: item.id,
             status: failed ? 'failed' : 'completed',
             title: item.revisedPrompt || 'Generated image',
-            ...(!failed && { media: [{ type: 'image' as const, mimeType: 'image/png', data: item.result }] }),
+            ...(!failed && { media: [media] }),
             ...(item.failure && { error: imageFailureText(item.failure) }),
           },
         }];

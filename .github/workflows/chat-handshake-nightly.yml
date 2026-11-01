@@ -21,8 +21,10 @@ jobs:
   # Zero-token protocol handshake for every chat driver (docs/structured-chat-research.md
   # §8 decision 4). Each driver's probe() spawns the pinned CLI, completes the
   # `initialize` handshake and exits: no prompt is sent and no credentials are
-  # configured, so nothing can spend tokens. Pins track the versions the drivers
-  # were tested with (chat-version-policy.ts TESTED_CLI_VERSIONS).
+  # configured, so nothing can spend tokens. Pins match testedMax in
+  # chat-version-policy.ts TESTED_CLI_VERSIONS; raise them together. After the
+  # handshake, the fake-model smoke runs the Dispatcher flow against a model server
+  # on 127.0.0.1 and checks ignoresToolListChanged still matches the CLI.
   chat-handshake:
     name: chat handshake (${{ matrix.provider }}, zero tokens)
     runs-on: ubuntu-latest
@@ -34,13 +36,13 @@ jobs:
         include:
           - provider: claude-code
             package: '@anthropic-ai/claude-code'
-            version: '2.1.300'
+            version: '2.1.316'
           - provider: codex-cli
             package: '@openai/codex'
-            version: '0.159.3'
+            version: '0.166.0'
           - provider: copilot-cli
             package: '@github/copilot'
-            version: '1.0.98'
+            version: '1.0.105'
     steps:
       - uses: actions/checkout@v7
 
@@ -64,11 +66,21 @@ jobs:
           CLUBHOUSE_CHAT_HANDSHAKE_REPORT: ${{ runner.temp }}/chat-handshake.json
         run: npx vitest run src/main/chat/handshake-smoke.test.ts
 
+      - name: Dispatcher flow against a local fake model (no paid requests)
+        shell: bash
+        env:
+          CLUBHOUSE_FAKE_MODEL_SMOKE: '1'
+          CLUBHOUSE_FAKE_MODEL_PROVIDERS: ${{ matrix.provider }}
+          CLUBHOUSE_FAKE_MODEL_REPORT: ${{ runner.temp }}/fake-model.json
+        run: |
+          CLUBHOUSE_FAKE_MODEL_BIN_DIR="$(npm prefix -g)/bin" npx vitest run src/main/chat/fake-model-smoke.test.ts
+
       - name: Publish handshake summary
         if: always()
         shell: bash
         env:
           REPORT: ${{ runner.temp }}/chat-handshake.json
+          FAKE_REPORT: ${{ runner.temp }}/fake-model.json
         run: |
           {
             echo "## Chat handshake: ${{ matrix.provider }} (pinned ${{ matrix.version }})"
@@ -81,5 +93,13 @@ jobs:
               '
             else
               echo "- no report written"
+            fi
+            if [ -f "$FAKE_REPORT" ]; then
+              node -e '
+                const rows = JSON.parse(require("fs").readFileSync(process.env.FAKE_REPORT, "utf8"));
+                console.log("| driver | CLI version | resumed | new wire offered next turn |");
+                console.log("|---|---|---|---|");
+                for (const r of rows) console.log(`| ${r.driver} | ${r.cliVersion ?? "?"} | ${r.resumed ? "yes" : "no"} | ${r.newWireReachedModel ? "yes" : "no"} |`);
+              '
             fi
           } >> "$GITHUB_STEP_SUMMARY"

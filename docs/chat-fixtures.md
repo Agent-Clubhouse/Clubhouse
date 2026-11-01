@@ -17,6 +17,7 @@ CI never sends a real prompt (docs/structured-chat-research.md §8, decision 4).
 - `scripts/chat-fixtures/fixture-format.mjs` holds the format, matching and redaction code both share.
 - `src/main/orchestrators/adapters/testing/fake-cli.ts` is the vitest helper: `createFakeCli`, `writeFakeCliShims`, `EventLog` and `NdjsonPeer`.
 - `src/main/orchestrators/adapters/fixture-replay.test.ts` drives `AcpClient`, `CodexAppServerClient`, a stream-json peer and the `copilot_acp` `ChatDriver` through the committed fixtures. `src/main/chat/claude/fixture-replay.test.ts` does the same for `ClaudeStreamTransport` and its normalizer. Start there for examples.
+- `src/main/chat/fake-model-smoke.test.ts` runs the Dispatcher flow with a real CLI and driver against `src/main/chat/testing/fake-model-server.ts`, a model server on 127.0.0.1. It needs no login and sends no paid request. Set `CLUBHOUSE_FAKE_MODEL_SMOKE=1` and `CLUBHOUSE_FAKE_MODEL_BIN_DIR`.
 - `e2e/chat-fake-cli.ts` installs fake `claude`/`codex`/`copilot` executables on the app's PATH for Playwright.
 - `src/main/orchestrators/adapters/testing/chat-script.ts` builds fixtures from scripted turns at run time (tool images, Copilot binary results and their session journal, Markdown with paths, AskUserQuestion, held turns). The rich chat E2E specs use it; see docs/testing/chat-e2e-plan.md.
 

@@ -19,6 +19,7 @@ import {
 import { MINIMAL_CHAT_CAPABILITIES } from '../../../shared/chat/capabilities';
 import type { ChatEventDraft } from '../../../shared/chat/events';
 import type { ChatDriverStartOptions } from '../../../shared/chat/runtime';
+import { CODEX_APP_SERVER_SCHEMA_VERSION } from './codex-protocol';
 import * as fx from './codex-protocol/__fixtures__/app-server-session';
 import { CodexAppServerClient } from './codex-app-server-client';
 
@@ -197,7 +198,7 @@ describe('CodexChatDriver', () => {
         cwd: 'workspace',
         resumed: false,
         nativeSessionId: fx.THREAD_ID,
-        cliVersion: '0.153.4',
+        cliVersion: CODEX_APP_SERVER_SCHEMA_VERSION,
         model: 'gpt-5-codex',
         level: 'auto_edit',
         capabilities: CODEX_CHAT_CAPABILITIES,
@@ -1004,7 +1005,7 @@ describe('CodexChatDriver', () => {
   it('probe completes the handshake only and reports the CLI version', async () => {
     const probe = await new CodexChatDriver().probe('codex');
 
-    expect(probe).toEqual({ handshakeOk: true, cliVersion: '0.153.4', capabilities: CODEX_CHAT_CAPABILITIES });
+    expect(probe).toEqual({ handshakeOk: true, cliVersion: CODEX_APP_SERVER_SCHEMA_VERSION, capabilities: CODEX_CHAT_CAPABILITIES });
     expect(server.received.map((m) => m.method)).toEqual(['initialize', 'initialized']);
     expect(server.proc.kill).toHaveBeenCalled();
   });
