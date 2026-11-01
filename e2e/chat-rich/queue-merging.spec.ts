@@ -98,7 +98,13 @@ test('claude: a burst of helper updates becomes one steer, and user steers are n
   await session.sendHelperUpdates(updates);
   const fromAgents = steered.and(window.locator('[data-source="mcp"]'));
   await expect(fromAgents).toHaveCount(1, { timeout: TURN_TIMEOUT });
-  for (const text of updates) await expect(fromAgents).toContainText(text);
+  // One row per update, each with its sender and without its routing text (#2599).
+  for (let i = 1; i <= 9; i++) {
+    await expect(fromAgents.locator(`[data-sender="helper-${i}"]`)).toContainText(`Step ${i} done.`);
+  }
+  await expect(fromAgents.locator('[data-sender="Clubhouse"]')).toContainText('Helper helper-10 is ready.');
+  await expect(fromAgents).not.toContainText('[FROM HELPER');
+  await expect(fromAgents).not.toContainText('[Clubhouse]');
   for (const text of userSteers) await expect(fromAgents).not.toContainText(text);
 
   await dom.stop.click();
@@ -230,7 +236,8 @@ test('codex: a burst of helper updates becomes one steer, and queued and steered
   await session.sendHelperUpdates(updates);
   const fromAgents = steered.and(window.locator('[data-source="mcp"]'));
   await expect(fromAgents).toHaveCount(1, { timeout: TURN_TIMEOUT });
-  for (const text of updates) await expect(fromAgents).toContainText(text);
+  for (let i = 1; i <= updates.length; i++) await expect(fromAgents).toContainText(`Step ${i} done.`);
+  await expect(fromAgents).not.toContainText('[FROM HELPER');
   await expect(dom.queueItems).toHaveCount(1);
   await expect(dom.queueItems).toHaveText(/Then write the changelog\./);
 

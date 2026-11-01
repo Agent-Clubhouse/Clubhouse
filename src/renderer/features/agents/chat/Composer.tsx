@@ -9,7 +9,7 @@
  */
 
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ClipboardEvent, type DragEvent, type KeyboardEvent, type MouseEvent } from 'react';
-import { CHAT_ATTACHMENTS_MAX, PERMISSION_LEVELS, switchNote, type AvailableCommand, type ChatCapabilities, type ChatModelOption, type PermissionLevel } from '../../../../shared/chat';
+import { CHAT_ATTACHMENTS_MAX, PERMISSION_LEVELS, messageSummary, switchNote, type AvailableCommand, type ChatCapabilities, type ChatModelOption, type PermissionLevel } from '../../../../shared/chat';
 import type { PlanEntry } from '../../../../shared/chat';
 import type { QueuedMessage } from '../../../stores/chatStore';
 import { CheckIcon, ChevronDown, FileIcon, PaperclipIcon, PlanIcon, PlusIcon, ShieldIcon, StopIcon, UpIcon, XIcon } from './icons';
@@ -123,7 +123,7 @@ export function QueueList({ queued, onRemove }: {
         // About QUEUE_VISIBLE_ROWS rows of 31px, then the list scrolls.
         <ul className="m-0 p-0 list-none max-h-[155px] overflow-y-auto" data-testid="chat-queue-list">
           {queued.map((q, i) => {
-            const label = q.text || queuedAttachmentLabel(q);
+            const label = (q.text && messageSummary(q)) || queuedAttachmentLabel(q);
             return (
               <li key={q.messageId} className={`group flex items-center gap-2.5 px-3 py-1.5 text-[12.5px] text-ctp-subtext1 ${i > 0 ? 'border-t border-surface-0' : ''}`} data-testid="chat-queue-item">
                 <span className="w-[18px] h-[18px] rounded bg-surface-0 grid place-items-center text-[11px] text-ctp-overlay1 flex-shrink-0">{i + 1}</span>

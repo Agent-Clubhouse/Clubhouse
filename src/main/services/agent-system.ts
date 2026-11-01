@@ -18,6 +18,7 @@ import * as profileSettings from './profile-settings';
 import { readProjectAgentDefaults, readLaunchWrapper, readDefaultMcps, readMcpConfigs } from './agent-settings-service';
 import { applyLaunchWrapper, validateWrapperConfig } from '../orchestrators/shared';
 import type { DurableAgentConfig, LaunchWrapperConfig, FreeAgentPermissionMode } from '../../shared/types';
+import type { RoutedMessagePart } from '../../shared/chat';
 import { agentRegistry, resolveOrchestrator, untrackAgent, readProjectOrchestrator, DEFAULT_ORCHESTRATOR } from './agent-registry';
 import { waitReady as waitMcpBridgeReady } from './clubhouse-mcp/bridge-server';
 import { injectClubhouseMcp } from './clubhouse-mcp/injection';
@@ -70,6 +71,8 @@ export interface SpawnAgentParams {
   kind: 'durable' | 'quick' | 'companion';
   model?: string;
   mission?: string;
+  /** Who sent the mission, for chat to show. The mission text itself is what the agent gets. */
+  missionRouted?: RoutedMessagePart[];
   systemPrompt?: string;
   allowedTools?: string[];
   orchestrator?: OrchestratorId;
@@ -457,6 +460,7 @@ async function spawnAgentInner(inParams: SpawnAgentParams, facts: SpawnFacts): P
           kind: p.kind,
           model: p.model,
           mission: p.mission,
+          missionRouted: p.missionRouted,
           systemPrompt: p.systemPrompt,
           freeAgentMode: p.freeAgentMode,
           permissionMode,

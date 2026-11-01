@@ -98,10 +98,12 @@ export async function reportDisposeDecision(
   const runtime = getAgentRuntime(parentId);
   if (!runtime) return { ok: true, delivered: false, message: 'The orchestrator isn\'t running' };
   const text = decision === 'disposed'
-    ? `[Clubhouse] The user approved your request and disposed of ${config.name}.`
-    : `[Clubhouse] The user declined your request to dispose of ${config.name}. Nothing was changed.`;
+    ? `The user approved your request and disposed of ${config.name}.`
+    : `The user declined your request to dispose of ${config.name}. Nothing was changed.`;
   try {
-    await runtime.sendMessage(text, { source: 'mcp', taskId: `dispose_${Date.now().toString(36)}` });
+    await runtime.sendMessage(`[Clubhouse] ${text}`, {
+      source: 'mcp', taskId: `dispose_${Date.now().toString(36)}`, routed: [{ fromClubhouse: true, text }],
+    });
     return { ok: true, delivered: true, message: 'Reported' };
   } catch (err) {
     // telemetry-exempt: logged; the user's decision already stands

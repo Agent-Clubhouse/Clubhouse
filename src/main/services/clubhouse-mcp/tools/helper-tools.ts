@@ -236,7 +236,7 @@ async function resolveTargetProject(homePath: string, orchestratorId: string, re
  * or user decision should be held for that.
  */
 function notifyOrchestrator(orchestratorId: string, text: string): void {
-  deliverHelperUpdate(orchestratorId, `[Clubhouse] ${text}`).then((delivery) => {
+  deliverHelperUpdate(orchestratorId, `[Clubhouse] ${text}`, { fromClubhouse: true, text }).then((delivery) => {
     if (delivery === 'delivered') return;
     appLog('core:mcp', 'warn', 'Helper update not delivered: the orchestrator is not running', {
       meta: { orchestratorId, delivery },
@@ -414,6 +414,7 @@ async function finishHelperStart(
       kind: 'durable',
       model: config.model,
       mission: helperMission(orchestrator.name, task),
+      missionRouted: [{ sender: { agentId: orchestrator.id, name: orchestrator.name }, text: task }],
       orchestrator: finalProvider as OrchestratorId | undefined,
       // Both explicitly: an unset mode would be filled from project settings
       // at spawn, and a persona may have written freeAgentMode on the config.
@@ -967,10 +968,11 @@ async function wakeHelper(agentId: string, args: Record<string, unknown>): Promi
       ...(message && { messageDelivered: false, note: 'It is still starting; send the message once it is running.' }),
     });
   }
+  const callerSender = { agentId, name: caller.config.name };
   if (agentSystem.isAgentRunning(helper.id)) {
     // A sleep that began while the helper was re-read.
     if (agentSystem.isAgentStopping(helper.id)) return stillStopping(helper, message);
-    const delivery = message ? await deliverNow(helper.id, `[FROM:${caller.config.name}] ${message}`) : undefined;
+    const delivery = message ? await deliverNow(helper.id, `[FROM:${caller.config.name}] ${message}`, [{ sender: callerSender, text: message }]) : undefined;
     if (delivery === 'stopping') return stillStopping(helper, message);
     const delivered = delivery === 'delivered';
     return jsonResult({ helperId: helper.id, name: helper.name, status: 'already_running', ...(message && { messageDelivered: delivered }) });
@@ -984,6 +986,7 @@ async function wakeHelper(agentId: string, args: Record<string, unknown>): Promi
   const mission = helper.pendingTask
     ? [helperMission(caller.config.name, helper.pendingTask), fromCaller].filter(Boolean).join('\n\n')
     : fromCaller;
+  const missionText = [helper.pendingTask, message].filter(Boolean).join('\n\n');
   const resume = !!helper.lastSessionId;
   let launch: HelperLaunch;
   let taskTaken = false;
@@ -1003,7 +1006,7 @@ async function wakeHelper(agentId: string, args: Record<string, unknown>): Promi
       cwd: helper.worktreePath || helperPath,
       kind: 'durable',
       model: helper.model,
-      ...(mission && { mission }),
+      ...(mission && { mission, missionRouted: [{ sender: callerSender, text: missionText }] }),
       orchestrator: provider,
       freeAgentMode: launch.freeAgentMode,
       permissionMode: launch.permissionMode,
@@ -1041,7 +1044,9 @@ async function messageParent(agentId: string, args: Record<string, unknown>): Pr
   const parent = (await findParent(registration.projectPath, self))?.config;
   if (!parent || isDisposedAgent(parent)) throw new HelperToolError('Your parent agent no longer exists.');
   // Batched with the parent's other helper updates (#2414).
-  const delivery = await deliverHelperUpdate(parent.id, `[FROM HELPER:${self.name} (${self.id})] ${text}`);
+  const delivery = await deliverHelperUpdate(parent.id, `[FROM HELPER:${self.name} (${self.id})] ${text}`, {
+    sender: { agentId: self.id, name: self.name }, text,
+  });
   if (delivery === 'stopping') {
     throw new HelperToolError(`${parent.name} is shutting down, so the message was not delivered.`);
   }

@@ -20,6 +20,7 @@ import { DEFAULT_PASTE_TIMING } from '../../agent-runtime/pty-runtime';
 import { isAgentStoppingError } from '../../agent-runtime/agent-stopping';
 import { getProvider } from '../../../orchestrators';
 import { sleepAgent, wakeWiredAgent } from './agent-lifecycle';
+import type { RoutedMessagePart } from '../../../../shared/chat';
 
 // PTY input helpers moved to agent-runtime/pty-input; re-exported for existing importers.
 export { sleep, writeChunkedBracketedPaste, waitForBufferQuiescence, submitAfterPaste } from '../../agent-runtime/pty-input';
@@ -40,7 +41,7 @@ export function buildSenderLabel(agentId: string, senderName: string, projectNam
  * A message as the target receives it: tagged with its task and sender, and
  * with reply instructions when the target has a wire back to the sender.
  */
-function buildTaggedMessage(agentId: string, targetId: string, message: string, taskId: string): { text: string; senderLabel: string; targetName: string; isBidirectional: boolean } {
+function buildTaggedMessage(agentId: string, targetId: string, message: string, taskId: string): { text: string; routed: RoutedMessagePart[]; senderLabel: string; targetName: string; isBidirectional: boolean } {
   const sourceBinding = bindingManager.getBindingsForAgent(agentId).find(b => b.targetId === targetId);
   const senderName = sourceBinding?.agentName || agentId;
   const senderLabel = buildSenderLabel(agentId, senderName, sourceBinding?.projectName);
@@ -57,7 +58,8 @@ function buildTaggedMessage(agentId: string, targetId: string, message: string, 
     text += `\n\n---\nReply to ${senderName} via tool "${replyToolName}" with task_id="${taskId}". ` +
       `Prefix your response with TASK_RESULT:${taskId}.`;
   }
-  return { text, senderLabel, targetName, isBidirectional: !!reverseBinding };
+  const routed = [{ sender: { agentId, name: senderName }, text: message }];
+  return { text, routed, senderLabel, targetName, isBidirectional: !!reverseBinding };
 }
 
 /** The error for a tool that needs the target awake. The Dispatcher wakes targets itself. */
@@ -152,7 +154,7 @@ export function registerAgentTools(): void {
         return sleepingError(agentId, targetId, 'sending messages');
       }
 
-      const { text: taggedMessage, senderLabel, targetName, isBidirectional } = buildTaggedMessage(agentId, targetId, message, taskId);
+      const { text: taggedMessage, routed, senderLabel, targetName, isBidirectional } = buildTaggedMessage(agentId, targetId, message, taskId);
 
       appLog('core:mcp', 'info', 'send_message: target resolved', {
         meta: { sourceAgent: agentId, targetAgent: targetId, runtime: reg.runtime, taskId, senderLabel, isBidirectional },
@@ -166,7 +168,7 @@ export function registerAgentTools(): void {
         appLog('core:mcp', 'info', 'send_message: delivering', {
           meta: { targetAgent: targetId, taskId, runtime: runtime.kind, forceSubmit, messageLength: taggedMessage.length },
         });
-        await runtime.sendMessage(taggedMessage, { source: 'mcp', taskId, submit: forceSubmit });
+        await runtime.sendMessage(taggedMessage, { source: 'mcp', taskId, submit: forceSubmit, routed });
 
         const submitNote = forceSubmit ? '' : ' (force_submit=false, message injected without submitting)';
         const resultText = isBidirectional
@@ -423,7 +425,10 @@ export function registerAgentTools(): void {
           const timing = getProvider(reg.orchestrator)?.getPasteSubmitTiming() ?? DEFAULT_PASTE_TIMING;
           await writeLineThenEnter(targetId, notice, timing.initialDelayMs);
         } else {
-          await runtime.sendMessage(notice, { source: 'mcp', taskId });
+          await runtime.sendMessage(notice, {
+            source: 'mcp', taskId,
+            routed: [{ sender: { agentId, name: senderName }, text: `File delivered: ${filePath}` }],
+          });
         }
 
         return {
@@ -541,8 +546,8 @@ export function registerAgentTools(): void {
       const message = optionalString(args, 'message');
       const targetName = bindingManager.getBindingsForAgent(agentId).find(b => b.targetId === targetId)?.targetName || targetId;
       const taskId = `t_${Date.now().toString(36)}`;
-      const mission = message ? buildTaggedMessage(agentId, targetId, message, taskId).text : undefined;
-      return wakeWiredAgent({ callerId: agentId, targetId, targetName, mission });
+      const tagged = message ? buildTaggedMessage(agentId, targetId, message, taskId) : undefined;
+      return wakeWiredAgent({ callerId: agentId, targetId, targetName, mission: tagged?.text, missionRouted: tagged?.routed });
     },
   });
 

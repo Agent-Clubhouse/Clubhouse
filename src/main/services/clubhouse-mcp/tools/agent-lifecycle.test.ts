@@ -211,9 +211,10 @@ describe('agent-lifecycle', () => {
 
     it('delivers a message to an agent that is already running', async () => {
       running = true;
-      const result = await wakeWiredAgent({ ...request, mission: 'go' });
+      const missionRouted = [{ sender: { agentId: 'caller', name: 'Dispatcher' }, text: 'go' }];
+      const result = await wakeWiredAgent({ ...request, mission: 'go', missionRouted });
       expect(parsed(result)).toMatchObject({ status: 'already_running', messageDelivered: true });
-      expect(mocks.deliverNow).toHaveBeenCalledWith('target', 'go');
+      expect(mocks.deliverNow).toHaveBeenCalledWith('target', 'go', missionRouted);
     });
 
     it('waits for a stopping agent, then wakes it, reading the session its exit saved', async () => {

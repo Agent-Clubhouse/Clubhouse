@@ -2,8 +2,9 @@ import { describe, it, expect } from 'vitest';
 import { MINIMAL_CHAT_CAPABILITIES } from '../../../../shared/chat';
 import { foldChatEvents } from '../../../stores/chatStore';
 import { chatFixture, FIXTURE_AGENT_ID, FIXTURE_PROVIDERS, FIXTURE_SCENARIOS, PROFILES } from './fixtures';
-import type { ToolCallItem } from '../../../stores/chatStore';
+import type { AgentMessageItem, ChatItem, ToolCallItem } from '../../../stores/chatStore';
 import {
+  agentMessagesToName,
   argSummary,
   buildStreamBlocks,
   commandForRequest,
@@ -361,5 +362,20 @@ describe('shortName', () => {
     expect(name).toBe(`${'a'.repeat(78)}😀…`);
     expect(/[\uD800-\uDBFF](?![\uDC00-\uDFFF])/.test(name)).toBe(false);
     expect(shortName('😀'.repeat(80))).toBe('😀'.repeat(80));
+  });
+});
+
+describe('agentMessagesToName', () => {
+  const base = { sessionId: 's', seq: 1, ts: 1 };
+  const agent = (id: string, over: Partial<AgentMessageItem> = {}): ChatItem => ({ ...base, id, kind: 'agent_message', messageId: id, text: 'hi', streaming: false, ...over });
+  const user = (id: string): ChatItem => ({ ...base, id, kind: 'user_message', messageId: id, content: [], text: 'x', source: 'user', delivery: 'prompt' });
+  const end = (id: string): ChatItem => ({ ...base, id, kind: 'turn_end', stopReason: 'end_turn' });
+
+  it('names the first message of each run', () => {
+    expect([...agentMessagesToName([user('u'), agent('a'), agent('b'), end('e'), agent('c'), user('v'), agent('d')])]).toEqual(['a', 'c', 'd']);
+  });
+
+  it('skips subagent text and empty messages', () => {
+    expect([...agentMessagesToName([agent('s', { subagentId: 'x' }), agent('e', { text: '' }), agent('a')])]).toEqual(['a']);
   });
 });

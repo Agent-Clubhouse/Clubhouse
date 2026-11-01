@@ -784,6 +784,7 @@ describe('AgentTools', () => {
       expect(request).toMatchObject({ callerId: 'dispatcher-1', targetId: 'orch-1', targetName: 'boss' });
       expect(request.mission).toMatch(/^\[TASK:t_\w+\] \[FROM:Dispatcher\] ship it/);
       expect(request.mission).toContain(agentToolName(back, 'send_message'));
+      expect(request.missionRouted).toEqual([{ sender: { agentId: 'dispatcher-1', name: 'Dispatcher' }, text: 'ship it' }]);
     });
 
     it('wake_agent without a message sends no first prompt', async () => {

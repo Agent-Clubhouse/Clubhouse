@@ -11,7 +11,11 @@ import type {
   TurnEndItem,
   UserMessageItem,
 } from '../../../stores/chatStore';
-import type { ChatCapabilities, ContentBlock } from '../../../../shared/chat';
+import { messageDisplay, senderDisplayName, stripTaskMarker, type ChatCapabilities, type ContentBlock, type MessageSender, type RoutedMessagePart } from '../../../../shared/chat';
+import type { Agent } from '../../../../shared/types';
+import { useAgentStore } from '../../../stores/agentStore';
+import { AgentAvatar } from '../AgentAvatar';
+import { useOpenState } from './transcript-expansion';
 import { attachmentName } from './attachments';
 import { enrichMarkdownLinks, useRichLinks, useTokenHandlers } from './rich/RichLinks';
 import { useRichChatContent } from './rich/rich-flag';
@@ -99,58 +103,140 @@ export function Markdown({ text, streaming = false, className = '' }: { text: st
   return <div className={`chat-markdown ${className}`} onClick={onClick} dangerouslySetInnerHTML={{ __html: html }} />;
 }
 
+/** Source labels beside a sender. `mcp`, `system` and `group_project` messages say who sent them by name instead. */
 const SOURCE_LABELS: Partial<Record<UserMessageItem['source'], string>> = {
   mission: 'Mission',
-  mcp: 'From another agent',
   shoulder_tap: 'Shoulder tap',
-  group_project: 'Group project',
   annex: 'From Annex',
-  system: 'Clubhouse',
 };
 
-export function UserMessage({ item }: { item: UserMessageItem }) {
+/** Another agent's message past either limit starts collapsed. */
+export const LONG_MESSAGE_CHARS = 800;
+export const LONG_MESSAGE_LINES = 14;
+
+export function isLongMessage(text: string): boolean {
+  return text.length > LONG_MESSAGE_CHARS || text.split('\n').length > LONG_MESSAGE_LINES;
+}
+
+function metaLabels(item: UserMessageItem): string[] {
   const label = SOURCE_LABELS[item.source];
+  return [label, item.delivery === 'steer' ? 'Steered into the running turn' : null].filter((l): l is string => !!l);
+}
+
+function Attachments({ item, align }: { item: UserMessageItem; align: 'start' | 'end' }) {
   const attached = item.content
     .map((block) => ({ block, name: attachmentName(block) }))
     .filter((a): a is { block: ContentBlock; name: string } => a.name !== null);
+  if (attached.length === 0) return null;
   return (
-    <div className="ml-auto max-w-[82%] min-w-0 flex flex-col items-end gap-1" data-testid="chat-user-message" data-source={item.source} data-delivery={item.delivery}>
-      {(label || item.delivery === 'steer') && (
-        <span className="text-[11px] text-ctp-overlay0">
-          {[label, item.delivery === 'steer' ? 'Steered into the running turn' : null].filter(Boolean).join(' · ')}
+    <div className={`flex flex-wrap gap-1.5 ${align === 'end' ? 'justify-end' : 'justify-start'}`} data-testid="chat-user-attachments">
+      {attached.map(({ block, name }, i) => (
+        <span
+          key={i}
+          className="h-7 max-w-[220px] flex items-center gap-1.5 px-2 rounded-md bg-surface-0 text-[12px] text-ctp-subtext1"
+          title={block.type === 'file' ? block.path : block.type === 'image' ? block.path ?? name : name}
+        >
+          {block.type === 'image' ? <ImageIcon size={13} className="text-ctp-overlay1 flex-shrink-0" /> : <FileIcon size={13} className="text-ctp-overlay1 flex-shrink-0" />}
+          <span className="truncate min-w-0">{name}</span>
         </span>
-      )}
-      {attached.length > 0 && (
-        <div className="flex flex-wrap justify-end gap-1.5" data-testid="chat-user-attachments">
-          {attached.map(({ block, name }, i) => (
-            <span
-              key={i}
-              className="h-7 max-w-[220px] flex items-center gap-1.5 px-2 rounded-md bg-surface-0 text-[12px] text-ctp-subtext1"
-              title={block.type === 'file' ? block.path : block.type === 'image' ? block.path ?? name : name}
-            >
-              {block.type === 'image' ? <ImageIcon size={13} className="text-ctp-overlay1 flex-shrink-0" /> : <FileIcon size={13} className="text-ctp-overlay1 flex-shrink-0" />}
-              <span className="truncate min-w-0">{name}</span>
-            </span>
-          ))}
-        </div>
-      )}
-      {item.text && (
+      ))}
+    </div>
+  );
+}
+
+/**
+ * The sender's agent record: by id, or for an old message that only has a
+ * name, by a name just one agent has. Its name, color and picture stay current
+ * after a rename. Absent for an agent that is gone or in a project not loaded.
+ */
+function useSenderAgent(sender: MessageSender | undefined): Agent | undefined {
+  return useAgentStore((s) => {
+    if (!sender) return undefined;
+    if (sender.agentId) return s.agents[sender.agentId];
+    const named = Object.values(s.agents).filter((a) => a.name === sender.name);
+    return named.length === 1 ? named[0] : undefined;
+  });
+}
+
+/** One message from another agent or from Clubhouse, on the left. */
+function SentPart({ part, item, expansionKey }: { part: RoutedMessagePart; item: UserMessageItem; expansionKey?: string }) {
+  const { sender } = part;
+  const agent = useSenderAgent(sender);
+  const name = agent?.name ?? senderDisplayName(part) ?? (item.source === 'group_project' ? 'Group project' : 'Another agent');
+  const [open, toggle] = useOpenState(!isLongMessage(part.text), expansionKey);
+  const collapsible = isLongMessage(part.text);
+  const labels = metaLabels(item);
+  // An agent that is gone keeps its name and initials, on the default color.
+  const avatarAgent = agent ?? (sender && { id: sender.agentId ?? sender.name, name: sender.name, kind: 'durable', color: '' } as Agent);
+  return (
+    <div className="max-w-full min-w-0 flex items-start gap-2" data-testid="chat-sent-part" data-sender={name}>
+      {avatarAgent && <div className="flex-shrink-0 mt-px" data-testid="chat-sent-avatar"><AgentAvatar agent={avatarAgent} size="2xs" /></div>}
+      <div className="min-w-0 flex flex-col items-start gap-1">
+        {collapsible ? (
+          <button
+            type="button"
+            className="flex items-center gap-1.5 min-h-[18px] text-left text-[12px] text-ctp-subtext1 hover:text-ctp-text rounded focus-visible:outline focus-visible:outline-1 focus-visible:outline-ctp-accent"
+            onClick={toggle}
+            aria-expanded={open}
+            data-testid="chat-sent-toggle"
+          >
+            <span className="min-w-0 wrap-anywhere">{name} sent a long message</span>
+            {labels.length > 0 && <span className="text-[11px] text-ctp-overlay0">· {labels.join(' · ')}</span>}
+            {open ? <ChevronDown /> : <ChevronRight />}
+          </button>
+        ) : (
+          <div className="min-h-[18px] flex flex-wrap items-baseline gap-x-1.5 text-[12px]">
+            <span className="font-medium text-ctp-subtext1 wrap-anywhere" data-testid="chat-sent-name">{name}</span>
+            {labels.length > 0 && <span className="text-[11px] text-ctp-overlay0">· {labels.join(' · ')}</span>}
+          </div>
+        )}
+        {open && part.text && (
+          <div className="max-w-full min-w-0 bg-surface-0 text-ctp-text rounded-xl rounded-tl px-3 py-2 text-[13px] wrap-anywhere" data-testid="chat-sent-body">
+            {sender ? <Markdown text={part.text} /> : <span className="whitespace-pre-wrap">{part.text}</span>}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+export function UserMessage({ item, expansionKey }: { item: UserMessageItem; expansionKey?: string }) {
+  const display = messageDisplay(item);
+  if (display.from === 'others') {
+    return (
+      <div className="mr-auto max-w-[82%] min-w-0 flex flex-col items-start gap-2" data-testid="chat-user-message" data-source={item.source} data-delivery={item.delivery} data-from="others">
+        {display.parts.map((part, i) => (
+          <SentPart key={i} part={part} item={item} expansionKey={expansionKey && `${expansionKey}:sent:${i}`} />
+        ))}
+        <Attachments item={item} align="start" />
+      </div>
+    );
+  }
+  return (
+    <div className="ml-auto max-w-[82%] min-w-0 flex flex-col items-end gap-1" data-testid="chat-user-message" data-source={item.source} data-delivery={item.delivery} data-from="you">
+      <span className="text-[11px] text-ctp-overlay0" data-testid="chat-you-label">{['You', ...metaLabels(item)].join(' · ')}</span>
+      <Attachments item={item} align="end" />
+      {display.text && (
         <div className="max-w-full bg-surface-0 text-ctp-text rounded-xl rounded-br px-3 py-2 text-[13px] whitespace-pre-wrap wrap-anywhere">
-          {item.text}
+          {display.text}
         </div>
       )}
     </div>
   );
 }
 
-/** `preformatted`: a slash command's own laid-out output, shown as is (#2179). */
-export function AgentMessage({ item, preformatted = false }: { item: AgentMessageItem; preformatted?: boolean }) {
+/**
+ * `preformatted`: a slash command's own laid-out output, shown as is (#2179).
+ * `name`: set on the message that starts a run from this agent.
+ */
+export function AgentMessage({ item, preformatted = false, name }: { item: AgentMessageItem; preformatted?: boolean; name?: string }) {
   if (!item.text && !item.streaming) return null;
   return (
     <div className="text-[13.5px] leading-relaxed text-ctp-text" data-testid="chat-agent-message">
+      {name && <div className="text-[12px] font-medium text-ctp-subtext1 mb-0.5" data-testid="chat-agent-name">{name}</div>}
       {preformatted
         ? <pre className="font-mono text-[12px] leading-[1.6] text-ctp-text whitespace-pre overflow-x-auto m-0" data-testid="chat-command-output">{item.text}</pre>
-        : <Markdown text={item.text} streaming={item.streaming} />}
+        : <Markdown text={stripTaskMarker(item.text)} streaming={item.streaming} />}
       {item.streaming && <span className="inline-block w-1.5 h-3.5 bg-ctp-accent/70 animate-pulse align-text-bottom" aria-label="Streaming" />}
     </div>
   );

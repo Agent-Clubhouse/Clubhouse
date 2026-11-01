@@ -21,6 +21,7 @@ import { tel } from '../telemetry/facade';
 export interface ShoulderTapParams {
   projectId: string;
   senderLabel: string;        // "agentName@proj" or "user"
+  senderAgentId?: string;     // set when the sender is an agent
   targetAgentId: string | null; // null = broadcast to all members
   message: string;
   taskId?: string;
@@ -153,7 +154,13 @@ async function deliverShoulderTap(params: ShoulderTapParams): Promise<ShoulderTa
     const runtime = getAgentRuntime(binding.agentId);
     try {
       if (runtime) {
-        await runtime.sendMessage(taggedMessage, { source: 'shoulder_tap', taskId });
+        await runtime.sendMessage(taggedMessage, {
+          source: 'shoulder_tap', taskId,
+          // A tap from the UI has no sender to show: chat reads it as the user's own.
+          ...(params.senderAgentId && {
+            routed: [{ sender: { agentId: params.senderAgentId, name: senderLabel.split('@')[0] }, text: message }],
+          }),
+        });
         delivered.push({ agentId: binding.agentId, agentName, status: 'delivered' });
         recordDelivery('delivered', runtime.kind);
       } else {

@@ -83,6 +83,20 @@ export type MessageSource =
   | 'annex'          // a remote Annex client
   | 'system';        // Clubhouse itself (e.g. "continued from terminal" context)
 
+/** The agent that sent a message. The name is its name at the time, for when the agent is gone. */
+export interface MessageSender {
+  agentId?: string;
+  name: string;
+}
+
+/** One message from someone other than the user, as chat shows it: no routing text. */
+export interface RoutedMessagePart {
+  sender?: MessageSender;
+  /** Clubhouse wrote it itself (a helper notice). */
+  fromClubhouse?: boolean;
+  text: string;
+}
+
 /** How a message reached the agent. */
 export type MessageDelivery =
   | 'prompt'  // started a new turn
@@ -368,9 +382,16 @@ export interface ChatEventDataMap {
     messageId: string;
     /** Mobile optimistic-send correlation. Absent for local/legacy sends. */
     clientCommandId?: string;
+    /** What the agent received, routing text included. */
     content: ContentBlock[];
     source: MessageSource;
     delivery: MessageDelivery;
+    /**
+     * Who sent it and the message without routing text, for display (#2599).
+     * More than one part when a burst of updates went as one message. Absent
+     * from the user's own messages and from older transcripts.
+     */
+    routed?: RoutedMessagePart[];
     /**
      * A queued MCP message that joined the queued item with this messageId
      * (#2414) instead of starting its own: one row, one turn for both.

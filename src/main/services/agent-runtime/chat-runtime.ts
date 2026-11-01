@@ -40,6 +40,7 @@ import {
   type MessageSource,
   type PermissionLevel,
   type PermissionOption,
+  type RoutedMessagePart,
   type RuntimeSendOptions,
   type RuntimeSendResult,
   type RuntimeTranscriptSlice,
@@ -236,10 +237,10 @@ export class ChatAgentRuntime implements AgentRuntime {
 
   // ── Lifecycle ──────────────────────────────────────────────────────────
 
-  async start(mission?: string | ContentBlock[]): Promise<void> {
+  async start(mission?: string | ContentBlock[], routed?: RoutedMessagePart[]): Promise<void> {
     await this.openSession(this.opts.resumeNativeSessionId);
     if (mission && (typeof mission !== 'string' || mission.trim() !== '')) {
-      await this.sendMessage(mission, { source: 'mission', delivery: 'prompt' });
+      await this.sendMessage(mission, { source: 'mission', delivery: 'prompt', ...(routed && { routed }) });
     }
   }
 
@@ -571,7 +572,10 @@ export class ChatAgentRuntime implements AgentRuntime {
 
     const traceContext = captureChatTrace(currentRequestTraceparent());
     const messageId = this.newId();
-    const correlation = opts.clientCommandId ? { clientCommandId: opts.clientCommandId } : {};
+    const correlation = {
+      ...(opts.clientCommandId && { clientCommandId: opts.clientCommandId }),
+      ...(opts.routed && { routed: opts.routed }),
+    };
     if (wanted === 'queued' && caps.queue !== 'native') {
       // Helper reports and Clubhouse notices arriving mid-turn join the MCP
       // item at the tail, so a burst becomes one turn. Never a user's message.
