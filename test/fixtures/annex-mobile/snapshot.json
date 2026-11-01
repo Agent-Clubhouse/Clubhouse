@@ -294,6 +294,7 @@
               }
             },
             "orchestrator": null,
+            "parentAgentId": "durable_chat",
             "projectId": "proj_app",
             "status": "sleeping"
           }

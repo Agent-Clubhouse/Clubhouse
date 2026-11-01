@@ -848,6 +848,149 @@
       },
       "seq": 38,
       "type": "chat:event"
+    },
+    {
+      "payload": {
+        "agentId": "durable_chat",
+        "event": {
+          "agentId": "durable_chat",
+          "data": {
+            "content": [
+              {
+                "text": "[FROM:Docs@App] The docs are up to date.",
+                "type": "text"
+              }
+            ],
+            "delivery": "prompt",
+            "messageId": "msg_routed_one",
+            "routed": [
+              {
+                "sender": {
+                  "agentId": "durable_docs",
+                  "name": "Docs"
+                },
+                "text": "The docs are up to date."
+              }
+            ],
+            "source": "mcp"
+          },
+          "seq": 131,
+          "sessionId": "sess_live",
+          "ts": 1800000071000,
+          "turnId": "turn_2",
+          "type": "user_message",
+          "v": 2
+        }
+      },
+      "seq": 39,
+      "type": "chat:event"
+    },
+    {
+      "payload": {
+        "agentId": "durable_chat",
+        "event": {
+          "agentId": "durable_chat",
+          "data": {
+            "content": [
+              {
+                "text": "2 updates, oldest first:\n\n--- 1 of 2 ---\n[FROM:Docs@App] Started on the guide.\n\n--- 2 of 2 ---\n[FROM:reviewer@App] The tests pass.",
+                "type": "text"
+              }
+            ],
+            "delivery": "prompt",
+            "messageId": "msg_routed_burst",
+            "routed": [
+              {
+                "sender": {
+                  "agentId": "durable_docs",
+                  "name": "Docs"
+                },
+                "text": "Started on the guide."
+              },
+              {
+                "sender": {
+                  "name": "reviewer"
+                },
+                "text": "The tests pass."
+              }
+            ],
+            "source": "mcp"
+          },
+          "seq": 132,
+          "sessionId": "sess_live",
+          "ts": 1800000072000,
+          "turnId": "turn_2",
+          "type": "user_message",
+          "v": 2
+        }
+      },
+      "seq": 40,
+      "type": "chat:event"
+    },
+    {
+      "payload": {
+        "agentId": "durable_chat",
+        "event": {
+          "agentId": "durable_chat",
+          "data": {
+            "content": [
+              {
+                "text": "[Clubhouse] Docs was disposed.",
+                "type": "text"
+              }
+            ],
+            "delivery": "prompt",
+            "messageId": "msg_routed_clubhouse",
+            "routed": [
+              {
+                "fromClubhouse": true,
+                "text": "Docs was disposed."
+              }
+            ],
+            "source": "mcp"
+          },
+          "seq": 133,
+          "sessionId": "sess_live",
+          "ts": 1800000073000,
+          "turnId": "turn_2",
+          "type": "user_message",
+          "v": 2
+        }
+      },
+      "seq": 41,
+      "type": "chat:event"
+    },
+    {
+      "payload": {
+        "agentId": "durable_chat",
+        "event": {
+          "agentId": "durable_chat",
+          "data": {
+            "content": [
+              {
+                "text": "The nightly build finished.",
+                "type": "text"
+              }
+            ],
+            "delivery": "prompt",
+            "messageId": "msg_routed_no_sender",
+            "routed": [
+              {
+                "text": "The nightly build finished."
+              }
+            ],
+            "source": "mcp"
+          },
+          "seq": 134,
+          "sessionId": "sess_live",
+          "ts": 1800000074000,
+          "turnId": "turn_2",
+          "type": "user_message",
+          "v": 2
+        }
+      },
+      "seq": 42,
+      "type": "chat:event"
     }
   ]
 }

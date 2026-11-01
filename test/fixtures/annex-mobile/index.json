@@ -3,6 +3,7 @@
   "files": [
     "agent-settings-dispatcher.json",
     "agent-settings-errors.json",
+    "agent-settings-helper.json",
     "agent-settings-mcp-off.json",
     "agent-settings-running.json",
     "agent-settings.json",

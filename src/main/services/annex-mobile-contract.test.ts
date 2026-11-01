@@ -607,6 +607,9 @@ describe('Annex mobile contract fixtures', () => {
     expect(snapshot.type).toBe('snapshot');
     expect(snapshot.payload).toHaveProperty('projectState');
     expect(snapshot.payload).toHaveProperty('finishedQuickAgents');
+    const durable = (id: string) => snapshot.payload.agents.proj_app.find((a: { id: string }) => a.id === id);
+    expect(durable('durable_docs').parentAgentId).toBe('durable_chat');
+    expect(durable('durable_chat')).not.toHaveProperty('parentAgentId');
     // The host platform is the machine's; record it as a Mac's so the file is the same on every CI runner.
     expect(snapshot.payload.ptyHost.platform).toBe(process.platform);
     snapshot.payload.ptyHost = annexPtyHost('darwin', undefined);
@@ -664,7 +667,12 @@ describe('Annex mobile contract fixtures', () => {
     const settings = await exchange('GET', '/api/v1/mobile/agents/durable_sleepy/settings');
     expect(settings.response.body.details.changes).toMatchObject({ files: 2 });
     fixtures.set('agent-settings.json', settings);
+    expect(settings.response.body).not.toHaveProperty('parentAgentId');
     fixtures.set('agent-settings-running.json', await exchange('GET', '/api/v1/mobile/agents/durable_chat/settings'));
+    // A helper names its parent (#2618), which is how a phone knows Connect to Dispatcher doesn't apply.
+    const helper = await exchange('GET', '/api/v1/mobile/agents/durable_docs/settings');
+    expect(helper.response.body).toMatchObject({ parentAgentId: 'durable_chat', orchestration: { connectToDispatcher: false } });
+    fixtures.set('agent-settings-helper.json', helper);
     fixtures.set('agent-settings-errors.json', { agentNotFound: await exchange('GET', '/api/v1/mobile/agents/missing/settings') });
     // Clubhouse MCP off for the agent (#2589): its switches read off, with the reason.
     W.durables[APP][0].mcpOverride = false;
@@ -850,7 +858,7 @@ describe('Annex mobile contract fixtures', () => {
     commandFixtures.get('_common')!.push({ name: 'command_capacity (MobileCommandService at capacity)', request: { version: 1, epoch: full.epoch, commandId: 'cmd_full', ...base }, response: { status: capacity.statusCode, body: capacity.body } });
   });
 
-  it('chat events: one of every type, as the WebSocket sends them', async () => {
+  it('chat events: one of every type, then each form of routed, as the WebSocket sends them', async () => {
     const ws = await connect();
     const turn = { turnId: 'turn_2' };
     const samples: Record<string, [Record<string, unknown>, Record<string, unknown>?]> = {
@@ -901,8 +909,23 @@ describe('Annex mobile contract fixtures', () => {
       const [data, extra] = samples[type];
       publishChatEvent(envelope(++seq, type, JSON.parse(JSON.stringify(data)), extra));
     }
+    // Messages from other agents and Clubhouse (#2605): content is what the agent received, routed is who sent what.
+    const routedMessages: Array<{ messageId: string; text: string; routed: Array<Record<string, unknown>> }> = [
+      { messageId: 'msg_routed_one', text: '[FROM:Docs@App] The docs are up to date.',
+        routed: [{ sender: { agentId: 'durable_docs', name: 'Docs' }, text: 'The docs are up to date.' }] },
+      { messageId: 'msg_routed_burst', text: '2 updates, oldest first:\n\n--- 1 of 2 ---\n[FROM:Docs@App] Started on the guide.\n\n--- 2 of 2 ---\n[FROM:reviewer@App] The tests pass.',
+        routed: [{ sender: { agentId: 'durable_docs', name: 'Docs' }, text: 'Started on the guide.' }, { sender: { name: 'reviewer' }, text: 'The tests pass.' }] },
+      { messageId: 'msg_routed_clubhouse', text: '[Clubhouse] Docs was disposed.',
+        routed: [{ fromClubhouse: true, text: 'Docs was disposed.' }] },
+      { messageId: 'msg_routed_no_sender', text: 'The nightly build finished.',
+        routed: [{ text: 'The nightly build finished.' }] },
+    ];
+    for (const { messageId, text, routed } of routedMessages) {
+      publishChatEvent(envelope(++seq, 'user_message', { messageId, source: 'mcp', delivery: 'prompt', content: [{ type: 'text', text }], routed }, turn));
+    }
     const chat = frames(ws).filter((f) => f.type === 'chat:event');
-    expect(chat.map((f) => f.payload.event.type)).toEqual([...CHAT_EVENT_TYPES]);
+    expect(chat.map((f) => f.payload.event.type)).toEqual([...CHAT_EVENT_TYPES, ...routedMessages.map(() => 'user_message')]);
+    expect(chat.slice(-routedMessages.length).map((f) => f.payload.event.data.routed)).toEqual(routedMessages.map((m) => m.routed));
     expect(JSON.stringify(chat)).not.toContain('/Users/me');
     fixtures.set('chat-events.json', { direction: 'desktop-to-phone', frames: chat });
   });

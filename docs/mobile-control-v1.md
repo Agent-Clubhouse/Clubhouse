@@ -221,6 +221,8 @@ Capabilities advertise what the desktop accepts: `permissions: {version:1, persi
 
 Create (#2451) and settings (#2452) follow the desktop New agent page and the Details → Settings card. Both reads need an authenticated client; the commands need the pinned client certificate like every mobile command.
 
+**Helpers** are durable agents another agent started. They carry `parentAgentId`, the id of that agent, in the snapshot's `agents[projectId][]`, `GET /api/v1/projects/:id/agents` and the [settings route](#settings). Top-level agents leave it out, so its presence is what marks a helper. The parent can be in another project (#2511), so it may not be in the same `agents[projectId]` list. A helper handed off as a normal agent loses the field. Additive: older desktops never send it, and older phones ignore it.
+
 **Free Agent Mode** (skip all permission prompts) is settable from a phone when capabilities have `permissions.freeAgentMode` ([Permissions from a phone](#permissions-from-a-phone)). As on the desktop, it needs an orchestrator with `permissions:true`: turning it on for one without is 409 `free_agent_mode_unavailable`; turning it off is always allowed. Omitted on create, the agent follows the project's agent defaults, as on the desktop. Older desktops refuse the field with 403 `free_agent_mode_not_allowed`.
 
 ### Create options
@@ -270,7 +272,7 @@ We chose a route rather than snapshot fields. The settings need disk and CLI rea
 `GET /api/v1/mobile/agents/:agentId/settings` (404 `agent_not_found`; durable agents only):
 
 ```json
-{"version":1,"epoch":"uuid","agentId":"durable_1","projectId":"p1",
+{"version":1,"epoch":"uuid","agentId":"durable_1","projectId":"p1","parentAgentId":"durable_0",
  "state":"sleeping"|"running"|"starting"|"creating"|"failed","sleeping":true,
  "settings":{
   "name":{"value":"brave-otter","editable":"sleeping"},
@@ -356,7 +358,7 @@ Every durable agent in the snapshot (`agents[projectId][]`), `GET /api/v1/projec
 - **control**: one of `controls` (hands-off, ask before starting helpers, ask about everything).
 - **maxHelpers**: "Helpers at once", a whole number from 1 to `maxHelpersCap` (the app-wide helper cap, at most 100).
 - **crossProjectHelpers**: "Cross-project helpers" (#2512): the agent may start helpers in other registered projects. The desktop shows it while `orchestrate` is on; turning it off leaves helpers already running elsewhere alone.
-- **connectToDispatcher**: "Connect to Dispatcher" (#2534): the Dispatcher may message this agent and get its reports. The desktop shows it while the [Dispatcher](#dispatcher) is on, with `orchestrate` on or off; turning it on while the Dispatcher is off is 409 `dispatcher_off`. Unset (source `default`), it follows `orchestrate` (#2578). A helper talks only to its parent, so on a helper it is always `false` with source `default`, and a value sent for one has no effect while it is a helper. So an agent can report `true` with the Dispatcher off: send this field only when the user changes it.
+- **connectToDispatcher**: "Connect to Dispatcher" (#2534): the Dispatcher may message this agent and get its reports. The desktop shows it while the [Dispatcher](#dispatcher) is on, with `orchestrate` on or off; turning it on while the Dispatcher is off is 409 `dispatcher_off`. Unset (source `default`), it follows `orchestrate` (#2578). A helper (an agent with `parentAgentId`) talks only to its parent, so on a helper it is always `false` with source `default`, and a value sent for one has no effect while it is a helper. Don't offer the switch on a helper. So an agent can report `true` with the Dispatcher off: send this field only when the user changes it.
 - **mcpEnabled**: whether Clubhouse MCP is on for this agent (#2589), following its own setting, then its project's, then the app's. A helper always has it (#2610). No Clubhouse MCP means no orchestration: while it is `false`, `orchestrate`, `crossProjectHelpers` and `connectToDispatcher` read `false`, the agent gets no Dispatcher wire and isn't in the Dispatcher's `list_agents`. Their `sources` still describe the saved settings, which are kept and come back when MCP does. Disable those switches and say they need Clubhouse MCP. Helpers already running keep running. The snapshot refreshes when an MCP setting changes.
 - **sources**: where each field comes from. `agent` is an override on the agent, which `null` clears; `persona` is the persona's front-matter; `default` is the built-in default.
 
@@ -414,7 +416,7 @@ While it is on, its id works wherever an agent id does: the chat snapshot, chat 
 - **Settings.** `GET /mobile/agents/:id/settings` has `isDispatcher: true` and `orchestration: null`. `orchestrator`, `model`, `runtime` and `freeAgentMode` are `editable: "always"` (as on Settings > Dispatcher they apply the next time it starts), `idleSleep` `"always"`, and `name`, `color`, `emoji`, `persona` and `clubhouseMode` `"never"`.
 - **agent.update.** Only `orchestrator`, `model`, `runtime`, `freeAgentMode` and `idleSleep`, at any time. A new `orchestrator` resets `model` to `default` unless the command sets one; `model` must be `default` or one the CLI lists (400 `invalid_model`). `name`, `color`, `emoji`, `persona`, `clubhouseMode` or `orchestration` are 409 `dispatcher_locked`, the desktop's own rules.
 
-Messages other agents send the Dispatcher arrive as `user_message` with `source: "mcp"` and a `[FROM:<name>@<project>]` tag in the text, as for any agent; there is no structured sender field.
+Messages other agents send the Dispatcher arrive as `user_message` with `source: "mcp"` and [`routed`](#live-events-and-replay) naming the sender, as for any agent. `content` is what the Dispatcher received, with a `[FROM:<name>@<project>]` tag in the text, and that tag is all older transcripts have.
 
 ## Project state
 
@@ -511,7 +513,7 @@ Errors use the existing envelope with correlation fields: `error {message, op, s
 
 ## Contract fixtures
 
-`test/fixtures/annex-mobile/` holds a canonical example of every message in this document: capabilities, the WebSocket snapshot (agents, quick agents, `projectState`, `finishedQuickAgents`, `helperRequests`, theme), the chat snapshot with `chatControls`, `slashCommands` and `contentRoots`, create options and agent settings, a request and receipt for every `MOBILE_COMMAND_TYPES` command with each refusal its code path can reach, one `chat:event` of every chat event type, every `pty:*` message and error, `mobile:replay`, and the attachment upload's answers. The phone (Clubhouse Go) vendors these files and decodes each one in its contract tests, and checks that the commands it builds match the requests here. Neither side tests only against its own fakes.
+`test/fixtures/annex-mobile/` holds a canonical example of every message in this document: capabilities, the WebSocket snapshot (agents, quick agents, `projectState`, `finishedQuickAgents`, `helperRequests`, theme), the chat snapshot with `chatControls`, `slashCommands` and `contentRoots`, create options and agent settings, a request and receipt for every `MOBILE_COMMAND_TYPES` command with each refusal its code path can reach, one `chat:event` of every chat event type followed by `user_message` with each form of `routed` (one sender, a burst, `fromClubhouse`, no `sender`), every `pty:*` message and error, `mobile:replay`, and the attachment upload's answers. The phone (Clubhouse Go) vendors these files and decodes each one in its contract tests, and checks that the commands it builds match the requests here. Neither side tests only against its own fakes.
 
 `src/main/services/annex-mobile-contract.test.ts` writes them. It runs the real annex-server, mobile-control, mobile-agents, mobile-helper-requests, mobile-attachments and chat echo code over pinned mTLS and the WebSocket handler. Only the leaves are faked (disk, git, CLIs, PTYs, the orchestrator side of helper requests). The output is deterministic: fixed ids and clock, sorted keys, and random UUIDs (epochs, tokens, attachment and helper request ids) renumbered `00000000-0000-4000-8000-<n>` in order of first appearance.
 
@@ -519,6 +521,8 @@ Errors use the existing envelope with correlation fields: `error {message, op, s
 - `npm run fixtures:annex-mobile -- --check` (and the suite itself, in `npm test`) fails when a file is stale or extra.
 - A changed fixture is a protocol change: keep it additive, update this document, and tell the phone side.
 - A new command type or chat event type fails the suite until it has an example.
+
+A helper is `durable_docs` in `snapshot.json` and `agent-settings-helper.json`; the other agents there are top-level.
 
 The Dispatcher has its own files: `snapshot-dispatcher.json` (the snapshot's `dispatcher` and its `agent-state` row while it is on), `dispatcher-changed.json` (the event), `agent-settings-dispatcher.json` and `dispatcher-routes.json` (its chat and sessions while on, its GET routes while off, git, and a shell in its folder).
 
