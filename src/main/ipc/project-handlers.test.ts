@@ -32,6 +32,7 @@ vi.mock('../services/project-store', () => ({
   setIcon: vi.fn(() => 'icon_proj_1.png'),
   readIconData: vi.fn(() => 'data:image/png;base64,abc123'),
   saveCroppedIcon: vi.fn(() => 'icon_proj_1.png'),
+  onProjectsChanged: vi.fn(),
 }));
 
 vi.mock('../services/agent-config', () => ({
@@ -102,7 +103,7 @@ import { appLog } from '../services/log-service';
 import { isInsideGitRepo } from '../services/git-service';
 import { assertAllowedPath } from '../services/path-sandbox';
 import * as settingsService from '../services/agent-settings-service';
-import { registerProjectHandlers } from './project-handlers';
+import { PROJECTS_CHANGE_DEBOUNCE_MS, registerProjectHandlers } from './project-handlers';
 import * as projectStateStore from '../services/project-state-store';
 import { broadcastToAllWindows } from '../util/ipc-broadcast';
 
@@ -824,5 +825,19 @@ describe('project state handlers (#2458)', () => {
     const change = { state: { pinnedProjectIds: [], inactiveProjectIds: [], projectActivity: {}, idleDays: 7 }, acked: { w: 1 } };
     listener(change);
     expect(broadcastToAllWindows).toHaveBeenCalledWith(IPC.PROJECT.STATE_CHANGED, change);
+  });
+
+  it('tells the windows once per burst of project list writes', async () => {
+    vi.useFakeTimers();
+    try {
+      const listener = vi.mocked(projectStore.onProjectsChanged).mock.calls.at(-1)![0];
+      listener();
+      listener();
+      expect(broadcastToAllWindows).not.toHaveBeenCalledWith(IPC.PROJECT.CHANGED);
+      await vi.advanceTimersByTimeAsync(PROJECTS_CHANGE_DEBOUNCE_MS);
+      expect(vi.mocked(broadcastToAllWindows).mock.calls.filter(([channel]) => channel === IPC.PROJECT.CHANGED)).toHaveLength(1);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

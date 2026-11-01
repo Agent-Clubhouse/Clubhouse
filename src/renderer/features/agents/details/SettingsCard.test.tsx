@@ -137,13 +137,13 @@ describe('Settings card (#2280)', () => {
     // Spawn settings are locked while it runs, with one hint tied to them.
     const hint = card.getByTestId('details-settings-locked-hint');
     expect(hint).toHaveTextContent(LOCKED_HINT);
-    for (const id of ['runs-in', 'model', 'access', 'clubhouse-mode']) {
+    for (const id of ['cli', 'runs-in', 'model', 'access', 'clubhouse-mode']) {
       const row = card.getByTestId(`details-setting-${id}`);
       expect(row).toHaveAttribute('data-locked', 'true');
       expect(row).toHaveAttribute('aria-describedby', hint.id);
     }
     // Read-only summaries and live-editable auto-sleep aren't "locked".
-    for (const id of ['cli', 'effort', 'mcp', 'instructions', 'auto-sleep']) {
+    for (const id of ['effort', 'mcp', 'instructions', 'auto-sleep']) {
       expect(card.getByTestId(`details-setting-${id}`)).not.toHaveAttribute('data-locked');
     }
     expect(card.queryByRole('combobox', { name: /model/i })).not.toBeInTheDocument();

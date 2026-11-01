@@ -246,7 +246,8 @@ export async function buildAgentSettings(
       color: field(config.color, identity),
       emoji: field(config.emoji ?? null, identity),
       hasImageIcon: !!config.icon,
-      orchestrator: { ...field(config.orchestrator ?? null, spawn), resolved: orchestrator },
+      // A new CLI can't resume this session (#2593), so a phone can warn before sending the change.
+      orchestrator: { ...field(config.orchestrator ?? null, spawn), resolved: orchestrator, changeStartsNewSession: !!config.lastSessionId },
       model: field(config.model ?? 'default', spawn),
       runtime: { ...field(config.runtimeMode ?? 'default', runtimeEditable), resolved: runtime },
       persona: field(config.persona ?? null, identity),
@@ -458,12 +459,18 @@ export async function updateMobileAgent(
   const orchestration = command.orchestration !== undefined ? parseMobileOrchestration(command.orchestration, 'update') : undefined;
 
   assertAuthorized();
+  const hadSession = !!config.lastSessionId;
   // First, so a refused policy change (helpers to settle) leaves the other settings unwritten too.
   if (orchestration) await writeOrchestration(project.path, config.id, orchestration);
   if (Object.keys(updates).length > 0) await agentConfig.updateDurableConfig(project.path, config.id, updates);
   if (Object.keys(identity).length > 0) await agentConfig.updateDurable(project.path, config.id, identity);
   const saved = (await agentConfig.getDurableConfig(project.path, config.id)) ?? config;
-  return buildAgentSettings(project, saved, live);
+  return { ...await buildAgentSettings(project, saved, live), ...sessionReset(command, hadSession, saved) };
+}
+
+/** Tells the phone a new CLI dropped the agent's session (#2593): the next wake starts a new one. */
+function sessionReset(command: MobileAgentUpdate, hadSession: boolean, saved: DurableAgentConfig) {
+  return command.orchestrator !== undefined && hadSession && !saved.lastSessionId ? { sessionReset: true as const } : {};
 }
 
 /** agent.update fields Settings > Dispatcher doesn't offer (#2535): the same rules as the desktop's IPC guards. */
@@ -512,7 +519,8 @@ export async function updateMobileDispatcher(
   if (command.idleSleep !== undefined) updates.idleSleep = command.idleSleep === 'inherit' ? null : command.idleSleep;
 
   assertAuthorized();
+  const hadSession = !!config.lastSessionId;
   if (Object.keys(updates).length > 0) await agentConfig.updateDurableConfig(project.path, config.id, updates);
   const saved = (await agentConfig.getDurableConfig(project.path, config.id)) ?? config;
-  return buildAgentSettings(project, saved, live, { dispatcher: true });
+  return { ...await buildAgentSettings(project, saved, live, { dispatcher: true }), ...sessionReset(command, hadSession, saved) };
 }

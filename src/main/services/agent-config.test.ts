@@ -72,6 +72,7 @@ import { watch } from 'fs';
 import { setAgentIdleSleep } from './chat-idle-settings';
 import { execFile } from 'child_process';
 import { pathExists } from './fs-utils';
+import { registerProvider } from '../orchestrators/registry';
 import { isInsideGitRepo } from './git-service';
 import {
   listDurable,
@@ -94,6 +95,8 @@ import {
   removeSessionEntries,
   ensureGitignore as _ensureGitignore,
   saveAgentIcon,
+  writeAgentIconFile,
+  readAgentIconData,
   clearAgentConfigCache,
   flushAgentConfig,
   stripLegacyStructuredMode,
@@ -1804,6 +1807,72 @@ describe('updateSessionId', () => {
   });
 });
 
+describe('updateDurableConfig: a new CLI (#2593)', () => {
+  const entry = (sessionId: string, orchestrator?: string) => ({
+    sessionId, startedAt: '2024-06-01T00:00:00Z', lastActiveAt: '2024-06-01T00:00:00Z', ...(orchestrator && { orchestrator }),
+  });
+
+  function setup(extra: Record<string, unknown>) {
+    const written: Record<string, string> = {
+      [path.join(PROJECT_PATH, '.clubhouse', 'agents.json')]: JSON.stringify([
+        { id: 'durable_cli', name: 'cli', color: 'indigo', createdAt: '2024-01-01', ...extra },
+      ]),
+    };
+    vi.mocked(pathExists).mockImplementation(async (p: any) => String(p).endsWith('agents.json'));
+    vi.mocked(fsp.readFile).mockImplementation(async (p: any) => written[String(p)] || '[]');
+    vi.mocked(fsp.writeFile).mockImplementation(async (p: any, data: any) => { written[String(p)] = String(data); });
+    vi.mocked(fsp.rename).mockImplementation(async (src: any, dest: any) => {
+      written[String(dest)] = written[String(src)] || '';
+      delete written[String(src)];
+    });
+    vi.mocked(fsp.mkdir).mockResolvedValue(undefined);
+  }
+
+  it('drops the old CLI\'s resume id and model, and marks its sessions as its own', async () => {
+    setup({
+      orchestrator: 'codex-cli', model: 'gpt-5', lastSessionId: 'codex-2',
+      sessionHistory: [entry('codex-1'), entry('codex-2', 'codex-cli'), entry('older', 'github-copilot')],
+    });
+    await updateDurableConfig(PROJECT_PATH, 'durable_cli', { orchestrator: 'claude-code' });
+    const config = await getDurableConfig(PROJECT_PATH, 'durable_cli');
+    expect(config!.orchestrator).toBe('claude-code');
+    expect(config!.lastSessionId).toBeUndefined();
+    expect(config!.model).toBeUndefined();
+    expect(config!.sessionHistory!.map((s) => s.orchestrator)).toEqual(['codex-cli', 'codex-cli', 'github-copilot']);
+  });
+
+  it('keeps a model chosen in the same update', async () => {
+    setup({ orchestrator: 'claude-code', model: 'opus', lastSessionId: 's1' });
+    await updateDurableConfig(PROJECT_PATH, 'durable_cli', { orchestrator: 'codex-cli', model: 'gpt-5' });
+    const config = await getDurableConfig(PROJECT_PATH, 'durable_cli');
+    expect(config!.model).toBe('gpt-5');
+    expect(config!.lastSessionId).toBeUndefined();
+  });
+
+  it('changes nothing when the CLI stays the same', async () => {
+    setup({ orchestrator: 'claude-code', model: 'opus', lastSessionId: 's1', sessionHistory: [entry('s1')] });
+    await updateDurableConfig(PROJECT_PATH, 'durable_cli', { orchestrator: 'claude-code' });
+    const config = await getDurableConfig(PROJECT_PATH, 'durable_cli');
+    expect(config!.model).toBe('opus');
+    expect(config!.lastSessionId).toBe('s1');
+    expect(config!.sessionHistory![0].orchestrator).toBeUndefined();
+  });
+
+  it('counts an agent with no CLI of its own as on the default one', async () => {
+    registerProvider({ id: 'claude-code' } as never);
+    setup({ model: 'opus', lastSessionId: 's1', sessionHistory: [entry('s1')] });
+    await updateDurableConfig(PROJECT_PATH, 'durable_cli', { orchestrator: 'claude-code' });
+    let config = await getDurableConfig(PROJECT_PATH, 'durable_cli');
+    expect(config!.lastSessionId).toBe('s1');
+    expect(config!.model).toBe('opus');
+
+    await updateDurableConfig(PROJECT_PATH, 'durable_cli', { orchestrator: 'codex-cli' });
+    config = await getDurableConfig(PROJECT_PATH, 'durable_cli');
+    expect(config!.lastSessionId).toBeUndefined();
+    expect(config!.sessionHistory![0].orchestrator).toBe('claude-code');
+  });
+});
+
 describe('addSessionEntry', () => {
   function setupWritableAgents(agents: any[]) {
     const writtenData: Record<string, string> = {};
@@ -1881,11 +1950,11 @@ describe('addSessionEntry', () => {
     it('adds a session that has no entry yet, started and active now', async () => {
       setupWritableAgents([{ id: 'durable_1', name: 'agent-1', color: 'indigo', createdAt: '2024-01-01' }]);
 
-      await touchSessionEntry(PROJECT_PATH, 'durable_1', 'chat-1', '2024-06-01T00:00:00Z');
+      await touchSessionEntry(PROJECT_PATH, 'durable_1', 'chat-1', 'claude-code', '2024-06-01T00:00:00Z');
 
       const config = await getDurableConfig(PROJECT_PATH, 'durable_1');
       expect(config!.sessionHistory).toEqual([
-        { sessionId: 'chat-1', startedAt: '2024-06-01T00:00:00Z', lastActiveAt: '2024-06-01T00:00:00Z' },
+        { sessionId: 'chat-1', startedAt: '2024-06-01T00:00:00Z', lastActiveAt: '2024-06-01T00:00:00Z', orchestrator: 'claude-code' },
       ]);
       expect(config!.lastSessionId).toBe('chat-1');
     });
@@ -1899,12 +1968,12 @@ describe('addSessionEntry', () => {
         ],
       }]);
 
-      await touchSessionEntry(PROJECT_PATH, 'durable_1', 'chat-1', '2024-06-03T00:00:00Z');
+      await touchSessionEntry(PROJECT_PATH, 'durable_1', 'chat-1', 'claude-code', '2024-06-03T00:00:00Z');
 
       const config = await getDurableConfig(PROJECT_PATH, 'durable_1');
       expect(config!.sessionHistory).toHaveLength(2);
       expect(config!.sessionHistory!.find((s) => s.sessionId === 'chat-1')).toEqual({
-        sessionId: 'chat-1', startedAt: '2024-06-01T00:00:00Z', lastActiveAt: '2024-06-03T00:00:00Z', friendlyName: 'Refactor',
+        sessionId: 'chat-1', startedAt: '2024-06-01T00:00:00Z', lastActiveAt: '2024-06-03T00:00:00Z', orchestrator: 'claude-code', friendlyName: 'Refactor',
       });
     });
   });
@@ -2655,5 +2724,31 @@ describe('backup and recovery', () => {
       const result = await getDurableConfig(PROJECT_PATH, 'durable_nonexistent_xyz');
       expect(result).toBeNull();
     });
+  });
+});
+
+describe('writeAgentIconFile (#2597)', () => {
+  beforeEach(() => {
+    vi.mocked(fsp.mkdir).mockResolvedValue(undefined);
+    vi.mocked(fsp.writeFile).mockResolvedValue(undefined);
+    vi.mocked(fsp.unlink).mockClear();
+  });
+
+  it('writes a name that follows the content and removes the older icons of that agent only', async () => {
+    vi.mocked(fsp.readdir).mockResolvedValue(['a1.png', 'a1.abc.svg', 'a11.png'] as never);
+    const bytes = new Uint8Array([1, 2, 3]);
+    const name = await writeAgentIconFile('a1', bytes, 'webp');
+    expect(name).toMatch(/^a1\.[0-9a-f]{12}\.webp$/);
+    expect(fsp.writeFile).toHaveBeenCalledWith(expect.stringContaining(name), bytes);
+    const removed = vi.mocked(fsp.unlink).mock.calls.map(([file]) => path.basename(String(file)));
+    expect(removed.sort()).toEqual(['a1.abc.svg', 'a1.png']);
+  });
+
+  it('reads an icon back with the type its name says', async () => {
+    vi.mocked(pathExists).mockResolvedValue(true);
+    vi.mocked(fsp.readFile).mockResolvedValue(Buffer.from('x') as never);
+    expect(await readAgentIconData('a1.abc.svg')).toMatch(/^data:image\/svg\+xml;base64,/);
+    expect(await readAgentIconData('a1.abc.jpg')).toMatch(/^data:image\/jpeg;base64,/);
+    expect(await readAgentIconData('a1.png')).toMatch(/^data:image\/png;base64,/);
   });
 });

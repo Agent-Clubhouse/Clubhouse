@@ -9,10 +9,12 @@
  * and changes live. Model, effort and access keep their composer chips while
  * the agent runs; the rows here only reflect them. Asleep (#2281), the spawn
  * settings are native selects and switches, saved for the next wake; an
- * agent on another machine is read-only here.
+ * agent on another machine is read-only here. A new CLI (#2593) resets the
+ * model and starts a new session; main does both, whichever path changed it,
+ * and an agent with a session to lose asks first.
  */
 
-import { useEffect, useId, useRef, useState, type ReactNode } from 'react';
+import { useEffect, useId, useMemo, useRef, useState, type ReactNode } from 'react';
 import type { Agent, DurableConfigUpdates } from '../../../../shared/types';
 import type { ChatViewState } from '../../../stores/chatStore';
 import { useAgentStore } from '../../../stores/agentStore';
@@ -21,9 +23,12 @@ import { useOrchestratorStore } from '../../../stores/orchestratorStore';
 import { isRemoteProjectId, useRemoteProjectStore } from '../../../stores/remoteProjectStore';
 import { Button } from '../../../components/Button';
 import { Toggle } from '../../../components/Toggle';
+import { useEffectiveOrchestrators } from '../../../hooks/useEffectiveOrchestrators';
 import { useModelOptions } from '../../../hooks/useModelOptions';
 import { getPersonaTemplate } from '../../personas';
 import { useAgentSettingsPages } from '../agentSettingsPages';
+import { buildOrchestratorOptions } from '../orchestrator-options';
+import { useCliChangeConfirm } from '../useCliChangeConfirm';
 import { LEVEL_LABELS } from '../chat/view-model';
 import { useChatFlag } from '../chat/chat-flag';
 import { normalizeIdleSleep } from '../../../../shared/idle-sleep';
@@ -262,8 +267,36 @@ export function SettingsCard({ agent, chat, projectPath, provider }: {
   const modelValue = modelId && modelId !== 'default' ? modelId : 'default';
   const modelChoices = modelOptions.some((o) => o.id === modelValue) ? modelOptions : [...modelOptions, { id: modelValue, label: modelValue }];
 
+  const allOrchestrators = useOrchestratorStore((s) => s.allOrchestrators);
+  const { effectiveOrchestrators } = useEffectiveOrchestrators(local ? projectPath : undefined);
+  const cliOptions = useMemo(
+    () => buildOrchestratorOptions(effectiveOrchestrators, allOrchestrators, orchestrator)
+      .map((o) => ({ id: o.id, label: o.displayName })),
+    [effectiveOrchestrators, allOrchestrators, orchestrator],
+  );
+
+  const { requestCliChange, cliChangeDialog } = useCliChangeConfirm({
+    projectPath,
+    agentId: agent.id,
+    agentName: agent.name,
+    enabled: editing,
+    apply: (v) => save('cli', { orchestrator: v, model: 'default' }, { orchestrator: v, model: undefined }),
+  });
+
   const rows: SettingRow[] = [
-    { id: 'cli', label: 'CLI', editable: 'never', value: <>{provider}{chat?.cliVersion && !asleep ? <span className="text-ctp-overlay1"> {chat.cliVersion}</span> : null}</> },
+    {
+      id: 'cli', label: 'CLI', editable: 'sleeping',
+      value: <>{provider}{chat?.cliVersion && !asleep ? <span className="text-ctp-overlay1"> {chat.cliVersion}</span> : null}</>,
+      control: editing && cliOptions.length > 1 ? (
+        <SelectControl
+          label="CLI"
+          value={orchestrator}
+          disabled={busy('cli')}
+          onChange={(v) => { if (v !== orchestrator) void requestCliChange(v); }}
+          options={cliOptions}
+        />
+      ) : undefined,
+    },
     ...(runsIn ? [{
       id: 'runs-in', label: 'Runs in', editable: 'sleeping' as const, value: runsIn,
       control: editing && chatFlag === true && nextRuntime?.chatAvailable ? (
@@ -360,6 +393,7 @@ export function SettingsCard({ agent, chat, projectPath, provider }: {
           <Button kind="ghost" onClick={() => (isDispatcherAgent(agent) ? openDispatcherSettings() : openAllSettings(agent.id))} data-testid="details-all-settings">All settings</Button>
         </div>
       )}
+      {cliChangeDialog}
     </DetailsCard>
   );
 }

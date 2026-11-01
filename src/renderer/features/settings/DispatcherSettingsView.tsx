@@ -17,6 +17,7 @@ import { useChromeFlagStore } from '../../chrome/chromeFlag';
 import { useOrchestratorStore } from '../../stores/orchestratorStore';
 import { ipcErrorMessage } from '../../utils/ipc-error';
 import { useAppIdleMinutes, SELECT_CLASS } from '../agents/details/AutoSleepRow';
+import { useCliChangeConfirm } from '../agents/useCliChangeConfirm';
 import { useDispatcherRead } from '../dispatcher/useDispatcherEnabled';
 import { SettingsField, SettingsPage, SettingsSection, settingsError, settingsHelp } from './SettingsLayout';
 
@@ -69,6 +70,14 @@ export function DispatcherSettingsView() {
       setSaving(false);
     }
   };
+
+  const { requestCliChange, cliChangeDialog } = useCliChangeConfirm({
+    projectPath: path,
+    agentId: config?.id ?? '',
+    agentName: 'The Dispatcher',
+    enabled: !!config,
+    apply: (cli) => save({ orchestrator: cli, model: 'default' }),
+  });
 
   if (!state) {
     return (
@@ -128,6 +137,7 @@ export function DispatcherSettingsView() {
         {state.path && <p className={`${settingsHelp} mt-2`} data-testid="dispatcher-folder">Its folder is {state.path}</p>}
       </section>
 
+      {cliChangeDialog}
       {state.enabled && config && (
         <SettingsSection title="Agent">
           <p className={settingsHelp}>Changes apply the next time the Dispatcher starts. Auto-sleep applies at once.</p>
@@ -137,7 +147,7 @@ export function DispatcherSettingsView() {
               className={SELECT_CLASS}
               value={orchestrator}
               disabled={saving}
-              onChange={(e) => void save({ orchestrator: e.target.value, model: 'default' })}
+              onChange={(e) => void requestCliChange(e.target.value)}
             >
               {!orchestrator && <option value="">App default</option>}
               {cliChoices.map((o) => <option key={o.id} value={o.id}>{o.displayName}</option>)}

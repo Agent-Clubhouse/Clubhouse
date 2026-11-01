@@ -2,7 +2,7 @@ import { execFile } from 'child_process';
 import { watch, type FSWatcher } from 'fs';
 import * as fsp from 'fs/promises';
 import * as path from 'path';
-import { randomUUID } from 'crypto';
+import { createHash, randomUUID } from 'crypto';
 import { app } from 'electron';
 import { DurableAgentConfig, DurableConfigUpdates, OrchestratorId, SessionInfo, WorktreeStatus, DeleteResult, GitStatusFile, GitLogEntry, HelperCascadeResult, HelperDeleteChoice, HelperDisposeBlock, HelperDisposeChecks, HelperHandoff, HelperHandoffHow, HELPER_HANDOFF_HOWS } from '../../shared/types';
 import type { DurableAgentCreation, DurableCreationEvent, DurableCreationStage, DurableWorktreeOptions, StartDurableCreationParams } from '../../shared/types';
@@ -1145,6 +1145,19 @@ export async function updateDurableConfig(
     agent.quickAgentDefaults = updates.quickAgentDefaults;
   }
   if (updates.orchestrator !== undefined) {
+    // No CLI of its own means the project's, which is what its sessions came from.
+    const previous = agent.orchestrator
+      || await resolveOrchestrator(projectPath).then((p) => p.id).catch((): undefined => undefined);
+    if (updates.orchestrator !== previous) {
+      // The new CLI can't resume the old one's session or run its model (#2593).
+      // Every setting path comes through here: full settings, the card, the phone.
+      delete agent.lastSessionId;
+      if (updates.model === undefined) delete agent.model;
+      // Older entries don't say whose they are; after this, nothing else can tell.
+      if (previous) {
+        for (const session of agent.sessionHistory ?? []) session.orchestrator ??= previous;
+      }
+    }
     agent.orchestrator = updates.orchestrator;
   }
   if (updates.model !== undefined) {
@@ -1325,13 +1338,14 @@ export async function addSessionEntry(projectPath: string, agentId: string, entr
  * call this when the CLI reports its native session id and when the session
  * ends, so chat sessions reach the Sessions picker the way terminal runs do.
  */
-export async function touchSessionEntry(projectPath: string, agentId: string, sessionId: string, at: string = new Date().toISOString()): Promise<void> {
+export async function touchSessionEntry(projectPath: string, agentId: string, sessionId: string, orchestrator: OrchestratorId, at: string = new Date().toISOString()): Promise<void> {
   const { agentsById } = await readAgentsEntry(projectPath);
   const existing = agentsById.get(agentId)?.sessionHistory?.find((s) => s.sessionId === sessionId);
   await addSessionEntry(projectPath, agentId, {
     sessionId,
     startedAt: existing?.startedAt ?? at,
     lastActiveAt: at,
+    orchestrator,
     ...(existing?.friendlyName && { friendlyName: existing.friendlyName }),
   });
 }
@@ -3330,21 +3344,39 @@ export async function saveAgentIcon(projectPath: string, agentId: string, dataUr
   return filename;
 }
 
+/**
+ * Store an image as the agent's icon file and drop its old one. Returns the
+ * filename for `updateDurable` to record. The name follows the content, so a
+ * window can tell a new image from the old without reading it.
+ */
+export async function writeAgentIconFile(agentId: string, bytes: Uint8Array, extension: string): Promise<string> {
+  const hash = createHash('sha256').update(bytes).digest('hex').slice(0, 12);
+  const filename = `${agentId}.${hash}.${extension}`;
+  await fsp.writeFile(path.join(await getAgentIconsDir(), filename), bytes);
+  await removeAgentIconFile(agentId, filename);
+  return filename;
+}
+
+const AGENT_ICON_MIME: Readonly<Record<string, string>> = {
+  '.jpg': 'image/jpeg', '.gif': 'image/gif', '.webp': 'image/webp', '.svg': 'image/svg+xml',
+};
+
 /** Read an agent icon file and return a data URL, or null if not found. */
 export async function readAgentIconData(filename: string): Promise<string | null> {
   const filePath = path.join(await getAgentIconsDir(), filename);
   if (!(await pathExists(filePath))) return null;
   const data = await fsp.readFile(filePath);
-  return `data:image/png;base64,${data.toString('base64')}`;
+  const mime = AGENT_ICON_MIME[path.extname(filename).toLowerCase()] ?? 'image/png';
+  return `data:${mime};base64,${data.toString('base64')}`;
 }
 
-/** Remove the icon file for an agent. */
-export async function removeAgentIconFile(agentId: string): Promise<void> {
+/** Remove the icon file for an agent, except `keep` if given. */
+export async function removeAgentIconFile(agentId: string, keep?: string): Promise<void> {
   const iconsDir = await getAgentIconsDir();
   try {
     const files = await fsp.readdir(iconsDir);
     for (const file of files) {
-      if (file.startsWith(agentId + '.')) {
+      if (file.startsWith(agentId + '.') && file !== keep) {
         await fsp.unlink(path.join(iconsDir, file));
       }
     }

@@ -65,12 +65,16 @@ vi.stubGlobal('window', {
       onNavigateToAgent: vi.fn(() => mockRemovers.onNavigateToAgent),
       onNavigateToPluginSettings: vi.fn(() => mockRemovers.onNavigateToPluginSettings),
     },
+    project: {
+      onChanged: vi.fn(() => vi.fn()),
+    },
     pty: {
       onExit: vi.fn(() => mockRemovers.onExit),
       kill: vi.fn(),
     },
     agent: {
       onHookEvent: vi.fn(() => mockRemovers.onHookEvent),
+      onConfigsChanged: vi.fn(() => vi.fn()),
       onAgentWaking: vi.fn(() => mockRemovers.onAgentWaking),
       onAgentAwoke: vi.fn(() => mockRemovers.onAgentAwoke),
       onAgentWakeFailed: vi.fn(() => mockRemovers.onAgentWakeFailed),
