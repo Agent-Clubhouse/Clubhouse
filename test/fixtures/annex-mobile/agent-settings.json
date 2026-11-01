@@ -196,6 +196,7 @@
           "value": "brave-otter"
         },
         "orchestrator": {
+          "changeStartsNewSession": true,
           "editable": "sleeping",
           "resolved": "claude-code",
           "value": null

@@ -570,7 +570,7 @@ async function runChatStart(
         recordSessionCapture({ orchestrator: provider.id, agentId: params.agentId, runtime: 'chat', result, source: 'provider_reported', exitCode });
       };
       // Tracked so quit and update wait for it before the final config flush (#2053).
-      trackSessionCapture(params.agentId, touchSessionEntry(params.projectPath, params.agentId, id).then(() => captured('captured'), (err) => {
+      trackSessionCapture(params.agentId, touchSessionEntry(params.projectPath, params.agentId, id, provider.id).then(() => captured('captured'), (err) => {
         appLog('core:chat', 'warn', 'Failed to persist native session id', {
           meta: { agentId: params.agentId, error: err instanceof Error ? err.message : String(err) },
         });

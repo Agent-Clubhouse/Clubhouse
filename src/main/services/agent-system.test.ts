@@ -1282,6 +1282,31 @@ describe('agent-system', () => {
       });
     }
 
+    describe('a session another CLI made (#2593)', () => {
+      const history = (orchestrator: string) => [{ sessionId: DEAD, startedAt: 'x', lastActiveAt: 'x', orchestrator }];
+
+      it('starts fresh instead of asking the new CLI, even one with no store to check', async () => {
+        sessionCapable(mockProvider);
+        expect((mockProvider as Record<string, unknown>).hasSession).toBeUndefined();
+        mockGetDurableConfig.mockImplementation(async () => ({ id: 'agent-1', runtimeMode: 'terminal', sessionHistory: history('codex-cli'), ...config }));
+        await wake('claude-code');
+        const spawnArgs = mockProvider.buildSpawnCommand.mock.calls.at(-1)![0] as { resume?: boolean; sessionId?: string };
+        expect(spawnArgs.resume).toBe(false);
+        expect(spawnArgs.sessionId).toBeUndefined();
+        expect(mockUpdateSessionId).toHaveBeenCalledWith('/project', 'agent-1', null);
+      });
+
+      it('still resumes its own', async () => {
+        sessionCapable(mockProvider);
+        mockGetDurableConfig.mockImplementation(async () => ({ id: 'agent-1', runtimeMode: 'terminal', sessionHistory: history('claude-code'), ...config }));
+        await wake('claude-code');
+        const spawnArgs = mockProvider.buildSpawnCommand.mock.calls.at(-1)![0] as { resume?: boolean; sessionId?: string };
+        expect(spawnArgs.resume).toBe(true);
+        expect(spawnArgs.sessionId).toBe(DEAD);
+        expect(mockUpdateSessionId).not.toHaveBeenCalled();
+      });
+    });
+
     it('a resumed run that exits cleanly without printing an id keeps the resumed id', async () => {
       const { onExit } = await wake('claude-code');
       onExit('agent-1', 0, 'bye');
@@ -2910,6 +2935,19 @@ describe('listSessions: saved ids the CLI store lacks (#2156)', () => {
     (mockCodexProvider as Record<string, unknown>).hasSession = vi.fn(async () => undefined);
     const sessions = await listSessions('/project', 'durable_cp', 'codex-cli');
     expect(sessions.map((s) => s.sessionId).sort()).toEqual(['a-1', 'b-1']);
+    expect(mockRemoveSessionEntries).not.toHaveBeenCalled();
+  });
+
+  it('leaves another CLI\'s sessions out without pruning them, whether or not this CLI has a store (#2593)', async () => {
+    sessionCapable(mockCodexProvider);
+    mockRemoveSessionEntries.mockClear();
+    mockGetDurableConfig.mockResolvedValue({ id: 'durable_cp', orchestrator: 'codex-cli' });
+    mockGetSessionHistory.mockResolvedValue([{ ...entry('claude-1'), orchestrator: 'claude-code' }, { ...entry('codex-1'), orchestrator: 'codex-cli' }]);
+    (mockCodexProvider as Record<string, unknown>).hasSession = vi.fn(async (id: string) => id === 'codex-1');
+
+    const sessions = await listSessions('/project', 'durable_cp', 'codex-cli');
+
+    expect(sessions.map((s) => s.sessionId)).toEqual(['codex-1']);
     expect(mockRemoveSessionEntries).not.toHaveBeenCalled();
   });
 

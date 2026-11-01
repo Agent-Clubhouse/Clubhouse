@@ -409,9 +409,14 @@ async function spawnAgentInner(inParams: SpawnAgentParams, facts: SpawnFacts): P
       recordResumeOutcome(provider.id, params.agentId, 'fresh_user');
     }
     // A saved id the CLI's own store doesn't have (Codex agents saved made-up
-    // ids before #2113, #2132): start fresh instead of resuming nothing.
-    if (params.kind === 'durable' && params.resume && params.sessionId && isSessionCapable(provider) && provider.hasSession) {
-      const exists = await provider.hasSession(params.sessionId, profileEnv).catch((): undefined => undefined);
+    // ids before #2113, #2132), or another CLI's session (#2593; Claude Code has
+    // no store check, so it would be asked and quit): start fresh instead of
+    // resuming nothing.
+    if (params.kind === 'durable' && params.resume && params.sessionId) {
+      const madeBy = durableConfig?.sessionHistory?.find((s) => s.sessionId === params.sessionId)?.orchestrator;
+      const exists = madeBy && madeBy !== provider.id ? false
+        : isSessionCapable(provider) && provider.hasSession ? await provider.hasSession(params.sessionId, profileEnv).catch((): undefined => undefined)
+          : undefined;
       if (exists === false) {
         appLog('core:agent', 'warn', 'Saved session is gone from the CLI store; starting fresh', {
           meta: { agentId: params.agentId, sessionId: params.sessionId },
@@ -877,6 +882,7 @@ async function captureSession(
       sessionId: capturedId,
       startedAt: now,
       lastActiveAt: now,
+      orchestrator: provider.id,
     }).then(() => {
       appLog('core:agent', 'info', 'Captured session ID on exit', {
         meta: { agentId, sessionId: capturedId, exitCode },
@@ -1096,6 +1102,8 @@ export async function listSessions(
   const missing: string[] = [];
   for (const s of clubhouseHistory) {
     if (merged.has(s.sessionId)) continue;
+    // Another CLI's session: not this one's to offer, and not missing either (#2593).
+    if (s.orchestrator && s.orchestrator !== provider.id) continue;
     if (isSessionCapable(provider) && provider.hasSession) {
       const profileEnv = await resolveProfileEnv(projectPath, provider.id);
       const has = await provider.hasSession(s.sessionId, profileEnv).catch((): undefined => undefined);

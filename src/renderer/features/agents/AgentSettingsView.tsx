@@ -4,6 +4,7 @@ import { AGENT_COLORS } from '../../../shared/name-generator';
 import { useModelOptions } from '../../hooks/useModelOptions';
 import { useEffectiveOrchestrators } from '../../hooks/useEffectiveOrchestrators';
 import { buildOrchestratorOptions } from './orchestrator-options';
+import { useCliChangeConfirm } from './useCliChangeConfirm';
 import { useAgentStore } from '../../stores/agentStore';
 import { useProjectStore } from '../../stores/projectStore';
 import { useOrchestratorStore } from '../../stores/orchestratorStore';
@@ -301,18 +302,28 @@ export function AgentSettingsView({ agent }: Props) {
 
   const handleOrchestratorChange = async (value: string) => {
     if (!projectPath) return;
-    await window.clubhouse.agent.updateDurableConfig(projectPath, agent.id, { orchestrator: value });
+    // Main resets the model on a new CLI, as it can't run the old one's (#2593).
+    await window.clubhouse.agent.updateDurableConfig(projectPath, agent.id, { orchestrator: value, model: 'default' });
+    setSavedModel('default');
     useAgentStore.setState((s) => {
       const existing = s.agents[agent.id];
       if (!existing) return s;
       return {
         agents: {
           ...s.agents,
-          [agent.id]: { ...existing, orchestrator: value },
+          [agent.id]: { ...existing, orchestrator: value, model: undefined },
         },
       };
     });
   };
+
+  const { requestCliChange, cliChangeDialog } = useCliChangeConfirm({
+    projectPath,
+    agentId: agent.id,
+    agentName: agent.name,
+    enabled: !isRunning,
+    apply: handleOrchestratorChange,
+  });
 
   // Agent model state.
   //
@@ -1056,7 +1067,7 @@ export function AgentSettingsView({ agent }: Props) {
           <select
             id="agent-settings-orchestrator"
             value={agentOrchestrator}
-            onChange={(e) => handleOrchestratorChange(e.target.value)}
+            onChange={(e) => void requestCliChange(e.target.value)}
             disabled={isRunning}
             title={stopFirst}
             className={selectClass}
@@ -1597,6 +1608,7 @@ export function AgentSettingsView({ agent }: Props) {
         />
       )}
 
+      {cliChangeDialog}
       <ConfirmDestructiveAction
         open={pendingLeave !== null}
         title="Leave with unsaved changes?"

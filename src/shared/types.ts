@@ -246,6 +246,8 @@ export interface SessionInfo {
   lastActiveAt: string;
   /** User-assigned friendly name for easy identification */
   friendlyName?: string;
+  /** The CLI that made this session; only that CLI can resume it (#2593). Unset on older entries until the agent changes CLI. */
+  orchestrator?: OrchestratorId;
 }
 
 export interface DurableAgentConfig {
