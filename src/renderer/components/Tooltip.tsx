@@ -61,6 +61,10 @@ export function formatShortcut(binding: string, platform: string | undefined = w
 // a programmatic focus() after one doesn't (the :focus-visible heuristic).
 let keyboardModality = true;
 let modalityTracked = false;
+/** Whether focus arriving now follows the keyboard rather than a click. */
+export function isKeyboardModality(): boolean {
+  return keyboardModality;
+}
 function trackModality() {
   if (modalityTracked) return;
   modalityTracked = true;

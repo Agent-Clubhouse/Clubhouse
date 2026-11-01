@@ -2,13 +2,14 @@ import React, { useCallback, useMemo, useRef, useState } from 'react';
 import type { Agent, AgentDetailedStatus, CompletedQuickAgent, Project } from '../../../shared/types';
 import { getAgentColorHex } from '../../../shared/name-generator';
 import { AgentRow } from './AgentRow';
-import { agentDot, buildProjectTree, countDescendants, helperRollup, localParentId, moveWithinGroup, projectRollup, siblingGroups, type AgentNode } from './treeModel';
+import { agentDot, buildProjectTree, countDescendants, descendants, helperRollup, localParentId, moveWithinGroup, projectRollup, siblingGroups, type AgentNode } from './treeModel';
 import type { ProjectFold } from '../chromeStore';
 import { PopupMenu, type MenuItem } from '../../components/PopupMenu';
 import { reportChromeFeature } from '../telemetry';
 import type { ActionDef } from '../../features/agents/useAgentRowActions';
 import type { AgentDragHandlers } from './AgentRow';
 import { useRefocusAfterMove } from './useRefocusAfterMove';
+import { AutoClosingFold } from './AutoClosingFold';
 import { Tooltip } from '../../components/Tooltip';
 import { TruncatedLabel } from '../../components/TruncatedLabel';
 import { markdownToPlainText } from '../../utils/safe-markdown';
@@ -17,7 +18,9 @@ import { OtherProjectParentLine } from '../../features/agents/helpers/OtherProje
 /**
  * One project in the sidebar tree: a header (chevron, square, name, roll-up,
  * hover actions) and, when expanded, its agents. Sleeping agents and finished
- * quick agents each fold into one row (docs/chrome-redesign-spec.md §2).
+ * quick agents each fold into one row (docs/chrome-redesign-spec.md §2). The
+ * sleeping fold closes itself after you leave it, unless it is pinned or holds
+ * the selection (#2580), so it doesn't stay in the way of the projects below.
  *
  * Tree semantics (§4.8): the header, rows and folds are treeitems with a
  * data-tree-key; ProjectTree owns focus (roving tabindex) and the arrow keys.
@@ -76,6 +79,8 @@ export interface ProjectGroupProps {
   collapsed: boolean;
   pinned: boolean;
   sleepingOpen: boolean;
+  /** The sleeping fold is pinned, so it doesn't close itself (#2580). */
+  sleepingPinned?: boolean;
   finishedOpen: boolean;
   activeProjectId: string | null;
   activeAgentId: string | null;
@@ -86,6 +91,9 @@ export interface ProjectGroupProps {
   onToggleCollapsed: (projectId: string) => void;
   onTogglePinned: (projectId: string) => void;
   onToggleFold: (projectId: string, fold: ProjectFold) => void;
+  /** Close a fold without it counting as the user's toggle. */
+  onCloseFold?: (projectId: string, fold: ProjectFold) => void;
+  onToggleSleepingPinned?: (projectId: string) => void;
   /** Absent for a satellite's projects, which can't be changed from here. */
   onNewAgent?: (projectId: string) => void;
   draggable?: boolean;
@@ -160,9 +168,9 @@ function GuideLine({ x, first, last, tick }: { x: number; first: boolean; last: 
 
 export const ProjectGroup = React.memo(function ProjectGroup(props: ProjectGroupProps) {
   const {
-    project, iconUrl, agents, detailed, completed, collapsed, pinned, sleepingOpen, finishedOpen,
+    project, iconUrl, agents, detailed, completed, collapsed, pinned, sleepingOpen, sleepingPinned = false, finishedOpen,
     activeProjectId, activeAgentId, headerSelected, selectedCompletedId,
-    onSelectProject, onToggleCollapsed, onTogglePinned, onToggleFold, onNewAgent,
+    onSelectProject, onToggleCollapsed, onTogglePinned, onToggleFold, onCloseFold, onToggleSleepingPinned, onNewAgent,
     onSelectAgent, onOpenTerminal, onSelectCompleted, onDismissCompleted, onClearCompleted, dragHandlers, dropIndicator, draggable = true,
     onMoveProject, canMoveUp, canMoveDown, onOpenSettings, onReorderAgents, level = 1, parentKey,
     sortedByRecent, inSection, onSetInactive, onAgentReorderHint,
@@ -179,6 +187,10 @@ export const ProjectGroup = React.memo(function ProjectGroup(props: ProjectGroup
   /** Everyone in the sleeping fold, helpers included. */
   const sleepingCount = tree.sleeping.reduce((n, node) => n + 1 + countDescendants(node), 0);
   const expanded = !collapsed;
+  /** The selected agent is in the sleeping fold, so closing it would hide the selection. */
+  const selectionInSleeping = isActiveProject && !!activeAgentId
+    && tree.sleeping.some((root) => root.agent.id === activeAgentId || descendants(root).some((a) => a.id === activeAgentId));
+  const closeSleepingFold = useCallback(() => onCloseFold?.(project.id, 'sleeping'), [onCloseFold, project.id]);
 
   // Reordering durable agents (§4.8): by drag, by Move up / Move down in the
   // row menu, or by Alt+Up / Alt+Down on the row. A move stays inside the
@@ -454,25 +466,45 @@ export const ProjectGroup = React.memo(function ProjectGroup(props: ProjectGroup
           {tree.quick.map((a) => renderAgent(a))}
 
           {tree.sleeping.length > 0 && (
-            <>
-              <button
-                type="button"
-                role="treeitem"
-                aria-level={level + 1}
-                data-tree-key={`fold:${project.id}:sleeping`}
-                data-tree-parent={projectKey}
-                data-tree-toggle
-                data-testid={`sleeping-fold-${project.id}`}
-                aria-expanded={sleepingOpen}
-                onClick={() => onToggleFold(project.id, 'sleeping')}
-                className="h-[26px] flex items-center gap-1.5 rounded-md text-xs text-ctp-overlay1 hover:text-ctp-text cursor-pointer"
-                style={{ paddingLeft: ROW_INDENT - 2 }}
-              >
-                <Chevron open={sleepingOpen} />
-                <span>{sleepingCount} sleeping</span>
-              </button>
+            // A drag has no pointer events, and closing would take the rows from under it.
+            <AutoClosingFold open={sleepingOpen} hold={sleepingPinned || selectionInSleeping || agentDrag !== null} onClose={closeSleepingFold}>
+              <div className="group/sleeping h-[26px] flex items-center">
+                <button
+                  type="button"
+                  role="treeitem"
+                  aria-level={level + 1}
+                  data-tree-key={`fold:${project.id}:sleeping`}
+                  data-tree-parent={projectKey}
+                  data-tree-toggle
+                  data-testid={`sleeping-fold-${project.id}`}
+                  aria-expanded={sleepingOpen}
+                  onClick={() => onToggleFold(project.id, 'sleeping')}
+                  className="min-w-0 flex-1 h-full flex items-center gap-1.5 rounded-md text-xs text-ctp-overlay1 hover:text-ctp-text cursor-pointer"
+                  style={{ paddingLeft: ROW_INDENT - 2 }}
+                >
+                  <Chevron open={sleepingOpen} />
+                  <span>{sleepingCount} sleeping</span>
+                </button>
+                {/* Tab reaches it from the fold's row, which shows it on focus. */}
+                {sleepingOpen && onToggleSleepingPinned && (
+                  <Tooltip content={sleepingPinned ? 'Stop keeping open' : 'Keep open'}>
+                    <button
+                      type="button"
+                      data-testid={`sleeping-fold-pin-${project.id}`}
+                      aria-label={`Keep sleeping agents open in ${label}`}
+                      aria-pressed={sleepingPinned}
+                      onClick={() => onToggleSleepingPinned(project.id)}
+                      className={`mr-1 flex-shrink-0 w-6 h-6 rounded items-center justify-center cursor-pointer hover:bg-surface-1 ${
+                        sleepingPinned ? 'flex text-ctp-text' : 'hidden group-hover/sleeping:flex group-focus-within/sleeping:flex text-ctp-subtext0'
+                      }`}
+                    >
+                      {PinIcon}
+                    </button>
+                  </Tooltip>
+                )}
+              </div>
               {sleepingOpen && tree.sleeping.map((n) => renderNode(n, ROW_INDENT + 12, `fold:${project.id}:sleeping`, 2))}
-            </>
+            </AutoClosingFold>
           )}
 
           {completed.length > 0 && (

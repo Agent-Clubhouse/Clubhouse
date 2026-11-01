@@ -195,6 +195,9 @@ export function ProjectTree(props: ProjectTreeProps) {
   const toggleProjectCollapsed = useChromeStore((s) => s.toggleProjectCollapsed);
   const toggleCollapseAll = useChromeStore((s) => s.toggleCollapseAll);
   const toggleFold = useChromeStore((s) => s.toggleFold);
+  const closeFold = useChromeStore((s) => s.closeFold);
+  const pinnedSleepingFolds = useChromeStore((s) => s.pinnedSleepingFolds);
+  const toggleSleepingFoldPinned = useChromeStore((s) => s.toggleSleepingFoldPinned);
   const collapsedAgentIds = useChromeStore((s) => s.collapsedAgentIds);
   const toggleAgentCollapsed = useChromeStore((s) => s.toggleAgentCollapsed);
   const collapsedAgentSet = useMemo(() => new Set(collapsedAgentIds), [collapsedAgentIds]);
@@ -317,6 +320,10 @@ export function ProjectTree(props: ProjectTreeProps) {
     toggleFold(projectId, fold);
     reportChromeFeature('fold_toggle');
   }, [toggleFold]);
+  const onToggleSleepingPinned = useCallback((projectId: string) => {
+    toggleSleepingFoldPinned(projectId);
+    reportChromeFeature('sleeping_fold_pin');
+  }, [toggleSleepingFoldPinned]);
   const onToggleCollapsed = useCallback((projectId: string) => {
     toggleProjectCollapsed(projectId);
     reportChromeFeature('project_collapse');
@@ -361,6 +368,7 @@ export function ProjectTree(props: ProjectTreeProps) {
       collapsed={collapsedSet.has(project.id)}
       pinned={pinnedProjectIds.includes(project.id)}
       sleepingOpen={foldSet.has(foldKey(project.id, 'sleeping'))}
+      sleepingPinned={pinnedSleepingFolds.includes(project.id)}
       finishedOpen={foldSet.has(foldKey(project.id, 'finished'))}
       activeProjectId={activeProjectId}
       activeAgentId={props.projectScopeId === project.id ? null : activeAgentId}
@@ -370,6 +378,8 @@ export function ProjectTree(props: ProjectTreeProps) {
       onToggleCollapsed={onToggleCollapsed}
       onTogglePinned={onTogglePinned}
       onToggleFold={onToggleFold}
+      onCloseFold={closeFold}
+      onToggleSleepingPinned={onToggleSleepingPinned}
       onNewAgent={props.onNewAgent}
       draggable={!!props.onReorder}
       onSelectAgent={props.onSelectAgent}

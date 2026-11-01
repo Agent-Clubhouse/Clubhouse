@@ -14,7 +14,7 @@ import { useAgentStore } from '../stores/agentStore';
 describe('chromeStore', () => {
   beforeEach(() => {
     localStorage.clear();
-    useChromeStore.setState({ sidebarWidth: SIDEBAR_DEFAULT, sidebarCollapsed: false, lastProjectId: null, pinnedProjectIds: [], collapsedProjectIds: [], expandedFolds: [], tabMru: {}, projectActivity: {}, idleDays: 7, idleOpen: false, projectSort: 'manual', agentSort: 'manual', inactiveProjectIds: [], agentActivity: {}, collapsedAgentIds: [] });
+    useChromeStore.setState({ sidebarWidth: SIDEBAR_DEFAULT, sidebarCollapsed: false, lastProjectId: null, pinnedProjectIds: [], collapsedProjectIds: [], expandedFolds: [], pinnedSleepingFolds: [], tabMru: {}, projectActivity: {}, idleDays: 7, idleOpen: false, projectSort: 'manual', agentSort: 'manual', inactiveProjectIds: [], agentActivity: {}, collapsedAgentIds: [] });
   });
 
   afterEach(() => {
@@ -23,7 +23,7 @@ describe('chromeStore', () => {
 
   describe('loadChromeState', () => {
     it('defaults to a 264px expanded sidebar when nothing is stored', () => {
-      expect(loadChromeState()).toEqual({ sidebarWidth: 264, sidebarCollapsed: false, lastProjectId: null, pinnedProjectIds: [], collapsedProjectIds: [], expandedFolds: [], tabMru: {}, projectActivity: {}, idleDays: 7, idleOpen: false, projectSort: 'manual', agentSort: 'manual', inactiveProjectIds: [], agentActivity: {}, collapsedAgentIds: [] });
+      expect(loadChromeState()).toEqual({ sidebarWidth: 264, sidebarCollapsed: false, lastProjectId: null, pinnedProjectIds: [], collapsedProjectIds: [], expandedFolds: [], pinnedSleepingFolds: [], tabMru: {}, projectActivity: {}, idleDays: 7, idleOpen: false, projectSort: 'manual', agentSort: 'manual', inactiveProjectIds: [], agentActivity: {}, collapsedAgentIds: [] });
     });
 
     it('reads persisted width and collapsed state', () => {
@@ -38,7 +38,7 @@ describe('chromeStore', () => {
 
     it('falls back to defaults on corrupt JSON', () => {
       localStorage.setItem(CHROME_STORAGE_KEY, '{not json');
-      expect(loadChromeState()).toEqual({ sidebarWidth: SIDEBAR_DEFAULT, sidebarCollapsed: false, lastProjectId: null, pinnedProjectIds: [], collapsedProjectIds: [], expandedFolds: [], tabMru: {}, projectActivity: {}, idleDays: 7, idleOpen: false, projectSort: 'manual', agentSort: 'manual', inactiveProjectIds: [], agentActivity: {}, collapsedAgentIds: [] });
+      expect(loadChromeState()).toEqual({ sidebarWidth: SIDEBAR_DEFAULT, sidebarCollapsed: false, lastProjectId: null, pinnedProjectIds: [], collapsedProjectIds: [], expandedFolds: [], pinnedSleepingFolds: [], tabMru: {}, projectActivity: {}, idleDays: 7, idleOpen: false, projectSort: 'manual', agentSort: 'manual', inactiveProjectIds: [], agentActivity: {}, collapsedAgentIds: [] });
     });
 
     it('reads the last selected project', () => {
@@ -48,7 +48,7 @@ describe('chromeStore', () => {
 
     it('never reads the legacy panel sizes key', () => {
       localStorage.setItem('clubhouse_panel_sizes', JSON.stringify({ explorerWidth: 390, explorerCollapsed: true }));
-      expect(loadChromeState()).toEqual({ sidebarWidth: SIDEBAR_DEFAULT, sidebarCollapsed: false, lastProjectId: null, pinnedProjectIds: [], collapsedProjectIds: [], expandedFolds: [], tabMru: {}, projectActivity: {}, idleDays: 7, idleOpen: false, projectSort: 'manual', agentSort: 'manual', inactiveProjectIds: [], agentActivity: {}, collapsedAgentIds: [] });
+      expect(loadChromeState()).toEqual({ sidebarWidth: SIDEBAR_DEFAULT, sidebarCollapsed: false, lastProjectId: null, pinnedProjectIds: [], collapsedProjectIds: [], expandedFolds: [], pinnedSleepingFolds: [], tabMru: {}, projectActivity: {}, idleDays: 7, idleOpen: false, projectSort: 'manual', agentSort: 'manual', inactiveProjectIds: [], agentActivity: {}, collapsedAgentIds: [] });
     });
   });
 
@@ -60,7 +60,7 @@ describe('chromeStore', () => {
 
     it('reads a version 1 payload without tree state', () => {
       localStorage.setItem(CHROME_STORAGE_KEY, JSON.stringify({ version: 1, sidebarWidth: 280, sidebarCollapsed: false }));
-      expect(loadChromeState()).toEqual({ sidebarWidth: 280, sidebarCollapsed: false, lastProjectId: null, pinnedProjectIds: [], collapsedProjectIds: [], expandedFolds: [], tabMru: {}, projectActivity: {}, idleDays: 7, idleOpen: false, projectSort: 'manual', agentSort: 'manual', inactiveProjectIds: [], agentActivity: {}, collapsedAgentIds: [] });
+      expect(loadChromeState()).toEqual({ sidebarWidth: 280, sidebarCollapsed: false, lastProjectId: null, pinnedProjectIds: [], collapsedProjectIds: [], expandedFolds: [], pinnedSleepingFolds: [], tabMru: {}, projectActivity: {}, idleDays: 7, idleOpen: false, projectSort: 'manual', agentSort: 'manual', inactiveProjectIds: [], agentActivity: {}, collapsedAgentIds: [] });
     });
 
     it('togglePinned adds and removes a project', () => {
@@ -82,6 +82,31 @@ describe('chromeStore', () => {
       useChromeStore.setState({ pinnedProjectIds: ['p1', 'p2'], collapsedProjectIds: ['p2'], expandedFolds: ['p2:sleeping', 'p1:finished'], lastProjectId: 'p2' });
       useChromeStore.getState().forgetProjects(['p2']);
       expect(useChromeStore.getState()).toMatchObject({ pinnedProjectIds: ['p1'], collapsedProjectIds: [], expandedFolds: ['p1:finished'], lastProjectId: null });
+    });
+
+    it('closeFold closes an open fold and leaves a closed one closed', () => {
+      useChromeStore.setState({ expandedFolds: ['p1:sleeping', 'p2:sleeping'] });
+      useChromeStore.getState().closeFold('p1', 'sleeping');
+      useChromeStore.getState().closeFold('p1', 'sleeping');
+      expect(useChromeStore.getState().expandedFolds).toEqual(['p2:sleeping']);
+    });
+
+    it('persists sleeping fold pins per project, reads junk as none, and forgets removed projects (#2580)', () => {
+      vi.useFakeTimers();
+      const s = useChromeStore.getState();
+      s.toggleSleepingFoldPinned('p1');
+      s.toggleSleepingFoldPinned('p2');
+      s.toggleSleepingFoldPinned('remote||s1||a');
+      s.toggleSleepingFoldPinned('p2');
+      vi.advanceTimersByTime(400);
+      expect(loadChromeState().pinnedSleepingFolds).toEqual(['p1', 'remote||s1||a']);
+      s.forgetProjects(['p1']);
+      expect(useChromeStore.getState().pinnedSleepingFolds).toEqual(['remote||s1||a']);
+      s.forgetProjectsWithPrefix('remote||s1||');
+      expect(useChromeStore.getState().pinnedSleepingFolds).toEqual([]);
+
+      localStorage.setItem(CHROME_STORAGE_KEY, JSON.stringify({ version: 2, pinnedSleepingFolds: 'p1' }));
+      expect(loadChromeState().pinnedSleepingFolds).toEqual([]);
     });
 
     it('toggleFold tracks folds per project', () => {
@@ -132,7 +157,7 @@ describe('chromeStore', () => {
       useChromeStore.getState().toggleSidebar();
       expect(localStorage.getItem(CHROME_STORAGE_KEY)).toBeNull();
       vi.advanceTimersByTime(400);
-      expect(JSON.parse(localStorage.getItem(CHROME_STORAGE_KEY)!)).toEqual({ version: 2, sidebarWidth: 310, sidebarCollapsed: true, lastProjectId: null, pinnedProjectIds: [], collapsedProjectIds: [], expandedFolds: [], tabMru: {}, projectActivity: {}, idleDays: 7, idleOpen: false, projectSort: 'manual', agentSort: 'manual', inactiveProjectIds: [], agentActivity: {}, collapsedAgentIds: [] });
+      expect(JSON.parse(localStorage.getItem(CHROME_STORAGE_KEY)!)).toEqual({ version: 2, sidebarWidth: 310, sidebarCollapsed: true, lastProjectId: null, pinnedProjectIds: [], collapsedProjectIds: [], expandedFolds: [], pinnedSleepingFolds: [], tabMru: {}, projectActivity: {}, idleDays: 7, idleOpen: false, projectSort: 'manual', agentSort: 'manual', inactiveProjectIds: [], agentActivity: {}, collapsedAgentIds: [] });
       expect(localStorage.getItem('clubhouse_panel_sizes')).toBe('{"explorerWidth":200}');
     });
   });
