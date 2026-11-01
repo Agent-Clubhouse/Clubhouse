@@ -313,6 +313,7 @@ export function ChatViewBody({ agent, state, actions, loading, onSwitchToTermina
           {/* Canvas cards stay quiet: the focused view announces replies, not every card on the board. */}
           <ChatStream
             state={state}
+            agentName={agent.name}
             onOpenSubagent={hasAgentMap ? openSubagent : undefined}
             jump={jump}
             onJumpResult={onJumpResult}

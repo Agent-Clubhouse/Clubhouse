@@ -5,7 +5,7 @@ import * as path from 'path';
 import { randomUUID } from 'crypto';
 import { app } from 'electron';
 import { appLog } from '../log-service';
-import { isChatEvent, type ChatEvent, type ChatSessionSummary } from '../../../shared/chat';
+import { isChatEvent, messageDisplay, type ChatEvent, type ChatSessionSummary } from '../../../shared/chat';
 
 function transcriptDir(): string {
   return path.join(app.getPath('userData'), 'agent-logs', 'chat');
@@ -223,7 +223,10 @@ function record(index: SessionIndex, event: ChatEvent): SessionEntry {
   }
   if (event.type === 'session_ended') entry.endedAt = event.ts;
   if (event.type === 'user_message' && !entry.title) {
-    entry.title = event.data.content.filter((b) => b.type === 'text').map((b) => b.text).join(' ').slice(0, 120);
+    // The history list shows this: the message, not its routing text.
+    const text = event.data.content.filter((b) => b.type === 'text').map((b) => b.text).join(' ');
+    const display = messageDisplay({ source: event.data.source, text, routed: event.data.routed });
+    entry.title = (display.from === 'you' ? display.text : display.parts[0].text).slice(0, 120);
   }
   selectCurrent(index);
   return entry;

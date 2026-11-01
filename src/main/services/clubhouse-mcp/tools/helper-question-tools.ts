@@ -69,10 +69,15 @@ function quote(text: string): string {
 
 /** The message a parent gets for a helper's question. */
 export function formatHelperQuestion(helper: { id: string; name: string }, id: string, questions: ChatQuestion[]): string {
-  const lines = [
+  return [
     `[QUESTION FROM HELPER:${helper.name} (${helper.id})] ${helper.name} is waiting for your answer. ` +
       `Answer with answer_helper_question, requestId ${quote(id)}. If the user should decide, call it with escalate: true instead.`,
-  ];
+    ...questionLines(questions),
+  ].join('\n');
+}
+
+function questionLines(questions: ChatQuestion[]): string[] {
+  const lines: string[] = [];
   questions.forEach((q, i) => {
     lines.push(`${i + 1}. ${q.header ? `${q.header}. ` : ''}${q.prompt}`);
     if (q.options?.length) {
@@ -84,7 +89,7 @@ export function formatHelperQuestion(helper: { id: string; name: string }, id: s
       lines.push(`   ${rule}${q.allowFreeText ? ' Your own text is fine too.' : ''}`);
     }
   });
-  return lines.join('\n');
+  return lines;
 }
 
 /**
@@ -117,6 +122,7 @@ export async function routeHelperQuestion(helperId: string, question: QuestionDa
     try {
       await runtime.sendMessage(formatHelperQuestion(helper, id, question.questions), {
         source: 'mcp', taskId: `helper_question_${id}`,
+        routed: [{ sender: { agentId: helper.id, name: helper.name }, text: questionLines(question.questions).join('\n') }],
       });
     } catch (err) {
       routed.delete(id);

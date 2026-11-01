@@ -28,6 +28,7 @@ import type {
   ContentBlock,
   MessageDelivery,
   MessageSource,
+  RoutedMessagePart,
   SessionEndReason,
 } from './events';
 
@@ -46,6 +47,8 @@ export interface RuntimeSendOptions {
   delivery?: 'auto' | MessageDelivery;
   /** For agent-to-agent messages; PTY runtimes ignore it. */
   taskId?: string;
+  /** Who sent the message and its text without routing, for chat to show. Never reaches the agent. */
+  routed?: RoutedMessagePart[];
   /**
    * PTY only: false types the text without pressing Enter (MCP send_message
    * force_submit=false). Chat runtimes always send.

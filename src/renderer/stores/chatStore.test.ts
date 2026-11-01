@@ -485,6 +485,32 @@ describe('reduceChatEvent', () => {
       expect(s.queued.map((q) => q.messageId)).toEqual(['q1']);
     });
 
+    it('keeps who sent each message of a merged queue item, parsing old ones (#2599)', () => {
+      const routed = [{ sender: { agentId: 'b1', name: 'b' }, text: 'two' }];
+      let s = fold([
+        sessionStarted(ev),
+        ev('turn_started', { trigger: 'prompt' }, { turnId: 't1' }),
+        ev('user_message', { messageId: 'm1', content: text('[FROM HELPER:a (a1)] one'), source: 'mcp', delivery: 'queued' }),
+        ev('user_message', { messageId: 'm2', content: text('[FROM HELPER:b (b1)] two'), source: 'mcp', delivery: 'queued', queuedWith: 'm1', routed }),
+      ]);
+      const parts = [{ sender: { agentId: 'a1', name: 'a' }, text: 'one' }, ...routed];
+      expect(s.queued[0].routed).toEqual(parts);
+      s = fold([
+        ev('turn_ended', { stopReason: 'end_turn' }, { turnId: 't1' }),
+        ev('turn_started', { trigger: 'queued' }, { turnId: 't2' }),
+      ], s);
+      expect((s.items.find((i) => i.kind === 'user_message') as UserMessageItem).routed).toEqual(parts);
+    });
+
+    it('keeps who sent a delivered message', () => {
+      const routed = [{ sender: { agentId: 'a1', name: 'a' }, text: 'one' }];
+      const s = fold([
+        sessionStarted(ev),
+        ev('user_message', { messageId: 'm1', content: text('[FROM:a] one'), source: 'mcp', delivery: 'prompt', routed }),
+      ]);
+      expect((s.items.find((i) => i.kind === 'user_message') as UserMessageItem).routed).toEqual(routed);
+    });
+
     it('shows MCP messages merged into one queued item as one row, delivered as one (#2414)', () => {
       let s = fold([
         sessionStarted(ev),

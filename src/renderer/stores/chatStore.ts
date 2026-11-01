@@ -15,7 +15,7 @@
 import { useMemo } from 'react';
 import { create } from 'zustand';
 import { useShallow } from 'zustand/react/shallow';
-import { COMPACTION_SETTLED, COMPACTION_STARTED, MINIMAL_CHAT_CAPABILITIES, coalesceUpdateContent } from '../../shared/chat';
+import { COMPACTION_SETTLED, COMPACTION_STARTED, MINIMAL_CHAT_CAPABILITIES, coalesceUpdateContent, parseRoutedText } from '../../shared/chat';
 import type {
   AvailableCommand,
   ChatCapabilities,
@@ -42,6 +42,7 @@ import type {
   ToolCallStatus,
   ToolKind,
   UsageLimit,
+  RoutedMessagePart,
 } from '../../shared/chat';
 
 // ── View model ──────────────────────────────────────────────────────────────
@@ -64,6 +65,8 @@ export interface UserMessageItem extends ChatItemBase {
   text: string;
   source: MessageSource;
   delivery: MessageDelivery;
+  /** Who sent it and the message without routing text. */
+  routed?: RoutedMessagePart[];
 }
 
 export interface AgentMessageItem extends ChatItemBase {
@@ -181,6 +184,8 @@ export interface QueuedMessage {
   ts: number;
   /** Each message's content when several MCP messages share this item (#2414); `content` is them combined. */
   parts?: ContentBlock[][];
+  /** Who sent it and the message without routing text. */
+  routed?: RoutedMessagePart[];
 }
 
 export interface UsageSnapshot {
@@ -467,6 +472,7 @@ function queuedToItem(q: QueuedMessage, event: ChatEvent): UserMessageItem {
     text: q.text,
     source: q.source,
     delivery: 'queued',
+    ...(q.routed && { routed: q.routed }),
   };
   if (event.turnId) item.turnId = event.turnId;
   return item;
@@ -621,7 +627,8 @@ export function reduceChatEvent(prev: ChatViewState | undefined, event: ChatEven
           const target = state.queued[joined];
           const parts = [...(target.parts ?? [target.content]), d.content];
           const content = coalesceUpdateContent(parts);
-          const merged: QueuedMessage = { ...target, parts, content, text: blocksToText(content) };
+          const routed = [...(target.routed ?? parseRoutedText(target.text)), ...(d.routed ?? parseRoutedText(text))];
+          const merged: QueuedMessage = { ...target, parts, content, text: blocksToText(content), routed };
           return { ...state, queued: state.queued.map((q, i) => (i === joined ? merged : q)) };
         }
         // A join whose item was cut off (a transcript read from its tail)
@@ -629,6 +636,7 @@ export function reduceChatEvent(prev: ChatViewState | undefined, event: ChatEven
         const q: QueuedMessage = {
           messageId: d.queuedWith ?? d.messageId, content: d.content, text, source: d.source,
           sessionId: sid, seq: event.seq, ts: event.ts,
+          ...(d.routed && { routed: d.routed }),
         };
         return { ...state, queued: [...state.queued, q] };
       }
@@ -645,6 +653,7 @@ export function reduceChatEvent(prev: ChatViewState | undefined, event: ChatEven
         text,
         source: d.source,
         delivery: d.delivery,
+        ...(d.routed && { routed: d.routed }),
       };
       return { ...state, queued, items: [...state.items, item] };
     }

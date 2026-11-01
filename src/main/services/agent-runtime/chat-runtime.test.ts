@@ -1264,6 +1264,22 @@ describe('ChatAgentRuntime coalesced helper updates (#2414)', () => {
     return driver.last.sent.map((s) => s.content.map((b) => (b.type === 'text' ? b.text : '')).join('\n'));
   }
 
+  it('keeps who sent a message on the event and off what the agent receives (#2599)', async () => {
+    const { driver, runtime } = await midTurn(STEERLESS);
+    const first = [{ sender: { agentId: 'a1', name: 'a' }, text: 'one' }];
+    const second = [{ sender: { agentId: 'b1', name: 'b' }, text: 'two' }];
+    await runtime.sendMessage('[FROM HELPER:a (a1)] one', { source: 'mcp', routed: first });
+    await runtime.sendMessage('[FROM HELPER:b (b1)] two', { source: 'mcp', routed: second });
+
+    const queued = transcript.filter((e) => e.type === 'user_message');
+    expect(queued.map((e) => e.type === 'user_message' && e.data.routed)).toEqual([first, second]);
+
+    driver.last.emit({ type: 'turn_ended', data: { stopReason: 'end_turn' } });
+    await flush();
+    expect(sentText(driver)).toEqual(['2 updates, oldest first:\n\n--- 1 of 2 ---\n[FROM HELPER:a (a1)] one\n\n--- 2 of 2 ---\n[FROM HELPER:b (b1)] two']);
+    expect(driver.last.sent[0].content).toEqual([{ type: 'text', text: sentText(driver)[0] }]);
+  });
+
   it('merges ten MCP messages queued mid-turn into one item, sent as one turn in order', async () => {
     const { driver, runtime } = await midTurn(STEERLESS);
     const results = [];

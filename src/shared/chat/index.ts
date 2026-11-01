@@ -5,3 +5,4 @@ export * from './attachments';
 export * from './sessions';
 export * from './media';
 export * from './coalesce';
+export * from './message-routing';

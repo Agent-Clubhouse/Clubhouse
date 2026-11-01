@@ -13,7 +13,7 @@
  * pending batch first, so the question still arrives after earlier updates.
  */
 
-import { coalesceUpdateTexts, type ChatSessionState } from '../../../../shared/chat';
+import { coalesceUpdateTexts, parseRoutedText, type ChatSessionState, type RoutedMessagePart } from '../../../../shared/chat';
 import { getAgentRuntime } from '../../agent-runtime';
 import { isAgentStoppingError } from '../../agent-runtime/agent-stopping';
 
@@ -24,6 +24,7 @@ export const HELPER_UPDATE_WINDOW_MS = 3000;
 
 interface Batch {
   texts: string[];
+  routed: RoutedMessagePart[];
   timer: ReturnType<typeof setTimeout>;
   unsubscribe?: () => void;
   waiters: Array<{ resolve: (d: Delivery) => void; reject: (err: unknown) => void }>;
@@ -51,12 +52,12 @@ function mergesItsQueue(runtime: Runtime): boolean {
  * does. A terminal agent that is shutting down refuses the text (its runtime
  * throws AgentStoppingError), which comes back as 'stopping'.
  */
-export async function deliverNow(targetId: string, text: string): Promise<Delivery> {
+export async function deliverNow(targetId: string, text: string, routed?: RoutedMessagePart[]): Promise<Delivery> {
   const runtime = getAgentRuntime(targetId);
   // A chat runtime that is ending is still registered for a moment.
   if (!runtime?.isRunning()) return 'not_running';
   try {
-    await runtime.sendMessage(text, { source: 'mcp', taskId: `helper_${Date.now().toString(36)}` });
+    await runtime.sendMessage(text, { source: 'mcp', taskId: `helper_${Date.now().toString(36)}`, ...(routed && { routed }) });
   } catch (err) {
     if (isAgentStoppingError(err)) return 'stopping';
     throw err;
@@ -64,25 +65,32 @@ export async function deliverNow(targetId: string, text: string): Promise<Delive
   return 'delivered';
 }
 
+/** One update's display part; an update without one is parsed, so a batch stays in step. */
+function routedFor(text: string, part?: RoutedMessagePart): RoutedMessagePart[] {
+  return part ? [part] : parseRoutedText(text);
+}
+
 /**
  * Deliver an update to a parent: at once when it is idle, otherwise with the
  * others that arrive within the window. Resolves when the update is handed to
  * the parent's runtime.
  */
-export function deliverHelperUpdate(targetId: string, text: string): Promise<Delivery> {
+export function deliverHelperUpdate(targetId: string, text: string, part?: RoutedMessagePart): Promise<Delivery> {
   const runtime = getAgentRuntime(targetId);
   if (!runtime) return Promise.resolve('not_running');
   const pending = batches.get(targetId);
-  if (!pending && (!isBusy(runtime) || mergesItsQueue(runtime))) return deliverNow(targetId, text);
+  if (!pending && (!isBusy(runtime) || mergesItsQueue(runtime))) return deliverNow(targetId, text, routedFor(text, part));
 
   return new Promise<Delivery>((resolve, reject) => {
     if (pending) {
       pending.texts.push(text);
+      pending.routed.push(...routedFor(text, part));
       pending.waiters.push({ resolve, reject });
       return;
     }
     const batch: Batch = {
       texts: [text],
+      routed: routedFor(text, part),
       timer: setTimeout(() => { void flushHelperUpdates(targetId); }, HELPER_UPDATE_WINDOW_MS),
       waiters: [{ resolve, reject }],
     };
@@ -105,7 +113,7 @@ export async function flushHelperUpdates(targetId: string): Promise<void> {
   clearTimeout(batch.timer);
   batch.unsubscribe?.();
   try {
-    const delivery = await deliverNow(targetId, coalesceUpdateTexts(batch.texts));
+    const delivery = await deliverNow(targetId, coalesceUpdateTexts(batch.texts), batch.routed);
     for (const w of batch.waiters) w.resolve(delivery);
   } catch (err) {
     // telemetry-exempt: every waiter gets the error, as an unbatched send would

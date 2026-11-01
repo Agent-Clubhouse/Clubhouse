@@ -8,6 +8,7 @@ interface FakeRuntime {
   caps?: { steer: boolean; queue: 'client' | 'native' | 'none' };
   running: boolean;
   sent: string[];
+  routed: unknown[];
   refuse: boolean;
   listeners: Set<(s: ChatSessionState) => void>;
   setState(s: ChatSessionState): void;
@@ -17,7 +18,7 @@ const runtimes = new Map<string, FakeRuntime>();
 
 function addRuntime(id: string, kind: 'chat' | 'pty', state: ChatSessionState = 'idle'): FakeRuntime {
   const rt: FakeRuntime = {
-    kind, state, sent: [], refuse: false, listeners: new Set(), running: true,
+    kind, state, sent: [], routed: [], refuse: false, listeners: new Set(), running: true,
     setState(s) { rt.state = s; for (const l of [...rt.listeners]) l(s); },
   };
   runtimes.set(id, rt);
@@ -35,9 +36,10 @@ vi.mock('../../agent-runtime', () => ({
       getState: () => (rt.kind === 'chat' ? rt.state : 'idle'),
       getCapabilities: rt.kind === 'chat' ? () => rt.caps ?? { steer: true, queue: 'native' } : undefined,
       onStateChange: (l: (s: ChatSessionState) => void) => { rt.listeners.add(l); return () => { rt.listeners.delete(l); }; },
-      sendMessage: async (text: string) => {
+      sendMessage: async (text: string, opts: { routed?: unknown }) => {
         if (rt.refuse) throw new AgentStoppingError(id);
         rt.sent.push(text);
+        rt.routed.push(opts.routed);
         return { delivery: 'prompt' };
       },
     };
@@ -81,6 +83,24 @@ describe('deliverHelperUpdate (#2414)', () => {
       '3 updates, oldest first:\n\n' +
       '--- 1 of 3 ---\n[FROM HELPER:a (a)] hi\n\n--- 2 of 3 ---\n[FROM HELPER:b (b)] hi\n\n--- 3 of 3 ---\n[FROM HELPER:c (c)] hi',
     ]);
+  });
+
+  it('sends who sent each update beside the text, parsing one that has no part', async () => {
+    const rt = addRuntime('p', 'chat', 'running');
+    const results = [
+      deliverHelperUpdate('p', '[FROM HELPER:a (a)] hi', { sender: { agentId: 'a', name: 'a' }, text: 'hi' }),
+      deliverHelperUpdate('p', '[Clubhouse] ready'),
+    ];
+    await vi.advanceTimersByTimeAsync(HELPER_UPDATE_WINDOW_MS);
+    await Promise.all(results);
+    expect(rt.sent).toEqual(['2 updates, oldest first:\n\n--- 1 of 2 ---\n[FROM HELPER:a (a)] hi\n\n--- 2 of 2 ---\n[Clubhouse] ready']);
+    expect(rt.routed).toEqual([[{ sender: { agentId: 'a', name: 'a' }, text: 'hi' }, { fromClubhouse: true, text: 'ready' }]]);
+  });
+
+  it('sends an idle parent\'s update with its sender', async () => {
+    const rt = addRuntime('p', 'chat', 'idle');
+    await deliverHelperUpdate('p', '[FROM HELPER:a (a)] hi', { sender: { agentId: 'a', name: 'a' }, text: 'hi' });
+    expect(rt.routed).toEqual([[{ sender: { agentId: 'a', name: 'a' }, text: 'hi' }]]);
   });
 
   it('keeps the window fixed from the first update', async () => {

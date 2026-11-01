@@ -351,6 +351,7 @@ describe('start_helper', () => {
     expect(spawn).toMatchObject({ agentId: 'helper_fixer', projectPath: PROJECT, cwd: worktreeOf('fixer-1'), kind: 'durable' });
     expect(spawn.mission).toContain('Fix the bug');
     expect(spawn.mission).toContain('message_parent');
+    expect(spawn.missionRouted).toEqual([{ sender: { agentId: 'orch', name: expect.any(String) }, text: 'Fix the bug' }]);
     expect(sent.get('orch')?.[0]).toMatch(/fixer.*is ready on branch fixer-1\/standby/);
   });
 

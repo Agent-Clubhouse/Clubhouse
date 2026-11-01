@@ -499,6 +499,25 @@ export function looksPreformatted(text: string): boolean {
 }
 
 /**
+ * Ids of agent messages that show the agent's name: the first one after
+ * anything from someone else or the end of a turn. A turn's later messages,
+ * split up by its tool calls, are still the same speaker.
+ */
+export function agentMessagesToName(items: ChatItem[]): Set<string> {
+  const ids = new Set<string>();
+  let speakerChanged = true;
+  for (const item of items) {
+    if (item.kind === 'user_message' || item.kind === 'turn_end') {
+      speakerChanged = true;
+    } else if (speakerChanged && item.kind === 'agent_message' && !item.subagentId && (item.text || item.streaming)) {
+      ids.add(item.id);
+      speakerChanged = false;
+    }
+  }
+  return ids;
+}
+
+/**
  * Ids of agent messages that are a slash command's own laid-out output: only
  * the first reply after the command, in the same turn and with no tool call
  * in between. Anything later is the agent talking, which stays markdown.

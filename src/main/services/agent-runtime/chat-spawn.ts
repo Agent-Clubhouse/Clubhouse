@@ -13,7 +13,7 @@ import { randomUUID } from 'crypto';
 import * as path from 'path';
 import type { OrchestratorProvider } from '../../orchestrators';
 import type { FreeAgentPermissionMode, DurableAgentConfig } from '../../../shared/types';
-import type { PermissionLevel, SessionEndReason } from '../../../shared/chat';
+import type { PermissionLevel, RoutedMessagePart, SessionEndReason } from '../../../shared/chat';
 import { agentRegistry, untrackAgent } from '../agent-registry';
 import * as configPipeline from '../config-pipeline';
 import { agentEndpointUrl, NONCE_HEADER, waitReady as waitMcpBridgeReady } from '../clubhouse-mcp/bridge-server';
@@ -55,6 +55,8 @@ export interface ChatSpawnParams {
   kind: 'durable' | 'quick' | 'companion';
   model?: string;
   mission?: string;
+  /** Who sent the mission, for chat to show. */
+  missionRouted?: RoutedMessagePart[];
   systemPrompt?: string;
   freeAgentMode?: boolean;
   permissionMode: FreeAgentPermissionMode;
@@ -663,7 +665,7 @@ async function runChatStart(
     setAgentIdleSleep(params.agentId, durableConfig?.idleSleep);
     stopIdleWatch = onAgentIdleSleepChange(params.agentId, () => runtime.idleTimeoutChanged());
     try {
-      await runtime.start(params.mission);
+      await runtime.start(params.mission, params.missionRouted);
       if (resumeResult) recordResumeOutcome(provider.id, params.agentId, resumeResult, 'chat');
       return { ok: true };
     } catch (err) {

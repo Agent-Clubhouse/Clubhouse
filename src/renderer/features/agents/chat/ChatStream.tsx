@@ -1,7 +1,9 @@
 import { memo, useEffect, useLayoutEffect, useMemo, useReducer, useRef, useState } from 'react';
 import type { ChatCapabilities, ChatMcpServer } from '../../../../shared/chat';
 import type { ChatViewState } from '../../../stores/chatStore';
-import { buildStreamBlocks, commandOutputIds, toolErrorText, type StreamBlock } from './view-model';
+import { stripTaskMarker } from '../../../../shared/chat';
+import { useAgentStore } from '../../../stores/agentStore';
+import { agentMessagesToName, buildStreamBlocks, commandOutputIds, toolErrorText, type StreamBlock } from './view-model';
 import { scrollWithin } from './scroll';
 import { RichLinkProvider } from './rich/RichLinks';
 import { useRichChatContent } from './rich/rich-flag';
@@ -20,13 +22,12 @@ import {
 } from './MessageBlocks';
 import {
   AwaitingApprovalContext,
-  createTranscriptExpansionStore,
   ExploreGroup,
   LiveTurnContext,
   SubagentCard,
   ToolCallView,
-  TranscriptExpansionProvider,
 } from './ToolBlocks';
+import { createTranscriptExpansionStore, TranscriptExpansionProvider } from './transcript-expansion';
 
 /** Distance from the bottom (px) within which new content keeps the view pinned. */
 const STICK_THRESHOLD = 80;
@@ -64,6 +65,8 @@ interface BlockProps {
   onOpenSubagent?: (subagentId: string) => void;
   /** An agent message that is a slash command's laid-out output. */
   preformatted?: boolean;
+  /** The name to show on an agent message that starts a run of them. */
+  agentName?: string;
 }
 
 /** The subagent a top-level block belongs to, when its work shows inline (ids_only, or nesting off). */
@@ -100,7 +103,7 @@ function sameItems<T>(a: readonly T[], b: readonly T[]): boolean {
  */
 function sameBlock(prev: BlockProps, next: BlockProps): boolean {
   if (prev.turnNumber !== next.turnNumber || prev.capabilities !== next.capabilities || prev.mcpServers !== next.mcpServers) return false;
-  if (prev.inlineSubagentId !== next.inlineSubagentId || prev.onOpenSubagent !== next.onOpenSubagent || prev.preformatted !== next.preformatted) return false;
+  if (prev.inlineSubagentId !== next.inlineSubagentId || prev.onOpenSubagent !== next.onOpenSubagent || prev.preformatted !== next.preformatted || prev.agentName !== next.agentName) return false;
   const a = prev.block;
   const b = next.block;
   if (a.type === 'item' && b.type === 'item') return a.item === b.item && a.tool === b.tool;
@@ -125,13 +128,13 @@ const Block = memo(function Block(props: BlockProps) {
   return <BlockBody {...props} />;
 }, sameBlock);
 
-function BlockBody({ block, turnNumber, capabilities, mcpServers, preformatted }: BlockProps) {
+function BlockBody({ block, turnNumber, capabilities, mcpServers, preformatted, agentName }: BlockProps) {
   if (block.type === 'explore') return <ExploreGroup tools={block.tools} expansionKey={`${block.key}:explore`} />;
   if (block.type === 'subagent') return null;
   const item = block.item;
   switch (item.kind) {
-    case 'user_message': return <UserMessage item={item} />;
-    case 'agent_message': return <AgentMessage item={item} preformatted={preformatted} />;
+    case 'user_message': return <UserMessage item={item} expansionKey={block.key} />;
+    case 'agent_message': return <AgentMessage item={item} preformatted={preformatted} name={agentName} />;
     case 'thought': return <ThoughtRow item={item} />;
     case 'tool_call': return <ToolCallView tool={item} mcpServers={mcpServers} expansionKey={`${block.key}:tool`} />;
     case 'plan_document': return <PlanDocumentCard item={item} error={block.tool && toolErrorText(block.tool)} />;
@@ -165,6 +168,8 @@ export interface ChatStreamProps {
   onShowEarlier?: () => void;
   /** Saved conversations cannot invite the user to send a message. */
   emptyMessage?: string;
+  /** The agent's name. Saved history leaves it out: the agent's record has it, while it exists. */
+  agentName?: string;
 }
 
 function sameTranscriptShape(a: ChatViewState, b: ChatViewState): boolean {
@@ -225,6 +230,7 @@ const ChatStreamInner = memo(function ChatStreamInner({
   announce = true,
   emptyMessage = 'No messages yet. Send one to start.',
   onShowEarlier,
+  agentName,
 }: ChatStreamProps) {
   const scroller = useRef<HTMLDivElement>(null);
   const pinned = useRef(true);
@@ -236,6 +242,9 @@ const ChatStreamInner = memo(function ChatStreamInner({
   const rich = useRichChatContent();
   const blocks = useMemo(() => buildStreamBlocks({ items, subagents, capabilities }, { mediaVisible: rich }), [items, subagents, capabilities, rich]);
   const commandOutput = useMemo(() => commandOutputIds(items, commands), [items, commands]);
+  const storedName = useAgentStore((s) => s.agents[state.agentId]?.name);
+  const shownName = agentName ?? storedName ?? 'Agent';
+  const named = useMemo(() => agentMessagesToName(items), [items]);
   const [windowStart, setWindowStart] = useState(() => Math.max(0, blocks.length - CHAT_STREAM_WINDOW_SIZE));
   const [followTail, setFollowTail] = useState(true);
   const tailStart = Math.max(0, blocks.length - CHAT_STREAM_WINDOW_SIZE);
@@ -256,7 +265,7 @@ const ChatStreamInner = memo(function ChatStreamInner({
   const announcement = useMemo(() => {
     for (let i = items.length - 1; i >= 0; i--) {
       const it = items[i];
-      if (it.kind === 'agent_message' && !it.subagentId) return it.streaming ? '' : it.text;
+      if (it.kind === 'agent_message' && !it.subagentId) return it.streaming ? '' : stripTaskMarker(it.text);
     }
     return '';
   }, [items]);
@@ -418,6 +427,7 @@ const ChatStreamInner = memo(function ChatStreamInner({
                   inlineSubagentId={inlineJumps.get(b.key)}
                   onOpenSubagent={onOpenSubagent}
                   preformatted={b.type === 'item' && commandOutput.has(b.item.id)}
+                  agentName={b.type === 'item' && named.has(b.item.id) ? shownName : undefined}
                 />
               </div>
             ))}
