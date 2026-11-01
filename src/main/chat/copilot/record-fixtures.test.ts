@@ -13,7 +13,7 @@ import * as os from 'os';
 import * as path from 'path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { ChatEventDraft } from '../../../shared/chat/events';
-import type { ChatDriverSession } from '../../../shared/chat/runtime';
+import type { ChatDriverSession, ChatDriverStartOptions } from '../../../shared/chat/runtime';
 import { COPILOT_OPTION_ALLOW, COPILOT_OPTION_DENY } from './normalizer';
 import { CopilotSdkChatDriver } from './driver';
 import { startFakeModel, type FakeModel } from './__fixtures__/fake-model';
@@ -43,20 +43,27 @@ const eventType = (e: Entry): string | undefined => e.msg?.params?.event?.type;
 /**
  * Cut what only makes a recording large, none of which a driver reads: the CLI's
  * system prompt (twice), its built-in skills, and the tool list in its snapshots.
- * Pin the decision in a permission answer, which is the point of those fixtures.
+ * Drop models.list, which runs in the background so can land anywhere: replay
+ * answers it as a standing query. Pin the decisions these fixtures exist for.
  */
 function tidy(name: string): void {
   const { header, entries } = readFixture(name);
-  for (const entry of entries) {
+  const listIds = new Set(entries.filter((e) => e.from === 'client' && e.msg?.method === 'models.list').map((e) => e.msg.id));
+  const kept = entries.filter((e) => e.msg?.method !== 'models.list' && !(e.from === 'cli' && !e.msg?.method && listIds.has(e.msg?.id)));
+  for (const entry of kept) {
     const event = entry.msg?.params?.event;
     if (event?.type === 'system.message') event.data = { role: event.data.role, content: '(trimmed)' };
     if (event?.type === 'session.skills_loaded') event.data.skills = event.data.skills.slice(0, 1);
     if (event?.type === 'model.messages_snapshot') event.data = { trimmed: true };
-    if (entry.from === 'client' && entry.msg?.method === 'session.permissions.handlePendingPermissionRequest') {
-      entry.match = { params: { result: entry.msg.params.result } };
-    }
+    if (entry.from !== 'client') continue;
+    const { method, params } = entry.msg ?? {};
+    if (/handlePending/.test(method ?? '')) entry.match = { params: { result: params.result } };
+    // An answer to a request the CLI made: a question or a plan.
+    if (!method && entry.msg?.result) entry.match = { result: entry.msg.result };
+    if (method === 'session.mode.set') entry.match = { params: { mode: params.mode } };
+    if (method === 'session.send' && params.mode) entry.match = { params: { mode: params.mode } };
   }
-  writeFixture(name, header, entries);
+  writeFixture(name, header, kept);
 }
 
 const RUN_TOOL = { name: 'bash', args: { command: 'echo hi', description: 'say hi', mode: 'sync', initial_wait: 5 } };
@@ -115,15 +122,14 @@ describe.skipIf(!enabled)('record the copilot-sdk fixtures', () => {
     return shim;
   }
 
-  const driver = () => new CopilotSdkChatDriver({ sessionOverrides: { model: 'fake-model', provider: { type: 'openai', baseUrl: model.baseUrl, apiKey: 'fake' } } });
+  const byok = () => ({ ...env, COPILOT_PROVIDER_BASE_URL: model.baseUrl, COPILOT_PROVIDER_TYPE: 'openai', COPILOT_PROVIDER_API_KEY: 'fake-key', COPILOT_MODEL: 'fake-model' });
 
   /** Run one session through the recorder, then close it so the fixture is written. */
-  async function session(name: string, description: string, run: (s: ChatDriverSession, w: ReturnType<typeof watch>) => Promise<void>, resumeNativeSessionId?: string): Promise<string | undefined> {
+  async function session(name: string, description: string, run: (s: ChatDriverSession, w: ReturnType<typeof watch>) => Promise<void>, overrides: Partial<ChatDriverStartOptions> = {}): Promise<string | undefined> {
     const cwd = fs.mkdtempSync(path.join(tmp, 'cwd-'));
-    const started = await driver().start({
+    const started = await new CopilotSdkChatDriver().start({
       agentId: 'a1', provider: 'copilot-cli', cwd, binaryPath: recorder(name, description), level: 'ask',
-      env: { ...env, COPILOT_PROVIDER_BASE_URL: model.baseUrl }, extraArgs: ['--no-auto-login'],
-      ...(resumeNativeSessionId && { resumeNativeSessionId }),
+      env: byok(), extraArgs: ['--no-auto-login'], ...overrides,
     });
     const w = watch(started);
     await run(started, w);
@@ -215,11 +221,69 @@ describe.skipIf(!enabled)('record the copilot-sdk fixtures', () => {
       model.script({ text: 'still here' });
       await say(s, 'Do you remember?');
       await w.turns(1);
-    }, id);
+    }, { resumeNativeSessionId: id });
   }, 120_000);
 
   it('resume-not-found', async () => {
-    await session('resume-not-found', 'Resuming a session the CLI does not have fails at once; the driver starts a new one.', async () => undefined, '00000000-0000-4000-8000-000000000000');
+    await session('resume-not-found', 'Resuming a session the CLI does not have fails at once; the driver starts a new one.', async () => undefined, { resumeNativeSessionId: '00000000-0000-4000-8000-000000000000' });
+  }, 90_000);
+
+  it('steer', async () => {
+    await session('steer', 'A message steered into a running turn. It reaches the next model call, and the turn ends once.', async (s, w) => {
+      model.script({ hold: true, tools: [{ name: 'no_such_tool' }] }, { text: 'after' });
+      await say(s, 'ORIGINAL');
+      await w.until(() => model.holding());
+      await s.send([{ type: 'text', text: 'STEER-TEXT' }], 'steer');
+      model.release();
+      await w.turns(1);
+    });
+  }, 90_000);
+
+  it('queue', async () => {
+    await session('queue', 'A message queued natively during a turn, which runs as its own turn afterwards.', async (s, w) => {
+      model.script({ hold: true, text: 'one' }, { text: 'two' });
+      await say(s, 'FIRST');
+      await w.until(() => model.holding());
+      await s.send([{ type: 'text', text: 'QUEUED-TEXT' }], 'queued');
+      await new Promise((r) => setTimeout(r, 200));
+      model.release();
+      await w.turns(2);
+    });
+  }, 90_000);
+
+  it('question', async () => {
+    await session('question', 'ask_user with choices, answered by the client.', async (s, w) => {
+      model.script({ tools: [{ name: 'ask_user', args: { question: 'Colour?', choices: ['blue', 'red'] } }] }, { text: 'ok' });
+      await say(s, 'ask me');
+      await w.until(() => w.of('question').length > 0);
+      const { requestId, questions } = w.of('question')[0].data;
+      await s.answerQuestion(requestId, { [questions[0].id]: 'red' });
+      await w.turns(1);
+    });
+  }, 90_000);
+
+  it('plan-approval', async () => {
+    await session('plan-approval', 'The level changes to Plan, exit_plan_mode asks, and approving returns to the earlier level.', async (s, w) => {
+      await s.setLevel('plan');
+      model.script({ tools: [{ name: 'exit_plan_mode', args: { summary: 'THE-PLAN', actions: ['interactive'], recommendedAction: 'interactive' } }] }, { text: 'ok' });
+      await say(s, 'plan it');
+      await w.until(() => w.of('permission_request').length > 0);
+      await s.respondPermission(w.of('permission_request')[0].data.requestId, 'approve');
+      await w.turns(1);
+    }, { level: 'auto_edit' });
+  }, 90_000);
+
+  it('subagent', async () => {
+    await session('subagent', 'A task subagent with its own tool call and message, whose idle does not end the turn.', async (s, w) => {
+      model.script(
+        { tools: [{ name: 'task', args: { description: 'look', prompt: 'SUB', agent_type: 'explore', name: 'scout' } }] },
+        { tools: [{ name: 'grep', args: { pattern: 'zzz-no-match' } }] },
+        { text: 'sub result' },
+        { text: 'done' },
+      );
+      await say(s, 'delegate');
+      await w.turns(1);
+    }, { level: 'full_access' });
   }, 90_000);
 
   // No real session does these on purpose. Each comes from docs/copilot-sdk-driver.md

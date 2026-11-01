@@ -168,15 +168,13 @@ describe.skipIf(!enabled)('Dispatcher flow (real CLI, fake model)', () => {
     { driver: () => new ClaudeChatDriver('claude_stream_json'), provider: 'claude-code', bin: 'claude', env: claudeEnv },
     { driver: () => new CodexChatDriver(), provider: 'codex-cli', bin: 'codex', env: codexEnv },
     { driver: () => createCopilotAcpChatDriver(), provider: 'copilot-cli', bin: 'copilot', env: copilotEnv },
-    // A headless Copilot ignores COPILOT_PROVIDER_*, so the provider goes in the session config.
-    { driver: () => new CopilotSdkChatDriver({ sessionOverrides: { model: 'gpt-fake-1', provider: { type: 'openai', baseUrl: `${model?.url}/v1`, apiKey: 'fake-key-for-a-local-server' } } }), provider: 'copilot-cli', bin: 'copilot', env: copilotEnv },
+    { driver: () => new CopilotSdkChatDriver(), provider: 'copilot-cli', bin: 'copilot', env: copilotEnv },
   ];
 
   const only = process.env.CLUBHOUSE_FAKE_MODEL_PROVIDERS?.split(',').map((p) => p.trim());
   for (const { driver: make, provider, bin, env } of drivers.filter((d) => !only || only.includes(d.provider))) {
-    it(`${provider} / ${make().id}: wake, send_message, read_output, sleep, new wire, resume`, async () => {
-      // Made here, not above: a driver's settings can read the running fake model.
-      const driver = make();
+    const driver = make();
+    it(`${provider} / ${driver.id}: wake, send_message, read_output, sleep, new wire, resume`, async () => {
       const home = fs.mkdtempSync(path.join(root, 'home-'));
       const cwd = fs.mkdtempSync(path.join(root, 'cwd-'));
       const self = `${SELF}-${driver.id}`;

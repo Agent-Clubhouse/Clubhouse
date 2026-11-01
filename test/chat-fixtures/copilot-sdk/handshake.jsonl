@@ -1,7 +1,7 @@
-{"kind":"header","format":"clubhouse-chat-fixture","version":1,"protocol":"copilot-sdk","cli":{"name":"copilot","version":"1.0.105"},"source":"recorded","recordedAt":"2026-11-01T23:13:26.727Z","args":["--headless","--port","0"],"description":"Probe: connect, status and login with no session. Logged out, recorded with no credentials."}
-{"from":"client","t":15,"msg":{"jsonrpc":"2.0","id":0,"method":"connect","params":{"token":"REDACTED_CONNECTION_TOKEN","supportedTaskKinds":["agent","client","shell"]}}}
-{"from":"cli","t":40,"msg":{"jsonrpc":"2.0","id":0,"result":{"ok":true,"protocolVersion":3,"version":"1.0.105","taskKinds":["agent","shell","client"]}}}
-{"from":"client","t":40,"msg":{"jsonrpc":"2.0","id":1,"method":"status.get","params":{}}}
-{"from":"client","t":40,"msg":{"jsonrpc":"2.0","id":2,"method":"auth.getStatus","params":{}}}
-{"from":"cli","t":41,"msg":{"jsonrpc":"2.0","id":1,"result":{"version":"1.0.105","protocolVersion":3}}}
+{"kind":"header","format":"clubhouse-chat-fixture","version":1,"protocol":"copilot-sdk","cli":{"name":"copilot","version":"1.0.105"},"source":"recorded","recordedAt":"2026-11-01T23:30:56.567Z","args":["--headless","--port","0"],"description":"Probe: connect, status and login with no session. Logged out, recorded with no credentials."}
+{"from":"client","t":14,"msg":{"jsonrpc":"2.0","id":0,"method":"connect","params":{"token":"REDACTED_CONNECTION_TOKEN","supportedTaskKinds":["agent","client","shell"]}}}
+{"from":"cli","t":39,"msg":{"jsonrpc":"2.0","id":0,"result":{"ok":true,"protocolVersion":3,"version":"1.0.105","taskKinds":["agent","shell","client"]}}}
+{"from":"client","t":39,"msg":{"jsonrpc":"2.0","id":1,"method":"status.get","params":{}}}
+{"from":"client","t":39,"msg":{"jsonrpc":"2.0","id":2,"method":"auth.getStatus","params":{}}}
+{"from":"cli","t":39,"msg":{"jsonrpc":"2.0","id":1,"result":{"version":"1.0.105","protocolVersion":3}}}
 {"from":"cli","t":556,"msg":{"jsonrpc":"2.0","id":2,"result":{"isAuthenticated":false,"statusMessage":"Not authenticated"}}}

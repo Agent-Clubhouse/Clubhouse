@@ -74,7 +74,7 @@ The same rules apply, with these differences:
 - **Session ids are remapped too.** Clients pick their own, so the id in a client entry's `params.sessionId` is replaced with the live one everywhere it appears in later CLI messages.
 - **Connection token.** When `COPILOT_CONNECTION_TOKEN` is set, a `connect` with a different token gets `AUTHENTICATION_FAILED`, and the fake exits with code 3.
 - **Hanging up.** A client that disconnects doesn't stop the fake, as it doesn't stop the real CLI. The driver has to kill it. The report's `stdinClosed` means the client disconnected.
-- **Standing queries** are `models.list` and `session.queue.pendingItems`.
+- **Standing query:** `models.list`. The driver calls it in the background, so the recording test drops it from fixtures.
 
 The driver only takes a binary path, so its tests use `writeFakeCliShims` with `createFakeCli`'s `reportPath`, as `src/main/chat/copilot/fixture-replay.test.ts` does.
 
@@ -128,6 +128,7 @@ Each CLI also has a recorded `model-list` fixture (2026-10-31: Claude Code 2.1.3
 |---|---|
 | `handshake` | Recorded: the probe's `connect`, `status.get` and `auth.getStatus`, logged out, with no session |
 | `resume`, `resume-not-found` | Recorded: `session.resume` of a stored session, and of one the CLI doesn't have |
+| `steer`, `queue`, `question`, `plan-approval`, `subagent` | Recorded: the phase 2 features, with the delivery mode, answer and session mode pinned by `match` |
 | `schema-drift` | Hand-made from `multi-turn`: unknown event types and fields, an unknown CLI request, a stray stdout line |
 | `protocol-mismatch`, `exit-at-launch`, `hang-at-launch`, `no-answer` | Hand-made: the triggers for falling back to ACP |
 | `died-mid-turn` | Hand-made from `multi-turn`: the CLI exits while a turn streams |
@@ -204,7 +205,7 @@ node scripts/chat-fixtures/record.mjs --protocol acp --cli-name copilot \
 
 ### Copilot SDK
 
-Don't use a real model for these. `src/main/chat/copilot/record-fixtures.test.ts` puts the recorder in proxy mode between the real driver and the runtime npm installs, with a local fake model as the session's provider, a throwaway home and invalid tokens. It writes everything in `test/chat-fixtures/copilot-sdk/`, including the hand-made fixtures. CI skips it. Re-run it when the driver's traffic changes or the SDK is bumped. On macOS, `sandbox-exec` guarantees nothing leaves the machine:
+Don't use a real model for these. `src/main/chat/copilot/record-fixtures.test.ts` puts the recorder in proxy mode between the real driver and the runtime npm installs, with a local fake model set through `COPILOT_PROVIDER_*`, a throwaway home and invalid tokens. It writes everything in `test/chat-fixtures/copilot-sdk/`, including the hand-made fixtures. CI skips it. Re-run it when the driver's traffic changes or the SDK is bumped. On macOS, `sandbox-exec` guarantees nothing leaves the machine:
 
 ```sh
 PROFILE='(version 1)(allow default)(deny network-outbound)(allow network-outbound (remote ip "localhost:*"))'
@@ -212,7 +213,7 @@ CLUBHOUSE_RECORD_COPILOT_SDK=1 sandbox-exec -p "$PROFILE" \
   npx vitest run --project main src/main/chat/copilot/record-fixtures.test.ts
 ```
 
-It removes the CLI's system prompt and built-in skills, which a driver doesn't read, and adds `match` to permission answers.
+It removes the CLI's system prompt and built-in skills, which a driver doesn't read, and adds `match` to answers, session modes and delivery modes.
 
 To use the recorder by hand, pass the launch after `--`. It reads the CLI's port, stops the CLI when a proxied client disconnects, leaves the port line and its own kill out of the fixture, and always redacts the connection token. In script mode it generates the token, available as `{{connectionToken}}`:
 

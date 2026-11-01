@@ -1,6 +1,6 @@
 # Copilot SDK chat driver: spike results and plan
 
-Status: spike done, phases 0 to 2 done (opt-in driver, off by default) · Date: 2026-11-01 · Issue: [#2616](https://github.com/Agent-Clubhouse/Clubhouse/issues/2616) · Context: [docs/structured-chat-research.md](structured-chat-research.md) §7 and §8 (Phase 5)
+Status: spike done, phases 0 to 3 done (opt-in driver, off by default) · Date: 2026-11-01 · Issue: [#2616](https://github.com/Agent-Clubhouse/Clubhouse/issues/2616) · Context: [docs/structured-chat-research.md](structured-chat-research.md) §7 and §8 (Phase 5)
 
 Copilot chat runs today on the ACP driver (`copilot_acp`, `src/main/orchestrators/adapters/acp-chat-driver.ts`). This note records what the SDK does on real CLI versions and how to move to it. Codex is covered in [its own section](#codex-stay-on-app-server).
 

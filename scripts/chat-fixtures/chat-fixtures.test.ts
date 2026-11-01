@@ -113,7 +113,7 @@ describe('fixture format', () => {
       claude: ['ask-user-question', 'subagent-task'],
       codex: [],
       copilot: ['handshake-1.0.82'],
-      'copilot-sdk': ['died-mid-turn', 'exit-at-launch', 'handshake', 'hang-at-launch', 'no-answer', 'protocol-mismatch', 'resume', 'resume-not-found'],
+      'copilot-sdk': ['died-mid-turn', 'exit-at-launch', 'handshake', 'hang-at-launch', 'no-answer', 'plan-approval', 'protocol-mismatch', 'question', 'queue', 'resume', 'resume-not-found', 'steer', 'subagent'],
     };
     // The model list needs a real login, so copilot-sdk gets it in phase 4 (docs/copilot-sdk-driver.md).
     const missing: Record<string, string[]> = { 'copilot-sdk': ['model-list'] };

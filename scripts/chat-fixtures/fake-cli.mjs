@@ -99,7 +99,6 @@ const STANDING_QUERIES = {
   },
   'copilot-sdk': {
     'request:models.list': (msg) => ({ jsonrpc: '2.0', id: msg.id, result: { models: [] } }),
-    'request:session.queue.pendingItems': (msg) => ({ jsonrpc: '2.0', id: msg.id, result: { items: [] } }),
   },
 };
 const recordedKeys = new Set(entries.filter((e) => e.from === 'client' && e.msg).map((e) => messageKey(protocol, e.msg)));

@@ -27,8 +27,8 @@ async function fakeCopilot(name: string): Promise<{ fake: FakeCli; binary: strin
   return { fake, binary: shims.copilot };
 }
 
-// The fixtures were recorded logged out, with BYOK standing in for a login.
-const LOGIN_STAND_IN = { COPILOT_PROVIDER_BASE_URL: 'http://127.0.0.1:0/v1' };
+// The fixtures were recorded logged out, with a provider standing in for a login.
+const LOGIN_STAND_IN = { COPILOT_PROVIDER_BASE_URL: 'http://127.0.0.1:0/v1', COPILOT_MODEL: 'fake-model' };
 
 async function start(name: string, overrides: Partial<ChatDriverStartOptions> = {}) {
   const { fake, binary } = await fakeCopilot(name);
@@ -64,7 +64,7 @@ describe('CopilotSdkChatDriver probe against fake Copilot', () => {
     expect(report.argv).toEqual(['--headless', '--port', '0']);
   });
 
-  it('a model key stands in for the login', async () => {
+  it('a provider stands in for the login', async () => {
     const { result } = await probe('handshake', LOGIN_STAND_IN);
     expect(result.handshakeOk).toBe(true);
     expect(result.needsLogin).toBeUndefined();
@@ -191,6 +191,61 @@ describe('CopilotSdkChatDriver sessions against fake Copilot', () => {
     expect(session.resumeFallback).toBe('not_found');
     expect(session.nativeSessionId).not.toBe(resumeNativeSessionId);
     expect(drafts.items.some((d) => d.type === 'notice' && (d.data as { code?: string }).code === 'resume_unavailable')).toBe(true);
+    await expectComplete(session, fake);
+  });
+
+  it('steer: goes into the running turn, which ends once', async () => {
+    const { fake, session, drafts } = await start('steer');
+    await say(session, 'ORIGINAL');
+    expect(await session.send([{ type: 'text', text: 'STEER-TEXT' }], 'steer')).toBe('steer');
+    expect(await drafts.waitFor({ type: 'turn_ended' })).toMatchObject({ data: { stopReason: 'end_turn' } });
+    expect(drafts.items.filter((d) => d.type === 'turn_started')).toHaveLength(1);
+    await expectComplete(session, fake);
+  });
+
+  it('queue: runs as its own turn after the first', async () => {
+    const { fake, session, drafts } = await start('queue');
+    await say(session, 'FIRST');
+    expect(await session.send([{ type: 'text', text: 'QUEUED-TEXT' }], 'queued')).toBe('queued');
+    await drafts.waitFor({ type: 'turn_ended' });
+    await drafts.waitFor({ type: 'turn_ended' });
+    expect(drafts.items.filter((d) => d.type === 'turn_started').map((d) => (d.data as { trigger: string }).trigger)).toEqual(['prompt', 'queued']);
+    await expectComplete(session, fake);
+  });
+
+  it('question: the choices reach the UI, and the answer reaches the CLI', async () => {
+    const { fake, session, drafts } = await start('question');
+    await say(session, 'ask me');
+    const asked = (await drafts.waitFor({ type: 'question' })).data as { requestId: string; questions: Array<{ id: string; prompt: string }> };
+    expect(asked.questions[0].prompt).toBe('Colour?');
+    await session.answerQuestion(asked.requestId, { [asked.questions[0].id]: 'red' });
+    expect(await drafts.waitFor({ type: 'question_resolved' })).toMatchObject({ data: { answers: { answer: 'red' } } });
+    expect(await drafts.waitFor({ type: 'turn_ended' })).toMatchObject({ data: { stopReason: 'end_turn' } });
+    await expectComplete(session, fake);
+  });
+
+  it('plan-approval: shows the plan, and approving returns to the earlier level', async () => {
+    const { fake, session, drafts } = await start('plan-approval', { level: 'auto_edit' });
+    await session.setLevel('plan');
+    await say(session, 'plan it');
+    const request = await drafts.waitFor({ type: 'permission_request' });
+    expect(drafts.items.find((d) => d.type === 'plan_document')?.data).toMatchObject({ markdown: 'THE-PLAN', status: 'ready' });
+    await session.respondPermission((request.data as { requestId: string }).requestId, 'approve');
+    await drafts.waitFor({ type: 'turn_ended' });
+    expect(drafts.items.filter((d) => d.type === 'mode_changed').at(-1)?.data).toMatchObject({ level: 'auto_edit', nativeMode: 'interactive' });
+    await expectComplete(session, fake);
+  });
+
+  it('subagent: its work sits under it, and its idle does not end the turn', async () => {
+    const { fake, session, drafts } = await start('subagent', { level: 'full_access' });
+    await say(session, 'delegate');
+    await drafts.waitFor({ type: 'turn_ended' });
+    const statuses = drafts.items.filter((d) => d.type === 'subagent').map((d) => (d.data as { status: string }).status);
+    expect(statuses[0]).toBe('running');
+    expect(statuses.at(-1)).toBe('completed');
+    expect(drafts.items.filter((d) => d.type === 'turn_ended')).toHaveLength(1);
+    const task = drafts.items.find((d) => d.type === 'tool_call' && (d.data as { toolName?: string }).toolName === 'task')?.data as { toolCallId: string };
+    expect(drafts.items.find((d) => d.type === 'tool_call' && (d.data as { toolName?: string }).toolName === 'grep')?.data).toMatchObject({ subagentId: task.toolCallId });
     await expectComplete(session, fake);
   });
 
