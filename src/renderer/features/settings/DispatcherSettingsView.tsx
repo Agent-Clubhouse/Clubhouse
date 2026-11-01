@@ -100,7 +100,8 @@ export function DispatcherSettingsView() {
 
   return (
     <SettingsPage title={TITLE} description={DESCRIPTION}>
-      <SettingsSection title="Dispatcher">
+      {/* No heading: the page title already says Dispatcher. */}
+      <section className="mt-[22px]">
         <SettingsField
           label="Turn on Dispatcher"
           help={(
@@ -125,7 +126,7 @@ export function DispatcherSettingsView() {
         </SettingsField>
         {switchError && <p className={`${settingsError} mt-1.5`} role="alert" data-testid="dispatcher-enabled-error">{switchError}</p>}
         {state.path && <p className={`${settingsHelp} mt-2`} data-testid="dispatcher-folder">Its folder is {state.path}</p>}
-      </SettingsSection>
+      </section>
 
       {state.enabled && config && (
         <SettingsSection title="Agent">

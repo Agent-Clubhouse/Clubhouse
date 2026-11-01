@@ -48,6 +48,8 @@ describe('DispatcherSettingsView', () => {
     render(<DispatcherSettingsView />);
     const toggle = await screen.findByRole('switch', { name: 'Turn on Dispatcher' });
     expect(toggle.getAttribute('aria-checked')).toBe('false');
+    // The page title only: no section heading repeats it.
+    expect(screen.getAllByRole('heading', { name: 'Dispatcher' })).toHaveLength(1);
     expect(screen.queryByLabelText('CLI')).toBeNull();
 
     await act(async () => { fireEvent.click(toggle); });
