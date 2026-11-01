@@ -7,6 +7,7 @@ import { describe, it, expect, beforeEach, vi } from 'vitest';
 vi.mock('./log-service', () => ({ appLog: vi.fn() }));
 
 import { bindingManager } from './clubhouse-mcp/binding-manager';
+import { buildToolKey } from './clubhouse-mcp/tool-registry';
 import {
   claimSourceBinding,
   clearBindingRemovedByUser,
@@ -88,6 +89,66 @@ describe('claimSourceBinding', () => {
   it('rejects a plugin binding (#2082)', () => {
     expect(claimSourceBinding('mine', { ...wire('a', 'p'), targetKind: 'plugin' })).toBe('invalid');
     expect(pairs()).toEqual([]);
+  });
+});
+
+describe('relabelling a live binding (#2561)', () => {
+  const named = (projectName: string): PersistedBinding => ({
+    ...wire('a', 'b'), label: 'lead', agentName: 'Dispatcher', targetName: 'lead', projectName,
+  });
+  const live = () => bindingManager.getBindingsForAgent('a')[0];
+
+  it('a claim updates the label fields in place and refreshes the tool names', () => {
+    listSource('mine');
+    claimSourceBinding('mine', named('Wardfall'));
+    const before = buildToolKey(live());
+    const binding = live();
+    const changes = vi.fn();
+    bindingManager.onChange(changes);
+
+    expect(claimSourceBinding('mine', { ...named('Wardfall Two'), label: 'Lead', targetName: 'Lead', agentName: 'Dispatcher 2' })).toBe('existing');
+    // The same binding, not unbound and bound again.
+    expect(live()).toBe(binding);
+    expect(live()).toMatchObject({ label: 'Lead', agentName: 'Dispatcher 2', targetName: 'Lead', projectName: 'Wardfall Two' });
+    expect(buildToolKey(live())).not.toBe(before);
+    expect(buildToolKey(live())).toMatch(/^Wardfall_Two_Lead_/);
+    expect(changes).toHaveBeenCalledTimes(1);
+    expect(changes).toHaveBeenCalledWith('a');
+  });
+
+  it('a claim with the same labels changes nothing', () => {
+    listSource('mine');
+    claimSourceBinding('mine', named('Wardfall'));
+    const changes = vi.fn();
+    bindingManager.onChange(changes);
+    expect(claimSourceBinding('mine', named('Wardfall'))).toBe('existing');
+    expect(changes).not.toHaveBeenCalled();
+  });
+
+  it('a pruning source relabels on rebuild and keeps ownership', async () => {
+    const mine = listSource('mine');
+    mine.push(named('Wardfall'));
+    await rebuildPersistedBindings();
+    const binding = live();
+
+    mine[0] = named('Wardfall Two');
+    expect((await rebuildPersistedBindings()).sources[0]).toMatchObject({ created: 0, existing: 1, pruned: 0 });
+    expect(live()).toBe(binding);
+    expect(live().projectName).toBe('Wardfall Two');
+
+    // Still the source's: it goes once the source stops listing it.
+    mine.length = 0;
+    await rebuildPersistedBindings();
+    expect(pairs()).toEqual([]);
+  });
+
+  it('a non-pruning source does not relabel a binding on rebuild', async () => {
+    const canvas = listSource('canvas', false);
+    canvas.push(named('Wardfall'));
+    await rebuildPersistedBindings();
+    canvas[0] = named('Stale');
+    await rebuildPersistedBindings();
+    expect(live().projectName).toBe('Wardfall');
   });
 });
 

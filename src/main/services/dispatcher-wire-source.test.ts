@@ -68,6 +68,7 @@ vi.mock('./dispatcher/dispatcher-service', () => ({
 vi.mock('./pty-manager', () => ({ write: vi.fn(), isRunning: vi.fn(() => true) }));
 
 import { bindingManager } from './clubhouse-mcp/binding-manager';
+import { buildToolKey } from './clubhouse-mcp/tool-registry';
 import {
   rebuildPersistedBindings,
   registerPersistedBindingSource,
@@ -182,6 +183,22 @@ describe('Dispatcher wire rebuild', () => {
     const result = await rebuild();
     expect(boundPairs()).toEqual([`${DISPATCHER}->durable_lead`, `durable_lead->${DISPATCHER}`]);
     expect(result.sources.find((s) => s.id === 'dispatcher-wires')).toMatchObject({ collected: 2, created: 2 });
+  });
+
+  it('relabels the live wires in place when the project is renamed (#2561)', async () => {
+    await rebuild();
+    const toLead = () => bindingManager.getBindingsForAgent(DISPATCHER).find((b) => b.targetId === 'durable_lead')!;
+    const fromLead = () => bindingManager.getBindingsForAgent('durable_lead').find((b) => b.targetId === DISPATCHER)!;
+    const before = toLead();
+    expect(before.projectName).toBe('Wardfall');
+
+    projects.list = projects.list.map((p) => (p.id === 'proj_w' ? { ...p, displayName: 'Wardfall Two' } : p));
+    const result = await rebuild();
+    expect(result.sources.find((s) => s.id === 'dispatcher-wires')).toMatchObject({ created: 0, existing: 2, pruned: 0 });
+    // The same bindings, relabelled: the wires never dropped.
+    expect(toLead()).toBe(before);
+    expect(toLead().projectName).toBe('Wardfall Two');
+    expect(fromLead().projectName).toBe('Wardfall Two');
   });
 
   it('binds nothing while the Dispatcher is off, and removes its wires when it turns off', async () => {
@@ -385,9 +402,33 @@ describe('watchDispatcherWires', () => {
 
   it('a project change that leaves the wires as they were does not rebuild', async () => {
     const { onChange, flush } = await watched();
-    setProjects(projects.list.map((p) => (p.path === projectPath ? { ...p, displayName: 'Renamed' } : p)));
+    // The other project has no Dispatcher wires, so renaming it changes none.
+    setProjects(projects.list.map((p) => (p.path === otherProjectPath ? { ...p, displayName: 'Renamed' } : p)));
     await flush();
     expect(onChange).not.toHaveBeenCalled();
+  });
+
+  it('end to end: renaming a project relabels its live Dispatcher wires in place (#2561)', async () => {
+    const { onChange, flush } = await watched();
+    const toLead = () => bindingManager.getBindingsForAgent(DISPATCHER).find((b) => b.targetId === 'durable_lead')!;
+    const fromLead = () => bindingManager.getBindingsForAgent('durable_lead').find((b) => b.targetId === DISPATCHER)!;
+    const binding = toLead();
+    const toolKey = buildToolKey(binding);
+
+    setProjects(projects.list.map((p) => (p.path === projectPath ? { ...p, displayName: 'Renamed' } : p)));
+    await flush();
+    expect(onChange).toHaveBeenCalledTimes(1);
+    // The same bindings, relabelled: the wires never dropped.
+    expect(toLead()).toBe(binding);
+    expect(toLead().projectName).toBe('Renamed');
+    expect(fromLead().projectName).toBe('Renamed');
+    expect(buildToolKey(toLead())).not.toBe(toolKey);
+    expect(buildToolKey(toLead())).toMatch(/^Renamed_lead_/);
+
+    // Committed: a later unrelated write does not rebuild again.
+    setAgents(projectPath, [...configs.get(projectPath)!]);
+    await flush();
+    expect(onChange).toHaveBeenCalledTimes(1);
   });
 
   describe('reads only what a change can affect', () => {

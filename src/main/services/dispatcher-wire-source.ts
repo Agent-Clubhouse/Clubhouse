@@ -31,7 +31,7 @@ import {
   isDispatcherPath,
   onDispatcherChanged,
 } from './dispatcher/dispatcher-service';
-import type { CollectedBindings, PersistedBinding, PersistedBindingSource } from './persisted-bindings';
+import { bindingSignature, type CollectedBindings, type PersistedBinding, type PersistedBindingSource } from './persisted-bindings';
 import { isDisposedAgent } from '../../shared/agent-helpers';
 import type { DurableAgentConfig } from '../../shared/types';
 import { appLog } from './log-service';
@@ -120,7 +120,7 @@ function activeDispatcherId(): string | null {
 }
 
 function wireSignature(bindings: readonly PersistedBinding[]): string {
-  return bindings.map((b) => `${b.agentId}>${b.targetId}`).sort().join(',');
+  return bindings.map(bindingSignature).sort().join(',');
 }
 
 /** Key in the signature maps for the Dispatcher itself: its id, or '' while off. */

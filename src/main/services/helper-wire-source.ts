@@ -18,7 +18,7 @@
 
 import * as projectStore from './project-store';
 import { listDurable, onAgentConfigChanged, projectKey } from './agent-config';
-import type { CollectedBindings, PersistedBinding, PersistedBindingSource } from './persisted-bindings';
+import { bindingSignature, type CollectedBindings, type PersistedBinding, type PersistedBindingSource } from './persisted-bindings';
 import { isDisposedAgent } from '../../shared/agent-helpers';
 import type { DurableAgentConfig } from '../../shared/types';
 import { appLog } from './log-service';
@@ -153,7 +153,7 @@ async function registeredProjects(): Promise<Array<{ path: string; name?: string
 function wireSignature(wires: ProjectHelperWires): string {
   if (wires.unresolved.length > 0) return STALE;
   return wires.bindings
-    .map((b) => `${b.agentId}>${b.targetId}`)
+    .map(bindingSignature)
     .sort()
     .join(',');
 }
