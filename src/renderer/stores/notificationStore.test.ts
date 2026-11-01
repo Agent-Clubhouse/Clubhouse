@@ -1,8 +1,10 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { useNotificationStore } from './notificationStore';
 import { useAgentStore } from './agentStore';
 import { useUIStore } from './uiStore';
 import { useProjectStore } from './projectStore';
+import { useDispatcherStore } from '../features/dispatcher/dispatcherStore';
+import { DISPATCHER_OFF, DISPATCHER_PROJECT_ID } from '../../shared/dispatcher-types';
 
 // Mock window.clubhouse API
 const mockGetNotificationSettings = vi.fn();
@@ -360,6 +362,39 @@ describe('notificationStore', () => {
         useNotificationStore.getState().checkAndNotify('Claude', 'permission_request', 'Bash', 'agent-1', 'proj-1');
 
         expect(mockSendNotification).toHaveBeenCalled();
+      });
+
+      describe('with the Dispatcher view open (#2556)', () => {
+        beforeEach(() => {
+          useNotificationStore.setState({ settings: ALL_ON_SETTINGS });
+          vi.spyOn(document, 'hasFocus').mockReturnValue(true);
+          useDispatcherStore.getState().setState({ enabled: true, agentId: 'disp', path: 'dispatcher-dir', config: null });
+          useAgentStore.setState({ activeAgentId: 'agent-1' });
+          useUIStore.setState({ explorerTab: 'agents', dispatcherOpen: true });
+          useProjectStore.setState({ activeProjectId: 'proj-1' });
+        });
+        afterEach(() => {
+          useUIStore.setState({ dispatcherOpen: false });
+          useDispatcherStore.getState().setState(DISPATCHER_OFF);
+        });
+
+        it('suppresses the Dispatcher\'s own notifications', () => {
+          useNotificationStore.getState().checkAndNotify('Dispatcher', 'permission_request', 'Bash', 'disp', DISPATCHER_PROJECT_ID);
+          expect(mockSendNotification).not.toHaveBeenCalled();
+        });
+
+        it('notifies for the active project agent hidden behind it', () => {
+          useNotificationStore.getState().checkAndNotify('Claude', 'permission_request', 'Bash', 'agent-1', 'proj-1');
+          expect(mockSendNotification).toHaveBeenCalled();
+        });
+
+        it('notifies for the Dispatcher once its view is closed, and suppresses the active agent again', () => {
+          useUIStore.setState({ dispatcherOpen: false });
+          useNotificationStore.getState().checkAndNotify('Dispatcher', 'permission_request', 'Bash', 'disp', DISPATCHER_PROJECT_ID);
+          expect(mockSendNotification).toHaveBeenCalledTimes(1);
+          useNotificationStore.getState().checkAndNotify('Claude', 'permission_request', 'Bash', 'agent-1', 'proj-1');
+          expect(mockSendNotification).toHaveBeenCalledTimes(1);
+        });
       });
 
       it('passes agentId and projectId through to sendNotification', () => {

@@ -37,7 +37,8 @@ import { initChatEventListener } from './stores/chatStore';
 import { initToolActivityListener } from './plugins/builtin/canvas/useWireActivity';
 import { usePendingPermissionStore } from './stores/pendingPermissionStore';
 import { showStructuredModeRemovedNotice } from './services/structured-mode-removal-notice';
-import { isDispatcherAgent, isDispatcherProjectId } from './features/dispatcher/dispatcherStore';
+import { isDispatcherAgent, isDispatcherProjectId, useDispatcherStore } from './features/dispatcher/dispatcherStore';
+import { DISPATCHER_PROJECT_ID } from '../shared/dispatcher-types';
 import { closeDispatcher, openDispatcher } from './features/dispatcher/dispatcherNav';
 
 
@@ -69,7 +70,7 @@ function initWindowListeners(): (() => void)[] {
   removers.push(
     window.clubhouse.app.onNotificationClicked((agentId: string, projectId: string) => {
       // The Dispatcher is in no project; it opens its own view (#2538).
-      if (isDispatcherProjectId(projectId)) { openDispatcher(); return; }
+      if (isDispatcherProjectId(projectId) || isDispatcherAgent({ id: agentId, projectId })) { openDispatcher(); return; }
       closeDispatcher();
       useProjectStore.getState().setActiveProject(projectId);
       useUIStore.getState().setExplorerTab('agents', projectId);
@@ -682,11 +683,15 @@ function initNotificationClearing(): () => void {
   const check = () => {
     const activeAgentId = useAgentStore.getState().activeAgentId;
     const activeProjectId = useProjectStore.getState().activeProjectId;
-    const explorerTab = useUIStore.getState().explorerTab;
-    const key = `${activeAgentId}|${activeProjectId}|${explorerTab}`;
+    const { explorerTab, dispatcherOpen } = useUIStore.getState();
+    const dispatcherAgentId = useDispatcherStore.getState().state?.agentId;
+    const key = `${activeAgentId}|${activeProjectId}|${explorerTab}|${dispatcherOpen}|${dispatcherAgentId}`;
     if (key !== prevKey) {
       prevKey = key;
-      if (activeAgentId && activeProjectId && explorerTab === 'agents') {
+      // The Dispatcher's view hides the active agent behind it (#2556).
+      if (dispatcherOpen) {
+        if (dispatcherAgentId) useNotificationStore.getState().clearNotification(dispatcherAgentId, DISPATCHER_PROJECT_ID);
+      } else if (activeAgentId && activeProjectId && explorerTab === 'agents') {
         useNotificationStore.getState().clearNotification(activeAgentId, activeProjectId);
       }
     }
@@ -695,6 +700,7 @@ function initNotificationClearing(): () => void {
   unsubs.push(useAgentStore.subscribe(check));
   unsubs.push(useProjectStore.subscribe(check));
   unsubs.push(useUIStore.subscribe(check));
+  unsubs.push(useDispatcherStore.subscribe(check));
 
   return () => unsubs.forEach((u) => u());
 }

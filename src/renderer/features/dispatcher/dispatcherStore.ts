@@ -40,8 +40,16 @@ export function isDispatcherProjectId(projectId: string | null | undefined): boo
   return projectId === DISPATCHER_PROJECT_ID;
 }
 
-export function isDispatcherAgent(agent: Pick<Agent, 'projectId'> | null | undefined): boolean {
-  return !!agent && agent.projectId === DISPATCHER_PROJECT_ID;
+/**
+ * Whether this is the Dispatcher's agent. Its id decides, so a record that
+ * came into the store with the wrong projectId (an update-restart resume
+ * before the Dispatcher's state loaded, #2552) is still recognised.
+ */
+export function isDispatcherAgent(agent: Pick<Agent, 'id' | 'projectId'> | null | undefined): boolean {
+  if (!agent) return false;
+  if (agent.projectId === DISPATCHER_PROJECT_ID) return true;
+  const agentId = useDispatcherStore.getState().state?.agentId;
+  return !!agentId && agent.id === agentId;
 }
 
 /** The Dispatcher's agent id while it's turned on. */

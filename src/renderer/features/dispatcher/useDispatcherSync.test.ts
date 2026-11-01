@@ -5,7 +5,7 @@ import type { DurableAgentConfig } from '../../../shared/types';
 import { useAgentStore } from '../../stores/agentStore';
 import { useUIStore } from '../../stores/uiStore';
 import { useDispatcherSync } from './useDispatcherSync';
-import { findLocalProject, useDispatcherStore } from './dispatcherStore';
+import { findLocalProject, isDispatcherAgent, useDispatcherStore } from './dispatcherStore';
 
 const config = { id: 'disp', name: 'Dispatcher', color: 'indigo', createdAt: '2026-10-31T00:00:00.000Z', model: 'opus' } as DurableAgentConfig;
 const ON: DispatcherState = { enabled: true, agentId: 'disp', path: 'dispatcher-dir', config };
@@ -47,6 +47,19 @@ describe('useDispatcherSync', () => {
     expect(useAgentStore.getState().agents.disp).toBeUndefined();
     expect(useUIStore.getState().dispatcherOpen).toBe(false);
     expect(findLocalProject(DISPATCHER_PROJECT_ID)).toBeUndefined();
+  });
+
+  it('repairs a record a resume keyed on the folder before the state arrived (#2552)', async () => {
+    // The resume ran first and, with no Dispatcher state yet, fell back to the folder.
+    useAgentStore.setState({ agents: { disp: { id: 'disp', projectId: 'dispatcher-dir', name: 'Dispatcher', kind: 'durable', status: 'running', color: 'indigo' } } });
+    // The repair doesn't wait for listDurable.
+    window.clubhouse.agent.listDurable = vi.fn(() => new Promise<DurableAgentConfig[]>(() => {}));
+    window.clubhouse.dispatcher.get = vi.fn().mockResolvedValue(ON);
+    renderHook(() => useDispatcherSync());
+    await waitFor(() => expect(useAgentStore.getState().agents.disp.projectId).toBe(DISPATCHER_PROJECT_ID));
+    expect(useAgentStore.getState().agents.disp.status).toBe('running');
+    expect(findLocalProject(useAgentStore.getState().agents.disp.projectId)?.path).toBe('dispatcher-dir');
+    expect(isDispatcherAgent(useAgentStore.getState().agents.disp)).toBe(true);
   });
 
   it('loads nothing while the Dispatcher is off', async () => {

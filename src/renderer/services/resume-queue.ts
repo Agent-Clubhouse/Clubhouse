@@ -4,7 +4,9 @@ import type { Agent, DurableAgentConfig } from '../../shared/types';
 import type { RestartSessionEntry, RestartSessionState } from '../../shared/types';
 import { isAssistantAgent } from '../../shared/assistant-utils';
 import type { ResumeStatus } from '../features/app/ResumeBanner';
-import { findProjectByPath } from '../utils/project-path';
+import { findProjectByPath, sameProjectPath } from '../utils/project-path';
+import { DISPATCHER_PROJECT_ID } from '../../shared/dispatcher-types';
+import { useDispatcherStore } from '../features/dispatcher/dispatcherStore';
 import { parentLinkFields } from '../stores/agent/parentLink';
 
 /**
@@ -49,9 +51,14 @@ async function processWorkspaceQueue(entries: RestartSessionEntry[]): Promise<vo
 /**
  * Look up the renderer's projectId from a filesystem path (trailing separators
  * and, on Windows, case and slash style don't matter).
- * Returns the project ID or the path itself as fallback.
+ * The Dispatcher's agent or folder gets its synthetic id (#2552); otherwise
+ * returns the project ID or the path itself as fallback.
  */
-function resolveProjectId(projectPath: string): string {
+function resolveProjectId(projectPath: string, agentId: string): string {
+  const dispatcher = useDispatcherStore.getState().state;
+  if (dispatcher?.agentId === agentId || (dispatcher?.path && sameProjectPath(dispatcher.path, projectPath))) {
+    return DISPATCHER_PROJECT_ID;
+  }
   const projects = useProjectStore.getState().projects;
   const match = findProjectByPath(projects, projectPath);
   return match?.id || projectPath;
@@ -102,8 +109,6 @@ async function resumeAgent(entry: RestartSessionEntry): Promise<void> {
   useAgentStore.getState().setResumeStatus(entry.agentId, 'resuming');
 
   try {
-    const projectId = resolveProjectId(entry.projectPath);
-
     // Fetch the durable config so we can restore settings that aren't
     // captured in RestartSessionEntry (color, icon, freeAgentMode, etc.).
     // This mirrors how spawnDurableAgent reads the full config in
@@ -137,6 +142,9 @@ async function resumeAgent(entry: RestartSessionEntry): Promise<void> {
     // handler can find the agent, and so waitForAgentRunning resolves.
     // The record is merged into the one loadDurableAgents already put there,
     // so fields that only live on it (a helper's parentAgentId, #2410) survive.
+    // Resolved here, not before the await above, so a Dispatcher state that
+    // arrived meanwhile is seen (#2552). Earlier than that, useDispatcherSync repairs it.
+    const projectId = resolveProjectId(entry.projectPath, entry.agentId);
     const agent = buildResumedAgent(useAgentStore.getState().agents[entry.agentId], entry, projectId, durableConfig);
     useAgentStore.setState((s) => ({
       agents: { ...s.agents, [entry.agentId]: agent },

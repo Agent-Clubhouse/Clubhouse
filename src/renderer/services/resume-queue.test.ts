@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 // Mock the agent store
 const mockSetResumeStatus = vi.fn();
@@ -55,6 +55,8 @@ Object.defineProperty(globalThis, 'window', {
 });
 
 import { processResumeQueue } from './resume-queue';
+import { useDispatcherStore } from '../features/dispatcher/dispatcherStore';
+import { DISPATCHER_OFF, DISPATCHER_PROJECT_ID, type DispatcherState } from '../../shared/dispatcher-types';
 import { useAgentStore } from '../stores/agentStore';
 import type { RestartSessionState, RestartSessionEntry } from '../../shared/types';
 
@@ -523,6 +525,32 @@ describe('resume-queue', () => {
       } finally {
         (window as any).clubhouse = original;
       }
+    });
+
+    describe('the Dispatcher (#2552)', () => {
+      const DISPATCHER: DispatcherState = { enabled: true, agentId: 'disp', path: 'dispatcher-dir', config: null };
+      afterEach(() => useDispatcherStore.getState().setState(DISPATCHER_OFF));
+
+      it('gets the synthetic project id, not its folder, when its state has loaded', async () => {
+        useDispatcherStore.getState().setState(DISPATCHER);
+        const record = await resumedRecord(makeEntry({ agentId: 'disp', projectPath: 'dispatcher-dir' }));
+        expect(record.projectId).toBe(DISPATCHER_PROJECT_ID);
+      });
+
+      it('matches its folder with a trailing separator', async () => {
+        useDispatcherStore.getState().setState({ ...DISPATCHER, agentId: 'other' });
+        const record = await resumedRecord(makeEntry({ agentId: 'disp', projectPath: 'dispatcher-dir' + '\\' }));
+        expect(record.projectId).toBe(DISPATCHER_PROJECT_ID);
+      });
+
+      it('sees a state that loads while the resume reads the saved config', async () => {
+        mockGetDurableConfig.mockImplementationOnce(async () => {
+          useDispatcherStore.getState().setState(DISPATCHER);
+          return null;
+        });
+        const record = await resumedRecord(makeEntry({ agentId: 'disp', projectPath: 'dispatcher-dir' }));
+        expect(record.projectId).toBe(DISPATCHER_PROJECT_ID);
+      });
     });
 
     it('does not fold case on other platforms', async () => {
