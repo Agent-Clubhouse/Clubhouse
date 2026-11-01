@@ -66,6 +66,8 @@ vi.mock('../../orchestration-policy', () => ({
   isCrossProjectAllowed: vi.fn(async () => false),
   checkHelperLimitFor: vi.fn(),
   getOrchestrationPolicy: vi.fn(async (_projectPath: string, id: string) => policies.get(id) ?? null),
+  resolveOrchestrationPolicies: vi.fn(async (_projectPath: string, agents: DurableAgentConfig[]) =>
+    new Map(agents.flatMap((a) => (policies.has(a.id) ? [[a.id, policies.get(a.id)]] : [])))),
   resolveHelperLaunchSettings: vi.fn(),
 }));
 vi.mock('../../../orchestrators', () => ({
@@ -93,6 +95,8 @@ import { callTool, getScopedToolList, _resetForTesting } from '../tool-registry'
 import { agentRegistry } from '../../agent-registry';
 import { onOrchestrationGateChange, setOrchestrationEnabled, _resetOrchestrationGateForTesting } from '../orchestration-gate';
 import { isDispatcherAgent, syncDispatcherGate, _resetDispatcherGateForTesting } from '../dispatcher-gate';
+import * as agentConfig from '../../agent-config';
+import { getOrchestrationPolicy, resolveOrchestrationPolicies } from '../../orchestration-policy';
 
 // ── Fixtures ───────────────────────────────────────────────────────────────
 
@@ -284,6 +288,28 @@ describe('list_orchestrators', () => {
 
     const body = parse(await callTool('dispatcher', 'list_orchestrators', {}));
     expect((body.orchestrators as Array<{ id: string }>).map((o) => o.id)).toEqual(['kept']);
+  });
+
+  it('reads each project\'s agents once, and resolves its policies in one call', async () => {
+    await runDispatcher();
+    for (const id of ['a1', 'a2', 'a3']) {
+      addAgent(PROJECT_A, { id });
+      policies.set(id, policy({ connectToDispatcher: true }));
+    }
+    addAgent(PROJECT_B, { id: 'b1' });
+    vi.mocked(agentConfig.listDurable).mockClear();
+    vi.mocked(agentConfig.getDurableConfig).mockClear();
+    vi.mocked(getOrchestrationPolicy).mockClear();
+    vi.mocked(resolveOrchestrationPolicies).mockClear();
+
+    const body = parse(await callTool('dispatcher', 'list_orchestrators', {}));
+    expect((body.orchestrators as Array<{ id: string }>).map((o) => o.id)).toEqual(['a1', 'a2', 'a3']);
+    const reads = vi.mocked(agentConfig.listDurable).mock.calls.map(([p]) => p);
+    expect(reads.filter((p) => p === PROJECT_A)).toHaveLength(1);
+    expect(reads.filter((p) => p === PROJECT_B)).toHaveLength(1);
+    expect(agentConfig.getDurableConfig).not.toHaveBeenCalled();
+    expect(getOrchestrationPolicy).not.toHaveBeenCalled();
+    expect(vi.mocked(resolveOrchestrationPolicies).mock.calls.map(([p]) => p).sort()).toEqual([PROJECT_A, PROJECT_B].sort());
   });
 
   it('never lists the Dispatcher itself (its folder is not a project)', async () => {

@@ -18,7 +18,7 @@ import * as agentConfig from '../../agent-config';
 import { agentRegistry } from '../../agent-registry';
 import { getGitInfo } from '../../git-service';
 import { listHelpersEverywhere } from '../../helper-index';
-import { getOrchestrationPolicy } from '../../orchestration-policy';
+import { resolveOrchestrationPolicies } from '../../orchestration-policy';
 import * as projectStore from '../../project-store';
 import { onDispatcherChanged } from '../../dispatcher/dispatcher-service';
 import { appLog } from '../../log-service';
@@ -36,24 +36,17 @@ function errorText(err: unknown): string {
 }
 
 /**
- * Whether the agent's policy has "Connect to Dispatcher" on. Read without
- * relying on the field's type, so a policy without it (#2534 not there yet)
- * reads as off.
+ * The orchestrators in one project that opted in. Resolved as the Dispatcher
+ * wires are (#2537), reading agents.json, the defaults and each persona once.
  */
-function connectsToDispatcher(policy: object): boolean {
-  return (policy as { connectToDispatcher?: unknown }).connectToDispatcher === true;
-}
-
-/** The orchestrators in one project that opted in. */
 async function optedInOrchestrators(project: Project): Promise<DurableAgentConfig[]> {
-  const agents = await agentConfig.listDurable(project.path);
-  const result: DurableAgentConfig[] = [];
-  for (const agent of agents) {
-    if (isDisposedAgent(agent)) continue;
-    const policy = await getOrchestrationPolicy(project.path, agent.id);
-    if (policy?.orchestrate && connectsToDispatcher(policy)) result.push(agent);
-  }
-  return result;
+  const agents = (await agentConfig.listDurable(project.path)).filter((a) => !isDisposedAgent(a));
+  if (agents.length === 0) return [];
+  const policies = await resolveOrchestrationPolicies(project.path, agents);
+  return agents.filter((agent) => {
+    const policy = policies.get(agent.id);
+    return !!policy?.orchestrate && policy.connectToDispatcher;
+  });
 }
 
 async function currentBranch(agent: DurableAgentConfig, projectPath: string): Promise<string | null> {
