@@ -209,6 +209,7 @@ function useBreadcrumb(projectLabel: string | undefined, tabLabel: string | unde
   const activeAgentName = useAgentStore((s) => (s.activeAgentId ? s.agents[s.activeAgentId]?.name : undefined));
   const agentSettings = useAgentSettingsTarget(explorerTab);
   const newAgentOpen = useChromeStore((s) => s.newAgent !== null);
+  const dispatcherOpen = useUIStore((s) => s.dispatcherOpen);
   const appPluginId = explorerTab.startsWith('plugin:app:') ? explorerTab.slice('plugin:app:'.length) : null;
   const projectPluginId = !appPluginId && explorerTab.startsWith('plugin:') ? explorerTab.slice('plugin:'.length) : null;
   const pluginId = appPluginId ?? projectPluginId;
@@ -225,6 +226,7 @@ function useBreadcrumb(projectLabel: string | undefined, tabLabel: string | unde
   });
 
   if (newAgentOpen) return { current: 'New agent' };
+  if (dispatcherOpen) return { current: 'Dispatcher' };
   if (explorerTab === 'settings') return { current: 'Settings' };
   if (explorerTab === 'help') return { current: 'Help' };
   if (appPluginId) return { current: dynamicTitle || appPluginLabel || appPluginId };
@@ -247,8 +249,10 @@ export function ChromeTitleBar() {
   const shortBreadcrumb = useWindowWidth() < BREADCRUMB_SHORT_BELOW;
 
   // The New agent page names its own project, so the title bar shows no tabs (#2031).
+  // Nor does the Dispatcher's view, which is in no project (#2538).
   const newAgentOpen = useChromeStore((s) => s.newAgent !== null);
-  const inProjectView = !newAgentOpen && !!activeProjectId && explorerTab !== 'settings' && explorerTab !== 'help' && !explorerTab.startsWith('plugin:app:');
+  const dispatcherOpen = useUIStore((s) => s.dispatcherOpen);
+  const inProjectView = !newAgentOpen && !dispatcherOpen && !!activeProjectId && explorerTab !== 'settings' && explorerTab !== 'help' && !explorerTab.startsWith('plugin:app:');
   const projectLabel = activeProject ? (activeProject.displayName || activeProject.name) : undefined;
   const activeTabLabel = orderedTabs.find((t) => t.id === explorerTab)?.label;
   const crumb = useBreadcrumb(projectLabel, activeTabLabel);

@@ -20,8 +20,8 @@ import type { BranchChanges } from '../../../../shared/git-branch';
 import type { ChatViewState } from '../../../stores/chatStore';
 import { useAgentStore } from '../../../stores/agentStore';
 import { useOrchestratorStore } from '../../../stores/orchestratorStore';
-import { useProjectStore } from '../../../stores/projectStore';
 import { isRemoteProjectId } from '../../../stores/remoteProjectStore';
+import { isDispatcherAgent, useLocalProject } from '../../dispatcher/dispatcherStore';
 import { Tooltip } from '../../../components/Tooltip';
 import { jumpToCanvas, useAgentCanvases } from './agent-canvases';
 import { getOrchestratorLabel } from '../orchestrator-colors';
@@ -61,7 +61,8 @@ export function agentCwd(agent: Agent, projectPath: string | undefined): string 
  * so it asks main for one when the store doesn't know the project.
  */
 export function useProjectPath(projectId: string | undefined): string | undefined {
-  const known = useProjectStore((s) => s.projects.find((p) => p.id === projectId)?.path);
+  // The Dispatcher's folder too (#2538): it's in no project.
+  const known = useLocalProject(projectId)?.path;
   const [fetched, setFetched] = useState<{ id: string; path: string | undefined } | null>(null);
   useEffect(() => {
     if (known || !projectId || isRemoteProjectId(projectId) || !window.clubhouse.window?.isPopout?.()) return;
@@ -218,7 +219,8 @@ export function AgentDetails({ agent, chat, onShowInStream, missedSubagentId, on
   const orchestration = useOrchestrationCards(agent, projectPath);
   const { orchestrationPath, ownConfig, helperIds, orchestrating } = orchestration;
   const hasWires = useMcpBindingStore((s) => s.bindings.some((b) => b.agentId === agent.id || (b.targetKind === 'agent' && b.targetId === agent.id)));
-  const showConnections = !!orchestrationPath && (orchestrating || hasWires);
+  // The Dispatcher has no orchestration of its own, but its wires to orchestrators show (#2538).
+  const showConnections = (!!orchestrationPath && (orchestrating || hasWires)) || (isDispatcherAgent(agent) && hasWires);
   // A tool-made wire removed here is a user removal: the usual unbind, with no cause (#2230).
   const disconnectToolWire = useCallback(async (c: Connection) => {
     const unbind = useMcpBindingStore.getState().unbind;

@@ -19,6 +19,8 @@ import { useProjectStore } from '../stores/projectStore';
 import { useRemoteProjectStore } from '../stores/remoteProjectStore';
 import { useUIStore } from '../stores/uiStore';
 import { EmptyState } from '../components/EmptyState';
+import { isDispatcherAgent } from '../features/dispatcher/dispatcherStore';
+import { closeDispatcher, openDispatcher } from '../features/dispatcher/dispatcherNav';
 
 export function createUIAPI(ctx: PluginContext): UIAPI {
   return {
@@ -118,6 +120,8 @@ export function createNavigationAPI(): NavigationAPI {
   return {
     focusAgent(agentId: string): void {
       const agent = useAgentStore.getState().agents[agentId];
+      if (isDispatcherAgent(agent)) { openDispatcher(); return; }
+      closeDispatcher();
       const projectId = agent?.projectId || useProjectStore.getState().activeProjectId || undefined;
       useUIStore.getState().setExplorerTab('agents', projectId);
       useAgentStore.getState().setActiveAgent(agentId, projectId);

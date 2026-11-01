@@ -21,6 +21,8 @@ import { useProjectStore } from '../../../stores/projectStore';
 import { useUIStore } from '../../../stores/uiStore';
 import { startRequestsFor, useHelperStartRequestStore } from '../../../stores/helperStartRequestStore';
 import { sameProjectPath } from '../../../utils/project-path';
+import { isDispatcherProjectId } from '../../dispatcher/dispatcherStore';
+import { closeDispatcher, openDispatcher } from '../../dispatcher/dispatcherNav';
 
 function errorText(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
@@ -312,8 +314,10 @@ export function useHelperStartApprovals(orchestratorId: string, projectPath: str
 
 // ── Navigation ──────────────────────────────────────────────────────────
 
-/** Show an agent in the main pane, as picking it in the sidebar does. */
+/** Show an agent in the main pane, as picking it in the sidebar does. The Dispatcher opens its own view (#2538). */
 export function openAgent(projectId: string, agentId: string): void {
+  if (isDispatcherProjectId(projectId)) { openDispatcher(); return; }
+  closeDispatcher();
   const projects = useProjectStore.getState();
   if (projects.activeProjectId !== projectId) projects.setActiveProject(projectId);
   const agents = useAgentStore.getState();

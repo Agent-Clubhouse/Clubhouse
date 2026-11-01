@@ -2,7 +2,8 @@ import { useCallback, useEffect, useMemo, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import type { Agent } from '../../../shared/types';
 import { useAgentStore } from '../../stores/agentStore';
-import { useProjectStore } from '../../stores/projectStore';
+import { isDispatcherAgent, useLocalProject } from '../dispatcher/dispatcherStore';
+import { openDispatcherSettings } from '../dispatcher/dispatcherNav';
 import { useAnnexClientStore } from '../../stores/annexClientStore';
 import { isRemoteAgentId, parseNamespacedId } from '../../stores/remoteProjectStore';
 import { wakeDurableAgent, type WakeMode } from './wake-durable-agent';
@@ -121,7 +122,9 @@ export function useAgentRowActions(agent: Agent, { onSpawnQuickChild }: { onSpaw
   const sendAgentWake = useAnnexClientStore((s) => s.sendAgentWake);
   const sendAgentKill = useAnnexClientStore((s) => s.sendAgentKill);
   // The agent's own project: the new chrome's tree shows rows from every project.
-  const activeProject = useProjectStore((s) => s.projects.find((p) => p.id === agent.projectId));
+  // The Dispatcher (#2538) runs in its own folder, in no project.
+  const activeProject = useLocalProject(agent.projectId);
+  const isDispatcher = isDispatcherAgent(agent);
 
   const isCreating = agent.status === 'creating';
   const isDurable = agent.kind === 'durable';
@@ -176,8 +179,10 @@ export function useAgentRowActions(agent: Agent, { onSpawnQuickChild }: { onSpaw
   }, [agent.id, agent.projectId, agent.name]);
 
   const handleSettings = useCallback(() => {
-    openAgentSettings(agent.id);
-  }, [agent.id, openAgentSettings]);
+    // The Dispatcher's settings are a page of app Settings, not the agent settings view.
+    if (isDispatcher) openDispatcherSettings();
+    else openAgentSettings(agent.id);
+  }, [agent.id, openAgentSettings, isDispatcher]);
 
   const handleSpawnChild = useCallback(() => {
     if (onSpawnQuickChild) onSpawnQuickChild(agent.id);
@@ -225,8 +230,8 @@ export function useAgentRowActions(agent: Agent, { onSpawnQuickChild }: { onSpaw
       });
     }
 
-    // Priority 2: Pop Out
-    list.push({
+    // Priority 2: Pop Out. Not for the Dispatcher: a popout finds its agent through a project.
+    if (!isDispatcher) list.push({
       id: 'popout',
       label: 'Pop Out',
       icon: <PopOutIcon />,
@@ -268,8 +273,9 @@ export function useAgentRowActions(agent: Agent, { onSpawnQuickChild }: { onSpaw
       });
     }
 
-    // Priority 4b: Apply persona / Extract pattern (local durable agents)
-    if (isDurable && !isRemote) {
+    // Priority 4b: Apply persona / Extract pattern (local durable agents).
+    // The Dispatcher's persona is built in and can't be changed (#2533).
+    if (isDurable && !isRemote && !isDispatcher) {
       list.push({
         id: 'apply-persona',
         label: 'Apply persona…',
@@ -301,8 +307,9 @@ export function useAgentRowActions(agent: Agent, { onSpawnQuickChild }: { onSpaw
       });
     }
 
-    // Priority 5: Delete / Remove (lowest — collapses first)
-    if (isDurable && agent.status !== 'running') {
+    // Priority 5: Delete / Remove (lowest — collapses first). The Dispatcher
+    // can't be deleted; turning it off in Settings is how it goes away.
+    if (isDurable && agent.status !== 'running' && !isDispatcher) {
       list.push({
         id: 'delete',
         label: 'Delete',
@@ -323,7 +330,7 @@ export function useAgentRowActions(agent: Agent, { onSpawnQuickChild }: { onSpaw
     }
 
     return list;
-  }, [agent.status, agent.kind, isDurable, isRemote, isCreating, onSpawnQuickChild, handleStopOrRemove, handleWake, handleWakeNewSession, handlePopOut, handleSpawnChild, handleSettings, handleDelete, handleApplyPersona, handleExtractPersona]);
+  }, [agent.status, agent.kind, isDurable, isRemote, isDispatcher, isCreating, onSpawnQuickChild, handleStopOrRemove, handleWake, handleWakeNewSession, handlePopOut, handleSpawnChild, handleSettings, handleDelete, handleApplyPersona, handleExtractPersona]);
 
   return actions;
 }

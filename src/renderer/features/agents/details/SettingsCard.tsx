@@ -31,6 +31,8 @@ import { AutoSleepRow, autoSleepSummary, SELECT_CLASS, useAppIdleMinutes } from 
 import { CardNote, CardRow, DetailsCard } from './DetailsCard';
 import { useAgentDetailsStore } from './detailsStore';
 import { useDurableConfig } from './useDurableConfig';
+import { isDispatcherAgent } from '../../dispatcher/dispatcherStore';
+import { openDispatcherSettings } from '../../dispatcher/dispatcherNav';
 
 /**
  * When a row's setting can change: at any time (applied live), only while the
@@ -354,7 +356,7 @@ export function SettingsCard({ agent, chat, projectPath, provider }: {
       )}
       {local && (
         <div className="pr-3.5 pl-[33px] pt-1">
-          <Button kind="ghost" onClick={() => openAllSettings(agent.id)} data-testid="details-all-settings">All settings</Button>
+          <Button kind="ghost" onClick={() => (isDispatcherAgent(agent) ? openDispatcherSettings() : openAllSettings(agent.id))} data-testid="details-all-settings">All settings</Button>
         </div>
       )}
     </DetailsCard>

@@ -40,6 +40,10 @@ import { reportChromeFeature, reportChromeActionFailed } from './telemetry';
 import { FeedbackButton } from '../features/feedback/FeedbackButton';
 import { AppNotices } from '../features/app/AppNotices';
 import { TruncatedLabel } from '../components/TruncatedLabel';
+import { DISPATCHER_PROJECT_ID } from '../../shared/dispatcher-types';
+import { DispatcherRow } from './sidebar/DispatcherRow';
+import { isDispatcherAgent, useDispatcherAgentId, useDispatcherStore } from '../features/dispatcher/dispatcherStore';
+import { closeDispatcher, openDispatcher } from '../features/dispatcher/dispatcherNav';
 
 /**
  * Sidebar for the new chrome (docs/chrome-redesign-spec.md §2, §4.2): the host
@@ -317,6 +321,11 @@ export function ChromeSidebar() {
   const remoteDetailed = useRemoteProjectStore((s) => s.remoteAgentDetailedStatus);
   const remoteProjectIcons = useRemoteProjectStore((s) => s.remoteProjectIcons);
   const isRemoteHost = activeHostId !== null;
+  // The Dispatcher's pinned row (#2538), while it's turned on.
+  const dispatcherAgentId = useDispatcherAgentId();
+  const dispatcherAgent = dispatcherAgentId ? agents[dispatcherAgentId] : undefined;
+  const dispatcherPath = useDispatcherStore((s) => s.project?.path);
+  const dispatcherShown = useUIStore((s) => s.dispatcherOpen) && !!dispatcherAgent;
 
   // The filter narrows the tree in place (#2031); it applies only while the tree is shown.
   const [filter, setFilter] = useState('');
@@ -417,10 +426,15 @@ export function ChromeSidebar() {
     return out;
   }, [pendingStarts]);
   // Needs you covers every host, so a blocked agent anywhere is one click away.
+  // The Dispatcher is in no project, so its synthetic id is let in on its own (#2538).
+  const needsProjectIds = useMemo(
+    () => (dispatcherAgentId ? new Set([...localProjectIds, DISPATCHER_PROJECT_ID]) : localProjectIds),
+    [localProjectIds, dispatcherAgentId],
+  );
   const needs = useMemo(() => mergeNeedsAttention(
-    selectNeedsAttention(agents, detailed, localProjectIds, disposeRequests, startRequests),
+    selectNeedsAttention(agents, detailed, needsProjectIds, disposeRequests, startRequests),
     selectRemoteNeedsAttention(satellites, satelliteProjects, remoteAgents, remoteDetailed),
-  ), [agents, detailed, localProjectIds, disposeRequests, startRequests, satellites, satelliteProjects, remoteAgents, remoteDetailed]);
+  ), [agents, detailed, needsProjectIds, disposeRequests, startRequests, satellites, satelliteProjects, remoteAgents, remoteDetailed]);
   const needsByHost = useMemo(() => {
     const counts: Record<string, number> = {};
     for (const item of needs) counts[item.hostId ?? LOCAL_HOST] = (counts[item.hostId ?? LOCAL_HOST] ?? 0) + 1;
@@ -438,6 +452,7 @@ export function ChromeSidebar() {
   const openAppItem = useCallback((id: string, params?: AppLaunchParams) => {
     useChromeStore.getState().launchApp(id, params);
     useChromeStore.getState().closeNewAgent();
+    closeDispatcher();
     setExplorerTab(`plugin:app:${id}`);
     reportChromeFeature('app_item_open');
   }, [setExplorerTab]);
@@ -452,14 +467,16 @@ export function ChromeSidebar() {
   const appViewAgentIdRaw = useChromeStore((s) => s.appViewAgentId);
   const appViewAgentId = explorerTab.startsWith('plugin:app:') ? appViewAgentIdRaw : null;
   const appViewProjectId = appViewAgentId ? treeAgents[appViewAgentId]?.projectId ?? null : null;
-  const treeActiveAgentId = isProjectTab ? activeAgentId : appViewAgentId;
-  const treeActiveProjectId = isProjectTab ? activeProjectId : appViewProjectId;
+  // While the Dispatcher's view is open, its row is the selection, not the tree's.
+  const treeActiveAgentId = dispatcherShown ? null : isProjectTab ? activeAgentId : appViewAgentId;
+  const treeActiveProjectId = dispatcherShown ? null : isProjectTab ? activeProjectId : appViewProjectId;
 
   // Selecting a project header makes the project root the scope (spec §4.5).
   // The project's remembered agent is cleared too, so the project-switch effect
   // (App.tsx restoreProjectAgent) doesn't reselect it and end the project scope.
   const selectProject = useCallback((projectId: string) => {
     useChromeStore.getState().closeNewAgent();
+    closeDispatcher();
     setActiveProject(projectId);
     setActiveAgent(null, projectId);
     setProjectScope(projectId);
@@ -473,6 +490,7 @@ export function ChromeSidebar() {
   // An agent on another host switches the host first (a remote Needs you row).
   const openAgent = useCallback((agent: Agent, keepTab: boolean) => requestLeaveAgentSettings(() => {
     useChromeStore.getState().closeNewAgent();
+    closeDispatcher();
     useQuickAgentStore.getState().selectCompleted(null);
     switchHost(hostOf(agent.projectId));
     setProjectScope(null);
@@ -518,6 +536,11 @@ export function ChromeSidebar() {
   }, [openAgent]);
 
   const selectNeedsYou = useCallback((agent: Agent) => {
+    if (isDispatcherAgent(agent)) {
+      openDispatcher();
+      reportChromeFeature('needs_you_select');
+      return;
+    }
     // needs_you_remote_select: the agent runs on a satellite, whichever host is shown.
     const remote = hostOf(agent.projectId) !== null;
     // Selecting a helper's dispose request shows the helper and opens the
@@ -532,6 +555,11 @@ export function ChromeSidebar() {
     }
     reportChromeFeature(remote ? 'needs_you_remote_select' : 'needs_you_select');
   }, [openAgent]);
+
+  const openDispatcherRow = useCallback(() => {
+    openDispatcher();
+    reportChromeFeature('dispatcher_open');
+  }, []);
 
   const onSwitchHost = useCallback((hostId: string | null) => {
     switchHost(hostId);
@@ -551,6 +579,7 @@ export function ChromeSidebar() {
 
   const selectCompleted = useCallback((projectId: string, completedId: string) => {
     useChromeStore.getState().closeNewAgent();
+    closeDispatcher();
     setProjectScope(null);
     if (useProjectStore.getState().activeProjectId !== projectId) setActiveProject(projectId);
     setExplorerTab('agents', projectId);
@@ -649,6 +678,16 @@ export function ChromeSidebar() {
 
       <AppRow inline={inlineItems} overflow={overflowItems} explorerTab={explorerTab} onOpen={openAppItem} />
 
+      {dispatcherAgent && (
+        <DispatcherRow
+          agent={dispatcherAgent}
+          detailed={detailed[dispatcherAgent.id]}
+          active={dispatcherShown}
+          projectPath={dispatcherPath}
+          onSelect={openDispatcherRow}
+        />
+      )}
+
       {mode !== 'tree' && (
         <>
           <SidebarBreadcrumb current={breadcrumbLabel} onBack={backToAgents} />
@@ -682,7 +721,7 @@ export function ChromeSidebar() {
         <NeedsYou
           items={needs}
           projectNames={projectNames}
-          activeAgentId={activeAgentId}
+          activeAgentId={dispatcherShown ? dispatcherAgentId : activeAgentId}
           onSelect={selectNeedsYou}
           onReview={reviewEnabled ? openNeedsYouReview : undefined}
         />
