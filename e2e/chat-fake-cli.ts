@@ -61,6 +61,8 @@ export async function installFakeClis(fixtures: Partial<Record<ChatFixtureCli, s
   return {
     env: {
       CLUBHOUSE_TEST_CLI_BINARIES: JSON.stringify(binaries),
+      // A model picker's live handshake would spawn the fake too and count in its report (#2569).
+      CLUBHOUSE_TEST_NO_MODEL_PROBES: '1',
       [pathKey]: `${binDir}${path.delimiter}${process.env[pathKey] ?? ''}`,
     },
     async report(cli) {

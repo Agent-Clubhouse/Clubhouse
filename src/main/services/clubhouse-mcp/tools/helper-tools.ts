@@ -92,6 +92,7 @@ import {
 } from '../../helper-start-requests';
 import { McpArgError, optionalString } from './validation';
 import { _resetHelperDeliveryForTesting, deliverHelperUpdate, deliverNow } from './helper-delivery';
+import { checkHelperModel } from './model-tools';
 
 // ── Results ──────────────────────────────────────────────────────────────
 
@@ -469,8 +470,8 @@ type StartOutcome =
   /** `message` for the orchestrator's tool result; `reason` to follow "because" in an approval's answer. */
   | { kind: 'refused'; message: string; reason: string }
   | { kind: 'too_many'; waiting: number }
-  | { kind: 'needs_approval'; control: OrchestrationControl; request: HelperStartRequest; reused: boolean }
-  | { kind: 'starting'; helperId: string; name: string; branch?: string; launch: HelperLaunch; project: TargetProject };
+  | { kind: 'needs_approval'; control: OrchestrationControl; request: HelperStartRequest; reused: boolean; modelWarning?: string }
+  | { kind: 'starting'; helperId: string; name: string; branch?: string; launch: HelperLaunch; project: TargetProject; modelWarning?: string };
 
 /** A sentence as the tail of "…because <reason>": its first letter lowered unless it starts an acronym or name. */
 function asReason(text: string): string {
@@ -518,6 +519,21 @@ async function runHelperStart(orchestratorId: string, args: HelperStartArgs, app
   if (!isOrchestrationEnabled(orchestratorId)) return refused('orchestration is off for its orchestrator.');
   const { projectPath: homePath, config: orchestrator } = await resolveCaller(orchestratorId);
   const { name, task, persona, cli, model, access, branchFrom, folder } = args;
+
+  // The model is checked before the start lock: listing models can take a CLI handshake (#2569).
+  let modelWarning: string | undefined;
+  if (model) {
+    let modelProject = homePath;
+    try {
+      modelProject = (await resolveTargetProject(homePath, orchestratorId, args.project)).path;
+    } catch {
+      // telemetry-exempt: a bad project is refused under the lock; check the model with the home profile
+    }
+    const helperCli = cli ?? orchestrator.orchestrator ?? agentRegistry.get(orchestratorId)?.orchestrator;
+    const check = await checkHelperModel(helperCli, model, modelProject);
+    if (check.ok === false) return refused(check.message);
+    modelWarning = check.warning;
+  }
 
   return withStartLock(async (): Promise<StartOutcome> => {
     // Read again under the lock: a turn-off may have run while this waited.
@@ -569,7 +585,7 @@ async function runHelperStart(orchestratorId: string, args: HelperStartArgs, app
         appLog('core:mcp', 'info', 'start_helper needs user approval', {
           meta: { agentId: orchestratorId, control: policy.control, requestId: recorded.request.requestId, reused: recorded.reused, crossProject: target.cross },
         });
-        return { kind: 'needs_approval', control: policy.control, request: recorded.request, reused: recorded.reused };
+        return { kind: 'needs_approval', control: policy.control, request: recorded.request, reused: recorded.reused, ...(modelWarning && { modelWarning }) };
       }
     }
 
@@ -607,7 +623,10 @@ async function runHelperStart(orchestratorId: string, args: HelperStartArgs, app
         approved: approvedIn !== undefined, crossProject: target.cross,
       },
     });
-    return { kind: 'starting', helperId, name: config.name, ...(config.branch && { branch: config.branch }), launch, project: target };
+    return {
+      kind: 'starting', helperId, name: config.name, ...(config.branch && { branch: config.branch }), launch, project: target,
+      ...(modelWarning && { modelWarning }),
+    };
   });
 }
 
@@ -633,6 +652,7 @@ async function startHelper(agentId: string, args: Record<string, unknown>): Prom
         control: outcome.control,
         ...(outcome.reused && { reused: true }),
         expiresAt: outcome.request.expiresAt,
+        ...(outcome.modelWarning && { modelWarning: outcome.modelWarning }),
         message:
           (outcome.reused ? 'You already asked for this start, and it is still waiting. ' : '') +
           'This agent is set to ask the user before starting helpers, so nothing was created yet. ' +
@@ -648,6 +668,7 @@ async function startHelper(agentId: string, args: Record<string, unknown>): Prom
         ...(outcome.project.cross && { projectPath: outcome.project.path }),
         ...(outcome.branch && { branch: outcome.branch }),
         access: outcome.launch.level,
+        ...(outcome.modelWarning && { modelWarning: outcome.modelWarning }),
         ...(outcome.launch.clamped && { accessNote: `Access lowered to ${outcome.launch.level}: a helper never gets more than you run with or than its CLI allows at that level.` }),
         message:
           `Helper "${outcome.name}" is being created${outcome.project.cross ? ` in ${outcome.project.name}` : ''}. Its worktree can take up to a minute; ` +
@@ -1083,7 +1104,12 @@ export function registerHelperTools(): void {
           task: { type: 'string', description: 'The task, sent as the helper\'s first message.' },
           persona: { type: 'string', description: 'Optional persona id to apply, from the project the helper is created in.' },
           cli: { type: 'string', description: 'Optional CLI provider id (e.g. claude-code, codex-cli, copilot-cli). Defaults to yours.' },
-          model: { type: 'string', description: 'Optional model for the helper.' },
+          model: {
+            type: 'string',
+            description:
+              'Optional model for the helper: an id from list_models for the helper\'s CLI (or an alias that CLI accepts). ' +
+              'Refused if the CLI\'s live list doesn\'t have it; only warned if Clubhouse fell back to a list that may be stale.',
+          },
           access: { type: 'string', enum: ['same', ...ACCESS_LEVELS], description: 'Access level: same (default) or a lower one. Never more than yours.' },
           branchFrom: { type: 'string', description: 'Optional branch or commit the helper\'s branch starts from. Defaults to HEAD.' },
           folder: { type: 'string', description: 'Optional folder name under .clubhouse/agents/. Defaults to the name.' },

@@ -326,6 +326,50 @@ export function supportsAutoResumeAfterUpdate(provider: OrchestratorProvider | C
   return isSessionCapable(provider as OrchestratorProvider);
 }
 
+// ── Model catalog (#2569) ──────────────────────────────────────────────────
+
+/** One model a CLI accepts for `--model`, as listed by the CLI itself where it can. */
+export interface ModelInfo {
+  /** What to pass as the model (start_helper's `model`, the CLI's `--model`). */
+  id: string;
+  label: string;
+  description?: string;
+  /** The CLI's own default model. */
+  isDefault?: boolean;
+  /** Reasoning effort levels the model takes, when the CLI reports them per model. */
+  efforts?: string[];
+  /** Hidden from the CLI's own picker, but still accepted. */
+  hidden?: boolean;
+  /** Relative cost the CLI reports (e.g. Copilot's "0.33x"). */
+  costHint?: string;
+  /** Other names the CLI resolves this entry to (e.g. Claude's `opus` → `claude-opus-5-5`). */
+  resolvedId?: string;
+}
+
+/**
+ * Where a model list came from. `live`: the CLI's own handshake (no prompt is
+ * sent). `fallback`: the older `command` probe (`codex debug models`,
+ * `copilot --help`) or the `static` list shipped with Clubhouse, either of
+ * which can be stale.
+ */
+export type ModelListSource = 'live' | 'fallback';
+
+export interface ModelList {
+  models: ModelInfo[];
+  source: ModelListSource;
+  via: 'handshake' | 'command' | 'static';
+  /** Why the live handshake wasn't used, when it failed. */
+  liveError?: string;
+  fetchedAt: number;
+}
+
+export interface ListModelsOptions {
+  /** Profile env (CLAUDE_CONFIG_DIR, CODEX_HOME…): a profile can change login and so the list. */
+  env?: Record<string, string>;
+  /** Skip the cache and probe again. */
+  refresh?: boolean;
+}
+
 // ── Core Interface ──────────────────────────────────────────────────────────
 
 export interface OrchestratorProvider {
@@ -352,7 +396,16 @@ export interface OrchestratorProvider {
   readonly conventions: OrchestratorConventions;
 
   // UI helpers
-  getModelOptions(): Promise<Array<{ id: string; label: string }>>;
+  getModelOptions(opts?: ListModelsOptions): Promise<Array<{ id: string; label: string }>>;
+  /**
+   * The models the CLI accepts, from its own handshake where it has one, else
+   * the older probe, else the static list; `source` says which. Probes run
+   * in an empty temp dir, so the list reflects the CLI's user-level settings,
+   * never a project's. Cached per profile env for about ten minutes.
+   */
+  listModels?(opts?: ListModelsOptions): Promise<ModelList>;
+  /** Whether the CLI accepts `model`, given a list from listModels (aliases included). */
+  acceptsModel?(model: string, list: ModelList): boolean;
   getDefaultPermissions(kind: 'durable' | 'quick'): string[];
   toolVerb(toolName: string): string | undefined;
 

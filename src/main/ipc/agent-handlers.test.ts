@@ -828,6 +828,15 @@ describe('agent-handlers', () => {
     expect(result).toEqual([{ id: 'default', label: 'Default' }]);
   });
 
+  it('GET_MODEL_OPTIONS lists models under the project\'s profile env', async () => {
+    const getModelOptions = vi.fn(async () => [{ id: 'default', label: 'Default' }]);
+    vi.mocked(agentSystem.resolveOrchestrator).mockResolvedValueOnce({ id: 'codex-cli', getModelOptions } as never);
+    vi.mocked(agentSystem.resolveProfileEnv).mockResolvedValueOnce({ CODEX_HOME: 'profile-home' });
+    await handlers.get(IPC.AGENT.GET_MODEL_OPTIONS)!({}, '/project', 'codex-cli');
+    expect(agentSystem.resolveProfileEnv).toHaveBeenCalledWith('/project', 'codex-cli');
+    expect(getModelOptions).toHaveBeenCalledWith({ env: { CODEX_HOME: 'profile-home' } });
+  });
+
   it('CHECK_ORCHESTRATOR delegates to agentSystem.checkAvailability', async () => {
     const handler = handlers.get(IPC.AGENT.CHECK_ORCHESTRATOR)!;
     const result = await handler({}, '/project', 'claude-code');

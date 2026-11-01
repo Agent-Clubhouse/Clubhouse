@@ -1,4 +1,5 @@
 import * as fsp from 'fs/promises';
+import * as os from 'os';
 import * as path from 'path';
 import { execFile } from 'child_process';
 import { promisify } from 'util';
@@ -9,9 +10,14 @@ import type {
   PasteSubmitTiming,
   SpawnOpts,
   SpawnCommandResult,
+  ListModelsOptions,
+  ModelInfo,
+  ModelList,
 } from './types';
-import { findBinaryInPath, testBinaryOverride } from './shared';
+import { findBinaryInPath, testBinaryOverride, testModelProbesDisabled } from './shared';
 import { getShellEnvironment } from '../util/shell';
+import type { ModelProbeContext } from './model-probes';
+import { appLog } from '../services/log-service';
 
 const execFileAsync = promisify(execFile);
 
@@ -29,6 +35,13 @@ export interface ModelFetchConfig {
   /** Timeout in ms (default: 5000) */
   timeout?: number;
 }
+
+/** How long a live model list is reused before the CLI is asked again. */
+export const MODEL_LIST_TTL_MS = 10 * 60_000;
+/** A fallback list is retried sooner: the live source may have been briefly unavailable. */
+export const FALLBACK_MODEL_LIST_TTL_MS = 60_000;
+/** Deadline for a live model handshake, after which the probe is killed. */
+export const MODEL_PROBE_TIMEOUT_MS = 10_000;
 
 /**
  * Abstract base class for orchestrator providers.
@@ -87,6 +100,15 @@ export abstract class BaseProvider implements OrchestratorProvider {
    */
   protected readonly modelFetchConfig?: ModelFetchConfig;
 
+  /**
+   * Optional live model source: the CLI's own handshake (model-probes.ts).
+   * Must never send a prompt. Return null when the CLI listed nothing.
+   */
+  protected probeLiveModels?(ctx: ModelProbeContext): Promise<ModelInfo[] | null>;
+
+  private readonly modelCache = new Map<string, { list: ModelList; expires: number }>();
+  private readonly modelLoads = new Map<string, Promise<ModelList>>();
+
   // ── Abstract: must be implemented by each provider ────────────────────
 
   abstract getCapabilities(): ProviderCapabilities;
@@ -140,23 +162,106 @@ export abstract class BaseProvider implements OrchestratorProvider {
     await fsp.writeFile(filePath, content, 'utf-8');
   }
 
-  /** Get available model options, with optional dynamic fetching */
-  async getModelOptions(): Promise<Array<{ id: string; label: string }>> {
+  /** Model options for the pickers: listModels without hidden models, as `{ id, label }`. */
+  async getModelOptions(opts?: ListModelsOptions): Promise<Array<{ id: string; label: string }>> {
+    const { models } = await this.listModels(opts);
+    return models.filter((m) => !m.hidden).map(({ id, label }) => ({ id, label }));
+  }
+
+  /**
+   * The models this CLI accepts: its live handshake, else the older command
+   * probe, else the static list. Cached per profile env; concurrent
+   * callers share one probe.
+   */
+  async listModels(opts: ListModelsOptions = {}): Promise<ModelList> {
+    const key = JSON.stringify(Object.entries(opts.env ?? {}).sort());
+    const cached = this.modelCache.get(key);
+    if (cached && !opts.refresh && cached.expires > Date.now()) return copyModelList(cached.list);
+    let load = this.modelLoads.get(key);
+    if (!load) {
+      load = this.loadModels(opts).finally(() => this.modelLoads.delete(key));
+      this.modelLoads.set(key, load);
+    }
+    const list = await load;
+    const ttl = list.source === 'live' ? MODEL_LIST_TTL_MS : FALLBACK_MODEL_LIST_TTL_MS;
+    this.modelCache.set(key, { list, expires: list.fetchedAt + ttl });
+    return copyModelList(list);
+  }
+
+  /** Whether the CLI accepts `model`: a listed id, or `default`. Providers add their own aliases. */
+  acceptsModel(model: string, list: ModelList): boolean {
+    return model === 'default' || list.models.some((m) => m.id === model);
+  }
+
+  private async loadModels(opts: ListModelsOptions): Promise<ModelList> {
+    let liveError: string | undefined;
+    if (this.probeLiveModels && !testModelProbesDisabled()) {
+      try {
+        const models = await this.runLiveProbe(opts);
+        if (models?.length) return { models, source: 'live', via: 'handshake', fetchedAt: Date.now() };
+        liveError = 'the CLI listed no models';
+      } catch (err) {
+        liveError = err instanceof Error ? err.message : String(err);
+      }
+      appLog('core:orchestrator', 'warn', 'Live model list unavailable; using the fallback', {
+        meta: { provider: this.id, error: liveError },
+      });
+    }
+    const fallback = (via: ModelList['via'], models: ModelInfo[]): ModelList => ({
+      models, source: 'fallback', via, fetchedAt: Date.now(), ...(liveError && { liveError }),
+    });
     if (this.modelFetchConfig) {
       try {
         const binary = this.findBinary();
         const { stdout } = await execFileAsync(binary, this.modelFetchConfig.args, {
           timeout: this.modelFetchConfig.timeout ?? 5000,
           shell: process.platform === 'win32',
-          env: getShellEnvironment(),
+          env: { ...getShellEnvironment(), ...opts.env },
         });
         const parsed = this.modelFetchConfig.parser(stdout);
-        if (parsed) return parsed;
+        if (parsed) return fallback('command', parsed);
       } catch {
         // Fall back to static list
       }
     }
-    return [...this.fallbackModelOptions];
+    return fallback('static', this.fallbackModelOptions.map((m) => ({ ...m })));
+  }
+
+  /**
+   * Run the probe in a fresh empty temp dir, removed once the probe has
+   * settled: a project or the home dir could carry a CLAUDE.md, .claude,
+   * .codex or hooks that load as if it were a project. User-level settings
+   * still apply.
+   */
+  private async runLiveProbe(opts: ListModelsOptions): Promise<ModelInfo[] | null> {
+    const binary = this.findBinary();
+    const cwd = await fsp.mkdtemp(path.join(os.tmpdir(), 'clubhouse-models-'));
+    const controller = new AbortController();
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const deadline = new Promise<never>((_, reject) => {
+      timer = setTimeout(() => {
+        controller.abort();
+        reject(new Error(`model handshake timed out after ${MODEL_PROBE_TIMEOUT_MS}ms`));
+      }, MODEL_PROBE_TIMEOUT_MS);
+    });
+    const probe = this.probeLiveModels!({
+      binary,
+      cwd,
+      env: opts.env,
+      signal: controller.signal,
+      timeoutMs: MODEL_PROBE_TIMEOUT_MS,
+      log: (level, message, meta) => appLog('core:orchestrator', level === 'info' ? 'debug' : level, `[models:${this.id}] ${message}`, { meta }),
+    });
+    // After a timeout the killed probe may still be exiting; remove the dir once it has.
+    void probe.catch((): null => null).finally(() => fsp.rm(cwd, { recursive: true, force: true, maxRetries: 3, retryDelay: 100 }).catch((err: unknown) => {
+      // telemetry-exempt: an empty temp dir left behind; logged
+      appLog('core:orchestrator', 'debug', 'Could not remove the model probe dir', { meta: { provider: this.id, error: err instanceof Error ? err.message : String(err) } });
+    }));
+    try {
+      return await Promise.race([probe, deadline]);
+    } finally {
+      clearTimeout(timer);
+    }
   }
 
   /** Get default permission sets */
@@ -185,4 +290,8 @@ export abstract class BaseProvider implements OrchestratorProvider {
       postEndMarkerDelayMs: 150,
     };
   }
+}
+
+function copyModelList(list: ModelList): ModelList {
+  return { ...list, models: list.models.map((m) => ({ ...m, ...(m.efforts && { efforts: [...m.efforts] }) })) };
 }

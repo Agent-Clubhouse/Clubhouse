@@ -499,6 +499,8 @@ export const ATTR = {
     'start_helper', 'list_helpers', 'sleep_helper', 'wake_helper', 'message_parent',
     // helpers in other projects (#2515)
     'list_projects',
+    // models per CLI (#2569)
+    'list_models',
     // helper questions (#2366)
     'answer_helper_question',
     // the Dispatcher (#2536)

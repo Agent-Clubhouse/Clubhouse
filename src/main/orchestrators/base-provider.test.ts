@@ -1,4 +1,5 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import * as os from 'os';
 import * as path from 'path';
 
 vi.mock('fs', () => ({
@@ -14,6 +15,8 @@ vi.mock('fs/promises', () => ({
   mkdir: vi.fn(async () => {}),
   stat: vi.fn(async () => ({ isDirectory: () => true })),
   realpath: vi.fn(async (p: string) => p),
+  mkdtemp: vi.fn(async (prefix: string) => `${prefix}abc123`),
+  rm: vi.fn(async () => {}),
 }));
 
 vi.mock('child_process', () => ({
@@ -31,12 +34,14 @@ vi.mock('../util/shell', () => ({
 
 import * as fs from 'fs';
 import * as fsp from 'fs/promises';
-import { BaseProvider } from './base-provider';
+import { BaseProvider, FALLBACK_MODEL_LIST_TTL_MS, MODEL_LIST_TTL_MS, MODEL_PROBE_TIMEOUT_MS } from './base-provider';
+import type { ModelProbeContext } from './model-probes';
 import type {
   ProviderCapabilities,
   SpawnOpts,
   SpawnCommandResult,
   OrchestratorConventions,
+  ModelInfo,
 } from './types';
 
 // ── Concrete test subclass ────────────────────────────────────────────────
@@ -366,5 +371,171 @@ describe('BaseProvider', () => {
       expect(a).not.toBe(b);
       expect(a).toEqual(b);
     });
+  });
+});
+
+// ── listModels (#2569) ────────────────────────────────────────────────────
+
+class TestProviderWithLiveModels extends TestProviderWithModelFetch {
+  probe = vi.fn(async (_ctx: ModelProbeContext): Promise<ModelInfo[] | null> => [
+    { id: 'default', label: 'Default', isDefault: true },
+    { id: 'live-a', label: 'Live A', efforts: ['low', 'high'] },
+    { id: 'live-secret', label: 'Secret', hidden: true },
+  ]);
+  protected probeLiveModels(ctx: ModelProbeContext) {
+    return this.probe(ctx);
+  }
+}
+
+describe('BaseProvider.listModels', () => {
+  let provider: TestProviderWithLiveModels;
+
+  beforeEach(async () => {
+    vi.mocked(fs.existsSync).mockImplementation((p) => isBinaryPath(String(p)));
+    const { execFile } = await import('child_process');
+    vi.mocked(execFile).mockReset();
+    vi.mocked(execFile).mockImplementation(() => { throw new Error('not found'); });
+    provider = new TestProviderWithLiveModels();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it('uses the live handshake and marks it live', async () => {
+    const list = await provider.listModels();
+    expect(list.source).toBe('live');
+    expect(list.via).toBe('handshake');
+    expect(list.models.map((m) => m.id)).toEqual(['default', 'live-a', 'live-secret']);
+    expect(provider.probe).toHaveBeenCalledWith(expect.objectContaining({
+      binary: expect.stringContaining('test-cli'),
+      timeoutMs: MODEL_PROBE_TIMEOUT_MS,
+    }));
+  });
+
+  it('getModelOptions reads the live list without hidden models, as { id, label }', async () => {
+    expect(await provider.getModelOptions()).toEqual([
+      { id: 'default', label: 'Default' },
+      { id: 'live-a', label: 'Live A' },
+    ]);
+  });
+
+  it('skips the handshake when E2E turns probes off in an unpackaged build', async () => {
+    vi.stubEnv('CLUBHOUSE_TEST_NO_MODEL_PROBES', '1');
+    try {
+      const list = await provider.listModels();
+      expect(provider.probe).not.toHaveBeenCalled();
+      expect(list).toMatchObject({ source: 'fallback', via: 'static' });
+      expect(list.liveError).toBeUndefined();
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
+
+  it('falls back to the command probe when the handshake fails, and says why', async () => {
+    provider.probe.mockRejectedValueOnce(new Error('not logged in'));
+    const { execFile } = await import('child_process');
+    vi.mocked(execFile).mockReturnValue({ stdout: 'cmd-model\n', stderr: '' } as any);
+    const list = await provider.listModels();
+    expect(list).toMatchObject({ source: 'fallback', via: 'command', liveError: 'not logged in' });
+    expect(list.models.map((m) => m.id)).toEqual(['default', 'cmd-model']);
+  });
+
+  it('falls back to the static list when the handshake and the command both fail', async () => {
+    provider.probe.mockResolvedValueOnce(null);
+    const list = await provider.listModels();
+    expect(list).toMatchObject({ source: 'fallback', via: 'static', liveError: 'the CLI listed no models' });
+    expect(list.models.map((m) => m.id)).toEqual(['default', 'model-a', 'model-b']);
+  });
+
+  it('a provider without a live source reports the static list as a fallback, with no live error', async () => {
+    const list = await new TestProvider().listModels();
+    expect(list).toMatchObject({ source: 'fallback', via: 'static' });
+    expect(list.liveError).toBeUndefined();
+  });
+
+  it('caches per profile env, and refresh probes again', async () => {
+    await provider.listModels();
+    await provider.listModels();
+    expect(provider.probe).toHaveBeenCalledTimes(1);
+    await provider.listModels({ env: { TEST_CONFIG_DIR: 'profile-dir' } });
+    expect(provider.probe).toHaveBeenCalledTimes(2);
+    await provider.listModels({ refresh: true });
+    expect(provider.probe).toHaveBeenCalledTimes(3);
+  });
+
+  it('passes the profile env to the probe', async () => {
+    await provider.listModels({ env: { TEST_CONFIG_DIR: 'profile-dir' } });
+    expect(provider.probe).toHaveBeenCalledWith(expect.objectContaining({ env: { TEST_CONFIG_DIR: 'profile-dir' } }));
+  });
+
+  it('runs the probe in a fresh temp dir and removes it afterwards, never a project or home', async () => {
+    await provider.listModels();
+    const cwd = provider.probe.mock.calls[0][0].cwd;
+    expect(fsp.mkdtemp).toHaveBeenCalledWith(path.join(os.tmpdir(), 'clubhouse-models-'));
+    expect(cwd).toBe(path.join(os.tmpdir(), 'clubhouse-models-abc123'));
+    expect(cwd).not.toBe(os.homedir());
+    await vi.waitFor(() => expect(fsp.rm).toHaveBeenCalledWith(cwd, expect.objectContaining({ recursive: true, force: true })));
+  });
+
+  it('removes the temp dir when the probe fails too', async () => {
+    provider.probe.mockRejectedValueOnce(new Error('not logged in'));
+    await provider.listModels();
+    await vi.waitFor(() => expect(fsp.rm).toHaveBeenCalledWith(path.join(os.tmpdir(), 'clubhouse-models-abc123'), expect.anything()));
+  });
+
+  it('shares one probe between concurrent callers', async () => {
+    const [a, b] = await Promise.all([provider.listModels(), provider.listModels()]);
+    expect(provider.probe).toHaveBeenCalledTimes(1);
+    expect(a).toEqual(b);
+  });
+
+  it('hands out copies, so a caller cannot change the cache', async () => {
+    const first = await provider.listModels();
+    first.models[1].efforts!.push('max');
+    first.models.pop();
+    const second = await provider.listModels();
+    expect(second.models).toHaveLength(3);
+    expect(second.models[1].efforts).toEqual(['low', 'high']);
+  });
+
+  it('keeps a live list for ten minutes and a fallback for one', async () => {
+    vi.useFakeTimers();
+    await provider.listModels();
+    vi.advanceTimersByTime(MODEL_LIST_TTL_MS - 1000);
+    await provider.listModels();
+    expect(provider.probe).toHaveBeenCalledTimes(1);
+    vi.advanceTimersByTime(2000);
+    await provider.listModels();
+    expect(provider.probe).toHaveBeenCalledTimes(2);
+
+    provider.probe.mockResolvedValue(null);
+    await provider.listModels({ env: { TEST_CONFIG_DIR: 'other' } });
+    vi.advanceTimersByTime(FALLBACK_MODEL_LIST_TTL_MS + 1000);
+    await provider.listModels({ env: { TEST_CONFIG_DIR: 'other' } });
+    expect(provider.probe).toHaveBeenCalledTimes(4);
+  });
+
+  it('aborts a handshake that runs past the deadline and falls back', async () => {
+    vi.useFakeTimers();
+    let signal: AbortSignal | undefined;
+    provider.probe.mockImplementationOnce((ctx) => {
+      signal = ctx.signal;
+      return new Promise(() => {});
+    });
+    const pending = provider.listModels();
+    await vi.advanceTimersByTimeAsync(MODEL_PROBE_TIMEOUT_MS + 10);
+    const list = await pending;
+    expect(signal?.aborted).toBe(true);
+    expect(list.source).toBe('fallback');
+    expect(list.liveError).toMatch(/timed out/);
+  });
+
+  it('acceptsModel takes a listed id or default', async () => {
+    const list = await provider.listModels();
+    expect(provider.acceptsModel('live-a', list)).toBe(true);
+    expect(provider.acceptsModel('live-secret', list)).toBe(true);
+    expect(provider.acceptsModel('default', list)).toBe(true);
+    expect(provider.acceptsModel('live-b', list)).toBe(false);
   });
 });
