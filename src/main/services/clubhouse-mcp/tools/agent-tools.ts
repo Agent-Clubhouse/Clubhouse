@@ -5,7 +5,7 @@
 import * as fsp from 'fs/promises';
 import * as path from 'path';
 import { app } from 'electron';
-import { buildToolName } from '../tool-registry';
+import { buildToolName, callTool, keepsFirstToolList, registerGlobalTool } from '../tool-registry';
 import { mcpAdapter } from '../mcp-adapter';
 import { bindingManager } from '../binding-manager';
 import { isDispatcherAgent, isTrackedDispatcher } from '../dispatcher-gate';
@@ -54,7 +54,11 @@ function buildTaggedMessage(agentId: string, targetId: string, message: string, 
   // If bidirectional, append reply instructions so the target knows how to respond
   if (reverseBinding) {
     const replyToolName = buildToolName(reverseBinding, 'send_message');
-    text += `\n\n---\nReply to ${senderName} via tool "${replyToolName}" with task_id="${taskId}". ` +
+    // A CLI with a fixed tool list doesn't have this tool if the wire is newer than its session.
+    const fallback = keepsFirstToolList(targetId)
+      ? `If you don't have that tool, use call_wire_tool with target="${agentId}" and tool="send_message". `
+      : '';
+    text += `\n\n---\nReply to ${senderName} via tool "${replyToolName}" with task_id="${taskId}". ${fallback}` +
       `Prefix your response with TASK_RESULT:${taskId}.`;
   }
   return { text, senderLabel, targetName, isBidirectional: !!reverseBinding };
@@ -524,7 +528,7 @@ export function registerAgentTools(): void {
     label: 'Wake Agent',
     mcp: { targetKind: 'agent', nameSuffix: 'wake_agent', group: 'dispatcher' },
     description:
-      'Wake the linked agent, which is sleeping. It resumes its last session when it has one, at its own access level.\n\n' +
+      'Wake the linked agent if it is sleeping. It resumes its last session when it has one, at its own access level.\n\n' +
       'An optional message is delivered as its first prompt, tagged like send_message, so include what to do and why. ' +
       'The result says whether it is running, already_running, starting or still stopping, and, ' +
       'when you sent a message, messageDelivered.',
@@ -553,7 +557,7 @@ export function registerAgentTools(): void {
     label: 'Sleep Agent',
     mcp: { targetKind: 'agent', nameSuffix: 'sleep_agent', group: 'dispatcher' },
     description:
-      'Put the linked agent to sleep. Returns once it has stopped. Its session stays; wake_agent resumes it.\n\n' +
+      'Put the linked agent to sleep. Returns once it has stopped, or already_sleeping if it was. Its session stays; wake_agent resumes it.\n\n' +
       'Without force, this refuses a chat agent that is mid-turn and any terminal agent, whose turn state is unknown. ' +
       'Only use force when losing the turn in progress is fine, and ask the user if you are not sure. ' +
       'Running helpers of the agent are listed in the result; they keep running.',
@@ -572,4 +576,37 @@ export function registerAgentTools(): void {
     },
   });
 
+  registerGlobalTool(
+    'call_wire_tool',
+    {
+      description:
+        'Call a tool of one of your wires by the id of what it connects to. Your CLI reads its tool list once, ' +
+        'when your session starts, so a wire added later (a helper you started, a newly connected agent) ' +
+        'has no tools of its own in your list. The next session lists them. A wrong target lists your wires.',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          target: { type: 'string', description: 'The id on the other end of the wire, such as an agent id or helper id.' },
+          tool: { type: 'string', description: 'The tool to call, without its prefix: send_message, read_output, get_status and so on.' },
+          arguments: { type: 'object', description: 'The tool\'s arguments.' },
+        },
+        required: ['target', 'tool'],
+      },
+    },
+    async (agentId, args): Promise<McpToolResult> => {
+      const bindings = bindingManager.getBindingsForAgent(agentId);
+      const binding = bindings.find((b) => b.targetId === args.target);
+      if (!binding) {
+        const wires = bindings.map((b) => `${b.targetName || b.label} (${b.targetId})`).join(', ') || 'none';
+        return { content: [{ type: 'text', text: `You have no wire to ${String(args.target)}. Your wires: ${wires}.` }], isError: true };
+      }
+      const tool = String(args.tool);
+      // The listing drops these, and callTool only checks them for group projects.
+      if (binding.disabledTools?.includes(tool)) {
+        return { content: [{ type: 'text', text: `${tool} is turned off on this wire.` }], isError: true };
+      }
+      return callTool(agentId, buildToolName(binding, tool), (args.arguments as Record<string, unknown>) ?? {});
+    },
+    { group: 'fixedToolList' },
+  );
 }

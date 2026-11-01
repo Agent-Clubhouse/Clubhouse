@@ -12,10 +12,20 @@ import { appLog } from '../log-service';
 import { isCrossProjectEnabled, isOrchestrationEnabled, onOrchestrationGateChange } from './orchestration-gate';
 import { isDispatcherAgent, isTrackedDispatcher } from './dispatcher-gate';
 import { CROSS_PROJECT_OFF_MESSAGE, ORCHESTRATION_OFF_MESSAGE } from '../../../shared/orchestration-policy';
+import { getProvider } from '../../orchestrators';
 
 /** The refusal a Dispatcher tool returns for any other agent. */
 export const DISPATCHER_ONLY_MESSAGE = 'Only the Dispatcher can use this tool.';
 import type { McpRefusalReason } from '../../telemetry/agent-signals';
+
+/**
+ * Whether the agent's CLI keeps the tool list it read at session start (#2603).
+ * An agent that isn't tracked gets the listing of a CLI that refreshes.
+ */
+export function keepsFirstToolList(agentId: string): boolean {
+  const orchestrator = agentRegistry.get(agentId)?.orchestrator;
+  return !!orchestrator && !!getProvider(orchestrator)?.getCapabilities().ignoresToolListChanged;
+}
 
 /** Check if a value matches a JSON Schema type (handles array vs object correctly). */
 function matchesJsonSchemaType(value: unknown, schemaType: string): boolean {
@@ -35,10 +45,12 @@ function matchesJsonSchemaType(value: unknown, schemaType: string): boolean {
  * - `dispatcher` (#2536): the Dispatcher's tools, on only for the running
  *   Dispatcher while it is turned on. The two groups above are never on for
  *   the Dispatcher, whatever its policy says.
+ * - `fixedToolList` (#2603): the way to a wire added after the session started,
+ *   on for agents whose CLI never re-reads its tool list.
  *
  * A tool may name several groups; it is available when any of them is on.
  */
-export type ToolGroup = 'orchestration' | 'crossProject' | 'dispatcher';
+export type ToolGroup = 'orchestration' | 'crossProject' | 'dispatcher' | 'fixedToolList';
 
 /** One group, or several (any one of them opens the tool). */
 export type ToolGroups = ToolGroup | readonly ToolGroup[];
@@ -58,6 +70,10 @@ const toolGroupGates: Record<ToolGroup, ToolGroupGate> = {
     refusal: CROSS_PROJECT_OFF_MESSAGE,
   },
   dispatcher: { isEnabled: isDispatcherAgent, refusal: DISPATCHER_ONLY_MESSAGE },
+  fixedToolList: {
+    isEnabled: keepsFirstToolList,
+    refusal: 'Your CLI refreshes its tool list, so call the wire\'s own tools instead.',
+  },
 };
 
 function groupList(group: ToolGroups): readonly ToolGroup[] {
@@ -150,7 +166,12 @@ export function clearTargetToolTemplates(targetKind: BindingTargetKind, targetId
   invalidateToolListCache();
 }
 
-/** The only tools a sleeping agent target lists. wake_agent is listed for nothing else. */
+/**
+ * The only tools a sleeping agent target lists, and wake_agent is listed for
+ * nothing else, unless the caller's CLI never re-reads its list: then every
+ * tool is listed whatever the target's state, and the handlers answer a target
+ * in the wrong state (#2603).
+ */
 const SLEEPING_TARGET_TOOLS: ReadonlySet<string> = new Set(['get_status', 'wake_agent']);
 
 /**
@@ -345,11 +366,13 @@ function wakeKey(bindings: McpBinding[]): string {
 /**
  * Get the scoped tool list for an agent based on its current bindings.
  * Results are cached and invalidated when bindings change or a target wakes or sleeps.
+ * A target's state doesn't change the list of a CLI that keeps its first one.
  */
 export function getScopedToolList(agentId: string): McpToolDefinition[] {
   const currentVersion = bindingManager.getVersion();
   const bindings = bindingManager.getBindingsForAgent(agentId);
-  const currentWakeKey = wakeKey(bindings);
+  const allWireTools = keepsFirstToolList(agentId);
+  const currentWakeKey = allWireTools ? 'all' : wakeKey(bindings);
   const cached = toolListCache.get(agentId);
   if (cached && cached.bindingVersion === currentVersion && cached.wakeKey === currentWakeKey) {
     return cached.tools;
@@ -362,7 +385,8 @@ export function getScopedToolList(agentId: string): McpToolDefinition[] {
     if (!templates) continue;
 
     // When target agent is sleeping (not in registry), only expose status and wake tools.
-    const isTargetSleeping = binding.targetKind === 'agent' && !agentRegistry.get(binding.targetId);
+    const followsTargetState = binding.targetKind === 'agent' && !allWireTools;
+    const isTargetSleeping = followsTargetState && !agentRegistry.get(binding.targetId);
 
     // For group projects, the project's admin role governs the privileged
     // toolset (admins get them, non-admins don't), combined with any per-wire
@@ -379,7 +403,7 @@ export function getScopedToolList(agentId: string): McpToolDefinition[] {
       if (isTargetSleeping && !SLEEPING_TARGET_TOOLS.has(template.nameSuffix)) {
         continue;
       }
-      if (binding.targetKind === 'agent' && !isTargetSleeping && template.nameSuffix === 'wake_agent') {
+      if (followsTargetState && !isTargetSleeping && template.nameSuffix === 'wake_agent') {
         continue;
       }
 

@@ -45,6 +45,7 @@ vi.mock('../../util/ipc-broadcast', () => ({
 import * as bridgeServer from './bridge-server';
 import { appLog } from '../log-service';
 import { bindingManager } from './binding-manager';
+import { registerBuiltinProviders } from '../../orchestrators';
 import { registerToolTemplate, registerGlobalTool, buildToolName, _resetForTesting as resetTools } from './tool-registry';
 import { setOrchestrationEnabled, _resetOrchestrationGateForTesting } from './orchestration-gate';
 import { IPC } from '../../../shared/ipc-channels';
@@ -692,6 +693,33 @@ describe('BridgeServer', () => {
       expect(unrelated.chunks.join('')).not.toContain('list_changed');
       stream.close();
       unrelated.close();
+      mockAgentRegistryGet.mockReset();
+    });
+
+    it('a client that lists once can call a tool of a target that was sleeping at session start (#2603)', async () => {
+      registerBuiltinProviders();
+      const handler = vi.fn().mockResolvedValue({ content: [{ type: 'text', text: 'sent' }] });
+      registerToolTemplate('agent', 'send_message', { description: 'Send', inputSchema: { type: 'object' } }, handler);
+      registerToolTemplate('agent', 'get_status', { description: 'Status', inputSchema: { type: 'object' } }, vi.fn());
+      bindingManager.bind('agent-1', { targetId: 'agent-2', targetKind: 'agent', label: 'A2' });
+      const awake = new Set<string>();
+      mockAgentRegistryGet.mockImplementation((id: string) =>
+        id === 'agent-1' || awake.has(id) ? { runtime: 'chat', projectPath: '/test', orchestrator: 'codex-cli' } : undefined,
+      );
+      const sid = await initialize();
+      const headers = { ...NONCE, 'Mcp-Session-Id': sid };
+      // The one tools/list a Codex session makes, with the target asleep.
+      const listed = JSON.parse((await rawRequest(port, 'POST', '/mcp/agent-1', headers, { jsonrpc: '2.0', id: 2, method: 'tools/list' })).body).result.tools.map((t: { name: string }) => t.name);
+      const send = listed.find((n: string) => n.endsWith('__send_message'));
+      expect(send).toBeDefined();
+
+      awake.add('agent-2');
+      emitAuthChange('agent-2');
+      for (const id of [3, 4]) {
+        const res = await rawRequest(port, 'POST', '/mcp/agent-1', headers, { jsonrpc: '2.0', id, method: 'tools/call', params: { name: send, arguments: { message: 'hi' } } });
+        expect(JSON.parse(res.body).result.content[0].text).toBe('sent');
+      }
+      expect(handler).toHaveBeenCalledTimes(2);
       mockAgentRegistryGet.mockReset();
     });
 

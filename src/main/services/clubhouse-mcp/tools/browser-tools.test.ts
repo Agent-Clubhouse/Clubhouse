@@ -31,6 +31,7 @@ vi.mock('../../log-service', () => ({
 }));
 
 vi.mock('../../agent-registry', () => ({
+  agentRegistry: { get: vi.fn() },
   getAgentNonce: vi.fn(),
 }));
 

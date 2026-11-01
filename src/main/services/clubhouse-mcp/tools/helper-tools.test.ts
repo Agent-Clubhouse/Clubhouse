@@ -154,6 +154,7 @@ vi.mock('../../../orchestrators', () => ({
   getProvider: (id: string) => (['claude-code', 'codex-cli', 'copilot-cli'].includes(id)
     ? {
       id,
+      getCapabilities: () => ({}),
       ...(modelLists.has(id) && { listModels: async () => modelLists.get(id) }),
       ...(id === 'claude-code' && { acceptsModel: (m: string, l: ModelList) => claudeAcceptsModel(m, l) }),
     }

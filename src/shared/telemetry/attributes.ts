@@ -496,7 +496,7 @@ export const ATTR = {
     // orchestration: hand off and dispose (#2229)
     'hand_off', 'dispose_helper',
     // helpers (#2227)
-    'start_helper', 'list_helpers', 'sleep_helper', 'wake_helper', 'message_parent',
+    'start_helper', 'list_helpers', 'sleep_helper', 'wake_helper', 'message_parent', 'call_wire_tool',
     // helpers in other projects (#2515)
     'list_projects',
     // models per CLI (#2569)

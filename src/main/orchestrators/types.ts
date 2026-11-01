@@ -145,6 +145,12 @@ export interface ProviderCapabilities {
   /** Whether the provider can be restored automatically after an app update. */
   supportsAutoResumeAfterUpdate?: boolean;
   permissions: boolean;
+  /**
+   * The CLI reads its MCP tool list once per session and ignores
+   * notifications/tools/list_changed, so a tool must be listed from the start
+   * to ever be callable (#2603).
+   */
+  ignoresToolListChanged?: boolean;
 }
 
 /**

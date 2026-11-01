@@ -9,6 +9,7 @@ interface FakeProvider {
   displayName: string;
   listModels?: ReturnType<typeof vi.fn>;
   getModelOptions: ReturnType<typeof vi.fn>;
+  getCapabilities: () => Record<string, never>;
 }
 const providers: FakeProvider[] = [];
 vi.mock('../../../orchestrators', () => ({
@@ -46,6 +47,7 @@ function fakeProvider(id: string, displayName: string, list?: ModelList): FakePr
   return {
     id,
     displayName,
+    getCapabilities: () => ({}),
     ...(list && { listModels: vi.fn(async () => list) }),
     getModelOptions: vi.fn(async () => [{ id: 'default', label: 'Default' }, { id: 'static-x', label: 'Static X' }]),
   };
