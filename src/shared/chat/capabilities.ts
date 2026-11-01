@@ -18,6 +18,9 @@ export type ChatDriverId =
   /** Any other ACP agent (Gemini CLI, etc.) through the generic ACP driver. */
   | 'acp';
 
+/** Experimental flag that offers `copilot_sdk` as a chat driver (Settings › Experimental). */
+export const COPILOT_SDK_FLAG = 'copilotSdk';
+
 /**
  * Clubhouse's five-level permission ladder. Each driver maps these to its
  * native modes (shown to the user under each level).

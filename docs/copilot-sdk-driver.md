@@ -194,9 +194,11 @@ Levels: `plan` is `mode.set('plan')`, `ask` is the handler, `full_access` is `se
 
 The driver is off by default. To turn it on, in a beta or dev build:
 
-1. Settings › Experimental: turn on Chat.
+1. Settings › Experimental: turn on **Chat** and **Copilot SDK driver**.
 2. Settings › Orchestrators & agents › Copilot CLI: leave Runtime on Chat, and set **Chat driver** to **Copilot SDK (experimental)**.
 3. Start or restart a Copilot agent.
+
+The flag only offers the choice. With it off, Copilot uses ACP and the Chat driver setting is hidden. A saved choice is kept, and applies again when the flag comes back. Running agents keep their driver until they restart.
 
 **Which driver is running:** the chat opens with "This chat runs on the experimental Copilot SDK driver with Copilot CLI x.y.z". The agent glyph's tooltip shows the same driver and version. On a fallback, a toast and a chat notice say "Using Copilot CLI (ACP): " and the reason.
 

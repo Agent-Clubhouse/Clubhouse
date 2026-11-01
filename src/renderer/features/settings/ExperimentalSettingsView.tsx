@@ -3,6 +3,7 @@ import { Toggle } from '../../components/Toggle';
 import { SettingsPage, SettingsSection, SettingsField } from './SettingsLayout';
 import { Button } from '../../components/Button';
 import { RICH_CHAT_CONTENT_FLAG, resetRichChatContentFlag } from '../agents/chat/rich/rich-flag';
+import { COPILOT_SDK_FLAG } from '../../../shared/chat';
 
 /** Feature definitions for the experimental settings page. */
 const EXPERIMENTAL_FEATURES: Array<{
@@ -34,6 +35,11 @@ const EXPERIMENTAL_FEATURES: Array<{
     id: RICH_CHAT_CONTENT_FLAG,
     label: 'Rich chat content',
     description: 'Show images agents return inline in chat, links as links, and GitHub pull requests, issues and commits as references with a hover card. Images from the web load only when you click them, and GitHub details load through the gh CLI only when you hover one.',
+  },
+  {
+    id: COPILOT_SDK_FLAG,
+    label: 'Copilot SDK driver',
+    description: 'Offer the Copilot SDK as a chat driver, in Settings > Orchestrators & agents > Copilot CLI. ACP stays the default until you choose it. Running agents keep their driver until they restart.',
   },
   {
     id: 'dispatcher',
@@ -83,7 +89,7 @@ export function ExperimentalSettingsView() {
 
       <SettingsSection title="Features">
         {EXPERIMENTAL_FEATURES.map(({ id, label, description }) => (
-          <SettingsField key={id} label={label} help={description}>
+          <SettingsField key={id} label={label} help={id === COPILOT_SDK_FLAG && !settings.chat ? `${description} Needs Chat, which is off.` : description}>
             <Toggle
               aria-label={label}
               checked={!!settings[id]}

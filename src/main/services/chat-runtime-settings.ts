@@ -6,7 +6,7 @@
 import { createSettingsStore } from './settings-store';
 import * as experimentalSettings from './experimental-settings';
 import { isPreviewEligible } from './preview-eligible';
-import type { AgentRuntimeMode, ChatDriverId, ChatRuntimeSettings } from '../../shared/chat';
+import { COPILOT_SDK_FLAG, type AgentRuntimeMode, type ChatDriverId, type ChatRuntimeSettings } from '../../shared/chat';
 
 /** Experimental flag id (Settings › Experimental › Chat). */
 export const CHAT_EXPERIMENTAL_FLAG = 'chat';
@@ -28,6 +28,11 @@ export function isChatEnabled(): boolean {
   return isPreviewEligible() && experimentalSettings.getSettings()[CHAT_EXPERIMENTAL_FLAG] === true;
 }
 
+/** The Copilot SDK driver's own flag, with the same beta-only gate as Chat. */
+export function isCopilotSdkEnabled(): boolean {
+  return isPreviewEligible() && experimentalSettings.getSettings()[COPILOT_SDK_FLAG] === true;
+}
+
 export interface ResolvedRuntimeMode {
   mode: AgentRuntimeMode;
   driver?: ChatDriverId;
@@ -37,8 +42,10 @@ export interface ResolvedRuntimeMode {
 export function resolveRuntimeMode(provider: string, agentOverride?: AgentRuntimeMode): ResolvedRuntimeMode {
   if (!isChatEnabled()) return { mode: 'terminal' };
   const setting = getSettings()[provider];
+  // With its flag off, a saved SDK choice is ignored but kept, so it applies again when the flag comes back.
+  const driver = setting?.driver === 'copilot_sdk' && !isCopilotSdkEnabled() ? undefined : setting?.driver;
   return {
     mode: agentOverride ?? setting?.mode ?? DEFAULT_CHAT_PROVIDER_MODE,
-    ...(setting?.driver ? { driver: setting.driver } : {}),
+    ...(driver ? { driver } : {}),
   };
 }

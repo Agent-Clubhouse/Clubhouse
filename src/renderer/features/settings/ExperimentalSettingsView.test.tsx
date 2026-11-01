@@ -63,6 +63,22 @@ describe('ExperimentalSettingsView', () => {
     expect(await screen.findByText(/Needs New layout\. After turning this on, switch it on in Settings > Dispatcher\./)).toBeInTheDocument();
   });
 
+  it('offers the Copilot SDK driver flag, off by default, and says when it needs Chat', async () => {
+    mockGetExperimentalSettings.mockResolvedValue({});
+    const { unmount } = render(<ExperimentalSettingsView />);
+    const toggle = await screen.findByRole('switch', { name: 'Copilot SDK driver' });
+    expect(toggle).toHaveAttribute('aria-checked', 'false');
+    expect(screen.getByText(/Needs Chat, which is off\./)).toBeInTheDocument();
+    fireEvent.click(toggle);
+    await waitFor(() => expect(mockSaveExperimentalSettings).toHaveBeenCalledWith({ copilotSdk: true }));
+    unmount();
+
+    mockGetExperimentalSettings.mockResolvedValue({ chat: true });
+    render(<ExperimentalSettingsView />);
+    await screen.findByRole('switch', { name: 'Copilot SDK driver' });
+    expect(screen.queryByText(/Needs Chat, which is off\./)).not.toBeInTheDocument();
+  });
+
   it('renders the Chat feature toggle and saves it under the chat id', async () => {
     mockGetExperimentalSettings.mockResolvedValue({ goobers: true });
     render(<ExperimentalSettingsView />);
