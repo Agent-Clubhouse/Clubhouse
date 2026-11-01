@@ -84,6 +84,7 @@ describe('preload IPC bridge', () => {
       feedback,
       telemetry,
       chat,
+      dispatcher,
     ];
     const expectedApi = {
       platform: api.platform,

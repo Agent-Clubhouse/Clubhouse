@@ -10,6 +10,7 @@ import judge from './judge.md';
 import researcher from './researcher.md';
 import orchestrator from './orchestrator.md';
 import workhorse from './workhorse.md';
+import dispatcher from './dispatcher.md';
 import { SkillDefinition } from '../../../shared/persona-pattern';
 
 export interface PersonaTemplate {
@@ -140,7 +141,23 @@ export const PERSONA_TEMPLATES: PersonaTemplate[] = [
   },
 ];
 
-const PERSONA_MAP = new Map(PERSONA_TEMPLATES.map((p) => [p.id, p]));
+/**
+ * Built-in personas no picker lists. They resolve by id like any other, so
+ * an agent created with one gets its instructions, but users can't pick them.
+ */
+export const HIDDEN_PERSONA_TEMPLATES: PersonaTemplate[] = [
+  {
+    // The app-wide Dispatcher (#2533). No front-matter, so it pins no CLI.
+    id: 'dispatcher',
+    name: 'Dispatcher',
+    description: 'Coordinates the orchestrators in each project. Does not write code or start helpers.',
+    content: dispatcher,
+    tools: ['list_orchestrators', 'list_projects', 'send_message', 'get_status', 'read_output'],
+    skills: [],
+  },
+];
+
+const PERSONA_MAP = new Map([...PERSONA_TEMPLATES, ...HIDDEN_PERSONA_TEMPLATES].map((p) => [p.id, p]));
 
 /**
  * Look up a persona template by ID. Returns undefined if not found.
