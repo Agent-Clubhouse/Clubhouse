@@ -38,6 +38,8 @@ interface PersistedChromeState {
   collapsedProjectIds?: string[];
   /** Keys of the form `${projectId}:${fold}` that the user expanded. Folds start closed. */
   expandedFolds?: string[];
+  /** Projects whose sleeping fold is pinned: it doesn't close itself (#2580). */
+  pinnedSleepingFolds?: string[];
   /** Per project, title-bar tab ids by most recent use: the More menu's order. */
   tabMru?: Record<string, string[]>;
   /** Last activity per project, for the idle rule (§5.4). */
@@ -162,6 +164,13 @@ export interface ChromeState {
   pinnedProjectIds: string[];
   collapsedProjectIds: string[];
   expandedFolds: string[];
+  pinnedSleepingFolds: string[];
+  /**
+   * Projects whose sleeping fold closed itself while another project was
+   * active, so coming back can reveal the selection in it. Closing a fold by
+   * hand never lands here, so it stays closed. Not persisted.
+   */
+  sleepingFoldsClosedAway: string[];
   tabMru: Record<string, string[]>;
   projectActivity: Record<string, number>;
   /** Days without activity before an unpinned project folds into "N idle projects"; 0 is never. */
@@ -205,6 +214,11 @@ export interface ChromeState {
   /** Collapse every given project, or expand them all if every one is already collapsed. */
   toggleCollapseAll: (projectIds: string[]) => void;
   toggleFold: (projectId: string, fold: ProjectFold) => void;
+  /** Close a fold if it is open. `whileAway`: it closed itself while another project was active. */
+  closeFold: (projectId: string, fold: ProjectFold, whileAway?: boolean) => void;
+  /** Whether the project's sleeping fold closed while it was away, clearing the note. */
+  takeSleepingFoldClosedAway: (projectId: string) => boolean;
+  toggleSleepingFoldPinned: (projectId: string) => void;
   /** Drop pins, collapsed state and folds for projects that were removed. */
   forgetProjects: (projectIds: string[]) => void;
   /** The same for every stored project id with a prefix: an unpaired satellite's projects. */
@@ -214,7 +228,7 @@ export interface ChromeState {
 }
 
 type PersistedFields = Pick<ChromeState,
-  'sidebarWidth' | 'sidebarCollapsed' | 'lastProjectId' | 'pinnedProjectIds' | 'collapsedProjectIds' | 'expandedFolds' | 'tabMru'
+  'sidebarWidth' | 'sidebarCollapsed' | 'lastProjectId' | 'pinnedProjectIds' | 'collapsedProjectIds' | 'expandedFolds' | 'pinnedSleepingFolds' | 'tabMru'
   | 'projectActivity' | 'idleDays' | 'idleOpen' | 'projectSort' | 'agentSort' | 'inactiveProjectIds' | 'agentActivity' | 'collapsedAgentIds'>;
 
 const DEFAULTS: PersistedFields = {
@@ -224,6 +238,7 @@ const DEFAULTS: PersistedFields = {
   pinnedProjectIds: [],
   collapsedProjectIds: [],
   expandedFolds: [],
+  pinnedSleepingFolds: [],
   tabMru: {},
   projectActivity: {},
   idleDays: DEFAULT_IDLE_DAYS,
@@ -270,6 +285,7 @@ export function loadChromeState(): PersistedFields {
       pinnedProjectIds: stringArray(parsed.pinnedProjectIds),
       collapsedProjectIds: stringArray(parsed.collapsedProjectIds),
       expandedFolds: stringArray(parsed.expandedFolds),
+      pinnedSleepingFolds: stringArray(parsed.pinnedSleepingFolds),
       tabMru: stringArrayRecord(parsed.tabMru),
       projectActivity: numberRecord(parsed.projectActivity),
       idleDays: typeof parsed.idleDays === 'number' && parsed.idleDays >= 0 ? parsed.idleDays : DEFAULT_IDLE_DAYS,
@@ -305,6 +321,7 @@ function persistChromeState(state: PersistedFields): void {
     pinnedProjectIds: state.pinnedProjectIds,
     collapsedProjectIds: state.collapsedProjectIds,
     expandedFolds: state.expandedFolds,
+    pinnedSleepingFolds: state.pinnedSleepingFolds,
     tabMru: state.tabMru,
     projectActivity: state.projectActivity,
     idleDays: state.idleDays,
@@ -365,6 +382,7 @@ export const useChromeStore = create<ChromeState>((set, get) => {
     // state is used (ensureChromeStateLoaded), so don't touch localStorage at startup.
     ...(isNewChromeEnabled() ? loadChromeState() : DEFAULTS),
     projectScopeId: null,
+    sleepingFoldsClosedAway: [],
 
     setProjectScope: (projectId) => {
       if (get().projectScopeId !== projectId) set({ projectScopeId: projectId });
@@ -536,7 +554,35 @@ export const useChromeStore = create<ChromeState>((set, get) => {
     toggleFold: (projectId, fold) => {
       const key = foldKey(projectId, fold);
       const current = get().expandedFolds;
-      set({ expandedFolds: current.includes(key) ? current.filter((k) => k !== key) : [...current, key] });
+      set({
+        expandedFolds: current.includes(key) ? current.filter((k) => k !== key) : [...current, key],
+        // A toggle is the user's say on this fold, whatever closed it before.
+        ...(fold === 'sleeping' ? { sleepingFoldsClosedAway: get().sleepingFoldsClosedAway.filter((id) => id !== projectId) } : {}),
+      });
+      schedulePersist();
+    },
+
+    closeFold: (projectId, fold, whileAway = false) => {
+      const key = foldKey(projectId, fold);
+      const current = get().expandedFolds;
+      if (!current.includes(key)) return;
+      set({
+        expandedFolds: current.filter((k) => k !== key),
+        ...(whileAway && fold === 'sleeping' ? { sleepingFoldsClosedAway: [...get().sleepingFoldsClosedAway, projectId] } : {}),
+      });
+      schedulePersist();
+    },
+
+    takeSleepingFoldClosedAway: (projectId) => {
+      const current = get().sleepingFoldsClosedAway;
+      if (!current.includes(projectId)) return false;
+      set({ sleepingFoldsClosedAway: current.filter((id) => id !== projectId) });
+      return true;
+    },
+
+    toggleSleepingFoldPinned: (projectId) => {
+      const current = get().pinnedSleepingFolds;
+      set({ pinnedSleepingFolds: current.includes(projectId) ? current.filter((id) => id !== projectId) : [...current, projectId] });
       schedulePersist();
     },
 
@@ -546,6 +592,7 @@ export const useChromeStore = create<ChromeState>((set, get) => {
         ...s.pinnedProjectIds,
         ...s.collapsedProjectIds,
         ...s.expandedFolds.map((key) => key.slice(0, key.lastIndexOf(':'))),
+        ...s.pinnedSleepingFolds,
         ...(s.lastProjectId ? [s.lastProjectId] : []),
         ...Object.keys(s.tabMru),
         ...Object.keys(s.projectActivity),
@@ -562,6 +609,8 @@ export const useChromeStore = create<ChromeState>((set, get) => {
       set({
         collapsedProjectIds: s.collapsedProjectIds.filter((id) => !gone.has(id)),
         expandedFolds: s.expandedFolds.filter((key) => !gone.has(key.slice(0, key.lastIndexOf(':')))),
+        pinnedSleepingFolds: s.pinnedSleepingFolds.filter((id) => !gone.has(id)),
+        sleepingFoldsClosedAway: s.sleepingFoldsClosedAway.filter((id) => !gone.has(id)),
         lastProjectId: s.lastProjectId && gone.has(s.lastProjectId) ? null : s.lastProjectId,
         tabMru: Object.fromEntries(Object.entries(s.tabMru).filter(([id]) => !gone.has(id))),
       });

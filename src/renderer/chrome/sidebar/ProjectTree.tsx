@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useSta
 import type { Agent, AgentDetailedStatus, CompletedQuickAgent, Project } from '../../../shared/types';
 import { useChromeStore, foldKey, type ProjectFold } from '../chromeStore';
 import { ProjectGroup } from './ProjectGroup';
-import { buildProjectTree, descendants, holdOrder, localParentId, moveProject, orderProjects } from './treeModel';
+import { buildProjectTree, holdOrder, isInSleepingFold, localParentId, moveProject, orderProjects } from './treeModel';
 import { useAgentStore } from '../../stores/agentStore';
 import { PopupMenu, type MenuEntry } from '../../components/PopupMenu';
 import { useToastStore } from '../../stores/toastStore';
@@ -195,6 +195,15 @@ export function ProjectTree(props: ProjectTreeProps) {
   const toggleProjectCollapsed = useChromeStore((s) => s.toggleProjectCollapsed);
   const toggleCollapseAll = useChromeStore((s) => s.toggleCollapseAll);
   const toggleFold = useChromeStore((s) => s.toggleFold);
+  const closeFold = useChromeStore((s) => s.closeFold);
+  // Read through a ref: a callback that changed on each switch would restart the folds' timers.
+  const activeProjectRef = useRef(activeProjectId);
+  activeProjectRef.current = activeProjectId;
+  const onCloseFold = useCallback((projectId: string, fold: ProjectFold) => {
+    closeFold(projectId, fold, projectId !== activeProjectRef.current);
+  }, [closeFold]);
+  const pinnedSleepingFolds = useChromeStore((s) => s.pinnedSleepingFolds);
+  const toggleSleepingFoldPinned = useChromeStore((s) => s.toggleSleepingFoldPinned);
   const collapsedAgentIds = useChromeStore((s) => s.collapsedAgentIds);
   const toggleAgentCollapsed = useChromeStore((s) => s.toggleAgentCollapsed);
   const collapsedAgentSet = useMemo(() => new Set(collapsedAgentIds), [collapsedAgentIds]);
@@ -225,9 +234,6 @@ export function ProjectTree(props: ProjectTreeProps) {
     // Not loaded yet: try again when the agents arrive.
     if (!target) return;
     pendingReveal.current = null;
-    // A helper whose orchestrator is in another project (#2514) is a root
-    // here, with no parents to unfold, but it can still be in the sleeping fold.
-    if (!target.parentAgentId || (!target.parentProjectPath && !byId.has(target.parentAgentId))) return;
     const chrome = useChromeStore.getState();
     const collapsed = new Set(chrome.collapsedAgentIds);
     const seen = new Set<string>();
@@ -237,9 +243,22 @@ export function ProjectTree(props: ProjectTreeProps) {
       if (collapsed.has(parent)) toggleAgentCollapsed(parent);
       parent = localParentId(byId.get(parent)!);
     }
-    const inSleepingFold = buildProjectTree(list).sleeping.some((root) => root.agent.id === agentId || descendants(root).some((a) => a.id === agentId));
-    if (inSleepingFold && !chrome.expandedFolds.includes(foldKey(activeProjectId, 'sleeping'))) toggleFold(activeProjectId, 'sleeping');
+    if (isInSleepingFold(buildProjectTree(list), agentId) && !chrome.expandedFolds.includes(foldKey(activeProjectId, 'sleeping'))) toggleFold(activeProjectId, 'sleeping');
   }, [selectionSeq, activeAgentId, activeProjectId, agentsByProject, toggleAgentCollapsed, toggleFold]);
+
+  // The one exception for a project switch (#2580): a sleeping fold that closed
+  // itself while you were away reopens if the selection you come back to is
+  // inside. A fold you closed yourself isn't noted, so it stays closed. The
+  // selection catches up after the project does, so wait until it is this
+  // project's before using up the note.
+  useEffect(() => {
+    if (!activeProjectId || !activeAgentId) return;
+    const list = agentsByProject[activeProjectId] ?? [];
+    if (!list.some((a) => a.id === activeAgentId)) return;
+    const chrome = useChromeStore.getState();
+    if (!chrome.takeSleepingFoldClosedAway(activeProjectId)) return;
+    if (isInSleepingFold(buildProjectTree(list), activeAgentId) && !chrome.expandedFolds.includes(foldKey(activeProjectId, 'sleeping'))) toggleFold(activeProjectId, 'sleeping');
+  }, [activeProjectId, activeAgentId, agentsByProject, toggleFold]);
 
   const runningIds = useMemo(() => new Set(
     Object.entries(agentsByProject).filter(([, list]) => list.some((a) => a.status === 'running')).map(([id]) => id),
@@ -317,6 +336,10 @@ export function ProjectTree(props: ProjectTreeProps) {
     toggleFold(projectId, fold);
     reportChromeFeature('fold_toggle');
   }, [toggleFold]);
+  const onToggleSleepingPinned = useCallback((projectId: string) => {
+    toggleSleepingFoldPinned(projectId);
+    reportChromeFeature('sleeping_fold_pin');
+  }, [toggleSleepingFoldPinned]);
   const onToggleCollapsed = useCallback((projectId: string) => {
     toggleProjectCollapsed(projectId);
     reportChromeFeature('project_collapse');
@@ -362,6 +385,7 @@ export function ProjectTree(props: ProjectTreeProps) {
       collapsed={collapsedSet.has(project.id)}
       pinned={pinnedProjectIds.includes(project.id)}
       sleepingOpen={foldSet.has(foldKey(project.id, 'sleeping'))}
+      sleepingPinned={pinnedSleepingFolds.includes(project.id)}
       finishedOpen={foldSet.has(foldKey(project.id, 'finished'))}
       activeProjectId={activeProjectId}
       activeAgentId={props.projectScopeId === project.id ? null : activeAgentId}
@@ -371,6 +395,8 @@ export function ProjectTree(props: ProjectTreeProps) {
       onToggleCollapsed={onToggleCollapsed}
       onTogglePinned={onTogglePinned}
       onToggleFold={onToggleFold}
+      onCloseFold={onCloseFold}
+      onToggleSleepingPinned={onToggleSleepingPinned}
       onNewAgent={props.onNewAgent}
       draggable={!!props.onReorder}
       onSelectAgent={props.onSelectAgent}
