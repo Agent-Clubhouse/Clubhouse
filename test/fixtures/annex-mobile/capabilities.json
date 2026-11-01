@@ -45,12 +45,25 @@
         "chat.setModel",
         "chat.setLevel",
         "quick.dismiss",
-        "quick.clear"
+        "quick.clear",
+        "dispatcher.setEnabled"
       ],
       "controlAuth": "mtls-pinned-client",
       "controlAvailable": true,
       "createOptions": {
         "path": "/api/v1/mobile/projects/{projectId}/create-options",
+        "version": 1
+      },
+      "dispatcher": {
+        "commands": [
+          "dispatcher.setEnabled"
+        ],
+        "enabled": false,
+        "event": "dispatcher:changed",
+        "flagOn": false,
+        "newLayout": true,
+        "projectId": "__dispatcher__",
+        "snapshotField": "dispatcher",
         "version": 1
       },
       "epoch": "00000000-0000-4000-8000-000000000001",

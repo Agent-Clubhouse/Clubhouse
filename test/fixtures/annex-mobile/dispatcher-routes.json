@@ -1,0 +1,108 @@
+{
+  "chat": {
+    "request": {
+      "method": "GET",
+      "path": "/api/v1/mobile/agents/durable_dispatcher/chat"
+    },
+    "response": {
+      "body": {
+        "agentId": "durable_dispatcher",
+        "canStart": true,
+        "capabilities": null,
+        "chatControls": null,
+        "contentAnyPath": true,
+        "contentRoots": [
+          "/work/app/.clubhouse/agents/planner",
+          "/work/app"
+        ],
+        "currentSessionId": null,
+        "epoch": "00000000-0000-4000-8000-000000000001",
+        "events": [],
+        "lastSeq": 0,
+        "nextBeforeSeq": null,
+        "pendingPermissions": [],
+        "pendingQuestions": [],
+        "queueRemovalSupported": false,
+        "queueStateSeq": 0,
+        "queuedMessageIds": [],
+        "readOnly": true,
+        "sessionId": null,
+        "slashCommands": null,
+        "state": "sleeping",
+        "truncated": false,
+        "version": 1
+      },
+      "status": 200
+    }
+  },
+  "chatSessions": {
+    "request": {
+      "method": "GET",
+      "path": "/api/v1/mobile/agents/durable_dispatcher/chat/sessions"
+    },
+    "response": {
+      "body": {
+        "agentId": "durable_dispatcher",
+        "epoch": "00000000-0000-4000-8000-000000000001",
+        "sessions": [],
+        "version": 1
+      },
+      "status": 200
+    }
+  },
+  "git": {
+    "request": {
+      "method": "GET",
+      "path": "/api/v1/projects/__dispatcher__/git/info"
+    },
+    "response": {
+      "body": {
+        "error": "not_git_repo"
+      },
+      "status": 409
+    }
+  },
+  "offChat": {
+    "request": {
+      "method": "GET",
+      "path": "/api/v1/mobile/agents/durable_dispatcher/chat"
+    },
+    "response": {
+      "body": {
+        "error": "agent_not_found"
+      },
+      "status": 404
+    }
+  },
+  "offSettings": {
+    "request": {
+      "method": "GET",
+      "path": "/api/v1/mobile/agents/durable_dispatcher/settings"
+    },
+    "response": {
+      "body": {
+        "error": "agent_not_found"
+      },
+      "status": 404
+    }
+  },
+  "shell": {
+    "replies": [
+      {
+        "payload": {
+          "cwd": "/Users/me/.clubhouse/dispatcher",
+          "sessionId": "shell_dispatch"
+        },
+        "type": "pty:spawn-shell:ack"
+      }
+    ],
+    "request": {
+      "payload": {
+        "agentId": "durable_dispatcher",
+        "projectId": "__dispatcher__",
+        "sessionId": "shell_dispatch"
+      },
+      "type": "pty:spawn-shell"
+    }
+  }
+}

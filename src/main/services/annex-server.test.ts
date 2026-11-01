@@ -1296,7 +1296,7 @@ describe('annex-server', () => {
     expect(res.status).toBe(200);
     expect(JSON.parse(res.body)).toMatchObject({ version: 1, agentId: 'a', projectId: 'p', state: 'sleeping', options: { idleSleep: { minutes: [15, 30, 60, 240] } },
       details: { branch: 'agent/standby', mcpIds: [], changes: null } });
-    expect(mobileAgents.buildAgentDetails).toHaveBeenCalledWith({ id: 'p', path: '/test/project' }, expect.objectContaining({ id: 'a' }));
+    expect(mobileAgents.buildAgentDetails).toHaveBeenCalledWith({ id: 'p', path: '/test/project' }, expect.objectContaining({ id: 'a' }), { dispatcher: false });
     vi.mocked(ptyManagerModule.isRunning).mockReturnValue(true);
     expect(JSON.parse((await request(port, 'GET', '/api/v1/mobile/agents/a/settings', undefined, authHeaders(token))).body).state).toBe('running');
     expect((await request(port, 'GET', '/api/v1/mobile/agents/missing/settings', undefined, authHeaders(token))).status).toBe(404);

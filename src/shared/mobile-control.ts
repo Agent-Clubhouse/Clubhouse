@@ -3,7 +3,7 @@ import type { ChatCapabilities, ChatModelOption, ChatQuestionAnswers, Permission
 import type { AgentIdleSleep } from './idle-sleep';
 import type { OrchestrationPolicy, OrchestrationPolicyPatch } from './orchestration-policy';
 export const MOBILE_PROTOCOL_VERSION = 1;
-export const MOBILE_COMMAND_TYPES = ['chat.send', 'chat.interrupt', 'chat.permission', 'chat.question', 'chat.queue.remove', 'agent.start', 'agent.stop', 'agent.spawn', 'agent.create', 'agent.update', 'project.setPinned', 'project.setInactive', 'helper.approve', 'helper.decline', 'chat.setModel', 'chat.setLevel', 'quick.dismiss', 'quick.clear'] as const;
+export const MOBILE_COMMAND_TYPES = ['chat.send', 'chat.interrupt', 'chat.permission', 'chat.question', 'chat.queue.remove', 'agent.start', 'agent.stop', 'agent.spawn', 'agent.create', 'agent.update', 'project.setPinned', 'project.setInactive', 'helper.approve', 'helper.decline', 'chat.setModel', 'chat.setLevel', 'quick.dismiss', 'quick.clear', 'dispatcher.setEnabled'] as const;
 interface CommandBase { version: 1; commandId: string; epoch: string }
 interface ChatTarget { agentId: string; sessionId: string }
 export type MobileCommand = CommandBase & (
@@ -29,6 +29,8 @@ export type MobileCommand = CommandBase & (
   // The start page's "Finished, waiting on you" list (#2467).
   | { type: 'quick.dismiss'; projectId: string; agentId: string }
   | { type: 'quick.clear'; projectId: string }
+  // Settings > Dispatcher's switch (#2533). Never the experimental flag.
+  | { type: 'dispatcher.setEnabled'; enabled: boolean }
 );
 /** A durable agent, as the New agent page makes one. */
 export interface MobileAgentCreate {

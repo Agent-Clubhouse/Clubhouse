@@ -31,18 +31,22 @@
                 "auto",
                 "bypass"
               ],
+              "connectToDispatcher": false,
               "control": "ask-before-start",
               "controls": [
                 "hands-off",
                 "ask-before-start",
                 "ask-everything"
               ],
+              "crossProjectHelpers": false,
               "maxHelpers": 4,
               "maxHelpersCap": 20,
               "orchestrate": false,
               "sources": {
                 "access": "default",
+                "connectToDispatcher": "default",
                 "control": "persona",
+                "crossProjectHelpers": "default",
                 "maxHelpers": "persona",
                 "orchestrate": "default"
               }
@@ -133,18 +137,22 @@
                 "auto",
                 "bypass"
               ],
+              "connectToDispatcher": false,
               "control": "hands-off",
               "controls": [
                 "hands-off",
                 "ask-before-start",
                 "ask-everything"
               ],
+              "crossProjectHelpers": false,
               "maxHelpers": 5,
               "maxHelpersCap": 20,
               "orchestrate": false,
               "sources": {
                 "access": "default",
+                "connectToDispatcher": "default",
                 "control": "default",
+                "crossProjectHelpers": "default",
                 "maxHelpers": "default",
                 "orchestrate": "default"
               }
@@ -232,18 +240,22 @@
                 "auto",
                 "bypass"
               ],
+              "connectToDispatcher": false,
               "control": "hands-off",
               "controls": [
                 "hands-off",
                 "ask-before-start",
                 "ask-everything"
               ],
+              "crossProjectHelpers": false,
               "maxHelpers": 5,
               "maxHelpersCap": 20,
               "orchestrate": false,
               "sources": {
                 "access": "default",
+                "connectToDispatcher": "default",
                 "control": "default",
+                "crossProjectHelpers": "default",
                 "maxHelpers": "default",
                 "orchestrate": "default"
               }
@@ -331,18 +343,22 @@
                 "auto",
                 "bypass"
               ],
+              "connectToDispatcher": false,
               "control": "hands-off",
               "controls": [
                 "hands-off",
                 "ask-before-start",
                 "ask-everything"
               ],
+              "crossProjectHelpers": false,
               "maxHelpers": 3,
               "maxHelpersCap": 20,
               "orchestrate": true,
               "sources": {
                 "access": "default",
+                "connectToDispatcher": "default",
                 "control": "default",
+                "crossProjectHelpers": "default",
                 "maxHelpers": "agent",
                 "orchestrate": "agent"
               }
@@ -721,18 +737,22 @@
                 "auto",
                 "bypass"
               ],
+              "connectToDispatcher": false,
               "control": "ask-everything",
               "controls": [
                 "hands-off",
                 "ask-before-start",
                 "ask-everything"
               ],
+              "crossProjectHelpers": false,
               "maxHelpers": 20,
               "maxHelpersCap": 20,
               "orchestrate": true,
               "sources": {
                 "access": "agent",
+                "connectToDispatcher": "default",
                 "control": "agent",
+                "crossProjectHelpers": "default",
                 "maxHelpers": "agent",
                 "orchestrate": "agent"
               }
@@ -822,18 +842,22 @@
                 "auto",
                 "bypass"
               ],
+              "connectToDispatcher": false,
               "control": "ask-everything",
               "controls": [
                 "hands-off",
                 "ask-before-start",
                 "ask-everything"
               ],
+              "crossProjectHelpers": false,
               "maxHelpers": 5,
               "maxHelpersCap": 20,
               "orchestrate": true,
               "sources": {
                 "access": "agent",
+                "connectToDispatcher": "default",
                 "control": "agent",
+                "crossProjectHelpers": "default",
                 "maxHelpers": "default",
                 "orchestrate": "agent"
               }
@@ -921,18 +945,22 @@
                 "auto",
                 "bypass"
               ],
+              "connectToDispatcher": false,
               "control": "hands-off",
               "controls": [
                 "hands-off",
                 "ask-before-start",
                 "ask-everything"
               ],
+              "crossProjectHelpers": false,
               "maxHelpers": 5,
               "maxHelpersCap": 20,
               "orchestrate": false,
               "sources": {
                 "access": "default",
+                "connectToDispatcher": "default",
                 "control": "default",
+                "crossProjectHelpers": "default",
                 "maxHelpers": "default",
                 "orchestrate": "default"
               }
@@ -1121,6 +1149,416 @@
           "version": 1
         },
         "status": 400
+      }
+    },
+    {
+      "name": "dispatcher_off",
+      "request": {
+        "agentId": "durable_dispatcher",
+        "commandId": "cmd_122",
+        "epoch": "00000000-0000-4000-8000-000000000001",
+        "model": "sonnet",
+        "type": "agent.update",
+        "version": 1
+      },
+      "response": {
+        "body": {
+          "commandId": "cmd_122",
+          "epoch": "00000000-0000-4000-8000-000000000001",
+          "error": {
+            "code": "dispatcher_off",
+            "message": "The Dispatcher is turned off."
+          },
+          "status": "rejected",
+          "version": 1
+        },
+        "status": 409
+      }
+    },
+    {
+      "name": "dispatcher_off (connectToDispatcher)",
+      "request": {
+        "agentId": "durable_chat",
+        "commandId": "cmd_123",
+        "epoch": "00000000-0000-4000-8000-000000000001",
+        "orchestration": {
+          "connectToDispatcher": true
+        },
+        "type": "agent.update",
+        "version": 1
+      },
+      "response": {
+        "body": {
+          "commandId": "cmd_123",
+          "epoch": "00000000-0000-4000-8000-000000000001",
+          "error": {
+            "code": "dispatcher_off",
+            "message": "Turn on the Dispatcher first."
+          },
+          "status": "rejected",
+          "version": 1
+        },
+        "status": 409
+      }
+    },
+    {
+      "name": "accepted (Dispatcher)",
+      "request": {
+        "agentId": "durable_dispatcher",
+        "commandId": "cmd_126",
+        "epoch": "00000000-0000-4000-8000-000000000001",
+        "freeAgentMode": false,
+        "idleSleep": 30,
+        "model": "sonnet",
+        "type": "agent.update",
+        "version": 1
+      },
+      "response": {
+        "body": {
+          "commandId": "cmd_126",
+          "epoch": "00000000-0000-4000-8000-000000000001",
+          "result": {
+            "agentId": "durable_dispatcher",
+            "isDispatcher": true,
+            "orchestration": null,
+            "projectId": "__dispatcher__",
+            "settings": {
+              "clubhouseMode": {
+                "editable": "never",
+                "projectEnabled": false,
+                "value": null
+              },
+              "color": {
+                "editable": "never",
+                "value": "indigo"
+              },
+              "emoji": {
+                "editable": "never",
+                "value": null
+              },
+              "freeAgentMode": {
+                "editable": "always",
+                "value": false
+              },
+              "hasImageIcon": false,
+              "idleSleep": {
+                "applies": true,
+                "editable": "always",
+                "minutes": 30,
+                "source": "agent",
+                "value": 30
+              },
+              "model": {
+                "editable": "always",
+                "value": "sonnet"
+              },
+              "name": {
+                "editable": "never",
+                "value": "Dispatcher"
+              },
+              "orchestrator": {
+                "editable": "always",
+                "resolved": "claude-code",
+                "value": "claude-code"
+              },
+              "persona": {
+                "editable": "never",
+                "value": "dispatcher"
+              },
+              "runtime": {
+                "editable": "always",
+                "resolved": "chat",
+                "value": "chat"
+              }
+            },
+            "sleeping": true,
+            "state": "sleeping"
+          },
+          "status": "completed",
+          "version": 1
+        },
+        "status": 200
+      }
+    },
+    {
+      "name": "accepted orchestrator (Dispatcher, model back to default)",
+      "request": {
+        "agentId": "durable_dispatcher",
+        "commandId": "cmd_127",
+        "epoch": "00000000-0000-4000-8000-000000000001",
+        "orchestrator": "codex-cli",
+        "type": "agent.update",
+        "version": 1
+      },
+      "response": {
+        "body": {
+          "commandId": "cmd_127",
+          "epoch": "00000000-0000-4000-8000-000000000001",
+          "result": {
+            "agentId": "durable_dispatcher",
+            "isDispatcher": true,
+            "orchestration": null,
+            "projectId": "__dispatcher__",
+            "settings": {
+              "clubhouseMode": {
+                "editable": "never",
+                "projectEnabled": false,
+                "value": null
+              },
+              "color": {
+                "editable": "never",
+                "value": "indigo"
+              },
+              "emoji": {
+                "editable": "never",
+                "value": null
+              },
+              "freeAgentMode": {
+                "editable": "never",
+                "value": false
+              },
+              "hasImageIcon": false,
+              "idleSleep": {
+                "applies": false,
+                "editable": "always",
+                "minutes": 30,
+                "source": "agent",
+                "value": 30
+              },
+              "model": {
+                "editable": "always",
+                "value": "default"
+              },
+              "name": {
+                "editable": "never",
+                "value": "Dispatcher"
+              },
+              "orchestrator": {
+                "editable": "always",
+                "resolved": "codex-cli",
+                "value": "codex-cli"
+              },
+              "persona": {
+                "editable": "never",
+                "value": "dispatcher"
+              },
+              "runtime": {
+                "editable": "never",
+                "resolved": "terminal",
+                "value": "chat"
+              }
+            },
+            "sleeping": true,
+            "state": "sleeping"
+          },
+          "status": "completed",
+          "version": 1
+        },
+        "status": 200
+      }
+    },
+    {
+      "name": "invalid_model (Dispatcher)",
+      "request": {
+        "agentId": "durable_dispatcher",
+        "commandId": "cmd_128",
+        "epoch": "00000000-0000-4000-8000-000000000001",
+        "model": "opus",
+        "type": "agent.update",
+        "version": 1
+      },
+      "response": {
+        "body": {
+          "commandId": "cmd_128",
+          "epoch": "00000000-0000-4000-8000-000000000001",
+          "error": {
+            "code": "invalid_model",
+            "message": "opus isn't a model this CLI lists."
+          },
+          "status": "rejected",
+          "version": 1
+        },
+        "status": 400
+      }
+    },
+    {
+      "name": "dispatcher_locked (name)",
+      "request": {
+        "agentId": "durable_dispatcher",
+        "commandId": "cmd_129",
+        "epoch": "00000000-0000-4000-8000-000000000001",
+        "name": "Boss",
+        "type": "agent.update",
+        "version": 1
+      },
+      "response": {
+        "body": {
+          "commandId": "cmd_129",
+          "epoch": "00000000-0000-4000-8000-000000000001",
+          "error": {
+            "code": "dispatcher_locked",
+            "message": "The Dispatcher's name can't be changed."
+          },
+          "status": "rejected",
+          "version": 1
+        },
+        "status": 409
+      }
+    },
+    {
+      "name": "dispatcher_locked (persona)",
+      "request": {
+        "agentId": "durable_dispatcher",
+        "commandId": "cmd_130",
+        "epoch": "00000000-0000-4000-8000-000000000001",
+        "persona": "qa",
+        "type": "agent.update",
+        "version": 1
+      },
+      "response": {
+        "body": {
+          "commandId": "cmd_130",
+          "epoch": "00000000-0000-4000-8000-000000000001",
+          "error": {
+            "code": "dispatcher_locked",
+            "message": "The Dispatcher's persona can't be changed."
+          },
+          "status": "rejected",
+          "version": 1
+        },
+        "status": 409
+      }
+    },
+    {
+      "name": "dispatcher_locked (orchestration)",
+      "request": {
+        "agentId": "durable_dispatcher",
+        "commandId": "cmd_131",
+        "epoch": "00000000-0000-4000-8000-000000000001",
+        "orchestration": {
+          "orchestrate": true
+        },
+        "type": "agent.update",
+        "version": 1
+      },
+      "response": {
+        "body": {
+          "commandId": "cmd_131",
+          "epoch": "00000000-0000-4000-8000-000000000001",
+          "error": {
+            "code": "dispatcher_locked",
+            "message": "The Dispatcher's orchestration can't be changed."
+          },
+          "status": "rejected",
+          "version": 1
+        },
+        "status": 409
+      }
+    },
+    {
+      "name": "accepted cross-project and Dispatcher",
+      "request": {
+        "agentId": "durable_chat",
+        "commandId": "cmd_136",
+        "epoch": "00000000-0000-4000-8000-000000000001",
+        "orchestration": {
+          "connectToDispatcher": true,
+          "crossProjectHelpers": true
+        },
+        "type": "agent.update",
+        "version": 1
+      },
+      "response": {
+        "body": {
+          "commandId": "cmd_136",
+          "epoch": "00000000-0000-4000-8000-000000000001",
+          "result": {
+            "agentId": "durable_chat",
+            "orchestration": {
+              "access": "same",
+              "accessLevels": [
+                "same",
+                "standard",
+                "auto",
+                "bypass"
+              ],
+              "connectToDispatcher": true,
+              "control": "hands-off",
+              "controls": [
+                "hands-off",
+                "ask-before-start",
+                "ask-everything"
+              ],
+              "crossProjectHelpers": true,
+              "maxHelpers": 3,
+              "maxHelpersCap": 20,
+              "orchestrate": true,
+              "sources": {
+                "access": "default",
+                "connectToDispatcher": "agent",
+                "control": "default",
+                "crossProjectHelpers": "agent",
+                "maxHelpers": "agent",
+                "orchestrate": "agent"
+              }
+            },
+            "projectId": "proj_app",
+            "settings": {
+              "clubhouseMode": {
+                "editable": "never",
+                "projectEnabled": false,
+                "value": null
+              },
+              "color": {
+                "editable": "sleeping",
+                "value": "indigo"
+              },
+              "emoji": {
+                "editable": "sleeping",
+                "value": "🦊"
+              },
+              "freeAgentMode": {
+                "editable": "sleeping",
+                "value": false
+              },
+              "hasImageIcon": true,
+              "idleSleep": {
+                "applies": true,
+                "editable": "always",
+                "minutes": 0,
+                "source": "agent",
+                "value": "never"
+              },
+              "model": {
+                "editable": "sleeping",
+                "value": "opus"
+              },
+              "name": {
+                "editable": "sleeping",
+                "value": "planner"
+              },
+              "orchestrator": {
+                "editable": "sleeping",
+                "resolved": "claude-code",
+                "value": "claude-code"
+              },
+              "persona": {
+                "editable": "sleeping",
+                "value": null
+              },
+              "runtime": {
+                "editable": "sleeping",
+                "resolved": "chat",
+                "value": "default"
+              }
+            },
+            "sleeping": false,
+            "state": "running"
+          },
+          "status": "completed",
+          "version": 1
+        },
+        "status": 200
       }
     }
   ],

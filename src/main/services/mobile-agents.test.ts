@@ -10,14 +10,17 @@ vi.mock('./agent-creation', async (importOriginal) => ({
   ...await importOriginal<typeof import('./agent-creation')>(),
   startDurableCreation: vi.fn(),
 }));
+const getModelOptions = vi.hoisted(() => vi.fn(async (id?: string, _opts?: unknown) => (id === 'codex-cli' ? [] : [{ id: 'default', label: 'Default' }, { id: 'opus', label: 'Opus' }])));
 vi.mock('./agent-system', () => ({
   getAvailableOrchestrators: vi.fn(),
   checkAvailability: vi.fn(async () => ({ available: true })),
   resolveOrchestrator: vi.fn(async (_path: string, id?: string) => ({
     id: id ?? 'claude-code',
-    getModelOptions: async () => (id === 'codex-cli' ? [] : [{ id: 'default', label: 'Default' }, { id: 'opus', label: 'Opus' }]),
+    getModelOptions: (opts?: unknown) => getModelOptions(id, opts),
   })),
+  resolveProfileEnv: vi.fn(async () => undefined),
 }));
+vi.mock('./dispatcher/dispatcher-settings', () => ({ isDispatcherEnabled: vi.fn(() => false) }));
 vi.mock('./agent-settings-service', () => ({
   readProjectAgentDefaults: vi.fn(async () => ({})),
   readMcpCatalog: vi.fn(async () => [{ id: 'ado', name: 'Azure DevOps', description: 'Work items', args: [{ name: 'org' }] }]),
@@ -51,7 +54,8 @@ vi.mock('./orchestration-policy', async () => {
 
 import * as agentConfig from './agent-config';
 import { startDurableCreation } from './agent-creation';
-import { checkAvailability, getAvailableOrchestrators } from './agent-system';
+import { checkAvailability, getAvailableOrchestrators, resolveProfileEnv } from './agent-system';
+import { isDispatcherEnabled } from './dispatcher/dispatcher-settings';
 import { readProjectAgentDefaults } from './agent-settings-service';
 import { getProfile } from './profile-settings';
 import { isClubhouseModeEnabled } from './clubhouse-mode-settings';
@@ -62,7 +66,7 @@ import { applyPersonaToAgent } from './persona-application';
 import { MobileControlError } from './mobile-control';
 import { setOrchestrationPolicy } from './orchestration-policy';
 import * as orchestrationSettings from './orchestration-settings';
-import { buildAgentDetails, buildAgentSettings, buildAgentSettingsOptions, buildCreateOptions, createMobileAgent, maxHelpersCap, updateMobileAgent } from './mobile-agents';
+import { buildAgentDetails, buildAgentSettings, buildAgentSettingsOptions, buildCreateOptions, createMobileAgent, maxHelpersCap, updateMobileAgent, updateMobileDispatcher } from './mobile-agents';
 
 const project = { id: 'p1', path: '/work/app' };
 const orchestrator = (id: string, permissions = true) => ({ id, displayName: id, shortName: id.slice(0, 2), capabilities: { permissions } });
@@ -211,8 +215,8 @@ describe('agent settings', () => {
         idleSleep: { value: 60, editable: 'always', minutes: 60, source: 'agent', applies: true },
       },
       orchestration: {
-        orchestrate: false, access: 'same', control: 'hands-off', maxHelpers: 3,
-        sources: { orchestrate: 'default', access: 'default', control: 'default', maxHelpers: 'persona' },
+        orchestrate: false, access: 'same', control: 'hands-off', maxHelpers: 3, crossProjectHelpers: false, connectToDispatcher: false,
+        sources: { orchestrate: 'default', access: 'default', control: 'default', maxHelpers: 'persona', crossProjectHelpers: 'default', connectToDispatcher: 'default' },
         maxHelpersCap: 8, controls: ['hands-off', 'ask-before-start', 'ask-everything'], accessLevels: ['same', 'standard', 'auto', 'bypass'],
       },
     });
@@ -365,7 +369,8 @@ describe('orchestration policy from a phone (#2228)', () => {
     await updateMobileAgent(project, agent(), { agentId: 'durable_1', orchestration: { control: null } }, { live: undefined, assertAuthorized: allow });
     expect(setOrchestrationPolicy).toHaveBeenLastCalledWith('/work/app', 'durable_1', { control: null });
     await updateMobileAgent(project, agent(), { agentId: 'durable_1', orchestration: null }, { live: undefined, assertAuthorized: allow });
-    expect(setOrchestrationPolicy).toHaveBeenLastCalledWith('/work/app', 'durable_1', { orchestrate: null, access: null, control: null, maxHelpers: null });
+    expect(setOrchestrationPolicy).toHaveBeenLastCalledWith('/work/app', 'durable_1',
+      { orchestrate: null, access: null, control: null, maxHelpers: null, crossProjectHelpers: null, connectToDispatcher: null });
   });
 
   it('refuses invalid fields with the reason, before writing anything', async () => {
@@ -398,5 +403,97 @@ describe('orchestration policy from a phone (#2228)', () => {
     expect(await refusal(createMobileAgent(project, { ...create, orchestration: { control: null } } as never, allow))).toMatchObject({ code: 'invalid_orchestration' });
     expect(await refusal(createMobileAgent(project, { ...create, orchestration: { maxHelpers: 50 } }, allow))).toMatchObject({ code: 'invalid_orchestration' });
     expect(startDurableCreation).not.toHaveBeenCalled();
+  });
+});
+
+describe('cross-project helpers and Connect to Dispatcher (#2512, #2534)', () => {
+  beforeEach(() => { vi.mocked(agentConfig.getDurableConfig).mockResolvedValue(null); });
+
+  it('shows both with where they come from', async () => {
+    const { orchestration } = await buildAgentSettings(project, agent({ orchestration: { orchestrate: true, crossProjectHelpers: true } }), undefined);
+    expect(orchestration).toMatchObject({
+      crossProjectHelpers: true, connectToDispatcher: false,
+      sources: { crossProjectHelpers: 'agent', connectToDispatcher: 'default' },
+    });
+  });
+
+  it('writes both, and turns Connect to Dispatcher on only while the Dispatcher is on', async () => {
+    await updateMobileAgent(project, agent(), { agentId: 'durable_1', orchestration: { crossProjectHelpers: true, connectToDispatcher: false } }, { live: undefined, assertAuthorized: allow });
+    expect(setOrchestrationPolicy).toHaveBeenLastCalledWith('/work/app', 'durable_1', { crossProjectHelpers: true, connectToDispatcher: false });
+    vi.mocked(setOrchestrationPolicy).mockClear();
+    const off = await refusal(updateMobileAgent(project, agent(), { agentId: 'durable_1', orchestration: { connectToDispatcher: true } }, { live: undefined, assertAuthorized: allow }));
+    expect(off).toMatchObject({ code: 'dispatcher_off', statusCode: 409 });
+    expect(await refusal(createMobileAgent(project, { projectId: 'p1', name: 'calm-otter', color: 'indigo', orchestration: { connectToDispatcher: true } }, allow)))
+      .toMatchObject({ code: 'dispatcher_off' });
+    expect(setOrchestrationPolicy).not.toHaveBeenCalled();
+    vi.mocked(isDispatcherEnabled).mockReturnValue(true);
+    await updateMobileAgent(project, agent(), { agentId: 'durable_1', orchestration: { connectToDispatcher: true } }, { live: undefined, assertAuthorized: allow });
+    expect(setOrchestrationPolicy).toHaveBeenLastCalledWith('/work/app', 'durable_1', { connectToDispatcher: true });
+    vi.mocked(isDispatcherEnabled).mockReturnValue(false);
+  });
+});
+
+describe('model options use the profile env (#2569)', () => {
+  it('passes the profile env, as GET_MODEL_OPTIONS does', async () => {
+    vi.mocked(resolveProfileEnv).mockResolvedValue({ CLAUDE_CONFIG_DIR: '/profiles/work' });
+    await buildAgentSettingsOptions('/work/app');
+    expect(resolveProfileEnv).toHaveBeenCalledWith('/work/app', 'claude-code');
+    expect(getModelOptions).toHaveBeenCalledWith('claude-code', { env: { CLAUDE_CONFIG_DIR: '/profiles/work' } });
+    vi.mocked(resolveProfileEnv).mockResolvedValue(undefined);
+  });
+});
+
+describe('the Dispatcher from a phone (#2533)', () => {
+  const folder = { id: '__dispatcher__', path: '/Users/me/.clubhouse/dispatcher' };
+  const dispatcherAgent = (extra: Partial<DurableAgentConfig> = {}): DurableAgentConfig =>
+    ({ id: 'durable_d', name: 'Dispatcher', color: 'indigo', createdAt: '2026-01-01', orchestrator: 'claude-code', persona: 'dispatcher', freeAgentMode: true, ...extra });
+  const update = (command: Record<string, unknown>, live: 'running' | undefined = undefined, config = dispatcherAgent()) =>
+    updateMobileDispatcher(folder, config, { agentId: 'durable_d', ...command }, { live, assertAuthorized: allow });
+
+  beforeEach(() => { vi.mocked(agentConfig.getDurableConfig).mockResolvedValue(null); });
+
+  it('reads Settings > Dispatcher: CLI, model, runtime and Free agent mode at any time, the rest never, no orchestration', async () => {
+    const settings = await buildAgentSettings(folder, dispatcherAgent(), 'running', { dispatcher: true });
+    expect(settings).toMatchObject({ isDispatcher: true, orchestration: null, state: 'running' });
+    expect(settings.settings).toMatchObject({
+      name: { editable: 'never' }, color: { editable: 'never' }, emoji: { editable: 'never' }, persona: { editable: 'never' },
+      clubhouseMode: { editable: 'never', value: null }, orchestrator: { editable: 'always' }, model: { editable: 'always' },
+      runtime: { editable: 'always' }, freeAgentMode: { editable: 'always' }, idleSleep: { editable: 'always' },
+    });
+    expect((await buildAgentSettings(project, agent(), undefined))).not.toHaveProperty('isDispatcher');
+  });
+
+  it('has no changes to show: its folder is no git repo', async () => {
+    expect((await buildAgentDetails(folder, dispatcherAgent(), { dispatcher: true })).changes).toBeNull();
+    expect(getBranchChanges).not.toHaveBeenCalled();
+  });
+
+  it('changes CLI, model, runtime, Free agent mode and auto-sleep, also while it runs', async () => {
+    await update({ model: 'opus', runtime: 'terminal', freeAgentMode: false, idleSleep: 30 }, 'running');
+    expect(agentConfig.updateDurableConfig).toHaveBeenCalledWith(folder.path, 'durable_d', { model: 'opus', runtimeMode: 'terminal', freeAgentMode: false, idleSleep: 30 });
+    expect(agentConfig.updateDurable).not.toHaveBeenCalled();
+  });
+
+  it('resets the model with a new CLI, as Settings > Dispatcher does, unless the command sets one', async () => {
+    await update({ orchestrator: 'codex-cli' });
+    expect(agentConfig.updateDurableConfig).toHaveBeenLastCalledWith(folder.path, 'durable_d', { orchestrator: 'codex-cli', model: 'default' });
+    await update({ orchestrator: 'claude-code', model: 'opus' }, undefined, dispatcherAgent({ orchestrator: 'codex-cli' }));
+    expect(agentConfig.updateDurableConfig).toHaveBeenLastCalledWith(folder.path, 'durable_d', { orchestrator: 'claude-code', model: 'opus' });
+  });
+
+  it('refuses what Settings > Dispatcher does not offer, before writing anything', async () => {
+    for (const command of [{ name: 'Boss' }, { color: 'rose' }, { emoji: '🧭' }, { persona: 'qa' }, { persona: null }, { clubhouseMode: true }, { orchestration: { orchestrate: true } }, { orchestration: null }]) {
+      expect(await refusal(update({ idleSleep: 30, ...command }))).toMatchObject({ code: 'dispatcher_locked', statusCode: 409 });
+    }
+    expect(await refusal(update({ model: 'gpt-9' }))).toMatchObject({ code: 'invalid_model', statusCode: 400 });
+    expect(await refusal(update({ orchestrator: 'unknown-cli' }))).toMatchObject({ code: 'orchestrator_unavailable' });
+    expect(await refusal(update({ orchestrator: 'codex-cli', freeAgentMode: true }))).toMatchObject({ code: 'free_agent_mode_unavailable' });
+    expect(agentConfig.updateDurableConfig).not.toHaveBeenCalled();
+  });
+
+  it('keeps its current CLI choosable after it was turned off for new agents', async () => {
+    vi.mocked(getAvailableOrchestrators).mockReturnValue([orchestrator('codex-cli', false)] as never);
+    await update({ orchestrator: 'claude-code' }, undefined, dispatcherAgent({ orchestrator: undefined }));
+    expect(agentConfig.updateDurableConfig).toHaveBeenCalledWith(folder.path, 'durable_d', { orchestrator: 'claude-code', model: 'default' });
   });
 });

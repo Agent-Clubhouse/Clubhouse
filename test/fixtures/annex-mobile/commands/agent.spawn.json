@@ -51,6 +51,30 @@
         },
         "status": 404
       }
+    },
+    {
+      "name": "dispatcher_locked",
+      "request": {
+        "commandId": "cmd_135",
+        "epoch": "00000000-0000-4000-8000-000000000001",
+        "projectId": "__dispatcher__",
+        "prompt": "x",
+        "type": "agent.spawn",
+        "version": 1
+      },
+      "response": {
+        "body": {
+          "commandId": "cmd_135",
+          "epoch": "00000000-0000-4000-8000-000000000001",
+          "error": {
+            "code": "dispatcher_locked",
+            "message": "The Dispatcher is in no project."
+          },
+          "status": "rejected",
+          "version": 1
+        },
+        "status": 409
+      }
     }
   ],
   "type": "agent.spawn"

@@ -13,7 +13,7 @@ import { AGENT_COLORS, generateDurableName } from '../../shared/name-generator';
 import { validateAgentGitName } from '../../shared/agent-name';
 import * as agentConfig from './agent-config';
 import { parseStartCreationParams, personaInjection, startDurableCreation } from './agent-creation';
-import { checkAvailability, getAvailableOrchestrators, resolveOrchestrator } from './agent-system';
+import { checkAvailability, getAvailableOrchestrators, resolveOrchestrator, resolveProfileEnv } from './agent-system';
 import { readDefaultMcps, readMcpCatalog, readProjectAgentDefaults } from './agent-settings-service';
 import { listAvailablePersonas } from './materialization-service';
 import * as orchestratorSettings from './orchestrator-settings';
@@ -27,6 +27,7 @@ import { getBranchChanges, isInsideGitRepo } from './git-service';
 import { MobileControlError } from './mobile-control';
 import * as orchestrationPolicy from './orchestration-policy';
 import * as orchestrationSettings from './orchestration-settings';
+import { isDispatcherEnabled } from './dispatcher/dispatcher-settings';
 import {
   ACCESS_LEVELS, MAX_HELPER_LIMIT, ORCHESTRATION_CONTROLS, validateOrchestrationPatch,
   type OrchestrationAccess, type OrchestrationPolicyPatch, type ResolvedOrchestrationPolicy,
@@ -63,7 +64,10 @@ const permissionsSupported = (orchestrator: string): boolean =>
 
 async function modelOptions(projectPath: string, orchestrator: string): Promise<Array<{ id: string; label: string }>> {
   try {
-    const options = await (await resolveOrchestrator(projectPath, orchestrator)).getModelOptions();
+    const provider = await resolveOrchestrator(projectPath, orchestrator);
+    // A profile can change the CLI's login, and so the models it lists (#2569), as GET_MODEL_OPTIONS passes it.
+    const env = await resolveProfileEnv(projectPath, provider.id);
+    const options = await provider.getModelOptions(env ? { env } : undefined);
     if (Array.isArray(options) && options.length > 0) return options;
   } catch {
     // telemetry-exempt: the picker falls back to the provider default, as useModelOptions does.
@@ -132,10 +136,13 @@ const ACCESS_CHOICES: readonly OrchestrationAccess[] = ['same', ...ACCESS_LEVELS
  * with null), and the choices the Orchestrate card offers.
  */
 export function mobileOrchestration(policy: ResolvedOrchestrationPolicy) {
-  const { orchestrate, access, control, maxHelpers, sources } = policy;
+  const { orchestrate, access, control, maxHelpers, crossProjectHelpers, connectToDispatcher, sources } = policy;
   return {
-    orchestrate, access, control, maxHelpers,
-    sources: { orchestrate: sources.orchestrate, access: sources.access, control: sources.control, maxHelpers: sources.maxHelpers },
+    orchestrate, access, control, maxHelpers, crossProjectHelpers, connectToDispatcher,
+    sources: {
+      orchestrate: sources.orchestrate, access: sources.access, control: sources.control, maxHelpers: sources.maxHelpers,
+      crossProjectHelpers: sources.crossProjectHelpers, connectToDispatcher: sources.connectToDispatcher,
+    },
     maxHelpersCap: maxHelpersCap(), controls: [...ORCHESTRATION_CONTROLS], accessLevels: [...ACCESS_CHOICES],
   };
 }
@@ -143,10 +150,13 @@ export type MobileOrchestration = ReturnType<typeof mobileOrchestration>;
 
 /**
  * Every policy field a phone shows, for agent.update's `orchestration: null`
- * (clear every override). Cross-project helpers (#2512) isn't on the phone
- * yet, so a phone never clears it unseen.
+ * (clear every override). Phones gate cross-project helpers (#2512) and
+ * Connect to Dispatcher (#2534) on capabilities; one that doesn't know them
+ * clears them too, as Reset on the desktop would.
  */
-const CLEAR_ALL: OrchestrationPolicyPatch = { orchestrate: null, access: null, control: null, maxHelpers: null };
+const CLEAR_ALL: OrchestrationPolicyPatch = {
+  orchestrate: null, access: null, control: null, maxHelpers: null, crossProjectHelpers: null, connectToDispatcher: null,
+};
 
 /**
  * A phone's orchestration patch, checked with the desktop's rules: the shared
@@ -167,6 +177,10 @@ export function parseMobileOrchestration(raw: unknown, mode: 'update' | 'create'
   if (Object.keys(patch).length === 0) throw invalid('invalid_orchestration', 'Set at least one orchestration field');
   if (mode === 'create' && Object.values(patch).some((v) => v === null)) throw invalid('invalid_orchestration', 'A new agent has no orchestration overrides to clear');
   if (typeof patch.maxHelpers === 'number' && patch.maxHelpers > cap) throw invalid('invalid_orchestration', capMessage);
+  // The Orchestrate card offers Connect to Dispatcher only while the Dispatcher is on (#2534); off is always allowed.
+  if (patch.connectToDispatcher === true && !isDispatcherEnabled()) {
+    throw new MobileControlError('dispatcher_off', 409, 'rejected', 'Turn on the Dispatcher first.');
+  }
   return patch;
 }
 
@@ -191,12 +205,25 @@ function stateOf(config: DurableAgentConfig, live: 'running' | 'starting' | unde
 
 const field = <T>(value: T, editable: MobileSettingEditable) => ({ value, editable });
 
-/** One agent's settings as the Settings card shows them, each with when it can change (#2452). */
-export async function buildAgentSettings(project: MobileAgentProject, config: DurableAgentConfig, live: 'running' | 'starting' | undefined) {
+/**
+ * One agent's settings as the Settings card shows them, each with when it can
+ * change (#2452). The Dispatcher's are Settings > Dispatcher's: CLI, model,
+ * runtime, Free agent mode and auto-sleep, at any time (they apply the next
+ * time it starts); its name, colour, emoji, persona and orchestration never.
+ */
+export async function buildAgentSettings(
+  project: MobileAgentProject,
+  config: DurableAgentConfig,
+  live: 'running' | 'starting' | undefined,
+  { dispatcher = false }: { dispatcher?: boolean } = {},
+) {
   const state = stateOf(config, live);
   const orchestrator = config.orchestrator
     || await resolveOrchestrator(project.path).then((p) => p.id).catch(() => DEFAULT_ORCHESTRATOR);
-  const runtimeEditable: MobileSettingEditable = chatAvailable(orchestrator) ? 'sleeping' : 'never';
+  /** What a spawn setting's `sleeping` becomes: any time for the Dispatcher, never for its locked ones. */
+  const spawn: MobileSettingEditable = dispatcher ? 'always' : 'sleeping';
+  const identity: MobileSettingEditable = dispatcher ? 'never' : 'sleeping';
+  const runtimeEditable: MobileSettingEditable = chatAvailable(orchestrator) ? spawn : 'never';
   const mode = resolveRuntimeMode(orchestrator, config.runtimeMode);
   // Awake, the runtime it runs in; asleep, the one the next wake starts in.
   const runtime = live ? (isChatAgent(config.id) ? 'chat' : 'terminal')
@@ -204,29 +231,31 @@ export async function buildAgentSettings(project: MobileAgentProject, config: Du
   const appMinutes = chatIdleSettings.getSettings().idleTimeoutMinutes;
   const idle = normalizeIdleSleep(config.idleSleep);
   const resolved = resolveIdleSleep(idle, appMinutes);
-  const clubhouseProject = isClubhouseModeEnabled(project.path);
-  const orchestration = await orchestrationOf(project.path, config);
+  const clubhouseProject = !dispatcher && isClubhouseModeEnabled(project.path);
+  // The Dispatcher's orchestration settings are locked (#2533), so it has none to show.
+  const orchestration = dispatcher ? null : await orchestrationOf(project.path, config);
   return {
     agentId: config.id,
     projectId: project.id,
+    ...(dispatcher && { isDispatcher: true as const }),
     state,
     /** Settings marked `sleeping` can change now. */
     sleeping: state === 'sleeping' || state === 'failed',
     settings: {
-      name: field(config.name, 'sleeping'),
-      color: field(config.color, 'sleeping'),
-      emoji: field(config.emoji ?? null, 'sleeping'),
+      name: field(config.name, identity),
+      color: field(config.color, identity),
+      emoji: field(config.emoji ?? null, identity),
       hasImageIcon: !!config.icon,
-      orchestrator: { ...field(config.orchestrator ?? null, 'sleeping'), resolved: orchestrator },
-      model: field(config.model ?? 'default', 'sleeping'),
+      orchestrator: { ...field(config.orchestrator ?? null, spawn), resolved: orchestrator },
+      model: field(config.model ?? 'default', spawn),
       runtime: { ...field(config.runtimeMode ?? 'default', runtimeEditable), resolved: runtime },
-      persona: field(config.persona ?? null, 'sleeping'),
+      persona: field(config.persona ?? null, identity),
       clubhouseMode: { ...field(clubhouseProject ? !config.clubhouseModeOverride : null, clubhouseProject ? 'sleeping' : 'never'), projectEnabled: clubhouseProject },
-      freeAgentMode: field(!!config.freeAgentMode, permissionsSupported(orchestrator) ? 'sleeping' : 'never'),
+      freeAgentMode: field(!!config.freeAgentMode, permissionsSupported(orchestrator) ? spawn : 'never'),
       // Only chat agents idle-sleep; the value is kept either way.
       idleSleep: { ...field(idle, 'always'), minutes: resolved.minutes, source: resolved.source, applies: runtime === 'chat' },
     },
-    /** Changes at any time, as on the Orchestrate card; agent.update's `orchestration`. */
+    /** Changes at any time, as on the Orchestrate card; agent.update's `orchestration`. Null for the Dispatcher. */
     orchestration,
   };
 }
@@ -262,9 +291,10 @@ function underProject(root: string, path: string): string {
  * against main as on the Changes card. Changes are null while the agent is
  * still being created or when git can't be read.
  */
-export async function buildAgentDetails(project: MobileAgentProject, config: DurableAgentConfig) {
+export async function buildAgentDetails(project: MobileAgentProject, config: DurableAgentConfig, { dispatcher = false }: { dispatcher?: boolean } = {}) {
   const creating = config.creation?.state === 'creating';
-  const changes = creating ? null : await getBranchChanges(config.worktreePath || project.path, undefined, true).then(
+  // The Dispatcher's folder is no git repo (#2533): no Changes.
+  const changes = creating || dispatcher ? null : await getBranchChanges(config.worktreePath || project.path, undefined, true).then(
     (c): MobileAgentChanges => ({
       available: c.available,
       base: c.base ?? null,
@@ -434,4 +464,55 @@ export async function updateMobileAgent(
   if (Object.keys(identity).length > 0) await agentConfig.updateDurable(project.path, config.id, identity);
   const saved = (await agentConfig.getDurableConfig(project.path, config.id)) ?? config;
   return buildAgentSettings(project, saved, live);
+}
+
+/** agent.update fields Settings > Dispatcher doesn't offer (#2535): the same rules as the desktop's IPC guards. */
+const DISPATCHER_LOCKED = ['name', 'color', 'emoji', 'persona', 'clubhouseMode', 'orchestration'] as const satisfies ReadonlyArray<keyof MobileAgentUpdate>;
+
+/**
+ * agent.update for the Dispatcher: Settings > Dispatcher's rules. CLI, model,
+ * runtime, Free agent mode and auto-sleep change at any time and apply the
+ * next time it starts. A new CLI resets the model to its default, and a model
+ * must be one the CLI lists. Everything else is `dispatcher_locked`.
+ */
+export async function updateMobileDispatcher(
+  project: MobileAgentProject,
+  config: DurableAgentConfig,
+  command: MobileAgentUpdate,
+  { live, assertAuthorized }: { live: 'running' | 'starting' | undefined; assertAuthorized: () => void },
+) {
+  const locked = DISPATCHER_LOCKED.filter((k) => command[k] !== undefined);
+  if (locked.length > 0) {
+    throw new MobileControlError('dispatcher_locked', 409, 'rejected', `The Dispatcher's ${locked.join(', ')} can't be changed.`);
+  }
+  const updates: DurableConfigUpdates = {};
+  const current = config.orchestrator
+    || await resolveOrchestrator(project.path).then((p) => p.id).catch(() => DEFAULT_ORCHESTRATOR);
+  const orchestrator = command.orchestrator ?? current;
+  if (command.orchestrator !== undefined && command.orchestrator !== config.orchestrator) {
+    // The current CLI stays listed even when it has since been turned off for new agents.
+    if (command.orchestrator !== current) await assertOrchestrator(project.path, command.orchestrator);
+    updates.orchestrator = command.orchestrator as DurableConfigUpdates['orchestrator'];
+    updates.model = 'default';
+  }
+  if (command.model !== undefined) {
+    if (command.model !== 'default' && !(await modelOptions(project.path, orchestrator)).some((o) => o.id === command.model)) {
+      throw invalid('invalid_model', `${command.model} isn't a model this CLI lists.`);
+    }
+    updates.model = command.model;
+  }
+  if (command.runtime !== undefined) {
+    if (command.runtime !== 'default' && !chatAvailable(orchestrator)) throw new MobileControlError('runtime_unavailable');
+    updates.runtimeMode = command.runtime === 'default' ? null : command.runtime;
+  }
+  if (command.freeAgentMode !== undefined) {
+    if (command.freeAgentMode && !permissionsSupported(orchestrator)) throw new MobileControlError('free_agent_mode_unavailable');
+    updates.freeAgentMode = command.freeAgentMode;
+  }
+  if (command.idleSleep !== undefined) updates.idleSleep = command.idleSleep === 'inherit' ? null : command.idleSleep;
+
+  assertAuthorized();
+  if (Object.keys(updates).length > 0) await agentConfig.updateDurableConfig(project.path, config.id, updates);
+  const saved = (await agentConfig.getDurableConfig(project.path, config.id)) ?? config;
+  return buildAgentSettings(project, saved, live, { dispatcher: true });
 }

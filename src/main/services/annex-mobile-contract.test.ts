@@ -36,7 +36,33 @@ const W = vi.hoisted(() => ({
   dispose: { ok: true } as Record<string, unknown>,
   projectStateReady: true,
   finishedReady: true,
+  // The app-wide Dispatcher (#2533): off unless a test turns it on.
+  dispatcher: { flagOn: false, enabled: false, newLayout: true },
+  dispatcherListeners: new Set<(state: any) => void>(),
 }));
+const DISPATCHER_PATH = vi.hoisted(() => '/Users/me/.clubhouse/dispatcher');
+
+vi.mock('./dispatcher/dispatcher-service', () => {
+  const config = () => (W.durables[DISPATCHER_PATH] ?? [])[0] ?? null;
+  const enabled = () => W.dispatcher.flagOn && W.dispatcher.enabled;
+  const state = () => ({ enabled: enabled(), flagOn: W.dispatcher.flagOn, agentId: config()?.id ?? null,
+    path: config() ? DISPATCHER_PATH : null, config: config() ? { ...config() } : null });
+  return {
+    DISPATCHER_NAME: 'Dispatcher',
+    getDispatcherPath: () => DISPATCHER_PATH,
+    isDispatcherAgentId: (id?: string | null) => !!id && id === config()?.id,
+    isDispatcherEnabled: enabled,
+    getDispatcherState: state,
+    onDispatcherChanged: (l: (s: unknown) => void) => { W.dispatcherListeners.add(l); return () => W.dispatcherListeners.delete(l); },
+    setDispatcherEnabled: async (on: boolean) => {
+      W.dispatcher.enabled = on;
+      for (const l of W.dispatcherListeners) l(state());
+      return state();
+    },
+  };
+});
+vi.mock('./dispatcher/dispatcher-settings', () => ({ isDispatcherEnabled: () => W.dispatcher.flagOn && W.dispatcher.enabled }));
+vi.mock('../window-chrome', () => ({ newChromeEnabled: () => W.dispatcher.newLayout }));
 
 vi.mock('./annex-chat-content', () => ({ readMobileChatContent: async () => ({ kind: 'text', name: 'README.md', text: '# App' }) }));
 vi.mock('./agent-runtime/chat-files', async (importOriginal) => ({
@@ -409,7 +435,12 @@ function resetWorld() {
       { id: 'durable_fresh', name: 'fresh', color: 'cyan', createdAt: '2026-10-05T09:00:00.000Z', creation: { state: 'creating', startedAt: '2026-10-05T09:00:00.000Z' } },
       { id: 'durable_docs', name: 'Docs', color: 'violet', parentAgentId: 'durable_chat', worktreePath: `${APP}/.clubhouse/agents/docs`, createdAt: '2026-10-06T09:00:00.000Z' },
     ],
+    [DISPATCHER_PATH]: [
+      { id: 'durable_dispatcher', name: 'Dispatcher', color: 'indigo', orchestrator: 'claude-code', freeAgentMode: true, persona: 'dispatcher',
+        idleSleep: 'never', runtimeMode: 'chat', mcpOverride: true, createdAt: '2026-10-07T09:00:00.000Z', lastSessionId: 'sess_dispatch' },
+    ],
   };
+  W.dispatcher = { flagOn: false, enabled: false, newLayout: true };
   W.running = new Set(['durable_term']);
   W.revert = new Set();
   W.transcripts = {
@@ -980,6 +1011,73 @@ describe('Annex mobile contract fixtures', () => {
     cases.push({ name: 'rate_limited', request: { method: 'POST', path: route, headers: { 'Content-Type': 'image/png' }, body: `<${png.length} bytes>` },
       response: { status: limited!.status, body: limited!.body, headers: { 'retry-after': '<seconds>' } } });
     fixtures.set('attachments.json', { cases });
+  });
+
+  it('the Dispatcher (#2533)', async () => {
+    const off = { type: 'dispatcher.setEnabled', enabled: true };
+    await command('dispatcher_flag_off', off);
+    W.dispatcher.flagOn = true;
+    W.dispatcher.newLayout = false;
+    await command('dispatcher_layout_off', off);
+    W.dispatcher.newLayout = true;
+    // Off: its id answers nothing, and nothing connects to it.
+    const routes: Record<string, unknown> = {
+      offChat: await exchange('GET', '/api/v1/mobile/agents/durable_dispatcher/chat'),
+      offSettings: await exchange('GET', '/api/v1/mobile/agents/durable_dispatcher/settings'),
+    };
+    await command('dispatcher_off', { type: 'agent.start', agentId: 'durable_dispatcher' });
+    await command('dispatcher_off', { type: 'agent.update', agentId: 'durable_dispatcher', model: 'sonnet' });
+    await command('dispatcher_off (connectToDispatcher)', { type: 'agent.update', agentId: 'durable_chat', orchestration: { connectToDispatcher: true } });
+
+    const ws = await connect();
+    ws.send.mockClear();
+    const on = await command('accepted', { type: 'dispatcher.setEnabled', enabled: true });
+    expect(on.body.result).toEqual({ enabled: true, flagOn: true, agentId: 'durable_dispatcher' });
+    await vi.waitFor(() => expect(frames(ws).some((f) => f.type === 'snapshot')).toBe(true));
+    const changedOn = frames(ws).find((f) => f.type === 'dispatcher:changed');
+    const snapshot = frames(ws).find((f) => f.type === 'snapshot').payload;
+    expect(snapshot.dispatcher.agent).toMatchObject({ id: 'durable_dispatcher', projectId: '__dispatcher__', isDispatcher: true });
+    expect(Object.values(snapshot.agents).flat().some((a: any) => a.id === 'durable_dispatcher')).toBe(false);
+    await command('accepted unchanged', { type: 'dispatcher.setEnabled', enabled: true });
+    const state = await exchange('GET', '/api/v1/mobile/agents/state');
+    fixtures.set('snapshot-dispatcher.json', { direction: 'desktop-to-phone', field: 'dispatcher', value: snapshot.dispatcher,
+      agentStateRow: state.response.body.agents.find((a: any) => a.agentId === 'durable_dispatcher') });
+
+    // On: the usual agent routes and commands, with Settings > Dispatcher's rules.
+    const settings = await exchange('GET', '/api/v1/mobile/agents/durable_dispatcher/settings');
+    expect(settings.response.body).toMatchObject({ isDispatcher: true, orchestration: null, details: { changes: null } });
+    fixtures.set('agent-settings-dispatcher.json', settings);
+    routes.chat = await exchange('GET', '/api/v1/mobile/agents/durable_dispatcher/chat');
+    routes.chatSessions = await exchange('GET', '/api/v1/mobile/agents/durable_dispatcher/chat/sessions');
+    routes.git = await exchange('GET', '/api/v1/projects/__dispatcher__/git/info');
+    routes.shell = { request: { type: 'pty:spawn-shell', payload: { sessionId: 'shell_dispatch', projectId: '__dispatcher__', agentId: 'durable_dispatcher' } },
+      replies: await roundTrip(ws, { type: 'pty:spawn-shell', payload: { sessionId: 'shell_dispatch', projectId: '__dispatcher__', agentId: 'durable_dispatcher' } }) };
+    await roundTrip(ws, { type: 'pty:close', payload: { sessionId: 'shell_dispatch' } });
+
+    await command('accepted (Dispatcher)', { type: 'agent.update', agentId: 'durable_dispatcher', model: 'sonnet', idleSleep: 30, freeAgentMode: false });
+    await command('accepted orchestrator (Dispatcher, model back to default)', { type: 'agent.update', agentId: 'durable_dispatcher', orchestrator: 'codex-cli' });
+    await command('invalid_model (Dispatcher)', { type: 'agent.update', agentId: 'durable_dispatcher', model: 'opus' });
+    await command('dispatcher_locked (name)', { type: 'agent.update', agentId: 'durable_dispatcher', name: 'Boss' });
+    await command('dispatcher_locked (persona)', { type: 'agent.update', agentId: 'durable_dispatcher', persona: 'qa' });
+    await command('dispatcher_locked (orchestration)', { type: 'agent.update', agentId: 'durable_dispatcher', orchestration: { orchestrate: true } });
+    await command('accepted (Dispatcher)', { type: 'agent.start', agentId: 'durable_dispatcher', resume: true });
+    await command('accepted (Dispatcher)', { type: 'agent.stop', agentId: 'durable_dispatcher' });
+    await command('dispatcher_locked', { type: 'agent.create', projectId: '__dispatcher__', name: 'second', color: 'indigo' });
+    await command('dispatcher_locked', { type: 'agent.spawn', projectId: '__dispatcher__', prompt: 'x' });
+    const chatPolicy = { ...W.durables[APP][0].orchestration };
+    await command('accepted cross-project and Dispatcher', { type: 'agent.update', agentId: 'durable_chat', orchestration: { crossProjectHelpers: true, connectToDispatcher: true } });
+    W.durables[APP][0].orchestration = chatPolicy;
+
+    ws.send.mockClear();
+    await command('accepted off', { type: 'dispatcher.setEnabled', enabled: false });
+    await vi.waitFor(() => expect(frames(ws).some((f) => f.type === 'snapshot')).toBe(true));
+    const changedOff = frames(ws).find((f) => f.type === 'dispatcher:changed');
+    expect(frames(ws).find((f) => f.type === 'snapshot').payload.dispatcher).toBeNull();
+    const seq = (f: any) => ({ ...f, seq: 1000 });
+    fixtures.set('dispatcher-changed.json', { direction: 'desktop-to-phone', note: 'seq is the replay sequence; a snapshot follows each.', frames: [seq(changedOn), seq(changedOff)] });
+    fixtures.set('dispatcher-routes.json', routes);
+    W.dispatcher = { flagOn: false, enabled: false, newLayout: true };
+    W.durables[DISPATCHER_PATH][0] = { ...W.durables[DISPATCHER_PATH][0], model: undefined, orchestrator: 'claude-code' };
   });
 
   it('session pairing revocation', async () => {

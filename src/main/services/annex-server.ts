@@ -18,7 +18,12 @@ import { readChatTranscript, listChatSessions } from './agent-runtime/chat-trans
 import { getSettings as getExperimentalSettings } from './experimental-settings';
 import { readMobileChatContent } from './annex-chat-content';
 import { agentFolders } from './agent-runtime/chat-files';
-import { buildAgentDetails, buildAgentSettings, buildAgentSettingsOptions, buildCreateOptions, createMobileAgent, mobileOrchestration, updateMobileAgent } from './mobile-agents';
+import { buildAgentDetails, buildAgentSettings, buildAgentSettingsOptions, buildCreateOptions, createMobileAgent, mobileOrchestration, updateMobileAgent, updateMobileDispatcher } from './mobile-agents';
+import {
+  DISPATCHER_CHANGED_EVENT, DISPATCHER_PROJECT_ID, activeDispatcher, dispatcherCapability, dispatcherChange, dispatcherFolderProject,
+  isDisabledDispatcherId, isDispatcherProjectId, setDispatcherEnabledFromPhone, type MobileDispatcherChange,
+} from './mobile-dispatcher';
+import { onDispatcherChanged } from './dispatcher/dispatcher-service';
 import { resolveOrchestrationPolicies } from './orchestration-policy';
 import { MOBILE_SLASH_COMMANDS_MAX, latestSlashCommands, remoteChatEvent } from './annex-chat-echo';
 import { buildMobileHelperRequests, runHelperCommand } from './mobile-helper-requests';
@@ -184,6 +189,7 @@ let unsubGroupProjectChanged: (() => void) | null = null;
 let unsubBulletinMessage: (() => void) | null = null;
 let unsubGroupProjectRegistry: (() => void) | null = null;
 let unsubHelperRequests: (() => void) | null = null;
+let unsubDispatcher: (() => void) | null = null;
 let staleEvictionInterval: ReturnType<typeof setInterval> | null = null;
 let heartbeatInterval: ReturnType<typeof setInterval> | null = null;
 
@@ -224,6 +230,7 @@ function unsubscribeEventBus(): void {
   unsubBulletinMessage?.();
   unsubGroupProjectRegistry?.();
   unsubHelperRequests?.();
+  unsubDispatcher?.();
   unsubPtyData = null;
   unsubHookEvent = null;
   unsubChatEvent = null;
@@ -234,6 +241,7 @@ function unsubscribeEventBus(): void {
   unsubBulletinMessage = null;
   unsubGroupProjectRegistry = null;
   unsubHelperRequests = null;
+  unsubDispatcher = null;
 }
 
 // ---------------------------------------------------------------------------
@@ -786,9 +794,17 @@ async function buildSnapshotData(): Promise<object> {
     });
   }
 
+  // The Dispatcher (#2533): in no project, so on its own, and only while it is on.
+  const active = activeDispatcher();
+  const dispatcherAgent = active ? { ...mapDurableAgent(active.config, DISPATCHER_PROJECT_ID), isDispatcher: true as const } : null;
+  if (active?.config.icon) {
+    const dataUrl = await agentConfig.readAgentIconData(active.config.icon);
+    if (dataUrl) agentIcons[active.config.id] = dataUrl;
+  }
+
   // Build agents metadata (execution modes, detailed statuses)
   const agentsMeta: Record<string, { executionMode: string | null; detailedStatus: AgentDetailedStatus | null }> = {};
-  for (const projectAgents of Object.values(agents)) {
+  for (const projectAgents of [...Object.values(agents), ...(dispatcherAgent ? [[dispatcherAgent]] : [])]) {
     for (const agent of projectAgents as Array<{ id: string; status: string; executionMode: string | null }>) {
       if (agent.status === 'running') {
         agentsMeta[agent.id] = {
@@ -933,6 +949,10 @@ async function buildSnapshotData(): Promise<object> {
     bulletinDigests,
     groupProjectMembers,
     ptyHost: annexPtyHost(process.platform, detectWindowsPty()),
+    // Null while the Dispatcher is off; its agent is the agents[projectId][] shape plus isDispatcher.
+    dispatcher: dispatcherAgent
+      ? { enabled: true, flagOn: true, projectId: DISPATCHER_PROJECT_ID, agent: dispatcherAgent }
+      : null,
   };
 }
 
@@ -1101,6 +1121,21 @@ async function findAgentAcrossProjects(agentId: string): Promise<{ config: Await
   return null;
 }
 
+/**
+ * findAgentAcrossProjects for phone routes and commands: the Dispatcher too
+ * while it is on (#2533), with its folder as the project `__dispatcher__`.
+ */
+async function findMobileAgent(agentId: string): ReturnType<typeof findAgentAcrossProjects> {
+  return activeDispatcher(agentId) ?? findAgentAcrossProjects(agentId);
+}
+
+/** The Dispatcher's folder is no git repo: git routes for `__dispatcher__` say so instead of project_not_found. */
+function refuseDispatcherGit(ctx: AnnexRouteContext, projectId: string): boolean {
+  if (!isDispatcherProjectId(projectId)) return false;
+  sendJson(ctx.res, 409, { error: 'not_git_repo' });
+  return true;
+}
+
 // ---------------------------------------------------------------------------
 // Controller terminals (#2476)
 // ---------------------------------------------------------------------------
@@ -1164,7 +1199,8 @@ async function handleSpawnShellWs(ws: WebSocket, payload: Record<string, unknown
     sendPtyError(ws, op, 'too_many_shells', { sessionId });
     return;
   }
-  const project = typeof projectId === 'string' ? await findProjectById(projectId) : undefined;
+  // The Dispatcher's folder too while it is on (#2533): a shell there, as for any agent's folder.
+  const project = dispatcherFolderProject(projectId) ?? (typeof projectId === 'string' ? await findProjectById(projectId) : undefined);
   if (!project) {
     sendPtyError(ws, op, 'project_not_found', { sessionId });
     return;
@@ -1869,6 +1905,7 @@ async function handleProjectFilesReadRoute(ctx: AnnexRouteContext, match: RegExp
 
 async function handleGitInfoRoute(ctx: AnnexRouteContext, match: RegExpMatchArray): Promise<void> {
   const projectId = decodeURIComponent(match[1]);
+  if (refuseDispatcherGit(ctx, projectId)) return;
   const project = await findProjectById(projectId);
   if (!project) { sendJson(ctx.res, 404, { error: 'project_not_found' }); return; }
   try {
@@ -1881,6 +1918,7 @@ async function handleGitInfoRoute(ctx: AnnexRouteContext, match: RegExpMatchArra
 
 async function handleGitLogRoute(ctx: AnnexRouteContext, match: RegExpMatchArray): Promise<void> {
   const projectId = decodeURIComponent(match[1]);
+  if (refuseDispatcherGit(ctx, projectId)) return;
   const project = await findProjectById(projectId);
   if (!project) { sendJson(ctx.res, 404, { error: 'project_not_found' }); return; }
   const url = new URL(ctx.req.url || '/', 'http://localhost');
@@ -1896,6 +1934,7 @@ async function handleGitLogRoute(ctx: AnnexRouteContext, match: RegExpMatchArray
 
 async function handleGitDiffRoute(ctx: AnnexRouteContext, match: RegExpMatchArray): Promise<void> {
   const projectId = decodeURIComponent(match[1]);
+  if (refuseDispatcherGit(ctx, projectId)) return;
   const project = await findProjectById(projectId);
   if (!project) { sendJson(ctx.res, 404, { error: 'project_not_found' }); return; }
   const url = new URL(ctx.req.url || '/', 'http://localhost');
@@ -1912,6 +1951,7 @@ async function handleGitDiffRoute(ctx: AnnexRouteContext, match: RegExpMatchArra
 
 async function handleGitShowCommitRoute(ctx: AnnexRouteContext, match: RegExpMatchArray): Promise<void> {
   const projectId = decodeURIComponent(match[1]);
+  if (refuseDispatcherGit(ctx, projectId)) return;
   const project = await findProjectById(projectId);
   if (!project) { sendJson(ctx.res, 404, { error: 'project_not_found' }); return; }
   const url = new URL(ctx.req.url || '/', 'http://localhost');
@@ -1927,6 +1967,7 @@ async function handleGitShowCommitRoute(ctx: AnnexRouteContext, match: RegExpMat
 
 async function handleGitCommitDiffRoute(ctx: AnnexRouteContext, match: RegExpMatchArray): Promise<void> {
   const projectId = decodeURIComponent(match[1]);
+  if (refuseDispatcherGit(ctx, projectId)) return;
   const project = await findProjectById(projectId);
   if (!project) { sendJson(ctx.res, 404, { error: 'project_not_found' }); return; }
   const url = new URL(ctx.req.url || '/', 'http://localhost');
@@ -1944,6 +1985,7 @@ async function handleGitCommitDiffRoute(ctx: AnnexRouteContext, match: RegExpMat
 async function handleGitOperationRoute(ctx: AnnexRouteContext, match: RegExpMatchArray): Promise<void> {
   if (ctx.requireMtls()) return;
   const projectId = decodeURIComponent(match[1]);
+  if (refuseDispatcherGit(ctx, projectId)) return;
   const operation = match[2];
   const project = await findProjectById(projectId);
   if (!project) { sendJson(ctx.res, 404, { error: 'project_not_found' }); return; }
@@ -1976,7 +2018,7 @@ async function handleSessionListRoute(ctx: AnnexRouteContext, match: RegExpMatch
   const projectId = url.searchParams.get('projectId');
   const orchestrator = url.searchParams.get('orchestrator') || undefined;
   if (!projectId) { sendJson(ctx.res, 400, { error: 'projectId_required' }); return; }
-  const project = await findProjectById(projectId);
+  const project = dispatcherFolderProject(projectId) ?? await findProjectById(projectId);
   if (!project) { sendJson(ctx.res, 404, { error: 'project_not_found' }); return; }
   try {
     const config = await agentConfig.getDurableConfig(project.path, agentId);
@@ -1997,7 +2039,7 @@ async function handleSessionTranscriptRoute(ctx: AnnexRouteContext, match: RegEx
   const offset = parseInt(url.searchParams.get('offset') || '0', 10);
   const limit = parseInt(url.searchParams.get('limit') || '100', 10);
   if (!projectId) { sendJson(ctx.res, 400, { error: 'projectId_required' }); return; }
-  const project = await findProjectById(projectId);
+  const project = dispatcherFolderProject(projectId) ?? await findProjectById(projectId);
   if (!project) { sendJson(ctx.res, 404, { error: 'project_not_found' }); return; }
   try {
     const config = await agentConfig.getDurableConfig(project.path, agentId);
@@ -2021,7 +2063,7 @@ async function handleSessionSummaryRoute(ctx: AnnexRouteContext, match: RegExpMa
   const projectId = url.searchParams.get('projectId');
   const orchestrator = url.searchParams.get('orchestrator') || undefined;
   if (!projectId) { sendJson(ctx.res, 400, { error: 'projectId_required' }); return; }
-  const project = await findProjectById(projectId);
+  const project = dispatcherFolderProject(projectId) ?? await findProjectById(projectId);
   if (!project) { sendJson(ctx.res, 404, { error: 'project_not_found' }); return; }
   try {
     const config = await agentConfig.getDurableConfig(project.path, agentId);
@@ -2459,6 +2501,8 @@ async function handleMobileCapabilitiesRoute(ctx: AnnexRouteContext): Promise<vo
     // Shells at the project root or an agent's worktree, and an agent's own PTY (#2476).
     terminal: { version: 1, projectShell: true, agentShell: true, agentAttach: true,
       maxShellsPerConnection: MAX_SHELLS_PER_CONNECTION, maxInputLength: MAX_PTY_INPUT_SIZE },
+    // The app-wide Dispatcher (#2533): the snapshot's `dispatcher`, dispatcher:changed and dispatcher.setEnabled.
+    dispatcher: dispatcherCapability(),
     ...phoneRoutes(),
   });
 }
@@ -2516,6 +2560,16 @@ async function handleMobileAgentStateRoute(ctx: AnnexRouteContext): Promise<void
         });
       }
     }
+    const dispatcher = activeDispatcher();
+    if (dispatcher) {
+      const d = dispatcher.config;
+      agents.push({
+        agentId: d.id, projectId: DISPATCHER_PROJECT_ID, kind: 'durable', isDispatcher: true,
+        status: isAgentRunning(d.id) ? 'running' : 'sleeping',
+        hasSession: !!d.lastSessionId, lastActivityAt: lastActivityAt(d.id, d.createdAt),
+        ...state(d.id),
+      });
+    }
     for (const quick of trackedQuickAgents.values()) {
       agents.push({
         agentId: quick.id, projectId: quick.projectId, kind: 'quick', status: quick.status,
@@ -2533,7 +2587,7 @@ async function handleMobileAgentStateRoute(ctx: AnnexRouteContext): Promise<void
 async function handleMobileChatRoute(ctx: AnnexRouteContext, match: RegExpMatchArray): Promise<void> {
   try {
     const agentId = decodeURIComponent(match[1]);
-    const durable = await findAgentAcrossProjects(agentId);
+    const durable = await findMobileAgent(agentId);
     if ((!durable || isDisposedAgent(durable.config)) && !trackedQuickAgents.has(agentId)) {
       sendJson(ctx.res, 404, { error: 'agent_not_found' }); return;
     }
@@ -2596,7 +2650,7 @@ async function handleMobileContentRoute(ctx: AnnexRouteContext, match: RegExpMat
   };
   try {
     const agentId = decodeURIComponent(match[1]);
-    const info = await findAgentAcrossProjects(agentId);
+    const info = await findMobileAgent(agentId);
     if ((!info || isDisposedAgent(info.config)) && !trackedQuickAgents.has(agentId)) {
       sendJson(ctx.res, 404, { error: 'agent_not_found' }); return;
     }
@@ -2614,7 +2668,7 @@ async function handleMobileContentRoute(ctx: AnnexRouteContext, match: RegExpMat
 async function handleMobileChatSessionsRoute(ctx: AnnexRouteContext, match: RegExpMatchArray): Promise<void> {
   try {
     const agentId = decodeURIComponent(match[1]);
-    if (!await findAgentAcrossProjects(agentId) && !trackedQuickAgents.has(agentId)) {
+    if (!await findMobileAgent(agentId) && !trackedQuickAgents.has(agentId)) {
       sendJson(ctx.res, 404, { error: 'agent_not_found' }); return;
     }
     sendJson(ctx.res, 200, { version: 1, epoch: mobileCommands.epoch, agentId, sessions: await listChatSessions(agentId) });
@@ -2645,13 +2699,14 @@ async function handleMobileCreateOptionsRoute(ctx: AnnexRouteContext, match: Reg
 /** A durable agent's editable settings and what each can be set to (#2452). */
 async function handleMobileAgentSettingsRoute(ctx: AnnexRouteContext, match: RegExpMatchArray): Promise<void> {
   try {
-    const info = await findAgentAcrossProjects(decodeURIComponent(match[1]));
+    const info = await findMobileAgent(decodeURIComponent(match[1]));
     if (!info || isDisposedAgent(info.config)) { sendJson(ctx.res, 404, { error: 'agent_not_found' }); return; }
     const project = { id: info.project.id, path: info.project.path };
+    const dispatcher = project.id === DISPATCHER_PROJECT_ID;
     const [settings, options, details] = await Promise.all([
-      buildAgentSettings(project, info.config, mobileLiveState(info.config.id)),
+      buildAgentSettings(project, info.config, mobileLiveState(info.config.id), { dispatcher }),
       buildAgentSettingsOptions(project.path),
-      buildAgentDetails(project, info.config),
+      buildAgentDetails(project, info.config, { dispatcher }),
     ]);
     sendJson(ctx.res, 200, { version: 1, epoch: mobileCommands.epoch, ...settings, options, details });
   } catch {
@@ -2662,8 +2717,19 @@ async function handleMobileAgentSettingsRoute(ctx: AnnexRouteContext, match: Reg
 
 async function runMobileCommand(command: MobileCommand, assertAuthorized: () => void, principal: string): Promise<unknown> {
   assertAuthorized();
+  if (command.type === 'dispatcher.setEnabled') {
+    // onDispatcherChanged broadcasts dispatcher:changed and refreshes the snapshot.
+    return setDispatcherEnabledFromPhone(command.enabled, assertAuthorized);
+  }
+  // The Dispatcher is in no project (#2533): nothing is created, pinned or listed under its id.
+  if ('projectId' in command && isDispatcherProjectId(command.projectId)) {
+    throw new MobileControlError('dispatcher_locked', 409, 'rejected', 'The Dispatcher is in no project.');
+  }
+  if ('agentId' in command && isDisabledDispatcherId(command.agentId)) {
+    throw new MobileControlError('dispatcher_off', 409, 'rejected', 'The Dispatcher is turned off.');
+  }
   if ('sessionId' in command) {
-    const info = await findAgentAcrossProjects(command.agentId);
+    const info = await findMobileAgent(command.agentId);
     if ((!info || isDisposedAgent(info.config)) && !trackedQuickAgents.has(command.agentId)) throw new MobileControlError('agent_not_found', 404);
     const runtime = getAgentRuntime(command.agentId);
     return executeChatCommand(command, runtime, async () => !await isRevertRunning(command.agentId), () => {
@@ -2746,10 +2812,12 @@ async function runMobileCommand(command: MobileCommand, assertAuthorized: () => 
     return created;
   }
   if (command.type === 'agent.update') {
-    const durable = await findAgentAcrossProjects(command.agentId);
+    const durable = await findMobileAgent(command.agentId);
     if (!durable || isDisposedAgent(durable.config)) throw new MobileControlError('agent_not_found', 404);
     assertAuthorized();
-    const updated = await updateMobileAgent({ id: durable.project.id, path: durable.project.path }, durable.config, command,
+    // Settings > Dispatcher's rules for the Dispatcher, the Settings card's for every other agent.
+    const updateAgent = durable.project.id === DISPATCHER_PROJECT_ID ? updateMobileDispatcher : updateMobileAgent;
+    const updated = await updateAgent({ id: durable.project.id, path: durable.project.path }, durable.config, command,
       { live: mobileLiveState(command.agentId), assertAuthorized });
     // The desktop's agent list reads names and colours once; tell it what the phone changed.
     const { settings } = updated;
@@ -2771,7 +2839,7 @@ async function runMobileCommand(command: MobileCommand, assertAuthorized: () => 
     broadcastSnapshotRefresh();
     return result;
   }
-  const info = await findAgentAcrossProjects(command.agentId);
+  const info = await findMobileAgent(command.agentId);
   const quick = trackedQuickAgents.get(command.agentId);
   const project = info?.project ?? (quick ? await findProjectById(quick.projectId) : undefined);
   if (!project || (info && isDisposedAgent(info.config))) throw new MobileControlError('agent_not_found', 404);
@@ -2864,7 +2932,7 @@ async function handleMobileAttachmentRoute(ctx: AnnexRouteContext, match: RegExp
     const agentId = decodeURIComponent(match[1]);
     if (!isUploadContentType(ctx.req.headers['content-type'])) { refuse(415, 'unsupported_media_type'); return; }
     mobileAttachments.checkLimits(principal, Math.min(Number(ctx.req.headers['content-length']) || 0, CHAT_IMAGE_MAX_BYTES));
-    const info = await findAgentAcrossProjects(agentId);
+    const info = await findMobileAgent(agentId);
     if ((!info || isDisposedAgent(info.config)) && !trackedQuickAgents.has(agentId)) { refuse(404, 'agent_not_found'); return; }
     const runtime = getAgentRuntime(agentId);
     if (!runtime || runtime.kind !== 'chat' || !runtime.isRunning()) { refuse(409, 'not_chat'); return; }
@@ -3774,6 +3842,18 @@ export function start(): void {
   const offStarts = onStartRequestsChanged(() => broadcastSnapshotRefresh());
   const offDisposes = onDisposeRequestsChanged(() => broadcastSnapshotRefresh());
   unsubHelperRequests = () => { offStarts(); offDisposes(); };
+
+  // The Dispatcher turned on or off, or its config changed (#2533): phones add, drop or update it live.
+  let lastDispatcherChange = JSON.stringify(dispatcherChange());
+  unsubDispatcher = onDispatcherChanged((state) => {
+    const change: MobileDispatcherChange = dispatcherChange(state);
+    const key = JSON.stringify(change);
+    if (key !== lastDispatcherChange) {
+      lastDispatcherChange = key;
+      broadcastAndBuffer(DISPATCHER_CHANGED_EVENT, change);
+    }
+    broadcastSnapshotRefresh();
+  });
 
   // Listen for group project registry changes and broadcast them
   unsubGroupProjectRegistry = groupProjectRegistry.onChange(() => {
