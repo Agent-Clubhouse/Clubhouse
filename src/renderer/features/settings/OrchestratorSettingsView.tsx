@@ -13,7 +13,7 @@ import { noteExplicitTerminalChoice } from '../agents/chat/chat-default-tip';
 import { ProjectAgentDefaultsSection } from './ProjectAgentDefaultsSection';
 import { SettingsPage, SettingsSection, SettingsField, SettingsBlock, settingsInput, settingsHelp } from './SettingsLayout';
 import type { FreeAgentPermissionMode, SourceControlProvider } from '../../../shared/types';
-import type { AgentRuntimeMode, ChatDriverId, ChatRuntimeSettings } from '../../../shared/chat';
+import { COPILOT_SDK_FLAG, type AgentRuntimeMode, type ChatDriverId, type ChatRuntimeSettings } from '../../../shared/chat';
 import { Button } from '../../components/Button';
 import { useChatIdleSettingsStore } from '../../stores/chatIdleSettingsStore';
 import { CHAT_IDLE_TIMEOUT_CHOICES } from '../../../shared/settings-definitions';
@@ -47,6 +47,7 @@ const DEFAULT_RUNTIME_MODE: AgentRuntimeMode = 'chat';
  */
 function useChatRuntimeSettings() {
   const [chatEnabled, setChatEnabled] = useState(false);
+  const [copilotSdkEnabled, setCopilotSdkEnabled] = useState(false);
   /** The flag (and, when on, the settings) have loaded, whatever the answer. */
   const [chatResolved, setChatResolved] = useState(false);
   const [runtimeSettings, setRuntimeSettings] = useState<ChatRuntimeSettings>({});
@@ -62,6 +63,7 @@ function useChatRuntimeSettings() {
         ]);
         if (cancelled || experimental?.chat !== true || !eligible) return;
         setChatEnabled(true);
+        setCopilotSdkEnabled(experimental?.[COPILOT_SDK_FLAG] === true);
         const settings = await window.clubhouse.chat.getRuntimeSettings();
         if (!cancelled) setRuntimeSettings(settings ?? {});
       } catch {
@@ -101,10 +103,13 @@ function useChatRuntimeSettings() {
     }
   };
 
-  return { chatEnabled, chatResolved, runtimeSettings, setRuntimeMode, setChatDriver };
+  return { chatEnabled, copilotSdkEnabled, chatResolved, runtimeSettings, setRuntimeMode, setChatDriver };
 }
 
-/** Chat drivers a provider lets you choose between. The first is what it gets when nothing is chosen. */
+/**
+ * Chat drivers a provider lets you choose between, shown once the Copilot SDK
+ * flag is on. The first is what it gets when nothing is chosen.
+ */
 const CHAT_DRIVER_CHOICES: Readonly<Record<string, ReadonlyArray<{ value: ChatDriverId; label: string }>>> = {
   'copilot-cli': [
     { value: 'copilot_acp', label: 'ACP (default)' },
@@ -177,7 +182,7 @@ function AppAgentSettings() {
   const setFreeAgentDefaultMode = useFreeAgentSettingsStore((s) => s.setDefaultMode);
   const loadFreeAgentSettings = useFreeAgentSettingsStore((s) => s.loadSettings);
   const [showConfirm, setShowConfirm] = useState(false);
-  const { chatEnabled, chatResolved, runtimeSettings, setRuntimeMode, setChatDriver } = useChatRuntimeSettings();
+  const { chatEnabled, copilotSdkEnabled, chatResolved, runtimeSettings, setRuntimeMode, setChatDriver } = useChatRuntimeSettings();
   const idleMinutes = useChatIdleSettingsStore((st) => st.idleTimeoutMinutes as number);
   const saveIdle = useChatIdleSettingsStore((st) => st.saveSettings);
   const loadIdle = useChatIdleSettingsStore((st) => st.loadSettings);
@@ -435,7 +440,7 @@ function AppAgentSettings() {
                           onChange={(mode) => setRuntimeMode(o.id, mode)}
                         />
                       </SettingsField>
-                      {runtimeMode === 'chat' && CHAT_DRIVER_CHOICES[o.id] && (
+                      {runtimeMode === 'chat' && copilotSdkEnabled && CHAT_DRIVER_CHOICES[o.id] && (
                         <SettingsField
                           label="Chat driver"
                           help="How chat talks to the CLI. Applies the next time an agent starts, and the chat says when it runs on the Copilot SDK. If the SDK can't start, the agent uses ACP and tells you why."

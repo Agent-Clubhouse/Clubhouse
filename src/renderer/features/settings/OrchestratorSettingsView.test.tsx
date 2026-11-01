@@ -385,8 +385,24 @@ describe('OrchestratorSettingsView', () => {
         });
       });
 
-      it('defaults to ACP, and only Copilot offers it', async () => {
+      function setSdkFlag() {
+        window.clubhouse.app.getExperimentalSettings = vi.fn().mockResolvedValue({ chat: true, copilotSdk: true });
+        window.clubhouse.app.isPreviewEligible = vi.fn().mockResolvedValue(true);
+      }
+
+      it('is not offered with its flag off, even with the SDK saved, and the choice stays saved', async () => {
         setChatFlag(true);
+        getRuntimeSettings.mockResolvedValue({ 'copilot-cli': { mode: 'chat', driver: 'copilot_sdk' } });
+        render(<OrchestratorSettingsView />);
+        const row = await screen.findByTestId('runtime-mode-copilot-cli');
+        await waitFor(() => expect(within(row).getByRole('radio', { name: 'Chat' })).toHaveAttribute('aria-checked', 'true'));
+        expect(screen.queryByTestId('chat-driver-copilot-cli')).not.toBeInTheDocument();
+        fireEvent.click(within(row).getByRole('radio', { name: 'CLI' }));
+        await waitFor(() => expect(saveRuntimeSettings).toHaveBeenCalledWith({ 'copilot-cli': { mode: 'terminal', driver: 'copilot_sdk' } }));
+      });
+
+      it('defaults to ACP, and only Copilot offers it', async () => {
+        setSdkFlag();
         render(<OrchestratorSettingsView />);
         const select = await screen.findByTestId('chat-driver-copilot-cli');
         expect(select).toHaveValue('copilot_acp');
@@ -394,7 +410,7 @@ describe('OrchestratorSettingsView', () => {
       });
 
       it('saves the SDK when chosen, and clears the choice on going back', async () => {
-        setChatFlag(true);
+        setSdkFlag();
         getRuntimeSettings.mockResolvedValue({ 'claude-code': { mode: 'terminal' } });
         render(<OrchestratorSettingsView />);
         const select = await screen.findByTestId('chat-driver-copilot-cli');
@@ -408,7 +424,7 @@ describe('OrchestratorSettingsView', () => {
       });
 
       it('is hidden when the agent opens in the CLI, and when chat is off', async () => {
-        setChatFlag(true);
+        setSdkFlag();
         getRuntimeSettings.mockResolvedValue({ 'copilot-cli': { mode: 'terminal' } });
         const { unmount } = render(<OrchestratorSettingsView />);
         await screen.findByTestId('runtime-mode-copilot-cli');
