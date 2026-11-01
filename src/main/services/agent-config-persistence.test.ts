@@ -8,7 +8,7 @@ let writeGate: { reached: () => void; release: Promise<void> } | null = null;
 /** Errors to throw from readFile for specific paths (simulates EACCES/EBUSY). */
 const readErrors = new Map<string, NodeJS.ErrnoException>();
 /** Directory identities for stat(); paths not listed fall back to path identity. */
-const dirInodes = new Map<string, number>();
+const dirInodes = new Map<string, number | bigint>();
 const copiedFiles: Array<[string, string]> = [];
 
 vi.mock('child_process', () => ({
@@ -42,10 +42,11 @@ vi.mock('fs/promises', () => ({
     if (data !== undefined) files.set(String(dest), data);
     files.delete(String(src));
   }),
-  stat: vi.fn(async (p: string) => {
+  // Like Node: a plain stat rounds a file ID to a Number, a bigint stat keeps it exact.
+  stat: vi.fn(async (p: string, opts?: { bigint?: boolean }) => {
     const ino = dirInodes.get(String(p));
     if (ino === undefined) throw Object.assign(new Error('ENOENT'), { code: 'ENOENT' });
-    return { dev: 1, ino };
+    return opts?.bigint ? { dev: BigInt(1), ino: BigInt(ino) } : { dev: 1, ino: Number(ino) };
   }),
   copyFile: vi.fn(async (src: string, dest: string) => { copiedFiles.push([String(src), String(dest)]); }),
   appendFile: vi.fn(async () => undefined),
@@ -73,7 +74,9 @@ import {
   deleteUnregister,
   flushAgentConfig,
   flushAllAgentConfigs,
+  isSameProject,
   listDurable,
+  projectKey,
   renameDurable,
   restoreFromBackup,
 } from './agent-config';
@@ -280,6 +283,49 @@ describe('agent-config cross-project durable ID collisions', () => {
 
     await listDurable(PROJECT_PATH);
     expect((await listDurable(alias)).map((a) => a.id)).toEqual([AGENT_A.id]);
+  });
+
+  describe('file IDs above 2^53 (#2628)', () => {
+    // NTFS: a 16-bit sequence number over a 48-bit record number, so a reused
+    // record's ID passes 2^53 and neighboring folders differ only in low bits.
+    const FILE_ID = (BigInt(40) << BigInt(48)) | BigInt(1000);
+    const NEIGHBOR_ID = FILE_ID + BigInt(1);
+
+    it('uses IDs a Number cannot tell apart', () => {
+      expect(Number(FILE_ID)).toBe(Number(NEIGHBOR_ID));
+    });
+
+    it('keeps neighboring folders apart as projects', async () => {
+      dirInodes.set(PROJECT_PATH, FILE_ID);
+      dirInodes.set(OTHER_PATH, NEIGHBOR_ID);
+      expect(await isSameProject(PROJECT_PATH, OTHER_PATH)).toBe(false);
+      expect(await projectKey(PROJECT_PATH)).toBe(`ino:1:${FILE_ID}`);
+      expect(await projectKey(OTHER_PATH)).toBe(`ino:1:${NEIGHBOR_ID}`);
+    });
+
+    it('still reassigns an ID copied into a neighboring folder', async () => {
+      dirInodes.set(PROJECT_PATH, FILE_ID);
+      dirInodes.set(OTHER_PATH, NEIGHBOR_ID);
+      files.set(CONFIG_PATH, JSON.stringify([AGENT_A]));
+      files.set(OTHER_CONFIG, JSON.stringify([AGENT_A]));
+
+      await listDurable(PROJECT_PATH);
+      expect((await listDurable(OTHER_PATH))[0].id).not.toBe(AGENT_A.id);
+    });
+
+    it('still sees one folder reached through two paths as one project', async () => {
+      const alias = path.resolve('alias-of-test-project');
+      dirInodes.set(PROJECT_PATH, FILE_ID);
+      dirInodes.set(alias, FILE_ID);
+      expect(await isSameProject(PROJECT_PATH, alias)).toBe(true);
+    });
+  });
+
+  it('falls back to the path when a folder has no file ID or cannot be read (#2628)', async () => {
+    dirInodes.set(PROJECT_PATH, BigInt(0));
+    expect(await projectKey(PROJECT_PATH)).toMatch(/^path:/);
+    expect(await projectKey(OTHER_PATH)).toMatch(/^path:/);
+    expect(await isSameProject(PROJECT_PATH, OTHER_PATH)).toBe(false);
   });
 
   it('releases ownership when the owning project removes the agent', async () => {
