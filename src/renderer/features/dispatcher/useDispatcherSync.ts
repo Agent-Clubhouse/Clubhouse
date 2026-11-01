@@ -28,6 +28,11 @@ export function useDispatcherSync(): void {
     }
     if (loadedId.current && loadedId.current !== state.agentId) useAgentStore.getState().removeAgent(loadedId.current);
     loadedId.current = state.agentId;
+    // A resume that ran before this state arrived keyed the agent on its folder (#2552).
+    const loaded = useAgentStore.getState().agents[state.agentId!];
+    if (loaded && loaded.projectId !== DISPATCHER_PROJECT_ID) {
+      useAgentStore.setState((s) => ({ agents: { ...s.agents, [loaded.id]: { ...s.agents[loaded.id], projectId: DISPATCHER_PROJECT_ID } } }));
+    }
     // A config change (model, runtime) arrives as a new state, and reloading picks it up.
     useAgentStore.getState().loadDurableAgents(DISPATCHER_PROJECT_ID, state.path!).catch((err) => {
       rendererLog('core:agents', 'error', 'Failed to load the Dispatcher agent', {

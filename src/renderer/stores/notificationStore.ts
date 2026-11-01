@@ -3,12 +3,16 @@ import { NotificationSettings } from '../../shared/types';
 import { useAgentStore } from './agentStore';
 import { useUIStore } from './uiStore';
 import { useProjectStore } from './projectStore';
+import { useDispatcherStore } from '../features/dispatcher/dispatcherStore';
 import { useSoundStore, mapNotificationToSoundEvent, hasAnyCustomPack } from './soundStore';
 
 export function isAgentVisible(agentId: string, projectId: string): boolean {
   if (!document.hasFocus()) return false;
 
-  const { explorerTab } = useUIStore.getState();
+  const { explorerTab, dispatcherOpen } = useUIStore.getState();
+  // The Dispatcher's view covers the pane (#2538), so only its agent is on screen.
+  if (dispatcherOpen) return agentId === useDispatcherStore.getState().state?.agentId;
+
   const { activeProjectId } = useProjectStore.getState();
 
   // Agent is selected in the agents panel
