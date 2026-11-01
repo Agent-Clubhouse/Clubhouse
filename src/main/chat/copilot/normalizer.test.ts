@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { PermissionRequest } from '@github/copilot-sdk';
-import { addTokens, copilotErrorCode, copilotPermissionOptions, copilotPermissionView, copilotTokens, copilotToolContent, copilotToolKind, copilotToolTitle } from './normalizer';
+import { addTokens, copilotErrorCode, copilotPermissionOptions, copilotPermissionView, copilotProviderFromEnv, copilotTokens, copilotToolContent, copilotToolKind, copilotToolTitle } from './normalizer';
 
 const shell = { kind: 'shell', canOfferSessionApproval: true, fullCommandText: 'echo hi', intention: 'say hi', commands: [], hasWriteFileRedirection: false, possiblePaths: [], possibleUrls: [] } as unknown as PermissionRequest;
 
@@ -38,6 +38,52 @@ describe('copilot normalizer', () => {
     expect(copilotErrorCode({ statusCode: 429 })).toBe('rate_limited');
     expect(copilotErrorCode({ errorType: 'context_limit' })).toBe('context_overflow');
     expect(copilotErrorCode({ message: 'boom' })).toBe('unknown');
+  });
+
+  it('maps every documented provider variable, and needs a base URL to turn one on', () => {
+    expect(copilotProviderFromEnv({ COPILOT_PROVIDER_API_KEY: 'k', COPILOT_PROVIDER_TYPE: 'openai' })).toBeUndefined();
+    expect(copilotProviderFromEnv({ COPILOT_PROVIDER_BASE_URL: '' })).toBeUndefined();
+    expect(copilotProviderFromEnv({ COPILOT_PROVIDER_BASE_URL: 'http://x/v1' })).toEqual({ baseUrl: 'http://x/v1' });
+    expect(copilotProviderFromEnv({
+      COPILOT_PROVIDER_BASE_URL: 'https://x',
+      COPILOT_PROVIDER_TYPE: 'azure',
+      COPILOT_PROVIDER_WIRE_API: 'responses',
+      COPILOT_PROVIDER_TRANSPORT: 'websockets',
+      COPILOT_PROVIDER_API_KEY: 'k',
+      COPILOT_PROVIDER_API_KEY_COMMAND: 'get-key',
+      COPILOT_PROVIDER_BEARER_TOKEN: 'b',
+      COPILOT_PROVIDER_AZURE_API_VERSION: '2024-10-21',
+      COPILOT_PROVIDER_HEADERS: 'X-One: 1\nX-Two: a:b\\nX-Three: 3',
+      COPILOT_PROVIDER_MODEL_ID: 'gpt-5',
+      COPILOT_PROVIDER_WIRE_MODEL: 'deployment',
+      COPILOT_PROVIDER_MAX_PROMPT_TOKENS: '1000',
+      COPILOT_PROVIDER_MAX_OUTPUT_TOKENS: '200',
+    })).toEqual({
+      baseUrl: 'https://x',
+      type: 'azure',
+      wireApi: 'responses',
+      transport: 'websockets',
+      apiKey: 'k',
+      apiKeyCommand: 'get-key',
+      bearerToken: 'b',
+      azure: { apiVersion: '2024-10-21' },
+      headers: { 'X-One': '1', 'X-Two': 'a:b', 'X-Three': '3' },
+      modelId: 'gpt-5',
+      wireModel: 'deployment',
+      maxPromptTokens: 1000,
+      maxOutputTokens: 200,
+    });
+  });
+
+  it('drops provider values the CLI wouldn\'t accept', () => {
+    expect(copilotProviderFromEnv({
+      COPILOT_PROVIDER_BASE_URL: 'http://x',
+      COPILOT_PROVIDER_TYPE: 'nonsense',
+      COPILOT_PROVIDER_WIRE_API: 'nonsense',
+      COPILOT_PROVIDER_TRANSPORT: 'nonsense',
+      COPILOT_PROVIDER_HEADERS: 'no colon here',
+      COPILOT_PROVIDER_MAX_PROMPT_TOKENS: 'lots',
+    })).toEqual({ baseUrl: 'http://x' });
   });
 
   it('adds up tokens across model calls', () => {

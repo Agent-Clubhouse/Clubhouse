@@ -58,7 +58,7 @@ describe.skipIf(!fs.existsSync(runtime))('CopilotSdkChatDriver on the real runti
 
   beforeAll(async () => {
     model = await startFakeModel();
-    driver = new CopilotSdkChatDriver({ sessionOverrides: { model: 'fake-model', provider: { type: 'openai', baseUrl: model.baseUrl, apiKey: 'fake' } } });
+    driver = new CopilotSdkChatDriver();
   });
   afterEach(async () => {
     model.reset();
@@ -69,10 +69,13 @@ describe.skipIf(!fs.existsSync(runtime))('CopilotSdkChatDriver on the real runti
     try { fs.rmSync(tmp, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 }); } catch { /* the CLI can still be flushing logs */ }
   });
 
-  // The BYOK variable stands in for a login, so the driver gets past its login check.
+  // Someone's own model key, set the way they'd set it for the CLI. It's what gets the driver past its login check.
+  const byokEnv = (): Record<string, string> => ({
+    ...baseEnv, COPILOT_PROVIDER_BASE_URL: model.baseUrl, COPILOT_PROVIDER_TYPE: 'openai', COPILOT_PROVIDER_API_KEY: 'fake-key', COPILOT_MODEL: 'fake-model',
+  });
   const options = (overrides: Partial<ChatDriverStartOptions> = {}): ChatDriverStartOptions => ({
     agentId: 'a1', provider: 'copilot-cli', cwd: tmp, binaryPath: runtime, level: 'ask',
-    env: { ...baseEnv, COPILOT_PROVIDER_BASE_URL: model.baseUrl }, extraArgs: ['--no-auto-login'], ...overrides,
+    env: byokEnv(), extraArgs: ['--no-auto-login'], ...overrides,
   });
   const open = async (overrides?: Partial<ChatDriverStartOptions>) => {
     const session = await driver.start(options(overrides));
@@ -85,9 +88,38 @@ describe.skipIf(!fs.existsSync(runtime))('CopilotSdkChatDriver on the real runti
     const loggedOut = await driver.probe(runtime, baseEnv);
     expect(loggedOut).toMatchObject({ handshakeOk: true, needsLogin: true, capabilities: COPILOT_SDK_CAPABILITIES });
     expect(loggedOut.cliVersion).toMatch(/^\d+\.\d+\.\d+/);
-    expect((await driver.probe(runtime, { ...baseEnv, COPILOT_PROVIDER_BASE_URL: model.baseUrl })).needsLogin).toBeUndefined();
+    expect((await driver.probe(runtime, byokEnv())).needsLogin).toBeUndefined();
     expect(model.requests.length).toBe(before);
   }, 60_000);
+
+  it('honors COPILOT_PROVIDER_* as the CLI does: a probe that passes means a send reaches the model', async () => {
+    expect((await driver.probe(runtime, byokEnv())).needsLogin).toBeUndefined();
+    const { session, of, endedTurns } = await open();
+    const seen = model.requests.length;
+    model.script({ text: 'from your own key' });
+    await session.send([{ type: 'text', text: 'hi' }], 'prompt');
+    const [ended] = await endedTurns(1);
+    expect(ended.data.stopReason).toBe('end_turn');
+    expect(of('error')).toEqual([]);
+    expect(model.requests.length).toBeGreaterThan(seen);
+    expect(model.requests.at(-1)?.model).toBe('fake-model');
+  }, 90_000);
+
+  it('does not count a provider variable without a base URL as a login', async () => {
+    const env = { ...baseEnv, COPILOT_PROVIDER_API_KEY: 'k', COPILOT_PROVIDER_TYPE: 'openai', COPILOT_MODEL: 'm' };
+    expect((await driver.probe(runtime, env)).needsLogin).toBe(true);
+    await expect(driver.start(options({ env }))).rejects.toThrow(/not logged in/i);
+  }, 60_000);
+
+  it('asks for a model when a provider has none, as the CLI does', async () => {
+    const { COPILOT_MODEL: _unset, ...env } = byokEnv();
+    await expect(driver.start(options({ env }))).rejects.toThrow(/needs a model/);
+    const saved = await open({ env, model: 'saved-model' });
+    model.script({ text: 'ok' });
+    await saved.session.send([{ type: 'text', text: 'hi' }], 'prompt');
+    await saved.endedTurns(1);
+    expect(model.requests.at(-1)?.model).toBe('saved-model');
+  }, 90_000);
 
   it('refuses to start logged out, in the words the fallback code reads as a login', async () => {
     await expect(driver.start(options({ env: baseEnv }))).rejects.toThrow(/not logged in/i);
@@ -411,7 +443,7 @@ describe.skipIf(!fs.existsSync(runtime))('CopilotSdkChatDriver on the real runti
     const file = path.join(tmp, 'pixel.png');
     fs.writeFileSync(file, Buffer.from(png, 'base64'));
     const vision = new CopilotSdkChatDriver({
-      sessionOverrides: { model: 'fake-model', provider: { type: 'openai', baseUrl: model.baseUrl, apiKey: 'fake' }, modelCapabilities: { supports: { vision: true } } },
+      sessionOverrides: { modelCapabilities: { supports: { vision: true } } },
     });
     const session = await vision.start(options());
     sessions.push(session);
@@ -448,8 +480,8 @@ describe.skipIf(!fs.existsSync(runtime))('CopilotSdkChatDriver on the real runti
     await viaShim.send([{ type: 'text', text: 'hi' }], 'prompt');
     await a.endedTurns(1);
     expect(a.of('agent_message').at(-1)?.data.text).toBe('through the shim');
-    expect((await driver.probe(shim, { ...baseEnv, COPILOT_PROVIDER_BASE_URL: model.baseUrl })).handshakeOk).toBe(true);
-    expect((await driver.probe(runtime, { ...baseEnv, COPILOT_PROVIDER_BASE_URL: model.baseUrl }, { commandPrefix: process.platform === 'win32' ? 'set CLUBHOUSE_PREFIX_RAN=1' : 'export CLUBHOUSE_PREFIX_RAN=1' })).handshakeOk).toBe(true);
+    expect((await driver.probe(shim, byokEnv())).handshakeOk).toBe(true);
+    expect((await driver.probe(runtime, byokEnv(), { commandPrefix: process.platform === 'win32' ? 'set CLUBHOUSE_PREFIX_RAN=1' : 'export CLUBHOUSE_PREFIX_RAN=1' })).handshakeOk).toBe(true);
     await viaShim.close();
     sessions.splice(sessions.indexOf(viaShim), 1);
     await a.pumped;

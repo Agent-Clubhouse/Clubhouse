@@ -14,6 +14,7 @@ import {
   copilotErrorCode,
   copilotPermissionOptions,
   copilotPermissionView,
+  copilotProviderFromEnv,
   copilotTokens,
   copilotToolContent,
   copilotToolKind,
@@ -90,11 +91,6 @@ async function connect(server: CopilotServer): Promise<CopilotClient> {
   const client = new CopilotClient({ connection: RuntimeConnection.forUri(server.uri, { connectionToken: server.connectionToken }), logLevel: 'error' });
   await client.start();
   return client;
-}
-
-/** A model key from the environment (BYOK) stands in for a GitHub login. */
-function hasProviderKey(env: Record<string, string | undefined>): boolean {
-  return Object.keys(env).some((k) => k.startsWith('COPILOT_PROVIDER_'));
 }
 
 function probeErrorCode(err: unknown): NonNullable<ChatDriverProbe['errorCode']> {
@@ -251,7 +247,12 @@ export class CopilotSdkChatSession implements ChatDriverSession {
   async open(cliVersion: string | undefined): Promise<void> {
     const { servers, skipped } = toSdkMcpServers(this.opts.mcpServers, { ...process.env, ...this.opts.env }, this.opts.mcpHttpEndpoints);
     if (skipped.length) this.log('warn', 'MCP servers not expressible over the Copilot SDK', { skipped });
-    const model = this.opts.model && this.opts.model !== 'default' ? this.opts.model : undefined;
+    const env = { ...process.env, ...this.opts.env };
+    const provider = copilotProviderFromEnv(env);
+    const saved = this.opts.model && this.opts.model !== 'default' ? this.opts.model : undefined;
+    // Saved model first, as `--model` beats COPILOT_MODEL in the CLI.
+    const model = saved ?? env.COPILOT_MODEL ?? provider?.modelId;
+    if (provider && !model) throw new Error('A Copilot provider (COPILOT_PROVIDER_BASE_URL) needs a model. Set COPILOT_MODEL, or choose a model for the agent.');
     const config: SessionConfig = {
       clientName: 'Clubhouse',
       streaming: true,
@@ -260,6 +261,7 @@ export class CopilotSdkChatSession implements ChatDriverSession {
       // instructions, skills and MCP config, which Terminal and ACP both load.
       enableConfigDiscovery: true,
       ...(model && { model }),
+      ...(provider && { provider }),
       ...(Object.keys(servers).length && { mcpServers: servers }),
       onPermissionRequest: (request) => this.onPermission(request),
       onUserInputRequest: (request) => this.onQuestion(request),
@@ -315,6 +317,7 @@ export class CopilotSdkChatSession implements ChatDriverSession {
       resumed: !!resumeId && !this.resumeFallback,
       resumeFallback: this.resumeFallback,
       mcpServers: Object.keys(servers),
+      ownProvider: !!provider,
     });
     this.push({
       type: 'notice',
@@ -820,8 +823,10 @@ export class CopilotSdkChatDriver implements ChatDriver {
       })();
       const remaining = Math.max(1, timeoutMs - (Date.now() - startedAt));
       const { status, auth } = await withTimeout(Promise.race([handshake, untilExit(running)]), remaining, 'Copilot handshake');
-      const needsLogin = !auth.isAuthenticated && !hasProviderKey({ ...process.env, ...env });
-      this.log('info', 'Copilot SDK probe', { binary: binaryPath, cliVersion: status.version, protocolVersion: status.protocolVersion, authenticated: auth.isAuthenticated, authType: auth.authType, needsLogin, elapsedMs: Date.now() - startedAt });
+      // A provider stands in for a login only because start() hands it to the session.
+      const ownProvider = !!copilotProviderFromEnv({ ...process.env, ...env });
+      const needsLogin = !auth.isAuthenticated && !ownProvider;
+      this.log('info', 'Copilot SDK probe', { binary: binaryPath, cliVersion: status.version, protocolVersion: status.protocolVersion, authenticated: auth.isAuthenticated, authType: auth.authType, ownProvider, needsLogin, elapsedMs: Date.now() - startedAt });
       return {
         handshakeOk: true,
         cliVersion: status.version,
@@ -856,7 +861,7 @@ export class CopilotSdkChatDriver implements ChatDriver {
         const [status, auth] = await Promise.all([client.getStatus(), client.getAuthStatus()]);
         // The probe's answer can be cached from before a logout. Handshake and
         // createSession succeed logged out, so only the first send would say.
-        if (!auth.isAuthenticated && !hasProviderKey({ ...process.env, ...opts.env })) throw new Error(LOGIN_MESSAGE);
+        if (!auth.isAuthenticated && !copilotProviderFromEnv({ ...process.env, ...opts.env })) throw new Error(LOGIN_MESSAGE);
         const session = new CopilotSdkChatSession(client, server, opts, this.log, this.options.sessionOverrides);
         await session.open(status.version);
         return session;

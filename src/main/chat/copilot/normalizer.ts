@@ -1,5 +1,5 @@
 import * as path from 'path';
-import type { PermissionRequest } from '@github/copilot-sdk';
+import type { PermissionRequest, ProviderConfig } from '@github/copilot-sdk';
 import type { ChatErrorCode, PermissionOption, TokenUsage, ToolCallContent, ToolCallLocation, ToolKind } from '../../../shared/chat/events';
 
 type Obj = Record<string, unknown>;
@@ -136,5 +136,57 @@ export function addTokens(a: TokenUsage | undefined, b: TokenUsage): TokenUsage 
     cacheWrite: sum(a.cacheWrite, b.cacheWrite),
     reasoning: sum(a.reasoning, b.reasoning),
     total: sum(a.total, b.total),
+  };
+}
+
+// ── Your own model key ──────────────────────────────────────────────────────
+
+const oneOf = <T extends string>(value: string | undefined, allowed: readonly T[]): T | undefined =>
+  (allowed as readonly string[]).includes(value ?? '') ? value as T : undefined;
+
+function positiveInt(value: string | undefined): number | undefined {
+  const n = Number(value);
+  return value && Number.isInteger(n) && n > 0 ? n : undefined;
+}
+
+/** `COPILOT_PROVIDER_HEADERS`: "Name: Value" pairs, split by line breaks or a literal "\\n". */
+function parseProviderHeaders(value: string | undefined): Record<string, string> | undefined {
+  const pairs = (value ?? '').split(/\r?\n|\\n/).flatMap((line): Array<[string, string]> => {
+    const colon = line.indexOf(':');
+    const name = line.slice(0, Math.max(colon, 0)).trim();
+    return name ? [[name, line.slice(colon + 1).trim()]] : [];
+  });
+  return pairs.length ? Object.fromEntries(pairs) : undefined;
+}
+
+/**
+ * The session's `provider` from the variables `copilot help environment`
+ * documents. The CLI view and ACP honor them, but `--headless` ignores them and
+ * still wants a GitHub login, so the driver has to pass them on. Only the base
+ * URL turns a provider on, as in the CLI.
+ */
+export function copilotProviderFromEnv(env: Record<string, string | undefined>): ProviderConfig | undefined {
+  const baseUrl = env.COPILOT_PROVIDER_BASE_URL;
+  if (!baseUrl) return undefined;
+  const type = oneOf(env.COPILOT_PROVIDER_TYPE, ['openai', 'azure', 'anthropic'] as const);
+  const wireApi = oneOf(env.COPILOT_PROVIDER_WIRE_API, ['completions', 'responses'] as const);
+  const transport = oneOf(env.COPILOT_PROVIDER_TRANSPORT, ['http', 'websockets'] as const);
+  const headers = parseProviderHeaders(env.COPILOT_PROVIDER_HEADERS);
+  const maxPromptTokens = positiveInt(env.COPILOT_PROVIDER_MAX_PROMPT_TOKENS);
+  const maxOutputTokens = positiveInt(env.COPILOT_PROVIDER_MAX_OUTPUT_TOKENS);
+  return {
+    baseUrl,
+    ...(type && { type }),
+    ...(wireApi && { wireApi }),
+    ...(transport && { transport }),
+    ...(env.COPILOT_PROVIDER_API_KEY && { apiKey: env.COPILOT_PROVIDER_API_KEY }),
+    ...(env.COPILOT_PROVIDER_API_KEY_COMMAND && { apiKeyCommand: env.COPILOT_PROVIDER_API_KEY_COMMAND }),
+    ...(env.COPILOT_PROVIDER_BEARER_TOKEN && { bearerToken: env.COPILOT_PROVIDER_BEARER_TOKEN }),
+    ...(env.COPILOT_PROVIDER_AZURE_API_VERSION && { azure: { apiVersion: env.COPILOT_PROVIDER_AZURE_API_VERSION } }),
+    ...(headers && { headers }),
+    ...(env.COPILOT_PROVIDER_MODEL_ID && { modelId: env.COPILOT_PROVIDER_MODEL_ID }),
+    ...(env.COPILOT_PROVIDER_WIRE_MODEL && { wireModel: env.COPILOT_PROVIDER_WIRE_MODEL }),
+    ...(maxPromptTokens && { maxPromptTokens }),
+    ...(maxOutputTokens && { maxOutputTokens }),
   };
 }
