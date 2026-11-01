@@ -159,6 +159,23 @@ export async function whenSpawnsSettled(): Promise<void> {
   while (inflightSpawns.size) await Promise.allSettled([...inflightSpawns]);
 }
 
+/** Why a helper didn't start: without the bridge it couldn't report to its parent (#2610). */
+function helperMcpError(err: unknown): Error {
+  const detail = err instanceof Error ? err.message : String(err);
+  return tagError(new Error(`This helper needs Clubhouse MCP to report to its orchestrator, and it couldn't be set up: ${detail}`), 'preflight_failed');
+}
+
+/**
+ * The bridge runs for any durable agent that resolves MCP on, even with MCP off
+ * in the app and its project (#2610). A helper can't start without it.
+ */
+async function prepareMcpBridge(projectPath: string, config: DurableAgentConfig | null | undefined): Promise<void> {
+  if (!isMcpEnabled(projectPath, clubhouseMcpOverride(config))) return;
+  ensureMcpBridgeForAgent();
+  if (!config?.parentAgentId) return;
+  await waitMcpBridgeReady().catch((err: unknown) => { throw helperMcpError(err); });
+}
+
 /**
  * The launch access a helper may start with: `asked` (what the caller passed,
  * or the project's free-agent setting filled in for it), lowered to its
@@ -178,23 +195,6 @@ export async function whenSpawnsSettled(): Promise<void> {
  * (setUserLaunchAccess); a terminal (PTY) helper has no such path and stays
  * at its cap until it is restarted.
  */
-/** Why a helper didn't start: without the bridge it couldn't report to its parent (#2610). */
-function helperMcpError(err: unknown): Error {
-  const detail = err instanceof Error ? err.message : String(err);
-  return tagError(new Error(`This helper needs Clubhouse MCP to report to its orchestrator, and it couldn't be set up: ${detail}`), 'preflight_failed');
-}
-
-/**
- * The bridge runs for any durable agent that resolves MCP on, even with MCP off
- * in the app and its project (#2610). A helper can't start without it.
- */
-async function prepareMcpBridge(projectPath: string, config: DurableAgentConfig | null | undefined): Promise<void> {
-  if (!isMcpEnabled(projectPath, clubhouseMcpOverride(config))) return;
-  ensureMcpBridgeForAgent();
-  if (!config?.parentAgentId) return;
-  await waitMcpBridgeReady().catch((err: unknown) => { throw helperMcpError(err); });
-}
-
 async function capHelperLaunch(
   projectPath: string,
   agentId: string,
