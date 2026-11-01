@@ -44,6 +44,7 @@ import { registerAgentTools, writeChunkedBracketedPaste, waitForBufferQuiescence
 import { getScopedToolList, callTool, buildToolName, _resetForTesting as resetTools } from '../tool-registry';
 import { mcpAdapter } from '../mcp-adapter';
 import { bindingManager } from '../binding-manager';
+import { setDispatcherAgent, _resetDispatcherGateForTesting } from '../dispatcher-gate';
 import type { McpBinding } from '../types';
 
 function makeBinding(overrides: Partial<McpBinding> & { agentId: string; targetId: string; targetKind: McpBinding['targetKind'] }): McpBinding {
@@ -724,6 +725,65 @@ describe('AgentTools', () => {
       // After post-end-marker delay, promise resolves — safe to send \r
       await vi.advanceTimersByTimeAsync(postEndMarkerDelayMs);
       await promise;
+    });
+  });
+
+  describe('Dispatcher sender label (#2548)', () => {
+    // The two directions of a Dispatcher <-> orchestrator pair, as
+    // dispatcher-wire-source's pairBindings builds them: both carry the
+    // orchestrator's project.
+    const toOrchestrator = makeBinding({
+      agentId: 'dispatcher-1', targetId: 'orch-1', targetKind: 'agent',
+      label: 'boss', agentName: 'Dispatcher', targetName: 'boss', projectName: 'myapp',
+    });
+    const toDispatcher = makeBinding({
+      agentId: 'orch-1', targetId: 'dispatcher-1', targetKind: 'agent',
+      label: 'Dispatcher', agentName: 'boss', targetName: 'Dispatcher', projectName: 'myapp',
+    });
+
+    beforeEach(() => {
+      mockAgentRegistryGet.mockReturnValue({ runtime: 'pty', orchestrator: 'claude-code' });
+      for (const b of [toOrchestrator, toDispatcher]) {
+        const { agentId, ...rest } = b;
+        bindingManager.bind(agentId, rest);
+      }
+      setDispatcherAgent('dispatcher-1', true);
+    });
+
+    afterEach(() => {
+      _resetDispatcherGateForTesting();
+    });
+
+    it('keeps the orchestrator project in the Dispatcher tool names', () => {
+      const names = getScopedToolList('dispatcher-1').map(t => t.name);
+      expect(names).toContain(agentToolName(toOrchestrator, 'send_message'));
+      expect(agentToolName(toOrchestrator, 'send_message')).toMatch(/^clubhouse__myapp_boss_[a-z0-9]+__send_message$/);
+    });
+
+    it('labels a Dispatcher message as just "Dispatcher"', async () => {
+      const result = await sendMessage('dispatcher-1', agentToolName(toOrchestrator, 'send_message'), { message: 'hi', task_id: 'd1' });
+      expect(result.isError).toBeFalsy();
+      // Two-way pairs add reply instructions, so the message goes as a bracketed paste.
+      expect(mockPtyWrite.mock.calls[0][0]).toBe('orch-1');
+      expect(mockPtyWrite.mock.calls.map(c => c[1]).join('')).not.toContain('Dispatcher@');
+      expect(mockPtyWrite.mock.calls.map(c => c[1]).join('')).toContain('[TASK:d1] [FROM:Dispatcher] hi');
+    });
+
+    it('labels an orchestrator message to the Dispatcher with its project', async () => {
+      const result = await sendMessage('orch-1', agentToolName(toDispatcher, 'send_message'), { message: 'hi', task_id: 'd2' });
+      expect(result.isError).toBeFalsy();
+      // Two-way pairs add reply instructions, so the message goes as a bracketed paste.
+      expect(mockPtyWrite.mock.calls[0][0]).toBe('dispatcher-1');
+      expect(mockPtyWrite.mock.calls.map(c => c[1]).join('')).toContain('[TASK:d2] [FROM:boss@myapp] hi');
+    });
+
+    it('labels a Dispatcher send_file as just "Dispatcher"', async () => {
+      const promise = callTool('dispatcher-1', agentToolName(toOrchestrator, 'send_file'), { content: 'x', task_id: 'd3' });
+      await vi.advanceTimersByTimeAsync(600);
+      const result = await promise;
+      expect(result.isError).toBeFalsy();
+      expect(mockPtyWrite.mock.calls[0][1]).toContain('[FROM:Dispatcher] File delivered');
+      expect(mockPtyWrite.mock.calls[0][1]).not.toContain('Dispatcher@');
     });
   });
 

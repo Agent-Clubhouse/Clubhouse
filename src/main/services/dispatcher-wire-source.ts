@@ -44,7 +44,8 @@ type Pair = { agentId: string; targetId: string };
  * Both directions of one Dispatcher ↔ orchestrator pair. The Dispatcher end
  * is named "Dispatcher" and both carry the orchestrator's project, so the
  * Dispatcher's tool names read `<project>_<orchestrator>` and a message from
- * the orchestrator shows which project it came from.
+ * the orchestrator shows which project it came from. The Dispatcher's own
+ * messages are labelled just "Dispatcher" (agent-tools' buildSenderLabel).
  */
 function pairBindings(dispatcherId: string, orchestrator: DurableAgentConfig, projectName?: string): PersistedBinding[] {
   const project = projectName ? { projectName } : {};

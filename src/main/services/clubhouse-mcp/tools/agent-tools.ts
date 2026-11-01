@@ -8,6 +8,7 @@ import { app } from 'electron';
 import { buildToolName } from '../tool-registry';
 import { mcpAdapter } from '../mcp-adapter';
 import { bindingManager } from '../binding-manager';
+import { isTrackedDispatcher } from '../dispatcher-gate';
 import { agentRegistry } from '../../agent-registry';
 import type { McpToolResult } from '../types';
 import { appLog } from '../../log-service';
@@ -21,6 +22,18 @@ import { getProvider } from '../../../orchestrators';
 
 // PTY input helpers moved to agent-runtime/pty-input; re-exported for existing importers.
 export { sleep, writeChunkedBracketedPaste, waitForBufferQuiescence, submitAfterPaste } from '../../agent-runtime/pty-input';
+
+// ── Sender label ────────────────────────────────────────────────────────────
+
+/**
+ * The `[FROM:...]` label of a sent message: `<name>@<project>`, or just the
+ * name when the binding has no project. The Dispatcher lives in no project:
+ * its bindings carry the orchestrator's project only for tool naming (#2548).
+ */
+export function buildSenderLabel(agentId: string, senderName: string, projectName?: string): string {
+  if (!projectName || isTrackedDispatcher(agentId)) return senderName;
+  return `${senderName}@${projectName}`;
+}
 
 // ── File-backed message helpers ─────────────────────────────────────────────
 
@@ -111,8 +124,7 @@ export function registerAgentTools(): void {
       // Resolve sender identity from the binding
       const sourceBinding = bindingManager.getBindingsForAgent(agentId).find(b => b.targetId === targetId);
       const senderName = sourceBinding?.agentName || agentId;
-      const senderProject = sourceBinding?.projectName;
-      const senderLabel = senderProject ? `${senderName}@${senderProject}` : senderName;
+      const senderLabel = buildSenderLabel(agentId, senderName, sourceBinding?.projectName);
       const targetName = sourceBinding?.targetName || targetId;
 
       // Check if the target has a reverse binding back to the caller
@@ -373,8 +385,7 @@ export function registerAgentTools(): void {
 
       const sourceBinding = bindingManager.getBindingsForAgent(agentId).find(b => b.targetId === targetId);
       const senderName = sourceBinding?.agentName || agentId;
-      const senderProject = sourceBinding?.projectName;
-      const senderLabel = senderProject ? `${senderName}@${senderProject}` : senderName;
+      const senderLabel = buildSenderLabel(agentId, senderName, sourceBinding?.projectName);
       const targetName = sourceBinding?.targetName || targetId;
 
       try {
