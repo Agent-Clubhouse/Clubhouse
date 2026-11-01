@@ -35,6 +35,8 @@
  * find the caller's helpers in every project through the helper index
  * (#2511) and act on each one in the project its row is in. list_projects,
  * in the `crossProject` tool group, lists the projects a helper can go to.
+ * The Dispatcher (#2536) gets list_projects through the `dispatcher` group
+ * and none of the others.
  */
 
 import * as path from 'path';
@@ -162,7 +164,7 @@ async function resolveOwnHelper(caller: Caller, ref: string): Promise<HelperEntr
 
 // ── Projects (#2515) ─────────────────────────────────────────────────────
 
-function projectName(project: Project): string {
+export function projectName(project: Project): string {
   return project.displayName || project.name;
 }
 
@@ -177,7 +179,7 @@ async function registeredProjectAt(projects: readonly Project[], projectPath: st
 }
 
 /** A project's name for messages and results: its registered name, else its folder name. */
-async function nameOfProject(projects: readonly Project[], projectPath: string): Promise<string> {
+export async function nameOfProject(projects: readonly Project[], projectPath: string): Promise<string> {
   const project = await registeredProjectAt(projects, projectPath);
   return project ? projectName(project) : path.basename(projectPath);
 }
@@ -799,10 +801,10 @@ export function watchHelperStartRequests(send: (channel: string, payload: unknow
 
 // ── list_helpers ─────────────────────────────────────────────────────────
 
-type HelperStatus = 'creating' | 'starting' | 'failed' | 'stopping' | 'sleeping' | 'idle' | 'running'
+export type HelperStatus = 'creating' | 'starting' | 'failed' | 'stopping' | 'sleeping' | 'idle' | 'running'
   | 'waiting_permission' | 'waiting_input' | 'error';
 
-function helperStatus(helper: DurableAgentConfig): { status: HelperStatus; reason?: string } {
+export function helperStatus(helper: DurableAgentConfig): { status: HelperStatus; reason?: string } {
   if (helper.creation?.state === 'creating') return { status: 'creating' };
   if (helper.creation?.state === 'failed') return { status: 'failed', reason: helper.creation.reason };
   if (spawning.has(helper.id)) return { status: 'starting' };
@@ -1155,7 +1157,8 @@ export function registerHelperTools(): void {
       inputSchema: { type: 'object', properties: {} },
     },
     (agentId) => guarded('list_projects', agentId, () => listProjects(agentId)),
-    { group: 'crossProject' },
+    // The Dispatcher (#2536) gets it too; it is in no project, so nothing is "yours".
+    { group: ['crossProject', 'dispatcher'] },
   );
 
   registerGlobalTool(

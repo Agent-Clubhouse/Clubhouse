@@ -500,6 +500,8 @@ export const ATTR = {
     'list_projects',
     // helper questions (#2366)
     'answer_helper_question',
+    // the Dispatcher (#2536)
+    'list_orchestrators',
     // orchestration: connection tools (#2230)
     'create_group_project', 'add_to_group_project', 'remove_from_group_project', 'connect_agents', 'disconnect_agents',
     'other',
