@@ -2,6 +2,7 @@ import * as fsp from 'fs/promises';
 import * as path from 'path';
 import { ipcMain, dialog, BrowserWindow } from 'electron';
 import { IPC } from '../../shared/ipc-channels';
+import { ICON_DATA_URL_MAX_LENGTH } from '../../shared/icon-limits';
 import { SpawnAgentParams } from '../../shared/types';
 import { isSessionCapable, type OrchestratorId, type TranscriptReadStats } from '../orchestrators';
 import * as agentConfig from '../services/agent-config';
@@ -286,7 +287,7 @@ export function registerAgentHandlers(): void {
   });
 
   ipcMain.handle(IPC.AGENT.SAVE_ICON, withValidatedArgs(
-    [stringArg(), stringArg(), stringArg({ maxLength: 5 * 1024 * 1024 })],
+    [stringArg(), stringArg(), stringArg({ maxLength: ICON_DATA_URL_MAX_LENGTH })],
     async (_event, projectPath, agentId, dataUrl) => {
       return agentConfig.saveAgentIcon(projectPath, agentId, dataUrl);
     },

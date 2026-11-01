@@ -63,5 +63,11 @@ export const project = {
     ipcRenderer.on(IPC.PROJECT.STATE_CHANGED, listener);
     return () => { ipcRenderer.removeListener(IPC.PROJECT.STATE_CHANGED, listener); };
   },
+  /** The project list was written, by this window or anything else (#2597). */
+  onChanged: (callback: () => void) => {
+    const listener = () => callback();
+    ipcRenderer.on(IPC.PROJECT.CHANGED, listener);
+    return () => { ipcRenderer.removeListener(IPC.PROJECT.CHANGED, listener); };
+  },
   },
 };

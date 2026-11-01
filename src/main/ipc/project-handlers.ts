@@ -3,6 +3,7 @@ import { execSync } from 'child_process';
 import * as fsp from 'fs/promises';
 import * as path from 'path';
 import { IPC } from '../../shared/ipc-channels';
+import { ICON_DATA_URL_MAX_LENGTH } from '../../shared/icon-limits';
 import * as projectStore from '../services/project-store';
 import { ensureGitignore } from '../services/agent-config';
 import { readLaunchWrapper, writeLaunchWrapper, readMcpCatalog, writeMcpCatalog, readDefaultMcps, writeDefaultMcps, readMcpConfigs, writeMcpConfigs, readWrapperCatalogSnapshot, writeWrapperCatalogSnapshot } from '../services/agent-settings-service';
@@ -16,9 +17,25 @@ import { applyProjectStateChange, hydrateProjectState, onProjectStateChange } fr
 import { parseProjectStateOp } from '../../shared/project-state';
 import { broadcastToAllWindows } from '../util/ipc-broadcast';
 
+/** How long project list writes are gathered into one renderer event. */
+export const PROJECTS_CHANGE_DEBOUNCE_MS = 150;
+
+/** Tell the windows when the project list is written, so a change made outside them shows at once (#2597). */
+function forwardProjectChanges(): void {
+  let timer: ReturnType<typeof setTimeout> | null = null;
+  projectStore.onProjectsChanged(() => {
+    if (timer) return;
+    timer = setTimeout(() => {
+      timer = null;
+      broadcastToAllWindows(IPC.PROJECT.CHANGED);
+    }, PROJECTS_CHANGE_DEBOUNCE_MS);
+  });
+}
+
 export function registerProjectHandlers(): void {
   // Pins, inactive marks and activity (#2458). Every window, and Annex, hears each change.
   onProjectStateChange((change) => broadcastToAllWindows(IPC.PROJECT.STATE_CHANGED, change));
+  forwardProjectChanges();
 
   ipcMain.handle(IPC.PROJECT.STATE_HYDRATE, withValidatedArgs([objectArg()], (_event, legacy: unknown) =>
     hydrateProjectState(legacy),
@@ -129,7 +146,7 @@ export function registerProjectHandlers(): void {
     return `data:${mime};base64,${data.toString('base64')}`;
   });
 
-  ipcMain.handle(IPC.PROJECT.SAVE_CROPPED_ICON, withValidatedArgs([stringArg(), stringArg({ maxLength: 5 * 1024 * 1024 })], async (_event, projectId: string, dataUrl: string) => {
+  ipcMain.handle(IPC.PROJECT.SAVE_CROPPED_ICON, withValidatedArgs([stringArg(), stringArg({ maxLength: ICON_DATA_URL_MAX_LENGTH })], async (_event, projectId: string, dataUrl: string) => {
     return projectStore.saveCroppedIcon(projectId, dataUrl);
   }));
 

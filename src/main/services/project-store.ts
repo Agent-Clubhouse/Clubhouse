@@ -524,12 +524,12 @@ export async function setIcon(projectId: string, sourcePath: string): Promise<st
   return filename;
 }
 
-export async function removeIconFile(projectId: string): Promise<void> {
+export async function removeIconFile(projectId: string, keep?: string): Promise<void> {
   const iconsDir = await getIconsDir();
   try {
     const files = await fsp.readdir(iconsDir);
     for (const file of files) {
-      if (file.startsWith(projectId + '.')) {
+      if (file.startsWith(projectId + '.') && file !== keep) {
         await fsp.unlink(path.join(iconsDir, file));
       }
     }
@@ -559,6 +559,20 @@ export async function readIconData(filename: string): Promise<string | null> {
   const mime = mimeMap[ext] || 'image/png';
   const data = await fsp.readFile(filePath);
   return `data:${mime};base64,${data.toString('base64')}`;
+}
+
+/**
+ * Store an image as the project's icon file and drop its old one. Returns the
+ * filename for `update` to record. The name follows the content, so a window
+ * can tell a new image from the old without reading it.
+ */
+export async function writeIconFile(projectId: string, bytes: Uint8Array, extension: string): Promise<string> {
+  const hash = crypto.createHash('sha256').update(bytes).digest('hex').slice(0, 12);
+  const filename = `${projectId}.${hash}.${extension}`;
+  const iconsDir = await getIconsDir();
+  await fsp.writeFile(path.join(iconsDir, filename), bytes);
+  await removeIconFile(projectId, filename);
+  return filename;
 }
 
 /** Save a cropped PNG data URL as the project icon. Returns the filename. */

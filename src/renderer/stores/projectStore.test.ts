@@ -467,4 +467,47 @@ describe('projectStore', () => {
       expect(getState().projectIcons).toEqual({});
     });
   });
+
+  describe('syncProjectDisplay (#2597)', () => {
+    it('takes how projects look, keeping the list and its order', async () => {
+      const a = makeProject({ id: 'a' });
+      const b = makeProject({ id: 'b', name: 'b' });
+      useProjectStore.setState({ projects: [a, b] });
+      mockProject.list.mockResolvedValue([
+        { ...b, displayName: 'Bee', color: 'rose', emoji: '🐝' },
+        a,
+        makeProject({ id: 'just-added' }),
+      ]);
+
+      await getState().syncProjectDisplay();
+
+      expect(getState().projects.map((p) => p.id)).toEqual(['a', 'b']);
+      expect(getState().projects[0]).toBe(a);
+      expect(getState().projects[1]).toMatchObject({ displayName: 'Bee', color: 'rose', emoji: '🐝' });
+      expect(mockProject.readIcon).not.toHaveBeenCalled();
+    });
+
+    it('leaves the state alone when nothing changed', async () => {
+      const projects = [makeProject({ id: 'a', color: 'rose' })];
+      useProjectStore.setState({ projects });
+      mockProject.list.mockResolvedValue([{ ...projects[0] }]);
+      await getState().syncProjectDisplay();
+      expect(getState().projects).toBe(projects);
+    });
+
+    it('loads a new image and forgets a removed one', async () => {
+      useProjectStore.setState({
+        projects: [makeProject({ id: 'a', icon: 'a.1.png' }), makeProject({ id: 'b', icon: 'b.1.png' })],
+        projectIcons: { a: 'data:old-a', b: 'data:old-b' },
+      });
+      mockProject.list.mockResolvedValue([makeProject({ id: 'a', icon: 'a.2.png' }), makeProject({ id: 'b', emoji: '🐝' })]);
+      mockProject.readIcon.mockResolvedValue('data:new-a');
+
+      await getState().syncProjectDisplay();
+      await vi.waitFor(() => expect(getState().projectIcons.a).toBe('data:new-a'));
+
+      expect(mockProject.readIcon).toHaveBeenCalledWith('a.2.png');
+      expect(getState().projectIcons.b).toBeUndefined();
+    });
+  });
 });

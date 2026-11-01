@@ -207,6 +207,12 @@ describe('agentLifecycleSlice – spawnDurableAgent', () => {
     expect(state().agents['durable-1']?.status).toBe('running');
   });
 
+  it('keeps the emoji from durable config across a wake', async () => {
+    const { state, slice } = createTestStore();
+    await slice.spawnDurableAgent(PROJECT_ID, PROJECT_PATH, { ...DURABLE_CONFIG, emoji: '🦊' }, false);
+    expect(state().agents['durable-1']?.emoji).toBe('🦊');
+  });
+
   it('transitions to error on spawn failure (TC-CRIT-01)', async () => {
     const { state, slice } = createTestStore();
 

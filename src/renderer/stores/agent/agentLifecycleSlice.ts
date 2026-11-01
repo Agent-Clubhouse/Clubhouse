@@ -177,6 +177,7 @@ export function createLifecycleSlice(set: SetAgentState, get: GetAgentState): Ag
         status: 'spawning',
         color: config.color,
         icon: config.icon,
+        emoji: config.emoji,
         worktreePath: config.worktreePath,
         branch: config.branch,
         exitCode: undefined,

@@ -32,7 +32,7 @@ vi.mock('./sound-service', () => ({
 // electron is aliased to our mock by vitest.config.ts
 import * as fsp from 'fs/promises';
 import { pathExists } from './fs-utils';
-import { list, add, remove, update, reorder, readIconData, setIcon, saveCroppedIcon, removeIconFile, onProjectsChanged } from './project-store';
+import { list, add, remove, update, reorder, readIconData, setIcon, saveCroppedIcon, removeIconFile, writeIconFile, onProjectsChanged } from './project-store';
 import { getSettings as getBadgeSettings, saveSettings as saveBadgeSettings } from './badge-settings';
 import { getSettings as getSoundSettings, saveSettings as saveSoundSettings } from './sound-service';
 
@@ -1910,5 +1910,33 @@ describe('registry shape validation (invalid data must not become an empty regis
 
     await add('/Users/me/new-project');
     expect(vi.mocked(fsp.copyFile)).toHaveBeenCalledWith(STORE_PATH, BACKUP_PATH);
+  });
+});
+
+describe('writeIconFile', () => {
+  it('writes a name that follows the content and removes every older icon of that project only', async () => {
+    vi.mocked(fsp.readdir).mockResolvedValue(['proj_a.png', 'proj_a.old.svg', 'proj_ab.png', '_preserved_x.png'] as never);
+    const bytes = new Uint8Array([1, 2, 3]);
+
+    const first = await writeIconFile('proj_a', bytes, 'jpg');
+    const second = await writeIconFile('proj_a', new Uint8Array([4]), 'jpg');
+
+    expect(first).toMatch(/^proj_a\.[0-9a-f]{12}\.jpg$/);
+    expect(second).not.toBe(first);
+    expect(fsp.writeFile).toHaveBeenCalledWith(expect.stringContaining(first), bytes);
+    const removed = vi.mocked(fsp.unlink).mock.calls.map(([file]) => path.basename(String(file)));
+    expect(removed).toContain('proj_a.png');
+    expect(removed).toContain('proj_a.old.svg');
+    expect(removed).not.toContain('proj_ab.png');
+    expect(removed).not.toContain('_preserved_x.png');
+  });
+
+  it('keeps the file it just wrote', async () => {
+    const bytes = new Uint8Array([9]);
+    const name = await writeIconFile('proj_k', bytes, 'png');
+    vi.mocked(fsp.readdir).mockResolvedValue([name] as never);
+    vi.mocked(fsp.unlink).mockClear();
+    await writeIconFile('proj_k', bytes, 'png');
+    expect(fsp.unlink).not.toHaveBeenCalled();
   });
 });
