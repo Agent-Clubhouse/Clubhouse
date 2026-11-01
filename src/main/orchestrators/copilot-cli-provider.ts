@@ -21,6 +21,7 @@ import {
 } from './types';
 import type { McpServerDef } from '../../shared/types';
 import { BaseProvider } from './base-provider';
+import { probeCopilotModels, type ModelProbeContext } from './model-probes';
 import { homePath, parseModelChoicesFromHelp, validateHookUrl, buildHookCurlCommand, mergeHookEntries, parseJsonlFile } from './shared';
 import { isClubhouseHookEntry } from '../services/config-pipeline';
 import { appLog } from '../services/log-service';
@@ -129,6 +130,12 @@ export class CopilotCliProvider extends BaseProvider implements HookCapable, Hea
   protected readonly fallbackModelOptions = FALLBACK_MODEL_OPTIONS;
   protected readonly configEnvKeys = ['GH_HOST', 'GH_TOKEN'];
 
+  /** ACP `session/new` lists the models this login can use, with cost multipliers. No prompt is sent. */
+  protected probeLiveModels(ctx: ModelProbeContext) {
+    return probeCopilotModels(ctx);
+  }
+
+  /** Fallback when the ACP handshake is unavailable. */
   protected readonly modelFetchConfig = {
     args: ['--help'],
     parser: (help: string) => parseModelChoicesFromHelp(help, COPILOT_MODEL_CHOICES_PATTERN),

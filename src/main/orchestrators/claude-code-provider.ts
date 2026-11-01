@@ -5,6 +5,7 @@ import * as path from 'path';
 import {
   OrchestratorConventions,
   ProviderCapabilities,
+  ModelList,
   SpawnOpts,
   SpawnCommandResult,
   HeadlessOpts,
@@ -17,6 +18,7 @@ import {
   TranscriptReadOptions,
 } from './types';
 import { BaseProvider } from './base-provider';
+import { probeClaudeModels, type ModelProbeContext } from './model-probes';
 import { homePath, validateHookUrl, buildHookCurlCommand, mergeHookEntries, resolveEncodedPathDir, parseJsonlFile } from './shared';
 import { isClubhouseHookEntry } from '../services/config-pipeline';
 import { appLog } from '../services/log-service';
@@ -36,13 +38,16 @@ const TOOL_VERBS: Record<string, string> = {
   NotebookEdit: 'Editing notebook',
 };
 
-// Claude Code uses well-known aliases — no machine-readable model list in --help
+// Claude Code's well-known aliases: the fallback when the `initialize` handshake can't list models.
 const MODEL_OPTIONS = [
   { id: 'default', label: 'Default' },
   { id: 'opus', label: 'Opus' },
   { id: 'sonnet', label: 'Sonnet' },
   { id: 'haiku', label: 'Haiku' },
 ];
+
+/** Aliases Claude Code resolves itself, listed by `initialize` or not. */
+const CLAUDE_MODEL_ALIASES = ['default', 'best', 'opus', 'sonnet', 'haiku', 'fable', 'opusplan'];
 
 const DEFAULT_DURABLE_PERMISSIONS = ['Bash(git:*)', 'Bash(npm:*)', 'Bash(npx:*)'];
 const DEFAULT_QUICK_PERMISSIONS = ['Bash(git:*)', 'Bash(npm:*)', 'Bash(npx:*)', 'Read', 'Write', 'Edit', 'Glob', 'Grep'];
@@ -117,6 +122,22 @@ export class ClaudeCodeProvider extends BaseProvider implements HookCapable, Hea
   protected readonly durablePermissions = DEFAULT_DURABLE_PERMISSIONS;
   protected readonly quickPermissions = DEFAULT_QUICK_PERMISSIONS;
   protected readonly fallbackModelOptions = MODEL_OPTIONS;
+
+  /** The stream-json `initialize` reply lists the models this login can use, with their aliases. */
+  protected probeLiveModels(ctx: ModelProbeContext) {
+    return probeClaudeModels(ctx);
+  }
+
+  /**
+   * Claude also takes a listed model's resolved id, a family alias (`opus`,
+   * `opusplan`…) and a `[1m]` long-context suffix on either (`opus[1m]`).
+   */
+  override acceptsModel(model: string, list: ModelList): boolean {
+    const base = model.replace(/\[1m\]$/i, '').toLowerCase();
+    if (base === '') return false;
+    if (CLAUDE_MODEL_ALIASES.includes(base)) return true;
+    return list.models.some((m) => m.id.toLowerCase() === base || m.resolvedId?.toLowerCase() === base);
+  }
   protected readonly configEnvKeys = ['CLAUDE_CONFIG_DIR'];
 
   // ── Core interface ──────────────────────────────────────────────────────

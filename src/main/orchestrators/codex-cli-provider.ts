@@ -19,6 +19,7 @@ import {
 import type { McpServerDef } from '../../shared/types';
 import type { StreamJsonEvent } from '../services/jsonl-parser';
 import { BaseProvider } from './base-provider';
+import { probeCodexModels, type ModelProbeContext } from './model-probes';
 import { cwdKey } from './copilot-session-store';
 import { createCodexHeadlessNormalizer } from './codex-headless-events';
 import { homePath, validateHookUrl, buildHookCurlCommand, mergeHookEntries, parseJsonlFile } from './shared';
@@ -283,10 +284,16 @@ export class CodexCliProvider extends BaseProvider implements HeadlessCapable, H
   // isolated session store, config.toml and auth.
   protected readonly configEnvKeys = ['CODEX_HOME', 'OPENAI_API_KEY', 'OPENAI_BASE_URL'];
 
+  /** Fallback when app-server's model/list is unavailable. */
   protected readonly modelFetchConfig = {
     args: ['debug', 'models'],
     parser: parseCodexDebugModels,
   };
+
+  /** app-server `model/list`: the catalog for this login, with effort levels. */
+  protected probeLiveModels(ctx: ModelProbeContext) {
+    return probeCodexModels(ctx);
+  }
 
   // ── Core interface ──────────────────────────────────────────────────────
 
