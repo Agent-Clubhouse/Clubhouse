@@ -121,7 +121,8 @@ describe('Copilot capability record', () => {
   it('flags versions outside the tested range', () => {
     expect(copilotVersionStatus('1.0.92')).toBe('tested');
     expect(copilotVersionStatus('1.0.98')).toBe('tested');
-    expect(copilotVersionStatus('1.0.100-0')).toBe('newer');
+    expect(copilotVersionStatus('1.0.105')).toBe('tested');
+    expect(copilotVersionStatus('1.0.106-0')).toBe('newer');
     expect(copilotVersionStatus('1.0.82')).toBe('tested');
     expect(copilotVersionStatus('1.0.40')).toBe('older');
     expect(copilotVersionStatus(undefined)).toBe('unknown');

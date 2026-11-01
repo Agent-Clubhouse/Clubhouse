@@ -214,6 +214,18 @@ describe('CodexChatEventMapper', () => {
       });
     });
 
+    it('keeps a generated image that arrives as a fileId (Codex 0.166)', () => {
+      const item = {
+        type: 'imageGeneration' as const, id: 'gen-2', status: 'completed', revisedPrompt: 'a red fox', fileId: 'file-1', failure: null, generationId: null,
+      };
+      expect(completed({ ...item, savedPath: '/home/u/.codex/generated_images/fox.png' })[0].data).toEqual({
+        toolCallId: 'gen-2', status: 'completed', title: 'a red fox', media: [{ type: 'image', mimeType: 'image/png', sourcePath: '/home/u/.codex/generated_images/fox.png' }],
+      });
+      expect(completed(item)[0].data).toEqual({
+        toolCallId: 'gen-2', status: 'completed', title: 'a red fox', media: [{ type: 'image', mimeType: 'image/png', unavailable: true }],
+      });
+    });
+
     it('maps a generated image to a media-only call carrying its bytes', () => {
       const item = {
         type: 'imageGeneration' as const, id: 'gen-1', status: 'generating', revisedPrompt: null, result: '', failure: null,

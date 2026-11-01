@@ -61,14 +61,18 @@ export const TESTED_CLI_VERSIONS: Readonly<Partial<Record<ChatDriverId, CliVersi
   // Last live-tested on Claude Code 2.1.302 on 2026-10-18 (chat-itest-2026-10-18).
   claude_agent_sdk: { testedMax: '2.1.316' },
   claude_stream_json: { testedMax: '2.1.316' },
-  // Generated bindings are pinned at 0.153.4; chat was live-tested on
-  // codex-cli 0.163.0 on 2026-10-18 (resume, approvals, compaction, token usage).
-  codex_app_server: { testedMax: '0.163.0' },
+  // Generated bindings are pinned at 0.166.0. Tested 2026-11-01 on codex-cli
+  // 0.166.0 by handshake, schema diff and a fake-model round trip through the
+  // MCP bridge, no live prompt. Last live-tested on 0.163.0 on 2026-10-18
+  // (resume, approvals, compaction, token usage).
+  codex_app_server: { testedMax: '0.166.0' },
   // Fixtures exist from 1.0.82, 1.0.92 and 1.0.98. The probe launches exactly
   // like a session (no --no-auto-update, #2154), so probe.cliVersion is the
   // version that actually runs: the user's installed Copilot, the same one
   // Terminal runs. Nothing older is known to break, so there is no floor.
-  copilot_acp: { testedMax: '1.0.98' },
+  // Tested 2026-11-01 on 1.0.105 by handshake and a fake-model round trip
+  // through the MCP bridge, no live prompt. Last live prompt on 1.0.98.
+  copilot_acp: { testedMax: '1.0.105' },
   // @github/copilot-sdk 1.0.22 pins Copilot CLI 1.0.98 (and checks its own
   // protocol version on connect).
   copilot_sdk: { testedMax: '1.0.98' },

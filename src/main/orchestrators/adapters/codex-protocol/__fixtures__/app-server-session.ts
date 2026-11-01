@@ -12,6 +12,7 @@ import type {
   ThreadItem,
   Turn,
 } from '..';
+import { CODEX_APP_SERVER_SCHEMA_VERSION } from '../generated-meta';
 import type { ThreadListResponse } from '../generated/v2/ThreadListResponse';
 import type { ThreadResumeResponse } from '../generated/v2/ThreadResumeResponse';
 import type { ThreadStartResponse } from '../generated/v2/ThreadStartResponse';
@@ -29,7 +30,7 @@ type Notification<M extends ServerNotification['method']> = Extract<ServerNotifi
 type Request<M extends ServerRequest['method']> = Extract<ServerRequest, { method: M }>;
 
 export const initializeResult: InitializeResponse = {
-  userAgent: 'codex_cli_rs/0.153.4 (clubhouse; test)',
+  userAgent: `codex_cli_rs/${CODEX_APP_SERVER_SCHEMA_VERSION} (clubhouse; test)`,
   codexHome: 'codex-home',
   platformFamily: 'unix',
   platformOs: 'macos',
@@ -38,6 +39,7 @@ export const initializeResult: InitializeResponse = {
 export const thread: Thread = {
   id: THREAD_ID,
   sessionId: THREAD_ID,
+  originator: null,
   forkedFromId: null,
   parentThreadId: null,
   preview: '',
@@ -55,7 +57,7 @@ export const thread: Thread = {
   status: { type: 'idle' },
   path: null,
   cwd: CWD,
-  cliVersion: '0.153.4',
+  cliVersion: CODEX_APP_SERVER_SCHEMA_VERSION,
   source: 'appServer',
   threadSource: null,
   agentNickname: null,
@@ -70,6 +72,7 @@ const threadSessionFields: ThreadStartResponse = {
   model: 'gpt-5-codex',
   modelProvider: 'openai',
   serviceTier: null,
+  disabledPluginIds: [],
   cwd: CWD,
   instructionSources: [],
   approvalPolicy: 'on-request',
@@ -88,6 +91,7 @@ export const threadStartResult: ThreadStartResponse = { ...threadSessionFields }
 
 export const threadResumeResult: ThreadResumeResponse = {
   ...threadSessionFields,
+  collaborationMode: null,
   turnsBackwardsCursor: null,
   itemsBackwardsCursor: null,
 };
@@ -101,6 +105,7 @@ export const threadListResult: ThreadListResponse = {
 function turn(id: string, status: Turn['status'], extra: Partial<Turn> = {}): Turn {
   return {
     id,
+    rootTurnId: null,
     items: [],
     itemsView: 'notLoaded',
     status,
@@ -119,6 +124,7 @@ export const rateLimitsResult: GetAccountRateLimitsResponse = {
   rateLimits: {
     limitId: 'codex',
     limitName: null,
+    normalModelSlug: null,
     primary: { usedPercent: 12.5, windowDurationMins: 300, resetsAt: 1_760_610_000 },
     secondary: { usedPercent: 3, windowDurationMins: 10_080, resetsAt: 1_761_000_000 },
     credits: null,
@@ -128,6 +134,7 @@ export const rateLimitsResult: GetAccountRateLimitsResponse = {
     rateLimitReachedType: null,
   },
   rateLimitsByLimitId: null,
+  ordinaryUsageAllowed: null,
   rateLimitResetCredits: null,
   accountId: null,
   rateLimitUpsell: null,

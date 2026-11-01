@@ -74,8 +74,10 @@ describe('chat CLI version policy', () => {
     for (const driver of ['copilot_acp', 'copilot_sdk'] as const) {
       expect(evaluateCliVersion(driver, 'copilot-cli', '1.0.82').status).toBe('ok');
       expect(evaluateCliVersion(driver, 'copilot-cli', '1.0.98').status).toBe('ok');
-      expect(evaluateCliVersion(driver, 'copilot-cli', '1.0.99').status).toBe('untested');
     }
+    expect(evaluateCliVersion('copilot_acp', 'copilot-cli', '1.0.105').status).toBe('ok');
+    expect(evaluateCliVersion('copilot_acp', 'copilot-cli', '1.0.106').status).toBe('untested');
+    expect(evaluateCliVersion('copilot_sdk', 'copilot-cli', '1.0.99').status).toBe('untested');
   });
 
   it('notes a newer-than-tested version without failing it', () => {
