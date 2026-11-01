@@ -350,6 +350,32 @@ async function writeProjects(projects: Project[]): Promise<void> {
   await writeStore({ version: CURRENT_VERSION, projects });
 }
 
+type ProjectsChangeListener = () => void;
+const projectsChangeListeners = new Set<ProjectsChangeListener>();
+
+/**
+ * Listen for changes to the project list: a project added, removed, renamed
+ * or otherwise updated. Listeners run synchronously after the write and may
+ * be called for changes they don't care about. Returns an unsubscribe function.
+ */
+export function onProjectsChanged(listener: ProjectsChangeListener): () => void {
+  projectsChangeListeners.add(listener);
+  return () => { projectsChangeListeners.delete(listener); };
+}
+
+function notifyProjectsChanged(): void {
+  for (const listener of projectsChangeListeners) {
+    try {
+      listener();
+    } catch (err) {
+      // telemetry-exempt: logged; a listener's failure must not fail the project write
+      appLog('core:project-store', 'warn', 'Project change listener failed', {
+        meta: { error: err instanceof Error ? err.message : String(err) },
+      });
+    }
+  }
+}
+
 let projectUpdateQueue: Promise<unknown> = Promise.resolve();
 
 /**
@@ -362,6 +388,7 @@ async function updateProjects(fn: (projects: Project[]) => Project[] | Promise<P
     const projects = await readProjects();
     const updated = await fn(projects);
     await writeProjects(updated);
+    notifyProjectsChanged();
     return updated;
   };
 

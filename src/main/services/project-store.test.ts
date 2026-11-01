@@ -32,7 +32,7 @@ vi.mock('./sound-service', () => ({
 // electron is aliased to our mock by vitest.config.ts
 import * as fsp from 'fs/promises';
 import { pathExists } from './fs-utils';
-import { list, add, remove, update, reorder, readIconData, setIcon, saveCroppedIcon, removeIconFile } from './project-store';
+import { list, add, remove, update, reorder, readIconData, setIcon, saveCroppedIcon, removeIconFile, onProjectsChanged } from './project-store';
 import { getSettings as getBadgeSettings, saveSettings as saveBadgeSettings } from './badge-settings';
 import { getSettings as getSoundSettings, saveSettings as saveSoundSettings } from './sound-service';
 
@@ -144,6 +144,32 @@ describe('add', () => {
     expect(project.id).toMatch(/^proj_/);
     expect(project.name).toBe('my-project');
     expect(project.path).toBe('/Users/me/my-project');
+  });
+});
+
+describe('onProjectsChanged', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.mocked(fsp.writeFile).mockResolvedValue(undefined);
+    vi.mocked(fsp.mkdir).mockResolvedValue(undefined);
+    vi.mocked(fsp.rename).mockResolvedValue(undefined);
+    vi.mocked(fsp.copyFile).mockResolvedValue(undefined);
+    vi.mocked(fsp.readdir).mockResolvedValue([]);
+  });
+
+  it('fires after a project is removed or renamed, and stops once unsubscribed', async () => {
+    mockStoreFile({ version: 1, projects: [{ id: 'proj_a', name: 'A', path: path.join(os.tmpdir(), 'a') }] });
+    const listener = vi.fn();
+    const unsubscribe = onProjectsChanged(listener);
+
+    await update('proj_a', { displayName: 'Renamed' });
+    expect(listener).toHaveBeenCalledTimes(1);
+    await remove('proj_a');
+    expect(listener).toHaveBeenCalledTimes(2);
+
+    unsubscribe();
+    await remove('proj_a');
+    expect(listener).toHaveBeenCalledTimes(2);
   });
 });
 
