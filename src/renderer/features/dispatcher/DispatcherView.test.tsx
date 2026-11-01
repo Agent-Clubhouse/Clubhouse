@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { render, screen, fireEvent, within, waitFor } from '@testing-library/react';
+import { render, renderHook, screen, fireEvent, within, waitFor } from '@testing-library/react';
 
 vi.mock('../agents/chat/AgentRuntimePane', () => ({
   AgentRuntimePane: ({ agent }: { agent: { id: string } }) => <div data-testid="runtime-pane">{agent.id}</div>,
@@ -11,6 +11,7 @@ import type { Agent } from '../../../shared/types';
 import { useAgentStore } from '../../stores/agentStore';
 import { useUIStore } from '../../stores/uiStore';
 import { useProjectStore } from '../../stores/projectStore';
+import { useOrchestrationCards } from '../agents/helpers/OrchestrationCards';
 import { DispatcherView } from './DispatcherView';
 import { useDispatcherStore } from './dispatcherStore';
 
@@ -49,6 +50,11 @@ describe('DispatcherView', () => {
     fireEvent.click(await waitFor(() => screen.getByTestId('open-settings-button')));
     expect(useUIStore.getState()).toMatchObject({ explorerTab: 'settings', settingsSubPage: 'dispatcher', dispatcherOpen: false });
     expect(useAgentStore.getState().agentSettingsOpenFor).toBeNull();
+  });
+
+  it('has no Orchestrate or Helpers cards, though its folder resolves', () => {
+    const { result } = renderHook(() => useOrchestrationCards(dispatcher(), 'dispatcher-dir'));
+    expect(result.current).toMatchObject({ orchestrationPath: undefined, showOrchestrate: false, showHelpers: false });
   });
 
   it('says it is loading until the agent is in the store', () => {

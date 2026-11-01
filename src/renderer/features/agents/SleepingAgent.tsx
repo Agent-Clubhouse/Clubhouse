@@ -79,7 +79,7 @@ export function SleepingAgent({ agent, details = false }: {
   const isRemote = isRemoteAgentId(agent.id);
   const remoteParts = useMemo(() => isRemote ? parseNamespacedId(agent.id) : null, [agent.id, isRemote]);
   // Use the agent's own project, not the globally-active project. The
-  // Dispatcher (#2538) has its folder instead, and no orchestration of its own.
+  // Dispatcher (#2538) has its folder instead.
   const agentProject = useLocalProject(agent.projectId);
   const isDispatcher = isDispatcherAgent(agent);
   const isDurable = agent.kind === 'durable';
@@ -325,7 +325,7 @@ export function SleepingAgent({ agent, details = false }: {
             )}
 
             {/* An orchestrator's cards sit here while asleep (#2232), unless the details column shows them. */}
-            {!compact && !detailsOpen && isDurable && !isRemote && !isDispatcher && agentProject && <SleepingOrchestration agent={agent} projectPath={agentProject.path} />}
+            {!compact && !detailsOpen && isDurable && !isRemote && agentProject && <SleepingOrchestration agent={agent} projectPath={agentProject.path} />}
 
             {!compact && last && ((last.loading && last.sessionId) || last.summary || last.filesModified.length > 0 || agent.branch) && (
               <LastSession
