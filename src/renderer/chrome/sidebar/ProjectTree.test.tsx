@@ -449,6 +449,31 @@ describe('ProjectTree sort modes and inactive projects (#2116)', () => {
     expect(useChromeStore.getState()).toMatchObject({ projectSort: 'recent', agentSort: 'recent' });
   });
 
+  it('separates the project and agent order rows, and arrow keys step over the separator (#2581)', () => {
+    useChromeStore.setState({ projectSort: 'recent', agentSort: 'manual' });
+    setup();
+    fireEvent.click(screen.getByTestId('sidebar-sort-menu'));
+    const menu = screen.getByTestId('sidebar-sort');
+    const rows = [...menu.children].map((el) => el.getAttribute('data-testid') ?? el.getAttribute('role'));
+    expect(rows).toEqual([
+      'sidebar-sort-projects-manual',
+      'sidebar-sort-projects-recent',
+      'separator',
+      'sidebar-sort-agents-manual',
+      'sidebar-sort-agents-recent',
+    ]);
+    // The two current rows are the ones either side of the separator, and both stay highlighted.
+    for (const id of ['sidebar-sort-projects-recent', 'sidebar-sort-agents-manual']) {
+      expect(screen.getByTestId(id).getAttribute('aria-current')).toBe('true');
+      expect(screen.getByTestId(id).className).toContain('bg-surface-0');
+    }
+    expect(document.activeElement).toBe(screen.getByTestId('sidebar-sort-projects-recent'));
+    fireEvent.keyDown(menu, { key: 'ArrowDown' });
+    expect(document.activeElement).toBe(screen.getByTestId('sidebar-sort-agents-manual'));
+    fireEvent.keyDown(menu, { key: 'ArrowUp' });
+    expect(document.activeElement).toBe(screen.getByTestId('sidebar-sort-projects-recent'));
+  });
+
   it('has no Mark inactive on a satellite', () => {
     setup({ onReorder: undefined, onOpenSettings: undefined, onReorderAgents: undefined, onNewAgent: undefined });
     fireEvent.contextMenu(key('project:a'));
