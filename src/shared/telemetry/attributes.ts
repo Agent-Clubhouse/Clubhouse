@@ -351,6 +351,7 @@ export const ATTR = {
     'row_menu_open', 'hover_card_action',
     'project_menu_open', 'agent_reorder', 'idle_toggle', 'needs_you_review',
     'agent_settings_page', 'agent_shell_toggle', 'sidebar_filter', 'filter_search_everything', 'new_agent_create', 'new_agent_start', 'first_run_install',
+    'dispatcher_open',
   ]),
   /** The UI action whose failure was caught and reported (`clubhouse.ui.action_failed`). */
   uiAction: enumAttr('clubhouse.ui.action', [

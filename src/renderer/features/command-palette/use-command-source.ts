@@ -23,6 +23,8 @@ import { switchHost } from '../../chrome/hosts';
 import { reportChromeFeature } from '../../chrome/telemetry';
 import { useAnnexClientStore } from '../../stores/annexClientStore';
 import { useRemoteProjectStore } from '../../stores/remoteProjectStore';
+import { isDispatcherAgent } from '../dispatcher/dispatcherStore';
+import { closeDispatcher, openDispatcher } from '../dispatcher/dispatcherNav';
 
 /** Canvas metadata loaded from storage for non-active projects */
 interface CrossProjectCanvas {
@@ -234,6 +236,9 @@ export function useCommandSource(): CommandItem[] {
         dot,
         shortcut: agentShortcut,
         execute: () => {
+          // The Dispatcher is in no project; it opens its own view (#2538).
+          if (isDispatcherAgent(agent)) { openDispatcher(); return; }
+          closeDispatcher();
           setActiveProject(agent.projectId);
           setExplorerTab('agents', agent.projectId);
           setActiveAgent(agentId, agent.projectId);

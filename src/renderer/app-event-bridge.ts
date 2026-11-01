@@ -37,6 +37,8 @@ import { initChatEventListener } from './stores/chatStore';
 import { initToolActivityListener } from './plugins/builtin/canvas/useWireActivity';
 import { usePendingPermissionStore } from './stores/pendingPermissionStore';
 import { showStructuredModeRemovedNotice } from './services/structured-mode-removal-notice';
+import { isDispatcherAgent, isDispatcherProjectId } from './features/dispatcher/dispatcherStore';
+import { closeDispatcher, openDispatcher } from './features/dispatcher/dispatcherNav';
 
 
 // ─── IPC Listener Setup ─────────────────────────────────────────────────────
@@ -66,6 +68,9 @@ function initWindowListeners(): (() => void)[] {
   // Navigate to agent when notification is clicked
   removers.push(
     window.clubhouse.app.onNotificationClicked((agentId: string, projectId: string) => {
+      // The Dispatcher is in no project; it opens its own view (#2538).
+      if (isDispatcherProjectId(projectId)) { openDispatcher(); return; }
+      closeDispatcher();
       useProjectStore.getState().setActiveProject(projectId);
       useUIStore.getState().setExplorerTab('agents', projectId);
       useAgentStore.getState().setActiveAgent(agentId, projectId);
@@ -129,7 +134,10 @@ function initWindowListeners(): (() => void)[] {
   removers.push(
     window.clubhouse.window.onNavigateToAgent((agentId: string) => {
       const agent = useAgentStore.getState().agents[agentId];
-      if (agent) {
+      if (agent && isDispatcherAgent(agent)) {
+        openDispatcher();
+      } else if (agent) {
+        closeDispatcher();
         useProjectStore.getState().setActiveProject(agent.projectId);
         useUIStore.getState().setExplorerTab('agents', agent.projectId);
         useAgentStore.getState().setActiveAgent(agentId, agent.projectId);
@@ -748,6 +756,11 @@ let previousCleanup: (() => void) | null = null;
 export function handleProtocolAction(action: ResolvedProtocolAction): void {
   switch (action.kind) {
     case 'open-file': {
+      // The Dispatcher's folder has no project or Files tab to open it in (#2538).
+      if (isDispatcherProjectId(action.projectId)) {
+        useToastStore.getState().addToast(`No open project contains ${action.relativePath}`, 'error');
+        break;
+      }
       useProjectStore.getState().setActiveProject(action.projectId);
       useUIStore.getState().setExplorerTab('plugin:files', action.projectId);
       const { relativePath, line, column } = action;

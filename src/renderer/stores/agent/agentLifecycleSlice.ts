@@ -3,7 +3,7 @@ import { generateQuickAgentId } from '../../../shared/agent-id';
 import { generateQuickName } from '../../../shared/name-generator';
 import { expandTemplate, AgentContext } from '../../../shared/template-engine';
 import { useHeadlessStore } from '../headlessStore';
-import { useProjectStore } from '../projectStore';
+import { findLocalProject } from '../../features/dispatcher/dispatcherStore';
 import { AgentLifecycleSlice, GetAgentState, SetAgentState } from './types';
 import { omitRecordKey } from './agentUtils';
 import { parentLinkFields } from './parentLink';
@@ -256,8 +256,7 @@ export function createLifecycleSlice(set: SetAgentState, get: GetAgentState): Ag
       const resolvedPath =
         projectPath ||
         (() => {
-          const project = useProjectStore.getState().projects.find((p) => p.id === agent.projectId);
-          return project?.path;
+          return findLocalProject(agent.projectId)?.path;
         })();
 
       if (resolvedPath) {

@@ -57,6 +57,12 @@ interface UIState {
   projectExplorerTab: Record<string, ExplorerTab>;
   /** Active host in the rail: null = local, satelliteId = remote host */
   activeHostId: string | null;
+  /**
+   * The Dispatcher's view covers the pane (#2538). It isn't a project tab, so
+   * it doesn't touch the active project; opening anything else closes it.
+   */
+  dispatcherOpen: boolean;
+  setDispatcherOpen: (open: boolean) => void;
   setActiveHost: (id: string | null) => void;
   setExplorerTab: (tab: ExplorerTab, projectId?: string) => void;
   restoreProjectView: (projectId: string) => void;
@@ -119,6 +125,11 @@ export const useUIStore = create<UIState>((set, get) => ({
   helpSearchQuery: '',
   projectExplorerTab: {},
   activeHostId: loadActiveHost(),
+  dispatcherOpen: false,
+
+  setDispatcherOpen: (open) => {
+    if (get().dispatcherOpen !== open) set({ dispatcherOpen: open });
+  },
 
   setActiveHost: (id) => {
     set({ activeHostId: id });

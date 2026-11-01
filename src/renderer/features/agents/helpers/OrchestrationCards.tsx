@@ -9,6 +9,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { Agent } from '../../../../shared/types';
 import { isRemoteProjectId } from '../../../stores/remoteProjectStore';
+import { isDispatcherAgent } from '../../dispatcher/dispatcherStore';
 import { useAgentDetailsStore } from '../details/detailsStore';
 import { SectionHead } from '../states/parts';
 import { OrchestrateCard } from './OrchestrateCard';
@@ -19,8 +20,9 @@ import { useHelpersEverywhere } from './cross-project';
 
 /** What the orchestration cards need, and whether each one shows. */
 export function useOrchestrationCards(agent: Agent, projectPath: string | undefined) {
-  // Local durable agents only; a satellite keeps its own config.
-  const orchestrationPath = agent.kind === 'durable' && !isRemoteProjectId(agent.projectId) ? projectPath : undefined;
+  // Local durable agents only; a satellite keeps its own config. The
+  // Dispatcher's orchestration settings are locked (#2533), so it has none.
+  const orchestrationPath = agent.kind === 'durable' && !isRemoteProjectId(agent.projectId) && !isDispatcherAgent(agent) ? projectPath : undefined;
   const orch = useOrchestration(orchestrationPath, agent);
   const { configs, reload: reloadConfigs } = useProjectAgentConfigs(orchestrationPath, agent.projectId);
   const ownConfig = configs?.find((c) => c.id === agent.id);

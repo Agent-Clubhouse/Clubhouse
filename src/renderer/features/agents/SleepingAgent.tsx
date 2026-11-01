@@ -2,7 +2,8 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } fr
 import { ATTR, tel } from '../../telemetry';
 import { Agent } from '../../../shared/types';
 import { useAgentStore } from '../../stores/agentStore';
-import { useProjectStore } from '../../stores/projectStore';
+import { isDispatcherAgent, useLocalProject } from '../dispatcher/dispatcherStore';
+import { openDispatcherSettings } from '../dispatcher/dispatcherNav';
 import { isRemoteAgentId, parseNamespacedId } from '../../stores/remoteProjectStore';
 import { PopupMenu, type MenuEntry } from '../../components/PopupMenu';
 import { Button } from '../../components/Button';
@@ -75,11 +76,12 @@ export function SleepingAgent({ agent, details = false }: {
   const setSessionNamePrompt = useAgentStore((s) => s.setSessionNamePrompt);
   const openAgentSettings = useAgentStore((s) => s.openAgentSettings);
   const storeIconUrl = useAgentStore((s) => s.agentIcons[agent.id]);
-  const projects = useProjectStore((s) => s.projects);
   const isRemote = isRemoteAgentId(agent.id);
   const remoteParts = useMemo(() => isRemote ? parseNamespacedId(agent.id) : null, [agent.id, isRemote]);
-  // Use the agent's own project, not the globally-active project
-  const agentProject = projects.find((p) => p.id === agent.projectId);
+  // Use the agent's own project, not the globally-active project. The
+  // Dispatcher (#2538) has its folder instead.
+  const agentProject = useLocalProject(agent.projectId);
+  const isDispatcher = isDispatcherAgent(agent);
   const isDurable = agent.kind === 'durable';
   const failed = agent.status === 'error';
 
@@ -281,7 +283,7 @@ export function SleepingAgent({ agent, details = false }: {
                   <ModelLabel orchestrator={agent.orchestrator} model={agent.model} />
                   <span className="ml-auto flex items-center"><Kbd>{shortcut}</Kbd></span>
                   {failed && !isRemote && (
-                    <Button kind="ghost" onClick={() => openAgentSettings(agent.id)} data-testid="open-settings-button">
+                    <Button kind="ghost" onClick={() => (isDispatcher ? openDispatcherSettings() : openAgentSettings(agent.id))} data-testid="open-settings-button">
                       Open settings
                     </Button>
                   )}

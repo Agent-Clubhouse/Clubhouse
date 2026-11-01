@@ -15,9 +15,9 @@ import type { Agent } from '../../../../shared/types';
 import type { AgentRuntimeMode, ChatAgentRuntimeInfo } from '../../../../shared/chat';
 import { chatEventCount, useChatStore } from '../../../stores/chatStore';
 import { useAgentStore } from '../../../stores/agentStore';
-import { useProjectStore } from '../../../stores/projectStore';
 import { useToastStore } from '../../../stores/toastStore';
 import { isRemoteProjectId } from '../../../stores/remoteProjectStore';
+import { findLocalProject, useLocalProject } from '../../dispatcher/dispatcherStore';
 import { ConfirmDestructiveAction } from '../../../components/ConfirmDestructiveAction';
 import { TerminalPaneToolbar } from '../pane/AgentPaneToolbar';
 import { AgentDetails } from '../details/AgentDetails';
@@ -94,7 +94,7 @@ export function useAgentRuntimeInfo(agent: Agent, enabled: boolean): ChatAgentRu
   // A chat runtime runs it, as far as this window's chat events (or main's last answer) say.
   const chatLive = useChatStore((s) => s.live[agent.id] === true);
   const [recheck, setRecheck] = useState(0);
-  const projectPath = useProjectStore((s) => s.projects.find((p) => p.id === agent.projectId)?.path);
+  const projectPath = useLocalProject(agent.projectId)?.path;
   const remote = isRemoteProjectId(agent.projectId);
   const eligible = enabled && !remote && agent.kind === 'durable';
   useEffect(() => {
@@ -142,7 +142,7 @@ export async function switchAgentRuntime(agent: Agent, mode: AgentRuntimeMode): 
   recordBreadcrumb('event', `runtime.switch.${mode}`);
   rendererLog(SWITCH_LOG_NS, 'info', 'Runtime switch requested', { meta });
   try {
-    const project = useProjectStore.getState().projects.find((p) => p.id === agent.projectId);
+    const project = findLocalProject(agent.projectId);
     if (!project) throw new Error('Project not found');
     const api = window.clubhouse.agent;
     await api.updateDurableConfig(project.path, agent.id, { runtimeMode: mode });

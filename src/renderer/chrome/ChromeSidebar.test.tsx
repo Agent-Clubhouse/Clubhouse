@@ -37,6 +37,8 @@ import { useKeyboardShortcutsStore } from '../stores/keyboardShortcutsStore';
 import { useChromeFlagStore } from './chromeFlag';
 import { useHelperStartRequestStore } from '../stores/helperStartRequestStore';
 import { useAgentDetailsStore } from '../features/agents/details/detailsStore';
+import { useDispatcherStore } from '../features/dispatcher/dispatcherStore';
+import { DISPATCHER_PROJECT_ID, DISPATCHER_OFF } from '../../shared/dispatcher-types';
 
 function registerAppPlugin(id: string, label: string, position: 'top' | 'bottom' = 'top') {
   usePluginStore.getState().registerPlugin(
@@ -666,6 +668,98 @@ describe('ChromeSidebar', () => {
       fireEvent.click(screen.getByText('Pair a satellite…'));
       expect(useUIStore.getState()).toMatchObject({ explorerTab: 'settings', settingsContext: 'app', settingsSubPage: 'annex-control' });
     });
+  });
+});
+
+describe('ChromeSidebar Dispatcher (#2538)', () => {
+  const dispatcher = agent('disp', DISPATCHER_PROJECT_ID, { name: 'Dispatcher', status: 'sleeping' });
+  const turnOn = () => {
+    useDispatcherStore.getState().setState({ enabled: true, agentId: 'disp', path: 'dispatcher-dir', config: null });
+    useAgentStore.setState((s) => ({ agents: { ...s.agents, disp: dispatcher } }));
+  };
+  beforeEach(() => useUIStore.setState({ dispatcherOpen: false }));
+  afterEach(() => useDispatcherStore.getState().setState(DISPATCHER_OFF));
+
+  it('has no row while the Dispatcher is off', () => {
+    useAgentStore.setState((s) => ({ agents: { ...s.agents, disp: dispatcher } }));
+    render(<ChromeSidebar />);
+    expect(screen.queryByTestId('dispatcher-row')).toBeNull();
+  });
+
+  it('shows the row with no projects, and opens its view', () => {
+    useProjectStore.setState({ projects: [], activeProjectId: null });
+    useAgentStore.setState({ agents: {}, agentDetailedStatus: {}, activeAgentId: null });
+    turnOn();
+    render(<ChromeSidebar />);
+    const row = within(screen.getByTestId('dispatcher-row')).getByTestId('agent-item-disp');
+    expect(row.textContent).toContain('Dispatcher');
+    expect(row.getAttribute('data-active')).toBe('false');
+    fireEvent.click(row);
+    expect(useUIStore.getState().dispatcherOpen).toBe(true);
+    expect(row.getAttribute('data-active')).toBe('true');
+    // It's in no project: nothing becomes the active project.
+    expect(useProjectStore.getState().activeProjectId).toBeNull();
+  });
+
+  it('pins the row above Needs you and the projects, and keeps it out of the tree', () => {
+    turnOn();
+    render(<ChromeSidebar />);
+    const row = screen.getByTestId('dispatcher-row');
+    const following = (el: Element) => !!(row.compareDocumentPosition(el) & Node.DOCUMENT_POSITION_FOLLOWING);
+    expect(following(screen.getByTestId('needs-you'))).toBe(true);
+    expect(following(screen.getByTestId('agent-list'))).toBe(true);
+    expect(within(screen.getByTestId('agent-list')).queryByTestId('agent-item-disp')).toBeNull();
+  });
+
+  it('takes the selection while its view is open, and a project click closes it', () => {
+    turnOn();
+    useUIStore.setState({ dispatcherOpen: true });
+    render(<ChromeSidebar />);
+    expect(screen.getByTestId('agent-item-disp').getAttribute('data-active')).toBe('true');
+    expect(screen.getByTestId('agent-item-a1').getAttribute('data-active')).toBe('false');
+    fireEvent.click(within(screen.getByTestId('project-p1')).getByText('Clubhouse'));
+    expect(useUIStore.getState().dispatcherOpen).toBe(false);
+  });
+
+  it('lists the Dispatcher in Needs you despite its synthetic project id, and opens its view', () => {
+    turnOn();
+    useAgentStore.setState((s) => ({
+      agentDetailedStatus: { ...s.agentDetailedStatus, disp: { state: 'needs_permission', message: 'Wants to run: gh pr list', timestamp: 2 } },
+    }));
+    render(<ChromeSidebar />);
+    const section = screen.getByTestId('needs-you');
+    const row = within(section).getByTestId('needs-you-row-disp');
+    expect(row.textContent).toContain('Wants to run: gh pr list');
+    expect(within(section).getByTestId('needs-you-row-b1')).toBeTruthy();
+    fireEvent.click(row);
+    expect(useUIStore.getState().dispatcherOpen).toBe(true);
+    // The project and its agent stay as they were.
+    expect(useProjectStore.getState().activeProjectId).toBe('p1');
+    expect(useAgentStore.getState().activeAgentId).toBe('a1');
+  });
+
+  it('leaves the Dispatcher out of Needs you once it is off', () => {
+    turnOn();
+    useAgentStore.setState((s) => ({
+      agentDetailedStatus: { ...s.agentDetailedStatus, disp: { state: 'needs_permission', message: 'Wants to run: gh pr list', timestamp: 2 } },
+    }));
+    useDispatcherStore.getState().setState({ ...DISPATCHER_OFF, agentId: 'disp', path: 'dispatcher-dir' });
+    render(<ChromeSidebar />);
+    expect(screen.queryByTestId('needs-you-row-disp')).toBeNull();
+  });
+
+  it('offers no delete, duplicate, persona or pop out in its menu, and Settings opens Settings > Dispatcher', () => {
+    turnOn();
+    render(<ChromeSidebar />);
+    fireEvent.contextMenu(screen.getByTestId('agent-item-disp'));
+    const menu = screen.getByTestId('agent-context-menu');
+    for (const id of ['delete', 'remove', 'apply-persona', 'extract-persona', 'popout', 'duplicate']) {
+      expect(within(menu).queryByTestId(`ctx-${id}`)).toBeNull();
+    }
+    expect(within(menu).getByTestId('ctx-wake')).toBeTruthy();
+    fireEvent.click(within(menu).getByTestId('ctx-settings'));
+    expect(useUIStore.getState()).toMatchObject({ explorerTab: 'settings', settingsContext: 'app', settingsSubPage: 'dispatcher', dispatcherOpen: false });
+    expect(useAgentStore.getState().agentSettingsOpenFor).toBeNull();
   });
 });
 

@@ -21,6 +21,9 @@ import { useAgentStore } from '../stores/agentStore';
 import { useQuickAgentStore } from '../stores/quickAgentStore';
 import { ChromeAgentDialogs } from './sidebar/ChromeAgentDialogs';
 import { reportChromePage, reportChromeSurface, reportChromeView, type ChromeSurface } from './telemetry';
+import { DispatcherView } from '../features/dispatcher/DispatcherView';
+import { useDispatcherAgentId } from '../features/dispatcher/dispatcherStore';
+import { useDispatcherSync } from '../features/dispatcher/useDispatcherSync';
 
 const SURFACE_FOR_MODE: Record<SidebarMode, ChromeSurface> = {
   tree: 'sidebar_agents',
@@ -67,6 +70,12 @@ export function ChromeBody() {
   const toggleSidebar = useChromeStore((s) => s.toggleSidebar);
   const newAgent = useChromeStore((s) => s.newAgent);
   const activeAgentId = useAgentStore((s) => s.activeAgentId);
+  const dispatcherOpen = useUIStore((s) => s.dispatcherOpen);
+
+  // The Dispatcher (#2538): its state and agent, and its view while it's on and open.
+  useDispatcherSync();
+  const dispatcherAgentId = useDispatcherAgentId();
+  const showDispatcher = dispatcherOpen && !!dispatcherAgentId;
 
   const isSettings = explorerTab === 'settings';
   const isHelp = explorerTab === 'help';
@@ -97,6 +106,22 @@ export function ChromeBody() {
     else useChromeStore.getState().closeNewAgent();
   }, [newAgent, knownIds, explorerTab, activeProjectId, activeAgentId, activeHostId]);
   const showNewAgent = !!newAgent && !activeHostId;
+
+  // Like the New agent page, the Dispatcher's view stays until something else
+  // opens: a tab, project, agent or host, or the New agent page. Opening it
+  // already settles the tab, so the state when it opens is the baseline.
+  const dispatcherBase = useRef<{ tab: string; project: string | null; agent: string | null; host: string | null } | null>(null);
+  useEffect(() => {
+    if (!dispatcherOpen) { dispatcherBase.current = null; return; }
+    const now = { tab: explorerTab, project: activeProjectId, agent: activeAgentId, host: activeHostId };
+    const base = dispatcherBase.current;
+    if (!base) { dispatcherBase.current = now; return; }
+    const same = base.tab === now.tab && base.project === now.project && base.agent === now.agent && base.host === now.host;
+    if (!same) useUIStore.getState().setDispatcherOpen(false);
+  }, [dispatcherOpen, explorerTab, activeProjectId, activeAgentId, activeHostId]);
+  useEffect(() => {
+    if (newAgent) useUIStore.getState().setDispatcherOpen(false);
+  }, [newAgent]);
   useEffect(() => syncProjectActivityWithAgents(), []);
   useEffect(() => syncCollapsedAgentsWithAgents(), []);
 
@@ -120,17 +145,17 @@ export function ChromeBody() {
   // most recently active project, falling back to the first one.
   const fallbackProjectId = (lastProjectId && projects.some((p) => p.id === lastProjectId) ? lastProjectId : projects[0]?.id) ?? null;
   useEffect(() => {
-    if (!activeProjectId && !activeHostId && !isSettings && !isHelp && !appPluginId && fallbackProjectId) {
+    if (!activeProjectId && !activeHostId && !isSettings && !isHelp && !appPluginId && !showDispatcher && fallbackProjectId) {
       useProjectStore.getState().setActiveProject(fallbackProjectId);
     }
-  }, [activeProjectId, activeHostId, isSettings, isHelp, appPluginId, fallbackProjectId]);
+  }, [activeProjectId, activeHostId, isSettings, isHelp, appPluginId, showDispatcher, fallbackProjectId]);
 
   const mode = useSidebarMode();
   const activeProject = projects.find((p) => p.id === activeProjectId);
   const startPage = useShowsStartPage(activeProjectId) && !!activeProject;
   // Not before the project list loads, or first run would flash on every launch.
   const firstRun = projectsLoaded && projects.length === 0 && !activeHostId;
-  const inPane = !isSettings && !isHelp && !appPluginId;
+  const inPane = !isSettings && !isHelp && !appPluginId && !showDispatcher;
   const page = showNewAgent ? 'new_agent' : !inPane ? null : activeProjectId ? (startPage ? 'start_page' : null)
     : activeHostId ? 'satellite_start' : (firstRun ? 'first_run' : null);
 
@@ -151,6 +176,8 @@ export function ChromeBody() {
     if (isSettings) return <MainContentView />;
     if (isHelp) return <HelpView />;
     if (appPluginId) return <AppPluginContent pluginId={appPluginId} />;
+    // Before the project fallback: the Dispatcher is in no project, and works with none (#2538).
+    if (showDispatcher) return <DispatcherView />;
     if (!activeProjectId) {
       if (activeHostId) return <SatelliteStartPage activeHostId={activeHostId} />;
       // With projects, the fallback above selects one on the next render.
@@ -159,7 +186,7 @@ export function ChromeBody() {
     if (startPage && activeProject) return <ProjectHome project={activeProject} overview={<ProjectStartPage project={activeProject} />} />;
     // A tab's own list lives in the sidebar (spec §4.6), so the pane is just the tab's content.
     return <MainContentView />;
-  }, [showNewAgent, newAgent, isSettings, isHelp, appPluginId, activeProjectId, activeHostId, firstRun, startPage, activeProject]);
+  }, [showNewAgent, newAgent, isSettings, isHelp, appPluginId, showDispatcher, activeProjectId, activeHostId, firstRun, startPage, activeProject]);
 
 
   return (
