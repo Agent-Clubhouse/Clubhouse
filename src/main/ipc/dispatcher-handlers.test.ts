@@ -10,7 +10,7 @@ vi.mock('electron', () => ({
   ipcMain: { handle: vi.fn((ch: string, fn: (...args: unknown[]) => unknown) => { h.handlers.set(ch, fn); }) },
 }));
 
-const ON: DispatcherState = { enabled: true, agentId: 'disp', path: 'dispatcher-folder', config: null };
+const ON: DispatcherState = { enabled: true, flagOn: true, agentId: 'disp', path: 'dispatcher-folder', config: null };
 vi.mock('../services/dispatcher/dispatcher-service', () => ({
   getDispatcherState: vi.fn(() => ON),
   setDispatcherEnabled: vi.fn(async (on: boolean) => ({ ...ON, enabled: on })),

@@ -40,7 +40,7 @@ afterEach(() => useChromeFlagStore.setState({ enabled: false }));
 describe('ChromeBody Dispatcher view (#2538)', () => {
   beforeEach(() => {
     useUIStore.setState({ dispatcherOpen: false });
-    useDispatcherStore.getState().setState({ enabled: true, agentId: 'disp', path: 'dispatcher-dir', config: null });
+    useDispatcherStore.getState().setState({ enabled: true, flagOn: true, agentId: 'disp', path: 'dispatcher-dir', config: null });
   });
   afterEach(() => useDispatcherStore.getState().setState(DISPATCHER_OFF));
 
@@ -64,6 +64,17 @@ describe('ChromeBody Dispatcher view (#2538)', () => {
 
     act(() => openDispatcher());
     act(() => useUIStore.getState().setExplorerTab('plugin:files', 'p1'));
+    expect(useUIStore.getState().dispatcherOpen).toBe(false);
+  });
+
+  it("stays open when its own agent becomes active, as on Wake, and still closes for another agent (#2563)", () => {
+    useAgentStore.setState((s) => ({ agents: { ...s.agents, a2: { id: 'a2', projectId: 'p1', name: 'other', kind: 'durable', status: 'running', color: 'blue' } as never } }));
+    render(<ChromeBody />);
+    act(() => openDispatcher());
+    act(() => useAgentStore.setState({ activeAgentId: 'disp' }));
+    expect(useUIStore.getState().dispatcherOpen).toBe(true);
+    expect(screen.getByTestId('dispatcher-view')).toBeTruthy();
+    act(() => useAgentStore.setState({ activeAgentId: 'a2' }));
     expect(useUIStore.getState().dispatcherOpen).toBe(false);
   });
 

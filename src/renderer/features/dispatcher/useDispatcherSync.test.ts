@@ -8,7 +8,7 @@ import { useDispatcherSync } from './useDispatcherSync';
 import { findLocalProject, isDispatcherAgent, useDispatcherStore } from './dispatcherStore';
 
 const config = { id: 'disp', name: 'Dispatcher', color: 'indigo', createdAt: '2026-10-31T00:00:00.000Z', model: 'opus' } as DurableAgentConfig;
-const ON: DispatcherState = { enabled: true, agentId: 'disp', path: 'dispatcher-dir', config };
+const ON: DispatcherState = { enabled: true, flagOn: true, agentId: 'disp', path: 'dispatcher-dir', config };
 
 describe('useDispatcherSync', () => {
   let emit: ((s: DispatcherState) => void) | null;
@@ -25,6 +25,7 @@ describe('useDispatcherSync', () => {
     Object.assign(window.clubhouse.dispatcher, { get: originals.get, onChanged: originals.onChanged });
     window.clubhouse.agent.listDurable = originals.listDurable;
     useDispatcherStore.getState().setState(DISPATCHER_OFF);
+    useDispatcherStore.setState({ loadError: null });
   });
 
   it('loads the Dispatcher agent under the synthetic project id, with its folder as the path', async () => {
@@ -68,5 +69,25 @@ describe('useDispatcherSync', () => {
     await waitFor(() => expect(useDispatcherStore.getState().state).not.toBeNull());
     expect(window.clubhouse.agent.listDurable).not.toHaveBeenCalled();
     expect(useAgentStore.getState().agents.disp).toBeUndefined();
+  });
+
+  it('keeps a failed load for the view, and Retry loads again (#2557)', async () => {
+    window.clubhouse.dispatcher.get = vi.fn().mockResolvedValue(ON);
+    window.clubhouse.agent.listDurable = vi.fn()
+      .mockRejectedValueOnce(new Error("Error invoking remote method 'agent:listDurable': Error: disk unavailable"))
+      .mockResolvedValue([config]);
+    renderHook(() => useDispatcherSync());
+    await waitFor(() => expect(useDispatcherStore.getState().loadError).toBe('disk unavailable'));
+    expect(useAgentStore.getState().agents.disp).toBeUndefined();
+    act(() => useDispatcherStore.getState().retryLoad());
+    await waitFor(() => expect(useAgentStore.getState().agents.disp).toBeTruthy());
+    expect(useDispatcherStore.getState().loadError).toBeNull();
+  });
+
+  it('says so when the load finds no agent in its folder', async () => {
+    window.clubhouse.dispatcher.get = vi.fn().mockResolvedValue(ON);
+    window.clubhouse.agent.listDurable = vi.fn().mockResolvedValue([]);
+    renderHook(() => useDispatcherSync());
+    await waitFor(() => expect(useDispatcherStore.getState().loadError).toBe('Its agent wasn’t found in its folder.'));
   });
 });

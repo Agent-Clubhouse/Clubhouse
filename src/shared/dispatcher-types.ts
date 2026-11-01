@@ -8,6 +8,8 @@ import type { DurableAgentConfig } from './types';
  */
 export interface DispatcherState {
   enabled: boolean;
+  /** The experimental flag alone, which shows Settings > Dispatcher. */
+  flagOn: boolean;
   agentId: string | null;
   path: string | null;
   config: DurableAgentConfig | null;
@@ -19,4 +21,4 @@ export interface DispatcherState {
  */
 export const DISPATCHER_PROJECT_ID = '__dispatcher__';
 
-export const DISPATCHER_OFF: DispatcherState = { enabled: false, agentId: null, path: null, config: null };
+export const DISPATCHER_OFF: DispatcherState = { enabled: false, flagOn: false, agentId: null, path: null, config: null };

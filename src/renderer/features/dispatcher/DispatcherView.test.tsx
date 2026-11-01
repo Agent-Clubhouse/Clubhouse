@@ -21,9 +21,12 @@ const dispatcher = (over: Partial<Agent> = {}): Agent =>
 beforeEach(() => {
   useProjectStore.setState({ projects: [], activeProjectId: null });
   useUIStore.setState({ explorerTab: 'agents', dispatcherOpen: true });
-  useDispatcherStore.getState().setState({ enabled: true, agentId: 'disp', path: 'dispatcher-dir', config: null });
+  useDispatcherStore.getState().setState({ enabled: true, flagOn: true, agentId: 'disp', path: 'dispatcher-dir', config: null });
 });
-afterEach(() => useDispatcherStore.getState().setState(DISPATCHER_OFF));
+afterEach(() => {
+  useDispatcherStore.getState().setState(DISPATCHER_OFF);
+  useDispatcherStore.setState({ loadError: null });
+});
 
 describe('DispatcherView', () => {
   it('shows the chat or terminal pane while it runs', () => {
@@ -60,6 +63,19 @@ describe('DispatcherView', () => {
   it('says it is loading until the agent is in the store', () => {
     useAgentStore.setState({ agents: {} });
     render(<DispatcherView />);
-    expect(screen.getByTestId('dispatcher-view').textContent).toBe('Loading the Dispatcher');
+    expect(screen.getByRole('status').textContent).toBe('Loading the Dispatcher');
+  });
+
+  it('shows a failed load with Retry instead of loading for good (#2557)', () => {
+    useAgentStore.setState({ agents: {} });
+    useDispatcherStore.getState().setLoadError('disk unavailable');
+    render(<DispatcherView />);
+    const alert = screen.getByRole('alert');
+    expect(alert.textContent).toBe('Couldn’t load the Dispatcher. disk unavailable');
+    expect(alert.className).toContain('text-ctp-error');
+    const before = useDispatcherStore.getState().loadAttempt;
+    fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
+    expect(useDispatcherStore.getState()).toMatchObject({ loadError: null, loadAttempt: before + 1 });
+    expect(screen.getByRole('status').textContent).toBe('Loading the Dispatcher');
   });
 });

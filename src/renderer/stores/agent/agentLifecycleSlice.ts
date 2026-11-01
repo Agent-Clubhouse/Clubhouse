@@ -3,7 +3,7 @@ import { generateQuickAgentId } from '../../../shared/agent-id';
 import { generateQuickName } from '../../../shared/name-generator';
 import { expandTemplate, AgentContext } from '../../../shared/template-engine';
 import { useHeadlessStore } from '../headlessStore';
-import { findLocalProject } from '../../features/dispatcher/dispatcherStore';
+import { findLocalProject, isDispatcherAgent } from '../../features/dispatcher/dispatcherStore';
 import { AgentLifecycleSlice, GetAgentState, SetAgentState } from './types';
 import { omitRecordKey } from './agentUtils';
 import { parentLinkFields } from './parentLink';
@@ -197,7 +197,9 @@ export function createLifecycleSlice(set: SetAgentState, get: GetAgentState): Ag
 
       set((s) => ({
         agents: { ...s.agents, [agentId]: agent },
-        activeAgentId: agentId,
+        // The Dispatcher has its own view (#2563): it doesn't take the active
+        // project's agent, which closing its view goes back to.
+        activeAgentId: isDispatcherAgent({ id: agentId, projectId }) ? s.activeAgentId : agentId,
         agentSpawnedAt: { ...s.agentSpawnedAt, [agentId]: Date.now() },
         agentLaunchFailure: omitRecordKey(s.agentLaunchFailure, agentId),
         projectActiveAgent: { ...s.projectActiveAgent, [projectId]: agentId },

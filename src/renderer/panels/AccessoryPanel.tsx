@@ -11,6 +11,7 @@ import { PluginErrorBoundary } from './PluginContentView';
 import { AgentList } from '../features/agents/AgentList';
 import { SettingsSubPage } from '../../shared/types';
 import { useFeedbackStore } from '../stores/feedbackStore';
+import { useDispatcherFlagOn } from '../features/dispatcher/useDispatcherEnabled';
 
 
 export interface SettingsCategory { label: string; page: SettingsSubPage }
@@ -24,7 +25,8 @@ export function useSettingsCategories(): { app: SettingsCategory[]; project: Set
   const [showExperimental, setShowExperimental] = useState(false);
   const [showAnnex, setShowAnnex] = useState(false);
   const [showGoobers, setShowGoobers] = useState(false);
-  const [showDispatcher, setShowDispatcher] = useState(false);
+  // Follows dispatcher:changed, so the page shows and hides as the flag flips (#2555).
+  const showDispatcher = useDispatcherFlagOn();
   const initFeedback = useFeedbackStore((s) => s.init);
   useEffect(() => { void initFeedback(); }, [initFeedback]);
   useEffect(() => {
@@ -35,7 +37,6 @@ export function useSettingsCategories(): { app: SettingsCategory[]; project: Set
     });
     window.clubhouse.app.getExperimentalSettings().then((s) => {
       setShowGoobers(!!s.goobers);
-      setShowDispatcher(!!s.dispatcher);
     });
   }, [previewChannel]);
 

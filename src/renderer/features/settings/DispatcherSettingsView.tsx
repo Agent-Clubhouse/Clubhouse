@@ -1,22 +1,31 @@
 /**
  * App settings, Dispatcher (#2535): the switch that turns the app-wide
- * Dispatcher on, and its agent settings once it exists. Shown only while the
- * experimental flag is on. Its persona, orchestration settings and folder
- * can't change here or anywhere else.
+ * Dispatcher on, and its agent settings once it exists. Listed only while the
+ * experimental flag is on; reached with the flag off, the switch is disabled
+ * and says why (#2555). Its row and view are in the new layout only, so on the
+ * classic layout the switch is disabled too (#2565). Its persona,
+ * orchestration settings and folder can't change here or anywhere else.
  */
 
 import { useEffect, useState } from 'react';
 import type { DurableConfigUpdates } from '../../../shared/types';
 import { AGENT_IDLE_SLEEP_MINUTES, formatIdleMinutes, normalizeIdleSleep } from '../../../shared/idle-sleep';
+import { Button } from '../../components/Button';
 import { Toggle } from '../../components/Toggle';
 import { useModelOptions } from '../../hooks/useModelOptions';
+import { useChromeFlagStore } from '../../chrome/chromeFlag';
 import { useOrchestratorStore } from '../../stores/orchestratorStore';
+import { ipcErrorMessage } from '../../utils/ipc-error';
 import { useAppIdleMinutes, SELECT_CLASS } from '../agents/details/AutoSleepRow';
-import { useDispatcherState } from '../dispatcher/useDispatcherEnabled';
-import { SettingsField, SettingsPage, SettingsSection, settingsHelp } from './SettingsLayout';
+import { useDispatcherRead } from '../dispatcher/useDispatcherEnabled';
+import { SettingsField, SettingsPage, SettingsSection, settingsError, settingsHelp } from './SettingsLayout';
+
+const TITLE = 'Dispatcher';
+const DESCRIPTION = 'One agent for the whole app that coordinates the orchestrators in your projects.';
 
 export function DispatcherSettingsView() {
-  const state = useDispatcherState();
+  const { state, error: readError, retry } = useDispatcherRead();
+  const newLayout = useChromeFlagStore((s) => s.enabled);
   const [switching, setSwitching] = useState(false);
   const [switchError, setSwitchError] = useState<string | null>(null);
   const [saveError, setSaveError] = useState<string | null>(null);
@@ -40,7 +49,7 @@ export function DispatcherSettingsView() {
       await window.clubhouse.dispatcher.setEnabled(on);
     } catch (err) {
       // telemetry-exempt: shown under the switch, which keeps the saved value.
-      setSwitchError(`Couldn’t turn it ${on ? 'on' : 'off'}. ${err instanceof Error ? err.message : String(err)}`);
+      setSwitchError(`Couldn’t turn it ${on ? 'on' : 'off'}. ${ipcErrorMessage(err)}`);
     } finally {
       setSwitching(false);
     }
@@ -55,13 +64,28 @@ export function DispatcherSettingsView() {
       await window.clubhouse.agent.updateDurableConfig(path, config.id, updates);
     } catch (err) {
       // telemetry-exempt: shown under the settings, which keep the saved values.
-      setSaveError(`Couldn’t save. ${err instanceof Error ? err.message : String(err)}`);
+      setSaveError(`Couldn’t save. ${ipcErrorMessage(err)}`);
     } finally {
       setSaving(false);
     }
   };
 
-  if (!state) return null;
+  if (!state) {
+    return (
+      <SettingsPage title={TITLE} description={DESCRIPTION}>
+        {readError ? (
+          <div className="mt-[22px] flex items-center gap-3">
+            <p className={settingsError} role="alert" data-testid="dispatcher-load-error">
+              Couldn’t load the Dispatcher’s settings. {readError}
+            </p>
+            <Button onClick={retry}>Retry</Button>
+          </div>
+        ) : (
+          <p className={`${settingsHelp} mt-[22px]`} role="status" data-testid="dispatcher-loading">Loading</p>
+        )}
+      </SettingsPage>
+    );
+  }
 
   // The current CLI stays listed even when it has since been turned off for new agents.
   const cliChoices = allOrchestrators.filter((o) => enabledIds.includes(o.id) || o.id === orchestrator);
@@ -75,26 +99,34 @@ export function DispatcherSettingsView() {
   const permissionsSupported = allOrchestrators.find((o) => o.id === orchestrator)?.capabilities.permissions ?? true;
 
   return (
-    <SettingsPage
-      title="Dispatcher"
-      description="One agent for the whole app that coordinates the orchestrators in your projects."
-    >
-      <SettingsSection title="Dispatcher">
+    <SettingsPage title={TITLE} description={DESCRIPTION}>
+      {/* No heading: the page title already says Dispatcher. */}
+      <section className="mt-[22px]">
         <SettingsField
           label="Turn on Dispatcher"
-          help="Turning it off stops it. Its folder and notes are kept, so turning it back on carries on where it left off."
+          help={(
+            <span id="dispatcher-enabled-help">
+              {!state.flagOn
+                ? 'Turn on Dispatcher in Settings > Experimental first.'
+                : !newLayout
+                  ? 'The Dispatcher needs the new layout. Turn on New layout in Settings > Experimental.'
+                  : 'Turning it off stops it. Its folder and notes are kept, so turning it back on carries on where it left off.'}
+            </span>
+          )}
         >
+          {/* On the classic layout one that's still on can be turned off, not on (#2565). */}
           <Toggle
             aria-label="Turn on Dispatcher"
+            aria-describedby="dispatcher-enabled-help"
             checked={state.enabled}
-            disabled={switching}
+            disabled={switching || !state.flagOn || (!newLayout && !state.enabled)}
             onChange={(on) => void turn(on)}
             data-testid="dispatcher-enabled"
           />
         </SettingsField>
-        {switchError && <p className={settingsHelp} data-testid="dispatcher-enabled-error">{switchError}</p>}
+        {switchError && <p className={`${settingsError} mt-1.5`} role="alert" data-testid="dispatcher-enabled-error">{switchError}</p>}
         {state.path && <p className={`${settingsHelp} mt-2`} data-testid="dispatcher-folder">Its folder is {state.path}</p>}
-      </SettingsSection>
+      </section>
 
       {state.enabled && config && (
         <SettingsSection title="Agent">
@@ -166,7 +198,7 @@ export function DispatcherSettingsView() {
               />
             </SettingsField>
           )}
-          {saveError && <p className={settingsHelp} data-testid="dispatcher-save-error">{saveError}</p>}
+          {saveError && <p className={`${settingsError} mt-1.5`} role="alert" data-testid="dispatcher-save-error">{saveError}</p>}
         </SettingsSection>
       )}
     </SettingsPage>

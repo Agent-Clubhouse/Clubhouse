@@ -764,7 +764,7 @@ export function handleProtocolAction(action: ResolvedProtocolAction): void {
     case 'open-file': {
       // The Dispatcher's folder has no project or Files tab to open it in (#2538).
       if (isDispatcherProjectId(action.projectId)) {
-        useToastStore.getState().addToast(`No open project contains ${action.relativePath}`, 'error');
+        useToastStore.getState().addToast(`${action.relativePath} is in the Dispatcher’s folder, which doesn’t open in Files.`, 'error');
         break;
       }
       useProjectStore.getState().setActiveProject(action.projectId);

@@ -506,8 +506,8 @@ vi.stubGlobal('clubhouse', {
     onAgentsNeedRestart: () => noop,
   },
   dispatcher: {
-    get: async () => ({ enabled: false, agentId: null, path: null, config: null }),
-    setEnabled: async () => ({ enabled: false, agentId: null, path: null, config: null }),
+    get: async () => ({ enabled: false, flagOn: false, agentId: null, path: null, config: null }),
+    setEnabled: async () => ({ enabled: false, flagOn: false, agentId: null, path: null, config: null }),
     onChanged: () => noop,
   },
   feedback: {

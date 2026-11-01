@@ -21,6 +21,9 @@ export const settingsLabel = 'block text-xs text-ctp-overlay1 mb-1';
 /** Help and secondary text. */
 export const settingsHelp = 'text-xs text-ctp-overlay1';
 
+/** An error line. Give it `role="alert"` so screen readers announce it. */
+export const settingsError = 'text-xs text-ctp-error';
+
 export function SettingsPage({
   title,
   description,

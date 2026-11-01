@@ -149,7 +149,7 @@ test.describe('claude: file chips in one reply', () => {
     await expect(text.locator('.view-lines')).toContainText('PLAN_MARKER', { timeout: TURN_TIMEOUT });
 
     await dom.filePreview.getByRole('button', { name: 'Open in Files' }).click();
-    await expect(dom.filePreview.getByRole('status')).toHaveText('That file is not in an open project');
+    await expect(dom.filePreview.getByRole('alert')).toHaveText('That file is not in an open project');
     await chat.window.keyboard.press('Escape');
     await expect(dom.filePreview).toHaveCount(0);
   });

@@ -109,16 +109,20 @@ export function ChromeBody() {
 
   // Like the New agent page, the Dispatcher's view stays until something else
   // opens: a tab, project, agent or host, or the New agent page. Opening it
-  // already settles the tab, so the state when it opens is the baseline.
+  // already settles the tab, so the state when it opens is the baseline. The
+  // Dispatcher's own agent becoming active is part of its view, not something
+  // else opening (#2563).
   const dispatcherBase = useRef<{ tab: string; project: string | null; agent: string | null; host: string | null } | null>(null);
   useEffect(() => {
     if (!dispatcherOpen) { dispatcherBase.current = null; return; }
     const now = { tab: explorerTab, project: activeProjectId, agent: activeAgentId, host: activeHostId };
     const base = dispatcherBase.current;
     if (!base) { dispatcherBase.current = now; return; }
-    const same = base.tab === now.tab && base.project === now.project && base.agent === now.agent && base.host === now.host;
+    const ownAgent = !!dispatcherAgentId && now.agent === dispatcherAgentId;
+    const same = base.tab === now.tab && base.project === now.project && (base.agent === now.agent || ownAgent) && base.host === now.host;
     if (!same) useUIStore.getState().setDispatcherOpen(false);
-  }, [dispatcherOpen, explorerTab, activeProjectId, activeAgentId, activeHostId]);
+    else dispatcherBase.current = now;
+  }, [dispatcherOpen, explorerTab, activeProjectId, activeAgentId, activeHostId, dispatcherAgentId]);
   useEffect(() => {
     if (newAgent) useUIStore.getState().setDispatcherOpen(false);
   }, [newAgent]);

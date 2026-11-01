@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import * as os from 'os';
 import * as path from 'path';
+import { DISPATCHER_PROJECT_ID } from '../../../shared/dispatcher-types';
 import { createLifecycleSlice } from './agentLifecycleSlice';
 import type { AgentState } from './types';
 import { buildProjectTree } from '../../chrome/sidebar/treeModel';
@@ -217,6 +218,16 @@ describe('agentLifecycleSlice – spawnDurableAgent', () => {
 
     expect(state().agents['durable-1']?.status).toBe('error');
     expect((state().agents['durable-1'] as any).errorMessage).toBe('durable spawn failed');
+  });
+
+  it("takes the active agent for a project agent, but not for the Dispatcher, which has its own view (#2563)", async () => {
+    const { state, slice } = createTestStore({ activeAgentId: 'a1' });
+    await slice.spawnDurableAgent(DISPATCHER_PROJECT_ID, 'dispatcher-dir', { ...DURABLE_CONFIG, id: 'disp', worktreePath: undefined }, false);
+    expect(state().agents.disp?.status).toBe('running');
+    expect(state().activeAgentId).toBe('a1');
+
+    await slice.spawnDurableAgent(PROJECT_ID, PROJECT_PATH, DURABLE_CONFIG, false);
+    expect(state().activeAgentId).toBe('durable-1');
   });
 
   it('preserves the configured model on the store entry', async () => {
