@@ -22,6 +22,7 @@ import { registerBlueprintHandlers } from './blueprint-handlers';
 import { registerGoobersHandlers } from './goobers-handlers';
 import { registerTelemetrySettingsHandlers } from './telemetry-settings-handlers';
 import { registerFeedbackHandlers } from './feedback-handlers';
+import { registerDispatcherHandlers } from './dispatcher-handlers';
 import * as hookServer from '../services/hook-server';
 import { registerBuiltinProviders, getAllProviders } from '../orchestrators';
 import { registerBuiltinChatDrivers } from '../services/agent-runtime/builtin-chat-drivers';
@@ -75,6 +76,7 @@ export function registerAllHandlers(): void {
   registerMcpBindingHandlers();
   registerGroupProjectHandlers();
   registerCanvasIndexHandlers();
+  registerDispatcherHandlers();
   // After the group-project lifecycle listener is attached, so restored
   // group-project wires post their joins and start polling.
   restorePersistedBindings();

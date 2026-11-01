@@ -28,6 +28,7 @@ import { telemetry } from './telemetry';
 import { NEW_CHROME_ARG } from '../shared/chrome-flag';
 import { parseWindowsPtyArg } from '../shared/windows-pty';
 import { chat } from './chat';
+import { dispatcher } from './dispatcher';
 
 export const api = {
   platform: process.platform as 'darwin' | 'win32' | 'linux',
@@ -77,6 +78,7 @@ export const api = {
   ...feedback,
   ...telemetry,
   ...chat,
+  ...dispatcher,
 };
 
 export type ClubhouseAPI = typeof api;

@@ -570,6 +570,13 @@ export const IPC = {
      */
     OPEN_AND_READ: 'blueprint:open-and-read',
   },
+  /** The app-wide Dispatcher agent (#2533). */
+  DISPATCHER: {
+    GET: 'dispatcher:get',
+    SET_ENABLED: 'dispatcher:set-enabled',
+    /** Main → renderer broadcast: DispatcherState after any change. */
+    CHANGED: 'dispatcher:changed',
+  },
   HOOK_SERVER: {
     /** Main → renderer: a list of agentIds whose hook config was changed and need restart for the change to take full effect. */
     AGENTS_NEED_RESTART: 'hook-server:agents-need-restart',
