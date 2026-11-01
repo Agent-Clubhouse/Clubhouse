@@ -44,6 +44,8 @@ export interface OrchestrationPolicy {
   maxHelpers: number;
   /** "Cross-project helpers" (#2512): may start helpers in other registered projects. */
   crossProjectHelpers: boolean;
+  /** "Connect to Dispatcher" (#2534): the Dispatcher may message this agent and get its reports. */
+  connectToDispatcher: boolean;
 }
 
 /**
@@ -65,6 +67,7 @@ export const ORCHESTRATION_DEFAULTS: Readonly<OrchestrationPolicy> = Object.free
   control: 'hands-off',
   maxHelpers: DEFAULT_MAX_HELPERS,
   crossProjectHelpers: false,
+  connectToDispatcher: false,
 });
 
 /** The refusal an orchestration tool returns for an agent with orchestration off. */
@@ -105,6 +108,7 @@ export function normalizeOrchestrationConfig(raw: unknown): OrchestrationPolicyC
   if (isControl(r.control)) out.control = r.control;
   if (isLimit(r.maxHelpers)) out.maxHelpers = r.maxHelpers;
   if (typeof r.crossProjectHelpers === 'boolean') out.crossProjectHelpers = r.crossProjectHelpers;
+  if (typeof r.connectToDispatcher === 'boolean') out.connectToDispatcher = r.connectToDispatcher;
   return Object.keys(out).length > 0 ? out : undefined;
 }
 
@@ -139,6 +143,10 @@ export function validateOrchestrationPatch(raw: unknown): { [K in keyof Orchestr
       case 'crossProjectHelpers':
         if (value !== null && typeof value !== 'boolean') throw new Error('crossProjectHelpers must be a boolean');
         out.crossProjectHelpers = value as boolean | null;
+        break;
+      case 'connectToDispatcher':
+        if (value !== null && typeof value !== 'boolean') throw new Error('connectToDispatcher must be a boolean');
+        out.connectToDispatcher = value as boolean | null;
         break;
       default:
         throw new Error(`Unknown orchestration policy field: ${key}`);

@@ -192,6 +192,19 @@ describe('getOrchestrationPolicy', () => {
     expect(await getOrchestrationPolicy(PROJECT, 'dev')).toMatchObject({ orchestrate: false, maxHelpers: 2 });
   });
 
+  it('never connects other agents to the Dispatcher from the Orchestrator persona (#2534)', async () => {
+    state.personas.set('orchestrator', persona({ orchestrate: true, connectToDispatcher: true, maxHelpers: 2 }));
+    setAgents(PROJECT, [agent('orch', { persona: 'orchestrator' }), agent('dev', { persona: 'developer' })]);
+    expect(await getOrchestrationPolicy(PROJECT, 'orch')).toMatchObject({ connectToDispatcher: true, sources: { connectToDispatcher: 'persona' } });
+    expect(await getOrchestrationPolicy(PROJECT, 'dev')).toMatchObject({ connectToDispatcher: false, maxHelpers: 2, sources: { connectToDispatcher: 'default' } });
+  });
+
+  it('lets an agent\'s own persona connect it to the Dispatcher (#2534)', async () => {
+    state.personas.set('lead', persona({ connectToDispatcher: true }));
+    setAgents(PROJECT, [agent('orch', { persona: 'lead' })]);
+    expect((await getOrchestrationPolicy(PROJECT, 'orch'))?.connectToDispatcher).toBe(true);
+  });
+
   it('turns orchestration on for agents using the built-in Orchestrator persona, and only them (#2233)', async () => {
     const { getPersonaTemplate } = await import('../../renderer/features/personas');
     state.personas.set('orchestrator', getPersonaTemplate('orchestrator')!.content);
@@ -303,6 +316,17 @@ describe('setOrchestrationPolicy', () => {
     expect(result.ok).toBe(true);
     expect(find('orch').orchestration).toEqual({ orchestrate: true, control: 'ask-everything' });
     expect(isOrchestrationEnabled('orch')).toBe(true);
+  });
+
+  it('saves connectToDispatcher and logs it (#2534)', async () => {
+    const { appLog } = await import('./log-service');
+    setAgents(PROJECT, [agent('orch', { orchestration: { orchestrate: true } })]);
+    const result = await setOrchestrationPolicy(PROJECT, 'orch', { connectToDispatcher: true });
+    expect(result).toMatchObject({ ok: true, policy: { connectToDispatcher: true } });
+    expect(find('orch').orchestration).toEqual({ orchestrate: true, connectToDispatcher: true });
+    expect(appLog).toHaveBeenLastCalledWith('core:orchestration', 'info', 'Orchestration policy changed', {
+      meta: expect.objectContaining({ agentId: 'orch', connectToDispatcher: true }),
+    });
   });
 
   it('saves for an agent that isn\'t running without opening a gate', async () => {

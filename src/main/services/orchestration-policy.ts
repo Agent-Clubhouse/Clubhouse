@@ -6,8 +6,9 @@
  *
  * Policy layering, per field: the agent's own `orchestration` fields, then
  * the `orchestration:` front-matter of the agent's persona, then (for every
- * field but `orchestrate`) the front-matter of the Orchestrator persona
- * (`orchestrator`, looked up project > user > built-in), then
+ * field but `orchestrate` and `connectToDispatcher`) the front-matter of the
+ * Orchestrator persona (`orchestrator`, looked up project > user >
+ * built-in), then
  * ORCHESTRATION_DEFAULTS. So a project ships its own policy by adding
  * `.clubhouse/personas/orchestrator.md` with, for example:
  *
@@ -15,8 +16,9 @@
  *     orchestration: {"orchestrate": true, "access": "same", "control": "ask-before-start", "maxHelpers": 3}
  *     ---
  *
- * The Orchestrator persona's `orchestrate` applies only to agents that use
- * that persona, so it never turns orchestration on for everyone.
+ * The Orchestrator persona's `orchestrate` and `connectToDispatcher` apply
+ * only to agents that use that persona, so it never turns orchestration on,
+ * or connects the Dispatcher, for everyone.
  *
  * The tool gate. Only two things open it: a spawn (syncOrchestrationGate)
  * and setOrchestrationPolicy, and only for an agent running in that project.
@@ -148,7 +150,7 @@ async function readPersonaPolicy(projectPath: string, personaId: string): Promis
 
 /**
  * The persona layer of an agent's policy: its own persona's front-matter
- * over the Orchestrator persona's (minus `orchestrate`).
+ * over the Orchestrator persona's (minus `orchestrate` and `connectToDispatcher`).
  */
 export async function readPersonaOrchestrationDefaults(
   projectPath: string,
@@ -171,7 +173,10 @@ async function personaDefaultsFor(projectPath: string, personaId: string | undef
   const own = personaId ? await readPersonaPolicy(projectPath, personaId) : undefined;
   if (personaId === ORCHESTRATOR_PERSONA_ID) return own;
   const project = await readPersonaPolicy(projectPath, ORCHESTRATOR_PERSONA_ID);
-  if (project) delete project.orchestrate;
+  if (project) {
+    delete project.orchestrate;
+    delete project.connectToDispatcher;
+  }
   return normalizeOrchestrationConfig({ ...project, ...own });
 }
 
@@ -358,6 +363,7 @@ export async function setOrchestrationPolicy(
         control: next.control,
         maxHelpers: next.maxHelpers,
         crossProjectHelpers: next.crossProjectHelpers,
+        connectToDispatcher: next.connectToDispatcher,
       },
     });
     // Turning only cross-project helpers off settles nothing; say what keeps running.
