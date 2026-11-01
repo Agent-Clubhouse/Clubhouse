@@ -227,3 +227,45 @@ describe('listSoleOwnedPairs (#2232)', () => {
     expect(listSoleOwnedPairs('mine')).toEqual([]);
   });
 });
+
+describe('a gated pruning source (#2537)', () => {
+  /** Lists its wires only while open, like the Dispatcher wires while the Dispatcher is on. */
+  function gatedSource(id: string) {
+    const state = { open: true, listed: [] as PersistedBinding[], unverified: [] as Array<{ agentId: string; targetId: string }> };
+    registerPersistedBindingSource({
+      id,
+      prune: true,
+      collect: async () => (state.open ? { bindings: [...state.listed], unverified: [...state.unverified] } : { bindings: [], unverified: [] }),
+    });
+    return state;
+  }
+
+  it('removes every wire it created when the gate closes, and none another pruning source lists', async () => {
+    const gated = gatedSource('gated');
+    const helpers = listSource('helpers');
+    gated.listed.push(wire('d', 'o1'), wire('o1', 'd'), wire('d', 'o2'));
+    helpers.push(wire('d', 'o2'));
+    await rebuildPersistedBindings();
+    expect(pairs()).toEqual(['d->o1', 'd->o2', 'o1->d']);
+
+    gated.open = false;
+    const result = await rebuildPersistedBindings();
+    expect(result.sources[0]).toMatchObject({ id: 'gated', pruned: 2 });
+    expect(pairs()).toEqual(['d->o2']);
+  });
+
+  it('keeps the wires it could not check, then prunes them once it can', async () => {
+    const gated = gatedSource('gated');
+    gated.listed.push(wire('d', 'o1'), wire('o1', 'd'));
+    await rebuildPersistedBindings();
+
+    gated.listed.length = 0;
+    gated.unverified.push({ agentId: 'd', targetId: 'o1' }, { agentId: 'o1', targetId: 'd' });
+    await rebuildPersistedBindings();
+    expect(pairs()).toEqual(['d->o1', 'o1->d']);
+
+    gated.unverified.length = 0;
+    await rebuildPersistedBindings();
+    expect(pairs()).toEqual([]);
+  });
+});
