@@ -211,6 +211,9 @@ export function ProjectTree(props: ProjectTreeProps) {
     toggleAgentCollapsed(agentId);
     reportChromeFeature('fold_toggle');
   }, [toggleAgentCollapsed]);
+  const openSleepingFold = useCallback((projectId: string) => {
+    if (!useChromeStore.getState().expandedFolds.includes(foldKey(projectId, 'sleeping'))) toggleFold(projectId, 'sleeping');
+  }, [toggleFold]);
   // Choosing a helper from elsewhere (Needs you, the palette, a notification)
   // unfolds the parents it is folded under, and the sleeping fold it is in,
   // so the selection is never hidden. Only a fresh choice counts
@@ -243,8 +246,8 @@ export function ProjectTree(props: ProjectTreeProps) {
       if (collapsed.has(parent)) toggleAgentCollapsed(parent);
       parent = localParentId(byId.get(parent)!);
     }
-    if (isInSleepingFold(buildProjectTree(list), agentId) && !chrome.expandedFolds.includes(foldKey(activeProjectId, 'sleeping'))) toggleFold(activeProjectId, 'sleeping');
-  }, [selectionSeq, activeAgentId, activeProjectId, agentsByProject, toggleAgentCollapsed, toggleFold]);
+    if (isInSleepingFold(buildProjectTree(list), agentId)) openSleepingFold(activeProjectId);
+  }, [selectionSeq, activeAgentId, activeProjectId, agentsByProject, toggleAgentCollapsed, openSleepingFold]);
 
   // The one exception for a project switch (#2580): a sleeping fold that closed
   // itself while you were away reopens if the selection you come back to is
@@ -255,10 +258,23 @@ export function ProjectTree(props: ProjectTreeProps) {
     if (!activeProjectId || !activeAgentId) return;
     const list = agentsByProject[activeProjectId] ?? [];
     if (!list.some((a) => a.id === activeAgentId)) return;
-    const chrome = useChromeStore.getState();
-    if (!chrome.takeSleepingFoldClosedAway(activeProjectId)) return;
-    if (isInSleepingFold(buildProjectTree(list), activeAgentId) && !chrome.expandedFolds.includes(foldKey(activeProjectId, 'sleeping'))) toggleFold(activeProjectId, 'sleeping');
-  }, [activeProjectId, activeAgentId, agentsByProject, toggleFold]);
+    if (!useChromeStore.getState().takeSleepingFoldClosedAway(activeProjectId)) return;
+    if (isInSleepingFold(buildProjectTree(list), activeAgentId)) openSleepingFold(activeProjectId);
+  }, [activeProjectId, activeAgentId, agentsByProject, openSleepingFold]);
+
+  // The selected agent moving into the sleeping fold (#2594): it went to sleep,
+  // or was the last awake one in its team. Only that move opens the fold, seen
+  // as the same selection outside it last time and inside it now, so startup, a
+  // project switch and a fold closed by hand afterwards are all left alone.
+  const selectionOutsideFold = useRef<string | null>(null);
+  useEffect(() => {
+    const list = activeProjectId ? agentsByProject[activeProjectId] : undefined;
+    const selection = activeProjectId && activeAgentId && list?.some((a) => a.id === activeAgentId) ? `${activeProjectId}:${activeAgentId}` : null;
+    const wasOutside = selection !== null && selectionOutsideFold.current === selection;
+    const inFold = selection !== null && isInSleepingFold(buildProjectTree(list!), activeAgentId!);
+    selectionOutsideFold.current = inFold ? null : selection;
+    if (inFold && wasOutside) openSleepingFold(activeProjectId!);
+  }, [activeProjectId, activeAgentId, agentsByProject, openSleepingFold]);
 
   const runningIds = useMemo(() => new Set(
     Object.entries(agentsByProject).filter(([, list]) => list.some((a) => a.status === 'running')).map(([id]) => id),
