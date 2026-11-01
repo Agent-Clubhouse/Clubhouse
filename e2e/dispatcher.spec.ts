@@ -180,7 +180,10 @@ test('turn on, wire an orchestrator, restart, turn off and back on', async () =>
   await expect(w.locator('[data-testid="dispatcher-view"]')).toBeVisible();
   await openOrchestrateCard(w);
   await expect(w.locator('[data-testid="dispatcher-view"]')).toHaveCount(0);
-  await expect(w.locator('[data-testid="title-bar"]')).toContainText(path.basename(projectDir));
+  // The breadcrumb follows the project's agent again. Windows can drop the
+  // project segment at its window width, so check the agent.
+  await expect(w.locator('[data-testid="title-bar"]')).toContainText('conductor');
+  await expect(w.locator('[data-testid="title-bar"]')).not.toContainText('Dispatcher');
 
   // Connect to Dispatcher adds and removes the wire live.
   const connect = w.locator('[data-testid="orchestrate-dispatcher"]');
