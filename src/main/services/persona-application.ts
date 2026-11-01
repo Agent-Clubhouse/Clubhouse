@@ -1,6 +1,6 @@
 import { parsePersonaFile } from '../../shared/persona-pattern';
 import type { DurableConfigUpdates } from '../../shared/types';
-import { getDurableConfig, updateDurableConfig } from './agent-config';
+import { assertPersonaAllowed, getDurableConfig, updateDurableConfig } from './agent-config';
 import { resolveOrchestrator } from './agent-system';
 import { isClubhouseModeEnabled } from './clubhouse-mode-settings';
 import { materializeAgent, readLayeredPersonaRaw, writeResolvedPersonaInstructions } from './materialization-service';
@@ -21,6 +21,8 @@ export async function applyPersonaToAgent(
   personaId: string,
   options: { appendToExisting?: boolean } = {},
 ): Promise<void> {
+  // Refuse before anything is read or written (#2551).
+  assertPersonaAllowed(projectPath, personaId);
   const agent = await getDurableConfig(projectPath, agentId);
   if (!agent) return;
 

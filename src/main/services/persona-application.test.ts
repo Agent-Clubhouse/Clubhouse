@@ -24,7 +24,9 @@ vi.mock('./clubhouse-mode-settings', () => ({
 
 // In-memory agent store standing in for agents.json.
 const store = new Map<string, Record<string, unknown>>();
-vi.mock('./agent-config', () => ({
+// The real persona rule (#2551); the store stays in memory.
+vi.mock('./agent-config', async () => ({
+  assertPersonaAllowed: (await vi.importActual<typeof import('./agent-config')>('./agent-config')).assertPersonaAllowed,
   getDurableConfig: vi.fn(async (_p: string, id: string) => (store.has(id) ? { ...store.get(id) } : null)),
   updateDurableConfig: vi.fn(async (_p: string, id: string, updates: Record<string, unknown>) => {
     store.set(id, { ...store.get(id), ...updates });
@@ -49,6 +51,7 @@ vi.mock('./agent-system', () => ({
 import { applyPersonaToAgent } from './persona-application';
 import { updateDurableConfig } from './agent-config';
 import { getPersonaTemplate } from '../../renderer/features/personas';
+import { getDispatcherPath } from './dispatcher/dispatcher-paths';
 
 describe('applyPersonaToAgent', () => {
   let root: string;
@@ -141,5 +144,24 @@ describe('applyPersonaToAgent', () => {
     await applyPersonaToAgent(projectPath, 'missing', 'qa');
     expect(updateDurableConfig).not.toHaveBeenCalled();
     expect(provider.writeInstructions).not.toHaveBeenCalled();
+  });
+
+  describe('the dispatcher persona (#2551)', () => {
+    it('refuses it for a project agent, writing nothing', async () => {
+      instructions.set(worktreePath, 'Old instructions');
+      await expect(applyPersonaToAgent(projectPath, 'agent-1', 'dispatcher')).rejects.toThrow('The Dispatcher persona is only for the Dispatcher.');
+      expect(updateDurableConfig).not.toHaveBeenCalled();
+      expect(store.get('agent-1')).not.toHaveProperty('persona');
+      expect(instructions.get(worktreePath)).toBe('Old instructions');
+    });
+
+    it('refuses another persona for the Dispatcher, writing nothing', async () => {
+      const dir = getDispatcherPath();
+      store.set('disp', { id: 'disp', name: 'Dispatcher', color: 'indigo', persona: 'dispatcher' });
+      await expect(applyPersonaToAgent(dir, 'disp', 'orchestrator')).rejects.toThrow("The Dispatcher's persona can't be changed.");
+      expect(updateDurableConfig).not.toHaveBeenCalled();
+      expect(store.get('disp')?.persona).toBe('dispatcher');
+      expect(provider.writeInstructions).not.toHaveBeenCalled();
+    });
   });
 });

@@ -23,15 +23,14 @@ import { appLog } from '../log-service';
 import { AGENT_COLORS } from '../../../shared/name-generator';
 import type { DispatcherState } from '../../../shared/dispatcher-types';
 import type { DurableAgentConfig } from '../../../shared/types';
-import { getDispatcherNotesPath, getDispatcherPath, isDispatcherPath } from './dispatcher-paths';
+import { DISPATCHER_PERSONA, getDispatcherNotesPath, getDispatcherPath, isDispatcherPath } from './dispatcher-paths';
 import { isDispatcherEnabled, updateSettings } from './dispatcher-settings';
 
-export { getDispatcherPath, getDispatcherNotesPath, isDispatcherPath } from './dispatcher-paths';
+export { DISPATCHER_PERSONA, getDispatcherPath, getDispatcherNotesPath, isDispatcherPath } from './dispatcher-paths';
 export { isDispatcherEnabled, isDispatcherFlagOn, DISPATCHER_FLAG } from './dispatcher-settings';
 
 const NS = 'core:dispatcher';
 export const DISPATCHER_NAME = 'Dispatcher';
-export const DISPATCHER_PERSONA = 'dispatcher';
 
 /** The last config read from disk; null before the Dispatcher was first created. */
 let config: DurableAgentConfig | null = null;
