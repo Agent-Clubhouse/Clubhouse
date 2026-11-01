@@ -279,7 +279,7 @@ export interface DurableAgentConfig {
   /** Why the agent last went to sleep (#2104). */
   lastSleep?: AgentSleepInfo;
   /**
-   * Per-agent Chat / Terminal override. Only consulted when the experimental
+   * Per-agent Chat / CLI override. Only consulted when the experimental
    * Chat flag is on; unset means the provider's runtime setting.
    */
   runtimeMode?: import('./chat').AgentRuntimeMode;
@@ -656,7 +656,7 @@ export interface DurableConfigUpdates {
   mcpConfigs?: Record<string, Record<string, string>> | null;
   /** Per-agent Clubhouse MCP bridge override; null clears it (project and app settings decide). */
   mcpOverride?: boolean | null;
-  /** Per-agent Chat / Terminal override; null clears it (provider default). */
+  /** Per-agent Chat / CLI override; null clears it (provider default). */
   runtimeMode?: import('./chat').AgentRuntimeMode | null;
   /** Per-agent auto-sleep; 'inherit' or null clears it (app default). */
   idleSleep?: import('./idle-sleep').AgentIdleSleep | null;

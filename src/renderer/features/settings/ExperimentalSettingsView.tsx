@@ -28,7 +28,7 @@ const EXPERIMENTAL_FEATURES: Array<{
   {
     id: 'chat',
     label: 'Chat',
-    description: 'Talk to Claude Code, Codex and Copilot agents in a native chat view. The terminal stays available for every provider.',
+    description: 'Talk to Claude Code, Codex and Copilot agents in a native chat view. The CLI view stays available for every provider.',
   },
   {
     id: RICH_CHAT_CONTENT_FLAG,

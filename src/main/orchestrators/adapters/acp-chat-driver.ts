@@ -261,7 +261,7 @@ export class AcpChatDriver implements ChatDriver {
           data: {
             level: 'warn',
             code: 'mcp_servers_unsupported',
-            message: `${caps.agent.title ?? caps.agent.name} chat can't load stdio MCP servers, so these are off: ${unsupported.join(', ')}. Run them in Terminal mode, or set them up as HTTP servers.`,
+            message: `${caps.agent.title ?? caps.agent.name} chat can't load stdio MCP servers, so these are off: ${unsupported.join(', ')}. Run them in the CLI view, or set them up as HTTP servers.`,
           },
         });
       }

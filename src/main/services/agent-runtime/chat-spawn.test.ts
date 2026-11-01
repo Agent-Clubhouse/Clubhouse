@@ -535,7 +535,7 @@ require('readline').createInterface({ input: process.stdin }).on('line', line =>
       expect(registry.setRuntime).not.toHaveBeenCalled();
       expect(toasts()).toEqual([{
         level: 'warn', code: 'fallback',
-        message: 'Opened in the terminal: Claude Code 2.1.250 is known to break chat: hangs; Claude Code 2.1.250 is known to break chat: hangs',
+        message: 'Opened in the CLI view: Claude Code 2.1.250 is known to break chat: hangs; Claude Code 2.1.250 is known to break chat: hangs',
       }]);
     });
 
@@ -547,7 +547,7 @@ require('readline').createInterface({ input: process.stdin }).on('line', line =>
       expect(stream.sessions).toHaveLength(0);
       expect(toasts()).toEqual([{
         level: 'info', code: 'login_required',
-        message: 'Claude Code needs you to log in. Opening the terminal so you can log in (run claude, then /login). Chat starts next time.',
+        message: 'Claude Code needs you to log in. Opening the CLI view so you can log in (run claude, then /login). Chat starts next time.',
       }]);
     });
 
@@ -615,7 +615,7 @@ require('readline').createInterface({ input: process.stdin }).on('line', line =>
       expect(stream.sessions).toHaveLength(0);
       // A failure after the session started isn't counted against the driver.
       expect(sdkStarts).toBe(DRIVER_FAILURE_THRESHOLD + 1);
-      expect(toasts().at(-1)?.message).toBe('Opened in the terminal: Claude Code (Agent SDK) failed after its session started: stdin closed');
+      expect(toasts().at(-1)?.message).toBe('Opened in the CLI view: Claude Code (Agent SDK) failed after its session started: stdin closed');
     });
 
     it('does not pause a driver for failed resumes', async () => {
@@ -660,7 +660,7 @@ require('readline').createInterface({ input: process.stdin }).on('line', line =>
       stream.start = async () => { throw new Error('b'); };
       expect(await tryStartChatAgent(params, provider, undefined, undefined, null)).toBe('terminal');
       expect(registry.setRuntime).toHaveBeenLastCalledWith('agent-1', 'pty');
-      expect(toasts().at(-1)?.message).toBe('Opened in the terminal: Claude Code (Agent SDK) failed to start: a; Claude Code (stream-json) failed to start: b');
+      expect(toasts().at(-1)?.message).toBe('Opened in the CLI view: Claude Code (Agent SDK) failed to start: a; Claude Code (stream-json) failed to start: b');
       expect(getAgentRuntime('agent-1')).toBeUndefined();
     });
   });

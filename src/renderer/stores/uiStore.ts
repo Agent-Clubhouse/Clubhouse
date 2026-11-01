@@ -78,7 +78,7 @@ interface UIState {
   openAbout: () => void;
   /**
    * One-shot focus target inside a settings page, cleared by the page once it
-   * has scrolled there. `runtime:<providerId>` is a provider's Chat / Terminal
+   * has scrolled there. `runtime:<providerId>` is a provider's Chat / CLI
    * runtime row on the Orchestrators page.
    */
   settingsFocus: string | null;

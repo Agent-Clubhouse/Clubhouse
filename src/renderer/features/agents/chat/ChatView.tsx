@@ -70,7 +70,7 @@ function ProtocolDriftNote({ state, compact }: { state: ChatViewState; compact: 
   const messages = total === 1 ? 'message' : 'messages';
   const drift = names.length === 0 ? ''
     : compact ? `${total} unrecognized CLI ${messages}. `
-    : `This CLI sent ${total} ${messages} Clubhouse doesn't recognize yet. The terminal view shows everything. `;
+    : `This CLI sent ${total} ${messages} Clubhouse doesn't recognize yet. The CLI view shows everything. `;
   const text = `${drift}${versionNote ?? ''}`.trim();
   return (
     <div className="flex items-center gap-1.5 min-w-0 text-[12px] text-ctp-overlay0 px-1" data-testid="chat-protocol-unknown">
@@ -88,7 +88,7 @@ function ProtocolDriftNote({ state, compact }: { state: ChatViewState; compact: 
   );
 }
 
-/** Shown after the CLI reports it needs a login: the terminal runs the CLI's own login flow. */
+/** Shown after the CLI reports it needs a login: the CLI view runs its own login flow. */
 function LoginBanner({ state, onSwitchToTerminal }: { state: ChatViewState; onSwitchToTerminal?: () => void }) {
   const last = state.items[state.items.length - 1];
   if (!last || last.kind !== 'error' || last.code !== 'auth_required') return null;
@@ -101,7 +101,7 @@ function LoginBanner({ state, onSwitchToTerminal }: { state: ChatViewState; onSw
           onClick={onSwitchToTerminal}
           className="h-7 px-2.5 rounded-md bg-ctp-accent text-ctp-crust text-[12px] font-medium"
         >
-          Log in in the terminal
+          Switch to CLI to log in
         </button>
       )}
     </div>

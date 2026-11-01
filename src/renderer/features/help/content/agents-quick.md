@@ -56,4 +56,4 @@ Completed quick agents appear as dismissible review cards ("ghosts") in the expl
 
 ## Transcript
 
-Every agent produces a structured event log with tool calls, permission events, errors, and timing data. More organized than raw terminal output — useful for debugging and auditing.
+Every agent produces a structured event log with tool calls, permission events, errors, and timing data. More organized than raw CLI output, and useful for debugging and auditing.

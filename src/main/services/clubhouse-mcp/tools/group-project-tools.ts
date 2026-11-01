@@ -349,10 +349,10 @@ export function registerGroupProjectTools(): void {
     label: 'Shoulder Tap',
     mcp: { targetKind: 'group-project', nameSuffix: 'shoulder_tap' },
       description:
-        'Send an urgent, ephemeral message directly into a specific agent\'s terminal.\n\n' +
+        'Send an urgent, ephemeral message directly into a specific agent\'s CLI.\n\n' +
         'NOT for routine coordination — post to a channel instead. Use shoulder_tap only when a channel post is insufficient: ' +
         'the target is unresponsive, or there is a time-critical blocker.\n\n' +
-        'The message is injected as terminal input. No bulletin record is created — if a reply is expected, ask the target to post it on your inbox channel ("inbox-<your-name>").\n\n' +
+        'The message is injected as input to the agent. No bulletin record is created — if a reply is expected, ask the target to post it on your inbox channel ("inbox-<your-name>").\n\n' +
         'The target_agent_id must match an agentId returned by list_members.',
       inputSchema: {
         type: 'object',
@@ -413,7 +413,7 @@ export function registerGroupProjectTools(): void {
     label: 'Broadcast',
     mcp: { targetKind: 'group-project', nameSuffix: 'broadcast' },
       description:
-        'Broadcast an urgent, ephemeral message to every agent in this project (injected into each terminal; no bulletin record).\n\n' +
+        'Broadcast an urgent, ephemeral message to every agent in this project (injected as input to each one; no bulletin record).\n\n' +
         'NOT for routine coordination — post to "general" for that. Use broadcast only for critical, all-hands announcements ' +
         '("stop all work, critical issue found", "project goals changed"). You (the sender) are excluded.',
       inputSchema: {
@@ -588,7 +588,7 @@ export function registerGroupProjectTools(): void {
         'Put a connected agent in this group project to sleep.\n\n' +
         'Gracefully stops the target agent using the same lifecycle path as the Clubhouse UI stop action, ' +
         'and returns once it has exited. Without force, it refuses a chat agent that is mid-turn and any ' +
-        'terminal agent, whose turn state is unknown. Running helpers of the target are listed in the result. ' +
+        'agent in the CLI view, whose turn state is unknown. Running helpers of the target are listed in the result. ' +
         'Use list_members first; the target_agent_id must be a member of this project.',
       inputSchema: {
         type: 'object',
@@ -638,7 +638,7 @@ export function registerGroupProjectTools(): void {
         'This is the real admin control over `pollingEnabled` — the same setting the ' +
         'UI Polling switch drives and the one agents auto-start from on join. ' +
         'It persists the setting AND injects the orchestrator-aware start/stop ' +
-        'instruction into every connected member\'s terminal, exactly like the UI toggle.\n\n' +
+        'instruction into every connected member\'s CLI, exactly like the UI toggle.\n\n' +
         'Pass `enabled` to set an explicit state; omit it to flip the current value. ' +
         'Use query_polling first if you want to check the current state.',
       inputSchema: {
@@ -866,7 +866,7 @@ export function registerGroupProjectTools(): void {
     mcp: { targetKind: 'group-project', nameSuffix: 'clear_agent' },
     description:
       'Send a /clear command to a connected agent, clearing its conversation context.\n\n' +
-      'Injects /clear directly into the target agent\'s terminal. Use this when the agent\'s ' +
+      'Injects /clear directly into the target agent\'s CLI. Use this when the agent\'s ' +
       'context is bloated or stale and a fresh slate would improve its performance.\n\n' +
       'The agent must be connected (not sleeping). The target_agent_id must match an agentId ' +
       'returned by list_members.',
@@ -932,7 +932,7 @@ export function registerGroupProjectTools(): void {
     mcp: { targetKind: 'group-project', nameSuffix: 'compact_agent' },
     description:
       'Send a /compact command to a connected agent, compacting its conversation context.\n\n' +
-      'Injects /compact directly into the target agent\'s terminal. Use this when the agent\'s ' +
+      'Injects /compact directly into the target agent\'s CLI. Use this when the agent\'s ' +
       'context is large and you want it summarized without losing continuity.\n\n' +
       'The agent must be connected (not sleeping). The target_agent_id must match an agentId ' +
       'returned by list_members.',

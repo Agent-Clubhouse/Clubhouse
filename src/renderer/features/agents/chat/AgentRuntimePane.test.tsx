@@ -48,8 +48,9 @@ describe('AgentRuntimePane', () => {
     expect(screen.getByTestId('terminal-pane-bar')).toBeInTheDocument();
     expect(screen.getByTestId('agent-details-toggle')).toBeInTheDocument();
     expect(api.chat.getAgentRuntime).not.toHaveBeenCalled();
-    // No Chat to switch to: the switch is Terminal and the Changes review.
-    expect(screen.getAllByRole('radio').map((r) => r.textContent)).toEqual(['Terminal', 'Changes']);
+    // No Chat to switch to: the switch is CLI, with the Changes review beside it.
+    expect(screen.getAllByRole('radio').map((r) => r.textContent)).toEqual(['CLI']);
+    expect(screen.getByTestId('view-changes')).toBeInTheDocument();
   });
 
   it('renders the terminal alone outside the main pane', async () => {
@@ -225,7 +226,7 @@ describe('AgentRuntimePane', () => {
 
     render(<AgentRuntimePane agent={agent} terminal={terminal} />);
     await screen.findByTestId('chat-turn-footer');
-    fireEvent.click(screen.getByRole('radio', { name: 'Terminal' }));
+    fireEvent.click(screen.getByRole('radio', { name: 'CLI' }));
     await waitFor(() => expect(spawnDurableAgent).toHaveBeenCalled());
     expect(updateDurableConfig).toHaveBeenCalledWith('/work/clubhouse', FIXTURE_AGENT_ID, { runtimeMode: 'terminal' });
     // Waits for the exit so the respawn resumes the session the old process just saved.
@@ -246,7 +247,7 @@ describe('AgentRuntimePane', () => {
 
     render(<AgentRuntimePane agent={agent} terminal={terminal} />);
     await screen.findByTestId('chat-queue');
-    fireEvent.click(screen.getByRole('radio', { name: 'Terminal' }));
+    fireEvent.click(screen.getByRole('radio', { name: 'CLI' }));
     expect(await screen.findByText('Interrupt and switch?')).toBeInTheDocument();
     expect(killAgent).not.toHaveBeenCalled();
     fireEvent.click(screen.getByTestId('confirm-destructive-confirm'));

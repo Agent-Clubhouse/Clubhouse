@@ -17,7 +17,7 @@ export function useAgentReview(agent: Agent, refreshKey: unknown, enabled = true
   reload: () => void;
   active: boolean;
   open: () => void;
-  /** The toolbar's Changes segment; absent where there's no folder to review. */
+  /** The toolbar's Changes button; absent where there's no folder to review. */
   view: ReviewView | undefined;
 } {
   const projectPath = useProjectStore((s) => s.projects.find((p) => p.id === agent.projectId)?.path);

@@ -73,7 +73,7 @@ function turnRefusal(agentId: string, name: string): { reason: string; state?: s
   if (runtime?.kind !== 'chat') {
     return {
       reason: 'turn_state_unknown',
-      note: `${name}'s turn state is unknown: terminal agents don't report it, so it may be mid-turn. ` +
+      note: `${name}'s turn state is unknown: agents in the CLI view don't report it, so it may be mid-turn. ` +
         'To stop it anyway, call sleep_agent again with force: true.',
     };
   }
@@ -96,7 +96,7 @@ export interface SleepAgentRequest {
 
 /**
  * Put an agent to sleep. Without `force`, refuses a chat agent mid-turn and
- * any terminal agent, whose turn state is unknown. Returns once the process
+ * any agent in the CLI view, whose turn state is unknown. Returns once the process
  * has exited, and records the caller as who put it to sleep.
  */
 export async function sleepAgent({ callerId, targetId, targetName, force }: SleepAgentRequest): Promise<McpToolResult> {

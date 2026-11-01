@@ -179,7 +179,7 @@ export function DispatcherSettingsView() {
             >
               <option value="">Provider default</option>
               <option value="chat">Chat</option>
-              <option value="terminal">Terminal</option>
+              <option value="terminal">CLI</option>
             </select>
           </SettingsField>
           <SettingsField label="Auto-sleep" htmlFor="dispatcher-auto-sleep" help="Only applies in chat.">

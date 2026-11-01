@@ -315,7 +315,7 @@ export function NoticeRow({ item }: { item: NoticeItem }) {
 }
 
 const ERROR_HINTS: Partial<Record<string, string>> = {
-  auth_required: 'Sign in from the terminal view, then send your message again.',
+  auth_required: 'Sign in from the CLI view, then send your message again.',
   account_issue: 'Check your account or billing with the provider; signing in again won\'t fix this.',
   rate_limited: 'The provider rate-limited this session.',
   context_overflow: 'The conversation no longer fits in the context window.',

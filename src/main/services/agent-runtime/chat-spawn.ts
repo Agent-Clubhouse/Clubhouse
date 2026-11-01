@@ -503,9 +503,9 @@ async function runChatStart(
     ? {
         level: 'info',
         code: 'login_required',
-        message: `${cliLabel(provider.id)} needs you to log in. Opening the terminal so you can log in${login.hint ? ` (${login.hint})` : ''}. Chat starts next time.`,
+        message: `${cliLabel(provider.id)} needs you to log in. Opening the CLI view so you can log in${login.hint ? ` (${login.hint})` : ''}. Chat starts next time.`,
       }
-    : { level: 'warn', code: 'fallback', message: `Opened in the terminal: ${skipped.join('; ')}` });
+    : { level: 'warn', code: 'fallback', message: `Opened in the CLI view: ${skipped.join('; ')}` });
   return 'terminal';
 
   /** Nonce, Clubhouse MCP bridge + project servers and env: once, before the first start attempt. */

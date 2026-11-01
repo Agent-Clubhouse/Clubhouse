@@ -133,7 +133,7 @@ export const LEGACY_SHORTCUTS: ShortcutSpec[] = [
   // Escape hatch for the "can scroll but can't type" xterm focus wedge: force
   // focus back to the active agent terminal without needing a mouse click
   // (clicks don't reliably refocus under Copilot CLI's mouse tracking).
-  { id: 'focus-active-terminal', label: 'Focus Active Terminal', category: 'Agents', defaultBinding: 'Meta+Shift+T' },
+  { id: 'focus-active-terminal', label: 'Focus Active CLI', category: 'Agents', defaultBinding: 'Meta+Shift+T' },
   { id: 'toggle-agent-details', label: 'Toggle Agent Details', category: 'Agents', defaultBinding: 'Meta+Alt+D' },
   ...switchAgents((n) => `Meta+${n}`),
 

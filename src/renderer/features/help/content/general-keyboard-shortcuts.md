@@ -41,7 +41,7 @@ Open `Cmd+K`, then type a prefix:
 | `Cmd+1` – `Cmd+9` | Switch to Agent 1–9 |
 | `Cmd+Option+1` – `Cmd+Option+9` | Switch to Project 1–9 |
 | `Cmd+Shift+O` | Add Project |
-| `Cmd+Shift+T` | Focus Active Terminal — an escape hatch for terminal-focus issues under Copilot CLI's mouse tracking |
+| `Cmd+Shift+T` | Focus Active CLI, an escape hatch for focus issues under Copilot CLI's mouse tracking |
 | `Cmd+Shift+W` | Close Project |
 | `Cmd+Enter` | Submit Quick Agent dialog |
 
@@ -65,5 +65,5 @@ This one lives in the app menu (**Help > Capture Feedback Screenshot**), so it c
 
 ## Notes
 
-- **Agent terminals** capture keyboard input — app shortcuts like `Cmd+K` still work, but typing goes to the terminal process.
+- **Agent CLI views** capture keyboard input. App shortcuts like `Cmd+K` still work, but typing goes to the agent's process.
 - Changes to keybindings take effect immediately.

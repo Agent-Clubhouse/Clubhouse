@@ -2,7 +2,7 @@
 
 An orchestrator agent takes a larger piece of work, such as an epic, and starts its own helper agents to do parts of it. It gives each helper a task, talks to it, accepts its work and disposes of it when it's done.
 
-Helpers are full durable agents. Each has its own worktree and branch, runs in chat or terminal, and can be opened and talked to like any other agent. A helper's view has a **Helper of** line at the top that links to its orchestrator.
+Helpers are full durable agents. Each has its own worktree and branch, runs in chat or the CLI view, and can be opened and talked to like any other agent. A helper's view has a **Helper of** line at the top that links to its orchestrator.
 
 ## Helpers in the sidebar
 
@@ -81,7 +81,7 @@ When the orchestrator wakes a helper with `wake_helper`, Clubhouse checks the ce
 
 At any level the orchestrator can still ask you when it judges a choice is yours, such as when the scope is unclear or work could be lost.
 
-Under **Hands-off**, a question a helper asks goes to its orchestrator instead of **Needs you**, and the helper waits for the answer. The orchestrator answers with `answer_helper_question`, or passes the question to you, and then it shows under **Needs you**. The helper's chat marks a question that went to the orchestrator, and you can answer it there yourself. If the orchestrator is asleep, the question comes to you. Under the other control levels, helpers' questions always come to you. Helpers running in a terminal answer their questions in the terminal, so theirs always come to you.
+Under **Hands-off**, a question a helper asks goes to its orchestrator instead of **Needs you**, and the helper waits for the answer. The orchestrator answers with `answer_helper_question`, or passes the question to you, and then it shows under **Needs you**. The helper's chat marks a question that went to the orchestrator, and you can answer it there yourself. If the orchestrator is asleep, the question comes to you. Under the other control levels, helpers' questions always come to you. Helpers running in the CLI view answer their questions there, so theirs always come to you.
 
 Under **Ask before starting** and **Ask for everything**, `start_helper` creates nothing until you answer. The request shows under **Needs you** on the orchestrator, and as a row marked **Waiting for approval** in its **Helpers** card. You also get a desktop notification, if those are on. Select **Approve** to start the helper with the same checks as any other start, including the helper limits and the access ceiling. If the orchestrator is asleep, wake it first, and the request keeps waiting until then. Select **Decline** to drop it. Either way the orchestrator gets a message. Each orchestrator can have up to 3 requests waiting. A request that waits 24 hours expires. Waiting requests are also cleared when Clubhouse quits, and when you turn off orchestration for the agent or dispose or delete it.
 

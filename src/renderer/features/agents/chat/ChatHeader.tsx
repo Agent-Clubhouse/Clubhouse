@@ -151,7 +151,7 @@ interface ChatHeaderProps {
   switching?: boolean;
   /** The Agent details toggle (#2032), in the toolbar's slot for it. */
   detailsToggle?: ReactNode;
-  /** The Changes review segment (#2032). */
+  /** The Changes review button (#2032). */
   review?: ReviewView;
   /** Offer the agent's ⋯ menu (main pane only). */
   showMenu?: boolean;

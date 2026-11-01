@@ -91,7 +91,7 @@ export interface SpawnAgentParams {
   permissionMode?: FreeAgentPermissionMode;
   /**
    * Started for a person to talk to, e.g. from a phone. A quick agent then
-   * follows the provider's Chat / Terminal setting like a durable one,
+   * follows the provider's Chat / CLI setting like a durable one,
    * instead of the project's headless spawn mode.
    */
   interactive?: boolean;

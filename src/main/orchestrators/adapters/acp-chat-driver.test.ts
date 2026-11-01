@@ -694,7 +694,7 @@ describe('Clubhouse MCP over HTTP for ACP agents (#2240)', () => {
     for await (const d of session.events) drafts.push(d);
     expect(drafts.find((d) => d.type === 'notice')).toMatchObject({
       type: 'notice',
-      data: { level: 'warn', code: 'mcp_servers_unsupported', message: "Copilot chat can't load stdio MCP servers, so these are off: local. Run them in Terminal mode, or set them up as HTTP servers." },
+      data: { level: 'warn', code: 'mcp_servers_unsupported', message: "Copilot chat can't load stdio MCP servers, so these are off: local. Run them in the CLI view, or set them up as HTTP servers." },
     });
     expect(replayer.errors).toEqual([]);
   });

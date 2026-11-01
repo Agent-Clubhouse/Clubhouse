@@ -19,7 +19,7 @@ The explorer shows a colored ring around each agent's avatar:
 | **Needs Permission** | Orange | Waiting for you to approve/deny a sensitive operation |
 | **Tool Error** | Yellow | A tool call failed; agent may recover on its own |
 | **Sleeping** | Gray | Paused or between missions — resume anytime |
-| **Error** | Red | Fatal error — check terminal output or transcript |
+| **Error** | Red | Fatal error, check the CLI output or transcript |
 
 ## Dashboard Monitoring
 

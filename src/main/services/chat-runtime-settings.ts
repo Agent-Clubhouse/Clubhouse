@@ -1,6 +1,6 @@
 /**
  * Chat runtime preferences: the experimental `chat` flag and the per-provider
- * Chat / Terminal choice. With the flag off, every agent runs in the terminal.
+ * Chat / CLI choice. With the flag off, every agent runs in the terminal.
  */
 
 import { createSettingsStore } from './settings-store';
