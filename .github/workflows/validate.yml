@@ -557,7 +557,9 @@ jobs:
     needs: changes
     if: ${{ !cancelled() && needs.changes.result == 'success' && needs.changes.outputs.full == 'true' }}
     name: Linux Package Smoke Test
-    runs-on: ubuntu-latest
+    # Pinned: ubuntu-26.04's rpmbuild runs %install in a per-package BUILD
+    # subdirectory, which breaks electron-installer-redhat's `cp -r usr/*`.
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v7
