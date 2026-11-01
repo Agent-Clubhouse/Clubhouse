@@ -103,12 +103,13 @@ function driverLabel(driver: ChatDriver): string {
 /**
  * Drivers to try for a provider, in fallback order: the preferred one (or the
  * provider default), then the provider's other drivers in registration order.
- * For Claude that is Agent SDK, then stream-json; the terminal comes last.
+ * For Claude that is Agent SDK, then stream-json; the terminal comes last. An
+ * opt-in driver only appears when it is the preferred one.
  */
 export function chatDriverCandidates(provider: string, preferred?: ChatDriver['id']): ChatDriver[] {
   const first = resolveChatDriver(provider, preferred);
   if (!first) return [];
-  return [first, ...listChatDrivers().filter((d) => d.provider === provider && d !== first)];
+  return [first, ...listChatDrivers().filter((d) => d.provider === provider && d !== first && !d.optIn)];
 }
 
 /**

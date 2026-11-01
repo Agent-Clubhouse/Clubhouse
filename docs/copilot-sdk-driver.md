@@ -1,6 +1,6 @@
 # Copilot SDK chat driver: spike results and plan
 
-Status: spike done, dependency added (phase 0), driver not started · Date: 2026-11-01 · Issue: [#2616](https://github.com/Agent-Clubhouse/Clubhouse/issues/2616) · Context: [docs/structured-chat-research.md](structured-chat-research.md) §7 and §8 (Phase 5)
+Status: spike done, phases 0 and 1 done (opt-in driver, off by default) · Date: 2026-11-01 · Issue: [#2616](https://github.com/Agent-Clubhouse/Clubhouse/issues/2616) · Context: [docs/structured-chat-research.md](structured-chat-research.md) §7 and §8 (Phase 5)
 
 Copilot chat runs today on the ACP driver (`copilot_acp`, `src/main/orchestrators/adapters/acp-chat-driver.ts`). This note records what the SDK does on real CLI versions and how to move to it. Codex is covered in [its own section](#codex-stay-on-app-server).
 
@@ -163,7 +163,7 @@ The TCP listener is safe enough for this: it bound to `127.0.0.1`, and with `COP
 
 **Sessions carry over between drivers, so falling back doesn't lose context.** An SDK session loaded over ACP `session/load`, and an ACP session opened with `resumeSession`. In both directions the model saw the earlier messages. This held on 1.0.82, 1.0.83, 1.0.98 and 1.0.106-2. So existing Copilot agents need no migration, and the transcript stays Clubhouse's.
 
-**Registration.** `registerCopilotChatDrivers` registers `copilot_sdk` ahead of `copilot_acp` once it is the default. Until then it registers after, and `chat-runtime-settings.json`'s existing per-provider `driver` setting opts a user in. The provider's other drivers remain fallbacks either way.
+**Registration.** `copilot_sdk` registers after `copilot_acp` with `optIn: true`, so it is never the default and never a fallback from ACP. Choosing it in Settings writes the per-provider `driver` setting in `chat-runtime-settings.json`. To make it the default in phase 4, drop `optIn` and register it first.
 
 ## Shape of the code
 
@@ -182,6 +182,28 @@ Reused from the ACP driver:
 Capabilities: `steer: true`, `queue: 'native'`, `planApproval: true`, `questions: true`, `subagents: 'full'`, `resume: 'native'`, `usage: 'tokens'` until credits are confirmed on a real login, then `'cost'`.
 
 Levels: `plan` is `mode.set('plan')`, `ask` is the handler, `full_access` is `setApproveAll`, autopilot is `mode.set('autopilot')` (all observed). `auto_edit` would be the handler approving `write` requests (proposed, not run). Whether mode and `setApproveAll` survive a resume is untested, so check it in phase 2. ACP re-sends them after a resume because a loaded session's values were stale (#2174).
+
+## Trying it
+
+Phase 1 is off by default. To turn it on, in a beta or dev build:
+
+1. Settings › Experimental: turn on Chat.
+2. Settings › Orchestrators & agents › Copilot CLI: leave Runtime on Chat, and set **Chat driver** to **Copilot SDK (experimental)**.
+3. Start or restart a Copilot agent.
+
+**Which driver is running:** the chat opens with "This chat runs on the experimental Copilot SDK driver with Copilot CLI x.y.z". The agent glyph's tooltip shows the same driver and version. On a fallback, a toast and a chat notice say "Using Copilot CLI (ACP): " and the reason.
+
+**In the logs** (`~/.clubhouse/logs`):
+
+| Namespace | Message | What it tells you |
+|---|---|---|
+| `core:chat` | `Chat driver check` | Each driver tried, whether it passed, and why not |
+| `core:chat:copilot` | `Copilot SDK probe` | Binary, CLI version, protocol, login result, time taken |
+| `core:chat:copilot` | `Copilot SDK session opened` | Session id, CLI version, level, resume result, MCP servers |
+| `core:chat:copilot` | `Copilot session error` | Error type, status code and message |
+| `core:chat:copilot` | `Copilot CLI exited` | Exit code and the end of stderr |
+
+**What phase 1 doesn't do yet:** steering and the native queue (messages sent during a turn wait for it to end), Plan and Auto levels (they ask first, and say so), plan approval, questions (the CLI's `ask_user` isn't offered, since no handler is set), subagent cards, images, and the model menu. A saved model still applies at start.
 
 ## Plan
 

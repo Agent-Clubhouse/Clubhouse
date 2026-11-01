@@ -15,14 +15,14 @@ export function registerChatDriver(driver: ChatDriver): () => void {
   };
 }
 
-/** The preferred driver if registered for this provider, else any driver for it. */
+/** The preferred driver if registered for this provider, else the first one for it that isn't opt-in. */
 export function resolveChatDriver(provider: string, preferred?: ChatDriverId): ChatDriver | undefined {
   if (preferred) {
     const d = drivers.get(preferred);
     if (d && d.provider === provider) return d;
   }
   for (const d of drivers.values()) {
-    if (d.provider === provider) return d;
+    if (d.provider === provider && !d.optIn) return d;
   }
   return undefined;
 }
