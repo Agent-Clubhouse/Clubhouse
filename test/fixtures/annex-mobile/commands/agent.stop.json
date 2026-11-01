@@ -45,6 +45,29 @@
         },
         "status": 404
       }
+    },
+    {
+      "name": "accepted (Dispatcher)",
+      "request": {
+        "agentId": "durable_dispatcher",
+        "commandId": "cmd_133",
+        "epoch": "00000000-0000-4000-8000-000000000001",
+        "type": "agent.stop",
+        "version": 1
+      },
+      "response": {
+        "body": {
+          "commandId": "cmd_133",
+          "epoch": "00000000-0000-4000-8000-000000000001",
+          "result": {
+            "agentId": "durable_dispatcher",
+            "stopRequested": true
+          },
+          "status": "completed",
+          "version": 1
+        },
+        "status": 200
+      }
     }
   ],
   "type": "agent.stop"

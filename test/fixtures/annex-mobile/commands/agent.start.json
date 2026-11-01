@@ -94,6 +94,53 @@
         },
         "status": 404
       }
+    },
+    {
+      "name": "dispatcher_off",
+      "request": {
+        "agentId": "durable_dispatcher",
+        "commandId": "cmd_121",
+        "epoch": "00000000-0000-4000-8000-000000000001",
+        "type": "agent.start",
+        "version": 1
+      },
+      "response": {
+        "body": {
+          "commandId": "cmd_121",
+          "epoch": "00000000-0000-4000-8000-000000000001",
+          "error": {
+            "code": "dispatcher_off",
+            "message": "The Dispatcher is turned off."
+          },
+          "status": "rejected",
+          "version": 1
+        },
+        "status": 409
+      }
+    },
+    {
+      "name": "accepted (Dispatcher)",
+      "request": {
+        "agentId": "durable_dispatcher",
+        "commandId": "cmd_132",
+        "epoch": "00000000-0000-4000-8000-000000000001",
+        "resume": true,
+        "type": "agent.start",
+        "version": 1
+      },
+      "response": {
+        "body": {
+          "commandId": "cmd_132",
+          "epoch": "00000000-0000-4000-8000-000000000001",
+          "result": {
+            "agentId": "durable_dispatcher",
+            "executionMode": "pty"
+          },
+          "status": "completed",
+          "version": 1
+        },
+        "status": 200
+      }
     }
   ],
   "type": "agent.start"

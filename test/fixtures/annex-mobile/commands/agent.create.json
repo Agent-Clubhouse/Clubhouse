@@ -550,6 +550,31 @@
         },
         "status": 400
       }
+    },
+    {
+      "name": "dispatcher_locked",
+      "request": {
+        "color": "indigo",
+        "commandId": "cmd_134",
+        "epoch": "00000000-0000-4000-8000-000000000001",
+        "name": "second",
+        "projectId": "__dispatcher__",
+        "type": "agent.create",
+        "version": 1
+      },
+      "response": {
+        "body": {
+          "commandId": "cmd_134",
+          "epoch": "00000000-0000-4000-8000-000000000001",
+          "error": {
+            "code": "dispatcher_locked",
+            "message": "The Dispatcher is in no project."
+          },
+          "status": "rejected",
+          "version": 1
+        },
+        "status": 409
+      }
     }
   ],
   "type": "agent.create"

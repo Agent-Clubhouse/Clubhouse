@@ -184,6 +184,14 @@
         "model"
       ]
     },
+    "dispatcher.setEnabled": {
+      "fields": [
+        "enabled"
+      ],
+      "required": [
+        "enabled"
+      ]
+    },
     "helper.approve": {
       "fields": [
         "requestId",

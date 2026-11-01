@@ -16,10 +16,10 @@ New `POST https://host:mainPort/pair` uses existing `{pin, publicKey, alias, ico
 Authenticated `GET /api/v1/mobile/capabilities` returns:
 
 ```json
-{"version":1,"epoch":"uuid","controlAuth":"mtls-pinned-client","controlAvailable":true,"commands":["chat.send","chat.interrupt","chat.permission","chat.question","chat.queue.remove","agent.start","agent.stop","agent.spawn","agent.create","agent.update","project.setPinned","project.setInactive","helper.approve","helper.decline","chat.setModel","chat.setLevel","quick.dismiss","quick.clear"],"pairing":{"sessionRevokePath":"/api/v1/mobile/pairing"},"attachments":{"version":1,"imageTypes":["image/png","image/jpeg","image/gif","image/webp"],"maxImageBytes":3932160,"maxCount":10},"events":{"transport":"annex-websocket","replayRequest":"mobile:replay","queueState":"queue_state"},"createOptions":{"version":1,"path":"/api/v1/mobile/projects/{projectId}/create-options"},"agentSettings":{"version":1,"path":"/api/v1/mobile/agents/{agentId}/settings"},"helperRequests":{"version":1,"snapshotField":"helperRequests","commands":["helper.approve","helper.decline"]},"chatControls":{"version":1},"slashCommands":{"version":1,"snapshotField":"slashCommands","event":"commands_available","maxCommands":200},"permissions":{"version":1,"persistentApprovals":true,"freeAgentMode":true},"orchestration":{"version":1},"idempotency":{"scope":"peer-and-epoch","maxEntries":2048,"ttlMs":3600000},"projectState":{"version":1},"finishedQuickAgents":{"version":1},"terminal":{"version":1,"projectShell":true,"agentShell":true,"agentAttach":true,"maxShellsPerConnection":8,"maxInputLength":65536}}
+{"version":1,"epoch":"uuid","controlAuth":"mtls-pinned-client","controlAvailable":true,"commands":["chat.send","chat.interrupt","chat.permission","chat.question","chat.queue.remove","agent.start","agent.stop","agent.spawn","agent.create","agent.update","project.setPinned","project.setInactive","helper.approve","helper.decline","chat.setModel","chat.setLevel","quick.dismiss","quick.clear","dispatcher.setEnabled"],"pairing":{"sessionRevokePath":"/api/v1/mobile/pairing"},"attachments":{"version":1,"imageTypes":["image/png","image/jpeg","image/gif","image/webp"],"maxImageBytes":3932160,"maxCount":10},"events":{"transport":"annex-websocket","replayRequest":"mobile:replay","queueState":"queue_state"},"createOptions":{"version":1,"path":"/api/v1/mobile/projects/{projectId}/create-options"},"agentSettings":{"version":1,"path":"/api/v1/mobile/agents/{agentId}/settings"},"helperRequests":{"version":1,"snapshotField":"helperRequests","commands":["helper.approve","helper.decline"]},"chatControls":{"version":1},"slashCommands":{"version":1,"snapshotField":"slashCommands","event":"commands_available","maxCommands":200},"permissions":{"version":1,"persistentApprovals":true,"freeAgentMode":true},"orchestration":{"version":1},"idempotency":{"scope":"peer-and-epoch","maxEntries":2048,"ttlMs":3600000},"projectState":{"version":1},"finishedQuickAgents":{"version":1},"terminal":{"version":1,"projectShell":true,"agentShell":true,"agentAttach":true,"maxShellsPerConnection":8,"maxInputLength":65536},"dispatcher":{"version":1,"enabled":true,"flagOn":true,"newLayout":true,"projectId":"__dispatcher__","snapshotField":"dispatcher","event":"dispatcher:changed","commands":["dispatcher.setEnabled"]}}
 ```
 
-A 404 means unsupported: do not send mobile commands. Gate durable-agent creation on `commands` including `agent.create` and `createOptions.version >= 1`, settings on `agent.update` and `agentSettings.version >= 1`, and helper requests on `helperRequests.version >= 1`; older desktops offer quick agents (`agent.spawn`) only. Gate project pins and inactive marks on `projectState.version >= 1` (`projectState:{version:1}`); without it, keep them on the phone. See [Project state](#project-state). Gate the finished quick agents list ("Finished, waiting on you") on `finishedQuickAgents.version >= 1`; without it, keep the phone's own list of quick agents it saw exit. See [Finished quick agents](#finished-quick-agents). Gate the composer's model, effort and level controls on `chat.setModel` / `chat.setLevel` and `chatControls.version >= 1` ([Chat controls](#chat-controls)). Gate terminals on `terminal.version >= 1` ([Terminals](#terminals)). Gate the composer's `/` menu on `slashCommands.version >= 1` ([Slash commands](#slash-commands)). Gate an agent's orchestration policy on `orchestration.version >= 1` ([Orchestration](#orchestration)). A new epoch invalidates command retries and replay cursors. A paired phone is a full controller, so it may open a shell on the desktop; there are still no arbitrary filesystem paths (a shell's directory comes from a registered project or agent), credentials, or gateway provisioning commands.
+A 404 means unsupported: do not send mobile commands. Gate durable-agent creation on `commands` including `agent.create` and `createOptions.version >= 1`, settings on `agent.update` and `agentSettings.version >= 1`, and helper requests on `helperRequests.version >= 1`; older desktops offer quick agents (`agent.spawn`) only. Gate project pins and inactive marks on `projectState.version >= 1` (`projectState:{version:1}`); without it, keep them on the phone. See [Project state](#project-state). Gate the finished quick agents list ("Finished, waiting on you") on `finishedQuickAgents.version >= 1`; without it, keep the phone's own list of quick agents it saw exit. See [Finished quick agents](#finished-quick-agents). Gate the composer's model, effort and level controls on `chat.setModel` / `chat.setLevel` and `chatControls.version >= 1` ([Chat controls](#chat-controls)). Gate terminals on `terminal.version >= 1` ([Terminals](#terminals)). Gate the composer's `/` menu on `slashCommands.version >= 1` ([Slash commands](#slash-commands)). Gate an agent's orchestration policy on `orchestration.version >= 1` ([Orchestration](#orchestration)). Gate the Dispatcher on `dispatcher.version >= 1` ([Dispatcher](#dispatcher)). A new epoch invalidates command retries and replay cursors. A paired phone is a full controller, so it may open a shell on the desktop; there are still no arbitrary filesystem paths (a shell's directory comes from a registered project or agent), credentials, or gateway provisioning commands.
 
 ## Commands
 
@@ -41,6 +41,7 @@ A 404 means unsupported: do not send mobile commands. Gate durable-agent creatio
 - `project.setInactive`: `{projectId, inactive}`; mark a project inactive (idle until marked active) or active. See [Project state](#project-state).
 - `quick.dismiss`: `{projectId, agentId}`; dismiss one finished quick agent. See [Finished quick agents](#finished-quick-agents).
 - `quick.clear`: `{projectId}`; dismiss all of a project's finished quick agents. See [Finished quick agents](#finished-quick-agents).
+- `dispatcher.setEnabled`: `{enabled}`; turn the app-wide Dispatcher on or off, as Settings > Dispatcher does. See [Dispatcher](#dispatcher).
 
 - `helper.approve`: `{requestId, force?}`; approve a helper start or dispose an orchestrator asked the user to decide. `force:true` is the desktop's "Dispose anyway". See [Helper requests](#helper-requests).
 - `helper.decline`: `{requestId}`; decline it. The orchestrator is told, as from the desktop.
@@ -343,7 +344,8 @@ Every durable agent in the snapshot (`agents[projectId][]`), `GET /api/v1/projec
 
 ```json
 "orchestration":{"orchestrate":false,"access":"same","control":"hands-off","maxHelpers":5,
- "sources":{"orchestrate":"default","access":"default","control":"persona","maxHelpers":"agent"},
+ "crossProjectHelpers":false,"connectToDispatcher":false,
+ "sources":{"orchestrate":"default","access":"default","control":"persona","maxHelpers":"agent","crossProjectHelpers":"default","connectToDispatcher":"default"},
  "maxHelpersCap":20,"controls":["hands-off","ask-before-start","ask-everything"],"accessLevels":["same","standard","auto","bypass"]}
 ```
 
@@ -351,15 +353,64 @@ Every durable agent in the snapshot (`agents[projectId][]`), `GET /api/v1/projec
 - **access**: "Helpers get": one of `accessLevels`. `same` follows the orchestrator; a fixed level is a ceiling request, and a helper never gets more than its orchestrator runs with.
 - **control**: one of `controls` (hands-off, ask before starting helpers, ask about everything).
 - **maxHelpers**: "Helpers at once", a whole number from 1 to `maxHelpersCap` (the app-wide helper cap, at most 100).
+- **crossProjectHelpers**: "Cross-project helpers" (#2512): the agent may start helpers in other registered projects. The desktop shows it while `orchestrate` is on; turning it off leaves helpers already running elsewhere alone.
+- **connectToDispatcher**: "Connect to Dispatcher" (#2534): the Dispatcher may message this agent and get its reports. The desktop shows it only while `orchestrate` is on and the [Dispatcher](#dispatcher) is on; turning it on while the Dispatcher is off is 409 `dispatcher_off`.
 - **sources**: where each field comes from. `agent` is an override on the agent, which `null` clears; `persona` is the persona's front-matter; `default` is the built-in default.
 
-`agent.update` takes `orchestration` as a partial object: `{"orchestrate"?: bool|null, "access"?: string|null, "control"?: string|null, "maxHelpers"?: int|null}`. Each key sets that field; `null` clears it back to the persona or default. `"orchestration": null` clears all four. `agent.create` takes the same object without nulls. Writes go through the desktop's own policy service, so the desktop UI updates live.
+`agent.update` takes `orchestration` as a partial object: `{"orchestrate"?: bool|null, "access"?: string|null, "control"?: string|null, "maxHelpers"?: int|null, "crossProjectHelpers"?: bool|null, "connectToDispatcher"?: bool|null}`. Each key sets that field; `null` clears it back to the persona or default. `"orchestration": null` clears all six. Phones gate `crossProjectHelpers` and `connectToDispatcher` on the payload having them (and Connect to Dispatcher on `dispatcher.enabled`); a phone that doesn't know them ignores them. `agent.create` takes the same object without nulls. Writes go through the desktop's own policy service, so the desktop UI updates live.
 
 Rejections:
 
 - 400 `invalid_orchestration`, with the reason in `message`: an unknown field, a bad `access` or `control`, `maxHelpers` outside 1 to `maxHelpersCap`, an empty object, or a null on create.
 - 409 `orchestration_has_helpers`: turning `orchestrate` off while the agent has live helpers. Nothing changes; the desktop asks whether to keep or dispose them.
+- 409 `dispatcher_off`: `connectToDispatcher: true` while the Dispatcher is off.
 - A non-object `orchestration` (or `null` on create) is 400 `invalid_command`.
+
+## Dispatcher
+
+The app-wide Dispatcher (#2533): one durable agent that coordinates the orchestrators in every project. It lives in its own folder under the Clubhouse base dir, which is no git repo, and is in no project, so it never appears in `projects`, `agents{}`, `GET /api/v1/projects` or `GET /api/v1/projects/:id/agents`. It is on only when the desktop's experimental flag (`flagOn`) and the switch in Settings > Dispatcher are both on. Gated on `dispatcher.version >= 1` in capabilities:
+
+```json
+"dispatcher":{"version":1,"enabled":false,"flagOn":true,"newLayout":true,"projectId":"__dispatcher__",
+ "snapshotField":"dispatcher","event":"dispatcher:changed","commands":["dispatcher.setEnabled"]}
+```
+
+- **enabled**: the flag and the switch are both on.
+- **flagOn**: the experimental flag. A phone never changes it; without it, the switch says "Turn on Dispatcher in Settings > Experimental on the desktop".
+- **newLayout**: the desktop runs the New layout this session. The Dispatcher's view is in the new layout only, so turning it on needs it; one that is still on can always be turned off.
+
+### Snapshot
+
+The snapshot's `dispatcher` is `null` while the Dispatcher is off (or was never created). While it is on:
+
+```json
+"dispatcher":{"enabled":true,"flagOn":true,"projectId":"__dispatcher__",
+ "agent":{"id":"durable_dispatcher","projectId":"__dispatcher__","name":"Dispatcher","kind":"durable","isDispatcher":true,"color":"indigo",
+  "emoji":null,"branch":null,"model":null,"orchestrator":"claude-code","freeAgentMode":true,"icon":null,"status":"sleeping",
+  "detailedStatus":null,"executionMode":null,"hasSession":true,"lastActivityAt":1800000000000}}
+```
+
+`agent` is the `agents[projectId][]` shape with `projectId: "__dispatcher__"` and `isDispatcher: true`, and no `orchestration` (its orchestration settings are locked). It is in `agentIcons` when it has an image icon and in `agentsMeta` while it runs. `GET /api/v1/mobile/agents/state` has a row for it (`projectId: "__dispatcher__"`, `isDispatcher: true`) while it is on.
+
+### Live changes
+
+`dispatcher:changed` is broadcast and buffered for `mobile:replay` whenever `enabled`, `flagOn` or the agent id change, from the desktop or a phone: `{"enabled":bool,"flagOn":bool,"agentId":"id"|null}` (`agentId` is null while it is off). A fresh `snapshot` follows it, and also follows any change to its config (its CLI or model changed on the desktop). Add or drop the Dispatcher from that snapshot.
+
+### dispatcher.setEnabled
+
+`{type:"dispatcher.setEnabled", enabled:bool}` is Settings > Dispatcher's switch. Result `{enabled, flagOn, agentId}`, as `dispatcher:changed`. Turning it off stops the agent and keeps its folder, notes and config, so turning it on again carries on. Refusals (409): `dispatcher_flag_off` (turning it on with the flag off) and `dispatcher_layout_off` (turning it on while the desktop runs the classic layout). Turning on one that is on, or off one that is off, succeeds with the current state.
+
+### Its agent
+
+While it is on, its id works wherever an agent id does: the chat snapshot, chat history pages, `/chat/sessions`, `/content`, attachments, `/settings`, every `chat.*` command, `agent.start`, `agent.stop`, `agent.update`, `pty:attach`, and `GET /api/v1/agents/:id/sessions…` with `projectId=__dispatcher__`. While it is off, GET routes answer 404 `agent_not_found` and commands 409 `dispatcher_off`.
+
+- **Shells.** `pty:spawn-shell` with `projectId: "__dispatcher__"` (with or without its `agentId`) opens a shell in its folder while it is on; otherwise `project_not_found`.
+- **No git.** Git routes for `__dispatcher__` answer 409 `{"error":"not_git_repo"}`. Its settings' `details.changes`, `branch` and `worktree` are null.
+- **No project.** `agent.create`, `agent.spawn`, `project.*` and `quick.*` with `projectId: "__dispatcher__"` are 409 `dispatcher_locked`.
+- **Settings.** `GET /mobile/agents/:id/settings` has `isDispatcher: true` and `orchestration: null`. `orchestrator`, `model`, `runtime` and `freeAgentMode` are `editable: "always"` (as on Settings > Dispatcher they apply the next time it starts), `idleSleep` `"always"`, and `name`, `color`, `emoji`, `persona` and `clubhouseMode` `"never"`.
+- **agent.update.** Only `orchestrator`, `model`, `runtime`, `freeAgentMode` and `idleSleep`, at any time. A new `orchestrator` resets `model` to `default` unless the command sets one; `model` must be `default` or one the CLI lists (400 `invalid_model`). `name`, `color`, `emoji`, `persona`, `clubhouseMode` or `orchestration` are 409 `dispatcher_locked`, the desktop's own rules.
+
+Messages other agents send the Dispatcher arrive as `user_message` with `source: "mcp"` and a `[FROM:<name>@<project>]` tag in the text, as for any agent; there is no structured sender field.
 
 ## Project state
 
@@ -464,5 +515,7 @@ Errors use the existing envelope with correlation fields: `error {message, op, s
 - `npm run fixtures:annex-mobile -- --check` (and the suite itself, in `npm test`) fails when a file is stale or extra.
 - A changed fixture is a protocol change: keep it additive, update this document, and tell the phone side.
 - A new command type or chat event type fails the suite until it has an example.
+
+The Dispatcher has its own files: `snapshot-dispatcher.json` (the snapshot's `dispatcher` and its `agent-state` row while it is on), `dispatcher-changed.json` (the event), `agent-settings-dispatcher.json` and `dispatcher-routes.json` (its chat and sessions while on, its GET routes while off, git, and a shell in its folder).
 
 `commands/<type>.json` lists `cases` of `{name, request, response:{status, body}}`; `name` is `accepted…` or the error code. `commands/_common.json` has the refusals any command can get (`invalid_command`, `unsupported_version`, `epoch_mismatch`, `command_conflict`, `client_certificate_required`, `command_capacity`) and an identical retry. Not covered: `authorization_revoked`, `start_cancelled` and the upload `quota_exceeded` / `authorization_revoked`, which need races or a day of uploads; `/content` previews and git routes.

@@ -32,18 +32,22 @@
               "auto",
               "bypass"
             ],
+            "connectToDispatcher": false,
             "control": "hands-off",
             "controls": [
               "hands-off",
               "ask-before-start",
               "ask-everything"
             ],
+            "crossProjectHelpers": false,
             "maxHelpers": 3,
             "maxHelpersCap": 20,
             "orchestrate": true,
             "sources": {
               "access": "default",
+              "connectToDispatcher": "default",
               "control": "default",
+              "crossProjectHelpers": "default",
               "maxHelpers": "agent",
               "orchestrate": "agent"
             }
@@ -78,18 +82,22 @@
               "auto",
               "bypass"
             ],
+            "connectToDispatcher": false,
             "control": "hands-off",
             "controls": [
               "hands-off",
               "ask-before-start",
               "ask-everything"
             ],
+            "crossProjectHelpers": false,
             "maxHelpers": 5,
             "maxHelpersCap": 20,
             "orchestrate": false,
             "sources": {
               "access": "default",
+              "connectToDispatcher": "default",
               "control": "default",
+              "crossProjectHelpers": "default",
               "maxHelpers": "default",
               "orchestrate": "default"
             }
@@ -120,18 +128,22 @@
               "auto",
               "bypass"
             ],
+            "connectToDispatcher": false,
             "control": "hands-off",
             "controls": [
               "hands-off",
               "ask-before-start",
               "ask-everything"
             ],
+            "crossProjectHelpers": false,
             "maxHelpers": 5,
             "maxHelpersCap": 20,
             "orchestrate": false,
             "sources": {
               "access": "default",
+              "connectToDispatcher": "default",
               "control": "default",
+              "crossProjectHelpers": "default",
               "maxHelpers": "default",
               "orchestrate": "default"
             }
@@ -162,18 +174,22 @@
               "auto",
               "bypass"
             ],
+            "connectToDispatcher": false,
             "control": "hands-off",
             "controls": [
               "hands-off",
               "ask-before-start",
               "ask-everything"
             ],
+            "crossProjectHelpers": false,
             "maxHelpers": 5,
             "maxHelpersCap": 20,
             "orchestrate": false,
             "sources": {
               "access": "default",
+              "connectToDispatcher": "default",
               "control": "default",
+              "crossProjectHelpers": "default",
               "maxHelpers": "default",
               "orchestrate": "default"
             }
@@ -204,18 +220,22 @@
               "auto",
               "bypass"
             ],
+            "connectToDispatcher": false,
             "control": "hands-off",
             "controls": [
               "hands-off",
               "ask-before-start",
               "ask-everything"
             ],
+            "crossProjectHelpers": false,
             "maxHelpers": 5,
             "maxHelpersCap": 20,
             "orchestrate": false,
             "sources": {
               "access": "default",
+              "connectToDispatcher": "default",
               "control": "default",
+              "crossProjectHelpers": "default",
               "maxHelpers": "default",
               "orchestrate": "default"
             }
@@ -246,18 +266,22 @@
               "auto",
               "bypass"
             ],
+            "connectToDispatcher": false,
             "control": "hands-off",
             "controls": [
               "hands-off",
               "ask-before-start",
               "ask-everything"
             ],
+            "crossProjectHelpers": false,
             "maxHelpers": 5,
             "maxHelpersCap": 20,
             "orchestrate": false,
             "sources": {
               "access": "default",
+              "connectToDispatcher": "default",
               "control": "default",
+              "crossProjectHelpers": "default",
               "maxHelpers": "default",
               "orchestrate": "default"
             }

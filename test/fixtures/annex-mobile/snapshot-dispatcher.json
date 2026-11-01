@@ -1,0 +1,42 @@
+{
+  "agentStateRow": {
+    "agentId": "durable_dispatcher",
+    "detailedStatus": null,
+    "hasSession": true,
+    "isDispatcher": true,
+    "kind": "durable",
+    "lastActivityAt": 1791363600000,
+    "pendingPermission": false,
+    "pendingQuestion": false,
+    "projectId": "__dispatcher__",
+    "sessionId": null,
+    "sessionState": null,
+    "status": "sleeping"
+  },
+  "direction": "desktop-to-phone",
+  "field": "dispatcher",
+  "value": {
+    "agent": {
+      "branch": null,
+      "color": "indigo",
+      "detailedStatus": null,
+      "emoji": null,
+      "executionMode": null,
+      "freeAgentMode": true,
+      "hasSession": true,
+      "icon": null,
+      "id": "durable_dispatcher",
+      "isDispatcher": true,
+      "kind": "durable",
+      "lastActivityAt": 1791363600000,
+      "model": null,
+      "name": "Dispatcher",
+      "orchestrator": "claude-code",
+      "projectId": "__dispatcher__",
+      "status": "sleeping"
+    },
+    "enabled": true,
+    "flagOn": true,
+    "projectId": "__dispatcher__"
+  }
+}

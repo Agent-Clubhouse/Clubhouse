@@ -1,0 +1,24 @@
+{
+  "direction": "desktop-to-phone",
+  "frames": [
+    {
+      "payload": {
+        "agentId": "durable_dispatcher",
+        "enabled": true,
+        "flagOn": true
+      },
+      "seq": 1000,
+      "type": "dispatcher:changed"
+    },
+    {
+      "payload": {
+        "agentId": null,
+        "enabled": false,
+        "flagOn": true
+      },
+      "seq": 1000,
+      "type": "dispatcher:changed"
+    }
+  ],
+  "note": "seq is the replay sequence; a snapshot follows each."
+}

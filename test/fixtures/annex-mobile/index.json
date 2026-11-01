@@ -1,6 +1,7 @@
 {
   "version": 1,
   "files": [
+    "agent-settings-dispatcher.json",
     "agent-settings-errors.json",
     "agent-settings-running.json",
     "agent-settings.json",
@@ -28,6 +29,7 @@
     "commands/chat.send.json",
     "commands/chat.setLevel.json",
     "commands/chat.setModel.json",
+    "commands/dispatcher.setEnabled.json",
     "commands/helper.approve.json",
     "commands/helper.decline.json",
     "commands/project.setInactive.json",
@@ -36,11 +38,14 @@
     "commands/quick.dismiss.json",
     "create-options-errors.json",
     "create-options.json",
+    "dispatcher-changed.json",
+    "dispatcher-routes.json",
     "pairing-revoke.json",
     "pairing.json",
     "pty.json",
     "replay.json",
     "rest-catalog.json",
+    "snapshot-dispatcher.json",
     "snapshot-helper-requests.json",
     "snapshot.json"
   ]

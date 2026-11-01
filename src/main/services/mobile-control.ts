@@ -29,6 +29,7 @@ export const MOBILE_COMMAND_FIELDS: Readonly<Record<MobileCommand['type'], reado
   'helper.decline': ['requestId'],
   'quick.dismiss': ['projectId', 'agentId'],
   'quick.clear': ['projectId'],
+  'dispatcher.setEnabled': ['enabled'],
 };
 /** Fields a command may leave out. Every agent.update setting is optional, but it needs at least one. */
 const OPTIONAL = new Set(['delivery', 'message', 'resume', 'model', 'orchestrator', 'attachmentIds', 'force', 'effort']);
@@ -36,7 +37,7 @@ const CREATE_OPTIONAL = new Set(['orchestrator', 'model', 'persona', 'freeAgentM
 export const isOptionalCommandField = (type: MobileCommand['type'], key: string): boolean =>
   type === 'agent.update' ? key !== 'agentId' : type === 'agent.create' ? CREATE_OPTIONAL.has(key)
     : type === 'chat.setModel' && key === 'model' ? false : OPTIONAL.has(key);
-const BOOLEAN_FIELDS = new Set(['resume', 'useWorktree', 'clubhouseMode', 'pinned', 'inactive', 'force', 'freeAgentMode']);
+const BOOLEAN_FIELDS = new Set(['resume', 'useWorktree', 'clubhouseMode', 'pinned', 'inactive', 'force', 'freeAgentMode', 'enabled']);
 /** Fields agent.update clears with null. */
 export const NULLABLE_ON_UPDATE = new Set(['emoji', 'persona', 'orchestration']);
 const record = (v: unknown): v is Record<string, unknown> => !!v && typeof v === 'object' && !Array.isArray(v);
