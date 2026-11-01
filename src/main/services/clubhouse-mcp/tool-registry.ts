@@ -540,6 +540,11 @@ export async function callTool(
     return groupRefusal(template.group);
   }
 
+  // Checked at call time too: the listing drops these, but a client may have a stale list or know the name.
+  if (binding.disabledTools?.includes(parsed.suffix)) {
+    return refuse('tool_denied', `${parsed.suffix} is turned off on this wire.`);
+  }
+
   // Validate arguments against the tool's declared inputSchema
   const schema = template.definition.inputSchema;
   if (schema && typeof schema === 'object') {
@@ -567,8 +572,7 @@ export async function callTool(
   // to invoke this tool at call time, not just at listing time.
   if (binding.targetKind === 'group-project') {
     const project = await groupProjectRegistry.getSync(binding.targetId);
-    const denied = deniedGroupProjectTools(project?.metadata, agentId, binding.disabledTools);
-    if (denied.has(parsed.suffix)) {
+    if (deniedGroupProjectTools(project?.metadata, agentId).has(parsed.suffix)) {
       return refuse('tool_denied', 'Only a project admin can invoke this tool.');
     }
   }

@@ -16,7 +16,7 @@ vi.mock('../dispatcher/dispatcher-settings', () => ({
   isDispatcherEnabled: () => dispatcherState.enabled,
 }));
 
-import { registerToolTemplate, registerGlobalTool, getScopedToolList, callTool, refusalReasonOf, buildToolName, buildToolKey, parseToolName, shortHash, invalidateToolListCache, agentsWiredTo, sanitizeWireInstruction, _resetForTesting } from './tool-registry';
+import { registerToolTemplate, registerGlobalTool, setTargetToolTemplates, getScopedToolList, callTool, refusalReasonOf, buildToolName, buildToolKey, parseToolName, shortHash, invalidateToolListCache, agentsWiredTo, sanitizeWireInstruction, _resetForTesting } from './tool-registry';
 import { bindingManager } from './binding-manager';
 import { registerBuiltinProviders } from '../../orchestrators';
 import {
@@ -730,6 +730,77 @@ describe('ToolRegistry', () => {
       const tools = getScopedToolList('agent-1');
       const browserTools = tools.filter(t => t.name.startsWith('browser__'));
       expect(browserTools).toHaveLength(1);
+    });
+  });
+
+  describe('a tool turned off on a wire, called by name (#2609)', () => {
+    const def = { description: 'Tool', inputSchema: { type: 'object' as const, properties: { text: { type: 'string' } }, required: ['text'] } };
+    const result = { content: [{ type: 'text' as const, text: 'ran' }] };
+
+    it.each([
+      ['agent', 'agent-2', 'send_message'],
+      ['browser', 'widget-1', 'navigate'],
+      ['group-project', 'gp_off_1', 'list_members'],
+    ] as const)('refuses it on a %s wire, and leaves its other tools callable', async (targetKind, targetId, suffix) => {
+      const handler = vi.fn().mockResolvedValue(result);
+      registerToolTemplate(targetKind, suffix, def, handler);
+      registerToolTemplate(targetKind, 'other_tool', def, handler);
+      const binding = { targetId, targetKind, label: 'Target', targetName: 'target', projectName: 'app' };
+      bindingManager.bind('agent-1', binding);
+      bindingManager.setDisabledTools('agent-1', targetId, [suffix]);
+      const name = (tool: string) => buildToolName({ agentId: 'agent-1', ...binding }, tool);
+
+      // Refused before the arguments are checked: the reason is the wire, not the call.
+      const refused = await callTool('agent-1', name(suffix), {});
+      expect(refused.isError).toBe(true);
+      expect(refused.content[0].text).toBe(`${suffix} is turned off on this wire.`);
+      expect(refusalReasonOf(refused)).toBe('tool_denied');
+      expect(handler).not.toHaveBeenCalled();
+
+      expect((await callTool('agent-1', name('other_tool'), { text: 'x' })).content[0].text).toBe('ran');
+    });
+
+    it('refuses it on a plugin wire', async () => {
+      const handler = vi.fn().mockResolvedValue(result);
+      setTargetToolTemplates('plugin', 'acme', [
+        { nameSuffix: 'do-thing', definition: def, handler },
+        { nameSuffix: 'other_tool', definition: def, handler },
+      ]);
+      bindingManager.bind('agent-1', { targetId: 'acme', targetKind: 'plugin', label: 'Acme' });
+      bindingManager.setDisabledTools('agent-1', 'acme', ['do-thing']);
+
+      const refused = await callTool('agent-1', 'plugin__acme__do-thing', { text: 'x' });
+      expect(refused.content[0].text).toBe('do-thing is turned off on this wire.');
+      expect(refusalReasonOf(refused)).toBe('tool_denied');
+      expect(handler).not.toHaveBeenCalled();
+      expect((await callTool('agent-1', 'plugin__acme__other_tool', { text: 'x' })).content[0].text).toBe('ran');
+    });
+
+    it('takes effect at once, and lifts when the tool is turned back on', async () => {
+      const handler = vi.fn().mockResolvedValue(result);
+      registerToolTemplate('agent', 'send_message', def, handler);
+      const binding = { targetId: 'agent-2', targetKind: 'agent' as const, label: 'A2', targetName: 'robin', projectName: 'app' };
+      bindingManager.bind('agent-1', binding);
+      const name = buildToolName({ agentId: 'agent-1', ...binding }, 'send_message');
+
+      expect((await callTool('agent-1', name, { text: 'x' })).isError).toBeUndefined();
+      bindingManager.setDisabledTools('agent-1', 'agent-2', ['send_message']);
+      expect((await callTool('agent-1', name, { text: 'x' })).isError).toBe(true);
+      bindingManager.setDisabledTools('agent-1', 'agent-2', []);
+      expect((await callTool('agent-1', name, { text: 'x' })).isError).toBeUndefined();
+    });
+
+    it('only applies to the wire it was turned off on', async () => {
+      const handler = vi.fn().mockResolvedValue(result);
+      registerToolTemplate('agent', 'send_message', def, handler);
+      const first = { targetId: 'agent-2', targetKind: 'agent' as const, label: 'A2', targetName: 'robin', projectName: 'app' };
+      const second = { targetId: 'agent-3', targetKind: 'agent' as const, label: 'A3', targetName: 'wren', projectName: 'app' };
+      bindingManager.bind('agent-1', first);
+      bindingManager.bind('agent-1', second);
+      bindingManager.setDisabledTools('agent-1', 'agent-2', ['send_message']);
+
+      expect((await callTool('agent-1', buildToolName({ agentId: 'agent-1', ...first }, 'send_message'), { text: 'x' })).isError).toBe(true);
+      expect((await callTool('agent-1', buildToolName({ agentId: 'agent-1', ...second }, 'send_message'), { text: 'x' })).isError).toBeUndefined();
     });
   });
 

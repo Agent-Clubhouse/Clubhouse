@@ -1098,6 +1098,7 @@ export function registerHelperTools(): void {
         'with the helper id in the "starting" state: making the worktree can take up to a minute. ' +
         'You get a message when the helper has started its task, or why it failed. The helper can ' +
         'reply with message_parent, and you can message it over the wire Clubhouse adds between you. ' +
+        'If you have call_wire_tool, your tool list is fixed at session start, so reach that wire with it, using the helper id. ' +
         'Its access is never more than yours. If you are set to ask the user before starting helpers, ' +
         'it returns "needs_approval" with a requestId instead, and you get a message when the user ' +
         'approves or declines. With project, the helper is created in another Clubhouse project ' +

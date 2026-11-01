@@ -51,7 +51,7 @@ const lifecycle = vi.hoisted(() => ({
 vi.mock('./agent-lifecycle', () => lifecycle);
 
 import { registerAgentTools, writeChunkedBracketedPaste, waitForBufferQuiescence } from './agent-tools';
-import { getScopedToolList, callTool, buildToolName, invalidateToolListCache, _resetForTesting as resetTools } from '../tool-registry';
+import { getScopedToolList, callTool, refusalReasonOf, buildToolName, invalidateToolListCache, _resetForTesting as resetTools } from '../tool-registry';
 import { mcpAdapter } from '../mcp-adapter';
 import { bindingManager } from '../binding-manager';
 import { setDispatcherAgent, _resetDispatcherGateForTesting } from '../dispatcher-gate';
@@ -924,6 +924,7 @@ describe('AgentTools', () => {
         const result = await via('target', 'send_message', { message: 'hi' });
         expect(result.isError).toBe(true);
         expect(result.content[0].text).toBe('send_message is turned off on this wire.');
+        expect(refusalReasonOf(result)).toBe('tool_denied');
       });
 
       it('refuses an unknown tool, and itself', async () => {
