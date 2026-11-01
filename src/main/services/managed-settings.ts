@@ -51,6 +51,8 @@ export interface ManagedSettingsOptions<T> {
   defaultsOverride?: Partial<T>;
   /** File mode for the settings file (e.g. 0o600 for files holding salts). */
   mode?: number;
+  /** Use this store instead of creating one: for a file a settings service already holds a cache of. */
+  store?: SettingsStore<T>;
 }
 
 /**
@@ -73,7 +75,7 @@ export function createManagedSettings<T>(
     ? { ...definition.defaults, ...options.defaultsOverride }
     : definition.defaults;
 
-  const store = createSettingsStore<T>(definition.filename, defaults, options?.migrate, options?.mode != null ? { mode: options.mode } : undefined);
+  const store = options?.store ?? createSettingsStore<T>(definition.filename, defaults, options?.migrate, options?.mode != null ? { mode: options.mode } : undefined);
 
   let registered = false;
 

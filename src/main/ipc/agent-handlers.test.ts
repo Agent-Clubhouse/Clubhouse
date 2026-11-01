@@ -1,4 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import { notifyMcpEnablementChanged } from '../services/mcp-settings';
 import { ATTR } from '../../shared/telemetry/attributes';
 import { setProducingRuntime } from '../telemetry/__test-utils__/producing-runtime';
 import { errorTypeOf, type Classification, type TelemetryRuntime } from '../telemetry/types';
@@ -1150,6 +1151,15 @@ describe('agent-handlers', () => {
       } finally {
         vi.useRealTimers();
       }
+    });
+  });
+
+  describe('MCP change events (#2589)', () => {
+    it('tells the windows when an app or project MCP setting changes', () => {
+      const send = vi.fn();
+      vi.mocked(BrowserWindow.getAllWindows).mockReturnValue([{ isDestroyed: () => false, webContents: { isDestroyed: () => false, send } }] as never);
+      notifyMcpEnablementChanged();
+      expect(send.mock.calls.filter(([channel]) => channel === IPC.AGENT.MCP_ENABLEMENT_CHANGED)).toHaveLength(1);
     });
   });
 

@@ -25,6 +25,7 @@ import {
 } from './mobile-dispatcher';
 import { onDispatcherChanged } from './dispatcher/dispatcher-service';
 import { resolveOrchestrationPolicies } from './orchestration-policy';
+import { onMcpEnablementChanged } from './mcp-settings';
 import { MOBILE_SLASH_COMMANDS_MAX, latestSlashCommands, remoteChatEvent } from './annex-chat-echo';
 import { buildMobileHelperRequests, runHelperCommand } from './mobile-helper-requests';
 import { onStartRequestsChanged } from './helper-start-requests';
@@ -3841,7 +3842,9 @@ export function start(): void {
   // Helper starts and disposes waiting on the user (#159) are in the snapshot.
   const offStarts = onStartRequestsChanged(() => broadcastSnapshotRefresh());
   const offDisposes = onDisposeRequestsChanged(() => broadcastSnapshotRefresh());
-  unsubHelperRequests = () => { offStarts(); offDisposes(); };
+  // Where Clubhouse MCP is off, the switches that need it read off (#2589).
+  const offMcp = onMcpEnablementChanged(() => broadcastSnapshotRefresh());
+  unsubHelperRequests = () => { offStarts(); offDisposes(); offMcp(); };
 
   // The Dispatcher turned on or off, or its config changed (#2533): phones add, drop or update it live.
   let lastDispatcherChange = JSON.stringify(dispatcherChange());

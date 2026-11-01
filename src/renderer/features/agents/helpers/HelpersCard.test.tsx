@@ -85,7 +85,7 @@ afterEach(() => {
   useProjectStore.setState({ projects: [] });
 });
 
-function Harness({ orchestrating = true, agentOverride }: { orchestrating?: boolean; agentOverride?: Agent }) {
+function Harness({ orchestrating = true, agentOverride, mcpOff }: { orchestrating?: boolean; agentOverride?: Agent; mcpOff?: boolean }) {
   const { helpers: list, reload } = useHelpersEverywhere(PROJECT, 'lead');
   const approvals = useHelperStartApprovals('lead', PROJECT, reload);
   const [open, setOpen] = useState(true);
@@ -97,6 +97,7 @@ function Harness({ orchestrating = true, agentOverride }: { orchestrating?: bool
       helpers={list}
       maxHelpers={5}
       orchestrating={orchestrating}
+      mcpOff={mcpOff}
       open={open}
       onToggle={() => setOpen((o) => !o)}
       approvals={approvals}
@@ -419,5 +420,21 @@ describe('HelpersCard with a helper in another project (#2514)', () => {
     fireEvent.click(within(row).getByTestId('disposed-remove'));
     fireEvent.click(screen.getByTestId('confirm-destructive-confirm'));
     await waitFor(() => expect(window.clubhouse.agent.removeDisposed).toHaveBeenCalledWith(OTHER, 'x2'));
+  });
+});
+
+describe('Helpers card with Clubhouse MCP off (#2589)', () => {
+  it('says running helpers keep running and shows them', async () => {
+    configs = [config('h1', 'merge-1', { parentAgentId: 'lead' })];
+    render(<Harness orchestrating={false} mcpOff />);
+    expect(await screen.findByTestId('helpers-mcp-off')).toHaveTextContent('These helpers keep running.');
+    expect(screen.getByTestId('helpers-list')).toHaveTextContent('merge-1');
+  });
+
+  it('says why it can\'t start helpers when it has none', async () => {
+    configs = [];
+    render(<Harness orchestrating={false} mcpOff />);
+    expect(await screen.findByText('Clubhouse MCP is off, so epic-lead can’t start helpers.')).toBeInTheDocument();
+    expect(screen.queryByTestId('helpers-mcp-off')).not.toBeInTheDocument();
   });
 });

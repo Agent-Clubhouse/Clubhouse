@@ -23,6 +23,11 @@ export const DISPATCHER_HELP = 'Let the Dispatcher message this agent and get it
 /** The help line under the "Cross-project helpers" switch (#2512). */
 export const CROSS_PROJECT_HELP = 'Let this agent start helpers in other projects.';
 
+/** Why the controls are disabled where Clubhouse MCP is off (#2589). Saved settings come back with MCP. */
+export function mcpOffNote(name: string): string {
+  return `Orchestration and Connect to Dispatcher need Clubhouse MCP, which is off for ${name}. Turn it on to use them. Your settings here are kept.`;
+}
+
 /** The note under the access control: the live ceiling, or the rule when it isn't running. */
 export function accessNote(access: HelperAccessResolution | null, running: boolean, name: string): string {
   if (!running || !access) return `Never more than ${name}’s level when a helper starts.`;

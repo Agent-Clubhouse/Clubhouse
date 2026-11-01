@@ -4,7 +4,8 @@
 
 import { BrowserWindow, ipcMain } from 'electron';
 import { IPC } from '../../shared/ipc-channels';
-import { isMcpEnabledForAny } from '../services/mcp-settings';
+import { isMcpEnabledForAny, notifyMcpEnablementChanged } from '../services/mcp-settings';
+import { watchMcpForOrchestration } from '../services/orchestration-policy';
 import { bindingManager, bridgeServer } from '../services/clubhouse-mcp';
 import type { BindingTargetKind } from '../services/clubhouse-mcp';
 import { registerAgentTools } from '../services/clubhouse-mcp/tools/agent-tools';
@@ -271,11 +272,13 @@ export function maybeStartMcpBridge(): void {
 }
 
 /**
- * Called when MCP or Clubhouse Mode settings change. If MCP becomes enabled
- * for any project, lazily start the bridge and register handlers without
- * requiring an app restart.
+ * Called when MCP or Clubhouse Mode settings change. Tells whatever follows
+ * MCP (gates, Dispatcher wires, views) first, since that matters most when MCP
+ * has just gone off everywhere. If MCP becomes enabled for any project, lazily
+ * start the bridge and register handlers without requiring an app restart.
  */
 export function onMcpSettingsChanged(): void {
+  notifyMcpEnablementChanged();
   if (!isMcpEnabledForAny()) return;
   registerMcpBindingHandlers();
   maybeStartMcpBridge();
@@ -286,6 +289,7 @@ let persistedSourcesRegistered = false;
 let stopWatchingHelperWires: (() => void) | null = null;
 let stopWatchingOrchestratorConnections: (() => void) | null = null;
 let stopWatchingDispatcherWires: (() => void) | null = null;
+let stopWatchingMcpForOrchestration: (() => void) | null = null;
 
 /**
  * Rebuild bindings from every persisted wire store (canvas wires, #1544,
@@ -308,6 +312,7 @@ export function restorePersistedBindings(): Promise<void> {
     stopWatchingOrchestratorConnections = watchOrchestratorConnections(() => restorePersistedBindings());
     registerPersistedBindingSource(dispatcherWireBindingSource);
     stopWatchingDispatcherWires = watchDispatcherWires(() => restorePersistedBindings());
+    stopWatchingMcpForOrchestration = watchMcpForOrchestration();
   }
   return rebuildPersistedBindings().then((): void => undefined, (err): void => {
     appLog('core:mcp', 'error', 'Persisted binding rebuild failed', {
@@ -326,5 +331,7 @@ export function _resetHandlersForTesting(): void {
   stopWatchingOrchestratorConnections = null;
   stopWatchingDispatcherWires?.();
   stopWatchingDispatcherWires = null;
+  stopWatchingMcpForOrchestration?.();
+  stopWatchingMcpForOrchestration = null;
   bridgeState = 'idle';
 }

@@ -25,7 +25,7 @@ vi.mock('../telemetry/feature-events', async (importActual) => ({
 import { ipcMain } from 'electron';
 import { settingsChanged } from '../telemetry/feature-events';
 import * as fs from 'fs';
-import { resetAllSettingsStoresForTests } from './settings-store';
+import { createSettingsStore, resetAllSettingsStoresForTests } from './settings-store';
 import { createManagedSettings } from './managed-settings';
 import type { SettingsDefinition } from '../../shared/settings-definitions';
 
@@ -251,5 +251,16 @@ describe('managed-settings', () => {
     await handlers.get('settings:telemetry:save')!({}, { enabled: true });
     expect(settingsChanged).toHaveBeenCalledTimes(1);
     expect(settingsChanged).toHaveBeenCalledWith('editor');
+  });
+});
+
+describe('createManagedSettings with a shared store (#2589)', () => {
+  it('reads and writes through the store it is given, so the service holding it sees a save', async () => {
+    const shared = createSettingsStore(TEST_DEF.filename, TEST_DEF.defaults);
+    const managed = createManagedSettings(TEST_DEF, { store: shared });
+    expect(managed.store).toBe(shared);
+    const next = { ...TEST_DEF.defaults };
+    await managed.saveSettings(next);
+    expect(shared.get()).toEqual(next);
   });
 });

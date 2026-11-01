@@ -344,7 +344,7 @@ Every durable agent in the snapshot (`agents[projectId][]`), `GET /api/v1/projec
 
 ```json
 "orchestration":{"orchestrate":false,"access":"same","control":"hands-off","maxHelpers":5,
- "crossProjectHelpers":false,"connectToDispatcher":false,
+ "crossProjectHelpers":false,"connectToDispatcher":false,"mcpEnabled":true,
  "sources":{"orchestrate":"default","access":"default","control":"persona","maxHelpers":"agent","crossProjectHelpers":"default","connectToDispatcher":"default"},
  "maxHelpersCap":20,"controls":["hands-off","ask-before-start","ask-everything"],"accessLevels":["same","standard","auto","bypass"]}
 ```
@@ -355,6 +355,7 @@ Every durable agent in the snapshot (`agents[projectId][]`), `GET /api/v1/projec
 - **maxHelpers**: "Helpers at once", a whole number from 1 to `maxHelpersCap` (the app-wide helper cap, at most 100).
 - **crossProjectHelpers**: "Cross-project helpers" (#2512): the agent may start helpers in other registered projects. The desktop shows it while `orchestrate` is on; turning it off leaves helpers already running elsewhere alone.
 - **connectToDispatcher**: "Connect to Dispatcher" (#2534): the Dispatcher may message this agent and get its reports. The desktop shows it while the [Dispatcher](#dispatcher) is on, with `orchestrate` on or off; turning it on while the Dispatcher is off is 409 `dispatcher_off`. Unset (source `default`), it follows `orchestrate` (#2578). A helper talks only to its parent, so on a helper it is always `false` with source `default`, and a value sent for one has no effect while it is a helper. So an agent can report `true` with the Dispatcher off: send this field only when the user changes it.
+- **mcpEnabled**: whether Clubhouse MCP is on for this agent (#2589), following its own setting, then its project's, then the app's. No Clubhouse MCP means no orchestration: while it is `false`, `orchestrate`, `crossProjectHelpers` and `connectToDispatcher` read `false`, the agent gets no Dispatcher wire and isn't in the Dispatcher's `list_agents`. Their `sources` still describe the saved settings, which are kept and come back when MCP does. Disable those switches and say they need Clubhouse MCP. Helpers already running keep running. The snapshot refreshes when an MCP setting changes.
 - **sources**: where each field comes from. `agent` is an override on the agent, which `null` clears; `persona` is the persona's front-matter; `default` is the built-in default.
 
 `agent.update` takes `orchestration` as a partial object: `{"orchestrate"?: bool|null, "access"?: string|null, "control"?: string|null, "maxHelpers"?: int|null, "crossProjectHelpers"?: bool|null, "connectToDispatcher"?: bool|null}`. Each key sets that field; `null` clears it back to the persona or default. `"orchestration": null` clears all six. Phones gate `crossProjectHelpers` and `connectToDispatcher` on the payload having them (and Connect to Dispatcher on `dispatcher.enabled`); a phone that doesn't know them ignores them. `agent.create` takes the same object without nulls. Writes go through the desktop's own policy service, so the desktop UI updates live.
@@ -364,6 +365,7 @@ Rejections:
 - 400 `invalid_orchestration`, with the reason in `message`: an unknown field, a bad `access` or `control`, `maxHelpers` outside 1 to `maxHelpersCap`, an empty object, or a null on create.
 - 409 `orchestration_has_helpers`: turning `orchestrate` off while the agent has live helpers. Nothing changes; the desktop asks whether to keep or dispose them.
 - 409 `dispatcher_off`: `connectToDispatcher: true` while the Dispatcher is off.
+- 409 `mcp_off`: `orchestrate`, `crossProjectHelpers` or `connectToDispatcher` set to `true` while `mcpEnabled` is `false` (on `agent.create`, while Clubhouse MCP is off for the project), with the reason in `message`. Nothing is created or changed. Setting them to `false`, clearing them with `null`, and the other fields are still accepted.
 - A non-object `orchestration` (or `null` on create) is 400 `invalid_command`.
 
 ## Dispatcher

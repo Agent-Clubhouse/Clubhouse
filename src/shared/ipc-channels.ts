@@ -76,6 +76,7 @@ export const IPC = {
     REPORT_DISPOSE_DECISION: 'agent:report-dispose-decision',
     /** Main → renderer: a project's agents.json changed (parent links, creation, disposal, handoff). Payload: the project path. */
     CONFIGS_CHANGED: 'agent:configs-changed',
+    MCP_ENABLEMENT_CHANGED: 'agent:mcp-enablement-changed',
     /** Main → renderer (#2234): a helper start waiting on the user's approval. */
     HELPER_START_REQUEST: 'agent:helper-start-request',
     /** Main → renderer (#2234): start requests that were answered, expired or dropped. */

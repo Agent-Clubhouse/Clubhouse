@@ -42,6 +42,7 @@
             "crossProjectHelpers": false,
             "maxHelpers": 3,
             "maxHelpersCap": 20,
+            "mcpEnabled": true,
             "orchestrate": true,
             "sources": {
               "access": "default",
@@ -92,6 +93,7 @@
             "crossProjectHelpers": false,
             "maxHelpers": 5,
             "maxHelpersCap": 20,
+            "mcpEnabled": true,
             "orchestrate": false,
             "sources": {
               "access": "default",
@@ -138,6 +140,7 @@
             "crossProjectHelpers": false,
             "maxHelpers": 5,
             "maxHelpersCap": 20,
+            "mcpEnabled": true,
             "orchestrate": false,
             "sources": {
               "access": "default",
@@ -184,6 +187,7 @@
             "crossProjectHelpers": false,
             "maxHelpers": 5,
             "maxHelpersCap": 20,
+            "mcpEnabled": true,
             "orchestrate": false,
             "sources": {
               "access": "default",
@@ -230,6 +234,7 @@
             "crossProjectHelpers": false,
             "maxHelpers": 5,
             "maxHelpersCap": 20,
+            "mcpEnabled": true,
             "orchestrate": false,
             "sources": {
               "access": "default",
@@ -276,6 +281,7 @@
             "crossProjectHelpers": false,
             "maxHelpers": 5,
             "maxHelpersCap": 20,
+            "mcpEnabled": true,
             "orchestrate": false,
             "sources": {
               "access": "default",

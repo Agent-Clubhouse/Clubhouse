@@ -18,6 +18,8 @@ Turn on **Let this agent orchestrate** for a durable agent. The switch is in the
 
 When it's on, the agent's Clubhouse MCP gets the helper and connection tools. If the agent isn't running, the tools appear the next time it starts.
 
+Orchestration needs Clubhouse MCP. Where MCP is off for an agent, in the app, its project or the agent itself, **Let this agent orchestrate** and **Connect to Dispatcher** are off and can't be changed, and the settings say why. The agent gets no helper tools and the Dispatcher can't reach it. Your settings are kept and come back when MCP is on. Helpers it already has keep running, and you can still manage them.
+
 If you turn it off while the agent has helpers, Clubhouse asks what to do with them, including helpers in other projects.
 
 - **Keep helpers as normal agents** clears their link to the orchestrator and leaves them as they are.

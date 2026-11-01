@@ -52,6 +52,10 @@ vi.mock('./agent-config', () => ({
   getWorktreeStatus: vi.fn(async () => ({ isValid: false, branch: '', uncommittedFiles: [], unpushedCommits: [], hasRemote: true })),
   disposeHelper: mocks.disposeHelper,
   isSameProject: vi.fn(async (a: string, b: string) => path.resolve(a) === path.resolve(b)),
+  onAgentConfigChanged: (listener: (projectPath: string) => void) => {
+    mcp.configListeners.add(listener);
+    return () => mcp.configListeners.delete(listener);
+  },
 }));
 
 /**
@@ -98,7 +102,7 @@ vi.mock('./agent-system', () => ({
 
 const registry = vi.hoisted(() => new Map<string, { projectPath: string; orchestrator: string; runtime: string; launchAccess?: { freeAgentMode: boolean; permissionMode?: 'auto' | 'skip-all' } }>());
 vi.mock('./agent-registry', () => ({
-  agentRegistry: { get: (id: string) => registry.get(id) },
+  agentRegistry: { get: (id: string) => registry.get(id), getAllRegistrations: () => new Map(registry) },
 }));
 
 vi.mock('./orchestration-settings', () => ({
@@ -120,6 +124,22 @@ vi.mock('./materialization-service', () => ({
 
 vi.mock('./log-service', () => ({ appLog: vi.fn() }));
 
+/** App and project MCP settings, with isMcpEnabled's real precedence over them. */
+const mcp = vi.hoisted(() => ({
+  app: true,
+  projects: new Map<string, boolean>(),
+  listeners: new Set<() => void>(),
+  configListeners: new Set<(projectPath: string) => void>(),
+}));
+vi.mock('./mcp-settings', () => ({
+  isMcpEnabled: (projectPath?: string, agentOverride?: boolean) =>
+    agentOverride ?? (projectPath ? mcp.projects.get(projectPath) : undefined) ?? mcp.app,
+  onMcpEnablementChanged: (listener: () => void) => {
+    mcp.listeners.add(listener);
+    return () => mcp.listeners.delete(listener);
+  },
+}));
+
 import {
   checkHelperLimitFor,
   getHelperSummary,
@@ -131,6 +151,7 @@ import {
   setOrchestrationPolicy,
   syncOrchestrationGate,
   turnOffOrchestration,
+  watchMcpForOrchestration,
   withAgentLock,
 } from './orchestration-policy';
 import { isCrossProjectEnabled, isOrchestrationEnabled, setOrchestrationEnabled, _resetOrchestrationGateForTesting } from './clubhouse-mcp/orchestration-gate';
@@ -170,6 +191,8 @@ beforeEach(() => {
   state.running.clear();
   mocks.projectList.mockResolvedValue([{ id: 'p1', name: 'app', path: PROJECT }]);
   mocks.killAgent.mockResolvedValue(undefined);
+  mcp.app = true;
+  mcp.projects.clear();
 });
 
 describe('getOrchestrationPolicy', () => {
@@ -1084,5 +1107,189 @@ describe('dispose_helper and turn-off share the orchestrator lock (#2229)', () =
     expect(mocks.disposeHelper).not.toHaveBeenCalled();
     expect(mocks.killAgent).not.toHaveBeenCalled();
     expect(find('h1').disposedAt).toBeUndefined();
+  });
+});
+
+describe('no Clubhouse MCP, no orchestration (#2589)', () => {
+  const on = { orchestrate: true, crossProjectHelpers: true, connectToDispatcher: true };
+
+  /** MCP off at each level, for the same agent: each returns a way to put it back. */
+  const levels: Array<[string, () => () => void]> = [
+    ['app', () => { mcp.app = false; return () => { mcp.app = true; }; }],
+    ['project', () => { mcp.projects.set(PROJECT, false); return () => { mcp.projects.delete(PROJECT); }; }],
+    ['agent', () => { find('orch').mcpOverride = false; return () => { delete find('orch').mcpOverride; }; }],
+  ];
+
+  describe.each(levels)('off at %s level', (_level, turnOff) => {
+    beforeEach(() => { setAgents(PROJECT, [agent('orch', { orchestration: { ...on } })]); });
+
+    it('resolves off in reads and listings, keeping the saved values', async () => {
+      const restore = turnOff();
+      const off = { orchestrate: false, crossProjectHelpers: false, connectToDispatcher: false, mcpOff: on };
+      expect(await getOrchestrationPolicy(PROJECT, 'orch')).toMatchObject(off);
+      expect((await resolveOrchestrationPolicies(PROJECT, agentsOf(PROJECT))).get('orch')).toMatchObject(off);
+      expect(find('orch').orchestration).toEqual(on);
+      restore();
+      const back = await getOrchestrationPolicy(PROJECT, 'orch');
+      expect(back).toMatchObject(on);
+      expect(back).not.toHaveProperty('mcpOff');
+    });
+
+    it('refuses turning a switch on and saves nothing', async () => {
+      setAgents(PROJECT, [agent('orch')]);
+      turnOff();
+      for (const patch of [{ orchestrate: true }, { crossProjectHelpers: true }, { connectToDispatcher: true }]) {
+        const result = await setOrchestrationPolicy(PROJECT, 'orch', patch);
+        expect(result).toMatchObject({ ok: false, mcpRequired: true, message: expect.stringContaining('Clubhouse MCP') });
+      }
+      expect(find('orch').orchestration).toBeUndefined();
+    });
+
+    it('does not open the gate at spawn', async () => {
+      turnOff();
+      live('orch');
+      await syncOrchestrationGate(PROJECT, 'orch');
+      expect(isOrchestrationEnabled('orch')).toBe(false);
+    });
+
+    it('closes a running agent\'s gate live and reopens it when MCP is back', async () => {
+      const stop = watchMcpForOrchestration();
+      live('orch');
+      await syncOrchestrationGate(PROJECT, 'orch');
+      expect(isCrossProjectEnabled('orch')).toBe(true);
+
+      const restore = turnOff();
+      for (const listener of mcp.listeners) listener();
+      for (const listener of mcp.configListeners) listener(PROJECT);
+      await vi.waitFor(() => expect(isOrchestrationEnabled('orch')).toBe(false));
+
+      restore();
+      for (const listener of mcp.listeners) listener();
+      for (const listener of mcp.configListeners) listener(PROJECT);
+      await vi.waitFor(() => expect(isOrchestrationEnabled('orch')).toBe(true));
+      expect(isCrossProjectEnabled('orch')).toBe(true);
+      stop();
+    });
+  });
+
+  it('reopens a gate a policy read closed first', async () => {
+    const stop = watchMcpForOrchestration();
+    setAgents(PROJECT, [agent('orch', { orchestration: { orchestrate: true } })]);
+    live('orch');
+    await syncOrchestrationGate(PROJECT, 'orch');
+    mcp.app = false;
+    await getOrchestrationPolicy(PROJECT, 'orch');
+    expect(isOrchestrationEnabled('orch')).toBe(false);
+    mcp.app = true;
+    for (const listener of mcp.listeners) listener();
+    await vi.waitFor(() => expect(isOrchestrationEnabled('orch')).toBe(true));
+    stop();
+  });
+
+  it('never opens a gate that was not open, whatever agents.json says now', async () => {
+    const stop = watchMcpForOrchestration();
+    setAgents(PROJECT, [agent('orch')]);
+    live('orch');
+    await syncOrchestrationGate(PROJECT, 'orch');
+    mcp.app = false;
+    for (const listener of mcp.listeners) listener();
+    // An edit while MCP is off, then MCP comes back.
+    find('orch').orchestration = { orchestrate: true };
+    mcp.app = true;
+    for (const listener of mcp.listeners) listener();
+    for (const listener of mcp.configListeners) listener(PROJECT);
+    await withAgentLock(PROJECT, 'orch', async () => undefined);
+    expect(isOrchestrationEnabled('orch')).toBe(false);
+    stop();
+  });
+
+  it('keeps the gate shut when orchestration was turned off while MCP was off', async () => {
+    const stop = watchMcpForOrchestration();
+    setAgents(PROJECT, [agent('orch', { orchestration: { orchestrate: true } })]);
+    live('orch');
+    await syncOrchestrationGate(PROJECT, 'orch');
+    mcp.app = false;
+    for (const listener of mcp.listeners) listener();
+    await vi.waitFor(() => expect(isOrchestrationEnabled('orch')).toBe(false));
+    expect(await setOrchestrationPolicy(PROJECT, 'orch', { orchestrate: false })).toMatchObject({ ok: true });
+    mcp.app = true;
+    for (const listener of mcp.listeners) listener();
+    await withAgentLock(PROJECT, 'orch', async () => undefined);
+    expect(isOrchestrationEnabled('orch')).toBe(false);
+    stop();
+  });
+
+  it('leaves helpers alone when MCP goes off, and they are still its helpers', async () => {
+    const stop = watchMcpForOrchestration();
+    setAgents(PROJECT, [
+      agent('orch', { orchestration: { orchestrate: true } }),
+      agent('h1', { parentAgentId: 'orch' }),
+    ]);
+    live('orch');
+    live('h1');
+    state.running.add('h1');
+    await syncOrchestrationGate(PROJECT, 'orch');
+    mcp.app = false;
+    for (const listener of mcp.listeners) listener();
+    await vi.waitFor(() => expect(isOrchestrationEnabled('orch')).toBe(false));
+    expect(mocks.killAgent).not.toHaveBeenCalled();
+    expect(mocks.resolveHelpersForDelete).not.toHaveBeenCalled();
+    expect(find('h1').parentAgentId).toBe('orch');
+    expect((await getHelperSummary(PROJECT, 'orch')).helperIds).toEqual(['h1']);
+    stop();
+  });
+
+  it('still asks about helpers when saved orchestration goes off with MCP off', async () => {
+    setAgents(PROJECT, [
+      agent('orch', { orchestration: { orchestrate: true } }),
+      agent('h1', { parentAgentId: 'orch' }),
+    ]);
+    mcp.app = false;
+    const result = await setOrchestrationPolicy(PROJECT, 'orch', { orchestrate: false });
+    expect(result).toMatchObject({ ok: false, needsHelperChoice: { helperIds: ['h1'] } });
+    expect(find('orch').orchestration).toEqual({ orchestrate: true });
+  });
+
+  it('lets a turn-off with a helper choice write the saved value with MCP off', async () => {
+    setAgents(PROJECT, [agent('orch', { orchestration: { orchestrate: true } })]);
+    mocks.resolveHelpersForDelete.mockResolvedValue({ ok: true, message: 'Done', helperIds: [] });
+    mcp.app = false;
+    expect(await turnOffOrchestration(PROJECT, 'orch', 'keep')).toMatchObject({ ok: true });
+    expect(find('orch').orchestration).toEqual({ orchestrate: false });
+  });
+
+  it('still pins orchestration when a persona change would drop it with MCP off', async () => {
+    state.personas.set('lead', persona({ orchestrate: true }));
+    state.personas.set('dev', persona({}));
+    setAgents(PROJECT, [agent('orch', { persona: 'dev' }), agent('h1', { parentAgentId: 'orch' })]);
+    mcp.app = false;
+    await reconcileAfterPersonaChange(PROJECT, 'orch', 'lead');
+    expect(find('orch').orchestration).toEqual({ orchestrate: true });
+  });
+
+  it('does not pin when a persona change keeps saved orchestration on with MCP off', async () => {
+    state.personas.set('lead', persona({ orchestrate: true }));
+    setAgents(PROJECT, [agent('orch', { persona: 'lead' }), agent('h1', { parentAgentId: 'orch' })]);
+    mcp.app = false;
+    await reconcileAfterPersonaChange(PROJECT, 'orch', 'lead');
+    expect(find('orch').orchestration).toBeUndefined();
+  });
+
+  it('allows the other fields with MCP off, without opening anything', async () => {
+    setAgents(PROJECT, [agent('orch', { orchestration: { orchestrate: true } })]);
+    live('orch');
+    mcp.app = false;
+    expect(await setOrchestrationPolicy(PROJECT, 'orch', { maxHelpers: 2 })).toMatchObject({ ok: true, policy: { maxHelpers: 2, orchestrate: false } });
+    expect(isOrchestrationEnabled('orch')).toBe(false);
+    expect(find('orch').orchestration).toEqual({ orchestrate: true, maxHelpers: 2 });
+  });
+
+  it('an agent turned on stays on when its project and the app are off', async () => {
+    setAgents(PROJECT, [agent('orch', { mcpOverride: true, orchestration: { orchestrate: true } })]);
+    mcp.app = false;
+    mcp.projects.set(PROJECT, false);
+    live('orch');
+    await syncOrchestrationGate(PROJECT, 'orch');
+    expect(isOrchestrationEnabled('orch')).toBe(true);
   });
 });

@@ -1,0 +1,223 @@
+{
+  "request": {
+    "method": "GET",
+    "path": "/api/v1/mobile/agents/durable_chat/settings"
+  },
+  "response": {
+    "body": {
+      "agentId": "durable_chat",
+      "details": {
+        "branch": "planner/standby",
+        "changes": {
+          "additions": 94,
+          "ahead": 2,
+          "available": true,
+          "base": "main",
+          "deletions": 51,
+          "files": 2,
+          "noBase": false,
+          "uncommitted": 1
+        },
+        "mcpIds": [
+          "github"
+        ],
+        "worktree": ".clubhouse/agents/planner",
+        "worktreePath": "/work/app/.clubhouse/agents/planner"
+      },
+      "epoch": "00000000-0000-4000-8000-000000000001",
+      "options": {
+        "colors": [
+          {
+            "hex": "#6366f1",
+            "id": "indigo",
+            "label": "Indigo"
+          },
+          {
+            "hex": "#10b981",
+            "id": "emerald",
+            "label": "Emerald"
+          },
+          {
+            "hex": "#f59e0b",
+            "id": "amber",
+            "label": "Amber"
+          },
+          {
+            "hex": "#f43f5e",
+            "id": "rose",
+            "label": "Rose"
+          },
+          {
+            "hex": "#06b6d4",
+            "id": "cyan",
+            "label": "Cyan"
+          },
+          {
+            "hex": "#8b5cf6",
+            "id": "violet",
+            "label": "Violet"
+          },
+          {
+            "hex": "#f97316",
+            "id": "orange",
+            "label": "Orange"
+          },
+          {
+            "hex": "#14b8a6",
+            "id": "teal",
+            "label": "Teal"
+          }
+        ],
+        "idleSleep": {
+          "appMinutes": 30,
+          "minutes": [
+            15,
+            30,
+            60,
+            240
+          ]
+        },
+        "orchestrators": [
+          {
+            "available": true,
+            "badge": "Beta",
+            "chat": true,
+            "displayName": "Claude Code",
+            "id": "claude-code",
+            "models": [
+              {
+                "id": "default",
+                "label": "Default"
+              },
+              {
+                "id": "opus",
+                "label": "Opus"
+              },
+              {
+                "id": "sonnet",
+                "label": "Sonnet"
+              }
+            ],
+            "permissions": true,
+            "shortName": "CC"
+          },
+          {
+            "available": false,
+            "chat": false,
+            "displayName": "Codex",
+            "id": "codex-cli",
+            "models": [
+              {
+                "id": "default",
+                "label": "Default"
+              },
+              {
+                "id": "gpt-5",
+                "label": "GPT-5"
+              }
+            ],
+            "permissions": false,
+            "shortName": "CX",
+            "unavailableReason": "Codex CLI not found"
+          }
+        ],
+        "personas": [
+          {
+            "id": "qa",
+            "name": "QA",
+            "source": "builtin"
+          },
+          {
+            "id": "architect",
+            "name": "Architect",
+            "source": "project"
+          }
+        ]
+      },
+      "orchestration": {
+        "access": "same",
+        "accessLevels": [
+          "same",
+          "standard",
+          "auto",
+          "bypass"
+        ],
+        "connectToDispatcher": false,
+        "control": "hands-off",
+        "controls": [
+          "hands-off",
+          "ask-before-start",
+          "ask-everything"
+        ],
+        "crossProjectHelpers": false,
+        "maxHelpers": 3,
+        "maxHelpersCap": 20,
+        "mcpEnabled": false,
+        "orchestrate": false,
+        "sources": {
+          "access": "default",
+          "connectToDispatcher": "default",
+          "control": "default",
+          "crossProjectHelpers": "default",
+          "maxHelpers": "agent",
+          "orchestrate": "agent"
+        }
+      },
+      "projectId": "proj_app",
+      "settings": {
+        "clubhouseMode": {
+          "editable": "never",
+          "projectEnabled": false,
+          "value": null
+        },
+        "color": {
+          "editable": "sleeping",
+          "value": "indigo"
+        },
+        "emoji": {
+          "editable": "sleeping",
+          "value": "🦊"
+        },
+        "freeAgentMode": {
+          "editable": "sleeping",
+          "value": false
+        },
+        "hasImageIcon": true,
+        "idleSleep": {
+          "applies": true,
+          "editable": "always",
+          "minutes": 30,
+          "source": "app",
+          "value": "inherit"
+        },
+        "model": {
+          "editable": "sleeping",
+          "value": "opus"
+        },
+        "name": {
+          "editable": "sleeping",
+          "value": "planner"
+        },
+        "orchestrator": {
+          "changeStartsNewSession": true,
+          "editable": "sleeping",
+          "resolved": "claude-code",
+          "value": "claude-code"
+        },
+        "persona": {
+          "editable": "sleeping",
+          "value": null
+        },
+        "runtime": {
+          "editable": "sleeping",
+          "resolved": "chat",
+          "value": "default"
+        }
+      },
+      "sleeping": false,
+      "state": "running",
+      "version": 1
+    },
+    "status": 200
+  }
+}

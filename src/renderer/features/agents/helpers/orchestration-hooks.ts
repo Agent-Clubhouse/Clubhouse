@@ -204,6 +204,17 @@ export function useOrchestration(projectPath: string | undefined, agent: Pick<Ag
     return () => { alive = false; };
   }, [projectPath, agent.id, nonce]);
 
+  // Where MCP is off the policy reads off (#2589), and MCP can change at app, project or agent level.
+  useEffect(() => {
+    if (!projectPath) return;
+    const reread = () => setNonce((n) => n + 1);
+    const offMcp = window.clubhouse.agent.onMcpEnablementChanged?.(reread);
+    const offConfigs = window.clubhouse.agent.onConfigsChanged?.((changed) => {
+      if (sameProjectPath(changed, projectPath)) reread();
+    });
+    return () => { offMcp?.(); offConfigs?.(); };
+  }, [projectPath]);
+
   // The ceiling follows the orchestrator's live level, so re-read as it starts and stops.
   useEffect(() => {
     if (!projectPath) { setAccess(null); return; }

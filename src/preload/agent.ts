@@ -99,6 +99,12 @@ export const agent = {
     ipcRenderer.on(IPC.AGENT.CONFIGS_CHANGED, listener);
     return () => { ipcRenderer.removeListener(IPC.AGENT.CONFIGS_CHANGED, listener); };
   },
+  /** Clubhouse MCP or Clubhouse Mode settings changed, so policies that depend on MCP may read differently (#2589). */
+  onMcpEnablementChanged: (callback: () => void) => {
+    const listener = () => callback();
+    ipcRenderer.on(IPC.AGENT.MCP_ENABLEMENT_CHANGED, listener);
+    return () => { ipcRenderer.removeListener(IPC.AGENT.MCP_ENABLEMENT_CHANGED, listener); };
+  },
   /** A helper start waiting on the user's approval (#2234). Sent to the main window only. */
   onHelperStartRequest: (callback: (request: HelperStartRequest) => void) => {
     const listener = (_event: Electron.IpcRendererEvent, request: HelperStartRequest) => callback(request);
