@@ -420,6 +420,18 @@ describe('BaseProvider.listModels', () => {
     ]);
   });
 
+  it('skips the handshake when E2E turns probes off in an unpackaged build', async () => {
+    vi.stubEnv('CLUBHOUSE_TEST_NO_MODEL_PROBES', '1');
+    try {
+      const list = await provider.listModels();
+      expect(provider.probe).not.toHaveBeenCalled();
+      expect(list).toMatchObject({ source: 'fallback', via: 'static' });
+      expect(list.liveError).toBeUndefined();
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
+
   it('falls back to the command probe when the handshake fails, and says why', async () => {
     provider.probe.mockRejectedValueOnce(new Error('not logged in'));
     const { execFile } = await import('child_process');

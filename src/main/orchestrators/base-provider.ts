@@ -14,7 +14,7 @@ import type {
   ModelInfo,
   ModelList,
 } from './types';
-import { findBinaryInPath, testBinaryOverride } from './shared';
+import { findBinaryInPath, testBinaryOverride, testModelProbesDisabled } from './shared';
 import { getShellEnvironment } from '../util/shell';
 import type { ModelProbeContext } from './model-probes';
 import { appLog } from '../services/log-service';
@@ -195,7 +195,7 @@ export abstract class BaseProvider implements OrchestratorProvider {
 
   private async loadModels(opts: ListModelsOptions): Promise<ModelList> {
     let liveError: string | undefined;
-    if (this.probeLiveModels) {
+    if (this.probeLiveModels && !testModelProbesDisabled()) {
       try {
         const models = await this.runLiveProbe(opts);
         if (models?.length) return { models, source: 'live', via: 'handshake', fetchedAt: Date.now() };

@@ -23,6 +23,16 @@ export function clearBinaryCache(): void {
 }
 
 /**
+ * Test/E2E seam: `CLUBHOUSE_TEST_NO_MODEL_PROBES=1` turns off the live model
+ * handshakes (#2569), so a fake CLI's replay report only counts the agent
+ * sessions a test starts, not a model picker's probe. Model lists then come
+ * from the fallback. Honored ONLY in unpackaged builds.
+ */
+export function testModelProbesDisabled(): boolean {
+  return process.env.CLUBHOUSE_TEST_NO_MODEL_PROBES === '1' && !app.isPackaged;
+}
+
+/**
  * Test/E2E seam: `CLUBHOUSE_TEST_CLI_BINARIES` is a JSON object mapping an
  * orchestrator id to the exact binary to use for it, e.g.
  * `{"claude-code": "/tmp/fake/bin/claude"}`. Chat E2E points each provider at
