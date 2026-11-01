@@ -391,7 +391,8 @@ jobs:
           name: annex-traces-${{ matrix.os }}
           path: test-results/
 
-  # Rich chat content and chat UX specs (e2e/chat-rich, #2480), in a job of
+  # Rich chat content and chat UX specs (e2e/chat-rich, #2480), plus the
+  # Dispatcher spec (e2e/dispatcher.spec.ts, #2533, ~15 s), in a job of
   # their own so they never lengthen the E2E shards, the run's long pole.
   # Linux and Windows only, full-ci included: nothing in them differs on
   # macOS (docs/testing/chat-e2e-plan.md). Add shards here as the folder grows.
@@ -437,10 +438,10 @@ jobs:
           path: .webpack/
       - name: Run chat E2E tests
         if: runner.os != 'Linux'
-        run: npx playwright test e2e/chat-rich/ --fully-parallel --shard=${{ matrix.shard }}/3 --pass-with-no-tests --reporter=line,junit
+        run: npx playwright test e2e/chat-rich/ e2e/dispatcher.spec.ts --fully-parallel --shard=${{ matrix.shard }}/3 --pass-with-no-tests --reporter=line,junit
       - name: Run chat E2E tests (Linux — requires virtual display)
         if: runner.os == 'Linux'
-        run: xvfb-run --auto-servernum npx playwright test e2e/chat-rich/ --fully-parallel --shard=${{ matrix.shard }}/3 --pass-with-no-tests --reporter=line,junit
+        run: xvfb-run --auto-servernum npx playwright test e2e/chat-rich/ e2e/dispatcher.spec.ts --fully-parallel --shard=${{ matrix.shard }}/3 --pass-with-no-tests --reporter=line,junit
         env:
           # chrome-sandbox is not SUID root on GitHub runners
           ELECTRON_DISABLE_SANDBOX: '1'
