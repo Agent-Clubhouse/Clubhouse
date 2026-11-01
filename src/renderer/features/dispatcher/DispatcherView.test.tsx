@@ -21,7 +21,7 @@ const dispatcher = (over: Partial<Agent> = {}): Agent =>
 beforeEach(() => {
   useProjectStore.setState({ projects: [], activeProjectId: null });
   useUIStore.setState({ explorerTab: 'agents', dispatcherOpen: true });
-  useDispatcherStore.getState().setState({ enabled: true, agentId: 'disp', path: 'dispatcher-dir', config: null });
+  useDispatcherStore.getState().setState({ enabled: true, flagOn: true, agentId: 'disp', path: 'dispatcher-dir', config: null });
 });
 afterEach(() => useDispatcherStore.getState().setState(DISPATCHER_OFF));
 

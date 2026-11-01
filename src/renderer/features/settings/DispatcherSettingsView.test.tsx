@@ -6,9 +6,10 @@ import { useOrchestratorStore } from '../../stores/orchestratorStore';
 import { DispatcherSettingsView } from './DispatcherSettingsView';
 
 const FOLDER = 'dispatcher-folder';
-const OFF: DispatcherState = { enabled: false, agentId: null, path: null, config: null };
+const OFF: DispatcherState = { enabled: false, flagOn: true, agentId: null, path: null, config: null };
 const ON: DispatcherState = {
   enabled: true,
+  flagOn: true,
   agentId: 'disp',
   path: FOLDER,
   config: { id: 'disp', name: 'Dispatcher', color: 'indigo', createdAt: 'now', orchestrator: 'codex-cli', idleSleep: 'never', runtimeMode: 'chat', freeAgentMode: true, persona: 'dispatcher' },
@@ -77,5 +78,60 @@ describe('DispatcherSettingsView', () => {
     render(<DispatcherSettingsView />);
     expect(await screen.findByTestId('dispatcher-folder')).toBeTruthy();
     expect(screen.queryByLabelText('CLI')).toBeNull();
+  });
+
+  it('shows a loading line until the read lands', async () => {
+    let resolve!: (s: DispatcherState) => void;
+    window.clubhouse.dispatcher.get = vi.fn(() => new Promise<DispatcherState>((r) => { resolve = r; }));
+    render(<DispatcherSettingsView />);
+    expect(screen.getByRole('heading', { name: 'Dispatcher' })).toBeTruthy();
+    expect(screen.getByTestId('dispatcher-loading').textContent).toBe('Loading');
+    await act(async () => { resolve(OFF); });
+    expect(screen.queryByTestId('dispatcher-loading')).toBeNull();
+    expect(screen.getByRole('switch', { name: 'Turn on Dispatcher' })).toBeTruthy();
+  });
+
+  it('says when the read fails, and Retry reads again', async () => {
+    window.clubhouse.dispatcher.get = vi.fn()
+      .mockRejectedValueOnce(new Error("Error invoking remote method 'dispatcher:get': Error: IPC down"))
+      .mockResolvedValue(OFF);
+    render(<DispatcherSettingsView />);
+    const alert = await screen.findByRole('alert');
+    expect(alert.textContent).toBe('Couldn’t load the Dispatcher’s settings. IPC down');
+    expect(alert.className).toContain('text-ctp-error');
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Retry' })); });
+    expect(await screen.findByRole('switch', { name: 'Turn on Dispatcher' })).toBeTruthy();
+    expect(screen.queryByRole('alert')).toBeNull();
+  });
+
+  it('disables the switch and says why while the flag is off (#2555)', async () => {
+    state = { ...OFF, flagOn: false };
+    render(<DispatcherSettingsView />);
+    const toggle = await screen.findByRole('switch', { name: 'Turn on Dispatcher' });
+    expect((toggle as HTMLButtonElement).disabled).toBe(true);
+    expect(toggle.getAttribute('aria-describedby')).toBe('dispatcher-enabled-help');
+    expect(document.getElementById('dispatcher-enabled-help')?.textContent).toBe('Turn on Dispatcher in Settings > Experimental first.');
+    fireEvent.click(toggle);
+    expect(window.clubhouse.dispatcher.setEnabled).not.toHaveBeenCalled();
+  });
+
+  it('shows switch and save errors as alerts in the error colour', async () => {
+    window.clubhouse.dispatcher.setEnabled = vi.fn().mockRejectedValue(new Error('disk full'));
+    const { unmount } = render(<DispatcherSettingsView />);
+    const toggle = await screen.findByRole('switch', { name: 'Turn on Dispatcher' });
+    await act(async () => { fireEvent.click(toggle); });
+    const switchAlert = await screen.findByRole('alert');
+    expect(switchAlert.textContent).toBe('Couldn’t turn it on. disk full');
+    expect(switchAlert.className).toContain('text-ctp-error');
+    unmount();
+
+    state = ON;
+    window.clubhouse.agent.updateDurableConfig = vi.fn().mockRejectedValue(new Error('read-only'));
+    render(<DispatcherSettingsView />);
+    const runsIn = await screen.findByLabelText('Runs in');
+    await act(async () => { fireEvent.change(runsIn, { target: { value: 'terminal' } }); });
+    const saveAlert = await screen.findByRole('alert');
+    expect(saveAlert.textContent).toBe('Couldn’t save. read-only');
+    expect(saveAlert.className).toContain('text-ctp-error');
   });
 });

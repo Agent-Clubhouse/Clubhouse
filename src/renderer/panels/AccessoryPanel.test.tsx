@@ -1,10 +1,12 @@
-import { render, screen, waitFor } from '@testing-library/react';
+import { act, render, screen, waitFor } from '@testing-library/react';
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { useUIStore } from '../stores/uiStore';
 import { useUpdateStore } from '../stores/updateStore';
 import { useProjectStore } from '../stores/projectStore';
 import { usePluginStore } from '../plugins/plugin-store';
 import { useRemoteProjectStore } from '../stores/remoteProjectStore';
+import type { DispatcherState } from '../../shared/dispatcher-types';
+import { DISPATCHER_OFF } from '../../shared/dispatcher-types';
 import { AccessoryPanel } from './AccessoryPanel';
 
 vi.mock('../plugins/plugin-loader', () => ({
@@ -109,6 +111,21 @@ describe('SettingsCategoryNav (via AccessoryPanel)', () => {
       expect(screen.getByText('Goobers')).toBeInTheDocument();
     });
     unmount();
+  });
+
+  it('shows and hides the Dispatcher item as the flag flips, without a remount (#2555)', async () => {
+    let emit: ((s: DispatcherState) => void) | null = null;
+    window.clubhouse.app.isPreviewEligible = vi.fn().mockResolvedValue(false);
+    window.clubhouse.app.getExperimentalSettings = vi.fn().mockResolvedValue({});
+    window.clubhouse.dispatcher.get = vi.fn().mockResolvedValue(DISPATCHER_OFF);
+    window.clubhouse.dispatcher.onChanged = vi.fn((cb) => { emit = cb; return () => { emit = null; }; });
+    render(<AccessoryPanel />);
+    await waitFor(() => expect(window.clubhouse.dispatcher.get).toHaveBeenCalled());
+    expect(screen.queryByText('Dispatcher')).not.toBeInTheDocument();
+    act(() => emit?.({ ...DISPATCHER_OFF, flagOn: true }));
+    expect(screen.getByText('Dispatcher')).toBeInTheDocument();
+    act(() => emit?.(DISPATCHER_OFF));
+    expect(screen.queryByText('Dispatcher')).not.toBeInTheDocument();
   });
 });
 

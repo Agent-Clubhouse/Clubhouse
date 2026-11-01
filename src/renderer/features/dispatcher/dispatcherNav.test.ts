@@ -13,7 +13,7 @@ beforeEach(() => {
   useUIStore.setState({ explorerTab: 'agents', dispatcherOpen: false, previousExplorerTab: null });
   useProjectStore.setState({ projects: [{ id: 'p1', name: 'Clubhouse', path: 'clubhouse-dir' }] as never, activeProjectId: 'p1' });
   useAgentStore.setState({ activeAgentId: 'a1', agentSettingsOpenFor: null });
-  useDispatcherStore.getState().setState({ enabled: true, agentId: 'disp', path: 'dispatcher-dir', config: null });
+  useDispatcherStore.getState().setState({ enabled: true, flagOn: true, agentId: 'disp', path: 'dispatcher-dir', config: null });
 });
 afterEach(() => useDispatcherStore.getState().setState(DISPATCHER_OFF));
 

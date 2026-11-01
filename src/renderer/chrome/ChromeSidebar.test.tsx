@@ -674,7 +674,7 @@ describe('ChromeSidebar', () => {
 describe('ChromeSidebar Dispatcher (#2538)', () => {
   const dispatcher = agent('disp', DISPATCHER_PROJECT_ID, { name: 'Dispatcher', status: 'sleeping' });
   const turnOn = () => {
-    useDispatcherStore.getState().setState({ enabled: true, agentId: 'disp', path: 'dispatcher-dir', config: null });
+    useDispatcherStore.getState().setState({ enabled: true, flagOn: true, agentId: 'disp', path: 'dispatcher-dir', config: null });
     useAgentStore.setState((s) => ({ agents: { ...s.agents, disp: dispatcher } }));
   };
   beforeEach(() => useUIStore.setState({ dispatcherOpen: false }));

@@ -124,26 +124,44 @@ describe('gating', () => {
   it('is off on a fresh profile and creates nothing at start-up', async () => {
     await svc.initDispatcher();
     expect(svc.isDispatcherEnabled()).toBe(false);
-    expect(svc.getDispatcherState()).toEqual({ enabled: false, agentId: null, path: null, config: null });
+    expect(svc.getDispatcherState()).toEqual({ enabled: false, flagOn: false, agentId: null, path: null, config: null });
     expect(fs.existsSync(dispatcherDir())).toBe(false);
     expect(agentConfig.createDurable).not.toHaveBeenCalled();
   });
 
   it('needs both the flag and the setting', async () => {
-    await svc.setDispatcherEnabled(true);
-    expect(svc.isDispatcherEnabled()).toBe(false);
-    expect(agentConfig.createDurable).not.toHaveBeenCalled();
-
-    await svc.setDispatcherEnabled(false);
     h.experimental = { dispatcher: true };
     await svc.onExperimentalSettingsChanged();
     expect(svc.isDispatcherEnabled()).toBe(false);
+    expect(svc.getDispatcherState()).toMatchObject({ enabled: false, flagOn: true });
     expect(agentConfig.createDurable).not.toHaveBeenCalled();
 
     const state = await svc.setDispatcherEnabled(true);
     expect(state.enabled).toBe(true);
     expect(state.agentId).toBe('durable_1');
     expect(state.path).toBe(dispatcherDir());
+  });
+
+  it("won't save it on while the flag is off (#2555)", async () => {
+    await expect(svc.setDispatcherEnabled(true)).rejects.toThrow('Turn on Dispatcher in Settings > Experimental first.');
+    h.experimental = { dispatcher: true };
+    await svc.onExperimentalSettingsChanged();
+    expect(svc.isDispatcherEnabled()).toBe(false);
+    expect(agentConfig.createDurable).not.toHaveBeenCalled();
+    // Turning it off still works with the flag off.
+    h.experimental = {};
+    await expect(svc.setDispatcherEnabled(false)).resolves.toMatchObject({ enabled: false, flagOn: false });
+  });
+
+  it('broadcasts a flag change even while the setting is off, so the nav follows it', async () => {
+    const seen: boolean[] = [];
+    const off = svc.onDispatcherChanged((s) => seen.push(s.flagOn));
+    h.experimental = { dispatcher: true };
+    await svc.onExperimentalSettingsChanged();
+    h.experimental = {};
+    await svc.onExperimentalSettingsChanged();
+    off();
+    expect(seen).toEqual([true, false]);
   });
 
   it('turning the flag off stops the agent', async () => {

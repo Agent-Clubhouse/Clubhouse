@@ -40,7 +40,7 @@ afterEach(() => useChromeFlagStore.setState({ enabled: false }));
 describe('ChromeBody Dispatcher view (#2538)', () => {
   beforeEach(() => {
     useUIStore.setState({ dispatcherOpen: false });
-    useDispatcherStore.getState().setState({ enabled: true, agentId: 'disp', path: 'dispatcher-dir', config: null });
+    useDispatcherStore.getState().setState({ enabled: true, flagOn: true, agentId: 'disp', path: 'dispatcher-dir', config: null });
   });
   afterEach(() => useDispatcherStore.getState().setState(DISPATCHER_OFF));
 

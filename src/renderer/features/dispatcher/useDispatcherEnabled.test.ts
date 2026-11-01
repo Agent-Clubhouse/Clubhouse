@@ -1,9 +1,9 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { renderHook, act, waitFor } from '@testing-library/react';
 import type { DispatcherState } from '../../../shared/dispatcher-types';
-import { useDispatcherEnabled, useDispatcherState } from './useDispatcherEnabled';
+import { useDispatcherEnabled, useDispatcherFlagOn, useDispatcherRead, useDispatcherState } from './useDispatcherEnabled';
 
-const ON: DispatcherState = { enabled: true, agentId: 'durable_1', path: 'dispatcher-dir', config: null };
+const ON: DispatcherState = { enabled: true, flagOn: true, agentId: 'durable_1', path: 'dispatcher-dir', config: null };
 
 describe('useDispatcherState', () => {
   let listener: ((s: DispatcherState) => void) | null;
@@ -42,6 +42,25 @@ describe('useDispatcherState', () => {
     const { result } = renderHook(() => useDispatcherEnabled());
     act(() => listener?.(ON));
     await act(async () => { resolve({ ...ON, enabled: false }); });
+    expect(result.current).toBe(true);
+  });
+
+  it('exposes a failed read, and Retry reads again', async () => {
+    window.clubhouse.dispatcher.get = vi.fn().mockRejectedValueOnce(new Error('IPC down')).mockResolvedValue(ON);
+    const { result } = renderHook(() => useDispatcherRead());
+    await waitFor(() => expect(result.current.error).toBe('IPC down'));
+    expect(result.current.state).toBeNull();
+    act(() => result.current.retry());
+    await waitFor(() => expect(result.current.state).toEqual(ON));
+    expect(result.current.error).toBeNull();
+  });
+
+  it('reports the flag apart from the setting', async () => {
+    window.clubhouse.dispatcher.get = vi.fn().mockResolvedValue({ ...ON, enabled: false, flagOn: false });
+    const { result } = renderHook(() => useDispatcherFlagOn());
+    await waitFor(() => expect(window.clubhouse.dispatcher.get).toHaveBeenCalled());
+    expect(result.current).toBe(false);
+    act(() => listener?.({ ...ON, enabled: false }));
     expect(result.current).toBe(true);
   });
 });

@@ -24,7 +24,7 @@ import { AGENT_COLORS } from '../../../shared/name-generator';
 import type { DispatcherState } from '../../../shared/dispatcher-types';
 import type { DurableAgentConfig } from '../../../shared/types';
 import { DISPATCHER_PERSONA, getDispatcherNotesPath, getDispatcherPath, isDispatcherPath } from './dispatcher-paths';
-import { isDispatcherEnabled, updateSettings } from './dispatcher-settings';
+import { isDispatcherEnabled, isDispatcherFlagOn, updateSettings } from './dispatcher-settings';
 
 export { DISPATCHER_PERSONA, getDispatcherPath, getDispatcherNotesPath, isDispatcherPath } from './dispatcher-paths';
 export { isDispatcherEnabled, isDispatcherFlagOn, DISPATCHER_FLAG } from './dispatcher-settings';
@@ -57,6 +57,7 @@ export function isDispatcherAgentId(agentId: string | undefined | null): boolean
 export function getDispatcherState(): DispatcherState {
   return {
     enabled: isDispatcherEnabled(),
+    flagOn: isDispatcherFlagOn(),
     agentId: config?.id ?? null,
     path: config ? getDispatcherPath() : null,
     config: config ? { ...config } : null,
@@ -210,6 +211,8 @@ export function initDispatcher(): Promise<void> {
 
 /** Turn the Dispatcher on or off from Settings > Dispatcher. Resolves with the new state. */
 export async function setDispatcherEnabled(on: boolean): Promise<DispatcherState> {
+  // Saving it on behind the flag would start the Dispatcher the next time anyone turns the flag on (#2555).
+  if (on && !isDispatcherFlagOn()) throw new Error('Turn on Dispatcher in Settings > Experimental first.');
   await updateSettings((current) => ({ ...current, enabled: on }));
   await enqueue(reconcile);
   return getDispatcherState();
