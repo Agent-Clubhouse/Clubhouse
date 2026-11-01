@@ -5,6 +5,7 @@ import { appLog } from './log-service';
 import type { FreeAgentPermissionMode } from '../../shared/types';
 import { ACCESS_LEVELS, accessLevelOf, launchAccessFor } from '../../shared/orchestration-policy';
 import { setOrchestrationEnabled } from './clubhouse-mcp/orchestration-gate';
+import { setDispatcherAgent } from './clubhouse-mcp/dispatcher-gate';
 
 export const DEFAULT_ORCHESTRATOR: OrchestratorId = 'claude-code';
 
@@ -119,6 +120,7 @@ class AgentRegistry {
     if (!this.registrations.delete(agentId)) return;
     // A gone agent keeps no orchestration tools (#2228); the next spawn re-syncs.
     setOrchestrationEnabled(agentId, false);
+    setDispatcherAgent(agentId, false);
     this.emitAuthChange(agentId);
   }
 

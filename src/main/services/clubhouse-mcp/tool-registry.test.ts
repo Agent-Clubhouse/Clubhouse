@@ -11,6 +11,11 @@ vi.mock('fs/promises', () => ({
   writeFile: vi.fn().mockResolvedValue(undefined),
 }));
 
+const dispatcherState = vi.hoisted(() => ({ enabled: true }));
+vi.mock('../dispatcher/dispatcher-settings', () => ({
+  isDispatcherEnabled: () => dispatcherState.enabled,
+}));
+
 import { registerToolTemplate, registerGlobalTool, getScopedToolList, callTool, refusalReasonOf, buildToolName, buildToolKey, parseToolName, shortHash, invalidateToolListCache, sanitizeWireInstruction, _resetForTesting } from './tool-registry';
 import { bindingManager } from './binding-manager';
 import {
@@ -21,6 +26,7 @@ import {
   setOrchestrationEnabled,
   _resetOrchestrationGateForTesting,
 } from './orchestration-gate';
+import { setDispatcherAgent, _resetDispatcherGateForTesting } from './dispatcher-gate';
 import { agentRegistry } from '../agent-registry';
 import { groupProjectRegistry } from '../group-project-registry';
 import type { McpBinding } from './types';
@@ -34,6 +40,8 @@ describe('ToolRegistry', () => {
     _resetForTesting();
     bindingManager._resetForTesting();
     _resetOrchestrationGateForTesting();
+    _resetDispatcherGateForTesting();
+    dispatcherState.enabled = true;
     // Clean up any registrations from previous tests
     agentRegistry.untrack('agent-2');
     agentRegistry.untrack('agent-3');
@@ -1116,6 +1124,83 @@ describe('ToolRegistry', () => {
       closeCrossProject('agent-1');
       off();
       expect(listener).toHaveBeenCalledTimes(3);
+    });
+  });
+
+  describe('dispatcher tool group (#2536)', () => {
+    const ONLY = 'Only the Dispatcher can use this tool.';
+    const ok = { content: [{ type: 'text' as const, text: 'ok' }] };
+
+    function names(agentId: string): string[] {
+      return getScopedToolList(agentId).map((t) => t.name);
+    }
+
+    function registerGroupedTools() {
+      const handler = vi.fn().mockResolvedValue(ok);
+      const def = (description: string) => ({ description, inputSchema: { type: 'object' as const } });
+      registerGlobalTool('test_list_orchestrators', def('Dispatcher only'), handler, { group: 'dispatcher' });
+      registerGlobalTool('test_start_helper', def('Orchestration'), handler, { group: 'orchestration' });
+      registerGlobalTool('test_list_projects', def('Both'), handler, { group: ['crossProject', 'dispatcher'] });
+      return handler;
+    }
+
+    it('opens only for the Dispatcher, and only while it is on', async () => {
+      const handler = registerGroupedTools();
+      expect(names('agent-1')).toEqual([]);
+      const refused = await callTool('agent-1', 'test_list_orchestrators', {});
+      expect(refused).toEqual({ content: [{ type: 'text', text: ONLY }], isError: true });
+      expect(refusalReasonOf(refused)).toBe('group_off');
+
+      setDispatcherAgent('dispatcher', true);
+      expect(names('dispatcher')).toEqual(['test_list_orchestrators', 'test_list_projects']);
+      expect((await callTool('dispatcher', 'test_list_orchestrators', {})).isError).toBeFalsy();
+      expect(handler).toHaveBeenCalledWith('dispatcher', {});
+      // Another agent still gets nothing.
+      expect(names('agent-1')).toEqual([]);
+
+      dispatcherState.enabled = false;
+      invalidateToolListCache();
+      expect(names('dispatcher')).toEqual([]);
+      expect((await callTool('dispatcher', 'test_list_orchestrators', {})).isError).toBe(true);
+    });
+
+    it('never gives the Dispatcher the orchestration tools, even with orchestration open', async () => {
+      const handler = registerGroupedTools();
+      setDispatcherAgent('dispatcher', true);
+      setOrchestrationEnabled('dispatcher', true, { crossProject: true });
+      expect(names('dispatcher')).not.toContain('test_start_helper');
+      const refused = await callTool('dispatcher', 'test_start_helper', {});
+      expect(refused.isError).toBe(true);
+      expect(handler).not.toHaveBeenCalled();
+    });
+
+    it('a tool in several groups opens for any of them, and an orchestrator keeps its view', () => {
+      registerGroupedTools();
+      setOrchestrationEnabled('orch', true, { crossProject: true });
+      expect(names('orch')).toEqual(['test_start_helper', 'test_list_projects']);
+    });
+
+    it('drops the cached list and notifies gate listeners when the Dispatcher changes', () => {
+      registerGroupedTools();
+      const listener = vi.fn();
+      const off = onOrchestrationGateChange(listener);
+      expect(names('dispatcher')).toEqual([]);
+      setDispatcherAgent('dispatcher', true);
+      setDispatcherAgent('dispatcher', true);
+      expect(names('dispatcher')).toEqual(['test_list_orchestrators', 'test_list_projects']);
+      setDispatcherAgent('dispatcher', false);
+      off();
+      expect(names('dispatcher')).toEqual([]);
+      expect(listener).toHaveBeenCalledTimes(2);
+    });
+
+    it('untracking the Dispatcher closes its gate', () => {
+      registerGroupedTools();
+      agentRegistry.register('dispatcher', { projectPath: 'dispatcher-home', orchestrator: 'claude-code', runtime: 'pty' });
+      setDispatcherAgent('dispatcher', true);
+      expect(names('dispatcher')).toContain('test_list_orchestrators');
+      agentRegistry.untrack('dispatcher');
+      expect(names('dispatcher')).toEqual([]);
     });
   });
 });
