@@ -1,6 +1,7 @@
 import * as path from 'path';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import type { DurableAgentConfig } from '../../../../shared/types';
+import type { ChatEvent } from '../../../../shared/chat';
 
 // ── Mocks: no CLI, git or disk is touched ──────────────────────────────────
 
@@ -16,6 +17,10 @@ const projects: Array<{ id: string; name: string; path: string; displayName?: st
 const running = new Set<string>();
 const connections = new Map<string, { connectedAt: number; toolCount: number | null }>();
 const branches = new Map<string, string>();
+/** Running helpers' runtimes by id; a running id not here is an idle chat agent with no transcript. */
+const runtimes = new Map<string, { kind: 'chat' | 'pty'; getState?: () => string; isRunning: () => boolean; readTranscript: ReturnType<typeof vi.fn> }>();
+const savedTranscripts = new Map<string, ChatEvent[]>();
+const ptyActivity = new Map<string, number>();
 const dispatcherState = vi.hoisted(() => ({ enabled: true, agentId: 'dispatcher' as string | null }));
 const dispatcherListeners = vi.hoisted(() => new Set<() => void>());
 
@@ -37,7 +42,7 @@ vi.mock('../../helper-index', () => ({
     const result: Array<{ projectPath: string; config: DurableAgentConfig }> = [];
     for (const [projectPath, agents] of agentsIn) {
       for (const config of agents) {
-        if (config.parentAgentId === id && (config.parentProjectPath ?? projectPath) === home) result.push({ projectPath, config });
+        if (config.parentAgentId === id && !config.disposedAt && (config.parentProjectPath ?? projectPath) === home) result.push({ projectPath, config });
       }
     }
     return result;
@@ -54,8 +59,18 @@ vi.mock('../../agent-system', () => ({
   waitForAgentStopped: vi.fn(),
 }));
 vi.mock('../../agent-runtime', () => ({
-  getAgentRuntime: (id: string) => (running.has(id) ? { kind: 'chat', getState: () => (id.startsWith('busy') ? 'running' : 'idle') } : undefined),
+  getAgentRuntime: (id: string) => runtimes.get(id) ?? (running.has(id)
+    ? { kind: 'chat', isRunning: () => true, getState: () => (id.startsWith('busy') ? 'running' : 'idle'), readTranscript: async () => ({ kind: 'chat', events: [] }) }
+    : undefined),
 }));
+vi.mock('../../agent-runtime/chat-transcript', () => ({
+  transcriptExists: (id: string) => savedTranscripts.has(id),
+  readChatTranscript: vi.fn(async (id: string) => {
+    if (!savedTranscripts.has(id)) throw new Error('read a transcript that does not exist');
+    return savedTranscripts.get(id);
+  }),
+}));
+vi.mock('../../pty-manager', () => ({ getLastActivity: (id: string) => ptyActivity.get(id) ?? null }));
 vi.mock('../../git-service', () => ({
   getGitInfo: vi.fn(async (dir: string) => ({ hasGit: true, branch: branches.get(dir) ?? 'main', ahead: 0, behind: 0, status: [], log: [] })),
   findGitCommonDir: async (dir: string) => (dir === DISPATCHER_DIR ? null : path.join(dir, '.git')),
@@ -96,6 +111,7 @@ import { agentRegistry } from '../../agent-registry';
 import { onOrchestrationGateChange, setOrchestrationEnabled, _resetOrchestrationGateForTesting } from '../orchestration-gate';
 import { isDispatcherAgent, syncDispatcherGate, _resetDispatcherGateForTesting } from '../dispatcher-gate';
 import * as agentConfig from '../../agent-config';
+import { readChatTranscript } from '../../agent-runtime/chat-transcript';
 import { getOrchestrationPolicy, resolveOrchestrationPolicies } from '../../orchestration-policy';
 import { resolveOrchestrationPolicy } from '../../../../shared/orchestration-policy';
 
@@ -151,6 +167,9 @@ beforeEach(() => {
   running.clear();
   connections.clear();
   branches.clear();
+  runtimes.clear();
+  savedTranscripts.clear();
+  ptyActivity.clear();
   dispatcherState.enabled = true;
   dispatcherState.agentId = 'dispatcher';
   dispatcherListeners.clear();
@@ -340,6 +359,249 @@ describe('list_agents', () => {
     await runDispatcher();
     policies.set('dispatcher', policy({ connectToDispatcher: true }));
     expect(parse(await callTool('dispatcher', 'list_agents', {})).agents).toEqual([]);
+  });
+});
+
+// ── inspect_helper ─────────────────────────────────────────────────────────
+
+describe('inspect_helper', () => {
+  const NOW = Date.parse('2026-11-01T12:00:00.000Z');
+  const ISO_NOW = new Date(NOW).toISOString();
+
+  function chatEvent(text: string, ts = NOW): ChatEvent {
+    return { v: 1, agentId: 'h', sessionId: 's', seq: 1, ts, type: 'agent_message', data: { messageId: 'm', text } } as unknown as ChatEvent;
+  }
+
+  /** A chat helper's runtime, mid-turn, with this transcript. */
+  function chatRuntime(id: string, events: ChatEvent[]) {
+    running.add(id);
+    const readTranscript = vi.fn(async () => ({ kind: 'chat', events }));
+    runtimes.set(id, { kind: 'chat', getState: () => 'running', isRunning: () => true, readTranscript });
+    return readTranscript;
+  }
+
+  /** A terminal helper's runtime with this buffer. */
+  function terminalRuntime(id: string, text: string) {
+    running.add(id);
+    const readTranscript = vi.fn(async () => ({ kind: 'pty', text }));
+    runtimes.set(id, { kind: 'pty', isRunning: () => true, readTranscript });
+    return readTranscript;
+  }
+
+  async function connectedLead(): Promise<void> {
+    await runDispatcher();
+    addAgent(PROJECT_A, { id: 'lead', name: 'Lead' });
+    policies.set('lead', policy({ connectToDispatcher: true }));
+  }
+
+  const inspect = (helper: unknown, extra: Record<string, unknown> = {}, caller = 'dispatcher') =>
+    callTool(caller, 'inspect_helper', { helper, ...extra });
+
+  it('reads a chat helper: state, branch, parent and recent chat output', async () => {
+    await connectedLead();
+    const worktree = path.join(PROJECT_A, 'wt');
+    addAgent(PROJECT_A, { id: 'h', name: 'Helper', parentAgentId: 'lead', worktreePath: worktree });
+    branches.set(worktree, 'feature/h');
+    chatRuntime('h', [chatEvent('Tests are green.')]);
+
+    const body = parse(await inspect('h'));
+    expect(body).toMatchObject({
+      helperId: 'h',
+      name: 'Helper',
+      project: 'alpha',
+      status: 'running',
+      branch: 'feature/h',
+      lastActivity: ISO_NOW,
+      parent: { id: 'lead', name: 'Lead', project: 'alpha' },
+      runtime: 'chat',
+      output: 'Tests are green.',
+      outputSource: 'live',
+    });
+    expect(body).not.toHaveProperty('activityAt');
+  });
+
+  it('reads a terminal helper: running, recent buffer without control sequences, terminal activity', async () => {
+    await connectedLead();
+    addAgent(PROJECT_A, { id: 'h', parentAgentId: 'lead' });
+    const read = terminalRuntime('h', '\x1b[32mok\x1b[0m line\r\n\x1b]0;title\x1b\\next\x07');
+    ptyActivity.set('h', NOW);
+
+    const body = parse(await inspect('h', { lines: 10 }));
+    expect(body).toMatchObject({ status: 'running', runtime: 'terminal', output: 'ok line\nnext', outputSource: 'live', lastActivity: ISO_NOW });
+    expect(read).toHaveBeenCalledWith({ tail: 10 });
+  });
+
+  it.each([
+    ['chat', chatRuntime],
+    ['terminal', terminalRuntime],
+  ] as const)('covers a %s helper in another project', async (_kind, start) => {
+    await connectedLead();
+    addAgent(PROJECT_B, { id: 'h', parentAgentId: 'lead', parentProjectPath: PROJECT_A });
+    if (start === chatRuntime) chatRuntime('h', [chatEvent('remote')]);
+    else terminalRuntime('h', 'remote');
+    const result = await inspect('h');
+    expect(result.isError).toBeFalsy();
+    expect(parse(result)).toMatchObject({ project: 'Beta', parent: { project: 'alpha' }, output: 'remote' });
+  });
+
+  describe.each([
+    ['chat', (id: string) => chatRuntime(id, [chatEvent('secret')])],
+    ['terminal', (id: string) => terminalRuntime(id, 'secret')],
+  ] as const)('refuses, on a %s target', (_kind, start) => {
+    const refused = (result: { isError?: boolean; content: Array<{ text: string }> }) => {
+      expect(result.isError).toBe(true);
+      expect(result.content[0].text).toMatch(/not a helper of an agent connected to you/);
+      expect(result.content[0].text).not.toContain('secret');
+    };
+
+    it('a helper whose parent is not connected', async () => {
+      await connectedLead();
+      addAgent(PROJECT_A, { id: 'other' });
+      policies.set('other', policy({ connectToDispatcher: false }));
+      addAgent(PROJECT_A, { id: 'h', parentAgentId: 'other' });
+      start('h');
+      refused(await inspect('h'));
+    });
+
+    it('a helper whose parent has no policy, or is disposed', async () => {
+      await connectedLead();
+      addAgent(PROJECT_A, { id: 'no-policy' });
+      addAgent(PROJECT_A, { id: 'h', parentAgentId: 'no-policy' });
+      addAgent(PROJECT_A, { id: 'gone', disposedAt: '2026-10-30T10:00:00.000Z' });
+      policies.set('gone', policy({ connectToDispatcher: true }));
+      addAgent(PROJECT_A, { id: 'h2', parentAgentId: 'gone' });
+      start('h');
+      start('h2');
+      refused(await inspect('h'));
+      refused(await inspect('h2'));
+    });
+
+    it('a connected agent, which is not a helper, and a plain agent', async () => {
+      await connectedLead();
+      addAgent(PROJECT_A, { id: 'plain' });
+      start('lead');
+      start('plain');
+      refused(await inspect('lead'));
+      refused(await inspect('plain'));
+    });
+
+    it('a disposed helper, a helper of a helper, an unknown id and a helper\'s name', async () => {
+      await connectedLead();
+      addAgent(PROJECT_A, { id: 'h', name: 'Named', parentAgentId: 'lead' });
+      addAgent(PROJECT_A, { id: 'old', parentAgentId: 'lead', disposedAt: '2026-10-30T10:00:00.000Z' });
+      addAgent(PROJECT_A, { id: 'grand', parentAgentId: 'h' });
+      for (const id of ['h', 'old', 'grand']) start(id);
+      refused(await inspect('old'));
+      refused(await inspect('grand'));
+      refused(await inspect('nobody'));
+      refused(await inspect('Named'));
+    });
+
+    it('any caller but the Dispatcher, even the parent', async () => {
+      await connectedLead();
+      runAgent('lead', PROJECT_A);
+      setOrchestrationEnabled('lead', true, { crossProject: true });
+      addAgent(PROJECT_A, { id: 'h', parentAgentId: 'lead' });
+      start('h');
+      expect(names('lead')).not.toContain('inspect_helper');
+      expect(await inspect('h', {}, 'lead')).toMatchObject({ isError: true, content: [{ text: 'Only the Dispatcher can use this tool.' }] });
+    });
+  });
+
+  it('refuses a missing helper argument', async () => {
+    await connectedLead();
+    expect((await callTool('dispatcher', 'inspect_helper', {})).isError).toBe(true);
+  });
+
+  it('gives the Dispatcher nothing that changes a helper', async () => {
+    await connectedLead();
+    const listed = names('dispatcher');
+    expect(listed).toContain('inspect_helper');
+    for (const tool of [...HELPER_TOOLS, 'dispose_helper']) expect(listed).not.toContain(tool);
+  });
+
+  it('bounds the output: lines clamped, and a long tail cut to the size limit', async () => {
+    await connectedLead();
+    addAgent(PROJECT_A, { id: 'h', parentAgentId: 'lead' });
+    const read = terminalRuntime('h', `${'x'.repeat(40_000)}END`);
+
+    const body = parse(await inspect('h', { lines: 100_000 }));
+    expect(read).toHaveBeenLastCalledWith({ tail: 200 });
+    expect((body.output as string).length).toBe(16_000);
+    expect(body.output).toMatch(/END$/);
+    expect(body.outputTruncated).toBe(true);
+
+    // 0 would otherwise read the whole buffer.
+    await inspect('h', { lines: 0 });
+    expect(read).toHaveBeenLastCalledWith({ tail: 1 });
+    await inspect('h', { lines: 2.5 });
+    expect(read).toHaveBeenLastCalledWith({ tail: 2 });
+    expect((await inspect('h', { lines: 'many' })).isError).toBe(true);
+  });
+
+  it('keeps only the requested lines of chat output', async () => {
+    await connectedLead();
+    addAgent(PROJECT_A, { id: 'h', parentAgentId: 'lead' });
+    const read = chatRuntime('h', [chatEvent('one\ntwo\nthree')]);
+    expect(parse(await inspect('h', { lines: 2 })).output).toBe('two\nthree');
+    expect(read).toHaveBeenCalledWith({ tail: 8 });
+  });
+
+  it('a sleeping helper with saved chat history returns it, marked saved', async () => {
+    await connectedLead();
+    addAgent(PROJECT_A, { id: 'h', parentAgentId: 'lead' });
+    savedTranscripts.set('h', [chatEvent('Finished earlier.')]);
+    expect(parse(await inspect('h'))).toMatchObject({
+      status: 'sleeping', runtime: 'chat', output: 'Finished earlier.', outputSource: 'saved', lastActivity: ISO_NOW,
+    });
+  });
+
+  it('a sleeping helper with no history returns its state and says output is not available', async () => {
+    await connectedLead();
+    addAgent(PROJECT_A, { id: 'h', parentAgentId: 'lead' });
+    vi.mocked(readChatTranscript).mockClear();
+    const result = await inspect('h');
+    expect(result.isError).toBeFalsy();
+    const body = parse(result);
+    expect(body).toMatchObject({ status: 'sleeping', runtime: null, output: null, outputSource: null, lastActivity: '2026-10-31T10:00:00.000Z' });
+    expect(body.outputNote).toMatch(/not available/);
+    expect(readChatTranscript).not.toHaveBeenCalled();
+  });
+
+  it('keeps a newer saved time, and reports a live helper with no output yet', async () => {
+    await connectedLead();
+    addAgent(PROJECT_A, { id: 'h', parentAgentId: 'lead', lastSleep: { at: '2026-11-01T13:00:00.000Z' } as DurableAgentConfig['lastSleep'] });
+    terminalRuntime('h', '');
+    ptyActivity.set('h', NOW);
+    expect(parse(await inspect('h'))).toMatchObject({ lastActivity: '2026-11-01T13:00:00.000Z', output: null, outputNote: 'No output yet.', outputSource: 'live' });
+  });
+
+  it('still returns the state when the output can\'t be read', async () => {
+    await connectedLead();
+    addAgent(PROJECT_A, { id: 'h', parentAgentId: 'lead' });
+    const read = chatRuntime('h', []);
+    read.mockRejectedValueOnce(new Error('disk full'));
+    const result = await inspect('h');
+    expect(result.isError).toBeFalsy();
+    expect(parse(result)).toMatchObject({ status: 'running', output: null, outputNote: 'Could not read its output: disk full' });
+  });
+
+  it('points a helper that never got its task at its parent, not at wake_helper', async () => {
+    await connectedLead();
+    addAgent(PROJECT_A, { id: 'h', parentAgentId: 'lead', pendingTask: 'do it' } as Partial<DurableAgentConfig> & { id: string });
+    const body = parse(await inspect('h'));
+    expect(body.taskPending).toBe(true);
+    expect(body.note).toMatch(/Ask its parent/);
+    expect(body.note).not.toMatch(/wake_helper/);
+  });
+
+  it('a project that can\'t be read doesn\'t hide a helper in the next', async () => {
+    await runDispatcher();
+    addAgent(PROJECT_B, { id: 'lead' });
+    policies.set('lead', policy({ connectToDispatcher: true }));
+    addAgent(PROJECT_B, { id: 'h', parentAgentId: 'lead' });
+    vi.mocked(agentConfig.listDurable).mockRejectedValueOnce(new Error('unreadable'));
+    expect((await inspect('h')).isError).toBeFalsy();
   });
 });
 
