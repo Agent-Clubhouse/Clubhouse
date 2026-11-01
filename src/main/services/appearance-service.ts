@@ -27,6 +27,7 @@ import * as agentConfig from './agent-config';
 import { resolveLocalPath } from './agent-runtime/chat-media';
 import { isDispatcherPath } from './dispatcher/dispatcher-paths';
 import { isDispatcherAgentId } from './dispatcher/dispatcher-service';
+import { appLog } from './log-service';
 import * as projectStore from './project-store';
 
 export type AppearanceErrorCode =
@@ -177,6 +178,34 @@ async function resolveProject(actor: AppearanceActor, ref: string | undefined): 
     throw new AppearanceError('out_of_scope', 'You can only change your own project.');
   }
   return own;
+}
+
+/** Every project, as it looks now. */
+export async function listProjectAppearances(): Promise<ProjectAppearance[]> {
+  return (await projectStore.list()).map(describeProject);
+}
+
+/** Every agent, in one project or all of them. The Dispatcher is in none. */
+export async function listAgentAppearances(projectRef?: string): Promise<Array<AgentAppearance & { projectId: string }>> {
+  const projects = await projectStore.list();
+  const targets = projectRef ? [await findProject(projects, projectRef)] : projects;
+  const rows: Array<AgentAppearance & { projectId: string }> = [];
+  for (const project of targets) {
+    let agents: DurableAgentConfig[];
+    try {
+      agents = await agentConfig.listDurable(project.path);
+    } catch (err) {
+      // telemetry-exempt: logged; one unreadable project must not hide the others
+      appLog('core:cli', 'warn', 'Could not list a project\'s agents', {
+        meta: { projectPath: project.path, error: err instanceof Error ? err.message : String(err) },
+      });
+      continue;
+    }
+    for (const agent of agents) {
+      if (!isDisposedAgent(agent)) rows.push({ ...describeAgent(agent), projectId: project.id });
+    }
+  }
+  return rows;
 }
 
 export async function updateProjectAppearance(

@@ -38,6 +38,7 @@ export const KNOWN_LOG_NAMESPACES: readonly string[] = [
   'core:ipc',
   'core:materialization',
   'core:mcp',
+  'core:cli',
   'core:orchestration',
   'core:orchestrator',
   'core:permission-queue',

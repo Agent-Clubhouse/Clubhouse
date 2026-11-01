@@ -159,6 +159,22 @@ describe('hook-server', () => {
     stop();
   });
 
+  describe('the CLI routes (#2598)', () => {
+    it('sends them to the CLI endpoint, whatever the method and the hook toggle', async () => {
+      setEnabled(false);
+      try {
+        // Nothing has been published here, so the endpoint refuses it; a hook route would answer 200.
+        expect((await postToServerWithBody(port, '/cli/v1/projects/update', {})).status).toBe(403);
+      } finally {
+        setEnabled(true);
+      }
+    });
+
+    it('leaves other routes as they were', async () => {
+      expect((await postToServerWithBody(port, '/other', {})).status).toBe(404);
+    });
+  });
+
   describe('start/stop/getPort', () => {
     it('starts on a random port', () => {
       expect(port).toBeGreaterThan(0);

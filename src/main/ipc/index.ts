@@ -24,6 +24,8 @@ import { registerTelemetrySettingsHandlers } from './telemetry-settings-handlers
 import { registerFeedbackHandlers } from './feedback-handlers';
 import { registerDispatcherHandlers } from './dispatcher-handlers';
 import * as hookServer from '../services/hook-server';
+import { publishCliEndpoint } from '../services/cli-endpoint';
+import { refreshInstalledCli } from '../services/cli-install';
 import { registerBuiltinProviders, getAllProviders } from '../orchestrators';
 import { registerBuiltinChatDrivers } from '../services/agent-runtime/builtin-chat-drivers';
 import { autoDetectDefaults } from '../services/orchestrator-settings';
@@ -89,9 +91,21 @@ export function registerAllHandlers(): void {
   // for the app's lifetime; whether a given agent actually has Clubhouse hooks
   // injected is governed per-orchestrator (OrchestratorSettings.hookServerEnabled)
   // at spawn time — see agent-system and hook-server-toggle.
-  hookServer.start().catch((err) => {
+  hookServer.start().then((port) => {
+    // The clubhouse CLI's way in (#2598): a new token at every start.
+    publishCliEndpoint(port).catch((err) => {
+      logService.appLog('core:cli', 'error', 'Failed to publish the CLI endpoint', {
+        meta: { error: err?.message ?? String(err) },
+      });
+    });
+  }).catch((err) => {
     logService.appLog('core:hook-server', 'error', 'Failed to start hook server', {
       meta: { error: err?.message ?? String(err), stack: err?.stack },
+    });
+  });
+  refreshInstalledCli().catch((err) => {
+    logService.appLog('core:cli', 'warn', 'Failed to refresh the installed clubhouse command', {
+      meta: { error: err?.message ?? String(err) },
     });
   });
 
