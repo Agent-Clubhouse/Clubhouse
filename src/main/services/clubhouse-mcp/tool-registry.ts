@@ -10,7 +10,11 @@ import { groupProjectRegistry } from '../group-project-registry';
 import { deniedGroupProjectTools } from '../../../shared/group-project-admin';
 import { appLog } from '../log-service';
 import { isCrossProjectEnabled, isOrchestrationEnabled, onOrchestrationGateChange } from './orchestration-gate';
+import { isDispatcherAgent, isTrackedDispatcher } from './dispatcher-gate';
 import { CROSS_PROJECT_OFF_MESSAGE, ORCHESTRATION_OFF_MESSAGE } from '../../../shared/orchestration-policy';
+
+/** The refusal a Dispatcher tool returns for any other agent. */
+export const DISPATCHER_ONLY_MESSAGE = 'Only the Dispatcher can use this tool.';
 import type { McpRefusalReason } from '../../telemetry/agent-signals';
 
 /** Check if a value matches a JSON Schema type (handles array vs object correctly). */
@@ -28,8 +32,16 @@ function matchesJsonSchemaType(value: unknown, schemaType: string): boolean {
  *   "Let this agent orchestrate" policy is on.
  * - `crossProject` (#2512): tools that reach other projects (list_projects),
  *   on when orchestration and the agent's "Cross-project helpers" are both on.
+ * - `dispatcher` (#2536): the Dispatcher's tools, on only for the running
+ *   Dispatcher while it is turned on. The two groups above are never on for
+ *   the Dispatcher, whatever its policy says.
+ *
+ * A tool may name several groups; it is available when any of them is on.
  */
-export type ToolGroup = 'orchestration' | 'crossProject';
+export type ToolGroup = 'orchestration' | 'crossProject' | 'dispatcher';
+
+/** One group, or several (any one of them opens the tool). */
+export type ToolGroups = ToolGroup | readonly ToolGroup[];
 
 interface ToolGroupGate {
   isEnabled: (agentId: string) => boolean;
@@ -37,13 +49,24 @@ interface ToolGroupGate {
 }
 
 const toolGroupGates: Record<ToolGroup, ToolGroupGate> = {
-  orchestration: { isEnabled: isOrchestrationEnabled, refusal: ORCHESTRATION_OFF_MESSAGE },
-  crossProject: { isEnabled: isCrossProjectEnabled, refusal: CROSS_PROJECT_OFF_MESSAGE },
+  orchestration: {
+    isEnabled: (agentId) => !isTrackedDispatcher(agentId) && isOrchestrationEnabled(agentId),
+    refusal: ORCHESTRATION_OFF_MESSAGE,
+  },
+  crossProject: {
+    isEnabled: (agentId) => !isTrackedDispatcher(agentId) && isCrossProjectEnabled(agentId),
+    refusal: CROSS_PROJECT_OFF_MESSAGE,
+  },
+  dispatcher: { isEnabled: isDispatcherAgent, refusal: DISPATCHER_ONLY_MESSAGE },
 };
 
+function groupList(group: ToolGroups): readonly ToolGroup[] {
+  return typeof group === 'string' ? [group] : group;
+}
+
 /** Whether a tool in `group` (or in no group) is available to an agent. */
-function groupAllows(group: ToolGroup | undefined, agentId: string): boolean {
-  return !group || toolGroupGates[group].isEnabled(agentId);
+function groupAllows(group: ToolGroups | undefined, agentId: string): boolean {
+  return !group || groupList(group).some((g) => toolGroupGates[g].isEnabled(agentId));
 }
 
 /**
@@ -63,20 +86,20 @@ export function refusalReasonOf(result: McpToolResult): McpRefusalReason | undef
   return refusals.get(result);
 }
 
-function groupRefusal(group: ToolGroup): McpToolResult {
-  return refuse('group_off', toolGroupGates[group].refusal);
+function groupRefusal(group: ToolGroups): McpToolResult {
+  return refuse('group_off', toolGroupGates[groupList(group)[0]].refusal);
 }
 
 export interface ToolRegistrationOptions {
-  /** Gate the tool behind a tool group. */
-  group?: ToolGroup;
+  /** Gate the tool behind a tool group, or several. */
+  group?: ToolGroups;
 }
 
 export interface ToolTemplate {
   nameSuffix: string;
   definition: Omit<McpToolDefinition, 'name'>;
   handler: (targetId: string, agentId: string, args: Record<string, unknown>) => Promise<McpToolResult>;
-  group?: ToolGroup;
+  group?: ToolGroups;
 }
 
 /**
@@ -134,7 +157,7 @@ export function clearTargetToolTemplates(targetKind: BindingTargetKind, targetId
 const globalTools = new Map<string, {
   definition: McpToolDefinition;
   handler: (agentId: string, args: Record<string, unknown>) => Promise<McpToolResult>;
-  group?: ToolGroup;
+  group?: ToolGroups;
 }>();
 
 /** Maximum length for wire instruction strings before truncation. */

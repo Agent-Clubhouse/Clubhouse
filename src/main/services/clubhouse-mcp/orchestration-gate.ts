@@ -49,6 +49,14 @@ export function closeCrossProject(agentId: string): void {
   notify(agentId);
 }
 
+/**
+ * Tell the listeners an agent's tool groups changed for another reason (the
+ * Dispatcher gate, #2536), so they refresh its tool list.
+ */
+export function notifyToolGateChange(agentId: string): void {
+  notify(agentId);
+}
+
 function notify(agentId: string): void {
   for (const listener of listeners) {
     try {

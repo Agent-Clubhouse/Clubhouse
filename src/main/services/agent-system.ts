@@ -21,6 +21,7 @@ import type { DurableAgentConfig, LaunchWrapperConfig, FreeAgentPermissionMode }
 import { agentRegistry, resolveOrchestrator, untrackAgent, readProjectOrchestrator, DEFAULT_ORCHESTRATOR } from './agent-registry';
 import { waitReady as waitMcpBridgeReady } from './clubhouse-mcp/bridge-server';
 import { injectClubhouseMcp } from './clubhouse-mcp/injection';
+import { syncDispatcherGate } from './clubhouse-mcp/dispatcher-gate';
 import { bindingManager } from './clubhouse-mcp/binding-manager';
 import { isMcpEnabled } from './mcp-settings';
 import { resolveHelperLaunchSettings, syncOrchestrationGate } from './orchestration-policy';
@@ -399,6 +400,8 @@ async function spawnAgentInner(inParams: SpawnAgentParams, facts: SpawnFacts): P
     agentRegistry.setLaunchCap(params.agentId, { freeAgentMode: params.freeAgentMode === true, permissionMode });
     // The orchestration tools are listed from this gate (#2228); set it before the MCP connects.
     if (params.kind === 'durable') await syncOrchestrationGate(params.projectPath, params.agentId);
+    // Likewise the Dispatcher's tools (#2536), only for the Dispatcher.
+    await syncDispatcherGate(params.projectPath, params.agentId);
     facts.model = params.model;
 
     // The user woke it fresh although it has a session to resume.
