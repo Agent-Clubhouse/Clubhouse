@@ -210,6 +210,7 @@ vi.mock('../services/project-store', () => ({
   setIcon: vi.fn(),
   readIconData: vi.fn(),
   saveCroppedIcon: vi.fn(),
+  onProjectsChanged: vi.fn(() => () => {}),
 }));
 
 vi.mock('../services/agent-config', () => ({

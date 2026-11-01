@@ -10,7 +10,10 @@ import type { DurableAgentConfig } from '../../shared/types';
 
 const { configs, projects, configListeners, ptyWrite, getBoard } = vi.hoisted(() => ({
   configs: new Map<string, DurableAgentConfig[]>(),
-  projects: { list: [] as Array<{ id: string; name: string; path: string; displayName?: string }> },
+  projects: {
+    list: [] as Array<{ id: string; name: string; path: string; displayName?: string }>,
+    listeners: new Set<() => void>(),
+  },
   configListeners: new Set<(projectPath: string) => void>(),
   ptyWrite: vi.fn(),
   getBoard: vi.fn(),
@@ -18,7 +21,13 @@ const { configs, projects, configListeners, ptyWrite, getBoard } = vi.hoisted(()
 
 vi.mock('electron', () => ({ app: { isPackaged: false, getPath: () => os.tmpdir() } }));
 vi.mock('./log-service', () => ({ appLog: vi.fn() }));
-vi.mock('./project-store', () => ({ list: vi.fn(async () => projects.list) }));
+vi.mock('./project-store', () => ({
+  list: vi.fn(async () => projects.list),
+  onProjectsChanged: (listener: () => void) => {
+    projects.listeners.add(listener);
+    return () => projects.listeners.delete(listener);
+  },
+}));
 vi.mock('./agent-config', () => ({
   listDurable: vi.fn(async (projectPath: string) => configs.get(projectPath) ?? []),
   projectKey: vi.fn(async (projectPath: string) => path.resolve(projectPath)),
@@ -75,6 +84,7 @@ function setAgents(p: string, agents: DurableAgentConfig[]): void {
 beforeEach(() => {
   configs.clear();
   configListeners.clear();
+  projects.listeners.clear();
   ptyWrite.mockClear();
   getBoard.mockClear();
   bindingManager._resetForTesting();
@@ -303,6 +313,29 @@ describe('watchHelperWires', () => {
     setAgents(otherProjectPath, [agent('durable_o1'), agent('durable_o2', { parentAgentId: 'durable_o1' })]);
     await flush();
     expect(onChange).toHaveBeenCalledTimes(3);
+  });
+
+  it('rebuilds when a project with helper wires is removed, with no config write', async () => {
+    vi.useFakeTimers();
+    registerPersistedBindingSource(helperWireBindingSource);
+    await rebuildPersistedBindings();
+    expect(boundPairs()).toContain('durable_o1->durable_o2');
+    const onChange = vi.fn(rebuild);
+    const stop = watchHelperWires(onChange);
+    const flush = () => vi.advanceTimersByTimeAsync(100);
+
+    projects.list = projects.list.filter((p) => p.path !== otherProjectPath);
+    for (const listener of projects.listeners) listener();
+    await flush();
+    expect(onChange).toHaveBeenCalledTimes(1);
+    expect(boundPairs()).not.toContain('durable_o1->durable_o2');
+    expect(boundPairs()).toContain('durable_lead->durable_h1');
+
+    // Committed: the removed project doesn't keep asking for a rebuild.
+    setAgents(projectPath, [...configs.get(projectPath)!]);
+    await flush();
+    expect(onChange).toHaveBeenCalledTimes(1);
+    stop();
   });
 
   it('keeps a change pending until a rebuild commits it, and retries', async () => {

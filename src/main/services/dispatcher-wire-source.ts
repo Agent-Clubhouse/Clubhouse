@@ -153,9 +153,17 @@ export const dispatcherWireBindingSource: PersistedBindingSource = {
     }
     if (!dispatcherId) return { bindings: [], unverified: [] };
 
+    const listed = await registeredProjects();
+    // A project that is no longer registered has no wires: pruned like any other change.
+    const listedPaths = new Set(listed.map((p) => p.path));
+    for (const path of new Set([...committed.keys(), ...lastPairs.keys()])) {
+      if (path === DISPATCHER_KEY || listedPaths.has(path)) continue;
+      collected.set(path, '');
+      lastPairs.delete(path);
+    }
     const projects = await readWires(
       dispatcherId,
-      await registeredProjects(),
+      listed,
       'Could not read agents for Dispatcher wires; keeping that project\'s wires as they are',
     );
     const bindings: PersistedBinding[] = [];
@@ -184,16 +192,24 @@ const RETRY_DELAYS_MS = [1_000, 5_000, 15_000, 60_000];
 
 /**
  * Call `onWiresChanged` when the Dispatcher wires change: the Dispatcher is
- * turned on or off, or an orchestrator's policy changes (its switch, its
- * orchestration, its persona, a project default persona). Changes that leave
- * the wires as they were are ignored. A change counts as handled only once a
- * rebuild commits it; until then the check is retried a few times, and the
- * next change retries it again. Returns an unsubscribe function.
+ * turned on or off, an orchestrator's policy changes (its switch, its
+ * orchestration, its persona, a project default persona), or a project is
+ * added or removed. Changes that leave the wires as they were are ignored. A
+ * change counts as handled only once a rebuild commits it; until then the
+ * check is retried a few times, and the next change retries it again.
+ *
+ * A project's wires depend only on its own agents, defaults and personas, so
+ * an agent or persona change reads only that project. The Dispatcher
+ * changing, the project list changing, a retry, and a path that matches no
+ * registered project read every project. Returns an unsubscribe function.
  */
 export function watchDispatcherWires(onWiresChanged: () => unknown): () => void {
   let timer: ReturnType<typeof setTimeout> | null = null;
   let stopped = false;
   let attempt = 0;
+  /** Projects to read on the next check; ignored while `dirtyAll` is set. */
+  const dirty = new Set<string>();
+  let dirtyAll = false;
 
   /** Returns false when nothing was scheduled (stopped, or a check is already pending). */
   const schedule = (delayMs: number): boolean => {
@@ -202,12 +218,12 @@ export function watchDispatcherWires(onWiresChanged: () => unknown): () => void 
     return true;
   };
 
-  const wantedSignatures = async (): Promise<Map<string, string>> => {
+  const wantedSignatures = async (all: boolean, paths: ReadonlySet<string>): Promise<Map<string, string>> => {
     const dispatcherId = activeDispatcherId();
     const wanted = new Map<string, string>();
     if ((committed.get(DISPATCHER_KEY) ?? '') !== (dispatcherId ?? '')) wanted.set(DISPATCHER_KEY, dispatcherId ?? '');
     if (!dispatcherId) return wanted;
-    let listed: Array<{ path: string; name?: string }> = [];
+    let listed: Array<{ path: string; name?: string }>;
     try {
       listed = await registeredProjects();
     } catch (err) {
@@ -215,8 +231,16 @@ export function watchDispatcherWires(onWiresChanged: () => unknown): () => void 
       appLog('core:mcp', 'warn', 'Could not list projects for Dispatcher wires', {
         meta: { error: err instanceof Error ? err.message : String(err) },
       });
+      return wanted;
     }
-    for (const project of await readWires(dispatcherId, listed, 'Could not read agents after a config change')) {
+    const listedPaths = new Set(listed.map((p) => p.path));
+    // A path no project is registered under may still be one of them, spelled differently.
+    const readAll = all || [...paths].some((p) => !listedPaths.has(p));
+    for (const [path, signature] of committed) {
+      if (path !== DISPATCHER_KEY && !listedPaths.has(path) && signature !== '') wanted.set(path, '');
+    }
+    const toRead = readAll ? listed : listed.filter((p) => paths.has(p.path));
+    for (const project of await readWires(dispatcherId, toRead, 'Could not read agents after a config change')) {
       if (!project.bindings) continue;
       const signature = wireSignature(project.bindings);
       if (signature !== (committed.get(project.path) ?? '')) wanted.set(project.path, signature);
@@ -225,7 +249,11 @@ export function watchDispatcherWires(onWiresChanged: () => unknown): () => void 
   };
 
   const check = async (): Promise<void> => {
-    const wanted = await wantedSignatures();
+    const all = dirtyAll;
+    const paths = new Set(dirty);
+    dirtyAll = false;
+    dirty.clear();
+    const wanted = await wantedSignatures(all, paths);
     if (wanted.size === 0 || stopped) {
       attempt = 0;
       return;
@@ -251,6 +279,7 @@ export function watchDispatcherWires(onWiresChanged: () => unknown): () => void 
       return;
     }
     // A check already pending covers these; only a scheduled retry uses up an attempt.
+    dirtyAll = true;
     if (schedule(RETRY_DELAYS_MS[attempt])) attempt++;
   };
 
@@ -263,10 +292,25 @@ export function watchDispatcherWires(onWiresChanged: () => unknown): () => void 
     schedule(50);
   };
 
+  const allChanged = (): void => {
+    dirtyAll = true;
+    changed();
+  };
+
+  const projectChanged = (projectPath: string): void => {
+    // The Dispatcher's own writes (status, sessions) never change a wire.
+    if (isDispatcherPath(projectPath)) return;
+    dirty.add(projectPath);
+    changed();
+  };
+
   const unsubscribers = [
-    onAgentConfigChanged(changed),
-    onPersonaChanged(changed),
-    onDispatcherChanged(changed),
+    onAgentConfigChanged(projectChanged),
+    // Both kinds of persona change are scoped to one project's agents.
+    onPersonaChanged((change) => projectChanged(change.projectPath)),
+    onDispatcherChanged(allChanged),
+    // Rare (add, remove, rename): read every project, and drop the wires of one that went.
+    projectStore.onProjectsChanged(allChanged),
   ];
   return () => {
     stopped = true;

@@ -176,8 +176,16 @@ export const helperWireBindingSource: PersistedBindingSource = {
   id: HELPER_WIRE_SOURCE_ID,
   prune: true,
   async collect(): Promise<CollectedBindings> {
+    const listed = await registeredProjects();
+    // A project that is no longer registered has no wires: pruned like any other change.
+    const listedPaths = new Set(listed.map((p) => p.path));
+    for (const projectPath of new Set([...committed.keys(), ...lastPairs.keys()])) {
+      if (listedPaths.has(projectPath)) continue;
+      collected.set(projectPath, '');
+      lastPairs.delete(projectPath);
+    }
     const projects = await readProjects(
-      await registeredProjects(),
+      listed,
       'Could not read agents for helper wires; keeping that project\'s wires as they are',
     );
     const wiresByProject = await helperWiresAcrossProjects(projects);
@@ -214,7 +222,7 @@ const RETRY_DELAYS_MS = [1_000, 5_000, 15_000, 60_000];
 
 /**
  * Call `onWiresChanged` when a project's helper wires change (a helper is
- * created, disposed, deleted or reparented). Writes that leave the wires as
+ * created, disposed, deleted or reparented, or a project is removed). Writes that leave the wires as
  * they were are ignored. A change counts as handled only once a rebuild
  * commits it; until then the check is retried a few times, and the next
  * config write retries it again. Returns an unsubscribe function.
@@ -238,8 +246,10 @@ export function watchHelperWires(onWiresChanged: () => unknown): () => void {
     // A parent in one project wires helpers in others (#2513), so every
     // project's signature is checked, not only the ones that changed.
     let listed: Array<{ path: string; name?: string }> = [];
+    let listedOk = false;
     try {
       listed = await registeredProjects();
+      listedOk = true;
     } catch (err) {
       // telemetry-exempt: logged; the changed projects are still checked
       appLog('core:mcp', 'warn', 'Could not list projects after a config change', {
@@ -249,9 +259,17 @@ export function watchHelperWires(onWiresChanged: () => unknown): () => void {
     const toRead = [...listed, ...paths.filter((p) => !listed.some((l) => l.path === p)).map((p) => ({ path: p }))];
     const wiresByProject = await helperWiresAcrossProjects(await readProjects(toRead, 'Could not read agents after a config change'));
     const wanted = new Map<string, string>();
+    const listedPaths = new Set(listed.map((l) => l.path));
     for (const [projectPath, wires] of wiresByProject) {
+      // Collect reads only registered projects, so an unregistered one is held to no wires.
+      if (listedOk && !listedPaths.has(projectPath)) continue;
       const signature = wireSignature(wires);
       if (signature !== (committed.get(projectPath) ?? '')) wanted.set(projectPath, signature);
+    }
+    if (listedOk) {
+      for (const [projectPath, signature] of committed) {
+        if (!listedPaths.has(projectPath) && signature !== '') wanted.set(projectPath, '');
+      }
     }
     if (wanted.size === 0) {
       attempt = 0;
@@ -282,18 +300,25 @@ export function watchHelperWires(onWiresChanged: () => unknown): () => void {
     if (schedule(RETRY_DELAYS_MS[attempt])) attempt++;
   };
 
-  const unsubscribe = onAgentConfigChanged((projectPath) => {
-    dirtyProjects.add(projectPath);
+  const changed = (): void => {
     attempt = 0;
     // A new write supersedes a pending retry. Coalesce a burst of writes (and
     // the watcher echo of our own flush), and stay out of the writer's call stack.
     if (timer) clearTimeout(timer);
     timer = null;
     schedule(50);
-  });
+  };
+  const unsubscribers = [
+    onAgentConfigChanged((projectPath) => {
+      dirtyProjects.add(projectPath);
+      changed();
+    }),
+    // A removed project's wires go; every check already reads every project.
+    projectStore.onProjectsChanged(changed),
+  ];
   return () => {
     stopped = true;
-    unsubscribe();
+    for (const unsubscribe of unsubscribers) unsubscribe();
     if (timer) clearTimeout(timer);
     timer = null;
   };
