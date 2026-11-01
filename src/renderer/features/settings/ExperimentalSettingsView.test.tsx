@@ -69,7 +69,7 @@ describe('ExperimentalSettingsView', () => {
     await waitFor(() => {
       expect(screen.getByText('Chat')).toBeInTheDocument();
     });
-    expect(screen.getByText(/native chat view\. The terminal stays available for every provider\./)).toBeInTheDocument();
+    expect(screen.getByText(/native chat view\. The CLI view stays available for every provider\./)).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole('switch', { name: 'Chat' }));
 

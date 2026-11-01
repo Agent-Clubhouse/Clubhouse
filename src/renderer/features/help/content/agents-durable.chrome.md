@@ -36,7 +36,7 @@ Open **Settings** from the agent's row menu or hover card.
 |---------|--------------|
 | **Appearance** | Name, color and icon |
 | **Runs on** and **Model** | The CLI and model the agent uses. Changes apply the next time it starts or wakes. |
-| **Runtime** | Chat or terminal. Shown only when the experimental Chat feature is on. |
+| **Runtime** | Chat or CLI. Shown only when the experimental Chat feature is on. |
 | **Persona** | A role the agent takes on, such as reviewer or researcher |
 | **Instructions** | Markdown that guides the agent: style, limits, how to work |
 | **Permissions** | Tools the agent may use without asking, and tools it's always denied |

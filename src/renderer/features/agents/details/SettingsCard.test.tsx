@@ -75,8 +75,8 @@ describe('settings helpers', () => {
   it('builds the summary from what is known', () => {
     expect(settingsSummary({ runsIn: 'Chat', model: 'Opus 5.5', access: 'Full access', autoSleep: 'Sleeps after 30 min' }))
       .toBe('Chat · Opus 5.5 · Full access · Sleeps after 30 min');
-    expect(settingsSummary({ runsIn: 'Terminal', model: 'Default model', access: 'Ask before edits', autoSleep: null }))
-      .toBe('Terminal · Default model · Ask before edits');
+    expect(settingsSummary({ runsIn: 'CLI', model: 'Default model', access: 'Ask before edits', autoSleep: null }))
+      .toBe('CLI · Default model · Ask before edits');
   });
 
   it('names models, access and instructions in sentence case', () => {
@@ -177,7 +177,7 @@ describe('Settings card (#2280)', () => {
     const codex: Agent = { ...agent, orchestrator: 'codex-cli' };
     render(<AgentDetails agent={codex} />);
     await waitFor(() => expect(screen.getByTestId('details-card-settings-summary'))
-      .toHaveTextContent('Terminal · gpt-5.5 · Set by the CLI'));
+      .toHaveTextContent('CLI · gpt-5.5 · Set by the CLI'));
     const card = openSettings();
     expect(card.getByTestId('details-setting-cli')).toHaveTextContent('Codex');
     expect(card.queryByTestId('details-setting-effort')).not.toBeInTheDocument();

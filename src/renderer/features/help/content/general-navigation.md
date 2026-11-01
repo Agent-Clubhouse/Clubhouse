@@ -9,7 +9,7 @@ Clubhouse uses a multi-pane layout. The number of visible columns adapts to your
 | **Project Rail** | Global nav: Home, project icons, `+` add, `?` help, gear for settings. Always visible. |
 | **Explorer Rail** | Agent list, plugin tabs for the active project. |
 | **Accessory Panel** | Agent config, file browsers, Git info, plugin sidebars. |
-| **Main Content View** | Terminal output, plugin panels, settings pages. |
+| **Main Content View** | Agent output, plugin panels, settings pages. |
 
 Some plugins use a "full" layout that hides the Accessory Panel for more space.
 

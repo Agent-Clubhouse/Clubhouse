@@ -24,9 +24,9 @@ function toolLabel(suffix: string): string {
 
 /** Short description hints for tools. */
 const TOOL_HINTS: Record<string, string> = {
-  send_message: 'Inject messages into terminal',
+  send_message: 'Inject messages into the agent\'s CLI',
   get_status: 'Check running/sleeping status',
-  read_output: 'Read terminal output buffer',
+  read_output: 'Read the agent\'s output buffer',
   check_connectivity: 'Check link direction',
   send_file: 'Send content via temp file',
   clear_agent: 'Send /clear to this agent (clears its context)',
@@ -46,8 +46,8 @@ const TOOL_HINTS: Record<string, string> = {
   read_message: 'Read a single message by ID',
   get_project_info: 'Get project details',
   query_polling: 'Read the current project polling setting',
-  shoulder_tap: 'Inject urgent message into an agent\'s terminal',
-  broadcast: 'Inject urgent message into all agents\' terminals',
+  shoulder_tap: 'Inject urgent message into an agent\'s CLI',
+  broadcast: 'Inject urgent message into all agents\' CLIs',
   wake_agent: 'Wake a sleeping agent in this project',
   sleep_agent: 'Stop a connected agent in this project',
   toggle_polling: 'Turn project-wide polling on or off (the real setting)',

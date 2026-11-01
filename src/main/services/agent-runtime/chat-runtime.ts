@@ -715,7 +715,7 @@ export class ChatAgentRuntime implements AgentRuntime {
     const session = this.session;
     this.session = undefined;
     if (session) {
-      await this.emit({ type: 'session_ended', data: { reason: 'fallback', message: 'Chat start failed; using the terminal' } });
+      await this.emit({ type: 'session_ended', data: { reason: 'fallback', message: 'Chat start failed; using the CLI view' } });
       await this.emitChain;
       await session.close().catch((): void => undefined);
     }

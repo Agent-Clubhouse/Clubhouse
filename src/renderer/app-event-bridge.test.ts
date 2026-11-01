@@ -542,13 +542,13 @@ describe('initAppEventBridge', () => {
 
   it('shows a toast with the reason when an agent falls back from chat', () => {
     const onRuntimeNotice = vi.mocked(window.clubhouse.chat.onRuntimeNotice).mock.calls[0][0];
-    onRuntimeNotice('agent-unknown', { level: 'warn', code: 'fallback', message: 'Opened in the terminal: Claude Code (Agent SDK) handshake failed: boom' });
-    expect(mockAddToast).toHaveBeenCalledWith('agent-unknown: Opened in the terminal: Claude Code (Agent SDK) handshake failed: boom', 'info');
+    onRuntimeNotice('agent-unknown', { level: 'warn', code: 'fallback', message: 'Opened in the CLI view: Claude Code (Agent SDK) handshake failed: boom' });
+    expect(mockAddToast).toHaveBeenCalledWith('agent-unknown: Opened in the CLI view: Claude Code (Agent SDK) handshake failed: boom', 'info');
   });
 
   it('keeps the chat fallback reason for the launch error card (#2088)', () => {
     const onRuntimeNotice = vi.mocked(window.clubhouse.chat.onRuntimeNotice).mock.calls[0][0];
-    onRuntimeNotice('agent-1', { level: 'warn', code: 'fallback', message: 'Opened in the terminal: Codex (app-server) failed to start: no rollout found for thread id 562a' });
+    onRuntimeNotice('agent-1', { level: 'warn', code: 'fallback', message: 'Opened in the CLI view: Codex (app-server) failed to start: no rollout found for thread id 562a' });
     expect(mockNoteLaunchFailure).toHaveBeenCalledWith('agent-1', 'Codex (app-server) failed to start: no rollout found for thread id 562a');
 
     mockNoteLaunchFailure.mockClear();

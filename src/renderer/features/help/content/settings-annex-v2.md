@@ -45,10 +45,10 @@ After pairing, connections use **mutual TLS** — no PIN required for reconnecti
 ### Viewing Remote Agents
 - Paired satellites appear in the **Project Rail** under a divider with the satellite's alias and color
 - Click a remote project to see its agents in the Agent List
-- Terminal output streams in real-time over WebSocket
+- CLI output streams in real-time over WebSocket
 
 ### Controlling Agents
-- Type in a remote agent's terminal — input is forwarded to the satellite
+- Type in a remote agent's CLI view, and input is forwarded to the satellite
 - Spawn quick agents on the satellite from the controller
 - Wake sleeping durable agents remotely
 - Kill running agents remotely

@@ -1,10 +1,10 @@
-# Terminal & Transcripts
+# CLI & Transcripts
 
-Every agent has a terminal view showing real-time output, plus a structured transcript for organized review.
+Every agent has a CLI view showing real-time output, plus a structured transcript for organized review.
 
-## Terminal View
+## CLI View
 
-The terminal (built on xterm.js) behaves like a standard terminal emulator:
+The CLI view (built on xterm.js) behaves like a standard terminal emulator:
 - Full ANSI color support and theme-aware colors
 - Scrollback buffer preserved for the session
 - Text selection and clipboard copy
@@ -12,7 +12,7 @@ The terminal (built on xterm.js) behaves like a standard terminal emulator:
 
 ## User Input
 
-You can type directly into an agent's terminal. Keystrokes are forwarded to the orchestrator process — useful for responding to interactive prompts from tools the agent invokes.
+You can type directly into an agent's CLI view. Keystrokes are forwarded to the orchestrator process, which is useful for responding to interactive prompts from tools the agent invokes.
 
 ## Output Buffering
 

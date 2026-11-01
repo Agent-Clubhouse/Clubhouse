@@ -53,7 +53,7 @@ export function isRowLocked(editable: RowEditable, awake: boolean): boolean {
 export const LOCKED_HINT = 'Sleep the agent to change these';
 
 export interface SettingsValues {
-  runsIn: 'Chat' | 'Terminal' | null;
+  runsIn: 'Chat' | 'CLI' | null;
   model: string | null;
   access: string | null;
   autoSleep: string | null;
@@ -157,8 +157,8 @@ interface SettingRow {
 }
 
 /** The saved runtime override as shown; null when unset. */
-function runtimeName(mode: string | undefined): 'Chat' | 'Terminal' | null {
-  return mode === 'chat' ? 'Chat' : mode === 'terminal' ? 'Terminal' : null;
+function runtimeName(mode: string | undefined): 'Chat' | 'CLI' | null {
+  return mode === 'chat' ? 'Chat' : mode === 'terminal' ? 'CLI' : null;
 }
 
 /** "Applied on the next wake": spawn settings of a sleeping agent take effect when it wakes. */
@@ -213,11 +213,11 @@ export function SettingsCard({ agent, chat, projectPath, provider }: {
     `${agent.id}\n${orchestrator}\n`,
   );
   const nextRuntime = next.state === 'done' ? next.value : null;
-  let runsIn: 'Chat' | 'Terminal' | null;
-  if (!asleep) runsIn = chat ? 'Chat' : 'Terminal';
+  let runsIn: 'Chat' | 'CLI' | null;
+  if (!asleep) runsIn = chat ? 'Chat' : 'CLI';
   else if (!local) runsIn = null;
-  else if (chatFlag === false) runsIn = 'Terminal';
-  else if (nextRuntime) runsIn = nextRuntime.chat ? 'Chat' : 'Terminal';
+  else if (chatFlag === false) runsIn = 'CLI';
+  else if (nextRuntime) runsIn = nextRuntime.chat ? 'Chat' : 'CLI';
   else runsIn = runtimeName(saved?.runtimeMode);
   const modelId = chat && !asleep ? chat.model : (saved ? saved.model : agent.model);
   const model = modelLabel(modelId, asleep ? undefined : chat);
@@ -305,7 +305,7 @@ export function SettingsCard({ agent, chat, projectPath, provider }: {
           value={saved?.runtimeMode ?? ''}
           disabled={busy('runs-in')}
           onChange={(v) => void save('runs-in', { runtimeMode: v === '' ? null : v as 'chat' | 'terminal' })}
-          options={[{ id: '', label: 'Provider default' }, { id: 'chat', label: 'Chat' }, { id: 'terminal', label: 'Terminal' }]}
+          options={[{ id: '', label: 'Provider default' }, { id: 'chat', label: 'Chat' }, { id: 'terminal', label: 'CLI' }]}
         />
       ) : undefined,
     }] : []),

@@ -1,10 +1,10 @@
-# Terminal and transcripts
+# CLI and transcripts
 
-Select an agent and the pane shows what it's doing, usually in a terminal. With the experimental Chat feature turned on, an agent's **Runtime** setting can show it as a chat instead.
+Select an agent and the pane shows what it's doing, usually in its CLI view. With the experimental Chat feature turned on, an agent's **Runtime** setting can show it as a chat instead.
 
-## The agent's terminal
+## The agent's CLI view
 
-The terminal works like any terminal emulator:
+The CLI view works like any terminal emulator:
 
 - full ANSI color, following your theme;
 - scrollback for the session;
@@ -15,7 +15,7 @@ You can type into it. Keystrokes go to the agent's process, which is how you ans
 
 Switching to another agent doesn't lose anything. Output keeps arriving in the background and is there when you come back.
 
-If typing stops reaching the terminal, press `⇧⌘T` to focus it again.
+If typing stops reaching the CLI view, press `⇧⌘T` to focus it again.
 
 ## Permission prompts
 
@@ -29,7 +29,7 @@ Common requests are file edits, shell commands, deletions and Git operations. In
 
 ## Transcripts
 
-A headless quick agent has no terminal to scroll back through, so its summary card has **View transcript** once it finishes. The transcript lists, in order:
+A headless quick agent has no CLI view to scroll back through, so its summary card has **View transcript** once it finishes. The transcript lists, in order:
 
 - each tool the agent called, by name, such as Read, Edit or Bash;
 - what the agent wrote between tool calls;

@@ -11,7 +11,7 @@ Quick fixes for frequently encountered problems.
 
 ## Agent Stuck (Orange Ring)
 
-The orange ring means the agent is **waiting for permission approval**. Open the agent's terminal, review the request, and click **Approve** or **Deny**.
+The orange ring means the agent is **waiting for permission approval**. Open the agent's CLI view, review the request, and click **Approve** or **Deny**.
 
 To reduce interruptions: enable headless mode or Free Agent mode for quick agents.
 
@@ -40,7 +40,7 @@ Yellow banner = no `.git` directory found. Options:
 2. Click **Check now** to force a manual check
 3. Verify internet connectivity and firewall/proxy settings
 
-## Terminal Not Responding
+## CLI View Not Responding
 
 1. **Red ring?** — Agent crashed. Stop and restart.
 2. **No output?** — Process may be hung. Use **Kill/Stop**, then restart.
@@ -56,7 +56,7 @@ Models come from the orchestrator, not Clubhouse. If models are missing:
 ## Command Palette Not Opening
 
 If `Cmd+K` doesn't work:
-- Ensure focus is on the Clubhouse window (not a pop-out terminal's native input)
+- Ensure focus is on the Clubhouse window (not a pop-out's native input)
 - Check **Settings > Keyboard Shortcuts** for conflicts
 - Try `Cmd+K` from a non-text-input area first
 

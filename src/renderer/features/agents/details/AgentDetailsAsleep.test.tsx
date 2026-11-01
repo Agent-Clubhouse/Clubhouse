@@ -377,7 +377,7 @@ describe('Agent details for a sleeping agent (#2281)', () => {
   it('shows the terminal and no Runs in control with the Chat flag off', async () => {
     chatFlag = false;
     render(<AgentDetails agent={sleeping} />);
-    await waitFor(() => expect(settings().getByTestId('details-setting-runs-in')).toHaveTextContent('Terminal'));
+    await waitFor(() => expect(settings().getByTestId('details-setting-runs-in')).toHaveTextContent('CLI'));
     expect(settings().queryByRole('combobox', { name: 'Runs in' })).not.toBeInTheDocument();
     expect(settings().queryByTestId('details-setting-auto-sleep')).not.toBeInTheDocument();
   });
@@ -414,7 +414,7 @@ describe('Agent details for a sleeping agent (#2281)', () => {
     expect(settings().getByRole('combobox', { name: 'Runs in' })).toBe(select);
     expect(settings().getByTestId('details-setting-auto-sleep')).toBeInTheDocument();
     answer({ chat: false, live: false, chatAvailable: true });
-    await waitFor(() => expect(settings().getByTestId('details-setting-runs-in')).toHaveTextContent('Terminal'));
+    await waitFor(() => expect(settings().getByTestId('details-setting-runs-in')).toHaveTextContent('CLI'));
   });
 
   it('rolls a failed select back to the saved value', async () => {

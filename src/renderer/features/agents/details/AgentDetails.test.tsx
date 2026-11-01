@@ -35,7 +35,7 @@ describe('AgentDetails in the terminal', () => {
     expect(screen.getByTestId('details-card-mcp-summary')).toHaveTextContent('2 configured');
     fireEvent.click(screen.getByTestId('details-card-session-toggle'));
     const session = screen.getByTestId('details-card-session');
-    expect(session).toHaveTextContent('Claude Code · terminal');
+    expect(session).toHaveTextContent('Claude Code · CLI');
     expect(session).toHaveTextContent('.clubhouse/agents/faithful-urchin');
     expect(session).toHaveTextContent('faithful-urchin/rows');
     // The terminal has no turns: Changes offers only the branch.

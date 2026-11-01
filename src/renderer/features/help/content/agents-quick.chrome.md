@@ -41,6 +41,6 @@ Finished quick agents wait for you in two places: the project's start page, unde
 - how long it ran and which tools it used;
 - the files it modified.
 
-For a headless quick agent, the card can also show its transcript. See **Terminal and transcripts**.
+For a headless quick agent, the card can also show its transcript. See **CLI and transcripts**.
 
 **Dismiss** removes one when you're done. **Clear all**, on the start page and on the sidebar row, removes every finished quick agent in the project.

@@ -336,7 +336,7 @@ export function registerChatHandlers(): void {
   ));
 
   // Lets the agent pane pick ChatView or the terminal, and offer the
-  // Chat / Terminal switch only when the provider has a chat driver. With the
+  // Chat / CLI switch only when the provider has a chat driver. With the
   // project path and `starting`, a waking agent's answer is the runtime it is
   // starting into, so the pane doesn't flash the terminal first (#2206).
   ipcMain.handle(IPC.CHAT.GET_AGENT_RUNTIME, withValidatedArgs(

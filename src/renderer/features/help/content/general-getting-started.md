@@ -11,7 +11,7 @@ On first launch, a short onboarding flow appears based on your experience level.
 1. **Add a project** — Click `+` in the Project Rail (left sidebar) and select a folder.
 2. **Create an agent** — Open the Agents tab, click **New Agent**, and choose Durable or Quick.
 3. **Give it a mission** — Describe what you want in natural language (e.g., *"Add input validation to the signup form"*).
-4. **Monitor progress** — Watch real-time terminal output, approve permissions, and review results.
+4. **Monitor progress** — Watch real-time output, approve permissions, and review results.
 
 > **Tip:** Use `Cmd+K` to open the Command Palette — the fastest way to navigate anywhere in the app.
 

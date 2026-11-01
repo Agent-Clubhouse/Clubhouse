@@ -30,11 +30,11 @@ const CLUBHOUSE_WILDCARDS = [
 const SELECT_CLASS = `${settingsInput} w-[200px]`;
 const CODE_CLASS = 'font-mono text-ctp-subtext1';
 
-// ── Per-provider Chat / Terminal runtime (experimental 'chat' flag) ──────
+// ── Per-provider Chat / CLI runtime (experimental 'chat' flag) ──────
 
 const RUNTIME_MODE_OPTIONS: Array<{ value: AgentRuntimeMode; label: string }> = [
   { value: 'chat', label: 'Chat' },
-  { value: 'terminal', label: 'Terminal' },
+  { value: 'terminal', label: 'CLI' },
 ];
 
 /** Provider default when no runtime setting is saved. */
@@ -74,7 +74,7 @@ function useChatRuntimeSettings() {
   }, []);
 
   const setRuntimeMode = async (orchestratorId: string, mode: AgentRuntimeMode) => {
-    // An explicit Terminal choice means the "Agents now open in Chat" tip is never needed.
+    // An explicit CLI choice means the "Agents now open in Chat" tip is never needed.
     if (mode === 'terminal') noteExplicitTerminalChoice();
     setRuntimeSettings((prev) => ({ ...prev, [orchestratorId]: { ...prev[orchestratorId], mode } }));
     try {
@@ -407,7 +407,7 @@ function AppAgentSettings() {
                     >
                       <SettingsField
                         label="Runtime"
-                        help="Agents for this provider open in chat. Switch to Terminal to use the CLI's own interface. Chat needs a supported CLI; until then agents open in the terminal."
+                        help="Agents for this provider open in chat. Choose CLI to use the provider's own interface. Chat needs a supported CLI; until then agents open in the CLI view."
                       >
                         <RuntimeModeControl
                           value={runtimeMode}

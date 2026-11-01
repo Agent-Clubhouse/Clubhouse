@@ -23,7 +23,7 @@ You can change any of these in **Settings > Keyboard shortcuts**. A binding you 
 | `⌘2` to `⌘9` | The other title-bar tabs, in order |
 | `⌥⌘1` to `⌥⌘9` | Switch to agent 1 to 9, in sidebar order |
 | `⇧⌘N` | New quick agent: opens the active project's start page with the box focused |
-| `⇧⌘T` | Focus the active agent's terminal, if typing stops reaching it |
+| `⇧⌘T` | Focus the active agent's CLI view, if typing stops reaching it |
 
 There are no shortcuts to switch projects by number. Use `⌘K` and type `/` with part of the project name.
 
@@ -51,5 +51,5 @@ Plugins can add their own shortcuts, such as `⇧⌘F` to search files in the Fi
 
 ## Notes
 
-- When an agent's terminal has focus, typing goes to the agent. App shortcuts like `⌘K` still work.
+- When an agent's CLI view has focus, typing goes to the agent. App shortcuts like `⌘K` still work.
 - Changes to shortcuts apply right away.

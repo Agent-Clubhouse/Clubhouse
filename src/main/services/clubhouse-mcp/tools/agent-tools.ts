@@ -104,7 +104,7 @@ export function registerAgentTools(): void {
     label: 'Send Message',
     mcp: { targetKind: 'agent', nameSuffix: 'send_message' },
     description:
-      'Send a message to the linked agent. The message is injected as terminal input and submitted.\n\n' +
+      'Send a message to the linked agent. The message is injected as input to the agent and submitted.\n\n' +
       'IMPORTANT — this is asynchronous. The target agent will process the message on its own timeline ' +
       'and may be in the middle of other work. There is no inline response.\n\n' +
       'Your identity (name and project) is automatically included in the message so the target ' +
@@ -135,7 +135,7 @@ export function registerAgentTools(): void {
           type: 'boolean',
           description:
             'Whether to send a delayed Enter keystroke after the message to force submission. ' +
-            'Defaults to true. Set to false to inject text into the terminal without submitting ' +
+            'Defaults to true. Set to false to inject text into the agent\'s input without submitting ' +
             '(useful for building up multi-part inputs).',
         },
       },
@@ -236,7 +236,7 @@ export function registerAgentTools(): void {
     label: 'Read Agent Output',
     mcp: { targetKind: 'agent', nameSuffix: 'read_output' },
     description:
-        'Read recent terminal output from the linked agent.\n\n' +
+        'Read recent output from the linked agent.\n\n' +
         'Use this to poll for responses after send_message. The output is a raw terminal buffer ' +
         'and will contain ALL agent output — tool calls, reasoning, status messages, and any replies.\n\n' +
         'To find a specific response, search the output for the TASK_RESULT:<task_id> marker you ' +
@@ -462,7 +462,7 @@ export function registerAgentTools(): void {
     mcp: { targetKind: 'agent', nameSuffix: 'clear_agent' },
     description:
         'Send a /clear command to the linked agent, clearing its conversation context.\n\n' +
-        'Injects /clear directly into the agent\'s terminal. Use this when the agent\'s context ' +
+        'Injects /clear directly into the agent\'s CLI. Use this when the agent\'s context ' +
         'is bloated or stale and a fresh slate would improve its performance.\n\n' +
         'The agent must be running. Use get_status to check first.',
     inputSchema: {
@@ -498,7 +498,7 @@ export function registerAgentTools(): void {
     mcp: { targetKind: 'agent', nameSuffix: 'compact_agent' },
     description:
         'Send a /compact command to the linked agent, compacting its conversation context.\n\n' +
-        'Injects /compact directly into the agent\'s terminal. Use this when the agent\'s context ' +
+        'Injects /compact directly into the agent\'s CLI. Use this when the agent\'s context ' +
         'is large and you want it summarized without losing continuity.\n\n' +
         'The agent must be running. Use get_status to check first.',
     inputSchema: {
@@ -563,7 +563,7 @@ export function registerAgentTools(): void {
     mcp: { targetKind: 'agent', nameSuffix: 'sleep_agent', group: 'dispatcher' },
     description:
       'Put the linked agent to sleep. Returns once it has stopped, or already_sleeping if it was. Its session stays; wake_agent resumes it.\n\n' +
-      'Without force, this refuses a chat agent that is mid-turn and any terminal agent, whose turn state is unknown. ' +
+      'Without force, this refuses a chat agent that is mid-turn and any agent in the CLI view, whose turn state is unknown. ' +
       'Only use force when losing the turn in progress is fine, and ask the user if you are not sure. ' +
       'Running helpers of the agent are listed in the result; they keep running.',
     inputSchema: {

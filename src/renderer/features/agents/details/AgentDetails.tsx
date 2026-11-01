@@ -401,11 +401,11 @@ export function AgentDetails({ agent, chat, onShowInStream, missedSubagentId, on
       {!asleep && <DetailsCard id="session" title="Session" summary={sessionSummary} open={open('session')} onToggle={() => toggleCard('session')}>
         <CardRow label="Runs on">
           {provider}
-          {chat?.driver ? <span className="text-ctp-overlay1"> · {DRIVER_LABELS[chat.driver] ?? chat.driver}{chat.cliVersion ? ` ${chat.cliVersion}` : ''}</span> : !chat ? <span className="text-ctp-overlay1"> · terminal</span> : null}
+          {chat?.driver ? <span className="text-ctp-overlay1"> · {DRIVER_LABELS[chat.driver] ?? chat.driver}{chat.cliVersion ? ` ${chat.cliVersion}` : ''}</span> : !chat ? <span className="text-ctp-overlay1"> · CLI</span> : null}
         </CardRow>
         <CardRow label="Usage">
           {cost || tokens ? <>{cost}{cost && tokens ? <span className="text-ctp-overlay1"> · </span> : null}{tokens ? <span className={cost ? 'text-ctp-overlay1' : ''}>{formatTokens(tokens)} tokens</span> : null}</>
-            : <span className="text-ctp-overlay1">{chat ? 'none yet' : 'not reported in the terminal'}</span>}
+            : <span className="text-ctp-overlay1">{chat ? 'none yet' : 'not reported in the CLI view'}</span>}
         </CardRow>
         {limits.length > 0 && (
           <CardRow label="Plan limits">

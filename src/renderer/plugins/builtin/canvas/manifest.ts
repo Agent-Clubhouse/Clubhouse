@@ -57,7 +57,7 @@ export const manifest: PluginManifest = {
             'The Canvas provides a free-form spatial workspace for arranging views.',
             '',
             '### View types',
-            '- **Agent View** — Shows an agent terminal or sleeping widget.',
+            '- **Agent View** — Shows an agent\'s CLI or chat, or a sleeping widget.',
             '- **File View** — Browse and read project files.',
             '- **Browser View** — A sandboxed web browser.',
             '- **Git Diff View** — View changed files and diffs across projects and worktrees.',

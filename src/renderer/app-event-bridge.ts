@@ -411,11 +411,11 @@ export function initHelperStartRequestListener(): () => void {
 
 /** Notices that explain a start that didn't go as asked; a launch error card shows them. */
 const LAUNCH_FAILURE_CODES = new Set(['fallback', 'login_required']);
-const TERMINAL_FALLBACK_PREFIX = 'Opened in the terminal: ';
+const CLI_FALLBACK_PREFIX = 'Opened in the CLI view: ';
 
-/** The reason inside a chat fallback notice, without the "Opened in the terminal" lead-in. */
+/** The reason inside a chat fallback notice, without the "Opened in the CLI view" lead-in. */
 export function launchFailureReason(message: string): string {
-  return message.startsWith(TERMINAL_FALLBACK_PREFIX) ? message.slice(TERMINAL_FALLBACK_PREFIX.length) : message;
+  return message.startsWith(CLI_FALLBACK_PREFIX) ? message.slice(CLI_FALLBACK_PREFIX.length) : message;
 }
 
 /**

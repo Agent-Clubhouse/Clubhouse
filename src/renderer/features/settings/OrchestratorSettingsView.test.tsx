@@ -309,7 +309,7 @@ describe('OrchestratorSettingsView', () => {
     });
   });
 
-  describe('runtime (Chat / Terminal) control', () => {
+  describe('runtime (Chat / CLI) control', () => {
     const getRuntimeSettings = vi.fn();
     const saveRuntimeSettings = vi.fn();
 
@@ -380,7 +380,7 @@ describe('OrchestratorSettingsView', () => {
       expect(within(row).getByText('Runtime')).toBeInTheDocument();
       expect(within(row).getByText(/Agents for this provider open in chat/)).toBeInTheDocument();
       expect(within(row).getByRole('radio', { name: 'Chat' })).toHaveAttribute('aria-checked', 'true');
-      expect(within(row).getByRole('radio', { name: 'Terminal' })).toHaveAttribute('aria-checked', 'false');
+      expect(within(row).getByRole('radio', { name: 'CLI' })).toHaveAttribute('aria-checked', 'false');
       // The hook server toggle is still there alongside it.
       expect(screen.getByText('Hook server')).toBeInTheDocument();
     });
@@ -391,7 +391,7 @@ describe('OrchestratorSettingsView', () => {
       render(<OrchestratorSettingsView />);
       const row = await screen.findByTestId('runtime-mode-claude-code');
       await waitFor(() => {
-        expect(within(row).getByRole('radio', { name: 'Terminal' })).toHaveAttribute('aria-checked', 'true');
+        expect(within(row).getByRole('radio', { name: 'CLI' })).toHaveAttribute('aria-checked', 'true');
       });
     });
 
@@ -403,7 +403,7 @@ describe('OrchestratorSettingsView', () => {
       });
       render(<OrchestratorSettingsView />);
       const row = await screen.findByTestId('runtime-mode-claude-code');
-      fireEvent.click(within(row).getByRole('radio', { name: 'Terminal' }));
+      fireEvent.click(within(row).getByRole('radio', { name: 'CLI' }));
 
       await waitFor(() => {
         expect(saveRuntimeSettings).toHaveBeenCalledWith({
@@ -411,7 +411,7 @@ describe('OrchestratorSettingsView', () => {
           'claude-code': { mode: 'terminal', driver: 'claude_agent_sdk' },
         });
       });
-      expect(within(row).getByRole('radio', { name: 'Terminal' })).toHaveAttribute('aria-checked', 'true');
+      expect(within(row).getByRole('radio', { name: 'CLI' })).toHaveAttribute('aria-checked', 'true');
     });
 
     it('shows for enabled orchestrators without hook support, without a hook server toggle', async () => {
@@ -436,7 +436,7 @@ describe('OrchestratorSettingsView', () => {
       localStorage.removeItem(CHAT_DEFAULT_TIP_KEY);
       render(<OrchestratorSettingsView />);
       const row = await screen.findByTestId('runtime-mode-claude-code');
-      fireEvent.click(within(row).getByRole('radio', { name: 'Terminal' }));
+      fireEvent.click(within(row).getByRole('radio', { name: 'CLI' }));
       expect(localStorage.getItem(CHAT_DEFAULT_TIP_KEY)).toBe('chose_terminal');
       localStorage.removeItem(CHAT_DEFAULT_TIP_KEY);
     });

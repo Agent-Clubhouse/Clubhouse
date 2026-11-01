@@ -1,11 +1,11 @@
 /**
  * First-launch tip for Chat as the default runtime
  * (docs/structured-chat-research.md §8.0 step 4): "Agents now open in Chat…"
- * next to the Chat / Terminal switch, once per user.
+ * next to the Chat / CLI switch, once per user.
  *
  * It only shows when chat came from the default: never once the user has
- * explicitly chosen Terminal anywhere (a provider setting, any durable agent
- * set to Terminal, or the switch), and not for a provider or agent explicitly
+ * explicitly chosen CLI anywhere (a provider setting, any durable agent
+ * set to CLI, or the switch), and not for a provider or agent explicitly
  * set to Chat. The decision is remembered in localStorage (per user profile)
  * as soon as the tip is shown, so it never reappears, even if neither button
  * is pressed. If that write fails, the tip doesn't show at all: a tip that
@@ -19,7 +19,7 @@ export const CHAT_DEFAULT_TIP_KEY = 'clubhouse_chat_default_tip';
 
 export type ChatTipResolution = 'shown' | 'dismissed' | 'opened_settings' | 'chose_terminal' | 'chose_chat';
 
-export const CHAT_DEFAULT_TIP_TEXT = 'Agents now open in Chat. Prefer the terminal? You can change it for each provider in Settings.';
+export const CHAT_DEFAULT_TIP_TEXT = 'Agents now open in Chat. Prefer the CLI view? You can change it for each provider in Settings.';
 
 /** True once the tip has been shown or ruled out. Storage errors count as resolved: never nag. */
 export function isChatTipResolved(): boolean {
@@ -40,7 +40,7 @@ export function resolveChatTip(how: ChatTipResolution): boolean {
   }
 }
 
-/** Record an explicit Terminal choice: the user never needs the tip after that. */
+/** Record an explicit CLI choice: the user never needs the tip after that. */
 export function noteExplicitTerminalChoice(): void {
   resolveChatTip('chose_terminal');
 }

@@ -62,7 +62,7 @@ export function ClubhouseStructureIllustration({ className }: { className?: stri
       <circle cx="180" cy="163" r="6" fill="rgb(var(--ctp-accent))" opacity="0.9" />
 
       <rect x="220" y="10" width="90" height="180" rx="12" fill="rgb(var(--ctp-surface0))" />
-      <text x="265" y="40" textAnchor="middle" fontSize="10" fill="rgb(var(--ctp-subtext0))">Terminal</text>
+      <text x="265" y="40" textAnchor="middle" fontSize="10" fill="rgb(var(--ctp-subtext0))">CLI</text>
       <rect x="232" y="55" width="66" height="4" rx="2" fill="rgb(var(--ctp-accent))" opacity="0.3" />
       <rect x="232" y="65" width="50" height="4" rx="2" fill="rgb(var(--ctp-accent))" opacity="0.2" />
       <rect x="232" y="75" width="58" height="4" rx="2" fill="rgb(var(--ctp-accent))" opacity="0.3" />

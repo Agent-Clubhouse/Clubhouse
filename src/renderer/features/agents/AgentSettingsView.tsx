@@ -450,7 +450,7 @@ export function AgentSettingsView({ agent }: Props) {
   // Persona state (per-agent override of project default)
   const [agentPersona, setAgentPersona] = useState('');
 
-  // Chat / Terminal runtime override ('' = provider default). Only offered
+  // Chat / CLI runtime override ('' = provider default). Only offered
   // when the experimental Chat flag is on.
   const [chatFlagEnabled, setChatFlagEnabled] = useState(false);
   const [runtimeMode, setRuntimeMode] = useState<AgentRuntimeMode | ''>('');
@@ -1112,7 +1112,7 @@ export function AgentSettingsView({ agent }: Props) {
         </select>
       </Field>
       {chatFlagEnabled && (
-        <Field label="Runtime" help="Chat or terminal for this agent. Overrides the provider setting." htmlFor="agent-settings-runtime">
+        <Field label="Runtime" help="Chat or CLI for this agent. Overrides the provider setting." htmlFor="agent-settings-runtime">
           <select
             id="agent-settings-runtime"
             aria-label="Runtime"
@@ -1124,7 +1124,7 @@ export function AgentSettingsView({ agent }: Props) {
           >
             <option value="">Provider default</option>
             <option value="chat">Chat</option>
-            <option value="terminal">Terminal</option>
+            <option value="terminal">CLI</option>
           </select>
         </Field>
       )}

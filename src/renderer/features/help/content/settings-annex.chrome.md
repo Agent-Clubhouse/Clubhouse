@@ -30,7 +30,7 @@ Once a satellite is paired, a host row appears at the top of the sidebar. It sho
 - **Pair a satellite…**;
 - open **Annex settings**.
 
-When you switch to a satellite, the sidebar lists its projects and agents. You can type into its agents' terminals, start quick agents, and wake or stop agents there.
+When you switch to a satellite, the sidebar lists its projects and agents. You can type into its agents' CLI views, start quick agents, and wake or stop agents there.
 
 Agents on any connected host that are waiting on you appear under **Needs you**, tagged with the host's name. Clicking one switches to that host and opens the agent. Permission prompts from a satellite's agents are answered on the controller.
 

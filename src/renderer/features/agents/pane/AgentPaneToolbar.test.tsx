@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
-import { render, screen, fireEvent, act } from '@testing-library/react';
+import { render, screen, fireEvent, act, within } from '@testing-library/react';
 import { AgentPaneToolbar } from './AgentPaneToolbar';
 import { chatActivity, chatUsage } from '../chat/ChatHeader';
 import { createChatViewState } from '../../../stores/chatStore';
@@ -56,7 +56,7 @@ describe('AgentPaneToolbar', () => {
     );
     ro.resize(400);
     expect(screen.getByTestId('agent-pane-toolbar')).toHaveAttribute('data-narrow', 'true');
-    expect(screen.getByRole('radio', { name: 'Terminal' })).toHaveTextContent('');
+    expect(screen.getByRole('radio', { name: 'CLI' })).toHaveTextContent('');
     expect(screen.queryByTestId('pane-model')).not.toBeInTheDocument();
     expect(screen.getByTestId('pane-orchestrator').getAttribute('aria-label')).toContain('Model opus');
     ro.resize(800);
@@ -80,29 +80,48 @@ describe('AgentPaneToolbar', () => {
     expect(screen.getByTestId('agent-context-menu')).toBeInTheDocument();
   });
 
-  it('offers Changes as a third view beside Chat and Terminal', () => {
+  it('offers Changes as its own pressed button beside the Chat and CLI switch', () => {
     const onOpen = vi.fn();
     const onClose = vi.fn();
     const onChange = vi.fn();
     const { rerender } = render(<AgentPaneToolbar agent={agent} dot="idle" runtime={{ value: 'chat', onChange }} review={{ active: false, count: 6, onOpen, onClose }} />);
-    const changes = screen.getByTestId('view-changes');
+    const group = screen.getByRole('radiogroup', { name: 'Chat or CLI' });
+    expect(within(group).getAllByRole('radio').map((r) => r.textContent)).toEqual(['Chat', 'CLI']);
+    expect(group).not.toContainElement(screen.getByTestId('view-changes'));
+    const changes = screen.getByRole('button', { name: /Changes/ });
+    expect(changes).toBe(screen.getByTestId('view-changes'));
     expect(changes).toHaveTextContent('Changes6');
+    expect(changes).toHaveAttribute('aria-pressed', 'false');
     fireEvent.click(changes);
-    expect(onOpen).toHaveBeenCalled();
+    expect(onOpen).toHaveBeenCalledTimes(1);
     rerender(<AgentPaneToolbar agent={agent} dot="idle" runtime={{ value: 'chat', onChange }} review={{ active: true, count: 6, onOpen, onClose }} />);
-    expect(screen.getByRole('radio', { name: /Changes/ })).toHaveAttribute('aria-checked', 'true');
+    expect(screen.getByTestId('view-changes')).toHaveAttribute('aria-pressed', 'true');
     expect(screen.getByRole('radio', { name: 'Chat' })).toHaveAttribute('aria-checked', 'false');
+    // Pressing it again returns to the last view without opening anything.
+    fireEvent.click(screen.getByTestId('view-changes'));
+    expect(onClose).toHaveBeenCalledTimes(1);
+    expect(onOpen).toHaveBeenCalledTimes(1);
     // Back to the current runtime closes the review; the other runtime also switches.
     fireEvent.click(screen.getByRole('radio', { name: 'Chat' }));
-    expect(onClose).toHaveBeenCalledTimes(1);
+    expect(onClose).toHaveBeenCalledTimes(2);
     expect(onChange).not.toHaveBeenCalled();
-    fireEvent.click(screen.getByRole('radio', { name: 'Terminal' }));
+    fireEvent.click(screen.getByRole('radio', { name: 'CLI' }));
     expect(onChange).toHaveBeenCalledWith('terminal');
   });
 
-  it('shows Terminal and Changes for an agent that can\'t switch runtimes', () => {
+  it('keeps Changes as an icon button below 640px', () => {
+    ro = installResizeObserver();
+    render(<AgentPaneToolbar agent={agent} dot="idle" runtime={{ value: 'chat', onChange: vi.fn() }} review={{ active: true, count: 6, onOpen: vi.fn(), onClose: vi.fn() }} />);
+    ro.resize(400);
+    const changes = screen.getByRole('button', { name: 'Changes' });
+    expect(changes).toHaveTextContent('');
+    expect(changes).toHaveAttribute('aria-pressed', 'true');
+  });
+
+  it('shows CLI and Changes for an agent that can\'t switch runtimes', () => {
     render(<AgentPaneToolbar agent={agent} dot="idle" runtime={{ value: 'terminal' }} review={{ active: false, onOpen: vi.fn(), onClose: vi.fn() }} />);
-    expect(screen.getAllByRole('radio').map((r) => r.textContent)).toEqual(['Terminal', 'Changes']);
+    expect(screen.getAllByRole('radio').map((r) => r.textContent)).toEqual(['CLI']);
+    expect(screen.getByTestId('view-changes')).toHaveTextContent('Changes');
   });
 
   it('names the agent only when asked (the classic shell)', () => {

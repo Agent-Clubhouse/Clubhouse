@@ -38,11 +38,11 @@ A banner appears when the project has no `.git` folder. Click **git init** in th
 2. Click **Check now**.
 3. Check your connection, firewall and proxy.
 
-## The terminal isn't responding
+## The CLI view isn't responding
 
 1. **Status says Error?** The agent crashed. Stop it and start it again.
 2. **No output?** The process may be hung. Stop it from the row menu, then start it again.
-3. **Can scroll but can't type?** Press `⇧⌘T` to focus the terminal again.
+3. **Can scroll but can't type?** Press `⇧⌘T` to focus the CLI view again.
 4. **Slow to draw?** A very long output buffer can do that. Restart the agent to clear it.
 
 ## Models are missing

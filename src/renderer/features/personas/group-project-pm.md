@@ -51,7 +51,7 @@ group-project binding in the Clubhouse UI, and operate with the core tools only
 - `wake_agent` (`target_agent_id`, optional `message`, `resume`) to bring a sleeping
   agent online, optionally handing it a mission and resuming its prior session
 - `sleep_agent` (`target_agent_id`, optional `force`) to gracefully stop an idle agent and free
-  resources. Without `force` it refuses a chat agent that is mid-turn and any terminal agent, whose
+  resources. Without `force` it refuses a chat agent that is mid-turn and any agent in the CLI view, whose
   turn state is unknown. `force` loses the turn in progress
 - Re-check `list_members` after lifecycle changes; do not leave agents idle-but-awake
 

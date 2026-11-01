@@ -2,8 +2,8 @@
  * The agent pane's one 32px toolbar (#2018, "Design decided 2026-10-17"). It
  * replaces ChatHeader's 52px header and the terminal's 32px runtime bar, in
  * the main pane and in popouts: status dot and word, what the agent is doing,
- * a neutral orchestrator glyph, the model, the context meter, Changes, the
- * Chat / Terminal switch and the agent's menu. The agent's name is not
+ * a neutral orchestrator glyph, the model, the context meter, the Chat / CLI
+ * switch, Changes and the agent's menu. The agent's name is not
  * repeated where the breadcrumb or the popout title already says it.
  *
  * Below 640px wide (popouts parked beside the main window) Changes and the
@@ -34,19 +34,20 @@ export const ChatBubbleIcon = () => <Svg size={13}><path d="M4 5h16v11H10l-5 4v-
 export const TerminalGlyph = () => <Svg size={13}><path d="M4 17l6-5-6-5M12 19h8" /></Svg>;
 export const MoreIcon = () => <Svg><path d="M5 12h.01M12 12h.01M19 12h.01" strokeWidth={3} /></Svg>;
 
-/** The Changes review as a third view beside Chat and Terminal (#2032). */
+/** The Changes review, a button beside the Chat / CLI switch (#2032, #2600). */
 export interface ReviewView {
   active: boolean;
-  /** Files changed on the branch, shown on the segment. */
+  /** Files changed on the branch, shown on the button. */
   count?: number;
   onOpen: () => void;
   onClose: () => void;
 }
 
 /**
- * The Chat / Terminal switch: labels when wide, icon segments when narrow.
- * Without `onChange` only the current runtime shows (agents that can't
- * switch); with `review` a Changes segment follows.
+ * The Chat / CLI switch: labels when wide, icon segments when narrow. Without
+ * `onChange` only the current runtime shows (agents that can't switch). With
+ * `review`, a Changes button follows the switch: pressing it again, or choosing
+ * a segment, returns to the runtime. No segment is checked while it's open.
  */
 export function RuntimeSwitch({ value, onChange, disabled, compact, review }: {
   value: RuntimeView;
@@ -56,40 +57,40 @@ export function RuntimeSwitch({ value, onChange, disabled, compact, review }: {
   review?: ReviewView;
 }) {
   const views: RuntimeView[] = onChange ? ['chat', 'terminal'] : [value];
-  const showing = review?.active ? 'changes' : value;
-  const segment = 'h-[22px] flex items-center justify-center gap-1 rounded-[5px] text-xs disabled:opacity-50';
   return (
-    <span className="inline-flex gap-0.5 p-0.5 rounded-[7px] bg-ctp-crust" role="radiogroup" aria-label={review ? 'View' : 'Chat or terminal'} data-testid="runtime-switch">
-      {views.map((v) => {
-        const label = v === 'chat' ? 'Chat' : 'Terminal';
-        return (
-          <Tooltip key={v} content={label} disabled={!compact}>
-            <button
-              type="button"
-              role="radio"
-              aria-checked={showing === v}
-              aria-label={compact ? label : undefined}
-              disabled={disabled}
-              onClick={() => {
-                if (review?.active) review.onClose();
-                if (v !== value) onChange?.(v);
-              }}
-              className={`${segment} ${compact ? 'w-[26px]' : 'px-[9px]'} ${showing === v ? 'bg-surface-0 text-ctp-text' : 'text-ctp-subtext0 hover:text-ctp-text'}`}
-            >
-              {compact ? (v === 'chat' ? <ChatBubbleIcon /> : <TerminalGlyph />) : label}
-            </button>
-          </Tooltip>
-        );
-      })}
+    <span className="inline-flex items-center gap-1">
+      <span className="inline-flex gap-0.5 p-0.5 rounded-[7px] bg-ctp-crust" role="radiogroup" aria-label="Chat or CLI" data-testid="runtime-switch">
+        {views.map((v) => {
+          const label = v === 'chat' ? 'Chat' : 'CLI';
+          const checked = !review?.active && v === value;
+          return (
+            <Tooltip key={v} content={label} disabled={!compact}>
+              <button
+                type="button"
+                role="radio"
+                aria-checked={checked}
+                aria-label={compact ? label : undefined}
+                disabled={disabled}
+                onClick={() => {
+                  if (review?.active) review.onClose();
+                  if (v !== value) onChange?.(v);
+                }}
+                className={`h-[22px] flex items-center justify-center gap-1 rounded-[5px] text-xs disabled:opacity-50 ${compact ? 'w-[26px]' : 'px-[9px]'} ${checked ? 'bg-surface-0 text-ctp-text' : 'text-ctp-subtext0 hover:text-ctp-text'}`}
+              >
+                {compact ? (v === 'chat' ? <ChatBubbleIcon /> : <TerminalGlyph />) : label}
+              </button>
+            </Tooltip>
+          );
+        })}
+      </span>
       {review && (
         <Tooltip content="Changes" disabled={!compact}>
           <button
             type="button"
-            role="radio"
-            aria-checked={review.active}
+            aria-pressed={review.active}
             aria-label={compact ? 'Changes' : undefined}
-            onClick={() => { if (!review.active) review.onOpen(); }}
-            className={`${segment} ${compact ? 'w-[26px]' : 'px-[9px]'} ${review.active ? 'bg-surface-0 text-ctp-text' : 'text-ctp-subtext0 hover:text-ctp-text'}`}
+            onClick={() => { if (review.active) review.onClose(); else review.onOpen(); }}
+            className={`h-7 rounded-md flex items-center justify-center gap-1 text-xs hover:bg-surface-0 hover:text-ctp-text ${compact ? 'w-7' : 'px-2'} ${review.active ? 'bg-surface-0 text-ctp-text' : 'text-ctp-subtext0'}`}
             data-testid="view-changes"
           >
             {compact ? <DiffIcon /> : <>Changes{review.count ? <span className="text-ctp-overlay1 tabular-nums">{review.count}</span> : null}</>}
@@ -202,7 +203,7 @@ export interface AgentPaneToolbarProps {
   usage?: PaneUsage | null;
   /** The runtime switch. Without `onChange` it only names the current runtime, beside Changes. */
   runtime?: { value: RuntimeView; onChange?: (v: RuntimeView) => void; disabled?: boolean; tip?: ReactNode };
-  /** The Changes review segment (#2032), main pane only. */
+  /** The Changes review button (#2032), main pane only. */
   review?: ReviewView;
   /** The Agent details toggle (#2032), before the runtime switch. */
   detailsToggle?: ReactNode;

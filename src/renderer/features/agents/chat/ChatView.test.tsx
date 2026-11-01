@@ -961,7 +961,7 @@ describe('ChatView agent details', () => {
       fireEvent.click(screen.getByTestId('details-card-changes-toggle'));
       fireEvent.click(await screen.findByTestId('details-review-all'));
       expect(await screen.findByTestId('changes-review')).toBeInTheDocument();
-      expect(screen.getByTestId('view-changes')).toHaveAttribute('aria-checked', 'true');
+      expect(screen.getByTestId('view-changes')).toHaveAttribute('aria-pressed', 'true');
       fireEvent.click(screen.getByRole('radio', { name: 'Chat' }));
       expect(screen.queryByTestId('changes-review')).not.toBeInTheDocument();
     } finally {
@@ -1127,7 +1127,7 @@ describe('ChatView login banner', () => {
     const onSwitchToTerminal = vi.fn();
     render(<ChatViewBody agent={agent} state={fold(events)} actions={makeActions()} providerName="Codex" onSwitchToTerminal={onSwitchToTerminal} />);
     expect(screen.getByTestId('chat-login-banner')).toHaveTextContent('This CLI needs you to log in.');
-    fireEvent.click(screen.getByRole('button', { name: 'Log in in the terminal' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Switch to CLI to log in' }));
     expect(onSwitchToTerminal).toHaveBeenCalled();
   });
 });

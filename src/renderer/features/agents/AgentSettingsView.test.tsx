@@ -450,7 +450,7 @@ describe('AgentSettingsView', () => {
       renderSettings();
       const select = await screen.findByLabelText('Runtime') as HTMLSelectElement;
       expect(select.value).toBe('');
-      expect(Array.from(select.options).map((o) => o.textContent)).toEqual(['Provider default', 'Chat', 'Terminal']);
+      expect(Array.from(select.options).map((o) => o.textContent)).toEqual(['Provider default', 'Chat', 'CLI']);
     });
 
     it('loads and persists the override, using null for Provider default', async () => {

@@ -4,7 +4,7 @@
  * a build that isn't preview-eligible) it renders the terminal exactly as
  * before and never loads the chat view.
  *
- * The Chat / Terminal switch hands the agent over by setting its runtime
+ * The Chat / CLI switch hands the agent over by setting its runtime
  * override and restarting it with resume, so the CLI keeps its context
  * (docs/structured-chat-research.md §7.1, decision 8: switch freely when idle;
  * during a turn, confirm "Interrupt and switch?" first).
@@ -169,7 +169,7 @@ interface Props {
   /** The terminal view, rendered unchanged when the agent isn't in chat. */
   terminal: ReactNode;
   /**
-   * Show the Chat / Terminal switch. Views outside the main agent pane
+   * Show the Chat / CLI switch. Views outside the main agent pane
    * (popouts, canvas, plugins) render whichever runtime the agent is in and
    * leave switching to the main pane.
    */
@@ -218,7 +218,7 @@ export function AgentRuntimePane({ agent, terminal, canSwitch = true, context = 
       await switchAgentRuntime(agent, mode);
     } catch (err) {
       // telemetry-exempt: shown to the user; chat stays independent of telemetry (research §7.3), which maps chat events itself.
-      useToastStore.getState().addToast(`Couldn't switch to ${mode === 'chat' ? 'Chat' : 'Terminal'}: ${err instanceof Error ? err.message : String(err)}`, 'error');
+      useToastStore.getState().addToast(`Couldn't switch to ${mode === 'chat' ? 'Chat' : 'CLI'}: ${err instanceof Error ? err.message : String(err)}`, 'error');
     } finally {
       setSwitching(false);
     }
@@ -240,7 +240,7 @@ export function AgentRuntimePane({ agent, terminal, canSwitch = true, context = 
     <ConfirmDestructiveAction
       open={confirm !== null}
       title="Interrupt and switch?"
-      description={`${agent.name} is working. Switching to ${confirm === 'chat' ? 'Chat' : 'the terminal'} stops the current turn, then resumes the same session there.`}
+      description={`${agent.name} is working. Switching to ${confirm === 'chat' ? 'Chat' : 'the CLI view'} stops the current turn, then resumes the same session there.`}
       confirmLabel="Interrupt and switch"
       onConfirm={() => { if (confirm) void doSwitch(confirm); }}
       onCancel={() => setConfirm(null)}
