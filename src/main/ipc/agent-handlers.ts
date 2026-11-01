@@ -154,30 +154,15 @@ function assertNotDispatcher(projectPath: string, agentId: string, what: string)
   }
 }
 
-/** Nothing is created in the Dispatcher's folder (no duplicates), and no agent gets the hidden dispatcher persona. */
-function assertCreatable(projectPath: string, persona: string | undefined): void {
+/**
+ * Nothing is created in the Dispatcher's folder (no duplicates). The persona
+ * rules (no other agent gets the dispatcher persona, and the Dispatcher keeps
+ * it) live in agentConfig.assertPersonaAllowed, which every create and config
+ * update runs (#2551).
+ */
+function assertCreatable(projectPath: string): void {
   if (dispatcher.isDispatcherPath(projectPath)) {
     throw tagError(new Error("The Dispatcher can't be duplicated."), 'validation');
-  }
-  if (persona === dispatcher.DISPATCHER_PERSONA) {
-    throw tagError(new Error('The Dispatcher persona is only for the Dispatcher.'), 'validation');
-  }
-}
-
-/**
- * The Dispatcher's CLI, model, effort, runtime, auto-sleep and access can
- * change; its persona can't. No other agent can take the dispatcher persona.
- */
-function assertConfigUpdateAllowed(projectPath: string, agentId: string, updates: DurableConfigUpdates): void {
-  if (updates.persona === undefined) return;
-  if (isDispatcherAgent(projectPath, agentId)) {
-    if (updates.persona !== dispatcher.DISPATCHER_PERSONA) {
-      throw tagError(new Error("The Dispatcher's persona can't be changed."), 'validation');
-    }
-    return;
-  }
-  if (updates.persona === dispatcher.DISPATCHER_PERSONA) {
-    throw tagError(new Error('The Dispatcher persona is only for the Dispatcher.'), 'validation');
   }
 }
 
@@ -221,7 +206,7 @@ export function registerAgentHandlers(): void {
         'clubhouse.agent.create',
         { attrs: [ATTR.usesWorktree(useWorktree !== false), ATTR.orchestrator(orchestratorAttr(orchestrator))] },
         () => {
-          assertCreatable(projectPath, persona);
+          assertCreatable(projectPath);
           return createDurableAgent(
             projectPath, name, color, model, useWorktree, orchestrator, freeAgentMode, mcpIds,
             mcpConfigs as Record<string, Record<string, string>> | undefined, persona,
@@ -239,7 +224,7 @@ export function registerAgentHandlers(): void {
     [stringArg(), objectArg<Record<string, unknown>>()],
     async (_event, projectPath, rawParams) => {
       const params = parseStartCreationParams(rawParams);
-      assertCreatable(projectPath, params.persona);
+      assertCreatable(projectPath);
       const { agentId, config } = await startDurableCreation(projectPath, params, personaInjection(projectPath, params));
       return { agentId, config };
     },
@@ -331,7 +316,6 @@ export function registerAgentHandlers(): void {
   ipcMain.handle(IPC.AGENT.UPDATE_DURABLE_CONFIG, withValidatedArgs(
     [stringArg(), stringArg(), objectArg<DurableConfigUpdates>()],
     async (_event, projectPath, agentId, updates) => {
-      assertConfigUpdateAllowed(projectPath, agentId, updates);
       return agentConfig.updateDurableConfig(projectPath, agentId, updates);
     },
   ));

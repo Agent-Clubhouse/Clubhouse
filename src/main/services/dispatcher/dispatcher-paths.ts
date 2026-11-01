@@ -10,6 +10,9 @@ export function getDispatcherPath(): string {
   return path.join(getBaseDirPath(), 'dispatcher');
 }
 
+/** The hidden built-in persona only the Dispatcher has (#2535). */
+export const DISPATCHER_PERSONA = 'dispatcher';
+
 /** The Dispatcher's workspace for plans and state between sessions. */
 export function getDispatcherNotesPath(): string {
   return path.join(getDispatcherPath(), 'notes');

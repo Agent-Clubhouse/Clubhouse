@@ -21,7 +21,7 @@ import { assertAgentGitName, validateAgentGitName } from '../../shared/agent-nam
 import { ACCESS_LEVELS, type AgentAccessLevel, type OrchestrationPolicyConfig } from '../../shared/orchestration-policy';
 import { notifyPersonaChanged } from './persona-change-hook';
 import { uncommittedPorcelain } from './clubhouse-owned-files';
-import { isDispatcherPath } from './dispatcher/dispatcher-paths';
+import { DISPATCHER_PERSONA, isDispatcherPath } from './dispatcher/dispatcher-paths';
 
 /**
  * Non-blocking git command execution. Prevents UI freezes in large repos.
@@ -1114,11 +1114,29 @@ export async function getDurableConfig(projectPath: string, agentId: string): Pr
   return agentsById.get(agentId) ?? null;
 }
 
+/**
+ * The hidden dispatcher persona belongs to the Dispatcher, and the Dispatcher
+ * keeps it (#2535, #2551). Every persona write checks this: creation, and
+ * updateDurableConfig (so Apply persona and every settings path too).
+ * `persona` is the persona the agent would end up with; '' or undefined is
+ * none. Throws tagged `validation`.
+ */
+export function assertPersonaAllowed(projectPath: string, persona: string | undefined): void {
+  if (isDispatcherPath(projectPath)) {
+    if (persona !== DISPATCHER_PERSONA) {
+      throw tagError(new Error("The Dispatcher's persona can't be changed."), 'validation');
+    }
+  } else if (persona === DISPATCHER_PERSONA) {
+    throw tagError(new Error('The Dispatcher persona is only for the Dispatcher.'), 'validation');
+  }
+}
+
 export async function updateDurableConfig(
   projectPath: string,
   agentId: string,
   updates: DurableConfigUpdates,
 ): Promise<void> {
+  if (updates.persona !== undefined) assertPersonaAllowed(projectPath, updates.persona);
   const { agents, agentsById } = await readAgentsEntry(projectPath);
   const agent = agentsById.get(agentId);
   if (!agent) return;
@@ -1722,9 +1740,11 @@ async function foreignParentProject(projectPath: string, params: StartDurableCre
 /**
  * Refuse a persona id that resolves to nothing in the target project
  * (project > user > built-in), so no agent records an id with no content
- * (#2511). Throws tagged `validation`.
+ * (#2511), or one the agent may not have (assertPersonaAllowed). Throws
+ * tagged `validation`.
  */
 async function assertPersonaExists(projectPath: string, persona: string | undefined): Promise<void> {
+  assertPersonaAllowed(projectPath, persona);
   if (!persona) return;
   const { readLayeredPersonaRaw } = await import('./materialization-service');
   if (await readLayeredPersonaRaw(projectPath, persona) === undefined) {

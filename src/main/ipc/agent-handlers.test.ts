@@ -311,22 +311,18 @@ describe('agent-handlers', () => {
       expect(orchestrationPolicy.turnOffOrchestration).not.toHaveBeenCalled();
     });
 
-    it('refuses a duplicate in its folder and the dispatcher persona anywhere else', async () => {
+    // The persona rules run in agentConfig.assertPersonaAllowed (#2551); see agent-config.test.
+    it('refuses a duplicate in its folder', async () => {
       const start = handlers.get(IPC.AGENT.START_DURABLE_CREATION)!;
       await expect(start({}, 'dispatcher-folder', { name: 'copy', color: 'indigo' })).rejects.toThrow(/duplicated/);
-      await expect(start({}, 'project', { name: 'imposter', color: 'indigo', persona: 'dispatcher' })).rejects.toThrow(/only for the Dispatcher/);
       const create = handlers.get(IPC.AGENT.CREATE_DURABLE)!;
       await expect(create({}, 'dispatcher-folder', 'copy', 'indigo')).rejects.toThrow(/duplicated/);
       expect(agentCreation.startDurableCreation).not.toHaveBeenCalled();
       expect(agentConfig.createDurable).not.toHaveBeenCalled();
     });
 
-    it('refuses a persona change but allows CLI, model, runtime, auto-sleep and access', async () => {
+    it('allows CLI, model, runtime, auto-sleep and access', async () => {
       const update = handlers.get(IPC.AGENT.UPDATE_DURABLE_CONFIG)!;
-      await expect(update({}, 'dispatcher-folder', 'disp', { persona: 'workhorse' })).rejects.toThrow("The Dispatcher's persona can't be changed.");
-      await expect(update({}, 'project', 'agent-1', { persona: 'dispatcher' })).rejects.toThrow(/only for the Dispatcher/);
-      expect(agentConfig.updateDurableConfig).not.toHaveBeenCalled();
-
       const allowed = { orchestrator: 'codex-cli', model: 'gpt-5', runtimeMode: 'terminal', idleSleep: 30, freeAgentMode: false };
       await update({}, 'dispatcher-folder', 'disp', allowed);
       expect(agentConfig.updateDurableConfig).toHaveBeenCalledWith('dispatcher-folder', 'disp', allowed);
