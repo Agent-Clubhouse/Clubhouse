@@ -151,6 +151,20 @@ describe('checkpoint tracker', () => {
     expect(fs.readFileSync(path.join(repo, 'a.txt'), 'utf-8')).toBe('x\n');
   });
 
+  it('marks and closes a turn that ends before its start checkpoint is written', async () => {
+    reg.others.set('term-1', { cwd: repo, runtime: 'pty' });
+    handleChatEventForCheckpoints(turnEvent('turn_started', 'turn-q'));
+    fs.writeFileSync(path.join(repo, 'a.txt'), 'x\n');
+    handleChatEventForCheckpoints(turnEvent('turn_ended', 'turn-q'));
+    await whenCheckpointsIdle();
+    const [turn] = await listTurns('agent-1');
+    expect(turn.end).toBeTruthy();
+    expect(turn.shared).toBe(true);
+    // The turn is closed: once the terminal agent leaves, it can be reverted.
+    reg.others.clear();
+    await expect(revertTurn('agent-1', 'turn-q')).resolves.toMatchObject({ conflicts: [] });
+  });
+
   it('reports a revert in progress so new prompts can wait for it', async () => {
     await runTurn('turn-p', () => fs.writeFileSync(path.join(repo, 'a.txt'), 'x\n'));
     expect(await isRevertRunning('agent-1')).toBe(false);
