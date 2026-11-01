@@ -16,6 +16,7 @@ import { startPeriodicChecks as startUpdateChecks, stopPeriodicChecks as stopUpd
 import { startPeriodicPluginUpdateChecks, stopPeriodicPluginUpdateChecks } from './services/plugin-update-service';
 import * as annexServer from './services/annex-server';
 import { bridgeServer as mcpBridgeServer } from './services/clubhouse-mcp';
+import { unpublishCliEndpoint } from './services/cli-endpoint';
 import { flushAllPending as flushPendingBroadcasts } from './util/ipc-broadcast';
 import { preWarmShellEnvironment } from './util/shell';
 import { initializeRipgrep } from './services/search-service';
@@ -450,6 +451,7 @@ setShutdownBegin(() => {
   stopHeadlessStaleSweep();
   annexServer.stop();
   mcpBridgeServer.stop();
+  unpublishCliEndpoint();
   stopAllWatches();
   // Bounded; queued feedback stays on disk for the next run.
   void shutdownFeedback();

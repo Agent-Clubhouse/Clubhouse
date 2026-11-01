@@ -1,6 +1,6 @@
 import { ipcRenderer } from 'electron';
 import { IPC } from '../shared/ipc-channels';
-import type { NotificationSettings, BadgeSettings, ResolvedProtocolAction, TerminalColors, ThemeColors, ThemeGradients } from '../shared/types';
+import type { CliInstallStatus, NotificationSettings, BadgeSettings, ResolvedProtocolAction, TerminalColors, ThemeColors, ThemeGradients } from '../shared/types';
 
 export const app = {
   app: {
@@ -70,6 +70,12 @@ export const app = {
     ipcRenderer.invoke(IPC.APP.IS_PREVIEW_ELIGIBLE),
   getArchInfo: (): Promise<{ arch: string; platform: string; rosetta: boolean }> =>
     ipcRenderer.invoke(IPC.APP.GET_ARCH_INFO),
+  getCliInstallStatus: (): Promise<CliInstallStatus> =>
+    ipcRenderer.invoke(IPC.APP.GET_CLI_INSTALL_STATUS),
+  installCli: (): Promise<CliInstallStatus> =>
+    ipcRenderer.invoke(IPC.APP.INSTALL_CLI),
+  uninstallCli: (): Promise<CliInstallStatus> =>
+    ipcRenderer.invoke(IPC.APP.UNINSTALL_CLI),
   getHeadlessSettings: () =>
     ipcRenderer.invoke(IPC.APP.GET_HEADLESS_SETTINGS),
   saveHeadlessSettings: (settings: { enabled?: boolean; defaultMode?: string; projectOverrides?: Record<string, string> }) =>

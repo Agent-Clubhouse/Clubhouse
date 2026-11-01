@@ -5,6 +5,7 @@ import { getAgentProjectPath, getAgentOrchestrator, getAgentNonce, resolveOrches
 import { launchAccessForChatLevel } from '../../shared/orchestration-policy';
 import { isHookCapable } from '../orchestrators';
 import { appLog } from './log-service';
+import { CLI_ROUTE_PREFIX, handleCliRequest } from './cli-endpoint';
 import { broadcastToAllWindows } from '../util/ipc-broadcast';
 import * as annexEventBus from './annex-event-bus';
 import * as permissionQueue from './annex-permission-queue';
@@ -250,6 +251,12 @@ function handlePermissionRequest(
 
 /** Main request handler for the hook server */
 async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse): Promise<void> {
+  // The clubhouse CLI's own routes, with their own auth, and no part of the hook toggle.
+  if (req.url?.startsWith(CLI_ROUTE_PREFIX)) {
+    await handleCliRequest(req, res);
+    return;
+  }
+
   if (req.method !== 'POST' || !req.url?.startsWith('/hook/')) {
     res.writeHead(404);
     res.end();

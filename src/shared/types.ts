@@ -1,3 +1,13 @@
+/** Whether the clubhouse command is installed (#2598). Only a packaged build can install it. */
+export interface CliInstallStatus {
+  supported: boolean;
+  installed: boolean;
+  /** Where the command is. */
+  commandPath?: string;
+  /** What the user still has to do to run it. */
+  note?: string;
+}
+
 export interface ArchInfo {
   arch: string;
   platform: string;

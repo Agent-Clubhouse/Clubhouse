@@ -2,6 +2,7 @@ import { execSync } from 'child_process';
 import { app, BrowserWindow, clipboard, ipcMain, nativeImage, shell } from 'electron';
 import { IPC } from '../../shared/ipc-channels';
 import { ArchInfo, BadgeSettings, LoggingSettings, NotificationSettings, ThemeId } from '../../shared/types';
+import { getCliInstallStatus, installCli, uninstallCli } from '../services/cli-install';
 import * as notificationService from '../services/notification-service';
 import * as themeService from '../services/theme-service';
 import * as orchestratorSettings from '../services/orchestrator-settings';
@@ -115,6 +116,10 @@ export function registerAppHandlers(): void {
   ipcMain.handle(IPC.APP.IS_PREVIEW_ELIGIBLE, () => {
     return isPreviewEligible();
   });
+
+  ipcMain.handle(IPC.APP.GET_CLI_INSTALL_STATUS, () => getCliInstallStatus());
+  ipcMain.handle(IPC.APP.INSTALL_CLI, () => installCli());
+  ipcMain.handle(IPC.APP.UNINSTALL_CLI, () => uninstallCli());
 
   ipcMain.handle(IPC.APP.GET_ARCH_INFO, (): ArchInfo => {
     let rosetta = false;

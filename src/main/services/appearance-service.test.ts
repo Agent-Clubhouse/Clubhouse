@@ -19,6 +19,7 @@ let agents: Record<string, DurableAgentConfig[]> = {};
 vi.mock('./agent-config', () => ({
   isSameProject: vi.fn(async (a: string, b: string) => a === b),
   getDurableConfig: vi.fn(async (projectPath: string, id: string) => agents[projectPath]?.find((a) => a.id === id) ?? null),
+  listDurable: vi.fn(async (projectPath: string) => agents[projectPath] ?? []),
   updateDurable: vi.fn(async () => undefined),
   writeAgentIconFile: vi.fn(async (id: string, _bytes: Uint8Array, extension: string) => `${id}.hash.${extension}`),
   removeAgentIconFile: vi.fn(async () => undefined),
@@ -28,7 +29,7 @@ vi.mock('./dispatcher/dispatcher-service', () => ({ isDispatcherAgentId: (id: st
 vi.mock('./dispatcher/dispatcher-paths', () => ({ isDispatcherPath: (p: string) => p === '/dispatcher' }));
 
 import * as agentConfig from './agent-config';
-import { AppearanceError, updateAgentAppearance, updateProjectAppearance, type AppearanceActor } from './appearance-service';
+import { AppearanceError, listAgentAppearances, listProjectAppearances, updateAgentAppearance, updateProjectAppearance, type AppearanceActor } from './appearance-service';
 import * as projectStore from './project-store';
 
 const PNG = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0, 0]);
@@ -236,5 +237,23 @@ describe('image files', () => {
   it('accepts a file at the size limit', async () => {
     await updateAgentAppearance(SELF, undefined, { imagePath: await fileWith('max.png', Buffer.concat([PNG, Buffer.alloc(ICON_FILE_MAX_BYTES - PNG.length)])) });
     expect(agentConfig.writeAgentIconFile).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('listing', () => {
+  it('lists every project as it looks', async () => {
+    expect((await listProjectAppearances()).map((p) => [p.id, p.displayName])).toEqual([['p1', null], ['p2', 'Second']]);
+  });
+
+  it('lists agents everywhere or in one project, skipping disposed helpers', async () => {
+    agents['/two'].push(agent('gone', { disposedAt: '2026-01-02' } as Partial<DurableAgentConfig>));
+    expect((await listAgentAppearances()).map((a) => [a.id, a.projectId])).toEqual([['a1', 'p1'], ['a2', 'p1'], ['b1', 'p2']]);
+    expect((await listAgentAppearances('Second')).map((a) => a.id)).toEqual(['b1']);
+    expect(await refusal(listAgentAppearances('nope'))).toBe('not_found');
+  });
+
+  it('still lists the other projects when one can\'t be read', async () => {
+    vi.mocked(agentConfig.listDurable).mockRejectedValueOnce(new Error('EIO'));
+    expect((await listAgentAppearances()).map((a) => a.id)).toEqual(['b1']);
   });
 });
