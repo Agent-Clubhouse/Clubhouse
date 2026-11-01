@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { PERSONA_TEMPLATES, getPersonaTemplate, getPersonaIds } from './index';
+import { PERSONA_TEMPLATES, HIDDEN_PERSONA_TEMPLATES, getPersonaTemplate, getPersonaIds } from './index';
 import { PATTERN_SETTING_KEYS, parsePersonaFile, stripPersonaFrontMatter } from '../../../shared/persona-pattern';
 
 describe('persona templates', () => {
@@ -160,6 +160,31 @@ describe('persona templates', () => {
 
     it('keeps the copy free of em dashes', () => {
       for (const p of [orchestrator(), workhorse()]) expect(p.content, p.id).not.toContain('\u2014');
+    });
+  });
+
+  describe('hidden dispatcher persona (#2535)', () => {
+    const dispatcher = () => getPersonaTemplate('dispatcher')!;
+
+    it('resolves by id but is in no picker list', () => {
+      expect(dispatcher()).toBeDefined();
+      expect(HIDDEN_PERSONA_TEMPLATES.map((p) => p.id)).toEqual(['dispatcher']);
+      expect(PERSONA_TEMPLATES.some((p) => p.id === 'dispatcher')).toBe(false);
+      expect(getPersonaIds()).not.toContain('dispatcher');
+    });
+
+    it('pins no CLI and has no front-matter', () => {
+      expect(dispatcher().orchestrator).toBeUndefined();
+      expect(parsePersonaFile(dispatcher().content).body).toBe(dispatcher().content);
+    });
+
+    it('covers its world, delegation, notes and authority', () => {
+      const body = dispatcher().content;
+      for (const tool of ['`list_orchestrators`', '`list_projects`', '`send_message`', '`get_status`']) expect(body).toContain(tool);
+      expect(body).toContain('`notes/`');
+      expect(body).toMatch(/never as the user's approval/);
+      expect(body).toMatch(/don't start helpers/);
+      expect(body).not.toContain('\u2014');
     });
   });
 });

@@ -505,6 +505,11 @@ vi.stubGlobal('clubhouse', {
   hookServer: {
     onAgentsNeedRestart: () => noop,
   },
+  dispatcher: {
+    get: async () => ({ enabled: false, agentId: null, path: null, config: null }),
+    setEnabled: async () => ({ enabled: false, agentId: null, path: null, config: null }),
+    onChanged: () => noop,
+  },
   feedback: {
     getStatus: async () => ({
       started: false, state: 'disconnected', connected: false, enrolled: false, canCapture: false, notice: null, expiresAt: null,

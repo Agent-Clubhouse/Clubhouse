@@ -26,6 +26,7 @@ export const KNOWN_LOG_NAMESPACES: readonly string[] = [
   'core:companion',
   'core:config-diff',
   'core:config-pipeline',
+  'core:dispatcher',
   'core:feedback',
   'core:file',
   'core:finished-quick-agents',

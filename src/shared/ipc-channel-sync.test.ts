@@ -155,6 +155,8 @@ const MAIN_TO_RENDERER_ONLY_CHANNELS = new Set([
   'IPC.CHAT.RUNTIME_NOTICE',
   // Framebriar feedback status is broadcast main→renderer from feedback-handlers.ts.
   'IPC.FEEDBACK.STATUS_CHANGED',
+  // Dispatcher state is broadcast main→renderer from dispatcher-service.ts.
+  'IPC.DISPATCHER.CHANGED',
 ]);
 
 /**

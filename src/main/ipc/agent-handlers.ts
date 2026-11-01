@@ -15,6 +15,7 @@ import { broadcastSnapshotRefresh } from '../services/annex-server';
 import { bindingManager } from '../services/clubhouse-mcp/binding-manager';
 import { refreshClubhouseModeReadme } from '../services/materialization-service';
 import * as orchestrationPolicy from '../services/orchestration-policy';
+import * as dispatcher from '../services/dispatcher/dispatcher-service';
 import * as projectStore from '../services/project-store';
 import { listHelpersEverywhere } from '../services/helper-index';
 import * as clubhouseModeSettings from '../services/clubhouse-mode-settings';
@@ -140,6 +141,46 @@ function forwardConfigChanges(): void {
   });
 }
 
+// --- Dispatcher singleton guards (#2535) ---
+
+function isDispatcherAgent(projectPath: string, agentId: string): boolean {
+  return dispatcher.isDispatcherPath(projectPath) || dispatcher.isDispatcherAgentId(agentId);
+}
+
+/** The Dispatcher can't be deleted or given orchestration settings. */
+function assertNotDispatcher(projectPath: string, agentId: string, what: string): void {
+  if (isDispatcherAgent(projectPath, agentId)) {
+    throw tagError(new Error(`The Dispatcher can't be ${what}.`), 'validation');
+  }
+}
+
+/** Nothing is created in the Dispatcher's folder (no duplicates), and no agent gets the hidden dispatcher persona. */
+function assertCreatable(projectPath: string, persona: string | undefined): void {
+  if (dispatcher.isDispatcherPath(projectPath)) {
+    throw tagError(new Error("The Dispatcher can't be duplicated."), 'validation');
+  }
+  if (persona === dispatcher.DISPATCHER_PERSONA) {
+    throw tagError(new Error('The Dispatcher persona is only for the Dispatcher.'), 'validation');
+  }
+}
+
+/**
+ * The Dispatcher's CLI, model, effort, runtime, auto-sleep and access can
+ * change; its persona can't. No other agent can take the dispatcher persona.
+ */
+function assertConfigUpdateAllowed(projectPath: string, agentId: string, updates: DurableConfigUpdates): void {
+  if (updates.persona === undefined) return;
+  if (isDispatcherAgent(projectPath, agentId)) {
+    if (updates.persona !== dispatcher.DISPATCHER_PERSONA) {
+      throw tagError(new Error("The Dispatcher's persona can't be changed."), 'validation');
+    }
+    return;
+  }
+  if (updates.persona === dispatcher.DISPATCHER_PERSONA) {
+    throw tagError(new Error('The Dispatcher persona is only for the Dispatcher.'), 'validation');
+  }
+}
+
 export function registerAgentHandlers(): void {
   forwardConfigChanges();
   ipcMain.handle(IPC.AGENT.LIST_DURABLE, withValidatedArgs(
@@ -179,11 +220,14 @@ export function registerAgentHandlers(): void {
       async (_event, projectPath, name, color, model, useWorktree, orchestrator, freeAgentMode, mcpIds, mcpConfigs, persona, worktreeOptions) => tel.flow(
         'clubhouse.agent.create',
         { attrs: [ATTR.usesWorktree(useWorktree !== false), ATTR.orchestrator(orchestratorAttr(orchestrator))] },
-        () => createDurableAgent(
-          projectPath, name, color, model, useWorktree, orchestrator, freeAgentMode, mcpIds,
-          mcpConfigs as Record<string, Record<string, string>> | undefined, persona,
-          worktreeOptions ? parseWorktreeOptions(worktreeOptions) : undefined,
-        ),
+        () => {
+          assertCreatable(projectPath, persona);
+          return createDurableAgent(
+            projectPath, name, color, model, useWorktree, orchestrator, freeAgentMode, mcpIds,
+            mcpConfigs as Record<string, Record<string, string>> | undefined, persona,
+            worktreeOptions ? parseWorktreeOptions(worktreeOptions) : undefined,
+          );
+        },
       ),
     ),
   );
@@ -195,6 +239,7 @@ export function registerAgentHandlers(): void {
     [stringArg(), objectArg<Record<string, unknown>>()],
     async (_event, projectPath, rawParams) => {
       const params = parseStartCreationParams(rawParams);
+      assertCreatable(projectPath, params.persona);
       const { agentId, config } = await startDurableCreation(projectPath, params, personaInjection(projectPath, params));
       return { agentId, config };
     },
@@ -208,6 +253,7 @@ export function registerAgentHandlers(): void {
   ipcMain.handle(IPC.AGENT.DELETE_DURABLE, withValidatedArgs(
     [stringArg(), stringArg()],
     async (_event, projectPath, agentId) => {
+      assertNotDispatcher(projectPath, agentId, 'deleted');
       const result = await deleteFlow('standard', () => agentConfig.deleteDurable(projectPath, agentId));
       bindingManager.unbindAgent(agentId);
       bindingManager.unbindTarget(agentId);
@@ -285,6 +331,7 @@ export function registerAgentHandlers(): void {
   ipcMain.handle(IPC.AGENT.UPDATE_DURABLE_CONFIG, withValidatedArgs(
     [stringArg(), stringArg(), objectArg<DurableConfigUpdates>()],
     async (_event, projectPath, agentId, updates) => {
+      assertConfigUpdateAllowed(projectPath, agentId, updates);
       return agentConfig.updateDurableConfig(projectPath, agentId, updates);
     },
   ));
@@ -308,6 +355,7 @@ export function registerAgentHandlers(): void {
   ipcMain.handle(IPC.AGENT.DELETE_COMMIT_PUSH, withValidatedArgs(
     [stringArg(), stringArg()],
     async (_event, projectPath, agentId) => {
+      assertNotDispatcher(projectPath, agentId, 'deleted');
       const result = await deleteFlow('commit_push', () => agentConfig.deleteCommitAndPush(projectPath, agentId));
       if (result.ok) broadcastSnapshotRefresh();
       return result;
@@ -317,6 +365,7 @@ export function registerAgentHandlers(): void {
   ipcMain.handle(IPC.AGENT.DELETE_CLEANUP_BRANCH, withValidatedArgs(
     [stringArg(), stringArg()],
     async (_event, projectPath, agentId) => {
+      assertNotDispatcher(projectPath, agentId, 'deleted');
       const result = await deleteFlow('cleanup_branch', () => agentConfig.deleteWithCleanupBranch(projectPath, agentId));
       if (result.ok) broadcastSnapshotRefresh();
       return result;
@@ -326,6 +375,7 @@ export function registerAgentHandlers(): void {
   ipcMain.handle(IPC.AGENT.DELETE_SAVE_PATCH, withValidatedArgs(
     [stringArg(), stringArg()],
     async (_event, projectPath, agentId) => {
+      assertNotDispatcher(projectPath, agentId, 'deleted');
       const win = BrowserWindow.getFocusedWindow();
       if (!win) return { ok: false, message: 'cancelled' };
       const result = await dialog.showSaveDialog(win, {
@@ -348,6 +398,7 @@ export function registerAgentHandlers(): void {
   ipcMain.handle(IPC.AGENT.DELETE_FORCE, withValidatedArgs(
     [stringArg(), stringArg()],
     async (_event, projectPath, agentId) => {
+      assertNotDispatcher(projectPath, agentId, 'deleted');
       const result = await deleteFlow('force', () => agentConfig.deleteForce(projectPath, agentId));
       if (result.ok) broadcastSnapshotRefresh();
       return result;
@@ -357,6 +408,7 @@ export function registerAgentHandlers(): void {
   ipcMain.handle(IPC.AGENT.DELETE_UNREGISTER, withValidatedArgs(
     [stringArg(), stringArg()],
     async (_event, projectPath, agentId) => {
+      assertNotDispatcher(projectPath, agentId, 'deleted');
       const result = await deleteFlow('unregister', () => agentConfig.deleteUnregister(projectPath, agentId));
       if (result.ok) broadcastSnapshotRefresh();
       return result;
@@ -463,6 +515,7 @@ export function registerAgentHandlers(): void {
   ipcMain.handle(IPC.AGENT.SET_ORCHESTRATION_POLICY, withValidatedArgs(
     [stringArg(), stringArg(), objectArg<Record<string, unknown>>()],
     async (_event, projectPath, agentId, patch) => {
+      assertNotDispatcher(projectPath, agentId, 'given orchestration settings');
       const result = await orchestrationPolicy.setOrchestrationPolicy(projectPath, agentId, patch);
       if (result.ok) broadcastSnapshotRefresh();
       return result;
@@ -472,6 +525,7 @@ export function registerAgentHandlers(): void {
   ipcMain.handle(IPC.AGENT.TURN_OFF_ORCHESTRATION, withValidatedArgs(
     [stringArg(), stringArg(), stringArg(), booleanArg({ optional: true })],
     async (_event, projectPath, agentId, choice, force) => {
+      assertNotDispatcher(projectPath, agentId, 'given orchestration settings');
       if (choice !== 'keep' && choice !== 'dispose' && choice !== 'cancel') {
         throw new Error(`Unknown choice: ${choice}`);
       }

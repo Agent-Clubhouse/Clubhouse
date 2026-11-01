@@ -21,6 +21,7 @@ import { assertAgentGitName, validateAgentGitName } from '../../shared/agent-nam
 import { ACCESS_LEVELS, type AgentAccessLevel, type OrchestrationPolicyConfig } from '../../shared/orchestration-policy';
 import { notifyPersonaChanged } from './persona-change-hook';
 import { uncommittedPorcelain } from './clubhouse-owned-files';
+import { isDispatcherPath } from './dispatcher/dispatcher-paths';
 
 /**
  * Non-blocking git command execution. Prevents UI freezes in large repos.
@@ -1199,6 +1200,10 @@ export async function updateDurableConfig(
       delete agent.mission;
     }
   }
+  if (updates.mcpOverride !== undefined) {
+    if (updates.mcpOverride === null) delete agent.mcpOverride;
+    else agent.mcpOverride = updates.mcpOverride;
+  }
   if (updates.persona !== undefined) {
     if (updates.persona) {
       agent.persona = updates.persona;
@@ -1765,7 +1770,8 @@ export async function beginDurableCreation(
   const parentAgents = parentProject ? await readAgents(parentProject) : undefined;
 
   await ensureDir(clubhouseDir(projectPath));
-  await ensureGitignore(projectPath);
+  // The Dispatcher's folder is no repo, so it gets no .gitignore (#2535).
+  if (!isDispatcherPath(projectPath)) await ensureGitignore(projectPath);
 
   // Inherit freeAgentMode from project defaults if not explicitly set
   const projectDefaults = await readProjectAgentDefaults(projectPath);

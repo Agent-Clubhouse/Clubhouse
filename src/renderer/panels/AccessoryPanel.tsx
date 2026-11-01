@@ -24,6 +24,7 @@ export function useSettingsCategories(): { app: SettingsCategory[]; project: Set
   const [showExperimental, setShowExperimental] = useState(false);
   const [showAnnex, setShowAnnex] = useState(false);
   const [showGoobers, setShowGoobers] = useState(false);
+  const [showDispatcher, setShowDispatcher] = useState(false);
   const initFeedback = useFeedbackStore((s) => s.init);
   useEffect(() => { void initFeedback(); }, [initFeedback]);
   useEffect(() => {
@@ -34,6 +35,7 @@ export function useSettingsCategories(): { app: SettingsCategory[]; project: Set
     });
     window.clubhouse.app.getExperimentalSettings().then((s) => {
       setShowGoobers(!!s.goobers);
+      setShowDispatcher(!!s.dispatcher);
     });
   }, [previewChannel]);
 
@@ -41,6 +43,7 @@ export function useSettingsCategories(): { app: SettingsCategory[]; project: Set
     { label: 'About', page: 'about' },
     { label: 'Orchestrators & agents', page: 'orchestrators' },
     { label: 'Helpers', page: 'helpers' },
+    ...(showDispatcher ? [{ label: 'Dispatcher', page: 'dispatcher' as SettingsSubPage }] : []),
     { label: 'Profiles', page: 'profiles' },
     { label: 'Display & UI', page: 'display' },
     { label: 'External editor', page: 'editor' },
