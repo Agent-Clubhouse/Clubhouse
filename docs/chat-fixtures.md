@@ -74,7 +74,7 @@ The same rules apply, with these differences:
 - **Session ids are remapped too.** Clients pick their own, so the id in a client entry's `params.sessionId` is replaced with the live one everywhere it appears in later CLI messages.
 - **Connection token.** When `COPILOT_CONNECTION_TOKEN` is set, a `connect` with a different token gets `AUTHENTICATION_FAILED`, and the fake exits with code 3.
 - **Hanging up.** A client that disconnects doesn't stop the fake, as it doesn't stop the real CLI. The driver has to kill it. The report's `stdinClosed` means the client disconnected.
-- **Standing query:** `models.list`. The driver calls it in the background, so the recording test drops it from fixtures.
+- **Standing queries:** `models.list` and `session.commands.list`. The driver calls them in the background, so the recording test drops them from fixtures, except `slash-command`, where a command waits for the list.
 
 The driver only takes a binary path, so its tests use `writeFakeCliShims` with `createFakeCli`'s `reportPath`, as `src/main/chat/copilot/fixture-replay.test.ts` does.
 
@@ -129,6 +129,8 @@ Each CLI also has a recorded `model-list` fixture (2026-10-31: Claude Code 2.1.3
 | `handshake` | Recorded: the probe's `connect`, `status.get` and `auth.getStatus`, logged out, with no session |
 | `resume`, `resume-not-found` | Recorded: `session.resume` of a stored session, and of one the CLI doesn't have |
 | `steer`, `queue`, `question`, `plan-approval`, `subagent` | Recorded: the phase 2 features, with the delivery mode, answer and session mode pinned by `match` |
+| `slash-command` | Recorded: the command list, then `/session` and a refused `/compact`, with the command's name pinned by `match` |
+| `elicitation-accept`, `elicitation-decline` | Recorded: a stdio server's form, with the result sent back pinned by `match` |
 | `schema-drift` | Hand-made from `multi-turn`: unknown event types and fields, an unknown CLI request, a stray stdout line |
 | `protocol-mismatch`, `exit-at-launch`, `hang-at-launch`, `no-answer` | Hand-made: the triggers for falling back to ACP |
 | `died-mid-turn` | Hand-made from `multi-turn`: the CLI exits while a turn streams |

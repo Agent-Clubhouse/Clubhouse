@@ -43,13 +43,15 @@ const eventType = (e: Entry): string | undefined => e.msg?.params?.event?.type;
 /**
  * Cut what only makes a recording large, none of which a driver reads: the CLI's
  * system prompt (twice), its built-in skills, and the tool list in its snapshots.
- * Drop models.list, which runs in the background so can land anywhere: replay
- * answers it as a standing query. Pin the decisions these fixtures exist for.
+ * Drop models.list and session.commands.list, which run in the background so can
+ * land anywhere: replay answers them as standing queries. Keep the command list
+ * in slash-command, where a command waits for it. Pin the decisions these fixtures exist for.
  */
 function tidy(name: string): void {
   const { header, entries } = readFixture(name);
-  const listIds = new Set(entries.filter((e) => e.from === 'client' && e.msg?.method === 'models.list').map((e) => e.msg.id));
-  const kept = entries.filter((e) => e.msg?.method !== 'models.list' && !(e.from === 'cli' && !e.msg?.method && listIds.has(e.msg?.id)));
+  const standing = name === 'slash-command' ? ['models.list'] : ['models.list', 'session.commands.list'];
+  const listIds = new Set(entries.filter((e) => e.from === 'client' && standing.includes(e.msg?.method)).map((e) => e.msg.id));
+  const kept = entries.filter((e) => !standing.includes(e.msg?.method) && !(e.from === 'cli' && !e.msg?.method && listIds.has(e.msg?.id)));
   for (const entry of kept) {
     const event = entry.msg?.params?.event;
     if (event?.type === 'system.message') event.data = { role: event.data.role, content: '(trimmed)' };
@@ -60,6 +62,7 @@ function tidy(name: string): void {
     if (/handlePending/.test(method ?? '')) entry.match = { params: { result: params.result } };
     // An answer to a request the CLI made: a question or a plan.
     if (!method && entry.msg?.result) entry.match = { result: entry.msg.result };
+    if (method === 'session.commands.invoke') entry.match = { params: { name: params.name } };
     if (method === 'session.mode.set') entry.match = { params: { mode: params.mode } };
     if (method === 'session.send' && params.mode) entry.match = { params: { mode: params.mode } };
   }
@@ -260,6 +263,67 @@ describe.skipIf(!enabled)('record the copilot-sdk fixtures', () => {
       await s.answerQuestion(requestId, { [questions[0].id]: 'red' });
       await w.turns(1);
     });
+  }, 90_000);
+
+  it('slash-command', async () => {
+    await session('slash-command', 'A command with text output, then one the CLI refuses. Neither reaches the model.', async (s, w) => {
+      await say(s, '/session');
+      await w.turns(1);
+      await say(s, '/compact');
+      await w.turns(2);
+    });
+  }, 90_000);
+
+  /** A stdio MCP server whose `ask` tool sends a form and reports what came back. */
+  function elicitingServer(): Record<string, unknown> {
+    const script = path.join(fs.mkdtempSync(path.join(tmp, 'mcp-')), 'server.js');
+    const form = { message: 'Who are you?', requestedSchema: { type: 'object', properties: { name: { type: 'string', title: 'Name' }, age: { type: 'integer', title: 'Age' } }, required: ['name', 'age'] } };
+    fs.writeFileSync(script, `
+      const send = (o) => process.stdout.write(JSON.stringify(o) + '\\n');
+      let done;
+      require('readline').createInterface({ input: process.stdin }).on('line', (line) => {
+        const m = JSON.parse(line);
+        const reply = (result) => send({ jsonrpc: '2.0', id: m.id, result });
+        if (m.id === 999 && !m.method) return done(m.result ?? m.error);
+        if (m.method === 'initialize') return reply({ protocolVersion: m.params.protocolVersion, capabilities: { tools: {} }, serverInfo: { name: 'asker', version: '1' } });
+        if (m.method === 'tools/list') return reply({ tools: [{ name: 'ask', description: 'ask', inputSchema: { type: 'object', properties: {} } }] });
+        if (m.method === 'tools/call') {
+          done = (r) => reply({ content: [{ type: 'text', text: 'SERVER-GOT ' + JSON.stringify(r) }] });
+          return send({ jsonrpc: '2.0', id: 999, method: 'elicitation/create', params: ${JSON.stringify(form)} });
+        }
+        if (m.id !== undefined) reply({});
+      });
+    `);
+    return { asker: { command: process.execPath, args: [script] } };
+  }
+
+  async function askThroughServer(s: ChatDriverSession, w: ReturnType<typeof watch>): Promise<void> {
+    await new Promise((r) => setTimeout(r, 1_500));
+    model.script({ text: 'ready' });
+    await say(s, 'hi');
+    await w.turns(1);
+    const ask = model.tools.at(-1)?.find((n) => n.startsWith('asker') && n.endsWith('ask'));
+    model.script({ tools: [{ name: ask ?? 'missing' }] }, { text: 'after' });
+    await say(s, 'ask');
+    await w.until(() => w.of('permission_request').length > 0);
+  }
+
+  it('elicitation-accept', async () => {
+    await session('elicitation-accept', 'A stdio server asks for a form; the client accepts and answers with typed values.', async (s, w) => {
+      await askThroughServer(s, w);
+      await s.respondPermission(w.of('permission_request')[0].data.requestId, 'accept');
+      await w.until(() => w.of('question').length > 0);
+      await s.answerQuestion(w.of('question')[0].data.requestId, { name: 'Ann', age: '30' });
+      await w.turns(2);
+    }, { level: 'full_access', mcpServers: elicitingServer() });
+  }, 90_000);
+
+  it('elicitation-decline', async () => {
+    await session('elicitation-decline', 'A stdio server asks for a form; the client declines.', async (s, w) => {
+      await askThroughServer(s, w);
+      await s.respondPermission(w.of('permission_request')[0].data.requestId, 'decline');
+      await w.turns(2);
+    }, { level: 'full_access', mcpServers: elicitingServer() });
   }, 90_000);
 
   it('plan-approval', async () => {
