@@ -294,8 +294,9 @@ test('the Dispatcher wakes a connected agent with a message and sleeps it again'
     const dispatcherId = (await dispatcherConfigs())[0].id;
 
     await addProject(app!.electronApp, w, projectDir);
+    // An orchestrator is connected by default (#2578).
     await openOrchestrateCard(w);
-    await w.locator('[data-testid="orchestrate-dispatcher"]').click();
+    await expect(w.locator('[data-testid="orchestrate-dispatcher"]')).toHaveAttribute('aria-checked', 'true');
     await expect.poll(() => hasWire(w, dispatcherId)).toBe(true);
 
     // Start the Dispatcher. The fake reports the bridge credentials it was given.
