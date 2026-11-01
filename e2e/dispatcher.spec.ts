@@ -14,8 +14,8 @@ import { addProject } from './smoke-helpers';
  * are spent:
  * - flag off: no row, no Settings > Dispatcher, no Connect to Dispatcher;
  * - turning it on creates one Dispatcher folder, its row and view;
- * - Connect to Dispatcher adds and removes the wire live, and it survives a
- *   restart;
+ * - an orchestrator connects by default, Connect to Dispatcher removes and
+ *   adds the wire live, and it survives a restart;
  * - turning it off (the setting, then the flag while it runs) stops it and
  *   drops its row and wires, keeps its folder, and it comes back with the
  *   same id;
@@ -139,7 +139,7 @@ async function closeSettings(w: Page): Promise<void> {
   await expect(w.getByRole('button', { name: 'Experimental', exact: true })).toBeHidden();
 }
 
-/** Select the orchestrator and expand its Orchestrate card. */
+/** Select the orchestrator and expand its Orchestration card. */
 async function openOrchestrateCard(w: Page): Promise<void> {
   const agent = w.locator('[data-agent-name="conductor"]').first();
   if (!(await agent.isVisible().catch(() => false))) {
@@ -226,11 +226,9 @@ test('turn on, wire an orchestrator, restart, turn off and back on', async () =>
   await expect(w.locator('[data-testid="title-bar"]')).toContainText('conductor');
   await expect(w.locator('[data-testid="title-bar"]')).not.toContainText('Dispatcher');
 
-  // Connect to Dispatcher adds and removes the wire live.
+  // Connected by default (#2578); Connect to Dispatcher removes and adds the wire live.
   const connect = w.locator('[data-testid="orchestrate-dispatcher"]');
   await expect(connect).toBeVisible();
-  expect(await hasWire(w, dispatcherId)).toBe(false);
-  await connect.click();
   await expect.poll(() => hasWire(w, dispatcherId)).toBe(true);
   await connect.click();
   await expect.poll(() => hasWire(w, dispatcherId)).toBe(false);
@@ -296,8 +294,9 @@ test('the Dispatcher wakes a connected agent with a message and sleeps it again'
     const dispatcherId = (await dispatcherConfigs())[0].id;
 
     await addProject(app!.electronApp, w, projectDir);
+    // An orchestrator is connected by default (#2578).
     await openOrchestrateCard(w);
-    await w.locator('[data-testid="orchestrate-dispatcher"]').click();
+    await expect(w.locator('[data-testid="orchestrate-dispatcher"]')).toHaveAttribute('aria-checked', 'true');
     await expect.poll(() => hasWire(w, dispatcherId)).toBe(true);
 
     // Start the Dispatcher. The fake reports the bridge credentials it was given.

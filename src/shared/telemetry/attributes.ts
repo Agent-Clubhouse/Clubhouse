@@ -504,7 +504,7 @@ export const ATTR = {
     // helper questions (#2366)
     'answer_helper_question',
     // the Dispatcher (#2536)
-    'list_orchestrators',
+    'list_agents',
     // appearance (#2597)
     'update_project', 'update_agent',
     // orchestration: connection tools (#2230)

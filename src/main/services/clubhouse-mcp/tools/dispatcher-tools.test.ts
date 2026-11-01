@@ -97,6 +97,7 @@ import { onOrchestrationGateChange, setOrchestrationEnabled, _resetOrchestration
 import { isDispatcherAgent, syncDispatcherGate, _resetDispatcherGateForTesting } from '../dispatcher-gate';
 import * as agentConfig from '../../agent-config';
 import { getOrchestrationPolicy, resolveOrchestrationPolicies } from '../../orchestration-policy';
+import { resolveOrchestrationPolicy } from '../../../../shared/orchestration-policy';
 
 // ── Fixtures ───────────────────────────────────────────────────────────────
 
@@ -164,7 +165,7 @@ describe('dispatcher gate', () => {
   it('opens at spawn only for the Dispatcher in its own folder', async () => {
     await runDispatcher();
     expect(isDispatcherAgent('dispatcher')).toBe(true);
-    expect(names('dispatcher')).toEqual(expect.arrayContaining(['list_orchestrators', 'list_projects']));
+    expect(names('dispatcher')).toEqual(expect.arrayContaining(['list_agents', 'list_projects']));
 
     // The same id outside the folder, or another agent in it, gets nothing.
     await syncDispatcherGate(PROJECT_A, 'dispatcher');
@@ -182,26 +183,26 @@ describe('dispatcher gate', () => {
     for (const tool of HELPER_TOOLS) expect((await callTool('dispatcher', tool, { name: 'x', task: 'y', helper: 'x' })).isError).toBe(true);
   });
 
-  it('orchestrators never get list_orchestrators', async () => {
+  it('orchestrators never get list_agents', async () => {
     addAgent(PROJECT_A, { id: 'orch' });
     runAgent('orch', PROJECT_A);
     setOrchestrationEnabled('orch', true, { crossProject: true });
-    expect(names('orch')).not.toContain('list_orchestrators');
+    expect(names('orch')).not.toContain('list_agents');
     expect(names('orch')).toEqual(expect.arrayContaining([...HELPER_TOOLS, 'list_projects']));
-    const refused = await callTool('orch', 'list_orchestrators', {});
+    const refused = await callTool('orch', 'list_agents', {});
     expect(refused).toMatchObject({ isError: true, content: [{ text: 'Only the Dispatcher can use this tool.' }] });
   });
 
   it('closes when the Dispatcher is turned off, and refreshes the tool list', async () => {
     await runDispatcher();
-    expect(names('dispatcher')).toContain('list_orchestrators');
+    expect(names('dispatcher')).toContain('list_agents');
     const listener = vi.fn();
     const off = onOrchestrationGateChange(listener);
     dispatcherState.enabled = false;
     for (const l of dispatcherListeners) l();
     off();
     expect(listener).toHaveBeenCalledWith('dispatcher');
-    expect(names('dispatcher')).not.toContain('list_orchestrators');
+    expect(names('dispatcher')).not.toContain('list_agents');
   });
 
   it('closes when the Dispatcher is untracked', async () => {
@@ -211,10 +212,10 @@ describe('dispatcher gate', () => {
   });
 });
 
-// ── list_orchestrators ─────────────────────────────────────────────────────
+// ── list_agents ─────────────────────────────────────────────────────
 
-describe('list_orchestrators', () => {
-  it('lists opted-in orchestrators across projects with status, connection, branch and helpers', async () => {
+describe('list_agents', () => {
+  it('lists connected agents across projects with status, connection, branch and helpers', async () => {
     await runDispatcher();
     addAgent(PROJECT_A, { id: 'lead-a', name: 'Lead A' });
     addAgent(PROJECT_B, { id: 'busy-b', name: 'Lead B', worktreePath: path.join(PROJECT_B, 'wt') });
@@ -230,14 +231,15 @@ describe('list_orchestrators', () => {
     branches.set(PROJECT_A, 'feature/a');
     branches.set(path.join(PROJECT_B, 'wt'), 'feature/b');
 
-    const result = await callTool('dispatcher', 'list_orchestrators', {});
+    const result = await callTool('dispatcher', 'list_agents', {});
     expect(result.isError).toBeFalsy();
-    expect(parse(result).orchestrators).toEqual([
+    expect(parse(result).agents).toEqual([
       {
         id: 'lead-a',
         name: 'Lead A',
         project: { name: 'alpha', path: PROJECT_A },
         status: 'idle',
+        orchestrates: true,
         connected: true,
         branch: 'feature/a',
         helpers: {
@@ -253,6 +255,7 @@ describe('list_orchestrators', () => {
         name: 'Lead B',
         project: { name: 'Beta', path: PROJECT_B },
         status: 'running',
+        orchestrates: true,
         // Running, but not connected to the bridge yet.
         connected: false,
         branch: 'feature/b',
@@ -261,17 +264,38 @@ describe('list_orchestrators', () => {
     ]);
   });
 
-  it('a sleeping orchestrator is listed as sleeping and not connected', async () => {
+  it('a sleeping agent is listed as sleeping and not connected', async () => {
     await runDispatcher();
     addAgent(PROJECT_A, { id: 'lead-a' });
     policies.set('lead-a', policy({ connectToDispatcher: true }));
     // Left over from an earlier run.
     connections.set('lead-a', { connectedAt: 1, toolCount: 10 });
-    const [row] = parse(await callTool('dispatcher', 'list_orchestrators', {})).orchestrators as Array<Record<string, unknown>>;
+    const [row] = parse(await callTool('dispatcher', 'list_agents', {})).agents as Array<Record<string, unknown>>;
     expect(row).toMatchObject({ id: 'lead-a', status: 'sleeping', connected: false });
   });
 
-  it('leaves out opted-out orchestrators, non-orchestrators, policies without the field, and disposed agents', async () => {
+  it('lists a plain agent that is connected, and says it does not orchestrate (#2578)', async () => {
+    await runDispatcher();
+    addAgent(PROJECT_A, { id: 'plain' });
+    addAgent(PROJECT_A, { id: 'lead' });
+    policies.set('plain', policy({ orchestrate: false, connectToDispatcher: true }));
+    policies.set('lead', policy({ connectToDispatcher: true }));
+    const rows = parse(await callTool('dispatcher', 'list_agents', {})).agents as Array<Record<string, unknown>>;
+    expect(rows.map((r) => [r.id, r.orchestrates])).toEqual([['plain', false], ['lead', true]]);
+  });
+
+  it('leaves out a helper with the switch set, resolved by the real policy (#2578)', async () => {
+    await runDispatcher();
+    addAgent(PROJECT_A, { id: 'lead', orchestration: { orchestrate: true } });
+    addAgent(PROJECT_A, { id: 'h', parentAgentId: 'lead', orchestration: { connectToDispatcher: true } });
+    // Once: only the project with agents resolves.
+    vi.mocked(resolveOrchestrationPolicies).mockImplementationOnce(async (_p, agents) =>
+      new Map(agents.map((a) => [a.id, resolveOrchestrationPolicy(a.orchestration, undefined, { helper: !!a.parentAgentId })])));
+    const rows = parse(await callTool('dispatcher', 'list_agents', {})).agents as Array<{ id: string }>;
+    expect(rows.map((r) => r.id)).toEqual(['lead']);
+  });
+
+  it('leaves out agents with the switch off, policies without the field, and disposed agents', async () => {
     await runDispatcher();
     addAgent(PROJECT_A, { id: 'opted-out' });
     addAgent(PROJECT_A, { id: 'no-field' });
@@ -282,12 +306,12 @@ describe('list_orchestrators', () => {
     policies.set('opted-out', policy({ connectToDispatcher: false }));
     // Before #2534 the resolved policy has no connectToDispatcher: read as off.
     policies.set('no-field', policy({}));
-    policies.set('not-orch', policy({ orchestrate: false, connectToDispatcher: true }));
+    policies.set('not-orch', policy({ orchestrate: false, connectToDispatcher: false }));
     policies.set('gone', policy({ connectToDispatcher: true }));
     policies.set('kept', policy({ connectToDispatcher: true }));
 
-    const body = parse(await callTool('dispatcher', 'list_orchestrators', {}));
-    expect((body.orchestrators as Array<{ id: string }>).map((o) => o.id)).toEqual(['kept']);
+    const body = parse(await callTool('dispatcher', 'list_agents', {}));
+    expect((body.agents as Array<{ id: string }>).map((o) => o.id)).toEqual(['kept']);
   });
 
   it('reads each project\'s agents once, and resolves its policies in one call', async () => {
@@ -302,8 +326,8 @@ describe('list_orchestrators', () => {
     vi.mocked(getOrchestrationPolicy).mockClear();
     vi.mocked(resolveOrchestrationPolicies).mockClear();
 
-    const body = parse(await callTool('dispatcher', 'list_orchestrators', {}));
-    expect((body.orchestrators as Array<{ id: string }>).map((o) => o.id)).toEqual(['a1', 'a2', 'a3']);
+    const body = parse(await callTool('dispatcher', 'list_agents', {}));
+    expect((body.agents as Array<{ id: string }>).map((o) => o.id)).toEqual(['a1', 'a2', 'a3']);
     const reads = vi.mocked(agentConfig.listDurable).mock.calls.map(([p]) => p);
     expect(reads.filter((p) => p === PROJECT_A)).toHaveLength(1);
     expect(reads.filter((p) => p === PROJECT_B)).toHaveLength(1);
@@ -315,7 +339,7 @@ describe('list_orchestrators', () => {
   it('never lists the Dispatcher itself (its folder is not a project)', async () => {
     await runDispatcher();
     policies.set('dispatcher', policy({ connectToDispatcher: true }));
-    expect(parse(await callTool('dispatcher', 'list_orchestrators', {})).orchestrators).toEqual([]);
+    expect(parse(await callTool('dispatcher', 'list_agents', {})).agents).toEqual([]);
   });
 });
 

@@ -180,10 +180,11 @@ describe('persona templates', () => {
 
     it('covers its world, delegation, notes and authority', () => {
       const body = dispatcher().content;
-      for (const tool of ['`list_orchestrators`', '`list_projects`', '`send_message`', '`get_status`']) expect(body).toContain(tool);
+      for (const tool of ['`list_agents`', '`list_projects`', '`send_message`', '`get_status`']) expect(body).toContain(tool);
       expect(body).toContain('`notes/`');
       expect(body).toMatch(/never as the user's approval/);
       expect(body).toMatch(/don't start helpers/);
+      expect(body).toMatch(/say so plainly\. You don't create projects, agents or connections/);
       expect(body).not.toContain('\u2014');
     });
   });

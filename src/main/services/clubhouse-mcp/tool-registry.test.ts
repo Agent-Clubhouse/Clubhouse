@@ -1160,7 +1160,7 @@ describe('ToolRegistry', () => {
     function registerGroupedTools() {
       const handler = vi.fn().mockResolvedValue(ok);
       const def = (description: string) => ({ description, inputSchema: { type: 'object' as const } });
-      registerGlobalTool('test_list_orchestrators', def('Dispatcher only'), handler, { group: 'dispatcher' });
+      registerGlobalTool('test_list_agents', def('Dispatcher only'), handler, { group: 'dispatcher' });
       registerGlobalTool('test_start_helper', def('Orchestration'), handler, { group: 'orchestration' });
       registerGlobalTool('test_list_projects', def('Both'), handler, { group: ['crossProject', 'dispatcher'] });
       return handler;
@@ -1169,13 +1169,13 @@ describe('ToolRegistry', () => {
     it('opens only for the Dispatcher, and only while it is on', async () => {
       const handler = registerGroupedTools();
       expect(names('agent-1')).toEqual([]);
-      const refused = await callTool('agent-1', 'test_list_orchestrators', {});
+      const refused = await callTool('agent-1', 'test_list_agents', {});
       expect(refused).toEqual({ content: [{ type: 'text', text: ONLY }], isError: true });
       expect(refusalReasonOf(refused)).toBe('group_off');
 
       setDispatcherAgent('dispatcher', true);
-      expect(names('dispatcher')).toEqual(['test_list_orchestrators', 'test_list_projects']);
-      expect((await callTool('dispatcher', 'test_list_orchestrators', {})).isError).toBeFalsy();
+      expect(names('dispatcher')).toEqual(['test_list_agents', 'test_list_projects']);
+      expect((await callTool('dispatcher', 'test_list_agents', {})).isError).toBeFalsy();
       expect(handler).toHaveBeenCalledWith('dispatcher', {});
       // Another agent still gets nothing.
       expect(names('agent-1')).toEqual([]);
@@ -1183,7 +1183,7 @@ describe('ToolRegistry', () => {
       dispatcherState.enabled = false;
       invalidateToolListCache();
       expect(names('dispatcher')).toEqual([]);
-      expect((await callTool('dispatcher', 'test_list_orchestrators', {})).isError).toBe(true);
+      expect((await callTool('dispatcher', 'test_list_agents', {})).isError).toBe(true);
     });
 
     describe('wake_agent and sleep_agent wire templates (#2577)', () => {
@@ -1276,7 +1276,7 @@ describe('ToolRegistry', () => {
       expect(names('dispatcher')).toEqual([]);
       setDispatcherAgent('dispatcher', true);
       setDispatcherAgent('dispatcher', true);
-      expect(names('dispatcher')).toEqual(['test_list_orchestrators', 'test_list_projects']);
+      expect(names('dispatcher')).toEqual(['test_list_agents', 'test_list_projects']);
       setDispatcherAgent('dispatcher', false);
       off();
       expect(names('dispatcher')).toEqual([]);
@@ -1287,7 +1287,7 @@ describe('ToolRegistry', () => {
       registerGroupedTools();
       agentRegistry.register('dispatcher', { projectPath: 'dispatcher-home', orchestrator: 'claude-code', runtime: 'pty' });
       setDispatcherAgent('dispatcher', true);
-      expect(names('dispatcher')).toContain('test_list_orchestrators');
+      expect(names('dispatcher')).toContain('test_list_agents');
       agentRegistry.untrack('dispatcher');
       expect(names('dispatcher')).toEqual([]);
     });

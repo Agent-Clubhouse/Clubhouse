@@ -20,6 +20,10 @@
  * only to agents that use that persona, so it never turns orchestration on,
  * or connects the Dispatcher, for everyone.
  *
+ * An unset `connectToDispatcher` follows the agent's resolved `orchestrate`,
+ * and a helper's is always false, whatever is set (#2578). It never opens the tool gate, which reads only
+ * `orchestrate`: a connected plain agent gets no orchestration tools.
+ *
  * The tool gate. Only two things open it: a spawn (syncOrchestrationGate)
  * and setOrchestrationPolicy, and only for an agent running in that project.
  * Everything else may only close it: policy reads, a persona change, the
@@ -186,7 +190,7 @@ async function resolveFor(
   agent: DurableAgentConfig,
   stored: OrchestrationPolicyConfig | undefined,
 ): Promise<ResolvedOrchestrationPolicy> {
-  return resolveOrchestrationPolicy(stored, await readPersonaOrchestrationDefaults(projectPath, agent));
+  return resolveOrchestrationPolicy(stored, await readPersonaOrchestrationDefaults(projectPath, agent), { helper: !!agent.parentAgentId });
 }
 
 /** Resolve as if the agent's effective persona were `personaId`. */
@@ -253,7 +257,7 @@ export async function resolveOrchestrationPolicies(
       try { personaId = resolvePersonaId(agent, defaults); } catch { /* telemetry-exempt: as effectivePersonaId, the agent's own persona */ }
     }
     if (!personas.has(personaId)) personas.set(personaId, personaDefaultsFor(projectPath, personaId));
-    out.set(agent.id, resolveOrchestrationPolicy(agent.orchestration, await personas.get(personaId)));
+    out.set(agent.id, resolveOrchestrationPolicy(agent.orchestration, await personas.get(personaId), { helper: !!agent.parentAgentId }));
   }));
   return out;
 }

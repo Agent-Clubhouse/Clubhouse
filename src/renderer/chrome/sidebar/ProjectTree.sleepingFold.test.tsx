@@ -355,6 +355,84 @@ describe('revealing a selection in the sleeping fold (#2580)', () => {
   });
 });
 
+describe('the selected agent moving into the sleeping fold (#2594)', () => {
+  const awake = { a: [agent('a1', 'a'), agent('s1', 'a', asleep)] };
+  const a1Asleep = { a: [agent('a1', 'a', asleep), agent('s1', 'a', asleep)] };
+
+  beforeEach(() => {
+    useChromeStore.setState({ expandedFolds: [] });
+  });
+
+  it('opens the fold when the selected agent goes to sleep, and holds it while selected', () => {
+    const { rerender } = render(<ProjectTree {...props({ agentsByProject: awake })} />);
+    expect(key('agent:a1')).not.toBeNull();
+    rerender(<ProjectTree {...props({ agentsByProject: a1Asleep })} />);
+    expect(isOpen()).toBe(true);
+    expect(key('agent:a1')).not.toBeNull();
+    wait(FOLD_CLOSE_DELAY_MS * 2);
+    expect(isOpen()).toBe(true);
+  });
+
+  it('does not open for an agent that is not selected going to sleep', () => {
+    const { rerender } = render(<ProjectTree {...props({ agentsByProject: awake, activeAgentId: 'other' })} />);
+    rerender(<ProjectTree {...props({ agentsByProject: a1Asleep, activeAgentId: 'other' })} />);
+    expect(isOpen()).toBe(false);
+    const both = { a: [agent('a1', 'a'), agent('a2', 'a'), agent('s1', 'a', asleep)] };
+    const a2Asleep = { a: [agent('a1', 'a'), agent('a2', 'a', asleep), agent('s1', 'a', asleep)] };
+    rerender(<ProjectTree {...props({ agentsByProject: both })} />);
+    rerender(<ProjectTree {...props({ agentsByProject: a2Asleep })} />);
+    expect(isOpen()).toBe(false);
+  });
+
+  it('stays closed once the user closes it by hand, through later updates', () => {
+    const { rerender } = render(<ProjectTree {...props({ agentsByProject: awake })} />);
+    rerender(<ProjectTree {...props({ agentsByProject: a1Asleep })} />);
+    fireEvent.click(row());
+    expect(isOpen()).toBe(false);
+    rerender(<ProjectTree {...props({ agentsByProject: { a: [agent('a1', 'a', asleep), agent('s1', 'a', asleep)] } })} />);
+    wait(FOLD_CLOSE_DELAY_MS);
+    expect(isOpen()).toBe(false);
+  });
+
+  it('opens again if it wakes and goes back to sleep', () => {
+    const { rerender } = render(<ProjectTree {...props({ agentsByProject: awake })} />);
+    rerender(<ProjectTree {...props({ agentsByProject: a1Asleep })} />);
+    fireEvent.click(row());
+    rerender(<ProjectTree {...props({ agentsByProject: awake })} />);
+    expect(isOpen()).toBe(false);
+    rerender(<ProjectTree {...props({ agentsByProject: a1Asleep })} />);
+    expect(isOpen()).toBe(true);
+  });
+
+  it('opens when a selected sleeping helper moves in with the last awake one in its team', () => {
+    const team = (leadOver = {}) => ({ a: [agent('lead', 'a', leadOver), agent('h1', 'a', { ...asleep, parentAgentId: 'lead' })] });
+    const { rerender } = render(<ProjectTree {...props({ agentsByProject: team(), activeAgentId: 'h1' })} />);
+    expect(isOpen()).toBe(false);
+    rerender(<ProjectTree {...props({ agentsByProject: team(asleep), activeAgentId: 'h1' })} />);
+    expect(isOpen()).toBe(true);
+  });
+
+  it('leaves the fold alone when a selected agent starts out inside it, or its agents load late', () => {
+    const { rerender } = render(<ProjectTree {...props({ agentsByProject: a1Asleep })} />);
+    expect(isOpen()).toBe(false);
+    rerender(<ProjectTree {...props({ agentsByProject: { a: [agent('a1', 'a', asleep)] } })} />);
+    expect(isOpen()).toBe(false);
+    rerender(<ProjectTree {...props({ agentsByProject: {} })} />);
+    rerender(<ProjectTree {...props({ agentsByProject: a1Asleep })} />);
+    expect(isOpen()).toBe(false);
+  });
+
+  it('leaves it alone on selecting, or switching back to, an agent already inside', () => {
+    const { rerender } = render(<ProjectTree {...props({ agentsByProject: awake })} />);
+    // Selection restored without a new choice, as on a project switch.
+    rerender(<ProjectTree {...props({ agentsByProject: awake, activeProjectId: 'b', activeAgentId: null })} />);
+    rerender(<ProjectTree {...props({ agentsByProject: a1Asleep, activeProjectId: 'a', activeAgentId: 's1' })} />);
+    expect(isOpen()).toBe(false);
+    rerender(<ProjectTree {...props({ agentsByProject: a1Asleep, activeAgentId: 'a1' })} />);
+    expect(isOpen()).toBe(false);
+  });
+});
+
 describe('sleeping fold pin (#2580)', () => {
   const pin = (id = 'a') => screen.getByTestId(`sleeping-fold-pin-${id}`);
 

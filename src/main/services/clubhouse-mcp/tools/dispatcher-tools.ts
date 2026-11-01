@@ -2,13 +2,12 @@
  * Dispatcher tools (#2536), in the `dispatcher` tool group: listed and
  * callable only by the running Dispatcher.
  *
- * - list_orchestrators: every orchestrator that opted in with "Connect to
- *   Dispatcher" (#2534), across every registered project, with its status,
+ * - list_agents: every agent with "Connect to Dispatcher" on (#2534, #2578),
+ *   across every registered project, with its status, whether it orchestrates,
  *   whether it is connected now, its helpers and its branch.
  *
  * list_projects comes from helper-tools, whose gate also opens for the
- * Dispatcher. These tools only read state: orchestrator to Dispatcher
- * traffic is explicit (send_message), nothing is pushed or forwarded.
+ * Dispatcher. These tools only read state: agent to Dispatcher traffic is explicit (send_message), nothing is pushed or forwarded.
  */
 
 import { registerGlobalTool } from '../tool-registry';
@@ -35,17 +34,23 @@ function errorText(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
 }
 
+interface ConnectedAgent {
+  agent: DurableAgentConfig;
+  orchestrates: boolean;
+}
+
 /**
- * The orchestrators in one project that opted in. Resolved as the Dispatcher
- * wires are (#2537), reading agents.json, the defaults and each persona once.
+ * The agents in one project connected to the Dispatcher. Resolved as the
+ * Dispatcher wires are (#2537), reading agents.json, the defaults and each
+ * persona once.
  */
-async function optedInOrchestrators(project: Project): Promise<DurableAgentConfig[]> {
+async function connectedAgents(project: Project): Promise<ConnectedAgent[]> {
   const agents = (await agentConfig.listDurable(project.path)).filter((a) => !isDisposedAgent(a));
   if (agents.length === 0) return [];
   const policies = await resolveOrchestrationPolicies(project.path, agents);
-  return agents.filter((agent) => {
+  return agents.flatMap((agent) => {
     const policy = policies.get(agent.id);
-    return !!policy?.orchestrate && policy.connectToDispatcher;
+    return policy?.connectToDispatcher ? [{ agent, orchestrates: policy.orchestrate }] : [];
   });
 }
 
@@ -54,14 +59,14 @@ async function currentBranch(agent: DurableAgentConfig, projectPath: string): Pr
     const git = await getGitInfo(agent.worktreePath || projectPath);
     return git.hasGit ? git.branch || agent.branch || null : null;
   } catch {
-    // telemetry-exempt: the orchestrator is listed without a branch
+    // telemetry-exempt: the agent is listed without a branch
     return agent.branch ?? null;
   }
 }
 
-async function describeOrchestrator(
+async function describeAgent(
   project: Project,
-  agent: DurableAgentConfig,
+  { agent, orchestrates }: ConnectedAgent,
   projects: readonly Project[],
 ): Promise<Record<string, unknown>> {
   const [helpers, branch] = await Promise.all([
@@ -79,6 +84,7 @@ async function describeOrchestrator(
     name: agent.name,
     project: { name: projectName(project), path: project.path },
     status: helperStatus(agent).status,
+    orchestrates,
     // Running and connected to the MCP bridge: it can be messaged now.
     connected: !!agentRegistry.get(agent.id) && !!getAgentConnection(agent.id),
     branch,
@@ -86,43 +92,44 @@ async function describeOrchestrator(
   };
 }
 
-async function listOrchestrators(): Promise<McpToolResult> {
+async function listAgents(): Promise<McpToolResult> {
   const projects = await projectStore.list();
-  const orchestrators: Record<string, unknown>[] = [];
+  const rows: Record<string, unknown>[] = [];
   for (const project of projects) {
-    let agents: DurableAgentConfig[];
+    let agents: ConnectedAgent[];
     try {
-      agents = await optedInOrchestrators(project);
+      agents = await connectedAgents(project);
     } catch (err) {
       // telemetry-exempt: logged; one unreadable project must not hide the others
-      appLog('core:mcp', 'warn', 'list_orchestrators: could not read a project', {
+      appLog('core:mcp', 'warn', 'list_agents: could not read a project', {
         meta: { projectPath: project.path, error: errorText(err) },
       });
       continue;
     }
-    for (const agent of agents) orchestrators.push(await describeOrchestrator(project, agent, projects));
+    for (const agent of agents) rows.push(await describeAgent(project, agent, projects));
   }
-  return jsonResult({ orchestrators });
+  return jsonResult({ agents: rows });
 }
 
 let unwatchDispatcher: (() => void) | null = null;
 
 export function registerDispatcherTools(): void {
   registerGlobalTool(
-    'list_orchestrators',
+    'list_agents',
     {
       description:
-        'List the orchestrators that are connected to you (their "Connect to Dispatcher" setting is on), ' +
-        'in every Clubhouse project: id, name, project, status, whether it is connected now (running and ' +
-        'reachable with send_message), its current branch, and its helpers with each one\'s project and status.',
+        'List the agents that are connected to you (their "Connect to Dispatcher" setting is on), ' +
+        'in every Clubhouse project: id, name, project, status, whether it orchestrates, whether it is ' +
+        'connected now (running and reachable with send_message), its current branch, and its helpers ' +
+        'with each one\'s project and status.',
       inputSchema: { type: 'object', properties: {} },
     },
     async (agentId) => {
       try {
-        return await listOrchestrators();
+        return await listAgents();
       } catch (err) {
         // telemetry-exempt: the error reaches the Dispatcher as the tool result
-        appLog('core:mcp', 'warn', 'list_orchestrators failed', { meta: { agentId, error: errorText(err) } });
+        appLog('core:mcp', 'warn', 'list_agents failed', { meta: { agentId, error: errorText(err) } });
         return { content: [{ type: 'text', text: errorText(err) }], isError: true };
       }
     },

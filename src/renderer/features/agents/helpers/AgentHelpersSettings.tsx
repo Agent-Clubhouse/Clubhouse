@@ -1,6 +1,6 @@
 /**
  * The agent's Helpers settings page (#2232, mockup "Settings"): the same
- * orchestration switches as the Orchestrate card beside the chat, for the
+ * orchestration switches as the Orchestration card beside the chat, for the
  * classic layout and for anyone who looks in Settings first. Each control
  * saves on its own, like the card, so this page never joins the save bar.
  */
@@ -20,7 +20,7 @@ import { TurnOffOrchestrationDialog } from './TurnOffOrchestrationDialog';
 export function AgentHelpersSettings({ agent, projectPath }: { agent: Agent; projectPath: string | undefined }) {
   const orch = useOrchestration(projectPath, agent);
   const ids = { toggle: useId(), access: useId(), control: useId(), count: useId(), crossProject: useId(), dispatcher: useId() };
-  // Connect to Dispatcher shows only while the Dispatcher is turned on (#2534).
+  // Connect to Dispatcher shows while the Dispatcher is turned on, with orchestration on or off (#2578).
   const showDispatcher = useDispatcherEnabled();
   const [countError, setCountError] = useState<string | null>(null);
   const { policy, access, saving } = orch;
@@ -87,7 +87,7 @@ export function AgentHelpersSettings({ agent, projectPath }: { agent: Agent; pro
           />
         </Field>
       )}
-      {policy.orchestrate && showDispatcher && (
+      {showDispatcher && (
         <Field label="Connect to Dispatcher" htmlFor={ids.dispatcher} help={DISPATCHER_HELP}>
           <DispatcherToggle
             id={ids.dispatcher}

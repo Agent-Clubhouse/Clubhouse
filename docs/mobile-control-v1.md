@@ -338,7 +338,7 @@ The receipt `result` is the settings payload above, without `version`, `epoch` a
 
 ## Orchestration
 
-An agent's orchestration policy (#2228), as the desktop's Orchestrate card and the agent's Helpers settings edit it. Gated on `orchestration: {version: 1}` in capabilities.
+An agent's orchestration policy (#2228), as the desktop's Orchestration card and the agent's Helpers settings edit it. Gated on `orchestration: {version: 1}` in capabilities.
 
 Every durable agent in the snapshot (`agents[projectId][]`), `GET /api/v1/projects/:id/agents` and the [Settings](#settings) payload (so the `agent.update` result) has:
 
@@ -354,7 +354,7 @@ Every durable agent in the snapshot (`agents[projectId][]`), `GET /api/v1/projec
 - **control**: one of `controls` (hands-off, ask before starting helpers, ask about everything).
 - **maxHelpers**: "Helpers at once", a whole number from 1 to `maxHelpersCap` (the app-wide helper cap, at most 100).
 - **crossProjectHelpers**: "Cross-project helpers" (#2512): the agent may start helpers in other registered projects. The desktop shows it while `orchestrate` is on; turning it off leaves helpers already running elsewhere alone.
-- **connectToDispatcher**: "Connect to Dispatcher" (#2534): the Dispatcher may message this agent and get its reports. The desktop shows it only while `orchestrate` is on and the [Dispatcher](#dispatcher) is on; turning it on while the Dispatcher is off is 409 `dispatcher_off`.
+- **connectToDispatcher**: "Connect to Dispatcher" (#2534): the Dispatcher may message this agent and get its reports. The desktop shows it while the [Dispatcher](#dispatcher) is on, with `orchestrate` on or off; turning it on while the Dispatcher is off is 409 `dispatcher_off`. Unset (source `default`), it follows `orchestrate` (#2578). A helper talks only to its parent, so on a helper it is always `false` with source `default`, and a value sent for one has no effect while it is a helper. So an agent can report `true` with the Dispatcher off: send this field only when the user changes it.
 - **sources**: where each field comes from. `agent` is an override on the agent, which `null` clears; `persona` is the persona's front-matter; `default` is the built-in default.
 
 `agent.update` takes `orchestration` as a partial object: `{"orchestrate"?: bool|null, "access"?: string|null, "control"?: string|null, "maxHelpers"?: int|null, "crossProjectHelpers"?: bool|null, "connectToDispatcher"?: bool|null}`. Each key sets that field; `null` clears it back to the persona or default. `"orchestration": null` clears all six. Phones gate `crossProjectHelpers` and `connectToDispatcher` on the payload having them (and Connect to Dispatcher on `dispatcher.enabled`); a phone that doesn't know them ignores them. `agent.create` takes the same object without nulls. Writes go through the desktop's own policy service, so the desktop UI updates live.
