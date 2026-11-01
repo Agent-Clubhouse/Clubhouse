@@ -412,7 +412,8 @@ describe('cross-project helpers and Connect to Dispatcher (#2512, #2534)', () =>
   it('shows both with where they come from', async () => {
     const { orchestration } = await buildAgentSettings(project, agent({ orchestration: { orchestrate: true, crossProjectHelpers: true } }), undefined);
     expect(orchestration).toMatchObject({
-      crossProjectHelpers: true, connectToDispatcher: false,
+      // Unset, it follows orchestrate (#2578).
+      crossProjectHelpers: true, connectToDispatcher: true,
       sources: { crossProjectHelpers: 'agent', connectToDispatcher: 'default' },
     });
   });

@@ -32,7 +32,7 @@
               "auto",
               "bypass"
             ],
-            "connectToDispatcher": false,
+            "connectToDispatcher": true,
             "control": "hands-off",
             "controls": [
               "hands-off",

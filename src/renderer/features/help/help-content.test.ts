@@ -98,7 +98,7 @@ describe('help-content', () => {
     it('covers the cards, access, control, limits, disposing and connections', () => {
       const content = find(HELP_SECTIONS, 'agents-orchestrated-helpers').content;
       expect(content).toContain('**Let this agent orchestrate**');
-      for (const name of ['**Orchestrate**', '**Helpers**', '**Connections**', '**Settings > Helpers**', '**Dispose anyway**', '**Needs you**']) {
+      for (const name of ['**Orchestration**', '**Helpers**', '**Connections**', '**Settings > Helpers**', '**Dispose anyway**', '**Needs you**']) {
         expect(content, name).toContain(name);
       }
       for (const heading of ['## Access', '## Control levels', '## Limits', '## Disposing', '## Connections']) {

@@ -1,5 +1,5 @@
 /**
- * The orchestration policy controls (#2232), shared by the Orchestrate card
+ * The orchestration policy controls (#2232), shared by the Orchestration card
  * and the agent's Helpers settings page so both write the same fields the
  * same way. Each control saves on change; the helper count saves on blur or
  * Enter and never goes above the app-wide cap.

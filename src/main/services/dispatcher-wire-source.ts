@@ -1,10 +1,10 @@
 /**
- * Dispatcher ↔ orchestrator wires as a startup binding source (#2537, epic
- * #2533).
+ * Dispatcher ↔ agent wires as a startup binding source (#2537, epic #2533).
  *
  * The orchestration policy is the source of truth: every agent whose resolved
- * policy has `orchestrate` and `connectToDispatcher` on gets a two-way
- * agent-to-agent wire with the Dispatcher. The policy lives in agents.json
+ * policy has `connectToDispatcher` on gets a two-way agent-to-agent wire with
+ * the Dispatcher. Unset, that follows `orchestrate` (#2578), so an orchestrate
+ * change can move a wire too. The policy lives in agents.json
  * (and the persona), so nothing new is persisted and the wires come back on
  * restart. There are no wires while the Dispatcher is off.
  *
@@ -14,9 +14,8 @@
  *
  * Modelled on helper-wire-source. orchestrator-connections isn't reused: its
  * scope pruning drops agents that aren't in a project, and the Dispatcher is
- * in none. The source prunes: once an orchestrator turns the switch or
- * orchestration off, or the Dispatcher is turned off, the wires it created
- * go. A project whose agents can't be read keeps its wires as they are for
+ * in none. The source prunes: once an agent's resolved switch goes off, or
+ * the Dispatcher is turned off, the wires it created go. A project whose agents can't be read keeps its wires as they are for
  * that run.
  */
 
@@ -41,22 +40,22 @@ export const DISPATCHER_WIRE_SOURCE_ID = 'dispatcher-wires';
 type Pair = { agentId: string; targetId: string };
 
 /**
- * Both directions of one Dispatcher ↔ orchestrator pair. The Dispatcher end
- * is named "Dispatcher" and both carry the orchestrator's project, so the
- * Dispatcher's tool names read `<project>_<orchestrator>` and a message from
- * the orchestrator shows which project it came from. The Dispatcher's own
- * messages are labelled just "Dispatcher" (agent-tools' buildSenderLabel).
+ * Both directions of one Dispatcher ↔ agent pair. The Dispatcher end is named
+ * "Dispatcher" and both carry the agent's project, so the Dispatcher's tool
+ * names read `<project>_<agent>` and a message from the agent shows which
+ * project it came from. The Dispatcher's own messages are labelled just
+ * "Dispatcher" (agent-tools' buildSenderLabel).
  */
-function pairBindings(dispatcherId: string, orchestrator: DurableAgentConfig, projectName?: string): PersistedBinding[] {
+function pairBindings(dispatcherId: string, agent: DurableAgentConfig, projectName?: string): PersistedBinding[] {
   const project = projectName ? { projectName } : {};
   return [
     {
-      agentId: dispatcherId, targetId: orchestrator.id, targetKind: 'agent',
-      label: orchestrator.name, agentName: DISPATCHER_NAME, targetName: orchestrator.name, ...project,
+      agentId: dispatcherId, targetId: agent.id, targetKind: 'agent',
+      label: agent.name, agentName: DISPATCHER_NAME, targetName: agent.name, ...project,
     },
     {
-      agentId: orchestrator.id, targetId: dispatcherId, targetKind: 'agent',
-      label: DISPATCHER_NAME, agentName: orchestrator.name, targetName: DISPATCHER_NAME, ...project,
+      agentId: agent.id, targetId: dispatcherId, targetKind: 'agent',
+      label: DISPATCHER_NAME, agentName: agent.name, targetName: DISPATCHER_NAME, ...project,
     },
   ];
 }
@@ -73,8 +72,7 @@ export async function dispatcherWiresForProject(
   const policies = await resolveOrchestrationPolicies(projectPath, live);
   const out: PersistedBinding[] = [];
   for (const agent of live) {
-    const policy = policies.get(agent.id);
-    if (policy?.orchestrate && policy.connectToDispatcher) out.push(...pairBindings(dispatcherId, agent, projectName));
+    if (policies.get(agent.id)?.connectToDispatcher) out.push(...pairBindings(dispatcherId, agent, projectName));
   }
   return out;
 }
@@ -192,8 +190,8 @@ const RETRY_DELAYS_MS = [1_000, 5_000, 15_000, 60_000];
 
 /**
  * Call `onWiresChanged` when the Dispatcher wires change: the Dispatcher is
- * turned on or off, an orchestrator's policy changes (its switch, its
- * orchestration, its persona, a project default persona), or a project is
+ * turned on or off, an agent's policy changes (its switch, its orchestration,
+ * its persona, a project default persona), or a project is
  * added or removed. Changes that leave the wires as they were are ignored. A
  * change counts as handled only once a rebuild commits it; until then the
  * check is retried a few times, and the next change retries it again.

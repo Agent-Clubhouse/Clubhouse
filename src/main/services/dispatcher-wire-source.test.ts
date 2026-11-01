@@ -1,7 +1,7 @@
 /**
- * Dispatcher ↔ orchestrator wires (#2537): derived from the orchestration
- * policy's `orchestrate` and `connectToDispatcher`, only while the Dispatcher
- * is on, rebuilt in main alongside the other persisted wires.
+ * Dispatcher ↔ agent wires (#2537): derived from the orchestration policy's
+ * resolved `connectToDispatcher` (#2578), only while the Dispatcher is on,
+ * rebuilt in main alongside the other persisted wires.
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import * as os from 'os';
@@ -39,22 +39,23 @@ vi.mock('./agent-config', () => ({
     if (!agents) throw new Error('EACCES');
     return agents;
   }),
+  projectKey: (p: string) => p,
   onAgentConfigChanged: vi.fn((listener: (projectPath: string) => void) => {
     configListeners.add(listener);
     return () => configListeners.delete(listener);
   }),
 }));
-// The policy resolves from the agent's own orchestration config here; the
-// persona layer is covered by orchestration-policy's own tests.
-vi.mock('./orchestration-policy', () => ({
-  resolveOrchestrationPolicies: vi.fn(async (projectPath: string, agents: DurableAgentConfig[]) => {
-    if (unreadablePolicies.has(projectPath)) throw new Error('persona unreadable');
-    return new Map(agents.map((a) => [a.id, {
-      orchestrate: a.orchestration?.orchestrate ?? false,
-      connectToDispatcher: a.orchestration?.connectToDispatcher ?? false,
-    }]));
-  }),
-}));
+// The policy resolves from the agent's own orchestration config here, with the
+// real resolver; the persona layer is covered by orchestration-policy's own tests.
+vi.mock('./orchestration-policy', async () => {
+  const { resolveOrchestrationPolicy } = await import('../../shared/orchestration-policy');
+  return {
+    resolveOrchestrationPolicies: vi.fn(async (projectPath: string, agents: DurableAgentConfig[]) => {
+      if (unreadablePolicies.has(projectPath)) throw new Error('persona unreadable');
+      return new Map(agents.map((a) => [a.id, resolveOrchestrationPolicy(a.orchestration, undefined, { helper: !!a.parentAgentId })]));
+    }),
+  };
+});
 vi.mock('./dispatcher/dispatcher-service', () => ({
   DISPATCHER_NAME: 'Dispatcher',
   getDispatcherAgentId: () => dispatcher.id,
@@ -80,6 +81,7 @@ import {
   watchDispatcherWires,
   _resetDispatcherWireSourceForTesting,
 } from './dispatcher-wire-source';
+import { helperWireBindingSource, _resetHelperWireSourceForTesting } from './helper-wire-source';
 import { notifyPersonaChanged, notifyProjectDefaultPersonaChanged } from './persona-change-hook';
 import { listDurable } from './agent-config';
 import { resolveOrchestrationPolicies } from './orchestration-policy';
@@ -97,6 +99,8 @@ const agent = (id: string, extra: Partial<DurableAgentConfig> = {}): DurableAgen
 } as DurableAgentConfig);
 
 const connected = { orchestrate: true, connectToDispatcher: true };
+/** An orchestrator with the switch explicitly off. */
+const optedOut = { orchestrate: true, connectToDispatcher: false };
 
 const key = (b: { agentId: string; targetId: string }) => `${b.agentId}->${b.targetId}`;
 const boundPairs = () => bindingManager.getAllBindings().map(key).sort();
@@ -139,7 +143,7 @@ beforeEach(() => {
   ];
   configs.set(projectPath, [
     agent('durable_lead', { orchestration: connected }),
-    agent('durable_quiet', { orchestration: { orchestrate: true } }),
+    agent('durable_quiet', { orchestration: optedOut }),
     agent('durable_worker'),
   ]);
   configs.set(otherProjectPath, [agent('durable_o1')]);
@@ -162,9 +166,20 @@ describe('dispatcherWiresForProject', () => {
     ]);
   });
 
-  it('needs orchestration on as well as the switch', async () => {
+  it('depends only on the resolved switch, not on orchestrate (#2578)', async () => {
     const out = await dispatcherWiresForProject(DISPATCHER, projectPath, [
-      agent('durable_x', { orchestration: { connectToDispatcher: true } }),
+      agent('durable_default', { orchestration: { orchestrate: true } }),
+      agent('durable_plain', { orchestration: { connectToDispatcher: true } }),
+      agent('durable_off', { orchestration: optedOut }),
+      agent('durable_none'),
+    ]);
+    expect(out.filter((b) => b.agentId === DISPATCHER).map((b) => b.targetId)).toEqual(['durable_default', 'durable_plain']);
+  });
+
+  it('never wires a helper, whatever its policy says (#2578)', async () => {
+    const out = await dispatcherWiresForProject(DISPATCHER, projectPath, [
+      agent('durable_unset', { orchestration: { orchestrate: true }, parentAgentId: 'durable_lead' }),
+      agent('durable_explicit', { orchestration: connected, parentAgentId: 'durable_lead' }),
     ]);
     expect(out).toEqual([]);
   });
@@ -239,11 +254,17 @@ describe('Dispatcher wire rebuild', () => {
     expect(boundPairs()).toEqual([`${DISPATCHER}->durable_quiet`, `durable_quiet->${DISPATCHER}`]);
   });
 
-  it('removes the wire of an orchestrator that turns orchestration off', async () => {
+  it('removes the wire of an unset agent that turns orchestration off, and keeps an explicit one (#2578)', async () => {
+    configs.set(projectPath, [agent('durable_lead', { orchestration: { orchestrate: true } })]);
     await rebuild();
-    configs.set(projectPath, [agent('durable_lead', { orchestration: { orchestrate: false, connectToDispatcher: true } })]);
+    expect(boundPairs()).toEqual([`${DISPATCHER}->durable_lead`, `durable_lead->${DISPATCHER}`]);
+    configs.set(projectPath, [agent('durable_lead', { orchestration: { orchestrate: false } })]);
     await rebuild();
     expect(boundPairs()).toEqual([]);
+
+    configs.set(projectPath, [agent('durable_lead', { orchestration: { orchestrate: false, connectToDispatcher: true } })]);
+    await rebuild();
+    expect(boundPairs()).toEqual([`${DISPATCHER}->durable_lead`, `durable_lead->${DISPATCHER}`]);
   });
 
   it('wires orchestrators in every registered project', async () => {
@@ -263,6 +284,34 @@ describe('Dispatcher wire rebuild', () => {
     _resetDispatcherWireSourceForTesting();
     await rebuild();
     expect(boundPairs()).toEqual([`${DISPATCHER}->durable_lead`, `durable_lead->${DISPATCHER}`]);
+  });
+});
+
+describe('a helper with the switch set, alongside the helper wires', () => {
+  it('keeps both wires to its orchestrator and has none to the Dispatcher (#2578)', async () => {
+    _resetHelperWireSourceForTesting();
+    configs.set(projectPath, [
+      agent('durable_lead', { orchestration: connected }),
+      agent('durable_h', { orchestration: connected, parentAgentId: 'durable_lead' }),
+    ]);
+    registerPersistedBindingSource(helperWireBindingSource);
+    await rebuild();
+    expect(boundPairs()).toEqual([
+      `${DISPATCHER}->durable_lead`,
+      `durable_h->durable_lead`,
+      `durable_lead->${DISPATCHER}`,
+      `durable_lead->durable_h`,
+    ].sort());
+  });
+});
+
+describe('an agent that becomes a helper', () => {
+  it('loses its Dispatcher wire on the next rebuild (#2578)', async () => {
+    await rebuild();
+    expect(boundPairs()).toContain(`durable_lead->${DISPATCHER}`);
+    configs.set(projectPath, [agent('durable_lead', { orchestration: connected, parentAgentId: 'durable_boss' })]);
+    await rebuild();
+    expect(boundPairs()).toEqual([]);
   });
 });
 
@@ -366,6 +415,20 @@ describe('watchDispatcherWires', () => {
     await flush();
     expect(onChange).toHaveBeenCalledTimes(1);
     expect(boundPairs()).toHaveLength(2);
+  });
+
+  it('rebuilds when orchestrate flips on an agent whose switch is unset (#2578)', async () => {
+    const { onChange, flush } = await watched();
+
+    setAgents(projectPath, [agent('durable_lead', { orchestration: connected }), agent('durable_flip', { orchestration: { orchestrate: true } })]);
+    await flush();
+    expect(onChange).toHaveBeenCalledTimes(1);
+    expect(boundPairs()).toContain(`durable_flip->${DISPATCHER}`);
+
+    setAgents(projectPath, [agent('durable_lead', { orchestration: connected }), agent('durable_flip', { orchestration: { orchestrate: false } })]);
+    await flush();
+    expect(onChange).toHaveBeenCalledTimes(2);
+    expect(boundPairs()).toEqual([`${DISPATCHER}->durable_lead`, `durable_lead->${DISPATCHER}`]);
   });
 
   it('rebuilds after a persona change turns the policy on', async () => {

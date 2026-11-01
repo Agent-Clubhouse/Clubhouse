@@ -2,7 +2,7 @@
  * App settings, Helpers (#2232): the app-wide cap on running helpers across
  * every orchestrator, and disposed helpers no Helpers card can reach because
  * their orchestrator is gone. Each agent's own switches are in its
- * Orchestrate card and on its Helpers settings page.
+ * Orchestration card and on its Helpers settings page.
  */
 
 import { useCallback, useEffect, useState } from 'react';
@@ -103,7 +103,7 @@ export function HelpersSettingsView() {
   return (
     <SettingsPage
       title="Helpers"
-      description="Limits for agents that orchestrate helpers. Each agent’s own switches are in its Orchestrate card and on its Helpers settings page."
+      description="Limits for agents that orchestrate helpers. Each agent’s own switches are in its Orchestration card and on its Helpers settings page."
       testId="helpers-settings"
     >
       <SettingsSection title="Limits">

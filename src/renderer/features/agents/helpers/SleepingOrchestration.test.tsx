@@ -60,7 +60,7 @@ afterEach(() => {
 });
 
 describe('Sleeping orchestrator view (#2232)', () => {
-  it('shows the Orchestrate card with the next-start note and the Helpers card', async () => {
+  it('shows the Orchestration card with the next-start note and the Helpers card', async () => {
     render(<SleepingAgent agent={lead} />);
     const section = await screen.findByTestId('sleeping-orchestration');
     expect(within(section).getByTestId('details-card-helpers')).toBeInTheDocument();

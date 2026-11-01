@@ -1,5 +1,5 @@
 /**
- * The Orchestrate and Helpers cards (#2232) as one unit, for Agent details
+ * The Orchestration and Helpers cards (#2232) as one unit, for Agent details
  * beside a running agent and for the sleeping view. A sleeping orchestrator
  * has no details column, so its view shows the same two cards under the wake
  * composer: pending starts wait there with Approve off until it's awake, and
@@ -45,7 +45,7 @@ export function useOrchestrationCards(agent: Agent, projectPath: string | undefi
 
 export type OrchestrationCardsModel = ReturnType<typeof useOrchestrationCards>;
 
-/** The Orchestrate card, then the Helpers card, each when it applies. */
+/** The Orchestration card, then the Helpers card, each when it applies. */
 export function OrchestrationCardPair({ agent, model, isOpen, onToggle }: {
   agent: Agent;
   model: OrchestrationCardsModel;

@@ -343,7 +343,7 @@
                 "auto",
                 "bypass"
               ],
-              "connectToDispatcher": false,
+              "connectToDispatcher": true,
               "control": "hands-off",
               "controls": [
                 "hands-off",
@@ -737,7 +737,7 @@
                 "auto",
                 "bypass"
               ],
-              "connectToDispatcher": false,
+              "connectToDispatcher": true,
               "control": "ask-everything",
               "controls": [
                 "hands-off",
@@ -842,7 +842,7 @@
                 "auto",
                 "bypass"
               ],
-              "connectToDispatcher": false,
+              "connectToDispatcher": true,
               "control": "ask-everything",
               "controls": [
                 "hands-off",

@@ -34,7 +34,7 @@ beforeEach(() => {
 });
 
 describe('Agent Helpers settings page (#2232)', () => {
-  it('duplicates the Orchestrate card\'s switch and fields', async () => {
+  it('duplicates the Orchestration card\'s switch and fields', async () => {
     render(<AgentHelpersSettings agent={lead} projectPath={PROJECT} />);
     const toggle = await screen.findByTestId('settings-orchestrate-toggle');
     // Off: the fields wait for the switch.
@@ -66,18 +66,24 @@ describe('Agent Helpers settings page (#2232)', () => {
     expect(window.clubhouse.agent.setOrchestrationPolicy).toHaveBeenLastCalledWith(PROJECT, 'lead', { crossProjectHelpers: true });
   });
 
-  it('shows Connect to Dispatcher only while orchestrating with the Dispatcher on, and saves it (#2534)', async () => {
+  it('shows Connect to Dispatcher with orchestration on as well as off', async () => {
+    dispatcherOn = true;
+    stored = { ...stored, orchestrate: true, connectToDispatcher: true };
+    render(<AgentHelpersSettings agent={lead} projectPath={PROJECT} />);
+    expect(await screen.findByTestId('settings-orchestrate-dispatcher')).toHaveAttribute('aria-checked', 'true');
+  });
+
+  it('lets a plain agent connect to the Dispatcher, with orchestration left off (#2578)', async () => {
     dispatcherOn = true;
     render(<AgentHelpersSettings agent={lead} projectPath={PROJECT} />);
     const toggle = await screen.findByTestId('settings-orchestrate-toggle');
-    expect(screen.queryByTestId('settings-orchestrate-dispatcher')).not.toBeInTheDocument();
-    fireEvent.click(toggle);
     const sw = await screen.findByTestId('settings-orchestrate-dispatcher');
     expect(screen.getByText('Connect to Dispatcher')).toBeInTheDocument();
     expect(screen.getByText('Let the Dispatcher message this agent and get its reports.')).toBeInTheDocument();
     fireEvent.click(sw);
     await waitFor(() => expect(sw).toHaveAttribute('aria-checked', 'true'));
     expect(window.clubhouse.agent.setOrchestrationPolicy).toHaveBeenLastCalledWith(PROJECT, 'lead', { connectToDispatcher: true });
+    expect(toggle).toHaveAttribute('aria-checked', 'false');
   });
 
   it('hides Connect to Dispatcher while the Dispatcher is off (#2534)', async () => {
