@@ -56,7 +56,7 @@ describe('parseArgs', () => {
 });
 
 describe('toRequest', () => {
-  const cwd = path.join(path.sep, 'work', 'dir');
+  const cwd = path.resolve(path.sep, 'work', 'dir');
 
   it('sends a relative image as absolute, from the CLI\'s working directory', () => {
     const { body } = toRequest(parseArgs(['agent', 'set', 'a1', '--image', path.join('art', 'i.png')]), cwd);
@@ -64,7 +64,7 @@ describe('toRequest', () => {
   });
 
   it('leaves an absolute image, and an empty one that clears it, alone', () => {
-    const absolute = path.join(path.sep, 'elsewhere', 'i.png');
+    const absolute = path.resolve(path.sep, 'elsewhere', 'i.png');
     expect(toRequest(parseArgs(['agent', 'set', 'a1', '--image', absolute]), cwd).body.imagePath).toBe(absolute);
     expect(toRequest(parseArgs(['agent', 'set', 'a1', '--image', '']), cwd).body.imagePath).toBe('');
   });
