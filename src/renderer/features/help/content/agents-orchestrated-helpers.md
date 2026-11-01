@@ -28,6 +28,8 @@ Turn on **Cross-project helpers** to let the agent start helpers in other projec
 
 Agents using the **Orchestrator** persona start with the switch on. The persona also tells the agent how to plan, start helpers, hand off and dispose. Give helpers the **Workhorse** persona when no other role fits.
 
+While the Dispatcher is turned on, a **Connect to Dispatcher** switch sits next to **Cross-project helpers**. Turn it on to let the Dispatcher message this orchestrator and get its reports. It is off by default and only shows while orchestration is on.
+
 ## Starting helpers
 
 The orchestrator calls `start_helper` with a name, a task and, if it wants, a persona, a CLI, a model and a branch to start from. A helper runs on the same CLI as its orchestrator unless the orchestrator picks another.
@@ -149,3 +151,4 @@ orchestration: {"orchestrate": true, "access": "same", "control": "hands-off", "
 | `control` | `hands-off`, `ask-before-start` or `ask-everything` |
 | `maxHelpers` | How many helpers at once |
 | `crossProjectHelpers` | `true` or `false`. Whether the agent can start helpers in other projects. |
+| `connectToDispatcher` | `true` or `false`. Whether the Dispatcher can message the agent and get its reports. Like `orchestrate`, from the Orchestrator persona it only applies to agents using that persona. |
