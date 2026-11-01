@@ -2,7 +2,7 @@ import React, { useCallback, useMemo, useRef, useState } from 'react';
 import type { Agent, AgentDetailedStatus, CompletedQuickAgent, Project } from '../../../shared/types';
 import { getAgentColorHex } from '../../../shared/name-generator';
 import { AgentRow } from './AgentRow';
-import { agentDot, buildProjectTree, countDescendants, descendants, helperRollup, localParentId, moveWithinGroup, projectRollup, siblingGroups, type AgentNode } from './treeModel';
+import { agentDot, buildProjectTree, countDescendants, helperRollup, isInSleepingFold, localParentId, moveWithinGroup, projectRollup, siblingGroups, type AgentNode } from './treeModel';
 import type { ProjectFold } from '../chromeStore';
 import { PopupMenu, type MenuItem } from '../../components/PopupMenu';
 import { reportChromeFeature } from '../telemetry';
@@ -188,8 +188,7 @@ export const ProjectGroup = React.memo(function ProjectGroup(props: ProjectGroup
   const sleepingCount = tree.sleeping.reduce((n, node) => n + 1 + countDescendants(node), 0);
   const expanded = !collapsed;
   /** The selected agent is in the sleeping fold, so closing it would hide the selection. */
-  const selectionInSleeping = isActiveProject && !!activeAgentId
-    && tree.sleeping.some((root) => root.agent.id === activeAgentId || descendants(root).some((a) => a.id === activeAgentId));
+  const selectionInSleeping = isActiveProject && !!activeAgentId && isInSleepingFold(tree, activeAgentId);
   const closeSleepingFold = useCallback(() => onCloseFold?.(project.id, 'sleeping'), [onCloseFold, project.id]);
 
   // Reordering durable agents (§4.8): by drag, by Move up / Move down in the

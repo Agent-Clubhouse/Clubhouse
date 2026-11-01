@@ -91,6 +91,24 @@ describe('chromeStore', () => {
       expect(useChromeStore.getState().expandedFolds).toEqual(['p2:sleeping']);
     });
 
+    it('notes a sleeping fold that closed while away until taken, a toggle, or the project going (#2580)', () => {
+      const s = useChromeStore.getState();
+      useChromeStore.setState({ expandedFolds: ['p1:sleeping', 'p2:sleeping', 'p3:sleeping', 'p4:finished', 'p5:sleeping'], sleepingFoldsClosedAway: [] });
+      s.closeFold('p1', 'sleeping', true);
+      s.closeFold('p2', 'sleeping', true);
+      s.closeFold('p3', 'sleeping', true);
+      s.closeFold('p4', 'finished', true);
+      s.closeFold('p5', 'sleeping');
+      s.closeFold('never-open', 'sleeping', true);
+      expect(useChromeStore.getState().sleepingFoldsClosedAway).toEqual(['p1', 'p2', 'p3']);
+      expect(s.takeSleepingFoldClosedAway('p1')).toBe(true);
+      expect(s.takeSleepingFoldClosedAway('p1')).toBe(false);
+      s.toggleFold('p2', 'finished');
+      s.toggleFold('p2', 'sleeping');
+      s.forgetProjects(['p3']);
+      expect(useChromeStore.getState().sleepingFoldsClosedAway).toEqual([]);
+    });
+
     it('persists sleeping fold pins per project, reads junk as none, and forgets removed projects (#2580)', () => {
       vi.useFakeTimers();
       const s = useChromeStore.getState();

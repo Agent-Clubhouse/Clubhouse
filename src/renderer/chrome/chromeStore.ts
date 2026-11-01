@@ -165,6 +165,12 @@ export interface ChromeState {
   collapsedProjectIds: string[];
   expandedFolds: string[];
   pinnedSleepingFolds: string[];
+  /**
+   * Projects whose sleeping fold closed itself while another project was
+   * active, so coming back can reveal the selection in it. Closing a fold by
+   * hand never lands here, so it stays closed. Not persisted.
+   */
+  sleepingFoldsClosedAway: string[];
   tabMru: Record<string, string[]>;
   projectActivity: Record<string, number>;
   /** Days without activity before an unpinned project folds into "N idle projects"; 0 is never. */
@@ -208,8 +214,10 @@ export interface ChromeState {
   /** Collapse every given project, or expand them all if every one is already collapsed. */
   toggleCollapseAll: (projectIds: string[]) => void;
   toggleFold: (projectId: string, fold: ProjectFold) => void;
-  /** Close a fold if it is open. */
-  closeFold: (projectId: string, fold: ProjectFold) => void;
+  /** Close a fold if it is open. `whileAway`: it closed itself while another project was active. */
+  closeFold: (projectId: string, fold: ProjectFold, whileAway?: boolean) => void;
+  /** Whether the project's sleeping fold closed while it was away, clearing the note. */
+  takeSleepingFoldClosedAway: (projectId: string) => boolean;
   toggleSleepingFoldPinned: (projectId: string) => void;
   /** Drop pins, collapsed state and folds for projects that were removed. */
   forgetProjects: (projectIds: string[]) => void;
@@ -374,6 +382,7 @@ export const useChromeStore = create<ChromeState>((set, get) => {
     // state is used (ensureChromeStateLoaded), so don't touch localStorage at startup.
     ...(isNewChromeEnabled() ? loadChromeState() : DEFAULTS),
     projectScopeId: null,
+    sleepingFoldsClosedAway: [],
 
     setProjectScope: (projectId) => {
       if (get().projectScopeId !== projectId) set({ projectScopeId: projectId });
@@ -545,16 +554,30 @@ export const useChromeStore = create<ChromeState>((set, get) => {
     toggleFold: (projectId, fold) => {
       const key = foldKey(projectId, fold);
       const current = get().expandedFolds;
-      set({ expandedFolds: current.includes(key) ? current.filter((k) => k !== key) : [...current, key] });
+      set({
+        expandedFolds: current.includes(key) ? current.filter((k) => k !== key) : [...current, key],
+        // A toggle is the user's say on this fold, whatever closed it before.
+        ...(fold === 'sleeping' ? { sleepingFoldsClosedAway: get().sleepingFoldsClosedAway.filter((id) => id !== projectId) } : {}),
+      });
       schedulePersist();
     },
 
-    closeFold: (projectId, fold) => {
+    closeFold: (projectId, fold, whileAway = false) => {
       const key = foldKey(projectId, fold);
       const current = get().expandedFolds;
       if (!current.includes(key)) return;
-      set({ expandedFolds: current.filter((k) => k !== key) });
+      set({
+        expandedFolds: current.filter((k) => k !== key),
+        ...(whileAway && fold === 'sleeping' ? { sleepingFoldsClosedAway: [...get().sleepingFoldsClosedAway, projectId] } : {}),
+      });
       schedulePersist();
+    },
+
+    takeSleepingFoldClosedAway: (projectId) => {
+      const current = get().sleepingFoldsClosedAway;
+      if (!current.includes(projectId)) return false;
+      set({ sleepingFoldsClosedAway: current.filter((id) => id !== projectId) });
+      return true;
     },
 
     toggleSleepingFoldPinned: (projectId) => {
@@ -587,6 +610,7 @@ export const useChromeStore = create<ChromeState>((set, get) => {
         collapsedProjectIds: s.collapsedProjectIds.filter((id) => !gone.has(id)),
         expandedFolds: s.expandedFolds.filter((key) => !gone.has(key.slice(0, key.lastIndexOf(':')))),
         pinnedSleepingFolds: s.pinnedSleepingFolds.filter((id) => !gone.has(id)),
+        sleepingFoldsClosedAway: s.sleepingFoldsClosedAway.filter((id) => !gone.has(id)),
         lastProjectId: s.lastProjectId && gone.has(s.lastProjectId) ? null : s.lastProjectId,
         tabMru: Object.fromEntries(Object.entries(s.tabMru).filter(([id]) => !gone.has(id))),
       });

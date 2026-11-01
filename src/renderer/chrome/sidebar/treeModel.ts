@@ -294,6 +294,11 @@ export function descendants<A extends NestableAgent>(node: AgentNode<A>, into: A
   return into;
 }
 
+/** Whether an agent is in the project's sleeping fold, helpers included. */
+export function isInSleepingFold<A extends NestableAgent>(tree: ProjectAgentTree<A>, agentId: string): boolean {
+  return tree.sleeping.some((root) => root.agent.id === agentId || descendants(root).some((a) => a.id === agentId));
+}
+
 /** How many agents are under `node`, at any depth. */
 export function countDescendants(node: AgentNode<NestableAgent>): number {
   let n = 0;

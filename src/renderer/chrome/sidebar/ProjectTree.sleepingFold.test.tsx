@@ -48,7 +48,7 @@ beforeEach(() => {
   vi.useFakeTimers();
   const now = Date.now();
   useChromeStore.setState({
-    pinnedProjectIds: [], collapsedProjectIds: [], expandedFolds: ['a:sleeping'], pinnedSleepingFolds: [],
+    pinnedProjectIds: [], collapsedProjectIds: [], expandedFolds: ['a:sleeping'], pinnedSleepingFolds: [], sleepingFoldsClosedAway: [],
     projectActivity: { a: now, b: now }, idleDays: 7, idleOpen: false,
   });
   // Later focus counts as keyboard focus, whatever the last test did.
@@ -210,6 +210,148 @@ describe('sleeping fold with the selection inside (#2580)', () => {
     expect(isOpen()).toBe(true);
     wait(FOLD_CLOSE_DELAY_MS * 2);
     expect(isOpen()).toBe(true);
+  });
+});
+
+describe('revealing a selection in the sleeping fold (#2580)', () => {
+  const choose = (agentId: string) => act(() => {
+    useAgentStore.setState({ activeAgentId: agentId, agentSelectionSeq: useAgentStore.getState().agentSelectionSeq + 1 });
+  });
+
+  it('opens the fold for a plain top-level sleeping agent chosen from elsewhere, then holds it', () => {
+    useChromeStore.setState({ expandedFolds: [] });
+    const { rerender } = render(<ProjectTree {...props()} />);
+    expect(key('agent:s1')).toBeNull();
+    choose('s1');
+    rerender(<ProjectTree {...props({ activeAgentId: 's1' })} />);
+    expect(isOpen()).toBe(true);
+    expect(key('agent:s1')).not.toBeNull();
+    wait(FOLD_CLOSE_DELAY_MS * 2);
+    expect(isOpen()).toBe(true);
+  });
+
+  it('opens it for a top-level agent chosen before its agents load', () => {
+    useChromeStore.setState({ expandedFolds: [] });
+    const { rerender } = render(<ProjectTree {...props({ agentsByProject: {} })} />);
+    choose('s1');
+    rerender(<ProjectTree {...props({ agentsByProject: {}, activeAgentId: 's1' })} />);
+    expect(isOpen()).toBe(false);
+    rerender(<ProjectTree {...props({ activeAgentId: 's1' })} />);
+    expect(isOpen()).toBe(true);
+  });
+
+  it('leaves the fold closed for a chosen agent that is awake', () => {
+    useChromeStore.setState({ expandedFolds: [] });
+    const { rerender } = render(<ProjectTree {...props({ activeAgentId: 'a3' })} />);
+    choose('a1');
+    rerender(<ProjectTree {...props({ activeAgentId: 'a1' })} />);
+    expect(isOpen()).toBe(false);
+  });
+
+  it('does not reopen after the user closes it by hand with the chosen agent inside', () => {
+    useChromeStore.setState({ expandedFolds: [] });
+    const { rerender } = render(<ProjectTree {...props()} />);
+    choose('s1');
+    rerender(<ProjectTree {...props({ activeAgentId: 's1' })} />);
+    fireEvent.click(row());
+    expect(isOpen()).toBe(false);
+    rerender(<ProjectTree {...props({ activeAgentId: 's1', detailed: {} })} />);
+    wait(FOLD_CLOSE_DELAY_MS);
+    expect(isOpen()).toBe(false);
+  });
+
+  // A switch as the app does it: the project first, its restored agent a step
+  // later (App.tsx restoreProjectAgent), with no new agentSelectionSeq.
+  const inB = { activeProjectId: 'b', activeAgentId: null };
+  const backToA = (rerender: (ui: React.ReactElement) => void) => {
+    rerender(<ProjectTree {...props({ activeProjectId: 'a', activeAgentId: 'b1' })} />);
+    expect(isOpen()).toBe(false);
+    rerender(<ProjectTree {...props({ activeProjectId: 'a', activeAgentId: 's1' })} />);
+  };
+
+  it('reopens on returning to a selection inside a fold that closed while away, and closes again on leaving', () => {
+    const { rerender } = render(<ProjectTree {...props({ activeAgentId: 's1' })} />);
+    rerender(<ProjectTree {...props(inB)} />);
+    wait(FOLD_CLOSE_DELAY_MS - 1);
+    expect(isOpen()).toBe(true);
+    wait(1);
+    expect(isOpen()).toBe(false);
+    backToA(rerender);
+    expect(isOpen()).toBe(true);
+    expect(key('agent:s1')).not.toBeNull();
+    wait(FOLD_CLOSE_DELAY_MS * 2);
+    expect(isOpen()).toBe(true);
+    // Round two: away closes it again, and back reveals it again.
+    rerender(<ProjectTree {...props(inB)} />);
+    wait(FOLD_CLOSE_DELAY_MS);
+    expect(isOpen()).toBe(false);
+    backToA(rerender);
+    expect(isOpen()).toBe(true);
+  });
+
+  it('cancels the close on coming back before it fires', () => {
+    const { rerender } = render(<ProjectTree {...props({ activeAgentId: 's1' })} />);
+    rerender(<ProjectTree {...props(inB)} />);
+    wait(FOLD_CLOSE_DELAY_MS - 1);
+    rerender(<ProjectTree {...props({ activeAgentId: 's1' })} />);
+    wait(FOLD_CLOSE_DELAY_MS * 2);
+    expect(isOpen()).toBe(true);
+  });
+
+  it('keeps a fold closed by hand closed, across a switch away and back', () => {
+    const { rerender } = render(<ProjectTree {...props({ activeAgentId: 's1' })} />);
+    fireEvent.click(row());
+    expect(isOpen()).toBe(false);
+    rerender(<ProjectTree {...props(inB)} />);
+    wait(FOLD_CLOSE_DELAY_MS * 2);
+    backToA(rerender);
+    expect(isOpen()).toBe(false);
+  });
+
+  it('keeps it closed when, after it closed while away, the user opens and closes it by hand', () => {
+    const { rerender } = render(<ProjectTree {...props({ activeAgentId: 's1' })} />);
+    rerender(<ProjectTree {...props(inB)} />);
+    wait(FOLD_CLOSE_DELAY_MS);
+    fireEvent.click(row());
+    fireEvent.click(row());
+    backToA(rerender);
+    expect(isOpen()).toBe(false);
+  });
+
+  it('does not reopen after the reveal once the user closes it by hand', () => {
+    const { rerender } = render(<ProjectTree {...props({ activeAgentId: 's1' })} />);
+    rerender(<ProjectTree {...props(inB)} />);
+    wait(FOLD_CLOSE_DELAY_MS);
+    backToA(rerender);
+    fireEvent.click(row());
+    rerender(<ProjectTree {...props({ activeAgentId: 's1', detailed: {} })} />);
+    expect(isOpen()).toBe(false);
+  });
+
+  it('stays closed on coming back to an awake selection, and the note is used up', () => {
+    const { rerender } = render(<ProjectTree {...props({ activeAgentId: 's1' })} />);
+    rerender(<ProjectTree {...props(inB)} />);
+    wait(FOLD_CLOSE_DELAY_MS);
+    rerender(<ProjectTree {...props({ activeAgentId: 'a1' })} />);
+    expect(isOpen()).toBe(false);
+    expect(useChromeStore.getState().sleepingFoldsClosedAway).toEqual([]);
+  });
+
+  it('notes nothing when the fold closes in the active project', () => {
+    const { rerender } = render(<ProjectTree {...props()} />);
+    wait(FOLD_CLOSE_DELAY_MS);
+    expect(isOpen()).toBe(false);
+    expect(useChromeStore.getState().sleepingFoldsClosedAway).toEqual([]);
+    rerender(<ProjectTree {...props({ activeAgentId: 's1' })} />);
+    expect(isOpen()).toBe(false);
+  });
+
+  it('does not restart the timer when the active project changes', () => {
+    const { rerender } = render(<ProjectTree {...props()} />);
+    wait(FOLD_CLOSE_DELAY_MS - 1);
+    rerender(<ProjectTree {...props(inB)} />);
+    wait(1);
+    expect(isOpen()).toBe(false);
   });
 });
 
