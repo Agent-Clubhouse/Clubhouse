@@ -366,8 +366,6 @@ export interface ModelList {
 export interface ListModelsOptions {
   /** Profile env (CLAUDE_CONFIG_DIR, CODEX_HOME…): a profile can change login and so the list. */
   env?: Record<string, string>;
-  /** Directory the probe runs in: a project's settings can narrow the list. Defaults to the home directory. */
-  cwd?: string;
   /** Skip the cache and probe again. */
   refresh?: boolean;
 }
@@ -401,8 +399,9 @@ export interface OrchestratorProvider {
   getModelOptions(opts?: ListModelsOptions): Promise<Array<{ id: string; label: string }>>;
   /**
    * The models the CLI accepts, from its own handshake where it has one, else
-   * the older probe, else the static list; `source` says which. Cached per
-   * env and cwd for about ten minutes.
+   * the older probe, else the static list; `source` says which. Probes run
+   * in an empty temp dir, so the list reflects the CLI's user-level settings,
+   * never a project's. Cached per profile env for about ten minutes.
    */
   listModels?(opts?: ListModelsOptions): Promise<ModelList>;
   /** Whether the CLI accepts `model`, given a list from listModels (aliases included). */

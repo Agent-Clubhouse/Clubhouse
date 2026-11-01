@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import * as os from 'os';
 import * as path from 'path';
 
 vi.mock('fs', () => ({
@@ -14,6 +15,8 @@ vi.mock('fs/promises', () => ({
   mkdir: vi.fn(async () => {}),
   stat: vi.fn(async () => ({ isDirectory: () => true })),
   realpath: vi.fn(async (p: string) => p),
+  mkdtemp: vi.fn(async (prefix: string) => `${prefix}abc123`),
+  rm: vi.fn(async () => {}),
 }));
 
 vi.mock('child_process', () => ({
@@ -439,21 +442,34 @@ describe('BaseProvider.listModels', () => {
     expect(list.liveError).toBeUndefined();
   });
 
-  it('caches per env and cwd, and refresh probes again', async () => {
+  it('caches per profile env, and refresh probes again', async () => {
     await provider.listModels();
     await provider.listModels();
     expect(provider.probe).toHaveBeenCalledTimes(1);
     await provider.listModels({ env: { TEST_CONFIG_DIR: 'profile-dir' } });
-    await provider.listModels({ cwd: path.join('workspace', 'project') });
-    expect(provider.probe).toHaveBeenCalledTimes(3);
+    expect(provider.probe).toHaveBeenCalledTimes(2);
     await provider.listModels({ refresh: true });
-    expect(provider.probe).toHaveBeenCalledTimes(4);
+    expect(provider.probe).toHaveBeenCalledTimes(3);
   });
 
-  it('passes the profile env and cwd to the probe', async () => {
-    const cwd = path.join('workspace', 'project');
-    await provider.listModels({ env: { TEST_CONFIG_DIR: 'profile-dir' }, cwd });
-    expect(provider.probe).toHaveBeenCalledWith(expect.objectContaining({ env: { TEST_CONFIG_DIR: 'profile-dir' }, cwd }));
+  it('passes the profile env to the probe', async () => {
+    await provider.listModels({ env: { TEST_CONFIG_DIR: 'profile-dir' } });
+    expect(provider.probe).toHaveBeenCalledWith(expect.objectContaining({ env: { TEST_CONFIG_DIR: 'profile-dir' } }));
+  });
+
+  it('runs the probe in a fresh temp dir and removes it afterwards, never a project or home', async () => {
+    await provider.listModels();
+    const cwd = provider.probe.mock.calls[0][0].cwd;
+    expect(fsp.mkdtemp).toHaveBeenCalledWith(path.join(os.tmpdir(), 'clubhouse-models-'));
+    expect(cwd).toBe(path.join(os.tmpdir(), 'clubhouse-models-abc123'));
+    expect(cwd).not.toBe(os.homedir());
+    await vi.waitFor(() => expect(fsp.rm).toHaveBeenCalledWith(cwd, expect.objectContaining({ recursive: true, force: true })));
+  });
+
+  it('removes the temp dir when the probe fails too', async () => {
+    provider.probe.mockRejectedValueOnce(new Error('not logged in'));
+    await provider.listModels();
+    await vi.waitFor(() => expect(fsp.rm).toHaveBeenCalledWith(path.join(os.tmpdir(), 'clubhouse-models-abc123'), expect.anything()));
   });
 
   it('shares one probe between concurrent callers', async () => {
@@ -482,9 +498,9 @@ describe('BaseProvider.listModels', () => {
     expect(provider.probe).toHaveBeenCalledTimes(2);
 
     provider.probe.mockResolvedValue(null);
-    await provider.listModels({ cwd: 'other' });
+    await provider.listModels({ env: { TEST_CONFIG_DIR: 'other' } });
     vi.advanceTimersByTime(FALLBACK_MODEL_LIST_TTL_MS + 1000);
-    await provider.listModels({ cwd: 'other' });
+    await provider.listModels({ env: { TEST_CONFIG_DIR: 'other' } });
     expect(provider.probe).toHaveBeenCalledTimes(4);
   });
 

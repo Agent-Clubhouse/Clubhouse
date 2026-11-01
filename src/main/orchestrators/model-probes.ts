@@ -6,7 +6,8 @@
  * - Claude Code: the stream-json control `initialize` reply's `models[]`.
  * - Codex: app-server `initialize`, then `model/list`.
  * - Copilot CLI: ACP `initialize`, then `session/new`, whose result lists the
- *   models; the session is closed unprompted.
+ *   models; the session is closed unprompted, and the folder Copilot made
+ *   for it is removed (removeUnpromptedCopilotSession).
  *
  * The protocol clients are the chat drivers' own (ClaudeStreamTransport,
  * CodexAppServerClient, AcpSession). The parsers are exported for the
@@ -14,6 +15,8 @@
  */
 
 import type { ChildProcess } from 'child_process';
+import * as fsp from 'fs/promises';
+import * as path from 'path';
 import { ClaudeStreamTransport } from '../chat/claude/stream-transport';
 import { initializedFromWire } from '../chat/claude/normalizer';
 import { spawnClaude } from '../chat/claude/spawn';
@@ -22,7 +25,7 @@ import { CodexAppServerClient } from './adapters/codex-app-server-client';
 import type { Model } from './adapters/codex-protocol';
 import { AcpSession, type AcpAgentProfile, type AcpSessionState } from './adapters/acp-session';
 import { sessionChoices } from './adapters/acp-chat-mapper';
-import { resolveCopilotAcpSpawn, selectAcpProfile } from './adapters/copilot-acp';
+import { copilotSessionStateDir, resolveCopilotAcpSpawn, selectAcpProfile } from './adapters/copilot-acp';
 import type { ModelInfo } from './types';
 import { buildCliSpawnEnv } from '../util/shell';
 
@@ -174,26 +177,92 @@ export function acpSessionModels(
   })));
 }
 
+/** Everything an unprompted Copilot session folder holds (1.0.103). Anything else means it was used. */
+const UNPROMPTED_COPILOT_FILES = new Set(['workspace.yaml', '.workspace-fork.lock', path.join('checkpoints', 'index.md')]);
+const UNPROMPTED_COPILOT_DIRS = new Set(['checkpoints', 'files', 'research']);
+
+/** Relative paths of every file under `dir`, or a reason to keep it (a symlink or an unexpected folder). */
+async function listUnpromptedLayout(dir: string, rel = ''): Promise<string[] | string> {
+  const files: string[] = [];
+  for (const entry of await fsp.readdir(path.join(dir, rel), { withFileTypes: true })) {
+    const entryRel = path.join(rel, entry.name);
+    if (entry.isSymbolicLink()) return `symlink ${entryRel}`;
+    if (entry.isDirectory()) {
+      if (rel || !UNPROMPTED_COPILOT_DIRS.has(entry.name)) return `unexpected folder ${entryRel}`;
+      const inner = await listUnpromptedLayout(dir, entryRel);
+      if (typeof inner === 'string') return inner;
+      files.push(...inner);
+    } else {
+      files.push(entryRel);
+    }
+  }
+  return files;
+}
+
+/**
+ * Remove the session folder Copilot created for a probe's own `session/new`,
+ * and nothing else. Only the folder named exactly `sessionId`, directly under
+ * `stateDir`, is a candidate, and it is kept unless it holds just what an
+ * unprompted session leaves (a workspace.yaml for this id with no summaries,
+ * a lock, an empty checkpoint index). Never throws; returns whether it removed it.
+ */
+export async function removeUnpromptedCopilotSession(
+  stateDir: string,
+  sessionId: string,
+  log?: ModelProbeContext['log'],
+): Promise<boolean> {
+  const keep = (reason: string) => {
+    log?.('debug', 'Kept the model probe\'s Copilot session folder', { sessionId, reason });
+    return false;
+  };
+  if (!/^[A-Za-z0-9][A-Za-z0-9-]*$/.test(sessionId)) return keep('not a plain session id');
+  const root = path.resolve(stateDir);
+  const dir = path.resolve(root, sessionId);
+  if (path.dirname(dir) !== root || path.basename(dir) !== sessionId) return keep('path did not resolve under the session-state dir');
+  try {
+    const stat = await fsp.lstat(dir);
+    if (!stat.isDirectory()) return keep('not a folder');
+    const layout = await listUnpromptedLayout(dir);
+    if (typeof layout === 'string') return keep(layout);
+    const extra = layout.find((f) => !UNPROMPTED_COPILOT_FILES.has(f));
+    if (extra) return keep(`holds ${extra}`);
+    const workspace = await fsp.readFile(path.join(dir, 'workspace.yaml'), 'utf8');
+    if (!new RegExp(`^id: ${sessionId}$`, 'm').test(workspace)) return keep('workspace.yaml names another session');
+    if (!/^summary_count: 0$/m.test(workspace)) return keep('workspace.yaml has summaries');
+    await fsp.rm(dir, { recursive: true, force: true });
+    return true;
+  } catch (err) {
+    // telemetry-exempt: the folder is kept; logged at debug
+    return keep(err instanceof Error ? err.message : String(err));
+  }
+}
+
 export async function probeCopilotModels(ctx: ModelProbeContext): Promise<ModelInfo[] | null> {
   ctx.signal.throwIfAborted();
+  // These clients use the env as given; Claude's transport layers it over the shell env itself.
+  const env = buildCliSpawnEnv(ctx.env);
   const session = new AcpSession({
     ...resolveCopilotAcpSpawn({ binary: ctx.binary }),
     cwd: ctx.cwd,
-    // These clients use the env as given; Claude's transport layers it over the shell env itself.
-    env: buildCliSpawnEnv(ctx.env),
+    env,
     rpcTimeoutMs: ctx.timeoutMs,
     profile: selectAcpProfile,
     onLog: ctx.log,
   });
   const detach = onAbort(ctx.signal, () => session.kill());
+  let sessionId: string | null = null;
   try {
     await session.start();
-    await session.newSession({ cwd: ctx.cwd, mcpServers: [] });
+    sessionId = (await session.newSession({ cwd: ctx.cwd, mcpServers: [] })).sessionId;
     return acpSessionModels(session.getState(), session.agentProfile.modelCostHint);
   } finally {
     detach();
     // session/close (bounded) so the unprompted session isn't left open, then kill.
-    if (ctx.signal.aborted) session.kill();
-    else await session.close();
+    if (ctx.signal.aborted) {
+      session.kill();
+    } else {
+      await session.close();
+      if (sessionId) await removeUnpromptedCopilotSession(copilotSessionStateDir(env), sessionId, ctx.log);
+    }
   }
 }

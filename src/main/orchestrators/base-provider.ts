@@ -170,11 +170,11 @@ export abstract class BaseProvider implements OrchestratorProvider {
 
   /**
    * The models this CLI accepts: its live handshake, else the older command
-   * probe, else the static list. Cached per profile env and cwd; concurrent
+   * probe, else the static list. Cached per profile env; concurrent
    * callers share one probe.
    */
   async listModels(opts: ListModelsOptions = {}): Promise<ModelList> {
-    const key = JSON.stringify([opts.cwd ?? '', Object.entries(opts.env ?? {}).sort()]);
+    const key = JSON.stringify(Object.entries(opts.env ?? {}).sort());
     const cached = this.modelCache.get(key);
     if (cached && !opts.refresh && cached.expires > Date.now()) return copyModelList(cached.list);
     let load = this.modelLoads.get(key);
@@ -227,8 +227,15 @@ export abstract class BaseProvider implements OrchestratorProvider {
     return fallback('static', this.fallbackModelOptions.map((m) => ({ ...m })));
   }
 
+  /**
+   * Run the probe in a fresh empty temp dir, removed once the probe has
+   * settled: a project or the home dir could carry a CLAUDE.md, .claude,
+   * .codex or hooks that load as if it were a project. User-level settings
+   * still apply.
+   */
   private async runLiveProbe(opts: ListModelsOptions): Promise<ModelInfo[] | null> {
     const binary = this.findBinary();
+    const cwd = await fsp.mkdtemp(path.join(os.tmpdir(), 'clubhouse-models-'));
     const controller = new AbortController();
     let timer: ReturnType<typeof setTimeout> | undefined;
     const deadline = new Promise<never>((_, reject) => {
@@ -237,18 +244,21 @@ export abstract class BaseProvider implements OrchestratorProvider {
         reject(new Error(`model handshake timed out after ${MODEL_PROBE_TIMEOUT_MS}ms`));
       }, MODEL_PROBE_TIMEOUT_MS);
     });
+    const probe = this.probeLiveModels!({
+      binary,
+      cwd,
+      env: opts.env,
+      signal: controller.signal,
+      timeoutMs: MODEL_PROBE_TIMEOUT_MS,
+      log: (level, message, meta) => appLog('core:orchestrator', level === 'info' ? 'debug' : level, `[models:${this.id}] ${message}`, { meta }),
+    });
+    // After a timeout the killed probe may still be exiting; remove the dir once it has.
+    void probe.catch((): null => null).finally(() => fsp.rm(cwd, { recursive: true, force: true, maxRetries: 3, retryDelay: 100 }).catch((err: unknown) => {
+      // telemetry-exempt: an empty temp dir left behind; logged
+      appLog('core:orchestrator', 'debug', 'Could not remove the model probe dir', { meta: { provider: this.id, error: err instanceof Error ? err.message : String(err) } });
+    }));
     try {
-      return await Promise.race([
-        this.probeLiveModels!({
-          binary,
-          cwd: opts.cwd ?? os.homedir(),
-          env: opts.env,
-          signal: controller.signal,
-          timeoutMs: MODEL_PROBE_TIMEOUT_MS,
-          log: (level, message, meta) => appLog('core:orchestrator', level === 'info' ? 'debug' : level, `[models:${this.id}] ${message}`, { meta }),
-        }),
-        deadline,
-      ]);
+      return await Promise.race([probe, deadline]);
     } finally {
       clearTimeout(timer);
     }

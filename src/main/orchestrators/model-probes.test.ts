@@ -1,4 +1,4 @@
-import { describe, it, expect, afterEach } from 'vitest';
+import { describe, it, expect, afterEach, beforeEach, vi } from 'vitest';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
@@ -9,6 +9,7 @@ import {
   probeClaudeModels,
   probeCodexModels,
   probeCopilotModels,
+  removeUnpromptedCopilotSession,
   type ModelProbeContext,
 } from './model-probes';
 import { dedupeCopilotConfigOptions, dedupeCopilotLegacyModels, copilotModelCostHint } from './adapters/copilot-acp';
@@ -153,9 +154,14 @@ describe('live probes, replayed through the fake CLI (no real CLI, no prompt)', 
     expect(r.argv).toEqual(['app-server']);
   });
 
-  it('Copilot: initialize, session/new and session/close, never a prompt', async () => {
+  it('Copilot: initialize, session/new and session/close, never a prompt; removes only its own session folder', async () => {
     const { ctx, report } = await fakeFor('copilot');
-    const models = await probeCopilotModels(ctx);
+    const stateDir = path.join(dir!, 'copilot-home', 'session-state');
+    const own = await unpromptedSession(stateDir, RECORDED_COPILOT_SESSION);
+    const other = await unpromptedSession(stateDir, OTHER_SESSION);
+    const models = await probeCopilotModels({ ...ctx, env: { COPILOT_HOME: path.join(dir!, 'copilot-home') } });
+    expect(fs.existsSync(own)).toBe(false);
+    expect(fs.existsSync(other)).toBe(true);
     expect(models?.find((m) => m.id === 'claude-haiku-4.5')?.costHint).toBe('0.33x');
     const r = await report();
     expect(r.mismatch).toBeNull();
@@ -168,5 +174,76 @@ describe('live probes, replayed through the fake CLI (no real CLI, no prompt)', 
     const controller = new AbortController();
     controller.abort();
     await expect(probeCodexModels({ ...ctx, signal: controller.signal })).rejects.toThrow();
+  });
+});
+
+/** The session id in the recorded copilot/model-list.jsonl. */
+const RECORDED_COPILOT_SESSION = 'f8c7c8a0-c507-4ff9-9b1a-4f0b4d795aa9';
+const OTHER_SESSION = '11111111-2222-4333-8444-555555555555';
+
+/** What Copilot 1.0.103 leaves for a session/new that was closed unprompted. */
+async function unpromptedSession(stateDir: string, id: string, workspace = `id: ${id}\ncwd: /workspace/project\nsummary_count: 0\n`): Promise<string> {
+  const dir = path.join(stateDir, id);
+  await fs.promises.mkdir(path.join(dir, 'checkpoints'), { recursive: true });
+  await fs.promises.mkdir(path.join(dir, 'files'), { recursive: true });
+  await fs.promises.writeFile(path.join(dir, 'workspace.yaml'), workspace);
+  await fs.promises.writeFile(path.join(dir, '.workspace-fork.lock'), '');
+  await fs.promises.writeFile(path.join(dir, 'checkpoints', 'index.md'), '');
+  return dir;
+}
+
+describe('removeUnpromptedCopilotSession', () => {
+  let stateDir: string;
+  beforeEach(async () => {
+    stateDir = path.join(await fs.promises.mkdtemp(path.join(os.tmpdir(), 'copilot-state-')), 'session-state');
+  });
+  afterEach(async () => {
+    await fs.promises.rm(path.dirname(stateDir), { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
+  });
+
+  it('removes only the folder for the probe\'s own session id', async () => {
+    const own = await unpromptedSession(stateDir, RECORDED_COPILOT_SESSION);
+    const other = await unpromptedSession(stateDir, OTHER_SESSION);
+    expect(await removeUnpromptedCopilotSession(stateDir, RECORDED_COPILOT_SESSION)).toBe(true);
+    expect(fs.existsSync(own)).toBe(false);
+    expect(fs.existsSync(other)).toBe(true);
+    expect(fs.existsSync(stateDir)).toBe(true);
+  });
+
+  it('keeps a folder that shows a prompt, and logs why at debug', async () => {
+    const own = await unpromptedSession(stateDir, RECORDED_COPILOT_SESSION);
+    await fs.promises.writeFile(path.join(own, 'events.jsonl'), '{"type":"user.message"}\n');
+    const log = vi.fn();
+    expect(await removeUnpromptedCopilotSession(stateDir, RECORDED_COPILOT_SESSION, log)).toBe(false);
+    expect(fs.existsSync(path.join(own, 'events.jsonl'))).toBe(true);
+    expect(log).toHaveBeenCalledWith('debug', expect.any(String), expect.objectContaining({ reason: 'holds events.jsonl' }));
+  });
+
+  it('keeps a folder with summaries, files or another session\'s workspace', async () => {
+    const summarized = await unpromptedSession(stateDir, RECORDED_COPILOT_SESSION, `id: ${RECORDED_COPILOT_SESSION}\nsummary_count: 1\n`);
+    expect(await removeUnpromptedCopilotSession(stateDir, RECORDED_COPILOT_SESSION)).toBe(false);
+    expect(fs.existsSync(summarized)).toBe(true);
+
+    const withFile = await unpromptedSession(stateDir, OTHER_SESSION);
+    await fs.promises.writeFile(path.join(withFile, 'files', 'notes.md'), 'x');
+    expect(await removeUnpromptedCopilotSession(stateDir, OTHER_SESSION)).toBe(false);
+    expect(fs.existsSync(withFile)).toBe(true);
+
+    const mismatched = await unpromptedSession(stateDir, 'abc-123', `id: ${OTHER_SESSION}\nsummary_count: 0\n`);
+    expect(await removeUnpromptedCopilotSession(stateDir, 'abc-123')).toBe(false);
+    expect(fs.existsSync(mismatched)).toBe(true);
+  });
+
+  it('never resolves outside the session-state dir', async () => {
+    const other = await unpromptedSession(stateDir, OTHER_SESSION);
+    for (const id of ['..', '.', '', `..${path.sep}session-state`, `x${path.sep}..${path.sep}${OTHER_SESSION}`, '*']) {
+      expect(await removeUnpromptedCopilotSession(stateDir, id), id).toBe(false);
+    }
+    expect(fs.existsSync(other)).toBe(true);
+    expect(fs.existsSync(stateDir)).toBe(true);
+  });
+
+  it('does nothing when the folder is missing', async () => {
+    expect(await removeUnpromptedCopilotSession(stateDir, RECORDED_COPILOT_SESSION)).toBe(false);
   });
 });

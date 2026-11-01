@@ -9,6 +9,10 @@
  * is refused; one missing from a fallback list only gets a warning, since
  * that list can be stale.
  *
+ * The CLIs are asked from an empty temp dir, so a list reflects each CLI's
+ * login and user-level settings; a project-level model restriction isn't
+ * applied (LIST_SCOPE_NOTE).
+ *
  * list_models is in the `orchestration` tool group with start_helper, so any
  * agent that can start a helper, in its own project or another, can call it.
  */
@@ -22,6 +26,10 @@ import { appLog } from '../../log-service';
 import { getAllProviders, getProvider } from '../../../orchestrators';
 import type { ModelInfo, ModelList, OrchestratorId, OrchestratorProvider } from '../../../orchestrators';
 import { McpArgError, optionalString } from './validation';
+
+/** Told to the caller with every list: what a list does and doesn't reflect. */
+export const LIST_SCOPE_NOTE =
+  'Each list reflects the CLI\'s login and user-level settings. A project-level model restriction is not applied.';
 
 function errorText(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
@@ -137,7 +145,7 @@ async function listModels(agentId: string, args: Record<string, unknown>): Promi
   }
   const projectPath = agentRegistry.get(agentId)?.projectPath;
   const listed = await Promise.all(providers.map((p) => describeProvider(p, projectPath, refresh)));
-  return { content: [{ type: 'text', text: JSON.stringify({ providers: listed }, null, 2) }] };
+  return { content: [{ type: 'text', text: JSON.stringify({ note: LIST_SCOPE_NOTE, providers: listed }, null, 2) }] };
 }
 
 export function registerModelTools(): void {
@@ -150,6 +158,7 @@ export function registerModelTools(): void {
         'is the CLI\'s default, its reasoning effort levels and a cost hint. "source" is "live" when the CLI listed ' +
         'the models itself, or "fallback" when Clubhouse fell back to an older or built-in list that may be stale. ' +
         'start_helper refuses a model missing from a live list and warns for one missing from a fallback list. ' +
+        'Lists reflect each CLI\'s login and user-level settings; a project-level model restriction is not applied. ' +
         'Lists are cached for about ten minutes; refresh asks the CLIs again.',
       inputSchema: {
         type: 'object',

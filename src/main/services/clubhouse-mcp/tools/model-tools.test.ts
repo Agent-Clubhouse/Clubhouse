@@ -23,7 +23,7 @@ let enabled: string[] = [];
 vi.mock('../../orchestrator-settings', () => ({ getSettings: () => ({ enabled }) }));
 vi.mock('../../log-service', () => ({ appLog: vi.fn() }));
 
-import { registerModelTools } from './model-tools';
+import { LIST_SCOPE_NOTE, registerModelTools } from './model-tools';
 import { callTool, getScopedToolList, _resetForTesting } from '../tool-registry';
 import { agentRegistry } from '../../agent-registry';
 import { setOrchestrationEnabled, _resetOrchestrationGateForTesting } from '../orchestration-gate';
@@ -72,7 +72,8 @@ beforeEach(() => {
 
 describe('list_models', () => {
   it('is listed and callable only while orchestration is on', async () => {
-    expect(getScopedToolList('orch').map((t) => t.name)).toContain('list_models');
+    const tool = getScopedToolList('orch').find((t) => t.name === 'list_models');
+    expect(tool?.description).toContain('user-level settings; a project-level model restriction is not applied');
     agentRegistry.register('plain', { projectPath: PROJECT, orchestrator: 'claude-code', runtime: 'chat' });
     setOrchestrationEnabled('plain', false);
     expect(getScopedToolList('plain').map((t) => t.name)).not.toContain('list_models');
@@ -81,6 +82,7 @@ describe('list_models', () => {
 
   it('lists every enabled provider with its source', async () => {
     const body = parse(await callTool('orch', 'list_models', {}));
+    expect(body.note).toBe(LIST_SCOPE_NOTE);
     expect(body.providers.map((p: any) => p.cli)).toEqual(['claude-code', 'codex-cli']);
     expect(body.providers[0]).toEqual({
       cli: 'claude-code',
