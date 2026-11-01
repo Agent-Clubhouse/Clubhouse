@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach, vi } from 'vitest';
 
 vi.mock('electron', () => ({
   ipcMain: { handle: vi.fn() },
+  app: { isPackaged: false, getPath: () => 'clubhouse-test-home' },
 }));
 
 vi.mock('../services/agent-settings-service', () => ({
@@ -43,8 +44,11 @@ vi.mock('../services/agent-system', () => ({
   })),
 }));
 
-vi.mock('../services/agent-config', () => ({
+vi.mock('../services/agent-config', async () => ({
+  // The real persona rule (#2551).
+  assertPersonaAllowed: (await vi.importActual<typeof import('../services/agent-config')>('../services/agent-config')).assertPersonaAllowed,
   getDurableConfig: vi.fn(() => ({ id: 'a1', name: 'Bot', orchestrator: 'claude-code' })),
+  updateDurableConfig: vi.fn(async () => undefined),
 }));
 
 vi.mock('../services/materialization-service', () => ({
@@ -70,6 +74,7 @@ import * as agentSystem from '../services/agent-system';
 import * as agentConfig from '../services/agent-config';
 import { materializeAgent, previewMaterialization, resetProjectAgentDefaults } from '../services/materialization-service';
 import { computeConfigDiff, propagateChanges } from '../services/config-diff-service';
+import { getDispatcherPath } from '../services/dispatcher/dispatcher-paths';
 
 describe('agent-settings-handlers', () => {
   let handlers: Map<string, (...args: any[]) => any>;
@@ -444,5 +449,19 @@ describe('agent-settings-handlers', () => {
   it('rejects non-array selectedItemIds for PROPAGATE_CONFIG_CHANGES', () => {
     const handler = handlers.get(IPC.AGENT.PROPAGATE_CONFIG_CHANGES)!;
     expect(() => handler({}, '/project', 'a1', 'not-an-array')).toThrow('must be an array');
+  });
+
+  describe('APPLY_PERSONA_TO_AGENT and the dispatcher persona (#2551)', () => {
+    it('refuses the dispatcher persona for a project agent', async () => {
+      const handler = handlers.get(IPC.AGENT.APPLY_PERSONA_TO_AGENT)!;
+      await expect(handler({}, 'project', 'a1', 'dispatcher')).rejects.toThrow('The Dispatcher persona is only for the Dispatcher.');
+      expect(agentConfig.updateDurableConfig).not.toHaveBeenCalled();
+    });
+
+    it('refuses another persona for the Dispatcher', async () => {
+      const handler = handlers.get(IPC.AGENT.APPLY_PERSONA_TO_AGENT)!;
+      await expect(handler({}, getDispatcherPath(), 'disp', 'orchestrator')).rejects.toThrow("The Dispatcher's persona can't be changed.");
+      expect(agentConfig.updateDurableConfig).not.toHaveBeenCalled();
+    });
   });
 });

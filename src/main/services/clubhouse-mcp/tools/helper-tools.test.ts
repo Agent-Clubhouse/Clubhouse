@@ -38,6 +38,12 @@ vi.mock('../../agent-config', () => ({
 }));
 
 const mockStartDurableCreation = vi.fn();
+
+/** The real persona rule creation runs (#2551), for a mocked creation step to apply. */
+async function realPersonaRule(projectPath: string, params: { persona?: string }): Promise<void> {
+  const { assertPersonaAllowed } = await vi.importActual<typeof import('../../agent-config')>('../../agent-config');
+  assertPersonaAllowed(projectPath, params.persona);
+}
 const mockPersonaInjection = vi.fn((projectPath: string, params: { persona?: string }) => ({
   inject: params.persona ? async (created: DurableAgentConfig) => mockApplyPersona(projectPath, created.id, params.persona) : undefined,
 }));
@@ -293,6 +299,15 @@ describe('gating', () => {
 // ── start_helper ───────────────────────────────────────────────────────────
 
 describe('start_helper', () => {
+  it('refuses the dispatcher persona up front, with nothing created (#2551)', async () => {
+    mockStartDurableCreation.mockImplementationOnce(realPersonaRule);
+    const result = await callTool('orch', 'start_helper', { name: 'h', task: 't', persona: 'dispatcher' });
+    expect(result.isError).toBe(true);
+    expect(result.content[0].text).toBe('Could not start helper "h": The Dispatcher persona is only for the Dispatcher.');
+    expect(mockApplyPersona).not.toHaveBeenCalled();
+    expect(parse(await callTool('orch', 'list_helpers', {})).helpers).toEqual([]);
+  });
+
   it('returns "starting" before the creation completes, then spawns with the task and tells the orchestrator', async () => {
     const creation = controllableCreation();
     const result = await callTool('orch', 'start_helper', { name: 'fixer', task: 'Fix the bug', folder: 'fixer-1', branchFrom: 'main' });
@@ -593,6 +608,15 @@ describe('start approvals', () => {
     expect(mockCheckDurableCreation).toHaveBeenCalledWith(PROJECT, expect.objectContaining({
       name: 'impl-api', parentAgentId: 'orch', disposable: true, folderName: 'api', branchFrom: 'main',
     }));
+  });
+
+  it('refuses the dispatcher persona before asking, and records no request (#2551)', async () => {
+    mockCheckDurableCreation.mockImplementationOnce(realPersonaRule);
+    const result = await callTool('orch', 'start_helper', { name: 'h', task: 't', persona: 'dispatcher' });
+    expect(result.isError).toBe(true);
+    expect(result.content[0].text).toContain('The Dispatcher persona is only for the Dispatcher.');
+    expect(listStartRequests()).toEqual([]);
+    expect(mockStartDurableCreation).not.toHaveBeenCalled();
   });
 
   it('refuses at once a start that could never run, and records no request', async () => {
@@ -1079,6 +1103,15 @@ describe('helpers in another project', () => {
   }
 
   describe('start_helper with project', () => {
+    it('refuses the dispatcher persona in the target project, with nothing created (#2551)', async () => {
+      mockStartDurableCreation.mockImplementationOnce(realPersonaRule);
+      const result = await callTool('orch', 'start_helper', { name: 'api', task: 't', project: 'Far Away', persona: 'dispatcher' });
+      expect(result.isError).toBe(true);
+      expect(result.content[0].text).toBe('Could not start helper "api": The Dispatcher persona is only for the Dispatcher.');
+      expect(mockStartDurableCreation.mock.calls[0][0]).toBe(FAR);
+      expect(mockApplyPersona).not.toHaveBeenCalled();
+    });
+
     it('creates and spawns the helper in the target project, with limits and launch from home', async () => {
       const creation = controllableCreation();
       const body = parse(await callTool('orch', 'start_helper', { name: 'api', task: 'Build it', project: 'Far Away', persona: 'workhorse' }));

@@ -80,7 +80,10 @@ import {
   disposeHelper,
   recoverInterruptedCreations,
   resolveHelpersForDelete,
+  getDurableConfig,
+  updateDurableConfig,
 } from './agent-config';
+import { getDispatcherPath } from './dispatcher/dispatcher-paths';
 import { cancelDurableCreation, onDurableCreationEvent, startDurableCreation } from './agent-creation';
 
 const PROJECT_PATH = path.resolve('test-project');
@@ -591,6 +594,55 @@ describe('persona ids (#2511)', () => {
   it('accepts a persona defined in the project', async () => {
     files.set(path.join(PROJECT_PATH, '.clubhouse', 'personas', 'house-style.md'), '# House style');
     await expect(checkDurableCreation(PROJECT_PATH, { name: 'agent', color: 'indigo', persona: 'house-style' })).resolves.toBeUndefined();
+  });
+});
+
+describe('the dispatcher persona (#2551)', () => {
+  const DISPATCHER = 'dispatcher';
+  const PARENT_PROJECT = path.resolve('test-parent-project');
+
+  it('refuses it for any other agent, before anything is created', async () => {
+    const params = { name: 'imposter', color: 'indigo', persona: DISPATCHER };
+    await expect(checkDurableCreation(PROJECT_PATH, params)).rejects.toThrow('The Dispatcher persona is only for the Dispatcher.');
+    await expect(startDurableCreation(PROJECT_PATH, params)).rejects.toThrow(/only for the Dispatcher/);
+    await expect(createDurable(PROJECT_PATH, 'imposter', 'indigo', undefined, true, undefined, undefined, undefined, undefined, DISPATCHER))
+      .rejects.toThrow(/only for the Dispatcher/);
+    expect(execFile).not.toHaveBeenCalled();
+    expect(diskAgents()).toEqual([]);
+  });
+
+  it('refuses it for a helper started from another project (start_helper, cross-project)', async () => {
+    const orch = await createDurable(PARENT_PROJECT, 'orch', 'indigo', undefined, false);
+    const params = { name: 'helper', color: 'indigo', persona: DISPATCHER, parentAgentId: orch.id, parentProjectPath: PARENT_PROJECT, disposable: true };
+    await expect(checkDurableCreation(PROJECT_PATH, params)).rejects.toThrow(/only for the Dispatcher/);
+    await expect(startDurableCreation(PROJECT_PATH, params)).rejects.toThrow(/only for the Dispatcher/);
+    expect(gitArgv().some(isWorktreeAdd)).toBe(false);
+    expect(diskAgents()).toEqual([]);
+  });
+
+  it('creates the Dispatcher with it in its own folder, and nothing else there', async () => {
+    const dir = getDispatcherPath();
+    const created = await createDurable(dir, 'Dispatcher', 'indigo', undefined, false, undefined, true, undefined, undefined, DISPATCHER);
+    expect(created.persona).toBe(DISPATCHER);
+    await expect(createDurable(dir, 'other', 'indigo', undefined, false, undefined, undefined, undefined, undefined, 'qa'))
+      .rejects.toThrow("The Dispatcher's persona can't be changed.");
+    await expect(createDurable(dir, 'bare', 'indigo', undefined, false)).rejects.toThrow(/persona can't be changed/);
+  });
+
+  it('refuses a config update that gives it to another agent, or changes or clears the Dispatcher\'s', async () => {
+    const agent = await createDurable(PROJECT_PATH, 'agent', 'indigo', undefined, false, undefined, undefined, undefined, undefined, 'qa');
+    await expect(updateDurableConfig(PROJECT_PATH, agent.id, { persona: DISPATCHER })).rejects.toThrow(/only for the Dispatcher/);
+    expect((await getDurableConfig(PROJECT_PATH, agent.id))?.persona).toBe('qa');
+
+    const dir = getDispatcherPath();
+    const disp = await createDurable(dir, 'Dispatcher', 'indigo', undefined, false, undefined, true, undefined, undefined, DISPATCHER);
+    await expect(updateDurableConfig(dir, disp.id, { persona: 'orchestrator' })).rejects.toThrow("The Dispatcher's persona can't be changed.");
+    await expect(updateDurableConfig(dir, disp.id, { persona: '' })).rejects.toThrow(/persona can't be changed/);
+    expect((await getDurableConfig(dir, disp.id))?.persona).toBe(DISPATCHER);
+
+    // Its other settings, and re-saving its own persona, still go through.
+    await updateDurableConfig(dir, disp.id, { persona: DISPATCHER, model: 'opus', idleSleep: 'never' });
+    expect(await getDurableConfig(dir, disp.id)).toMatchObject({ persona: DISPATCHER, model: 'opus' });
   });
 });
 

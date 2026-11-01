@@ -146,6 +146,8 @@ describe('agent.create', () => {
     expect((await refusal(createMobileAgent(project, create({ color: '#ff0000' }), allow))).code).toBe('invalid_color');
     expect((await refusal(createMobileAgent(project, create({ orchestrator: 'gemini' }), allow))).code).toBe('orchestrator_unavailable');
     expect((await refusal(createMobileAgent(project, create({ persona: 'pirate' }), allow))).code).toBe('unknown_persona');
+    // The hidden dispatcher persona is never listed (#2551); agentConfig refuses it as well.
+    expect((await refusal(createMobileAgent(project, create({ persona: 'dispatcher' }), allow))).code).toBe('unknown_persona');
     expect((await refusal(createMobileAgent(project, create({ mcpIds: ['kusto'] }), allow))).code).toBe('unknown_mcp');
     expect((await refusal(createMobileAgent(project, create({ useWorktree: false, branchName: 'x' }), allow))).code).toBe('worktree_options_require_worktree');
     vi.mocked(isInsideGitRepo).mockResolvedValueOnce(false);
@@ -318,6 +320,7 @@ describe('agent.update', () => {
     expect(await refuse({ orchestrator: 'gemini' })).toBe('orchestrator_unavailable');
     expect(await refuse({ orchestrator: 'codex-cli', runtime: 'chat' })).toBe('runtime_unavailable');
     expect(await refuse({ persona: 'pirate' })).toBe('unknown_persona');
+    expect(await refuse({ persona: 'dispatcher' })).toBe('unknown_persona');
     expect(await refuse({ clubhouseMode: false })).toBe('clubhouse_mode_unavailable');
     expect(await refuse({}, agent({ creation: { state: 'creating', startedAt: 'now' } }))).toBe('agent_creating');
     vi.mocked(isChatEnabled).mockReturnValueOnce(false);

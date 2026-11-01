@@ -53,10 +53,15 @@ vi.mock('../../orchestrators', () => ({
 function notify(projectPath: string) {
   for (const l of h.configListeners) l(projectPath);
 }
-vi.mock('../agent-config', () => ({
+// Creation and updates run the real persona rule, so the Dispatcher's own create is checked against it (#2551).
+vi.mock('../agent-config', async () => {
+  const { assertPersonaAllowed } = await vi.importActual<typeof import('../agent-config')>('../agent-config');
+  return {
+  assertPersonaAllowed,
   listDurable: vi.fn(async (dir: string) => (h.agents.get(dir) ?? []).map((a) => ({ ...a }))),
   getDurableConfig: vi.fn(async (dir: string, id: string) => h.agents.get(dir)?.find((a) => a.id === id) ?? null),
   createDurable: vi.fn(async (dir: string, name: string, color: string, model: string | undefined, _wt: boolean, orchestrator: string | undefined, freeAgentMode: boolean | undefined, _m: unknown, _c: unknown, persona: string | undefined) => {
+    assertPersonaAllowed(dir, persona);
     const config: DurableAgentConfig = {
       id: `durable_${h.nextId++}`, name, color, createdAt: 'now',
       ...(model ? { model } : {}), ...(orchestrator ? { orchestrator } : {}),
@@ -67,13 +72,15 @@ vi.mock('../agent-config', () => ({
     return config;
   }),
   updateDurableConfig: vi.fn(async (dir: string, id: string, updates: DurableConfigUpdates) => {
+    if (updates.persona !== undefined) assertPersonaAllowed(dir, updates.persona);
     const agent = h.agents.get(dir)?.find((a) => a.id === id);
     if (!agent) return;
     Object.assign(agent, updates);
     notify(dir);
   }),
   onAgentConfigChanged: (l: (p: string) => void) => { h.configListeners.add(l); return () => { h.configListeners.delete(l); }; },
-}));
+  };
+});
 
 vi.mock('../agent-system', () => ({
   isAgentRunning: (id: string) => h.running.has(id),
