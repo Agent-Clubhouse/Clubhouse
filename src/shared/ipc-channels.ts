@@ -43,6 +43,8 @@ export const IPC = {
     STATE_APPLY: 'project:state-apply',
     /** main → renderer: the state after a change from any window or a phone. */
     STATE_CHANGED: 'project:state-changed',
+    /** main → renderer: the project list was written; windows re-read how projects look (#2597). */
+    CHANGED: 'project:changed',
   },
   AGENT: {
     CREATE_DURABLE: 'agent:create-durable',

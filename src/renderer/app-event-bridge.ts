@@ -177,6 +177,18 @@ function initWindowListeners(): (() => void)[] {
 
 // ─── Agent Lifecycle Listeners ──────────────────────────────────────────────
 
+/** A change made outside this window (an agent, the CLI, a hand edit) shows at once (#2597). */
+function initDisplaySyncListeners(): (() => void)[] {
+  return [
+    window.clubhouse.agent.onConfigsChanged((projectPath: string) => {
+      useAgentStore.getState().syncDurableDisplay(projectPath).catch(() => { /* best-effort: the next change or load catches up */ });
+    }),
+    window.clubhouse.project.onChanged(() => {
+      useProjectStore.getState().syncProjectDisplay().catch(() => { /* best-effort: the next change or load catches up */ });
+    }),
+  ];
+}
+
 function initPtyExitListener(): () => void {
   const removeExitListener = window.clubhouse.pty.onExit(
     async (agentId: string, exitCode: number, lastOutput?: string) => {
@@ -819,6 +831,7 @@ export function initAppEventBridge(): () => void {
   const cleanups: (() => void)[] = [];
 
   cleanups.push(...initWindowListeners());
+  cleanups.push(...initDisplaySyncListeners());
   cleanups.push(initPtyExitListener());
   cleanups.push(initAgentWakingListener());
   cleanups.push(initCreationEventListener());

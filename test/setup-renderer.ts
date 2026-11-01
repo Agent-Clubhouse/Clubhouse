@@ -42,6 +42,7 @@ vi.stubGlobal('clubhouse', {
     onExit: () => vi.fn(),
   },
   project: {
+    onChanged: () => noop,
     list: async () => [],
     add: asyncNoop,
     remove: asyncNoop,
@@ -68,6 +69,7 @@ vi.stubGlobal('clubhouse', {
     writeWrapperCatalogSnapshot: asyncNoop,
   },
   agent: {
+    onConfigsChanged: () => noop,
     listDurable: async () => [],
     getRunningStatuses: async () => [],
     createDurable: asyncNoop,

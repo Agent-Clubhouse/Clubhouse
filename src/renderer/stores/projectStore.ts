@@ -12,6 +12,8 @@ interface ProjectState {
   /** False until the first loadProjects settles, so an empty list can be told from "not loaded yet". */
   projectsLoaded: boolean;
   loadProjects: () => Promise<void>;
+  /** Re-read how the known projects look, leaving the list and its order alone (#2597). */
+  syncProjectDisplay: () => Promise<void>;
   addProject: (path: string) => Promise<Project>;
   removeProject: (id: string) => Promise<void>;
   pickAndAddProject: () => Promise<Project | null>;
@@ -62,6 +64,27 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
         get().loadProjectIcon(p);
       }
     }
+  },
+
+  syncProjectDisplay: async () => {
+    const latest = new Map<string, Project>((await window.clubhouse.project.list()).map((p: Project) => [p.id, p]));
+    const known = get().projects;
+    // Adds and removes belong to whoever made them: their own replies update the list.
+    const projects = known.map((p) => {
+      const next = latest.get(p.id);
+      if (!next) return p;
+      const same = p.name === next.name && p.displayName === next.displayName && p.color === next.color && p.emoji === next.emoji && p.icon === next.icon;
+      return same ? p : { ...p, name: next.name, displayName: next.displayName, color: next.color, emoji: next.emoji, icon: next.icon };
+    });
+    if (projects.every((p, i) => p === known[i])) return;
+    set({ projects });
+    const iconChanged = projects.filter((p, i) => p.icon !== known[i].icon);
+    set((s) => {
+      const projectIcons = { ...s.projectIcons };
+      for (const p of iconChanged) delete projectIcons[p.id];
+      return { projectIcons };
+    });
+    for (const p of iconChanged) void get().loadProjectIcon(p);
   },
 
   addProject: async (path) => {

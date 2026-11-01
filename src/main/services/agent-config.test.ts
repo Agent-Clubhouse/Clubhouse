@@ -95,6 +95,8 @@ import {
   removeSessionEntries,
   ensureGitignore as _ensureGitignore,
   saveAgentIcon,
+  writeAgentIconFile,
+  readAgentIconData,
   clearAgentConfigCache,
   flushAgentConfig,
   stripLegacyStructuredMode,
@@ -2722,5 +2724,31 @@ describe('backup and recovery', () => {
       const result = await getDurableConfig(PROJECT_PATH, 'durable_nonexistent_xyz');
       expect(result).toBeNull();
     });
+  });
+});
+
+describe('writeAgentIconFile (#2597)', () => {
+  beforeEach(() => {
+    vi.mocked(fsp.mkdir).mockResolvedValue(undefined);
+    vi.mocked(fsp.writeFile).mockResolvedValue(undefined);
+    vi.mocked(fsp.unlink).mockClear();
+  });
+
+  it('writes a name that follows the content and removes the older icons of that agent only', async () => {
+    vi.mocked(fsp.readdir).mockResolvedValue(['a1.png', 'a1.abc.svg', 'a11.png'] as never);
+    const bytes = new Uint8Array([1, 2, 3]);
+    const name = await writeAgentIconFile('a1', bytes, 'webp');
+    expect(name).toMatch(/^a1\.[0-9a-f]{12}\.webp$/);
+    expect(fsp.writeFile).toHaveBeenCalledWith(expect.stringContaining(name), bytes);
+    const removed = vi.mocked(fsp.unlink).mock.calls.map(([file]) => path.basename(String(file)));
+    expect(removed.sort()).toEqual(['a1.abc.svg', 'a1.png']);
+  });
+
+  it('reads an icon back with the type its name says', async () => {
+    vi.mocked(pathExists).mockResolvedValue(true);
+    vi.mocked(fsp.readFile).mockResolvedValue(Buffer.from('x') as never);
+    expect(await readAgentIconData('a1.abc.svg')).toMatch(/^data:image\/svg\+xml;base64,/);
+    expect(await readAgentIconData('a1.abc.jpg')).toMatch(/^data:image\/jpeg;base64,/);
+    expect(await readAgentIconData('a1.png')).toMatch(/^data:image\/png;base64,/);
   });
 });

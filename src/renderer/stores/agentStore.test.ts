@@ -1279,7 +1279,55 @@ describe('agentStore', () => {
     });
   });
 
+  describe('syncDurableDisplay (#2597)', () => {
+    const config = (id: string, extra: Record<string, unknown> = {}) => ({ id, name: id, color: 'indigo', createdAt: '2024-01-01', ...extra });
+
+    it('takes how loaded durable agents look, while they run too, and adds nothing', async () => {
+      const mockAgent = window.clubhouse.agent as any;
+      seedAgent({ id: 'running', name: 'running', color: 'indigo', projectId: 'proj_1', status: 'running', kind: 'durable' });
+      mockAgent.listDurable.mockResolvedValue([config('running', { color: 'rose', emoji: '🦊' }), config('not_loaded')]);
+
+      await getState().syncDurableDisplay('/project');
+
+      expect(getState().agents['running']).toMatchObject({ color: 'rose', emoji: '🦊', status: 'running' });
+      expect(getState().agents['not_loaded']).toBeUndefined();
+    });
+
+    it('leaves the state alone when nothing changed', async () => {
+      const mockAgent = window.clubhouse.agent as any;
+      seedAgent({ id: 'same', name: 'same', color: 'indigo', projectId: 'proj_1', status: 'sleeping', kind: 'durable' });
+      const before = getState().agents;
+      mockAgent.listDurable.mockResolvedValue([config('same')]);
+      await getState().syncDurableDisplay('/project');
+      expect(getState().agents).toBe(before);
+    });
+
+    it('loads a new image and forgets a removed one', async () => {
+      const mockAgent = window.clubhouse.agent as any;
+      seedAgent({ id: 'swap', name: 'swap', color: 'indigo', icon: 'swap.1.png', projectId: 'proj_1', status: 'sleeping', kind: 'durable' });
+      seedAgent({ id: 'drop', name: 'drop', color: 'indigo', icon: 'drop.1.png', projectId: 'proj_1', status: 'sleeping', kind: 'durable' });
+      useAgentStore.setState({ agentIcons: { swap: 'data:old', drop: 'data:old' } });
+      mockAgent.listDurable.mockResolvedValue([config('swap', { icon: 'swap.2.png' }), config('drop', { emoji: '🦊' })]);
+      mockAgent.readIcon.mockResolvedValue('data:new');
+
+      await getState().syncDurableDisplay('/project');
+
+      expect(mockAgent.readIcon).toHaveBeenCalledWith('swap.2.png');
+      expect(getState().agentIcons['swap']).toBe('data:new');
+      expect(getState().agentIcons['drop']).toBeUndefined();
+    });
+  });
+
   describe('loadDurableAgents', () => {
+    it('loads the emoji from durable config', async () => {
+      const mockAgent = window.clubhouse.agent as any;
+      mockAgent.listDurable.mockResolvedValue([
+        { id: 'durable_e1', name: 'emoji-agent', color: 'indigo', emoji: '🦊', createdAt: '2024-01-01' },
+      ]);
+      await getState().loadDurableAgents('proj_1', '/project');
+      expect(getState().agents['durable_e1'].emoji).toBe('🦊');
+    });
+
     it('leaves disposed helpers off the rail (#2224)', async () => {
       const mockAgent = window.clubhouse.agent as any;
       seedAgent({ id: 'durable_gone', projectId: 'proj_1', status: 'sleeping', kind: 'durable' });

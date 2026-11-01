@@ -87,6 +87,7 @@ export function createCrudSlice(set: SetAgentState, get: GetAgentState): AgentCr
             ...creationStatus(config),
             color: config.color,
             icon: config.icon,
+            emoji: config.emoji,
             worktreePath: config.worktreePath,
             branch: config.branch,
             model: config.model,
@@ -189,6 +190,30 @@ export function createCrudSlice(set: SetAgentState, get: GetAgentState): AgentCr
       }
     },
 
+    syncDurableDisplay: async (projectPath) => {
+      const configs: DurableAgentConfig[] = await window.clubhouse.agent.listDurable(projectPath);
+      const iconChanged: Agent[] = [];
+      set((s) => {
+        let agents = s.agents;
+        let agentIcons = s.agentIcons;
+        for (const config of configs) {
+          const agent = s.agents[config.id];
+          if (!agent || agent.kind !== 'durable') continue;
+          if (agent.name === config.name && agent.color === config.color && agent.emoji === config.emoji && agent.icon === config.icon) continue;
+          const patched = { ...agent, name: config.name, color: config.color, emoji: config.emoji, icon: config.icon };
+          if (agents === s.agents) agents = { ...s.agents };
+          agents[config.id] = patched;
+          if (agent.icon !== config.icon) {
+            iconChanged.push(patched);
+            if (agentIcons === s.agentIcons) agentIcons = { ...s.agentIcons };
+            delete agentIcons[config.id];
+          }
+        }
+        return agents === s.agents ? s : { agents, agentIcons };
+      });
+      await Promise.all(iconChanged.map((agent) => get().loadAgentIcon(agent)));
+    },
+
     restoreFromBackup: async (projectId, projectPath) => {
       const result = await window.clubhouse.agent.restoreFromBackup(projectPath);
       if (result.restoredCount > 0) {
@@ -205,6 +230,7 @@ export function createCrudSlice(set: SetAgentState, get: GetAgentState): AgentCr
               ...creationStatus(config),
               color: config.color,
               icon: config.icon,
+              emoji: config.emoji,
               worktreePath: config.worktreePath,
               branch: config.branch,
               model: config.model,

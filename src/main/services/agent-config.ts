@@ -2,7 +2,7 @@ import { execFile } from 'child_process';
 import { watch, type FSWatcher } from 'fs';
 import * as fsp from 'fs/promises';
 import * as path from 'path';
-import { randomUUID } from 'crypto';
+import { createHash, randomUUID } from 'crypto';
 import { app } from 'electron';
 import { DurableAgentConfig, DurableConfigUpdates, OrchestratorId, SessionInfo, WorktreeStatus, DeleteResult, GitStatusFile, GitLogEntry, HelperCascadeResult, HelperDeleteChoice, HelperDisposeBlock, HelperDisposeChecks, HelperHandoff, HelperHandoffHow, HELPER_HANDOFF_HOWS } from '../../shared/types';
 import type { DurableAgentCreation, DurableCreationEvent, DurableCreationStage, DurableWorktreeOptions, StartDurableCreationParams } from '../../shared/types';
@@ -3344,21 +3344,39 @@ export async function saveAgentIcon(projectPath: string, agentId: string, dataUr
   return filename;
 }
 
+/**
+ * Store an image as the agent's icon file and drop its old one. Returns the
+ * filename for `updateDurable` to record. The name follows the content, so a
+ * window can tell a new image from the old without reading it.
+ */
+export async function writeAgentIconFile(agentId: string, bytes: Uint8Array, extension: string): Promise<string> {
+  const hash = createHash('sha256').update(bytes).digest('hex').slice(0, 12);
+  const filename = `${agentId}.${hash}.${extension}`;
+  await fsp.writeFile(path.join(await getAgentIconsDir(), filename), bytes);
+  await removeAgentIconFile(agentId, filename);
+  return filename;
+}
+
+const AGENT_ICON_MIME: Readonly<Record<string, string>> = {
+  '.jpg': 'image/jpeg', '.gif': 'image/gif', '.webp': 'image/webp', '.svg': 'image/svg+xml',
+};
+
 /** Read an agent icon file and return a data URL, or null if not found. */
 export async function readAgentIconData(filename: string): Promise<string | null> {
   const filePath = path.join(await getAgentIconsDir(), filename);
   if (!(await pathExists(filePath))) return null;
   const data = await fsp.readFile(filePath);
-  return `data:image/png;base64,${data.toString('base64')}`;
+  const mime = AGENT_ICON_MIME[path.extname(filename).toLowerCase()] ?? 'image/png';
+  return `data:${mime};base64,${data.toString('base64')}`;
 }
 
-/** Remove the icon file for an agent. */
-export async function removeAgentIconFile(agentId: string): Promise<void> {
+/** Remove the icon file for an agent, except `keep` if given. */
+export async function removeAgentIconFile(agentId: string, keep?: string): Promise<void> {
   const iconsDir = await getAgentIconsDir();
   try {
     const files = await fsp.readdir(iconsDir);
     for (const file of files) {
-      if (file.startsWith(agentId + '.')) {
+      if (file.startsWith(agentId + '.') && file !== keep) {
         await fsp.unlink(path.join(iconsDir, file));
       }
     }
