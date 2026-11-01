@@ -165,6 +165,13 @@ vi.mock('../../../orchestrators', () => ({
 const mockBroadcast = vi.fn();
 vi.mock('../../../util/ipc-broadcast', () => ({ broadcastToAllWindows: (...args: unknown[]) => mockBroadcast(...args) }));
 vi.mock('../../log-service', () => ({ appLog: vi.fn() }));
+const mockBridgeReady = vi.fn(async () => 23456);
+const mockEnsureBridge = vi.fn();
+vi.mock('../bridge-server', async (importOriginal) => ({
+  ...await importOriginal<typeof import('../bridge-server')>(),
+  waitReady: () => mockBridgeReady(),
+}));
+vi.mock('../../mcp-settings', () => ({ ensureMcpBridgeForAgent: () => mockEnsureBridge() }));
 
 import { AgentStoppingError } from '../../agent-runtime/agent-stopping';
 import {
@@ -388,6 +395,15 @@ describe('start_helper', () => {
   it('rejects an unknown cli and a bad access level', async () => {
     expect((await callTool('orch', 'start_helper', { name: 'h', task: 't', cli: 'nope' })).isError).toBe(true);
     expect((await callTool('orch', 'start_helper', { name: 'h', task: 't', access: 'root' })).isError).toBe(true);
+    expect(mockStartDurableCreation).not.toHaveBeenCalled();
+  });
+
+  it('refuses with the reason, creating nothing, when the bridge can\'t run (#2610)', async () => {
+    mockBridgeReady.mockRejectedValueOnce(new Error('port in use'));
+    const result = await callTool('orch', 'start_helper', { name: 'h', task: 't' });
+    expect(result.isError).toBe(true);
+    expect(result.content[0].text).toContain('the Clubhouse MCP bridge isn\'t running, so the helper couldn\'t report to you (port in use)');
+    expect(mockEnsureBridge).toHaveBeenCalled();
     expect(mockStartDurableCreation).not.toHaveBeenCalled();
   });
 
@@ -1223,6 +1239,14 @@ describe('helpers in another project', () => {
       expect(result.content[0].text).toBe('Could not start helper "api": The Dispatcher persona is only for the Dispatcher.');
       expect(mockStartDurableCreation.mock.calls[0][0]).toBe(FAR);
       expect(mockApplyPersona).not.toHaveBeenCalled();
+    });
+
+    it('refuses a helper in another project when the bridge can\'t run, creating nothing (#2610)', async () => {
+      mockBridgeReady.mockRejectedValueOnce(new Error('port in use'));
+      const result = await callTool('orch', 'start_helper', { name: 'api', task: 't', project: 'Far Away' });
+      expect(result.isError).toBe(true);
+      expect(result.content[0].text).toContain('couldn\'t report to you');
+      expect(mockStartDurableCreation).not.toHaveBeenCalled();
     });
 
     it('creates and spawns the helper in the target project, with limits and launch from home', async () => {

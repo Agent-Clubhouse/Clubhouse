@@ -1284,6 +1284,21 @@ describe('no Clubhouse MCP, no orchestration (#2589)', () => {
     expect(find('orch').orchestration).toEqual({ orchestrate: true, maxHelpers: 2 });
   });
 
+  it('a helper always has MCP, in any project, so it never reads MCP off (#2610)', async () => {
+    setAgents(OTHER_PROJECT, [
+      agent('cross', { parentAgentId: 'orch', parentProjectPath: PROJECT }),
+      agent('refused', { parentAgentId: 'orch', parentProjectPath: PROJECT, mcpOverride: false }),
+      agent('plain'),
+    ]);
+    mcp.projects.set(OTHER_PROJECT, false);
+    const policies = await resolveOrchestrationPolicies(OTHER_PROJECT, agentsOf(OTHER_PROJECT));
+    expect(policies.get('cross')).not.toHaveProperty('mcpOff');
+    expect(policies.get('refused')).not.toHaveProperty('mcpOff');
+    expect(policies.get('plain')).toHaveProperty('mcpOff');
+    // Still never connected to the Dispatcher: it talks only to its parent.
+    expect(policies.get('cross')?.connectToDispatcher).toBe(false);
+  });
+
   it('an agent turned on stays on when its project and the app are off', async () => {
     setAgents(PROJECT, [agent('orch', { mcpOverride: true, orchestration: { orchestrate: true } })]);
     mcp.app = false;

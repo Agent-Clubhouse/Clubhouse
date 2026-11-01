@@ -20,6 +20,8 @@ When it's on, the agent's Clubhouse MCP gets the helper and connection tools. If
 
 Orchestration needs Clubhouse MCP. Where MCP is off for an agent, in the app, its project or the agent itself, **Let this agent orchestrate** and **Connect to Dispatcher** are off and can't be changed, and the settings say why. The agent gets no helper tools and the Dispatcher can't reach it. Your settings are kept and come back when MCP is on. Helpers it already has keep running, and you can still manage them.
 
+A helper always gets Clubhouse MCP, even in a project where it's off, because it can't report to its orchestrator without it. The project's other MCP servers still follow the project's setting. If the MCP bridge can't run, the helper doesn't start and its orchestrator is told why.
+
 If you turn it off while the agent has helpers, Clubhouse asks what to do with them, including helpers in other projects.
 
 - **Keep helpers as normal agents** clears their link to the orchestrator and leaves them as they are.

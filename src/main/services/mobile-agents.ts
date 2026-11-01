@@ -11,6 +11,7 @@ import type { MobileAgentCreate, MobileAgentUpdate, MobileSettingEditable } from
 import { AGENT_IDLE_SLEEP_MINUTES, normalizeIdleSleep, resolveIdleSleep } from '../../shared/idle-sleep';
 import { AGENT_COLORS, generateDurableName } from '../../shared/name-generator';
 import { validateAgentGitName } from '../../shared/agent-name';
+import { clubhouseMcpOverride } from '../../shared/agent-helpers';
 import * as agentConfig from './agent-config';
 import { parseStartCreationParams, personaInjection, startDurableCreation } from './agent-creation';
 import { checkAvailability, getAvailableOrchestrators, resolveOrchestrator, resolveProfileEnv } from './agent-system';
@@ -466,7 +467,7 @@ export async function updateMobileAgent(
     updates.freeAgentMode = command.freeAgentMode;
   }
   if (idleSleep !== undefined) updates.idleSleep = idleSleep === 'inherit' ? null : idleSleep;
-  const orchestration = command.orchestration !== undefined ? parseMobileOrchestration(command.orchestration, 'update', { mcpEnabled: isMcpEnabled(project.path, config.mcpOverride) }) : undefined;
+  const orchestration = command.orchestration !== undefined ? parseMobileOrchestration(command.orchestration, 'update', { mcpEnabled: isMcpEnabled(project.path, clubhouseMcpOverride(config)) }) : undefined;
 
   assertAuthorized();
   const hadSession = !!config.lastSessionId;

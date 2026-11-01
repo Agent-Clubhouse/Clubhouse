@@ -78,6 +78,7 @@ import type { OrchestratorProvider } from '../../orchestrators';
 import { getShellEnvironment } from '../../util/shell';
 import { injectClubhouseMcp, buildClubhouseMcpDef } from '../clubhouse-mcp/injection';
 import { isMcpEnabled } from '../mcp-settings';
+import { resolveProjectMcpServers } from '../materialization-service';
 import { CodexChatDriver } from '../../orchestrators/adapters/codex-chat-driver';
 import { ClaudeChatDriver } from '../../chat/claude/driver';
 import { ClaudeSdkTransport, SDK_INIT_TIMEOUT_MS } from '../../chat/claude/sdk-transport';
@@ -272,6 +273,25 @@ require('readline').createInterface({ input: process.stdin }).on('line', line =>
     expect(isChatAgent('agent-1')).toBe(true);
     // Into session history (the Sessions picker), not just lastSessionId.
     expect(agentConfig.touchSessionEntry).toHaveBeenCalledWith('/p', 'agent-1', 'native-1', 'claude-code');
+  });
+
+  it.each([
+    ['no setting of its own', {}],
+    ['its own setting off', { mcpOverride: false }],
+  ])('gives a helper in an MCP-off project the bridge but not its project servers, with %s (#2610)', async (_label, own) => {
+    vi.mocked(isMcpEnabled).mockImplementation((_p?: string, agentOverride?: boolean) => agentOverride ?? false);
+    vi.mocked(resolveProjectMcpServers).mockResolvedValue({ github: { command: 'gh' } } as never);
+    try {
+      const driver = new FakeChatDriver();
+      registerChatDriver(driver);
+      const config = { id: 'agent-1', name: 'a', color: 'red', createdAt: '', parentAgentId: 'orch', ...own } as DurableAgentConfig;
+      expect(await tryStartChatAgent(params, provider, undefined, undefined, config)).toBe('chat');
+      expect(vi.mocked(injectClubhouseMcp)).toHaveBeenCalledWith('/p/wt', 'agent-1', 4321, provider.conventions, { projectPath: '/p', agentOverride: true });
+      expect(Object.keys(driver.last.startOptions!.mcpServers!)).toEqual(['clubhouse']);
+    } finally {
+      vi.mocked(isMcpEnabled).mockImplementation(() => true);
+      vi.mocked(resolveProjectMcpServers).mockResolvedValue({});
+    }
   });
 
   it.each([

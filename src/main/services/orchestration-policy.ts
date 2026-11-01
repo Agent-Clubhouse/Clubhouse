@@ -78,7 +78,7 @@ import {
 import { appLog } from './log-service';
 import { isMcpEnabled, onMcpEnablementChanged } from './mcp-settings';
 import { setPersonaChangeHook, type PersonaChange } from './persona-change-hook';
-import { isDisposedAgent } from '../../shared/agent-helpers';
+import { clubhouseMcpOverride, isDisposedAgent } from '../../shared/agent-helpers';
 import { readFrontMatterValue } from '../../shared/persona-pattern';
 import type { DurableAgentConfig } from '../../shared/types';
 import {
@@ -209,7 +209,7 @@ async function resolveFor(
 }
 
 function resolveOptions(projectPath: string, agent: DurableAgentConfig): { helper: boolean; mcpOff: boolean } {
-  return { helper: !!agent.parentAgentId, mcpOff: !isMcpEnabled(projectPath, agent.mcpOverride) };
+  return { helper: !!agent.parentAgentId, mcpOff: !isMcpEnabled(projectPath, clubhouseMcpOverride(agent)) };
 }
 
 /** Resolve as if the agent's effective persona were `personaId`. */
@@ -653,7 +653,7 @@ async function reconcileMcpGate(projectPath: string, agentId: string): Promise<v
     if (!live || (!isOrchestrationEnabled(agentId) && !closedByMcp.has(agentId))) return;
     const agent = await agentConfig.getDurableConfig(projectPath, agentId);
     if (!agent) return;
-    if (!isMcpEnabled(projectPath, agent.mcpOverride)) {
+    if (!isMcpEnabled(projectPath, clubhouseMcpOverride(agent))) {
       noteMcpClosure(agentId, true);
       setOrchestrationEnabled(agentId, false);
       return;

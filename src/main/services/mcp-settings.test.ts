@@ -29,7 +29,9 @@ vi.mock('./dispatcher/dispatcher-settings', () => ({
   isDispatcherEnabled: vi.fn(() => dispatcherOn),
 }));
 
-import { isMcpEnabled, isMcpEnabledForAny, notifyMcpEnablementChanged, onMcpEnablementChanged, saveSettings } from './mcp-settings';
+import {
+  _resetAgentBridgeNeedForTesting, ensureMcpBridgeForAgent, isMcpEnabled, isMcpEnabledForAny, notifyMcpEnablementChanged, onMcpEnablementChanged, saveSettings, setMcpBridgeStarter,
+} from './mcp-settings';
 import { isClubhouseModeEnabled } from './clubhouse-mode-settings';
 import { resetAllSettingsStoresForTests } from './settings-store';
 
@@ -172,5 +174,27 @@ describe('onMcpEnablementChanged (#2589)', () => {
     offGood();
     notifyMcpEnablementChanged();
     expect(good).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('ensureMcpBridgeForAgent (#2610)', () => {
+  beforeEach(() => {
+    resetAllSettingsStoresForTests();
+    _resetAgentBridgeNeedForTesting();
+    cmStored = { enabled: false };
+    dispatcherOn = false;
+  });
+
+  it('counts as MCP on for any, with everything else off, and starts the bridge each time', async () => {
+    await saveSettings({ enabled: false });
+    expect(isMcpEnabledForAny()).toBe(false);
+    const starter = vi.fn(() => expect(isMcpEnabledForAny()).toBe(true));
+    setMcpBridgeStarter(starter);
+    ensureMcpBridgeForAgent();
+    ensureMcpBridgeForAgent();
+    expect(starter).toHaveBeenCalledTimes(2);
+    expect(isMcpEnabledForAny()).toBe(true);
+    // It is about the bridge: no other agent's MCP changes.
+    expect(isMcpEnabled('/project')).toBe(false);
   });
 });

@@ -12,7 +12,7 @@ import * as orchestratorSettings from './orchestrator-settings';
 import * as clubhouseModeSettings from './clubhouse-mode-settings';
 import * as configPipeline from './config-pipeline';
 import { getDurableConfig, addSessionEntry, updateDurableConfig } from './agent-config';
-import { isDisposedAgent } from '../../shared/agent-helpers';
+import { clubhouseMcpOverride, isDisposedAgent } from '../../shared/agent-helpers';
 import { materializeAgent, cleanupStaleJsonInTomlConfigs } from './materialization-service';
 import * as profileSettings from './profile-settings';
 import { readProjectAgentDefaults, readLaunchWrapper, readDefaultMcps, readMcpConfigs } from './agent-settings-service';
@@ -24,7 +24,7 @@ import { waitReady as waitMcpBridgeReady } from './clubhouse-mcp/bridge-server';
 import { injectClubhouseMcp } from './clubhouse-mcp/injection';
 import { syncDispatcherGate } from './clubhouse-mcp/dispatcher-gate';
 import { bindingManager } from './clubhouse-mcp/binding-manager';
-import { isMcpEnabled } from './mcp-settings';
+import { ensureMcpBridgeForAgent, isMcpEnabled } from './mcp-settings';
 import { resolveHelperLaunchSettings, syncOrchestrationGate } from './orchestration-policy';
 import { findParent } from './helper-index';
 import {
@@ -178,6 +178,23 @@ export async function whenSpawnsSettled(): Promise<void> {
  * (setUserLaunchAccess); a terminal (PTY) helper has no such path and stays
  * at its cap until it is restarted.
  */
+/** Why a helper didn't start: without the bridge it couldn't report to its parent (#2610). */
+function helperMcpError(err: unknown): Error {
+  const detail = err instanceof Error ? err.message : String(err);
+  return tagError(new Error(`This helper needs Clubhouse MCP to report to its orchestrator, and it couldn't be set up: ${detail}`), 'preflight_failed');
+}
+
+/**
+ * The bridge runs for any durable agent that resolves MCP on, even with MCP off
+ * in the app and its project (#2610). A helper can't start without it.
+ */
+async function prepareMcpBridge(projectPath: string, config: DurableAgentConfig | null | undefined): Promise<void> {
+  if (!isMcpEnabled(projectPath, clubhouseMcpOverride(config))) return;
+  ensureMcpBridgeForAgent();
+  if (!config?.parentAgentId) return;
+  await waitMcpBridgeReady().catch((err: unknown) => { throw helperMcpError(err); });
+}
+
 async function capHelperLaunch(
   projectPath: string,
   agentId: string,
@@ -398,6 +415,7 @@ async function spawnAgentInner(inParams: SpawnAgentParams, facts: SpawnFacts): P
       params = { ...params, freeAgentMode: capped.freeAgentMode, permissionMode: capped.permissionMode };
       permissionMode = capped.permissionMode;
     }
+    if (params.kind === 'durable') await prepareMcpBridge(params.projectPath, durableConfig);
     // The final launch access, the ceiling for this agent's helpers (#2228).
     // Every runtime below starts with exactly these values.
     agentRegistry.setLaunchCap(params.agentId, { freeAgentMode: params.freeAgentMode === true, permissionMode });
@@ -619,7 +637,7 @@ async function spawnPtyAgent(
   if (params.kind === 'durable') {
     try {
       durableConfig = await getDurableConfig(params.projectPath, params.agentId);
-      agentMcpOverride = durableConfig?.mcpOverride;
+      agentMcpOverride = clubhouseMcpOverride(durableConfig);
     } catch { /* config not available */ }
   }
   const mcpEnabledForSpawn = isMcpEnabled(params.projectPath, agentMcpOverride);
@@ -652,6 +670,8 @@ async function spawnPtyAgent(
       mcpPort = port;
       await injectClubhouseMcp(params.cwd, params.agentId, port, provider.conventions, { projectPath: params.projectPath, agentOverride: agentMcpOverride });
     })).catch((err) => {
+      // A helper without the bridge couldn't report to its parent, so it doesn't start (#2610).
+      if (durableConfig?.parentAgentId) throw helperMcpError(err);
       appLog('core:mcp', 'warn', 'MCP bridge injection skipped', {
         meta: { agentId: params.agentId, error: err instanceof Error ? err.message : String(err) },
       });
@@ -677,7 +697,9 @@ async function spawnPtyAgent(
   let { binary, args } = spawnCmd;
   const { env } = spawnCmd;
   // Only when MCP is on for this agent (agent > project > global): an agent
-  // with it turned off gets neither the bridge nor project servers (#2223).
+  // with it turned off gets neither the bridge nor project servers (#2223). A
+  // helper always gets the bridge; project servers keep following the settings
+  // (#2610).
   if (mcpEnabledForSpawn && mcpPort > 0 && provider.buildMcpArgs) {
     const { buildClubhouseMcpDef } = await import('./clubhouse-mcp/injection');
     const { resolveProjectMcpServers } = await import('./materialization-service');
@@ -686,7 +708,9 @@ async function spawnPtyAgent(
     // project MCP file materialised into the worktree never reaches them.
     // Launch flags are the only path — hand over the project's servers here
     // alongside the Clubhouse bridge.
-    const projectServers = await resolveProjectMcpServers(params.projectPath, durableConfig ?? undefined);
+    const projectServers = isMcpEnabled(params.projectPath, durableConfig?.mcpOverride)
+      ? await resolveProjectMcpServers(params.projectPath, durableConfig ?? undefined)
+      : {};
 
     args = [...args, ...provider.buildMcpArgs({
       ...projectServers,

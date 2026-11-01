@@ -18,6 +18,7 @@ import { agentRegistry, untrackAgent } from '../agent-registry';
 import * as configPipeline from '../config-pipeline';
 import { agentEndpointUrl, NONCE_HEADER, waitReady as waitMcpBridgeReady } from '../clubhouse-mcp/bridge-server';
 import { injectClubhouseMcp, buildClubhouseMcpDef, CLUBHOUSE_NONCE_ENV } from '../clubhouse-mcp/injection';
+import { clubhouseMcpOverride } from '../../../shared/agent-helpers';
 import { isMcpEnabled } from '../mcp-settings';
 import { resolveProjectMcpServers } from '../materialization-service';
 import { touchSessionEntry } from '../agent-config';
@@ -514,7 +515,10 @@ async function runChatStart(
     agentRegistry.setRuntime(params.agentId, 'chat');
     start.prepared = true;
 
-    const mcpEnabled = isMcpEnabled(params.projectPath, durableConfig?.mcpOverride);
+    // A helper always gets the bridge; project servers keep following the settings (#2610).
+    const bridgeOverride = clubhouseMcpOverride(durableConfig);
+    const mcpEnabled = isMcpEnabled(params.projectPath, bridgeOverride);
+    const projectServersEnabled = isMcpEnabled(params.projectPath, durableConfig?.mcpOverride);
     const mcpJsonPath = path.join(params.cwd, provider.conventions.mcpConfigFile || '.mcp.json');
     if (mcpEnabled) configPipeline.snapshotFile(params.agentId, mcpJsonPath);
     let mcpPort = 0;
@@ -522,7 +526,7 @@ async function runChatStart(
       mcpPort = await waitMcpBridgeReady();
       // A newer start has its own nonce: don't overwrite its MCP config with this one.
       checkpoint();
-      await injectClubhouseMcp(params.cwd, params.agentId, mcpPort, provider.conventions, { projectPath: params.projectPath, agentOverride: durableConfig?.mcpOverride });
+      await injectClubhouseMcp(params.cwd, params.agentId, mcpPort, provider.conventions, { projectPath: params.projectPath, agentOverride: bridgeOverride });
     } catch (err) {
       if (err instanceof ChatStartCancelledError) throw err;
       appLog('core:mcp', 'warn', 'MCP bridge injection skipped for chat agent', {
@@ -530,7 +534,7 @@ async function runChatStart(
       });
     }
     const mcpServers = {
-      ...(mcpEnabled ? await resolveProjectMcpServers(params.projectPath, durableConfig ?? undefined) : {}),
+      ...(projectServersEnabled ? await resolveProjectMcpServers(params.projectPath, durableConfig ?? undefined) : {}),
       // The bridge too follows the agent > project > global setting (#2223).
       ...(mcpEnabled && mcpPort > 0 ? { clubhouse: buildClubhouseMcpDef(mcpPort, params.agentId) } : {}),
     };

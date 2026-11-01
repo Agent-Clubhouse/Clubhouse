@@ -287,6 +287,19 @@ export function onMcpSettingsChanged(): void {
   restorePersistedBindings();
 }
 
+/**
+ * Bring up the bridge and its tools for an agent starting with MCP on
+ * (ensureMcpBridgeForAgent). maybeStartMcpBridge has the bridge's ready promise
+ * set when this returns, so the spawn can wait on it. Bindings are restored
+ * only the first time: wires don't change because an agent started.
+ */
+export function startMcpBridgeForAgent(): void {
+  const first = !handlersRegistered;
+  registerMcpBindingHandlers();
+  maybeStartMcpBridge();
+  if (first) void restorePersistedBindings();
+}
+
 let persistedSourcesRegistered = false;
 let stopWatchingHelperWires: (() => void) | null = null;
 let stopWatchingOrchestratorConnections: (() => void) | null = null;
