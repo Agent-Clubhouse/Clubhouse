@@ -5,6 +5,7 @@ import { useAgentStore } from '../../../stores/agentStore';
 import { useChatIdleSettingsStore } from '../../../stores/chatIdleSettingsStore';
 import { useClubhouseModeStore } from '../../../stores/clubhouseModeStore';
 import { useOrchestratorStore } from '../../../stores/orchestratorStore';
+import { useProfileStore } from '../../../stores/profileStore';
 import { useProjectStore } from '../../../stores/projectStore';
 import { useRemoteProjectStore } from '../../../stores/remoteProjectStore';
 import { resetChatFlagCache } from '../chat/AgentRuntimePane';
@@ -76,6 +77,105 @@ async function loadedModelSelect(id: string) {
   });
   return model;
 }
+
+describe('CLI row (#2593)', () => {
+  const claude = { id: 'claude-code', displayName: 'Claude Code', shortName: 'CC', capabilities: { permissions: true } };
+  const codex = { id: 'codex-cli', displayName: 'Codex', shortName: 'CX', capabilities: { permissions: true } };
+  const copilot = { id: 'github-copilot', displayName: 'GitHub Copilot', shortName: 'GHCP', capabilities: { permissions: false } };
+
+  function offer(enabled: string[]) {
+    useOrchestratorStore.setState({ enabled, allOrchestrators: [claude, codex, copilot] } as never);
+  }
+  const cli = () => settings().queryByRole('combobox', { name: 'CLI' }) as HTMLSelectElement | null;
+  const optionLabels = (select: HTMLSelectElement) => Array.from(select.options).map((o) => o.text);
+
+  beforeEach(() => {
+    offer(['claude-code', 'codex-cli']);
+    useProfileStore.setState({ profiles: [], loadProfiles: vi.fn(async () => {}) } as never);
+    window.clubhouse.agentSettings.readProjectAgentDefaults = vi.fn(async () => ({})) as never;
+  });
+
+  it('offers the enabled CLIs with the current one selected', async () => {
+    render(<AgentDetails agent={sleeping} />);
+    await waitFor(() => expect(cli()).toBeInTheDocument());
+    expect(cli()!.value).toBe('claude-code');
+    expect(optionLabels(cli()!)).toEqual(['Claude Code', 'Codex']);
+  });
+
+  it('keeps the current CLI on offer when it has been turned off', async () => {
+    offer(['claude-code', 'codex-cli']);
+    render(<AgentDetails agent={{ ...sleeping, orchestrator: 'github-copilot' }} />);
+    await waitFor(() => expect(cli()).toBeInTheDocument());
+    expect(cli()!.value).toBe('github-copilot');
+    expect(optionLabels(cli()!)).toEqual(['GitHub Copilot (disabled)', 'Claude Code', 'Codex']);
+  });
+
+  it('narrows the list to the project\'s profile', async () => {
+    offer(['claude-code', 'codex-cli', 'github-copilot']);
+    useProfileStore.setState({ profiles: [{ id: 'work', name: 'Work', orchestrators: { 'claude-code': {}, 'github-copilot': {} } }] } as never);
+    window.clubhouse.agentSettings.readProjectAgentDefaults = vi.fn(async () => ({ profileId: 'work' })) as never;
+    render(<AgentDetails agent={sleeping} />);
+    await waitFor(() => expect(cli() && optionLabels(cli()!)).toEqual(['Claude Code', 'GitHub Copilot']));
+  });
+
+  it('stays read-only with only one CLI on offer', async () => {
+    offer(['claude-code']);
+    render(<AgentDetails agent={sleeping} />);
+    await settings().findByRole('combobox', { name: 'Model' });
+    expect(cli()).toBeNull();
+    expect(settings().getByTestId('details-setting-cli')).not.toHaveAttribute('data-locked');
+  });
+
+  it('saves the CLI and resets the model, in the config and the agent store', async () => {
+    saved.model = 'opus';
+    useAgentStore.setState({ agents: { a1: { ...sleeping, model: 'opus' } } } as never);
+    render(<AgentDetails agent={{ ...sleeping, model: 'opus' }} />);
+    await waitFor(() => expect(cli()).toBeInTheDocument());
+    fireEvent.change(cli()!, { target: { value: 'codex-cli' } });
+    await waitFor(() => expect(window.clubhouse.agent.updateDurableConfig).toHaveBeenCalledWith('/work/proj', 'a1', { orchestrator: 'codex-cli', model: 'default' }));
+    await waitFor(() => expect(useAgentStore.getState().agents.a1).toMatchObject({ orchestrator: 'codex-cli', model: undefined }));
+    expect(saved.orchestrator).toBe('codex-cli');
+    expect(saved.model).toBeUndefined();
+    expect(settings().getByTestId('details-setting-model')).toHaveTextContent('Default');
+  });
+
+  it('asks for the new CLI\'s models and runtime once it changes', async () => {
+    const { rerender } = render(<AgentDetails agent={sleeping} />);
+    await waitFor(() => expect(cli()).toBeInTheDocument());
+    fireEvent.change(cli()!, { target: { value: 'codex-cli' } });
+    await waitFor(() => expect(useAgentStore.getState().agents.a1.orchestrator).toBe('codex-cli'));
+    rerender(<AgentDetails agent={useAgentStore.getState().agents.a1} />);
+    await waitFor(() => expect(window.clubhouse.agent.getModelOptions).toHaveBeenCalledWith('/work/proj', 'codex-cli'));
+    await waitFor(() => expect(window.clubhouse.chat.getAgentRuntime).toHaveBeenCalledWith('a1', 'codex-cli', expect.anything()));
+  });
+
+  it('leaves the CLI and model as saved when the save fails', async () => {
+    saved.model = 'opus';
+    useAgentStore.setState({ agents: { a1: { ...sleeping, model: 'opus' } } } as never);
+    window.clubhouse.agent.updateDurableConfig = vi.fn(async () => { throw new Error('disk full'); }) as never;
+    render(<AgentDetails agent={{ ...sleeping, model: 'opus' }} />);
+    await waitFor(() => expect(cli()).toBeInTheDocument());
+    await loadedModelSelect('opus');
+    fireEvent.change(cli()!, { target: { value: 'codex-cli' } });
+    await waitFor(() => expect(settings().getByTestId('details-setting-cli-error')).toHaveTextContent('Couldn’t save'));
+    expect(cli()!.value).toBe('claude-code');
+    expect(useAgentStore.getState().agents.a1).toMatchObject({ orchestrator: 'claude-code', model: 'opus' });
+    expect((settings().getByRole('combobox', { name: 'Model' }) as HTMLSelectElement).value).toBe('opus');
+  });
+
+  it('locks while awake and shows no select', async () => {
+    render(<AgentDetails agent={{ ...sleeping, status: 'running' }} />);
+    const row = settings().getByTestId('details-setting-cli');
+    expect(row).toHaveAttribute('data-locked', 'true');
+    expect(cli()).toBeNull();
+  });
+
+  it('has no select for an agent on another machine', () => {
+    useRemoteProjectStore.setState({ satelliteProjects: { 'sat-1': [{ id: 'remote||sat-1||p1', name: 'proj', path: '/x', remote: true, satelliteId: 'sat-1', satelliteName: 'studio-mac' }] } } as never);
+    render(<AgentDetails agent={{ ...sleeping, id: 'remote||sat-1||a1', projectId: 'remote||sat-1||p1' }} />);
+    expect(cli()).toBeNull();
+  });
+});
 
 describe('Agent details for a sleeping agent (#2281)', () => {
   it('shows Settings, Changes, Canvases and the last session, and leaves out live-only cards', () => {

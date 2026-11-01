@@ -301,14 +301,16 @@ export function AgentSettingsView({ agent }: Props) {
 
   const handleOrchestratorChange = async (value: string) => {
     if (!projectPath) return;
-    await window.clubhouse.agent.updateDurableConfig(projectPath, agent.id, { orchestrator: value });
+    // Main resets the model on a new CLI, as it can't run the old one's (#2593).
+    await window.clubhouse.agent.updateDurableConfig(projectPath, agent.id, { orchestrator: value, model: 'default' });
+    setSavedModel('default');
     useAgentStore.setState((s) => {
       const existing = s.agents[agent.id];
       if (!existing) return s;
       return {
         agents: {
           ...s.agents,
-          [agent.id]: { ...existing, orchestrator: value },
+          [agent.id]: { ...existing, orchestrator: value, model: undefined },
         },
       };
     });

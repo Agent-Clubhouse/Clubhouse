@@ -1145,6 +1145,19 @@ export async function updateDurableConfig(
     agent.quickAgentDefaults = updates.quickAgentDefaults;
   }
   if (updates.orchestrator !== undefined) {
+    // No CLI of its own means the project's, which is what its sessions came from.
+    const previous = agent.orchestrator
+      || await resolveOrchestrator(projectPath).then((p) => p.id).catch((): undefined => undefined);
+    if (updates.orchestrator !== previous) {
+      // The new CLI can't resume the old one's session or run its model (#2593).
+      // Every setting path comes through here: full settings, the card, the phone.
+      delete agent.lastSessionId;
+      if (updates.model === undefined) delete agent.model;
+      // Older entries don't say whose they are; after this, nothing else can tell.
+      if (previous) {
+        for (const session of agent.sessionHistory ?? []) session.orchestrator ??= previous;
+      }
+    }
     agent.orchestrator = updates.orchestrator;
   }
   if (updates.model !== undefined) {
@@ -1325,13 +1338,14 @@ export async function addSessionEntry(projectPath: string, agentId: string, entr
  * call this when the CLI reports its native session id and when the session
  * ends, so chat sessions reach the Sessions picker the way terminal runs do.
  */
-export async function touchSessionEntry(projectPath: string, agentId: string, sessionId: string, at: string = new Date().toISOString()): Promise<void> {
+export async function touchSessionEntry(projectPath: string, agentId: string, sessionId: string, orchestrator: OrchestratorId, at: string = new Date().toISOString()): Promise<void> {
   const { agentsById } = await readAgentsEntry(projectPath);
   const existing = agentsById.get(agentId)?.sessionHistory?.find((s) => s.sessionId === sessionId);
   await addSessionEntry(projectPath, agentId, {
     sessionId,
     startedAt: existing?.startedAt ?? at,
     lastActiveAt: at,
+    orchestrator,
     ...(existing?.friendlyName && { friendlyName: existing.friendlyName }),
   });
 }

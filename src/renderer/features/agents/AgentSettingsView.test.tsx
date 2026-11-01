@@ -385,7 +385,7 @@ describe('AgentSettingsView', () => {
         expect(window.clubhouse.agent.updateDurableConfig).toHaveBeenCalledWith(
           '/project',
           'agent-1',
-          { orchestrator: 'github-copilot' },
+          { orchestrator: 'github-copilot', model: 'default' },
         );
       });
 
@@ -396,6 +396,17 @@ describe('AgentSettingsView', () => {
       await waitFor(() => {
         expect(useAgentStore.getState().agents['agent-1'].orchestrator).toBe('github-copilot');
       });
+    });
+
+    it('resets the model along with the CLI, in the store and the Model select (#2593)', async () => {
+      setupMultiOrch();
+      (window.clubhouse.agent as any).getDurableConfig = vi.fn().mockResolvedValue({ model: 'sonnet' });
+      renderSettings({ orchestrator: 'claude-code', model: 'sonnet' });
+      const model = screen.getByLabelText('Model', { selector: '#agent-settings-model' }) as HTMLSelectElement;
+      await waitFor(() => expect(model.value).toBe('sonnet'));
+      fireEvent.change(screen.getByLabelText('Runs on'), { target: { value: 'github-copilot' } });
+      await waitFor(() => expect(useAgentStore.getState().agents['agent-1'].model).toBeUndefined());
+      await waitFor(() => expect(model.value).toBe('default'));
     });
 
     it('labels the CLI picker "Runs on" (#2233)', () => {

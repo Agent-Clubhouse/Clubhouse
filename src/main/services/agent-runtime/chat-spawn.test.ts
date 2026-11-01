@@ -271,7 +271,7 @@ require('readline').createInterface({ input: process.stdin }).on('line', line =>
     expect(getAgentRuntime('agent-1')?.kind).toBe('chat');
     expect(isChatAgent('agent-1')).toBe(true);
     // Into session history (the Sessions picker), not just lastSessionId.
-    expect(agentConfig.touchSessionEntry).toHaveBeenCalledWith('/p', 'agent-1', 'native-1');
+    expect(agentConfig.touchSessionEntry).toHaveBeenCalledWith('/p', 'agent-1', 'native-1', 'claude-code');
   });
 
   it.each([
@@ -352,7 +352,7 @@ require('readline').createInterface({ input: process.stdin }).on('line', line =>
 
     await getAgentRuntime('agent-1')?.stop();
 
-    await vi.waitFor(() => expect(agentConfig.touchSessionEntry).toHaveBeenCalledWith('/p', 'agent-1', 'native-1'));
+    await vi.waitFor(() => expect(agentConfig.touchSessionEntry).toHaveBeenCalledWith('/p', 'agent-1', 'native-1', 'claude-code'));
   });
 
   it('resumes the native session and continues the chat session sequence', async () => {
