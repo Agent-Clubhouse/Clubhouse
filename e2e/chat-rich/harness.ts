@@ -107,6 +107,8 @@ export interface RichChat {
    * goes when its window closes.
    */
   sendHelperUpdates(texts: string[]): Promise<void>;
+  /** Print the chat's events without their text, for a failure a snapshot can't explain. */
+  logChatEvents(): Promise<void>;
   /** The fake replayed the whole script with no unexpected message. */
   expectScriptComplete(): Promise<void>;
   close(): Promise<void>;
@@ -240,6 +242,16 @@ export async function openRichChat(opts: RichChatOptions): Promise<RichChat> {
           // Not awaited: a busy parent's batch resolves when its window closes.
           for (const text of texts) void deliver(agentId, text).catch((err: unknown) => console.error('helper update failed', err));
         }, { name: HELPER_SEAM_GLOBAL, agentId, texts });
+      },
+      async logChatEvents() {
+        const events = await window.evaluate((id) => (window as unknown as { clubhouse: { chat: {
+          readTranscript(agentId: string): Promise<Array<{ type: string; turnId?: string; data?: Record<string, unknown> }>>;
+        } } }).clubhouse.chat.readTranscript(id), agentId);
+        for (const { type, turnId, data } of events) {
+          if (type === 'agent_message_chunk') continue;
+          const { toolCallId, toolName, title, kind, status, source, delivery } = data ?? {};
+          console.log('chat event', JSON.stringify({ type, turnId, toolCallId, toolName, title, kind, status, source, delivery }));
+        }
       },
       async expectScriptComplete() {
         await expect.poll(async () => {
