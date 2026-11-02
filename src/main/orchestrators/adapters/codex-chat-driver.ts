@@ -16,7 +16,6 @@ import { AsyncQueue } from './async-queue';
 import { CodexAppServerClient } from './codex-app-server-client';
 import { CodexChatEventMapper, toCodexInput, toCodexMcpServers } from './codex-chat-events';
 import {
-  CODEX_APP_SERVER_SCHEMA_VERSION,
   type AskForApproval,
   type JsonValue,
   type Model,
@@ -450,17 +449,6 @@ class CodexChatSession implements ChatDriverSession {
           level: 'warn',
           code: 'mcp_servers_skipped',
           message: `Left out MCP servers Codex can't run: ${mcp.skipped.map((x) => `${x.name} (${x.reason})`).join(', ')}`,
-        },
-      });
-    }
-    const version = cliVersion ?? result.thread.cliVersion;
-    if (version && version !== CODEX_APP_SERVER_SCHEMA_VERSION) {
-      this.queue.push({
-        type: 'notice',
-        data: {
-          level: 'info',
-          code: 'untested_cli_version',
-          message: `Codex ${version} is untested with Clubhouse chat (tested with ${CODEX_APP_SERVER_SCHEMA_VERSION}).`,
         },
       });
     }

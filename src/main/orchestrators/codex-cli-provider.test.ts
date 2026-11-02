@@ -848,6 +848,16 @@ describe('CodexCliProvider', () => {
       expect(args.some(a => a.includes('mcp_servers.good.command'))).toBe(true);
     });
 
+    it('never builds a quoted server key, which makes app-server exit 1 (#2699)', () => {
+      const args = provider.buildMcpArgs({
+        'has space': { command: 'node' },
+        'has"quote': { command: 'node' },
+        'dotted.name': { command: 'node' },
+        good: { command: 'node' },
+      });
+      expect(args.filter(a => a.startsWith('mcp_servers.')).every(a => a.startsWith('mcp_servers.good.'))).toBe(true);
+    });
+
     it('returns no args for an empty server set', () => {
       expect(provider.buildMcpArgs({})).toEqual([]);
     });

@@ -293,12 +293,14 @@ describe('CodexChatDriver', () => {
     expect(await next()).toMatchObject({ type: 'session_started', data: { resumed: true, nativeSessionId: fx.THREAD_ID } });
   });
 
-  it('notes a CLI version other than the one the bindings came from', async () => {
-    useServer({ initialize: () => ({ result: { ...fx.initializeResult, userAgent: 'codex_cli_rs/0.163.0 (x)' } }) });
+  // The version policy owns this note (chat-spawn's driver check); a CLI other
+  // than the one the bindings came from isn't a reason to warn on its own (#2699).
+  it.each(['0.163.0', '0.166.0', '99.0.0', 'not-a-version'])('adds no version notice of its own on %s', async (version) => {
+    useServer({ initialize: () => ({ result: { ...fx.initializeResult, userAgent: `codex_cli_rs/${version} (x)` } }) });
     const { take } = await startSession();
 
-    const [, , notice] = await take(3);
-    expect(notice).toMatchObject({ type: 'notice', data: { level: 'info', code: 'untested_cli_version' } });
+    server.send({ method: 'thread/status/changed', params: { threadId: fx.THREAD_ID, status: { type: 'idle' } } });
+    expect((await take(3)).map((e) => e.type)).toEqual(['session_started', 'commands_available', 'session_state']);
   });
 
   it('holds events that arrive during start until after session_started', async () => {
