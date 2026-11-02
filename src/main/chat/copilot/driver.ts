@@ -578,12 +578,24 @@ export class CopilotSdkChatSession implements ChatDriverSession {
   async close(): Promise<void> {
     this.closing = true;
     this.settlePending('agent');
+    this.quietFailedWrites();
     const grace = (work: Promise<unknown>) => withTimeout(work, CLOSE_GRACE_MS, 'Copilot close').catch((err: Error) => this.log('warn', 'Copilot did not close cleanly', { error: err.message }));
     if (this.sdk) await grace(this.sdk.disconnect());
     await grace(this.client.stop());
     await this.server.kill();
     await grace(this.server.exited);
     this.onExit();
+  }
+
+  /**
+   * vscode-jsonrpc's sendRequest throws a failed write inside an async promise
+   * executor, so it becomes an unhandled rejection no caller can catch. The SDK
+   * only sets this private flag once the connection has closed, and the detach
+   * in close() can fail before that, when the CLI has just died.
+   */
+  private quietFailedWrites(): void {
+    const { messageWriter } = this.client as unknown as { messageWriter?: { suppressWriteErrors: boolean } | null };
+    if (messageWriter) messageWriter.suppressWriteErrors = true;
   }
 
   private requireSession(): CopilotSession {

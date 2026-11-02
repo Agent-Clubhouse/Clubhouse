@@ -4,6 +4,7 @@
  * record-fixtures.test.ts writes these fixtures.
  */
 import * as fs from 'fs';
+import * as net from 'net';
 import * as os from 'os';
 import * as path from 'path';
 import { afterEach, describe, expect, it } from 'vitest';
@@ -290,6 +291,29 @@ describe('CopilotSdkChatDriver sessions against fake Copilot', () => {
     const { session, drafts } = await start('died-mid-turn');
     await say(session, 'Reply with the word one.');
     expect(await drafts.waitFor({ type: 'turn_ended' })).toMatchObject({ data: { stopReason: 'error' } });
+  });
+
+  it('closing just after the connection breaks raises no unhandled rejection', async () => {
+    const { session } = await start('multi-turn');
+    const unhandled: unknown[] = [];
+    const onUnhandled = (reason: unknown) => unhandled.push(reason);
+    process.on('unhandledRejection', onUnhandled);
+    try {
+      // The CLI has just died: writes fail, but the connection hasn't heard yet.
+      const { client, server } = session as unknown as { client: { socket: net.Socket }; server: { kill(): Promise<void> } };
+      client.socket.write = ((...args: unknown[]) => {
+        const callback = args.at(-1) as (err: Error) => void;
+        callback(new Error('write EPIPE'));
+        return false;
+      }) as typeof client.socket.write;
+      const closing = session.close();
+      void server.kill();
+      await closing;
+      await new Promise((resolve) => setImmediate(resolve));
+    } finally {
+      process.off('unhandledRejection', onUnhandled);
+    }
+    expect(unhandled).toEqual([]);
   });
 
   it('schema-drift: unknown events, fields and requests are tolerated, and the unknown request is refused', async () => {
