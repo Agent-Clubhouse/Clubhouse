@@ -318,10 +318,11 @@ Tools, thoughts, routed messages, the user's messages and subagent work aren't s
 | Bottom tolerance | 16px | 16pt initial tolerance |
 | Plans as stops | A plan row | A `plan_document` reaches the phone as an assistant message, so it stops there |
 | Previous and next | Buttons, and Cmd+Opt+Up/Down (Ctrl+Alt off macOS) | Touch controls |
+| Sender faces on a closed activity row | None. The label names the first two senders, then "and N others" | Clubhouse Go keeps the first three unique sender faces, then a count of the rest |
 
 Tool images break a group on both. Phones have no subagent rows.
 
-**Implemented in an unmerged Clubhouse Go PR.** Clubhouse-Go#217 implements these shared rules, but it hasn't merged, so they haven't shipped on phones: the long failed output fold (status or exit code, with a last-line preview), and telling the true bottom from paused near the bottom for Latest.
+**On Clubhouse Go's main, not in a phone build yet.** Clubhouse-Go#217 merged at `edab44e` with these shared rules, but they aren't in a phone build yet: the long failed output fold (status or exit code, with a last-line preview), and telling the true bottom from paused near the bottom for Latest. The evidence so far is from the Mac and the simulator only, with no test on a phone by hand.
 
 ### Queued messages
 
