@@ -11,6 +11,7 @@ vi.mock('../settings-store', () => ({
 import {
   MAX_DENYLIST_ENTRIES,
   MAX_VERSIONS_PER_ENTRY,
+  TESTED_CLI_VERSIONS,
   applyRemoteCliDenylist,
   compareCliVersions,
   getCliDenylist,
@@ -82,6 +83,35 @@ describe('chat CLI version policy', () => {
     expect(evaluateCliVersion('copilot_sdk', 'copilot-cli', '1.0.83').status).toBe('ok');
     expect(evaluateCliVersion('copilot_sdk', 'copilot-cli', '1.0.106-2').status).toBe('ok');
     expect(evaluateCliVersion('copilot_sdk', 'copilot-cli', '1.0.106').status).toBe('untested');
+  });
+
+  describe('Codex against its tested range (#2699)', () => {
+    const codex = (version: string | undefined, over?: CliVersionPolicy) => evaluateCliVersion('codex_app_server', 'codex-cli', version, over);
+    const ranged: CliVersionPolicy = { tested: { codex_app_server: { minVersion: '0.160.0', testedMax: '0.166.0' } }, denylist: [] };
+
+    it('is ok inside the range and at the top of it', () => {
+      expect(codex('0.163.0', ranged)).toEqual({ status: 'ok', version: '0.163.0' });
+      expect(codex('0.166.0', ranged)).toEqual({ status: 'ok', version: '0.166.0' });
+      expect(codex('0.163.0')).toEqual({ status: 'ok', version: '0.163.0' });
+      expect(codex(TESTED_CLI_VERSIONS.codex_app_server?.testedMax)).toMatchObject({ status: 'ok' });
+    });
+
+    it('is untested above the range', () => {
+      expect(codex('0.166.1', ranged)).toMatchObject({
+        status: 'untested',
+        message: 'Codex 0.166.1 is newer than the version chat was tested with (0.166.0).',
+      });
+    });
+
+    it('is below_min under a floor, and ok when the driver has no floor', () => {
+      expect(codex('0.159.9', ranged)).toMatchObject({ status: 'below_min', version: '0.159.9' });
+      expect(codex('0.1.0').status).toBe('ok');
+    });
+
+    it('gives no verdict on an unparseable version', () => {
+      expect(codex('not-a-version', ranged)).toEqual({ status: 'unknown' });
+      expect(codex(undefined, ranged)).toEqual({ status: 'unknown' });
+    });
   });
 
   it('notes a newer-than-tested version without failing it', () => {

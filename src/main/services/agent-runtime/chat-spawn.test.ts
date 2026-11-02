@@ -67,7 +67,7 @@ import type { ChatAgentRuntime } from './chat-runtime';
 import type { DurableAgentConfig } from '../../../shared/types';
 import { chatIdleTimeoutMs, clearAgentIdleSleep, setAgentIdleSleep } from '../chat-idle-settings';
 import { clearDriverHealth, DRIVER_FAILURE_THRESHOLD } from './chat-driver-health';
-import { evaluateCliVersion } from './chat-version-policy';
+import { evaluateCliVersion, TESTED_CLI_VERSIONS } from './chat-version-policy';
 import { appendChatEvent, listChatSessions, readChatTranscript } from './chat-transcript';
 import { broadcastToAllWindows } from '../../util/ipc-broadcast';
 import { noteKillRequest } from './sleep-reason';
@@ -657,6 +657,34 @@ require('readline').createInterface({ input: process.stdin }).on('line', line =>
       expect(sdk.sessions).toHaveLength(1);
       expect(toasts()).toEqual([]);
       expect(notices()).toEqual([{ level: 'info', code: 'untested_cli_version', message: 'Claude Code 2.1.900 is newer than the version chat was tested with (2.1.316).' }]);
+    });
+
+    describe('the Codex version notice follows the policy (#2699)', () => {
+      const codexProvider = { ...provider, id: 'codex-cli', getBinaryPath: () => 'codex' } as unknown as OrchestratorProvider;
+      const testedMax = TESTED_CLI_VERSIONS.codex_app_server?.testedMax as string;
+
+      async function startOn(cliVersion: string | undefined) {
+        const codex = new FakeChatDriver('codex_app_server', 'codex-cli');
+        registerChatDriver(codex);
+        codex.probe = async () => ({ handshakeOk: true, cliVersion, capabilities: codex.capabilities });
+        expect(await tryStartChatAgent(params, codexProvider, undefined, undefined, null)).toBe('chat');
+      }
+
+      it.each([
+        ['inside the range', '0.163.0'],
+        ['at the top of the range', testedMax],
+        ['below the range, where Codex has no floor', '0.1.0'],
+        ['unparseable', 'not-a-version'],
+        ['unreported', undefined],
+      ])('stays quiet %s', async (_case, version) => {
+        await startOn(version);
+        expect(notices()).toEqual([]);
+      });
+
+      it('notes a version above the range', async () => {
+        await startOn('99.0.0');
+        expect(notices()).toEqual([{ level: 'info', code: 'untested_cli_version', message: `Codex 99.0.0 is newer than the version chat was tested with (${testedMax}).` }]);
+      });
     });
 
     it('tries the next driver when a session fails to start, and pauses a driver that keeps failing', async () => {
