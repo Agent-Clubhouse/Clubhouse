@@ -23,6 +23,7 @@
     "framebriar:check": "node scripts/vendor-framebriar.mjs --check",
     "fixtures:annex-mobile": "node scripts/annex-mobile-fixtures.mjs",
     "harness:annex-client": "CLUBHOUSE_ANNEX_CLIENT_HARNESS=1 vitest run --project integration test/annex-v2/annex-client-against-server.test.ts",
+    "harness:annex-session": "CLUBHOUSE_ANNEX_SESSION_HARNESS=1 vitest run --project integration test/annex-v2/annex-session.test.ts",
     "harness:annex": "CLUBHOUSE_ANNEX_HARNESS=1 vitest run --project integration test/annex-v2/annex-harness.test.ts --disableConsoleIntercept --reporter=dot --no-file-parallelism",
     "typecheck": "tsc --noEmit",
     "validate": "npm run lint && npm run typecheck && npm test && npm run make && npm run test:e2e",

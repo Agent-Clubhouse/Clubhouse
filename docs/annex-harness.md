@@ -51,6 +51,12 @@ Plain HTTP on `127.0.0.1:<controlPort>`. Every answer is the current state: `{"f
 
 `npm run harness:annex-client` runs the real `annex-client` against a harness in its own process: real pairing, mTLS and WebSockets, for a first connection, events held until the snapshot, a failed build and a cold start on one, an oversized snapshot, and reconnects. It takes about a minute, so it isn't part of `npm test`. There's no renderer in it.
 
+## One long session
+
+`npm run harness:annex-session` connects a phone and the real `annex-client` to one satellite process at once, and takes both through these in order, sharing state on purpose: a snapshot over 8 MiB with canvases left out, a project change, a large terminal attach during a snapshot, a failed build and recovery, canvas edits around truncated snapshots and a reconnect, an oversized command, Annex stopped and started during a hung build, and a process restart during a failure. It takes about a minute, so it isn't part of `npm test`.
+
+This satellite (`annex-session-satellite.test.ts`) uses the real canvas storage, `pty-manager` and terminal mirror, in its own temp folder. The output comes from a fake `node-pty`, and project and agent lists are fixtures.
+
 ## What it doesn't cover
 
-The fixtures have no agents running, no chat history and no icons, and it doesn't set a real permission or PTY. It tests connecting, snapshots and their failures, not everything a phone does.
+The fixtures have no agents running, no chat history and no icons, and it doesn't set a real permission or a real process in a PTY. It tests connecting, snapshots and their failures, not everything a phone does. It also isn't a real phone, a renderer, the real project and agent stores, or two machines.
