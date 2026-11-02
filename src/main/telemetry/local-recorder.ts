@@ -93,6 +93,7 @@ export const LOCAL_DIAG_PRIORITY_EVENTS: Readonly<Record<string, readonly string
     'Heartbeat: terminating unresponsive WebSocket client',
     'Failed to send snapshot on connect',
     'broadcastSnapshotRefresh failed',
+    'Dropping held frames for a socket with no snapshot yet',
     'Snapshot refresh after an agent config change failed',
   ],
   'core:annex-client': ['Connected to satellite', 'Disconnecting satellite'],
