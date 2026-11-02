@@ -98,7 +98,7 @@ test('claude: a burst of helper updates becomes one steer, and user steers are n
   await session.sendHelperUpdates(updates);
   const fromAgents = steered.and(window.locator('[data-source="mcp"]'));
   await expect(fromAgents).toHaveCount(1, { timeout: TURN_TIMEOUT }).catch(async (err: unknown) => {
-    // #2677: the steer was folded in with a tool call this script never makes. Name it.
+    // #2677: a folded steer doesn't match here, and the snapshot doesn't say what it folded with.
     await session.logChatEvents().catch((logErr: unknown) => console.log('could not read chat events', logErr));
     throw err;
   });
