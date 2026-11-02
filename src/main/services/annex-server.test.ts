@@ -3192,6 +3192,81 @@ describe('annex-server', () => {
         expect(Object.keys(projectIcons).length).toBeLessThan(200);
       }, 30_000);
 
+      it('goes through the one build: changes during a running read get one more, not one each', async () => {
+        const ws = await connected();
+        const finishes: Array<(value: unknown[]) => void> = [];
+        vi.mocked(projectStore.list).mockReset();
+        vi.mocked(projectStore.list).mockImplementation(() => new Promise((resolve) => { finishes.push(resolve as never); }) as never);
+
+        // A refresh is reading, then a burst lands during it.
+        annexServer.broadcastSnapshotRefresh();
+        expect(finishes).toHaveLength(1);
+        for (let i = 0; i < 20; i++) projectsChanged()();
+        await new Promise((r) => setTimeout(r, annexServer._testing.PROJECTS_CHANGED_DEBOUNCE_MS * 2));
+        expect(finishes).toHaveLength(1);
+
+        finishes[0]([]);
+        await vi.waitFor(() => expect(finishes).toHaveLength(2));
+        finishes[1]([]);
+        await vi.waitFor(() => expect(refreshes(ws)).toBe(2));
+        await new Promise((r) => setTimeout(r, annexServer._testing.PROJECTS_CHANGED_DEBOUNCE_MS * 2));
+        expect(finishes).toHaveLength(2);
+      }, 30_000);
+
+      it('during a failure backoff builds nothing, and the retry at the end of the window covers it', async () => {
+        vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] });
+        try {
+          vi.mocked(projectStore.list).mockReset();
+          vi.mocked(projectStore.list).mockRejectedValue(new Error('disk gone') as never);
+          const failing = Object.assign(new EventEmitter(), { readyState: 1, send: vi.fn(), ping: () => {}, close: vi.fn() });
+          annexServer._testing.wsAuthTypes.set(failing as never, 'bearer');
+          annexServer._testing.wss!.clients.add(failing as never);
+          annexServer._testing.wss!.emit('connection', failing);
+          await vi.waitFor(() => expect(failing.send).toHaveBeenCalled());
+          const builds = () => vi.mocked(projectStore.list).mock.calls.length;
+          const before = builds();
+
+          for (let i = 0; i < 20; i++) projectsChanged()();
+          await vi.advanceTimersByTimeAsync(annexServer._testing.PROJECTS_CHANGED_DEBOUNCE_MS + 10);
+          expect(builds()).toBe(before);
+
+          vi.mocked(projectStore.list).mockReset();
+          vi.mocked(projectStore.list).mockReturnValue([] as never);
+          await vi.advanceTimersByTimeAsync(annexServer._testing.SNAPSHOT_RETRY_DELAYS_MS[0]);
+          expect(vi.mocked(projectStore.list).mock.calls.length).toBe(1);
+          expect(failing.send.mock.calls.some(([d]) => (d as string).startsWith('{"type":"snapshot"'))).toBe(true);
+        } finally {
+          vi.useRealTimers();
+        }
+      }, 30_000);
+
+      it('builds nothing after the last phone disconnects during the debounce', async () => {
+        const ws = await connected();
+        const before = vi.mocked(projectStore.list).mock.calls.length;
+        projectsChanged()();
+        ws.readyState = 3;
+        ws.emit('close', 1006, Buffer.from(''));
+        annexServer._testing.wss!.clients.delete(ws as never);
+        await new Promise((r) => setTimeout(r, annexServer._testing.PROJECTS_CHANGED_DEBOUNCE_MS * 2));
+        expect(vi.mocked(projectStore.list).mock.calls.length).toBe(before);
+      }, 30_000);
+
+      it('builds nothing after the server stops during the debounce, and listens again after a restart', async () => {
+        await connected();
+        const listener = projectsChanged();
+        const before = vi.mocked(projectStore.list).mock.calls.length;
+        listener();
+        annexServer.stop();
+        await new Promise((r) => setTimeout(r, annexServer._testing.PROJECTS_CHANGED_DEBOUNCE_MS * 2));
+        expect(vi.mocked(projectStore.list).mock.calls.length).toBe(before);
+
+        annexServer.start();
+        await new Promise((r) => setTimeout(r, 50));
+        const ws = await connected();
+        projectsChanged()();
+        await vi.waitFor(() => expect(refreshes(ws)).toBe(1));
+      }, 30_000);
+
       it('builds nothing with no phone connected, and stops listening when the server does', async () => {
         const builds = vi.mocked(projectStore.list).mock.calls.length;
         const listener = projectsChanged();
