@@ -98,6 +98,7 @@ vi.mock('./project-store', () => ({
   list: vi.fn().mockReturnValue([]),
   readIconData: vi.fn().mockReturnValue(null),
   iconFilePath: vi.fn(),
+  onProjectsChanged: vi.fn(() => () => {}),
 }));
 
 // Mock agent-config
@@ -3087,6 +3088,70 @@ describe('annex-server', () => {
       await connect();
       expect(decoder).toHaveBeenCalledTimes(2);
     }, 30_000);
+
+    describe('project changes', () => {
+      const projectsChanged = () => vi.mocked(projectStore.onProjectsChanged).mock.lastCall![0] as () => void;
+      const refreshes = (ws: { send: ReturnType<typeof vi.fn> }) => ws.send.mock.calls.filter(([data]) => (data as string).startsWith('{"type":"snapshot"')).length;
+      const connected = async () => {
+        const ws = Object.assign(new EventEmitter(), { readyState: 1, send: vi.fn(), ping: () => {}, close: () => {} });
+        annexServer._testing.wsAuthTypes.set(ws as never, 'bearer');
+        annexServer._testing.wss!.clients.add(ws as never);
+        annexServer._testing.wss!.emit('connection', ws);
+        await vi.waitFor(() => expect(ws.send).toHaveBeenCalled());
+        ws.send.mockClear();
+        return ws;
+      };
+
+      it('sends one snapshot for a burst, carrying the new image within the budget', async () => {
+        const ws = await connected();
+        const name = writeIcon('p.png', pngFile(1024, 64));
+        vi.mocked(projectStore.list).mockReturnValue([{ id: 'proj_1', name: 'P', path: '/p', icon: name } as any]);
+        vi.mocked(agentConfigModule.listDurable).mockReturnValue([]);
+        const builds = vi.mocked(projectStore.list).mock.calls.length;
+
+        for (let i = 0; i < 20; i++) projectsChanged()();
+        await vi.waitFor(() => expect(refreshes(ws)).toBe(1));
+        await new Promise((r) => setTimeout(r, annexServer._testing.PROJECTS_CHANGED_DEBOUNCE_MS * 2));
+
+        expect(refreshes(ws)).toBe(1);
+        expect(vi.mocked(projectStore.list).mock.calls.length).toBe(builds + 1);
+        const { payload, type } = JSON.parse(ws.send.mock.calls[0][0] as string);
+        expect(type).toBe('snapshot');
+        expect(payload.projectIcons.proj_1).toMatch(/^data:image\/png;base64,/);
+      }, 30_000);
+
+      it('sends another for a change after the burst', async () => {
+        const ws = await connected();
+        projectsChanged()();
+        await vi.waitFor(() => expect(refreshes(ws)).toBe(1));
+        projectsChanged()();
+        await vi.waitFor(() => expect(refreshes(ws)).toBe(2));
+      }, 30_000);
+
+      it('keeps a project image within the budget like any other, leaving out what is past it', async () => {
+        const ws = await connected();
+        const icons = Array.from({ length: 200 }, (_, i) => writeIcon(`p${i}.png`, pngFile(60 * 1024, 256)));
+        vi.mocked(projectStore.list).mockReturnValue(icons.map((icon, i) => ({ id: `proj_${i}`, name: `p${i}`, path: `/p${i}`, icon })) as any);
+        vi.mocked(agentConfigModule.listDurable).mockReturnValue([]);
+
+        projectsChanged()();
+        await vi.waitFor(() => expect(refreshes(ws)).toBe(1), { timeout: 20_000 });
+
+        const frame = ws.send.mock.calls[0][0] as string;
+        expect(Buffer.byteLength(frame)).toBeLessThan(SNAPSHOT_FRAME_MAX_BYTES);
+        const { projectIcons } = JSON.parse(frame).payload;
+        expect(Object.keys(projectIcons).length).toBeGreaterThan(0);
+        expect(Object.keys(projectIcons).length).toBeLessThan(200);
+      }, 30_000);
+
+      it('builds nothing with no phone connected, and stops listening when the server does', async () => {
+        const builds = vi.mocked(projectStore.list).mock.calls.length;
+        const listener = projectsChanged();
+        listener();
+        await new Promise((r) => setTimeout(r, annexServer._testing.PROJECTS_CHANGED_DEBOUNCE_MS * 2));
+        expect(vi.mocked(projectStore.list).mock.calls.length).toBe(builds);
+      }, 30_000);
+    });
 
     it('drops every icon when the rest of the snapshot is too large, and logs the size only', async () => {
       serveAgentsWithIcons([writeIcon('a0.png', pngFile(1024, 64))]);

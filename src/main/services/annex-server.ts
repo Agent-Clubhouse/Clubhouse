@@ -1058,6 +1058,8 @@ function reportClientCounts(): void {
 
 /** A frame this size is worth knowing about: a phone can't take one over MOBILE_WS_FRAME_MAX_BYTES. */
 const LARGE_FRAME_LOG_BYTES = 4 * 1024 * 1024;
+/** Writes to the project list come in bursts, as saving an image takes more than one. */
+const PROJECTS_CHANGED_DEBOUNCE_MS = 150;
 const LARGE_FRAME_LOG_INTERVAL_MS = 60_000;
 const lastLargeFrameLog = new Map<string, number>();
 
@@ -3999,7 +4001,24 @@ export function start(): void {
   const offDisposes = onDisposeRequestsChanged(() => broadcastSnapshotRefresh());
   // Where Clubhouse MCP is off, the switches that need it read off (#2589).
   const offMcp = onMcpEnablementChanged(() => broadcastSnapshotRefresh());
-  unsubHelperRequests = () => { offStarts(); offDisposes(); offMcp(); };
+  // A project's name, color or image, wherever it changed, or one added or removed. A burst is one snapshot.
+  let projectsChangedTimer: ReturnType<typeof setTimeout> | null = null;
+  const offProjects = projectStore.onProjectsChanged(() => {
+    if (projectsChangedTimer) return;
+    projectsChangedTimer = setTimeout(() => {
+      projectsChangedTimer = null;
+      if (wss && wss.clients.size > 0) broadcastSnapshotRefresh();
+    }, PROJECTS_CHANGED_DEBOUNCE_MS);
+    projectsChangedTimer.unref?.();
+  });
+  unsubHelperRequests = () => {
+    offStarts();
+    offDisposes();
+    offMcp();
+    offProjects();
+    if (projectsChangedTimer) clearTimeout(projectsChangedTimer);
+    projectsChangedTimer = null;
+  };
 
   // The Dispatcher turned on or off, or its config changed (#2533): phones add, drop or update it live.
   let lastDispatcherChange = JSON.stringify(dispatcherChange());
@@ -4641,6 +4660,7 @@ export function getWsAuthType(ws: WebSocket): WsAuthType {
 
 /** @internal Exposed for testing only. */
 export const _testing = {
+  PROJECTS_CHANGED_DEBOUNCE_MS,
   runMobileCommand,
   get sessionTokens() { return sessionTokens; },
   isValidToken,

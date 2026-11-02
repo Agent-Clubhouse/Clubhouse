@@ -127,6 +127,7 @@ vi.mock('./icon-images', () => ({ readIconThumbnail: async (base64: string) => `
 vi.mock('./project-store', () => ({
   list: async () => { if (W.projectsThrow) throw new Error('disk gone'); return W.projects; },
   readIconData: async (icon: string) => (icon ? 'data:image/png;base64,iVBORw0KGgo=' : null),
+  onProjectsChanged: () => () => {},
   iconFilePath: async (icon: string) => (icon ? 'iVBORw0KGgo=' : null),
 }));
 vi.mock('./agent-config', () => {
