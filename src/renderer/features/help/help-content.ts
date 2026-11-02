@@ -100,7 +100,7 @@ export const HELP_SECTIONS: HelpSection[] = [
       { id: 'agents-clubhouse-mode', title: 'Clubhouse Mode', content: agentsClubhouseMode },
       { id: 'agents-terminal', title: 'CLI & Transcripts', content: agentsTerminal },
       { id: 'agents-orchestrated-helpers', title: 'Orchestrated Helpers', content: agentsOrchestratedHelpers },
-      { id: 'orchestrators', title: 'Orchestrators', content: settingsOrchestrators },
+      { id: 'orchestrators', title: 'Agent providers', content: settingsOrchestrators },
     ],
   },
   {
@@ -201,7 +201,7 @@ export const CHROME_HELP_SECTIONS: HelpSection[] = [
       { id: 'agents-clubhouse-mode', title: 'Clubhouse mode', content: agentsClubhouseMode },
       { id: 'agents-terminal', title: 'CLI and transcripts', content: agentsTerminalChrome },
       { id: 'agents-orchestrated-helpers', title: 'Orchestrated helpers', content: agentsOrchestratedHelpers },
-      { id: 'orchestrators', title: 'Orchestrators', content: settingsOrchestrators },
+      { id: 'orchestrators', title: 'Agent providers', content: settingsOrchestrators },
     ],
   },
   {

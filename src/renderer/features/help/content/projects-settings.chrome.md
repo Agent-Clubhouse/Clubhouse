@@ -5,7 +5,7 @@ Open a project's settings from its menu in the sidebar (**Project settings**), o
 | Page | What's there |
 |------|--------------|
 | **General** | Name, icon, color, launch wrapper, blueprint bundle, and closing or resetting the project |
-| **Orchestrators & agents** | The project's default orchestrator and agent defaults |
+| **Agents & providers** | The project's default agent provider and agent defaults |
 | **Notifications & alerts** | Badge and sound overrides for this project |
 | **Plugins** | Which plugins are on in this project |
 
@@ -19,7 +19,7 @@ Open a project's settings from its menu in the sidebar (**Project settings**), o
 | **Launch wrapper** | Runs agents through a wrapper command, when your setup needs one. |
 | **Blueprint bundle** | **Export canvases** saves every canvas in the project as one bundle, for sharing or backup. |
 
-## Orchestrators & agents
+## Agents & providers
 
 Each setting here can follow the app-wide value or override it for this project:
 

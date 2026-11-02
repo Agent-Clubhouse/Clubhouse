@@ -19,7 +19,7 @@ For more options, click **New** at the top of the sidebar and choose **Quick age
 
 ## Free agent mode
 
-Free Agent Mode handles permission prompts for you. By default it skips them all. If your CLI supports `--permission-mode auto`, you can switch to **Auto** under **Free agent permission mode** in **Settings > Orchestrators & agents**, for all projects or one. Auto runs a safety check that allows safe actions and blocks risky ones, like force pushes, mass deletions and sending credentials out.
+Free Agent Mode handles permission prompts for you. By default it skips them all. If your CLI supports `--permission-mode auto`, you can switch to **Auto** under **Free agent permission mode** in **Settings > Agents & providers**, for all projects or one. Auto runs a safety check that allows safe actions and blocks risky ones, like force pushes, mass deletions and sending credentials out.
 
 ## Headless or interactive
 
@@ -29,7 +29,7 @@ Free Agent Mode handles permission prompts for you. By default it skips them all
 | **File edits and commands** | Applied right away | Need your approval |
 | **Speed** | Faster | Slower, since it waits for you |
 
-Set it with **Default quick agent mode** in **Settings > Orchestrators & agents**, or **Quick agent mode** in a project's own **Orchestrators & agents** page. Headless and Free Agent Mode are separate settings.
+Set it with **Default quick agent mode** in **Settings > Agents & providers**, or **Quick agent mode** in a project's own **Agents & providers** page. Headless and Free Agent Mode are separate settings.
 
 ## When it finishes
 

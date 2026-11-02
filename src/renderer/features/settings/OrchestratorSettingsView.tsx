@@ -367,7 +367,7 @@ function AppAgentSettings() {
         </div>
       </Modal>
 
-      <SettingsSection title="Orchestrators">
+      <SettingsSection title="Agent providers">
         {allOrchestrators.map((o) => {
           const isEnabled = enabled.includes(o.id);
           const avail = availability[o.id];
@@ -379,7 +379,7 @@ function AppAgentSettings() {
           const toggleDisabled = (isOnlyEnabled && !notInstalled) || (!!notInstalled && !isEnabled);
           const toggleTitle = !!notInstalled && !isEnabled
             ? 'CLI not found. Install it to enable.'
-            : isOnlyEnabled && !notInstalled ? 'At least one orchestrator must be enabled' : undefined;
+            : isOnlyEnabled && !notInstalled ? 'At least one agent provider must be enabled' : undefined;
           // The sub-rows only render when the orchestrator is enabled. The
           // hook server option shows only for hook-capable orchestrators, the
           // runtime option only with the experimental Chat flag. Resolve the
@@ -465,7 +465,7 @@ function AppAgentSettings() {
                   {hookCapable && (
                     <SettingsField
                       label="Hook server"
-                      help="Receives this orchestrator's hook callbacks, like permission requests and tool events. When off, its agents get no hooks, so remote permissions and observability stop working. Running agents need a restart for the change to take full effect."
+                      help="Receives this provider's hook callbacks, like permission requests and tool events. When off, its agents get no hooks, so remote permissions and observability stop working. Running agents need a restart for the change to take full effect."
                     >
                       <Toggle
                         aria-label={`Hook server for ${o.displayName}`}
@@ -482,7 +482,7 @@ function AppAgentSettings() {
 
         {allOrchestrators.length === 0 && (
           <SettingsBlock>
-            <p className={settingsHelp}>No orchestrators registered.</p>
+            <p className={settingsHelp}>No agent providers registered.</p>
           </SettingsBlock>
         )}
       </SettingsSection>
@@ -691,10 +691,10 @@ function ProjectAgentSettings({ projectId }: { projectId: string }) {
 export function OrchestratorSettingsView({ projectId }: Props) {
   return (
     <SettingsPage
-      title="Orchestrators & agents"
+      title="Agents & providers"
       description={projectId
-        ? 'Configure orchestrator and agent behavior for this project.'
-        : 'Configure orchestrator backends and agent behavior.'}
+        ? 'Configure the agent provider and agent behavior for this project.'
+        : 'Configure agent providers and agent behavior.'}
     >
       {projectId
         ? <ProjectAgentSettings projectId={projectId} />

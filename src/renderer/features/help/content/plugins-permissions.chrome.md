@@ -62,7 +62,7 @@ Any unlisted command is blocked.
 
 ## Free agent mode
 
-The `agents.free-agent-mode` permission lets a plugin spawn agents with autonomous permission handling. By default it skips all permission prompts. That follows **Free agent permission mode** in **Settings > Orchestrators & agents**. If your CLI supports it, you can switch that to **Auto**, which runs a safety check instead.
+The `agents.free-agent-mode` permission lets a plugin spawn agents with autonomous permission handling. By default it skips all permission prompts. That follows **Free agent permission mode** in **Settings > Agents & providers**. If your CLI supports it, you can switch that to **Auto**, which runs a safety check instead.
 
 ```json
 {

@@ -40,7 +40,7 @@ describe('uiStore', () => {
   });
 
   describe('openRuntimeSettings', () => {
-    it('opens app settings on Orchestrators, focused on the provider runtime row', () => {
+    it('opens app settings on Agents & providers, focused on the provider runtime row', () => {
       useUIStore.setState({ explorerTab: 'agents', settingsSubPage: 'about', settingsContext: 'proj-1' });
       getState().openRuntimeSettings('codex-cli');
       expect(getState()).toMatchObject({

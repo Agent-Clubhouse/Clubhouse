@@ -362,7 +362,7 @@ export function ProfilesSettingsView() {
       <SettingsSection title="Usage">
         <SettingsBlock>
           <p className={settingsHelp}>
-            Assign a profile to a project in its Orchestrators &amp; agents settings. While a profile is active, agent
+            Assign a profile to a project in its Agents &amp; providers settings. While a profile is active, agent
             creation only offers the orchestrators the profile configures, and the profile&apos;s env vars are injected
             when an agent starts.
           </p>
