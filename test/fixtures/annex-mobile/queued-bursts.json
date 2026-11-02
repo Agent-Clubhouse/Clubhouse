@@ -1,0 +1,659 @@
+{
+  "burst": {
+    "events": [
+      {
+        "agentId": "durable_burst",
+        "data": {
+          "trigger": "prompt"
+        },
+        "seq": 3,
+        "sessionId": "burst_1",
+        "ts": 1800000000000,
+        "turnId": "burst_2",
+        "type": "turn_started",
+        "v": 2
+      },
+      {
+        "agentId": "durable_burst",
+        "data": {
+          "content": [
+            {
+              "text": "[FROM HELPER:Docs (durable_docs)] One.",
+              "type": "text"
+            }
+          ],
+          "delivery": "queued",
+          "messageId": "burst_3",
+          "routed": [
+            {
+              "sender": {
+                "agentId": "durable_docs",
+                "name": "Docs"
+              },
+              "text": "One."
+            }
+          ],
+          "source": "mcp"
+        },
+        "seq": 5,
+        "sessionId": "burst_1",
+        "ts": 1800000000000,
+        "type": "user_message",
+        "v": 2
+      },
+      {
+        "agentId": "durable_burst",
+        "data": {
+          "queuedMessageIds": [
+            "burst_3"
+          ],
+          "transition": {
+            "messageIds": [
+              "burst_3"
+            ],
+            "status": "queued"
+          }
+        },
+        "seq": 6,
+        "sessionId": "burst_1",
+        "ts": 1800000000000,
+        "type": "queue_state",
+        "v": 2
+      },
+      {
+        "agentId": "durable_burst",
+        "data": {
+          "content": [
+            {
+              "text": "[FROM:brave-otter@App] Two.",
+              "type": "text"
+            }
+          ],
+          "delivery": "queued",
+          "messageId": "burst_4",
+          "queuedWith": "burst_3",
+          "routed": [
+            {
+              "sender": {
+                "agentId": "durable_sleepy",
+                "name": "brave-otter"
+              },
+              "text": "Two."
+            }
+          ],
+          "source": "mcp"
+        },
+        "seq": 7,
+        "sessionId": "burst_1",
+        "ts": 1800000000000,
+        "type": "user_message",
+        "v": 2
+      },
+      {
+        "agentId": "durable_burst",
+        "data": {
+          "content": [
+            {
+              "text": "And another thing.",
+              "type": "text"
+            }
+          ],
+          "delivery": "queued",
+          "messageId": "burst_5",
+          "source": "annex"
+        },
+        "seq": 8,
+        "sessionId": "burst_1",
+        "ts": 1800000000000,
+        "type": "user_message",
+        "v": 2
+      },
+      {
+        "agentId": "durable_burst",
+        "data": {
+          "queuedMessageIds": [
+            "burst_3",
+            "burst_5"
+          ],
+          "transition": {
+            "messageIds": [
+              "burst_5"
+            ],
+            "status": "queued"
+          }
+        },
+        "seq": 9,
+        "sessionId": "burst_1",
+        "ts": 1800000000000,
+        "type": "queue_state",
+        "v": 2
+      },
+      {
+        "agentId": "durable_burst",
+        "data": {
+          "stopReason": "end_turn"
+        },
+        "seq": 10,
+        "sessionId": "burst_1",
+        "ts": 1800000000000,
+        "turnId": "burst_2",
+        "type": "turn_ended",
+        "v": 2
+      },
+      {
+        "agentId": "durable_burst",
+        "data": {
+          "queuedMessageIds": [
+            "burst_5"
+          ],
+          "transition": {
+            "messageIds": [
+              "burst_3"
+            ],
+            "status": "dispatching"
+          }
+        },
+        "seq": 12,
+        "sessionId": "burst_1",
+        "ts": 1800000000000,
+        "type": "queue_state",
+        "v": 2
+      },
+      {
+        "agentId": "durable_burst",
+        "data": {
+          "queuedMessageIds": [
+            "burst_5"
+          ],
+          "transition": {
+            "messageIds": [
+              "burst_3"
+            ],
+            "status": "delivered"
+          }
+        },
+        "seq": 13,
+        "sessionId": "burst_1",
+        "ts": 1800000000000,
+        "type": "queue_state",
+        "v": 2
+      },
+      {
+        "agentId": "durable_burst",
+        "data": {
+          "trigger": "prompt"
+        },
+        "seq": 14,
+        "sessionId": "burst_1",
+        "ts": 1800000000000,
+        "turnId": "burst_6",
+        "type": "turn_started",
+        "v": 2
+      },
+      {
+        "agentId": "durable_burst",
+        "data": {
+          "stopReason": "end_turn"
+        },
+        "seq": 16,
+        "sessionId": "burst_1",
+        "ts": 1800000000000,
+        "turnId": "burst_6",
+        "type": "turn_ended",
+        "v": 2
+      },
+      {
+        "agentId": "durable_burst",
+        "data": {
+          "queuedMessageIds": [],
+          "transition": {
+            "messageIds": [
+              "burst_5"
+            ],
+            "status": "dispatching"
+          }
+        },
+        "seq": 18,
+        "sessionId": "burst_1",
+        "ts": 1800000000000,
+        "type": "queue_state",
+        "v": 2
+      },
+      {
+        "agentId": "durable_burst",
+        "data": {
+          "queuedMessageIds": [],
+          "transition": {
+            "messageIds": [
+              "burst_5"
+            ],
+            "status": "delivered"
+          }
+        },
+        "seq": 19,
+        "sessionId": "burst_1",
+        "ts": 1800000000000,
+        "type": "queue_state",
+        "v": 2
+      },
+      {
+        "agentId": "durable_burst",
+        "data": {
+          "trigger": "prompt"
+        },
+        "seq": 20,
+        "sessionId": "burst_1",
+        "ts": 1800000000000,
+        "turnId": "burst_7",
+        "type": "turn_started",
+        "v": 2
+      },
+      {
+        "agentId": "durable_burst",
+        "data": {
+          "stopReason": "end_turn"
+        },
+        "seq": 22,
+        "sessionId": "burst_1",
+        "ts": 1800000000000,
+        "turnId": "burst_7",
+        "type": "turn_ended",
+        "v": 2
+      }
+    ],
+    "routed": [
+      {
+        "sender": {
+          "agentId": "durable_docs",
+          "name": "Docs"
+        },
+        "text": "One."
+      },
+      {
+        "sender": {
+          "agentId": "durable_sleepy",
+          "name": "brave-otter"
+        },
+        "text": "Two."
+      }
+    ],
+    "rowId": "burst_3"
+  },
+  "direction": "desktop-to-phone",
+  "failed": {
+    "events": [
+      {
+        "agentId": "durable_failed",
+        "data": {
+          "trigger": "prompt"
+        },
+        "seq": 3,
+        "sessionId": "failed_1",
+        "ts": 1800000000000,
+        "turnId": "failed_2",
+        "type": "turn_started",
+        "v": 2
+      },
+      {
+        "agentId": "durable_failed",
+        "data": {
+          "content": [
+            {
+              "text": "Never sent.",
+              "type": "text"
+            }
+          ],
+          "delivery": "queued",
+          "messageId": "failed_3",
+          "source": "annex"
+        },
+        "seq": 5,
+        "sessionId": "failed_1",
+        "ts": 1800000000000,
+        "type": "user_message",
+        "v": 2
+      },
+      {
+        "agentId": "durable_failed",
+        "data": {
+          "queuedMessageIds": [
+            "failed_3"
+          ],
+          "transition": {
+            "messageIds": [
+              "failed_3"
+            ],
+            "status": "queued"
+          }
+        },
+        "seq": 6,
+        "sessionId": "failed_1",
+        "ts": 1800000000000,
+        "type": "queue_state",
+        "v": 2
+      },
+      {
+        "agentId": "durable_failed",
+        "data": {
+          "stopReason": "end_turn"
+        },
+        "seq": 7,
+        "sessionId": "failed_1",
+        "ts": 1800000000000,
+        "turnId": "failed_2",
+        "type": "turn_ended",
+        "v": 2
+      },
+      {
+        "agentId": "durable_failed",
+        "data": {
+          "queuedMessageIds": [],
+          "transition": {
+            "messageIds": [
+              "failed_3"
+            ],
+            "status": "dispatching"
+          }
+        },
+        "seq": 9,
+        "sessionId": "failed_1",
+        "ts": 1800000000000,
+        "type": "queue_state",
+        "v": 2
+      },
+      {
+        "agentId": "durable_failed",
+        "data": {
+          "queuedMessageIds": [],
+          "transition": {
+            "messageIds": [
+              "failed_3"
+            ],
+            "status": "failed"
+          }
+        },
+        "seq": 10,
+        "sessionId": "failed_1",
+        "ts": 1800000000000,
+        "type": "queue_state",
+        "v": 2
+      }
+    ]
+  },
+  "missingJoinTarget": {
+    "events": [
+      {
+        "agentId": "durable_burst",
+        "data": {
+          "content": [
+            {
+              "text": "[FROM:brave-otter@App] Two.",
+              "type": "text"
+            }
+          ],
+          "delivery": "queued",
+          "messageId": "burst_4",
+          "queuedWith": "burst_3",
+          "routed": [
+            {
+              "sender": {
+                "agentId": "durable_sleepy",
+                "name": "brave-otter"
+              },
+              "text": "Two."
+            }
+          ],
+          "source": "mcp"
+        },
+        "seq": 7,
+        "sessionId": "burst_1",
+        "ts": 1800000000000,
+        "type": "user_message",
+        "v": 2
+      },
+      {
+        "agentId": "durable_burst",
+        "data": {
+          "content": [
+            {
+              "text": "And another thing.",
+              "type": "text"
+            }
+          ],
+          "delivery": "queued",
+          "messageId": "burst_5",
+          "source": "annex"
+        },
+        "seq": 8,
+        "sessionId": "burst_1",
+        "ts": 1800000000000,
+        "type": "user_message",
+        "v": 2
+      },
+      {
+        "agentId": "durable_burst",
+        "data": {
+          "queuedMessageIds": [
+            "burst_3",
+            "burst_5"
+          ],
+          "transition": {
+            "messageIds": [
+              "burst_5"
+            ],
+            "status": "queued"
+          }
+        },
+        "seq": 9,
+        "sessionId": "burst_1",
+        "ts": 1800000000000,
+        "type": "queue_state",
+        "v": 2
+      },
+      {
+        "agentId": "durable_burst",
+        "data": {
+          "stopReason": "end_turn"
+        },
+        "seq": 10,
+        "sessionId": "burst_1",
+        "ts": 1800000000000,
+        "turnId": "burst_2",
+        "type": "turn_ended",
+        "v": 2
+      },
+      {
+        "agentId": "durable_burst",
+        "data": {
+          "queuedMessageIds": [
+            "burst_5"
+          ],
+          "transition": {
+            "messageIds": [
+              "burst_3"
+            ],
+            "status": "dispatching"
+          }
+        },
+        "seq": 12,
+        "sessionId": "burst_1",
+        "ts": 1800000000000,
+        "type": "queue_state",
+        "v": 2
+      },
+      {
+        "agentId": "durable_burst",
+        "data": {
+          "queuedMessageIds": [
+            "burst_5"
+          ],
+          "transition": {
+            "messageIds": [
+              "burst_3"
+            ],
+            "status": "delivered"
+          }
+        },
+        "seq": 13,
+        "sessionId": "burst_1",
+        "ts": 1800000000000,
+        "type": "queue_state",
+        "v": 2
+      },
+      {
+        "agentId": "durable_burst",
+        "data": {
+          "trigger": "prompt"
+        },
+        "seq": 14,
+        "sessionId": "burst_1",
+        "ts": 1800000000000,
+        "turnId": "burst_6",
+        "type": "turn_started",
+        "v": 2
+      },
+      {
+        "agentId": "durable_burst",
+        "data": {
+          "stopReason": "end_turn"
+        },
+        "seq": 16,
+        "sessionId": "burst_1",
+        "ts": 1800000000000,
+        "turnId": "burst_6",
+        "type": "turn_ended",
+        "v": 2
+      },
+      {
+        "agentId": "durable_burst",
+        "data": {
+          "queuedMessageIds": [],
+          "transition": {
+            "messageIds": [
+              "burst_5"
+            ],
+            "status": "dispatching"
+          }
+        },
+        "seq": 18,
+        "sessionId": "burst_1",
+        "ts": 1800000000000,
+        "type": "queue_state",
+        "v": 2
+      },
+      {
+        "agentId": "durable_burst",
+        "data": {
+          "queuedMessageIds": [],
+          "transition": {
+            "messageIds": [
+              "burst_5"
+            ],
+            "status": "delivered"
+          }
+        },
+        "seq": 19,
+        "sessionId": "burst_1",
+        "ts": 1800000000000,
+        "type": "queue_state",
+        "v": 2
+      },
+      {
+        "agentId": "durable_burst",
+        "data": {
+          "trigger": "prompt"
+        },
+        "seq": 20,
+        "sessionId": "burst_1",
+        "ts": 1800000000000,
+        "turnId": "burst_7",
+        "type": "turn_started",
+        "v": 2
+      },
+      {
+        "agentId": "durable_burst",
+        "data": {
+          "stopReason": "end_turn"
+        },
+        "seq": 22,
+        "sessionId": "burst_1",
+        "ts": 1800000000000,
+        "turnId": "burst_7",
+        "type": "turn_ended",
+        "v": 2
+      }
+    ],
+    "note": "The burst read from its tail: the join is the first event, so the row takes the queuedWith id.",
+    "routed": [
+      {
+        "sender": {
+          "agentId": "durable_sleepy",
+          "name": "brave-otter"
+        },
+        "text": "Two."
+      }
+    ],
+    "rowId": "burst_3"
+  },
+  "nativeQueue": {
+    "events": [
+      {
+        "agentId": "durable_native",
+        "data": {
+          "trigger": "prompt"
+        },
+        "seq": 3,
+        "sessionId": "native_1",
+        "ts": 1800000000000,
+        "turnId": "native_2",
+        "type": "turn_started",
+        "v": 2
+      },
+      {
+        "agentId": "durable_native",
+        "data": {
+          "content": [
+            {
+              "text": "Held by the CLI.",
+              "type": "text"
+            }
+          ],
+          "delivery": "queued",
+          "messageId": "native_3",
+          "source": "annex"
+        },
+        "seq": 5,
+        "sessionId": "native_1",
+        "ts": 1800000000000,
+        "type": "user_message",
+        "v": 2
+      },
+      {
+        "agentId": "durable_native",
+        "data": {
+          "stopReason": "end_turn"
+        },
+        "seq": 6,
+        "sessionId": "native_1",
+        "ts": 1800000000000,
+        "turnId": "native_2",
+        "type": "turn_ended",
+        "v": 2
+      },
+      {
+        "agentId": "durable_native",
+        "data": {
+          "trigger": "prompt"
+        },
+        "seq": 8,
+        "sessionId": "native_1",
+        "ts": 1800000000000,
+        "turnId": "native_4",
+        "type": "turn_started",
+        "v": 2
+      }
+    ],
+    "note": "A provider-held queue has no queue_state: turn_started is its only signal."
+  },
+  "note": "Events from the real chat runtime, without the session and state events around them. See docs/mobile-control-v1.md#queued-messages."
+}

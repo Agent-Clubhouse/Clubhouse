@@ -17,6 +17,12 @@ import {
   type ToolCallItem,
   type UserMessageItem,
 } from './chatStore';
+import queuedBurstsFixture from '../../../test/fixtures/annex-mobile/queued-bursts.json';
+
+const queuedBursts = queuedBurstsFixture as unknown as {
+  burst: { events: ChatEvent[]; rowId: string; routed: unknown[] };
+  missingJoinTarget: { events: ChatEvent[]; rowId: string; routed: unknown[] };
+};
 
 const AGENT = 'agent-1';
 
@@ -500,6 +506,15 @@ describe('reduceChatEvent', () => {
         ev('turn_started', { trigger: 'queued' }, { turnId: 't2' }),
       ], s);
       expect((s.items.find((i) => i.kind === 'user_message') as UserMessageItem).routed).toEqual(parts);
+    });
+
+    it('reads a burst the way the contract fixture says, with or without its first event', () => {
+      const { burst, missingJoinTarget } = queuedBursts;
+      const beforeDelivery = (events: ChatEvent[]) => events.slice(0, events.findIndex((e) => e.type === 'turn_ended'));
+      const whole = foldChatEvents(undefined, 'durable_burst', beforeDelivery(burst.events));
+      expect(whole.queued[0]).toMatchObject({ messageId: burst.rowId, routed: burst.routed });
+      const cut = foldChatEvents(undefined, 'durable_burst', beforeDelivery(missingJoinTarget.events));
+      expect(cut.queued[0]).toMatchObject({ messageId: missingJoinTarget.rowId, routed: missingJoinTarget.routed });
     });
 
     it('keeps who sent a delivered message', () => {

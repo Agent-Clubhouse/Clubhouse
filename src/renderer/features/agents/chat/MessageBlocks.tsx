@@ -11,7 +11,7 @@ import type {
   TurnEndItem,
   UserMessageItem,
 } from '../../../stores/chatStore';
-import { messageDisplay, senderDisplayName, stripTaskMarker, type ChatCapabilities, type ContentBlock, type MessageSender, type RoutedMessagePart } from '../../../../shared/chat';
+import { findSenderAgent, messageDisplay, sentPartName, stripTaskMarker, type ChatCapabilities, type ContentBlock, type MessageSender, type RoutedMessagePart } from '../../../../shared/chat';
 import type { Agent } from '../../../../shared/types';
 import { useAgentStore } from '../../../stores/agentStore';
 import { AgentAvatar } from '../AgentAvatar';
@@ -150,19 +150,14 @@ function Attachments({ item, align }: { item: UserMessageItem; align: 'start' | 
  * after a rename. Absent for an agent that is gone or in a project not loaded.
  */
 function useSenderAgent(sender: MessageSender | undefined): Agent | undefined {
-  return useAgentStore((s) => {
-    if (!sender) return undefined;
-    if (sender.agentId) return s.agents[sender.agentId];
-    const named = Object.values(s.agents).filter((a) => a.name === sender.name);
-    return named.length === 1 ? named[0] : undefined;
-  });
+  return useAgentStore((s) => findSenderAgent(sender, s.agents));
 }
 
 /** One message from another agent or from Clubhouse, on the left. */
 function SentPart({ part, item, expansionKey }: { part: RoutedMessagePart; item: UserMessageItem; expansionKey?: string }) {
   const { sender } = part;
   const agent = useSenderAgent(sender);
-  const name = agent?.name ?? senderDisplayName(part) ?? (item.source === 'group_project' ? 'Group project' : 'Another agent');
+  const name = sentPartName(part, item.source, agent);
   const [open, toggle] = useOpenState(!isLongMessage(part.text), expansionKey);
   const collapsible = isLongMessage(part.text);
   const labels = metaLabels(item);

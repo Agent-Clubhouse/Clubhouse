@@ -1,0 +1,3093 @@
+{
+  "catalog": {
+    "agentIcons": {
+      "durable_chat": "data:image/png;base64,R0lGODlhAQABAAAAACw=",
+      "durable_dispatcher": "data:image/png;base64,R0lGODlhAQABAAAAACw="
+    },
+    "agents": {
+      "proj_app": [
+        {
+          "branch": "planner/standby",
+          "color": "indigo",
+          "detailedStatus": {
+            "message": "Needs permission",
+            "state": "needs_permission",
+            "timestamp": 1800000000000
+          },
+          "emoji": "🦊",
+          "executionMode": "chat",
+          "freeAgentMode": false,
+          "hasSession": true,
+          "icon": "durable_chat.png",
+          "id": "durable_chat",
+          "kind": "durable",
+          "lastActivityAt": 1800000140000,
+          "model": "opus",
+          "name": "planner",
+          "orchestration": {
+            "access": "same",
+            "accessLevels": [
+              "same",
+              "standard",
+              "auto",
+              "bypass"
+            ],
+            "connectToDispatcher": true,
+            "control": "hands-off",
+            "controls": [
+              "hands-off",
+              "ask-before-start",
+              "ask-everything"
+            ],
+            "crossProjectHelpers": false,
+            "maxHelpers": 3,
+            "maxHelpersCap": 20,
+            "mcpEnabled": true,
+            "orchestrate": true,
+            "sources": {
+              "access": "default",
+              "connectToDispatcher": "default",
+              "control": "default",
+              "crossProjectHelpers": "default",
+              "maxHelpers": "agent",
+              "orchestrate": "agent"
+            }
+          },
+          "orchestrator": "claude-code",
+          "projectId": "proj_app",
+          "status": "running"
+        },
+        {
+          "branch": null,
+          "color": "teal",
+          "detailedStatus": {
+            "message": "Needs permission",
+            "state": "needs_permission",
+            "timestamp": 1800000000000
+          },
+          "emoji": null,
+          "executionMode": "chat",
+          "freeAgentMode": false,
+          "hasSession": true,
+          "icon": null,
+          "id": "durable_basic",
+          "kind": "durable",
+          "lastActivityAt": 1790931600000,
+          "model": null,
+          "name": "reviewer",
+          "orchestration": {
+            "access": "same",
+            "accessLevels": [
+              "same",
+              "standard",
+              "auto",
+              "bypass"
+            ],
+            "connectToDispatcher": false,
+            "control": "hands-off",
+            "controls": [
+              "hands-off",
+              "ask-before-start",
+              "ask-everything"
+            ],
+            "crossProjectHelpers": false,
+            "maxHelpers": 5,
+            "maxHelpersCap": 20,
+            "mcpEnabled": true,
+            "orchestrate": false,
+            "sources": {
+              "access": "default",
+              "connectToDispatcher": "default",
+              "control": "default",
+              "crossProjectHelpers": "default",
+              "maxHelpers": "default",
+              "orchestrate": "default"
+            }
+          },
+          "orchestrator": "codex-cli",
+          "projectId": "proj_app",
+          "status": "running"
+        },
+        {
+          "branch": "brave-otter/standby",
+          "color": "amber",
+          "detailedStatus": null,
+          "emoji": null,
+          "executionMode": null,
+          "freeAgentMode": false,
+          "hasSession": true,
+          "icon": null,
+          "id": "durable_sleepy",
+          "kind": "durable",
+          "lastActivityAt": 1800000000000,
+          "model": null,
+          "name": "brave-otter",
+          "orchestration": {
+            "access": "same",
+            "accessLevels": [
+              "same",
+              "standard",
+              "auto",
+              "bypass"
+            ],
+            "connectToDispatcher": false,
+            "control": "hands-off",
+            "controls": [
+              "hands-off",
+              "ask-before-start",
+              "ask-everything"
+            ],
+            "crossProjectHelpers": false,
+            "maxHelpers": 5,
+            "maxHelpersCap": 20,
+            "mcpEnabled": true,
+            "orchestrate": false,
+            "sources": {
+              "access": "default",
+              "connectToDispatcher": "default",
+              "control": "default",
+              "crossProjectHelpers": "default",
+              "maxHelpers": "default",
+              "orchestrate": "default"
+            }
+          },
+          "orchestrator": null,
+          "projectId": "proj_app",
+          "status": "sleeping"
+        },
+        {
+          "branch": null,
+          "color": "rose",
+          "detailedStatus": null,
+          "emoji": null,
+          "executionMode": "pty",
+          "freeAgentMode": false,
+          "hasSession": false,
+          "icon": null,
+          "id": "durable_term",
+          "kind": "durable",
+          "lastActivityAt": 1800000000000,
+          "model": null,
+          "name": "shell-runner",
+          "orchestration": {
+            "access": "same",
+            "accessLevels": [
+              "same",
+              "standard",
+              "auto",
+              "bypass"
+            ],
+            "connectToDispatcher": false,
+            "control": "hands-off",
+            "controls": [
+              "hands-off",
+              "ask-before-start",
+              "ask-everything"
+            ],
+            "crossProjectHelpers": false,
+            "maxHelpers": 5,
+            "maxHelpersCap": 20,
+            "mcpEnabled": true,
+            "orchestrate": false,
+            "sources": {
+              "access": "default",
+              "connectToDispatcher": "default",
+              "control": "default",
+              "crossProjectHelpers": "default",
+              "maxHelpers": "default",
+              "orchestrate": "default"
+            }
+          },
+          "orchestrator": "claude-code",
+          "projectId": "proj_app",
+          "status": "running"
+        },
+        {
+          "branch": null,
+          "color": "cyan",
+          "detailedStatus": null,
+          "emoji": null,
+          "executionMode": null,
+          "freeAgentMode": false,
+          "hasSession": false,
+          "icon": null,
+          "id": "durable_fresh",
+          "kind": "durable",
+          "lastActivityAt": 1791190800000,
+          "model": null,
+          "name": "fresh",
+          "orchestration": {
+            "access": "same",
+            "accessLevels": [
+              "same",
+              "standard",
+              "auto",
+              "bypass"
+            ],
+            "connectToDispatcher": false,
+            "control": "hands-off",
+            "controls": [
+              "hands-off",
+              "ask-before-start",
+              "ask-everything"
+            ],
+            "crossProjectHelpers": false,
+            "maxHelpers": 5,
+            "maxHelpersCap": 20,
+            "mcpEnabled": true,
+            "orchestrate": false,
+            "sources": {
+              "access": "default",
+              "connectToDispatcher": "default",
+              "control": "default",
+              "crossProjectHelpers": "default",
+              "maxHelpers": "default",
+              "orchestrate": "default"
+            }
+          },
+          "orchestrator": null,
+          "projectId": "proj_app",
+          "status": "sleeping"
+        },
+        {
+          "branch": null,
+          "color": "violet",
+          "detailedStatus": null,
+          "emoji": null,
+          "executionMode": null,
+          "freeAgentMode": false,
+          "hasSession": false,
+          "icon": null,
+          "id": "durable_docs",
+          "kind": "durable",
+          "lastActivityAt": 1791277200000,
+          "model": null,
+          "name": "Docs",
+          "orchestration": {
+            "access": "same",
+            "accessLevels": [
+              "same",
+              "standard",
+              "auto",
+              "bypass"
+            ],
+            "connectToDispatcher": false,
+            "control": "hands-off",
+            "controls": [
+              "hands-off",
+              "ask-before-start",
+              "ask-everything"
+            ],
+            "crossProjectHelpers": false,
+            "maxHelpers": 5,
+            "maxHelpersCap": 20,
+            "mcpEnabled": true,
+            "orchestrate": false,
+            "sources": {
+              "access": "default",
+              "connectToDispatcher": "default",
+              "control": "default",
+              "crossProjectHelpers": "default",
+              "maxHelpers": "default",
+              "orchestrate": "default"
+            }
+          },
+          "orchestrator": null,
+          "parentAgentId": "durable_chat",
+          "projectId": "proj_app",
+          "status": "sleeping"
+        }
+      ],
+      "proj_docs": [
+        {
+          "branch": null,
+          "color": "orange",
+          "detailedStatus": null,
+          "emoji": null,
+          "executionMode": null,
+          "freeAgentMode": false,
+          "hasSession": false,
+          "icon": null,
+          "id": "durable_cross",
+          "kind": "durable",
+          "lastActivityAt": 1791450000000,
+          "model": null,
+          "name": "Docs",
+          "orchestration": {
+            "access": "same",
+            "accessLevels": [
+              "same",
+              "standard",
+              "auto",
+              "bypass"
+            ],
+            "connectToDispatcher": false,
+            "control": "hands-off",
+            "controls": [
+              "hands-off",
+              "ask-before-start",
+              "ask-everything"
+            ],
+            "crossProjectHelpers": false,
+            "maxHelpers": 5,
+            "maxHelpersCap": 20,
+            "mcpEnabled": true,
+            "orchestrate": false,
+            "sources": {
+              "access": "default",
+              "connectToDispatcher": "default",
+              "control": "default",
+              "crossProjectHelpers": "default",
+              "maxHelpers": "default",
+              "orchestrate": "default"
+            }
+          },
+          "orchestrator": null,
+          "parentAgentId": "durable_chat",
+          "projectId": "proj_docs",
+          "status": "sleeping"
+        }
+      ]
+    },
+    "dispatcher": {
+      "agent": {
+        "branch": null,
+        "color": "indigo",
+        "detailedStatus": null,
+        "emoji": null,
+        "executionMode": null,
+        "freeAgentMode": true,
+        "hasSession": true,
+        "icon": "durable_dispatcher.abc.png",
+        "id": "durable_dispatcher",
+        "isDispatcher": true,
+        "kind": "durable",
+        "lastActivityAt": 1800000000000,
+        "model": null,
+        "name": "Dispatcher",
+        "orchestrator": "claude-code",
+        "projectId": "__dispatcher__",
+        "status": "sleeping"
+      },
+      "enabled": true,
+      "flagOn": true,
+      "projectId": "__dispatcher__"
+    },
+    "quickAgents": {
+      "proj_app": [
+        {
+          "color": "gray",
+          "detailedStatus": null,
+          "freeAgentMode": false,
+          "id": "quick_1",
+          "kind": "quick",
+          "lastActivityAt": 1799999880000,
+          "model": null,
+          "name": "swift-fox",
+          "orchestrator": "claude-code",
+          "parentAgentId": "durable_chat",
+          "projectId": "proj_app",
+          "prompt": "Fix the flaky test",
+          "spawnedAt": 1799999880000,
+          "status": "running"
+        }
+      ],
+      "proj_docs": []
+    }
+  },
+  "colors": [
+    {
+      "hex": "#6366f1",
+      "id": "indigo"
+    },
+    {
+      "hex": "#10b981",
+      "id": "emerald"
+    },
+    {
+      "hex": "#f59e0b",
+      "id": "amber"
+    },
+    {
+      "hex": "#f43f5e",
+      "id": "rose"
+    },
+    {
+      "hex": "#06b6d4",
+      "id": "cyan"
+    },
+    {
+      "hex": "#8b5cf6",
+      "id": "violet"
+    },
+    {
+      "hex": "#f97316",
+      "id": "orange"
+    },
+    {
+      "hex": "#14b8a6",
+      "id": "teal"
+    }
+  ],
+  "direction": "desktop-to-phone",
+  "expected": [
+    {
+      "from": "others",
+      "messageId": "top_level",
+      "parts": [
+        {
+          "agentId": "durable_sleepy",
+          "avatar": {
+            "background": "#f59e0b",
+            "initials": "BO",
+            "type": "initials"
+          },
+          "name": "brave-otter",
+          "text": "Ready."
+        }
+      ]
+    },
+    {
+      "from": "others",
+      "messageId": "emoji_over_image",
+      "parts": [
+        {
+          "agentId": "durable_chat",
+          "avatar": {
+            "background": "#6366f120",
+            "emoji": "🦊",
+            "type": "emoji"
+          },
+          "name": "planner",
+          "text": "Go."
+        }
+      ]
+    },
+    {
+      "from": "others",
+      "messageId": "helper",
+      "parts": [
+        {
+          "agentId": "durable_docs",
+          "avatar": {
+            "background": "#8b5cf6",
+            "initials": "D",
+            "type": "initials"
+          },
+          "name": "Docs",
+          "text": "Halfway."
+        }
+      ]
+    },
+    {
+      "from": "others",
+      "messageId": "dispatcher_image",
+      "parts": [
+        {
+          "agentId": "durable_dispatcher",
+          "avatar": {
+            "image": "data:image/png;base64,R0lGODlhAQABAAAAACw=",
+            "type": "image"
+          },
+          "name": "Dispatcher",
+          "text": "Status?"
+        }
+      ]
+    },
+    {
+      "from": "others",
+      "messageId": "cross_project",
+      "parts": [
+        {
+          "agentId": "durable_cross",
+          "avatar": {
+            "background": "#f97316",
+            "initials": "D",
+            "type": "initials"
+          },
+          "name": "Docs",
+          "text": "Done there."
+        }
+      ]
+    },
+    {
+      "from": "others",
+      "messageId": "quick_agent",
+      "parts": [
+        {
+          "agentId": "quick_1",
+          "avatar": {
+            "type": "quick"
+          },
+          "name": "swift-fox",
+          "text": "Fixed."
+        }
+      ]
+    },
+    {
+      "from": "others",
+      "messageId": "disposed_helper",
+      "parts": [
+        {
+          "agentId": null,
+          "avatar": {
+            "background": "#6366f1",
+            "initials": "OH",
+            "type": "initials"
+          },
+          "name": "old-helper",
+          "text": "Bye."
+        }
+      ]
+    },
+    {
+      "from": "others",
+      "messageId": "unknown_id_same_name",
+      "parts": [
+        {
+          "agentId": null,
+          "avatar": {
+            "background": "#6366f1",
+            "initials": "R",
+            "type": "initials"
+          },
+          "name": "reviewer",
+          "text": "Old id."
+        }
+      ]
+    },
+    {
+      "from": "others",
+      "messageId": "name_only_unique",
+      "parts": [
+        {
+          "agentId": "durable_basic",
+          "avatar": {
+            "background": "#14b8a6",
+            "initials": "R",
+            "type": "initials"
+          },
+          "name": "reviewer",
+          "text": "By name."
+        }
+      ]
+    },
+    {
+      "from": "others",
+      "messageId": "name_only_ambiguous",
+      "parts": [
+        {
+          "agentId": null,
+          "avatar": {
+            "background": "#6366f1",
+            "initials": "D",
+            "type": "initials"
+          },
+          "name": "Docs",
+          "text": "Which one?"
+        }
+      ]
+    },
+    {
+      "from": "others",
+      "messageId": "burst",
+      "parts": [
+        {
+          "agentId": "durable_docs",
+          "avatar": {
+            "background": "#8b5cf6",
+            "initials": "D",
+            "type": "initials"
+          },
+          "name": "Docs",
+          "text": "Started."
+        },
+        {
+          "agentId": null,
+          "avatar": null,
+          "name": "Clubhouse",
+          "text": "Docs is asleep."
+        }
+      ]
+    },
+    {
+      "from": "others",
+      "messageId": "queue_first",
+      "parts": [
+        {
+          "agentId": "durable_docs",
+          "avatar": {
+            "background": "#8b5cf6",
+            "initials": "D",
+            "type": "initials"
+          },
+          "name": "Docs",
+          "text": "One."
+        }
+      ]
+    },
+    {
+      "from": "others",
+      "messageId": "queue_joined",
+      "parts": [
+        {
+          "agentId": "durable_sleepy",
+          "avatar": {
+            "background": "#f59e0b",
+            "initials": "BO",
+            "type": "initials"
+          },
+          "name": "brave-otter",
+          "text": "Two."
+        }
+      ],
+      "queuedWith": "queue_first"
+    },
+    {
+      "from": "others",
+      "messageId": "task_result_marker",
+      "parts": [
+        {
+          "agentId": "durable_basic",
+          "avatar": {
+            "background": "#14b8a6",
+            "initials": "R",
+            "type": "initials"
+          },
+          "name": "reviewer",
+          "text": "Looks good."
+        }
+      ]
+    },
+    {
+      "from": "others",
+      "messageId": "clubhouse_notice",
+      "parts": [
+        {
+          "agentId": null,
+          "avatar": null,
+          "name": "Clubhouse",
+          "text": "Docs was disposed."
+        }
+      ]
+    },
+    {
+      "from": "others",
+      "messageId": "no_sender",
+      "parts": [
+        {
+          "agentId": null,
+          "avatar": null,
+          "name": "Another agent",
+          "text": "The nightly build finished."
+        }
+      ]
+    },
+    {
+      "from": "others",
+      "messageId": "parsed_from",
+      "parts": [
+        {
+          "agentId": "durable_basic",
+          "avatar": {
+            "background": "#14b8a6",
+            "initials": "R",
+            "type": "initials"
+          },
+          "name": "reviewer",
+          "text": "An old one."
+        }
+      ]
+    },
+    {
+      "from": "others",
+      "messageId": "parsed_helper",
+      "parts": [
+        {
+          "agentId": "durable_docs",
+          "avatar": {
+            "background": "#8b5cf6",
+            "initials": "D",
+            "type": "initials"
+          },
+          "name": "Docs",
+          "text": "An old report."
+        }
+      ]
+    },
+    {
+      "from": "others",
+      "messageId": "parsed_clubhouse",
+      "parts": [
+        {
+          "agentId": null,
+          "avatar": null,
+          "name": "Clubhouse",
+          "text": "An old notice."
+        }
+      ]
+    },
+    {
+      "from": "others",
+      "messageId": "parsed_tap",
+      "parts": [
+        {
+          "agentId": "durable_sleepy",
+          "avatar": {
+            "background": "#f59e0b",
+            "initials": "BO",
+            "type": "initials"
+          },
+          "name": "brave-otter",
+          "text": "Look at this."
+        }
+      ]
+    },
+    {
+      "from": "you",
+      "messageId": "parsed_tap_user",
+      "text": "From the desktop."
+    },
+    {
+      "from": "others",
+      "messageId": "system",
+      "parts": [
+        {
+          "agentId": null,
+          "avatar": null,
+          "name": "Clubhouse",
+          "text": "Continued from the terminal."
+        }
+      ]
+    },
+    {
+      "from": "others",
+      "messageId": "group_project",
+      "parts": [
+        {
+          "agentId": null,
+          "avatar": null,
+          "name": "Group project",
+          "text": "New bulletin posts."
+        }
+      ]
+    },
+    {
+      "from": "you",
+      "messageId": "mission_from_user",
+      "text": "Fix the login bug."
+    },
+    {
+      "from": "you",
+      "messageId": "from_a_phone",
+      "text": "[FROM:x] Typed by the user."
+    }
+  ],
+  "frames": [
+    {
+      "payload": {
+        "agentId": "durable_chat",
+        "event": {
+          "agentId": "durable_chat",
+          "data": {
+            "content": [
+              {
+                "text": "[FROM:brave-otter@App] Ready.",
+                "type": "text"
+              }
+            ],
+            "delivery": "prompt",
+            "messageId": "top_level",
+            "routed": [
+              {
+                "sender": {
+                  "agentId": "durable_sleepy",
+                  "name": "brave-otter"
+                },
+                "text": "Ready."
+              }
+            ],
+            "source": "mcp"
+          },
+          "seq": 1,
+          "sessionId": "sess_live",
+          "ts": 1799999941000,
+          "type": "user_message",
+          "v": 2
+        }
+      },
+      "seq": 1001,
+      "type": "chat:event"
+    },
+    {
+      "payload": {
+        "agentId": "durable_chat",
+        "event": {
+          "agentId": "durable_chat",
+          "data": {
+            "content": [
+              {
+                "text": "[FROM:planner@App] Go.",
+                "type": "text"
+              }
+            ],
+            "delivery": "prompt",
+            "messageId": "emoji_over_image",
+            "routed": [
+              {
+                "sender": {
+                  "agentId": "durable_chat",
+                  "name": "planner"
+                },
+                "text": "Go."
+              }
+            ],
+            "source": "mcp"
+          },
+          "seq": 2,
+          "sessionId": "sess_live",
+          "ts": 1799999942000,
+          "type": "user_message",
+          "v": 2
+        }
+      },
+      "seq": 1002,
+      "type": "chat:event"
+    },
+    {
+      "payload": {
+        "agentId": "durable_chat",
+        "event": {
+          "agentId": "durable_chat",
+          "data": {
+            "content": [
+              {
+                "text": "[FROM HELPER:Docs (durable_docs)] Halfway.",
+                "type": "text"
+              }
+            ],
+            "delivery": "prompt",
+            "messageId": "helper",
+            "routed": [
+              {
+                "sender": {
+                  "agentId": "durable_docs",
+                  "name": "Docs"
+                },
+                "text": "Halfway."
+              }
+            ],
+            "source": "mcp"
+          },
+          "seq": 3,
+          "sessionId": "sess_live",
+          "ts": 1799999943000,
+          "type": "user_message",
+          "v": 2
+        }
+      },
+      "seq": 1003,
+      "type": "chat:event"
+    },
+    {
+      "payload": {
+        "agentId": "durable_chat",
+        "event": {
+          "agentId": "durable_chat",
+          "data": {
+            "content": [
+              {
+                "text": "[FROM:Dispatcher] Status?",
+                "type": "text"
+              }
+            ],
+            "delivery": "prompt",
+            "messageId": "dispatcher_image",
+            "routed": [
+              {
+                "sender": {
+                  "agentId": "durable_dispatcher",
+                  "name": "Dispatcher"
+                },
+                "text": "Status?"
+              }
+            ],
+            "source": "mcp"
+          },
+          "seq": 4,
+          "sessionId": "sess_live",
+          "ts": 1799999944000,
+          "type": "user_message",
+          "v": 2
+        }
+      },
+      "seq": 1004,
+      "type": "chat:event"
+    },
+    {
+      "payload": {
+        "agentId": "durable_chat",
+        "event": {
+          "agentId": "durable_chat",
+          "data": {
+            "content": [
+              {
+                "text": "[FROM HELPER:Docs (durable_cross)] Done there.",
+                "type": "text"
+              }
+            ],
+            "delivery": "prompt",
+            "messageId": "cross_project",
+            "routed": [
+              {
+                "sender": {
+                  "agentId": "durable_cross",
+                  "name": "Docs"
+                },
+                "text": "Done there."
+              }
+            ],
+            "source": "mcp"
+          },
+          "seq": 5,
+          "sessionId": "sess_live",
+          "ts": 1799999945000,
+          "type": "user_message",
+          "v": 2
+        }
+      },
+      "seq": 1005,
+      "type": "chat:event"
+    },
+    {
+      "payload": {
+        "agentId": "durable_chat",
+        "event": {
+          "agentId": "durable_chat",
+          "data": {
+            "content": [
+              {
+                "text": "[FROM:swift-fox@App] Fixed.",
+                "type": "text"
+              }
+            ],
+            "delivery": "prompt",
+            "messageId": "quick_agent",
+            "routed": [
+              {
+                "sender": {
+                  "agentId": "quick_1",
+                  "name": "swift-fox"
+                },
+                "text": "Fixed."
+              }
+            ],
+            "source": "mcp"
+          },
+          "seq": 6,
+          "sessionId": "sess_live",
+          "ts": 1799999946000,
+          "type": "user_message",
+          "v": 2
+        }
+      },
+      "seq": 1006,
+      "type": "chat:event"
+    },
+    {
+      "payload": {
+        "agentId": "durable_chat",
+        "event": {
+          "agentId": "durable_chat",
+          "data": {
+            "content": [
+              {
+                "text": "[FROM HELPER:old-helper (durable_gone)] Bye.",
+                "type": "text"
+              }
+            ],
+            "delivery": "prompt",
+            "messageId": "disposed_helper",
+            "routed": [
+              {
+                "sender": {
+                  "agentId": "durable_gone",
+                  "name": "old-helper"
+                },
+                "text": "Bye."
+              }
+            ],
+            "source": "mcp"
+          },
+          "seq": 7,
+          "sessionId": "sess_live",
+          "ts": 1799999947000,
+          "type": "user_message",
+          "v": 2
+        }
+      },
+      "seq": 1007,
+      "type": "chat:event"
+    },
+    {
+      "payload": {
+        "agentId": "durable_chat",
+        "event": {
+          "agentId": "durable_chat",
+          "data": {
+            "content": [
+              {
+                "text": "[FROM:reviewer@Gone] Old id.",
+                "type": "text"
+              }
+            ],
+            "delivery": "prompt",
+            "messageId": "unknown_id_same_name",
+            "routed": [
+              {
+                "sender": {
+                  "agentId": "durable_deleted",
+                  "name": "reviewer"
+                },
+                "text": "Old id."
+              }
+            ],
+            "source": "mcp"
+          },
+          "seq": 8,
+          "sessionId": "sess_live",
+          "ts": 1799999948000,
+          "type": "user_message",
+          "v": 2
+        }
+      },
+      "seq": 1008,
+      "type": "chat:event"
+    },
+    {
+      "payload": {
+        "agentId": "durable_chat",
+        "event": {
+          "agentId": "durable_chat",
+          "data": {
+            "content": [
+              {
+                "text": "[FROM:reviewer@App] By name.",
+                "type": "text"
+              }
+            ],
+            "delivery": "prompt",
+            "messageId": "name_only_unique",
+            "routed": [
+              {
+                "sender": {
+                  "name": "reviewer"
+                },
+                "text": "By name."
+              }
+            ],
+            "source": "mcp"
+          },
+          "seq": 9,
+          "sessionId": "sess_live",
+          "ts": 1799999949000,
+          "type": "user_message",
+          "v": 2
+        }
+      },
+      "seq": 1009,
+      "type": "chat:event"
+    },
+    {
+      "payload": {
+        "agentId": "durable_chat",
+        "event": {
+          "agentId": "durable_chat",
+          "data": {
+            "content": [
+              {
+                "text": "[FROM:Docs@App] Which one?",
+                "type": "text"
+              }
+            ],
+            "delivery": "prompt",
+            "messageId": "name_only_ambiguous",
+            "routed": [
+              {
+                "sender": {
+                  "name": "Docs"
+                },
+                "text": "Which one?"
+              }
+            ],
+            "source": "mcp"
+          },
+          "seq": 10,
+          "sessionId": "sess_live",
+          "ts": 1799999950000,
+          "type": "user_message",
+          "v": 2
+        }
+      },
+      "seq": 1010,
+      "type": "chat:event"
+    },
+    {
+      "payload": {
+        "agentId": "durable_chat",
+        "event": {
+          "agentId": "durable_chat",
+          "data": {
+            "content": [
+              {
+                "text": "2 updates, oldest first:\n\n--- 1 of 2 ---\n[FROM HELPER:Docs (durable_docs)] Started.\n\n--- 2 of 2 ---\n[Clubhouse] Docs is asleep.",
+                "type": "text"
+              }
+            ],
+            "delivery": "prompt",
+            "messageId": "burst",
+            "routed": [
+              {
+                "sender": {
+                  "agentId": "durable_docs",
+                  "name": "Docs"
+                },
+                "text": "Started."
+              },
+              {
+                "fromClubhouse": true,
+                "text": "Docs is asleep."
+              }
+            ],
+            "source": "mcp"
+          },
+          "seq": 11,
+          "sessionId": "sess_live",
+          "ts": 1799999951000,
+          "type": "user_message",
+          "v": 2
+        }
+      },
+      "seq": 1011,
+      "type": "chat:event"
+    },
+    {
+      "payload": {
+        "agentId": "durable_chat",
+        "event": {
+          "agentId": "durable_chat",
+          "data": {
+            "content": [
+              {
+                "text": "[FROM HELPER:Docs (durable_docs)] One.",
+                "type": "text"
+              }
+            ],
+            "delivery": "queued",
+            "messageId": "queue_first",
+            "routed": [
+              {
+                "sender": {
+                  "agentId": "durable_docs",
+                  "name": "Docs"
+                },
+                "text": "One."
+              }
+            ],
+            "source": "mcp"
+          },
+          "seq": 12,
+          "sessionId": "sess_live",
+          "ts": 1799999952000,
+          "type": "user_message",
+          "v": 2
+        }
+      },
+      "seq": 1012,
+      "type": "chat:event"
+    },
+    {
+      "payload": {
+        "agentId": "durable_chat",
+        "event": {
+          "agentId": "durable_chat",
+          "data": {
+            "content": [
+              {
+                "text": "[FROM:brave-otter@App] Two.",
+                "type": "text"
+              }
+            ],
+            "delivery": "queued",
+            "messageId": "queue_joined",
+            "queuedWith": "queue_first",
+            "routed": [
+              {
+                "sender": {
+                  "agentId": "durable_sleepy",
+                  "name": "brave-otter"
+                },
+                "text": "Two."
+              }
+            ],
+            "source": "mcp"
+          },
+          "seq": 13,
+          "sessionId": "sess_live",
+          "ts": 1799999953000,
+          "type": "user_message",
+          "v": 2
+        }
+      },
+      "seq": 1013,
+      "type": "chat:event"
+    },
+    {
+      "payload": {
+        "agentId": "durable_chat",
+        "event": {
+          "agentId": "durable_chat",
+          "data": {
+            "content": [
+              {
+                "text": "[TASK:t_1] [FROM:reviewer@App] TASK_RESULT:t_1: Looks good.",
+                "type": "text"
+              }
+            ],
+            "delivery": "prompt",
+            "messageId": "task_result_marker",
+            "routed": [
+              {
+                "sender": {
+                  "agentId": "durable_basic",
+                  "name": "reviewer"
+                },
+                "text": "TASK_RESULT:t_1: Looks good."
+              }
+            ],
+            "source": "mcp"
+          },
+          "seq": 14,
+          "sessionId": "sess_live",
+          "ts": 1799999954000,
+          "type": "user_message",
+          "v": 2
+        }
+      },
+      "seq": 1014,
+      "type": "chat:event"
+    },
+    {
+      "payload": {
+        "agentId": "durable_chat",
+        "event": {
+          "agentId": "durable_chat",
+          "data": {
+            "content": [
+              {
+                "text": "[Clubhouse] Docs was disposed.",
+                "type": "text"
+              }
+            ],
+            "delivery": "prompt",
+            "messageId": "clubhouse_notice",
+            "routed": [
+              {
+                "fromClubhouse": true,
+                "text": "Docs was disposed."
+              }
+            ],
+            "source": "mcp"
+          },
+          "seq": 15,
+          "sessionId": "sess_live",
+          "ts": 1799999955000,
+          "type": "user_message",
+          "v": 2
+        }
+      },
+      "seq": 1015,
+      "type": "chat:event"
+    },
+    {
+      "payload": {
+        "agentId": "durable_chat",
+        "event": {
+          "agentId": "durable_chat",
+          "data": {
+            "content": [
+              {
+                "text": "The nightly build finished.",
+                "type": "text"
+              }
+            ],
+            "delivery": "prompt",
+            "messageId": "no_sender",
+            "routed": [
+              {
+                "text": "The nightly build finished."
+              }
+            ],
+            "source": "mcp"
+          },
+          "seq": 16,
+          "sessionId": "sess_live",
+          "ts": 1799999956000,
+          "type": "user_message",
+          "v": 2
+        }
+      },
+      "seq": 1016,
+      "type": "chat:event"
+    },
+    {
+      "payload": {
+        "agentId": "durable_chat",
+        "event": {
+          "agentId": "durable_chat",
+          "data": {
+            "content": [
+              {
+                "text": "[TASK:t_2] [FROM:reviewer@App] An old one.",
+                "type": "text"
+              }
+            ],
+            "delivery": "prompt",
+            "messageId": "parsed_from",
+            "source": "mcp"
+          },
+          "seq": 17,
+          "sessionId": "sess_live",
+          "ts": 1799999957000,
+          "type": "user_message",
+          "v": 2
+        }
+      },
+      "seq": 1017,
+      "type": "chat:event"
+    },
+    {
+      "payload": {
+        "agentId": "durable_chat",
+        "event": {
+          "agentId": "durable_chat",
+          "data": {
+            "content": [
+              {
+                "text": "[FROM HELPER:Docs (durable_docs)] An old report.",
+                "type": "text"
+              }
+            ],
+            "delivery": "prompt",
+            "messageId": "parsed_helper",
+            "source": "mcp"
+          },
+          "seq": 18,
+          "sessionId": "sess_live",
+          "ts": 1799999958000,
+          "type": "user_message",
+          "v": 2
+        }
+      },
+      "seq": 1018,
+      "type": "chat:event"
+    },
+    {
+      "payload": {
+        "agentId": "durable_chat",
+        "event": {
+          "agentId": "durable_chat",
+          "data": {
+            "content": [
+              {
+                "text": "[Clubhouse] An old notice.",
+                "type": "text"
+              }
+            ],
+            "delivery": "prompt",
+            "messageId": "parsed_clubhouse",
+            "source": "mcp"
+          },
+          "seq": 19,
+          "sessionId": "sess_live",
+          "ts": 1799999959000,
+          "type": "user_message",
+          "v": 2
+        }
+      },
+      "seq": 1019,
+      "type": "chat:event"
+    },
+    {
+      "payload": {
+        "agentId": "durable_chat",
+        "event": {
+          "agentId": "durable_chat",
+          "data": {
+            "content": [
+              {
+                "text": "Group Project notification — shoulder tap from \"brave-otter@App\" in \"Team\"\nLook at this.\n\n---\nRESPONSE INSTRUCTIONS:\nReply on the board.",
+                "type": "text"
+              }
+            ],
+            "delivery": "prompt",
+            "messageId": "parsed_tap",
+            "source": "shoulder_tap"
+          },
+          "seq": 20,
+          "sessionId": "sess_live",
+          "ts": 1799999960000,
+          "type": "user_message",
+          "v": 2
+        }
+      },
+      "seq": 1020,
+      "type": "chat:event"
+    },
+    {
+      "payload": {
+        "agentId": "durable_chat",
+        "event": {
+          "agentId": "durable_chat",
+          "data": {
+            "content": [
+              {
+                "text": "Group Project notification — shoulder tap from \"user\" in \"Team\"\nFrom the desktop.\n\n---\nRESPONSE INSTRUCTIONS:\nReply on the board.",
+                "type": "text"
+              }
+            ],
+            "delivery": "prompt",
+            "messageId": "parsed_tap_user",
+            "source": "shoulder_tap"
+          },
+          "seq": 21,
+          "sessionId": "sess_live",
+          "ts": 1799999961000,
+          "type": "user_message",
+          "v": 2
+        }
+      },
+      "seq": 1021,
+      "type": "chat:event"
+    },
+    {
+      "payload": {
+        "agentId": "durable_chat",
+        "event": {
+          "agentId": "durable_chat",
+          "data": {
+            "content": [
+              {
+                "text": "Continued from the terminal.",
+                "type": "text"
+              }
+            ],
+            "delivery": "prompt",
+            "messageId": "system",
+            "source": "system"
+          },
+          "seq": 22,
+          "sessionId": "sess_live",
+          "ts": 1799999962000,
+          "type": "user_message",
+          "v": 2
+        }
+      },
+      "seq": 1022,
+      "type": "chat:event"
+    },
+    {
+      "payload": {
+        "agentId": "durable_chat",
+        "event": {
+          "agentId": "durable_chat",
+          "data": {
+            "content": [
+              {
+                "text": "New bulletin posts.",
+                "type": "text"
+              }
+            ],
+            "delivery": "prompt",
+            "messageId": "group_project",
+            "source": "group_project"
+          },
+          "seq": 23,
+          "sessionId": "sess_live",
+          "ts": 1799999963000,
+          "type": "user_message",
+          "v": 2
+        }
+      },
+      "seq": 1023,
+      "type": "chat:event"
+    },
+    {
+      "payload": {
+        "agentId": "durable_chat",
+        "event": {
+          "agentId": "durable_chat",
+          "data": {
+            "content": [
+              {
+                "text": "Fix the login bug.",
+                "type": "text"
+              }
+            ],
+            "delivery": "prompt",
+            "messageId": "mission_from_user",
+            "source": "mission"
+          },
+          "seq": 24,
+          "sessionId": "sess_live",
+          "ts": 1799999964000,
+          "type": "user_message",
+          "v": 2
+        }
+      },
+      "seq": 1024,
+      "type": "chat:event"
+    },
+    {
+      "payload": {
+        "agentId": "durable_chat",
+        "event": {
+          "agentId": "durable_chat",
+          "data": {
+            "content": [
+              {
+                "text": "[FROM:x] Typed by the user.",
+                "type": "text"
+              }
+            ],
+            "delivery": "prompt",
+            "messageId": "from_a_phone",
+            "source": "annex"
+          },
+          "seq": 25,
+          "sessionId": "sess_live",
+          "ts": 1799999965000,
+          "type": "user_message",
+          "v": 2
+        }
+      },
+      "seq": 1025,
+      "type": "chat:event"
+    }
+  ],
+  "history": {
+    "request": {
+      "method": "GET",
+      "path": "/api/v1/mobile/agents/durable_sleepy/chat"
+    },
+    "response": {
+      "body": {
+        "agentId": "durable_sleepy",
+        "canStart": true,
+        "capabilities": null,
+        "chatControls": null,
+        "contentAnyPath": true,
+        "contentRoots": [
+          "/work/app/.clubhouse/agents/planner",
+          "/work/app"
+        ],
+        "currentSessionId": null,
+        "epoch": "00000000-0000-4000-8000-000000000001",
+        "events": [
+          {
+            "agentId": "durable_sleepy",
+            "data": {
+              "content": [
+                {
+                  "text": "[FROM:brave-otter@App] Ready.",
+                  "type": "text"
+                }
+              ],
+              "delivery": "prompt",
+              "messageId": "top_level",
+              "routed": [
+                {
+                  "sender": {
+                    "agentId": "durable_sleepy",
+                    "name": "brave-otter"
+                  },
+                  "text": "Ready."
+                }
+              ],
+              "source": "mcp"
+            },
+            "seq": 1,
+            "sessionId": "sess_old",
+            "ts": 1799999941000,
+            "type": "user_message",
+            "v": 2
+          },
+          {
+            "agentId": "durable_sleepy",
+            "data": {
+              "content": [
+                {
+                  "text": "[FROM:planner@App] Go.",
+                  "type": "text"
+                }
+              ],
+              "delivery": "prompt",
+              "messageId": "emoji_over_image",
+              "routed": [
+                {
+                  "sender": {
+                    "agentId": "durable_chat",
+                    "name": "planner"
+                  },
+                  "text": "Go."
+                }
+              ],
+              "source": "mcp"
+            },
+            "seq": 2,
+            "sessionId": "sess_old",
+            "ts": 1799999942000,
+            "type": "user_message",
+            "v": 2
+          },
+          {
+            "agentId": "durable_sleepy",
+            "data": {
+              "content": [
+                {
+                  "text": "[FROM HELPER:Docs (durable_docs)] Halfway.",
+                  "type": "text"
+                }
+              ],
+              "delivery": "prompt",
+              "messageId": "helper",
+              "routed": [
+                {
+                  "sender": {
+                    "agentId": "durable_docs",
+                    "name": "Docs"
+                  },
+                  "text": "Halfway."
+                }
+              ],
+              "source": "mcp"
+            },
+            "seq": 3,
+            "sessionId": "sess_old",
+            "ts": 1799999943000,
+            "type": "user_message",
+            "v": 2
+          },
+          {
+            "agentId": "durable_sleepy",
+            "data": {
+              "content": [
+                {
+                  "text": "[FROM:Dispatcher] Status?",
+                  "type": "text"
+                }
+              ],
+              "delivery": "prompt",
+              "messageId": "dispatcher_image",
+              "routed": [
+                {
+                  "sender": {
+                    "agentId": "durable_dispatcher",
+                    "name": "Dispatcher"
+                  },
+                  "text": "Status?"
+                }
+              ],
+              "source": "mcp"
+            },
+            "seq": 4,
+            "sessionId": "sess_old",
+            "ts": 1799999944000,
+            "type": "user_message",
+            "v": 2
+          },
+          {
+            "agentId": "durable_sleepy",
+            "data": {
+              "content": [
+                {
+                  "text": "[FROM HELPER:Docs (durable_cross)] Done there.",
+                  "type": "text"
+                }
+              ],
+              "delivery": "prompt",
+              "messageId": "cross_project",
+              "routed": [
+                {
+                  "sender": {
+                    "agentId": "durable_cross",
+                    "name": "Docs"
+                  },
+                  "text": "Done there."
+                }
+              ],
+              "source": "mcp"
+            },
+            "seq": 5,
+            "sessionId": "sess_old",
+            "ts": 1799999945000,
+            "type": "user_message",
+            "v": 2
+          },
+          {
+            "agentId": "durable_sleepy",
+            "data": {
+              "content": [
+                {
+                  "text": "[FROM:swift-fox@App] Fixed.",
+                  "type": "text"
+                }
+              ],
+              "delivery": "prompt",
+              "messageId": "quick_agent",
+              "routed": [
+                {
+                  "sender": {
+                    "agentId": "quick_1",
+                    "name": "swift-fox"
+                  },
+                  "text": "Fixed."
+                }
+              ],
+              "source": "mcp"
+            },
+            "seq": 6,
+            "sessionId": "sess_old",
+            "ts": 1799999946000,
+            "type": "user_message",
+            "v": 2
+          },
+          {
+            "agentId": "durable_sleepy",
+            "data": {
+              "content": [
+                {
+                  "text": "[FROM HELPER:old-helper (durable_gone)] Bye.",
+                  "type": "text"
+                }
+              ],
+              "delivery": "prompt",
+              "messageId": "disposed_helper",
+              "routed": [
+                {
+                  "sender": {
+                    "agentId": "durable_gone",
+                    "name": "old-helper"
+                  },
+                  "text": "Bye."
+                }
+              ],
+              "source": "mcp"
+            },
+            "seq": 7,
+            "sessionId": "sess_old",
+            "ts": 1799999947000,
+            "type": "user_message",
+            "v": 2
+          },
+          {
+            "agentId": "durable_sleepy",
+            "data": {
+              "content": [
+                {
+                  "text": "[FROM:reviewer@Gone] Old id.",
+                  "type": "text"
+                }
+              ],
+              "delivery": "prompt",
+              "messageId": "unknown_id_same_name",
+              "routed": [
+                {
+                  "sender": {
+                    "agentId": "durable_deleted",
+                    "name": "reviewer"
+                  },
+                  "text": "Old id."
+                }
+              ],
+              "source": "mcp"
+            },
+            "seq": 8,
+            "sessionId": "sess_old",
+            "ts": 1799999948000,
+            "type": "user_message",
+            "v": 2
+          },
+          {
+            "agentId": "durable_sleepy",
+            "data": {
+              "content": [
+                {
+                  "text": "[FROM:reviewer@App] By name.",
+                  "type": "text"
+                }
+              ],
+              "delivery": "prompt",
+              "messageId": "name_only_unique",
+              "routed": [
+                {
+                  "sender": {
+                    "name": "reviewer"
+                  },
+                  "text": "By name."
+                }
+              ],
+              "source": "mcp"
+            },
+            "seq": 9,
+            "sessionId": "sess_old",
+            "ts": 1799999949000,
+            "type": "user_message",
+            "v": 2
+          },
+          {
+            "agentId": "durable_sleepy",
+            "data": {
+              "content": [
+                {
+                  "text": "[FROM:Docs@App] Which one?",
+                  "type": "text"
+                }
+              ],
+              "delivery": "prompt",
+              "messageId": "name_only_ambiguous",
+              "routed": [
+                {
+                  "sender": {
+                    "name": "Docs"
+                  },
+                  "text": "Which one?"
+                }
+              ],
+              "source": "mcp"
+            },
+            "seq": 10,
+            "sessionId": "sess_old",
+            "ts": 1799999950000,
+            "type": "user_message",
+            "v": 2
+          },
+          {
+            "agentId": "durable_sleepy",
+            "data": {
+              "content": [
+                {
+                  "text": "2 updates, oldest first:\n\n--- 1 of 2 ---\n[FROM HELPER:Docs (durable_docs)] Started.\n\n--- 2 of 2 ---\n[Clubhouse] Docs is asleep.",
+                  "type": "text"
+                }
+              ],
+              "delivery": "prompt",
+              "messageId": "burst",
+              "routed": [
+                {
+                  "sender": {
+                    "agentId": "durable_docs",
+                    "name": "Docs"
+                  },
+                  "text": "Started."
+                },
+                {
+                  "fromClubhouse": true,
+                  "text": "Docs is asleep."
+                }
+              ],
+              "source": "mcp"
+            },
+            "seq": 11,
+            "sessionId": "sess_old",
+            "ts": 1799999951000,
+            "type": "user_message",
+            "v": 2
+          },
+          {
+            "agentId": "durable_sleepy",
+            "data": {
+              "content": [
+                {
+                  "text": "[FROM HELPER:Docs (durable_docs)] One.",
+                  "type": "text"
+                }
+              ],
+              "delivery": "queued",
+              "messageId": "queue_first",
+              "routed": [
+                {
+                  "sender": {
+                    "agentId": "durable_docs",
+                    "name": "Docs"
+                  },
+                  "text": "One."
+                }
+              ],
+              "source": "mcp"
+            },
+            "seq": 12,
+            "sessionId": "sess_old",
+            "ts": 1799999952000,
+            "type": "user_message",
+            "v": 2
+          },
+          {
+            "agentId": "durable_sleepy",
+            "data": {
+              "content": [
+                {
+                  "text": "[FROM:brave-otter@App] Two.",
+                  "type": "text"
+                }
+              ],
+              "delivery": "queued",
+              "messageId": "queue_joined",
+              "queuedWith": "queue_first",
+              "routed": [
+                {
+                  "sender": {
+                    "agentId": "durable_sleepy",
+                    "name": "brave-otter"
+                  },
+                  "text": "Two."
+                }
+              ],
+              "source": "mcp"
+            },
+            "seq": 13,
+            "sessionId": "sess_old",
+            "ts": 1799999953000,
+            "type": "user_message",
+            "v": 2
+          },
+          {
+            "agentId": "durable_sleepy",
+            "data": {
+              "content": [
+                {
+                  "text": "[TASK:t_1] [FROM:reviewer@App] TASK_RESULT:t_1: Looks good.",
+                  "type": "text"
+                }
+              ],
+              "delivery": "prompt",
+              "messageId": "task_result_marker",
+              "routed": [
+                {
+                  "sender": {
+                    "agentId": "durable_basic",
+                    "name": "reviewer"
+                  },
+                  "text": "TASK_RESULT:t_1: Looks good."
+                }
+              ],
+              "source": "mcp"
+            },
+            "seq": 14,
+            "sessionId": "sess_old",
+            "ts": 1799999954000,
+            "type": "user_message",
+            "v": 2
+          },
+          {
+            "agentId": "durable_sleepy",
+            "data": {
+              "content": [
+                {
+                  "text": "[Clubhouse] Docs was disposed.",
+                  "type": "text"
+                }
+              ],
+              "delivery": "prompt",
+              "messageId": "clubhouse_notice",
+              "routed": [
+                {
+                  "fromClubhouse": true,
+                  "text": "Docs was disposed."
+                }
+              ],
+              "source": "mcp"
+            },
+            "seq": 15,
+            "sessionId": "sess_old",
+            "ts": 1799999955000,
+            "type": "user_message",
+            "v": 2
+          },
+          {
+            "agentId": "durable_sleepy",
+            "data": {
+              "content": [
+                {
+                  "text": "The nightly build finished.",
+                  "type": "text"
+                }
+              ],
+              "delivery": "prompt",
+              "messageId": "no_sender",
+              "routed": [
+                {
+                  "text": "The nightly build finished."
+                }
+              ],
+              "source": "mcp"
+            },
+            "seq": 16,
+            "sessionId": "sess_old",
+            "ts": 1799999956000,
+            "type": "user_message",
+            "v": 2
+          },
+          {
+            "agentId": "durable_sleepy",
+            "data": {
+              "content": [
+                {
+                  "text": "[TASK:t_2] [FROM:reviewer@App] An old one.",
+                  "type": "text"
+                }
+              ],
+              "delivery": "prompt",
+              "messageId": "parsed_from",
+              "source": "mcp"
+            },
+            "seq": 17,
+            "sessionId": "sess_old",
+            "ts": 1799999957000,
+            "type": "user_message",
+            "v": 2
+          },
+          {
+            "agentId": "durable_sleepy",
+            "data": {
+              "content": [
+                {
+                  "text": "[FROM HELPER:Docs (durable_docs)] An old report.",
+                  "type": "text"
+                }
+              ],
+              "delivery": "prompt",
+              "messageId": "parsed_helper",
+              "source": "mcp"
+            },
+            "seq": 18,
+            "sessionId": "sess_old",
+            "ts": 1799999958000,
+            "type": "user_message",
+            "v": 2
+          },
+          {
+            "agentId": "durable_sleepy",
+            "data": {
+              "content": [
+                {
+                  "text": "[Clubhouse] An old notice.",
+                  "type": "text"
+                }
+              ],
+              "delivery": "prompt",
+              "messageId": "parsed_clubhouse",
+              "source": "mcp"
+            },
+            "seq": 19,
+            "sessionId": "sess_old",
+            "ts": 1799999959000,
+            "type": "user_message",
+            "v": 2
+          },
+          {
+            "agentId": "durable_sleepy",
+            "data": {
+              "content": [
+                {
+                  "text": "Group Project notification — shoulder tap from \"brave-otter@App\" in \"Team\"\nLook at this.\n\n---\nRESPONSE INSTRUCTIONS:\nReply on the board.",
+                  "type": "text"
+                }
+              ],
+              "delivery": "prompt",
+              "messageId": "parsed_tap",
+              "source": "shoulder_tap"
+            },
+            "seq": 20,
+            "sessionId": "sess_old",
+            "ts": 1799999960000,
+            "type": "user_message",
+            "v": 2
+          },
+          {
+            "agentId": "durable_sleepy",
+            "data": {
+              "content": [
+                {
+                  "text": "Group Project notification — shoulder tap from \"user\" in \"Team\"\nFrom the desktop.\n\n---\nRESPONSE INSTRUCTIONS:\nReply on the board.",
+                  "type": "text"
+                }
+              ],
+              "delivery": "prompt",
+              "messageId": "parsed_tap_user",
+              "source": "shoulder_tap"
+            },
+            "seq": 21,
+            "sessionId": "sess_old",
+            "ts": 1799999961000,
+            "type": "user_message",
+            "v": 2
+          },
+          {
+            "agentId": "durable_sleepy",
+            "data": {
+              "content": [
+                {
+                  "text": "Continued from the terminal.",
+                  "type": "text"
+                }
+              ],
+              "delivery": "prompt",
+              "messageId": "system",
+              "source": "system"
+            },
+            "seq": 22,
+            "sessionId": "sess_old",
+            "ts": 1799999962000,
+            "type": "user_message",
+            "v": 2
+          },
+          {
+            "agentId": "durable_sleepy",
+            "data": {
+              "content": [
+                {
+                  "text": "New bulletin posts.",
+                  "type": "text"
+                }
+              ],
+              "delivery": "prompt",
+              "messageId": "group_project",
+              "source": "group_project"
+            },
+            "seq": 23,
+            "sessionId": "sess_old",
+            "ts": 1799999963000,
+            "type": "user_message",
+            "v": 2
+          },
+          {
+            "agentId": "durable_sleepy",
+            "data": {
+              "content": [
+                {
+                  "text": "Fix the login bug.",
+                  "type": "text"
+                }
+              ],
+              "delivery": "prompt",
+              "messageId": "mission_from_user",
+              "source": "mission"
+            },
+            "seq": 24,
+            "sessionId": "sess_old",
+            "ts": 1799999964000,
+            "type": "user_message",
+            "v": 2
+          },
+          {
+            "agentId": "durable_sleepy",
+            "data": {
+              "content": [
+                {
+                  "text": "[FROM:x] Typed by the user.",
+                  "type": "text"
+                }
+              ],
+              "delivery": "prompt",
+              "messageId": "from_a_phone",
+              "source": "annex"
+            },
+            "seq": 25,
+            "sessionId": "sess_old",
+            "ts": 1799999965000,
+            "type": "user_message",
+            "v": 2
+          }
+        ],
+        "lastSeq": 25,
+        "nextBeforeSeq": null,
+        "pendingPermissions": [],
+        "pendingQuestions": [],
+        "queueRemovalSupported": false,
+        "queueStateSeq": 0,
+        "queuedMessageIds": [],
+        "readOnly": true,
+        "sessionId": "sess_old",
+        "slashCommands": null,
+        "state": "sleeping",
+        "truncated": false,
+        "version": 1
+      },
+      "status": 200
+    }
+  },
+  "initials": [
+    {
+      "initials": "D",
+      "name": "Dispatcher"
+    },
+    {
+      "initials": "CF",
+      "name": "clever-fox"
+    },
+    {
+      "initials": "CO",
+      "name": "Clubhouse-Orchestrator"
+    },
+    {
+      "initials": "OT",
+      "name": "one-two-three"
+    },
+    {
+      "initials": "M",
+      "name": "my_agent"
+    },
+    {
+      "initials": "T",
+      "name": "Two Words"
+    },
+    {
+      "initials": "DD",
+      "name": "double--dash"
+    },
+    {
+      "initials": "7U",
+      "name": "7-up"
+    }
+  ],
+  "note": "Resolve each frame's sender from `catalog` alone; `expected` is what the desktop draws for that event.",
+  "replay": [
+    {
+      "count": 25,
+      "epoch": "00000000-0000-4000-8000-000000000001",
+      "fromSeq": 1001,
+      "toSeq": 1025,
+      "type": "replay:start"
+    },
+    {
+      "payload": {
+        "agentId": "durable_chat",
+        "event": {
+          "agentId": "durable_chat",
+          "data": {
+            "content": [
+              {
+                "text": "[FROM:brave-otter@App] Ready.",
+                "type": "text"
+              }
+            ],
+            "delivery": "prompt",
+            "messageId": "top_level",
+            "routed": [
+              {
+                "sender": {
+                  "agentId": "durable_sleepy",
+                  "name": "brave-otter"
+                },
+                "text": "Ready."
+              }
+            ],
+            "source": "mcp"
+          },
+          "seq": 1,
+          "sessionId": "sess_live",
+          "ts": 1799999941000,
+          "type": "user_message",
+          "v": 2
+        }
+      },
+      "replayed": true,
+      "seq": 1001,
+      "type": "chat:event"
+    },
+    {
+      "payload": {
+        "agentId": "durable_chat",
+        "event": {
+          "agentId": "durable_chat",
+          "data": {
+            "content": [
+              {
+                "text": "[FROM:planner@App] Go.",
+                "type": "text"
+              }
+            ],
+            "delivery": "prompt",
+            "messageId": "emoji_over_image",
+            "routed": [
+              {
+                "sender": {
+                  "agentId": "durable_chat",
+                  "name": "planner"
+                },
+                "text": "Go."
+              }
+            ],
+            "source": "mcp"
+          },
+          "seq": 2,
+          "sessionId": "sess_live",
+          "ts": 1799999942000,
+          "type": "user_message",
+          "v": 2
+        }
+      },
+      "replayed": true,
+      "seq": 1002,
+      "type": "chat:event"
+    },
+    {
+      "payload": {
+        "agentId": "durable_chat",
+        "event": {
+          "agentId": "durable_chat",
+          "data": {
+            "content": [
+              {
+                "text": "[FROM HELPER:Docs (durable_docs)] Halfway.",
+                "type": "text"
+              }
+            ],
+            "delivery": "prompt",
+            "messageId": "helper",
+            "routed": [
+              {
+                "sender": {
+                  "agentId": "durable_docs",
+                  "name": "Docs"
+                },
+                "text": "Halfway."
+              }
+            ],
+            "source": "mcp"
+          },
+          "seq": 3,
+          "sessionId": "sess_live",
+          "ts": 1799999943000,
+          "type": "user_message",
+          "v": 2
+        }
+      },
+      "replayed": true,
+      "seq": 1003,
+      "type": "chat:event"
+    },
+    {
+      "payload": {
+        "agentId": "durable_chat",
+        "event": {
+          "agentId": "durable_chat",
+          "data": {
+            "content": [
+              {
+                "text": "[FROM:Dispatcher] Status?",
+                "type": "text"
+              }
+            ],
+            "delivery": "prompt",
+            "messageId": "dispatcher_image",
+            "routed": [
+              {
+                "sender": {
+                  "agentId": "durable_dispatcher",
+                  "name": "Dispatcher"
+                },
+                "text": "Status?"
+              }
+            ],
+            "source": "mcp"
+          },
+          "seq": 4,
+          "sessionId": "sess_live",
+          "ts": 1799999944000,
+          "type": "user_message",
+          "v": 2
+        }
+      },
+      "replayed": true,
+      "seq": 1004,
+      "type": "chat:event"
+    },
+    {
+      "payload": {
+        "agentId": "durable_chat",
+        "event": {
+          "agentId": "durable_chat",
+          "data": {
+            "content": [
+              {
+                "text": "[FROM HELPER:Docs (durable_cross)] Done there.",
+                "type": "text"
+              }
+            ],
+            "delivery": "prompt",
+            "messageId": "cross_project",
+            "routed": [
+              {
+                "sender": {
+                  "agentId": "durable_cross",
+                  "name": "Docs"
+                },
+                "text": "Done there."
+              }
+            ],
+            "source": "mcp"
+          },
+          "seq": 5,
+          "sessionId": "sess_live",
+          "ts": 1799999945000,
+          "type": "user_message",
+          "v": 2
+        }
+      },
+      "replayed": true,
+      "seq": 1005,
+      "type": "chat:event"
+    },
+    {
+      "payload": {
+        "agentId": "durable_chat",
+        "event": {
+          "agentId": "durable_chat",
+          "data": {
+            "content": [
+              {
+                "text": "[FROM:swift-fox@App] Fixed.",
+                "type": "text"
+              }
+            ],
+            "delivery": "prompt",
+            "messageId": "quick_agent",
+            "routed": [
+              {
+                "sender": {
+                  "agentId": "quick_1",
+                  "name": "swift-fox"
+                },
+                "text": "Fixed."
+              }
+            ],
+            "source": "mcp"
+          },
+          "seq": 6,
+          "sessionId": "sess_live",
+          "ts": 1799999946000,
+          "type": "user_message",
+          "v": 2
+        }
+      },
+      "replayed": true,
+      "seq": 1006,
+      "type": "chat:event"
+    },
+    {
+      "payload": {
+        "agentId": "durable_chat",
+        "event": {
+          "agentId": "durable_chat",
+          "data": {
+            "content": [
+              {
+                "text": "[FROM HELPER:old-helper (durable_gone)] Bye.",
+                "type": "text"
+              }
+            ],
+            "delivery": "prompt",
+            "messageId": "disposed_helper",
+            "routed": [
+              {
+                "sender": {
+                  "agentId": "durable_gone",
+                  "name": "old-helper"
+                },
+                "text": "Bye."
+              }
+            ],
+            "source": "mcp"
+          },
+          "seq": 7,
+          "sessionId": "sess_live",
+          "ts": 1799999947000,
+          "type": "user_message",
+          "v": 2
+        }
+      },
+      "replayed": true,
+      "seq": 1007,
+      "type": "chat:event"
+    },
+    {
+      "payload": {
+        "agentId": "durable_chat",
+        "event": {
+          "agentId": "durable_chat",
+          "data": {
+            "content": [
+              {
+                "text": "[FROM:reviewer@Gone] Old id.",
+                "type": "text"
+              }
+            ],
+            "delivery": "prompt",
+            "messageId": "unknown_id_same_name",
+            "routed": [
+              {
+                "sender": {
+                  "agentId": "durable_deleted",
+                  "name": "reviewer"
+                },
+                "text": "Old id."
+              }
+            ],
+            "source": "mcp"
+          },
+          "seq": 8,
+          "sessionId": "sess_live",
+          "ts": 1799999948000,
+          "type": "user_message",
+          "v": 2
+        }
+      },
+      "replayed": true,
+      "seq": 1008,
+      "type": "chat:event"
+    },
+    {
+      "payload": {
+        "agentId": "durable_chat",
+        "event": {
+          "agentId": "durable_chat",
+          "data": {
+            "content": [
+              {
+                "text": "[FROM:reviewer@App] By name.",
+                "type": "text"
+              }
+            ],
+            "delivery": "prompt",
+            "messageId": "name_only_unique",
+            "routed": [
+              {
+                "sender": {
+                  "name": "reviewer"
+                },
+                "text": "By name."
+              }
+            ],
+            "source": "mcp"
+          },
+          "seq": 9,
+          "sessionId": "sess_live",
+          "ts": 1799999949000,
+          "type": "user_message",
+          "v": 2
+        }
+      },
+      "replayed": true,
+      "seq": 1009,
+      "type": "chat:event"
+    },
+    {
+      "payload": {
+        "agentId": "durable_chat",
+        "event": {
+          "agentId": "durable_chat",
+          "data": {
+            "content": [
+              {
+                "text": "[FROM:Docs@App] Which one?",
+                "type": "text"
+              }
+            ],
+            "delivery": "prompt",
+            "messageId": "name_only_ambiguous",
+            "routed": [
+              {
+                "sender": {
+                  "name": "Docs"
+                },
+                "text": "Which one?"
+              }
+            ],
+            "source": "mcp"
+          },
+          "seq": 10,
+          "sessionId": "sess_live",
+          "ts": 1799999950000,
+          "type": "user_message",
+          "v": 2
+        }
+      },
+      "replayed": true,
+      "seq": 1010,
+      "type": "chat:event"
+    },
+    {
+      "payload": {
+        "agentId": "durable_chat",
+        "event": {
+          "agentId": "durable_chat",
+          "data": {
+            "content": [
+              {
+                "text": "2 updates, oldest first:\n\n--- 1 of 2 ---\n[FROM HELPER:Docs (durable_docs)] Started.\n\n--- 2 of 2 ---\n[Clubhouse] Docs is asleep.",
+                "type": "text"
+              }
+            ],
+            "delivery": "prompt",
+            "messageId": "burst",
+            "routed": [
+              {
+                "sender": {
+                  "agentId": "durable_docs",
+                  "name": "Docs"
+                },
+                "text": "Started."
+              },
+              {
+                "fromClubhouse": true,
+                "text": "Docs is asleep."
+              }
+            ],
+            "source": "mcp"
+          },
+          "seq": 11,
+          "sessionId": "sess_live",
+          "ts": 1799999951000,
+          "type": "user_message",
+          "v": 2
+        }
+      },
+      "replayed": true,
+      "seq": 1011,
+      "type": "chat:event"
+    },
+    {
+      "payload": {
+        "agentId": "durable_chat",
+        "event": {
+          "agentId": "durable_chat",
+          "data": {
+            "content": [
+              {
+                "text": "[FROM HELPER:Docs (durable_docs)] One.",
+                "type": "text"
+              }
+            ],
+            "delivery": "queued",
+            "messageId": "queue_first",
+            "routed": [
+              {
+                "sender": {
+                  "agentId": "durable_docs",
+                  "name": "Docs"
+                },
+                "text": "One."
+              }
+            ],
+            "source": "mcp"
+          },
+          "seq": 12,
+          "sessionId": "sess_live",
+          "ts": 1799999952000,
+          "type": "user_message",
+          "v": 2
+        }
+      },
+      "replayed": true,
+      "seq": 1012,
+      "type": "chat:event"
+    },
+    {
+      "payload": {
+        "agentId": "durable_chat",
+        "event": {
+          "agentId": "durable_chat",
+          "data": {
+            "content": [
+              {
+                "text": "[FROM:brave-otter@App] Two.",
+                "type": "text"
+              }
+            ],
+            "delivery": "queued",
+            "messageId": "queue_joined",
+            "queuedWith": "queue_first",
+            "routed": [
+              {
+                "sender": {
+                  "agentId": "durable_sleepy",
+                  "name": "brave-otter"
+                },
+                "text": "Two."
+              }
+            ],
+            "source": "mcp"
+          },
+          "seq": 13,
+          "sessionId": "sess_live",
+          "ts": 1799999953000,
+          "type": "user_message",
+          "v": 2
+        }
+      },
+      "replayed": true,
+      "seq": 1013,
+      "type": "chat:event"
+    },
+    {
+      "payload": {
+        "agentId": "durable_chat",
+        "event": {
+          "agentId": "durable_chat",
+          "data": {
+            "content": [
+              {
+                "text": "[TASK:t_1] [FROM:reviewer@App] TASK_RESULT:t_1: Looks good.",
+                "type": "text"
+              }
+            ],
+            "delivery": "prompt",
+            "messageId": "task_result_marker",
+            "routed": [
+              {
+                "sender": {
+                  "agentId": "durable_basic",
+                  "name": "reviewer"
+                },
+                "text": "TASK_RESULT:t_1: Looks good."
+              }
+            ],
+            "source": "mcp"
+          },
+          "seq": 14,
+          "sessionId": "sess_live",
+          "ts": 1799999954000,
+          "type": "user_message",
+          "v": 2
+        }
+      },
+      "replayed": true,
+      "seq": 1014,
+      "type": "chat:event"
+    },
+    {
+      "payload": {
+        "agentId": "durable_chat",
+        "event": {
+          "agentId": "durable_chat",
+          "data": {
+            "content": [
+              {
+                "text": "[Clubhouse] Docs was disposed.",
+                "type": "text"
+              }
+            ],
+            "delivery": "prompt",
+            "messageId": "clubhouse_notice",
+            "routed": [
+              {
+                "fromClubhouse": true,
+                "text": "Docs was disposed."
+              }
+            ],
+            "source": "mcp"
+          },
+          "seq": 15,
+          "sessionId": "sess_live",
+          "ts": 1799999955000,
+          "type": "user_message",
+          "v": 2
+        }
+      },
+      "replayed": true,
+      "seq": 1015,
+      "type": "chat:event"
+    },
+    {
+      "payload": {
+        "agentId": "durable_chat",
+        "event": {
+          "agentId": "durable_chat",
+          "data": {
+            "content": [
+              {
+                "text": "The nightly build finished.",
+                "type": "text"
+              }
+            ],
+            "delivery": "prompt",
+            "messageId": "no_sender",
+            "routed": [
+              {
+                "text": "The nightly build finished."
+              }
+            ],
+            "source": "mcp"
+          },
+          "seq": 16,
+          "sessionId": "sess_live",
+          "ts": 1799999956000,
+          "type": "user_message",
+          "v": 2
+        }
+      },
+      "replayed": true,
+      "seq": 1016,
+      "type": "chat:event"
+    },
+    {
+      "payload": {
+        "agentId": "durable_chat",
+        "event": {
+          "agentId": "durable_chat",
+          "data": {
+            "content": [
+              {
+                "text": "[TASK:t_2] [FROM:reviewer@App] An old one.",
+                "type": "text"
+              }
+            ],
+            "delivery": "prompt",
+            "messageId": "parsed_from",
+            "source": "mcp"
+          },
+          "seq": 17,
+          "sessionId": "sess_live",
+          "ts": 1799999957000,
+          "type": "user_message",
+          "v": 2
+        }
+      },
+      "replayed": true,
+      "seq": 1017,
+      "type": "chat:event"
+    },
+    {
+      "payload": {
+        "agentId": "durable_chat",
+        "event": {
+          "agentId": "durable_chat",
+          "data": {
+            "content": [
+              {
+                "text": "[FROM HELPER:Docs (durable_docs)] An old report.",
+                "type": "text"
+              }
+            ],
+            "delivery": "prompt",
+            "messageId": "parsed_helper",
+            "source": "mcp"
+          },
+          "seq": 18,
+          "sessionId": "sess_live",
+          "ts": 1799999958000,
+          "type": "user_message",
+          "v": 2
+        }
+      },
+      "replayed": true,
+      "seq": 1018,
+      "type": "chat:event"
+    },
+    {
+      "payload": {
+        "agentId": "durable_chat",
+        "event": {
+          "agentId": "durable_chat",
+          "data": {
+            "content": [
+              {
+                "text": "[Clubhouse] An old notice.",
+                "type": "text"
+              }
+            ],
+            "delivery": "prompt",
+            "messageId": "parsed_clubhouse",
+            "source": "mcp"
+          },
+          "seq": 19,
+          "sessionId": "sess_live",
+          "ts": 1799999959000,
+          "type": "user_message",
+          "v": 2
+        }
+      },
+      "replayed": true,
+      "seq": 1019,
+      "type": "chat:event"
+    },
+    {
+      "payload": {
+        "agentId": "durable_chat",
+        "event": {
+          "agentId": "durable_chat",
+          "data": {
+            "content": [
+              {
+                "text": "Group Project notification — shoulder tap from \"brave-otter@App\" in \"Team\"\nLook at this.\n\n---\nRESPONSE INSTRUCTIONS:\nReply on the board.",
+                "type": "text"
+              }
+            ],
+            "delivery": "prompt",
+            "messageId": "parsed_tap",
+            "source": "shoulder_tap"
+          },
+          "seq": 20,
+          "sessionId": "sess_live",
+          "ts": 1799999960000,
+          "type": "user_message",
+          "v": 2
+        }
+      },
+      "replayed": true,
+      "seq": 1020,
+      "type": "chat:event"
+    },
+    {
+      "payload": {
+        "agentId": "durable_chat",
+        "event": {
+          "agentId": "durable_chat",
+          "data": {
+            "content": [
+              {
+                "text": "Group Project notification — shoulder tap from \"user\" in \"Team\"\nFrom the desktop.\n\n---\nRESPONSE INSTRUCTIONS:\nReply on the board.",
+                "type": "text"
+              }
+            ],
+            "delivery": "prompt",
+            "messageId": "parsed_tap_user",
+            "source": "shoulder_tap"
+          },
+          "seq": 21,
+          "sessionId": "sess_live",
+          "ts": 1799999961000,
+          "type": "user_message",
+          "v": 2
+        }
+      },
+      "replayed": true,
+      "seq": 1021,
+      "type": "chat:event"
+    },
+    {
+      "payload": {
+        "agentId": "durable_chat",
+        "event": {
+          "agentId": "durable_chat",
+          "data": {
+            "content": [
+              {
+                "text": "Continued from the terminal.",
+                "type": "text"
+              }
+            ],
+            "delivery": "prompt",
+            "messageId": "system",
+            "source": "system"
+          },
+          "seq": 22,
+          "sessionId": "sess_live",
+          "ts": 1799999962000,
+          "type": "user_message",
+          "v": 2
+        }
+      },
+      "replayed": true,
+      "seq": 1022,
+      "type": "chat:event"
+    },
+    {
+      "payload": {
+        "agentId": "durable_chat",
+        "event": {
+          "agentId": "durable_chat",
+          "data": {
+            "content": [
+              {
+                "text": "New bulletin posts.",
+                "type": "text"
+              }
+            ],
+            "delivery": "prompt",
+            "messageId": "group_project",
+            "source": "group_project"
+          },
+          "seq": 23,
+          "sessionId": "sess_live",
+          "ts": 1799999963000,
+          "type": "user_message",
+          "v": 2
+        }
+      },
+      "replayed": true,
+      "seq": 1023,
+      "type": "chat:event"
+    },
+    {
+      "payload": {
+        "agentId": "durable_chat",
+        "event": {
+          "agentId": "durable_chat",
+          "data": {
+            "content": [
+              {
+                "text": "Fix the login bug.",
+                "type": "text"
+              }
+            ],
+            "delivery": "prompt",
+            "messageId": "mission_from_user",
+            "source": "mission"
+          },
+          "seq": 24,
+          "sessionId": "sess_live",
+          "ts": 1799999964000,
+          "type": "user_message",
+          "v": 2
+        }
+      },
+      "replayed": true,
+      "seq": 1024,
+      "type": "chat:event"
+    },
+    {
+      "payload": {
+        "agentId": "durable_chat",
+        "event": {
+          "agentId": "durable_chat",
+          "data": {
+            "content": [
+              {
+                "text": "[FROM:x] Typed by the user.",
+                "type": "text"
+              }
+            ],
+            "delivery": "prompt",
+            "messageId": "from_a_phone",
+            "source": "annex"
+          },
+          "seq": 25,
+          "sessionId": "sess_live",
+          "ts": 1799999965000,
+          "type": "user_message",
+          "v": 2
+        }
+      },
+      "replayed": true,
+      "seq": 1025,
+      "type": "chat:event"
+    },
+    {
+      "epoch": "00000000-0000-4000-8000-000000000001",
+      "type": "replay:end"
+    }
+  ]
+}
