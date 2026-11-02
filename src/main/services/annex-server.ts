@@ -795,8 +795,9 @@ interface BuiltSnapshot {
 
 /**
  * A snapshot's reads get this long, then count as a failure. Everyone waiting on a
- * build waits on all of it, and a phone gives up after about 30 seconds, so it should
- * hear before then. The reads can't be cancelled: whatever they return later is ignored.
+ * build waits on all of it. `snapshot_failed` is what starts a phone's 30 second grace,
+ * after which it reconnects, so a phone waiting on a hung build has about 45 seconds
+ * from connecting. The reads can't be cancelled: whatever they return later is ignored.
  */
 const SNAPSHOT_BUILD_TIMEOUT_MS = 15_000;
 /** Reads given up on and still running. While there's one, no more start, so retries can't pile up behind a hung disk. */
@@ -1174,15 +1175,10 @@ const HELD_BYTES_MAX = 32 * 1024 * 1024;
 interface HeldFrames {
   frames: string[];
   bytes: number;
-  /** Where the newest held snapshot is: a newer one replaces it. */
-  snapshotAt: number;
   /** A try at the snapshot failed and another is due: replies go out so commands work, events stay back. */
   retrying: boolean;
-  /** Waiting on the host's shared retry, with nothing said yet: it might work. */
-  joinedRetry?: boolean;
   /** The snapshot's `lastSeq`: every event after it is held. */
   cursor: number;
-  retryTimer?: ReturnType<typeof setTimeout>;
 }
 
 /**
@@ -1192,6 +1188,8 @@ interface HeldFrames {
  * other socket, so holding them costs little.
  */
 const heldFrames = new WeakMap<WebSocket, HeldFrames>();
+/** Every socket with frames held: what the next build serves. */
+const firstSnapshotWaiters = new Set<WebSocket>();
 
 /**
  * Hold a frame for later. Past the limits, what's held is dropped, and the cursor
@@ -1201,12 +1199,7 @@ const heldFrames = new WeakMap<WebSocket, HeldFrames>();
  * either. iOS can't see a close code, and a phone reconnects within a second into
  * another build.
  */
-function holdFrame(held: HeldFrames, data: string, isSnapshot: boolean): void {
-  if (isSnapshot && held.snapshotAt >= 0) {
-    held.bytes -= Buffer.byteLength(held.frames[held.snapshotAt]);
-    held.frames.splice(held.snapshotAt, 1);
-  }
-  if (isSnapshot) held.snapshotAt = held.frames.length;
+function holdFrame(held: HeldFrames, data: string): void {
   held.frames.push(data);
   held.bytes += Buffer.byteLength(data);
   if (held.frames.length <= HELD_FRAMES_MAX && held.bytes <= HELD_BYTES_MAX) return;
@@ -1215,14 +1208,13 @@ function holdFrame(held: HeldFrames, data: string, isSnapshot: boolean): void {
   });
   held.frames = [];
   held.bytes = 0;
-  held.snapshotAt = -1;
 }
 
 /** Send what was held, in order and in one tick, so nothing live can land between them. */
 function releaseFrames(ws: WebSocket): void {
   const held = heldFrames.get(ws);
-  if (held?.retryTimer) clearTimeout(held.retryTimer);
   heldFrames.delete(ws);
+  firstSnapshotWaiters.delete(ws);
   if (!held || ws.readyState !== WebSocket.OPEN) return;
   for (const data of held.frames) ws.send(data);
 }
@@ -1262,7 +1254,7 @@ function setSnapshotBlock(kind: 'failed' | 'oversize'): void {
     // A timer can fire just before the clock reaches `until`, and this retry must not hit its own gate.
     if (snapshotBlock) snapshotBlock.until = 0;
     // With no one connected there's no one to build for. The next to connect tries.
-    if (wss && wss.clients.size > 0) broadcastSnapshotRefresh();
+    if (firstSnapshotWaiters.size > 0 || (wss && wss.clients.size > 0)) broadcastSnapshotRefresh();
   }, delay);
   snapshotBlockTimer.unref?.();
 }
@@ -1305,50 +1297,19 @@ function deliverFirstSnapshot(ws: WebSocket, held: HeldFrames, built: BuiltSnaps
  * socket stays open: a phone has its own grace period, commands work through it,
  * and closing would only bring it back sooner.
  */
-/** The shared retry didn't produce a snapshot: tell whoever joined it, as they'd have heard on their own. */
-function failJoinedRetry(): void {
-  for (const client of wss?.clients ?? []) {
-    const held = heldFrames.get(client);
-    if (!held?.joinedRetry) continue;
-    held.joinedRetry = false;
-    firstSnapshotFailed(client);
-  }
-}
-
-async function sendFirstSnapshot(ws: WebSocket): Promise<void> {
-  if (snapshotBlock && Date.now() < snapshotBlock.until) {
-    firstSnapshotFailed(ws);
-    return;
-  }
-  if (snapshotBlock) {
-    // The window is over but nothing has worked since. One shared build decides for everyone.
-    const held = heldFrames.get(ws);
-    if (held) held.joinedRetry = true;
-    if (!refreshInFlight) broadcastSnapshotRefresh();
-    return;
-  }
-  try {
-    const built = assembleSnapshot(await readSnapshotSources());
-    const held = heldFrames.get(ws);
-    // Closed during the build: there's no one to send it to.
-    if (!held) return;
-    if (ws.readyState !== WebSocket.OPEN) {
-      recordSnapshotFailure('send_failed');
-      return;
-    }
-    if (deliverFirstSnapshot(ws, held, built, 'connect')) {
-      if (snapshotBlock) broadcastSnapshotRefresh();
-    } else {
-      setSnapshotBlock('oversize');
-      firstSnapshotFailed(ws);
-    }
-  } catch (err) {
-    appLog('core:annex', 'error', 'Failed to send snapshot on connect', {
-      meta: { error: err instanceof Error ? err.message : String(err) },
-    });
-    setSnapshotBlock('failed');
-    firstSnapshotFailed(ws);
-  }
+/**
+ * A socket's first snapshot, then what was held for it. Until one is sent the
+ * phone has no baseline for events, so they stay back, within the limits in
+ * holdFrame, while WebSocket replies still go out. HTTP isn't involved at all.
+ * The socket waits on the host's one build, joining it if one is running.
+ * If none can be sent it hears `snapshot_failed` once, and the socket stays open: a
+ * phone has its own grace period, and closing would only bring it back sooner.
+ */
+function sendFirstSnapshot(ws: WebSocket): void {
+  if (snapshotBlock && Date.now() < snapshotBlock.until) firstSnapshotFailed(ws);
+  // The window is over but nothing has worked since, so connected phones are owed one too.
+  else if (snapshotBlock && !refreshInFlight) broadcastSnapshotRefresh();
+  else startSnapshotBuild();
 }
 
 function broadcastWs(message: object): void {
@@ -1363,9 +1324,9 @@ function broadcastFrame(type: string, data: string): number {
     if (client.readyState === WebSocket.OPEN) {
       try {
         const held = heldFrames.get(client);
-        // A socket still waiting for its first snapshot gets this one by way of deliverFirstSnapshot.
-        if ((held?.retrying || held?.joinedRetry) && type === 'snapshot') continue;
-        if (held) holdFrame(held, data, type === 'snapshot');
+        // A socket waiting on its first snapshot gets it from the same build, with its own cursor.
+        if (held && type === 'snapshot') continue;
+        if (held) holdFrame(held, data);
         else client.send(data);
       } catch (err) {
         sendFailures++;
@@ -3540,6 +3501,11 @@ const MAX_PTY_INPUT_SIZE = 64 * 1024; // 64KB
  */
 export const WS_MAX_PAYLOAD = 11 * 1024 * 1024;
 
+function isReplayFrame(data: string): boolean {
+  const { type, seq } = JSON.parse(data) as { type?: string; seq?: unknown };
+  return seq !== undefined || type === 'replay:start' || type === 'replay:end';
+}
+
 /** Send data over a WebSocket only if the connection is still open. */
 function safeSend(ws: WebSocket, data: string): boolean {
   if (ws.readyState === WebSocket.OPEN) {
@@ -3551,7 +3517,9 @@ function safeSend(ws: WebSocket, data: string): boolean {
     }
     noteFrameSize(data);
     const held = heldFrames.get(ws);
-    if (held && !held.retrying) holdFrame(held, data, false);
+    // A reply can go ahead of the snapshot: a phone has no cursor yet, and takes the snapshot after it.
+    // Replay can't, because it carries seqs: it waits with the events it might repeat.
+    if (held && !held.retrying && isReplayFrame(data)) holdFrame(held, data);
     else ws.send(data);
     return true;
   }
@@ -4106,7 +4074,8 @@ export function start(): void {
     // Nothing reaches this socket until its snapshot has. Events from here on come after it,
     // so its cursor is this seq: the build reads state later, and an event it already
     // reflects arriving again is safe, where one lost between the read and the cursor isn't.
-    heldFrames.set(ws, { frames: [], bytes: 0, snapshotAt: -1, retrying: false, cursor: eventReplay.getLastSeq() });
+    heldFrames.set(ws, { frames: [], bytes: 0, retrying: false, cursor: eventReplay.getLastSeq() });
+    firstSnapshotWaiters.add(ws);
 
     // wsAuthTypes is set synchronously in handleUpgrade before 'connection' fires — safe to read here.
     const authType = wsAuthTypes.get(ws);
@@ -4133,6 +4102,7 @@ export function start(): void {
     // is handled correctly and never leaves the satellite stuck in locked state.
     ws.on('close', (code, reason) => {
       heldFrames.delete(ws);
+      firstSnapshotWaiters.delete(ws);
       appLog('core:annex', 'info', 'WebSocket client disconnected', {
         meta: { authType, code, reason: reason?.toString() || '' },
       });
@@ -4161,7 +4131,7 @@ export function start(): void {
     });
 
     // Send snapshot on connect — async I/O after all event handlers are registered
-    await sendFirstSnapshot(ws);
+    sendFirstSnapshot(ws);
   });
 
   // Subscribe to event bus (clean up any stale listeners first)
@@ -4459,6 +4429,9 @@ export function stop(): void {
   if (refreshFollowUp) clearTimeout(refreshFollowUp);
   refreshFollowUp = null;
   refreshAgain = false;
+  refreshWanted = false;
+  refreshInFlight = false;
+  firstSnapshotWaiters.clear();
   refreshGeneration++;
   abandonedSnapshotReads.clear();
   clearSnapshotBlock();
@@ -4592,6 +4565,7 @@ function pairingLink(fingerprint: string, certFingerprint: string | undefined, n
  */
 let refreshInFlight = false;
 let refreshAgain = false;
+let refreshWanted = false;
 let refreshFollowUp: ReturnType<typeof setTimeout> | null = null;
 /** Bumped by stop(), so a build still running then can't start another afterwards. */
 let refreshGeneration = 0;
@@ -4635,42 +4609,71 @@ export function broadcastSnapshotRefresh(): void {
       return;
     }
   }
+  refreshWanted = true;
   if (refreshInFlight) {
     refreshAgain = true;
     return;
   }
+  startSnapshotBuild();
+}
+
+/**
+ * The host's one snapshot build: reads never run side by side, however many sockets
+ * connect, so what a host does is bounded by itself and not by its phones. It serves
+ * every socket waiting on a first snapshot, joined at any point, each with its own
+ * cursor, and connected phones too if a refresh asked. A socket that joined partway
+ * may have missed a change made before it connected and after these reads, as an
+ * event it won't be sent. That counts as a race, and the follow-up covers it.
+ */
+function startSnapshotBuild(): void {
+  if (refreshInFlight) return;
   refreshInFlight = true;
+  const broadcast = refreshWanted;
+  refreshWanted = false;
   const cursor = eventReplay.getLastSeq();
   const generation = refreshGeneration;
   let raced = false;
   readSnapshotSources().then((sources) => {
+    if (generation !== refreshGeneration) return;
     const built = assembleSnapshot(sources);
     raced = snapshotStateChangedSince(cursor);
     if (raced) built.payload.lastSeq = cursor;
-    const frame = snapshotFrame(built, 'refresh');
-    // Never send a phone a frame it would close on. It keeps what it has, and the next change tries again.
-    if (Buffer.byteLength(frame) > MOBILE_WS_FRAME_MAX_BYTES) {
+    let oversize = false;
+    if (broadcast) {
+      const frame = snapshotFrame(built, 'refresh');
+      // Never send a phone a frame it would close on. It keeps what it has, and the next change tries again.
+      if (Buffer.byteLength(frame) > MOBILE_WS_FRAME_MAX_BYTES) oversize = true;
+      else if (broadcastFrame('snapshot', frame) > 0) recordSnapshotFailure('send_failed');
+    }
+    for (const ws of [...firstSnapshotWaiters]) {
+      const held = heldFrames.get(ws);
+      if (!held || ws.readyState !== WebSocket.OPEN) continue;
+      try {
+        if (!deliverFirstSnapshot(ws, held, built, 'connect')) oversize = true;
+      } catch (err) {
+        recordSnapshotFailure('send_failed');
+        appLog('core:annex', 'error', 'Failed to send snapshot on connect', {
+          meta: { error: err instanceof Error ? err.message : String(err) },
+        });
+      }
+    }
+    if (oversize) {
       setSnapshotBlock('oversize');
-      failJoinedRetry();
-      return;
+      for (const ws of firstSnapshotWaiters) firstSnapshotFailed(ws);
+    } else {
+      clearSnapshotBlock();
     }
-    clearSnapshotBlock();
-    if (broadcastFrame('snapshot', frame) > 0) recordSnapshotFailure('send_failed');
-    for (const client of wss?.clients ?? []) {
-      const held = heldFrames.get(client);
-      if ((held?.retrying || held?.joinedRetry) && client.readyState === WebSocket.OPEN) deliverFirstSnapshot(client, held, built, 'refresh');
-    }
-    failJoinedRetry();
   }).catch((err) => {
-    appLog('core:annex', 'error', 'broadcastSnapshotRefresh failed', {
-      meta: { error: err instanceof Error ? err.message : String(err) },
-    });
+    if (generation !== refreshGeneration) return;
+    const meta = { error: err instanceof Error ? err.message : String(err) };
+    if (broadcast) appLog('core:annex', 'error', 'broadcastSnapshotRefresh failed', { meta });
+    if (firstSnapshotWaiters.size > 0) appLog('core:annex', 'error', 'Failed to send snapshot on connect', { meta });
     setSnapshotBlock('failed');
-    failJoinedRetry();
+    for (const ws of firstSnapshotWaiters) firstSnapshotFailed(ws);
   }).finally(() => {
-    refreshInFlight = false;
     // The server stopped during the build: nothing left to tell, even if it has started again.
     if (generation !== refreshGeneration) return;
+    refreshInFlight = false;
     if (refreshAgain) {
       refreshAgain = false;
       broadcastSnapshotRefresh();
@@ -5029,7 +5032,7 @@ export const _testing = {
   heldBytes: (ws: WebSocket) => heldFrames.get(ws)?.bytes,
   holdForTest(ws: WebSocket, data: string) {
     const held = heldFrames.get(ws);
-    if (held) holdFrame(held, data, false);
+    if (held) holdFrame(held, data);
   },
   runMobileCommand,
   get sessionTokens() { return sessionTokens; },

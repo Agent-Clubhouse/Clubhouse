@@ -3305,11 +3305,16 @@ describe('annex-server', () => {
       expect(sent(ws).at(-1)).toEqual(sequenced(next));
     });
 
-    it('holds frames with no seq and direct replies in the same order', async () => {
+    it('holds broadcasts and replay in order, and lets other replies through at once', async () => {
       const ws = openDuringBuild();
       annexServer.broadcastThemeChanged();
       ws.emit('message', JSON.stringify({ type: 'replay', since: _eventReplay.getLastSeq() }));
       expect(ws.send).not.toHaveBeenCalled();
+
+      // Bearer sockets are refused control, which is a plain reply.
+      ws.emit('message', JSON.stringify({ type: 'pty:input', payload: {} }));
+      expect(sent(ws).map((f) => f.type)).toEqual(['error']);
+      ws.send.mockClear();
 
       finishList([]);
       await vi.waitFor(() => expect(ws.send).toHaveBeenCalled());
@@ -3656,6 +3661,110 @@ describe('annex-server', () => {
 
           expect(builds()).toBe(stuck + 1);
           expect(sent(ws)[1].type).toBe('snapshot');
+        });
+      });
+
+      describe('reads on the host', () => {
+        const openSocket = () => {
+          const ws = Object.assign(new EventEmitter(), { readyState: 1, send: vi.fn(), ping: () => {}, close: vi.fn() });
+          annexServer._testing.wsAuthTypes.set(ws as never, 'bearer');
+          annexServer._testing.wss!.clients.add(ws as never);
+          annexServer._testing.wss!.emit('connection', ws);
+          return ws;
+        };
+
+        it('stays at one, however many connect before the first timeout', async () => {
+          vi.mocked(projectStore.list).mockReset();
+          vi.mocked(projectStore.list).mockImplementation(() => new Promise(() => {}) as never);
+
+          const sockets = [];
+          for (let i = 0; i < 40; i++) {
+            sockets.push(openSocket());
+            await vi.advanceTimersByTimeAsync(300);
+          }
+          expect(builds()).toBe(1);
+
+          await vi.advanceTimersByTimeAsync(annexServer._testing.SNAPSHOT_BUILD_TIMEOUT_MS);
+          expect(builds()).toBe(1);
+          for (const ws of sockets) expect(sent(ws)).toEqual([{ type: 'error', payload: { message: 'snapshot_failed' } }]);
+
+          // Retries find the read still running and don't add another.
+          for (const delay of annexServer._testing.SNAPSHOT_RETRY_DELAYS_MS) await vi.advanceTimersByTimeAsync(delay);
+          expect(builds()).toBe(1);
+        });
+
+        it('serves everyone who joined a first build from it, each with their own cursor', async () => {
+          let finish: (value: never[]) => void = () => {};
+          vi.mocked(projectStore.list).mockReset();
+          vi.mocked(projectStore.list).mockImplementationOnce(() => new Promise((resolve) => { finish = resolve; }) as never);
+          vi.mocked(projectStore.list).mockReturnValue([] as never);
+          const a = openSocket();
+          const aCursor = _eventReplay.getLastSeq();
+          const event = liveEvent();
+          publish();
+          const b = openSocket();
+          const bCursor = _eventReplay.getLastSeq();
+          await vi.advanceTimersByTimeAsync(0);
+          expect(builds()).toBe(1);
+
+          finish([]);
+          await vi.advanceTimersByTimeAsync(0);
+
+          expect(sent(a)[0].payload.lastSeq).toBe(aCursor);
+          expect(sent(a).slice(1).map((f) => f.seq)).toEqual([event]);
+          expect(sent(b)[0].payload.lastSeq).toBe(bCursor);
+          expect(sent(b)).toHaveLength(1);
+        });
+
+        it('follows up when a state change landed during the read a socket joined', async () => {
+          let finish: (value: never[]) => void = () => {};
+          vi.mocked(projectStore.list).mockReset();
+          vi.mocked(projectStore.list).mockImplementationOnce(() => new Promise((resolve) => { finish = resolve; }) as never);
+          vi.mocked(projectStore.list).mockReturnValue([] as never);
+          const a = openSocket();
+          // The read began before this. A socket joining after it can't see it as an event, so it needs a snapshot that has it.
+          const spawned = _eventReplay.pushEvent('agent:spawned', { id: 'q5' });
+          const late = openSocket();
+
+          finish([]);
+          await vi.advanceTimersByTimeAsync(0);
+          await vi.advanceTimersByTimeAsync(1000);
+
+          expect(sent(a)[0].type).toBe('snapshot');
+          expect(sent(late)[0].type).toBe('snapshot');
+          expect(sent(late)[0].payload.lastSeq).toBe(spawned);
+          const fresh = sent(late).filter((f) => f.type === 'snapshot');
+          expect(fresh).toHaveLength(2);
+          expect(fresh[1].payload.lastSeq).toBe(spawned);
+        });
+
+        it('does not send connected phones a snapshot because someone else connected', async () => {
+          vi.mocked(projectStore.list).mockReset();
+          vi.mocked(projectStore.list).mockReturnValue([] as never);
+          const here = openSocket();
+          await vi.advanceTimersByTimeAsync(0);
+          here.send.mockClear();
+
+          openSocket();
+          await vi.advanceTimersByTimeAsync(1000);
+
+          expect(here.send).not.toHaveBeenCalled();
+        });
+
+        it('starts a new read after a running one for a change it may have missed, one at a time', async () => {
+          const finishes: Array<(value: never[]) => void> = [];
+          vi.mocked(projectStore.list).mockReset();
+          vi.mocked(projectStore.list).mockImplementation(() => new Promise((resolve) => { finishes.push(resolve); }) as never);
+          openSocket();
+          await vi.advanceTimersByTimeAsync(0);
+
+          annexServer.broadcastSnapshotRefresh();
+          await vi.advanceTimersByTimeAsync(0);
+          expect(builds()).toBe(1);
+
+          finishes[0]([]);
+          await vi.advanceTimersByTimeAsync(0);
+          expect(builds()).toBe(2);
         });
       });
 

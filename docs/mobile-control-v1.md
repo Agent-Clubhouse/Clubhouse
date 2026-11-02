@@ -152,11 +152,11 @@ When a durable agent's process exits (stopped, idle-slept, crashed; terminal or 
 
 ### Order on connect
 
-A socket's first frame is always its `snapshot`, or `{type:"error",payload:{message:"snapshot_failed"}}` if one can't be built. Nothing comes before it, not even a reply to something you've already sent. Everything from the build follows, in order, then live frames.
+Until a socket's first `snapshot` (or `{type:"error",payload:{message:"snapshot_failed"}}` if one can't be built), it gets no events: nothing sequenced, no replay and no broadcast. WebSocket replies aren't held, so `pty:attach:ack`, the other `*:ack` frames, `error`, `replay:gap`, `telemetry:hello:ack` and a shell's `pty:data` can arrive before it. They have no `seq`, so you have no cursor to move. HTTP isn't affected at all: `POST /api/v1/mobile/commands` and every route answer whatever the socket is doing. After the snapshot come the held events in order, then live frames.
 
-After `snapshot_failed` the socket stays open, and replies to what you send still arrive. Events don't: without a snapshot you have nothing to read them against. They're held on the desktop, up to 10,000 frames or 32 MiB. Past that, what's held is dropped but `lastSeq` stays where it was, so you'll see a jump in seq after the snapshot: replay as for any gap. A successful try sends the snapshot and then what's held. Reconnect whenever your own grace period ends.
+After `snapshot_failed` the socket stays open. Events still don't arrive: without a snapshot you have nothing to read them against. They're held on the desktop, up to 10,000 frames or 32 MiB. Past that, what's held is dropped but `lastSeq` stays where it was, so you'll see a jump in seq after the snapshot: replay as for any gap. A successful try sends the snapshot and then what's held. Reconnect whenever your own grace period ends.
 
-Trying again is per desktop, not per socket, so several phones or quick reconnects don't add work. Inside the window a connecting phone gets `snapshot_failed` straight away and nothing is built. When the window ends, one build serves every socket waiting, each with its own `lastSeq`.
+Snapshots are built one at a time for the whole desktop, so several phones or quick reconnects don't add work: a socket connecting during a build is served by it, with its own `lastSeq`. Trying again works the same way. Inside the window a connecting phone gets `snapshot_failed` straight away and nothing is built. When the window ends, one build serves every socket waiting, each with its own `lastSeq`.
 
 - If building failed, or took over 15 seconds, the window is 2, 8 and 30 seconds and then a minute each time, until a build works. Changes wait for the end of the window.
 - A snapshot too large to send (over 16 MiB) is never sent. The window is 5 minutes, and a change to what a snapshot shows brings a look at most every 30 seconds. A connected phone keeps what it has until one fits.
