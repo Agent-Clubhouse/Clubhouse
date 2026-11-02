@@ -9,6 +9,7 @@
  */
 import crypto from 'crypto';
 import fs from 'fs';
+import fsp from 'fs/promises';
 import http from 'http';
 import https from 'https';
 import os from 'os';
@@ -141,17 +142,21 @@ describe('every appearance change reaches a phone as a snapshot', () => {
     }
   }
 
-  const cli = (route: string, body: object) => new Promise<{ status: number; body: any }>((resolve, reject) => {
-    const { token } = JSON.parse(fs.readFileSync(cliEndpointFile(), 'utf8'));
-    const text = JSON.stringify(body);
-    const req = http.request({ host: '127.0.0.1', port: cliPort, path: route, method: 'POST', headers: { [CLI_TOKEN_HEADER]: token, 'Content-Length': Buffer.byteLength(text) } }, (res) => {
-      let answer = '';
-      res.on('data', (c) => { answer += c; });
-      res.on('end', () => resolve({ status: res.statusCode!, body: JSON.parse(answer) }));
+  const readJson = async (file: string) => JSON.parse(await fsp.readFile(file, 'utf8'));
+
+  const cli = async (route: string, body: object) => {
+    const { token } = await readJson(cliEndpointFile());
+    return new Promise<{ status: number; body: any }>((resolve, reject) => {
+      const text = JSON.stringify(body);
+      const req = http.request({ host: '127.0.0.1', port: cliPort, path: route, method: 'POST', headers: { [CLI_TOKEN_HEADER]: token, 'Content-Length': Buffer.byteLength(text) } }, (res) => {
+        let answer = '';
+        res.on('data', (c) => { answer += c; });
+        res.on('end', () => resolve({ status: res.statusCode!, body: JSON.parse(answer) }));
+      });
+      req.on('error', reject);
+      req.end(text);
     });
-    req.on('error', reject);
-    req.end(text);
-  });
+  };
   const cliEndpointFile = () => path.join(A.dir, '.clubhouse-dev', 'cli-endpoint.json');
 
   const imageFile = (name: string, bytes: Buffer) => {
@@ -283,7 +288,7 @@ describe('every appearance change reaches a phone as a snapshot', () => {
       const file = path.join(projectPath, '.clubhouse', 'agents.json');
       const edit = async (name: string) => {
         await agentConfig.flushAgentConfig(projectPath);
-        const agents = JSON.parse(fs.readFileSync(file, 'utf8'));
+        const agents = await readJson(file);
         agents.find((a: { id: string }) => a.id === agentId).name = name;
         await expectSnapshotAfterEdit(file, JSON.stringify(agents, null, 2), (p) => agentIn(p)?.name === name);
       };
@@ -455,7 +460,7 @@ describe('every appearance change reaches a phone as a snapshot', () => {
     it('its agents.json edited', async () => {
       const file = path.join(dispatcherPath(), '.clubhouse', 'agents.json');
       await agentConfig.flushAgentConfig(dispatcherPath());
-      const agents = JSON.parse(fs.readFileSync(file, 'utf8'));
+      const agents = await readJson(file);
       agents[0].color = 'indigo';
       await expectSnapshotAfterEdit(file, JSON.stringify(agents, null, 2), (p) => shown(p)?.color === 'indigo');
     }, 60_000);
