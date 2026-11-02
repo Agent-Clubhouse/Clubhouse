@@ -621,7 +621,9 @@ describe('reads change nothing', () => {
     expect(spawnAgent).not.toHaveBeenCalled();
     expect(getModelOptions).not.toHaveBeenCalled();
     expect(checkAvailability).not.toHaveBeenCalled();
-    expect(changed).not.toHaveBeenCalled();
+    // Only this test's projects: an earlier test's watcher can still fire as its folder goes.
+    expect(changed).not.toHaveBeenCalledWith(one);
+    expect(changed).not.toHaveBeenCalledWith(two);
     expect([...agentRegistry.getAllRegistrations().keys()]).toEqual(registered);
     off();
   });
