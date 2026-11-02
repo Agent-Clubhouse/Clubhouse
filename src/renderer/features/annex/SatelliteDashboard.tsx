@@ -369,6 +369,9 @@ export function SatelliteDashboard({ activeHostId }: SatelliteDashboardProps) {
                 {satellite?.host && ` \u00B7 ${satellite.host}`}
               </p>
             </div>
+            {satellite?.snapshotUnavailable && projects.length > 0 && (
+              <p className="text-xs text-ctp-subtext0 mt-0.5">This may be out of date. Retrying to load the latest.</p>
+            )}
           </div>
         </div>
 
@@ -395,12 +398,17 @@ export function SatelliteDashboard({ activeHostId }: SatelliteDashboardProps) {
           </>
         )}
 
-        {projects.length === 0 && (
+        {projects.length === 0 && (satellite?.snapshotUnavailable ? (
+          <EmptyState
+            title="Can't load this satellite yet"
+            description="Retrying. Its projects will show here when it answers."
+          />
+        ) : (
           <EmptyState
             title="No projects on this satellite"
             description="Open a project on the remote machine to see it here."
           />
-        )}
+        ))}
       </div>
     </div>
   );

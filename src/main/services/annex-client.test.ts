@@ -786,6 +786,61 @@ describe('annex-client', () => {
     });
   });
 
+  describe('a satellite that cannot build a snapshot', () => {
+    const FINGERPRINT = 'SNAP:FAILED';
+    const frame = (value: object) => Buffer.from(JSON.stringify(value));
+    const snapshot = { type: 'snapshot', payload: { protocolVersion: 2, projects: [], agents: {}, quickAgents: {}, theme: null, orchestrators: null, pendingPermissions: [], lastSeq: 1 } };
+
+    async function connected() {
+      const { WebSocket: WsMock } = await import('ws');
+      let messageHandler: ((data: any) => void) | null = null;
+      mockHttpGetIdentity({ fingerprint: FINGERPRINT, alias: 'Failed', icon: 'server', color: 'green', publicKey: 'failed-key' });
+      vi.mocked(annexPeers.getPeer).mockReturnValue({ fingerprint: FINGERPRINT, alias: 'Failed', icon: 'server', color: 'green', publicKey: 'failed-key', pairedAt: '2024-01-01', lastSeen: '2024-01-01' });
+      vi.mocked(WsMock).mockImplementation(function (this: any) {
+        this.readyState = 1;
+        this.socket = makeMockSocket(FINGERPRINT);
+        this.on = vi.fn().mockImplementation((event: string, cb: any) => {
+          if (event === 'open') setTimeout(cb, 0);
+          if (event === 'message') messageHandler = cb;
+          return this;
+        });
+        this.send = vi.fn(); this.ping = vi.fn(); this.close = vi.fn(); this.terminate = vi.fn(); this.removeListener = vi.fn();
+        return this;
+      });
+      annexClient.startClient();
+      await bonjourFindCallback!(makeService());
+      await vi.waitFor(() => expect(messageHandler).not.toBeNull());
+      return () => messageHandler!;
+    }
+    const sat = () => annexClient.getSatellite(FINGERPRINT)!;
+
+    it('says so until a snapshot arrives, and stays connected', async () => {
+      const handler = await connected();
+      await vi.waitFor(() => expect(sat().state).toBe('connected'));
+      handler()(frame({ type: 'error', payload: { message: 'snapshot_failed' } }));
+      expect(sat().snapshotUnavailable).toBe(true);
+      expect(sat().state).toBe('connected');
+
+      handler()(frame(snapshot));
+      expect(sat().snapshotUnavailable).toBeUndefined();
+    });
+
+    it('is not set by any other error', async () => {
+      const handler = await connected();
+      handler()(frame({ type: 'error', payload: { message: 'project_not_found' } }));
+      expect(sat().snapshotUnavailable).toBeUndefined();
+    });
+
+    it('starts clear on a new connection', async () => {
+      const handler = await connected();
+      await vi.waitFor(() => expect(sat().state).toBe('connected'));
+      handler()(frame({ type: 'error', payload: { message: 'snapshot_failed' } }));
+      annexClient.disconnect(FINGERPRINT);
+      annexClient.connect(FINGERPRINT);
+      expect(sat().snapshotUnavailable).toBeUndefined();
+    });
+  });
+
   describe('canvases a satellite left out of its snapshot', () => {
     const FINGERPRINT = 'CANVAS:OMITTED';
     const STATE = { canvases: [{ id: 'canvas_1', name: 'Main', views: [] }], activeCanvasId: 'canvas_1' };

@@ -1121,6 +1121,8 @@ export interface SatelliteConnection {
   pairingPort: number;
   snapshot: SatelliteSnapshot | null;
   lastError: string | null;
+  /** This connection's satellite can't build a snapshot yet, and is retrying. */
+  snapshotUnavailable?: boolean;
 }
 
 /** Summary of an installed plugin sent in the satellite snapshot. */
