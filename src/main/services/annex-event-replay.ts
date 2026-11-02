@@ -25,10 +25,14 @@ export interface BufferedEvent {
   type: string;
   payload: unknown;
   timestamp: number;
+  /** About what the payload costs: its encoded size. */
+  bytes: number;
 }
 
 const MAX_EVENTS = 10_000;
 const MAX_AGE_MS = 60 * 60 * 1000; // 1 hour
+/** A tunable guess, not a measurement. Past it the oldest events go, and a client that needed them gets a replay gap. */
+export const MAX_BUFFER_BYTES = 64 * 1024 * 1024;
 
 /**
  * Fixed-capacity ring buffer with O(1) push and front-eviction.
@@ -108,18 +112,35 @@ class RingBuffer<T> {
 
 let globalSeq = 0;
 const buffer = new RingBuffer<BufferedEvent>(MAX_EVENTS);
+let bufferedBytes = 0;
 
-/** Push an event into the replay buffer and return its sequence number. */
-export function pushEvent(type: string, payload: unknown, context?: string): number {
+function dropOldest(count: number): void {
+  for (let i = 0; i < count; i++) bufferedBytes -= buffer.at(i)?.bytes ?? 0;
+  buffer.dropFront(count);
+}
+
+/**
+ * Push an event into the replay buffer and return its sequence number. `bytes` is its
+ * encoded size, for a caller that has already serialized it.
+ */
+export function pushEvent(type: string, payload: unknown, context?: string, bytes = Buffer.byteLength(JSON.stringify(payload) ?? '')): number {
   const tc = validatedTraceparent(context);
   globalSeq += 1;
+  // A full ring overwrites its oldest, so that one's bytes go too.
+  if (buffer.size === MAX_EVENTS) dropOldest(1);
   buffer.push({
     seq: globalSeq,
     type,
     payload,
+    bytes,
     timestamp: Date.now(),
     ...(tc && { tc }),
   });
+  bufferedBytes += bytes;
+  let excess = 0;
+  // Always keeps the newest, however large: it's what's being sent now.
+  for (let over = bufferedBytes - MAX_BUFFER_BYTES; over > 0 && excess < buffer.size - 1; excess++) over -= buffer.at(excess)!.bytes;
+  if (excess > 0) dropOldest(excess);
   return globalSeq;
 }
 
@@ -132,7 +153,7 @@ export function evictStale(): void {
     if (!event || event.timestamp >= cutoff) break;
     count++;
   }
-  if (count > 0) buffer.dropFront(count);
+  if (count > 0) dropOldest(count);
 }
 
 /**
@@ -176,14 +197,22 @@ export function getLastSeq(): number {
 export function clearForAgent(agentId: string): void {
   buffer.filterInPlace((e) => {
     const payload = e.payload as Record<string, unknown> | null;
-    return !(payload && payload.agentId === agentId);
+    const keep = !(payload && payload.agentId === agentId);
+    if (!keep) bufferedBytes -= e.bytes;
+    return keep;
   });
 }
 
 /** Reset the entire buffer. Used during shutdown. */
 export function reset(): void {
   buffer.clear();
+  bufferedBytes = 0;
   globalSeq = 0;
+}
+
+/** Get the encoded size of what's buffered (for testing/diagnostics). */
+export function sizeInBytes(): number {
+  return bufferedBytes;
 }
 
 /** Get the number of buffered events (for testing/diagnostics). */
