@@ -147,11 +147,18 @@ When a durable agent's process exits (stopped, idle-slept, crashed; terminal or 
 
 ### Order on connect
 
-A socket's first frame is always its `snapshot`, or `{type:"error",payload:{message:"snapshot_failed"}}` if one can't be built. Nothing comes before it, not even a reply to something you've already sent. Everything from the build follows, in order, then live frames:
+A socket's first frame is always its `snapshot`, or `{type:"error",payload:{message:"snapshot_failed"}}` if one can't be built. Nothing comes before it, not even a reply to something you've already sent. Everything from the build follows, in order, then live frames.
+
+After `snapshot_failed` the socket stays open, and replies to what you send still arrive. Events don't: without a snapshot you have nothing to read them against. They're held on the desktop, up to 10,000 frames or 32 MiB. Past that, what's held is dropped but `lastSeq` stays where it was, so you'll see a jump in seq after the snapshot: replay as for any gap. A successful try sends the snapshot and then what's held. Reconnect whenever your own grace period ends.
+
+- If building failed, the desktop tries again after 2, 8 and 30 seconds and then every minute.
+- A snapshot too large to send (over 16 MiB) is never sent. It's tried again when something changes, and every 5 minutes as a backstop. A connected phone keeps what it has.
+- For a few seconds after either, a new socket gets `snapshot_failed` without a new attempt, so reconnecting doesn't mean rebuilding.
+
+The desktop never closes a socket for any of this. A phone can't rely on a close code: on iOS, `URLSession` reports 1013 as 1005.
 
 - The first snapshot's `lastSeq` is the seq when the socket connected. Events during the build follow it with no gap. The snapshot's state may already include some of them, so applying one must be safe.
-- A later `snapshot` has `lastSeq` equal to the newest seq sent to you, so it never moves your cursor back. While a socket waits for its first, only the newest refresh is kept.
-- If too much arrives during the build (10,000 frames or 32 MiB), the socket closes with code 1013 and no snapshot. Reconnect with your usual backoff.
+- A later `snapshot`'s `lastSeq` says what its state includes. If what it shows changed while it was being built, it's the seq from before that, so a phone that has seen the change drops it as a duplicate, and a fresh `snapshot` follows within a moment. `pty:data` and `chat:event` don't count, because they don't change a snapshot's fields. While a socket waits for its first snapshot, only the newest refresh is kept.
 
 ### Authoritative local queue
 
