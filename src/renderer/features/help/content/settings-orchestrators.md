@@ -1,28 +1,28 @@
-# Orchestrators
+# Agent providers
 
-An orchestrator is the CLI backend powering your agents. It handles AI communication, tool calls, file operations, and output streaming. Each agent's **Runs on** setting picks the CLI it uses.
+An agent provider is the CLI that runs your agents. It handles AI communication, tool calls, file operations, and output streaming. Each agent's **Runs on** setting picks the CLI it uses.
 
 An orchestrator agent is a different thing. It's an agent that starts and manages helper agents. See **Orchestrated helpers**.
 
-## Available orchestrators
+## Available agent providers
 
-| Orchestrator | Description | Status |
-|-------------|-------------|--------|
+| Provider | Description | Status |
+|----------|-------------|--------|
 | **Claude Code** | Anthropic's CLI for Claude. Most complete Clubhouse integration. | Stable |
 | **Copilot CLI** | GitHub Copilot's CLI. Best for GitHub-centric workflows. | Stable |
 | **Codex CLI** | OpenAI's Codex CLI. Sandbox-based permissions, `--full-auto` mode. | Beta |
 
 ## Setup
 
-1. Open **Settings > Orchestrators & Agents**
-2. Enable/disable orchestrators with toggles
+1. Open **Settings > Agents & providers**
+2. Enable/disable agent providers with toggles
 3. Clubhouse auto-detects installed binaries via PATH
 
 **Status indicators:**
-- **Green checkmark** — Binary found, ready to use
-- **Red indicator** — Binary not found. Follow the setup prompt to install.
+- **Green checkmark**: binary found, ready to use
+- **Red indicator**: binary not found. Follow the setup prompt to install.
 
-You cannot disable the last remaining orchestrator.
+You cannot disable the last remaining agent provider.
 
 ## Capability matrix
 
@@ -36,10 +36,10 @@ You cannot disable the last remaining orchestrator.
 
 ## Per-project selection
 
-Each project can use a different orchestrator. To choose it, set **Agents run on** on the project's **Orchestrators & Agents** settings page. Only enabled orchestrators with detected binaries appear as options.
+Each project can use a different agent provider. To choose it, set **Agents run on** on the project's **Agents & providers** settings page. Only enabled providers with detected binaries appear as options.
 
 ## Model selection
 
-Each orchestrator provides its own model list. If models are missing:
-- Update the orchestrator CLI to the latest version
+Each agent provider has its own model list. If models are missing:
+- Update the provider's CLI to the latest version
 - Check that API keys are valid and have the required permissions

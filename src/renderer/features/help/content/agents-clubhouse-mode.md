@@ -34,8 +34,8 @@ Clubhouse Mode supports dynamic placeholders in instructions:
 
 ## Settings
 
-- **Global toggle:** **Settings > Orchestrators & Agents > Clubhouse Mode** — enable/disable for all projects
-- **Per-project override:** the project's **Orchestrators & Agents** settings page, **Clubhouse Mode** — override the global setting
+- **Global toggle:** **Settings > Agents & providers > Clubhouse Mode** turns it on or off for all projects
+- **Per-project override:** **Clubhouse Mode** on the project's **Agents & providers** settings page overrides the global setting
 
 ## When to use
 

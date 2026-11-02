@@ -79,11 +79,11 @@ interface UIState {
   /**
    * One-shot focus target inside a settings page, cleared by the page once it
    * has scrolled there. `runtime:<providerId>` is a provider's Chat / CLI
-   * runtime row on the Orchestrators page.
+   * runtime row on the Agents & providers page.
    */
   settingsFocus: string | null;
   setSettingsFocus: (focus: string | null) => void;
-  /** Deep link: app settings › Orchestrators, scrolled to a provider's runtime setting. */
+  /** Deep link: app settings › Agents & providers, scrolled to a provider's runtime setting. */
   openRuntimeSettings: (providerId: string) => void;
   openPluginSettings: (pluginId: string) => void;
   closePluginSettings: () => void;

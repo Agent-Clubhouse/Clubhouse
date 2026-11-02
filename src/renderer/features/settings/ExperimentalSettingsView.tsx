@@ -39,7 +39,7 @@ const EXPERIMENTAL_FEATURES: Array<{
   {
     id: COPILOT_SDK_FLAG,
     label: 'Copilot SDK driver',
-    description: 'Offer the Copilot SDK as a chat driver, in Settings > Orchestrators & agents > Copilot CLI. ACP stays the default until you choose it. Running agents keep their driver until they restart.',
+    description: 'Offer the Copilot SDK as a chat driver, in Settings > Agents & providers > Copilot CLI. ACP stays the default until you choose it. Running agents keep their driver until they restart.',
   },
   {
     id: 'dispatcher',

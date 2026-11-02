@@ -38,7 +38,7 @@ export function McpSettingsView() {
         </SettingsField>
         <SettingsField
           label="Project default"
-          help="Whether projects get MCP by default. Each project can override this in Orchestrators & agents."
+          help="Whether projects get MCP by default. Each project can override this in Agents & providers."
         >
           <Toggle
             aria-label="Project default"

@@ -42,7 +42,7 @@ export function useSettingsCategories(): { app: SettingsCategory[]; project: Set
 
   const app: SettingsCategory[] = [
     { label: 'About', page: 'about' },
-    { label: 'Orchestrators & agents', page: 'orchestrators' },
+    { label: 'Agents & providers', page: 'orchestrators' },
     { label: 'Helpers', page: 'helpers' },
     ...(showDispatcher ? [{ label: 'Dispatcher', page: 'dispatcher' as SettingsSubPage }] : []),
     { label: 'Profiles', page: 'profiles' },
@@ -62,7 +62,7 @@ export function useSettingsCategories(): { app: SettingsCategory[]; project: Set
   ];
   const project: SettingsCategory[] = [
     { label: 'General', page: 'project' },
-    { label: 'Orchestrators & agents', page: 'orchestrators' },
+    { label: 'Agents & providers', page: 'orchestrators' },
     { label: 'Notifications & alerts', page: 'notifications' },
     { label: 'Plugins', page: 'plugins' },
   ];

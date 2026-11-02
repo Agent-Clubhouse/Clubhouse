@@ -72,10 +72,10 @@ describe('OrchestratorSettingsView', () => {
   beforeEach(resetStores);
 
   describe('app-level settings (no projectId)', () => {
-    it('renders the Orchestrators & agents heading', () => {
+    it('renders the Agents & providers heading', () => {
       render(<OrchestratorSettingsView />);
-      expect(screen.getByText('Orchestrators & agents')).toBeInTheDocument();
-      expect(screen.getByText('Configure orchestrator backends and agent behavior.')).toBeInTheDocument();
+      expect(screen.getByText('Agents & providers')).toBeInTheDocument();
+      expect(screen.getByText('Configure agent providers and agent behavior.')).toBeInTheDocument();
     });
 
     it('renders Clubhouse Mode toggle', () => {
@@ -112,9 +112,9 @@ describe('OrchestratorSettingsView', () => {
       expect(quickAgents.compareDocumentPosition(clubhouse) & Node.DOCUMENT_POSITION_FOLLOWING).toBeGreaterThan(0);
     });
 
-    it('renders Orchestrators section', () => {
+    it('renders Agent providers section', () => {
       render(<OrchestratorSettingsView />);
-      expect(screen.getByText('Orchestrators')).toBeInTheDocument();
+      expect(screen.getByText('Agent providers')).toBeInTheDocument();
       expect(screen.getByText('Claude Code')).toBeInTheDocument();
     });
 
@@ -235,7 +235,7 @@ describe('OrchestratorSettingsView', () => {
           enabled: [],
         });
         render(<OrchestratorSettingsView />);
-        expect(screen.getByText('No orchestrators registered.')).toBeInTheDocument();
+        expect(screen.getByText('No agent providers registered.')).toBeInTheDocument();
       });
 
       describe('toggle disabled state when not installed', () => {
@@ -303,7 +303,7 @@ describe('OrchestratorSettingsView', () => {
           const orchToggle = screen.getByRole('switch', { name: 'Claude Code' });
           expect(orchToggle).toHaveAttribute('aria-checked', 'true');
           expect(orchToggle).toBeDisabled();
-          expect(screen.getByTestId('orchestrator-toggle-claude-code')).toHaveAttribute('title', 'At least one orchestrator must be enabled');
+          expect(screen.getByTestId('orchestrator-toggle-claude-code')).toHaveAttribute('title', 'At least one agent provider must be enabled');
         });
       });
     });
@@ -567,7 +567,7 @@ describe('OrchestratorSettingsView', () => {
 
     it('renders project-level description', () => {
       render(<OrchestratorSettingsView projectId="proj-1" />);
-      expect(screen.getByText('Configure orchestrator and agent behavior for this project.')).toBeInTheDocument();
+      expect(screen.getByText('Configure the agent provider and agent behavior for this project.')).toBeInTheDocument();
     });
 
     it('renders Clubhouse Mode dropdown', () => {
@@ -613,7 +613,7 @@ describe('OrchestratorSettingsView', () => {
     it('returns null for invalid project', () => {
       const { container: _container } = render(<OrchestratorSettingsView projectId="nonexistent" />);
       // Should still render the outer wrapper but ProjectAgentSettings returns null
-      expect(screen.getByText('Orchestrators & agents')).toBeInTheDocument();
+      expect(screen.getByText('Agents & providers')).toBeInTheDocument();
       expect(screen.queryByText('Clubhouse Mode')).not.toBeInTheDocument();
     });
 

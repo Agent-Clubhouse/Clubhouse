@@ -17,7 +17,7 @@ Quick agents are one-shot task runners. Give them a mission, they execute it, an
 
 Check **Free Agent** to enable autonomous permission handling. By default this uses **Skip All Permissions** mode, which bypasses all permission prompts.
 
-You can switch to **Auto** mode in **Settings > Orchestrators & Agents > Free Agent Permission Mode** (globally or per-project) if your CLI supports `--permission-mode auto`. Auto mode runs a background safety classifier to approve safe actions and block dangerous ones.
+You can switch to **Auto** mode in **Settings > Agents & providers > Free Agent Permission Mode** (globally or per-project) if your CLI supports `--permission-mode auto`. Auto mode runs a background safety classifier to approve safe actions and block dangerous ones.
 
 > **Note:** Auto mode provides safer autonomous execution than skipping all permissions, but requires CLI support that is not yet widely available. It blocks high-risk operations like force pushes, mass deletions, and credential exfiltration.
 
