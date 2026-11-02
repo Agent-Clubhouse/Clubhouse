@@ -14,6 +14,7 @@ function settings(hard: Partial<PresetCellView> = {}, revision = 'r1.0'): Helper
   return {
     revision,
     serverTime: SERVER_TIME,
+    auto: { effective: false, source: 'default', reason: 'not_enabled', scopes: { app: { value: false, editable: true } } },
     labels: HELPER_ROUTING_LABELS,
     providers: {
       'claude-code': {
@@ -36,6 +37,13 @@ beforeEach(() => {
 });
 
 describe('HelperPresetsSection (#2671)', () => {
+  it('turns Auto on app-wide with the revision it was made from', async () => {
+    render(<HelperPresetsSection />);
+    fireEvent.click(await screen.findByTestId('helper-presets-auto'));
+    await waitFor(() => expect(app().updateHelperRouting).toHaveBeenCalledWith({ revision: 'r1.0', auto: true }));
+    expect(screen.getByText(/balances counts, not cost/)).toBeTruthy();
+  });
+
   it('lists Claude\'s presets and doesn\'t offer Copilot', async () => {
     render(<HelperPresetsSection />);
     expect(await screen.findByTestId('helper-presets-claude-code')).toBeTruthy();

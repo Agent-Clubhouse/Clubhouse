@@ -83,18 +83,22 @@ export function normalizeSavedPresets(raw: unknown): SavedPresets {
 
 // ── Codes ────────────────────────────────────────────────────────────────
 
-export type HelperRoutingMode = 'explicit' | 'preset';
-export type HelperRoutingReason = 'explicit_request' | 'persona_pinned' | 'preset_on_cli';
-export type HelperRoutingFallback = 'none' | 'builtin_preset' | 'model_unverified';
-export type HelperRoutingFieldSource = 'request' | 'persona' | 'orchestrator' | 'custom_mapping' | 'builtin_mapping' | 'cli_default';
+export type HelperRoutingMode = 'explicit' | 'preset' | 'auto';
+export type HelperRoutingReason = 'explicit_request' | 'persona_pinned' | 'preset_on_cli' | 'only_candidate' | 'lower_load' | 'better_quota_tier' | 'sticky' | 'default_order';
+export type HelperRoutingFallback = 'none' | 'builtin_preset' | 'candidate_skipped' | 'model_unverified';
+export type HelperRoutingFieldSource = 'request' | 'persona' | 'orchestrator' | 'auto' | 'custom_mapping' | 'builtin_mapping' | 'cli_default';
+export type HelperRoutingSkip = 'cli_disabled' | 'cli_unavailable' | 'auto_not_supported' | 'no_valid_mapping' | 'cooling_down' | 'quota_near_limit' | 'quota_exhausted';
+export type HelperAutoOffReason = 'not_enabled' | 'project_off' | 'persona_off' | 'orchestration_off' | 'mcp_off' | 'dispatcher_locked';
 export type PresetCellState = 'valid' | 'unverified' | 'stale';
 export type PresetStaleReason = 'model_unavailable' | 'effort_unavailable';
 export type HelperContextStatus = 'none' | 'applied' | 'reset' | 'not_applied';
 
 /** What the desktop advertises at this stage. A client keys on these, so nothing is listed before it works. */
-export const HELPER_ROUTING_MODES: readonly HelperRoutingMode[] = ['explicit', 'preset'];
-export const HELPER_ROUTING_REASONS: readonly HelperRoutingReason[] = ['explicit_request', 'persona_pinned', 'preset_on_cli'];
-export const HELPER_ROUTING_FALLBACKS: readonly HelperRoutingFallback[] = ['none', 'builtin_preset', 'model_unverified'];
+export const HELPER_ROUTING_MODES: readonly HelperRoutingMode[] = ['explicit', 'preset', 'auto'];
+export const HELPER_ROUTING_REASONS: readonly HelperRoutingReason[] = ['explicit_request', 'persona_pinned', 'preset_on_cli', 'only_candidate', 'lower_load', 'better_quota_tier', 'sticky', 'default_order'];
+export const HELPER_ROUTING_FALLBACKS: readonly HelperRoutingFallback[] = ['none', 'builtin_preset', 'candidate_skipped', 'model_unverified'];
+export const HELPER_ROUTING_SKIPS: readonly HelperRoutingSkip[] = ['cli_disabled', 'cli_unavailable', 'auto_not_supported', 'no_valid_mapping', 'cooling_down', 'quota_near_limit', 'quota_exhausted'];
+export const HELPER_AUTO_OFF_REASONS: readonly HelperAutoOffReason[] = ['not_enabled', 'project_off', 'persona_off', 'orchestration_off', 'mcp_off', 'dispatcher_locked'];
 export const PRESET_CELL_STATES: readonly PresetCellState[] = ['valid', 'unverified', 'stale'];
 
 /**
@@ -147,6 +151,14 @@ export const HELPER_ROUTING_LABELS = {
     fiveHour: '5-hour limit',
     other: 'Plan limit',
   },
+  autoOff: {
+    not_enabled: 'It isn’t turned on',
+    project_off: 'This project turned it off',
+    persona_off: 'This agent’s persona turned it off',
+    orchestration_off: 'This agent doesn’t orchestrate',
+    mcp_off: 'Clubhouse MCP is off for this agent',
+    dispatcher_locked: 'The Dispatcher doesn’t start helpers',
+  },
   cell: {
     valid: 'Offered',
     unverified: 'Couldn’t be checked',
@@ -166,8 +178,8 @@ export const HELPER_ROUTING_LABELS = {
  */
 export interface HelperRouting {
   mode: HelperRoutingMode;
-  /** False for everything but Auto, so nothing claims balancing for a helper an argument decided. */
-  balanced: false;
+  /** True only when Auto chose among providers, so nothing claims balancing for a helper an argument or a persona decided. */
+  balanced: boolean;
   decidedAt: string;
   policyVersion: number;
   requested: { provider: string | null; model: string | null; effort: string | null; difficulty: HelperDifficulty | null };
@@ -176,7 +188,16 @@ export interface HelperRouting {
   reason: HelperRoutingReason;
   fallback: HelperRoutingFallback;
   context: { status: HelperContextStatus };
+  /** What Auto saw, for a decision it made. Never live: these are as of `decidedAt`. */
+  load?: Record<string, number>;
+  quota?: Record<string, QuotaDecisionView>;
+  /** `unknown_scored_as_healthy`: the chosen provider's quota was unknown, and that says nothing about its capacity. */
+  quotaBasis?: 'known' | 'unknown_scored_as_healthy';
+  skipped?: Record<string, HelperRoutingSkip>;
 }
+
+/** A provider's quota as a decision saw it. */
+export type QuotaDecisionView = Pick<QuotaView, 'state' | 'unknownReason' | 'asOf' | 'limitingWindow'>;
 
 /** The snapshot's codes-only form, for a helper in every row. */
 export function minimalRouting(routing: HelperRouting) {
@@ -235,6 +256,21 @@ export interface HelperRoutingSettings {
   providers: Record<string, ProviderRoutingView>;
   /** With an agent in the request: whether it can use presets, and why not. */
   agent?: { usable: boolean; reason?: 'dispatcher_locked' | 'mcp_off' | 'orchestration_off' };
+  auto: HelperAutoView;
+}
+
+/** Whether `cli: "auto"` is allowed, at the scope asked about, and each level's say in it. */
+export interface HelperAutoView {
+  effective: boolean;
+  source: 'agent' | 'project' | 'persona' | 'app' | 'default' | 'mcp_off' | 'dispatcher_locked';
+  reason?: HelperAutoOffReason;
+  scopes: {
+    app: { value: boolean; editable: boolean };
+    /** Only `off` or null: a project can't turn it on. */
+    project?: { value: 'off' | null; choices: ['off', null]; editable: boolean };
+    persona?: { value: false | null; editable: false };
+    agent?: { value: boolean | null; editable: boolean };
+  };
 }
 
 export interface HelperRoutingUpdate {
@@ -243,6 +279,8 @@ export interface HelperRoutingUpdate {
   cells?: Array<{ provider: string; difficulty: string; model: string; effort: string | null }>;
   /** Back to the built-ins: one cell, one provider, or `{}` for all. */
   reset?: { provider?: string; difficulty?: string };
+  /** `cli: "auto"`, at the write's scope: a boolean app-wide, `off` or null for a project. */
+  auto?: boolean | 'off' | null;
 }
 
 export type HelperRoutingUpdateResult =
@@ -336,7 +374,8 @@ function windowView(window: QuotaWindow | undefined): QuotaWindowView | null {
  */
 export function classifyQuota(windows: readonly QuotaWindow[], now: number, options: { model?: string } = {}): Omit<QuotaView, 'source' | 'refreshAfterSeconds'> {
   const current = windows.filter((w) => (w.resetsAt === undefined || w.resetsAt > now) && now - w.asOf <= QUOTA_STALE_MS);
-  const counts = (w: QuotaWindow) => !isModelWindow(w.name) || (!!options.model && wireName(w.name) === `model:${options.model}`);
+  // By name, ignoring case: a provider labels a window `Fable` where the model's id is `fable`.
+  const counts = (w: QuotaWindow) => !isModelWindow(w.name) || (!!options.model && wireName(w.name).toLowerCase() === `model:${options.model.toLowerCase()}`);
   const readable = current.filter((w) => counts(w) && (w.usedPercent !== undefined || w.limitReached));
   const unreadable = current.filter((w) => counts(w) && w.usedPercent === undefined && !w.limitReached).map((w) => wireName(w.name));
   const listed = {

@@ -16,12 +16,17 @@ import {
   HELPER_ROUTING_LABELS,
   HELPER_ROUTING_POLICY_VERSION,
   PRESET_PROVIDERS,
+  routingLabel,
   isHelperDifficulty,
   isPresetModel,
   isPresetProvider,
   type HelperDifficulty,
+  type HelperAutoView,
   type HelperRouting,
   type HelperRoutingFallback,
+  type HelperRoutingSkip,
+  type QuotaDecisionView,
+  type QuotaView,
   type HelperRoutingFieldSource,
   type HelperRoutingSettings,
   type HelperRoutingUpdate,
@@ -39,11 +44,16 @@ import { getAllProviders, getProvider } from '../orchestrators';
 import type { OrchestratorId } from '../orchestrators';
 import { helperPresetsChanged } from '../telemetry/feature-events';
 import { appLog } from './log-service';
-import { readProviderQuota } from './provider-quota';
+import { isProviderCoolingDown, readProviderQuota } from './provider-quota';
 import { readLayeredPersonaRaw } from './materialization-service';
 import { checkHelperEffort, checkHelperModel, modelListFor } from './model-check';
 import * as orchestrationSettings from './orchestration-settings';
 import { appendSettingsAudit, type SettingsAuditSurface } from './settings-audit';
+import { AUTO_RESERVATION_MS, AUTO_STICKY_MS, decideAutoProvider, type AutoCandidate } from './helper-auto-policy';
+import { getSettings as getOrchestratorSettings } from './orchestrator-settings';
+import { readProjectAgentDefaults, writeProjectAgentDefaults } from './agent-settings-service';
+import type { DurableAgentConfig } from '../../shared/types';
+import type { ResolvedOrchestrationPolicy } from '../../shared/orchestration-policy';
 
 function errorText(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
@@ -127,7 +137,13 @@ async function resolveCell(
 
 // ── What a start decides ─────────────────────────────────────────────────
 
+export const AUTO_CLI = 'auto';
+
 export interface StartPlanRequest {
+  /** Whether this orchestrator may use Auto, for `cli: "auto"`. */
+  auto?: HelperAutoView;
+  /** Who is asking, for Auto's sticky choice. */
+  orchestratorId?: string;
   cli?: string;
   model?: string;
   effort?: string;
@@ -139,7 +155,16 @@ export interface StartPlanRequest {
   projectPath: string;
 }
 
+/** One provider Auto could still use, with what it would run. */
+interface AutoOption {
+  provider: PresetProvider;
+  cell: ResolvedCell;
+  quota: QuotaDecisionView;
+}
+
 export interface StartPlan {
+  /** Auto, waiting to be decided under the start lock: see decideAutoPlan. */
+  pendingAuto?: { options: AutoOption[]; skipped: Record<string, HelperRoutingSkip>; difficulty: HelperDifficulty; orchestratorId: string; orchestratorCli?: string };
   provider?: string;
   model?: string;
   effort?: string;
@@ -153,7 +178,7 @@ export interface StartPlan {
 export type StartPlanResult =
   | { ok: true; plan: StartPlan | null }
   /** `message` is for the orchestrator. `userReason` follows "because" in what a person who approved the start reads. */
-  | { ok: false; code: 'no_valid_mapping' | 'auto_not_supported'; message: string; userReason: string };
+  | { ok: false; code: 'no_valid_mapping' | 'auto_not_supported' | 'auto_off' | 'no_candidate'; message: string; userReason: string };
 
 /** What a persona's front-matter sets for a CLI and model. Unreadable means nothing: the creation refuses a missing persona. */
 async function personaPins(projectPath: string, persona: string | undefined): Promise<{ orchestrator?: string; model?: string }> {
@@ -185,11 +210,21 @@ export async function planHelperStart(request: StartPlanRequest): Promise<StartP
   if (!cli && !model && !effort && !difficulty) return { ok: true, plan: null };
 
   const pinned = await personaPins(projectPath, persona);
+  const wantsAuto = cli === AUTO_CLI;
+  if (wantsAuto) {
+    if (!request.auto?.effective) {
+      const why = routingLabel('autoOff', request.auto?.reason ?? 'not_enabled');
+      return { ok: false, code: 'auto_off', message: `Auto provider is off for you: ${why}. Name a CLI, or ask the user to turn it on.`, userReason: `Auto provider is off: ${why}.` };
+    }
+    // A persona's pin decides, and Auto has nothing to balance. Its CLI or the orchestrator's is used.
+    if (!pinned.orchestrator && !pinned.model) return prepareAuto(request);
+  }
   // A persona's model goes with its CLI: it can't run on another one the request named.
-  const otherCli = !!cli && !!pinned.orchestrator && pinned.orchestrator !== cli;
+  const otherCli = !!cli && !wantsAuto && !!pinned.orchestrator && pinned.orchestrator !== cli;
   const pins = otherCli ? {} : pinned;
-  const provider = cli ?? pins.orchestrator ?? orchestratorCli;
-  const providerSource: HelperRoutingFieldSource = cli ? 'request' : pins.orchestrator ? 'persona' : 'orchestrator';
+  const namedCli = wantsAuto ? undefined : cli;
+  const provider = namedCli ?? pins.orchestrator ?? orchestratorCli;
+  const providerSource: HelperRoutingFieldSource = namedCli ? 'request' : pins.orchestrator ? 'persona' : 'orchestrator';
   let resolvedModel = model ?? pins.model;
   let modelSource: HelperRoutingFieldSource = model ? 'request' : pins.model ? 'persona' : 'cli_default';
   let resolvedEffort = effort;
@@ -259,22 +294,222 @@ export async function planHelperStart(request: StartPlanRequest): Promise<StartP
       ...(provider && { provider }),
       ...(passedModel && { model: passedModel }),
       ...(resolvedEffort && { effort: resolvedEffort }),
-      keep: [...(cli ? ['orchestrator' as const] : []), ...(model || otherCli ? ['model' as const] : [])],
+      keep: [...(namedCli ? ['orchestrator' as const] : []), ...(model || otherCli ? ['model' as const] : [])],
       ...(warning && { warning }),
       routing: {
-        mode: validDifficulty ? 'preset' : 'explicit',
+        mode: wantsAuto ? 'auto' : validDifficulty ? 'preset' : 'explicit',
         balanced: false,
         decidedAt: new Date().toISOString(),
         policyVersion: HELPER_ROUTING_POLICY_VERSION,
         requested: { provider: cli ?? null, model: model ?? null, effort: effort ?? null, difficulty: validDifficulty },
         resolved: { provider: provider ?? null, model: passedModel ?? null, effort: resolvedEffort ?? null, difficulty: validDifficulty },
         source: { provider: providerSource, model: modelSource, effort: effortSource },
-        reason: usedPreset ? 'preset_on_cli' : cli || model || effort ? 'explicit_request' : 'persona_pinned',
+        reason: wantsAuto && (pinned.orchestrator || pinned.model) ? 'persona_pinned'
+          : usedPreset ? 'preset_on_cli' : namedCli || model || effort ? 'explicit_request' : 'persona_pinned',
         fallback,
         context: { status: 'none' },
       },
     },
   };
+}
+
+// ── Auto ─────────────────────────────────────────────────────────────────
+
+function decisionQuota(quota: QuotaView): QuotaDecisionView {
+  return {
+    state: quota.state,
+    asOf: quota.asOf,
+    ...(quota.unknownReason && { unknownReason: quota.unknownReason }),
+    ...(quota.limitingWindow && { limitingWindow: quota.limitingWindow }),
+  };
+}
+
+async function providerUsable(provider: string, projectPath: string): Promise<boolean> {
+  try {
+    const instance = getProvider(provider as OrchestratorId);
+    if (!instance) return false;
+    return (await instance.checkAvailability()).available;
+  } catch (err) {
+    // telemetry-exempt: logged; a provider that can't be checked isn't a candidate.
+    appLog('core:mcp', 'warn', 'Auto: could not check a provider', { meta: { provider, projectPath, error: err instanceof Error ? err.name : 'unknown' } });
+    return false;
+  }
+}
+
+/**
+ * What Auto can choose from, read before the start lock, because a list or a
+ * quota read can take a CLI handshake. The choice waits for the lock, so a burst
+ * of starts sees each other's.
+ */
+async function prepareAuto(request: StartPlanRequest): Promise<StartPlanResult> {
+  const { projectPath, orchestratorCli } = request;
+  const difficulty = request.difficulty as HelperDifficulty;
+  const enabled = getOrchestratorSettings().enabled ?? [];
+  const skipped: Record<string, HelperRoutingSkip> = {};
+  for (const other of getAllProviders()) {
+    if (!isPresetProvider(other.id) && (enabled.length === 0 || enabled.includes(other.id))) skipped[other.id] = 'auto_not_supported';
+  }
+  const options: AutoOption[] = [];
+  await Promise.all(PRESET_PROVIDERS.map(async (provider) => {
+    if (enabled.length > 0 && !enabled.includes(provider)) { skipped[provider] = 'cli_disabled'; return; }
+    if (!(await providerUsable(provider, projectPath))) { skipped[provider] = 'cli_unavailable'; return; }
+    if (await isProviderCoolingDown(provider, projectPath)) { skipped[provider] = 'cooling_down'; return; }
+    const { resolved } = await resolveCell(provider, difficulty, projectPath);
+    if (!resolved) { skipped[provider] = 'no_valid_mapping'; return; }
+    const quota = await readProviderQuota(provider, projectPath, { model: resolved.cell.model });
+    options.push({ provider, cell: resolved, quota: decisionQuota(quota) });
+  }));
+  // Registration order, whichever read finished first.
+  options.sort((a, b) => PRESET_PROVIDERS.indexOf(a.provider) - PRESET_PROVIDERS.indexOf(b.provider));
+  const usable = options.filter((o) => o.quota.state !== 'exhausted' && o.quota.state !== 'near_limit');
+  if (usable.length === 0) return noCandidate(difficulty, skipped, options);
+  return {
+    ok: true,
+    plan: {
+      pendingAuto: { options, skipped, difficulty, orchestratorId: request.orchestratorId ?? '', ...(orchestratorCli && { orchestratorCli }) },
+      keep: ['orchestrator', 'model'],
+      routing: {} as HelperRouting,
+    },
+  };
+}
+
+function noCandidate(difficulty: HelperDifficulty, skipped: Record<string, HelperRoutingSkip>, options: readonly AutoOption[]): StartPlanResult {
+  const all = { ...skipped };
+  for (const option of options) {
+    if (option.quota.state === 'exhausted') all[option.provider] = 'quota_exhausted';
+    else if (option.quota.state === 'near_limit') all[option.provider] = 'quota_near_limit';
+  }
+  const reasons = Object.entries(all).map(([provider, code]) => `${provider}: ${routingLabel('skipped', code)}`).join('; ');
+  return {
+    ok: false,
+    code: 'no_candidate',
+    message: `Auto has no provider for a ${difficulty} task right now (${reasons}). Tell the user, or name a CLI. Don't retry in a loop.`,
+    userReason: `no provider can take a ${difficulty} task right now (${reasons}).`,
+  };
+}
+
+const stickyChoices = new Map<string, { provider: string; at: number }>();
+
+function stickyFor(orchestratorId: string, difficulty: string): string | undefined {
+  const key = `${orchestratorId}\0${difficulty}`;
+  const choice = stickyChoices.get(key);
+  if (!choice) return undefined;
+  if (Date.now() - choice.at > AUTO_STICKY_MS) {
+    stickyChoices.delete(key);
+    return undefined;
+  }
+  return choice.provider;
+}
+
+/** Helpers Auto has chosen and hasn't yet seen live, by id. Counted in load so a burst spreads out. */
+const reservations = new Map<string, { provider: string; expires: number }>();
+
+/** Add a chosen helper's reservation, once its id is known. Called under the start lock. */
+export function reserveAutoHelper(helperId: string, provider: string): void {
+  reservations.set(helperId, { provider, expires: Date.now() + AUTO_RESERVATION_MS });
+}
+
+/** The start has settled, one way or the other: its row counts for itself now. */
+export function releaseAutoHelper(helperId: string): void {
+  reservations.delete(helperId);
+}
+
+/** Reservations as load, without double counting a helper already seen live. */
+export function reservedLoad(liveIds: ReadonlySet<string>): Record<string, number> {
+  const now = Date.now();
+  const load: Record<string, number> = {};
+  for (const [id, reservation] of reservations) {
+    if (reservation.expires <= now) reservations.delete(id);
+    else if (!liveIds.has(id)) load[reservation.provider] = (load[reservation.provider] ?? 0) + 1;
+  }
+  return load;
+}
+
+/**
+ * Make Auto's choice, under the start lock, from what prepareAuto read and the
+ * load right now. Decided once: nothing moves this helper later.
+ */
+export function decideAutoPlan(plan: StartPlan, load: Readonly<Record<string, number>>): StartPlanResult {
+  const pending = plan.pendingAuto;
+  if (!pending) return { ok: true, plan };
+  const { options, skipped, difficulty, orchestratorId, orchestratorCli } = pending;
+  const unverified = new Set(options.filter((o) => o.cell.fallback === 'model_unverified').map((o) => o.provider));
+  const candidates: AutoCandidate[] = options.map((o) => ({ provider: o.provider, quotaState: o.quota.state, ...(unverified.has(o.provider) && { unverified: true }) }));
+  const decision = decideAutoProvider({
+    candidates, load, ...(orchestratorCli && { orchestratorCli }),
+    ...(orchestratorId && { sticky: stickyFor(orchestratorId, difficulty) }),
+  });
+  if (decision.ok === false) return noCandidate(difficulty, skipped, options);
+  const chosen = options.find((o) => o.provider === decision.provider)!;
+  if (orchestratorId) stickyChoices.set(`${orchestratorId}\0${difficulty}`, { provider: decision.provider, at: Date.now() });
+  const allSkipped = { ...skipped, ...decision.skipped };
+  const { cell } = chosen;
+  const effort = cell.cell.effort ?? undefined;
+  const routing: HelperRouting = {
+    mode: 'auto',
+    balanced: true,
+    decidedAt: new Date(Date.now()).toISOString(),
+    policyVersion: HELPER_ROUTING_POLICY_VERSION,
+    requested: { provider: AUTO_CLI, model: null, effort: null, difficulty },
+    resolved: { provider: decision.provider, model: cell.cell.model, effort: effort ?? null, difficulty },
+    source: { provider: 'auto', model: cell.source, effort: effort ? cell.source : 'cli_default' },
+    reason: decision.reason,
+    // Copilot can never be chosen, so its being skipped isn't a fallback.
+    fallback: cell.fallback !== 'none' ? cell.fallback : Object.values(allSkipped).some((code) => code !== 'auto_not_supported') ? 'candidate_skipped' : 'none',
+    context: { status: 'none' },
+    load: Object.fromEntries(options.map((o) => [o.provider, load[o.provider] ?? 0])),
+    quota: Object.fromEntries(options.map((o) => [o.provider, o.quota])),
+    quotaBasis: chosen.quota.state === 'unknown' ? 'unknown_scored_as_healthy' : 'known',
+    ...(Object.keys(allSkipped).length > 0 && { skipped: allSkipped }),
+  };
+  return {
+    ok: true,
+    plan: {
+      provider: decision.provider,
+      model: cell.cell.model,
+      ...(effort && { effort }),
+      keep: ['orchestrator', 'model'],
+      routing,
+      ...(cell.warning && { warning: cell.warning }),
+    },
+  };
+}
+
+/**
+ * Whether `cli: "auto"` is allowed, at the scope asked about. A project or a
+ * persona can turn it off and never on, so a cloned repository can't spend another
+ * provider's quota. Then the orchestrator's own choice, then the app's.
+ */
+export async function readHelperAuto(context: {
+  projectPath?: string;
+  agent?: { config: DurableAgentConfig; policy: ResolvedOrchestrationPolicy };
+  dispatcher?: boolean;
+} = {}): Promise<HelperAutoView> {
+  const app = orchestrationSettings.getAutoHelpers();
+  const { projectPath, agent, dispatcher } = context;
+  const project = projectPath ? (await readProjectAgentDefaults(projectPath)).helperAuto === 'off' : false;
+  const policy = agent?.policy;
+  const stored = agent?.config.orchestration?.autoHelpers;
+  const personaOff = policy?.sources.autoHelpers === 'persona';
+  const locked = !!dispatcher;
+  const scopes: HelperAutoView['scopes'] = {
+    app: { value: app, editable: true },
+    ...(projectPath && !locked && { project: { value: project ? 'off' as const : null, choices: ['off', null] as ['off', null], editable: true } }),
+    ...(agent && !locked && {
+      persona: { value: personaOff ? false as const : null, editable: false as const },
+      agent: { value: stored ?? null, editable: !policy?.mcpOff },
+    }),
+  };
+  if (locked) {
+    return { effective: false, source: 'dispatcher_locked', reason: 'dispatcher_locked', scopes: { app: { value: app, editable: true }, agent: { value: null, editable: false } } };
+  }
+  const off = (source: HelperAutoView['source'], reason: HelperAutoView['reason']): HelperAutoView => ({ effective: false, source, reason, scopes });
+  if (policy?.mcpOff) return off('mcp_off', 'mcp_off');
+  if (project) return off('project', 'project_off');
+  if (personaOff) return off('persona', 'persona_off');
+  if (policy && !policy.orchestrate) return off(stored !== undefined ? 'agent' : app ? 'app' : 'default', 'orchestration_off');
+  if (stored !== undefined) return stored ? { effective: true, source: 'agent', scopes } : off('agent', 'not_enabled');
+  return app ? { effective: true, source: 'app', scopes } : off('default', 'not_enabled');
 }
 
 // ── The settings ─────────────────────────────────────────────────────────
@@ -367,7 +602,7 @@ async function viewProvider(provider: PresetProvider, projectPath: string | unde
  * Reads made without one also notice a cell whose state changed, and move the
  * revision.
  */
-export async function readHelperRouting(options: { projectPath?: string } = {}): Promise<HelperRoutingSettings> {
+export async function readHelperRouting(options: { projectPath?: string; autoContext?: Parameters<typeof readHelperAuto>[0] } = {}): Promise<HelperRoutingSettings> {
   const providers: Record<string, ProviderRoutingView> = {};
   await Promise.all(PRESET_PROVIDERS.map(async (p) => { providers[p] = await viewProvider(p, options.projectPath); }));
   for (const other of getAllProviders()) {
@@ -387,7 +622,8 @@ export async function readHelperRouting(options: { projectPath?: string } = {}):
       emitChanged();
     }
   }
-  return { revision: helperRoutingRevision(), serverTime: new Date(Date.now()).toISOString(), labels: HELPER_ROUTING_LABELS, providers };
+  const auto = await readHelperAuto(options.autoContext ?? (options.projectPath ? { projectPath: options.projectPath } : {}));
+  return { revision: helperRoutingRevision(), serverTime: new Date(Date.now()).toISOString(), labels: HELPER_ROUTING_LABELS, providers, auto };
 }
 
 // ── Changing them ────────────────────────────────────────────────────────
@@ -418,12 +654,14 @@ let writeChain: Promise<unknown> = Promise.resolve();
 
 interface PresetWriteOrigin {
   surface: SettingsAuditSurface;
+  /** For a write at project scope: only `auto`. */
+  projectPath?: string;
 }
 
 function checkShape(update: HelperRoutingUpdate): void {
   const invalid = (message: string) => new HelperRoutingError('invalid_helper_routing', message);
   if (typeof update?.revision !== 'string' || savedPartOf(update.revision) === null) throw invalid('Send the revision this change was made from.');
-  if (!update.cells?.length && !update.reset) throw invalid('Send cells to change or a reset.');
+  if (!update.cells?.length && !update.reset && update.auto === undefined) throw invalid('Send cells to change, a reset, or auto.');
   for (const cell of update.cells ?? []) {
     if (!isPresetProvider(cell?.provider)) throw invalid(`${String(cell?.provider)} has no presets.`);
     if (!isHelperDifficulty(cell.difficulty)) throw invalid(`difficulty must be one of ${HELPER_DIFFICULTIES.join(', ')}.`);
@@ -475,8 +713,9 @@ export function updateHelperPresets(update: HelperRoutingUpdate, origin: PresetW
   return run;
 }
 
-async function writePresets(update: HelperRoutingUpdate, { surface }: PresetWriteOrigin): Promise<HelperRoutingSettings> {
-  const action = update?.reset && !update.cells?.length
+async function writePresets(update: HelperRoutingUpdate, { surface, projectPath }: PresetWriteOrigin): Promise<HelperRoutingSettings> {
+  const action = update?.auto !== undefined && !update.cells?.length && !update.reset ? 'toggle'
+    : update?.reset && !update.cells?.length
     ? update.reset.difficulty ? 'reset_cell' : update.reset.provider ? 'reset_provider' : 'reset_all'
     : 'set';
   const refuse = async (err: HelperRoutingError): Promise<never> => {
@@ -487,6 +726,13 @@ async function writePresets(update: HelperRoutingUpdate, { surface }: PresetWrit
 
   try {
     checkShape(update);
+    const invalid = (message: string) => new HelperRoutingError('invalid_helper_routing', message);
+    if (projectPath) {
+      if (update.cells?.length || update.reset) throw invalid('A project can only turn Auto off.');
+      if (update.auto !== 'off' && update.auto !== null) throw invalid('A project can only set auto to off or null.');
+    } else if (update.auto !== undefined && typeof update.auto !== 'boolean') {
+      throw invalid('App-wide, auto is true or false.');
+    }
   } catch (err) {
     if (err instanceof HelperRoutingError) return refuse(err);
     throw err;
@@ -503,6 +749,27 @@ async function writePresets(update: HelperRoutingUpdate, { surface }: PresetWrit
     if (check.state === 'stale') {
       return refuse(new HelperRoutingError(check.staleReason as HelperRoutingErrorCode, check.message ?? 'That choice isn\'t offered.'));
     }
+  }
+
+  if (update.auto !== undefined) {
+    if (projectPath) {
+      const defaults = await readProjectAgentDefaults(projectPath);
+      const before = defaults.helperAuto ?? null;
+      const { helperAuto: _old, ...rest } = defaults;
+      await writeProjectAgentDefaults(projectPath, { ...rest, ...(update.auto === 'off' && { helperAuto: 'off' as const }) });
+      await orchestrationSettings.bumpPresetsRevision();
+      await appendSettingsAudit({ surface, scope: 'project', key: 'helper_auto', before, after: update.auto === 'off' ? 'off' : null, outcome: 'ok' });
+    } else {
+      const before = orchestrationSettings.getAutoHelpers();
+      await orchestrationSettings.saveAutoHelpers(update.auto === true);
+      await appendSettingsAudit({ surface, scope: 'app', key: 'helper_auto', before, after: update.auto === true, outcome: 'ok' });
+    }
+  }
+  if (projectPath || (!update.cells?.length && !update.reset)) {
+    helperPresetsChanged(action, surface, true);
+    appLog('core:orchestration', 'info', 'Helper Auto setting changed', { meta: { action, surface, scope: projectPath ? 'project' : 'app' } });
+    emitChanged();
+    return readHelperRouting(projectPath ? { projectPath } : {});
   }
 
   const before = orchestrationSettings.getPresets();
@@ -531,6 +798,8 @@ async function writePresets(update: HelperRoutingUpdate, { surface }: PresetWrit
 export function _resetHelperRoutingForTesting(): void {
   stateEpoch = 0;
   lastStateSignature = null;
+  stickyChoices.clear();
+  reservations.clear();
   writeChain = Promise.resolve();
   listeners.clear();
 }

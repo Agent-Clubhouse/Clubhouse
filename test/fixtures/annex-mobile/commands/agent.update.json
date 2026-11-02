@@ -31,6 +31,7 @@
                 "auto",
                 "bypass"
               ],
+              "autoHelpers": false,
               "connectToDispatcher": false,
               "control": "ask-before-start",
               "controls": [
@@ -45,6 +46,7 @@
               "orchestrate": false,
               "sources": {
                 "access": "default",
+                "autoHelpers": "default",
                 "connectToDispatcher": "default",
                 "control": "persona",
                 "crossProjectHelpers": "default",
@@ -190,6 +192,7 @@
                 "auto",
                 "bypass"
               ],
+              "autoHelpers": false,
               "connectToDispatcher": false,
               "control": "hands-off",
               "controls": [
@@ -204,6 +207,7 @@
               "orchestrate": false,
               "sources": {
                 "access": "default",
+                "autoHelpers": "default",
                 "connectToDispatcher": "default",
                 "control": "default",
                 "crossProjectHelpers": "default",
@@ -346,6 +350,7 @@
                 "auto",
                 "bypass"
               ],
+              "autoHelpers": false,
               "connectToDispatcher": false,
               "control": "hands-off",
               "controls": [
@@ -360,6 +365,7 @@
               "orchestrate": false,
               "sources": {
                 "access": "default",
+                "autoHelpers": "default",
                 "connectToDispatcher": "default",
                 "control": "default",
                 "crossProjectHelpers": "default",
@@ -502,6 +508,7 @@
                 "auto",
                 "bypass"
               ],
+              "autoHelpers": false,
               "connectToDispatcher": true,
               "control": "hands-off",
               "controls": [
@@ -516,6 +523,7 @@
               "orchestrate": true,
               "sources": {
                 "access": "default",
+                "autoHelpers": "default",
                 "connectToDispatcher": "default",
                 "control": "default",
                 "crossProjectHelpers": "default",
@@ -949,6 +957,7 @@
                 "auto",
                 "bypass"
               ],
+              "autoHelpers": false,
               "connectToDispatcher": true,
               "control": "ask-everything",
               "controls": [
@@ -963,6 +972,7 @@
               "orchestrate": true,
               "sources": {
                 "access": "agent",
+                "autoHelpers": "default",
                 "connectToDispatcher": "default",
                 "control": "agent",
                 "crossProjectHelpers": "default",
@@ -1107,6 +1117,7 @@
                 "auto",
                 "bypass"
               ],
+              "autoHelpers": false,
               "connectToDispatcher": true,
               "control": "ask-everything",
               "controls": [
@@ -1121,6 +1132,7 @@
               "orchestrate": true,
               "sources": {
                 "access": "agent",
+                "autoHelpers": "default",
                 "connectToDispatcher": "default",
                 "control": "agent",
                 "crossProjectHelpers": "default",
@@ -1263,6 +1275,7 @@
                 "auto",
                 "bypass"
               ],
+              "autoHelpers": false,
               "connectToDispatcher": false,
               "control": "hands-off",
               "controls": [
@@ -1277,6 +1290,7 @@
               "orchestrate": false,
               "sources": {
                 "access": "default",
+                "autoHelpers": "default",
                 "connectToDispatcher": "default",
                 "control": "default",
                 "crossProjectHelpers": "default",
@@ -1957,6 +1971,7 @@
                 "auto",
                 "bypass"
               ],
+              "autoHelpers": false,
               "connectToDispatcher": true,
               "control": "hands-off",
               "controls": [
@@ -1971,6 +1986,7 @@
               "orchestrate": true,
               "sources": {
                 "access": "default",
+                "autoHelpers": "default",
                 "connectToDispatcher": "agent",
                 "control": "default",
                 "crossProjectHelpers": "agent",
@@ -2119,7 +2135,7 @@
       "name": "accepted contextWindow",
       "request": {
         "agentId": "durable_sleepy",
-        "commandId": "cmd_150",
+        "commandId": "cmd_158",
         "contextWindow": "500000",
         "epoch": "00000000-0000-4000-8000-000000000001",
         "type": "agent.update",
@@ -2127,7 +2143,7 @@
       },
       "response": {
         "body": {
-          "commandId": "cmd_150",
+          "commandId": "cmd_158",
           "epoch": "00000000-0000-4000-8000-000000000001",
           "result": {
             "agentId": "durable_sleepy",
@@ -2139,6 +2155,7 @@
                 "auto",
                 "bypass"
               ],
+              "autoHelpers": false,
               "connectToDispatcher": false,
               "control": "hands-off",
               "controls": [
@@ -2153,6 +2170,7 @@
               "orchestrate": false,
               "sources": {
                 "access": "default",
+                "autoHelpers": "default",
                 "connectToDispatcher": "default",
                 "control": "default",
                 "crossProjectHelpers": "default",
@@ -2275,7 +2293,7 @@
       "name": "accepted contextWindow null reset",
       "request": {
         "agentId": "durable_sleepy",
-        "commandId": "cmd_151",
+        "commandId": "cmd_159",
         "contextWindow": null,
         "epoch": "00000000-0000-4000-8000-000000000001",
         "type": "agent.update",
@@ -2283,7 +2301,7 @@
       },
       "response": {
         "body": {
-          "commandId": "cmd_151",
+          "commandId": "cmd_159",
           "epoch": "00000000-0000-4000-8000-000000000001",
           "result": {
             "agentId": "durable_sleepy",
@@ -2295,6 +2313,7 @@
                 "auto",
                 "bypass"
               ],
+              "autoHelpers": false,
               "connectToDispatcher": false,
               "control": "hands-off",
               "controls": [
@@ -2309,6 +2328,7 @@
               "orchestrate": false,
               "sources": {
                 "access": "default",
+                "autoHelpers": "default",
                 "connectToDispatcher": "default",
                 "control": "default",
                 "crossProjectHelpers": "default",
@@ -2431,7 +2451,7 @@
       "name": "invalid_context_window",
       "request": {
         "agentId": "durable_sleepy",
-        "commandId": "cmd_152",
+        "commandId": "cmd_160",
         "contextWindow": "123",
         "epoch": "00000000-0000-4000-8000-000000000001",
         "type": "agent.update",
@@ -2439,7 +2459,7 @@
       },
       "response": {
         "body": {
-          "commandId": "cmd_152",
+          "commandId": "cmd_160",
           "epoch": "00000000-0000-4000-8000-000000000001",
           "error": {
             "code": "invalid_context_window",
@@ -2455,7 +2475,7 @@
       "name": "agent_running (contextWindow)",
       "request": {
         "agentId": "durable_chat",
-        "commandId": "cmd_153",
+        "commandId": "cmd_161",
         "contextWindow": "500000",
         "epoch": "00000000-0000-4000-8000-000000000001",
         "type": "agent.update",
@@ -2463,7 +2483,7 @@
       },
       "response": {
         "body": {
-          "commandId": "cmd_153",
+          "commandId": "cmd_161",
           "epoch": "00000000-0000-4000-8000-000000000001",
           "error": {
             "code": "agent_running",
@@ -2479,7 +2499,7 @@
       "name": "accepted model change resets contextWindow",
       "request": {
         "agentId": "durable_sleepy",
-        "commandId": "cmd_154",
+        "commandId": "cmd_162",
         "epoch": "00000000-0000-4000-8000-000000000001",
         "model": "sonnet",
         "type": "agent.update",
@@ -2487,7 +2507,7 @@
       },
       "response": {
         "body": {
-          "commandId": "cmd_154",
+          "commandId": "cmd_162",
           "epoch": "00000000-0000-4000-8000-000000000001",
           "result": {
             "agentId": "durable_sleepy",
@@ -2503,6 +2523,7 @@
                 "auto",
                 "bypass"
               ],
+              "autoHelpers": false,
               "connectToDispatcher": false,
               "control": "hands-off",
               "controls": [
@@ -2517,6 +2538,7 @@
               "orchestrate": false,
               "sources": {
                 "access": "default",
+                "autoHelpers": "default",
                 "connectToDispatcher": "default",
                 "control": "default",
                 "crossProjectHelpers": "default",
@@ -2619,7 +2641,7 @@
       "name": "accepted contextWindow (Dispatcher)",
       "request": {
         "agentId": "durable_dispatcher",
-        "commandId": "cmd_155",
+        "commandId": "cmd_163",
         "contextWindow": "300000",
         "epoch": "00000000-0000-4000-8000-000000000001",
         "type": "agent.update",
@@ -2627,7 +2649,7 @@
       },
       "response": {
         "body": {
-          "commandId": "cmd_155",
+          "commandId": "cmd_163",
           "epoch": "00000000-0000-4000-8000-000000000001",
           "result": {
             "agentId": "durable_dispatcher",
@@ -2748,7 +2770,7 @@
       "name": "accepted contextWindow null reset (Dispatcher)",
       "request": {
         "agentId": "durable_dispatcher",
-        "commandId": "cmd_156",
+        "commandId": "cmd_164",
         "contextWindow": null,
         "epoch": "00000000-0000-4000-8000-000000000001",
         "type": "agent.update",
@@ -2756,7 +2778,7 @@
       },
       "response": {
         "body": {
-          "commandId": "cmd_156",
+          "commandId": "cmd_164",
           "epoch": "00000000-0000-4000-8000-000000000001",
           "result": {
             "agentId": "durable_dispatcher",
@@ -2877,7 +2899,7 @@
       "name": "invalid_context_window (Dispatcher)",
       "request": {
         "agentId": "durable_dispatcher",
-        "commandId": "cmd_157",
+        "commandId": "cmd_165",
         "contextWindow": "123",
         "epoch": "00000000-0000-4000-8000-000000000001",
         "type": "agent.update",
@@ -2885,7 +2907,7 @@
       },
       "response": {
         "body": {
-          "commandId": "cmd_157",
+          "commandId": "cmd_165",
           "epoch": "00000000-0000-4000-8000-000000000001",
           "error": {
             "code": "invalid_context_window",
@@ -2901,7 +2923,7 @@
       "name": "dispatcher_locked (name, with contextWindow)",
       "request": {
         "agentId": "durable_dispatcher",
-        "commandId": "cmd_158",
+        "commandId": "cmd_166",
         "contextWindow": "300000",
         "epoch": "00000000-0000-4000-8000-000000000001",
         "name": "Boss",
@@ -2910,7 +2932,7 @@
       },
       "response": {
         "body": {
-          "commandId": "cmd_158",
+          "commandId": "cmd_166",
           "epoch": "00000000-0000-4000-8000-000000000001",
           "error": {
             "code": "dispatcher_locked",

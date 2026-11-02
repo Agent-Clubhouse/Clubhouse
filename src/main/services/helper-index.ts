@@ -158,6 +158,14 @@ export async function listHelpersEverywhere(
   return result;
 }
 
+/** Every live helper in every local project, whoever its parent is: what the global limits and Auto's load count. */
+export async function listAllHelpers(homePath: string): Promise<HelperEntry[]> {
+  const index = await indexFor(homePath);
+  return index
+    .filter((row) => row.config.parentAgentId && !isDisposedAgent(row.config))
+    .map(({ projectPath, config }) => ({ projectPath, config }));
+}
+
 /**
  * A helper's parent and the project it is in, or null for a top-level agent
  * or a parent that can't be found (deleted, or its project removed or moved).

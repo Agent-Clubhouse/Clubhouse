@@ -144,7 +144,7 @@ describe('the allowlist', () => {
       'agent.access': ['free_agent_mode', 'permission_mode'],
       'agent.mcp': ['clubhouse_mcp', 'clubhouse_mode', 'mcp_ids'],
       'agent.idle': ['idle_sleep'],
-      'agent.orchestration': ['orchestrate', 'access', 'control', 'max_helpers', 'cross_project_helpers', 'connect_to_dispatcher'],
+      'agent.orchestration': ['orchestrate', 'access', 'control', 'max_helpers', 'cross_project_helpers', 'connect_to_dispatcher', 'auto_helpers'],
       'project.identity': ['name', 'display_name', 'color', 'emoji', 'has_image'],
       'project.defaults': ['orchestrator', 'persona', 'mission', 'free_agent_mode', 'profile_id', 'source_control_provider', 'default_mcps'],
       'project.modes': ['clubhouse_mode', 'mcp', 'permission_mode'],

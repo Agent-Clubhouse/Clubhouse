@@ -82,7 +82,8 @@ describe('helper routing', () => {
     const persona = fs.readFileSync(path.join(__dirname, '../renderer/features/personas/orchestrator.md'), 'utf8');
     expect(persona).toContain('`difficulty` keeps the helper on its CLI.');
     expect(persona).toContain('Don\'t claim a choice is cheapest, best or preferred');
-    expect(persona).not.toContain('cli: "auto"');
+    expect(persona).toContain('Unknown quota means unknown, not available.');
+    expect(persona).toContain('A helper stays on its provider for its whole task.');
   });
 });
 
@@ -154,7 +155,8 @@ describe('classifyQuota', () => {
     });
     expect(classifyQuota(windows, NOW, { model: 'Fable' })).toMatchObject({ state: 'near_limit', limitingWindow: 'model:Fable' });
     expect(classifyQuota(windows, NOW, { model: 'opus' })).toMatchObject({ state: 'near_limit', limitingWindow: 'model:opus' });
-    expect(classifyQuota(windows, NOW, { model: 'fable' }).state).toBe('known');
+    expect(classifyQuota(windows, NOW, { model: 'fable' }).state).toBe('near_limit');
+    expect(classifyQuota(windows, NOW, { model: 'sonnet' }).state).toBe('known');
   });
 
   it('another duration still counts, named other', () => {

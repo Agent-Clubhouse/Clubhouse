@@ -238,6 +238,8 @@ export interface ProjectAgentDefaults {
   lintCommand?: string;
   /** Default profile to use for agents in this project */
   profileId?: string;
+  /** `off` stops `cli: "auto"` in this project (#2671). A project can't turn it on. */
+  helperAuto?: 'off';
   /** Shell command prefix prepended before the CLI binary (e.g. ". ./init.ps1 &&") */
   commandPrefix?: string;
   /** Default mission ID. Resolved at materialization to .clubhouse/missions/<id>.md content; substituted for @@mission. */

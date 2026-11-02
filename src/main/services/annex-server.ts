@@ -2900,7 +2900,7 @@ async function handleMobileHelperRoutingRoute(ctx: AnnexRouteContext): Promise<v
 
 async function runMobileCommand(command: MobileCommand, assertAuthorized: () => void, principal: string): Promise<unknown> {
   assertAuthorized();
-  if (command.type === 'helperRouting.update') return runHelperRoutingUpdate(command, assertAuthorized);
+  if (command.type === 'helperRouting.update') return runHelperRoutingUpdate(command, assertAuthorized, findProjectById);
   if (command.type === 'dispatcher.setEnabled') {
     // onDispatcherChanged broadcasts dispatcher:changed and refreshes the snapshot.
     return setDispatcherEnabledFromPhone(command.enabled, assertAuthorized);

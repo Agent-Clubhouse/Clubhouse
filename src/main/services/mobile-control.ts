@@ -38,14 +38,16 @@ export const MOBILE_COMMAND_FIELDS: Readonly<Record<MobileCommand['type'], reado
   'quick.dismiss': ['projectId', 'agentId'],
   'quick.clear': ['projectId'],
   'dispatcher.setEnabled': ['enabled'],
-  'helperRouting.update': ['revision', 'scope', 'cells', 'reset'],
+  'helperRouting.update': ['revision', 'scope', 'projectId', 'cells', 'reset', 'auto'],
 };
 /** Fields a command may leave out. Every agent.update setting is optional, but it needs at least one. */
 const OPTIONAL = new Set(['delivery', 'message', 'resume', 'model', 'orchestrator', 'attachmentIds', 'force', 'effort', 'cells', 'reset']);
+const ROUTING_OPTIONAL = new Set(['projectId', 'auto']);
 const CREATE_OPTIONAL = new Set(['orchestrator', 'model', 'persona', 'freeAgentMode', 'useWorktree', 'mcpIds', 'branchName', 'branchFrom', 'folderName', 'orchestration']);
 export const isOptionalCommandField = (type: MobileCommand['type'], key: string): boolean =>
   type === 'agent.update' ? key !== 'agentId' : type === 'agent.create' ? CREATE_OPTIONAL.has(key)
-    : type === 'chat.setModel' && key === 'model' ? false : OPTIONAL.has(key);
+    : type === 'helperRouting.update' && ROUTING_OPTIONAL.has(key) ? true
+      : type === 'chat.setModel' && key === 'model' ? false : OPTIONAL.has(key);
 const BOOLEAN_FIELDS = new Set(['resume', 'useWorktree', 'clubhouseMode', 'pinned', 'inactive', 'force', 'freeAgentMode', 'enabled']);
 /** Fields agent.update clears with null. */
 export const NULLABLE_ON_UPDATE = new Set(['emoji', 'persona', 'orchestration', 'contextWindow']);
@@ -82,6 +84,8 @@ export function parseMobileCommand(value: unknown): MobileCommand {
       if (!Array.isArray(v) || v.length === 0 || v.length > 32 || v.some((c) => !record(c))) throw new MobileControlError('invalid_command', 400);
     } else if (key === 'reset') {
       if (!record(v) || Object.keys(v).length > 2) throw new MobileControlError('invalid_command', 400);
+    } else if (key === 'auto') {
+      if (v !== true && v !== false && v !== 'off' && v !== null) throw new MobileControlError('invalid_command', 400);
     } else if (key === 'idleSleep') { if (!idleSleep(v)) throw new MobileControlError('invalid_command', 400); }
     else if (key === 'effort') { if (v !== null && !text(v, 64)) throw new MobileControlError('invalid_command', 400); }
     else if (key === 'level') { if (!(PERMISSION_LEVELS as readonly unknown[]).includes(v)) throw new MobileControlError('invalid_command', 400); }
@@ -90,7 +94,7 @@ export function parseMobileCommand(value: unknown): MobileCommand {
   }
   if (value.delivery !== undefined && !['auto', 'prompt', 'steer', 'queued'].includes(value.delivery as string)) throw new MobileControlError('invalid_command', 400);
   if (type === 'agent.update' && !fields.some((k) => k !== 'agentId' && value[k] !== undefined)) throw new MobileControlError('invalid_command', 400);
-  if (type === 'helperRouting.update' && value.cells === undefined && value.reset === undefined) throw new MobileControlError('invalid_command', 400);
+  if (type === 'helperRouting.update' && value.cells === undefined && value.reset === undefined && value.auto === undefined) throw new MobileControlError('invalid_command', 400);
   return value as unknown as MobileCommand;
 }
 

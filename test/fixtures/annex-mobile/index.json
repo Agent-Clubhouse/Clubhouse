@@ -45,6 +45,7 @@
     "create-options.json",
     "dispatcher-changed.json",
     "dispatcher-routes.json",
+    "helper-routing-auto.json",
     "helper-routing-changed.json",
     "helper-routing-helper.json",
     "helper-routing-quota.json",

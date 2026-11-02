@@ -94,7 +94,7 @@ The rules are the desktop's:
 
 When a dispose finds new facts the request is reissued under a **new `requestId`** with the new checks, and a snapshot is broadcast. An answer to the old id is `helper_request_not_found`, so a phone can never confirm facts it didn't show. Refetch the snapshot after any `helper_*` rejection.
 
-Errors (`message` is the desktop's sentence for all but `helper_request_not_found`): 404 `helper_request_not_found` (answered, expired, dropped or reissued); 409 `helper_start_blocked`, `helper_check_failed`, `helper_work_at_risk`, `helper_work_changed` (`status:"rejected"`, the request still waits); 409 `no_valid_mapping` (`status:"rejected"`, nothing was created and the request is gone); 409 `helper_start_refused`, `helper_dispose_failed` (`status:"failed"`; a refused start was used up; a failed dispose may have stopped the helper).
+Errors (`message` is the desktop's sentence for all but `helper_request_not_found`): 404 `helper_request_not_found` (answered, expired, dropped or reissued); 409 `helper_start_blocked`, `helper_check_failed`, `helper_work_at_risk`, `helper_work_changed` (`status:"rejected"`, the request still waits); 409 `no_valid_mapping`, `no_candidate`, `auto_off` (`status:"rejected"`, nothing was created and the request is gone); 409 `helper_start_refused`, `helper_dispose_failed` (`status:"failed"`; a refused start was used up; a failed dispose may have stopped the helper).
 
 `no_valid_mapping` means nothing valid is offered for the start's difficulty, either its presets or a model its persona sets. Show `error.message`, a sentence for a person, and offer no retry. `rejected` here says nothing was done, and only the next snapshot says whether a request still waits: a snapshot without the row is sent when the request is used up, and it can arrive before or after the receipt. Sending the same `commandId` again replays the receipt. A new one gets 404 `helper_request_not_found`.
 
@@ -622,14 +622,18 @@ Rejections:
 
 The model and effort a `difficulty` picks on each CLI (#2671), as Settings > Helpers edits them. Fixtures: `helper-routing.json`, `helper-routing-helper.json`, `helper-routing-changed.json`, `commands/helperRouting.update.json`. The design, and what later stages add, is in `docs/helper-auto-routing.md`.
 
-Gate on `helperRouting` in capabilities. It lists only what works now, so don't offer anything it doesn't list. Auto isn't there until `modes` has `auto`.
+Gate on `helperRouting` in capabilities. It lists only what works now, so don't offer anything it doesn't list. Offer Auto only when `modes` has `auto`.
 
 ```json
-"helperRouting":{"version":1,"path":"/api/v1/mobile/helper-routing","modes":["explicit","preset"],"scopes":["app"],"quota":true,
+"helperRouting":{"version":1,"path":"/api/v1/mobile/helper-routing","modes":["explicit","preset","auto"],"scopes":["app","project","agent"],"quota":true,
  "quotaStates":["known","low","near_limit","exhausted","unknown"],"unknownReasons":["not_read","stale","not_applicable","read_failed","not_supported"],"quotaSources":["cli_query","session_event","none"],
  "commands":["helperRouting.update"],"snapshotField":"helperRoutingRevision","event":"helper_routing:changed",
- "difficulties":["easy","medium","hard"],"reasons":["explicit_request","persona_pinned","preset_on_cli"],
- "fallbacks":["none","builtin_preset","model_unverified"],"cellStates":["valid","unverified","stale"]}
+ "difficulties":["easy","medium","hard"],
+ "reasons":["explicit_request","persona_pinned","preset_on_cli","only_candidate","lower_load","better_quota_tier","sticky","default_order"],
+ "fallbacks":["none","builtin_preset","candidate_skipped","model_unverified"],
+ "skipped":["cli_disabled","cli_unavailable","auto_not_supported","no_valid_mapping","cooling_down","quota_near_limit","quota_exhausted"],
+ "autoOffReasons":["not_enabled","project_off","persona_off","orchestration_off","mcp_off","dispatcher_locked"],
+ "cellStates":["valid","unverified","stale"]}
 ```
 
 ### Reading
@@ -647,11 +651,12 @@ Gate on `helperRouting` in capabilities. It lists only what works now, so don't 
   "copilot-cli":{"autoEligible":false,"reason":"auto_not_supported","quota":{"state":"unknown","unknownReason":"not_supported","source":"none","asOf":null},"cells":null}}}
 ```
 
-- **labels**: the words for every code, in the families `reason`, `fallback`, `skipped`, `quota`, `unknown`, `window`, `cell` and `generic`. Every read has all of them, including a bare one, so cache them once per revision for rows that only have codes. For a code you don't have, use `labels.generic.unknownCode`, then your own generic "Other".
+- **labels**: the words for every code, in the families `reason`, `fallback`, `skipped`, `quota`, `unknown`, `window`, `autoOff`, `cell` and `generic`. Every read has all of them, including a bare one, so cache them once per revision for rows that only have codes. For a code you don't have, use `labels.generic.unknownCode`, then your own generic "Other".
 - **cells**: `effective` is what a start uses now. `custom` is the saved choice, or null. `state` is that of the saved choice, or of the built-in without one: `valid`, `unverified` (the list may be out of date, so it couldn't be checked) or `stale` (no longer offered, with `staleReason` `model_unavailable` or `effort_unavailable`). A stale saved choice stays saved. `effective` is then the built-in, with `fallback: "builtin_preset"`, or null if that is stale too, and a start with that difficulty is refused. Offer Reset whenever `custom` is set.
-- **autoEligible**: whether a provider has presets, for now.
+- **autoEligible**: whether a provider has presets and Auto can pick it. Copilot can't: its list reports no per-model efforts, and it has no quota source.
 - **choices**: what the pickers offer, per model, with `source` `live` or `fallback`. Always the app-wide list, even with `projectId` or `agentId`, because a write is checked against it. `default` isn't offered, since a preset has to name a model. Cells do follow that profile: a cell can read `stale` there while its model is in `choices`, which means a start in that project would be refused or fall back.
-- **agent**: with `agentId` only. `{usable: true}`, or `{usable: false, reason}` with `dispatcher_locked`, `mcp_off` or `orchestration_off`. The Dispatcher doesn't start helpers, and this gives it no new authority.
+- **agent**: with `agentId` only. `{usable: true}`, or `{usable: false, reason}` with `dispatcher_locked`, `mcp_off` or `orchestration_off`, for presets. The Dispatcher doesn't start helpers, and this gives it no new authority.
+- **auto**: whether `cli: "auto"` is allowed at the scope asked about. See [Auto provider](#auto-provider).
 
 The built-in presets are starting choices, not measured best ones. Don't present them as a recommendation.
 
@@ -685,13 +690,51 @@ The thresholds are starting proposals, not measured values. `known` means under 
 
 A read still going returns `not_read` after at most 3 seconds, with a short `refreshAfterSeconds`. A refresh still going returns the last reading, with `0`. Fetching can't cause extra CLI reads: they are shared and cached for 5 minutes per provider and profile, with a minute's wait after a failure. `helper-routing-quota.json` has whole responses for these under `fullResponses`, with the delay each one gives.
 
+### Auto provider
+
+Lets an orchestrator's `cli: "auto"` pick between Claude Code and Codex for a helper, from helper counts and plan limits. It balances counts, not cost, and a helper stays on its provider for its whole task: a wake never decides again. Off unless a person turns it on. Fixtures: `helper-routing-auto.json`.
+
+```json
+"auto":{"effective":false,"source":"project","reason":"project_off",
+ "scopes":{"app":{"value":true,"editable":true},
+  "project":{"value":"off","choices":["off",null],"editable":true},
+  "persona":{"value":null,"editable":false},
+  "agent":{"value":null,"editable":true}}}
+```
+
+- **effective**: whether it would work now. **reason**, when it wouldn't, is one of `autoOffReasons`, with words in `labels.autoOff`. **source** is the level that decided: `agent`, `project`, `persona`, `app`, `default`, `mcp_off` or `dispatcher_locked`.
+- **scopes**: each level's say, for the scope asked about: `app` always, `project` with `projectId` or `agentId`, and `persona` and `agent` with `agentId`.
+- **The order:** `dispatcher_locked` and `mcp_off` are always off. Then a project's or a persona's `off`, which can never be `on`. Then the agent's own, then the app's. `orchestration.autoHelpers` in `agent.update` is the agent's, and the agent row's `orchestration.autoHelpers` with `sources.autoHelpers` shows it.
+
+To change it, send `helperRouting.update` with `auto`: `true` or `false` at `scope: "app"`, or `"off"` or `null` at `scope: "project"` with `projectId` (404 `project_not_found`). A project scope takes nothing else.
+
+A held start that names Auto has `requestedRouting.provider: "auto"`, and decides at approval. `helper.approve` then refuses with 409 `status:"rejected"`, code `no_candidate` or `auto_off`, as for `no_valid_mapping`: show `error.message`, offer no retry, and take the row from the snapshot.
+
+A helper Auto chose has this in its settings' `routing`, as of `decidedAt`, not live:
+
+```json
+{"mode":"auto","balanced":true,"reason":"lower_load","fallback":"candidate_skipped","quotaBasis":"known",
+ "requested":{"provider":"auto","model":null,"effort":null,"difficulty":"hard"},
+ "resolved":{"provider":"codex-cli","model":"gpt-6.1-sol","effort":"high","difficulty":"hard"},
+ "source":{"provider":"auto","model":"builtin_mapping","effort":"builtin_mapping"},
+ "load":{"claude-code":2,"codex-cli":0},
+ "quota":{"claude-code":{"state":"known","asOf":"…","limitingWindow":"weekly"},"codex-cli":{"state":"unknown","unknownReason":"not_applicable","asOf":"…"}},
+ "skipped":{"copilot-cli":"auto_not_supported"}}
+```
+
+- **balanced** is true only when Auto chose among providers. A persona's pin decides without it: `mode: "auto"`, `balanced: false`, `reason: "persona_pinned"`.
+- **quotaBasis**: `known`, or `unknown_scored_as_healthy` when the chosen provider's quota was unknown. Unknown shares a score with healthy so a login that can't report isn't starved. Keep showing it as unknown: it says nothing about capacity.
+- **skipped**: why a provider wasn't considered, with words in `labels.skipped`.
+
+The snapshot's row has the same codes as any helper: `routing:{mode:"auto",difficulty,provider,model,effort,reason}`.
+
 ### helperRouting.update
 
-`{revision, scope: "app", cells?: [{provider, difficulty, model, effort}], reset?: {provider?, difficulty?}}`, with at least one of `cells` and `reset`. `effort` null leaves the level to the CLI. `reset: {}` resets everything, `{provider}` one provider, and `{provider, difficulty}` one cell. A reset runs before `cells`. The result is the page's data, so don't refetch.
+`{revision, scope, projectId?, cells?: [{provider, difficulty, model, effort}], reset?: {provider?, difficulty?}, auto?}`, with at least one of `cells`, `reset` and `auto`. `cells` and `reset` are for `scope: "app"`. `effort` null leaves the level to the CLI. `reset: {}` resets everything, `{provider}` one provider, and `{provider, difficulty}` one cell. A reset runs before `cells`. The result is the page's data, so don't refetch.
 
 - 409 `helper_routing_stale`: another edit got there first. Nothing was written, and the refusal's body has `revision` and `settings` with fresh values. Show them and let the person make the change again. Never retry on your own, because that could overwrite someone's edit.
 - 409 `model_unavailable`, `effort_unavailable`: a live list doesn't offer it. `message` says what it does offer. Nothing was written.
-- 400 `invalid_helper_routing`: a provider with no presets, a bad value, `default` as a model, or a scope other than `app`.
+- 400 `invalid_helper_routing`: a provider with no presets, a bad value, `default` as a model, an unknown scope, or anything but `auto: "off"|null` at project scope.
 
 A value missing from a fallback list is accepted, and shows as `unverified`.
 

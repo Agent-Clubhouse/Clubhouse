@@ -1,0 +1,475 @@
+{
+  "cases": {
+    "agentFollowingApp": {
+      "effective": true,
+      "scopes": {
+        "agent": {
+          "editable": true,
+          "value": null
+        },
+        "app": {
+          "editable": true,
+          "value": true
+        },
+        "persona": {
+          "editable": false,
+          "value": null
+        },
+        "project": {
+          "choices": [
+            "off",
+            null
+          ],
+          "editable": true,
+          "value": null
+        }
+      },
+      "source": "app"
+    },
+    "dispatcherLocked": {
+      "effective": false,
+      "reason": "dispatcher_locked",
+      "scopes": {
+        "agent": {
+          "editable": false,
+          "value": null
+        },
+        "app": {
+          "editable": true,
+          "value": true
+        }
+      },
+      "source": "dispatcher_locked"
+    },
+    "mcpOff": {
+      "effective": false,
+      "reason": "mcp_off",
+      "scopes": {
+        "agent": {
+          "editable": false,
+          "value": null
+        },
+        "app": {
+          "editable": true,
+          "value": true
+        },
+        "persona": {
+          "editable": false,
+          "value": null
+        },
+        "project": {
+          "choices": [
+            "off",
+            null
+          ],
+          "editable": true,
+          "value": null
+        }
+      },
+      "source": "mcp_off"
+    },
+    "notOrchestrating": {
+      "effective": false,
+      "reason": "orchestration_off",
+      "scopes": {
+        "agent": {
+          "editable": true,
+          "value": null
+        },
+        "app": {
+          "editable": true,
+          "value": true
+        },
+        "persona": {
+          "editable": false,
+          "value": null
+        },
+        "project": {
+          "choices": [
+            "off",
+            null
+          ],
+          "editable": true,
+          "value": null
+        }
+      },
+      "source": "app"
+    },
+    "offByDefault": {
+      "effective": false,
+      "reason": "not_enabled",
+      "scopes": {
+        "app": {
+          "editable": true,
+          "value": false
+        }
+      },
+      "source": "default"
+    },
+    "onAppWide": {
+      "effective": true,
+      "scopes": {
+        "app": {
+          "editable": true,
+          "value": true
+        }
+      },
+      "source": "app"
+    },
+    "projectOff": {
+      "effective": false,
+      "reason": "project_off",
+      "scopes": {
+        "app": {
+          "editable": true,
+          "value": true
+        },
+        "project": {
+          "choices": [
+            "off",
+            null
+          ],
+          "editable": true,
+          "value": "off"
+        }
+      },
+      "source": "project"
+    },
+    "projectScope": {
+      "effective": true,
+      "scopes": {
+        "app": {
+          "editable": true,
+          "value": true
+        },
+        "project": {
+          "choices": [
+            "off",
+            null
+          ],
+          "editable": true,
+          "value": null
+        }
+      },
+      "source": "app"
+    }
+  },
+  "direction": "desktop-to-phone",
+  "field": "auto",
+  "heldStart": {
+    "expiresAt": "2027-01-16T07:50:00.000Z",
+    "helper": {
+      "agentId": null,
+      "name": "impl-ipc"
+    },
+    "kind": "start",
+    "projectId": "proj_app",
+    "requestId": "hstart_00000000-0000-4000-8000-000000000016",
+    "requestedAt": "2027-01-15T07:50:00.000Z",
+    "requestedRouting": {
+      "difficulty": "hard",
+      "effort": null,
+      "model": null,
+      "provider": "auto"
+    },
+    "requester": {
+      "agentId": "durable_chat",
+      "name": "planner"
+    },
+    "start": {
+      "access": null,
+      "branchFrom": null,
+      "model": null,
+      "persona": null,
+      "task": "Wire the IPC"
+    },
+    "summary": "Wants to start the helper impl-ipc"
+  },
+  "settingsRouting": {
+    "betterTier": {
+      "balanced": true,
+      "context": {
+        "status": "none"
+      },
+      "decidedAt": "2027-01-15T08:00:00.000Z",
+      "display": {
+        "reason": "This provider has more of its limit left",
+        "summary": "gpt-6.1-sol, high effort. This provider has more of its limit left."
+      },
+      "fallback": "none",
+      "load": {
+        "claude-code": 2,
+        "codex-cli": 0
+      },
+      "mode": "auto",
+      "policyVersion": 1,
+      "quota": {
+        "claude-code": {
+          "asOf": "2027-01-15T08:00:00.000Z",
+          "limitingWindow": "fiveHour",
+          "state": "low"
+        },
+        "codex-cli": {
+          "asOf": "2027-01-15T08:00:00.000Z",
+          "limitingWindow": "weekly",
+          "state": "known"
+        }
+      },
+      "quotaBasis": "known",
+      "reason": "better_quota_tier",
+      "requested": {
+        "difficulty": "hard",
+        "effort": null,
+        "model": null,
+        "provider": "auto"
+      },
+      "resolved": {
+        "difficulty": "hard",
+        "effort": "high",
+        "model": "gpt-6.1-sol",
+        "provider": "codex-cli"
+      },
+      "source": {
+        "effort": "builtin_mapping",
+        "model": "builtin_mapping",
+        "provider": "auto"
+      }
+    },
+    "lowerLoad": {
+      "balanced": true,
+      "context": {
+        "status": "none"
+      },
+      "decidedAt": "2027-01-15T08:00:00.000Z",
+      "display": {
+        "reason": "Fewer helpers running on this provider",
+        "summary": "gpt-6.1-sol, high effort. Fewer helpers running on this provider."
+      },
+      "fallback": "none",
+      "load": {
+        "claude-code": 2,
+        "codex-cli": 0
+      },
+      "mode": "auto",
+      "policyVersion": 1,
+      "quota": {
+        "claude-code": {
+          "asOf": "2027-01-15T08:00:00.000Z",
+          "limitingWindow": "weekly",
+          "state": "known"
+        },
+        "codex-cli": {
+          "asOf": "2027-01-15T08:00:00.000Z",
+          "limitingWindow": "weekly",
+          "state": "known"
+        }
+      },
+      "quotaBasis": "known",
+      "reason": "lower_load",
+      "requested": {
+        "difficulty": "hard",
+        "effort": null,
+        "model": null,
+        "provider": "auto"
+      },
+      "resolved": {
+        "difficulty": "hard",
+        "effort": "high",
+        "model": "gpt-6.1-sol",
+        "provider": "codex-cli"
+      },
+      "source": {
+        "effort": "builtin_mapping",
+        "model": "builtin_mapping",
+        "provider": "auto"
+      }
+    },
+    "personaPinned": {
+      "balanced": false,
+      "context": {
+        "status": "none"
+      },
+      "decidedAt": "2027-01-15T08:00:00.000Z",
+      "display": {
+        "reason": "Set by the persona",
+        "summary": "opus. Set by the persona."
+      },
+      "fallback": "none",
+      "mode": "auto",
+      "policyVersion": 1,
+      "reason": "persona_pinned",
+      "requested": {
+        "difficulty": "hard",
+        "effort": null,
+        "model": null,
+        "provider": "auto"
+      },
+      "resolved": {
+        "difficulty": "hard",
+        "effort": null,
+        "model": "opus",
+        "provider": "claude-code"
+      },
+      "source": {
+        "effort": "cli_default",
+        "model": "persona",
+        "provider": "persona"
+      }
+    },
+    "skippedOne": {
+      "balanced": true,
+      "context": {
+        "status": "none"
+      },
+      "decidedAt": "2027-01-15T08:00:00.000Z",
+      "display": {
+        "fallback": "Another provider was skipped",
+        "reason": "The only provider available",
+        "summary": "gpt-6.1-sol, high effort. The only provider available."
+      },
+      "fallback": "candidate_skipped",
+      "load": {
+        "claude-code": 2,
+        "codex-cli": 0
+      },
+      "mode": "auto",
+      "policyVersion": 1,
+      "quota": {
+        "claude-code": {
+          "asOf": "2027-01-15T08:00:00.000Z",
+          "limitingWindow": "weekly",
+          "state": "known"
+        },
+        "codex-cli": {
+          "asOf": "2027-01-15T08:00:00.000Z",
+          "limitingWindow": "weekly",
+          "state": "known"
+        }
+      },
+      "quotaBasis": "known",
+      "reason": "only_candidate",
+      "requested": {
+        "difficulty": "hard",
+        "effort": null,
+        "model": null,
+        "provider": "auto"
+      },
+      "resolved": {
+        "difficulty": "hard",
+        "effort": "high",
+        "model": "gpt-6.1-sol",
+        "provider": "codex-cli"
+      },
+      "skipped": {
+        "claude-code": "quota_near_limit",
+        "copilot-cli": "auto_not_supported"
+      },
+      "source": {
+        "effort": "builtin_mapping",
+        "model": "builtin_mapping",
+        "provider": "auto"
+      }
+    },
+    "sticky": {
+      "balanced": true,
+      "context": {
+        "status": "none"
+      },
+      "decidedAt": "2027-01-15T08:00:00.000Z",
+      "display": {
+        "reason": "Stayed on the provider chosen last",
+        "summary": "gpt-6.1-sol, high effort. Stayed on the provider chosen last."
+      },
+      "fallback": "none",
+      "load": {
+        "claude-code": 1,
+        "codex-cli": 2
+      },
+      "mode": "auto",
+      "policyVersion": 1,
+      "quota": {
+        "claude-code": {
+          "asOf": "2027-01-15T08:00:00.000Z",
+          "limitingWindow": "weekly",
+          "state": "known"
+        },
+        "codex-cli": {
+          "asOf": "2027-01-15T08:00:00.000Z",
+          "limitingWindow": "weekly",
+          "state": "known"
+        }
+      },
+      "quotaBasis": "known",
+      "reason": "sticky",
+      "requested": {
+        "difficulty": "hard",
+        "effort": null,
+        "model": null,
+        "provider": "auto"
+      },
+      "resolved": {
+        "difficulty": "hard",
+        "effort": "high",
+        "model": "gpt-6.1-sol",
+        "provider": "codex-cli"
+      },
+      "source": {
+        "effort": "builtin_mapping",
+        "model": "builtin_mapping",
+        "provider": "auto"
+      }
+    },
+    "unknownQuota": {
+      "balanced": true,
+      "context": {
+        "status": "none"
+      },
+      "decidedAt": "2027-01-15T08:00:00.000Z",
+      "display": {
+        "reason": "No reason to switch",
+        "summary": "gpt-6.1-sol, high effort. No reason to switch."
+      },
+      "fallback": "none",
+      "load": {
+        "claude-code": 0,
+        "codex-cli": 0
+      },
+      "mode": "auto",
+      "policyVersion": 1,
+      "quota": {
+        "codex-cli": {
+          "asOf": "2027-01-15T08:00:00.000Z",
+          "state": "unknown",
+          "unknownReason": "not_applicable"
+        }
+      },
+      "quotaBasis": "unknown_scored_as_healthy",
+      "reason": "default_order",
+      "requested": {
+        "difficulty": "hard",
+        "effort": null,
+        "model": null,
+        "provider": "auto"
+      },
+      "resolved": {
+        "difficulty": "hard",
+        "effort": "high",
+        "model": "gpt-6.1-sol",
+        "provider": "codex-cli"
+      },
+      "source": {
+        "effort": "builtin_mapping",
+        "model": "builtin_mapping",
+        "provider": "auto"
+      }
+    }
+  },
+  "snapshotRow": {
+    "difficulty": "hard",
+    "effort": "high",
+    "mode": "auto",
+    "model": "gpt-6.1-sol",
+    "provider": "codex-cli",
+    "reason": "lower_load"
+  }
+}

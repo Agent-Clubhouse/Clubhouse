@@ -307,6 +307,52 @@
         },
         "status": 404
       }
+    },
+    {
+      "name": "no_candidate",
+      "request": {
+        "commandId": "cmd_156",
+        "epoch": "00000000-0000-4000-8000-000000000001",
+        "requestId": "hstart_00000000-0000-4000-8000-000000000016",
+        "type": "helper.approve",
+        "version": 1
+      },
+      "response": {
+        "body": {
+          "commandId": "cmd_156",
+          "epoch": "00000000-0000-4000-8000-000000000001",
+          "error": {
+            "code": "no_candidate",
+            "message": "Couldn’t start impl-ipc because no provider can take a hard task right now (claude-code: Close to its limit; codex-cli: The provider reports its limit reached)."
+          },
+          "status": "rejected",
+          "version": 1
+        },
+        "status": 409
+      }
+    },
+    {
+      "name": "auto_off",
+      "request": {
+        "commandId": "cmd_157",
+        "epoch": "00000000-0000-4000-8000-000000000001",
+        "requestId": "hstart_00000000-0000-4000-8000-000000000017",
+        "type": "helper.approve",
+        "version": 1
+      },
+      "response": {
+        "body": {
+          "commandId": "cmd_157",
+          "epoch": "00000000-0000-4000-8000-000000000001",
+          "error": {
+            "code": "auto_off",
+            "message": "Couldn’t start impl-ipc because Auto provider is off: This project turned it off."
+          },
+          "status": "rejected",
+          "version": 1
+        },
+        "status": 409
+      }
     }
   ],
   "type": "helper.approve"

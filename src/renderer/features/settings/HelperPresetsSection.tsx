@@ -17,6 +17,7 @@ import {
   type QuotaView,
 } from '../../../shared/helper-routing';
 import { Button } from '../../components/Button';
+import { Toggle } from '../../components/Toggle';
 import { SettingsBlock, SettingsSection, settingsHelp, settingsInput } from './SettingsLayout';
 
 const PROVIDER_NAMES: Record<string, string> = { 'claude-code': 'Claude Code', 'codex-cli': 'Codex' };
@@ -156,6 +157,23 @@ export function HelperPresetsSection() {
   return (
     <SettingsSection title="Presets by difficulty">
       <SettingsBlock>
+        {settings && (
+          <label className="flex items-center gap-2.5 text-[13px] text-ctp-text mb-1.5">
+            <Toggle
+              checked={settings.auto.scopes.app.value}
+              disabled={busy}
+              onChange={(on) => void update({ auto: on })}
+              aria-label="Let orchestrators use Auto provider"
+              data-testid="helper-presets-auto"
+            />
+            <span>Auto provider</span>
+          </label>
+        )}
+        {settings && (
+          <p className={settingsHelp}>
+            Lets an orchestrator ask Clubhouse to pick between Claude Code and Codex for a helper, from helper counts and plan limits. It balances counts, not cost, and a helper stays on its provider for its whole task. An orchestrator’s own switch wins, and a project or persona can turn it off.
+          </p>
+        )}
         <p className={settingsHelp}>
           An orchestrator can name a difficulty instead of a model. These are what it picks on each CLI. They are starting choices, so change them to suit your work. Anything an orchestrator names itself still wins.
         </p>

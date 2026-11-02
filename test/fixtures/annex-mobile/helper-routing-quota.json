@@ -182,6 +182,17 @@
     "mixedTtlsAndNotRead": {
       "nextFetchSeconds": 5,
       "response": {
+        "auto": {
+          "effective": false,
+          "reason": "not_enabled",
+          "scopes": {
+            "app": {
+              "editable": true,
+              "value": false
+            }
+          },
+          "source": "default"
+        },
         "epoch": "00000000-0000-4000-8000-000000000001",
         "providers": {
           "claude-code": {
@@ -387,6 +398,17 @@
     "zeroAndMissingTtl": {
       "nextFetchSeconds": 5,
       "response": {
+        "auto": {
+          "effective": false,
+          "reason": "not_enabled",
+          "scopes": {
+            "app": {
+              "editable": true,
+              "value": false
+            }
+          },
+          "source": "default"
+        },
         "epoch": "00000000-0000-4000-8000-000000000001",
         "providers": {
           "claude-code": {

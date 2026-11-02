@@ -52,7 +52,7 @@ import * as agentSystem from '../../agent-system';
 import { getAgentRuntime } from '../../agent-runtime';
 import { findGitCommonDir, getDefaultBranch, getGitInfo } from '../../git-service';
 import { withoutClubhouseOwnedChanges } from '../../clubhouse-owned-files';
-import { findParent, listHelpersEverywhere, type HelperEntry } from '../../helper-index';
+import { findParent, listAllHelpers, listHelpersEverywhere, type HelperEntry } from '../../helper-index';
 import { listAvailablePersonas } from '../../materialization-service';
 import * as projectStore from '../../project-store';
 import {
@@ -96,9 +96,10 @@ import {
 import { McpArgError, optionalString } from './validation';
 import { _resetHelperDeliveryForTesting, deliverHelperUpdate, deliverNow } from './helper-delivery';
 import { checkHelperEffort, checkHelperModel } from '../../model-check';
-import { planHelperStart, type StartPlan } from '../../helper-routing';
+import { AUTO_CLI, decideAutoPlan, planHelperStart, readHelperAuto, releaseAutoHelper, reserveAutoHelper, reservedLoad, type StartPlan } from '../../helper-routing';
+import { classifyStartFailure, noteProviderFailure } from '../../provider-quota';
 import { contextWindowCheck } from '../../context-window';
-import { helperRouted } from '../../../telemetry/feature-events';
+import { helperAutoRefused, helperRouted } from '../../../telemetry/feature-events';
 
 // ── Results ──────────────────────────────────────────────────────────────
 
@@ -282,6 +283,24 @@ async function withStartLock<T>(fn: () => Promise<T>): Promise<T> {
   return run;
 }
 
+/**
+ * Helpers per provider across every orchestrator, for Auto: creating, starting or
+ * with a live process, plus reservations. Sleeping, failed and disposed helpers
+ * use nothing, and agents that aren't helpers aren't counted.
+ */
+async function currentHelperLoad(homePath: string): Promise<Record<string, number>> {
+  const load: Record<string, number> = {};
+  const live = new Set<string>();
+  for (const { config } of await listAllHelpers(homePath)) {
+    const { status } = helperStatus(config);
+    if (status === 'sleeping' || status === 'failed' || status === 'stopping' || !config.orchestrator) continue;
+    live.add(config.id);
+    load[config.orchestrator] = (load[config.orchestrator] ?? 0) + 1;
+  }
+  for (const [provider, count] of Object.entries(reservedLoad(live))) load[provider] = (load[provider] ?? 0) + count;
+  return load;
+}
+
 /** At most one needs-approval notification per orchestrator per minute. */
 const APPROVAL_NOTICE_INTERVAL_MS = 60_000;
 const lastApprovalNotice = new Map<string, number>();
@@ -445,6 +464,11 @@ async function finishHelperStart(
     // telemetry-exempt: the failure reaches the orchestrator and list_helpers
     const reason = errorText(err);
     if (taskTaken) await restoreTask(helperPath, helperId, task);
+    // Auto leaves this provider alone for a while. The helper stays where it is: its worktree is set up for this CLI.
+    const failedOn = await agentConfig.getDurableConfig(helperPath, helperId).catch((): null => null);
+    if (failedOn?.routing?.mode === 'auto' && failedOn.orchestrator) {
+      await noteProviderFailure(failedOn.orchestrator, helperPath, classifyStartFailure(err));
+    }
     spawnFailures.set(helperId, reason);
     broadcastToAllWindows(IPC.AGENT.AGENT_WAKE_FAILED, helperId, reason);
     appLog('core:mcp', 'warn', 'start_helper: helper spawn failed', {
@@ -454,6 +478,7 @@ async function finishHelperStart(
       `Helper "${helperName}" (${helperId}) was created but failed to start: ${reason} Its task is saved: wake_helper delivers it.`);
   } finally {
     spawning.delete(helperId);
+    releaseAutoHelper(helperId);
   }
 }
 
@@ -484,8 +509,11 @@ function validateStartArgs(args: HelperStartArgs): void {
   if (args.access && args.access !== 'same' && !isAccessLevel(args.access)) {
     throw new McpArgError(`access must be one of: same, ${ACCESS_LEVELS.join(', ')}`);
   }
-  if (args.cli && !getProvider(args.cli as OrchestratorId)) {
-    throw new McpArgError(`Unknown cli "${args.cli}". Available: ${getAllProviders().map((p) => p.id).join(', ')}`);
+  if (args.cli === AUTO_CLI) {
+    if (!args.difficulty) throw new McpArgError('cli "auto" needs a difficulty: easy, medium or hard.');
+    if (args.model || args.effort) throw new McpArgError('cli "auto" picks the model and effort, since they belong to one CLI. Name a CLI to choose them yourself.');
+  } else if (args.cli && !getProvider(args.cli as OrchestratorId)) {
+    throw new McpArgError(`Unknown cli "${args.cli}". Available: auto, ${getAllProviders().map((p) => p.id).join(', ')}`);
   }
   if (args.difficulty && !isHelperDifficulty(args.difficulty)) {
     throw new McpArgError(`difficulty must be one of: ${HELPER_DIFFICULTIES.join(', ')}`);
@@ -570,11 +598,21 @@ async function runHelperStart(orchestratorId: string, args: HelperStartArgs, app
     } catch {
       // telemetry-exempt: a bad project is refused under the lock; check the model with the home profile
     }
+    const auto = cli === AUTO_CLI ? await readHelperAuto({
+      projectPath: modelProject,
+      // A project can say off for itself, and so can the orchestrator's own, wherever the helper goes.
+      agent: { config: orchestrator, policy: (await getOrchestrationPolicy(homePath, orchestratorId))! },
+    }) : undefined;
+    const homeAuto = cli === AUTO_CLI && modelProject !== homePath ? await readHelperAuto({ projectPath: homePath }) : undefined;
     const planned = await planHelperStart({
-      cli, model, effort, difficulty, persona, projectPath: modelProject,
+      cli, model, effort, difficulty, persona, projectPath: modelProject, orchestratorId,
+      ...(auto && { auto: homeAuto?.source === 'project' ? homeAuto : auto }),
       orchestratorCli: orchestrator.orchestrator ?? agentRegistry.get(orchestratorId)?.orchestrator,
     });
-    if (planned.ok === false) return refused(planned.message, planned.code, planned.userReason);
+    if (planned.ok === false) {
+      if (cli === AUTO_CLI) helperAutoRefused(planned.code);
+      return refused(planned.message, planned.code, planned.userReason);
+    }
     plan = planned.plan;
     if (plan?.warning) modelWarning = plan.warning;
     if (model) {
@@ -655,7 +693,18 @@ async function runHelperStart(orchestratorId: string, args: HelperStartArgs, app
       }
     }
 
-    const helperProvider = plan?.provider ?? cli ?? orchestrator.orchestrator ?? agentRegistry.get(orchestratorId)?.orchestrator;
+    // Auto decides here, under the lock, so a burst of starts sees each other's choices.
+    if (plan?.pendingAuto) {
+      const decided = decideAutoPlan(plan, await currentHelperLoad(homePath));
+      if (decided.ok === false) {
+        helperAutoRefused(decided.code);
+        return refused(decided.message, decided.code, decided.userReason);
+      }
+      plan = decided.plan;
+      if (plan?.warning) modelWarning = plan.warning;
+    }
+    const namedCli = cli === AUTO_CLI ? undefined : cli;
+    const helperProvider = plan?.provider ?? namedCli ?? orchestrator.orchestrator ?? agentRegistry.get(orchestratorId)?.orchestrator;
     const launch = await resolveLaunchFor(homePath, orchestratorId, helperProvider, access);
 
     let started: Awaited<ReturnType<typeof startDurableCreation>>;
@@ -679,6 +728,7 @@ async function runHelperStart(orchestratorId: string, args: HelperStartArgs, app
     const { agentId: helperId, config, done } = started;
     // Before anything is awaited: no wake may spawn it while this start owns it.
     spawning.add(helperId);
+    if (plan?.routing.mode === 'auto' && helperProvider) reserveAutoHelper(helperId, helperProvider);
     const background = finishHelperStart(homePath, target.path, orchestrator, helperId, name, task, access, plan?.effort, done)
       .catch((err) => {
         appLog('core:mcp', 'error', 'start_helper: background start failed', { meta: { helperId, error: errorText(err) } });
@@ -1178,6 +1228,7 @@ export function registerHelperTools(): void {
         'reply with message_parent, and you can message it over the wire Clubhouse adds between you. ' +
         'If you have call_wire_tool, your tool list is fixed at session start, so reach that wire with it, using the helper id. ' +
         'With difficulty, Clubhouse picks a model and effort for the helper\'s CLI from the user\'s helper presets. Anything you name wins, and "routing" in the result says what was used and why. ' +
+        'cli "auto" with difficulty also picks the provider, once, for the helper\'s whole task. ' +
         'Its access is never more than yours. If you are set to ask the user before starting helpers, ' +
         'it returns "needs_approval" with a requestId instead, and you get a message when the user ' +
         'approves or declines. With project, the helper is created in another Clubhouse project ' +
@@ -1188,7 +1239,10 @@ export function registerHelperTools(): void {
           name: { type: 'string', description: 'The helper\'s name (also its default folder).' },
           task: { type: 'string', description: 'The task, sent as the helper\'s first message.' },
           persona: { type: 'string', description: 'Optional persona id to apply, from the project the helper is created in.' },
-          cli: { type: 'string', description: 'Optional CLI provider id (e.g. claude-code, codex-cli, copilot-cli). Defaults to yours.' },
+          cli: {
+            type: 'string',
+            description: 'Optional CLI provider id (e.g. claude-code, codex-cli, copilot-cli). Defaults to yours. Or "auto", with difficulty, if Auto provider is on for you: Clubhouse picks Claude or Codex from helper counts and plan limits, and refuses if it is off.',
+          },
           model: {
             type: 'string',
             description:

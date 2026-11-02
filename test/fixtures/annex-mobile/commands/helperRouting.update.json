@@ -23,7 +23,26 @@
           "commandId": "cmd_139",
           "epoch": "00000000-0000-4000-8000-000000000001",
           "result": {
+            "auto": {
+              "effective": false,
+              "reason": "not_enabled",
+              "scopes": {
+                "app": {
+                  "editable": true,
+                  "value": false
+                }
+              },
+              "source": "default"
+            },
             "labels": {
+              "autoOff": {
+                "dispatcher_locked": "The Dispatcher doesn’t start helpers",
+                "mcp_off": "Clubhouse MCP is off for this agent",
+                "not_enabled": "It isn’t turned on",
+                "orchestration_off": "This agent doesn’t orchestrate",
+                "persona_off": "This agent’s persona turned it off",
+                "project_off": "This project turned it off"
+              },
               "cell": {
                 "stale": "No longer offered",
                 "unverified": "Couldn’t be checked",
@@ -323,7 +342,26 @@
           },
           "revision": "r1.3",
           "settings": {
+            "auto": {
+              "effective": false,
+              "reason": "not_enabled",
+              "scopes": {
+                "app": {
+                  "editable": true,
+                  "value": false
+                }
+              },
+              "source": "default"
+            },
             "labels": {
+              "autoOff": {
+                "dispatcher_locked": "The Dispatcher doesn’t start helpers",
+                "mcp_off": "Clubhouse MCP is off for this agent",
+                "not_enabled": "It isn’t turned on",
+                "orchestration_off": "This agent doesn’t orchestrate",
+                "persona_off": "This agent’s persona turned it off",
+                "project_off": "This project turned it off"
+              },
               "cell": {
                 "stale": "No longer offered",
                 "unverified": "Couldn’t be checked",
@@ -708,7 +746,7 @@
           "epoch": "00000000-0000-4000-8000-000000000001",
           "error": {
             "code": "invalid_helper_routing",
-            "message": "Presets can only be changed app-wide."
+            "message": "A project scope needs a projectId."
           },
           "status": "rejected",
           "version": 1
@@ -758,7 +796,26 @@
           "commandId": "cmd_146",
           "epoch": "00000000-0000-4000-8000-000000000001",
           "result": {
+            "auto": {
+              "effective": false,
+              "reason": "not_enabled",
+              "scopes": {
+                "app": {
+                  "editable": true,
+                  "value": false
+                }
+              },
+              "source": "default"
+            },
             "labels": {
+              "autoOff": {
+                "dispatcher_locked": "The Dispatcher doesn’t start helpers",
+                "mcp_off": "Clubhouse MCP is off for this agent",
+                "not_enabled": "It isn’t turned on",
+                "orchestration_off": "This agent doesn’t orchestrate",
+                "persona_off": "This agent’s persona turned it off",
+                "project_off": "This project turned it off"
+              },
               "cell": {
                 "stale": "No longer offered",
                 "unverified": "Couldn’t be checked",
@@ -1056,7 +1113,26 @@
           "commandId": "cmd_147",
           "epoch": "00000000-0000-4000-8000-000000000001",
           "result": {
+            "auto": {
+              "effective": false,
+              "reason": "not_enabled",
+              "scopes": {
+                "app": {
+                  "editable": true,
+                  "value": false
+                }
+              },
+              "source": "default"
+            },
             "labels": {
+              "autoOff": {
+                "dispatcher_locked": "The Dispatcher doesn’t start helpers",
+                "mcp_off": "Clubhouse MCP is off for this agent",
+                "not_enabled": "It isn’t turned on",
+                "orchestration_off": "This agent doesn’t orchestrate",
+                "persona_off": "This agent’s persona turned it off",
+                "project_off": "This project turned it off"
+              },
               "cell": {
                 "stale": "No longer offered",
                 "unverified": "Couldn’t be checked",
@@ -1349,7 +1425,26 @@
           "commandId": "cmd_148",
           "epoch": "00000000-0000-4000-8000-000000000001",
           "result": {
+            "auto": {
+              "effective": false,
+              "reason": "not_enabled",
+              "scopes": {
+                "app": {
+                  "editable": true,
+                  "value": false
+                }
+              },
+              "source": "default"
+            },
             "labels": {
+              "autoOff": {
+                "dispatcher_locked": "The Dispatcher doesn’t start helpers",
+                "mcp_off": "Clubhouse MCP is off for this agent",
+                "not_enabled": "It isn’t turned on",
+                "orchestration_off": "This agent doesn’t orchestrate",
+                "persona_off": "This agent’s persona turned it off",
+                "project_off": "This project turned it off"
+              },
               "cell": {
                 "stale": "No longer offered",
                 "unverified": "Couldn’t be checked",
@@ -1637,7 +1732,26 @@
           "commandId": "cmd_149",
           "epoch": "00000000-0000-4000-8000-000000000001",
           "result": {
+            "auto": {
+              "effective": false,
+              "reason": "not_enabled",
+              "scopes": {
+                "app": {
+                  "editable": true,
+                  "value": false
+                }
+              },
+              "source": "default"
+            },
             "labels": {
+              "autoOff": {
+                "dispatcher_locked": "The Dispatcher doesn’t start helpers",
+                "mcp_off": "Clubhouse MCP is off for this agent",
+                "not_enabled": "It isn’t turned on",
+                "orchestration_off": "This agent doesn’t orchestrate",
+                "persona_off": "This agent’s persona turned it off",
+                "project_off": "This project turned it off"
+              },
               "cell": {
                 "stale": "No longer offered",
                 "unverified": "Couldn’t be checked",
@@ -1904,6 +2018,1013 @@
           "version": 1
         },
         "status": 200
+      }
+    },
+    {
+      "name": "accepted auto off app-wide",
+      "request": {
+        "auto": false,
+        "commandId": "cmd_150",
+        "epoch": "00000000-0000-4000-8000-000000000001",
+        "revision": "r5.3",
+        "scope": "app",
+        "type": "helperRouting.update",
+        "version": 1
+      },
+      "response": {
+        "body": {
+          "commandId": "cmd_150",
+          "epoch": "00000000-0000-4000-8000-000000000001",
+          "result": {
+            "auto": {
+              "effective": false,
+              "reason": "not_enabled",
+              "scopes": {
+                "app": {
+                  "editable": true,
+                  "value": false
+                }
+              },
+              "source": "default"
+            },
+            "labels": {
+              "autoOff": {
+                "dispatcher_locked": "The Dispatcher doesn’t start helpers",
+                "mcp_off": "Clubhouse MCP is off for this agent",
+                "not_enabled": "It isn’t turned on",
+                "orchestration_off": "This agent doesn’t orchestrate",
+                "persona_off": "This agent’s persona turned it off",
+                "project_off": "This project turned it off"
+              },
+              "cell": {
+                "stale": "No longer offered",
+                "unverified": "Couldn’t be checked",
+                "valid": "Offered"
+              },
+              "fallback": {
+                "builtin_preset": "The saved choice is no longer offered, so the default was used",
+                "candidate_skipped": "Another provider was skipped",
+                "model_unverified": "The model list may be out of date, so this couldn’t be checked",
+                "none": "None",
+                "retried_after_spawn_failure": "Started on another provider after the first failed to start"
+              },
+              "generic": {
+                "unknownCode": "Clubhouse gave a reason this version can’t show"
+              },
+              "quota": {
+                "exhausted": "Limit reached",
+                "known": "Limit available",
+                "low": "Limit getting low",
+                "near_limit": "Close to the limit",
+                "unknown": "Unknown"
+              },
+              "reason": {
+                "better_quota_tier": "This provider has more of its limit left",
+                "default_order": "No reason to switch",
+                "explicit_request": "You or the orchestrator chose this",
+                "lower_load": "Fewer helpers running on this provider",
+                "only_candidate": "The only provider available",
+                "persona_pinned": "Set by the persona",
+                "preset_on_cli": "From the helper settings for this difficulty",
+                "sticky": "Stayed on the provider chosen last"
+              },
+              "skipped": {
+                "auto_not_supported": "Auto doesn’t support this provider yet",
+                "cli_disabled": "Turned off in Settings",
+                "cli_unavailable": "Not available on this computer",
+                "cooling_down": "It failed to start recently",
+                "no_valid_mapping": "No choice for this difficulty is offered now",
+                "quota_exhausted": "The provider reports its limit reached",
+                "quota_near_limit": "Close to its limit"
+              },
+              "unknown": {
+                "not_applicable": "This login has no plan limit",
+                "not_read": "Not checked yet",
+                "not_supported": "This provider doesn’t report it",
+                "read_failed": "Couldn’t check",
+                "stale": "Last checked too long ago"
+              },
+              "window": {
+                "fiveHour": "5-hour limit",
+                "other": "Plan limit",
+                "weekly": "Weekly limit"
+              }
+            },
+            "providers": {
+              "claude-code": {
+                "autoEligible": true,
+                "cells": {
+                  "easy": {
+                    "builtin": {
+                      "effort": "low",
+                      "model": "haiku"
+                    },
+                    "custom": null,
+                    "editable": true,
+                    "effective": {
+                      "effort": "low",
+                      "model": "haiku"
+                    },
+                    "source": "builtin",
+                    "state": "valid"
+                  },
+                  "hard": {
+                    "builtin": {
+                      "effort": "high",
+                      "model": "opus"
+                    },
+                    "custom": null,
+                    "editable": true,
+                    "effective": {
+                      "effort": "high",
+                      "model": "opus"
+                    },
+                    "source": "builtin",
+                    "state": "valid"
+                  },
+                  "medium": {
+                    "builtin": {
+                      "effort": "medium",
+                      "model": "sonnet"
+                    },
+                    "custom": null,
+                    "editable": true,
+                    "effective": {
+                      "effort": "medium",
+                      "model": "sonnet"
+                    },
+                    "source": "builtin",
+                    "state": "valid"
+                  }
+                },
+                "choices": {
+                  "asOf": "2027-01-15T08:00:00.000Z",
+                  "models": [
+                    {
+                      "efforts": [
+                        "low",
+                        "medium",
+                        "high"
+                      ],
+                      "id": "opus",
+                      "label": "Opus"
+                    },
+                    {
+                      "efforts": [
+                        "low",
+                        "medium",
+                        "high"
+                      ],
+                      "id": "sonnet",
+                      "label": "Sonnet"
+                    },
+                    {
+                      "efforts": [
+                        "low",
+                        "medium",
+                        "high"
+                      ],
+                      "id": "haiku",
+                      "label": "Haiku"
+                    }
+                  ],
+                  "source": "live"
+                },
+                "quota": {
+                  "asOf": "2027-01-15T08:00:00.000Z",
+                  "fiveHour": {
+                    "resetsAt": "2027-01-15T10:24:00.000Z",
+                    "usedPercent": 12
+                  },
+                  "limitingWindow": "weekly",
+                  "refreshAfterSeconds": 300,
+                  "resetsAt": "2027-01-18T08:00:00.000Z",
+                  "source": "cli_query",
+                  "state": "known",
+                  "weekly": {
+                    "resetsAt": "2027-01-18T08:00:00.000Z",
+                    "usedPercent": 41
+                  }
+                }
+              },
+              "codex-cli": {
+                "autoEligible": true,
+                "cells": {
+                  "easy": {
+                    "builtin": {
+                      "effort": "low",
+                      "model": "gpt-6-luna"
+                    },
+                    "custom": null,
+                    "editable": true,
+                    "effective": {
+                      "effort": "low",
+                      "model": "gpt-6-luna"
+                    },
+                    "source": "builtin",
+                    "state": "valid"
+                  },
+                  "hard": {
+                    "builtin": {
+                      "effort": "high",
+                      "model": "gpt-6.1-sol"
+                    },
+                    "custom": null,
+                    "editable": true,
+                    "effective": {
+                      "effort": "high",
+                      "model": "gpt-6.1-sol"
+                    },
+                    "source": "builtin",
+                    "state": "valid"
+                  },
+                  "medium": {
+                    "builtin": {
+                      "effort": "medium",
+                      "model": "gpt-6.1-terra"
+                    },
+                    "custom": null,
+                    "editable": true,
+                    "effective": {
+                      "effort": "medium",
+                      "model": "gpt-6.1-terra"
+                    },
+                    "source": "builtin",
+                    "state": "valid"
+                  }
+                },
+                "choices": {
+                  "asOf": "2027-01-15T08:00:00.000Z",
+                  "models": [
+                    {
+                      "efforts": [
+                        "low",
+                        "medium",
+                        "high"
+                      ],
+                      "id": "gpt-6.1-sol",
+                      "label": "Sol"
+                    },
+                    {
+                      "efforts": [
+                        "low",
+                        "medium",
+                        "high"
+                      ],
+                      "id": "gpt-6.1-terra",
+                      "label": "Terra"
+                    },
+                    {
+                      "efforts": [
+                        "low",
+                        "medium",
+                        "high"
+                      ],
+                      "id": "gpt-6-luna",
+                      "label": "Luna"
+                    }
+                  ],
+                  "source": "live"
+                },
+                "quota": {
+                  "asOf": "2027-01-15T08:00:00.000Z",
+                  "fiveHour": {
+                    "resetsAt": "2027-01-15T10:24:00.000Z",
+                    "usedPercent": 12
+                  },
+                  "limitingWindow": "weekly",
+                  "refreshAfterSeconds": 300,
+                  "resetsAt": "2027-01-18T08:00:00.000Z",
+                  "source": "cli_query",
+                  "state": "known",
+                  "weekly": {
+                    "resetsAt": "2027-01-18T08:00:00.000Z",
+                    "usedPercent": 41
+                  }
+                }
+              },
+              "copilot-cli": {
+                "autoEligible": false,
+                "cells": null,
+                "quota": {
+                  "asOf": null,
+                  "source": "none",
+                  "state": "unknown",
+                  "unknownReason": "not_supported"
+                },
+                "reason": "auto_not_supported"
+              }
+            },
+            "revision": "r6.3",
+            "serverTime": "2027-01-15T08:00:00.000Z"
+          },
+          "status": "completed",
+          "version": 1
+        },
+        "status": 200
+      }
+    },
+    {
+      "name": "accepted auto off for a project",
+      "request": {
+        "auto": "off",
+        "commandId": "cmd_151",
+        "epoch": "00000000-0000-4000-8000-000000000001",
+        "projectId": "proj_app",
+        "revision": "r6.3",
+        "scope": "project",
+        "type": "helperRouting.update",
+        "version": 1
+      },
+      "response": {
+        "body": {
+          "commandId": "cmd_151",
+          "epoch": "00000000-0000-4000-8000-000000000001",
+          "result": {
+            "auto": {
+              "effective": false,
+              "reason": "project_off",
+              "scopes": {
+                "app": {
+                  "editable": true,
+                  "value": false
+                },
+                "project": {
+                  "choices": [
+                    "off",
+                    null
+                  ],
+                  "editable": true,
+                  "value": "off"
+                }
+              },
+              "source": "project"
+            },
+            "labels": {
+              "autoOff": {
+                "dispatcher_locked": "The Dispatcher doesn’t start helpers",
+                "mcp_off": "Clubhouse MCP is off for this agent",
+                "not_enabled": "It isn’t turned on",
+                "orchestration_off": "This agent doesn’t orchestrate",
+                "persona_off": "This agent’s persona turned it off",
+                "project_off": "This project turned it off"
+              },
+              "cell": {
+                "stale": "No longer offered",
+                "unverified": "Couldn’t be checked",
+                "valid": "Offered"
+              },
+              "fallback": {
+                "builtin_preset": "The saved choice is no longer offered, so the default was used",
+                "candidate_skipped": "Another provider was skipped",
+                "model_unverified": "The model list may be out of date, so this couldn’t be checked",
+                "none": "None",
+                "retried_after_spawn_failure": "Started on another provider after the first failed to start"
+              },
+              "generic": {
+                "unknownCode": "Clubhouse gave a reason this version can’t show"
+              },
+              "quota": {
+                "exhausted": "Limit reached",
+                "known": "Limit available",
+                "low": "Limit getting low",
+                "near_limit": "Close to the limit",
+                "unknown": "Unknown"
+              },
+              "reason": {
+                "better_quota_tier": "This provider has more of its limit left",
+                "default_order": "No reason to switch",
+                "explicit_request": "You or the orchestrator chose this",
+                "lower_load": "Fewer helpers running on this provider",
+                "only_candidate": "The only provider available",
+                "persona_pinned": "Set by the persona",
+                "preset_on_cli": "From the helper settings for this difficulty",
+                "sticky": "Stayed on the provider chosen last"
+              },
+              "skipped": {
+                "auto_not_supported": "Auto doesn’t support this provider yet",
+                "cli_disabled": "Turned off in Settings",
+                "cli_unavailable": "Not available on this computer",
+                "cooling_down": "It failed to start recently",
+                "no_valid_mapping": "No choice for this difficulty is offered now",
+                "quota_exhausted": "The provider reports its limit reached",
+                "quota_near_limit": "Close to its limit"
+              },
+              "unknown": {
+                "not_applicable": "This login has no plan limit",
+                "not_read": "Not checked yet",
+                "not_supported": "This provider doesn’t report it",
+                "read_failed": "Couldn’t check",
+                "stale": "Last checked too long ago"
+              },
+              "window": {
+                "fiveHour": "5-hour limit",
+                "other": "Plan limit",
+                "weekly": "Weekly limit"
+              }
+            },
+            "providers": {
+              "claude-code": {
+                "autoEligible": true,
+                "cells": {
+                  "easy": {
+                    "builtin": {
+                      "effort": "low",
+                      "model": "haiku"
+                    },
+                    "custom": null,
+                    "editable": true,
+                    "effective": {
+                      "effort": "low",
+                      "model": "haiku"
+                    },
+                    "source": "builtin",
+                    "state": "valid"
+                  },
+                  "hard": {
+                    "builtin": {
+                      "effort": "high",
+                      "model": "opus"
+                    },
+                    "custom": null,
+                    "editable": true,
+                    "effective": {
+                      "effort": "high",
+                      "model": "opus"
+                    },
+                    "source": "builtin",
+                    "state": "valid"
+                  },
+                  "medium": {
+                    "builtin": {
+                      "effort": "medium",
+                      "model": "sonnet"
+                    },
+                    "custom": null,
+                    "editable": true,
+                    "effective": {
+                      "effort": "medium",
+                      "model": "sonnet"
+                    },
+                    "source": "builtin",
+                    "state": "valid"
+                  }
+                },
+                "choices": {
+                  "asOf": "2027-01-15T08:00:00.000Z",
+                  "models": [
+                    {
+                      "efforts": [
+                        "low",
+                        "medium",
+                        "high"
+                      ],
+                      "id": "opus",
+                      "label": "Opus"
+                    },
+                    {
+                      "efforts": [
+                        "low",
+                        "medium",
+                        "high"
+                      ],
+                      "id": "sonnet",
+                      "label": "Sonnet"
+                    },
+                    {
+                      "efforts": [
+                        "low",
+                        "medium",
+                        "high"
+                      ],
+                      "id": "haiku",
+                      "label": "Haiku"
+                    }
+                  ],
+                  "source": "live"
+                },
+                "quota": {
+                  "asOf": "2027-01-15T08:00:00.000Z",
+                  "fiveHour": {
+                    "resetsAt": "2027-01-15T10:24:00.000Z",
+                    "usedPercent": 12
+                  },
+                  "limitingWindow": "weekly",
+                  "refreshAfterSeconds": 300,
+                  "resetsAt": "2027-01-18T08:00:00.000Z",
+                  "source": "cli_query",
+                  "state": "known",
+                  "weekly": {
+                    "resetsAt": "2027-01-18T08:00:00.000Z",
+                    "usedPercent": 41
+                  }
+                }
+              },
+              "codex-cli": {
+                "autoEligible": true,
+                "cells": {
+                  "easy": {
+                    "builtin": {
+                      "effort": "low",
+                      "model": "gpt-6-luna"
+                    },
+                    "custom": null,
+                    "editable": true,
+                    "effective": {
+                      "effort": "low",
+                      "model": "gpt-6-luna"
+                    },
+                    "source": "builtin",
+                    "state": "valid"
+                  },
+                  "hard": {
+                    "builtin": {
+                      "effort": "high",
+                      "model": "gpt-6.1-sol"
+                    },
+                    "custom": null,
+                    "editable": true,
+                    "effective": {
+                      "effort": "high",
+                      "model": "gpt-6.1-sol"
+                    },
+                    "source": "builtin",
+                    "state": "valid"
+                  },
+                  "medium": {
+                    "builtin": {
+                      "effort": "medium",
+                      "model": "gpt-6.1-terra"
+                    },
+                    "custom": null,
+                    "editable": true,
+                    "effective": {
+                      "effort": "medium",
+                      "model": "gpt-6.1-terra"
+                    },
+                    "source": "builtin",
+                    "state": "valid"
+                  }
+                },
+                "choices": {
+                  "asOf": "2027-01-15T08:00:00.000Z",
+                  "models": [
+                    {
+                      "efforts": [
+                        "low",
+                        "medium",
+                        "high"
+                      ],
+                      "id": "gpt-6.1-sol",
+                      "label": "Sol"
+                    },
+                    {
+                      "efforts": [
+                        "low",
+                        "medium",
+                        "high"
+                      ],
+                      "id": "gpt-6.1-terra",
+                      "label": "Terra"
+                    },
+                    {
+                      "efforts": [
+                        "low",
+                        "medium",
+                        "high"
+                      ],
+                      "id": "gpt-6-luna",
+                      "label": "Luna"
+                    }
+                  ],
+                  "source": "live"
+                },
+                "quota": {
+                  "asOf": "2027-01-15T08:00:00.000Z",
+                  "fiveHour": {
+                    "resetsAt": "2027-01-15T10:24:00.000Z",
+                    "usedPercent": 12
+                  },
+                  "limitingWindow": "weekly",
+                  "refreshAfterSeconds": 300,
+                  "resetsAt": "2027-01-18T08:00:00.000Z",
+                  "source": "cli_query",
+                  "state": "known",
+                  "weekly": {
+                    "resetsAt": "2027-01-18T08:00:00.000Z",
+                    "usedPercent": 41
+                  }
+                }
+              },
+              "copilot-cli": {
+                "autoEligible": false,
+                "cells": null,
+                "quota": {
+                  "asOf": null,
+                  "source": "none",
+                  "state": "unknown",
+                  "unknownReason": "not_supported"
+                },
+                "reason": "auto_not_supported"
+              }
+            },
+            "revision": "r7.3",
+            "serverTime": "2027-01-15T08:00:00.000Z"
+          },
+          "status": "completed",
+          "version": 1
+        },
+        "status": 200
+      }
+    },
+    {
+      "name": "accepted auto back on for a project",
+      "request": {
+        "auto": null,
+        "commandId": "cmd_152",
+        "epoch": "00000000-0000-4000-8000-000000000001",
+        "projectId": "proj_app",
+        "revision": "r7.3",
+        "scope": "project",
+        "type": "helperRouting.update",
+        "version": 1
+      },
+      "response": {
+        "body": {
+          "commandId": "cmd_152",
+          "epoch": "00000000-0000-4000-8000-000000000001",
+          "result": {
+            "auto": {
+              "effective": false,
+              "reason": "not_enabled",
+              "scopes": {
+                "app": {
+                  "editable": true,
+                  "value": false
+                },
+                "project": {
+                  "choices": [
+                    "off",
+                    null
+                  ],
+                  "editable": true,
+                  "value": null
+                }
+              },
+              "source": "default"
+            },
+            "labels": {
+              "autoOff": {
+                "dispatcher_locked": "The Dispatcher doesn’t start helpers",
+                "mcp_off": "Clubhouse MCP is off for this agent",
+                "not_enabled": "It isn’t turned on",
+                "orchestration_off": "This agent doesn’t orchestrate",
+                "persona_off": "This agent’s persona turned it off",
+                "project_off": "This project turned it off"
+              },
+              "cell": {
+                "stale": "No longer offered",
+                "unverified": "Couldn’t be checked",
+                "valid": "Offered"
+              },
+              "fallback": {
+                "builtin_preset": "The saved choice is no longer offered, so the default was used",
+                "candidate_skipped": "Another provider was skipped",
+                "model_unverified": "The model list may be out of date, so this couldn’t be checked",
+                "none": "None",
+                "retried_after_spawn_failure": "Started on another provider after the first failed to start"
+              },
+              "generic": {
+                "unknownCode": "Clubhouse gave a reason this version can’t show"
+              },
+              "quota": {
+                "exhausted": "Limit reached",
+                "known": "Limit available",
+                "low": "Limit getting low",
+                "near_limit": "Close to the limit",
+                "unknown": "Unknown"
+              },
+              "reason": {
+                "better_quota_tier": "This provider has more of its limit left",
+                "default_order": "No reason to switch",
+                "explicit_request": "You or the orchestrator chose this",
+                "lower_load": "Fewer helpers running on this provider",
+                "only_candidate": "The only provider available",
+                "persona_pinned": "Set by the persona",
+                "preset_on_cli": "From the helper settings for this difficulty",
+                "sticky": "Stayed on the provider chosen last"
+              },
+              "skipped": {
+                "auto_not_supported": "Auto doesn’t support this provider yet",
+                "cli_disabled": "Turned off in Settings",
+                "cli_unavailable": "Not available on this computer",
+                "cooling_down": "It failed to start recently",
+                "no_valid_mapping": "No choice for this difficulty is offered now",
+                "quota_exhausted": "The provider reports its limit reached",
+                "quota_near_limit": "Close to its limit"
+              },
+              "unknown": {
+                "not_applicable": "This login has no plan limit",
+                "not_read": "Not checked yet",
+                "not_supported": "This provider doesn’t report it",
+                "read_failed": "Couldn’t check",
+                "stale": "Last checked too long ago"
+              },
+              "window": {
+                "fiveHour": "5-hour limit",
+                "other": "Plan limit",
+                "weekly": "Weekly limit"
+              }
+            },
+            "providers": {
+              "claude-code": {
+                "autoEligible": true,
+                "cells": {
+                  "easy": {
+                    "builtin": {
+                      "effort": "low",
+                      "model": "haiku"
+                    },
+                    "custom": null,
+                    "editable": true,
+                    "effective": {
+                      "effort": "low",
+                      "model": "haiku"
+                    },
+                    "source": "builtin",
+                    "state": "valid"
+                  },
+                  "hard": {
+                    "builtin": {
+                      "effort": "high",
+                      "model": "opus"
+                    },
+                    "custom": null,
+                    "editable": true,
+                    "effective": {
+                      "effort": "high",
+                      "model": "opus"
+                    },
+                    "source": "builtin",
+                    "state": "valid"
+                  },
+                  "medium": {
+                    "builtin": {
+                      "effort": "medium",
+                      "model": "sonnet"
+                    },
+                    "custom": null,
+                    "editable": true,
+                    "effective": {
+                      "effort": "medium",
+                      "model": "sonnet"
+                    },
+                    "source": "builtin",
+                    "state": "valid"
+                  }
+                },
+                "choices": {
+                  "asOf": "2027-01-15T08:00:00.000Z",
+                  "models": [
+                    {
+                      "efforts": [
+                        "low",
+                        "medium",
+                        "high"
+                      ],
+                      "id": "opus",
+                      "label": "Opus"
+                    },
+                    {
+                      "efforts": [
+                        "low",
+                        "medium",
+                        "high"
+                      ],
+                      "id": "sonnet",
+                      "label": "Sonnet"
+                    },
+                    {
+                      "efforts": [
+                        "low",
+                        "medium",
+                        "high"
+                      ],
+                      "id": "haiku",
+                      "label": "Haiku"
+                    }
+                  ],
+                  "source": "live"
+                },
+                "quota": {
+                  "asOf": "2027-01-15T08:00:00.000Z",
+                  "fiveHour": {
+                    "resetsAt": "2027-01-15T10:24:00.000Z",
+                    "usedPercent": 12
+                  },
+                  "limitingWindow": "weekly",
+                  "refreshAfterSeconds": 300,
+                  "resetsAt": "2027-01-18T08:00:00.000Z",
+                  "source": "cli_query",
+                  "state": "known",
+                  "weekly": {
+                    "resetsAt": "2027-01-18T08:00:00.000Z",
+                    "usedPercent": 41
+                  }
+                }
+              },
+              "codex-cli": {
+                "autoEligible": true,
+                "cells": {
+                  "easy": {
+                    "builtin": {
+                      "effort": "low",
+                      "model": "gpt-6-luna"
+                    },
+                    "custom": null,
+                    "editable": true,
+                    "effective": {
+                      "effort": "low",
+                      "model": "gpt-6-luna"
+                    },
+                    "source": "builtin",
+                    "state": "valid"
+                  },
+                  "hard": {
+                    "builtin": {
+                      "effort": "high",
+                      "model": "gpt-6.1-sol"
+                    },
+                    "custom": null,
+                    "editable": true,
+                    "effective": {
+                      "effort": "high",
+                      "model": "gpt-6.1-sol"
+                    },
+                    "source": "builtin",
+                    "state": "valid"
+                  },
+                  "medium": {
+                    "builtin": {
+                      "effort": "medium",
+                      "model": "gpt-6.1-terra"
+                    },
+                    "custom": null,
+                    "editable": true,
+                    "effective": {
+                      "effort": "medium",
+                      "model": "gpt-6.1-terra"
+                    },
+                    "source": "builtin",
+                    "state": "valid"
+                  }
+                },
+                "choices": {
+                  "asOf": "2027-01-15T08:00:00.000Z",
+                  "models": [
+                    {
+                      "efforts": [
+                        "low",
+                        "medium",
+                        "high"
+                      ],
+                      "id": "gpt-6.1-sol",
+                      "label": "Sol"
+                    },
+                    {
+                      "efforts": [
+                        "low",
+                        "medium",
+                        "high"
+                      ],
+                      "id": "gpt-6.1-terra",
+                      "label": "Terra"
+                    },
+                    {
+                      "efforts": [
+                        "low",
+                        "medium",
+                        "high"
+                      ],
+                      "id": "gpt-6-luna",
+                      "label": "Luna"
+                    }
+                  ],
+                  "source": "live"
+                },
+                "quota": {
+                  "asOf": "2027-01-15T08:00:00.000Z",
+                  "fiveHour": {
+                    "resetsAt": "2027-01-15T10:24:00.000Z",
+                    "usedPercent": 12
+                  },
+                  "limitingWindow": "weekly",
+                  "refreshAfterSeconds": 300,
+                  "resetsAt": "2027-01-18T08:00:00.000Z",
+                  "source": "cli_query",
+                  "state": "known",
+                  "weekly": {
+                    "resetsAt": "2027-01-18T08:00:00.000Z",
+                    "usedPercent": 41
+                  }
+                }
+              },
+              "copilot-cli": {
+                "autoEligible": false,
+                "cells": null,
+                "quota": {
+                  "asOf": null,
+                  "source": "none",
+                  "state": "unknown",
+                  "unknownReason": "not_supported"
+                },
+                "reason": "auto_not_supported"
+              }
+            },
+            "revision": "r8.3",
+            "serverTime": "2027-01-15T08:00:00.000Z"
+          },
+          "status": "completed",
+          "version": 1
+        },
+        "status": 200
+      }
+    },
+    {
+      "name": "invalid_helper_routing (project can't turn it on)",
+      "request": {
+        "auto": true,
+        "commandId": "cmd_153",
+        "epoch": "00000000-0000-4000-8000-000000000001",
+        "projectId": "proj_app",
+        "revision": "r8.3",
+        "scope": "project",
+        "type": "helperRouting.update",
+        "version": 1
+      },
+      "response": {
+        "body": {
+          "commandId": "cmd_153",
+          "epoch": "00000000-0000-4000-8000-000000000001",
+          "error": {
+            "code": "invalid_helper_routing",
+            "message": "A project can only set auto to off or null."
+          },
+          "status": "rejected",
+          "version": 1
+        },
+        "status": 400
+      }
+    },
+    {
+      "name": "invalid_helper_routing (app-wide off value)",
+      "request": {
+        "auto": "off",
+        "commandId": "cmd_154",
+        "epoch": "00000000-0000-4000-8000-000000000001",
+        "revision": "r8.3",
+        "scope": "app",
+        "type": "helperRouting.update",
+        "version": 1
+      },
+      "response": {
+        "body": {
+          "commandId": "cmd_154",
+          "epoch": "00000000-0000-4000-8000-000000000001",
+          "error": {
+            "code": "invalid_helper_routing",
+            "message": "App-wide, auto is true or false."
+          },
+          "status": "rejected",
+          "version": 1
+        },
+        "status": 400
+      }
+    },
+    {
+      "name": "project_not_found",
+      "request": {
+        "auto": "off",
+        "commandId": "cmd_155",
+        "epoch": "00000000-0000-4000-8000-000000000001",
+        "projectId": "missing",
+        "revision": "r8.3",
+        "scope": "project",
+        "type": "helperRouting.update",
+        "version": 1
+      },
+      "response": {
+        "body": {
+          "commandId": "cmd_155",
+          "epoch": "00000000-0000-4000-8000-000000000001",
+          "error": {
+            "code": "project_not_found",
+            "message": "project_not_found"
+          },
+          "status": "rejected",
+          "version": 1
+        },
+        "status": 404
       }
     }
   ],

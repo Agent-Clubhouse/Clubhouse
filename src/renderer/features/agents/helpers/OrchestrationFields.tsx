@@ -22,6 +22,7 @@ export const DISPATCHER_HELP = 'Let the Dispatcher message this agent and get it
 
 /** The help line under the "Cross-project helpers" switch (#2512). */
 export const CROSS_PROJECT_HELP = 'Let this agent start helpers in other projects.';
+export const AUTO_HELPERS_HELP = 'Let Clubhouse pick between Claude Code and Codex for a helper, from helper counts and plan limits. This balances counts, not cost. Unset follows Settings > Helpers.';
 
 /** Why the controls are disabled where Clubhouse MCP is off (#2589). Saved settings come back with MCP. */
 export function mcpOffNote(name: string): string {
@@ -125,6 +126,26 @@ export function HelperCountInput({ id, value, ceiling, disabled, className, onCo
 }
 
 /** "Cross-project helpers" (#2512): may this agent start helpers in other registered projects. */
+export function AutoHelpersToggle({ id, checked, name, disabled, onChange, testId }: {
+  id?: string;
+  checked: boolean;
+  name: string;
+  disabled?: boolean;
+  onChange: (on: boolean) => void;
+  testId?: string;
+}) {
+  return (
+    <Toggle
+      id={id}
+      checked={checked}
+      disabled={disabled}
+      onChange={onChange}
+      aria-label={`Let Clubhouse pick the provider for ${name}’s helpers`}
+      data-testid={testId}
+    />
+  );
+}
+
 export function CrossProjectToggle({ id, checked, name, disabled, onChange, testId }: {
   id?: string;
   checked: boolean;

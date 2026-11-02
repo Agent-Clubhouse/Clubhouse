@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { abortPending } from './facade';
 import { setProducingRuntime } from './__test-utils__/producing-runtime';
-import { blueprintTransfer, helperPresetsChanged, helperRouted, isSettingsKey, popoutOpened, recordToolsList, settingsChanged, SETTINGS_KEYS_EXCLUDED, themeChanged } from './feature-events';
+import { blueprintTransfer, helperAutoCooldown, helperAutoRefused, helperPresetsChanged, helperQuotaRead, helperRouted, isSettingsKey, popoutOpened, recordToolsList, settingsChanged, SETTINGS_KEYS_EXCLUDED, themeChanged } from './feature-events';
 import * as definitions from '../../shared/settings-definitions';
 import { byteSizeBucket, classifyFetchError } from './workspace';
 import type { TelemetryRuntime } from './types';
@@ -134,5 +134,46 @@ describe('helper routing events (#2671)', () => {
     expect(events[0]).toEqual({ name: 'clubhouse.helper_routing.changed', attrs: {
       'clubhouse.helper_presets.action': 'reset_cell', 'clubhouse.helper_presets.surface': 'mobile', 'clubhouse.outcome': 'error',
     } });
+  });
+});
+
+describe('Auto events (#2671)', () => {
+  afterEach(() => { events.length = 0; abortPending(); setProducingRuntime(null); });
+
+  it('a decision says how it was reached, in buckets and codes', () => {
+    setProducingRuntime(runtime());
+    helperRouted({
+      mode: 'auto', balanced: true, decidedAt: '2027-01-15T08:20:00.000Z', policyVersion: 1, fallback: 'candidate_skipped', context: { status: 'none' },
+      requested: { provider: 'auto', model: null, effort: null, difficulty: 'hard' },
+      resolved: { provider: 'codex-cli', model: 'gpt-6.1-sol', effort: 'high', difficulty: 'hard' },
+      source: { provider: 'auto', model: 'custom_mapping', effort: 'custom_mapping' },
+      reason: 'lower_load',
+      load: { 'codex-cli': 3 },
+      quota: { 'codex-cli': { state: 'unknown', unknownReason: 'stale', asOf: '2027-01-15T08:00:00.000Z' } },
+      quotaBasis: 'unknown_scored_as_healthy',
+    });
+    expect(events[0].attrs).toMatchObject({
+      'clubhouse.helper_routing.requested_cli': 'auto',
+      'clubhouse.helper_routing.mode': 'auto',
+      'clubhouse.helper_routing.preset': 'custom',
+      'clubhouse.helper_routing.reason': 'lower_load',
+      'clubhouse.helper_routing.fallback': 'candidate_skipped',
+      'clubhouse.helper_routing.load_bucket': '2-3',
+      'clubhouse.helper_routing.quota_basis': 'unknown_scored_as_healthy',
+      'clubhouse.helper_routing.quota_age': 'over_15m',
+      'clubhouse.helper_quota.state': 'unknown',
+    });
+    expect(JSON.stringify(events[0].attrs)).not.toContain('gpt-6.1-sol');
+  });
+
+  it('refusals, cooldowns and quota reads are codes', () => {
+    setProducingRuntime(runtime());
+    helperAutoRefused('no_candidate');
+    helperAutoCooldown('claude-code', 'auth');
+    helperQuotaRead('codex-cli', 'near_limit', true);
+    expect(events.map((e) => e.name)).toEqual(['clubhouse.helper_auto.refused', 'clubhouse.helper_auto.cooling', 'clubhouse.helper_quota.read']);
+    expect(events[0].attrs).toEqual({ 'clubhouse.helper_auto.refusal': 'no_candidate' });
+    expect(events[1].attrs).toEqual({ 'clubhouse.orchestrator': 'claude-code', 'clubhouse.helper_auto.cooldown': 'auth' });
+    expect(events[2].attrs).toEqual({ 'clubhouse.orchestrator': 'codex-cli', 'clubhouse.helper_quota.state': 'near_limit', 'clubhouse.outcome': 'ok' });
   });
 });

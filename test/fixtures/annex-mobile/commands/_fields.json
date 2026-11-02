@@ -216,8 +216,10 @@
       "fields": [
         "revision",
         "scope",
+        "projectId",
         "cells",
-        "reset"
+        "reset",
+        "auto"
       ],
       "required": [
         "revision",

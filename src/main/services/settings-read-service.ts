@@ -293,6 +293,7 @@ const AGENT_SECTIONS: ReadonlyArray<Section<AgentContext>> = [
       orchestrationField('maxHelpers', 'max_helpers'),
       orchestrationField('crossProjectHelpers', 'cross_project_helpers'),
       orchestrationField('connectToDispatcher', 'connect_to_dispatcher'),
+      orchestrationField('autoHelpers', 'auto_helpers'),
     ],
   },
 ];

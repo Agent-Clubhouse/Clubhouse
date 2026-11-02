@@ -50,6 +50,12 @@ export interface OrchestrationPolicy {
    * default (#2578), and always false on a helper: see resolveOrchestrationPolicy.
    */
   connectToDispatcher: boolean;
+  /**
+   * "Auto provider" (#2671): this agent's `cli: "auto"` may pick a helper's
+   * provider. Unset follows the app setting. A persona can only turn it off:
+   * see resolveOrchestrationPolicy, and services/helper-routing.ts for the rest.
+   */
+  autoHelpers: boolean;
 }
 
 /**
@@ -77,6 +83,7 @@ export const ORCHESTRATION_DEFAULTS: Readonly<OrchestrationPolicy> = Object.free
   maxHelpers: DEFAULT_MAX_HELPERS,
   crossProjectHelpers: false,
   connectToDispatcher: false,
+  autoHelpers: false,
 });
 
 /** The refusal an orchestration tool returns for an agent with orchestration off. */
@@ -92,7 +99,7 @@ export const MCP_REQUIRED_MESSAGE = 'This needs Clubhouse MCP, which is off for 
 export type OrchestrationPolicySource = 'agent' | 'persona' | 'default';
 
 /** The switches that need Clubhouse MCP (#2589). */
-export type McpDependentSwitches = Pick<OrchestrationPolicy, 'orchestrate' | 'crossProjectHelpers' | 'connectToDispatcher'>;
+export type McpDependentSwitches = Pick<OrchestrationPolicy, 'orchestrate' | 'crossProjectHelpers' | 'connectToDispatcher' | 'autoHelpers'>;
 
 export interface ResolvedOrchestrationPolicy extends OrchestrationPolicy {
   sources: Record<keyof OrchestrationPolicy, OrchestrationPolicySource>;
@@ -111,7 +118,7 @@ export function savedOrchestrate(policy: Pick<ResolvedOrchestrationPolicy, 'orch
 
 /** Whether a patch sets one of the switches that need Clubhouse MCP to on. Clearing or turning off never does. */
 export function patchTurnsOnMcpSwitch(patch: { [K in keyof McpDependentSwitches]?: boolean | null }): boolean {
-  return patch.orchestrate === true || patch.crossProjectHelpers === true || patch.connectToDispatcher === true;
+  return patch.orchestrate === true || patch.crossProjectHelpers === true || patch.connectToDispatcher === true || patch.autoHelpers === true;
 }
 
 function isAccess(value: unknown): value is OrchestrationAccess {
@@ -140,6 +147,7 @@ export function normalizeOrchestrationConfig(raw: unknown): OrchestrationPolicyC
   if (isLimit(r.maxHelpers)) out.maxHelpers = r.maxHelpers;
   if (typeof r.crossProjectHelpers === 'boolean') out.crossProjectHelpers = r.crossProjectHelpers;
   if (typeof r.connectToDispatcher === 'boolean') out.connectToDispatcher = r.connectToDispatcher;
+  if (typeof r.autoHelpers === 'boolean') out.autoHelpers = r.autoHelpers;
   return Object.keys(out).length > 0 ? out : undefined;
 }
 
@@ -178,6 +186,10 @@ export function validateOrchestrationPatch(raw: unknown): { [K in keyof Orchestr
       case 'connectToDispatcher':
         if (value !== null && typeof value !== 'boolean') throw new Error('connectToDispatcher must be a boolean');
         out.connectToDispatcher = value as boolean | null;
+        break;
+      case 'autoHelpers':
+        if (value !== null && typeof value !== 'boolean') throw new Error('autoHelpers must be a boolean');
+        out.autoHelpers = value as boolean | null;
         break;
       default:
         throw new Error(`Unknown orchestration policy field: ${key}`);
@@ -223,6 +235,8 @@ export function resolveOrchestrationPolicy(
 ): ResolvedOrchestrationPolicy {
   const agent = normalizeOrchestrationConfig(agentConfig) ?? {};
   const persona = normalizeOrchestrationConfig(personaDefaults) ?? {};
+  // A cloned repository's persona can turn Auto off but never on: it would spend another provider's quota.
+  if (persona.autoHelpers === true) delete persona.autoHelpers;
   const keys = Object.keys(ORCHESTRATION_DEFAULTS) as Array<keyof OrchestrationPolicy>;
   const policy = { ...ORCHESTRATION_DEFAULTS } as OrchestrationPolicy;
   const sources = {} as ResolvedOrchestrationPolicy['sources'];
@@ -244,10 +258,10 @@ export function resolveOrchestrationPolicy(
     policy.connectToDispatcher = policy.orchestrate;
   }
   if (options.mcpOff) {
-    const { orchestrate, crossProjectHelpers, connectToDispatcher } = policy;
+    const { orchestrate, crossProjectHelpers, connectToDispatcher, autoHelpers } = policy;
     return {
-      ...policy, orchestrate: false, crossProjectHelpers: false, connectToDispatcher: false, sources,
-      mcpOff: { orchestrate, crossProjectHelpers, connectToDispatcher },
+      ...policy, orchestrate: false, crossProjectHelpers: false, connectToDispatcher: false, autoHelpers: false, sources,
+      mcpOff: { orchestrate, crossProjectHelpers, connectToDispatcher, autoHelpers },
     };
   }
   return { ...policy, sources };

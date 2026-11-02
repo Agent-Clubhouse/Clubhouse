@@ -27,6 +27,9 @@ import { disposeHelperForUser, reportDisposeDecision, workAtRisk } from './helpe
 import { approveHelperStart, declineHelperStart } from './clubhouse-mcp/tools/helper-tools';
 import * as agentConfig from './agent-config';
 
+/** Refusals from routing, before anything is created (#2671). */
+const DEFINITE_REFUSALS = new Set(['no_valid_mapping', 'no_candidate', 'auto_off', 'auto_not_supported']);
+
 /** What the desktop calls an orchestrator it can't name (app-event-bridge). */
 const UNNAMED_ORCHESTRATOR = 'An orchestrator';
 
@@ -151,9 +154,9 @@ export async function runHelperCommand(command: HelperCommand, deps: HelperComma
     if (!result.ok) {
       // Still waiting means a fixable refusal (wake the orchestrator); gone means it was used up or answered.
       const waiting = peekStartRequest(start.projectPath, requestId);
-      // A start with no valid preset is refused before anything is created, so the answer is definite. The
+      // A start with no valid preset or provider is refused before anything is created, so the answer is definite. The
       // request is gone too: the snapshot taking it was sent when it was used up (#2671).
-      if (result.code === 'no_valid_mapping') throw new MobileControlError('no_valid_mapping', 409, 'rejected', result.message);
+      if (result.code && DEFINITE_REFUSALS.has(result.code)) throw new MobileControlError(result.code, 409, 'rejected', result.message);
       throw new MobileControlError(waiting ? 'helper_start_blocked' : 'helper_start_refused', 409, waiting ? 'rejected' : 'failed', result.message);
     }
     return { requestId, kind: 'start', approved: true, helperId: result.helperId ?? null };

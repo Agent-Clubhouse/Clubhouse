@@ -33,7 +33,7 @@ export type MobileCommand = CommandBase & (
   // Settings > Dispatcher's switch (#2533). Never the experimental flag.
   | { type: 'dispatcher.setEnabled'; enabled: boolean }
   // App-wide helper presets (#2671). `revision` is what the change was made from; 409 helper_routing_stale changes nothing.
-  | ({ type: 'helperRouting.update'; scope: string } & import('./helper-routing').HelperRoutingUpdate)
+  | ({ type: 'helperRouting.update'; scope: string; projectId?: string } & import('./helper-routing').HelperRoutingUpdate)
 );
 /** A durable agent, as the New agent page makes one. */
 export interface MobileAgentCreate {
