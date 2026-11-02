@@ -28,7 +28,7 @@ Auto applies only where it is selected, and only to a new helper. It never write
 
 `cli: "auto"` while Auto isn't allowed is refused, not ignored.
 
-`preset` has no switch. It only changes anything when an orchestrator sends `difficulty`, it stays on one CLI, and an orchestrator can already name any model. This also means turning on a stage 2 setting can't quietly authorize cross-provider routing when stage 4 ships.
+`preset` has no switch. It only changes anything when an orchestrator sends `difficulty`, it stays on one CLI, and an orchestrator can already name any model. This also means turning on a stage 2 setting can't quietly authorize cross-provider routing when stage 4 ships. The limitation: a project or persona `off` stops Auto but doesn't stop presets.
 
 **Each of CLI, model and effort**, highest first:
 
@@ -285,7 +285,7 @@ A cell with nothing valid has `effective: null`. The `auto` block appears from s
 
 **A stale write** writes nothing, for any part of the command, and its 409 returns `{revision, settings}`. A client shows the fresh values and lets the person apply their change again. It must not retry on its own, since that could overwrite someone else's edit.
 
-**Helper snapshot (minimal):** `routing:{mode,difficulty,provider,model,effort,reason}`, codes only. The full snapshot size tests include these fields, on a helper in every row.
+**Helper snapshot (minimal):** `routing:{mode,difficulty,provider,model,effort,reason}`, codes only. A full snapshot size test covers these fields, on a helper in every row. Stage 2 writes a new one unless one exists by then (#2659 may add size coverage).
 
 **Helper settings (detailed):** `GET /mobile/agents/:id/settings` carries the full `routing` above and `display`.
 
@@ -314,7 +314,6 @@ To replace the persona's model lines once Auto ships. The `start_helper` descrip
 - **Terminal signal limit.** Terminal helpers report no error codes, so their failures after spawn aren't seen, no cooldown is set, and quota stays whatever the last read said.
 - **Worktree check, stage 4.** Whether a worktree prepared for one CLI can be switched to another. If it can't, the retry is dropped and the start fails as today with its task saved. Cooldowns stay either way.
 - **Phone wire** isn't locked. Go reviews it before implementation, and stability work stays first.
-- **`preset` without a switch** changes the first accepted design, and needs agreeing.
 - **Context and Auto** haven't been tested together, and #2668 was still open when this was written.
 
 ## Stages
