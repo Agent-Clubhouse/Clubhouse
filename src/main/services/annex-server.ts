@@ -1193,15 +1193,22 @@ function releaseFrames(ws: WebSocket): void {
 
 /** How long to wait before trying a socket's first snapshot again. Past the end, the last one repeats. */
 const SNAPSHOT_RETRY_DELAYS_MS = [2000, 8000, 30_000, 60_000];
+/** After a failure, a new socket waits this long before building, as a phone reconnects within seconds. */
+const SNAPSHOT_FAILED_COOLDOWN_MS = 5000;
+let firstSnapshotBlockedUntil = 0;
+
 /**
- * A snapshot too large to send stays too large until something changes, and a
- * refresh tries again when it does. So the timer here is only a backstop.
+ * How long a snapshot too large to send is taken at its word. It stays too large
+ * until something changes, and a phone reconnects about every 32 seconds, each new
+ * socket wanting a build. So this is held for the whole host, not per socket: inside
+ * it no socket builds, and one socket's build answers for all of them.
  */
 const SNAPSHOT_OVERSIZE_RETRY_MS = 5 * 60_000;
-/** After a failure, a new socket waits this long before building, as a phone reconnects every few seconds. */
-const SNAPSHOT_FAILED_COOLDOWN_MS = 5000;
-const SNAPSHOT_OVERSIZE_COOLDOWN_MS = 30_000;
-let firstSnapshotBlockedUntil = 0;
+/** A change is worth a look, but only this often: a busy host could otherwise rebuild a huge snapshot nonstop. */
+const SNAPSHOT_OVERSIZE_RECHECK_MS = 30_000;
+/** When a snapshot was last found too large, or null if it isn't. */
+let snapshotOversizeAt: number | null = null;
+let snapshotOversizeRecheck: ReturnType<typeof setTimeout> | null = null;
 
 /** Tell the phone once, keep the socket and its commands, and try again later. */
 function firstSnapshotFailed(ws: WebSocket, delay: number, attempt: number): void {
@@ -1239,6 +1246,15 @@ function deliverFirstSnapshot(ws: WebSocket, held: HeldFrames, built: BuiltSnaps
  * again on a timer. A snapshot too large to send won't, so only a backstop runs.
  */
 async function sendFirstSnapshot(ws: WebSocket, attempt = 0): Promise<void> {
+  if (snapshotOversizeAt !== null) {
+    const left = snapshotOversizeAt + SNAPSHOT_OVERSIZE_RETRY_MS - Date.now();
+    if (left > 0) {
+      firstSnapshotFailed(ws, left, attempt);
+      return;
+    }
+    // This socket takes the recheck. Any other waits out a new window, or hears sooner if this one fits.
+    snapshotOversizeAt = Date.now();
+  }
   if (attempt === 0 && Date.now() < firstSnapshotBlockedUntil) {
     firstSnapshotFailed(ws, Math.max(firstSnapshotBlockedUntil - Date.now(), SNAPSHOT_RETRY_DELAYS_MS[0]), attempt);
     return;
@@ -1254,8 +1270,12 @@ async function sendFirstSnapshot(ws: WebSocket, attempt = 0): Promise<void> {
       return;
     }
     if (!deliverFirstSnapshot(ws, held, built, 'connect')) {
-      firstSnapshotBlockedUntil = Date.now() + SNAPSHOT_OVERSIZE_COOLDOWN_MS;
+      snapshotOversizeAt = Date.now();
       firstSnapshotFailed(ws, SNAPSHOT_OVERSIZE_RETRY_MS, attempt);
+    } else if (snapshotOversizeAt !== null) {
+      // It fits again, so sockets waiting on the window can have it now.
+      snapshotOversizeAt = null;
+      broadcastSnapshotRefresh();
     }
   } catch (err) {
     appLog('core:annex', 'error', 'Failed to send snapshot on connect', {
@@ -4317,7 +4337,11 @@ export function stop(): void {
   if (refreshFollowUp) clearTimeout(refreshFollowUp);
   refreshFollowUp = null;
   refreshAgain = false;
+  refreshGeneration++;
   firstSnapshotBlockedUntil = 0;
+  snapshotOversizeAt = null;
+  if (snapshotOversizeRecheck) clearTimeout(snapshotOversizeRecheck);
+  snapshotOversizeRecheck = null;
   lastLargeFrameLog.clear();
   lastSnapshotLog = null;
   lastIconBudgetWarning = '';
@@ -4447,6 +4471,8 @@ function pairingLink(fingerprint: string, certFingerprint: string | undefined, n
 let refreshInFlight = false;
 let refreshAgain = false;
 let refreshFollowUp: ReturnType<typeof setTimeout> | null = null;
+/** Bumped by stop(), so a build still running then can't start another afterwards. */
+let refreshGeneration = 0;
 
 /** After a refresh that raced a change, the next waits this long, so a storm of changes can't mean building nonstop. */
 const RACED_REFRESH_DELAY_MS = 250;
@@ -4474,12 +4500,24 @@ function snapshotStateChangedSince(seq: number): boolean {
  * on its own: a follow-up needs a real change during the build.
  */
 export function broadcastSnapshotRefresh(): void {
+  if (snapshotOversizeAt !== null) {
+    const wait = snapshotOversizeAt + SNAPSHOT_OVERSIZE_RECHECK_MS - Date.now();
+    if (wait > 0) {
+      snapshotOversizeRecheck ??= setTimeout(() => {
+        snapshotOversizeRecheck = null;
+        broadcastSnapshotRefresh();
+      }, wait);
+      snapshotOversizeRecheck.unref?.();
+      return;
+    }
+  }
   if (refreshInFlight) {
     refreshAgain = true;
     return;
   }
   refreshInFlight = true;
   const cursor = eventReplay.getLastSeq();
+  const generation = refreshGeneration;
   let raced = false;
   readSnapshotSources().then((sources) => {
     const built = assembleSnapshot(sources);
@@ -4487,7 +4525,11 @@ export function broadcastSnapshotRefresh(): void {
     if (raced) built.payload.lastSeq = cursor;
     const frame = snapshotFrame(built, 'refresh');
     // Never send a phone a frame it would close on. It keeps what it has, and the next change tries again.
-    if (Buffer.byteLength(frame) > MOBILE_WS_FRAME_MAX_BYTES) return;
+    if (Buffer.byteLength(frame) > MOBILE_WS_FRAME_MAX_BYTES) {
+      snapshotOversizeAt = Date.now();
+      return;
+    }
+    snapshotOversizeAt = null;
     firstSnapshotBlockedUntil = 0;
     if (broadcastFrame('snapshot', frame) > 0) recordSnapshotFailure('send_failed');
     for (const client of wss?.clients ?? []) {
@@ -4500,6 +4542,8 @@ export function broadcastSnapshotRefresh(): void {
     });
   }).finally(() => {
     refreshInFlight = false;
+    // The server stopped during the build: nothing left to tell, even if it has started again.
+    if (generation !== refreshGeneration) return;
     if (refreshAgain) {
       refreshAgain = false;
       broadcastSnapshotRefresh();
@@ -4852,6 +4896,7 @@ export const _testing = {
   HELD_FRAMES_MAX,
   SNAPSHOT_RETRY_DELAYS_MS,
   SNAPSHOT_OVERSIZE_RETRY_MS,
+  SNAPSHOT_OVERSIZE_RECHECK_MS,
   SNAPSHOT_FAILED_COOLDOWN_MS,
   heldBytes: (ws: WebSocket) => heldFrames.get(ws)?.bytes,
   holdForTest(ws: WebSocket, data: string) {

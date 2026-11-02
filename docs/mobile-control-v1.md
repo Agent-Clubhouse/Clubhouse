@@ -152,8 +152,8 @@ A socket's first frame is always its `snapshot`, or `{type:"error",payload:{mess
 After `snapshot_failed` the socket stays open, and replies to what you send still arrive. Events don't: without a snapshot you have nothing to read them against. They're held on the desktop, up to 10,000 frames or 32 MiB. Past that, what's held is dropped but `lastSeq` stays where it was, so you'll see a jump in seq after the snapshot: replay as for any gap. A successful try sends the snapshot and then what's held. Reconnect whenever your own grace period ends.
 
 - If building failed, the desktop tries again after 2, 8 and 30 seconds and then every minute.
-- A snapshot too large to send (over 16 MiB) is never sent. It's tried again when something changes, and every 5 minutes as a backstop. A connected phone keeps what it has.
-- For a few seconds after either, a new socket gets `snapshot_failed` without a new attempt, so reconnecting doesn't mean rebuilding.
+- A snapshot too large to send (over 16 MiB) is never sent. For the next 5 minutes, across every socket, a connecting phone gets `snapshot_failed` without a new attempt. A change to what a snapshot shows brings a recheck, at most every 30 seconds. So does the end of the 5 minutes, once however many are waiting. When one fits, every waiting socket gets it. A connected phone keeps what it has until then.
+- For 5 seconds after a failed build, a new socket gets `snapshot_failed` without a new attempt, so reconnecting doesn't mean rebuilding.
 
 The desktop never closes a socket for any of this. A phone can't rely on a close code: on iOS, `URLSession` reports 1013 as 1005.
 

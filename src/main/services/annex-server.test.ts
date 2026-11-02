@@ -3477,8 +3477,8 @@ describe('annex-server', () => {
         expect(ws.close).not.toHaveBeenCalled();
       });
 
-      it('does not rebuild on the transient timer, only on the slow backstop', async () => {
-        vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+      it('does not rebuild on the transient retry timer, only on the slow backstop', async () => {
+        vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] });
         try {
           oversized();
           const ws = openDuringBuild();
@@ -3496,21 +3496,103 @@ describe('annex-server', () => {
         }
       });
 
-      it('does not rebuild for a phone reconnecting into it', async () => {
-        oversized();
-        const first = openDuringBuild();
-        finishList([]);
-        await vi.waitFor(() => expect(first.send).toHaveBeenCalled());
-        const before = builds();
+      const connectAgain = async () => {
+        const ws = Object.assign(new EventEmitter(), { readyState: 1, send: vi.fn(), ping: () => {}, close: vi.fn() });
+        annexServer._testing.wsAuthTypes.set(ws as never, 'bearer');
+        annexServer._testing.wss!.clients.add(ws as never);
+        annexServer._testing.wss!.emit('connection', ws);
+        await vi.waitFor(() => expect(ws.send).toHaveBeenCalled());
+        return ws;
+      };
 
-        const again = Object.assign(new EventEmitter(), { readyState: 1, send: vi.fn(), ping: () => {}, close: vi.fn() });
-        annexServer._testing.wsAuthTypes.set(again as never, 'bearer');
-        annexServer._testing.wss!.clients.add(again as never);
-        annexServer._testing.wss!.emit('connection', again);
-        await vi.waitFor(() => expect(again.send).toHaveBeenCalled());
+      it('does not rebuild for phones reconnecting into it, across several clients and the whole window', async () => {
+        vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] });
+        try {
+          oversized();
+          const first = openDuringBuild();
+          finishList([]);
+          await vi.waitFor(() => expect(first.send).toHaveBeenCalled());
+          const before = builds();
 
-        expect(builds()).toBe(before);
-        expect(sent(again)).toEqual([{ type: 'error', payload: { message: 'snapshot_failed' } }]);
+          // Build 147 reconnects about every 32 seconds, whatever the socket before it did.
+          for (let reconnect = 0; reconnect < 8; reconnect++) {
+            await vi.advanceTimersByTimeAsync(32_000);
+            for (const ws of [await connectAgain(), await connectAgain()]) {
+              expect(sent(ws)).toEqual([{ type: 'error', payload: { message: 'snapshot_failed' } }]);
+            }
+          }
+
+          expect(builds()).toBe(before);
+        } finally {
+          vi.useRealTimers();
+        }
+      });
+
+      it('rechecks once when the window ends, however many sockets are waiting', async () => {
+        vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] });
+        try {
+          oversized();
+          const first = openDuringBuild();
+          finishList([]);
+          await vi.waitFor(() => expect(first.send).toHaveBeenCalled());
+          const others = [await connectAgain(), await connectAgain(), await connectAgain()];
+          const before = builds();
+
+          await vi.advanceTimersByTimeAsync(annexServer._testing.SNAPSHOT_OVERSIZE_RETRY_MS + 1000);
+
+          expect(builds()).toBe(before + 1);
+          for (const ws of others) expect(sent(ws)).toHaveLength(1);
+        } finally {
+          vi.useRealTimers();
+        }
+      });
+
+      it('rechecks on a real change, but no more than once in the recheck interval', async () => {
+        vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] });
+        try {
+          oversized();
+          const first = openDuringBuild();
+          finishList([]);
+          await vi.waitFor(() => expect(first.send).toHaveBeenCalled());
+          const before = builds();
+
+          for (let change = 0; change < 20; change++) annexServer.broadcastSnapshotRefresh();
+          await vi.advanceTimersByTimeAsync(annexServer._testing.SNAPSHOT_OVERSIZE_RECHECK_MS - 1000);
+          expect(builds()).toBe(before);
+
+          await vi.advanceTimersByTimeAsync(1000);
+          expect(builds()).toBe(before + 1);
+          await vi.advanceTimersByTimeAsync(annexServer._testing.SNAPSHOT_OVERSIZE_RECHECK_MS - 1000);
+          expect(builds()).toBe(before + 1);
+        } finally {
+          vi.useRealTimers();
+        }
+      });
+
+      it('serves every waiting socket from one build once a recheck fits, and new sockets build again', async () => {
+        vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] });
+        try {
+          oversized();
+          const first = openDuringBuild();
+          finishList([]);
+          await vi.waitFor(() => expect(first.send).toHaveBeenCalled());
+          const other = await connectAgain();
+
+          vi.mocked(pluginStorage.readKey).mockReset();
+          vi.mocked(pluginStorage.readKey).mockResolvedValue(null as never);
+          const before = builds();
+          annexServer.broadcastSnapshotRefresh();
+          await vi.advanceTimersByTimeAsync(annexServer._testing.SNAPSHOT_OVERSIZE_RECHECK_MS + 1000);
+
+          expect(builds()).toBe(before + 1);
+          for (const ws of [first, other]) expect(sent(ws)[1].type).toBe('snapshot');
+
+          const fresh = await connectAgain();
+          expect(sent(fresh)[0].type).toBe('snapshot');
+          expect(builds()).toBe(before + 2);
+        } finally {
+          vi.useRealTimers();
+        }
       });
 
       it('recovers on a real change: the next refresh that fits is its first snapshot, with what was held', async () => {
@@ -3525,7 +3607,13 @@ describe('annex-server', () => {
 
         vi.mocked(pluginStorage.readKey).mockReset();
         vi.mocked(pluginStorage.readKey).mockResolvedValue(null as never);
-        annexServer.broadcastSnapshotRefresh();
+        vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] });
+        try {
+          annexServer.broadcastSnapshotRefresh();
+          await vi.advanceTimersByTimeAsync(annexServer._testing.SNAPSHOT_OVERSIZE_RECHECK_MS + 1000);
+        } finally {
+          vi.useRealTimers();
+        }
         await vi.waitFor(() => expect(sent(ws).length).toBeGreaterThan(1));
 
         const frames = sent(ws);
