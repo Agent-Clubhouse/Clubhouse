@@ -13,6 +13,23 @@ const baseLockState = {
 
 const noop = () => {};
 
+describe('SatelliteLockOverlay – controller initials', () => {
+  it('draws them in the text color computed from the controller color', () => {
+    render(
+      <SatelliteLockOverlay
+        lockState={{ ...baseLockState, paused: false, controllerColor: 'amber' }}
+        onDisconnect={noop}
+        onPause={noop}
+        onDisableAndDisconnect={noop}
+      />,
+    );
+
+    const initials = screen.getByText('CU');
+    expect(initials.style.color).toBe('rgb(0, 0, 0)');
+    expect(initials.className).not.toContain('text-white');
+  });
+});
+
 describe('SatelliteLockOverlay – pause floatie positioning', () => {
   it('renders at default top (48px) when no bannerOffset is provided', () => {
     render(

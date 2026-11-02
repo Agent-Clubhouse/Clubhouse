@@ -5,6 +5,7 @@
  * Displays the controller's identity and provides disconnect/pause/disable actions.
  */
 import React from 'react';
+import { initialsTextColor } from '../../../shared/agent-avatar';
 import { getAgentColorHex } from '../../../shared/name-generator';
 
 interface LockState {
@@ -42,8 +43,8 @@ export const SatelliteLockOverlay = React.memo(function SatelliteLockOverlay({ l
         <div className="flex flex-col items-center gap-6 text-center">
           {/* Controller icon */}
           <div
-            className="w-24 h-24 rounded-full flex items-center justify-center text-white text-3xl font-bold shadow-lg"
-            style={{ backgroundColor: colorHex }}
+            className="w-24 h-24 rounded-full flex items-center justify-center text-3xl font-bold shadow-lg"
+            style={{ backgroundColor: colorHex, color: initialsTextColor(colorHex) }}
           >
             {lockState.controllerAlias.slice(0, 2).toUpperCase()}
           </div>

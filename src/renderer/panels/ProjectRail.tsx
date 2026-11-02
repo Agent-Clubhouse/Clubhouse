@@ -11,6 +11,7 @@ import { usePanelStore } from '../stores/panelStore';
 import { Badge } from '../components/Badge';
 import { Project } from '../../shared/types';
 import { PluginRegistryEntry } from '../../shared/plugin-types';
+import { initialsTextColor } from '../../shared/agent-avatar';
 import { getAgentColorHex } from '../../shared/name-generator';
 import { sanitizeSvg } from '../utils/sanitize-svg';
 import { showConfirmDialog } from '../plugins/PluginDialog';
@@ -120,14 +121,14 @@ const ProjectIcon = React.memo(function ProjectIcon({ project, isActive, onClick
             w-10 h-10 rounded-lg flex items-center justify-center overflow-hidden text-sm font-bold
             transition-colors duration-100
             ${isActive
-              ? 'text-white shadow-lg'
+              ? 'shadow-lg'
               : expanded
                 ? 'bg-surface-1 text-ctp-subtext0'
                 : 'bg-surface-1 text-ctp-subtext0 hover:bg-surface-2 hover:text-ctp-text'
             }
           `}
           style={isActive ? {
-            backgroundColor: (hasImage || hasEmoji) ? undefined : hex,
+            ...(!hasImage && !hasEmoji && { backgroundColor: hex, color: initialsTextColor(hex) }),
             ...(hasEmoji && { backgroundColor: `${hex}20` }),
             boxShadow: `0 10px 15px -3px ${hex}30, 0 4px 6px -4px ${hex}30`,
           } : hasEmoji ? { backgroundColor: `${hex}10` } : undefined}
