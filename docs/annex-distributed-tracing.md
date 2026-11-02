@@ -108,7 +108,7 @@ adapter/query remain unverified. A green draft is not evidence those gaps closed
 
 Feedback upload and tracing remain separate configurations. The feedback adapter
 keeps its own telemetry disabled. Desktop vendors the canonical Framebriar Node
-SDK at release `v0.5.1` (`7572776830a65688403c59806621154a2458099c`), with
+SDK at release `v0.7.0` (`f57b75fe5d38d7e2c3d221d246c9e01445da41dc`), with
 unchanged upstream files and SHA-256 provenance in `VENDORED.json`. See
 `docs/framebriar-sdk-drop-20261102.md`.
 
