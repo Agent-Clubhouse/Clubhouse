@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useState, type KeyboardEvent } from 'react';
 import { Modal } from '../../components/Modal';
-import { FEEDBACK_DIAGNOSTICS, type FeedbackCaptureResult, type FeedbackDiagnosticLine, type FeedbackDiagnosticsOutcome, type FeedbackShot } from '../../../shared/feedback-types';
+import { FEEDBACK_DIAGNOSTICS, type FeedbackCaptureResult, type FeedbackDiagnosticLine, type FeedbackDiagnosticsOutcome, type FeedbackShot, type FeedbackStatus } from '../../../shared/feedback-types';
 import { useFeedbackStore } from '../../stores/feedbackStore';
 import { useUIStore } from '../../stores/uiStore';
+import { ipcErrorMessage } from '../../utils/ipc-error';
 import { compositeAnnotatedPng, type Stroke } from './annotation';
 import { ScreenshotAnnotator } from './ScreenshotAnnotator';
 
@@ -44,6 +45,17 @@ function diagnosticsOutcomeText(outcome: FeedbackDiagnosticsOutcome): string {
   return outcome.status === 'left_out' ? 'Diagnostics left out.' : NO_DIAGNOSTICS_TEXT[outcome.reason];
 }
 
+/** States that still hold the enrollment's credential, so delivery only needs the network. */
+const DELIVERS_WHEN_REACHABLE: ReadonlySet<FeedbackStatus['state']> = new Set(['connected', 'offline', 'checking', 'stopped']);
+
+/** Where a saved report stands. In any other state it can't go until a new connection is made. */
+function savedText(status: FeedbackStatus | null): string {
+  const waiting = status !== null && (status.notice !== null || !DELIVERS_WHEN_REACHABLE.has(status.state));
+  return waiting
+    ? 'Saved. It\'s queued on this computer and waits until Clubhouse is connected to Framebriar again.'
+    : 'Saved. It\'s queued on this computer and is sent as soon as Clubhouse can reach the server.';
+}
+
 /**
  * Review a captured screenshot before it leaves the computer: preview, notes, and Send,
  * "Send without screenshot" or Cancel. After sending it shows "Saved" (queued on this
@@ -59,6 +71,7 @@ export function FeedbackReviewDialog({ draft, onClose }: Props) {
   const [outcome, setOutcome] = useState<FeedbackDiagnosticsOutcome | null>(null);
   const diagnostics = draft.diagnostics;
   const received = useFeedbackStore((s) => (reportId ? s.status?.received.includes(reportId) === true : false));
+  const saved = useFeedbackStore((s) => savedText(s.status));
   const shots = shotsOf(draft);
   const [shotIndex, setShotIndex] = useState(0);
   // Ink is per window: switching windows keeps each one's drawing.
@@ -110,7 +123,7 @@ export function FeedbackReviewDialog({ draft, onClose }: Props) {
       setPhase('saved');
     } catch (err) {
       // telemetry-exempt: shown to the user; the reviewed draft is kept for a retry.
-      setError(err instanceof Error ? err.message : String(err));
+      setError(ipcErrorMessage(err));
       setPhase('review');
     }
   };
@@ -121,7 +134,7 @@ export function FeedbackReviewDialog({ draft, onClose }: Props) {
         {phase === 'saved' ? (
           <div className="space-y-3">
             <p className="text-sm text-ctp-text" role="status" data-testid="feedback-sent-state">
-              {received ? 'Received. Thanks for the feedback.' : 'Saved. It\'s queued on this computer and is sent as soon as Clubhouse can reach the server.'}
+              {received ? 'Received. Thanks for the feedback.' : saved}
             </p>
             {outcome && <p className="text-xs text-ctp-subtext0" data-testid="feedback-diagnostics-outcome">{diagnosticsOutcomeText(outcome)}</p>}
             <div className="flex justify-end">
