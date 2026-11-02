@@ -22,11 +22,11 @@ function fakeSdk(submit?: () => Promise<unknown>) {
   let access = { state: 'connected', connected: true, enrolled: true, canCapture: true, notice: null as string | null, expiresAt: null };
   const fb = {
     store: { probeAsync: async () => ({ available: true }) },
-    access: { endpoint: 'https://fb.example', gameId: 'clubhouse', status: () => access, subscribe: () => () => {}, getToken: async () => 'upload-credential' },
-    outbox: { status: () => ({ state: 'available', items: 0, bytes: 0, maxItems: 10, maxBytes: 1, blocked: 0, retention: 'until-delivered-or-cleared' }) },
+    access: { endpoint: 'https://fb.example', gameId: 'clubhouse', status: () => access, subscribe: () => () => {}, getToken: async () => 'upload-credential', onEnrollmentChange: () => () => {} },
+    outbox: { status: () => ({ state: 'available', items: 0, bytes: 0, maxItems: 10, maxBytes: 1, blocked: 0, heldForEnrollment: 0, heldBytes: 0, releaseToken: null, retention: 'until-delivered-or-cleared' }) },
     feedback: {
       sessionId: SESSION,
-      open: vi.fn(async () => ({ capturedAt: WINDOW.windowEnd })),
+      open: vi.fn(async () => ({ capturedAt: WINDOW.windowEnd, enrollmentRef: 'ref-a' })),
       prepare: vi.fn(async (input: Record<string, unknown>) => ({ report: { id: REPORT_ID }, png: input.png, input })),
       submit: vi.fn(submit ?? (async () => ({ id: REPORT_ID, status: 'saved-local' }))),
     },
@@ -113,12 +113,12 @@ describe('FeedbackService diagnostics', () => {
     expect(crumbs(fb)[0].code).toBe('diagnostics.none.no_lines');
   });
 
-  it('records no_review for a report with no draft: nothing unreviewed is ever sent', async () => {
+  it('refuses a report with no draft: nothing unreviewed is ever sent', async () => {
     const { fb } = fakeSdk();
     const create = vi.fn() as never;
     const { s } = serviceWith(fb, { createExcerptTelemetry: create });
-    const result = await s.send({ notes: 'text only', includeScreenshot: false, includeDiagnostics: true });
-    expect(result.diagnostics).toEqual({ status: 'none', reason: 'no_review' });
+    await expect(s.send({ notes: 'text only', includeScreenshot: false, includeDiagnostics: true } as never)).rejects.toMatchObject({ code: 'draft-required' });
+    expect(fb.feedback.prepare).not.toHaveBeenCalled();
     expect(create).not.toHaveBeenCalled();
   });
 
@@ -218,13 +218,12 @@ describe('FeedbackService diagnostics', () => {
         expect(excerpt).not.toHaveBeenCalled();
       });
 
-      it('keeps no_review honest: no draft, no field and no excerpt', async () => {
+      it('refuses a report with no draft: no field and no excerpt', async () => {
         const { fb } = fakeSdk();
         const excerpt = vi.fn();
         const { s } = serviceWith(fb, { reportDiagnosticsField: true, createExcerptTelemetry: excerpt as never });
-        const result = await s.send({ notes: 'text only', includeScreenshot: false, includeDiagnostics: true });
-        expect(result.diagnostics).toEqual({ status: 'none', reason: 'no_review' });
-        expect(preparedInput(fb)).not.toHaveProperty('diagnostics');
+        await expect(s.send({ notes: 'text only', includeScreenshot: false, includeDiagnostics: true } as never)).rejects.toMatchObject({ code: 'draft-required' });
+        expect(fb.feedback.prepare).not.toHaveBeenCalled();
         expect(excerpt).not.toHaveBeenCalled();
       });
 
@@ -305,9 +304,9 @@ describe('FeedbackService diagnostics', () => {
     const { fb } = fakeSdk();
     const many = Array.from({ length: 45 }, (_, i) => ({ kind: 'event' as const, atMs: i, code: 'view.agent' }));
     const { s } = serviceWith(fb, { breadcrumbs: () => many });
-    await s.send({ notes: 'x', includeScreenshot: false });
+    await s.send({ draftId: (await s.captureDraft(async () => null)).draftId, notes: 'x', includeScreenshot: false, includeDiagnostics: false });
     expect(crumbs(fb)).toHaveLength(40);
-    expect(crumbs(fb)[0].code).toBe('diagnostics.none.no_review');
+    expect(crumbs(fb)[0].code).toMatch(/^diagnostics\./);
   });
 
   describe('delivery when collection or sending fails', () => {

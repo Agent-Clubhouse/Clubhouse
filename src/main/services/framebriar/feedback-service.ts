@@ -21,6 +21,11 @@
  *   itself, so its status goes in a breadcrumb (diagnostics.*) that travels with it. With the
  *   report field on, the same reviewed lines go in the report through the outbox instead, and
  *   no excerpt is sent.
+ * - Enrollment binding (#2658): open() gives a draft its enrollmentRef, kept in the draft's
+ *   snapshot only, never in the review hash, report bytes, logs or anything the renderer sees.
+ *   If the enrollment changes under a draft, its prepared report can never send: the draft is
+ *   opened afresh and the user has to review and Send again. Reports saved under an earlier
+ *   enrollment stay held until the user releases or clears them.
  */
 
 import { createHash, randomUUID } from 'crypto';
@@ -33,6 +38,7 @@ import type {
   FramebriarReceipt,
   FramebriarSnapshot,
   FramebriarPrepared,
+  FramebriarSubmitAck,
   SafeStorageLike,
 } from '../../vendor/framebriar/adapters/node/index.mjs';
 import { createFramebriar, createTelemetry, otlpExporterOptions } from '../../vendor/framebriar/adapters/node/index.mjs';
@@ -49,7 +55,7 @@ import {
   recordFeedbackSubmitted,
   type FeedbackErrorClass,
 } from '../../telemetry/feedback-telemetry';
-import { FEEDBACK_MAX_PNG_BYTES, type FeedbackCaptureResult, type FeedbackDiagnosticLine, type FeedbackDiagnostics, type FeedbackDiagnosticsOutcome, type FeedbackSendInput, type FeedbackSendResult, type FeedbackStatus } from '../../../shared/feedback-types';
+import { FEEDBACK_MAX_PNG_BYTES, type FeedbackCaptureResult, type FeedbackDiagnosticLine, type FeedbackDiagnostics, type FeedbackDiagnosticsOutcome, type FeedbackHeldClearResult, type FeedbackHeldReleaseResult, type FeedbackSendInput, type FeedbackSendResult, type FeedbackStatus } from '../../../shared/feedback-types';
 
 export const FRAMEBRIAR_APP_ID = 'clubhouse';
 /** Reviewed drafts are dropped if the review isn't finished in time. */
@@ -140,7 +146,7 @@ const DISCONNECTED_ACCESS: FramebriarAccessView = Object.freeze({
   state: 'disconnected', connected: false, enrolled: false, canCapture: false, notice: null, expiresAt: null,
 });
 const EMPTY_OUTBOX: FramebriarOutboxView = Object.freeze({
-  state: 'checking', items: 0, bytes: 0, maxItems: 10, maxBytes: 32 * 1024 * 1024, blocked: 0, retention: 'until-delivered-or-cleared',
+  state: 'checking', items: 0, bytes: 0, maxItems: 10, maxBytes: 32 * 1024 * 1024, blocked: 0, heldForEnrollment: 0, heldBytes: 0, releaseToken: null, retention: 'until-delivered-or-cleared',
 });
 
 /** What the renderer sees while Feedback isn't running (switch off, or before start). */
@@ -173,6 +179,9 @@ export function toFeedbackStatus(
       pending: outbox.items,
       blocked: outbox.blocked,
       ...(outbox.correlationWaiting ? { correlationWaiting: outbox.correlationWaiting } : {}),
+      heldForEnrollment: outbox.heldForEnrollment,
+      heldBytes: outbox.heldBytes,
+      releaseToken: outbox.releaseToken,
       bytes: outbox.bytes,
       maxItems: outbox.maxItems,
       maxBytes: outbox.maxBytes,
@@ -194,7 +203,10 @@ interface Shot {
 }
 
 interface Draft {
-  /** snapshot.png is the first shot: the window feedback was started from. */
+  /**
+   * snapshot.png is the first shot: the window feedback was started from. snapshot.enrollmentRef
+   * is what binds the report to its enrollment, and it goes to prepare() with the rest.
+   */
   snapshot: FramebriarSnapshot;
   shots: Shot[];
   createdAt: number;
@@ -269,6 +281,8 @@ export class FeedbackService {
         onReceipt: (receipt) => this.noteReceipt(receipt),
       });
       this.fb = fb;
+      // Never the ref itself: it's only an identity for binding reports.
+      fb.access.onEnrollmentChange(({ enrollmentRef }) => { this.log('info', 'Feedback enrollment changed', { enrolled: enrollmentRef !== null }); });
       const t0 = this.now();
       await this.probeStorage(fb);
       await fb.start();
@@ -430,6 +444,10 @@ export class FeedbackService {
       }
       shots.push({ shotId: `s${i}`, label: source.label, png });
     }
+    return this.addDraft(opened, correlation, diagnostics, queuedAtCapture, shots);
+  }
+
+  private addDraft(opened: FramebriarSnapshot, correlation: FeedbackCorrelationSnapshot, diagnostics: FeedbackDiagnostics, queuedAtCapture: number | undefined, shots: Shot[]): FeedbackCaptureResult {
     const snapshot: FramebriarSnapshot = { ...opened, ...correlation.data, png: shots[0]?.png ?? null };
     const draftId = randomUUID();
     this.drafts.set(draftId, { snapshot, shots, createdAt: this.now(), diagnostics, queuedAtCapture });
@@ -460,8 +478,7 @@ export class FeedbackService {
   }
 
   /** What this report will say about its diagnostics. Never throws. */
-  private diagnosticsOutcome(fb: Framebriar, draft: Draft | undefined, include: boolean, inReport: boolean): FeedbackDiagnosticsOutcome {
-    if (!draft) return { status: 'none', reason: 'no_review' };
+  private diagnosticsOutcome(fb: Framebriar, draft: Draft, include: boolean, inReport: boolean): FeedbackDiagnosticsOutcome {
     if (draft.diagnostics.status === 'none') return { status: 'none', reason: draft.diagnostics.reason ?? 'no_lines' };
     if (!include) return { status: 'left_out', reason: 'reporter' };
     if (inReport) {
@@ -520,16 +537,22 @@ export class FeedbackService {
   /**
    * Commit reviewed feedback to the durable outbox. With includeScreenshot the captured PNG
    * goes along; otherwise it's text-only (notes required). Resolves once the report is saved
-   * locally; delivery and its receipt ("Received") come later.
+   * locally; delivery and its receipt ("Received") come later. If the enrollment changed,
+   * nothing is saved and it resolves with a new draft to review instead.
    */
   async send(input: FeedbackSendInput): Promise<FeedbackSendResult> {
     // Never the image itself: only whether a drawing came along.
     const meta = { draftId: input.draftId ?? null, includeScreenshot: input.includeScreenshot, notesLength: input.notes?.length ?? 0, annotated: input.annotatedPng !== undefined, shotId: input.shotId ?? null };
     // Read before sending: a committed report consumes its draft.
-    const shots = input.draftId ? this.drafts.get(input.draftId)?.shots.length ?? 0 : 0;
+    const shots = this.drafts.get(input.draftId)?.shots.length ?? 0;
     const inReport = this.deps.reportDiagnosticsField === true;
     try {
       const result = await this.sendInner(input, inReport);
+      if (result.status === 'enrollment-changed') {
+        this.log('info', 'Feedback reopened after an enrollment change', { ...meta, reopenedDraftId: result.draft.draftId });
+        recordFeedbackFailed('submit', 'enrollment-changed');
+        return result;
+      }
       // With the field on, access is no part of sending: a failed read can't undo a saved report.
       const state = inReport ? this.afterSave(() => this.fb?.access.status().state) : this.fb?.access.status().state;
       // The report id links a Framebriar report to this user's local record (a diag line,
@@ -540,8 +563,21 @@ export class FeedbackService {
     } catch (err) {
       this.log('warn', 'Feedback send failed', { ...meta, ...errorMeta(err) });
       if (!this.isStartFailure(err)) recordFeedbackFailed('submit', feedbackErrorClass(err));
-      throw err;
+      throw this.withHeldHint(err);
     }
+  }
+
+  /** Held reports take up capacity, so a full queue can consist entirely of them. Never throws. */
+  private withHeldHint(err: unknown): unknown {
+    if (!(err instanceof Error) || (err as { code?: unknown }).code !== 'storage-full') return err;
+    let held = 0;
+    try {
+      held = this.fb?.outbox.status().heldForEnrollment ?? 0;
+    } catch { // telemetry-exempt: only omits a hint from an error that is already reported
+      return err;
+    }
+    if (held > 0) err.message += ` ${held} held ${held === 1 ? 'report takes' : 'reports take'} up space. You can send or clear them in Settings, Feedback.`;
+    return err;
   }
 
   /** Never throws. */
@@ -558,57 +594,124 @@ export class FeedbackService {
     await this.start();
     await this.recheckStorage();
     const fb = this.sdk();
-    const draft = input.draftId ? this.drafts.get(input.draftId) : undefined;
-    if (input.draftId && !draft) throw Object.assign(new Error('This feedback draft expired. Open feedback again.'), { code: 'screenshot-expired' });
-    if (input.includeScreenshot && !draft?.snapshot.png) throw Object.assign(new Error('This screenshot expired. Capture it again.'), { code: 'screenshot-expired' });
+    if (!input.draftId) throw Object.assign(new Error('Open feedback again to send a report.'), { code: 'draft-required' });
+    const draft = this.drafts.get(input.draftId);
+    if (!draft) throw Object.assign(new Error('This feedback draft expired. Open feedback again.'), { code: 'screenshot-expired' });
+    if (input.includeScreenshot && !draft.snapshot.png) throw Object.assign(new Error('This screenshot expired. Capture it again.'), { code: 'screenshot-expired' });
     const notes = input.notes ?? '';
     if (!input.includeScreenshot && notes.trim() === '') throw Object.assign(new Error('Add a note to send feedback without a screenshot.'), { code: 'notes-required' });
     const scene = input.scene && SCENE.test(input.scene) ? input.scene : 'app';
-    const png = input.includeScreenshot && draft ? this.annotatedOrCaptured(this.chosenShot(draft, input.shotId), input.annotatedPng) : null;
+    const png = input.includeScreenshot ? this.annotatedOrCaptured(this.chosenShot(draft, input.shotId), input.annotatedPng) : null;
     const includeDiagnostics = input.includeDiagnostics === true;
-    const outcome = draft?.diagnosticsOutcome ?? this.diagnosticsOutcome(fb, draft, includeDiagnostics, inReport);
+    const outcome = draft.diagnosticsOutcome ?? this.diagnosticsOutcome(fb, draft, includeDiagnostics, inReport);
     // First and within the cap, so the report always says what became of its diagnostics.
     const breadcrumbs: FeedbackBreadcrumb[] = [
       { kind: 'event', atMs: this.now(), code: diagnosticsBreadcrumbCode(outcome), ...((outcome.status === 'queued' || outcome.status === 'attached') && { value: outcome.lines }) },
       ...(this.deps.breadcrumbs?.() ?? []).slice(0, MAX_REPORT_BREADCRUMBS - 1),
     ];
-    // The hash is memory-only and never logged/exported. It prevents a retry from
+    // The hash is memory-only and never logged/exported, and leaves out the enrollment ref. It prevents a retry from
     // silently replacing a possibly saved report with a different reviewed payload.
     const key = createHash('sha256').update(JSON.stringify({ notes, scene, includeCorrelation: input.includeCorrelation !== false, includeDiagnostics, png: png ? createHash('sha256').update(png).digest('hex') : null })).digest('hex');
-    if (draft?.prepared && draft.prepared.key !== key) {
+    if (draft.prepared && draft.prepared.key !== key) {
+      // An edit can't reuse the prepared report, but a new enrollment replaces it anyway.
+      if (await this.enrollmentMoved(fb, draft)) return this.reopenDraft(input, draft, png);
       throw Object.assign(new Error('Retry the feedback unchanged, or close it and open a new report to make changes.'), { code: 'feedback-review-changed' });
     }
-    const prepare = () => fb.feedback.prepare({
-      notes,
-      context: { scene, breadcrumbs },
-      ...(inReport && draft && { diagnostics: toDiagnosticsV1(draft.diagnostics, outcome, { queued: draft.queuedAtCapture }) }),
-      ...(input.includeScreenshot && draft
-        ? { ...draft.snapshot, png }
-        : { ...(draft?.snapshot ?? {}), png: null }),
-      ...(input.includeCorrelation === false && { incident: null, traceId: undefined, spanId: undefined }),
-    });
-    if (draft && !draft.prepared) {
-      const cached = { key, value: prepare() };
-      draft.prepared = cached;
+    let cached = draft.prepared;
+    if (!cached) {
+      const fresh = {
+        key,
+        value: fb.feedback.prepare({
+          notes,
+          context: { scene, breadcrumbs },
+          ...(inReport && { diagnostics: toDiagnosticsV1(draft.diagnostics, outcome, { queued: draft.queuedAtCapture }) }),
+          ...draft.snapshot,
+          png,
+          ...(input.includeCorrelation === false && { incident: null, traceId: undefined, spanId: undefined }),
+        }),
+      };
+      cached = fresh;
+      draft.prepared = fresh;
       draft.diagnosticsOutcome = outcome;
       // A prepare failure has not reached storage and may safely be corrected.
-      void cached.value.catch(() => { if (draft.prepared === cached) { draft.prepared = undefined; draft.diagnosticsOutcome = undefined; } });
+      void fresh.value.catch(() => { if (draft.prepared === fresh) { draft.prepared = undefined; draft.diagnosticsOutcome = undefined; } });
     }
-    const prepared = await (draft?.prepared?.value ?? prepare());
-    // This instance has no telemetry, so the flag only decides what becomes of a field the
-    // report carries: false rewrites it to left_out. The field already holds the user's choice.
-    const ack = await fb.feedback.submit(prepared, { includeDiagnostics: inReport });
+    let prepared: FramebriarPrepared;
+    let ack: FramebriarSubmitAck;
+    try {
+      prepared = await cached.value;
+      // This instance has no telemetry, so the flag only decides what becomes of a field the
+      // report carries: false rewrites it to left_out. The field already holds the user's choice.
+      ack = await fb.feedback.submit(prepared, { includeDiagnostics: inReport });
+    } catch (err) {
+      if ((err as { code?: unknown } | null)?.code === 'enrollment-changed') return this.reopenDraft(input, draft, png);
+      throw err;
+    }
     // Only a committed report consumes the draft: a failed save (e.g. storage full) keeps
     // the reviewed screenshot so the user can retry.
-    if (input.draftId) this.drafts.delete(input.draftId);
+    this.drafts.delete(input.draftId);
     if (inReport) this.afterSave(() => this.emit());
     else this.emit();
     // Never `attached`: those lines are already in the report, and would go twice.
-    if (outcome.status === 'queued' && draft) {
+    if (outcome.status === 'queued') {
       const { traceId, spanId } = prepared.report as { traceId?: string; spanId?: string };
       this.sendExcerpt(fb, ack.id, draft.diagnostics.lines, traceId && spanId ? { traceId, spanId } : {});
     }
     return { id: ack.id, status: ack.status, diagnostics: outcome };
+  }
+
+  /** Never throws: unreadable storage isn't evidence of a change, and submit checks again. */
+  private async enrollmentMoved(fb: Framebriar, draft: Draft): Promise<boolean> {
+    try {
+      return (await fb.access.enrollmentState()).enrollmentRef !== draft.snapshot.enrollmentRef;
+    } catch { // telemetry-exempt: treated as unchanged; the caller reports the edit as usual
+      return false;
+    }
+  }
+
+  /**
+   * The enrollment changed, so the prepared report can never send. Open a new report: new id,
+   * capture time, trace references and diagnostics, keeping only the image reviewed for this
+   * Send (the renderer keeps the text). Until open() succeeds the old draft stays, unprepared,
+   * and its old ref sends the next Send back here.
+   */
+  private async reopenDraft(input: FeedbackSendInput, draft: Draft, png: Buffer | null): Promise<FeedbackSendResult> {
+    draft.prepared = undefined;
+    draft.diagnosticsOutcome = undefined;
+    const correlation = (this.deps.captureCorrelation ?? captureFeedbackCorrelation)(this.now());
+    const diagnostics = this.readDiagnostics();
+    let opened: FramebriarSnapshot;
+    try {
+      opened = await this.sdk().feedback.open();
+    } catch (err) {
+      if ((err as { code?: unknown } | null)?.code !== 'enrollment-changed') throw err;
+      throw Object.assign(new Error('Feedback access changed while this report was opening. Choose Send again.'), { code: 'enrollment-changed' });
+    }
+    const label = draft.shots.find((s) => s.shotId === input.shotId)?.label ?? draft.shots[0]?.label ?? 'This window';
+    this.drafts.delete(input.draftId);
+    return { status: 'enrollment-changed', draft: this.addDraft(opened, correlation, diagnostics, this.readQueued(), png ? [{ shotId: 's0', label, png }] : []) };
+  }
+
+  /**
+   * Queue the held reports for delivery under the current enrollment. The token must be the one
+   * shown when the user confirmed, never one read here: if the enrollment or the held set moved
+   * since, the SDK changes nothing and says stale-release.
+   */
+  async releaseHeldReports(releaseToken: string): Promise<FeedbackHeldReleaseResult> {
+    await this.start();
+    await this.recheckStorage();
+    const { released, remaining, failed, code } = await this.sdk().outbox.releaseHeldReports({ releaseToken });
+    this.log(failed > 0 || code ? 'warn' : 'info', 'Feedback held reports release', { released, remaining, failed, code: code ?? null });
+    return { released, remaining, failed, ...(code && { code }), status: this.status() };
+  }
+
+  /** Discard the held reports only. Takes no token and sends nothing, so it works unenrolled. */
+  async clearHeldReports(): Promise<FeedbackHeldClearResult> {
+    await this.start();
+    await this.recheckStorage();
+    const { cleared, remaining, failed, code } = await this.sdk().outbox.clearHeldReports();
+    this.log(failed > 0 || code ? 'warn' : 'info', 'Feedback held reports clear', { cleared, remaining, failed, code: code ?? null });
+    return { cleared, remaining, failed, ...(code && { code }), status: this.status() };
   }
 
   /** The screenshot the user picked (#2100); the starting window's when none was picked. */

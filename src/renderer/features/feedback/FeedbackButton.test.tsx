@@ -29,6 +29,15 @@ describe('FeedbackButton', () => {
     expect(screen.getByRole('button', { name: 'Send feedback' })).toBeTruthy();
   });
 
+  it('says held reports are held, not waiting to send', () => {
+    setFeedback(true, feedbackStatus({ outbox: { ...feedbackStatus().outbox, pending: 2, heldForEnrollment: 2 } }));
+    render(<FeedbackButton variant="sidebar" />);
+    const label = screen.getByTestId('nav-feedback').getAttribute('aria-label') ?? '';
+    expect(label).toContain('2 feedback reports held, see Settings, Feedback');
+    expect(label).not.toContain('waiting to send');
+    expect(screen.getByTestId('feedback-marker')).toBeTruthy();
+  });
+
   it('keeps a marker and explanation while a notice or unsent feedback is pending', () => {
     setFeedback(true, feedbackStatus({ notice: 'expired', outbox: { ...feedbackStatus().outbox, pending: 2 } }));
     render(<FeedbackButton variant="rail" expanded />);

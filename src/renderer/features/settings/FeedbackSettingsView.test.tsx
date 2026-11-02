@@ -1,16 +1,162 @@
-import { act, fireEvent, render, screen } from '@testing-library/react';
+import { act, fireEvent, render, screen, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { resetFeedbackStore } from '../../stores/feedbackStore';
+import { resetFeedbackStore, useFeedbackStore } from '../../stores/feedbackStore';
+import { clearResultText, releaseResultText } from './FeedbackHeldReports';
 import { FeedbackSettingsView } from './FeedbackSettingsView';
 import { feedbackStatus, setFeedback } from '../feedback/feedback-test-utils';
 
+const withHeld = (held: number, bytes: number, releaseToken: string | null, over: Parameters<typeof feedbackStatus>[0] = {}) => {
+  const base = feedbackStatus(over);
+  return { ...base, outbox: { ...base.outbox, pending: held, heldForEnrollment: held, heldBytes: bytes, releaseToken } };
+};
 const disconnected = feedbackStatus({ state: 'disconnected', connected: false, enrolled: false, canCapture: false, expiresAt: null });
 
 beforeEach(() => {
   window.clubhouse.feedback.connect = vi.fn();
   window.clubhouse.feedback.disconnect = vi.fn();
+  window.clubhouse.feedback.releaseHeld = vi.fn();
+  window.clubhouse.feedback.clearHeld = vi.fn();
+  window.clubhouse.feedback.getStatus = vi.fn();
 });
 afterEach(() => resetFeedbackStore());
+
+describe('held reports', () => {
+  const release = () => vi.mocked(window.clubhouse.feedback.releaseHeld);
+  const clear = () => vi.mocked(window.clubhouse.feedback.clearHeld);
+  const held = () => screen.getByTestId('feedback-held').textContent ?? '';
+  const none = withHeld(0, 0, null);
+  const openSend = () => fireEvent.click(within(screen.getByTestId('feedback-held')).getByRole('button', { name: 'Send' }));
+  const confirm = (name: string) => act(async () => { fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name })); });
+
+  it('shows nothing when no report is held', () => {
+    setFeedback(true);
+    render(<FeedbackSettingsView />);
+    expect(screen.queryByTestId('feedback-held')).toBeNull();
+  });
+
+  it('shows the count and size, naming no account, and held reports are not waiting to send', () => {
+    setFeedback(true, withHeld(2, 2 * 1024 * 1024, 'token-a'));
+    render(<FeedbackSettingsView />);
+    expect(held()).toMatch(/2 reports held \(2\.0 MB\)/);
+    expect(held()).toMatch(/earlier feedback connection/);
+    expect(held()).not.toMatch(/account|@|token/i);
+    expect(screen.queryByTestId('feedback-outbox')).toBeNull();
+  });
+
+  it('counts only what is really waiting', () => {
+    const status = withHeld(1, 10, 'token-a');
+    setFeedback(true, { ...status, outbox: { ...status.outbox, pending: 3 } });
+    render(<FeedbackSettingsView />);
+    expect(screen.getByTestId('feedback-outbox').textContent).toMatch(/^2 reports are saved and waiting to send\./);
+  });
+
+  it('releases with the token shown when the confirmation opened, even if status moved on', async () => {
+    setFeedback(true, withHeld(2, 0, 'token-shown'));
+    release().mockResolvedValue({ released: 0, remaining: 0, failed: 0, status: none });
+    render(<FeedbackSettingsView />);
+    openSend();
+    expect(screen.getByTestId('feedback-held-confirm').textContent).toMatch(/2 reports saved under an earlier feedback connection will be queued to send/);
+    expect(release()).not.toHaveBeenCalled();
+    act(() => { useFeedbackStore.setState({ status: withHeld(3, 0, 'token-newer') }); });
+    expect(screen.getByTestId('feedback-held-confirm').textContent).toMatch(/2 reports/);
+    await confirm('Send');
+    expect(release()).toHaveBeenCalledTimes(1);
+    expect(release()).toHaveBeenCalledWith('token-shown');
+    expect(window.clubhouse.feedback.getStatus).not.toHaveBeenCalled();
+  });
+
+  it('says queued after a release, never Sent', async () => {
+    setFeedback(true, withHeld(2, 0, 'token-a'));
+    release().mockResolvedValue({ released: 2, remaining: 0, failed: 0, status: none });
+    render(<FeedbackSettingsView />);
+    openSend();
+    await confirm('Send');
+    const message = screen.getByTestId('feedback-held-message').textContent ?? '';
+    expect(message).toBe('2 reports queued to send.');
+    expect(message).not.toMatch(/\bSent\b/i);
+    expect(screen.queryByRole('dialog')).toBeNull();
+  });
+
+  it('a stale token refreshes and asks again, and nothing moves without a new confirmation', async () => {
+    setFeedback(true, withHeld(2, 0, 'token-old'));
+    release().mockResolvedValueOnce({ released: 0, remaining: 3, failed: 0, code: 'stale-release', status: withHeld(3, 0, 'token-new') });
+    render(<FeedbackSettingsView />);
+    openSend();
+    await confirm('Send');
+    expect(release()).toHaveBeenCalledTimes(1);
+    const asked = screen.getByTestId('feedback-held-confirm').textContent ?? '';
+    expect(asked).toMatch(/changed/);
+    expect(asked).toMatch(/3 reports/);
+    expect(useFeedbackStore.getState().status?.outbox.releaseToken).toBe('token-new');
+    release().mockResolvedValueOnce({ released: 3, remaining: 0, failed: 0, status: none });
+    await confirm('Send');
+    expect(release()).toHaveBeenLastCalledWith('token-new');
+    expect(screen.getByTestId('feedback-held-message').textContent).toBe('3 reports queued to send.');
+  });
+
+  it('a stale token with nothing left to send stops asking', async () => {
+    setFeedback(true, withHeld(1, 0, 'token-old'));
+    release().mockResolvedValue({ released: 0, remaining: 0, failed: 0, code: 'stale-release', status: none });
+    render(<FeedbackSettingsView />);
+    openSend();
+    await confirm('Send');
+    expect(screen.queryByRole('dialog')).toBeNull();
+    expect(screen.getByTestId('feedback-held-message').textContent).toBe('The held reports changed. Nothing was queued.');
+  });
+
+  it('shows released, remaining and failed after a partial release', async () => {
+    setFeedback(true, withHeld(2, 0, 'token-a'));
+    release().mockResolvedValue({ released: 1, remaining: 1, failed: 1, status: withHeld(1, 0, 'token-b') });
+    render(<FeedbackSettingsView />);
+    openSend();
+    await confirm('Send');
+    expect(screen.getByTestId('feedback-held-message').textContent).toBe('1 report queued to send. 1 still held. 1 failed.');
+    expect(held()).toMatch(/1 report held/);
+  });
+
+  it('unenrolled: Send is off and says to connect, and Clear still works', async () => {
+    setFeedback(true, withHeld(2, 0, null, { state: 'disconnected', connected: false, enrolled: false, canCapture: false, expiresAt: null }));
+    clear().mockResolvedValue({ cleared: 2, remaining: 0, failed: 0, status: none });
+    render(<FeedbackSettingsView />);
+    const area = within(screen.getByTestId('feedback-held'));
+    expect((area.getByRole('button', { name: 'Send' }) as HTMLButtonElement).disabled).toBe(true);
+    expect(held()).toMatch(/connect and send/);
+    fireEvent.click(area.getByRole('button', { name: 'Clear' }));
+    expect(clear()).not.toHaveBeenCalled();
+    expect(screen.getByTestId('feedback-held-confirm').textContent).toMatch(/2 reports will be deleted/);
+    await confirm('Clear');
+    expect(clear()).toHaveBeenCalledTimes(1);
+    expect(release()).not.toHaveBeenCalled();
+    expect(screen.getByTestId('feedback-held-message').textContent).toBe('2 reports cleared.');
+  });
+
+  it('Cancel leaves everything held', () => {
+    setFeedback(true, withHeld(2, 0, 'token-a'));
+    render(<FeedbackSettingsView />);
+    openSend();
+    fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Cancel' }));
+    expect(release()).not.toHaveBeenCalled();
+    expect(held()).toMatch(/2 reports held/);
+  });
+
+  it.each([
+    [{ released: 0, remaining: 2, failed: 0, code: 'not-enrolled' as const }, /Connect to Feedback/],
+    [{ released: 0, remaining: 2, failed: 0, code: 'storage-unavailable' as const }, /Nothing was queued/],
+  ])('explains %o', (result, text) => {
+    expect(releaseResultText(result)).toMatch(text);
+  });
+
+  it('keeps every line of copy to the rules', () => {
+    const lines = [
+      releaseResultText({ released: 1, remaining: 1, failed: 1 }),
+      releaseResultText({ released: 0, remaining: 0, failed: 0, code: 'stale-release' }),
+      clearResultText({ cleared: 1, remaining: 1, failed: 1 }),
+      clearResultText({ cleared: 0, remaining: 1, failed: 0, code: 'storage-unavailable' }),
+    ].join(' ');
+    expect(lines).not.toMatch(/\u2014/);
+    expect(lines).not.toMatch(/\bSent\b/i);
+  });
+});
 
 describe('FeedbackSettingsView', () => {
   it('says Feedback is unavailable when main reports no status', () => {

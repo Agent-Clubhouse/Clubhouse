@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState, type KeyboardEvent } from 'react';
 import { Modal } from '../../components/Modal';
 import { FEEDBACK_DIAGNOSTICS, type FeedbackCaptureResult, type FeedbackDiagnosticLine, type FeedbackDiagnosticsOutcome, type FeedbackShot, type FeedbackStatus } from '../../../shared/feedback-types';
-import { useFeedbackStore } from '../../stores/feedbackStore';
+import { useFeedbackStore, type FeedbackReopened } from '../../stores/feedbackStore';
 import { useUIStore } from '../../stores/uiStore';
 import { ipcErrorMessage } from '../../utils/ipc-error';
 import { compositeAnnotatedPng, type Stroke } from './annotation';
@@ -9,6 +9,8 @@ import { ScreenshotAnnotator } from './ScreenshotAnnotator';
 
 interface Props {
   draft: FeedbackCaptureResult;
+  /** Set when this draft replaced one whose enrollment changed: what it keeps. */
+  reopened?: FeedbackReopened | null;
   onClose: () => void;
 }
 
@@ -61,13 +63,14 @@ function savedText(status: FeedbackStatus | null): string {
  * "Send without screenshot" or Cancel. After sending it shows "Saved" (queued on this
  * computer), then "Received" once the server acknowledges the report.
  */
-export function FeedbackReviewDialog({ draft, onClose }: Props) {
-  const [notes, setNotes] = useState('');
+export function FeedbackReviewDialog({ draft, reopened = null, onClose }: Props) {
+  const reopenDraft = useFeedbackStore((s) => s.reopenDraft);
+  const [notes, setNotes] = useState(reopened?.notes ?? '');
   const [phase, setPhase] = useState<Phase>('review');
   const [reportId, setReportId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [includeCorrelation, setIncludeCorrelation] = useState(true);
-  const [includeDiagnostics, setIncludeDiagnostics] = useState(true);
+  const [includeCorrelation, setIncludeCorrelation] = useState(reopened?.includeCorrelation ?? true);
+  const [includeDiagnostics, setIncludeDiagnostics] = useState(reopened?.includeDiagnostics ?? true);
   const [outcome, setOutcome] = useState<FeedbackDiagnosticsOutcome | null>(null);
   const diagnostics = draft.diagnostics;
   const received = useFeedbackStore((s) => (reportId ? s.status?.received.includes(reportId) === true : false));
@@ -118,6 +121,11 @@ export function FeedbackReviewDialog({ draft, onClose }: Props) {
         ...(annotatedPng !== undefined && { annotatedPng }),
         ...(includeScreenshot && shot?.shotId && { shotId: shot.shotId }),
       });
+      if (result.status === 'enrollment-changed') {
+        // Nothing was saved. A new report with new contents needs its own review and Send.
+        reopenDraft(result.draft, { notes, includeCorrelation, includeDiagnostics });
+        return;
+      }
       setReportId(result.id);
       setOutcome(result.diagnostics ?? null);
       setPhase('saved');
@@ -143,6 +151,11 @@ export function FeedbackReviewDialog({ draft, onClose }: Props) {
           </div>
         ) : (
           <>
+            {reopened && (
+              <p className="text-sm text-ctp-text" role="status" data-testid="feedback-reopened">
+                Your feedback connection changed, so nothing was sent. This is a new report with your note and image. Check what it includes below, then choose Send.
+              </p>
+            )}
             {shots.length > 1 && (
               <div className="flex gap-2 overflow-x-auto" role="radiogroup" aria-label="Window to send" onKeyDown={onShotKey} data-testid="feedback-shots">
                 {shots.map((s, i) => (
@@ -167,7 +180,7 @@ export function FeedbackReviewDialog({ draft, onClose }: Props) {
             {shot ? (
               <ScreenshotAnnotator key={shotIndex} src={shot.preview} strokes={strokes} onChange={setStrokes} disabled={phase === 'sending'} />
             ) : (
-              <p className="text-sm text-ctp-subtext0">No screenshot could be taken. You can still send a note.</p>
+              <p className="text-sm text-ctp-subtext0">{reopened ? 'This report has no screenshot.' : 'No screenshot could be taken. You can still send a note.'}</p>
             )}
             <label htmlFor="feedback-notes" className="block text-sm text-ctp-text">What happened?</label>
             <textarea

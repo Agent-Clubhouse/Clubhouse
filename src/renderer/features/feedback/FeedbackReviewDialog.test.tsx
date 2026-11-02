@@ -2,6 +2,7 @@ import { act, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { resetFeedbackStore, useFeedbackStore } from '../../stores/feedbackStore';
 import { useUIStore } from '../../stores/uiStore';
+import { FeedbackDialogHost } from './FeedbackDialogHost';
 import { FeedbackReviewDialog } from './FeedbackReviewDialog';
 import { feedbackStatus, setFeedback } from './feedback-test-utils';
 import type { FeedbackStatus } from '../../../shared/feedback-types';
@@ -25,6 +26,111 @@ beforeEach(() => {
   setFeedback(true);
 });
 afterEach(() => resetFeedbackStore());
+
+describe('after an enrollment change', () => {
+  const NEXT = {
+    draftId: '1c6d7b3f-2a4e-4d9f-8b8c-3e5f7a9b1d2f', preview: 'data:image/png;base64,bmV3', shots: [{ shotId: 's0', label: 'Main window', preview: 'data:image/png;base64,bmV3' }],
+    correlation: { scope: 'trace-only' as const, capturedAt: '2026-11-02T00:00:00.000Z', traceCount: 7, hostCount: 0, phoneCount: 0, connectionCount: 0 },
+  };
+  const OLD = { ...DRAFT, correlation: { ...NEXT.correlation, traceCount: 2 } };
+
+  it('keeps the note and image, shows the new summary and waits for a new Send', async () => {
+    useFeedbackStore.setState({ draft: OLD });
+    send.mockResolvedValueOnce({ status: 'enrollment-changed', draft: NEXT });
+    render(<FeedbackDialogHost />);
+    fireEvent.change(screen.getByLabelText('What happened?'), { target: { value: 'my note' } });
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Send' })); });
+
+    expect(send).toHaveBeenCalledTimes(1);
+    expect(screen.getByTestId('feedback-reopened').textContent).toMatch(/nothing was sent/);
+    expect(screen.queryByTestId('feedback-sent-state')).toBeNull();
+    expect((screen.getByLabelText('What happened?') as HTMLTextAreaElement).value).toBe('my note');
+    expect(screen.getByText(/7 trace\/span references/)).toBeTruthy();
+    expect(screen.queryByText(/2 trace\/span references/)).toBeNull();
+    expect((screen.getByRole('checkbox', { name: /Include tracing references/ }) as HTMLInputElement).checked).toBe(true);
+    expect(useFeedbackStore.getState().draft?.draftId).toBe(NEXT.draftId);
+
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Send' })); });
+    expect(send).toHaveBeenCalledTimes(2);
+    expect(send).toHaveBeenLastCalledWith(expect.objectContaining({ draftId: NEXT.draftId, notes: 'my note', shotId: 's0' }));
+    expect(screen.getByTestId('feedback-sent-state')).toBeTruthy();
+  });
+
+  describe('what the user turned off', () => {
+    const line = { at: '2026-11-01T12:00:00.000Z', level: 'warn' as const, ns: 'core:annex', event: 'annex.ws.disconnected' };
+    const diagnostics = { status: 'available' as const, windowStart: line.at, windowEnd: line.at, lines: [line], bytes: 50, dropped: 0 };
+    const tracing = () => screen.getByRole('checkbox', { name: /Include tracing references/ }) as HTMLInputElement;
+    const lines = () => screen.getByRole('checkbox', { name: /Include recent diagnostics/ }) as HTMLInputElement;
+    const tapSend = () => act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Send' })); });
+
+    it.each([
+      ['diagnostics', false, true],
+      ['tracing references', true, false],
+      ['both', false, false],
+      ['neither', true, true],
+    ])('%s: choices survive the reopen and reach the new Send', async (_name, includeDiagnostics, includeCorrelation) => {
+      useFeedbackStore.setState({ draft: { ...OLD, diagnostics } });
+      send.mockResolvedValueOnce({ status: 'enrollment-changed', draft: { ...NEXT, diagnostics } });
+      render(<FeedbackDialogHost />);
+      if (!includeDiagnostics) fireEvent.click(lines());
+      if (!includeCorrelation) fireEvent.click(tracing());
+      await tapSend();
+      expect(screen.getByTestId('feedback-reopened')).toBeTruthy();
+      expect(lines().checked).toBe(includeDiagnostics);
+      expect(tracing().checked).toBe(includeCorrelation);
+      await tapSend();
+      expect(send).toHaveBeenCalledTimes(2);
+      expect(send).toHaveBeenLastCalledWith(expect.objectContaining({ draftId: NEXT.draftId, includeDiagnostics, includeCorrelation }));
+    });
+
+    it('stays off through a second reopen', async () => {
+      const THIRD = { ...NEXT, draftId: '2d7e8c4a-3b5f-4e0a-9c9d-4f6a8b0c2e3a', diagnostics };
+      useFeedbackStore.setState({ draft: { ...OLD, diagnostics } });
+      send.mockResolvedValueOnce({ status: 'enrollment-changed', draft: { ...NEXT, diagnostics } }).mockResolvedValueOnce({ status: 'enrollment-changed', draft: THIRD });
+      render(<FeedbackDialogHost />);
+      fireEvent.click(lines());
+      await tapSend();
+      await tapSend();
+      expect(useFeedbackStore.getState().draft?.draftId).toBe(THIRD.draftId);
+      expect(lines().checked).toBe(false);
+    });
+
+    it('stays off when the box was hidden on the way: the first draft had it, the next has nothing to show', async () => {
+      const { correlation: _none, ...noTracing } = NEXT;
+      const THIRD = { ...NEXT, draftId: '2d7e8c4a-3b5f-4e0a-9c9d-4f6a8b0c2e3a' };
+      useFeedbackStore.setState({ draft: OLD });
+      send.mockResolvedValueOnce({ status: 'enrollment-changed', draft: noTracing }).mockResolvedValueOnce({ status: 'enrollment-changed', draft: THIRD });
+      render(<FeedbackDialogHost />);
+      fireEvent.click(tracing());
+      await tapSend();
+      expect(screen.queryByRole('checkbox', { name: /Include tracing references/ })).toBeNull();
+      await tapSend();
+      expect(tracing().checked).toBe(false);
+    });
+  });
+
+  it('says a reopened report has no screenshot when the Send left it out', async () => {
+    useFeedbackStore.setState({ draft: DRAFT });
+    send.mockResolvedValueOnce({ status: 'enrollment-changed', draft: { draftId: NEXT.draftId, preview: null, shots: [] } });
+    render(<FeedbackDialogHost />);
+    fireEvent.change(screen.getByLabelText('What happened?'), { target: { value: 'my note' } });
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Send without screenshot' })); });
+    expect(screen.getByText('This report has no screenshot.')).toBeTruthy();
+    expect(screen.queryByText(/could be taken/)).toBeNull();
+  });
+
+  it('a later capture starts empty', async () => {
+    useFeedbackStore.setState({ draft: OLD });
+    send.mockResolvedValueOnce({ status: 'enrollment-changed', draft: NEXT });
+    render(<FeedbackDialogHost />);
+    fireEvent.change(screen.getByLabelText('What happened?'), { target: { value: 'my note' } });
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Send' })); });
+    act(() => { useFeedbackStore.getState().closeDraft(); });
+    act(() => { useFeedbackStore.getState().openDraft(DRAFT); });
+    expect((screen.getByLabelText('What happened?') as HTMLTextAreaElement).value).toBe('');
+    expect(screen.queryByTestId('feedback-reopened')).toBeNull();
+  });
+});
 
 describe('FeedbackReviewDialog', () => {
   it('reviews the opening correlation summary and lets the user remove it', async () => {

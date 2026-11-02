@@ -8,7 +8,7 @@
  * `connection-uncertain` never turn an enrolled install off. Only disconnect turns it off, or
  * finding the stored enrollment gone. An invitation that fails on a fresh install leaves it off.
  */
-import { existsSync, mkdtempSync, readFileSync, rmSync } from 'fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -17,11 +17,21 @@ import { asyncOnlySafeStorage, fakeKeychain } from '../../telemetry/__test-utils
 import type { FeedbackDiagnostics } from '../../../shared/feedback-types';
 import { toDiagnosticsV1 } from './feedback-diagnostics-v1';
 import { FeedbackService } from './feedback-service';
+import fixture from './fixtures/held-reports-v1.json';
 
 const NOW = Date.parse('2026-11-01T12:00:00.000Z');
 const HOUR = 3_600_000;
 const DAY = 24 * HOUR;
 const PNG = Buffer.concat([Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]), Buffer.from('fake-image-bytes')]);
+/** A PNG with a real IHDR chunk, so a drawing can be checked against its size. */
+function pngOf(width: number, height: number, body: string): Buffer {
+  const ihdr = Buffer.alloc(25);
+  ihdr.writeUInt32BE(13, 0);
+  ihdr.write('IHDR', 4, 'latin1');
+  ihdr.writeUInt32BE(width, 8);
+  ihdr.writeUInt32BE(height, 12);
+  return Buffer.concat([PNG.subarray(0, 8), ihdr, Buffer.from(body)]);
+}
 const FIRST_INVITE = 'a'.repeat(43);
 const SECOND_INVITE = 'b'.repeat(43);
 const FIRST_TOKEN = 't'.repeat(43);
@@ -36,7 +46,7 @@ const json = (value: unknown, status = 200) => new Response(JSON.stringify(value
 /** Access and outbox calls the shipped typings leave out; both are in the vendored source. */
 type RealSdk = Framebriar & {
   access: Framebriar['access'] & { refresh(): Promise<unknown> };
-  outbox: Framebriar['outbox'] & { dir: string; list(): Promise<Array<{ id: string; code: string | null }>>; resume(): Promise<void> };
+  outbox: Framebriar['outbox'] & { dir: string; list(): Promise<Array<{ id: string; code: string | null }>>; resume(): Promise<void>; flush(): Promise<void> };
 };
 
 const cleanups: Array<() => Promise<void> | void> = [];
@@ -70,15 +80,18 @@ function harness({ reportDiagnosticsField = true, online = false }: { reportDiag
     throw new Error(`Unexpected request: ${path}`);
   });
   let sdk: RealSdk | undefined;
+  const prepared: Array<Promise<unknown>> = [];
   const excerpt = vi.fn();
   const service = new FeedbackService({
     safeStorage: asyncOnlySafeStorage(keychain), dataDir, appVersion: '0.42.0', isOnline: () => state.online,
     create: ((opts: Parameters<typeof createFramebriar>[0]) => {
-      sdk = createFramebriar({
+      const real = createFramebriar({
         ...opts, endpoint: 'https://framebriar.test/api', fetchImpl: fetchImpl as never,
         // access.status() reads the clock, so this makes the SDK's real status() throw.
         now: () => { if (state.statusThrows) throw new Error('clock broke'); return state.now; },
       }) as RealSdk;
+      // The SDK's objects are frozen, so this records through a copy.
+      sdk = { ...real, feedback: { ...real.feedback, prepare: (input) => { const result = real.feedback.prepare(input); prepared.push(result); return result; } } };
       return sdk;
     }) as never,
     now: () => state.now, captureCorrelation: () => ({ data: {} }) as never,
@@ -86,7 +99,15 @@ function harness({ reportDiagnosticsField = true, online = false }: { reportDiag
   });
   cleanups.push(async () => { state.statusThrows = false; await service.shutdown(); });
   return {
-    service, state, access, excerpt, reports, grant,
+    service, state, access, excerpt, reports, grant, prepared,
+    /** Status once the SDK's own refresh after an enrollment change has landed. */
+    settled: async (held: number, enrolled = true) => {
+      await vi.waitFor(() => {
+        const { heldForEnrollment, releaseToken } = service.status().outbox;
+        expect([heldForEnrollment, releaseToken !== null]).toEqual([held, enrolled]);
+      }, { timeout: 5_000 });
+      return service.status().outbox;
+    },
     fb: () => sdk as RealSdk,
     capture: () => service.captureDraft(async () => PNG),
     send: (draftId: string, includeDiagnostics = true) => service.send({ draftId, notes: 'it broke', includeScreenshot: true, includeDiagnostics }),
@@ -100,10 +121,12 @@ type Harness = ReturnType<typeof harness>;
 
 /** Enrolled, with the redeem held open: `release` lets it finish. */
 function holdRedeem(h: Harness) {
-  let release!: (response: Response) => void;
-  h.access.redeem = () => new Promise<Response>((resolve) => { release = resolve; });
+  let release: ((response: Response) => void) | undefined;
+  let finished = false;
+  // The state says connecting before the request goes out, so a test can finish first.
+  h.access.redeem = () => finished ? json({}, 401) : new Promise<Response>((resolve) => { release = resolve; });
   const connecting = h.service.connect(SECOND_INVITE);
-  cleanups.unshift(async () => { release?.(json({}, 401)); await connecting; });
+  cleanups.unshift(async () => { finished = true; release?.(json({}, 401)); await connecting; });
 }
 
 /** Each way an enrolled install can stop being connected, and what the SDK shows for it. */
@@ -224,7 +247,7 @@ describe('the report field with the real SDK', () => {
       await expect(h.capture()).rejects.toMatchObject({ code: 'feedback-unavailable' });
     });
 
-    it('disconnected during review: nothing is saved, and the review can be retried after enrolling again', async () => {
+    it('disconnected during review: nothing is saved, and enrolling again reopens the review', async () => {
       const h = harness();
       await h.service.connect(FIRST_INVITE);
       const draft = await h.capture();
@@ -233,7 +256,11 @@ describe('the report field with the real SDK', () => {
       await expect(h.send(draft.draftId)).rejects.toMatchObject({ code: 'feedback-unavailable' });
       expect(await h.saved()).toEqual([]);
       await h.service.connect(FIRST_INVITE);
-      await expect(h.send(draft.draftId)).resolves.toMatchObject({ diagnostics: { status: 'attached', lines: 1 } });
+      // Enrolling again is a new enrollment, even with the same invitation.
+      const reopened = await h.send(draft.draftId);
+      if (reopened.status !== 'enrollment-changed') throw new Error(`Expected a reopen, got ${reopened.status}`);
+      expect(await h.saved()).toEqual([]);
+      await expect(h.send(reopened.draft.draftId)).resolves.toMatchObject({ diagnostics: { status: 'attached', lines: 1 } });
       expect(await h.saved()).toHaveLength(1);
     });
 
@@ -250,59 +277,276 @@ describe('the report field with the real SDK', () => {
     });
   });
 
-  /** submit has no eligibility check of its own, and the outbox has none either. What that does today. */
+  /** Bound to an enrollment: the SDK refuses a prepared report under any other (#2697, #2658). */
   describe('enrollment changes between prepare and submit', () => {
-    const prepareReport = (h: Harness) => h.fb().feedback.prepare({
-      notes: 'it broke', png: null, capturedAt: AVAILABLE.windowEnd,
+    const prepareReport = async (h: Harness) => h.fb().feedback.prepare({
+      ...await h.fb().feedback.open(), notes: 'it broke', png: null, capturedAt: AVAILABLE.windowEnd,
       diagnostics: toDiagnosticsV1(AVAILABLE, { status: 'attached', lines: 1 }),
-    } as never);
+    });
 
-    it('submit saves it, delivery waits, and a later enrollment delivers it under its own token', async () => {
+    it('a supplied prepare without the ref is invalid input', async () => {
+      const h = harness();
+      await h.service.connect(FIRST_INVITE);
+      await expect(h.fb().feedback.prepare({ notes: 'it broke', png: null })).rejects.toMatchObject({ code: 'invalid-input' });
+    });
+
+    it('submit refuses it with enrollment-changed and saves nothing, at disconnect and at a later enrollment', async () => {
       const h = harness({ online: true });
       await h.service.connect(FIRST_INVITE);
       const prepared = await prepareReport(h);
       await h.service.disconnect();
       expect(h.fb().access.status().canCapture).toBe(false);
-
-      const ack = await h.fb().feedback.submit(prepared, { includeDiagnostics: true });
-      expect(ack).toMatchObject({ status: 'saved-local', reportDiagnostics: 'attached' });
-      expect(await h.saved()).toHaveLength(1);
-
-      // No token, so nothing is sent: it waits five minutes at a time, and isn't blocked.
-      await vi.waitFor(async () => expect((await h.fb().outbox.list())[0].code).toBe('access-required'), { timeout: 10_000 });
-      expect(h.reports).toEqual([]);
+      await expect(h.fb().feedback.submit(prepared, { includeDiagnostics: true })).rejects.toMatchObject({ code: 'enrollment-changed' });
 
       h.access.redeem = () => json(h.grant(SECOND_TOKEN, 's'));
       await h.service.connect(SECOND_INVITE);
-      h.state.now += 6 * 60_000;
-      await h.fb().outbox.resume();
-      await vi.waitFor(() => expect(h.reports).toHaveLength(1), { timeout: 10_000 });
-      expect(h.reports[0].authorization).toBe(`Bearer ${SECOND_TOKEN}`);
-      expect(h.reports[0].body.id).toBe(ack.id);
-      expect(h.reports[0].body.diagnostics).toMatchObject({ state: 'attached', lines: 1 });
-      await vi.waitFor(async () => expect(await h.fb().outbox.list()).toEqual([]), { timeout: 10_000 });
+      await expect(h.fb().feedback.submit(prepared, { includeDiagnostics: true })).rejects.toMatchObject({ code: 'enrollment-changed' });
+      expect(await h.saved()).toEqual([]);
+      expect(h.reports).toEqual([]);
     });
 
-    it('through the service: a retry after a failed save skips the check, because it reuses the prepared report', async () => {
-      const h = harness();
-      await h.service.connect(FIRST_INVITE);
-      // The outbox holds ten reports, so the eleventh prepares and then fails to save.
+    /** Ten reports fill the outbox, so the next one prepares and then fails to save. */
+    async function failedSave(h: Harness, notes = 'it broke') {
       for (let i = 0; i < 10; i++) await h.send((await h.capture()).draftId);
       const draft = await h.capture();
-      await expect(h.send(draft.draftId)).rejects.toMatchObject({ code: 'storage-full' });
-
-      await h.service.disconnect();
-      expect(h.fb().access.status().canCapture).toBe(false);
+      await expect(h.service.send({ draftId: draft.draftId, notes, includeScreenshot: true, includeDiagnostics: true })).rejects.toMatchObject({ code: 'storage-full' });
+      return draft;
+    }
+    async function makeRoom(h: Harness) {
       const [oldest] = await h.fb().outbox.list();
       const oldestDir = join(h.fb().outbox.dir, 'reports', oldest.id);
       rmSync(oldestDir, { recursive: true, force: true });
       expect(existsSync(oldestDir)).toBe(false);
+    }
 
-      await expect(h.send(draft.draftId)).resolves.toMatchObject({ status: 'saved-local', diagnostics: { status: 'attached', lines: 1 } });
-      const saved = await h.saved();
-      expect(saved).toHaveLength(10);
-      expect(saved.every((report) => (report.diagnostics as { state: string }).state === 'attached')).toBe(true);
+    it('through the service: a retry under the same enrollment keeps the report id and bytes', async () => {
+      const h = harness();
+      await h.service.connect(FIRST_INVITE);
+      const before = h.prepared.length;
+      const draft = await failedSave(h);
+      const first = await h.prepared.at(-1) as { report: { id: string } };
+      await makeRoom(h);
+      const result = await h.send(draft.draftId);
+      expect(result).toMatchObject({ status: 'saved-local', id: first.report.id });
+      // Ten reports and the one retried, prepared once.
+      expect(h.prepared).toHaveLength(before + 11);
+      const saved = (await h.saved()).find((report) => report.id === first.report.id);
+      expect(JSON.stringify(saved)).toBe(JSON.stringify(first.report));
+    }, 30_000);
+
+    it('through the service: a retry after a change reopens with a new id, and only a new Send saves', async () => {
+      const h = harness();
+      await h.service.connect(FIRST_INVITE);
+      const draft = await failedSave(h);
+      const old = await h.prepared.at(-1) as { report: { id: string; capturedAt: string } };
+      await h.service.disconnect();
+      await makeRoom(h);
+
+      // Disconnected: nothing can open, the cached report is gone and the draft waits.
+      await expect(h.send(draft.draftId)).rejects.toMatchObject({ code: 'feedback-unavailable' });
+      h.access.redeem = () => json(h.grant(SECOND_TOKEN, 's'));
+      await h.service.connect(SECOND_INVITE);
+      h.state.now += 60_000;
+      const count = (await h.saved()).length;
+      const result = await h.send(draft.draftId);
+      expect(result.status).toBe('enrollment-changed');
+      const next = (result as Extract<typeof result, { status: 'enrollment-changed' }>).draft;
+      expect(next.draftId).not.toBe(draft.draftId);
+      expect(await h.saved()).toHaveLength(count);
+      await expect(h.send(draft.draftId)).rejects.toMatchObject({ code: 'screenshot-expired' });
+
+      const sent = await h.send(next.draftId);
+      expect(sent.status).toBe('saved-local');
+      const saved = (await h.saved()).find((report) => report.id === (sent as { id: string }).id);
+      expect(saved?.id).not.toBe(old.report.id);
+      expect(saved?.capturedAt).not.toBe(old.report.capturedAt);
+      expect(await h.saved()).toHaveLength(count + 1);
       expect(h.excerpt).not.toHaveBeenCalled();
+    }, 30_000);
+
+    it('reopens at prepare too, carrying only the reviewed drawing', async () => {
+      const h = harness();
+      await h.service.connect(FIRST_INVITE);
+      const shot = pngOf(4, 3, 'shot');
+      const drawn = pngOf(4, 3, 'ink');
+      const draft = await h.service.captureDraft([{ label: 'Main window', grab: async () => shot }, { label: 'Pop-out', grab: async () => pngOf(4, 3, 'other') }]);
+      expect(draft.shots).toHaveLength(2);
+      await h.service.disconnect();
+      h.access.redeem = () => json(h.grant(SECOND_TOKEN, 's'));
+      await h.service.connect(SECOND_INVITE);
+      const result = await h.service.send({ draftId: draft.draftId, notes: 'the note', includeScreenshot: true, shotId: 's0', annotatedPng: drawn.toString('base64') });
+      if (result.status !== 'enrollment-changed') throw new Error(`Expected a reopen, got ${result.status}`);
+      expect(result.draft.shots.map((s) => [s.shotId, s.label, s.preview])).toEqual([['s0', 'Main window', `data:image/png;base64,${drawn.toString('base64')}`]]);
+      expect(JSON.stringify(result.draft)).not.toContain('enrollmentRef');
+    });
+
+    it('a Send that left the screenshot out carries no image', async () => {
+      const h = harness();
+      await h.service.connect(FIRST_INVITE);
+      const draft = await h.capture();
+      await h.service.disconnect();
+      h.access.redeem = () => json(h.grant(SECOND_TOKEN, 's'));
+      await h.service.connect(SECOND_INVITE);
+      const result = await h.service.send({ draftId: draft.draftId, notes: 'the note', includeScreenshot: false });
+      if (result.status !== 'enrollment-changed') throw new Error(`Expected a reopen, got ${result.status}`);
+      expect(result.draft.preview).toBeNull();
+      expect(result.draft.shots).toEqual([]);
+    });
+
+    it('an edited retry after a change reopens rather than asking for the old text', async () => {
+      const h = harness();
+      await h.service.connect(FIRST_INVITE);
+      const draft = await failedSave(h);
+      await h.service.disconnect();
+      h.access.redeem = () => json(h.grant(SECOND_TOKEN, 's'));
+      await h.service.connect(SECOND_INVITE);
+      await expect(h.service.send({ draftId: draft.draftId, notes: 'edited', includeScreenshot: true, includeDiagnostics: true })).resolves.toMatchObject({ status: 'enrollment-changed' });
+    }, 30_000);
+
+    it('an edited retry under the same enrollment is still refused', async () => {
+      const h = harness();
+      await h.service.connect(FIRST_INVITE);
+      const draft = await failedSave(h);
+      await expect(h.service.send({ draftId: draft.draftId, notes: 'edited', includeScreenshot: true, includeDiagnostics: true })).rejects.toMatchObject({ code: 'feedback-review-changed' });
+    }, 30_000);
+  });
+
+  it('keeps the ref out of the report bytes and the renderer, and beside the report on disk', async () => {
+    const h = harness();
+    await h.service.connect(FIRST_INVITE);
+    const { enrollmentRef } = await h.fb().access.enrollmentState();
+    expect(enrollmentRef).toEqual(expect.any(String));
+    const draft = await h.capture();
+    expect(JSON.stringify(draft)).not.toContain(enrollmentRef);
+    const result = await h.send(draft.draftId);
+    expect(JSON.stringify(result)).not.toContain(enrollmentRef);
+    expect(JSON.stringify(h.service.status())).not.toContain(enrollmentRef);
+    const dir = join(h.fb().outbox.dir, 'reports', (result as { id: string }).id);
+    expect(readFileSync(join(dir, 'report.json'), 'utf-8')).not.toContain(enrollmentRef);
+    expect(JSON.parse(readFileSync(join(dir, 'binding.json'), 'utf-8'))).toEqual({ enrollmentRef });
+  });
+
+  describe('held reports', () => {
+    /** One report saved under the first enrollment, then a second enrollment. */
+    async function heldReport(h: Harness) {
+      await h.service.connect(FIRST_INVITE);
+      const saved = await h.send((await h.capture()).draftId) as { id: string };
+      const bytes = readFileSync(join(h.fb().outbox.dir, 'reports', saved.id, 'report.json'));
+      h.access.redeem = () => json(h.grant(SECOND_TOKEN, 's'));
+      await h.service.disconnect();
+      await h.service.connect(SECOND_INVITE);
+      await h.settled(1);
+      return { id: saved.id, bytes };
+    }
+
+    it('shows up in status, in the fixture shape, and is never delivered on its own', async () => {
+      const h = harness({ online: true });
+      h.state.online = false;
+      await heldReport(h);
+      h.state.online = true;
+      await h.fb().outbox.resume();
+      await h.fb().outbox.flush();
+      expect(h.reports).toEqual([]);
+      const { outbox } = h.service.status();
+      expect(Object.keys(fixture.status.heldWhileEnrolled)).toEqual(expect.arrayContaining(['heldForEnrollment', 'heldBytes', 'releaseToken']));
+      expect(outbox).toMatchObject({ pending: 1, blocked: 0, heldForEnrollment: 1, heldBytes: PNG.length, releaseToken: expect.any(String) });
+    });
+
+    it('releases with the confirmed token, queued under the new enrollment with the same bytes', async () => {
+      const h = harness();
+      const { id, bytes } = await heldReport(h);
+      const token = h.service.status().outbox.releaseToken as string;
+      await expect(h.service.releaseHeldReports(token)).resolves.toMatchObject({ released: 1, remaining: 0, failed: 0, status: { outbox: { heldForEnrollment: 0, releaseToken: null, pending: 1 } } });
+      expect(readFileSync(join(h.fb().outbox.dir, 'reports', id, 'report.json')).equals(bytes)).toBe(true);
+      expect(h.reports).toEqual([]);
+      h.state.online = true;
+      await h.fb().outbox.resume();
+      await vi.waitFor(() => expect(h.reports).toHaveLength(1), { timeout: 10_000 });
+      expect(h.reports[0].authorization).toBe(`Bearer ${SECOND_TOKEN}`);
+      expect(h.reports[0].body.id).toBe(id);
+    });
+
+    it('a stale token changes nothing, and the refreshed status has the token to ask with', async () => {
+      const h = harness();
+      await heldReport(h);
+      const shown = h.service.status().outbox.releaseToken as string;
+      const held = await h.send((await h.capture()).draftId) as { id: string };
+      // A third enrollment holds the second report too, so the shown token no longer matches.
+      h.access.redeem = () => json(h.grant(SECOND_TOKEN, 'v'));
+      await h.service.disconnect();
+      await h.service.connect(SECOND_INVITE);
+      await h.settled(2);
+      expect(held.id).toEqual(expect.any(String));
+      const result = await h.service.releaseHeldReports(shown);
+      expect(result).toMatchObject({ released: 0, remaining: 2, failed: 0, code: 'stale-release', status: { outbox: { heldForEnrollment: 2 } } });
+      expect(result.status.outbox.releaseToken).toEqual(expect.any(String));
+      expect(result.status.outbox.releaseToken).not.toBe(shown);
+      await expect(h.service.releaseHeldReports(result.status.outbox.releaseToken as string)).resolves.toMatchObject({ released: 2, remaining: 0 });
+    });
+
+    it('a second release of the same token is stale', async () => {
+      const h = harness();
+      await heldReport(h);
+      const token = h.service.status().outbox.releaseToken as string;
+      await h.service.releaseHeldReports(token);
+      await expect(h.service.releaseHeldReports(token)).resolves.toMatchObject(fixture.release.double);
+    });
+
+    it('never reads a token of its own: an empty one is stale', async () => {
+      const h = harness();
+      await heldReport(h);
+      await expect(h.service.releaseHeldReports('')).resolves.toMatchObject({ released: 0, remaining: 1, code: 'stale-release' });
+    });
+
+    it('a partial release reports released, remaining and failed, with a new token', async () => {
+      const h = harness();
+      await h.service.connect(FIRST_INVITE);
+      await h.send((await h.capture()).draftId);
+      const stuck = await h.send((await h.capture()).draftId) as { id: string };
+      h.access.redeem = () => json(h.grant(SECOND_TOKEN, 's'));
+      await h.service.disconnect();
+      await h.service.connect(SECOND_INVITE);
+      const shown = (await h.settled(2)).releaseToken as string;
+      const binding = join(h.fb().outbox.dir, 'reports', stuck.id, 'binding.json');
+      rmSync(binding);
+      mkdirSync(binding);
+      const result = await h.service.releaseHeldReports(shown);
+      // A directory there reads as unbound, which changes nothing about the held set.
+      expect(result).toMatchObject(fixture.release.partial);
+      expect(result.status.outbox).toMatchObject({ heldForEnrollment: 1, releaseToken: expect.any(String) });
+      expect(result.status.outbox.releaseToken).not.toBe(shown);
+    });
+
+    it('while unenrolled: no token, release refuses, and clear works', async () => {
+      const h = harness();
+      await h.service.connect(FIRST_INVITE);
+      await h.send((await h.capture()).draftId);
+      await h.send((await h.capture()).draftId);
+      await h.service.disconnect();
+      await h.settled(2, false);
+      await expect(h.service.releaseHeldReports('anything')).resolves.toMatchObject(fixture.release.notEnrolled);
+      await expect(h.service.clearHeldReports()).resolves.toMatchObject({ ...fixture.clear.whileUnenrolled, status: { outbox: { heldForEnrollment: 0, pending: 0 } } });
+      expect(await h.saved()).toEqual([]);
+      expect(h.reports).toEqual([]);
+    });
+
+    it('clear leaves a report of the current enrollment alone', async () => {
+      const h = harness();
+      await heldReport(h);
+      const current = await h.send((await h.capture()).draftId) as { id: string };
+      await expect(h.service.clearHeldReports()).resolves.toMatchObject({ cleared: 1, remaining: 0, failed: 0 });
+      expect((await h.saved()).map((report) => report.id)).toEqual([current.id]);
+    });
+
+    it('a full queue of held reports says where to go', async () => {
+      const h = harness();
+      await h.service.connect(FIRST_INVITE);
+      for (let i = 0; i < 10; i++) await h.send((await h.capture()).draftId);
+      h.access.redeem = () => json(h.grant(SECOND_TOKEN, 's'));
+      await h.service.disconnect();
+      await h.service.connect(SECOND_INVITE);
+      const draft = await h.capture();
+      await expect(h.send(draft.draftId)).rejects.toThrow(/10 held reports take up space\. You can send or clear them in Settings, Feedback\./);
     }, 30_000);
   });
 });

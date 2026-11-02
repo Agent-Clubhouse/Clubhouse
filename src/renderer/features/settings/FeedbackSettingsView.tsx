@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import type { FeedbackStatus } from '../../../shared/feedback-types';
 import { FEEDBACK_NOTICE_TEXT, useFeedbackStore } from '../../stores/feedbackStore';
+import { FeedbackHeldReports } from './FeedbackHeldReports';
 import { FeedbackTelemetryPrompt, type TelemetryShareAsk } from './FeedbackTelemetryPrompt';
 import { DeveloperTelemetrySection, shareAskFrom, shareTelemetry } from './DeveloperTelemetrySection';
 import { SettingsPage, SettingsSection, SettingsField, settingsInput, settingsHelp } from './SettingsLayout';
@@ -142,6 +143,8 @@ export function FeedbackSettingsView() {
   const expires = formatDate(status.expiresAt);
   const storageUnavailable = !status.storage.available;
   const stateText = STATE_TEXT[status.state];
+  // Held reports are in pending too, but don't wait for the network.
+  const waiting = status.outbox.pending - status.outbox.heldForEnrollment;
 
   return (
     <SettingsPage
@@ -226,9 +229,11 @@ export function FeedbackSettingsView() {
 
       <DeveloperTelemetrySection refreshKey={`${status.connected}:${telemetryRevision}`} />
 
-      {(status.outbox.pending > 0 || status.outbox.blocked > 0) && (
+      <FeedbackHeldReports status={status} onStatus={setStatus} />
+
+      {(waiting > 0 || status.outbox.blocked > 0) && (
         <p className={`${settingsHelp} mt-2`} data-testid="feedback-outbox">
-          {status.outbox.pending > 0 && `${status.outbox.pending} ${status.outbox.pending === 1 ? 'report is' : 'reports are'} saved and waiting to send.`}
+          {waiting > 0 && `${waiting} ${waiting === 1 ? 'report is' : 'reports are'} saved and waiting to send.`}
           {status.outbox.blocked > 0 && ` ${status.outbox.blocked} couldn't be delivered and are kept on this computer.`}
           {(status.outbox.correlationWaiting ?? 0) > 0 && ` ${status.outbox.correlationWaiting} are waiting for the feedback service to support their tracing references. Their reviewed contents are kept unchanged.`}
         </p>

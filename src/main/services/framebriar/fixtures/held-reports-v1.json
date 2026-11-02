@@ -1,0 +1,25 @@
+{
+  "v": 1,
+  "codes": {"enrollmentChanged": "enrollment-changed", "staleRelease": "stale-release", "notEnrolled": "not-enrolled"},
+  "status": {
+    "heldWhileEnrolled": {"items": 2, "bytes": 0, "maxItems": 10, "maxBytes": 33554432, "heldForEnrollment": 2, "heldBytes": 0, "releaseToken": "<opaque string>"},
+    "nothingHeld": {"items": 1, "bytes": 0, "maxItems": 10, "maxBytes": 33554432, "heldForEnrollment": 0, "heldBytes": 0, "releaseToken": null},
+    "heldWhileUnenrolled": {"items": 2, "bytes": 0, "maxItems": 10, "maxBytes": 33554432, "heldForEnrollment": 2, "heldBytes": 0, "releaseToken": null}
+  },
+  "release": {
+    "success": {"released": 2, "remaining": 0, "failed": 0},
+    "partial": {"released": 1, "remaining": 1, "failed": 1},
+    "staleAfterEnrollmentChange": {"released": 0, "remaining": 2, "failed": 0, "code": "stale-release"},
+    "staleAfterHeldSetChange": {"released": 0, "remaining": 1, "failed": 0, "code": "stale-release"},
+    "missingToken": {"released": 0, "remaining": 2, "failed": 0, "code": "stale-release"},
+    "double": {"released": 0, "remaining": 0, "failed": 0, "code": "stale-release"},
+    "notEnrolled": {"released": 0, "remaining": 2, "failed": 0, "code": "not-enrolled"}
+  },
+  "clear": {
+    "whileUnenrolled": {"cleared": 2, "remaining": 0, "failed": 0}
+  },
+  "notes": {
+    "partial": "After a partial release the failed reports stay held and status carries a new releaseToken, because the held set changed.",
+    "releaseToken": "Opaque. Compare only for equality by passing it back. It changes with the current enrollment or the set of held reports."
+  }
+}

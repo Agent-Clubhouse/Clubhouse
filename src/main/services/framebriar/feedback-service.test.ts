@@ -13,7 +13,7 @@ import { createDiagRedactor } from '../../telemetry/diag-redaction';
 import { connectFailureClass, connectFailureReason, FeedbackService, pngSize, sdkVersion, toFeedbackStatus } from './feedback-service';
 
 const ACCESS: FramebriarAccessView = { state: 'connected', connected: true, enrolled: true, canCapture: true, notice: null, expiresAt: '2026-11-15T00:00:00.000Z' };
-const OUTBOX: FramebriarOutboxView = { state: 'available', items: 2, bytes: 1234, maxItems: 10, maxBytes: 33554432, blocked: 1, retention: 'until-delivered-or-cleared' };
+const OUTBOX: FramebriarOutboxView = { state: 'available', items: 2, bytes: 1234, maxItems: 10, maxBytes: 33554432, blocked: 1, heldForEnrollment: 0, heldBytes: 0, releaseToken: null, retention: 'until-delivered-or-cleared' };
 const PNG = Buffer.concat([Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]), Buffer.from('fake-image-bytes')]);
 
 /** A PNG header with a real IHDR chunk (the body is never decoded). */
@@ -51,7 +51,7 @@ describe('toFeedbackStatus', () => {
       notice: null,
       expiresAt: '2026-11-15T00:00:00.000Z',
       storage: { available: true },
-      outbox: { state: 'available', pending: 2, blocked: 1, bytes: 1234, maxItems: 10, maxBytes: 33554432 },
+      outbox: { state: 'available', pending: 2, blocked: 1, heldForEnrollment: 0, heldBytes: 0, releaseToken: null, bytes: 1234, maxItems: 10, maxBytes: 33554432 },
       received: ['r2', 'r1'],
     });
   });
@@ -92,12 +92,14 @@ describe('FeedbackService (fake SDK)', () => {
       access: {
         endpoint: 'https://fb.example', gameId: 'clubhouse',
         status: () => access,
+        enrollmentState: vi.fn(async () => ({ enrollmentRef: 'ref-a', active: true })),
+        onEnrollmentChange: vi.fn(() => () => {}),
         connect: vi.fn(async (inv: string) => { calls.push(['connect', inv]); access = { ...ACCESS }; return true; }),
         disconnect: vi.fn(async () => { access = { ...ACCESS, state: 'disconnected', connected: false, enrolled: false, canCapture: false }; return { forgotten: true, revoked: true }; }),
       },
       outbox: { status: () => OUTBOX },
       feedback: {
-        open: vi.fn(async () => ({ png: (await options!.capture!()) as Buffer | null, capturedAt: '2026-10-17T10:00:00.000Z' })),
+        open: vi.fn(async () => ({ png: (await options!.capture!()) as Buffer | null, capturedAt: '2026-10-17T10:00:00.000Z', enrollmentRef: 'ref-a' })),
         prepare: vi.fn(async (input: Record<string, unknown>) => ({ report: { id: 'rep-1' }, png: (input.png as Buffer | null) ?? null, input })),
         submit: vi.fn(async (_prepared: unknown) => ({ id: 'rep-1', gameId: 'clubhouse', status: 'saved-local' as const, sent: false as const, diagnostics: 'unavailable' as const })),
       },
@@ -136,7 +138,7 @@ describe('FeedbackService (fake SDK)', () => {
     const { create, fb } = fakeSdk();
     const crumbs = Array.from({ length: 45 }, (_, i) => ({ kind: 'event' as const, atMs: 1_000 - i, code: 'view.agent' }));
     const s = new FeedbackService({ safeStorage, dataDir: '/data', appVersion: '0.42.0-beta.1', isOnline: () => true, create: create as never, breadcrumbs: () => crumbs });
-    await s.send({ notes: 'it froze', includeScreenshot: false, scene: 'agents' });
+    await s.send({ draftId: (await s.captureDraft(async () => PNG)).draftId, notes: 'it froze', includeScreenshot: false, scene: 'agents' });
     const context = (fb.feedback.prepare.mock.lastCall![0] as { context: { breadcrumbs: unknown[] } }).context;
     expect(context.breadcrumbs).toHaveLength(40);
     expect(context.breadcrumbs[1]).toEqual({ kind: 'event', atMs: 1_000, code: 'view.agent' });
@@ -228,9 +230,6 @@ describe('FeedbackService (fake SDK)', () => {
     const second = await s.captureDraft(async () => PNG);
     await s.send({ draftId: second.draftId, notes: 'just text', includeScreenshot: false, scene: 'Not A Code!' });
     expect(fb.feedback.prepare).toHaveBeenLastCalledWith(expect.objectContaining({ png: null, capturedAt: '2026-10-17T10:00:00.000Z', context: { scene: 'app', breadcrumbs: [expect.objectContaining({ code: 'diagnostics.none.no_lines' })] } }));
-
-    await s.send({ notes: 'no capture at all', includeScreenshot: false });
-    expect(fb.feedback.prepare).toHaveBeenLastCalledWith(expect.objectContaining({ png: null }));
   });
 
   it('snapshots incident context before asynchronous startup and honors removal in text-only review', async () => {
@@ -341,11 +340,106 @@ describe('FeedbackService (fake SDK)', () => {
     });
   });
 
-  it('refuses a screenshot send without a draft, and text-only without notes', async () => {
+  it('refuses a send with no draft id or an expired one, and saves nothing', async () => {
+    const { create, fb } = fakeSdk();
+    const s = service(create);
+    await expect(s.send({ notes: 'x', includeScreenshot: false } as never)).rejects.toMatchObject({ code: 'draft-required' });
+    for (const includeScreenshot of [true, false]) {
+      await expect(s.send({ draftId: '00000000-0000-4000-8000-000000000000', notes: 'x', includeScreenshot })).rejects.toMatchObject({ code: 'screenshot-expired' });
+    }
+    expect(fb.feedback.open).not.toHaveBeenCalled();
+    expect(fb.feedback.prepare).not.toHaveBeenCalled();
+    expect(fb.feedback.submit).not.toHaveBeenCalled();
+  });
+
+  describe('enrollment binding', () => {
+    const changed = () => Object.assign(new Error('The enrollment changed after this report was opened'), { code: 'enrollment-changed' });
+
+    it('passes the ref from open() to prepare() by the draft, never to the review hash or renderer', async () => {
+      const { create, fb } = fakeSdk();
+      const s = service(create);
+      const draft = await s.captureDraft(async () => PNG);
+      expect(JSON.stringify(draft)).not.toContain('ref-a');
+      await s.send({ draftId: draft.draftId, notes: 'n', includeScreenshot: false });
+      expect(fb.feedback.prepare).toHaveBeenCalledWith(expect.objectContaining({ enrollmentRef: 'ref-a', png: null }));
+    });
+
+    it.each(['prepare', 'submit'] as const)('enrollment-changed at %s: nothing cached survives, and a new draft needs a new Send', async (step) => {
+      const { create, fb } = fakeSdk();
+      const log = vi.fn();
+      const s = new FeedbackService({ safeStorage, dataDir: '/data', appVersion: '0.42.0-beta.1', isOnline: () => true, create: create as never, log, now: () => Date.parse('2026-10-17T10:00:00.000Z') });
+      const draft = await s.captureDraft(async () => PNG);
+      fb.feedback.open.mockClear();
+      fb.feedback[step].mockRejectedValueOnce(changed());
+      const result = await s.send({ draftId: draft.draftId, notes: 'kept in the renderer', includeScreenshot: true });
+      if (result.status !== 'enrollment-changed') throw new Error(`Expected a reopen, got ${result.status}`);
+      expect(result.draft.draftId).not.toBe(draft.draftId);
+      expect(result.draft.shots.map((shot) => shot.preview)).toEqual([draft.preview]);
+      expect(fb.feedback.open).toHaveBeenCalledTimes(1);
+      expect(JSON.stringify(result)).not.toContain('kept in the renderer');
+      // Only the first prepare (and submit, when it got that far) ran: no second Send was made for the user.
+      expect(fb.feedback.prepare).toHaveBeenCalledTimes(1);
+      expect(fb.feedback.submit).toHaveBeenCalledTimes(step === 'submit' ? 1 : 0);
+      await expect(s.send({ draftId: draft.draftId, notes: 'x', includeScreenshot: true })).rejects.toMatchObject({ code: 'screenshot-expired' });
+      await expect(s.send({ draftId: result.draft.draftId, notes: 'edited for the new report', includeScreenshot: true })).resolves.toMatchObject({ status: 'saved-local' });
+      expect(fb.feedback.prepare).toHaveBeenCalledTimes(2);
+      expect(JSON.stringify(log.mock.calls)).not.toContain('ref-a');
+    });
+
+    it('an open() that fails keeps the draft, with nothing cached, for the next Send', async () => {
+      const { create, fb } = fakeSdk();
+      const s = service(create);
+      const draft = await s.captureDraft(async () => PNG);
+      fb.feedback.submit.mockRejectedValueOnce(changed());
+      fb.feedback.open.mockRejectedValueOnce(changed());
+      await expect(s.send({ draftId: draft.draftId, notes: 'n', includeScreenshot: true })).rejects.toThrow(/Choose Send again/);
+      fb.feedback.prepare.mockRejectedValueOnce(changed());
+      await expect(s.send({ draftId: draft.draftId, notes: 'n', includeScreenshot: true })).resolves.toMatchObject({ status: 'enrollment-changed' });
+      expect(fb.feedback.prepare).toHaveBeenCalledTimes(2);
+    });
+
+    it('a status read that throws while adding the held hint leaves the real error', async () => {
+      const { create, fb } = fakeSdk();
+      const s = service(create);
+      const draft = await s.captureDraft(async () => PNG);
+      const full = Object.assign(new Error('Local feedback storage is full'), { code: 'storage-full' });
+      fb.feedback.submit.mockRejectedValueOnce(full);
+      const status = vi.fn(() => { throw new Error('status broke'); });
+      fb.outbox.status = status as never;
+      await expect(s.send({ draftId: draft.draftId, notes: 'n', includeScreenshot: true })).rejects.toBe(full);
+      expect(status).toHaveBeenCalled();
+      expect(full.message).toBe('Local feedback storage is full');
+    });
+
+    it('adds the held hint to a full queue only', async () => {
+      const { create, fb } = fakeSdk();
+      const s = service(create);
+      const draft = await s.captureDraft(async () => PNG);
+      fb.outbox.status = (() => ({ ...OUTBOX, heldForEnrollment: 1 })) as never;
+      fb.feedback.prepare.mockRejectedValueOnce(Object.assign(new Error('Invalid'), { code: 'invalid-input' }));
+      await expect(s.send({ draftId: draft.draftId, notes: 'n', includeScreenshot: true })).rejects.toThrow(/^Invalid$/);
+      fb.feedback.submit.mockRejectedValueOnce(Object.assign(new Error('Full.'), { code: 'storage-full' }));
+      await expect(s.send({ draftId: draft.draftId, notes: 'n', includeScreenshot: true })).rejects.toThrow('Full. 1 held report takes up space.');
+    });
+
+    it('logs an enrollment change without the ref', async () => {
+      const { create, fb } = fakeSdk();
+      const log = vi.fn();
+      await new FeedbackService({ safeStorage, dataDir: '/data', appVersion: '0.42.0-beta.1', isOnline: () => true, create: create as never, log }).start();
+      const hook = (fb.access.onEnrollmentChange.mock.calls as unknown as Array<[(change: { enrollmentRef: string | null }) => void]>)[0][0];
+      hook({ enrollmentRef: 'secret-ref' });
+      hook({ enrollmentRef: null });
+      expect(log).toHaveBeenCalledWith('info', 'Feedback enrollment changed', { enrolled: true });
+      expect(log).toHaveBeenCalledWith('info', 'Feedback enrollment changed', { enrolled: false });
+      expect(JSON.stringify(log.mock.calls)).not.toContain('secret-ref');
+    });
+  });
+
+  it('refuses text-only without notes', async () => {
     const { create } = fakeSdk();
     const s = service(create);
-    await expect(s.send({ draftId: '00000000-0000-4000-8000-000000000000', notes: 'x', includeScreenshot: true })).rejects.toThrow(/expired/);
-    await expect(s.send({ notes: '   ', includeScreenshot: false })).rejects.toThrow(/Add a note/);
+    const draft = await s.captureDraft(async () => PNG);
+    await expect(s.send({ draftId: draft.draftId, notes: '   ', includeScreenshot: false })).rejects.toThrow(/Add a note/);
   });
 
   it('keeps the reviewed draft when saving fails, so the user can retry', async () => {
@@ -504,7 +598,7 @@ describe('FeedbackService (fake SDK)', () => {
         diagnostics: 'diagnostics.none.no_lines', draftId: draft.draftId, includeScreenshot: true, notesLength: 12, annotated: false, shotId: null, id: 'rep-1', status: 'saved-local', state: 'connected',
       });
       fb.feedback.submit.mockRejectedValueOnce(Object.assign(new Error('Local feedback storage is full'), { code: 'storage-full' }));
-      await expect(s.send({ notes: 'more secret words', includeScreenshot: false })).rejects.toThrow();
+      await expect(s.send({ draftId: (await s.captureDraft(async () => PNG)).draftId, notes: 'more secret words', includeScreenshot: false })).rejects.toThrow();
       expect(find('Feedback send failed')?.[2]).toMatchObject({ error: 'Local feedback storage is full', code: 'storage-full', notesLength: 17 });
       expect(JSON.stringify(entries)).not.toMatch(/secret words/);
     });
@@ -550,7 +644,7 @@ describe('FeedbackService (fake SDK)', () => {
       const shot = pngOf(4, 3, 'shot');
       const draft = await s.captureDraft([{ label: 'Main window', grab: async () => shot }, { label: 'Pop-out', grab: async () => shot }]);
       await s.send({ draftId: draft.draftId, notes: NOTES, includeScreenshot: true, annotatedPng: pngOf(4, 3, 'ink').toString('base64') });
-      await s.send({ notes: NOTES, includeScreenshot: false });
+      await s.send({ draftId: (await s.captureDraft(async () => null)).draftId, notes: NOTES, includeScreenshot: false });
       expect(named('clubhouse.feedback.submitted')).toEqual([
         [ATTR.feedbackScreenshot(true), ATTR.feedbackAnnotated(true), ATTR.feedbackShots(2), ATTR.feedbackAccessState('connected')],
         [ATTR.feedbackScreenshot(false), ATTR.feedbackAnnotated(false), ATTR.feedbackShots(0), ATTR.feedbackAccessState('connected')],
@@ -560,14 +654,14 @@ describe('FeedbackService (fake SDK)', () => {
     it('records failed submits with an error class, never the message', async () => {
       const { create, fb } = fakeSdk();
       const s = service(create);
-      await expect(s.send({ notes: '  ', includeScreenshot: false })).rejects.toThrow();
-      await expect(s.send({ notes: NOTES, includeScreenshot: true })).rejects.toThrow();
       const draft = await s.captureDraft(async () => PNG);
+      await expect(s.send({ draftId: draft.draftId, notes: '  ', includeScreenshot: false })).rejects.toThrow();
+      await expect(s.send({ draftId: (await s.captureDraft(async () => null)).draftId, notes: NOTES, includeScreenshot: true })).rejects.toThrow();
       await expect(s.send({ draftId: draft.draftId, notes: NOTES, includeScreenshot: true, shotId: 's9' })).rejects.toThrow();
       fb.feedback.submit.mockRejectedValueOnce(Object.assign(new Error('Local feedback storage is full'), { code: 'storage-full' }));
-      await expect(s.send({ notes: NOTES, includeScreenshot: false })).rejects.toThrow();
+      await expect(s.send({ draftId: draft.draftId, notes: NOTES, includeScreenshot: false })).rejects.toThrow();
       fb.feedback.submit.mockRejectedValueOnce(new Error('something odd at /Users/someone'));
-      await expect(s.send({ notes: NOTES, includeScreenshot: false })).rejects.toThrow();
+      await expect(s.send({ draftId: draft.draftId, notes: NOTES, includeScreenshot: false })).rejects.toThrow();
       expect(named('clubhouse.feedback.failed').map((a) => a[1])).toEqual([
         ATTR.feedbackError('notes-required'),
         ATTR.feedbackError('screenshot-expired'),
@@ -620,7 +714,7 @@ describe('FeedbackService (fake SDK)', () => {
     });
 
     it('counts a start failure once when a capture or a send started it', async () => {
-      for (const act of [(s: FeedbackService) => s.captureDraft(async () => PNG), (s: FeedbackService) => s.send({ notes: NOTES, includeScreenshot: false })]) {
+      for (const act of [(s: FeedbackService) => s.captureDraft(async () => PNG), (s: FeedbackService) => s.send({ draftId: '00000000-0000-4000-8000-000000000000', notes: NOTES, includeScreenshot: false })]) {
         vi.mocked(rt.event).mockClear();
         const { create, fb } = fakeSdk();
         fb.start.mockRejectedValueOnce(Object.assign(new Error('locked'), { code: 'busy' }));
@@ -679,7 +773,7 @@ describe('FeedbackService (fake SDK)', () => {
       const { create, fb, opts } = fakeSdk();
       fb.feedback.submit.mockResolvedValueOnce({ id, gameId: 'clubhouse', status: 'saved-local', sent: false, diagnostics: 'unavailable' });
       const { s, log } = logged(create);
-      await s.send({ notes: 'private words', includeScreenshot: false });
+      await s.send({ draftId: (await s.captureDraft(async () => PNG)).draftId, notes: 'private words', includeScreenshot: false });
       opts().onReceipt!({ id, status: 'accepted' });
       const lines = log.filter(([, m]) => m === 'Feedback saved for delivery' || m === 'Feedback delivered');
       expect(lines.map(([l, m, meta]) => [l, m, meta?.id])).toEqual([
@@ -739,7 +833,7 @@ describe('FeedbackService (fake SDK)', () => {
     const before = fb.store.probeAsync.mock.calls.length;
     await s.disconnect();
     await s.captureDraft(async () => PNG).catch(() => {});
-    await s.send({ notes: 'x', includeScreenshot: false }).catch(() => {});
+    await s.send({ draftId: '00000000-0000-4000-8000-000000000000', notes: 'x', includeScreenshot: false }).catch(() => {});
     expect(fb.store.probeAsync.mock.calls.length).toBe(before + 3);
   });
 
@@ -818,7 +912,7 @@ describe('FeedbackService with the vendored Framebriar SDK (mocked transport)', 
       value.traces[0].spanId = '3333333333333333';
       const prepared = await sdk.feedback.prepare({ ...snapshot, notes: 'incident' });
       const ack = await sdk.feedback.submit(prepared, { includeDiagnostics: false });
-      const legacy = await sdk.feedback.prepare({ png: null, notes: 'ordinary report' });
+      const legacy = await sdk.feedback.prepare({ ...await sdk.feedback.open(), png: null, incident: null, notes: 'ordinary report' });
       await sdk.feedback.submit(legacy, { includeDiagnostics: false });
       await until(() => old.reports.has(legacy.report.id));
       expect(old.reports.has(ack.id)).toBe(false);
@@ -864,7 +958,7 @@ describe('FeedbackService with the vendored Framebriar SDK (mocked transport)', 
       const draft = await s.captureDraft(async () => PNG);
       const withShot = await s.send({ draftId: draft.draftId, notes: 'see screenshot', includeScreenshot: true, scene: 'agents' });
       expect(withShot.status).toBe('saved-local');
-      const textOnly = await s.send({ notes: 'text only', includeScreenshot: false });
+      const textOnly = await s.send({ draftId: (await s.captureDraft(async () => PNG)).draftId, notes: 'text only', includeScreenshot: false });
 
       // A receipt can arrive just before the outbox removes the report: wait for both.
       await until(() => s.status().received.includes(withShot.id) && s.status().received.includes(textOnly.id) && s.status().outbox.pending === 0);
