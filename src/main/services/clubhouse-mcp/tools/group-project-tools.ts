@@ -438,6 +438,7 @@ export function registerGroupProjectTools(): void {
         const result = await executeShoulderTap({
           projectId: targetId,
           senderLabel,
+          senderAgentId: agentId,
           targetAgentId: null, // broadcast to all
           message,
         });

@@ -319,6 +319,12 @@ import * as eventReplay from './annex-event-replay';
 import { recordStartRequest, _resetStartRequestsForTesting } from './helper-start-requests';
 import { listDisposeRequests, recordDisposeRequest, _resetDisposeRequestsForTesting } from './helper-dispose-requests';
 import { registerChatRuntime, clearChatRuntimes, publishChatEvent } from './agent-runtime';
+import { ChatAgentRuntime } from './agent-runtime/chat-runtime';
+import { onChatEvent } from './agent-runtime/chat-event-bus';
+import { FakeChatDriver } from './agent-runtime/fake-chat-driver';
+import { findSenderAgent, messageDisplay, MINIMAL_CHAT_CAPABILITIES, sentPartName, type ChatCapabilities } from '../../shared/chat';
+import { agentAvatarSpec, agentInitials } from '../../shared/agent-avatar';
+import { AGENT_COLORS } from '../../shared/name-generator';
 import { MOBILE_COMMAND_FIELDS, MobileCommandService, NULLABLE_ON_UPDATE, isOptionalCommandField } from './mobile-control';
 import { MOBILE_COMMAND_TYPES } from '../../shared/mobile-control';
 import { CHAT_EVENT_TYPES, type ChatEvent } from '../../shared/chat';
@@ -564,6 +570,13 @@ async function command(name: string, fields: Record<string, unknown>, opts: { ep
   list.push({ name: name.replace(/^common:/, ''), request, response: { status, body } });
   commandFixtures.set(key, list);
   return { status, body };
+}
+
+/** Sequence numbers depend on what the suite published before; the shape is the contract. The cursor sent becomes 1000. */
+function renumberFrames(list: any[], before: number) {
+  const offset = (n: number) => (typeof n === 'number' ? n - before + 1000 : n);
+  return list.map((f) => ({ ...f, ...('seq' in f && { seq: offset(f.seq) }), ...('fromSeq' in f && { fromSeq: offset(f.fromSeq) }),
+    ...('toSeq' in f && { toSeq: offset(f.toSeq) }), ...('lastSeq' in f && { lastSeq: offset(f.lastSeq) }), ...('oldestAvailable' in f && { oldestAvailable: 1 }) }));
 }
 
 // ── Suite ────────────────────────────────────────────────────────────────────
@@ -985,10 +998,7 @@ describe('Annex mobile contract fixtures', () => {
     const replay = await roundTrip(ws, { type: 'mobile:replay', epoch, since: before }, 3);
     const gap = await roundTrip(ws, { type: 'mobile:replay', epoch: 'previous-epoch', since: before });
     const ahead = await roundTrip(ws, { type: 'mobile:replay', epoch, since: before + 1000 });
-    // Sequence numbers depend on what the suite published before; the shape is the contract.
-    const offset = (n: number) => (typeof n === 'number' ? n - before + 1000 : n);
-    const renumber = (list: any[]) => list.map((f) => ({ ...f, ...('seq' in f && { seq: offset(f.seq) }), ...('fromSeq' in f && { fromSeq: offset(f.fromSeq) }),
-      ...('toSeq' in f && { toSeq: offset(f.toSeq) }), ...('lastSeq' in f && { lastSeq: offset(f.lastSeq) }), ...('oldestAvailable' in f && { oldestAvailable: 1 }) }));
+    const renumber = (list: any[]) => renumberFrames(list, before);
     fixtures.set('replay.json', {
       note: 'Sequence numbers are renumbered so the cursor sent is 1000.',
       cases: [
@@ -1118,6 +1128,184 @@ describe('Annex mobile contract fixtures', () => {
     W.dispatcher = { flagOn: false, enabled: false, newLayout: true };
     expect((await send('GET', route)).status).toBe(404);
     W.durables[DISPATCHER_PATH][0] = saved;
+  });
+
+  it('sender identity: every kind of sender, drawn from the snapshot alone', async () => {
+    resetWorld();
+    W.dispatcher = { flagOn: true, enabled: true, newLayout: true };
+    W.durables[DISPATCHER_PATH][0] = { ...W.durables[DISPATCHER_PATH][0], icon: 'durable_dispatcher.abc.png' };
+    // A disposed helper keeps its config row; a helper in another project shares a name with one here.
+    W.durables[APP].push({ id: 'durable_gone', name: 'old-helper', color: 'rose', parentAgentId: 'durable_chat', disposedAt: '2026-10-09T09:00:00.000Z', createdAt: '2026-10-08T09:00:00.000Z' });
+    W.durables['/work/docs'] = [{ id: 'durable_cross', name: 'Docs', color: 'orange', parentAgentId: 'durable_chat', createdAt: '2026-10-08T09:00:00.000Z' }];
+    const part = (agentId: string | undefined, name: string, text: string) => ({ sender: { ...(agentId && { agentId }), name }, text });
+    const messages: Array<Record<string, unknown> & { messageId: string; text: string; source?: string }> = [
+      { messageId: 'top_level', text: '[FROM:brave-otter@App] Ready.', routed: [part('durable_sleepy', 'brave-otter', 'Ready.')] },
+      { messageId: 'emoji_over_image', text: '[FROM:planner@App] Go.', routed: [part('durable_chat', 'planner', 'Go.')] },
+      { messageId: 'helper', text: '[FROM HELPER:Docs (durable_docs)] Halfway.', routed: [part('durable_docs', 'Docs', 'Halfway.')] },
+      { messageId: 'dispatcher_image', text: '[FROM:Dispatcher] Status?', routed: [part('durable_dispatcher', 'Dispatcher', 'Status?')] },
+      { messageId: 'cross_project', text: '[FROM HELPER:Docs (durable_cross)] Done there.', routed: [part('durable_cross', 'Docs', 'Done there.')] },
+      { messageId: 'quick_agent', text: '[FROM:swift-fox@App] Fixed.', routed: [part('quick_1', 'swift-fox', 'Fixed.')] },
+      { messageId: 'disposed_helper', text: '[FROM HELPER:old-helper (durable_gone)] Bye.', routed: [part('durable_gone', 'old-helper', 'Bye.')] },
+      { messageId: 'unknown_id_same_name', text: '[FROM:reviewer@Gone] Old id.', routed: [part('durable_deleted', 'reviewer', 'Old id.')] },
+      { messageId: 'name_only_unique', text: '[FROM:reviewer@App] By name.', routed: [part(undefined, 'reviewer', 'By name.')] },
+      { messageId: 'name_only_ambiguous', text: '[FROM:Docs@App] Which one?', routed: [part(undefined, 'Docs', 'Which one?')] },
+      { messageId: 'burst', text: '2 updates, oldest first:\n\n--- 1 of 2 ---\n[FROM HELPER:Docs (durable_docs)] Started.\n\n--- 2 of 2 ---\n[Clubhouse] Docs is asleep.',
+        routed: [part('durable_docs', 'Docs', 'Started.'), { fromClubhouse: true, text: 'Docs is asleep.' }] },
+      { messageId: 'queue_first', delivery: 'queued', text: '[FROM HELPER:Docs (durable_docs)] One.', routed: [part('durable_docs', 'Docs', 'One.')] },
+      { messageId: 'queue_joined', delivery: 'queued', queuedWith: 'queue_first', text: '[FROM:brave-otter@App] Two.', routed: [part('durable_sleepy', 'brave-otter', 'Two.')] },
+      { messageId: 'task_result_marker', text: '[TASK:t_1] [FROM:reviewer@App] TASK_RESULT:t_1: Looks good.', routed: [part('durable_basic', 'reviewer', 'TASK_RESULT:t_1: Looks good.')] },
+      { messageId: 'clubhouse_notice', text: '[Clubhouse] Docs was disposed.', routed: [{ fromClubhouse: true, text: 'Docs was disposed.' }] },
+      { messageId: 'no_sender', text: 'The nightly build finished.', routed: [{ text: 'The nightly build finished.' }] },
+      // Older transcripts and deliveries with no routed.
+      { messageId: 'parsed_from', text: '[TASK:t_2] [FROM:reviewer@App] An old one.' },
+      { messageId: 'parsed_helper', text: '[FROM HELPER:Docs (durable_docs)] An old report.' },
+      { messageId: 'parsed_clubhouse', text: '[Clubhouse] An old notice.' },
+      { messageId: 'parsed_tap', source: 'shoulder_tap', text: 'Group Project notification — shoulder tap from "brave-otter@App" in "Team"\nLook at this.\n\n---\nRESPONSE INSTRUCTIONS:\nReply on the board.' },
+      { messageId: 'parsed_tap_user', source: 'shoulder_tap', text: 'Group Project notification — shoulder tap from "user" in "Team"\nFrom the desktop.\n\n---\nRESPONSE INSTRUCTIONS:\nReply on the board.' },
+      { messageId: 'system', source: 'system', text: 'Continued from the terminal.' },
+      { messageId: 'group_project', source: 'group_project', text: 'New bulletin posts.' },
+      { messageId: 'mission_from_user', source: 'mission', text: 'Fix the login bug.' },
+      { messageId: 'from_a_phone', source: 'annex', text: '[FROM:x] Typed by the user.' },
+    ];
+    const ws = await connect();
+    const catalog = frames(ws).find((f) => f.type === 'snapshot').payload;
+    const before = eventReplay.getLastSeq();
+    ws.send.mockClear();
+    const events = messages.map(({ messageId, text, source = 'mcp', ...rest }, i) => envelope(i + 1, 'user_message',
+      { messageId, source, delivery: 'prompt', content: [{ type: 'text', text }], ...rest }));
+    for (const event of events) publishChatEvent(event);
+    const live = frames(ws).filter((f) => f.type === 'chat:event');
+    expect(live).toHaveLength(events.length);
+
+    // What the desktop's own code draws, given only the snapshot's rows and the event.
+    const rows: any[] = [...Object.values(catalog.agents).flat(), ...Object.values(catalog.quickAgents).flat(), catalog.dispatcher.agent];
+    const byId = Object.fromEntries(rows.map((row) => [row.id, row]));
+    const expected = events.map((event: any) => {
+      const { messageId, source, content, routed } = event.data;
+      const display = messageDisplay({ source, text: content[0].text, routed });
+      if (display.from === 'you') return { messageId, from: 'you', text: display.text };
+      return { messageId, from: 'others', ...(event.data.queuedWith && { queuedWith: event.data.queuedWith }), parts: display.parts.map((sent) => {
+        const agent = findSenderAgent(sent.sender, byId);
+        const subject = agent ?? sent.sender;
+        return { name: sentPartName(sent, source, agent), agentId: agent?.id ?? null, text: sent.text,
+          avatar: subject ? agentAvatarSpec(subject, agent && catalog.agentIcons[agent.id]) : null };
+      }) };
+    });
+    const first = (id: string) => expected.find((e) => e.messageId === id)!.parts![0];
+    expect(first('top_level')).toMatchObject({ agentId: 'durable_sleepy', avatar: { type: 'initials', initials: 'BO', background: '#f59e0b' } });
+    expect(first('emoji_over_image').avatar).toEqual({ type: 'emoji', emoji: '🦊', background: '#6366f120' });
+    expect(first('helper').avatar).toEqual({ type: 'initials', initials: 'D', background: '#8b5cf6' });
+    expect(first('dispatcher_image').avatar).toEqual({ type: 'image', image: catalog.agentIcons.durable_dispatcher });
+    expect(first('cross_project')).toMatchObject({ agentId: 'durable_cross', avatar: { background: '#f97316' } });
+    expect(first('quick_agent').avatar).toEqual({ type: 'quick' });
+    expect(first('disposed_helper')).toEqual({ name: 'old-helper', agentId: null, text: 'Bye.', avatar: { type: 'initials', initials: 'OH', background: '#6366f1' } });
+    expect(first('unknown_id_same_name')).toMatchObject({ agentId: null, avatar: { initials: 'R', background: '#6366f1' } });
+    expect(first('name_only_unique')).toMatchObject({ agentId: 'durable_basic', avatar: { background: '#14b8a6' } });
+    expect(first('name_only_ambiguous')).toMatchObject({ agentId: null, avatar: { background: '#6366f1' } });
+    expect(first('task_result_marker').text).toBe('Looks good.');
+    expect(first('clubhouse_notice')).toMatchObject({ name: 'Clubhouse', avatar: null });
+    expect(first('no_sender')).toMatchObject({ name: 'Another agent', avatar: null });
+    expect(first('parsed_helper').agentId).toBe('durable_docs');
+    expect(first('group_project')).toMatchObject({ name: 'Group project', avatar: null });
+
+    // Restored history and replay carry the same parts as the live event.
+    const routedOf = (list: any[]) => list.filter((e) => e.type === 'user_message').map((e) => e.data.routed);
+    W.transcripts.durable_sleepy = events.map((event) => ({ ...event, agentId: 'durable_sleepy', sessionId: 'sess_old' })) as never;
+    const history = await exchange('GET', '/api/v1/mobile/agents/durable_sleepy/chat');
+    expect(routedOf(history.response.body.events)).toEqual(routedOf(events));
+    const replay = await roundTrip(ws, { type: 'mobile:replay', epoch, since: before }, events.length + 2);
+    expect(routedOf(replay.filter((f) => f.type === 'chat:event').map((f) => f.payload.event))).toEqual(routedOf(events));
+
+    fixtures.set('sender-identity.json', {
+      direction: 'desktop-to-phone',
+      note: 'Resolve each frame\'s sender from `catalog` alone; `expected` is what the desktop draws for that event.',
+      catalog: { agents: catalog.agents, quickAgents: catalog.quickAgents, dispatcher: catalog.dispatcher, agentIcons: catalog.agentIcons },
+      colors: AGENT_COLORS.map(({ id, hex }) => ({ id, hex })),
+      initials: ['Dispatcher', 'clever-fox', 'Clubhouse-Orchestrator', 'one-two-three', 'my_agent', 'Two Words', 'double--dash', '7-up']
+        .map((name) => ({ name, initials: agentInitials(name) })),
+      frames: renumberFrames(live, before),
+      expected,
+      history,
+      replay: renumberFrames(replay, before),
+    });
+    resetWorld();
+  });
+
+  it('queued bursts, from the real runtime: delivery sends no user_message (#2414, #2605)', async () => {
+    const part = (agentId: string, name: string, text: string) => [{ sender: { agentId, name }, text }];
+    const run = async (name: string, caps: ChatCapabilities, script: (driver: FakeChatDriver, runtime: ChatAgentRuntime) => Promise<void>) => {
+      const seen: ChatEvent[] = [];
+      const off = onChatEvent((event) => { if (event.agentId === `durable_${name}`) seen.push(event); });
+      let n = 0;
+      const driver = new FakeChatDriver('copilot_acp', 'copilot-cli', caps);
+      const runtime = new ChatAgentRuntime({
+        agentId: `durable_${name}`, provider: 'copilot-cli', driverId: driver.id, cwd: APP, level: 'ask', idleTimeoutMs: 0,
+        startSession: () => driver.start({ agentId: `durable_${name}`, provider: 'copilot-cli', cwd: APP, binaryPath: '/bin/copilot', level: 'ask' }),
+        newId: () => `${name}_${++n}`, now: () => NOW, onEnded: () => {},
+      });
+      await runtime.start();
+      await script(driver, runtime);
+      off();
+      return seen.filter((e) => ['user_message', 'queue_state', 'queue_removed', 'turn_started', 'turn_ended'].includes(e.type));
+    };
+    const settled = () => new Promise((resolve) => setTimeout(resolve, 20));
+    const turn = async (driver: FakeChatDriver, type: 'turn_started' | 'turn_ended') => {
+      driver.last.emit(type === 'turn_started' ? { type, data: { trigger: 'prompt' } } : { type, data: { stopReason: 'end_turn' } });
+      await settled();
+    };
+    const steerless = { ...MINIMAL_CHAT_CAPABILITIES, steer: false, queue: 'client' as const, interrupt: true };
+
+    const burst = await run('burst', steerless, async (driver, runtime) => {
+      await turn(driver, 'turn_started');
+      await runtime.sendMessage('[FROM HELPER:Docs (durable_docs)] One.', { source: 'mcp', routed: part('durable_docs', 'Docs', 'One.') });
+      await runtime.sendMessage('[FROM:brave-otter@App] Two.', { source: 'mcp', routed: part('durable_sleepy', 'brave-otter', 'Two.') });
+      await runtime.sendMessage('And another thing.', { source: 'annex' });
+      await turn(driver, 'turn_ended');
+      await turn(driver, 'turn_started');
+      await turn(driver, 'turn_ended');
+      await turn(driver, 'turn_started');
+      await turn(driver, 'turn_ended');
+    });
+    const users = burst.filter((e): e is Extract<ChatEvent, { type: 'user_message' }> => e.type === 'user_message');
+    expect(users.map((e) => [e.data.source, e.data.delivery, e.data.queuedWith])).toEqual([['mcp', 'queued', undefined], ['mcp', 'queued', users[0].data.messageId], ['annex', 'queued', undefined]]);
+    const lastUser = burst.indexOf(users[2]);
+    const statuses = burst.slice(lastUser + 1).filter((e) => e.type === 'queue_state').map((e) => [(e.data as any).transition.status, (e.data as any).transition.messageIds, (e.data as any).queuedMessageIds]);
+    expect(statuses).toEqual([
+      ['queued', [users[2].data.messageId], [users[0].data.messageId, users[2].data.messageId]],
+      ['dispatching', [users[0].data.messageId], [users[2].data.messageId]],
+      ['delivered', [users[0].data.messageId], [users[2].data.messageId]],
+      ['dispatching', [users[2].data.messageId], []],
+      ['delivered', [users[2].data.messageId], []],
+    ]);
+
+    const failed = await run('failed', steerless, async (driver, runtime) => {
+      await turn(driver, 'turn_started');
+      await runtime.sendMessage('Never sent.', { source: 'annex' });
+      driver.last.send = async () => { throw new Error('driver refused'); };
+      await turn(driver, 'turn_ended');
+    });
+    expect(failed.filter((e) => e.type === 'queue_state').map((e) => (e.data as any).transition.status)).toEqual(['queued', 'dispatching', 'failed']);
+
+    const native = await run('native', { ...steerless, queue: 'native' }, async (driver, runtime) => {
+      await turn(driver, 'turn_started');
+      await runtime.sendMessage('Held by the CLI.', { source: 'annex', delivery: 'queued' });
+      await turn(driver, 'turn_ended');
+      await turn(driver, 'turn_started');
+    });
+    expect(native.some((e) => e.type === 'queue_state')).toBe(false);
+    expect(native.find((e) => e.type === 'user_message')?.data).toMatchObject({ delivery: 'queued' });
+
+    fixtures.set('queued-bursts.json', {
+      direction: 'desktop-to-phone',
+      note: 'Events from the real chat runtime, without the session and state events around them. See docs/mobile-control-v1.md#queued-messages.',
+      burst: { events: burst, rowId: users[0].data.messageId, routed: [...users[0].data.routed!, ...users[1].data.routed!] },
+      missingJoinTarget: {
+        note: 'The burst read from its tail: the join is the first event, so the row takes the queuedWith id.',
+        events: burst.slice(burst.indexOf(users[1])), rowId: users[0].data.messageId, routed: users[1].data.routed,
+      },
+      failed: { events: failed },
+      nativeQueue: { note: 'A provider-held queue has no queue_state: turn_started is its only signal.', events: native },
+    });
   });
 
   it('Clubhouse MCP off refuses turning orchestration on (#2589)', async () => {

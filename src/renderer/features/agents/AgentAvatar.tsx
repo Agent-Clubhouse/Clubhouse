@@ -1,6 +1,6 @@
 import { useAgentStore } from '../../stores/agentStore';
 import { Agent } from '../../../shared/types';
-import { getAgentColorHex } from '../../../shared/name-generator';
+import { agentAvatarSpec } from '../../../shared/agent-avatar';
 
 interface Props {
   agent: Agent;
@@ -21,7 +21,6 @@ const SIZE_CONFIG = {
 };
 
 export function AgentAvatar({ agent, size = 'md', showRing = false, ringColor, iconUrl }: Props) {
-  const bgColor = getAgentColorHex(agent.color);
   const storeIconUrl = useAgentStore((s) => s.agentIcons[agent.id]);
   const iconDataUrl = iconUrl ?? storeIconUrl;
 
@@ -31,7 +30,8 @@ export function AgentAvatar({ agent, size = 'md', showRing = false, ringColor, i
   const fontSize = s.font;
 
   const renderContent = () => {
-    if (agent.kind !== 'durable') {
+    const spec = agentAvatarSpec(agent, iconDataUrl);
+    if (spec.type === 'quick') {
       // Quick agent: lightning bolt
       return (
         <div className={`${innerSize} rounded-full flex items-center justify-center bg-surface-2 text-ctp-subtext0`}>
@@ -43,35 +43,34 @@ export function AgentAvatar({ agent, size = 'md', showRing = false, ringColor, i
     }
 
     // Emoji avatar
-    if (agent.emoji) {
+    if (spec.type === 'emoji') {
       return (
         <div
           className={`${innerSize} rounded-full flex items-center justify-center flex-shrink-0`}
-          style={{ backgroundColor: `${bgColor}20` }}
+          style={{ backgroundColor: spec.background }}
         >
-          <span className={size === '2xs' ? 'text-xs' : size === 'sm' ? 'text-sm' : 'text-base'} role="img">{agent.emoji}</span>
+          <span className={size === '2xs' ? 'text-xs' : size === 'sm' ? 'text-sm' : 'text-base'} role="img">{spec.emoji}</span>
         </div>
       );
     }
 
     // Image icon avatar
-    if (agent.icon && iconDataUrl) {
+    if (spec.type === 'image') {
       return (
         <div className={`${innerSize} rounded-full overflow-hidden flex-shrink-0`}>
-          <img src={iconDataUrl} alt={agent.name} draggable={false} className="w-full h-full object-cover" />
+          <img src={spec.image} alt={agent.name} draggable={false} className="w-full h-full object-cover" />
         </div>
       );
     }
 
     // Initials on the agent color. The provider shows as the neutral
     // OrchestratorGlyph beside the model instead of a brand mascot (#2025).
-    const initials = agent.name.split('-').map((w) => w[0]).join('').toUpperCase().slice(0, 2);
     return (
       <div
         className={`${innerSize} rounded-full flex items-center justify-center ${fontSize} font-bold text-white`}
-        style={{ backgroundColor: bgColor }}
+        style={{ backgroundColor: spec.background }}
       >
-        {initials}
+        {spec.initials}
       </div>
     );
   };

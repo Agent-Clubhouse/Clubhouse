@@ -79,6 +79,13 @@ describe('UserMessage', () => {
     render(<UserMessage item={item({ text: 'x', source: 'mcp', routed: routed('Short') })} />);
     expect(screen.getByTestId('chat-sent-name').textContent).toBe('typecheck-leak');
     expect(screen.getByTestId('chat-sent-avatar').textContent).toBe('TL');
+    expect(screen.getByTestId('chat-sent-avatar').querySelector<HTMLElement>('[style]')?.style.backgroundColor).toBe('rgb(99, 102, 241)');
+  });
+
+  it('doesn\'t fall back from an unknown id to an agent of the same name', () => {
+    useAgentStore.setState({ agents: { other: agent({ id: 'other', color: 'rose' }) } });
+    render(<UserMessage item={item({ text: 'x', source: 'mcp', routed: routed('Short') })} />);
+    expect(screen.getByTestId('chat-sent-avatar').querySelector<HTMLElement>('[style]')?.style.backgroundColor).toBe('rgb(99, 102, 241)');
   });
 
   it('falls back to parsing an old message, finding the agent by its only name', () => {

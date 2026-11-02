@@ -45,8 +45,10 @@
     "pairing-revoke.json",
     "pairing.json",
     "pty.json",
+    "queued-bursts.json",
     "replay.json",
     "rest-catalog.json",
+    "sender-identity.json",
     "snapshot-dispatcher.json",
     "snapshot-helper-requests.json",
     "snapshot.json"

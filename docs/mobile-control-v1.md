@@ -118,6 +118,9 @@ The Annex snapshot carries what the desktop's `AgentAvatar` draws, so a phone ca
 
 - Durable agents (`agents[projectId][]`, and `GET /api/v1/projects/:id/agents`): `color`, `emoji` (a string, or `null` when unset; set through `agent.update`), and the icon as `agentIcons[agentId]`. When `emoji` is set the desktop draws it in place of initials.
 - Quick agents (`quickAgents[projectId][]`): `color`, always `"gray"`. Quick agents don't inherit their parent's colour.
+- The Dispatcher (`dispatcher.agent`): the durable shape, and in `agentIcons` too. It isn't in `agents`.
+
+Each `snapshot` is complete, so replace the agent rows and `agentIcons` rather than merging them: an image that was removed is simply absent. A new snapshot follows any change to an agent's name, color, emoji or image, wherever it was made: Settings, `agent.update`, the `update_agent` MCP tool, the `clubhouse` CLI, or an edit to `agents.json`. An image's bytes are also at `GET /api/v1/icons/agent/:agentId`, the Dispatcher's too while it is on. See [Drawing a sender](#drawing-a-sender) for how to draw these.
 
 ## Chat state and history
 
@@ -137,15 +140,122 @@ Chat snapshots add `queuedMessageIds: string[]`, `queueStateSeq: number`, and `q
 
 Capabilities advertise `events.queueState: "queue_state"`. The additive rich event is `{type:"queue_state",data:{queuedMessageIds:["id"],transition:{messageIds:["id"],status:"queued"|"dispatching"|"delivered"|"failed"|"removed"}}` inside the normal ChatEvent envelope. The full ID list is authoritative for local cancellation. `dispatching` removes the item before sending; `delivered` means the driver send resolved, not that its turn completed. `failed` does not guarantee no provider effect, so do not automatically retry. Existing `user_message` and `queue_removed` events are unchanged. Merged MCP submissions share their original queue item ID via queuedWith.
 
-`user_message` also carries an optional, additive `routed: [{sender?: {agentId?, name}, fromClubhouse?, text}]` on messages from other agents and Clubhouse. Each part is one message, with its sender and without routing text such as `[FROM:...]`; a burst of updates has several. `content` still holds exactly what the agent received. A client that wants to show the sender should prefer `routed`, and can ignore it to keep showing `content` as today. Older transcripts don't have it.
+`user_message` also carries an optional, additive `routed: [{sender?: {agentId?, name}, fromClubhouse?, text}]` on messages from other agents and Clubhouse. Each part is one message, with its sender and without routing text such as `[FROM:...]`; a burst of updates has several. `content` still holds exactly what the agent received. A client that wants to show the sender should prefer `routed`, and can ignore it to keep showing `content` as today. Older transcripts don't have it. A part's text can still start with the reply marker `TASK_RESULT:<id>:` or `TASK_ACK:<id>:`; don't show it. See [Who sent a message](#who-sent-a-message).
 
-For each session, apply a queue snapshot or event only if its queueStateSeq/event.seq is at least as new as the queue state already applied. Snapshot queue state can be newer than the returned transcript page, so track this watermark separately from chat history and Annex replay cursors. Never infer consumption from turn_started. Session termination makes remaining IDs non-cancellable; a new session resets the queue watermark.
+For each session, apply a queue snapshot or event only if its queueStateSeq/event.seq is at least as new as the queue state already applied. Snapshot queue state can be newer than the returned transcript page, so track this watermark separately from chat history and Annex replay cursors. Don't infer that a runtime-owned queue item was consumed from turn_started; [Queued messages](#queued-messages) has the one exception. Session termination makes remaining IDs non-cancellable; a new session resets the queue watermark.
 
 Existing WebSocket `{type:"chat:event",payload:{agentId,event:ChatEvent},seq}` stays unchanged. Deduplicate rich events by `(agentId,sessionId,event.seq)`. Annex `seq` is the transport cursor.
 
 Send `{type:"mobile:replay",epoch:"capabilities epoch",since:123}`. Replies use existing top-level `replay:start`, original event frames with `replayed:true`, and `replay:end`; each replay control frame includes `epoch`. Invalid/stale epoch, cursor beyond lastSeq, or missing retained events produces top-level `{type:"replay:gap",epoch,oldestAvailable,lastSeq}`. Resnapshot chat and project state on gap. Buffer live events while applying a snapshot/replay and deduplicate; do not advance the cursor to a snapshot's lastSeq before its data has been applied.
 
 Chat event definitions: src/shared/chat/events.ts. Driver capabilities: src/shared/chat/capabilities.ts. Existing snapshots/projects/agents: src/main/services/annex-server.ts. Read runtime state/driver capabilities before presenting steer/approval actions. Errors, cancellation, waiting_input, waiting_permission, turn_ended and session_ended remain normal rich events.
+
+## Who sent a message
+
+How a phone shows `user_message`, so it matches the desktop's chat (`messageDisplay` and `findSenderAgent` in `src/shared/chat/message-routing.ts`, `agentAvatarSpec` in `src/shared/agent-avatar.ts`). `sender-identity.json` has a case for each row here, with what the desktop's code draws for it.
+
+### Reading a message
+
+Decide who it is from in this order. The first match wins.
+
+| Message | Reads as |
+|---|---|
+| `source` is `user` or `annex` | You. The text is never parsed, whatever it looks like. |
+| `routed` has parts | One entry per part, in order. |
+| `source` is `system` | Clubhouse. |
+| `source` is `group_project` | "Group project", no avatar. |
+| `source` is `shoulder_tap` | Parse `content` (below): the sender `user` means you. |
+| Anything else | Parse `content`. A `mission` with no tag is you. |
+
+**Parsing** is only for older transcripts and deliveries with no `routed`; new messages from agents and Clubhouse carry it. Each line is a prefix on `content` text. The sender has a name, and an id only where the tag has one. `sender-identity.json` has an example of each, except the bursts.
+
+- `[Clubhouse] text`: Clubhouse.
+- `[FROM HELPER:name (id)] text`: the helper, with its id.
+- `[TASK:id] [FROM:name@project] text`, with or without the task: `name`, with no id. Drop the reply instructions after a `\n\n---\n`.
+- `Group Project notification — shoulder tap from "name@project" in "group"\ntext\n\n---\nRESPONSE INSTRUCTIONS:...`: `name`, with no id.
+- `N updates, oldest first:\n\n--- 1 of N ---\n...`: one part per section.
+
+If you don't parse, show the part with no sender as "Another agent".
+
+Strip a leading `TASK_RESULT:<id>:` or `TASK_ACK:<id>:` from a part's text in every case.
+
+### Finding the sender's agent
+
+Build one list from the latest snapshot: every row of `agents[*]` in every project, every row of `quickAgents[*]`, and `dispatcher.agent` when it isn't null. A snapshot holds all registered projects, so a sender in another project is there too. `GET /api/v1/projects/:id/agents` is one project and isn't enough.
+
+1. With `sender.agentId`: the row with that id, or nothing. Never fall back to the name, even if another agent has it. `agentId` is the id in the catalog, so a miss means that agent is gone or isn't available. Examples: a deleted agent, a disposed helper, a quick agent that finished, the Dispatcher while it is off.
+2. With only `sender.name`: the row with that name if exactly one row has it, otherwise nothing.
+
+Look the sender up again on each snapshot, so a rename or new look shows on messages already on screen.
+
+### Drawing a sender
+
+| Part | Name | Avatar |
+|---|---|---|
+| Sender found | The row's current `name` | From the row, below |
+| Sender not found | `sender.name` | Initials of `sender.name` on indigo |
+| `fromClubhouse` | "Clubhouse" | None |
+| No sender | "Another agent", or "Group project" for that `source` | None |
+
+`sender.name` is the sender's name when the message was sent. When a wire had no name recorded it can be the agent's id.
+
+An avatar is always a circle, with images clipped to it and filling it. Use the first that applies:
+
+1. **Quick agent** (`kind` isn't `durable`): a lightning bolt on a neutral surface. Ignore `color`, `emoji` and the name.
+2. **Emoji** (`emoji` set): the emoji on the agent's color at alpha `0x20`, about 12.5%. This comes before an image.
+3. **Image** (`icon` set and `agentIcons[id]` present): `agentIcons[id]`, a data URL.
+4. **Initials**: bold on the agent's solid color.
+
+**Initials:** split the name on `-`, take the first character of each piece, skip empty pieces, uppercase, keep the first two. `-` is the only separator. So `Dispatcher` is `D`, not `DI`; `clever-fox` is `CF`; `one-two-three` is `OT`; `my_agent` and `Two Words` are `M` and `T`. The `initials` list in `sender-identity.json` has more.
+
+**Colors:** `color` is an id. An unknown or missing one is indigo.
+
+| id | hex | id | hex |
+|---|---|---|---|
+| `indigo` | `#6366f1` | `violet` | `#8b5cf6` |
+| `emerald` | `#10b981` | `orange` | `#f97316` |
+| `amber` | `#f59e0b` | `teal` | `#14b8a6` |
+| `rose` | `#f43f5e` | `cyan` | `#06b6d4` |
+
+The desktop draws initials in white. Clubhouse Go draws them in whichever of dark or light contrasts more; that difference is known and open.
+
+### Laying out a message
+
+- **You:** on the right, in a bubble, labelled "You".
+- **Others:** on the left, one entry per part: the avatar, then the name above a bubble. Parts of one message stay together, even with different senders. The active agent's replies aren't in this layout.
+- **Color:** agent color appears only in the avatar. Don't tint bubbles, names or message backgrounds with it. The desktop draws both bubbles on the same neutral surface.
+- **Long messages:** a part over 800 characters or 14 lines starts collapsed, as "`name` sent a long message".
+- **Text:** a part with a `sender` is Markdown. A Clubhouse notice or a part with no sender is plain text.
+
+### Queued messages
+
+There is **no `user_message` when a queued message is delivered**. Delivery is only `queue_state`, so a burst's combined parts exist only if you build them from the queued events. `queued-bursts.json` has each case below as the real runtime emits it.
+
+**Building the row.** On `user_message` with `delivery: "queued"`, the row's id is `queuedWith`, or `messageId` when there is none.
+
+- **Joining:** if that row exists, append this event's `routed` parts and content to it. A join has its own `messageId` and no `queue_state` of its own, and only the row's id appears in `queuedMessageIds`.
+- **Missing target:** if the row doesn't exist, as when a page starts mid-burst, create it under the `queuedWith` id. Later joins and its `queue_state` then find it.
+- **No `routed`:** an event without it is parsed, so the parts stay in step with the content.
+
+Only MCP messages join, and only an MCP row at the end of the queue. `queuedWith` means nothing on any other `delivery`: treat that event as a normal message. `user_message` in `chat-events.json` has `queuedWith` with `delivery: "steer"` so that a decoder sees every optional field. The runtime never sends that combination.
+
+**Delivery of a runtime-owned queue** follows `queue_state`:
+
+| `transition.status` | What to do |
+|---|---|
+| `queued` | The row waits. |
+| `dispatching` | Move it into the timeline, so it comes before that turn's output. |
+| `delivered` | The send resolved. Don't assume this comes before `turn_started`. |
+| `failed` | Mark it not delivered, and don't retry: the provider may still have acted on it. |
+| `removed` | Drop it (with `queue_removed`). |
+
+`queuedMessageIds` is the whole queue on every event. A row a newer list has dropped is no longer queued, even if you missed why, so a missed event is not a reason to use `turn_started`. After a `replay:gap`, reload the chat and apply its `queuedMessageIds`.
+
+**The `turn_started` exception.** Some rows have no `queue_state` at all: a provider-held queue (capability `queue: "native"`, where `delivery: "queued"` comes with no queue events), and older desktops or transcripts (no `events.queueState` in capabilities). On `turn_started`, consume the oldest row that no `queue_state` has named, as a row or in `queuedMessageIds`. A runtime-owned row is always named before its turn starts, so this never takes one.
+
+If a `user_message` with another `delivery` arrives with the same `messageId` as a row, it replaces the row. The runtime doesn't send one today.
+
+The desktop's chat doesn't follow `queue_state` yet: it consumes the oldest row on every `turn_started`. Phones should follow this section, not that.
 
 ## Review clarifications
 
@@ -416,6 +526,8 @@ While it is on, its id works wherever an agent id does: the chat snapshot, chat 
 - **Settings.** `GET /mobile/agents/:id/settings` has `isDispatcher: true` and `orchestration: null`. `orchestrator`, `model`, `runtime` and `freeAgentMode` are `editable: "always"` (as on Settings > Dispatcher they apply the next time it starts), `idleSleep` `"always"`, and `name`, `color`, `emoji`, `persona` and `clubhouseMode` `"never"`.
 - **agent.update.** Only `orchestrator`, `model`, `runtime`, `freeAgentMode` and `idleSleep`, at any time. A new `orchestrator` resets `model` to `default` unless the command sets one; `model` must be `default` or one the CLI lists (400 `invalid_model`). `name`, `color`, `emoji`, `persona`, `clubhouseMode` or `orchestration` are 409 `dispatcher_locked`, the desktop's own rules.
 
+The Dispatcher can change its own color, emoji and image through the `update_agent` MCP tool, and the `clubhouse` CLI can change them too (#2645). A phone can't: `agent.update` stays `dispatcher_locked` for them. A fresh `snapshot` carries the new look. Its name stays "Dispatcher", whichever look it has. Messages it sends name it as the sender like any agent; find it in `dispatcher.agent`, not `agents`.
+
 Messages other agents send the Dispatcher arrive as `user_message` with `source: "mcp"` and [`routed`](#live-events-and-replay) naming the sender, as for any agent. `content` is what the Dispatcher received, with a `[FROM:<name>@<project>]` tag in the text, and that tag is all older transcripts have.
 
 ## Project state
@@ -513,7 +625,7 @@ Errors use the existing envelope with correlation fields: `error {message, op, s
 
 ## Contract fixtures
 
-`test/fixtures/annex-mobile/` holds a canonical example of every message in this document: capabilities, the WebSocket snapshot (agents, quick agents, `projectState`, `finishedQuickAgents`, `helperRequests`, theme), the chat snapshot with `chatControls`, `slashCommands` and `contentRoots`, create options and agent settings, a request and receipt for every `MOBILE_COMMAND_TYPES` command with each refusal its code path can reach, one `chat:event` of every chat event type followed by `user_message` with each form of `routed` (one sender, a burst, `fromClubhouse`, no `sender`), every `pty:*` message and error, `mobile:replay`, and the attachment upload's answers. The phone (Clubhouse Go) vendors these files and decodes each one in its contract tests, and checks that the commands it builds match the requests here. Neither side tests only against its own fakes.
+`test/fixtures/annex-mobile/` holds a canonical example of every message in this document: capabilities, the WebSocket snapshot (agents, quick agents, `projectState`, `finishedQuickAgents`, `helperRequests`, theme), the chat snapshot with `chatControls`, `slashCommands` and `contentRoots`, create options and agent settings, a request and receipt for every `MOBILE_COMMAND_TYPES` command with each refusal its code path can reach, one `chat:event` of every chat event type followed by `user_message` with each form of `routed` (one sender, a burst, `fromClubhouse`, no `sender`), every kind of sender and how to draw it, queued bursts, every `pty:*` message and error, `mobile:replay`, and the attachment upload's answers. The phone (Clubhouse Go) vendors these files and decodes each one in its contract tests, and checks that the commands it builds match the requests here. Neither side tests only against its own fakes.
 
 `src/main/services/annex-mobile-contract.test.ts` writes them. It runs the real annex-server, mobile-control, mobile-agents, mobile-helper-requests, mobile-attachments and chat echo code over pinned mTLS and the WebSocket handler. Only the leaves are faked (disk, git, CLIs, PTYs, the orchestrator side of helper requests). The output is deterministic: fixed ids and clock, sorted keys, and random UUIDs (epochs, tokens, attachment and helper request ids) renumbered `00000000-0000-4000-8000-<n>` in order of first appearance.
 
@@ -523,6 +635,8 @@ Errors use the existing envelope with correlation fields: `error {message, op, s
 - A new command type or chat event type fails the suite until it has an example.
 
 A helper is `durable_docs` in `snapshot.json` and `agent-settings-helper.json`; the other agents there are top-level.
+
+`sender-identity.json` is for [Who sent a message](#who-sent-a-message). `catalog` is the snapshot's agent rows and `agentIcons`, `frames` are the live `chat:event`s, and `expected` is, for each event, what the desktop's code draws given only `catalog` and that event: `{from:"you", text}` or `{from:"others", parts:[{name, agentId, text, avatar}]}`, where `agentId` is the row it found or null. `avatar` is null, `{type:"quick"}`, `{type:"emoji", emoji, background}`, `{type:"image", image}` or `{type:"initials", initials, background}`, with `background` a CSS hex color. `history` and `replay` carry the same messages through the chat route and `mobile:replay`. `colors` and `initials` are the tables to check against. `queued-bursts.json` is for [Queued messages](#queued-messages): events from the real chat runtime for a burst, the same burst missing its first event, a failed send and a provider-held queue, with `rowId` and the combined `routed` to expect.
 
 The Dispatcher has its own files: `snapshot-dispatcher.json` (the snapshot's `dispatcher` and its `agent-state` row while it is on), `dispatcher-changed.json` (the event), `agent-settings-dispatcher.json` and `dispatcher-routes.json` (its chat and sessions while on, its GET routes while off, git, and a shell in its folder).
 

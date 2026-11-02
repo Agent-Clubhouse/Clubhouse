@@ -560,6 +560,34 @@ describe('GroupProjectTools', () => {
     agentRegistry.untrack('agent-2');
   });
 
+  it.each([
+    ['shoulder_tap', { target_agent_id: 'agent-2', message: 'Look at this' }],
+    ['broadcast', { message: 'Look at this' }],
+  ])('%s says which agent sent it', async (tool, args) => {
+    const project = await groupProjectRegistry.create(`Sender ${tool}`);
+    await groupProjectRegistry.update(project.id, { metadata: { admins: ['agent-1'] } });
+    agentRegistry.register('agent-1', { projectPath: '/test', orchestrator: 'claude-code', runtime: 'pty' });
+    agentRegistry.register('agent-2', { projectPath: '/test', orchestrator: 'claude-code', runtime: 'chat' });
+    const sendMessage = vi.fn(async () => ({ delivery: 'prompt', messageId: 'm' }));
+    registerChatRuntime({ kind: 'chat', agentId: 'agent-2', isRunning: () => true, getState: () => 'idle', sendMessage } as never);
+    for (const [agentId, agentName] of [['agent-1', 'robin'], ['agent-2', 'falcon']]) {
+      bindingManager.bind(agentId, { targetId: project.id, targetKind: 'group-project', label: 'S', agentName, targetName: 'Sender', projectName: 'myapp' });
+    }
+
+    const binding = makeBinding({ agentId: 'agent-1', targetId: project.id, targetName: 'Sender' });
+    const result = await callTool('agent-1', buildToolName(binding, tool), args);
+
+    expect(JSON.parse(result.content[0].text!).delivered).toBe(1);
+    expect(sendMessage).toHaveBeenCalledWith(expect.any(String), expect.objectContaining({
+      source: 'shoulder_tap',
+      routed: [{ sender: { agentId: 'agent-1', name: 'robin' }, text: 'Look at this' }],
+    }));
+
+    clearChatRuntimes();
+    agentRegistry.untrack('agent-1');
+    agentRegistry.untrack('agent-2');
+  });
+
   describe('resolveSenderLabel (via post_bulletin)', () => {
     it('uses live registry name when project has been renamed', async () => {
       const project = await groupProjectRegistry.create('OldName');

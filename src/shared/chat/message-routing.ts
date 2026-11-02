@@ -121,3 +121,20 @@ export function messageSummary(message: { source: MessageSource; text: string; r
 export function senderDisplayName(part: { sender?: MessageSender; fromClubhouse?: boolean }): string | undefined {
   return part.sender?.name ?? (part.fromClubhouse ? 'Clubhouse' : undefined);
 }
+
+/**
+ * The sender's agent record: by id, or for a sender with only a name, by a
+ * name just one agent has. An id never falls back to its name: it was that
+ * agent, which is gone.
+ */
+export function findSenderAgent<T extends { name: string }>(sender: MessageSender | undefined, agents: Record<string, T>): T | undefined {
+  if (!sender) return undefined;
+  if (sender.agentId) return agents[sender.agentId];
+  const named = Object.values(agents).filter((a) => a.name === sender.name);
+  return named.length === 1 ? named[0] : undefined;
+}
+
+/** The name chat shows above a part: the agent's current one, else what the part carries. */
+export function sentPartName(part: { sender?: MessageSender; fromClubhouse?: boolean }, source: MessageSource, agent?: { name: string }): string {
+  return agent?.name ?? senderDisplayName(part) ?? (source === 'group_project' ? 'Group project' : 'Another agent');
+}

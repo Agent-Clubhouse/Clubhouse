@@ -125,6 +125,28 @@ function forwardCreationEvents(): void {
 export const CONFIG_CHANGE_DEBOUNCE_MS = 150;
 let configChangesForwarded = false;
 
+const lastDisplay = new Map<string, string>();
+
+/**
+ * Phones draw avatars from the Annex snapshot, so a new name, color, emoji or
+ * image anywhere (Settings, update_agent, the CLI, agents.json) refreshes it.
+ * Most config writes change none of these and rebuilding it is not cheap.
+ */
+async function refreshSnapshotOnDisplayChange(projectPath: string): Promise<void> {
+  try {
+    const agents = await agentConfig.listDurable(projectPath);
+    const display = JSON.stringify(agents.map((a) => [a.id, a.name, a.color, a.emoji, a.icon]));
+    if (lastDisplay.get(projectPath) === display) return;
+    lastDisplay.set(projectPath, display);
+    broadcastSnapshotRefresh();
+  } catch (err) {
+    // telemetry-exempt: logged; phones catch up at the next snapshot
+    appLog('core:annex', 'warn', 'Snapshot refresh after an agent config change failed', {
+      meta: { projectPath, error: err instanceof Error ? err.message : String(err) },
+    });
+  }
+}
+
 /**
  * Tell the windows when a project's agent configs change (any in-app write,
  * or an external edit to agents.json), so views built on them, such as the
@@ -139,6 +161,7 @@ function forwardConfigChanges(): void {
     timers.set(projectPath, setTimeout(() => {
       timers.delete(projectPath);
       broadcastToAllWindows(IPC.AGENT.CONFIGS_CHANGED, projectPath);
+      void refreshSnapshotOnDisplayChange(projectPath);
     }, CONFIG_CHANGE_DEBOUNCE_MS));
   });
   onMcpEnablementChanged(() => broadcastToAllWindows(IPC.AGENT.MCP_ENABLEMENT_CHANGED));
@@ -291,7 +314,10 @@ export function registerAgentHandlers(): void {
   ipcMain.handle(IPC.AGENT.SAVE_ICON, withValidatedArgs(
     [stringArg(), stringArg(), stringArg({ maxLength: ICON_DATA_URL_MAX_LENGTH })],
     async (_event, projectPath, agentId, dataUrl) => {
-      return agentConfig.saveAgentIcon(projectPath, agentId, dataUrl);
+      const filename = await agentConfig.saveAgentIcon(projectPath, agentId, dataUrl);
+      // The same file name as the image it replaces, so the display check can't see it.
+      broadcastSnapshotRefresh();
+      return filename;
     },
   ));
 

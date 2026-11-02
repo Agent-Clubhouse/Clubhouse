@@ -710,6 +710,7 @@ describe('agent-handlers', () => {
     const result = await handler({}, '/project', 'agent-1', 'data:image/png;base64,abc');
     expect(agentConfig.saveAgentIcon).toHaveBeenCalledWith('/project', 'agent-1', 'data:image/png;base64,abc');
     expect(result).toBe('icon-filename.png');
+    expect(broadcastSnapshotRefresh).toHaveBeenCalled();
   });
 
   it('READ_ICON delegates to agentConfig.readAgentIconData', async () => {
@@ -1148,6 +1149,28 @@ describe('agent-handlers', () => {
         await vi.advanceTimersByTimeAsync(CONFIG_CHANGE_DEBOUNCE_MS);
         const sent = send.mock.calls.filter(([channel]) => channel === IPC.AGENT.CONFIGS_CHANGED);
         expect(sent).toEqual([[IPC.AGENT.CONFIGS_CHANGED, '/project'], [IPC.AGENT.CONFIGS_CHANGED, '/other']]);
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it('refreshes the Annex snapshot only when an agent\'s name or look changed', async () => {
+      vi.useFakeTimers();
+      try {
+        const write = async (agents: object[]) => {
+          vi.mocked(agentConfig.listDurable).mockResolvedValue(agents as never);
+          vi.mocked(broadcastSnapshotRefresh).mockClear();
+          configChange.listener!('/phones');
+          await vi.advanceTimersByTimeAsync(CONFIG_CHANGE_DEBOUNCE_MS);
+          return vi.mocked(broadcastSnapshotRefresh).mock.calls.length;
+        };
+        const agent = { id: 'a1', name: 'Bot', color: 'rose' };
+        expect(await write([agent])).toBe(1);
+        expect(await write([{ ...agent, lastSessionId: 'new' }])).toBe(0);
+        expect(await write([{ ...agent, color: 'teal' }])).toBe(1);
+        expect(await write([{ ...agent, color: 'teal', emoji: '🦊' }])).toBe(1);
+        expect(await write([{ ...agent, color: 'teal', icon: 'a1.png' }])).toBe(1);
+        expect(await write([{ ...agent, name: 'Renamed', color: 'teal', icon: 'a1.png' }])).toBe(1);
       } finally {
         vi.useRealTimers();
       }
