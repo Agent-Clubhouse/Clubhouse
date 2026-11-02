@@ -300,11 +300,23 @@ describe('previous and next', () => {
   });
 
   it('moves the window to reach a stop that is not mounted', () => {
-    setup(transcript(120).state);
+    const { layout } = setup(transcript(120).state);
     expect(screen.queryByText('Reply 1')).not.toBeInTheDocument();
-    for (let i = 0; i < 70; i++) fireEvent.click(screen.getByTestId('chat-nav-previous'));
+    expect(screen.queryByTestId('chat-window-later')).not.toBeInTheDocument();
+
+    // Start at the window's top edge, so the next stop back isn't mounted.
+    layout.scrollTo(0);
+    const replies = [...screen.getByTestId('chat-stream').querySelectorAll('[data-testid="chat-agent-message"]')];
+    const earliest = Number(/Reply (\d+)/.exec(replies[0].textContent ?? '')![1]);
+    expect(screen.queryByText(`Reply ${earliest - 1}`)).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByTestId('chat-nav-previous'));
     expect(screen.getByTestId('chat-window-later')).toBeInTheDocument();
-    expect(screen.getByText('Reply 50')).toBeInTheDocument();
+    expect(landed(layout, replyKey(earliest - 1))).toBeLessThanOrEqual(8);
+
+    // The window has moved, and Previous carries on from there.
+    fireEvent.click(screen.getByTestId('chat-nav-previous'));
+    expect(landed(layout, replyKey(earliest - 2))).toBeLessThanOrEqual(8);
   });
 
   it('offers no buttons with fewer than two stops', () => {
