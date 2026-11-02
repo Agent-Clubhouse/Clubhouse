@@ -2,6 +2,14 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
+import { EventEmitter } from 'events';
+
+// Real by default. The one test that needs a change event fires it by hand,
+// because macOS delivers real fs.watch events seconds late on a busy machine.
+vi.mock('fs', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('fs')>();
+  return { ...actual, default: actual, watch: vi.fn(actual.watch) };
+});
 
 vi.mock('../util/shell', () => ({
   getShellEnvironment: vi.fn(() => ({ PATH: '' })),
@@ -946,10 +954,9 @@ describe('GoobersService — address-watch race, M21', () => {
     fs.writeFileSync(path.join(tmpRoot, '.instance-id'), 'eaf74575d8de50fa5471027ba7fd15cb\n');
   }
 
-  /** A real `fs.watch()` event has genuine OS-level latency on top of the
-   *  async chain it triggers (onAddressFileChanged -> refreshConnectionOnce
-   *  -> probeLiveness) — poll for the condition instead of a single fixed
-   *  flush(), so the test is robust rather than racing a hardcoded delay. */
+  /** The watcher callback doesn't return the async chain it starts
+   *  (onAddressFileChanged -> refreshConnectionOnce -> probeLiveness), so poll
+   *  for the outcome instead of racing a single fixed flush(). */
   async function waitUntil(predicate: () => boolean, timeoutMs = 2000): Promise<void> {
     const deadline = Date.now() + timeoutMs;
     while (Date.now() < deadline) {
@@ -1008,12 +1015,19 @@ describe('GoobersService — address-watch race, M21', () => {
     // No address file yet — the watcher genuinely has something to wait for.
     const settings = makeFakeSettings(defaultSettings({ instanceRoot: tmpRoot }));
     const service = new GoobersService(settings);
+    let fireWatcher: (eventType: string, filename: string) => void = () => {};
+    const close = vi.fn();
+    vi.mocked(fs.watch).mockImplementationOnce(((_dir: string, listener: typeof fireWatcher) => {
+      fireWatcher = listener;
+      return Object.assign(new EventEmitter(), { close });
+    }) as unknown as typeof fs.watch);
 
     service.subscribe();
     await vi.waitFor(() => {
       expect(service.isWatchingAddressFileForTests).toBe(true);
     }, { timeout: 2_000 });
     expect(service.isPollingForTests).toBe(false);
+    expect(fs.watch).toHaveBeenCalledWith(path.join(tmpRoot, 'scheduler'), expect.any(Function));
 
     // The file appears — but the daemon is captured mid-startup, not yet
     // running, on the very first probe the watcher's callback triggers.
@@ -1021,10 +1035,11 @@ describe('GoobersService — address-watch race, M21', () => {
     // this would leave the watcher installed (its one event already spent)
     // and nothing polling — permanently stuck.
     vi.mocked(probeLiveness).mockResolvedValueOnce(startingSnapshot());
-    fs.writeFileSync(path.join(tmpRoot, 'scheduler', 'api.address'), '127.0.0.1:8080\n');
+    fireWatcher('rename', 'api.address');
     await waitUntil(() => !service.isWatchingAddressFileForTests);
 
     expect(service.isWatchingAddressFileForTests).toBe(false);
+    expect(close).toHaveBeenCalledOnce();
     expect(service.isPollingForTests).toBe(true);
 
     vi.mocked(probeLiveness).mockResolvedValueOnce(runningSnapshotFor(tmpRoot));
