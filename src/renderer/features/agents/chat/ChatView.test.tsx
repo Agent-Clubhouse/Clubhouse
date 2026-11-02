@@ -58,6 +58,11 @@ describe('ChatView conversation', () => {
     expect(screen.getByTestId('chat-user-message')).toHaveTextContent('The agent list rows are too tall');
     expect(screen.getByTestId('chat-thought')).toHaveTextContent('Thought for 6s');
     expect(screen.getByTestId('chat-explore-group')).toHaveTextContent('Explored 3 files, 2 searches');
+    // The edits and the command fold into one row, and aren't built until it opens (#2664).
+    const group = screen.getByTestId('chat-group-toggle');
+    expect(group).toHaveTextContent('Made 3 tool calls');
+    expect(screen.queryByTestId('chat-diff-card')).not.toBeInTheDocument();
+    fireEvent.click(group);
     const diffs = screen.getAllByTestId('chat-diff-card');
     expect(diffs).toHaveLength(2);
     expect(diffs[0]).toHaveTextContent('src/renderer/features/agents/AgentListItem.tsx');
@@ -136,6 +141,8 @@ describe('ChatView conversation', () => {
     const events = chatFixture('codex', 'conversation');
     const firstOutput = events.findIndex((e) => e.type === 'tool_call_update' && e.data.toolCallId === 'cmd-1');
     renderState(fold(events.slice(0, firstOutput + 1)));
+    expect(screen.getByTestId('chat-group-toggle')).toHaveTextContent('Making');
+    fireEvent.click(screen.getByTestId('chat-group-toggle'));
     const card = screen.getByTestId('chat-command-card');
     expect(card).toHaveAttribute('data-status', 'in_progress');
     expect(card).toHaveTextContent('running');

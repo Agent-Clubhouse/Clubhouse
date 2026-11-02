@@ -1,12 +1,19 @@
 import { describe, it, expect } from 'vitest';
 import { MINIMAL_CHAT_CAPABILITIES } from '../../../../shared/chat';
 import { foldChatEvents } from '../../../stores/chatStore';
-import { chatFixture, FIXTURE_AGENT_ID, FIXTURE_PROVIDERS, FIXTURE_SCENARIOS, PROFILES } from './fixtures';
+import { chatFixture, ChatFixture, FIXTURE_AGENT_ID, FIXTURE_PROVIDERS, FIXTURE_SCENARIOS, PROFILES } from './fixtures';
 import type { AgentMessageItem, ChatItem, ToolCallItem } from '../../../stores/chatStore';
 import {
   agentMessagesToName,
   argSummary,
   buildStreamBlocks,
+  FAILED_OUTPUT_OPEN_LINES,
+  groupCopyText,
+  groupLabel,
+  isLongFailedOutput,
+  isNavigationStop,
+  lastOutputLine,
+  type StreamBlock,
   commandForRequest,
   commandOutputIds,
   composerModes,
@@ -377,5 +384,119 @@ describe('agentMessagesToName', () => {
 
   it('skips subagent text and empty messages', () => {
     expect([...agentMessagesToName([agent('s', { subagentId: 'x' }), agent('e', { text: '' }), agent('a')])]).toEqual(['a']);
+  });
+});
+
+describe('chat reading rules (#2664)', () => {
+  const prof = PROFILES.claude;
+  const stream = (build: (f: ChatFixture) => void, opts: Parameters<typeof buildStreamBlocks>[1] = {}) => {
+    const f = new ChatFixture();
+    f.start(prof.driver, prof.provider, prof.capabilities);
+    f.prompt('t', 'Go');
+    build(f);
+    return buildStreamBlocks(foldChatEvents(undefined, FIXTURE_AGENT_ID, f.events), opts).slice(1);
+  };
+  const edit = (f: ChatFixture, id: string, done: Record<string, unknown> = {}) =>
+    f.tool('t', { toolCallId: id, kind: 'edit', title: id, status: 'in_progress', content: [] }, done as never);
+  const routed = (f: ChatFixture, id: string, extra: Record<string, unknown> = {}) =>
+    f.emit('user_message', { messageId: id, content: [{ type: 'text', text: `from ${id}` }], text: `from ${id}`, source: 'mcp', delivery: 'steer', routed: [{ sender: { name: id }, text: `from ${id}` }], ...extra } as never, { turnId: 't' });
+  const types = (blocks: StreamBlock[]) => blocks.map((b) => (b.type === 'item' ? b.item.kind : b.type));
+
+  it('folds adjacent tool calls and messages from others into one row, in order', () => {
+    const [group] = stream((f) => { edit(f, 'a'); routed(f, 'helper'); edit(f, 'b'); });
+    expect(group.type).toBe('group');
+    if (group.type !== 'group') return;
+    expect(group.items.map((i) => i.kind)).toEqual(['tool_call', 'user_message', 'tool_call']);
+    expect(group.tools).toHaveLength(2);
+    expect(group.messages).toHaveLength(1);
+  });
+
+  it('leaves a single tool or message as its normal row', () => {
+    expect(types(stream((f) => { edit(f, 'a'); f.say('t', 'm', 'Hi'); }))).toEqual(['tool_call', 'agent_message']);
+    expect(types(stream((f) => { routed(f, 'helper'); f.say('t', 'm', 'Hi'); }))).toEqual(['user_message', 'agent_message']);
+  });
+
+  it('keeps the group key as it grows', () => {
+    const one = stream((f) => { edit(f, 'a'); edit(f, 'b'); })[0];
+    const two = stream((f) => { edit(f, 'a'); edit(f, 'b'); edit(f, 'c'); })[0];
+    expect(one.key).toBe(two.key);
+  });
+
+  it('carries a thought inside a group only when a tool follows', () => {
+    const between = stream((f) => { edit(f, 'a'); f.think('t', 'th', 'Hmm', 1000); edit(f, 'b'); });
+    expect(types(between)).toEqual(['group']);
+    if (between[0].type === 'group') expect(between[0].items.map((i) => i.kind)).toEqual(['tool_call', 'thought', 'tool_call']);
+    expect(types(stream((f) => { edit(f, 'a'); edit(f, 'b'); f.think('t', 'th', 'Hmm', 1000); }))).toEqual(['group', 'thought']);
+  });
+
+  it.each([
+    ['an agent message', (f: ChatFixture) => f.say('t', 'm', 'Hi'), 'agent_message'],
+    ['the user\'s own message', (f: ChatFixture) => f.prompt('t', 'More', 'steer'), 'user_message'],
+    ['a failed tool', (f: ChatFixture) => edit(f, 'x', { status: 'failed', error: 'no' }), 'tool_call'],
+    ['a command that exited non-zero', (f: ChatFixture) => f.tool('t', { toolCallId: 'x', kind: 'execute', title: 'x', status: 'in_progress', content: [{ type: 'terminal', command: 'x', output: 'no', exitCode: 1 }] }), 'tool_call'],
+    ['a helper question', (f: ChatFixture) => routed(f, 'q', { routed: undefined, text: '[QUESTION FROM HELPER:h (id)] h is waiting for your answer. Answer with answer_helper_question, requestId "r". If the user should decide, call it with escalate: true instead.\nWhich?', content: [{ type: 'text', text: '[QUESTION FROM HELPER:h (id)] h is waiting for your answer. Answer with answer_helper_question, requestId "r". If the user should decide, call it with escalate: true instead.\nWhich?' }] }), 'user_message'],
+    ['a notice', (f: ChatFixture) => f.emit('notice', { level: 'info', code: 'c', message: 'FYI' }, { turnId: 't' }), 'notice'],
+    ['an error', (f: ChatFixture) => f.emit('error', { code: 'c', message: 'Bad', fatal: false }, { turnId: 't' }), 'error'],
+  ])('%s breaks a group and stays in place', (_name, breaker, kind) => {
+    const blocks = stream((f) => { edit(f, 'a'); edit(f, 'b'); breaker(f); edit(f, 'c'); edit(f, 'd'); });
+    expect(types(blocks)).toEqual(['group', kind, 'group']);
+  });
+
+  it('pulls a call with an open permission request out of its group', () => {
+    const blocks = stream((f) => { edit(f, 'a'); edit(f, 'b'); edit(f, 'c'); }, { awaitingApproval: new Set(['b']) });
+    expect(types(blocks)).toEqual(['tool_call', 'tool_call', 'tool_call']);
+    expect(blocks[1].type === 'item' && blocks[1].item.kind === 'tool_call' && blocks[1].item.toolCallId).toBe('b');
+  });
+
+  it('keeps a tool with visible images out of a group', () => {
+    const f = new ChatFixture();
+    f.start(prof.driver, prof.provider, prof.capabilities);
+    edit(f, 'a'); edit(f, 'b');
+    const state = foldChatEvents(undefined, FIXTURE_AGENT_ID, f.events);
+    const items = state.items.map((i) => (i.kind === 'tool_call' && i.toolCallId === 'b' ? { ...i, media: [{ mediaRef: 'r', mimeType: 'image/png' }] } : i)) as typeof state.items;
+    expect(types(buildStreamBlocks({ ...state, items }, { mediaVisible: true }))).toEqual(['tool_call', 'tool_call']);
+    expect(types(buildStreamBlocks({ ...state, items }))).toEqual(['group']);
+  });
+
+  it('counts the agent\'s messages, plans and questions as stops, and nothing else', () => {
+    const f = new ChatFixture();
+    f.start(prof.driver, prof.provider, prof.capabilities);
+    f.prompt('t', 'Go');
+    f.say('t', 'marker', 'TASK_RESULT:abc: Done');
+    f.emit('agent_message', { messageId: 'empty', text: 'TASK_RESULT:abc:' }, { turnId: 't' });
+    f.say('t', 'sub', 'From a subagent', { subagentId: 'unknown' });
+    routed(f, 'helper');
+    const blocks = buildStreamBlocks(foldChatEvents(undefined, FIXTURE_AGENT_ID, f.events));
+    const stops = blocks.filter(isNavigationStop);
+    expect(stops).toHaveLength(1);
+    expect(stops[0].type === 'item' && stops[0].item.kind === 'agent_message' && stops[0].item.messageId).toBe('marker');
+    const plan = { type: 'item', key: 'p', item: { kind: 'plan_document' } } as unknown as StreamBlock;
+    const question = { type: 'item', key: 'q', item: { kind: 'question' } } as unknown as StreamBlock;
+    expect(isNavigationStop(plan)).toBe(true);
+    expect(isNavigationStop(question)).toBe(true);
+  });
+
+  it('labels a group with its counts and senders', () => {
+    expect(groupLabel(6, 2, ['Orchestrator', 'go-helper'], false)).toBe('Made 6 tool calls, 2 messages from Orchestrator and go-helper');
+    expect(groupLabel(1, 0, [], true)).toBe('Making 1 tool call');
+    expect(groupLabel(0, 3, ['a', 'b', 'c', 'd'], false)).toBe('3 messages from a, b and 2 others');
+  });
+
+  it('copies a group in order, full content included', () => {
+    const [group] = stream((f) => {
+      f.tool('t', { toolCallId: 'x', kind: 'execute', title: 'x', status: 'in_progress', content: [{ type: 'terminal', command: 'npm test', output: 'all good', exitCode: 0 }] });
+      routed(f, 'helper');
+    });
+    if (group.type !== 'group') throw new Error('expected a group');
+    const text = groupCopyText(group.items);
+    expect(text).toContain('$ npm test\nall good');
+    expect(text.indexOf('npm test')).toBeLessThan(text.indexOf('from helper'));
+  });
+
+  it('calls output long past the failed output limit, and finds its last line', () => {
+    const lines = (n: number) => Array.from({ length: n }, (_, i) => `line ${i}`).join('\n');
+    expect(isLongFailedOutput(lines(FAILED_OUTPUT_OPEN_LINES))).toBe(false);
+    expect(isLongFailedOutput(lines(FAILED_OUTPUT_OPEN_LINES + 1))).toBe(true);
+    expect(lastOutputLine('a\nb\n\n')).toBe('b');
   });
 });

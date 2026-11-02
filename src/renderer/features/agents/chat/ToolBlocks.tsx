@@ -1,7 +1,8 @@
 import { createContext, useContext, useMemo, useState, type ReactNode } from 'react';
-import type { ChatMcpServer, ToolCallContent, ToolKind } from '../../../../shared/chat';
-import type { ToolCallItem } from '../../../stores/chatStore';
-import type { SubagentBlock } from './view-model';
+import { useAgentStore } from '../../../stores/agentStore';
+import { findSenderAgent, messageDisplay, sentPartName, type ChatMcpServer, type ToolCallContent, type ToolKind } from '../../../../shared/chat';
+import type { ChatItem, ToolCallItem } from '../../../stores/chatStore';
+import type { GroupBlock, SubagentBlock } from './view-model';
 import {
   argSummary,
   commandOf,
@@ -11,6 +12,10 @@ import {
   exploreLabel,
   formatDuration,
   formatTokens,
+  groupCopyText,
+  groupLabel,
+  isLongFailedOutput,
+  lastOutputLine,
   mcpTool,
   shortName,
   terminalContent,
@@ -22,7 +27,7 @@ import {
   type DiffLine,
 } from './view-model';
 import { AgentsIcon, BrainIcon, ChevronDown, ChevronRight, EditIcon, FileIcon, GlobeIcon, ImageIcon, SearchIcon, TerminalIcon, ToolIcon } from './icons';
-import { AgentMessage, ThoughtRow } from './MessageBlocks';
+import { AgentMessage, CopyButton, ThoughtRow } from './MessageBlocks';
 import { useOpenState } from './transcript-expansion';
 import { RichText } from './rich/RichLinks';
 import { ChatMediaContext, ToolImages } from './rich/ChatImages';
@@ -80,11 +85,19 @@ export const LiveTurnContext = createContext<string | null | undefined>(undefine
  * Claude reports nothing between the call and its result, so `pending` alone
  * means it's under way. Once its turn is over it isn't, and says so.
  */
-function useUnfinished(tool: ToolCallItem): 'running' | 'stopped' | null {
-  const liveTurn = useContext(LiveTurnContext);
+function unfinishedState(tool: ToolCallItem, liveTurn: string | null | undefined): 'running' | 'stopped' | null {
   if (tool.status !== 'pending' && tool.status !== 'in_progress') return null;
   if (liveTurn === undefined) return 'running';
   return liveTurn !== null && (tool.turnId === undefined || tool.turnId === liveTurn) ? 'running' : 'stopped';
+}
+
+function useUnfinished(tool: ToolCallItem): 'running' | 'stopped' | null {
+  return unfinishedState(tool, useContext(LiveTurnContext));
+}
+
+function useAnyRunning(tools: ToolCallItem[]): boolean {
+  const liveTurn = useContext(LiveTurnContext);
+  return tools.some((t) => unfinishedState(t, liveTurn) === 'running');
 }
 
 function StatusMeta({ tool }: { tool: ToolCallItem }) {
@@ -117,9 +130,9 @@ export function ToolRow({ tool }: { tool: ToolCallItem }) {
   );
 }
 
-export function ExploreGroup({ tools, expansionKey }: { tools: ToolCallItem[]; expansionKey?: string }) {
+export function ExploreGroup({ tools, items = tools, expansionKey }: { tools: ToolCallItem[]; items?: ChatItem[]; expansionKey?: string }) {
   const [open, toggle] = useOpenState(false, expansionKey);
-  const running = tools.some((t) => t.status === 'in_progress');
+  const running = useAnyRunning(tools);
   return (
     <div className="flex flex-col" data-testid="chat-explore-group">
       <button
@@ -134,16 +147,74 @@ export function ExploreGroup({ tools, expansionKey }: { tools: ToolCallItem[]; e
       </button>
       {open && (
         <div className="ml-[7px] pl-3 border-l border-surface-1 flex flex-col">
-          {tools.map((t) => <ToolRow key={t.id} tool={t} />)}
+          {items.map((i) => (
+            i.kind === 'tool_call' ? <ToolRow key={i.id} tool={i} />
+              : i.kind === 'thought' ? <ThoughtRow key={i.id} item={i} />
+                : null
+          ))}
         </div>
       )}
     </div>
   );
 }
 
-/** Open state for a tool card: follows the status until the user toggles it (see toolOpenByDefault). */
-function useToolOpen(status: ToolCallItem['status'] | undefined, expansionKey?: string): [boolean, () => void] {
-  return useOpenState(status !== undefined && toolOpenByDefault(status), expansionKey);
+/**
+ * A run of tool calls and messages from others on one row (#2664). Its rows
+ * aren't built until it opens, and each then keeps its own open state.
+ */
+export function ChatterGroup({ block, expansionKey, renderItem }: { block: GroupBlock; expansionKey?: string; renderItem: (item: ChatItem) => ReactNode }) {
+  const [open, toggle] = useOpenState(false, expansionKey);
+  const running = useAnyRunning(block.tools);
+  // A string, so a change to some other agent doesn't re-render this row.
+  const senders = useAgentStore((s) => {
+    const names = block.messages.flatMap((m) => {
+      const display = messageDisplay(m);
+      return display.from === 'others' ? display.parts.map((p) => sentPartName(p, m.source, findSenderAgent(p.sender, s.agents))) : [];
+    });
+    return [...new Set(names)].join('\n');
+  });
+  const partCount = useMemo(() => block.messages.reduce((n, m) => {
+    const display = messageDisplay(m);
+    return n + (display.from === 'others' ? display.parts.length : 0);
+  }, 0), [block.messages]);
+  const label = groupLabel(block.tools.length, partCount, senders ? senders.split('\n') : [], running);
+  return (
+    <div className="flex flex-col" data-testid="chat-group">
+      <div className="flex items-center gap-2 min-w-0">
+        <button
+          type="button"
+          className="flex-1 flex items-center gap-2 min-h-6 min-w-0 text-[12.5px] text-left text-ctp-overlay1 hover:text-ctp-subtext0"
+          onClick={toggle}
+          aria-expanded={open}
+          data-testid="chat-group-toggle"
+        >
+          {open ? <ChevronDown className="text-ctp-overlay0 flex-shrink-0" /> : <ChevronRight className="text-ctp-overlay0 flex-shrink-0" />}
+          <span className="font-medium text-ctp-subtext1 min-w-0 wrap-anywhere">{label}</span>
+          {running && <Spin />}
+        </button>
+        {open && <CopyButton text={() => groupCopyText(block.items)} label="Copy all of this group" />}
+      </div>
+      {open && (
+        <div className="ml-[7px] mt-1 pl-3 border-l border-surface-1 flex flex-col gap-1.5" data-testid="chat-group-body">
+          {block.items.map((item) => <div key={item.id} className="min-w-0">{renderItem(item)}</div>)}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/**
+ * Open state for a tool card: follows the status until the user toggles it (see
+ * toolOpenByDefault). A failure with long `output` starts closed, on its last line.
+ */
+function useToolOpen(status: ToolCallItem['status'] | undefined, expansionKey?: string, output = ''): [boolean, () => void] {
+  const longFailure = status === 'failed' && isLongFailedOutput(output);
+  return useOpenState(status !== undefined && toolOpenByDefault(status) && !longFailure, expansionKey);
+}
+
+/** A closed card's failure when it has no error of its own: the line that usually says what went wrong. */
+function FailureLine({ output }: { output: string }) {
+  return <div className="px-3 py-1.5 text-[12px] text-ctp-error border-t border-surface-0 truncate" title={lastOutputLine(output)} data-testid="chat-tool-failure-line">{lastOutputLine(output)}</div>;
 }
 
 const CARD_HEADER = 'flex items-center gap-2 h-[34px] px-3 text-[12.5px] text-ctp-overlay1 min-w-0';
@@ -261,11 +332,11 @@ export function CommandCard({ tool, expansionKey }: { tool: ToolCallItem; expans
   // Output arrives in many appended chunks; join them only when they change.
   const term = useMemo(() => terminalContent(tool), [tool]);
   const command = useMemo(() => commandOf(tool), [tool]);
-  const [open, toggle] = useToolOpen(tool.status, expansionKey);
+  const [open, toggle] = useToolOpen(tool.status, expansionKey, term?.output);
   const awaiting = useAwaitingApproval(tool);
   const running = useUnfinished(tool) === 'running' && !awaiting;
   const exit = term?.exitCode;
-  const error = toolErrorText(tool, term?.output);
+  const error = toolErrorText(tool, open ? term?.output : undefined);
   // The header and its accessible name carry a short form; the full command shows when the card is open.
   const shortCommand = useMemo(() => shortName(command), [command]);
   const cut = shortCommand !== command.trim();
@@ -293,6 +364,7 @@ export function CommandCard({ tool, expansionKey }: { tool: ToolCallItem; expans
       )}
       {/* The error stays visible on a collapsed card: it's the outcome, not detail. */}
       {error && <div className="px-3 py-1.5 text-[12px] text-ctp-error border-t border-surface-0 break-words" data-testid="chat-tool-error">{error}</div>}
+      {!error && !open && tool.status === 'failed' && term?.output && <FailureLine output={term.output} />}
     </div>
   );
 }
@@ -305,8 +377,8 @@ export function ToolCard({ tool, mcpServers, expansionKey }: { tool: ToolCallIte
   const mcp = useMemo(() => mcpTool(tool, mcpServers), [tool, mcpServers]);
   const args = useMemo(() => toolArgs(tool), [tool]);
   const result = useMemo(() => toolResultText(tool), [tool]);
-  const error = toolErrorText(tool, result);
-  const [open, toggle] = useToolOpen(tool.status, expansionKey);
+  const [open, toggle] = useToolOpen(tool.status, expansionKey, result);
+  const error = toolErrorText(tool, open ? result : undefined);
   // A call that only carries an image (a generated image): shown as an image, not a generic tool.
   const mediaOnly = useContext(ChatMediaContext) !== null && tool.mediaOnly === true;
   const Ico = mediaOnly ? ImageIcon : KIND_ICONS[tool.toolKind] ?? ToolIcon;
@@ -341,6 +413,7 @@ export function ToolCard({ tool, mcpServers, expansionKey }: { tool: ToolCallIte
       <ToolImages media={tool.media} className="px-3 border-t border-surface-0" />
       {/* The error stays visible on a collapsed card: it's the outcome, not detail. */}
       {error && <div className="px-3 py-1.5 text-[12px] text-ctp-error border-t border-surface-0 break-words" data-testid="chat-tool-error">{error}</div>}
+      {!error && !open && tool.status === 'failed' && result && <FailureLine output={result} />}
     </div>
   );
 }

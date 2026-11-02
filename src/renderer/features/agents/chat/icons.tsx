@@ -34,6 +34,7 @@ export const AgentsIcon = (p: IconProps) => <Icon {...p}><rect x="5" y="8" width
 export const BrainIcon = (p: IconProps) => <Icon {...p}><path d="M12 5a3 3 0 0 0-6 1 3 3 0 0 0-2 5 3 3 0 0 0 2 5 3 3 0 0 0 6 1zM12 5a3 3 0 0 1 6 1 3 3 0 0 1 2 5 3 3 0 0 1-2 5 3 3 0 0 1-6 1" /></Icon>;
 export const ChevronRight = (p: IconProps) => <Icon size={12} {...p}><path d="M9 6l6 6-6 6" /></Icon>;
 export const ChevronDown = (p: IconProps) => <Icon size={12} {...p}><path d="M6 9l6 6 6-6" /></Icon>;
+export const ChevronUp = (p: IconProps) => <Icon size={12} {...p}><path d="M6 15l6-6 6 6" /></Icon>;
 export const ShieldIcon = (p: IconProps) => <Icon {...p}><path d="M12 3l8 3v6c0 5-3.5 8-8 9-4.5-1-8-4-8-9V6z" /></Icon>;
 export const PlanIcon = (p: IconProps) => <Icon {...p}><path d="M9 6h11M9 12h11M9 18h11M4 6h.01M4 12h.01M4 18h.01" /></Icon>;
 export const CheckIcon = (p: IconProps) => <Icon {...p}><path d="M5 12l5 5 9-10" /></Icon>;

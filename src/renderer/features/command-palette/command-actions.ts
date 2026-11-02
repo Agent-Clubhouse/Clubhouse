@@ -7,6 +7,7 @@ import { usePanelStore } from '../../stores/panelStore';
 import { useChromeStore } from '../../chrome/chromeStore';
 import { isNewChromeEnabled } from '../../chrome/chromeFlag';
 import { FOCUS_ACTIVE_TERMINAL_EVENT } from '../agents/AgentTerminal';
+import { NEXT_AGENT_MESSAGE_EVENT, PREVIOUS_AGENT_MESSAGE_EVENT } from '../../stores/keyboardShortcutsStore';
 import { openNewAgentFromShortcut } from '../../chrome/startPage';
 import { groupProjectAgents } from '../../chrome/sidebar/treeModel';
 
@@ -66,6 +67,17 @@ export function getCommandActions(): CommandAction[] {
       // Global so it works while typing in the composer.
       global: true,
       execute: () => useAgentDetailsStore.getState().toggle(),
+    },
+    {
+      id: 'chat-previous-message',
+      // Global so it works while typing in the composer.
+      global: true,
+      execute: () => window.dispatchEvent(new CustomEvent(PREVIOUS_AGENT_MESSAGE_EVENT)),
+    },
+    {
+      id: 'chat-next-message',
+      global: true,
+      execute: () => window.dispatchEvent(new CustomEvent(NEXT_AGENT_MESSAGE_EVENT)),
     },
     {
       id: 'add-project',

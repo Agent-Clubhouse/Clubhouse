@@ -224,8 +224,49 @@ The desktop draws initials in white. Clubhouse Go draws them in whichever of dar
 - **You:** on the right, in a bubble, labelled "You".
 - **Others:** on the left, one entry per part: the avatar, then the name above a bubble. Parts of one message stay together, even with different senders. The active agent's replies aren't in this layout.
 - **Color:** agent color appears only in the avatar. Don't tint bubbles, names or message backgrounds with it. The desktop draws both bubbles on the same neutral surface.
-- **Long messages:** a part over 800 characters or 14 lines starts collapsed, as "`name` sent a long message".
+- **Long messages:** see [Chat reading rules](#chat-reading-rules). Desktop collapses a part with a newline or over 120 characters to one row with a first-line preview; phones collapse every routed part.
 - **Text:** a part with a `sender` is Markdown. A Clubhouse notice or a part with no sender is plain text.
+
+### Chat reading rules
+
+Desktop and phones apply the same rules to a busy transcript (#2664). They are computed on the client from existing events, with no contract change. Chronology is always preserved.
+
+**What groups.** A run of adjacent groupable items with at least 2 counted items becomes one expandable row, for example "Made 6 tool calls, 2 messages from Orchestrator and go-helper". With fewer than 2, the item shows as its normal row.
+
+- Counted: a top-level `tool_call` that hasn't failed, didn't exit non-zero, has no open permission request and shows no images; and a routed message (`messageDisplay` says it's from others) with no `sendState` that isn't a helper question (text starting `[QUESTION FROM HELPER:`).
+- Carried: a thought, and an `agent_message` with no text. These stay in the group, in order, uncounted, and only when something counted follows. Otherwise they show after it.
+
+A group's identity is its first item's id, so it survives growing. Its rows aren't built until it opens, and each keeps its own open state.
+
+**What breaks a group and always stays visible.** An `agent_message` with text, including while streaming; the user's own message; a question, plan, error, every notice, a turn end and a subagent card; a failed tool, a command that exited non-zero, a tool awaiting approval and a tool with visible images; a routed message with `sendState`, and a helper question; a change of subagent id. A tool that later fails or needs approval leaves its group and splits it. Compaction stays one notice row, in progress and then settled.
+
+**Failed output.** The row, exit status and error always show. Output of 6 lines or fewer starts open. Longer output starts closed with its last line showing. The user's toggle wins.
+
+**Navigation stops.** One stop per item, never merged, landing on the item's top:
+
+- an `agent_message` with no `subagentId` and non-empty text once the task marker is stripped (`messageId`), which counts while streaming once it has text, and includes slash command output
+- a `plan_document` (`planId`)
+- a `question` (`requestId`)
+
+Tools, thoughts, routed messages, the user's messages and subagent work aren't stops, and a stop is never inside a group. Previous goes to the top of a stop partly scrolled past, otherwise the stop before. Next goes to the first stop below the viewport's top.
+
+**Reading position.** The anchor is the first row reaching into the viewport and its offset, identified by key. It is restored after streaming, expansion, history loading, a window move or a layout change.
+
+**Following and Latest.** The bottom means within 16 of the end. An upward scroll of more than 1 stops following, even inside that band, and Latest shows while paused there. At the true bottom with every row mounted, following resumes and Latest hides, whether the reader scrolled there or content shrank, with no scroll event. Latest shows only when not following or when later rows aren't mounted, and an explicit Latest resumes following.
+
+**Platform differences.**
+
+| | Desktop | Phones |
+| --- | --- | --- |
+| Routed message | Collapsed when it has a newline or is over 120 characters; shorter ones show in full | Always compact, whatever the length |
+| Single routine item | Its normal row | Compact |
+| Routed attachments | Shown on the message | Counted in the summary |
+| Finished thoughts | Carried in a group | Finished system messages stay as boundaries, because the wire has no reliable thought marker |
+| Bottom tolerance | 16px | 16pt initial tolerance |
+| Stops | Messages, plans, questions | Messages, questions: phones have no plan or subagent rows |
+| Previous and next | Buttons, and Cmd+Opt+Up/Down (Ctrl+Alt off macOS) | Touch controls |
+
+Tool images break a group on both.
 
 ### Queued messages
 

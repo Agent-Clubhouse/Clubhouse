@@ -20,6 +20,10 @@ export interface ShortcutDefinition {
 
 type ShortcutOverrides = Record<string, string>;
 
+/** Window events for the shortcuts that move through the focused chat. */
+export const PREVIOUS_AGENT_MESSAGE_EVENT = 'clubhouse:chat-previous-message';
+export const NEXT_AGENT_MESSAGE_EVENT = 'clubhouse:chat-next-message';
+
 /**
  * Map from shifted symbol (macOS Cmd+Shift+1 fires '!') to the underlying digit.
  */
@@ -135,6 +139,8 @@ export const LEGACY_SHORTCUTS: ShortcutSpec[] = [
   // (clicks don't reliably refocus under Copilot CLI's mouse tracking).
   { id: 'focus-active-terminal', label: 'Focus Active CLI', category: 'Agents', defaultBinding: 'Meta+Shift+T' },
   { id: 'toggle-agent-details', label: 'Toggle Agent Details', category: 'Agents', defaultBinding: 'Meta+Alt+D' },
+  { id: 'chat-previous-message', label: 'Previous Agent Message', category: 'Agents', defaultBinding: 'Meta+Alt+ArrowUp' },
+  { id: 'chat-next-message', label: 'Next Agent Message', category: 'Agents', defaultBinding: 'Meta+Alt+ArrowDown' },
   ...switchAgents((n) => `Meta+${n}`),
 
   // Projects
@@ -151,7 +157,7 @@ export const LEGACY_SHORTCUTS: ShortcutSpec[] = [
 /** Actions with the same id and meaning in both shells. */
 const SHARED_IDS = [
   'command-palette', 'toggle-settings', 'toggle-help', 'toggle-sidebar',
-  'new-quick-agent', 'focus-active-terminal', 'toggle-agent-details', 'add-project', 'close-project',
+  'new-quick-agent', 'focus-active-terminal', 'toggle-agent-details', 'chat-previous-message', 'chat-next-message', 'add-project', 'close-project',
 ];
 
 /**
