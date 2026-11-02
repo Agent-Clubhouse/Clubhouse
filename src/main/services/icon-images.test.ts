@@ -1,0 +1,134 @@
+import * as fs from 'fs';
+import * as os from 'os';
+import * as path from 'path';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { CHAT_MEDIA_MAX_PIXELS } from '../../shared/chat';
+import { readIconThumbnail, resizeIcon } from './icon-images';
+
+const native = vi.hoisted(() => ({ createFromBuffer: vi.fn(), createThumbnailFromPath: undefined as unknown }));
+vi.mock('electron', () => ({ nativeImage: native }));
+vi.mock('./log-service', () => ({ appLog: vi.fn() }));
+
+/** A PNG header giving the size, then padding. */
+function png(width: number, height: number, padding = 0): Buffer {
+  const header = Buffer.from('89504e470d0a1a0a0000000d49484452', 'hex');
+  const size = Buffer.alloc(8);
+  size.writeUInt32BE(width, 0);
+  size.writeUInt32BE(height, 4);
+  return Buffer.concat([header, size, Buffer.alloc(padding)]);
+}
+
+function image(width: number, height: number, output = 'png-output') {
+  const resized = { toPNG: () => Buffer.from(output) };
+  const resize = vi.fn(() => resized);
+  return { isEmpty: () => false, getSize: () => ({ width, height }), resize, toPNG: () => Buffer.from(`unscaled-${output}`) };
+}
+
+describe('resizeIcon', () => {
+  beforeEach(() => {
+    native.createFromBuffer.mockReset();
+    native.createThumbnailFromPath = undefined;
+  });
+
+  it('fits the longer side to the box and keeps the shape', async () => {
+    const decoded = image(4000, 1000);
+    native.createFromBuffer.mockReturnValue(decoded);
+    expect((await resizeIcon(png(4000, 1000), '/x.png', 128))?.toString()).toBe('png-output');
+    expect(decoded.resize).toHaveBeenCalledWith({ width: 128, height: 32, quality: 'good' });
+  });
+
+  it('never scales up, and keeps a side at least one pixel', async () => {
+    const small = image(16, 16);
+    native.createFromBuffer.mockReturnValue(small);
+    expect((await resizeIcon(png(16, 16), '/x.png', 128))?.toString()).toBe('unscaled-png-output');
+    expect(small.resize).not.toHaveBeenCalled();
+
+    const thin = image(5000, 2);
+    native.createFromBuffer.mockReturnValue(thin);
+    await resizeIcon(png(5000, 2), '/x.png', 128);
+    expect(thin.resize).toHaveBeenCalledWith({ width: 128, height: 1, quality: 'good' });
+  });
+
+  it('does not decode an image claiming too many pixels', async () => {
+    const side = Math.ceil(Math.sqrt(CHAT_MEDIA_MAX_PIXELS)) + 1;
+    expect(await resizeIcon(png(side, side), '/x.png', 128)).toBeNull();
+    expect(native.createFromBuffer).not.toHaveBeenCalled();
+  });
+
+  it('returns null for what nativeImage can\'t decode', async () => {
+    native.createFromBuffer.mockReturnValue({ isEmpty: () => true });
+    expect(await resizeIcon(png(10, 10), '/x.png', 128)).toBeNull();
+    native.createFromBuffer.mockImplementation(() => { throw new Error('decode failed'); });
+    expect(await resizeIcon(png(10, 10), '/x.png', 128)).toBeNull();
+  });
+
+  it('uses the system thumbnailer for GIF, WebP and SVG, and has no answer without one', async () => {
+    const gif = Buffer.from('GIF89a\x10\x00\x10\x00', 'latin1');
+    expect(await resizeIcon(gif, '/x.gif', 128)).toBeNull();
+
+    native.createThumbnailFromPath = vi.fn(async () => image(128, 128));
+    expect((await resizeIcon(gif, '/x.gif', 128))?.toString()).toBe('unscaled-png-output');
+    expect(native.createThumbnailFromPath).toHaveBeenCalledWith('/x.gif', { width: 128, height: 128 });
+    expect(native.createFromBuffer).not.toHaveBeenCalled();
+
+    native.createThumbnailFromPath = vi.fn(async () => { throw new Error('unsupported'); });
+    expect(await resizeIcon(gif, '/x.gif', 128)).toBeNull();
+  });
+
+  it('gives up on a thumbnailer that never answers', async () => {
+    vi.useFakeTimers();
+    try {
+      native.createThumbnailFromPath = vi.fn(() => new Promise(() => {}));
+      const pending = resizeIcon(Buffer.from('GIF89a\x10\x00\x10\x00', 'latin1'), '/x.gif', 128);
+      await vi.advanceTimersByTimeAsync(5000);
+      expect(await pending).toBeNull();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});
+
+describe('readIconThumbnail', () => {
+  let dir: string;
+
+  beforeEach(() => {
+    native.createFromBuffer.mockReset();
+    dir = fs.mkdtempSync(path.join(os.tmpdir(), 'icon-images-'));
+  });
+
+  afterEach(() => {
+    fs.rmSync(dir, { recursive: true, force: true });
+  });
+
+  it('is null, not an error, for a missing file', async () => {
+    expect(await readIconThumbnail(path.join(dir, 'gone.png'))).toBeNull();
+  });
+
+  it('makes concurrent requests share one decode', async () => {
+    const file = path.join(dir, 'a.png');
+    fs.writeFileSync(file, png(2000, 2000, 100 * 1024));
+    native.createFromBuffer.mockReturnValue(image(2000, 2000));
+    const results = await Promise.all([readIconThumbnail(file), readIconThumbnail(file), readIconThumbnail(file)]);
+    expect(new Set(results).size).toBe(1);
+    expect(results[0]).toBe(`data:image/png;base64,${Buffer.from('png-output').toString('base64')}`);
+    expect(native.createFromBuffer).toHaveBeenCalledTimes(1);
+  });
+
+  it('remembers an icon that can\'t be resized rather than trying on every snapshot', async () => {
+    const file = path.join(dir, 'a.png');
+    fs.writeFileSync(file, png(2000, 2000, 100 * 1024));
+    native.createFromBuffer.mockReturnValue({ isEmpty: () => true });
+    expect(await readIconThumbnail(file)).toBeNull();
+    expect(await readIconThumbnail(file)).toBeNull();
+    expect(native.createFromBuffer).toHaveBeenCalledTimes(1);
+  });
+
+  it('leaves the user\'s file as it is', async () => {
+    const file = path.join(dir, 'a.png');
+    const bytes = png(2000, 2000, 100 * 1024);
+    fs.writeFileSync(file, bytes);
+    native.createFromBuffer.mockReturnValue(image(2000, 2000));
+    await readIconThumbnail(file);
+    expect(fs.readFileSync(file).equals(bytes)).toBe(true);
+  });
+});

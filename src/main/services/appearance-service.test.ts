@@ -2,10 +2,11 @@ import * as fsp from 'fs/promises';
 import * as os from 'os';
 import * as path from 'path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { ICON_FILE_MAX_BYTES } from '../../shared/icon-limits';
+import { ICON_SOURCE_MAX_BYTES, ICON_STORED_MAX_BYTES } from '../../shared/icon-limits';
 import type { DurableAgentConfig, Project } from '../../shared/types';
 
-vi.mock('electron', () => ({ app: { getPath: () => os.tmpdir(), isPackaged: false } }));
+const decode = vi.hoisted(() => vi.fn());
+vi.mock('electron', () => ({ app: { getPath: () => os.tmpdir(), isPackaged: false }, nativeImage: { createFromBuffer: decode } }));
 vi.mock('./log-service', () => ({ appLog: vi.fn() }));
 
 let projects: Project[] = [];
@@ -264,7 +265,7 @@ describe('image files', () => {
     expect(await imageError(dir)).toContain('isn\'t a file');
     expect(await imageError(await fileWith('notes.png', 'just some text'))).toContain('isn\'t a supported image');
     expect(await imageError(await fileWith('empty.png', ''))).toContain('isn\'t a supported image');
-    expect(await imageError(await fileWith('big.png', Buffer.concat([PNG, Buffer.alloc(ICON_FILE_MAX_BYTES)])))).toContain('larger than');
+    expect(await imageError(await fileWith('big.png', Buffer.concat([PNG, Buffer.alloc(ICON_SOURCE_MAX_BYTES)])))).toContain('larger than');
   });
 
   it.skipIf(process.platform === 'win32' || process.getuid?.() === 0)('says when a file can\'t be read', async () => {
@@ -273,9 +274,38 @@ describe('image files', () => {
     expect(await imageError(file)).toContain('can\'t be read');
   });
 
-  it('accepts a file at the size limit', async () => {
-    await updateAgentAppearance(SELF, undefined, { imagePath: await fileWith('max.png', Buffer.concat([PNG, Buffer.alloc(ICON_FILE_MAX_BYTES - PNG.length)])) });
-    expect(agentConfig.writeAgentIconFile).toHaveBeenCalledTimes(1);
+  it('stores a file at the stored limit as it is', async () => {
+    const bytes = Buffer.concat([PNG, Buffer.alloc(ICON_STORED_MAX_BYTES - PNG.length)]);
+    await updateAgentAppearance(SELF, undefined, { imagePath: await fileWith('max.png', bytes) });
+    expect(decode).not.toHaveBeenCalled();
+    expect(vi.mocked(agentConfig.writeAgentIconFile).mock.calls[0][1]).toEqual(bytes);
+  });
+
+  it('stores a larger image resized, as a PNG, for agents and projects', async () => {
+    const small = Buffer.from('resized-png');
+    const resize = vi.fn(() => ({ toPNG: () => small }));
+    decode.mockReturnValue({ isEmpty: () => false, getSize: () => ({ width: 4000, height: 2000 }), resize });
+    const large = await fileWith('large.jpg', Buffer.concat([Buffer.from([0xff, 0xd8, 0xff, 0xe0]), Buffer.alloc(ICON_SOURCE_MAX_BYTES - 4)]));
+
+    await updateAgentAppearance(SELF, undefined, { imagePath: large });
+    await updateProjectAppearance(SELF, undefined, { imagePath: large });
+
+    expect(resize).toHaveBeenCalledWith({ width: 256, height: 128, quality: 'good' });
+    expect(agentConfig.writeAgentIconFile).toHaveBeenCalledWith('a1', small, 'png');
+    expect(vi.mocked(projectStore.writeIconFile).mock.calls[0].slice(1)).toEqual([small, 'png']);
+  });
+
+  it('refuses a large image it can\'t resize, and says what would work', async () => {
+    decode.mockReturnValue({ isEmpty: () => true });
+    const corrupt = await fileWith('corrupt.png', Buffer.concat([PNG, Buffer.alloc(ICON_STORED_MAX_BYTES)]));
+    const gif = await fileWith('large.gif', Buffer.concat([Buffer.from('GIF89a'), Buffer.alloc(ICON_STORED_MAX_BYTES)]));
+
+    for (const file of [corrupt, gif]) {
+      const message = await imageError(file);
+      expect(message).toContain('can\'t be resized');
+      expect(message).toContain('Use a PNG or JPEG, or a file of 256 KB or less');
+    }
+    expect(agentConfig.writeAgentIconFile).not.toHaveBeenCalled();
   });
 });
 

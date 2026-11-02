@@ -631,6 +631,12 @@ export const ATTR = {
     'agent:spawned', 'agent:woken', 'agent:status', 'agent:completed', 'snapshot', 'canvas:state', 'theme:changed',
     'group-project:list', 'group-project:changed', 'bulletin:message', 'other',
   ]),
+  /** How a snapshot went: sent whole, sent with fewer icons, too large even so, or not sent. */
+  annexSnapshotResult: enumAttr('clubhouse.annex.snapshot.result', [
+    'ok', 'icons_left_out', 'icons_dropped', 'over_mobile_limit', 'build_failed', 'send_failed',
+  ]),
+  /** Why a snapshot went out: a client connected, or something changed and every client gets a new one. */
+  annexSnapshotTrigger: enumAttr('clubhouse.annex.snapshot.trigger', ['connect', 'refresh']),
   annexRemoteAction: enumAttr('clubhouse.annex.remote.action', ['spawn', 'wake']),
   annexControlChannel: enumAttr('clubhouse.annex.control.channel', ['ws', 'rest']),
   annexReplayResult: enumAttr('clubhouse.annex.replay.result', ['ok', 'gap', 'send_failed']),
@@ -1166,6 +1172,36 @@ export const METRICS = {
   'clubhouse.annex.snapshot.build.duration': {
     kind: 'histogram', unit: 's', level: 'standard',
     description: 'Satellite buildSnapshot time',
+    attributes: [],
+  },
+  'clubhouse.annex.snapshots': {
+    kind: 'counter', unit: '{snapshot}', level: 'standard',
+    description: 'Snapshots the satellite sent or failed to send, by result',
+    attributes: ['clubhouse.annex.snapshot.result'],
+  },
+  'clubhouse.annex.snapshot.bytes': {
+    kind: 'histogram', unit: 'By', level: 'standard',
+    description: 'Encoded size of a snapshot frame, on connect or refresh',
+    attributes: ['clubhouse.annex.snapshot.trigger'],
+  },
+  'clubhouse.annex.snapshot.icon_bytes': {
+    kind: 'histogram', unit: 'By', level: 'standard',
+    description: 'Icon data in a snapshot frame, on connect or refresh',
+    attributes: ['clubhouse.annex.snapshot.trigger'],
+  },
+  'clubhouse.annex.snapshot.icons': {
+    kind: 'histogram', unit: '{icon}', level: 'standard',
+    description: 'Icons in a snapshot frame',
+    attributes: [],
+  },
+  'clubhouse.annex.snapshot.icons_left_out': {
+    kind: 'histogram', unit: '{icon}', level: 'standard',
+    description: 'Icons a snapshot frame left out for size',
+    attributes: [],
+  },
+  'clubhouse.annex.snapshot.items': {
+    kind: 'histogram', unit: '{item}', level: 'standard',
+    description: 'Projects and agents listed in a snapshot frame',
     attributes: [],
   },
   'clubhouse.annex.events': {

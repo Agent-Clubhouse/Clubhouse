@@ -122,6 +122,17 @@ The Annex snapshot carries what the desktop's `AgentAvatar` draws, so a phone ca
 
 Each `snapshot` is complete, so replace the agent rows and `agentIcons` rather than merging them: an image that was removed is simply absent. A new snapshot follows any change to an agent's name, color, emoji or image, wherever it was made: Settings, `agent.update`, the `update_agent` MCP tool, the `clubhouse` CLI, or an edit to `agents.json`. An image's bytes are also at `GET /api/v1/icons/agent/:agentId`, the Dispatcher's too while it is on. See [Drawing a sender](#drawing-a-sender) for how to draw these.
 
+### Snapshot size
+
+Clubhouse Go closes a WebSocket with code 1009 on a frame over 16 MiB, and a phone that reconnects into the same frame never recovers. So a snapshot stays well under it:
+
+- `agentIcons` and `projectIcons` are still data URLs, but of thumbnails: a PNG within 128 by 128 pixels, or the file as it is when that's 64 KiB or less. Don't assume a size or a format.
+- Icons in one snapshot total at most 4 MiB of data URL characters. Past that, icons are left out: the Dispatcher's is kept first, then projects', then agents', in list order.
+- A snapshot frame over 8 MiB is sent with both maps empty. The other fields are always sent.
+- An image too large to send and impossible to resize is left out too: large GIF, WebP and SVG files have no thumbnail on Linux.
+
+So `icon` set with no `agentIcons[id]` is normal. Use `GET /api/v1/icons/agent/:agentId` or `GET /api/v1/icons/project/:projectId`, or draw initials. Those routes serve the same thumbnail, or the whole file when there's none. Images set through `update_agent`, `update_project` or the CLI over 256 KiB are stored as a PNG within 256 by 256 pixels. Files on disk are otherwise left as they are.
+
 ## Chat state and history
 
 Authenticated `GET /api/v1/mobile/agents/:agentId/chat` returns `{version:1,epoch,agentId,sessionId,state,capabilities,events,lastSeq,truncated,pendingPermissions,pendingQuestions}`. Events use the existing ChatEvent schema. LastSeq here is **session-local**, distinct from Annex's global WS seq. Returned history is a bounded tail; pending interactions are included separately even when their events predate the tail. GET `/api/v1/mobile/agents/:agentId/chat/sessions` returns `{version,epoch,agentId,sessions:ChatSessionSummary[]}`. The chat snapshot accepts `sessionId` (optional), `beforeSeq` (exclusive, positive integer) and `limit` (1–2000, default 2000). It also returns `currentSessionId`, `readOnly`, and `nextBeforeSeq` (null when no older page). `lastSeq` always describes the full session, not the current page. Never send actions for a readOnly historical session. Pending interactions are independent of the requested page.

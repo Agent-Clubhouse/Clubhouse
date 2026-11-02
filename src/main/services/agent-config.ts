@@ -3363,10 +3363,17 @@ const AGENT_ICON_MIME: Readonly<Record<string, string>> = {
   '.jpg': 'image/jpeg', '.gif': 'image/gif', '.webp': 'image/webp', '.svg': 'image/svg+xml',
 };
 
+/** Where an agent icon file is, or null for a name outside the icons folder. */
+export async function agentIconFilePath(filename: string): Promise<string | null> {
+  const iconsDir = await getAgentIconsDir();
+  const filePath = path.resolve(iconsDir, filename);
+  return filePath.startsWith(iconsDir + path.sep) ? filePath : null;
+}
+
 /** Read an agent icon file and return a data URL, or null if not found. */
 export async function readAgentIconData(filename: string): Promise<string | null> {
-  const filePath = path.join(await getAgentIconsDir(), filename);
-  if (!(await pathExists(filePath))) return null;
+  const filePath = await agentIconFilePath(filename);
+  if (!filePath || !(await pathExists(filePath))) return null;
   const data = await fsp.readFile(filePath);
   const mime = AGENT_ICON_MIME[path.extname(filename).toLowerCase()] ?? 'image/png';
   return `data:${mime};base64,${data.toString('base64')}`;
