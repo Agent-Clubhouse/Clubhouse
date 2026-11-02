@@ -3,8 +3,8 @@ import * as path from 'path';
 import { beforeEach, describe, expect, it } from 'vitest';
 import { FEEDBACK_DIAGNOSTICS, type FeedbackDiagnostics } from '../../../shared/feedback-types';
 import { addDiagTap, diag, _resetDiagForTests } from '../../telemetry/diag';
-import { createDiagnosticsRing, DIAGNOSTICS_CATALOG, WITHHELD_EVENT, type DiagnosticsRing } from './feedback-diagnostics';
-import { DIAGNOSTICS_V1_LIMITS, toDiagnosticsV1 } from './feedback-diagnostics-v1';
+import { createDiagnosticsRing, DIAGNOSTICS_CATALOG, DIAGNOSTICS_WORDS, WITHHELD_EVENT, type DiagnosticsRing } from './feedback-diagnostics';
+import { DIAGNOSTICS_V1_LIMITS, OPERATION_BY_EVENT, toDiagnosticsV1, type DiagnosticsV1 } from './feedback-diagnostics-v1';
 
 const START = Date.parse('2026-11-01T12:00:00.000Z');
 const SECRETS = [
@@ -197,25 +197,196 @@ describe('toDiagnosticsV1', () => {
 
   it('maps each outcome to a v1 state', () => {
     const none: FeedbackDiagnostics = { status: 'none', ...window, lines: [], bytes: 0, dropped: 0 };
-    expect(toDiagnosticsV1(available([line()]), { status: 'queued', lines: 1 })).toMatchObject({ state: 'attached', lines: 1, delivery: { queued: true } });
+    expect(toDiagnosticsV1(available([line()]), { status: 'queued', lines: 1 })).toMatchObject({ state: 'attached', lines: 1 });
     expect(toDiagnosticsV1(available([line()]), { status: 'left_out', reason: 'reporter' })).toMatchObject({ state: 'left_out', reason: 'reporter', lines: 0, entries: [] });
     expect(toDiagnosticsV1(none, { status: 'none', reason: 'no_lines' })).toMatchObject({ state: 'none', reason: 'no_lines' });
     expect(toDiagnosticsV1(none, { status: 'none', reason: 'collection_failed' })).toMatchObject({ state: 'unavailable', reason: 'collection_failed' });
   });
 
   it('keeps the closed attrs and counts the rest', () => {
-    const v1 = toDiagnosticsV1(available([line({ closeCode: 1006, statusCode: 503, failure: 'overflow', attempt: 2, responseBytes: 10, tlsMs: 4, toState: 'disconnected', peerRef: 'abcd', driver: 'x', exitCode: 1 })]), { status: 'queued', lines: 1 });
-    expect(v1.entries[0].attrs).toEqual({ closeCode: 1006, statusCode: 503, failure: 'overflow', attempt: 2, responseBytes: 10, tlsMs: 4, operation: 'disconnected' });
-    expect(v1.droppedAttrs).toBe(3);
+    const v1 = toDiagnosticsV1(available([line({ closeCode: 1006, statusCode: 503, failure: 'overflow', attempt: 2, responseBytes: 10, tlsMs: 4, toState: 'disconnected', fromState: 'connected', peerRef: 'abcd', other: 'x', exitCode: 1 })]), { status: 'queued', lines: 1 });
+    expect(v1.entries[0].attrs).toEqual({ closeCode: 1006, statusCode: 503, failure: 'overflow', attempt: 2, responseBytes: 10, tlsMs: 4, toState: 'disconnected', fromState: 'connected', exitCode: 1 });
+    expect(v1.droppedAttrs).toBe(2);
   });
 
   it.each([
     ['closeCode', 999], ['closeCode', 5000], ['statusCode', 99], ['statusCode', 600], ['failure', 'nope'], ['attempt', -1],
     ['connectionId', 'not-a-uuid'], ['traceId', 'abc'], ['spanId', 'abc'], ['operation', 'has space'],
+    ['peerRef', 'ABCDEF0123456789'], ['peerRef', 'abcdef012345678'], ['agentRef', 'abcdef01234567890'], ['agentRef', 'not-hex-not-hex-1'],
+    ['link', 'tls'], ['link', 'MTLS'], ['link', 'constructor'],
+    ['fromState', 'Connected'], ['toState', 'project-goobers'], ['reason', 'project-goobers'], ['provider', ''], ['driver', 7],
   ])('drops an invalid %s (%s) and counts it', (key, value) => {
     const v1 = toDiagnosticsV1(available([line({ [key]: value })]), { status: 'queued', lines: 1 });
     expect(v1.entries[0].attrs).toBeUndefined();
     expect(v1.droppedAttrs).toBe(1);
+  });
+
+  it('keeps a 16-hex peerRef and agentRef', () => {
+    const v1 = toDiagnosticsV1(available([line({ peerRef: 'abcdef0123456789', agentRef: '0123456789abcdef' })]), { status: 'queued', lines: 1 });
+    expect(v1.entries[0].attrs).toEqual({ peerRef: 'abcdef0123456789', agentRef: '0123456789abcdef' });
+  });
+
+  describe('exitCode', () => {
+    it.each([0, 1, 255])('keeps %s', (exitCode) => {
+      const v1 = toDiagnosticsV1(available([line({ exitCode })]), { status: 'queued', lines: 1 });
+      expect(v1.entries[0].attrs).toEqual({ exitCode });
+      expect(v1.droppedAttrs).toBe(0);
+    });
+
+    it.each([-1, 256, 1.5, 'SIGTERM'])('omits %s, counts it, and says why', (exitCode) => {
+      const v1 = toDiagnosticsV1(available([line({ exitCode })]), { status: 'queued', lines: 1 });
+      expect(v1.entries[0].attrs).toEqual({ reason: 'exit_code_unavailable' });
+      expect(v1.droppedAttrs).toBe(1);
+    });
+
+    it('omits a null, and keeps the reason the line already has', () => {
+      const attrs = { exitCode: null, reason: 'process_exit' } as unknown as Record<string, string | number>;
+      const v1 = toDiagnosticsV1(available([line(attrs)]), { status: 'queued', lines: 1 });
+      expect(v1.entries[0].attrs).toEqual({ reason: 'process_exit' });
+      expect(v1.droppedAttrs).toBe(1);
+    });
+  });
+
+  it('does not send the exit code a chat session end logs, which is always a literal 0', () => {
+    const ended = { ...line({ exitCode: 0, reason: 'process_exit' }), event: 'chat.ended' };
+    const v1 = toDiagnosticsV1(available([ended]), { status: 'queued', lines: 1 });
+    expect(v1.entries[0].attrs).toEqual({ reason: 'process_exit' });
+    expect(v1.droppedAttrs).toBe(1);
+  });
+
+  it.each([['mtls', 'mtls'], ['bearer', 'bearer'], ['unknown', 'unknown'], ['mtls-first', 'unknown']])('maps link %s to %s', (link, expected) => {
+    const v1 = toDiagnosticsV1(available([line({ link })]), { status: 'queued', lines: 1 });
+    expect(v1.entries[0].attrs).toEqual({ link: expected });
+    expect(v1.droppedAttrs).toBe(0);
+  });
+
+  it('sends a custom provider or driver as a fixed word, never its name', () => {
+    const v1 = toDiagnosticsV1(available([line({ provider: 'My Private CLI', driver: 'project-goobers' })]), { status: 'queued', lines: 1 });
+    expect(v1.entries[0].attrs).toEqual({ provider: 'custom', driver: 'custom' });
+  });
+
+  it('has only words that fit the Framebriar token rule', () => {
+    for (const kind of ['state', 'reason', 'cli'] as const) {
+      for (const word of DIAGNOSTICS_WORDS[kind]) expect(word).toMatch(/^[a-z0-9][a-z0-9_.-]{0,31}$/);
+    }
+  });
+
+  it('keeps every word the ring can produce', () => {
+    const fields = [['fromState', 'state'], ['toState', 'state'], ['reason', 'reason'], ['provider', 'cli'], ['driver', 'cli']] as const;
+    for (const [attr, kind] of fields) {
+      for (const word of DIAGNOSTICS_WORDS[kind]) {
+        expect(toDiagnosticsV1(available([line({ [attr]: word })]), { status: 'queued', lines: 1 }).entries[0].attrs).toEqual({ [attr]: word });
+      }
+    }
+  });
+
+  describe('operation', () => {
+    it('never carries a reached state: that stays in toState', () => {
+      const v1 = toDiagnosticsV1(available([line({ operation: 'disconnected', toState: 'disconnected' })]), { status: 'queued', lines: 1 });
+      expect(v1.entries[0].attrs).toEqual({ toState: 'disconnected' });
+      expect(v1.droppedAttrs).toBe(1);
+    });
+
+    it('names the verb an event attempted', () => {
+      const lines = [{ ...line(), event: 'annex.client.connecting' }, { ...line(), event: 'annex.ws.snapshot_failed' }, { ...line({ toState: 'connected' }), event: 'annex.client.state' }];
+      const v1 = toDiagnosticsV1(available(lines), { status: 'queued', lines: 3 });
+      expect(v1.entries.map((e) => e.attrs?.operation)).toEqual(['connect', 'snapshot.send', undefined]);
+    });
+
+    it('has verbs only for events in the catalog', () => {
+      const events = new Set(Object.values(DIAGNOSTICS_CATALOG).flat().map((e) => e.event));
+      for (const event of OPERATION_BY_EVENT.keys()) expect(events).toContain(event);
+    });
+  });
+
+  describe('at', () => {
+    it.each(['2026-11-01T12:00:00Z', '2026-11-01T12:00:00.1Z', '2026-11-01T12:00:00.123456789Z'])('keeps %s', (at) => {
+      const v1 = toDiagnosticsV1(available([{ ...line(), at }]), { status: 'queued', lines: 1 });
+      expect(v1.entries[0].at).toBe(at);
+      expect(v1.dropped).toBe(0);
+    });
+
+    it.each(['2026-11-01T12:00:00+00:00', '2026-11-01T12:00:00', '2026-11-01T12:00:00.1234567890Z', '2026-13-01T12:00:00Z', 'yesterday'])('drops a line at %s and counts it', (at) => {
+      const v1 = toDiagnosticsV1(available([{ ...line(), at }]), { status: 'queued', lines: 1 });
+      expect(v1.entries).toEqual([]);
+      expect(v1.dropped).toBe(1);
+    });
+  });
+
+  describe('delivery', () => {
+    const queued = { status: 'queued', lines: 1 } as const;
+
+    it('sends the outbox count as an integer, including zero', () => {
+      expect(toDiagnosticsV1(available([line()]), queued, { queued: 3 }).delivery).toEqual({ queued: 3 });
+      expect(toDiagnosticsV1(available([line()]), queued, { queued: 0 }).delivery).toEqual({ queued: 0 });
+    });
+
+    it('leaves delivery out when there is nothing true to say', () => {
+      expect(toDiagnosticsV1(available([line()]), queued)).not.toHaveProperty('delivery');
+      expect(toDiagnosticsV1(available([line()]), queued, { queued: undefined })).not.toHaveProperty('delivery');
+      for (const bad of [-1, 1.5, NaN, true as unknown as number]) expect(toDiagnosticsV1(available([line()]), queued, { queued: bad })).not.toHaveProperty('delivery');
+    });
+
+    it.each(['ok', 'none', 'timeout', 'unknown'])('accepts lastResult %s', (lastResult) => {
+      expect(toDiagnosticsV1(available([line()]), queued, { lastResult }).delivery).toEqual({ lastResult });
+    });
+
+    it('omits any other lastResult', () => {
+      expect(toDiagnosticsV1(available([line()]), queued, { lastResult: 'Delivered' })).not.toHaveProperty('delivery');
+    });
+  });
+
+  it('produces only what the final rules allow, for every catalog event and word', () => {
+    const WORD = /^[a-z0-9][a-z0-9_.-]{0,31}$/;
+    const UTC = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d{1,9})?Z$/;
+    const FAILURE = ['timeout', 'tls', 'dns', 'refused', 'closed', 'oversize', 'overflow', 'busy', 'storage', 'auth', 'protocol', 'cancelled', 'server', 'offline', 'unknown'];
+    const check = (v1: DiagnosticsV1) => {
+      expect(v1.windowStart).toMatch(UTC);
+      expect(v1.windowEnd).toMatch(UTC);
+      if (v1.reason !== undefined) expect(v1.reason).toMatch(WORD);
+      if (v1.delivery?.queued !== undefined) expect(Number.isInteger(v1.delivery.queued)).toBe(true);
+      if (v1.delivery?.lastResult !== undefined) expect(['ok', 'none', ...FAILURE]).toContain(v1.delivery.lastResult);
+      for (const entry of v1.entries) {
+        expect(entry.at).toMatch(UTC);
+        const attrs = entry.attrs ?? {};
+        for (const key of ['peerRef', 'agentRef']) if (key in attrs) expect(attrs[key]).toMatch(/^[0-9a-f]{16}$/);
+        if ('exitCode' in attrs) {
+          expect(Number.isInteger(attrs.exitCode)).toBe(true);
+          expect(attrs.exitCode).toBeGreaterThanOrEqual(0);
+          expect(attrs.exitCode).toBeLessThanOrEqual(255);
+        }
+        if ('link' in attrs) expect(['mtls', 'bearer', 'unknown']).toContain(attrs.link);
+        for (const key of ['fromState', 'toState', 'reason', 'provider', 'driver', 'operation']) if (key in attrs) expect(attrs[key]).toMatch(WORD);
+        if ('operation' in attrs) expect(DIAGNOSTICS_WORDS.state.has(attrs.operation as string)).toBe(false);
+      }
+    };
+
+    // Every line the catalog can hold, with each word its fields allow.
+    const ring = createDiagnosticsRing({ now: () => START, salt: Buffer.alloc(32, 1), maxBytes: 1024 * 1024 });
+    ring.note({ ns: 'core:annex-client', level: 'info', msg: 'Connecting to satellite', meta: { fingerprint: 'AA:BB', authMode: 'mtls-first' } });
+    ring.note({ ns: 'core:annex-client', level: 'info', msg: 'Connecting to satellite', meta: { fingerprint: 'AA:BB', authMode: 'bearer' } });
+    ring.note({ ns: 'core:annex', level: 'info', msg: 'WebSocket upgrade accepted', meta: { authType: 'mtls' } });
+    for (const exitCode of [0, 255, 256, -1, -1024, 1024]) ring.note({ ns: 'core:chat', level: 'info', msg: 'Chat session ended', meta: { agentId: 'a', reason: 'process_exit', exitCode } });
+    for (const exitCode of [-1, 1024]) ring.note({ ns: 'core:chat', level: 'info', msg: 'Chat session ended', meta: { agentId: 'a', exitCode } });
+    for (const to of DIAGNOSTICS_WORDS.state) for (const error of ['read ECONNRESET', 'boom']) ring.note({ ns: 'core:annex-client', level: 'warn', msg: `Satellite state: connected → ${to}`, meta: { fingerprint: 'AA:BB', error } });
+    for (const reason of DIAGNOSTICS_WORDS.reason) ring.note({ ns: 'core:chat', level: 'info', msg: 'Cancelling chat start', meta: { agentId: 'a', reason } });
+    for (const cli of DIAGNOSTICS_WORDS.cli) ring.note({ ns: 'core:chat', level: 'info', msg: 'Starting chat agent', meta: { agentId: 'a', provider: cli, driver: cli } });
+    for (const [ns, entries] of Object.entries(DIAGNOSTICS_CATALOG)) for (const entry of entries) if (typeof entry.msg === 'string') ring.note({ ns, level: 'info', msg: entry.msg });
+    ring.note({ ns: 'core:git', level: 'error', msg: 'git failed', meta: { error: 'spawn ENOENT' } });
+    const d = ring.collect();
+    const v1 = toDiagnosticsV1(d, { status: 'queued', lines: d.lines.length }, { queued: 2, lastResult: 'none' });
+    expect(v1.entries.length).toBeGreaterThan(0);
+    check(v1);
+
+    // Hand-built lines with values the ring would never let through.
+    const hostile = ['My Private CLI', 'Connected', '', 'x'.repeat(33), 'constructor', 'mtls-first', 'disconnected'];
+    const lines = hostile.flatMap((value) => ['peerRef', 'agentRef', 'exitCode', 'link', 'fromState', 'toState', 'reason', 'provider', 'driver', 'operation'].map((key) => line({ [key]: value })));
+    check(toDiagnosticsV1(available(lines), { status: 'queued', lines: lines.length }));
+
+    // Each outcome without lines.
+    const none: FeedbackDiagnostics = { status: 'none', ...window, lines: [], bytes: 0, dropped: 0 };
+    check(toDiagnosticsV1(available([line()]), { status: 'left_out', reason: 'reporter' }));
+    for (const reason of ['no_lines', 'collection_failed', 'no_review', 'not_connected'] as const) check(toDiagnosticsV1(none, { status: 'none', reason }));
   });
 
   it('sends ids in lower case, and bytes as the UTF-8 length of the entries', () => {

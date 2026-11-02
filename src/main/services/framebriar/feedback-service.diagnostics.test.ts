@@ -155,7 +155,29 @@ describe('FeedbackService diagnostics', () => {
       const { s } = serviceWith(fb, { reportDiagnosticsField: true, createExcerptTelemetry: (() => fakeExcerpt()) as never });
       const draft = await capture(s);
       await s.send({ draftId: draft.draftId, notes: '', includeScreenshot: true, includeDiagnostics: true });
-      expect(preparedInput(fb).diagnostics).toMatchObject({ state: 'attached', lines: 1, entries: [{ event: 'annex.ws.disconnected', attrs: { closeCode: 1009 } }] });
+      expect(preparedInput(fb).diagnostics).toMatchObject({ state: 'attached', lines: 1, entries: [{ event: 'annex.ws.disconnected', attrs: { closeCode: 1009 } }], delivery: { queued: 0 } });
+    });
+
+    it('omits the outbox count when it can\'t be read at capture', async () => {
+      const { fb } = fakeSdk();
+      const status = vi.spyOn(fb.outbox, 'status');
+      // Starting reads the status too, so only break the read that follows open().
+      fb.feedback.open.mockImplementationOnce(async () => { status.mockImplementationOnce(() => { throw new Error('outbox broke'); }); return { capturedAt: WINDOW.windowEnd }; });
+      const { s } = serviceWith(fb, { reportDiagnosticsField: true, createExcerptTelemetry: (() => fakeExcerpt()) as never });
+      const draft = await capture(s);
+      await s.send({ draftId: draft.draftId, notes: '', includeScreenshot: true, includeDiagnostics: true });
+      expect(preparedInput(fb).diagnostics).not.toHaveProperty('delivery');
+    });
+
+    it('counts the outbox at capture, not at send', async () => {
+      const { fb } = fakeSdk();
+      const status = fb.outbox.status();
+      const items = vi.spyOn(fb.outbox, 'status').mockReturnValue({ ...status, items: 4 });
+      const { s } = serviceWith(fb, { reportDiagnosticsField: true, createExcerptTelemetry: (() => fakeExcerpt()) as never });
+      const draft = await capture(s);
+      items.mockReturnValue({ ...status, items: 9 });
+      await s.send({ draftId: draft.draftId, notes: '', includeScreenshot: true, includeDiagnostics: true });
+      expect((preparedInput(fb).diagnostics as { delivery: unknown }).delivery).toEqual({ queued: 4 });
     });
   });
 
