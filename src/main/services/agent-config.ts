@@ -1117,6 +1117,32 @@ export async function getDurableConfig(projectPath: string, agentId: string): Pr
 }
 
 /**
+ * A project's agents, for reads that must change nothing (#2653). getDurableConfig
+ * and listDurable load a project on first use, and loading can write: it repairs
+ * and restores agents.json, reassigns copied ids, starts a watcher and settles
+ * interrupted creations. This returns what is loaded, or parses the file (then
+ * its backup) and keeps nothing. So a project not loaded yet shows its records
+ * as they are on disk, before any of those repairs.
+ */
+export async function peekDurableConfigs(projectPath: string): Promise<readonly DurableAgentConfig[]> {
+  const entry = configCache.get(projectPath);
+  if (entry) return entry.agents;
+  for (const file of [agentsConfigPath(projectPath), agentsBackupPath(projectPath)]) {
+    const raw = await readConfigFileIfPresent(file);
+    if (raw === null) continue;
+    try {
+      const parsed: unknown = JSON.parse(raw);
+      if (!Array.isArray(parsed)) continue;
+      const valid = parsed.filter(isAgentRecord);
+      if (valid.length > 0 || parsed.length === 0) return valid;
+    } catch {
+      // telemetry-exempt: a read that changes nothing; loading the project reports the corruption and recovers
+    }
+  }
+  return [];
+}
+
+/**
  * The hidden dispatcher persona belongs to the Dispatcher, and the Dispatcher
  * keeps it (#2535, #2551). Every persona write checks this: creation, and
  * updateDurableConfig (so Apply persona and every settings path too).

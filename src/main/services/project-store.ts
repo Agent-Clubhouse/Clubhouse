@@ -401,6 +401,23 @@ export async function list(): Promise<Project[]> {
   return readProjects();
 }
 
+/**
+ * The projects, for reads that must change nothing (#2653). list() can migrate
+ * the store, quarantine a corrupt file and restore the backup; this only parses.
+ */
+export async function peekProjects(): Promise<Project[]> {
+  // Not getStorePath: that creates the folder.
+  for (const name of ['projects.json', 'projects.json.bak']) {
+    try {
+      const file = path.join(getBaseDirPath(), name);
+      return migrate(JSON.parse(await fsp.readFile(file, 'utf-8'))).store.projects;
+    } catch {
+      // telemetry-exempt: a read that changes nothing; list() reports the corruption and recovers
+    }
+  }
+  return [];
+}
+
 export async function add(dirPath: string): Promise<Project> {
   const name = path.basename(dirPath);
   const id = `proj_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;

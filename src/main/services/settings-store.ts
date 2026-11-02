@@ -31,6 +31,28 @@ export function resetAllSettingsStoresForTests(): void {
   }
 }
 
+/**
+ * What a settings file holds right now, before any defaults are merged in, for
+ * telling a saved value from an absent one (#2653). Reads and nothing else: no
+ * cache, no recovery. A save still queued shows on the next read.
+ */
+export async function peekStoredSettings(filename: string): Promise<Record<string, unknown> | 'missing' | 'unreadable'> {
+  let raw: string;
+  try {
+    raw = await fs.promises.readFile(path.join(app.getPath('userData'), filename), 'utf-8');
+  } catch (err) {
+    // telemetry-exempt: the caller reports the source as uncertain
+    return (err as NodeJS.ErrnoException)?.code === 'ENOENT' ? 'missing' : 'unreadable';
+  }
+  try {
+    const parsed: unknown = JSON.parse(raw);
+    return parsed !== null && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed as Record<string, unknown> : 'unreadable';
+  } catch {
+    // telemetry-exempt: the caller reports the source as uncertain
+    return 'unreadable';
+  }
+}
+
 export function createSettingsStore<T>(
   filename: string,
   defaults: T,

@@ -507,6 +507,8 @@ export const ATTR = {
     'list_agents', 'inspect_helper',
     // appearance (#2597)
     'update_project', 'update_agent',
+    // settings reads (#2653)
+    'list_settings', 'read_settings',
     // orchestration: connection tools (#2230)
     'create_group_project', 'add_to_group_project', 'remove_from_group_project', 'connect_agents', 'disconnect_agents',
     'other',
