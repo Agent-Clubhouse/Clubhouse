@@ -73,6 +73,30 @@ export const LOCAL_MAX_PENDING_DIAG_LINES = 500;
 /** Diag bytes per cap window (see DIAG_WINDOW_BYTES). */
 export const LOCAL_DIAG_WINDOW_BYTES = DIAG_WINDOW_BYTES;
 const DIAG_FLOOR: Record<DiagRecord['level'], number> = { debug: 0.5, info: 0.8, warn: 1, error: 1, fatal: 1 };
+/**
+ * Bytes each priority event may use per cap window once the shared budget has
+ * no room for it (#2662). About 150 lines at the usual 200 bytes a line.
+ */
+export const LOCAL_DIAG_PRIORITY_EVENT_BYTES = 32 * 1024;
+/**
+ * Rare lines that explain a connection incident, kept when busy namespaces
+ * have used the shared budget. Each has its own reserve, so a storm of one
+ * can't use up another's. local-recorder.test.ts fails when a literal here is
+ * no longer logged.
+ */
+export const LOCAL_DIAG_PRIORITY_EVENTS: Readonly<Record<string, readonly string[]>> = {
+  'core:annex': [
+    'WebSocket upgrade accepted',
+    'WebSocket upgrade rejected — invalid origin',
+    'WebSocket upgrade rejected — unauthorized',
+    'WebSocket client disconnected',
+    'Heartbeat: terminating unresponsive WebSocket client',
+    'Failed to send snapshot on connect',
+    'broadcastSnapshotRefresh failed',
+    'Snapshot refresh after an agent config change failed',
+  ],
+  'core:annex-client': ['Connected to satellite', 'Disconnecting satellite'],
+};
 /** Same per-instrument limit as the SDK's metric views. */
 export const LOCAL_METRIC_CARDINALITY_LIMIT = 200;
 
@@ -98,6 +122,7 @@ export interface LocalRecorderOptions {
   maxPendingLines?: number;
   maxPendingDiagLines?: number;
   diagWindowBytes?: number;
+  diagPriorityEventBytes?: number;
   sessionCaps?: { traces: number; logs: number };
   capsWindowMs?: number;
   /** Called after the recorder starts a new chunk (local-control runs retention then). */
@@ -152,6 +177,7 @@ export function createLocalRecorder(opts: LocalRecorderOptions): LocalRecorder {
   const maxPending = opts.maxPendingLines ?? LOCAL_MAX_PENDING_LINES;
   const maxPendingDiag = opts.maxPendingDiagLines ?? LOCAL_MAX_PENDING_DIAG_LINES;
   const diagBudget = opts.diagWindowBytes ?? LOCAL_DIAG_WINDOW_BYTES;
+  const diagPriorityBudget = opts.diagPriorityEventBytes ?? LOCAL_DIAG_PRIORITY_EVENT_BYTES;
   const signals = opts.signals !== false;
   const metricInterval = opts.metricIntervalMs ?? LOCAL_METRIC_INTERVAL_MS;
   const appendFile = opts.appendFile ?? ((file: string, data: string) => fsp.appendFile(file, data, 'utf-8'));
@@ -177,8 +203,12 @@ export function createLocalRecorder(opts: LocalRecorderOptions): LocalRecorder {
   let pendingDiag = 0;
   let droppedLines = 0;
   let droppedDiag = 0;
+  /** How many of `droppedDiag` were priority events. */
+  let droppedDiagPriority = 0;
   /** Diag bytes queued in this cap window. */
   let diagBytes = 0;
+  /** Reserve bytes each priority event has used in this cap window. */
+  const diagPriorityBytes = new Map<string, number>();
   let headerWritten = false;
   let chunk = 0;
   let chunkBytes = 0;
@@ -189,7 +219,7 @@ export function createLocalRecorder(opts: LocalRecorderOptions): LocalRecorder {
   /** This run's chunks on disk, oldest first, with the bytes written to each. */
   const runFiles: Array<{ file: string; bytes: number }> = [];
   const runBytes = (): number => runFiles.reduce((sum, f) => sum + f.bytes, 0);
-  const reportedDrops = { traces: 0, logs: 0, lines: 0, diag: 0 };
+  const reportedDrops = { traces: 0, logs: 0, lines: 0, diag: 0, diagPriority: 0 };
 
   const startedAt = now();
   let windowStart = startedAt;
@@ -524,9 +554,17 @@ export function createLocalRecorder(opts: LocalRecorderOptions): LocalRecorder {
 
   // --- Diag lines (local only, #2299) ---
 
+  /** Count a drop, and whether it was a priority event. */
+  function dropDiag(priority: boolean): void {
+    droppedDiag++;
+    if (priority) droppedDiagPriority++;
+  }
+
   function writeDiag(r: DiagRecord): void {
     if (stopped) return;
-    if (pendingDiag >= maxPendingDiag) {
+    const priority = LOCAL_DIAG_PRIORITY_EVENTS[r.ns]?.includes(r.msg) ?? false;
+    // Priority lines are bounded by their reserve, so they may pass the queue limit.
+    if (!priority && pendingDiag >= maxPendingDiag) {
       droppedDiag++;
       return;
     }
@@ -538,16 +576,23 @@ export function createLocalRecorder(opts: LocalRecorderOptions): LocalRecorder {
     try {
       line = JSON.stringify(record);
     } catch {
-      droppedDiag++;
+      dropDiag(priority);
       return;
     }
     const bytes = Buffer.byteLength(line, 'utf-8') + 1;
-    if (diagBytes + bytes > diagBudget * (DIAG_FLOOR[r.level] ?? 1)) {
-      droppedDiag++;
-      return;
+    if (diagBytes + bytes <= diagBudget * (DIAG_FLOOR[r.level] ?? 1)) {
+      diagBytes += bytes;
+    } else {
+      // Past the shared budget, so the reserve is still there late in the window.
+      const key = `${r.ns}\n${r.msg}`;
+      const used = diagPriorityBytes.get(key) ?? 0;
+      if (!priority || used + bytes > diagPriorityBudget) {
+        dropDiag(priority);
+        return;
+      }
+      diagPriorityBytes.set(key, used + bytes);
     }
     writeHeader();
-    diagBytes += bytes;
     pending.push(line);
     pendingIsDiag.push(true);
     pendingDiag++;
@@ -615,17 +660,24 @@ export function createLocalRecorder(opts: LocalRecorderOptions): LocalRecorder {
 
   /** A `dropped` line with what was dropped since the last one, if anything. */
   function writeDrops(): void {
-    const total = { traces: caps.dropped('traces'), logs: caps.dropped('logs'), lines: droppedLines, diag: droppedDiag };
+    const total = {
+      traces: caps.dropped('traces'),
+      logs: caps.dropped('logs'),
+      lines: droppedLines,
+      diag: droppedDiag,
+      diagPriority: droppedDiagPriority,
+    };
     const delta = {
       traces: total.traces - reportedDrops.traces,
       logs: total.logs - reportedDrops.logs,
       lines: total.lines - reportedDrops.lines,
       diag: total.diag - reportedDrops.diag,
     };
+    const diagPriority = total.diagPriority - reportedDrops.diagPriority;
     if (!delta.traces && !delta.logs && !delta.lines && !delta.diag) return;
     writeHeader();
     Object.assign(reportedDrops, total);
-    push({ t: 'dropped', ts: iso(now()), ...delta }, true);
+    push({ t: 'dropped', ts: iso(now()), ...delta, ...(diagPriority ? { diagPriority } : {}) }, true);
   }
 
   /** Start a new item-cap window, after reporting what the last one dropped. */
@@ -635,6 +687,7 @@ export function createLocalRecorder(opts: LocalRecorderOptions): LocalRecorder {
     reportedDrops.traces = 0;
     reportedDrops.logs = 0;
     diagBytes = 0;
+    diagPriorityBytes.clear();
     capsWindowStart = now();
   }
 
@@ -661,7 +714,11 @@ export function createLocalRecorder(opts: LocalRecorderOptions): LocalRecorder {
 
   const timer = setInterval(() => {
     try {
-      if (now() - windowStart >= metricInterval) writeMetrics();
+      if (now() - windowStart >= metricInterval) {
+        writeMetrics();
+        // Each window, so a reader can tell lines are missing while it happens (#2662).
+        writeDrops();
+      }
       if (now() - capsWindowStart >= capsWindow) rollCaps();
       void flushLines();
     } catch {
