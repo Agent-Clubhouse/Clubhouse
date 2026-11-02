@@ -27,7 +27,9 @@ function FeedbackIcon({ size }: { size: number }) {
 export function FeedbackButton({ variant, expanded = false }: Props) {
   const canCapture = useFeedbackStore((s) => s.status?.canCapture === true);
   const notice = useFeedbackStore((s) => s.status?.notice ?? null);
-  const pending = useFeedbackStore((s) => s.status?.outbox.pending ?? 0);
+  const held = useFeedbackStore((s) => s.status?.outbox.heldForEnrollment ?? 0);
+  // Held reports don't send until the user chooses, in Settings.
+  const pending = useFeedbackStore((s) => s.status?.outbox.pending ?? 0) - held;
   const init = useFeedbackStore((s) => s.init);
   const openDraft = useFeedbackStore((s) => s.openDraft);
   const [capturing, setCapturing] = useState(false);
@@ -53,10 +55,11 @@ export function FeedbackButton({ variant, expanded = false }: Props) {
 
   const pendingText = pending > 0 ? `${pending} feedback ${pending === 1 ? 'report' : 'reports'} waiting to send` : null;
   const shortcut = window.clubhouse.platform === 'darwin' ? FEEDBACK_CAPTURE_SHORTCUT_LABEL.mac : FEEDBACK_CAPTURE_SHORTCUT_LABEL.other;
-  const label = ['Send feedback', notice ? FEEDBACK_NOTICE_TEXT[notice] : null, pendingText].filter(Boolean).join('. ');
+  const heldText = held > 0 ? `${held} feedback ${held === 1 ? 'report' : 'reports'} held, see Settings, Feedback` : null;
+  const label = ['Send feedback', notice ? FEEDBACK_NOTICE_TEXT[notice] : null, pendingText, heldText].filter(Boolean).join('. ');
   // The tooltip also names the capture shortcut; the accessible name stays short.
-  const title = [`Send feedback (${shortcut} captures what's under the pointer)`, notice ? FEEDBACK_NOTICE_TEXT[notice] : null, pendingText].filter(Boolean).join('. ');
-  const marker = notice || pending > 0 ? (
+  const title = [`Send feedback (${shortcut} captures what's under the pointer)`, notice ? FEEDBACK_NOTICE_TEXT[notice] : null, pendingText, heldText].filter(Boolean).join('. ');
+  const marker = notice || pending > 0 || held > 0 ? (
     <span
       className={`absolute top-0.5 right-0.5 w-1.5 h-1.5 rounded-full ${notice ? 'bg-ctp-warning' : 'bg-ctp-subtext0'}`}
       data-testid="feedback-marker"

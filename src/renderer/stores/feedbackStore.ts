@@ -29,6 +29,10 @@ interface FeedbackState {
    */
   openDraft: (draft: FeedbackCaptureResult) => void;
   closeDraft: () => void;
+  /** Set while reviewing a draft reopened after an enrollment change: the note it keeps. */
+  reopenedNotes: string | null;
+  /** Replace the open review with a reopened draft, keeping only the note and the draft's image. */
+  reopenDraft: (draft: FeedbackCaptureResult, notes: string) => void;
 }
 
 let initPromise: Promise<void> | null = null;
@@ -41,6 +45,7 @@ export const useFeedbackStore = create<FeedbackState>((set, get) => ({
   status: null,
   loaded: false,
   draft: null,
+  reopenedNotes: null,
 
   openDraft: (draft) => {
     const open = get().draft;
@@ -48,10 +53,12 @@ export const useFeedbackStore = create<FeedbackState>((set, get) => ({
       void window.clubhouse.feedback.cancel(draft.draftId);
       return;
     }
-    set({ draft });
+    set({ draft, reopenedNotes: null });
   },
 
-  closeDraft: () => set({ draft: null }),
+  closeDraft: () => set({ draft: null, reopenedNotes: null }),
+
+  reopenDraft: (draft, notes) => set({ draft, reopenedNotes: notes }),
 
   init: () => {
     if (!initPromise) {
@@ -98,5 +105,5 @@ export function resetFeedbackStore(): void {
   unsubscribeCaptured?.();
   unsubscribeCaptured = null;
   toastedNotices.clear();
-  useFeedbackStore.setState({ status: null, loaded: false, draft: null });
+  useFeedbackStore.setState({ status: null, loaded: false, draft: null, reopenedNotes: null });
 }

@@ -9,6 +9,8 @@ import { ScreenshotAnnotator } from './ScreenshotAnnotator';
 
 interface Props {
   draft: FeedbackCaptureResult;
+  /** Set when this draft replaced one whose enrollment changed: the note to keep. */
+  reopenedNotes?: string | null;
   onClose: () => void;
 }
 
@@ -61,8 +63,10 @@ function savedText(status: FeedbackStatus | null): string {
  * "Send without screenshot" or Cancel. After sending it shows "Saved" (queued on this
  * computer), then "Received" once the server acknowledges the report.
  */
-export function FeedbackReviewDialog({ draft, onClose }: Props) {
-  const [notes, setNotes] = useState('');
+export function FeedbackReviewDialog({ draft, reopenedNotes = null, onClose }: Props) {
+  const reopened = reopenedNotes !== null;
+  const reopenDraft = useFeedbackStore((s) => s.reopenDraft);
+  const [notes, setNotes] = useState(reopenedNotes ?? '');
   const [phase, setPhase] = useState<Phase>('review');
   const [reportId, setReportId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -118,6 +122,11 @@ export function FeedbackReviewDialog({ draft, onClose }: Props) {
         ...(annotatedPng !== undefined && { annotatedPng }),
         ...(includeScreenshot && shot?.shotId && { shotId: shot.shotId }),
       });
+      if (result.status === 'enrollment-changed') {
+        // Nothing was saved. A new report with new contents needs its own review and Send.
+        reopenDraft(result.draft, notes);
+        return;
+      }
       setReportId(result.id);
       setOutcome(result.diagnostics ?? null);
       setPhase('saved');
@@ -143,6 +152,11 @@ export function FeedbackReviewDialog({ draft, onClose }: Props) {
           </div>
         ) : (
           <>
+            {reopened && (
+              <p className="text-sm text-ctp-text" role="status" data-testid="feedback-reopened">
+                Your feedback connection changed, so nothing was sent. This is a new report with your note and image. Check what it includes below, then choose Send.
+              </p>
+            )}
             {shots.length > 1 && (
               <div className="flex gap-2 overflow-x-auto" role="radiogroup" aria-label="Window to send" onKeyDown={onShotKey} data-testid="feedback-shots">
                 {shots.map((s, i) => (
@@ -167,7 +181,7 @@ export function FeedbackReviewDialog({ draft, onClose }: Props) {
             {shot ? (
               <ScreenshotAnnotator key={shotIndex} src={shot.preview} strokes={strokes} onChange={setStrokes} disabled={phase === 'sending'} />
             ) : (
-              <p className="text-sm text-ctp-subtext0">No screenshot could be taken. You can still send a note.</p>
+              <p className="text-sm text-ctp-subtext0">{reopened ? 'This report has no screenshot.' : 'No screenshot could be taken. You can still send a note.'}</p>
             )}
             <label htmlFor="feedback-notes" className="block text-sm text-ctp-text">What happened?</label>
             <textarea
