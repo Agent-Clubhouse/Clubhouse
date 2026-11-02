@@ -3507,6 +3507,95 @@ describe('annex-server', () => {
         expect(builds()).toBe(before);
       });
 
+      describe('connections while the retry is building', () => {
+        const openSocket = () => {
+          const ws = Object.assign(new EventEmitter(), { readyState: 1, send: vi.fn(), ping: () => {}, close: vi.fn() });
+          annexServer._testing.wsAuthTypes.set(ws as never, 'bearer');
+          annexServer._testing.wss!.clients.add(ws as never);
+          annexServer._testing.wss!.emit('connection', ws);
+          return ws;
+        };
+
+        /** A failed first snapshot, then the retry paused inside its build. */
+        async function retryPaused() {
+          failing();
+          const first = openDuringBuild();
+          failList(new Error('disk gone'));
+          await vi.waitFor(() => expect(first.send).toHaveBeenCalled());
+          let finish: (value: never[]) => void = () => {};
+          let fail: (err: Error) => void = () => {};
+          vi.mocked(projectStore.list).mockImplementationOnce(() => new Promise((resolve, reject) => { finish = resolve; fail = reject; }) as never);
+          const before = builds();
+          await vi.advanceTimersByTimeAsync(annexServer._testing.SNAPSHOT_RETRY_DELAYS_MS[0]);
+          expect(builds()).toBe(before + 1);
+          return { first, buildsSoFar: builds(), finish: (v: never[]) => finish(v), fail: (e: Error) => fail(e) };
+        }
+
+        it('join it rather than starting another, each with its own cursor and held events', async () => {
+          const paused = await retryPaused();
+          const firstCursor = _eventReplay.getLastSeq();
+          const a = openSocket();
+          const aCursor = _eventReplay.getLastSeq();
+          const aEvent = liveEvent();
+          publish();
+          const b = openSocket();
+          const bCursor = _eventReplay.getLastSeq();
+          const bEvent = liveEvent();
+          publish();
+          await vi.advanceTimersByTimeAsync(0);
+          expect(builds()).toBe(paused.buildsSoFar);
+          expect(a.send).not.toHaveBeenCalled();
+          expect(b.send).not.toHaveBeenCalled();
+
+          vi.mocked(projectStore.list).mockReset();
+          vi.mocked(projectStore.list).mockReturnValue([] as never);
+          paused.finish([]);
+          await vi.advanceTimersByTimeAsync(0);
+
+          expect(vi.mocked(projectStore.list).mock.calls.length).toBe(0);
+          expect(sent(a)[0].type).toBe('snapshot');
+          expect(sent(a)[0].payload.lastSeq).toBe(aCursor);
+          expect(sent(a).slice(1).map((f) => f.seq)).toEqual([aEvent, bEvent]);
+          expect(sent(b)[0].payload.lastSeq).toBe(bCursor);
+          expect(sent(b).slice(1).map((f) => f.seq)).toEqual([bEvent]);
+          expect(sent(paused.first)[1].payload.lastSeq).toBeLessThanOrEqual(firstCursor);
+          expect(sent(a).filter((f) => f.type === 'snapshot')).toHaveLength(1);
+        });
+
+        it('all hear snapshot_failed once if it fails, with one build between them', async () => {
+          const paused = await retryPaused();
+          const a = openSocket();
+          const b = openSocket();
+
+          paused.fail(new Error('still gone'));
+          await vi.advanceTimersByTimeAsync(0);
+
+          expect(builds()).toBe(paused.buildsSoFar);
+          for (const ws of [a, b]) expect(sent(ws)).toEqual([{ type: 'error', payload: { message: 'snapshot_failed' } }]);
+        });
+
+        it('start one shared build when the window has ended and nothing is running', async () => {
+          failing();
+          const first = openDuringBuild();
+          failList(new Error('disk gone'));
+          await vi.waitFor(() => expect(first.send).toHaveBeenCalled());
+          first.readyState = 3;
+          first.emit('close', 1006, Buffer.from(''));
+          annexServer._testing.wss!.clients.delete(first as never);
+          await vi.advanceTimersByTimeAsync(annexServer._testing.SNAPSHOT_RETRY_DELAYS_MS[0] + 1000);
+
+          vi.mocked(projectStore.list).mockReset();
+          vi.mocked(projectStore.list).mockReturnValue([] as never);
+          const a = openSocket();
+          const b = openSocket();
+          await vi.advanceTimersByTimeAsync(0);
+
+          expect(vi.mocked(projectStore.list).mock.calls.length).toBe(1);
+          expect(sent(a)[0].type).toBe('snapshot');
+          expect(sent(b)[0].type).toBe('snapshot');
+        });
+      });
+
       it('never closes a socket for failing', async () => {
         failing();
         const first = openDuringBuild();
