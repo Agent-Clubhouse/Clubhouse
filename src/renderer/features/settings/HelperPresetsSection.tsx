@@ -45,7 +45,8 @@ function PresetRow({ provider, difficulty, view, labels, busy, onSave, onReset }
   const shown = cell.custom ?? cell.effective ?? cell.builtin;
   const listed = view.choices.models.find((m) => m.id === shown.model);
   const models = listed ? view.choices.models : [{ id: shown.model, label: shown.model, efforts: shown.effort ? [shown.effort] : [] }, ...view.choices.models];
-  const efforts = listed?.efforts ?? (shown.effort ? [shown.effort] : []);
+  // What's saved or in use is always an option, or the select would show Default while starts use it.
+  const efforts = [...new Set([...(listed?.efforts ?? []), ...(shown.effort ? [shown.effort] : [])])];
   const note = cellNote(cell, labels);
   const testId = `helper-preset-${provider}-${difficulty}`;
   return (

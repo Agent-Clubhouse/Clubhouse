@@ -19,7 +19,7 @@ vi.mock('../orchestrators', () => {
   const all = ['claude-code', 'codex-cli', 'copilot-cli'].map(provider);
   return { getProvider: (id: string) => all.find((p) => p.id === id), getAllProviders: () => all };
 });
-vi.mock('./agent-system', () => ({ resolveProfileEnv: async () => undefined }));
+vi.mock('./agent-system', () => ({ resolveProfileEnv: vi.fn(async () => undefined) }));
 vi.mock('./log-service', () => ({ appLog: vi.fn() }));
 vi.mock('./materialization-service', () => ({ readLayeredPersonaRaw: async (_p: string, id: string) => W.personas.get(id) }));
 vi.mock('./orchestration-settings', () => ({
@@ -30,6 +30,7 @@ vi.mock('./orchestration-settings', () => ({
 vi.mock('./settings-audit', () => ({ appendSettingsAudit: async (row: Record<string, unknown>) => { W.audit.push(row); return true; } }));
 vi.mock('../telemetry/feature-events', () => ({ helperPresetsChanged: (...args: unknown[]) => { W.telemetry.push(args); } }));
 
+import { resolveProfileEnv } from './agent-system';
 import {
   HelperRoutingError,
   _resetHelperRoutingForTesting,
@@ -153,6 +154,41 @@ describe('planHelperStart: precedence', () => {
     expect(preset).toMatchObject({ provider: 'claude-code', model: 'haiku', effort: 'low', keep: ['orchestrator', 'model'] });
   });
 
+  it('refuses a persona\'s model the helper\'s CLI doesn\'t list, in preset mode, instead of launching it', async () => {
+    W.personas.set('pinned', '---\nmodel: opus\n---\nBody');
+    const result = await planHelperStart({ ...base, orchestratorCli: 'codex-cli', difficulty: 'hard', persona: 'pinned' });
+    expect(result).toMatchObject({ ok: false, code: 'no_valid_mapping' });
+    if (result.ok === false) {
+      expect(result.message).toContain('persona');
+      expect(result.message).toContain('opus');
+      expect(result.userReason).toContain('persona');
+    }
+  });
+
+  it('a persona\'s model the list may just not know yet is used, and says so', async () => {
+    W.personas.set('pinned', '---\nmodel: new-model\n---\nBody');
+    W.lists.set('codex-cli', fallback([m('gpt-5')]));
+    const result = await plan({ orchestratorCli: 'codex-cli', difficulty: 'hard', persona: 'pinned' });
+    expect(result).toMatchObject({ model: 'new-model' });
+    expect(result!.routing).toMatchObject({ reason: 'persona_pinned', fallback: 'model_unverified' });
+    expect(result!.warning).toContain('fallback model list');
+  });
+
+  it('outside preset mode, a persona\'s model the CLI doesn\'t list only warns: the request didn\'t ask for a preset', async () => {
+    W.personas.set('pinned', '---\nmodel: opus\n---\nBody');
+    const result = await plan({ cli: 'codex-cli', persona: 'pinned' });
+    expect(result).toMatchObject({ provider: 'codex-cli', model: 'opus' });
+    expect(result!.warning).toContain('opus');
+  });
+
+  it('a persona\'s model the CLI lists is used with no warning', async () => {
+    W.personas.set('pinned', '---\nmodel: sonnet\n---\nBody');
+    const result = await plan({ difficulty: 'hard', persona: 'pinned' });
+    expect(result).toMatchObject({ model: 'sonnet' });
+    expect(result!.warning).toBeUndefined();
+    expect(result!.routing.fallback).toBe('none');
+  });
+
   it('a persona that can\'t be read pins nothing', async () => {
     const result = await plan({ difficulty: 'easy', persona: 'missing' });
     expect(result).toMatchObject({ provider: 'claude-code', model: 'haiku' });
@@ -207,6 +243,13 @@ describe('planHelperStart: stale and unverified presets', () => {
     expect(result!.warning).toContain('handshake timed out');
   });
 
+  it('a saved "default" is stale, so a hard start never runs on an unknown default', async () => {
+    W.saved = { 'codex-cli': { hard: { model: 'default', effort: null } } };
+    const result = await plan({ difficulty: 'hard', cli: 'codex-cli' });
+    expect(result).toMatchObject({ model: 'gpt-6.1-sol', effort: 'high' });
+    expect(result!.routing).toMatchObject({ fallback: 'builtin_preset', source: { model: 'builtin_mapping' } });
+  });
+
   it('a cell can leave the level to the CLI', async () => {
     W.saved = { 'claude-code': { hard: { model: 'opus', effort: null } } };
     const result = await plan({ difficulty: 'hard' });
@@ -238,6 +281,38 @@ describe('readHelperRouting', () => {
     view = (await readHelperRouting()).providers['codex-cli'];
     if (!view.autoEligible) throw new Error('eligible');
     expect(view.cells.hard).toMatchObject({ state: 'stale', effective: null, source: 'custom' });
+  });
+
+  it('shows a saved "default" as stale, and doesn\'t offer default as a choice', async () => {
+    W.lists.set('claude-code', live([m('default', ['low'], { isDefault: true }), ...CLAUDE.slice(1)]));
+    W.saved = { 'claude-code': { hard: { model: 'default', effort: null } } };
+    const view = (await readHelperRouting()).providers['claude-code'];
+    if (!view.autoEligible) throw new Error('eligible');
+    expect(view.choices.models.map((c) => c.id)).not.toContain('default');
+    expect(view.cells.hard).toMatchObject({ state: 'stale', staleReason: 'model_unavailable', fallback: 'builtin_preset', effective: { model: 'opus' } });
+  });
+
+  it('choices are what a write accepts: app-wide, even when cells are read under a project\'s profile', async () => {
+    const { getProvider } = await import('../orchestrators');
+    const provider = getProvider('codex-cli' as never)!;
+    const asked: Array<unknown> = [];
+    const original = provider.listModels;
+    provider.listModels = async (options?: { env?: unknown }) => { asked.push(options?.env ?? null); return options?.env ? live([m('gpt-6-luna')]) : live(CODEX); };
+    vi.mocked(resolveProfileEnv).mockResolvedValue({ CODEX_HOME: '/profile' });
+    try {
+      const view = (await readHelperRouting({ projectPath: '/p' })).providers['codex-cli'];
+      if (!view.autoEligible) throw new Error('eligible');
+      expect(view.choices.models.map((c) => c.id)).toEqual(CODEX.map((c) => c.id));
+      // The state says what a start in that project would do.
+      expect(view.cells.hard).toMatchObject({ state: 'stale', effective: null });
+      // So a value picked from the choices is one the write takes.
+      await updateHelperPresets({ revision: helperRoutingRevision(), cells: [{ provider: 'codex-cli', difficulty: 'hard', model: 'gpt-6.1-terra', effort: 'high' }] } as never, { surface: 'mobile' });
+      expect(W.saved['codex-cli'].hard.model).toBe('gpt-6.1-terra');
+    } finally {
+      provider.listModels = original;
+      vi.mocked(resolveProfileEnv).mockReset();
+      vi.mocked(resolveProfileEnv).mockResolvedValue(undefined);
+    }
   });
 
   it('moves the revision when a cell\'s state changes, once, and tells listeners, with no write', async () => {
@@ -334,6 +409,7 @@ describe('updateHelperPresets', () => {
     ['Copilot', { cells: [cell({ provider: 'copilot-cli' })] }],
     ['a bad difficulty', { cells: [cell({ difficulty: 'extreme' })] }],
     ['a model that could be an argument', { cells: [cell({ model: '-c' })] }],
+    ['the CLI\'s default, which a preset can\'t be', { cells: [cell({ model: 'default', effort: null })] }],
     ['a bad effort', { cells: [cell({ effort: 'a b' })] }],
     ['nothing to do', {}],
     ['a difficulty reset with no provider', { reset: { difficulty: 'easy' } }],

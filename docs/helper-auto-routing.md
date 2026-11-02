@@ -41,6 +41,8 @@ A start that names no CLI, model, effort or difficulty is today's path. Nothing 
 
 `preset` and `auto` have no step 4. With no valid cell they refuse with `no_valid_mapping`.
 
+A persona's model isn't known to fit the CLI, so it is checked. In `preset` mode, one a live list refuses is `no_valid_mapping`. In `explicit` mode it only warns, as nothing asked for a preset. A persona's `default` is that persona's own choice, and is allowed.
+
 A persona's model goes with its CLI. If the request names a different CLI from the one the persona pins, the persona's model is dropped too, and the model comes from below that step.
 
 A cell's effort belongs to its model. So an explicit or pinned model takes no effort from a preset: it gets an explicit effort or the CLI's default. An explicit effort on a preset's model is checked against that model.
@@ -71,6 +73,9 @@ Cells are app-scope in v1. Reset removes overrides per cell, per provider or for
 - Live list: a missing model, or an effort that model lacks, makes the cell `stale` (`model_unavailable`, `effort_unavailable`). A good model with a bad effort is still stale, and never runs at a default effort.
 - Fallback or unreadable list: the cell is `unverified` and usable, with fallback code `model_unverified`. Verified candidates rank ahead within a tier.
 - A cell can have `effort: null` for a model that takes no levels.
+- A cell has to name a model. `default` is refused on write and treated as stale if it's saved, because a `hard` task on an unknown default is a silent substitute.
+
+**Which list.** A write is checked against the app-wide list, because presets are app-wide, and `choices` are that same list, so a value picked from them is accepted. Cells read with `projectId` or `agentId` are checked under that project's profile, so their state says what a start there would do. A model only a project's profile offers can't be saved as a preset. Name it on the start instead.
 
 **Fallback.** Custom cell, then the built-in cell if valid (`builtin_preset`), then the next provider (Auto only, `candidate_skipped`), then a refusal with `no_valid_mapping` naming each cell and reason. Neither mode falls back to the CLI's default model, because a `hard` task on an unknown default is a silent substitute. Saved values are never rewritten. Settings and the phone show a stale cell with Reset.
 

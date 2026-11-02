@@ -82,7 +82,7 @@ The rules are the desktop's:
 
 When a dispose finds new facts the request is reissued under a **new `requestId`** with the new checks, and a snapshot is broadcast. An answer to the old id is `helper_request_not_found`, so a phone can never confirm facts it didn't show. Refetch the snapshot after any `helper_*` rejection.
 
-Errors (`message` is the desktop's sentence for all but `helper_request_not_found`): 404 `helper_request_not_found` (answered, expired, dropped or reissued); 409 `helper_start_blocked`, `helper_check_failed`, `helper_work_at_risk`, `helper_work_changed` (`status:"rejected"`, the request still waits); 409 `helper_start_refused`, `no_valid_mapping`, `helper_dispose_failed` (`status:"failed"`; a refused start was used up; a failed dispose may have stopped the helper). `no_valid_mapping` means no preset for the start's difficulty is offered now: show `error.message`, a sentence for a person, and offer no retry, since the request is gone.
+Errors (`message` is the desktop's sentence for all but `helper_request_not_found`): 404 `helper_request_not_found` (answered, expired, dropped or reissued); 409 `helper_start_blocked`, `helper_check_failed`, `helper_work_at_risk`, `helper_work_changed` (`status:"rejected"`, the request still waits); 409 `helper_start_refused`, `no_valid_mapping`, `helper_dispose_failed` (`status:"failed"`; a refused start was used up; a failed dispose may have stopped the helper). `no_valid_mapping` means nothing valid is offered for the start's difficulty, either its presets or a model its persona sets: show `error.message`, a sentence for a person, and offer no retry, since the request is gone.
 
 ## Image attachments
 
@@ -624,7 +624,7 @@ Gate on `helperRouting` in capabilities. It lists only what works now, so don't 
 - **labels**: the words for every code, in the families `reason`, `fallback`, `skipped`, `quota`, `unknown`, `cell` and `generic`. Every read has all of them, including a bare one, so cache them once per revision for rows that only have codes. For a code you don't have, use `labels.generic.unknownCode`, then your own generic "Other".
 - **cells**: `effective` is what a start uses now. `custom` is the saved choice, or null. `state` is that of the saved choice, or of the built-in without one: `valid`, `unverified` (the list may be out of date, so it couldn't be checked) or `stale` (no longer offered, with `staleReason` `model_unavailable` or `effort_unavailable`). A stale saved choice stays saved. `effective` is then the built-in, with `fallback: "builtin_preset"`, or null if that is stale too, and a start with that difficulty is refused. Offer Reset whenever `custom` is set.
 - **autoEligible**: whether a provider has presets, for now.
-- **choices**: what the pickers offer, per model, with `source` `live` or `fallback`.
+- **choices**: what the pickers offer, per model, with `source` `live` or `fallback`. Always the app-wide list, even with `projectId` or `agentId`, because a write is checked against it. `default` isn't offered, since a preset has to name a model. Cells do follow that profile: a cell can read `stale` there while its model is in `choices`, which means a start in that project would be refused or fall back.
 - **agent**: with `agentId` only. `{usable: true}`, or `{usable: false, reason}` with `dispatcher_locked`, `mcp_off` or `orchestration_off`. The Dispatcher doesn't start helpers, and this gives it no new authority.
 
 The built-in presets are starting choices, not measured best ones. Don't present them as a recommendation.
@@ -635,7 +635,7 @@ The built-in presets are starting choices, not measured best ones. Don't present
 
 - 409 `helper_routing_stale`: another edit got there first. Nothing was written, and the refusal's body has `revision` and `settings` with fresh values. Show them and let the person make the change again. Never retry on your own, because that could overwrite someone's edit.
 - 409 `model_unavailable`, `effort_unavailable`: a live list doesn't offer it. `message` says what it does offer. Nothing was written.
-- 400 `invalid_helper_routing`: a provider with no presets, a bad value, or a scope other than `app`.
+- 400 `invalid_helper_routing`: a provider with no presets, a bad value, `default` as a model, or a scope other than `app`.
 
 A value missing from a fallback list is accepted, and shows as `unverified`.
 

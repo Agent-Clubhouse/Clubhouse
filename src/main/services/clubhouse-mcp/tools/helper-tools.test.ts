@@ -770,17 +770,30 @@ describe('start_helper difficulty (#2671)', () => {
 
   it('a persona\'s pin wins over a preset, and an explicit field wins over a persona (behaviour change)', async () => {
     controllableCreation();
-    personaFiles.set('pinned', '---\nmodel: sonnet\norchestrator: codex-cli\n---\nBody');
+    personaFiles.set('pinned', '---\nmodel: gpt-6.1-sol\norchestrator: codex-cli\n---\nBody');
 
     // A pin fills what the request left open, so nothing is kept from the persona.
     const pinned = parse(await start({ difficulty: 'easy', persona: 'pinned', name: 'a' }));
-    expect(pinned.routing).toMatchObject({ reason: 'persona_pinned', resolved: { provider: 'codex-cli', model: 'sonnet', effort: null } });
+    expect(pinned.routing).toMatchObject({ reason: 'persona_pinned', resolved: { provider: 'codex-cli', model: 'gpt-6.1-sol', effort: null } });
 
     // What the request named stays, and the persona step is told to leave it.
     const named = parse(await start({ cli: 'claude-code', model: 'opus', persona: 'pinned', name: 'b' }));
     expect(named.routing).toMatchObject({ reason: 'explicit_request', resolved: { provider: 'claude-code', model: 'opus' } });
     expect(mockStartDurableCreation.mock.calls[1][1]).toMatchObject({ orchestrator: 'claude-code', model: 'opus' });
     expect(mockPersonaInjection).toHaveBeenLastCalledWith(PROJECT, expect.objectContaining({ persona: 'pinned' }), ['orchestrator', 'model']);
+  });
+
+  it('a persona\'s model the CLI doesn\'t offer is refused with a difficulty, and only warned about without one', async () => {
+    controllableCreation();
+    personaFiles.set('claude-model', '---\nmodel: opus\n---\nBody');
+    const refused = await start({ cli: 'codex-cli', difficulty: 'hard', persona: 'claude-model' });
+    expect(refused.isError).toBe(true);
+    expect(refused.content[0].text).toContain('persona sets the model "opus"');
+    expect(mockStartDurableCreation).not.toHaveBeenCalled();
+
+    const warned = parse(await start({ cli: 'codex-cli', persona: 'claude-model' }));
+    expect(warned.state).toBe('starting');
+    expect(warned.modelWarning).toContain('"opus"');
   });
 
   it('refuses with no_valid_mapping and creates nothing, with no CLI default as a substitute', async () => {

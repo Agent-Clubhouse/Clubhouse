@@ -50,6 +50,9 @@ function errorText(err: unknown): string {
 
 // ── Checking a cell ──────────────────────────────────────────────────────
 
+/** The id that means "pass no --model". */
+const CLI_DEFAULT_MODEL = 'default';
+
 interface CellCheck {
   state: PresetCellState;
   staleReason?: PresetStaleReason;
@@ -59,6 +62,10 @@ interface CellCheck {
 
 /** Check a model and effort against the CLI's list, under a project's profile. Never throws. */
 async function checkCell(provider: string, cell: PresetCell, projectPath: string | undefined): Promise<CellCheck> {
+  // A difficulty must not run on whatever the CLI happens to default to.
+  if (cell.model === CLI_DEFAULT_MODEL) {
+    return { state: 'stale', staleReason: 'model_unavailable', message: 'A preset has to name a model, not the CLI\'s default.' };
+  }
   const model = await checkHelperModel(provider, cell.model, projectPath);
   if (model.ok === false) return { state: 'stale', staleReason: 'model_unavailable', message: model.message };
   if (!cell.effort) return model.warning ? { state: 'unverified', message: model.warning } : { state: 'valid' };
@@ -221,6 +228,27 @@ export async function planHelperStart(request: StartPlanRequest): Promise<StartP
     }
   }
 
+  // A persona's model comes unchecked, and it may not be one this CLI runs (`opus` on Codex).
+  if (modelSource === 'persona' && resolvedModel) {
+    const check = await checkHelperModel(provider, resolvedModel, projectPath);
+    if (check.ok === false) {
+      // A preset was asked for and can't be honoured. Otherwise it's the persona's call, as before: say so.
+      if (validDifficulty) {
+        return {
+          ok: false,
+          code: 'no_valid_mapping',
+          message: `This helper's persona sets the model "${resolvedModel}", which ${provider} doesn't offer: ${check.message} ` +
+            'Name a CLI and model yourself, or use another persona.',
+          userReason: `its persona sets the model "${resolvedModel}", which ${provider} doesn't offer.`,
+        };
+      }
+      warning = check.message;
+    } else if (check.warning) {
+      warning = check.warning;
+      if (validDifficulty) fallback = 'model_unverified';
+    }
+  }
+
   const usedPreset = modelSource === 'custom_mapping' || modelSource === 'builtin_mapping';
   // 'default' passes no --model, and is saved as no model.
   const passedModel = resolvedModel && resolvedModel !== 'default' ? resolvedModel : undefined;
@@ -308,9 +336,10 @@ async function viewProvider(provider: PresetProvider, projectPath: string | unde
   let choices: Extract<ProviderRoutingView, { autoEligible: true }>['choices'] = { source: 'fallback', asOf: null, models: [] };
   if (instance) {
     try {
-      const list = await modelListFor(instance, projectPath);
+      // App-wide, whatever profile the cells are read under: presets are app-wide, so this is what a write takes.
+      const list = await modelListFor(instance, undefined);
       if (list) {
-        const models: PresetChoice[] = list.models.filter((m) => !m.hidden).map((m) => ({ id: m.id, label: m.label, efforts: m.efforts ?? [] }));
+        const models: PresetChoice[] = list.models.filter((m) => !m.hidden && m.id !== CLI_DEFAULT_MODEL).map((m) => ({ id: m.id, label: m.label, efforts: m.efforts ?? [] }));
         choices = { source: list.source, asOf: new Date(list.fetchedAt).toISOString(), models };
       }
     } catch (err) {
@@ -328,8 +357,10 @@ async function viewProvider(provider: PresetProvider, projectPath: string | unde
 
 /**
  * The page's data. A CLI's list can take a handshake, cached for about ten
- * minutes. `projectPath` reads under that project's profile. Reads made without
- * one also notice a cell whose state changed, and move the revision.
+ * minutes. `projectPath` reads cells under that project's profile, so their state
+ * says what a start there would do; `choices` stay app-wide, since a write is.
+ * Reads made without one also notice a cell whose state changed, and move the
+ * revision.
  */
 export async function readHelperRouting(options: { projectPath?: string } = {}): Promise<HelperRoutingSettings> {
   const providers: Record<string, ProviderRoutingView> = {};
@@ -390,6 +421,7 @@ function checkShape(update: HelperRoutingUpdate): void {
     if (!isPresetProvider(cell?.provider)) throw invalid(`${String(cell?.provider)} has no presets.`);
     if (!isHelperDifficulty(cell.difficulty)) throw invalid(`difficulty must be one of ${HELPER_DIFFICULTIES.join(', ')}.`);
     if (!isPresetModel(cell.model)) throw invalid('That isn\'t a model id.');
+    if (cell.model === CLI_DEFAULT_MODEL) throw invalid('A preset has to name a model, not the CLI\'s default.');
     if (cell.effort !== null && !isEffortValue(cell.effort)) throw invalid('effort must be a level or null.');
   }
   const { reset } = update;

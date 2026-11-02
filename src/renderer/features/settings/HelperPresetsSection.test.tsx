@@ -38,6 +38,26 @@ describe('HelperPresetsSection (#2671)', () => {
     expect(screen.getByText(/starting choices/)).toBeTruthy();
   });
 
+  it('shows the level a start really uses, even when the list gives the model none', async () => {
+    const shown = settings();
+    const claude = shown.providers['claude-code'];
+    if (!claude.autoEligible) throw new Error('eligible');
+    claude.choices.models = [{ id: 'opus', label: 'Opus', efforts: [] }];
+    app().getHelperRouting.mockResolvedValue(shown);
+    render(<HelperPresetsSection />);
+    const select = await screen.findByTestId('helper-preset-claude-code-hard-effort') as HTMLSelectElement;
+    expect(select.value).toBe('high');
+    expect(select.disabled).toBe(false);
+  });
+
+  it('shows a stale saved level, not Default', async () => {
+    app().getHelperRouting.mockResolvedValue(settings({
+      state: 'stale', staleReason: 'effort_unavailable', custom: { model: 'opus', effort: 'ultra' }, fallback: 'builtin_preset',
+    }));
+    render(<HelperPresetsSection />);
+    expect((await screen.findByTestId('helper-preset-claude-code-hard-effort') as HTMLSelectElement).value).toBe('ultra');
+  });
+
   it('saves a new model with the revision it was made from, dropping a level it doesn\'t take', async () => {
     render(<HelperPresetsSection />);
     fireEvent.change(await screen.findByTestId('helper-preset-claude-code-hard-model'), { target: { value: 'sonnet' } });
