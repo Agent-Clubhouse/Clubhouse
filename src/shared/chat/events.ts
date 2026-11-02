@@ -367,6 +367,8 @@ export interface ChatEventDataMap {
     levelNames?: Partial<Record<PermissionLevel, string>>;
     /** MCP servers the CLI loaded, with their status. Replaces any earlier list; absent leaves it unchanged. */
     mcpServers?: ChatMcpServer[];
+    /** The context this session works within, for a CLI that reports more than its usage's `context` (#2660). */
+    contextLimits?: import('../context-window').ContextLimits;
   };
   session_state: { state: ChatSessionState };
   session_ended: { reason: SessionEndReason; exitCode?: number; message?: string };

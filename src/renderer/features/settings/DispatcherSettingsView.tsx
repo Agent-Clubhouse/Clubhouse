@@ -13,6 +13,8 @@ import { AGENT_IDLE_SLEEP_MINUTES, formatIdleMinutes, normalizeIdleSleep } from 
 import { Button } from '../../components/Button';
 import { Toggle } from '../../components/Toggle';
 import { useModelOptions } from '../../hooks/useModelOptions';
+import { useContextWindowOptions } from '../../hooks/useContextWindowOptions';
+import { ContextWindowSelect, contextWindowHelp } from '../agents/ContextWindowField';
 import { useChromeFlagStore } from '../../chrome/chromeFlag';
 import { useOrchestratorStore } from '../../stores/orchestratorStore';
 import { ipcErrorMessage } from '../../utils/ipc-error';
@@ -42,6 +44,7 @@ export function DispatcherSettingsView() {
   const path = state?.path ?? undefined;
   const orchestrator = config?.orchestrator ?? '';
   const { options: modelOptions, loading: modelsLoading } = useModelOptions(orchestrator || undefined, path ?? '');
+  const contextOptions = useContextWindowOptions(!!config && !!path, path, orchestrator || undefined, config?.model);
 
   const turn = async (on: boolean) => {
     setSwitching(true);
@@ -168,6 +171,17 @@ export function DispatcherSettingsView() {
             >
               {modelChoices.map((o) => <option key={o.id} value={o.id}>{o.label}</option>)}
             </select>
+          </SettingsField>
+          <SettingsField label={contextOptions?.label ?? 'Context'} htmlFor="dispatcher-context" help={contextWindowHelp(contextOptions)}>
+            <ContextWindowSelect
+              id="dispatcher-context"
+              options={contextOptions}
+              value={config?.contextWindow}
+              disabled={saving}
+              className={SELECT_CLASS}
+              onChange={(v) => void save({ contextWindow: v })}
+            />
+            {config?.contextWindowNotice && <p className="text-ctp-subtext0 mt-1" data-testid="dispatcher-context-notice">{config.contextWindowNotice}</p>}
           </SettingsField>
           <SettingsField label="Runs in" htmlFor="dispatcher-runtime">
             <select

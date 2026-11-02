@@ -113,6 +113,7 @@ vi.stubGlobal('clubhouse', {
     getCompanionStatus: async () => 'none',
     getCompanionWorkspace: async () => '/tmp/test-workspace',
     getModelOptions: async () => [],
+    getContextWindowOptions: async () => ({ configurable: false, state: 'unsupported', label: 'Context', reason: 'No context setting.' }),
     checkOrchestrator: async () => ({ available: true }),
     getOrchestrators: async () => [],
     getToolVerb: async () => '',

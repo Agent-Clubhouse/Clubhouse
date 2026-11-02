@@ -120,6 +120,7 @@ export const IPC = {
     GET_COMPANION_STATUS: 'agent:get-companion-status',
     GET_COMPANION_WORKSPACE: 'agent:get-companion-workspace',
     GET_MODEL_OPTIONS: 'agent:get-model-options',
+    GET_CONTEXT_WINDOW_OPTIONS: 'agent:get-context-window-options',
     CHECK_ORCHESTRATOR: 'agent:check-orchestrator',
     GET_ORCHESTRATORS: 'agent:get-orchestrators',
     GET_TOOL_VERB: 'agent:get-tool-verb',

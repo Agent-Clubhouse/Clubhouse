@@ -1229,3 +1229,11 @@ describe('Copilot ACP chat driver: work Copilot starts after the prompt ended (#
     expect(replayer.done).toBe(true);
   });
 });
+
+describe('Copilot context tier over ACP (#2660)', () => {
+  it('is a launch flag, because ACP has no option for it', async () => {
+    const { COPILOT_ACP_LAUNCH } = await import('./acp-chat-driver');
+    expect(COPILOT_ACP_LAUNCH.contextWindowArgs?.('long_context')).toEqual(['--context', 'long_context']);
+    expect(COPILOT_ACP_LAUNCH.contextWindowArgs?.(undefined)).toEqual([]);
+  });
+});

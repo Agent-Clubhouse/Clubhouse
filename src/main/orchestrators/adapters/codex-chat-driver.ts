@@ -374,6 +374,14 @@ class CodexChatSession implements ChatDriverSession {
       const info = await this.client.start();
       cliVersion = parseCodexVersion(info?.userAgent);
       mcp = toCodexMcpServers(opts.mcpServers, opts.cwd);
+      const contextWindow = Number(opts.contextWindow);
+      const config: Record<string, JsonValue> | undefined = Object.keys(mcp.servers).length > 0 || contextWindow > 0
+        ? {
+          ...(Object.keys(mcp.servers).length > 0 && { mcp_servers: mcp.servers as unknown as JsonValue }),
+          // Honoured by thread/start and a cold thread/resume; a loaded thread ignores it (#2660).
+          ...(contextWindow > 0 && { model_context_window: contextWindow }),
+        }
+        : undefined;
       const shared = {
         cwd: opts.cwd,
         ...(opts.model && { model: opts.model }),
@@ -382,7 +390,7 @@ class CodexChatSession implements ChatDriverSession {
         ...(opts.systemPrompt && { developerInstructions: opts.systemPrompt }),
         // Codex reads MCP servers from config.toml's `mcp_servers` table;
         // the per-session override takes the same shape.
-        ...(Object.keys(mcp.servers).length > 0 && { config: { mcp_servers: mcp.servers as unknown as JsonValue } }),
+        ...(config && { config }),
       };
       result = opts.resumeNativeSessionId
         ? await this.client.threadResume({ threadId: opts.resumeNativeSessionId, excludeTurns: true, ...shared })

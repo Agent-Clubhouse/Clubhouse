@@ -1,6 +1,7 @@
 import type { PermissionLevel } from '../../shared/chat/capabilities';
 import type { StreamJsonEvent } from '../services/jsonl-parser';
 import type { McpServerDef } from '../../shared/types';
+import type { ContextWindowOptions } from '../../shared/context-window';
 
 export type OrchestratorId = 'claude-code' | (string & {});
 
@@ -29,6 +30,8 @@ export interface SpawnOpts {
    * so a wake with a first message can still resume.
    */
   interactive?: boolean;
+  /** The agent's context choice (#2660), already checked against this model. */
+  contextWindow?: string;
 }
 
 export interface HeadlessOpts extends SpawnOpts {
@@ -410,6 +413,12 @@ export interface OrchestratorProvider {
    * never a project's. Cached per profile env for about ten minutes.
    */
   listModels?(opts?: ListModelsOptions): Promise<ModelList>;
+  /**
+   * The context choices for `model` (#2660). A CLI whose catalog needs a process
+   * caches it per profile env and shares one read, so opening settings can't
+   * spawn repeatedly. Never throws: an unreadable catalog is `unavailable`.
+   */
+  getContextWindowOptions?(model: string | undefined, opts?: ListModelsOptions): Promise<ContextWindowOptions>;
   /** Whether the CLI accepts `model`, given a list from listModels (aliases included). */
   acceptsModel?(model: string, list: ModelList): boolean;
   getDefaultPermissions(kind: 'durable' | 'quick'): string[];

@@ -114,6 +114,19 @@ describe('ClaudeCodeProvider', () => {
     });
   });
 
+  describe('context choice (#2660)', () => {
+    it('passes --autocompact only when there is a choice, on a resume too', async () => {
+      expect((await provider.buildSpawnCommand({ cwd: '/p' })).args).not.toContain('--autocompact');
+      const fresh = (await provider.buildSpawnCommand({ cwd: '/p', contextWindow: '300000' })).args;
+      expect(fresh.slice(fresh.indexOf('--autocompact'), fresh.indexOf('--autocompact') + 2)).toEqual(['--autocompact', '300000']);
+      expect((await provider.buildSpawnCommand({ cwd: '/p', resume: true, contextWindow: '300000' })).args).toContain('--autocompact');
+    });
+
+    it('offers its working window per model, labelled as what it is', async () => {
+      expect(await provider.getContextWindowOptions('claude-haiku-4-5')).toMatchObject({ kind: 'working_window', label: 'Working context', maxTokens: 200_000 });
+    });
+  });
+
   describe('buildSpawnCommand', () => {
     // #2074: the resume queue sends no mission, so a resumed session gets no new prompt
     it('a resumed spawn without a mission ends at the resume flag, with no prompt', async () => {

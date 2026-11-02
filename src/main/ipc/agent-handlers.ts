@@ -1,3 +1,4 @@
+import { contextWindowOptionsFor } from '../services/context-window';
 import * as fsp from 'fs/promises';
 import * as path from 'path';
 import { ipcMain, dialog, BrowserWindow } from 'electron';
@@ -631,6 +632,11 @@ export function registerAgentHandlers(): void {
       const env = await agentSystem.resolveProfileEnv(projectPath, provider.id);
       return provider.getModelOptions(env ? { env } : undefined);
     },
+  ));
+
+  ipcMain.handle(IPC.AGENT.GET_CONTEXT_WINDOW_OPTIONS, withValidatedArgs(
+    [stringArg(), stringArg({ optional: true }), stringArg({ optional: true })],
+    async (_event, projectPath, orchestrator, model) => contextWindowOptionsFor(projectPath, orchestrator, model),
   ));
 
   ipcMain.handle(IPC.AGENT.CHECK_ORCHESTRATOR, withValidatedArgs(

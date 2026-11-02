@@ -60,13 +60,22 @@ describe('chat.setModel and chat.setLevel parsing', () => {
 });
 
 describe('chatControls snapshot fields', () => {
+  it('reports the running context: limits where the CLI gives them, else its usage window, reset by a new session (#2660)', () => {
+    const start = sessionEvents();
+    expect(chatControls([...start, event('session_info', { contextLimits: { effectiveTokens: 300000, compactAtTokens: 267000, reservedTokens: 33000, note: 'n' } })], caps()).context)
+      .toEqual({ effectiveTokens: 300000, compactAtTokens: 267000, reservedTokens: 33000, note: 'n' });
+    expect(chatControls([...start, event('usage', { scope: 'turn', context: { used: 1, size: 258400 } })], caps()).context)
+      .toEqual({ effectiveTokens: 258400, compactAtTokens: null, reservedTokens: null, note: null });
+    expect(chatControls([...start, event('usage', { scope: 'turn', context: { used: 1, size: 272000, window: 'input' } })], caps()).context?.note).toMatch(/input tokens/);
+    expect(chatControls([...start, event('usage', { scope: 'turn', context: { used: 1, size: 9 } }), event('session_started', { driver: 'x', provider: 'y', cwd: '/', resumed: false })], caps()).context).toBeNull();
+  });
   it('folds model, effort, level, lists and capability fields from the session', () => {
     const events = [...sessionEvents(), event('mode_changed', { level: 'plan' })];
     expect(chatControls(events, caps({ modelSwitch: 'per_turn', effortSwitch: 'per_turn' }))).toEqual({
       model: 'opus', modelUnknown: false, effort: 'high', effortIsDefault: false, effortReported: true, level: 'plan',
       models: [{ id: 'opus', label: 'Opus' }, { id: 'haiku', label: 'Haiku' }], efforts: ['low', 'high'],
       levelNames: { ask: 'default', plan: 'plan' }, liveLevels: ['plan', 'ask', 'auto_edit', 'full_access'],
-      modelSwitch: 'per_turn', effortSwitch: 'per_turn', effortDefault: true, switchNote: 'Applies from the next message.',
+      modelSwitch: 'per_turn', effortSwitch: 'per_turn', effortDefault: true, switchNote: 'Applies from the next message.', context: null,
     });
   });
   it('reports an unknown default model and an unreported effort, as the composer waits for them', () => {

@@ -1391,6 +1391,7 @@ describe('annex-server', () => {
           models: [{ id: 'opus', label: 'Opus' }], efforts: ['low', 'high'], levelNames: { ask: 'default' },
           liveLevels: ['plan', 'ask', 'full_access'], modelSwitch: 'live', effortSwitch: 'per_turn', effortDefault: true,
           switchNote: 'Model changes apply now; effort changes from the next message.',
+          context: null,
         });
       } finally { clearChatRuntimes(); }
     });

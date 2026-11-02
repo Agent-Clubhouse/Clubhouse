@@ -12,6 +12,8 @@ import {
   claudeQuestionInput,
   claudeTurnErrorCode,
   claudeContextWindow,
+  claudeTransportOptions,
+  contextLimitsFromUsage,
   claudeModeFromLevel,
   planLimitsFromWire,
   claudeModelRow,
@@ -1147,5 +1149,29 @@ describe('claudeTurnErrorCode', () => {
     expect(claudeTurnErrorCode(undefined, 'api_error', 'refusal')).toBe('refusal');
     expect(claudeTurnErrorCode(undefined, undefined, 'max_tokens')).toBe('max_tokens');
     expect(claudeTurnErrorCode(undefined)).toBe('unknown');
+  });
+});
+
+describe('context limits (#2660)', () => {
+  it('reads the working window, compaction point and reserve from get_context_usage', () => {
+    expect(contextLimitsFromUsage({ maxTokens: 300000, autoCompactThreshold: 267000, isAutoCompactEnabled: true })).toMatchObject({
+      effectiveTokens: 300000, compactAtTokens: 267000, reservedTokens: 33000,
+    });
+  });
+
+  it('reports no compaction point when auto-compact is off, and nothing from a reply without a size', () => {
+    expect(contextLimitsFromUsage({ maxTokens: 300000, autoCompactThreshold: 267000, isAutoCompactEnabled: false })).toMatchObject({ compactAtTokens: null, reservedTokens: null });
+    expect(contextLimitsFromUsage({})).toBeUndefined();
+    expect(contextLimitsFromUsage(null)).toBeUndefined();
+  });
+
+  it('says its figure is not the model\'s own window', () => {
+    expect(contextLimitsFromUsage({ maxTokens: 300000 })?.note).toMatch(/isn't changed/);
+  });
+
+  it('carries the choice to the transport as --autocompact, and not otherwise', () => {
+    const opts = { agentId: 'a', provider: 'claude-code', cwd: '/', binaryPath: 'claude', level: 'ask' as const };
+    expect(claudeTransportOptions({ ...opts, contextWindow: '300000' }).autocompact).toBe('300000');
+    expect(claudeTransportOptions(opts)).not.toHaveProperty('autocompact');
   });
 });

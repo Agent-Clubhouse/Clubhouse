@@ -39,6 +39,7 @@ export function buildStreamJsonArgs(opts: ClaudeTransportOptions): string[] {
   if (opts.includePartialMessages ?? true) args.push('--include-partial-messages');
   if (opts.model) args.push('--model', opts.model);
   if (opts.effort) args.push('--effort', opts.effort);
+  if (opts.autocompact) args.push('--autocompact', opts.autocompact);
   if (opts.mcpServers && Object.keys(opts.mcpServers).length > 0) {
     args.push('--mcp-config', JSON.stringify({ mcpServers: opts.mcpServers }));
   }
@@ -152,6 +153,10 @@ export class ClaudeStreamTransport extends ClaudeTransportBase {
   async appliedSettings(): Promise<ClaudeAppliedSettings> {
     // Short: start() waits on the first read, and a CLI without get_settings mustn't hold it up.
     return appliedSettingsFromWire(await this.control({ subtype: 'get_settings' }, 5_000));
+  }
+
+  async contextUsage(): Promise<unknown> {
+    return this.control({ subtype: 'get_context_usage' }, 5_000);
   }
 
   async planUsage(): Promise<unknown> {

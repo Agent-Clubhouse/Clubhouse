@@ -55,6 +55,9 @@ export interface ChatSpawnParams {
   cwd: string;
   kind: 'durable' | 'quick' | 'companion';
   model?: string;
+  contextWindow?: string;
+  /** Why the saved context choice wasn't used; shown in the chat as a notice. */
+  contextWindowNotice?: ChatRuntimeNotice;
   mission?: string;
   /** Who sent the mission, for chat to show. */
   missionRouted?: RoutedMessagePart[];
@@ -457,7 +460,7 @@ async function runChatStart(
       ? { level: 'warn', code: 'fallback', message: `Using ${driverLabel(driver)}: ${skipped.join('; ')}` }
       : undefined;
     const sessionStartedAt = Date.now();
-    const outcome = await startChatRuntime(driver, [...(fallbackNotice ? [fallbackNotice] : []), ...check.notices], prepared);
+    const outcome = await startChatRuntime(driver, [...(fallbackNotice ? [fallbackNotice] : []), ...check.notices, ...(params.contextWindowNotice ? [params.contextWindowNotice] : [])], prepared);
     attempt.sessionStartMs = Date.now() - sessionStartedAt;
     // Covers a start whose driver timed out after the cancel: it never counts
     // as a driver failure, tries the next driver or falls back.
@@ -629,6 +632,7 @@ async function runChatStart(
         env,
         commandPrefix,
         model: params.model,
+        ...(params.contextWindow ? { contextWindow: params.contextWindow } : {}),
         level,
         systemPrompt: params.systemPrompt,
         resumeNativeSessionId: resumeId,

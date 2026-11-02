@@ -22,7 +22,8 @@
 // fixture recorded before a driver started asking still replays. A fixture that
 // records one must record every one the driver sends: the Claude driver reads
 // get_settings at start, after model changes and after /model or /effort turns,
-// and get_usage at start and after turns (at most every 30s).
+// get_usage at start and after turns (at most every 30s), and get_context_usage
+// at start and after /model or /effort turns.
 //
 // Options (flag or environment variable):
 //   --fake-fixture <path>      CLUBHOUSE_FAKE_CLI_FIXTURE   fixture to replay (required)
@@ -92,6 +93,7 @@ const STANDING_QUERIES = {
   'claude-stream-json': {
     'control_request:get_settings': (msg) => ({ type: 'control_response', response: { subtype: 'success', request_id: msg.request_id, response: {} } }),
     // No rate_limits: the driver shows no plan windows from it.
+    'control_request:get_context_usage': (msg) => ({ type: 'control_response', response: { subtype: 'success', request_id: msg.request_id, response: {} } }),
     'control_request:get_usage': (msg) => ({ type: 'control_response', response: { subtype: 'success', request_id: msg.request_id, response: {} } }),
   },
   'codex-app-server': {

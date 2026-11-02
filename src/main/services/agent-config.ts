@@ -11,6 +11,7 @@ import { appLog } from './log-service';
 import { applyAgentDefaults, readProjectAgentDefaults } from './agent-settings-service';
 import { tagError } from '../telemetry/types';
 import { resolveOrchestrator } from './agent-system';
+import { contextWindowCheck } from './context-window';
 import { pathExists } from './fs-utils';
 import { isInsideGitRepo } from './git-service';
 import { stepUnderFlow } from '../telemetry/workspace';
@@ -1159,12 +1160,63 @@ export function assertPersonaAllowed(projectPath: string, persona: string | unde
   }
 }
 
+/** What the catalog said about a saved context choice, checked before an update touches the agent. */
+interface ContextWindowPreflight {
+  /** The project's CLI, for an agent with none of its own. */
+  projectCli?: string;
+  /** A kept choice the update's model doesn't offer. */
+  refused?: { value: string; message: string };
+}
+
+/**
+ * Checks a context choice against the CLI and model the update ends with
+ * (#2660). A catalog read can take seconds, so this runs before the update's
+ * read-change-write and changes nothing: a refused choice leaves the whole
+ * update unapplied. A new choice must be on offer. A new model keeps a choice
+ * only while it's still offered; one it can't check stays, and launch decides.
+ */
+async function preflightContextWindow(projectPath: string, agentId: string, updates: DurableConfigUpdates): Promise<ContextWindowPreflight> {
+  const agent = (await readAgentsEntry(projectPath)).agentsById.get(agentId);
+  if (!agent) return {};
+  const projectCli = updates.orchestrator !== undefined && !agent.orchestrator
+    ? await resolveOrchestrator(projectPath).then((p) => p.id).catch((): undefined => undefined)
+    : undefined;
+  const cliChanged = updates.orchestrator !== undefined && updates.orchestrator !== (agent.orchestrator || projectCli);
+  const named = updates.model && updates.model !== 'default' ? updates.model : undefined;
+  const model = updates.model !== undefined ? named : cliChanged ? undefined : agent.model;
+  const preflight: ContextWindowPreflight = { projectCli };
+  const cli = updates.orchestrator ?? agent.orchestrator;
+  if (updates.contextWindow) {
+    const check = await contextWindowCheck(projectPath, cli, model, updates.contextWindow);
+    if (check.state !== 'ok') throw new Error(check.message);
+    return preflight;
+  }
+  // A new CLI clears the choice without asking; see updateDurableConfig.
+  const kept = agent.contextWindow;
+  if (updates.contextWindow === undefined && kept && !cliChanged && model !== agent.model) {
+    const check = await contextWindowCheck(projectPath, cli, model, kept);
+    if (check.state === 'refused') preflight.refused = { value: kept, message: check.message };
+  }
+  return preflight;
+}
+
+/** A launch found the saved context choice no longer offered (#2660): clear it and say why. */
+export async function clearContextWindow(projectPath: string, agentId: string, notice: string): Promise<void> {
+  const { agents, agentsById } = await readAgentsEntry(projectPath);
+  const agent = agentsById.get(agentId);
+  if (!agent?.contextWindow) return;
+  delete agent.contextWindow;
+  agent.contextWindowNotice = notice;
+  await writeAgents(projectPath, agents);
+}
+
 export async function updateDurableConfig(
   projectPath: string,
   agentId: string,
   updates: DurableConfigUpdates,
 ): Promise<void> {
   if (updates.persona !== undefined) assertPersonaAllowed(projectPath, updates.persona);
+  const preflight = await preflightContextWindow(projectPath, agentId, updates);
   const { agents, agentsById } = await readAgentsEntry(projectPath);
   const agent = agentsById.get(agentId);
   if (!agent) return;
@@ -1174,13 +1226,17 @@ export async function updateDurableConfig(
   }
   if (updates.orchestrator !== undefined) {
     // No CLI of its own means the project's, which is what its sessions came from.
-    const previous = agent.orchestrator
-      || await resolveOrchestrator(projectPath).then((p) => p.id).catch((): undefined => undefined);
+    const previous = agent.orchestrator || preflight.projectCli;
     if (updates.orchestrator !== previous) {
       // The new CLI can't resume the old one's session or run its model (#2593).
       // Every setting path comes through here: full settings, the card, the phone.
       delete agent.lastSessionId;
       if (updates.model === undefined) delete agent.model;
+      // A value only means something to the CLI it was chosen for.
+      if (agent.contextWindow && updates.contextWindow === undefined) {
+        agent.contextWindowNotice = 'Cleared the saved context choice, because it was for another CLI.';
+        delete agent.contextWindow;
+      }
       // Older entries don't say whose they are; after this, nothing else can tell.
       if (previous) {
         for (const session of agent.sessionHistory ?? []) session.orchestrator ??= previous;
@@ -1194,6 +1250,16 @@ export async function updateDurableConfig(
     } else {
       delete agent.model;
     }
+  }
+  if (updates.contextWindow === null) {
+    delete agent.contextWindow;
+    delete agent.contextWindowNotice;
+  } else if (updates.contextWindow !== undefined) {
+    agent.contextWindow = updates.contextWindow;
+    delete agent.contextWindowNotice;
+  } else if (preflight.refused && agent.contextWindow === preflight.refused.value) {
+    delete agent.contextWindow;
+    agent.contextWindowNotice = preflight.refused.message;
   }
   if (updates.freeAgentMode !== undefined) {
     if (updates.freeAgentMode) {

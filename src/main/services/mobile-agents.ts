@@ -6,8 +6,10 @@
  * it can already approve every request one by one.
  */
 
+import { CONTEXT_WINDOW_APPLIES, type ContextWindowOptions } from '../../shared/context-window';
+import { contextWindowCheck, contextWindowOptionsFor } from './context-window';
 import type { DurableAgentConfig, DurableConfigUpdates, McpCatalogEntry, StartDurableCreationParams } from '../../shared/types';
-import type { MobileAgentCreate, MobileAgentUpdate, MobileSettingEditable } from '../../shared/mobile-control';
+import type { MobileAgentCreate, MobileAgentUpdate, MobileContextWindow, MobileSettingEditable } from '../../shared/mobile-control';
 import { AGENT_IDLE_SLEEP_MINUTES, normalizeIdleSleep, resolveIdleSleep } from '../../shared/idle-sleep';
 import { AGENT_COLORS, generateDurableName } from '../../shared/name-generator';
 import { validateAgentGitName } from '../../shared/agent-name';
@@ -42,7 +44,7 @@ export type MobileAgentState = 'creating' | 'failed' | 'starting' | 'running' | 
 
 const DEFAULT_ORCHESTRATOR = 'claude-code';
 /** agent.update settings read at spawn: everything but auto-sleep. */
-const SPAWN_SETTINGS = ['name', 'color', 'emoji', 'orchestrator', 'model', 'runtime', 'persona', 'clubhouseMode', 'freeAgentMode'] as const satisfies ReadonlyArray<keyof MobileAgentUpdate>;
+const SPAWN_SETTINGS = ['name', 'color', 'emoji', 'orchestrator', 'model', 'runtime', 'persona', 'clubhouseMode', 'freeAgentMode', 'contextWindow'] as const satisfies ReadonlyArray<keyof MobileAgentUpdate>;
 /** Shown when a spawn setting changes on an awake agent, as on the Settings card. */
 const LOCKED_DETAIL = 'Sleep the agent to change these';
 
@@ -216,6 +218,37 @@ function stateOf(config: DurableAgentConfig, live: 'running' | 'starting' | unde
 
 const field = <T>(value: T, editable: MobileSettingEditable) => ({ value, editable });
 
+/** The saved next-start choice with what the CLI offers for this model (#2660). `chatControls.context` is what a session runs with. */
+export function mobileContextWindow(config: DurableAgentConfig, options: ContextWindowOptions, editable: MobileSettingEditable): MobileContextWindow {
+  const notice = config.contextWindowNotice ?? null;
+  const value = config.contextWindow ?? null;
+  if (options.configurable === false) {
+    return {
+      value, editable: 'never', configurable: false, kind: null, label: options.label, description: null, defaultLabel: null,
+      choices: [], defaultTokens: null, maxTokens: null, costNote: null, applies: CONTEXT_WINDOW_APPLIES, state: options.state, reason: options.reason, notice,
+    };
+  }
+  return {
+    value, editable, configurable: true, kind: options.kind, label: options.label, description: options.description, defaultLabel: options.defaultLabel,
+    choices: options.choices, defaultTokens: options.defaultTokens, maxTokens: options.maxTokens, costNote: options.costNote, applies: options.applies,
+    state: null, reason: null, notice,
+  };
+}
+
+/** Tells the phone this update cleared the saved context choice, with the reason, so it needn't refetch. */
+function contextWindowReset(previous: string | undefined, saved: DurableAgentConfig, command: MobileAgentUpdate) {
+  if (!previous || saved.contextWindow || command.contextWindow === null) return {};
+  return { contextWindowReset: { previous, reason: saved.contextWindowNotice ?? 'The saved context choice was cleared.' } };
+}
+
+/** agent.update's contextWindow: null clears; anything else must be on offer. Checked here so the phone gets the stable code. */
+async function assertContextWindow(project: MobileAgentProject, orchestrator: string, model: string | undefined, value: string | null | undefined): Promise<void> {
+  if (value === undefined || value === null) return;
+  if (typeof value !== 'string') throw invalid('invalid_context_window', 'contextWindow must be a choice id or null.');
+  const check = await contextWindowCheck(project.path, orchestrator, model && model !== 'default' ? model : undefined, value);
+  if (check.state !== 'ok') throw invalid('invalid_context_window', check.message);
+}
+
 /**
  * One agent's settings as the Settings card shows them, each with when it can
  * change (#2452). The Dispatcher's are Settings > Dispatcher's: CLI, model,
@@ -268,6 +301,7 @@ export async function buildAgentSettings(
       freeAgentMode: field(!!config.freeAgentMode, permissionsSupported(orchestrator) ? spawn : 'never'),
       // Only chat agents idle-sleep; the value is kept either way.
       idleSleep: { ...field(idle, 'always'), minutes: resolved.minutes, source: resolved.source, applies: runtime === 'chat' },
+      contextWindow: mobileContextWindow(config, await contextWindowOptionsFor(project.path, orchestrator, config.model), spawn),
     },
     /** Changes at any time, as on the Orchestration card; agent.update's `orchestration`. Null for the Dispatcher. */
     orchestration,
@@ -469,16 +503,21 @@ export async function updateMobileAgent(
     updates.freeAgentMode = command.freeAgentMode;
   }
   if (idleSleep !== undefined) updates.idleSleep = idleSleep === 'inherit' ? null : idleSleep;
+  if (command.contextWindow !== undefined) {
+    await assertContextWindow(project, orchestrator, command.model ?? (command.orchestrator !== undefined ? undefined : config.model), command.contextWindow);
+    updates.contextWindow = command.contextWindow;
+  }
   const orchestration = command.orchestration !== undefined ? parseMobileOrchestration(command.orchestration, 'update', { mcpEnabled: isMcpEnabled(project.path, clubhouseMcpOverride(config)) }) : undefined;
 
   assertAuthorized();
   const hadSession = !!config.lastSessionId;
+  const previousChoice = config.contextWindow;
   // First, so a refused policy change (helpers to settle) leaves the other settings unwritten too.
   if (orchestration) await writeOrchestration(project.path, config.id, orchestration);
   if (Object.keys(updates).length > 0) await agentConfig.updateDurableConfig(project.path, config.id, updates);
   if (Object.keys(identity).length > 0) await agentConfig.updateDurable(project.path, config.id, identity);
   const saved = (await agentConfig.getDurableConfig(project.path, config.id)) ?? config;
-  return { ...await buildAgentSettings(project, saved, live), ...sessionReset(command, hadSession, saved) };
+  return { ...await buildAgentSettings(project, saved, live), ...sessionReset(command, hadSession, saved), ...contextWindowReset(previousChoice, saved, command) };
 }
 
 /** Tells the phone a new CLI dropped the agent's session (#2593): the next wake starts a new one. */
@@ -530,10 +569,16 @@ export async function updateMobileDispatcher(
     updates.freeAgentMode = command.freeAgentMode;
   }
   if (command.idleSleep !== undefined) updates.idleSleep = command.idleSleep === 'inherit' ? null : command.idleSleep;
+  if (command.contextWindow !== undefined) {
+    const model = updates.model ?? config.model;
+    await assertContextWindow(project, orchestrator, model, command.contextWindow);
+    updates.contextWindow = command.contextWindow;
+  }
 
   assertAuthorized();
   const hadSession = !!config.lastSessionId;
+  const previousChoice = config.contextWindow;
   if (Object.keys(updates).length > 0) await agentConfig.updateDurableConfig(project.path, config.id, updates);
   const saved = (await agentConfig.getDurableConfig(project.path, config.id)) ?? config;
-  return { ...await buildAgentSettings(project, saved, live, { dispatcher: true }), ...sessionReset(command, hadSession, saved) };
+  return { ...await buildAgentSettings(project, saved, live, { dispatcher: true }), ...sessionReset(command, hadSession, saved), ...contextWindowReset(previousChoice, saved, command) };
 }

@@ -17,6 +17,7 @@ import type {
 import { findBinaryInPath, testBinaryOverride, testModelProbesDisabled } from './shared';
 import { getShellEnvironment } from '../util/shell';
 import type { ModelProbeContext } from './model-probes';
+import type { ContextWindowOptions } from '../../shared/context-window';
 import { appLog } from '../services/log-service';
 
 const execFileAsync = promisify(execFile);
@@ -108,6 +109,8 @@ export abstract class BaseProvider implements OrchestratorProvider {
 
   private readonly modelCache = new Map<string, { list: ModelList; expires: number }>();
   private readonly modelLoads = new Map<string, Promise<ModelList>>();
+  private readonly contextCatalogCache = new Map<string, { value: unknown; expires: number }>();
+  private readonly contextCatalogLoads = new Map<string, Promise<unknown>>();
 
   // ── Abstract: must be implemented by each provider ────────────────────
 
@@ -186,6 +189,34 @@ export abstract class BaseProvider implements OrchestratorProvider {
     const ttl = list.source === 'live' ? MODEL_LIST_TTL_MS : FALLBACK_MODEL_LIST_TTL_MS;
     this.modelCache.set(key, { list, expires: list.fetchedAt + ttl });
     return copyModelList(list);
+  }
+
+  /** No context setting unless the provider has one (#2660). */
+  async getContextWindowOptions(_model: string | undefined, _opts?: ListModelsOptions): Promise<ContextWindowOptions> {
+    return { configurable: false, state: 'unsupported', label: 'Context', reason: `${this.displayName} has no context setting.` };
+  }
+
+  /**
+   * A catalog read that needs a process, cached per profile env with one read
+   * shared by concurrent callers. A failed read is remembered too, for less
+   * time, so a CLI that can't answer isn't spawned on every look.
+   */
+  protected cachedContextCatalog<T>(opts: ListModelsOptions | undefined, read: () => Promise<T | null>): Promise<T | null> {
+    const key = JSON.stringify(Object.entries(opts?.env ?? {}).sort());
+    const cached = this.contextCatalogCache.get(key);
+    if (cached && cached.expires > Date.now()) return Promise.resolve(cached.value as T | null);
+    let load = this.contextCatalogLoads.get(key);
+    if (!load) {
+      load = read().catch((err: unknown): null => {
+        appLog('core:orchestrator', 'info', 'Context catalog unavailable', { meta: { provider: this.id, error: err instanceof Error ? err.message : String(err) } });
+        return null;
+      }).then((value) => {
+        this.contextCatalogCache.set(key, { value, expires: Date.now() + (value ? MODEL_LIST_TTL_MS : FALLBACK_MODEL_LIST_TTL_MS) });
+        return value;
+      }).finally(() => this.contextCatalogLoads.delete(key));
+      this.contextCatalogLoads.set(key, load);
+    }
+    return load as Promise<T | null>;
   }
 
   /** Whether the CLI accepts `model`: a listed id, or `default`. Providers add their own aliases. */

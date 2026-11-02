@@ -1,4 +1,6 @@
 import * as fsp from 'fs/promises';
+import * as os from 'os';
+import * as path from 'path';
 import { fileURLToPath } from 'url';
 import type { CopilotClient, CopilotSession, ElicitationContext, ElicitationResult, ExitPlanModeRequest, ExitPlanModeResult, MCPServerConfig, MessageOptions, ModelInfo, PermissionRequest, PermissionRequestResult, SessionConfig, SessionEvent } from '@github/copilot-sdk';
 import { MINIMAL_CHAT_CAPABILITIES, type ChatCapabilities, type PermissionLevel } from '../../../shared/chat/capabilities';
@@ -23,6 +25,7 @@ import {
   copilotToolTitle,
 } from './normalizer';
 import { loadCopilotSdk } from './sdk-loader';
+import { copilotTierEntry, type CopilotTierEntry } from '../../../shared/context-window';
 
 type ReasoningEffort = NonNullable<NonNullable<Parameters<CopilotSession['setModel']>[1]>['reasoningEffort']>;
 
@@ -88,6 +91,9 @@ function untilExit(server: CopilotServer): Promise<never> {
     throw new CopilotLaunchError(`Copilot exited${tail ? `: ${tail}` : ''}`, 'process_exited');
   });
 }
+
+/** How long a tier catalog read may take, for the server's start and for models.list. */
+const TIER_CATALOG_TIMEOUT_MS = 8_000;
 
 async function connect(server: CopilotServer): Promise<CopilotClient> {
   const { CopilotClient, RuntimeConnection } = await loadCopilotSdk();
@@ -285,6 +291,7 @@ export class CopilotSdkChatSession implements ChatDriverSession {
       // instructions, skills and MCP config, which Terminal and ACP both load.
       enableConfigDiscovery: true,
       ...(model && { model }),
+      ...(this.opts.contextWindow && { contextTier: this.opts.contextWindow as SessionConfig['contextTier'] }),
       ...(provider && { provider }),
       ...(Object.keys(servers).length && { mcpServers: servers }),
       onPermissionRequest: (request) => this.onPermission(request),
@@ -1077,6 +1084,26 @@ export class CopilotSdkChatDriver implements ChatDriver {
     } finally {
       opts.signal?.removeEventListener('abort', onAbort);
     }
+  }
+}
+
+/**
+ * Each model's context tiers, from the SDK's models.list on a local server in
+ * an empty folder. Sends no prompt. Throws when it can't read them (no login).
+ */
+export async function readCopilotTierCatalog(binary: string, env: Record<string, string>): Promise<CopilotTierEntry[]> {
+  const cwd = await fsp.mkdtemp(path.join(os.tmpdir(), 'clubhouse-copilot-tiers-'));
+  let server: CopilotServer | undefined;
+  let client: CopilotClient | undefined;
+  try {
+    server = await launchCopilotServer({ binary, cwd, env, timeoutMs: TIER_CATALOG_TIMEOUT_MS });
+    client = await connect(server);
+    const models = await withTimeout(client.listModels(), TIER_CATALOG_TIMEOUT_MS, 'Listing models');
+    return models.map((m) => copilotTierEntry(m as unknown as Record<string, unknown>)).filter((e): e is CopilotTierEntry => e !== null);
+  } finally {
+    await client?.forceStop().catch(ignore);
+    await server?.kill();
+    await fsp.rm(cwd, { recursive: true, force: true, maxRetries: 3, retryDelay: 100 }).catch(ignore);
   }
 }
 

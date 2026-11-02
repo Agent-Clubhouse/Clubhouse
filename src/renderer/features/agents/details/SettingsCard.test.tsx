@@ -9,6 +9,7 @@ import { useOrchestratorStore } from '../../../stores/orchestratorStore';
 import { useProjectStore } from '../../../stores/projectStore';
 import { useAgentSettingsPages } from '../agentSettingsPages';
 import { AgentDetails } from './AgentDetails';
+import { SettingsCard } from './SettingsCard';
 import {
   accessLabel, instructionsLabel, isRowLocked, LOCKED_HINT, modelLabel, settingsSummary,
 } from './SettingsCard';
@@ -297,5 +298,42 @@ describe('Session card after #2280', () => {
     expect(session.queryByText('Level')).not.toBeInTheDocument();
     expect(session.getByText('Runs on')).toBeInTheDocument();
     expect(session.getByText('Usage')).toBeInTheDocument();
+  });
+});
+
+describe('Settings card context row (#2660)', () => {
+  const read = () => window.clubhouse.agent.getContextWindowOptions as ReturnType<typeof vi.fn>;
+  beforeEach(() => {
+    window.clubhouse.agent.getContextWindowOptions = vi.fn(async () => ({ configurable: false, state: 'unsupported', label: 'Context', reason: 'No context setting.' })) as never;
+  });
+
+  it('asks for nothing while the card is closed or the agent awake', async () => {
+    useAgentDetailsStore.setState({ settingsOpen: false });
+    window.clubhouse.agent.getDurableConfig = vi.fn(async () => ({ id: 'a1', model: 'opus' })) as never;
+    const { rerender } = render(<SettingsCard agent={{ ...agent, status: 'sleeping' }} projectPath="/p" provider="Claude Code" />);
+    await act(async () => {});
+    expect(read()).not.toHaveBeenCalled();
+    useAgentDetailsStore.setState({ settingsOpen: true });
+    rerender(<SettingsCard agent={{ ...agent, status: 'running' }} projectPath="/p" provider="Claude Code" />);
+    await act(async () => {});
+    expect(read()).not.toHaveBeenCalled();
+  });
+
+  it('asks once open and asleep, for this CLI and model', async () => {
+    useAgentDetailsStore.setState({ settingsOpen: true });
+    window.clubhouse.agent.getDurableConfig = vi.fn(async () => ({ id: 'a1', model: 'opus' })) as never;
+    render(<SettingsCard agent={{ ...agent, status: 'sleeping' }} projectPath="/p" provider="Claude Code" />);
+    await waitFor(() => expect(read()).toHaveBeenCalledWith('/p', 'claude-code', 'opus'));
+    expect(read()).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps what a running session reports apart from the saved next start', async () => {
+    useAgentDetailsStore.setState({ settingsOpen: true });
+    window.clubhouse.agent.getDurableConfig = vi.fn(async () => ({ id: 'a1', contextWindow: '500000' })) as never;
+    const chat = { ...createChatViewState('a1'), contextLimits: { effectiveTokens: 300000, compactAtTokens: 267000, reservedTokens: 33000 } };
+    render(<SettingsCard agent={{ ...agent, status: 'running' }} chat={chat} projectPath="/p" provider="Claude Code" />);
+    await waitFor(() => expect(screen.getByTestId('details-setting-context-saved').textContent).toContain('500K'));
+    expect(screen.getByTestId('details-setting-context-now').textContent).toContain('300K, compacts at 267K, 33K in reserve');
+    expect(read()).not.toHaveBeenCalled();
   });
 });

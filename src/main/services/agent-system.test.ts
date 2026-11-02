@@ -73,6 +73,11 @@ const mockAddSessionEntry = vi.fn();
 const mockUpdateSessionId = vi.fn(async () => {});
 const mockGetSessionHistory = vi.fn(async (): Promise<Array<{ sessionId: string; startedAt: string; lastActiveAt: string }>> => []);
 const mockRemoveSessionEntries = vi.fn(async () => {});
+const mockContextWindowForLaunch = vi.fn();
+vi.mock('./context-window', () => ({
+  contextWindowForLaunch: (...args: unknown[]) => mockContextWindowForLaunch(...args),
+}));
+
 vi.mock('./agent-config', () => ({
   getSessionHistory: (...args: unknown[]) => mockGetSessionHistory(...(args as [])),
   removeSessionEntries: (...args: unknown[]) => mockRemoveSessionEntries(...(args as [])),
@@ -444,6 +449,33 @@ describe('agent-system', () => {
         kind: 'durable',
       });
       expect(getAgentProjectPath('agent-1')).toBe('/my/project');
+    });
+
+    describe('a saved context choice in a terminal (#2660)', () => {
+      const notices = () => mockBroadcastToAllWindows.mock.calls.filter((c) => c[0] === IPC.CHAT.RUNTIME_NOTICE);
+      const spawnWith = async () => {
+        mockBroadcastToAllWindows.mockClear();
+        mockGetDurableConfig.mockResolvedValue({ id: 'agent-1', orchestrator: 'claude-code', contextWindow: '500000' });
+        await spawnAgent({ agentId: 'agent-1', projectPath: '/my/project', cwd: '/my/project', kind: 'durable' });
+      };
+      afterEach(() => { mockContextWindowForLaunch.mockReset(); mockGetDurableConfig.mockReset(); });
+
+      it.each([
+        ['refused', 'Started without the saved context choice, and cleared it. Not offered.'],
+        ['unknown', 'Started without the saved context choice. No catalog.'],
+      ])('says so when the choice is %s, and passes no flag', async (_state, message) => {
+        const notice = { level: 'warn', code: 'context_window_not_applied', message };
+        mockContextWindowForLaunch.mockResolvedValue({ notice });
+        await spawnWith();
+        expect(notices()).toEqual([[IPC.CHAT.RUNTIME_NOTICE, 'agent-1', notice]]);
+        expect(mockPtySpawn).toHaveBeenCalled();
+      });
+
+      it('says nothing when the choice applies', async () => {
+        mockContextWindowForLaunch.mockResolvedValue({ value: '500000' });
+        await spawnWith();
+        expect(notices()).toEqual([]);
+      });
     });
 
     it('tracks agent orchestrator when specified', async () => {
