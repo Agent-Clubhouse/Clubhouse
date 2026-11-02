@@ -1242,7 +1242,7 @@ describe('Annex mobile contract fixtures', { timeout: TEST_TIMEOUT_MS }, () => {
   it('queued bursts, from the real runtime: delivery sends no user_message (#2414, #2605)', async () => {
     const part = (agentId: string, name: string, text: string) => [{ sender: { agentId, name }, text }];
     // `drained`: this turn_ended sends the next queued message, and the wait includes that send's result.
-    type Turn = (type: 'turn_started' | 'turn_ended', drained?: 'delivered' | 'failed') => Promise<void>;
+    type Turn = (type: 'turn_started' | 'turn_ended', drained?: 'delivered' | 'failed', trigger?: 'prompt' | 'system') => Promise<void>;
     const run = async (name: string, caps: ChatCapabilities, script: (turn: Turn, driver: FakeChatDriver, runtime: ChatAgentRuntime) => Promise<void>) => {
       const seen: ChatEvent[] = [];
       const off = onChatEvent((event) => { if (event.agentId === `durable_${name}`) seen.push(event); });
@@ -1254,9 +1254,9 @@ describe('Annex mobile contract fixtures', { timeout: TEST_TIMEOUT_MS }, () => {
         newId: () => `${name}_${++n}`, now: () => NOW, onEnded: () => {},
       });
       await runtime.start();
-      const turn: Turn = async (type, drained) => {
+      const turn: Turn = async (type, drained, trigger = 'prompt') => {
         const from = seen.length;
-        driver.last.emit(type === 'turn_started' ? { type, data: { trigger: 'prompt' } } : { type, data: { stopReason: 'end_turn' } });
+        driver.last.emit(type === 'turn_started' ? { type, data: { trigger } } : { type, data: { stopReason: 'end_turn' } });
         await eventually(() => {
           const since = seen.slice(from);
           expect(since.some((e) => e.type === type)).toBe(true);
@@ -1311,6 +1311,18 @@ describe('Annex mobile contract fixtures', { timeout: TEST_TIMEOUT_MS }, () => {
     expect(native.some((e) => e.type === 'queue_state')).toBe(false);
     expect(native.find((e) => e.type === 'user_message')?.data).toMatchObject({ delivery: 'queued' });
 
+    const systemTurn = await run('system', { ...steerless, queue: 'native' }, async (turn, _driver, runtime) => {
+      await turn('turn_started');
+      await runtime.sendMessage('Held through the compaction.', { source: 'annex', delivery: 'queued' });
+      await turn('turn_ended');
+      await turn('turn_started', undefined, 'system');
+      await turn('turn_ended');
+      await turn('turn_started');
+    });
+    const held = systemTurn.find((e): e is Extract<ChatEvent, { type: 'user_message' }> => e.type === 'user_message')!;
+    expect(systemTurn.filter((e) => e.type === 'turn_started').map((e) => (e.data as any).trigger)).toEqual(['prompt', 'system', 'prompt']);
+    expect(systemTurn.some((e) => e.type === 'queue_state')).toBe(false);
+
     fixtures.set('queued-bursts.json', {
       direction: 'desktop-to-phone',
       note: 'Events from the real chat runtime, without the session and state events around them. See docs/mobile-control-v1.md#queued-messages.',
@@ -1321,6 +1333,10 @@ describe('Annex mobile contract fixtures', { timeout: TEST_TIMEOUT_MS }, () => {
       },
       failed: { events: failed },
       nativeQueue: { note: 'A provider-held queue has no queue_state: turn_started is its only signal.', events: native },
+      systemTurn: {
+        note: 'A trigger: system turn consumes no row. rowId stays queued through it, and the last turn_started, which is not system, delivers it.',
+        events: systemTurn, rowId: held.data.messageId,
+      },
     });
   });
 

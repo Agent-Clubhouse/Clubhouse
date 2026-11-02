@@ -22,6 +22,7 @@ import queuedBurstsFixture from '../../../test/fixtures/annex-mobile/queued-burs
 const queuedBursts = queuedBurstsFixture as unknown as {
   burst: { events: ChatEvent[]; rowId: string; routed: unknown[] };
   missingJoinTarget: { events: ChatEvent[]; rowId: string; routed: unknown[] };
+  systemTurn: { events: ChatEvent[]; rowId: string };
 };
 
 const AGENT = 'agent-1';
@@ -515,6 +516,16 @@ describe('reduceChatEvent', () => {
       expect(whole.queued[0]).toMatchObject({ messageId: burst.rowId, routed: burst.routed });
       const cut = foldChatEvents(undefined, 'durable_burst', beforeDelivery(missingJoinTarget.events));
       expect(cut.queued[0]).toMatchObject({ messageId: missingJoinTarget.rowId, routed: missingJoinTarget.routed });
+    });
+
+    it('folds the system turn fixture: the row stays through it and the next turn delivers it', () => {
+      const { events, rowId } = queuedBursts.systemTurn;
+      const lastStart = events.map((e) => e.type).lastIndexOf('turn_started');
+      const held = foldChatEvents(undefined, 'durable_system', events.slice(0, lastStart));
+      expect(held.queued.map((q) => q.messageId)).toEqual([rowId]);
+      const delivered = foldChatEvents(held, 'durable_system', events.slice(lastStart));
+      expect(delivered.queued).toEqual([]);
+      expect(delivered.items.filter((i): i is UserMessageItem => i.kind === 'user_message').map((u) => u.messageId)).toEqual([rowId]);
     });
 
     it('keeps who sent a delivered message', () => {
