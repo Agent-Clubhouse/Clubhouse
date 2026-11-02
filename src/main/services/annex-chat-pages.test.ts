@@ -174,6 +174,61 @@ describe('a chat page', () => {
     });
   });
 
+  describe('what is pending or queued is never stubbed', () => {
+    const blocks = () => Array.from({ length: 10 }, () => ({ type: 'text', text: 't'.repeat(300 * 1024) }));
+    const row = (extra: object = {}) => envelope(4, 'user_message', { messageId: 'critical-queued', source: 'user', delivery: 'queued', content: blocks(), ...extra });
+    const build = (eligible: any[], pendingQuestions: any[], pendingPermissions: any[] = []) => buildChatPage({ metadata: { version: 1, queuedMessageIds: ['critical-queued'] }, eligible, limit: 2000, pendingPermissions, pendingQuestions });
+
+    it('keeps a queued row as itself when a question leaves it little room', () => {
+      const result = build([row()], [question(9, 'p'.repeat(7.5 * MIB))]);
+      expect(result.ok).toBe(true);
+      expect(Buffer.byteLength((result as any).body)).toBeLessThanOrEqual(CHAT_PAGE_MAX_BYTES);
+      const [shown] = JSON.parse((result as any).body).events;
+      expect(shown).toMatchObject({ seq: 4, type: 'user_message', data: { messageId: 'critical-queued', source: 'user', delivery: 'queued', truncated: {} } });
+      expect(shown.data.content).toHaveLength(10);
+      expect(shown.data.content[0].text).toContain('omitted');
+    });
+
+    it('keeps queuedWith and routed parts on a shortened join', () => {
+      const routed = [{ from: 'helper', text: 'r'.repeat(2 * MIB) }];
+      const join = envelope(5, 'user_message', { messageId: 'join', source: 'mcp', delivery: 'queued', queuedWith: 'critical-queued', content: blocks(), routed });
+      const result = build([row(), join], [question(9, 'p'.repeat(7.5 * MIB))]);
+      const shown = JSON.parse((result as any).body).events.find((e: any) => e.seq === 5);
+      expect(shown.data).toMatchObject({ messageId: 'join', queuedWith: 'critical-queued', routed: [{ from: 'helper' }] });
+      expect(shown.data.routed[0].text.length).toBeLessThan(MIB);
+    });
+
+    it('answers 503 rather than losing a queued row', () => {
+      const result = build([row()], [question(9, 'p'.repeat(8 * MIB - 8 * 1024))]);
+      expect(result).toMatchObject({ ok: false, failure: { error: 'pending_overflow' } });
+    });
+
+    it('answers 503 if a row can not be made small, with what identifies it too large', () => {
+      expect(build([row({ clientCommandId: 'c'.repeat(32 * 1024) })], [question(9, 'p'.repeat(7.5 * MIB))]).ok).toBe(false);
+    });
+
+    it('leaves out a pending permission\'s tail copy with no room, never a notice in its place', () => {
+      const pending = permission(5, [allow, deny], 5 * 1024);
+      const result = buildChatPage({ metadata: { version: 1 }, eligible: [pending], limit: 2000, pendingPermissions: [pending], pendingQuestions: [question(9, 'p'.repeat(8 * MIB - 10_750))] });
+      expect(result.ok).toBe(true);
+      const body = JSON.parse((result as any).body);
+      expect(body.pendingPermissions).toHaveLength(1);
+      expect(body.events).toEqual([]);
+    });
+
+    it('never makes a stub of any row, whatever the tail looks like', () => {
+      const eligible = [row(), notice(5, 200 * 1024), notice(6, 200 * 1024)];
+      const events = JSON.parse((build(eligible, [question(9, 'p'.repeat(7.5 * MIB))]) as any).body).events;
+      expect(events[0].data.messageId).toBe('critical-queued');
+      expect(events.filter((e: any) => e.data.omitted?.type === 'user_message')).toEqual([]);
+    });
+
+    it('keeps ids on a stub of anything else', () => {
+      const { body } = page({ eligible: [envelope(1, 'question_resolved', { requestId: 'q1', answers: { a: 'x'.repeat(9 * MIB) } })] });
+      expect(body.events[0].data.omitted).toMatchObject({ type: 'question_resolved', requestId: 'q1' });
+    });
+  });
+
   describe('queued rows', () => {
     const queued = (seq: number, messageId: string, extra: object = {}) => envelope(seq, 'user_message', {
       messageId, delivery: 'queued', content: [{ type: 'text', text: `prompt ${seq}` }], routed: { source: 'mcp' }, ...extra,
@@ -229,7 +284,7 @@ describe('a chat page', () => {
       expect(full.ok).toBe(true);
       expect(JSON.parse((full as any).body).events[0].data.messageId).toBe('a');
 
-      const none = buildChatPage({ metadata: metadata(['a']), eligible: [huge(1, 'a')], limit: 2000, pendingPermissions: [], pendingQuestions: [question(2, 'p'.repeat(7.9 * MIB))] });
+      const none = buildChatPage({ metadata: metadata(['a']), eligible: [huge(1, 'a')], limit: 2000, pendingPermissions: [], pendingQuestions: [question(2, 'p'.repeat(8 * MIB - 8 * 1024))] });
       expect(none.ok).toBe(false);
     });
   });

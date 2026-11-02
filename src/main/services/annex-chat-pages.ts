@@ -36,6 +36,9 @@ export const PENDING_MINIMAL_MAX_BYTES = 4 * 1024 * 1024;
 const MINIMAL_TEXT_MAX_BYTES = 256;
 /** Kept free on every page, so what's first on it can always at least be marked. */
 const STUB_ROOM_BYTES = 4 * 1024;
+/** The least a queued row is shown in. Less than this, or with what identifies it not fitting, and the answer is a 503. */
+const QUEUED_ROW_MIN_BYTES = 16 * 1024;
+const QUEUED_TEXT_MIN_BYTES = 256;
 
 type PermissionRequest = Extract<ChatEvent, { type: 'permission_request' }>;
 type Question = Extract<ChatEvent, { type: 'question' }>;
@@ -43,11 +46,46 @@ type Question = Extract<ChatEvent, { type: 'question' }>;
 const bytesOf = (value: unknown): number => Buffer.byteLength(JSON.stringify(value));
 
 /** Every string in a value, within a limit. Only for what has no identity in its text. */
-function previewStrings(value: unknown): unknown {
-  if (typeof value === 'string') return previewText(value, PAGE_STRING_MAX_BYTES);
-  if (Array.isArray(value)) return value.map(previewStrings);
-  if (value && typeof value === 'object') return Object.fromEntries(Object.entries(value).map(([k, v]) => [k, previewStrings(v)]));
+function previewStrings(value: unknown, maxBytes = PAGE_STRING_MAX_BYTES): unknown {
+  if (typeof value === 'string') return previewText(value, maxBytes);
+  if (Array.isArray(value)) return value.map((item) => previewStrings(item, maxBytes));
+  if (value && typeof value === 'object') return Object.fromEntries(Object.entries(value).map(([k, v]) => [k, previewStrings(v, maxBytes)]));
   return value;
+}
+
+function countLongStrings(value: unknown): number {
+  if (typeof value === 'string') return Buffer.byteLength(value) > QUEUED_TEXT_MIN_BYTES ? 1 : 0;
+  if (Array.isArray(value)) return value.reduce((sum: number, item) => sum + countLongStrings(item), 0);
+  if (value && typeof value === 'object') return countLongStrings(Object.values(value));
+  return 0;
+}
+
+type UserMessage = Extract<ChatEvent, { type: 'user_message' }>;
+
+/**
+ * A queued row within `maxBytes`, or null if it can't be: `queuedMessageIds` names it, so
+ * it never becomes a stub. Only its text is shortened. Its ids, source and delivery stay,
+ * and so does every block and part, so they stay in step.
+ */
+function queuedRowWithin(event: UserMessage, maxBytes: number): UserMessage | null {
+  const remote = remoteChatEvent(event) as UserMessage;
+  const originalBytes = bytesOf(remote);
+  if (originalBytes <= maxBytes) return remote;
+  const { content, routed } = remote.data;
+  let cap = Math.floor(maxBytes / Math.max(1, countLongStrings({ content, routed })));
+  for (; cap >= QUEUED_TEXT_MIN_BYTES; cap = Math.floor(cap / 2)) {
+    const shortened = {
+      ...remote,
+      data: {
+        ...remote.data,
+        content: previewStrings(content, cap),
+        ...(routed && { routed: previewStrings(routed, cap) }),
+        truncated: { originalBytes },
+      },
+    } as UserMessage;
+    if (bytesOf(shortened) <= maxBytes) return shortened;
+  }
+  return null;
 }
 
 /** A question's text can be its id, and 147 answers empty without it: never shortened, here or in history. */
@@ -75,7 +113,10 @@ function stubEvent(event: ChatEvent, originalBytes: number): ChatEvent {
     } as typeof event.data };
   }
   const message = event.type === 'question' ? 'A question here is too large to show. It\'s on the desktop.' : 'Something here is too large to show. It\'s on the desktop.';
-  return { ...event, type: 'notice', data: { level: 'info', code: 'event_omitted', message, omitted: { type: event.type, originalBytes } } } as ChatEvent;
+  // Its ids, so a later event about it still has something to refer to. Never for what's pending or queued: those aren't stubbed.
+  const { requestId, messageId, toolCallId } = event.data as { requestId?: string; messageId?: string; toolCallId?: string };
+  const ids = Object.fromEntries(Object.entries({ requestId, messageId, toolCallId }).filter(([, id]) => id && Buffer.byteLength(id) <= MINIMAL_TEXT_MAX_BYTES));
+  return { ...event, type: 'notice', data: { level: 'info', code: 'event_omitted', message, omitted: { type: event.type, originalBytes, ...ids } } } as ChatEvent;
 }
 
 /** An event as a page shows it. */
@@ -136,7 +177,7 @@ function overflow(pendingCount: number): ChatPage {
   };
 }
 
-const isQueuedRow = (event: ChatEvent, queue: ReadonlySet<string>): boolean => (
+const isQueuedRow = (event: ChatEvent, queue: ReadonlySet<string>): event is UserMessage => (
   event.type === 'user_message' && event.data.delivery === 'queued' && queue.has(event.data.queuedWith ?? event.data.messageId)
 );
 const costOf = (encoded: readonly string[]): number => encoded.reduce((sum, json) => sum + Buffer.byteLength(json) + 1, 0);
@@ -144,12 +185,14 @@ const costOf = (encoded: readonly string[]): number => encoded.reduce((sum, json
 /** The response for one read, or why there can't be one. */
 export function buildChatPage({ metadata, eligible, limit, pendingPermissions, pendingQuestions }: ChatPageParts): ChatPage {
   const queue = new Set(metadata.queuedMessageIds as string[] | undefined);
-  const queuedRows = eligible.filter((event) => isQueuedRow(event, queue));
+  const queuedRows = eligible.filter((event): event is UserMessage => isQueuedRow(event, queue));
   const pendingCount = pendingPermissions.length + pendingQuestions.length + queuedRows.length;
   const envelopeBytes = (permissions: PermissionRequest[]) => bytesOf({ ...metadata, truncated: true, nextBeforeSeq: Number.MAX_SAFE_INTEGER, pendingPermissions: permissions, pendingQuestions, events: [] });
-  // At their smallest here. They only go whole if that leaves room.
-  const queuedSmall = queuedRows.map((event) => JSON.stringify(projectEvent(event)));
-  const fits = (permissions: PermissionRequest[]) => envelopeBytes(permissions) + costOf(queuedSmall) + STUB_ROOM_BYTES <= CHAT_PAGE_MAX_BYTES;
+  const encodeRows = (maxBytes: number) => queuedRows.map((event) => queuedRowWithin(event, maxBytes)).map((row) => (row ? JSON.stringify(row) : null));
+  // At their smallest here. They get whatever room is left afterwards.
+  const queuedSmallest = encodeRows(QUEUED_ROW_MIN_BYTES);
+  if (queuedSmallest.includes(null)) return overflow(pendingCount);
+  const fits = (permissions: PermissionRequest[]) => envelopeBytes(permissions) + costOf(queuedSmallest as string[]) + STUB_ROOM_BYTES <= CHAT_PAGE_MAX_BYTES;
 
   let permissions = boundPendingPermissions(pendingPermissions, { record: false });
   let stage: PendingStage = 'whole';
@@ -163,7 +206,10 @@ export function buildChatPage({ metadata, eligible, limit, pendingPermissions, p
 
   let used = envelopeBytes(permissions);
   const queuedWhole = queuedRows.map((event) => JSON.stringify(remoteChatEvent(event)));
-  const queuedEncoded = used + costOf(queuedWhole) + STUB_ROOM_BYTES <= CHAT_PAGE_MAX_BYTES ? queuedWhole : queuedSmall;
+  const room = CHAT_PAGE_MAX_BYTES - used - STUB_ROOM_BYTES;
+  const share = Math.min(PAGE_EVENT_MAX_BYTES, Math.floor((room - queuedRows.length) / Math.max(1, queuedRows.length)));
+  const queuedEncoded = costOf(queuedWhole) <= room ? queuedWhole
+    : (share > QUEUED_ROW_MIN_BYTES ? encodeRows(share) : queuedSmallest).map((row, i) => row ?? (queuedSmallest[i] as string));
   used += costOf(queuedEncoded);
   const queuedBySeq = new Map(queuedRows.map((event, i) => [event.seq, queuedEncoded[i]]));
 
@@ -191,13 +237,13 @@ export function buildChatPage({ metadata, eligible, limit, pendingPermissions, p
     let json = JSON.stringify(projected);
     if (used + Buffer.byteLength(json) + 1 > CHAT_PAGE_MAX_BYTES) {
       // The next page has more room, unless this is already first on one. Then what's pending is taking
-      // that room on every page, so paging would never get past it. A question still pending is in the
-      // list, whole, so leaving out its copy loses nothing. Anything else is marked as left out.
+      // that room on every page, so paging would never get past it. A request or question still pending
+      // is in the list, so leaving out its copy loses nothing. Anything else is marked as left out.
       if (walked > 0) {
         stopped = true;
         break;
       }
-      if (original.type === 'question' && activeQuestions.has(original.seq)) {
+      if (pending || (original.type === 'question' && activeQuestions.has(original.seq))) {
         oldestShown = original.seq;
         walked++;
         continue;

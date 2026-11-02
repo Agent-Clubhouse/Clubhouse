@@ -2468,12 +2468,28 @@ describe('Annex mobile contract fixtures', { timeout: TEST_TIMEOUT_MS }, () => {
     expect(withQueued.body.events[0].seq).toBe(4);
     expect(withQueued.body.nextBeforeSeq).toBe(withQueued.body.events[1].seq);
 
+    // A queued row with little room beside a question: shortened, and still itself. With none, no page.
+    const criticalRow = envelope(4, 'user_message', { messageId: 'msg_q', source: 'user', delivery: 'queued', content: Array.from({ length: 10 }, () => ({ type: 'text', text: 't'.repeat(300 * 1024) })) });
+    const beside = (bytes: number) => envelope(9, 'question', { requestId: 'q_beside', questions: [{ id: 'which', prompt: 'q'.repeat(bytes), header: 'Big', options: [] }] });
+    chat([criticalRow, beside(Math.floor(7.5 * 1024 * 1024))]);
+    const shortened = await send('GET', route);
+    expect(shortened.status).toBe(200);
+    expect(shortened.body.pendingQuestions[0].data.questions[0].prompt).toHaveLength(Math.floor(7.5 * 1024 * 1024));
+    expect(shortened.body.queuedMessageIds).toContain('msg_q');
+    const [rowShown] = shortened.body.events;
+    expect(rowShown).toMatchObject({ seq: 4, type: 'user_message', data: { messageId: 'msg_q', source: 'user', delivery: 'queued', truncated: { originalBytes: expect.any(Number) } } });
+    expect(rowShown.data.content).toHaveLength(10);
+    expect(Buffer.byteLength(JSON.stringify(shortened.body))).toBeLessThanOrEqual(8 * 1024 * 1024);
+    chat([criticalRow, beside(8 * 1024 * 1024 - 8 * 1024)]);
+    expect((await send('GET', route)).status).toBe(503);
+
     chat(LIVE_TRANSCRIPT);
     fixtures.set('chat-pages.json', {
       note: 'Bodies are shortened to what shows the rule. A 503 leaves a phone read-only until a refresh works.',
       byBytes: { status: byBytes.status, body: { ...shorten(byBytes.body), nextBeforeSeq: '<the oldest seq shown>' } },
       minimal: { status: minimal.status, body: { ...shorten(minimal.body), pendingPermissions: [{ ...row, data: { ...row.data, truncated: { originalBytes: 307400 } } }], pendingPermissionCount: minimal.body.pendingPermissions.length } },
       overflow: { status: noPage.status, body: noPage.body },
+      queuedRowShortened: { note: 'Beside a question that leaves little room. Only its text is shortened: its ids, source, delivery, every block and part stay. Too little room for this, and the answer is a 503.', status: shortened.status, event: { ...rowShown, data: { ...rowShown.data, content: rowShown.data.content.slice(0, 1).map((b: any) => ({ type: b.type, text: `${b.text.slice(0, 40)}<shortened here>` })), contentBlocks: rowShown.data.content.length } } },
       omittedQuestion: { note: 'A question in history too large for any page. Not pending, so nothing to answer.', event: stub },
       queuedRow: { note: 'A row named by queuedMessageIds, in front of a tail that does not reach it. nextBeforeSeq does not count it.', firstEvents: withQueued.body.events.slice(0, 2).map((e: any) => ({ seq: e.seq, type: e.type, ...(e.type === 'user_message' && { data: e.data }) })), nextBeforeSeq: '<the seq of the second event>', queuedMessageIds: withQueued.body.queuedMessageIds },
     });

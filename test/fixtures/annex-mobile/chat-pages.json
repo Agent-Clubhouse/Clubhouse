@@ -99,6 +99,7 @@
         "message": "A question here is too large to show. It's on the desktop.",
         "omitted": {
           "originalBytes": 9437385,
+          "requestId": "q_big",
           "type": "question"
         }
       },
@@ -144,5 +145,32 @@
     "queuedMessageIds": [
       "msg_q"
     ]
+  },
+  "queuedRowShortened": {
+    "event": {
+      "agentId": "durable_chat",
+      "data": {
+        "content": [
+          {
+            "text": "tttttttttttttttttttttttttttttttttttttttt<shortened here>",
+            "type": "text"
+          }
+        ],
+        "contentBlocks": 10,
+        "delivery": "queued",
+        "messageId": "msg_q",
+        "source": "user",
+        "truncated": {
+          "originalBytes": 3072442
+        }
+      },
+      "seq": 4,
+      "sessionId": "sess_live",
+      "ts": 1799999944000,
+      "type": "user_message",
+      "v": 2
+    },
+    "note": "Beside a question that leaves little room. Only its text is shortened: its ids, source, delivery, every block and part stay. Too little room for this, and the answer is a 503.",
+    "status": 200
   }
 }
