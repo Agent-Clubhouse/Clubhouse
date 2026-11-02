@@ -1038,9 +1038,9 @@ async function handleIconRequest(res: http.ServerResponse, url: string): Promise
   const agentIconMatch = url.match(/^\/api\/v1\/icons\/agent\/([^/]+)$/);
   if (agentIconMatch) {
     const agentId = decodeURIComponent(agentIconMatch[1]);
-    // Find the agent's icon filename across all projects
-    const projects = await projectStore.list();
-    let iconFilename: string | undefined;
+    // The Dispatcher is in no project (#2533); anyone else, find across all projects
+    let iconFilename = activeDispatcher(agentId)?.config.icon;
+    const projects = iconFilename ? [] : await projectStore.list();
     for (const proj of projects) {
       const durables = await agentConfig.listDurable(proj.path);
       const agent = durables.find((d) => d.id === agentId);

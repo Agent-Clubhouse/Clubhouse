@@ -25,8 +25,12 @@ vi.mock('./agent-config', () => ({
   removeAgentIconFile: vi.fn(async () => undefined),
 }));
 
-vi.mock('./dispatcher/dispatcher-service', () => ({ isDispatcherAgentId: (id: string) => id === 'dispatcher' }));
-vi.mock('./dispatcher/dispatcher-paths', () => ({ isDispatcherPath: (p: string) => p === '/dispatcher' }));
+let dispatcherState = { enabled: true, path: '/dispatcher' as string | null };
+vi.mock('./dispatcher/dispatcher-service', () => ({
+  isDispatcherAgentId: (id: string) => id === 'dispatcher',
+  getDispatcherState: () => dispatcherState,
+}));
+vi.mock('./dispatcher/dispatcher-paths', () => ({ getDispatcherPath: () => '/dispatcher' }));
 
 import * as agentConfig from './agent-config';
 import { AppearanceError, listAgentAppearances, listProjectAppearances, updateAgentAppearance, updateProjectAppearance, type AppearanceActor } from './appearance-service';
@@ -62,7 +66,8 @@ beforeEach(async () => {
     { id: 'p1', name: 'one', path: '/one' },
     { id: 'p2', name: 'two', path: '/two', displayName: 'Second' },
   ];
-  agents = { '/one': [agent('a1'), agent('a2')], '/two': [agent('b1')] };
+  agents = { '/one': [agent('a1'), agent('a2')], '/two': [agent('b1')], '/dispatcher': [agent('dispatcher')] };
+  dispatcherState = { enabled: true, path: '/dispatcher' };
 });
 
 afterEach(async () => {
@@ -172,15 +177,49 @@ describe('updateAgentAppearance', () => {
     expect(agentConfig.updateDurable).toHaveBeenCalledWith('/one', 'a2', { color: 'rose' });
   });
 
-  it('locks the Dispatcher\'s own appearance for everyone', async () => {
-    expect(await refusal(updateAgentAppearance(DISPATCHER, undefined, { color: 'teal' }))).toBe('dispatcher_locked');
-    expect(await refusal(updateAgentAppearance(CLI, 'dispatcher', { emoji: '🦊' }))).toBe('dispatcher_locked');
-    const image = await fileWith('i.png', PNG);
-    expect(await refusal(updateAgentAppearance(DISPATCHER, 'dispatcher', { imagePath: image }))).toBe('dispatcher_locked');
-    // Turned off, it asks as an ordinary agent in its own folder.
-    const off: AppearanceActor = { scope: 'own', agentId: 'old-dispatcher', projectPath: '/dispatcher' };
-    expect(await refusal(updateAgentAppearance(off, undefined, { color: 'teal' }))).toBe('dispatcher_locked');
-    expect(agentConfig.updateDurable).not.toHaveBeenCalled();
+  describe('the Dispatcher', () => {
+    it('changes itself by default, in its own folder, without looking at projects', async () => {
+      const result = await updateAgentAppearance(DISPATCHER, undefined, { color: 'teal', emoji: '🦊' });
+      expect(agentConfig.updateDurable).toHaveBeenCalledWith('/dispatcher', 'dispatcher', { color: 'teal', emoji: '🦊' });
+      expect(projectStore.list).not.toHaveBeenCalled();
+      expect(result.id).toBe('dispatcher');
+    });
+
+    it('changes itself by id, image included', async () => {
+      await updateAgentAppearance(DISPATCHER, 'dispatcher', { imagePath: await fileWith('i.png', PNG) });
+      expect(agentConfig.writeAgentIconFile).toHaveBeenCalledWith('dispatcher', expect.anything(), 'png');
+      expect(agentConfig.updateDurable).toHaveBeenCalledWith('/dispatcher', 'dispatcher', { icon: 'dispatcher.hash.png', emoji: null });
+    });
+
+    it('still changes itself turned off, when it asks as an ordinary agent in its own folder', async () => {
+      const off: AppearanceActor = { scope: 'own', agentId: 'dispatcher', projectPath: '/dispatcher' };
+      await updateAgentAppearance(off, undefined, { color: 'teal' });
+      expect(agentConfig.updateDurable).toHaveBeenCalledWith('/dispatcher', 'dispatcher', { color: 'teal' });
+    });
+
+    it('can be changed by the CLI', async () => {
+      await updateAgentAppearance(CLI, 'dispatcher', { emoji: '🦊' });
+      expect(agentConfig.updateDurable).toHaveBeenCalledWith('/dispatcher', 'dispatcher', { emoji: '🦊' });
+    });
+
+    it('can\'t be changed by another agent', async () => {
+      expect(await refusal(updateAgentAppearance(SELF, 'dispatcher', { color: 'teal' }))).toBe('out_of_scope');
+      const inFolder: AppearanceActor = { scope: 'own', agentId: 'a1', projectPath: '/dispatcher' };
+      expect(await refusal(updateAgentAppearance(inFolder, 'dispatcher', { color: 'teal' }))).toBe('out_of_scope');
+      expect(agentConfig.updateDurable).not.toHaveBeenCalled();
+      expect(agentConfig.writeAgentIconFile).not.toHaveBeenCalled();
+    });
+
+    it('keeps its name', async () => {
+      await updateAgentAppearance(DISPATCHER, undefined, { name: 'Bob', color: 'teal' } as never);
+      expect(agentConfig.updateDurable).toHaveBeenCalledWith('/dispatcher', 'dispatcher', { color: 'teal' });
+    });
+
+    it('takes the same checks as any agent', async () => {
+      expect(await refusal(updateAgentAppearance(DISPATCHER, undefined, { color: 'plaid' }))).toBe('invalid_color');
+      expect(await refusal(updateAgentAppearance(DISPATCHER, undefined, {}))).toBe('no_changes');
+      expect(agentConfig.updateDurable).not.toHaveBeenCalled();
+    });
   });
 
   it('refuses a bad color, an unknown, disposed or creating agent, and an empty change', async () => {
@@ -247,13 +286,18 @@ describe('listing', () => {
 
   it('lists agents everywhere or in one project, skipping disposed helpers', async () => {
     agents['/two'].push(agent('gone', { disposedAt: '2026-01-02' } as Partial<DurableAgentConfig>));
-    expect((await listAgentAppearances()).map((a) => [a.id, a.projectId])).toEqual([['a1', 'p1'], ['a2', 'p1'], ['b1', 'p2']]);
+    expect((await listAgentAppearances()).map((a) => [a.id, a.projectId])).toEqual([['a1', 'p1'], ['a2', 'p1'], ['b1', 'p2'], ['dispatcher', '__dispatcher__']]);
     expect((await listAgentAppearances('Second')).map((a) => a.id)).toEqual(['b1']);
     expect(await refusal(listAgentAppearances('nope'))).toBe('not_found');
   });
 
   it('still lists the other projects when one can\'t be read', async () => {
     vi.mocked(agentConfig.listDurable).mockRejectedValueOnce(new Error('EIO'));
-    expect((await listAgentAppearances()).map((a) => a.id)).toEqual(['b1']);
+    expect((await listAgentAppearances()).map((a) => a.id)).toEqual(['b1', 'dispatcher']);
+  });
+
+  it('leaves the Dispatcher out while it is off', async () => {
+    dispatcherState = { enabled: false, path: '/dispatcher' };
+    expect((await listAgentAppearances()).map((a) => a.id)).toEqual(['a1', 'a2', 'b1']);
   });
 });

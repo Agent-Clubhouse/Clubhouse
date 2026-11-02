@@ -128,7 +128,6 @@ function pickFields<K extends string>(body: Record<string, unknown>, allowed: re
 const APPEARANCE_STATUS: Readonly<Record<string, number>> = {
   not_found: 404,
   out_of_scope: 403,
-  dispatcher_locked: 409,
   agent_creating: 409,
   ambiguous_project: 409,
 };

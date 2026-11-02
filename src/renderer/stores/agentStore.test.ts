@@ -1293,6 +1293,20 @@ describe('agentStore', () => {
       expect(getState().agents['not_loaded']).toBeUndefined();
     });
 
+    it('updates the Dispatcher, which is in no project (#2645)', async () => {
+      const mockAgent = window.clubhouse.agent as any;
+      seedAgent({ id: 'dispatcher', name: 'Dispatcher', color: 'indigo', icon: 'dispatcher.1.png', projectId: '__dispatcher__', status: 'running', kind: 'durable' });
+      useAgentStore.setState({ agentIcons: { dispatcher: 'data:old' } });
+      mockAgent.listDurable.mockResolvedValue([config('dispatcher', { name: 'Dispatcher', color: 'rose', icon: 'dispatcher.2.png' })]);
+      mockAgent.readIcon.mockResolvedValue('data:new');
+
+      await getState().syncDurableDisplay('/base/dispatcher');
+
+      expect(mockAgent.listDurable).toHaveBeenCalledWith('/base/dispatcher');
+      expect(getState().agents['dispatcher']).toMatchObject({ color: 'rose', icon: 'dispatcher.2.png', projectId: '__dispatcher__', status: 'running' });
+      expect(getState().agentIcons['dispatcher']).toBe('data:new');
+    });
+
     it('leaves the state alone when nothing changed', async () => {
       const mockAgent = window.clubhouse.agent as any;
       seedAgent({ id: 'same', name: 'same', color: 'indigo', projectId: 'proj_1', status: 'sleeping', kind: 'durable' });

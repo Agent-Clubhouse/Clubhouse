@@ -183,7 +183,7 @@ describe('routes', () => {
   });
 
   it.each([
-    ['not_found', 404], ['dispatcher_locked', 409], ['agent_creating', 409], ['ambiguous_project', 409],
+    ['not_found', 404], ['agent_creating', 409], ['ambiguous_project', 409],
     ['invalid_color', 400], ['invalid_image', 400], ['no_changes', 400],
   ])('passes a %s refusal on as %i with its message', async (code, status) => {
     mocks.updateAgentAppearance.mockRejectedValueOnce(new AppearanceError(code as never, 'Because.'));
@@ -237,9 +237,9 @@ describe('the real CLI against this endpoint', () => {
   });
 
   it('turns a refusal into the refused exit code', async () => {
-    mocks.updateAgentAppearance.mockRejectedValueOnce(new AppearanceError('dispatcher_locked', 'Locked.'));
-    const { code, err } = await runCli(['agent', 'set', 'dispatcher', '--color', 'teal']);
+    mocks.updateAgentAppearance.mockRejectedValueOnce(new AppearanceError('agent_creating', 'Still being created.'));
+    const { code, err } = await runCli(['agent', 'set', 'a1', '--color', 'teal']);
     expect(code).toBe(EXIT.refused);
-    expect(err).toContain('Locked.');
+    expect(err).toContain('Still being created.');
   });
 });
