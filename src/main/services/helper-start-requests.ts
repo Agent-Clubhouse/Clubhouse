@@ -85,6 +85,7 @@ export function recordStartRequest(
   orchestratorName: string,
   args: HelperStartArgs,
   now = Date.now(),
+  warning?: HelperStartRequest['warning'],
 ): RecordStartResult {
   sweep(now);
   const mine = [...pending.values()].filter((r) => r.orchestratorId === orchestratorId && norm(r.projectPath) === norm(projectPath));
@@ -100,6 +101,7 @@ export function recordStartRequest(
     args: { ...args },
     createdAt: new Date(now).toISOString(),
     expiresAt: new Date(now + START_REQUEST_TTL_MS).toISOString(),
+    ...(warning && { warning }),
   };
   pending.set(request.requestId, request);
   const timer = setTimeout(() => sweep(Date.now()), START_REQUEST_TTL_MS + 1);

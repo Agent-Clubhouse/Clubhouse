@@ -141,6 +141,8 @@ export interface MobileHelperRequest {
   /** For a start: what the helper is asked to do and how. */
   /** For a start that named a CLI, model, effort or difficulty (#2671). What it resolves to is decided at approval. */
   requestedRouting?: { provider: string | null; model: string | null; effort: string | null; difficulty: string | null };
+  /** A provider this start names looked unwell when it was asked, as of `asOf`. Show `message`. It never blocks an approval. */
+  startWarning?: import('./helper-routing').HelperStartWarning;
   start?: { task: string; persona: string | null; model: string | null; access: string | null; branchFrom: string | null };
   /**
    * For a dispose: what disposing would lose. `canDispose` is false when a

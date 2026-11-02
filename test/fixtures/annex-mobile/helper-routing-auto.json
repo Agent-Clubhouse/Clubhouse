@@ -185,6 +185,40 @@
     },
     "summary": "Wants to start the helper impl-ipc"
   },
+  "heldStartWithWarning": {
+    "expiresAt": "2027-01-16T07:50:00.000Z",
+    "helper": {
+      "agentId": null,
+      "name": "impl-ipc"
+    },
+    "kind": "start",
+    "projectId": "proj_app",
+    "requestId": "hstart_00000000-0000-4000-8000-000000000017",
+    "requestedAt": "2027-01-15T07:50:00.000Z",
+    "requestedRouting": {
+      "difficulty": null,
+      "effort": null,
+      "model": "gpt-6.1-sol",
+      "provider": "codex-cli"
+    },
+    "requester": {
+      "agentId": "durable_chat",
+      "name": "planner"
+    },
+    "start": {
+      "access": null,
+      "branchFrom": null,
+      "model": "gpt-6.1-sol",
+      "persona": null,
+      "task": "Wire the IPC"
+    },
+    "startWarning": {
+      "asOf": "2027-01-15T07:59:00.000Z",
+      "code": "quota_near_limit",
+      "message": "codex-cli is close to its plan limit. The helper is started on it anyway, as asked."
+    },
+    "summary": "Wants to start the helper impl-ipc"
+  },
   "settingsRouting": {
     "betterTier": {
       "balanced": true,
@@ -233,6 +267,44 @@
         "effort": "builtin_mapping",
         "model": "builtin_mapping",
         "provider": "auto"
+      }
+    },
+    "explicitWithWarning": {
+      "balanced": false,
+      "context": {
+        "status": "none"
+      },
+      "decidedAt": "2027-01-15T08:00:00.000Z",
+      "display": {
+        "reason": "You or the orchestrator chose this",
+        "summary": "gpt-6.1-sol, high effort. You or the orchestrator chose this.",
+        "warning": "codex-cli failed to start or hit its limit recently. The helper is started on it anyway, as asked."
+      },
+      "fallback": "none",
+      "mode": "explicit",
+      "policyVersion": 1,
+      "reason": "explicit_request",
+      "requested": {
+        "difficulty": null,
+        "effort": "high",
+        "model": "gpt-6.1-sol",
+        "provider": "codex-cli"
+      },
+      "resolved": {
+        "difficulty": null,
+        "effort": "high",
+        "model": "gpt-6.1-sol",
+        "provider": "codex-cli"
+      },
+      "source": {
+        "effort": "request",
+        "model": "request",
+        "provider": "request"
+      },
+      "warning": {
+        "asOf": "2027-01-15T08:00:00.000Z",
+        "code": "cooling_down",
+        "message": "codex-cli failed to start or hit its limit recently. The helper is started on it anyway, as asked."
       }
     },
     "lowerLoad": {

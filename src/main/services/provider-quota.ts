@@ -15,6 +15,7 @@
 import {
   classifyQuota,
   QUOTA_STALE_MS,
+  type HelperStartWarning,
   type PlanQuotaReading,
   type QuotaSource,
   type QuotaView,
@@ -47,6 +48,8 @@ interface QuotaEntry {
   inFlight?: Promise<void>;
   /** Auto leaves this provider and profile alone until then. Explicit starts aren't affected. */
   coolingUntil?: number;
+  /** When the cooldown began, for saying how old a warning is. */
+  cooledAt?: number;
 }
 
 const entries = new Map<string, QuotaEntry>();
@@ -193,6 +196,7 @@ export async function noteProviderFailure(providerId: string, projectPath: strin
       : undefined;
     const until = knownReset && knownReset > now ? knownReset : now + COOLDOWN_MS[kind];
     entry.coolingUntil = Math.max(entry.coolingUntil ?? 0, until);
+    entry.cooledAt = now;
     if (kind === 'quota') {
       entry.windows = [...entry.windows.filter((w) => w.name !== 'window'), { name: 'window', limitReached: true, resetsAt: until, asOf: now }];
       entry.source = 'session_event';
@@ -215,15 +219,22 @@ export async function isProviderCoolingDown(providerId: string, projectPath: str
  * explicit start is never blocked by quota or a cooldown, and this reads nothing
  * from a CLI, so it says nothing until something has. Never throws.
  */
-export async function providerStartWarning(providerId: string, projectPath: string | undefined): Promise<string | undefined> {
+export async function providerStartWarning(providerId: string, projectPath: string | undefined): Promise<HelperStartWarning | undefined> {
   try {
     const { entry } = await entryFor(providerId, projectPath);
     const now = Date.now();
-    if ((entry.coolingUntil ?? 0) > now) return `${providerId} failed to start or hit its limit recently, so Auto is leaving it alone for now. The helper is started on it anyway, as you asked.`;
+    if ((entry.coolingUntil ?? 0) > now) {
+      return {
+        code: 'cooling_down',
+        asOf: new Date(entry.cooledAt ?? now).toISOString(),
+        message: `${providerId} failed to start or hit its limit recently. The helper is started on it anyway, as asked.`,
+      };
+    }
     if (entry.windows.length === 0) return undefined;
-    const { state } = classifyQuota(entry.windows, now);
-    if (state === 'exhausted') return `${providerId} reports its plan limit reached. The helper is started on it anyway, as you asked, and may stop right away.`;
-    if (state === 'near_limit') return `${providerId} is close to its plan limit. The helper is started on it anyway, as you asked.`;
+    const { state, asOf } = classifyQuota(entry.windows, now);
+    if (!asOf) return undefined;
+    if (state === 'exhausted') return { code: 'quota_exhausted', asOf, message: `${providerId} reports its plan limit reached. The helper is started on it anyway, as asked, and may stop right away.` };
+    if (state === 'near_limit') return { code: 'quota_near_limit', asOf, message: `${providerId} is close to its plan limit. The helper is started on it anyway, as asked.` };
     return undefined;
   } catch {
     // telemetry-exempt: only a warning, and the start goes on

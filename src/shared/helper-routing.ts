@@ -198,12 +198,25 @@ export interface HelperRouting {
   reason: HelperRoutingReason;
   fallback: HelperRoutingFallback;
   context: { status: HelperContextStatus };
+  /** A provider this start named looked unwell, as far as was known. It never blocks an explicit choice. */
+  warning?: HelperStartWarning;
   /** What Auto saw, for a decision it made. Never live: these are as of `decidedAt`. */
   load?: Record<string, number>;
   quota?: Record<string, QuotaDecisionView>;
   /** `unknown_scored_as_healthy`: the chosen provider's quota was unknown, and that says nothing about its capacity. */
   quotaBasis?: 'known' | 'unknown_scored_as_healthy';
   skipped?: Record<string, HelperRoutingSkip>;
+}
+
+/**
+ * What was known about a provider a start named. `message` is the words to show:
+ * it says what was reported, and never promises capacity. `asOf` is when it became
+ * known, so it can be old, since a warning never asks a CLI.
+ */
+export interface HelperStartWarning {
+  code: 'quota_near_limit' | 'quota_exhausted' | 'cooling_down';
+  message: string;
+  asOf: string;
 }
 
 /** A provider's quota as a decision saw it. */

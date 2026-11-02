@@ -712,6 +712,14 @@ To change it, send `helperRouting.update` with `auto`: `true` or `false` at `sco
 
 A held start that names Auto has `requestedRouting.provider: "auto"`, and decides at approval. `helper.approve` then refuses with 409 `status:"rejected"`, code `no_candidate` or `auto_off`, as for `no_valid_mapping`: show `error.message`, offer no retry, and take the row from the snapshot.
 
+**A provider looking unwell.** A start that names a CLI is never blocked by quota or a cooldown. It's only told, in `startWarning` on a held request, `warning` on `helper.approve`'s result, and `routing.warning` in a helper's settings, with `display.warning`:
+
+```json
+{"code":"quota_near_limit","asOf":"…","message":"codex-cli is close to its plan limit. The helper is started on it anyway, as asked."}
+```
+
+`code` is `quota_near_limit`, `quota_exhausted` or `cooling_down`. Show `message`, the server's words, and don't add a claim about capacity. It comes from what was already known and never asks a CLI, so there may be none where a limit hasn't been read yet. `asOf` is when it became known, on the same clock as `serverTime`. A held request's warning is from when it was asked. Approval decides again, so its result can differ or have none: show the result's. Don't block on any of them, and absent says nothing about capacity.
+
 A helper Auto chose has this in its settings' `routing`, as of `decidedAt`, not live:
 
 ```json

@@ -934,7 +934,22 @@ describe('start_helper cli "auto" (#2671)', () => {
     await noteProviderFailure('codex-cli', PROJECT, 'auth');
     const body = parse(await callTool('orch', 'start_helper', { name: 'h', task: 't', cli: 'codex-cli', model: 'gpt-6.1-sol', effort: 'high' }));
     expect(body.state).toBe('starting');
-    expect(body.quotaWarning).toContain('as you asked');
+    expect(body.quotaWarning).toContain('as asked');
+    expect(body.routing).toMatchObject({ warning: { code: 'cooling_down', asOf: expect.any(String) } });
+    expect(mockStartDurableCreation.mock.calls[0][1]).toMatchObject({ model: 'gpt-6.1-sol', orchestrator: 'codex-cli' });
+  });
+
+  it('a held start keeps the warning for the person, and an approval decides it again', async () => {
+    mockGetPolicy.mockResolvedValue({ ...policy, control: 'ask-before-start' });
+    await noteProviderFailure('codex-cli', PROJECT, 'auth');
+    await callTool('orch', 'start_helper', { name: 'h', task: 't', cli: 'codex-cli', model: 'gpt-6.1-sol' });
+    const [request] = listStartRequests();
+    expect(request.warning).toMatchObject({ code: 'cooling_down' });
+    controllableCreation();
+    _resetProviderQuotaForTesting();
+    const decision = await approveHelperStart(PROJECT, request.requestId);
+    expect(decision.ok).toBe(true);
+    expect(decision.warning).toBeUndefined();
   });
 
   it('a held start stays requested, and decides at approval', async () => {

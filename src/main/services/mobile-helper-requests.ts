@@ -98,6 +98,7 @@ export function buildMobileHelperRequests(
       ...((r.args.cli || r.args.model || r.args.effort || r.args.difficulty) && {
         requestedRouting: { provider: r.args.cli ?? null, model: r.args.model ?? null, effort: r.args.effort ?? null, difficulty: r.args.difficulty ?? null },
       }),
+      ...(r.warning && { startWarning: r.warning }),
     });
   }
   for (const { requestId, request, createdAt } of listDisposeRequests()) {
@@ -159,7 +160,7 @@ export async function runHelperCommand(command: HelperCommand, deps: HelperComma
       if (result.code && DEFINITE_REFUSALS.has(result.code)) throw new MobileControlError(result.code, 409, 'rejected', result.message);
       throw new MobileControlError(waiting ? 'helper_start_blocked' : 'helper_start_refused', 409, waiting ? 'rejected' : 'failed', result.message);
     }
-    return { requestId, kind: 'start', approved: true, helperId: result.helperId ?? null };
+    return { requestId, kind: 'start', approved: true, helperId: result.helperId ?? null, ...(result.warning && { warning: result.warning }) };
   }
 
   const pending = findDisposeRequest(requestId);

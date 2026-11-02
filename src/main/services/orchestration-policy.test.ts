@@ -1,3 +1,4 @@
+import * as orchestrationSettings from './orchestration-settings';
 import { setRoutingPolicyListener } from './helper-routing-changes';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import * as path from 'path';
@@ -344,8 +345,8 @@ describe('setOrchestrationPolicy audit (#2671)', () => {
   it('writes one row per field that changed, values and who asked', async () => {
     await setOrchestrationPolicy(PROJECT, 'orch', { maxHelpers: 9, control: 'ask-before-start' }, { surface: 'dispatcher', actorId: 'disp' });
     expect(auditRows).toEqual(expect.arrayContaining([
-      { surface: 'dispatcher', actorId: 'disp', targetId: 'orch', scope: 'agent', key: 'orchestration.maxHelpers', before: expect.anything(), after: 9, outcome: 'ok' },
-      { surface: 'dispatcher', actorId: 'disp', targetId: 'orch', scope: 'agent', key: 'orchestration.control', before: expect.anything(), after: 'ask-before-start', outcome: 'ok' },
+      { surface: 'dispatcher', actorId: 'disp', targetId: 'orch', scope: 'agent', key: 'orchestration.maxHelpers', before: null, after: 9, outcome: 'ok' },
+      { surface: 'dispatcher', actorId: 'disp', targetId: 'orch', scope: 'agent', key: 'orchestration.control', before: null, after: 'ask-before-start', outcome: 'ok' },
     ]));
     expect(auditRows).toHaveLength(2);
   });
@@ -357,6 +358,68 @@ describe('setOrchestrationPolicy audit (#2671)', () => {
       await setOrchestrationPolicy(PROJECT, 'orch', { maxHelpers: 9 });
       expect(listener).not.toHaveBeenCalled();
       await setOrchestrationPolicy(PROJECT, 'orch', { orchestrate: true, autoHelpers: true });
+      expect(listener).toHaveBeenCalledTimes(1);
+    } finally {
+      setRoutingPolicyListener(null);
+    }
+  });
+
+  it('a clear from false to unset moves the revision and is audited, though it resolves false both ways', async () => {
+    setAgents(PROJECT, [agent('orch', { orchestration: { autoHelpers: false } })]);
+    const listener = vi.fn();
+    setRoutingPolicyListener(listener);
+    try {
+      await setOrchestrationPolicy(PROJECT, 'orch', { autoHelpers: null });
+      expect(listener).toHaveBeenCalledTimes(1);
+      expect(auditRows).toEqual([expect.objectContaining({ key: 'orchestration.autoHelpers', before: false, after: null })]);
+    } finally {
+      setRoutingPolicyListener(null);
+    }
+  });
+
+  it('a clear that turns Auto on through the app moves the revision, and says so in the outcome', async () => {
+    setAgents(PROJECT, [agent('orch', { orchestration: { orchestrate: true, autoHelpers: false } })]);
+    vi.mocked(orchestrationSettings.getAutoHelpers).mockReturnValue(true);
+    const listener = vi.fn();
+    setRoutingPolicyListener(listener);
+    try {
+      const before = await getOrchestrationPolicy(PROJECT, 'orch');
+      expect(before?.autoEffective).toMatchObject({ effective: false, source: 'agent' });
+      const result = await setOrchestrationPolicy(PROJECT, 'orch', { autoHelpers: null });
+      expect(result.policy?.autoEffective).toMatchObject({ effective: true, source: 'app' });
+      expect(listener).toHaveBeenCalledTimes(1);
+    } finally {
+      setRoutingPolicyListener(null);
+      vi.mocked(orchestrationSettings.getAutoHelpers).mockReturnValue(false);
+    }
+  });
+
+  it('a write MCP masks still moves the revision and is audited', async () => {
+    setAgents(PROJECT, [agent('orch', { orchestration: { orchestrate: true, autoHelpers: true }, mcpOverride: false })]);
+    const listener = vi.fn();
+    setRoutingPolicyListener(listener);
+    try {
+      // false either way as resolved, with MCP off.
+      await setOrchestrationPolicy(PROJECT, 'orch', { autoHelpers: false });
+      expect(listener).toHaveBeenCalledTimes(1);
+      expect(auditRows).toEqual([expect.objectContaining({ key: 'orchestration.autoHelpers', before: true, after: false })]);
+    } finally {
+      setRoutingPolicyListener(null);
+    }
+  });
+
+  it('turning orchestration off moves the revision, even when settling a late helper then fails', async () => {
+    // The first pass settles nothing away, so the helper still there counts as a late one, and that pass fails.
+    setAgents(PROJECT, [agent('orch', { orchestration: { orchestrate: true } }), agent('late', { parentAgentId: 'orch' })]);
+    mocks.resolveHelpersForDelete
+      .mockResolvedValueOnce({ ok: true, message: 'Kept', helperIds: [] })
+      .mockResolvedValueOnce({ ok: false, message: 'it could not be released' });
+    const listener = vi.fn();
+    setRoutingPolicyListener(listener);
+    try {
+      const result = await turnOffOrchestration(PROJECT, 'orch', 'keep');
+      expect(result.ok).toBe(false);
+      expect(result.message).toContain('Orchestration is off, but');
       expect(listener).toHaveBeenCalledTimes(1);
     } finally {
       setRoutingPolicyListener(null);

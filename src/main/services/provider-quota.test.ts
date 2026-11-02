@@ -246,9 +246,9 @@ describe('failures and cooldowns', () => {
     expect(await providerStartWarning('claude-code', undefined)).toBeUndefined();
     expect(read).not.toHaveBeenCalled();
     await readProviderQuota('claude-code');
-    expect(await providerStartWarning('claude-code', undefined)).toContain('close to its plan limit');
+    expect(await providerStartWarning('claude-code', undefined)).toMatchObject({ code: 'quota_near_limit', asOf: new Date(NOW).toISOString(), message: expect.stringContaining('close to its plan limit') });
     await noteProviderFailure('claude-code', undefined, 'auth');
-    expect(await providerStartWarning('claude-code', undefined)).toContain('failed to start or hit its limit');
+    expect(await providerStartWarning('claude-code', undefined)).toMatchObject({ code: 'cooling_down', asOf: new Date(NOW).toISOString() });
     expect(read).toHaveBeenCalledTimes(1);
   });
 

@@ -383,11 +383,17 @@ async function countHelpersElsewhere(projectPath: string, agentId: string): Prom
 
 type PolicyAudit = Pick<SettingsAuditRow, 'surface' | 'actorId' | 'targetId'>;
 
-/** One row per field that changed. Every field is an enum, a boolean or a whole number. */
-async function auditPolicyChange(audit: PolicyAudit, before: ResolvedOrchestrationPolicy, after: ResolvedOrchestrationPolicy): Promise<void> {
+/**
+ * One row per field whose saved value changed: what the agent itself says, null
+ * when unset. Resolved values would miss a clear from false to unset, or anything
+ * written while MCP masks it. Every field is an enum, a boolean or a whole number.
+ */
+async function auditPolicyChange(audit: PolicyAudit, before: OrchestrationPolicyConfig | undefined, after: OrchestrationPolicyConfig | undefined): Promise<void> {
   for (const key of Object.keys(ORCHESTRATION_DEFAULTS) as Array<keyof OrchestrationPolicy>) {
-    if (before[key] === after[key]) continue;
-    await appendSettingsAudit({ ...audit, scope: 'agent', key: `orchestration.${key}`, before: before[key], after: after[key], outcome: 'ok' });
+    const was = before?.[key] ?? null;
+    const now = after?.[key] ?? null;
+    if (was === now) continue;
+    await appendSettingsAudit({ ...audit, scope: 'agent', key: `orchestration.${key}`, before: was, after: now, outcome: 'ok' });
   }
 }
 
@@ -448,10 +454,16 @@ export async function setOrchestrationPolicy(
       }
     }
 
+    // Copied now: the write can change this agent's own record.
+    const storedBefore = agent.orchestration && { ...agent.orchestration };
     await agentConfig.setOrchestrationConfig(projectPath, agentId, stored);
     applyGate(projectPath, agent, next);
-    await auditPolicyChange(audit, current, next);
-    if (current.autoHelpers !== next.autoHelpers || current.orchestrate !== next.orchestrate) noteRoutingPolicyChanged();
+    await auditPolicyChange(audit, storedBefore, stored);
+    // Its own switch or orchestrate as saved, or the outcome: a clear from false to unset can change the outcome,
+    // and a write while MCP is off changes what comes back with it.
+    if (storedBefore?.autoHelpers !== stored?.autoHelpers
+      || storedBefore?.orchestrate !== stored?.orchestrate
+      || current.autoEffective?.effective !== next.autoEffective?.effective) noteRoutingPolicyChanged();
     appLog('core:orchestration', 'info', 'Orchestration policy changed', {
       meta: {
         agentId,
@@ -542,6 +554,8 @@ export async function turnOffOrchestration(
     if (savedOrchestrate(current)) {
       stored = applyOrchestrationPatch(fresh.orchestration, { orchestrate: false });
       await agentConfig.setOrchestrationConfig(projectPath, agentId, stored);
+      // Now, not at the end: the write stands even if settling a late helper fails below.
+      noteRoutingPolicyChanged();
     }
     // Closed again after the write, whatever happened to the gate meanwhile.
     setOrchestrationEnabled(agentId, false);

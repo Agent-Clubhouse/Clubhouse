@@ -332,7 +332,7 @@
       }
     },
     {
-      "name": "auto_off",
+      "name": "accepted start, with a warning",
       "request": {
         "commandId": "cmd_164",
         "epoch": "00000000-0000-4000-8000-000000000001",
@@ -343,6 +343,36 @@
       "response": {
         "body": {
           "commandId": "cmd_164",
+          "epoch": "00000000-0000-4000-8000-000000000001",
+          "result": {
+            "approved": true,
+            "helperId": "durable_helper_new",
+            "kind": "start",
+            "requestId": "hstart_00000000-0000-4000-8000-000000000017",
+            "warning": {
+              "asOf": "2027-01-15T08:00:00.000Z",
+              "code": "quota_near_limit",
+              "message": "codex-cli is close to its plan limit. The helper is started on it anyway, as asked."
+            }
+          },
+          "status": "completed",
+          "version": 1
+        },
+        "status": 200
+      }
+    },
+    {
+      "name": "auto_off",
+      "request": {
+        "commandId": "cmd_165",
+        "epoch": "00000000-0000-4000-8000-000000000001",
+        "requestId": "hstart_00000000-0000-4000-8000-000000000018",
+        "type": "helper.approve",
+        "version": 1
+      },
+      "response": {
+        "body": {
+          "commandId": "cmd_165",
           "epoch": "00000000-0000-4000-8000-000000000001",
           "error": {
             "code": "auto_off",

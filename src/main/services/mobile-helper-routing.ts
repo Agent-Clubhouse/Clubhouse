@@ -133,6 +133,7 @@ export function mobileHelperRoutingDetail(routing: HelperRouting | undefined) {
       summary: describeRouting(routing),
       reason: routingLabel('reason', routing.reason),
       ...(routing.fallback !== 'none' && { fallback: routingLabel('fallback', routing.fallback) }),
+      ...(routing.warning && { warning: routing.warning.message }),
     },
   };
 }

@@ -68,7 +68,7 @@ import { appLog } from '../../log-service';
 import { IPC } from '../../../../shared/ipc-channels';
 import { AGENT_COLORS } from '../../../../shared/name-generator';
 import { isDisposedAgent, isEffortValue } from '../../../../shared/agent-helpers';
-import { HELPER_DIFFICULTIES, isHelperDifficulty, type HelperAutoView, type HelperContextStatus, type HelperRouting } from '../../../../shared/helper-routing';
+import { HELPER_DIFFICULTIES, isHelperDifficulty, type HelperAutoView, type HelperContextStatus, type HelperRouting, type HelperStartWarning } from '../../../../shared/helper-routing';
 import {
   ACCESS_LEVELS,
   CROSS_PROJECT_OFF_MESSAGE,
@@ -546,8 +546,8 @@ type StartOutcome =
   /** `message` for the orchestrator's tool result; `reason` to follow "because" in an approval's answer. */
   | { kind: 'refused'; message: string; reason: string; code?: string; userReason?: string }
   | { kind: 'too_many'; waiting: number }
-  | { kind: 'needs_approval'; control: OrchestrationControl; request: HelperStartRequest; reused: boolean; modelWarning?: string; effortWarning?: string; quotaWarning?: string }
-  | { kind: 'starting'; helperId: string; name: string; branch?: string; launch: HelperLaunch; project: TargetProject; effort?: string; routing?: HelperRouting; modelWarning?: string; effortWarning?: string; quotaWarning?: string };
+  | { kind: 'needs_approval'; control: OrchestrationControl; request: HelperStartRequest; reused: boolean; modelWarning?: string; effortWarning?: string; quotaWarning?: HelperStartWarning }
+  | { kind: 'starting'; helperId: string; name: string; branch?: string; launch: HelperLaunch; project: TargetProject; effort?: string; routing?: HelperRouting; modelWarning?: string; effortWarning?: string; quotaWarning?: HelperStartWarning };
 
 /** A sentence as the tail of "…because <reason>": its first letter lowered unless it starts an acronym or name. */
 function asReason(text: string): string {
@@ -599,7 +599,7 @@ async function runHelperStart(orchestratorId: string, args: HelperStartArgs, app
   // Model and effort are checked before the start lock: listing models can take a CLI handshake (#2569).
   let modelWarning: string | undefined;
   let effortWarning: string | undefined;
-  let quotaWarning: string | undefined;
+  let quotaWarning: HelperStartWarning | undefined;
   let plan: StartPlan | null = null;
   if (cli || model || effort || difficulty) {
     let modelProject = homePath;
@@ -631,7 +631,10 @@ async function runHelperStart(orchestratorId: string, args: HelperStartArgs, app
       effortWarning = check.warning;
     }
     // An explicit start isn't blocked by quota or a cooldown, only told, from what is already known.
-    if (plan?.provider && !plan.pendingAuto) quotaWarning = await providerStartWarning(plan.provider, modelProject);
+    if (plan?.provider && !plan.pendingAuto) {
+      quotaWarning = await providerStartWarning(plan.provider, modelProject);
+      if (quotaWarning) plan = { ...plan, routing: { ...plan.routing, warning: quotaWarning } };
+    }
   }
 
   return withStartLock(async (): Promise<StartOutcome> => {
@@ -687,7 +690,7 @@ async function runHelperStart(orchestratorId: string, args: HelperStartArgs, app
         // The project is held by path, so an approval finds the same one.
         const { project: _asked, ...rest } = args;
         const held: HelperStartArgs = target.cross ? { ...rest, project: target.path } : rest;
-        const recorded = recordStartRequest(homePath, orchestratorId, orchestrator.name, held);
+        const recorded = recordStartRequest(homePath, orchestratorId, orchestrator.name, held, undefined, quotaWarning);
         if (recorded.ok === false) return { kind: 'too_many', waiting: recorded.waiting };
         noticeApprovalNeeded(orchestrator, args, target);
         appLog('core:mcp', 'info', 'start_helper needs user approval', {
@@ -789,7 +792,7 @@ async function startHelper(agentId: string, args: Record<string, unknown>): Prom
         expiresAt: outcome.request.expiresAt,
         ...(outcome.modelWarning && { modelWarning: outcome.modelWarning }),
         ...(outcome.effortWarning && { effortWarning: outcome.effortWarning }),
-        ...(outcome.quotaWarning && { quotaWarning: outcome.quotaWarning }),
+        ...(outcome.quotaWarning && { quotaWarning: outcome.quotaWarning.message }),
         message:
           (outcome.reused ? 'You already asked for this start, and it is still waiting. ' : '') +
           'This agent is set to ask the user before starting helpers, so nothing was created yet. ' +
@@ -809,7 +812,7 @@ async function startHelper(agentId: string, args: Record<string, unknown>): Prom
         ...(outcome.routing && { routing: outcome.routing }),
         ...(outcome.modelWarning && { modelWarning: outcome.modelWarning }),
         ...(outcome.effortWarning && { effortWarning: outcome.effortWarning }),
-        ...(outcome.quotaWarning && { quotaWarning: outcome.quotaWarning }),
+        ...(outcome.quotaWarning && { quotaWarning: outcome.quotaWarning.message }),
         ...(outcome.launch.clamped && { accessNote: `Access lowered to ${outcome.launch.level}: a helper never gets more than you run with or than its CLI allows at that level.` }),
         message:
           `Helper "${outcome.name}" is being created${outcome.project.cross ? ` in ${outcome.project.name}` : ''}. Its worktree can take up to a minute; ` +
@@ -890,7 +893,7 @@ export async function approveHelperStart(projectPath: string, requestId: string)
     notifyOrchestrator(orchestratorId,
       `The user approved starting ${what}. It is being created as ${outcome.helperId} with ` +
       `${outcome.launch.level} access. You will get a message when it has started its task, or why it failed.`);
-    return { ok: true, message: `Starting ${outcome.name}`, helperId: outcome.helperId };
+    return { ok: true, message: `Starting ${outcome.name}`, helperId: outcome.helperId, ...(outcome.quotaWarning && { warning: outcome.quotaWarning }) };
   }
   const reason = outcome.kind === 'refused' ? outcome.reason : 'it could not be started.';
   appLog('core:mcp', 'info', 'Approved helper start refused', { meta: { orchestratorId, requestId, reason } });

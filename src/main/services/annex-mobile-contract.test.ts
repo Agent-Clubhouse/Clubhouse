@@ -14,6 +14,7 @@
 import { _resetProviderQuotaForTesting } from './provider-quota';
 import { noteRoutingPolicyChanged } from './helper-routing-changes';
 import { _settleHelperRoutingForTesting } from './helper-routing';
+import type { HelperStartWarning } from '../../shared/helper-routing';
 import { QUOTA_STALE_MS, quotaRefetchDelaySeconds } from '../../shared/helper-routing';
 import { CLAUDE_WORKING_WINDOW_NOTE } from '../../shared/context-window';
 import { describe, it, expect, beforeAll, afterAll, beforeEach, vi } from 'vitest';
@@ -38,7 +39,7 @@ const W = vi.hoisted(() => ({
   peers: new Map<string, any>(),
   tls: null as null | Record<string, unknown>,
   tlsFingerprint: '',
-  helperStart: 'approve' as 'approve' | 'blocked' | 'refused' | 'no_valid_mapping' | 'no_candidate' | 'auto_off',
+  helperStart: 'approve' as 'approve' | 'blocked' | 'refused' | 'no_valid_mapping' | 'no_candidate' | 'auto_off' | 'warned',
   presets: {} as Record<string, Record<string, { model: string; effort: string | null }>>,
   presetsRevision: 0,
   autoHelpers: false,
@@ -353,6 +354,9 @@ vi.mock('./clubhouse-mcp/tools/helper-tools', async () => {
         W.helperStartRefusals++;
         return { ok: false, code: 'no_valid_mapping', message: 'Couldn’t start impl-ipc because no hard preset for codex-cli is offered now. Change it in Settings > Helpers.' };
       }
+      if (W.helperStart === 'warned') {
+        return { ok: true, helperId: 'durable_helper_new', message: 'Started', warning: { code: 'quota_near_limit', asOf: new Date(NOW).toISOString(), message: 'codex-cli is close to its plan limit. The helper is started on it anyway, as asked.' } };
+      }
       if (W.helperStart === 'no_candidate') {
         return { ok: false, code: 'no_candidate', message: 'Couldn’t start impl-ipc because no provider can take a hard task right now (claude-code: Close to its limit; codex-cli: The provider reports its limit reached).' };
       }
@@ -559,8 +563,8 @@ function resetWorld() {
   _resetDisposeRequestsForTesting();
 }
 
-function helperStart(args: Record<string, string> = { model: 'opus' }): string {
-  const result = recordStartRequest(APP, 'durable_chat', 'planner', { name: 'impl-ipc', task: 'Wire the IPC', ...args }, NOW - 600_000);
+function helperStart(args: Record<string, string> = { model: 'opus' }, warning?: HelperStartWarning): string {
+  const result = recordStartRequest(APP, 'durable_chat', 'planner', { name: 'impl-ipc', task: 'Wire the IPC', ...args }, NOW - 600_000, warning);
   if (!result.ok) throw new Error('start request not recorded');
   return result.request.requestId;
 }
@@ -1921,6 +1925,11 @@ describe('Annex mobile contract fixtures', { timeout: TEST_TIMEOUT_MS }, () => {
       betterTier: autoDecision({ reason: 'better_quota_tier', quota: {
         'claude-code': { state: 'low', asOf: new Date(NOW).toISOString(), limitingWindow: 'fiveHour' }, 'codex-cli': { state: 'known', asOf: new Date(NOW).toISOString(), limitingWindow: 'weekly' },
       } }),
+      explicitWithWarning: decision({
+        mode: 'explicit', requested: field('codex-cli', 'gpt-6.1-sol', 'high', null), resolved: field('codex-cli', 'gpt-6.1-sol', 'high', null),
+        source: { provider: 'request', model: 'request', effort: 'request' }, reason: 'explicit_request',
+        warning: { code: 'cooling_down', asOf: new Date(NOW).toISOString(), message: 'codex-cli failed to start or hit its limit recently. The helper is started on it anyway, as asked.' },
+      }),
       personaPinned: decision({ mode: 'auto', requested: field('auto', null, null, 'hard'), resolved: field('claude-code', 'opus', null, 'hard'),
         source: { provider: 'persona', model: 'persona', effort: 'cli_default' }, reason: 'persona_pinned' }),
     };
@@ -1940,10 +1949,19 @@ describe('Annex mobile contract fixtures', { timeout: TEST_TIMEOUT_MS }, () => {
     expect(heldRow.requestedRouting).toEqual({ provider: 'auto', model: null, effort: null, difficulty: 'hard' });
     const noProvider = await command('no_candidate', { type: 'helper.approve', requestId: heldAuto });
     expect(noProvider).toMatchObject({ status: 409, body: { status: 'rejected', error: { code: 'no_candidate' } } });
+    // A start that names a provider looking unwell: it says so, as of when it was known, and never blocks.
+    _resetStartRequestsForTesting({ keepListeners: true });
+    const startWarning: HelperStartWarning = { code: 'quota_near_limit', asOf: new Date(NOW - 60_000).toISOString(), message: 'codex-cli is close to its plan limit. The helper is started on it anyway, as asked.' };
+    const warnedHeld = helperStart({ cli: 'codex-cli', model: 'gpt-6.1-sol' }, startWarning);
+    const warnedRow = frames(await connect()).find((f) => f.type === 'snapshot').payload.helperRequests.find((r: { requestId: string }) => r.requestId === warnedHeld);
+    expect(warnedRow.startWarning).toEqual(startWarning);
+    W.helperStart = 'warned';
+    const warnedApproval = await command('accepted start, with a warning', { type: 'helper.approve', requestId: warnedHeld });
+    expect(warnedApproval.body.result.warning).toMatchObject({ code: 'quota_near_limit', asOf: new Date(NOW).toISOString() });
     W.helperStart = 'auto_off';
     await command('auto_off', { type: 'helper.approve', requestId: helperStart({ cli: 'auto', difficulty: 'hard' }) });
     W.helperStart = 'approve';
-    fixtures.set('helper-routing-auto.json', { direction: 'desktop-to-phone', field: 'auto', cases: autoCases, heldStart: heldRow, snapshotRow: autoRow, settingsRouting: autoSettings });
+    fixtures.set('helper-routing-auto.json', { direction: 'desktop-to-phone', field: 'auto', cases: autoCases, heldStart: heldRow, heldStartWithWarning: warnedRow, snapshotRow: autoRow, settingsRouting: autoSettings });
 
     W.providers = {};
     vi.mocked(Date.now).mockRestore();

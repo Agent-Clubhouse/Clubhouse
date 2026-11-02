@@ -5,7 +5,7 @@
       "request": {
         "commandId": "cmd_110",
         "epoch": "00000000-0000-4000-8000-000000000001",
-        "requestId": "hstart_00000000-0000-4000-8000-000000000018",
+        "requestId": "hstart_00000000-0000-4000-8000-000000000019",
         "type": "helper.decline",
         "version": 1
       },
@@ -16,7 +16,7 @@
           "result": {
             "declined": true,
             "kind": "start",
-            "requestId": "hstart_00000000-0000-4000-8000-000000000018"
+            "requestId": "hstart_00000000-0000-4000-8000-000000000019"
           },
           "status": "completed",
           "version": 1
@@ -29,7 +29,7 @@
       "request": {
         "commandId": "cmd_111",
         "epoch": "00000000-0000-4000-8000-000000000001",
-        "requestId": "hdispose_00000000-0000-4000-8000-000000000019",
+        "requestId": "hdispose_00000000-0000-4000-8000-000000000020",
         "type": "helper.decline",
         "version": 1
       },
@@ -40,7 +40,7 @@
           "result": {
             "declined": true,
             "kind": "dispose",
-            "requestId": "hdispose_00000000-0000-4000-8000-000000000019"
+            "requestId": "hdispose_00000000-0000-4000-8000-000000000020"
           },
           "status": "completed",
           "version": 1
