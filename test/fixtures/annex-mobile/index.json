@@ -18,6 +18,7 @@
     "chat-snapshot-errors.json",
     "chat-snapshot-sleeping.json",
     "chat-snapshot.json",
+    "command-too-large.json",
     "commands/_common.json",
     "commands/_fields.json",
     "commands/agent.create.json",

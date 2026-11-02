@@ -1,0 +1,29 @@
+{
+  "note": "requestBytes replaces the request: a real one is over 1 MiB. bodyBytes is the response body exactly as sent; Date is left out. Epoch is the desktop's, there is no commandId, and no receipt is kept.",
+  "request": {
+    "method": "POST",
+    "path": "/api/v1/mobile/commands",
+    "requestBytes": 1048577
+  },
+  "response": {
+    "body": {
+      "epoch": "00000000-0000-4000-8000-000000000001",
+      "error": {
+        "code": "too_large",
+        "message": "too_large"
+      },
+      "status": "rejected",
+      "version": 1
+    },
+    "bodyBytes": "{\"version\":1,\"epoch\":\"00000000-0000-4000-8000-000000000001\",\"status\":\"rejected\",\"error\":{\"code\":\"too_large\",\"message\":\"too_large\"}}",
+    "headers": {
+      "Access-Control-Allow-Headers": "Authorization, Content-Type",
+      "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+      "Connection": "close",
+      "Content-Length": "131",
+      "Content-Type": "application/json"
+    },
+    "status": 413,
+    "statusLine": "HTTP/1.1 413 Payload Too Large"
+  }
+}
