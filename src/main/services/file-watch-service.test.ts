@@ -3,6 +3,25 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
 
+interface FakeWatcher {
+  listener: (eventType: string, filename: string) => Promise<void>;
+  close: ReturnType<typeof vi.fn>;
+}
+
+const { fakeWatchers } = vi.hoisted(() => ({ fakeWatchers: [] as FakeWatcher[] }));
+
+// A fake watcher, so tests fire events themselves. Real macOS events can arrive
+// very late or not at all, including a file's creation after the watch starts.
+vi.mock('fs', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('fs')>();
+  const watch = vi.fn((_dir: string, _options: unknown, listener: FakeWatcher['listener']) => {
+    const watcher = { listener, close: vi.fn() };
+    fakeWatchers.push(watcher);
+    return watcher;
+  });
+  return { ...actual, default: { ...actual, watch }, watch };
+});
+
 // Mock electron BrowserWindow
 vi.mock('electron', () => ({
   BrowserWindow: vi.fn(),
@@ -17,7 +36,7 @@ vi.mock('../../shared/ipc-channels', () => ({
   },
 }));
 
-import { startWatch, stopWatch, stopAllWatches, cleanupWatchesForWindow, getActiveWatchCount, extractBaseDir, _activeWatches, _watchKey, MAX_PENDING_EVENTS } from './file-watch-service';
+import { startWatch, stopWatch, stopAllWatches, cleanupWatchesForWindow, getActiveWatchCount, extractBaseDir, compileWatchGlob, _activeWatches, _watchKey, MAX_PENDING_EVENTS } from './file-watch-service';
 import type { BrowserWindow } from 'electron';
 
 /**
@@ -56,6 +75,18 @@ function makeSender(id = 1) {
   };
 }
 
+/** Deliver an event to the newest watch. Resolves once it has been classified. */
+function fireEvent(eventType: 'rename' | 'change', filename: string): Promise<void> {
+  return fakeWatchers[fakeWatchers.length - 1].listener(eventType, filename);
+}
+
+/** Every event the sender has received, across batches, in order. */
+function sentEvents(sender: ReturnType<typeof makeSender>): Array<{ type: string; path: string }> {
+  return sender.send.mock.calls.flatMap(
+    (call: unknown[]) => (call[1] as { events: Array<{ type: string; path: string }> }).events,
+  );
+}
+
 function makeWindow(webContentsId = 1) {
   return {
     webContents: { id: webContentsId },
@@ -86,7 +117,9 @@ describe('file-watch-service', () => {
 
     it('starts a watch and registers in activeWatches (stopWatch succeeds)', () => {
       const sender = makeSender();
-      startWatch('w1', path.join(tmpDir, '**', '*.ts'), sender as any);
+      const glob = path.join(tmpDir, '**', '*.ts');
+      startWatch('w1', glob, sender as any);
+      expect(fs.watch).toHaveBeenCalledWith(extractBaseDir(glob), { recursive: true }, expect.any(Function));
       expect(getActiveWatchCount()).toBe(1);
       stopWatch('w1', sender.id);
       expect(getActiveWatchCount()).toBe(0);
@@ -356,179 +389,136 @@ describe('file-watch-service', () => {
   });
 
   describe('async rename event classification', () => {
+    let srcDir: string;
+    let glob: string;
+
+    beforeEach(() => {
+      srcDir = path.join(tmpDir, 'src');
+      fs.mkdirSync(srcDir, { recursive: true });
+      glob = path.join(srcDir, '**', '*.ts');
+    });
+
     it('classifies rename of a new file as created', async () => {
-      vi.useRealTimers();
-
-      fs.mkdirSync(path.join(tmpDir, 'src'), { recursive: true });
-
+      const filePath = path.join(srcDir, 'new-file.ts');
       const sender = makeSender();
-      const glob = path.join(tmpDir, 'src', '**', '*.ts');
       startWatch('ar1', glob, sender as any);
 
-      // Create a file — fs.watch will emit a 'rename' event
-      fs.writeFileSync(path.join(tmpDir, 'src', 'new-file.ts'), 'export {};');
+      fs.writeFileSync(filePath, 'export {};');
+      await fireEvent('rename', 'new-file.ts');
+      vi.runAllTimers();
 
-      // Wait for async access check + debounce
-      await new Promise((r) => setTimeout(r, 500));
-
-      if (sender.send.mock.calls.length > 0) {
-        const allEvents = sender.send.mock.calls.flatMap(
-          (call: unknown[]) => (call[1] as { events: Array<{ type: string; path: string }> }).events,
-        );
-        const createEvents = allEvents.filter((e: { type: string; path: string }) => e.path.includes('new-file.ts'));
-        // The file exists, so rename should be classified as 'created'
-        for (const event of createEvents) {
-          expect(event.type).toBe('created');
-        }
-      }
-
-      stopWatch('ar1', sender.id);
+      expect(sentEvents(sender)).toEqual([{ type: 'created', path: filePath }]);
     });
 
     it('classifies rename of a deleted file as deleted', async () => {
-      vi.useRealTimers();
-
-      fs.mkdirSync(path.join(tmpDir, 'src'), { recursive: true });
-      const filePath = path.join(tmpDir, 'src', 'doomed.ts');
+      const filePath = path.join(srcDir, 'doomed.ts');
       fs.writeFileSync(filePath, 'export {};');
-
       const sender = makeSender();
-      const glob = path.join(tmpDir, 'src', '**', '*.ts');
       startWatch('ar2', glob, sender as any);
 
-      // Wait for watcher to settle and flush any creation events
-      await new Promise((r) => setTimeout(r, 500));
-      sender.send.mockClear();
-
-      // Delete the file — fs.watch will emit a 'rename' event
       fs.unlinkSync(filePath);
+      await fireEvent('rename', 'doomed.ts');
+      vi.runAllTimers();
 
-      // Wait for async access check + debounce
-      await new Promise((r) => setTimeout(r, 500));
+      expect(sentEvents(sender)).toEqual([{ type: 'deleted', path: filePath }]);
+    });
 
-      if (sender.send.mock.calls.length > 0) {
-        const allEvents = sender.send.mock.calls.flatMap(
-          (call: unknown[]) => (call[1] as { events: Array<{ type: string; path: string }> }).events,
-        );
-        const deleteEvents = allEvents.filter((e: { type: string; path: string }) => e.path.includes('doomed.ts'));
-        // The file no longer exists, so rename should be classified as 'deleted'
-        for (const event of deleteEvents) {
-          expect(event.type).toBe('deleted');
-        }
-      }
+    it('reports a late creation event and then the delete, in order', async () => {
+      const filePath = path.join(srcDir, 'doomed.ts');
+      fs.writeFileSync(filePath, 'export {};');
+      const sender = makeSender();
+      startWatch('ar4', glob, sender as any);
 
-      stopWatch('ar2', sender.id);
+      // FSEvents can deliver a file's creation after the watch has started.
+      await fireEvent('rename', 'doomed.ts');
+      vi.runAllTimers();
+      fs.unlinkSync(filePath);
+      await fireEvent('rename', 'doomed.ts');
+      vi.runAllTimers();
+
+      expect(sentEvents(sender)).toEqual([
+        { type: 'created', path: filePath },
+        { type: 'deleted', path: filePath },
+      ]);
     });
 
     it('does not push events if watch was stopped during async check', async () => {
-      vi.useRealTimers();
-
-      fs.mkdirSync(path.join(tmpDir, 'src'), { recursive: true });
-
       const sender = makeSender();
-      const glob = path.join(tmpDir, 'src', '**', '*.ts');
       startWatch('ar3', glob, sender as any);
 
-      // Create file to trigger watcher
-      fs.writeFileSync(path.join(tmpDir, 'src', 'ephemeral.ts'), 'export {};');
-
-      // Stop the watch immediately — in-flight async callbacks should bail
+      fs.writeFileSync(path.join(srcDir, 'ephemeral.ts'), 'export {};');
+      const classified = fireEvent('rename', 'ephemeral.ts');
+      // Stop the watch while the access check is in flight — it should bail
       stopWatch('ar3', sender.id);
+      await classified;
+      vi.runAllTimers();
 
-      // Wait for any in-flight async access checks to resolve
-      await new Promise((r) => setTimeout(r, 500));
-
-      // No events should have been sent
       expect(sender.send).not.toHaveBeenCalled();
     });
   });
 
   describe('glob filtering', () => {
+    let srcDir: string;
+    let glob: string;
+
+    beforeEach(() => {
+      srcDir = path.join(tmpDir, 'src');
+      fs.mkdirSync(srcDir, { recursive: true });
+      glob = path.join(srcDir, '**', '*.ts');
+    });
+
     it('should only forward events for files matching the glob pattern', async () => {
-      vi.useRealTimers();
-
-      // Create subdirectories
-      fs.mkdirSync(path.join(tmpDir, 'src'), { recursive: true });
-
       const sender = makeSender();
-      const glob = path.join(tmpDir, 'src', '**', '*.ts');
       startWatch('gf1', glob, sender as any);
 
-      // Create a .ts file (should match)
-      fs.writeFileSync(path.join(tmpDir, 'src', 'index.ts'), 'export {};');
+      await fireEvent('change', 'index.ts');
+      await fireEvent('change', 'script.js');
+      vi.runAllTimers();
 
-      // Create a .js file (should NOT match)
-      fs.writeFileSync(path.join(tmpDir, 'src', 'script.js'), 'module.exports = {};');
-
-      // Wait for debounce
-      await new Promise((r) => setTimeout(r, 500));
-
-      if (sender.send.mock.calls.length > 0) {
-        const allEvents = sender.send.mock.calls.flatMap(
-          (call: unknown[]) => (call[1] as { events: Array<{ path: string }> }).events,
-        );
-        // Only .ts files should be in the events
-        for (const event of allEvents) {
-          expect(event.path).toMatch(/\.ts$/);
-        }
-        // No .js files
-        expect(allEvents.some((e: { path: string }) => e.path.endsWith('.js'))).toBe(false);
-      }
-
-      stopWatch('gf1', sender.id);
+      expect(sentEvents(sender)).toEqual([{ type: 'modified', path: path.join(srcDir, 'index.ts') }]);
     });
 
     it('should forward events for nested files matching the glob', async () => {
-      vi.useRealTimers();
-
-      // Create subdirectories
-      fs.mkdirSync(path.join(tmpDir, 'src', 'components'), { recursive: true });
-
       const sender = makeSender();
-      const glob = path.join(tmpDir, 'src', '**', '*.ts');
       startWatch('gf2', glob, sender as any);
 
-      // Create a nested .ts file (should match)
-      fs.writeFileSync(path.join(tmpDir, 'src', 'components', 'App.ts'), 'export class App {}');
+      await fireEvent('change', path.join('components', 'App.ts'));
+      vi.runAllTimers();
 
-      // Wait for debounce
-      await new Promise((r) => setTimeout(r, 500));
-
-      if (sender.send.mock.calls.length > 0) {
-        const allEvents = sender.send.mock.calls.flatMap(
-          (call: unknown[]) => (call[1] as { events: Array<{ path: string }> }).events,
-        );
-        expect(allEvents.some((e: { path: string }) => e.path.includes('App.ts'))).toBe(true);
-      }
-
-      stopWatch('gf2', sender.id);
+      expect(sentEvents(sender)).toEqual([{ type: 'modified', path: path.join(srcDir, 'components', 'App.ts') }]);
     });
 
     it('should not forward events for files outside the glob scope', async () => {
-      vi.useRealTimers();
-
-      // Create subdirectories
-      fs.mkdirSync(path.join(tmpDir, 'src'), { recursive: true });
-
       const sender = makeSender();
-      const glob = path.join(tmpDir, 'src', '**', '*.ts');
       startWatch('gf3', glob, sender as any);
 
-      // Create a non-ts file in src (should NOT match)
-      fs.writeFileSync(path.join(tmpDir, 'src', 'README.md'), '# Readme');
+      await fireEvent('change', 'README.md');
+      vi.runAllTimers();
 
-      // Wait for debounce
-      await new Promise((r) => setTimeout(r, 500));
+      expect(sender.send).not.toHaveBeenCalled();
+    });
+  });
 
-      if (sender.send.mock.calls.length > 0) {
-        const allEvents = sender.send.mock.calls.flatMap(
-          (call: unknown[]) => (call[1] as { events: Array<{ path: string }> }).events,
-        );
-        // No .md files should be forwarded
-        expect(allEvents.some((e: { path: string }) => e.path.endsWith('.md'))).toBe(false);
-      }
+  describe('compileWatchGlob', () => {
+    const realPlatform = process.platform;
 
-      stopWatch('gf3', sender.id);
+    afterEach(() => {
+      Object.defineProperty(process, 'platform', { value: realPlatform });
+    });
+
+    it('matches Windows paths against the glob the plugin API builds on Windows', () => {
+      Object.defineProperty(process, 'platform', { value: 'win32' });
+      const isMatch = compileWatchGlob('C:\\Users\\me\\proj/**/*.ts');
+
+      expect(isMatch('C:\\Users\\me\\proj\\src\\a.ts')).toBe(true);
+      expect(isMatch('C:\\Users\\me\\proj\\src\\a.js')).toBe(false);
+      expect(isMatch('C:\\Users\\me\\other\\a.ts')).toBe(false);
+    });
+
+    it('leaves a backslash as an escape off Windows, where it is legal in a glob', () => {
+      Object.defineProperty(process, 'platform', { value: 'darwin' });
+
+      expect(compileWatchGlob('/proj/\\[id\\].ts')('/proj/[id].ts')).toBe(true);
     });
   });
 });
@@ -793,9 +783,7 @@ describe('file-watch lifecycle and cleanup', () => {
       startWatch('w1', path.join(tmpDir, '**', '*.ts'), sender as any);
       startWatch('w2', path.join(tmpDir, '**', '*.js'), sender as any);
 
-      // Save real close so we can release the native handle after the test
       const entry1 = _activeWatches.get(_watchKey(sender.id, 'w1'))!;
-      const realClose1 = entry1.watcher.close.bind(entry1.watcher);
       vi.spyOn(entry1.watcher, 'close').mockImplementation(() => {
         throw new Error('already closed');
       });
@@ -805,9 +793,6 @@ describe('file-watch lifecycle and cleanup', () => {
 
       expect(closeSpy2).toHaveBeenCalledOnce();
       expect(getActiveWatchCount()).toBe(0);
-
-      // Close the leaked native handle to avoid keeping the process alive on Windows
-      realClose1();
     });
 
     it('still removes from map when watcher.close() throws', () => {
@@ -815,7 +800,6 @@ describe('file-watch lifecycle and cleanup', () => {
       startWatch('w1', path.join(tmpDir, '**', '*.ts'), sender as any);
 
       const entry = _activeWatches.get(_watchKey(sender.id, 'w1'))!;
-      const realClose = entry.watcher.close.bind(entry.watcher);
       vi.spyOn(entry.watcher, 'close').mockImplementation(() => {
         throw new Error('already closed');
       });
@@ -824,9 +808,6 @@ describe('file-watch lifecycle and cleanup', () => {
 
       expect(_activeWatches.has(_watchKey(sender.id, 'w1'))).toBe(false);
       expect(getActiveWatchCount()).toBe(0);
-
-      // Close the leaked native handle to avoid keeping the process alive on Windows
-      realClose();
     });
   });
 });
