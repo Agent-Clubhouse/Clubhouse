@@ -83,6 +83,14 @@
         "snapshotField": "helperRequests",
         "version": 1
       },
+      "iconRefs": {
+        "connectParam": "iconRefs=1",
+        "paths": {
+          "agent": "/api/v1/icons/agent/{agentId}?v={version}",
+          "project": "/api/v1/icons/project/{projectId}?v={version}"
+        },
+        "version": 1
+      },
       "idempotency": {
         "maxEntries": 2048,
         "scope": "peer-and-epoch",

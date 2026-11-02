@@ -1,0 +1,19 @@
+{
+  "before": {
+    "bytes": 14,
+    "height": 128,
+    "type": "image/png",
+    "version": "durablechatpng00000000000000000000000000000000000000000000000000",
+    "width": 128
+  },
+  "changed": {
+    "bytes": 14,
+    "height": 128,
+    "type": "image/png",
+    "version": "durablechatchangedpng0000000000000000000000000000000000000000000",
+    "width": 128
+  },
+  "direction": "desktop-to-phone",
+  "note": "A snapshot is complete: replace the maps. A different version means fetch again. No entry means drop any cached image.",
+  "removed": null
+}

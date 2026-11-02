@@ -1,0 +1,36 @@
+{
+  "connect": "/ws?iconRefs=1",
+  "direction": "desktop-to-phone",
+  "note": "agentIcons and projectIcons are always present and empty. A quick agent never has an entry. An agent with `icon` set and no entry draws initials.",
+  "value": {
+    "agentIcons": {},
+    "iconRefs": {
+      "agents": {
+        "durable_chat": {
+          "bytes": 14,
+          "height": 128,
+          "type": "image/png",
+          "version": "durablechatpng00000000000000000000000000000000000000000000000000",
+          "width": 128
+        },
+        "durable_dispatcher": {
+          "bytes": 14,
+          "height": 128,
+          "type": "image/png",
+          "version": "durabledispatcherpng00000000000000000000000000000000000000000000",
+          "width": 128
+        }
+      },
+      "projects": {
+        "proj_app": {
+          "bytes": 8,
+          "height": 128,
+          "type": "image/png",
+          "version": "projapppng000000000000000000000000000000000000000000000000000000",
+          "width": 128
+        }
+      }
+    },
+    "projectIcons": {}
+  }
+}

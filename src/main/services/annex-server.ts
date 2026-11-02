@@ -4915,6 +4915,7 @@ export function getWsAuthType(ws: WebSocket): WsAuthType {
 /** @internal Exposed for testing only. */
 export const _testing = {
   HELD_FRAMES_MAX,
+  wsIconRefs,
   SNAPSHOT_RETRY_DELAYS_MS,
   SNAPSHOT_OVERSIZE_RETRY_MS,
   SNAPSHOT_OVERSIZE_RECHECK_MS,

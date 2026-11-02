@@ -1,0 +1,61 @@
+{
+  "current": {
+    "request": {
+      "path": "/api/v1/icons/agent/durable_chat?v=validpng00000000000000000000000000000000000000000000000000000000"
+    },
+    "response": {
+      "headers": {
+        "cache-control": "private, max-age=31536000, immutable",
+        "content-length": "70",
+        "content-type": "image/png",
+        "etag": "\"validpng00000000000000000000000000000000000000000000000000000000\""
+      },
+      "status": 200
+    }
+  },
+  "imageBase64": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8/5+hHgAHggJ/PchI7wAAAABJRU5ErkJggg==",
+  "missing": {
+    "request": {
+      "path": "/api/v1/icons/agent/durable_chat"
+    },
+    "response": {
+      "body": {
+        "error": "icon_not_found"
+      },
+      "status": 404
+    }
+  },
+  "notModified": {
+    "request": {
+      "headers": {
+        "If-None-Match": "\"validpng00000000000000000000000000000000000000000000000000000000\""
+      },
+      "path": "/api/v1/icons/agent/durable_chat?v=validpng00000000000000000000000000000000000000000000000000000000"
+    },
+    "response": {
+      "headers": {
+        "cache-control": "private, max-age=31536000, immutable",
+        "etag": "\"validpng00000000000000000000000000000000000000000000000000000000\""
+      },
+      "status": 304
+    }
+  },
+  "note": "Compare the ETag with the version you asked for. If they differ, it is stale: do not refetch until a new snapshot.",
+  "stale": {
+    "request": {
+      "headers": {
+        "If-None-Match": "\"old\""
+      },
+      "path": "/api/v1/icons/agent/durable_chat?v=old"
+    },
+    "response": {
+      "headers": {
+        "cache-control": "private, no-cache",
+        "content-length": "70",
+        "content-type": "image/png",
+        "etag": "\"validpng00000000000000000000000000000000000000000000000000000000\""
+      },
+      "status": 200
+    }
+  }
+}

@@ -122,24 +122,30 @@ vi.mock('./annex-network-profile', async (importOriginal) => ({
 }));
 vi.mock('bonjour-service', () => ({ default: class { publish() { return { stop() {} }; } destroy() {} } }));
 vi.mock('./log-service', () => ({ appLog: () => {} }));
-// The fixture's icon bytes aren't whole images, so the "path" is the bytes and the thumbnail is them as they are.
+// A real 1 by 1 PNG, for fixtures that show image bytes.
+const VALID_PNG_BASE64 = vi.hoisted(() => 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8/5+hHgAHggJ/PchI7wAAAABJRU5ErkJggg==');
+// Most fixture icon bytes aren't whole images, so a "path" is the bytes and the name, and the image is those as they are. The name sets the version.
 vi.mock('./icon-images', () => ({
-  readIconImage: async (base64: string) => ({
-    dataUrl: `data:image/png;base64,${base64}`, version: `version-of-${base64.slice(0, 4)}`, type: 'image/png',
-    bytes: Buffer.from(base64, 'base64').length, width: 128, height: 128,
-  }),
+  readIconImage: async (file: string) => {
+    const [base64, icon] = file.split('|');
+    const bytes = icon.startsWith('valid') ? VALID_PNG_BASE64 : base64;
+    return {
+      dataUrl: `data:image/png;base64,${bytes}`, version: icon.replace(/[^a-z0-9]/gi, '').toLowerCase().padEnd(64, '0').slice(0, 64),
+      type: 'image/png', bytes: Buffer.from(bytes, 'base64').length, width: 128, height: 128,
+    };
+  },
 }));
 vi.mock('./project-store', () => ({
   list: async () => { if (W.projectsThrow) throw new Error('disk gone'); return W.projects; },
   readIconData: async (icon: string) => (icon ? 'data:image/png;base64,iVBORw0KGgo=' : null),
-  iconFilePath: async (icon: string) => (icon ? 'iVBORw0KGgo=' : null),
+  iconFilePath: async (icon: string) => (icon ? `iVBORw0KGgo=|${icon}` : null),
 }));
 vi.mock('./agent-config', () => {
   const find = (projectPath: string, id: string) => (W.durables[projectPath] ?? []).find((d) => d.id === id) ?? null;
   return {
     listDurable: async (projectPath: string) => W.durables[projectPath] ?? [],
     readAgentIconData: async (icon: string) => (icon ? 'data:image/png;base64,R0lGODlhAQABAAAAACw=' : null),
-    agentIconFilePath: async (icon: string) => (icon ? 'R0lGODlhAQABAAAAACw=' : null),
+    agentIconFilePath: async (icon: string) => (icon ? `R0lGODlhAQABAAAAACw=|${icon}` : null),
     getDurableConfig: async (projectPath: string, id: string) => find(projectPath, id),
     updateDurableConfig: async (projectPath: string, id: string, updates: Record<string, unknown>) => { Object.assign(find(projectPath, id) ?? {}, updates); },
     updateDurable: async (projectPath: string, id: string, updates: Record<string, unknown>) => { Object.assign(find(projectPath, id) ?? {}, updates); },
@@ -544,6 +550,9 @@ function send(method: string, route: string, body?: Buffer | object, opts: { cli
     req.on('error', reject); if (raw) req.write(raw); req.end();
   });
 }
+const pickIconHeaders = (headers: Record<string, unknown>) => Object.fromEntries(
+  ['etag', 'cache-control', 'content-type', 'content-length'].filter((name) => headers[name] !== undefined).map((name) => [name, headers[name]]),
+) as Record<string, string>;
 const exchange = async (method: string, route: string, body?: object) => ({ request: { method, path: route, ...(body && { body }) }, response: await send(method, route, body).then(({ status, body }) => ({ status, body })) });
 
 /** A busy machine is slow here, not wrong: each request is a fresh mTLS handshake. These only bound how long a failure takes to report. */
@@ -551,8 +560,9 @@ const TEST_TIMEOUT_MS = 30_000;
 const eventually = (check: () => void) => vi.waitFor(check, { timeout: 10_000 });
 
 type FakeWs = EventEmitter & { readyState: number; send: ReturnType<typeof vi.fn>; ping: () => void; close: () => void };
-async function connect(auth: 'mtls' | 'bearer' = 'mtls'): Promise<FakeWs> {
+async function connect(auth: 'mtls' | 'bearer' = 'mtls', opts: { iconRefs?: boolean } = {}): Promise<FakeWs> {
   const ws = Object.assign(new EventEmitter(), { readyState: 1, send: vi.fn(), ping: () => {}, close: () => {} }) as FakeWs;
+  if (opts.iconRefs) annexServer._testing.wsIconRefs.add(ws as never);
   annexServer._testing.wsAuthTypes.set(ws as never, auth);
   if (auth === 'mtls') annexServer._testing.wsPeerFingerprints.set(ws as never, 'mobile-fixture-identity');
   annexServer._testing.wss!.clients.add(ws as never);
@@ -653,6 +663,70 @@ describe('Annex mobile contract fixtures', { timeout: TEST_TIMEOUT_MS }, () => {
       unknownProject: await exchange('GET', '/api/v1/projects/missing/agents'),
     });
   });
+
+  it('icon refs: a snapshot with no image bytes, changes, removals and the routes', async () => {
+    const saved = W.durables[DISPATCHER_PATH][0];
+    W.durables[DISPATCHER_PATH][0] = { ...saved, icon: 'durable_dispatcher.png' };
+    W.dispatcher = { flagOn: true, enabled: true, newLayout: true };
+    const firstSnapshot = async () => frames(await connect('mtls', { iconRefs: true })).find((f) => f.type === 'snapshot').payload;
+
+    const snapshot = await firstSnapshot();
+    expect(snapshot.agentIcons).toEqual({});
+    expect(snapshot.projectIcons).toEqual({});
+    expect(snapshot.iconRefs.projects.proj_app.type).toBe('image/png');
+    expect(snapshot.iconRefs.agents.durable_chat.version).toMatch(/^[0-9a-z]{64}$/);
+    expect(snapshot.iconRefs.agents.durable_dispatcher).toBeDefined();
+    expect(JSON.stringify(snapshot.iconRefs)).not.toContain('base64');
+    fixtures.set('snapshot-icon-refs.json', {
+      direction: 'desktop-to-phone', connect: '/ws?iconRefs=1',
+      note: 'agentIcons and projectIcons are always present and empty. A quick agent never has an entry. An agent with `icon` set and no entry draws initials.',
+      value: { agentIcons: snapshot.agentIcons, projectIcons: snapshot.projectIcons, iconRefs: snapshot.iconRefs },
+    });
+
+    // The image changes, then goes.
+    const chat = W.durables[APP].findIndex((d) => d.id === 'durable_chat');
+    const original = W.durables[APP][chat];
+    W.durables[APP][chat] = { ...original, icon: 'durable_chat.changed.png' };
+    const changed = (await firstSnapshot()).iconRefs;
+    expect(changed.agents.durable_chat.version).not.toBe(snapshot.iconRefs.agents.durable_chat.version);
+    W.durables[APP][chat] = { ...original, icon: undefined };
+    const removed = (await firstSnapshot()).iconRefs;
+    expect(removed.agents.durable_chat).toBeUndefined();
+    fixtures.set('snapshot-icon-refs-changed.json', {
+      direction: 'desktop-to-phone',
+      note: 'A snapshot is complete: replace the maps. A different version means fetch again. No entry means drop any cached image.',
+      before: snapshot.iconRefs.agents.durable_chat, changed: changed.agents.durable_chat, removed: removed.agents.durable_chat ?? null,
+    });
+
+    // The routes, with a real image.
+    W.durables[APP][chat] = { ...original, icon: 'valid.png' };
+    const version = (await firstSnapshot()).iconRefs.agents.durable_chat.version;
+    const route = `/api/v1/icons/agent/durable_chat`;
+    const asFixture = async (path: string, headers?: Record<string, string>) => {
+      const res = await send('GET', path, undefined, { headers });
+      return { request: { path, ...(headers && { headers }) }, response: { status: res.status, headers: pickIconHeaders(res.headers) } };
+    };
+    const current = await asFixture(`${route}?v=${version}`);
+    const notModified = await asFixture(`${route}?v=${version}`, { 'If-None-Match': `"${version}"` });
+    const stale = await asFixture(`${route}?v=old`, { 'If-None-Match': '"old"' });
+    W.durables[APP][chat] = { ...original, icon: undefined };
+    const missing = await send('GET', route);
+    W.durables[APP][chat] = original;
+    W.durables[DISPATCHER_PATH][0] = saved;
+    W.dispatcher = { flagOn: false, enabled: false, newLayout: true };
+    expect(current.response.status).toBe(200);
+    expect(current.response.headers.etag).toBe(`"${version}"`);
+    expect(notModified.response.status).toBe(304);
+    expect(stale.response.status).toBe(200);
+    expect(stale.response.headers['cache-control']).toBe('private, no-cache');
+    expect(missing.status).toBe(404);
+    fixtures.set('icon-route.json', {
+      note: 'Compare the ETag with the version you asked for. If they differ, it is stale: do not refetch until a new snapshot.',
+      imageBase64: VALID_PNG_BASE64,
+      current, notModified, stale,
+      missing: { request: { path: route }, response: { status: missing.status, body: missing.body } },
+    });
+  }, TEST_TIMEOUT_MS);
 
   it('chat snapshots and sessions', async () => {
     const live = await exchange('GET', '/api/v1/mobile/agents/durable_chat/chat');

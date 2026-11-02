@@ -42,6 +42,7 @@
     "create-options.json",
     "dispatcher-changed.json",
     "dispatcher-routes.json",
+    "icon-route.json",
     "pairing-revoke.json",
     "pairing.json",
     "pty.json",
@@ -51,6 +52,8 @@
     "sender-identity.json",
     "snapshot-dispatcher.json",
     "snapshot-helper-requests.json",
+    "snapshot-icon-refs-changed.json",
+    "snapshot-icon-refs.json",
     "snapshot.json"
   ]
 }

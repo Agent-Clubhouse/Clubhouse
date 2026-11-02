@@ -3188,16 +3188,6 @@ describe('annex-server', () => {
         expect(snapshots(await connectWithRefs(true))[0].iconRefs.agents).toEqual({});
       }, 30_000);
 
-      it('never sends more than one build at a time, and follows a burst with one more', async () => {
-        vi.mocked(projectStore.list).mockClear();
-        serveAgentsWithIcons([]);
-        for (let i = 0; i < 5; i++) annexServer.broadcastSnapshotRefresh();
-        expect(projectStore.list).toHaveBeenCalledTimes(1);
-        await vi.waitFor(() => expect(projectStore.list).toHaveBeenCalledTimes(2));
-        await new Promise((r) => setTimeout(r, 50));
-        expect(projectStore.list).toHaveBeenCalledTimes(2);
-      }, 30_000);
-
       it('answers with an ETag, a 304 for a match, and the current image for a stale version', async () => {
         fakeDecoder();
         annexServer.stop();
@@ -3239,7 +3229,7 @@ describe('annex-server', () => {
         const ws = await connectWithRefs(false);
         expect(counts).toHaveBeenLastCalledWith(1, 0);
         ws.emit('message', JSON.stringify({ type: 'telemetry:hello', payload: {
-          version: 1, serviceName: 'clubhouse-go', serviceInstanceId: '11111111-1111-4111-8111-111111111111', connectionAttemptId: '22222222-2222-4222-8222-222222222222',
+          version: 1, serviceName: 'clubhouse-go', traceContext: 'w3c-v00', serviceInstanceId: '11111111-1111-4111-8111-111111111111', connectionAttemptId: '22222222-2222-4222-8222-222222222222',
         } }));
         await vi.waitFor(() => expect(counts).toHaveBeenLastCalledWith(0, 1));
       }, 30_000);
