@@ -63,7 +63,8 @@ export function parseMobileCommand(value: unknown): MobileCommand {
     } else if (key === 'mcpIds') {
       if (!Array.isArray(v) || v.length > 100 || v.some((id) => !text(id, 128)) || new Set(v).size !== v.length) throw new MobileControlError('invalid_command', 400);
     } else if (key === 'answers') {
-      if (!record(v) || Object.keys(v).length > 100 || Object.entries(v).some(([k, a]) => !text(k) || !(text(a, 65536) || (Array.isArray(a) && a.length <= 100 && a.every((x) => text(x, 65536)))))) throw new MobileControlError('invalid_command', 400);
+      // A Claude question's id is its full text (claudeQuestions), so ids get the same limit as answers. They stay exactly as sent.
+      if (!record(v) || Object.keys(v).length > 100 || Object.entries(v).some(([k, a]) => !text(k, 65536) || !(text(a, 65536) || (Array.isArray(a) && a.length <= 100 && a.every((x) => text(x, 65536)))))) throw new MobileControlError('invalid_command', 400);
     } else if (key === 'orchestration') {
       // The fields are checked against the policy rules (and the app-wide cap) when the command runs, so errors can say why.
       if (!record(v) || Object.keys(v).length > 16) throw new MobileControlError('invalid_command', 400);

@@ -63,6 +63,52 @@ describe('mobile validation and chat dispatch', () => {
     const service = new MobileCommandService();
     expect(() => parseMobileCommand(bad === null || Array.isArray(bad) ? bad : { ...command(service), ...bad })).toThrow();
   });
+  describe('chat.question answers limits (#2676)', () => {
+    const question = (answers: unknown) => ({ version: 1, epoch: 'e', commandId: 'c', type: 'chat.question', agentId: 'agent-1', sessionId: 'session-1', requestId: 'q1', answers });
+    const refused = (answers: unknown) => expect(() => parseMobileCommand(question(answers))).toThrow(MobileControlError);
+    const keys = (count: number) => Object.fromEntries(Array.from({ length: count }, (_, i) => [`q${i}`, 'a']));
+
+    it.each([
+      ['ASCII', 'q'.repeat(65536)],
+      ['two-byte', 'é'.repeat(65536)],
+      ['three-byte', '€'.repeat(65536)],
+      ['four-byte, two units each', '😀'.repeat(32768)],
+    ])('accepts a %s question id of 65536 UTF-16 units', (_name, id) => {
+      expect(id).toHaveLength(65536);
+      const answers = { [id]: 'a' };
+      expect(parseMobileCommand(question(answers))).toMatchObject({ answers });
+    });
+    it.each([
+      ['ASCII', 'q'.repeat(65537)],
+      ['two-byte', 'é'.repeat(65537)],
+      ['three-byte', '€'.repeat(65537)],
+      ['four-byte, past the limit by one unit', `${'😀'.repeat(32768)}q`],
+    ])('refuses a %s question id of 65537 UTF-16 units', (_name, id) => {
+      expect(id).toHaveLength(65537);
+      refused({ [id]: 'a' });
+    });
+    it('refuses an empty question id', () => refused({ '': 'a' }));
+    it('keeps the limits on answers, in size and in number', () => {
+      expect(() => parseMobileCommand(question({ q: 'a'.repeat(65536) }))).not.toThrow();
+      refused({ q: 'a'.repeat(65537) });
+      expect(() => parseMobileCommand(question({ q: Array(100).fill('a') }))).not.toThrow();
+      refused({ q: Array(101).fill('a') });
+      expect(() => parseMobileCommand(question(keys(100)))).not.toThrow();
+      refused(keys(101));
+    });
+    it('hands ids of 349 and 212 characters in one command to answerQuestion, in full and exactly as sent', async () => {
+      const long = `  Keep\u00a0this exact ${'x'.repeat(349 - 21)}?  `;
+      const shorter = `\tKeep é this too ${'y'.repeat(212 - 18)}\n`;
+      expect([long.length, shorter.length]).toEqual([349, 212]);
+      const answers = { [long]: ['one', 'two'], [shorter]: 'three' };
+      const active = runtime([event('question', { requestId: 'q1', questions: [{ id: long, prompt: long }, { id: shorter, prompt: shorter }] })]);
+      const service = new MobileCommandService();
+      const response = await service.execute('peer', { ...question(answers), epoch: service.epoch }, (c) => executeChatCommand(c as Extract<typeof c, { sessionId: string }>, active, async () => true));
+      expect(response.statusCode).toBe(200);
+      expect(active.answerQuestion).toHaveBeenCalledWith('q1', answers);
+      expect(Object.keys(vi.mocked(active.answerQuestion).mock.calls[0][1])).toEqual([long, shorter]);
+    });
+  });
   it('parses project.setPinned and project.setInactive, with a boolean and nothing else (#2458)', () => {
     const head = { version: 1, epoch: 'e', commandId: 'c' };
     expect(parseMobileCommand({ ...head, type: 'project.setPinned', projectId: 'p', pinned: true })).toMatchObject({ pinned: true });

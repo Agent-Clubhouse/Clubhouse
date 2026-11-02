@@ -846,6 +846,22 @@ describe('ChatAgentRuntime', () => {
     expect(resolved?.type === 'question_resolved' && resolved.data.answers).toEqual({ a: ['ui', 'api'] });
   });
 
+  it('passes long question ids to the driver and the transcript exactly as given (#2676)', async () => {
+    const driver = new FakeChatDriver();
+    const { runtime } = makeRuntime(driver);
+    await runtime.start();
+    const id = ` ${'q'.repeat(65534)} `;
+    driver.last.emit({ type: 'question', data: { requestId: 'q', questions: [{ id, prompt: id }] } });
+    await flush();
+
+    await runtime.answerQuestion('q', { [id]: 'a' });
+    await flush();
+
+    expect(driver.last.answers).toEqual([{ requestId: 'q', answers: { [id]: 'a' } }]);
+    const resolved = transcript.find((e) => e.type === 'question_resolved');
+    expect(resolved?.type === 'question_resolved' && resolved.data.answers).toEqual({ [id]: 'a' });
+  });
+
   it('ignores a second or late answer to the same request instead of failing', async () => {
     const driver = new FakeChatDriver();
     const { runtime } = makeRuntime(driver);

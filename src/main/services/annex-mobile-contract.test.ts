@@ -703,6 +703,46 @@ describe('Annex mobile contract fixtures', { timeout: TEST_TIMEOUT_MS }, () => {
     fixtures.set('agent-settings-mcp-off.json', mcpOff);
   });
 
+  describe('chat.question ids and the 1 MiB request body limit (#2676)', () => {
+    const LIMIT = 1024 * 1024;
+    const ROUTE = '/api/v1/mobile/commands';
+    /** A command with these full-length ids, padded with answer text to `size` UTF-8 bytes if given. */
+    const body = (ids: string[], size?: number) => {
+      const request = { version: 1, epoch, commandId: `cmd_body_${ids.length}_${size ?? 0}_${ids[0].codePointAt(64000)}`, type: 'chat.question', agentId: 'durable_chat', sessionId: 'sess_live', requestId: 'q_1',
+        answers: Object.fromEntries(ids.map((id) => [id, 'a'])) };
+      if (size) request.answers[ids[0]] = 'a'.repeat(size - Buffer.byteLength(JSON.stringify(request)) + 1);
+      return Buffer.from(JSON.stringify(request));
+    };
+    const ids = (unit: string, count: number) => Array.from({ length: count }, (_, i) => String(i).padStart(2, '0') + unit.repeat(Math.floor((65536 - 2) / unit.length)));
+    const accepted = { status: 200, body: { status: 'completed' } };
+    // The server drops the connection once a body is over, so there's no receipt.
+    const dropped = async (raw: Buffer) => expect((await send('POST', ROUTE, raw).catch(() => null))?.status).not.toBe(200);
+
+    it('takes exactly 1 MiB and drops one byte more', async () => {
+      const atLimit = body(ids('k', 15), LIMIT);
+      expect(atLimit).toHaveLength(LIMIT);
+      expect(await send('POST', ROUTE, atLimit)).toMatchObject(accepted);
+      const over = body(ids('k', 15), LIMIT + 1);
+      expect(over).toHaveLength(LIMIT + 1);
+      await dropped(over);
+    });
+    it.each([
+      ['ASCII', 'k', 15],
+      ['three-byte', '€', 5],
+      ['four-byte', '😀', 7],
+    ])('fits only so many full-length %s ids', async (_name, unit, most) => {
+      const fits = ids(unit, most);
+      for (const id of fits) expect(id).toHaveLength(65536);
+      expect(await send('POST', ROUTE, body(fits))).toMatchObject(accepted);
+      await dropped(body(ids(unit, most + 1)));
+    });
+    it('always fits one full-length id, even when every character is escaped in JSON', async () => {
+      const raw = body([`\u0001`.repeat(65536)]);
+      expect(raw.length).toBeLessThan(LIMIT);
+      expect(await send('POST', ROUTE, raw)).toMatchObject(accepted);
+    });
+  });
+
   it('chat commands', async () => {
     const chat = { agentId: 'durable_chat', sessionId: 'sess_live' };
     await command('accepted', { type: 'chat.send', ...chat, text: 'Run the tests', delivery: 'auto' });
@@ -730,6 +770,11 @@ describe('Annex mobile contract fixtures', { timeout: TEST_TIMEOUT_MS }, () => {
     await command('accepted', { type: 'chat.question', ...chat, requestId: 'q_1', answers: { which: 'main' } });
     await command('accepted multiple choices', { type: 'chat.question', ...chat, requestId: 'q_1', answers: { which: ['main', 'dev'] } });
     await command('pending_request_not_found', { type: 'chat.question', ...chat, requestId: 'q_gone', answers: { which: 'main' } });
+    // A Claude question's id is its text. Its own commandId keeps the numbering of the fixtures after it.
+    const longId = `  Long question ${'x'.repeat(349 - 19)}?  `;
+    const shorterId = `Shorter question é ${'y'.repeat(212 - 20)}?`;
+    expect([longId.length, shorterId.length]).toEqual([349, 212]);
+    await command('accepted long question ids', { type: 'chat.question', ...chat, requestId: 'q_1', answers: { [longId]: 'main', [shorterId]: ['main', 'dev'] } }, { commandId: 'cmd_long_questions' });
 
     await command('accepted switch', { type: 'chat.setModel', ...chat, model: 'sonnet' });
     await command('accepted effort', { type: 'chat.setModel', ...chat, model: 'opus', effort: 'low' });

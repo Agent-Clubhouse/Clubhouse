@@ -510,6 +510,13 @@ describe('CodexChatEventMapper', () => {
       }]);
     });
 
+    it('keeps a long question id exact in the question and its reply (#2676)', () => {
+      const id = ` ${'q'.repeat(65534)} `;
+      const [question] = mapper.mapServerRequest({ ...request, params: { ...request.params, questions: [{ ...request.params.questions[1], id }] } }) as Array<{ type: 'question'; data: { questions: Array<{ id: string }> } }>;
+      expect(question.data.questions[0].id).toBe(id);
+      expect(mapper.resolveQuestion('5', { [id]: 'yes' })?.reply.result).toEqual({ answers: { [id]: { answers: ['yes'] } } });
+    });
+
     it('resolves answers into the Codex reply', () => {
       mapper.mapServerRequest(request);
 

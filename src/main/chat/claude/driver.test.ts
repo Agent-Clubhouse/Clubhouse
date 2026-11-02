@@ -992,6 +992,20 @@ describe('ClaudeChatDriverSession mapping (scripted transport)', () => {
     expect(drafts.of('turn_ended')[0]).toMatchObject({ turnId: 'turn-1', data: { stopReason: 'error' } });
   });
 
+  it('answers long questions under their exact text (#2676)', async () => {
+    const { session, transport, drafts } = await scripted();
+    await session.send([{ type: 'text', text: 'ask' }], 'prompt');
+    const long = `  Which ${'x'.repeat(349 - 11)}?  `;
+    const shorter = `Which é ${'y'.repeat(212 - 9)}?`;
+    expect([long.length, shorter.length]).toEqual([349, 212]);
+    const input = { questions: [{ question: long, options: [{ label: 'A' }] }, { question: shorter, options: [{ label: 'B' }] }] };
+    transport.emit({ kind: 'permission_request', requestId: 'q1', toolName: 'AskUserQuestion', input, suggestions: [] });
+    const q = await drafts.waitFor('question');
+    expect(q.data.questions.map((x) => x.id)).toEqual([long, shorter]);
+    await session.answerQuestion('q1', { [long]: 'A', [shorter]: 'B' });
+    expect(transport.answers).toEqual([['q1', { behavior: 'allow', updatedInput: { ...input, answers: { [long]: 'A', [shorter]: 'B' } } }]]);
+  });
+
   it('joins multiSelect answers for AskUserQuestion', async () => {
     const { session, transport, drafts } = await scripted();
     await session.send([{ type: 'text', text: 'ask' }], 'prompt');
