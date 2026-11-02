@@ -363,6 +363,9 @@ describe('Annex harness', () => {
           if (req.url === '/fixture') { H.projects = body.projects ?? H.projects; H.agentsPerProject = body.agentsPerProject ?? H.agentsPerProject; }
           if (req.url === '/refresh') annexServer.broadcastSnapshotRefresh();
           if (req.url === '/projects-changed') fireProjectsChanged(body.count);
+          if (req.url === '/theme') annexServer.broadcastThemeChanged();
+          // What a desktop restart does to the event seq, without new certificates.
+          if (req.url === '/reset-seq') eventReplay.reset();
           if (req.url === '/chat-event') publishChatEvent({ agentId: body.agentId ?? 'durable_0_0', type: 'turn_ended', seq: 1, ts: 0, sessionId: 's', data: {} } as never);
           res.setHeader('Content-Type', 'application/json');
           res.end(JSON.stringify({ fault: H.fault, reads: H.reads, readsRunning: H.readsRunning, maxReadsRunning: H.maxReadsRunning, lastSeq: eventReplay.getLastSeq() }));
