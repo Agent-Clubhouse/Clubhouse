@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import * as path from 'path';
 import * as os from 'os';
 
@@ -224,6 +224,56 @@ describe('CodexCliProvider', () => {
 
       const result = await provider.checkAvailability();
       expect(result.available).toBe(true);
+    });
+  });
+
+  describe('context choice (#2660)', () => {
+    const catalog = JSON.stringify({ models: [
+      { slug: 'gpt-6-astra', visibility: 'list', priority: 1, context_window: 272000, max_context_window: 872000, effective_context_window_percent: 95 },
+      { slug: 'gpt-5.5', visibility: 'list', priority: 2, context_window: 272000, max_context_window: 272000, effective_context_window_percent: 95 },
+    ] });
+    const reads = () => vi.mocked(childProcess.execFile).mock.calls.filter((c) => (c[1] as string[])?.[0] === 'debug');
+    const original = vi.mocked(childProcess.execFile).getMockImplementation();
+    // promisify on a plain mock resolves its first value, so that value carries stdout.
+    const answer = (stdout: string | Error) => vi.mocked(childProcess.execFile).mockImplementation(((...a: unknown[]) => {
+      const cb = a.at(-1) as (...r: unknown[]) => void;
+      if ((a[1] as string[] | undefined)?.[0] !== 'debug') return cb(null, { stdout: '1.0.0', stderr: '' });
+      return stdout instanceof Error ? cb(stdout) : cb(null, { stdout, stderr: '' });
+    }) as never);
+    beforeEach(() => { vi.mocked(childProcess.execFile).mockClear(); });
+    afterEach(() => { vi.mocked(childProcess.execFile).mockImplementation(original as never); });
+
+    it('passes the window as a -c override before the trailing prompt', async () => {
+      const { args, trailingArgs } = await provider.buildSpawnCommand({ cwd: '/p', contextWindow: '500000', mission: 'go' });
+      expect(args.slice(args.indexOf('-c'), args.indexOf('-c') + 2)).toEqual(['-c', 'model_context_window=500000']);
+      expect(trailingArgs).toEqual(['go']);
+      expect((await provider.buildSpawnCommand({ cwd: '/p' })).args).not.toContain('-c');
+    });
+
+    it('reads the catalog once for many looks, and shares one read', async () => {
+      answer(catalog);
+      const [a, b] = await Promise.all([provider.getContextWindowOptions('gpt-6-astra'), provider.getContextWindowOptions('gpt-5.5')]);
+      await provider.getContextWindowOptions('gpt-6-astra');
+      expect(reads()).toHaveLength(1);
+      expect(a).toMatchObject({ configurable: true, kind: 'context_window', defaultTokens: 258_400, maxTokens: 828_400 });
+      expect(b).toMatchObject({ configurable: false, state: 'unsupported' });
+    });
+
+    it('a saved model of default means the catalog default', async () => {
+      answer(catalog);
+      expect(await provider.getContextWindowOptions('default')).toMatchObject({ configurable: true, maxTokens: 828_400 });
+    });
+
+    it('is unavailable when the catalog cannot be read, and does not ask again each look', async () => {
+      answer(new Error('nope'));
+      expect(await provider.getContextWindowOptions('gpt-6-astra')).toMatchObject({ configurable: false, state: 'unavailable' });
+      await provider.getContextWindowOptions('gpt-6-astra');
+      expect(reads()).toHaveLength(1);
+    });
+
+    it('is unavailable when the output is not the expected shape', async () => {
+      answer('not json');
+      expect(await provider.getContextWindowOptions('gpt-6-astra')).toMatchObject({ configurable: false, state: 'unavailable' });
     });
   });
 

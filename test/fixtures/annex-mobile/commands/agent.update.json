@@ -63,6 +63,57 @@
                 "editable": "sleeping",
                 "value": "rose"
               },
+              "contextWindow": {
+                "applies": [
+                  "launch",
+                  "resume"
+                ],
+                "choices": [
+                  {
+                    "id": "100000",
+                    "label": "100K",
+                    "tokens": 100000
+                  },
+                  {
+                    "id": "200000",
+                    "label": "200K",
+                    "tokens": 200000
+                  },
+                  {
+                    "id": "300000",
+                    "label": "300K",
+                    "tokens": 300000
+                  },
+                  {
+                    "id": "500000",
+                    "label": "500K",
+                    "tokens": 500000
+                  },
+                  {
+                    "id": "750000",
+                    "label": "750K",
+                    "tokens": 750000
+                  },
+                  {
+                    "id": "1000000",
+                    "label": "1M",
+                    "tokens": 1000000
+                  }
+                ],
+                "configurable": true,
+                "costNote": "A larger size sends more history with each message, so long sessions use more tokens. Your plan or the model can cap it; a running session shows what it got.",
+                "defaultLabel": "Auto",
+                "defaultTokens": null,
+                "description": "How much conversation Claude Code keeps before it compacts. This doesn't change the model's own context window, and a lower value compacts sooner. It compacts a little below this size.",
+                "editable": "sleeping",
+                "kind": "working_window",
+                "label": "Working context",
+                "maxTokens": 1000000,
+                "notice": null,
+                "reason": null,
+                "state": null,
+                "value": null
+              },
               "emoji": {
                 "editable": "sleeping",
                 "value": "🦦"
@@ -171,6 +222,57 @@
                 "editable": "sleeping",
                 "value": "rose"
               },
+              "contextWindow": {
+                "applies": [
+                  "launch",
+                  "resume"
+                ],
+                "choices": [
+                  {
+                    "id": "100000",
+                    "label": "100K",
+                    "tokens": 100000
+                  },
+                  {
+                    "id": "200000",
+                    "label": "200K",
+                    "tokens": 200000
+                  },
+                  {
+                    "id": "300000",
+                    "label": "300K",
+                    "tokens": 300000
+                  },
+                  {
+                    "id": "500000",
+                    "label": "500K",
+                    "tokens": 500000
+                  },
+                  {
+                    "id": "750000",
+                    "label": "750K",
+                    "tokens": 750000
+                  },
+                  {
+                    "id": "1000000",
+                    "label": "1M",
+                    "tokens": 1000000
+                  }
+                ],
+                "configurable": true,
+                "costNote": "A larger size sends more history with each message, so long sessions use more tokens. Your plan or the model can cap it; a running session shows what it got.",
+                "defaultLabel": "Auto",
+                "defaultTokens": null,
+                "description": "How much conversation Claude Code keeps before it compacts. This doesn't change the model's own context window, and a lower value compacts sooner. It compacts a little below this size.",
+                "editable": "sleeping",
+                "kind": "working_window",
+                "label": "Working context",
+                "maxTokens": 1000000,
+                "notice": null,
+                "reason": null,
+                "state": null,
+                "value": null
+              },
               "emoji": {
                 "editable": "sleeping",
                 "value": null
@@ -276,6 +378,57 @@
                 "editable": "sleeping",
                 "value": "rose"
               },
+              "contextWindow": {
+                "applies": [
+                  "launch",
+                  "resume"
+                ],
+                "choices": [
+                  {
+                    "id": "100000",
+                    "label": "100K",
+                    "tokens": 100000
+                  },
+                  {
+                    "id": "200000",
+                    "label": "200K",
+                    "tokens": 200000
+                  },
+                  {
+                    "id": "300000",
+                    "label": "300K",
+                    "tokens": 300000
+                  },
+                  {
+                    "id": "500000",
+                    "label": "500K",
+                    "tokens": 500000
+                  },
+                  {
+                    "id": "750000",
+                    "label": "750K",
+                    "tokens": 750000
+                  },
+                  {
+                    "id": "1000000",
+                    "label": "1M",
+                    "tokens": 1000000
+                  }
+                ],
+                "configurable": true,
+                "costNote": "A larger size sends more history with each message, so long sessions use more tokens. Your plan or the model can cap it; a running session shows what it got.",
+                "defaultLabel": "Auto",
+                "defaultTokens": null,
+                "description": "How much conversation Claude Code keeps before it compacts. This doesn't change the model's own context window, and a lower value compacts sooner. It compacts a little below this size.",
+                "editable": "sleeping",
+                "kind": "working_window",
+                "label": "Working context",
+                "maxTokens": 1000000,
+                "notice": null,
+                "reason": null,
+                "state": null,
+                "value": null
+              },
               "emoji": {
                 "editable": "sleeping",
                 "value": null
@@ -380,6 +533,57 @@
               "color": {
                 "editable": "sleeping",
                 "value": "indigo"
+              },
+              "contextWindow": {
+                "applies": [
+                  "launch",
+                  "resume"
+                ],
+                "choices": [
+                  {
+                    "id": "100000",
+                    "label": "100K",
+                    "tokens": 100000
+                  },
+                  {
+                    "id": "200000",
+                    "label": "200K",
+                    "tokens": 200000
+                  },
+                  {
+                    "id": "300000",
+                    "label": "300K",
+                    "tokens": 300000
+                  },
+                  {
+                    "id": "500000",
+                    "label": "500K",
+                    "tokens": 500000
+                  },
+                  {
+                    "id": "750000",
+                    "label": "750K",
+                    "tokens": 750000
+                  },
+                  {
+                    "id": "1000000",
+                    "label": "1M",
+                    "tokens": 1000000
+                  }
+                ],
+                "configurable": true,
+                "costNote": "A larger size sends more history with each message, so long sessions use more tokens. Your plan or the model can cap it; a running session shows what it got.",
+                "defaultLabel": "Auto",
+                "defaultTokens": null,
+                "description": "How much conversation Claude Code keeps before it compacts. This doesn't change the model's own context window, and a lower value compacts sooner. It compacts a little below this size.",
+                "editable": "sleeping",
+                "kind": "working_window",
+                "label": "Working context",
+                "maxTokens": 1000000,
+                "notice": null,
+                "reason": null,
+                "state": null,
+                "value": null
               },
               "emoji": {
                 "editable": "sleeping",
@@ -777,6 +981,57 @@
                 "editable": "sleeping",
                 "value": "indigo"
               },
+              "contextWindow": {
+                "applies": [
+                  "launch",
+                  "resume"
+                ],
+                "choices": [
+                  {
+                    "id": "100000",
+                    "label": "100K",
+                    "tokens": 100000
+                  },
+                  {
+                    "id": "200000",
+                    "label": "200K",
+                    "tokens": 200000
+                  },
+                  {
+                    "id": "300000",
+                    "label": "300K",
+                    "tokens": 300000
+                  },
+                  {
+                    "id": "500000",
+                    "label": "500K",
+                    "tokens": 500000
+                  },
+                  {
+                    "id": "750000",
+                    "label": "750K",
+                    "tokens": 750000
+                  },
+                  {
+                    "id": "1000000",
+                    "label": "1M",
+                    "tokens": 1000000
+                  }
+                ],
+                "configurable": true,
+                "costNote": "A larger size sends more history with each message, so long sessions use more tokens. Your plan or the model can cap it; a running session shows what it got.",
+                "defaultLabel": "Auto",
+                "defaultTokens": null,
+                "description": "How much conversation Claude Code keeps before it compacts. This doesn't change the model's own context window, and a lower value compacts sooner. It compacts a little below this size.",
+                "editable": "sleeping",
+                "kind": "working_window",
+                "label": "Working context",
+                "maxTokens": 1000000,
+                "notice": null,
+                "reason": null,
+                "state": null,
+                "value": null
+              },
               "emoji": {
                 "editable": "sleeping",
                 "value": "🦊"
@@ -884,6 +1139,57 @@
                 "editable": "sleeping",
                 "value": "indigo"
               },
+              "contextWindow": {
+                "applies": [
+                  "launch",
+                  "resume"
+                ],
+                "choices": [
+                  {
+                    "id": "100000",
+                    "label": "100K",
+                    "tokens": 100000
+                  },
+                  {
+                    "id": "200000",
+                    "label": "200K",
+                    "tokens": 200000
+                  },
+                  {
+                    "id": "300000",
+                    "label": "300K",
+                    "tokens": 300000
+                  },
+                  {
+                    "id": "500000",
+                    "label": "500K",
+                    "tokens": 500000
+                  },
+                  {
+                    "id": "750000",
+                    "label": "750K",
+                    "tokens": 750000
+                  },
+                  {
+                    "id": "1000000",
+                    "label": "1M",
+                    "tokens": 1000000
+                  }
+                ],
+                "configurable": true,
+                "costNote": "A larger size sends more history with each message, so long sessions use more tokens. Your plan or the model can cap it; a running session shows what it got.",
+                "defaultLabel": "Auto",
+                "defaultTokens": null,
+                "description": "How much conversation Claude Code keeps before it compacts. This doesn't change the model's own context window, and a lower value compacts sooner. It compacts a little below this size.",
+                "editable": "sleeping",
+                "kind": "working_window",
+                "label": "Working context",
+                "maxTokens": 1000000,
+                "notice": null,
+                "reason": null,
+                "state": null,
+                "value": null
+              },
               "emoji": {
                 "editable": "sleeping",
                 "value": "🦊"
@@ -988,6 +1294,57 @@
               "color": {
                 "editable": "sleeping",
                 "value": "rose"
+              },
+              "contextWindow": {
+                "applies": [
+                  "launch",
+                  "resume"
+                ],
+                "choices": [
+                  {
+                    "id": "100000",
+                    "label": "100K",
+                    "tokens": 100000
+                  },
+                  {
+                    "id": "200000",
+                    "label": "200K",
+                    "tokens": 200000
+                  },
+                  {
+                    "id": "300000",
+                    "label": "300K",
+                    "tokens": 300000
+                  },
+                  {
+                    "id": "500000",
+                    "label": "500K",
+                    "tokens": 500000
+                  },
+                  {
+                    "id": "750000",
+                    "label": "750K",
+                    "tokens": 750000
+                  },
+                  {
+                    "id": "1000000",
+                    "label": "1M",
+                    "tokens": 1000000
+                  }
+                ],
+                "configurable": true,
+                "costNote": "A larger size sends more history with each message, so long sessions use more tokens. Your plan or the model can cap it; a running session shows what it got.",
+                "defaultLabel": "Auto",
+                "defaultTokens": null,
+                "description": "How much conversation Claude Code keeps before it compacts. This doesn't change the model's own context window, and a lower value compacts sooner. It compacts a little below this size.",
+                "editable": "sleeping",
+                "kind": "working_window",
+                "label": "Working context",
+                "maxTokens": 1000000,
+                "notice": null,
+                "reason": null,
+                "state": null,
+                "value": null
               },
               "emoji": {
                 "editable": "sleeping",
@@ -1246,6 +1603,57 @@
                 "editable": "never",
                 "value": "indigo"
               },
+              "contextWindow": {
+                "applies": [
+                  "launch",
+                  "resume"
+                ],
+                "choices": [
+                  {
+                    "id": "100000",
+                    "label": "100K",
+                    "tokens": 100000
+                  },
+                  {
+                    "id": "200000",
+                    "label": "200K",
+                    "tokens": 200000
+                  },
+                  {
+                    "id": "300000",
+                    "label": "300K",
+                    "tokens": 300000
+                  },
+                  {
+                    "id": "500000",
+                    "label": "500K",
+                    "tokens": 500000
+                  },
+                  {
+                    "id": "750000",
+                    "label": "750K",
+                    "tokens": 750000
+                  },
+                  {
+                    "id": "1000000",
+                    "label": "1M",
+                    "tokens": 1000000
+                  }
+                ],
+                "configurable": true,
+                "costNote": "A larger size sends more history with each message, so long sessions use more tokens. Your plan or the model can cap it; a running session shows what it got.",
+                "defaultLabel": "Auto",
+                "defaultTokens": null,
+                "description": "How much conversation Claude Code keeps before it compacts. This doesn't change the model's own context window, and a lower value compacts sooner. It compacts a little below this size.",
+                "editable": "always",
+                "kind": "working_window",
+                "label": "Working context",
+                "maxTokens": 1000000,
+                "notice": null,
+                "reason": null,
+                "state": null,
+                "value": null
+              },
               "emoji": {
                 "editable": "never",
                 "value": null
@@ -1323,6 +1731,57 @@
               "color": {
                 "editable": "never",
                 "value": "indigo"
+              },
+              "contextWindow": {
+                "applies": [
+                  "launch",
+                  "resume"
+                ],
+                "choices": [
+                  {
+                    "id": "100000",
+                    "label": "100K",
+                    "tokens": 100000
+                  },
+                  {
+                    "id": "200000",
+                    "label": "200K",
+                    "tokens": 200000
+                  },
+                  {
+                    "id": "300000",
+                    "label": "300K",
+                    "tokens": 300000
+                  },
+                  {
+                    "id": "500000",
+                    "label": "500K",
+                    "tokens": 500000
+                  },
+                  {
+                    "id": "750000",
+                    "label": "750K",
+                    "tokens": 750000
+                  },
+                  {
+                    "id": "1000000",
+                    "label": "1M",
+                    "tokens": 1000000
+                  }
+                ],
+                "configurable": true,
+                "costNote": "A larger size sends more history with each message, so long sessions use more tokens. Your plan or the model can cap it; a running session shows what it got.",
+                "defaultLabel": "Auto",
+                "defaultTokens": null,
+                "description": "How much conversation Claude Code keeps before it compacts. This doesn't change the model's own context window, and a lower value compacts sooner. It compacts a little below this size.",
+                "editable": "always",
+                "kind": "working_window",
+                "label": "Working context",
+                "maxTokens": 1000000,
+                "notice": null,
+                "reason": null,
+                "state": null,
+                "value": null
               },
               "emoji": {
                 "editable": "never",
@@ -1530,6 +1989,57 @@
                 "editable": "sleeping",
                 "value": "indigo"
               },
+              "contextWindow": {
+                "applies": [
+                  "launch",
+                  "resume"
+                ],
+                "choices": [
+                  {
+                    "id": "100000",
+                    "label": "100K",
+                    "tokens": 100000
+                  },
+                  {
+                    "id": "200000",
+                    "label": "200K",
+                    "tokens": 200000
+                  },
+                  {
+                    "id": "300000",
+                    "label": "300K",
+                    "tokens": 300000
+                  },
+                  {
+                    "id": "500000",
+                    "label": "500K",
+                    "tokens": 500000
+                  },
+                  {
+                    "id": "750000",
+                    "label": "750K",
+                    "tokens": 750000
+                  },
+                  {
+                    "id": "1000000",
+                    "label": "1M",
+                    "tokens": 1000000
+                  }
+                ],
+                "configurable": true,
+                "costNote": "A larger size sends more history with each message, so long sessions use more tokens. Your plan or the model can cap it; a running session shows what it got.",
+                "defaultLabel": "Auto",
+                "defaultTokens": null,
+                "description": "How much conversation Claude Code keeps before it compacts. This doesn't change the model's own context window, and a lower value compacts sooner. It compacts a little below this size.",
+                "editable": "sleeping",
+                "kind": "working_window",
+                "label": "Working context",
+                "maxTokens": 1000000,
+                "notice": null,
+                "reason": null,
+                "state": null,
+                "value": null
+              },
               "emoji": {
                 "editable": "sleeping",
                 "value": "🦊"
@@ -1598,6 +2108,813 @@
           "error": {
             "code": "mcp_off",
             "message": "This needs Clubhouse MCP, which is off for this agent. Turn it on first."
+          },
+          "status": "rejected",
+          "version": 1
+        },
+        "status": 409
+      }
+    },
+    {
+      "name": "accepted contextWindow",
+      "request": {
+        "agentId": "durable_sleepy",
+        "commandId": "cmd_139",
+        "contextWindow": "500000",
+        "epoch": "00000000-0000-4000-8000-000000000001",
+        "type": "agent.update",
+        "version": 1
+      },
+      "response": {
+        "body": {
+          "commandId": "cmd_139",
+          "epoch": "00000000-0000-4000-8000-000000000001",
+          "result": {
+            "agentId": "durable_sleepy",
+            "orchestration": {
+              "access": "same",
+              "accessLevels": [
+                "same",
+                "standard",
+                "auto",
+                "bypass"
+              ],
+              "connectToDispatcher": false,
+              "control": "hands-off",
+              "controls": [
+                "hands-off",
+                "ask-before-start",
+                "ask-everything"
+              ],
+              "crossProjectHelpers": false,
+              "maxHelpers": 5,
+              "maxHelpersCap": 20,
+              "mcpEnabled": true,
+              "orchestrate": false,
+              "sources": {
+                "access": "default",
+                "connectToDispatcher": "default",
+                "control": "default",
+                "crossProjectHelpers": "default",
+                "maxHelpers": "default",
+                "orchestrate": "default"
+              }
+            },
+            "projectId": "proj_app",
+            "settings": {
+              "clubhouseMode": {
+                "editable": "never",
+                "projectEnabled": false,
+                "value": null
+              },
+              "color": {
+                "editable": "sleeping",
+                "value": "amber"
+              },
+              "contextWindow": {
+                "applies": [
+                  "launch",
+                  "resume"
+                ],
+                "choices": [
+                  {
+                    "id": "100000",
+                    "label": "100K",
+                    "tokens": 100000
+                  },
+                  {
+                    "id": "200000",
+                    "label": "200K",
+                    "tokens": 200000
+                  },
+                  {
+                    "id": "300000",
+                    "label": "300K",
+                    "tokens": 300000
+                  },
+                  {
+                    "id": "500000",
+                    "label": "500K",
+                    "tokens": 500000
+                  },
+                  {
+                    "id": "750000",
+                    "label": "750K",
+                    "tokens": 750000
+                  },
+                  {
+                    "id": "1000000",
+                    "label": "1M",
+                    "tokens": 1000000
+                  }
+                ],
+                "configurable": true,
+                "costNote": "A larger size sends more history with each message, so long sessions use more tokens. Your plan or the model can cap it; a running session shows what it got.",
+                "defaultLabel": "Auto",
+                "defaultTokens": null,
+                "description": "How much conversation Claude Code keeps before it compacts. This doesn't change the model's own context window, and a lower value compacts sooner. It compacts a little below this size.",
+                "editable": "sleeping",
+                "kind": "working_window",
+                "label": "Working context",
+                "maxTokens": 1000000,
+                "notice": null,
+                "reason": null,
+                "state": null,
+                "value": "500000"
+              },
+              "emoji": {
+                "editable": "sleeping",
+                "value": null
+              },
+              "freeAgentMode": {
+                "editable": "sleeping",
+                "value": false
+              },
+              "hasImageIcon": false,
+              "idleSleep": {
+                "applies": true,
+                "editable": "always",
+                "minutes": 60,
+                "source": "agent",
+                "value": 60
+              },
+              "model": {
+                "editable": "sleeping",
+                "value": "opus"
+              },
+              "name": {
+                "editable": "sleeping",
+                "value": "brave-otter"
+              },
+              "orchestrator": {
+                "changeStartsNewSession": true,
+                "editable": "sleeping",
+                "resolved": "claude-code",
+                "value": "claude-code"
+              },
+              "persona": {
+                "editable": "sleeping",
+                "value": null
+              },
+              "runtime": {
+                "editable": "sleeping",
+                "resolved": "chat",
+                "value": "default"
+              }
+            },
+            "sleeping": true,
+            "state": "sleeping"
+          },
+          "status": "completed",
+          "version": 1
+        },
+        "status": 200
+      }
+    },
+    {
+      "name": "accepted contextWindow null reset",
+      "request": {
+        "agentId": "durable_sleepy",
+        "commandId": "cmd_140",
+        "contextWindow": null,
+        "epoch": "00000000-0000-4000-8000-000000000001",
+        "type": "agent.update",
+        "version": 1
+      },
+      "response": {
+        "body": {
+          "commandId": "cmd_140",
+          "epoch": "00000000-0000-4000-8000-000000000001",
+          "result": {
+            "agentId": "durable_sleepy",
+            "orchestration": {
+              "access": "same",
+              "accessLevels": [
+                "same",
+                "standard",
+                "auto",
+                "bypass"
+              ],
+              "connectToDispatcher": false,
+              "control": "hands-off",
+              "controls": [
+                "hands-off",
+                "ask-before-start",
+                "ask-everything"
+              ],
+              "crossProjectHelpers": false,
+              "maxHelpers": 5,
+              "maxHelpersCap": 20,
+              "mcpEnabled": true,
+              "orchestrate": false,
+              "sources": {
+                "access": "default",
+                "connectToDispatcher": "default",
+                "control": "default",
+                "crossProjectHelpers": "default",
+                "maxHelpers": "default",
+                "orchestrate": "default"
+              }
+            },
+            "projectId": "proj_app",
+            "settings": {
+              "clubhouseMode": {
+                "editable": "never",
+                "projectEnabled": false,
+                "value": null
+              },
+              "color": {
+                "editable": "sleeping",
+                "value": "amber"
+              },
+              "contextWindow": {
+                "applies": [
+                  "launch",
+                  "resume"
+                ],
+                "choices": [
+                  {
+                    "id": "100000",
+                    "label": "100K",
+                    "tokens": 100000
+                  },
+                  {
+                    "id": "200000",
+                    "label": "200K",
+                    "tokens": 200000
+                  },
+                  {
+                    "id": "300000",
+                    "label": "300K",
+                    "tokens": 300000
+                  },
+                  {
+                    "id": "500000",
+                    "label": "500K",
+                    "tokens": 500000
+                  },
+                  {
+                    "id": "750000",
+                    "label": "750K",
+                    "tokens": 750000
+                  },
+                  {
+                    "id": "1000000",
+                    "label": "1M",
+                    "tokens": 1000000
+                  }
+                ],
+                "configurable": true,
+                "costNote": "A larger size sends more history with each message, so long sessions use more tokens. Your plan or the model can cap it; a running session shows what it got.",
+                "defaultLabel": "Auto",
+                "defaultTokens": null,
+                "description": "How much conversation Claude Code keeps before it compacts. This doesn't change the model's own context window, and a lower value compacts sooner. It compacts a little below this size.",
+                "editable": "sleeping",
+                "kind": "working_window",
+                "label": "Working context",
+                "maxTokens": 1000000,
+                "notice": null,
+                "reason": null,
+                "state": null,
+                "value": null
+              },
+              "emoji": {
+                "editable": "sleeping",
+                "value": null
+              },
+              "freeAgentMode": {
+                "editable": "sleeping",
+                "value": false
+              },
+              "hasImageIcon": false,
+              "idleSleep": {
+                "applies": true,
+                "editable": "always",
+                "minutes": 60,
+                "source": "agent",
+                "value": 60
+              },
+              "model": {
+                "editable": "sleeping",
+                "value": "opus"
+              },
+              "name": {
+                "editable": "sleeping",
+                "value": "brave-otter"
+              },
+              "orchestrator": {
+                "changeStartsNewSession": true,
+                "editable": "sleeping",
+                "resolved": "claude-code",
+                "value": "claude-code"
+              },
+              "persona": {
+                "editable": "sleeping",
+                "value": null
+              },
+              "runtime": {
+                "editable": "sleeping",
+                "resolved": "chat",
+                "value": "default"
+              }
+            },
+            "sleeping": true,
+            "state": "sleeping"
+          },
+          "status": "completed",
+          "version": 1
+        },
+        "status": 200
+      }
+    },
+    {
+      "name": "invalid_context_window",
+      "request": {
+        "agentId": "durable_sleepy",
+        "commandId": "cmd_141",
+        "contextWindow": "123",
+        "epoch": "00000000-0000-4000-8000-000000000001",
+        "type": "agent.update",
+        "version": 1
+      },
+      "response": {
+        "body": {
+          "commandId": "cmd_141",
+          "epoch": "00000000-0000-4000-8000-000000000001",
+          "error": {
+            "code": "invalid_context_window",
+            "message": "123 isn't one this model offers."
+          },
+          "status": "rejected",
+          "version": 1
+        },
+        "status": 400
+      }
+    },
+    {
+      "name": "agent_running (contextWindow)",
+      "request": {
+        "agentId": "durable_chat",
+        "commandId": "cmd_142",
+        "contextWindow": "500000",
+        "epoch": "00000000-0000-4000-8000-000000000001",
+        "type": "agent.update",
+        "version": 1
+      },
+      "response": {
+        "body": {
+          "commandId": "cmd_142",
+          "epoch": "00000000-0000-4000-8000-000000000001",
+          "error": {
+            "code": "agent_running",
+            "message": "Sleep the agent to change these"
+          },
+          "status": "rejected",
+          "version": 1
+        },
+        "status": 409
+      }
+    },
+    {
+      "name": "accepted model change resets contextWindow",
+      "request": {
+        "agentId": "durable_sleepy",
+        "commandId": "cmd_143",
+        "epoch": "00000000-0000-4000-8000-000000000001",
+        "model": "sonnet",
+        "type": "agent.update",
+        "version": 1
+      },
+      "response": {
+        "body": {
+          "commandId": "cmd_143",
+          "epoch": "00000000-0000-4000-8000-000000000001",
+          "result": {
+            "agentId": "durable_sleepy",
+            "contextWindowReset": {
+              "previous": "500000",
+              "reason": "500000 isn't one this model offers."
+            },
+            "orchestration": {
+              "access": "same",
+              "accessLevels": [
+                "same",
+                "standard",
+                "auto",
+                "bypass"
+              ],
+              "connectToDispatcher": false,
+              "control": "hands-off",
+              "controls": [
+                "hands-off",
+                "ask-before-start",
+                "ask-everything"
+              ],
+              "crossProjectHelpers": false,
+              "maxHelpers": 5,
+              "maxHelpersCap": 20,
+              "mcpEnabled": true,
+              "orchestrate": false,
+              "sources": {
+                "access": "default",
+                "connectToDispatcher": "default",
+                "control": "default",
+                "crossProjectHelpers": "default",
+                "maxHelpers": "default",
+                "orchestrate": "default"
+              }
+            },
+            "projectId": "proj_app",
+            "settings": {
+              "clubhouseMode": {
+                "editable": "never",
+                "projectEnabled": false,
+                "value": null
+              },
+              "color": {
+                "editable": "sleeping",
+                "value": "amber"
+              },
+              "contextWindow": {
+                "applies": [
+                  "launch",
+                  "resume"
+                ],
+                "choices": [
+                  {
+                    "id": "100000",
+                    "label": "100K",
+                    "tokens": 100000
+                  },
+                  {
+                    "id": "200000",
+                    "label": "200K",
+                    "tokens": 200000
+                  }
+                ],
+                "configurable": true,
+                "costNote": "A larger size sends more history with each message, so long sessions use more tokens. Your plan or the model can cap it; a running session shows what it got.",
+                "defaultLabel": "Auto",
+                "defaultTokens": null,
+                "description": "How much conversation Claude Code keeps before it compacts. This doesn't change the model's own context window, and a lower value compacts sooner. It compacts a little below this size.",
+                "editable": "sleeping",
+                "kind": "working_window",
+                "label": "Working context",
+                "maxTokens": 200000,
+                "notice": "500000 isn't one this model offers.",
+                "reason": null,
+                "state": null,
+                "value": null
+              },
+              "emoji": {
+                "editable": "sleeping",
+                "value": null
+              },
+              "freeAgentMode": {
+                "editable": "sleeping",
+                "value": false
+              },
+              "hasImageIcon": false,
+              "idleSleep": {
+                "applies": true,
+                "editable": "always",
+                "minutes": 60,
+                "source": "agent",
+                "value": 60
+              },
+              "model": {
+                "editable": "sleeping",
+                "value": "sonnet"
+              },
+              "name": {
+                "editable": "sleeping",
+                "value": "brave-otter"
+              },
+              "orchestrator": {
+                "changeStartsNewSession": true,
+                "editable": "sleeping",
+                "resolved": "claude-code",
+                "value": "claude-code"
+              },
+              "persona": {
+                "editable": "sleeping",
+                "value": null
+              },
+              "runtime": {
+                "editable": "sleeping",
+                "resolved": "chat",
+                "value": "default"
+              }
+            },
+            "sleeping": true,
+            "state": "sleeping"
+          },
+          "status": "completed",
+          "version": 1
+        },
+        "status": 200
+      }
+    },
+    {
+      "name": "accepted contextWindow (Dispatcher)",
+      "request": {
+        "agentId": "durable_dispatcher",
+        "commandId": "cmd_144",
+        "contextWindow": "300000",
+        "epoch": "00000000-0000-4000-8000-000000000001",
+        "type": "agent.update",
+        "version": 1
+      },
+      "response": {
+        "body": {
+          "commandId": "cmd_144",
+          "epoch": "00000000-0000-4000-8000-000000000001",
+          "result": {
+            "agentId": "durable_dispatcher",
+            "isDispatcher": true,
+            "orchestration": null,
+            "projectId": "__dispatcher__",
+            "settings": {
+              "clubhouseMode": {
+                "editable": "never",
+                "projectEnabled": false,
+                "value": null
+              },
+              "color": {
+                "editable": "never",
+                "value": "indigo"
+              },
+              "contextWindow": {
+                "applies": [
+                  "launch",
+                  "resume"
+                ],
+                "choices": [
+                  {
+                    "id": "100000",
+                    "label": "100K",
+                    "tokens": 100000
+                  },
+                  {
+                    "id": "200000",
+                    "label": "200K",
+                    "tokens": 200000
+                  },
+                  {
+                    "id": "300000",
+                    "label": "300K",
+                    "tokens": 300000
+                  },
+                  {
+                    "id": "500000",
+                    "label": "500K",
+                    "tokens": 500000
+                  },
+                  {
+                    "id": "750000",
+                    "label": "750K",
+                    "tokens": 750000
+                  },
+                  {
+                    "id": "1000000",
+                    "label": "1M",
+                    "tokens": 1000000
+                  }
+                ],
+                "configurable": true,
+                "costNote": "A larger size sends more history with each message, so long sessions use more tokens. Your plan or the model can cap it; a running session shows what it got.",
+                "defaultLabel": "Auto",
+                "defaultTokens": null,
+                "description": "How much conversation Claude Code keeps before it compacts. This doesn't change the model's own context window, and a lower value compacts sooner. It compacts a little below this size.",
+                "editable": "always",
+                "kind": "working_window",
+                "label": "Working context",
+                "maxTokens": 1000000,
+                "notice": null,
+                "reason": null,
+                "state": null,
+                "value": "300000"
+              },
+              "emoji": {
+                "editable": "never",
+                "value": null
+              },
+              "freeAgentMode": {
+                "editable": "always",
+                "value": true
+              },
+              "hasImageIcon": false,
+              "idleSleep": {
+                "applies": true,
+                "editable": "always",
+                "minutes": 0,
+                "source": "agent",
+                "value": "never"
+              },
+              "model": {
+                "editable": "always",
+                "value": "opus"
+              },
+              "name": {
+                "editable": "never",
+                "value": "Dispatcher"
+              },
+              "orchestrator": {
+                "changeStartsNewSession": true,
+                "editable": "always",
+                "resolved": "claude-code",
+                "value": "claude-code"
+              },
+              "persona": {
+                "editable": "never",
+                "value": "dispatcher"
+              },
+              "runtime": {
+                "editable": "always",
+                "resolved": "chat",
+                "value": "chat"
+              }
+            },
+            "sleeping": true,
+            "state": "sleeping"
+          },
+          "status": "completed",
+          "version": 1
+        },
+        "status": 200
+      }
+    },
+    {
+      "name": "accepted contextWindow null reset (Dispatcher)",
+      "request": {
+        "agentId": "durable_dispatcher",
+        "commandId": "cmd_145",
+        "contextWindow": null,
+        "epoch": "00000000-0000-4000-8000-000000000001",
+        "type": "agent.update",
+        "version": 1
+      },
+      "response": {
+        "body": {
+          "commandId": "cmd_145",
+          "epoch": "00000000-0000-4000-8000-000000000001",
+          "result": {
+            "agentId": "durable_dispatcher",
+            "isDispatcher": true,
+            "orchestration": null,
+            "projectId": "__dispatcher__",
+            "settings": {
+              "clubhouseMode": {
+                "editable": "never",
+                "projectEnabled": false,
+                "value": null
+              },
+              "color": {
+                "editable": "never",
+                "value": "indigo"
+              },
+              "contextWindow": {
+                "applies": [
+                  "launch",
+                  "resume"
+                ],
+                "choices": [
+                  {
+                    "id": "100000",
+                    "label": "100K",
+                    "tokens": 100000
+                  },
+                  {
+                    "id": "200000",
+                    "label": "200K",
+                    "tokens": 200000
+                  },
+                  {
+                    "id": "300000",
+                    "label": "300K",
+                    "tokens": 300000
+                  },
+                  {
+                    "id": "500000",
+                    "label": "500K",
+                    "tokens": 500000
+                  },
+                  {
+                    "id": "750000",
+                    "label": "750K",
+                    "tokens": 750000
+                  },
+                  {
+                    "id": "1000000",
+                    "label": "1M",
+                    "tokens": 1000000
+                  }
+                ],
+                "configurable": true,
+                "costNote": "A larger size sends more history with each message, so long sessions use more tokens. Your plan or the model can cap it; a running session shows what it got.",
+                "defaultLabel": "Auto",
+                "defaultTokens": null,
+                "description": "How much conversation Claude Code keeps before it compacts. This doesn't change the model's own context window, and a lower value compacts sooner. It compacts a little below this size.",
+                "editable": "always",
+                "kind": "working_window",
+                "label": "Working context",
+                "maxTokens": 1000000,
+                "notice": null,
+                "reason": null,
+                "state": null,
+                "value": null
+              },
+              "emoji": {
+                "editable": "never",
+                "value": null
+              },
+              "freeAgentMode": {
+                "editable": "always",
+                "value": true
+              },
+              "hasImageIcon": false,
+              "idleSleep": {
+                "applies": true,
+                "editable": "always",
+                "minutes": 0,
+                "source": "agent",
+                "value": "never"
+              },
+              "model": {
+                "editable": "always",
+                "value": "opus"
+              },
+              "name": {
+                "editable": "never",
+                "value": "Dispatcher"
+              },
+              "orchestrator": {
+                "changeStartsNewSession": true,
+                "editable": "always",
+                "resolved": "claude-code",
+                "value": "claude-code"
+              },
+              "persona": {
+                "editable": "never",
+                "value": "dispatcher"
+              },
+              "runtime": {
+                "editable": "always",
+                "resolved": "chat",
+                "value": "chat"
+              }
+            },
+            "sleeping": true,
+            "state": "sleeping"
+          },
+          "status": "completed",
+          "version": 1
+        },
+        "status": 200
+      }
+    },
+    {
+      "name": "invalid_context_window (Dispatcher)",
+      "request": {
+        "agentId": "durable_dispatcher",
+        "commandId": "cmd_146",
+        "contextWindow": "123",
+        "epoch": "00000000-0000-4000-8000-000000000001",
+        "type": "agent.update",
+        "version": 1
+      },
+      "response": {
+        "body": {
+          "commandId": "cmd_146",
+          "epoch": "00000000-0000-4000-8000-000000000001",
+          "error": {
+            "code": "invalid_context_window",
+            "message": "123 isn't one this model offers."
+          },
+          "status": "rejected",
+          "version": 1
+        },
+        "status": 400
+      }
+    },
+    {
+      "name": "dispatcher_locked (name, with contextWindow)",
+      "request": {
+        "agentId": "durable_dispatcher",
+        "commandId": "cmd_147",
+        "contextWindow": "300000",
+        "epoch": "00000000-0000-4000-8000-000000000001",
+        "name": "Boss",
+        "type": "agent.update",
+        "version": 1
+      },
+      "response": {
+        "body": {
+          "commandId": "cmd_147",
+          "epoch": "00000000-0000-4000-8000-000000000001",
+          "error": {
+            "code": "dispatcher_locked",
+            "message": "The Dispatcher's name can't be changed."
           },
           "status": "rejected",
           "version": 1

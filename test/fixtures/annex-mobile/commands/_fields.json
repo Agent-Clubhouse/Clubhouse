@@ -70,6 +70,7 @@
         "clubhouseMode",
         "freeAgentMode",
         "idleSleep",
+        "contextWindow",
         "orchestration"
       ],
       "fields": [
@@ -84,12 +85,14 @@
         "clubhouseMode",
         "freeAgentMode",
         "idleSleep",
+        "contextWindow",
         "orchestration"
       ],
       "nullable": [
         "emoji",
         "persona",
-        "orchestration"
+        "orchestration",
+        "contextWindow"
       ],
       "required": [
         "agentId"

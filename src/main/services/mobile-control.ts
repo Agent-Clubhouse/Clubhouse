@@ -1,3 +1,4 @@
+import { INPUT_WINDOW_NOTE, type ContextLimits } from '../../shared/context-window';
 import { createHash, randomUUID } from 'crypto';
 import type { AgentRuntime, ChatCapabilities, ChatEvent, ContentBlock, PermissionLevel } from '../../shared/chat';
 import { CHAT_ATTACHMENTS_MAX, PERMISSION_LEVELS, switchNote } from '../../shared/chat';
@@ -22,7 +23,7 @@ export const MOBILE_COMMAND_FIELDS: Readonly<Record<MobileCommand['type'], reado
   'agent.stop': ['agentId'],
   'agent.spawn': ['projectId', 'prompt', 'model', 'orchestrator'],
   'agent.create': ['projectId', 'name', 'color', 'orchestrator', 'model', 'persona', 'freeAgentMode', 'useWorktree', 'mcpIds', 'branchName', 'branchFrom', 'folderName', 'orchestration'],
-  'agent.update': ['agentId', 'name', 'color', 'emoji', 'orchestrator', 'model', 'runtime', 'persona', 'clubhouseMode', 'freeAgentMode', 'idleSleep', 'orchestration'],
+  'agent.update': ['agentId', 'name', 'color', 'emoji', 'orchestrator', 'model', 'runtime', 'persona', 'clubhouseMode', 'freeAgentMode', 'idleSleep', 'contextWindow', 'orchestration'],
   'project.setPinned': ['projectId', 'pinned'],
   'project.setInactive': ['projectId', 'inactive'],
   'helper.approve': ['requestId', 'force'],
@@ -39,7 +40,7 @@ export const isOptionalCommandField = (type: MobileCommand['type'], key: string)
     : type === 'chat.setModel' && key === 'model' ? false : OPTIONAL.has(key);
 const BOOLEAN_FIELDS = new Set(['resume', 'useWorktree', 'clubhouseMode', 'pinned', 'inactive', 'force', 'freeAgentMode', 'enabled']);
 /** Fields agent.update clears with null. */
-export const NULLABLE_ON_UPDATE = new Set(['emoji', 'persona', 'orchestration']);
+export const NULLABLE_ON_UPDATE = new Set(['emoji', 'persona', 'orchestration', 'contextWindow']);
 const record = (v: unknown): v is Record<string, unknown> => !!v && typeof v === 'object' && !Array.isArray(v);
 const text = (v: unknown, max = 256): v is string => typeof v === 'string' && v.length > 0 && v.length <= max;
 const idleSleep = (v: unknown): boolean => v === 'inherit' || v === 'never' || (AGENT_IDLE_SLEEP_MINUTES as readonly unknown[]).includes(v);
@@ -146,19 +147,34 @@ export function pendingInteractions(events: ChatEvent[]) {
  * The composer's level, model and effort state for a session (#2462), folded
  * from its events the way the desktop chat store folds them.
  */
+/** What the session has reported of its context: its limits where the CLI gives them, else its usage's window. */
+function mobileContext(limits: ContextLimits | null, usage: { size: number; window?: 'input' | 'total' } | null): MobileChatControls['context'] {
+  if (!limits && !usage) return null;
+  return {
+    effectiveTokens: limits?.effectiveTokens ?? usage?.size ?? null,
+    compactAtTokens: limits?.compactAtTokens ?? null,
+    reservedTokens: limits?.reservedTokens ?? null,
+    note: limits?.note ?? (usage?.window === 'input' ? INPUT_WINDOW_NOTE : null),
+  };
+}
+
 export function chatControls(events: ChatEvent[], caps: ChatCapabilities | undefined): MobileChatControls {
   let model: string | null = null; let modelUnknown = false;
   let effort: string | null = null; let effortIsDefault = false; let effortReported = false;
   let level: PermissionLevel | null = null;
   let models: MobileChatControls['models'] = []; let efforts: string[] = []; let levelNames: MobileChatControls['levelNames'] = {};
+  let limits: ContextLimits | null = null; let usageContext: { size: number; window?: 'input' | 'total' } | null = null;
   for (const event of events) {
     if (event.type === 'session_started') {
       model = event.data.model ?? model; modelUnknown = false; level = event.data.level ?? level;
-      models = []; efforts = []; levelNames = {};
+      models = []; efforts = []; levelNames = {}; limits = null; usageContext = null;
     } else if (event.type === 'session_info') {
       const d = event.data;
       if (d.model !== undefined) { model = d.model; modelUnknown = d.model === null; }
       models = d.models ?? models; efforts = d.efforts ?? efforts; levelNames = d.levelNames ?? levelNames;
+      limits = d.contextLimits ?? limits;
+    } else if (event.type === 'usage' && event.data.context) {
+      usageContext = event.data.context;
     } else if (event.type === 'model_changed') {
       model = event.data.modelId; modelUnknown = false;
       effort = event.data.effort ?? null; effortIsDefault = event.data.effortIsDefault === true; effortReported = true;
@@ -170,6 +186,7 @@ export function chatControls(events: ChatEvent[], caps: ChatCapabilities | undef
     model, modelUnknown, effort, effortIsDefault, effortReported, level, models, efforts, levelNames,
     liveLevels: [...(caps?.liveLevels ?? [])], modelSwitch, effortSwitch, effortDefault: caps?.effortDefault === true,
     switchNote: switchNote(modelSwitch, effortSwitch) ?? null,
+    context: mobileContext(limits, usageContext),
   };
 }
 

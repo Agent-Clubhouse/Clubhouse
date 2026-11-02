@@ -32,6 +32,12 @@
         "usage": "cost"
       },
       "chatControls": {
+        "context": {
+          "compactAtTokens": 267000,
+          "effectiveTokens": 300000,
+          "note": "Claude Code's working context. The model's own window isn't changed.",
+          "reservedTokens": 33000
+        },
         "effort": "high",
         "effortDefault": false,
         "effortIsDefault": false,

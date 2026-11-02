@@ -220,6 +220,7 @@ describe('agent settings', () => {
         clubhouseMode: { value: null, editable: 'never', projectEnabled: false },
         freeAgentMode: { value: true, editable: 'sleeping' },
         idleSleep: { value: 60, editable: 'always', minutes: 60, source: 'agent', applies: true },
+        contextWindow: expect.objectContaining({ value: null, configurable: false, editable: 'never', kind: null, applies: ['launch', 'resume'] }),
       },
       orchestration: {
         orchestrate: false, access: 'same', control: 'hands-off', maxHelpers: 3, crossProjectHelpers: false, connectToDispatcher: false, mcpEnabled: true,

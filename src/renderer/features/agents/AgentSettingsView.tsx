@@ -2,6 +2,8 @@ import { useEffect, useMemo, useState, useRef } from 'react';
 import { Agent, QuickAgentDefaults, MaterializationPreview, McpCatalogArg, McpCatalogEntry, McpCatalogEntryWithState } from '../../../shared/types';
 import { AGENT_COLORS } from '../../../shared/name-generator';
 import { useModelOptions } from '../../hooks/useModelOptions';
+import { useContextWindowOptions } from '../../hooks/useContextWindowOptions';
+import { ContextWindowSelect, contextWindowHelp } from './ContextWindowField';
 import { useEffectiveOrchestrators } from '../../hooks/useEffectiveOrchestrators';
 import { buildOrchestratorOptions } from './orchestrator-options';
 import { useCliChangeConfirm } from './useCliChangeConfirm';
@@ -350,6 +352,29 @@ export function AgentSettingsView({ agent }: Props) {
         },
       };
     });
+  };
+
+  // The saved next-start choice (#2660). Main can clear it on a new model or CLI, so it's read back after those.
+  const [contextWindow, setContextWindow] = useState<string | undefined>();
+  const [contextWindowNotice, setContextWindowNotice] = useState<string | undefined>();
+  const contextOptions = useContextWindowOptions(!!projectPath && !isRunning, projectPath, agentOrchestrator, savedModel);
+  useEffect(() => {
+    if (!projectPath) return;
+    let alive = true;
+    window.clubhouse.agent.getDurableConfig(projectPath, agent.id).then((c) => {
+      if (!alive) return;
+      setContextWindow(c?.contextWindow);
+      setContextWindowNotice(c?.contextWindowNotice);
+    }).catch(() => {
+      // telemetry-exempt: the row shows no saved choice; saving still validates in main.
+    });
+    return () => { alive = false; };
+  }, [projectPath, agent.id, savedModel, agentOrchestrator]);
+  const handleContextWindowChange = async (value: string | null) => {
+    if (!projectPath) return;
+    await window.clubhouse.agent.updateDurableConfig(projectPath, agent.id, { contextWindow: value });
+    setContextWindow(value ?? undefined);
+    setContextWindowNotice(undefined);
   };
 
   const handleModelChange = async (value: string) => {
@@ -1110,6 +1135,17 @@ export function AgentSettingsView({ agent }: Props) {
           ))}
           <option value="custom">Custom...</option>
         </select>
+      </Field>
+      <Field label={contextOptions?.label ?? 'Context'} help={contextWindowHelp(contextOptions)} htmlFor="agent-settings-context">
+        <ContextWindowSelect
+          id="agent-settings-context"
+          options={contextOptions}
+          value={contextWindow}
+          disabled={isRunning}
+          className={selectClass}
+          onChange={(v) => void handleContextWindowChange(v)}
+        />
+        {contextWindowNotice && <p className="text-ctp-subtext0 mt-1" data-testid="agent-settings-context-notice">{contextWindowNotice}</p>}
       </Field>
       {chatFlagEnabled && (
         <Field label="Runtime" help="Chat or CLI for this agent. Overrides the provider setting." htmlFor="agent-settings-runtime">

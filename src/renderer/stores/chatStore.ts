@@ -12,6 +12,7 @@
  * and live events that overlap it.
  */
 
+import type { ContextLimits } from '../../shared/context-window';
 import { useMemo } from 'react';
 import { create } from 'zustand';
 import { useShallow } from 'zustand/react/shallow';
@@ -253,6 +254,8 @@ export interface ChatViewState {
   plan: PlanEntry[];
   subagents: Record<string, SubagentInfo>;
   usage: ChatUsage;
+  /** What the session reports beyond its usage's context: compaction point and reserve (#2660). */
+  contextLimits: ContextLimits | null;
   commands: AvailableCommand[];
   /** Model choices from session_info (empty: no model menu). */
   models: ChatModelOption[];
@@ -303,6 +306,7 @@ export function createChatViewState(agentId: string): ChatViewState {
     plan: [],
     subagents: {},
     usage: { turn: null, session: null, limits: [], context: null, turnTotal: null },
+    contextLimits: null,
     commands: [],
     models: [],
     efforts: [],
@@ -388,6 +392,7 @@ function startSession(state: ChatViewState, event: ChatEvent): ChatViewState {
     sessionStartedAt: event.ts,
     lastSeq: state.lastSeq,
     usage: { ...createChatViewState(event.agentId).usage, limits: state.usage.limits },
+    contextLimits: null,
   };
 }
 
@@ -582,6 +587,7 @@ export function reduceChatEvent(prev: ChatViewState | undefined, event: ChatEven
         efforts: d.efforts ?? state.efforts,
         levelNames: d.levelNames ?? state.levelNames,
         mcpServers: d.mcpServers ?? state.mcpServers,
+        contextLimits: d.contextLimits ?? state.contextLimits,
         capabilities: d.capabilities
           ? { ...(state.capabilities ?? MINIMAL_CHAT_CAPABILITIES), ...d.capabilities }
           : state.capabilities,

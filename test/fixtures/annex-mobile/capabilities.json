@@ -48,6 +48,9 @@
         "quick.clear",
         "dispatcher.setEnabled"
       ],
+      "contextWindow": {
+        "version": 1
+      },
       "controlAuth": "mtls-pinned-client",
       "controlAvailable": true,
       "createOptions": {

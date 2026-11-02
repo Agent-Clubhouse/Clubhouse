@@ -39,7 +39,7 @@ import { broadcastToAllWindows } from '../util/ipc-broadcast';
 import { IPC } from '../../shared/ipc-channels';
 import * as os from 'os';
 import { getAgentRuntime, isChatAgent } from './agent-runtime';
-import { cancelChatStart, tryStartChatAgent, type ChatStartFacts, type ChatStartResult } from './agent-runtime/chat-spawn';
+import { cancelChatStart, tryStartChatAgent, type ChatRuntimeNotice, type ChatStartFacts, type ChatStartResult } from './agent-runtime/chat-spawn';
 import { clearStaleResume, isSessionNotFound, takeChatStartFailure, type StaleResumeReason } from './agent-runtime/stale-session';
 import { noteKillRequest, recordSleep, sleepInfoForExit, takeKillRequest } from './agent-runtime/sleep-reason';
 import { onAgentExit } from './agent-exit-broadcast';
@@ -47,6 +47,7 @@ import { sessionCaptureFor, trackSessionCapture } from './session-capture-barrie
 import { assertLaunchesOpen } from './launch-gate';
 import { ATTR } from '../../shared/telemetry/attributes';
 import { tel, tagError, withErrorType } from '../telemetry/facade';
+import { contextWindowForLaunch } from './context-window';
 import { agentKillRequested, clearSpawnKind, noteSpawnKind } from '../telemetry/agent-telemetry';
 import { recordChatStart, recordSpawn, spawnAttrs, type SpawnFacts } from '../telemetry/spawn-telemetry';
 import {
@@ -70,6 +71,10 @@ export interface SpawnAgentParams {
   cwd: string;
   kind: 'durable' | 'quick' | 'companion';
   model?: string;
+  /** Filled in from a durable agent's config, once checked for this launch (#2660). */
+  contextWindow?: string;
+  /** Why the saved choice wasn't used for this launch. */
+  contextWindowNotice?: ChatRuntimeNotice;
   mission?: string;
   /** Who sent the mission, for chat to show. The mission text itself is what the agent gets. */
   missionRouted?: RoutedMessagePart[];
@@ -424,6 +429,10 @@ async function spawnAgentInner(inParams: SpawnAgentParams, facts: SpawnFacts): P
     // Likewise the Dispatcher's tools (#2536), only for the Dispatcher.
     await syncDispatcherGate(params.projectPath, params.agentId);
     facts.model = params.model;
+    if (params.kind === 'durable' && durableConfig?.contextWindow) {
+      const { value, notice } = await contextWindowForLaunch(params.projectPath, provider.id, params.agentId, params.model, durableConfig.contextWindow);
+      params = { ...params, contextWindow: value, contextWindowNotice: notice };
+    }
 
     // The user woke it fresh although it has a session to resume.
     if (params.kind === 'durable' && !params.resume && durableConfig?.lastSessionId) {
@@ -482,6 +491,8 @@ async function spawnAgentInner(inParams: SpawnAgentParams, facts: SpawnFacts): P
           cwd: p.cwd,
           kind: p.kind,
           model: p.model,
+          contextWindow: p.contextWindow,
+          contextWindowNotice: p.contextWindowNotice,
           mission: p.mission,
           missionRouted: p.missionRouted,
           systemPrompt: p.systemPrompt,
@@ -564,7 +575,10 @@ async function spawnAgentInner(inParams: SpawnAgentParams, facts: SpawnFacts): P
         const nonce = randomUUID();
         agentRegistry.setNonce(params.agentId, nonce);
         const mcpPort = await waitMcpBridgeReady().catch(() => 0);
-        const spawnEnv: Record<string, string> = {
+        // A terminal has no chat to carry the notice; the desktop shows it as other runtime notices.
+  if (params.contextWindowNotice) broadcastToAllWindows(IPC.CHAT.RUNTIME_NOTICE, params.agentId, params.contextWindowNotice);
+
+  const spawnEnv: Record<string, string> = {
           ...headlessResult.env,
           ...profileEnv,
           ...(wrapperApplied ? wrapperConfig?.env : undefined),
@@ -681,6 +695,7 @@ async function spawnPtyAgent(
     tel.step('clubhouse.provider.build_command', () => provider.buildSpawnCommand({
       cwd: params.cwd,
       model: params.model,
+      contextWindow: params.contextWindow,
       mission: params.mission,
       systemPrompt: params.systemPrompt,
       allowedTools,

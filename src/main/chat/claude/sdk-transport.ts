@@ -80,6 +80,7 @@ export class ClaudeSdkTransport extends ClaudeTransportBase {
       allowDangerouslySkipPermissions: opts.permissionMode === 'bypassPermissions' || undefined,
       model: opts.model,
       effort: opts.effort,
+      ...(opts.autocompact && { extraArgs: { autocompact: opts.autocompact } }),
       mcpServers: opts.mcpServers as Options['mcpServers'],
       resume: opts.resume,
       forkSession: opts.forkSession,
@@ -213,6 +214,10 @@ export class ClaudeSdkTransport extends ClaudeTransportBase {
     const query = this.requireQuery() as Query & { getSettings?: () => Promise<unknown> };
     if (!query.getSettings) return {};
     return appliedSettingsFromWire(await query.getSettings());
+  }
+
+  async contextUsage(): Promise<unknown> {
+    return this.requireQuery().getContextUsage();
   }
 
   async planUsage(): Promise<unknown> {

@@ -194,6 +194,8 @@ export interface ChatDriverStartOptions {
   commandPrefix?: string;
   model?: string;
   effort?: string;
+  /** The agent's context choice (#2660), already checked against this model. Read at start and at resume. */
+  contextWindow?: string;
   level: PermissionLevel;
   systemPrompt?: string;
   /**

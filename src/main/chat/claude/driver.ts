@@ -1,3 +1,4 @@
+import { CLAUDE_WORKING_WINDOW_NOTE, type ContextLimits } from '../../../shared/context-window';
 import * as fsp from 'fs/promises';
 import * as os from 'os';
 import * as path from 'path';
@@ -433,6 +434,18 @@ export function claudeContextWindow(model: string | undefined, modelUsage: Recor
   return model || selected ? 200_000 : undefined;
 }
 
+/** The working window and compaction point from a `get_context_usage` reply. */
+export function contextLimitsFromUsage(reply: unknown): ContextLimits | undefined {
+  if (!isObj(reply) || typeof reply.maxTokens !== 'number' || reply.maxTokens <= 0) return undefined;
+  const compactAt = reply.isAutoCompactEnabled !== false && typeof reply.autoCompactThreshold === 'number' ? reply.autoCompactThreshold : null;
+  return {
+    effectiveTokens: reply.maxTokens,
+    compactAtTokens: compactAt,
+    reservedTokens: compactAt !== null ? Math.max(0, reply.maxTokens - compactAt) : null,
+    note: CLAUDE_WORKING_WINDOW_NOTE,
+  };
+}
+
 /** How long a get_usage read may take; it's best-effort and never holds a turn up. */
 const PLAN_USAGE_TIMEOUT_MS = 5_000;
 /** At most one get_usage read per this long (it calls the claude.ai usage endpoint). */
@@ -534,6 +547,7 @@ export class ClaudeChatDriverSession implements ChatDriverSession {
   private pump: Promise<void> | null = null;
   /** The last main-loop call's context fill this turn: input + cache read + cache write. */
   private lastContext: { used: number; model?: string } | undefined;
+  private contextLimits: ContextLimits | undefined;
   /** A compaction-started notice went out and nothing has settled it yet. */
   private compacting = false;
   /** Status per window from rate_limit_event, kept on get_usage's windows (which have none). */
@@ -571,6 +585,21 @@ export class ClaudeChatDriverSession implements ChatDriverSession {
     // Before the first prompt, so the request order on the wire is fixed.
     await this.refreshApplied();
     void this.refreshPlanUsage();
+    void this.refreshContextLimits();
+  }
+
+  /** Read the working window and compaction point; best-effort, and sends nothing to the model. */
+  private async refreshContextLimits(): Promise<void> {
+    if (!this.transport.contextUsage || this.closing) return;
+    try {
+      const limits = contextLimitsFromUsage(await this.transport.contextUsage());
+      if (!limits || this.closing) return;
+      const same = JSON.stringify(limits) === JSON.stringify(this.contextLimits);
+      this.contextLimits = limits;
+      if (!same) this.push({ type: 'session_info', data: { contextLimits: limits } }, true);
+    } catch (err) {
+      this.log?.('debug', '[claude-chat] Could not read the context limits', { error: err instanceof Error ? err.message : String(err) });
+    }
   }
 
   /** Read every plan window (5-hour, weekly, per-model) from get_usage; best-effort. */
@@ -992,7 +1021,9 @@ export class ClaudeChatDriverSession implements ChatDriverSession {
         const turnCost = this.turnCost(ev.totalCostUsd);
         const costIsEstimate = ev.totalCostUsd !== undefined ? this.costIsEstimate : undefined;
         // Context fill is the last main-loop call's prompt, against that model's window.
-        const size = this.lastContext ? claudeContextWindow(this.lastContext.model, ev.modelUsage, this.applied?.model ?? this.model) : undefined;
+        const window = this.lastContext ? claudeContextWindow(this.lastContext.model, ev.modelUsage, this.applied?.model ?? this.model) : undefined;
+        // modelUsage says the model's window; a working window (--autocompact) is smaller, and fill is against that.
+        const size = window && this.contextLimits?.effectiveTokens ? Math.min(window, this.contextLimits.effectiveTokens) : window;
         const context = this.lastContext && size ? { used: this.lastContext.used, size } : undefined;
         this.push({
           type: 'usage',
@@ -1015,6 +1046,7 @@ export class ClaudeChatDriverSession implements ChatDriverSession {
         if (this.slashThisTurn) {
           this.slashThisTurn = false;
           void this.refreshApplied();
+          void this.refreshContextLimits();
         }
         return;
       }
@@ -1253,6 +1285,7 @@ export function claudeTransportOptions(opts: ChatDriverStartOptions, log?: Claud
     permissionMode: claudeModeFromLevel(opts.level),
     model: opts.model,
     effort: opts.effort as ClaudeTransportOptions['effort'],
+    ...(opts.contextWindow && { autocompact: opts.contextWindow }),
     appendSystemPrompt: opts.systemPrompt,
     resume: opts.resumeNativeSessionId,
     mcpServers: opts.mcpServers as ClaudeTransportOptions['mcpServers'],

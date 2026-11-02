@@ -18,11 +18,13 @@ import {
 } from './types';
 import type { McpServerDef } from '../../shared/types';
 import type { StreamJsonEvent } from '../services/jsonl-parser';
+import type { ListModelsOptions } from './types';
 import { BaseProvider } from './base-provider';
+import { codexContextWindowOptions, parseCodexContextCatalog, type ContextWindowOptions } from '../../shared/context-window';
 import { probeCodexModels, type ModelProbeContext } from './model-probes';
 import { cwdKey } from './copilot-session-store';
 import { createCodexHeadlessNormalizer } from './codex-headless-events';
-import { homePath, validateHookUrl, buildHookCurlCommand, mergeHookEntries, parseJsonlFile } from './shared';
+import { homePath, testModelProbesDisabled, validateHookUrl, buildHookCurlCommand, mergeHookEntries, parseJsonlFile } from './shared';
 import { getShellEnvironment, invalidateShellEnvironmentCache } from '../util/shell';
 import { isClubhouseHookEntry } from '../services/config-pipeline';
 import { appLog } from '../services/log-service';
@@ -295,6 +297,24 @@ export class CodexCliProvider extends BaseProvider implements HeadlessCapable, H
     return probeCodexModels(ctx);
   }
 
+  /** app-server's model/list has no context fields; `codex debug models` does, and sends no prompt. */
+  async getContextWindowOptions(model: string | undefined, opts?: ListModelsOptions): Promise<ContextWindowOptions> {
+    const catalog = testModelProbesDisabled() ? null : await this.cachedContextCatalog(opts, async () => {
+      const { stdout } = await execFileAsync(this.findBinary(), ['debug', 'models'], {
+        timeout: 5000,
+        maxBuffer: 32 * 1024 * 1024,
+        shell: process.platform === 'win32',
+        env: { ...getShellEnvironment(), ...opts?.env },
+      });
+      return parseCodexContextCatalog(stdout);
+    });
+    if (!catalog) {
+      return { configurable: false, state: 'unavailable', label: 'Context window', reason: 'Couldn\'t read Codex\'s model catalog.' };
+    }
+    const wanted = model && model !== 'default' ? model : catalog[0]?.slug;
+    return codexContextWindowOptions(catalog.find((e) => e.slug === wanted));
+  }
+
   // ── Core interface ──────────────────────────────────────────────────────
 
   getCapabilities(): ProviderCapabilities {
@@ -374,6 +394,7 @@ export class CodexCliProvider extends BaseProvider implements HeadlessCapable, H
     if (opts.model && opts.model !== 'default') {
       args.push('--model', opts.model);
     }
+    if (opts.contextWindow) args.push('-c', `model_context_window=${opts.contextWindow}`);
 
     // The mission/prompt is a bare positional argument for Codex (unlike
     // Claude Code's -p flag), so it must stay last even after buildMcpArgs()

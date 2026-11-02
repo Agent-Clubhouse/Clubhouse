@@ -270,6 +270,10 @@ export interface DurableAgentConfig {
   worktreePath?: string;
   createdAt: string;
   model?: string;
+  /** The context choice for this CLI and model (#2660): a provider's choice value, read at launch and resume. Absent: the CLI decides. */
+  contextWindow?: string;
+  /** Why a saved context choice was cleared, shown until the next choice. */
+  contextWindowNotice?: string;
   quickAgentDefaults?: QuickAgentDefaults;
   orchestrator?: OrchestratorId;
   freeAgentMode?: boolean;
@@ -648,6 +652,8 @@ export interface DurableConfigUpdates {
   quickAgentDefaults?: QuickAgentDefaults;
   orchestrator?: OrchestratorId;
   model?: string;
+  /** A provider's choice for this model; null clears it. Refused when the model doesn't offer it. */
+  contextWindow?: string | null;
   freeAgentMode?: boolean;
   clubhouseModeOverride?: boolean;
   lastSessionId?: string | null;

@@ -1,3 +1,4 @@
+import { buildStreamJsonArgs } from './stream-transport';
 /**
  * Process-lifecycle edge cases for the stream-json transport, driven by a
  * scripted child process so event order is deterministic.
@@ -148,5 +149,14 @@ describe('appliedSettingsFromWire', () => {
     expect(appliedSettingsFromWire({ applied: { model: 'claude-haiku-4-5', effort: null } })).toEqual({ model: 'claude-haiku-4-5', effort: null });
     expect(appliedSettingsFromWire({ effective: {} })).toEqual({});
     expect(appliedSettingsFromWire(undefined)).toEqual({});
+  });
+});
+
+describe('buildStreamJsonArgs: --autocompact (#2660)', () => {
+  const base = { binary: 'claude', cwd: '/p', permissionMode: 'default' as const };
+  it('passes the working window only when there is one', () => {
+    expect(buildStreamJsonArgs(base)).not.toContain('--autocompact');
+    const args = buildStreamJsonArgs({ ...base, autocompact: '300000' });
+    expect(args.slice(args.indexOf('--autocompact'), args.indexOf('--autocompact') + 2)).toEqual(['--autocompact', '300000']);
   });
 });

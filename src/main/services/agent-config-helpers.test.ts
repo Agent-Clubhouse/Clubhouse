@@ -163,6 +163,8 @@ vi.mock('./agent-settings-service', () => ({
   readProjectAgentDefaults: vi.fn(async () => ({})),
 }));
 vi.mock('./agent-system', () => ({ resolveOrchestrator: vi.fn() }));
+const contextCheck = vi.hoisted(() => vi.fn());
+vi.mock('./context-window', () => ({ contextWindowCheck: contextCheck }));
 vi.mock('./chat-idle-settings', () => ({ setAgentIdleSleep: vi.fn() }));
 /** Project paths the project store lists (#2511). */
 const registeredProjects: string[] = [];
@@ -1108,5 +1110,66 @@ describe('helpers in another project (#2511)', () => {
     await flushAllAgentConfigs();
     expect(otherOnDisk('durable_3_far')?.parentAgentId).toBe('durable_5_own');
     expect(otherOnDisk('durable_3_far')).not.toHaveProperty('parentProjectPath');
+  });
+});
+
+describe('the saved context choice (#2660)', () => {
+  const saved = async (id: string) => (await listDurable(PROJECT_PATH)).find((a) => a.id === id)!;
+  beforeEach(() => { contextCheck.mockReset(); });
+
+  it('saves a choice on offer and clears with null', async () => {
+    seed([agent('durable_1_a', { orchestrator: 'claude-code' })]);
+    contextCheck.mockResolvedValue({ state: 'ok' });
+    await updateDurableConfig(PROJECT_PATH, 'durable_1_a', { contextWindow: '500000' });
+    expect((await saved('durable_1_a')).contextWindow).toBe('500000');
+    await updateDurableConfig(PROJECT_PATH, 'durable_1_a', { contextWindow: null });
+    expect(await saved('durable_1_a')).not.toHaveProperty('contextWindow');
+  });
+
+  it('refuses a choice the model does not offer, or one it cannot check', async () => {
+    seed([agent('durable_1_a', { orchestrator: 'claude-code' })]);
+    contextCheck.mockResolvedValue({ state: 'refused', message: 'not offered' });
+    await expect(updateDurableConfig(PROJECT_PATH, 'durable_1_a', { contextWindow: '500000' })).rejects.toThrow('not offered');
+    contextCheck.mockResolvedValue({ state: 'unknown', message: 'no catalog' });
+    await expect(updateDurableConfig(PROJECT_PATH, 'durable_1_a', { contextWindow: '500000' })).rejects.toThrow('no catalog');
+    expect(await saved('durable_1_a')).not.toHaveProperty('contextWindow');
+  });
+
+  it('a new model keeps a choice it offers, and clears one it does not, saying why', async () => {
+    seed([agent('durable_1_a', { orchestrator: 'claude-code', contextWindow: '500000' })]);
+    contextCheck.mockResolvedValue({ state: 'ok' });
+    await updateDurableConfig(PROJECT_PATH, 'durable_1_a', { model: 'opus' });
+    expect((await saved('durable_1_a')).contextWindow).toBe('500000');
+    contextCheck.mockResolvedValue({ state: 'refused', message: 'not on haiku' });
+    await updateDurableConfig(PROJECT_PATH, 'durable_1_a', { model: 'haiku' });
+    const after = await saved('durable_1_a');
+    expect(after).not.toHaveProperty('contextWindow');
+    expect(after.contextWindowNotice).toBe('not on haiku');
+    contextCheck.mockResolvedValue({ state: 'ok' });
+    await updateDurableConfig(PROJECT_PATH, 'durable_1_a', { contextWindow: '100000' });
+    expect(await saved('durable_1_a')).not.toHaveProperty('contextWindowNotice');
+  });
+
+  it('a new model keeps a choice it cannot check; launch decides', async () => {
+    seed([agent('durable_1_a', { orchestrator: 'claude-code', contextWindow: '500000' })]);
+    contextCheck.mockResolvedValue({ state: 'unknown', message: 'no catalog' });
+    await updateDurableConfig(PROJECT_PATH, 'durable_1_a', { model: 'opus' });
+    expect((await saved('durable_1_a')).contextWindow).toBe('500000');
+  });
+
+  it('a new CLI clears it without asking the old catalog, and says why', async () => {
+    seed([agent('durable_1_a', { orchestrator: 'claude-code', contextWindow: '500000' })]);
+    await updateDurableConfig(PROJECT_PATH, 'durable_1_a', { orchestrator: 'codex-cli', model: 'default' });
+    const after = await saved('durable_1_a');
+    expect(after).not.toHaveProperty('contextWindow');
+    expect(after.contextWindowNotice).toMatch(/another CLI/);
+    expect(contextCheck).not.toHaveBeenCalled();
+  });
+
+  it('a setting unrelated to the model reads no catalog', async () => {
+    seed([agent('durable_1_a', { orchestrator: 'claude-code', contextWindow: '500000' })]);
+    await updateDurableConfig(PROJECT_PATH, 'durable_1_a', { freeAgentMode: true });
+    expect(contextCheck).not.toHaveBeenCalled();
+    expect((await saved('durable_1_a')).contextWindow).toBe('500000');
   });
 });
