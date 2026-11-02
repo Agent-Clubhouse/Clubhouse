@@ -17,6 +17,7 @@ import fs from 'fs';
 import path from 'path';
 import crypto from 'crypto';
 import https from 'https';
+import tls from 'tls';
 import { EventEmitter } from 'events';
 
 const W = vi.hoisted(() => ({
@@ -362,7 +363,7 @@ import * as finishedQuickStore from './finished-quick-agents-store';
 import * as eventReplay from './annex-event-replay';
 import { recordStartRequest, _resetStartRequestsForTesting } from './helper-start-requests';
 import { listDisposeRequests, recordDisposeRequest, _resetDisposeRequestsForTesting } from './helper-dispose-requests';
-import { registerChatRuntime, clearChatRuntimes, publishChatEvent } from './agent-runtime';
+import { getAgentRuntime, registerChatRuntime, clearChatRuntimes, publishChatEvent } from './agent-runtime';
 import { ChatAgentRuntime } from './agent-runtime/chat-runtime';
 import { onChatEvent } from './agent-runtime/chat-event-bus';
 import { FakeChatDriver } from './agent-runtime/fake-chat-driver';
@@ -756,16 +757,141 @@ describe('Annex mobile contract fixtures', { timeout: TEST_TIMEOUT_MS }, () => {
     };
     const ids = (unit: string, count: number) => Array.from({ length: count }, (_, i) => String(i).padStart(2, '0') + unit.repeat(Math.floor((65536 - 2) / unit.length)));
     const accepted = { status: 200, body: { status: 'completed' } };
-    // The server drops the connection once a body is over, so there's no receipt.
-    const dropped = async (raw: Buffer) => expect((await send('POST', ROUTE, raw).catch(() => null))?.status).not.toBe(200);
+    const refusal = () => ({ version: 1, epoch, status: 'rejected', error: { code: 'too_large', message: 'too_large' } });
+    const refused = async (raw: Buffer) => {
+      const reply = await send('POST', ROUTE, raw);
+      expect(reply).toMatchObject({ status: 413, headers: { connection: 'close' } });
+      expect(reply.body).toEqual(refusal());
+    };
+    const answered = () => vi.spyOn(getAgentRuntime('durable_chat') as unknown as { answerQuestion: () => Promise<void> }, 'answerQuestion');
 
-    it('takes exactly 1 MiB and drops one byte more', async () => {
+    /**
+     * What a phone sees on the wire: uploads over a raw mTLS socket, reading the
+     * answer as it goes. `send` stops at `stopAt` bytes (default all) and honors
+     * backpressure, so `sent` is how far the upload had got. A socket error is
+     * kept, not thrown: past the drain bound the client can see one.
+     */
+    function upload(payload: Buffer | number, opts: { chunked?: boolean; stopAt?: number; closeOnAnswer?: boolean } = {}) {
+      const total = typeof payload === 'number' ? payload : payload.length;
+      const block = Buffer.alloc(64 * 1024, 'a');
+      return new Promise<{ raw: string; sent: number; sentAtAnswer: number | null; socketError: string | null; closedBeforeAllSent: boolean }>((resolve) => {
+        let raw = '';
+        let sent = 0;
+        let sentAtAnswer: number | null = null;
+        let socketError: string | null = null;
+        const stopAt = opts.stopAt ?? total;
+        const socket = tls.connect({ host: '127.0.0.1', port, ...client, rejectUnauthorized: false }, () => {
+          socket.write(`POST ${ROUTE} HTTP/1.1\r\nHost: 127.0.0.1\r\nContent-Type: application/json\r\n${opts.chunked ? 'Transfer-Encoding: chunked' : `Content-Length: ${total}`}\r\n\r\n`);
+          pump();
+        });
+        const pump = () => {
+          while (sent < stopAt && !socket.destroyed) {
+            const size = Math.min(block.length, stopAt - sent);
+            const part = typeof payload === 'number' ? block.subarray(0, size) : payload.subarray(sent, sent + size);
+            sent += size;
+            const framed = opts.chunked ? Buffer.concat([Buffer.from(`${size.toString(16)}\r\n`), part, Buffer.from('\r\n')]) : part;
+            if (!socket.write(framed)) { socket.once('drain', pump); return; }
+          }
+          if (opts.chunked && sent >= stopAt && !socket.destroyed) socket.write('0\r\n\r\n');
+        };
+        socket.on('data', (data) => {
+          sentAtAnswer ??= sent;
+          raw += data.toString();
+          if (opts.closeOnAnswer) socket.destroy();
+        });
+        socket.on('error', (err) => { socketError = err.message; });
+        socket.on('close', () => resolve({ raw, sent, sentAtAnswer, socketError, closedBeforeAllSent: sent < stopAt }));
+      });
+    }
+    /** The response head and body exactly as sent. Date changes every run, so it's left out. */
+    const parsed = (raw: string) => {
+      const [head, bytes] = raw.split('\r\n\r\n');
+      const [statusLine, ...lines] = head.split('\r\n');
+      return { statusLine, headers: Object.fromEntries(lines.map((l) => l.split(': ')).filter(([name]) => name !== 'Date')), bytes };
+    };
+    const onTheWire = () => {
+      const bytes = JSON.stringify(refusal());
+      return { statusLine: 'HTTP/1.1 413 Payload Too Large', headers: { 'Access-Control-Allow-Headers': 'Authorization, Content-Type', 'Access-Control-Allow-Methods': 'GET, POST, OPTIONS', 'Content-Type': 'application/json', 'Content-Length': String(Buffer.byteLength(bytes)), Connection: 'close' }, bytes };
+    };
+
+    it('takes exactly 1 MiB and refuses one byte more', async () => {
       const atLimit = body(ids('k', 15), LIMIT);
       expect(atLimit).toHaveLength(LIMIT);
       expect(await send('POST', ROUTE, atLimit)).toMatchObject(accepted);
       const over = body(ids('k', 15), LIMIT + 1);
       expect(over).toHaveLength(LIMIT + 1);
-      await dropped(over);
+      await refused(over);
+    });
+    it('counts encoded bytes, not characters', async () => {
+      const over = body(ids('€', 6));
+      expect(over.toString()).not.toHaveLength(over.length);
+      expect(over.toString().length).toBeLessThan(LIMIT);
+      expect(over.length).toBeGreaterThan(LIMIT);
+      await refused(over);
+    });
+    it('does not run a refused command or keep anything for it', async () => {
+      const spy = answered();
+      const named = (commandId: string) => ({ ...JSON.parse(body(ids('k', 15)).toString()), commandId });
+      const pad = (request: Record<string, any>, bytes: number) => {
+        const key = Object.keys(request.answers)[0];
+        request.answers[key] = 'a'.repeat(request.answers[key].length + bytes - Buffer.byteLength(JSON.stringify(request)));
+        const raw = Buffer.from(JSON.stringify(request));
+        expect(raw).toHaveLength(bytes);
+        return raw;
+      };
+      // The same command at the limit does run, so not running below means something.
+      expect(await send('POST', ROUTE, pad(named('cmd_runs_at_limit'), LIMIT))).toMatchObject(accepted);
+      expect(spy).toHaveBeenCalledTimes(1);
+      spy.mockClear();
+
+      const over = pad(named('cmd_refused'), LIMIT + 1);
+      await refused(over);
+      await refused(over);
+      expect(parsed((await upload(over, { chunked: true })).raw)).toEqual(onTheWire());
+      expect(spy).not.toHaveBeenCalled();
+      // No receipt holds the id: different content under it runs, where a kept id would be command_conflict.
+      const small = { version: 1, epoch, commandId: 'cmd_refused', type: 'chat.question', agentId: 'durable_chat', sessionId: 'sess_live', requestId: 'q_1', answers: { which: 'main' } };
+      expect(await send('POST', ROUTE, small)).toMatchObject(accepted);
+      expect(spy).toHaveBeenCalledTimes(1);
+    });
+    it('delivers the answer during an upload just over the limit, and reads the upload to its end', async () => {
+      const over = body(ids('k', 15), LIMIT + 1);
+      const result = await upload(over);
+      expect(parsed(result.raw)).toEqual(onTheWire());
+      expect(result).toMatchObject({ sent: over.length, socketError: null, closedBeforeAllSent: false });
+      fixtures.set('command-too-large.json', {
+        note: 'requestBytes replaces the request: a real one is over 1 MiB. bodyBytes is the response body exactly as sent; Date is left out. Epoch is the desktop\'s, there is no commandId, and no receipt is kept.',
+        request: { method: 'POST', path: ROUTE, requestBytes: LIMIT + 1 },
+        response: { status: 413, statusLine: 'HTTP/1.1 413 Payload Too Large', headers: parsed(result.raw).headers, body: refusal(), bodyBytes: parsed(result.raw).bytes },
+      });
+    });
+    it('answers a chunked upload once it passes the limit, before it ends', async () => {
+      const result = await upload(LIMIT * 4, { chunked: true });
+      expect(parsed(result.raw)).toEqual(onTheWire());
+      expect(result.sentAtAnswer).toBeLessThan(LIMIT * 4);
+    });
+    it('answers an upload over the drain bound, then closes before taking all of it', async () => {
+      const total = 64 * LIMIT;
+      const result = await upload(total);
+      expect(parsed(result.raw)).toEqual(onTheWire());
+      // Answered from Content-Length, long before the bound; closed well short of the whole upload.
+      expect(result.sentAtAnswer).toBeLessThan(16 * LIMIT);
+      expect(result.closedBeforeAllSent).toBe(true);
+      expect(result.sent).toBeLessThan(total);
+    });
+    it('closes a stalled upload at the time bound, having answered at once', async () => {
+      const realSetTimeout = globalThis.setTimeout;
+      // Ten real seconds would only slow the suite; what's checked is that this delay is asked for and the socket closes on it.
+      const timers = vi.spyOn(globalThis, 'setTimeout').mockImplementation(((fn: () => void, ms?: number) => realSetTimeout(fn, ms === 10_000 ? 200 : ms)) as typeof setTimeout);
+      const result = await upload(4 * LIMIT, { stopAt: 64 * 1024 });
+      expect(timers).toHaveBeenCalledWith(expect.any(Function), 10_000);
+      expect(parsed(result.raw)).toEqual(onTheWire());
+      expect(result.sent).toBe(64 * 1024);
+    });
+    it('stops draining when the client hangs up on the answer', async () => {
+      const result = await upload(64 * LIMIT, { closeOnAnswer: true });
+      expect(parsed(result.raw).statusLine).toBe('HTTP/1.1 413 Payload Too Large');
+      expect(await send('POST', ROUTE, body(ids('k', 1)))).toMatchObject(accepted);
     });
     it.each([
       ['ASCII', 'k', 15],
@@ -775,7 +901,7 @@ describe('Annex mobile contract fixtures', { timeout: TEST_TIMEOUT_MS }, () => {
       const fits = ids(unit, most);
       for (const id of fits) expect(id).toHaveLength(65536);
       expect(await send('POST', ROUTE, body(fits))).toMatchObject(accepted);
-      await dropped(body(ids(unit, most + 1)));
+      await refused(body(ids(unit, most + 1)));
     });
     it('always fits one full-length id, even when every character is escaped in JSON', async () => {
       const raw = body([`\u0001`.repeat(65536)]);
