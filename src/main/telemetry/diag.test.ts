@@ -201,3 +201,17 @@ describe('diag is local only', () => {
     expect(lines.find((l) => l.t === 'diag')).toMatchObject({ ns: 'core:agent', level: 'warn', msg: 'inside', traceId: span.traceId, spanId: span.spanId });
   });
 });
+
+describe('addDiagTap filter', () => {
+  it('calls a tap only for the lines it wants, and survives a filter that throws', () => {
+    _resetDiagForTests('/Users/somebody');
+    const seen: string[] = [];
+    const off = addDiagTap((r) => seen.push(r.ns), (ns) => ns === 'core:annex');
+    const offBroken = addDiagTap(() => seen.push('broken'), () => { throw new Error('bad filter'); });
+    diag('core:annex', 'info', 'kept');
+    diag('core:git', 'info', 'skipped');
+    off();
+    offBroken();
+    expect(seen).toEqual(['core:annex']);
+  });
+});

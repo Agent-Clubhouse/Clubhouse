@@ -35,6 +35,47 @@ describe('FeedbackReviewDialog', () => {
     await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Send' })); });
     expect(send).toHaveBeenCalledWith(expect.objectContaining({ includeCorrelation: false }));
   });
+  describe('diagnostics', () => {
+    const line = { at: '2026-11-01T12:00:00.000Z', level: 'warn' as const, ns: 'core:annex', event: 'annex.ws.disconnected', attrs: { closeCode: 1009 } };
+    const window = { windowStart: '2026-11-01T11:30:00.000Z', windowEnd: '2026-11-01T12:00:00.000Z' };
+    const available = { status: 'available' as const, ...window, lines: [line], bytes: 90, dropped: 2 };
+
+    it('shows every line, the 30-day retention and the chance of loss, and includes them by default', async () => {
+      send.mockResolvedValue({ id: 'rep-1', status: 'saved-local', diagnostics: { status: 'queued', lines: 1 } });
+      render(<FeedbackReviewDialog draft={{ ...DRAFT, diagnostics: available }} onClose={() => {}} />);
+      const box = screen.getByTestId('feedback-diagnostics');
+      expect(box.textContent).toMatch(/kept for 30 days, even if the report is deleted/);
+      expect(box.textContent).toMatch(/can be lost if Clubhouse quits/);
+      expect(box.textContent).toMatch(/Show 1 line \(2 older left out\)/);
+      expect(box.textContent).not.toMatch(/\u2014/);
+      expect(screen.getByTestId('feedback-diagnostics-lines').textContent).toMatch(/warn core:annex annex\.ws\.disconnected closeCode=1009/);
+      expect((screen.getByRole('checkbox', { name: /Include recent diagnostics/ }) as HTMLInputElement).checked).toBe(true);
+      await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Send' })); });
+      expect(send).toHaveBeenCalledWith(expect.objectContaining({ includeDiagnostics: true }));
+      expect(screen.getByTestId('feedback-diagnostics-outcome').textContent).toBe('Diagnostics queued to send (1 line).');
+    });
+
+    it('lets the reporter leave them out, and says so', async () => {
+      send.mockResolvedValue({ id: 'rep-1', status: 'saved-local', diagnostics: { status: 'left_out', reason: 'reporter' } });
+      render(<FeedbackReviewDialog draft={{ ...DRAFT, diagnostics: available }} onClose={() => {}} />);
+      fireEvent.click(screen.getByRole('checkbox', { name: /Include recent diagnostics/ }));
+      await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Send' })); });
+      expect(send).toHaveBeenCalledWith(expect.objectContaining({ includeDiagnostics: false }));
+      expect(screen.getByTestId('feedback-diagnostics-outcome').textContent).toBe('Diagnostics left out.');
+    });
+
+    it.each([
+      ['no_lines', /No recent diagnostics/],
+      ['collection_failed', /could not be read/],
+    ] as const)('says why there are none (%s), with nothing to toggle', async (reason, text) => {
+      render(<FeedbackReviewDialog draft={{ ...DRAFT, diagnostics: { status: 'none', reason, ...window, lines: [], bytes: 0, dropped: 0 } }} onClose={() => {}} />);
+      expect(screen.getByTestId('feedback-diagnostics-none').textContent).toMatch(text);
+      expect(screen.queryByRole('checkbox', { name: /Include recent diagnostics/ })).toBeNull();
+      await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Send' })); });
+      expect(send.mock.lastCall![0]).not.toHaveProperty('includeDiagnostics');
+    });
+  });
+
   it('shows the screenshot and sends it with notes and the scene', async () => {
     const onClose = vi.fn();
     render(<FeedbackReviewDialog draft={DRAFT} onClose={onClose} />);

@@ -7,8 +7,9 @@
  * Local only, by construction: this module imports nothing from the facade,
  * the SDK runtime or an exporter, and its only sink is the local recorder
  * (local-control.ts installs it). No export path reads diag lines, whatever
- * EXPORT_WITHOUT_LOCAL_RECORDING says, and they are never added to feedback
- * reports.
+ * EXPORT_WITHOUT_LOCAL_RECORDING says. A feedback report the reporter reviewed
+ * is the one exception: it can carry the few fields feedback-diagnostics.ts
+ * allowlists, taken through a tap and never the line itself (#2658).
  *
  * Gated by the logging settings: logging `enabled`,
  * then `namespaces[ns] !== false`, then `minLogLevel`. Independent of
@@ -40,11 +41,13 @@ export interface DiagEntry {
  * `msg` or `meta` wholesale.
  */
 export type DiagTap = (record: Readonly<DiagRecord>) => void;
+/** Which lines a tap wants, so redaction doesn't run on every line in the app for its sake. */
+export type DiagTapFilter = (ns: string, level: DiagLevel) => boolean;
 
 const MAX_SEEN_NAMESPACES = 500;
 
 let redactor: DiagRedactor | null = null;
-const taps = new Set<DiagTap>();
+const taps = new Map<DiagTap, DiagTapFilter | undefined>();
 const seenNamespaces = new Set<string>();
 
 function getRedactor(): DiagRedactor {
@@ -75,16 +78,25 @@ function allowed(ns: string, level: DiagLevel): boolean {
   return !(LOG_LEVEL_PRIORITY[level] < LOG_LEVEL_PRIORITY[settings.minLogLevel]);
 }
 
+function tapWants(wants: DiagTapFilter | undefined, entry: DiagEntry): boolean {
+  try {
+    return !wants || wants(entry.ns, entry.level);
+  } catch {
+    return false; // A tap must never break the caller.
+  }
+}
+
 function record(entry: DiagEntry, window?: DiagRecord['window']): void {
   const target = getDiagSink();
   const write = !!target && allowed(entry.ns, entry.level);
+  const tapping = [...taps].filter(([, wants]) => tapWants(wants, entry));
   // Redaction runs only when something will see the line.
-  if (!write && taps.size === 0) return;
+  if (!write && tapping.length === 0) return;
   const r = getRedactor();
   const out: DiagRecord = { ns: entry.ns, level: entry.level, msg: r.text(String(entry.msg ?? '')) };
   if (entry.meta && typeof entry.meta === 'object') out.meta = r.meta(entry.meta);
   if (window) out.window = window;
-  for (const tap of taps) {
+  for (const [tap] of tapping) {
     try {
       tap(out);
     } catch {
@@ -143,8 +155,8 @@ export function noteDiagDropped(n: number): void {
 }
 
 /** See DiagTap. Returns an unsubscribe. */
-export function addDiagTap(tap: DiagTap): () => void {
-  taps.add(tap);
+export function addDiagTap(tap: DiagTap, wants?: DiagTapFilter): () => void {
+  taps.set(tap, wants);
   return () => taps.delete(tap);
 }
 

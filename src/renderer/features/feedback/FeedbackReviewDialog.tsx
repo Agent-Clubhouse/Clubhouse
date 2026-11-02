@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState, type KeyboardEvent } from 'react';
 import { Modal } from '../../components/Modal';
-import type { FeedbackCaptureResult, FeedbackShot } from '../../../shared/feedback-types';
+import { FEEDBACK_DIAGNOSTICS, type FeedbackCaptureResult, type FeedbackDiagnosticLine, type FeedbackDiagnosticsOutcome, type FeedbackShot } from '../../../shared/feedback-types';
 import { useFeedbackStore } from '../../stores/feedbackStore';
 import { useUIStore } from '../../stores/uiStore';
 import { compositeAnnotatedPng, type Stroke } from './annotation';
@@ -25,6 +25,24 @@ function shotsOf(draft: FeedbackCaptureResult): FeedbackShot[] {
   return draft.preview ? [{ shotId: '', label: 'This window', preview: draft.preview }] : [];
 }
 
+/** One diagnostic line as the reporter reads it: every field that would be sent. */
+function diagnosticLineText(line: FeedbackDiagnosticLine): string {
+  const attrs = Object.entries(line.attrs ?? {}).map(([key, value]) => `${key}=${value}`).join(' ');
+  return `${new Date(line.at).toLocaleTimeString()} ${line.level} ${line.ns} ${line.event}${attrs && ` ${attrs}`}`;
+}
+
+const NO_DIAGNOSTICS_TEXT = {
+  no_lines: 'No recent diagnostics to include.',
+  collection_failed: 'Recent diagnostics could not be read, so none are included.',
+  no_review: 'No diagnostics were reviewed for this report, so none are included.',
+  not_connected: 'Diagnostics weren\'t queued because feedback isn\'t connected.',
+} as const;
+
+function diagnosticsOutcomeText(outcome: FeedbackDiagnosticsOutcome): string {
+  if (outcome.status === 'queued') return `Diagnostics queued to send (${outcome.lines} ${outcome.lines === 1 ? 'line' : 'lines'}).`;
+  return outcome.status === 'left_out' ? 'Diagnostics left out.' : NO_DIAGNOSTICS_TEXT[outcome.reason];
+}
+
 /**
  * Review a captured screenshot before it leaves the computer: preview, notes, and Send,
  * "Send without screenshot" or Cancel. After sending it shows "Saved" (queued on this
@@ -36,6 +54,9 @@ export function FeedbackReviewDialog({ draft, onClose }: Props) {
   const [reportId, setReportId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [includeCorrelation, setIncludeCorrelation] = useState(true);
+  const [includeDiagnostics, setIncludeDiagnostics] = useState(true);
+  const [outcome, setOutcome] = useState<FeedbackDiagnosticsOutcome | null>(null);
+  const diagnostics = draft.diagnostics;
   const received = useFeedbackStore((s) => (reportId ? s.status?.received.includes(reportId) === true : false));
   const shots = shotsOf(draft);
   const [shotIndex, setShotIndex] = useState(0);
@@ -78,11 +99,13 @@ export function FeedbackReviewDialog({ draft, onClose }: Props) {
         notes,
         includeScreenshot,
         ...(draft.correlation && { includeCorrelation }),
+        ...(diagnostics?.status === 'available' && { includeDiagnostics }),
         scene: currentScene(),
         ...(annotatedPng !== undefined && { annotatedPng }),
         ...(includeScreenshot && shot?.shotId && { shotId: shot.shotId }),
       });
       setReportId(result.id);
+      setOutcome(result.diagnostics ?? null);
       setPhase('saved');
     } catch (err) {
       // telemetry-exempt: shown to the user; the reviewed draft is kept for a retry.
@@ -99,6 +122,7 @@ export function FeedbackReviewDialog({ draft, onClose }: Props) {
             <p className="text-sm text-ctp-text" role="status" data-testid="feedback-sent-state">
               {received ? 'Received. Thanks for the feedback.' : 'Saved. It\'s queued on this computer and is sent as soon as Clubhouse can reach the server.'}
             </p>
+            {outcome && <p className="text-xs text-ctp-subtext0" data-testid="feedback-diagnostics-outcome">{diagnosticsOutcomeText(outcome)}</p>}
             <div className="flex justify-end">
               <button type="button" onClick={onClose} className="px-3 py-1.5 text-sm rounded-md bg-surface-0 text-ctp-text hover:bg-surface-1">Close</button>
             </div>
@@ -154,6 +178,27 @@ export function FeedbackReviewDialog({ draft, onClose }: Props) {
                   {' '}These contain no chat or network payloads and do not guarantee the tracing backend retained the traces.
                 </span>
               </label>
+            )}
+            {diagnostics?.status === 'available' && (
+              <div className="text-xs text-ctp-subtext0" data-testid="feedback-diagnostics">
+                <label className="block">
+                  <input type="checkbox" checked={includeDiagnostics} disabled={phase === 'sending'} onChange={e => setIncludeDiagnostics(e.target.checked)} />{' '}
+                  Include recent diagnostics
+                </label>
+                <span className="block mt-1">
+                  Connection, agent and chat events from the last {FEEDBACK_DIAGNOSTICS.windowMinutes} minutes, with no messages, paths or chat content.
+                  {' '}They are sent separately from this report and kept for {FEEDBACK_DIAGNOSTICS.retentionDays} days, even if the report is deleted. They can be lost if Clubhouse quits before they are sent.
+                </span>
+                <details className="mt-1">
+                  <summary className="cursor-pointer">Show {diagnostics.lines.length} {diagnostics.lines.length === 1 ? 'line' : 'lines'}{diagnostics.dropped > 0 && ` (${diagnostics.dropped} older left out)`}</summary>
+                  <ul className="mt-1 max-h-32 overflow-y-auto font-mono break-all" data-testid="feedback-diagnostics-lines">
+                    {diagnostics.lines.map((line, i) => <li key={i}>{diagnosticLineText(line)}</li>)}
+                  </ul>
+                </details>
+              </div>
+            )}
+            {diagnostics?.status === 'none' && (
+              <p className="text-xs text-ctp-subtext0" data-testid="feedback-diagnostics-none">{NO_DIAGNOSTICS_TEXT[diagnostics.reason ?? 'no_lines']}</p>
             )}
             {error && <p className="text-sm text-ctp-error" role="alert" data-testid="feedback-error">{error}</p>}
             <div className="flex items-center justify-end gap-2">

@@ -133,9 +133,22 @@ export interface FramebriarFeedback {
 export interface FramebriarTelemetry {
   readonly sessionId: string;
   readonly enabled: boolean;
-  flush(): Promise<void>;
+  log(severity: string, body: string, attrs?: Record<string, string | number | boolean>, options?: { time?: number; parent?: null }): void;
+  feedbackSubmitted(input: { reportId: string; traceId?: string; spanId?: string; includeDiagnostics?: boolean }): Promise<{ marked: boolean; excerpt: number; sent?: boolean }>;
+  stats(): { sent: number; dropped: number; buffered: number; forbidden: boolean };
+  flush(): Promise<boolean>;
   shutdown(): Promise<void>;
+  dispose(): void;
 }
+
+export declare function createTelemetry(options: {
+  access: FramebriarAccess;
+  buildSha?: string | null;
+  sessionId?: string;
+  mode?: 'continuous' | 'excerpt-only';
+  fetchImpl?: typeof fetch;
+  now?: () => number;
+}): FramebriarTelemetry;
 
 export interface FramebriarStorageAvailability {
   available: boolean;

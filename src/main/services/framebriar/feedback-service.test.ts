@@ -139,7 +139,7 @@ describe('FeedbackService (fake SDK)', () => {
     await s.send({ notes: 'it froze', includeScreenshot: false, scene: 'agents' });
     const context = (fb.feedback.prepare.mock.lastCall![0] as { context: { breadcrumbs: unknown[] } }).context;
     expect(context.breadcrumbs).toHaveLength(40);
-    expect(context.breadcrumbs[0]).toEqual({ kind: 'event', atMs: 1_000, code: 'view.agent' });
+    expect(context.breadcrumbs[1]).toEqual({ kind: 'event', atMs: 1_000, code: 'view.agent' });
   });
 
   it('reports a stopped status before start', () => {
@@ -222,12 +222,12 @@ describe('FeedbackService (fake SDK)', () => {
     const s = service(create);
     const draft = await s.captureDraft(async () => PNG);
     await s.send({ draftId: draft.draftId, notes: 'broken', includeScreenshot: true, scene: 'agents' });
-    expect(fb.feedback.prepare).toHaveBeenLastCalledWith(expect.objectContaining({ notes: 'broken', png: PNG, context: { scene: 'agents', breadcrumbs: [] } }));
+    expect(fb.feedback.prepare).toHaveBeenLastCalledWith(expect.objectContaining({ notes: 'broken', png: PNG, context: { scene: 'agents', breadcrumbs: [expect.objectContaining({ code: 'diagnostics.none.no_lines' })] } }));
     expect(fb.feedback.submit).toHaveBeenLastCalledWith(expect.anything(), { includeDiagnostics: false });
 
     const second = await s.captureDraft(async () => PNG);
     await s.send({ draftId: second.draftId, notes: 'just text', includeScreenshot: false, scene: 'Not A Code!' });
-    expect(fb.feedback.prepare).toHaveBeenLastCalledWith(expect.objectContaining({ png: null, capturedAt: '2026-10-17T10:00:00.000Z', context: { scene: 'app', breadcrumbs: [] } }));
+    expect(fb.feedback.prepare).toHaveBeenLastCalledWith(expect.objectContaining({ png: null, capturedAt: '2026-10-17T10:00:00.000Z', context: { scene: 'app', breadcrumbs: [expect.objectContaining({ code: 'diagnostics.none.no_lines' })] } }));
 
     await s.send({ notes: 'no capture at all', includeScreenshot: false });
     expect(fb.feedback.prepare).toHaveBeenLastCalledWith(expect.objectContaining({ png: null }));
@@ -501,7 +501,7 @@ describe('FeedbackService (fake SDK)', () => {
 
       await s.send({ draftId: draft.draftId, notes: 'secret words', includeScreenshot: true });
       expect(find('Feedback saved for delivery')?.[2]).toEqual({
-        draftId: draft.draftId, includeScreenshot: true, notesLength: 12, annotated: false, shotId: null, id: 'rep-1', status: 'saved-local', state: 'connected',
+        diagnostics: 'diagnostics.none.no_lines', draftId: draft.draftId, includeScreenshot: true, notesLength: 12, annotated: false, shotId: null, id: 'rep-1', status: 'saved-local', state: 'connected',
       });
       fb.feedback.submit.mockRejectedValueOnce(Object.assign(new Error('Local feedback storage is full'), { code: 'storage-full' }));
       await expect(s.send({ notes: 'more secret words', includeScreenshot: false })).rejects.toThrow();

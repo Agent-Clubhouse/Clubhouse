@@ -93,7 +93,11 @@ Retention runs at startup (even with **Record locally** off), when recording sta
 
 ## Feedback reports
 
-A feedback report never includes the log folder or any part of it. Each report has an id, and Clubhouse writes that id to a `core:feedback` diagnostic line when the report is saved and again when it is delivered. These lines are at the info level, so they are written while **Record locally** is on, the `core:feedback` namespace is on, and **Minimum level** is info or debug. If a maintainer asks for your record of a report, they find the matching lines by its id and the time you sent it.
+A feedback report never includes the log folder. The review step can attach recent diagnostics, and shows every line before you send. They come from memory, so they work with **Record locally** and telemetry export off. They cover the last 30 minutes, at most 200 lines and 48 KB, and only connection, agent and chat events from a fixed list. Each line is a fixed event name with a few values, and ids are replaced by a short hash. Log messages, paths, project names and chat content are left out, and a warning or error outside the list keeps only its namespace, level, time and a one-word failure type.
+
+Clear **Include recent diagnostics** to leave them out. They travel separately from the report and are kept for 30 days, even if the report is deleted. They can be lost if Clubhouse quits before they are sent. The report records what happened to them: queued, left out, or none available with the reason.
+
+Each report has an id, and Clubhouse writes that id to a `core:feedback` diagnostic line when the report is saved and again when it is delivered. These lines are at the info level, so they are written while **Record locally** is on, the `core:feedback` namespace is on, and **Minimum level** is info or debug. If a maintainer asks for your record of a report, they find the matching lines by its id and the time you sent it.
 
 ## Common diagnostic scenarios
 
