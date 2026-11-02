@@ -28,6 +28,11 @@ export interface FeedbackStatus {
     blocked: number;
     /** Retained unchanged until the current service session supports incident metadata. */
     correlationWaiting?: number;
+    /** Part of pending: reports saved under another enrollment, which wait for the user's choice. */
+    heldForEnrollment: number;
+    heldBytes: number;
+    /** Opaque, what a release confirms. Null when nothing is held or there's no active enrollment. */
+    releaseToken: string | null;
     bytes: number;
     maxItems: number;
     maxBytes: number;
@@ -107,8 +112,8 @@ export interface FeedbackCorrelationSummary {
 }
 
 export interface FeedbackSendInput {
-  /** From capture(); omit for text-only feedback without a capture. */
-  draftId?: string;
+  /** From capture(). A report is always one the user reviewed. */
+  draftId: string;
   notes: string;
   /** false sends the notes without the captured screenshot. */
   includeScreenshot: boolean;
@@ -133,11 +138,33 @@ export const FEEDBACK_CAPTURE_SHORTCUT_LABEL = { mac: '⌘⇧2', other: 'Ctrl+Sh
 /** Largest screenshot PNG feedback will send, decoded. */
 export const FEEDBACK_MAX_PNG_BYTES = 8 * 1024 * 1024;
 
-export interface FeedbackSendResult {
-  id: string;
-  /** Saved locally; "Received" arrives later in FeedbackStatus.received. */
-  status: 'saved-local';
-  diagnostics?: FeedbackDiagnosticsOutcome;
+export type FeedbackSendResult =
+  | {
+    id: string;
+    /** Saved locally; "Received" arrives later in FeedbackStatus.received. */
+    status: 'saved-local';
+    diagnostics?: FeedbackDiagnosticsOutcome;
+  }
+  /** Nothing was saved: the enrollment changed, and this new draft needs a review and a new Send. */
+  | { status: 'enrollment-changed'; draft: FeedbackCaptureResult };
+
+export type FeedbackHeldCode = 'stale-release' | 'not-enrolled' | 'storage-unavailable';
+
+/** Released reports are queued for delivery, not delivered. */
+export interface FeedbackHeldReleaseResult {
+  released: number;
+  remaining: number;
+  failed: number;
+  code?: FeedbackHeldCode;
+  status: FeedbackStatus;
+}
+
+export interface FeedbackHeldClearResult {
+  cleared: number;
+  remaining: number;
+  failed: number;
+  code?: FeedbackHeldCode;
+  status: FeedbackStatus;
 }
 
 /**

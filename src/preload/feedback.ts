@@ -1,6 +1,6 @@
 import { ipcRenderer } from 'electron';
 import { IPC } from '../shared/ipc-channels';
-import type { FeedbackCaptureResult, FeedbackSendInput, FeedbackSendResult, FeedbackStatus, RendererBreadcrumb } from '../shared/feedback-types';
+import type { FeedbackCaptureResult, FeedbackHeldClearResult, FeedbackHeldReleaseResult, FeedbackSendInput, FeedbackSendResult, FeedbackStatus, RendererBreadcrumb } from '../shared/feedback-types';
 
 /** Framebriar screenshot feedback. Tokens and the invitation never come back over this bridge. */
 export const feedback = {
@@ -18,6 +18,11 @@ export const feedback = {
       ipcRenderer.invoke(IPC.FEEDBACK.SEND, input),
     cancel: (draftId: string): Promise<void> =>
       ipcRenderer.invoke(IPC.FEEDBACK.CANCEL, draftId),
+    /** Queue held reports under the current enrollment. Pass the token the user confirmed. */
+    releaseHeld: (releaseToken: string): Promise<FeedbackHeldReleaseResult> =>
+      ipcRenderer.invoke(IPC.FEEDBACK.RELEASE_HELD, releaseToken),
+    clearHeld: (): Promise<FeedbackHeldClearResult> =>
+      ipcRenderer.invoke(IPC.FEEDBACK.CLEAR_HELD),
     /** Note a breadcrumb for feedback reports (#2303), whatever the logging and feedback settings are. */
     recordBreadcrumb: (crumb: RendererBreadcrumb) =>
       ipcRenderer.send(IPC.FEEDBACK.RECORD_BREADCRUMB, crumb),

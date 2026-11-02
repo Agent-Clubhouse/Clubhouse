@@ -614,6 +614,8 @@ export const IPC = {
     CAPTURE: 'feedback:capture',
     SEND: 'feedback:send',
     CANCEL: 'feedback:cancel',
+    RELEASE_HELD: 'feedback:release-held',
+    CLEAR_HELD: 'feedback:clear-held',
     /** Main → renderer broadcast: FeedbackStatus after any access, outbox or receipt change. */
     STATUS_CHANGED: 'feedback:status-changed',
     /** Main → main window: a draft captured from the keyboard shortcut, to review (#2101). */

@@ -23,6 +23,8 @@ const MAX_ANNOTATED_BASE64 = Math.ceil(FEEDBACK_MAX_PNG_BYTES / 3) * 4;
 const BASE64 = /^[A-Za-z0-9+/]*={0,2}$/;
 const DRAFT_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const SHOT_ID = /^s\d{1,2}$/;
+/** The SDK's token is opaque, so only its size is checked here. */
+const MAX_RELEASE_TOKEN = 128;
 
 /**
  * Every Clubhouse window worth a screenshot (#2100): `first` (the window feedback started
@@ -94,7 +96,7 @@ export function validateSendInput(value: FeedbackSendInput, argName: string): vo
   if (typeof value.includeScreenshot !== 'boolean') throw new Error(`${argName}.includeScreenshot must be a boolean`);
   if (value.includeCorrelation !== undefined && typeof value.includeCorrelation !== 'boolean') throw new Error(`${argName}.includeCorrelation must be a boolean`);
   if (value.includeDiagnostics !== undefined && typeof value.includeDiagnostics !== 'boolean') throw new Error(`${argName}.includeDiagnostics must be a boolean`);
-  if (value.draftId !== undefined && (typeof value.draftId !== 'string' || !DRAFT_ID.test(value.draftId))) throw new Error(`${argName}.draftId is invalid`);
+  if (typeof value.draftId !== 'string' || !DRAFT_ID.test(value.draftId)) throw new Error(`${argName}.draftId is invalid`);
   if (value.scene !== undefined && (typeof value.scene !== 'string' || value.scene.length > 40)) throw new Error(`${argName}.scene is invalid`);
   if (value.shotId !== undefined && (typeof value.shotId !== 'string' || !SHOT_ID.test(value.shotId))) throw new Error(`${argName}.shotId is invalid`);
   // Shape only here; the service decodes it and enforces the byte cap and dimensions.
@@ -130,6 +132,16 @@ export function registerFeedbackHandlers(): void {
     requireEnabled(event);
     return getFeedbackService().send(input);
   }));
+
+  ipcMain.handle(IPC.FEEDBACK.RELEASE_HELD, withValidatedArgs([stringArg({ maxLength: MAX_RELEASE_TOKEN })], async (event, releaseToken) => {
+    requireEnabled(event);
+    return getFeedbackService().releaseHeldReports(releaseToken);
+  }));
+
+  ipcMain.handle(IPC.FEEDBACK.CLEAR_HELD, async (event) => {
+    requireEnabled(event);
+    return getFeedbackService().clearHeldReports();
+  });
 
   // Breadcrumbs (#2303) are noted whether or not feedback is set up or logging is on,
   // so a report sent later has them. App windows only; main checks the code.
