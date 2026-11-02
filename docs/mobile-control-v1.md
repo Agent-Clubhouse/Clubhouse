@@ -220,9 +220,9 @@ An avatar is always a circle, with images clipped to it and filling it. Use the 
 1. **Quick agent** (`kind` isn't `durable`): a lightning bolt on a neutral surface. Ignore `color`, `emoji` and the name.
 2. **Emoji** (`emoji` set): the emoji on the agent's color at alpha `0x20`, about 12.5%. This comes before an image.
 3. **Image** (`icon` set and `agentIcons[id]` present): `agentIcons[id]`, a data URL.
-4. **Initials**: bold on the agent's solid color.
+4. **Initials**: bold on the agent's solid color, in the [text color](#initials-text-color) for that color.
 
-**Initials:** split the name on `-`, take the first character of each piece, skip empty pieces, uppercase, keep the first two. `-` is the only separator. So `Dispatcher` is `D`, not `DI`; `clever-fox` is `CF`; `one-two-three` is `OT`; `my_agent` and `Two Words` are `M` and `T`. The `initials` list in `sender-identity.json` has more.
+**Initials:** split the name on `-`, take the first code point of each piece, skip empty pieces, uppercase, keep the first two code points. `-` is the only separator. So `Dispatcher` is `D`, not `DI`; `clever-fox` is `CF`; `one-two-three` is `OT`; `my_agent` and `Two Words` are `M` and `T`; `🦊-fox` is `🦊F`. Never cut a surrogate pair: in Swift or Kotlin, count code points rather than UTF-16 units. The `initials` list in `sender-identity.json` has more.
 
 **Colors:** `color` is an id. An unknown or missing one is indigo.
 
@@ -233,13 +233,22 @@ An avatar is always a circle, with images clipped to it and filling it. Use the 
 | `amber` | `#f59e0b` | `teal` | `#14b8a6` |
 | `rose` | `#f43f5e` | `cyan` | `#06b6d4` |
 
-The desktop draws initials in white. Clubhouse Go draws them in whichever of dark or light contrasts more; that difference is known and open.
+#### Initials text color
+
+The text color comes from the background, with no field on the wire. `initialsTextColor` in `src/shared/agent-avatar.ts` is the desktop's copy, and every place the desktop draws initials on a solid agent color uses it. For a background `#rrggbb`:
+
+1. For each channel, `c = value / 255`, then `c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ^ 2.4`.
+2. `L = 0.2126 * r + 0.7152 * g + 0.0722 * b`.
+3. `onWhite = 1.05 / (L + 0.05)` and `onBlack = (L + 0.05) / 0.05`.
+4. Draw `#ffffff` when `onWhite >= onBlack`, otherwise `#000000`.
+
+These are exactly white and black, not a theme's light and dark, so one of them always reaches at least 4.58:1. Every color in the table above gets `#000000` today. `colors[].initialsText` in `sender-identity.json` has the result for each color. This covers initials on a solid color only: an emoji's tinted background and images are unaffected.
 
 ### Laying out a message
 
-- **You:** on the right, in a bubble, labelled "You".
-- **Others:** on the left, one entry per part: the avatar, then the name above a bubble. Parts of one message stay together, even with different senders. The active agent's replies aren't in this layout.
-- **Color:** agent color appears only in the avatar. Don't tint bubbles, names or message backgrounds with it. The desktop draws both bubbles on the same neutral surface.
+- **You:** on the right, in a filled bubble, labelled "You".
+- **Others:** on the left, one entry per part: the avatar, then the name above an unfilled bubble with a neutral hairline border. Parts of one message stay together, even with different senders. The active agent's replies aren't in this layout.
+- **Color:** agent color appears only in the avatar. Don't tint bubbles, borders, names or message backgrounds with it. The desktop fills your bubble with a neutral surface and draws the others with no fill and a 1px neutral border, so the fill alone says who wrote it.
 - **Long messages:** see [Chat reading rules](#chat-reading-rules). Desktop collapses a part with a newline or over 120 characters to one row with a first-line preview; phones collapse every routed part.
 - **Text:** a part with a `sender` is Markdown. A Clubhouse notice or a part with no sender is plain text.
 
@@ -818,7 +827,7 @@ Errors use the existing envelope with correlation fields: `error {message, op, s
 
 A helper is `durable_docs` in `snapshot.json` and `agent-settings-helper.json`; the other agents there are top-level.
 
-`sender-identity.json` is for [Who sent a message](#who-sent-a-message). `catalog` is the snapshot's agent rows and `agentIcons`, `frames` are the live `chat:event`s, and `expected` is, for each event, what the desktop's code draws given only `catalog` and that event: `{from:"you", text}` or `{from:"others", parts:[{name, agentId, text, avatar}]}`, where `agentId` is the row it found or null. `avatar` is null, `{type:"quick"}`, `{type:"emoji", emoji, background}`, `{type:"image", image}` or `{type:"initials", initials, background}`, with `background` a CSS hex color. `history` and `replay` carry the same messages through the chat route and `mobile:replay`. `colors` and `initials` are the tables to check against. `queued-bursts.json` is for [Queued messages](#queued-messages): events from the real chat runtime for a burst, the same burst missing its first event, a failed send, a provider-held queue and a system turn over a held row, with `rowId` and the combined `routed` to expect.
+`sender-identity.json` is for [Who sent a message](#who-sent-a-message). `catalog` is the snapshot's agent rows and `agentIcons`, `frames` are the live `chat:event`s, and `expected` is, for each event, what the desktop's code draws given only `catalog` and that event: `{from:"you", text}` or `{from:"others", parts:[{name, agentId, text, avatar}]}`, where `agentId` is the row it found or null. `avatar` is null, `{type:"quick"}`, `{type:"emoji", emoji, background}`, `{type:"image", image}` or `{type:"initials", initials, background}`, with `background` a CSS hex color. `history` and `replay` carry the same messages through the chat route and `mobile:replay`. `colors` (with `initialsText`, the [text color](#initials-text-color) for each) and `initials` are the tables to check against. `queued-bursts.json` is for [Queued messages](#queued-messages): events from the real chat runtime for a burst, the same burst missing its first event, a failed send, a provider-held queue and a system turn over a held row, with `rowId` and the combined `routed` to expect.
 
 The Dispatcher has its own files: `snapshot-dispatcher.json` (the snapshot's `dispatcher` and its `agent-state` row while it is on), `dispatcher-changed.json` (the event), `agent-settings-dispatcher.json` and `dispatcher-routes.json` (its chat and sessions while on, its GET routes while off, git, and a shell in its folder).
 

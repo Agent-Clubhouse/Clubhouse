@@ -1,4 +1,4 @@
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen, fireEvent, within } from '@testing-library/react';
 import { Profiler } from 'react';
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { useProjectStore } from '../stores/projectStore';
@@ -188,6 +188,18 @@ describe('ProjectRail context menu', () => {
       disconnect = vi.fn();
     });
     resetStores();
+  });
+
+  it('draws the active project\'s letter in the text color computed from its color', () => {
+    useProjectStore.setState({
+      projects: [makeProject({ id: 'p1', name: 'Alpha', color: 'amber' })],
+      activeProjectId: 'p1',
+    });
+
+    render(<ProjectRail />);
+    const letter = within(screen.getByTestId('project-p1')).getByText('A');
+    expect(letter.style.color).toBe('rgb(0, 0, 0)');
+    expect(letter.className).not.toContain('text-white');
   });
 
   it('shows context menu on right-click of a project icon', () => {

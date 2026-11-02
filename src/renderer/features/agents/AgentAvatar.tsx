@@ -1,6 +1,6 @@
 import { useAgentStore } from '../../stores/agentStore';
 import { Agent } from '../../../shared/types';
-import { agentAvatarSpec } from '../../../shared/agent-avatar';
+import { agentAvatarSpec, initialsTextColor } from '../../../shared/agent-avatar';
 
 interface Props {
   agent: Agent;
@@ -67,8 +67,8 @@ export function AgentAvatar({ agent, size = 'md', showRing = false, ringColor, i
     // OrchestratorGlyph beside the model instead of a brand mascot (#2025).
     return (
       <div
-        className={`${innerSize} rounded-full flex items-center justify-center ${fontSize} font-bold text-white`}
-        style={{ backgroundColor: spec.background }}
+        className={`${innerSize} rounded-full flex items-center justify-center ${fontSize} font-bold`}
+        style={{ backgroundColor: spec.background, color: initialsTextColor(spec.background) }}
       >
         {spec.initials}
       </div>

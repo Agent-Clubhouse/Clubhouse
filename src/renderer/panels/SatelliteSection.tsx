@@ -6,6 +6,7 @@
  * hosts render as compact single-row entries with a status dot.
  */
 import { useCallback } from 'react';
+import { initialsTextColor } from '../../shared/agent-avatar';
 import { getAgentColorHex } from '../../shared/name-generator';
 import type { SatelliteConnection } from '../stores/annexClientStore';
 import { useRemoteProjectStore, type RemoteProject } from '../stores/remoteProjectStore';
@@ -185,14 +186,14 @@ export function SatelliteProjectList({ satellite, projects, activeProjectId, exp
                   w-10 h-10 rounded-lg flex items-center justify-center overflow-hidden text-sm font-bold
                   transition-colors duration-100
                   ${isActive
-                    ? 'text-white shadow-lg'
+                    ? 'shadow-lg'
                     : expanded
                       ? 'bg-surface-1 text-ctp-subtext0'
                       : 'bg-surface-1 text-ctp-subtext0 hover:bg-surface-2 hover:text-ctp-text'
                   }
                 `}
                 style={isActive ? {
-                  backgroundColor: iconDataUrl ? undefined : colorHex,
+                  ...(!iconDataUrl && { backgroundColor: colorHex, color: initialsTextColor(colorHex) }),
                   boxShadow: `0 10px 15px -3px ${colorHex}30, 0 4px 6px -4px ${colorHex}30`,
                 } : undefined}
               >

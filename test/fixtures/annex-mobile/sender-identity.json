@@ -398,35 +398,43 @@
   "colors": [
     {
       "hex": "#6366f1",
-      "id": "indigo"
+      "id": "indigo",
+      "initialsText": "#000000"
     },
     {
       "hex": "#10b981",
-      "id": "emerald"
+      "id": "emerald",
+      "initialsText": "#000000"
     },
     {
       "hex": "#f59e0b",
-      "id": "amber"
+      "id": "amber",
+      "initialsText": "#000000"
     },
     {
       "hex": "#f43f5e",
-      "id": "rose"
+      "id": "rose",
+      "initialsText": "#000000"
     },
     {
       "hex": "#06b6d4",
-      "id": "cyan"
+      "id": "cyan",
+      "initialsText": "#000000"
     },
     {
       "hex": "#8b5cf6",
-      "id": "violet"
+      "id": "violet",
+      "initialsText": "#000000"
     },
     {
       "hex": "#f97316",
-      "id": "orange"
+      "id": "orange",
+      "initialsText": "#000000"
     },
     {
       "hex": "#14b8a6",
-      "id": "teal"
+      "id": "teal",
+      "initialsText": "#000000"
     }
   ],
   "direction": "desktop-to-phone",
@@ -2259,6 +2267,10 @@
     {
       "initials": "7U",
       "name": "7-up"
+    },
+    {
+      "initials": "🦊F",
+      "name": "🦊-fox"
     }
   ],
   "note": "Resolve each frame's sender from `catalog` alone; `expected` is what the desktop draws for that event.",

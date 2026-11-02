@@ -38,6 +38,18 @@ describe('AgentAvatar', () => {
     expect(screen.getByText('CF')).toBeInTheDocument();
   });
 
+  it('does not split an emoji at the start of a word (#2648)', () => {
+    render(<AgentAvatar agent={makeAgent({ name: '🦊-fox' })} />);
+    expect(screen.getByText('🦊F')).toBeInTheDocument();
+  });
+
+  it.each(['indigo', 'amber', 'plaid'])('draws initials on %s in the computed color, not a fixed white', (color) => {
+    render(<AgentAvatar agent={makeAgent({ color })} />);
+    const initials = screen.getByText('BF');
+    expect(initials.style.color).toBe('rgb(0, 0, 0)');
+    expect(initials.className).not.toContain('text-white');
+  });
+
   it('renders lightning bolt for quick agents', () => {
     const { container } = render(<AgentAvatar agent={makeAgent({ kind: 'quick' })} />);
     expect(container.querySelector('svg')).toBeInTheDocument();

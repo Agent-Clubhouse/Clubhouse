@@ -366,7 +366,7 @@ import { ChatAgentRuntime } from './agent-runtime/chat-runtime';
 import { onChatEvent } from './agent-runtime/chat-event-bus';
 import { FakeChatDriver } from './agent-runtime/fake-chat-driver';
 import { findSenderAgent, messageDisplay, MINIMAL_CHAT_CAPABILITIES, sentPartName, type ChatCapabilities } from '../../shared/chat';
-import { agentAvatarSpec, agentInitials } from '../../shared/agent-avatar';
+import { agentAvatarSpec, agentInitials, initialsTextColor } from '../../shared/agent-avatar';
 import { AGENT_COLORS } from '../../shared/name-generator';
 import { MOBILE_COMMAND_FIELDS, MobileCommandService, NULLABLE_ON_UPDATE, isOptionalCommandField } from './mobile-control';
 import { MOBILE_COMMAND_TYPES } from '../../shared/mobile-control';
@@ -1337,8 +1337,8 @@ describe('Annex mobile contract fixtures', { timeout: TEST_TIMEOUT_MS }, () => {
       direction: 'desktop-to-phone',
       note: 'Resolve each frame\'s sender from `catalog` alone; `expected` is what the desktop draws for that event.',
       catalog: { agents: catalog.agents, quickAgents: catalog.quickAgents, dispatcher: catalog.dispatcher, agentIcons: catalog.agentIcons },
-      colors: AGENT_COLORS.map(({ id, hex }) => ({ id, hex })),
-      initials: ['Dispatcher', 'clever-fox', 'Clubhouse-Orchestrator', 'one-two-three', 'my_agent', 'Two Words', 'double--dash', '7-up']
+      colors: AGENT_COLORS.map(({ id, hex }) => ({ id, hex, initialsText: initialsTextColor(hex) })),
+      initials: ['Dispatcher', 'clever-fox', 'Clubhouse-Orchestrator', 'one-two-three', 'my_agent', 'Two Words', 'double--dash', '7-up', '🦊-fox']
         .map((name) => ({ name, initials: agentInitials(name) })),
       frames: renumberFrames(live, before),
       expected,
