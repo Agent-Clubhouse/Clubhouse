@@ -92,7 +92,7 @@ describe('HelperPresetsSection (#2671)', () => {
       render(<HelperPresetsSection />);
       await act(async () => { await vi.advanceTimersByTimeAsync(0); });
       expect(app().getHelperRouting).toHaveBeenCalledTimes(1);
-      await act(async () => { await vi.advanceTimersByTimeAsync(29_000); });
+      await act(async () => { await vi.advanceTimersByTimeAsync(4_000); });
       expect(app().getHelperRouting).toHaveBeenCalledTimes(1);
       await act(async () => { await vi.advanceTimersByTimeAsync(1_000); });
       expect(app().getHelperRouting).toHaveBeenCalledTimes(2);

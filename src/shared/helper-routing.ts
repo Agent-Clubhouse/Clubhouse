@@ -142,6 +142,11 @@ export const HELPER_ROUTING_LABELS = {
     read_failed: 'Couldn’t check',
     not_supported: 'This provider doesn’t report it',
   },
+  window: {
+    weekly: 'Weekly limit',
+    fiveHour: '5-hour limit',
+    other: 'Plan limit',
+  },
   cell: {
     valid: 'Offered',
     unverified: 'Couldn’t be checked',
@@ -362,4 +367,18 @@ export function classifyQuota(windows: readonly QuotaWindow[], now: number, opti
     resetsAt: iso(limiting.resetsAt),
     ...listed,
   };
+}
+
+/** The least a client waits before fetching again, whatever a provider says, so a 0 can't make it spin. */
+export const QUOTA_REFETCH_FLOOR_SECONDS = 5;
+
+/**
+ * How long to wait before fetching the page again, in seconds: the soonest any
+ * provider's reading would be new, and never under the floor. A provider with no
+ * `refreshAfterSeconds` asks for nothing, and with none at all there's no timer.
+ * Reading another provider early does no harm, since its reading is cached.
+ */
+export function quotaRefetchDelaySeconds(providers: Readonly<Record<string, { quota?: Pick<QuotaView, 'refreshAfterSeconds'> }>>): number | null {
+  const delays = Object.values(providers).map((p) => p.quota?.refreshAfterSeconds).filter((s): s is number => typeof s === 'number' && Number.isFinite(s));
+  return delays.length > 0 ? Math.max(Math.min(...delays), QUOTA_REFETCH_FLOOR_SECONDS) : null;
 }

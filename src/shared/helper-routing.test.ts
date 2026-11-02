@@ -9,12 +9,14 @@ import {
   HELPER_ROUTING_REASONS,
   PRESET_CELL_STATES,
   PRESET_PROVIDERS,
+  QUOTA_REFETCH_FLOOR_SECONDS,
   QUOTA_STALE_MS,
   classifyQuota,
   describeRouting,
   isPresetModel,
   minimalRouting,
   normalizeSavedPresets,
+  quotaRefetchDelaySeconds,
   routingLabel,
   type HelperRouting,
   type QuotaWindow,
@@ -157,5 +159,24 @@ describe('classifyQuota', () => {
 
   it('another duration still counts, named other', () => {
     expect(classifyQuota([{ name: '1d', usedPercent: 85, asOf: NOW }, week(10)], NOW)).toMatchObject({ state: 'low', limitingWindow: 'other' });
+  });
+});
+
+describe('quotaRefetchDelaySeconds', () => {
+  const after = (refreshAfterSeconds?: number) => ({ quota: { ...(refreshAfterSeconds !== undefined && { refreshAfterSeconds }) } });
+
+  it('takes the soonest provider', () => {
+    expect(quotaRefetchDelaySeconds({ a: after(300), b: after(60) })).toBe(60);
+  });
+
+  it('a 0, or anything under the floor, waits the floor, so a client can\'t spin', () => {
+    expect(quotaRefetchDelaySeconds({ a: after(0), b: after(300) })).toBe(QUOTA_REFETCH_FLOOR_SECONDS);
+    expect(quotaRefetchDelaySeconds({ a: after(3) })).toBe(QUOTA_REFETCH_FLOOR_SECONDS);
+  });
+
+  it('a provider with none asks for nothing', () => {
+    expect(quotaRefetchDelaySeconds({ a: after(), b: after(60) })).toBe(60);
+    expect(quotaRefetchDelaySeconds({ a: after(), b: {} })).toBeNull();
+    expect(quotaRefetchDelaySeconds({})).toBeNull();
   });
 });

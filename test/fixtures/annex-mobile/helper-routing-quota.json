@@ -177,5 +177,426 @@
       "weekly": null
     }
   },
-  "field": "providers[provider].quota"
+  "field": "providers[provider].quota",
+  "fullResponses": {
+    "mixedTtlsAndNotRead": {
+      "nextFetchSeconds": 5,
+      "response": {
+        "epoch": "00000000-0000-4000-8000-000000000001",
+        "providers": {
+          "claude-code": {
+            "autoEligible": true,
+            "cells": {
+              "easy": {
+                "builtin": {
+                  "effort": "low",
+                  "model": "haiku"
+                },
+                "custom": null,
+                "editable": true,
+                "effective": {
+                  "effort": "low",
+                  "model": "haiku"
+                },
+                "source": "builtin",
+                "state": "valid"
+              },
+              "hard": {
+                "builtin": {
+                  "effort": "high",
+                  "model": "opus"
+                },
+                "custom": null,
+                "editable": true,
+                "effective": {
+                  "effort": "high",
+                  "model": "opus"
+                },
+                "source": "builtin",
+                "state": "valid"
+              },
+              "medium": {
+                "builtin": {
+                  "effort": "medium",
+                  "model": "sonnet"
+                },
+                "custom": null,
+                "editable": true,
+                "effective": {
+                  "effort": "medium",
+                  "model": "sonnet"
+                },
+                "source": "builtin",
+                "state": "valid"
+              }
+            },
+            "choices": {
+              "asOf": "2027-01-15T08:00:00.000Z",
+              "models": [
+                {
+                  "efforts": [
+                    "low",
+                    "medium",
+                    "high"
+                  ],
+                  "id": "opus",
+                  "label": "Opus"
+                },
+                {
+                  "efforts": [
+                    "low",
+                    "medium",
+                    "high"
+                  ],
+                  "id": "sonnet",
+                  "label": "Sonnet"
+                },
+                {
+                  "efforts": [
+                    "low",
+                    "medium",
+                    "high"
+                  ],
+                  "id": "haiku",
+                  "label": "Haiku"
+                }
+              ],
+              "source": "live"
+            },
+            "quota": {
+              "asOf": null,
+              "refreshAfterSeconds": 3,
+              "source": "none",
+              "state": "unknown",
+              "unknownReason": "not_read"
+            }
+          },
+          "codex-cli": {
+            "autoEligible": true,
+            "cells": {
+              "easy": {
+                "builtin": {
+                  "effort": "low",
+                  "model": "gpt-6-luna"
+                },
+                "custom": null,
+                "editable": true,
+                "effective": {
+                  "effort": "low",
+                  "model": "gpt-6-luna"
+                },
+                "source": "builtin",
+                "state": "valid"
+              },
+              "hard": {
+                "builtin": {
+                  "effort": "high",
+                  "model": "gpt-6.1-sol"
+                },
+                "custom": null,
+                "editable": true,
+                "effective": {
+                  "effort": "high",
+                  "model": "gpt-6.1-sol"
+                },
+                "source": "builtin",
+                "state": "valid"
+              },
+              "medium": {
+                "builtin": {
+                  "effort": "medium",
+                  "model": "gpt-6.1-terra"
+                },
+                "custom": null,
+                "editable": true,
+                "effective": {
+                  "effort": "medium",
+                  "model": "gpt-6.1-terra"
+                },
+                "source": "builtin",
+                "state": "valid"
+              }
+            },
+            "choices": {
+              "asOf": "2027-01-15T08:00:00.000Z",
+              "models": [
+                {
+                  "efforts": [
+                    "low",
+                    "medium",
+                    "high"
+                  ],
+                  "id": "gpt-6.1-sol",
+                  "label": "Sol"
+                },
+                {
+                  "efforts": [
+                    "low",
+                    "medium",
+                    "high"
+                  ],
+                  "id": "gpt-6.1-terra",
+                  "label": "Terra"
+                },
+                {
+                  "efforts": [
+                    "low",
+                    "medium",
+                    "high"
+                  ],
+                  "id": "gpt-6-luna",
+                  "label": "Luna"
+                }
+              ],
+              "source": "live"
+            },
+            "quota": {
+              "asOf": "2027-01-15T08:00:00.000Z",
+              "fiveHour": {
+                "resetsAt": "2027-01-15T10:24:00.000Z",
+                "usedPercent": 12
+              },
+              "limitingWindow": "weekly",
+              "refreshAfterSeconds": 300,
+              "resetsAt": "2027-01-18T08:00:00.000Z",
+              "source": "cli_query",
+              "state": "known",
+              "weekly": {
+                "resetsAt": "2027-01-18T08:00:00.000Z",
+                "usedPercent": 41
+              }
+            }
+          },
+          "copilot-cli": {
+            "autoEligible": false,
+            "cells": null,
+            "quota": {
+              "asOf": null,
+              "source": "none",
+              "state": "unknown",
+              "unknownReason": "not_supported"
+            },
+            "reason": "auto_not_supported"
+          }
+        },
+        "revision": "r5.3",
+        "serverTime": "2027-01-15T08:00:00.000Z",
+        "version": 1
+      }
+    },
+    "zeroAndMissingTtl": {
+      "nextFetchSeconds": 5,
+      "response": {
+        "epoch": "00000000-0000-4000-8000-000000000001",
+        "providers": {
+          "claude-code": {
+            "autoEligible": true,
+            "cells": {
+              "easy": {
+                "builtin": {
+                  "effort": "low",
+                  "model": "haiku"
+                },
+                "custom": null,
+                "editable": true,
+                "effective": {
+                  "effort": "low",
+                  "model": "haiku"
+                },
+                "source": "builtin",
+                "state": "valid"
+              },
+              "hard": {
+                "builtin": {
+                  "effort": "high",
+                  "model": "opus"
+                },
+                "custom": null,
+                "editable": true,
+                "effective": {
+                  "effort": "high",
+                  "model": "opus"
+                },
+                "source": "builtin",
+                "state": "valid"
+              },
+              "medium": {
+                "builtin": {
+                  "effort": "medium",
+                  "model": "sonnet"
+                },
+                "custom": null,
+                "editable": true,
+                "effective": {
+                  "effort": "medium",
+                  "model": "sonnet"
+                },
+                "source": "builtin",
+                "state": "valid"
+              }
+            },
+            "choices": {
+              "asOf": "2027-01-15T08:00:00.000Z",
+              "models": [
+                {
+                  "efforts": [
+                    "low",
+                    "medium",
+                    "high"
+                  ],
+                  "id": "opus",
+                  "label": "Opus"
+                },
+                {
+                  "efforts": [
+                    "low",
+                    "medium",
+                    "high"
+                  ],
+                  "id": "sonnet",
+                  "label": "Sonnet"
+                },
+                {
+                  "efforts": [
+                    "low",
+                    "medium",
+                    "high"
+                  ],
+                  "id": "haiku",
+                  "label": "Haiku"
+                }
+              ],
+              "source": "live"
+            },
+            "quota": {
+              "asOf": "2027-01-15T08:00:00.000Z",
+              "fiveHour": {
+                "resetsAt": "2027-01-15T10:24:00.000Z",
+                "usedPercent": 12
+              },
+              "limitingWindow": "weekly",
+              "refreshAfterSeconds": 0,
+              "resetsAt": "2027-01-18T08:00:00.000Z",
+              "source": "cli_query",
+              "state": "known",
+              "weekly": {
+                "resetsAt": "2027-01-18T08:00:00.000Z",
+                "usedPercent": 41
+              }
+            }
+          },
+          "codex-cli": {
+            "autoEligible": true,
+            "cells": {
+              "easy": {
+                "builtin": {
+                  "effort": "low",
+                  "model": "gpt-6-luna"
+                },
+                "custom": null,
+                "editable": true,
+                "effective": {
+                  "effort": "low",
+                  "model": "gpt-6-luna"
+                },
+                "source": "builtin",
+                "state": "valid"
+              },
+              "hard": {
+                "builtin": {
+                  "effort": "high",
+                  "model": "gpt-6.1-sol"
+                },
+                "custom": null,
+                "editable": true,
+                "effective": {
+                  "effort": "high",
+                  "model": "gpt-6.1-sol"
+                },
+                "source": "builtin",
+                "state": "valid"
+              },
+              "medium": {
+                "builtin": {
+                  "effort": "medium",
+                  "model": "gpt-6.1-terra"
+                },
+                "custom": null,
+                "editable": true,
+                "effective": {
+                  "effort": "medium",
+                  "model": "gpt-6.1-terra"
+                },
+                "source": "builtin",
+                "state": "valid"
+              }
+            },
+            "choices": {
+              "asOf": "2027-01-15T08:00:00.000Z",
+              "models": [
+                {
+                  "efforts": [
+                    "low",
+                    "medium",
+                    "high"
+                  ],
+                  "id": "gpt-6.1-sol",
+                  "label": "Sol"
+                },
+                {
+                  "efforts": [
+                    "low",
+                    "medium",
+                    "high"
+                  ],
+                  "id": "gpt-6.1-terra",
+                  "label": "Terra"
+                },
+                {
+                  "efforts": [
+                    "low",
+                    "medium",
+                    "high"
+                  ],
+                  "id": "gpt-6-luna",
+                  "label": "Luna"
+                }
+              ],
+              "source": "live"
+            },
+            "quota": {
+              "asOf": "2027-01-15T08:00:00.000Z",
+              "fiveHour": {
+                "resetsAt": "2027-01-15T10:24:00.000Z",
+                "usedPercent": 12
+              },
+              "limitingWindow": "weekly",
+              "refreshAfterSeconds": 300,
+              "resetsAt": "2027-01-18T08:00:00.000Z",
+              "source": "cli_query",
+              "state": "known",
+              "weekly": {
+                "resetsAt": "2027-01-18T08:00:00.000Z",
+                "usedPercent": 41
+              }
+            }
+          },
+          "copilot-cli": {
+            "autoEligible": false,
+            "cells": null,
+            "quota": {
+              "asOf": null,
+              "source": "none",
+              "state": "unknown",
+              "unknownReason": "not_supported"
+            },
+            "reason": "auto_not_supported"
+          }
+        },
+        "revision": "r5.3",
+        "serverTime": "2027-01-15T08:05:00.000Z",
+        "version": 1
+      }
+    }
+  }
 }

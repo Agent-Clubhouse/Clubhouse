@@ -12,7 +12,7 @@
  * `npm run fixtures:annex-mobile -- --check`) fails when they are stale.
  */
 import { _resetProviderQuotaForTesting } from './provider-quota';
-import { QUOTA_STALE_MS } from '../../shared/helper-routing';
+import { QUOTA_STALE_MS, quotaRefetchDelaySeconds } from '../../shared/helper-routing';
 import { CLAUDE_WORKING_WINDOW_NOTE } from '../../shared/context-window';
 import { describe, it, expect, beforeAll, afterAll, beforeEach, vi } from 'vitest';
 import fs from 'fs';
@@ -1479,7 +1479,7 @@ describe('Annex mobile contract fixtures', { timeout: TEST_TIMEOUT_MS }, () => {
       ...(id !== 'copilot-cli' && { listModels: async () => lists[id], readPlanQuota: () => quotas[id]() }),
     }]));
     const ROUTE = '/api/v1/mobile/helper-routing';
-    const FAMILIES = ['reason', 'fallback', 'skipped', 'quota', 'unknown', 'cell', 'generic'];
+    const FAMILIES = ['reason', 'fallback', 'skipped', 'quota', 'unknown', 'window', 'cell', 'generic'];
     const cell = (res: Awaited<ReturnType<typeof exchange>>, provider: string, difficulty: string) => res.response.body.providers[provider].cells[difficulty];
 
     // A bare read has every label family, so a phone can cache them once per revision.
@@ -1643,8 +1643,42 @@ describe('Annex mobile contract fixtures', { timeout: TEST_TIMEOUT_MS }, () => {
     expect(quotaCases.unknownReadFailed).toMatchObject({ state: 'unknown', unknownReason: 'read_failed', asOf: null });
     expect(quotaCases.unknownStale).toMatchObject({ state: 'unknown', unknownReason: 'stale', asOf: new Date(NOW - QUOTA_STALE_MS - 1).toISOString() });
     expect(quotaCases.unknownNotSupported).toMatchObject({ state: 'unknown', unknownReason: 'not_supported', source: 'none', asOf: null });
+    // Whole responses, to show the polling rule. Each has one provider with no refreshAfterSeconds (Copilot).
+    const nextFetch = (body: { providers: Parameters<typeof quotaRefetchDelaySeconds>[0] }) => quotaRefetchDelaySeconds(body.providers);
+    // A read still going: not_read, and soon. A real wait, since the budget is a real timer.
     _resetProviderQuotaForTesting();
-    fixtures.set('helper-routing-quota.json', { field: 'providers[provider].quota', cases: quotaCases });
+    let finishRead!: (r: unknown) => void;
+    quotas['claude-code'] = () => new Promise((resolve) => { finishRead = resolve; });
+    quotas['codex-cli'] = async () => plan(41);
+    const mixedTtls = (await exchange('GET', ROUTE)).response.body;
+    expect(mixedTtls.providers['claude-code'].quota).toMatchObject({ state: 'unknown', unknownReason: 'not_read', refreshAfterSeconds: 3 });
+    expect(mixedTtls.providers['codex-cli'].quota.refreshAfterSeconds).toBe(300);
+    expect(mixedTtls.providers['copilot-cli'].quota).not.toHaveProperty('refreshAfterSeconds');
+    expect(nextFetch(mixedTtls)).toBe(5);
+    finishRead(plan(41));
+    // A cache that has just ended, with its new read still going: the last reading, and 0.
+    await vi.waitFor(async () => { expect((await exchange('GET', ROUTE)).response.body.providers['claude-code'].quota.state).toBe('known'); });
+    vi.mocked(Date.now).mockReturnValue(NOW + 300_000);
+    quotas['claude-code'] = () => new Promise((resolve) => { finishRead = resolve; });
+    const zeroTtl = (await exchange('GET', ROUTE)).response.body;
+    expect(zeroTtl.providers['claude-code'].quota).toMatchObject({ state: 'known', refreshAfterSeconds: 0 });
+    expect(nextFetch(zeroTtl)).toBe(5);
+    finishRead(plan(41));
+    vi.mocked(Date.now).mockReturnValue(NOW);
+    const noTtl = { providers: { 'copilot-cli': zeroTtl.providers['copilot-cli'] } };
+    expect(nextFetch(noTtl)).toBeNull();
+    _resetProviderQuotaForTesting();
+    const { labels: _labels, ...withoutLabels } = mixedTtls;
+    const { labels: _labelsZero, ...zeroWithoutLabels } = zeroTtl;
+    fixtures.set('helper-routing-quota.json', {
+      field: 'providers[provider].quota',
+      cases: quotaCases,
+      // labels are left out here: helper-routing.json has them.
+      fullResponses: {
+        mixedTtlsAndNotRead: { response: withoutLabels, nextFetchSeconds: nextFetch(mixedTtls) },
+        zeroAndMissingTtl: { response: zeroWithoutLabels, nextFetchSeconds: nextFetch(zeroTtl) },
+      },
+    });
     // Never a credential, an account id or a plan name in any of it.
     expect(JSON.stringify(quotaCases)).not.toMatch(/accountId|planType|subscription|token|key/i);
 

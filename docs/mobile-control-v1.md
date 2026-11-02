@@ -635,7 +635,7 @@ Gate on `helperRouting` in capabilities. It lists only what works now, so don't 
   "copilot-cli":{"autoEligible":false,"reason":"auto_not_supported","quota":{"state":"unknown","unknownReason":"not_supported","source":"none","asOf":null},"cells":null}}}
 ```
 
-- **labels**: the words for every code, in the families `reason`, `fallback`, `skipped`, `quota`, `unknown`, `cell` and `generic`. Every read has all of them, including a bare one, so cache them once per revision for rows that only have codes. For a code you don't have, use `labels.generic.unknownCode`, then your own generic "Other".
+- **labels**: the words for every code, in the families `reason`, `fallback`, `skipped`, `quota`, `unknown`, `window`, `cell` and `generic`. Every read has all of them, including a bare one, so cache them once per revision for rows that only have codes. For a code you don't have, use `labels.generic.unknownCode`, then your own generic "Other".
 - **cells**: `effective` is what a start uses now. `custom` is the saved choice, or null. `state` is that of the saved choice, or of the built-in without one: `valid`, `unverified` (the list may be out of date, so it couldn't be checked) or `stale` (no longer offered, with `staleReason` `model_unavailable` or `effort_unavailable`). A stale saved choice stays saved. `effective` is then the built-in, with `fallback: "builtin_preset"`, or null if that is stale too, and a start with that difficulty is refused. Offer Reset whenever `custom` is set.
 - **autoEligible**: whether a provider has presets, for now.
 - **choices**: what the pickers offer, per model, with `source` `live` or `fallback`. Always the app-wide list, even with `projectId` or `agentId`, because a write is checked against it. `default` isn't offered, since a preset has to name a model. Cells do follow that profile: a cell can read `stale` there while its model is in `choices`, which means a start in that project would be refused or fall back.
@@ -657,12 +657,21 @@ Each provider's `quota` is what its CLI says about its plan limits. Read token-f
 
 The thresholds are starting proposals, not measured values. `known` means under our threshold, not that capacity is guaranteed. `unknown` is never available capacity: use `labels.quota` and `labels.unknown`, and don't treat it as healthy in the UI.
 
-- **limitingWindow**: the most constrained readable window, `weekly`, `fiveHour` or `other`, which sets `state`. `resetsAt` is that window's. A limit the provider reports reached wins over a fuller window.
+- **limitingWindow**: the most constrained readable window, `weekly`, `fiveHour` or `other`, which sets `state`. `resetsAt` is that window's. A limit the provider reports reached wins over a fuller window. Words are in `labels.window`, and an unknown value uses `labels.generic.unknownCode`.
+- **`other`** means the provider reported a limit of another length. It has no percent or name of its own on purpose: there's no window field for it, and a raw duration isn't worth showing. Show `labels.window.other` with `state` and `resetsAt`.
 - **weekly**, **fiveHour**: `{usedPercent, resetsAt}`, or null when there is no such window, which is normal on some plans. A window that exists but can't be read has `usedPercent: null` and is named in `unreadableWindows`. The other one decides.
-- **modelWindows**: limits for one model, `[{name, usedPercent, resetsAt}]`. They don't set `state`, because they only apply to that model. `name` is the provider's label for it, not a model id.
-- **source**: `cli_query`, `session_event` (a running chat session reported it) or `none`. A terminal session reports nothing.
-- **asOf**: when the reading was made, or the oldest that counted. Show its age against the response's `serverTime`, not the phone's clock.
-- **refreshAfterSeconds**: how long a fetch returns this same reading. Refetch while the page is open, no sooner than that, and on returning to the foreground. Nothing pushes quota, and `helperRoutingRevision` doesn't move for it. A read still going returns `not_read` after at most 3 seconds, with a short `refreshAfterSeconds`. Fetching can't cause extra CLI reads: they are shared and cached for 5 minutes per provider and profile, with a minute's wait after a failure.
+- **modelWindows**: limits for one model, `[{name, usedPercent, resetsAt}]`. They don't set `state`, because they only apply to that model. `name` is the provider's label for it, not a model id, so show it as it is.
+- **source**: `cli_query`, `session_event` (a running chat session reported it) or `none`. Diagnostic only, with no labels: don't show it or branch on it. A terminal session reports nothing. The capability's `quotaSources` is for the same use.
+- **asOf**, **serverTime**: ISO 8601 in UTC, such as `2027-01-15T08:00:00.000Z`. To show a reading's age, don't subtract from the phone's clock. Anchor when the response arrives: age is `serverTime - asOf`, plus the suspend-aware monotonic time elapsed since that response. `asOf` is when the reading was made, or the oldest that counted.
+
+**Fetching again.** Nothing pushes quota, and `helperRoutingRevision` doesn't move for it. `refreshAfterSeconds` says how long a fetch returns the same reading for that provider. There's one GET for all of them, so while the page is open:
+
+- Wait the smallest `refreshAfterSeconds` across providers, and at least 5 seconds. Reading another provider sooner than its own delay does no harm: it comes back cached.
+- `0` means its next read is due or going. It waits the 5 second floor, so it can't make a client spin.
+- A provider with no `refreshAfterSeconds`, such as `not_supported`, asks for nothing. With none at all, set no timer.
+- Also fetch on returning to the foreground.
+
+A read still going returns `not_read` after at most 3 seconds, with a short `refreshAfterSeconds`. A refresh still going returns the last reading, with `0`. Fetching can't cause extra CLI reads: they are shared and cached for 5 minutes per provider and profile, with a minute's wait after a failure. `helper-routing-quota.json` has whole responses for these under `fullResponses`, with the delay each one gives.
 
 ### helperRouting.update
 

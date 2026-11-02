@@ -254,7 +254,7 @@ A cell with nothing valid has `effective: null`. Until the `auto` mode is advert
 
 **Revisions.** The full snapshot has `helperRoutingRevision`, and a `helper_routing:changed` event carries `{revision}`, so an open or cached page knows to refetch. The revision moves when a saved value changes or when an app-wide read finds that a cell's state changed. It doesn't move for a quota sample, and no snapshot is broadcast for one. It is opaque to a client. A list changing doesn't make a write stale: only a saved value does.
 
-**Quota freshness** is pulled. `GET helper-routing` returns `serverTime`, and each `quota` has `asOf` and `refreshAfterSeconds`, the cache's remaining life. A phone refetches while the page is open, no sooner than that, and on returning to the foreground. It shows age from `asOf` against `serverTime`. A fetch uses the same shared 5 minute cache as routing, so phones can't make extra CLI reads.
+**Quota freshness** is pulled. See `docs/mobile-control-v1.md#quota` for the rule: the smallest `refreshAfterSeconds` across providers, at least 5 seconds, with age measured from a `serverTime` anchor on suspend-aware monotonic time, never the phone's clock.
 
 **Labels.** `GET helper-routing` returns `labels`, keyed by code family, and helper settings add `display:{summary,reason,fallback}` with the resolved text, and `quota` from stage 3. So the desktop owns the words. A bare `GET helper-routing`, with no `agentId` or `projectId`, returns every label family, so a client can cache labels once per revision for code-only helper and Needs you rows. Precedence for a client: `display`, then `labels`, then `labels.unknownCode`, then its own generic "Other". The snapshot carries codes only.
 

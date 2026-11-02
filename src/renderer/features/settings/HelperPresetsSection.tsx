@@ -8,6 +8,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import {
   HELPER_DIFFICULTIES,
+  quotaRefetchDelaySeconds,
   type HelperDifficulty,
   type HelperRoutingSettings,
   type HelperRoutingUpdate,
@@ -22,8 +23,6 @@ const PROVIDER_NAMES: Record<string, string> = { 'claude-code': 'Claude Code', '
 const DIFFICULTY_NAMES: Record<HelperDifficulty, string> = { easy: 'Easy', medium: 'Medium', hard: 'Hard' };
 
 type Eligible = Extract<ProviderRoutingView, { autoEligible: true }>;
-
-const REFETCH_FLOOR_SECONDS = 30;
 
 function ago(asOf: string, serverTime: string): string {
   const minutes = Math.max(0, Math.round((Date.parse(serverTime) - Date.parse(asOf)) / 60_000));
@@ -43,7 +42,7 @@ function quotaLine(quota: QuotaView, settings: HelperRoutingSettings): string {
     return `Plan limit unknown. ${why}${checked}`;
   }
   const limit = quota.limitingWindow === 'weekly' ? quota.weekly : quota.limitingWindow === 'fiveHour' ? quota.fiveHour : null;
-  const which = quota.limitingWindow === 'weekly' ? 'Weekly limit' : quota.limitingWindow === 'fiveHour' ? '5-hour limit' : 'Plan limit';
+  const which = quota.limitingWindow === 'weekly' || quota.limitingWindow === 'fiveHour' ? labels.window[quota.limitingWindow] : labels.window.other;
   const used = limit?.usedPercent != null ? ` ${limit.usedPercent}% used.` : '';
   const reset = quota.resetsAt ? ` Resets ${when(quota.resetsAt)}.` : '';
   return `${labels.quota[quota.state]}.${' '}${which}${used ? `:${used}` : '.'}${reset}${checked}`;
@@ -130,14 +129,12 @@ export function HelperPresetsSection() {
   }, [refetches]);
 
   // While the page is open, read again when the limits would be new: never for a page nobody is looking at.
-  const refreshAfter = settings
-    ? Math.min(...Object.values(settings.providers).map((p) => p.quota?.refreshAfterSeconds ?? Infinity))
-    : Infinity;
+  const refetchAfter = settings ? quotaRefetchDelaySeconds(settings.providers) : null;
   useEffect(() => {
-    if (!Number.isFinite(refreshAfter)) return undefined;
-    const timer = setTimeout(() => setRefetches((n) => n + 1), Math.max(refreshAfter, REFETCH_FLOOR_SECONDS) * 1000);
+    if (refetchAfter === null) return undefined;
+    const timer = setTimeout(() => setRefetches((n) => n + 1), refetchAfter * 1000);
     return () => clearTimeout(timer);
-  }, [refreshAfter, settings]);
+  }, [refetchAfter, settings]);
 
   const update = useCallback(async (change: Omit<HelperRoutingUpdate, 'revision'>) => {
     if (!settings) return;

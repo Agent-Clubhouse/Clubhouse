@@ -71,6 +71,11 @@
                 "not_supported": "This provider doesn’t report it",
                 "read_failed": "Couldn’t check",
                 "stale": "Last checked too long ago"
+              },
+              "window": {
+                "fiveHour": "5-hour limit",
+                "other": "Plan limit",
+                "weekly": "Weekly limit"
               }
             },
             "providers": {
@@ -366,6 +371,11 @@
                 "not_supported": "This provider doesn’t report it",
                 "read_failed": "Couldn’t check",
                 "stale": "Last checked too long ago"
+              },
+              "window": {
+                "fiveHour": "5-hour limit",
+                "other": "Plan limit",
+                "weekly": "Weekly limit"
               }
             },
             "providers": {
@@ -796,6 +806,11 @@
                 "not_supported": "This provider doesn’t report it",
                 "read_failed": "Couldn’t check",
                 "stale": "Last checked too long ago"
+              },
+              "window": {
+                "fiveHour": "5-hour limit",
+                "other": "Plan limit",
+                "weekly": "Weekly limit"
               }
             },
             "providers": {
@@ -1089,6 +1104,11 @@
                 "not_supported": "This provider doesn’t report it",
                 "read_failed": "Couldn’t check",
                 "stale": "Last checked too long ago"
+              },
+              "window": {
+                "fiveHour": "5-hour limit",
+                "other": "Plan limit",
+                "weekly": "Weekly limit"
               }
             },
             "providers": {
@@ -1377,6 +1397,11 @@
                 "not_supported": "This provider doesn’t report it",
                 "read_failed": "Couldn’t check",
                 "stale": "Last checked too long ago"
+              },
+              "window": {
+                "fiveHour": "5-hour limit",
+                "other": "Plan limit",
+                "weekly": "Weekly limit"
               }
             },
             "providers": {
@@ -1660,6 +1685,11 @@
                 "not_supported": "This provider doesn’t report it",
                 "read_failed": "Couldn’t check",
                 "stale": "Last checked too long ago"
+              },
+              "window": {
+                "fiveHour": "5-hour limit",
+                "other": "Plan limit",
+                "weekly": "Weekly limit"
               }
             },
             "providers": {
