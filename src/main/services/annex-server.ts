@@ -1191,27 +1191,55 @@ function releaseFrames(ws: WebSocket): void {
   for (const data of held.frames) ws.send(data);
 }
 
-/** How long to wait before trying a socket's first snapshot again. Past the end, the last one repeats. */
+/** After a failed build, how long until the next. Past the end, the last one repeats. */
 const SNAPSHOT_RETRY_DELAYS_MS = [2000, 8000, 30_000, 60_000];
-/** After a failure, a new socket waits this long before building, as a phone reconnects within seconds. */
-const SNAPSHOT_FAILED_COOLDOWN_MS = 5000;
-let firstSnapshotBlockedUntil = 0;
-
 /**
  * How long a snapshot too large to send is taken at its word. It stays too large
- * until something changes, and a phone reconnects about every 32 seconds, each new
- * socket wanting a build. So this is held for the whole host, not per socket: inside
- * it no socket builds, and one socket's build answers for all of them.
+ * until something changes, so this is only a backstop.
  */
 const SNAPSHOT_OVERSIZE_RETRY_MS = 5 * 60_000;
 /** A change is worth a look, but only this often: a busy host could otherwise rebuild a huge snapshot nonstop. */
 const SNAPSHOT_OVERSIZE_RECHECK_MS = 30_000;
-/** When a snapshot was last found too large, or null if it isn't. */
-let snapshotOversizeAt: number | null = null;
-let snapshotOversizeRecheck: ReturnType<typeof setTimeout> | null = null;
 
-/** Tell the phone once, keep the socket and its commands, and try again later. */
-function firstSnapshotFailed(ws: WebSocket, delay: number, attempt: number): void {
+/**
+ * Snapshots can't be sent right now, and when to try again. This covers the whole
+ * host rather than each socket: phones reconnect every few seconds, and each new
+ * socket wanting its own build is how a failure turns into constant work. Inside the
+ * window nothing builds, and a phone hears `snapshot_failed` at once. When it ends,
+ * one refresh runs and serves everyone waiting.
+ */
+let snapshotBlock: { kind: 'failed' | 'oversize'; until: number; startedAt: number } | null = null;
+let snapshotFailures = 0;
+let snapshotOversizeRecheck: ReturnType<typeof setTimeout> | null = null;
+let snapshotBlockTimer: ReturnType<typeof setTimeout> | null = null;
+
+function setSnapshotBlock(kind: 'failed' | 'oversize'): void {
+  // Several builds can fail together: that's one failure, not several steps of backoff.
+  if (kind === 'failed' && snapshotBlock && Date.now() < snapshotBlock.until) return;
+  const delay = kind === 'oversize'
+    ? SNAPSHOT_OVERSIZE_RETRY_MS
+    : SNAPSHOT_RETRY_DELAYS_MS[Math.min(snapshotFailures++, SNAPSHOT_RETRY_DELAYS_MS.length - 1)];
+  snapshotBlock = { kind, until: Date.now() + delay, startedAt: Date.now() };
+  if (snapshotBlockTimer) clearTimeout(snapshotBlockTimer);
+  snapshotBlockTimer = setTimeout(() => {
+    snapshotBlockTimer = null;
+    // A timer can fire just before the clock reaches `until`, and this retry must not hit its own gate.
+    if (snapshotBlock) snapshotBlock.until = 0;
+    // With no one connected there's no one to build for. The next to connect tries.
+    if (wss && wss.clients.size > 0) broadcastSnapshotRefresh();
+  }, delay);
+  snapshotBlockTimer.unref?.();
+}
+
+function clearSnapshotBlock(): void {
+  snapshotBlock = null;
+  snapshotFailures = 0;
+  if (snapshotBlockTimer) clearTimeout(snapshotBlockTimer);
+  snapshotBlockTimer = null;
+}
+
+/** Tell the phone once, and keep the socket and its commands. Events stay back until a snapshot goes out. */
+function firstSnapshotFailed(ws: WebSocket): void {
   const held = heldFrames.get(ws);
   if (!held || ws.readyState !== WebSocket.OPEN) return;
   try {
@@ -1222,9 +1250,6 @@ function firstSnapshotFailed(ws: WebSocket, delay: number, attempt: number): voi
     });
   }
   held.retrying = true;
-  if (held.retryTimer) clearTimeout(held.retryTimer);
-  held.retryTimer = setTimeout(() => { void sendFirstSnapshot(ws, attempt + 1); }, delay);
-  held.retryTimer.unref?.();
 }
 
 /** Send a built snapshot as this socket's first, and what was held after it. False if it's too large to send. */
@@ -1242,24 +1267,13 @@ function deliverFirstSnapshot(ws: WebSocket, held: HeldFrames, built: BuiltSnaps
  * phone has no baseline for events, so they stay back, within the limits in
  * holdFrame. If one can't be sent the phone hears `snapshot_failed` once, and the
  * socket stays open: a phone has its own grace period, commands work through it,
- * and closing would only bring it back sooner. A failure may pass, so it's tried
- * again on a timer. A snapshot too large to send won't, so only a backstop runs.
+ * and closing would only bring it back sooner.
  */
-async function sendFirstSnapshot(ws: WebSocket, attempt = 0): Promise<void> {
-  if (snapshotOversizeAt !== null) {
-    const left = snapshotOversizeAt + SNAPSHOT_OVERSIZE_RETRY_MS - Date.now();
-    if (left > 0) {
-      firstSnapshotFailed(ws, left, attempt);
-      return;
-    }
-    // This socket takes the recheck. Any other waits out a new window, or hears sooner if this one fits.
-    snapshotOversizeAt = Date.now();
-  }
-  if (attempt === 0 && Date.now() < firstSnapshotBlockedUntil) {
-    firstSnapshotFailed(ws, Math.max(firstSnapshotBlockedUntil - Date.now(), SNAPSHOT_RETRY_DELAYS_MS[0]), attempt);
+async function sendFirstSnapshot(ws: WebSocket): Promise<void> {
+  if (snapshotBlock && Date.now() < snapshotBlock.until) {
+    firstSnapshotFailed(ws);
     return;
   }
-  const retryDelay = SNAPSHOT_RETRY_DELAYS_MS[Math.min(attempt, SNAPSHOT_RETRY_DELAYS_MS.length - 1)];
   try {
     const built = assembleSnapshot(await readSnapshotSources());
     const held = heldFrames.get(ws);
@@ -1269,20 +1283,18 @@ async function sendFirstSnapshot(ws: WebSocket, attempt = 0): Promise<void> {
       recordSnapshotFailure('send_failed');
       return;
     }
-    if (!deliverFirstSnapshot(ws, held, built, 'connect')) {
-      snapshotOversizeAt = Date.now();
-      firstSnapshotFailed(ws, SNAPSHOT_OVERSIZE_RETRY_MS, attempt);
-    } else if (snapshotOversizeAt !== null) {
-      // It fits again, so sockets waiting on the window can have it now.
-      snapshotOversizeAt = null;
-      broadcastSnapshotRefresh();
+    if (deliverFirstSnapshot(ws, held, built, 'connect')) {
+      if (snapshotBlock) broadcastSnapshotRefresh();
+    } else {
+      setSnapshotBlock('oversize');
+      firstSnapshotFailed(ws);
     }
   } catch (err) {
     appLog('core:annex', 'error', 'Failed to send snapshot on connect', {
-      meta: { attempt, error: err instanceof Error ? err.message : String(err) },
+      meta: { error: err instanceof Error ? err.message : String(err) },
     });
-    firstSnapshotBlockedUntil = Date.now() + SNAPSHOT_FAILED_COOLDOWN_MS;
-    firstSnapshotFailed(ws, retryDelay, attempt);
+    setSnapshotBlock('failed');
+    firstSnapshotFailed(ws);
   }
 }
 
@@ -4338,8 +4350,7 @@ export function stop(): void {
   refreshFollowUp = null;
   refreshAgain = false;
   refreshGeneration++;
-  firstSnapshotBlockedUntil = 0;
-  snapshotOversizeAt = null;
+  clearSnapshotBlock();
   if (snapshotOversizeRecheck) clearTimeout(snapshotOversizeRecheck);
   snapshotOversizeRecheck = null;
   lastLargeFrameLog.clear();
@@ -4500,8 +4511,10 @@ function snapshotStateChangedSince(seq: number): boolean {
  * on its own: a follow-up needs a real change during the build.
  */
 export function broadcastSnapshotRefresh(): void {
-  if (snapshotOversizeAt !== null) {
-    const wait = snapshotOversizeAt + SNAPSHOT_OVERSIZE_RECHECK_MS - Date.now();
+  if (snapshotBlock && Date.now() < snapshotBlock.until) {
+    // A failure's retry covers any change. A snapshot too large might fit now, so look, but not often.
+    if (snapshotBlock.kind === 'failed') return;
+    const wait = snapshotBlock.startedAt + SNAPSHOT_OVERSIZE_RECHECK_MS - Date.now();
     if (wait > 0) {
       snapshotOversizeRecheck ??= setTimeout(() => {
         snapshotOversizeRecheck = null;
@@ -4526,11 +4539,10 @@ export function broadcastSnapshotRefresh(): void {
     const frame = snapshotFrame(built, 'refresh');
     // Never send a phone a frame it would close on. It keeps what it has, and the next change tries again.
     if (Buffer.byteLength(frame) > MOBILE_WS_FRAME_MAX_BYTES) {
-      snapshotOversizeAt = Date.now();
+      setSnapshotBlock('oversize');
       return;
     }
-    snapshotOversizeAt = null;
-    firstSnapshotBlockedUntil = 0;
+    clearSnapshotBlock();
     if (broadcastFrame('snapshot', frame) > 0) recordSnapshotFailure('send_failed');
     for (const client of wss?.clients ?? []) {
       const held = heldFrames.get(client);
@@ -4540,6 +4552,7 @@ export function broadcastSnapshotRefresh(): void {
     appLog('core:annex', 'error', 'broadcastSnapshotRefresh failed', {
       meta: { error: err instanceof Error ? err.message : String(err) },
     });
+    setSnapshotBlock('failed');
   }).finally(() => {
     refreshInFlight = false;
     // The server stopped during the build: nothing left to tell, even if it has started again.
@@ -4897,7 +4910,6 @@ export const _testing = {
   SNAPSHOT_RETRY_DELAYS_MS,
   SNAPSHOT_OVERSIZE_RETRY_MS,
   SNAPSHOT_OVERSIZE_RECHECK_MS,
-  SNAPSHOT_FAILED_COOLDOWN_MS,
   heldBytes: (ws: WebSocket) => heldFrames.get(ws)?.bytes,
   holdForTest(ws: WebSocket, data: string) {
     const held = heldFrames.get(ws);

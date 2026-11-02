@@ -3267,39 +3267,142 @@ describe('annex-server', () => {
       }
     });
 
-    it('keeps the socket open and keeps trying, at a capped pace, when snapshots keep failing', async () => {
-      vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
-      try {
-        vi.mocked(projectStore.list).mockRejectedValue(new Error('disk gone') as never);
-        const ws = openDuringBuild();
-        failList(new Error('disk gone'));
+    describe('host-wide backoff after a failed build', () => {
+      const builds = () => vi.mocked(projectStore.list).mock.calls.length;
+      const connectAgain = async () => {
+        const ws = Object.assign(new EventEmitter(), { readyState: 1, send: vi.fn(), ping: () => {}, close: vi.fn() });
+        annexServer._testing.wsAuthTypes.set(ws as never, 'bearer');
+        annexServer._testing.wss!.clients.add(ws as never);
+        annexServer._testing.wss!.emit('connection', ws);
         await vi.waitFor(() => expect(ws.send).toHaveBeenCalled());
-        const attempts = () => vi.mocked(appLog).mock.calls.filter(([, , message]) => message === 'Failed to send snapshot on connect').length;
-        await vi.waitFor(() => expect(attempts()).toBe(1));
+        return ws;
+      };
+      const failing = () => vi.mocked(projectStore.list).mockRejectedValue(new Error('disk gone') as never);
+
+      beforeEach(() => {
+        vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] });
+      });
+      afterEach(() => {
+        vi.useRealTimers();
+      });
+
+      it('grows to at most a minute, with one build per retry however many phones wait', async () => {
+        failing();
+        const first = openDuringBuild();
+        failList(new Error('disk gone'));
+        await vi.waitFor(() => expect(first.send).toHaveBeenCalled());
+        await connectAgain();
+        await connectAgain();
+        const before = builds();
 
         const delays = annexServer._testing.SNAPSHOT_RETRY_DELAYS_MS;
-        for (const delay of delays) await vi.advanceTimersByTimeAsync(delay);
-        expect(attempts()).toBe(delays.length + 1);
-        // Past the list it stays at the last delay, not faster.
-        // (vi.waitFor moves a fake clock along, so these allow some slack.)
-        await vi.advanceTimersByTimeAsync(delays[delays.length - 1] - 1000);
-        expect(attempts()).toBe(delays.length + 1);
-        await vi.advanceTimersByTimeAsync(1000);
-        expect(attempts()).toBe(delays.length + 2);
+        let expected = before;
+        for (const delay of [...delays, delays[delays.length - 1], delays[delays.length - 1]]) {
+          await vi.advanceTimersByTimeAsync(delay - 1000);
+          expect(builds()).toBe(expected);
+          await vi.advanceTimersByTimeAsync(1000);
+          expected += 1;
+          expect(builds()).toBe(expected);
+        }
+        expect(delays[delays.length - 1]).toBe(60_000);
+      });
 
-        // A phone's grace period depends on the socket staying up, with one error frame.
-        expect(ws.close).not.toHaveBeenCalled();
-        expect(sent(ws).map((f) => f.type)).toEqual(['error']);
+      it('answers a new connection inside the window with snapshot_failed and no build', async () => {
+        failing();
+        const first = openDuringBuild();
+        failList(new Error('disk gone'));
+        await vi.waitFor(() => expect(first.send).toHaveBeenCalled());
+        const before = builds();
 
-        // It stops when the socket does.
-        ws.readyState = 3;
-        ws.emit('close', 1006, Buffer.from(''));
-        const atClose = attempts();
-        await vi.advanceTimersByTimeAsync(delays[delays.length - 1] * 2);
-        expect(attempts()).toBeLessThanOrEqual(atClose + 1);
-      } finally {
-        vi.useRealTimers();
-      }
+        const late = await connectAgain();
+
+        expect(sent(late)).toEqual([{ type: 'error', payload: { message: 'snapshot_failed' } }]);
+        expect(builds()).toBe(before);
+      });
+
+      it('does not build for a change inside the window, and the retry covers it', async () => {
+        failing();
+        const first = openDuringBuild();
+        failList(new Error('disk gone'));
+        await vi.waitFor(() => expect(first.send).toHaveBeenCalled());
+        const before = builds();
+
+        for (let i = 0; i < 10; i++) annexServer.broadcastSnapshotRefresh();
+        expect(builds()).toBe(before);
+
+        await vi.advanceTimersByTimeAsync(annexServer._testing.SNAPSHOT_RETRY_DELAYS_MS[0]);
+        expect(builds()).toBe(before + 1);
+      });
+
+      it('fans one successful retry out to everyone waiting, each with their own cursor', async () => {
+        failing();
+        const first = openDuringBuild();
+        const firstCursor = _eventReplay.getLastSeq();
+        failList(new Error('disk gone'));
+        await vi.waitFor(() => expect(first.send).toHaveBeenCalled());
+        publish();
+        const lateCursor = _eventReplay.getLastSeq();
+        const late = await connectAgain();
+        const before = builds();
+
+        vi.mocked(projectStore.list).mockReset();
+        vi.mocked(projectStore.list).mockReturnValue([] as never);
+        await vi.advanceTimersByTimeAsync(annexServer._testing.SNAPSHOT_RETRY_DELAYS_MS[0]);
+
+        expect(vi.mocked(projectStore.list).mock.calls.length).toBe(1);
+        expect(before).toBeGreaterThan(0);
+        expect(sent(first)[1].payload.lastSeq).toBe(firstCursor);
+        expect(sent(first).at(-1)).toEqual(expect.objectContaining({ type: 'chat:event' }));
+        expect(sent(late)[1].payload.lastSeq).toBe(lateCursor);
+        expect(first.close).not.toHaveBeenCalled();
+      });
+
+      it('resets once a build works, so the next failure starts short again', async () => {
+        failing();
+        const first = openDuringBuild();
+        failList(new Error('disk gone'));
+        await vi.waitFor(() => expect(first.send).toHaveBeenCalled());
+        const delays = annexServer._testing.SNAPSHOT_RETRY_DELAYS_MS;
+        await vi.advanceTimersByTimeAsync(delays[0]);
+        await vi.advanceTimersByTimeAsync(delays[1]);
+
+        vi.mocked(projectStore.list).mockReset();
+        vi.mocked(projectStore.list).mockReturnValue([] as never);
+        await vi.advanceTimersByTimeAsync(delays[2]);
+        expect(sent(first)[1].type).toBe('snapshot');
+
+        failing();
+        const next = await connectAgain();
+        expect(sent(next)[0].type).toBe('error');
+        const before = builds();
+        await vi.advanceTimersByTimeAsync(delays[0]);
+        expect(builds()).toBe(before + 1);
+      });
+
+      it('builds nothing while no one is connected, and stops when the sockets do', async () => {
+        failing();
+        const first = openDuringBuild();
+        failList(new Error('disk gone'));
+        await vi.waitFor(() => expect(first.send).toHaveBeenCalled());
+        first.readyState = 3;
+        first.emit('close', 1006, Buffer.from(''));
+        annexServer._testing.wss!.clients.delete(first as never);
+        const before = builds();
+
+        await vi.advanceTimersByTimeAsync(annexServer._testing.SNAPSHOT_RETRY_DELAYS_MS[3] * 2);
+
+        expect(builds()).toBe(before);
+      });
+
+      it('never closes a socket for failing', async () => {
+        failing();
+        const first = openDuringBuild();
+        failList(new Error('disk gone'));
+        await vi.waitFor(() => expect(first.send).toHaveBeenCalled());
+        for (const delay of annexServer._testing.SNAPSHOT_RETRY_DELAYS_MS) await vi.advanceTimersByTimeAsync(delay);
+        expect(first.close).not.toHaveBeenCalled();
+        expect(sent(first).map((f) => f.type)).toEqual(['error']);
+      });
     });
 
     it('stamps a refresh with the seq its live state was read at, so nothing newer is overwritten', async () => {
