@@ -331,6 +331,24 @@ describe('syncOrchestrationGate (spawn)', () => {
   });
 });
 
+describe('setOrchestrationPolicy precondition (#2661)', () => {
+  it('sees the fresh config and refuses by throwing, before anything is written', async () => {
+    setAgents(PROJECT, [agent('orch')]);
+    const before = await getOrchestrationPolicy(PROJECT, 'orch');
+    const precondition = vi.fn(() => { throw new Error('refused'); });
+    await expect(setOrchestrationPolicy(PROJECT, 'orch', { maxHelpers: 9 }, { precondition })).rejects.toThrow('refused');
+    expect(precondition).toHaveBeenCalledWith(expect.objectContaining({ id: 'orch' }), expect.objectContaining({ maxHelpers: before?.maxHelpers }));
+    expect((await getOrchestrationPolicy(PROJECT, 'orch'))?.maxHelpers).toBe(before?.maxHelpers);
+  });
+
+  it('writes when it passes', async () => {
+    setAgents(PROJECT, [agent('orch')]);
+    const result = await setOrchestrationPolicy(PROJECT, 'orch', { maxHelpers: 9 }, { precondition: () => undefined });
+    expect(result.ok).toBe(true);
+    expect((await getOrchestrationPolicy(PROJECT, 'orch'))?.maxHelpers).toBe(9);
+  });
+});
+
 describe('setOrchestrationPolicy', () => {
   it('persists the change and opens the gate of a running agent', async () => {
     setAgents(PROJECT, [agent('orch')]);

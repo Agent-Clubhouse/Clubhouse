@@ -536,6 +536,7 @@ export const IPC = {
     GET_AGENT_CONNECTION: 'mcp-binding:get-agent-connection',
     /** Renderer→main: the wires an orchestrator's connection tools made and alone own (#2232). */
     GET_TOOL_CONNECTIONS: 'mcp-binding:get-tool-connections',
+    GET_DISPATCHER_LINKS: 'mcp-binding:get-dispatcher-links',
     /** Main→renderer: the agent id whose connection or tool count changed. */
     AGENT_CONNECTION_CHANGED: 'mcp-binding:agent-connection-changed',
     /** Broadcast when an MCP tool is called — carries source/target/direction for wire animation. */

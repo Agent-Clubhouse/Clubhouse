@@ -357,12 +357,15 @@ async function countHelpersElsewhere(projectPath: string, agentId: string): Prom
  * Change an agent's policy. Fields set to null go back to the persona or
  * default value. Turning orchestration off while the agent has live helpers
  * changes nothing and returns `needsHelperChoice`: settle them with
- * turnOffOrchestration. An invalid patch throws.
+ * turnOffOrchestration. An invalid patch throws. `precondition` runs under the
+ * agent's lock on the fresh config, before anything is written, and refuses the
+ * change by throwing (#2661).
  */
 export async function setOrchestrationPolicy(
   projectPath: string,
   agentId: string,
   rawPatch: unknown,
+  options: { precondition?: (agent: DurableAgentConfig, current: ResolvedOrchestrationPolicy) => void } = {},
 ): Promise<SetOrchestrationPolicyResult> {
   const patch = validateOrchestrationPatch(rawPatch);
   return withAgentLock(projectPath, agentId, async () => {
@@ -370,6 +373,7 @@ export async function setOrchestrationPolicy(
     if (!agent) return { ok: false, message: 'Agent not found' };
 
     const current = await resolveFor(projectPath, agent, agent.orchestration);
+    options.precondition?.(agent, current);
     const stored = applyOrchestrationPatch(agent.orchestration, patch);
     const next = await resolveFor(projectPath, agent, stored);
     if (next.mcpOff && patchTurnsOnMcpSwitch(patch)) {

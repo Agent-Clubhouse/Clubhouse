@@ -1,6 +1,6 @@
 import { ipcRenderer } from 'electron';
 import { IPC } from '../shared/ipc-channels';
-import type { AgentMcpConnection } from '../shared/types';
+import type { AgentMcpConnection, DispatcherLink } from '../shared/types';
 import type { McpUnbindCause, McpUnbindResult } from '../shared/mcp-unbind';
 
 export const mcpBinding = {
@@ -24,6 +24,9 @@ export const mcpBinding = {
   /** Wires the orchestrator connection tools made and alone own; the user may remove these (#2232). */
   getToolConnections: (): Promise<Array<{ agentId: string; targetId: string }>> =>
     ipcRenderer.invoke(IPC.MCP_BINDING.GET_TOOL_CONNECTIONS),
+  /** Links the Dispatcher made that the user may remove, suspended ones included (#2661). */
+  getDispatcherLinks: (): Promise<DispatcherLink[]> =>
+    ipcRenderer.invoke(IPC.MCP_BINDING.GET_DISPATCHER_LINKS),
   getAgentConnection: (agentId: string): Promise<AgentMcpConnection | null> =>
     ipcRenderer.invoke(IPC.MCP_BINDING.GET_AGENT_CONNECTION, agentId),
   onAgentConnectionChanged: (callback: (agentId: string) => void) => {

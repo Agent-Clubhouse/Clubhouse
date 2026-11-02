@@ -509,6 +509,8 @@ export const ATTR = {
     'update_project', 'update_agent',
     // settings reads (#2653)
     'list_settings', 'read_settings',
+    // Dispatcher controls over connected orchestrators (#2661)
+    'set_orchestrator_helpers', 'connect_orchestrators', 'disconnect_orchestrators', 'list_orchestrator_controls',
     // orchestration: connection tools (#2230)
     'create_group_project', 'add_to_group_project', 'remove_from_group_project', 'connect_agents', 'disconnect_agents',
     'other',

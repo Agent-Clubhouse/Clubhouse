@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
-import type { Agent } from '../../../../shared/types';
+import type { Agent, DispatcherLink } from '../../../../shared/types';
 import { useAgentStore } from '../../../stores/agentStore';
 import { useMcpBindingStore, type McpBindingEntry } from '../../../stores/mcpBindingStore';
 import { ConnectionsCard, agentConnections, connectionMeta } from './ConnectionsCard';
@@ -127,6 +127,51 @@ describe('Connections card (#2232)', () => {
     // The dynamic import of AgentDetails transforms its whole card tree on a
     // cold run, which can take longer than the default 5s on its own.
   }, 30_000);
+
+  describe('links the Dispatcher made (#2661)', () => {
+    const link = (agentId: string, targetId: string, extra: Partial<DispatcherLink> = {}): DispatcherLink => ({
+      agentId, targetId, agentName: agentId, targetName: targetId, status: 'active', ...extra,
+    });
+
+    it('marks an active link as the Dispatcher\'s and offers Disconnect with its own wording', async () => {
+      useMcpBindingStore.setState({ bindings: [wire('lead', 'rev', ['epic-lead', 'reviewer']), wire('rev', 'lead', ['reviewer', 'epic-lead'])] });
+      window.clubhouse.mcpBinding.getDispatcherLinks = vi.fn(async () => [link('lead', 'rev'), link('rev', 'lead')]);
+      const onDisconnect = vi.fn();
+      render(<ConnectionsCard agent={lead} helperIds={new Set()} open onToggle={() => {}} onDisconnect={onDisconnect} />);
+      fireEvent.click(await screen.findByTestId('connection-disconnect'));
+      expect(screen.getByTestId('connection-meta')).toHaveTextContent('Dispatcher, two-way');
+      expect(screen.getByText(/The Dispatcher made this connection/)).toBeInTheDocument();
+      fireEvent.click(screen.getByTestId('confirm-destructive-confirm'));
+      expect(onDisconnect).toHaveBeenCalledWith(expect.objectContaining({ dispatcherMade: true, pairs: expect.arrayContaining([{ agentId: 'lead', targetId: 'rev' }, { agentId: 'rev', targetId: 'lead' }]) }));
+    });
+
+    it('shows a suspended link with no binding, says why, and re-reads after removing it', async () => {
+      useMcpBindingStore.setState({ bindings: [] });
+      const getDispatcherLinks = vi.fn(async () => [link('lead', 'rev', { targetName: 'reviewer', status: 'suspended', reason: 'orchestration_off' })] as DispatcherLink[]);
+      window.clubhouse.mcpBinding.getDispatcherLinks = getDispatcherLinks;
+      const onDisconnect = vi.fn(async () => { getDispatcherLinks.mockResolvedValue([]); });
+      render(<ConnectionsCard agent={lead} helperIds={new Set()} open onToggle={() => {}} onDisconnect={onDisconnect} />);
+      const meta = await screen.findByTestId('connection-meta');
+      expect(meta).toHaveTextContent('Dispatcher, sends to it, suspended');
+      expect(meta.getAttribute('title')).toContain('Orchestration is off for one of these agents.');
+      expect(screen.getByText('reviewer')).toBeInTheDocument();
+      fireEvent.click(screen.getByTestId('connection-disconnect'));
+      fireEvent.click(screen.getByTestId('confirm-destructive-confirm'));
+      await waitFor(() => expect(screen.queryByTestId('connection-meta')).not.toBeInTheDocument());
+    });
+
+    it('leaves a wire main doesn\'t list as the Dispatcher\'s unmarked and read-only', async () => {
+      useMcpBindingStore.setState({ bindings: [wire('lead', 'rev', ['epic-lead', 'reviewer'])] });
+      window.clubhouse.mcpBinding.getToolConnections = vi.fn(async () => []);
+      const getDispatcherLinks = vi.fn(async (): Promise<DispatcherLink[]> => []);
+      window.clubhouse.mcpBinding.getDispatcherLinks = getDispatcherLinks;
+      render(<ConnectionsCard agent={lead} helperIds={new Set()} open onToggle={() => {}} onDisconnect={vi.fn()} />);
+      await waitFor(() => expect(getDispatcherLinks).toHaveBeenCalled());
+      expect(screen.getByTestId('connection-meta')).toHaveTextContent('sends to it');
+      expect(screen.getByTestId('connection-meta')).not.toHaveTextContent('Dispatcher');
+      expect(screen.queryByTestId('connection-disconnect')).not.toBeInTheDocument();
+    });
+  });
 
   it('says where wires come from when there are none', () => {
     useMcpBindingStore.setState({ bindings: [] });

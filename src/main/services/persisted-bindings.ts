@@ -201,6 +201,28 @@ export function isBindingRemovedByUser(agentId: string, targetId: string): boole
 export function clearBindingRemovedByUser(agentId: string, targetId: string): void {
   removedByUser.delete(pairKey(agentId, targetId));
   releaseOwnership(pairKey(agentId, targetId));
+  for (const listener of [...drawnByUserListeners]) {
+    try {
+      listener(agentId, targetId);
+    } catch (err) {
+      // telemetry-exempt: logged; one listener failing must not stop the bind or the others
+      appLog('core:mcp', 'warn', 'User-draw listener failed', {
+        meta: { agentId, targetId, error: err instanceof Error ? err.message : String(err) },
+      });
+    }
+  }
+}
+
+const drawnByUserListeners = new Set<BindingRemovedByUserListener>();
+
+/**
+ * Listen for the user drawing a pair through the renderer, so a source that
+ * remembers a removal across restarts (Dispatcher connections, #2661) can
+ * forget it. Returns an unsubscribe function.
+ */
+export function onBindingDrawnByUser(listener: BindingRemovedByUserListener): () => void {
+  drawnByUserListeners.add(listener);
+  return () => { drawnByUserListeners.delete(listener); };
 }
 
 /**

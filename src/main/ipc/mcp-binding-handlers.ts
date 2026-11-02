@@ -20,6 +20,7 @@ import { registerModelTools } from '../services/clubhouse-mcp/tools/model-tools'
 import { registerDispatcherTools } from '../services/clubhouse-mcp/tools/dispatcher-tools';
 import { registerAppearanceTools } from '../services/clubhouse-mcp/tools/appearance-tools';
 import { registerSettingsReadTools } from '../services/clubhouse-mcp/tools/settings-read-tools';
+import { registerDispatcherControlTools } from '../services/clubhouse-mcp/tools/dispatcher-control-tools';
 import { onDisposeRequestsChanged } from '../services/helper-dispose-requests';
 import { registerConnectionTools } from '../services/clubhouse-mcp/tools/connection-tools';
 import { agentRegistry } from '../services/agent-registry';
@@ -38,6 +39,7 @@ import { MCP_UNBIND_CANVAS_CLEANUP } from '../../shared/mcp-unbind';
 import { helperWireBindingSource, watchHelperWires } from '../services/helper-wire-source';
 import { ORCHESTRATOR_CONNECTION_SOURCE_ID, orchestratorConnectionSource, watchOrchestratorConnections } from '../services/orchestrator-connections';
 import { dispatcherWireBindingSource, watchDispatcherWires } from '../services/dispatcher-wire-source';
+import { dispatcherConnectionSource, listDispatcherLinksForUser, watchDispatcherConnections } from '../services/dispatcher-connections';
 import { broadcastToAllWindows } from '../util/ipc-broadcast';
 import { withValidatedArgs, stringArg, objectArg, arrayArg } from './validation';
 
@@ -106,6 +108,7 @@ export function registerMcpBindingHandlers(): void {
   registerDispatcherTools();
   registerAppearanceTools();
   registerSettingsReadTools();
+  registerDispatcherControlTools();
   registerHelperQuestionTools();
   // Held helper starts (#2234) go to the main window only, for Needs you.
   watchHelperStartRequests((channel, payload) => {
@@ -196,6 +199,11 @@ export function registerMcpBindingHandlers(): void {
   ipcMain.handle(IPC.MCP_BINDING.GET_TOOL_CONNECTIONS, (event) => {
     assertCallerIsAppWindow(event);
     return listSoleOwnedPairs(ORCHESTRATOR_CONNECTION_SOURCE_ID);
+  });
+
+  ipcMain.handle(IPC.MCP_BINDING.GET_DISPATCHER_LINKS, (event) => {
+    assertCallerIsAppWindow(event);
+    return listDispatcherLinksForUser();
   });
 
   ipcMain.handle(IPC.MCP_BINDING.SET_INSTRUCTIONS, withValidatedArgs(
@@ -306,6 +314,7 @@ let persistedSourcesRegistered = false;
 let stopWatchingHelperWires: (() => void) | null = null;
 let stopWatchingOrchestratorConnections: (() => void) | null = null;
 let stopWatchingDispatcherWires: (() => void) | null = null;
+let stopWatchingDispatcherConnections: (() => void) | null = null;
 let stopWatchingMcpForOrchestration: (() => void) | null = null;
 
 /**
@@ -329,6 +338,9 @@ export function restorePersistedBindings(): Promise<void> {
     stopWatchingOrchestratorConnections = watchOrchestratorConnections(() => restorePersistedBindings());
     registerPersistedBindingSource(dispatcherWireBindingSource);
     stopWatchingDispatcherWires = watchDispatcherWires(() => restorePersistedBindings());
+    // After the canvas source, so a pair the user also drew stays the user's.
+    registerPersistedBindingSource(dispatcherConnectionSource);
+    stopWatchingDispatcherConnections = watchDispatcherConnections(() => restorePersistedBindings());
     stopWatchingMcpForOrchestration = watchMcpForOrchestration();
   }
   return rebuildPersistedBindings().then((): void => undefined, (err): void => {
@@ -348,6 +360,8 @@ export function _resetHandlersForTesting(): void {
   stopWatchingOrchestratorConnections = null;
   stopWatchingDispatcherWires?.();
   stopWatchingDispatcherWires = null;
+  stopWatchingDispatcherConnections?.();
+  stopWatchingDispatcherConnections = null;
   stopWatchingMcpForOrchestration?.();
   stopWatchingMcpForOrchestration = null;
   bridgeState = 'idle';
