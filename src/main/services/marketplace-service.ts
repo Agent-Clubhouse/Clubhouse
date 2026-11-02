@@ -31,7 +31,7 @@ export const PREVIEW_REGISTRY_URL =
 
 const marketplaceSettingsStore = createSettingsStore<MarketplaceSettings>('marketplace-settings.json', {
   showBetaPlugins: false,
-});
+}, undefined, { audit: { key: 'marketplace' } });
 
 export const getMarketplaceSettings = marketplaceSettingsStore.get;
 export const saveMarketplaceSettings = marketplaceSettingsStore.save;

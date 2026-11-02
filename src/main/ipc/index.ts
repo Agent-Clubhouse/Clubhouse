@@ -1,3 +1,4 @@
+import { enableSettingsAudit } from '../services/settings-audit';
 import { registerPtyHandlers } from './pty-handlers';
 import { registerProjectHandlers } from './project-handlers';
 import { registerFileHandlers } from './file-handlers';
@@ -35,6 +36,7 @@ import { runStartupRetention } from '../telemetry/local-control';
 import { registerDefaultBroadcastPolicies } from '../util/ipc-broadcast-policies';
 
 export function registerAllHandlers(): void {
+  enableSettingsAudit();
   // Register orchestrator providers before anything else
   registerBuiltinProviders();
   // Chat drivers only make chat available; the experimental Chat flag still decides.

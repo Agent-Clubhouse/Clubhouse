@@ -77,7 +77,7 @@ import {
 } from './clubhouse-mcp/orchestration-gate';
 import { appLog } from './log-service';
 import { noteRoutingPolicyChanged } from './helper-routing-changes';
-import { appendSettingsAudit, type SettingsAuditRow, type SettingsAuditSurface } from './settings-audit';
+import { appendSettingsAudit, currentSettingsOrigin, type SettingsAuditRow, type SettingsAuditSurface } from './settings-audit';
 import { isMcpEnabled, onMcpEnablementChanged } from './mcp-settings';
 import { setPersonaChangeHook, type PersonaChange } from './persona-change-hook';
 import { clubhouseMcpOverride, isDisposedAgent } from '../../shared/agent-helpers';
@@ -417,13 +417,15 @@ export async function setOrchestrationPolicy(
   rawPatch: unknown,
   options: {
     precondition?: (agent: DurableAgentConfig, current: ResolvedOrchestrationPolicy) => void;
-    /** Who is asking, for the audit record. Defaults to the desktop's UI. */
+    /** Who is asking, for the audit record. Defaults to the surface this call came in on. */
     surface?: SettingsAuditSurface;
     actorId?: string;
   } = {},
 ): Promise<SetOrchestrationPolicyResult> {
   const patch = validateOrchestrationPatch(rawPatch);
-  const audit = { surface: options.surface ?? 'ui' as const, ...(options.actorId && { actorId: options.actorId }), targetId: agentId };
+  const who = currentSettingsOrigin();
+  const actorId = options.actorId ?? who.actorId;
+  const audit = { surface: options.surface ?? who.surface, ...(actorId && { actorId }), targetId: agentId };
   return withAgentLock(projectPath, agentId, async () => {
     const agent = await agentConfig.getDurableConfig(projectPath, agentId);
     if (!agent) return { ok: false, message: 'Agent not found' };
@@ -554,6 +556,7 @@ export async function turnOffOrchestration(
     if (savedOrchestrate(current)) {
       stored = applyOrchestrationPatch(fresh.orchestration, { orchestrate: false });
       await agentConfig.setOrchestrationConfig(projectPath, agentId, stored);
+      await appendSettingsAudit({ ...currentSettingsOrigin(), targetId: agentId, scope: 'agent', key: 'orchestration.orchestrate', before: true, after: false, outcome: 'ok' });
       // Now, not at the end: the write stands even if settling a late helper fails below.
       noteRoutingPolicyChanged();
     }
@@ -603,6 +606,8 @@ export async function reconcileAfterPersonaChange(
     const { helperIds } = await getHelperSummary(projectPath, agentId);
     if (helperIds.length > 0) {
       await agentConfig.setOrchestrationConfig(projectPath, agentId, applyOrchestrationPatch(agent.orchestration, { orchestrate: true }));
+      // Not a change of what it does: it is pinned on where a persona change would turn it off.
+      await appendSettingsAudit({ surface: 'persona', targetId: agentId, scope: 'agent', key: 'orchestration.orchestrate', before: true, after: true, outcome: 'ok', code: 'pinned_for_helpers' });
       appLog('core:orchestration', 'info', 'Persona change kept orchestration on: the agent has helpers', {
         meta: { agentId, helpers: helperIds.length },
       });

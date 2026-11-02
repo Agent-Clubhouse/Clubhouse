@@ -17,7 +17,7 @@ import type { McpSettings } from '../../shared/types';
  * The one store for this file. The settings IPC (ipc/settings-handlers) shares
  * it, so isMcpEnabled sees a change from the Settings page at once.
  */
-export const mcpSettingsStore = createSettingsStore<McpSettings>(MCP_SETTINGS.filename, MCP_SETTINGS.defaults);
+export const mcpSettingsStore = createSettingsStore<McpSettings>(MCP_SETTINGS.filename, MCP_SETTINGS.defaults, undefined, { audit: { key: 'mcp' } });
 
 export const getSettings = mcpSettingsStore.get;
 export const saveSettings = mcpSettingsStore.save;

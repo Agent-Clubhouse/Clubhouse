@@ -31,6 +31,8 @@ const store = createSettingsStore<OrchestrationSettings>(
     helperPresetsRevision: validRevision(raw.helperPresetsRevision),
     autoHelpers: raw.autoHelpers === true,
   }),
+  // Presets and Auto have rows of their own, with reasons.
+  { audit: { key: 'orchestration', keys: ['globalHelperCap'], ignore: ['helperPresets', 'helperPresetsRevision', 'autoHelpers'] } },
 );
 
 export const getSettings = store.get;

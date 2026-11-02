@@ -32,7 +32,7 @@ const store = createSettingsStore<NotificationSettings>('notification-settings.j
   agentError: false,
   agentRequestedAttention: true,
   playSound: true,
-});
+}, undefined, { audit: { key: 'notifications' } });
 
 export const getSettings = store.get;
 export const saveSettings = store.save;

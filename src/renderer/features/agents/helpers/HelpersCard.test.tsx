@@ -243,6 +243,18 @@ describe('Helpers card start approvals (#2234)', () => {
     useHelperStartRequestStore.getState().add(startRequest('hstart_x', 'other', 'someone-else'));
   });
 
+  it('shows a waiting start\'s warning in the server\'s words, and it doesn\'t block Approve (#2671)', async () => {
+    useHelperStartRequestStore.getState().add({
+      ...startRequest('hstart_w', 'impl-warned'),
+      warning: { code: 'quota_near_limit', asOf: '2027-01-15T08:00:00.000Z', message: 'codex-cli is close to its plan limit.' },
+    });
+    await renderCard();
+    const row = screen.getByTestId('helper-request-hstart_w');
+    expect(within(row).getByTestId('helper-request-warning')).toHaveTextContent('codex-cli is close to its plan limit.');
+    expect(within(row).getByTestId('helper-approve')).not.toBeDisabled();
+    expect(within(screen.getByTestId('helper-request-hstart_a')).queryByTestId('helper-request-warning')).toBeNull();
+  });
+
   it('shows the orchestrator\'s waiting starts as pending rows with Approve and Decline', async () => {
     await renderCard();
     expect(screen.getByTestId('details-card-helpers-summary')).toHaveTextContent('4 of 5 · 1 starting · 1 waiting');

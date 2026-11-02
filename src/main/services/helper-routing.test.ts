@@ -53,7 +53,10 @@ vi.mock('./provider-quota', () => ({
   isProviderCoolingDown: async (provider: string) => W.cooling.has(provider),
 }));
 vi.mock('./agent-runtime/chat-event-bus', () => ({ onChatEvent: () => () => undefined }));
-vi.mock('./settings-audit', () => ({ appendSettingsAudit: async (row: Record<string, unknown>) => { W.audit.push(row); return true; } }));
+vi.mock('./settings-audit', async (importOriginal) => ({
+  ...await importOriginal<typeof import('./settings-audit')>(),
+  appendSettingsAudit: async (row: Record<string, unknown>) => { W.audit.push(row); return true; },
+}));
 vi.mock('../telemetry/feature-events', () => ({ helperAutoRefused: () => undefined, helperPresetsChanged: (...args: unknown[]) => { W.telemetry.push(args); } }));
 
 import { resolveProfileEnv } from './agent-system';

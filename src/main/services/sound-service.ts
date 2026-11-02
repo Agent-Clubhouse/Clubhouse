@@ -83,7 +83,7 @@ function migrateSettings(raw: Record<string, unknown>): SoundSettings {
   return settings;
 }
 
-const store = createSettingsStore<SoundSettings>('sound-settings.json', defaultSettings, migrateSettings);
+const store = createSettingsStore<SoundSettings>('sound-settings.json', defaultSettings, migrateSettings, { audit: { key: 'sound' } });
 
 export const getSettings = store.get;
 export const saveSettings = store.save;

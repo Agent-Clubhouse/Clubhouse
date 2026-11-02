@@ -80,7 +80,7 @@ export function helperAutoCooldown(provider: string, kind: 'auth' | 'quota' | 'a
 /** Presets were changed or reset. Never the values. */
 export function helperPresetsChanged(
   action: 'set' | 'toggle' | 'reset_cell' | 'reset_provider' | 'reset_all',
-  surface: 'ui' | 'mcp' | 'mobile' | 'dispatcher' | 'persona' | 'system',
+  surface: 'ui' | 'mcp' | 'mobile' | 'dispatcher' | 'persona' | 'cli' | 'system',
   ok: boolean,
 ): void {
   tel.event('clubhouse.helper_routing.changed', [

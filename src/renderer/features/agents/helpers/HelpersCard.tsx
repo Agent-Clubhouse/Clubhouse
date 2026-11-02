@@ -217,6 +217,7 @@ export function HelpersCard({ agent, projectPath, helpers, maxHelpers, orchestra
                     </button>
                   </span>
                 </div>
+                {r.warning && <p className="text-xs text-ctp-overlay1" data-testid="helper-request-warning">{r.warning.message}</p>}
               </li>
             ))}
             {live.map((entry) => {

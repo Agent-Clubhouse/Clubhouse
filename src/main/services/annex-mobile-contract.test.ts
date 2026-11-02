@@ -314,7 +314,6 @@ vi.mock('./orchestration-settings', () => ({
   saveAutoHelpers: async (on: boolean) => { W.autoHelpers = on; W.presetsRevision++; },
   bumpPresetsRevision: async () => { W.presetsRevision++; },
 }));
-vi.mock('./settings-audit', () => ({ appendSettingsAudit: async () => true }));
 // The helper presets read the CLIs' model lists: only those cases put providers here.
 vi.mock('../orchestrators', async (importOriginal) => {
   const original = await importOriginal<typeof import('../orchestrators')>();

@@ -3,7 +3,7 @@ import { ClubhouseModeSettings } from '../../shared/types';
 
 const store = createSettingsStore<ClubhouseModeSettings>('clubhouse-mode-settings.json', {
   enabled: false,
-});
+}, undefined, { audit: { key: 'clubhouse_mode' } });
 
 export const getSettings = store.get;
 export const saveSettings = store.save;

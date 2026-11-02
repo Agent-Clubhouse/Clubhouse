@@ -12,6 +12,31 @@ export interface SettingsStore<T> {
 
 const settingsStoreResetters = new Set<() => void>();
 
+/** What a store tells the audit: its top-level keys, for it to decide what to keep. */
+export interface SettingsStoreAuditEvent {
+  key: string;
+  before: Record<string, unknown>;
+  after: Record<string, unknown>;
+  /** Keys whose values are fit to keep, besides booleans. */
+  keys?: readonly string[];
+  /** Keys with a record of their own, or that aren't settings. */
+  ignore?: readonly string[];
+}
+
+let storeAuditor: ((event: SettingsStoreAuditEvent) => Promise<void> | void) | null = null;
+
+/** Set by settings-audit, not imported: this module is below the logger, which the audit needs. */
+export function setSettingsStoreAuditor(auditor: typeof storeAuditor): void {
+  storeAuditor = auditor;
+}
+
+/** For a settings file a person's choices live in: its audit key, and what else it may say. */
+export interface SettingsStoreAudit {
+  key: string;
+  keys?: readonly string[];
+  ignore?: readonly string[];
+}
+
 function cloneSettings<T>(settings: T): T {
   if (typeof globalThis.structuredClone === 'function') {
     return globalThis.structuredClone(settings);
@@ -57,7 +82,7 @@ export function createSettingsStore<T>(
   filename: string,
   defaults: T,
   migrate?: (raw: Record<string, unknown>) => T,
-  options?: { mode?: number },
+  options?: { mode?: number; audit?: SettingsStoreAudit },
 ): SettingsStore<T> {
   // Resolve filePath lazily on each access. `createSettingsStore` runs at
   // module-load time (e.g. when ipc/app-handlers imports a settings module),
@@ -129,6 +154,34 @@ export function createSettingsStore<T>(
     return writeTask;
   }
 
+  /** What a save is about to replace, if anyone is recording it. Never stops the save. */
+  function auditSnapshot(): T | undefined {
+    if (!options?.audit || !storeAuditor) return undefined;
+    try {
+      return cloneSettings(store.get());
+    } catch (err) {
+      console.warn(`[settings-store] Audit of ${filename} skipped:`, err instanceof Error ? err.message : err);
+      return undefined;
+    }
+  }
+
+  async function reportAudit(before: T, after: T): Promise<void> {
+    const audit = options?.audit;
+    if (!audit || !storeAuditor) return;
+    try {
+      await storeAuditor({
+        key: audit.key,
+        before: before as Record<string, unknown>,
+        after: after as Record<string, unknown>,
+        ...(audit.keys && { keys: audit.keys }),
+        ...(audit.ignore && { ignore: audit.ignore }),
+      });
+    } catch (err) {
+      // Note: appLog cannot be imported here. The write itself succeeded.
+      console.warn(`[settings-store] Audit of ${filename} failed:`, err instanceof Error ? err.message : err);
+    }
+  }
+
   const store: SettingsStore<T> = {
     get() {
       if (!cacheLoaded || cachedSettings === null) {
@@ -137,9 +190,15 @@ export function createSettingsStore<T>(
       return Object.freeze(cachedSettings!) as T;
     },
     save(settings: T) {
+      const before = auditSnapshot();
       cachedSettings = cloneSettings(settings);
       cacheLoaded = true;
-      return queueWrite(cachedSettings);
+      const written = queueWrite(cachedSettings);
+      if (before === undefined) return written;
+      const after = cloneSettings(settings);
+      // A failed write stays this promise's failure, and records nothing. The audit's own failure stays out of it.
+      void written.then(() => reportAudit(before, after), (): void => undefined);
+      return written;
     },
     update(fn: (current: T) => T): Promise<T> {
       const result = updateLock.catch(() => {}).then((): Promise<T> => {

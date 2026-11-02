@@ -1,6 +1,6 @@
 # Helper Auto routing
 
-**Status: built through stage 4 (#2671):** an explicit `effort` on `start_helper`, presets by `difficulty`, read-only quota, and `cli: "auto"`. Stage 5, the wider settings audit, is a design. Clubhouse Go has locked the stage 2 phone wire in [Phone contract](#phone-contract), which is presets only. Later stages are not locked.
+**Status: built (#2671):** an explicit `effort` on `start_helper`, presets by `difficulty`, read-only quota, `cli: "auto"`, and the settings audit. Clubhouse Go has locked the stage 2 phone wire in [Phone contract](#phone-contract), which is presets only. Later stages are not locked.
 
 An orchestrator can ask for a helper by difficulty instead of naming a model, and can opt in to letting Clubhouse pick the provider from load and quota. The choice is deterministic, explained, and made once.
 
@@ -134,7 +134,7 @@ The margin applies only between providers in the same tier. A worse tier always 
 
 From 0/0 with the orchestrator on A, seven starts go A A B B B B A. The spread stays within 2. That balances helper counts, not cost.
 
-**No candidate:** an immediate refusal naming each provider's reason. Nothing is queued. Explicit starts are never blocked by quota or a cooldown, only warned: `start_helper` returns `quotaWarning`, from what is already known, without asking a CLI.
+**No candidate:** an immediate refusal naming each provider's reason. Nothing is queued. Explicit starts are never blocked by quota or a cooldown, only warned: `start_helper` returns `quotaWarning`, from what is already known, without asking a CLI. A person sees the same words in Needs you, on the Helpers card and in the helper header, and a phone in `startWarning`, `warning` and `routing.warning`.
 
 **One decision.** Routing never runs again for that helper. A wake reuses its saved CLI, model and effort and resumes its session. A quota change, rate limit or failure after the task is delivered never moves it. If a saved model has gone, the wake fails or falls to the CLI default as any agent does, and is reported.
 
@@ -204,16 +204,31 @@ Stage 2 lists only `explicit` and `preset`, its three reasons and its fallbacks.
 
 ## Auditing settings changes
 
-The writers today, from greps, so close but not proven complete. The audit PR should pin the list with a test.
+`settings-audit.jsonl` under the Clubhouse base dir: one JSON line per change or refusal, 1 MB, then one rotated file. It shares `bounded-audit-log.ts` with `dispatcher-audit.ts`. It's local and isn't sent anywhere. Reading it is by the file for now: nothing in the app shows it.
 
-- **Agent:** `updateDurableConfig` (IPC, mobile, persona application, and runtime bookkeeping like `lastSleep` and session ids), `updateDurable` (IPC, appearance, mobile), `setOrchestrationPolicy` (IPC, mobile, Dispatcher controls), persona reconcile, `turnOffOrchestration`, `setHelperStartFields`, `setParentAgent`, icon writes.
-- **Project:** `PROJECT.UPDATE`, reset, cropped icon, write and reset of project agent defaults, instructions and permissions, MCP binding instructions and disabled tools.
-- **App:** the `createSettingsStore` stores, mostly through `SAVE_*` in `app-handlers`, plus Annex, telemetry, marketplace and `dispatcher.setEnabled`.
-- **MCP:** `update_agent`, `update_project`, and the Dispatcher controls, which `dispatcher-audit.ts` already records.
+**A row** has `surface`, `actorId` when an agent asked, `scope` (`app`, `project`, `agent`), `targetId`, `key`, `before` and `after` or `changed: true`, `outcome` and `code`. It uses agent and project ids. Where only a path is to hand, as with project defaults, `targetId` is a short hash of it, never the path.
 
-**Design.** Generalize `dispatcher-audit.ts` into a shared bounded log, with the same rotation and 1 MB cap. A row has surface (`ui`, `mcp`, `mobile`, `dispatcher`, `persona`, `system`), actor id, scope, key, target id, before, after, outcome and code. It hooks at service chokepoints and diffs the keys in the `settings-read-service` catalog. Values go through a per-key formatter (enum, bool, integer, provider id). Anything else, such as names or commands, records `changed: true` only. Bookkeeping fields are left out, and rows use project ids, not paths.
+**Values.** Only through a per-key format. `value` keeps a boolean, a whole number, or a short word or id. Anything longer or odder, even on a `value` key, is only `changed: true`. `changed` keys never keep a value: names, commands, env, MCP config, instructions, permissions. In a settings store, a boolean is kept, other keys need the store to name them, and the rest are `changed: true`.
 
-Built in stage 2: `settings-audit.jsonl`, covering helper presets and `setOrchestrationPolicy`, including refusals. Appearance and agent config come next, then the rest.
+**Who asked** comes from `withSettingsSurface` at each entry point: `ui` from `withValidatedArgs`, `mcp` with the agent's id from the tool registry, `mobile` from the command service, `cli` from the CLI endpoint, `persona` around applying one. An explicit `dispatcher` comes from its controls. Nothing set means `system`, which is Clubhouse itself. An IPC handler not using `withValidatedArgs` also reads `system`.
+
+**What it covers,** hooked where settings are written, so a new way to reach a writer is covered:
+
+| Scope | Writer | Keys |
+|---|---|---|
+| Agent | `updateDurableConfig` | Exhaustive by type. Bookkeeping (`lastSleep`, session ids) is left out |
+| Agent | `updateDurable`, `saveAgentIcon`, so appearance too | Name, color, emoji, icon |
+| Agent | `setOrchestrationPolicy`, `turnOffOrchestration`, a persona pinning | Each policy field, refusals too |
+| Agent | Instructions, permissions, MCP binding instructions and disabled tools | Changed only |
+| Project | `projectStore.update`, so appearance too | Color, CLI, name, emoji, icon |
+| Project | `writeProjectAgentDefaults`, including reset | Exhaustive by type |
+| Project | Reset | Changed only |
+| App | Every `createSettingsStore` that holds a person's choices | Top-level keys |
+| App | Helper presets and Auto | Each cell and switch, refusals too |
+
+`settings-audit-inventory.test.ts` pins this: a new settings store has to report or be named as not settings, and the writers and entry points are checked. **Not settings:** `annex-ports.json`, `finished-quick-agents.json`, `project-state.json`, `chat-cli-denylist.json`.
+
+**Not covered:** the renderer's own stores such as keyboard shortcuts, plugin storage, files edited by hand, and `dispatcher-audit.jsonl`'s own rows, which stay where they are. Project pin and inactive state isn't treated as a setting. A store's save records a key's value as saved, which can include neighbours saved at their defaults, as `docs/settings-read-mcp.md` describes.
 
 ## Phone contract
 
@@ -341,4 +356,4 @@ One PR each.
 2. Built. Mapping and `difficulty` in `preset` mode: settings, validation, reset, UI, explanation, telemetry, phone read and write including app-wide preset editing, restoring explicit fields after a persona applies, first audit rows.
 3. Built. Quota service: read-only, shown in Settings and on the phone. Routing doesn't use it yet.
 4. Built. `cli: "auto"`: routing, load, sticky, reservations, cooldowns, retry, tool and persona guidance.
-5. Wider audit.
+5. Built. Wider audit.

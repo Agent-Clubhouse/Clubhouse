@@ -15,7 +15,7 @@ export function migrateExperimentalSettings(raw: Record<string, unknown>): Exper
   return settings as ExperimentalSettings;
 }
 
-const store = createSettingsStore<ExperimentalSettings>('experimental-settings.json', {}, migrateExperimentalSettings);
+const store = createSettingsStore<ExperimentalSettings>('experimental-settings.json', {}, migrateExperimentalSettings, { audit: { key: 'experimental' } });
 
 export const getSettings = store.get;
 export const saveSettings = store.save;

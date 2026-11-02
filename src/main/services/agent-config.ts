@@ -12,6 +12,7 @@ import { applyAgentDefaults, readProjectAgentDefaults } from './agent-settings-s
 import { tagError } from '../telemetry/types';
 import { resolveOrchestrator } from './agent-system';
 import type { HelperContextStatus } from '../../shared/helper-routing';
+import { auditChanged, auditChanges, type AuditKeyFormat } from './settings-audit';
 import { contextWindowCheck } from './context-window';
 import { pathExists } from './fs-utils';
 import { isInsideGitRepo } from './git-service';
@@ -1211,6 +1212,47 @@ export async function clearContextWindow(projectPath: string, agentId: string, n
   await writeAgents(projectPath, agents);
 }
 
+/**
+ * What the audit keeps of an agent's settings (#2671). `bookkeeping` isn't a
+ * setting, and a key missing here doesn't compile, so a new one is a decision.
+ */
+const AGENT_AUDIT_KEYS: Record<keyof DurableConfigUpdates, AuditKeyFormat | 'bookkeeping'> = {
+  orchestrator: 'value',
+  model: 'value',
+  contextWindow: 'value',
+  freeAgentMode: 'value',
+  clubhouseModeOverride: 'value',
+  mcpOverride: 'value',
+  runtimeMode: 'value',
+  idleSleep: 'value',
+  persona: 'value',
+  mission: 'value',
+  sourceControlProvider: 'value',
+  // These can hold commands, env or credentials, so never their values.
+  quickAgentDefaults: 'changed',
+  mcpIds: 'changed',
+  mcpConfigs: 'changed',
+  buildCommand: 'changed',
+  testCommand: 'changed',
+  lintCommand: 'changed',
+  lastSessionId: 'bookkeeping',
+  lastSleep: 'bookkeeping',
+};
+
+const AGENT_AUDIT_CATALOG: Readonly<Record<string, AuditKeyFormat>> = {
+  ...Object.fromEntries(Object.entries(AGENT_AUDIT_KEYS).filter((e): e is [string, AuditKeyFormat] => e[1] !== 'bookkeeping')),
+  // Cleared by a change of model or CLI, not set through here.
+  effort: 'value',
+};
+
+/** updateDurable's fields: a name or an emoji says nothing about behaviour, and a name is free text. */
+const AGENT_IDENTITY_AUDIT_CATALOG: Readonly<Record<string, AuditKeyFormat>> = { name: 'changed', color: 'value', icon: 'changed', emoji: 'changed' };
+
+function pickAudited(agent: DurableAgentConfig, catalog: Readonly<Record<string, AuditKeyFormat>>): Record<string, unknown> {
+  const record = agent as unknown as Record<string, unknown>;
+  return Object.fromEntries(Object.keys(catalog).map((key) => [key, record[key]]));
+}
+
 export async function updateDurableConfig(
   projectPath: string,
   agentId: string,
@@ -1221,6 +1263,7 @@ export async function updateDurableConfig(
   const { agents, agentsById } = await readAgentsEntry(projectPath);
   const agent = agentsById.get(agentId);
   if (!agent) return;
+  const auditBefore = pickAudited(agent, AGENT_AUDIT_CATALOG);
   const previousPersona = agent.persona;
   if (updates.quickAgentDefaults !== undefined) {
     agent.quickAgentDefaults = updates.quickAgentDefaults;
@@ -1374,6 +1417,7 @@ export async function updateDurableConfig(
     }
   }
   await writeAgents(projectPath, agents);
+  await auditChanges('agent', 'agent', agentId, auditBefore, pickAudited(agent, AGENT_AUDIT_CATALOG), AGENT_AUDIT_CATALOG);
   // A running chat session picks the new timeout up now.
   if (updates.idleSleep !== undefined) setAgentIdleSleep(agentId, agent.idleSleep);
   if (agent.persona !== previousPersona) {
@@ -2389,6 +2433,7 @@ export async function updateDurable(
   const { agents, agentsById } = await readAgentsEntry(projectPath);
   const agent = agentsById.get(agentId);
   if (!agent) return;
+  const auditBefore = pickAudited(agent, AGENT_IDENTITY_AUDIT_CATALOG);
   if (updates.name !== undefined) agent.name = updates.name;
   if (updates.color !== undefined) agent.color = updates.color;
   if (updates.icon !== undefined) {
@@ -2408,6 +2453,7 @@ export async function updateDurable(
     }
   }
   await writeAgents(projectPath, agents);
+  await auditChanges('agent', 'agent', agentId, auditBefore, pickAudited(agent, AGENT_IDENTITY_AUDIT_CATALOG), AGENT_IDENTITY_AUDIT_CATALOG);
 }
 
 export async function deleteDurable(projectPath: string, agentId: string): Promise<void> {
@@ -3449,6 +3495,7 @@ export async function saveAgentIcon(projectPath: string, agentId: string, dataUr
   if (agent) {
     agent.icon = filename;
     await writeAgents(projectPath, agents);
+    await auditChanged('agent', 'agent.icon', agentId);
   }
 
   return filename;

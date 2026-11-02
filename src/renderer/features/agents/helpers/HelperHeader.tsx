@@ -51,7 +51,7 @@ export function HelperHeader({ agent }: { agent: Agent }) {
       )}
       {link.routing && (
         <span className="min-w-0 truncate" title={describeRouting(link.routing)} data-testid="helper-header-routing">
-          · {describeRouting(link.routing)}
+          · {describeRouting(link.routing)}{link.routing.warning && ` ${link.routing.warning.message}`}
         </span>
       )}
     </div>

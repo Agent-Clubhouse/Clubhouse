@@ -1,3 +1,4 @@
+import { currentSettingsOrigin, withSettingsSurface } from './settings-audit';
 import { parsePersonaFile } from '../../shared/persona-pattern';
 import type { DurableConfigUpdates } from '../../shared/types';
 import { assertPersonaAllowed, getDurableConfig, updateDurableConfig } from './agent-config';
@@ -41,7 +42,8 @@ export async function applyPersonaToAgent(
     ...(copied as DurableConfigUpdates),
   };
   for (const key of options.keep ?? []) delete updates[key];
-  await updateDurableConfig(projectPath, agentId, updates);
+  // What the persona sets is the persona's doing, whoever applied it.
+  await withSettingsSurface('persona', currentSettingsOrigin().actorId, () => updateDurableConfig(projectPath, agentId, updates));
 
   const updated = await getDurableConfig(projectPath, agentId);
   if (!updated) return;

@@ -9,7 +9,7 @@ export interface SessionSettings {
 
 const store = createSettingsStore<SessionSettings>('session-settings.json', {
   promptForName: false,
-});
+}, undefined, { audit: { key: 'session' } });
 
 export const getSettings = store.get;
 export const saveSettings = store.save;

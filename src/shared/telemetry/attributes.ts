@@ -546,7 +546,7 @@ export const ATTR = {
   helperAutoCooldown: enumAttr('clubhouse.helper_auto.cooldown', ['auth', 'quota', 'availability']),
   helperQuotaState: enumAttr('clubhouse.helper_quota.state', ['known', 'low', 'near_limit', 'exhausted', 'unknown']),
   helperPresetsAction: enumAttr('clubhouse.helper_presets.action', ['set', 'toggle', 'reset_cell', 'reset_provider', 'reset_all']),
-  helperPresetsSurface: enumAttr('clubhouse.helper_presets.surface', ['ui', 'mcp', 'mobile', 'dispatcher', 'persona', 'system']),
+  helperPresetsSurface: enumAttr('clubhouse.helper_presets.surface', ['ui', 'mcp', 'mobile', 'dispatcher', 'persona', 'cli', 'system']),
   /** Bucketed from the model string; never the raw model name. */
   modelFamily: enumAttr('clubhouse.model.family', ['opus', 'sonnet', 'haiku', 'gpt-5', 'default', 'other']),
   /**

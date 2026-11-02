@@ -35,7 +35,7 @@ export function migrateHeadlessSettings(raw: Record<string, unknown>): HeadlessS
 
 const store = createSettingsStore<HeadlessSettings>('headless-settings.json', {
   enabled: true,
-}, migrateHeadlessSettings);
+}, migrateHeadlessSettings, { audit: { key: 'headless' } });
 
 export const getSettings = store.get;
 export const saveSettings = store.save;

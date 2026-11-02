@@ -3,6 +3,7 @@
  * based on an agent's current bindings.
  */
 
+import { withSettingsSurface } from '../settings-audit';
 import type { McpToolDefinition, McpToolResult, McpBinding, BindingTargetKind } from './types';
 import { bindingManager } from './binding-manager';
 import { agentRegistry } from '../agent-registry';
@@ -486,7 +487,7 @@ export async function callTool(
         }
       }
     }
-    return globalTool.handler(agentId, args);
+    return withSettingsSurface('mcp', agentId, () => globalTool.handler(agentId, args));
   }
 
   const bindings = bindingManager.getBindingsForAgent(agentId);
@@ -577,7 +578,7 @@ export async function callTool(
     }
   }
 
-  return template.handler(binding.targetId, agentId, args);
+  return withSettingsSurface('mcp', agentId, () => template.handler(binding.targetId, agentId, args));
 }
 
 function matchScopedToolName(

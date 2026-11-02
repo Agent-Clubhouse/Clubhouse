@@ -76,7 +76,6 @@ vi.mock('../../project-store', () => ({ list: async () => [...projects] }));
 const mockListPersonas = vi.fn();
 const personaFiles = new Map<string, string>();
 vi.mock('../../orchestrator-settings', () => ({ getSettings: () => ({ enabled: ['claude-code', 'codex-cli', 'copilot-cli'] }) }));
-vi.mock('../../settings-audit', () => ({ appendSettingsAudit: async () => true }));
 const mockContextCheck = vi.fn();
 vi.mock('../../context-window', () => ({ contextWindowCheck: (...args: unknown[]) => mockContextCheck(...args) }));
 vi.mock('../../materialization-service', () => ({ readLayeredPersonaRaw: async (_p: string, id: string) => personaFiles.get(id), listAvailablePersonas: (...args: unknown[]) => mockListPersonas(...args) }));
