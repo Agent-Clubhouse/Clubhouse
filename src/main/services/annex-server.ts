@@ -809,10 +809,12 @@ async function readSnapshotSources(): Promise<SnapshotSources> {
   let timer: ReturnType<typeof setTimeout> | undefined;
   try {
     if (abandonedSnapshotReads.size > 0) throw new Error('snapshot_build_stuck');
+    const generation = refreshGeneration;
     const read = readSnapshotSourcesData();
     const timeout = new Promise<never>((_, reject) => {
       timer = setTimeout(() => {
-        abandonedSnapshotReads.add(read);
+        // The server stopped since this began, so it says nothing about the one running now.
+        if (generation === refreshGeneration) abandonedSnapshotReads.add(read);
         const done = () => { abandonedSnapshotReads.delete(read); };
         read.then(done, done);
         reject(new Error('snapshot_build_timeout'));

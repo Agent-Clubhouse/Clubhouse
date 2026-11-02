@@ -3714,6 +3714,27 @@ describe('annex-server', () => {
           expect(sent(ws).map((f) => f.type)).toEqual(['error']);
         });
 
+        it('does not let a read from before a stop mark the next server as stuck', async () => {
+          hangingRead();
+          const ws = Object.assign(new EventEmitter(), { readyState: 1, send: vi.fn(), ping: () => {}, close: vi.fn() });
+          annexServer._testing.wsAuthTypes.set(ws as never, 'bearer');
+          annexServer._testing.wss!.clients.add(ws as never);
+          annexServer._testing.wss!.emit('connection', ws);
+          await vi.advanceTimersByTimeAsync(1000);
+
+          annexServer.stop();
+          annexServer.start();
+          await vi.advanceTimersByTimeAsync(annexServer._testing.SNAPSHOT_BUILD_TIMEOUT_MS);
+
+          vi.mocked(appLog).mockClear();
+          vi.mocked(projectStore.list).mockReturnValue([] as never);
+          const before = builds();
+          annexServer.broadcastSnapshotRefresh();
+          await vi.advanceTimersByTimeAsync(0);
+          expect(builds()).toBe(before + 1);
+          expect(vi.mocked(appLog).mock.calls.some(([, , message]) => message === 'broadcastSnapshotRefresh failed')).toBe(false);
+        });
+
         it('does not start another while one is still stuck, then builds again once it ends', async () => {
           const finish = hangingRead();
           const ws = Object.assign(new EventEmitter(), { readyState: 1, send: vi.fn(), ping: () => {}, close: vi.fn() });
