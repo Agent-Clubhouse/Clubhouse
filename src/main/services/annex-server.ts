@@ -458,19 +458,46 @@ interface TrackedQuickAgent {
   parentAgentId: string | null;
   projectId: string;
   spawnedAt: number;
-  timerId?: ReturnType<typeof setTimeout>;
 }
 
 const trackedQuickAgents = new Map<string, TrackedQuickAgent>();
+/** Pending removals of exited quick agents. Kept out of the entries because those are sent to phones, and a Timeout can't be serialized (#2639). */
+const quickAgentCleanupTimers = new Map<string, ReturnType<typeof setTimeout>>();
 
 /** Quick agents don't inherit a colour: the desktop always draws them gray. */
 const QUICK_AGENT_COLOR = 'gray';
 
+function cancelQuickAgentCleanup(agentId: string): void {
+  clearTimeout(quickAgentCleanupTimers.get(agentId));
+  quickAgentCleanupTimers.delete(agentId);
+}
+
 function setTrackedQuickAgent(agentId: string, entry: TrackedQuickAgent): void {
-  const existing = trackedQuickAgents.get(agentId);
-  if (existing?.timerId !== undefined) clearTimeout(existing.timerId);
+  cancelQuickAgentCleanup(agentId);
   trackedQuickAgents.set(agentId, entry);
   noteAgentActivity(agentId, entry.spawnedAt);
+}
+
+function untrackQuickAgent(agentId: string): void {
+  cancelQuickAgentCleanup(agentId);
+  trackedQuickAgents.delete(agentId);
+}
+
+/** What a tracked quick agent sends to controllers. Named, so a field added to the entry stays off the wire until it's listed here. */
+function quickAgentWireFields(qa: TrackedQuickAgent) {
+  return {
+    id: qa.id,
+    name: qa.name,
+    kind: qa.kind,
+    status: qa.status,
+    prompt: qa.prompt,
+    model: qa.model,
+    orchestrator: qa.orchestrator,
+    freeAgentMode: qa.freeAgentMode,
+    parentAgentId: qa.parentAgentId,
+    projectId: qa.projectId,
+    spawnedAt: qa.spawnedAt,
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -790,7 +817,7 @@ async function buildSnapshotData(): Promise<object> {
       quickAgents[qa.projectId] = [];
     }
     quickAgents[qa.projectId].push({
-      ...qa,
+      ...quickAgentWireFields(qa),
       color: QUICK_AGENT_COLOR,
       detailedStatus: getDetailedStatus(qa.id),
       lastActivityAt: lastActivityAt(qa.id, qa.spawnedAt),
@@ -1393,7 +1420,7 @@ async function handleSpawnQuickAgent(
     });
   } catch (err) {
     tracked.status = 'failed';
-    trackedQuickAgents.delete(agentId);
+    untrackQuickAgent(agentId);
     appLog('core:annex', 'error', 'Failed to spawn quick agent', {
       meta: { agentId, error: err instanceof Error ? err.message : String(err) },
     });
@@ -2784,7 +2811,8 @@ async function runMobileCommand(command: MobileCommand, assertAuthorized: () => 
     const tracked: TrackedQuickAgent = { id, name, kind: 'quick', status: 'starting', prompt: command.prompt,
       model: command.model ?? null, orchestrator, freeAgentMode: false, parentAgentId: null, projectId: project.id, spawnedAt: Date.now() };
     setTrackedQuickAgent(id, tracked);
-    broadcastAndBuffer('agent:spawned', tracked);
+    // A copy: the replay buffer keeps this payload, and the entry goes on changing.
+    broadcastAndBuffer('agent:spawned', quickAgentWireFields(tracked));
     const starting = { cancelled: false };
     mobileStartingAgents.set(id, starting);
     try {
@@ -2797,11 +2825,11 @@ async function runMobileCommand(command: MobileCommand, assertAuthorized: () => 
         throw new MobileControlError('start_cancelled', 409, 'failed');
       }
       tracked.status = isAgentRunning(id) ? 'running' : 'sleeping';
-      broadcastToAllWindows(IPC.ANNEX.AGENT_SPAWNED, { ...tracked, headless: getAgentExecutionMode(id) === 'headless' });
+      broadcastToAllWindows(IPC.ANNEX.AGENT_SPAWNED, { ...quickAgentWireFields(tracked), headless: getAgentExecutionMode(id) === 'headless' });
       broadcastSnapshotRefresh();
       return { agentId: id, name, state: tracked.status, executionMode: getAgentExecutionMode(id) };
     } catch (err) {
-      trackedQuickAgents.delete(id);
+      untrackQuickAgent(id);
       broadcastSnapshotRefresh();
       throw err;
     } finally { finishMobileStart(id, starting); }
@@ -3445,7 +3473,7 @@ async function handleSpawnQuickAgentWs(
     safeSend(ws, JSON.stringify({ type: 'agent:spawn:ack', payload: { id: agentId, name, status: 'starting' } }));
   } catch {
     tracked.status = 'failed';
-    trackedQuickAgents.delete(agentId);
+    untrackQuickAgent(agentId);
     safeSend(ws, JSON.stringify({ type: 'error', payload: { message: 'spawn_failed' } }));
   }
 }
@@ -3796,10 +3824,11 @@ export function start(): void {
         projectId: tracked.projectId,
         parentAgentId: tracked.parentAgentId,
       });
-      tracked.timerId = setTimeout(() => {
-        trackedQuickAgents.delete(agentId);
+      cancelQuickAgentCleanup(agentId);
+      quickAgentCleanupTimers.set(agentId, setTimeout(() => {
+        untrackQuickAgent(agentId);
         agentLastActivity.delete(agentId);
-      }, 60_000);
+      }, 60_000));
     } else {
       // A durable agent asleep: stopped, idle-slept or exited, terminal or chat. The iOS app takes pty:* frames
       // only into its terminal, and the chat events that said so were just dropped from replay, so without this
@@ -4085,6 +4114,7 @@ export function stop(): void {
   revokedTokens.clear();
   detailedStatusCache.clear();
   lastChatStatusPush.clear();
+  for (const agentId of quickAgentCleanupTimers.keys()) cancelQuickAgentCleanup(agentId);
   trackedQuickAgents.clear();
   agentLastActivity.clear();
   eventReplay.reset();
@@ -4139,7 +4169,7 @@ export function broadcastSnapshotRefresh(): void {
   buildSnapshot().then((snapshot) => {
     broadcastWs({ type: 'snapshot', payload: snapshot });
   }).catch((err) => {
-    appLog('core:annex', 'warn', 'broadcastSnapshotRefresh failed', {
+    appLog('core:annex', 'error', 'broadcastSnapshotRefresh failed', {
       meta: { error: err instanceof Error ? err.message : String(err) },
     });
   });
@@ -4498,6 +4528,7 @@ export const _testing = {
   get wss() { return wss; },
   get heartbeatInterval() { return heartbeatInterval; },
   get trackedQuickAgents() { return trackedQuickAgents; },
+  quickAgentCleanupTimers,
   releaseMtlsLockIfLastClient,
   get sessionPauseOwner() { return sessionPauseOwner; },
   setSessionPauseOwner(fp: string | null) { sessionPauseOwner = fp; },

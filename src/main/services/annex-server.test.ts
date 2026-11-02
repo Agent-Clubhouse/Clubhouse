@@ -1,4 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import { EventEmitter } from 'events';
 import http from 'http';
 import net from 'net';
 import fs from 'fs';
@@ -2322,7 +2323,7 @@ describe('annex-server', () => {
 
         const { trackedQuickAgents } = annexServer._testing;
         expect(trackedQuickAgents.has(FIXED_ID)).toBe(true);
-        expect(trackedQuickAgents.get(FIXED_ID)?.timerId).toBeDefined();
+        expect(annexServer._testing.quickAgentCleanupTimers.has(FIXED_ID)).toBe(true);
 
         // (b) Insert second entry with the same ID — should cancel entry1's timer
         const res2 = await request(
@@ -2341,6 +2342,133 @@ describe('annex-server', () => {
         vi.useRealTimers();
       }
     }, 15_000);
+  });
+
+  // #2639: an exited quick agent stays tracked for 60s, and everything sent in that window must still serialize.
+  describe('exited quick agent cleanup window', () => {
+    const QUICK_ID = 'quick_exited';
+    type FakeWs = EventEmitter & { readyState: number; send: ReturnType<typeof vi.fn>; ping: () => void; close: () => void };
+    const frames = (ws: FakeWs) => ws.send.mock.calls.map((c) => JSON.parse(c[0] as string));
+
+    beforeEach(async () => {
+      vi.mocked(pluginManifestRegistry.listAllManifests).mockReturnValue([]);
+      const { groupProjectRegistry } = await import('./group-project-registry');
+      vi.mocked(groupProjectRegistry.list).mockResolvedValue([]);
+      const themeService = await import('./theme-service');
+      vi.mocked(themeService.getSettings).mockReturnValue({ themeId: 'catppuccin-mocha' } as any);
+      vi.mocked(agentConfigModule.listDurable).mockReturnValue([]);
+    });
+
+    async function connect(): Promise<FakeWs> {
+      const ws = Object.assign(new EventEmitter(), { readyState: 1, send: vi.fn(), ping: () => {}, close: () => {} }) as FakeWs;
+      annexServer._testing.wsAuthTypes.set(ws as never, 'bearer');
+      annexServer._testing.wss!.clients.add(ws as never);
+      annexServer._testing.wss!.emit('connection', ws);
+      await vi.waitFor(() => expect(frames(ws).some((f) => f.type === 'snapshot' || f.type === 'error')).toBe(true));
+      return ws;
+    }
+
+    /** Starts a quick agent the way a phone does, and returns the PTY exit listener. */
+    async function spawnFromPhone() {
+      vi.mocked(projectStore.list).mockReturnValue([{ id: 'proj_1', name: 'test', path: '/tmp/test' }] as any);
+      vi.mocked(agentIdModule.generateQuickAgentId).mockReturnValue(QUICK_ID);
+      vi.mocked(annexEventBus.onPtyExit).mockClear();
+      await startAndPair();
+      const ptyExit = vi.mocked(annexEventBus.onPtyExit).mock.calls[0][0] as (agentId: string, exitCode: number) => void;
+      await annexServer._testing.runMobileCommand({ version: 1, epoch: 'e', commandId: 'spawn', type: 'agent.spawn', projectId: 'proj_1', prompt: 'Do it' } as never, vi.fn());
+      return ptyExit;
+    }
+
+    it('builds a snapshot that serializes, with only the contract fields', async () => {
+      (await spawnFromPhone())(QUICK_ID, 0);
+      const wire = JSON.parse(JSON.stringify(await annexServer._testing.buildSnapshot()));
+      expect(Object.keys(wire.quickAgents.proj_1[0]).sort()).toEqual(['color', 'detailedStatus', 'freeAgentMode', 'id', 'kind', 'lastActivityAt',
+        'model', 'name', 'orchestrator', 'parentAgentId', 'projectId', 'prompt', 'spawnedAt', 'status']);
+      expect(wire.quickAgents.proj_1[0]).toMatchObject({ id: QUICK_ID, status: 'completed', prompt: 'Do it' });
+    });
+
+    it('does not put other fields of the tracked entry in the snapshot', async () => {
+      await spawnFromPhone();
+      const circular: Record<string, unknown> = {};
+      circular.self = circular;
+      Object.assign(annexServer._testing.trackedQuickAgents.get(QUICK_ID)!, { internal: circular });
+      const wire = JSON.parse(JSON.stringify(await annexServer._testing.buildSnapshot()));
+      expect(wire.quickAgents.proj_1[0]).not.toHaveProperty('internal');
+    });
+
+    it('sends a newly connected phone its initial snapshot', async () => {
+      (await spawnFromPhone())(QUICK_ID, 0);
+      const sent = frames(await connect());
+      expect(sent.find((f) => f.type === 'snapshot')?.payload.quickAgents.proj_1[0].id).toBe(QUICK_ID);
+      expect(sent.filter((f) => f.type === 'error')).toEqual([]);
+    });
+
+    it('broadcasts snapshot refreshes to connected phones', async () => {
+      const ptyExit = await spawnFromPhone();
+      const ws = await connect();
+      ptyExit(QUICK_ID, 0);
+      ws.send.mockClear();
+      annexServer.broadcastSnapshotRefresh();
+      await vi.waitFor(() => expect(frames(ws).some((f) => f.type === 'snapshot')).toBe(true));
+      expect(frames(ws).find((f) => f.type === 'snapshot').payload.quickAgents.proj_1[0].status).toBe('completed');
+    });
+
+    // Real timers: a fake timer's handle serializes, so it would hide the circular Timeout.
+    it('replays the spawn event as it was sent', async () => {
+      const ptyExit = await spawnFromPhone();
+      const ws = await connect();
+      ptyExit(QUICK_ID, 1);
+      ws.send.mockClear();
+      ws.emit('message', JSON.stringify({ type: 'replay', since: 0 }));
+      expect(frames(ws).find((f) => f.type === 'agent:spawned').payload).toMatchObject({ id: QUICK_ID, status: 'starting' });
+    });
+
+    it('removes the entry 60s after exit, with one timer however many exits are reported', async () => {
+      const ptyExit = await spawnFromPhone();
+      vi.useFakeTimers({ shouldAdvanceTime: false });
+      try {
+        const { trackedQuickAgents, agentLastActivity, quickAgentCleanupTimers } = annexServer._testing;
+        ptyExit(QUICK_ID, 0);
+        const timers = vi.getTimerCount();
+        ptyExit(QUICK_ID, 0);
+        expect(vi.getTimerCount()).toBe(timers);
+        vi.advanceTimersByTime(59_999);
+        expect(trackedQuickAgents.has(QUICK_ID)).toBe(true);
+        vi.advanceTimersByTime(1);
+        expect(trackedQuickAgents.has(QUICK_ID)).toBe(false);
+        expect(agentLastActivity.has(QUICK_ID)).toBe(false);
+        expect(quickAgentCleanupTimers.size).toBe(0);
+      } finally {
+        vi.useRealTimers();
+      }
+    }, 15_000);
+
+    it('clears the cleanup timer on stop', async () => {
+      const ptyExit = await spawnFromPhone();
+      vi.useFakeTimers({ shouldAdvanceTime: false });
+      try {
+        ptyExit(QUICK_ID, 0);
+        const { trackedQuickAgents, quickAgentCleanupTimers } = annexServer._testing;
+        const entry = trackedQuickAgents.get(QUICK_ID)!;
+        annexServer.stop();
+        expect(quickAgentCleanupTimers.size).toBe(0);
+        // A timer that survived stop would remove this entry of the next run.
+        trackedQuickAgents.set(QUICK_ID, entry);
+        vi.advanceTimersByTime(65_000);
+        expect(trackedQuickAgents.has(QUICK_ID)).toBe(true);
+        trackedQuickAgents.clear();
+      } finally {
+        vi.useRealTimers();
+      }
+    }, 15_000);
+
+    it('logs a failed snapshot refresh as an error', async () => {
+      await startAndPair();
+      vi.mocked(projectStore.list).mockImplementation(() => { throw new Error('store crashed'); });
+      annexServer.broadcastSnapshotRefresh();
+      await vi.waitFor(() => expect(appLog).toHaveBeenCalledWith('core:annex', 'error', 'broadcastSnapshotRefresh failed',
+        expect.objectContaining({ meta: { error: 'store crashed' } })));
+    });
   });
 
   // -------------------------------------------------------------------------
