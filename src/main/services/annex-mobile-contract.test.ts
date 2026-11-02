@@ -122,15 +122,19 @@ vi.mock('./annex-network-profile', async (importOriginal) => ({
 }));
 vi.mock('bonjour-service', () => ({ default: class { publish() { return { stop() {} }; } destroy() {} } }));
 vi.mock('./log-service', () => ({ appLog: () => {} }));
+// The fixture's icon bytes aren't whole images, so the "path" is the bytes and the thumbnail is them as they are.
+vi.mock('./icon-images', () => ({ readIconThumbnail: async (base64: string) => `data:image/png;base64,${base64}` }));
 vi.mock('./project-store', () => ({
   list: async () => { if (W.projectsThrow) throw new Error('disk gone'); return W.projects; },
   readIconData: async (icon: string) => (icon ? 'data:image/png;base64,iVBORw0KGgo=' : null),
+  iconFilePath: async (icon: string) => (icon ? 'iVBORw0KGgo=' : null),
 }));
 vi.mock('./agent-config', () => {
   const find = (projectPath: string, id: string) => (W.durables[projectPath] ?? []).find((d) => d.id === id) ?? null;
   return {
     listDurable: async (projectPath: string) => W.durables[projectPath] ?? [],
     readAgentIconData: async (icon: string) => (icon ? 'data:image/png;base64,R0lGODlhAQABAAAAACw=' : null),
+    agentIconFilePath: async (icon: string) => (icon ? 'R0lGODlhAQABAAAAACw=' : null),
     getDurableConfig: async (projectPath: string, id: string) => find(projectPath, id),
     updateDurableConfig: async (projectPath: string, id: string, updates: Record<string, unknown>) => { Object.assign(find(projectPath, id) ?? {}, updates); },
     updateDurable: async (projectPath: string, id: string, updates: Record<string, unknown>) => { Object.assign(find(projectPath, id) ?? {}, updates); },
@@ -1113,9 +1117,9 @@ describe('Annex mobile contract fixtures', { timeout: TEST_TIMEOUT_MS }, () => {
 
     ws.send.mockClear();
     await command('accepted off', { type: 'dispatcher.setEnabled', enabled: false });
-    await eventually(() => expect(frames(ws).some((f) => f.type === 'snapshot')).toBe(true));
+    // A refresh from before the switch can still be on its way: wait for the one after it.
+    await eventually(() => expect(frames(ws).some((f) => f.type === 'snapshot' && f.payload.dispatcher === null)).toBe(true));
     const changedOff = frames(ws).find((f) => f.type === 'dispatcher:changed');
-    expect(frames(ws).find((f) => f.type === 'snapshot').payload.dispatcher).toBeNull();
     const seq = (f: any) => ({ ...f, seq: 1000 });
     fixtures.set('dispatcher-changed.json', { direction: 'desktop-to-phone', note: 'seq is the replay sequence; a snapshot follows each.', frames: [seq(changedOn), seq(changedOff)] });
     fixtures.set('dispatcher-routes.json', routes);

@@ -78,6 +78,12 @@ export const nativeImage = {
     toPNG: () => Buffer.alloc(0),
     getSize: () => ({ width: 0, height: 0 }),
   }),
+  createFromBuffer: () => ({
+    isEmpty: () => true,
+    toDataURL: () => '',
+    toPNG: () => Buffer.alloc(0),
+    getSize: () => ({ width: 0, height: 0 }),
+  }),
   createEmpty: () => ({
     isEmpty: () => true,
     toDataURL: () => '',

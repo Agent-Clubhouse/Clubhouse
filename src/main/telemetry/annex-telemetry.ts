@@ -129,6 +129,31 @@ export function recordSnapshotBuild(startMs: number, atMs = Date.now()): void {
   tel.count('clubhouse.annex.snapshot.build.duration', (atMs - startMs) / 1000);
 }
 
+export type SnapshotResult = Parameters<typeof ATTR.annexSnapshotResult>[0];
+export type SnapshotTrigger = Parameters<typeof ATTR.annexSnapshotTrigger>[0];
+
+/** A snapshot being sent: its encoded frame, its icons, and how many projects and agents it lists. No image data. */
+export function recordSnapshot(
+  result: SnapshotResult,
+  trigger: SnapshotTrigger,
+  sizes: { bytes: number; iconBytes: number; iconCount: number; iconsLeftOut: number; items: number },
+): void {
+  if (!isTelemetryActive()) return;
+  tel.count('clubhouse.annex.snapshots', 1, [ATTR.annexSnapshotResult(result)]);
+  const by = [ATTR.annexSnapshotTrigger(trigger)];
+  tel.count('clubhouse.annex.snapshot.bytes', sizes.bytes, by);
+  tel.count('clubhouse.annex.snapshot.icon_bytes', sizes.iconBytes, by);
+  tel.count('clubhouse.annex.snapshot.icons', sizes.iconCount);
+  tel.count('clubhouse.annex.snapshot.icons_left_out', sizes.iconsLeftOut);
+  tel.count('clubhouse.annex.snapshot.items', sizes.items);
+}
+
+/** A snapshot that didn't reach a client: no frame was built, or sending it failed. */
+export function recordSnapshotFailure(reason: 'build_failed' | 'send_failed'): void {
+  if (!isTelemetryActive()) return;
+  tel.count('clubhouse.annex.snapshots', 1, [ATTR.annexSnapshotResult(reason)]);
+}
+
 const EVENT_TYPES = new Set<string>([
   'pty:data', 'pty:exit', 'hook:event', 'chat:event', 'permission:request', 'permission:response',
   'agent:spawned', 'agent:woken', 'agent:status', 'agent:completed', 'snapshot', 'canvas:state', 'theme:changed',

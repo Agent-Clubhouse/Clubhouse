@@ -21,12 +21,13 @@ import * as fs from 'fs';
 import * as fsp from 'fs/promises';
 import { isDisposedAgent } from '../../shared/agent-helpers';
 import { DISPATCHER_PROJECT_ID } from '../../shared/dispatcher-types';
-import { CHAT_MEDIA_TYPES, sniffMediaType } from '../../shared/chat';
-import { ICON_FILE_MAX_BYTES } from '../../shared/icon-limits';
+import { CHAT_MEDIA_TYPES, mediaDimensions, sniffMediaType } from '../../shared/chat';
+import { ICON_SOURCE_MAX_BYTES, ICON_STORED_MAX_BYTES, ICON_STORED_SIZE } from '../../shared/icon-limits';
 import { AGENT_COLORS } from '../../shared/name-generator';
 import type { DurableAgentConfig, Project } from '../../shared/types';
 import * as agentConfig from './agent-config';
 import { resolveLocalPath } from './agent-runtime/chat-media';
+import { resizeIcon } from './icon-images';
 import { getDispatcherPath } from './dispatcher/dispatcher-paths';
 import { getDispatcherState, isDispatcherAgentId } from './dispatcher/dispatcher-service';
 import { appLog } from './log-service';
@@ -111,7 +112,13 @@ function imageError(imagePath: string, why: string): AppearanceError {
 
 const IMAGE_TYPES = Object.values(CHAT_MEDIA_TYPES).join(', ');
 
-/** An image file's bytes and type, from the bytes themselves. It may be anywhere the user can read (#2478). */
+const megabytes = (bytes: number): string => `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+
+/**
+ * An image file's bytes and type, from the bytes themselves, resized if it's
+ * large: phones get every icon at once, so what's stored stays about what the
+ * crop dialog makes. It may be anywhere the user can read (#2478).
+ */
 async function readImage(imagePath: string, cwd: string | undefined): Promise<{ bytes: Buffer; extension: string }> {
   const real = await resolveLocalPath(imagePath, cwd);
   if (!real) throw imageError(imagePath, cwd ? 'the file doesn\'t exist.' : 'the file doesn\'t exist, or the path isn\'t absolute.');
@@ -123,7 +130,7 @@ async function readImage(imagePath: string, cwd: string | undefined): Promise<{ 
   try {
     const stat = await handle.stat();
     if (!stat.isFile()) throw imageError(imagePath, 'it isn\'t a file.');
-    if (stat.size > ICON_FILE_MAX_BYTES) throw imageError(imagePath, `it's larger than ${(ICON_FILE_MAX_BYTES / (1024 * 1024)).toFixed(1)} MB.`);
+    if (stat.size > ICON_SOURCE_MAX_BYTES) throw imageError(imagePath, `it's larger than ${megabytes(ICON_SOURCE_MAX_BYTES)}.`);
     const buffer = Buffer.alloc(stat.size);
     const { bytesRead } = await handle.read(buffer, 0, buffer.length, 0).catch((err: unknown) => {
       throw imageError(imagePath, `the file can't be read (${(err as NodeJS.ErrnoException).code ?? 'unknown error'}).`);
@@ -134,7 +141,17 @@ async function readImage(imagePath: string, cwd: string | undefined): Promise<{ 
   }
   const extension = CHAT_MEDIA_TYPES[sniffMediaType(bytes) ?? ''];
   if (!extension) throw imageError(imagePath, `it isn't a supported image (${IMAGE_TYPES}).`);
-  return { bytes, extension };
+  const type = sniffMediaType(bytes)!;
+  const size = mediaDimensions(bytes, type);
+  const small = bytes.length <= ICON_STORED_MAX_BYTES;
+  if (small && (!size || Math.max(size.width, size.height) <= ICON_STORED_SIZE)) return { bytes, extension };
+  const resized = await resizeIcon(bytes, real, ICON_STORED_SIZE);
+  // Few bytes and many pixels: fine to keep when it can't be resized. Phones only ever get a thumbnail or nothing.
+  if (!resized && small) return { bytes, extension };
+  if (!resized) {
+    throw imageError(imagePath, `it's ${megabytes(bytes.length)} and can't be resized on this computer. Use a PNG or JPEG, or a file of ${ICON_STORED_MAX_BYTES / 1024} KB or less.`);
+  }
+  return { bytes: resized, extension: 'png' };
 }
 
 function describeProject(project: Project): ProjectAppearance {

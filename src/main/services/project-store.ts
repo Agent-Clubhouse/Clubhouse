@@ -555,13 +555,16 @@ export async function removeIconFile(projectId: string, keep?: string): Promise<
   }
 }
 
-export async function readIconData(filename: string): Promise<string | null> {
+/** Where a project icon file is, or null for a name outside the icons folder. */
+export async function iconFilePath(filename: string): Promise<string | null> {
   const iconsDir = await getIconsDir();
   const filePath = path.resolve(iconsDir, filename);
-  if (!filePath.startsWith(iconsDir + path.sep) && filePath !== iconsDir) {
-    return null;
-  }
-  if (!await pathExists(filePath)) return null;
+  return filePath.startsWith(iconsDir + path.sep) ? filePath : null;
+}
+
+export async function readIconData(filename: string): Promise<string | null> {
+  const filePath = await iconFilePath(filename);
+  if (!filePath || !await pathExists(filePath)) return null;
 
   const ext = path.extname(filename).toLowerCase();
   const mimeMap: Record<string, string> = {
