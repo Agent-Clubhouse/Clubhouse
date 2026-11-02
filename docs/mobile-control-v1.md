@@ -142,7 +142,7 @@ Capabilities advertise `events.queueState: "queue_state"`. The additive rich eve
 
 `user_message` also carries an optional, additive `routed: [{sender?: {agentId?, name}, fromClubhouse?, text}]` on messages from other agents and Clubhouse. Each part is one message, with its sender and without routing text such as `[FROM:...]`; a burst of updates has several. `content` still holds exactly what the agent received. A client that wants to show the sender should prefer `routed`, and can ignore it to keep showing `content` as today. Older transcripts don't have it. A part's text can still start with the reply marker `TASK_RESULT:<id>:` or `TASK_ACK:<id>:`; don't show it. See [Who sent a message](#who-sent-a-message).
 
-For each session, apply a queue snapshot or event only if its queueStateSeq/event.seq is at least as new as the queue state already applied. Snapshot queue state can be newer than the returned transcript page, so track this watermark separately from chat history and Annex replay cursors. Don't infer that a runtime-owned queue item was consumed from turn_started; [Queued messages](#queued-messages) has the one exception. Session termination makes remaining IDs non-cancellable; a new session resets the queue watermark.
+For each session, apply a queue snapshot or event only if its queueStateSeq/event.seq is at least as new as the queue state already applied. Snapshot queue state can be newer than the returned transcript page, so track this watermark separately from chat history and Annex replay cursors. Don't infer that a runtime-owned queue item was consumed from turn_started; [Queued messages](#queued-messages) has the one exception. Session termination makes remaining IDs non-cancellable and [settles them as not delivered](#queued-messages); a new session resets the queue watermark.
 
 Existing WebSocket `{type:"chat:event",payload:{agentId,event:ChatEvent},seq}` stays unchanged. Deduplicate rich events by `(agentId,sessionId,event.seq)`. Annex `seq` is the transport cursor.
 
@@ -249,13 +249,27 @@ Only MCP messages join, and only an MCP row at the end of the queue. `queuedWith
 | `failed` | Mark it not delivered, and don't retry: the provider may still have acted on it. |
 | `removed` | Drop it (with `queue_removed`). |
 
+`delivered` and `failed` also move a row still in the queue, for when its `dispatching` was cut off. For a row already in the timeline they only update its state. A `queue_state` naming a row you don't have changes nothing.
+
 `queuedMessageIds` is the whole queue on every event. A row a newer list has dropped is no longer queued, even if you missed why, so a missed event is not a reason to use `turn_started`. After a `replay:gap`, reload the chat and apply its `queuedMessageIds`.
 
-**The `turn_started` exception.** Some rows have no `queue_state` at all: a provider-held queue (capability `queue: "native"`, where `delivery: "queued"` comes with no queue events), and older desktops or transcripts (no `events.queueState` in capabilities). On `turn_started`, consume the oldest row that no `queue_state` has named, as a row or in `queuedMessageIds`. A runtime-owned row is always named before its turn starts, so this never takes one.
+**The `turn_started` exception.** Some rows have no `queue_state` at all: a provider-held queue (capability `queue: "native"`, where `delivery: "queued"` comes with no queue events), and older desktops or transcripts (no `events.queueState` in capabilities). On `turn_started`, consume the oldest row that no `queue_state` has named, in `transition.messageIds` or `queuedMessageIds`. A runtime-owned row is always named before its turn starts, so this never takes one. Don't require `trigger: "queued"`: older transcripts drained their queue with `prompt`.
 
-If a `user_message` with another `delivery` arrives with the same `messageId` as a row, it replaces the row. The runtime doesn't send one today.
+**System turns.** A `turn_started` with `trigger: "system"` consumes no row, including under the exception above. It is the agent's own work (`/compact`, a permission or question with no turn open, an agent starting on its own), so the row stays for the next turn that isn't `system`.
 
-The desktop's chat doesn't follow `queue_state` yet: it consumes the oldest row on every `turn_started`. Phones should follow this section, not that.
+**Settling.** When the run that held a row is over, the row becomes not delivered. This covers rows still queued, named or not, and rows at `dispatching` with no `delivered` or `failed` yet. They go at the end of the timeline. It happens on:
+
+- **`session_ended`.**
+- **A new run in the same session:** a `session_started` whose `sessionId` is the one already on screen. That is normally `resumed: true`, but the desktop doesn't check the flag. After a crash no `session_ended` comes first, so this is the only event that settles the row.
+- **History of a dead session:** after building the view from a transcript that nothing runs now, which may stop without a `session_ended`. The desktop does this in `settleDeadSession`. On a phone, the signal is `readOnly: true` on the chat snapshot.
+
+A `session_started` with a different `sessionId` is a new conversation: start from an empty view, with no rows carried over. If `delivered` arrives for a row after it settled, the send did resolve, so clear the mark.
+
+For a native queue this is best evidence, not proof. The CLI's queue dies with its process and no turn opened for the row, but a CLI that folded the message into a running turn without opening a new one would make the label wrong. A row at `dispatching` is similar: its send never reported back, so the provider may have received it. Don't retry either one. The desktop adds `Not delivered` to the message's label line (`You · Not delivered`), with no other styling.
+
+**Matching is by id only, never by text.** Two sends with the same words are two messages, so a `user_message` with the same text as a row leaves the row alone. If a `user_message` with another `delivery` arrives with the same `messageId` as a row, it replaces the row. The runtime doesn't send one today.
+
+The desktop's chat follows this section too (`foldChatEvents` in `src/renderer/stores/chatStore.ts`). It acts on `transition` alone and doesn't compare `queuedMessageIds`, because it reads every event in order and has no replay gap to recover from.
 
 ## Review clarifications
 
