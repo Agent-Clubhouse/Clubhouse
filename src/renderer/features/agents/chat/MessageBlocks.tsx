@@ -213,7 +213,7 @@ function SentPart({ part, item, expansionKey }: { part: RoutedMessagePart; item:
         )}
         {open && collapsible && <CopyButton text={() => part.text} label={`Copy message from ${name}`} />}
         {open && part.text && (
-          <div className="max-w-full min-w-0 bg-surface-0 text-ctp-text rounded-xl rounded-tl px-3 py-2 text-[13px] wrap-anywhere" data-testid="chat-sent-body">
+          <div className="max-w-full min-w-0 border border-surface-1 text-ctp-text rounded-xl rounded-tl px-3 py-2 text-[13px] wrap-anywhere" data-testid="chat-sent-body">
             {sender ? <Markdown text={part.text} /> : <span className="whitespace-pre-wrap">{part.text}</span>}
           </div>
         )}
@@ -239,7 +239,7 @@ export function UserMessage({ item, expansionKey }: { item: UserMessageItem; exp
       <span className="text-[11px] text-ctp-overlay0" data-testid="chat-you-label">{['You', ...metaLabels(item)].join(' · ')}</span>
       <Attachments item={item} align="end" />
       {display.text && (
-        <div className="max-w-full bg-surface-0 text-ctp-text rounded-xl rounded-br px-3 py-2 text-[13px] whitespace-pre-wrap wrap-anywhere">
+        <div className="max-w-full bg-surface-0 text-ctp-text rounded-xl rounded-br px-3 py-2 text-[13px] whitespace-pre-wrap wrap-anywhere" data-testid="chat-you-body">
           {display.text}
         </div>
       )}

@@ -37,6 +37,17 @@ describe('UserMessage', () => {
     expect(row.textContent).toContain('[FROM:x] mine');
   });
 
+  it('fills the user\'s own bubble, and gives a routed one only a neutral hairline', () => {
+    const { unmount } = render(<UserMessage item={item({ text: 'mine' })} />);
+    expect(screen.getByTestId('chat-you-body').className).toContain('bg-surface-0');
+    unmount();
+    render(<UserMessage item={item({ text: 'x', source: 'mcp', routed: routed('Short') })} />);
+    const body = screen.getByTestId('chat-sent-body');
+    expect(body.className).toContain('border-surface-1');
+    expect(body.className).not.toMatch(/\bbg-/);
+    expect(body.getAttribute('style')).toBeNull();
+  });
+
   it('keeps the source and steer labels readable', () => {
     render(<UserMessage item={item({ text: 'hi', source: 'annex', delivery: 'steer' })} />);
     expect(screen.getByTestId('chat-you-label').textContent).toBe('You · From Annex · Steered into the running turn');
