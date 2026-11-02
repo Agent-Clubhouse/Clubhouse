@@ -10,9 +10,9 @@
  * Dispatcher's store. Settings go through setOrchestrationPolicy, so its lock,
  * checks and gate handling all apply. Neither setting stops or settles a helper.
  *
- * Every write call that reaches here leaves an audit row, refusals included. A
- * caller the registry's group gate refuses never gets here: that shows in the
- * tool-call telemetry instead.
+ * Every write call that reaches here leaves an audit row, refusals included.
+ * What the registry refuses never gets here (its group gate, and its check of an
+ * argument's type): that shows only in the tool-call telemetry.
  */
 
 import { isDispatcherAgent } from './clubhouse-mcp/dispatcher-gate';
@@ -28,12 +28,15 @@ import {
 import {
   DISPATCHER_CONNECTION_SOURCE_ID,
   DispatcherLinkRefused,
+  MAX_DISPATCHER_LINKS,
   addDispatcherConnections,
   bindingFor,
   isConnectedOrchestrator,
   isTombstoned,
+  listPendingRemovals,
   readAgentCensus,
   readDispatcherConnections,
+  recordUserRemoval,
   removeDispatcherConnections,
   statusOf,
   suspensionOf,
@@ -281,7 +284,10 @@ export async function connectOrchestrators(actorId: string, args: Record<string,
     // The user removed a pair between the check above and the claim: don't keep it.
     if (outcomes.includes('removed')) {
       // Only what this call added: a link it found already saved was there before it.
-      await removeDispatcherConnections(added);
+      // The removed direction goes first and fails closed, so a failed write can't leave it to restore.
+      const wasRemoved = (p: { agentId: string; targetId: string }) => isBindingRemovedByUser(p.agentId, p.targetId);
+      for (const p of added.filter(wasRemoved)) await recordUserRemoval(p);
+      await removeDispatcherConnections(added.filter((p) => !wasRemoved(p)));
       for (const p of added) releaseSourceBinding(DISPATCHER_CONNECTION_SOURCE_ID, p.agentId, p.targetId);
       await rebuildPersistedBindings();
       throw new DispatcherControlError('removed_by_user', 'The user removed this connection. It stays removed until the user draws it again.');
@@ -376,6 +382,11 @@ export async function listOrchestratorControls(actorId: string, args: Record<str
         created_at: c.createdAt,
       };
     });
+  // Removed by the user, but not in the store yet. `saved` is false when a restart could lose it.
+  const unconfirmed = (await listPendingRemovals())
+    .filter((r) => !agentId || r.agentId === agentId || r.targetId === agentId)
+    .slice(0, MAX_DISPATCHER_LINKS)
+    .map((r) => ({ from: r.agentId, to: r.targetId, saved: r.saved }));
   const next = cursor + limit;
   return {
     global_cap: globalCap,
@@ -384,6 +395,7 @@ export async function listOrchestratorControls(actorId: string, args: Record<str
     total: everyone.length,
     ...(next < everyone.length && { next_cursor: String(next) }),
     links,
+    ...(unconfirmed.length > 0 && { unconfirmed_removals: unconfirmed }),
     ...(auditRows > 0 && { audit: await readAudit(auditRows) }),
   };
 }

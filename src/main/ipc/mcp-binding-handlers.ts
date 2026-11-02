@@ -35,11 +35,11 @@ import {
   listSoleOwnedPairs,
 } from '../services/persisted-bindings';
 import { canvasWireBindingSource } from '../services/canvas-wire-source';
-import { MCP_UNBIND_CANVAS_CLEANUP } from '../../shared/mcp-unbind';
+import { MCP_UNBIND_CANVAS_CLEANUP, type McpUnbindResult } from '../../shared/mcp-unbind';
 import { helperWireBindingSource, watchHelperWires } from '../services/helper-wire-source';
 import { ORCHESTRATOR_CONNECTION_SOURCE_ID, orchestratorConnectionSource, watchOrchestratorConnections } from '../services/orchestrator-connections';
 import { dispatcherWireBindingSource, watchDispatcherWires } from '../services/dispatcher-wire-source';
-import { dispatcherConnectionSource, listDispatcherLinksForUser, watchDispatcherConnections } from '../services/dispatcher-connections';
+import { dispatcherConnectionSource, isRemovalUnsaved, listDispatcherLinksForUser, watchDispatcherConnections } from '../services/dispatcher-connections';
 import { broadcastToAllWindows } from '../util/ipc-broadcast';
 import { withValidatedArgs, stringArg, objectArg, arrayArg } from './validation';
 
@@ -172,7 +172,7 @@ export function registerMcpBindingHandlers(): void {
 
   ipcMain.handle(IPC.MCP_BINDING.UNBIND, withValidatedArgs(
     [stringArg(), stringArg(), stringArg({ optional: true })],
-    (event, agentId, targetId, cause): { kept: boolean } => {
+    (event, agentId, targetId, cause): McpUnbindResult | Promise<McpUnbindResult> => {
       assertCallerIsAppWindow(event);
       assertNotPluginBinding(agentId as string, targetId as string);
       // Canvas cleanup (a card or canvas tab closed, a zone member left) only
@@ -192,7 +192,8 @@ export function registerMcpBindingHandlers(): void {
       // bring this back from a store whose save hasn't landed yet.
       markBindingRemovedByUser(agentId as string, targetId as string);
       appLog('core:mcp', 'info', 'Binding removed', { meta: { agentId, targetId } });
-      return { kept: false };
+      return isRemovalUnsaved({ agentId: agentId as string, targetId: targetId as string })
+        .then((removalNotSaved) => ({ kept: false, ...(removalNotSaved && { removalNotSaved }) }));
     },
   ));
 
