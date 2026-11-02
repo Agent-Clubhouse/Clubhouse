@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { EventEmitter } from 'events';
 import http from 'http';
 import net from 'net';
+import { PassThrough } from 'stream';
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
@@ -1651,6 +1652,14 @@ describe('annex-server', () => {
       expect(peers.get('mobile-test-identity')?.tlsCertificateFingerprint).toBe(new crypto.X509Certificate(credentials.cert).fingerprint256);
       const capability = await secureRequest('GET', '/api/v1/mobile/capabilities', undefined);
       expect(capability.body.controlAvailable).toBe(true);
+      // A refusal is logged by code and known type, never with the command's contents (#2676).
+      const marker = 'CONTENT_MARKER';
+      const refused = await secureRequest('POST', '/api/v1/mobile/commands', { version: 1, epoch: capability.body.epoch, commandId: 'too-long', type: 'chat.question', agentId: 'a', sessionId: 's', requestId: 'q', answers: { [marker.padEnd(65537, 'x')]: marker } });
+      expect(refused).toMatchObject({ status: 400, body: { error: { code: 'invalid_command' } } });
+      expect(appLog).toHaveBeenCalledWith('core:annex', 'warn', 'Mobile command refused', { meta: { code: 'invalid_command', status: 400, type: 'chat.question' } });
+      await secureRequest('POST', '/api/v1/mobile/commands', [marker]);
+      expect(appLog).toHaveBeenCalledWith('core:annex', 'warn', 'Mobile command refused', { meta: { code: 'invalid_command', status: 400, type: 'unknown' } });
+      expect(JSON.stringify(vi.mocked(appLog).mock.calls)).not.toContain(marker);
       // A paired phone learns the routes it can use (pairingHosts orders LAN before Tailscale);
       // this server is bound to loopback, so that is its only one.
       expect(capability.body.routes).toEqual({ hosts: ['127.0.0.1'], port: status.port });
@@ -2692,6 +2701,21 @@ describe('annex-server', () => {
   // -------------------------------------------------------------------------
 
   describe('readBody error handling', () => {
+    it('reads a body of exactly 1 MiB and drops the connection one byte past it', async () => {
+      const LIMIT = 1024 * 1024;
+      const fed = (size: number) => {
+        const stream = new PassThrough();
+        const result = annexServer._testing.readBody(stream as unknown as http.IncomingMessage);
+        stream.write(Buffer.alloc(size - 1, 'a'));
+        stream.end(Buffer.alloc(1, 'a'));
+        return { stream, result };
+      };
+      expect(await fed(LIMIT).result).toHaveLength(LIMIT);
+      const over = fed(LIMIT + 1);
+      await expect(over.result).rejects.toThrow('Body exceeded maximum allowed size');
+      expect(over.stream.destroyed).toBe(true);
+    });
+
     /**
      * Helper: opens a raw TCP socket, sends headers for a POST with a
      * declared Content-Length, then destroys the socket before sending

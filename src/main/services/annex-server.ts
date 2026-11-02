@@ -7,7 +7,7 @@ import * as os from 'os';
 import { randomInt, randomUUID, timingSafeEqual } from 'crypto';
 import { WebSocketServer, WebSocket } from 'ws';
 import * as annexTls from './annex-tls';
-import { MOBILE_COMMAND_TYPES, type AnnexAgentUpdate, type MobileCommand } from '../../shared/mobile-control';
+import { MOBILE_COMMAND_TYPES, type AnnexAgentUpdate, type MobileCommand, type MobileResponse } from '../../shared/mobile-control';
 import { applyProjectStateChange, getProjectState, isProjectStateReady, onProjectStateChange } from './project-state-store';
 import { isProjectIdle } from '../../shared/project-state';
 import { applyFinishedQuickAgentChange, getFinishedQuickAgents, isFinishedQuickAgentsReady, onFinishedQuickAgentsChange } from './finished-quick-agents-store';
@@ -3041,12 +3041,23 @@ async function handleMobileCommandRoute(ctx: AnnexRouteContext): Promise<void> {
         || (current.role && current.role !== 'controller')) throw new MobileControlError('authorization_revoked', 403);
     };
     const response = await mobileCommands.execute(principal, input, (command) => runMobileCommand(command, assertAuthorized, principal!));
+    logRefusedMobileCommand(response, input);
     sendJson(ctx.res, response.statusCode, response.body);
   } catch {
-    // telemetry-exempt: invalid JSON/body is reported to the caller without logging its content.
+    // telemetry-exempt: invalid JSON/body is reported to the caller and logged by code, without its content.
     const response = mobileCommands.reject('invalid_command', 400);
+    logRefusedMobileCommand(response);
     sendJson(ctx.res, response.statusCode, response.body);
   }
+}
+
+/** A refusal's code, status and known command type, so a phone's failure can be told apart afterwards. Never the command's contents. */
+function logRefusedMobileCommand(response: MobileResponse, input?: unknown): void {
+  if (response.statusCode < 400) return;
+  const type = (input as { type?: unknown } | null | undefined)?.type;
+  appLog('core:annex', 'warn', 'Mobile command refused', {
+    meta: { code: response.body.error?.code, status: response.statusCode, type: (MOBILE_COMMAND_TYPES as readonly unknown[]).includes(type) ? type : 'unknown' },
+  });
 }
 
 /**
