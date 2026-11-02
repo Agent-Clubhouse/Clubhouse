@@ -3057,6 +3057,41 @@ async function runMobileCommand(command: MobileCommand, assertAuthorized: () => 
   } finally { finishMobileStart(command.agentId, starting); }
 }
 
+/** How much of a refused upload is discarded, and for how long, so the client gets to read its 413. */
+const OVERSIZED_COMMAND_DRAIN_BYTES = 16 * 1024 * 1024;
+const OVERSIZED_COMMAND_DRAIN_MS = 10_000;
+
+/**
+ * Refuses a body over the limit. It can't be parsed, so the answer has no
+ * commandId and no receipt is kept. Ending the response closes the socket, and
+ * closing on unread upload bytes can reset the connection and lose the answer,
+ * so the answer goes out now and the response ends once the upload is over or a bound is hit.
+ */
+function refuseOversizedMobileCommand(req: http.IncomingMessage, res: http.ServerResponse): void {
+  const response = mobileCommands.reject('too_large', 413);
+  logRefusedMobileCommand(response);
+  const json = JSON.stringify(response.body);
+  res.writeHead(response.statusCode, { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(json), Connection: 'close' });
+  res.write(json);
+  let discarded = 0;
+  const finish = () => {
+    clearTimeout(timer);
+    req.off('data', discard);
+    req.off('end', finish);
+    req.off('close', finish);
+    res.end();
+  };
+  const discard = (chunk: Buffer) => {
+    discarded += chunk.length;
+    if (discarded > OVERSIZED_COMMAND_DRAIN_BYTES) finish();
+  };
+  const timer = setTimeout(finish, OVERSIZED_COMMAND_DRAIN_MS);
+  req.on('data', discard);
+  req.on('end', finish);
+  req.on('close', finish);
+  req.resume();
+}
+
 async function handleMobileCommandRoute(ctx: AnnexRouteContext): Promise<void> {
   // Mobile requires pinned mTLS even on the legacy HTTP fallback listener.
   if (!ctx.mobilePrincipal) {
@@ -3064,7 +3099,7 @@ async function handleMobileCommandRoute(ctx: AnnexRouteContext): Promise<void> {
     sendJson(ctx.res, response.statusCode, response.body); return;
   }
   try {
-    const input: unknown = JSON.parse(await readBody(ctx.req));
+    const input: unknown = JSON.parse((await readCappedBody(ctx.req, MAX_BODY_SIZE)).toString());
     // A peer can be revoked while its body is streaming; recheck before execution.
     const peer = findPairedPeer(ctx.mobilePrincipal);
     const principal = peer && (peer.role === 'controller' || !peer.role)
@@ -3080,7 +3115,8 @@ async function handleMobileCommandRoute(ctx: AnnexRouteContext): Promise<void> {
     const response = await mobileCommands.execute(principal, input, (command) => runMobileCommand(command, assertAuthorized, principal!));
     logRefusedMobileCommand(response, input);
     sendJson(ctx.res, response.statusCode, response.body);
-  } catch {
+  } catch (err) {
+    if (err instanceof MobileUploadError && err.code === 'too_large') { refuseOversizedMobileCommand(ctx.req, ctx.res); return; }
     // telemetry-exempt: invalid JSON/body is reported to the caller and logged by code, without its content.
     const response = mobileCommands.reject('invalid_command', 400);
     logRefusedMobileCommand(response);
