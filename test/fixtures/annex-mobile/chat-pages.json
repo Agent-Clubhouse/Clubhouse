@@ -1,0 +1,232 @@
+{
+  "byBytes": {
+    "body": {
+      "agentId": "durable_chat",
+      "canStart": false,
+      "capabilities": "<omitted>",
+      "chatControls": "<omitted>",
+      "contentAnyPath": true,
+      "contentRoots": [
+        "/work/app/.clubhouse/agents/planner",
+        "/work/app"
+      ],
+      "currentSessionId": "sess_live",
+      "epoch": "<epoch>",
+      "events": "<15 events>",
+      "lastSeq": 229,
+      "nextBeforeSeq": "<the oldest seq shown>",
+      "pendingPermissions": [],
+      "pendingQuestions": [],
+      "queueRemovalSupported": true,
+      "queueStateSeq": 11,
+      "queuedMessageIds": [
+        "msg_q"
+      ],
+      "readOnly": false,
+      "sessionId": "sess_live",
+      "slashCommands": "<omitted>",
+      "state": "waiting_permission",
+      "truncated": true,
+      "version": 1
+    },
+    "status": 200
+  },
+  "minimal": {
+    "body": {
+      "agentId": "durable_chat",
+      "canStart": false,
+      "capabilities": "<omitted>",
+      "chatControls": "<omitted>",
+      "contentAnyPath": true,
+      "contentRoots": [
+        "/work/app/.clubhouse/agents/planner",
+        "/work/app"
+      ],
+      "currentSessionId": "sess_live",
+      "epoch": "<epoch>",
+      "events": "<300 events>",
+      "lastSeq": 399,
+      "nextBeforeSeq": null,
+      "pendingPermissionCount": 300,
+      "pendingPermissions": [
+        {
+          "agentId": "durable_chat",
+          "data": {
+            "description": "Incomplete input: this request is too large to show in full here. Review it on the desktop to approve it. You can still deny it here. Write file 0",
+            "options": [
+              {
+                "kind": "reject_once",
+                "label": "Deny",
+                "optionId": "deny"
+              }
+            ],
+            "requestId": "perm_big_0",
+            "title": "Write file 0",
+            "toolName": "Write",
+            "truncated": {
+              "originalBytes": 307400
+            }
+          },
+          "seq": 100,
+          "sessionId": "sess_live",
+          "ts": 1800000040000,
+          "type": "permission_request",
+          "v": 2
+        }
+      ],
+      "pendingQuestions": [],
+      "queueRemovalSupported": true,
+      "queueStateSeq": 11,
+      "queuedMessageIds": [
+        "msg_q"
+      ],
+      "readOnly": false,
+      "sessionId": "sess_live",
+      "slashCommands": "<omitted>",
+      "state": "waiting_permission",
+      "truncated": false,
+      "version": 1
+    },
+    "status": 200
+  },
+  "note": "Bodies are shortened to what shows the rule. A 503 leaves a phone read-only until a refresh works.",
+  "omittedQuestion": {
+    "event": {
+      "agentId": "durable_chat",
+      "data": {
+        "code": "event_omitted",
+        "level": "info",
+        "message": "A question here is too large to show. It's on the desktop.",
+        "omitted": {
+          "originalBytes": 9437385,
+          "requestId": "q_big",
+          "type": "question"
+        }
+      },
+      "seq": 300,
+      "sessionId": "sess_live",
+      "ts": 1800000240000,
+      "type": "notice",
+      "v": 2
+    },
+    "note": "A question in history too large for any page. Not pending, so nothing to answer."
+  },
+  "overflow": {
+    "body": {
+      "error": "pending_overflow",
+      "message": "A pending request is too large to show here. Review it on the desktop.",
+      "pendingCount": 1
+    },
+    "status": 503
+  },
+  "queuedRow": {
+    "firstEvents": [
+      {
+        "data": {
+          "content": [
+            {
+              "text": "Then run the tests.",
+              "type": "text"
+            }
+          ],
+          "delivery": "queued",
+          "messageId": "msg_q"
+        },
+        "seq": 4,
+        "type": "user_message"
+      },
+      {
+        "seq": 215,
+        "type": "notice"
+      }
+    ],
+    "nextBeforeSeq": "<the seq of the second event>",
+    "note": "A row named by queuedMessageIds, in front of a tail that does not reach it. nextBeforeSeq does not count it.",
+    "queuedMessageIds": [
+      "msg_q"
+    ]
+  },
+  "queuedRowShortened": {
+    "event": {
+      "agentId": "durable_chat",
+      "data": {
+        "content": [
+          {
+            "text": "tttttttttttttttttttttttttttttttttttttttt<shortened here>",
+            "type": "text"
+          }
+        ],
+        "contentBlocks": 10,
+        "delivery": "queued",
+        "messageId": "msg_q",
+        "source": "user",
+        "truncated": {
+          "originalBytes": 3072442
+        }
+      },
+      "seq": 4,
+      "sessionId": "sess_live",
+      "ts": 1799999944000,
+      "type": "user_message",
+      "v": 2
+    },
+    "note": "Beside a question that leaves little room. Only its text is shortened: its ids, source, delivery, every block and part stay. Too little room for this, and the answer is a 503.",
+    "status": 200
+  },
+  "smallestForms": {
+    "note": "Fold these as usual. Empty answers with truncated still means answered. A queue_state or anything without a form here makes the page a 503.",
+    "permissionResolved": {
+      "agentId": "durable_chat",
+      "data": {
+        "by": "user",
+        "decision": "deny",
+        "requestId": "perm_old",
+        "truncated": {
+          "originalBytes": 409789
+        }
+      },
+      "seq": 40,
+      "sessionId": "sess_live",
+      "ts": 1799999980000,
+      "type": "permission_resolved",
+      "v": 2
+    },
+    "questionResolved": {
+      "agentId": "durable_chat",
+      "data": {
+        "answers": {},
+        "requestId": "q_old",
+        "truncated": {
+          "originalBytes": 409763
+        }
+      },
+      "seq": 40,
+      "sessionId": "sess_live",
+      "ts": 1799999980000,
+      "type": "question_resolved",
+      "v": 2
+    },
+    "userMessage": {
+      "agentId": "durable_chat",
+      "data": {
+        "content": [
+          {
+            "text": "mmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmm\n[Clubhouse: 409357 bytes of this output are omitted here. Open it on the desktop for all of it.]\nmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmm",
+            "type": "text"
+          }
+        ],
+        "delivery": "prompt",
+        "messageId": "msg_old",
+        "source": "user",
+        "truncated": {
+          "originalBytes": 409811
+        }
+      },
+      "seq": 40,
+      "sessionId": "sess_live",
+      "ts": 1799999980000,
+      "type": "user_message",
+      "v": 2
+    }
+  }
+}

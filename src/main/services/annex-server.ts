@@ -72,6 +72,8 @@ import { injectPtyText } from './agent-runtime/pty-input';
 import { AgentStoppingError } from './agent-runtime/agent-stopping';
 import { spawnAgent, killAgent, getAvailableOrchestrators, isHeadlessAgent, resolveOrchestrator, resolveProfileEnv } from './agent-system';
 import { appLog } from './log-service';
+import { buildChatPage } from './annex-chat-pages';
+import { forgetAppendedNotes, MOBILE_PERSISTENT_APPROVALS, OUTER_TOOL_INPUT_MAX_BYTES, PERMISSION_INPUT_MAX_BYTES, boundChatEvent, boundToolInput, toolInputSizeBucket } from './annex-chat-bounds';
 import { ICON_TEMPORARILY_UNAVAILABLE, readIconImage, type IconImage } from './icon-images';
 
 /**
@@ -102,7 +104,9 @@ import {
   recordBroadcast,
   recordClients,
   recordControlDenied,
+  recordChatPageOverflow,
   recordFrameOverLimit,
+  recordToolInputSize,
   recordPairServed,
   recordReplay,
   recordServerStarted,
@@ -1052,7 +1056,7 @@ function assembleSnapshot(sources: SnapshotSources): BuiltSnapshot {
     theme: getThemeColors(),
     terminalColors: getTerminalColors(),
     orchestrators: getOrchestratorsMap(),
-    pendingPermissions: permissionQueue.listPending(),
+    pendingPermissions: permissionQueue.listPending().map((pending) => ({ ...pending, ...boundToolInput(pending.toolInput) })),
     // Helper starts and disposes waiting on the user (#159); gated by capabilities.helperRequests.
     helperRequests: buildMobileHelperRequests(projects, durablesByProject),
     // Moves when presets or a cell's state change, so an open or cached page knows to refetch (#2671).
@@ -1133,6 +1137,11 @@ function noteFrameSize(data: string, type?: string): void {
  * isn't here because it has its own limits, in snapshotFrame.
  */
 const FRAME_FALLBACKS: Readonly<Record<string, (message: { payload: Record<string, unknown> }) => object>> = {
+  // Replay and anything else sending one that didn't start in broadcastAndBuffer.
+  'chat:event': (message) => {
+    const { event } = message.payload as { event: ChatEvent };
+    return { ...message, payload: { ...message.payload, event: boundChatEvent(event, Buffer.byteLength(JSON.stringify(event))) } };
+  },
   // readBoundedPtyBuffer stops this first. An empty ack would read as a real, blank terminal.
   'pty:attach:ack': (message) => ({ type: 'error', payload: { message: TERMINAL_UNAVAILABLE, op: 'pty:attach', agentId: message.payload.agentId } }),
 };
@@ -1442,9 +1451,44 @@ function broadcastFrame(type: string, frame: string, form?: SnapshotForm): numbe
 /** Broadcast a message and push it to the replay buffer. */
 function broadcastAndBuffer(type: string, payload: unknown, context?: string): void {
   const tc = validatedTraceparent(type === 'chat:event' ? context : context ?? currentRequestTraceparent());
-  const seq = eventReplay.pushEvent(type, payload, tc);
-  const message = { type, payload, seq, ...(tc && { tc }) };
-  broadcastWs(message);
+  // Serialized once, here, because a frame's size decides what's kept for replay as well as what's sent.
+  const { payload: bounded, json } = boundEventPayload(type, payload);
+  const seq = eventReplay.pushEvent(type, bounded, tc, Buffer.byteLength(json));
+  broadcastFrame(type, `{"type":${JSON.stringify(type)},"payload":${json},"seq":${seq}${tc ? `,"tc":${JSON.stringify(tc)}` : ''}}`);
+}
+
+/** An event's payload as Annex keeps and sends it, and that as JSON. Most pass through unchanged. */
+function boundEventPayload(type: string, payload: unknown): { payload: unknown; json: string } {
+  const json = JSON.stringify(payload) ?? 'null';
+  if (type === 'chat:event' && (payload as { event?: ChatEvent }).event?.type === 'permission_request') {
+    recordToolInputSize(toolInputSizeBucket(Buffer.byteLength(json)));
+  }
+  // A character is at most three UTF-8 bytes, so most events skip the count.
+  if (json.length * 3 <= OUTER_TOOL_INPUT_MAX_BYTES) return { payload, json };
+  if (type === 'hook:event') {
+    const hook = payload as { event: AgentHookEvent };
+    const input = boundToolInput(hook.event.toolInput);
+    if (!input.toolInputTruncated) return { payload, json };
+    recordFrameOverLimit(type, 'fallback');
+    const next = { ...hook, event: { ...hook.event, ...input } };
+    return { payload: next, json: JSON.stringify(next) };
+  }
+  if (type === 'permission:request') {
+    const request = payload as { toolInput?: Record<string, unknown> };
+    const input = boundToolInput(request.toolInput);
+    if (!input.toolInputTruncated) return { payload, json };
+    recordFrameOverLimit(type, 'fallback');
+    const next = { ...request, ...input };
+    return { payload: next, json: JSON.stringify(next) };
+  }
+  if (type !== 'chat:event' || json.length * 3 <= PERMISSION_INPUT_MAX_BYTES) return { payload, json };
+  const bytes = Buffer.byteLength(json);
+  const { agentId, event } = payload as { agentId: string; event: ChatEvent };
+  const bounded = boundChatEvent(event, bytes);
+  if (bounded === event) return { payload, json };
+  recordFrameOverLimit(type, 'fallback');
+  const next = { agentId, event: bounded };
+  return { payload: next, json: JSON.stringify(next) };
 }
 
 // ---------------------------------------------------------------------------
@@ -1975,6 +2019,13 @@ function handlePermissionResponse(
 
   if (!requestId) {
     sendJson(res, 400, { error: 'missing_request_id' });
+    return;
+  }
+
+  // A frame this came from left out most of a large input, so it can't be approved from here.
+  const queued = permissionQueue.listPending().find((p) => p.requestId === requestId);
+  if (decision === 'allow' && queued && boundToolInput(queued.toolInput).toolInputTruncated) {
+    sendJson(res, 409, { error: 'incomplete_representation' });
     return;
   }
 
@@ -2959,7 +3010,7 @@ async function handleMobileCapabilitiesRoute(ctx: AnnexRouteContext): Promise<vo
     // The composer's / menu: a live chat snapshot's `slashCommands`, updated by `commands_available` events.
     slashCommands: { version: 1, snapshotField: 'slashCommands', event: 'commands_available', maxCommands: MOBILE_SLASH_COMMANDS_MAX },
     // A paired phone has full control (#2462): persistent approvals and Free Agent Mode, as on the desktop.
-    permissions: { version: 1, persistentApprovals: true, freeAgentMode: true },
+    permissions: { version: 1, persistentApprovals: MOBILE_PERSISTENT_APPROVALS, freeAgentMode: true },
     // Durable agents' `orchestration` in the catalog and settings; agent.create and agent.update take it (#2228).
     orchestration: { version: 1 },
     idempotency: { scope: 'peer-and-epoch', maxEntries: MOBILE_COMMAND_MAX_ENTRIES, ttlMs: MOBILE_COMMAND_TTL_MS },
@@ -3081,28 +3132,39 @@ async function handleMobileChatRoute(ctx: AnnexRouteContext, match: RegExpMatchA
     live = live && getAgentRuntime(agentId) === runtime && runtime.isRunning() && runtime.getSessionId?.() === sessionId;
     const current = events.filter((e) => e.sessionId === sessionId);
     const eligible = beforeSeq === undefined ? current : current.filter((e) => e.seq < beforeSeq);
-    const page = eligible.slice(-limit);
     // The agent's folders (#2457): relative paths resolve against the first. Older phones
     // link only absolute paths under them; `contentAnyPath` says any readable path is served (#2478).
     const richContent = getExperimentalSettings().richChatContent === true;
     const contentRoots = richContent ? await agentFolders(agentId).catch((): string[] => []) : [];
-    sendJson(ctx.res, 200, {
-      version: 1, epoch: mobileCommands.epoch, agentId, sessionId: sessionId ?? null,
-      canStart: !!durable && !isAgentRunning(agentId) && !mobileStartingAgents.has(agentId),
-      currentSessionId: runtime?.kind === 'chat' ? runtime.getSessionId?.() ?? null : null, readOnly: !live,
-      state: live ? runtime.getState() : 'sleeping', capabilities: live ? runtime.getCapabilities?.() ?? null : null,
-      events: page.map(remoteChatEvent), lastSeq: current[current.length - 1]?.seq ?? 0, truncated: eligible.length > limit,
-      nextBeforeSeq: eligible.length > limit ? page[0]?.seq ?? null : null,
-      contentRoots,
-      contentAnyPath: richContent,
-      ...(live ? runtime.getQueueState?.() ?? { queuedMessageIds: [], queueStateSeq: 0, queueRemovalSupported: false }
-        : { queuedMessageIds: [], queueStateSeq: 0, queueRemovalSupported: false }),
-      ...(live ? pendingInteractions(current) : { pendingPermissions: [], pendingQuestions: [] }),
-      // The composer's level, model and effort pills, for chat.setLevel / chat.setModel (#2462).
-      chatControls: live ? chatControls(current, runtime.getCapabilities?.()) : null,
-      // The composer's / menu; a page may not reach back to the session's commands_available.
-      slashCommands: live ? latestSlashCommands(current) : null,
+    const pending = live ? pendingInteractions(current) : { pendingPermissions: [], pendingQuestions: [] };
+    const page = buildChatPage({
+      eligible,
+      limit,
+      pendingPermissions: pending.pendingPermissions,
+      pendingQuestions: pending.pendingQuestions,
+      metadata: {
+        version: 1, epoch: mobileCommands.epoch, agentId, sessionId: sessionId ?? null,
+        canStart: !!durable && !isAgentRunning(agentId) && !mobileStartingAgents.has(agentId),
+        currentSessionId: runtime?.kind === 'chat' ? runtime.getSessionId?.() ?? null : null, readOnly: !live,
+        state: live ? runtime.getState() : 'sleeping', capabilities: live ? runtime.getCapabilities?.() ?? null : null,
+        lastSeq: current[current.length - 1]?.seq ?? 0,
+        contentRoots,
+        contentAnyPath: richContent,
+        ...(live ? runtime.getQueueState?.() ?? { queuedMessageIds: [], queueStateSeq: 0, queueRemovalSupported: false }
+          : { queuedMessageIds: [], queueStateSeq: 0, queueRemovalSupported: false }),
+        // The composer's level, model and effort pills, for chat.setLevel / chat.setModel (#2462).
+        chatControls: live ? chatControls(current, runtime.getCapabilities?.()) : null,
+        // The composer's / menu; a page may not reach back to the session's commands_available.
+        slashCommands: live ? latestSlashCommands(current) : null,
+      },
     });
+    if (page.stage !== 'whole') recordChatPageOverflow(page.stage);
+    if (page.ok === false) {
+      sendJson(ctx.res, 503, page.failure);
+      return;
+    }
+    ctx.res.writeHead(200, { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(page.body) });
+    ctx.res.end(page.body);
   } catch {
     // telemetry-exempt: do not export transcript content; caller receives a bounded error.
     sendJson(ctx.res, 500, { error: 'chat_snapshot_failed' });
@@ -4312,6 +4374,7 @@ export function start(): void {
 
   unsubChatEvent = onChatEvent((event) => {
     noteAgentActivity(event.agentId, event.ts);
+    if (event.type === 'session_ended') forgetAppendedNotes(event.agentId, event.sessionId);
     // Remote clients never get desktop paths or inline image bytes (#2453).
     broadcastAndBuffer('chat:event', { agentId: event.agentId, event: remoteChatEvent(event) }, chatEventTraceparent(event));
     pushChatStatus(event);

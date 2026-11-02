@@ -2305,6 +2305,224 @@ describe('Annex mobile contract fixtures', { timeout: TEST_TIMEOUT_MS }, () => {
     if (W.iconDir) fs.rmSync(W.iconDir, { recursive: true, force: true });
   });
 
+  it('large tool output: a preview, live and on replay', async () => {
+    const ws = await connect();
+    ws.send.mockClear();
+    publishChatEvent({ v: 1, type: 'tool_call_update', agentId: 'durable_chat', sessionId: 'session_fixture', seq: 99, ts: NOW, data: {
+      toolCallId: 'call_large', status: 'completed', durationMs: 1200, contentMode: 'append',
+      content: [{ type: 'terminal', command: 'cat big.log', output: `first line\n${'x'.repeat(40)}\n`.repeat(1).concat(`${'filler line\n'.repeat(200_000)}last line\n`), exitCode: 0 }],
+      rawOutput: { stdout: 'y'.repeat(2 * 1024 * 1024) },
+    } } as never);
+    const frame = frames(ws).find((f) => f.type === 'chat:event');
+    expect(frame.payload.event.data).toMatchObject({ toolCallId: 'call_large', status: 'completed', contentMode: 'replace' });
+    expect(frame.payload.event.data).not.toHaveProperty('rawOutput');
+    // The middle of a filler log, so the file stays readable. It's still the shape on the wire.
+    const output = frame.payload.event.data.content[0].output as string;
+    const note = output.match(/\[Clubhouse: .*\]/)![0];
+    fixtures.set('chat-event-tool-output-preview.json', {
+      direction: 'desktop-to-phone',
+      note: 'Over 1 MiB. The filler in output and originalBytes are shortened here; the note between the start and end is what a phone draws.',
+      frame: { ...frame, seq: 1000, payload: { ...frame.payload, event: { ...frame.payload.event, data: {
+        ...frame.payload.event.data,
+        truncated: { originalBytes: 4577777 },
+        content: [{ ...frame.payload.event.data.content[0], output: `first line\n\n${note.replace(/\d+ bytes/, '4000000 bytes')}\nlast line\n` }],
+      } } } },
+    });
+  }, TEST_TIMEOUT_MS);
+
+
+  it('large permission requests: preview, refused approve, deny', async () => {
+    const big = { ...LIVE_TRANSCRIPT.find((e) => e.type === 'permission_request')! };
+    const large = { ...big, data: { ...(big as any).data, title: 'Write big.ts', description: 'big.ts', toolName: 'Write', rawInput: { file_path: '/work/app/big.ts', content: 'c'.repeat(300 * 1024) } } };
+    registerChatRuntime(chatRuntime('durable_chat', 'sess_live', CHAT_CAPS, [...LIVE_TRANSCRIPT.filter((e) => e !== big), large as never], true) as never);
+    const chat = { agentId: 'durable_chat', sessionId: 'sess_live' };
+
+    const snapshot = await exchange('GET', '/api/v1/mobile/agents/durable_chat/chat');
+    const [pending] = (snapshot.response.body as { pendingPermissions: any[] }).pendingPermissions;
+    expect(pending.data.description.startsWith('Incomplete input:')).toBe(true);
+    expect(pending.data.content[0].text.startsWith('Incomplete input:')).toBe(true);
+
+    const approve = await send('POST', '/api/v1/mobile/commands', { version: 1, epoch, commandId: 'cmd_incomplete_allow', type: 'chat.permission', ...chat, requestId: 'perm_1', optionId: 'allow' });
+    expect(approve.status).toBe(409);
+    expect(approve.body).toMatchObject({ status: 'rejected', error: { code: 'incomplete_representation' } });
+    const deny = await send('POST', '/api/v1/mobile/commands', { version: 1, epoch, commandId: 'cmd_incomplete_deny', type: 'chat.permission', ...chat, requestId: 'perm_1', optionId: PERMISSION_OPTIONS.find((o) => o.kind.startsWith('reject'))!.optionId });
+    expect(deny.status).toBe(200);
+
+    const preview = pending.data.content[0].text as string;
+    const ws = await connect();
+    ws.send.mockClear();
+    publishChatEvent(envelope(101, 'tool_call', { toolCallId: 'call_write', kind: 'edit', title: 'Write big.ts', status: 'pending', toolName: 'Write',
+      locations: [{ path: '/work/app/big.ts', line: 1 }],
+      rawInput: { file_path: '/work/app/big.ts', content: 'c'.repeat(300 * 1024) } }) as never);
+    const toolCall = frames(ws).find((f) => f.type === 'chat:event');
+    expect(toolCall.payload.event.data.rawInput).toEqual({ file_path: '/work/app/big.ts' });
+    expect(toolCall.payload.event.data.locations).toEqual([{ path: '/work/app/big.ts', line: 1 }]);
+    expect(toolCall.payload.event.data.content[0].text).toMatch(/this is a preview/);
+    fixtures.set('chat-event-tool-call-preview.json', {
+      direction: 'desktop-to-phone',
+      note: 'A tool_call over 256 KiB keeps its id, title, kind, status and locations. rawInput has only small plain fields. 147 ignores truncated, so content leads with a note, which it shows when the card is opened. originalBytes is pinned here.',
+      frame: { ...toolCall, seq: 1000, payload: { ...toolCall.payload, event: { ...toolCall.payload.event, data: { ...toolCall.payload.event.data, truncated: { originalBytes: 307400 } } } } },
+    });
+
+    fixtures.set('chat-permission-incomplete.json', {
+      note: 'Over 256 KiB. The middle of the preview is shortened here. The warning leads description and content; approve is refused and deny works.',
+      pendingPermission: { ...pending, data: { ...pending.data, truncated: { originalBytes: 307543 }, content: [{ type: 'text', text: `${preview.slice(0, preview.indexOf('\n\n'))}\n\n{\n  "file_path": "/work/app/big.ts",\n  "content": "ccc…"\n}` }] } },
+      approve: { request: { type: 'chat.permission', requestId: 'perm_1', optionId: 'allow' }, response: { status: approve.status, body: { ...approve.body, epoch: '<epoch>', commandId: '<commandId>' } } },
+      deny: { status: deny.status, body: { ...deny.body, epoch: '<epoch>', commandId: '<commandId>' } },
+    });
+    registerChatRuntime(chatRuntime('durable_chat', 'sess_live', CHAT_CAPS, LIVE_TRANSCRIPT, true) as never);
+  }, TEST_TIMEOUT_MS);
+
+
+  it('refuses approve through a real command when the options have changed since the phone was sent them', async () => {
+    const chat = { agentId: 'durable_chat', sessionId: 'sess_live' };
+    const runtime = chatRuntime('durable_chat', 'sess_live', CHAT_CAPS, LIVE_TRANSCRIPT, true);
+    const allow = PERMISSION_OPTIONS.find((o) => o.kind.startsWith('allow'))!;
+    const deny = PERMISSION_OPTIONS.find((o) => o.kind.startsWith('reject'))!;
+    registerChatRuntime({
+      ...runtime,
+      getPendingPermissionOptions: (id: string) => (id === 'perm_1' ? [...PERMISSION_OPTIONS, { optionId: 'added', kind: 'allow_always', label: 'Allow everything' }] : undefined),
+    } as never);
+
+    const approve = await send('POST', '/api/v1/mobile/commands', { version: 1, epoch, commandId: 'cmd_changed_allow', type: 'chat.permission', ...chat, requestId: 'perm_1', optionId: allow.optionId });
+    expect(approve.status).toBe(409);
+    expect(approve.body).toMatchObject({ status: 'rejected', error: { code: 'incomplete_representation' } });
+
+    const denied = await send('POST', '/api/v1/mobile/commands', { version: 1, epoch, commandId: 'cmd_changed_deny', type: 'chat.permission', ...chat, requestId: 'perm_1', optionId: deny.optionId });
+    expect(denied.status).toBe(200);
+    registerChatRuntime(runtime as never);
+  }, TEST_TIMEOUT_MS);
+
+
+  it('does not offer a deny a request does not have', async () => {
+    const chat = { agentId: 'durable_chat', sessionId: 'sess_live' };
+    const big = LIVE_TRANSCRIPT.find((e) => e.type === 'permission_request')! as any;
+    const allowOnly = PERMISSION_OPTIONS.filter((o) => o.kind.startsWith('allow'));
+    const large = { ...big, data: { ...big.data, requestId: 'perm_1', options: allowOnly, rawInput: { content: 'c'.repeat(300 * 1024) } } };
+    const runtime = chatRuntime('durable_chat', 'sess_live', CHAT_CAPS, [...LIVE_TRANSCRIPT.filter((e) => e !== big), large as never], true);
+    registerChatRuntime({ ...runtime, getPendingPermissionOptions: () => allowOnly } as never);
+
+    const snapshot = await exchange('GET', '/api/v1/mobile/agents/durable_chat/chat');
+    const [pending] = (snapshot.response.body as { pendingPermissions: any[] }).pendingPermissions;
+    expect(pending.data.description).not.toMatch(/deny/i);
+    const approve = await send('POST', '/api/v1/mobile/commands', { version: 1, epoch, commandId: 'cmd_no_deny_allow', type: 'chat.permission', ...chat, requestId: 'perm_1', optionId: allowOnly[0].optionId });
+    expect(approve.status).toBe(409);
+    expect(approve.body.error.message).toBe('This request is too large to review here. Review it on the desktop.');
+    registerChatRuntime(chatRuntime('durable_chat', 'sess_live', CHAT_CAPS, LIVE_TRANSCRIPT, true) as never);
+  }, TEST_TIMEOUT_MS);
+
+
+  it('chat pages: bounded on bytes, and pending all or nothing', async () => {
+    const chat = (agentEvents: ChatEvent[]) => registerChatRuntime(chatRuntime('durable_chat', 'sess_live', CHAT_CAPS, agentEvents, true) as never);
+    const route = '/api/v1/mobile/agents/durable_chat/chat';
+    const options = [{ optionId: 'allow', kind: 'allow_once', label: 'Allow' }, { optionId: 'deny', kind: 'reject_once', label: 'Deny' }];
+    const permission = (i: number, input = 300 * 1024) => envelope(100 + i, 'permission_request', { requestId: `perm_big_${i}`, title: `Write file ${i}`, toolName: 'Write', options, rawInput: { file_path: `/work/${i}`, content: 'c'.repeat(input) } });
+    const shorten = (body: any) => ({ ...body, chatControls: '<omitted>', capabilities: '<omitted>', slashCommands: '<omitted>', events: `<${body.events.length} events>`, epoch: '<epoch>', pendingPermissions: body.pendingPermissions.slice(0, 2) });
+
+    // The tail runs out of room before it runs out of events.
+    const large = Array.from({ length: 30 }, (_, i) => envelope(200 + i, 'notice', { level: 'info', message: 'n'.repeat(512 * 1024) }));
+    chat(large);
+    const byBytes = await send('GET', route);
+    expect(byBytes.status).toBe(200);
+    expect(byBytes.body.truncated).toBe(true);
+    expect(byBytes.body.events.length).toBeLessThan(30);
+    expect(byBytes.body.nextBeforeSeq).toBe(byBytes.body.events[0].seq);
+    expect(Buffer.byteLength(JSON.stringify(byBytes.body))).toBeLessThanOrEqual(8 * 1024 * 1024);
+
+    // Too many to preview: every row minimal, none missing.
+    chat(Array.from({ length: 300 }, (_, i) => permission(i, 8 * 1024)));
+    const minimal = await send('GET', route);
+    expect(minimal.status).toBe(200);
+    expect(minimal.body.pendingPermissions).toHaveLength(300);
+    const [row] = minimal.body.pendingPermissions;
+    expect(row.data.description.startsWith('Incomplete input:')).toBe(true);
+    expect(row.data.options.map((o: { kind: string }) => o.kind)).toEqual(['reject_once']);
+    expect(row.data).not.toHaveProperty('rawInput');
+    expect(row.data).not.toHaveProperty('content');
+    // The tail's copy is the same row.
+    expect(minimal.body.events.find((e: any) => e.data.requestId === row.data.requestId).data).toEqual(row.data);
+
+    // A question that can't fit: never shortened, so no page.
+    const hugeQuestion = envelope(300, 'question', { requestId: 'q_big', questions: [{ id: 'which', prompt: 'q'.repeat(9 * 1024 * 1024), header: 'Big', options: [] }] });
+    chat([hugeQuestion]);
+    const noPage = await send('GET', route);
+    expect(noPage.status).toBe(503);
+    expect(noPage.body.error).toBe('pending_overflow');
+
+    // The same question, now answered: history, so the gap is marked, with no text and nothing to answer.
+    chat([hugeQuestion, envelope(301, 'question_resolved', { requestId: 'q_big', answers: {} })]);
+    const omitted = await send('GET', route);
+    expect(omitted.status).toBe(200);
+    expect(omitted.body.pendingQuestions).toEqual([]);
+    expect(omitted.body.nextBeforeSeq).toBe(301);
+    const older = await send('GET', `${route}?beforeSeq=301`);
+    expect(older.status).toBe(200);
+    const stub = older.body.events.find((e: any) => e.seq === 300);
+    expect(stub).toMatchObject({ type: 'notice', data: { code: 'event_omitted', omitted: { type: 'question' } } });
+
+    // An old queued row the tail would never reach, while its id is still in the queue.
+    chat([envelope(4, 'user_message', { messageId: 'msg_q', delivery: 'queued', content: [{ type: 'text', text: 'Then run the tests.' }] }), ...large]);
+    const withQueued = await send('GET', route);
+    expect(withQueued.body.queuedMessageIds).toContain('msg_q');
+    expect(withQueued.body.events[0].data.messageId).toBe('msg_q');
+    expect(withQueued.body.events[0].seq).toBe(4);
+    expect(withQueued.body.nextBeforeSeq).toBe(withQueued.body.events[1].seq);
+
+    // A queued row with little room beside a question: shortened, and still itself. With none, no page.
+    const criticalRow = envelope(4, 'user_message', { messageId: 'msg_q', source: 'user', delivery: 'queued', content: Array.from({ length: 10 }, () => ({ type: 'text', text: 't'.repeat(300 * 1024) })) });
+    const beside = (bytes: number) => envelope(9, 'question', { requestId: 'q_beside', questions: [{ id: 'which', prompt: 'q'.repeat(bytes), header: 'Big', options: [] }] });
+    chat([criticalRow, beside(Math.floor(7.5 * 1024 * 1024))]);
+    const shortened = await send('GET', route);
+    expect(shortened.status).toBe(200);
+    expect(shortened.body.pendingQuestions[0].data.questions[0].prompt).toHaveLength(Math.floor(7.5 * 1024 * 1024));
+    expect(shortened.body.queuedMessageIds).toContain('msg_q');
+    const [rowShown] = shortened.body.events;
+    expect(rowShown).toMatchObject({ seq: 4, type: 'user_message', data: { messageId: 'msg_q', source: 'user', delivery: 'queued', truncated: { originalBytes: expect.any(Number) } } });
+    expect(rowShown.data.content).toHaveLength(10);
+    expect(Buffer.byteLength(JSON.stringify(shortened.body))).toBeLessThanOrEqual(8 * 1024 * 1024);
+    chat([criticalRow, beside(8 * 1024 * 1024 - 8 * 1024)]);
+    expect((await send('GET', route)).status).toBe(503);
+
+    // An answered question stays answered beside an active one taking most of the page: a phone folds the resolution.
+    const sevenPointEight = Math.floor(7.8 * 1024 * 1024);
+    const askedLongAgo = envelope(3, 'question', { requestId: 'q_old', questions: [{ id: 'which', prompt: 'Which branch?', header: 'Branch', options: [] }] });
+    const answered = envelope(40, 'question_resolved', { requestId: 'q_old', answers: { which: 'a'.repeat(400 * 1024) } });
+    const askedNow = envelope(41, 'question', { requestId: 'q_now', questions: [{ id: 'which', prompt: 'q'.repeat(sevenPointEight), header: 'Big', options: [] }] });
+    chat([askedLongAgo, answered, askedNow]);
+    const stillAnswered = await send('GET', route);
+    expect(stillAnswered.status).toBe(200);
+    expect(stillAnswered.body.pendingQuestions.map((e: any) => e.data.requestId)).toEqual(['q_now']);
+    const resolution = stillAnswered.body.events.find((e: any) => e.seq === 40);
+    expect(resolution).toMatchObject({ type: 'question_resolved', data: { requestId: 'q_old', answers: {} } });
+    expect(stillAnswered.body.events.some((e: any) => e.type === 'notice')).toBe(false);
+    expect(Buffer.byteLength(JSON.stringify(stillAnswered.body))).toBeLessThanOrEqual(8 * 1024 * 1024);
+
+    // Others that change state, the same way: a smaller form of the same type, or no page.
+    chat([envelope(40, 'permission_resolved', { requestId: 'perm_old', decision: 'deny', by: 'user', optionId: 'o'.repeat(400 * 1024) }), askedNow]);
+    const permissionDone = (await send('GET', route)).body.events.find((e: any) => e.seq === 40);
+    expect(permissionDone).toMatchObject({ type: 'permission_resolved', data: { requestId: 'perm_old', decision: 'deny', by: 'user' } });
+    chat([envelope(40, 'user_message', { messageId: 'msg_old', source: 'user', delivery: 'prompt', content: [{ type: 'text', text: 'm'.repeat(400 * 1024) }] }), askedNow]);
+    const deliveredShort = (await send('GET', route)).body.events.find((e: any) => e.seq === 40);
+    expect(deliveredShort).toMatchObject({ type: 'user_message', data: { messageId: 'msg_old', delivery: 'prompt' } });
+    const manyIds = Array.from({ length: 30_000 }, (_, i) => `message_${i}`);
+    chat([envelope(40, 'queue_state', { queuedMessageIds: manyIds, transition: { messageIds: manyIds, status: 'queued' } }), askedNow]);
+    expect((await send('GET', route)).status).toBe(503);
+    chat([envelope(40, 'plan', { entries: Array.from({ length: 30_000 }, (_, i) => ({ content: `entry ${i}`, status: 'pending' })) }), askedNow]);
+    expect((await send('GET', route)).status).toBe(503);
+
+    chat(LIVE_TRANSCRIPT);
+    fixtures.set('chat-pages.json', {
+      note: 'Bodies are shortened to what shows the rule. A 503 leaves a phone read-only until a refresh works.',
+      byBytes: { status: byBytes.status, body: { ...shorten(byBytes.body), nextBeforeSeq: '<the oldest seq shown>' } },
+      minimal: { status: minimal.status, body: { ...shorten(minimal.body), pendingPermissions: [{ ...row, data: { ...row.data, truncated: { originalBytes: 307400 } } }], pendingPermissionCount: minimal.body.pendingPermissions.length } },
+      overflow: { status: noPage.status, body: noPage.body },
+      queuedRowShortened: { note: 'Beside a question that leaves little room. Only its text is shortened: its ids, source, delivery, every block and part stay. Too little room for this, and the answer is a 503.', status: shortened.status, event: { ...rowShown, data: { ...rowShown.data, content: rowShown.data.content.slice(0, 1).map((b: any) => ({ type: b.type, text: `${b.text.slice(0, 40)}<shortened here>` })), contentBlocks: rowShown.data.content.length } } },
+      smallestForms: { note: 'Fold these as usual. Empty answers with truncated still means answered. A queue_state or anything without a form here makes the page a 503.', questionResolved: resolution, permissionResolved: { ...permissionDone }, userMessage: deliveredShort },
+      omittedQuestion: { note: 'A question in history too large for any page. Not pending, so nothing to answer.', event: stub },
+      queuedRow: { note: 'A row named by queuedMessageIds, in front of a tail that does not reach it. nextBeforeSeq does not count it.', firstEvents: withQueued.body.events.slice(0, 2).map((e: any) => ({ seq: e.seq, type: e.type, ...(e.type === 'user_message' && { data: e.data }) })), nextBeforeSeq: '<the seq of the second event>', queuedMessageIds: withQueued.body.queuedMessageIds },
+    });
+  }, TEST_TIMEOUT_MS);
+
   it('fixtures on disk match (npm run fixtures:annex-mobile to update)', () => {
     const rendered = render();
     if (WRITE) {

@@ -536,6 +536,8 @@ export interface ChatEventDataMap {
     /** Stable code for UI and telemetry, e.g. 'continued_from_terminal', 'untested_cli_version', 'fallback'. */
     code: string;
     message: string;
+    /** With code `event_omitted`: this stands in for an event too large for an Annex chat page. */
+    omitted?: { type: string; originalBytes: number };
   };
   error: { code: ChatErrorCode; message: string; fatal: boolean; willRetry?: boolean; toolCallId?: string };
   /**

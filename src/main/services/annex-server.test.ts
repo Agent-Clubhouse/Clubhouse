@@ -4700,6 +4700,147 @@ describe('annex-server', () => {
       expect(overLimitLog()).toHaveLength(1);
     });
 
+    describe('tool output', () => {
+      const toolUpdate = (data: Record<string, unknown>) => ({ type: 'tool_call_update', agentId: 'a', seq: 1, ts: 0, sessionId: 's', data: { toolCallId: 't1', ...data } });
+      const chatFrames = (ws: { send: ReturnType<typeof vi.fn> }) => ws.send.mock.calls.map(([d]) => JSON.parse(d as string)).filter((f) => f.type === 'chat:event');
+
+      beforeEach(() => {
+        registerChatRuntime('a', { getState: () => 'idle' } as never);
+      });
+      afterEach(() => clearChatRuntimes());
+
+      it('sends a preview that keeps the id and final status, and replaces the content', async () => {
+        const ws = await liveSocket();
+        const output = `start\n${'o'.repeat(20 * MIB)}\nend\n`;
+        publishChatEvent(toolUpdate({ status: 'completed', durationMs: 12, contentMode: 'append', content: [{ type: 'terminal', command: 'ls', output, exitCode: 0 }], rawOutput: { stdout: output } }) as never);
+
+        const frame = ws.send.mock.calls.at(-1)![0] as string;
+        expect(Buffer.byteLength(frame)).toBeLessThan(2 * MIB);
+        const { data } = chatFrames(ws).at(-1).payload.event;
+        expect(data).toMatchObject({ toolCallId: 't1', status: 'completed', durationMs: 12, contentMode: 'replace' });
+        expect(data.content[0]).toMatchObject({ type: 'terminal', command: 'ls', exitCode: 0 });
+        expect(data.content[0].output.startsWith('start\n')).toBe(true);
+        expect(data.content[0].output.endsWith('end\n')).toBe(true);
+        expect(data.content[0].output).toMatch(/earlier|omitted/i);
+        expect(data).not.toHaveProperty('rawOutput');
+        expect(data.truncated.originalBytes).toBeGreaterThan(20 * MIB);
+      });
+
+      it('stores the preview for replay, so a reconnect can not bring the large one back', async () => {
+        const ws = await liveSocket();
+        const before = _eventReplay.getLastSeq();
+        publishChatEvent(toolUpdate({ status: 'completed', content: [{ type: 'text', text: 'x'.repeat(20 * MIB) }] }) as never);
+
+        const [stored] = _eventReplay.getEventsSince(before)!;
+        expect(Buffer.byteLength(JSON.stringify(stored.payload))).toBeLessThan(2 * MIB);
+        ws.send.mockClear();
+        ws.emit('message', JSON.stringify({ type: 'replay', since: before }));
+        expect(chatFrames(ws).map((f) => f.seq)).toEqual([before + 1]);
+        expect(Buffer.byteLength(ws.send.mock.calls.find(([d]) => (d as string).includes('chat:event'))![0] as string)).toBeLessThan(2 * MIB);
+      });
+
+      it('leaves tool output under the limit exactly as it was', async () => {
+        const ws = await liveSocket();
+        const data = { status: 'in_progress', contentMode: 'append', content: [{ type: 'terminal', output: 'small' }], rawOutput: { a: 1 } };
+        publishChatEvent(toolUpdate(data) as never);
+        expect(chatFrames(ws).at(-1).payload.event.data).toEqual({ toolCallId: 't1', ...data });
+      });
+
+      it('keeps seq, key order and trace context on an ordinary frame', async () => {
+        const ws = await liveSocket();
+        publishChatEvent(toolUpdate({ status: 'in_progress' }) as never);
+        const raw = ws.send.mock.calls.at(-1)![0] as string;
+        expect(raw.startsWith('{"type":"chat:event","payload":{')).toBe(true);
+        expect(JSON.parse(raw).seq).toBe(_eventReplay.getLastSeq());
+      });
+    });
+
+    describe('tool input', () => {
+      const big = 'c'.repeat(2 * MIB);
+
+      it('stores and sends a bounded hook:event, keeping its status', async () => {
+        const ws = await liveSocket();
+        const before = _eventReplay.getLastSeq();
+        const onHook = vi.mocked(annexEventBus.onHookEvent).mock.lastCall![0];
+        onHook('a', { kind: 'pre_tool', toolName: 'Write', toolInput: { file_path: '/x', content: big }, timestamp: 1 } as never);
+
+        const frame = ws.send.mock.calls.map(([d]) => d as string).find((d) => d.includes('hook:event'))!;
+        expect(Buffer.byteLength(frame)).toBeLessThan(70 * 1024);
+        const { payload } = JSON.parse(frame);
+        expect(payload.agentId).toBe('a');
+        expect(payload.detailedStatus).toBeDefined();
+        expect(payload.event).toMatchObject({ toolName: 'Write', toolInput: { file_path: '/x' }, toolInputTruncated: { originalBytes: expect.any(Number) } });
+        expect(payload.event.toolInput).not.toHaveProperty('content');
+        expect(JSON.stringify(_eventReplay.getEventsSince(before)).length).toBeLessThan(70 * 1024);
+      });
+
+      it('bounds the catalog and outer permission paths, and keeps the queue whole', async () => {
+        const input = { file_path: '/x', content: big };
+        const ws = await liveSocket();
+        const before = _eventReplay.getLastSeq();
+        const { requestId } = permissionQueue.createPermission('a', 'Write', input);
+
+        const snapshot = await annexServer._testing.buildSnapshot() as { pendingPermissions: Array<Record<string, any>> };
+        const row = snapshot.pendingPermissions.find((p) => p.requestId === requestId)!;
+        expect(Buffer.byteLength(JSON.stringify(row))).toBeLessThan(70 * 1024);
+        expect(row).toMatchObject({ requestId, toolName: 'Write', toolInput: { file_path: '/x' }, toolInputTruncated: { originalBytes: expect.any(Number) } });
+        // The queue's own copy, which decides what the agent gets, is whole.
+        expect(permissionQueue.listPending().find((p) => p.requestId === requestId)!.toolInput).toEqual(input);
+
+        const frames = (_eventReplay.getEventsSince(before) ?? []).filter((f) => f.type === 'permission:request');
+        for (const frame of frames) expect(Buffer.byteLength(JSON.stringify(frame.payload))).toBeLessThan(70 * 1024);
+        expect(ws.close).not.toHaveBeenCalled();
+        permissionQueue.resolvePermissionDetailed(requestId, 'deny', { expectedAgentId: 'a', source: 'annex' });
+      });
+
+      it('keeps a large Write small on every path, live and on replay', async () => {
+        registerChatRuntime('a', { getState: () => 'idle' } as never);
+        try {
+          const ws = await liveSocket();
+          const before = _eventReplay.getLastSeq();
+          const rawInput = { file_path: '/work/big.ts', content: big };
+          const envelope = (type: string, seq: number, data: object) => ({ v: 1, type, agentId: 'a', sessionId: 's', seq, ts: 1, data }) as never;
+
+          publishChatEvent(envelope('tool_call', 1, { toolCallId: 't1', title: 'Write big.ts', kind: 'edit', status: 'pending', rawInput, content: [{ type: 'diff', path: 'big.ts', newText: big }] }));
+          publishChatEvent(envelope('permission_request', 2, { requestId: 'p1', title: 'Write big.ts', toolCallId: 't1', toolName: 'Write', rawInput, options: [] }));
+          const onHook = vi.mocked(annexEventBus.onHookEvent).mock.lastCall![0];
+          onHook('a', { kind: 'pre_tool', toolName: 'Write', toolInput: rawInput, timestamp: 1 } as never);
+
+          const live = ws.send.mock.calls.map(([d]) => d as string);
+          expect(live).toHaveLength(3);
+          for (const frame of live) expect(Buffer.byteLength(frame)).toBeLessThan(300 * 1024);
+          const [toolCall, permission] = live.map((d) => JSON.parse(d));
+          expect(toolCall.payload.event.data).toMatchObject({ toolCallId: 't1', status: 'pending', title: 'Write big.ts', rawInput: { file_path: '/work/big.ts' }, truncated: { originalBytes: expect.any(Number) } });
+          expect(toolCall.payload.event.data.rawInput).not.toHaveProperty('content');
+          expect(permission.payload.event.data.description.startsWith('Incomplete input:')).toBe(true);
+
+          ws.send.mockClear();
+          ws.emit('message', JSON.stringify({ type: 'replay', since: before }));
+          const replayed = ws.send.mock.calls.map(([d]) => d as string).filter((d) => d.includes('"replayed":true'));
+          expect(replayed).toHaveLength(3);
+          for (const frame of replayed) expect(Buffer.byteLength(frame)).toBeLessThan(300 * 1024);
+        } finally {
+          clearChatRuntimes();
+        }
+      });
+
+      it('refuses allow on the outer path for a call it only sent part of, and allows deny', async () => {
+        annexServer.stop();
+        const { port, token } = await startAndPair();
+        const large = permissionQueue.createPermission('durable_1', 'Write', { file_path: '/x', content: big });
+        const post = (requestId: string, decision: string) => request(port, 'POST', '/api/v1/agents/durable_1/permission-response', { requestId, decision }, authHeaders(token));
+
+        const refused = await post(large.requestId, 'allow');
+        expect(refused.status).toBe(409);
+        expect(JSON.parse(refused.body)).toEqual({ error: 'incomplete_representation' });
+        expect((await post(large.requestId, 'deny')).status).toBe(200);
+        await expect(large.decision).resolves.toBe('deny');
+
+        const small = permissionQueue.createPermission('durable_1', 'Bash', { command: 'ls' });
+        expect((await post(small.requestId, 'allow')).status).toBe(200);
+      }, 30_000);
+    });
+
     it('leaves a snapshot to its own limits', async () => {
       const ws = await liveSocket();
       annexServer._testing.safeSendForTest(ws as never, JSON.stringify({ type: 'snapshot', payload: { text: 'x'.repeat(9 * MIB) } }));

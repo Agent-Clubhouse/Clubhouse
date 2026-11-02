@@ -240,6 +240,68 @@ Send `{type:"mobile:replay",epoch:"capabilities epoch",since:123}`. Replies use 
 
 Chat event definitions: src/shared/chat/events.ts. Driver capabilities: src/shared/chat/capabilities.ts. Existing snapshots/projects/agents: src/main/services/annex-server.ts. Read runtime state/driver capabilities before presenting steer/approval actions. Errors, cancellation, waiting_input, waiting_permission, turn_ended and session_ended remain normal rich events.
 
+## Chat pages and overflow
+
+One `GET …/chat` response is at most 8 MiB encoded, whatever `limit` asks for, because real TLS rejects a response over 16 MiB, and retrying the same page fails the same way.
+
+**Pages:** newest events first, until the page is full. `truncated` says there's more, and `nextBeforeSeq` is where the next page starts. A page can hold fewer than `limit`. An event over 1 MiB has a preview, as for live tool output, and each page is worked out afresh from the transcript, so an event reads the same each time. It doesn't carry the appended note a live update can have.
+
+**Nothing is skipped without saying so.** An event that still doesn't fit once nothing else on the page has taken room comes in its smallest form, at its own `seq`, with `truncated` set, so paging moves on:
+
+| Event | Smallest form |
+|---|---|
+| `question_resolved` | Same type: `requestId`, `cancelled`, and `answers: {}`. The answers are on the desktop. |
+| `permission_resolved` | Same type: `requestId`, `decision`, `by`, and `optionId` if short. |
+| `user_message` that isn't queued | Same type: `messageId`, `clientCommandId`, `source`, `delivery`, `queuedWith`, short text, and its first `routed` part. |
+| `tool_call`, `tool_call_update` | Same type: `toolCallId`, `status`, `kind` or `title`, `durationMs`, exit code, and a note in `content`. |
+| Text and thinking output, `usage`, `notice`, and a question or permission request that's no longer pending | `{"type":"notice","data":{"level":"info","code":"event_omitted","message":"…","omitted":{"type":"…","originalBytes":N}}}`, with the event's `requestId`, `messageId` or `toolCallId` if short. |
+| Anything else, including `queue_state`, `queue_removed` and a type added later | No smaller form. If it can't fit, the page is a 503. |
+
+Fold a `question_resolved` or `permission_resolved` as usual: empty `answers` with `truncated` still means answered. A smaller form depends on what's pending, because that shares the page: read it again once less is pending and the event comes back whole. A request or question still pending is in the lists, so a tail copy with no room is simply left out.
+
+**Queued rows are always there.** Every `user_message` a row in `queuedMessageIds` is built from comes on the page, however old, in `seq` order at the front of `events`, so `events` can jump in `seq` there. `nextBeforeSeq` doesn't count them, so you can see one again on an older page: match by `seq`. They're whole if they fit. Otherwise only their text is shortened, to share the room left, with `truncated` set: `messageId`, `queuedWith`, `source`, `delivery`, and every block and `routed` part stay. A queued row is never a stub. If that can't fit, it's a 503.
+
+**What's pending is all or nothing.** A partial list would read as requests being answered.
+
+1. Up to 1 MiB of permissions: each whole, or a preview within its cap.
+2. Over that, every row is minimal: `requestId`, `toolCallId`, `toolName`, `title`, a `description` starting with the warning, and only its deny options, with `reject_always` only while `persistentApprovals` is on. A row with none of those can only be viewed. Approve is refused for all of them.
+3. Over 4 MiB of minimal rows, or if pending questions, queued rows or an event with no smaller form can't fit, there's no page: 503 `{"error":"pending_overflow","pendingCount":N,"message":"…"}`. If whole rows are what doesn't fit, rows go minimal first.
+
+A question is never shortened or sent without its text, so it stays whole or the page is a 503. The full question stays on the desktop.
+
+**A 503 leaves a phone read-only.** On build 147 it keeps its cached state but sets `requiresResync`, which disables chat send, deny and question answers until a refresh succeeds, so the desktop has to reduce what's pending. It shows only "Desktop request failed (503): pending_overflow". A cold open shows unavailable, with Try again. A refresh recovers once it's smaller.
+
+## Large tool output
+
+A `tool_call_update` whose `chat:event` is over 1 MiB goes out as a preview, live and on replay:
+
+- `toolCallId`, `status`, `durationMs` and `exitCode` are kept.
+- `content` is the start and end of each block, with a plain note between them saying how much is omitted. `contentMode` is `replace`, so it replaces what you have rather than adding to it.
+- A `diff` block too large to send becomes a `text` block, because part of a diff would read as the whole change.
+- `rawOutput` is left out unless it's small. If no block was cut, a text block says it's a preview, because a client may ignore `truncated`. With no `content` at all, that note is the only `content`, with `contentMode: append` so what's shown stays, and only one update for a call carries it. After a desktop restart a call can get one more. These notes are in the tool's content, so on a client that collapses tool cards they're seen when a card is opened. The always-visible warning is the permission request's `description`, below.
+- `truncated: {originalBytes}` is the whole event's size.
+
+The transcript on the desktop is whole. `GET …/chat` still returns the full event, so this recovers the output only if the whole response fits in what you can receive. Permission requests have their own rules, below. Other `chat:event` types aren't bounded yet (#2673).
+
+Conditions from Clubhouse Go's tests on build 147, for any later change here: a preview must keep the id and final status, and must replace rather than append. A frame may only be left out entirely if it carries no critical fact, so never a permission, question, queue or status frame.
+
+## Large permission requests
+
+A permission request over 256 KiB is too large to review on a phone, wherever it arrives. For a `chat:event` `permission_request`, and `pendingPermissions` in `GET …/chat`, a phone gets:
+
+- `description` starting with the warning below, so it's the first thing shown. `content` is one text block starting with it too, then a preview.
+- `rawInput` with only its small plain fields, such as the path. `requestId`, `title`, `toolName`, `toolCallId` and `options` are kept. `truncated: {originalBytes}`.
+
+The warning is: "Incomplete input: this request is too large to show in full here. Review it on the desktop to approve it. You can still deny it here." That last sentence is only there when a phone has a deny it supports: `reject_once`, `cancel_turn`, or `reject_always` while `persistentApprovals` is on. With none of those it's: "Incomplete input: this request is too large to show in full here. Review it on the desktop." The refused approve's message follows the same rule.
+
+**Approve is refused:** `chat.permission` with anything but a deny option answers 409, `status:"rejected"`, `error:{code:"incomplete_representation",message}`. Denying still works. Full review is on the desktop, and the pending call itself is never changed. Approve is also refused when the desktop can't establish you were shown the whole request: one left pending across its restart, unless the whole original request, options included, is at most 4 KiB, which is whole on every path. It's refused too if the options the agent would act on aren't the ones you were sent.
+
+**The `tool_call` for it:** over 256 KiB, a `tool_call` keeps its id, title, kind, status and locations. Its `rawInput` has only small plain fields, its `content` starts with a text note saying it's a preview, then a preview of any content, and it has `truncated: {originalBytes}`.
+
+**All pending, together:** the permissions in `/chat` total at most 1 MiB. Past that each gets a share, and one forced below its own cap counts as incomplete, with the same warning and refusal. None is ever left out.
+
+**Paths that draw no card** (`hook:event`, outer `permission:request` and the snapshot's `pendingPermissions`) carry at most 64 KiB of `toolInput`: its small plain fields, and `toolInputTruncated: {originalBytes}`. `POST …/permission-response` refuses `allow` with 409 `incomplete_representation` for a call that's over that. `hook:event` keeps `detailedStatus`.
+
 ## Who sent a message
 
 How a phone shows `user_message`, so it matches the desktop's chat (`messageDisplay` and `findSenderAgent` in `src/shared/chat/message-routing.ts`, `agentAvatarSpec` in `src/shared/agent-avatar.ts`). `sender-identity.json` has a case for each row here, with what the desktop's code draws for it.
@@ -978,7 +1040,7 @@ Errors use the existing envelope with correlation fields: `error {message, op, s
 
 ## Contract fixtures
 
-`test/fixtures/annex-mobile/` holds a canonical example of every message in this document: capabilities, icon refs and their routes, a snapshot over its limit and the canvas routes, the WebSocket snapshot (agents, quick agents, `projectState`, `finishedQuickAgents`, `helperRequests`, theme), the chat snapshot with `chatControls`, `slashCommands` and `contentRoots`, create options and agent settings, a request and receipt for every `MOBILE_COMMAND_TYPES` command with each refusal its code path can reach, one `chat:event` of every chat event type followed by `user_message` with each form of `routed` (one sender, a burst, `fromClubhouse`, no `sender`), every kind of sender and how to draw it, queued bursts, every `pty:*` message and error, `mobile:replay`, the attachment upload's answers, and the [oversized command](#oversized-commands) refusal in `command-too-large.json`, with its exact response bytes. The phone (Clubhouse Go) vendors these files and decodes each one in its contract tests, and checks that the commands it builds match the requests here. Neither side tests only against its own fakes.
+`test/fixtures/annex-mobile/` holds a canonical example of every message in this document: capabilities, icon refs and their routes, a snapshot over its limit and the canvas routes, large tool output, the WebSocket snapshot (agents, quick agents, `projectState`, `finishedQuickAgents`, `helperRequests`, theme), the chat snapshot with `chatControls`, `slashCommands` and `contentRoots`, create options and agent settings, a request and receipt for every `MOBILE_COMMAND_TYPES` command with each refusal its code path can reach, one `chat:event` of every chat event type followed by `user_message` with each form of `routed` (one sender, a burst, `fromClubhouse`, no `sender`), every kind of sender and how to draw it, queued bursts, every `pty:*` message and error, `mobile:replay`, the attachment upload's answers, and the [oversized command](#oversized-commands) refusal in `command-too-large.json`, with its exact response bytes. The phone (Clubhouse Go) vendors these files and decodes each one in its contract tests, and checks that the commands it builds match the requests here. Neither side tests only against its own fakes.
 
 `src/main/services/annex-mobile-contract.test.ts` writes them. It runs the real annex-server, mobile-control, mobile-agents, mobile-helper-requests, mobile-attachments and chat echo code over pinned mTLS and the WebSocket handler. Only the leaves are faked (disk, git, CLIs, PTYs, the orchestrator side of helper requests). The output is deterministic: fixed ids and clock, sorted keys, and random UUIDs (epochs, tokens, attachment and helper request ids) renumbered `00000000-0000-4000-8000-<n>` in order of first appearance.
 
