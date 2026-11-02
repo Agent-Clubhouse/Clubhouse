@@ -102,7 +102,6 @@ test('claude: a burst of helper updates becomes one steer, and user steers are n
     await session.logChatEvents().catch((logErr: unknown) => console.log('could not read chat events', logErr));
     throw err;
   });
-  await session.logChatEvents(); // TEMPORARY: check the output in CI
   // One row per update, each with its sender and without its routing text (#2599).
   for (let i = 1; i <= 9; i++) {
     await expect(fromAgents.locator(`[data-sender="helper-${i}"]`)).toContainText(`Step ${i} done.`);
