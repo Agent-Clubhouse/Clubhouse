@@ -227,13 +227,26 @@ async function isRotatableStore(storePath: string): Promise<boolean> {
   }
 }
 
+let lastLoggedProjects: string | null = null;
+
+/**
+ * Every list() reads the file, many times a second under Annex and agent
+ * activity, and this line carries the whole project list. It's only news when
+ * the list differs, and repeats of it used up the diag budget (#2662).
+ */
+function logLoadedIfChanged(storePath: string, store: ProjectStoreV1): void {
+  const projects = store.projects.map((p) => ({ id: p.id, name: p.name }));
+  const key = JSON.stringify(projects);
+  if (key === lastLoggedProjects) return;
+  lastLoggedProjects = key;
+  appLog('core:project-store', 'info', `Loaded ${projects.length} project(s) from disk`, {
+    meta: { storePath, projects },
+  });
+}
+
 async function readStore(): Promise<ProjectStoreV1> {
   const storePath = await getStorePath();
   const backupPath = await getBackupPath();
-
-  appLog('core:project-store', 'debug', 'Reading project store from disk', {
-    meta: { storePath, backupPath },
-  });
 
   let store: ProjectStoreV1 | null = null;
 
@@ -248,9 +261,7 @@ async function readStore(): Promise<ProjectStoreV1> {
           meta: { storePath, dropped },
         });
       }
-      appLog('core:project-store', 'info', `Loaded ${store.projects.length} project(s) from disk`, {
-        meta: { storePath, projects: store.projects.map((p) => ({ id: p.id, name: p.name })) },
-      });
+      logLoadedIfChanged(storePath, store);
       // Re-write if we migrated from an older format
       if (raw.version == null || raw.version !== CURRENT_VERSION) {
         appLog('core:project-store', 'info', 'Migrated project store from older format', {

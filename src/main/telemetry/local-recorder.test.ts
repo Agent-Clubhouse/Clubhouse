@@ -1,7 +1,8 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import * as fs from 'fs';
 import * as path from 'path';
 import { ATTR, type TelAttr } from '../../shared/telemetry/attributes';
-import { createLocalRecorder, LOCAL_FORMAT_VERSION, type LocalRecorder, type LocalRecorderOptions } from './local-recorder';
+import { createLocalRecorder, LOCAL_DIAG_PRIORITY_EVENTS, LOCAL_FORMAT_VERSION, type LocalRecorder, type LocalRecorderOptions } from './local-recorder';
 import { createScrubber } from './scrubber';
 import { tagError } from './types';
 
@@ -435,6 +436,109 @@ describe('local recorder diag lines (#2299)', () => {
     h.rec.writeDiag(line('second window', 'error'));
     await h.rec.flush();
     expect(h.records().some((r) => r.msg === 'second window')).toBe(true);
+  });
+
+  describe('priority events (#2662)', () => {
+    const ACCEPTED = 'WebSocket upgrade accepted';
+    const CLOSED = 'WebSocket client disconnected';
+    const annex = (msg: string, level: 'info' | 'error' = 'info') => ({ ns: 'core:annex', level, msg, meta: { authType: 'mtls' } });
+    const diagMsgs = (h: Harness, msg: string) => h.records().filter((r) => r.t === 'diag' && r.msg === msg);
+
+    it('keeps a connection event after busy namespaces used the whole budget', async () => {
+      const h = harness({ diagWindowBytes: 500 });
+      for (let i = 0; i < 50; i++) h.rec.writeDiag(line(`noise ${i} ${'x'.repeat(40)}`, 'error'));
+      h.rec.writeDiag(annex(ACCEPTED));
+      h.rec.writeDiag(annex('Failed to send snapshot on connect', 'error'));
+      h.rec.writeDiag(annex('Some other annex line'));
+      h.rec.writeDiag(line(`still noise ${'x'.repeat(40)}`, 'error'));
+      await h.rec.flush();
+      expect(diagMsgs(h, ACCEPTED)).toHaveLength(1);
+      expect(diagMsgs(h, 'Failed to send snapshot on connect')).toHaveLength(1);
+      expect(diagMsgs(h, 'Some other annex line')).toHaveLength(0);
+      expect(h.records().some((r) => r.t === 'diag' && r.msg.startsWith('still noise'))).toBe(false);
+      const dropped = h.records().find((r) => r.t === 'dropped')!;
+      expect(dropped.diag).toBeGreaterThan(0);
+      expect(dropped).not.toHaveProperty('diagPriority');
+    });
+
+    it('only uses its reserve once the shared budget is out', async () => {
+      const h = harness({ diagWindowBytes: 100_000, diagPriorityEventBytes: 200 });
+      for (let i = 0; i < 20; i++) h.rec.writeDiag(annex(ACCEPTED));
+      await h.rec.flush();
+      expect(diagMsgs(h, ACCEPTED)).toHaveLength(20);
+      expect(h.records().some((r) => r.t === 'dropped')).toBe(false);
+    });
+
+    it('bounds a storm of one event without touching the reserve of another, and counts the drops', async () => {
+      const reserve = 1_000;
+      const h = harness({ diagWindowBytes: 0, diagPriorityEventBytes: reserve });
+      for (let i = 0; i < 500; i++) h.rec.writeDiag(annex(ACCEPTED));
+      h.rec.writeDiag(annex(CLOSED));
+      await h.rec.flush();
+      const storm = diagMsgs(h, ACCEPTED);
+      const written = storm.reduce((n, r) => n + Buffer.byteLength(JSON.stringify(r), 'utf-8') + 1, 0);
+      expect(storm.length).toBeGreaterThan(0);
+      expect(written).toBeLessThanOrEqual(reserve);
+      expect(diagMsgs(h, CLOSED)).toHaveLength(1);
+      expect(h.records().find((r) => r.t === 'dropped')).toMatchObject({ diag: 500 - storm.length, diagPriority: 500 - storm.length });
+    });
+
+    it('refills the reserve with each cap window', async () => {
+      let t = 0;
+      const h = harness({ diagWindowBytes: 0, diagPriorityEventBytes: 200, now: () => t, capsWindowMs: 1_000, flushIntervalMs: 10 });
+      for (let i = 0; i < 10; i++) h.rec.writeDiag(annex(ACCEPTED));
+      await h.rec.flush();
+      const first = diagMsgs(h, ACCEPTED).length;
+      expect(first).toBeLessThan(10);
+      t += 2_000;
+      await new Promise((resolve) => setTimeout(resolve, 30));
+      h.rec.writeDiag(annex(ACCEPTED));
+      await h.rec.flush();
+      expect(diagMsgs(h, ACCEPTED)).toHaveLength(first + 1);
+    });
+
+    it('passes the pending limit, which other diag lines may not', async () => {
+      const h = harness({ maxPendingDiagLines: 1 });
+      h.rec.writeDiag(line('fills the queue'));
+      h.rec.writeDiag(line('over the limit'));
+      h.rec.writeDiag(annex(ACCEPTED));
+      await h.rec.flush();
+      expect(diagMsgs(h, 'over the limit')).toHaveLength(0);
+      expect(diagMsgs(h, ACCEPTED)).toHaveLength(1);
+    });
+
+    it('lists only messages Clubhouse still logs, so a reworded line loses its reserve visibly', () => {
+      const sources: string[] = [];
+      const walk = (dir: string) => {
+        for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+          const full = path.join(dir, entry.name);
+          if (entry.isDirectory()) { if (entry.name !== 'vendor') walk(full); }
+          else if (entry.name.endsWith('.ts') && !entry.name.endsWith('.test.ts') && entry.name !== 'local-recorder.ts') sources.push(fs.readFileSync(full, 'utf-8'));
+        }
+      };
+      walk(path.join(process.cwd(), 'src/main'));
+      const all = sources.join('\n');
+      const missing = Object.entries(LOCAL_DIAG_PRIORITY_EVENTS)
+        .flatMap(([ns, msgs]) => msgs.map((msg) => [ns, msg]))
+        .filter(([ns, msg]) => !new RegExp(`appLog\\('${ns}', '\\w+', '${msg}'`).test(all));
+      expect(missing).toEqual([]);
+    });
+  });
+
+  it('reports drops on each metric window, before the cap window rolls (#2662)', async () => {
+    let t = 0;
+    const h = harness({ diagWindowBytes: 0, now: () => t, metricIntervalMs: 100, capsWindowMs: 1_000_000, flushIntervalMs: 10 });
+    h.rec.writeDiag(line('dropped one', 'error'));
+    t = 100;
+    await vi.waitFor(() => expect(h.records().filter((r) => r.t === 'dropped')).toEqual([expect.objectContaining({ diag: 1 })]));
+    // A quiet window adds nothing; the next drop is a delta.
+    t = 200;
+    await new Promise((resolve) => setTimeout(resolve, 30));
+    expect(h.records().filter((r) => r.t === 'dropped')).toHaveLength(1);
+    h.rec.writeDiag(line('dropped two', 'error'));
+    h.rec.writeDiag(line('dropped three', 'error'));
+    t = 300;
+    await vi.waitFor(() => expect(h.records().filter((r) => r.t === 'dropped').at(-1)).toMatchObject({ diag: 2 }));
   });
 
   it('keeps separate pending limits, so diag and signals cannot starve each other', async () => {
