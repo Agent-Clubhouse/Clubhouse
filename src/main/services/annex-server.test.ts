@@ -4700,6 +4700,61 @@ describe('annex-server', () => {
       expect(overLimitLog()).toHaveLength(1);
     });
 
+    describe('tool output', () => {
+      const toolUpdate = (data: Record<string, unknown>) => ({ type: 'tool_call_update', agentId: 'a', seq: 1, ts: 0, sessionId: 's', data: { toolCallId: 't1', ...data } });
+      const chatFrames = (ws: { send: ReturnType<typeof vi.fn> }) => ws.send.mock.calls.map(([d]) => JSON.parse(d as string)).filter((f) => f.type === 'chat:event');
+
+      beforeEach(() => {
+        registerChatRuntime('a', { getState: () => 'idle' } as never);
+      });
+      afterEach(() => clearChatRuntimes());
+
+      it('sends a preview that keeps the id and final status, and replaces the content', async () => {
+        const ws = await liveSocket();
+        const output = `start\n${'o'.repeat(20 * MIB)}\nend\n`;
+        publishChatEvent(toolUpdate({ status: 'completed', durationMs: 12, contentMode: 'append', content: [{ type: 'terminal', command: 'ls', output, exitCode: 0 }], rawOutput: { stdout: output } }) as never);
+
+        const frame = ws.send.mock.calls.at(-1)![0] as string;
+        expect(Buffer.byteLength(frame)).toBeLessThan(2 * MIB);
+        const { data } = chatFrames(ws).at(-1).payload.event;
+        expect(data).toMatchObject({ toolCallId: 't1', status: 'completed', durationMs: 12, contentMode: 'replace' });
+        expect(data.content[0]).toMatchObject({ type: 'terminal', command: 'ls', exitCode: 0 });
+        expect(data.content[0].output.startsWith('start\n')).toBe(true);
+        expect(data.content[0].output.endsWith('end\n')).toBe(true);
+        expect(data.content[0].output).toMatch(/earlier|omitted/i);
+        expect(data).not.toHaveProperty('rawOutput');
+        expect(data.truncated.originalBytes).toBeGreaterThan(20 * MIB);
+      });
+
+      it('stores the preview for replay, so a reconnect can not bring the large one back', async () => {
+        const ws = await liveSocket();
+        const before = _eventReplay.getLastSeq();
+        publishChatEvent(toolUpdate({ status: 'completed', content: [{ type: 'text', text: 'x'.repeat(20 * MIB) }] }) as never);
+
+        const [stored] = _eventReplay.getEventsSince(before)!;
+        expect(Buffer.byteLength(JSON.stringify(stored.payload))).toBeLessThan(2 * MIB);
+        ws.send.mockClear();
+        ws.emit('message', JSON.stringify({ type: 'replay', since: before }));
+        expect(chatFrames(ws).map((f) => f.seq)).toEqual([before + 1]);
+        expect(Buffer.byteLength(ws.send.mock.calls.find(([d]) => (d as string).includes('chat:event'))![0] as string)).toBeLessThan(2 * MIB);
+      });
+
+      it('leaves tool output under the limit exactly as it was', async () => {
+        const ws = await liveSocket();
+        const data = { status: 'in_progress', contentMode: 'append', content: [{ type: 'terminal', output: 'small' }], rawOutput: { a: 1 } };
+        publishChatEvent(toolUpdate(data) as never);
+        expect(chatFrames(ws).at(-1).payload.event.data).toEqual({ toolCallId: 't1', ...data });
+      });
+
+      it('keeps seq, key order and trace context on an ordinary frame', async () => {
+        const ws = await liveSocket();
+        publishChatEvent(toolUpdate({ status: 'in_progress' }) as never);
+        const raw = ws.send.mock.calls.at(-1)![0] as string;
+        expect(raw.startsWith('{"type":"chat:event","payload":{')).toBe(true);
+        expect(JSON.parse(raw).seq).toBe(_eventReplay.getLastSeq());
+      });
+    });
+
     it('leaves a snapshot to its own limits', async () => {
       const ws = await liveSocket();
       annexServer._testing.safeSendForTest(ws as never, JSON.stringify({ type: 'snapshot', payload: { text: 'x'.repeat(9 * MIB) } }));

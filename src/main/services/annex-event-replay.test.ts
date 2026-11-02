@@ -172,4 +172,34 @@ describe('annex-event-replay', () => {
     const events = replay.getEventsSince(0)!;
     expect(events.map((e) => e.tc)).toEqual([tc, undefined, undefined]);
     expect(JSON.stringify(events)).not.toContain('secret');
+  
+
+});
+
+describe('annex-event-replay byte limit', () => {
+  beforeEach(() => replay.reset());
+
+  it('drops the oldest past it, and a client that needed them gets a gap', () => {
+    const mib = 1024 * 1024;
+    const first = replay.pushEvent('chat:event', {}, undefined, 40 * mib);
+    const second = replay.pushEvent('chat:event', {}, undefined, 20 * mib);
+    expect(replay.getOldestSeq()).toBe(first);
+    replay.pushEvent('chat:event', {}, undefined, 20 * mib);
+    expect(replay.getOldestSeq()).toBe(second);
+    expect(replay.getEventsSince(first - 1)).toBeNull();
+    expect(replay.sizeInBytes()).toBe(40 * mib);
   });
+
+  it('keeps the newest however large it is', () => {
+    const seq = replay.pushEvent('chat:event', {}, undefined, 200 * 1024 * 1024);
+    expect(replay.getOldestSeq()).toBe(seq);
+    expect(replay.size()).toBe(1);
+  });
+
+  it('keeps its count right through clearing an agent', () => {
+    replay.pushEvent('chat:event', { agentId: 'a' }, undefined, 100);
+    replay.pushEvent('chat:event', { agentId: 'b' }, undefined, 50);
+    replay.clearForAgent('a');
+    expect(replay.sizeInBytes()).toBe(50);
+  });
+});

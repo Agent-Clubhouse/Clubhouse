@@ -240,6 +240,20 @@ Send `{type:"mobile:replay",epoch:"capabilities epoch",since:123}`. Replies use 
 
 Chat event definitions: src/shared/chat/events.ts. Driver capabilities: src/shared/chat/capabilities.ts. Existing snapshots/projects/agents: src/main/services/annex-server.ts. Read runtime state/driver capabilities before presenting steer/approval actions. Errors, cancellation, waiting_input, waiting_permission, turn_ended and session_ended remain normal rich events.
 
+## Large tool output
+
+A `tool_call_update` whose `chat:event` is over 1 MiB goes out as a preview, live and on replay:
+
+- `toolCallId`, `status`, `durationMs` and `exitCode` are kept.
+- `content` is the start and end of each block, with a plain note between them saying how much is omitted. `contentMode` is `replace`, so it replaces what you have rather than adding to it.
+- A `diff` block too large to send becomes a `text` block, because part of a diff would read as the whole change.
+- `rawOutput` is left out unless it's small.
+- `truncated: {originalBytes}` is the whole event's size.
+
+The transcript on the desktop is whole. `GET …/chat` still returns the full event, so this recovers the output only if the whole response fits in what you can receive. Other `chat:event` types aren't bounded yet (#2673).
+
+Conditions from Clubhouse Go's tests on build 147, for any later change here: a preview must keep the id and final status, and must replace rather than append. A frame may only be left out entirely if it carries no critical fact, so never a permission, question, queue or status frame.
+
 ## Who sent a message
 
 How a phone shows `user_message`, so it matches the desktop's chat (`messageDisplay` and `findSenderAgent` in `src/shared/chat/message-routing.ts`, `agentAvatarSpec` in `src/shared/agent-avatar.ts`). `sender-identity.json` has a case for each row here, with what the desktop's code draws for it.
@@ -978,7 +992,7 @@ Errors use the existing envelope with correlation fields: `error {message, op, s
 
 ## Contract fixtures
 
-`test/fixtures/annex-mobile/` holds a canonical example of every message in this document: capabilities, icon refs and their routes, a snapshot over its limit and the canvas routes, the WebSocket snapshot (agents, quick agents, `projectState`, `finishedQuickAgents`, `helperRequests`, theme), the chat snapshot with `chatControls`, `slashCommands` and `contentRoots`, create options and agent settings, a request and receipt for every `MOBILE_COMMAND_TYPES` command with each refusal its code path can reach, one `chat:event` of every chat event type followed by `user_message` with each form of `routed` (one sender, a burst, `fromClubhouse`, no `sender`), every kind of sender and how to draw it, queued bursts, every `pty:*` message and error, `mobile:replay`, the attachment upload's answers, and the [oversized command](#oversized-commands) refusal in `command-too-large.json`, with its exact response bytes. The phone (Clubhouse Go) vendors these files and decodes each one in its contract tests, and checks that the commands it builds match the requests here. Neither side tests only against its own fakes.
+`test/fixtures/annex-mobile/` holds a canonical example of every message in this document: capabilities, icon refs and their routes, a snapshot over its limit and the canvas routes, large tool output, the WebSocket snapshot (agents, quick agents, `projectState`, `finishedQuickAgents`, `helperRequests`, theme), the chat snapshot with `chatControls`, `slashCommands` and `contentRoots`, create options and agent settings, a request and receipt for every `MOBILE_COMMAND_TYPES` command with each refusal its code path can reach, one `chat:event` of every chat event type followed by `user_message` with each form of `routed` (one sender, a burst, `fromClubhouse`, no `sender`), every kind of sender and how to draw it, queued bursts, every `pty:*` message and error, `mobile:replay`, the attachment upload's answers, and the [oversized command](#oversized-commands) refusal in `command-too-large.json`, with its exact response bytes. The phone (Clubhouse Go) vendors these files and decodes each one in its contract tests, and checks that the commands it builds match the requests here. Neither side tests only against its own fakes.
 
 `src/main/services/annex-mobile-contract.test.ts` writes them. It runs the real annex-server, mobile-control, mobile-agents, mobile-helper-requests, mobile-attachments and chat echo code over pinned mTLS and the WebSocket handler. Only the leaves are faked (disk, git, CLIs, PTYs, the orchestrator side of helper requests). The output is deterministic: fixed ids and clock, sorted keys, and random UUIDs (epochs, tokens, attachment and helper request ids) renumbered `00000000-0000-4000-8000-<n>` in order of first appearance.
 

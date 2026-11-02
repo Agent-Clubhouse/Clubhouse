@@ -2305,6 +2305,32 @@ describe('Annex mobile contract fixtures', { timeout: TEST_TIMEOUT_MS }, () => {
     if (W.iconDir) fs.rmSync(W.iconDir, { recursive: true, force: true });
   });
 
+  it('large tool output: a preview, live and on replay', async () => {
+    const ws = await connect();
+    ws.send.mockClear();
+    publishChatEvent({ v: 1, type: 'tool_call_update', agentId: 'durable_chat', sessionId: 'session_fixture', seq: 99, ts: NOW, data: {
+      toolCallId: 'call_large', status: 'completed', durationMs: 1200, contentMode: 'append',
+      content: [{ type: 'terminal', command: 'cat big.log', output: `first line\n${'x'.repeat(40)}\n`.repeat(1).concat(`${'filler line\n'.repeat(200_000)}last line\n`), exitCode: 0 }],
+      rawOutput: { stdout: 'y'.repeat(2 * 1024 * 1024) },
+    } } as never);
+    const frame = frames(ws).find((f) => f.type === 'chat:event');
+    expect(frame.payload.event.data).toMatchObject({ toolCallId: 'call_large', status: 'completed', contentMode: 'replace' });
+    expect(frame.payload.event.data).not.toHaveProperty('rawOutput');
+    // The middle of a filler log, so the file stays readable. It's still the shape on the wire.
+    const output = frame.payload.event.data.content[0].output as string;
+    const note = output.match(/\[Clubhouse: .*\]/)![0];
+    fixtures.set('chat-event-tool-output-preview.json', {
+      direction: 'desktop-to-phone',
+      note: 'Over 1 MiB. The filler in output and originalBytes are shortened here; the note between the start and end is what a phone draws.',
+      frame: { ...frame, seq: 1000, payload: { ...frame.payload, event: { ...frame.payload.event, data: {
+        ...frame.payload.event.data,
+        truncated: { originalBytes: 4577777 },
+        content: [{ ...frame.payload.event.data.content[0], output: `first line\n\n${note.replace(/\d+ bytes/, '4000000 bytes')}\nlast line\n` }],
+      } } } },
+    });
+  }, TEST_TIMEOUT_MS);
+
+
   it('fixtures on disk match (npm run fixtures:annex-mobile to update)', () => {
     const rendered = render();
     if (WRITE) {

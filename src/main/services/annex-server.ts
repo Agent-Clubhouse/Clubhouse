@@ -72,6 +72,7 @@ import { injectPtyText } from './agent-runtime/pty-input';
 import { AgentStoppingError } from './agent-runtime/agent-stopping';
 import { spawnAgent, killAgent, getAvailableOrchestrators, isHeadlessAgent, resolveOrchestrator, resolveProfileEnv } from './agent-system';
 import { appLog } from './log-service';
+import { TOOL_EVENT_MAX_BYTES, boundChatEvent } from './annex-chat-bounds';
 import { ICON_TEMPORARILY_UNAVAILABLE, readIconImage, type IconImage } from './icon-images';
 
 /**
@@ -1133,6 +1134,11 @@ function noteFrameSize(data: string, type?: string): void {
  * isn't here because it has its own limits, in snapshotFrame.
  */
 const FRAME_FALLBACKS: Readonly<Record<string, (message: { payload: Record<string, unknown> }) => object>> = {
+  // Replay and anything else sending one that didn't start in broadcastAndBuffer.
+  'chat:event': (message) => {
+    const { event } = message.payload as { event: ChatEvent };
+    return { ...message, payload: { ...message.payload, event: boundChatEvent(event, Buffer.byteLength(JSON.stringify(event))) } };
+  },
   // readBoundedPtyBuffer stops this first. An empty ack would read as a real, blank terminal.
   'pty:attach:ack': (message) => ({ type: 'error', payload: { message: TERMINAL_UNAVAILABLE, op: 'pty:attach', agentId: message.payload.agentId } }),
 };
@@ -1442,9 +1448,24 @@ function broadcastFrame(type: string, frame: string, form?: SnapshotForm): numbe
 /** Broadcast a message and push it to the replay buffer. */
 function broadcastAndBuffer(type: string, payload: unknown, context?: string): void {
   const tc = validatedTraceparent(type === 'chat:event' ? context : context ?? currentRequestTraceparent());
-  const seq = eventReplay.pushEvent(type, payload, tc);
-  const message = { type, payload, seq, ...(tc && { tc }) };
-  broadcastWs(message);
+  // Serialized once, here, because a frame's size decides what's kept for replay as well as what's sent.
+  const { payload: bounded, json } = boundEventPayload(type, payload);
+  const seq = eventReplay.pushEvent(type, bounded, tc, Buffer.byteLength(json));
+  broadcastFrame(type, `{"type":${JSON.stringify(type)},"payload":${json},"seq":${seq}${tc ? `,"tc":${JSON.stringify(tc)}` : ''}}`);
+}
+
+/** An event's payload as Annex keeps and sends it, and that as JSON. Most pass through unchanged. */
+function boundEventPayload(type: string, payload: unknown): { payload: unknown; json: string } {
+  const json = JSON.stringify(payload) ?? 'null';
+  // A character is at most three UTF-8 bytes, so most events skip the count.
+  if (type !== 'chat:event' || json.length * 3 <= TOOL_EVENT_MAX_BYTES) return { payload, json };
+  const bytes = Buffer.byteLength(json);
+  const { agentId, event } = payload as { agentId: string; event: ChatEvent };
+  const bounded = boundChatEvent(event, bytes);
+  if (bounded === event) return { payload, json };
+  recordFrameOverLimit(type, 'fallback');
+  const next = { agentId, event: bounded };
+  return { payload: next, json: JSON.stringify(next) };
 }
 
 // ---------------------------------------------------------------------------
