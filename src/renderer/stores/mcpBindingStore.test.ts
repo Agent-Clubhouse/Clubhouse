@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { useMcpBindingStore, initMcpBindingListener } from './mcpBindingStore';
 import type { McpBindingEntry } from './mcpBindingStore';
+import { useToastStore } from './toastStore';
 
 // The setup-renderer.ts mock provides plain functions, not vi.fn(). We need to
 // replace them with vi.fn() for our tests.
@@ -106,6 +107,17 @@ describe('mcpBindingStore', () => {
       await useMcpBindingStore.getState().unbind('a1', 'w1');
 
       expect(mocks.unbind).toHaveBeenCalledWith('a1', 'w1');
+    });
+
+    it('tells the user when a Dispatcher link\'s removal could not be saved (#2661)', async () => {
+      useToastStore.setState({ toasts: [] });
+      useMcpBindingStore.setState({ bindings: [{ agentId: 'a1', targetId: 'a2', targetKind: 'agent', label: 'x' }] });
+      mocks.unbind.mockResolvedValue({ kept: false, removalNotSaved: true });
+
+      await useMcpBindingStore.getState().unbind('a1', 'a2');
+
+      expect(useMcpBindingStore.getState().bindings).toEqual([]);
+      expect(useToastStore.getState().toasts).toEqual([expect.objectContaining({ type: 'error', message: expect.stringContaining('could come back') })]);
     });
 
     it('keeps the binding when main kept it on canvas cleanup (#2225)', async () => {

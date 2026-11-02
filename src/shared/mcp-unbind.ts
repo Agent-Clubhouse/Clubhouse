@@ -13,4 +13,9 @@ export type McpUnbindCause = typeof MCP_UNBIND_CANVAS_CLEANUP;
 export interface McpUnbindResult {
   /** True when main kept the binding instead of unbinding it. */
   kept: boolean;
+  /**
+   * The wire is gone, but the removal of a Dispatcher-made link couldn't be saved
+   * anywhere, so that link could come back if the app restarts before it can be.
+   */
+  removalNotSaved?: boolean;
 }

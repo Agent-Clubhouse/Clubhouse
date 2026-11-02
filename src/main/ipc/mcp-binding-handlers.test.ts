@@ -64,6 +64,7 @@ vi.mock('../services/agent-registry', () => ({
 
 vi.mock('../services/dispatcher-connections', () => ({
   dispatcherConnectionSource: { id: 'dispatcher-connections', collect: vi.fn(async () => []) },
+  isRemovalUnsaved: vi.fn(async () => false),
   listDispatcherLinksForUser: vi.fn(async () => [{ agentId: 'a', targetId: 'b', agentName: 'a', targetName: 'b', status: 'suspended', reason: 'dispatcher_off' }]),
   watchDispatcherConnections: vi.fn(() => () => {}),
 }));
@@ -120,7 +121,7 @@ import {
 import { canvasWireBindingSource } from '../services/canvas-wire-source';
 import { helperWireBindingSource, watchHelperWires } from '../services/helper-wire-source';
 import { orchestratorConnectionSource, watchOrchestratorConnections } from '../services/orchestrator-connections';
-import { dispatcherConnectionSource } from '../services/dispatcher-connections';
+import { dispatcherConnectionSource, isRemovalUnsaved } from '../services/dispatcher-connections';
 import { dispatcherWireBindingSource, watchDispatcherWires } from '../services/dispatcher-wire-source';
 import { registerConnectionTools } from '../services/clubhouse-mcp/tools/connection-tools';
 import {
@@ -673,6 +674,13 @@ describe('user removals and later restores', () => {
     expect(markBindingRemovedByUser).toHaveBeenCalledWith('agent-1', 'agent-2');
     await handlers.get(IPC.MCP_BINDING.BIND)!(fakeEvent, 'agent-1', { targetId: 'agent-2', targetKind: 'agent', label: 'x' });
     expect(clearBindingRemovedByUser).toHaveBeenCalledWith('agent-1', 'agent-2');
+  });
+
+  it('UNBIND says so when a Dispatcher link\'s removal could not be saved (#2661)', async () => {
+    expect(await handlers.get(IPC.MCP_BINDING.UNBIND)!(fakeEvent, 'a', 'b')).toEqual({ kept: false });
+    vi.mocked(isRemovalUnsaved).mockResolvedValueOnce(true);
+    expect(await handlers.get(IPC.MCP_BINDING.UNBIND)!(fakeEvent, 'a', 'b')).toEqual({ kept: false, removalNotSaved: true });
+    expect(isRemovalUnsaved).toHaveBeenLastCalledWith({ agentId: 'a', targetId: 'b' });
   });
 
   it('UNBIND on canvas cleanup keeps a pair a persisted source holds (#2225)', async () => {
