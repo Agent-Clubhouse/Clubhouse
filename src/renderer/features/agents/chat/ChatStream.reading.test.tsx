@@ -182,6 +182,63 @@ describe('holding the reading position', () => {
   });
 });
 
+describe('reaching Show earlier while the agent streams', () => {
+  const grow = (fixture: ChatFixture, state: ChatViewState, id: string) => {
+    let next = state;
+    fixture.say('turn-120', id, `Streamed ${id}`);
+    for (const e of fixture.events.slice(-2)) next = reduceChatEvent(next, e);
+    return next;
+  };
+
+  it('stays there as rows keep arriving, and a click loads earlier history', () => {
+    const onShowEarlier = vi.fn();
+    const { state, fixture } = transcript(120);
+    const view = render(<ChatStream state={state} onShowEarlier={onShowEarlier} />);
+    const layout = new FakeLayout(screen.getByTestId('chat-stream'));
+    (HTMLElement.prototype as unknown as { above: (i: number) => number }).above = (i) => layout.rowTop(i);
+    layout.scrollTo(layout.bottom());
+    for (let i = 0; i < 3 && screen.queryByTestId('chat-window-older'); i++) fireEvent.click(screen.getByTestId('chat-window-older'));
+    layout.scrollTo(0);
+    let next = state;
+    for (const id of ['s1', 's2', 's3']) {
+      next = grow(fixture, next, id);
+      view.rerender(<ChatStream state={next} onShowEarlier={onShowEarlier} />);
+      expect(screen.getByTestId('chat-show-earlier')).toBeInTheDocument();
+    }
+    expect(layout.top).toBe(0);
+    fireEvent.click(screen.getByTestId('chat-show-earlier'));
+    expect(onShowEarlier).toHaveBeenCalledOnce();
+  });
+
+  it('is reached from a window at the tail, with rows arriving as Show older is clicked', () => {
+    const { state, fixture } = transcript(120);
+    const onShowEarlier = vi.fn();
+    const view = render(<ChatStream state={state} onShowEarlier={onShowEarlier} />);
+    const layout = new FakeLayout(screen.getByTestId('chat-stream'));
+    (HTMLElement.prototype as unknown as { above: (i: number) => number }).above = (i) => layout.rowTop(i);
+    layout.scrollTo(layout.bottom());
+    const next = grow(fixture, state, 's1');
+    act(() => {
+      fireEvent.click(screen.getByTestId('chat-window-older'));
+      view.rerender(<ChatStream state={next} onShowEarlier={onShowEarlier} />);
+    });
+    // The click won: the window moved back, and didn't slide to the tail with the new row.
+    expect(screen.getByTestId('chat-window-later')).toBeInTheDocument();
+  });
+
+  it('does not snap a reader back when rows arrive before their scroll event', () => {
+    const { state, fixture } = transcript(10);
+    const { view, layout } = setup(state);
+    layout.top = layout.bottom() - 200;
+    const held = layout.top;
+    fixture.say('turn-10', 'x', 'More');
+    let next = state;
+    for (const e of fixture.events.slice(-2)) next = reduceChatEvent(next, e);
+    view.rerender(<ChatStream state={next} />);
+    expect(layout.top).toBe(held);
+  });
+});
+
 describe('jumping to a subagent', () => {
   it('goes to a target outside the window even though the reader had a place elsewhere', () => {
     const base = transcript(120).state;

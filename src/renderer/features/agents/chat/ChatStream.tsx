@@ -318,6 +318,11 @@ const ChatStreamInner = memo(function ChatStreamInner({
     const root = scroller.current;
     if (!root) return;
     if (pinned.current) {
+      // The reader moved up and its scroll event hasn't fired yet: don't snap them back. onScroll takes it from here.
+      if (root.scrollTop < lastScrollTop.current - MOVED_UP_PX && root.scrollHeight - root.scrollTop - root.clientHeight > MOVED_UP_PX) {
+        pinned.current = false;
+        return;
+      }
       root.scrollTop = root.scrollHeight;
     } else if (anchor.current) {
       const row = rowElement(anchor.current.key);

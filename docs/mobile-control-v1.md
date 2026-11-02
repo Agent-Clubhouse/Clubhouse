@@ -263,10 +263,12 @@ Tools, thoughts, routed messages, the user's messages and subagent work aren't s
 | Routed attachments | Shown on the message | Counted in the summary |
 | Finished thoughts | Carried in a group | Finished system messages stay as boundaries, because the wire has no reliable thought marker |
 | Bottom tolerance | 16px | 16pt initial tolerance |
-| Stops | Messages, plans, questions | Messages, questions: phones have no plan or subagent rows |
+| Plans as stops | A plan row | A `plan_document` reaches the phone as an assistant message, so it stops there |
 | Previous and next | Buttons, and Cmd+Opt+Up/Down (Ctrl+Alt off macOS) | Touch controls |
 
-Tool images break a group on both.
+Tool images break a group on both. Phones have no subagent rows.
+
+**Not in Clubhouse Go yet.** These are the shared rule, but phones don't do them yet: the long failed output fold (directed, not built), and telling the true bottom from paused near the bottom for Latest (in progress).
 
 ### Queued messages
 
