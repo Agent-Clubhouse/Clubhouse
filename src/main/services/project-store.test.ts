@@ -30,7 +30,12 @@ vi.mock('./sound-service', () => ({
 }));
 
 // electron is aliased to our mock by vitest.config.ts
+vi.mock('./log-service', () => ({
+  appLog: vi.fn(),
+}));
+
 import * as fsp from 'fs/promises';
+import { appLog } from './log-service';
 import { pathExists } from './fs-utils';
 import { list, add, remove, update, reorder, readIconData, setIcon, saveCroppedIcon, removeIconFile, writeIconFile, onProjectsChanged } from './project-store';
 import { getSettings as getBadgeSettings, saveSettings as saveBadgeSettings } from './badge-settings';
@@ -63,6 +68,29 @@ function mockNoStoreFile() {
     return true; // base dir exists
   });
 }
+
+describe('read logging (#2662)', () => {
+  const lines = () => vi.mocked(appLog).mock.calls.filter(([ns]) => ns === 'core:project-store');
+  const store = (name: string) => ({ version: 1, projects: [{ id: 'proj_log', name, path: path.join(os.tmpdir(), 'log-project') }] });
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.mocked(fsp.writeFile).mockResolvedValue(undefined);
+    vi.mocked(fsp.mkdir).mockResolvedValue(undefined);
+    vi.mocked(fsp.readdir).mockResolvedValue([]);
+  });
+
+  it('logs nothing for repeat reads, and logs again when the list changes', async () => {
+    mockStoreFile(store('first'));
+    for (let i = 0; i < 50; i++) await list();
+    expect(lines().map(([, , msg]) => msg)).toEqual(['Loaded 1 project(s) from disk']);
+    mockStoreFile(store('renamed'));
+    await list();
+    await list();
+    expect(lines()).toHaveLength(2);
+    expect(lines()[1][3]?.meta?.projects).toEqual([{ id: 'proj_log', name: 'renamed' }]);
+  });
+});
 
 describe('migrate (tested via list)', () => {
   beforeEach(() => {
