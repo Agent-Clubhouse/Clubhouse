@@ -55,7 +55,7 @@ import { AUTO_RESERVATION_MS, AUTO_STICKY_MS, decideAutoProvider, type AutoCandi
 import { getSettings as getOrchestratorSettings } from './orchestrator-settings';
 import { readProjectAgentDefaults, writeProjectAgentDefaults } from './agent-settings-service';
 import type { DurableAgentConfig } from '../../shared/types';
-import type { ResolvedOrchestrationPolicy } from '../../shared/orchestration-policy';
+import { decideHelperAuto, type ResolvedOrchestrationPolicy } from '../../shared/orchestration-policy';
 
 function errorText(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
@@ -214,10 +214,7 @@ export async function planHelperStart(request: StartPlanRequest): Promise<StartP
   const pinned = await personaPins(projectPath, persona);
   const wantsAuto = cli === AUTO_CLI;
   if (wantsAuto) {
-    if (!request.auto?.effective) {
-      const why = routingLabel('autoOff', request.auto?.reason ?? 'not_enabled');
-      return { ok: false, code: 'auto_off', message: `Auto provider is off for you: ${why}. Name a CLI, or ask the user to turn it on.`, userReason: `Auto provider is off: ${why}.` };
-    }
+    if (!request.auto?.effective) return autoOffRefusal(request.auto);
     // A persona's pin decides, and Auto has nothing to balance. Its CLI or the orchestrator's is used.
     if (!pinned.orchestrator && !pinned.model) return prepareAuto(request);
   }
@@ -489,29 +486,31 @@ export async function readHelperAuto(context: {
 } = {}): Promise<HelperAutoView> {
   const app = orchestrationSettings.getAutoHelpers();
   const { projectPath, agent, dispatcher } = context;
-  const project = projectPath ? (await readProjectAgentDefaults(projectPath)).helperAuto === 'off' : false;
-  const policy = agent?.policy;
-  const stored = agent?.config.orchestration?.autoHelpers;
-  const personaOff = policy?.sources.autoHelpers === 'persona';
-  const locked = !!dispatcher;
-  const scopes: HelperAutoView['scopes'] = {
-    app: { value: app, editable: true },
-    ...(projectPath && !locked && { project: { value: project ? 'off' as const : null, choices: ['off', null] as ['off', null], editable: true } }),
-    ...(agent && !locked && {
-      persona: { value: personaOff ? false as const : null, editable: false as const },
-      agent: { value: stored ?? null, editable: !policy?.mcpOff },
-    }),
-  };
-  if (locked) {
-    return { effective: false, source: 'dispatcher_locked', reason: 'dispatcher_locked', scopes: { app: { value: app, editable: true }, agent: { value: null, editable: false } } };
+  if (dispatcher) {
+    // The Dispatcher doesn't start helpers, and nothing here is its to change.
+    return { effective: false, source: 'dispatcher_locked', reason: 'dispatcher_locked', scopes: { app: { value: app, editable: false }, agent: { value: null, editable: false } } };
   }
-  const off = (source: HelperAutoView['source'], reason: HelperAutoView['reason']): HelperAutoView => ({ effective: false, source, reason, scopes });
-  if (policy?.mcpOff) return off('mcp_off', 'mcp_off');
-  if (project) return off('project', 'project_off');
-  if (personaOff) return off('persona', 'persona_off');
-  if (policy && !policy.orchestrate) return off(stored !== undefined ? 'agent' : app ? 'app' : 'default', 'orchestration_off');
-  if (stored !== undefined) return stored ? { effective: true, source: 'agent', scopes } : off('agent', 'not_enabled');
-  return app ? { effective: true, source: 'app', scopes } : off('default', 'not_enabled');
+  const projectOff = projectPath ? (await readProjectAgentDefaults(projectPath)).helperAuto === 'off' : false;
+  const policy = agent?.policy;
+  // Its own switch, MCP or not. A saved value comes back with MCP, and clearing or turning it off still works without.
+  const stored = agent?.config.orchestration?.autoHelpers ?? null;
+  return {
+    ...decideHelperAuto({ app, projectOff, ...(policy && { policy }) }),
+    scopes: {
+      app: { value: app, editable: true },
+      ...(projectPath && { project: { value: projectOff ? 'off' as const : null, choices: ['off', null] as ['off', null], editable: true } }),
+      ...(agent && {
+        persona: { value: policy?.personaAutoOff ? false as const : null, editable: false as const },
+        agent: { value: stored, editable: true },
+      }),
+    },
+  };
+}
+
+/** The refusal for `cli: "auto"` while it's off, saying why. */
+export function autoOffRefusal(auto: HelperAutoView | undefined): Extract<StartPlanResult, { ok: false }> {
+  const why = routingLabel('autoOff', auto?.reason ?? 'not_enabled');
+  return { ok: false, code: 'auto_off', message: `Auto provider is off for you: ${why}. Name a CLI, or ask the user to turn it on.`, userReason: `Auto provider is off: ${why}.` };
 }
 
 // ── The settings ─────────────────────────────────────────────────────────
@@ -748,7 +747,8 @@ async function writePresets(update: HelperRoutingUpdate, { surface, projectPath 
   const stale = async () => refuse(new HelperRoutingError(
     'helper_routing_stale',
     'These presets changed since this page loaded. Check the new values and make your change again.',
-    await readHelperRouting(),
+    // Fresh values for what the page was showing: at a project's scope, that project's.
+    await readHelperRouting(projectPath ? { projectPath } : {}),
   ));
   if (savedPartOf(update.revision) !== orchestrationSettings.getPresetsRevision()) return stale();
 

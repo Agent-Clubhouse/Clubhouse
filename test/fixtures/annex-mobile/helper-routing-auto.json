@@ -35,7 +35,7 @@
           "value": null
         },
         "app": {
-          "editable": true,
+          "editable": false,
           "value": true
         }
       },
@@ -46,7 +46,7 @@
       "reason": "mcp_off",
       "scopes": {
         "agent": {
-          "editable": false,
+          "editable": true,
           "value": null
         },
         "app": {

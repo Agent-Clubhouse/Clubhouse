@@ -2,7 +2,8 @@ import { describe, it, expect, beforeEach, vi, type Mock } from 'vitest';
 import { settingsChanged, themeChanged } from '../telemetry/feature-events';
 
 vi.mock('../services/free-agent-settings', () => ({ getSettings: vi.fn(() => ({})), saveSettings: vi.fn(async () => {}) }));
-vi.mock('../services/orchestration-settings', () => ({ getSettings: vi.fn(() => ({ globalHelperCap: 7 })), saveSettings: vi.fn(async () => {}) }));
+vi.mock('../services/orchestration-settings', () => ({
+  getAutoHelpers: vi.fn(() => false), getSettings: vi.fn(() => ({ globalHelperCap: 7 })), saveSettings: vi.fn(async () => {}) }));
 const orchestrationBroadcast = vi.hoisted(() => vi.fn());
 vi.mock('../util/ipc-broadcast', () => ({ broadcastToAllWindows: orchestrationBroadcast }));
 vi.mock('../services/session-settings', () => ({ getSettings: vi.fn(() => ({})), saveSettings: vi.fn(async () => {}) }));

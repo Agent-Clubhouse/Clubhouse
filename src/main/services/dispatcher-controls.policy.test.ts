@@ -30,7 +30,8 @@ vi.mock('./mcp-settings', () => ({
   isMcpEnabled: () => true,
   onMcpEnablementChanged: vi.fn(() => () => undefined),
 }));
-vi.mock('./orchestration-settings', () => ({ getGlobalHelperCap: () => 20 }));
+vi.mock('./orchestration-settings', () => ({
+  getAutoHelpers: vi.fn(() => false), getGlobalHelperCap: () => 20 }));
 vi.mock('./dispatcher/dispatcher-service', () => ({
   isDispatcherEnabled: () => true,
   isDispatcherAgentId: (id: string) => id === 'dispatcher',

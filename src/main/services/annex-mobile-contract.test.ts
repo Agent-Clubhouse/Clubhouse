@@ -1625,7 +1625,7 @@ describe('Annex mobile contract fixtures', { timeout: TEST_TIMEOUT_MS }, () => {
       ...(id !== 'copilot-cli' && { listModels: async () => lists[id], readPlanQuota: () => quotas[id]() }),
     }]));
     const ROUTE = '/api/v1/mobile/helper-routing';
-    const FAMILIES = ['reason', 'fallback', 'skipped', 'quota', 'unknown', 'window', 'autoOff', 'cell', 'generic'];
+    const FAMILIES = ['reason', 'fallback', 'skipped', 'quota', 'unknown', 'window', 'autoSource', 'autoOff', 'cell', 'generic'];
     const cell = (res: Awaited<ReturnType<typeof exchange>>, provider: string, difficulty: string) => res.response.body.providers[provider].cells[difficulty];
 
     // A bare read has every label family, so a phone can cache them once per revision.
@@ -1864,7 +1864,8 @@ describe('Annex mobile contract fixtures', { timeout: TEST_TIMEOUT_MS }, () => {
     const projectWrite = await command('accepted auto off for a project', { type: 'helperRouting.update', scope: 'project', projectId: 'proj_app', revision: on.body.result.revision, auto: 'off' });
     expect(projectWrite.body.result.auto).toMatchObject({ source: 'project', reason: 'project_off' });
     expect(W.projectDefaults).toMatchObject({ helperAuto: 'off' });
-    const projectClear = await command('accepted auto back on for a project', { type: 'helperRouting.update', scope: 'project', projectId: 'proj_app', revision: projectWrite.body.result.revision, auto: null });
+    const projectClear = await command('accepted project override removed (null, which never enables)', { type: 'helperRouting.update', scope: 'project', projectId: 'proj_app', revision: projectWrite.body.result.revision, auto: null });
+    expect(projectClear.body.result.auto).toMatchObject({ effective: false, source: 'default', reason: 'not_enabled', scopes: { project: { value: null } } });
     await command('invalid_helper_routing (project can\'t turn it on)', { type: 'helperRouting.update', scope: 'project', projectId: 'proj_app', revision: projectClear.body.result.revision, auto: true });
     await command('invalid_helper_routing (app-wide off value)', write({ revision: projectClear.body.result.revision, auto: 'off' }));
     await command('project_not_found', { type: 'helperRouting.update', scope: 'project', projectId: 'missing', revision: projectClear.body.result.revision, auto: 'off' });
@@ -1881,6 +1882,28 @@ describe('Annex mobile contract fixtures', { timeout: TEST_TIMEOUT_MS }, () => {
     const staleAfterDesktop = await command('helper_routing_stale (a desktop project change)', write({ revision: held, auto: true }));
     expect(staleAfterDesktop).toMatchObject({ status: 409, body: { status: 'rejected', error: { code: 'helper_routing_stale' }, revision: moved.payload.revision, settings: { revision: moved.payload.revision } } });
     expect(W.autoHelpers).toBe(false);
+
+    // A phone at a project's scope read null, and the desktop set off: its stale null can't clear that, and it gets the project's values.
+    const heldProject = (await exchange('GET', `${ROUTE}?projectId=proj_app`)).response.body.revision;
+    W.projectDefaults = { ...W.projectDefaults, helperAuto: 'off' };
+    noteRoutingPolicyChanged();
+    await _settleHelperRoutingForTesting();
+    const staleProject = await command('helper_routing_stale (project scope, fresh values for that project)', { type: 'helperRouting.update', scope: 'project', projectId: 'proj_app', revision: heldProject, auto: null });
+    expect(staleProject).toMatchObject({ status: 409, body: { error: { code: 'helper_routing_stale' }, settings: { auto: { source: 'project', reason: 'project_off', scopes: { project: { value: 'off' } } } } } });
+    expect(W.projectDefaults.helperAuto).toBe('off');
+    delete W.projectDefaults.helperAuto;
+
+    // An agent's own setting: true or false sets it, null clears it, so it follows the app again.
+    await command('accepted autoHelpers on', { type: 'agent.update', agentId: 'durable_chat', orchestration: { autoHelpers: true } });
+    expect(W.durables[APP][0].orchestration.autoHelpers).toBe(true);
+    await command('accepted autoHelpers off', { type: 'agent.update', agentId: 'durable_chat', orchestration: { autoHelpers: false } });
+    expect(W.durables[APP][0].orchestration.autoHelpers).toBe(false);
+    await command('accepted autoHelpers cleared (inherits)', { type: 'agent.update', agentId: 'durable_chat', orchestration: { autoHelpers: null } });
+    expect(W.durables[APP][0].orchestration).not.toHaveProperty('autoHelpers');
+    await command('invalid_orchestration (autoHelpers)', { type: 'agent.update', agentId: 'durable_chat', orchestration: { autoHelpers: 'yes' } });
+    W.durables[APP][0].mcpOverride = false;
+    await command('mcp_off (autoHelpers)', { type: 'agent.update', agentId: 'durable_chat', orchestration: { autoHelpers: true } });
+    delete W.durables[APP][0].mcpOverride;
 
     const autoDecision = (fields: Record<string, unknown>) => decision({
       mode: 'auto', balanced: true, requested: field('auto', null, null, 'hard'), resolved: field('codex-cli', 'gpt-6.1-sol', 'high', 'hard'),

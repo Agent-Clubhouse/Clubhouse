@@ -9,6 +9,7 @@
  */
 
 import { isEffortValue } from './agent-helpers';
+import type { HelperAutoOffReason, HelperAutoSource } from './orchestration-policy';
 
 export const HELPER_DIFFICULTIES = ['easy', 'medium', 'hard'] as const;
 export type HelperDifficulty = (typeof HELPER_DIFFICULTIES)[number];
@@ -88,7 +89,7 @@ export type HelperRoutingReason = 'explicit_request' | 'persona_pinned' | 'prese
 export type HelperRoutingFallback = 'none' | 'builtin_preset' | 'candidate_skipped' | 'model_unverified';
 export type HelperRoutingFieldSource = 'request' | 'persona' | 'orchestrator' | 'auto' | 'custom_mapping' | 'builtin_mapping' | 'cli_default';
 export type HelperRoutingSkip = 'cli_disabled' | 'cli_unavailable' | 'auto_not_supported' | 'no_valid_mapping' | 'cooling_down' | 'quota_near_limit' | 'quota_exhausted';
-export type HelperAutoOffReason = 'not_enabled' | 'project_off' | 'persona_off' | 'orchestration_off' | 'mcp_off' | 'dispatcher_locked';
+export type { HelperAutoOffReason, HelperAutoSource } from './orchestration-policy';
 export type PresetCellState = 'valid' | 'unverified' | 'stale';
 export type PresetStaleReason = 'model_unavailable' | 'effort_unavailable';
 export type HelperContextStatus = 'none' | 'applied' | 'reset' | 'not_applied';
@@ -150,6 +151,15 @@ export const HELPER_ROUTING_LABELS = {
     weekly: 'Weekly limit',
     fiveHour: '5-hour limit',
     other: 'Plan limit',
+  },
+  autoSource: {
+    agent: 'Set on this agent',
+    project: 'Set for this project',
+    persona: 'Set by this agent’s persona',
+    app: 'Set for the whole app',
+    default: 'Off unless turned on',
+    mcp_off: 'Clubhouse MCP is off for this agent',
+    dispatcher_locked: 'Not for the Dispatcher',
   },
   autoOff: {
     not_enabled: 'It isn’t turned on',
@@ -262,7 +272,7 @@ export interface HelperRoutingSettings {
 /** Whether `cli: "auto"` is allowed, at the scope asked about, and each level's say in it. */
 export interface HelperAutoView {
   effective: boolean;
-  source: 'agent' | 'project' | 'persona' | 'app' | 'default' | 'mcp_off' | 'dispatcher_locked';
+  source: HelperAutoSource;
   reason?: HelperAutoOffReason;
   scopes: {
     app: { value: boolean; editable: boolean };

@@ -92,7 +92,7 @@ export function AgentHelpersSettings({ agent, projectPath }: { agent: Agent; pro
         <Field label="Auto provider" htmlFor={ids.auto} help={AUTO_HELPERS_HELP}>
           <AutoHelpersToggle
             id={ids.auto}
-            checked={policy.autoHelpers}
+            policy={policy}
             name={agent.name}
             disabled={saving}
             onChange={(on) => void orch.setAutoHelpers(on)}

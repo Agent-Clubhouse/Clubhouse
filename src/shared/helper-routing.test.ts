@@ -68,6 +68,11 @@ describe('helper routing', () => {
     for (const claim of ['cheapest', 'best', 'optimal', 'guaranteed', 'verified capacity']) expect(words).not.toContain(claim);
   });
 
+  it('has words for every source of the Auto setting, and no label calls unknown quota healthy', () => {
+    for (const source of ['agent', 'project', 'persona', 'app', 'default', 'mcp_off', 'dispatcher_locked'] as const) expect(HELPER_ROUTING_LABELS.autoSource[source]).toBeTruthy();
+    expect(JSON.stringify(HELPER_ROUTING_LABELS).toLowerCase()).not.toContain('healthy');
+  });
+
   it('the snapshot form is codes only', () => {
     expect(minimalRouting(routing)).toEqual({ mode: 'preset', difficulty: 'hard', provider: 'codex-cli', model: 'gpt-6.1-sol', effort: 'high', reason: 'preset_on_cli' });
   });

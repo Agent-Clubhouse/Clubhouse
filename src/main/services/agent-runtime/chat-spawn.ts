@@ -9,6 +9,7 @@
  * chat agents get status and approvals from the protocol instead.
  */
 
+import { isLoginRequiredError } from './login-error';
 import { randomUUID } from 'crypto';
 import * as path from 'path';
 import type { OrchestratorProvider } from '../../orchestrators';
@@ -116,14 +117,7 @@ export function chatDriverCandidates(provider: string, preferred?: ChatDriver['i
   return [first, ...listChatDrivers().filter((d) => d.provider === provider && d !== first && !d.optIn)];
 }
 
-/**
- * A start failure that means "log in first": the probe can't see it (Copilot
- * advertises its login method whether or not you're logged in), so it shows
- * up as the session request failing.
- */
-export function isLoginRequiredError(message: string): boolean {
-  return /authentication required|not logged in|not authenticated|unauthori[sz]ed|please (run )?\S*\s*login/i.test(message);
-}
+export { isLoginRequiredError };
 
 /** A start error's own `code` (e.g. `rpc_timeout` from the Claude init deadline, #2283), when it has a string one. */
 function errorCodeOf(err: unknown): string | undefined {

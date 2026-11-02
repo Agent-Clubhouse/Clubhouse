@@ -313,7 +313,7 @@ describe('readHelperRouting', () => {
       choices: { source: 'live', asOf: new Date(1000).toISOString() },
       cells: { easy: { state: 'valid', source: 'builtin', custom: null, editable: true, effective: { model: 'gpt-6-luna', effort: 'low' } } },
     });
-    expect(Object.keys(settings.labels)).toEqual(['reason', 'fallback', 'skipped', 'quota', 'unknown', 'window', 'autoOff', 'cell', 'generic']);
+    expect(Object.keys(settings.labels)).toEqual(['reason', 'fallback', 'skipped', 'quota', 'unknown', 'window', 'autoSource', 'autoOff', 'cell', 'generic']);
   });
 
   it('shows a stale saved choice with what is used instead, and nothing when nothing is left', async () => {
@@ -665,7 +665,7 @@ describe('Auto (#2671)', () => {
 
     it('no MCP, no Auto, whatever is saved', async () => {
       W.appAuto = true;
-      expect(await read(true, policy({ orchestrate: true, autoHelpers: true }, {}, { mcpOff: true }))).toMatchObject({ effective: false, source: 'mcp_off', reason: 'mcp_off', scopes: { agent: { value: true, editable: false } } });
+      expect(await read(true, policy({ orchestrate: true, autoHelpers: true }, {}, { mcpOff: true }))).toMatchObject({ effective: false, source: 'mcp_off', reason: 'mcp_off', scopes: { agent: { value: true, editable: true } } });
     });
 
     it('an agent that doesn\'t orchestrate can\'t use it', async () => {
@@ -675,7 +675,12 @@ describe('Auto (#2671)', () => {
 
     it('the Dispatcher is locked', async () => {
       W.appAuto = true;
-      expect(await readHelperAuto({ dispatcher: true })).toMatchObject({ effective: false, source: 'dispatcher_locked', reason: 'dispatcher_locked', scopes: { agent: { value: null, editable: false } } });
+      expect(await readHelperAuto({ dispatcher: true })).toMatchObject({ effective: false, source: 'dispatcher_locked', reason: 'dispatcher_locked', scopes: { app: { editable: false }, agent: { value: null, editable: false } } });
+    });
+
+    it('a persona\'s off beats the agent\'s own on, whose value stays', async () => {
+      const result = await read(true, policy({ orchestrate: true, autoHelpers: true }, { autoHelpers: false }));
+      expect(result).toMatchObject({ effective: false, source: 'persona', reason: 'persona_off', scopes: { persona: { value: false }, agent: { value: true } } });
     });
   });
 
@@ -729,6 +734,23 @@ describe('Auto (#2671)', () => {
       await _settleHelperRoutingForTesting();
       expect(W.revision).toBe(1);
       expect(changed).toHaveLength(1);
+    });
+
+    it('a stale write at a project\'s scope gets that project\'s fresh values, not the app\'s', async () => {
+      const old = helperRoutingRevision();
+      W.projects.set('/p', { helperAuto: 'off' });
+      noteRoutingPolicyChanged();
+      await _settleHelperRoutingForTesting();
+      // The phone read null and the desktop set off: this null must not clear it.
+      const err = await refused(updateHelperPresets({ revision: old, auto: null } as never, { surface: 'mobile', projectPath: '/p' }));
+      expect(err).toMatchObject({ code: 'helper_routing_stale', settings: { auto: { source: 'project', reason: 'project_off', scopes: { project: { value: 'off' } } } } });
+      expect(W.projects.get('/p')).toEqual({ helperAuto: 'off' });
+    });
+
+    it('a project\'s null removes its override, and never enables: the app still decides', async () => {
+      W.projects.set('/p', { helperAuto: 'off' });
+      const settings = await write({ auto: null }, { projectPath: '/p' });
+      expect(settings.auto).toMatchObject({ effective: false, source: 'default', reason: 'not_enabled', scopes: { project: { value: null } } });
     });
 
     it('app-wide refuses a project\'s values', async () => {

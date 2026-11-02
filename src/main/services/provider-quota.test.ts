@@ -26,10 +26,9 @@ vi.mock('../telemetry/feature-events', () => ({
   helperQuotaRead: (...args: unknown[]) => { W.telemetry.push(args); },
   helperAutoCooldown: (...args: unknown[]) => { W.cooldowns.push(args); },
 }));
-vi.mock('./agent-runtime/chat-spawn', () => ({ isLoginRequiredError: (message: string) => /not logged in/i.test(message) }));
 
 import {
-  QUOTA_CACHE_MS, QUOTA_FAILURE_BACKOFF_MS, _resetProviderQuotaForTesting, classifyStartFailure, isProviderCoolingDown, noteProviderFailure, readProviderQuota, watchSessionQuota,
+  QUOTA_CACHE_MS, QUOTA_FAILURE_BACKOFF_MS, _resetProviderQuotaForTesting, classifyStartFailure, isProviderCoolingDown, noteProviderFailure, providerStartWarning, readProviderQuota, watchSessionQuota,
 } from './provider-quota';
 import { AUTO_COOLDOWN_AUTH_MS, AUTO_COOLDOWN_AVAILABILITY_MS, AUTO_COOLDOWN_QUOTA_MS } from './helper-auto-policy';
 import { QUOTA_STALE_MS } from '../../shared/helper-routing';
@@ -229,6 +228,28 @@ describe('failures and cooldowns', () => {
     await noteProviderFailure('claude-code', undefined, 'quota', NOW + 1000);
     vi.setSystemTime(NOW + 1000);
     expect(await isProviderCoolingDown('claude-code', undefined)).toBe(false);
+  });
+
+  it('a quota failure with no reset of its own uses a known limit\'s', async () => {
+    W.read = async () => ({ kind: 'windows', windows: [{ name: 'week', usedPercent: 90, limitReached: true, resetsAt: NOW + AUTO_COOLDOWN_QUOTA_MS * 3, asOf: NOW }] });
+    await readProviderQuota('claude-code');
+    await noteProviderFailure('claude-code', undefined, 'quota');
+    vi.setSystemTime(NOW + AUTO_COOLDOWN_QUOTA_MS * 2);
+    expect(await isProviderCoolingDown('claude-code', undefined)).toBe(true);
+    vi.setSystemTime(NOW + AUTO_COOLDOWN_QUOTA_MS * 3);
+    expect(await isProviderCoolingDown('claude-code', undefined)).toBe(false);
+  });
+
+  it('warns an explicit start from what is known, asking the CLI nothing', async () => {
+    const read = vi.fn(async () => reading(96));
+    W.read = read;
+    expect(await providerStartWarning('claude-code', undefined)).toBeUndefined();
+    expect(read).not.toHaveBeenCalled();
+    await readProviderQuota('claude-code');
+    expect(await providerStartWarning('claude-code', undefined)).toContain('close to its plan limit');
+    await noteProviderFailure('claude-code', undefined, 'auth');
+    expect(await providerStartWarning('claude-code', undefined)).toContain('failed to start or hit its limit');
+    expect(read).toHaveBeenCalledTimes(1);
   });
 
   it('each profile cools down on its own', async () => {

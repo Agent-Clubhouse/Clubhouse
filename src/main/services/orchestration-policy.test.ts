@@ -1,3 +1,4 @@
+import { setRoutingPolicyListener } from './helper-routing-changes';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import * as path from 'path';
 import type { DurableAgentConfig, HelperCascadeResult } from '../../shared/types';
@@ -106,6 +107,7 @@ vi.mock('./agent-registry', () => ({
 }));
 
 vi.mock('./orchestration-settings', () => ({
+  getAutoHelpers: vi.fn(() => false),
   getGlobalHelperCap: () => state.globalCap,
 }));
 
@@ -346,6 +348,19 @@ describe('setOrchestrationPolicy audit (#2671)', () => {
       { surface: 'dispatcher', actorId: 'disp', targetId: 'orch', scope: 'agent', key: 'orchestration.control', before: expect.anything(), after: 'ask-before-start', outcome: 'ok' },
     ]));
     expect(auditRows).toHaveLength(2);
+  });
+
+  it('moves the routing revision when Auto is decided differently, and not otherwise', async () => {
+    const listener = vi.fn();
+    setRoutingPolicyListener(listener);
+    try {
+      await setOrchestrationPolicy(PROJECT, 'orch', { maxHelpers: 9 });
+      expect(listener).not.toHaveBeenCalled();
+      await setOrchestrationPolicy(PROJECT, 'orch', { orchestrate: true, autoHelpers: true });
+      expect(listener).toHaveBeenCalledTimes(1);
+    } finally {
+      setRoutingPolicyListener(null);
+    }
   });
 
   it('defaults to the desktop UI, and records nothing when nothing changed', async () => {

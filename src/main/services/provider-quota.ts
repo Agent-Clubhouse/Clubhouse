@@ -24,7 +24,7 @@ import type { UsageLimit } from '../../shared/chat/events';
 import { getProvider } from '../orchestrators';
 import type { OrchestratorId } from '../orchestrators';
 import { helperAutoCooldown, helperQuotaRead } from '../telemetry/feature-events';
-import { isLoginRequiredError } from './agent-runtime/chat-spawn';
+import { isLoginRequiredError } from './agent-runtime/login-error';
 import { AUTO_COOLDOWN_AUTH_MS, AUTO_COOLDOWN_AVAILABILITY_MS, AUTO_COOLDOWN_QUOTA_MS } from './helper-auto-policy';
 import { onChatEvent } from './agent-runtime/chat-event-bus';
 import { agentRegistry } from './agent-registry';
@@ -187,7 +187,11 @@ export async function noteProviderFailure(providerId: string, projectPath: strin
   try {
     const { entry } = await entryFor(providerId, projectPath);
     const now = Date.now();
-    const until = kind === 'quota' && resetsAt && resetsAt > now ? resetsAt : now + COOLDOWN_MS[kind];
+    // A limit we already know is reached says when it comes back.
+    const knownReset = kind === 'quota'
+      ? resetsAt ?? entry.windows.filter((w) => w.limitReached && w.resetsAt !== undefined && w.resetsAt > now).map((w) => w.resetsAt!).sort((a, b) => b - a)[0]
+      : undefined;
+    const until = knownReset && knownReset > now ? knownReset : now + COOLDOWN_MS[kind];
     entry.coolingUntil = Math.max(entry.coolingUntil ?? 0, until);
     if (kind === 'quota') {
       entry.windows = [...entry.windows.filter((w) => w.name !== 'window'), { name: 'window', limitReached: true, resetsAt: until, asOf: now }];
@@ -204,6 +208,27 @@ export async function noteProviderFailure(providerId: string, projectPath: strin
 export async function isProviderCoolingDown(providerId: string, projectPath: string | undefined): Promise<boolean> {
   const { entry } = await entryFor(providerId, projectPath);
   return (entry.coolingUntil ?? 0) > Date.now();
+}
+
+/**
+ * A warning for a start that names this provider, from what is already known. An
+ * explicit start is never blocked by quota or a cooldown, and this reads nothing
+ * from a CLI, so it says nothing until something has. Never throws.
+ */
+export async function providerStartWarning(providerId: string, projectPath: string | undefined): Promise<string | undefined> {
+  try {
+    const { entry } = await entryFor(providerId, projectPath);
+    const now = Date.now();
+    if ((entry.coolingUntil ?? 0) > now) return `${providerId} failed to start or hit its limit recently, so Auto is leaving it alone for now. The helper is started on it anyway, as you asked.`;
+    if (entry.windows.length === 0) return undefined;
+    const { state } = classifyQuota(entry.windows, now);
+    if (state === 'exhausted') return `${providerId} reports its plan limit reached. The helper is started on it anyway, as you asked, and may stop right away.`;
+    if (state === 'near_limit') return `${providerId} is close to its plan limit. The helper is started on it anyway, as you asked.`;
+    return undefined;
+  } catch {
+    // telemetry-exempt: only a warning, and the start goes on
+    return undefined;
+  }
 }
 
 const SESSION_ERROR_CLASS: Record<string, StartFailureClass> = {

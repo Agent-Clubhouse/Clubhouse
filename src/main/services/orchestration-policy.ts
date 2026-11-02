@@ -88,6 +88,7 @@ import {
   ORCHESTRATION_DEFAULTS,
   ORCHESTRATION_OFF_MESSAGE,
   applyOrchestrationPatch,
+  decideHelperAuto,
   checkHelperLimit,
   normalizeOrchestrationConfig,
   patchTurnsOnMcpSwitch,
@@ -162,7 +163,11 @@ export async function withAgentLock<T>(_projectPath: string, agentId: string, fn
 async function readPersonaPolicy(projectPath: string, personaId: string): Promise<OrchestrationPolicyConfig | undefined> {
   try {
     const raw = await readLayeredPersonaRaw(projectPath, personaId);
-    return raw === undefined ? undefined : normalizeOrchestrationConfig(readFrontMatterValue(raw, 'orchestration'));
+    if (raw === undefined) return undefined;
+    const config = normalizeOrchestrationConfig(readFrontMatterValue(raw, 'orchestration'));
+    // A persona can turn Auto off and never on, so its `true` can't hide another layer's `false` when they merge (#2671).
+    if (config?.autoHelpers === true) delete config.autoHelpers;
+    return config;
   } catch (err) {
     // telemetry-exempt: an unreadable persona falls back to the defaults
     appLog('core:orchestration', 'warn', 'Could not read orchestration defaults from a persona', {
@@ -210,7 +215,22 @@ async function resolveFor(
   agent: DurableAgentConfig,
   stored: OrchestrationPolicyConfig | undefined,
 ): Promise<ResolvedOrchestrationPolicy> {
-  return resolveOrchestrationPolicy(stored, await readPersonaOrchestrationDefaults(projectPath, agent), resolveOptions(projectPath, agent));
+  const policy = resolveOrchestrationPolicy(stored, await readPersonaOrchestrationDefaults(projectPath, agent), resolveOptions(projectPath, agent));
+  return withAutoEffective(policy, await projectAutoOff(projectPath));
+}
+
+async function projectAutoOff(projectPath: string): Promise<boolean> {
+  try {
+    return (await readProjectAgentDefaults(projectPath)).helperAuto === 'off';
+  } catch {
+    // telemetry-exempt: unreadable project defaults can't have said off, and the start reads them again
+    return false;
+  }
+}
+
+/** What the surfaces show: whether Auto would work, not only this agent's own switch (#2671). */
+function withAutoEffective(policy: ResolvedOrchestrationPolicy, projectOff: boolean): ResolvedOrchestrationPolicy {
+  return { ...policy, autoEffective: decideHelperAuto({ app: orchestrationSettings.getAutoHelpers(), projectOff, policy }) };
 }
 
 function resolveOptions(projectPath: string, agent: DurableAgentConfig): { helper: boolean; mcpOff: boolean } {
@@ -291,7 +311,10 @@ export async function resolveOrchestrationPolicies(
       try { personaId = resolvePersonaId(agent, defaults); } catch { /* telemetry-exempt: as effectivePersonaId, the agent's own persona */ }
     }
     if (!personas.has(personaId)) personas.set(personaId, personaDefaultsFor(projectPath, personaId));
-    out.set(agent.id, resolveOrchestrationPolicy(agent.orchestration, await personas.get(personaId), resolveOptions(projectPath, agent)));
+    out.set(agent.id, withAutoEffective(
+      resolveOrchestrationPolicy(agent.orchestration, await personas.get(personaId), resolveOptions(projectPath, agent)),
+      defaults?.helperAuto === 'off',
+    ));
   }));
   return out;
 }

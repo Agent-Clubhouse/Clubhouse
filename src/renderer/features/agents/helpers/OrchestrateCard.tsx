@@ -144,7 +144,7 @@ export function OrchestrateCard({ agent, projectPath, orch, open, onToggle }: {
               <span className="flex flex-col items-start gap-1">
                 <AutoHelpersToggle
                   id={ids.auto}
-                  checked={policy.autoHelpers}
+                  policy={policy}
                   name={agent.name}
                   disabled={saving}
                   onChange={(on) => void orch.setAutoHelpers(on)}

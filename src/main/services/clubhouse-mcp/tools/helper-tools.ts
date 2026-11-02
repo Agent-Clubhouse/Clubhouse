@@ -68,7 +68,7 @@ import { appLog } from '../../log-service';
 import { IPC } from '../../../../shared/ipc-channels';
 import { AGENT_COLORS } from '../../../../shared/name-generator';
 import { isDisposedAgent, isEffortValue } from '../../../../shared/agent-helpers';
-import { HELPER_DIFFICULTIES, isHelperDifficulty, type HelperContextStatus, type HelperRouting } from '../../../../shared/helper-routing';
+import { HELPER_DIFFICULTIES, isHelperDifficulty, type HelperAutoView, type HelperContextStatus, type HelperRouting } from '../../../../shared/helper-routing';
 import {
   ACCESS_LEVELS,
   CROSS_PROJECT_OFF_MESSAGE,
@@ -96,8 +96,8 @@ import {
 import { McpArgError, optionalString } from './validation';
 import { _resetHelperDeliveryForTesting, deliverHelperUpdate, deliverNow } from './helper-delivery';
 import { checkHelperEffort, checkHelperModel } from '../../model-check';
-import { AUTO_CLI, decideAutoPlan, planHelperStart, readHelperAuto, releaseAutoHelper, reserveAutoHelper, reservedLoad, type StartPlan } from '../../helper-routing';
-import { classifyStartFailure, noteProviderFailure } from '../../provider-quota';
+import { AUTO_CLI, autoOffRefusal, decideAutoPlan, planHelperStart, readHelperAuto, releaseAutoHelper, reserveAutoHelper, reservedLoad, type StartPlan } from '../../helper-routing';
+import { classifyStartFailure, noteProviderFailure, providerStartWarning } from '../../provider-quota';
 import { contextWindowCheck } from '../../context-window';
 import { helperAutoRefused, helperRouted } from '../../../telemetry/feature-events';
 
@@ -281,6 +281,15 @@ async function withStartLock<T>(fn: () => Promise<T>): Promise<T> {
   const run = startChain.catch((): undefined => undefined).then(fn);
   startChain = run.catch((): undefined => undefined);
   return run;
+}
+
+/** Whether this orchestrator may use Auto for a helper in that project. A project's `off` applies at either end. */
+async function autoStateFor(homePath: string, helperPath: string, orchestrator: DurableAgentConfig): Promise<HelperAutoView> {
+  const policy = await getOrchestrationPolicy(homePath, orchestrator.id);
+  const auto = await readHelperAuto({ projectPath: helperPath, ...(policy && { agent: { config: orchestrator, policy } }) });
+  if (!auto.effective || samePath(helperPath, homePath)) return auto;
+  const home = await readHelperAuto({ projectPath: homePath });
+  return home.source === 'project' ? { ...auto, ...home, scopes: auto.scopes } : auto;
 }
 
 /**
@@ -537,8 +546,8 @@ type StartOutcome =
   /** `message` for the orchestrator's tool result; `reason` to follow "because" in an approval's answer. */
   | { kind: 'refused'; message: string; reason: string; code?: string; userReason?: string }
   | { kind: 'too_many'; waiting: number }
-  | { kind: 'needs_approval'; control: OrchestrationControl; request: HelperStartRequest; reused: boolean; modelWarning?: string; effortWarning?: string }
-  | { kind: 'starting'; helperId: string; name: string; branch?: string; launch: HelperLaunch; project: TargetProject; effort?: string; routing?: HelperRouting; modelWarning?: string; effortWarning?: string };
+  | { kind: 'needs_approval'; control: OrchestrationControl; request: HelperStartRequest; reused: boolean; modelWarning?: string; effortWarning?: string; quotaWarning?: string }
+  | { kind: 'starting'; helperId: string; name: string; branch?: string; launch: HelperLaunch; project: TargetProject; effort?: string; routing?: HelperRouting; modelWarning?: string; effortWarning?: string; quotaWarning?: string };
 
 /** A sentence as the tail of "…because <reason>": its first letter lowered unless it starts an acronym or name. */
 function asReason(text: string): string {
@@ -590,6 +599,7 @@ async function runHelperStart(orchestratorId: string, args: HelperStartArgs, app
   // Model and effort are checked before the start lock: listing models can take a CLI handshake (#2569).
   let modelWarning: string | undefined;
   let effortWarning: string | undefined;
+  let quotaWarning: string | undefined;
   let plan: StartPlan | null = null;
   if (cli || model || effort || difficulty) {
     let modelProject = homePath;
@@ -598,15 +608,10 @@ async function runHelperStart(orchestratorId: string, args: HelperStartArgs, app
     } catch {
       // telemetry-exempt: a bad project is refused under the lock; check the model with the home profile
     }
-    const auto = cli === AUTO_CLI ? await readHelperAuto({
-      projectPath: modelProject,
-      // A project can say off for itself, and so can the orchestrator's own, wherever the helper goes.
-      agent: { config: orchestrator, policy: (await getOrchestrationPolicy(homePath, orchestratorId))! },
-    }) : undefined;
-    const homeAuto = cli === AUTO_CLI && modelProject !== homePath ? await readHelperAuto({ projectPath: homePath }) : undefined;
+    const auto = cli === AUTO_CLI ? await autoStateFor(homePath, modelProject, orchestrator) : undefined;
     const planned = await planHelperStart({
       cli, model, effort, difficulty, persona, projectPath: modelProject, orchestratorId,
-      ...(auto && { auto: homeAuto?.source === 'project' ? homeAuto : auto }),
+      ...(auto && { auto }),
       orchestratorCli: orchestrator.orchestrator ?? agentRegistry.get(orchestratorId)?.orchestrator,
     });
     if (planned.ok === false) {
@@ -625,6 +630,8 @@ async function runHelperStart(orchestratorId: string, args: HelperStartArgs, app
       if (check.ok === false) return refused(check.message);
       effortWarning = check.warning;
     }
+    // An explicit start isn't blocked by quota or a cooldown, only told, from what is already known.
+    if (plan?.provider && !plan.pendingAuto) quotaWarning = await providerStartWarning(plan.provider, modelProject);
   }
 
   return withStartLock(async (): Promise<StartOutcome> => {
@@ -688,13 +695,20 @@ async function runHelperStart(orchestratorId: string, args: HelperStartArgs, app
         });
         return {
           kind: 'needs_approval', control: policy.control, request: recorded.request, reused: recorded.reused,
-          ...(modelWarning && { modelWarning }), ...(effortWarning && { effortWarning }),
+          ...(modelWarning && { modelWarning }), ...(effortWarning && { effortWarning }), ...(quotaWarning && { quotaWarning }),
         };
       }
     }
 
     // Auto decides here, under the lock, so a burst of starts sees each other's choices.
     if (plan?.pendingAuto) {
+      // Reading the candidates can take seconds: the user may have turned it off since.
+      const still = await autoStateFor(homePath, target.path, orchestrator);
+      if (!still.effective) {
+        const off = autoOffRefusal(still);
+        helperAutoRefused(off.code);
+        return refused(off.message, off.code, off.userReason);
+      }
       const decided = decideAutoPlan(plan, await currentHelperLoad(homePath));
       if (decided.ok === false) {
         helperAutoRefused(decided.code);
@@ -746,7 +760,7 @@ async function runHelperStart(orchestratorId: string, args: HelperStartArgs, app
     return {
       kind: 'starting', helperId, name: config.name, ...(config.branch && { branch: config.branch }), launch, project: target,
       ...(plan?.effort && { effort: plan.effort }), ...(plan && { routing: plan.routing }),
-      ...(modelWarning && { modelWarning }), ...(effortWarning && { effortWarning }),
+      ...(modelWarning && { modelWarning }), ...(effortWarning && { effortWarning }), ...(quotaWarning && { quotaWarning }),
     };
   });
 }
@@ -775,6 +789,7 @@ async function startHelper(agentId: string, args: Record<string, unknown>): Prom
         expiresAt: outcome.request.expiresAt,
         ...(outcome.modelWarning && { modelWarning: outcome.modelWarning }),
         ...(outcome.effortWarning && { effortWarning: outcome.effortWarning }),
+        ...(outcome.quotaWarning && { quotaWarning: outcome.quotaWarning }),
         message:
           (outcome.reused ? 'You already asked for this start, and it is still waiting. ' : '') +
           'This agent is set to ask the user before starting helpers, so nothing was created yet. ' +
@@ -794,6 +809,7 @@ async function startHelper(agentId: string, args: Record<string, unknown>): Prom
         ...(outcome.routing && { routing: outcome.routing }),
         ...(outcome.modelWarning && { modelWarning: outcome.modelWarning }),
         ...(outcome.effortWarning && { effortWarning: outcome.effortWarning }),
+        ...(outcome.quotaWarning && { quotaWarning: outcome.quotaWarning }),
         ...(outcome.launch.clamped && { accessNote: `Access lowered to ${outcome.launch.level}: a helper never gets more than you run with or than its CLI allows at that level.` }),
         message:
           `Helper "${outcome.name}" is being created${outcome.project.cross ? ` in ${outcome.project.name}` : ''}. Its worktree can take up to a minute; ` +

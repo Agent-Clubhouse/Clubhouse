@@ -15,6 +15,7 @@ import {
   resolveHelperAccess,
   resolveOrchestrationPolicy,
   validateOrchestrationPatch,
+  decideHelperAuto,
   type OrchestrationAccess,
 } from './orchestration-policy';
 import type { FreeAgentPermissionMode } from './types';
@@ -322,8 +323,36 @@ describe('autoHelpers (#2671)', () => {
 
   it('a persona can turn it off and never on', () => {
     expect(resolveOrchestrationPolicy(undefined, { autoHelpers: true })).toMatchObject({ autoHelpers: false, sources: { autoHelpers: 'default' } });
-    expect(resolveOrchestrationPolicy(undefined, { autoHelpers: false })).toMatchObject({ autoHelpers: false, sources: { autoHelpers: 'persona' } });
-    expect(resolveOrchestrationPolicy({ autoHelpers: true }, { autoHelpers: false })).toMatchObject({ autoHelpers: true, sources: { autoHelpers: 'agent' } });
+    expect(resolveOrchestrationPolicy(undefined, { autoHelpers: true })).not.toHaveProperty('personaAutoOff');
+    expect(resolveOrchestrationPolicy(undefined, { autoHelpers: false })).toMatchObject({ autoHelpers: false, personaAutoOff: true, sources: { autoHelpers: 'persona' } });
+  });
+
+  describe('decideHelperAuto: the outcome, at every level', () => {
+    const decide = (app: boolean, projectOff: boolean, agent: object, persona?: object, options?: object) =>
+      decideHelperAuto({ app, projectOff, policy: resolveOrchestrationPolicy({ orchestrate: true, ...agent }, persona, options) });
+
+    it('a persona\'s off beats the agent\'s own on, the bug a source check would miss', () => {
+      expect(decide(true, false, { autoHelpers: true }, { autoHelpers: false })).toEqual({ effective: false, source: 'persona', reason: 'persona_off' });
+    });
+
+    it('a project\'s off beats everything but MCP', () => {
+      expect(decide(true, true, { autoHelpers: true })).toEqual({ effective: false, source: 'project', reason: 'project_off' });
+      expect(decide(true, true, { autoHelpers: true }, undefined, { mcpOff: true })).toEqual({ effective: false, source: 'mcp_off', reason: 'mcp_off' });
+    });
+
+    it('the agent\'s switch beats the app, both ways', () => {
+      expect(decide(false, false, { autoHelpers: true })).toEqual({ effective: true, source: 'agent' });
+      expect(decide(true, false, { autoHelpers: false })).toEqual({ effective: false, source: 'agent', reason: 'not_enabled' });
+    });
+
+    it('unset follows the app, and a persona\'s true changes nothing', () => {
+      expect(decide(true, false, {})).toEqual({ effective: true, source: 'app' });
+      expect(decide(false, false, {}, { autoHelpers: true })).toEqual({ effective: false, source: 'default', reason: 'not_enabled' });
+    });
+
+    it('an agent that doesn\'t orchestrate can\'t use it', () => {
+      expect(decide(true, false, { orchestrate: false, autoHelpers: true })).toMatchObject({ effective: false, reason: 'orchestration_off' });
+    });
   });
 
   it('needs Clubhouse MCP to turn on, and reads off without it, keeping what is saved', () => {

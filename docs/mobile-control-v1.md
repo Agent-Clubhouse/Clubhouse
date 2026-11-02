@@ -651,7 +651,7 @@ Gate on `helperRouting` in capabilities. It lists only what works now, so don't 
   "copilot-cli":{"autoEligible":false,"reason":"auto_not_supported","quota":{"state":"unknown","unknownReason":"not_supported","source":"none","asOf":null},"cells":null}}}
 ```
 
-- **labels**: the words for every code, in the families `reason`, `fallback`, `skipped`, `quota`, `unknown`, `window`, `autoOff`, `cell` and `generic`. Every read has all of them, including a bare one, so cache them once per revision for rows that only have codes. For a code you don't have, use `labels.generic.unknownCode`, then your own generic "Other".
+- **labels**: the words for every code, in the families `reason`, `fallback`, `skipped`, `quota`, `unknown`, `window`, `autoSource`, `autoOff`, `cell` and `generic`. Every read has all of them, including a bare one, so cache them once per revision for rows that only have codes. For a code you don't have, use `labels.generic.unknownCode`, then your own generic "Other".
 - **cells**: `effective` is what a start uses now. `custom` is the saved choice, or null. `state` is that of the saved choice, or of the built-in without one: `valid`, `unverified` (the list may be out of date, so it couldn't be checked) or `stale` (no longer offered, with `staleReason` `model_unavailable` or `effort_unavailable`). A stale saved choice stays saved. `effective` is then the built-in, with `fallback: "builtin_preset"`, or null if that is stale too, and a start with that difficulty is refused. Offer Reset whenever `custom` is set.
 - **autoEligible**: whether a provider has presets and Auto can pick it. Copilot can't: its list reports no per-model efforts, and it has no quota source.
 - **choices**: what the pickers offer, per model, with `source` `live` or `fallback`. Always the app-wide list, even with `projectId` or `agentId`, because a write is checked against it. `default` isn't offered, since a preset has to name a model. Cells do follow that profile: a cell can read `stale` there while its model is in `choices`, which means a start in that project would be refused or fall back.
@@ -702,11 +702,13 @@ Lets an orchestrator's `cli: "auto"` pick between Claude Code and Codex for a he
   "agent":{"value":null,"editable":true}}}
 ```
 
-- **effective**: whether it would work now. **reason**, when it wouldn't, is one of `autoOffReasons`, with words in `labels.autoOff`. **source** is the level that decided: `agent`, `project`, `persona`, `app`, `default`, `mcp_off` or `dispatcher_locked`.
-- **scopes**: each level's say, for the scope asked about: `app` always, `project` with `projectId` or `agentId`, and `persona` and `agent` with `agentId`.
-- **The order:** `dispatcher_locked` and `mcp_off` are always off. Then a project's or a persona's `off`, which can never be `on`. Then the agent's own, then the app's. `orchestration.autoHelpers` in `agent.update` is the agent's, and the agent row's `orchestration.autoHelpers` with `sources.autoHelpers` shows it.
+- **effective**: whether it would work now. **reason**, when it wouldn't, is one of `autoOffReasons`, with words in `labels.autoOff`. **source** is the level that decided: `agent`, `project`, `persona`, `app`, `default`, `mcp_off` or `dispatcher_locked`, with words in `labels.autoSource`.
+- **scopes**: each level's say, for the scope asked about: `app` always, `project` with `projectId` or `agentId`, and `persona` and `agent` with `agentId`. For the Dispatcher nothing is `editable`.
+- **The order:** `dispatcher_locked` and `mcp_off` are always off. Then a project's or a persona's `off`, which can never be `on`. Then the agent's own, then the app's.
+- **The agent's own:** `orchestration.autoHelpers` in `agent.update`, offered only when `modes` has `auto`. `true` or `false` sets it, at any time, also while the agent runs. `null` clears it, so the agent inherits the app's setting again. On a row or in settings, `orchestration.autoHelpers` is that switch, `true`, `false` or `null` while it inherits, and `orchestration.autoHelpersEffective` says whether Auto would work, with the app and the project included. Show the effective one. `true` while Clubhouse MCP is off is 409 `mcp_off`, while `false` and `null` still work. A non-boolean is 400 `invalid_orchestration`.
+- **A persona's `off`** wins even over the agent's own `true`, which stays saved. `scopes.persona.value` is `false` then.
 
-To change it, send `helperRouting.update` with `auto`: `true` or `false` at `scope: "app"`, or `"off"` or `null` at `scope: "project"` with `projectId` (404 `project_not_found`). A project scope takes nothing else.
+To change it, send `helperRouting.update` with `auto`: `true` or `false` at `scope: "app"`, or `"off"` or `null` at `scope: "project"` with `projectId` (404 `project_not_found`). A project scope takes nothing else. A project's `null` removes its override, and never turns Auto on: the levels below it decide. A stale write at project scope returns that project's fresh values.
 
 A held start that names Auto has `requestedRouting.provider: "auto"`, and decides at approval. `helper.approve` then refuses with 409 `status:"rejected"`, code `no_candidate` or `auto_off`, as for `no_valid_mapping`: show `error.message`, offer no retry, and take the row from the snapshot.
 
@@ -723,7 +725,7 @@ A helper Auto chose has this in its settings' `routing`, as of `decidedAt`, not 
 ```
 
 - **balanced** is true only when Auto chose among providers. A persona's pin decides without it: `mode: "auto"`, `balanced: false`, `reason: "persona_pinned"`.
-- **quotaBasis**: `known`, or `unknown_scored_as_healthy` when the chosen provider's quota was unknown. Unknown shares a score with healthy so a login that can't report isn't starved. Keep showing it as unknown: it says nothing about capacity.
+- **quotaBasis**: diagnostic only, with no labels: don't show it. `unknown_scored_as_healthy` means the chosen provider's quota was unknown, and scored the same as `known` so a login that can't report isn't starved. Show `quota[provider].state` instead, which stays `unknown`. Never word it as healthy or available.
 - **skipped**: why a provider wasn't considered, with words in `labels.skipped`.
 
 The snapshot's row has the same codes as any helper: `routing:{mode:"auto",difficulty,provider,model,effort,reason}`.

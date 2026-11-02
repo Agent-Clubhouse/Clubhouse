@@ -33,7 +33,8 @@
                 "auto",
                 "bypass"
               ],
-              "autoHelpers": false,
+              "autoHelpers": null,
+              "autoHelpersEffective": false,
               "connectToDispatcher": true,
               "control": "hands-off",
               "controls": [
@@ -86,7 +87,8 @@
                 "auto",
                 "bypass"
               ],
-              "autoHelpers": false,
+              "autoHelpers": null,
+              "autoHelpersEffective": false,
               "connectToDispatcher": false,
               "control": "hands-off",
               "controls": [
@@ -135,7 +137,8 @@
                 "auto",
                 "bypass"
               ],
-              "autoHelpers": false,
+              "autoHelpers": null,
+              "autoHelpersEffective": false,
               "connectToDispatcher": false,
               "control": "hands-off",
               "controls": [
@@ -184,7 +187,8 @@
                 "auto",
                 "bypass"
               ],
-              "autoHelpers": false,
+              "autoHelpers": null,
+              "autoHelpersEffective": false,
               "connectToDispatcher": false,
               "control": "hands-off",
               "controls": [
@@ -233,7 +237,8 @@
                 "auto",
                 "bypass"
               ],
-              "autoHelpers": false,
+              "autoHelpers": null,
+              "autoHelpersEffective": false,
               "connectToDispatcher": false,
               "control": "hands-off",
               "controls": [
@@ -282,7 +287,8 @@
                 "auto",
                 "bypass"
               ],
-              "autoHelpers": false,
+              "autoHelpers": null,
+              "autoHelpersEffective": false,
               "connectToDispatcher": false,
               "control": "hands-off",
               "controls": [

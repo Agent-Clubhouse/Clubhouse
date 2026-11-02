@@ -46,6 +46,15 @@
             "persona_off": "This agent’s persona turned it off",
             "project_off": "This project turned it off"
           },
+          "autoSource": {
+            "agent": "Set on this agent",
+            "app": "Set for the whole app",
+            "default": "Off unless turned on",
+            "dispatcher_locked": "Not for the Dispatcher",
+            "mcp_off": "Clubhouse MCP is off for this agent",
+            "persona": "Set by this agent’s persona",
+            "project": "Set for this project"
+          },
           "cell": {
             "stale": "No longer offered",
             "unverified": "Couldn’t be checked",
@@ -352,6 +361,15 @@
             "persona_off": "This agent’s persona turned it off",
             "project_off": "This project turned it off"
           },
+          "autoSource": {
+            "agent": "Set on this agent",
+            "app": "Set for the whole app",
+            "default": "Off unless turned on",
+            "dispatcher_locked": "Not for the Dispatcher",
+            "mcp_off": "Clubhouse MCP is off for this agent",
+            "persona": "Set by this agent’s persona",
+            "project": "Set for this project"
+          },
           "cell": {
             "stale": "No longer offered",
             "unverified": "Couldn’t be checked",
@@ -638,7 +656,7 @@
               "value": null
             },
             "app": {
-              "editable": true,
+              "editable": false,
               "value": false
             }
           },
@@ -653,6 +671,15 @@
             "orchestration_off": "This agent doesn’t orchestrate",
             "persona_off": "This agent’s persona turned it off",
             "project_off": "This project turned it off"
+          },
+          "autoSource": {
+            "agent": "Set on this agent",
+            "app": "Set for the whole app",
+            "default": "Off unless turned on",
+            "dispatcher_locked": "Not for the Dispatcher",
+            "mcp_off": "Clubhouse MCP is off for this agent",
+            "persona": "Set by this agent’s persona",
+            "project": "Set for this project"
           },
           "cell": {
             "stale": "No longer offered",
@@ -936,7 +963,7 @@
           "reason": "mcp_off",
           "scopes": {
             "agent": {
-              "editable": false,
+              "editable": true,
               "value": null
             },
             "app": {
@@ -967,6 +994,15 @@
             "orchestration_off": "This agent doesn’t orchestrate",
             "persona_off": "This agent’s persona turned it off",
             "project_off": "This project turned it off"
+          },
+          "autoSource": {
+            "agent": "Set on this agent",
+            "app": "Set for the whole app",
+            "default": "Off unless turned on",
+            "dispatcher_locked": "Not for the Dispatcher",
+            "mcp_off": "Clubhouse MCP is off for this agent",
+            "persona": "Set by this agent’s persona",
+            "project": "Set for this project"
           },
           "cell": {
             "stale": "No longer offered",
@@ -1282,6 +1318,15 @@
             "persona_off": "This agent’s persona turned it off",
             "project_off": "This project turned it off"
           },
+          "autoSource": {
+            "agent": "Set on this agent",
+            "app": "Set for the whole app",
+            "default": "Off unless turned on",
+            "dispatcher_locked": "Not for the Dispatcher",
+            "mcp_off": "Clubhouse MCP is off for this agent",
+            "persona": "Set by this agent’s persona",
+            "project": "Set for this project"
+          },
           "cell": {
             "stale": "No longer offered",
             "unverified": "Couldn’t be checked",
@@ -1583,6 +1628,15 @@
             "orchestration_off": "This agent doesn’t orchestrate",
             "persona_off": "This agent’s persona turned it off",
             "project_off": "This project turned it off"
+          },
+          "autoSource": {
+            "agent": "Set on this agent",
+            "app": "Set for the whole app",
+            "default": "Off unless turned on",
+            "dispatcher_locked": "Not for the Dispatcher",
+            "mcp_off": "Clubhouse MCP is off for this agent",
+            "persona": "Set by this agent’s persona",
+            "project": "Set for this project"
           },
           "cell": {
             "stale": "No longer offered",
@@ -1890,6 +1944,15 @@
             "persona_off": "This agent’s persona turned it off",
             "project_off": "This project turned it off"
           },
+          "autoSource": {
+            "agent": "Set on this agent",
+            "app": "Set for the whole app",
+            "default": "Off unless turned on",
+            "dispatcher_locked": "Not for the Dispatcher",
+            "mcp_off": "Clubhouse MCP is off for this agent",
+            "persona": "Set by this agent’s persona",
+            "project": "Set for this project"
+          },
           "cell": {
             "stale": "No longer offered",
             "unverified": "Couldn’t be checked",
@@ -2189,6 +2252,15 @@
             "persona_off": "This agent’s persona turned it off",
             "project_off": "This project turned it off"
           },
+          "autoSource": {
+            "agent": "Set on this agent",
+            "app": "Set for the whole app",
+            "default": "Off unless turned on",
+            "dispatcher_locked": "Not for the Dispatcher",
+            "mcp_off": "Clubhouse MCP is off for this agent",
+            "persona": "Set by this agent’s persona",
+            "project": "Set for this project"
+          },
           "cell": {
             "stale": "No longer offered",
             "unverified": "Couldn’t be checked",
@@ -2471,6 +2543,15 @@
             "orchestration_off": "This agent doesn’t orchestrate",
             "persona_off": "This agent’s persona turned it off",
             "project_off": "This project turned it off"
+          },
+          "autoSource": {
+            "agent": "Set on this agent",
+            "app": "Set for the whole app",
+            "default": "Off unless turned on",
+            "dispatcher_locked": "Not for the Dispatcher",
+            "mcp_off": "Clubhouse MCP is off for this agent",
+            "persona": "Set by this agent’s persona",
+            "project": "Set for this project"
           },
           "cell": {
             "stale": "No longer offered",
@@ -2770,6 +2851,15 @@
             "orchestration_off": "This agent doesn’t orchestrate",
             "persona_off": "This agent’s persona turned it off",
             "project_off": "This project turned it off"
+          },
+          "autoSource": {
+            "agent": "Set on this agent",
+            "app": "Set for the whole app",
+            "default": "Off unless turned on",
+            "dispatcher_locked": "Not for the Dispatcher",
+            "mcp_off": "Clubhouse MCP is off for this agent",
+            "persona": "Set by this agent’s persona",
+            "project": "Set for this project"
           },
           "cell": {
             "stale": "No longer offered",

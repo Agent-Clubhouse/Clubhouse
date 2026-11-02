@@ -143,9 +143,12 @@ const ACCESS_CHOICES: readonly OrchestrationAccess[] = ['same', ...ACCESS_LEVELS
  * it read false, and their saved values come back with MCP.
  */
 export function mobileOrchestration(policy: ResolvedOrchestrationPolicy) {
-  const { orchestrate, access, control, maxHelpers, crossProjectHelpers, connectToDispatcher, autoHelpers, sources } = policy;
+  const { orchestrate, access, control, maxHelpers, crossProjectHelpers, connectToDispatcher, sources } = policy;
   return {
-    orchestrate, access, control, maxHelpers, crossProjectHelpers, connectToDispatcher, autoHelpers,
+    orchestrate, access, control, maxHelpers, crossProjectHelpers, connectToDispatcher,
+    // This agent's own switch, or null while it follows the app. Whether Auto works is autoHelpersEffective.
+    autoHelpers: sources.autoHelpers === 'agent' ? policy.mcpOff?.autoHelpers ?? policy.autoHelpers : null,
+    autoHelpersEffective: policy.autoEffective?.effective ?? false,
     mcpEnabled: !policy.mcpOff,
     sources: {
       orchestrate: sources.orchestrate, access: sources.access, control: sources.control, maxHelpers: sources.maxHelpers,

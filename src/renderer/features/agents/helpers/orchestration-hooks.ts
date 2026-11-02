@@ -167,7 +167,8 @@ export interface OrchestrationState {
   setPolicy: (patch: OrchestrationPolicyPatch) => Promise<boolean>;
   setOrchestrate: (on: boolean) => Promise<void>;
   setCrossProjectHelpers: (on: boolean) => Promise<void>;
-  setAutoHelpers: (on: boolean) => Promise<void>;
+  /** Null clears this agent's own switch, so it follows Settings > Helpers. */
+  setAutoHelpers: (on: boolean | null) => Promise<void>;
   /** "Connect to Dispatcher" (#2534). */
   setConnectToDispatcher: (on: boolean) => Promise<void>;
   /** The turn-off dialog finished; `policy` is the new one when it went off. */
@@ -269,7 +270,7 @@ export function useOrchestration(projectPath: string | undefined, agent: Pick<Ag
     await setPolicy({ crossProjectHelpers: on });
   }, [setPolicy]);
 
-  const setAutoHelpers = useCallback(async (on: boolean) => {
+  const setAutoHelpers = useCallback(async (on: boolean | null) => {
     setNote(null);
     await setPolicy({ autoHelpers: on });
   }, [setPolicy]);

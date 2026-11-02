@@ -195,7 +195,7 @@ import { listStartRequests, START_REQUEST_TTL_MS, _resetStartRequestsForTesting 
 import { callTool, getScopedToolList, _resetForTesting } from '../tool-registry';
 import { agentRegistry } from '../../agent-registry';
 import { setHelperStartFields as agentConfigSetStartFields } from '../../agent-config';
-import { _resetProviderQuotaForTesting } from '../../provider-quota';
+import { _resetProviderQuotaForTesting, noteProviderFailure } from '../../provider-quota';
 import { _resetHelperRoutingForTesting } from '../../helper-routing';
 import { setOrchestrationEnabled, _resetOrchestrationGateForTesting } from '../orchestration-gate';
 
@@ -915,6 +915,26 @@ describe('start_helper cli "auto" (#2671)', () => {
     running.add('r2');
     const body = parse(await start({}));
     expect(body.routing).toMatchObject({ reason: 'lower_load', resolved: { provider: 'codex-cli' }, load: { 'claude-code': 2, 'codex-cli': 0 } });
+  });
+
+  it('checks again under the lock: turned off while it read the candidates, it refuses and creates nothing', async () => {
+    controllableCreation();
+    // First the check before reading, then the one under the lock.
+    mockGetPolicy.mockResolvedValueOnce(policy);
+    mockGetPolicy.mockResolvedValueOnce(policy);
+    mockGetPolicy.mockImplementation(async () => ({ ...policy, autoHelpers: false, sources: { autoHelpers: 'agent' } }));
+    const result = await start({});
+    expect(result.isError).toBe(true);
+    expect(result.content[0].text).toContain('Auto provider is off');
+    expect(mockStartDurableCreation).not.toHaveBeenCalled();
+  });
+
+  it('an explicit start on a cooling provider isn\'t blocked, only told', async () => {
+    controllableCreation();
+    await noteProviderFailure('codex-cli', PROJECT, 'auth');
+    const body = parse(await callTool('orch', 'start_helper', { name: 'h', task: 't', cli: 'codex-cli', model: 'gpt-6.1-sol', effort: 'high' }));
+    expect(body.state).toBe('starting');
+    expect(body.quotaWarning).toContain('as you asked');
   });
 
   it('a held start stays requested, and decides at approval', async () => {

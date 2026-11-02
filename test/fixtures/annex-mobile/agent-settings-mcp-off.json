@@ -142,7 +142,8 @@
           "auto",
           "bypass"
         ],
-        "autoHelpers": false,
+        "autoHelpers": null,
+        "autoHelpersEffective": false,
         "connectToDispatcher": false,
         "control": "hands-off",
         "controls": [

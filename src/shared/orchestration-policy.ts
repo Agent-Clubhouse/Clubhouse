@@ -103,6 +103,10 @@ export type McpDependentSwitches = Pick<OrchestrationPolicy, 'orchestrate' | 'cr
 
 export interface ResolvedOrchestrationPolicy extends OrchestrationPolicy {
   sources: Record<keyof OrchestrationPolicy, OrchestrationPolicySource>;
+  /** A persona turned Auto off (#2671). It wins even over the agent's own switch, whose value stays in `autoHelpers`. */
+  personaAutoOff?: true;
+  /** Whether `cli: "auto"` would work for this agent, once the app and the project have had their say. Set by the main side. */
+  autoEffective?: { effective: boolean; reason?: HelperAutoOffReason; source: HelperAutoSource };
   /**
    * Set only while Clubhouse MCP is off for this agent (#2589). The switches
    * above then read false, and this holds what they resolve to from the saved
@@ -114,6 +118,30 @@ export interface ResolvedOrchestrationPolicy extends OrchestrationPolicy {
 /** What `orchestrate` resolves to from the saved settings, MCP on or off. */
 export function savedOrchestrate(policy: Pick<ResolvedOrchestrationPolicy, 'orchestrate' | 'mcpOff'>): boolean {
   return policy.mcpOff ? policy.mcpOff.orchestrate : policy.orchestrate;
+}
+
+export type HelperAutoOffReason = 'not_enabled' | 'project_off' | 'persona_off' | 'orchestration_off' | 'mcp_off' | 'dispatcher_locked';
+export type HelperAutoSource = 'agent' | 'project' | 'persona' | 'app' | 'default' | 'mcp_off' | 'dispatcher_locked';
+
+/**
+ * Whether `cli: "auto"` is allowed for an agent (#2671). Off for good without
+ * MCP. Then a project's or a persona's `off`, which never turn it on. Then the
+ * agent's own switch, then the app's. A repository's files can't spend another
+ * provider's quota, so nothing in one enables this.
+ */
+export function decideHelperAuto(input: {
+  app: boolean;
+  projectOff: boolean;
+  policy?: Pick<ResolvedOrchestrationPolicy, 'orchestrate' | 'autoHelpers' | 'sources' | 'personaAutoOff' | 'mcpOff'>;
+}): { effective: boolean; reason?: HelperAutoOffReason; source: HelperAutoSource } {
+  const { app, projectOff, policy } = input;
+  if (policy?.mcpOff) return { effective: false, source: 'mcp_off', reason: 'mcp_off' };
+  if (projectOff) return { effective: false, source: 'project', reason: 'project_off' };
+  if (policy?.personaAutoOff) return { effective: false, source: 'persona', reason: 'persona_off' };
+  const own = policy?.sources.autoHelpers === 'agent' ? policy.autoHelpers : undefined;
+  if (policy && !policy.orchestrate) return { effective: false, source: own !== undefined ? 'agent' : app ? 'app' : 'default', reason: 'orchestration_off' };
+  if (own !== undefined) return own ? { effective: true, source: 'agent' } : { effective: false, source: 'agent', reason: 'not_enabled' };
+  return app ? { effective: true, source: 'app' } : { effective: false, source: 'default', reason: 'not_enabled' };
 }
 
 /** Whether a patch sets one of the switches that need Clubhouse MCP to on. Clearing or turning off never does. */
@@ -237,6 +265,7 @@ export function resolveOrchestrationPolicy(
   const persona = normalizeOrchestrationConfig(personaDefaults) ?? {};
   // A cloned repository's persona can turn Auto off but never on: it would spend another provider's quota.
   if (persona.autoHelpers === true) delete persona.autoHelpers;
+  const personaAutoOff = persona.autoHelpers === false ? { personaAutoOff: true as const } : {};
   const keys = Object.keys(ORCHESTRATION_DEFAULTS) as Array<keyof OrchestrationPolicy>;
   const policy = { ...ORCHESTRATION_DEFAULTS } as OrchestrationPolicy;
   const sources = {} as ResolvedOrchestrationPolicy['sources'];
@@ -260,11 +289,11 @@ export function resolveOrchestrationPolicy(
   if (options.mcpOff) {
     const { orchestrate, crossProjectHelpers, connectToDispatcher, autoHelpers } = policy;
     return {
-      ...policy, orchestrate: false, crossProjectHelpers: false, connectToDispatcher: false, autoHelpers: false, sources,
+      ...policy, orchestrate: false, crossProjectHelpers: false, connectToDispatcher: false, autoHelpers: false, sources, ...personaAutoOff,
       mcpOff: { orchestrate, crossProjectHelpers, connectToDispatcher, autoHelpers },
     };
   }
-  return { ...policy, sources };
+  return { ...policy, sources, ...personaAutoOff };
 }
 
 // ── Access ───────────────────────────────────────────────────────────────
