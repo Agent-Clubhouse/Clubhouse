@@ -22,11 +22,38 @@ const state = vi.hoisted(() => ({
   unreadable: new Set<string>(),
   /** Runs just before a policy write's precondition: a user change arriving in the gap. */
   beforeWrite: null as null | (() => void),
+  /** Which file writes fail, by the temp file's path. */
+  failWrite: null as null | ((file: string) => boolean),
+  /** Which file reads fail. */
+  failRead: null as null | ((file: string) => boolean),
+  /** Runs once after the next successful rename into place. */
+  afterRename: null as null | (() => void),
   kept: 0,
   dispatcherListeners: new Set<() => void>(),
   agentListeners: new Set<(p: string) => void>(),
 }));
 
+vi.mock('fs/promises', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('fs/promises')>();
+  const failed = (code: string) => Object.assign(new Error(`${code}: injected`), { code });
+  return {
+    ...actual,
+    writeFile: async (...args: Parameters<typeof actual.writeFile>) => {
+      if (state.failWrite?.(String(args[0]))) throw failed('ENOSPC');
+      return actual.writeFile(...args);
+    },
+    readFile: async (...args: Parameters<typeof actual.readFile>) => {
+      if (state.failRead?.(String(args[0]))) throw failed('EACCES');
+      return actual.readFile(...args);
+    },
+    rename: async (...args: Parameters<typeof actual.rename>) => {
+      await actual.rename(...args);
+      const after = state.afterRename;
+      state.afterRename = null;
+      after?.();
+    },
+  };
+});
 vi.mock('electron', () => ({ app: { isPackaged: false, getPath: () => os.tmpdir() } }));
 vi.mock('./log-service', () => ({ appLog: vi.fn() }));
 vi.mock('./base-dir', () => ({ getBaseDirPath: () => state.base }));
@@ -99,6 +126,8 @@ import { auditPath, appendAudit, readAudit, MAX_AUDIT_BYTES, _resetDispatcherAud
 import {
   dispatcherConnectionSource,
   dispatcherConnectionsPath,
+  dispatcherPendingRemovalsPath,
+  isRemovalUnsaved,
   listDispatcherLinksForUser,
   readDispatcherConnections,
   watchDispatcherConnections,
@@ -193,6 +222,9 @@ beforeEach(async () => {
   state.helpers = new Map();
   state.unreadable = new Set();
   state.beforeWrite = null;
+  state.failWrite = null;
+  state.failRead = null;
+  state.afterRename = null;
   state.kept = 0;
   state.dispatcherListeners.clear();
   state.agentListeners.clear();
@@ -581,6 +613,224 @@ describe('a link the user removes stays removed', () => {
     userDraws('b', 'c');
     await userRemoves('b', 'c');
     expect(storeFile().removedByUser).toHaveLength(1);
+  });
+});
+
+describe('a removal the store can\'t take', () => {
+  /** Only the store file refuses, as a store from a stuck volume or a bad path would. */
+  const storeRefuses = (file: string) => file.includes('dispatcher-connections.json.tmp');
+  /** Nothing in the folder can be written. */
+  const folderRefuses = (file: string) => file.includes('dispatcher-connections');
+
+  beforeEach(async () => {
+    await call('connect_orchestrators', { from: 'a', to: 'b' });
+  });
+
+  /** What the UNBIND handler does, without the canvas forgetting the wire. */
+  const removeWire = async (a: string, b: string): Promise<boolean> => {
+    bindingManager.unbind(a, b);
+    markBindingRemovedByUser(a, b);
+    return isRemovalUnsaved({ agentId: a, targetId: b });
+  };
+  const expectRefused = async () => {
+    expect((await call('connect_orchestrators', { from: 'a', to: 'b' })).isError).toBe(true);
+    expect(lastAudit()).toMatchObject({ outcome: 'refused', code: 'removed_by_user' });
+    expect(isBound('a', 'b')).toBe(false);
+  };
+  const pendingFile = () => fs.existsSync(dispatcherPendingRemovalsPath());
+
+  it('stays removed across restarts when only the store refuses, then lands when it takes writes', async () => {
+    state.failWrite = storeRefuses;
+    expect(await removeWire('a', 'b')).toBe(false);
+    expect(storeFile().connections).toHaveLength(1);
+    expect(pendingFile()).toBe(true);
+
+    await restart();
+    expect(isBound('a', 'b')).toBe(false);
+    expect(await storedPairs()).toEqual([]);
+    expect(await listDispatcherLinksForUser()).toEqual([]);
+    expect((await controls()).unconfirmed_removals).toEqual([{ from: 'a', to: 'b', saved: true }]);
+    await expectRefused();
+    expect((await call('disconnect_orchestrators', { from: 'a', to: 'b' })).isError).toBe(true);
+    expect(lastAudit()).toMatchObject({ code: 'not_dispatcher_owned' });
+
+    state.failWrite = null;
+    await restart();
+    await vi.waitFor(() => expect(pendingFile()).toBe(false));
+    expect(storeFile().connections).toEqual([]);
+    expect(storeFile().removedByUser).toEqual([expect.objectContaining({ agentId: 'a', targetId: 'b', agentProjectPath: P1 })]);
+    expect((await controls()).unconfirmed_removals).toBeUndefined();
+    await restart();
+    expect(isBound('a', 'b')).toBe(false);
+    await expectRefused();
+  });
+
+  it('holds in the session and says it isn\'t saved when nothing can be written, and lands on the retry', async () => {
+    state.failWrite = folderRefuses;
+    expect(await removeWire('a', 'b')).toBe(true);
+    expect((await controls()).unconfirmed_removals).toEqual([{ from: 'a', to: 'b', saved: false }]);
+    await rebuildPersistedBindings();
+    expect(isBound('a', 'b')).toBe(false);
+    await expectRefused();
+
+    state.failWrite = null;
+    agentChanged();
+    await vi.waitFor(() => expect(storeFile().removedByUser).toHaveLength(1));
+    await restart();
+    expect(isBound('a', 'b')).toBe(false);
+    await expectRefused();
+  });
+
+  it('retries by itself', async () => {
+    const timers = vi.spyOn(globalThis, 'setTimeout');
+    state.failWrite = folderRefuses;
+    await removeWire('a', 'b');
+    await vi.waitFor(() => expect(timers.mock.calls.some(([, ms]) => ms === 30_000)).toBe(true));
+    const retry = timers.mock.calls.find(([, ms]) => ms === 30_000)![0] as () => void;
+    timers.mockRestore();
+    state.failWrite = null;
+    retry();
+    await vi.waitFor(() => expect(storeFile().removedByUser).toHaveLength(1));
+  });
+
+  it('restores nothing while the folder still takes no writes after a restart, and says why', async () => {
+    state.failWrite = folderRefuses;
+    expect(await removeWire('a', 'b')).toBe(true);
+
+    await restart();
+    expect(isBound('a', 'b')).toBe(false);
+    expect(await linkRow('a', 'b')).toMatchObject({ status: 'suspended', reason: 'store_unwritable' });
+    expect(await listDispatcherLinksForUser()).toEqual([expect.objectContaining({ status: 'suspended', reason: 'store_unwritable' })]);
+
+    // The limit the user was told about: with no record at all, it returns once writes do.
+    state.failWrite = null;
+    agentChanged();
+    await vi.waitFor(() => expect(isBound('a', 'b')).toBe(true));
+    expect(await linkRow('a', 'b')).toMatchObject({ status: 'active' });
+  });
+
+  it('holds when the store can\'t even be read at the time of removal', async () => {
+    state.failRead = (file) => file.endsWith('dispatcher-connections.json');
+    expect(await removeWire('a', 'b')).toBe(false);
+    state.failRead = null;
+    await restart();
+    expect(isBound('a', 'b')).toBe(false);
+    await vi.waitFor(() => expect(pendingFile()).toBe(false));
+    expect(storeFile().connections).toEqual([]);
+    expect(storeFile().removedByUser).toEqual([expect.objectContaining({ agentId: 'a', targetId: 'b', agentProjectPath: P1 })]);
+  });
+
+  it('holds on a store from a newer Clubhouse, which stays unchanged', async () => {
+    const body = JSON.stringify({ ...storeFile(), version: 99 });
+    fs.writeFileSync(dispatcherConnectionsPath(), body);
+    expect(await removeWire('a', 'b')).toBe(false);
+    await restart();
+    expect(isBound('a', 'b')).toBe(false);
+    expect(await storedPairs()).toEqual([]);
+    expect(fs.readFileSync(dispatcherConnectionsPath(), 'utf-8')).toBe(body);
+    expect(pendingFile()).toBe(true);
+  });
+
+  it('restores nothing past a pending file it can\'t read, and doesn\'t overwrite it', async () => {
+    fs.writeFileSync(dispatcherPendingRemovalsPath(), '{ torn');
+    await restart();
+    expect(isBound('a', 'b')).toBe(false);
+    expect((await call('connect_orchestrators', { from: 'a', to: 'c' })).isError).toBe(true);
+    expect(await removeWire('a', 'b')).toBe(true);
+    expect(fs.readFileSync(dispatcherPendingRemovalsPath(), 'utf-8')).toBe('{ torn');
+    expect(storeFile().connections).toHaveLength(1);
+  });
+
+  it('holds when the user removes the pair between connect\'s check and its claim, and the write fails', async () => {
+    await call('disconnect_orchestrators', { from: 'a', to: 'b' });
+    state.afterRename = () => {
+      state.failWrite = storeRefuses;
+      markBindingRemovedByUser('a', 'b');
+    };
+    const result = await call('connect_orchestrators', { from: 'a', to: 'b' });
+    expect(result.isError).toBe(true);
+    expect(isBound('a', 'b')).toBe(false);
+    await restart();
+    expect(isBound('a', 'b')).toBe(false);
+    await expectRefused();
+  });
+
+  it('tombstones only the removed direction when that race hits a two-way connect', async () => {
+    await call('disconnect_orchestrators', { from: 'a', to: 'b' });
+    state.afterRename = () => markBindingRemovedByUser('a', 'b');
+    expect((await call('connect_orchestrators', { from: 'a', to: 'b', two_way: true })).isError).toBe(true);
+    expect(await storedPairs()).toEqual([]);
+    expect(storeFile().removedByUser).toEqual([expect.objectContaining({ agentId: 'a', targetId: 'b' })]);
+    await restart();
+    expect(isBound('a', 'b') || isBound('b', 'a')).toBe(false);
+    await expectRefused();
+  });
+
+  describe('also_user_wire', () => {
+    beforeEach(() => {
+      userDraws('a', 'b');
+      userDraws('b', 'a');
+    });
+
+    it.each([
+      ['only the store refuses', storeRefuses],
+      ['nothing can be written', folderRefuses],
+    ])('%s: a user wire the canvas still lists comes back as the user\'s', async (_name, failWrite) => {
+      state.failWrite = failWrite;
+      await removeWire('a', 'b');
+      await restart();
+      expect(isBound('a', 'b')).toBe(true);
+      expect(isBound('b', 'a')).toBe(true);
+      await rebuildPersistedBindings();
+      expect(isBound('a', 'b')).toBe(true);
+    });
+
+    it('the Dispatcher can\'t claim or drop the user\'s wire while the removal is pending', async () => {
+      state.failWrite = storeRefuses;
+      await removeWire('a', 'b');
+      await restart();
+      expect(await storedPairs()).toEqual([]);
+      expect(await linkRow('a', 'b')).toBeUndefined();
+      expect((await call('disconnect_orchestrators', { from: 'a', to: 'b' })).isError).toBe(true);
+      expect(lastAudit()).toMatchObject({ code: 'not_dispatcher_owned' });
+      expect(isBound('a', 'b')).toBe(true);
+    });
+
+    it('a user wire stays up, and stays the user\'s, while the store is suspended', async () => {
+      state.failWrite = folderRefuses;
+      await restart();
+      expect(isBound('a', 'b')).toBe(true);
+      expect(await linkRow('a', 'b')).toMatchObject({ status: 'suspended', reason: 'store_unwritable', also_user_wire: true });
+      expect(await listDispatcherLinksForUser()).toEqual([]);
+      state.failWrite = null;
+      agentChanged();
+      await vi.waitFor(async () => expect(await linkRow('a', 'b')).toMatchObject({ status: 'active' }));
+      expect(isBound('a', 'b')).toBe(true);
+      expect(JSON.parse(text(await call('disconnect_orchestrators', { from: 'a', to: 'b' }))).links[0].outcome).toBe('kept');
+      expect(isBound('a', 'b')).toBe(true);
+    });
+
+    it('drawing the pair again ends a pending removal once it can be saved', async () => {
+      state.failWrite = storeRefuses;
+      await removeWire('a', 'b');
+      state.failWrite = null;
+      userDraws('a', 'b');
+      await vi.waitFor(() => expect(storeFile().connections).toEqual([]));
+      expect(storeFile().removedByUser).toEqual([]);
+      expect(pendingFile()).toBe(false);
+      await restart();
+      expect(isBound('a', 'b')).toBe(true);
+    });
+
+    it('drawing the pair while nothing can be saved keeps the Dispatcher refused and leaves the wire', async () => {
+      state.failWrite = storeRefuses;
+      await removeWire('a', 'b');
+      userDraws('a', 'b');
+      await restart();
+      expect(isBound('a', 'b')).toBe(true);
+      expect(await storedPairs()).toEqual([]);
+      expect((await controls()).unconfirmed_removals).toEqual([{ from: 'a', to: 'b', saved: true }]);
+    });
   });
 });
 

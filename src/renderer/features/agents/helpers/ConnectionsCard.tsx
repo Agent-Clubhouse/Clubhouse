@@ -124,6 +124,7 @@ export function connectionMeta(c: Connection): string {
 
 const SUSPENDED_WHY: Record<NonNullable<DispatcherLink['reason']>, string> = {
   dispatcher_off: 'The Dispatcher is off.',
+  store_unwritable: 'Clubhouse can\u2019t save to its connections file.',
   mcp_off: 'Clubhouse MCP is off for one of these agents.',
   orchestration_off: 'Orchestration is off for one of these agents.',
   not_connected_to_dispatcher: 'One of these agents is not connected to the Dispatcher.',

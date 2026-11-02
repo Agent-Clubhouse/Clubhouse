@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import type { McpUnbindCause } from '../../shared/mcp-unbind';
+import { useToastStore } from './toastStore';
 
 export interface McpBindingEntry {
   agentId: string;
@@ -70,6 +71,9 @@ export const useMcpBindingStore = create<McpBindingStoreState>((set) => ({
       ? await window.clubhouse.mcpBinding.unbind(agentId, targetId, cause)
       : await window.clubhouse.mcpBinding.unbind(agentId, targetId);
     if (result?.kept) return;
+    if (result?.removalNotSaved) {
+      useToastStore.getState().addToast('Clubhouse couldn\u2019t save that removal. The Dispatcher\u2019s link could come back if the app restarts before it can.', 'error');
+    }
     // Optimistic update
     set((state) => ({
       bindings: state.bindings.filter(
