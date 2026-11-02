@@ -1024,6 +1024,82 @@ describe('annex-client', () => {
     });
   });
 
+  describe('a socket a newer connection has replaced', () => {
+    const FINGERPRINT = 'OLD:SOCKET';
+    type Handlers = Record<string, (...args: any[]) => void>;
+    let sockets: Array<{ handlers: Handlers; send: ReturnType<typeof vi.fn> }>;
+
+    /** Connected on a second socket, with the first's disconnect not yet finished. */
+    async function replacedSocket() {
+      const { WebSocket: WsMock } = await import('ws');
+      sockets = [];
+      mockHttpGetIdentity({ fingerprint: FINGERPRINT, alias: 'Old', icon: 'server', color: 'green', publicKey: 'old-key' });
+      vi.mocked(annexPeers.getPeer).mockReturnValue({
+        fingerprint: FINGERPRINT, alias: 'Old', icon: 'server', color: 'green', publicKey: 'old-key', pairedAt: '2024-01-01', lastSeen: '2024-01-01',
+      });
+      vi.mocked(WsMock).mockImplementation(function (this: any) {
+        const handlers: Handlers = {};
+        this.readyState = 1;
+        this.socket = makeMockSocket(FINGERPRINT);
+        this.on = vi.fn().mockImplementation((event: string, cb: any) => {
+          handlers[event] = cb;
+          if (event === 'open') setTimeout(cb, 0);
+          return this;
+        });
+        this.send = vi.fn(); this.ping = vi.fn(); this.close = vi.fn(); this.terminate = vi.fn(); this.removeListener = vi.fn();
+        sockets.push({ handlers, send: this.send });
+        return this;
+      });
+      annexClient.startClient();
+      await bonjourFindCallback!(makeService());
+      const connected = () => vi.waitFor(() => expect(annexClient.getSatellite(FINGERPRINT)?.state).toBe('connected'));
+      await connected();
+      annexClient.disconnect(FINGERPRINT);
+      annexClient.connect(FINGERPRINT);
+      await connected();
+      expect(sockets).toHaveLength(2);
+    }
+
+    const snapshot = (lastSeq: number, name: string) => Buffer.from(JSON.stringify({
+      type: 'snapshot',
+      payload: { protocolVersion: 2, projects: [{ id: name }], agents: {}, quickAgents: {}, theme: {}, orchestrators: {}, pendingPermissions: [], lastSeq },
+    }));
+
+    it('its late close leaves the new connection able to send', async () => {
+      await replacedSocket();
+      sockets[0].handlers.close();
+
+      expect(annexClient.getSatellite(FINGERPRINT)?.state).toBe('connected');
+      expect(annexClient.sendToSatellite(FINGERPRINT, { type: 'probe' })).toEqual({ sent: true });
+      expect(sockets[1].send).toHaveBeenCalledTimes(1);
+    });
+
+    it('its late error does not bring the new connection down or start another', async () => {
+      await replacedSocket();
+      sockets[0].handlers.error(new Error('closed before the connection was established'));
+      await new Promise((r) => setTimeout(r, 10));
+
+      expect(annexClient.getSatellite(FINGERPRINT)?.state).toBe('connected');
+      expect(annexClient.getSatellite(FINGERPRINT)?.lastError).toBeFalsy();
+      expect(sockets).toHaveLength(2);
+    });
+
+    it('its last frames are not taken as the new connection\'s', async () => {
+      await replacedSocket();
+      sockets[0].handlers.message(snapshot(5, 'from_old'));
+      expect(annexClient.getSatellite(FINGERPRINT)?.snapshot).toBeNull();
+
+      sockets[1].handlers.message(snapshot(1, 'from_new'));
+      expect((annexClient.getSatellite(FINGERPRINT)?.snapshot as any).projects).toEqual([{ id: 'from_new' }]);
+    });
+
+    it('the current socket closing still reconnects', async () => {
+      await replacedSocket();
+      sockets[1].handlers.close();
+      expect(annexClient.getSatellite(FINGERPRINT)?.state).toBe('disconnected');
+    });
+  });
+
   describe('mTLS reconnection', () => {
     it('attempts connection for discovered paired satellite without bearer token', async () => {
       const { WebSocket: WsMock } = await import('ws');

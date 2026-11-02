@@ -712,7 +712,9 @@ async function connectToSatellite(sat: SatelliteConnectionInternal): Promise<voi
       }
     });
 
+    // A socket that's been replaced can still report while it closes, and none of that is about the new one.
     ws.on('message', (data) => {
+      if (sat.ws !== ws) return;
       try {
         const msg = JSON.parse(data.toString());
         handleSatelliteMessage(sat, msg);
@@ -724,6 +726,7 @@ async function connectToSatellite(sat: SatelliteConnectionInternal): Promise<voi
     });
 
     ws.on('close', () => {
+      if (sat.ws !== ws) return;
       sat.ws = null;
       if (sat.state === 'connected') {
         setState(sat, 'disconnected', 'Connection closed');
@@ -732,6 +735,7 @@ async function connectToSatellite(sat: SatelliteConnectionInternal): Promise<voi
     });
 
     ws.on('error', (err) => {
+      if (sat.ws !== ws) return;
       const errorText = (err && typeof err === 'object' && 'message' in err) ? String((err as Error).message) : String(err);
       const retryWithBearerToken = !withBearerToken && sat.bearerToken && /401|unauthorized|forbidden|authentication/i.test(errorText);
       if (retryWithBearerToken) {
