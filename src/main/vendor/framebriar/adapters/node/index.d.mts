@@ -48,6 +48,12 @@ export interface FramebriarOutboxView {
   maxBytes: number;
   blocked: number;
   correlationWaiting?: number;
+  /** Reports whose enrollment isn't the current one; also counted in items and bytes. */
+  heldForEnrollment: number;
+  /** Their media bytes. */
+  heldBytes: number;
+  /** Opaque: pass it back to release. Null when nothing is held or there's no active enrollment. */
+  releaseToken: string | null;
   retention: 'until-delivered-or-cleared';
 }
 
@@ -67,14 +73,24 @@ export interface FramebriarAccess {
   connect(invitation: string): Promise<boolean>;
   disconnect(): Promise<{ forgotten: boolean; revoked: boolean | null }>;
   getToken(): Promise<string | undefined>;
+  /** Local identity for binding reports, never on the wire. Rejects when storage is unavailable. */
+  enrollmentState(): Promise<{ enrollmentRef: string | null; active: boolean }>;
+  /** Awaited after a change is durable and before its token can be used. Null on disconnect. */
+  onEnrollmentChange(fn: (change: { enrollmentRef: string | null }) => void | Promise<void>): () => void;
   dispose(): void;
 }
+
+export type FramebriarHeldCode = 'stale-release' | 'not-enrolled' | 'storage-unavailable';
 
 export interface FramebriarOutbox {
   status(): FramebriarOutboxView;
   subscribe(fn: (view: FramebriarOutboxView) => void): () => void;
   onReceipt(fn: (receipt: FramebriarReceipt) => void): () => void;
   clear(): Promise<void>;
+  /** `released` doesn't mean delivered: delivery follows asynchronously. */
+  releaseHeldReports(input: { releaseToken: string }): Promise<{ released: number; remaining: number; failed: number; code?: FramebriarHeldCode }>;
+  /** Discards held reports only, and works unenrolled. */
+  clearHeldReports(): Promise<{ cleared: number; remaining: number; failed: number; code?: FramebriarHeldCode }>;
   dispose(): void;
 }
 
@@ -84,6 +100,8 @@ export interface FramebriarSnapshot {
   readonly traceId?: string;
   readonly spanId?: string;
   readonly incident?: FramebriarIncident | null;
+  /** From open(). Stays in draft memory, and prepare() needs it with anything supplied. */
+  readonly enrollmentRef: string | null;
 }
 
 /** Upstream docs/feedback-diagnostics-v1.md. A report's own diagnostics; normalizeDiagnostics is what enforces it. */
@@ -146,6 +164,8 @@ export interface FramebriarIncident {
 export interface FramebriarPrepared {
   readonly report: Readonly<Record<string, unknown> & { id: string; traceId?: string; spanId?: string }>;
   readonly png: Buffer | null;
+  /** Beside the report, never in it. */
+  readonly enrollmentRef: string | null;
 }
 
 export interface FramebriarSubmitAck {
@@ -172,8 +192,13 @@ export interface FramebriarFeedback {
     spanId?: string;
     incident?: FramebriarIncident | null;
     diagnostics?: FramebriarReportDiagnostics;
+    /** Required with any of the fields above, or prepare fails with `invalid-input`. */
+    enrollmentRef?: string | null;
   }): Promise<FramebriarPrepared>;
-  /** `includeDiagnostics: false` replaces a carried diagnostics field with `left_out`. */
+  /**
+   * `includeDiagnostics: false` replaces a carried diagnostics field with `left_out`. Rejects with
+   * `enrollment-changed`, saving nothing, if the enrollment isn't the one it was prepared under.
+   */
   submit(prepared: FramebriarPrepared, opts?: { includeDiagnostics?: boolean }): Promise<FramebriarSubmitAck>;
 }
 

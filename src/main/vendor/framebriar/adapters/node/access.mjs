@@ -3,8 +3,10 @@
 // v2 contract (docs/general-feedback-v2.md): explicit redemption with bounded same-attempt
 // recovery, persisted 'connection-uncertain' marker, coalesced refresh, a 30-day family
 // with one-hour upload tokens, and persistent notices until replacement or explicit clear.
+// enrollmentRef: a random local identity minted on each successful redemption. Refresh keeps it,
+// expiry/revocation keep it (capture stays allowed), Disconnect clears it. Never on the wire.
 // Requests carry no Origin header; the service accepts originless clients.
-import {randomBytes} from 'node:crypto';
+import {randomBytes,randomUUID} from 'node:crypto';
 export const FRAMEBRIAR_ENDPOINT='https://framebriar-masra91-poc.azurewebsites.net/api';
 const HOUR=3600000,MONTH=30*86400000;
 const token=x=>typeof x==='string'&&/^[A-Za-z0-9_-]{43}$/.test(x);
@@ -29,9 +31,12 @@ export function createAccess({accessTimeoutMs=ACCESS_TIMEOUT_MS,retryDelay=ms=>n
   if(!validEndpoint(endpoint)||!/^[a-z0-9-]{1,60}$/.test(gameId??'')||(buildSha!==null&&!/^[a-f0-9]{7,40}$/.test(buildSha)))throw Error('Invalid Framebriar access scope');
   if(typeof store?.read!=='function'||typeof store.replace!=='function')throw Error('Framebriar access requires a secure store');
   let running=false,disposed=false,generation=0,revision=null,session,timer,controller,inflight,operation,failures=0;
-  let notice=null,optedIn=false,writes=0;
+  let notice=null,optedIn=false,writes=0,enrollmentRef=null;
   let view=Object.freeze({state:'disconnected',connected:false,enrolled:false,canCapture:false,notice:null,expiresAt:null});
-  const listeners=new Set([onChange]);
+  const listeners=new Set([onChange]),changeHooks=new Set();
+  // Awaited after an enrollment change is durable and before its token can be used, so a queue
+  // can fence its held reports first. A failing hook can't stop the change; delivery stays gated.
+  const enrollmentChanged=ref=>Promise.allSettled([...changeHooks].map(async fn=>fn(Object.freeze({enrollmentRef:ref})))).catch(()=>{});
   const emit=(state,expiresAt=session?.refreshExpiresAt??null)=>{
     view=Object.freeze({state,connected:state==='connected',enrolled:optedIn,canCapture:optedIn,notice:notice?.state??null,expiresAt:expiresAt??notice?.expiresAt??null,
       feedbackCorrelationVersion:session?.token&&Date.parse(session.expiresAt)>now()&&session.feedbackCorrelationVersion===1?1:null});
@@ -46,12 +51,26 @@ export function createAccess({accessTimeoutMs=ACCESS_TIMEOUT_MS,retryDelay=ms=>n
   // Storage seam: an undecryptable record (e.g. the OS key was reset) reads as empty for an
   // explicit connect/disconnect, so the user can always replace or clear it.
   async function load({recover=false}={}){
-    try{return await store.read();}
-    catch(e){if(recover&&e?.code==='invalid-store'&&e.revision)return {revision:e.revision,session:null,notice:null};throw e;}
+    const seen=writes;let saved;
+    try{saved=await store.read();}
+    catch(e){if(recover&&e?.code==='invalid-store'&&e.revision)saved={revision:e.revision,session:null,notice:null};else throw e;}
+    const stale=writes!==seen; // our own write landed during this read: memory is newer
+    saved=await withRef(saved);
+    if(!stale)enrollmentRef=saved.enrollmentRef??null;
+    return saved;
   }
-  async function put(expected,session,next){
-    const result=await store.replace(expected,{session,notice:noticeOf(next)});
-    if(result?.ok)writes++;
+  // A record written before enrollment refs existed gets one on first load. Compare-and-swap,
+  // so concurrent processes settle on one ref; a loser reads the winner's.
+  async function withRef(saved){
+    if(saved.enrollmentRef||!(saved.session||(saved.notice&&saved.notice.enrolled!==false)))return saved;
+    const ref=randomUUID(),result=await store.replace(saved.revision,{session:saved.session,notice:noticeOf(saved.notice),enrollmentRef:ref});
+    if(!result?.ok)return await store.read();
+    writes++;if(revision===saved.revision)revision=result.revision;
+    return {...saved,revision:result.revision,enrollmentRef:ref};
+  }
+  async function put(expected,session,next,ref=enrollmentRef){
+    const result=await store.replace(expected,{session,notice:noticeOf(next),...(ref?{enrollmentRef:ref}:{})});
+    if(result?.ok){writes++;enrollmentRef=ref;}
     return result?.ok?result.revision:null;
   }
   async function request(action,body,ticket){
@@ -77,7 +96,7 @@ export function createAccess({accessTimeoutMs=ACCESS_TIMEOUT_MS,retryDelay=ms=>n
   async function adoptStored(ticket){
     const saved=await load();if(!current(ticket))return;
     revision=saved.revision;notice=noticeOf(saved.notice);optedIn=!!saved.session||!!notice&&notice.enrolled!==false;
-    session=saved.session?{refreshToken:saved.session.refreshToken,refreshExpiresAt:saved.session.expiresAt}:undefined;
+    session=saved.session?{refreshToken:saved.session.refreshToken,refreshExpiresAt:saved.session.expiresAt,enrollmentRef:saved.enrollmentRef??null}:undefined;
     emit(session?'checking':notice?.state??'disconnected',session?.refreshExpiresAt??null);
     if(session)schedule(1000);
   }
@@ -89,14 +108,17 @@ export function createAccess({accessTimeoutMs=ACCESS_TIMEOUT_MS,retryDelay=ms=>n
     if(next===null){await adoptStored(ticket);return;}
     revision=next;notice=noticeOf(reason);optedIn=reason.enrolled;emit(state,null);
   }
-  async function accept(value,ticket){
+  // A redemption is a new enrollment, even under the same invitation. A refresh is not.
+  async function accept(value,ticket,{redeemed=false}={}){
     if(!valid(value))throw fault('invalid');
     if(!current(ticket))return false;
-    const next=await put(revision,{refreshToken:value.refreshToken,expiresAt:iso(value.refreshExpiresAt)},null);
+    const ref=redeemed?randomUUID():session?.enrollmentRef??enrollmentRef;
+    const next=await put(revision,{refreshToken:value.refreshToken,expiresAt:iso(value.refreshExpiresAt)},null,ref);
     if(!current(ticket))return false;
     if(next===null){session=undefined;await adoptStored(ticket);return false;}
     revision=next;
-    session={token:value.token,refreshToken:value.refreshToken,expiresAt:value.expiresAt,refreshExpiresAt:iso(value.refreshExpiresAt),feedbackCorrelationVersion:value.feedbackCorrelationVersion===1?1:null};
+    if(redeemed){await enrollmentChanged(ref);if(!current(ticket))return false;}
+    session={token:value.token,refreshToken:value.refreshToken,expiresAt:value.expiresAt,refreshExpiresAt:iso(value.refreshExpiresAt),feedbackCorrelationVersion:value.feedbackCorrelationVersion===1?1:null,enrollmentRef:ref};
     notice=null;optedIn=true;failures=0;emit('connected');
     if(!current(ticket))return false;
     const end=Date.parse(session.refreshExpiresAt),expiry=Date.parse(session.expiresAt);
@@ -109,7 +131,7 @@ export function createAccess({accessTimeoutMs=ACCESS_TIMEOUT_MS,retryDelay=ms=>n
         const saved=await load();if(!current(ticket))return;
         revision=saved.revision;
         if(!saved.session){notice=noticeOf(saved.notice);optedIn=!!notice&&notice.enrolled!==false;emit(notice?.state??'disconnected',null);return;}
-        optedIn=true;notice=null;session={refreshToken:saved.session.refreshToken,refreshExpiresAt:saved.session.expiresAt};
+        optedIn=true;notice=null;session={refreshToken:saved.session.refreshToken,refreshExpiresAt:saved.session.expiresAt,enrollmentRef:saved.enrollmentRef??null};
       }
       if(Date.parse(session.refreshExpiresAt)<=now()){await forget(ticket,'expired');return;}
       const value=await request('refresh',{refreshToken:session.refreshToken,scopeVersion:2},ticket);
@@ -132,7 +154,9 @@ export function createAccess({accessTimeoutMs=ACCESS_TIMEOUT_MS,retryDelay=ms=>n
     const ticket=generation,work=restoreOrRefresh(ticket).then(()=>view);
     const result=work.finally(()=>{if(inflight===result)inflight=undefined;});inflight=result;return result;
   }
-  async function getToken(){
+  // With `expected`, only a token belonging to that enrollment is returned. The check precedes any
+  // refresh, and the token and ref come from one session object, so they can't cross a change.
+  async function tokenFor(expected){
       if(!running||disposed||operation)return undefined;
       // Another process (or a disconnect elsewhere) may have replaced the record.
       const ticket=generation,seen=writes;
@@ -142,9 +166,12 @@ export function createAccess({accessTimeoutMs=ACCESS_TIMEOUT_MS,retryDelay=ms=>n
         if(writes===seen&&(saved.revision!==revision||saved.session?.refreshToken!==session?.refreshToken)){session=undefined;revision=saved.revision;}
         if(writes===seen&&!saved.session){notice=noticeOf(saved.notice);optedIn=!!notice&&notice.enrolled!==false;emit(notice?.state??'disconnected',null);return undefined;}
       }catch{if(current(ticket)){session=undefined;emit('storage-unavailable',null);}return undefined;}
-      if(session?.token&&Date.parse(session.expiresAt)-now()>5*60000)return session.token;
-      await refresh();return session?.token&&Date.parse(session.expiresAt)>now()?session.token:undefined;
+      const matches=()=>expected===undefined||session?.enrollmentRef===expected;
+      if(expected!==undefined&&enrollmentRef!==expected)return undefined;
+      if(session?.token&&matches()&&Date.parse(session.expiresAt)-now()>5*60000)return session.token;
+      await refresh();return session?.token&&matches()&&Date.parse(session.expiresAt)>now()?session.token:undefined;
     }
+  const getToken=()=>tokenFor();
   return Object.freeze({endpoint,gameId,
     status:()=>Object.freeze({...view,feedbackCorrelationVersion:session?.token&&Date.parse(session.expiresAt)>now()&&session.feedbackCorrelationVersion===1?1:null}),
     subscribe(fn){listeners.add(fn);try{fn(view);}catch{}return()=>listeners.delete(fn);},
@@ -166,7 +193,7 @@ export function createAccess({accessTimeoutMs=ACCESS_TIMEOUT_MS,retryDelay=ms=>n
       try{
         const old=await load({recover:true});if(!current(ticket))return false;
         optedIn=!!old.session||!!old.notice&&old.notice.enrolled!==false;
-        const next=await put(old.revision,null,{state:'connection-uncertain',expiresAt:null,enrolled:optedIn});if(!current(ticket))return false;
+        const next=await put(old.revision,null,{state:'connection-uncertain',expiresAt:null,enrolled:optedIn},optedIn?old.enrollmentRef:null);if(!current(ticket))return false;
         if(next===null)throw fault('stale');revision=next;
         if(!lastAttempt||lastAttempt.invitation!==invitation||now()-lastAttempt.at>14*60000)lastAttempt={invitation,attemptId:randomBytes(16).toString('base64url'),at:now()};
         const attempt=lastAttempt;
@@ -176,7 +203,7 @@ export function createAccess({accessTimeoutMs=ACCESS_TIMEOUT_MS,retryDelay=ms=>n
           catch(e){if(e?.kind!=='transient'||n>=2||!current(ticket))throw e;await retryDelay(n?5000:2000);if(!current(ticket))throw fault('stale');}
         }
         invitation=undefined;
-        const accepted=await accept(value,ticket);
+        const accepted=await accept(value,ticket,{redeemed:true});
         // A successful response is still recoverable until validation and persistence
         // succeed. A stopped/superseded operation must not clear a newer attempt.
         if(accepted&&current(ticket)&&lastAttempt===attempt)lastAttempt=undefined;
@@ -191,23 +218,33 @@ export function createAccess({accessTimeoutMs=ACCESS_TIMEOUT_MS,retryDelay=ms=>n
       }finally{invitation=undefined;if(ticket===generation)operation=undefined;}
     },
     getToken,
+    // Local enrollment identity for binding queued and prepared reports. active: a live session
+    // exists now, so delivery and release are possible. A ref without active is an expired or
+    // revoked enrollment. Reads storage; rejects when storage is unavailable.
+    async enrollmentState(){
+      const saved=await load();
+      return Object.freeze({enrollmentRef:saved.enrollmentRef??null,
+        active:!!saved.session&&!operation&&Date.parse(saved.session.expiresAt)>now()});
+    },
+    getTokenFor:ref=>typeof ref==='string'?tokenFor(ref):Promise.resolve(undefined),
+    onEnrollmentChange(fn){changeHooks.add(fn);return()=>changeHooks.delete(fn);},
     // One atomic in-memory snapshot after renewal: the capability belongs to this token.
     // Never restore it from encrypted enrollment or infer it from an earlier session.
-    async getFeedbackAuthorization(){
-      const token=await getToken();
+    async getFeedbackAuthorization(ref){
+      const token=await tokenFor(ref);
       if(!token||session?.token!==token||Date.parse(session.expiresAt)<=now())return undefined;
       return Object.freeze({token,feedbackCorrelationVersion:session.feedbackCorrelationVersion===1?1:null});
     },
-    // Forgets locally (reports stay queued) and attempts server revocation.
+    // Forgets locally (reports stay queued, held from the next enrollment) and attempts server revocation.
     async disconnect(){
       if(disposed)return {forgotten:false,revoked:false};
       lastAttempt=undefined;
       halt();running=true;const ticket=generation;operation='disconnect';emit('disconnecting',null);
       try{
         const old=await load({recover:true});if(!current(ticket))return {forgotten:false,revoked:false};
-        const next=await put(old.revision,null,null);
+        const next=await put(old.revision,null,null,null);
         if(!current(ticket)||next===null){if(current(ticket))emit('storage-unavailable',null);return {forgotten:false,revoked:false};}
-        revision=next;notice=null;optedIn=false;emit('disconnected',null);
+        revision=next;notice=null;optedIn=false;await enrollmentChanged(null);emit('disconnected',null);
         if(!old.session)return {forgotten:true,revoked:null};
         try{const result=await request('disconnect',{refreshToken:old.session.refreshToken},ticket);
           return {forgotten:true,revoked:result?.v===1&&result.disconnected===true};
@@ -215,6 +252,6 @@ export function createAccess({accessTimeoutMs=ACCESS_TIMEOUT_MS,retryDelay=ms=>n
       }catch{if(current(ticket))emit('storage-unavailable',null);return {forgotten:false,revoked:false};}
       finally{if(ticket===generation)operation=undefined;}
     },
-    dispose(){lastAttempt=undefined;running=false;disposed=true;halt();listeners.clear();},
+    dispose(){lastAttempt=undefined;running=false;disposed=true;halt();listeners.clear();changeHooks.clear();},
   });
 }

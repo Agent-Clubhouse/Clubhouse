@@ -30,7 +30,17 @@ it('typechecks the public Framebriar surface used by Clubhouse', () => {
         const token: string | undefined = await fb.access.getToken();
         const result: { forgotten: boolean; revoked: boolean | null } = await fb.access.disconnect();
         const headers: Record<string, string> = await otlpExporterOptions(fb.access, 'logs').headers();
-        const prepared = await fb.feedback.prepare({ notes: 'fixture', png: null });
+        const opened = await fb.feedback.open();
+        const ref: string | null = opened.enrollmentRef;
+        const prepared = await fb.feedback.prepare({ ...opened, notes: 'fixture', png: null });
+        const preparedRef: string | null = prepared.enrollmentRef;
+        const stop: () => void = fb.access.onEnrollmentChange(({ enrollmentRef }) => { const next: string | null = enrollmentRef; void next; });
+        const current: { enrollmentRef: string | null; active: boolean } = await fb.access.enrollmentState();
+        const { heldForEnrollment, heldBytes, releaseToken } = fb.outbox.status();
+        const released: { released: number; remaining: number; failed: number; code?: string } = await fb.outbox.releaseHeldReports({ releaseToken: releaseToken ?? '' });
+        const cleared: { cleared: number; remaining: number; failed: number; code?: string } = await fb.outbox.clearHeldReports();
+        // @ts-expect-error A release always carries the token the user confirmed.
+        await fb.outbox.releaseHeldReports();
         const ack: FramebriarSubmitAck = await fb.feedback.submit(prepared, { includeDiagnostics: false });
         const retention: 'until-delivered-or-cleared' = fb.outbox.status().retention;
         const storage: { available: boolean; reason?: string } = await fb.store.probeAsync();
@@ -42,10 +52,10 @@ it('typechecks the public Framebriar surface used by Clubhouse', () => {
         fb.access.connect({ invitation: 'fixture' });
         const carried: 'attached' | 'none' | 'left_out' | 'unavailable' | null = ack.reportDiagnostics;
         const diagnostics: FramebriarReportDiagnostics = normalizeDiagnostics({ v: 1, state: 'none' });
-        await fb.feedback.prepare({ png: null, diagnostics });
+        await fb.feedback.prepare({ ...opened, png: null, diagnostics });
         // @ts-expect-error Clubhouse doesn't use the SDK's provider: reportDiagnosticsField is the only way to the field.
         createFramebriar({ ...options, diagnosticsProvider: () => [] });
-        void [connected, token, result, headers, ack, retention, storage, carried];
+        void [connected, token, result, headers, ack, retention, storage, carried, ref, preparedRef, stop, current, heldForEnrollment, heldBytes, released, cleared];
       }
       void contract;
     `);

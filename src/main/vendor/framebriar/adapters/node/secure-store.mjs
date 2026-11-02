@@ -1,5 +1,5 @@
 // OS-backed enrollment store for Electron main processes. One compare-and-swap record
-// {revision, session, notice} per file, encrypted with Electron's injected `safeStorage`
+// {revision, session, notice, enrollmentRef?} per file, encrypted with Electron's injected `safeStorage`
 // (macOS Keychain, Windows DPAPI, Linux libsecret/kwallet). Same semantics as
 // adapters/godot/normal/secure_store.gd. No plaintext fallback: when safeStorage cannot
 // encrypt (or Linux selected the 'basic_text' backend) every operation is refused.
@@ -20,6 +20,10 @@ export const validStoredSession=s=>s===null||(plain(s)&&Object.keys(s).length===
   typeof s.refreshToken==='string'&&/^[A-Za-z0-9_-]{43}$/.test(s.refreshToken)&&typeof s.expiresAt==='string'&&ISO.test(s.expiresAt));
 export const validStoredNotice=n=>n===null||(plain(n)&&Object.keys(n).length===3&&NOTICES.includes(n.state)&&
   typeof n.enrolled==='boolean'&&(n.expiresAt===null||(typeof n.expiresAt==='string'&&ISO.test(n.expiresAt))));
+
+// Random local identity of an enrollment (docs/general-feedback-v2.md). Stored beside session,
+// because older readers require exactly two session keys but tolerate an extra top-level one.
+export const validStoredEnrollmentRef=r=>r===undefined||r===null||(typeof r==='string'&&UUID.test(r));
 
 export class SecureStoreError extends Error{
   constructor(code,extra={}){super(`Secure store ${code}`);this.name='SecureStoreError';this.code=code;Object.assign(this,extra);}
@@ -91,16 +95,16 @@ export function createSecureStore({safeStorage,file,scope='',platform=process.pl
     try{value=JSON.parse(text);}
     catch{throw new SecureStoreError('invalid-store',{revision:x.revision});}
     // The revision and scope are bound inside the ciphertext: a swapped or copied file fails.
-    if(!plain(value)||value.v!==1||value.revision!==x.revision||value.scope!==scope||!validStoredSession(value.session??null)||!validStoredNotice(value.notice??null))
+    if(!plain(value)||value.v!==1||value.revision!==x.revision||value.scope!==scope||!validStoredSession(value.session??null)||!validStoredNotice(value.notice??null)||!validStoredEnrollmentRef(value.enrollmentRef))
       throw new SecureStoreError('invalid-store',{revision:x.revision});
-    return {record:{revision:x.revision,session:value.session??null,notice:value.notice??null},reencrypt};
+    return {record:{revision:x.revision,session:value.session??null,notice:value.notice??null,...(value.enrollmentRef?{enrollmentRef:value.enrollmentRef}:{})},reencrypt};
   }
   const locked=fn=>lock.run(fn).catch(e=>{throw e instanceof SecureStoreError?e:new SecureStoreError(e?.code==='busy'?'busy':'secure-store-unavailable');});
   return Object.freeze({file,
     // Deprecated: sync API only. Use probeAsync().
     probe:()=>secureStorageAvailability(safeStorage,platform),
     probeAsync:()=>secureStorageAvailabilityAsync(safeStorage,platform),
-    // {revision:'missing'|uuid, session, notice}. An undecryptable record throws
+    // {revision:'missing'|uuid, session, notice, enrollmentRef?}. An undecryptable record throws
     // invalid-store carrying its outer `revision`, so an explicit replace can still clear it.
     async read(){
       const api=await usable();
@@ -110,18 +114,18 @@ export function createSecureStore({safeStorage,file,scope='',platform=process.pl
         // Rewrap under the rotated key with the same revision and contents, so CAS is unaffected.
         // Best effort: the old ciphertext still decrypts if this fails.
         if(reencrypt)try{
-          const data=await encrypt(api,JSON.stringify({v:1,revision:x.revision,scope,session:record.session,notice:record.notice}));
+          const data=await encrypt(api,JSON.stringify({v:1,revision:x.revision,scope,session:record.session,notice:record.notice,...(record.enrollmentRef?{enrollmentRef:record.enrollmentRef}:{})}));
           await writeFileDurable(file,JSON.stringify({v:1,revision:x.revision,data}));
         }catch{/* keep the readable record */}
         return record;
       });
     },
     // Compare-and-swap. {ok:true,revision} or {ok:false,code:'conflict'}; throws when unavailable.
-    async replace(expectedRevision,{session=null,notice=null}={}){
-      if(!(expectedRevision==='missing'||(typeof expectedRevision==='string'&&UUID.test(expectedRevision)))||!validStoredSession(session)||!validStoredNotice(notice))
+    async replace(expectedRevision,{session=null,notice=null,enrollmentRef=null}={}){
+      if(!(expectedRevision==='missing'||(typeof expectedRevision==='string'&&UUID.test(expectedRevision)))||!validStoredSession(session)||!validStoredNotice(notice)||!validStoredEnrollmentRef(enrollmentRef))
         throw new SecureStoreError('invalid-input');
       const api=await usable();
-      const revision=randomUUID(),body=JSON.stringify({v:1,revision,scope,session,notice});
+      const revision=randomUUID(),body=JSON.stringify({v:1,revision,scope,session,notice,...(enrollmentRef?{enrollmentRef}:{})});
       if(Buffer.byteLength(body)>SECURE_STORE_PAYLOAD_MAX)throw new SecureStoreError('invalid-input');
       let data;try{data=await encrypt(api,body);}catch{throw new SecureStoreError('secure-store-unavailable');}
       return locked(async()=>{
