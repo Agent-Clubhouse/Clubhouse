@@ -604,7 +604,7 @@ async function connectToSatellite(sat: SatelliteConnectionInternal): Promise<voi
 
   const attemptConnection = (withBearerToken: boolean): void => {
     const tlsOptions = annexTls.createTlsClientOptions(identity);
-    const wsUrl = `wss://${bracketHost(sat.host)}:${sat.mainPort}/ws`;
+    const wsUrl = `wss://${bracketHost(sat.host)}:${sat.mainPort}/ws?client=desktop`;
 
     appLog('core:annex-client', 'info', 'Connecting to satellite', {
       meta: {

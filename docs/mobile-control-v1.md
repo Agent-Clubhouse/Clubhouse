@@ -151,6 +151,50 @@ Clubhouse Go closes a WebSocket with code 1009 on a frame over 16 MiB, and a pho
 
 So `icon` set with no `agentIcons[id]` is normal. Use `GET /api/v1/icons/agent/:agentId` or `GET /api/v1/icons/project/:projectId`, or draw initials. Those routes serve the same thumbnail, or a 404 when there's none, so draw initials then. Images set through `update_agent`, `update_project` or the CLI that are over 256 KiB, or wider or taller than 256 pixels, are stored as a PNG within 256 by 256. Files on disk are otherwise left as they are.
 
+### Icon refs
+
+A phone that opts in gets image references in its snapshots and fetches images separately, so unchanged images are never sent again. A phone that doesn't is unaffected.
+
+**Opting in:** when `GET /api/v1/mobile/capabilities` has `iconRefs.version >= 1`, connect with `wss://…/ws?iconRefs=1&client=mobile`, on every connection including reconnects. It's on the URL because a snapshot follows the upgrade immediately. It lasts for that socket and covers every snapshot on it. An older desktop ignores both. `client` is for metrics only, and nothing trusts it: a socket that doesn't say is counted as unknown.
+
+**The snapshot:** `agentIcons` and `projectIcons` are always `{}` for this socket, so ignore them. `iconRefs` is new:
+
+```json
+"iconRefs": {
+  "agents":   {"<agentId>":   {"version":"<64 hex>","type":"image/png","bytes":21034,"width":128,"height":128}},
+  "projects": {"<projectId>": {"version":"<64 hex>","type":"image/png","bytes":18211,"width":128,"height":96}}
+}
+```
+
+- `version` is the lowercase SHA-256 of the bytes the route serves. Compare it for equality only. It survives a restart.
+- `type` is `image/png`, `image/jpeg`, `image/gif` or `image/webp`, read from the bytes. Never SVG. `bytes`, `width` and `height` describe the served image too.
+- **`iconRefs` has three states.** Absent means unknown, so keep what you have: a snapshot over its limit leaves it out and `snapshotTruncated.omitted` says so. Present means complete, so replace. No entry for an id in a present map means no image, so drop what you cached. A different `version` means fetch. `icon` set with no entry is normal, and draws initials until a later snapshot gives a `version`.
+- Projects are in `iconRefs.projects`. Durable agents **and the Dispatcher** are in `iconRefs.agents`. That isn't the snapshot's own `agents` map, which doesn't list the Dispatcher. A quick agent never has an entry, and draws its lightning bolt. An emoji still comes before an image.
+- REST catalogs don't carry `iconRefs`, so a catalog response must not clear them. Only a snapshot on the socket changes them.
+- A snapshot follows a change to an agent's or project's image and the Dispatcher turning on or off, as soon as the change is noticed. An image file replaced directly on disk under the same name has nothing to notice it: the next snapshot picks it up, whatever causes that.
+
+**Fetching:** `GET /api/v1/icons/agent/:agentId?v=<version>` and `/project/:projectId?v=<version>`, authenticated as today.
+
+| Case | Answer |
+|---|---|
+| `?v=` is current | 200, `Cache-Control: private, max-age=31536000, immutable` |
+| `If-None-Match` exactly equals the current ETag | 304, no body |
+| `?v=` is stale | 200 with the current image, `Cache-Control: private, no-cache` |
+| No `?v=` | 200, `Cache-Control: private, max-age=3600` |
+| No image | 404 `{"error":"icon_not_found"}` |
+
+Every 200 and 304 has the current version as a strong, quoted `ETag`. Show an image only if its ETag equals the current snapshot's `version`. If it differs the response is stale: keep what you draw now and don't refetch until a new snapshot changes the `version`. Send `If-None-Match` only for an image you've validated and kept.
+
+**Guarantees:** the desktop sends nothing, by socket or route, over 72 KiB or over 256 pixels on a side, checked on the bytes it sends. A generated thumbnail is within 128 by 128.
+
+**What to check and keep:** check the body's SHA-256 against the ETag, its byte count, and its Content-Type, decoded type and size. Treat anything else as bad. Fetch at most 4 at once. Keep at most 32 MiB of images on disk **in total across all hosts**, least recently used first, keyed on the desktop's identity, the kind, the id and the `version`. Cap decoded images in memory at 16 MiB, at width by height by 4 bytes each: about 62 at 256 by 256, or 250 at 128 by 128.
+
+**When anything fails** (network, 5xx, a bad decode, too large), draw initials and back off. It must never affect chat or the socket.
+
+**Drawing:** a generated PNG is a still image and already upright. A file sent as it is keeps its frames and EXIF, so draw a GIF's first frame and honor a JPEG's orientation.
+
+`icon-refs-cases.json` lists what to do with each kind of snapshot and response.
+
 ## Chat state and history
 
 Authenticated `GET /api/v1/mobile/agents/:agentId/chat` returns `{version:1,epoch,agentId,sessionId,state,capabilities,events,lastSeq,truncated,pendingPermissions,pendingQuestions}`. Events use the existing ChatEvent schema. LastSeq here is **session-local**, distinct from Annex's global WS seq. Returned history is a bounded tail; pending interactions are included separately even when their events predate the tail. GET `/api/v1/mobile/agents/:agentId/chat/sessions` returns `{version,epoch,agentId,sessions:ChatSessionSummary[]}`. The chat snapshot accepts `sessionId` (optional), `beforeSeq` (exclusive, positive integer) and `limit` (1–2000, default 2000). It also returns `currentSessionId`, `readOnly`, and `nextBeforeSeq` (null when no older page). `lastSeq` always describes the full session, not the current page. Never send actions for a readOnly historical session. Pending interactions are independent of the requested page.
@@ -933,7 +977,7 @@ Errors use the existing envelope with correlation fields: `error {message, op, s
 
 ## Contract fixtures
 
-`test/fixtures/annex-mobile/` holds a canonical example of every message in this document: capabilities, a snapshot over its limit and the canvas routes, the WebSocket snapshot (agents, quick agents, `projectState`, `finishedQuickAgents`, `helperRequests`, theme), the chat snapshot with `chatControls`, `slashCommands` and `contentRoots`, create options and agent settings, a request and receipt for every `MOBILE_COMMAND_TYPES` command with each refusal its code path can reach, one `chat:event` of every chat event type followed by `user_message` with each form of `routed` (one sender, a burst, `fromClubhouse`, no `sender`), every kind of sender and how to draw it, queued bursts, every `pty:*` message and error, `mobile:replay`, the attachment upload's answers, and the [oversized command](#oversized-commands) refusal in `command-too-large.json`, with its exact response bytes. The phone (Clubhouse Go) vendors these files and decodes each one in its contract tests, and checks that the commands it builds match the requests here. Neither side tests only against its own fakes.
+`test/fixtures/annex-mobile/` holds a canonical example of every message in this document: capabilities, icon refs and their routes, a snapshot over its limit and the canvas routes, the WebSocket snapshot (agents, quick agents, `projectState`, `finishedQuickAgents`, `helperRequests`, theme), the chat snapshot with `chatControls`, `slashCommands` and `contentRoots`, create options and agent settings, a request and receipt for every `MOBILE_COMMAND_TYPES` command with each refusal its code path can reach, one `chat:event` of every chat event type followed by `user_message` with each form of `routed` (one sender, a burst, `fromClubhouse`, no `sender`), every kind of sender and how to draw it, queued bursts, every `pty:*` message and error, `mobile:replay`, the attachment upload's answers, and the [oversized command](#oversized-commands) refusal in `command-too-large.json`, with its exact response bytes. The phone (Clubhouse Go) vendors these files and decodes each one in its contract tests, and checks that the commands it builds match the requests here. Neither side tests only against its own fakes.
 
 `src/main/services/annex-mobile-contract.test.ts` writes them. It runs the real annex-server, mobile-control, mobile-agents, mobile-helper-requests, mobile-attachments and chat echo code over pinned mTLS and the WebSocket handler. Only the leaves are faked (disk, git, CLIs, PTYs, the orchestrator side of helper requests). The output is deterministic: fixed ids and clock, sorted keys, and random UUIDs (epochs, tokens, attachment and helper request ids) renumbered `00000000-0000-4000-8000-<n>` in order of first appearance.
 
