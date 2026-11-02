@@ -1,18 +1,18 @@
 {
   "repo": "https://github.com/masra91/framebriar",
-  "commit": "7572776830a65688403c59806621154a2458099c",
-  "vendoredAt": "2026-10-31",
+  "commit": "dd63bc661ca3fc9c69abc36c885685ab523492b4",
+  "vendoredAt": "2026-11-02",
   "files": {
     "adapters/browser/otel-exporter.mjs": "8daf0ec59417a724ab82614c83397c20f330a22978f864927cdb6459b5f1857b",
     "adapters/browser/telemetry.mjs": "2f357670a9900089905b8f84f4d62427e5accef344276db2c8e5e427ea269950",
     "adapters/node/access.mjs": "34535e2594f5b7104e47fc650003a421d746610ffd78c9f10f05ff0c6fe00884",
-    "adapters/node/feedback.mjs": "25c497db56fb68255311e1a2022df4d778f0dca0a4c9cdeb7ab7166b28a9de82",
+    "adapters/node/feedback.mjs": "7147aa618f073a8df63293532a95967ad1f544c83000d878765bb408079772bb",
     "adapters/node/files.mjs": "430a1f606963ef020bfa635d09f45e91dda7eddb2c36c0133d90507bb604494a",
-    "adapters/node/index.mjs": "fa00689f0fbde320ec6d4cd482a9dea12276097b78bc2f6f7ee46f48f2816c95",
+    "adapters/node/index.mjs": "ba2a3e64f74a3993653cb450fe1455cb88e90be33e09ab30b845742b4a011cdb",
     "adapters/node/outbox.mjs": "97c4750bbf0dd886f86c3d3dd37d71880dab20758431681675942c8dfc90eed2",
     "adapters/node/secure-store.mjs": "c1b339269c70ee08e4eb73e75c59600099164271698a035ed9d34ee512e471a7",
     "adapters/node/telemetry.mjs": "4300610020620afe1b5b52b8816d9fe19260773a6784e87a35e34e37ac2b7e19",
     "adapters/node/transport.mjs": "2cba628268867fed2c67b2099c663444f55c6728b857fe4cf0ebeaa591a446ae",
-    "src/protocol.mjs": "a1f9307dfef5bfbc52ff06a9fac6f89d7642178ecf4e5c8a28b38a9ad7c3579d"
+    "src/protocol.mjs": "1d9e434d4b5352fd002c4f2e0b75c120ed16a56f88cbe780c9d29ccec795f2ab"
   }
 }
