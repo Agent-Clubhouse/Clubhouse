@@ -6,9 +6,9 @@
  * id (docs/structured-chat-research.md §7, "Capabilities, not provider checks").
  */
 
-import { PERMISSION_LEVEL_LABELS } from '../../../../shared/chat';
+import { PERMISSION_LEVEL_LABELS, messageDisplay, messageSummary, stripTaskMarker } from '../../../../shared/chat';
 import type { ChatCapabilities, PermissionLevel, ToolCallContent } from '../../../../shared/chat';
-import type { ChatItem, ChatViewState, PendingPermission, PlanDocumentItem, SubagentInfo, ToolCallItem, TurnEndItem } from '../../../stores/chatStore';
+import type { ChatItem, ChatViewState, PendingPermission, PlanDocumentItem, SubagentInfo, ToolCallItem, TurnEndItem, UserMessageItem } from '../../../stores/chatStore';
 
 // ── Stream blocks ───────────────────────────────────────────────────────────
 
@@ -19,13 +19,19 @@ export interface ItemBlock {
   /** The hidden tool call a question row or plan card stands for, so its error still shows. */
   tool?: ToolCallItem;
 }
-/** A run of consecutive read-only tool calls, shown as one "Explored" row. */
-export interface ExploreBlock { type: 'explore'; key: string; tools: ToolCallItem[] }
+/** A run of read-only tool calls, shown as one "Explored" row. `items` also has the thoughts between them, in order. */
+export interface ExploreBlock { type: 'explore'; key: string; tools: ToolCallItem[]; items: ChatItem[] }
+/** A run of tool calls and messages from others, shown as one "Made 6 tool calls" row (#2664). */
+export interface GroupBlock { type: 'group'; key: string; tools: ToolCallItem[]; messages: UserMessageItem[]; items: ChatItem[] }
 /** A subagent with its own work folded underneath. */
 export interface SubagentBlock { type: 'subagent'; key: string; info: SubagentInfo; tool?: ToolCallItem; children: ChatItem[] }
-export type StreamBlock = ItemBlock | ExploreBlock | SubagentBlock;
+export type StreamBlock = ItemBlock | ExploreBlock | GroupBlock | SubagentBlock;
 
 const READ_ONLY_KINDS = new Set(['read', 'search', 'fetch', 'think']);
+
+function isReadOnlyTool(tool: ToolCallItem): boolean {
+  return READ_ONLY_KINDS.has(tool.toolKind) && !tool.content.some((c) => c.type === 'diff' || c.type === 'terminal');
+}
 
 /**
  * A tool call that only looks around: no diff or output, didn't fail. With
@@ -35,9 +41,47 @@ const READ_ONLY_KINDS = new Set(['read', 'search', 'fetch', 'think']);
 export function isExploreTool(item: ChatItem, mediaVisible = false): item is ToolCallItem {
   if (item.kind !== 'tool_call') return false;
   if (mediaVisible && item.media?.length) return false;
-  if (!READ_ONLY_KINDS.has(item.toolKind)) return false;
   if (item.status === 'failed' || item.status === 'pending') return false;
-  return !item.content.some((c) => c.type === 'diff' || c.type === 'terminal');
+  return isReadOnlyTool(item);
+}
+
+/** A command that exited non-zero failed, whatever status its driver reported. */
+function exitedNonZero(tool: ToolCallItem): boolean {
+  const exit = terminalContent(tool)?.exitCode;
+  return exit !== undefined && exit !== 0;
+}
+
+/** Sent to the active agent for it to answer, so it stays out of a group. */
+const HELPER_QUESTION = /^\[QUESTION FROM HELPER:/;
+
+export interface StreamBlockOptions {
+  mediaVisible?: boolean;
+  /** Tool calls with a permission request still open: these stay out of a group. */
+  awaitingApproval?: ReadonlySet<string>;
+}
+
+/**
+ * How an item takes part in a group (docs/mobile-control-v1.md, "Chat reading
+ * rules"): 'counted' can start or extend one, 'carried' is kept in one, in
+ * order, only when something counted follows, and null ends one.
+ */
+function groupRole(item: ChatItem, opts: StreamBlockOptions): 'counted' | 'carried' | null {
+  switch (item.kind) {
+    case 'tool_call':
+      if (item.status === 'failed' || exitedNonZero(item)) return null;
+      if (opts.awaitingApproval?.has(item.toolCallId)) return null;
+      if (opts.mediaVisible && item.media?.length) return null;
+      return 'counted';
+    case 'user_message':
+      if (item.sendState || HELPER_QUESTION.test(item.text)) return null;
+      return messageDisplay(item).from === 'others' ? 'counted' : null;
+    case 'thought':
+      return 'carried';
+    case 'agent_message':
+      return !item.text && !item.streaming ? 'carried' : null;
+    default:
+      return null;
+  }
 }
 
 /**
@@ -46,9 +90,11 @@ export function isExploreTool(item: ChatItem, mediaVisible = false): item is Too
  * - With `subagents: 'full'`, items tagged with a known subagent move under
  *   that subagent's card, which replaces its parent tool call. With 'ids_only'
  *   or 'none' they stay in the main stream as ordinary rows.
- * - Two or more consecutive read-only tools fold into an ExploreBlock.
+ * - Two or more adjacent tool calls or messages from others fold into one row:
+ *   an ExploreBlock when all are read-only tools, else a GroupBlock. Anything
+ *   the user should see or act on ends the run and stays in place (groupRole).
  */
-export function buildStreamBlocks(state: Pick<ChatViewState, 'items' | 'subagents' | 'capabilities'>, opts: { mediaVisible?: boolean } = {}): StreamBlock[] {
+export function buildStreamBlocks(state: Pick<ChatViewState, 'items' | 'subagents' | 'capabilities'>, opts: StreamBlockOptions = {}): StreamBlock[] {
   const { items, subagents } = state;
   const nestSubagents = state.capabilities?.subagents === 'full';
 
@@ -98,12 +144,30 @@ export function buildStreamBlocks(state: Pick<ChatViewState, 'items' | 'subagent
   }
 
   const blocks: StreamBlock[] = [];
-  let run: ToolCallItem[] = [];
-  const flush = () => {
-    if (run.length >= 2) blocks.push({ type: 'explore', key: `explore:${run[0].id}`, tools: run });
-    else for (const t of run) blocks.push({ type: 'item', key: t.id, item: t });
-    run = [];
+  let run: ChatItem[] = [];
+  let counted = 0;
+  let carried: ChatItem[] = [];
+  const pushItem = (item: ChatItem) => {
+    const tool = (item.kind === 'question' || item.kind === 'plan_document') && item.toolCallId ? standIns.get(item.toolCallId) : undefined;
+    blocks.push(tool ? { type: 'item', key: item.id, item, tool } : { type: 'item', key: item.id, item });
   };
+  const flush = () => {
+    if (counted >= 2) {
+      const tools = run.filter((i): i is ToolCallItem => i.kind === 'tool_call');
+      const messages = run.filter((i): i is UserMessageItem => i.kind === 'user_message');
+      // One key whichever it is, so a row that grows into a group keeps its open state.
+      const key = `run:${run[0].id}`;
+      if (messages.length === 0 && tools.every(isReadOnlyTool)) blocks.push({ type: 'explore', key, tools, items: run });
+      else blocks.push({ type: 'group', key, tools, messages, items: run });
+    } else {
+      run.forEach(pushItem);
+    }
+    carried.forEach(pushItem);
+    run = [];
+    counted = 0;
+    carried = [];
+  };
+  const runSubagent = () => (run[0] && 'subagentId' in run[0] ? run[0].subagentId : undefined);
   for (const entry of top) {
     if ('type' in entry && entry.type === 'subagent') {
       flush();
@@ -111,16 +175,86 @@ export function buildStreamBlocks(state: Pick<ChatViewState, 'items' | 'subagent
       continue;
     }
     const item = entry as ChatItem;
-    if (isExploreTool(item, opts.mediaVisible)) {
-      run.push(item);
-      continue;
+    const role = groupRole(item, opts);
+    // Inline work by different subagents stays apart, so a jump to one finds it.
+    if (counted > 0 && ('subagentId' in item ? item.subagentId : undefined) !== runSubagent()) flush();
+    if (role === 'counted') {
+      run.push(...carried, item);
+      carried = [];
+      counted++;
+    } else if (role === 'carried' && counted > 0) {
+      carried.push(item);
+    } else {
+      flush();
+      pushItem(item);
     }
-    flush();
-    const tool = (item.kind === 'question' || item.kind === 'plan_document') && item.toolCallId ? standIns.get(item.toolCallId) : undefined;
-    blocks.push(tool ? { type: 'item', key: item.id, item, tool } : { type: 'item', key: item.id, item });
   }
   flush();
   return blocks;
+}
+
+/** A tool group's or message's label: "6 tool calls", "1 tool call". */
+function countOf(n: number, noun: string): string {
+  return `${n} ${noun}${n === 1 ? '' : 's'}`;
+}
+
+/** "Made 6 tool calls, 2 messages from Orchestrator and go-helper". */
+export function groupLabel(toolCount: number, messageCount: number, senders: readonly string[], running: boolean): string {
+  const parts: string[] = [];
+  if (toolCount) parts.push(`${running ? 'Making' : 'Made'} ${countOf(toolCount, 'tool call')}`);
+  if (messageCount) {
+    const shown = senders.slice(0, 2);
+    const rest = senders.length - shown.length;
+    const from = rest > 0 ? `${shown.join(', ')} and ${countOf(rest, 'other')}` : shown.join(' and ');
+    const text = countOf(messageCount, 'message');
+    parts.push(from ? `${text} from ${from}` : text);
+  }
+  return parts.join(', ');
+}
+
+/** Everything in a group as plain text, built only when the user copies it. */
+export function groupCopyText(items: ChatItem[]): string {
+  const sections: string[] = [];
+  for (const item of items) {
+    if (item.kind === 'user_message') sections.push(messageSummary(item));
+    else if (item.kind === 'thought' && item.text) sections.push(item.text);
+    else if (item.kind === 'tool_call') {
+      const diffs = diffContent(item).map((d) => `${d.path}\n${d.unifiedDiff ?? d.newText ?? ''}`);
+      const term = terminalContent(item);
+      const result = term ? term.output : toolResultText(item);
+      sections.push([term ? `$ ${commandOf(item)}` : item.title, ...diffs, result].filter(Boolean).join('\n'));
+    }
+  }
+  return sections.join('\n\n');
+}
+
+/**
+ * Previous and next land on what the agent wrote for the user, one stop per
+ * item (docs/mobile-control-v1.md, "Chat reading rules"): not tools, thoughts,
+ * messages from anyone else, or a subagent's work.
+ */
+export function isNavigationStop(block: StreamBlock): boolean {
+  if (block.type !== 'item') return false;
+  const { item } = block;
+  if (item.kind === 'plan_document' || item.kind === 'question') return true;
+  return item.kind === 'agent_message' && !item.subagentId && stripTaskMarker(item.text).trim() !== '';
+}
+
+/** Failed output past this many lines starts collapsed, with its last line showing. */
+export const FAILED_OUTPUT_OPEN_LINES = 6;
+
+function outputLines(text: string): string[] {
+  return text.split('\n').filter((line) => line.trim() !== '');
+}
+
+export function isLongFailedOutput(text: string): boolean {
+  return outputLines(text).length > FAILED_OUTPUT_OPEN_LINES;
+}
+
+/** The line of a long failure that usually says what went wrong. */
+export function lastOutputLine(text: string): string {
+  const lines = outputLines(text);
+  return lines[lines.length - 1] ?? '';
 }
 
 /** "Explored 3 files, 2 searches". */

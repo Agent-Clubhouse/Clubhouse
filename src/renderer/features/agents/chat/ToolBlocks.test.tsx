@@ -1,7 +1,7 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { fireEvent, render, screen, within } from '@testing-library/react';
-import type { ToolCallItem } from '../../../stores/chatStore';
-import { ApprovalDiffPreview, AwaitingApprovalContext, DiffCard, LiveTurnContext, ToolCallView } from './ToolBlocks';
+import type { ChatItem, ToolCallItem } from '../../../stores/chatStore';
+import { ApprovalDiffPreview, AwaitingApprovalContext, ChatterGroup, CommandCard, DiffCard, LiveTurnContext, ToolCallView } from './ToolBlocks';
 
 function tool(over: Partial<ToolCallItem>): ToolCallItem {
   return {
@@ -318,5 +318,47 @@ describe('ApprovalDiffPreview (#2168)', () => {
   it('renders nothing without diffs', () => {
     const { container } = render(<ApprovalDiffPreview diffs={[]} />);
     expect(container).toBeEmptyDOMElement();
+  });
+});
+
+describe('failed output and groups (#2664)', () => {
+  const failed = (output: string) => ({
+    id: 'x', sessionId: 's', seq: 1, ts: 1, kind: 'tool_call', toolCallId: 'x', toolKind: 'execute', title: 'x', status: 'failed',
+    content: [{ type: 'terminal', command: 'x', output, exitCode: 1 }],
+  }) as ToolCallItem;
+  const long = Array.from({ length: 20 }, (_, i) => `line ${i}`).join('\n');
+
+  it('opens a failure with short output', () => {
+    render(<CommandCard tool={failed('one line')} />);
+    expect(screen.getByTestId('chat-command-card')).toHaveAttribute('data-open', 'true');
+    expect(screen.queryByTestId('chat-tool-failure-line')).not.toBeInTheDocument();
+  });
+
+  it('starts a failure with long output closed, on its last line, and opens to all of it', () => {
+    render(<CommandCard tool={failed(long)} />);
+    const card = screen.getByTestId('chat-command-card');
+    expect(card).toHaveAttribute('data-open', 'false');
+    expect(card).toHaveTextContent('exit 1');
+    expect(screen.getByTestId('chat-tool-failure-line')).toHaveTextContent('line 19');
+    expect(card).not.toHaveTextContent('line 3');
+    fireEvent.click(within(card).getByRole('button', { expanded: false }));
+    expect(card).toHaveTextContent('line 3');
+  });
+
+  it('keeps an error on the closed card even when it repeats the output', () => {
+    render(<CommandCard tool={{ ...failed(long), error: long }} />);
+    expect(screen.getByTestId('chat-tool-error')).toBeInTheDocument();
+  });
+
+  it('builds a group\'s rows only when it opens', () => {
+    const renderItem = vi.fn((item: ChatItem) => <span>{item.id}</span>);
+    const tool = (id: string) => ({ ...failed('ok'), id, toolCallId: id, status: 'completed' }) as ToolCallItem;
+    const items = [tool('a'), tool('b')];
+    render(<ChatterGroup block={{ type: 'group', key: 'k', tools: items, messages: [], items }} renderItem={renderItem} />);
+    expect(screen.getByTestId('chat-group-toggle')).toHaveTextContent('Made 2 tool calls');
+    expect(renderItem).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByTestId('chat-group-toggle'));
+    expect(renderItem).toHaveBeenCalledTimes(2);
+    expect(screen.getByTestId('chat-copy')).toBeInTheDocument();
   });
 });

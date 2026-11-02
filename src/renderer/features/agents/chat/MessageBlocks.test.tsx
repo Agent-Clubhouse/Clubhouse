@@ -5,7 +5,7 @@ import type { RoutedMessagePart } from '../../../../shared/chat';
 import type { Agent } from '../../../../shared/types';
 import { useAgentStore } from '../../../stores/agentStore';
 import { reduceChatEvent, type AgentMessageItem, type UserMessageItem } from '../../../stores/chatStore';
-import { AgentMessage, isLongMessage, LONG_MESSAGE_CHARS, LONG_MESSAGE_LINES, UserMessage } from './MessageBlocks';
+import { AgentMessage, isLongMessage, LONG_MESSAGE_CHARS, UserMessage } from './MessageBlocks';
 import { createTranscriptExpansionStore, TranscriptExpansionProvider } from './transcript-expansion';
 
 function item(over: Partial<UserMessageItem>): UserMessageItem {
@@ -136,7 +136,8 @@ describe('UserMessage', () => {
   it('collapses a long message, and a click expands and collapses it', () => {
     render(<UserMessage item={item({ text: 'x', source: 'mcp', routed: routed(long) })} />);
     const toggle = screen.getByTestId('chat-sent-toggle');
-    expect(toggle.textContent).toContain('typecheck-leak sent a long message');
+    expect(toggle.textContent).toContain('typecheck-leak');
+    expect(screen.getByTestId('chat-sent-preview').textContent).toContain('xxx');
     expect(toggle.getAttribute('aria-expanded')).toBe('false');
     expect(screen.queryByTestId('chat-sent-body')).toBeNull();
     fireEvent.click(toggle);
@@ -186,8 +187,8 @@ describe('isLongMessage', () => {
   it('goes by length or by lines, past the limit only', () => {
     expect(isLongMessage('x'.repeat(LONG_MESSAGE_CHARS))).toBe(false);
     expect(isLongMessage('x'.repeat(LONG_MESSAGE_CHARS + 1))).toBe(true);
-    expect(isLongMessage(Array(LONG_MESSAGE_LINES).fill('y').join('\n'))).toBe(false);
-    expect(isLongMessage(Array(LONG_MESSAGE_LINES + 1).fill('y').join('\n'))).toBe(true);
+    expect(isLongMessage('one line\n')).toBe(false);
+    expect(isLongMessage('two\nlines')).toBe(true);
   });
 });
 

@@ -33,7 +33,8 @@ describe('ChatStream with a long transcript', () => {
 
     expect(screen.getAllByTestId('chat-stream-block')).toHaveLength(CHAT_STREAM_WINDOW_SIZE);
     expect(screen.getAllByTestId('chat-agent-message').at(-1)).toHaveTextContent('Done with step 1000. Everything passes and npm test is green.');
-    expect(screen.getAllByTestId('chat-agent-message')[0]).toHaveTextContent('Done with step 951.');
+    // Each turn is 4 rows, with its tool calls folded into one.
+    expect(screen.getAllByTestId('chat-agent-message')[0]).toHaveTextContent('Done with step 938.');
   }, 30_000);
 
   it('navigates older windows and returns directly to the latest tail', () => {
@@ -71,6 +72,7 @@ describe('ChatStream with a long transcript', () => {
     render(<ChatStream state={state} />);
     fireEvent.click(screen.getByTestId('chat-window-older'));
 
+    fireEvent.click(screen.getAllByTestId('chat-group-toggle')[0]);
     const firstCommand = screen.getAllByTestId('chat-command-card')[0];
     fireEvent.click(within(firstCommand).getByRole('button', { expanded: false }));
     expect(firstCommand).toHaveAttribute('data-open', 'true');
