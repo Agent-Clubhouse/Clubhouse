@@ -3,9 +3,9 @@ import * as os from 'os';
 import * as path from 'path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { CHAT_MEDIA_MAX_PIXELS } from '../../shared/chat';
-import { readIconThumbnail, resizeIcon } from './icon-images';
+import { jpegOrientation, readIconThumbnail, resizeIcon } from './icon-images';
 
-const native = vi.hoisted(() => ({ createFromBuffer: vi.fn(), createThumbnailFromPath: undefined as unknown }));
+const native = vi.hoisted(() => ({ createFromBuffer: vi.fn(), createFromBitmap: vi.fn(), createThumbnailFromPath: undefined as unknown }));
 vi.mock('electron', () => ({ nativeImage: native }));
 vi.mock('./log-service', () => ({ appLog: vi.fn() }));
 
@@ -85,6 +85,72 @@ describe('resizeIcon', () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+});
+
+/** A JPEG start, then an EXIF block giving the orientation. */
+function exifJpeg(orientation: number, littleEndian = false): Buffer {
+  const tiff = Buffer.alloc(26);
+  tiff.write(littleEndian ? 'II' : 'MM', 0, 'latin1');
+  const u16 = (at: number, v: number) => (littleEndian ? tiff.writeUInt16LE(v, at) : tiff.writeUInt16BE(v, at));
+  const u32 = (at: number, v: number) => (littleEndian ? tiff.writeUInt32LE(v, at) : tiff.writeUInt32BE(v, at));
+  u16(2, 42);
+  u32(4, 8);
+  u16(8, 1);
+  u16(10, 0x0112);
+  u16(12, 3);
+  u32(14, 1);
+  u16(18, orientation);
+  const payload = Buffer.concat([Buffer.from('Exif\0\0', 'latin1'), tiff]);
+  const length = Buffer.alloc(2);
+  length.writeUInt16BE(payload.length + 2);
+  return Buffer.concat([Buffer.from([0xff, 0xd8, 0xff, 0xe1]), length, payload, Buffer.from([0xff, 0xda, 0, 2])]);
+}
+
+describe('jpegOrientation', () => {
+  it('reads it in either byte order, and is 1 without one', () => {
+    expect(jpegOrientation(exifJpeg(6, true))).toBe(6);
+    expect(jpegOrientation(exifJpeg(8, false))).toBe(8);
+    expect(jpegOrientation(Buffer.from([0xff, 0xd8, 0xff, 0xda, 0, 2]))).toBe(1);
+    expect(jpegOrientation(Buffer.from([0xff, 0xd8]))).toBe(1);
+  });
+
+  it('survives a truncated EXIF block', () => {
+    expect(jpegOrientation(exifJpeg(6, true).subarray(0, 20))).toBe(1);
+  });
+});
+
+describe('orientation when resizing', () => {
+  beforeEach(() => {
+    native.createFromBuffer.mockReset();
+    native.createFromBitmap.mockReset();
+  });
+
+  /** A 2 by 1 image, pixels A then B, one byte standing for each. */
+  function twoPixels() {
+    const bitmap = Buffer.from([65, 0, 0, 0, 66, 0, 0, 0]);
+    return { isEmpty: () => false, getSize: () => ({ width: 2, height: 1 }), toBitmap: () => bitmap, toPNG: () => Buffer.from('sideways') };
+  }
+
+  it.each([
+    [6, { width: 1, height: 2 }, [65, 66]],
+    [8, { width: 1, height: 2 }, [66, 65]],
+    [3, { width: 2, height: 1 }, [66, 65]],
+    [2, { width: 2, height: 1 }, [66, 65]],
+  ])('turns an orientation %i JPEG upright', async (orientation, size, firsts) => {
+    native.createFromBuffer.mockReturnValue(twoPixels());
+    native.createFromBitmap.mockImplementation((bitmap: Buffer, options: unknown) => {
+      expect(options).toEqual(size);
+      expect([bitmap[0], bitmap[4]]).toEqual(firsts);
+      return { toPNG: () => Buffer.from('upright') };
+    });
+    expect((await resizeIcon(exifJpeg(orientation, true), '/x.jpg', 128))?.toString()).toBe('upright');
+  });
+
+  it('leaves an image with no orientation alone', async () => {
+    native.createFromBuffer.mockReturnValue(twoPixels());
+    expect((await resizeIcon(exifJpeg(1, true), '/x.jpg', 128))?.toString()).toBe('sideways');
+    expect(native.createFromBitmap).not.toHaveBeenCalled();
   });
 });
 

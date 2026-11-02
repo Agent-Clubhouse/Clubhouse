@@ -126,7 +126,7 @@ Each `snapshot` is complete, so replace the agent rows and `agentIcons` rather t
 
 Clubhouse Go closes a WebSocket with code 1009 on a frame over 16 MiB, and a phone that reconnects into the same frame never recovers. So a snapshot stays well under it:
 
-- `agentIcons` and `projectIcons` are still data URLs, but of thumbnails: a PNG within 128 by 128 pixels, or a PNG, JPEG, GIF or WebP file as it is when that's 64 KiB or less and within 256 by 256. They're always raster: an SVG is sent as a PNG copy or left out, because `UIImage` can't draw one. Don't assume a size.
+- `agentIcons` and `projectIcons` are still data URLs, but of thumbnails: a PNG within 128 by 128 pixels, or a PNG, JPEG, GIF or WebP file as it is when that's 64 KiB or less and within 256 by 256. They're always raster: an SVG is sent as a PNG copy or left out, because `UIImage` can't draw one. Don't assume a size. A generated PNG is a still image, already upright. A file sent as it is keeps its own frames and EXIF, so draw a GIF's first frame and honor a JPEG's orientation.
 - Icons in one snapshot total at most 4 MiB of data URL characters. Past that, icons are left out: the Dispatcher's is kept first, then projects', then agents', in list order.
 - A snapshot frame over 8 MiB is sent with both maps empty. The other fields are always sent.
 - An image that can't be made small enough is left out too: on Linux, that's any SVG, and any GIF or WebP that's large.

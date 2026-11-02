@@ -25,8 +25,58 @@ const ICON_MIME: Readonly<Record<string, string>> = {
   '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.gif': 'image/gif', '.webp': 'image/webp', '.svg': 'image/svg+xml', '.ico': 'image/x-icon',
 };
 
+/** The EXIF orientation of a JPEG, 1 to 8, or 1 when it has none. */
+export function jpegOrientation(b: Uint8Array): number {
+  const view = new DataView(b.buffer, b.byteOffset, b.byteLength);
+  let i = 2;
+  while (i + 4 <= b.length && b[i] === 0xff) {
+    const marker = b[i + 1];
+    const length = view.getUint16(i + 2);
+    // The image data starts: there's no EXIF after this.
+    if (marker === 0xda) return 1;
+    if (marker === 0xe1 && i + 10 + 8 <= b.length && Buffer.from(b.subarray(i + 4, i + 10)).toString('latin1') === 'Exif\0\0') {
+      const tiff = i + 10;
+      const little = b[tiff] === 0x49;
+      const ifd = tiff + view.getUint32(tiff + 4, little);
+      if (ifd + 2 > b.length) return 1;
+      const entries = view.getUint16(ifd, little);
+      for (let e = 0; e < entries && ifd + 2 + (e + 1) * 12 <= b.length; e++) {
+        const entry = ifd + 2 + e * 12;
+        if (view.getUint16(entry, little) === 0x0112) {
+          const orientation = view.getUint16(entry + 8, little);
+          return orientation >= 1 && orientation <= 8 ? orientation : 1;
+        }
+      }
+      return 1;
+    }
+    i += 2 + length;
+  }
+  return 1;
+}
+
+/** The image turned upright: nativeImage ignores EXIF, and a PNG can't carry it. Runs on the small copy. */
+function applyOrientation(image: NativeImage, orientation: number): NativeImage {
+  if (orientation === 1) return image;
+  const { width: w, height: h } = image.getSize();
+  const from = image.toBitmap();
+  const swapped = orientation >= 5;
+  const width = swapped ? h : w;
+  const height = swapped ? w : h;
+  const to = Buffer.alloc(width * height * 4);
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      const [dx, dy] = {
+        2: [w - 1 - x, y], 3: [w - 1 - x, h - 1 - y], 4: [x, h - 1 - y],
+        5: [y, x], 6: [h - 1 - y, x], 7: [h - 1 - y, w - 1 - x], 8: [y, w - 1 - x],
+      }[orientation as 2 | 3 | 4 | 5 | 6 | 7 | 8];
+      from.copy(to, (dy * width + dx) * 4, (y * w + x) * 4, (y * w + x) * 4 + 4);
+    }
+  }
+  return nativeImage.createFromBitmap(to, { width, height });
+}
+
 /** PNG bytes of the image within a `box`-pixel square, keeping its shape. Never scales up. */
-function fitToPng(image: NativeImage, box: number): Buffer | null {
+function fitToPng(image: NativeImage, box: number, orientation = 1): Buffer | null {
   if (image.isEmpty()) return null;
   const { width, height } = image.getSize();
   const scale = Math.min(1, box / Math.max(width, height));
@@ -35,7 +85,7 @@ function fitToPng(image: NativeImage, box: number): Buffer | null {
     height: Math.max(1, Math.round(height * scale)),
     quality: 'good',
   });
-  const png = fitted.toPNG();
+  const png = applyOrientation(fitted, orientation).toPNG();
   return png.length > 0 ? png : null;
 }
 
@@ -60,7 +110,9 @@ export async function resizeIcon(bytes: Uint8Array, filePath: string, box: numbe
     // A small file can claim a huge image: don't decode one.
     const size = type && mediaDimensions(bytes, type);
     if (size && size.width * size.height > CHAT_MEDIA_MAX_PIXELS) return null;
-    if (type === 'image/png' || type === 'image/jpeg') return fitToPng(nativeImage.createFromBuffer(Buffer.from(bytes)), box);
+    if (type === 'image/png' || type === 'image/jpeg') {
+      return fitToPng(nativeImage.createFromBuffer(Buffer.from(bytes)), box, type === 'image/jpeg' ? jpegOrientation(bytes) : 1);
+    }
     const thumbnail = await systemThumbnail(filePath, box);
     return thumbnail && fitToPng(thumbnail, box);
   } catch (err) {
