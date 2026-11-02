@@ -2,15 +2,15 @@
   "note": "What a client does with each. Stored is what it held before. Unknown keeps what it has. All of these are hand written from the contract, apart from the omitted case, whose shape comes from the real server.",
   "responses": [
     {
-      "bodyBytes": 70,
+      "bodyBytes": 103,
       "contentType": "image/png",
-      "etag": "\"cdb30873bdf16770bfea1fe86e44db7476e504c2dca1542b0660b20f47f523a7\"",
+      "etag": "\"77412b4849d7541fe062143e7beac5aa3792f1ec524455f44b5fa16eda09f236\"",
       "expect": "show",
       "name": "current",
       "status": 200
     },
     {
-      "etag": "\"cdb30873bdf16770bfea1fe86e44db7476e504c2dca1542b0660b20f47f523a7\"",
+      "etag": "\"77412b4849d7541fe062143e7beac5aa3792f1ec524455f44b5fa16eda09f236\"",
       "expect": "show the cached image",
       "name": "not modified",
       "status": 304
@@ -25,7 +25,7 @@
     {
       "contentType": "image/png",
       "currentVersion": null,
-      "etag": "\"cdb30873bdf16770bfea1fe86e44db7476e504c2dca1542b0660b20f47f523a7\"",
+      "etag": "\"77412b4849d7541fe062143e7beac5aa3792f1ec524455f44b5fa16eda09f236\"",
       "expect": "discard: it has no entry now",
       "name": "in flight, then removed",
       "status": 200
@@ -33,7 +33,7 @@
     {
       "contentType": "image/png",
       "currentVersion": "0000000000000000000000000000000000000000000000000000000000000000",
-      "etag": "\"cdb30873bdf16770bfea1fe86e44db7476e504c2dca1542b0660b20f47f523a7\"",
+      "etag": "\"77412b4849d7541fe062143e7beac5aa3792f1ec524455f44b5fa16eda09f236\"",
       "expect": "discard, and fetch the new version",
       "name": "in flight, then changed",
       "status": 200
@@ -45,15 +45,15 @@
     },
     {
       "contentType": "image/jpeg",
-      "etag": "\"cdb30873bdf16770bfea1fe86e44db7476e504c2dca1542b0660b20f47f523a7\"",
+      "etag": "\"77412b4849d7541fe062143e7beac5aa3792f1ec524455f44b5fa16eda09f236\"",
       "expect": "bad image: initials",
       "name": "type mismatch",
       "status": 200
     },
     {
-      "bodyBytes": 71,
+      "bodyBytes": 104,
       "contentType": "image/png",
-      "etag": "\"cdb30873bdf16770bfea1fe86e44db7476e504c2dca1542b0660b20f47f523a7\"",
+      "etag": "\"77412b4849d7541fe062143e7beac5aa3792f1ec524455f44b5fa16eda09f236\"",
       "expect": "bad image: initials",
       "name": "byte mismatch",
       "status": 200
@@ -62,7 +62,7 @@
       "contentType": "image/png",
       "decodedHeight": 512,
       "decodedWidth": 512,
-      "etag": "\"cdb30873bdf16770bfea1fe86e44db7476e504c2dca1542b0660b20f47f523a7\"",
+      "etag": "\"77412b4849d7541fe062143e7beac5aa3792f1ec524455f44b5fa16eda09f236\"",
       "expect": "bad image: initials",
       "name": "dimension mismatch",
       "status": 200
@@ -70,7 +70,7 @@
     {
       "bodySha256": "1111111111111111111111111111111111111111111111111111111111111111",
       "contentType": "image/png",
-      "etag": "\"cdb30873bdf16770bfea1fe86e44db7476e504c2dca1542b0660b20f47f523a7\"",
+      "etag": "\"77412b4849d7541fe062143e7beac5aa3792f1ec524455f44b5fa16eda09f236\"",
       "expect": "bad image: initials",
       "name": "hash mismatch",
       "status": 200
@@ -82,26 +82,26 @@
       "iconRefs": {
         "agents": {
           "a1": {
-            "bytes": 70,
+            "bytes": 103,
             "height": 1,
             "type": "image/png",
-            "version": "cdb30873bdf16770bfea1fe86e44db7476e504c2dca1542b0660b20f47f523a7",
+            "version": "77412b4849d7541fe062143e7beac5aa3792f1ec524455f44b5fa16eda09f236",
             "width": 1
           },
           "a2": {
-            "bytes": 70,
+            "bytes": 103,
             "height": 1,
             "type": "image/png",
-            "version": "cdb30873bdf16770bfea1fe86e44db7476e504c2dca1542b0660b20f47f523a7",
+            "version": "77412b4849d7541fe062143e7beac5aa3792f1ec524455f44b5fa16eda09f236",
             "width": 1
           }
         },
         "projects": {
           "p1": {
-            "bytes": 70,
+            "bytes": 103,
             "height": 1,
             "type": "image/png",
-            "version": "cdb30873bdf16770bfea1fe86e44db7476e504c2dca1542b0660b20f47f523a7",
+            "version": "77412b4849d7541fe062143e7beac5aa3792f1ec524455f44b5fa16eda09f236",
             "width": 1
           }
         }
@@ -113,19 +113,19 @@
       "iconRefs": {
         "agents": {
           "a1": {
-            "bytes": 70,
+            "bytes": 103,
             "height": 1,
             "type": "image/png",
-            "version": "cdb30873bdf16770bfea1fe86e44db7476e504c2dca1542b0660b20f47f523a7",
+            "version": "77412b4849d7541fe062143e7beac5aa3792f1ec524455f44b5fa16eda09f236",
             "width": 1
           }
         },
         "projects": {
           "p1": {
-            "bytes": 70,
+            "bytes": 103,
             "height": 1,
             "type": "image/png",
-            "version": "cdb30873bdf16770bfea1fe86e44db7476e504c2dca1542b0660b20f47f523a7",
+            "version": "77412b4849d7541fe062143e7beac5aa3792f1ec524455f44b5fa16eda09f236",
             "width": 1
           }
         }
@@ -165,10 +165,10 @@
       "iconRefs": {
         "agents": {
           "a1": {
-            "bytes": 70,
+            "bytes": 103,
             "height": 1,
             "type": "image/png",
-            "version": "cdb30873bdf16770bfea1fe86e44db7476e504c2dca1542b0660b20f47f523a7",
+            "version": "77412b4849d7541fe062143e7beac5aa3792f1ec524455f44b5fa16eda09f236",
             "width": 1
           }
         }
@@ -186,10 +186,10 @@
         "agents": null,
         "projects": {
           "p1": {
-            "bytes": 70,
+            "bytes": 103,
             "height": 1,
             "type": "image/png",
-            "version": "cdb30873bdf16770bfea1fe86e44db7476e504c2dca1542b0660b20f47f523a7",
+            "version": "77412b4849d7541fe062143e7beac5aa3792f1ec524455f44b5fa16eda09f236",
             "width": 1
           }
         }
@@ -201,7 +201,7 @@
       "iconRefs": {
         "agents": {
           "a1": {
-            "version": "cdb30873bdf16770bfea1fe86e44db7476e504c2dca1542b0660b20f47f523a7"
+            "version": "77412b4849d7541fe062143e7beac5aa3792f1ec524455f44b5fa16eda09f236"
           }
         },
         "projects": {}
@@ -212,26 +212,26 @@
   "stored": {
     "agents": {
       "a1": {
-        "bytes": 70,
+        "bytes": 103,
         "height": 1,
         "type": "image/png",
-        "version": "cdb30873bdf16770bfea1fe86e44db7476e504c2dca1542b0660b20f47f523a7",
+        "version": "77412b4849d7541fe062143e7beac5aa3792f1ec524455f44b5fa16eda09f236",
         "width": 1
       },
       "a2": {
-        "bytes": 70,
+        "bytes": 103,
         "height": 1,
         "type": "image/png",
-        "version": "cdb30873bdf16770bfea1fe86e44db7476e504c2dca1542b0660b20f47f523a7",
+        "version": "77412b4849d7541fe062143e7beac5aa3792f1ec524455f44b5fa16eda09f236",
         "width": 1
       }
     },
     "projects": {
       "p1": {
-        "bytes": 70,
+        "bytes": 103,
         "height": 1,
         "type": "image/png",
-        "version": "cdb30873bdf16770bfea1fe86e44db7476e504c2dca1542b0660b20f47f523a7",
+        "version": "77412b4849d7541fe062143e7beac5aa3792f1ec524455f44b5fa16eda09f236",
         "width": 1
       }
     }

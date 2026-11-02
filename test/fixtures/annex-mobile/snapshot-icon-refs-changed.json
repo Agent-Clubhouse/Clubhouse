@@ -1,16 +1,16 @@
 {
   "before": {
-    "bytes": 14,
+    "bytes": 103,
     "height": 1,
     "type": "image/png",
-    "version": "4ded3c18ff9094ef3faed284a0b36dd8e128114dfa02b1a0cc948b0ea56333fe",
+    "version": "77412b4849d7541fe062143e7beac5aa3792f1ec524455f44b5fa16eda09f236",
     "width": 1
   },
   "changed": {
-    "bytes": 14,
+    "bytes": 111,
     "height": 1,
     "type": "image/png",
-    "version": "541a759afeb9bf4c6d9caffd50d0c182d4abefc259e14e5460595d8d367ca390",
+    "version": "db61559d2747889bfd00e48fb995885cc048b1672567d679f77c789fad827e6d",
     "width": 1
   },
   "direction": "desktop-to-phone",

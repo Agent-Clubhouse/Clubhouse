@@ -1,8 +1,8 @@
 {
   "catalog": {
     "agentIcons": {
-      "durable_chat": "data:image/png;base64,R0lGODlhAQABAAAAACw=",
-      "durable_dispatcher": "data:image/png;base64,R0lGODlhAQABAAAAACw="
+      "durable_chat": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAAFXRFWHRpY29uAGR1cmFibGVfY2hhdC5wbmeieNGaAAAADUlEQVR42mP8/5+hHgAHggJ/PchI7wAAAABJRU5ErkJggg==",
+      "durable_dispatcher": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAAH3RFWHRpY29uAGR1cmFibGVfZGlzcGF0Y2hlci5hYmMucG5nQfK8XwAAAA1JREFUeNpj/P+foR4AB4ICfz3ISO8AAAAASUVORK5CYII="
     },
     "agents": {
       "proj_app": [
@@ -515,7 +515,7 @@
         {
           "agentId": "durable_dispatcher",
           "avatar": {
-            "image": "data:image/png;base64,R0lGODlhAQABAAAAACw=",
+            "image": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAAH3RFWHRpY29uAGR1cmFibGVfZGlzcGF0Y2hlci5hYmMucG5nQfK8XwAAAA1JREFUeNpj/P+foR4AB4ICfz3ISO8AAAAASUVORK5CYII=",
             "type": "image"
           },
           "name": "Dispatcher",

@@ -72,7 +72,7 @@ import { injectPtyText } from './agent-runtime/pty-input';
 import { AgentStoppingError } from './agent-runtime/agent-stopping';
 import { spawnAgent, killAgent, getAvailableOrchestrators, isHeadlessAgent, resolveOrchestrator, resolveProfileEnv } from './agent-system';
 import { appLog } from './log-service';
-import { readIconImage, type IconImage } from './icon-images';
+import { ICON_TEMPORARILY_UNAVAILABLE, readIconImage, type IconImage } from './icon-images';
 
 /**
  * Check if an agent is currently running in any execution mode.
@@ -853,7 +853,7 @@ async function buildSnapshotIcons(
   projects: Project[],
   durablesByProject: Record<string, DurableConfigs>,
   dispatcher?: DurableConfigs[number],
-): Promise<{ projectIcons: Record<string, string>; agentIcons: Record<string, string>; stats: SnapshotIconStats; iconRefs: IconRefs }> {
+): Promise<{ projectIcons: Record<string, string>; agentIcons: Record<string, string>; stats: SnapshotIconStats; iconRefs?: IconRefs }> {
   const projectIcons: Record<string, string> = {};
   const agentIcons: Record<string, string> = {};
   const iconRefs: IconRefs = { agents: {}, projects: {} };
@@ -872,7 +872,7 @@ async function buildSnapshotIcons(
   let leftOutCount = 0;
   let leftOutBytes = 0;
   images.forEach((image, i) => {
-    if (!image) return;
+    if (!image || image === ICON_TEMPORARILY_UNAVAILABLE) return;
     const { dataUrl, ...ref } = image;
     // A ref has no budget: it's a few fields, and the phone decides when to fetch.
     wanted[i].refs[wanted[i].id] = ref;
@@ -896,7 +896,8 @@ async function buildSnapshotIcons(
   return {
     projectIcons,
     agentIcons,
-    iconRefs,
+    // Present means complete, and no entry means removed. So with an icon whose answer isn't known, say nothing.
+    ...(images.includes(ICON_TEMPORARILY_UNAVAILABLE) ? {} : { iconRefs }),
     stats: { iconCount: Object.keys(projectIcons).length + Object.keys(agentIcons).length, iconBytes: includedBytes, iconsLeftOut: leftOutCount },
   };
 }
@@ -1244,8 +1245,8 @@ const SNAPSHOT_REFS_TRUNCATION_STEPS: typeof SNAPSHOT_TRUNCATION_STEPS = [
 function snapshotFrame({ payload, icons, iconRefs }: BuiltSnapshot, trigger: SnapshotTrigger, form: SnapshotForm = 'inline'): string {
   const items = payload.projects.length + Object.values(payload.agents).reduce((sum, list) => sum + list.length, 0);
   // A phone that fetches images has both legacy maps empty, because it clears its inline icons on seeing either.
-  const formPayload: Record<string, unknown> = form === 'refs' ? { ...payload, projectIcons: {}, agentIcons: {}, iconRefs } : payload;
-  const refCount = Object.keys(iconRefs.agents).length + Object.keys(iconRefs.projects).length;
+  const formPayload: Record<string, unknown> = form === 'refs' ? { ...payload, projectIcons: {}, agentIcons: {}, ...(iconRefs && { iconRefs }) } : payload;
+  const refCount = iconRefs ? Object.keys(iconRefs.agents).length + Object.keys(iconRefs.projects).length : 0;
   const sentIcons = form === 'refs' ? { iconCount: refCount, iconBytes: 0, iconsLeftOut: 0 } : icons;
   let frame = JSON.stringify({ type: 'snapshot', payload: formPayload });
   let bytes = Buffer.byteLength(frame);
@@ -1452,12 +1453,18 @@ function broadcastAndBuffer(type: string, payload: unknown, context?: string): v
 
 /**
  * An icon's bounded image, the same one a snapshot describes: a phone decodes all
- * of it. No such image is a 404, and the phone draws initials. The ETag is the
+ * of it. No such image is a 404, and the phone draws initials. One that can't be read
+ * right now is a 503, and the phone keeps what it has. The ETag is the
  * current version, whichever was asked for: `?v=` only decides how long it can be
  * kept, so a stale request gets the new image and a short answer on caching.
  */
 async function sendIconImage(req: http.IncomingMessage, res: http.ServerResponse, filePath: string | null | undefined, requested: string | null): Promise<void> {
   const image = filePath ? await readIconImage(filePath) : null;
+  if (image === ICON_TEMPORARILY_UNAVAILABLE) {
+    res.setHeader('Retry-After', '30');
+    sendJson(res, 503, { error: 'icon_unavailable' });
+    return;
+  }
   if (!image) {
     sendJson(res, 404, { error: 'icon_not_found' });
     return;
@@ -4796,7 +4803,7 @@ function startSnapshotBuild(): void {
     // Built once and encoded per form, so a phone that fetches images never gets one here.
     let oversize = false;
     if (broadcast) {
-      const forms = new Set<SnapshotForm>(['inline']);
+      const forms = new Set<SnapshotForm>();
       for (const client of wss?.clients ?? []) forms.add(snapshotFormOf(client));
       for (const form of forms) {
         const frame = snapshotFrame(built, 'refresh', form);

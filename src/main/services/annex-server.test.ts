@@ -3488,6 +3488,40 @@ describe('annex-server', () => {
         expect(withInline.agentIcons.a0).toMatch(/^data:image\/png;base64,/);
       }, 30_000);
 
+      it('leaves refs out, and answers 503, while an icon can\'t be read for a reason that can pass', async () => {
+        fakeDecoder();
+        // A directory passes the stat and fails the read, with an error that isn't a missing file.
+        fs.mkdirSync(path.join(dir, 'a0.png'));
+        annexServer.stop();
+        serveAgentsWithIcons(['a0.png']);
+        const { port, token } = await startAndPair();
+        const refs = await connectWithRefs(true);
+
+        const [snapshot] = snapshots(refs);
+        expect(snapshot).not.toHaveProperty('iconRefs');
+        expect(snapshot).not.toHaveProperty('snapshotTruncated');
+        expect(snapshot.agentIcons).toEqual({});
+
+        const res = await request(port, 'GET', '/api/v1/icons/agent/a0', undefined, authHeaders(token));
+        expect(res.status).toBe(503);
+        expect(JSON.parse(res.body)).toEqual({ error: 'icon_unavailable' });
+      }, 30_000);
+
+      it('does not build or report a form no socket gets', async () => {
+        fakeDecoder();
+        serveAgentsWithIcons([writeIcon('a0.png', pngFile(MIB))]);
+        const refs = await connectWithRefs(true);
+        refs.send.mockClear();
+        const telemetry = await import('../telemetry/annex-telemetry');
+        const reports = vi.spyOn(telemetry, 'recordSnapshot');
+
+        annexServer.broadcastSnapshotRefresh();
+        await vi.waitFor(() => expect(snapshots(refs)).toHaveLength(1));
+
+        expect(reports).toHaveBeenCalledTimes(1);
+        expect(reports.mock.calls[0][2]).toMatchObject({ iconBytes: 0 });
+      }, 30_000);
+
       it('gives each socket its own form on a refresh', async () => {
         fakeDecoder();
         serveAgentsWithIcons([writeIcon('a0.png', pngFile(MIB))]);

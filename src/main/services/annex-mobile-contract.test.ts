@@ -34,6 +34,8 @@ const W = vi.hoisted(() => ({
   transcripts: {} as Record<string, unknown[]>,
   sessions: {} as Record<string, unknown[]>,
   projectsThrow: false,
+  iconsUnavailable: false,
+  iconDir: null as string | null,
   spawnShellError: null as string | null,
   ptyData: [] as Array<(id: string, data: string, seq: number) => void>,
   ptyExit: [] as Array<(id: string, code: number) => void>,
@@ -139,20 +141,34 @@ vi.mock('./annex-network-profile', async (importOriginal) => ({
 }));
 vi.mock('bonjour-service', () => ({ default: class { publish() { return { stop() {} }; } destroy() {} } }));
 vi.mock('./log-service', () => ({ appLog: () => {} }));
-// The fixture's icon bytes aren't whole images, so the "path" is the bytes and the thumbnail is them as they are.
-// A real image for fixtures that show bytes. Most fixture icons aren't whole images, so a "path" here is its
-// bytes and name, and the image is those as they are. Its version is their real hash, so a change of name changes the bytes.
+// Real images through the real code. Each icon name gets a PNG of its own, a valid one with its name in a text
+// chunk, so the fixtures' bytes, hashes and sizes describe something a phone can decode. A "path" here ends in the name.
 const VALID_PNG_BASE64 = vi.hoisted(() => 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8/5+hHgAHggJ/PchI7wAAAABJRU5ErkJggg==');
-vi.mock('./icon-images', () => ({
-  readIconImage: async (file: string) => {
-    const nodeCrypto = await import('crypto');
-    const [base64, icon] = file.split('|');
-    const bytes = Buffer.from(icon.startsWith('valid') ? VALID_PNG_BASE64 : base64, 'base64');
-    // The name goes in the hash only for fake bytes, so two fake icons differ. A real image hashes as itself.
-    const version = nodeCrypto.createHash('sha256').update(bytes).update(icon.startsWith('valid') ? '' : icon).digest('hex');
-    return { dataUrl: `data:image/png;base64,${bytes.toString('base64')}`, version, type: 'image/png', bytes: bytes.length, width: 1, height: 1 };
-  },
-}));
+vi.mock('./icon-images', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('./icon-images')>();
+  const [nodeFs, nodeOs, nodePath, zlib] = await Promise.all([import('fs'), import('os'), import('path'), import('zlib')]);
+  const dir = nodeFs.mkdtempSync(nodePath.join(nodeOs.tmpdir(), 'annex-contract-icons-'));
+  W.iconDir = dir;
+  const iconPng = (name: string) => {
+    const valid = Buffer.from(VALID_PNG_BASE64, 'base64');
+    const body = Buffer.from(`tEXticon\0${name}`, 'latin1');
+    const length = Buffer.alloc(4);
+    length.writeUInt32BE(body.length - 4);
+    const crc = Buffer.alloc(4);
+    crc.writeUInt32BE(zlib.crc32(body));
+    return Buffer.concat([valid.subarray(0, 33), length, body, crc, valid.subarray(33)]);
+  };
+  return {
+    ...actual,
+    readIconImage: async (file: string) => {
+      if (W.iconsUnavailable) return actual.ICON_TEMPORARILY_UNAVAILABLE;
+      const name = file.split('|')[1];
+      const real = nodePath.join(dir, name);
+      if (!nodeFs.existsSync(real)) nodeFs.writeFileSync(real, iconPng(name));
+      return actual.readIconImage(real);
+    },
+  };
+});
 vi.mock('./project-store', () => ({
   list: async () => { if (W.projectsThrow) throw new Error('disk gone'); return W.projects; },
   readIconData: async (icon: string) => (icon ? 'data:image/png;base64,iVBORw0KGgo=' : null),
@@ -2174,9 +2190,14 @@ describe('Annex mobile contract fixtures', { timeout: TEST_TIMEOUT_MS }, () => {
       before: snapshot.iconRefs.agents.durable_chat, changed: changed.agents.durable_chat, removed: removed.agents.durable_chat ?? null,
     });
 
-    // The routes, with a real image.
-    W.durables[APP][chat] = { ...original, icon: 'valid.png' };
+    // The routes, for the same image the snapshot fixture describes.
+    W.durables[APP][chat] = original;
     const { version, bytes } = (await firstSnapshot()).iconRefs.agents.durable_chat;
+    expect(version).toBe(snapshot.iconRefs.agents.durable_chat.version);
+    const served = await (await import('./icon-images')).readIconImage(`|${original.icon}`) as { dataUrl: string };
+    const imageBase64 = served.dataUrl.slice(served.dataUrl.indexOf(',') + 1);
+    expect(crypto.createHash('sha256').update(Buffer.from(imageBase64, 'base64')).digest('hex')).toBe(version);
+    expect(Buffer.from(imageBase64, 'base64').length).toBe(bytes);
     const route = '/api/v1/icons/agent/durable_chat';
     const asFixture = async (path: string, headers?: Record<string, string>) => {
       const res = await send('GET', path, undefined, { headers });
@@ -2189,6 +2210,14 @@ describe('Annex mobile contract fixtures', { timeout: TEST_TIMEOUT_MS }, () => {
     W.durables[APP][chat] = { ...original, icon: undefined };
     const missing = await send('GET', route);
     W.durables[APP][chat] = original;
+    // Can't be read just now: not a removal, so no refs at all and a route that says to come back.
+    W.iconsUnavailable = true;
+    const unknown = await firstSnapshot();
+    const unavailable = await send('GET', route);
+    W.iconsUnavailable = false;
+    expect(unknown).not.toHaveProperty('iconRefs');
+    expect(unknown).not.toHaveProperty('snapshotTruncated');
+    expect(unavailable.status).toBe(503);
     expect(current.response.status).toBe(200);
     expect(current.response.headers.etag).toBe(`"${version}"`);
     expect(current.response.headers['cache-control']).toBe('private, max-age=31536000, immutable');
@@ -2201,9 +2230,10 @@ describe('Annex mobile contract fixtures', { timeout: TEST_TIMEOUT_MS }, () => {
     expect(missing.status).toBe(404);
     fixtures.set('icon-route.json', {
       note: 'Check the body: its SHA-256 equals the ETag, its byte count, and its Content-Type and decoded type and size. If the ETag differs from the current snapshot\'s version it is stale: keep what you draw and do not refetch until a new snapshot changes the version.',
-      imageBase64: VALID_PNG_BASE64, version,
+      imageBase64, version,
       current, notModified, stale, noVersion,
       missing: { request: { path: route }, response: { status: missing.status, body: missing.body } },
+      unavailable: { request: { path: route }, response: { status: unavailable.status, body: unavailable.body } },
     });
 
     // Refs left out of a frame over its limit, from the real server.
@@ -2270,6 +2300,10 @@ describe('Annex mobile contract fixtures', { timeout: TEST_TIMEOUT_MS }, () => {
     W.durables[DISPATCHER_PATH][0] = saved;
     W.dispatcher = { flagOn: false, enabled: false, newLayout: true };
   }, TEST_TIMEOUT_MS);
+
+  afterAll(() => {
+    if (W.iconDir) fs.rmSync(W.iconDir, { recursive: true, force: true });
+  });
 
   it('fixtures on disk match (npm run fixtures:annex-mobile to update)', () => {
     const rendered = render();

@@ -5,11 +5,27 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createHash } from 'crypto';
 import { CHAT_MEDIA_MAX_PIXELS } from '../../shared/chat';
 import { ICON_SERVED_MAX_BYTES } from '../../shared/icon-limits';
-import { jpegOrientation, readIconImage, resizeIcon } from './icon-images';
+import { ICON_TEMPORARILY_UNAVAILABLE, jpegOrientation, readIconImage, resizeIcon } from './icon-images';
 
 const native = vi.hoisted(() => ({ createFromBuffer: vi.fn(), createFromBitmap: vi.fn(), createThumbnailFromPath: undefined as unknown }));
 vi.mock('electron', () => ({ nativeImage: native }));
 vi.mock('./log-service', () => ({ appLog: vi.fn() }));
+const failNext = vi.hoisted(() => ({ readFile: null as string | null, stat: null as string | null, reads: 0 }));
+vi.mock('fs/promises', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('fs/promises')>();
+  const failing = (name: 'readFile' | 'stat') => () => {
+    const code = failNext[name];
+    failNext[name] = null;
+    if (code) throw Object.assign(new Error(code), { code });
+  };
+  const failRead = failing('readFile');
+  const failStat = failing('stat');
+  return {
+    ...actual,
+    readFile: async (...args: Parameters<typeof actual.readFile>) => { failNext.reads++; failRead(); return actual.readFile(...args); },
+    stat: async (...args: Parameters<typeof actual.stat>) => { failStat(); return actual.stat(...args); },
+  };
+});
 
 /** A PNG header giving the size, then padding. */
 function png(width: number, height: number, padding = 0): Buffer {
@@ -238,6 +254,74 @@ describe('readIconImage', () => {
     expect(await readIconImage(file)).toBeNull();
     expect(await readIconImage(file)).toBeNull();
     expect(native.createFromBuffer).toHaveBeenCalledTimes(1);
+  });
+
+  describe('a failure that can pass', () => {
+    const WEBP = Buffer.from('UklGRiIAAABXRUJQVlA4IBYAAAAwAQCdASoBAAEADsD+JaQAA3AAAAAA', 'base64');
+    const large = () => Buffer.concat([WEBP, Buffer.alloc(100 * 1024)]);
+
+    afterEach(() => {
+      vi.useRealTimers();
+      native.createThumbnailFromPath = undefined;
+    });
+
+    it('says a stuck thumbnailer is temporary, not no image, then recovers once the wait is over', async () => {
+      vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] });
+      const file = path.join(dir, 'a.webp');
+      fs.writeFileSync(file, large());
+      const thumbnailer = vi.fn(() => new Promise(() => {}));
+      native.createThumbnailFromPath = thumbnailer;
+
+      const first = readIconImage(file);
+      await vi.waitFor(() => expect(thumbnailer).toHaveBeenCalled());
+      await vi.advanceTimersByTimeAsync(5001);
+      expect(await first).toBe(ICON_TEMPORARILY_UNAVAILABLE);
+
+      // Not asked again straight away: a stuck one would hold up every build.
+      expect(await readIconImage(file)).toBe(ICON_TEMPORARILY_UNAVAILABLE);
+      expect(thumbnailer).toHaveBeenCalledTimes(1);
+
+      await vi.advanceTimersByTimeAsync(30_001);
+      native.createThumbnailFromPath = vi.fn(async () => thumbnailOf(128, 128));
+      expect(await readIconImage(file)).toMatchObject({ type: 'image/png', width: 128 });
+    });
+
+    it('does the same for a read that fails', async () => {
+      vi.useFakeTimers({ toFake: ['Date'] });
+      const file = path.join(dir, 'a.png');
+      fs.writeFileSync(file, png(64, 64));
+      failNext.readFile = 'EIO';
+      failNext.reads = 0;
+      expect(await readIconImage(file)).toBe(ICON_TEMPORARILY_UNAVAILABLE);
+      expect(await readIconImage(file)).toBe(ICON_TEMPORARILY_UNAVAILABLE);
+      expect(failNext.reads).toBe(1);
+
+      vi.setSystemTime(Date.now() + 30_001);
+      expect(await readIconImage(file)).toMatchObject({ width: 64 });
+    });
+
+    it('does the same for a stat that fails for any reason but a missing file', async () => {
+      const file = path.join(dir, 'a.png');
+      fs.writeFileSync(file, png(64, 64));
+      failNext.stat = 'EACCES';
+      expect(await readIconImage(file)).toBe(ICON_TEMPORARILY_UNAVAILABLE);
+      expect(await readIconImage(file)).toMatchObject({ width: 64 });
+    });
+
+    it('still counts a file gone between the stat and the read as no image', async () => {
+      const file = path.join(dir, 'a.png');
+      fs.writeFileSync(file, png(64, 64));
+      failNext.readFile = 'ENOENT';
+      expect(await readIconImage(file)).toBeNull();
+    });
+
+    it('keeps resizeIcon null on a timeout, for saving an icon', async () => {
+      vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+      native.createThumbnailFromPath = vi.fn(() => new Promise(() => {}));
+      const result = resizeIcon(large(), '/x.webp', 128);
+      await vi.advanceTimersByTimeAsync(5001);
+      expect(await result).toBeNull();
+    });
   });
 
   it('leaves the user\'s file as it is', async () => {

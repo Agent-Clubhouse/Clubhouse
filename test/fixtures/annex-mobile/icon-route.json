@@ -1,19 +1,19 @@
 {
   "current": {
     "request": {
-      "path": "/api/v1/icons/agent/durable_chat?v=cdb30873bdf16770bfea1fe86e44db7476e504c2dca1542b0660b20f47f523a7"
+      "path": "/api/v1/icons/agent/durable_chat?v=77412b4849d7541fe062143e7beac5aa3792f1ec524455f44b5fa16eda09f236"
     },
     "response": {
       "headers": {
         "cache-control": "private, max-age=31536000, immutable",
-        "content-length": "70",
+        "content-length": "103",
         "content-type": "image/png",
-        "etag": "\"cdb30873bdf16770bfea1fe86e44db7476e504c2dca1542b0660b20f47f523a7\""
+        "etag": "\"77412b4849d7541fe062143e7beac5aa3792f1ec524455f44b5fa16eda09f236\""
       },
       "status": 200
     }
   },
-  "imageBase64": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8/5+hHgAHggJ/PchI7wAAAABJRU5ErkJggg==",
+  "imageBase64": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAAFXRFWHRpY29uAGR1cmFibGVfY2hhdC5wbmeieNGaAAAADUlEQVR42mP8/5+hHgAHggJ/PchI7wAAAABJRU5ErkJggg==",
   "missing": {
     "request": {
       "path": "/api/v1/icons/agent/durable_chat"
@@ -32,9 +32,9 @@
     "response": {
       "headers": {
         "cache-control": "private, max-age=3600",
-        "content-length": "70",
+        "content-length": "103",
         "content-type": "image/png",
-        "etag": "\"cdb30873bdf16770bfea1fe86e44db7476e504c2dca1542b0660b20f47f523a7\""
+        "etag": "\"77412b4849d7541fe062143e7beac5aa3792f1ec524455f44b5fa16eda09f236\""
       },
       "status": 200
     }
@@ -42,14 +42,14 @@
   "notModified": {
     "request": {
       "headers": {
-        "If-None-Match": "\"cdb30873bdf16770bfea1fe86e44db7476e504c2dca1542b0660b20f47f523a7\""
+        "If-None-Match": "\"77412b4849d7541fe062143e7beac5aa3792f1ec524455f44b5fa16eda09f236\""
       },
-      "path": "/api/v1/icons/agent/durable_chat?v=cdb30873bdf16770bfea1fe86e44db7476e504c2dca1542b0660b20f47f523a7"
+      "path": "/api/v1/icons/agent/durable_chat?v=77412b4849d7541fe062143e7beac5aa3792f1ec524455f44b5fa16eda09f236"
     },
     "response": {
       "headers": {
         "cache-control": "private, max-age=31536000, immutable",
-        "etag": "\"cdb30873bdf16770bfea1fe86e44db7476e504c2dca1542b0660b20f47f523a7\""
+        "etag": "\"77412b4849d7541fe062143e7beac5aa3792f1ec524455f44b5fa16eda09f236\""
       },
       "status": 304
     }
@@ -65,12 +65,23 @@
     "response": {
       "headers": {
         "cache-control": "private, no-cache",
-        "content-length": "70",
+        "content-length": "103",
         "content-type": "image/png",
-        "etag": "\"cdb30873bdf16770bfea1fe86e44db7476e504c2dca1542b0660b20f47f523a7\""
+        "etag": "\"77412b4849d7541fe062143e7beac5aa3792f1ec524455f44b5fa16eda09f236\""
       },
       "status": 200
     }
   },
-  "version": "cdb30873bdf16770bfea1fe86e44db7476e504c2dca1542b0660b20f47f523a7"
+  "unavailable": {
+    "request": {
+      "path": "/api/v1/icons/agent/durable_chat"
+    },
+    "response": {
+      "body": {
+        "error": "icon_unavailable"
+      },
+      "status": 503
+    }
+  },
+  "version": "77412b4849d7541fe062143e7beac5aa3792f1ec524455f44b5fa16eda09f236"
 }

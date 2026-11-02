@@ -7,26 +7,26 @@
     "iconRefs": {
       "agents": {
         "durable_chat": {
-          "bytes": 14,
+          "bytes": 103,
           "height": 1,
           "type": "image/png",
-          "version": "4ded3c18ff9094ef3faed284a0b36dd8e128114dfa02b1a0cc948b0ea56333fe",
+          "version": "77412b4849d7541fe062143e7beac5aa3792f1ec524455f44b5fa16eda09f236",
           "width": 1
         },
         "durable_dispatcher": {
-          "bytes": 14,
+          "bytes": 109,
           "height": 1,
           "type": "image/png",
-          "version": "a4448c7bcb59812eb5a3ccf592167a09d933754997a0a523829dd04077ebedb9",
+          "version": "1c740ab6a0880151ac4223ae0b92d7e63a9602fad7f1abfc04033a447afaa65d",
           "width": 1
         }
       },
       "projects": {
         "proj_app": {
-          "bytes": 8,
+          "bytes": 99,
           "height": 1,
           "type": "image/png",
-          "version": "aee6fd6543384ced265509b1efb39fac50808641daacd9c57cb8d7894b8f2614",
+          "version": "64dd9b29a088efbbefd7d7f30963ac23433186043f15ce07100d85160dd7b7de",
           "width": 1
         }
       }
