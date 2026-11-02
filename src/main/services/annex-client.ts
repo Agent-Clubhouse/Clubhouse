@@ -80,6 +80,10 @@ export interface SatelliteSnapshot {
   groupProjectMembers?: Record<string, Array<{ agentId: string; agentName: string; status: string }>>;
   /** Unvalidated; read through `windowsPtyForHost`. */
   ptyHost?: unknown;
+  canvasState?: Record<string, unknown>;
+  appCanvasState?: unknown;
+  /** The satellite left these out for size. A field here is unknown, not empty. */
+  snapshotTruncated?: { omitted?: string[] };
 }
 
 // ---------------------------------------------------------------------------
@@ -756,9 +760,16 @@ function handleSatelliteMessage(sat: SatelliteConnectionInternal, msg: Record<st
       if (!sat.snapshot || !socketsWithSnapshot.has(sat.ws!) || incoming.lastSeq >= sat.snapshot.lastSeq) {
         if (sat.ws) socketsWithSnapshot.add(sat.ws);
         sat.lastError = null;
+        // Left out for size, so what's known still stands, and a new connection fetches it.
+        const omitted = incoming.snapshotTruncated?.omitted?.includes('canvasState');
+        if (omitted) {
+          incoming.canvasState ??= sat.snapshot?.canvasState;
+          incoming.appCanvasState ??= sat.snapshot?.appCanvasState;
+        }
         sat.snapshot = incoming;
         broadcastSatellitesChanged();
-        broadcastSatelliteEvent(sat.id, 'snapshot', msg.payload);
+        broadcastSatelliteEvent(sat.id, 'snapshot', incoming);
+        if (omitted) void fetchOmittedCanvases(sat);
       }
       break;
     }
@@ -795,6 +806,41 @@ function handleSatelliteMessage(sat: SatelliteConnectionInternal, msg: Record<st
       broadcastSatelliteEvent(sat.id, type, msg.payload);
       break;
   }
+}
+
+/** Connections that have fetched their canvases. Later changes come as `canvas:state`. */
+const socketsWithCanvases = new WeakSet<WebSocket>();
+
+/**
+ * Fetch the canvases a satellite's snapshot left out for size, once per connection,
+ * one project at a time, then send them on as a snapshot the renderer already reads.
+ */
+async function fetchOmittedCanvases(sat: SatelliteConnectionInternal): Promise<void> {
+  const ws = sat.ws;
+  if (!ws || socketsWithCanvases.has(ws)) return;
+  socketsWithCanvases.add(ws);
+  const canvasState: Record<string, unknown> = {};
+  let appCanvasState: unknown = null;
+  try {
+    const projects = (sat.snapshot?.projects ?? []) as Array<{ id: string }>;
+    for (const project of projects) {
+      const { state } = await satelliteHttpsRequest(sat.fingerprint, 'GET', `/api/v1/mobile/canvas/${encodeURIComponent(project.id)}`) as { state: unknown };
+      if (state) canvasState[project.id] = state;
+    }
+    ({ state: appCanvasState } = await satelliteHttpsRequest(sat.fingerprint, 'GET', '/api/v1/mobile/canvas') as { state: unknown });
+  } catch (err) {
+    // Try again on the next snapshot that leaves them out. Until then it keeps what it has.
+    socketsWithCanvases.delete(ws);
+    appLog('core:annex', 'warn', 'Could not fetch canvases a satellite left out of its snapshot', {
+      meta: { error: err instanceof Error ? err.message : String(err) },
+    });
+    return;
+  }
+  // Only onto a snapshot still missing them: a full one that arrived meanwhile is newer.
+  if (sat.ws !== ws || !sat.snapshot?.snapshotTruncated?.omitted?.includes('canvasState')) return;
+  sat.snapshot = { ...sat.snapshot, canvasState, ...(appCanvasState ? { appCanvasState } : {}) };
+  broadcastSatellitesChanged();
+  broadcastSatelliteEvent(sat.id, 'snapshot', sat.snapshot);
 }
 
 function startHeartbeat(sat: SatelliteConnectionInternal): void {

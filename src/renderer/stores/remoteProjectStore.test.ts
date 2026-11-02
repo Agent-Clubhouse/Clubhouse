@@ -111,6 +111,25 @@ describe('remoteProjectStore', () => {
   // -------------------------------------------------------------------------
 
   describe('applySatelliteSnapshot', () => {
+    it('keeps canvases through a snapshot that left them out, and takes them when they follow', () => {
+      const store = useRemoteProjectStore.getState();
+      const canvas = { canvases: [{ id: 'canvas_1', views: [] }], activeCanvasId: 'canvas_1' };
+      const projects = [{ id: 'proj_1', name: 'P', path: '/p' }];
+      const namespaced = 'remote||sat-1||proj_1';
+
+      // A fresh connection: nothing yet, and no error for the missing field.
+      store.applySatelliteSnapshot('sat-1', 'Sat', makeSnapshot({ projects, snapshotTruncated: { omitted: ['canvasState', 'appCanvasState'] } } as never));
+      expect(useRemoteProjectStore.getState().remoteCanvasState[namespaced]).toBeUndefined();
+
+      // What the client sends once it has fetched them.
+      store.applySatelliteSnapshot('sat-1', 'Sat', makeSnapshot({ projects, canvasState: { proj_1: canvas } } as never));
+      expect(useRemoteProjectStore.getState().remoteCanvasState[namespaced]?.activeCanvasId).toBe('canvas_1');
+
+      // A later one without them doesn't clear them.
+      store.applySatelliteSnapshot('sat-1', 'Sat', makeSnapshot({ projects, snapshotTruncated: { omitted: ['canvasState', 'appCanvasState'] } } as never));
+      expect(useRemoteProjectStore.getState().remoteCanvasState[namespaced]?.activeCanvasId).toBe('canvas_1');
+    });
+
     it('namespaces project IDs', () => {
       const store = useRemoteProjectStore.getState();
       store.applySatelliteSnapshot('sat-1', 'My Satellite', makeSnapshot());
