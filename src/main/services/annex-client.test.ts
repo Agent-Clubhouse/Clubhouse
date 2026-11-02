@@ -895,6 +895,70 @@ describe('annex-client', () => {
       await vi.waitFor(() => expect(snapshotEvents().at(-1)?.canvasState).toEqual({ proj_1: STATE }));
     });
 
+    describe('with a canvas changed after it was known', () => {
+      const edit = (name: string) => ({
+        type: 'canvas:state',
+        payload: { projectId: 'proj_1', state: { canvasId: 'canvas_1', name, views: [{ id: 'v' }], viewport: { panX: 0, panY: 0, zoom: 1 }, nextZIndex: 1, zoomedViewId: null, allCanvasTabs: [{ id: 'canvas_1', name }], activeCanvasId: 'canvas_1' } },
+      });
+      const canvasNames = (payload: any) => payload.canvasState.proj_1.canvases.map((c: { name: string }) => c.name);
+
+      it('a later truncated snapshot does not put the old canvas back', async () => {
+        await connectedSatellite();
+        send(truncated(5));
+        await vi.waitFor(() => expect(snapshotEvents().at(-1)?.canvasState).toBeDefined());
+
+        send(edit('Edited'));
+        send(truncated(6));
+
+        expect(canvasNames(snapshotEvents().at(-1))).toEqual(['Edited']);
+        expect(canvasNames(annexClient.getSatellite(FINGERPRINT)!.snapshot)).toEqual(['Edited']);
+      });
+
+      it('keeps the other canvases and wires when one changes', async () => {
+        const other = { id: 'canvas_2', name: 'Other', views: [{ id: 'kept' }] };
+        const wireDefinitions = [{ agentId: 'a', targetId: 'b' }];
+        routes['/api/v1/mobile/canvas/proj_1'] = { status: 200, body: { state: { canvases: [{ id: 'canvas_1', name: 'Main' }, other], activeCanvasId: 'canvas_1', wireDefinitions } } };
+        await connectedSatellite();
+        send(truncated(5));
+        await vi.waitFor(() => expect(snapshotEvents().at(-1)?.canvasState).toBeDefined());
+
+        send({ type: 'canvas:state', payload: { projectId: 'proj_1', state: { canvasId: 'canvas_1', name: 'Edited', views: [], viewport: {}, nextZIndex: 0, zoomedViewId: null } } });
+        send(truncated(6));
+
+        const state = snapshotEvents().at(-1).canvasState.proj_1;
+        expect(state.canvases).toHaveLength(2);
+        expect(state.canvases[0].name).toBe('Edited');
+        expect(state.canvases[1]).toEqual(other);
+        expect(state.wireDefinitions).toEqual(wireDefinitions);
+      });
+
+      it('keeps a change made while the fetch was running', async () => {
+        await connectedSatellite();
+        send(truncated(5));
+        send(edit('During'));
+        await vi.waitFor(() => expect(snapshotEvents().at(-1)?.canvasState).toBeDefined());
+        expect(canvasNames(snapshotEvents().at(-1))).toEqual(['During']);
+      });
+
+      it('updates a full snapshot too, and app canvases by scope', async () => {
+        await connectedSatellite();
+        send({ type: 'snapshot', payload: { ...truncated(5).payload, snapshotTruncated: undefined, canvasState: { proj_1: STATE }, appCanvasState: STATE } });
+        send(edit('Edited'));
+        send({ type: 'canvas:state', payload: { projectId: null, scope: 'global', state: { ...edit('App').payload.state } } });
+        const kept = annexClient.getSatellite(FINGERPRINT)!.snapshot as any;
+        expect(canvasNames(kept)).toEqual(['Edited']);
+        expect(kept.appCanvasState.canvases[0].name).toBe('App');
+      });
+
+      it('does not make up a whole project from one canvas it knows nothing else about', async () => {
+        await connectedSatellite();
+        send({ type: 'snapshot', payload: { ...truncated(5).payload, snapshotTruncated: undefined, canvasState: {} } });
+        send(edit('Lonely'));
+        expect((annexClient.getSatellite(FINGERPRINT)!.snapshot as any).canvasState).toEqual({});
+        expect(vi.mocked(broadcastToAllWindows).mock.calls.some(([, e]) => (e as { type?: string })?.type === 'canvas:state')).toBe(true);
+      });
+    });
+
     it('does not put an older fetch over a full snapshot that came meanwhile', async () => {
       await connectedSatellite();
       send(truncated(5));
