@@ -16,7 +16,7 @@ New `POST https://host:mainPort/pair` uses existing `{pin, publicKey, alias, ico
 Authenticated `GET /api/v1/mobile/capabilities` returns:
 
 ```json
-{"version":1,"epoch":"uuid","controlAuth":"mtls-pinned-client","controlAvailable":true,"commands":["chat.send","chat.interrupt","chat.permission","chat.question","chat.queue.remove","agent.start","agent.stop","agent.spawn","agent.create","agent.update","project.setPinned","project.setInactive","helper.approve","helper.decline","chat.setModel","chat.setLevel","quick.dismiss","quick.clear","dispatcher.setEnabled"],"pairing":{"sessionRevokePath":"/api/v1/mobile/pairing"},"attachments":{"version":1,"imageTypes":["image/png","image/jpeg","image/gif","image/webp"],"maxImageBytes":3932160,"maxCount":10},"events":{"transport":"annex-websocket","replayRequest":"mobile:replay","queueState":"queue_state"},"createOptions":{"version":1,"path":"/api/v1/mobile/projects/{projectId}/create-options"},"agentSettings":{"version":1,"path":"/api/v1/mobile/agents/{agentId}/settings"},"helperRequests":{"version":1,"snapshotField":"helperRequests","commands":["helper.approve","helper.decline"]},"chatControls":{"version":1},"slashCommands":{"version":1,"snapshotField":"slashCommands","event":"commands_available","maxCommands":200},"permissions":{"version":1,"persistentApprovals":true,"freeAgentMode":true},"orchestration":{"version":1},"idempotency":{"scope":"peer-and-epoch","maxEntries":2048,"ttlMs":3600000},"projectState":{"version":1},"finishedQuickAgents":{"version":1},"terminal":{"version":1,"projectShell":true,"agentShell":true,"agentAttach":true,"maxShellsPerConnection":8,"maxInputLength":65536},"dispatcher":{"version":1,"enabled":true,"flagOn":true,"newLayout":true,"projectId":"__dispatcher__","snapshotField":"dispatcher","event":"dispatcher:changed","commands":["dispatcher.setEnabled"]}}
+{"version":1,"epoch":"uuid","controlAuth":"mtls-pinned-client","controlAvailable":true,"commands":["chat.send","chat.interrupt","chat.permission","chat.question","chat.queue.remove","agent.start","agent.stop","agent.spawn","agent.create","agent.update","project.setPinned","project.setInactive","helper.approve","helper.decline","chat.setModel","chat.setLevel","quick.dismiss","quick.clear","dispatcher.setEnabled"],"pairing":{"sessionRevokePath":"/api/v1/mobile/pairing"},"attachments":{"version":1,"imageTypes":["image/png","image/jpeg","image/gif","image/webp"],"maxImageBytes":3932160,"maxCount":10},"events":{"transport":"annex-websocket","replayRequest":"mobile:replay","queueState":"queue_state"},"createOptions":{"version":1,"path":"/api/v1/mobile/projects/{projectId}/create-options"},"agentSettings":{"version":1,"path":"/api/v1/mobile/agents/{agentId}/settings"},"contextWindow":{"version":1},"helperRequests":{"version":1,"snapshotField":"helperRequests","commands":["helper.approve","helper.decline"]},"chatControls":{"version":1},"slashCommands":{"version":1,"snapshotField":"slashCommands","event":"commands_available","maxCommands":200},"permissions":{"version":1,"persistentApprovals":true,"freeAgentMode":true},"orchestration":{"version":1},"idempotency":{"scope":"peer-and-epoch","maxEntries":2048,"ttlMs":3600000},"projectState":{"version":1},"finishedQuickAgents":{"version":1},"terminal":{"version":1,"projectShell":true,"agentShell":true,"agentAttach":true,"maxShellsPerConnection":8,"maxInputLength":65536},"dispatcher":{"version":1,"enabled":true,"flagOn":true,"newLayout":true,"projectId":"__dispatcher__","snapshotField":"dispatcher","event":"dispatcher:changed","commands":["dispatcher.setEnabled"]}}
 ```
 
 A 404 means unsupported: do not send mobile commands. Gate durable-agent creation on `commands` including `agent.create` and `createOptions.version >= 1`, settings on `agent.update` and `agentSettings.version >= 1`, and helper requests on `helperRequests.version >= 1`; older desktops offer quick agents (`agent.spawn`) only. Gate project pins and inactive marks on `projectState.version >= 1` (`projectState:{version:1}`); without it, keep them on the phone. See [Project state](#project-state). Gate the finished quick agents list ("Finished, waiting on you") on `finishedQuickAgents.version >= 1`; without it, keep the phone's own list of quick agents it saw exit. See [Finished quick agents](#finished-quick-agents). Gate the composer's model, effort and level controls on `chat.setModel` / `chat.setLevel` and `chatControls.version >= 1` ([Chat controls](#chat-controls)). Gate terminals on `terminal.version >= 1` ([Terminals](#terminals)). Gate the composer's `/` menu on `slashCommands.version >= 1` ([Slash commands](#slash-commands)). Gate an agent's orchestration policy on `orchestration.version >= 1` ([Orchestration](#orchestration)). Gate the Dispatcher on `dispatcher.version >= 1` ([Dispatcher](#dispatcher)). A new epoch invalidates command retries and replay cursors. A paired phone is a full controller, so it may open a shell on the desktop; there are still no arbitrary filesystem paths (a shell's directory comes from a registered project or agent), credentials, or gateway provisioning commands.
@@ -36,7 +36,7 @@ A 404 means unsupported: do not send mobile commands. Gate durable-agent creatio
 - `agent.stop`: `{agentId}`; stops agent process, including a start in progress.
 - `agent.spawn`: `{projectId, prompt, model?, orchestrator?}`; quick agent under registered project with ask-first permission mode.
 - `agent.create`: `{projectId, name, color, orchestrator?, model?, persona?, freeAgentMode?, useWorktree?, mcpIds?, branchName?, branchFrom?, folderName?, orchestration?}`; durable agent, as the desktop New agent page makes one. See [Durable agents](#durable-agents).
-- `agent.update`: `{agentId, name?, color?, emoji?, orchestrator?, model?, runtime?, persona?, clubhouseMode?, freeAgentMode?, idleSleep?, orchestration?}`; at least one setting. See [Durable agents](#durable-agents).
+- `agent.update`: `{agentId, name?, color?, emoji?, orchestrator?, model?, runtime?, persona?, clubhouseMode?, freeAgentMode?, idleSleep?, contextWindow?, orchestration?}`; at least one setting. See [Durable agents](#durable-agents).
 - `project.setPinned`: `{projectId, pinned}`; pin or unpin a project in the desktop sidebar. See [Project state](#project-state).
 - `project.setInactive`: `{projectId, inactive}`; mark a project inactive (idle until marked active) or active. See [Project state](#project-state).
 - `quick.dismiss`: `{projectId, agentId}`; dismiss one finished quick agent. See [Finished quick agents](#finished-quick-agents).
@@ -340,6 +340,7 @@ Desktops that support them (#2462) advertise `chat.setModel` and `chat.setLevel`
  "switchNote":"Applies from the next message."|null}
 ```
 
+- `context` is what the running session reports: `{"effectiveTokens":300000|null,"compactAtTokens":267000|null,"reservedTokens":33000|null,"note":"…"|null}`, or `null` until it reports anything. A null field isn't reported, so omit that line and show no estimate. `note` is plain text or null, for example that Claude's figure is a working window and not the model's capacity. It changes with `session_info.contextLimits` and `usage.context.size`, which arrive at session start, after a model change and at turn end. Claude reports all three numbers; Codex and Copilot report `effectiveTokens` only. See [Context choice](#context-choice) for how this differs from the saved choice.
 - `model` is `null` with `modelUnknown:true` while the session runs the provider's default and hasn't named it: show "Default model".
 - `efforts` belong to the current model. Another model's efforts are only known once the session runs it (a `session_info` replaces the list).
 - `effortReported:false`: the session hasn't reported its effort yet; hide the effort chip rather than show "Default effort".
@@ -492,6 +493,7 @@ Send only what changed:
 - **emoji**: up to 16 UTF-16 units. `null` clears it.
 - **orchestrator**: one of `orchestrators` (409 `orchestrator_unavailable`). A different CLI resets the model to default unless `model` is in the same command, and starts a new session on the next wake. No conversation or context moves over, and the agent's `hasSession` becomes false. When that drops a saved session, the result has `sessionReset:true`; otherwise the field is absent.
 - **model**: `"default"` clears it.
+- **contextWindow**: a `choices[].id`, or `null` to clear it. See [Context choice](#context-choice).
 - **runtime**: `default`, `chat` or `terminal`. `chat` and `terminal` need chat to be available (409 `runtime_unavailable`).
 - **persona**: one of `personas`, or `null` for the project default.
 - **clubhouseMode**: boolean. Needs a Clubhouse mode project (409 `clubhouse_mode_unavailable`).
@@ -506,6 +508,46 @@ Rejections:
 - Instructions, skills, agent definitions, MCP JSON, permission rules, the launch wrapper and helpers are not accepted. Any unknown field is 400 `invalid_command`.
 
 The receipt `result` is the settings payload above, without `version`, `epoch` and `options`. The desktop windows and other clients are told about the change through `snapshot:refresh`.
+
+### Context choice
+
+A per-agent context setting, where the CLI really has one (#2660). `settings.contextWindow` is on `GET /mobile/agents/:id/settings` and in every `agent.update` result.
+
+**Gates.** `capabilities.contextWindow: {version:1}`: the host accepts `agent.update.contextWindow`; don't send the field without it. `settings.contextWindow` absent: an older host, so hide the row. Present: draw it, as below.
+
+```json
+"contextWindow":{"value":"500000"|null,"editable":"always"|"sleeping"|"never","configurable":true,
+ "kind":"working_window"|"context_window"|"tier"|null,"label":"Working context","description":"…"|null,"defaultLabel":"Auto"|null,
+ "choices":[{"id":"500000","label":"500K","tokens":500000}],"defaultTokens":258400|null,"maxTokens":1000000|null,"costNote":"…"|null,
+ "applies":["launch","resume"],"state":"unsupported"|"pick_model"|"unavailable"|null,"reason":"…"|null,"notice":"…"|null}
+```
+
+- **value** is the saved choice for the next start. It equals a `choices[].id`, or is `null` for no saved choice, where the CLI decides and the row reads `defaultLabel`. With `state:"unavailable"` it can be a saved id with no matching choice: show it as saved and not applied.
+- **configurable** says whether the CLI offers this for this model. **editable** says when Clubhouse lets it change. A row can change only when `configurable` is true and `editable` allows it. `editable` is `sleeping` for an ordinary agent (changeable when the response's `sleeping` is true, otherwise locked), `always` for the Dispatcher, and `never` when `configurable` is false.
+- **applies** is `["launch","resume"]` for running agents, sleeping agents and the Dispatcher alike. No value means live: saving never restarts anything and doesn't change a running session. Ignore an entry you don't know.
+- **state** and **reason** are set when `configurable` is false: `unsupported` (no such setting for this CLI or model), `pick_model` (it depends on the model, so choose one), `unavailable` (the catalog can't be read, for example no Copilot login). Show `reason`, disabled.
+- **tokens**, **defaultTokens** and **maxTokens** are null or absent where the CLI doesn't say. Never estimate one. **costNote** is plain text.
+- **notice** says why a saved choice was last cleared. The next explicit choice removes it.
+
+**kind** is a closed list, null when `configurable` is false. Draw the host's `label` and `description` rather than hardcoding them.
+
+| kind | label | CLI | what it is |
+|---|---|---|---|
+| `working_window` | Working context | Claude Code | When Claude Code compacts. It doesn't change the model's own window, so it mustn't read as the model's capacity. |
+| `context_window` | Context window | Codex | The window Codex uses. A choice's `tokens` is the usable size, after Codex's percent. |
+| `tier` | Context tier | Copilot | One of the model's tiers. Ids are `default` and `long_context`. With no saved choice, Copilot uses its own setting and a resumed session keeps the tier it last used. |
+
+An unknown `kind` from a newer host: when `configurable` is true, the choice list still works, so draw `label`, `description` and `choices` generically, with no kind-specific behaviour.
+
+**agent.update `{agentId, contextWindow: string|null}`.** A string must be a current `choices[].id`, or 400 `invalid_context_window`; it's also refused when the catalog can't confirm it. `null` clears it and always succeeds. On an ordinary agent it's a spawn setting (409 `agent_running` while awake). On the Dispatcher it's allowed at any time, and every other locked field stays locked.
+
+The result carries fresh `settings`, so don't refetch after a model or orchestrator change. When that change cleared the saved choice, the result also has `contextWindowReset: {previous, reason}`, absent otherwise, with `settings.contextWindow.value` null and `notice` set to the reason. A new orchestrator always clears it, because a value only means something to the CLI it was chosen for.
+
+**Current and pending.** `settings.contextWindow.value` is pending: the next start. [`chatControls.context`](#chat-controls) is current: the running session as the CLI reports it. They can differ, so show both and don't overwrite one with the other.
+
+**Not applied at a start.** The existing chat `notice` event, with no new event type: `{"type":"notice","data":{"level":"warn","code":"context_window_not_applied","message":"…"}}`. It's sent once, at session start, when a chat agent with a saved choice starts or resumes without it being passed to the CLI. If the model no longer offers it, it's cleared and `notice` is set. If the catalog can't confirm it, it stays saved. Draw `message` as any notice and match on `code`, not on the text. A terminal agent has no chat stream, so a phone sees only `notice`, in the cleared case.
+
+Fixtures: `agent-settings-context-window.json` has `cases` (each kind, `unsupported`, `pick_model`, `unavailable`, `unavailableWithSavedChoice`, `dispatcher`), `currentAndPending` and `notAppliedNotice`. `commands/agent.update.json` has the updates, the null reset, the refusals and `contextWindowReset`.
 
 ## Orchestration
 
@@ -581,7 +623,7 @@ While it is on, its id works wherever an agent id does: the chat snapshot, chat 
 - **No git.** Git routes for `__dispatcher__` answer 409 `{"error":"not_git_repo"}`. Its settings' `details.changes`, `branch` and `worktree` are null.
 - **No project.** `agent.create`, `agent.spawn`, `project.*` and `quick.*` with `projectId: "__dispatcher__"` are 409 `dispatcher_locked`.
 - **Settings.** `GET /mobile/agents/:id/settings` has `isDispatcher: true` and `orchestration: null`. `orchestrator`, `model`, `runtime` and `freeAgentMode` are `editable: "always"` (as on Settings > Dispatcher they apply the next time it starts), `idleSleep` `"always"`, and `name`, `color`, `emoji`, `persona` and `clubhouseMode` `"never"`.
-- **agent.update.** Only `orchestrator`, `model`, `runtime`, `freeAgentMode` and `idleSleep`, at any time. A new `orchestrator` resets `model` to `default` unless the command sets one; `model` must be `default` or one the CLI lists (400 `invalid_model`). `name`, `color`, `emoji`, `persona`, `clubhouseMode` or `orchestration` are 409 `dispatcher_locked`, the desktop's own rules.
+- **agent.update.** Only `orchestrator`, `model`, `runtime`, `freeAgentMode`, `idleSleep` and `contextWindow`, at any time. A new `orchestrator` resets `model` to `default` unless the command sets one; `model` must be `default` or one the CLI lists (400 `invalid_model`). `name`, `color`, `emoji`, `persona`, `clubhouseMode` or `orchestration` are 409 `dispatcher_locked`, the desktop's own rules.
 
 The Dispatcher can change its own color, emoji and image through the `update_agent` MCP tool, and the `clubhouse` CLI can change them too (#2645). A phone can't: `agent.update` stays `dispatcher_locked` for them. A fresh `snapshot` carries the new look. Its name stays "Dispatcher", whichever look it has. Messages it sends name it as the sender like any agent; find it in `dispatcher.agent`, not `agents`.
 

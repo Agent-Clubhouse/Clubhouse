@@ -24,6 +24,8 @@ export interface AcpLaunchSpec {
   id: ChatDriverId;
   provider: string;
   spawn(opts: { binary: string; extraArgs?: string[]; commandPrefix?: string }): StructuredSpawnCommand;
+  /** The CLI flag for the agent's context choice (#2660), for an agent that has one. */
+  contextWindowArgs?(value: string | undefined): string[];
   profile: AcpAgentProfile | ((init: InitializeResponse) => AcpAgentProfile);
   /** Extra drafts after the handshake, e.g. an untested-version notice. */
   handshakeNotices?(init: InitializeResponse): ChatEventDraft[];
@@ -210,7 +212,7 @@ export class AcpChatDriver implements ChatDriver {
     notices: ChatEventDraft[],
   ): Promise<AcpChatDriverSession> {
     if (opts.signal?.aborted) throw new Error('Chat start cancelled');
-    const cmd = this.spec.spawn({ binary: opts.binaryPath, extraArgs: opts.extraArgs, commandPrefix: opts.commandPrefix });
+    const cmd = this.spec.spawn({ binary: opts.binaryPath, extraArgs: [...(opts.extraArgs ?? []), ...(this.spec.contextWindowArgs?.(opts.contextWindow) ?? [])], commandPrefix: opts.commandPrefix });
     const queue = new AsyncQueue<ChatEventDraft>();
     for (const notice of notices) queue.push(notice);
     let mapper: AcpChatEventMapper | null = null;
@@ -398,6 +400,8 @@ export const COPILOT_ACP_LAUNCH: AcpLaunchSpec = {
   id: 'copilot_acp',
   provider: 'copilot-cli',
   spawn: resolveCopilotAcpSpawn,
+  // ACP has no config option for the tier (session/set_config_option refuses it); the flag is per launch.
+  contextWindowArgs: (value) => (value ? ['--context', value] : []),
   profile: selectAcpProfile,
   handshakeNotices(init) {
     const version = init.agentInfo?.version;

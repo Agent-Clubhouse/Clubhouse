@@ -1,3 +1,4 @@
+import { claudeContextWindowOptions } from '../../../shared/context-window';
 import { render, screen, fireEvent, waitFor, act, within } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { useAgentStore } from '../../stores/agentStore';
@@ -171,6 +172,30 @@ describe('AgentSettingsView', () => {
     (window.clubhouse.agent as any).getDurableConfig = vi.fn().mockResolvedValue({});
     (window.clubhouse.agent as any).updateDurableConfig = vi.fn().mockResolvedValue(undefined);
     (window.clubhouse.agent as any).getModelOptions = vi.fn().mockResolvedValue(MODEL_OPTION_LIST);
+    (window.clubhouse.agent as any).getContextWindowOptions = vi.fn().mockResolvedValue({ configurable: false, state: 'unsupported', label: 'Context', reason: 'No context setting.' });
+  });
+
+  describe('context choice (#2660)', () => {
+    it('awake: shows the saved next-start choice and reads no catalog', async () => {
+      const read = (window.clubhouse.agent as any).getContextWindowOptions;
+      (window.clubhouse.agent as any).getDurableConfig = vi.fn().mockResolvedValue({ contextWindow: '500000' });
+      renderSettings({ status: 'running' });
+      await waitFor(() => expect(screen.getByTestId('agent-settings-context-saved').textContent).toBe('500K on the next start'));
+      expect(read).not.toHaveBeenCalled();
+    });
+
+    it('awake with no choice: says the CLI decides, rather than Loading', async () => {
+      renderSettings({ status: 'running' });
+      await waitFor(() => expect(screen.getByTestId('agent-settings-context-saved').textContent).toBe('CLI default'));
+    });
+
+    it('asleep: offers the choices and saves one', async () => {
+      (window.clubhouse.agent as any).getContextWindowOptions = vi.fn().mockResolvedValue(claudeContextWindowOptions('opus'));
+      renderSettings({ status: 'sleeping' });
+      const select = await screen.findByRole('combobox', { name: 'Working context' });
+      fireEvent.change(select, { target: { value: '300000' } });
+      await waitFor(() => expect(window.clubhouse.agent.updateDurableConfig).toHaveBeenCalledWith(expect.anything(), expect.anything(), { contextWindow: '300000' }));
+    });
   });
 
   describe('header', () => {

@@ -25,7 +25,10 @@ import { probeCopilotModels, type ModelProbeContext } from './model-probes';
 import { homePath, parseModelChoicesFromHelp, validateHookUrl, buildHookCurlCommand, mergeHookEntries, parseJsonlFile } from './shared';
 import { isClubhouseHookEntry } from '../services/config-pipeline';
 import { appLog } from '../services/log-service';
-import { getShellEnvironment } from '../util/shell';
+import { buildCliSpawnEnv, getShellEnvironment } from '../util/shell';
+import { copilotContextWindowOptions, type ContextWindowOptions } from '../../shared/context-window';
+import type { ListModelsOptions } from './types';
+import { testModelProbesDisabled } from './shared';
 import { copilotSessionInCwd, findCopilotRunSession, findCopilotTranscript, hasCopilotSession, listCopilotSessions } from './copilot-session-store';
 
 const execFileAsync = promisify(execFile);
@@ -135,6 +138,17 @@ export class CopilotCliProvider extends BaseProvider implements HookCapable, Hea
     return probeCopilotModels(ctx);
   }
 
+  /** Tiers are only in the SDK's models.list, which needs a login and sends no prompt. */
+  async getContextWindowOptions(model: string | undefined, opts?: ListModelsOptions): Promise<ContextWindowOptions> {
+    // Tiers depend on the model, so no process for a model that has none to look up.
+    if (!model || model === 'default' || model === 'auto') return copilotContextWindowOptions(model, null);
+    const catalog = testModelProbesDisabled() ? null : await this.cachedContextCatalog(opts, async () => {
+      const { readCopilotTierCatalog } = await import('../chat/copilot/driver');
+      return readCopilotTierCatalog(this.findBinary(), buildCliSpawnEnv(opts?.env));
+    });
+    return copilotContextWindowOptions(model, catalog);
+  }
+
   /** Fallback when the ACP handshake is unavailable. */
   protected readonly modelFetchConfig = {
     args: ['--help'],
@@ -214,6 +228,7 @@ export class CopilotCliProvider extends BaseProvider implements HookCapable, Hea
     if (opts.model && opts.model !== 'default') {
       args.push('--model', opts.model);
     }
+    if (opts.contextWindow) args.push('--context', opts.contextWindow);
 
     if (opts.allowedTools && opts.allowedTools.length > 0) {
       for (const tool of opts.allowedTools) {

@@ -1230,4 +1230,18 @@ describe('CopilotCliProvider', () => {
     });
   });
 
+
+  describe('context choice (#2660)', () => {
+    it('passes --context only when there is a choice', async () => {
+      const { args } = await provider.buildSpawnCommand({ cwd: '/p', contextWindow: 'long_context' });
+      expect(args.slice(args.indexOf('--context'), args.indexOf('--context') + 2)).toEqual(['--context', 'long_context']);
+      expect((await provider.buildSpawnCommand({ cwd: '/p' })).args).not.toContain('--context');
+    });
+
+    it('asks for a model first, without reading the catalog', async () => {
+      for (const model of ['default', 'auto', undefined]) {
+        expect(await provider.getContextWindowOptions(model)).toMatchObject({ configurable: false, state: 'pick_model' });
+      }
+    });
+  });
 });

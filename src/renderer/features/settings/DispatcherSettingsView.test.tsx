@@ -1,3 +1,4 @@
+import { claudeContextWindowOptions } from '../../../shared/context-window';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import type { DispatcherState } from '../../../shared/dispatcher-types';
@@ -170,5 +171,27 @@ describe('DispatcherSettingsView', () => {
     expect((on as HTMLButtonElement).disabled).toBe(false);
     await act(async () => { fireEvent.click(on); });
     expect(window.clubhouse.dispatcher.setEnabled).toHaveBeenCalledWith(false);
+  });
+});
+
+describe('context choice (#2660)', () => {
+  it('saves the choice for the next start, and clears it with no choice', async () => {
+    window.clubhouse.agent.getContextWindowOptions = vi.fn(async () => claudeContextWindowOptions('opus')) as never;
+    state = ON;
+    render(<DispatcherSettingsView />);
+    const select = await screen.findByRole('combobox', { name: 'Working context' });
+    fireEvent.change(select, { target: { value: '300000' } });
+    await waitFor(() => expect(window.clubhouse.agent.updateDurableConfig).toHaveBeenCalledWith(expect.anything(), expect.anything(), { contextWindow: '300000' }));
+    fireEvent.change(select, { target: { value: '' } });
+    await waitFor(() => expect(window.clubhouse.agent.updateDurableConfig).toHaveBeenCalledWith(expect.anything(), expect.anything(), { contextWindow: null }));
+    expect(screen.getByText(/next time the agent starts/)).toBeTruthy();
+  });
+
+  it('says why when the CLI offers none', async () => {
+    window.clubhouse.agent.getContextWindowOptions = vi.fn(async () => ({ configurable: false, state: 'unsupported', label: 'Context window', reason: 'This model has one size, 272K.' })) as never;
+    state = ON;
+    render(<DispatcherSettingsView />);
+    expect(await screen.findByText('This model has one size, 272K.')).toBeTruthy();
+    expect(screen.queryByRole('combobox', { name: 'Context window' })).toBeNull();
   });
 });

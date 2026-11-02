@@ -25,6 +25,8 @@ import { Button } from '../../../components/Button';
 import { Toggle } from '../../../components/Toggle';
 import { useEffectiveOrchestrators } from '../../../hooks/useEffectiveOrchestrators';
 import { useModelOptions } from '../../../hooks/useModelOptions';
+import { useContextWindowOptions } from '../../../hooks/useContextWindowOptions';
+import { ContextWindowSelect, contextSummary, contextWindowHelp, formatContextChoice } from '../ContextWindowField';
 import { getPersonaTemplate } from '../../personas';
 import { useAgentSettingsPages } from '../agentSettingsPages';
 import { buildOrchestratorOptions } from '../orchestrator-options';
@@ -267,6 +269,11 @@ export function SettingsCard({ agent, chat, projectPath, provider }: {
   const modelValue = modelId && modelId !== 'default' ? modelId : 'default';
   const modelChoices = modelOptions.some((o) => o.id === modelValue) ? modelOptions : [...modelOptions, { id: modelValue, label: modelValue }];
 
+  // Only read while the row can change, so a closed card or an awake agent asks nothing of the CLI.
+  const contextOptions = useContextWindowOptions(editing && open, projectPath, orchestrator, modelValue);
+  // What the session reports now, kept apart from the saved next-start choice.
+  const contextNow = !asleep && chat ? contextSummary(chat.contextLimits, chat.usage.context?.size) : null;
+
   const allOrchestrators = useOrchestratorStore((s) => s.allOrchestrators);
   const { effectiveOrchestrators } = useEffectiveOrchestrators(local ? projectPath : undefined);
   const cliOptions = useMemo(
@@ -327,6 +334,22 @@ export function SettingsCard({ agent, chat, projectPath, provider }: {
     },
     // Effort lives in the chat session; the composer chip changes it.
     ...(effort ? [{ id: 'effort', label: 'Effort', editable: 'never' as const, value: effort }] : []),
+    ...(contextNow ? [{ id: 'context-now', label: 'Context now', editable: 'never' as const, value: contextNow }] : []),
+    ...(saved?.contextWindow && !asleep ? [{ id: 'context-saved', label: 'Context next start', editable: 'never' as const, value: formatContextChoice(saved.contextWindow) }] : []),
+    ...(editing ? [{
+      id: 'context', label: contextOptions?.label ?? 'Context', editable: 'sleeping' as const,
+      control: (
+        <span title={contextWindowHelp(contextOptions)}>
+          <ContextWindowSelect
+            options={contextOptions}
+            value={saved?.contextWindow}
+            disabled={busy('context')}
+            className={SELECT_CLASS}
+            onChange={(v) => void save('context', { contextWindow: v })}
+          />
+        </span>
+      ),
+    }] : []),
     {
       id: 'access', label: 'Access', editable: 'sleeping', value: access,
       control: editing && permissionsSupported ? (
@@ -382,6 +405,7 @@ export function SettingsCard({ agent, chat, projectPath, provider }: {
           </CardRow>
         );
       })}
+      {saved?.contextWindowNotice && <CardNote><span data-testid="details-settings-context-notice">{saved.contextWindowNotice}</span></CardNote>}
       {anyLocked && <CardNote><span id={hintId} data-testid="details-settings-locked-hint">{LOCKED_HINT}</span></CardNote>}
       {unreadable && <CardNote><span data-testid="details-settings-unreadable">Couldn’t read this agent’s settings. Try All settings.</span></CardNote>}
       {anyControl && <CardNote><span data-testid="details-settings-next-wake">{NEXT_WAKE_NOTE}</span></CardNote>}

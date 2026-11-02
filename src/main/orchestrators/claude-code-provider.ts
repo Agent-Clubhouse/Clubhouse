@@ -1,3 +1,4 @@
+import { claudeContextWindowOptions, type ContextWindowOptions } from '../../shared/context-window';
 import * as fs from 'fs';
 import { levelFromClaudeMode } from '../chat/claude/permission-mode';
 import * as fsp from 'fs/promises';
@@ -128,6 +129,11 @@ export class ClaudeCodeProvider extends BaseProvider implements HookCapable, Hea
     return probeClaudeModels(ctx);
   }
 
+  /** Built without a process: Claude's handshake lists no sizes, and it caps a size itself. */
+  async getContextWindowOptions(model: string | undefined): Promise<ContextWindowOptions> {
+    return claudeContextWindowOptions(model);
+  }
+
   /**
    * Claude also takes a listed model's resolved id, a family alias (`opus`,
    * `opusplan`…) and a `[1m]` long-context suffix on either (`opus[1m]`).
@@ -178,6 +184,8 @@ export class ClaudeCodeProvider extends BaseProvider implements HookCapable, Hea
     if (opts.model && opts.model !== 'default') {
       args.push('--model', opts.model);
     }
+    // A flag rather than /autocompact, which saves to the user's own settings (#2660).
+    if (opts.contextWindow) args.push('--autocompact', opts.contextWindow);
 
     if (opts.allowedTools && opts.allowedTools.length > 0) {
       for (const tool of opts.allowedTools) {

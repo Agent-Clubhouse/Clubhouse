@@ -1,3 +1,4 @@
+import type { ContextWindowOptions } from '../shared/context-window';
 import { ipcRenderer } from 'electron';
 import { IPC } from '../shared/ipc-channels';
 import type { AgentHookEvent, AgentSleepInfo, DurableAgentConfig, DurableConfigUpdates, DurableCreationEvent, DurableWorktreeOptions, DeleteResult, HelperCascadeResult, HelperDeleteChoice, HelperDisposeChecks, HelperDisposeDecision, HelperDisposeRequest, HelperDisposeResult, HelperInProject, HelperStartDecisionResult, HelperStartRequest, StartDurableCreationParams } from '../shared/types';
@@ -199,6 +200,8 @@ export const agent = {
 
   getModelOptions: (projectPath: string, orchestrator?: string) =>
     ipcRenderer.invoke(IPC.AGENT.GET_MODEL_OPTIONS, projectPath, orchestrator),
+  getContextWindowOptions: (projectPath: string, orchestrator?: string, model?: string): Promise<ContextWindowOptions> =>
+    ipcRenderer.invoke(IPC.AGENT.GET_CONTEXT_WINDOW_OPTIONS, projectPath, orchestrator, model),
 
   checkOrchestrator: (projectPath?: string, orchestrator?: string) =>
     ipcRenderer.invoke(IPC.AGENT.CHECK_ORCHESTRATOR, projectPath, orchestrator),

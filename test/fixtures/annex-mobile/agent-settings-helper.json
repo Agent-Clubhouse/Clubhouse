@@ -173,6 +173,57 @@
           "editable": "sleeping",
           "value": "violet"
         },
+        "contextWindow": {
+          "applies": [
+            "launch",
+            "resume"
+          ],
+          "choices": [
+            {
+              "id": "100000",
+              "label": "100K",
+              "tokens": 100000
+            },
+            {
+              "id": "200000",
+              "label": "200K",
+              "tokens": 200000
+            },
+            {
+              "id": "300000",
+              "label": "300K",
+              "tokens": 300000
+            },
+            {
+              "id": "500000",
+              "label": "500K",
+              "tokens": 500000
+            },
+            {
+              "id": "750000",
+              "label": "750K",
+              "tokens": 750000
+            },
+            {
+              "id": "1000000",
+              "label": "1M",
+              "tokens": 1000000
+            }
+          ],
+          "configurable": true,
+          "costNote": "A larger size sends more history with each message, so long sessions use more tokens. Your plan or the model can cap it; a running session shows what it got.",
+          "defaultLabel": "Auto",
+          "defaultTokens": null,
+          "description": "How much conversation Claude Code keeps before it compacts. This doesn't change the model's own context window, and a lower value compacts sooner. It compacts a little below this size.",
+          "editable": "sleeping",
+          "kind": "working_window",
+          "label": "Working context",
+          "maxTokens": 1000000,
+          "notice": null,
+          "reason": null,
+          "state": null,
+          "value": null
+        },
         "emoji": {
           "editable": "sleeping",
           "value": null

@@ -11,6 +11,7 @@ import { appLog } from './log-service';
 import { applyAgentDefaults, readProjectAgentDefaults } from './agent-settings-service';
 import { tagError } from '../telemetry/types';
 import { resolveOrchestrator } from './agent-system';
+import { contextWindowCheck } from './context-window';
 import { pathExists } from './fs-utils';
 import { isInsideGitRepo } from './git-service';
 import { stepUnderFlow } from '../telemetry/workspace';
@@ -1159,6 +1160,45 @@ export function assertPersonaAllowed(projectPath: string, persona: string | unde
   }
 }
 
+/**
+ * The saved context choice after an update (#2660). A new choice must be one
+ * the model offers. A new model or CLI keeps the choice only while it's still
+ * offered, and otherwise clears it and says why. Every setting path comes through here.
+ */
+async function applyContextWindowUpdate(
+  projectPath: string,
+  agent: DurableAgentConfig,
+  updates: DurableConfigUpdates,
+  modelChanged: boolean,
+): Promise<void> {
+  if (updates.contextWindow === null) {
+    delete agent.contextWindow;
+    delete agent.contextWindowNotice;
+    return;
+  }
+  const wanted = updates.contextWindow ?? agent.contextWindow;
+  if (!wanted || (updates.contextWindow === undefined && !modelChanged)) return;
+  const refusal = await contextWindowCheck(projectPath, agent.orchestrator, agent.model, wanted);
+  if (updates.contextWindow !== undefined) {
+    if (refusal.state !== 'ok') throw new Error(refusal.message);
+    agent.contextWindow = wanted;
+    delete agent.contextWindowNotice;
+  } else if (refusal.state === 'refused') {
+    delete agent.contextWindow;
+    agent.contextWindowNotice = refusal.message;
+  }
+}
+
+/** A launch found the saved context choice no longer offered (#2660): clear it and say why. */
+export async function clearContextWindow(projectPath: string, agentId: string, notice: string): Promise<void> {
+  const { agents, agentsById } = await readAgentsEntry(projectPath);
+  const agent = agentsById.get(agentId);
+  if (!agent?.contextWindow) return;
+  delete agent.contextWindow;
+  agent.contextWindowNotice = notice;
+  await writeAgents(projectPath, agents);
+}
+
 export async function updateDurableConfig(
   projectPath: string,
   agentId: string,
@@ -1181,6 +1221,11 @@ export async function updateDurableConfig(
       // Every setting path comes through here: full settings, the card, the phone.
       delete agent.lastSessionId;
       if (updates.model === undefined) delete agent.model;
+      // A value only means something to the CLI it was chosen for.
+      if (agent.contextWindow && updates.contextWindow === undefined) {
+        agent.contextWindowNotice = 'Cleared the saved context choice, because it was for another CLI.';
+        delete agent.contextWindow;
+      }
       // Older entries don't say whose they are; after this, nothing else can tell.
       if (previous) {
         for (const session of agent.sessionHistory ?? []) session.orchestrator ??= previous;
@@ -1188,6 +1233,7 @@ export async function updateDurableConfig(
     }
     agent.orchestrator = updates.orchestrator;
   }
+  const modelBefore = agent.model;
   if (updates.model !== undefined) {
     if (updates.model && updates.model !== 'default') {
       agent.model = updates.model;
@@ -1195,6 +1241,7 @@ export async function updateDurableConfig(
       delete agent.model;
     }
   }
+  await applyContextWindowUpdate(projectPath, agent, updates, modelBefore !== agent.model);
   if (updates.freeAgentMode !== undefined) {
     if (updates.freeAgentMode) {
       agent.freeAgentMode = true;

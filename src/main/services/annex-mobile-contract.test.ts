@@ -11,6 +11,7 @@
  * `npm run fixtures:annex-mobile` rewrites the files; this suite (and
  * `npm run fixtures:annex-mobile -- --check`) fails when they are stale.
  */
+import { CLAUDE_WORKING_WINDOW_NOTE } from '../../shared/context-window';
 import { describe, it, expect, beforeAll, afterAll, beforeEach, vi } from 'vitest';
 import fs from 'fs';
 import path from 'path';
@@ -39,6 +40,8 @@ const W = vi.hoisted(() => ({
   // The app-wide Dispatcher (#2533): off unless a test turns it on.
   dispatcher: { flagOn: false, enabled: false, newLayout: true },
   dispatcherListeners: new Set<(state: any) => void>(),
+  // What the CLI offers for the model (#2660); a case sets it, else Claude's.
+  contextOptions: null as null | Record<string, unknown>,
 }));
 const DISPATCHER_PATH = vi.hoisted(() => '/Users/me/.clubhouse/dispatcher');
 
@@ -132,7 +135,18 @@ vi.mock('./agent-config', () => {
     listDurable: async (projectPath: string) => W.durables[projectPath] ?? [],
     readAgentIconData: async (icon: string) => (icon ? 'data:image/png;base64,R0lGODlhAQABAAAAACw=' : null),
     getDurableConfig: async (projectPath: string, id: string) => find(projectPath, id),
-    updateDurableConfig: async (projectPath: string, id: string, updates: Record<string, unknown>) => { Object.assign(find(projectPath, id) ?? {}, updates); },
+    updateDurableConfig: async (projectPath: string, id: string, updates: Record<string, unknown>) => {
+      const agent = find(projectPath, id) ?? {};
+      Object.assign(agent, updates);
+      // agent-config's own rule (its tests cover it): null clears; a choice the new model lacks clears with a notice.
+      if (agent.contextWindow === null) { delete agent.contextWindow; delete agent.contextWindowNotice; }
+      if (updates.contextWindow) delete agent.contextWindowNotice;
+      const offered = W.contextOptions?.choices as Array<{ id: string }> | undefined;
+      if (updates.contextWindow === undefined && agent.contextWindow && offered && !offered.some((c) => c.id === agent.contextWindow)) {
+        agent.contextWindowNotice = `${agent.contextWindow} isn't one this model offers.`;
+        delete agent.contextWindow;
+      }
+    },
     updateDurable: async (projectPath: string, id: string, updates: Record<string, unknown>) => { Object.assign(find(projectPath, id) ?? {}, updates); },
     // The orchestration policy service's own writes (#2228).
     setOrchestrationConfig: async (projectPath: string, id: string, config?: Record<string, unknown>) => {
@@ -223,6 +237,7 @@ vi.mock('./agent-system', () => ({
   checkAvailability: async (_path: string, id: string) => (id === 'codex-cli' ? { available: false, error: 'Codex CLI not found' } : { available: true }),
   resolveOrchestrator: async (_path: string, id?: string) => ({
     id: id ?? 'claude-code',
+    getContextWindowOptions: async (model?: string) => W.contextOptions ?? (await import('../../shared/context-window')).claudeContextWindowOptions(model),
     getModelOptions: async () => (id === 'codex-cli'
       ? [{ id: 'default', label: 'Default' }, { id: 'gpt-5', label: 'GPT-5' }]
       : [{ id: 'default', label: 'Default' }, { id: 'opus', label: 'Opus' }, { id: 'sonnet', label: 'Sonnet' }]),
@@ -392,7 +407,8 @@ function envelope(seq: number, type: string, data: Record<string, unknown>, extr
 const LIVE_TRANSCRIPT: ChatEvent[] = [
   envelope(1, 'session_started', { driver: 'claude_agent_sdk', provider: 'claude-code', cwd: '/work/app/.clubhouse/agents/planner', resumed: false, model: 'opus', level: 'ask', capabilities: CHAT_CAPS }),
   envelope(2, 'session_info', { title: 'Wire the IPC', models: [{ id: 'opus', label: 'Opus', description: 'Most capable', costHint: '1x' }, { id: 'sonnet', label: 'Sonnet' }],
-    efforts: ['low', 'medium', 'high'], levelNames: { ask: 'default', plan: 'plan' }, mcpServers: [{ name: 'github', status: 'connected' }] }),
+    efforts: ['low', 'medium', 'high'], levelNames: { ask: 'default', plan: 'plan' }, mcpServers: [{ name: 'github', status: 'connected' }],
+    contextLimits: { effectiveTokens: 300000, compactAtTokens: 267000, reservedTokens: 33000, note: CLAUDE_WORKING_WINDOW_NOTE } }),
   envelope(3, 'model_changed', { modelId: 'opus', effort: 'high', effortIsDefault: false }),
   envelope(4, 'turn_started', { trigger: 'prompt' }, { turnId: 'turn_1' }),
   envelope(5, 'user_message', { messageId: 'msg_1', clientCommandId: 'cmd_photo', source: 'annex', delivery: 'prompt', content: [
@@ -1345,6 +1361,89 @@ describe('Annex mobile contract fixtures', { timeout: TEST_TIMEOUT_MS }, () => {
         required: MOBILE_COMMAND_FIELDS[type].filter((k) => !isOptionalCommandField(type, k)),
         ...(type === 'agent.update' && { nullable: [...NULLABLE_ON_UPDATE], atLeastOne: MOBILE_COMMAND_FIELDS[type].filter((k) => k !== 'agentId') }),
       }])),
+    });
+  });
+
+  it('context choices: each kind, current and pending, resets and the Dispatcher (#2660)', async () => {
+    const shared = await import('../../shared/context-window');
+    const settingsOf = async (id: string) => (await exchange('GET', `/api/v1/mobile/agents/${id}/settings`));
+    const sleepy = W.durables[APP].find((d) => d.id === 'durable_sleepy')!;
+    const live = W.durables[APP].find((d) => d.id === 'durable_chat')!;
+    sleepy.orchestrator = 'claude-code';
+    sleepy.model = 'opus';
+    const astra = { slug: 'gpt-6-astra', contextWindow: 272000, maxContextWindow: 872000, effectivePercent: 95 };
+    const tiered = { id: 'm', hasLongContext: true, standardTokens: 200000, longTokens: 900000, standardInputPrice: 1, longInputPrice: 2 };
+    const cases: Record<string, unknown> = {};
+    const kinds: Array<[string, unknown]> = [
+      ['working_window', shared.claudeContextWindowOptions('opus')],
+      ['context_window', shared.codexContextWindowOptions(astra)],
+      ['tier', shared.copilotContextWindowOptions('m', [tiered])],
+      ['unsupported', shared.codexContextWindowOptions({ ...astra, maxContextWindow: 272000 })],
+      ['pick_model', shared.copilotContextWindowOptions('auto', [tiered])],
+      ['unavailable', shared.copilotContextWindowOptions('m', null)],
+    ];
+    for (const [name, options] of kinds) {
+      W.contextOptions = options as Record<string, unknown>;
+      const res = await settingsOf('durable_sleepy');
+      cases[name] = res.response.body.settings.contextWindow;
+    }
+    expect(cases.working_window).toMatchObject({ kind: 'working_window', configurable: true, editable: 'sleeping', value: null, applies: ['launch', 'resume'], state: null });
+    expect(cases.unsupported).toMatchObject({ kind: null, configurable: false, editable: 'never', state: 'unsupported', choices: [] });
+
+    // A saved choice the catalog can't confirm: still saved, not applied, not in choices.
+    sleepy.contextWindow = 'long_context';
+    cases.unavailableWithSavedChoice = (await settingsOf('durable_sleepy')).response.body.settings.contextWindow;
+    delete sleepy.contextWindow;
+    W.contextOptions = null;
+
+    // Current and pending: the running session as reported, and the next start's choice.
+    live.contextWindow = '500000';
+    const running = (await settingsOf('durable_chat')).response.body;
+    const chat = (await exchange('GET', '/api/v1/mobile/agents/durable_chat/chat')).response.body;
+    expect(running.settings.contextWindow).toMatchObject({ value: '500000', editable: 'sleeping' });
+    expect(running.sleeping).toBe(false);
+    expect(chat.chatControls.context).toEqual({ effectiveTokens: 300000, compactAtTokens: 267000, reservedTokens: 33000, note: shared.CLAUDE_WORKING_WINDOW_NOTE });
+    const currentAndPending = { pending: running.settings.contextWindow, current: chat.chatControls.context };
+    delete live.contextWindow;
+
+    await command('accepted contextWindow', { type: 'agent.update', agentId: 'durable_sleepy', contextWindow: '500000' });
+    expect(sleepy.contextWindow).toBe('500000');
+    await command('accepted contextWindow null reset', { type: 'agent.update', agentId: 'durable_sleepy', contextWindow: null });
+    expect(sleepy).not.toHaveProperty('contextWindow');
+    await command('invalid_context_window', { type: 'agent.update', agentId: 'durable_sleepy', contextWindow: '123' });
+    await command('agent_running (contextWindow)', { type: 'agent.update', agentId: 'durable_chat', contextWindow: '500000' });
+
+    sleepy.contextWindow = '500000';
+    W.contextOptions = shared.claudeContextWindowOptions('claude-haiku-4-5') as unknown as Record<string, unknown>;
+    const reset = await command('accepted model change resets contextWindow', { type: 'agent.update', agentId: 'durable_sleepy', model: 'sonnet' });
+    expect(reset.body.result.contextWindowReset).toEqual({ previous: '500000', reason: '500000 isn\'t one this model offers.' });
+    expect(reset.body.result.settings.contextWindow).toMatchObject({ value: null, notice: '500000 isn\'t one this model offers.' });
+    delete sleepy.contextWindowNotice;
+    W.contextOptions = null;
+
+    // The Dispatcher: changes at any time, for the next start, and nothing else unlocks.
+    const wasFlag = W.dispatcher.flagOn; const wasOn = W.dispatcher.enabled;
+    W.dispatcher.flagOn = true; W.dispatcher.enabled = true;
+    const dispatcherAgent = W.durables[DISPATCHER_PATH][0];
+    const wasCli = dispatcherAgent.orchestrator; const wasModel = dispatcherAgent.model;
+    dispatcherAgent.orchestrator = 'claude-code'; dispatcherAgent.model = 'opus';
+    cases.dispatcher = (await settingsOf('durable_dispatcher')).response.body.settings.contextWindow;
+    expect(cases.dispatcher).toMatchObject({ editable: 'always', applies: ['launch', 'resume'] });
+    await command('accepted contextWindow (Dispatcher)', { type: 'agent.update', agentId: 'durable_dispatcher', contextWindow: '300000' });
+    await command('accepted contextWindow null reset (Dispatcher)', { type: 'agent.update', agentId: 'durable_dispatcher', contextWindow: null });
+    await command('invalid_context_window (Dispatcher)', { type: 'agent.update', agentId: 'durable_dispatcher', contextWindow: '123' });
+    const locked = await command('dispatcher_locked (name, with contextWindow)', { type: 'agent.update', agentId: 'durable_dispatcher', contextWindow: '300000', name: 'Boss' });
+    expect(locked.status).toBe(409);
+    Object.assign(dispatcherAgent, { orchestrator: wasCli, model: wasModel });
+    W.dispatcher.flagOn = wasFlag; W.dispatcher.enabled = wasOn;
+
+    fixtures.set('agent-settings-context-window.json', {
+      direction: 'desktop-to-phone',
+      field: 'settings.contextWindow',
+      cases,
+      currentAndPending,
+      // The existing chat `notice` event, sent when a start doesn't use the saved choice.
+      notAppliedNotice: envelope(1, 'notice', { level: 'warn', code: 'context_window_not_applied', message: 'Started without the saved context choice, and cleared it. 500000 isn\'t one this model offers.' }),
     });
   });
 

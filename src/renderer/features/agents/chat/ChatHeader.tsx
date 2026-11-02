@@ -115,6 +115,8 @@ export function chatUsage(state: ChatViewState): PaneUsage | null {
   if (ctxPct === null && limits.length === 0) return null;
   const lines: string[] = [];
   if (ctxPct !== null && ctx) lines.push(`Context ${ctxPct}%: ${formatTokens(ctx.used)} of ${formatTokens(ctx.size)} ${ctx.window === 'input' ? 'input ' : ''}tokens`);
+  if (state.contextLimits?.compactAtTokens) lines.push(`Compacts at ${formatTokens(state.contextLimits.compactAtTokens)}`);
+  if (state.contextLimits?.reservedTokens) lines.push(`${formatTokens(state.contextLimits.reservedTokens)} kept in reserve`);
   for (const l of limits) {
     const reset = l.resetsAt ? `, resets ${new Date(l.resetsAt).toLocaleString([], { weekday: 'short', hour: 'numeric', minute: '2-digit' })}` : '';
     lines.push(`${limitName(l.window)} limit: ${limitLabel(l)}${reset}`);

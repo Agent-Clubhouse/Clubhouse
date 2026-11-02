@@ -2515,6 +2515,7 @@ async function handleMobileCapabilitiesRoute(ctx: AnnexRouteContext): Promise<vo
     events: { transport: 'annex-websocket', replayRequest: 'mobile:replay', queueState: 'queue_state' },
     createOptions: { version: 1, path: '/api/v1/mobile/projects/{projectId}/create-options' },
     agentSettings: { version: 1, path: '/api/v1/mobile/agents/{agentId}/settings' },
+    contextWindow: { version: 1 },
     // Every agent's live state in one read, for catching up after a reconnect.
     agentState: { version: 1, path: '/api/v1/mobile/agents/state' },
     helperRequests: { version: 1, snapshotField: 'helperRequests', commands: ['helper.approve', 'helper.decline'] },

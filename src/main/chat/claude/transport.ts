@@ -24,6 +24,8 @@ export interface ClaudeTransportOptions {
   permissionMode: ClaudePermissionMode;
   model?: string;
   effort?: ClaudeEffort;
+  /** `--autocompact`: the working window in tokens (#2660). */
+  autocompact?: string;
   /** MCP servers by name, in Claude's `mcpServers` config shape (stdio / sse / http). */
   mcpServers?: Record<string, Record<string, unknown>>;
   /** Resume this native session id. */
@@ -96,6 +98,8 @@ export interface ClaudeTransport {
   setEffort(effort: ClaudeEffort | null): Promise<void>;
   /** The model and effort in effect (`get_settings` → `applied`). */
   appliedSettings(): Promise<ClaudeAppliedSettings>;
+  /** The raw `get_context_usage` reply. Local: it sends nothing to the model. */
+  contextUsage?(): Promise<unknown>;
   /** The raw `get_usage` reply (session totals and plan windows), skipping the transcript scan. */
   planUsage?(): Promise<unknown>;
   /** End the session: closes stdin and lets the CLI exit, killing it if it doesn't. */
