@@ -145,6 +145,22 @@ When a durable agent's process exits (stopped, idle-slept, crashed; terminal or 
 
 ## Live events and replay
 
+### Order on connect
+
+A socket's first frame is always its `snapshot`, or `{type:"error",payload:{message:"snapshot_failed"}}` if one can't be built. Nothing comes before it, not even a reply to something you've already sent. Everything from the build follows, in order, then live frames.
+
+After `snapshot_failed` the socket stays open, and replies to what you send still arrive. Events don't: without a snapshot you have nothing to read them against. They're held on the desktop, up to 10,000 frames or 32 MiB. Past that, what's held is dropped but `lastSeq` stays where it was, so you'll see a jump in seq after the snapshot: replay as for any gap. A successful try sends the snapshot and then what's held. Reconnect whenever your own grace period ends.
+
+Trying again is per desktop, not per socket, so several phones or quick reconnects don't add work. Inside the window a connecting phone gets `snapshot_failed` straight away and nothing is built. When the window ends, one build serves every socket waiting, each with its own `lastSeq`.
+
+- If building failed, the window is 2, 8 and 30 seconds and then a minute each time, until a build works. Changes wait for the end of the window.
+- A snapshot too large to send (over 16 MiB) is never sent. The window is 5 minutes, and a change to what a snapshot shows brings a look at most every 30 seconds. A connected phone keeps what it has until one fits.
+
+The desktop never closes a socket for any of this. A phone can't rely on a close code: on iOS, `URLSession` reports 1013 as 1005.
+
+- The first snapshot's `lastSeq` is the seq when the socket connected. Events during the build follow it with no gap. The snapshot's state may already include some of them, so applying one must be safe.
+- A later `snapshot`'s `lastSeq` says what its state includes. If what it shows changed while it was being built, it's the seq from before that, so a phone that has seen the change drops it as a duplicate, and a fresh `snapshot` follows within a moment. `pty:data` and `chat:event` don't count, because they don't change a snapshot's fields. While a socket waits for its first snapshot, only the newest refresh is kept.
+
 ### Authoritative local queue
 
 Chat snapshots add `queuedMessageIds: string[]`, `queueStateSeq: number`, and `queueRemovalSupported: boolean`. The IDs are the last published state of the runtime-owned queue, independent of history pagination. `queueStateSeq` is the session-local sequence of that state (zero before the first queue event), not the global Annex replay cursor. Native provider queues and historical sessions return `[]`, `0`, and `false`; do not offer local removal for provider-managed submissions.

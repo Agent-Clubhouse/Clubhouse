@@ -3123,6 +3123,637 @@ describe('annex-server', () => {
     }, 30_000);
   });
 
+  // ---------------------------------------------------------------------------
+  // A socket's first frame is its snapshot; what happens during the build follows
+  // ---------------------------------------------------------------------------
+
+  describe('frames during the first snapshot', () => {
+    let finishList: (projects: unknown[]) => void;
+    let failList: (err: Error) => void;
+
+    function openDuringBuild() {
+      vi.mocked(projectStore.list).mockImplementationOnce(() => new Promise((resolve, reject) => {
+        finishList = resolve as never;
+        failList = reject;
+      }) as never);
+      const ws = Object.assign(new EventEmitter(), { readyState: 1, send: vi.fn(), ping: () => {}, close: vi.fn() });
+      annexServer._testing.wsAuthTypes.set(ws as never, 'bearer');
+      annexServer._testing.wss!.clients.add(ws as never);
+      annexServer._testing.wss!.emit('connection', ws);
+      return ws;
+    }
+
+    const sent = (ws: { send: ReturnType<typeof vi.fn> }) => ws.send.mock.calls.map(([data]) => JSON.parse(data as string));
+    const sequenced = (seq: number) => expect.objectContaining({ type: 'chat:event', seq });
+    const liveEvent = () => _eventReplay.getLastSeq() + 1;
+
+    beforeEach(async () => {
+      vi.mocked(pluginManifestRegistry.listAllManifests).mockReturnValue([]);
+      const { groupProjectRegistry } = await import('./group-project-registry');
+      vi.mocked(groupProjectRegistry.list).mockResolvedValue([]);
+      const themeService = await import('./theme-service');
+      vi.mocked(themeService.getSettings).mockReturnValue({ themeId: 'catppuccin-mocha' } as any);
+      vi.mocked(projectStore.list).mockReturnValue([]);
+      annexServer.start();
+      await new Promise((r) => setTimeout(r, 50));
+      registerChatRuntime('a', { getState: () => 'idle' } as never);
+    });
+
+    afterEach(() => clearChatRuntimes());
+
+    function publish() {
+      publishChatEvent({ agentId: 'a', type: 'turn_ended' } as never);
+    }
+
+    it('sends nothing before the snapshot, then every event after its lastSeq, in order', async () => {
+      const ws = openDuringBuild();
+      const before = _eventReplay.getLastSeq();
+      const first = liveEvent();
+      publish();
+      publish();
+      expect(ws.send).not.toHaveBeenCalled();
+
+      finishList([]);
+      await vi.waitFor(() => expect(ws.send).toHaveBeenCalled());
+
+      const frames = sent(ws);
+      expect(frames[0].type).toBe('snapshot');
+      // The build read state after these two began, so they come after it, not inside its cursor.
+      expect(frames[0].payload.lastSeq).toBe(before);
+      expect(frames.slice(1)).toEqual([sequenced(first), sequenced(first + 1)]);
+    });
+
+    it('goes live once the snapshot is out', async () => {
+      const ws = openDuringBuild();
+      finishList([]);
+      await vi.waitFor(() => expect(ws.send).toHaveBeenCalled());
+      const next = liveEvent();
+      publish();
+      expect(sent(ws).at(-1)).toEqual(sequenced(next));
+    });
+
+    it('holds frames with no seq and direct replies in the same order', async () => {
+      const ws = openDuringBuild();
+      annexServer.broadcastThemeChanged();
+      ws.emit('message', JSON.stringify({ type: 'replay', since: _eventReplay.getLastSeq() }));
+      expect(ws.send).not.toHaveBeenCalled();
+
+      finishList([]);
+      await vi.waitFor(() => expect(ws.send).toHaveBeenCalled());
+
+      expect(sent(ws).map((f) => f.type)).toEqual(['snapshot', 'theme:changed', 'replay:start', 'replay:end']);
+    });
+
+    it('keeps only the newest refresh, with its own cursor, and no rewind', async () => {
+      const ws = openDuringBuild();
+      annexServer.broadcastSnapshotRefresh();
+      await new Promise((r) => setTimeout(r, 20));
+      publish();
+      annexServer.broadcastSnapshotRefresh();
+      await new Promise((r) => setTimeout(r, 20));
+
+      finishList([]);
+      await vi.waitFor(() => expect(ws.send).toHaveBeenCalled());
+
+      const frames = sent(ws);
+      const snapshots = frames.filter((f) => f.type === 'snapshot');
+      expect(snapshots).toHaveLength(2);
+      expect(frames[0].type).toBe('snapshot');
+      expect(frames.at(-1).type).toBe('snapshot');
+      expect(snapshots[1].payload.lastSeq).toBe(_eventReplay.getLastSeq());
+    });
+
+    it('keeps events back after a failed snapshot, retries, then sends snapshot and events in order', async () => {
+      vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+      try {
+        const ws = openDuringBuild();
+        const before = _eventReplay.getLastSeq();
+        const first = liveEvent();
+        publish();
+
+        failList(new Error('disk gone'));
+        await vi.waitFor(() => expect(ws.send).toHaveBeenCalled());
+        expect(sent(ws)).toEqual([{ type: 'error', payload: { message: 'snapshot_failed' } }]);
+
+        // Still no baseline, so live events stay back.
+        publish();
+        expect(sent(ws)).toHaveLength(1);
+
+        await vi.advanceTimersByTimeAsync(annexServer._testing.SNAPSHOT_RETRY_DELAYS_MS[0]);
+        await vi.waitFor(() => expect(sent(ws).length).toBeGreaterThan(1));
+        const frames = sent(ws);
+        expect(frames[1].type).toBe('snapshot');
+        expect(frames[1].payload.lastSeq).toBe(before);
+        expect(frames.slice(2)).toEqual([sequenced(first), sequenced(first + 1)]);
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it('answers commands during the retry, without letting events through', async () => {
+      vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+      try {
+        const ws = openDuringBuild();
+        failList(new Error('disk gone'));
+        await vi.waitFor(() => expect(ws.send).toHaveBeenCalled());
+        ws.send.mockClear();
+
+        publish();
+        ws.emit('message', JSON.stringify({ type: 'pty:input', payload: {} }));
+
+        expect(sent(ws)).toEqual([expect.objectContaining({ type: 'error' })]);
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    describe('host-wide backoff after a failed build', () => {
+      const builds = () => vi.mocked(projectStore.list).mock.calls.length;
+      const connectAgain = async () => {
+        const ws = Object.assign(new EventEmitter(), { readyState: 1, send: vi.fn(), ping: () => {}, close: vi.fn() });
+        annexServer._testing.wsAuthTypes.set(ws as never, 'bearer');
+        annexServer._testing.wss!.clients.add(ws as never);
+        annexServer._testing.wss!.emit('connection', ws);
+        await vi.waitFor(() => expect(ws.send).toHaveBeenCalled());
+        return ws;
+      };
+      const failing = () => vi.mocked(projectStore.list).mockRejectedValue(new Error('disk gone') as never);
+
+      beforeEach(() => {
+        vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] });
+      });
+      afterEach(() => {
+        vi.useRealTimers();
+      });
+
+      it('grows to at most a minute, with one build per retry however many phones wait', async () => {
+        failing();
+        const first = openDuringBuild();
+        failList(new Error('disk gone'));
+        await vi.waitFor(() => expect(first.send).toHaveBeenCalled());
+        await connectAgain();
+        await connectAgain();
+        const before = builds();
+
+        const delays = annexServer._testing.SNAPSHOT_RETRY_DELAYS_MS;
+        let expected = before;
+        for (const delay of [...delays, delays[delays.length - 1], delays[delays.length - 1]]) {
+          await vi.advanceTimersByTimeAsync(delay - 1000);
+          expect(builds()).toBe(expected);
+          await vi.advanceTimersByTimeAsync(1000);
+          expected += 1;
+          expect(builds()).toBe(expected);
+        }
+        expect(delays[delays.length - 1]).toBe(60_000);
+      });
+
+      it('answers a new connection inside the window with snapshot_failed and no build', async () => {
+        failing();
+        const first = openDuringBuild();
+        failList(new Error('disk gone'));
+        await vi.waitFor(() => expect(first.send).toHaveBeenCalled());
+        const before = builds();
+
+        const late = await connectAgain();
+
+        expect(sent(late)).toEqual([{ type: 'error', payload: { message: 'snapshot_failed' } }]);
+        expect(builds()).toBe(before);
+      });
+
+      it('does not build for a change inside the window, and the retry covers it', async () => {
+        failing();
+        const first = openDuringBuild();
+        failList(new Error('disk gone'));
+        await vi.waitFor(() => expect(first.send).toHaveBeenCalled());
+        const before = builds();
+
+        for (let i = 0; i < 10; i++) annexServer.broadcastSnapshotRefresh();
+        expect(builds()).toBe(before);
+
+        await vi.advanceTimersByTimeAsync(annexServer._testing.SNAPSHOT_RETRY_DELAYS_MS[0]);
+        expect(builds()).toBe(before + 1);
+      });
+
+      it('fans one successful retry out to everyone waiting, each with their own cursor', async () => {
+        failing();
+        const first = openDuringBuild();
+        const firstCursor = _eventReplay.getLastSeq();
+        failList(new Error('disk gone'));
+        await vi.waitFor(() => expect(first.send).toHaveBeenCalled());
+        publish();
+        const lateCursor = _eventReplay.getLastSeq();
+        const late = await connectAgain();
+        const before = builds();
+
+        vi.mocked(projectStore.list).mockReset();
+        vi.mocked(projectStore.list).mockReturnValue([] as never);
+        await vi.advanceTimersByTimeAsync(annexServer._testing.SNAPSHOT_RETRY_DELAYS_MS[0]);
+
+        expect(vi.mocked(projectStore.list).mock.calls.length).toBe(1);
+        expect(before).toBeGreaterThan(0);
+        expect(sent(first)[1].payload.lastSeq).toBe(firstCursor);
+        expect(sent(first).at(-1)).toEqual(expect.objectContaining({ type: 'chat:event' }));
+        expect(sent(late)[1].payload.lastSeq).toBe(lateCursor);
+        expect(first.close).not.toHaveBeenCalled();
+      });
+
+      it('resets once a build works, so the next failure starts short again', async () => {
+        failing();
+        const first = openDuringBuild();
+        failList(new Error('disk gone'));
+        await vi.waitFor(() => expect(first.send).toHaveBeenCalled());
+        const delays = annexServer._testing.SNAPSHOT_RETRY_DELAYS_MS;
+        await vi.advanceTimersByTimeAsync(delays[0]);
+        await vi.advanceTimersByTimeAsync(delays[1]);
+
+        vi.mocked(projectStore.list).mockReset();
+        vi.mocked(projectStore.list).mockReturnValue([] as never);
+        await vi.advanceTimersByTimeAsync(delays[2]);
+        expect(sent(first)[1].type).toBe('snapshot');
+
+        failing();
+        const next = await connectAgain();
+        expect(sent(next)[0].type).toBe('error');
+        const before = builds();
+        await vi.advanceTimersByTimeAsync(delays[0]);
+        expect(builds()).toBe(before + 1);
+      });
+
+      it('builds nothing while no one is connected, and stops when the sockets do', async () => {
+        failing();
+        const first = openDuringBuild();
+        failList(new Error('disk gone'));
+        await vi.waitFor(() => expect(first.send).toHaveBeenCalled());
+        first.readyState = 3;
+        first.emit('close', 1006, Buffer.from(''));
+        annexServer._testing.wss!.clients.delete(first as never);
+        const before = builds();
+
+        await vi.advanceTimersByTimeAsync(annexServer._testing.SNAPSHOT_RETRY_DELAYS_MS[3] * 2);
+
+        expect(builds()).toBe(before);
+      });
+
+      it('never closes a socket for failing', async () => {
+        failing();
+        const first = openDuringBuild();
+        failList(new Error('disk gone'));
+        await vi.waitFor(() => expect(first.send).toHaveBeenCalled());
+        for (const delay of annexServer._testing.SNAPSHOT_RETRY_DELAYS_MS) await vi.advanceTimersByTimeAsync(delay);
+        expect(first.close).not.toHaveBeenCalled();
+        expect(sent(first).map((f) => f.type)).toEqual(['error']);
+      });
+    });
+
+    it('stamps a refresh with the seq its live state was read at, so nothing newer is overwritten', async () => {
+      vi.mocked(projectStore.list).mockReturnValue([{ id: 'p', name: 'P', path: '/p' } as any]);
+      vi.mocked(agentConfigModule.listDurable).mockReturnValue([{ id: 'a', name: 'a', color: 'indigo', createdAt: '2025-01-01' }] as any);
+      const live = Object.assign(new EventEmitter(), { readyState: 1, send: vi.fn(), ping: () => {}, close: vi.fn() });
+      annexServer._testing.wsAuthTypes.set(live as never, 'bearer');
+      annexServer._testing.wss!.clients.add(live as never);
+      annexServer._testing.wss!.emit('connection', live);
+      await vi.waitFor(() => expect(live.send).toHaveBeenCalled());
+      live.send.mockClear();
+
+      // The agent starts while the refresh is reading disk, after the catalog would have been read.
+      let finishRead: (value: unknown) => void = () => {};
+      vi.mocked(pluginStorage.readKey).mockImplementationOnce(() => new Promise((resolve) => { finishRead = resolve; }) as never);
+      annexServer.broadcastSnapshotRefresh();
+      await new Promise((r) => setTimeout(r, 20));
+      vi.mocked(ptyManagerModule.isRunning).mockReturnValue(true);
+      publish();
+      const seqOfEvent = _eventReplay.getLastSeq();
+      finishRead(null);
+
+      await vi.waitFor(() => expect(sent(live).some((f) => f.type === 'snapshot')).toBe(true));
+      const refresh = sent(live).find((f) => f.type === 'snapshot');
+      expect(refresh.payload.lastSeq).toBe(seqOfEvent);
+      expect(refresh.payload.agents.p[0].status).toBe('running');
+    });
+
+    it('stamps a refresh that raced a state change with the seq from before, then follows with a fresh one', async () => {
+      const live = Object.assign(new EventEmitter(), { readyState: 1, send: vi.fn(), ping: () => {}, close: vi.fn() });
+      annexServer._testing.wsAuthTypes.set(live as never, 'bearer');
+      annexServer._testing.wss!.clients.add(live as never);
+      annexServer._testing.wss!.emit('connection', live);
+      await vi.waitFor(() => expect(live.send).toHaveBeenCalled());
+      live.send.mockClear();
+      const before = _eventReplay.getLastSeq();
+
+      // A quick agent spawns during the reads. A phone applies it at this seq, and replay won't repeat it.
+      let finishRead: (value: unknown) => void = () => {};
+      vi.mocked(pluginStorage.readKey).mockImplementationOnce(() => new Promise((resolve) => { finishRead = resolve; }) as never);
+      annexServer.broadcastSnapshotRefresh();
+      await new Promise((r) => setTimeout(r, 20));
+      const spawned = _eventReplay.pushEvent('agent:spawned', { id: 'q5' });
+      finishRead(null);
+
+      await vi.waitFor(() => expect(sent(live).filter((f) => f.type === 'snapshot').length).toBe(2), { timeout: 3000 });
+      const [raced, fresh] = sent(live).filter((f) => f.type === 'snapshot');
+      expect(raced.payload.lastSeq).toBe(before);
+      expect(fresh.payload.lastSeq).toBe(spawned);
+    });
+
+    it('counts an event type it does not know as a state change', async () => {
+      vi.mocked(projectStore.list).mockClear();
+      const before = _eventReplay.getLastSeq();
+      const live = Object.assign(new EventEmitter(), { readyState: 1, send: vi.fn(), ping: () => {}, close: vi.fn() });
+      annexServer._testing.wsAuthTypes.set(live as never, 'bearer');
+      annexServer._testing.wss!.clients.add(live as never);
+      annexServer._testing.wss!.emit('connection', live);
+      await vi.waitFor(() => expect(live.send).toHaveBeenCalled());
+      live.send.mockClear();
+
+      let finishRead: (value: unknown) => void = () => {};
+      vi.mocked(pluginStorage.readKey).mockImplementationOnce(() => new Promise((resolve) => { finishRead = resolve; }) as never);
+      annexServer.broadcastSnapshotRefresh();
+      await new Promise((r) => setTimeout(r, 20));
+      _eventReplay.pushEvent('some:future-event', {});
+      finishRead(null);
+
+      await vi.waitFor(() => expect(sent(live).some((f) => f.type === 'snapshot')).toBe(true));
+      expect(sent(live).find((f) => f.type === 'snapshot').payload.lastSeq).toBe(before);
+    });
+
+    it('keeps refreshes moving while an agent streams, with every event delivered and none out of order', async () => {
+      const live = Object.assign(new EventEmitter(), { readyState: 1, send: vi.fn(), ping: () => {}, close: vi.fn() });
+      annexServer._testing.wsAuthTypes.set(live as never, 'bearer');
+      annexServer._testing.wss!.clients.add(live as never);
+      annexServer._testing.wss!.emit('connection', live);
+      await vi.waitFor(() => expect(live.send).toHaveBeenCalled());
+      live.send.mockClear();
+
+      // Every build overlaps output, and each refresh must still reach a phone already past its start.
+      for (let round = 0; round < 3; round++) {
+        let finishRead: (value: unknown) => void = () => {};
+        vi.mocked(pluginStorage.readKey).mockImplementationOnce(() => new Promise((resolve) => { finishRead = resolve; }) as never);
+        annexServer.broadcastSnapshotRefresh();
+        await new Promise((r) => setTimeout(r, 10));
+        publish();
+        publish();
+        const newest = _eventReplay.getLastSeq();
+        finishRead(null);
+        await vi.waitFor(() => expect(sent(live).filter((f) => f.type === 'snapshot').length).toBe(round + 1));
+        // A phone drops a snapshot behind its cursor, and its cursor is here by now.
+        expect(sent(live).filter((f) => f.type === 'snapshot')[round].payload.lastSeq).toBe(newest);
+      }
+
+      const seqs = sent(live).filter((f) => f.type === 'chat:event').map((f) => f.seq);
+      expect(seqs).toHaveLength(6);
+      expect(seqs).toEqual(Array.from({ length: 6 }, (_, i) => seqs[0] + i));
+    });
+
+    it('does not count output as a race, or every refresh would be dropped while an agent streams', async () => {
+      vi.mocked(projectStore.list).mockClear();
+      let finishRead: (value: unknown) => void = () => {};
+      vi.mocked(pluginStorage.readKey).mockImplementationOnce(() => new Promise((resolve) => { finishRead = resolve; }) as never);
+      annexServer.broadcastSnapshotRefresh();
+      await new Promise((r) => setTimeout(r, 20));
+      publish();
+      _eventReplay.pushEvent('pty:data', { agentId: 'a', data: 'x' });
+      finishRead(null);
+      await new Promise((r) => setTimeout(r, 400));
+      expect(projectStore.list).toHaveBeenCalledTimes(1);
+    });
+
+    it('runs one refresh at a time, so an older build can\'t arrive after a newer one', async () => {
+      vi.mocked(projectStore.list).mockClear();
+      for (let i = 0; i < 5; i++) annexServer.broadcastSnapshotRefresh();
+      expect(projectStore.list).toHaveBeenCalledTimes(1);
+      await vi.waitFor(() => expect(projectStore.list).toHaveBeenCalledTimes(2));
+      await new Promise((r) => setTimeout(r, 50));
+      expect(projectStore.list).toHaveBeenCalledTimes(2);
+    });
+
+    it('sends nothing to a socket that closed during the build', async () => {
+      const ws = openDuringBuild();
+      publish();
+      ws.readyState = 3;
+      ws.emit('close', 1006, Buffer.from(''));
+
+      finishList([]);
+      await new Promise((r) => setTimeout(r, 20));
+
+      expect(ws.send).not.toHaveBeenCalled();
+    });
+
+    it('never closes a socket for holding too much, and keeps its cursor so replay can fill the jump', async () => {
+      const ws = openDuringBuild();
+      const cursor = _eventReplay.getLastSeq();
+      for (let i = 0; i < annexServer._testing.HELD_FRAMES_MAX + 1; i++) publish();
+      expect(ws.close).not.toHaveBeenCalled();
+      const next = liveEvent();
+      publish();
+
+      finishList([]);
+      await vi.waitFor(() => expect(ws.send).toHaveBeenCalled());
+
+      const frames = sent(ws);
+      expect(frames[0].payload.lastSeq).toBe(cursor);
+      expect(frames.slice(1)).toEqual([sequenced(next)]);
+    });
+
+    it('always gives a first snapshot the seq from connect, even with only chat during the build', async () => {
+      const ws = openDuringBuild();
+      const cursor = _eventReplay.getLastSeq();
+      for (let i = 0; i < 5; i++) publish();
+      finishList([]);
+      await vi.waitFor(() => expect(ws.send).toHaveBeenCalled());
+      const frames = sent(ws);
+      expect(frames[0].payload.lastSeq).toBe(cursor);
+      expect(frames.slice(1).map((f) => f.seq)).toEqual([1, 2, 3, 4, 5].map((n) => cursor + n));
+    });
+
+    describe('a snapshot too large to send', () => {
+      const oversized = () => vi.mocked(pluginStorage.readKey).mockImplementation(async ({ key, scope }: { key: string; scope: string }) => (
+        scope === 'global' && key === 'canvas-instances' ? [{ id: 'c', text: 'x'.repeat(17 * 1024 * 1024) }] : null
+      ) as never);
+      const builds = () => vi.mocked(projectStore.list).mock.calls.length;
+
+      it('is never sent: the phone hears snapshot_failed once and the socket stays open', async () => {
+        oversized();
+        const ws = openDuringBuild();
+        finishList([]);
+        await vi.waitFor(() => expect(ws.send).toHaveBeenCalled());
+
+        expect(sent(ws)).toEqual([{ type: 'error', payload: { message: 'snapshot_failed' } }]);
+        expect(ws.close).not.toHaveBeenCalled();
+      });
+
+      it('does not rebuild on the transient retry timer, only on the slow backstop', async () => {
+        vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] });
+        try {
+          oversized();
+          const ws = openDuringBuild();
+          finishList([]);
+          await vi.waitFor(() => expect(ws.send).toHaveBeenCalled());
+          const before = builds();
+
+          await vi.advanceTimersByTimeAsync(annexServer._testing.SNAPSHOT_OVERSIZE_RETRY_MS - 1000);
+          expect(builds()).toBe(before);
+          await vi.advanceTimersByTimeAsync(1000);
+          expect(builds()).toBe(before + 1);
+          expect(sent(ws)).toHaveLength(1);
+        } finally {
+          vi.useRealTimers();
+        }
+      });
+
+      const connectAgain = async () => {
+        const ws = Object.assign(new EventEmitter(), { readyState: 1, send: vi.fn(), ping: () => {}, close: vi.fn() });
+        annexServer._testing.wsAuthTypes.set(ws as never, 'bearer');
+        annexServer._testing.wss!.clients.add(ws as never);
+        annexServer._testing.wss!.emit('connection', ws);
+        await vi.waitFor(() => expect(ws.send).toHaveBeenCalled());
+        return ws;
+      };
+
+      it('does not rebuild for phones reconnecting into it, across several clients and the whole window', async () => {
+        vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] });
+        try {
+          oversized();
+          const first = openDuringBuild();
+          finishList([]);
+          await vi.waitFor(() => expect(first.send).toHaveBeenCalled());
+          const before = builds();
+
+          // Build 147 reconnects about every 32 seconds, whatever the socket before it did.
+          for (let reconnect = 0; reconnect < 8; reconnect++) {
+            await vi.advanceTimersByTimeAsync(32_000);
+            for (const ws of [await connectAgain(), await connectAgain()]) {
+              expect(sent(ws)).toEqual([{ type: 'error', payload: { message: 'snapshot_failed' } }]);
+            }
+          }
+
+          expect(builds()).toBe(before);
+        } finally {
+          vi.useRealTimers();
+        }
+      });
+
+      it('rechecks once when the window ends, however many sockets are waiting', async () => {
+        vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] });
+        try {
+          oversized();
+          const first = openDuringBuild();
+          finishList([]);
+          await vi.waitFor(() => expect(first.send).toHaveBeenCalled());
+          const others = [await connectAgain(), await connectAgain(), await connectAgain()];
+          const before = builds();
+
+          await vi.advanceTimersByTimeAsync(annexServer._testing.SNAPSHOT_OVERSIZE_RETRY_MS + 1000);
+
+          expect(builds()).toBe(before + 1);
+          for (const ws of others) expect(sent(ws)).toHaveLength(1);
+        } finally {
+          vi.useRealTimers();
+        }
+      });
+
+      it('rechecks on a real change, but no more than once in the recheck interval', async () => {
+        vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] });
+        try {
+          oversized();
+          const first = openDuringBuild();
+          finishList([]);
+          await vi.waitFor(() => expect(first.send).toHaveBeenCalled());
+          const before = builds();
+
+          for (let change = 0; change < 20; change++) annexServer.broadcastSnapshotRefresh();
+          await vi.advanceTimersByTimeAsync(annexServer._testing.SNAPSHOT_OVERSIZE_RECHECK_MS - 1000);
+          expect(builds()).toBe(before);
+
+          await vi.advanceTimersByTimeAsync(1000);
+          expect(builds()).toBe(before + 1);
+          await vi.advanceTimersByTimeAsync(annexServer._testing.SNAPSHOT_OVERSIZE_RECHECK_MS - 1000);
+          expect(builds()).toBe(before + 1);
+        } finally {
+          vi.useRealTimers();
+        }
+      });
+
+      it('serves every waiting socket from one build once a recheck fits, and new sockets build again', async () => {
+        vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] });
+        try {
+          oversized();
+          const first = openDuringBuild();
+          finishList([]);
+          await vi.waitFor(() => expect(first.send).toHaveBeenCalled());
+          const other = await connectAgain();
+
+          vi.mocked(pluginStorage.readKey).mockReset();
+          vi.mocked(pluginStorage.readKey).mockResolvedValue(null as never);
+          const before = builds();
+          annexServer.broadcastSnapshotRefresh();
+          await vi.advanceTimersByTimeAsync(annexServer._testing.SNAPSHOT_OVERSIZE_RECHECK_MS + 1000);
+
+          expect(builds()).toBe(before + 1);
+          for (const ws of [first, other]) expect(sent(ws)[1].type).toBe('snapshot');
+
+          const fresh = await connectAgain();
+          expect(sent(fresh)[0].type).toBe('snapshot');
+          expect(builds()).toBe(before + 2);
+        } finally {
+          vi.useRealTimers();
+        }
+      });
+
+      it('recovers on a real change: the next refresh that fits is its first snapshot, with what was held', async () => {
+        oversized();
+        const ws = openDuringBuild();
+        const before = _eventReplay.getLastSeq();
+        const next = liveEvent();
+        finishList([]);
+        await vi.waitFor(() => expect(ws.send).toHaveBeenCalled());
+        publish();
+        expect(sent(ws)).toHaveLength(1);
+
+        vi.mocked(pluginStorage.readKey).mockReset();
+        vi.mocked(pluginStorage.readKey).mockResolvedValue(null as never);
+        vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] });
+        try {
+          annexServer.broadcastSnapshotRefresh();
+          await vi.advanceTimersByTimeAsync(annexServer._testing.SNAPSHOT_OVERSIZE_RECHECK_MS + 1000);
+        } finally {
+          vi.useRealTimers();
+        }
+        await vi.waitFor(() => expect(sent(ws).length).toBeGreaterThan(1));
+
+        const frames = sent(ws);
+        expect(frames[1].type).toBe('snapshot');
+        expect(frames[1].payload.lastSeq).toBe(before);
+        expect(frames.slice(2)).toEqual([sequenced(next)]);
+        expect(frames.filter((f) => f.type === 'snapshot')).toHaveLength(1);
+      });
+
+      it('leaves a phone already connected with what it has, rather than sending it', async () => {
+        const live = Object.assign(new EventEmitter(), { readyState: 1, send: vi.fn(), ping: () => {}, close: vi.fn() });
+        annexServer._testing.wsAuthTypes.set(live as never, 'bearer');
+        annexServer._testing.wss!.clients.add(live as never);
+        annexServer._testing.wss!.emit('connection', live);
+        await vi.waitFor(() => expect(live.send).toHaveBeenCalled());
+        live.send.mockClear();
+
+        oversized();
+        annexServer.broadcastSnapshotRefresh();
+        await new Promise((r) => setTimeout(r, 200));
+
+        expect(sent(live).filter((f) => f.type === 'snapshot')).toEqual([]);
+        expect(live.close).not.toHaveBeenCalled();
+      });
+    });
+
+    it('stays within the held limit while a socket has no snapshot', async () => {
+      const ws = openDuringBuild();
+      const frame = `{"type":"x","payload":"${'€'.repeat(1024 * 1024)}"}`;
+      for (let i = 0; i < 40; i++) {
+        annexServer._testing.holdForTest(ws as never, frame);
+        expect(annexServer._testing.heldBytes(ws as never)).toBeLessThanOrEqual(32 * 1024 * 1024);
+      }
+      expect(ws.close).not.toHaveBeenCalled();
+    });
+  });
+
   // -------------------------------------------------------------------------
   // Bug fix: buildSnapshot() rejection logs error (1a)
   // -------------------------------------------------------------------------
@@ -3651,10 +4282,8 @@ describe('annex-server', () => {
       );
 
       // The snapshot return object must include sessionPaused
-      const snapshotReturn = source.slice(
-        source.lastIndexOf('return {', source.indexOf('canvasState,')),
-        source.indexOf('};', source.indexOf('canvasState,')) + 2,
-      );
+      const assembly = source.indexOf('function assembleSnapshot(');
+      const snapshotReturn = source.slice(assembly, source.indexOf('\n}\n', assembly));
       expect(snapshotReturn).toContain('sessionPaused');
     });
 
