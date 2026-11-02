@@ -18,7 +18,9 @@
  * - Recent diagnostics (feedback-diagnostics.ts, #2658): the allowlisted lines the reporter
  *   reviewed go after the report is saved, as a Framebriar telemetry excerpt tagged with its
  *   id, and only then. They can never hold up or fail the report. A report can't carry them
- *   itself, so its status goes in a breadcrumb (diagnostics.*) that travels with it.
+ *   itself, so its status goes in a breadcrumb (diagnostics.*) that travels with it. With the
+ *   report field on, the same reviewed lines go in the report through the outbox instead, and
+ *   no excerpt is sent.
  */
 
 import { createHash, randomUUID } from 'crypto';
@@ -85,7 +87,7 @@ const EXCERPT_CHECK_MS = 30_000;
 
 /** The report's own record of its diagnostics: the breadcrumb code for each outcome. */
 export function diagnosticsBreadcrumbCode(outcome: FeedbackDiagnosticsOutcome): string {
-  return outcome.status === 'queued' ? 'diagnostics.queued' : `diagnostics.${outcome.status}.${outcome.reason}`;
+  return outcome.status === 'queued' || outcome.status === 'attached' ? `diagnostics.${outcome.status}` : `diagnostics.${outcome.status}.${outcome.reason}`;
 }
 
 /** One breadcrumb as the SDK takes it: `atMs` in epoch ms, `code` never user text. */
@@ -433,7 +435,7 @@ export class FeedbackService {
     this.drafts.set(draftId, { snapshot, shots, createdAt: this.now(), diagnostics, queuedAtCapture });
     while (this.drafts.size > MAX_DRAFTS) this.drafts.delete(this.drafts.keys().next().value as string);
     const previews = shots.map((shot) => ({ shotId: shot.shotId, label: shot.label, preview: `data:image/png;base64,${shot.png.toString('base64')}` }));
-    return { draftId, preview: previews[0]?.preview ?? null, shots: previews, ...(correlation.summary && { correlation: correlation.summary }), diagnostics };
+    return { draftId, preview: previews[0]?.preview ?? null, shots: previews, ...(correlation.summary && { correlation: correlation.summary }), diagnostics, ...(this.deps.reportDiagnosticsField === true && { diagnosticsInReport: true as const }) };
   }
 
   /** Never throws: a report opens the same whether or not its diagnostics could be read. */
@@ -458,10 +460,16 @@ export class FeedbackService {
   }
 
   /** What this report will say about its diagnostics. Never throws. */
-  private diagnosticsOutcome(fb: Framebriar, draft: Draft | undefined, include: boolean): FeedbackDiagnosticsOutcome {
+  private diagnosticsOutcome(fb: Framebriar, draft: Draft | undefined, include: boolean, inReport: boolean): FeedbackDiagnosticsOutcome {
     if (!draft) return { status: 'none', reason: 'no_review' };
     if (draft.diagnostics.status === 'none') return { status: 'none', reason: draft.diagnostics.reason ?? 'no_lines' };
     if (!include) return { status: 'left_out', reason: 'reporter' };
+    if (inReport) {
+      // The lines travel in the report, through the outbox, so SDK access doesn't matter. Only
+      // lines the contract refuses can stop them, and then the report mustn't claim them.
+      const { state, lines } = toDiagnosticsV1(draft.diagnostics, { status: 'attached', lines: draft.diagnostics.lines.length });
+      return state === 'attached' ? { status: 'attached', lines } : { status: 'none', reason: 'collection_failed' };
+    }
     try {
       // The SDK's own rule for sending telemetry. Offline still counts: it retries.
       const { enrolled, notice, state } = fb.access.status();
@@ -519,9 +527,11 @@ export class FeedbackService {
     const meta = { draftId: input.draftId ?? null, includeScreenshot: input.includeScreenshot, notesLength: input.notes?.length ?? 0, annotated: input.annotatedPng !== undefined, shotId: input.shotId ?? null };
     // Read before sending: a committed report consumes its draft.
     const shots = input.draftId ? this.drafts.get(input.draftId)?.shots.length ?? 0 : 0;
+    const inReport = this.deps.reportDiagnosticsField === true;
     try {
-      const result = await this.sendInner(input);
-      const state = this.fb?.access.status().state;
+      const result = await this.sendInner(input, inReport);
+      // With the field on, access is no part of sending: a failed read can't undo a saved report.
+      const state = inReport ? this.afterSave(() => this.fb?.access.status().state) : this.fb?.access.status().state;
       // The report id links a Framebriar report to this user's local record (a diag line,
       // through appLog); telemetry can't carry it. Don't drop it.
       this.log('info', 'Feedback saved for delivery', { ...meta, id: result.id, status: result.status, state, diagnostics: result.diagnostics ? diagnosticsBreadcrumbCode(result.diagnostics) : null });
@@ -534,7 +544,17 @@ export class FeedbackService {
     }
   }
 
-  private async sendInner(input: FeedbackSendInput): Promise<FeedbackSendResult> {
+  /** Never throws. */
+  private afterSave<T>(read: () => T): T | undefined {
+    try {
+      return read();
+    } catch (err) { // telemetry-exempt: the report is already saved; logged for diagnosis
+      this.log('warn', 'Feedback status could not be read after saving', errorMeta(err));
+      return undefined;
+    }
+  }
+
+  private async sendInner(input: FeedbackSendInput, inReport: boolean): Promise<FeedbackSendResult> {
     await this.start();
     await this.recheckStorage();
     const fb = this.sdk();
@@ -546,10 +566,10 @@ export class FeedbackService {
     const scene = input.scene && SCENE.test(input.scene) ? input.scene : 'app';
     const png = input.includeScreenshot && draft ? this.annotatedOrCaptured(this.chosenShot(draft, input.shotId), input.annotatedPng) : null;
     const includeDiagnostics = input.includeDiagnostics === true;
-    const outcome = draft?.diagnosticsOutcome ?? this.diagnosticsOutcome(fb, draft, includeDiagnostics);
+    const outcome = draft?.diagnosticsOutcome ?? this.diagnosticsOutcome(fb, draft, includeDiagnostics, inReport);
     // First and within the cap, so the report always says what became of its diagnostics.
     const breadcrumbs: FeedbackBreadcrumb[] = [
-      { kind: 'event', atMs: this.now(), code: diagnosticsBreadcrumbCode(outcome), ...(outcome.status === 'queued' && { value: outcome.lines }) },
+      { kind: 'event', atMs: this.now(), code: diagnosticsBreadcrumbCode(outcome), ...((outcome.status === 'queued' || outcome.status === 'attached') && { value: outcome.lines }) },
       ...(this.deps.breadcrumbs?.() ?? []).slice(0, MAX_REPORT_BREADCRUMBS - 1),
     ];
     // The hash is memory-only and never logged/exported. It prevents a retry from
@@ -561,7 +581,7 @@ export class FeedbackService {
     const prepare = () => fb.feedback.prepare({
       notes,
       context: { scene, breadcrumbs },
-      ...(this.deps.reportDiagnosticsField === true && draft && { diagnostics: toDiagnosticsV1(draft.diagnostics, outcome, { queued: draft.queuedAtCapture }) }),
+      ...(inReport && draft && { diagnostics: toDiagnosticsV1(draft.diagnostics, outcome, { queued: draft.queuedAtCapture }) }),
       ...(input.includeScreenshot && draft
         ? { ...draft.snapshot, png }
         : { ...(draft?.snapshot ?? {}), png: null }),
@@ -577,11 +597,13 @@ export class FeedbackService {
     const prepared = await (draft?.prepared?.value ?? prepare());
     // This instance has no telemetry, so the flag only decides what becomes of a field the
     // report carries: false rewrites it to left_out. The field already holds the user's choice.
-    const ack = await fb.feedback.submit(prepared, { includeDiagnostics: this.deps.reportDiagnosticsField === true });
+    const ack = await fb.feedback.submit(prepared, { includeDiagnostics: inReport });
     // Only a committed report consumes the draft: a failed save (e.g. storage full) keeps
     // the reviewed screenshot so the user can retry.
     if (input.draftId) this.drafts.delete(input.draftId);
-    this.emit();
+    if (inReport) this.afterSave(() => this.emit());
+    else this.emit();
+    // Never `attached`: those lines are already in the report, and would go twice.
     if (outcome.status === 'queued' && draft) {
       const { traceId, spanId } = prepared.report as { traceId?: string; spanId?: string };
       this.sendExcerpt(fb, ack.id, draft.diagnostics.lines, traceId && spanId ? { traceId, spanId } : {});

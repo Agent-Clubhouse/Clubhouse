@@ -26,8 +26,8 @@ const EXIT_CODE_UNAVAILABLE = 'exit_code_unavailable';
 /** Sent for a provider or driver outside the closed set, so its name stays here. */
 const CUSTOM_CLI = 'custom';
 /**
- * The contract's words for why there are no entries. `not_connected` and `no_review` have none,
- * so the SDK reads them as `empty`: an open question on #2658, since lines do exist for the first.
+ * The contract's words for why there are no entries. `no_review` has none, so the SDK reads it
+ * as `empty`. Neither does `not_connected`, which only the excerpt path can record.
  */
 const NONE_REASONS: Partial<Record<FeedbackDiagnosticsNoneReason, string>> = { no_lines: 'empty', collection_failed: 'provider-failed' };
 /** The chat runtime logs a literal 0 on every session end, never a code it saw, so it can't be sent as one. */

@@ -39,6 +39,7 @@ const NO_DIAGNOSTICS_TEXT = {
 } as const;
 
 function diagnosticsOutcomeText(outcome: FeedbackDiagnosticsOutcome): string {
+  if (outcome.status === 'attached') return `Diagnostics attached to this report (${outcome.lines} ${outcome.lines === 1 ? 'line' : 'lines'}).`;
   if (outcome.status === 'queued') return `Diagnostics queued to send (${outcome.lines} ${outcome.lines === 1 ? 'line' : 'lines'}).`;
   return outcome.status === 'left_out' ? 'Diagnostics left out.' : NO_DIAGNOSTICS_TEXT[outcome.reason];
 }
@@ -187,7 +188,9 @@ export function FeedbackReviewDialog({ draft, onClose }: Props) {
                 </label>
                 <span className="block mt-1">
                   Connection, agent and chat events from the last {FEEDBACK_DIAGNOSTICS.windowMinutes} minutes, with no messages, paths or chat content.
-                  {' '}They are sent separately from this report and kept for {FEEDBACK_DIAGNOSTICS.retentionDays} days, even if the report is deleted. They can be lost if Clubhouse quits before they are sent.
+                  {' '}{draft.diagnosticsInReport
+                    ? 'They are saved and sent with this report.'
+                    : `They are sent separately from this report and kept for ${FEEDBACK_DIAGNOSTICS.retentionDays} days, even if the report is deleted. They can be lost if Clubhouse quits before they are sent.`}
                 </span>
                 <details className="mt-1">
                   <summary className="cursor-pointer">Show {diagnostics.lines.length} {diagnostics.lines.length === 1 ? 'line' : 'lines'}{diagnostics.dropped > 0 && ` (${diagnostics.dropped} older left out)`}</summary>

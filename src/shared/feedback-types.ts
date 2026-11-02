@@ -54,6 +54,8 @@ export interface FeedbackCaptureResult {
   correlation?: FeedbackCorrelationSummary;
   /** Recent diagnostics to review (#2658); what is shown here is exactly what can be sent. */
   diagnostics?: FeedbackDiagnostics;
+  /** Set when reviewed diagnostics would go in the report itself rather than separately. */
+  diagnosticsInReport?: true;
 }
 
 /** The bounds on a report's diagnostics, and how long Framebriar's telemetry store keeps them. */
@@ -85,11 +87,13 @@ export interface FeedbackDiagnostics {
 }
 
 /**
- * What happened to a report's diagnostics. `queued`, not "attached": they travel apart from
- * the report, in memory, and are lost if Clubhouse quits before they are sent.
+ * What happened to a report's diagnostics. `queued`: they travel apart from the report, in
+ * memory, and are lost if Clubhouse quits before they are sent. `attached`: they are in the
+ * report itself, saved in the outbox with it.
  */
 export type FeedbackDiagnosticsOutcome =
   | { status: 'queued'; lines: number }
+  | { status: 'attached'; lines: number }
   | { status: 'left_out'; reason: 'reporter' }
   | { status: 'none'; reason: FeedbackDiagnosticsNoneReason };
 

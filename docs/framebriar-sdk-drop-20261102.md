@@ -47,5 +47,6 @@ The SDK ships no types for the Node adapter, so `index.d.mts` stays Clubhouse's.
 
 Open before the field can go on:
 
-- `not_connected` has no contract word and reads as `empty` ("nothing recorded") though lines exist. The contract says a report filed while the connection is down still attaches its entries.
-- With the field on, the service still sends the telemetry excerpt too. Whether that continues is undecided.
+- The approved first live report, and the release constraint above.
+
+Settled in the service, behind the same gate: with the field on, reviewed entries are `attached` whatever the SDK access state, so `not_connected` can't reach the contract, and no telemetry excerpt is sent, so the lines don't go twice.
