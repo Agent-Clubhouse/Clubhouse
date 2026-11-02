@@ -3,7 +3,7 @@ import { Agent, QuickAgentDefaults, MaterializationPreview, McpCatalogArg, McpCa
 import { AGENT_COLORS } from '../../../shared/name-generator';
 import { useModelOptions } from '../../hooks/useModelOptions';
 import { useContextWindowOptions } from '../../hooks/useContextWindowOptions';
-import { ContextWindowSelect, contextWindowHelp } from './ContextWindowField';
+import { ContextWindowSelect, contextWindowHelp, formatContextChoice } from './ContextWindowField';
 import { useEffectiveOrchestrators } from '../../hooks/useEffectiveOrchestrators';
 import { buildOrchestratorOptions } from './orchestrator-options';
 import { useCliChangeConfirm } from './useCliChangeConfirm';
@@ -1137,14 +1137,20 @@ export function AgentSettingsView({ agent }: Props) {
         </select>
       </Field>
       <Field label={contextOptions?.label ?? 'Context'} help={contextWindowHelp(contextOptions)} htmlFor="agent-settings-context">
-        <ContextWindowSelect
-          id="agent-settings-context"
-          options={contextOptions}
-          value={contextWindow}
-          disabled={isRunning}
-          className={selectClass}
-          onChange={(v) => void handleContextWindowChange(v)}
-        />
+        {/* Awake it can't change, so the saved choice is enough and the CLI's catalog isn't read. */}
+        {isRunning ? (
+          <span title={stopFirst} data-testid="agent-settings-context-saved">
+            {contextWindow ? `${formatContextChoice(contextWindow)} on the next start` : 'CLI default'}
+          </span>
+        ) : (
+          <ContextWindowSelect
+            id="agent-settings-context"
+            options={contextOptions}
+            value={contextWindow}
+            className={selectClass}
+            onChange={(v) => void handleContextWindowChange(v)}
+          />
+        )}
         {contextWindowNotice && <p className="text-ctp-subtext0 mt-1" data-testid="agent-settings-context-notice">{contextWindowNotice}</p>}
       </Field>
       {chatFlagEnabled && (
