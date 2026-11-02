@@ -549,6 +549,143 @@ describe('start_helper model check (#2569)', () => {
   });
 });
 
+describe('start_helper effort (#2671)', () => {
+  const claudeLive: ModelList = {
+    source: 'live', via: 'handshake', fetchedAt: 0,
+    models: [
+      { id: 'default', label: 'Default', isDefault: true, efforts: ['low', 'medium'] },
+      { id: 'opus', label: 'Opus', resolvedId: 'claude-opus-5-5', efforts: ['low', 'high'] },
+      { id: 'old', label: 'Old' },
+    ],
+  };
+  const claudeFallback: ModelList = { ...claudeLive, source: 'fallback', via: 'static', liveError: 'timed out' };
+  const start = (args: Record<string, unknown>) => callTool('orch', 'start_helper', { name: 'h', task: 't', ...args });
+
+  it('asks for nothing and writes nothing without the argument', async () => {
+    controllableCreation();
+    modelLists.set('claude-code', claudeLive);
+    const body = parse(await start({}));
+    expect(body.effort).toBeUndefined();
+    expect(body.effortWarning).toBeUndefined();
+    expect(mockStartDurableCreation.mock.calls[0][1]).not.toHaveProperty('effort');
+  });
+
+  it('saves a level the model takes on the helper and reports it', async () => {
+    controllableCreation();
+    modelLists.set('claude-code', claudeLive);
+    const body = parse(await start({ model: 'opus', effort: 'high' }));
+    expect(body).toMatchObject({ state: 'starting', effort: 'high' });
+    expect(body.effortWarning).toBeUndefined();
+    expect(mockStartDurableCreation.mock.calls[0][1]).toMatchObject({ model: 'opus', effort: 'high' });
+  });
+
+  it('finds the model by its resolved id or a [1m] suffix', async () => {
+    controllableCreation();
+    modelLists.set('claude-code', claudeLive);
+    for (const [i, model] of ['claude-opus-5-5', 'opus[1m]'].entries()) {
+      const body = parse(await start({ name: `h${i}`, model, effort: 'high' }));
+      expect(body.effortWarning, model).toBeUndefined();
+    }
+  });
+
+  it('checks against the CLI\'s default model when none is named', async () => {
+    controllableCreation();
+    modelLists.set('claude-code', claudeLive);
+    expect((await start({ effort: 'medium' })).isError).toBeFalsy();
+    const refused = await start({ name: 'h2', effort: 'high' });
+    expect(refused.isError).toBe(true);
+    expect(refused.content[0].text).toContain('claude-code\'s default model doesn\'t take effort "high". Its levels: low, medium.');
+  });
+
+  it('refuses a level a live list doesn\'t give the model, and creates nothing', async () => {
+    modelLists.set('claude-code', claudeLive);
+    const result = await start({ model: 'opus', effort: 'max' });
+    expect(result.isError).toBe(true);
+    expect(result.content[0].text).toContain('Model "opus" doesn\'t take effort "max". Its levels: low, high.');
+    expect(mockStartDurableCreation).not.toHaveBeenCalled();
+  });
+
+  it('refuses a level for a model that takes none', async () => {
+    modelLists.set('claude-code', claudeLive);
+    const result = await start({ model: 'old', effort: 'high' });
+    expect(result.isError).toBe(true);
+    expect(result.content[0].text).toContain('Model "old" takes no effort level.');
+  });
+
+  it('only warns when the list is a fallback', async () => {
+    controllableCreation();
+    modelLists.set('claude-code', claudeFallback);
+    const body = parse(await start({ model: 'opus', effort: 'max' }));
+    expect(body).toMatchObject({ state: 'starting', effort: 'max' });
+    expect(body.effortWarning).toContain('fallback model list');
+  });
+
+  it('warns and starts when the list has no levels at all', async () => {
+    controllableCreation();
+    modelLists.set('claude-code', { source: 'live', via: 'handshake', fetchedAt: 0, models: [{ id: 'gpt', label: 'GPT' }] });
+    const body = parse(await start({ model: 'gpt', effort: 'high' }));
+    expect(body.state).toBe('starting');
+    expect(body.effortWarning).toContain('doesn\'t report effort levels');
+  });
+
+  it('warns and starts when the list doesn\'t have a model the CLI accepts', async () => {
+    controllableCreation();
+    modelLists.set('claude-code', claudeLive);
+    claudeAcceptsModel = () => true;
+    const body = parse(await start({ model: 'opusplan', effort: 'high' }));
+    expect(body.state).toBe('starting');
+    expect(body.effortWarning).toContain('doesn\'t have "opusplan"');
+  });
+
+  it('warns for a CLI that can\'t list models', async () => {
+    controllableCreation();
+    const body = parse(await start({ effort: 'high' }));
+    expect(body.effortWarning).toContain('it has no model list');
+  });
+
+  it.each(['HIGH', 'high; rm -rf /', 'high"', '-c', 'a'.repeat(33)])('refuses %s, which can\'t be a level', async (effort) => {
+    const result = await start({ effort });
+    expect(result.isError).toBe(true);
+    expect(result.content[0].text).toContain('is not a level');
+    expect(mockStartDurableCreation).not.toHaveBeenCalled();
+  });
+
+  it('refuses before holding a start, and a held start keeps its level', async () => {
+    mockGetPolicy.mockResolvedValue({ orchestrate: true, access: 'same', control: 'ask-before-start', maxHelpers: 5 });
+    modelLists.set('claude-code', claudeLive);
+    expect((await start({ model: 'opus', effort: 'max' })).isError).toBe(true);
+    expect(listStartRequests()).toEqual([]);
+
+    expect(parse(await start({ model: 'opus', effort: 'high' })).state).toBe('needs_approval');
+    expect(listStartRequests()[0].args.effort).toBe('high');
+    // Another level is another request, not the same one again.
+    expect(parse(await start({ model: 'opus', effort: 'low' })).reused).toBeUndefined();
+    expect(listStartRequests()).toHaveLength(2);
+    expect(parse(await start({ model: 'opus', effort: 'low' })).reused).toBe(true);
+  });
+
+  it('says so when a persona changed the model during creation and the level was cleared', async () => {
+    const creation = controllableCreation();
+    modelLists.set('claude-code', claudeLive);
+    await start({ model: 'opus', effort: 'high', persona: 'other-model' });
+    const { effort: _cleared, ...rest } = agents.get('helper_h')!;
+    agents.set('helper_h', { ...rest, model: 'haiku' });
+    creation.ready('helper_h');
+    await _settleHelperStartsForTesting();
+    expect(sent.get('orch')?.[0]).toContain('the effort you asked for (high) was not used');
+  });
+
+  it('list_helpers shows the helper\'s model and effort, and neither when unset', async () => {
+    addAgent({ id: 'set', parentAgentId: 'orch', model: 'opus', effort: 'high' });
+    addAgent({ id: 'unset', parentAgentId: 'orch' });
+    const { helpers } = parse(await callTool('orch', 'list_helpers', {})) as { helpers: Array<Record<string, unknown>> };
+    expect(helpers.find((h) => h.helperId === 'set')).toMatchObject({ model: 'opus', effort: 'high' });
+    const unset = helpers.find((h) => h.helperId === 'unset')!;
+    expect(unset).not.toHaveProperty('model');
+    expect(unset).not.toHaveProperty('effort');
+  });
+});
+
 describe('start_helper re-checks at spawn time', () => {
   it('ranks access again when a persona switched the CLI during creation', async () => {
     // A Claude orchestrator at auto: Claude auto is --permission-mode auto,

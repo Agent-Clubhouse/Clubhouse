@@ -67,7 +67,7 @@ import { broadcastToAllWindows } from '../../../util/ipc-broadcast';
 import { appLog } from '../../log-service';
 import { IPC } from '../../../../shared/ipc-channels';
 import { AGENT_COLORS } from '../../../../shared/name-generator';
-import { isDisposedAgent } from '../../../../shared/agent-helpers';
+import { isDisposedAgent, isEffortValue } from '../../../../shared/agent-helpers';
 import {
   ACCESS_LEVELS,
   CROSS_PROJECT_OFF_MESSAGE,
@@ -94,7 +94,7 @@ import {
 } from '../../helper-start-requests';
 import { McpArgError, optionalString } from './validation';
 import { _resetHelperDeliveryForTesting, deliverHelperUpdate, deliverNow } from './helper-delivery';
-import { checkHelperModel } from './model-tools';
+import { checkHelperEffort, checkHelperModel } from './model-tools';
 
 // ── Results ──────────────────────────────────────────────────────────────
 
@@ -358,6 +358,7 @@ async function finishHelperStart(
   helperName: string,
   task: string,
   requestedAccess: string | undefined,
+  requestedEffort: string | undefined,
   done: Promise<'ready' | 'failed' | 'cancelled'>,
 ): Promise<void> {
   let taskTaken = false;
@@ -429,8 +430,12 @@ async function finishHelperStart(
       meta: { orchestratorId: orchestrator.id, helperId, access: finalLaunch.level },
     });
     const branch = config.branch ? ` on branch ${config.branch}` : '';
+    // A persona applied during creation may have set another model or CLI, which clears the level.
+    const effortNote = requestedEffort && !config.effort
+      ? ` Its persona changed its model or CLI, so the effort you asked for (${requestedEffort}) was not used.`
+      : '';
     notifyOrchestrator(orchestrator.id,
-      `Helper "${helperName}" (${helperId}) is ready${branch} with ${finalLaunch.level} access and has started its task.`);
+      `Helper "${helperName}" (${helperId}) is ready${branch} with ${finalLaunch.level} access and has started its task.${effortNote}`);
   } catch (err) {
     // telemetry-exempt: the failure reaches the orchestrator and list_helpers
     const reason = errorText(err);
@@ -457,11 +462,14 @@ function validateStartArgs(args: HelperStartArgs): void {
   if (args.cli && !getProvider(args.cli as OrchestratorId)) {
     throw new McpArgError(`Unknown cli "${args.cli}". Available: ${getAllProviders().map((p) => p.id).join(', ')}`);
   }
+  if (args.effort && !isEffortValue(args.effort)) {
+    throw new McpArgError(`effort "${args.effort}" is not a level. Pick one of the model's "efforts" from list_models.`);
+  }
 }
 
 function parseStartArgs(args: Record<string, unknown>): HelperStartArgs {
   const parsed: HelperStartArgs = { name: requireText(args, 'name'), task: requireText(args, 'task') };
-  for (const key of ['persona', 'cli', 'model', 'access', 'branchFrom', 'folder', 'project'] as const) {
+  for (const key of ['persona', 'cli', 'model', 'effort', 'access', 'branchFrom', 'folder', 'project'] as const) {
     const value = optionalText(args, key);
     if (value) parsed[key] = value;
   }
@@ -473,8 +481,8 @@ type StartOutcome =
   /** `message` for the orchestrator's tool result; `reason` to follow "because" in an approval's answer. */
   | { kind: 'refused'; message: string; reason: string }
   | { kind: 'too_many'; waiting: number }
-  | { kind: 'needs_approval'; control: OrchestrationControl; request: HelperStartRequest; reused: boolean; modelWarning?: string }
-  | { kind: 'starting'; helperId: string; name: string; branch?: string; launch: HelperLaunch; project: TargetProject; modelWarning?: string };
+  | { kind: 'needs_approval'; control: OrchestrationControl; request: HelperStartRequest; reused: boolean; modelWarning?: string; effortWarning?: string }
+  | { kind: 'starting'; helperId: string; name: string; branch?: string; launch: HelperLaunch; project: TargetProject; effort?: string; modelWarning?: string; effortWarning?: string };
 
 /** A sentence as the tail of "…because <reason>": its first letter lowered unless it starts an acronym or name. */
 function asReason(text: string): string {
@@ -521,11 +529,12 @@ async function runHelperStart(orchestratorId: string, args: HelperStartArgs, app
   }
   if (!isOrchestrationEnabled(orchestratorId)) return refused('orchestration is off for its orchestrator.');
   const { projectPath: homePath, config: orchestrator } = await resolveCaller(orchestratorId);
-  const { name, task, persona, cli, model, access, branchFrom, folder } = args;
+  const { name, task, persona, cli, model, effort, access, branchFrom, folder } = args;
 
-  // The model is checked before the start lock: listing models can take a CLI handshake (#2569).
+  // Model and effort are checked before the start lock: listing models can take a CLI handshake (#2569).
   let modelWarning: string | undefined;
-  if (model) {
+  let effortWarning: string | undefined;
+  if (model || effort) {
     let modelProject = homePath;
     try {
       modelProject = (await resolveTargetProject(homePath, orchestratorId, args.project)).path;
@@ -533,9 +542,16 @@ async function runHelperStart(orchestratorId: string, args: HelperStartArgs, app
       // telemetry-exempt: a bad project is refused under the lock; check the model with the home profile
     }
     const helperCli = cli ?? orchestrator.orchestrator ?? agentRegistry.get(orchestratorId)?.orchestrator;
-    const check = await checkHelperModel(helperCli, model, modelProject);
-    if (check.ok === false) return refused(check.message);
-    modelWarning = check.warning;
+    if (model) {
+      const check = await checkHelperModel(helperCli, model, modelProject);
+      if (check.ok === false) return refused(check.message);
+      modelWarning = check.warning;
+    }
+    if (effort) {
+      const check = await checkHelperEffort(helperCli, model, effort, modelProject);
+      if (check.ok === false) return refused(check.message);
+      effortWarning = check.warning;
+    }
   }
 
   return withStartLock(async (): Promise<StartOutcome> => {
@@ -597,7 +613,10 @@ async function runHelperStart(orchestratorId: string, args: HelperStartArgs, app
         appLog('core:mcp', 'info', 'start_helper needs user approval', {
           meta: { agentId: orchestratorId, control: policy.control, requestId: recorded.request.requestId, reused: recorded.reused, crossProject: target.cross },
         });
-        return { kind: 'needs_approval', control: policy.control, request: recorded.request, reused: recorded.reused, ...(modelWarning && { modelWarning }) };
+        return {
+          kind: 'needs_approval', control: policy.control, request: recorded.request, reused: recorded.reused,
+          ...(modelWarning && { modelWarning }), ...(effortWarning && { effortWarning }),
+        };
       }
     }
 
@@ -609,6 +628,7 @@ async function runHelperStart(orchestratorId: string, args: HelperStartArgs, app
       const params: StartDurableCreationParams = {
         ...creation,
         ...(model && { model }),
+        ...(effort && { effort }),
         ...(helperProvider && { orchestrator: helperProvider as OrchestratorId }),
         freeAgentMode: launch.freeAgentMode,
       };
@@ -622,7 +642,7 @@ async function runHelperStart(orchestratorId: string, args: HelperStartArgs, app
     const { agentId: helperId, config, done } = started;
     // Before anything is awaited: no wake may spawn it while this start owns it.
     spawning.add(helperId);
-    const background = finishHelperStart(homePath, target.path, orchestrator, helperId, name, task, access, done)
+    const background = finishHelperStart(homePath, target.path, orchestrator, helperId, name, task, access, effort, done)
       .catch((err) => {
         appLog('core:mcp', 'error', 'start_helper: background start failed', { meta: { helperId, error: errorText(err) } });
       });
@@ -637,7 +657,7 @@ async function runHelperStart(orchestratorId: string, args: HelperStartArgs, app
     });
     return {
       kind: 'starting', helperId, name: config.name, ...(config.branch && { branch: config.branch }), launch, project: target,
-      ...(modelWarning && { modelWarning }),
+      ...(effort && { effort }), ...(modelWarning && { modelWarning }), ...(effortWarning && { effortWarning }),
     };
   });
 }
@@ -665,6 +685,7 @@ async function startHelper(agentId: string, args: Record<string, unknown>): Prom
         ...(outcome.reused && { reused: true }),
         expiresAt: outcome.request.expiresAt,
         ...(outcome.modelWarning && { modelWarning: outcome.modelWarning }),
+        ...(outcome.effortWarning && { effortWarning: outcome.effortWarning }),
         message:
           (outcome.reused ? 'You already asked for this start, and it is still waiting. ' : '') +
           'This agent is set to ask the user before starting helpers, so nothing was created yet. ' +
@@ -680,7 +701,9 @@ async function startHelper(agentId: string, args: Record<string, unknown>): Prom
         ...(outcome.project.cross && { projectPath: outcome.project.path }),
         ...(outcome.branch && { branch: outcome.branch }),
         access: outcome.launch.level,
+        ...(outcome.effort && { effort: outcome.effort }),
         ...(outcome.modelWarning && { modelWarning: outcome.modelWarning }),
+        ...(outcome.effortWarning && { effortWarning: outcome.effortWarning }),
         ...(outcome.launch.clamped && { accessNote: `Access lowered to ${outcome.launch.level}: a helper never gets more than you run with or than its CLI allows at that level.` }),
         message:
           `Helper "${outcome.name}" is being created${outcome.project.cross ? ` in ${outcome.project.name}` : ''}. Its worktree can take up to a minute; ` +
@@ -875,6 +898,8 @@ export async function describeHelper({ projectPath, config: helper }: HelperEntr
     status,
     ...(reason && { reason }),
     ...(helper.orchestrator && { cli: helper.orchestrator }),
+    ...(helper.model && { model: helper.model }),
+    ...(helper.effort && { effort: helper.effort }),
     ...(helper.persona && { persona: helper.persona }),
     branch: helper.branch ?? null,
     worktreePath: helper.worktreePath ?? null,
@@ -1127,6 +1152,12 @@ export function registerHelperTools(): void {
               'Optional model for the helper: an id from list_models for the helper\'s CLI (or an alias that CLI accepts). ' +
               'Refused if the CLI\'s live list doesn\'t have it; only warned if Clubhouse fell back to a list that may be stale.',
           },
+          effort: {
+            type: 'string',
+            description:
+              'Optional reasoning effort, kept for every start and wake: one of the model\'s "efforts" from list_models. Defaults to what the CLI picks. ' +
+              'Checked like model. A later change to the helper\'s model or CLI clears it.',
+          },
           access: { type: 'string', enum: ['same', ...ACCESS_LEVELS], description: 'Access level: same (default) or a lower one. Never more than yours.' },
           branchFrom: { type: 'string', description: 'Optional branch or commit the helper\'s branch starts from. Defaults to HEAD.' },
           folder: { type: 'string', description: 'Optional folder name under .clubhouse/agents/. Defaults to the name.' },
@@ -1149,7 +1180,7 @@ export function registerHelperTools(): void {
     {
       description:
         'List your helpers in every project: project, status (creating, starting, running, idle, waiting, stopping, ' +
-        'sleeping or failed), branch, worktree, commits ahead of and behind its remote branch, uncommitted files, ' +
+        'sleeping or failed), the model and effort set for it (none means its CLI picks), branch, worktree, commits ahead of and behind its remote branch, uncommitted files, ' +
         'last commit and last activity.',
       inputSchema: { type: 'object', properties: {} },
     },

@@ -229,6 +229,7 @@ export class CopilotCliProvider extends BaseProvider implements HookCapable, Hea
       args.push('--model', opts.model);
     }
     if (opts.contextWindow) args.push('--context', opts.contextWindow);
+    if (opts.effort) args.push('--reasoning-effort', opts.effort);
 
     if (opts.allowedTools && opts.allowedTools.length > 0) {
       for (const tool of opts.allowedTools) {

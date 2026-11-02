@@ -36,7 +36,7 @@ While the Dispatcher is turned on, a **Connect to Dispatcher** switch shows in t
 
 ## Starting helpers
 
-The orchestrator calls `start_helper` with a name, a task and, if it wants, a persona, a CLI, a model and a branch to start from. A helper runs on the same CLI as its orchestrator unless the orchestrator picks another.
+The orchestrator calls `start_helper` with a name, a task and, if it wants, a persona, a CLI, a model, a reasoning effort and a branch to start from. A helper runs on the same CLI as its orchestrator unless the orchestrator picks another.
 
 `list_models` lists the models each CLI accepts. Each CLI is asked for its list without sending a prompt, so no tokens are used, and the list is kept for about ten minutes. The CLI is asked from an empty folder, so the list follows its login and user-level settings, not a project's model restriction. If a CLI can't be asked, Clubhouse uses an older list that may be out of date, and says so. `start_helper` refuses a model that the CLI's own list doesn't have. If it only has the older list, it starts the helper anyway and warns the orchestrator.
 

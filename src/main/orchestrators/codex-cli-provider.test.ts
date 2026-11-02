@@ -277,6 +277,26 @@ describe('CodexCliProvider', () => {
     });
   });
 
+  describe('buildSpawnCommand — effort (#2671)', () => {
+    it('passes an effort as a config override, on a resume too, with the mission still last', async () => {
+      const started = await provider.buildSpawnCommand({ cwd: '/p', effort: 'high', mission: 'Go' });
+      expect(started.args).toEqual(['-c', 'model_reasoning_effort=high']);
+      expect(started.trailingArgs).toEqual(['Go']);
+      const resumed = await provider.buildSpawnCommand({ cwd: '/p', resume: true, sessionId: 's1', effort: 'low' });
+      expect(resumed.args).toEqual(['resume', 's1', '-c', 'model_reasoning_effort=low']);
+    });
+
+    it('passes it next to a context choice', async () => {
+      const { args, trailingArgs } = await provider.buildSpawnCommand({ cwd: '/p', effort: 'high', contextWindow: '500000', mission: 'Go' });
+      expect(args).toEqual(['-c', 'model_context_window=500000', '-c', 'model_reasoning_effort=high']);
+      expect(trailingArgs).toEqual(['Go']);
+    });
+
+    it('passes nothing without one', async () => {
+      expect((await provider.buildSpawnCommand({ cwd: '/p' })).args).toEqual([]);
+    });
+  });
+
   describe('buildSpawnCommand — session resume', () => {
     it('resumes the most recent session with `resume --last` when no id is given', async () => {
       const { args } = await provider.buildSpawnCommand({ cwd: '/p', resume: true });

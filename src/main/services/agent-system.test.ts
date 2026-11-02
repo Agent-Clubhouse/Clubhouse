@@ -478,6 +478,28 @@ describe('agent-system', () => {
       });
     });
 
+    describe('a saved effort next to a saved context choice (#2671)', () => {
+      const spawnWith = async () => {
+        mockGetDurableConfig.mockResolvedValue({ id: 'agent-1', orchestrator: 'claude-code', effort: 'high', contextWindow: '500000' });
+        await spawnAgent({ agentId: 'agent-1', projectPath: '/my/project', cwd: '/my/project', kind: 'durable' });
+      };
+      afterEach(() => { mockContextWindowForLaunch.mockReset(); mockGetDurableConfig.mockReset(); });
+
+      it('passes both when the choice applies', async () => {
+        mockContextWindowForLaunch.mockResolvedValue({ value: '500000' });
+        await spawnWith();
+        expect(mockProvider.buildSpawnCommand).toHaveBeenLastCalledWith(expect.objectContaining({ effort: 'high', contextWindow: '500000' }));
+      });
+
+      it('still passes the effort when the launch doesn\'t use the choice', async () => {
+        mockContextWindowForLaunch.mockResolvedValue({ notice: { level: 'warn', code: 'context_window_not_applied', message: 'Not offered.' } });
+        await spawnWith();
+        const opts = (mockProvider.buildSpawnCommand as ReturnType<typeof vi.fn>).mock.calls.at(-1)![0];
+        expect(opts.effort).toBe('high');
+        expect(opts.contextWindow).toBeUndefined();
+      });
+    });
+
     it('tracks agent orchestrator when specified', async () => {
       await spawnAgent({
         agentId: 'agent-1',
@@ -579,6 +601,34 @@ describe('agent-system', () => {
         kind: 'quick',
       });
       expect(mockProvider.getDefaultPermissions).toHaveBeenCalledWith('quick');
+    });
+
+    describe('a saved effort (#2671)', () => {
+      afterEach(() => {
+        mockGetDurableConfig.mockReset();
+        mockGetDurableConfig.mockImplementation(() => null);
+      });
+      const spawnWith = (config: Record<string, unknown> | null, extra: Record<string, unknown> = {}) => {
+        mockGetDurableConfig.mockImplementation((async () => (config && { id: 'agent-1', ...config })) as never);
+        return spawnAgent({ agentId: 'agent-1', projectPath: '/project', cwd: '/project', kind: 'durable', ...extra });
+      };
+
+      it('reaches the provider on a start and on a resume', async () => {
+        await spawnWith({ effort: 'high' });
+        expect(mockProvider.buildSpawnCommand).toHaveBeenLastCalledWith(expect.objectContaining({ effort: 'high' }));
+        await spawnWith({ effort: 'high', lastSessionId: 's1' }, { resume: true, sessionId: 's1' });
+        expect(mockProvider.buildSpawnCommand).toHaveBeenLastCalledWith(expect.objectContaining({ effort: 'high', resume: true }));
+      });
+
+      it('passes none without one', async () => {
+        await spawnWith({});
+        expect(mockProvider.buildSpawnCommand).toHaveBeenLastCalledWith(expect.objectContaining({ effort: undefined }));
+      });
+
+      it('never passes a hand-edited value that can\'t be a level', async () => {
+        await spawnWith({ effort: 'high; rm -rf /' });
+        expect(mockProvider.buildSpawnCommand).toHaveBeenLastCalledWith(expect.objectContaining({ effort: undefined }));
+      });
     });
 
     it('uses provided allowedTools over defaults', async () => {

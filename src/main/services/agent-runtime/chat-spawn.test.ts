@@ -231,6 +231,17 @@ require('readline').createInterface({ input: process.stdin }).on('line', line =>
     expect(registry.setRuntime).not.toHaveBeenCalled();
   });
 
+  it('starts the driver with the agent\'s effort, and without one when it has none (#2671)', async () => {
+    const driver = new FakeChatDriver();
+    const start = vi.spyOn(driver, 'start');
+    registerChatDriver(driver);
+    expect(await tryStartChatAgent({ ...params, effort: 'high' }, provider, undefined, undefined, null)).toBe('chat');
+    expect(start.mock.calls[0][0]).toMatchObject({ effort: 'high' });
+    start.mockClear();
+    expect(await tryStartChatAgent({ ...params, agentId: 'agent-2' }, provider, undefined, undefined, null)).toBe('chat');
+    expect(start.mock.calls[0][0]).not.toHaveProperty('effort');
+  });
+
   it('closes the chat CLI without an exit broadcast when the mission cannot be sent', async () => {
     const driver = new FakeChatDriver();
     const realStart = driver.start.bind(driver);

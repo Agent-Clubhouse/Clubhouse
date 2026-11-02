@@ -5,6 +5,15 @@ import type { DurableAgentConfig } from './types';
  * another durable agent. These pure functions are shared by main and renderer.
  */
 
+/**
+ * A value that can be a reasoning effort level. It reaches a CLI's arguments
+ * (and a shell, with a command prefix), so anything else is never passed. Which
+ * levels a model takes is the CLI's to say: see checkHelperEffort.
+ */
+export function isEffortValue(value: unknown): value is string {
+  return typeof value === 'string' && /^[a-z][a-z0-9_-]{0,31}$/.test(value);
+}
+
 /** True when a durable agent has been disposed and must not spawn. */
 export function isDisposedAgent(config: Pick<DurableAgentConfig, 'disposedAt'> | null | undefined): boolean {
   return !!config?.disposedAt;
