@@ -4,8 +4,8 @@ import * as os from 'os';
 import * as path from 'path';
 import { EventEmitter } from 'events';
 
-// Real by default. The one test that needs a change event fires it by hand,
-// because macOS delivers real fs.watch events seconds late on a busy machine.
+// Real by default. Tests that need a change event, or its absence, control the
+// watcher by hand, because macOS delivers real fs.watch events late or not at all.
 vi.mock('fs', async (importOriginal) => {
   const actual = await importOriginal<typeof import('fs')>();
   return { ...actual, default: actual, watch: vi.fn(actual.watch) };
@@ -1051,6 +1051,41 @@ describe('GoobersService — address-watch race, M21', () => {
     svc.afterPollTick(settings.getSettings());
 
     expect(service.getState().daemon.state).toBe('running');
+  });
+
+  it('still hands off when the watcher event never arrives', async () => {
+    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] });
+    try {
+      mockGetAllWindows.mockReturnValue([visibleWindow()]);
+      writeConfiguredRoot();
+      fs.mkdirSync(path.join(tmpRoot, 'scheduler'), { recursive: true });
+      const settings = makeFakeSettings(defaultSettings({ instanceRoot: tmpRoot }));
+      const service = new GoobersService(settings);
+      const close = vi.fn();
+      vi.mocked(fs.watch).mockImplementationOnce((() => Object.assign(new EventEmitter(), { close })) as unknown as typeof fs.watch);
+
+      service.subscribe();
+      await vi.waitFor(() => {
+        expect(service.isWatchingAddressFileForTests).toBe(true);
+      }, { timeout: 2_000 });
+
+      // Nothing to find yet, so the watcher stays armed.
+      const access = vi.spyOn(fs.promises, 'access');
+      vi.advanceTimersToNextTimer();
+      await access.mock.results[0].value.catch(() => undefined);
+      await flush();
+      expect(service.isWatchingAddressFileForTests).toBe(true);
+
+      vi.mocked(probeLiveness).mockResolvedValueOnce(startingSnapshot());
+      fs.writeFileSync(path.join(tmpRoot, 'scheduler', 'api.address'), '127.0.0.1:8080\n');
+      vi.advanceTimersToNextTimer();
+      await waitUntil(() => !service.isWatchingAddressFileForTests);
+
+      expect(close).toHaveBeenCalledOnce();
+      expect(service.isPollingForTests).toBe(true);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
 
