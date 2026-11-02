@@ -289,6 +289,29 @@ describe('annexClientStore', () => {
       vi.useRealTimers();
     });
 
+    it('still updates status from a hook:event whose tool input was cut down', async () => {
+      const { useRemoteProjectStore } = await import('./remoteProjectStore');
+      const spy = vi.spyOn(useRemoteProjectStore.getState(), 'updateRemoteAgentStatus');
+
+      let eventCallback: ((event: any) => void) | undefined;
+      mockAnnexClient.onSatelliteEvent.mockImplementationOnce((cb: any) => {
+        eventCallback = cb;
+        return vi.fn();
+      });
+
+      initAnnexClientListener();
+      const detailedStatus = { state: 'working', message: 'Running Bash', timestamp: 1000 };
+      vi.useFakeTimers();
+      eventCallback!({ satelliteId: 'sat-1', type: 'hook:event', payload: { agentId: 'agent-1', event: { kind: 'pre_tool', toolName: 'Write', toolInput: { file_path: '/x' }, toolInputTruncated: { originalBytes: 2097152 } }, detailedStatus } });
+
+      // Hook events are throttled to 50ms
+      vi.advanceTimersByTime(50);
+
+      expect(spy).toHaveBeenCalledWith('sat-1', 'agent-1', detailedStatus);
+      spy.mockRestore();
+      vi.useRealTimers();
+    });
+
     it('ignores hook:event without detailedStatus', async () => {
       const { useRemoteProjectStore } = await import('./remoteProjectStore');
       const spy = vi.spyOn(useRemoteProjectStore.getState(), 'updateRemoteAgentStatus');

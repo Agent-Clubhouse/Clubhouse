@@ -1,0 +1,44 @@
+{
+  "direction": "desktop-to-phone",
+  "frame": {
+    "payload": {
+      "agentId": "durable_chat",
+      "event": {
+        "agentId": "durable_chat",
+        "data": {
+          "content": [
+            {
+              "text": "[Clubhouse: this is a preview. This tool call is too large to show in full here. Open it on the desktop for all of it.]",
+              "type": "text"
+            }
+          ],
+          "kind": "edit",
+          "locations": [
+            {
+              "line": 1,
+              "path": "/work/app/big.ts"
+            }
+          ],
+          "rawInput": {
+            "file_path": "/work/app/big.ts"
+          },
+          "status": "pending",
+          "title": "Write big.ts",
+          "toolCallId": "call_write",
+          "toolName": "Write",
+          "truncated": {
+            "originalBytes": 307400
+          }
+        },
+        "seq": 101,
+        "sessionId": "sess_live",
+        "ts": 1800000041000,
+        "type": "tool_call",
+        "v": 2
+      }
+    },
+    "seq": 1000,
+    "type": "chat:event"
+  },
+  "note": "A tool_call over 256 KiB keeps its id, title, kind, status and locations. rawInput has only small plain fields. 147 ignores truncated, so content leads with a note, which it shows when the card is opened. originalBytes is pinned here."
+}

@@ -5,6 +5,11 @@ import type { AgentRuntime, ChatCapabilities, ChatEvent, ContentBlock, Permissio
 import { CHAT_ATTACHMENTS_MAX, PERMISSION_LEVELS, switchNote } from '../../shared/chat';
 import { MOBILE_COMMAND_TYPES, type MobileChatControls, type MobileCommand, type MobileResponse } from '../../shared/mobile-control';
 import { AGENT_IDLE_SLEEP_MINUTES } from '../../shared/idle-sleep';
+import { boundPendingPermissions, hasSupportedDeny, isIncompletePermission } from './annex-chat-bounds';
+
+const DENY_OPTION_KINDS: ReadonlySet<string> = new Set(['reject_once', 'reject_always', 'cancel_turn']);
+const INCOMPLETE_APPROVE_REFUSED = 'This request is too large to review here. Review it on the desktop to approve it, or deny it here.';
+const INCOMPLETE_APPROVE_REFUSED_DESKTOP_ONLY = 'This request is too large to review here. Review it on the desktop.';
 
 export class MobileControlError extends Error {
   /** `detail` is a sentence for the user (e.g. why a name was refused); the receipt's message falls back to the code. */
@@ -250,6 +255,12 @@ export async function executeChatCommand(command: Extract<MobileCommand, { sessi
     const request = pending.pendingPermissions.find((e) => e.data.requestId === command.requestId);
     const option = request?.data.options.find((o) => o.optionId === command.optionId);
     const activeOption = runtime.getPendingPermissionOptions?.(command.requestId)?.find((o) => o.optionId === command.optionId);
+    // Follows what was sent: a phone can't approve what it was only shown part of. Denying needs no review.
+    // The record of what was sent doesn't survive a restart, so work out the total's share again.
+    boundPendingPermissions(pending.pendingPermissions);
+    if (request && option && !DENY_OPTION_KINDS.has(option.kind) && isIncompletePermission(request, runtime.getPendingPermissionOptions?.(command.requestId))) {
+      throw new MobileControlError('incomplete_representation', 409, 'rejected', hasSupportedDeny(request.data.options) ? INCOMPLETE_APPROVE_REFUSED : INCOMPLETE_APPROVE_REFUSED_DESKTOP_ONLY);
+    }
     if (!option || !activeOption || activeOption.kind !== option.kind) throw new MobileControlError('pending_request_not_found');
     await runtime.respondPermission(command.requestId, command.optionId);
   } else {

@@ -202,12 +202,29 @@ A `tool_call_update` whose `chat:event` is over 1 MiB goes out as a preview, liv
 - `toolCallId`, `status`, `durationMs` and `exitCode` are kept.
 - `content` is the start and end of each block, with a plain note between them saying how much is omitted. `contentMode` is `replace`, so it replaces what you have rather than adding to it.
 - A `diff` block too large to send becomes a `text` block, because part of a diff would read as the whole change.
-- `rawOutput` is left out unless it's small.
+- `rawOutput` is left out unless it's small. If no block was cut, a text block says it's a preview, because a client may ignore `truncated`. With no `content` at all, that note is the only `content`, with `contentMode: append` so what's shown stays, and only one update for a call carries it. After a desktop restart a call can get one more. These notes are in the tool's content, so on a client that collapses tool cards they're seen when a card is opened. The always-visible warning is the permission request's `description`, below.
 - `truncated: {originalBytes}` is the whole event's size.
 
-The transcript on the desktop is whole. `GET …/chat` still returns the full event, so this recovers the output only if the whole response fits in what you can receive. Other `chat:event` types aren't bounded yet (#2673).
+The transcript on the desktop is whole. `GET …/chat` still returns the full event, so this recovers the output only if the whole response fits in what you can receive. Permission requests have their own rules, below. Other `chat:event` types aren't bounded yet (#2673).
 
 Conditions from Clubhouse Go's tests on build 147, for any later change here: a preview must keep the id and final status, and must replace rather than append. A frame may only be left out entirely if it carries no critical fact, so never a permission, question, queue or status frame.
+
+## Large permission requests
+
+A permission request over 256 KiB is too large to review on a phone, wherever it arrives. For a `chat:event` `permission_request`, and `pendingPermissions` in `GET …/chat`, a phone gets:
+
+- `description` starting with the warning below, so it's the first thing shown. `content` is one text block starting with it too, then a preview.
+- `rawInput` with only its small plain fields, such as the path. `requestId`, `title`, `toolName`, `toolCallId` and `options` are kept. `truncated: {originalBytes}`.
+
+The warning is: "Incomplete input: this request is too large to show in full here. Review it on the desktop to approve it. You can still deny it here." That last sentence is only there when a phone has a deny it supports: `reject_once`, `cancel_turn`, or `reject_always` while `persistentApprovals` is on. With none of those it's: "Incomplete input: this request is too large to show in full here. Review it on the desktop." The refused approve's message follows the same rule.
+
+**Approve is refused:** `chat.permission` with anything but a deny option answers 409, `status:"rejected"`, `error:{code:"incomplete_representation",message}`. Denying still works. Full review is on the desktop, and the pending call itself is never changed. Approve is also refused when the desktop can't establish you were shown the whole request: one left pending across its restart, unless the whole original request, options included, is at most 4 KiB, which is whole on every path. It's refused too if the options the agent would act on aren't the ones you were sent.
+
+**The `tool_call` for it:** over 256 KiB, a `tool_call` keeps its id, title, kind, status and locations. Its `rawInput` has only small plain fields, its `content` starts with a text note saying it's a preview, then a preview of any content, and it has `truncated: {originalBytes}`.
+
+**All pending, together:** the permissions in `/chat` total at most 1 MiB. Past that each gets a share, and one forced below its own cap counts as incomplete, with the same warning and refusal. None is ever left out.
+
+**Paths that draw no card** (`hook:event`, outer `permission:request` and the snapshot's `pendingPermissions`) carry at most 64 KiB of `toolInput`: its small plain fields, and `toolInputTruncated: {originalBytes}`. `POST …/permission-response` refuses `allow` with 409 `incomplete_representation` for a call that's over that. `hook:event` keeps `detailedStatus`.
 
 ## Who sent a message
 
