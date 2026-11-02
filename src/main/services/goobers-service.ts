@@ -238,6 +238,8 @@ export class GoobersService {
   private pollTimer: ReturnType<typeof setInterval> | null = null;
   private pollIntervalMs = POLL_INTERVAL_MS;
   private addressWatcher: FSWatcher | null = null;
+  private addressCheckTimer: ReturnType<typeof setInterval> | null = null;
+  private addressCheckInFlight = false;
   private focusListenerRegistered = false;
   private teardownRegistered = false;
   private eventStreamHandle: EventStreamHandle | null = null;
@@ -578,12 +580,44 @@ export class GoobersService {
         // the daemon (or its first start) creates it.
       });
       this.addressWatcher = watcher;
+      this.startAddressFileCheck(schedulerDir, watcher);
     } catch {
       // Same as above — the directory may not exist yet.
     }
   }
 
+  /**
+   * macOS can deliver an fs.watch event many seconds late or not at all, and
+   * nothing else re-probes a `not-running` daemon, so a lost event would leave
+   * the panel stuck there while the daemon is up. Checking for the file is the
+   * backstop: the watcher stays the fast path, and this bounds how late it can
+   * be. Also covers the file appearing between the last probe and the watch.
+   */
+  private startAddressFileCheck(schedulerDir: string, watcher: FSWatcher): void {
+    const addressFile = path.join(schedulerDir, 'api.address');
+    this.addressCheckTimer = setInterval(() => {
+      if (this.addressCheckInFlight || !this.canPollNow()) return;
+      this.addressCheckInFlight = true;
+      void this.checkAddressFile(addressFile, watcher).finally(() => {
+        this.addressCheckInFlight = false;
+      });
+    }, POLL_INTERVAL_MS);
+  }
+
+  private async checkAddressFile(addressFile: string, watcher: FSWatcher): Promise<void> {
+    try {
+      await fs.promises.access(addressFile);
+    } catch {
+      return; // Not there yet — keep waiting.
+    }
+    if (this.addressWatcher === watcher) await this.onAddressFileChanged();
+  }
+
   private closeAddressWatcher(): void {
+    if (this.addressCheckTimer) {
+      clearInterval(this.addressCheckTimer);
+      this.addressCheckTimer = null;
+    }
     if (this.addressWatcher) {
       this.addressWatcher.close();
       this.addressWatcher = null;
