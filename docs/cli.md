@@ -2,6 +2,8 @@
 
 Lets scripts list projects and agents and change how they look while Clubhouse is open. It covers a project's display name, color, emoji and image, and an agent's color, emoji and image. It can't rename agents or change anything else.
 
+The Dispatcher is an agent here too. While it's on, `clubhouse agents` lists it with the project `__dispatcher__`, and `clubhouse agent set` changes its color, emoji and image. `--project` only covers registered projects, so it leaves the Dispatcher out.
+
 ## Install
 
 In Clubhouse, go to **Settings > About > Command line tool** and choose **Install**. It needs Node.js on your PATH and no admin rights.

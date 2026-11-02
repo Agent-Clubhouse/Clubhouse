@@ -7,31 +7,33 @@
  *
  * Who can change what:
  * - An agent changes itself and its own project.
- * - The Dispatcher and the CLI change any project or agent.
- * - The Dispatcher's own appearance is locked for everyone.
+ * - The Dispatcher and the CLI change any project or agent, the Dispatcher included.
+ *   No other agent can change the Dispatcher: `own` only reaches itself.
  *
  * All of it is display only, so it changes at any time, awake or asleep. The
  * Settings card and agent.update still lock an agent's while it is awake. An
  * agent's name isn't here: it has one name field, and a rename leaves the
- * worktree and branch behind, so the name and path drift apart.
+ * worktree and branch behind, so the name and path drift apart. The Dispatcher's
+ * name stays too, and a phone's agent.update still can't change its look.
  */
 
 import * as fs from 'fs';
 import * as fsp from 'fs/promises';
 import { isDisposedAgent } from '../../shared/agent-helpers';
+import { DISPATCHER_PROJECT_ID } from '../../shared/dispatcher-types';
 import { CHAT_MEDIA_TYPES, sniffMediaType } from '../../shared/chat';
 import { ICON_FILE_MAX_BYTES } from '../../shared/icon-limits';
 import { AGENT_COLORS } from '../../shared/name-generator';
 import type { DurableAgentConfig, Project } from '../../shared/types';
 import * as agentConfig from './agent-config';
 import { resolveLocalPath } from './agent-runtime/chat-media';
-import { isDispatcherPath } from './dispatcher/dispatcher-paths';
-import { isDispatcherAgentId } from './dispatcher/dispatcher-service';
+import { getDispatcherPath } from './dispatcher/dispatcher-paths';
+import { getDispatcherState, isDispatcherAgentId } from './dispatcher/dispatcher-service';
 import { appLog } from './log-service';
 import * as projectStore from './project-store';
 
 export type AppearanceErrorCode =
-  | 'out_of_scope' | 'not_found' | 'ambiguous_project' | 'no_changes' | 'dispatcher_locked' | 'agent_creating'
+  | 'out_of_scope' | 'not_found' | 'ambiguous_project' | 'no_changes' | 'agent_creating'
   | 'invalid_name' | 'invalid_color' | 'invalid_emoji' | 'invalid_image' | 'conflicting_icon';
 
 /** A refused change. The message says why, for the caller to show as is. */
@@ -185,10 +187,12 @@ export async function listProjectAppearances(): Promise<ProjectAppearance[]> {
   return (await projectStore.list()).map(describeProject);
 }
 
-/** Every agent, in one project or all of them. The Dispatcher is in none. */
+/** Every agent, in one project or all of them. All of them includes the Dispatcher while it is on: it is in no project. */
 export async function listAgentAppearances(projectRef?: string): Promise<Array<AgentAppearance & { projectId: string }>> {
   const projects = await projectStore.list();
-  const targets = projectRef ? [await findProject(projects, projectRef)] : projects;
+  const dispatcher = getDispatcherState();
+  const dispatcherFolder = dispatcher.enabled && dispatcher.path ? [{ id: DISPATCHER_PROJECT_ID, path: dispatcher.path }] : [];
+  const targets: Array<Pick<Project, 'id' | 'path'>> = projectRef ? [await findProject(projects, projectRef)] : [...projects, ...dispatcherFolder];
   const rows: Array<AgentAppearance & { projectId: string }> = [];
   for (const project of targets) {
     let agents: DurableAgentConfig[];
@@ -247,10 +251,10 @@ async function resolveAgent(actor: AppearanceActor, agentId: string | undefined)
   const id = agentId ?? actor.agentId;
   if (!id) throw new AppearanceError('not_found', 'Say which agent to change.');
   if (actor.scope === 'own' && id !== actor.agentId) throw new AppearanceError('out_of_scope', 'You can only change yourself.');
-  if (isDispatcherAgentId(id) || (id === actor.agentId && actor.scope === 'own' && isDispatcherPath(actor.projectPath))) {
-    throw new AppearanceError('dispatcher_locked', 'The Dispatcher\'s appearance can\'t be changed.');
-  }
-  const projectPaths = actor.scope === 'own' ? [actor.projectPath] : (await projectStore.list()).map((p) => p.path);
+  // The Dispatcher is in no project: its config is in its own folder. Turned off, it asks as `own` from that folder.
+  const projectPaths = actor.scope === 'own'
+    ? [actor.projectPath]
+    : isDispatcherAgentId(id) ? [getDispatcherPath()] : (await projectStore.list()).map((p) => p.path);
   for (const projectPath of projectPaths) {
     const config = await agentConfig.getDurableConfig(projectPath, id);
     if (config && !isDisposedAgent(config)) return { projectPath, config };

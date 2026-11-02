@@ -63,6 +63,18 @@ describe('appearance tools', () => {
     expect(mocks.updateProjectAppearance).toHaveBeenCalledWith({ scope: 'all', agentId: 'dispatcher', cwd: '/dispatcher' }, 'two', { color: 'teal' });
   });
 
+  it('lets the Dispatcher ask about itself, by default or by id (#2645)', async () => {
+    await callTool('dispatcher', 'update_agent', { color: 'teal' });
+    expect(mocks.updateAgentAppearance).toHaveBeenLastCalledWith({ scope: 'all', agentId: 'dispatcher', cwd: '/dispatcher' }, undefined, { color: 'teal' });
+    await callTool('dispatcher', 'update_agent', { agent_id: 'dispatcher', emoji: '🦊' });
+    expect(mocks.updateAgentAppearance).toHaveBeenLastCalledWith({ scope: 'all', agentId: 'dispatcher', cwd: '/dispatcher' }, 'dispatcher', { emoji: '🦊' });
+  });
+
+  it('asks with its own scope when another agent names the Dispatcher', async () => {
+    await callTool('a1', 'update_agent', { agent_id: 'dispatcher', color: 'teal' });
+    expect(mocks.updateAgentAppearance).toHaveBeenLastCalledWith(expect.objectContaining({ scope: 'own', agentId: 'a1' }), 'dispatcher', { color: 'teal' });
+  });
+
   it('returns what changed', async () => {
     expect(JSON.parse(text(await callTool('a1', 'update_project', { color: 'rose' })))).toEqual({ project: { id: 'p1' } });
     expect(JSON.parse(text(await callTool('a1', 'update_agent', { color: 'rose' })))).toEqual({ agent: { id: 'a1' } });

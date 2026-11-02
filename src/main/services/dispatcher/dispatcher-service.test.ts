@@ -259,6 +259,24 @@ describe('turning it off', () => {
 });
 
 describe('change events', () => {
+  it('carry a new look, and a restart keeps it (#2645)', async () => {
+    h.experimental = { dispatcher: true };
+    await svc.setDispatcherEnabled(true);
+    await settle();
+    const changed = vi.fn();
+    svc.onDispatcherChanged(changed);
+
+    await agentConfig.updateDurableConfig(dispatcherDir(), 'durable_1', { color: 'rose', emoji: '🦊' } as DurableConfigUpdates);
+    await settle();
+    expect(changed).toHaveBeenLastCalledWith(expect.objectContaining({
+      agentId: 'durable_1', config: expect.objectContaining({ color: 'rose', emoji: '🦊' }),
+    }));
+
+    svc._resetDispatcherForTesting();
+    await svc.initDispatcher();
+    expect(svc.getDispatcherState().config).toMatchObject({ color: 'rose', emoji: '🦊', name: 'Dispatcher' });
+  });
+
   it('fire once per real change', async () => {
     const changed = vi.fn();
     svc.onDispatcherChanged(changed);

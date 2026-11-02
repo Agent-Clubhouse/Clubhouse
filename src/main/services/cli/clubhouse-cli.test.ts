@@ -199,7 +199,7 @@ describe('run', () => {
 
   it.each([
     [refused(400, 'invalid_color', 'Not a color.'), EXIT.refused],
-    [refused(409, 'dispatcher_locked', 'Locked.'), EXIT.refused],
+    [refused(409, 'agent_creating', 'Still being created.'), EXIT.refused],
     [refused(404, 'not_found', 'No such agent.'), EXIT.notFound],
     [refused(500, 'internal', 'Disk full.'), EXIT.failed],
   ])('maps %j to its exit code and shows the app\'s message', async (response, code) => {

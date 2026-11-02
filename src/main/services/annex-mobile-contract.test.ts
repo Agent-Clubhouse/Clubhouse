@@ -524,7 +524,7 @@ function send(method: string, route: string, body?: Buffer | object, opts: { cli
       rejectUnauthorized: false, agent: false,
       headers: { 'Content-Type': 'application/json', ...(raw && { 'Content-Length': String(raw.length) }), ...opts.headers } }, (res) => {
       let data = ''; res.on('data', (c) => { data += c; });
-      res.on('end', () => resolve({ status: res.statusCode!, body: data ? JSON.parse(data) : null, headers: res.headers }));
+      res.on('end', () => resolve({ status: res.statusCode!, body: data && !res.headers['content-type']?.startsWith('image/') ? JSON.parse(data) : null, headers: res.headers }));
     });
     req.on('error', reject); if (raw) req.write(raw); req.end();
   });
@@ -1107,6 +1107,17 @@ describe('Annex mobile contract fixtures', () => {
     fixtures.set('dispatcher-routes.json', routes);
     W.dispatcher = { flagOn: false, enabled: false, newLayout: true };
     W.durables[DISPATCHER_PATH][0] = { ...W.durables[DISPATCHER_PATH][0], model: undefined, orchestrator: 'claude-code' };
+  });
+
+  it('serves the Dispatcher\'s image, which is in no project, only while it is on (#2645)', async () => {
+    const route = '/api/v1/icons/agent/durable_dispatcher';
+    const saved = W.durables[DISPATCHER_PATH][0];
+    W.durables[DISPATCHER_PATH][0] = { ...saved, icon: 'durable_dispatcher.abc.png' };
+    W.dispatcher = { flagOn: true, enabled: true, newLayout: true };
+    expect((await send('GET', route)).status).toBe(200);
+    W.dispatcher = { flagOn: false, enabled: false, newLayout: true };
+    expect((await send('GET', route)).status).toBe(404);
+    W.durables[DISPATCHER_PATH][0] = saved;
   });
 
   it('Clubhouse MCP off refuses turning orchestration on (#2589)', async () => {

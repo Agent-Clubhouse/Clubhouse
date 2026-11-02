@@ -91,7 +91,7 @@ export function registerAppearanceTools(): void {
     {
       description:
         'Change how an agent looks: color, emoji or image, at any time. Set only what should change. It updates in ' +
-        'the app at once. You can change yourself; the Dispatcher can change any agent but itself. Agents can\'t be renamed here.',
+        'the app at once. You can change yourself; the Dispatcher can change itself and any other agent. Agents can\'t be renamed here.',
       inputSchema: {
         type: 'object',
         properties: {
