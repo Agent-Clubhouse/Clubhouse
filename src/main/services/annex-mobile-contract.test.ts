@@ -2483,6 +2483,33 @@ describe('Annex mobile contract fixtures', { timeout: TEST_TIMEOUT_MS }, () => {
     chat([criticalRow, beside(8 * 1024 * 1024 - 8 * 1024)]);
     expect((await send('GET', route)).status).toBe(503);
 
+    // An answered question stays answered beside an active one taking most of the page: a phone folds the resolution.
+    const sevenPointEight = Math.floor(7.8 * 1024 * 1024);
+    const askedLongAgo = envelope(3, 'question', { requestId: 'q_old', questions: [{ id: 'which', prompt: 'Which branch?', header: 'Branch', options: [] }] });
+    const answered = envelope(40, 'question_resolved', { requestId: 'q_old', answers: { which: 'a'.repeat(400 * 1024) } });
+    const askedNow = envelope(41, 'question', { requestId: 'q_now', questions: [{ id: 'which', prompt: 'q'.repeat(sevenPointEight), header: 'Big', options: [] }] });
+    chat([askedLongAgo, answered, askedNow]);
+    const stillAnswered = await send('GET', route);
+    expect(stillAnswered.status).toBe(200);
+    expect(stillAnswered.body.pendingQuestions.map((e: any) => e.data.requestId)).toEqual(['q_now']);
+    const resolution = stillAnswered.body.events.find((e: any) => e.seq === 40);
+    expect(resolution).toMatchObject({ type: 'question_resolved', data: { requestId: 'q_old', answers: {} } });
+    expect(stillAnswered.body.events.some((e: any) => e.type === 'notice')).toBe(false);
+    expect(Buffer.byteLength(JSON.stringify(stillAnswered.body))).toBeLessThanOrEqual(8 * 1024 * 1024);
+
+    // Others that change state, the same way: a smaller form of the same type, or no page.
+    chat([envelope(40, 'permission_resolved', { requestId: 'perm_old', decision: 'deny', by: 'user', optionId: 'o'.repeat(400 * 1024) }), askedNow]);
+    const permissionDone = (await send('GET', route)).body.events.find((e: any) => e.seq === 40);
+    expect(permissionDone).toMatchObject({ type: 'permission_resolved', data: { requestId: 'perm_old', decision: 'deny', by: 'user' } });
+    chat([envelope(40, 'user_message', { messageId: 'msg_old', source: 'user', delivery: 'prompt', content: [{ type: 'text', text: 'm'.repeat(400 * 1024) }] }), askedNow]);
+    const deliveredShort = (await send('GET', route)).body.events.find((e: any) => e.seq === 40);
+    expect(deliveredShort).toMatchObject({ type: 'user_message', data: { messageId: 'msg_old', delivery: 'prompt' } });
+    const manyIds = Array.from({ length: 30_000 }, (_, i) => `message_${i}`);
+    chat([envelope(40, 'queue_state', { queuedMessageIds: manyIds, transition: { messageIds: manyIds, status: 'queued' } }), askedNow]);
+    expect((await send('GET', route)).status).toBe(503);
+    chat([envelope(40, 'plan', { entries: Array.from({ length: 30_000 }, (_, i) => ({ content: `entry ${i}`, status: 'pending' })) }), askedNow]);
+    expect((await send('GET', route)).status).toBe(503);
+
     chat(LIVE_TRANSCRIPT);
     fixtures.set('chat-pages.json', {
       note: 'Bodies are shortened to what shows the rule. A 503 leaves a phone read-only until a refresh works.',
@@ -2490,6 +2517,7 @@ describe('Annex mobile contract fixtures', { timeout: TEST_TIMEOUT_MS }, () => {
       minimal: { status: minimal.status, body: { ...shorten(minimal.body), pendingPermissions: [{ ...row, data: { ...row.data, truncated: { originalBytes: 307400 } } }], pendingPermissionCount: minimal.body.pendingPermissions.length } },
       overflow: { status: noPage.status, body: noPage.body },
       queuedRowShortened: { note: 'Beside a question that leaves little room. Only its text is shortened: its ids, source, delivery, every block and part stay. Too little room for this, and the answer is a 503.', status: shortened.status, event: { ...rowShown, data: { ...rowShown.data, content: rowShown.data.content.slice(0, 1).map((b: any) => ({ type: b.type, text: `${b.text.slice(0, 40)}<shortened here>` })), contentBlocks: rowShown.data.content.length } } },
+      smallestForms: { note: 'Fold these as usual. Empty answers with truncated still means answered. A queue_state or anything without a form here makes the page a 503.', questionResolved: resolution, permissionResolved: { ...permissionDone }, userMessage: deliveredShort },
       omittedQuestion: { note: 'A question in history too large for any page. Not pending, so nothing to answer.', event: stub },
       queuedRow: { note: 'A row named by queuedMessageIds, in front of a tail that does not reach it. nextBeforeSeq does not count it.', firstEvents: withQueued.body.events.slice(0, 2).map((e: any) => ({ seq: e.seq, type: e.type, ...(e.type === 'user_message' && { data: e.data }) })), nextBeforeSeq: '<the seq of the second event>', queuedMessageIds: withQueued.body.queuedMessageIds },
     });

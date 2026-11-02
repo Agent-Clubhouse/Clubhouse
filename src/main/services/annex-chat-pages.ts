@@ -12,8 +12,11 @@
  * Queued rows come next, wherever they are in the history: `queuedMessageIds` names them,
  * and a queue state with no row reads as nothing waiting.
  *
- * Every event a page passes is accounted for: itself, a preview, or a stub saying it's
- * left out, and never a gap nothing marks. Each page is worked out from the transcript
+ * Every event a page passes is accounted for, and never a gap nothing marks. It's itself,
+ * or a preview, or at the last, for what changes state, a compact form of the same type.
+ * A phone folds those to work out what's still open: a notice in place of a
+ * `question_resolved` brings an answered card back. Only what carries no state can be a
+ * stub saying it's left out. Anything else that can't fit makes the page a 503. Each page is worked out from the transcript
  * and what's pending, so the same event looks the same however often it's read while
  * those stay the same. It doesn't get the note a live update can append: that note is
  * once per call, and history has nothing to count them against.
@@ -63,11 +66,11 @@ function countLongStrings(value: unknown): number {
 type UserMessage = Extract<ChatEvent, { type: 'user_message' }>;
 
 /**
- * A queued row within `maxBytes`, or null if it can't be: `queuedMessageIds` names it, so
- * it never becomes a stub. Only its text is shortened. Its ids, source and delivery stay,
- * and so does every block and part, so they stay in step.
+ * A user message within `maxBytes`, or null if it can't be. Only its text is shortened.
+ * Its ids, source and delivery stay, and so does every block and part, so they stay in
+ * step. A queued row only ever has this form: `queuedMessageIds` names it.
  */
-function queuedRowWithin(event: UserMessage, maxBytes: number): UserMessage | null {
+function userMessageWithin(event: UserMessage, maxBytes: number): UserMessage | null {
   const remote = remoteChatEvent(event) as UserMessage;
   const originalBytes = bytesOf(remote);
   if (originalBytes <= maxBytes) return remote;
@@ -91,12 +94,48 @@ function queuedRowWithin(event: UserMessage, maxBytes: number): UserMessage | nu
 /** A question's text can be its id, and 147 answers empty without it: never shortened, here or in history. */
 const isExact = (event: ChatEvent): boolean => event.type === 'question' || event.type === 'question_resolved';
 
-/** What's left of an event that can't be shown even as a preview. A tool call keeps its ids, status and exit code, so it doesn't look unfinished. */
-function stubEvent(event: ChatEvent, originalBytes: number): ChatEvent {
-  const short = (text: string) => previewText(text, MINIMAL_TEXT_MAX_BYTES);
+/**
+ * What can be a generic stub. An allowlist, so a new event type isn't one until someone
+ * decides it carries no state. A question or request in history is here because a card
+ * that's gone can't reopen: one still pending is in the lists, and never gets this far.
+ */
+const STUBBABLE_TYPES: ReadonlySet<ChatEvent['type']> = new Set<ChatEvent['type']>([
+  'agent_message', 'agent_message_chunk', 'agent_thought', 'agent_thought_chunk', 'notice', 'usage', 'question', 'permission_request',
+]);
+
+const shortText = (text: string) => previewText(text, MINIMAL_TEXT_MAX_BYTES);
+
+/**
+ * An event at its smallest: the same type with what a phone folds on, where it changes
+ * state, or a stub saying it's left out, where it doesn't. Null if it has neither form.
+ * Types made only of ids, such as `queue_state`, have nothing to give up, so they're null.
+ */
+function smallestForm(event: ChatEvent, originalBytes: number): ChatEvent | null {
+  const truncated = { originalBytes };
+  if (event.type === 'question_resolved') {
+    const { requestId, cancelled } = event.data;
+    return { ...event, data: { requestId, answers: {}, ...(cancelled !== undefined && { cancelled }), truncated } as typeof event.data };
+  }
+  if (event.type === 'permission_resolved') {
+    const { requestId, decision, by, optionId } = event.data;
+    return { ...event, data: { requestId, decision, by, ...(optionId && Buffer.byteLength(optionId) <= MINIMAL_TEXT_MAX_BYTES && { optionId }), truncated } as typeof event.data };
+  }
+  if (event.type === 'user_message') {
+    const { messageId, clientCommandId, source, delivery, queuedWith, routed, content } = event.data;
+    const firstText = content.find((block) => block.type === 'text');
+    return { ...event, data: {
+      messageId, source, delivery,
+      ...(clientCommandId && { clientCommandId }),
+      ...(queuedWith && { queuedWith }),
+      content: [{ type: 'text', text: firstText?.type === 'text' ? shortText(firstText.text) : '' }],
+      ...(routed?.length && { routed: previewStrings(routed.slice(0, 1), MINIMAL_TEXT_MAX_BYTES) }),
+      truncated,
+    } as typeof event.data };
+  }
+  // A tool call keeps its ids, status and exit code, so it doesn't look unfinished.
   if (event.type === 'tool_call') {
     const { toolCallId, kind, title, status, toolName, subagentId } = event.data;
-    return { ...event, data: { toolCallId, kind, title: short(title), status, ...(toolName && { toolName: short(toolName) }), ...(subagentId && { subagentId }), content: [toolPreviewNote()], truncated: { originalBytes } } as typeof event.data };
+    return { ...event, data: { toolCallId, kind, title: shortText(title), status, ...(toolName && { toolName: shortText(toolName) }), ...(subagentId && { subagentId }), content: [toolPreviewNote()], truncated } as typeof event.data };
   }
   if (event.type === 'tool_call_update') {
     const { toolCallId, status, title, durationMs, error, content } = event.data;
@@ -104,16 +143,16 @@ function stubEvent(event: ChatEvent, originalBytes: number): ChatEvent {
     return { ...event, data: {
       toolCallId,
       ...(status && { status }),
-      ...(title && { title: short(title) }),
+      ...(title && { title: shortText(title) }),
       ...(durationMs !== undefined && { durationMs }),
-      ...(error && { error: short(error) }),
+      ...(error && { error: shortText(error) }),
       content: [toolPreviewNote(), ...(exitCode !== undefined ? [{ type: 'terminal' as const, output: '', exitCode }] : [])],
       contentMode: 'replace',
-      truncated: { originalBytes },
+      truncated,
     } as typeof event.data };
   }
+  if (!STUBBABLE_TYPES.has(event.type)) return null;
   const message = event.type === 'question' ? 'A question here is too large to show. It\'s on the desktop.' : 'Something here is too large to show. It\'s on the desktop.';
-  // Its ids, so a later event about it still has something to refer to. Never for what's pending or queued: those aren't stubbed.
   const { requestId, messageId, toolCallId } = event.data as { requestId?: string; messageId?: string; toolCallId?: string };
   const ids = Object.fromEntries(Object.entries({ requestId, messageId, toolCallId }).filter(([, id]) => id && Buffer.byteLength(id) <= MINIMAL_TEXT_MAX_BYTES));
   return { ...event, type: 'notice', data: { level: 'info', code: 'event_omitted', message, omitted: { type: event.type, originalBytes, ...ids } } } as ChatEvent;
@@ -125,11 +164,13 @@ function projectEvent(event: ChatEvent): ChatEvent {
   if (isExact(remote)) return remote;
   const bytes = bytesOf(remote);
   if (bytes <= PAGE_EVENT_MAX_BYTES && event.type !== 'permission_request') return remote;
+  if (remote.type === 'user_message') return userMessageWithin(remote, PAGE_EVENT_MAX_BYTES) ?? smallestForm(remote, bytes)!;
   const bounded = boundChatEvent(remote, bytes, { appendNote: false });
   if (bytesOf(bounded) <= PAGE_EVENT_MAX_BYTES) return bounded;
   // A cap on each string isn't one on the total, and some fields have no preview of their own.
   const previewed = { ...bounded, data: previewStrings(bounded.data) } as ChatEvent;
-  return bytesOf(previewed) <= PAGE_EVENT_MAX_BYTES ? previewed : stubEvent(remote, bytes);
+  // With no smaller form it stays as it is: too large for what's left, it makes the page a 503.
+  return bytesOf(previewed) <= PAGE_EVENT_MAX_BYTES ? previewed : smallestForm(remote, bytes) ?? previewed;
 }
 
 /** Just enough to know a request is waiting, and to deny it if a phone can. Approve is refused, and not offered. */
@@ -173,7 +214,13 @@ function overflow(pendingCount: number): ChatPage {
   return {
     ok: false,
     stage: 'error',
-    failure: { error: 'pending_overflow', pendingCount, message: pendingCount === 1 ? 'A pending request is too large to show here. Review it on the desktop.' : `${pendingCount} requests are pending, too many to show here. Review them on the desktop.` },
+    failure: {
+      error: 'pending_overflow',
+      pendingCount,
+      message: pendingCount === 0 ? 'This chat has something too large to show here. Review it on the desktop.'
+        : pendingCount === 1 ? 'A pending request is too large to show here. Review it on the desktop.'
+          : `${pendingCount} requests are pending, too many to show here. Review them on the desktop.`,
+    },
   };
 }
 
@@ -188,7 +235,7 @@ export function buildChatPage({ metadata, eligible, limit, pendingPermissions, p
   const queuedRows = eligible.filter((event): event is UserMessage => isQueuedRow(event, queue));
   const pendingCount = pendingPermissions.length + pendingQuestions.length + queuedRows.length;
   const envelopeBytes = (permissions: PermissionRequest[]) => bytesOf({ ...metadata, truncated: true, nextBeforeSeq: Number.MAX_SAFE_INTEGER, pendingPermissions: permissions, pendingQuestions, events: [] });
-  const encodeRows = (maxBytes: number) => queuedRows.map((event) => queuedRowWithin(event, maxBytes)).map((row) => (row ? JSON.stringify(row) : null));
+  const encodeRows = (maxBytes: number) => queuedRows.map((event) => userMessageWithin(event, maxBytes)).map((row) => (row ? JSON.stringify(row) : null));
   // At their smallest here. They get whatever room is left afterwards.
   const queuedSmallest = encodeRows(QUEUED_ROW_MIN_BYTES);
   if (queuedSmallest.includes(null)) return overflow(pendingCount);
@@ -220,6 +267,8 @@ export function buildChatPage({ metadata, eligible, limit, pendingPermissions, p
   const events: string[] = [];
   let oldestShown: number | null = null;
   let walked = 0;
+  // What this walk has taken of the room. With none taken, the next page would have no more.
+  let added = 0;
   let stopped = false;
   for (let i = eligible.length - 1; i >= 0 && walked < limit; i--) {
     const original = eligible[i];
@@ -236,10 +285,10 @@ export function buildChatPage({ metadata, eligible, limit, pendingPermissions, p
     const projected = pending ?? projectEvent(original);
     let json = JSON.stringify(projected);
     if (used + Buffer.byteLength(json) + 1 > CHAT_PAGE_MAX_BYTES) {
-      // The next page has more room, unless this is already first on one. Then what's pending is taking
-      // that room on every page, so paging would never get past it. A request or question still pending
-      // is in the list, so leaving out its copy loses nothing. Anything else is marked as left out.
-      if (walked > 0) {
+      // The next page has more room, unless nothing has taken any yet. Then what's pending is taking
+      // it on every page, so paging would never get past this. A request or question still pending
+      // is in the list, so leaving out its copy loses nothing. Anything else goes at its smallest.
+      if (added > 0) {
         stopped = true;
         break;
       }
@@ -248,12 +297,17 @@ export function buildChatPage({ metadata, eligible, limit, pendingPermissions, p
         walked++;
         continue;
       }
-      json = JSON.stringify(stubEvent(remoteChatEvent(original), bytesOf(original)));
+      const remote = remoteChatEvent(original);
+      const smallest = smallestForm(remote, bytesOf(remote));
+      if (!smallest) return overflow(pendingCount);
+      json = JSON.stringify(smallest);
+      if (used + Buffer.byteLength(json) + 1 > CHAT_PAGE_MAX_BYTES) return overflow(pendingCount);
     }
     events.unshift(json);
     used += Buffer.byteLength(json) + 1;
     oldestShown = original.seq;
     walked++;
+    added++;
   }
   const more = stopped || walked < eligible.length;
   // Rows older than this page, in front. The next page's cursor doesn't count them.

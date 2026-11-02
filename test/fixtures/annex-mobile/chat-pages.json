@@ -172,5 +172,61 @@
     },
     "note": "Beside a question that leaves little room. Only its text is shortened: its ids, source, delivery, every block and part stay. Too little room for this, and the answer is a 503.",
     "status": 200
+  },
+  "smallestForms": {
+    "note": "Fold these as usual. Empty answers with truncated still means answered. A queue_state or anything without a form here makes the page a 503.",
+    "permissionResolved": {
+      "agentId": "durable_chat",
+      "data": {
+        "by": "user",
+        "decision": "deny",
+        "requestId": "perm_old",
+        "truncated": {
+          "originalBytes": 409789
+        }
+      },
+      "seq": 40,
+      "sessionId": "sess_live",
+      "ts": 1799999980000,
+      "type": "permission_resolved",
+      "v": 2
+    },
+    "questionResolved": {
+      "agentId": "durable_chat",
+      "data": {
+        "answers": {},
+        "requestId": "q_old",
+        "truncated": {
+          "originalBytes": 409763
+        }
+      },
+      "seq": 40,
+      "sessionId": "sess_live",
+      "ts": 1799999980000,
+      "type": "question_resolved",
+      "v": 2
+    },
+    "userMessage": {
+      "agentId": "durable_chat",
+      "data": {
+        "content": [
+          {
+            "text": "mmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmm\n[Clubhouse: 409357 bytes of this output are omitted here. Open it on the desktop for all of it.]\nmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmm",
+            "type": "text"
+          }
+        ],
+        "delivery": "prompt",
+        "messageId": "msg_old",
+        "source": "user",
+        "truncated": {
+          "originalBytes": 409811
+        }
+      },
+      "seq": 40,
+      "sessionId": "sess_live",
+      "ts": 1799999980000,
+      "type": "user_message",
+      "v": 2
+    }
   }
 }

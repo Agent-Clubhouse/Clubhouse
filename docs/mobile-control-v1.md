@@ -246,7 +246,18 @@ One `GET …/chat` response is at most 8 MiB encoded, whatever `limit` asks for,
 
 **Pages:** newest events first, until the page is full. `truncated` says there's more, and `nextBeforeSeq` is where the next page starts. A page can hold fewer than `limit`. An event over 1 MiB has a preview, as for live tool output, and each page is worked out afresh from the transcript, so an event reads the same each time. It doesn't carry the appended note a live update can have.
 
-**Nothing is skipped without saying so.** An event that's first on a page and still doesn't fit in the room left comes as a stub, at its own `seq`, so paging moves on with the gap marked. A tool call or update stays that type, keeping `toolCallId`, `status`, `title` and exit code, with `truncated` and a note in `content`. Anything else, including a question in history, becomes `{"type":"notice","data":{"level":"info","code":"event_omitted","message":"…","omitted":{"type":"…","originalBytes":N}}}`. A stub depends on what's pending, because that shares the page: read it again once less is pending and the event comes back whole. What's pending is the exception: it's in `pendingQuestions` or `pendingPermissions`, so a tail copy with no room is simply left out. A stub's `omitted` also carries the event's `requestId`, `messageId` or `toolCallId` if it has one.
+**Nothing is skipped without saying so.** An event that still doesn't fit once nothing else on the page has taken room comes in its smallest form, at its own `seq`, with `truncated` set, so paging moves on:
+
+| Event | Smallest form |
+|---|---|
+| `question_resolved` | Same type: `requestId`, `cancelled`, and `answers: {}`. The answers are on the desktop. |
+| `permission_resolved` | Same type: `requestId`, `decision`, `by`, and `optionId` if short. |
+| `user_message` that isn't queued | Same type: `messageId`, `clientCommandId`, `source`, `delivery`, `queuedWith`, short text, and its first `routed` part. |
+| `tool_call`, `tool_call_update` | Same type: `toolCallId`, `status`, `kind` or `title`, `durationMs`, exit code, and a note in `content`. |
+| Text and thinking output, `usage`, `notice`, and a question or permission request that's no longer pending | `{"type":"notice","data":{"level":"info","code":"event_omitted","message":"…","omitted":{"type":"…","originalBytes":N}}}`, with the event's `requestId`, `messageId` or `toolCallId` if short. |
+| Anything else, including `queue_state`, `queue_removed` and a type added later | No smaller form. If it can't fit, the page is a 503. |
+
+Fold a `question_resolved` or `permission_resolved` as usual: empty `answers` with `truncated` still means answered. A smaller form depends on what's pending, because that shares the page: read it again once less is pending and the event comes back whole. A request or question still pending is in the lists, so a tail copy with no room is simply left out.
 
 **Queued rows are always there.** Every `user_message` a row in `queuedMessageIds` is built from comes on the page, however old, in `seq` order at the front of `events`, so `events` can jump in `seq` there. `nextBeforeSeq` doesn't count them, so you can see one again on an older page: match by `seq`. They're whole if they fit. Otherwise only their text is shortened, to share the room left, with `truncated` set: `messageId`, `queuedWith`, `source`, `delivery`, and every block and `routed` part stay. A queued row is never a stub. If that can't fit, it's a 503.
 
@@ -254,7 +265,7 @@ One `GET …/chat` response is at most 8 MiB encoded, whatever `limit` asks for,
 
 1. Up to 1 MiB of permissions: each whole, or a preview within its cap.
 2. Over that, every row is minimal: `requestId`, `toolCallId`, `toolName`, `title`, a `description` starting with the warning, and only its deny options, with `reject_always` only while `persistentApprovals` is on. A row with none of those can only be viewed. Approve is refused for all of them.
-3. Over 4 MiB of minimal rows, or if pending questions and queued rows can't fit, there's no page: 503 `{"error":"pending_overflow","pendingCount":N,"message":"…"}`. If whole rows are what doesn't fit, rows go minimal first.
+3. Over 4 MiB of minimal rows, or if pending questions, queued rows or an event with no smaller form can't fit, there's no page: 503 `{"error":"pending_overflow","pendingCount":N,"message":"…"}`. If whole rows are what doesn't fit, rows go minimal first.
 
 A question is never shortened or sent without its text, so it stays whole or the page is a 503. The full question stays on the desktop.
 

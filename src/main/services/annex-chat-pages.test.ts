@@ -146,11 +146,19 @@ describe('a chat page', () => {
 
   describe('an event too large even as a preview', () => {
     it('falls back to a stub when many strings add up, re-measured after previewing', () => {
-      const content = Array.from({ length: 60 }, () => ({ type: 'text', text: 't'.repeat(300 * 1024) }));
-      const event = envelope(1, 'user_message', { messageId: 'm1', delivery: 'prompt', content });
+      const parts = Array.from({ length: 60 }, () => 't'.repeat(300 * 1024));
+      const event = envelope(1, 'agent_message', { messageId: 'm1', text: 'x', parts });
       const { body } = page({ eligible: [event] });
       expect(body.events).toHaveLength(1);
-      expect(body.events[0]).toMatchObject({ seq: 1, type: 'notice', data: { omitted: { type: 'user_message' } } });
+      expect(body.events[0]).toMatchObject({ seq: 1, type: 'notice', data: { omitted: { type: 'agent_message', messageId: 'm1' } } });
+    });
+
+    it('keeps a delivered user message as one, even with many blocks', () => {
+      const content = Array.from({ length: 60 }, () => ({ type: 'text', text: 't'.repeat(300 * 1024) }));
+      const event = envelope(1, 'user_message', { messageId: 'm1', source: 'user', delivery: 'prompt', content });
+      const [shown] = page({ eligible: [event] }).body.events;
+      expect(shown).toMatchObject({ type: 'user_message', data: { messageId: 'm1', source: 'user', delivery: 'prompt', truncated: {} } });
+      expect(Buffer.byteLength(JSON.stringify(shown))).toBeLessThanOrEqual(MIB);
     });
 
     it('keeps a tool update whose command is huge, with its id, status and exit code', () => {
@@ -223,9 +231,63 @@ describe('a chat page', () => {
       expect(events.filter((e: any) => e.data.omitted?.type === 'user_message')).toEqual([]);
     });
 
-    it('keeps ids on a stub of anything else', () => {
-      const { body } = page({ eligible: [envelope(1, 'question_resolved', { requestId: 'q1', answers: { a: 'x'.repeat(9 * MIB) } })] });
-      expect(body.events[0].data.omitted).toMatchObject({ type: 'question_resolved', requestId: 'q1' });
+    it('keeps ids on a stub of what can be one', () => {
+      const { body } = page({ eligible: [notice(1, 200 * 1024)], pendingQuestions: [question(90, 'p'.repeat(7.9 * MIB))] });
+      expect(body.events[0].data.omitted.type).toBe('notice');
+      const message = envelope(1, 'agent_message', { messageId: 'm1', text: 'x'.repeat(200 * 1024) });
+      expect(page({ eligible: [message], pendingQuestions: [question(90, 'p'.repeat(7.9 * MIB))] }).body.events[0].data.omitted).toMatchObject({ type: 'agent_message', messageId: 'm1' });
+    });
+  });
+
+  describe('what changes state, beside a question taking most of the page', () => {
+    const active = () => question(90, 'p'.repeat(7.8 * MIB));
+    const shown = (event: any) => {
+      const { result, body } = page({ eligible: [event], pendingQuestions: [active()] });
+      expect(result.ok).toBe(true);
+      return body.events[0];
+    };
+
+    it('keeps a question resolved, with its answers left out', () => {
+      const event = shown(envelope(40, 'question_resolved', { requestId: 'old', cancelled: false, answers: { a: 'x'.repeat(400 * 1024) } }));
+      expect(event).toMatchObject({ seq: 40, type: 'question_resolved', data: { requestId: 'old', cancelled: false, answers: {} } });
+      expect(event.data.truncated.originalBytes).toBeGreaterThan(400 * 1024);
+    });
+
+    it('keeps a permission resolved', () => {
+      const event = shown(envelope(40, 'permission_resolved', { requestId: 'old', decision: 'allow', by: 'user', optionId: 'o'.repeat(400 * 1024) }));
+      expect(event).toMatchObject({ type: 'permission_resolved', data: { requestId: 'old', decision: 'allow', by: 'user' } });
+      expect(event.data).not.toHaveProperty('optionId');
+    });
+
+    it('keeps a delivered message with who sent it and short text', () => {
+      const event = shown(envelope(40, 'user_message', { messageId: 'm', source: 'mcp', delivery: 'prompt', queuedWith: 'q', content: [{ type: 'text', text: 'x'.repeat(400 * 1024) }], routed: [{ from: 'h', text: 'r'.repeat(400 * 1024) }] }));
+      expect(event).toMatchObject({ type: 'user_message', data: { messageId: 'm', source: 'mcp', delivery: 'prompt', queuedWith: 'q', routed: [{ from: 'h' }] } });
+      expect(Buffer.byteLength(JSON.stringify(event))).toBeLessThan(4 * 1024);
+    });
+
+    it.each(['queue_state', 'queue_removed'])('answers 503 for a %s it can not fit, rather than a notice', (type) => {
+      const ids = Array.from({ length: 30_000 }, (_, i) => `message_${i}`);
+      const data = type === 'queue_state' ? { queuedMessageIds: ids, transition: { messageIds: ids, status: 'queued' } } : { messageIds: ids };
+      const { result } = page({ eligible: [envelope(40, type, data)], pendingQuestions: [active()] });
+      expect(result).toMatchObject({ ok: false, failure: { error: 'pending_overflow' } });
+    });
+
+    it('answers 503 for a type it has not been told about, so a new one is never stubbed by default', () => {
+      const { result } = page({ eligible: [envelope(40, 'some_future_event', { value: 'x'.repeat(400 * 1024) })], pendingQuestions: [active()] });
+      expect(result.ok).toBe(false);
+    });
+
+    it.each(['plan', 'plan_document', 'session_state', 'session_ended', 'error', 'subagent', 'mode_changed'])('does not stub a %s', (type) => {
+      const { result } = page({ eligible: [envelope(40, type, { value: 'x'.repeat(400 * 1024) })], pendingQuestions: [active()] });
+      expect(result.ok).toBe(false);
+    });
+
+    it('fills the page past an active question\'s own copy', () => {
+      const current = active();
+      const resolved = envelope(40, 'question_resolved', { requestId: 'old', answers: { a: 'x'.repeat(400 * 1024) } });
+      const { body } = page({ eligible: [question(3, 'old text'), resolved, current], pendingQuestions: [current] });
+      expect(body.events.map((e: any) => [e.seq, e.type])).toEqual([[3, 'question'], [40, 'question_resolved']]);
+      expect(body.truncated).toBe(false);
     });
   });
 
