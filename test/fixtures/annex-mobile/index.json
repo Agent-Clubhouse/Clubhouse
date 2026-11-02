@@ -50,6 +50,7 @@
     "create-options.json",
     "dispatcher-changed.json",
     "dispatcher-routes.json",
+    "frames-over-limit.json",
     "helper-routing-auto.json",
     "helper-routing-changed.json",
     "helper-routing-helper.json",

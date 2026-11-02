@@ -271,6 +271,27 @@ A question is never shortened or sent without its text, so it stays whole or the
 
 **A 503 leaves a phone read-only.** On build 147 it keeps its cached state but sets `requiresResync`, which disables chat send, deny and question answers until a refresh succeeds, so the desktop has to reduce what's pending. It shows only "Desktop request failed (503): pending_overflow". A cold open shows unavailable, with Try again. A refresh recovers once it's smaller.
 
+## Frames over the limit
+
+No frame is meant to go over 8 MiB. Most have a bound of their own, in the sections here. These are the rest.
+
+**`canvas:state`** over the limit comes with no `state`: `{"type":"canvas:state","payload":{"projectId":"…","stateOmitted":{"version":1,"reason":"frame_limit","bytes":N}}}`, and `"projectId":null,"scope":"global"` for the app's. Ignore a `canvas:state` with no `state`, or fetch the canvases through `snapshotTruncation.canvasPaths`.
+
+**`frame:omitted`** is the last resort, at the `seq` the event would have had, live and on replay: `{"type":"frame:omitted","seq":N,"payload":{"version":1,"originalType":"chat:event","eventType":"agent_message","agentId":"…","sessionId":"…","eventSeq":N,"bytes":N}}`.
+
+- Advance your cursor past it, as for any `seq`. A reader that doesn't know the type loses nothing else.
+- It only stands in for `agent_message`, `agent_message_chunk`, `agent_thought` and `agent_thought_chunk`: text that changes no state. A new type is never added by default. Never an approval, a question, a queue change or a status.
+- It isn't fetched for you. A later `agent_message` that fits is a normal event, with its whole text, so an omitted chunk is restored by its final message. If that final message is itself over the limit, it's omitted too. Then the phone keeps whatever chunks it got, `turn_ended` still comes, and a read of `/chat` shows that message as a preview of about 256 KiB with a note, or a stub. The whole text stays on the desktop.
+
+**Still sent whole.** A live `chat:event` carrying a `user_message`, `question`, `question_resolved`, `plan_document` or `queue_state` over 8 MiB goes as it is and is reported, because each holds facts that can't be left out. A `hook:event` with a very long `message` is the same. Up to 16 MiB, a phone receives it.
+
+**Over 16 MiB, a phone can't receive it.** The transport closes the socket.
+
+- Live, it's sent once. The phone reconnects, and the new connection's `snapshot` has a `lastSeq` past it, so a replay from there doesn't include it.
+- On replay it's never sent. A `mobile:replay` or `replay` from before it gets `replay:gap`, so reload the chat and continue from its `lastSeq`.
+- The event itself doesn't reach that phone. A question that size is a 503 on `/chat` while it's pending, so it's answered on the desktop.
+- Each new event of that size closes the socket once more. Nothing re-sends the same one.
+
 ## Large tool output
 
 A `tool_call_update` whose `chat:event` is over 1 MiB goes out as a preview, live and on replay:
@@ -1040,7 +1061,7 @@ Errors use the existing envelope with correlation fields: `error {message, op, s
 
 ## Contract fixtures
 
-`test/fixtures/annex-mobile/` holds a canonical example of every message in this document: capabilities, icon refs and their routes, a snapshot over its limit and the canvas routes, large tool output, the WebSocket snapshot (agents, quick agents, `projectState`, `finishedQuickAgents`, `helperRequests`, theme), the chat snapshot with `chatControls`, `slashCommands` and `contentRoots`, create options and agent settings, a request and receipt for every `MOBILE_COMMAND_TYPES` command with each refusal its code path can reach, one `chat:event` of every chat event type followed by `user_message` with each form of `routed` (one sender, a burst, `fromClubhouse`, no `sender`), every kind of sender and how to draw it, queued bursts, every `pty:*` message and error, `mobile:replay`, the attachment upload's answers, and the [oversized command](#oversized-commands) refusal in `command-too-large.json`, with its exact response bytes. The phone (Clubhouse Go) vendors these files and decodes each one in its contract tests, and checks that the commands it builds match the requests here. Neither side tests only against its own fakes.
+`test/fixtures/annex-mobile/` holds a canonical example of every message in this document: capabilities, icon refs and their routes, a snapshot over its limit and the canvas routes, frames over the limit, large tool output, the WebSocket snapshot (agents, quick agents, `projectState`, `finishedQuickAgents`, `helperRequests`, theme), the chat snapshot with `chatControls`, `slashCommands` and `contentRoots`, create options and agent settings, a request and receipt for every `MOBILE_COMMAND_TYPES` command with each refusal its code path can reach, one `chat:event` of every chat event type followed by `user_message` with each form of `routed` (one sender, a burst, `fromClubhouse`, no `sender`), every kind of sender and how to draw it, queued bursts, every `pty:*` message and error, `mobile:replay`, the attachment upload's answers, and the [oversized command](#oversized-commands) refusal in `command-too-large.json`, with its exact response bytes. The phone (Clubhouse Go) vendors these files and decodes each one in its contract tests, and checks that the commands it builds match the requests here. Neither side tests only against its own fakes.
 
 `src/main/services/annex-mobile-contract.test.ts` writes them. It runs the real annex-server, mobile-control, mobile-agents, mobile-helper-requests, mobile-attachments and chat echo code over pinned mTLS and the WebSocket handler. Only the leaves are faked (disk, git, CLIs, PTYs, the orchestrator side of helper requests). The output is deterministic: fixed ids and clock, sorted keys, and random UUIDs (epochs, tokens, attachment and helper request ids) renumbered `00000000-0000-4000-8000-<n>` in order of first appearance.
 

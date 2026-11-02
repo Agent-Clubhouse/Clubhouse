@@ -1107,6 +1107,122 @@ describe('annex-client', () => {
       });
     });
 
+    describe('with a canvas too large for a frame', () => {
+      const full = () => ({ type: 'snapshot', payload: { ...truncated(5).payload, snapshotTruncated: undefined, canvasState: { proj_1: STATE }, appCanvasState: STATE } });
+      const marker = { type: 'canvas:state', payload: { projectId: 'proj_1', stateOmitted: { version: 1, reason: 'frame_limit', bytes: 9_000_000 } } };
+      const edit = (name: string) => ({ type: 'canvas:state', payload: { projectId: 'proj_1', state: { canvasId: 'canvas_1', name, views: [], viewport: {}, nextZIndex: 0, zoomedViewId: null } } });
+      const big = (name: string) => ({ canvases: [{ id: 'canvas_1', name }], activeCanvasId: 'canvas_1' });
+      const held = () => {
+        const release: Array<() => void> = [];
+        vi.mocked(https.request).mockImplementation(((url: string, _options: unknown, cb: (res: unknown) => void) => {
+          const { status, body } = routes[new URL(url).pathname] ?? { status: 404, body: {} };
+          const req = new EventEmitter() as any;
+          req.write = vi.fn();
+          req.destroy = vi.fn();
+          req.end = () => release.push(() => {
+            const res = new EventEmitter() as any;
+            res.statusCode = status;
+            cb(res);
+            res.emit('data', Buffer.from(JSON.stringify(body)));
+            res.emit('end');
+          });
+          return req;
+        }) as never);
+        return release;
+      };
+
+      it('fetches that one project, and sends it on as a snapshot', async () => {
+        await connectedSatellite();
+        send(full());
+        routes['/api/v1/mobile/canvas/proj_1'] = { status: 200, body: { state: big('Fetched') } };
+        send(marker);
+        await vi.waitFor(() => expect(snapshotEvents().at(-1).canvasState.proj_1.canvases[0].name).toBe('Fetched'));
+        expect(requested()).toEqual(['/api/v1/mobile/canvas/proj_1']);
+        expect(vi.mocked(broadcastToAllWindows).mock.calls.some(([, e]) => (e as any)?.type === 'canvas:state' && (e as any)?.payload?.stateOmitted)).toBe(false);
+      });
+
+      it('fetches the app\'s for a global one', async () => {
+        await connectedSatellite();
+        send(full());
+        routes['/api/v1/mobile/canvas'] = { status: 200, body: { state: big('App') } };
+        send({ type: 'canvas:state', payload: { projectId: null, scope: 'global', stateOmitted: { version: 1, bytes: 1 } } });
+        await vi.waitFor(() => expect(snapshotEvents().at(-1).appCanvasState.canvases[0].name).toBe('App'));
+      });
+
+      it('keeps a change made during the fetch on top of what it returns', async () => {
+        await connectedSatellite();
+        send(full());
+        routes['/api/v1/mobile/canvas/proj_1'] = { status: 200, body: { state: big('Fetched') } };
+        const release = held();
+        send(marker);
+        send(edit('During'));
+        await vi.waitFor(() => expect(release.length).toBe(1));
+        release[0]();
+        await vi.waitFor(() => expect(snapshotEvents().at(-1).canvasState.proj_1.canvases[0].name).toBe('During'));
+      });
+
+      it('fetches once more for a marker during a fetch, not once each', async () => {
+        await connectedSatellite();
+        send(full());
+        routes['/api/v1/mobile/canvas/proj_1'] = { status: 200, body: { state: big('First') } };
+        const release = held();
+        send(marker);
+        send(marker);
+        send(marker);
+        await vi.waitFor(() => expect(release.length).toBe(1));
+        routes['/api/v1/mobile/canvas/proj_1'] = { status: 200, body: { state: big('Second') } };
+        release[0]();
+        await vi.waitFor(() => expect(release.length).toBe(2));
+        release[1]();
+        await vi.waitFor(() => expect(snapshotEvents().at(-1).canvasState.proj_1.canvases[0].name).toBe('Second'));
+        expect(release).toHaveLength(2);
+      });
+
+      it('does not put a fetch over a full snapshot that came meanwhile', async () => {
+        await connectedSatellite();
+        send(full());
+        routes['/api/v1/mobile/canvas/proj_1'] = { status: 200, body: { state: big('Older') } };
+        const release = held();
+        send(marker);
+        await vi.waitFor(() => expect(release.length).toBe(1));
+        send({ type: 'snapshot', payload: { ...full().payload, lastSeq: 6, canvasState: { proj_1: big('Newer') } } });
+        release[0]();
+        await new Promise((r) => setTimeout(r, 20));
+        expect(snapshotEvents().at(-1).canvasState.proj_1.canvases[0].name).toBe('Newer');
+      });
+
+      it('keeps what it has and stays connected when the fetch fails, and tries on the next marker', async () => {
+        await connectedSatellite();
+        send(full());
+        routes = {};
+        send(marker);
+        await vi.waitFor(() => expect(requested().length).toBeGreaterThan(0));
+        await new Promise((r) => setTimeout(r, 10));
+        const satellite = annexClient.getSatellites().find((s) => s.fingerprint === FINGERPRINT);
+        expect(satellite?.state).toBe('connected');
+        expect((satellite?.snapshot as any).canvasState).toEqual({ proj_1: STATE });
+
+        routes = { '/api/v1/mobile/canvas/proj_1': { status: 200, body: { state: big('Later') } } };
+        send(marker);
+        await vi.waitFor(() => expect(snapshotEvents().at(-1).canvasState.proj_1.canvases[0].name).toBe('Later'));
+      });
+
+      it('fetches again after the first fetch, if a marker came during it', async () => {
+        await connectedSatellite();
+        const release = held();
+        send(truncated(5));
+        await vi.waitFor(() => expect(release.length).toBe(1));
+        send(marker);
+        await vi.waitFor(() => expect(release.length).toBe(2));
+        routes['/api/v1/mobile/canvas/proj_1'] = { status: 200, body: { state: big('After') } };
+        for (let i = 0; i < 4; i++) {
+          await new Promise((r) => setTimeout(r, 5));
+          for (const go of release.splice(0)) go();
+        }
+        await vi.waitFor(() => expect(snapshotEvents().at(-1)?.canvasState?.proj_1?.canvases[0].name).toBe('After'));
+      });
+    });
+
     it('does not put an older fetch over a full snapshot that came meanwhile', async () => {
       await connectedSatellite();
       send(truncated(5));

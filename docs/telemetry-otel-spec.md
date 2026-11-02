@@ -565,7 +565,7 @@ The 7 errors and 31 warnings in §2.1 (identity request errors, WS errors, heart
 - `c.annex.events.bytes` counts UTF-8 bytes of the serialized message.
 - `c.annex.tool_input.requests` counts permission requests sent to Annex clients by `c.annex.tool_input.bucket`: `<=64k`, `<=256k`, `<=1m` or `>1m`. No contents.
 - `c.annex.chat_page.overflow` counts chat pages whose pending requests had to shrink, by `c.annex.chat_page.stage`: `minimal` or `error`.
-- `c.annex.frames.over_limit` counts frames over the 8 MiB per-frame limit, by `c.annex.event.type` and `c.annex.frame.action`: `fallback`, or `sent_over_limit` for a type with no fallback yet.
+- `c.annex.frames.over_limit` counts frames over the 8 MiB per-frame limit, by `c.annex.event.type` and `c.annex.frame.action`: `fallback`, which includes a `canvas:state` marker and a `frame:omitted`, or `sent_over_limit` for a type with no fallback.
 - `c.annex.snapshots` counts each snapshot by `c.annex.snapshot.result`: `ok`, `icons_left_out`, `canvas_omitted`, `icons_dropped`, `over_mobile_limit`, `build_failed` or `send_failed`. Histograms `c.annex.snapshot.bytes` and `c.annex.snapshot.icon_bytes` (split by `c.annex.snapshot.trigger`, `connect` or `refresh`), `c.annex.snapshot.icons`, `c.annex.snapshot.icons_left_out` and `c.annex.snapshot.items` give its sizes. No image data.
 
 ### 4.13 Goobers (`goobers-*.ts`)

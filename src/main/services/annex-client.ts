@@ -791,6 +791,9 @@ function handleSatelliteMessage(sat: SatelliteConnectionInternal, msg: Record<st
         if (omitted) {
           incoming.canvasState ??= sat.snapshot?.canvasState;
           incoming.appCanvasState ??= sat.snapshot?.appCanvasState;
+        } else if (sat.ws) {
+          // It has every canvas, from after any fetch still running began.
+          canvasRefetches.get(sat.ws)?.forEach((refetch) => { refetch.superseded = true; });
         }
         sat.snapshot = incoming;
         broadcastSatellitesChanged();
@@ -838,7 +841,14 @@ function handleSatelliteMessage(sat: SatelliteConnectionInternal, msg: Record<st
 
     case 'canvas:state':
       // Kept too: a snapshot that leaves canvases out is refilled from here, and would otherwise put old ones back.
-      if (sat.ws) canvasEventsDuringFetch.get(sat.ws)?.push(msg.payload as CanvasStateEvent);
+      if (sat.ws) {
+        canvasEventsDuringFetch.get(sat.ws)?.push(msg.payload as CanvasStateEvent);
+        canvasRefetches.get(sat.ws)?.get(canvasKey(msg.payload as CanvasStateEvent))?.changes.push(msg.payload as CanvasStateEvent);
+      }
+      if ((msg.payload as CanvasStateEvent).stateOmitted) {
+        void refetchOmittedCanvas(sat, msg.payload as CanvasStateEvent);
+        break;
+      }
       if (sat.snapshot) sat.snapshot = withCanvasEvent(sat.snapshot, msg.payload as CanvasStateEvent);
       broadcastSatelliteEvent(sat.id, type, msg.payload);
       break;
@@ -860,6 +870,8 @@ const canvasProjectsAsked = new WeakMap<WebSocket, Set<string>>();
 interface CanvasStateEvent {
   projectId?: string | null;
   scope?: string;
+  /** The change was too large for a frame, so this only says what changed. */
+  stateOmitted?: { version: number; bytes: number };
   state?: { canvasId: string; name: string; views: unknown[]; viewport: unknown; nextZIndex: number; zoomedViewId: string | null; selectedViewId?: string | null; allCanvasTabs?: Array<{ id: string; name: string }>; activeCanvasId?: string; wireDefinitions?: unknown[]; zoneWireDefinitions?: unknown[] };
 }
 interface CanvasStateRecord { canvases: Array<{ id: string }>; activeCanvasId: string; wireDefinitions?: unknown[]; zoneWireDefinitions?: unknown[] }
@@ -890,6 +902,51 @@ function withCanvasEvent(snapshot: SatelliteSnapshot, { projectId, scope, state 
   if (!projectId) return snapshot;
   const merged = mergeCanvasEvent(snapshot.canvasState?.[projectId] as CanvasStateRecord | undefined, state);
   return merged ? { ...snapshot, canvasState: { ...snapshot.canvasState, [projectId]: merged } } : snapshot;
+}
+
+/** One canvas change too large to send: a fetch running, and what's come since. */
+interface CanvasRefetch { changes: CanvasStateEvent[]; again: boolean; superseded: boolean }
+const canvasRefetches = new WeakMap<WebSocket, Map<string, CanvasRefetch>>();
+const canvasKey = ({ projectId, scope }: CanvasStateEvent): string => (scope === 'global' ? '' : projectId ?? '');
+
+/**
+ * Fetch one project's canvases, or the app's, after a marker said they changed. One at
+ * a time for each: a marker during a fetch means one more after it. Changes meanwhile go
+ * on top, and a failure keeps what's known until the next marker.
+ */
+async function refetchOmittedCanvas(sat: SatelliteConnectionInternal, marker: CanvasStateEvent): Promise<void> {
+  const ws = sat.ws;
+  const key = canvasKey(marker);
+  if (!ws || (!key && marker.scope !== 'global')) return;
+  const running = canvasRefetches.get(ws) ?? new Map<string, CanvasRefetch>();
+  canvasRefetches.set(ws, running);
+  const current = running.get(key);
+  if (current) {
+    current.again = true;
+    return;
+  }
+  const refetch: CanvasRefetch = { changes: [], again: false, superseded: false };
+  running.set(key, refetch);
+  let state: unknown;
+  try {
+    ({ state } = await satelliteHttpsRequest(sat.fingerprint, 'GET', key ? `/api/v1/mobile/canvas/${encodeURIComponent(key)}` : '/api/v1/mobile/canvas') as { state: unknown });
+  } catch (err) {
+    running.delete(key);
+    appLog('core:annex', 'warn', 'Could not fetch a canvas too large for a frame', {
+      meta: { error: err instanceof Error ? err.message : String(err) },
+    });
+    return;
+  }
+  running.delete(key);
+  if (sat.ws === ws && sat.snapshot && !refetch.superseded && state) {
+    const fetched: SatelliteSnapshot = key
+      ? { ...sat.snapshot, canvasState: { ...sat.snapshot.canvasState, [key]: state } }
+      : { ...sat.snapshot, appCanvasState: state };
+    sat.snapshot = refetch.changes.reduce(withCanvasEvent, fetched);
+    broadcastSatellitesChanged();
+    broadcastSatelliteEvent(sat.id, 'snapshot', sat.snapshot);
+  }
+  if (refetch.again) void refetchOmittedCanvas(sat, marker);
 }
 
 /**
@@ -931,6 +988,10 @@ async function fetchOmittedCanvases(sat: SatelliteConnectionInternal): Promise<v
   sat.snapshot = changes.reduce(withCanvasEvent, { ...sat.snapshot, canvasState, ...(appCanvasState ? { appCanvasState } : {}) } as SatelliteSnapshot);
   broadcastSatellitesChanged();
   broadcastSatelliteEvent(sat.id, 'snapshot', sat.snapshot);
+  // A marker while this ran: what came back may be from before that change.
+  for (const change of changes) {
+    if (change.stateOmitted) void refetchOmittedCanvas(sat, change);
+  }
   void fetchNewProjectCanvases(sat, ws);
 }
 
@@ -968,6 +1029,9 @@ async function fetchNewProjectCanvases(sat: SatelliteConnectionInternal, ws: Web
       sat.snapshot = ownChanges.reduce(withCanvasEvent, { ...sat.snapshot, canvasState: { ...sat.snapshot.canvasState, [projectId]: state } } as SatelliteSnapshot);
       broadcastSatellitesChanged();
       broadcastSatelliteEvent(sat.id, 'snapshot', sat.snapshot);
+      for (const change of ownChanges) {
+        if (change.stateOmitted) void refetchOmittedCanvas(sat, change);
+      }
     }
   } finally {
     canvasEventsDuringFetch.delete(ws);
