@@ -172,6 +172,112 @@ describe('FeedbackService diagnostics', () => {
       expect(preparedInput(fb).diagnostics).toMatchObject({ state: 'attached', lines: 1, entries: [{ event: 'annex.ws.disconnected', attrs: { closeCode: 1009 } }], delivery: { queued: 0 } });
     });
 
+    describe('field on', () => {
+      /** The reviewed report as it reaches the outbox, whatever the access state does after review. */
+      async function sendOnField(breakAccess: (sdk: ReturnType<typeof fakeSdk>) => void, includeDiagnostics = true) {
+        const sdk = fakeSdk();
+        const excerpt = vi.fn(() => fakeExcerpt());
+        const { s } = serviceWith(sdk.fb, { reportDiagnosticsField: true, createExcerptTelemetry: excerpt as never });
+        const draft = await capture(s);
+        expect(draft.diagnosticsInReport).toBe(true);
+        breakAccess(sdk);
+        const result = await s.send({ draftId: draft.draftId, notes: '', includeScreenshot: true, includeDiagnostics });
+        return { sdk, excerpt, result, field: preparedInput(sdk.fb).diagnostics };
+      }
+
+      it.each([
+        ['connecting', (sdk: ReturnType<typeof fakeSdk>) => sdk.setAccess({ state: 'connecting', connected: false })],
+        ['disconnected', (sdk: ReturnType<typeof fakeSdk>) => sdk.setAccess({ state: 'disconnected', connected: false, enrolled: false })],
+        ['expired', (sdk: ReturnType<typeof fakeSdk>) => sdk.setAccess({ state: 'expired', connected: false, notice: 'expired' })],
+        ['status() throwing', (sdk: ReturnType<typeof fakeSdk>) => { vi.spyOn(sdk.fb.access, 'status').mockImplementation(() => { throw new Error('access broke'); }); }],
+      ])('attaches the reviewed entries when access is %s, and creates no excerpt', async (_name, breakAccess) => {
+        const { sdk, excerpt, result, field } = await sendOnField(breakAccess);
+        expect(result).toMatchObject({ id: REPORT_ID, status: 'saved-local', diagnostics: { status: 'attached', lines: 1 } });
+        expect(field).toMatchObject({ state: 'attached', lines: 1, entries: [{ event: 'annex.ws.disconnected', attrs: { closeCode: 1009 } }] });
+        expect(crumbs(sdk.fb)[0]).toMatchObject({ code: 'diagnostics.attached', value: 1 });
+        expect(sdk.fb.feedback.submit).toHaveBeenCalledTimes(1);
+        expect(sdk.fb.feedback.submit.mock.lastCall![1]).toEqual({ includeDiagnostics: true });
+        expect(excerpt).not.toHaveBeenCalled();
+      });
+
+      it('a status read that throws after the save, with a listener attached, doesn\'t fail the send', async () => {
+        const sdk = fakeSdk();
+        const { s, log } = serviceWith(sdk.fb, { reportDiagnosticsField: true, createExcerptTelemetry: vi.fn() as never });
+        const draft = await capture(s);
+        s.onChange(() => {});
+        vi.spyOn(sdk.fb.access, 'status').mockImplementation(() => { throw new Error('access broke'); });
+        await expect(s.send({ draftId: draft.draftId, notes: '', includeScreenshot: true, includeDiagnostics: true })).resolves.toMatchObject({ id: REPORT_ID, diagnostics: { status: 'attached' } });
+        expect(log).toHaveBeenCalledWith('warn', 'Feedback status could not be read after saving', expect.anything());
+        expect(log).not.toHaveBeenCalledWith('warn', 'Feedback send failed', expect.anything());
+      });
+
+      it('opting out leaves no entries and no excerpt, whatever the access state', async () => {
+        const { excerpt, result, field } = await sendOnField((sdk) => sdk.setAccess({ state: 'connecting', connected: false }), false);
+        expect(result.diagnostics).toEqual({ status: 'left_out', reason: 'reporter' });
+        expect(field).toMatchObject({ state: 'left_out', lines: 0, entries: [] });
+        expect(excerpt).not.toHaveBeenCalled();
+      });
+
+      it('keeps no_review honest: no draft, no field and no excerpt', async () => {
+        const { fb } = fakeSdk();
+        const excerpt = vi.fn();
+        const { s } = serviceWith(fb, { reportDiagnosticsField: true, createExcerptTelemetry: excerpt as never });
+        const result = await s.send({ notes: 'text only', includeScreenshot: false, includeDiagnostics: true });
+        expect(result.diagnostics).toEqual({ status: 'none', reason: 'no_review' });
+        expect(preparedInput(fb)).not.toHaveProperty('diagnostics');
+        expect(excerpt).not.toHaveBeenCalled();
+      });
+
+      it('never claims lines the contract refused', async () => {
+        const { fb } = fakeSdk();
+        const excerpt = vi.fn();
+        const refused = { ...AVAILABLE, lines: [{ ...AVAILABLE.lines[0], event: 'not a token' }] };
+        const { s } = serviceWith(fb, { reportDiagnosticsField: true, diagnostics: () => refused, createExcerptTelemetry: excerpt as never });
+        const draft = await capture(s);
+        const result = await s.send({ draftId: draft.draftId, notes: '', includeScreenshot: true, includeDiagnostics: true });
+        expect(result.diagnostics).toEqual({ status: 'none', reason: 'collection_failed' });
+        expect(preparedInput(fb).diagnostics).toMatchObject({ state: 'unavailable', entries: [] });
+        expect(excerpt).not.toHaveBeenCalled();
+      });
+
+      it('records the same outcome when a failed save is retried, and creates no excerpt', async () => {
+        let fail = true;
+        const { fb, setAccess } = fakeSdk(async () => {
+          if (fail) throw Object.assign(new Error('full'), { code: 'storage-full' });
+          return { id: REPORT_ID, status: 'saved-local' };
+        });
+        const excerpt = vi.fn();
+        const { s } = serviceWith(fb, { reportDiagnosticsField: true, createExcerptTelemetry: excerpt as never });
+        const draft = await capture(s);
+        const input = { draftId: draft.draftId, notes: '', includeScreenshot: true, includeDiagnostics: true };
+        await expect(s.send(input)).rejects.toThrow('full');
+        fail = false;
+        setAccess({ state: 'connecting', connected: false });
+        await expect(s.send(input)).resolves.toMatchObject({ diagnostics: { status: 'attached', lines: 1 } });
+        expect(fb.feedback.prepare).toHaveBeenCalledTimes(1);
+        expect(excerpt).not.toHaveBeenCalled();
+      });
+    });
+
+    it('field off keeps not_connected and the one excerpt, and never says it is in the report', async () => {
+      const off = fakeSdk();
+      const noExcerpt = vi.fn();
+      const offline = serviceWith(off.fb, { createExcerptTelemetry: noExcerpt as never }).s;
+      const first = await capture(offline);
+      expect(first).not.toHaveProperty('diagnosticsInReport');
+      off.setAccess({ state: 'connecting', connected: false });
+      await expect(offline.send({ draftId: first.draftId, notes: '', includeScreenshot: true, includeDiagnostics: true })).resolves.toMatchObject({ diagnostics: { status: 'none', reason: 'not_connected' } });
+      expect(noExcerpt).not.toHaveBeenCalled();
+
+      const on = fakeSdk();
+      const oneExcerpt = vi.fn(() => fakeExcerpt());
+      const connected = serviceWith(on.fb, { createExcerptTelemetry: oneExcerpt as never }).s;
+      const second = await capture(connected);
+      await expect(connected.send({ draftId: second.draftId, notes: '', includeScreenshot: true, includeDiagnostics: true })).resolves.toMatchObject({ diagnostics: { status: 'queued', lines: 1 } });
+      expect(oneExcerpt).toHaveBeenCalledTimes(1);
+      expect(preparedInput(on.fb)).not.toHaveProperty('diagnostics');
+    });
+
     it('omits the outbox count when it can\'t be read at capture', async () => {
       const { fb } = fakeSdk();
       const status = vi.spyOn(fb.outbox, 'status');
@@ -331,7 +437,7 @@ describe('FeedbackService diagnostics', () => {
       });
       const draft = await s.captureDraft(async () => PNG);
       await s.send({ draftId: draft.draftId, notes: 'it broke', includeScreenshot: true, includeDiagnostics: choice.includeDiagnostics, includeCorrelation: choice.includeCorrelation });
-      if (choice.includeDiagnostics) await vi.waitFor(() => expect(log).toHaveBeenCalledWith('info', 'Feedback diagnostics sent', expect.anything()));
+      if (choice.includeDiagnostics && !choice.reportDiagnosticsField) await vi.waitFor(() => expect(log).toHaveBeenCalledWith('info', 'Feedback diagnostics sent', expect.anything()));
       return { report: reportBytes.join('\n'), wire: wireBytes.join('\n') };
     }
 
@@ -385,6 +491,42 @@ describe('FeedbackService diagnostics', () => {
       const { report } = await sendWith({ includeDiagnostics: false, includeCorrelation: true, reportDiagnosticsField: true });
       expect(JSON.parse(report).diagnostics).toMatchObject({ v: 1, state: 'left_out', entries: [] });
       expect(report).not.toContain('annex.ws.disconnected');
+    });
+
+    describe('with the gate on, what the outbox holds', () => {
+      /** Real prepare and submit. `eligible` is the view the SDK's own check reads; the service reads fb.access. */
+      async function saveWith(eligible: () => { canCapture: boolean }, breakAccess: (sdk: ReturnType<typeof fakeSdk>) => void) {
+        const fake = fakeSdk();
+        const enqueue = vi.fn(async ({ report }: { report: { id: string } }) => ({ id: report.id, status: 'saved-local' }));
+        const feedback = createFeedback({ access: { ...fake.fb.access, status: eligible }, outbox: { enqueue }, sessionId: SESSION } as never);
+        const excerpt = vi.fn(() => fakeExcerpt());
+        const { s } = serviceWith({ ...fake.fb, feedback }, { reportDiagnosticsField: true, createExcerptTelemetry: excerpt as never });
+        const draft = await capture(s);
+        breakAccess(fake);
+        const sent = s.send({ draftId: draft.draftId, notes: 'it broke', includeScreenshot: true, includeDiagnostics: true });
+        return { sent, enqueue, excerpt, saved: () => JSON.parse(JSON.stringify(enqueue.mock.lastCall![0].report)) };
+      }
+      const canSave = () => ({ canCapture: true });
+
+      it.each([
+        ['connecting', (sdk: ReturnType<typeof fakeSdk>) => sdk.setAccess({ state: 'connecting', connected: false })],
+        ['disconnected', (sdk: ReturnType<typeof fakeSdk>) => sdk.setAccess({ state: 'disconnected', connected: false, enrolled: false })],
+        ['status() throwing', (sdk: ReturnType<typeof fakeSdk>) => { vi.spyOn(sdk.fb.access, 'status').mockImplementation(() => { throw new Error('access broke'); }); }],
+      ])('attached, with entries, when the service sees access %s', async (_name, breakAccess) => {
+        const { sent, excerpt, saved } = await saveWith(canSave, breakAccess);
+        await expect(sent).resolves.toMatchObject({ diagnostics: { status: 'attached', lines: 1 } });
+        expect(saved().diagnostics).toMatchObject({ v: 1, state: 'attached', lines: 1, entries: [{ event: 'annex.ws.disconnected', attrs: { closeCode: 1009 } }] });
+        expect(JSON.stringify(saved().breadcrumbs)).toContain('diagnostics.attached');
+        expect(excerpt).not.toHaveBeenCalled();
+      });
+
+      it('nothing, when the SDK itself says the report can\'t be filed: the gate adds no way around that', async () => {
+        let open = true;
+        const { sent, enqueue, excerpt } = await saveWith(() => ({ canCapture: open }), () => { open = false; });
+        await expect(sent).rejects.toMatchObject({ code: 'feedback-unavailable' });
+        expect(enqueue).not.toHaveBeenCalled();
+        expect(excerpt).not.toHaveBeenCalled();
+      });
     });
 
     it('leaves the interim excerpt path as it was', async () => {
