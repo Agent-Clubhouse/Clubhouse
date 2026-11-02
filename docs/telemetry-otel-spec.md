@@ -547,7 +547,7 @@ The architecture and the telemetry stance on Annex are in §7. Instrumentation:
 | `c.annex.events` counter, `c.annex.events.bytes` | satellite | per event type, **incremented in `broadcastAndBuffer`, never per-event spans**; plus `c.annex.send_failures` | S |
 | `c.annex.remote_spawn` | controller → satellite | `agent:spawn`/`wake` send → ack; **carries trace context** (§7) | S |
 | `c.annex.replay` | satellite | `replay:start` → `end`/`gap` (iOS clients only today) | S |
-| `c.annex.clients` gauge | satellite | by `c.annex.client.kind` (`desktop`/`mobile`) | S |
+| `c.annex.clients` gauge | satellite | by `c.annex.client.kind` (`desktop`/`mobile`/`unknown`) | S |
 
 The 7 errors and 31 warnings in §2.1 (identity request errors, WS errors, heartbeat timeouts) map to `c.annex.discover`/`connect` errors and `c.annex.disconnects` respectively.
 
@@ -558,7 +558,7 @@ The 7 errors and 31 warnings in §2.1 (identity request errors, WS errors, heart
 - `c.annex.pair` on the controller wraps `pairWithService`. On the satellite it is replayed per `POST /pair` reply, with `error.type = pair_rejected` and the reason in `c.annex.pair.result`.
 - `c.annex.disconnects` is controller-side only. Its reasons are `heartbeat_timeout`, `heartbeat_failed`, `connection_closed`, `ws_error`, `user` and `other`. The client ignores close codes, so a satellite stop shows as `connection_closed`; a power resume reconnects sockets that were already down, so it is not a disconnect.
 - Recorded as metrics, not spans: `c.annex.snapshot.build.duration` (histogram) and `c.annex.replays` (counter by `ok`/`gap`/`send_failed`).
-- `c.annex.clients` (gauge) treats mTLS clients as `desktop` and bearer clients as `mobile`.
+- `c.annex.clients` (gauge) goes by the `?client=` a socket connects with: `desktop`, `mobile`, or `unknown` for anything else, including a client too old to send it. Authentication type says nothing, because phones use mTLS too. It is for metrics only and grants nothing.
 - No permission scopes exist, so `c.annex.control.denied` is counted by channel (`ws`/`rest`): control messages and destructive routes that require mTLS.
 - `c.annex.remote_spawn` covers the send. The satellite's ack isn't correlated today, so the satellite's own `c.agent.spawn`, continued from the same trace, is the end-to-end view.
 - `c.annex.rest` (Detailed) carries `c.annex.route` (40 templates kept in sync with `ANNEX_HTTP_ROUTE_TABLE` by a test) and `c.http.class`. It continues an inbound `traceparent` header from mTLS controllers only.

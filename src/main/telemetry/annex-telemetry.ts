@@ -179,10 +179,11 @@ export function recordBroadcast(type: string, bytes: number, sendFailures: numbe
   if (sendFailures > 0) tel.count('clubhouse.annex.send_failures', sendFailures, attrs);
 }
 
-/** Connected WS clients after a connect or close. mTLS ≈ desktop, bearer ≈ mobile. */
-export function recordClients(desktop: number, mobile: number): void {
+/** Connected WS clients after a connect or close, by what each says it is. */
+export function recordClients(desktop: number, mobile: number, unknown: number): void {
   tel.count('clubhouse.annex.clients', desktop, [ATTR.annexClientKind('desktop')]);
   tel.count('clubhouse.annex.clients', mobile, [ATTR.annexClientKind('mobile')]);
+  tel.count('clubhouse.annex.clients', unknown, [ATTR.annexClientKind('unknown')]);
 }
 
 export function recordControlDenied(channel: 'ws' | 'rest'): void {

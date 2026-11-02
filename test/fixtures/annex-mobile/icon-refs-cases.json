@@ -1,0 +1,239 @@
+{
+  "note": "What a client does with each. Stored is what it held before. Unknown keeps what it has. All of these are hand written from the contract, apart from the omitted case, whose shape comes from the real server.",
+  "responses": [
+    {
+      "bodyBytes": 103,
+      "contentType": "image/png",
+      "etag": "\"77412b4849d7541fe062143e7beac5aa3792f1ec524455f44b5fa16eda09f236\"",
+      "expect": "show",
+      "name": "current",
+      "status": 200
+    },
+    {
+      "etag": "\"77412b4849d7541fe062143e7beac5aa3792f1ec524455f44b5fa16eda09f236\"",
+      "expect": "show the cached image",
+      "name": "not modified",
+      "status": 304
+    },
+    {
+      "contentType": "image/png",
+      "etag": "\"0000000000000000000000000000000000000000000000000000000000000000\"",
+      "expect": "keep what is drawn, no refetch until the version changes",
+      "name": "stale",
+      "status": 200
+    },
+    {
+      "contentType": "image/png",
+      "currentVersion": null,
+      "etag": "\"77412b4849d7541fe062143e7beac5aa3792f1ec524455f44b5fa16eda09f236\"",
+      "expect": "discard: it has no entry now",
+      "name": "in flight, then removed",
+      "status": 200
+    },
+    {
+      "contentType": "image/png",
+      "currentVersion": "0000000000000000000000000000000000000000000000000000000000000000",
+      "etag": "\"77412b4849d7541fe062143e7beac5aa3792f1ec524455f44b5fa16eda09f236\"",
+      "expect": "discard, and fetch the new version",
+      "name": "in flight, then changed",
+      "status": 200
+    },
+    {
+      "expect": "initials, no retry for this version",
+      "name": "missing",
+      "status": 404
+    },
+    {
+      "contentType": "image/jpeg",
+      "etag": "\"77412b4849d7541fe062143e7beac5aa3792f1ec524455f44b5fa16eda09f236\"",
+      "expect": "bad image: initials",
+      "name": "type mismatch",
+      "status": 200
+    },
+    {
+      "bodyBytes": 104,
+      "contentType": "image/png",
+      "etag": "\"77412b4849d7541fe062143e7beac5aa3792f1ec524455f44b5fa16eda09f236\"",
+      "expect": "bad image: initials",
+      "name": "byte mismatch",
+      "status": 200
+    },
+    {
+      "contentType": "image/png",
+      "decodedHeight": 512,
+      "decodedWidth": 512,
+      "etag": "\"77412b4849d7541fe062143e7beac5aa3792f1ec524455f44b5fa16eda09f236\"",
+      "expect": "bad image: initials",
+      "name": "dimension mismatch",
+      "status": 200
+    },
+    {
+      "bodySha256": "1111111111111111111111111111111111111111111111111111111111111111",
+      "contentType": "image/png",
+      "etag": "\"77412b4849d7541fe062143e7beac5aa3792f1ec524455f44b5fa16eda09f236\"",
+      "expect": "bad image: initials",
+      "name": "hash mismatch",
+      "status": 200
+    }
+  ],
+  "snapshots": [
+    {
+      "expect": "replace both maps",
+      "iconRefs": {
+        "agents": {
+          "a1": {
+            "bytes": 103,
+            "height": 1,
+            "type": "image/png",
+            "version": "77412b4849d7541fe062143e7beac5aa3792f1ec524455f44b5fa16eda09f236",
+            "width": 1
+          },
+          "a2": {
+            "bytes": 103,
+            "height": 1,
+            "type": "image/png",
+            "version": "77412b4849d7541fe062143e7beac5aa3792f1ec524455f44b5fa16eda09f236",
+            "width": 1
+          }
+        },
+        "projects": {
+          "p1": {
+            "bytes": 103,
+            "height": 1,
+            "type": "image/png",
+            "version": "77412b4849d7541fe062143e7beac5aa3792f1ec524455f44b5fa16eda09f236",
+            "width": 1
+          }
+        }
+      },
+      "name": "complete"
+    },
+    {
+      "expect": "a2 removed: drop its image",
+      "iconRefs": {
+        "agents": {
+          "a1": {
+            "bytes": 103,
+            "height": 1,
+            "type": "image/png",
+            "version": "77412b4849d7541fe062143e7beac5aa3792f1ec524455f44b5fa16eda09f236",
+            "width": 1
+          }
+        },
+        "projects": {
+          "p1": {
+            "bytes": 103,
+            "height": 1,
+            "type": "image/png",
+            "version": "77412b4849d7541fe062143e7beac5aa3792f1ec524455f44b5fa16eda09f236",
+            "width": 1
+          }
+        }
+      },
+      "name": "one removed"
+    },
+    {
+      "expect": "every image removed",
+      "iconRefs": {
+        "agents": {},
+        "projects": {}
+      },
+      "name": "all removed"
+    },
+    {
+      "expect": "unknown: keep all",
+      "name": "unmarked absence"
+    },
+    {
+      "agentIcons": {},
+      "expect": "unknown: keep all, and ignore the empty legacy maps",
+      "name": "marked absence",
+      "projectIcons": {},
+      "snapshotTruncated": {
+        "bytes": 9437184,
+        "omitted": [
+          "canvasState",
+          "appCanvasState",
+          "iconRefs"
+        ],
+        "reason": "frame_limit",
+        "version": 1
+      }
+    },
+    {
+      "expect": "agents replaced, projects unknown: keep them",
+      "iconRefs": {
+        "agents": {
+          "a1": {
+            "bytes": 103,
+            "height": 1,
+            "type": "image/png",
+            "version": "77412b4849d7541fe062143e7beac5aa3792f1ec524455f44b5fa16eda09f236",
+            "width": 1
+          }
+        }
+      },
+      "name": "one sub-map missing"
+    },
+    {
+      "expect": "unknown: keep all",
+      "iconRefs": null,
+      "name": "null"
+    },
+    {
+      "expect": "agents unknown, projects replaced",
+      "iconRefs": {
+        "agents": null,
+        "projects": {
+          "p1": {
+            "bytes": 103,
+            "height": 1,
+            "type": "image/png",
+            "version": "77412b4849d7541fe062143e7beac5aa3792f1ec524455f44b5fa16eda09f236",
+            "width": 1
+          }
+        }
+      },
+      "name": "null sub-map"
+    },
+    {
+      "expect": "a1 has no valid ref: draw initials, and do not fetch",
+      "iconRefs": {
+        "agents": {
+          "a1": {
+            "version": "77412b4849d7541fe062143e7beac5aa3792f1ec524455f44b5fa16eda09f236"
+          }
+        },
+        "projects": {}
+      },
+      "name": "partial entry"
+    }
+  ],
+  "stored": {
+    "agents": {
+      "a1": {
+        "bytes": 103,
+        "height": 1,
+        "type": "image/png",
+        "version": "77412b4849d7541fe062143e7beac5aa3792f1ec524455f44b5fa16eda09f236",
+        "width": 1
+      },
+      "a2": {
+        "bytes": 103,
+        "height": 1,
+        "type": "image/png",
+        "version": "77412b4849d7541fe062143e7beac5aa3792f1ec524455f44b5fa16eda09f236",
+        "width": 1
+      }
+    },
+    "projects": {
+      "p1": {
+        "bytes": 103,
+        "height": 1,
+        "type": "image/png",
+        "version": "77412b4849d7541fe062143e7beac5aa3792f1ec524455f44b5fa16eda09f236",
+        "width": 1
+      }
+    }
+  }
+}

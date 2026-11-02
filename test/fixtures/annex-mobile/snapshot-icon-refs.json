@@ -1,0 +1,36 @@
+{
+  "connect": "/ws?iconRefs=1&client=mobile",
+  "direction": "desktop-to-phone",
+  "note": "Send both params on every connection, including reconnects. client is for metrics only. agentIcons and projectIcons are empty for an opted-in socket; ignore them. The Dispatcher is in iconRefs.agents, though not in the snapshot's agents map. A quick agent never has an entry.",
+  "value": {
+    "agentIcons": {},
+    "iconRefs": {
+      "agents": {
+        "durable_chat": {
+          "bytes": 103,
+          "height": 1,
+          "type": "image/png",
+          "version": "77412b4849d7541fe062143e7beac5aa3792f1ec524455f44b5fa16eda09f236",
+          "width": 1
+        },
+        "durable_dispatcher": {
+          "bytes": 109,
+          "height": 1,
+          "type": "image/png",
+          "version": "1c740ab6a0880151ac4223ae0b92d7e63a9602fad7f1abfc04033a447afaa65d",
+          "width": 1
+        }
+      },
+      "projects": {
+        "proj_app": {
+          "bytes": 99,
+          "height": 1,
+          "type": "image/png",
+          "version": "64dd9b29a088efbbefd7d7f30963ac23433186043f15ce07100d85160dd7b7de",
+          "width": 1
+        }
+      }
+    },
+    "projectIcons": {}
+  }
+}

@@ -1,0 +1,87 @@
+{
+  "current": {
+    "request": {
+      "path": "/api/v1/icons/agent/durable_chat?v=77412b4849d7541fe062143e7beac5aa3792f1ec524455f44b5fa16eda09f236"
+    },
+    "response": {
+      "headers": {
+        "cache-control": "private, max-age=31536000, immutable",
+        "content-length": "103",
+        "content-type": "image/png",
+        "etag": "\"77412b4849d7541fe062143e7beac5aa3792f1ec524455f44b5fa16eda09f236\""
+      },
+      "status": 200
+    }
+  },
+  "imageBase64": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAAFXRFWHRpY29uAGR1cmFibGVfY2hhdC5wbmeieNGaAAAADUlEQVR42mP8/5+hHgAHggJ/PchI7wAAAABJRU5ErkJggg==",
+  "missing": {
+    "request": {
+      "path": "/api/v1/icons/agent/durable_chat"
+    },
+    "response": {
+      "body": {
+        "error": "icon_not_found"
+      },
+      "status": 404
+    }
+  },
+  "noVersion": {
+    "request": {
+      "path": "/api/v1/icons/agent/durable_chat"
+    },
+    "response": {
+      "headers": {
+        "cache-control": "private, max-age=3600",
+        "content-length": "103",
+        "content-type": "image/png",
+        "etag": "\"77412b4849d7541fe062143e7beac5aa3792f1ec524455f44b5fa16eda09f236\""
+      },
+      "status": 200
+    }
+  },
+  "notModified": {
+    "request": {
+      "headers": {
+        "If-None-Match": "\"77412b4849d7541fe062143e7beac5aa3792f1ec524455f44b5fa16eda09f236\""
+      },
+      "path": "/api/v1/icons/agent/durable_chat?v=77412b4849d7541fe062143e7beac5aa3792f1ec524455f44b5fa16eda09f236"
+    },
+    "response": {
+      "headers": {
+        "cache-control": "private, max-age=31536000, immutable",
+        "etag": "\"77412b4849d7541fe062143e7beac5aa3792f1ec524455f44b5fa16eda09f236\""
+      },
+      "status": 304
+    }
+  },
+  "note": "Check the body: its SHA-256 equals the ETag, its byte count, and its Content-Type and decoded type and size. If the ETag differs from the current snapshot's version it is stale: keep what you draw and do not refetch until a new snapshot changes the version.",
+  "stale": {
+    "request": {
+      "headers": {
+        "If-None-Match": "\"0000000000000000000000000000000000000000000000000000000000000000\""
+      },
+      "path": "/api/v1/icons/agent/durable_chat?v=0000000000000000000000000000000000000000000000000000000000000000"
+    },
+    "response": {
+      "headers": {
+        "cache-control": "private, no-cache",
+        "content-length": "103",
+        "content-type": "image/png",
+        "etag": "\"77412b4849d7541fe062143e7beac5aa3792f1ec524455f44b5fa16eda09f236\""
+      },
+      "status": 200
+    }
+  },
+  "unavailable": {
+    "request": {
+      "path": "/api/v1/icons/agent/durable_chat"
+    },
+    "response": {
+      "body": {
+        "error": "icon_unavailable"
+      },
+      "status": 503
+    }
+  },
+  "version": "77412b4849d7541fe062143e7beac5aa3792f1ec524455f44b5fa16eda09f236"
+}

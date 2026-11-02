@@ -22,6 +22,9 @@ export const ICON_THUMBNAIL_PASSTHROUGH_BYTES = 64 * 1024;
  */
 export const ICON_THUMBNAIL_PASSTHROUGH_SIZE = 256;
 
+/** The most bytes of any one icon sent to a phone: a 128 pixel PNG can pass the 64 KiB file limit. */
+export const ICON_SERVED_MAX_BYTES = 72 * 1024;
+
 /** Clubhouse Go's WebSocket limit (`maximumMessageSize`): a larger frame closes the connection with code 1009. */
 export const MOBILE_WS_FRAME_MAX_BYTES = 16 * 1024 * 1024;
 

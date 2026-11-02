@@ -1,0 +1,19 @@
+{
+  "before": {
+    "bytes": 103,
+    "height": 1,
+    "type": "image/png",
+    "version": "77412b4849d7541fe062143e7beac5aa3792f1ec524455f44b5fa16eda09f236",
+    "width": 1
+  },
+  "changed": {
+    "bytes": 111,
+    "height": 1,
+    "type": "image/png",
+    "version": "db61559d2747889bfd00e48fb995885cc048b1672567d679f77c789fad827e6d",
+    "width": 1
+  },
+  "direction": "desktop-to-phone",
+  "note": "A present map is complete: replace it. A different version means fetch. No entry in a present map means removal, so drop the cached image.",
+  "removed": null
+}

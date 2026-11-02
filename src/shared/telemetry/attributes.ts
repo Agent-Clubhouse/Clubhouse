@@ -637,7 +637,7 @@ export const ATTR = {
   annexTls: boolAttr('clubhouse.annex.tls'),
   annexAuthMode: enumAttr('clubhouse.annex.auth_mode', ['mtls', 'bearer']),
   /** mTLS clients are desktop controllers; bearer clients are the mobile app. */
-  annexClientKind: enumAttr('clubhouse.annex.client.kind', ['desktop', 'mobile']),
+  annexClientKind: enumAttr('clubhouse.annex.client.kind', ['desktop', 'mobile', 'unknown']),
   /** Address family of the peer address used, never the address (§12 H9). */
   addrFamily: enumAttr('clubhouse.net.addr_family', ['ipv4', 'ipv6', 'hostname']),
   annexPairResult: enumAttr('clubhouse.annex.pair.result', [

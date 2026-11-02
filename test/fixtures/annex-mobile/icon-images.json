@@ -1,0 +1,41 @@
+{
+  "images": [
+    {
+      "base64": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8/5+hHgAHggJ/PchI7wAAAABJRU5ErkJggg==",
+      "bytes": 70,
+      "etag": "\"cdb30873bdf16770bfea1fe86e44db7476e504c2dca1542b0660b20f47f523a7\"",
+      "height": 1,
+      "type": "image/png",
+      "version": "cdb30873bdf16770bfea1fe86e44db7476e504c2dca1542b0660b20f47f523a7",
+      "width": 1
+    },
+    {
+      "base64": "/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAMCAgICAgMCAgIDAwMDBAYEBAQEBAgGBgUGCQgKCgkICQkKDA8MCgsOCwkJDRENDg8QEBEQCgwSExIQEw8QEBD/wAALCAABAAEBAREA/8QAFAABAAAAAAAAAAAAAAAAAAAACf/EABQQAQAAAAAAAAAAAAAAAAAAAAD/2gAIAQEAAD8AVN//2Q==",
+      "bytes": 160,
+      "etag": "\"a994a33f4e986013d7b54854cf062f28da28a280c832ba499e717d64034d445f\"",
+      "height": 1,
+      "type": "image/jpeg",
+      "version": "a994a33f4e986013d7b54854cf062f28da28a280c832ba499e717d64034d445f",
+      "width": 1
+    },
+    {
+      "base64": "R0lGODlhAQABAIAAAAUEBAAAACwAAAAAAQABAAACAkQBADs=",
+      "bytes": 35,
+      "etag": "\"90252ef0aa9e3d36c861bbeaa1bd57b7f855333edf2957ab9473838a52e2dd7f\"",
+      "height": 1,
+      "type": "image/gif",
+      "version": "90252ef0aa9e3d36c861bbeaa1bd57b7f855333edf2957ab9473838a52e2dd7f",
+      "width": 1
+    },
+    {
+      "base64": "UklGRiIAAABXRUJQVlA4IBYAAAAwAQCdASoBAAEADsD+JaQAA3AAAAAA",
+      "bytes": 42,
+      "etag": "\"c90cff659645a312a28804965f3dbc34061338f7234ff5d6ddb2c57e9eadec15\"",
+      "height": 1,
+      "type": "image/webp",
+      "version": "c90cff659645a312a28804965f3dbc34061338f7234ff5d6ddb2c57e9eadec15",
+      "width": 1
+    }
+  ],
+  "note": "One real image of each type, as the real code describes it."
+}

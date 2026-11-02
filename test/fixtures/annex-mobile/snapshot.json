@@ -3,7 +3,7 @@
   "frame": {
     "payload": {
       "agentIcons": {
-        "durable_chat": "data:image/png;base64,R0lGODlhAQABAAAAACw="
+        "durable_chat": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAAFXRFWHRpY29uAGR1cmFibGVfY2hhdC5wbmeieNGaAAAADUlEQVR42mP8/5+hHgAHggJ/PchI7wAAAABJRU5ErkJggg=="
       },
       "agents": {
         "proj_app": [
@@ -388,7 +388,7 @@
       "pendingPermissions": [],
       "plugins": [],
       "projectIcons": {
-        "proj_app": "data:image/png;base64,iVBORw0KGgo="
+        "proj_app": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAAEXRFWHRpY29uAHByb2pfYXBwLnBuZ6dlg98AAAANSURBVHjaY/z/n6EeAAeCAn89yEjvAAAAAElFTkSuQmCC"
       },
       "projectState": {
         "proj_app": {

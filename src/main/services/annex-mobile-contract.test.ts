@@ -20,6 +20,7 @@ import { CLAUDE_WORKING_WINDOW_NOTE } from '../../shared/context-window';
 import { describe, it, expect, beforeAll, afterAll, beforeEach, vi } from 'vitest';
 import fs from 'fs';
 import path from 'path';
+import os from 'os';
 import crypto from 'crypto';
 import https from 'https';
 import tls from 'tls';
@@ -33,6 +34,8 @@ const W = vi.hoisted(() => ({
   transcripts: {} as Record<string, unknown[]>,
   sessions: {} as Record<string, unknown[]>,
   projectsThrow: false,
+  iconsUnavailable: false,
+  iconDir: null as string | null,
   spawnShellError: null as string | null,
   ptyData: [] as Array<(id: string, data: string, seq: number) => void>,
   ptyExit: [] as Array<(id: string, code: number) => void>,
@@ -138,20 +141,46 @@ vi.mock('./annex-network-profile', async (importOriginal) => ({
 }));
 vi.mock('bonjour-service', () => ({ default: class { publish() { return { stop() {} }; } destroy() {} } }));
 vi.mock('./log-service', () => ({ appLog: () => {} }));
-// The fixture's icon bytes aren't whole images, so the "path" is the bytes and the thumbnail is them as they are.
-vi.mock('./icon-images', () => ({ readIconThumbnail: async (base64: string) => `data:image/png;base64,${base64}` }));
+// Real images through the real code. Each icon name gets a PNG of its own, a valid one with its name in a text
+// chunk, so the fixtures' bytes, hashes and sizes describe something a phone can decode. A "path" here ends in the name.
+const VALID_PNG_BASE64 = vi.hoisted(() => 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8/5+hHgAHggJ/PchI7wAAAABJRU5ErkJggg==');
+vi.mock('./icon-images', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('./icon-images')>();
+  const [nodeFs, nodeOs, nodePath, zlib] = await Promise.all([import('fs'), import('os'), import('path'), import('zlib')]);
+  const dir = nodeFs.mkdtempSync(nodePath.join(nodeOs.tmpdir(), 'annex-contract-icons-'));
+  W.iconDir = dir;
+  const iconPng = (name: string) => {
+    const valid = Buffer.from(VALID_PNG_BASE64, 'base64');
+    const body = Buffer.from(`tEXticon\0${name}`, 'latin1');
+    const length = Buffer.alloc(4);
+    length.writeUInt32BE(body.length - 4);
+    const crc = Buffer.alloc(4);
+    crc.writeUInt32BE(zlib.crc32(body));
+    return Buffer.concat([valid.subarray(0, 33), length, body, crc, valid.subarray(33)]);
+  };
+  return {
+    ...actual,
+    readIconImage: async (file: string) => {
+      if (W.iconsUnavailable) return actual.ICON_TEMPORARILY_UNAVAILABLE;
+      const name = file.split('|')[1];
+      const real = nodePath.join(dir, name);
+      if (!nodeFs.existsSync(real)) nodeFs.writeFileSync(real, iconPng(name));
+      return actual.readIconImage(real);
+    },
+  };
+});
 vi.mock('./project-store', () => ({
   list: async () => { if (W.projectsThrow) throw new Error('disk gone'); return W.projects; },
   readIconData: async (icon: string) => (icon ? 'data:image/png;base64,iVBORw0KGgo=' : null),
   onProjectsChanged: () => () => {},
-  iconFilePath: async (icon: string) => (icon ? 'iVBORw0KGgo=' : null),
+  iconFilePath: async (icon: string) => (icon ? `iVBORw0KGgo=|${icon}` : null),
 }));
 vi.mock('./agent-config', () => {
   const find = (projectPath: string, id: string) => (W.durables[projectPath] ?? []).find((d) => d.id === id) ?? null;
   return {
     listDurable: async (projectPath: string) => W.durables[projectPath] ?? [],
     readAgentIconData: async (icon: string) => (icon ? 'data:image/png;base64,R0lGODlhAQABAAAAACw=' : null),
-    agentIconFilePath: async (icon: string) => (icon ? 'R0lGODlhAQABAAAAACw=' : null),
+    agentIconFilePath: async (icon: string) => (icon ? `R0lGODlhAQABAAAAACw=|${icon}` : null),
     getDurableConfig: async (projectPath: string, id: string) => find(projectPath, id),
     updateDurableConfig: async (projectPath: string, id: string, updates: Record<string, unknown>) => {
       const agent = find(projectPath, id) ?? {};
@@ -609,6 +638,9 @@ function send(method: string, route: string, body?: Buffer | object, opts: { cli
     req.on('error', reject); if (raw) req.write(raw); req.end();
   });
 }
+const pickIconHeaders = (headers: Record<string, unknown>) => Object.fromEntries(
+  ['etag', 'cache-control', 'content-type', 'content-length'].filter((name) => headers[name] !== undefined).map((name) => [name, headers[name]]),
+) as Record<string, string>;
 const exchange = async (method: string, route: string, body?: object) => ({ request: { method, path: route, ...(body && { body }) }, response: await send(method, route, body).then(({ status, body }) => ({ status, body })) });
 
 /** A busy machine is slow here, not wrong: each request is a fresh mTLS handshake. These only bound how long a failure takes to report. */
@@ -616,8 +648,9 @@ const TEST_TIMEOUT_MS = 30_000;
 const eventually = (check: () => void) => vi.waitFor(check, { timeout: 10_000 });
 
 type FakeWs = EventEmitter & { readyState: number; send: ReturnType<typeof vi.fn>; ping: () => void; close: () => void };
-async function connect(auth: 'mtls' | 'bearer' = 'mtls'): Promise<FakeWs> {
+async function connect(auth: 'mtls' | 'bearer' = 'mtls', opts: { iconRefs?: boolean } = {}): Promise<FakeWs> {
   const ws = Object.assign(new EventEmitter(), { readyState: 1, send: vi.fn(), ping: () => {}, close: () => {} }) as FakeWs;
+  if (opts.iconRefs) annexServer._testing.wsIconRefs.add(ws as never);
   annexServer._testing.wsAuthTypes.set(ws as never, auth);
   if (auth === 'mtls') annexServer._testing.wsPeerFingerprints.set(ws as never, 'mobile-fixture-identity');
   annexServer._testing.wss!.clients.add(ws as never);
@@ -2099,6 +2132,177 @@ describe('Annex mobile contract fixtures', { timeout: TEST_TIMEOUT_MS }, () => {
       // The existing chat `notice` event, sent when a start doesn't use the saved choice.
       notAppliedNotice: envelope(1, 'notice', { level: 'warn', code: 'context_window_not_applied', message: 'Started without the saved context choice, and cleared it. 500000 isn\'t one this model offers.' }),
     });
+  });
+
+  it('icon refs: the snapshot forms, changes, removals and the routes', async () => {
+    const saved = W.durables[DISPATCHER_PATH][0];
+    W.durables[DISPATCHER_PATH][0] = { ...saved, icon: 'durable_dispatcher.png' };
+    W.dispatcher = { flagOn: true, enabled: true, newLayout: true };
+    const refsSocket = () => connect('mtls', { iconRefs: true });
+    const firstSnapshot = async () => frames(await refsSocket()).find((f) => f.type === 'snapshot').payload;
+    const SHA = /^[0-9a-f]{64}$/;
+
+    const legacy = await connect('mtls');
+    const refs = await refsSocket();
+    const snapshot = frames(refs).find((f) => f.type === 'snapshot').payload;
+    expect(snapshot.agentIcons).toEqual({});
+    expect(snapshot.projectIcons).toEqual({});
+    expect(snapshot.iconRefs.agents.durable_chat.version).toMatch(SHA);
+    expect(snapshot.iconRefs.projects.proj_app.type).toBe('image/png');
+    // The Dispatcher has a ref, though it isn't in the snapshot's own `agents` map.
+    expect(snapshot.iconRefs.agents.durable_dispatcher.version).toMatch(SHA);
+    expect(Object.values(snapshot.agents).flat().some((a: any) => a.id === 'durable_dispatcher')).toBe(false);
+    expect(JSON.stringify(snapshot.iconRefs)).not.toContain('base64');
+    const legacySnapshot = frames(legacy).find((f) => f.type === 'snapshot').payload;
+    expect(legacySnapshot).not.toHaveProperty('iconRefs');
+    fixtures.set('snapshot-icon-refs.json', {
+      direction: 'desktop-to-phone', connect: '/ws?iconRefs=1&client=mobile',
+      note: 'Send both params on every connection, including reconnects. client is for metrics only. agentIcons and projectIcons are empty for an opted-in socket; ignore them. The Dispatcher is in iconRefs.agents, though not in the snapshot\'s agents map. A quick agent never has an entry.',
+      value: { agentIcons: snapshot.agentIcons, projectIcons: snapshot.projectIcons, iconRefs: snapshot.iconRefs },
+    });
+
+    // A socket of each form, on one refresh.
+    legacy.send.mockClear();
+    refs.send.mockClear();
+    annexServer.broadcastSnapshotRefresh();
+    await eventually(() => {
+      expect(frames(legacy).some((f) => f.type === 'snapshot')).toBe(true);
+      expect(frames(refs).some((f) => f.type === 'snapshot')).toBe(true);
+    });
+    const mixed = { legacy: frames(legacy).find((f) => f.type === 'snapshot').payload, refs: frames(refs).find((f) => f.type === 'snapshot').payload };
+    expect(mixed.legacy).not.toHaveProperty('iconRefs');
+    expect(Object.keys(mixed.legacy.agentIcons).length).toBeGreaterThan(0);
+    expect(mixed.refs.agentIcons).toEqual({});
+    expect(mixed.refs.iconRefs.agents.durable_chat).toBeDefined();
+
+    // The image changes, then goes.
+    const chat = W.durables[APP].findIndex((d) => d.id === 'durable_chat');
+    const original = W.durables[APP][chat];
+    W.durables[APP][chat] = { ...original, icon: 'durable_chat.changed.png' };
+    const changed = (await firstSnapshot()).iconRefs;
+    expect(changed.agents.durable_chat.version).not.toBe(snapshot.iconRefs.agents.durable_chat.version);
+    W.durables[APP][chat] = { ...original, icon: undefined };
+    const removed = (await firstSnapshot()).iconRefs;
+    expect(removed.agents.durable_chat).toBeUndefined();
+    fixtures.set('snapshot-icon-refs-changed.json', {
+      direction: 'desktop-to-phone',
+      note: 'A present map is complete: replace it. A different version means fetch. No entry in a present map means removal, so drop the cached image.',
+      before: snapshot.iconRefs.agents.durable_chat, changed: changed.agents.durable_chat, removed: removed.agents.durable_chat ?? null,
+    });
+
+    // The routes, for the same image the snapshot fixture describes.
+    W.durables[APP][chat] = original;
+    const { version, bytes } = (await firstSnapshot()).iconRefs.agents.durable_chat;
+    expect(version).toBe(snapshot.iconRefs.agents.durable_chat.version);
+    const served = await (await import('./icon-images')).readIconImage(`|${original.icon}`) as { dataUrl: string };
+    const imageBase64 = served.dataUrl.slice(served.dataUrl.indexOf(',') + 1);
+    expect(crypto.createHash('sha256').update(Buffer.from(imageBase64, 'base64')).digest('hex')).toBe(version);
+    expect(Buffer.from(imageBase64, 'base64').length).toBe(bytes);
+    const route = '/api/v1/icons/agent/durable_chat';
+    const asFixture = async (path: string, headers?: Record<string, string>) => {
+      const res = await send('GET', path, undefined, { headers });
+      return { request: { path, ...(headers && { headers }) }, response: { status: res.status, headers: pickIconHeaders(res.headers ?? {}) } };
+    };
+    const current = await asFixture(`${route}?v=${version}`);
+    const notModified = await asFixture(`${route}?v=${version}`, { 'If-None-Match': `"${version}"` });
+    const stale = await asFixture(`${route}?v=${'0'.repeat(64)}`, { 'If-None-Match': `"${'0'.repeat(64)}"` });
+    const noVersion = await asFixture(route);
+    W.durables[APP][chat] = { ...original, icon: undefined };
+    const missing = await send('GET', route);
+    W.durables[APP][chat] = original;
+    // Can't be read just now: not a removal, so no refs at all and a route that says to come back.
+    W.iconsUnavailable = true;
+    const unknown = await firstSnapshot();
+    const unavailable = await send('GET', route);
+    W.iconsUnavailable = false;
+    expect(unknown).not.toHaveProperty('iconRefs');
+    expect(unknown).not.toHaveProperty('snapshotTruncated');
+    expect(unavailable.status).toBe(503);
+    expect(current.response.status).toBe(200);
+    expect(current.response.headers.etag).toBe(`"${version}"`);
+    expect(current.response.headers['cache-control']).toBe('private, max-age=31536000, immutable');
+    expect(Number(current.response.headers['content-length'])).toBe(bytes);
+    expect(notModified.response.status).toBe(304);
+    expect(notModified.response.headers.etag).toBe(`"${version}"`);
+    expect(stale.response.status).toBe(200);
+    expect(stale.response.headers['cache-control']).toBe('private, no-cache');
+    expect(noVersion.response.headers['cache-control']).toBe('private, max-age=3600');
+    expect(missing.status).toBe(404);
+    fixtures.set('icon-route.json', {
+      note: 'Check the body: its SHA-256 equals the ETag, its byte count, and its Content-Type and decoded type and size. If the ETag differs from the current snapshot\'s version it is stale: keep what you draw and do not refetch until a new snapshot changes the version.',
+      imageBase64, version,
+      current, notModified, stale, noVersion,
+      missing: { request: { path: route }, response: { status: missing.status, body: missing.body } },
+      unavailable: { request: { path: route }, response: { status: unavailable.status, body: unavailable.body } },
+    });
+
+    // Refs left out of a frame over its limit, from the real server.
+    const projects = W.projects;
+    W.projects = projects.map((p, i) => (i === 0 ? { ...p, displayName: 'n'.repeat(9 * 1024 * 1024) } : p));
+    const truncated = await firstSnapshot();
+    W.projects = projects;
+    expect(truncated).not.toHaveProperty('iconRefs');
+    expect(truncated.snapshotTruncated.omitted).toContain('iconRefs');
+    expect(truncated.agentIcons).toEqual({});
+
+    const entry = { version, type: 'image/png', bytes, width: 1, height: 1 };
+    const stored = { agents: { a1: entry, a2: entry }, projects: { p1: entry } };
+    fixtures.set('icon-refs-cases.json', {
+      note: 'What a client does with each. Stored is what it held before. Unknown keeps what it has. All of these are hand written from the contract, apart from the omitted case, whose shape comes from the real server.',
+      stored,
+      snapshots: [
+        { name: 'complete', iconRefs: stored, expect: 'replace both maps' },
+        { name: 'one removed', iconRefs: { agents: { a1: entry }, projects: { p1: entry } }, expect: 'a2 removed: drop its image' },
+        { name: 'all removed', iconRefs: { agents: {}, projects: {} }, expect: 'every image removed' },
+        { name: 'unmarked absence', expect: 'unknown: keep all' },
+        { name: 'marked absence', snapshotTruncated: { version: 1, reason: 'frame_limit', omitted: truncated.snapshotTruncated.omitted, bytes: 9437184 }, agentIcons: {}, projectIcons: {}, expect: 'unknown: keep all, and ignore the empty legacy maps' },
+        { name: 'one sub-map missing', iconRefs: { agents: { a1: entry } }, expect: 'agents replaced, projects unknown: keep them' },
+        { name: 'null', iconRefs: null, expect: 'unknown: keep all' },
+        { name: 'null sub-map', iconRefs: { agents: null, projects: { p1: entry } }, expect: 'agents unknown, projects replaced' },
+        { name: 'partial entry', iconRefs: { agents: { a1: { version } }, projects: {} }, expect: 'a1 has no valid ref: draw initials, and do not fetch' },
+      ],
+      responses: [
+        { name: 'current', status: 200, etag: `"${version}"`, contentType: 'image/png', bodyBytes: bytes, expect: 'show' },
+        { name: 'not modified', status: 304, etag: `"${version}"`, expect: 'show the cached image' },
+        { name: 'stale', status: 200, etag: `"${'0'.repeat(64)}"`, contentType: 'image/png', expect: 'keep what is drawn, no refetch until the version changes' },
+        { name: 'in flight, then removed', status: 200, etag: `"${version}"`, contentType: 'image/png', currentVersion: null, expect: 'discard: it has no entry now' },
+        { name: 'in flight, then changed', status: 200, etag: `"${version}"`, contentType: 'image/png', currentVersion: '0'.repeat(64), expect: 'discard, and fetch the new version' },
+        { name: 'missing', status: 404, expect: 'initials, no retry for this version' },
+        { name: 'type mismatch', status: 200, etag: `"${version}"`, contentType: 'image/jpeg', expect: 'bad image: initials' },
+        { name: 'byte mismatch', status: 200, etag: `"${version}"`, contentType: 'image/png', bodyBytes: bytes + 1, expect: 'bad image: initials' },
+        { name: 'dimension mismatch', status: 200, etag: `"${version}"`, contentType: 'image/png', decodedWidth: 512, decodedHeight: 512, expect: 'bad image: initials' },
+        { name: 'hash mismatch', status: 200, etag: `"${version}"`, contentType: 'image/png', bodySha256: '1'.repeat(64), expect: 'bad image: initials' },
+      ],
+    });
+
+    // Real images through the real code, one of each type a phone can be sent.
+    const { readIconImage } = await vi.importActual<typeof import('./icon-images')>('./icon-images');
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'annex-icon-samples-'));
+    const samples = {
+      'image/png': VALID_PNG_BASE64,
+      'image/jpeg': '/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAMCAgICAgMCAgIDAwMDBAYEBAQEBAgGBgUGCQgKCgkICQkKDA8MCgsOCwkJDRENDg8QEBEQCgwSExIQEw8QEBD/wAALCAABAAEBAREA/8QAFAABAAAAAAAAAAAAAAAAAAAACf/EABQQAQAAAAAAAAAAAAAAAAAAAAD/2gAIAQEAAD8AVN//2Q==',
+      'image/gif': 'R0lGODlhAQABAIAAAAUEBAAAACwAAAAAAQABAAACAkQBADs=',
+      'image/webp': 'UklGRiIAAABXRUJQVlA4IBYAAAAwAQCdASoBAAEADsD+JaQAA3AAAAAA',
+    };
+    const images = [];
+    for (const [type, base64] of Object.entries(samples)) {
+      const file = path.join(dir, `sample-${images.length}`);
+      fs.writeFileSync(file, Buffer.from(base64, 'base64'));
+      const image = (await readIconImage(file))!;
+      expect(image.type).toBe(type);
+      expect(image.version).toMatch(SHA);
+      expect(image.version).toBe(crypto.createHash('sha256').update(Buffer.from(base64, 'base64')).digest('hex'));
+      images.push({ base64, type: image.type, version: image.version, etag: `"${image.version}"`, bytes: image.bytes, width: image.width, height: image.height });
+    }
+    fs.rmSync(dir, { recursive: true, force: true });
+    fixtures.set('icon-images.json', { note: 'One real image of each type, as the real code describes it.', images });
+
+    W.durables[DISPATCHER_PATH][0] = saved;
+    W.dispatcher = { flagOn: false, enabled: false, newLayout: true };
+  }, TEST_TIMEOUT_MS);
+
+  afterAll(() => {
+    if (W.iconDir) fs.rmSync(W.iconDir, { recursive: true, force: true });
   });
 
   it('fixtures on disk match (npm run fixtures:annex-mobile to update)', () => {
