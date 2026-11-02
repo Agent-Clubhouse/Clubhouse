@@ -4181,7 +4181,11 @@ export function start(): void {
   const offDisposes = onDisposeRequestsChanged(() => broadcastSnapshotRefresh());
   // Where Clubhouse MCP is off, the switches that need it read off (#2589).
   const offMcp = onMcpEnablementChanged(() => broadcastSnapshotRefresh());
-  unsubHelperRequests = () => { offStarts(); offDisposes(); offMcp(); };
+  // A project's name, color or image, wherever it changed, or one added or removed.
+  const offProjects = projectStore.onProjectsChanged(() => {
+    if (wss && wss.clients.size > 0) broadcastSnapshotRefresh();
+  });
+  unsubHelperRequests = () => { offStarts(); offDisposes(); offMcp(); offProjects(); };
 
   // The Dispatcher turned on or off, or its config changed (#2533): phones add, drop or update it live.
   let lastDispatcherChange = JSON.stringify(dispatcherChange());

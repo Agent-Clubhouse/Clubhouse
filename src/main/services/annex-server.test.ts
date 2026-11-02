@@ -99,6 +99,7 @@ vi.mock('./project-store', () => ({
   list: vi.fn().mockReturnValue([]),
   readIconData: vi.fn().mockReturnValue(null),
   iconFilePath: vi.fn(),
+  onProjectsChanged: vi.fn(() => () => {}),
 }));
 
 // Mock agent-config
@@ -3221,6 +3222,34 @@ describe('annex-server', () => {
         const plain = await get('');
         expect(plain.statusCode).toBe(200);
         expect(plain.headers['cache-control']).toBe('public, max-age=3600');
+      }, 30_000);
+
+      it('refreshes when a project changes, so a new project image reaches phones', async () => {
+        const listener = vi.mocked(projectStore.onProjectsChanged).mock.lastCall![0] as () => void;
+        const ws = await connectWithRefs(true);
+        ws.send.mockClear();
+        listener();
+        await vi.waitFor(() => expect(snapshots(ws)).toHaveLength(1));
+      }, 30_000);
+
+      it('keeps a large setup within the metadata target, with no image bytes', async () => {
+        fakeDecoder();
+        const projectCount = 40;
+        const perProject = 10;
+        const icon = writeIcon('shared.png', pngFile(MIB));
+        vi.mocked(projectStore.list).mockReturnValue(Array.from({ length: projectCount }, (_, p) => ({
+          id: `proj_${String(p).padStart(12, '0')}`, name: `project-${p}`, displayName: `Project number ${p}`, path: `/Users/someone/source/project-${p}`, color: 'indigo', icon,
+        })) as any);
+        vi.mocked(agentConfigModule.listDurable).mockImplementation((projectPath: string) => Array.from({ length: perProject }, (_, a) => ({
+          id: `durable_${projectPath.length}_${projectPath.slice(-3)}_${String(a).padStart(10, '0')}`, name: `clever-agent-${a}`, color: 'indigo', icon, branch: `agent/clever-agent-${a}/standby`, model: 'claude-opus-5-5', orchestrator: 'claude-code', createdAt: '2026-01-01T00:00:00.000Z', lastSessionId: 'x',
+        })) as any);
+
+        const refs = Buffer.byteLength((await connectWithRefs(true)).send.mock.calls[0][0] as string);
+        const inline = Buffer.byteLength((await connectWithRefs(false)).send.mock.calls[0][0] as string);
+
+        expect(refs).toBeLessThan(2 * MIB);
+        expect(inline).toBeLessThan(SNAPSHOT_FRAME_MAX_BYTES);
+        console.info(`large setup, ${projectCount} projects and ${projectCount * perProject} agents, all with icons: refs ${refs} bytes, inline ${inline} bytes`);
       }, 30_000);
 
       it('counts a phone on mTLS as mobile once its hello says so', async () => {

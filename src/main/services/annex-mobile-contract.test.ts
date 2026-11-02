@@ -139,6 +139,7 @@ vi.mock('./project-store', () => ({
   list: async () => { if (W.projectsThrow) throw new Error('disk gone'); return W.projects; },
   readIconData: async (icon: string) => (icon ? 'data:image/png;base64,iVBORw0KGgo=' : null),
   iconFilePath: async (icon: string) => (icon ? `iVBORw0KGgo=|${icon}` : null),
+  onProjectsChanged: () => () => {},
 }));
 vi.mock('./agent-config', () => {
   const find = (projectPath: string, id: string) => (W.durables[projectPath] ?? []).find((d) => d.id === id) ?? null;
