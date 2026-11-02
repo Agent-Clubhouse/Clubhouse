@@ -590,8 +590,11 @@ export class ChatAgentRuntime implements AgentRuntime {
       }
       const preamble = this.withSystemPrompt([], caps);
       this.queued.push({ messageId, source: opts.source, parts: [blocks], preamble, trace: traceContext });
-      await this.emit({ type: 'user_message', data: { messageId, ...correlation, content: blocks, source: opts.source, delivery: 'queued' } });
-      await this.emitQueueState([messageId], 'queued');
+      // Written together, so no turn_started falls between the message and the event that says the runtime holds it.
+      await Promise.all([
+        this.emit({ type: 'user_message', data: { messageId, ...correlation, content: blocks, source: opts.source, delivery: 'queued' } }),
+        this.emitQueueState([messageId], 'queued'),
+      ]);
       return { delivery: 'queued', messageId };
     }
 
