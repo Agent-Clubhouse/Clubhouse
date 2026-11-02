@@ -31,6 +31,8 @@ const H = vi.hoisted(() => {
     readsRunning: 0,
     maxReadsRunning: 0,
     releaseHung: [] as Array<() => void>,
+    /** Annex's real listener on the project list, to fire as a write would. */
+    projectListeners: new Set<() => void>(),
     projects: 2,
     agentsPerProject: 3,
   };
@@ -67,7 +69,10 @@ vi.mock('../../src/main/services/project-store', () => ({
   },
   iconFilePath: async () => null,
   readIconData: async () => null,
-  onProjectsChanged: () => () => {},
+  onProjectsChanged: (listener: () => void) => {
+    H.projectListeners.add(listener);
+    return () => H.projectListeners.delete(listener);
+  },
 }));
 vi.mock('../../src/main/services/agent-config', () => ({
   listDurable: async (projectPath: string) => Array.from({ length: H.agentsPerProject }, (_, a) => ({
@@ -137,6 +142,11 @@ function pair(port: number, pin: string, phone: ReturnType<typeof phoneIdentity>
     req.on('error', reject);
     req.end(body);
   });
+}
+
+/** As if the project list were written this many times: Annex's real debounce decides the rest. */
+function fireProjectsChanged(count = 1): void {
+  for (let i = 0; i < count; i++) for (const listener of H.projectListeners) listener();
 }
 
 /** Clears a fault, and lets hung reads end. */
@@ -241,6 +251,89 @@ describe('Annex harness', () => {
     }, { timeout: 75_000 });
   }, 120_000);
 
+  describe('project changes, through the real debounce', () => {
+    const DEBOUNCE_MS = annexServer._testing.PROJECTS_CHANGED_DEBOUNCE_MS;
+    const settle = (ms = DEBOUNCE_MS * 3) => new Promise((r) => setTimeout(r, ms));
+    const snapshotsOf = (frames: any[]) => frames.filter((f) => f.type === 'snapshot');
+
+    /** A healthy socket, past its first snapshot, with nothing pending on the host. */
+    const liveClient = async () => {
+      setFault('none');
+      const client = await connect();
+      await vi.waitFor(() => expect(snapshotsOf(client.frames)).toHaveLength(1), { timeout: 75_000 });
+      await vi.waitFor(() => expect(H.readsRunning).toBe(0));
+      await settle();
+      return client;
+    };
+
+    it('idle, 20 give one ordered snapshot and one read, with no false gap', async () => {
+      const { frames } = await liveClient();
+      const reads = H.reads;
+      const seq = eventReplay.getLastSeq();
+
+      fireProjectsChanged(20);
+      await vi.waitFor(() => expect(snapshotsOf(frames)).toHaveLength(2));
+      await settle();
+
+      expect(H.reads).toBe(reads + 1);
+      expect(snapshotsOf(frames)).toHaveLength(2);
+      expect(snapshotsOf(frames)[1].payload.lastSeq).toBe(seq);
+    }, 120_000);
+
+    it('20 during a slow read give one follow-up read, one at a time', async () => {
+      const { frames } = await liveClient();
+      setFault('hang');
+      annexServer.broadcastSnapshotRefresh();
+      await vi.waitFor(() => expect(H.readsRunning).toBe(1));
+      const reads = H.reads;
+
+      fireProjectsChanged(20);
+      await settle();
+      expect(H.reads).toBe(reads);
+
+      setFault('none');
+      await vi.waitFor(() => expect(H.reads).toBe(reads + 1));
+      await vi.waitFor(() => expect(snapshotsOf(frames).length).toBeGreaterThanOrEqual(3));
+      await settle();
+      expect(H.reads).toBe(reads + 1);
+      expect(H.maxReadsRunning).toBe(1);
+    }, 120_000);
+
+    it('20 during a failure backoff read nothing extra, then recover', async () => {
+      const { frames } = await liveClient();
+      setFault('fail');
+      const started = H.reads;
+      annexServer.broadcastSnapshotRefresh();
+      // The failed read has happened, so the host is in its backoff window.
+      await vi.waitFor(() => expect(H.reads).toBe(started + 1));
+      await settle(50);
+      const reads = H.reads;
+
+      fireProjectsChanged(20);
+      await settle();
+      expect(H.reads).toBe(reads);
+
+      setFault('none');
+      const before = snapshotsOf(frames).length;
+      await vi.waitFor(() => expect(snapshotsOf(frames).length).toBeGreaterThan(before), { timeout: 75_000 });
+    }, 120_000);
+
+    it('a disconnect during the debounce: no read for that, and no error', async () => {
+      for (const ws of sockets.splice(0)) ws.terminate();
+      const { ws } = await liveClient();
+      const reads = H.reads;
+
+      fireProjectsChanged(20);
+      ws.terminate();
+      sockets.length = 0;
+      await vi.waitFor(() => expect(annexServer._testing.wss!.clients.size).toBe(0));
+      await settle();
+
+      expect(H.reads).toBe(reads);
+      expect(H.readsRunning).toBe(0);
+    }, 120_000);
+  });
+
   it('a snapshot too large to send never goes out, and reconnects do not build it again', async () => {
     await vi.waitFor(() => expect(H.readsRunning).toBe(0));
     setFault('oversize');
@@ -269,6 +362,7 @@ describe('Annex harness', () => {
           if (req.url === '/fault') setFault(body.fault);
           if (req.url === '/fixture') { H.projects = body.projects ?? H.projects; H.agentsPerProject = body.agentsPerProject ?? H.agentsPerProject; }
           if (req.url === '/refresh') annexServer.broadcastSnapshotRefresh();
+          if (req.url === '/projects-changed') fireProjectsChanged(body.count);
           if (req.url === '/chat-event') publishChatEvent({ agentId: body.agentId ?? 'durable_0_0', type: 'turn_ended', seq: 1, ts: 0, sessionId: 's', data: {} } as never);
           res.setHeader('Content-Type', 'application/json');
           res.end(JSON.stringify({ fault: H.fault, reads: H.reads, readsRunning: H.readsRunning, maxReadsRunning: H.maxReadsRunning, lastSeq: eventReplay.getLastSeq() }));

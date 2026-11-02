@@ -39,6 +39,7 @@ Plain HTTP on `127.0.0.1:<controlPort>`. Every answer is the current state: `{"f
 | `POST /fault {"fault":"none"}` | Back to normal. Waiting sockets recover on the host's next retry, up to a minute later, or at once after `POST /refresh` if the window is over |
 | `POST /fixture {"projects":40,"agentsPerProject":10}` | Sets how many snapshots list |
 | `POST /refresh` | Asks for a refresh, as a change would |
+| `POST /projects-changed {"count":20}` | Fires Annex's real project list listener that many times, through its real debounce |
 | `POST /chat-event {"agentId":"…"}` | Sends a sequenced `chat:event` |
 | `POST /stop` | Stops the harness |
 
