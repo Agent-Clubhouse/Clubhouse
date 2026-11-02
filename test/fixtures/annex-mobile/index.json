@@ -13,6 +13,7 @@
     "attachments.json",
     "canvas-route.json",
     "capabilities.json",
+    "chat-event-tool-output-preview.json",
     "chat-events.json",
     "chat-page.json",
     "chat-sessions.json",

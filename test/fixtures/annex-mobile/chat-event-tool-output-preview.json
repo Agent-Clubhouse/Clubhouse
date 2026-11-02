@@ -1,0 +1,36 @@
+{
+  "direction": "desktop-to-phone",
+  "frame": {
+    "payload": {
+      "agentId": "durable_chat",
+      "event": {
+        "agentId": "durable_chat",
+        "data": {
+          "content": [
+            {
+              "command": "cat big.log",
+              "exitCode": 0,
+              "output": "first line\n\n[Clubhouse: 4000000 bytes of this output are omitted here. Open it on the desktop for all of it.]\nlast line\n",
+              "type": "terminal"
+            }
+          ],
+          "contentMode": "replace",
+          "durationMs": 1200,
+          "status": "completed",
+          "toolCallId": "call_large",
+          "truncated": {
+            "originalBytes": 4577777
+          }
+        },
+        "seq": 99,
+        "sessionId": "session_fixture",
+        "ts": 1800000000000,
+        "type": "tool_call_update",
+        "v": 1
+      }
+    },
+    "seq": 1000,
+    "type": "chat:event"
+  },
+  "note": "Over 1 MiB. The filler in output and originalBytes are shortened here; the note between the start and end is what a phone draws."
+}
