@@ -52,7 +52,46 @@ export interface FeedbackCaptureResult {
   /** Every window captured; the first is the window feedback started from. */
   shots: FeedbackShot[];
   correlation?: FeedbackCorrelationSummary;
+  /** Recent diagnostics to review (#2658); what is shown here is exactly what can be sent. */
+  diagnostics?: FeedbackDiagnostics;
 }
+
+/** The bounds on a report's diagnostics, and how long Framebriar's telemetry store keeps them. */
+export const FEEDBACK_DIAGNOSTICS = { windowMinutes: 30, maxLines: 200, maxBytes: 48 * 1024, retentionDays: 30 } as const;
+
+/** One allowlisted log line: never a raw message or raw meta (feedback-diagnostics.ts). */
+export interface FeedbackDiagnosticLine {
+  /** ISO time. */
+  at: string;
+  level: 'debug' | 'info' | 'warn' | 'error';
+  ns: string;
+  /** A fixed name for what happened, never the log message. */
+  event: string;
+  attrs?: Record<string, string | number>;
+}
+
+/** Why a report has no diagnostics. */
+export type FeedbackDiagnosticsNoneReason = 'no_lines' | 'collection_failed' | 'no_review' | 'not_connected';
+
+export interface FeedbackDiagnostics {
+  status: 'available' | 'none';
+  reason?: FeedbackDiagnosticsNoneReason;
+  windowStart: string;
+  windowEnd: string;
+  lines: FeedbackDiagnosticLine[];
+  bytes: number;
+  /** Recent lines past the line or byte bound, the oldest, left out. */
+  dropped: number;
+}
+
+/**
+ * What happened to a report's diagnostics. `queued`, not "attached": they travel apart from
+ * the report, in memory, and are lost if Clubhouse quits before they are sent.
+ */
+export type FeedbackDiagnosticsOutcome =
+  | { status: 'queued'; lines: number }
+  | { status: 'left_out'; reason: 'reporter' }
+  | { status: 'none'; reason: FeedbackDiagnosticsNoneReason };
 
 export interface FeedbackCorrelationSummary {
   scope: 'incident' | 'trace-only';
@@ -71,6 +110,8 @@ export interface FeedbackSendInput {
   includeScreenshot: boolean;
   /** false removes the opening snapshot's incident and legacy trace/span references. */
   includeCorrelation?: boolean;
+  /** true sends the diagnostics reviewed with this draft. Anything else leaves them out. */
+  includeDiagnostics?: boolean;
   /** Where in Clubhouse feedback was given, e.g. 'agents' or 'settings'. A code, never user text. */
   scene?: string;
   /**
@@ -92,6 +133,7 @@ export interface FeedbackSendResult {
   id: string;
   /** Saved locally; "Received" arrives later in FeedbackStatus.received. */
   status: 'saved-local';
+  diagnostics?: FeedbackDiagnosticsOutcome;
 }
 
 /**

@@ -12,6 +12,7 @@ import { broadcastToAllWindows } from '../../util/ipc-broadcast';
 import { FeedbackService } from './feedback-service';
 import { buildSha } from '../../build-info';
 import { recentBreadcrumbs } from '../breadcrumbs';
+import { collectFeedbackDiagnostics, startFeedbackDiagnostics } from './feedback-diagnostics';
 import { notifyFramebriarConnectionChanged, setFramebriarTelemetrySource } from '../../telemetry/destinations/framebriar-source';
 
 let service: FeedbackService | null = null;
@@ -34,12 +35,14 @@ export function isFeedbackEnabled(): boolean {
 export function getFeedbackService(): FeedbackService {
   if (quitting) throw new Error('Clubhouse is quitting');
   if (!service) {
+    startFeedbackDiagnostics();
     const s = new FeedbackService({
       safeStorage,
       dataDir: path.join(app.getPath('userData'), 'framebriar'),
       appVersion: app.getVersion(),
       buildSha: buildSha(),
       breadcrumbs: recentBreadcrumbs,
+      diagnostics: collectFeedbackDiagnostics,
       isOnline: () => net.isOnline(),
       log: (level, msg, meta) => appLog('core:feedback', level, msg, meta ? { meta } : undefined),
     });

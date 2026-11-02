@@ -238,6 +238,12 @@ describe('captureFromShortcut (#2101)', () => {
 });
 
 describe('validateSendInput', () => {
+  it('accepts only a boolean includeDiagnostics', () => {
+    const ok = { notes: '', includeScreenshot: true };
+    expect(() => validateSendInput({ ...ok, includeDiagnostics: false }, 'arg1')).not.toThrow();
+    expect(() => validateSendInput({ ...ok, includeDiagnostics: 'yes' } as never, 'arg1')).toThrow(/includeDiagnostics/);
+  });
+
   const ok = { notes: 'n', includeScreenshot: false };
   it('accepts a minimal text-only review', () => {
     expect(() => validateSendInput(ok, 'arg1')).not.toThrow();

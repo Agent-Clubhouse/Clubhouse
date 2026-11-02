@@ -15,12 +15,17 @@
  *   delivered lines carry the report id maintainers match a Framebriar report by.
  * - The same lifecycle goes to telemetry (feedback-telemetry.ts, #2309) as states, counts
  *   and error classes only. The report id is never an attribute.
+ * - Recent diagnostics (feedback-diagnostics.ts, #2658): the allowlisted lines the reporter
+ *   reviewed go after the report is saved, as a Framebriar telemetry excerpt tagged with its
+ *   id, and only then. They can never hold up or fail the report. A report can't carry them
+ *   itself, so its status goes in a breadcrumb (diagnostics.*) that travels with it.
  */
 
 import { createHash, randomUUID } from 'crypto';
 import { captureFeedbackCorrelation, type FeedbackCorrelationSnapshot } from '../../telemetry/feedback-incident';
 import type {
   Framebriar,
+  FramebriarTelemetry,
   FramebriarAccessView,
   FramebriarOutboxView,
   FramebriarReceipt,
@@ -28,8 +33,9 @@ import type {
   FramebriarPrepared,
   SafeStorageLike,
 } from '../../vendor/framebriar/adapters/node/index.mjs';
-import { createFramebriar, otlpExporterOptions } from '../../vendor/framebriar/adapters/node/index.mjs';
+import { createFramebriar, createTelemetry, otlpExporterOptions } from '../../vendor/framebriar/adapters/node/index.mjs';
 import { ACCESS_TIMEOUT_MS } from '../../vendor/framebriar/adapters/node/access.mjs';
+import { toDiagnosticsV1 } from './feedback-diagnostics-v1';
 import type { FramebriarTelemetryExport } from '../../telemetry/destinations/framebriar-source';
 import {
   feedbackErrorClass,
@@ -41,7 +47,7 @@ import {
   recordFeedbackSubmitted,
   type FeedbackErrorClass,
 } from '../../telemetry/feedback-telemetry';
-import { FEEDBACK_MAX_PNG_BYTES, type FeedbackCaptureResult, type FeedbackSendInput, type FeedbackSendResult, type FeedbackStatus } from '../../../shared/feedback-types';
+import { FEEDBACK_MAX_PNG_BYTES, type FeedbackCaptureResult, type FeedbackDiagnosticLine, type FeedbackDiagnostics, type FeedbackDiagnosticsOutcome, type FeedbackSendInput, type FeedbackSendResult, type FeedbackStatus } from '../../../shared/feedback-types';
 
 export const FRAMEBRIAR_APP_ID = 'clubhouse';
 /** Reviewed drafts are dropped if the review isn't finished in time. */
@@ -73,6 +79,14 @@ const ACCESS_TRANSIENT = new Set(['checking', 'connecting', 'disconnecting']);
 
 /** The SDK's per-report cap on breadcrumbs. */
 const MAX_REPORT_BREADCRUMBS = 40;
+/** How long a diagnostics excerpt keeps retrying in memory before it is given up. */
+const EXCERPT_RETRY_MS = 15 * 60_000;
+const EXCERPT_CHECK_MS = 30_000;
+
+/** The report's own record of its diagnostics: the breadcrumb code for each outcome. */
+export function diagnosticsBreadcrumbCode(outcome: FeedbackDiagnosticsOutcome): string {
+  return outcome.status === 'queued' ? 'diagnostics.queued' : `diagnostics.${outcome.status}.${outcome.reason}`;
+}
 
 /** One breadcrumb as the SDK takes it: `atMs` in epoch ms, `code` never user text. */
 export interface FeedbackBreadcrumb {
@@ -99,6 +113,16 @@ export interface FeedbackServiceDeps {
   buildSha?: string | null;
   /** Recent app events for the report, newest first, at most 40 (#2098). Defaults to none. */
   breadcrumbs?: () => FeedbackBreadcrumb[];
+  /** Recent allowlisted log lines to review, read when a report opens (#2658). Defaults to none. */
+  diagnostics?: () => FeedbackDiagnostics;
+  /**
+   * Put diagnostics v1 in the report itself. Off, and the app must not turn it on until
+   * Framebriar confirms the API deploy and an SDK tag: today's API strips the field from a
+   * small report and answers a large one with a permanent 413 that blocks the outbox.
+   */
+  reportDiagnosticsField?: boolean;
+  /** For tests: the SDK's telemetry factory, used only for diagnostics excerpts. */
+  createExcerptTelemetry?: typeof createTelemetry;
   isOnline: () => boolean;
   /** For tests: the SDK factory (defaults to the vendored createFramebriar). */
   create?: typeof createFramebriar;
@@ -171,6 +195,10 @@ interface Draft {
   snapshot: FramebriarSnapshot;
   shots: Shot[];
   createdAt: number;
+  /** Read once, when feedback opened: what is reviewed is what is sent. */
+  diagnostics: FeedbackDiagnostics;
+  /** Fixed with the prepared report, so a retry records the same outcome. */
+  diagnosticsOutcome?: FeedbackDiagnosticsOutcome;
   /** Once prepared, retry the same report identity even if saving had an uncertain outcome. */
   prepared?: { key: string; value: Promise<FramebriarPrepared> };
 }
@@ -186,6 +214,7 @@ export class FeedbackService {
   private starting: Promise<void> | null = null;
   private readonly drafts = new Map<string, Draft>();
   private readonly received: string[] = [];
+  private readonly excerpts = new Set<FramebriarTelemetry>();
   private readonly listeners = new Set<(status: FeedbackStatus) => void>();
   private readonly now: () => number;
   private readonly log: FeedbackLog;
@@ -367,6 +396,7 @@ export class FeedbackService {
     // Snapshot the app pipeline before async capture/review. The feedback SDK
     // deliberately has its own telemetry off and cannot supply this context.
     const correlation = (this.deps.captureCorrelation ?? captureFeedbackCorrelation)(this.now());
+    const diagnostics = this.readDiagnostics();
     await this.start();
     await this.recheckStorage();
     this.pruneDrafts();
@@ -396,10 +426,74 @@ export class FeedbackService {
     }
     const snapshot: FramebriarSnapshot = { ...opened, ...correlation.data, png: shots[0]?.png ?? null };
     const draftId = randomUUID();
-    this.drafts.set(draftId, { snapshot, shots, createdAt: this.now() });
+    this.drafts.set(draftId, { snapshot, shots, createdAt: this.now(), diagnostics });
     while (this.drafts.size > MAX_DRAFTS) this.drafts.delete(this.drafts.keys().next().value as string);
     const previews = shots.map((shot) => ({ shotId: shot.shotId, label: shot.label, preview: `data:image/png;base64,${shot.png.toString('base64')}` }));
-    return { draftId, preview: previews[0]?.preview ?? null, shots: previews, ...(correlation.summary && { correlation: correlation.summary }) };
+    return { draftId, preview: previews[0]?.preview ?? null, shots: previews, ...(correlation.summary && { correlation: correlation.summary }), diagnostics };
+  }
+
+  /** Never throws: a report opens the same whether or not its diagnostics could be read. */
+  private readDiagnostics(): FeedbackDiagnostics {
+    const at = new Date(this.now()).toISOString();
+    const none: FeedbackDiagnostics = { status: 'none', reason: 'no_lines', windowStart: at, windowEnd: at, lines: [], bytes: 0, dropped: 0 };
+    try {
+      return this.deps.diagnostics?.() ?? none;
+    } catch (err) { // telemetry-exempt: logged here and recorded in the report as collection_failed
+      this.log('warn', 'Feedback diagnostics could not be read', errorMeta(err));
+      return { ...none, reason: 'collection_failed' };
+    }
+  }
+
+  /** What this report will say about its diagnostics. Never throws. */
+  private diagnosticsOutcome(fb: Framebriar, draft: Draft | undefined, include: boolean): FeedbackDiagnosticsOutcome {
+    if (!draft) return { status: 'none', reason: 'no_review' };
+    if (draft.diagnostics.status === 'none') return { status: 'none', reason: draft.diagnostics.reason ?? 'no_lines' };
+    if (!include) return { status: 'left_out', reason: 'reporter' };
+    try {
+      // The SDK's own rule for sending telemetry. Offline still counts: it retries.
+      const { enrolled, notice, state } = fb.access.status();
+      if (!enrolled || notice !== null || state === 'disconnected' || state === 'disconnecting' || state === 'connecting') return { status: 'none', reason: 'not_connected' };
+    } catch { // telemetry-exempt: recorded in the report as not_connected
+      return { status: 'none', reason: 'not_connected' };
+    }
+    return { status: 'queued', lines: draft.diagnostics.lines.length };
+  }
+
+  /**
+   * Send the reviewed lines, tagged with the saved report's id. One short-lived instance per
+   * report, in excerpt-only mode, so nothing else ever goes along. Never throws.
+   */
+  private sendExcerpt(fb: Framebriar, id: string, lines: readonly FeedbackDiagnosticLine[], trace: { traceId?: string; spanId?: string }): void {
+    let telemetry: FramebriarTelemetry | undefined;
+    const finish = (level: FeedbackLogLevel, msg: string) => {
+      this.log(level, msg, { id, lines: lines.length });
+      if (telemetry) this.excerpts.delete(telemetry);
+      telemetry?.dispose();
+    };
+    try {
+      telemetry = (this.deps.createExcerptTelemetry ?? createTelemetry)({ access: fb.access, buildSha: this.deps.buildSha ?? null, mode: 'excerpt-only', sessionId: fb.feedback.sessionId });
+      this.excerpts.add(telemetry);
+      for (const line of lines) {
+        const attrs: Record<string, string | number> = { 'clubhouse.ns': line.ns };
+        for (const [key, value] of Object.entries(line.attrs ?? {})) attrs[`clubhouse.${key}`] = value;
+        telemetry.log(line.level, line.event, attrs, { time: Date.parse(line.at), parent: null });
+      }
+      const started = this.now();
+      const active = telemetry;
+      const settle = () => {
+        if (!this.excerpts.has(active)) return; // Shut down meanwhile.
+        const { sent, buffered, dropped, forbidden } = active.stats();
+        if (forbidden) return finish('warn', 'Feedback diagnostics refused by the server');
+        if (buffered === 0) return finish(sent > 0 && dropped === 0 ? 'info' : 'warn', sent > 0 && dropped === 0 ? 'Feedback diagnostics sent' : 'Feedback diagnostics not all sent');
+        if (this.now() - started >= EXCERPT_RETRY_MS) return finish('warn', 'Feedback diagnostics given up after retrying');
+        setTimeout(settle, EXCERPT_CHECK_MS).unref?.();
+      };
+      void active.feedbackSubmitted({ reportId: id, ...trace, includeDiagnostics: true }).then(settle, () => finish('warn', 'Feedback diagnostics could not be sent'));
+    } catch (err) { // telemetry-exempt: the report is already saved; logged for its id
+      this.log('warn', 'Feedback diagnostics could not be sent', { id, ...errorMeta(err) });
+      if (telemetry) this.excerpts.delete(telemetry);
+      try { telemetry?.dispose(); } catch { /* telemetry-exempt: the failure is logged above */ }
+    }
   }
 
   /**
@@ -417,7 +511,7 @@ export class FeedbackService {
       const state = this.fb?.access.status().state;
       // The report id links a Framebriar report to this user's local record (a diag line,
       // through appLog); telemetry can't carry it. Don't drop it.
-      this.log('info', 'Feedback saved for delivery', { ...meta, id: result.id, status: result.status, state });
+      this.log('info', 'Feedback saved for delivery', { ...meta, id: result.id, status: result.status, state, diagnostics: result.diagnostics ? diagnosticsBreadcrumbCode(result.diagnostics) : null });
       recordFeedbackSubmitted({ screenshot: input.includeScreenshot, annotated: input.includeScreenshot && input.annotatedPng !== undefined, shots, accessState: state ?? 'stopped' });
       return result;
     } catch (err) {
@@ -438,16 +532,23 @@ export class FeedbackService {
     if (!input.includeScreenshot && notes.trim() === '') throw Object.assign(new Error('Add a note to send feedback without a screenshot.'), { code: 'notes-required' });
     const scene = input.scene && SCENE.test(input.scene) ? input.scene : 'app';
     const png = input.includeScreenshot && draft ? this.annotatedOrCaptured(this.chosenShot(draft, input.shotId), input.annotatedPng) : null;
-    const breadcrumbs = (this.deps.breadcrumbs?.() ?? []).slice(0, MAX_REPORT_BREADCRUMBS);
+    const includeDiagnostics = input.includeDiagnostics === true;
+    const outcome = draft?.diagnosticsOutcome ?? this.diagnosticsOutcome(fb, draft, includeDiagnostics);
+    // First and within the cap, so the report always says what became of its diagnostics.
+    const breadcrumbs: FeedbackBreadcrumb[] = [
+      { kind: 'event', atMs: this.now(), code: diagnosticsBreadcrumbCode(outcome), ...(outcome.status === 'queued' && { value: outcome.lines }) },
+      ...(this.deps.breadcrumbs?.() ?? []).slice(0, MAX_REPORT_BREADCRUMBS - 1),
+    ];
     // The hash is memory-only and never logged/exported. It prevents a retry from
     // silently replacing a possibly saved report with a different reviewed payload.
-    const key = createHash('sha256').update(JSON.stringify({ notes, scene, includeCorrelation: input.includeCorrelation !== false, png: png ? createHash('sha256').update(png).digest('hex') : null })).digest('hex');
+    const key = createHash('sha256').update(JSON.stringify({ notes, scene, includeCorrelation: input.includeCorrelation !== false, includeDiagnostics, png: png ? createHash('sha256').update(png).digest('hex') : null })).digest('hex');
     if (draft?.prepared && draft.prepared.key !== key) {
       throw Object.assign(new Error('Retry the feedback unchanged, or close it and open a new report to make changes.'), { code: 'feedback-review-changed' });
     }
     const prepare = () => fb.feedback.prepare({
       notes,
       context: { scene, breadcrumbs },
+      ...(this.deps.reportDiagnosticsField === true && draft && { diagnostics: toDiagnosticsV1(draft.diagnostics, outcome) }),
       ...(input.includeScreenshot && draft
         ? { ...draft.snapshot, png }
         : { ...(draft?.snapshot ?? {}), png: null }),
@@ -456,8 +557,9 @@ export class FeedbackService {
     if (draft && !draft.prepared) {
       const cached = { key, value: prepare() };
       draft.prepared = cached;
+      draft.diagnosticsOutcome = outcome;
       // A prepare failure has not reached storage and may safely be corrected.
-      void cached.value.catch(() => { if (draft.prepared === cached) draft.prepared = undefined; });
+      void cached.value.catch(() => { if (draft.prepared === cached) { draft.prepared = undefined; draft.diagnosticsOutcome = undefined; } });
     }
     const prepared = await (draft?.prepared?.value ?? prepare());
     const ack = await fb.feedback.submit(prepared, { includeDiagnostics: false });
@@ -465,7 +567,11 @@ export class FeedbackService {
     // the reviewed screenshot so the user can retry.
     if (input.draftId) this.drafts.delete(input.draftId);
     this.emit();
-    return { id: ack.id, status: ack.status };
+    if (outcome.status === 'queued' && draft) {
+      const { traceId, spanId } = prepared.report as { traceId?: string; spanId?: string };
+      this.sendExcerpt(fb, ack.id, draft.diagnostics.lines, traceId && spanId ? { traceId, spanId } : {});
+    }
+    return { id: ack.id, status: ack.status, diagnostics: outcome };
   }
 
   /** The screenshot the user picked (#2100); the starting window's when none was picked. */
@@ -528,6 +634,10 @@ export class FeedbackService {
   async shutdown(): Promise<void> {
     this.drafts.clear();
     this.listeners.clear();
+    for (const excerpt of this.excerpts) {
+      try { excerpt.dispose(); } catch { /* telemetry-exempt: shutting down */ }
+    }
+    this.excerpts.clear();
     const fb = this.fb;
     this.fb = null;
     this.storage = null;
