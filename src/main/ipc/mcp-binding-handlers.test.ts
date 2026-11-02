@@ -62,6 +62,16 @@ vi.mock('../services/agent-registry', () => ({
   agentRegistry: { get: vi.fn() },
 }));
 
+vi.mock('../services/dispatcher-connections', () => ({
+  dispatcherConnectionSource: { id: 'dispatcher-connections', collect: vi.fn(async () => []) },
+  listDispatcherLinksForUser: vi.fn(async () => [{ agentId: 'a', targetId: 'b', agentName: 'a', targetName: 'b', status: 'suspended', reason: 'dispatcher_off' }]),
+  watchDispatcherConnections: vi.fn(() => () => {}),
+}));
+
+vi.mock('../services/clubhouse-mcp/tools/dispatcher-control-tools', () => ({
+  registerDispatcherControlTools: vi.fn(),
+}));
+
 vi.mock('../services/persisted-bindings', () => ({
   registerPersistedBindingSource: vi.fn(),
   rebuildPersistedBindings: vi.fn(async () => ({ sources: [] })),
@@ -110,6 +120,7 @@ import {
 import { canvasWireBindingSource } from '../services/canvas-wire-source';
 import { helperWireBindingSource, watchHelperWires } from '../services/helper-wire-source';
 import { orchestratorConnectionSource, watchOrchestratorConnections } from '../services/orchestrator-connections';
+import { dispatcherConnectionSource } from '../services/dispatcher-connections';
 import { dispatcherWireBindingSource, watchDispatcherWires } from '../services/dispatcher-wire-source';
 import { registerConnectionTools } from '../services/clubhouse-mcp/tools/connection-tools';
 import {
@@ -165,6 +176,7 @@ describe('mcp-binding-handlers registration', () => {
       IPC.MCP_BINDING.SET_DISABLED_TOOLS,
       IPC.MCP_BINDING.GET_AGENT_CONNECTION,
       IPC.MCP_BINDING.GET_TOOL_CONNECTIONS,
+      IPC.MCP_BINDING.GET_DISPATCHER_LINKS,
       IPC.MCP_BINDING.REGISTER_WEBVIEW,
       IPC.MCP_BINDING.UNREGISTER_WEBVIEW,
     ];
@@ -284,6 +296,18 @@ describe('SEC-06: MCP binding IPC authorization', () => {
       const target = { targetId: 'w1', targetKind: 'browser', label: 'Widget' };
       expect(() => handler(fakeEvent, 'agent-1', target)).toThrow('unauthorized caller');
       expect(bindingManager.bind).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('GET_DISPATCHER_LINKS (#2661)', () => {
+    it('lists the Dispatcher\'s links, suspended ones included', async () => {
+      const handler = getHandler(IPC.MCP_BINDING.GET_DISPATCHER_LINKS);
+      expect(await handler(fakeEvent)).toEqual([expect.objectContaining({ agentId: 'a', status: 'suspended', reason: 'dispatcher_off' })]);
+    });
+
+    it('rejects a sender that isn\'t an app window', () => {
+      mockFromWebContents.mockReturnValue(null);
+      expect(() => getHandler(IPC.MCP_BINDING.GET_DISPATCHER_LINKS)(fakeEvent)).toThrow();
     });
   });
 
@@ -596,6 +620,7 @@ describe('restorePersistedBindings (#1544)', () => {
       helperWireBindingSource,
       orchestratorConnectionSource,
       dispatcherWireBindingSource,
+      dispatcherConnectionSource,
     ]);
     expect(rebuildPersistedBindings).toHaveBeenCalledTimes(2);
   });

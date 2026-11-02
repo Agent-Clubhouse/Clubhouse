@@ -65,6 +65,11 @@ export const DEFAULT_GLOBAL_HELPER_CAP = 20;
 /** Upper bound accepted for either limit, so a typo can't mean "unlimited". */
 export const MAX_HELPER_LIMIT = 100;
 
+/** The most helpers one agent may have: the app cap, and never above the hard limit. */
+export function maxHelpersCeiling(globalCap: number): number {
+  return Math.max(1, Math.min(MAX_HELPER_LIMIT, globalCap));
+}
+
 export const ORCHESTRATION_DEFAULTS: Readonly<OrchestrationPolicy> = Object.freeze({
   orchestrate: false,
   access: 'same',

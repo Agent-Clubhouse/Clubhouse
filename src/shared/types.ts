@@ -947,6 +947,17 @@ export interface AgentMcpConnection {
   toolCount: number | null;
 }
 
+/** A link the Dispatcher made, as the Connections card shows it (#2661). */
+export interface DispatcherLink {
+  agentId: string;
+  targetId: string;
+  agentName: string;
+  targetName: string;
+  /** `active` is bound now. `suspended` is saved but not bound; `reason` says why. */
+  status: 'active' | 'suspended';
+  reason?: 'dispatcher_off' | 'mcp_off' | 'orchestration_off' | 'not_connected_to_dispatcher';
+}
+
 // --- Editor settings ---
 
 export interface EditorSettings {

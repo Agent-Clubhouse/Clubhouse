@@ -10,7 +10,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { Agent, DurableAgentConfig, HelperStartDecisionResult, HelperStartRequest } from '../../../../shared/types';
 import {
   DEFAULT_GLOBAL_HELPER_CAP,
-  MAX_HELPER_LIMIT,
+  maxHelpersCeiling,
   type HelperAccessResolution,
   type HelperProjectGroup,
   type OrchestrationPolicyPatch,
@@ -46,10 +46,7 @@ export function useGlobalHelperCap(): { cap: number; loaded: boolean } {
   return { cap: cap ?? DEFAULT_GLOBAL_HELPER_CAP, loaded: cap !== null };
 }
 
-/** The most helpers one agent may have: the app cap, and never above the hard limit. */
-export function maxHelpersCeiling(globalCap: number): number {
-  return Math.max(1, Math.min(MAX_HELPER_LIMIT, globalCap));
-}
+export { maxHelpersCeiling };
 
 /** Parse a "helpers at once" entry, or explain why it can't be used. */
 export function parseHelperCount(raw: string, ceiling: number): { value: number } | { error: string } {

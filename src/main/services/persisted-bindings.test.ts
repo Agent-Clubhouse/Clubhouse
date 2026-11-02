@@ -11,6 +11,7 @@ import { buildToolKey } from './clubhouse-mcp/tool-registry';
 import {
   claimSourceBinding,
   clearBindingRemovedByUser,
+  onBindingDrawnByUser,
   consumeRestoredBinding,
   markBindingRemovedByUser,
   rebuildPersistedBindings,
@@ -328,5 +329,23 @@ describe('a gated pruning source (#2537)', () => {
     gated.unverified.length = 0;
     await rebuildPersistedBindings();
     expect(pairs()).toEqual([]);
+  });
+});
+
+describe('onBindingDrawnByUser (#2661)', () => {
+  it('tells a listener when the user draws a pair, and stops after unsubscribing', () => {
+    const listener = vi.fn();
+    const off = onBindingDrawnByUser(listener);
+    clearBindingRemovedByUser('a', 'b');
+    expect(listener).toHaveBeenCalledWith('a', 'b');
+    off();
+    clearBindingRemovedByUser('a', 'c');
+    expect(listener).toHaveBeenCalledTimes(1);
+  });
+
+  it('survives a listener that throws', () => {
+    const off = onBindingDrawnByUser(() => { throw new Error('boom'); });
+    expect(() => clearBindingRemovedByUser('a', 'b')).not.toThrow();
+    off();
   });
 });
