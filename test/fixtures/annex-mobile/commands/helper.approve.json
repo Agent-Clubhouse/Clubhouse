@@ -311,7 +311,7 @@
     {
       "name": "no_candidate",
       "request": {
-        "commandId": "cmd_156",
+        "commandId": "cmd_157",
         "epoch": "00000000-0000-4000-8000-000000000001",
         "requestId": "hstart_00000000-0000-4000-8000-000000000016",
         "type": "helper.approve",
@@ -319,7 +319,7 @@
       },
       "response": {
         "body": {
-          "commandId": "cmd_156",
+          "commandId": "cmd_157",
           "epoch": "00000000-0000-4000-8000-000000000001",
           "error": {
             "code": "no_candidate",
@@ -334,7 +334,7 @@
     {
       "name": "auto_off",
       "request": {
-        "commandId": "cmd_157",
+        "commandId": "cmd_158",
         "epoch": "00000000-0000-4000-8000-000000000001",
         "requestId": "hstart_00000000-0000-4000-8000-000000000017",
         "type": "helper.approve",
@@ -342,7 +342,7 @@
       },
       "response": {
         "body": {
-          "commandId": "cmd_157",
+          "commandId": "cmd_158",
           "epoch": "00000000-0000-4000-8000-000000000001",
           "error": {
             "code": "auto_off",

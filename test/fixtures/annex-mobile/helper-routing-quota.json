@@ -390,7 +390,7 @@
             "reason": "auto_not_supported"
           }
         },
-        "revision": "r5.3",
+        "revision": "r6.3",
         "serverTime": "2027-01-15T08:00:00.000Z",
         "version": 1
       }
@@ -615,7 +615,7 @@
             "reason": "auto_not_supported"
           }
         },
-        "revision": "r5.3",
+        "revision": "r6.3",
         "serverTime": "2027-01-15T08:05:00.000Z",
         "version": 1
       }

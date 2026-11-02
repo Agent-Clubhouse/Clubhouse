@@ -45,6 +45,8 @@ import type { OrchestratorId } from '../orchestrators';
 import { helperPresetsChanged } from '../telemetry/feature-events';
 import { appLog } from './log-service';
 import { isProviderCoolingDown, readProviderQuota } from './provider-quota';
+import { noteRoutingPolicyChanged, setRoutingPolicyListener } from './helper-routing-changes';
+import { onMcpEnablementChanged } from './mcp-settings';
 import { readLayeredPersonaRaw } from './materialization-service';
 import { checkHelperEffort, checkHelperModel, modelListFor } from './model-check';
 import * as orchestrationSettings from './orchestration-settings';
@@ -526,8 +528,12 @@ export function onHelperRoutingChanged(listener: ChangeListener): () => void {
   return () => { listeners.delete(listener); };
 }
 
+let lastEmitted: string | null = null;
+
 function emitChanged(): void {
   const revision = helperRoutingRevision();
+  if (revision === lastEmitted) return;
+  lastEmitted = revision;
   for (const listener of listeners) {
     try {
       listener(revision);
@@ -651,6 +657,8 @@ function cellText(cell: PresetCell | undefined): string | null {
 
 /** Writes run one at a time, so two can't both pass the revision check. */
 let writeChain: Promise<unknown> = Promise.resolve();
+/** A project write made here, which moves the revision itself. */
+let ownProjectWrites = 0;
 
 interface PresetWriteOrigin {
   surface: SettingsAuditSurface;
@@ -756,7 +764,13 @@ async function writePresets(update: HelperRoutingUpdate, { surface, projectPath 
       const defaults = await readProjectAgentDefaults(projectPath);
       const before = defaults.helperAuto ?? null;
       const { helperAuto: _old, ...rest } = defaults;
-      await writeProjectAgentDefaults(projectPath, { ...rest, ...(update.auto === 'off' && { helperAuto: 'off' as const }) });
+      // This write moves the revision itself, so what it returns is current.
+      ownProjectWrites++;
+      try {
+        await writeProjectAgentDefaults(projectPath, { ...rest, ...(update.auto === 'off' && { helperAuto: 'off' as const }) });
+      } finally {
+        ownProjectWrites--;
+      }
       await orchestrationSettings.bumpPresetsRevision();
       await appendSettingsAudit({ surface, scope: 'project', key: 'helper_auto', before, after: update.auto === 'off' ? 'off' : null, outcome: 'ok' });
     } else {
@@ -794,10 +808,36 @@ async function writePresets(update: HelperRoutingUpdate, { surface, projectPath 
   return readHelperRouting();
 }
 
+/**
+ * A change elsewhere decided something about Auto: move the revision, in turn with
+ * writes, so a page holding the old one is refused with fresh values.
+ */
+setRoutingPolicyListener(() => {
+  if (ownProjectWrites > 0) return;
+  writeChain = writeChain.catch((): undefined => undefined).then(async () => {
+    await orchestrationSettings.bumpPresetsRevision();
+    emitChanged();
+  }).catch((err: unknown) => {
+    // telemetry-exempt: logged; the next read still shows what is true now.
+    appLog('core:orchestration', 'warn', 'Could not move the helper routing revision', { meta: { error: errorText(err) } });
+  });
+});
+
+/** MCP going on or off decides Auto for every agent under it. Returns the unsubscribe function. */
+export function watchRoutingPolicy(): () => void {
+  return onMcpEnablementChanged(() => noteRoutingPolicyChanged());
+}
+
+/** For testing: wait for writes and revision moves to settle. */
+export function _settleHelperRoutingForTesting(): Promise<unknown> {
+  return writeChain;
+}
+
 /** For testing. */
 export function _resetHelperRoutingForTesting(): void {
   stateEpoch = 0;
   lastStateSignature = null;
+  lastEmitted = null;
   stickyChoices.clear();
   reservations.clear();
   writeChain = Promise.resolve();

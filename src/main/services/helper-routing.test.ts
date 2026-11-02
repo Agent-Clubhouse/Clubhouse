@@ -28,6 +28,7 @@ vi.mock('../orchestrators', () => {
 });
 vi.mock('./agent-system', () => ({ resolveProfileEnv: vi.fn(async () => undefined) }));
 vi.mock('./log-service', () => ({ appLog: vi.fn() }));
+vi.mock('./mcp-settings', () => ({ onMcpEnablementChanged: () => () => undefined }));
 vi.mock('./materialization-service', () => ({ readLayeredPersonaRaw: async (_p: string, id: string) => W.personas.get(id) }));
 vi.mock('./orchestration-settings', () => ({
   getPresets: () => W.saved,
@@ -40,7 +41,12 @@ vi.mock('./orchestration-settings', () => ({
 vi.mock('./orchestrator-settings', () => ({ getSettings: () => ({ enabled: W.enabled }) }));
 vi.mock('./agent-settings-service', () => ({
   readProjectAgentDefaults: async (path: string) => W.projects.get(path) ?? {},
-  writeProjectAgentDefaults: async (path: string, defaults: Record<string, unknown>) => { W.projects.set(path, defaults); },
+  // As the real one does, for a change that decides Auto.
+  writeProjectAgentDefaults: async (path: string, defaults: Record<string, unknown>) => {
+    const changed = W.projects.get(path)?.helperAuto !== defaults.helperAuto;
+    W.projects.set(path, defaults);
+    if (changed) noteRoutingPolicyChanged();
+  },
 }));
 vi.mock('./provider-quota', () => ({
   readProviderQuota: async (provider: string) => W.quota.get(provider) ?? { state: 'unknown', unknownReason: 'not_supported', source: 'none', asOf: null },
@@ -54,6 +60,7 @@ import { resolveProfileEnv } from './agent-system';
 import {
   HelperRoutingError,
   _resetHelperRoutingForTesting,
+  _settleHelperRoutingForTesting,
   decideAutoPlan,
   helperRoutingRevision,
   onHelperRoutingChanged,
@@ -66,6 +73,7 @@ import {
   updateHelperPresets,
 } from './helper-routing';
 import { AUTO_RESERVATION_MS, AUTO_STICKY_MS } from './helper-auto-policy';
+import { noteRoutingPolicyChanged } from './helper-routing-changes';
 import { resolveOrchestrationPolicy } from '../../shared/orchestration-policy';
 
 const m = (id: string, efforts: string[] = ['low', 'medium', 'high'], extra: Partial<ModelInfo> = {}): ModelInfo => ({ id, label: id, efforts, ...extra });
@@ -689,12 +697,38 @@ describe('Auto (#2671)', () => {
       let settings = await write({ auto: 'off' }, { projectPath: '/p' });
       expect(W.projects.get('/p')).toEqual({ persona: 'qa', helperAuto: 'off' });
       expect(settings.auto).toMatchObject({ effective: false, source: 'project', reason: 'project_off' });
+      await _settleHelperRoutingForTesting();
       expect(W.revision).toBe(1);
       settings = await write({ auto: null }, { projectPath: '/p' });
+      await _settleHelperRoutingForTesting();
       expect(W.projects.get('/p')).toEqual({ persona: 'qa' });
       expect(settings.auto.scopes.project?.value).toBeNull();
       expect(await refused(write({ auto: true }, { projectPath: '/p' }))).toMatchObject({ code: 'invalid_helper_routing' });
       expect(await refused(write({ reset: {} }, { projectPath: '/p' }))).toMatchObject({ code: 'invalid_helper_routing' });
+    });
+
+    it('a change made elsewhere moves the revision, tells open pages once, and makes an older write stale with fresh values', async () => {
+      const changed: string[] = [];
+      onHelperRoutingChanged((revision) => changed.push(revision));
+      const old = helperRoutingRevision();
+      // What the desktop's project defaults save does.
+      W.projects.set('/p', { helperAuto: 'off' });
+      noteRoutingPolicyChanged();
+      await _settleHelperRoutingForTesting();
+      expect(helperRoutingRevision()).not.toBe(old);
+      expect(changed).toEqual([helperRoutingRevision()]);
+      const err = await refused(updateHelperPresets({ revision: old, auto: true } as never, { surface: 'mobile' }));
+      expect(err).toMatchObject({ code: 'helper_routing_stale', settings: { revision: helperRoutingRevision() } });
+      expect(W.appAuto).toBe(false);
+    });
+
+    it('a project write through here moves the revision once and tells pages once', async () => {
+      const changed: string[] = [];
+      onHelperRoutingChanged((revision) => changed.push(revision));
+      await write({ auto: 'off' }, { projectPath: '/p' });
+      await _settleHelperRoutingForTesting();
+      expect(W.revision).toBe(1);
+      expect(changed).toHaveLength(1);
     });
 
     it('app-wide refuses a project\'s values', async () => {

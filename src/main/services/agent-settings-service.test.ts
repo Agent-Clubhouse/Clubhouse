@@ -1,3 +1,4 @@
+import { setRoutingPolicyListener } from './helper-routing-changes';
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import * as path from 'path';
 import * as os from 'os';
@@ -632,6 +633,24 @@ describe('readProjectAgentDefaults', () => {
 });
 
 describe('writeProjectAgentDefaults', () => {
+  it('tells helper routing when a project\'s Auto or default persona changes, and not otherwise (#2671)', async () => {
+    const listener = vi.fn();
+    setRoutingPolicyListener(listener);
+    try {
+      vi.mocked(fsp.readFile).mockResolvedValue(JSON.stringify({ agentDefaults: { persona: 'qa' } }));
+      await writeProjectAgentDefaults(PROJECT, { persona: 'qa', helperAuto: 'off' });
+      expect(listener).toHaveBeenCalledTimes(1);
+      listener.mockClear();
+      vi.mocked(fsp.readFile).mockResolvedValue(JSON.stringify({ agentDefaults: { persona: 'qa', helperAuto: 'off' } }));
+      await writeProjectAgentDefaults(PROJECT, { persona: 'qa', helperAuto: 'off', buildCommand: 'make' });
+      expect(listener).not.toHaveBeenCalled();
+      await writeProjectAgentDefaults(PROJECT, { persona: 'other', helperAuto: 'off' });
+      expect(listener).toHaveBeenCalledTimes(1);
+    } finally {
+      setRoutingPolicyListener(null);
+    }
+  });
+
   beforeEach(() => { vi.clearAllMocks(); });
 
   it('writes agentDefaults to settings.json', async () => {

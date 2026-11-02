@@ -12,6 +12,8 @@
  * `npm run fixtures:annex-mobile -- --check`) fails when they are stale.
  */
 import { _resetProviderQuotaForTesting } from './provider-quota';
+import { noteRoutingPolicyChanged } from './helper-routing-changes';
+import { _settleHelperRoutingForTesting } from './helper-routing';
 import { QUOTA_STALE_MS, quotaRefetchDelaySeconds } from '../../shared/helper-routing';
 import { CLAUDE_WORKING_WINDOW_NOTE } from '../../shared/context-window';
 import { describe, it, expect, beforeAll, afterAll, beforeEach, vi } from 'vitest';
@@ -282,7 +284,12 @@ vi.mock('./agent-creation', async (importOriginal) => ({
 }));
 vi.mock('./agent-settings-service', () => ({
   readProjectAgentDefaults: async () => W.projectDefaults,
-  writeProjectAgentDefaults: async (_path: string, defaults: Record<string, unknown>) => { W.projectDefaults = defaults; },
+  writeProjectAgentDefaults: async (_path: string, defaults: Record<string, unknown>) => {
+    const { noteRoutingPolicyChanged: note } = await import('./helper-routing-changes');
+    const changed = W.projectDefaults.helperAuto !== defaults.helperAuto;
+    W.projectDefaults = defaults;
+    if (changed) note();
+  },
   readMcpCatalog: async () => [
     { id: 'github', name: 'GitHub', description: 'Issues and pull requests', args: [] },
     { id: 'ado', name: 'Azure DevOps', description: 'Work items', args: [{ name: 'org' }] },
@@ -1862,6 +1869,18 @@ describe('Annex mobile contract fixtures', { timeout: TEST_TIMEOUT_MS }, () => {
     await command('invalid_helper_routing (app-wide off value)', write({ revision: projectClear.body.result.revision, auto: 'off' }));
     await command('project_not_found', { type: 'helperRouting.update', scope: 'project', projectId: 'missing', revision: projectClear.body.result.revision, auto: 'off' });
     W.autoHelpers = false;
+
+    // The desktop changes a project's defaults while a phone holds the page.
+    const held = (await exchange('GET', ROUTE)).response.body.revision;
+    const watching = await connect();
+    watching.send.mockClear();
+    noteRoutingPolicyChanged();
+    await _settleHelperRoutingForTesting();
+    const moved = frames(watching).filter((f) => f.type === 'helper_routing:changed').at(-1);
+    expect(moved.payload.revision).not.toBe(held);
+    const staleAfterDesktop = await command('helper_routing_stale (a desktop project change)', write({ revision: held, auto: true }));
+    expect(staleAfterDesktop).toMatchObject({ status: 409, body: { status: 'rejected', error: { code: 'helper_routing_stale' }, revision: moved.payload.revision, settings: { revision: moved.payload.revision } } });
+    expect(W.autoHelpers).toBe(false);
 
     const autoDecision = (fields: Record<string, unknown>) => decision({
       mode: 'auto', balanced: true, requested: field('auto', null, null, 'hard'), resolved: field('codex-cli', 'gpt-6.1-sol', 'high', 'hard'),

@@ -740,7 +740,7 @@ A value missing from a fallback list is accepted, and shows as `unverified`.
 
 ### Staying current
 
-The snapshot's `helperRoutingRevision` and the `helper_routing:changed` event (`{revision}`) tell an open or cached page to refetch. The revision is opaque. It moves when a saved value changes, or when an app-wide read finds a cell's state changed. A list changing never makes your write stale: only a saved value does.
+The snapshot's `helperRoutingRevision` and the `helper_routing:changed` event (`{revision}`) tell an open or cached page to refetch. The revision is opaque. It moves when a saved value changes, when an app-wide read finds a cell's state changed, or when something that decides Auto changes anywhere: a project's `off` or default persona, including from the desktop, an orchestrator's switch or persona, or Clubhouse MCP. An edit to a persona's file isn't seen until the next read, which still shows what is true. A list changing never makes your write stale: only a saved value does.
 
 ### A helper's routing
 

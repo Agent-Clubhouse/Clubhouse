@@ -76,6 +76,7 @@ import {
   setOrchestrationEnabled,
 } from './clubhouse-mcp/orchestration-gate';
 import { appLog } from './log-service';
+import { noteRoutingPolicyChanged } from './helper-routing-changes';
 import { appendSettingsAudit, type SettingsAuditRow, type SettingsAuditSurface } from './settings-audit';
 import { isMcpEnabled, onMcpEnablementChanged } from './mcp-settings';
 import { setPersonaChangeHook, type PersonaChange } from './persona-change-hook';
@@ -427,6 +428,7 @@ export async function setOrchestrationPolicy(
     await agentConfig.setOrchestrationConfig(projectPath, agentId, stored);
     applyGate(projectPath, agent, next);
     await auditPolicyChange(audit, current, next);
+    if (current.autoHelpers !== next.autoHelpers || current.orchestrate !== next.orchestrate) noteRoutingPolicyChanged();
     appLog('core:orchestration', 'info', 'Orchestration policy changed', {
       meta: {
         agentId,
@@ -575,6 +577,8 @@ export async function reconcileAfterPersonaChange(
 
 /** Route a persona change to the agents it affects. */
 async function onPersonaChange(change: PersonaChange): Promise<void> {
+  // A persona can turn Auto off (#2671).
+  noteRoutingPolicyChanged();
   if (change.kind === 'agent') {
     const agent = await agentConfig.getDurableConfig(change.projectPath, change.agentId);
     if (!agent) return;

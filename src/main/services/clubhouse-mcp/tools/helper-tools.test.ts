@@ -244,6 +244,7 @@ function controllableCreation() {
       name: params.name,
       parentAgentId: params.parentAgentId,
       ...((params as { orchestrator?: DurableAgentConfig['orchestrator'] }).orchestrator && { orchestrator: (params as { orchestrator?: DurableAgentConfig['orchestrator'] }).orchestrator }),
+      ...((params as { routing?: DurableAgentConfig['routing'] }).routing && { routing: (params as { routing?: DurableAgentConfig['routing'] }).routing }),
       ...(params.parentProjectPath && { parentProjectPath: params.parentProjectPath }),
       disposable: true,
       branch: `${folder}/standby`,
@@ -894,7 +895,8 @@ describe('start_helper cli "auto" (#2671)', () => {
     controllableCreation();
     const bodies = await Promise.all(['a', 'b', 'c', 'd'].map((name) => start({ name, folder: name }).then(parse)));
     const providers = bodies.map((b) => (b.routing as { resolved: { provider: string } }).resolved.provider);
-    expect(providers).toEqual(['claude-code', 'claude-code', 'codex-cli', 'codex-cli']);
+    // Whichever start reached the lock first: the decisions are in lock order, and the split is what counts.
+    expect([...providers].sort()).toEqual(['claude-code', 'claude-code', 'codex-cli', 'codex-cli']);
   });
 
   it('a sleeping helper isn\'t load', async () => {
@@ -926,11 +928,11 @@ describe('start_helper cli "auto" (#2671)', () => {
   it('a failed spawn leaves the helper where it is, sets a cooldown, and doesn\'t move it', async () => {
     const creation = controllableCreation();
     mockSpawnAgent.mockRejectedValueOnce(new Error('spawn failed'));
-    await start({});
-    agents.set('helper_h', { ...agents.get('helper_h')!, routing: { mode: 'auto' } as never });
+    await start({ task: 'the real task' });
     creation.ready('helper_h');
     await _settleHelperStartsForTesting();
-    expect(agents.get('helper_h')?.orchestrator).toBe('claude-code');
+    // The failed helper stays on its provider, and keeps its task for a wake.
+    expect(agents.get('helper_h')).toMatchObject({ orchestrator: 'claude-code', pendingTask: 'the real task', routing: { resolved: { provider: 'claude-code' } } });
     expect(sent.get('orch')?.at(-1)).toContain('failed to start');
     expect(sent.get('orch')?.at(-1)).toContain('wake_helper delivers it');
     expect(mockSpawnAgent).toHaveBeenCalledTimes(1);
