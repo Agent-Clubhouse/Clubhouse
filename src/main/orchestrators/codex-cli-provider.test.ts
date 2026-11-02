@@ -286,6 +286,12 @@ describe('CodexCliProvider', () => {
       expect(resumed.args).toEqual(['resume', 's1', '-c', 'model_reasoning_effort=low']);
     });
 
+    it('passes it next to a context choice', async () => {
+      const { args, trailingArgs } = await provider.buildSpawnCommand({ cwd: '/p', effort: 'high', contextWindow: '500000', mission: 'Go' });
+      expect(args).toEqual(['-c', 'model_context_window=500000', '-c', 'model_reasoning_effort=high']);
+      expect(trailingArgs).toEqual(['Go']);
+    });
+
     it('passes nothing without one', async () => {
       expect((await provider.buildSpawnCommand({ cwd: '/p' })).args).toEqual([]);
     });

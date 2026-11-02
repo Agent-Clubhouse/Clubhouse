@@ -105,6 +105,31 @@ describe.skipIf(!enabled)('Context choice (real CLI, fake model)', () => {
     }, 240_000);
   });
 
+  it('Claude Code: an effort (#2671) reaches the model next to a context choice', async () => {
+    const { home, cwd } = setup();
+    const env = { ...base(home), CLAUDE_CONFIG_DIR: path.join(home, '.claude'), ANTHROPIC_BASE_URL: model.url, ANTHROPIC_API_KEY: 'fake-key-for-a-local-server' };
+    const chat = await starter(new ClaudeChatDriver('claude_stream_json'), 'claude-code', 'claude', cwd, env, { model: 'claude-opus-5-5' })({ effort: 'low', contextWindow: '300000' });
+    const before = model.requests.length;
+    await chat.turn();
+    expect(chat.usageSize()).toBe(300000);
+    expect(model.requests.slice(before).some((r) => /"effort":"low"/.test(r.body))).toBe(true);
+    await chat.close();
+  }, 120_000);
+
+  it('Codex: an effort (#2671) reaches the model next to a context choice', async () => {
+    const { home, cwd } = setup();
+    const codexHome = path.join(home, '.codex');
+    fs.mkdirSync(codexHome, { recursive: true });
+    fs.writeFileSync(path.join(codexHome, 'config.toml'), ['model_provider = "fake"', '[model_providers.fake]', 'name = "fake"', `base_url = "${model.url}/v1"`, 'wire_api = "responses"', 'requires_openai_auth = false', ''].join('\n'));
+    const env = { ...base(home), CODEX_HOME: codexHome, OPENAI_API_KEY: 'fake-key-for-a-local-server', CODEX_API_KEY: '' };
+    const chat = await starter(new CodexChatDriver(), 'codex-cli', 'codex', cwd, env, { model: 'gpt-6-astra' })({ effort: 'low', contextWindow: '500000' });
+    const before = model.requests.length;
+    await chat.turn();
+    expect(chat.usageSize()).toBe(475_000);
+    expect(model.requests.slice(before).some((r) => /"effort":"low"/.test(r.body))).toBe(true);
+    await chat.close();
+  }, 120_000);
+
   it('Codex: sets the window at start and on a cold resume, and is not sticky', async () => {
     const { home, cwd } = setup();
     const codexHome = path.join(home, '.codex');

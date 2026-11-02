@@ -1157,6 +1157,50 @@ describe('the saved context choice (#2660)', () => {
     expect(await saved('durable_1_a')).not.toHaveProperty('contextWindowNotice');
   });
 
+  describe('with a saved effort (#2671)', () => {
+    const both = { orchestrator: 'claude-code' as const, model: 'opus', effort: 'high', contextWindow: '500000' };
+
+    it('a new model clears the effort and keeps a context choice it offers', async () => {
+      seed([agent('durable_1_a', both)]);
+      contextCheck.mockResolvedValue({ state: 'ok' });
+      await updateDurableConfig(PROJECT_PATH, 'durable_1_a', { model: 'sonnet' });
+      const after = await saved('durable_1_a');
+      expect(after).not.toHaveProperty('effort');
+      expect(after.contextWindow).toBe('500000');
+      expect(after).not.toHaveProperty('contextWindowNotice');
+    });
+
+    it('a new model clears the effort and a context choice it does not offer, saying why for the choice', async () => {
+      seed([agent('durable_1_a', both)]);
+      contextCheck.mockResolvedValue({ state: 'refused', message: 'not on haiku' });
+      await updateDurableConfig(PROJECT_PATH, 'durable_1_a', { model: 'haiku' });
+      const after = await saved('durable_1_a');
+      expect(after).not.toHaveProperty('effort');
+      expect(after).not.toHaveProperty('contextWindow');
+      expect(after.contextWindowNotice).toBe('not on haiku');
+    });
+
+    it('a new CLI clears both', async () => {
+      seed([agent('durable_1_a', both)]);
+      await updateDurableConfig(PROJECT_PATH, 'durable_1_a', { orchestrator: 'codex-cli' });
+      const after = await saved('durable_1_a');
+      expect(after).not.toHaveProperty('effort');
+      expect(after).not.toHaveProperty('contextWindow');
+    });
+
+    it('changing the context choice leaves the effort alone, and a refused one changes nothing', async () => {
+      seed([agent('durable_1_a', both)]);
+      contextCheck.mockResolvedValue({ state: 'ok' });
+      await updateDurableConfig(PROJECT_PATH, 'durable_1_a', { contextWindow: '300000' });
+      expect(await saved('durable_1_a')).toMatchObject({ effort: 'high', contextWindow: '300000' });
+      await updateDurableConfig(PROJECT_PATH, 'durable_1_a', { contextWindow: null });
+      expect((await saved('durable_1_a')).effort).toBe('high');
+      contextCheck.mockResolvedValue({ state: 'refused', message: 'not offered' });
+      await expect(updateDurableConfig(PROJECT_PATH, 'durable_1_a', { model: 'sonnet', contextWindow: '900000' })).rejects.toThrow('not offered');
+      expect(await saved('durable_1_a')).toMatchObject({ model: 'opus', effort: 'high' });
+    });
+  });
+
   it('a new model keeps a choice it cannot check; launch decides', async () => {
     seed([agent('durable_1_a', { orchestrator: 'claude-code', contextWindow: '500000' })]);
     contextCheck.mockResolvedValue({ state: 'unknown', message: 'no catalog' });

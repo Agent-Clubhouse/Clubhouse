@@ -153,6 +153,11 @@ describe('ClaudeCodeProvider', () => {
       expect((await provider.buildSpawnCommand({ cwd: '/p' })).args).not.toContain('--effort');
     });
 
+    it('passes an effort and a context choice side by side, with the mission last', async () => {
+      const { args } = await provider.buildSpawnCommand({ cwd: '/p', effort: 'high', contextWindow: '300000', mission: 'Go' });
+      expect(args).toEqual(['--autocompact', '300000', '--effort', 'high', 'Go']);
+    });
+
     it('adds --model flag for non-default model', async () => {
       const { args } = await provider.buildSpawnCommand({ cwd: '/p', model: 'opus' });
       expect(args).toContain('--model');

@@ -142,7 +142,7 @@ Classified from existing signals: `auth_required`, `account_issue`, `rate_limite
 
 ## Context window
 
-Auto adds no rule to #2660's context setting (#2668, not merged when this was written):
+Auto adds no rule to #2660's context setting:
 
 - A saved choice is per CLI and model. A model change keeps one the model offers and clears one it doesn't. A CLI change clears it.
 - At launch, `contextWindowForLaunch` clears a refused choice and keeps, without passing, one it can't check. Both emit the `context_window_not_applied` notice.
@@ -151,7 +151,7 @@ v1 has no context column and `start_helper` has no context argument, so the only
 
 `status` is a code with no text of its own. The words come from #2660's existing `contextWindowNotice`, `contextWindowReset` and `context_window_not_applied` notice, so a client shows those and doesn't add a second warning.
 
-Effort follows the same idea more simply: any change of model or CLI clears it.
+Effort follows the same idea more simply: any change of model or CLI clears it, whatever happens to the context choice, and changing the context choice leaves effort alone. Both are passed at launch, and a launch that drops the context choice still passes the effort.
 
 ## Explanation
 
@@ -314,7 +314,7 @@ To replace the persona's model lines once Auto ships. The `start_helper` descrip
 - **Terminal signal limit.** Terminal helpers report no error codes, so their failures after spawn aren't seen, no cooldown is set, and quota stays whatever the last read said.
 - **Worktree check, stage 4.** Whether a worktree prepared for one CLI can be switched to another. If it can't, the retry is dropped and the start fails as today with its task saved. Cooldowns stay either way.
 - **Phone wire** past stage 2 isn't locked.
-- **Context and Auto** haven't been tested together, and #2668 was still open when this was written.
+- **Context and Auto** haven't been tested together. Effort and context have, from stage 1.
 
 ## Stages
 
