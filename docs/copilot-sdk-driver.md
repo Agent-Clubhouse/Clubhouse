@@ -216,9 +216,19 @@ The flag only offers the choice. With it off, Copilot uses ACP and the Chat driv
 
 - An Auto level. It asks first and says so, because Copilot's autopilot keeps going on its own, which isn't what Auto means elsewhere.
 - Editing a plan while approving it. Send it back with a reason instead.
-- MCP elicitation. The session doesn't offer it, so a server can't ask the user for input (*from the SDK's types*).
-- Slash commands: the composer offers none.
+- `/allow-all`, `/permissions` and `/autopilot`, which ACP lists. They change access from inside the CLI, where the level menu can't see it, so the driver refuses them and points at the menu.
 - Credits. Usage shows tokens only until a real login confirms the fields (phase 4).
+
+## Commands and elicitation
+
+**A slash command runs only through `commands.invoke`.** Sent as a message, `/help` reached the model as text (observed on 1.0.105). `commands.list` returns the same built-ins ACP lists, plus the project's skills. The driver runs a message that starts with a listed command, and anything else stays text for the model, so "/tmp is full" still works. A skill comes back as `agent-prompt`, a prompt to send as a normal turn. A picker the CLI would draw itself (`show-dialog`) gets a notice.
+
+**A server's question starts at the approval card**, because the question card has no way to say no. Decline and cancel reach the server as such, and no level answers for the user. A form's fields then go in question cards. What a card can't do:
+
+- Show a field as anything but a choice or free text. Numbers and text limits are checked on submit, and the form stays open on a bad answer.
+- Leave a field blank: an optional one gets a Skip choice, or `-` as free text.
+- Fill in a default: it's shown in the prompt, and must be entered.
+- Open a link: in URL mode the card shows the URL for the user to open.
 
 ## Plan
 

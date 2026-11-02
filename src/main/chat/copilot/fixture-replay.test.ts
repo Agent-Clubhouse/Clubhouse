@@ -224,6 +224,43 @@ describe('CopilotSdkChatDriver sessions against fake Copilot', () => {
     await expectComplete(session, fake);
   });
 
+  it('slash-command: the list reaches the composer, a command runs through invoke, and a refusal is a notice', async () => {
+    const { fake, session, drafts } = await start('slash-command');
+    const listed = (await drafts.waitFor({ type: 'commands_available' })).data as { commands: Array<{ name: string }> };
+    expect(listed.commands.map((c) => c.name)).toEqual(expect.arrayContaining(['session', 'compact']));
+    await say(session, '/session');
+    expect(await drafts.waitFor({ type: 'agent_message' })).toMatchObject({ data: { text: expect.stringContaining('Session Info') } });
+    expect(await drafts.waitFor({ type: 'turn_ended' })).toMatchObject({ data: { stopReason: 'end_turn' } });
+    await say(session, '/compact');
+    expect(await drafts.waitFor({ type: 'notice', data: { code: 'command_failed' } })).toMatchObject({ data: { message: '/compact: Nothing to compact.' } });
+    await expectComplete(session, fake);
+  });
+
+  it('elicitation-accept: typed answers reach the CLI', async () => {
+    const { fake, session, drafts } = await start('elicitation-accept', { level: 'full_access' });
+    await say(session, 'hi');
+    await drafts.waitFor({ type: 'turn_ended' });
+    await say(session, 'ask');
+    const gate = (await drafts.waitFor({ type: 'permission_request' })).data as { requestId: string; description: string };
+    expect(gate.description).toBe('Who are you?');
+    await session.respondPermission(gate.requestId, 'accept');
+    const form = (await drafts.waitFor({ type: 'question' })).data as { requestId: string };
+    await session.answerQuestion(form.requestId, { name: 'Ann', age: '30' });
+    await drafts.waitFor({ type: 'turn_ended', turnId: 'turn-2' });
+    await expectComplete(session, fake);
+  });
+
+  it('elicitation-decline: reaches the CLI as a decline, and asks nothing more', async () => {
+    const { fake, session, drafts } = await start('elicitation-decline', { level: 'full_access' });
+    await say(session, 'hi');
+    await drafts.waitFor({ type: 'turn_ended' });
+    await say(session, 'ask');
+    const gate = (await drafts.waitFor({ type: 'permission_request' })).data as { requestId: string };
+    await session.respondPermission(gate.requestId, 'decline');
+    await drafts.waitFor({ type: 'turn_ended', turnId: 'turn-2' });
+    await expectComplete(session, fake);
+  });
+
   it('plan-approval: shows the plan, and approving returns to the earlier level', async () => {
     const { fake, session, drafts } = await start('plan-approval', { level: 'auto_edit' });
     await session.setLevel('plan');

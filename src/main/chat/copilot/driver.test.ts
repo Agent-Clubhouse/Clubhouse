@@ -10,7 +10,7 @@ import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 import { COMPACTION_STARTED, type ChatEventDraft } from '../../../shared/chat/events';
 import type { ChatDriverSession, ChatDriverStartOptions } from '../../../shared/chat/runtime';
 import { COPILOT_OPTION_ALLOW, COPILOT_OPTION_DENY } from './normalizer';
-import { COPILOT_SDK_CAPABILITIES, copilotPlanAction, CopilotSdkChatDriver, toSdkMcpServers } from './driver';
+import { COPILOT_SDK_CAPABILITIES, copilotPlanAction, CopilotSdkChatDriver, parseSlashCommand, toSdkMcpServers } from './driver';
 import { startFakeModel, type FakeModel } from './__fixtures__/fake-model';
 
 const platform = `${process.platform}-${process.arch}`;
@@ -486,6 +486,233 @@ describe.skipIf(!fs.existsSync(runtime))('CopilotSdkChatDriver on the real runti
     sessions.splice(sessions.indexOf(viaShim), 1);
     await a.pumped;
   }, 120_000);
+
+  describe('slash commands', () => {
+    const SKILL = 'my-skill';
+    function projectWithSkill(): string {
+      const dir = fs.mkdtempSync(path.join(tmp, 'project-'));
+      fs.mkdirSync(path.join(dir, '.github/skills', SKILL), { recursive: true });
+      fs.writeFileSync(path.join(dir, '.github/skills', SKILL, 'SKILL.md'), `---\nname: ${SKILL}\ndescription: A test skill\n---\nDo SKILL-BODY.\n`);
+      return dir;
+    }
+
+    it('lists the CLI\'s commands and the project\'s skills, without the ones that change access', async () => {
+      const { of, until } = await open({ cwd: projectWithSkill() });
+      const { data } = await until(() => of('commands_available')[0]);
+      const names = data.commands.map((c) => c.name);
+      expect(names).toEqual(expect.arrayContaining(['compact', 'session', 'usage', SKILL]));
+      for (const hidden of ['allow-all', 'permissions', 'autopilot']) expect(names).not.toContain(hidden);
+      expect(data.commands.every((c) => c.startOnly)).toBe(true);
+      expect(data.commands.find((c) => c.name === 'compact')?.inputHint).toBeTruthy();
+    }, 90_000);
+
+    it('runs a built-in command without the model, and shows what it says', async () => {
+      const { session, of, endedTurns } = await open();
+      const seen = model.requests.length;
+      expect(await session.send([{ type: 'text', text: '/session' }], 'prompt')).toBe('prompt');
+      const [ended] = await endedTurns(1);
+      expect(ended.data.stopReason).toBe('end_turn');
+      expect(of('agent_message').at(-1)?.data.text).toContain('Session Info');
+      expect(model.requests.length).toBe(seen);
+    }, 90_000);
+
+    it('sends a skill\'s prompt to the model as a normal turn', async () => {
+      const { session, of, until, endedTurns } = await open({ cwd: projectWithSkill() });
+      await until(() => of('commands_available')[0]);
+      model.script({ text: 'did the skill' });
+      await session.send([{ type: 'text', text: `/${SKILL} extra words` }], 'prompt');
+      const [ended] = await endedTurns(1);
+      expect(ended.data.stopReason).toBe('end_turn');
+      expect(model.requests.at(-1)?.text).toContain('SKILL-BODY');
+      expect(model.requests.at(-1)?.text).toContain('extra words');
+      expect(of('turn_started')).toHaveLength(1);
+    }, 90_000);
+
+    it('shows a command\'s own refusal as a notice, not a failed turn', async () => {
+      const { session, of, endedTurns } = await open();
+      await session.send([{ type: 'text', text: '/compact' }], 'prompt');
+      const [ended] = await endedTurns(1);
+      expect(ended.data.stopReason).toBe('end_turn');
+      expect(of('notice').find((n) => n.data.code === 'command_failed')?.data.message).toBe('/compact: Nothing to compact.');
+      expect(of('error')).toEqual([]);
+    }, 90_000);
+
+    it('keeps text that only looks like a command for the model', async () => {
+      const { session, endedTurns } = await open();
+      model.script({ text: 'ok' });
+      await session.send([{ type: 'text', text: '/no-such-command please' }], 'prompt');
+      await endedTurns(1);
+      expect(model.requests.at(-1)?.text).toContain('/no-such-command please');
+      model.script({ text: 'ok' });
+      await session.send([{ type: 'text', text: '/tmp/file.txt is full' }], 'prompt');
+      await endedTurns(2);
+      expect(model.requests.at(-1)?.text).toContain('/tmp/file.txt is full');
+    }, 90_000);
+
+    it('refuses the commands that change access, and tells the model nothing', async () => {
+      const { session, of, until } = await open();
+      const seen = model.requests.length;
+      await session.send([{ type: 'text', text: '/allow-all on' }], 'prompt');
+      await until(() => of('notice').find((n) => n.data.code === 'command_hidden'));
+      expect(model.requests.length).toBe(seen);
+      expect(of('turn_started')).toEqual([]);
+      // Still asks: nothing changed.
+      model.script({ tools: [RUN_TOOL] }, { text: 'done' });
+      await session.send([{ type: 'text', text: 'run it' }], 'prompt');
+      await until(() => of('permission_request')[0]);
+    }, 90_000);
+
+    it('says when a command can\'t run during a turn, and keeps the turn going', async () => {
+      const { session, of, until, endedTurns } = await open();
+      model.script({ hold: true, text: 'slow' });
+      await session.send([{ type: 'text', text: 'go' }], 'prompt');
+      await until(() => (model.holding() ? true : undefined));
+      await session.send([{ type: 'text', text: '/compact' }], 'steer');
+      await until(() => of('notice').find((n) => n.data.code === 'command_busy'));
+      await session.send([{ type: 'text', text: '/session' }], 'steer');
+      await until(() => of('agent_message').find((m) => m.data.text.includes('Session Info')));
+      expect(of('turn_ended')).toEqual([]);
+      model.release();
+      await endedTurns(1);
+      expect(of('turn_started')).toHaveLength(1);
+    }, 90_000);
+
+    it('keeps the system prompt for the next prompt when a first message is a command', async () => {
+      const { session, of, endedTurns } = await open();
+      await session.send([{ type: 'text', text: 'SYSTEM-PROMPT' }, { type: 'text', text: '/session' }], 'prompt');
+      await endedTurns(1);
+      expect(of('agent_message').at(-1)?.data.text).toContain('Session Info');
+      model.script({ text: 'ok' });
+      await session.send([{ type: 'text', text: 'hello' }], 'prompt');
+      await endedTurns(2);
+      expect(model.requests.at(-1)?.text).toContain('SYSTEM-PROMPT');
+    }, 90_000);
+
+    it('reads only a whole message that starts with a command', () => {
+      expect(parseSlashCommand('/compact')).toEqual({ name: 'compact' });
+      expect(parseSlashCommand('  /review  look at x\ny ')).toEqual({ name: 'review', input: 'look at x\ny' });
+      expect(parseSlashCommand('please /compact')).toBeUndefined();
+      expect(parseSlashCommand('/tmp/file.txt is full')).toBeUndefined();
+      expect(parseSlashCommand('/')).toBeUndefined();
+    });
+  });
+
+  describe('MCP elicitation', () => {
+    /** A stdio server whose `ask` tool sends this form and reports what came back. */
+    function elicitingServer(params: unknown): Record<string, unknown> {
+      const dir = fs.mkdtempSync(path.join(tmp, 'elicit-'));
+      const script = path.join(dir, 'server.js');
+      fs.writeFileSync(script, `
+        const send = (o) => process.stdout.write(JSON.stringify(o) + '\\n');
+        let done;
+        require('readline').createInterface({ input: process.stdin }).on('line', (line) => {
+          const m = JSON.parse(line);
+          const reply = (result) => send({ jsonrpc: '2.0', id: m.id, result });
+          if (m.id === 999 && !m.method) return done(m.result ?? m.error);
+          if (m.method === 'initialize') return reply({ protocolVersion: m.params.protocolVersion, capabilities: { tools: {} }, serverInfo: { name: 'asker', version: '1' } });
+          if (m.method === 'tools/list') return reply({ tools: [{ name: 'ask', description: 'ask', inputSchema: { type: 'object', properties: {} } }] });
+          if (m.method === 'tools/call') {
+            done = (r) => reply({ content: [{ type: 'text', text: 'SERVER-GOT ' + JSON.stringify(r) }] });
+            return send({ jsonrpc: '2.0', id: 999, method: 'elicitation/create', params: ${JSON.stringify(params)} });
+          }
+          if (m.id !== undefined) reply({});
+        });
+      `);
+      return { asker: { command: process.execPath, args: [script] } };
+    }
+
+    const FORM = {
+      message: 'Who are you?',
+      requestedSchema: {
+        type: 'object',
+        properties: {
+          name: { type: 'string', title: 'Name' },
+          age: { type: 'integer', title: 'Age', minimum: 1 },
+          colour: { type: 'string', title: 'Colour', enum: ['red', 'blue'] },
+          subscribe: { type: 'boolean', title: 'Subscribe' },
+          note: { type: 'string', title: 'Note' },
+        },
+        required: ['name', 'age', 'colour', 'subscribe'],
+      },
+    };
+
+    /** Runs the tool at Full access, to show a level doesn't answer for the user. */
+    async function openAsking(params: unknown) {
+      const opened = await open({ level: 'full_access', mcpServers: elicitingServer(params) });
+      await new Promise((r) => setTimeout(r, 1_500));
+      model.script({ text: 'ready' });
+      await opened.session.send([{ type: 'text', text: 'hi' }], 'prompt');
+      await opened.endedTurns(1);
+      const ask = model.tools.at(-1)?.find((n) => n.startsWith('asker') && n.endsWith('ask'));
+      model.script({ tools: [{ name: ask! }] }, { text: 'after' });
+      await opened.session.send([{ type: 'text', text: 'ask' }], 'prompt');
+      return opened;
+    }
+    const serverGot = () => /SERVER-GOT (\{.*?\})(?:\\n|")/.exec(model.requests.at(-1)?.text.replace(/\\"/g, '"') ?? '')?.[1] ?? '';
+
+    it('asks through the approval and question cards, and returns typed answers to the server', async () => {
+      const { session, of, until, endedTurns } = await openAsking(FORM);
+      const gate = await until(() => of('permission_request')[0]);
+      expect(gate.data.description).toBe('Who are you?');
+      await session.respondPermission(gate.data.requestId, 'accept');
+      const form = await until(() => of('question')[0]);
+      const byId = new Map(form.data.questions.map((q) => [q.id, q]));
+      expect(form.data.questions[0].prompt).toContain('Who are you?');
+      expect(byId.get('colour')?.options?.map((o) => o.id)).toEqual(['red', 'blue']);
+      expect(byId.get('subscribe')?.options?.map((o) => o.id)).toEqual(['Yes', 'No']);
+      expect(byId.get('note')?.prompt).toContain('optional');
+      await expect(session.answerQuestion(form.data.requestId, { name: 'Ann', age: 'old', colour: 'red', subscribe: 'Yes', note: '-' })).rejects.toThrow(/whole number/);
+      await session.answerQuestion(form.data.requestId, { name: 'Ann', age: '30', colour: 'red', subscribe: 'Yes', note: '-' });
+      await endedTurns(2);
+      expect(JSON.parse(serverGot())).toEqual({ action: 'accept', content: { name: 'Ann', age: 30, colour: 'red', subscribe: true } });
+    }, 120_000);
+
+    it('tells the server when the user declines', async () => {
+      const { session, of, until, endedTurns } = await openAsking(FORM);
+      const gate = await until(() => of('permission_request')[0]);
+      await session.respondPermission(gate.data.requestId, 'decline');
+      await endedTurns(2);
+      expect(JSON.parse(serverGot()).action).toBe('decline');
+      expect(of('question')).toEqual([]);
+    }, 120_000);
+
+    it('cancels when interrupted at the approval card', async () => {
+      const { session, of, until, endedTurns } = await openAsking(FORM);
+      await until(() => of('permission_request')[0]);
+      await session.interrupt();
+      await endedTurns(2);
+      expect(of('permission_resolved').at(-1)?.data.decision).toBe('cancelled');
+    }, 120_000);
+
+    it('cancels when interrupted at the question card', async () => {
+      const { session, of, until, endedTurns } = await openAsking(FORM);
+      const gate = await until(() => of('permission_request')[0]);
+      await session.respondPermission(gate.data.requestId, 'accept');
+      await until(() => of('question')[0]);
+      await session.interrupt();
+      await endedTurns(2);
+      expect(of('question_resolved').at(-1)?.data.cancelled).toBe(true);
+    }, 120_000);
+
+    it('tells the server when the session closes on an open question', async () => {
+      const { session, of, until } = await openAsking(FORM);
+      const gate = await until(() => of('permission_request')[0]);
+      await session.respondPermission(gate.data.requestId, 'accept');
+      await until(() => of('question')[0]);
+      await session.close();
+      sessions.splice(sessions.indexOf(session), 1);
+      expect(of('question_resolved').at(-1)?.data.cancelled).toBe(true);
+    }, 120_000);
+
+    it('accepts a form with no fields straight from the approval card', async () => {
+      const { session, of, until, endedTurns } = await openAsking({ message: 'Go ahead?', requestedSchema: { type: 'object', properties: {} } });
+      const gate = await until(() => of('permission_request')[0]);
+      await session.respondPermission(gate.data.requestId, 'accept');
+      await endedTurns(2);
+      expect(of('question')).toEqual([]);
+      expect(JSON.parse(serverGot()).action).toBe('accept');
+    }, 120_000);
+  });
 
   it('passes an HTTP MCP server with its header from the environment', () => {
     const { servers, skipped } = toSdkMcpServers(

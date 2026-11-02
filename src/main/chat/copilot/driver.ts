@@ -1,10 +1,11 @@
 import * as fsp from 'fs/promises';
 import { fileURLToPath } from 'url';
-import type { CopilotClient, CopilotSession, ExitPlanModeRequest, ExitPlanModeResult, MCPServerConfig, MessageOptions, ModelInfo, PermissionRequest, PermissionRequestResult, SessionConfig, SessionEvent } from '@github/copilot-sdk';
+import type { CopilotClient, CopilotSession, ElicitationContext, ElicitationResult, ExitPlanModeRequest, ExitPlanModeResult, MCPServerConfig, MessageOptions, ModelInfo, PermissionRequest, PermissionRequestResult, SessionConfig, SessionEvent } from '@github/copilot-sdk';
 import { MINIMAL_CHAT_CAPABILITIES, type ChatCapabilities, type PermissionLevel } from '../../../shared/chat/capabilities';
 import { COMPACTION_STARTED, type ChatEventDraft, type ChatMcpServerStatus, type ChatQuestionAnswers, type ContentBlock, type MessageDelivery, type TokenUsage } from '../../../shared/chat/events';
 import type { ChatDriver, ChatDriverProbe, ChatDriverSession, ChatDriverStartOptions, McpHttpEndpoint, PermissionResponseExtras } from '../../../shared/chat/runtime';
 import { AsyncQueue } from '../../orchestrators/adapters/async-queue';
+import { elicitationContent, elicitationQuestions } from './elicitation';
 import { CopilotLaunchError, launchCopilotServer, type CopilotServer } from './launch';
 import {
   addTokens,
@@ -25,6 +26,7 @@ import { loadCopilotSdk } from './sdk-loader';
 
 type ReasoningEffort = NonNullable<NonNullable<Parameters<CopilotSession['setModel']>[1]>['reasoningEffort']>;
 
+type SlashCommandInfo = Awaited<ReturnType<CopilotSession['rpc']['commands']['list']>>['commands'][number];
 type UserInputHandler = NonNullable<SessionConfig['onUserInputRequest']>;
 type UserInputRequest = Parameters<UserInputHandler>[0];
 type UserInputResponse = Awaited<ReturnType<UserInputHandler>>;
@@ -59,6 +61,7 @@ export const COPILOT_SDK_CAPABILITIES: ChatCapabilities = Object.freeze({
   subagents: 'full',
   usage: 'tokens',
   images: true,
+  slashCommands: true,
   modelSwitch: 'live',
   effortSwitch: 'live',
   liveLevels: ['plan', 'ask', 'auto_edit', 'full_access'],
@@ -152,6 +155,22 @@ const PLAN_OPTION_APPROVE = 'approve';
 const PLAN_OPTION_REJECT = 'reject';
 /** The one question an `ask_user` call carries. */
 const QUESTION_ID = 'answer';
+const ELICIT_OPTION_ACCEPT = 'accept';
+const ELICIT_OPTION_DECLINE = 'decline';
+
+/**
+ * Commands the composer doesn't offer, and that a message doesn't run. They
+ * change access from inside the CLI, where the level menu can't see it. The menu
+ * is the way to change access here, and Auto has no equivalent (see capabilities).
+ */
+const HIDDEN_COMMANDS: ReadonlySet<string> = new Set(['allow-all', 'permissions', 'autopilot']);
+const COMMAND_LIST_TIMEOUT_MS = 15_000;
+
+/** `/name rest` from a message, when the whole message starts with one. */
+export function parseSlashCommand(text: string): { name: string; input?: string } | undefined {
+  const m = /^\/([^\s/]+)(?:\s+([\s\S]*))?$/.exec(text.trim());
+  return m ? { name: m[1], ...(m[2]?.trim() && { input: m[2].trim() }) } : undefined;
+}
 
 /**
  * What approving a plan continues as. The CLI offers autopilot among the
@@ -199,7 +218,12 @@ export class CopilotSdkChatSession implements ChatDriverSession {
   resumeFallback: 'not_found' | undefined;
   private readonly queue = new AsyncQueue<ChatEventDraft>();
   private readonly pending = new Map<string, PendingApproval>();
-  private readonly pendingQuestions = new Map<string, { resolve: (r: UserInputResponse) => void; choices: string[] }>();
+  private readonly pendingQuestions = new Map<string, { answer: (answers: ChatQuestionAnswers) => void; cancel: () => void }>();
+  /** Commands by name and alias. */
+  private commands = new Map<string, SlashCommandInfo>();
+  private commandsLoaded: Promise<void> = Promise.resolve();
+  /** The system prompt that came ahead of a first message that was a command. It goes with the next prompt instead. */
+  private heldPreamble: string | undefined;
   /** Calls in progress, for the result's arguments and to tie a handler's request to its call. */
   private readonly tools = new Map<string, { name: string; args: unknown; parent?: string }>();
   /** Subagent's `agentId` → the tool call that started it, which is its id in the contract. */
@@ -266,6 +290,7 @@ export class CopilotSdkChatSession implements ChatDriverSession {
       onPermissionRequest: (request) => this.onPermission(request),
       onUserInputRequest: (request) => this.onQuestion(request),
       onExitPlanModeRequest: (request) => this.onPlan(request),
+      onElicitationRequest: (context) => this.onElicitation(context),
       onEvent: (event) => this.onEvent(event),
       ...this.overrides,
     };
@@ -324,6 +349,32 @@ export class CopilotSdkChatSession implements ChatDriverSession {
       data: { level: 'info', code: 'copilot_sdk_active', message: `This chat runs on the experimental Copilot SDK driver${cliVersion ? ` with Copilot CLI ${cliVersion}` : ''}.` },
     });
     void this.loadModels();
+    this.commandsLoaded = this.loadCommands();
+  }
+
+  /** What the composer offers: the same list ACP gets, less the commands that change access. */
+  private async loadCommands(): Promise<void> {
+    let listed: SlashCommandInfo[];
+    try {
+      ({ commands: listed } = await withTimeout(this.requireSession().rpc.commands.list(), COMMAND_LIST_TIMEOUT_MS, 'Listing commands'));
+    } catch (err) {
+      this.log('warn', 'Could not list Copilot commands', { error: err instanceof Error ? err.message : String(err) });
+      return;
+    }
+    const usable = listed.filter((c) => !HIDDEN_COMMANDS.has(c.name));
+    this.commands = new Map(usable.flatMap((c) => [c.name, ...(c.aliases ?? [])].map((n): [string, SlashCommandInfo] => [n, c])));
+    this.push({
+      type: 'commands_available',
+      data: {
+        commands: usable.map((c) => ({
+          name: c.name,
+          description: c.description,
+          ...(c.input?.hint && { inputHint: c.input.hint }),
+          // Only a message that starts with one runs it (send). Anywhere else it's text for the model.
+          startOnly: true,
+        })),
+      },
+    });
   }
 
   /** The model menu. It needs a real login, so it's best-effort and never holds a start up. */
@@ -352,10 +403,26 @@ export class CopilotSdkChatSession implements ChatDriverSession {
   }
 
   async send(content: ContentBlock[], delivery: MessageDelivery): Promise<MessageDelivery> {
-    const prompt = content
+    const command = await this.commandIn(content);
+    if (command === 'hidden') return delivery;
+    if (command) {
+      if (this.turnRunning && !command.info.allowDuringAgentExecution) {
+        this.push({ type: 'notice', data: { level: 'warn', code: 'command_busy', message: `/${command.info.name} can't run during a turn. Send it again when the turn ends.` } }, true);
+        return delivery;
+      }
+      const ownsTurn = !this.turnRunning;
+      if (ownsTurn) this.beginTurn('prompt');
+      // Not awaited: a command can take as long as a turn (/compact, a skill),
+      // and the runtime records the user's message only once send returns.
+      void this.runCommand(command.info, command.input, ownsTurn);
+      return ownsTurn ? 'prompt' : delivery;
+    }
+    const body = content
       .map((b) => (b.type === 'text' ? b.text : b.type === 'file' ? b.path : b.type === 'resource' ? b.text ?? b.uri : ''))
       .filter(Boolean)
       .join('\n');
+    const prompt = this.heldPreamble ? `${this.heldPreamble}\n${body}` : body;
+    this.heldPreamble = undefined;
     const images = await Promise.all(content.filter((b): b is Extract<ContentBlock, { type: 'image' }> => b.type === 'image').map(imageAttachment));
     const attachments = images.length ? { attachments: images } : {};
     if (this.turnRunning) {
@@ -373,6 +440,77 @@ export class CopilotSdkChatSession implements ChatDriverSession {
       throw err;
     }
     return 'prompt';
+  }
+
+  /**
+   * The command a message runs, if it is one. The CLI takes a command only
+   * through commands.invoke: sent as a message, it reaches the model as text.
+   * Anything not listed stays text too, so a message like "/tmp is full" still works.
+   */
+  private async commandIn(content: ContentBlock[]): Promise<{ info: SlashCommandInfo; input?: string } | 'hidden' | undefined> {
+    if (!content.length || content.some((b) => b.type !== 'text')) return undefined;
+    const texts = content.map((b) => (b.type === 'text' ? b.text : ''));
+    const parsed = parseSlashCommand(texts[texts.length - 1]);
+    if (!parsed) return undefined;
+    if (HIDDEN_COMMANDS.has(parsed.name)) {
+      this.push({ type: 'notice', data: { level: 'info', code: 'command_hidden', message: `/${parsed.name} changes access from inside the CLI. Use the level menu here, or the CLI view.` } });
+      return 'hidden';
+    }
+    await this.commandsLoaded;
+    const info = this.commands.get(parsed.name);
+    if (!info) return undefined;
+    // The runtime puts the system prompt ahead of a first message, as its own block.
+    if (texts.length > 1) this.heldPreamble = texts.slice(0, -1).join('\n');
+    return { info, ...(parsed.input && { input: parsed.input }) };
+  }
+
+  private async runCommand(info: SlashCommandInfo, input: string | undefined, ownsTurn: boolean): Promise<void> {
+    let continues = false;
+    const say = (text: string) => this.push({ type: 'agent_message', data: { messageId: `command-${++this.nextRequest}`, text } }, true);
+    try {
+      const session = this.requireSession();
+      const result = await session.rpc.commands.invoke({ name: info.name, ...(input && { input }) });
+      switch (result.kind) {
+        case 'text':
+          say(result.text);
+          break;
+        case 'completed':
+          if (result.message) say(result.message);
+          break;
+        case 'agent-prompt': {
+          if (result.notice) this.push({ type: 'notice', data: { level: 'info', code: 'command_notice', message: result.notice } }, true);
+          if (result.mode) await session.rpc.mode.set({ mode: result.mode });
+          const prompt = this.heldPreamble ? `${this.heldPreamble}\n${result.prompt}` : result.prompt;
+          this.heldPreamble = undefined;
+          await session.send({ prompt, displayPrompt: result.displayPrompt, ...(ownsTurn ? {} : { mode: 'immediate' as const }) });
+          // The turn now runs like any other, and ends on session.idle.
+          continues = true;
+          break;
+        }
+        case 'select-subcommand':
+          say([`${result.title}:`, ...result.options.map((o) => `- \`/${result.command} ${o.name}\`: ${o.description}`)].join('\n'));
+          break;
+        case 'add-timeline-entry':
+          say(result.entry.text);
+          break;
+        case 'set-model':
+          await session.setModel(result.model, result.reasoningEffort ? { reasoningEffort: result.reasoningEffort as ReasoningEffort } : undefined);
+          if (result.warning) this.push({ type: 'notice', data: { level: 'warn', code: 'command_notice', message: result.warning } }, true);
+          break;
+        case 'set-plan-model':
+          say(result.message);
+          break;
+        default:
+          // A picker the CLI would draw in its own UI (show-dialog, and any kind newer than this SDK).
+          this.push({ type: 'notice', data: { level: 'info', code: 'command_needs_cli', message: `/${info.name} opens something only the CLI view can show.${info.name === 'model' ? ' Use the model menu here.' : ''}` } }, true);
+      }
+    } catch (err) {
+      // The CLI's own words: "Nothing to compact." isn't a failed turn.
+      const message = err instanceof Error ? err.message.replace(/^Request \S+ failed with message: /, '') : String(err);
+      this.log('warn', 'Copilot command failed', { command: info.name, error: message });
+      this.push({ type: 'notice', data: { level: 'warn', code: 'command_failed', message: `/${info.name}: ${message}` } }, true);
+    }
+    if (ownsTurn && !continues) this.endTurn(this.interrupting ? 'cancelled' : 'end_turn');
   }
 
   async interrupt(): Promise<void> {
@@ -393,10 +531,9 @@ export class CopilotSdkChatSession implements ChatDriverSession {
   async answerQuestion(requestId: string, answers: ChatQuestionAnswers): Promise<void> {
     const pending = this.pendingQuestions.get(requestId);
     if (!pending) throw new Error(`No pending Copilot question ${requestId}`);
+    // A form refuses an answer its schema doesn't allow, and stays open.
+    pending.answer(answers);
     this.pendingQuestions.delete(requestId);
-    const raw = answers[QUESTION_ID] ?? '';
-    const answer = Array.isArray(raw) ? raw.join(', ') : raw;
-    pending.resolve({ answer, wasFreeform: !pending.choices.includes(answer) });
     this.push({ type: 'question_resolved', data: { requestId, answers } }, true);
   }
 
@@ -499,7 +636,14 @@ export class CopilotSdkChatSession implements ChatDriverSession {
     const choices = request.choices ?? [];
     const toolCallId = this.openCall('ask_user');
     return new Promise((resolve) => {
-      this.pendingQuestions.set(requestId, { resolve, choices });
+      this.pendingQuestions.set(requestId, {
+        answer: (answers) => {
+          const raw = answers[QUESTION_ID] ?? '';
+          const answer = Array.isArray(raw) ? raw.join(', ') : raw;
+          resolve({ answer, wasFreeform: !choices.includes(answer) });
+        },
+        cancel: () => resolve({ answer: '', wasFreeform: true }),
+      });
       this.push({
         type: 'question',
         data: {
@@ -515,6 +659,57 @@ export class CopilotSdkChatSession implements ChatDriverSession {
         },
       }, true);
     });
+  }
+
+  /**
+   * An MCP server asks the user for something. The approval card comes first,
+   * since it's the only one with a way to say no: declining and cancelling each
+   * reach the server as such. A form's fields then go in question cards. No level
+   * answers this: it's the server asking the user, not a tool asking to run.
+   */
+  private onElicitation(context: ElicitationContext): Promise<ElicitationResult> | ElicitationResult {
+    if (this.closing || this.finished) return { action: 'cancel' };
+    if (!this.turnRunning) this.beginTurn('system');
+    const source = context.elicitationSourceDisplayName ?? context.elicitationSource ?? 'An MCP server';
+    const schema = context.requestedSchema;
+    const hasFields = context.mode !== 'url' && !!schema && Object.keys(schema.properties).length > 0;
+    const requestId = `elicit-${++this.nextRequest}`;
+    return new Promise((resolve) => {
+      this.pending.set(requestId, {
+        answer: (optionId) => {
+          if (optionId === ELICIT_OPTION_DECLINE) resolve({ action: 'decline' });
+          else if (optionId !== ELICIT_OPTION_ACCEPT) throw new Error(`Unknown Copilot elicitation option ${optionId}`);
+          else if (hasFields) this.askElicitationFields(context.message, schema, resolve);
+          else resolve({ action: 'accept', ...(context.mode !== 'url' && { content: {} }) });
+        },
+        cancel: () => resolve({ action: 'cancel' }),
+      });
+      this.push({
+        type: 'permission_request',
+        data: {
+          requestId,
+          title: `${source} is asking`,
+          // The URL is for the user to open: nothing here opens a link a server sent.
+          description: context.mode === 'url' ? `${context.message}\n${context.url ?? ''}` : context.message,
+          toolName: 'elicitation',
+          rawInput: { message: context.message, ...(context.url && { url: context.url }), ...(schema && { requestedSchema: schema }) },
+          options: [
+            { optionId: ELICIT_OPTION_ACCEPT, kind: 'allow_once', label: context.mode === 'url' ? "I've done this in the browser" : hasFields ? 'Answer' : 'Accept' },
+            { optionId: ELICIT_OPTION_DECLINE, kind: 'reject_once', label: 'Decline' },
+          ],
+        },
+      }, true);
+    });
+  }
+
+  private askElicitationFields(message: string, schema: NonNullable<ElicitationContext['requestedSchema']>, resolve: (r: ElicitationResult) => void): void {
+    const requestId = `elicit-${++this.nextRequest}`;
+    this.pendingQuestions.set(requestId, {
+      answer: (answers) => resolve({ action: 'accept', content: elicitationContent(schema, answers) }),
+      cancel: () => resolve({ action: 'cancel' }),
+    });
+    const [first, ...rest] = elicitationQuestions(schema);
+    this.push({ type: 'question', data: { requestId, questions: [{ ...first, prompt: `${message}\n\n${first.prompt}` }, ...rest] } }, true);
   }
 
   /** Approval rides on a permission request, with the plan shown as a document, as for Claude's ExitPlanMode. */
@@ -561,7 +756,7 @@ export class CopilotSdkChatSession implements ChatDriverSession {
     }
     this.pending.clear();
     for (const [requestId, pending] of this.pendingQuestions) {
-      pending.resolve({ answer: '', wasFreeform: true });
+      pending.cancel();
       this.push({ type: 'question_resolved', data: { requestId, answers: {}, cancelled: true } }, true);
     }
     this.pendingQuestions.clear();
@@ -759,6 +954,9 @@ export class CopilotSdkChatSession implements ChatDriverSession {
         }, true);
         return;
       }
+      case 'commands.changed':
+        this.commandsLoaded = this.loadCommands();
+        return;
       case 'session.compaction_start':
         this.push({ type: 'notice', data: { level: 'info', code: COMPACTION_STARTED, message: 'Compacting context…' } }, true);
         return;
