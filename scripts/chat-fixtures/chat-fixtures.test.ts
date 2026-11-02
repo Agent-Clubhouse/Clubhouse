@@ -316,6 +316,21 @@ describe('fake-cli', () => {
     expect(version).toMatchObject({ code: 0, stdout: 'codex-cli 0.1.0\n' });
   });
 
+  it('leaves the running session\'s report alone for a --version probe or a refused launch', async () => {
+    const report = path.join(tmp, 'report.json');
+    const session = JSON.stringify({ complete: true, consumed: 7, total: 7 });
+    await fs.promises.writeFile(report, session);
+
+    const version = await run([FAKE_CLI, '--fake-fixture', await echo(), '--fake-report', report, '--version']);
+    expect(version).toMatchObject({ code: 0, stdout: 'codex-cli 0.1.0\n' });
+    expect(await fs.promises.readFile(report, 'utf8')).toBe(session);
+
+    const sdk = await writeFixture('sdk.jsonl', [header('copilot-sdk')]);
+    const refused = await run([FAKE_CLI, '--fake-fixture', sdk, '--fake-report', report]);
+    expect(refused.code).toBe(2);
+    expect(await fs.promises.readFile(report, 'utf8')).toBe(session);
+  });
+
   it('fails clearly without a fixture', async () => {
     const out = await run([FAKE_CLI]);
     expect(out.code).toBe(2);

@@ -242,7 +242,7 @@ export abstract class BaseProvider implements OrchestratorProvider {
     const fallback = (via: ModelList['via'], models: ModelInfo[]): ModelList => ({
       models, source: 'fallback', via, fetchedAt: Date.now(), ...(liveError && { liveError }),
     });
-    if (this.modelFetchConfig) {
+    if (this.modelFetchConfig && !testModelProbesDisabled()) {
       try {
         const binary = this.findBinary();
         const { stdout } = await execFileAsync(binary, this.modelFetchConfig.args, {

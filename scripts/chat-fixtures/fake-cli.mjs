@@ -171,10 +171,14 @@ function finish(code) {
 process.stdout.on('error', () => finish(0));
 
 // `--version` answers from the header so version probes see the recorded CLI.
+// It and a refused launch aren't sessions, so they leave the report alone: it
+// may hold the running session's progress, and they'd overwrite it for good.
 if (opts.cliArgs.includes('--version') && header.cli?.version) {
+  opts.report = undefined;
   process.stdout.write(`${header.cli.versionOutput ?? header.cli.version}\n`);
   finish(0);
 } else if (TCP_PROTOCOLS.includes(protocol) && !(opts.cliArgs.includes('--headless') && opts.cliArgs.includes('--port'))) {
+  opts.report = undefined;
   process.stderr.write('fake-cli: copilot-sdk needs --headless --port <n>\n');
   finish(2);
 } else {

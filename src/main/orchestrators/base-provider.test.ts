@@ -432,6 +432,20 @@ describe('BaseProvider.listModels', () => {
     }
   });
 
+  it('skips the command probe too when E2E turns probes off, as it would spawn the fake CLI', async () => {
+    vi.stubEnv('CLUBHOUSE_TEST_NO_MODEL_PROBES', '1');
+    const { execFile } = await import('child_process');
+    vi.mocked(execFile).mockClear();
+    vi.mocked(execFile).mockReturnValue({ stdout: 'cmd-model\n', stderr: '' } as any);
+    try {
+      const list = await provider.listModels();
+      expect(execFile).not.toHaveBeenCalled();
+      expect(list).toMatchObject({ source: 'fallback', via: 'static' });
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
+
   it('falls back to the command probe when the handshake fails, and says why', async () => {
     provider.probe.mockRejectedValueOnce(new Error('not logged in'));
     const { execFile } = await import('child_process');
