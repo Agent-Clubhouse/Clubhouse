@@ -273,7 +273,7 @@ describe('readHelperRouting', () => {
       choices: { source: 'live', asOf: new Date(1000).toISOString() },
       cells: { easy: { state: 'valid', source: 'builtin', custom: null, editable: true, effective: { model: 'gpt-6-luna', effort: 'low' } } },
     });
-    expect(Object.keys(settings.labels)).toEqual(['reason', 'fallback', 'skipped', 'quota', 'unknown', 'cell', 'generic']);
+    expect(Object.keys(settings.labels)).toEqual(['reason', 'fallback', 'skipped', 'quota', 'unknown', 'window', 'cell', 'generic']);
   });
 
   it('shows a stale saved choice with what is used instead, and nothing when nothing is left', async () => {
