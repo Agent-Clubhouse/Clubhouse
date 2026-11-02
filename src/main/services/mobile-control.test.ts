@@ -13,6 +13,30 @@ function runtime(events: ChatEvent[] = []): AgentRuntime {
   } as unknown as AgentRuntime;
 }
 
+describe('helperRouting.update parsing (#2671)', () => {
+  const base = { version: 1, commandId: 'c1', epoch: 'e', type: 'helperRouting.update', revision: 'r1.0', scope: 'app' };
+
+  it('takes cells or a reset, and needs one of them', () => {
+    expect(parseMobileCommand({ ...base, cells: [{ provider: 'codex-cli', difficulty: 'easy', model: 'x', effort: null }] })).toMatchObject({ type: 'helperRouting.update' });
+    expect(parseMobileCommand({ ...base, reset: {} })).toMatchObject({ reset: {} });
+    expect(() => parseMobileCommand(base)).toThrow(MobileControlError);
+  });
+
+  it.each([
+    [{ cells: [] }],
+    [{ cells: 'x' }],
+    [{ cells: ['x'] }],
+    [{ cells: Array.from({ length: 33 }, () => ({})) }],
+    [{ reset: 'all' }],
+    [{ reset: { a: 1, b: 2, c: 3 } }],
+    [{ reset: {}, revision: 3 }],
+    [{ reset: {}, scope: undefined }],
+    [{ reset: {}, extra: true }],
+  ])('refuses %j', (fields) => {
+    expect(() => parseMobileCommand({ ...base, ...fields })).toThrow(MobileControlError);
+  });
+});
+
 describe('mobile command receipts', () => {
   it('fails closed without a paired certificate principal', async () => {
     const service = new MobileCommandService(); const run = vi.fn();

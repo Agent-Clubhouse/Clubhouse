@@ -367,6 +367,8 @@ vi.stubGlobal('clubhouse', {
     saveExperimentalSettings: asyncNoop,
     getOrchestrationSettings: async () => ({ globalHelperCap: 20 }),
     saveOrchestrationSettings: asyncNoop,
+    getHelperRouting: async () => ({ revision: 'r0.0', labels: {}, providers: {} }),
+    updateHelperRouting: async () => ({ ok: true, settings: { revision: 'r0.0', labels: {}, providers: {} } }),
     onOrchestrationSettingsChanged: () => noop,
     getLiveAgentsForUpdate: vi.fn().mockResolvedValue([]),
     getPendingResumes: vi.fn().mockResolvedValue(null),

@@ -1,3 +1,4 @@
+import { HELPER_ROUTING_LABELS } from '../../../shared/helper-routing';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import * as path from 'path';
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
@@ -28,6 +29,7 @@ beforeEach(() => {
     [BETA]: [row('d3', 'qa-old', { disposedAt: '2026-10-16T10:00:00Z' })],
   };
   useProjectStore.setState({ projects: [{ id: 'pa', name: 'alpha', path: ALPHA }, { id: 'pb', name: 'beta', path: BETA }] } as never);
+  window.clubhouse.app.getHelperRouting = vi.fn(async () => ({ revision: 'r0.0', labels: HELPER_ROUTING_LABELS, providers: {} }));
   window.clubhouse.app.getOrchestrationSettings = vi.fn(async () => ({ globalHelperCap: cap }));
   window.clubhouse.app.saveOrchestrationSettings = vi.fn(async (s: { globalHelperCap: number }) => { cap = s.globalHelperCap; });
   window.clubhouse.agent.listDurable = vi.fn(async (p: string) => byProject[p] ?? []) as never;

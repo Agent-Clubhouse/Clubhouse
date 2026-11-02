@@ -1,0 +1,12 @@
+{
+  "direction": "desktop-to-phone",
+  "frames": [
+    {
+      "payload": {
+        "revision": "r1.3"
+      },
+      "seq": 136,
+      "type": "helper_routing:changed"
+    }
+  ]
+}

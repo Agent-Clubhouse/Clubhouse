@@ -46,7 +46,7 @@ function emit(change: StartRequestChange): void {
 }
 
 /** The fields that make two starts the same request. */
-const ARG_KEYS: ReadonlyArray<keyof HelperStartArgs> = ['name', 'task', 'persona', 'cli', 'model', 'effort', 'access', 'branchFrom', 'folder', 'project'];
+const ARG_KEYS: ReadonlyArray<keyof HelperStartArgs> = ['name', 'task', 'persona', 'cli', 'model', 'effort', 'difficulty', 'access', 'branchFrom', 'folder', 'project'];
 
 function sameArgs(a: HelperStartArgs, b: HelperStartArgs): boolean {
   return ARG_KEYS.every((k) => (a[k] ?? null) === (b[k] ?? null));
@@ -158,9 +158,9 @@ export function onStartRequestsChanged(listener: Listener): () => void {
   return () => { listeners.delete(listener); };
 }
 
-export function _resetStartRequestsForTesting(): void {
+export function _resetStartRequestsForTesting(options: { keepListeners?: boolean } = {}): void {
   for (const timer of timers.values()) clearTimeout(timer);
   timers.clear();
   pending.clear();
-  listeners.clear();
+  if (!options.keepListeners) listeners.clear();
 }

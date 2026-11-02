@@ -33,7 +33,11 @@ const W = vi.hoisted(() => ({
   peers: new Map<string, any>(),
   tls: null as null | Record<string, unknown>,
   tlsFingerprint: '',
-  helperStart: 'approve' as 'approve' | 'blocked' | 'refused',
+  helperStart: 'approve' as 'approve' | 'blocked' | 'refused' | 'no_valid_mapping',
+  presets: {} as Record<string, Record<string, { model: string; effort: string | null }>>,
+  presetsRevision: 0,
+  helperStartRefusals: 0,
+  providers: {} as Record<string, any>,
   dispose: { ok: true } as Record<string, unknown>,
   projectStateReady: true,
   finishedReady: true,
@@ -285,7 +289,23 @@ vi.mock('./materialization-service', () => ({
   readLayeredPersonaRaw: async (_projectPath: string, personaId: string) =>
     (personaId === 'architect' ? '---\norchestration: {"control": "ask-before-start", "maxHelpers": 4}\n---\n\n# Architect' : undefined),
 }));
-vi.mock('./orchestration-settings', () => ({ getSettings: () => ({ globalHelperCap: 20 }), getGlobalHelperCap: () => 20 }));
+vi.mock('./orchestration-settings', () => ({
+  getSettings: () => ({ globalHelperCap: 20 }),
+  getGlobalHelperCap: () => 20,
+  getPresets: () => W.presets,
+  getPresetsRevision: () => W.presetsRevision,
+  savePresets: async (presets: unknown) => { W.presets = presets as never; W.presetsRevision++; },
+}));
+vi.mock('./settings-audit', () => ({ appendSettingsAudit: async () => true }));
+// The helper presets read the CLIs' model lists: only those cases put providers here.
+vi.mock('../orchestrators', async (importOriginal) => {
+  const original = await importOriginal<typeof import('../orchestrators')>();
+  return {
+    ...original,
+    getProvider: (id: string) => W.providers[id] ?? original.getProvider(id as never),
+    getAllProviders: () => [...Object.values(W.providers), ...original.getAllProviders()],
+  };
+});
 vi.mock('./orchestrator-settings', () => ({ getSettings: () => ({ enabled: ['claude-code', 'codex-cli'] }) }));
 vi.mock('./profile-settings', () => ({ getProfile: () => undefined }));
 vi.mock('./clubhouse-mode-settings', () => ({ isClubhouseModeEnabled: () => false }));
@@ -312,6 +332,10 @@ vi.mock('./clubhouse-mcp/tools/helper-tools', async () => {
       if (W.helperStart === 'blocked') return { ok: false, message: 'Planner isn’t running. Wake it, then approve again.' };
       starts.takeStartRequest(projectPath, requestId);
       if (W.helperStart === 'refused') return { ok: false, message: 'A helper named impl-ipc already exists.' };
+      if (W.helperStart === 'no_valid_mapping') {
+        W.helperStartRefusals++;
+        return { ok: false, code: 'no_valid_mapping', message: 'Couldn’t start impl-ipc because no hard preset for codex-cli is offered now. Change it in Settings > Helpers.' };
+      }
       return { ok: true, helperId: 'durable_helper_new', message: 'Started' };
     },
     declineHelperStart: async (projectPath: string, requestId: string) => ({ ok: !!starts.takeStartRequest(projectPath, requestId), message: '' }),
@@ -508,7 +532,7 @@ function resetWorld() {
     id: 'quick_1', name: 'swift-fox', kind: 'quick', status: 'running', prompt: 'Fix the flaky test', model: null, orchestrator: 'claude-code',
     freeAgentMode: false, parentAgentId: 'durable_chat', projectId: 'proj_app', spawnedAt: NOW - 120_000,
   });
-  _resetStartRequestsForTesting();
+  _resetStartRequestsForTesting({ keepListeners: true });
   _resetDisposeRequestsForTesting();
 }
 
@@ -657,7 +681,7 @@ describe('Annex mobile contract fixtures', { timeout: TEST_TIMEOUT_MS }, () => {
     const helperFrame = frames(withHelpers)[0];
     expect(helperFrame.payload.helperRequests).toHaveLength(2);
     fixtures.set('snapshot-helper-requests.json', { direction: 'desktop-to-phone', field: 'helperRequests', value: helperFrame.payload.helperRequests });
-    _resetStartRequestsForTesting(); _resetDisposeRequestsForTesting();
+    _resetStartRequestsForTesting({ keepListeners: true }); _resetDisposeRequestsForTesting();
     fixtures.set('rest-catalog.json', {
       projects: await exchange('GET', '/api/v1/projects'),
       agents: await exchange('GET', '/api/v1/projects/proj_app/agents'),
@@ -898,9 +922,33 @@ describe('Annex mobile contract fixtures', { timeout: TEST_TIMEOUT_MS }, () => {
     await command('accepted start', { type: 'helper.approve', requestId: helperStart() });
     W.helperStart = 'blocked';
     await command('helper_start_blocked', { type: 'helper.approve', requestId: helperStart() });
-    _resetStartRequestsForTesting();
+    _resetStartRequestsForTesting({ keepListeners: true });
     W.helperStart = 'refused';
     await command('helper_start_refused', { type: 'helper.approve', requestId: helperStart() });
+    // Definite, and the request is used up: a phone shows the sentence and offers no retry (#2671).
+    W.helperStart = 'no_valid_mapping';
+    const held = helperStart();
+    const removal = await connect();
+    removal.send.mockClear();
+    const NO_MAPPING_MESSAGE = 'Couldn’t start impl-ipc because no hard preset for codex-cli is offered now. Change it in Settings > Helpers.';
+    const noMapping = await command('no_valid_mapping', { type: 'helper.approve', requestId: held }, { commandId: 'cmd_no_mapping' });
+    expect(noMapping).toEqual({ status: 409, body: {
+      version: 1, commandId: 'cmd_no_mapping', epoch, status: 'rejected', error: { code: 'no_valid_mapping', message: NO_MAPPING_MESSAGE },
+    } });
+    // A fresh snapshot takes the row away, whichever arrives first.
+    await eventually(() => {
+      const snapshot = frames(removal).filter((f) => f.type === 'snapshot').at(-1);
+      expect(snapshot?.payload.helperRequests.map((r: { requestId: string }) => r.requestId)).not.toContain(held);
+    });
+    expect(W.helperStartRefusals).toBe(1);
+    // The same command again gets the same receipt, and the start isn't tried twice.
+    const replay = await command('no_valid_mapping (same commandId replays the receipt)', { type: 'helper.approve', requestId: held }, { commandId: 'cmd_no_mapping' });
+    expect(replay).toEqual(noMapping);
+    expect(W.helperStartRefusals).toBe(1);
+    // A new command finds nothing to approve, so nothing can be created twice.
+    const again = await command('helper_request_not_found (consumed, new commandId)', { type: 'helper.approve', requestId: held }, { commandId: 'cmd_no_mapping_again' });
+    expect(again).toMatchObject({ status: 404, body: { commandId: 'cmd_no_mapping_again', status: 'rejected', error: { code: 'helper_request_not_found' } } });
+    expect(W.helperStartRefusals).toBe(1);
     W.helperStart = 'approve';
     await command('accepted dispose anyway', { type: 'helper.approve', requestId: helperDispose(), force: true });
     await command('accepted dispose (nothing at risk)', { type: 'helper.approve', requestId: helperDispose({ dirty: 0, unpushed: 0, unmerged: 3 }, false) });
@@ -1406,6 +1454,144 @@ describe('Annex mobile contract fixtures', { timeout: TEST_TIMEOUT_MS }, () => {
     await command('mcp_off', { type: 'agent.update', agentId: 'durable_chat', orchestration: { orchestrate: true } });
     delete W.durables[APP][0].mcpOverride;
   });
+
+  it('helper presets (#2671)', async () => {
+    const level = (id: string, label: string, efforts: string[] = ['low', 'medium', 'high']) => ({ id, label, efforts });
+    const claude = (source: 'live' | 'fallback' = 'live', models = [level('opus', 'Opus'), level('sonnet', 'Sonnet'), level('haiku', 'Haiku')]) =>
+      ({ models, source, via: source === 'live' ? 'handshake' : 'static', fetchedAt: NOW });
+    const codex = (models = [level('gpt-6.1-sol', 'Sol'), level('gpt-6.1-terra', 'Terra'), level('gpt-6-luna', 'Luna')]) =>
+      ({ models, source: 'live', via: 'handshake', fetchedAt: NOW });
+    const lists: Record<string, unknown> = { 'claude-code': claude(), 'codex-cli': codex() };
+    W.providers = Object.fromEntries(['claude-code', 'codex-cli', 'copilot-cli'].map((id) => [id, {
+      id,
+      ...(id !== 'copilot-cli' && { listModels: async () => lists[id] }),
+    }]));
+    const ROUTE = '/api/v1/mobile/helper-routing';
+    const FAMILIES = ['reason', 'fallback', 'skipped', 'quota', 'unknown', 'cell', 'generic'];
+    const cell = (res: Awaited<ReturnType<typeof exchange>>, provider: string, difficulty: string) => res.response.body.providers[provider].cells[difficulty];
+
+    // A bare read has every label family, so a phone can cache them once per revision.
+    const bare = await exchange('GET', ROUTE);
+    expect(Object.keys(bare.response.body.labels)).toEqual(FAMILIES);
+    expect(cell(bare, 'codex-cli', 'hard')).toMatchObject({ effective: { model: 'gpt-6.1-sol', effort: 'high' }, source: 'builtin', state: 'valid', custom: null });
+    expect(bare.response.body.providers['copilot-cli']).toEqual({ autoEligible: false, reason: 'auto_not_supported', cells: null });
+    const revision = bare.response.body.revision;
+    const cases: Record<string, unknown> = { bare };
+    cases.project = await exchange('GET', `${ROUTE}?projectId=proj_app`);
+    expect(Object.keys((cases.project as typeof bare).response.body.labels)).toEqual(FAMILIES);
+    cases.agent = await exchange('GET', `${ROUTE}?agentId=durable_chat`);
+    W.durables[APP][0].mcpOverride = false;
+    cases.mcpOff = await exchange('GET', `${ROUTE}?agentId=durable_chat`);
+    expect((cases.mcpOff as typeof bare).response.body.agent).toEqual({ usable: false, reason: 'mcp_off' });
+    delete W.durables[APP][0].mcpOverride;
+    cases.orchestrationOff = await exchange('GET', `${ROUTE}?agentId=durable_sleepy`);
+    W.dispatcher.flagOn = true;
+    W.dispatcher.enabled = true;
+    W.dispatcher.newLayout = true;
+    cases.dispatcher = await exchange('GET', `${ROUTE}?agentId=durable_dispatcher`);
+    expect((cases.dispatcher as typeof bare).response.body.agent).toEqual({ usable: false, reason: 'dispatcher_locked' });
+    W.dispatcher.enabled = false;
+    cases.agentNotFound = await exchange('GET', `${ROUTE}?agentId=missing`);
+    cases.projectNotFound = await exchange('GET', `${ROUTE}?projectId=missing`);
+
+    // A saved choice no longer offered: the built-in is used, and it says so. Nothing is rewritten.
+    W.presets = { 'codex-cli': { hard: { model: 'gone', effort: 'high' } } };
+    cases.stalePreset = await exchange('GET', ROUTE);
+    expect(cell(cases.stalePreset as typeof bare, 'codex-cli', 'hard')).toMatchObject({ state: 'stale', staleReason: 'model_unavailable', fallback: 'builtin_preset', source: 'builtin', effective: { model: 'gpt-6.1-sol' }, custom: { model: 'gone' } });
+    W.presets = { 'codex-cli': { hard: { model: 'gpt-6.1-sol', effort: 'ultra' } } };
+    cases.staleEffort = await exchange('GET', ROUTE);
+    expect(cell(cases.staleEffort as typeof bare, 'codex-cli', 'hard')).toMatchObject({ state: 'stale', staleReason: 'effort_unavailable', effective: { effort: 'high' } });
+    // Nothing valid left: a start is refused with no_valid_mapping.
+    W.presets = {};
+    lists['codex-cli'] = codex([level('gpt-6.1-terra', 'Terra'), level('gpt-6-luna', 'Luna')]);
+    cases.staleNothingValid = await exchange('GET', ROUTE);
+    expect(cell(cases.staleNothingValid as typeof bare, 'codex-cli', 'hard')).toMatchObject({ state: 'stale', effective: null });
+    lists['codex-cli'] = codex();
+    // A list that may be out of date: usable, and it says so.
+    lists['claude-code'] = claude('fallback', [level('sonnet', 'Sonnet')]);
+    cases.unverified = await exchange('GET', ROUTE);
+    expect(cell(cases.unverified as typeof bare, 'claude-code', 'hard')).toMatchObject({ state: 'unverified', fallback: 'model_unverified', effective: { model: 'opus' } });
+    lists['claude-code'] = claude();
+    fixtures.set('helper-routing.json', cases);
+
+    // Changing them: a write returns fresh values, and a changed event tells open pages.
+    const ws = await connect();
+    ws.send.mockClear();
+    const fresh = (await exchange('GET', ROUTE)).response.body.revision;
+    const write = (fields: Record<string, unknown>) => ({ type: 'helperRouting.update', scope: 'app', ...fields });
+    const set = await command('accepted set', write({ revision: fresh, cells: [{ provider: 'codex-cli', difficulty: 'easy', model: 'gpt-6.1-terra', effort: 'low' }] }));
+    expect(set.status).toBe(200);
+    expect(set.body.result.providers['codex-cli'].cells.easy).toMatchObject({ source: 'custom', effective: { model: 'gpt-6.1-terra' } });
+    const changed = frames(ws).filter((f) => f.type === 'helper_routing:changed');
+    expect(changed.at(-1).payload).toEqual({ revision: set.body.result.revision });
+    fixtures.set('helper-routing-changed.json', { direction: 'desktop-to-phone', frames: [changed.at(-1)] });
+    // Fresh values come back with the refusal, and nothing is written. A client doesn't retry.
+    const stale = await command('helper_routing_stale', write({ revision: fresh, cells: [{ provider: 'codex-cli', difficulty: 'easy', model: 'gpt-6-luna', effort: 'low' }] }));
+    expect(stale).toMatchObject({ status: 409, body: { error: { code: 'helper_routing_stale' }, revision: set.body.result.revision, settings: { revision: set.body.result.revision } } });
+    expect(W.presets['codex-cli'].easy.model).toBe('gpt-6.1-terra');
+    const current = set.body.result.revision;
+    await command('model_unavailable', write({ revision: current, cells: [{ provider: 'codex-cli', difficulty: 'easy', model: 'gone', effort: 'low' }] }));
+    await command('effort_unavailable', write({ revision: current, cells: [{ provider: 'codex-cli', difficulty: 'easy', model: 'gpt-6-luna', effort: 'ultra' }] }));
+    await command('invalid_helper_routing (Copilot)', write({ revision: current, cells: [{ provider: 'copilot-cli', difficulty: 'easy', model: 'x', effort: null }] }));
+    await command('invalid_helper_routing (project scope)', { type: 'helperRouting.update', scope: 'project', revision: current, reset: {} });
+    await command('invalid_command (nothing to do)', write({ revision: current }));
+    const cellReset = await command('accepted reset one cell', write({ revision: current, reset: { provider: 'codex-cli', difficulty: 'easy' } }));
+    expect(W.presets).toEqual({});
+    const again = await command('accepted set several', write({ revision: cellReset.body.result.revision, cells: [
+      { provider: 'claude-code', difficulty: 'hard', model: 'sonnet', effort: 'high' }, { provider: 'codex-cli', difficulty: 'medium', model: 'gpt-6-luna', effort: null },
+    ] }));
+    const providerReset = await command('accepted reset one provider', write({ revision: again.body.result.revision, reset: { provider: 'claude-code' } }));
+    await command('accepted reset all', write({ revision: providerReset.body.result.revision, reset: {} }));
+    expect(W.presets).toEqual({});
+    expect(revision).toMatch(/^r\d+\.\d+$/);
+
+    // What a helper's start decided: codes in the snapshot, words in its settings.
+    const docs = W.durables[APP].find((a: { id: string }) => a.id === 'durable_docs')!;
+    const decision = (fields: Record<string, unknown>) => ({
+      mode: 'preset', balanced: false, decidedAt: new Date(NOW).toISOString(), policyVersion: 1, fallback: 'none', context: { status: 'none' }, ...fields,
+    });
+    const field = (provider: string | null, model: string | null, effort: string | null, difficulty: string | null) => ({ provider, model, effort, difficulty });
+    const routed: Record<string, unknown> = {
+      preset: decision({
+        requested: field(null, null, null, 'hard'), resolved: field('codex-cli', 'gpt-6.1-sol', 'high', 'hard'),
+        source: { provider: 'orchestrator', model: 'builtin_mapping', effort: 'builtin_mapping' }, reason: 'preset_on_cli',
+      }),
+      explicitOverride: decision({
+        mode: 'explicit', requested: field('codex-cli', 'gpt-6.1-sol', 'high', null), resolved: field('codex-cli', 'gpt-6.1-sol', 'high', null),
+        source: { provider: 'request', model: 'request', effort: 'request' }, reason: 'explicit_request',
+      }),
+      personaPin: decision({
+        requested: field(null, null, null, 'easy'), resolved: field('claude-code', 'opus', null, 'easy'),
+        source: { provider: 'persona', model: 'persona', effort: 'cli_default' }, reason: 'persona_pinned',
+      }),
+      builtinFallback: decision({
+        requested: field(null, null, null, 'hard'), resolved: field('codex-cli', 'gpt-6.1-sol', 'high', 'hard'),
+        source: { provider: 'orchestrator', model: 'builtin_mapping', effort: 'builtin_mapping' }, reason: 'preset_on_cli', fallback: 'builtin_preset',
+      }),
+      contextReset: decision({
+        requested: field(null, null, null, 'easy'), resolved: field('claude-code', 'haiku', 'low', 'easy'),
+        source: { provider: 'orchestrator', model: 'builtin_mapping', effort: 'builtin_mapping' }, reason: 'preset_on_cli', context: { status: 'reset' },
+      }),
+      contextNotApplied: decision({
+        requested: field(null, null, null, 'easy'), resolved: field('claude-code', 'haiku', 'low', 'easy'),
+        source: { provider: 'orchestrator', model: 'builtin_mapping', effort: 'builtin_mapping' }, reason: 'preset_on_cli', context: { status: 'not_applied' },
+      }),
+    };
+    const settings: Record<string, unknown> = {};
+    for (const [name, routing] of Object.entries(routed)) {
+      docs.routing = routing;
+      settings[name] = (await exchange('GET', '/api/v1/mobile/agents/durable_docs/settings')).response.body.routing;
+    }
+    docs.routing = routed.preset;
+    const snapshotWs = await connect();
+    const snapshot = frames(snapshotWs).find((f) => f.type === 'snapshot').payload;
+    const row = snapshot.agents.proj_app.find((a: { id: string }) => a.id === 'durable_docs').routing;
+    expect(row).toEqual({ mode: 'preset', difficulty: 'hard', provider: 'codex-cli', model: 'gpt-6.1-sol', effort: 'high', reason: 'preset_on_cli' });
+    expect(snapshot.helperRoutingRevision).toMatch(/^r\d+\.\d+$/);
+    delete docs.routing;
+    fixtures.set('helper-routing-helper.json', { snapshotField: 'routing', snapshotRow: row, snapshotRevisionField: 'helperRoutingRevision', settingsField: 'routing', cases: settings });
+    W.providers = {};
+  }, TEST_TIMEOUT_MS);
 
   it('session pairing revocation', async () => {
     fixtures.set('pairing-revoke.json', { persistent: await exchange('DELETE', '/api/v1/mobile/pairing') });

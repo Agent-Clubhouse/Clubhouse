@@ -1,3 +1,4 @@
+import type { HelperRoutingSettings, HelperRoutingUpdate, HelperRoutingUpdateResult } from '../shared/helper-routing';
 import { ipcRenderer } from 'electron';
 import { IPC } from '../shared/ipc-channels';
 import type { CliInstallStatus, NotificationSettings, BadgeSettings, ResolvedProtocolAction, TerminalColors, ThemeColors, ThemeGradients } from '../shared/types';
@@ -94,6 +95,11 @@ export const app = {
     ipcRenderer.on(IPC.APP.ORCHESTRATION_SETTINGS_CHANGED, listener);
     return () => { ipcRenderer.removeListener(IPC.APP.ORCHESTRATION_SETTINGS_CHANGED, listener); };
   },
+  /** App-wide helper presets (#2671). */
+  getHelperRouting: (): Promise<HelperRoutingSettings> =>
+    ipcRenderer.invoke(IPC.APP.GET_HELPER_ROUTING),
+  updateHelperRouting: (update: HelperRoutingUpdate): Promise<HelperRoutingUpdateResult> =>
+    ipcRenderer.invoke(IPC.APP.UPDATE_HELPER_ROUTING, update),
   setDockBadge: (count: number) =>
     ipcRenderer.invoke(IPC.APP.SET_DOCK_BADGE, count),
   getBadgeSettings: () =>

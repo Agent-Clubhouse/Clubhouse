@@ -43,6 +43,7 @@ A 404 means unsupported: do not send mobile commands. Gate durable-agent creatio
 - `project.setInactive`: `{projectId, inactive}`; mark a project inactive (idle until marked active) or active. See [Project state](#project-state).
 - `quick.dismiss`: `{projectId, agentId}`; dismiss one finished quick agent. See [Finished quick agents](#finished-quick-agents).
 - `quick.clear`: `{projectId}`; dismiss all of a project's finished quick agents. See [Finished quick agents](#finished-quick-agents).
+- `helperRouting.update`: `{revision, scope, cells?, reset?}`; change or reset the app-wide helper presets. See [Helper presets](#helper-presets).
 - `dispatcher.setEnabled`: `{enabled}`; turn the app-wide Dispatcher on or off, as Settings > Dispatcher does. See [Dispatcher](#dispatcher).
 
 - `helper.approve`: `{requestId, force?}`; approve a helper start or dispose an orchestrator asked the user to decide. `force:true` is the desktop's "Dispose anyway". See [Helper requests](#helper-requests).
@@ -81,7 +82,9 @@ The rules are the desktop's:
 
 When a dispose finds new facts the request is reissued under a **new `requestId`** with the new checks, and a snapshot is broadcast. An answer to the old id is `helper_request_not_found`, so a phone can never confirm facts it didn't show. Refetch the snapshot after any `helper_*` rejection.
 
-Errors (`message` is the desktop's sentence for all but `helper_request_not_found`): 404 `helper_request_not_found` (answered, expired, dropped or reissued); 409 `helper_start_blocked`, `helper_check_failed`, `helper_work_at_risk`, `helper_work_changed` (`status:"rejected"`, the request still waits); 409 `helper_start_refused`, `helper_dispose_failed` (`status:"failed"`; a refused start was used up; a failed dispose may have stopped the helper).
+Errors (`message` is the desktop's sentence for all but `helper_request_not_found`): 404 `helper_request_not_found` (answered, expired, dropped or reissued); 409 `helper_start_blocked`, `helper_check_failed`, `helper_work_at_risk`, `helper_work_changed` (`status:"rejected"`, the request still waits); 409 `no_valid_mapping` (`status:"rejected"`, nothing was created and the request is gone); 409 `helper_start_refused`, `helper_dispose_failed` (`status:"failed"`; a refused start was used up; a failed dispose may have stopped the helper).
+
+`no_valid_mapping` means nothing valid is offered for the start's difficulty, either its presets or a model its persona sets. Show `error.message`, a sentence for a person, and offer no retry. `rejected` here says nothing was done, and only the next snapshot says whether a request still waits: a snapshot without the row is sent when the request is used up, and it can arrive before or after the receipt. Sending the same `commandId` again replays the receipt. A new one gets 404 `helper_request_not_found`.
 
 ## Image attachments
 
@@ -593,6 +596,73 @@ Rejections:
 - 409 `dispatcher_off`: `connectToDispatcher: true` while the Dispatcher is off.
 - 409 `mcp_off`: `orchestrate`, `crossProjectHelpers` or `connectToDispatcher` set to `true` while `mcpEnabled` is `false` (on `agent.create`, while Clubhouse MCP is off for the project), with the reason in `message`. Nothing is created or changed. Setting them to `false`, clearing them with `null`, and the other fields are still accepted.
 - A non-object `orchestration` (or `null` on create) is 400 `invalid_command`.
+
+## Helper presets
+
+The model and effort a `difficulty` picks on each CLI (#2671), as Settings > Helpers edits them. Fixtures: `helper-routing.json`, `helper-routing-helper.json`, `helper-routing-changed.json`, `commands/helperRouting.update.json`. The design, and what later stages add, is in `docs/helper-auto-routing.md`.
+
+Gate on `helperRouting` in capabilities. It lists only what works now, so don't offer anything it doesn't list. Auto isn't there until `modes` has `auto`.
+
+```json
+"helperRouting":{"version":1,"path":"/api/v1/mobile/helper-routing","modes":["explicit","preset"],"scopes":["app"],"quota":false,
+ "commands":["helperRouting.update"],"snapshotField":"helperRoutingRevision","event":"helper_routing:changed",
+ "difficulties":["easy","medium","hard"],"reasons":["explicit_request","persona_pinned","preset_on_cli"],
+ "fallbacks":["none","builtin_preset","model_unverified"],"cellStates":["valid","unverified","stale"]}
+```
+
+### Reading
+
+`GET /api/v1/mobile/helper-routing`, with optional `projectId` or `agentId`. Either reads the model lists under that project's profile, since a profile can be a different login. 404 `project_not_found`, `agent_not_found`.
+
+```json
+{"version":1,"epoch":"uuid","revision":"r12.0","labels":{…},
+ "providers":{
+  "codex-cli":{"autoEligible":true,
+   "choices":{"source":"live","asOf":"…","models":[{"id":"gpt-6.1-sol","label":"Sol","efforts":["low","high"]}]},
+   "cells":{"hard":{"effective":{"model":"gpt-6.1-sol","effort":"high"},"source":"builtin","state":"valid","custom":null,"builtin":{"model":"gpt-6.1-sol","effort":"high"},"editable":true},…}},
+  "copilot-cli":{"autoEligible":false,"reason":"auto_not_supported","cells":null}}}
+```
+
+- **labels**: the words for every code, in the families `reason`, `fallback`, `skipped`, `quota`, `unknown`, `cell` and `generic`. Every read has all of them, including a bare one, so cache them once per revision for rows that only have codes. For a code you don't have, use `labels.generic.unknownCode`, then your own generic "Other".
+- **cells**: `effective` is what a start uses now. `custom` is the saved choice, or null. `state` is that of the saved choice, or of the built-in without one: `valid`, `unverified` (the list may be out of date, so it couldn't be checked) or `stale` (no longer offered, with `staleReason` `model_unavailable` or `effort_unavailable`). A stale saved choice stays saved. `effective` is then the built-in, with `fallback: "builtin_preset"`, or null if that is stale too, and a start with that difficulty is refused. Offer Reset whenever `custom` is set.
+- **autoEligible**: whether a provider has presets, for now.
+- **choices**: what the pickers offer, per model, with `source` `live` or `fallback`. Always the app-wide list, even with `projectId` or `agentId`, because a write is checked against it. `default` isn't offered, since a preset has to name a model. Cells do follow that profile: a cell can read `stale` there while its model is in `choices`, which means a start in that project would be refused or fall back.
+- **agent**: with `agentId` only. `{usable: true}`, or `{usable: false, reason}` with `dispatcher_locked`, `mcp_off` or `orchestration_off`. The Dispatcher doesn't start helpers, and this gives it no new authority.
+
+The built-in presets are starting choices, not measured best ones. Don't present them as a recommendation.
+
+### helperRouting.update
+
+`{revision, scope: "app", cells?: [{provider, difficulty, model, effort}], reset?: {provider?, difficulty?}}`, with at least one of `cells` and `reset`. `effort` null leaves the level to the CLI. `reset: {}` resets everything, `{provider}` one provider, and `{provider, difficulty}` one cell. A reset runs before `cells`. The result is the page's data, so don't refetch.
+
+- 409 `helper_routing_stale`: another edit got there first. Nothing was written, and the refusal's body has `revision` and `settings` with fresh values. Show them and let the person make the change again. Never retry on your own, because that could overwrite someone's edit.
+- 409 `model_unavailable`, `effort_unavailable`: a live list doesn't offer it. `message` says what it does offer. Nothing was written.
+- 400 `invalid_helper_routing`: a provider with no presets, a bad value, `default` as a model, or a scope other than `app`.
+
+A value missing from a fallback list is accepted, and shows as `unverified`.
+
+### Staying current
+
+The snapshot's `helperRoutingRevision` and the `helper_routing:changed` event (`{revision}`) tell an open or cached page to refetch. The revision is opaque. It moves when a saved value changes, or when an app-wide read finds a cell's state changed. A list changing never makes your write stale: only a saved value does.
+
+### A helper's routing
+
+What the start decided, on a helper whose start named a CLI, model, effort or difficulty. Absent otherwise, and on helpers started before this. It goes if the helper's model or CLI is changed later.
+
+The snapshot's agent row has codes only: `routing:{mode,difficulty,provider,model,effort,reason}`. Its settings have the whole record, and `display` with the words:
+
+```json
+"routing":{"mode":"preset","balanced":false,"decidedAt":"…","policyVersion":1,
+ "requested":{"provider":null,"model":null,"effort":null,"difficulty":"hard"},
+ "resolved":{"provider":"codex-cli","model":"gpt-6.1-sol","effort":"high","difficulty":"hard"},
+ "source":{"provider":"orchestrator","model":"builtin_mapping","effort":"builtin_mapping"},
+ "reason":"preset_on_cli","fallback":"none","context":{"status":"none"},
+ "display":{"summary":"gpt-6.1-sol, high effort. From the helper settings for this difficulty.","reason":"From the helper settings for this difficulty"}}
+```
+
+`context.status` is `none`, `applied`, `reset` or `not_applied`. It has no words of its own. Show the [context notices](#context-choice) you already show, and don't add a second warning.
+
+A held start's helper request has `requestedRouting:{provider,model,effort,difficulty}`, when it named any of them, and nothing resolved. The choice is made at approval.
 
 ## Dispatcher
 

@@ -1,6 +1,6 @@
 /**
  * App settings, Helpers (#2232): the app-wide cap on running helpers across
- * every orchestrator, and disposed helpers no Helpers card can reach because
+ * every orchestrator, the presets behind `difficulty` (#2671), and disposed helpers no Helpers card can reach because
  * their orchestrator is gone. Each agent's own switches are in its
  * Orchestration card and on its Helpers settings page.
  */
@@ -15,6 +15,7 @@ import { ConfirmDestructiveAction } from '../../components/ConfirmDestructiveAct
 import { orphanedDisposed } from '../agents/helpers/helper-model';
 import { sameProjectPath } from '../../utils/project-path';
 import { parseHelperCount, useGlobalHelperCap } from '../agents/helpers/orchestration-hooks';
+import { HelperPresetsSection } from './HelperPresetsSection';
 import { SettingsBlock, SettingsField, SettingsPage, SettingsSection, settingsHelp, settingsInput } from './SettingsLayout';
 
 interface OrphanRow {
@@ -131,6 +132,8 @@ export function HelpersSettingsView() {
           />
         </SettingsField>
       </SettingsSection>
+
+      <HelperPresetsSection />
 
       <SettingsSection title="Disposed helpers without an orchestrator" meta={orphans && orphans.length > 0 ? String(orphans.length) : undefined}>
         <SettingsBlock>

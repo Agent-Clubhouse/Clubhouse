@@ -14,7 +14,7 @@ import { _resetDisposeRequestsForTesting, listDisposeRequests, recordDisposeRequ
 import { approveHelperStart, declineHelperStart } from './clubhouse-mcp/tools/helper-tools';
 import { disposeHelperForUser, reportDisposeDecision } from './helper-dispose-decisions';
 import * as agentConfig from './agent-config';
-import { MobileControlError } from './mobile-control';
+import { MobileCommandService, MobileControlError } from './mobile-control';
 import type { DurableAgentConfig, HelperDisposeChecks } from '../../shared/types';
 
 const projects = [{ id: 'proj', path: '/p' }];
@@ -67,6 +67,7 @@ describe('buildMobileHelperRequests', () => {
         requestedAt: '2026-10-26T09:00:00.000Z', expiresAt: '2026-10-27T09:00:00.000Z',
         summary: 'Wants to start the helper impl-ipc',
         start: { task: 'Wire the IPC', persona: null, model: 'opus', access: null, branchFrom: null },
+        requestedRouting: { provider: null, model: 'opus', effort: null, difficulty: null },
       },
       {
         requestId: disposeId, kind: 'dispose', projectId: 'proj',
@@ -137,6 +138,18 @@ describe('runHelperCommand: starts', () => {
     vi.mocked(approveHelperStart).mockResolvedValue({ ok: false, message: 'Wake Planner to approve this start.' });
     const err = await rejection(runHelperCommand(command('helper.approve', id), deps()));
     expect(err).toMatchObject({ code: 'helper_start_blocked', statusCode: 409, outcome: 'rejected', detail: 'Wake Planner to approve this start.' });
+  });
+
+  it('no_valid_mapping reaches the phone with the sentence in error.message, and the request is used up (#2671)', async () => {
+    const id = startRequest();
+    const sentence = 'Couldn’t start impl-ipc because no hard preset for codex-cli is offered now. Change it in Settings > Helpers.';
+    vi.mocked(approveHelperStart).mockImplementation(async (p, r) => { takeStartRequest(p, r); return { ok: false, code: 'no_valid_mapping', message: sentence }; });
+    const service = new MobileCommandService();
+    const response = await service.execute('peer', { version: 1, commandId: 'c1', epoch: service.epoch, type: 'helper.approve', requestId: id },
+      (parsed) => runHelperCommand(parsed as Parameters<typeof runHelperCommand>[0], deps()));
+    expect(response).toEqual({ statusCode: 409, body: {
+      version: 1, commandId: 'c1', epoch: service.epoch, status: 'rejected', error: { code: 'no_valid_mapping', message: sentence },
+    } });
   });
 
   it('reports a used-up start that failed as refused', async () => {

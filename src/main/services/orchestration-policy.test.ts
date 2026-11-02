@@ -123,6 +123,8 @@ vi.mock('./materialization-service', () => ({
 }));
 
 vi.mock('./log-service', () => ({ appLog: vi.fn() }));
+const auditRows = vi.hoisted(() => [] as Array<Record<string, unknown>>);
+vi.mock('./settings-audit', () => ({ appendSettingsAudit: async (row: Record<string, unknown>) => { auditRows.push(row); return true; } }));
 
 /** App and project MCP settings, with isMcpEnabled's real precedence over them. */
 const mcp = vi.hoisted(() => ({
@@ -328,6 +330,30 @@ describe('syncOrchestrationGate (spawn)', () => {
     vi.mocked(agentConfig.getDurableConfig).mockRejectedValueOnce(new Error('disk gone'));
     await expect(syncOrchestrationGate(PROJECT, 'orch')).resolves.toBeUndefined();
     expect(isOrchestrationEnabled('orch')).toBe(false);
+  });
+});
+
+describe('setOrchestrationPolicy audit (#2671)', () => {
+  beforeEach(() => {
+    auditRows.length = 0;
+    setAgents(PROJECT, [agent('orch')]);
+  });
+
+  it('writes one row per field that changed, values and who asked', async () => {
+    await setOrchestrationPolicy(PROJECT, 'orch', { maxHelpers: 9, control: 'ask-before-start' }, { surface: 'dispatcher', actorId: 'disp' });
+    expect(auditRows).toEqual(expect.arrayContaining([
+      { surface: 'dispatcher', actorId: 'disp', targetId: 'orch', scope: 'agent', key: 'orchestration.maxHelpers', before: expect.anything(), after: 9, outcome: 'ok' },
+      { surface: 'dispatcher', actorId: 'disp', targetId: 'orch', scope: 'agent', key: 'orchestration.control', before: expect.anything(), after: 'ask-before-start', outcome: 'ok' },
+    ]));
+    expect(auditRows).toHaveLength(2);
+  });
+
+  it('defaults to the desktop UI, and records nothing when nothing changed', async () => {
+    await setOrchestrationPolicy(PROJECT, 'orch', { maxHelpers: 7 });
+    expect(auditRows.at(-1)).toMatchObject({ surface: 'ui', key: 'orchestration.maxHelpers', after: 7 });
+    auditRows.length = 0;
+    await setOrchestrationPolicy(PROJECT, 'orch', { maxHelpers: 7 });
+    expect(auditRows).toEqual([]);
   });
 });
 

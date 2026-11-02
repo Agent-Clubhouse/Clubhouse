@@ -4,7 +4,7 @@ import type { AgentIdleSleep } from './idle-sleep';
 import type { ContextWindowApplies, ContextWindowChoice, ContextWindowKind } from './context-window';
 import type { OrchestrationPolicy, OrchestrationPolicyPatch } from './orchestration-policy';
 export const MOBILE_PROTOCOL_VERSION = 1;
-export const MOBILE_COMMAND_TYPES = ['chat.send', 'chat.interrupt', 'chat.permission', 'chat.question', 'chat.queue.remove', 'agent.start', 'agent.stop', 'agent.spawn', 'agent.create', 'agent.update', 'project.setPinned', 'project.setInactive', 'helper.approve', 'helper.decline', 'chat.setModel', 'chat.setLevel', 'quick.dismiss', 'quick.clear', 'dispatcher.setEnabled'] as const;
+export const MOBILE_COMMAND_TYPES = ['chat.send', 'chat.interrupt', 'chat.permission', 'chat.question', 'chat.queue.remove', 'agent.start', 'agent.stop', 'agent.spawn', 'agent.create', 'agent.update', 'project.setPinned', 'project.setInactive', 'helper.approve', 'helper.decline', 'chat.setModel', 'chat.setLevel', 'quick.dismiss', 'quick.clear', 'dispatcher.setEnabled', 'helperRouting.update'] as const;
 interface CommandBase { version: 1; commandId: string; epoch: string }
 interface ChatTarget { agentId: string; sessionId: string }
 export type MobileCommand = CommandBase & (
@@ -32,6 +32,8 @@ export type MobileCommand = CommandBase & (
   | { type: 'quick.clear'; projectId: string }
   // Settings > Dispatcher's switch (#2533). Never the experimental flag.
   | { type: 'dispatcher.setEnabled'; enabled: boolean }
+  // App-wide helper presets (#2671). `revision` is what the change was made from; 409 helper_routing_stale changes nothing.
+  | ({ type: 'helperRouting.update'; scope: string } & import('./helper-routing').HelperRoutingUpdate)
 );
 /** A durable agent, as the New agent page makes one. */
 export interface MobileAgentCreate {
@@ -137,6 +139,8 @@ export interface MobileHelperRequest {
   /** The desktop's Needs you line. */
   summary: string;
   /** For a start: what the helper is asked to do and how. */
+  /** For a start that named a CLI, model, effort or difficulty (#2671). What it resolves to is decided at approval. */
+  requestedRouting?: { provider: string | null; model: string | null; effort: string | null; difficulty: string | null };
   start?: { task: string; persona: string | null; model: string | null; access: string | null; branchFrom: string | null };
   /**
    * For a dispose: what disposing would lose. `canDispose` is false when a

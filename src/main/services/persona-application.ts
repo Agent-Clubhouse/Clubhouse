@@ -19,7 +19,11 @@ export async function applyPersonaToAgent(
   projectPath: string,
   agentId: string,
   personaId: string,
-  options: { appendToExisting?: boolean } = {},
+  options: {
+    appendToExisting?: boolean;
+    /** Settings the persona must not change, because a start asked for them by name (#2671). */
+    keep?: ReadonlyArray<'orchestrator' | 'model'>;
+  } = {},
 ): Promise<void> {
   // Refuse before anything is read or written (#2551).
   assertPersonaAllowed(projectPath, personaId);
@@ -36,6 +40,7 @@ export async function applyPersonaToAgent(
     persona: personaId,
     ...(copied as DurableConfigUpdates),
   };
+  for (const key of options.keep ?? []) delete updates[key];
   await updateDurableConfig(projectPath, agentId, updates);
 
   const updated = await getDurableConfig(projectPath, agentId);

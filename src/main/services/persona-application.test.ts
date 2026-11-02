@@ -96,6 +96,20 @@ describe('applyPersonaToAgent', () => {
     expect(instructions.get(worktreePath)).toBe('Project defaults\n\n# Project reviewer for bot\n');
   });
 
+  it('leaves alone what a start asked for by name, and still applies the rest (#2671)', async () => {
+    await writePersona(projectPersonas(), 'pinned', '---\nmodel: sonnet\norchestrator: codex-cli\nfreeAgentMode: true\n---\n\n# Pinned\n');
+    store.set('agent-1', { ...store.get('agent-1'), model: 'opus', orchestrator: 'claude-code' });
+    await applyPersonaToAgent(projectPath, 'agent-1', 'pinned', { keep: ['orchestrator', 'model'] });
+    expect(store.get('agent-1')).toMatchObject({ persona: 'pinned', model: 'opus', orchestrator: 'claude-code', freeAgentMode: true });
+  });
+
+  it('without keep, a persona still sets them: nothing changes for a start that named nothing', async () => {
+    await writePersona(projectPersonas(), 'pinned', '---\nmodel: sonnet\norchestrator: codex-cli\n---\n\n# Pinned\n');
+    store.set('agent-1', { ...store.get('agent-1'), model: 'opus', orchestrator: 'claude-code' });
+    await applyPersonaToAgent(projectPath, 'agent-1', 'pinned');
+    expect(store.get('agent-1')).toMatchObject({ model: 'sonnet', orchestrator: 'codex-cli' });
+  });
+
   it('falls back to the user persona when the project has none', async () => {
     await writePersona(userPersonas(), 'reviewer', '---\nmodel: haiku\n---\n\n# User reviewer\n');
 

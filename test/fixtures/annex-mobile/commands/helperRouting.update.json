@@ -1,0 +1,1647 @@
+{
+  "cases": [
+    {
+      "name": "accepted set",
+      "request": {
+        "cells": [
+          {
+            "difficulty": "easy",
+            "effort": "low",
+            "model": "gpt-6.1-terra",
+            "provider": "codex-cli"
+          }
+        ],
+        "commandId": "cmd_139",
+        "epoch": "00000000-0000-4000-8000-000000000001",
+        "revision": "r0.3",
+        "scope": "app",
+        "type": "helperRouting.update",
+        "version": 1
+      },
+      "response": {
+        "body": {
+          "commandId": "cmd_139",
+          "epoch": "00000000-0000-4000-8000-000000000001",
+          "result": {
+            "labels": {
+              "cell": {
+                "stale": "No longer offered",
+                "unverified": "Couldn’t be checked",
+                "valid": "Offered"
+              },
+              "fallback": {
+                "builtin_preset": "The saved choice is no longer offered, so the default was used",
+                "candidate_skipped": "Another provider was skipped",
+                "model_unverified": "The model list may be out of date, so this couldn’t be checked",
+                "none": "None",
+                "retried_after_spawn_failure": "Started on another provider after the first failed to start"
+              },
+              "generic": {
+                "unknownCode": "Clubhouse gave a reason this version can’t show"
+              },
+              "quota": {
+                "exhausted": "Limit reached",
+                "known": "Limit available",
+                "low": "Limit getting low",
+                "near_limit": "Close to the limit",
+                "unknown": "Unknown"
+              },
+              "reason": {
+                "better_quota_tier": "This provider has more of its limit left",
+                "default_order": "No reason to switch",
+                "explicit_request": "You or the orchestrator chose this",
+                "lower_load": "Fewer helpers running on this provider",
+                "only_candidate": "The only provider available",
+                "persona_pinned": "Set by the persona",
+                "preset_on_cli": "From the helper settings for this difficulty",
+                "sticky": "Stayed on the provider chosen last"
+              },
+              "skipped": {
+                "auto_not_supported": "Auto doesn’t support this provider yet",
+                "cli_disabled": "Turned off in Settings",
+                "cli_unavailable": "Not available on this computer",
+                "cooling_down": "It failed to start recently",
+                "no_valid_mapping": "No choice for this difficulty is offered now",
+                "quota_exhausted": "The provider reports its limit reached",
+                "quota_near_limit": "Close to its limit"
+              },
+              "unknown": {
+                "not_applicable": "This login has no plan limit",
+                "not_read": "Not checked yet",
+                "not_supported": "This provider doesn’t report it",
+                "read_failed": "Couldn’t check",
+                "stale": "Last checked too long ago"
+              }
+            },
+            "providers": {
+              "claude-code": {
+                "autoEligible": true,
+                "cells": {
+                  "easy": {
+                    "builtin": {
+                      "effort": "low",
+                      "model": "haiku"
+                    },
+                    "custom": null,
+                    "editable": true,
+                    "effective": {
+                      "effort": "low",
+                      "model": "haiku"
+                    },
+                    "source": "builtin",
+                    "state": "valid"
+                  },
+                  "hard": {
+                    "builtin": {
+                      "effort": "high",
+                      "model": "opus"
+                    },
+                    "custom": null,
+                    "editable": true,
+                    "effective": {
+                      "effort": "high",
+                      "model": "opus"
+                    },
+                    "source": "builtin",
+                    "state": "valid"
+                  },
+                  "medium": {
+                    "builtin": {
+                      "effort": "medium",
+                      "model": "sonnet"
+                    },
+                    "custom": null,
+                    "editable": true,
+                    "effective": {
+                      "effort": "medium",
+                      "model": "sonnet"
+                    },
+                    "source": "builtin",
+                    "state": "valid"
+                  }
+                },
+                "choices": {
+                  "asOf": "2027-01-15T08:00:00.000Z",
+                  "models": [
+                    {
+                      "efforts": [
+                        "low",
+                        "medium",
+                        "high"
+                      ],
+                      "id": "opus",
+                      "label": "Opus"
+                    },
+                    {
+                      "efforts": [
+                        "low",
+                        "medium",
+                        "high"
+                      ],
+                      "id": "sonnet",
+                      "label": "Sonnet"
+                    },
+                    {
+                      "efforts": [
+                        "low",
+                        "medium",
+                        "high"
+                      ],
+                      "id": "haiku",
+                      "label": "Haiku"
+                    }
+                  ],
+                  "source": "live"
+                }
+              },
+              "codex-cli": {
+                "autoEligible": true,
+                "cells": {
+                  "easy": {
+                    "builtin": {
+                      "effort": "low",
+                      "model": "gpt-6-luna"
+                    },
+                    "custom": {
+                      "effort": "low",
+                      "model": "gpt-6.1-terra"
+                    },
+                    "editable": true,
+                    "effective": {
+                      "effort": "low",
+                      "model": "gpt-6.1-terra"
+                    },
+                    "source": "custom",
+                    "state": "valid"
+                  },
+                  "hard": {
+                    "builtin": {
+                      "effort": "high",
+                      "model": "gpt-6.1-sol"
+                    },
+                    "custom": null,
+                    "editable": true,
+                    "effective": {
+                      "effort": "high",
+                      "model": "gpt-6.1-sol"
+                    },
+                    "source": "builtin",
+                    "state": "valid"
+                  },
+                  "medium": {
+                    "builtin": {
+                      "effort": "medium",
+                      "model": "gpt-6.1-terra"
+                    },
+                    "custom": null,
+                    "editable": true,
+                    "effective": {
+                      "effort": "medium",
+                      "model": "gpt-6.1-terra"
+                    },
+                    "source": "builtin",
+                    "state": "valid"
+                  }
+                },
+                "choices": {
+                  "asOf": "2027-01-15T08:00:00.000Z",
+                  "models": [
+                    {
+                      "efforts": [
+                        "low",
+                        "medium",
+                        "high"
+                      ],
+                      "id": "gpt-6.1-sol",
+                      "label": "Sol"
+                    },
+                    {
+                      "efforts": [
+                        "low",
+                        "medium",
+                        "high"
+                      ],
+                      "id": "gpt-6.1-terra",
+                      "label": "Terra"
+                    },
+                    {
+                      "efforts": [
+                        "low",
+                        "medium",
+                        "high"
+                      ],
+                      "id": "gpt-6-luna",
+                      "label": "Luna"
+                    }
+                  ],
+                  "source": "live"
+                }
+              },
+              "copilot-cli": {
+                "autoEligible": false,
+                "cells": null,
+                "reason": "auto_not_supported"
+              }
+            },
+            "revision": "r1.3"
+          },
+          "status": "completed",
+          "version": 1
+        },
+        "status": 200
+      }
+    },
+    {
+      "name": "helper_routing_stale",
+      "request": {
+        "cells": [
+          {
+            "difficulty": "easy",
+            "effort": "low",
+            "model": "gpt-6-luna",
+            "provider": "codex-cli"
+          }
+        ],
+        "commandId": "cmd_140",
+        "epoch": "00000000-0000-4000-8000-000000000001",
+        "revision": "r0.3",
+        "scope": "app",
+        "type": "helperRouting.update",
+        "version": 1
+      },
+      "response": {
+        "body": {
+          "commandId": "cmd_140",
+          "epoch": "00000000-0000-4000-8000-000000000001",
+          "error": {
+            "code": "helper_routing_stale",
+            "message": "These presets changed since this page loaded. Check the new values and make your change again."
+          },
+          "revision": "r1.3",
+          "settings": {
+            "labels": {
+              "cell": {
+                "stale": "No longer offered",
+                "unverified": "Couldn’t be checked",
+                "valid": "Offered"
+              },
+              "fallback": {
+                "builtin_preset": "The saved choice is no longer offered, so the default was used",
+                "candidate_skipped": "Another provider was skipped",
+                "model_unverified": "The model list may be out of date, so this couldn’t be checked",
+                "none": "None",
+                "retried_after_spawn_failure": "Started on another provider after the first failed to start"
+              },
+              "generic": {
+                "unknownCode": "Clubhouse gave a reason this version can’t show"
+              },
+              "quota": {
+                "exhausted": "Limit reached",
+                "known": "Limit available",
+                "low": "Limit getting low",
+                "near_limit": "Close to the limit",
+                "unknown": "Unknown"
+              },
+              "reason": {
+                "better_quota_tier": "This provider has more of its limit left",
+                "default_order": "No reason to switch",
+                "explicit_request": "You or the orchestrator chose this",
+                "lower_load": "Fewer helpers running on this provider",
+                "only_candidate": "The only provider available",
+                "persona_pinned": "Set by the persona",
+                "preset_on_cli": "From the helper settings for this difficulty",
+                "sticky": "Stayed on the provider chosen last"
+              },
+              "skipped": {
+                "auto_not_supported": "Auto doesn’t support this provider yet",
+                "cli_disabled": "Turned off in Settings",
+                "cli_unavailable": "Not available on this computer",
+                "cooling_down": "It failed to start recently",
+                "no_valid_mapping": "No choice for this difficulty is offered now",
+                "quota_exhausted": "The provider reports its limit reached",
+                "quota_near_limit": "Close to its limit"
+              },
+              "unknown": {
+                "not_applicable": "This login has no plan limit",
+                "not_read": "Not checked yet",
+                "not_supported": "This provider doesn’t report it",
+                "read_failed": "Couldn’t check",
+                "stale": "Last checked too long ago"
+              }
+            },
+            "providers": {
+              "claude-code": {
+                "autoEligible": true,
+                "cells": {
+                  "easy": {
+                    "builtin": {
+                      "effort": "low",
+                      "model": "haiku"
+                    },
+                    "custom": null,
+                    "editable": true,
+                    "effective": {
+                      "effort": "low",
+                      "model": "haiku"
+                    },
+                    "source": "builtin",
+                    "state": "valid"
+                  },
+                  "hard": {
+                    "builtin": {
+                      "effort": "high",
+                      "model": "opus"
+                    },
+                    "custom": null,
+                    "editable": true,
+                    "effective": {
+                      "effort": "high",
+                      "model": "opus"
+                    },
+                    "source": "builtin",
+                    "state": "valid"
+                  },
+                  "medium": {
+                    "builtin": {
+                      "effort": "medium",
+                      "model": "sonnet"
+                    },
+                    "custom": null,
+                    "editable": true,
+                    "effective": {
+                      "effort": "medium",
+                      "model": "sonnet"
+                    },
+                    "source": "builtin",
+                    "state": "valid"
+                  }
+                },
+                "choices": {
+                  "asOf": "2027-01-15T08:00:00.000Z",
+                  "models": [
+                    {
+                      "efforts": [
+                        "low",
+                        "medium",
+                        "high"
+                      ],
+                      "id": "opus",
+                      "label": "Opus"
+                    },
+                    {
+                      "efforts": [
+                        "low",
+                        "medium",
+                        "high"
+                      ],
+                      "id": "sonnet",
+                      "label": "Sonnet"
+                    },
+                    {
+                      "efforts": [
+                        "low",
+                        "medium",
+                        "high"
+                      ],
+                      "id": "haiku",
+                      "label": "Haiku"
+                    }
+                  ],
+                  "source": "live"
+                }
+              },
+              "codex-cli": {
+                "autoEligible": true,
+                "cells": {
+                  "easy": {
+                    "builtin": {
+                      "effort": "low",
+                      "model": "gpt-6-luna"
+                    },
+                    "custom": {
+                      "effort": "low",
+                      "model": "gpt-6.1-terra"
+                    },
+                    "editable": true,
+                    "effective": {
+                      "effort": "low",
+                      "model": "gpt-6.1-terra"
+                    },
+                    "source": "custom",
+                    "state": "valid"
+                  },
+                  "hard": {
+                    "builtin": {
+                      "effort": "high",
+                      "model": "gpt-6.1-sol"
+                    },
+                    "custom": null,
+                    "editable": true,
+                    "effective": {
+                      "effort": "high",
+                      "model": "gpt-6.1-sol"
+                    },
+                    "source": "builtin",
+                    "state": "valid"
+                  },
+                  "medium": {
+                    "builtin": {
+                      "effort": "medium",
+                      "model": "gpt-6.1-terra"
+                    },
+                    "custom": null,
+                    "editable": true,
+                    "effective": {
+                      "effort": "medium",
+                      "model": "gpt-6.1-terra"
+                    },
+                    "source": "builtin",
+                    "state": "valid"
+                  }
+                },
+                "choices": {
+                  "asOf": "2027-01-15T08:00:00.000Z",
+                  "models": [
+                    {
+                      "efforts": [
+                        "low",
+                        "medium",
+                        "high"
+                      ],
+                      "id": "gpt-6.1-sol",
+                      "label": "Sol"
+                    },
+                    {
+                      "efforts": [
+                        "low",
+                        "medium",
+                        "high"
+                      ],
+                      "id": "gpt-6.1-terra",
+                      "label": "Terra"
+                    },
+                    {
+                      "efforts": [
+                        "low",
+                        "medium",
+                        "high"
+                      ],
+                      "id": "gpt-6-luna",
+                      "label": "Luna"
+                    }
+                  ],
+                  "source": "live"
+                }
+              },
+              "copilot-cli": {
+                "autoEligible": false,
+                "cells": null,
+                "reason": "auto_not_supported"
+              }
+            },
+            "revision": "r1.3"
+          },
+          "status": "rejected",
+          "version": 1
+        },
+        "status": 409
+      }
+    },
+    {
+      "name": "model_unavailable",
+      "request": {
+        "cells": [
+          {
+            "difficulty": "easy",
+            "effort": "low",
+            "model": "gone",
+            "provider": "codex-cli"
+          }
+        ],
+        "commandId": "cmd_141",
+        "epoch": "00000000-0000-4000-8000-000000000001",
+        "revision": "r1.3",
+        "scope": "app",
+        "type": "helperRouting.update",
+        "version": 1
+      },
+      "response": {
+        "body": {
+          "commandId": "cmd_141",
+          "epoch": "00000000-0000-4000-8000-000000000001",
+          "error": {
+            "code": "model_unavailable",
+            "message": "Model \"gone\" is not one codex-cli accepts. Valid ids: gpt-6.1-sol, gpt-6.1-terra, gpt-6-luna. Call list_models for details."
+          },
+          "status": "rejected",
+          "version": 1
+        },
+        "status": 409
+      }
+    },
+    {
+      "name": "effort_unavailable",
+      "request": {
+        "cells": [
+          {
+            "difficulty": "easy",
+            "effort": "ultra",
+            "model": "gpt-6-luna",
+            "provider": "codex-cli"
+          }
+        ],
+        "commandId": "cmd_142",
+        "epoch": "00000000-0000-4000-8000-000000000001",
+        "revision": "r1.3",
+        "scope": "app",
+        "type": "helperRouting.update",
+        "version": 1
+      },
+      "response": {
+        "body": {
+          "commandId": "cmd_142",
+          "epoch": "00000000-0000-4000-8000-000000000001",
+          "error": {
+            "code": "effort_unavailable",
+            "message": "Model \"gpt-6-luna\" doesn't take effort \"ultra\". Its levels: low, medium, high. Call list_models for details."
+          },
+          "status": "rejected",
+          "version": 1
+        },
+        "status": 409
+      }
+    },
+    {
+      "name": "invalid_helper_routing (Copilot)",
+      "request": {
+        "cells": [
+          {
+            "difficulty": "easy",
+            "effort": null,
+            "model": "x",
+            "provider": "copilot-cli"
+          }
+        ],
+        "commandId": "cmd_143",
+        "epoch": "00000000-0000-4000-8000-000000000001",
+        "revision": "r1.3",
+        "scope": "app",
+        "type": "helperRouting.update",
+        "version": 1
+      },
+      "response": {
+        "body": {
+          "commandId": "cmd_143",
+          "epoch": "00000000-0000-4000-8000-000000000001",
+          "error": {
+            "code": "invalid_helper_routing",
+            "message": "copilot-cli has no presets."
+          },
+          "status": "rejected",
+          "version": 1
+        },
+        "status": 400
+      }
+    },
+    {
+      "name": "invalid_helper_routing (project scope)",
+      "request": {
+        "commandId": "cmd_144",
+        "epoch": "00000000-0000-4000-8000-000000000001",
+        "reset": {},
+        "revision": "r1.3",
+        "scope": "project",
+        "type": "helperRouting.update",
+        "version": 1
+      },
+      "response": {
+        "body": {
+          "commandId": "cmd_144",
+          "epoch": "00000000-0000-4000-8000-000000000001",
+          "error": {
+            "code": "invalid_helper_routing",
+            "message": "Presets can only be changed app-wide."
+          },
+          "status": "rejected",
+          "version": 1
+        },
+        "status": 400
+      }
+    },
+    {
+      "name": "invalid_command (nothing to do)",
+      "request": {
+        "commandId": "cmd_145",
+        "epoch": "00000000-0000-4000-8000-000000000001",
+        "revision": "r1.3",
+        "scope": "app",
+        "type": "helperRouting.update",
+        "version": 1
+      },
+      "response": {
+        "body": {
+          "epoch": "00000000-0000-4000-8000-000000000001",
+          "error": {
+            "code": "invalid_command",
+            "message": "invalid_command"
+          },
+          "status": "rejected",
+          "version": 1
+        },
+        "status": 400
+      }
+    },
+    {
+      "name": "accepted reset one cell",
+      "request": {
+        "commandId": "cmd_146",
+        "epoch": "00000000-0000-4000-8000-000000000001",
+        "reset": {
+          "difficulty": "easy",
+          "provider": "codex-cli"
+        },
+        "revision": "r1.3",
+        "scope": "app",
+        "type": "helperRouting.update",
+        "version": 1
+      },
+      "response": {
+        "body": {
+          "commandId": "cmd_146",
+          "epoch": "00000000-0000-4000-8000-000000000001",
+          "result": {
+            "labels": {
+              "cell": {
+                "stale": "No longer offered",
+                "unverified": "Couldn’t be checked",
+                "valid": "Offered"
+              },
+              "fallback": {
+                "builtin_preset": "The saved choice is no longer offered, so the default was used",
+                "candidate_skipped": "Another provider was skipped",
+                "model_unverified": "The model list may be out of date, so this couldn’t be checked",
+                "none": "None",
+                "retried_after_spawn_failure": "Started on another provider after the first failed to start"
+              },
+              "generic": {
+                "unknownCode": "Clubhouse gave a reason this version can’t show"
+              },
+              "quota": {
+                "exhausted": "Limit reached",
+                "known": "Limit available",
+                "low": "Limit getting low",
+                "near_limit": "Close to the limit",
+                "unknown": "Unknown"
+              },
+              "reason": {
+                "better_quota_tier": "This provider has more of its limit left",
+                "default_order": "No reason to switch",
+                "explicit_request": "You or the orchestrator chose this",
+                "lower_load": "Fewer helpers running on this provider",
+                "only_candidate": "The only provider available",
+                "persona_pinned": "Set by the persona",
+                "preset_on_cli": "From the helper settings for this difficulty",
+                "sticky": "Stayed on the provider chosen last"
+              },
+              "skipped": {
+                "auto_not_supported": "Auto doesn’t support this provider yet",
+                "cli_disabled": "Turned off in Settings",
+                "cli_unavailable": "Not available on this computer",
+                "cooling_down": "It failed to start recently",
+                "no_valid_mapping": "No choice for this difficulty is offered now",
+                "quota_exhausted": "The provider reports its limit reached",
+                "quota_near_limit": "Close to its limit"
+              },
+              "unknown": {
+                "not_applicable": "This login has no plan limit",
+                "not_read": "Not checked yet",
+                "not_supported": "This provider doesn’t report it",
+                "read_failed": "Couldn’t check",
+                "stale": "Last checked too long ago"
+              }
+            },
+            "providers": {
+              "claude-code": {
+                "autoEligible": true,
+                "cells": {
+                  "easy": {
+                    "builtin": {
+                      "effort": "low",
+                      "model": "haiku"
+                    },
+                    "custom": null,
+                    "editable": true,
+                    "effective": {
+                      "effort": "low",
+                      "model": "haiku"
+                    },
+                    "source": "builtin",
+                    "state": "valid"
+                  },
+                  "hard": {
+                    "builtin": {
+                      "effort": "high",
+                      "model": "opus"
+                    },
+                    "custom": null,
+                    "editable": true,
+                    "effective": {
+                      "effort": "high",
+                      "model": "opus"
+                    },
+                    "source": "builtin",
+                    "state": "valid"
+                  },
+                  "medium": {
+                    "builtin": {
+                      "effort": "medium",
+                      "model": "sonnet"
+                    },
+                    "custom": null,
+                    "editable": true,
+                    "effective": {
+                      "effort": "medium",
+                      "model": "sonnet"
+                    },
+                    "source": "builtin",
+                    "state": "valid"
+                  }
+                },
+                "choices": {
+                  "asOf": "2027-01-15T08:00:00.000Z",
+                  "models": [
+                    {
+                      "efforts": [
+                        "low",
+                        "medium",
+                        "high"
+                      ],
+                      "id": "opus",
+                      "label": "Opus"
+                    },
+                    {
+                      "efforts": [
+                        "low",
+                        "medium",
+                        "high"
+                      ],
+                      "id": "sonnet",
+                      "label": "Sonnet"
+                    },
+                    {
+                      "efforts": [
+                        "low",
+                        "medium",
+                        "high"
+                      ],
+                      "id": "haiku",
+                      "label": "Haiku"
+                    }
+                  ],
+                  "source": "live"
+                }
+              },
+              "codex-cli": {
+                "autoEligible": true,
+                "cells": {
+                  "easy": {
+                    "builtin": {
+                      "effort": "low",
+                      "model": "gpt-6-luna"
+                    },
+                    "custom": null,
+                    "editable": true,
+                    "effective": {
+                      "effort": "low",
+                      "model": "gpt-6-luna"
+                    },
+                    "source": "builtin",
+                    "state": "valid"
+                  },
+                  "hard": {
+                    "builtin": {
+                      "effort": "high",
+                      "model": "gpt-6.1-sol"
+                    },
+                    "custom": null,
+                    "editable": true,
+                    "effective": {
+                      "effort": "high",
+                      "model": "gpt-6.1-sol"
+                    },
+                    "source": "builtin",
+                    "state": "valid"
+                  },
+                  "medium": {
+                    "builtin": {
+                      "effort": "medium",
+                      "model": "gpt-6.1-terra"
+                    },
+                    "custom": null,
+                    "editable": true,
+                    "effective": {
+                      "effort": "medium",
+                      "model": "gpt-6.1-terra"
+                    },
+                    "source": "builtin",
+                    "state": "valid"
+                  }
+                },
+                "choices": {
+                  "asOf": "2027-01-15T08:00:00.000Z",
+                  "models": [
+                    {
+                      "efforts": [
+                        "low",
+                        "medium",
+                        "high"
+                      ],
+                      "id": "gpt-6.1-sol",
+                      "label": "Sol"
+                    },
+                    {
+                      "efforts": [
+                        "low",
+                        "medium",
+                        "high"
+                      ],
+                      "id": "gpt-6.1-terra",
+                      "label": "Terra"
+                    },
+                    {
+                      "efforts": [
+                        "low",
+                        "medium",
+                        "high"
+                      ],
+                      "id": "gpt-6-luna",
+                      "label": "Luna"
+                    }
+                  ],
+                  "source": "live"
+                }
+              },
+              "copilot-cli": {
+                "autoEligible": false,
+                "cells": null,
+                "reason": "auto_not_supported"
+              }
+            },
+            "revision": "r2.3"
+          },
+          "status": "completed",
+          "version": 1
+        },
+        "status": 200
+      }
+    },
+    {
+      "name": "accepted set several",
+      "request": {
+        "cells": [
+          {
+            "difficulty": "hard",
+            "effort": "high",
+            "model": "sonnet",
+            "provider": "claude-code"
+          },
+          {
+            "difficulty": "medium",
+            "effort": null,
+            "model": "gpt-6-luna",
+            "provider": "codex-cli"
+          }
+        ],
+        "commandId": "cmd_147",
+        "epoch": "00000000-0000-4000-8000-000000000001",
+        "revision": "r2.3",
+        "scope": "app",
+        "type": "helperRouting.update",
+        "version": 1
+      },
+      "response": {
+        "body": {
+          "commandId": "cmd_147",
+          "epoch": "00000000-0000-4000-8000-000000000001",
+          "result": {
+            "labels": {
+              "cell": {
+                "stale": "No longer offered",
+                "unverified": "Couldn’t be checked",
+                "valid": "Offered"
+              },
+              "fallback": {
+                "builtin_preset": "The saved choice is no longer offered, so the default was used",
+                "candidate_skipped": "Another provider was skipped",
+                "model_unverified": "The model list may be out of date, so this couldn’t be checked",
+                "none": "None",
+                "retried_after_spawn_failure": "Started on another provider after the first failed to start"
+              },
+              "generic": {
+                "unknownCode": "Clubhouse gave a reason this version can’t show"
+              },
+              "quota": {
+                "exhausted": "Limit reached",
+                "known": "Limit available",
+                "low": "Limit getting low",
+                "near_limit": "Close to the limit",
+                "unknown": "Unknown"
+              },
+              "reason": {
+                "better_quota_tier": "This provider has more of its limit left",
+                "default_order": "No reason to switch",
+                "explicit_request": "You or the orchestrator chose this",
+                "lower_load": "Fewer helpers running on this provider",
+                "only_candidate": "The only provider available",
+                "persona_pinned": "Set by the persona",
+                "preset_on_cli": "From the helper settings for this difficulty",
+                "sticky": "Stayed on the provider chosen last"
+              },
+              "skipped": {
+                "auto_not_supported": "Auto doesn’t support this provider yet",
+                "cli_disabled": "Turned off in Settings",
+                "cli_unavailable": "Not available on this computer",
+                "cooling_down": "It failed to start recently",
+                "no_valid_mapping": "No choice for this difficulty is offered now",
+                "quota_exhausted": "The provider reports its limit reached",
+                "quota_near_limit": "Close to its limit"
+              },
+              "unknown": {
+                "not_applicable": "This login has no plan limit",
+                "not_read": "Not checked yet",
+                "not_supported": "This provider doesn’t report it",
+                "read_failed": "Couldn’t check",
+                "stale": "Last checked too long ago"
+              }
+            },
+            "providers": {
+              "claude-code": {
+                "autoEligible": true,
+                "cells": {
+                  "easy": {
+                    "builtin": {
+                      "effort": "low",
+                      "model": "haiku"
+                    },
+                    "custom": null,
+                    "editable": true,
+                    "effective": {
+                      "effort": "low",
+                      "model": "haiku"
+                    },
+                    "source": "builtin",
+                    "state": "valid"
+                  },
+                  "hard": {
+                    "builtin": {
+                      "effort": "high",
+                      "model": "opus"
+                    },
+                    "custom": {
+                      "effort": "high",
+                      "model": "sonnet"
+                    },
+                    "editable": true,
+                    "effective": {
+                      "effort": "high",
+                      "model": "sonnet"
+                    },
+                    "source": "custom",
+                    "state": "valid"
+                  },
+                  "medium": {
+                    "builtin": {
+                      "effort": "medium",
+                      "model": "sonnet"
+                    },
+                    "custom": null,
+                    "editable": true,
+                    "effective": {
+                      "effort": "medium",
+                      "model": "sonnet"
+                    },
+                    "source": "builtin",
+                    "state": "valid"
+                  }
+                },
+                "choices": {
+                  "asOf": "2027-01-15T08:00:00.000Z",
+                  "models": [
+                    {
+                      "efforts": [
+                        "low",
+                        "medium",
+                        "high"
+                      ],
+                      "id": "opus",
+                      "label": "Opus"
+                    },
+                    {
+                      "efforts": [
+                        "low",
+                        "medium",
+                        "high"
+                      ],
+                      "id": "sonnet",
+                      "label": "Sonnet"
+                    },
+                    {
+                      "efforts": [
+                        "low",
+                        "medium",
+                        "high"
+                      ],
+                      "id": "haiku",
+                      "label": "Haiku"
+                    }
+                  ],
+                  "source": "live"
+                }
+              },
+              "codex-cli": {
+                "autoEligible": true,
+                "cells": {
+                  "easy": {
+                    "builtin": {
+                      "effort": "low",
+                      "model": "gpt-6-luna"
+                    },
+                    "custom": null,
+                    "editable": true,
+                    "effective": {
+                      "effort": "low",
+                      "model": "gpt-6-luna"
+                    },
+                    "source": "builtin",
+                    "state": "valid"
+                  },
+                  "hard": {
+                    "builtin": {
+                      "effort": "high",
+                      "model": "gpt-6.1-sol"
+                    },
+                    "custom": null,
+                    "editable": true,
+                    "effective": {
+                      "effort": "high",
+                      "model": "gpt-6.1-sol"
+                    },
+                    "source": "builtin",
+                    "state": "valid"
+                  },
+                  "medium": {
+                    "builtin": {
+                      "effort": "medium",
+                      "model": "gpt-6.1-terra"
+                    },
+                    "custom": {
+                      "effort": null,
+                      "model": "gpt-6-luna"
+                    },
+                    "editable": true,
+                    "effective": {
+                      "effort": null,
+                      "model": "gpt-6-luna"
+                    },
+                    "source": "custom",
+                    "state": "valid"
+                  }
+                },
+                "choices": {
+                  "asOf": "2027-01-15T08:00:00.000Z",
+                  "models": [
+                    {
+                      "efforts": [
+                        "low",
+                        "medium",
+                        "high"
+                      ],
+                      "id": "gpt-6.1-sol",
+                      "label": "Sol"
+                    },
+                    {
+                      "efforts": [
+                        "low",
+                        "medium",
+                        "high"
+                      ],
+                      "id": "gpt-6.1-terra",
+                      "label": "Terra"
+                    },
+                    {
+                      "efforts": [
+                        "low",
+                        "medium",
+                        "high"
+                      ],
+                      "id": "gpt-6-luna",
+                      "label": "Luna"
+                    }
+                  ],
+                  "source": "live"
+                }
+              },
+              "copilot-cli": {
+                "autoEligible": false,
+                "cells": null,
+                "reason": "auto_not_supported"
+              }
+            },
+            "revision": "r3.3"
+          },
+          "status": "completed",
+          "version": 1
+        },
+        "status": 200
+      }
+    },
+    {
+      "name": "accepted reset one provider",
+      "request": {
+        "commandId": "cmd_148",
+        "epoch": "00000000-0000-4000-8000-000000000001",
+        "reset": {
+          "provider": "claude-code"
+        },
+        "revision": "r3.3",
+        "scope": "app",
+        "type": "helperRouting.update",
+        "version": 1
+      },
+      "response": {
+        "body": {
+          "commandId": "cmd_148",
+          "epoch": "00000000-0000-4000-8000-000000000001",
+          "result": {
+            "labels": {
+              "cell": {
+                "stale": "No longer offered",
+                "unverified": "Couldn’t be checked",
+                "valid": "Offered"
+              },
+              "fallback": {
+                "builtin_preset": "The saved choice is no longer offered, so the default was used",
+                "candidate_skipped": "Another provider was skipped",
+                "model_unverified": "The model list may be out of date, so this couldn’t be checked",
+                "none": "None",
+                "retried_after_spawn_failure": "Started on another provider after the first failed to start"
+              },
+              "generic": {
+                "unknownCode": "Clubhouse gave a reason this version can’t show"
+              },
+              "quota": {
+                "exhausted": "Limit reached",
+                "known": "Limit available",
+                "low": "Limit getting low",
+                "near_limit": "Close to the limit",
+                "unknown": "Unknown"
+              },
+              "reason": {
+                "better_quota_tier": "This provider has more of its limit left",
+                "default_order": "No reason to switch",
+                "explicit_request": "You or the orchestrator chose this",
+                "lower_load": "Fewer helpers running on this provider",
+                "only_candidate": "The only provider available",
+                "persona_pinned": "Set by the persona",
+                "preset_on_cli": "From the helper settings for this difficulty",
+                "sticky": "Stayed on the provider chosen last"
+              },
+              "skipped": {
+                "auto_not_supported": "Auto doesn’t support this provider yet",
+                "cli_disabled": "Turned off in Settings",
+                "cli_unavailable": "Not available on this computer",
+                "cooling_down": "It failed to start recently",
+                "no_valid_mapping": "No choice for this difficulty is offered now",
+                "quota_exhausted": "The provider reports its limit reached",
+                "quota_near_limit": "Close to its limit"
+              },
+              "unknown": {
+                "not_applicable": "This login has no plan limit",
+                "not_read": "Not checked yet",
+                "not_supported": "This provider doesn’t report it",
+                "read_failed": "Couldn’t check",
+                "stale": "Last checked too long ago"
+              }
+            },
+            "providers": {
+              "claude-code": {
+                "autoEligible": true,
+                "cells": {
+                  "easy": {
+                    "builtin": {
+                      "effort": "low",
+                      "model": "haiku"
+                    },
+                    "custom": null,
+                    "editable": true,
+                    "effective": {
+                      "effort": "low",
+                      "model": "haiku"
+                    },
+                    "source": "builtin",
+                    "state": "valid"
+                  },
+                  "hard": {
+                    "builtin": {
+                      "effort": "high",
+                      "model": "opus"
+                    },
+                    "custom": null,
+                    "editable": true,
+                    "effective": {
+                      "effort": "high",
+                      "model": "opus"
+                    },
+                    "source": "builtin",
+                    "state": "valid"
+                  },
+                  "medium": {
+                    "builtin": {
+                      "effort": "medium",
+                      "model": "sonnet"
+                    },
+                    "custom": null,
+                    "editable": true,
+                    "effective": {
+                      "effort": "medium",
+                      "model": "sonnet"
+                    },
+                    "source": "builtin",
+                    "state": "valid"
+                  }
+                },
+                "choices": {
+                  "asOf": "2027-01-15T08:00:00.000Z",
+                  "models": [
+                    {
+                      "efforts": [
+                        "low",
+                        "medium",
+                        "high"
+                      ],
+                      "id": "opus",
+                      "label": "Opus"
+                    },
+                    {
+                      "efforts": [
+                        "low",
+                        "medium",
+                        "high"
+                      ],
+                      "id": "sonnet",
+                      "label": "Sonnet"
+                    },
+                    {
+                      "efforts": [
+                        "low",
+                        "medium",
+                        "high"
+                      ],
+                      "id": "haiku",
+                      "label": "Haiku"
+                    }
+                  ],
+                  "source": "live"
+                }
+              },
+              "codex-cli": {
+                "autoEligible": true,
+                "cells": {
+                  "easy": {
+                    "builtin": {
+                      "effort": "low",
+                      "model": "gpt-6-luna"
+                    },
+                    "custom": null,
+                    "editable": true,
+                    "effective": {
+                      "effort": "low",
+                      "model": "gpt-6-luna"
+                    },
+                    "source": "builtin",
+                    "state": "valid"
+                  },
+                  "hard": {
+                    "builtin": {
+                      "effort": "high",
+                      "model": "gpt-6.1-sol"
+                    },
+                    "custom": null,
+                    "editable": true,
+                    "effective": {
+                      "effort": "high",
+                      "model": "gpt-6.1-sol"
+                    },
+                    "source": "builtin",
+                    "state": "valid"
+                  },
+                  "medium": {
+                    "builtin": {
+                      "effort": "medium",
+                      "model": "gpt-6.1-terra"
+                    },
+                    "custom": {
+                      "effort": null,
+                      "model": "gpt-6-luna"
+                    },
+                    "editable": true,
+                    "effective": {
+                      "effort": null,
+                      "model": "gpt-6-luna"
+                    },
+                    "source": "custom",
+                    "state": "valid"
+                  }
+                },
+                "choices": {
+                  "asOf": "2027-01-15T08:00:00.000Z",
+                  "models": [
+                    {
+                      "efforts": [
+                        "low",
+                        "medium",
+                        "high"
+                      ],
+                      "id": "gpt-6.1-sol",
+                      "label": "Sol"
+                    },
+                    {
+                      "efforts": [
+                        "low",
+                        "medium",
+                        "high"
+                      ],
+                      "id": "gpt-6.1-terra",
+                      "label": "Terra"
+                    },
+                    {
+                      "efforts": [
+                        "low",
+                        "medium",
+                        "high"
+                      ],
+                      "id": "gpt-6-luna",
+                      "label": "Luna"
+                    }
+                  ],
+                  "source": "live"
+                }
+              },
+              "copilot-cli": {
+                "autoEligible": false,
+                "cells": null,
+                "reason": "auto_not_supported"
+              }
+            },
+            "revision": "r4.3"
+          },
+          "status": "completed",
+          "version": 1
+        },
+        "status": 200
+      }
+    },
+    {
+      "name": "accepted reset all",
+      "request": {
+        "commandId": "cmd_149",
+        "epoch": "00000000-0000-4000-8000-000000000001",
+        "reset": {},
+        "revision": "r4.3",
+        "scope": "app",
+        "type": "helperRouting.update",
+        "version": 1
+      },
+      "response": {
+        "body": {
+          "commandId": "cmd_149",
+          "epoch": "00000000-0000-4000-8000-000000000001",
+          "result": {
+            "labels": {
+              "cell": {
+                "stale": "No longer offered",
+                "unverified": "Couldn’t be checked",
+                "valid": "Offered"
+              },
+              "fallback": {
+                "builtin_preset": "The saved choice is no longer offered, so the default was used",
+                "candidate_skipped": "Another provider was skipped",
+                "model_unverified": "The model list may be out of date, so this couldn’t be checked",
+                "none": "None",
+                "retried_after_spawn_failure": "Started on another provider after the first failed to start"
+              },
+              "generic": {
+                "unknownCode": "Clubhouse gave a reason this version can’t show"
+              },
+              "quota": {
+                "exhausted": "Limit reached",
+                "known": "Limit available",
+                "low": "Limit getting low",
+                "near_limit": "Close to the limit",
+                "unknown": "Unknown"
+              },
+              "reason": {
+                "better_quota_tier": "This provider has more of its limit left",
+                "default_order": "No reason to switch",
+                "explicit_request": "You or the orchestrator chose this",
+                "lower_load": "Fewer helpers running on this provider",
+                "only_candidate": "The only provider available",
+                "persona_pinned": "Set by the persona",
+                "preset_on_cli": "From the helper settings for this difficulty",
+                "sticky": "Stayed on the provider chosen last"
+              },
+              "skipped": {
+                "auto_not_supported": "Auto doesn’t support this provider yet",
+                "cli_disabled": "Turned off in Settings",
+                "cli_unavailable": "Not available on this computer",
+                "cooling_down": "It failed to start recently",
+                "no_valid_mapping": "No choice for this difficulty is offered now",
+                "quota_exhausted": "The provider reports its limit reached",
+                "quota_near_limit": "Close to its limit"
+              },
+              "unknown": {
+                "not_applicable": "This login has no plan limit",
+                "not_read": "Not checked yet",
+                "not_supported": "This provider doesn’t report it",
+                "read_failed": "Couldn’t check",
+                "stale": "Last checked too long ago"
+              }
+            },
+            "providers": {
+              "claude-code": {
+                "autoEligible": true,
+                "cells": {
+                  "easy": {
+                    "builtin": {
+                      "effort": "low",
+                      "model": "haiku"
+                    },
+                    "custom": null,
+                    "editable": true,
+                    "effective": {
+                      "effort": "low",
+                      "model": "haiku"
+                    },
+                    "source": "builtin",
+                    "state": "valid"
+                  },
+                  "hard": {
+                    "builtin": {
+                      "effort": "high",
+                      "model": "opus"
+                    },
+                    "custom": null,
+                    "editable": true,
+                    "effective": {
+                      "effort": "high",
+                      "model": "opus"
+                    },
+                    "source": "builtin",
+                    "state": "valid"
+                  },
+                  "medium": {
+                    "builtin": {
+                      "effort": "medium",
+                      "model": "sonnet"
+                    },
+                    "custom": null,
+                    "editable": true,
+                    "effective": {
+                      "effort": "medium",
+                      "model": "sonnet"
+                    },
+                    "source": "builtin",
+                    "state": "valid"
+                  }
+                },
+                "choices": {
+                  "asOf": "2027-01-15T08:00:00.000Z",
+                  "models": [
+                    {
+                      "efforts": [
+                        "low",
+                        "medium",
+                        "high"
+                      ],
+                      "id": "opus",
+                      "label": "Opus"
+                    },
+                    {
+                      "efforts": [
+                        "low",
+                        "medium",
+                        "high"
+                      ],
+                      "id": "sonnet",
+                      "label": "Sonnet"
+                    },
+                    {
+                      "efforts": [
+                        "low",
+                        "medium",
+                        "high"
+                      ],
+                      "id": "haiku",
+                      "label": "Haiku"
+                    }
+                  ],
+                  "source": "live"
+                }
+              },
+              "codex-cli": {
+                "autoEligible": true,
+                "cells": {
+                  "easy": {
+                    "builtin": {
+                      "effort": "low",
+                      "model": "gpt-6-luna"
+                    },
+                    "custom": null,
+                    "editable": true,
+                    "effective": {
+                      "effort": "low",
+                      "model": "gpt-6-luna"
+                    },
+                    "source": "builtin",
+                    "state": "valid"
+                  },
+                  "hard": {
+                    "builtin": {
+                      "effort": "high",
+                      "model": "gpt-6.1-sol"
+                    },
+                    "custom": null,
+                    "editable": true,
+                    "effective": {
+                      "effort": "high",
+                      "model": "gpt-6.1-sol"
+                    },
+                    "source": "builtin",
+                    "state": "valid"
+                  },
+                  "medium": {
+                    "builtin": {
+                      "effort": "medium",
+                      "model": "gpt-6.1-terra"
+                    },
+                    "custom": null,
+                    "editable": true,
+                    "effective": {
+                      "effort": "medium",
+                      "model": "gpt-6.1-terra"
+                    },
+                    "source": "builtin",
+                    "state": "valid"
+                  }
+                },
+                "choices": {
+                  "asOf": "2027-01-15T08:00:00.000Z",
+                  "models": [
+                    {
+                      "efforts": [
+                        "low",
+                        "medium",
+                        "high"
+                      ],
+                      "id": "gpt-6.1-sol",
+                      "label": "Sol"
+                    },
+                    {
+                      "efforts": [
+                        "low",
+                        "medium",
+                        "high"
+                      ],
+                      "id": "gpt-6.1-terra",
+                      "label": "Terra"
+                    },
+                    {
+                      "efforts": [
+                        "low",
+                        "medium",
+                        "high"
+                      ],
+                      "id": "gpt-6-luna",
+                      "label": "Luna"
+                    }
+                  ],
+                  "source": "live"
+                }
+              },
+              "copilot-cli": {
+                "autoEligible": false,
+                "cells": null,
+                "reason": "auto_not_supported"
+              }
+            },
+            "revision": "r5.3"
+          },
+          "status": "completed",
+          "version": 1
+        },
+        "status": 200
+      }
+    }
+  ],
+  "type": "helperRouting.update"
+}

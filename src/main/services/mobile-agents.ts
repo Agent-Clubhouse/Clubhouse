@@ -6,6 +6,7 @@
  * it can already approve every request one by one.
  */
 
+import { mobileHelperRoutingDetail } from './mobile-helper-routing';
 import { CONTEXT_WINDOW_APPLIES, type ContextWindowOptions } from '../../shared/context-window';
 import { contextWindowCheck, contextWindowOptionsFor } from './context-window';
 import type { DurableAgentConfig, DurableConfigUpdates, McpCatalogEntry, StartDurableCreationParams } from '../../shared/types';
@@ -198,7 +199,7 @@ const mcpOff = (): MobileControlError => new MobileControlError('mcp_off', 409, 
 
 /** Write a policy patch through the desktop's own service; a refused change is a command error. */
 async function writeOrchestration(projectPath: string, agentId: string, patch: OrchestrationPolicyPatch): Promise<void> {
-  const result = await orchestrationPolicy.setOrchestrationPolicy(projectPath, agentId, patch);
+  const result = await orchestrationPolicy.setOrchestrationPolicy(projectPath, agentId, patch, { surface: 'mobile' });
   if (result.ok) return;
   if (result.needsHelperChoice) throw new MobileControlError('orchestration_has_helpers', 409, 'rejected', result.message);
   if (result.mcpRequired) throw mcpOff();
@@ -278,7 +279,9 @@ export async function buildAgentSettings(
   const clubhouseProject = !dispatcher && isClubhouseModeEnabled(project.path);
   // The Dispatcher's orchestration settings are locked (#2533), so it has none to show.
   const orchestration = dispatcher ? null : await orchestrationOf(project.path, config);
+  const routing = mobileHelperRoutingDetail(config.routing);
   return {
+    ...(routing && { routing }),
     agentId: config.id,
     projectId: project.id,
     ...(dispatcher && { isDispatcher: true as const }),

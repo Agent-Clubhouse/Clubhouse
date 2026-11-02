@@ -25,6 +25,9 @@ import {
   isDisabledDispatcherId, isDispatcherProjectId, setDispatcherEnabledFromPhone, type MobileDispatcherChange,
 } from './mobile-dispatcher';
 import { onDispatcherChanged } from './dispatcher/dispatcher-service';
+import { helperRoutingRevision, onHelperRoutingChanged } from './helper-routing';
+import { HELPER_ROUTING_CHANGED_EVENT, helperRoutingCapability, mobileHelperRouting, runHelperRoutingUpdate } from './mobile-helper-routing';
+import { minimalRouting } from '../../shared/helper-routing';
 import { resolveOrchestrationPolicies } from './orchestration-policy';
 import { onMcpEnablementChanged } from './mcp-settings';
 import { MOBILE_SLASH_COMMANDS_MAX, latestSlashCommands, remoteChatEvent } from './annex-chat-echo';
@@ -186,6 +189,7 @@ const shellOwners = new Map<string, WebSocket>();
 const MAX_SHELLS_PER_CONNECTION = 8;
 const MAX_SHELL_SESSION_ID_LENGTH = 128;
 
+let unsubHelperRouting: (() => void) | null = null;
 let unsubPtyData: (() => void) | null = null;
 let unsubHookEvent: (() => void) | null = null;
 let unsubChatEvent: (() => void) | null = null;
@@ -238,6 +242,8 @@ function unsubscribeEventBus(): void {
   unsubGroupProjectRegistry?.();
   unsubHelperRequests?.();
   unsubDispatcher?.();
+  unsubHelperRouting?.();
+  unsubHelperRouting = null;
   unsubPtyData = null;
   unsubHookEvent = null;
   unsubChatEvent = null;
@@ -765,6 +771,8 @@ function mapDurableAgent(d: DurableConfigs[number], projectId: string, policies?
     lastActivityAt: lastActivityAt(agentId, d.createdAt),
     /** The agent that started it, so a controller can tell a helper. Absent on a top-level agent. */
     ...(d.parentAgentId && { parentAgentId: d.parentAgentId }),
+    /** What a helper's start decided, in codes (#2671). Details are in its settings. */
+    ...(d.routing && { routing: minimalRouting(d.routing) }),
     /** The Orchestration card's policy; agent.update's `orchestration` changes it. */
     ...(policies?.has(agentId) && { orchestration: mobileOrchestration(policies.get(agentId)!) }),
   };
@@ -1020,6 +1028,8 @@ async function buildSnapshotData(): Promise<BuiltSnapshot> {
     pendingPermissions: permissionQueue.listPending(),
     // Helper starts and disposes waiting on the user (#159); gated by capabilities.helperRequests.
     helperRequests: buildMobileHelperRequests(projects, durablesByProject),
+    // Moves when presets or a cell's state change, so an open or cached page knows to refetch (#2671).
+    helperRoutingRevision: helperRoutingRevision(),
     lastSeq: eventReplay.getLastSeq(),
     plugins,
     projectIcons,
@@ -2651,6 +2661,8 @@ async function handleMobileCapabilitiesRoute(ctx: AnnexRouteContext): Promise<vo
       maxShellsPerConnection: MAX_SHELLS_PER_CONNECTION, maxInputLength: MAX_PTY_INPUT_SIZE },
     // The app-wide Dispatcher (#2533): the snapshot's `dispatcher`, dispatcher:changed and dispatcher.setEnabled.
     dispatcher: dispatcherCapability(),
+    // App-wide helper presets (#2671). It lists only what works now.
+    helperRouting: helperRoutingCapability(),
     ...phoneRoutes(),
   });
 }
@@ -2863,8 +2875,30 @@ async function handleMobileAgentSettingsRoute(ctx: AnnexRouteContext, match: Reg
   }
 }
 
+/** Helper presets, app-wide or under an agent's or project's profile (#2671). No filter returns every label family too. */
+async function handleMobileHelperRoutingRoute(ctx: AnnexRouteContext): Promise<void> {
+  try {
+    const query = new URL(ctx.req.url ?? '', 'http://annex').searchParams;
+    const agentId = query.get('agentId') ?? undefined;
+    const projectId = query.get('projectId') ?? undefined;
+    const agent = agentId ? await findMobileAgent(agentId) : undefined;
+    if (agentId && !agent && !isDisabledDispatcherId(agentId)) { sendJson(ctx.res, 404, { error: 'agent_not_found' }); return; }
+    const project = projectId && !isDispatcherProjectId(projectId) ? await findProjectById(projectId) : undefined;
+    if (projectId && !project) { sendJson(ctx.res, 404, { error: 'project_not_found' }); return; }
+    // The Dispatcher's folder has no CLI profile of its own, and it can't use presets.
+    const profileProject = project ?? (agentId && activeDispatcher(agentId) ? undefined : agent?.project);
+    const settings = await mobileHelperRouting({ projectPath: profileProject?.path, agentId, agent });
+    sendJson(ctx.res, 200, { version: 1, epoch: mobileCommands.epoch, ...settings });
+  } catch (err) {
+    // telemetry-exempt: read errors are bounded in the API response, and logged here.
+    appLog('core:annex', 'warn', 'Helper presets read failed', { meta: { error: err instanceof Error ? err.message : String(err) } });
+    sendJson(ctx.res, 500, { error: 'helper_routing_failed' });
+  }
+}
+
 async function runMobileCommand(command: MobileCommand, assertAuthorized: () => void, principal: string): Promise<unknown> {
   assertAuthorized();
+  if (command.type === 'helperRouting.update') return runHelperRoutingUpdate(command, assertAuthorized);
   if (command.type === 'dispatcher.setEnabled') {
     // onDispatcherChanged broadcasts dispatcher:changed and refreshes the snapshot.
     return setDispatcherEnabledFromPhone(command.enabled, assertAuthorized);
@@ -3121,6 +3155,7 @@ const ANNEX_HTTP_ROUTE_TABLE: AnnexHttpRoute[] = [
   { method: 'POST', pattern: /^\/api\/v1\/mobile\/commands$/, handler: handleMobileCommandRoute },
   { method: 'GET', pattern: /^\/api\/v1\/mobile\/projects\/([^/]+)\/create-options$/, handler: handleMobileCreateOptionsRoute },
   { method: 'GET', pattern: /^\/api\/v1\/mobile\/agents\/([^/]+)\/settings$/, handler: handleMobileAgentSettingsRoute },
+  { method: 'GET', pattern: /^\/api\/v1\/mobile\/helper-routing(\?.*)?$/, handler: handleMobileHelperRoutingRoute },
   { method: 'GET', pattern: /^\/api\/v1\/identity$/, handler: handleIdentityRoute },
   { method: 'GET', pattern: /^\/api\/v1\/status$/, handler: handleStatusRoute },
   { method: 'GET', pattern: /^\/api\/v1\/projects$/, handler: handleProjectsRoute },
@@ -4012,6 +4047,9 @@ export function start(): void {
   // Where Clubhouse MCP is off, the switches that need it read off (#2589).
   const offMcp = onMcpEnablementChanged(() => broadcastSnapshotRefresh());
   unsubHelperRequests = () => { offStarts(); offDisposes(); offMcp(); };
+
+  // Presets or a cell's state changed (#2671): a phone refetches. Never for a quota sample, and no snapshot is built.
+  unsubHelperRouting = onHelperRoutingChanged((revision) => broadcastAndBuffer(HELPER_ROUTING_CHANGED_EVENT, { revision }));
 
   // The Dispatcher turned on or off, or its config changed (#2533): phones add, drop or update it live.
   let lastDispatcherChange = JSON.stringify(dispatcherChange());

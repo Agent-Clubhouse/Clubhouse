@@ -6,6 +6,7 @@
  * project's agent configs change.
  */
 
+import type { HelperRouting } from '../../../../shared/helper-routing';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { Agent, DurableAgentConfig, HelperStartDecisionResult, HelperStartRequest } from '../../../../shared/types';
 import {
@@ -112,8 +113,8 @@ export function useProjectAgentConfigs(projectPath: string | undefined, projectI
  * or its config. `parentProjectPath` is set when the parent is in another
  * project (#2514). Null for a top-level agent and until loaded.
  */
-export function useHelperLink(agent: Agent, projectPath: string | undefined): { parentAgentId: string; parentProjectPath?: string; disposable: boolean } | null {
-  const [link, setLink] = useState<{ id: string; parentAgentId?: string; parentProjectPath?: string; disposable: boolean } | null>(null);
+export function useHelperLink(agent: Agent, projectPath: string | undefined): { parentAgentId: string; parentProjectPath?: string; disposable: boolean; routing?: HelperRouting } | null {
+  const [link, setLink] = useState<{ id: string; parentAgentId?: string; parentProjectPath?: string; disposable: boolean; routing?: HelperRouting } | null>(null);
   const local = agent.kind === 'durable' && !!projectPath;
   useEffect(() => {
     if (!local || !projectPath) { setLink(null); return; }
@@ -122,7 +123,7 @@ export function useHelperLink(agent: Agent, projectPath: string | undefined): { 
       (config: DurableAgentConfig | null | undefined) => {
         if (alive) {
           setLink({
-            id: agent.id, parentAgentId: config?.parentAgentId, parentProjectPath: config?.parentProjectPath || undefined, disposable: !!config?.disposable,
+            id: agent.id, parentAgentId: config?.parentAgentId, parentProjectPath: config?.parentProjectPath || undefined, disposable: !!config?.disposable, routing: config?.routing,
           });
         }
       },
@@ -135,7 +136,7 @@ export function useHelperLink(agent: Agent, projectPath: string | undefined): { 
   const parentAgentId = (loaded ? link.parentAgentId : undefined) ?? (local ? agent.parentAgentId : undefined);
   if (!parentAgentId) return null;
   const parentProjectPath = loaded && link.parentAgentId ? link.parentProjectPath : agent.parentProjectPath;
-  return { parentAgentId, parentProjectPath, disposable: loaded ? link.disposable : false };
+  return { parentAgentId, parentProjectPath, disposable: loaded ? link.disposable : false, ...(loaded && link.routing && { routing: link.routing }) };
 }
 
 // ── Orchestration policy ────────────────────────────────────────────────

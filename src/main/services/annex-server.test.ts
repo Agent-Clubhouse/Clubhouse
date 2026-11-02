@@ -3037,6 +3037,29 @@ describe('annex-server', () => {
       fs.rmSync(dir, { recursive: true, force: true });
     });
 
+    it('a helper\'s routing stays small: codes only, on every row, under the frame limit (#2671)', async () => {
+      const row = (i: number, routing?: unknown) => ({ id: `a${i}`, name: `a${i}`, color: 'indigo', parentAgentId: 'orch', createdAt: '2025-01-01', ...(routing ? { routing } : {}) });
+      const routing = {
+        mode: 'preset', balanced: false, decidedAt: '2026-11-01T00:00:00.000Z', policyVersion: 1, fallback: 'builtin_preset', context: { status: 'not_applied' },
+        requested: { provider: null, model: null, effort: null, difficulty: 'hard' },
+        resolved: { provider: 'codex-cli', model: 'gpt-6.1-sol', effort: 'high', difficulty: 'hard' },
+        source: { provider: 'orchestrator', model: 'builtin_mapping', effort: 'builtin_mapping' },
+        reason: 'preset_on_cli',
+      };
+      const HELPERS = 100;
+      vi.mocked(projectStore.list).mockReturnValue([{ id: 'proj_1', name: 'P', path: '/p' } as any]);
+      vi.mocked(agentConfigModule.listDurable).mockReturnValue(Array.from({ length: HELPERS }, (_, i) => row(i)) as any);
+      const without = await connect();
+      vi.mocked(agentConfigModule.listDurable).mockReturnValue(Array.from({ length: HELPERS }, (_, i) => row(i, routing)) as any);
+      const withRouting = await connect();
+
+      expect(withRouting.payload.agents.proj_1[0].routing).toEqual({ mode: 'preset', difficulty: 'hard', provider: 'codex-cli', model: 'gpt-6.1-sol', effort: 'high', reason: 'preset_on_cli' });
+      expect(typeof withRouting.payload.helperRoutingRevision).toBe('string');
+      expect(withRouting.bytes).toBeLessThan(SNAPSHOT_FRAME_MAX_BYTES);
+      // The full record stays in the helper's settings.
+      expect((withRouting.bytes - without.bytes) / HELPERS).toBeLessThan(150);
+    }, 30_000);
+
     it('keeps a frame under the limit when twelve icons are 3.7 MB each', async () => {
       fakeDecoder();
       serveAgentsWithIcons(Array.from({ length: 12 }, (_, i) => writeIcon(`a${i}.png`, pngFile(Math.floor(3.7 * MIB)))));

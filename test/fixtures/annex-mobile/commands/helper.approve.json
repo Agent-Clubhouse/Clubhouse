@@ -72,43 +72,87 @@
       }
     },
     {
-      "name": "accepted dispose anyway",
+      "name": "no_valid_mapping",
       "request": {
-        "commandId": "cmd_103",
+        "commandId": "cmd_no_mapping",
         "epoch": "00000000-0000-4000-8000-000000000001",
-        "force": true,
-        "requestId": "hdispose_00000000-0000-4000-8000-000000000009",
+        "requestId": "hstart_00000000-0000-4000-8000-000000000009",
         "type": "helper.approve",
         "version": 1
       },
       "response": {
         "body": {
-          "commandId": "cmd_103",
+          "commandId": "cmd_no_mapping",
           "epoch": "00000000-0000-4000-8000-000000000001",
-          "result": {
-            "approved": true,
-            "kind": "dispose",
-            "requestId": "hdispose_00000000-0000-4000-8000-000000000009",
-            "stopped": true
+          "error": {
+            "code": "no_valid_mapping",
+            "message": "Couldn’t start impl-ipc because no hard preset for codex-cli is offered now. Change it in Settings > Helpers."
           },
-          "status": "completed",
+          "status": "rejected",
           "version": 1
         },
-        "status": 200
+        "status": 409
       }
     },
     {
-      "name": "accepted dispose (nothing at risk)",
+      "name": "no_valid_mapping (same commandId replays the receipt)",
       "request": {
-        "commandId": "cmd_104",
+        "commandId": "cmd_no_mapping",
         "epoch": "00000000-0000-4000-8000-000000000001",
+        "requestId": "hstart_00000000-0000-4000-8000-000000000009",
+        "type": "helper.approve",
+        "version": 1
+      },
+      "response": {
+        "body": {
+          "commandId": "cmd_no_mapping",
+          "epoch": "00000000-0000-4000-8000-000000000001",
+          "error": {
+            "code": "no_valid_mapping",
+            "message": "Couldn’t start impl-ipc because no hard preset for codex-cli is offered now. Change it in Settings > Helpers."
+          },
+          "status": "rejected",
+          "version": 1
+        },
+        "status": 409
+      }
+    },
+    {
+      "name": "helper_request_not_found (consumed, new commandId)",
+      "request": {
+        "commandId": "cmd_no_mapping_again",
+        "epoch": "00000000-0000-4000-8000-000000000001",
+        "requestId": "hstart_00000000-0000-4000-8000-000000000009",
+        "type": "helper.approve",
+        "version": 1
+      },
+      "response": {
+        "body": {
+          "commandId": "cmd_no_mapping_again",
+          "epoch": "00000000-0000-4000-8000-000000000001",
+          "error": {
+            "code": "helper_request_not_found",
+            "message": "helper_request_not_found"
+          },
+          "status": "rejected",
+          "version": 1
+        },
+        "status": 404
+      }
+    },
+    {
+      "name": "accepted dispose anyway",
+      "request": {
+        "commandId": "cmd_103",
+        "epoch": "00000000-0000-4000-8000-000000000001",
+        "force": true,
         "requestId": "hdispose_00000000-0000-4000-8000-000000000010",
         "type": "helper.approve",
         "version": 1
       },
       "response": {
         "body": {
-          "commandId": "cmd_104",
+          "commandId": "cmd_103",
           "epoch": "00000000-0000-4000-8000-000000000001",
           "result": {
             "approved": true,
@@ -123,11 +167,36 @@
       }
     },
     {
+      "name": "accepted dispose (nothing at risk)",
+      "request": {
+        "commandId": "cmd_104",
+        "epoch": "00000000-0000-4000-8000-000000000001",
+        "requestId": "hdispose_00000000-0000-4000-8000-000000000011",
+        "type": "helper.approve",
+        "version": 1
+      },
+      "response": {
+        "body": {
+          "commandId": "cmd_104",
+          "epoch": "00000000-0000-4000-8000-000000000001",
+          "result": {
+            "approved": true,
+            "kind": "dispose",
+            "requestId": "hdispose_00000000-0000-4000-8000-000000000011",
+            "stopped": true
+          },
+          "status": "completed",
+          "version": 1
+        },
+        "status": 200
+      }
+    },
+    {
       "name": "helper_work_at_risk",
       "request": {
         "commandId": "cmd_105",
         "epoch": "00000000-0000-4000-8000-000000000001",
-        "requestId": "hdispose_00000000-0000-4000-8000-000000000011",
+        "requestId": "hdispose_00000000-0000-4000-8000-000000000012",
         "type": "helper.approve",
         "version": 1
       },
@@ -150,7 +219,7 @@
       "request": {
         "commandId": "cmd_106",
         "epoch": "00000000-0000-4000-8000-000000000001",
-        "requestId": "hdispose_00000000-0000-4000-8000-000000000012",
+        "requestId": "hdispose_00000000-0000-4000-8000-000000000013",
         "type": "helper.approve",
         "version": 1
       },
@@ -174,7 +243,7 @@
         "commandId": "cmd_107",
         "epoch": "00000000-0000-4000-8000-000000000001",
         "force": true,
-        "requestId": "hdispose_00000000-0000-4000-8000-000000000013",
+        "requestId": "hdispose_00000000-0000-4000-8000-000000000014",
         "type": "helper.approve",
         "version": 1
       },
@@ -198,7 +267,7 @@
         "commandId": "cmd_108",
         "epoch": "00000000-0000-4000-8000-000000000001",
         "force": true,
-        "requestId": "hdispose_00000000-0000-4000-8000-000000000014",
+        "requestId": "hdispose_00000000-0000-4000-8000-000000000015",
         "type": "helper.approve",
         "version": 1
       },

@@ -8,6 +8,7 @@
  */
 
 import type { Agent } from '../../../../shared/types';
+import { describeRouting } from '../../../../shared/helper-routing';
 import { useAgentStore } from '../../../stores/agentStore';
 import { useProjectPath } from '../details/AgentDetails';
 import { AgentAvatar } from '../AgentAvatar';
@@ -46,6 +47,11 @@ export function HelperHeader({ agent }: { agent: Agent }) {
       {link.disposable && parent && (
         <span className="min-w-0 truncate" data-testid="helper-header-disposable">
           · {parent.name} may dispose of it when the work is done
+        </span>
+      )}
+      {link.routing && (
+        <span className="min-w-0 truncate" title={describeRouting(link.routing)} data-testid="helper-header-routing">
+          · {describeRouting(link.routing)}
         </span>
       )}
     </div>

@@ -176,6 +176,8 @@ export async function setOrchestratorHelpers(actorId: string, args: Record<strin
       ...(crossProjectHelpers !== undefined && { crossProjectHelpers }),
       ...(maxHelpers !== undefined && { maxHelpers: maxHelpers as number }),
     }, {
+      surface: 'dispatcher',
+      actorId,
       // Checked again under the agent's lock: the user may have just changed it.
       precondition: (agent, current) => {
         if (!isConnectedOrchestrator(agent, current)) {

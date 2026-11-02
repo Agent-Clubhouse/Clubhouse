@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { abortPending } from './facade';
 import { setProducingRuntime } from './__test-utils__/producing-runtime';
-import { blueprintTransfer, isSettingsKey, popoutOpened, recordToolsList, settingsChanged, SETTINGS_KEYS_EXCLUDED, themeChanged } from './feature-events';
+import { blueprintTransfer, helperPresetsChanged, helperRouted, isSettingsKey, popoutOpened, recordToolsList, settingsChanged, SETTINGS_KEYS_EXCLUDED, themeChanged } from './feature-events';
 import * as definitions from '../../shared/settings-definitions';
 import { byteSizeBucket, classifyFetchError } from './workspace';
 import type { TelemetryRuntime } from './types';
@@ -97,5 +97,42 @@ describe('marketplace classifiers', () => {
     expect([0, 500, 50_000, 500_000, 5_000_000, 50_000_000, 500_000_000].map(byteSizeBucket)).toEqual([
       '0', '<1KB', '<100KB', '<1MB', '<10MB', '<100MB', '>=100MB',
     ]);
+  });
+});
+
+describe('helper routing events (#2671)', () => {
+  afterEach(() => { events.length = 0; abortPending(); setProducingRuntime(null); });
+
+  it('a decision has closed codes and a model family, never a raw model id', () => {
+    setProducingRuntime(runtime());
+    helperRouted({
+      mode: 'preset', balanced: false, decidedAt: 'now', policyVersion: 1, fallback: 'builtin_preset', context: { status: 'none' },
+      requested: { provider: null, model: null, effort: null, difficulty: 'hard' },
+      resolved: { provider: 'claude-code', model: 'claude-secret-internal-9', effort: 'some-new-level', difficulty: 'hard' },
+      source: { provider: 'orchestrator', model: 'builtin_mapping', effort: 'builtin_mapping' },
+      reason: 'preset_on_cli',
+    });
+    const [event] = events;
+    expect(event.name).toBe('clubhouse.helper.routed');
+    expect(event.attrs).toMatchObject({
+      'clubhouse.helper_routing.requested_cli': 'unset',
+      'clubhouse.helper_routing.difficulty': 'hard',
+      'clubhouse.helper_routing.mode': 'preset',
+      'clubhouse.orchestrator': 'claude-code',
+      'clubhouse.helper_routing.effort': 'other',
+      'clubhouse.helper_routing.preset': 'builtin',
+      'clubhouse.helper_routing.reason': 'preset_on_cli',
+      'clubhouse.helper_routing.fallback': 'builtin_preset',
+      'clubhouse.helper_routing.policy_version': 1,
+    });
+    expect(JSON.stringify(event.attrs)).not.toContain('secret');
+  });
+
+  it('a presets change has the action, surface and outcome, never values', () => {
+    setProducingRuntime(runtime());
+    helperPresetsChanged('reset_cell', 'mobile', false);
+    expect(events[0]).toEqual({ name: 'clubhouse.helper_routing.changed', attrs: {
+      'clubhouse.helper_presets.action': 'reset_cell', 'clubhouse.helper_presets.surface': 'mobile', 'clubhouse.outcome': 'error',
+    } });
   });
 });

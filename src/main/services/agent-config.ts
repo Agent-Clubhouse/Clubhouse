@@ -11,6 +11,7 @@ import { appLog } from './log-service';
 import { applyAgentDefaults, readProjectAgentDefaults } from './agent-settings-service';
 import { tagError } from '../telemetry/types';
 import { resolveOrchestrator } from './agent-system';
+import type { HelperContextStatus } from '../../shared/helper-routing';
 import { contextWindowCheck } from './context-window';
 import { pathExists } from './fs-utils';
 import { isInsideGitRepo } from './git-service';
@@ -1238,6 +1239,7 @@ export async function updateDurableConfig(
         delete agent.contextWindow;
       }
       delete agent.effort;
+      delete agent.routing;
       // Older entries don't say whose they are; after this, nothing else can tell.
       if (previous) {
         for (const session of agent.sessionHistory ?? []) session.orchestrator ??= previous;
@@ -1253,7 +1255,10 @@ export async function updateDurableConfig(
       delete agent.model;
     }
     // A level was checked against the old model (#2671).
-    if (agent.model !== modelBefore) delete agent.effort;
+    if (agent.model !== modelBefore) {
+      delete agent.effort;
+      delete agent.routing;
+    }
   }
   if (updates.contextWindow === null) {
     delete agent.contextWindow;
@@ -1893,7 +1898,7 @@ export async function beginDurableCreation(
   params: StartDurableCreationParams,
   options: DurableCreationRunOptions = {},
 ): Promise<DurableCreationHandle> {
-  const { name, color, model, effort, orchestrator, freeAgentMode, mcpIds, mcpConfigs, persona } = params;
+  const { name, color, model, effort, routing, orchestrator, freeAgentMode, mcpIds, mcpConfigs, persona } = params;
   const useWorktree = params.useWorktree !== false;
   // The folder and branch come from the request; refuse bad ones before anything touches disk.
   const plan = useWorktree ? planDurableWorktree(projectPath, name, params) : undefined;
@@ -1938,6 +1943,7 @@ export async function beginDurableCreation(
     createdAt: startedAt,
     ...(model && model !== 'default' ? { model } : {}),
     ...(effort ? { effort } : {}),
+    ...(routing ? { routing } : {}),
     ...(orchestrator ? { orchestrator } : {}),
     ...(effectiveFreeAgent ? { freeAgentMode: effectiveFreeAgent } : {}),
     ...(mcpIds && mcpIds.length > 0 ? { mcpIds } : {}),
@@ -2959,6 +2965,8 @@ export async function setOrchestrationConfig(
 export interface HelperStartFields {
   pendingTask?: string | null;
   requestedAccess?: AgentAccessLevel | null;
+  /** What became of a context choice at the start, recorded on the helper's `routing`. */
+  routingContext?: HelperContextStatus;
 }
 
 /**
@@ -2971,7 +2979,7 @@ export async function setHelperStartFields(projectPath: string, agentId: string,
   const { agents, agentsById } = await readAgentsEntry(projectPath);
   const agent = agentsById.get(agentId);
   if (!agent) return;
-  const before = `${agent.pendingTask ?? ''}\0${agent.requestedAccess ?? ''}`;
+  const before = `${agent.pendingTask ?? ''}\0${agent.requestedAccess ?? ''}\0${agent.routing?.context.status ?? ''}`;
   if (fields.pendingTask !== undefined) {
     if (fields.pendingTask) agent.pendingTask = fields.pendingTask;
     else delete agent.pendingTask;
@@ -2980,7 +2988,8 @@ export async function setHelperStartFields(projectPath: string, agentId: string,
     if (fields.requestedAccess) agent.requestedAccess = fields.requestedAccess;
     else delete agent.requestedAccess;
   }
-  if (`${agent.pendingTask ?? ''}\0${agent.requestedAccess ?? ''}` === before) return;
+  if (fields.routingContext && agent.routing) agent.routing = { ...agent.routing, context: { status: fields.routingContext } };
+  if (`${agent.pendingTask ?? ''}\0${agent.requestedAccess ?? ''}\0${agent.routing?.context.status ?? ''}` === before) return;
   await writeAgents(projectPath, agents);
 }
 
@@ -2993,6 +3002,7 @@ function clearHelperLink(agent: DurableAgentConfig): void {
   delete agent.pendingTask;
   delete agent.requestedAccess;
   delete agent.effort;
+  delete agent.routing;
 }
 
 /** A `git rev-list --count` result. Any failure throws, so a check never reads as zero. */

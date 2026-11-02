@@ -43,6 +43,8 @@ import { getLogDir, syncLocalRecording } from '../telemetry/local-control';
 import { getDiagNamespaces } from '../telemetry/diag';
 import { listLogNamespaces } from '../../shared/log-namespaces';
 import { settingsChanged, themeChanged } from '../telemetry/feature-events';
+import * as helperRouting from '../services/helper-routing';
+import type { HelperRoutingUpdate, HelperRoutingUpdateResult } from '../../shared/helper-routing';
 import { newChromeEnabled, usesTitleBarOverlay } from '../window-chrome';
 
 /** Protocols allowed for shell.openExternal — blocks file://, data:, javascript:, etc. */
@@ -290,10 +292,26 @@ export function registerAppHandlers(): void {
     return orchestrationSettings.getSettings();
   });
 
+  ipcMain.handle(IPC.APP.GET_HELPER_ROUTING, () => helperRouting.readHelperRouting());
+
+  ipcMain.handle(IPC.APP.UPDATE_HELPER_ROUTING, withValidatedArgs(
+    [objectArg<HelperRoutingUpdate>()],
+    async (_event, update): Promise<HelperRoutingUpdateResult> => {
+      try {
+        return { ok: true, settings: await helperRouting.updateHelperPresets(update, { surface: 'ui' }) };
+      } catch (err) {
+        if (!(err instanceof helperRouting.HelperRoutingError)) throw err;
+        // telemetry-exempt: the service records the refusal; the page shows the message.
+        return { ok: false, code: err.code, message: err.message, ...(err.settings && { settings: err.settings }) };
+      }
+    },
+  ));
+
   ipcMain.handle(IPC.APP.SAVE_ORCHESTRATION_SETTINGS, withValidatedArgs(
     [objectArg<orchestrationSettings.OrchestrationSettings>()],
     async (_event, settings) => {
       await orchestrationSettings.saveSettings(settings);
+      settingsChanged('orchestration');
       broadcastToAllWindows(IPC.APP.ORCHESTRATION_SETTINGS_CHANGED, orchestrationSettings.getSettings());
     },
   ));
