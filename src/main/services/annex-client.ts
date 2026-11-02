@@ -854,6 +854,8 @@ function handleSatelliteMessage(sat: SatelliteConnectionInternal, msg: Record<st
 const socketsWithCanvases = new WeakSet<WebSocket>();
 /** Changes that arrive while a connection's fetch is running: they go on top of what it returns. */
 const canvasEventsDuringFetch = new WeakMap<WebSocket, CanvasStateEvent[]>();
+/** The projects a connection has asked for canvases, once it's done its first fetch. */
+const canvasProjectsAsked = new WeakMap<WebSocket, Set<string>>();
 
 interface CanvasStateEvent {
   projectId?: string | null;
@@ -896,14 +898,18 @@ function withCanvasEvent(snapshot: SatelliteSnapshot, { projectId, scope, state 
  */
 async function fetchOmittedCanvases(sat: SatelliteConnectionInternal): Promise<void> {
   const ws = sat.ws;
-  if (!ws || socketsWithCanvases.has(ws)) return;
+  if (!ws) return;
+  if (socketsWithCanvases.has(ws)) {
+    void fetchNewProjectCanvases(sat, ws);
+    return;
+  }
   socketsWithCanvases.add(ws);
   const changes: CanvasStateEvent[] = [];
   canvasEventsDuringFetch.set(ws, changes);
   const canvasState: Record<string, unknown> = {};
   let appCanvasState: unknown = null;
+  const projects = (sat.snapshot?.projects ?? []) as Array<{ id: string }>;
   try {
-    const projects = (sat.snapshot?.projects ?? []) as Array<{ id: string }>;
     for (const project of projects) {
       const { state } = await satelliteHttpsRequest(sat.fingerprint, 'GET', `/api/v1/mobile/canvas/${encodeURIComponent(project.id)}`) as { state: unknown };
       if (state) canvasState[project.id] = state;
@@ -919,11 +925,53 @@ async function fetchOmittedCanvases(sat: SatelliteConnectionInternal): Promise<v
     return;
   }
   canvasEventsDuringFetch.delete(ws);
+  canvasProjectsAsked.set(ws, new Set(projects.map((project) => project.id)));
   // Only onto a snapshot still missing them: a full one that arrived meanwhile is newer.
   if (sat.ws !== ws || !sat.snapshot?.snapshotTruncated?.omitted?.includes('canvasState')) return;
   sat.snapshot = changes.reduce(withCanvasEvent, { ...sat.snapshot, canvasState, ...(appCanvasState ? { appCanvasState } : {}) } as SatelliteSnapshot);
   broadcastSatellitesChanged();
   broadcastSatelliteEvent(sat.id, 'snapshot', sat.snapshot);
+  void fetchNewProjectCanvases(sat, ws);
+}
+
+/**
+ * Canvases for projects that appeared since a connection's first fetch and aren't known.
+ * Each is asked for once, one at a time, however many snapshots name it. One that fails
+ * waits for the next snapshot that leaves canvases out, as a first fetch does.
+ */
+async function fetchNewProjectCanvases(sat: SatelliteConnectionInternal, ws: WebSocket): Promise<void> {
+  const asked = canvasProjectsAsked.get(ws);
+  if (!asked || canvasEventsDuringFetch.has(ws)) return;
+  const changes: CanvasStateEvent[] = [];
+  canvasEventsDuringFetch.set(ws, changes);
+  try {
+    while (sat.ws === ws && sat.snapshot?.snapshotTruncated?.omitted?.includes('canvasState')) {
+      const projects = sat.snapshot.projects as Array<{ id: string }>;
+      const projectId = projects.find((project) => !asked.has(project.id))?.id;
+      if (!projectId) return;
+      asked.add(projectId);
+      if (sat.snapshot.canvasState?.[projectId]) continue;
+      changes.length = 0;
+      let state: unknown;
+      try {
+        ({ state } = await satelliteHttpsRequest(sat.fingerprint, 'GET', `/api/v1/mobile/canvas/${encodeURIComponent(projectId)}`) as { state: unknown });
+      } catch (err) {
+        asked.delete(projectId);
+        appLog('core:annex', 'warn', 'Could not fetch canvases for a new project on a satellite', {
+          meta: { error: err instanceof Error ? err.message : String(err) },
+        });
+        return;
+      }
+      // Only onto a snapshot still missing them, as the first fetch does.
+      if (!state || sat.ws !== ws || !sat.snapshot?.snapshotTruncated?.omitted?.includes('canvasState')) continue;
+      const ownChanges = changes.filter((change) => change.projectId === projectId);
+      sat.snapshot = ownChanges.reduce(withCanvasEvent, { ...sat.snapshot, canvasState: { ...sat.snapshot.canvasState, [projectId]: state } } as SatelliteSnapshot);
+      broadcastSatellitesChanged();
+      broadcastSatelliteEvent(sat.id, 'snapshot', sat.snapshot);
+    }
+  } finally {
+    canvasEventsDuringFetch.delete(ws);
+  }
 }
 
 function startHeartbeat(sat: SatelliteConnectionInternal): void {

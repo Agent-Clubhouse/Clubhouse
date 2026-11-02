@@ -1014,6 +1014,99 @@ describe('annex-client', () => {
       });
     });
 
+    describe('with a project that appears after the fetch', () => {
+      const NEW_ROUTE = '/api/v1/mobile/canvas/proj_new';
+      const NEW_STATE = { canvases: [{ id: 'new_canvas', name: 'New', views: [] }], activeCanvasId: 'new_canvas' };
+      const withNew = (lastSeq: number) => {
+        const frame = truncated(lastSeq);
+        return { ...frame, payload: { ...frame.payload, projects: [{ id: 'proj_1' }, { id: 'proj_new' }] } };
+      };
+      const fetched = async () => {
+        await connectedSatellite();
+        send(truncated(5));
+        await vi.waitFor(() => expect(snapshotEvents().at(-1)?.canvasState).toBeDefined());
+        vi.mocked(https.request).mockClear();
+      };
+
+      beforeEach(() => { routes[NEW_ROUTE] = { status: 200, body: { projectId: 'proj_new', state: NEW_STATE } }; });
+
+      it('fetches only that project, and sends it on as a snapshot', async () => {
+        await fetched();
+        send(withNew(6));
+
+        await vi.waitFor(() => expect(snapshotEvents().at(-1)?.canvasState.proj_new).toEqual(NEW_STATE));
+        expect(snapshotEvents().at(-1).canvasState.proj_1).toEqual(STATE);
+        expect(requested()).toEqual([NEW_ROUTE]);
+      });
+
+      it('asks once, however many truncated snapshots follow, even when it has no canvases', async () => {
+        routes[NEW_ROUTE] = { status: 200, body: { projectId: 'proj_new', state: null } };
+        await fetched();
+        for (let seq = 6; seq < 12; seq++) send(withNew(seq));
+        await new Promise((r) => setTimeout(r, 20));
+        send(withNew(12));
+        await new Promise((r) => setTimeout(r, 20));
+
+        expect(requested()).toEqual([NEW_ROUTE]);
+      });
+
+      it('fetches each of several, one at a time, including one that appears during the first', async () => {
+        routes['/api/v1/mobile/canvas/proj_other'] = { status: 200, body: { state: STATE } };
+        await fetched();
+        send(withNew(6));
+        const frame = withNew(7);
+        send({ ...frame, payload: { ...frame.payload, projects: [...frame.payload.projects, { id: 'proj_other' }] } });
+
+        await vi.waitFor(() => expect(snapshotEvents().at(-1)?.canvasState.proj_other).toEqual(STATE));
+        expect(snapshotEvents().at(-1).canvasState.proj_new).toEqual(NEW_STATE);
+        expect(requested()).toEqual([NEW_ROUTE, '/api/v1/mobile/canvas/proj_other']);
+      });
+
+      it('picks up one that appeared while the first fetch was running', async () => {
+        await connectedSatellite();
+        send(truncated(5));
+        send(withNew(6));
+
+        await vi.waitFor(() => expect(snapshotEvents().at(-1)?.canvasState?.proj_new).toEqual(NEW_STATE));
+        expect(snapshotEvents().at(-1).canvasState.proj_1).toEqual(STATE);
+        expect(requested().filter((path) => path === NEW_ROUTE)).toHaveLength(1);
+      });
+
+      it('tries again on the next snapshot if the fetch fails, one request each time', async () => {
+        routes[NEW_ROUTE] = { status: 500, body: {} };
+        await fetched();
+        send(withNew(6));
+        await vi.waitFor(() => expect(requested()).toEqual([NEW_ROUTE]));
+        await new Promise((r) => setTimeout(r, 10));
+        expect(requested()).toEqual([NEW_ROUTE]);
+
+        routes[NEW_ROUTE] = { status: 200, body: { state: NEW_STATE } };
+        send(withNew(7));
+        await vi.waitFor(() => expect(snapshotEvents().at(-1)?.canvasState.proj_new).toEqual(NEW_STATE));
+        expect(requested()).toEqual([NEW_ROUTE, NEW_ROUTE]);
+      });
+
+      it('keeps a change made to it during its fetch', async () => {
+        await fetched();
+        send(withNew(6));
+        send({ type: 'canvas:state', payload: { projectId: 'proj_new', state: { canvasId: 'new_canvas', name: 'During', views: [], viewport: {}, nextZIndex: 0, zoomedViewId: null } } });
+
+        await vi.waitFor(() => expect(snapshotEvents().at(-1)?.canvasState.proj_new).toBeDefined());
+        expect(snapshotEvents().at(-1).canvasState.proj_new.canvases[0].name).toBe('During');
+      });
+
+      it('does not fetch one a snapshot already gave it', async () => {
+        await fetched();
+        const frame = withNew(6);
+        send({ type: 'snapshot', payload: { ...frame.payload, snapshotTruncated: undefined, canvasState: { proj_1: STATE, proj_new: NEW_STATE } } });
+        send(withNew(7));
+        await new Promise((r) => setTimeout(r, 20));
+
+        expect(requested()).toEqual([]);
+        expect(snapshotEvents().at(-1).canvasState.proj_new).toEqual(NEW_STATE);
+      });
+    });
+
     it('does not put an older fetch over a full snapshot that came meanwhile', async () => {
       await connectedSatellite();
       send(truncated(5));
