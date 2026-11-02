@@ -116,9 +116,10 @@ export interface FeedbackServiceDeps {
   /** Recent allowlisted log lines to review, read when a report opens (#2658). Defaults to none. */
   diagnostics?: () => FeedbackDiagnostics;
   /**
-   * Put diagnostics v1 in the report itself. Off, and the app must not turn it on until
-   * Framebriar confirms the API deploy and an SDK tag: today's API strips the field from a
-   * small report and answers a large one with a permanent 413 that blocks the outbox.
+   * Put diagnostics v1 in the report itself. Off, and the app must not turn it on until an
+   * approved first live report has verified storage and readback. Once it's on, rolling
+   * the API back strands reports over 16 KiB on a permanent 413 and silently strips smaller
+   * ones, so a rollback needs a compatible ingestion path or coordinated recovery (#2658).
    */
   reportDiagnosticsField?: boolean;
   /** For tests: the SDK's telemetry factory, used only for diagnostics excerpts. */
@@ -574,7 +575,9 @@ export class FeedbackService {
       void cached.value.catch(() => { if (draft.prepared === cached) { draft.prepared = undefined; draft.diagnosticsOutcome = undefined; } });
     }
     const prepared = await (draft?.prepared?.value ?? prepare());
-    const ack = await fb.feedback.submit(prepared, { includeDiagnostics: false });
+    // This instance has no telemetry, so the flag only decides what becomes of a field the
+    // report carries: false rewrites it to left_out. The field already holds the user's choice.
+    const ack = await fb.feedback.submit(prepared, { includeDiagnostics: this.deps.reportDiagnosticsField === true });
     // Only a committed report consumes the draft: a failed save (e.g. storage full) keeps
     // the reviewed screenshot so the user can retry.
     if (input.draftId) this.drafts.delete(input.draftId);

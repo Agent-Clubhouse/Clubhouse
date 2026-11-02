@@ -3,14 +3,16 @@
 // The prepared report (UUID, notes, context, PNG hash, trace) is immutable from then on;
 // submit() commits it to the durable outbox and then marks it in telemetry.
 import {randomUUID} from 'node:crypto';
-import {LIMITS,normalizeReport,normalizeIncident} from '../../src/protocol.mjs';
+import {LIMITS,captureDiagnostics,leaveOutDiagnostics,normalizeReport,normalizeIncident} from '../../src/protocol.mjs';
 import {isPng,sha256} from './transport.mjs';
 
 const fault=(code,message)=>Object.assign(Error(message),{code});
 const freeze=value=>{if(value&&typeof value==='object'&&!Buffer.isBuffer(value)){for(const child of Object.values(value))freeze(child);Object.freeze(value);}return value;};
 const traceOf=x=>/^[0-9a-f]{32}$/.test(x?.traceId??'')&&/^[0-9a-f]{16}$/.test(x?.spanId??'')?{traceId:x.traceId,spanId:x.spanId}:{};
 
-export function createFeedback({access,outbox,telemetry,capture,incidentProvider,appId=access?.gameId,gameId=appId,buildSha=null,appVersion,
+// diagnosticsProvider (optional, synchronous, no I/O): the report's own bounded diagnostics, snapshotted
+// at open() (docs/feedback-diagnostics-v1.md). Without one, reports omit the field exactly as before.
+export function createFeedback({access,outbox,telemetry,capture,incidentProvider,diagnosticsProvider,diagnosticsLimits,appId=access?.gameId,gameId=appId,buildSha=null,appVersion,
   sessionId=telemetry?.sessionId??randomUUID(),platform=`${process.platform}-${process.arch}`,now=()=>Date.now()}={}){
   if(!access||!outbox||typeof outbox.enqueue!=='function')throw Error('createFeedback requires access and outbox');
   if(!/^[a-z0-9-]{1,60}$/.test(gameId??'')||(buildSha!==null&&!/^[a-f0-9]{7,40}$/.test(buildSha))||
@@ -29,18 +31,19 @@ export function createFeedback({access,outbox,telemetry,capture,incidentProvider
     try{const value=incidentProvider();return value==null?null:freeze(normalizeIncident(value));}
     catch{throw fault('invalid-input','Invalid incident snapshot');}
   }
+  const snapshotDiagnostics=()=>diagnosticsProvider===undefined?undefined:freeze(captureDiagnostics({provider:diagnosticsProvider,now,...diagnosticsLimits}));
   // Explicit host action: snapshot references before any asynchronous screenshot work.
   // An independent provider does not enable Framebriar telemetry or query its backend.
   async function open(){
     if(!eligible())throw fault('feedback-unavailable','Feedback needs an enrollment');
-    const at=new Date(now()).toISOString(),incident=snapshotIncident();
+    const at=new Date(now()).toISOString(),incident=snapshotIncident(),diagnostics=snapshotDiagnostics();
     const ctx=incident===undefined?traceOf(telemetry?.activeContext?.()):traceOf(incident?.traces[0]);
-    return Object.freeze({png:await grab(),capturedAt:at,...ctx,...(incident===undefined?{}:{incident})});
+    return Object.freeze({png:await grab(),capturedAt:at,...ctx,...(incident===undefined?{}:{incident}),...(diagnostics===undefined?{}:{diagnostics})});
   }
-  async function prepare({notes='',context={},png,capturedAt,traceId,spanId,incident}={}){
+  async function prepare({notes='',context={},png,capturedAt,traceId,spanId,incident,diagnostics}={}){
     if(!eligible())throw fault('feedback-unavailable','Feedback needs an enrollment');
-    let snapshot={png,capturedAt,traceId,spanId,incident};
-    if(png===undefined)snapshot={...(await open()),...(capturedAt?{capturedAt}:{}),...(traceId?{traceId,spanId}:{}),...(incident===undefined?{}:{incident})};
+    let snapshot={png,capturedAt,traceId,spanId,incident,diagnostics};
+    if(png===undefined)snapshot={...(await open()),...(capturedAt?{capturedAt}:{}),...(traceId?{traceId,spanId}:{}),...(incident===undefined?{}:{incident}),...(diagnostics===undefined?{}:{diagnostics})};
     png=snapshot.png==null?null:Buffer.isBuffer(snapshot.png)?snapshot.png:Buffer.from(snapshot.png);
     if(png!==null&&(!isPng(png)||png.length>LIMITS.media))throw fault('invalid-media','A PNG up to 8 MiB is required');
     // Explicit null removes incident correlation including the legacy mirror. Never
@@ -54,18 +57,23 @@ export function createFeedback({access,outbox,telemetry,capture,incidentProvider
       breadcrumbs:Array.isArray(context.breadcrumbs)?context.breadcrumbs:[],
       media:png?{type:'image/png',bytes:png.length,sha256:sha256(png)}:null,
       ...(context.callCorrelationId?{callCorrelationId:context.callCorrelationId}:{}),
-      ...(ctx.traceId?ctx:fallback),...(metadata?{incident:metadata}:{}),...(appVersion!=null?{appVersion}:{})});
+      ...(ctx.traceId?ctx:fallback),...(metadata?{incident:metadata}:{}),...(appVersion!=null?{appVersion}:{}),
+      ...(snapshot.diagnostics==null?{}:{diagnostics:snapshot.diagnostics})});
     return Object.freeze({report:freeze(report),png});
   }
   // includeDiagnostics mirrors the review screen's "Include recent app diagnostics" box.
   async function submit(prepared,{includeDiagnostics=true}={}){
-    const ack=await outbox.enqueue({report:prepared.report,png:prepared.png});
+    // Unchecking the box after prepare still wins: nothing has left the process before enqueue.
+    const carried=prepared.report.diagnostics;
+    const report=carried&&!includeDiagnostics?{...prepared.report,diagnostics:leaveOutDiagnostics(carried)}:prepared.report;
+    const ack=await outbox.enqueue({report,png:prepared.png});
     let diagnostics='unavailable';
     if(telemetry?.feedbackSubmitted&&telemetry.enabled){
       diagnostics=includeDiagnostics?'included':'skipped';
       void telemetry.feedbackSubmitted({reportId:ack.id,traceId:prepared.report.traceId,spanId:prepared.report.spanId,includeDiagnostics}).catch(()=>{});
     }
-    return Object.freeze({...ack,diagnostics});
+    // diagnostics describes the telemetry excerpt; reportDiagnostics is what this report itself carries.
+    return Object.freeze({...ack,diagnostics,reportDiagnostics:report.diagnostics?.state??null});
   }
   return Object.freeze({sessionId,eligible,open,prepare,submit});
 }

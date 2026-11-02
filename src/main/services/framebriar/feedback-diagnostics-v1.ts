@@ -1,21 +1,21 @@
 /**
- * Framebriar's frozen report field, diagnostics v1, as Clubhouse would fill it (#2658). Not
- * sent yet: FeedbackServiceDeps.reportDiagnosticsField is off until the API is deployed and an
- * SDK that carries the field is released. Reports use the excerpt path until then. Pure.
+ * Framebriar's report field, diagnostics v1, as Clubhouse would fill it (#2658). Not sent yet:
+ * FeedbackServiceDeps.reportDiagnosticsField is off until an approved first live report has
+ * verified storage and readback. Reports use the excerpt path until then. Pure.
  *
- * The contract's attrs are closed, and its words come from closed client sets. A line's value
- * that doesn't fit is dropped and counted, as the service would count it, rather than sent as
- * something it isn't.
+ * The SDK's normalizeDiagnostics is the contract, and the service runs it again. The contract's
+ * attrs are closed, and its words come from closed client sets. A line's value that doesn't fit
+ * is dropped and counted, as the service would count it, rather than sent as something it isn't.
  */
-import type { FeedbackDiagnostics, FeedbackDiagnosticsOutcome } from '../../../shared/feedback-types';
+import { DIAGNOSTICS_CONTRACT, DIAGNOSTICS_LIMITS, type FramebriarDiagnosticsEntry, type FramebriarReportDiagnostics } from '../../vendor/framebriar/adapters/node/index.mjs';
+import type { FeedbackDiagnostics, FeedbackDiagnosticsNoneReason, FeedbackDiagnosticsOutcome } from '../../../shared/feedback-types';
 import { DIAGNOSTICS_WORDS } from './feedback-diagnostics';
 
-export const DIAGNOSTICS_V1_LIMITS = { bytes: 64 * 1024, entries: 500, stringChars: 4096, attrs: 32 } as const;
-
-const TOKEN = /^[A-Za-z0-9_.:+-]{1,64}$/;
+const TOKEN = new RegExp(DIAGNOSTICS_CONTRACT.tokenPattern);
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-const FAILURES = new Set(['timeout', 'tls', 'dns', 'refused', 'closed', 'oversize', 'overflow', 'busy', 'storage', 'auth', 'protocol', 'cancelled', 'server', 'offline', 'unknown']);
-const COUNTS = new Set(['attempt', 'backoffMs', 'snapshotBytes', 'webSocketMessageLimitBytes', 'transportFrameLimitBytes', 'durationMs', 'count', 'bytes', 'responseBytes', 'requestBytes', 'connectMs', 'tlsMs', 'firstByteMs']);
+const FAILURES = new Set(DIAGNOSTICS_CONTRACT.attrs.enums.failure);
+const COUNTS = new Set(DIAGNOSTICS_CONTRACT.attrs.numbers);
+const DELIVERY_RESULTS = new Set(DIAGNOSTICS_CONTRACT.deliveryResults);
 
 const REF = /^[0-9a-f]{16}$/;
 const AT = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d{1,9})?Z$/;
@@ -25,6 +25,11 @@ const LINKS: ReadonlyMap<string, string> = new Map([['mtls', 'mtls'], ['bearer',
 const EXIT_CODE_UNAVAILABLE = 'exit_code_unavailable';
 /** Sent for a provider or driver outside the closed set, so its name stays here. */
 const CUSTOM_CLI = 'custom';
+/**
+ * The contract's words for why there are no entries. `not_connected` and `no_review` have none,
+ * so the SDK reads them as `empty`: an open question on #2658, since lines do exist for the first.
+ */
+const NONE_REASONS: Partial<Record<FeedbackDiagnosticsNoneReason, string>> = { no_lines: 'empty', collection_failed: 'provider-failed' };
 /** The chat runtime logs a literal 0 on every session end, never a code it saw, so it can't be sent as one. */
 const UNOBSERVED_EXIT_CODE_EVENTS: ReadonlySet<string> = new Set(['chat.ended']);
 /** What each event was trying to do. An event that only reports a reached state has none. */
@@ -87,21 +92,13 @@ function mapAttr(key: string, value: unknown): string | number | undefined {
 
 const validAt = (at: string): boolean => AT.test(at) && !Number.isNaN(Date.parse(at));
 
-function mapDelivery({ queued, lastResult }: DiagnosticsV1Delivery): DiagnosticsV1Delivery | undefined {
-  const delivery: DiagnosticsV1Delivery = {
-    ...(inRange(queued, 0, Number.MAX_SAFE_INTEGER) && { queued }),
-    ...(lastResult !== undefined && (lastResult === 'ok' || lastResult === 'none' || FAILURES.has(lastResult)) && { lastResult }),
-  };
-  return Object.keys(delivery).length > 0 ? delivery : undefined;
+/** The contract drops a delivery with no valid count, and stores a missing lastResult as `unknown`. */
+function mapDelivery({ queued, lastResult }: DiagnosticsV1Delivery): FramebriarReportDiagnostics['delivery'] {
+  if (queued === undefined || !inRange(queued, 0, Number.MAX_SAFE_INTEGER)) return undefined;
+  return { queued, lastResult: lastResult !== undefined && DELIVERY_RESULTS.has(lastResult) ? lastResult : 'unknown' };
 }
 
-export interface DiagnosticsV1Entry {
-  at: string;
-  level: 'debug' | 'info' | 'warn' | 'error';
-  ns: string;
-  event: string;
-  attrs?: Record<string, string | number>;
-}
+export type DiagnosticsV1 = FramebriarReportDiagnostics;
 
 export interface DiagnosticsV1Delivery {
   /** How many reports were waiting in the outbox when the report was captured. */
@@ -110,28 +107,15 @@ export interface DiagnosticsV1Delivery {
   lastResult?: string;
 }
 
-export interface DiagnosticsV1 {
-  state: 'attached' | 'none' | 'left_out' | 'unavailable';
-  reason?: string;
-  windowStart: string;
-  windowEnd: string;
-  lines: number;
-  bytes: number;
-  dropped: number;
-  droppedAttrs: number;
-  entries: DiagnosticsV1Entry[];
-  delivery?: DiagnosticsV1Delivery;
-}
-
 export function toDiagnosticsV1(diagnostics: FeedbackDiagnostics, outcome: FeedbackDiagnosticsOutcome, delivery: DiagnosticsV1Delivery = {}): DiagnosticsV1 {
-  const base = { windowStart: diagnostics.windowStart, windowEnd: diagnostics.windowEnd };
-  const empty = { ...base, lines: 0, bytes: 0, dropped: 0, droppedAttrs: 0, entries: [] as DiagnosticsV1Entry[] };
-  if (outcome.status === 'left_out') return { state: 'left_out', reason: outcome.reason, ...empty };
-  if (outcome.status === 'none') return { state: outcome.reason === 'collection_failed' ? 'unavailable' : 'none', reason: outcome.reason, ...empty };
+  const base = { v: 1 as const, windowStart: diagnostics.windowStart, windowEnd: diagnostics.windowEnd };
+  const empty = { ...base, lines: 0, bytes: 0, dropped: 0, droppedAttrs: 0, entries: [] as FramebriarDiagnosticsEntry[] };
+  if (outcome.status === 'left_out') return { state: 'left_out', ...empty };
+  if (outcome.status === 'none') return { state: outcome.reason === 'collection_failed' ? 'unavailable' : 'none', reason: NONE_REASONS[outcome.reason] ?? outcome.reason, ...empty };
 
   let droppedAttrs = 0;
   let dropped = diagnostics.dropped;
-  const entries: DiagnosticsV1Entry[] = [];
+  const entries: FramebriarDiagnosticsEntry[] = [];
   for (const line of diagnostics.lines) {
     if (!TOKEN.test(line.ns) || !TOKEN.test(line.event) || !validAt(line.at)) {
       dropped++;
@@ -140,7 +124,7 @@ export function toDiagnosticsV1(diagnostics: FeedbackDiagnostics, outcome: Feedb
     const attrs: Record<string, string | number> = {};
     for (const [key, value] of Object.entries(line.attrs ?? {})) {
       const mapped = key === 'exitCode' && UNOBSERVED_EXIT_CODE_EVENTS.has(line.event) ? undefined : mapAttr(key, value);
-      if (mapped !== undefined && Object.keys(attrs).length < DIAGNOSTICS_V1_LIMITS.attrs) attrs[key] = mapped;
+      if (mapped !== undefined && Object.keys(attrs).length < DIAGNOSTICS_LIMITS.attrsPerEntry) attrs[key] = mapped;
       else droppedAttrs++;
     }
     const operation = OPERATION_BY_EVENT.get(line.event);
@@ -151,10 +135,12 @@ export function toDiagnosticsV1(diagnostics: FeedbackDiagnostics, outcome: Feedb
   const mappedDelivery = mapDelivery(delivery);
   // Oldest go first, as the contract trims.
   let bytes = Buffer.byteLength(JSON.stringify(entries), 'utf-8');
-  while (entries.length > DIAGNOSTICS_V1_LIMITS.entries || bytes > DIAGNOSTICS_V1_LIMITS.bytes) {
+  while (entries.length > DIAGNOSTICS_LIMITS.entries || bytes > DIAGNOSTICS_LIMITS.totalBytes) {
     entries.shift();
     dropped++;
     bytes = Buffer.byteLength(JSON.stringify(entries), 'utf-8');
   }
+  // `attached` needs an entry: without one the contract says this.
+  if (entries.length === 0) return { state: 'unavailable', reason: 'invalid', ...empty, dropped, droppedAttrs };
   return { state: 'attached', ...base, lines: entries.length, bytes, dropped, droppedAttrs, entries, ...(mappedDelivery && { delivery: mappedDelivery }) };
 }

@@ -4,7 +4,8 @@ import { beforeEach, describe, expect, it } from 'vitest';
 import { FEEDBACK_DIAGNOSTICS, type FeedbackDiagnostics } from '../../../shared/feedback-types';
 import { addDiagTap, diag, _resetDiagForTests } from '../../telemetry/diag';
 import { createDiagnosticsRing, DIAGNOSTICS_CATALOG, DIAGNOSTICS_WORDS, WITHHELD_EVENT, type DiagnosticsRing } from './feedback-diagnostics';
-import { DIAGNOSTICS_V1_LIMITS, OPERATION_BY_EVENT, toDiagnosticsV1, type DiagnosticsV1 } from './feedback-diagnostics-v1';
+import { DIAGNOSTICS_LIMITS, normalizeDiagnostics } from '../../vendor/framebriar/adapters/node/index.mjs';
+import { OPERATION_BY_EVENT, toDiagnosticsV1, type DiagnosticsV1 } from './feedback-diagnostics-v1';
 
 const START = Date.parse('2026-11-01T12:00:00.000Z');
 const SECRETS = [
@@ -198,9 +199,9 @@ describe('toDiagnosticsV1', () => {
   it('maps each outcome to a v1 state', () => {
     const none: FeedbackDiagnostics = { status: 'none', ...window, lines: [], bytes: 0, dropped: 0 };
     expect(toDiagnosticsV1(available([line()]), { status: 'queued', lines: 1 })).toMatchObject({ state: 'attached', lines: 1 });
-    expect(toDiagnosticsV1(available([line()]), { status: 'left_out', reason: 'reporter' })).toMatchObject({ state: 'left_out', reason: 'reporter', lines: 0, entries: [] });
-    expect(toDiagnosticsV1(none, { status: 'none', reason: 'no_lines' })).toMatchObject({ state: 'none', reason: 'no_lines' });
-    expect(toDiagnosticsV1(none, { status: 'none', reason: 'collection_failed' })).toMatchObject({ state: 'unavailable', reason: 'collection_failed' });
+    expect(toDiagnosticsV1(available([line()]), { status: 'left_out', reason: 'reporter' })).toMatchObject({ state: 'left_out', lines: 0, entries: [] });
+    expect(toDiagnosticsV1(none, { status: 'none', reason: 'no_lines' })).toMatchObject({ state: 'none', reason: 'empty' });
+    expect(toDiagnosticsV1(none, { status: 'none', reason: 'collection_failed' })).toMatchObject({ state: 'unavailable', reason: 'provider-failed' });
   });
 
   it('keeps the closed attrs and counts the rest', () => {
@@ -317,22 +318,63 @@ describe('toDiagnosticsV1', () => {
     const queued = { status: 'queued', lines: 1 } as const;
 
     it('sends the outbox count as an integer, including zero', () => {
-      expect(toDiagnosticsV1(available([line()]), queued, { queued: 3 }).delivery).toEqual({ queued: 3 });
-      expect(toDiagnosticsV1(available([line()]), queued, { queued: 0 }).delivery).toEqual({ queued: 0 });
+      expect(toDiagnosticsV1(available([line()]), queued, { queued: 3 }).delivery).toEqual({ queued: 3, lastResult: 'unknown' });
+      expect(toDiagnosticsV1(available([line()]), queued, { queued: 0 }).delivery).toEqual({ queued: 0, lastResult: 'unknown' });
     });
 
-    it('leaves delivery out when there is nothing true to say', () => {
+    it('leaves delivery out without a valid count, as the contract would', () => {
       expect(toDiagnosticsV1(available([line()]), queued)).not.toHaveProperty('delivery');
       expect(toDiagnosticsV1(available([line()]), queued, { queued: undefined })).not.toHaveProperty('delivery');
+      expect(toDiagnosticsV1(available([line()]), queued, { lastResult: 'ok' })).not.toHaveProperty('delivery');
       for (const bad of [-1, 1.5, NaN, true as unknown as number]) expect(toDiagnosticsV1(available([line()]), queued, { queued: bad })).not.toHaveProperty('delivery');
     });
 
     it.each(['ok', 'none', 'timeout', 'unknown'])('accepts lastResult %s', (lastResult) => {
-      expect(toDiagnosticsV1(available([line()]), queued, { lastResult }).delivery).toEqual({ lastResult });
+      expect(toDiagnosticsV1(available([line()]), queued, { queued: 1, lastResult }).delivery).toEqual({ queued: 1, lastResult });
     });
 
-    it('omits any other lastResult', () => {
-      expect(toDiagnosticsV1(available([line()]), queued, { lastResult: 'Delivered' })).not.toHaveProperty('delivery');
+    it('reads any other lastResult as unknown', () => {
+      expect(toDiagnosticsV1(available([line()]), queued, { queued: 1, lastResult: 'Delivered' }).delivery).toEqual({ queued: 1, lastResult: 'unknown' });
+    });
+  });
+
+  describe('against the SDK\'s normalizeDiagnostics', () => {
+    const queued = { status: 'queued', lines: 1 } as const;
+    const none: FeedbackDiagnostics = { status: 'none', ...window, lines: [], bytes: 0, dropped: 0 };
+
+    it('needs no correction, so nothing changes between here and the service', () => {
+      const lines = [line({ closeCode: 1006, failure: 'timeout', toState: 'disconnected', link: 'mtls-first', provider: 'codex-cli', connectionId: 'ABCDEF01-2345-4678-89AB-CDEF01234567' })];
+      const values = [
+        toDiagnosticsV1(available(lines), queued, { queued: 2 }),
+        toDiagnosticsV1(available(lines), { status: 'left_out', reason: 'reporter' }),
+        toDiagnosticsV1(none, { status: 'none', reason: 'no_lines' }),
+        toDiagnosticsV1(none, { status: 'none', reason: 'collection_failed' }),
+        toDiagnosticsV1(available([{ ...line(), ns: 'not a token' }]), queued),
+      ];
+      for (const v1 of values) expect(normalizeDiagnostics(v1)).toEqual(v1);
+    });
+
+    it('keeps every event, operation and word, none rewritten by the SDK\'s redaction', () => {
+      const lines = [...OPERATION_BY_EVENT.keys(), ...Object.values(DIAGNOSTICS_CATALOG).flat().map((entry) => entry.event)].map((event) => ({ ...line(), event }));
+      for (const key of ['fromState', 'toState']) for (const word of DIAGNOSTICS_WORDS.state) lines.push(line({ [key]: word }));
+      for (const word of DIAGNOSTICS_WORDS.reason) lines.push(line({ reason: word }));
+      for (const word of DIAGNOSTICS_WORDS.cli) lines.push(line({ provider: word, driver: word }));
+      lines.push(line({ provider: 'not in the set' }), line({ exitCode: -1 }));
+      const v1 = toDiagnosticsV1(available(lines.slice(0, DIAGNOSTICS_LIMITS.entries)), queued);
+      expect(v1.dropped).toBe(0);
+      expect(normalizeDiagnostics(v1)).toEqual(v1);
+    });
+
+    it('reports a line set with nothing usable as the contract does', () => {
+      const v1 = toDiagnosticsV1(available([{ ...line(), event: 'not a token' }], 1), queued);
+      expect(v1).toMatchObject({ state: 'unavailable', reason: 'invalid', dropped: 2, entries: [] });
+    });
+
+    it('has no contract word yet for not_connected or no_review: the SDK reads both as empty', () => {
+      for (const reason of ['not_connected', 'no_review'] as const) {
+        expect(toDiagnosticsV1(none, { status: 'none', reason }).reason).toBe(reason);
+        expect(normalizeDiagnostics(toDiagnosticsV1(none, { status: 'none', reason })).reason).toBe('empty');
+      }
     });
   });
 
@@ -402,10 +444,10 @@ describe('toDiagnosticsV1', () => {
   });
 
   it('trims the oldest entries past the caps and counts them', () => {
-    const lines = Array.from({ length: DIAGNOSTICS_V1_LIMITS.entries + 5 }, (_, i) => line({ attempt: i }));
+    const lines = Array.from({ length: DIAGNOSTICS_LIMITS.entries + 5 }, (_, i) => line({ attempt: i }));
     const v1 = toDiagnosticsV1(available(lines, 2), { status: 'queued', lines: lines.length });
-    expect(v1.entries.length).toBeLessThanOrEqual(DIAGNOSTICS_V1_LIMITS.entries);
-    expect(v1.bytes).toBeLessThanOrEqual(DIAGNOSTICS_V1_LIMITS.bytes);
+    expect(v1.entries.length).toBeLessThanOrEqual(DIAGNOSTICS_LIMITS.entries);
+    expect(v1.bytes).toBeLessThanOrEqual(DIAGNOSTICS_LIMITS.totalBytes);
     expect(v1.dropped).toBe(2 + lines.length - v1.entries.length);
     expect(v1.entries[v1.entries.length - 1].attrs?.attempt).toBe(lines.length - 1);
   });
