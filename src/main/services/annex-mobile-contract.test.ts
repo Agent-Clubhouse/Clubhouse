@@ -36,6 +36,7 @@ const W = vi.hoisted(() => ({
   helperStart: 'approve' as 'approve' | 'blocked' | 'refused' | 'no_valid_mapping',
   presets: {} as Record<string, Record<string, { model: string; effort: string | null }>>,
   presetsRevision: 0,
+  helperStartRefusals: 0,
   providers: {} as Record<string, any>,
   dispose: { ok: true } as Record<string, unknown>,
   projectStateReady: true,
@@ -332,6 +333,7 @@ vi.mock('./clubhouse-mcp/tools/helper-tools', async () => {
       starts.takeStartRequest(projectPath, requestId);
       if (W.helperStart === 'refused') return { ok: false, message: 'A helper named impl-ipc already exists.' };
       if (W.helperStart === 'no_valid_mapping') {
+        W.helperStartRefusals++;
         return { ok: false, code: 'no_valid_mapping', message: 'Couldn’t start impl-ipc because no hard preset for codex-cli is offered now. Change it in Settings > Helpers.' };
       }
       return { ok: true, helperId: 'durable_helper_new', message: 'Started' };
@@ -530,7 +532,7 @@ function resetWorld() {
     id: 'quick_1', name: 'swift-fox', kind: 'quick', status: 'running', prompt: 'Fix the flaky test', model: null, orchestrator: 'claude-code',
     freeAgentMode: false, parentAgentId: 'durable_chat', projectId: 'proj_app', spawnedAt: NOW - 120_000,
   });
-  _resetStartRequestsForTesting();
+  _resetStartRequestsForTesting({ keepListeners: true });
   _resetDisposeRequestsForTesting();
 }
 
@@ -679,7 +681,7 @@ describe('Annex mobile contract fixtures', { timeout: TEST_TIMEOUT_MS }, () => {
     const helperFrame = frames(withHelpers)[0];
     expect(helperFrame.payload.helperRequests).toHaveLength(2);
     fixtures.set('snapshot-helper-requests.json', { direction: 'desktop-to-phone', field: 'helperRequests', value: helperFrame.payload.helperRequests });
-    _resetStartRequestsForTesting(); _resetDisposeRequestsForTesting();
+    _resetStartRequestsForTesting({ keepListeners: true }); _resetDisposeRequestsForTesting();
     fixtures.set('rest-catalog.json', {
       projects: await exchange('GET', '/api/v1/projects'),
       agents: await exchange('GET', '/api/v1/projects/proj_app/agents'),
@@ -920,15 +922,33 @@ describe('Annex mobile contract fixtures', { timeout: TEST_TIMEOUT_MS }, () => {
     await command('accepted start', { type: 'helper.approve', requestId: helperStart() });
     W.helperStart = 'blocked';
     await command('helper_start_blocked', { type: 'helper.approve', requestId: helperStart() });
-    _resetStartRequestsForTesting();
+    _resetStartRequestsForTesting({ keepListeners: true });
     W.helperStart = 'refused';
     await command('helper_start_refused', { type: 'helper.approve', requestId: helperStart() });
-    // The request is used up, as any refused approval: a phone shows the sentence and offers no retry (#2671).
+    // Definite, and the request is used up: a phone shows the sentence and offers no retry (#2671).
     W.helperStart = 'no_valid_mapping';
-    const noMapping = await command('no_valid_mapping', { type: 'helper.approve', requestId: helperStart() });
-    expect(noMapping).toMatchObject({ status: 409, body: { status: 'failed', error: {
-      code: 'no_valid_mapping', message: 'Couldn’t start impl-ipc because no hard preset for codex-cli is offered now. Change it in Settings > Helpers.',
-    } } });
+    const held = helperStart();
+    const removal = await connect();
+    removal.send.mockClear();
+    const NO_MAPPING_MESSAGE = 'Couldn’t start impl-ipc because no hard preset for codex-cli is offered now. Change it in Settings > Helpers.';
+    const noMapping = await command('no_valid_mapping', { type: 'helper.approve', requestId: held }, { commandId: 'cmd_no_mapping' });
+    expect(noMapping).toEqual({ status: 409, body: {
+      version: 1, commandId: 'cmd_no_mapping', epoch, status: 'rejected', error: { code: 'no_valid_mapping', message: NO_MAPPING_MESSAGE },
+    } });
+    // A fresh snapshot takes the row away, whichever arrives first.
+    await eventually(() => {
+      const snapshot = frames(removal).filter((f) => f.type === 'snapshot').at(-1);
+      expect(snapshot?.payload.helperRequests.map((r: { requestId: string }) => r.requestId)).not.toContain(held);
+    });
+    expect(W.helperStartRefusals).toBe(1);
+    // The same command again gets the same receipt, and the start isn't tried twice.
+    const replay = await command('no_valid_mapping (same commandId replays the receipt)', { type: 'helper.approve', requestId: held }, { commandId: 'cmd_no_mapping' });
+    expect(replay).toEqual(noMapping);
+    expect(W.helperStartRefusals).toBe(1);
+    // A new command finds nothing to approve, so nothing can be created twice.
+    const again = await command('helper_request_not_found (consumed, new commandId)', { type: 'helper.approve', requestId: held }, { commandId: 'cmd_no_mapping_again' });
+    expect(again).toMatchObject({ status: 404, body: { commandId: 'cmd_no_mapping_again', status: 'rejected', error: { code: 'helper_request_not_found' } } });
+    expect(W.helperStartRefusals).toBe(1);
     W.helperStart = 'approve';
     await command('accepted dispose anyway', { type: 'helper.approve', requestId: helperDispose(), force: true });
     await command('accepted dispose (nothing at risk)', { type: 'helper.approve', requestId: helperDispose({ dirty: 0, unpushed: 0, unmerged: 3 }, false) });

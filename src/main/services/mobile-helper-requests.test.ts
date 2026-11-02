@@ -147,9 +147,9 @@ describe('runHelperCommand: starts', () => {
     const service = new MobileCommandService();
     const response = await service.execute('peer', { version: 1, commandId: 'c1', epoch: service.epoch, type: 'helper.approve', requestId: id },
       (parsed) => runHelperCommand(parsed as Parameters<typeof runHelperCommand>[0], deps()));
-    expect(response).toMatchObject({ statusCode: 409, body: { status: 'failed', error: { code: 'no_valid_mapping', message: sentence } } });
-    expect(response.body).not.toHaveProperty('result');
-    expect(response.body).not.toHaveProperty('routing');
+    expect(response).toEqual({ statusCode: 409, body: {
+      version: 1, commandId: 'c1', epoch: service.epoch, status: 'rejected', error: { code: 'no_valid_mapping', message: sentence },
+    } });
   });
 
   it('reports a used-up start that failed as refused', async () => {

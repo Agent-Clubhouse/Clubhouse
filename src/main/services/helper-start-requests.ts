@@ -158,9 +158,9 @@ export function onStartRequestsChanged(listener: Listener): () => void {
   return () => { listeners.delete(listener); };
 }
 
-export function _resetStartRequestsForTesting(): void {
+export function _resetStartRequestsForTesting(options: { keepListeners?: boolean } = {}): void {
   for (const timer of timers.values()) clearTimeout(timer);
   timers.clear();
   pending.clear();
-  listeners.clear();
+  if (!options.keepListeners) listeners.clear();
 }

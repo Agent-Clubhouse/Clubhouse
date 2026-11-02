@@ -151,7 +151,10 @@ export async function runHelperCommand(command: HelperCommand, deps: HelperComma
     if (!result.ok) {
       // Still waiting means a fixable refusal (wake the orchestrator); gone means it was used up or answered.
       const waiting = peekStartRequest(start.projectPath, requestId);
-      throw new MobileControlError(result.code ?? (waiting ? 'helper_start_blocked' : 'helper_start_refused'), 409, waiting ? 'rejected' : 'failed', result.message);
+      // A start with no valid preset is refused before anything is created, so the answer is definite. The
+      // request is gone too: the snapshot taking it was sent when it was used up (#2671).
+      if (result.code === 'no_valid_mapping') throw new MobileControlError('no_valid_mapping', 409, 'rejected', result.message);
+      throw new MobileControlError(waiting ? 'helper_start_blocked' : 'helper_start_refused', 409, waiting ? 'rejected' : 'failed', result.message);
     }
     return { requestId, kind: 'start', approved: true, helperId: result.helperId ?? null };
   }

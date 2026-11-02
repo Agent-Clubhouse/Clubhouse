@@ -82,7 +82,9 @@ The rules are the desktop's:
 
 When a dispose finds new facts the request is reissued under a **new `requestId`** with the new checks, and a snapshot is broadcast. An answer to the old id is `helper_request_not_found`, so a phone can never confirm facts it didn't show. Refetch the snapshot after any `helper_*` rejection.
 
-Errors (`message` is the desktop's sentence for all but `helper_request_not_found`): 404 `helper_request_not_found` (answered, expired, dropped or reissued); 409 `helper_start_blocked`, `helper_check_failed`, `helper_work_at_risk`, `helper_work_changed` (`status:"rejected"`, the request still waits); 409 `helper_start_refused`, `no_valid_mapping`, `helper_dispose_failed` (`status:"failed"`; a refused start was used up; a failed dispose may have stopped the helper). `no_valid_mapping` means nothing valid is offered for the start's difficulty, either its presets or a model its persona sets: show `error.message`, a sentence for a person, and offer no retry, since the request is gone.
+Errors (`message` is the desktop's sentence for all but `helper_request_not_found`): 404 `helper_request_not_found` (answered, expired, dropped or reissued); 409 `helper_start_blocked`, `helper_check_failed`, `helper_work_at_risk`, `helper_work_changed` (`status:"rejected"`, the request still waits); 409 `no_valid_mapping` (`status:"rejected"`, nothing was created and the request is gone); 409 `helper_start_refused`, `helper_dispose_failed` (`status:"failed"`; a refused start was used up; a failed dispose may have stopped the helper).
+
+`no_valid_mapping` means nothing valid is offered for the start's difficulty, either its presets or a model its persona sets. Show `error.message`, a sentence for a person, and offer no retry. `rejected` here says nothing was done, and only the next snapshot says whether a request still waits: a snapshot without the row is sent when the request is used up, and it can arrive before or after the receipt. Sending the same `commandId` again replays the receipt. A new one gets 404 `helper_request_not_found`.
 
 ## Image attachments
 
