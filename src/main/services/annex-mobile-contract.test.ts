@@ -11,6 +11,8 @@
  * `npm run fixtures:annex-mobile` rewrites the files; this suite (and
  * `npm run fixtures:annex-mobile -- --check`) fails when they are stale.
  */
+import { _resetProviderQuotaForTesting } from './provider-quota';
+import { QUOTA_STALE_MS, quotaRefetchDelaySeconds } from '../../shared/helper-routing';
 import { CLAUDE_WORKING_WINDOW_NOTE } from '../../shared/context-window';
 import { describe, it, expect, beforeAll, afterAll, beforeEach, vi } from 'vitest';
 import fs from 'fs';
@@ -1583,25 +1585,36 @@ describe('Annex mobile contract fixtures', { timeout: TEST_TIMEOUT_MS }, () => {
   });
 
   it('helper presets (#2671)', async () => {
+    // Quota and serverTime are read from the clock, and the file has to be the same on every run.
+    vi.spyOn(Date, 'now').mockReturnValue(NOW);
     const level = (id: string, label: string, efforts: string[] = ['low', 'medium', 'high']) => ({ id, label, efforts });
     const claude = (source: 'live' | 'fallback' = 'live', models = [level('opus', 'Opus'), level('sonnet', 'Sonnet'), level('haiku', 'Haiku')]) =>
       ({ models, source, via: source === 'live' ? 'handshake' : 'static', fetchedAt: NOW });
     const codex = (models = [level('gpt-6.1-sol', 'Sol'), level('gpt-6.1-terra', 'Terra'), level('gpt-6-luna', 'Luna')]) =>
       ({ models, source: 'live', via: 'handshake', fetchedAt: NOW });
     const lists: Record<string, unknown> = { 'claude-code': claude(), 'codex-cli': codex() };
+    // What each CLI says about its limits: a healthy plan unless a case says otherwise.
+    const inDays = (days: number) => NOW + days * 86_400_000;
+    const plan = (usedPercent: number, extra: object = {}) => ({ kind: 'windows', windows: [
+      { name: 'week', usedPercent, resetsAt: inDays(3), asOf: NOW, ...extra },
+      { name: '5h', usedPercent: 12, resetsAt: inDays(0.1), asOf: NOW },
+    ] });
+    const quotas: Record<string, () => Promise<unknown>> = { 'claude-code': async () => plan(41), 'codex-cli': async () => plan(41) };
     W.providers = Object.fromEntries(['claude-code', 'codex-cli', 'copilot-cli'].map((id) => [id, {
       id,
-      ...(id !== 'copilot-cli' && { listModels: async () => lists[id] }),
+      ...(id !== 'copilot-cli' && { listModels: async () => lists[id], readPlanQuota: () => quotas[id]() }),
     }]));
     const ROUTE = '/api/v1/mobile/helper-routing';
-    const FAMILIES = ['reason', 'fallback', 'skipped', 'quota', 'unknown', 'cell', 'generic'];
+    const FAMILIES = ['reason', 'fallback', 'skipped', 'quota', 'unknown', 'window', 'cell', 'generic'];
     const cell = (res: Awaited<ReturnType<typeof exchange>>, provider: string, difficulty: string) => res.response.body.providers[provider].cells[difficulty];
 
     // A bare read has every label family, so a phone can cache them once per revision.
     const bare = await exchange('GET', ROUTE);
     expect(Object.keys(bare.response.body.labels)).toEqual(FAMILIES);
     expect(cell(bare, 'codex-cli', 'hard')).toMatchObject({ effective: { model: 'gpt-6.1-sol', effort: 'high' }, source: 'builtin', state: 'valid', custom: null });
-    expect(bare.response.body.providers['copilot-cli']).toEqual({ autoEligible: false, reason: 'auto_not_supported', cells: null });
+    expect(bare.response.body.providers['copilot-cli']).toEqual({
+      autoEligible: false, reason: 'auto_not_supported', cells: null, quota: { state: 'unknown', unknownReason: 'not_supported', source: 'none', asOf: null },
+    });
     const revision = bare.response.body.revision;
     const cases: Record<string, unknown> = { bare };
     cases.project = await exchange('GET', `${ROUTE}?projectId=proj_app`);
@@ -1716,8 +1729,88 @@ describe('Annex mobile contract fixtures', { timeout: TEST_TIMEOUT_MS }, () => {
     expect(row).toEqual({ mode: 'preset', difficulty: 'hard', provider: 'codex-cli', model: 'gpt-6.1-sol', effort: 'high', reason: 'preset_on_cli' });
     expect(snapshot.helperRoutingRevision).toMatch(/^r\d+\.\d+$/);
     delete docs.routing;
+
+    // Each quota state, as a phone reads it. Only the provider's row differs.
+    const quotaOf = async (read: () => Promise<unknown>) => {
+      _resetProviderQuotaForTesting();
+      quotas['codex-cli'] = read;
+      const res = await exchange('GET', ROUTE);
+      return res.response.body.providers['codex-cli'].quota;
+    };
+    const quotaCases: Record<string, any> = {
+      known: await quotaOf(async () => plan(41)),
+      low: await quotaOf(async () => plan(85)),
+      nearLimit: await quotaOf(async () => plan(96)),
+      exhausted: await quotaOf(async () => plan(96, { limitReached: true })),
+      fiveHourLimiting: await quotaOf(async () => ({ kind: 'windows', windows: [
+        { name: 'week', usedPercent: 41, resetsAt: inDays(3), asOf: NOW }, { name: '5h', usedPercent: 88, resetsAt: inDays(0.1), asOf: NOW },
+      ] })),
+      oneWindowUnreadable: await quotaOf(async () => ({ kind: 'windows', windows: [
+        { name: 'week', usedPercent: 41, resetsAt: inDays(3), asOf: NOW }, { name: '5h', asOf: NOW },
+      ] })),
+      noFiveHourWindow: await quotaOf(async () => ({ kind: 'windows', windows: [{ name: 'week', usedPercent: 41, resetsAt: inDays(3), asOf: NOW }] })),
+      modelWindow: await quotaOf(async () => ({ kind: 'windows', windows: [
+        { name: 'week', usedPercent: 41, resetsAt: inDays(3), asOf: NOW }, { name: 'week:Fable', usedPercent: 99, resetsAt: inDays(3), asOf: NOW },
+      ] })),
+      unknownNotApplicable: await quotaOf(async () => ({ kind: 'not_applicable' })),
+      unknownReadFailed: await quotaOf(async () => { throw new Error('nope'); }),
+      unknownNothingReadable: await quotaOf(async () => ({ kind: 'windows', windows: [{ name: 'week', asOf: NOW }] })),
+      unknownStale: await quotaOf(async () => ({ kind: 'windows', windows: [{ name: 'week', usedPercent: 41, resetsAt: inDays(3), asOf: NOW - QUOTA_STALE_MS - 1 }] })),
+      unknownNotSupported: (await exchange('GET', ROUTE)).response.body.providers['copilot-cli'].quota,
+    };
+    expect(quotaCases.known).toMatchObject({ state: 'known', source: 'cli_query', limitingWindow: 'weekly', weekly: { usedPercent: 41 }, fiveHour: { usedPercent: 12 } });
+    expect(quotaCases.low.state).toBe('low');
+    expect(quotaCases.nearLimit.state).toBe('near_limit');
+    expect(quotaCases.exhausted.state).toBe('exhausted');
+    expect(quotaCases.fiveHourLimiting).toMatchObject({ state: 'low', limitingWindow: 'fiveHour' });
+    expect(quotaCases.oneWindowUnreadable).toMatchObject({ state: 'known', unreadableWindows: ['fiveHour'] });
+    expect(quotaCases.modelWindow).toMatchObject({ state: 'known', modelWindows: [{ name: 'Fable', usedPercent: 99 }] });
+    expect(quotaCases.unknownNotApplicable).toMatchObject({ state: 'unknown', unknownReason: 'not_applicable' });
+    expect(quotaCases.unknownReadFailed).toMatchObject({ state: 'unknown', unknownReason: 'read_failed', asOf: null });
+    expect(quotaCases.unknownStale).toMatchObject({ state: 'unknown', unknownReason: 'stale', asOf: new Date(NOW - QUOTA_STALE_MS - 1).toISOString() });
+    expect(quotaCases.unknownNotSupported).toMatchObject({ state: 'unknown', unknownReason: 'not_supported', source: 'none', asOf: null });
+    // Whole responses, to show the polling rule. Each has one provider with no refreshAfterSeconds (Copilot).
+    const nextFetch = (body: { providers: Parameters<typeof quotaRefetchDelaySeconds>[0] }) => quotaRefetchDelaySeconds(body.providers);
+    // A read still going: not_read, and soon. A real wait, since the budget is a real timer.
+    _resetProviderQuotaForTesting();
+    let finishRead!: (r: unknown) => void;
+    quotas['claude-code'] = () => new Promise((resolve) => { finishRead = resolve; });
+    quotas['codex-cli'] = async () => plan(41);
+    const mixedTtls = (await exchange('GET', ROUTE)).response.body;
+    expect(mixedTtls.providers['claude-code'].quota).toMatchObject({ state: 'unknown', unknownReason: 'not_read', refreshAfterSeconds: 3 });
+    expect(mixedTtls.providers['codex-cli'].quota.refreshAfterSeconds).toBe(300);
+    expect(mixedTtls.providers['copilot-cli'].quota).not.toHaveProperty('refreshAfterSeconds');
+    expect(nextFetch(mixedTtls)).toBe(5);
+    finishRead(plan(41));
+    // A cache that has just ended, with its new read still going: the last reading, and 0.
+    await vi.waitFor(async () => { expect((await exchange('GET', ROUTE)).response.body.providers['claude-code'].quota.state).toBe('known'); });
+    vi.mocked(Date.now).mockReturnValue(NOW + 300_000);
+    quotas['claude-code'] = () => new Promise((resolve) => { finishRead = resolve; });
+    const zeroTtl = (await exchange('GET', ROUTE)).response.body;
+    expect(zeroTtl.providers['claude-code'].quota).toMatchObject({ state: 'known', refreshAfterSeconds: 0 });
+    expect(nextFetch(zeroTtl)).toBe(5);
+    finishRead(plan(41));
+    vi.mocked(Date.now).mockReturnValue(NOW);
+    const noTtl = { providers: { 'copilot-cli': zeroTtl.providers['copilot-cli'] } };
+    expect(nextFetch(noTtl)).toBeNull();
+    _resetProviderQuotaForTesting();
+    const { labels: _labels, ...withoutLabels } = mixedTtls;
+    const { labels: _labelsZero, ...zeroWithoutLabels } = zeroTtl;
+    fixtures.set('helper-routing-quota.json', {
+      field: 'providers[provider].quota',
+      cases: quotaCases,
+      // labels are left out here: helper-routing.json has them.
+      fullResponses: {
+        mixedTtlsAndNotRead: { response: withoutLabels, nextFetchSeconds: nextFetch(mixedTtls) },
+        zeroAndMissingTtl: { response: zeroWithoutLabels, nextFetchSeconds: nextFetch(zeroTtl) },
+      },
+    });
+    // Never a credential, an account id or a plan name in any of it.
+    expect(JSON.stringify(quotaCases)).not.toMatch(/accountId|planType|subscription|token|key/i);
+
     fixtures.set('helper-routing-helper.json', { snapshotField: 'routing', snapshotRow: row, snapshotRevisionField: 'helperRoutingRevision', settingsField: 'routing', cases: settings });
     W.providers = {};
+    vi.mocked(Date.now).mockRestore();
   }, TEST_TIMEOUT_MS);
 
   it('session pairing revocation', async () => {

@@ -1,6 +1,6 @@
 # Helper Auto routing
 
-**Status: proposed (#2671).** Stages 1 and 2 are built: an explicit `effort` on `start_helper`, and presets by `difficulty`. Everything else here is a design. Clubhouse Go has locked the stage 2 phone wire in [Phone contract](#phone-contract), which is presets only. Later stages are not locked.
+**Status: proposed (#2671).** Stages 1 to 3 are built: an explicit `effort` on `start_helper`, presets by `difficulty`, and read-only quota. Everything else here is a design. Clubhouse Go has locked the stage 2 phone wire in [Phone contract](#phone-contract), which is presets only. Later stages are not locked.
 
 An orchestrator can ask for a helper by difficulty instead of naming a model, and can opt in to letting Clubhouse pick the provider from load and quota. The choice is deterministic, explained, and made once.
 
@@ -89,8 +89,10 @@ Read token-free, with no prompt. Checked on one login on Claude Code 2.1.312 and
 
 - **Codex:** `account/rateLimits/read` on `app-server`, plus `account/rateLimits/updated` from running chat sessions. `primary` can be the weekly window, so windows are classified by duration. `accountId` and `planType` are dropped and never stored.
 - **Claude:** the `get_usage` control request with `skip_behaviors`, plus `rate_limit_event` from running chat sessions. The SDK labels it experimental, so shape drift reads as `unknown` and never throws, and a fixture schema check guards the fields we read. Fields are picked by name, because the reply holds many unrelated keys.
+- **No plan:** a login with no plan limits is `not_applicable`. Claude says so with `rate_limits_available: false`. Codex says so only as an error, `authentication required to read rate limits`, seen on 0.163.0 with no login and with an API key, so it is matched by its words and a new wording reads as `read_failed`.
 - **Reads** run only when Auto routes or Settings is open, with no background polling. Shared in flight, cached 5 minutes, 1 minute backoff after a failure, 3 second budget at route time, keyed by provider and profile.
-- **Model-scoped caps** apply only on an exact name match. Otherwise only provider-wide windows count, so a model-scoped cap can be missed, and the UI says so.
+- **Model-scoped caps** apply only on an exact name match, and only to a choice of that model. A provider's own state leaves them out, since they apply to one model. So a model-scoped cap can be missed, and the UI says so.
+- **Claude's other keys** aren't read: `locked_reason` isn't in the SDK's types, so a reported limit on Claude comes from `rate_limit_event` in a running chat session. A terminal session or an idle provider shows `near_limit` at most, never `exhausted`.
 
 | State | Meaning | Routing |
 |---|---|---|
@@ -252,7 +254,7 @@ A cell with nothing valid has `effective: null`. Until the `auto` mode is advert
 
 **Revisions.** The full snapshot has `helperRoutingRevision`, and a `helper_routing:changed` event carries `{revision}`, so an open or cached page knows to refetch. The revision moves when a saved value changes or when an app-wide read finds that a cell's state changed. It doesn't move for a quota sample, and no snapshot is broadcast for one. It is opaque to a client. A list changing doesn't make a write stale: only a saved value does.
 
-**Quota freshness** is pulled. `GET helper-routing` returns `serverTime`, and each `quota` has `asOf` and `refreshAfterSeconds`, the cache's remaining life. A phone refetches while the page is open, no sooner than that, and on returning to the foreground. It shows age from `asOf` against `serverTime`. A fetch uses the same shared 5 minute cache as routing, so phones can't make extra CLI reads.
+**Quota freshness** is pulled. See `docs/mobile-control-v1.md#quota` for the rule: the smallest `refreshAfterSeconds` across providers, at least 5 seconds, with age measured from a `serverTime` anchor on suspend-aware monotonic time, never the phone's clock.
 
 **Labels.** `GET helper-routing` returns `labels`, keyed by code family, and helper settings add `display:{summary,reason,fallback}` with the resolved text, and `quota` from stage 3. So the desktop owns the words. A bare `GET helper-routing`, with no `agentId` or `projectId`, returns every label family, so a client can cache labels once per revision for code-only helper and Needs you rows. Precedence for a client: `display`, then `labels`, then `labels.unknownCode`, then its own generic "Other". The snapshot carries codes only.
 
@@ -339,6 +341,6 @@ One PR each.
 
 1. Explicit `effort` on `start_helper`. Built.
 2. Built. Mapping and `difficulty` in `preset` mode: settings, validation, reset, UI, explanation, telemetry, phone read and write including app-wide preset editing, restoring explicit fields after a persona applies, first audit rows.
-3. Quota service: read-only, shown in Settings and on the phone.
+3. Built. Quota service: read-only, shown in Settings and on the phone. Routing doesn't use it yet.
 4. `cli: "auto"`: routing, load, sticky, reservations, cooldowns, retry, tool and persona guidance.
 5. Wider audit.

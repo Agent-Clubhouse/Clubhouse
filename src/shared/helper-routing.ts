@@ -142,6 +142,11 @@ export const HELPER_ROUTING_LABELS = {
     read_failed: 'Couldn’t check',
     not_supported: 'This provider doesn’t report it',
   },
+  window: {
+    weekly: 'Weekly limit',
+    fiveHour: '5-hour limit',
+    other: 'Plan limit',
+  },
   cell: {
     valid: 'Offered',
     unverified: 'Couldn’t be checked',
@@ -216,13 +221,16 @@ export interface PresetChoice {
 export type ProviderRoutingView =
   | {
     autoEligible: true;
+    quota: QuotaView;
     choices: { source: 'live' | 'fallback'; asOf: string | null; models: PresetChoice[] };
     cells: Record<HelperDifficulty, PresetCellView>;
   }
-  | { autoEligible: false; reason: 'auto_not_supported'; cells: null };
+  | { autoEligible: false; reason: 'auto_not_supported'; quota: QuotaView; cells: null };
 
 export interface HelperRoutingSettings {
   revision: string;
+  /** To show a reading's age from its `asOf`, whatever the client's clock says. */
+  serverTime: string;
   labels: typeof HELPER_ROUTING_LABELS;
   providers: Record<string, ProviderRoutingView>;
   /** With an agent in the request: whether it can use presets, and why not. */
@@ -240,3 +248,137 @@ export interface HelperRoutingUpdate {
 export type HelperRoutingUpdateResult =
   | { ok: true; settings: HelperRoutingSettings }
   | { ok: false; code: string; message: string; settings?: HelperRoutingSettings };
+
+// ── Quota ────────────────────────────────────────────────────────────────
+
+/**
+ * These are tunable starting proposals, not measured values. Percent used is
+ * only ever compared within a provider's own plan: it says nothing about cost.
+ */
+export const QUOTA_LOW_PERCENT = 80;
+export const QUOTA_NEAR_LIMIT_PERCENT = 95;
+/** A reading older than this is `unknown`, keeping its `asOf`. */
+export const QUOTA_STALE_MS = 15 * 60_000;
+
+export const QUOTA_STATES = ['known', 'low', 'near_limit', 'exhausted', 'unknown'] as const;
+export type QuotaState = (typeof QUOTA_STATES)[number];
+export const QUOTA_UNKNOWN_REASONS = ['not_read', 'stale', 'not_applicable', 'read_failed', 'not_supported'] as const;
+export type QuotaUnknownReason = (typeof QUOTA_UNKNOWN_REASONS)[number];
+export const QUOTA_SOURCES = ['cli_query', 'session_event', 'none'] as const;
+export type QuotaSource = (typeof QUOTA_SOURCES)[number];
+
+/** One limit as a CLI reports it. A window with no `usedPercent` exists but couldn't be read. */
+export interface QuotaWindow {
+  /** `week`, `5h`, `week_opus`, `week:<model>`, or another duration such as `1d`. */
+  name: string;
+  usedPercent?: number;
+  /** Epoch milliseconds. */
+  resetsAt?: number;
+  /** The provider itself said this limit is reached. Used percent alone never sets this. */
+  limitReached?: boolean;
+  /** Epoch milliseconds: when this window was last heard. */
+  asOf: number;
+}
+
+/** What a CLI says about its plan limits. `not_applicable`: this login has none (an API key, say). */
+export type PlanQuotaReading = { kind: 'windows'; windows: QuotaWindow[] } | { kind: 'not_applicable' };
+
+export type QuotaWindowName = 'weekly' | 'fiveHour' | 'other' | `model:${string}`;
+
+export interface QuotaWindowView {
+  usedPercent: number | null;
+  resetsAt: string | null;
+}
+
+export interface QuotaView {
+  state: QuotaState;
+  source: QuotaSource;
+  /** When the reading behind this was made. Kept on a stale reading; null when there has been none. */
+  asOf: string | null;
+  unknownReason?: QuotaUnknownReason;
+  /** The most constrained window, which sets `state`, and when it resets. */
+  limitingWindow?: QuotaWindowName;
+  resetsAt?: string | null;
+  weekly?: QuotaWindowView | null;
+  fiveHour?: QuotaWindowView | null;
+  /** Limits for one model. They don't set this state, because they only apply to that model. */
+  modelWindows?: Array<QuotaWindowView & { name: string }>;
+  /** Windows that exist but couldn't be read, so the others decided. */
+  unreadableWindows?: QuotaWindowName[];
+  /** How long a fetch would return this same reading. */
+  refreshAfterSeconds?: number;
+}
+
+function iso(ms: number | undefined): string | null {
+  return ms === undefined ? null : new Date(ms).toISOString();
+}
+
+function wireName(name: string): QuotaWindowName {
+  if (name === 'week') return 'weekly';
+  if (name === '5h') return 'fiveHour';
+  return isModelWindow(name) ? `model:${name.replace(/^week[:_]/, '')}` : 'other';
+}
+
+function isModelWindow(name: string): boolean {
+  return name.startsWith('week:') || name === 'week_opus' || name === 'week_sonnet';
+}
+
+function windowView(window: QuotaWindow | undefined): QuotaWindowView | null {
+  return window ? { usedPercent: window.usedPercent ?? null, resetsAt: iso(window.resetsAt) } : null;
+}
+
+/**
+ * The state a set of windows comes to, from the most constrained one that can
+ * be read: the highest used percent, with the later reset breaking a tie. A limit
+ * the provider says is reached makes it `exhausted`, whatever the percent. A
+ * window past its reset says nothing any more. `model` adds that model's own
+ * window, by exact name; only a choice of model should pass it.
+ */
+export function classifyQuota(windows: readonly QuotaWindow[], now: number, options: { model?: string } = {}): Omit<QuotaView, 'source' | 'refreshAfterSeconds'> {
+  const current = windows.filter((w) => (w.resetsAt === undefined || w.resetsAt > now) && now - w.asOf <= QUOTA_STALE_MS);
+  const counts = (w: QuotaWindow) => !isModelWindow(w.name) || (!!options.model && wireName(w.name) === `model:${options.model}`);
+  const readable = current.filter((w) => counts(w) && (w.usedPercent !== undefined || w.limitReached));
+  const unreadable = current.filter((w) => counts(w) && w.usedPercent === undefined && !w.limitReached).map((w) => wireName(w.name));
+  const listed = {
+    weekly: windowView(current.find((w) => w.name === 'week')),
+    fiveHour: windowView(current.find((w) => w.name === '5h')),
+    ...(current.some((w) => isModelWindow(w.name)) && {
+      modelWindows: current.filter((w) => isModelWindow(w.name)).map((w) => ({ name: wireName(w.name).slice('model:'.length), ...windowView(w)! })),
+    }),
+    ...(unreadable.length > 0 && { unreadableWindows: unreadable }),
+  };
+  if (readable.length === 0) {
+    const anyHeard = windows.length > 0 ? Math.max(...windows.map((w) => w.asOf)) : undefined;
+    const allStale = windows.length > 0 && windows.every((w) => now - w.asOf > QUOTA_STALE_MS);
+    return { state: 'unknown', unknownReason: allStale ? 'stale' : 'read_failed', asOf: iso(anyHeard), ...listed };
+  }
+  const reached = readable.filter((w) => w.limitReached);
+  const pool = reached.length > 0 ? reached : readable;
+  const limiting = [...pool].sort((a, b) => (b.usedPercent ?? 0) - (a.usedPercent ?? 0) || (b.resetsAt ?? 0) - (a.resetsAt ?? 0))[0];
+  const used = limiting.usedPercent ?? 0;
+  const state: QuotaState = reached.length > 0 ? 'exhausted'
+    : used >= QUOTA_NEAR_LIMIT_PERCENT ? 'near_limit'
+      : used >= QUOTA_LOW_PERCENT ? 'low' : 'known';
+  return {
+    state,
+    // The oldest reading that counted, so a fresh event can't vouch for an old window.
+    asOf: iso(Math.min(...readable.map((w) => w.asOf))),
+    limitingWindow: wireName(limiting.name),
+    resetsAt: iso(limiting.resetsAt),
+    ...listed,
+  };
+}
+
+/** The least a client waits before fetching again, whatever a provider says, so a 0 can't make it spin. */
+export const QUOTA_REFETCH_FLOOR_SECONDS = 5;
+
+/**
+ * How long to wait before fetching the page again, in seconds: the soonest any
+ * provider's reading would be new, and never under the floor. A provider with no
+ * `refreshAfterSeconds` asks for nothing, and with none at all there's no timer.
+ * Reading another provider early does no harm, since its reading is cached.
+ */
+export function quotaRefetchDelaySeconds(providers: Readonly<Record<string, { quota?: Pick<QuotaView, 'refreshAfterSeconds'> }>>): number | null {
+  const delays = Object.values(providers).map((p) => p.quota?.refreshAfterSeconds).filter((s): s is number => typeof s === 'number' && Number.isFinite(s));
+  return delays.length > 0 ? Math.max(Math.min(...delays), QUOTA_REFETCH_FLOOR_SECONDS) : null;
+}

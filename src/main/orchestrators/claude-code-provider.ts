@@ -1,3 +1,6 @@
+import type { ListModelsOptions } from './types';
+import type { PlanQuotaReading } from '../../shared/helper-routing';
+import { probeClaudeQuota } from './quota-probes';
 import { claudeContextWindowOptions, type ContextWindowOptions } from '../../shared/context-window';
 import * as fs from 'fs';
 import { levelFromClaudeMode } from '../chat/claude/permission-mode';
@@ -125,6 +128,11 @@ export class ClaudeCodeProvider extends BaseProvider implements HookCapable, Hea
   protected readonly fallbackModelOptions = MODEL_OPTIONS;
 
   /** The stream-json `initialize` reply lists the models this login can use, with their aliases. */
+  /** `get_usage`: no prompt, and only the limit fields are kept. */
+  readPlanQuota(opts: ListModelsOptions = {}): Promise<PlanQuotaReading> {
+    return this.runQuotaProbe(opts, probeClaudeQuota);
+  }
+
   protected probeLiveModels(ctx: ModelProbeContext) {
     return probeClaudeModels(ctx);
   }

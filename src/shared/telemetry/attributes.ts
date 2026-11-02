@@ -539,6 +539,7 @@ export const ATTR = {
   helperRoutingReason: enumAttr('clubhouse.helper_routing.reason', ['explicit_request', 'persona_pinned', 'preset_on_cli']),
   helperRoutingFallback: enumAttr('clubhouse.helper_routing.fallback', ['none', 'builtin_preset', 'model_unverified']),
   helperRoutingPolicyVersion: intAttr('clubhouse.helper_routing.policy_version'),
+  helperQuotaState: enumAttr('clubhouse.helper_quota.state', ['known', 'low', 'near_limit', 'exhausted', 'unknown']),
   helperPresetsAction: enumAttr('clubhouse.helper_presets.action', ['set', 'reset_cell', 'reset_provider', 'reset_all']),
   helperPresetsSurface: enumAttr('clubhouse.helper_presets.surface', ['ui', 'mcp', 'mobile', 'dispatcher', 'persona', 'system']),
   /** Bucketed from the model string; never the raw model name. */
@@ -1418,6 +1419,8 @@ export const EVENTS = {
   'clubhouse.helper.routed': { level: 'standard' },
   /** Helper presets were changed or reset, or a change was refused. Attributes: action, surface, `clubhouse.outcome`. */
   'clubhouse.helper_routing.changed': { level: 'standard' },
+  /** A CLI's plan limits were read, token-free. Attributes: `orchestrator`, the state, `clubhouse.outcome`. */
+  'clubhouse.helper_quota.read': { level: 'standard' },
   /** Attributes: `clubhouse.theme.kind`, `clubhouse.theme.builtin_id`. */
   'clubhouse.theme.changed': { level: 'standard' },
   /** Attributes: `clubhouse.popout.type`. */

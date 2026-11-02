@@ -27,6 +27,7 @@ vi.mock('./orchestration-settings', () => ({
   getPresetsRevision: () => W.revision,
   savePresets: async (presets: typeof W.saved) => { W.saved = presets; W.revision++; },
 }));
+vi.mock('./agent-runtime/chat-event-bus', () => ({ onChatEvent: () => () => undefined }));
 vi.mock('./settings-audit', () => ({ appendSettingsAudit: async (row: Record<string, unknown>) => { W.audit.push(row); return true; } }));
 vi.mock('../telemetry/feature-events', () => ({ helperPresetsChanged: (...args: unknown[]) => { W.telemetry.push(args); } }));
 
@@ -263,13 +264,16 @@ describe('readHelperRouting', () => {
   it('returns every provider, with Copilot excluded and a reason', async () => {
     const settings = await readHelperRouting();
     expect(Object.keys(settings.providers).sort()).toEqual(['claude-code', 'codex-cli', 'copilot-cli']);
-    expect(settings.providers['copilot-cli']).toEqual({ autoEligible: false, reason: 'auto_not_supported', cells: null });
+    expect(settings.providers['copilot-cli']).toEqual({
+      autoEligible: false, reason: 'auto_not_supported', cells: null, quota: { state: 'unknown', unknownReason: 'not_supported', source: 'none', asOf: null },
+    });
+    expect(settings.serverTime).toEqual(expect.any(String));
     expect(settings.providers['codex-cli']).toMatchObject({
       autoEligible: true,
       choices: { source: 'live', asOf: new Date(1000).toISOString() },
       cells: { easy: { state: 'valid', source: 'builtin', custom: null, editable: true, effective: { model: 'gpt-6-luna', effort: 'low' } } },
     });
-    expect(Object.keys(settings.labels)).toEqual(['reason', 'fallback', 'skipped', 'quota', 'unknown', 'cell', 'generic']);
+    expect(Object.keys(settings.labels)).toEqual(['reason', 'fallback', 'skipped', 'quota', 'unknown', 'window', 'cell', 'generic']);
   });
 
   it('shows a stale saved choice with what is used instead, and nothing when nothing is left', async () => {

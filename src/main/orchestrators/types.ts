@@ -415,6 +415,8 @@ export interface OrchestratorProvider {
    * never a project's. Cached per profile env for about ten minutes.
    */
   listModels?(opts?: ListModelsOptions): Promise<ModelList>;
+  /** What the CLI says about its plan limits (#2671). Token-free. Only providers that can report have it. */
+  readPlanQuota?(opts?: ListModelsOptions): Promise<import('../../shared/helper-routing').PlanQuotaReading>;
   /**
    * The context choices for `model` (#2660). A CLI whose catalog needs a process
    * caches it per profile env and shares one read, so opening settings can't
