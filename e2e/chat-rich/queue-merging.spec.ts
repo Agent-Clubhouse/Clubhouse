@@ -88,6 +88,8 @@ test('claude: a burst of helper updates becomes one steer, and user steers are n
   const dom = chatDom(window);
   await session.send('Start.');
   await expect(chat).toHaveAttribute('data-state', 'running', { timeout: TURN_TIMEOUT });
+  // Before the held turn's Wait tool lands, steers land ahead of it, and the helper steer folds in with it (#2677).
+  await expect(window.getByTestId('chat-command-card')).toBeVisible({ timeout: TURN_TIMEOUT });
 
   // Each user steer goes at once, on its own.
   const steered = dom.userMessages.and(window.locator('[data-delivery="steer"]'));
