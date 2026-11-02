@@ -6,6 +6,14 @@ import { create } from 'zustand';
 import type { FeedbackCaptureResult, FeedbackNotice, FeedbackStatus } from '../../shared/feedback-types';
 import { useToastStore } from './toastStore';
 
+/** What a review reopened after an enrollment change keeps of the one it replaces. */
+export interface FeedbackReopened {
+  notes: string;
+  /** The user's opt-outs: what they turned off stays off, whatever the new contents are. */
+  includeCorrelation: boolean;
+  includeDiagnostics: boolean;
+}
+
 export const FEEDBACK_NOTICE_TEXT: Record<FeedbackNotice, string> = {
   expired: 'Your feedback access expired. Paste a new invitation in Settings, Feedback.',
   'access-required': 'Feedback access was revoked or isn\'t allowed any more. Paste a new invitation in Settings, Feedback.',
@@ -29,10 +37,10 @@ interface FeedbackState {
    */
   openDraft: (draft: FeedbackCaptureResult) => void;
   closeDraft: () => void;
-  /** Set while reviewing a draft reopened after an enrollment change: the note it keeps. */
-  reopenedNotes: string | null;
-  /** Replace the open review with a reopened draft, keeping only the note and the draft's image. */
-  reopenDraft: (draft: FeedbackCaptureResult, notes: string) => void;
+  /** Set while reviewing a draft reopened after an enrollment change. */
+  reopened: FeedbackReopened | null;
+  /** Replace the open review with a reopened draft, which brings its own image. */
+  reopenDraft: (draft: FeedbackCaptureResult, kept: FeedbackReopened) => void;
 }
 
 let initPromise: Promise<void> | null = null;
@@ -45,7 +53,7 @@ export const useFeedbackStore = create<FeedbackState>((set, get) => ({
   status: null,
   loaded: false,
   draft: null,
-  reopenedNotes: null,
+  reopened: null,
 
   openDraft: (draft) => {
     const open = get().draft;
@@ -53,12 +61,12 @@ export const useFeedbackStore = create<FeedbackState>((set, get) => ({
       void window.clubhouse.feedback.cancel(draft.draftId);
       return;
     }
-    set({ draft, reopenedNotes: null });
+    set({ draft, reopened: null });
   },
 
-  closeDraft: () => set({ draft: null, reopenedNotes: null }),
+  closeDraft: () => set({ draft: null, reopened: null }),
 
-  reopenDraft: (draft, notes) => set({ draft, reopenedNotes: notes }),
+  reopenDraft: (draft, kept) => set({ draft, reopened: kept }),
 
   init: () => {
     if (!initPromise) {
@@ -105,5 +113,5 @@ export function resetFeedbackStore(): void {
   unsubscribeCaptured?.();
   unsubscribeCaptured = null;
   toastedNotices.clear();
-  useFeedbackStore.setState({ status: null, loaded: false, draft: null, reopenedNotes: null });
+  useFeedbackStore.setState({ status: null, loaded: false, draft: null, reopened: null });
 }

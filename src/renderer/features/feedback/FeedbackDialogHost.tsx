@@ -9,12 +9,12 @@ import { FeedbackReviewDialog } from './FeedbackReviewDialog';
  */
 export function FeedbackDialogHost() {
   const draft = useFeedbackStore((s) => s.draft);
-  const reopenedNotes = useFeedbackStore((s) => s.reopenedNotes);
+  const reopened = useFeedbackStore((s) => s.reopened);
   const closeDraft = useFeedbackStore((s) => s.closeDraft);
   const init = useFeedbackStore((s) => s.init);
   // Start following main here too, so shortcut captures arrive with no Feedback button mounted.
   useEffect(() => { void init(); }, [init]);
   // Keyed by draft: a new capture is a fresh review (notes, ink, chosen window). A reopened
-  // draft is one too, and brings only its note along.
-  return draft ? <FeedbackReviewDialog key={draft.draftId} draft={draft} reopenedNotes={reopenedNotes} onClose={closeDraft} /> : null;
+  // draft is one too, and brings only its note and the user's opt-outs along.
+  return draft ? <FeedbackReviewDialog key={draft.draftId} draft={draft} reopened={reopened} onClose={closeDraft} /> : null;
 }

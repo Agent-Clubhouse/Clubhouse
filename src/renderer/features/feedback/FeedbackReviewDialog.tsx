@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState, type KeyboardEvent } from 'react';
 import { Modal } from '../../components/Modal';
 import { FEEDBACK_DIAGNOSTICS, type FeedbackCaptureResult, type FeedbackDiagnosticLine, type FeedbackDiagnosticsOutcome, type FeedbackShot, type FeedbackStatus } from '../../../shared/feedback-types';
-import { useFeedbackStore } from '../../stores/feedbackStore';
+import { useFeedbackStore, type FeedbackReopened } from '../../stores/feedbackStore';
 import { useUIStore } from '../../stores/uiStore';
 import { ipcErrorMessage } from '../../utils/ipc-error';
 import { compositeAnnotatedPng, type Stroke } from './annotation';
@@ -9,8 +9,8 @@ import { ScreenshotAnnotator } from './ScreenshotAnnotator';
 
 interface Props {
   draft: FeedbackCaptureResult;
-  /** Set when this draft replaced one whose enrollment changed: the note to keep. */
-  reopenedNotes?: string | null;
+  /** Set when this draft replaced one whose enrollment changed: what it keeps. */
+  reopened?: FeedbackReopened | null;
   onClose: () => void;
 }
 
@@ -63,15 +63,14 @@ function savedText(status: FeedbackStatus | null): string {
  * "Send without screenshot" or Cancel. After sending it shows "Saved" (queued on this
  * computer), then "Received" once the server acknowledges the report.
  */
-export function FeedbackReviewDialog({ draft, reopenedNotes = null, onClose }: Props) {
-  const reopened = reopenedNotes !== null;
+export function FeedbackReviewDialog({ draft, reopened = null, onClose }: Props) {
   const reopenDraft = useFeedbackStore((s) => s.reopenDraft);
-  const [notes, setNotes] = useState(reopenedNotes ?? '');
+  const [notes, setNotes] = useState(reopened?.notes ?? '');
   const [phase, setPhase] = useState<Phase>('review');
   const [reportId, setReportId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [includeCorrelation, setIncludeCorrelation] = useState(true);
-  const [includeDiagnostics, setIncludeDiagnostics] = useState(true);
+  const [includeCorrelation, setIncludeCorrelation] = useState(reopened?.includeCorrelation ?? true);
+  const [includeDiagnostics, setIncludeDiagnostics] = useState(reopened?.includeDiagnostics ?? true);
   const [outcome, setOutcome] = useState<FeedbackDiagnosticsOutcome | null>(null);
   const diagnostics = draft.diagnostics;
   const received = useFeedbackStore((s) => (reportId ? s.status?.received.includes(reportId) === true : false));
@@ -124,7 +123,7 @@ export function FeedbackReviewDialog({ draft, reopenedNotes = null, onClose }: P
       });
       if (result.status === 'enrollment-changed') {
         // Nothing was saved. A new report with new contents needs its own review and Send.
-        reopenDraft(result.draft, notes);
+        reopenDraft(result.draft, { notes, includeCorrelation, includeDiagnostics });
         return;
       }
       setReportId(result.id);
