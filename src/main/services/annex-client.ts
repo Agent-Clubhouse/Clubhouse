@@ -63,6 +63,8 @@ export interface SatelliteConnection {
   pairingPort: number;
   snapshot: SatelliteSnapshot | null;
   lastError: string | null;
+  /** This connection's satellite said it can't build a snapshot yet, and is retrying. `snapshot` is from before, if there is one. */
+  snapshotUnavailable?: boolean;
 }
 
 export interface SatelliteSnapshot {
@@ -109,6 +111,7 @@ export interface DiscoveredService {
 const discoveredServices = new Map<string, DiscoveredService>();
 
 interface SatelliteConnectionInternal {
+  snapshotUnavailable?: boolean;
   id: string;
   alias: string;
   icon: string;
@@ -425,6 +428,7 @@ function toPublicConnection(s: SatelliteConnectionInternal): SatelliteConnection
     pairingPort: s.pairingPort,
     snapshot: s.snapshot,
     lastError: s.lastError,
+    ...(s.snapshotUnavailable && { snapshotUnavailable: true }),
   };
 }
 
@@ -566,6 +570,7 @@ function getPeerCertificateFingerprint(ws: WebSocket): string | null {
 }
 
 async function connectToSatellite(sat: SatelliteConnectionInternal): Promise<void> {
+  sat.snapshotUnavailable = false;
   setState(sat, 'connecting');
   connectStarted(sat.fingerprint, sat.host);
 
@@ -760,6 +765,7 @@ function handleSatelliteMessage(sat: SatelliteConnectionInternal, msg: Record<st
       if (!sat.snapshot || !socketsWithSnapshot.has(sat.ws!) || incoming.lastSeq >= sat.snapshot.lastSeq) {
         if (sat.ws) socketsWithSnapshot.add(sat.ws);
         sat.lastError = null;
+        sat.snapshotUnavailable = false;
         // Left out for size, so what's known still stands, and a new connection fetches it.
         const omitted = incoming.snapshotTruncated?.omitted?.includes('canvasState');
         if (omitted) {
@@ -771,6 +777,16 @@ function handleSatelliteMessage(sat: SatelliteConnectionInternal, msg: Record<st
         broadcastSatelliteEvent(sat.id, 'snapshot', incoming);
         if (omitted) void fetchOmittedCanvases(sat);
       }
+      break;
+    }
+
+    case 'error': {
+      if ((msg.payload as { message?: unknown } | undefined)?.message === 'snapshot_failed') {
+        sat.snapshotUnavailable = true;
+        connectFailed(sat.fingerprint, 'unknown');
+        broadcastSatellitesChanged();
+      }
+      broadcastSatelliteEvent(sat.id, type, msg.payload);
       break;
     }
 

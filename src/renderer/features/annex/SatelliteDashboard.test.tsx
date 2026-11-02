@@ -76,6 +76,35 @@ describe('SatelliteDashboard', () => {
     expect(screen.getByText('No projects on this satellite')).toBeTruthy();
   });
 
+  it('says it is retrying, not that there are no projects, when a satellite cannot build a snapshot', () => {
+    useAnnexClientStore.setState({ satellites: [makeSatellite({ snapshotUnavailable: true, snapshot: null })] });
+    useRemoteProjectStore.setState({ satelliteProjects: { 'sat-1': [] } });
+
+    render(<SatelliteDashboard activeHostId="sat-1" />);
+
+    expect(screen.getByText("Can't load this satellite yet")).toBeTruthy();
+    expect(screen.queryByText('No projects on this satellite')).toBeNull();
+  });
+
+  it('marks what it shows as possibly out of date while a satellite cannot build a snapshot', () => {
+    useAnnexClientStore.setState({ satellites: [makeSatellite({ snapshotUnavailable: true })] });
+    useRemoteProjectStore.setState({ satelliteProjects: { 'sat-1': [{ id: 'remote||sat-1||p1', name: 'App', path: '/app' } as never] } });
+
+    render(<SatelliteDashboard activeHostId="sat-1" />);
+
+    expect(screen.getByText('This may be out of date. Retrying to load the latest.')).toBeTruthy();
+  });
+
+  it('shows neither once a snapshot arrives', () => {
+    useAnnexClientStore.setState({ satellites: [makeSatellite()] });
+    useRemoteProjectStore.setState({ satelliteProjects: { 'sat-1': [{ id: 'remote||sat-1||p1', name: 'App', path: '/app' } as never] } });
+
+    render(<SatelliteDashboard activeHostId="sat-1" />);
+
+    expect(screen.queryByText('This may be out of date. Retrying to load the latest.')).toBeNull();
+    expect(screen.queryByText("Can't load this satellite yet")).toBeNull();
+  });
+
   it('renders project cards for satellite projects', () => {
     useAnnexClientStore.setState({ satellites: [makeSatellite()] });
     useRemoteProjectStore.setState({
