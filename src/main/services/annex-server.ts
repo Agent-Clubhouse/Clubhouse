@@ -1483,9 +1483,10 @@ const FRAME_ENVELOPE_BYTES = 1024;
 
 /**
  * An event no phone can receive: the transport closes the socket on it. Sent once live,
- * that costs a reconnect, and the new connection's snapshot is past it. Sent on replay it
- * would be every time, for as long as the buffer keeps it, so a phone resuming from before
- * it gets `replay:gap` and reloads, which moves its cursor past.
+ * that costs a reconnect, and the new connection's first snapshot is past it. Sent on replay
+ * it would be every time, for as long as the buffer keeps it, so replay across it answers
+ * `replay:gap`. Clubhouse Go measured that phones ignore that frame's `lastSeq`, so what ends
+ * this is the fresh cursor each connection takes below, not the gap's.
  */
 function cannotBeReplayed(event: { payload: unknown }): boolean {
   const json = JSON.stringify(event.payload) ?? '';
@@ -4344,6 +4345,8 @@ export function start(): void {
     // Nothing reaches this socket until its snapshot has. Events from here on come after it,
     // so its cursor is this seq: the build reads state later, and an event it already
     // reflects arriving again is safe, where one lost between the read and the cursor isn't.
+    // Taken fresh for every connection, whichever build serves it: that's also how a phone gets
+    // past a frame it can't receive, so it must never come from an earlier connection or build.
     heldFrames.set(ws, { frames: [], bytes: 0, retrying: false, cursor: eventReplay.getLastSeq() });
     firstSnapshotWaiters.add(ws);
 

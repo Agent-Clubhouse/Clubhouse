@@ -281,14 +281,16 @@ No frame is meant to go over 8 MiB. Most have a bound of their own, in the secti
 
 - Advance your cursor past it, as for any `seq`. A reader that doesn't know the type loses nothing else.
 - It only stands in for `agent_message`, `agent_message_chunk`, `agent_thought` and `agent_thought_chunk`: text that changes no state. A new type is never added by default. Never an approval, a question, a queue change or a status.
-- It isn't fetched for you. A later `agent_message` that fits is a normal event, with its whole text, so an omitted chunk is restored by its final message. If that final message is itself over the limit, it's omitted too. Then the phone keeps whatever chunks it got, `turn_ended` still comes, and a read of `/chat` shows that message as a preview of about 256 KiB with a note, or a stub. The whole text stays on the desktop.
+- It isn't fetched for you. A later `agent_message` that fits is a normal event, with its whole text, so an omitted chunk is restored by its final message, which replaces it once.
+- If that final message is itself over the limit, it's omitted too, and `turn_ended` still comes. **A phone then shows the earlier text as if complete, with no live warning, until a history read.** Clubhouse Go measured this on build 147 and on its main branch: the chat goes idle with the prefix. A read of `/chat` shows that message as a preview of about 256 KiB with a note, or a stub. The whole text stays on the desktop.
 
 **Still sent whole.** A live `chat:event` carrying a `user_message`, `question`, `question_resolved`, `plan_document` or `queue_state` over 8 MiB goes as it is and is reported, because each holds facts that can't be left out. A `hook:event` with a very long `message` is the same. Up to 16 MiB, a phone receives it.
 
 **Over 16 MiB, a phone can't receive it.** The transport closes the socket.
 
-- Live, it's sent once. The phone reconnects, and the new connection's `snapshot` has a `lastSeq` past it, so a replay from there doesn't include it.
-- On replay it's never sent. A `mobile:replay` or `replay` from before it gets `replay:gap`, so reload the chat and continue from its `lastSeq`.
+- Live, it's sent once. The phone reconnects, and the new connection's first `snapshot` has a `lastSeq` at or past it, so nothing brings it back.
+- On replay it's never sent. A `mobile:replay` or `replay` from before it gets `replay:gap`.
+- **Recovery depends on that fresh checkpoint on each connection, not on `replay:gap`'s `lastSeq`.** Clubhouse Go measured that build 147 and its main branch ignore `gap.lastSeq`: they close once, then adopt the next connection's snapshot. So every connection's first snapshot captures its cursor when that socket connects, including one joining a running build or waiting on a retry, and tests hold that in place. A phone that kept using an older snapshot would cycle with backoff.
 - The event itself doesn't reach that phone. A question that size is a 503 on `/chat` while it's pending, so it's answered on the desktop.
 - Each new event of that size closes the socket once more. Nothing re-sends the same one.
 
