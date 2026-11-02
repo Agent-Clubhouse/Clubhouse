@@ -130,11 +130,11 @@ let agentCounter = 0;
  * test can deliver live pty:data while it is in flight.
  */
 function deferBufferFetch() {
-  let reply: ((body: string, headers?: Record<string, string>) => void) | null = null;
+  let reply: ((body: string, headers?: Record<string, string>, statusCode?: number) => void) | null = null;
   vi.mocked(https.get).mockImplementation(((_url: string, _opts: unknown, cb: (res: unknown) => void) => {
     const req = Object.assign(new EventEmitter(), { destroy: vi.fn() });
-    reply = (body, headers = {}) => {
-      const res = Object.assign(new EventEmitter(), { statusCode: 200, headers, resume: vi.fn() });
+    reply = (body, headers = {}, statusCode = 200) => {
+      const res = Object.assign(new EventEmitter(), { statusCode, headers, resume: vi.fn() });
       cb(res);
       res.emit('data', Buffer.from(body, 'utf-8'));
       res.emit('end');
@@ -142,9 +142,9 @@ function deferBufferFetch() {
     return req;
   }) as unknown as typeof https.get);
   return {
-    respond(body: string, headers?: Record<string, string>) {
+    respond(body: string, headers?: Record<string, string>, statusCode = 200) {
       expect(reply).not.toBeNull();
-      reply!(body, headers);
+      reply!(body, headers, statusCode);
     },
   };
 }
@@ -279,6 +279,41 @@ describe('annex-client remote PTY buffer cache', () => {
   });
 
   describe('seeding from the satellite (#2324)', () => {
+    it('shows a satellite that can not send the terminal, rather than a blank one that looks complete', async () => {
+      _addConnectedSatelliteForTesting(SAT);
+      const fetch = deferBufferFetch();
+      const pending = requestPtyBufferSnapshot(SAT, AGENT);
+      livePtyData('during', 6);
+      fetch.respond(JSON.stringify({ error: 'terminal_unavailable' }), {}, 503);
+
+      const { data } = await pending;
+
+      expect(data).toContain('too large to load here');
+      expect(data).toContain('during');
+    });
+
+    it('does not fetch again after that, and live output carries on', async () => {
+      _addConnectedSatelliteForTesting(SAT);
+      const fetch = deferBufferFetch();
+      const pending = requestPtyBufferSnapshot(SAT, AGENT);
+      fetch.respond('{}', {}, 503);
+      await pending;
+
+      livePtyData('after', 5);
+
+      const { data } = await requestPtyBufferSnapshot(SAT, AGENT);
+      expect(data).toContain('after');
+      expect(data).toContain('too large to load here');
+    });
+
+    it('still treats another failure as nothing to seed', async () => {
+      _addConnectedSatelliteForTesting(SAT);
+      const fetch = deferBufferFetch();
+      const pending = requestPtyBufferSnapshot(SAT, AGENT);
+      fetch.respond('{}', {}, 500);
+      expect((await pending).data).not.toContain('too large');
+    });
+
     it('does not double-feed a chunk that arrives during the fetch and is in the satellite buffer', async () => {
       _addConnectedSatelliteForTesting(SAT);
       const fetch = deferBufferFetch();

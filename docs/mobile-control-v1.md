@@ -907,7 +907,7 @@ Capabilities: `terminal: {version:1, projectShell:true, agentShell:true, agentAt
 
 For agents running in a terminal (`executionMode: "pty"`; chat and headless agents have no PTY):
 
-- `pty:attach {agentId}` → `pty:attach:ack {agentId, buffer, outputSeq, cols?, rows?}`. `buffer` is the agent's current screen and scrollback, serialized as terminal output. `cols`/`rows` is the PTY's size, when known.
+- `pty:attach {agentId}` → `pty:attach:ack {agentId, buffer, outputSeq, cols?, rows?}`. `buffer` is the agent's current screen and scrollback, serialized as terminal output. `cols`/`rows` is the PTY's size, when known. A frame is at most 8 MiB, so a large buffer drops old scrollback: `scrollbackLines` then says how many lines it kept, and the screen and cursor are whole. Raw output with no mirror is rebuilt through a terminal first, which keeps the screen and cursor it holds, though not modes set before it. If even the screen is over the limit there's no ack: you get an `error` with `terminal_unavailable`, the agent keeps running, and you can try again. `GET /api/v1/agents/:id/buffer` has the same limit: `x-clubhouse-scrollback-lines` says how many lines it kept, and it answers 503 `{"error":"terminal_unavailable"}` in that last case.
 - Live output is the existing broadcast `pty:data {agentId, data, outputSeq}`, which every controller already receives. There is no subscription and no `pty:detach`: to stop viewing, stop rendering. `outputSeq` counts output in UTF-16 code units and is the count after its chunk. Drop frames with `outputSeq <= ack.outputSeq`; of a frame that straddles it, only the last `outputSeq - ack.outputSeq` units are new. Frames may arrive before the ack, so buffer them until it does.
 - `pty:input {agentId, data}` types into the agent. `pty:resize {agentId, cols, rows}` resizes the agent's **real** PTY, and the desktop's view reflows with it. A phone shouldn't resize an agent PTY unless the user asks to; render at the snapshot's `cols`/`rows` instead.
 - `pty:exit {agentId, exitCode}` (broadcast, as before) ends the view.
@@ -929,6 +929,7 @@ Errors use the existing envelope with correlation fields: `error {message, op, s
 | `pty:input data exceeds 64KB limit` | `pty:input` | `data` is longer than `maxInputLength`. |
 | `agent_not_terminal` | `pty:attach` | A chat or headless agent. |
 | `agent_not_running` | `pty:attach` | No running PTY by that id, or the id is a shell rather than an agent. |
+| `terminal_unavailable` | `pty:attach` | The terminal's state is too large to send, even the screen alone. The agent keeps running. Don't retry automatically. |
 
 ## Contract fixtures
 

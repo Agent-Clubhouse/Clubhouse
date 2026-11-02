@@ -651,8 +651,10 @@ export const ATTR = {
   annexEventType: enumAttr('clubhouse.annex.event.type', [
     'pty:data', 'pty:exit', 'hook:event', 'chat:event', 'permission:request', 'permission:response',
     'agent:spawned', 'agent:woken', 'agent:status', 'agent:completed', 'snapshot', 'canvas:state', 'theme:changed',
-    'group-project:list', 'group-project:changed', 'bulletin:message', 'other',
+    'group-project:list', 'group-project:changed', 'bulletin:message', 'pty:attach:ack', 'other',
   ]),
+  /** What was done with a frame over the limit. */
+  annexFrameAction: enumAttr('clubhouse.annex.frame.action', ['fallback', 'sent_over_limit']),
   /** How a snapshot went: sent whole, sent with fewer icons, too large even so, or not sent. */
   annexSnapshotResult: enumAttr('clubhouse.annex.snapshot.result', [
     'ok', 'icons_left_out', 'canvas_omitted', 'icons_dropped', 'over_mobile_limit', 'build_failed', 'send_failed',
@@ -1228,6 +1230,11 @@ export const METRICS = {
     kind: 'histogram', unit: '{item}', level: 'standard',
     description: 'Projects and agents listed in a snapshot frame',
     attributes: [],
+  },
+  'clubhouse.annex.frames.over_limit': {
+    kind: 'counter', unit: '{frame}', level: 'standard',
+    description: 'Frames over the per-frame limit, by type and what was done with them',
+    attributes: ['clubhouse.annex.event.type', 'clubhouse.annex.frame.action'],
   },
   'clubhouse.annex.events': {
     kind: 'counter', unit: '{event}', level: 'standard',

@@ -60,6 +60,7 @@ vi.mock('./annex-event-bus', () => ({
 
 // Mock pty-headless-terminal
 vi.mock('./pty-headless-terminal', () => ({
+  serializeRawWithin: vi.fn(async () => null),
   ensure: vi.fn(),
   feedData: vi.fn(),
   resize: vi.fn(),
@@ -163,6 +164,32 @@ describe('pty-manager', () => {
       mockProcess.onData.mock.calls[0][0]('raw data');
       const { seq } = getBufferSnapshot('agent_sersnap_raw');
       expect(await getSerializedBufferSnapshot('agent_sersnap_raw')).toEqual({ data: 'raw data', seq, cols: 120, rows: 30 });
+    });
+
+    it('leaves a raw buffer within the limit alone', async () => {
+      await spawnAndActivate('agent_raw_small');
+      mockProcess.onData.mock.calls[0][0]('raw data');
+      const { seq } = getBufferSnapshot('agent_raw_small');
+      expect(await getSerializedBufferSnapshot('agent_raw_small', { maxEncodedBytes: 1024 })).toEqual({ data: 'raw data', seq, cols: 120, rows: 30 });
+      expect(vi.mocked(headlessTerminal).serializeRawWithin).not.toHaveBeenCalled();
+    });
+
+    it('fits a raw buffer over the limit through a terminal, at the PTY size', async () => {
+      await spawnAndActivate('agent_raw_large');
+      const raw = 'r'.repeat(4096);
+      mockProcess.onData.mock.calls[0][0](raw);
+      const { seq } = getBufferSnapshot('agent_raw_large');
+      vi.mocked(headlessTerminal).serializeRawWithin.mockResolvedValueOnce({ data: 'fitted', scrollbackLines: 3 });
+      expect(await getSerializedBufferSnapshot('agent_raw_large', { maxEncodedBytes: 1024 })).toEqual({ data: 'fitted', scrollbackLines: 3, seq, cols: 120, rows: 30 });
+      expect(vi.mocked(headlessTerminal).serializeRawWithin).toHaveBeenCalledWith(raw, { cols: 120, rows: 30, maxEncodedBytes: 1024 });
+    });
+
+    it('hands back the raw buffer when even a terminal can not fit it, for the final check to refuse', async () => {
+      await spawnAndActivate('agent_raw_stuck');
+      const raw = 'r'.repeat(4096);
+      mockProcess.onData.mock.calls[0][0](raw);
+      vi.mocked(headlessTerminal).serializeRawWithin.mockResolvedValueOnce(null);
+      expect((await getSerializedBufferSnapshot('agent_raw_stuck', { maxEncodedBytes: 1024 })).data).toBe(raw);
     });
   });
 

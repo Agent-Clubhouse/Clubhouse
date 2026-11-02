@@ -111,28 +111,89 @@ export function getSize(agentId: string): { cols: number; rows: number } | undef
   return session ? { cols: session.terminal.cols, rows: session.terminal.rows } : undefined;
 }
 
+export interface SnapshotLimit {
+  /** The most the data can be once it's a JSON string, in UTF-8 bytes. */
+  maxEncodedBytes: number;
+}
+
+export interface TerminalSnapshot {
+  data: string;
+  seq: number | undefined;
+  /** How many lines of scrollback are in `data`, when a limit left some out. */
+  scrollbackLines?: number;
+}
+
+/**
+ * Serialize with as much recent scrollback as fits. Taking lines off the serializer,
+ * rather than cutting its output, keeps the state valid: the screen, cursor and
+ * modes are always whole, and no escape sequence or character is split. Each try
+ * aims a little under what the last one's size suggests, so this takes few of them,
+ * and it only runs at all for a terminal over the limit.
+ */
+function serializeWithin(serializer: SerializeAddon, maxEncodedBytes?: number): { data: string; scrollbackLines?: number } {
+  let lines = SCROLLBACK_LINES;
+  let data = serializer.serialize({ scrollback: lines });
+  if (maxEncodedBytes === undefined) return { data };
+  let bytes = Buffer.byteLength(JSON.stringify(data));
+  if (bytes <= maxEncodedBytes) return { data };
+  while (bytes > maxEncodedBytes && lines > 0) {
+    const aimed = Math.floor(lines * (maxEncodedBytes / bytes) * 0.9);
+    lines = aimed < lines && aimed > 0 ? aimed : Math.floor(lines / 2);
+    data = serializer.serialize({ scrollback: lines });
+    bytes = Buffer.byteLength(JSON.stringify(data));
+  }
+  return { data, scrollbackLines: lines };
+}
+
 /**
  * Serialize the terminal once everything fed so far has been parsed, with
  * the seq of the last chunk fed. xterm parses writes asynchronously, so a
  * synchronous `serialize` can miss recent output that `seq` already counts.
  * Resolves to null when there is no headless terminal for the session.
  */
-export function snapshot(agentId: string): Promise<{ data: string; seq: number | undefined } | null> {
+export function snapshot(agentId: string, limit?: SnapshotLimit): Promise<TerminalSnapshot | null> {
   const session = sessions.get(agentId);
   if (!session) return Promise.resolve(null);
   const seq = session.seq;
   return new Promise((resolve) => {
     // A disposed terminal never runs its write callbacks. Retry once the
     // reset (if that is what disposed it) has created the replacement.
-    const abandon = () => resolve(Promise.resolve().then(() => snapshot(agentId)));
+    const abandon = () => resolve(Promise.resolve().then(() => snapshot(agentId, limit)));
     session.waiters.add(abandon);
     // The callback runs right after everything written before it is parsed
     // and before anything written after it, so the buffer matches `seq`.
     session.terminal.write('', () => {
       session.waiters.delete(abandon);
-      resolve({ data: session.serializer.serialize({ scrollback: SCROLLBACK_LINES }), seq });
+      resolve({ ...serializeWithin(session.serializer, limit?.maxEncodedBytes), seq });
     });
   });
+}
+
+/**
+ * Raw PTY output as a serialized terminal within a byte limit, for when there's no
+ * mirror to ask. It can only rebuild what the output still holds, so modes set before
+ * it are gone, but it's a real screen and cursor. Null if even the screen is over.
+ */
+export async function serializeRawWithin(
+  raw: string,
+  options: { cols?: number; rows?: number; maxEncodedBytes: number },
+): Promise<{ data: string; scrollbackLines?: number } | null> {
+  const terminal = new Terminal({
+    cols: options.cols ?? DEFAULT_COLS,
+    rows: options.rows ?? DEFAULT_ROWS,
+    scrollback: SCROLLBACK_LINES,
+    allowProposedApi: true,
+  });
+  const serializer = new SerializeAddon();
+  terminal.loadAddon(serializer);
+  try {
+    await new Promise<void>((resolve) => terminal.write(raw, resolve));
+    const fitted = serializeWithin(serializer, options.maxEncodedBytes);
+    return Buffer.byteLength(JSON.stringify(fitted.data)) <= options.maxEncodedBytes ? fitted : null;
+  } finally {
+    serializer.dispose();
+    terminal.dispose();
+  }
 }
 
 /**
