@@ -260,7 +260,7 @@ function smallFields(input: unknown, maxBytes: number): Record<string, unknown> 
   const kept: Record<string, unknown> = {};
   let used = 2;
   for (const [key, value] of Object.entries(input)) {
-    const small = typeof value === 'number' || typeof value === 'boolean' || (typeof value === 'string' && bytesOf(value) <= SMALL_FIELD_BYTES);
+    const small = typeof value === 'number' || typeof value === 'boolean' || (typeof value === 'string' && encodedBytesOf(value) <= SMALL_FIELD_BYTES);
     if (!small) continue;
     const cost = bytesOf(JSON.stringify(key)) + bytesOf(JSON.stringify(value)) + 2;
     if (used + cost > maxBytes) break;

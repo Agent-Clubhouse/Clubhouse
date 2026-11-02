@@ -288,6 +288,33 @@ describe('permission requests', () => {
     const small = () => request({ rawInput: { file_path: '/x' } });
     const medium = () => request({ rawInput: { content: 'm'.repeat(200 * 1024) } });
 
+    describe('with input that is all control characters', () => {
+      const controls = (megabytes: number) => '\x01'.repeat(megabytes * 1024 * 1024);
+
+      it('keeps one within the permission cap as sent', () => {
+        const [row] = boundPendingPermissions([request({ rawInput: { content: controls(20) } })]);
+        expect(bytes(row.data)).toBeLessThanOrEqual(256 * 1024);
+      });
+
+      it('shares the total evenly rather than the first taking it', () => {
+        const rows = boundPendingPermissions(Array.from({ length: 6 }, () => request({ rawInput: { content: controls(2) } })));
+        const sizes = rows.map((row) => bytes(row.data));
+        expect(sizes.reduce((sum, size) => sum + size, 0)).toBeLessThanOrEqual(1024 * 1024);
+        expect(Math.max(...sizes)).toBeLessThanOrEqual(256 * 1024);
+        expect(Math.min(...sizes)).toBeGreaterThan(100 * 1024);
+      });
+
+      it('keeps a tool call within its cap', () => {
+        const event = { type: 'tool_call', agentId: 'a', seq: 1, ts: 0, sessionId: 's', data: { toolCallId: 't', kind: 'other', title: 'T', status: 'pending', content: [{ type: 'text', text: controls(10) }, { type: 'text', text: controls(10) }] } } as never;
+        expect(bytes(boundChatEvent(event, bytes(event)))).toBeLessThanOrEqual(1024 * 1024);
+      });
+
+      it('does not count a small field by its raw size', () => {
+        const [row] = boundPendingPermissions([request({ rawInput: { note: '\x01'.repeat(1000), content: controls(2) } })]) as any[];
+        expect(row.data.rawInput).not.toHaveProperty('note');
+      });
+    });
+
     it('stays refused through a reconnect once a preview was sent, when it would fit alone now', () => {
       const pending = Array.from({ length: 12 }, medium);
       boundPendingPermissions(pending);
