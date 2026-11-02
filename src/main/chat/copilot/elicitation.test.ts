@@ -18,6 +18,12 @@ const schema = {
 const valid = { name: 'Ann', count: '3', pick: 'a', named: 'x', many: ['p', 'q'], flag: 'No' };
 
 describe('copilot elicitation', () => {
+  it('keeps a long field name exact as the question id and in the content (#2676)', () => {
+    const name = ` ${'f'.repeat(65534)} `;
+    const long = { type: 'object' as const, properties: { [name]: { type: 'string' as const } }, required: [name] };
+    expect(elicitationQuestions(long)[0].id).toBe(name);
+    expect(elicitationContent(long, { [name]: 'yes' })).toEqual({ [name]: 'yes' });
+  });
   it('turns each field into a question, with what a card can\'t show in its prompt', () => {
     const q = new Map(elicitationQuestions(schema).map((x) => [x.id, x]));
     expect(q.get('name')).toMatchObject({ prompt: 'Name\nYour name', allowFreeText: true, multiSelect: false });

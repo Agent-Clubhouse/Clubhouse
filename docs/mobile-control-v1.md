@@ -29,7 +29,9 @@ A 404 means unsupported: do not send mobile commands. Gate durable-agent creatio
 - `chat.queue.remove`: `{agentId, sessionId, messageIds:["id"]}`; removes only messages still held in the runtime queue, returns `{removed:["id"]}`. A native-provider queue may return no removed IDs.
 - `chat.interrupt`: `{agentId, sessionId}`; cancels the turn and keeps the session.
 - `chat.permission`: `{agentId, sessionId, requestId, optionId}`; exact pending option required. Any offered option, persistent ones (`allow_session`, `allow_always`, `reject_always`) included, is answered as the desktop's approval dock answers it, when capabilities have `permissions.persistentApprovals`. Older desktops refuse persistent options with 403 `persistent_approval_not_supported`.
-- `chat.question`: `{agentId, sessionId, requestId, answers}`; question-ID to string/string-array map.
+- `chat.question`: `{agentId, sessionId, requestId, answers}`; question-ID to string/string-array map. Send each key exactly as the question's `id`, with no trimming or normalizing: a Claude question's `id` is its full text. Up to 100 keys, each key and answer string 1 to 65536 UTF-16 code units (an emoji is two), and up to 100 strings in an array. Older desktops refuse a key over 256 with 400 `invalid_command`.
+
+  The whole request also has to fit the route's 1 MiB (1048576 bytes) limit, measured as UTF-8 JSON. Over it, the desktop drops the connection with no receipt. One key at the limit always fits, but a request can only hold so many: 15 of ASCII text, 7 of emoji, 5 of three-byte text such as CJK, or 2 when every character is escaped as `\uXXXX`. Answers count toward the same limit.
 - `chat.setModel`: `{agentId, sessionId, model, effort?}`; the composer's model and effort pills. See [Chat controls](#chat-controls).
 - `chat.setLevel`: `{agentId, sessionId, level}`; the composer's permission level menu. See [Chat controls](#chat-controls).
 - `agent.start`: `{agentId, message?, resume?}`; wake durable agent using desktop's configured runtime and permissions.

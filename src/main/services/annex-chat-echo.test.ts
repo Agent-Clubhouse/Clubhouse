@@ -6,6 +6,13 @@ const base = { v: 1, agentId: 'a', sessionId: 's', seq: 3, ts: 1 } as const;
 const userMessage = (content: unknown[]): ChatEvent => ({ ...base, type: 'user_message', data: { messageId: 'm', clientCommandId: 'c', source: 'annex', delivery: 'prompt', content } } as unknown as ChatEvent);
 
 describe('remoteChatEvent (#2453)', () => {
+  it('sends a question and its answers with long ids in full (#2676)', () => {
+    const id = ` ${'q'.repeat(65534)} `;
+    const question = { ...base, type: 'question', data: { requestId: 'r', questions: [{ id, prompt: id }] } } as unknown as ChatEvent;
+    const resolved = { ...base, type: 'question_resolved', data: { requestId: 'r', answers: { [id]: 'a' } } } as unknown as ChatEvent;
+    expect(remoteChatEvent(question)).toBe(question);
+    expect(remoteChatEvent(resolved)).toBe(resolved);
+  });
   it('turns user images into mediaRefs and never sends absolute paths or inline bytes', () => {
     const ref = `${'ab'.repeat(32)}.png`;
     const event = userMessage([

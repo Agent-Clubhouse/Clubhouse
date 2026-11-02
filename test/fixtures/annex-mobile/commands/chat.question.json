@@ -86,6 +86,38 @@
         },
         "status": 409
       }
+    },
+    {
+      "name": "accepted long question ids",
+      "request": {
+        "agentId": "durable_chat",
+        "answers": {
+          "  Long question xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx?  ": "main",
+          "Shorter question é yyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy?": [
+            "main",
+            "dev"
+          ]
+        },
+        "commandId": "cmd_long_questions",
+        "epoch": "00000000-0000-4000-8000-000000000001",
+        "requestId": "q_1",
+        "sessionId": "sess_live",
+        "type": "chat.question",
+        "version": 1
+      },
+      "response": {
+        "body": {
+          "commandId": "cmd_long_questions",
+          "epoch": "00000000-0000-4000-8000-000000000001",
+          "result": {
+            "answered": true,
+            "requestId": "q_1"
+          },
+          "status": "completed",
+          "version": 1
+        },
+        "status": 200
+      }
     }
   ],
   "type": "chat.question"
