@@ -1,6 +1,6 @@
 # Helper Auto routing
 
-**Status: proposed (#2671).** Only stage 1, an explicit `effort` on `start_helper`, is built. Everything else here is a design. The phone wire in [Phone contract](#phone-contract) is not locked, and nothing should be built against it until Clubhouse Go and the maintainer agree it.
+**Status: proposed (#2671).** Only stage 1, an explicit `effort` on `start_helper`, is built. Everything else here is a design. Clubhouse Go has locked the stage 2 phone wire in [Phone contract](#phone-contract), which is presets only. Later stages are not locked.
 
 An orchestrator can ask for a helper by difficulty instead of naming a model, and can opt in to letting Clubhouse pick the provider from load and quota. The choice is deterministic, explained, and made once.
 
@@ -201,7 +201,7 @@ The first audit covers helper routing and `setOrchestrationPolicy`. Appearance a
 
 ## Phone contract
 
-**Not locked.** On the phone the provider is named `provider`.
+Stage 2 is locked from the phone side. Auto UI waits for the stage 4 capability. On the phone the provider is named `provider`.
 
 App-wide preset editing from the phone is in scope.
 
@@ -241,7 +241,7 @@ A cell with nothing valid has `effective: null`. The `auto` block appears from s
 
 **Quota freshness** is pulled. `GET helper-routing` returns `serverTime`, and each `quota` has `asOf` and `refreshAfterSeconds`, the cache's remaining life. A phone refetches while the page is open, no sooner than that, and on returning to the foreground. It shows age from `asOf` against `serverTime`. A fetch uses the same shared 5 minute cache as routing, so phones can't make extra CLI reads.
 
-**Labels.** `GET helper-routing` returns `labels`, keyed by code family, and helper settings add `display:{reason,fallback,quota}` with the resolved text. So the desktop owns the words. Precedence for a client: `display`, then `labels`, then `labels.unknownCode`, then its own generic "Other". The snapshot carries codes only.
+**Labels.** `GET helper-routing` returns `labels`, keyed by code family, and helper settings add `display:{reason,fallback,quota}` with the resolved text. So the desktop owns the words. A bare `GET helper-routing`, with no `agentId` or `projectId`, returns every label family, so a client can cache labels once per revision for code-only helper and Needs you rows. Precedence for a client: `display`, then `labels`, then `labels.unknownCode`, then its own generic "Other". The snapshot carries codes only.
 
 | Family | Code | Text |
 |---|---|---|
@@ -289,7 +289,7 @@ A cell with nothing valid has `effective: null`. The `auto` block appears from s
 
 **Helper settings (detailed):** `GET /mobile/agents/:id/settings` carries the full `routing` above and `display`.
 
-**Held starts.** The helper request gets `requestedRouting`, with no resolved choice. `no_valid_mapping` is checked before holding, so the person isn't asked about a start that can't run, and again at approval, since a cell can go stale meanwhile. If it fails at approval, `helper.approve` returns a readable error with `code: "no_valid_mapping"` and no `routing`, as any refused approval does today: the request is used up and the orchestrator is told why. Only a helper that starts gets `routing`.
+**Held starts.** The helper request gets `requestedRouting`, with no resolved choice. `no_valid_mapping` is checked before holding, so the person isn't asked about a start that can't run, and again at approval, since a cell can go stale meanwhile. If it fails at approval, `helper.approve` returns a readable error with `code: "no_valid_mapping"` and no `routing`, as any refused approval does today: the request is used up and the orchestrator is told why. A phone shows the refusal sentence and offers no retry. Only a helper that starts gets `routing`.
 
 **Fixtures:** the capability at each stage, and absent; each quota state, including `near_limit` with quota remaining, `exhausted` as reported, and `unknown` with and without a stale `asOf`; a limiting window with another window unreadable; an explicit override (Sol, `explicit_request`, `balanced: false`); a preset on a CLI; a persona pin; project-disabled; `mcp_off`; `dispatcher_locked`; a stale preset falling back to built-in; stale with nothing valid; Copilot excluded; a held approval failing with `no_valid_mapping`; context `reset` and `not_applied`; a stale-write 409 and reset results; labels, including an unknown code; the revision in the snapshot and the changed event.
 
@@ -313,7 +313,7 @@ To replace the persona's model lines once Auto ships. The `start_helper` descrip
 
 - **Terminal signal limit.** Terminal helpers report no error codes, so their failures after spawn aren't seen, no cooldown is set, and quota stays whatever the last read said.
 - **Worktree check, stage 4.** Whether a worktree prepared for one CLI can be switched to another. If it can't, the retry is dropped and the start fails as today with its task saved. Cooldowns stay either way.
-- **Phone wire** isn't locked. Go reviews it before implementation, and stability work stays first.
+- **Phone wire** past stage 2 isn't locked.
 - **Context and Auto** haven't been tested together, and #2668 was still open when this was written.
 
 ## Stages
