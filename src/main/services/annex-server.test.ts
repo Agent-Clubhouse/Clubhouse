@@ -3596,6 +3596,69 @@ describe('annex-server', () => {
         });
       });
 
+      describe('a build that hangs', () => {
+        const hangingRead = () => {
+          let finish: (value: never[]) => void = () => {};
+          vi.mocked(projectStore.list).mockImplementationOnce(() => new Promise((resolve) => { finish = resolve; }) as never);
+          return (value: never[]) => finish(value);
+        };
+
+        it('counts as a failure: the phone hears snapshot_failed, and commands get replies', async () => {
+          hangingRead();
+          const ws = Object.assign(new EventEmitter(), { readyState: 1, send: vi.fn(), ping: () => {}, close: vi.fn() });
+          annexServer._testing.wsAuthTypes.set(ws as never, 'bearer');
+          annexServer._testing.wss!.clients.add(ws as never);
+          annexServer._testing.wss!.emit('connection', ws);
+          await vi.advanceTimersByTimeAsync(annexServer._testing.SNAPSHOT_BUILD_TIMEOUT_MS - 1000);
+          expect(ws.send).not.toHaveBeenCalled();
+
+          await vi.advanceTimersByTimeAsync(1000);
+          expect(sent(ws)).toEqual([{ type: 'error', payload: { message: 'snapshot_failed' } }]);
+
+          ws.emit('message', JSON.stringify({ type: 'pty:input', payload: {} }));
+          expect(sent(ws)).toHaveLength(2);
+        });
+
+        it('discards a result that arrives late, so nothing old reaches a phone', async () => {
+          const finish = hangingRead();
+          const ws = Object.assign(new EventEmitter(), { readyState: 1, send: vi.fn(), ping: () => {}, close: vi.fn() });
+          annexServer._testing.wsAuthTypes.set(ws as never, 'bearer');
+          annexServer._testing.wss!.clients.add(ws as never);
+          annexServer._testing.wss!.emit('connection', ws);
+          await vi.advanceTimersByTimeAsync(annexServer._testing.SNAPSHOT_BUILD_TIMEOUT_MS);
+          vi.mocked(projectStore.list).mockRejectedValue(new Error('still bad') as never);
+
+          finish([]);
+          await vi.advanceTimersByTimeAsync(0);
+
+          expect(sent(ws).map((f) => f.type)).toEqual(['error']);
+        });
+
+        it('does not start another while one is still stuck, then builds again once it ends', async () => {
+          const finish = hangingRead();
+          const ws = Object.assign(new EventEmitter(), { readyState: 1, send: vi.fn(), ping: () => {}, close: vi.fn() });
+          annexServer._testing.wsAuthTypes.set(ws as never, 'bearer');
+          annexServer._testing.wss!.clients.add(ws as never);
+          annexServer._testing.wss!.emit('connection', ws);
+          await vi.advanceTimersByTimeAsync(annexServer._testing.SNAPSHOT_BUILD_TIMEOUT_MS);
+          const stuck = builds();
+
+          // Retries come and go while it's stuck: none starts more disk work.
+          for (const delay of annexServer._testing.SNAPSHOT_RETRY_DELAYS_MS) await vi.advanceTimersByTimeAsync(delay);
+          expect(builds()).toBe(stuck);
+          expect(sent(ws).map((f) => f.type)).toEqual(['error']);
+
+          vi.mocked(projectStore.list).mockReturnValue([] as never);
+          finish([]);
+          await vi.advanceTimersByTimeAsync(0);
+          const delays = annexServer._testing.SNAPSHOT_RETRY_DELAYS_MS;
+          await vi.advanceTimersByTimeAsync(delays[delays.length - 1]);
+
+          expect(builds()).toBe(stuck + 1);
+          expect(sent(ws)[1].type).toBe('snapshot');
+        });
+      });
+
       it('never closes a socket for failing', async () => {
         failing();
         const first = openDuringBuild();

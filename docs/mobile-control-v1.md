@@ -158,7 +158,7 @@ After `snapshot_failed` the socket stays open, and replies to what you send stil
 
 Trying again is per desktop, not per socket, so several phones or quick reconnects don't add work. Inside the window a connecting phone gets `snapshot_failed` straight away and nothing is built. When the window ends, one build serves every socket waiting, each with its own `lastSeq`.
 
-- If building failed, the window is 2, 8 and 30 seconds and then a minute each time, until a build works. Changes wait for the end of the window.
+- If building failed, or took over 15 seconds, the window is 2, 8 and 30 seconds and then a minute each time, until a build works. Changes wait for the end of the window.
 - A snapshot too large to send (over 16 MiB) is never sent. The window is 5 minutes, and a change to what a snapshot shows brings a look at most every 30 seconds. A connected phone keeps what it has until one fits.
 
 The desktop never closes a socket for any of this. A phone can't rely on a close code: on iOS, `URLSession` reports 1013 as 1005.

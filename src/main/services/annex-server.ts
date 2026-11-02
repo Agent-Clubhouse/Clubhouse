@@ -793,15 +793,37 @@ interface BuiltSnapshot {
   icons: SnapshotIconStats;
 }
 
+/**
+ * A snapshot's reads get this long, then count as a failure. Everyone waiting on a
+ * build waits on all of it, and a phone gives up after about 30 seconds, so it should
+ * hear before then. The reads can't be cancelled: whatever they return later is ignored.
+ */
+const SNAPSHOT_BUILD_TIMEOUT_MS = 15_000;
+/** Reads given up on and still running. While there's one, no more start, so retries can't pile up behind a hung disk. */
+const abandonedSnapshotReads = new Set<Promise<unknown>>();
+
 /** A snapshot's disk reads. */
 async function readSnapshotSources(): Promise<SnapshotSources> {
   const startMs = Date.now();
+  let timer: ReturnType<typeof setTimeout> | undefined;
   try {
-    return await readSnapshotSourcesData();
+    if (abandonedSnapshotReads.size > 0) throw new Error('snapshot_build_stuck');
+    const read = readSnapshotSourcesData();
+    const timeout = new Promise<never>((_, reject) => {
+      timer = setTimeout(() => {
+        abandonedSnapshotReads.add(read);
+        const done = () => { abandonedSnapshotReads.delete(read); };
+        read.then(done, done);
+        reject(new Error('snapshot_build_timeout'));
+      }, SNAPSHOT_BUILD_TIMEOUT_MS);
+      timer.unref?.();
+    });
+    return await Promise.race([read, timeout]);
   } catch (err) {
     recordSnapshotFailure('build_failed');
     throw err;
   } finally {
+    clearTimeout(timer);
     recordSnapshotBuild(startMs);
   }
 }
@@ -4438,6 +4460,7 @@ export function stop(): void {
   refreshFollowUp = null;
   refreshAgain = false;
   refreshGeneration++;
+  abandonedSnapshotReads.clear();
   clearSnapshotBlock();
   if (snapshotOversizeRecheck) clearTimeout(snapshotOversizeRecheck);
   snapshotOversizeRecheck = null;
@@ -5000,6 +5023,7 @@ export const _testing = {
   PROJECTS_CHANGED_DEBOUNCE_MS,
   HELD_FRAMES_MAX,
   SNAPSHOT_RETRY_DELAYS_MS,
+  SNAPSHOT_BUILD_TIMEOUT_MS,
   SNAPSHOT_OVERSIZE_RETRY_MS,
   SNAPSHOT_OVERSIZE_RECHECK_MS,
   heldBytes: (ws: WebSocket) => heldFrames.get(ws)?.bytes,
