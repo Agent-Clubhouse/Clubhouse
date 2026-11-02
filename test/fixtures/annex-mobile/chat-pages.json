@@ -1,0 +1,101 @@
+{
+  "byBytes": {
+    "body": {
+      "agentId": "durable_chat",
+      "canStart": false,
+      "capabilities": "<omitted>",
+      "chatControls": "<omitted>",
+      "contentAnyPath": true,
+      "contentRoots": [
+        "/work/app/.clubhouse/agents/planner",
+        "/work/app"
+      ],
+      "currentSessionId": "sess_live",
+      "epoch": "<epoch>",
+      "events": "<15 events>",
+      "lastSeq": 229,
+      "nextBeforeSeq": "<the oldest seq shown>",
+      "pendingPermissions": [],
+      "pendingQuestions": [],
+      "queueRemovalSupported": true,
+      "queueStateSeq": 11,
+      "queuedMessageIds": [
+        "msg_q"
+      ],
+      "readOnly": false,
+      "sessionId": "sess_live",
+      "slashCommands": "<omitted>",
+      "state": "waiting_permission",
+      "truncated": true,
+      "version": 1
+    },
+    "status": 200
+  },
+  "minimal": {
+    "body": {
+      "agentId": "durable_chat",
+      "canStart": false,
+      "capabilities": "<omitted>",
+      "chatControls": "<omitted>",
+      "contentAnyPath": true,
+      "contentRoots": [
+        "/work/app/.clubhouse/agents/planner",
+        "/work/app"
+      ],
+      "currentSessionId": "sess_live",
+      "epoch": "<epoch>",
+      "events": "<300 events>",
+      "lastSeq": 399,
+      "nextBeforeSeq": null,
+      "pendingPermissionCount": 300,
+      "pendingPermissions": [
+        {
+          "agentId": "durable_chat",
+          "data": {
+            "description": "Incomplete input: this request is too large to show in full here. Review it on the desktop to approve it. You can still deny it here. Write file 0",
+            "options": [
+              {
+                "kind": "reject_once",
+                "label": "Deny",
+                "optionId": "deny"
+              }
+            ],
+            "requestId": "perm_big_0",
+            "title": "Write file 0",
+            "toolName": "Write",
+            "truncated": {
+              "originalBytes": 307400
+            }
+          },
+          "seq": 100,
+          "sessionId": "sess_live",
+          "ts": 1800000040000,
+          "type": "permission_request",
+          "v": 2
+        }
+      ],
+      "pendingQuestions": [],
+      "queueRemovalSupported": true,
+      "queueStateSeq": 11,
+      "queuedMessageIds": [
+        "msg_q"
+      ],
+      "readOnly": false,
+      "sessionId": "sess_live",
+      "slashCommands": "<omitted>",
+      "state": "waiting_permission",
+      "truncated": false,
+      "version": 1
+    },
+    "status": 200
+  },
+  "note": "Bodies are shortened to what shows the rule. A 503 leaves a phone read-only until a refresh works.",
+  "overflow": {
+    "body": {
+      "error": "pending_overflow",
+      "message": "A pending request is too large to show here. Review it on the desktop.",
+      "pendingCount": 1
+    },
+    "status": 503
+  }
+}

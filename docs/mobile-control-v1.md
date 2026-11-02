@@ -240,6 +240,22 @@ Send `{type:"mobile:replay",epoch:"capabilities epoch",since:123}`. Replies use 
 
 Chat event definitions: src/shared/chat/events.ts. Driver capabilities: src/shared/chat/capabilities.ts. Existing snapshots/projects/agents: src/main/services/annex-server.ts. Read runtime state/driver capabilities before presenting steer/approval actions. Errors, cancellation, waiting_input, waiting_permission, turn_ended and session_ended remain normal rich events.
 
+## Chat pages and overflow
+
+One `GET …/chat` response is at most 8 MiB encoded, whatever `limit` asks for, because real TLS rejects a response over 16 MiB, and retrying the same page fails the same way.
+
+**Pages:** newest events first, until the page is full. `truncated` says there's more, and `nextBeforeSeq` is where the next page starts. A page can hold fewer than `limit`. An event over 1 MiB has a preview, as for live tool output, and each page is worked out afresh from the transcript, so an event reads the same each time. It doesn't carry the appended note a live update can have. A question that can't fit on any page by itself is stepped past, so paging moves on.
+
+**What's pending is all or nothing.** A partial list would read as requests being answered.
+
+1. Up to 1 MiB of permissions: each whole, or a preview within its cap.
+2. Over that, every row is minimal: `requestId`, `toolCallId`, `toolName`, `title`, a `description` starting with the warning, and only its deny options, with `reject_always` only while `persistentApprovals` is on. A row with none of those can only be viewed. Approve is refused for all of them.
+3. Over 4 MiB of minimal rows, or if pending questions can't fit, there's no page: 503 `{"error":"pending_overflow","pendingCount":N,"message":"…"}`.
+
+A question is never shortened or sent without its text, so it stays whole or the page is a 503. The full question stays on the desktop.
+
+**A 503 leaves a phone read-only.** On build 147 it keeps its cached state but sets `requiresResync`, which disables chat send, deny and question answers until a refresh succeeds, so the desktop has to reduce what's pending. It shows only "Desktop request failed (503): pending_overflow". A cold open shows unavailable, with Try again. A refresh recovers once it's smaller.
+
 ## Large tool output
 
 A `tool_call_update` whose `chat:event` is over 1 MiB goes out as a preview, live and on replay:

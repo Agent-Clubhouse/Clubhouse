@@ -140,7 +140,7 @@ function withNoteIfUncut(content: ToolCallContent[]): ToolCallContent[] {
  * A tool update or permission request as a preview, if it's over its limit. `originalBytes` is
  * the encoded size of the whole event, known by the caller, who has it to hand.
  */
-export function boundChatEvent(event: ChatEvent, originalBytes: number): ChatEvent {
+export function boundChatEvent(event: ChatEvent, originalBytes: number, options: { appendNote?: boolean } = {}): ChatEvent {
   if (event.type === 'permission_request') {
     return originalBytes > PERMISSION_INPUT_MAX_BYTES ? permissionPreview(event, PERMISSION_INPUT_MAX_BYTES, originalBytes) : event;
   }
@@ -164,7 +164,7 @@ export function boundChatEvent(event: ChatEvent, originalBytes: number): ChatEve
       // Replaces what's there, so a block cut short has its note in it, and one that wasn't gets this.
       ? { content: withNoteIfUncut(data.content), contentMode: 'replace' as const }
       // Nothing to replace, and what it already shows stays. Appended, so only once for a call.
-      : carriesAppendedNote(event) && { content: [toolPreviewNote()], contentMode: 'append' as const }),
+      : options.appendNote !== false && carriesAppendedNote(event) && { content: [toolPreviewNote()], contentMode: 'append' as const }),
     ...(data.title && { title: previewText(data.title, 1024) }),
     ...(data.error && { error: previewText(data.error, 16 * 1024) }),
     // A small rawOutput can stay. It's the one field with no shape to preview by.
@@ -214,7 +214,7 @@ const SENT_INCOMPLETE_MAX = 1000;
  */
 let recordedSince = Date.now();
 
-function rememberIncomplete(requestId: string): void {
+export function rememberIncomplete(requestId: string): void {
   sentIncomplete.add(requestId);
   if (sentIncomplete.size <= SENT_INCOMPLETE_MAX) return;
   sentIncomplete.delete(sentIncomplete.values().next().value!);

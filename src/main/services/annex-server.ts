@@ -72,7 +72,8 @@ import { injectPtyText } from './agent-runtime/pty-input';
 import { AgentStoppingError } from './agent-runtime/agent-stopping';
 import { spawnAgent, killAgent, getAvailableOrchestrators, isHeadlessAgent, resolveOrchestrator, resolveProfileEnv } from './agent-system';
 import { appLog } from './log-service';
-import { forgetAppendedNotes, MOBILE_PERSISTENT_APPROVALS, OUTER_TOOL_INPUT_MAX_BYTES, PERMISSION_INPUT_MAX_BYTES, boundChatEvent, boundPendingPermissions, boundToolInput, toolInputSizeBucket } from './annex-chat-bounds';
+import { buildChatPage } from './annex-chat-pages';
+import { forgetAppendedNotes, MOBILE_PERSISTENT_APPROVALS, OUTER_TOOL_INPUT_MAX_BYTES, PERMISSION_INPUT_MAX_BYTES, boundChatEvent, boundToolInput, toolInputSizeBucket } from './annex-chat-bounds';
 import { ICON_TEMPORARILY_UNAVAILABLE, readIconImage, type IconImage } from './icon-images';
 
 /**
@@ -103,6 +104,7 @@ import {
   recordBroadcast,
   recordClients,
   recordControlDenied,
+  recordChatPageOverflow,
   recordFrameOverLimit,
   recordToolInputSize,
   recordPairServed,
@@ -2990,11 +2992,6 @@ async function handleMobileCanvasRoute(ctx: AnnexRouteContext, match: RegExpMatc
   sendJson(ctx.res, 200, { projectId, state: await readCanvasState(project.path) });
 }
 
-function boundedPendingInteractions(events: ChatEvent[]) {
-  const pending = pendingInteractions(events);
-  return { ...pending, pendingPermissions: boundPendingPermissions(pending.pendingPermissions) };
-}
-
 async function handleMobileCapabilitiesRoute(ctx: AnnexRouteContext): Promise<void> {
   sendJson(ctx.res, 200, {
     version: 1, epoch: mobileCommands.epoch, controlAuth: 'mtls-pinned-client',
@@ -3135,28 +3132,39 @@ async function handleMobileChatRoute(ctx: AnnexRouteContext, match: RegExpMatchA
     live = live && getAgentRuntime(agentId) === runtime && runtime.isRunning() && runtime.getSessionId?.() === sessionId;
     const current = events.filter((e) => e.sessionId === sessionId);
     const eligible = beforeSeq === undefined ? current : current.filter((e) => e.seq < beforeSeq);
-    const page = eligible.slice(-limit);
     // The agent's folders (#2457): relative paths resolve against the first. Older phones
     // link only absolute paths under them; `contentAnyPath` says any readable path is served (#2478).
     const richContent = getExperimentalSettings().richChatContent === true;
     const contentRoots = richContent ? await agentFolders(agentId).catch((): string[] => []) : [];
-    sendJson(ctx.res, 200, {
-      version: 1, epoch: mobileCommands.epoch, agentId, sessionId: sessionId ?? null,
-      canStart: !!durable && !isAgentRunning(agentId) && !mobileStartingAgents.has(agentId),
-      currentSessionId: runtime?.kind === 'chat' ? runtime.getSessionId?.() ?? null : null, readOnly: !live,
-      state: live ? runtime.getState() : 'sleeping', capabilities: live ? runtime.getCapabilities?.() ?? null : null,
-      events: page.map(remoteChatEvent).map((e) => (e.type === 'permission_request' ? boundChatEvent(e, Buffer.byteLength(JSON.stringify(e))) : e)), lastSeq: current[current.length - 1]?.seq ?? 0, truncated: eligible.length > limit,
-      nextBeforeSeq: eligible.length > limit ? page[0]?.seq ?? null : null,
-      contentRoots,
-      contentAnyPath: richContent,
-      ...(live ? runtime.getQueueState?.() ?? { queuedMessageIds: [], queueStateSeq: 0, queueRemovalSupported: false }
-        : { queuedMessageIds: [], queueStateSeq: 0, queueRemovalSupported: false }),
-      ...(live ? boundedPendingInteractions(current) : { pendingPermissions: [], pendingQuestions: [] }),
-      // The composer's level, model and effort pills, for chat.setLevel / chat.setModel (#2462).
-      chatControls: live ? chatControls(current, runtime.getCapabilities?.()) : null,
-      // The composer's / menu; a page may not reach back to the session's commands_available.
-      slashCommands: live ? latestSlashCommands(current) : null,
+    const pending = live ? pendingInteractions(current) : { pendingPermissions: [], pendingQuestions: [] };
+    const page = buildChatPage({
+      eligible,
+      limit,
+      pendingPermissions: pending.pendingPermissions,
+      pendingQuestions: pending.pendingQuestions,
+      metadata: {
+        version: 1, epoch: mobileCommands.epoch, agentId, sessionId: sessionId ?? null,
+        canStart: !!durable && !isAgentRunning(agentId) && !mobileStartingAgents.has(agentId),
+        currentSessionId: runtime?.kind === 'chat' ? runtime.getSessionId?.() ?? null : null, readOnly: !live,
+        state: live ? runtime.getState() : 'sleeping', capabilities: live ? runtime.getCapabilities?.() ?? null : null,
+        lastSeq: current[current.length - 1]?.seq ?? 0,
+        contentRoots,
+        contentAnyPath: richContent,
+        ...(live ? runtime.getQueueState?.() ?? { queuedMessageIds: [], queueStateSeq: 0, queueRemovalSupported: false }
+          : { queuedMessageIds: [], queueStateSeq: 0, queueRemovalSupported: false }),
+        // The composer's level, model and effort pills, for chat.setLevel / chat.setModel (#2462).
+        chatControls: live ? chatControls(current, runtime.getCapabilities?.()) : null,
+        // The composer's / menu; a page may not reach back to the session's commands_available.
+        slashCommands: live ? latestSlashCommands(current) : null,
+      },
     });
+    if (page.stage !== 'whole') recordChatPageOverflow(page.stage);
+    if (page.ok === false) {
+      sendJson(ctx.res, 503, page.failure);
+      return;
+    }
+    ctx.res.writeHead(200, { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(page.body) });
+    ctx.res.end(page.body);
   } catch {
     // telemetry-exempt: do not export transcript content; caller receives a bounded error.
     sendJson(ctx.res, 500, { error: 'chat_snapshot_failed' });

@@ -2412,6 +2412,52 @@ describe('Annex mobile contract fixtures', { timeout: TEST_TIMEOUT_MS }, () => {
   }, TEST_TIMEOUT_MS);
 
 
+  it('chat pages: bounded on bytes, and pending all or nothing', async () => {
+    const chat = (agentEvents: ChatEvent[]) => registerChatRuntime(chatRuntime('durable_chat', 'sess_live', CHAT_CAPS, agentEvents, true) as never);
+    const route = '/api/v1/mobile/agents/durable_chat/chat';
+    const options = [{ optionId: 'allow', kind: 'allow_once', label: 'Allow' }, { optionId: 'deny', kind: 'reject_once', label: 'Deny' }];
+    const permission = (i: number, input = 300 * 1024) => envelope(100 + i, 'permission_request', { requestId: `perm_big_${i}`, title: `Write file ${i}`, toolName: 'Write', options, rawInput: { file_path: `/work/${i}`, content: 'c'.repeat(input) } });
+    const shorten = (body: any) => ({ ...body, chatControls: '<omitted>', capabilities: '<omitted>', slashCommands: '<omitted>', events: `<${body.events.length} events>`, epoch: '<epoch>', pendingPermissions: body.pendingPermissions.slice(0, 2) });
+
+    // The tail runs out of room before it runs out of events.
+    const large = Array.from({ length: 30 }, (_, i) => envelope(200 + i, 'notice', { level: 'info', message: 'n'.repeat(512 * 1024) }));
+    chat(large);
+    const byBytes = await send('GET', route);
+    expect(byBytes.status).toBe(200);
+    expect(byBytes.body.truncated).toBe(true);
+    expect(byBytes.body.events.length).toBeLessThan(30);
+    expect(byBytes.body.nextBeforeSeq).toBe(byBytes.body.events[0].seq);
+    expect(Buffer.byteLength(JSON.stringify(byBytes.body))).toBeLessThanOrEqual(8 * 1024 * 1024);
+
+    // Too many to preview: every row minimal, none missing.
+    chat(Array.from({ length: 300 }, (_, i) => permission(i, 8 * 1024)));
+    const minimal = await send('GET', route);
+    expect(minimal.status).toBe(200);
+    expect(minimal.body.pendingPermissions).toHaveLength(300);
+    const [row] = minimal.body.pendingPermissions;
+    expect(row.data.description.startsWith('Incomplete input:')).toBe(true);
+    expect(row.data.options.map((o: { kind: string }) => o.kind)).toEqual(['reject_once']);
+    expect(row.data).not.toHaveProperty('rawInput');
+    expect(row.data).not.toHaveProperty('content');
+    // The tail's copy is the same row.
+    expect(minimal.body.events.find((e: any) => e.data.requestId === row.data.requestId).data).toEqual(row.data);
+
+    // A question that can't fit: never shortened, so no page.
+    const hugeQuestion = envelope(300, 'question', { requestId: 'q_big', questions: [{ id: 'which', prompt: 'q'.repeat(9 * 1024 * 1024), header: 'Big', options: [] }] });
+    chat([hugeQuestion]);
+    const noPage = await send('GET', route);
+    expect(noPage.status).toBe(503);
+    expect(noPage.body.error).toBe('pending_overflow');
+
+    chat(LIVE_TRANSCRIPT);
+    fixtures.set('chat-pages.json', {
+      note: 'Bodies are shortened to what shows the rule. A 503 leaves a phone read-only until a refresh works.',
+      byBytes: { status: byBytes.status, body: { ...shorten(byBytes.body), nextBeforeSeq: '<the oldest seq shown>' } },
+      minimal: { status: minimal.status, body: { ...shorten(minimal.body), pendingPermissions: [{ ...row, data: { ...row.data, truncated: { originalBytes: 307400 } } }], pendingPermissionCount: minimal.body.pendingPermissions.length } },
+      overflow: { status: noPage.status, body: noPage.body },
+    });
+  }, TEST_TIMEOUT_MS);
+
   it('fixtures on disk match (npm run fixtures:annex-mobile to update)', () => {
     const rendered = render();
     if (WRITE) {

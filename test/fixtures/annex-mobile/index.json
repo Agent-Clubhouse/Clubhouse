@@ -17,6 +17,7 @@
     "chat-event-tool-output-preview.json",
     "chat-events.json",
     "chat-page.json",
+    "chat-pages.json",
     "chat-permission-incomplete.json",
     "chat-sessions.json",
     "chat-snapshot-errors.json",

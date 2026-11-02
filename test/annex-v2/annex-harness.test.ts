@@ -106,7 +106,7 @@ vi.mock('../../src/main/services/clubhouse-mcp/binding-manager', () => ({ bindin
 
 import * as annexServer from '../../src/main/services/annex-server';
 import * as eventReplay from '../../src/main/services/annex-event-replay';
-import { publishChatEvent } from '../../src/main/services/agent-runtime';
+import { clearChatRuntimes, publishChatEvent, registerChatRuntime } from '../../src/main/services/agent-runtime';
 
 function clientCertificate(commonName: string) {
   const { privateKey, publicKey } = crypto.generateKeyPairSync('rsa', { modulusLength: 2048 });
@@ -332,6 +332,64 @@ describe('Annex harness', () => {
       expect(H.reads).toBe(reads);
       expect(H.readsRunning).toBe(0);
     }, 120_000);
+  });
+
+  describe('chat pages, over real TLS', () => {
+    const AGENT = 'durable_0_0';
+    const options = [{ optionId: 'allow', kind: 'allow_once', label: 'Allow' }, { optionId: 'deny', kind: 'reject_once', label: 'Deny' }];
+    const envelope = (seq: number, type: string, data: object) => ({ v: 1, type, agentId: AGENT, sessionId: 's', seq, ts: Date.now(), data });
+
+    /** Reads a page as raw bytes, the way a phone's transport counts them. */
+    const getChat = () => new Promise<{ status: number; bytes: number; body: any }>((resolve, reject) => {
+      https.get({ host: '127.0.0.1', port: harness.port, path: `/api/v1/mobile/agents/${AGENT}/chat`, key: phone.key, cert: phone.cert, rejectUnauthorized: false }, (res) => {
+        const chunks: Buffer[] = [];
+        res.on('data', (c: Buffer) => chunks.push(c));
+        res.on('end', () => {
+          const raw = Buffer.concat(chunks);
+          resolve({ status: res.statusCode!, bytes: raw.length, body: JSON.parse(raw.toString()) });
+        });
+      }).on('error', reject);
+    });
+
+    const withTranscript = (events: object[]) => registerChatRuntime({
+      kind: 'chat', agentId: AGENT, isRunning: () => true, getState: () => 'waiting_permission', getSessionId: () => 's', getCapabilities: () => null,
+      readTranscript: async () => ({ events }),
+    } as never);
+
+    afterAll(() => clearChatRuntimes());
+
+    it('a 20 MB tool result: a page within 8 MiB, keeping id and final status', async () => {
+      withTranscript([envelope(1, 'tool_call_update', { toolCallId: 't', status: 'completed', content: [{ type: 'text', text: 't'.repeat(20 * 1024 * 1024) }] })]);
+      const page = await getChat();
+      expect(page.status).toBe(200);
+      expect(page.bytes).toBeLessThanOrEqual(8 * 1024 * 1024);
+      expect(page.body.events[0].data).toMatchObject({ toolCallId: 't', status: 'completed', contentMode: 'replace' });
+    }, 60_000);
+
+    it('more tail than fits: within 8 MiB, with a next page', async () => {
+      withTranscript(Array.from({ length: 40 }, (_, i) => envelope(i + 1, 'notice', { level: 'info', message: 'n'.repeat(512 * 1024) })));
+      const page = await getChat();
+      expect(page.bytes).toBeLessThanOrEqual(8 * 1024 * 1024);
+      expect(page.body.truncated).toBe(true);
+      expect(page.body.nextBeforeSeq).toBe(page.body.events[0].seq);
+    }, 60_000);
+
+    it('many pending: every row minimal, none missing', async () => {
+      withTranscript(Array.from({ length: 300 }, (_, i) => envelope(i + 1, 'permission_request', { requestId: `p${i}`, title: `Write ${i}`, toolName: 'Write', options, rawInput: { content: 'c'.repeat(8192) } })));
+      const page = await getChat();
+      expect(page.status).toBe(200);
+      expect(page.bytes).toBeLessThanOrEqual(8 * 1024 * 1024);
+      expect(page.body.pendingPermissions).toHaveLength(300);
+      expect(page.body.pendingPermissions[0].data.options.map((o: { kind: string }) => o.kind)).toEqual(['reject_once']);
+    }, 60_000);
+
+    it('a question that can not fit: a 503, never a shortened one', async () => {
+      withTranscript([envelope(1, 'question', { requestId: 'q', questions: [{ id: 'q', prompt: 'p'.repeat(9 * 1024 * 1024), header: 'H', options: [] }] })]);
+      const page = await getChat();
+      expect(page.status).toBe(503);
+      expect(page.body.error).toBe('pending_overflow');
+      expect(page.bytes).toBeLessThan(1024);
+    }, 60_000);
   });
 
   it('a snapshot too large to send never goes out, and reconnects do not build it again', async () => {

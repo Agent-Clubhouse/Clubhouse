@@ -135,6 +135,12 @@ export function recordToolInputSize(bucket: Parameters<typeof ATTR.annexToolInpu
   tel.count('clubhouse.annex.tool_input.requests', 1, [ATTR.annexToolInputBucket(bucket)]);
 }
 
+/** A chat page whose pending requests had to shrink, or couldn't be sent at all. */
+export function recordChatPageOverflow(stage: Parameters<typeof ATTR.annexChatPageStage>[0]): void {
+  if (!isTelemetryActive()) return;
+  tel.count('clubhouse.annex.chat_page.overflow', 1, [ATTR.annexChatPageStage(stage)]);
+}
+
 /** A frame over the limit: replaced with its fallback, or sent because it has none yet. */
 export function recordFrameOverLimit(type: string, action: Parameters<typeof ATTR.annexFrameAction>[0]): void {
   if (!isTelemetryActive()) return;
