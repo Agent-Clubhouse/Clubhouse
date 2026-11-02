@@ -567,12 +567,16 @@ export class FeedbackService {
     }
   }
 
-  /** Held reports take up capacity, so a full queue can consist entirely of them. */
+  /** Held reports take up capacity, so a full queue can consist entirely of them. Never throws. */
   private withHeldHint(err: unknown): unknown {
-    const held = this.fb?.outbox.status().heldForEnrollment ?? 0;
-    if (held > 0 && err instanceof Error && (err as { code?: unknown }).code === 'storage-full') {
-      err.message += ` ${held} held ${held === 1 ? 'report takes' : 'reports take'} up space. You can send or clear them in Settings, Feedback.`;
+    if (!(err instanceof Error) || (err as { code?: unknown }).code !== 'storage-full') return err;
+    let held = 0;
+    try {
+      held = this.fb?.outbox.status().heldForEnrollment ?? 0;
+    } catch { // telemetry-exempt: only omits a hint from an error that is already reported
+      return err;
     }
+    if (held > 0) err.message += ` ${held} held ${held === 1 ? 'report takes' : 'reports take'} up space. You can send or clear them in Settings, Feedback.`;
     return err;
   }
 

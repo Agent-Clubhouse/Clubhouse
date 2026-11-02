@@ -398,6 +398,30 @@ describe('FeedbackService (fake SDK)', () => {
       expect(fb.feedback.prepare).toHaveBeenCalledTimes(2);
     });
 
+    it('a status read that throws while adding the held hint leaves the real error', async () => {
+      const { create, fb } = fakeSdk();
+      const s = service(create);
+      const draft = await s.captureDraft(async () => PNG);
+      const full = Object.assign(new Error('Local feedback storage is full'), { code: 'storage-full' });
+      fb.feedback.submit.mockRejectedValueOnce(full);
+      const status = vi.fn(() => { throw new Error('status broke'); });
+      fb.outbox.status = status as never;
+      await expect(s.send({ draftId: draft.draftId, notes: 'n', includeScreenshot: true })).rejects.toBe(full);
+      expect(status).toHaveBeenCalled();
+      expect(full.message).toBe('Local feedback storage is full');
+    });
+
+    it('adds the held hint to a full queue only', async () => {
+      const { create, fb } = fakeSdk();
+      const s = service(create);
+      const draft = await s.captureDraft(async () => PNG);
+      fb.outbox.status = (() => ({ ...OUTBOX, heldForEnrollment: 1 })) as never;
+      fb.feedback.prepare.mockRejectedValueOnce(Object.assign(new Error('Invalid'), { code: 'invalid-input' }));
+      await expect(s.send({ draftId: draft.draftId, notes: 'n', includeScreenshot: true })).rejects.toThrow(/^Invalid$/);
+      fb.feedback.submit.mockRejectedValueOnce(Object.assign(new Error('Full.'), { code: 'storage-full' }));
+      await expect(s.send({ draftId: draft.draftId, notes: 'n', includeScreenshot: true })).rejects.toThrow('Full. 1 held report takes up space.');
+    });
+
     it('logs an enrollment change without the ref', async () => {
       const { create, fb } = fakeSdk();
       const log = vi.fn();
