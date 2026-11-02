@@ -575,10 +575,7 @@ async function spawnAgentInner(inParams: SpawnAgentParams, facts: SpawnFacts): P
         const nonce = randomUUID();
         agentRegistry.setNonce(params.agentId, nonce);
         const mcpPort = await waitMcpBridgeReady().catch(() => 0);
-        // A terminal has no chat to carry the notice; the desktop shows it as other runtime notices.
-  if (params.contextWindowNotice) broadcastToAllWindows(IPC.CHAT.RUNTIME_NOTICE, params.agentId, params.contextWindowNotice);
-
-  const spawnEnv: Record<string, string> = {
+        const spawnEnv: Record<string, string> = {
           ...headlessResult.env,
           ...profileEnv,
           ...(wrapperApplied ? wrapperConfig?.env : undefined),
@@ -771,6 +768,9 @@ async function spawnPtyAgent(
       commandPrefix: commandPrefix || 'none',
     },
   });
+
+  // A terminal has no chat to carry the notice; the desktop shows it as other runtime notices.
+  if (params.contextWindowNotice) broadcastToAllWindows(IPC.CHAT.RUNTIME_NOTICE, params.agentId, params.contextWindowNotice);
 
   const spawnEnv: Record<string, string> = {
     ...env,

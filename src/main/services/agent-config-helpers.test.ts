@@ -1157,6 +1157,46 @@ describe('the saved context choice (#2660)', () => {
     expect((await saved('durable_1_a')).contextWindow).toBe('500000');
   });
 
+  it('a refused choice leaves the rest of the update unapplied, in the cache and on disk', async () => {
+    seed([agent('durable_1_a', { orchestrator: 'claude-code', model: 'opus', lastSessionId: 's1' })]);
+    await listDurable(PROJECT_PATH);
+    contextCheck.mockResolvedValue({ state: 'refused', message: 'not on haiku' });
+    await expect(updateDurableConfig(PROJECT_PATH, 'durable_1_a', { model: 'haiku', contextWindow: '500000' })).rejects.toThrow('not on haiku');
+    await expect(updateDurableConfig(PROJECT_PATH, 'durable_1_a', { orchestrator: 'codex-cli', contextWindow: '500000' })).rejects.toThrow('not on haiku');
+
+    const unchanged = { orchestrator: 'claude-code', model: 'opus', lastSessionId: 's1' };
+    expect(await saved('durable_1_a')).toMatchObject(unchanged);
+    // A later write mustn't carry the refused update with it.
+    await updateDurableConfig(PROJECT_PATH, 'durable_1_a', { freeAgentMode: true });
+    await flushAllAgentConfigs();
+    expect(onDisk('durable_1_a')).toMatchObject({ ...unchanged, freeAgentMode: true });
+    expect(onDisk('durable_1_a')).not.toHaveProperty('contextWindow');
+  });
+
+  it('checks against the CLI and model the update ends with, before changing anything', async () => {
+    seed([agent('durable_1_a', { orchestrator: 'claude-code', model: 'opus' })]);
+    let modelDuringCheck: string | undefined;
+    contextCheck.mockImplementation(async () => {
+      modelDuringCheck = (await saved('durable_1_a')).model;
+      return { state: 'ok' };
+    });
+    await updateDurableConfig(PROJECT_PATH, 'durable_1_a', { orchestrator: 'codex-cli', model: 'gpt-6-astra', contextWindow: '500000' });
+    expect(contextCheck).toHaveBeenCalledWith(PROJECT_PATH, 'codex-cli', 'gpt-6-astra', '500000');
+    expect(modelDuringCheck).toBe('opus');
+    expect(await saved('durable_1_a')).toMatchObject({ orchestrator: 'codex-cli', model: 'gpt-6-astra', contextWindow: '500000' });
+  });
+
+  it('a clear on a model change is not undone by a choice saved during the check', async () => {
+    seed([agent('durable_1_a', { orchestrator: 'claude-code', contextWindow: '500000' })]);
+    contextCheck.mockImplementation(async () => {
+      contextCheck.mockResolvedValue({ state: 'ok' });
+      await updateDurableConfig(PROJECT_PATH, 'durable_1_a', { contextWindow: '100000' });
+      return { state: 'refused', message: 'not on haiku' };
+    });
+    await updateDurableConfig(PROJECT_PATH, 'durable_1_a', { model: 'haiku' });
+    expect(await saved('durable_1_a')).toMatchObject({ model: 'haiku', contextWindow: '100000' });
+  });
+
   it('a new CLI clears it without asking the old catalog, and says why', async () => {
     seed([agent('durable_1_a', { orchestrator: 'claude-code', contextWindow: '500000' })]);
     await updateDurableConfig(PROJECT_PATH, 'durable_1_a', { orchestrator: 'codex-cli', model: 'default' });

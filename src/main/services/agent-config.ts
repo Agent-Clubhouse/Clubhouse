@@ -1134,33 +1134,44 @@ export function assertPersonaAllowed(projectPath: string, persona: string | unde
   }
 }
 
+/** What the catalog said about a saved context choice, checked before an update touches the agent. */
+interface ContextWindowPreflight {
+  /** The project's CLI, for an agent with none of its own. */
+  projectCli?: string;
+  /** A kept choice the update's model doesn't offer. */
+  refused?: { value: string; message: string };
+}
+
 /**
- * The saved context choice after an update (#2660). A new choice must be one
- * the model offers. A new model or CLI keeps the choice only while it's still
- * offered, and otherwise clears it and says why. Every setting path comes through here.
+ * Checks a context choice against the CLI and model the update ends with
+ * (#2660). A catalog read can take seconds, so this runs before the update's
+ * read-change-write and changes nothing: a refused choice leaves the whole
+ * update unapplied. A new choice must be on offer. A new model keeps a choice
+ * only while it's still offered; one it can't check stays, and launch decides.
  */
-async function applyContextWindowUpdate(
-  projectPath: string,
-  agent: DurableAgentConfig,
-  updates: DurableConfigUpdates,
-  modelChanged: boolean,
-): Promise<void> {
-  if (updates.contextWindow === null) {
-    delete agent.contextWindow;
-    delete agent.contextWindowNotice;
-    return;
+async function preflightContextWindow(projectPath: string, agentId: string, updates: DurableConfigUpdates): Promise<ContextWindowPreflight> {
+  const agent = (await readAgentsEntry(projectPath)).agentsById.get(agentId);
+  if (!agent) return {};
+  const projectCli = updates.orchestrator !== undefined && !agent.orchestrator
+    ? await resolveOrchestrator(projectPath).then((p) => p.id).catch((): undefined => undefined)
+    : undefined;
+  const cliChanged = updates.orchestrator !== undefined && updates.orchestrator !== (agent.orchestrator || projectCli);
+  const named = updates.model && updates.model !== 'default' ? updates.model : undefined;
+  const model = updates.model !== undefined ? named : cliChanged ? undefined : agent.model;
+  const preflight: ContextWindowPreflight = { projectCli };
+  const cli = updates.orchestrator ?? agent.orchestrator;
+  if (updates.contextWindow) {
+    const check = await contextWindowCheck(projectPath, cli, model, updates.contextWindow);
+    if (check.state !== 'ok') throw new Error(check.message);
+    return preflight;
   }
-  const wanted = updates.contextWindow ?? agent.contextWindow;
-  if (!wanted || (updates.contextWindow === undefined && !modelChanged)) return;
-  const refusal = await contextWindowCheck(projectPath, agent.orchestrator, agent.model, wanted);
-  if (updates.contextWindow !== undefined) {
-    if (refusal.state !== 'ok') throw new Error(refusal.message);
-    agent.contextWindow = wanted;
-    delete agent.contextWindowNotice;
-  } else if (refusal.state === 'refused') {
-    delete agent.contextWindow;
-    agent.contextWindowNotice = refusal.message;
+  // A new CLI clears the choice without asking; see updateDurableConfig.
+  const kept = agent.contextWindow;
+  if (updates.contextWindow === undefined && kept && !cliChanged && model !== agent.model) {
+    const check = await contextWindowCheck(projectPath, cli, model, kept);
+    if (check.state === 'refused') preflight.refused = { value: kept, message: check.message };
   }
+  return preflight;
 }
 
 /** A launch found the saved context choice no longer offered (#2660): clear it and say why. */
@@ -1179,6 +1190,7 @@ export async function updateDurableConfig(
   updates: DurableConfigUpdates,
 ): Promise<void> {
   if (updates.persona !== undefined) assertPersonaAllowed(projectPath, updates.persona);
+  const preflight = await preflightContextWindow(projectPath, agentId, updates);
   const { agents, agentsById } = await readAgentsEntry(projectPath);
   const agent = agentsById.get(agentId);
   if (!agent) return;
@@ -1188,8 +1200,7 @@ export async function updateDurableConfig(
   }
   if (updates.orchestrator !== undefined) {
     // No CLI of its own means the project's, which is what its sessions came from.
-    const previous = agent.orchestrator
-      || await resolveOrchestrator(projectPath).then((p) => p.id).catch((): undefined => undefined);
+    const previous = agent.orchestrator || preflight.projectCli;
     if (updates.orchestrator !== previous) {
       // The new CLI can't resume the old one's session or run its model (#2593).
       // Every setting path comes through here: full settings, the card, the phone.
@@ -1207,7 +1218,6 @@ export async function updateDurableConfig(
     }
     agent.orchestrator = updates.orchestrator;
   }
-  const modelBefore = agent.model;
   if (updates.model !== undefined) {
     if (updates.model && updates.model !== 'default') {
       agent.model = updates.model;
@@ -1215,7 +1225,16 @@ export async function updateDurableConfig(
       delete agent.model;
     }
   }
-  await applyContextWindowUpdate(projectPath, agent, updates, modelBefore !== agent.model);
+  if (updates.contextWindow === null) {
+    delete agent.contextWindow;
+    delete agent.contextWindowNotice;
+  } else if (updates.contextWindow !== undefined) {
+    agent.contextWindow = updates.contextWindow;
+    delete agent.contextWindowNotice;
+  } else if (preflight.refused && agent.contextWindow === preflight.refused.value) {
+    delete agent.contextWindow;
+    agent.contextWindowNotice = preflight.refused.message;
+  }
   if (updates.freeAgentMode !== undefined) {
     if (updates.freeAgentMode) {
       agent.freeAgentMode = true;
