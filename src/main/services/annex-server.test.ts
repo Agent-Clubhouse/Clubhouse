@@ -3932,6 +3932,81 @@ describe('annex-server', () => {
           return { first, buildsSoFar: builds(), finish: (v: never[]) => finish(v), fail: (e: Error) => fail(e) };
         }
 
+        describe('after a frame over the limit, a connection starts past it', () => {
+          const overLimit = (bytes: number) => {
+            publishChatEvent({ v: 2, type: 'question', agentId: 'a', sessionId: 's', seq: 1, ts: 0, data: { requestId: 'q', questions: [{ id: 'a', prompt: 'x'.repeat(bytes), header: 'H', options: [] }] } } as never);
+            return _eventReplay.getLastSeq();
+          };
+          const NINE_MIB = 9 * 1024 * 1024;
+          const SEVENTEEN_MIB = 17 * 1024 * 1024;
+          const carriesQuestion = (ws: { send: ReturnType<typeof vi.fn> }) => sent(ws).some((f) => f.type === 'chat:event' && f.payload.event.type === 'question');
+
+          it.each([['one a phone can take', NINE_MIB], ['one no phone can take', SEVENTEEN_MIB]])('on a plain connect, after %s', async (_name, bytes) => {
+            vi.mocked(projectStore.list).mockReset();
+            vi.mocked(projectStore.list).mockReturnValue([] as never);
+            const seq = overLimit(bytes);
+            const next = openSocket();
+            await vi.advanceTimersByTimeAsync(0);
+            const [snapshot] = sent(next);
+            expect(snapshot.type).toBe('snapshot');
+            expect(snapshot.payload.lastSeq).toBeGreaterThanOrEqual(seq);
+            expect(carriesQuestion(next)).toBe(false);
+          });
+
+          it('when it joins a build already running, while one from before keeps its own and gets the frame', async () => {
+            let finish: (value: never[]) => void = () => {};
+            vi.mocked(projectStore.list).mockReset();
+            vi.mocked(projectStore.list).mockImplementationOnce(() => new Promise((resolve) => { finish = resolve; }) as never);
+            vi.mocked(projectStore.list).mockReturnValue([] as never);
+            const before = openSocket();
+            const beforeCursor = _eventReplay.getLastSeq();
+            const seq = overLimit(SEVENTEEN_MIB);
+            const next = openSocket();
+            await vi.advanceTimersByTimeAsync(0);
+
+            finish([]);
+            await vi.advanceTimersByTimeAsync(0);
+
+            expect(sent(next)[0].payload.lastSeq).toBe(seq);
+            expect(carriesQuestion(next)).toBe(false);
+            expect(sent(before)[0].payload.lastSeq).toBe(beforeCursor);
+            expect(carriesQuestion(before)).toBe(true);
+          });
+
+          it('when it joins a retry already building', async () => {
+            const paused = await retryPaused();
+            const seq = overLimit(SEVENTEEN_MIB);
+            const next = openSocket();
+            await vi.advanceTimersByTimeAsync(0);
+
+            vi.mocked(projectStore.list).mockReset();
+            vi.mocked(projectStore.list).mockReturnValue([] as never);
+            paused.finish([]);
+            await vi.advanceTimersByTimeAsync(0);
+
+            expect(sent(next)[0].payload.lastSeq).toBe(seq);
+            expect(carriesQuestion(next)).toBe(false);
+          });
+
+          it('when it connects during a failure and is served by the retry', async () => {
+            failing();
+            const first = openDuringBuild();
+            failList(new Error('disk gone'));
+            await vi.waitFor(() => expect(first.send).toHaveBeenCalled());
+            const seq = overLimit(SEVENTEEN_MIB);
+            const next = openSocket();
+            await vi.advanceTimersByTimeAsync(0);
+            expect(sent(next)).toEqual([{ type: 'error', payload: { message: 'snapshot_failed' } }]);
+
+            vi.mocked(projectStore.list).mockReset();
+            vi.mocked(projectStore.list).mockReturnValue([] as never);
+            await vi.advanceTimersByTimeAsync(annexServer._testing.SNAPSHOT_RETRY_DELAYS_MS[0]);
+
+            expect(sent(next)[1].payload.lastSeq).toBe(seq);
+            expect(carriesQuestion(next)).toBe(false);
+          });
+        });
+
         it('join it rather than starting another, each with its own cursor and held events', async () => {
           const paused = await retryPaused();
           const firstCursor = _eventReplay.getLastSeq();
