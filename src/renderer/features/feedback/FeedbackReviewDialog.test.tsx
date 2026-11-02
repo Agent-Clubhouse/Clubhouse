@@ -4,6 +4,7 @@ import { resetFeedbackStore, useFeedbackStore } from '../../stores/feedbackStore
 import { useUIStore } from '../../stores/uiStore';
 import { FeedbackReviewDialog } from './FeedbackReviewDialog';
 import { feedbackStatus, setFeedback } from './feedback-test-utils';
+import type { FeedbackStatus } from '../../../shared/feedback-types';
 import { compositeAnnotatedPng } from './annotation';
 
 vi.mock('./annotation', async (importOriginal) => ({
@@ -84,6 +85,51 @@ describe('FeedbackReviewDialog', () => {
     await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Send' })); });
     expect(send).toHaveBeenCalledWith({ draftId: DRAFT.draftId, notes: 'The agent list froze', includeScreenshot: true, scene: 'agents' });
     expect(screen.getByTestId('feedback-sent-state').textContent).toMatch(/^Saved\./);
+  });
+
+  describe('what Saved promises', () => {
+    const REACHABLE = /^Saved\. It's queued on this computer and is sent as soon as Clubhouse can reach the server\.$/;
+    const WAITING = /^Saved\. It's queued on this computer and waits until Clubhouse is connected to Framebriar again\.$/;
+    const savedWith = async (status: FeedbackStatus | null) => {
+      setFeedback(true, status);
+      render(<FeedbackReviewDialog draft={DRAFT} onClose={() => {}} />);
+      await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Send' })); });
+      return screen.getByTestId('feedback-sent-state').textContent;
+    };
+
+    it.each(['connected', 'offline', 'checking', 'stopped'] as const)('%s: sent once the server can be reached', async (state) => {
+      expect(await savedWith(feedbackStatus({ state, connected: state === 'connected' }))).toMatch(REACHABLE);
+    });
+
+    it.each(['expired', 'access-required', 'connection-uncertain', 'migration-required'] as const)('%s notice: waits for a connection', async (notice) => {
+      expect(await savedWith(feedbackStatus({ state: notice, connected: false, notice }))).toMatch(WAITING);
+    });
+
+    it.each(['disconnected', 'disconnecting', 'connecting', 'storage-unavailable'] as const)('%s: waits for a connection', async (state) => {
+      expect(await savedWith(feedbackStatus({ state, connected: false }))).toMatch(WAITING);
+    });
+
+    it('a notice wins over a state that could otherwise deliver', async () => {
+      expect(await savedWith(feedbackStatus({ state: 'checking', connected: false, notice: 'expired' }))).toMatch(WAITING);
+    });
+
+    it('with no status yet, keeps the plain promise', async () => {
+      expect(await savedWith(null)).toMatch(REACHABLE);
+    });
+
+    it('follows the access state while the sheet stays open', async () => {
+      expect(await savedWith(feedbackStatus())).toMatch(REACHABLE);
+      act(() => { useFeedbackStore.setState({ status: feedbackStatus({ state: 'expired', connected: false, notice: 'expired' }) }); });
+      expect(screen.getByTestId('feedback-sent-state').textContent).toMatch(WAITING);
+    });
+  });
+
+  it('shows a send failure without the prefix Electron adds across IPC', async () => {
+    send.mockRejectedValueOnce(new Error("Error invoking remote method 'feedback:send': Error: Feedback needs an enrollment"));
+    render(<FeedbackReviewDialog draft={DRAFT} onClose={() => {}} />);
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Send' })); });
+    expect(screen.getByRole('alert').textContent).toBe('Feedback needs an enrollment');
+    expect(screen.queryByTestId('feedback-sent-state')).toBeNull();
   });
 
   it('switches from Saved to Received when the server acknowledges the report', async () => {
