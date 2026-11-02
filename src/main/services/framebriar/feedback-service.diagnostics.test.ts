@@ -1,7 +1,8 @@
-import { readFileSync } from 'fs';
+import { readFileSync, readdirSync } from 'fs';
 import { join } from 'path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createFeedback, createTelemetry, type Framebriar } from '../../vendor/framebriar/adapters/node/index.mjs';
+import { normalizeReport } from '../../vendor/framebriar/src/protocol.mjs';
 import incidentFixture from './fixtures/incident-report-v1.json';
 import { asyncOnlySafeStorage, fakeKeychain } from '../../telemetry/__test-utils__/fake-safe-storage';
 import type { FeedbackDiagnostics } from '../../../shared/feedback-types';
@@ -150,6 +151,19 @@ describe('FeedbackService diagnostics', () => {
       expect(readFileSync(join(__dirname, 'index.ts'), 'utf-8')).not.toContain('reportDiagnosticsField');
     });
 
+    it('has no way on in app code: no setting, IPC or SDK provider', () => {
+      const src = join(__dirname, '../../..');
+      const sources = (readdirSync(src, { recursive: true }) as string[])
+        .map((file) => file.replaceAll('\\', '/'))
+        .filter((file) => /\.tsx?$/.test(file) && !/\.test\.tsx?$/.test(file) && !file.startsWith('main/vendor/'));
+      const mentioning = (word: string) => sources.filter((file) => readFileSync(join(src, file), 'utf-8').includes(word));
+      // The dep's declaration and its two reads, the v1 file's note, and nothing that could set it.
+      expect(mentioning('reportDiagnosticsField').sort()).toEqual(['main/services/framebriar/feedback-diagnostics-v1.ts', 'main/services/framebriar/feedback-service.ts']);
+      expect(readFileSync(join(__dirname, 'feedback-service.ts'), 'utf-8').match(/reportDiagnosticsField/g)).toHaveLength(3);
+      // The SDK's own route to the field.
+      expect(mentioning('diagnosticsProvider')).toEqual([]);
+    });
+
     it('fills the frozen v1 shape only when explicitly on', async () => {
       const { fb } = fakeSdk();
       const { s } = serviceWith(fb, { reportDiagnosticsField: true, createExcerptTelemetry: (() => fakeExcerpt()) as never });
@@ -177,7 +191,7 @@ describe('FeedbackService diagnostics', () => {
       const draft = await capture(s);
       items.mockReturnValue({ ...status, items: 9 });
       await s.send({ draftId: draft.draftId, notes: '', includeScreenshot: true, includeDiagnostics: true });
-      expect((preparedInput(fb).diagnostics as { delivery: unknown }).delivery).toEqual({ queued: 4 });
+      expect((preparedInput(fb).diagnostics as { delivery: unknown }).delivery).toEqual({ queued: 4, lastResult: 'unknown' });
     });
   });
 
@@ -359,9 +373,26 @@ describe('FeedbackService diagnostics', () => {
       expect(report).not.toContain('annex.ws.disconnected');
     });
 
-    it('the pinned SDK would strip the field even if the gate were on, so the gate is what must hold', async () => {
+    it('the pinned SDK carries the field, so the gate is what must hold', async () => {
       const { report } = await sendWith({ includeDiagnostics: true, includeCorrelation: true, reportDiagnosticsField: true });
-      expect(report).not.toContain('"entries"');
+      const saved = JSON.parse(report);
+      expect(saved.diagnostics).toMatchObject({ v: 1, state: 'attached', lines: 1, delivery: { queued: 0 }, entries: [{ event: 'annex.ws.disconnected', attrs: { closeCode: 1009 } }] });
+      // What the outbox reads back from disk before sending.
+      expect(normalizeReport(saved).diagnostics).toEqual(saved.diagnostics);
+    });
+
+    it('with the gate on, unchecking the box leaves the lines out of the report', async () => {
+      const { report } = await sendWith({ includeDiagnostics: false, includeCorrelation: true, reportDiagnosticsField: true });
+      expect(JSON.parse(report).diagnostics).toMatchObject({ v: 1, state: 'left_out', entries: [] });
+      expect(report).not.toContain('annex.ws.disconnected');
+    });
+
+    it('leaves the interim excerpt path as it was', async () => {
+      const { fb } = fakeSdk();
+      const { s } = serviceWith(fb, { createExcerptTelemetry: (() => fakeExcerpt()) as never });
+      const draft = await capture(s);
+      await s.send({ draftId: draft.draftId, notes: '', includeScreenshot: true, includeDiagnostics: true });
+      expect(fb.feedback.submit.mock.lastCall![1]).toEqual({ includeDiagnostics: false });
     });
   });
 });

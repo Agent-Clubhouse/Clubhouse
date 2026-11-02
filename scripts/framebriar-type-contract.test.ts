@@ -11,8 +11,8 @@ it('typechecks the public Framebriar surface used by Clubhouse', () => {
     const entry = path.join(dir, 'contract.ts');
     const sdk = path.resolve('src/main/vendor/framebriar/adapters/node/index.mjs').replaceAll('\\', '/');
     writeFileSync(entry, `
-      import { createFramebriar, otlpExporterOptions } from ${JSON.stringify(sdk)};
-      import type { FramebriarAccessView, FramebriarSubmitAck } from ${JSON.stringify(sdk)};
+      import { createFramebriar, normalizeDiagnostics, otlpExporterOptions } from ${JSON.stringify(sdk)};
+      import type { FramebriarAccessView, FramebriarReportDiagnostics, FramebriarSubmitAck } from ${JSON.stringify(sdk)};
       const options = {
         appId: 'clubhouse', dataDir: '/unused', telemetry: 'off' as const,
         safeStorage: { isEncryptionAvailable: () => true,
@@ -40,7 +40,12 @@ it('typechecks the public Framebriar surface used by Clubhouse', () => {
         createFramebriar({ ...options, accessTimeoutMs: 1 });
         // @ts-expect-error Enrollment is explicit and takes one invitation string.
         fb.access.connect({ invitation: 'fixture' });
-        void [connected, token, result, headers, ack, retention, storage];
+        const carried: 'attached' | 'none' | 'left_out' | 'unavailable' | null = ack.reportDiagnostics;
+        const diagnostics: FramebriarReportDiagnostics = normalizeDiagnostics({ v: 1, state: 'none' });
+        await fb.feedback.prepare({ png: null, diagnostics });
+        // @ts-expect-error Clubhouse doesn't use the SDK's provider: reportDiagnosticsField is the only way to the field.
+        createFramebriar({ ...options, diagnosticsProvider: () => [] });
+        void [connected, token, result, headers, ack, retention, storage, carried];
       }
       void contract;
     `);

@@ -86,6 +86,48 @@ export interface FramebriarSnapshot {
   readonly incident?: FramebriarIncident | null;
 }
 
+/** Upstream docs/feedback-diagnostics-v1.md. A report's own diagnostics; normalizeDiagnostics is what enforces it. */
+export type FramebriarDiagnosticsState = 'attached' | 'none' | 'left_out' | 'unavailable';
+
+export interface FramebriarDiagnosticsEntry {
+  at: string;
+  level: 'debug' | 'info' | 'warn' | 'error';
+  ns: string;
+  event: string;
+  attrs?: Record<string, string | number>;
+}
+
+export interface FramebriarDiagnosticsDelivery {
+  queued: number;
+  lastResult: string;
+}
+
+export interface FramebriarReportDiagnostics {
+  v: 1;
+  state: FramebriarDiagnosticsState;
+  reason?: string;
+  windowStart?: string;
+  windowEnd?: string;
+  lines: number;
+  bytes: number;
+  dropped: number;
+  droppedAttrs: number;
+  entries: FramebriarDiagnosticsEntry[];
+  delivery?: FramebriarDiagnosticsDelivery;
+}
+
+export declare const DIAGNOSTICS_LIMITS: { readonly totalBytes: number; readonly entries: number; readonly stringBytes: number; readonly attrsPerEntry: number };
+export declare const DIAGNOSTICS_CONTRACT: {
+  readonly tokenPattern: string;
+  readonly deliveryResults: readonly string[];
+  readonly attrs: {
+    readonly numbers: readonly string[];
+    readonly enums: { readonly failure: readonly string[]; readonly link: readonly string[] };
+    readonly shortTokenPattern: string;
+  };
+};
+export declare function normalizeDiagnostics(raw: unknown, limits?: { maxBytes?: number; maxEntries?: number }): FramebriarReportDiagnostics;
+
 /** Upstream incident v1. Desktop-origin support is pending; never invent a phone identity. */
 export interface FramebriarIncident {
   readonly version: 1;
@@ -111,7 +153,10 @@ export interface FramebriarSubmitAck {
   gameId: string;
   status: 'saved-local';
   sent: false;
+  /** The telemetry excerpt only. */
   diagnostics: 'included' | 'skipped' | 'unavailable';
+  /** The state the report itself carries, or null without the field. */
+  reportDiagnostics: FramebriarDiagnosticsState | null;
 }
 
 export interface FramebriarFeedback {
@@ -126,7 +171,9 @@ export interface FramebriarFeedback {
     traceId?: string;
     spanId?: string;
     incident?: FramebriarIncident | null;
+    diagnostics?: FramebriarReportDiagnostics;
   }): Promise<FramebriarPrepared>;
+  /** `includeDiagnostics: false` replaces a carried diagnostics field with `left_out`. */
   submit(prepared: FramebriarPrepared, opts?: { includeDiagnostics?: boolean }): Promise<FramebriarSubmitAck>;
 }
 
