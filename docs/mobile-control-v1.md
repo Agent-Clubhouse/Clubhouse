@@ -137,7 +137,7 @@ The Annex snapshot carries what the desktop's `AgentAvatar` draws, so a phone ca
 - Quick agents (`quickAgents[projectId][]`): `color`, always `"gray"`. Quick agents don't inherit their parent's colour.
 - The Dispatcher (`dispatcher.agent`): the durable shape, and in `agentIcons` too. It isn't in `agents`.
 
-Each `snapshot` is complete, so replace the agent rows and `agentIcons` rather than merging them: an image that was removed is simply absent. A new snapshot follows any change to an agent's name, color, emoji or image, wherever it was made: Settings, `agent.update`, the `update_agent` MCP tool, the `clubhouse` CLI, or an edit to `agents.json`. The same goes for a project's name, color, emoji or image, and for a project being added or removed. An image's bytes are also at `GET /api/v1/icons/agent/:agentId`, the Dispatcher's too while it is on. See [Drawing a sender](#drawing-a-sender) for how to draw these.
+Each `snapshot` is complete, so replace the agent rows and `agentIcons` rather than merging them: an image that was removed is simply absent. A new snapshot follows any change to an agent's name, color, emoji or image, wherever it was made: Settings, `agent.update`, the `update_agent` MCP tool, the `clubhouse` CLI, or an edit to `agents.json`. The same goes for a project's name, color, emoji or image, and for a project being added or removed. An icon file replaced directly on disk under the same name is the exception: nothing sends a snapshot for that, and the next one has the new image. An image's bytes are also at `GET /api/v1/icons/agent/:agentId`, the Dispatcher's too while it is on. See [Drawing a sender](#drawing-a-sender) for how to draw these.
 
 ### Snapshot size
 
