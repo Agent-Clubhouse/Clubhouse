@@ -574,16 +574,212 @@ describe('reduceChatEvent', () => {
       expect(s.queued[0].text).toBe('2 updates, oldest first:\n\n--- 1 of 2 ---\ntwo\n\n--- 2 of 2 ---\nthree');
     });
 
-    it('clears a queued entry when the same text is later delivered', () => {
+    it('keeps a queued entry when another message with the same text is sent (#2647)', () => {
       const s = fold([
         sessionStarted(ev),
         ev('user_message', { messageId: 'q1', content: text('do it'), source: 'user', delivery: 'queued' }),
         ev('user_message', { messageId: 'u2', content: text('do it'), source: 'user', delivery: 'prompt' }),
       ]);
-      expect(s.queued).toEqual([]);
+      expect(s.queued.map((q) => q.messageId)).toEqual(['q1']);
       const users = s.items.filter((i): i is UserMessageItem => i.kind === 'user_message');
       expect(users).toHaveLength(1);
       expect(users[0].delivery).toBe('prompt');
+    });
+
+    describe('queue_state (#2647)', () => {
+      const users = (s: ChatViewState) => s.items.filter((i): i is UserMessageItem => i.kind === 'user_message');
+      const queuedMessage = (id: string, body = id) => ev('user_message', { messageId: id, content: text(body), source: 'user', delivery: 'queued' });
+      const transition = (status: ChatEventDataMap['queue_state']['transition']['status'], id: string, left: string[] = []) =>
+        ev('queue_state', { queuedMessageIds: left, transition: { messageIds: [id], status } });
+      const held = (...ids: string[]) => ids.flatMap((id, i) => [queuedMessage(id), transition('queued', id, ids.slice(0, i + 1))]);
+
+      it('moves a runtime-owned row to the timeline at dispatching, and its turn takes nothing else', () => {
+        let s = fold([sessionStarted(ev), ...held('q1', 'q2'), transition('dispatching', 'q1', ['q2'])]);
+        expect(s.queued.map((q) => q.messageId)).toEqual(['q2']);
+        expect(users(s).map((u) => [u.messageId, u.delivery, u.sendState])).toEqual([['q1', 'queued', 'sending']]);
+        s = fold([transition('delivered', 'q1', ['q2']), ev('turn_started', { trigger: 'prompt' }, { turnId: 't2' })], s);
+        expect(s.queued.map((q) => q.messageId)).toEqual(['q2']);
+        expect(users(s)).toHaveLength(1);
+        expect(users(s)[0].sendState).toBeUndefined();
+      });
+
+      it('marks a failed send not delivered and never shows it as sent by a later turn', () => {
+        const s = fold([
+          sessionStarted(ev),
+          ...held('q1', 'q2'),
+          transition('dispatching', 'q1', ['q2']),
+          transition('failed', 'q1', ['q2']),
+          ev('turn_started', { trigger: 'prompt' }, { turnId: 't2' }),
+        ]);
+        expect(users(s).map((u) => [u.messageId, u.sendState])).toEqual([['q1', 'not_delivered']]);
+        expect(s.queued.map((q) => q.messageId)).toEqual(['q2']);
+      });
+
+      it('marks a row failed even when its dispatching was cut off', () => {
+        const s = fold([sessionStarted(ev), ...held('q1'), transition('failed', 'q1')]);
+        expect(s.queued).toEqual([]);
+        expect(users(s).map((u) => u.sendState)).toEqual(['not_delivered']);
+      });
+
+      it('drops a removed row without showing it', () => {
+        const s = fold([sessionStarted(ev), ...held('q1', 'q2'), ev('queue_removed', { messageIds: ['q1'] }), transition('removed', 'q1', ['q2'])]);
+        expect(s.queued.map((q) => q.messageId)).toEqual(['q2']);
+        expect(users(s)).toEqual([]);
+      });
+
+      it('keeps a merged row whole through dispatching', () => {
+        const s = fold([
+          sessionStarted(ev),
+          ev('user_message', { messageId: 'm1', content: text('one'), source: 'mcp', delivery: 'queued' }),
+          transition('queued', 'm1', ['m1']),
+          ev('user_message', { messageId: 'm2', content: text('two'), source: 'mcp', delivery: 'queued', queuedWith: 'm1' }),
+          transition('dispatching', 'm1'),
+        ]);
+        expect(s.queued).toEqual([]);
+        expect(users(s)).toHaveLength(1);
+        expect(users(s)[0].text).toContain('two');
+      });
+
+      it('counts a row in queuedMessageIds as runtime-owned when its own queued status was cut off', () => {
+        const s = fold([
+          sessionStarted(ev),
+          queuedMessage('q1'),
+          queuedMessage('q2'),
+          ev('queue_state', { queuedMessageIds: ['q1', 'q2'], transition: { messageIds: ['q2'], status: 'queued' } }),
+          ev('turn_started', { trigger: 'prompt' }, { turnId: 't2' }),
+        ]);
+        expect(s.queued.map((q) => q.messageId)).toEqual(['q1', 'q2']);
+        expect(users(s)).toEqual([]);
+      });
+
+      it('a native queue never sends queue_state: its turn still delivers the oldest row', () => {
+        const s = fold([sessionStarted(ev), queuedMessage('q1'), queuedMessage('q2'), ev('turn_started', { trigger: 'queued' }, { turnId: 't2' })]);
+        expect(s.queued.map((q) => q.messageId)).toEqual(['q2']);
+        expect(users(s).map((u) => [u.messageId, u.delivery, u.turnId, u.sendState])).toEqual([['q1', 'queued', 't2', undefined]]);
+      });
+
+      it('a transcript from before queue_state still delivers on a drained turn, which says prompt', () => {
+        const s = fold([sessionStarted(ev), queuedMessage('q1'), ev('turn_started', { trigger: 'prompt' }, { turnId: 't2' })]);
+        expect(s.queued).toEqual([]);
+        expect(users(s).map((u) => u.messageId)).toEqual(['q1']);
+      });
+
+      it('a system turn delivers nothing, and the turn that follows still does', () => {
+        let s = fold([sessionStarted(ev), queuedMessage('q1'), ev('turn_started', { trigger: 'system' }, { turnId: 't2' })]);
+        expect(s.state).toBe('running');
+        expect(s.turnId).toBe('t2');
+        expect(s.queued.map((q) => q.messageId)).toEqual(['q1']);
+        expect(users(s)).toEqual([]);
+        s = fold([ev('turn_ended', { stopReason: 'end_turn' }, { turnId: 't2' }), ev('turn_started', { trigger: 'queued' }, { turnId: 't3' })], s);
+        expect(s.queued).toEqual([]);
+        expect(users(s).map((u) => u.turnId)).toEqual(['t3']);
+      });
+
+      it('a steer with the same text as a queued row leaves that row, which its own turn delivers', () => {
+        let s = fold([
+          sessionStarted(ev),
+          ev('turn_started', { trigger: 'prompt' }, { turnId: 't1' }),
+          queuedMessage('q1', 'same words'),
+          ev('user_message', { messageId: 's1', content: text('same words'), source: 'user', delivery: 'steer' }, { turnId: 't1' }),
+        ]);
+        expect(s.queued.map((q) => q.messageId)).toEqual(['q1']);
+        s = fold([ev('turn_ended', { stopReason: 'end_turn' }, { turnId: 't1' }), ev('turn_started', { trigger: 'queued' }, { turnId: 't2' })], s);
+        expect(s.queued).toEqual([]);
+        expect(users(s).map((u) => [u.messageId, u.delivery])).toEqual([['s1', 'steer'], ['q1', 'queued']]);
+      });
+
+      it.each([
+        ['runtime-owned', (id: string) => held(id)],
+        ['native', (id: string) => [queuedMessage(id)]],
+      ])('session_ended leaves a %s row not delivered, out of the queue list', (_name, queue) => {
+        const s = fold([sessionStarted(ev), ...queue('q1'), ev('session_ended', { reason: 'stopped' })]);
+        expect(s.queued).toEqual([]);
+        expect(users(s).map((u) => [u.messageId, u.sendState])).toEqual([['q1', 'not_delivered']]);
+      });
+
+      it('session_ended settles a send that never reported back, and a delivered one stays delivered', () => {
+        const s = fold([
+          sessionStarted(ev),
+          ...held('q1', 'q2'),
+          transition('dispatching', 'q1', ['q2']),
+          transition('delivered', 'q1', ['q2']),
+          transition('dispatching', 'q2'),
+          ev('session_ended', { reason: 'stopped' }),
+        ]);
+        expect(users(s).map((u) => [u.messageId, u.sendState])).toEqual([['q1', undefined], ['q2', 'not_delivered']]);
+      });
+
+      it('a resumed run after session_ended does not deliver the old row', () => {
+        const s = fold([
+          sessionStarted(ev),
+          queuedMessage('q1'),
+          ev('session_ended', { reason: 'idle_timeout' }),
+          sessionStarted(ev, 's1', { resumed: true }),
+          ev('turn_started', { trigger: 'prompt' }, { turnId: 't2' }),
+        ]);
+        expect(s.queued).toEqual([]);
+        expect(users(s).map((u) => [u.messageId, u.sendState, u.turnId])).toEqual([['q1', 'not_delivered', undefined]]);
+      });
+
+      it.each([
+        ['runtime-owned', (id: string) => held(id)],
+        ['native', (id: string) => [queuedMessage(id)]],
+      ])('a new run after a crash (no session_ended) settles a %s row', (_name, queue) => {
+        const s = fold([sessionStarted(ev), ...queue('q1'), sessionStarted(ev, 's1', { resumed: true }), ev('turn_started', { trigger: 'prompt' }, { turnId: 't2' })]);
+        expect(s.queued).toEqual([]);
+        expect(users(s).map((u) => [u.messageId, u.sendState, u.turnId])).toEqual([['q1', 'not_delivered', undefined]]);
+      });
+
+      it('a new conversation starts with an empty queue', () => {
+        const s = fold([sessionStarted(ev), ...held('q1'), sessionStarted(ev, 's2')]);
+        expect(s.queued).toEqual([]);
+        expect(users(s)).toEqual([]);
+      });
+
+      it('settleDeadSession leaves what a dead session held not delivered, and is stable', () => {
+        const s = fold([
+          sessionStarted(ev),
+          ev('turn_started', { trigger: 'prompt' }, { turnId: 't1' }),
+          ...held('q1'),
+          queuedMessage('n1'),
+        ]);
+        const settled = settleDeadSession(s);
+        expect(settled.queued).toEqual([]);
+        expect(users(settled).map((u) => [u.messageId, u.sendState])).toEqual([['q1', 'not_delivered'], ['n1', 'not_delivered']]);
+        expect(settled.state).toBe('sleeping');
+        expect(settleDeadSession(settled)).toBe(settled);
+      });
+
+      it('settleDeadSession settles a queue on a session that already reads asleep', () => {
+        const s = fold([sessionStarted(ev), queuedMessage('q1'), ev('session_state', { state: 'sleeping' })]);
+        expect(s.queued).toHaveLength(1);
+        expect(settleDeadSession(s).queued).toEqual([]);
+      });
+
+      it('restored history folds to the same view as the live events, with duplicates ignored', () => {
+        const events = [
+          sessionStarted(ev),
+          ev('turn_started', { trigger: 'prompt' }, { turnId: 't1' }),
+          ...held('q1', 'q2', 'q3'),
+          transition('removed', 'q3', ['q1', 'q2']),
+          ev('turn_ended', { stopReason: 'end_turn' }, { turnId: 't1' }),
+          transition('dispatching', 'q1', ['q2']),
+          transition('failed', 'q1', ['q2']),
+          ev('session_ended', { reason: 'error' }),
+        ];
+        const live = events.reduce<ChatViewState | undefined>((state, event) => reduceChatEvent(state, event), undefined);
+        const restored = fold(events);
+        expect(restored).toEqual(live);
+        expect(fold(events, restored)).toBe(restored);
+        expect(restored.queued).toEqual([]);
+        expect(users(restored).map((u) => [u.messageId, u.sendState])).toEqual([['q1', 'not_delivered'], ['q2', 'not_delivered']]);
+      });
+
+      it('a transcript cut before a row was queued ignores its queue_state', () => {
+        const s = fold([sessionStarted(ev), transition('queued', 'gone', ['gone']), transition('dispatching', 'gone'), transition('failed', 'gone')]);
+        expect(s.queued).toEqual([]);
+        expect(users(s)).toEqual([]);
+      });
     });
 
     it('records user message source and delivery', () => {

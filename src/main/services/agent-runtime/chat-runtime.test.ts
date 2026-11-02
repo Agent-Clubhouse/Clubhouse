@@ -249,6 +249,15 @@ describe('ChatAgentRuntime', () => {
       } });
     });
 
+    it('writes a queued message and the event saying the runtime holds it next to each other', async () => {
+      const { ids } = await queuedRuntime();
+      const types = transcript.filter((e) => e.type === 'user_message' || e.type === 'queue_state').map((e) => e.seq);
+      expect(types).toEqual(types.map((_, i) => types[0] + i));
+      expect(transcript.filter((e) => e.type === 'queue_state').map((e) => e.data)).toMatchObject(ids.map((id, i) => ({
+        queuedMessageIds: ids.slice(0, i + 1), transition: { messageIds: [id], status: 'queued' },
+      })));
+    });
+
     it('records failed queue dispatch without claiming delivery or requeueing', async () => {
       const { driver, runtime, ids } = await queuedRuntime();
       vi.spyOn(driver.last, 'send').mockRejectedValueOnce(new Error('send failed'));

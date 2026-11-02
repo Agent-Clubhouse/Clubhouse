@@ -67,6 +67,12 @@ export interface UserMessageItem extends ChatItemBase {
   delivery: MessageDelivery;
   /** Who sent it and the message without routing text. */
   routed?: RoutedMessagePart[];
+  /**
+   * Left a queue without word that it got through: `sending` while the runtime
+   * sends it, `not_delivered` once the send failed or the session ended first.
+   * Absent for every other message.
+   */
+  sendState?: 'sending' | 'not_delivered';
 }
 
 export interface AgentMessageItem extends ChatItemBase {
@@ -186,6 +192,8 @@ export interface QueuedMessage {
   parts?: ContentBlock[][];
   /** Who sent it and the message without routing text. */
   routed?: RoutedMessagePart[];
+  /** A queue_state named it: the runtime holds it and says when it leaves, so turn_started says nothing about it. */
+  runtimeOwned?: boolean;
 }
 
 export interface UsageSnapshot {
@@ -436,15 +444,17 @@ function expireQuestions(items: ChatItem[], which: (q: QuestionItem) => boolean)
  * crashed mid-turn): open questions expire, nothing is left awaiting an
  * answer, and the session reads as sleeping. A transcript cut off without
  * session_ended otherwise keeps its last state, idle or running, which status
- * surfaces would show over a terminal the agent now runs in (#2208).
+ * surfaces would show over a terminal the agent now runs in (#2208). Messages
+ * it still held never went (#2647).
  */
 export function settleDeadSession(state: ChatViewState): ChatViewState {
   const open = state.pendingQuestions.length > 0 || state.pendingPermissions.length > 0
     || state.items.some((i) => i.kind === 'question' && !i.answers && !i.cancelled && !i.expired);
   const asleep = state.state === 'sleeping' && state.turnId === null && state.turnStartedAt === null;
-  if (!open && asleep) return state;
-  const settled: ChatViewState = { ...state, state: 'sleeping', turnId: null, turnStartedAt: null };
-  return open ? { ...settled, items: expireQuestions(state.items, () => true), pendingQuestions: [], pendingPermissions: [] } : settled;
+  const unqueued = abandonQueued(state);
+  if (!open && asleep && unqueued === state) return state;
+  const settled: ChatViewState = { ...unqueued, state: 'sleeping', turnId: null, turnStartedAt: null };
+  return open ? { ...settled, items: expireQuestions(unqueued.items, () => true), pendingQuestions: [], pendingPermissions: [] } : settled;
 }
 
 function stopStreaming(items: ChatItem[], turnId: string | undefined): ChatItem[] {
@@ -460,7 +470,7 @@ function stopStreaming(items: ChatItem[], turnId: string | undefined): ChatItem[
   return changed ? next : items;
 }
 
-function queuedToItem(q: QueuedMessage, event: ChatEvent): UserMessageItem {
+function queuedToItem(q: QueuedMessage, event: Pick<ChatEvent, 'ts' | 'turnId'>, sendState?: UserMessageItem['sendState']): UserMessageItem {
   const item: UserMessageItem = {
     id: `user:${q.sessionId}:${q.messageId}`,
     sessionId: q.sessionId,
@@ -473,9 +483,27 @@ function queuedToItem(q: QueuedMessage, event: ChatEvent): UserMessageItem {
     source: q.source,
     delivery: 'queued',
     ...(q.routed && { routed: q.routed }),
+    ...(sendState && { sendState }),
   };
   if (event.turnId) item.turnId = event.turnId;
   return item;
+}
+
+/**
+ * The run that held these messages is over. A runtime's queue is in memory and
+ * a CLI's dies with it, so a message still waiting goes into the timeline as not
+ * delivered, and so does one whose send never reported back. The queue list
+ * would otherwise promise "sent when this turn ends" for a turn that won't come.
+ */
+function abandonQueued(state: ChatViewState, event?: ChatEvent): ChatViewState {
+  const sending = state.items.some((i) => i.kind === 'user_message' && i.sendState === 'sending');
+  if (state.queued.length === 0 && !sending) return state;
+  const items = state.items.map((i): ChatItem => (i.kind === 'user_message' && i.sendState === 'sending' ? { ...i, sendState: 'not_delivered' } : i));
+  return {
+    ...state,
+    queued: [],
+    items: [...items, ...state.queued.map((q) => queuedToItem(q, event ?? { ts: q.ts }, 'not_delivered'))],
+  };
 }
 
 // ── Reducer ─────────────────────────────────────────────────────────────────
@@ -509,6 +537,7 @@ export function reduceChatEvent(prev: ChatViewState | undefined, event: ChatEven
   switch (event.type) {
     case 'session_started': {
       const d = event.data;
+      state = abandonQueued(state, event);
       return {
         ...state,
         sessionStartedAt: Math.max(state.sessionStartedAt ?? 0, event.ts),
@@ -561,7 +590,7 @@ export function reduceChatEvent(prev: ChatViewState | undefined, event: ChatEven
     case 'session_state':
       return { ...state, state: event.data.state };
     case 'session_ended':
-      state = settleCompaction(state);
+      state = abandonQueued(settleCompaction(state), event);
       return {
         ...state,
         state: event.data.reason === 'error' ? 'error' : 'sleeping',
@@ -572,9 +601,12 @@ export function reduceChatEvent(prev: ChatViewState | undefined, event: ChatEven
       };
 
     case 'turn_started': {
-      // The runtime drains its queue one message per turn, so a new turn
-      // delivers the oldest queued message.
-      const [delivered, ...rest] = state.queued;
+      // A native queue (and an older transcript) reports no dispatch, so a new
+      // turn delivers the oldest message no queue_state has named. A 'system'
+      // turn is the agent's own work (/compact, a permission or question with
+      // no turn open, an ACP agent starting on its own) and delivers nothing.
+      const next = event.data.trigger === 'system' ? -1 : state.queued.findIndex((q) => !q.runtimeOwned);
+      const delivered = state.queued[next];
       return {
         ...state,
         turnId: event.turnId ?? null,
@@ -582,7 +614,7 @@ export function reduceChatEvent(prev: ChatViewState | undefined, event: ChatEven
         state: 'running',
         // usage.turn describes the running turn from here on.
         usage: { ...state.usage, turn: null },
-        queued: delivered ? rest : state.queued,
+        queued: delivered ? state.queued.filter((_, i) => i !== next) : state.queued,
         items: delivered ? [...state.items, queuedToItem(delivered, event)] : state.items,
       };
     }
@@ -640,11 +672,8 @@ export function reduceChatEvent(prev: ChatViewState | undefined, event: ChatEven
         };
         return { ...state, queued: [...state.queued, q] };
       }
-      // A delivered message with the same text (or id) supersedes a queued one.
-      // By id first, so of two queued messages with the same text the right one goes.
-      const byId = state.queued.findIndex((q) => q.messageId === d.messageId);
-      const qIdx = byId !== -1 ? byId : state.queued.findIndex((q) => q.text === text);
-      const queued = qIdx === -1 ? state.queued : state.queued.filter((_, i) => i !== qIdx);
+      // By id only: every send gets its own id, so the same text sent again is another message (#2647).
+      const queued = state.queued.filter((q) => q.messageId !== d.messageId);
       const item: UserMessageItem = {
         ...itemBase(event, `user:${sid}:${d.messageId}`),
         kind: 'user_message',
@@ -662,6 +691,27 @@ export function reduceChatEvent(prev: ChatViewState | undefined, event: ChatEven
       const removed = new Set(event.data.messageIds);
       const queued = state.queued.filter((q) => !removed.has(q.messageId));
       return queued.length === state.queued.length ? state : { ...state, queued };
+    }
+
+    case 'queue_state': {
+      const { queuedMessageIds, transition: { messageIds, status } } = event.data;
+      const named = new Set([...queuedMessageIds, ...messageIds]);
+      const transitioned = new Set(messageIds);
+      const queued = state.queued.map((q) => (named.has(q.messageId) ? { ...q, runtimeOwned: true } : q));
+      if (status === 'queued') return { ...state, queued };
+      const remaining = queued.filter((q) => !transitioned.has(q.messageId));
+      if (status === 'removed') return { ...state, queued: remaining };
+      const sendState = status === 'delivered' ? undefined : status === 'failed' ? 'not_delivered' : 'sending';
+      // The row normally left at `dispatching`: a later status only updates it.
+      const items = state.items.map((i): ChatItem => {
+        if (i.kind !== 'user_message' || !i.sendState || !transitioned.has(i.messageId)) return i;
+        const updated: UserMessageItem = { ...i };
+        if (sendState) updated.sendState = sendState;
+        else delete updated.sendState;
+        return updated;
+      });
+      const left = queued.filter((q) => transitioned.has(q.messageId)).map((q) => queuedToItem(q, event, sendState));
+      return { ...state, queued: remaining, items: [...items, ...left] };
     }
 
     case 'agent_message_chunk':

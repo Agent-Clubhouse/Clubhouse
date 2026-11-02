@@ -372,6 +372,7 @@ export interface ChatEventDataMap {
   session_ended: { reason: SessionEndReason; exitCode?: number; message?: string };
 
   turn_started: {
+    /** 'system': the agent's own work, which delivers no queued message. */
     trigger: MessageDelivery | 'system';
     /** The provider's own turn id, when it has one. */
     nativeTurnId?: string;

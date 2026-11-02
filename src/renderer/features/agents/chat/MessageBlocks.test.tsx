@@ -42,6 +42,14 @@ describe('UserMessage', () => {
     expect(screen.getByTestId('chat-you-label').textContent).toBe('You · From Annex · Steered into the running turn');
   });
 
+  it('says plainly when a queued message was not delivered, and nothing while it is sending', () => {
+    const { rerender } = render(<UserMessage item={item({ text: 'hi', delivery: 'queued', sendState: 'not_delivered' })} />);
+    expect(screen.getByTestId('chat-you-label').textContent).toBe('You · Not delivered');
+    expect(screen.getByTestId('chat-user-message').dataset.sendState).toBe('not_delivered');
+    rerender(<UserMessage item={item({ text: 'hi', delivery: 'queued', sendState: 'sending' })} />);
+    expect(screen.getByTestId('chat-you-label').textContent).toBe('You');
+  });
+
   it('shows another agent on the left with name and avatar and no routing text', () => {
     useAgentStore.setState({ agents: { durable_1: agent({}) } });
     render(<UserMessage item={item({ text: '[TASK:t] [FROM:typecheck-leak@p] Short one', source: 'mcp', routed: routed('Short one') })} />);

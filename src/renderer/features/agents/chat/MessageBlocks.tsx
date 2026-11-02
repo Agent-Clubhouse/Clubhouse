@@ -120,7 +120,7 @@ export function isLongMessage(text: string): boolean {
 
 function metaLabels(item: UserMessageItem): string[] {
   const label = SOURCE_LABELS[item.source];
-  return [label, item.delivery === 'steer' ? 'Steered into the running turn' : null].filter((l): l is string => !!l);
+  return [label, item.delivery === 'steer' ? 'Steered into the running turn' : null, item.sendState === 'not_delivered' ? 'Not delivered' : null].filter((l): l is string => !!l);
 }
 
 function Attachments({ item, align }: { item: UserMessageItem; align: 'start' | 'end' }) {
@@ -199,7 +199,7 @@ export function UserMessage({ item, expansionKey }: { item: UserMessageItem; exp
   const display = messageDisplay(item);
   if (display.from === 'others') {
     return (
-      <div className="mr-auto max-w-[82%] min-w-0 flex flex-col items-start gap-2" data-testid="chat-user-message" data-source={item.source} data-delivery={item.delivery} data-from="others">
+      <div className="mr-auto max-w-[82%] min-w-0 flex flex-col items-start gap-2" data-testid="chat-user-message" data-source={item.source} data-delivery={item.delivery} data-send-state={item.sendState} data-from="others">
         {display.parts.map((part, i) => (
           <SentPart key={i} part={part} item={item} expansionKey={expansionKey && `${expansionKey}:sent:${i}`} />
         ))}
@@ -208,7 +208,7 @@ export function UserMessage({ item, expansionKey }: { item: UserMessageItem; exp
     );
   }
   return (
-    <div className="ml-auto max-w-[82%] min-w-0 flex flex-col items-end gap-1" data-testid="chat-user-message" data-source={item.source} data-delivery={item.delivery} data-from="you">
+    <div className="ml-auto max-w-[82%] min-w-0 flex flex-col items-end gap-1" data-testid="chat-user-message" data-source={item.source} data-delivery={item.delivery} data-send-state={item.sendState} data-from="you">
       <span className="text-[11px] text-ctp-overlay0" data-testid="chat-you-label">{['You', ...metaLabels(item)].join(' · ')}</span>
       <Attachments item={item} align="end" />
       {display.text && (
