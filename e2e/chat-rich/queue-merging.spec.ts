@@ -97,7 +97,11 @@ test('claude: a burst of helper updates becomes one steer, and user steers are n
   // The updates wait out the batching window, then go as one steer.
   await session.sendHelperUpdates(updates);
   const fromAgents = steered.and(window.locator('[data-source="mcp"]'));
-  await expect(fromAgents).toHaveCount(1, { timeout: TURN_TIMEOUT });
+  await expect(fromAgents).toHaveCount(1, { timeout: TURN_TIMEOUT }).catch(async (err: unknown) => {
+    // #2677: the steer was folded in with a tool call this script never makes. Name it.
+    await session.logChatEvents().catch((logErr: unknown) => console.log('could not read chat events', logErr));
+    throw err;
+  });
   // One row per update, each with its sender and without its routing text (#2599).
   for (let i = 1; i <= 9; i++) {
     await expect(fromAgents.locator(`[data-sender="helper-${i}"]`)).toContainText(`Step ${i} done.`);
