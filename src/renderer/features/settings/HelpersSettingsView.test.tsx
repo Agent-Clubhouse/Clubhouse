@@ -29,7 +29,7 @@ beforeEach(() => {
     [BETA]: [row('d3', 'qa-old', { disposedAt: '2026-10-16T10:00:00Z' })],
   };
   useProjectStore.setState({ projects: [{ id: 'pa', name: 'alpha', path: ALPHA }, { id: 'pb', name: 'beta', path: BETA }] } as never);
-  window.clubhouse.app.getHelperRouting = vi.fn(async () => ({ revision: 'r0.0', labels: HELPER_ROUTING_LABELS, providers: {} }));
+  window.clubhouse.app.getHelperRouting = vi.fn(async () => ({ revision: 'r0.0', serverTime: '2026-11-01T00:00:00.000Z', labels: HELPER_ROUTING_LABELS, providers: {} }));
   window.clubhouse.app.getOrchestrationSettings = vi.fn(async () => ({ globalHelperCap: cap }));
   window.clubhouse.app.saveOrchestrationSettings = vi.fn(async (s: { globalHelperCap: number }) => { cap = s.globalHelperCap; });
   window.clubhouse.agent.listDurable = vi.fn(async (p: string) => byProject[p] ?? []) as never;

@@ -112,7 +112,19 @@
           "preset"
         ],
         "path": "/api/v1/mobile/helper-routing",
-        "quota": false,
+        "quota": true,
+        "quotaSources": [
+          "cli_query",
+          "session_event",
+          "none"
+        ],
+        "quotaStates": [
+          "known",
+          "low",
+          "near_limit",
+          "exhausted",
+          "unknown"
+        ],
         "reasons": [
           "explicit_request",
           "persona_pinned",
@@ -122,6 +134,13 @@
           "app"
         ],
         "snapshotField": "helperRoutingRevision",
+        "unknownReasons": [
+          "not_read",
+          "stale",
+          "not_applicable",
+          "read_failed",
+          "not_supported"
+        ],
         "version": 1
       },
       "idempotency": {

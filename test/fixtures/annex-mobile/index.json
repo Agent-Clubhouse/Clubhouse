@@ -46,6 +46,7 @@
     "dispatcher-routes.json",
     "helper-routing-changed.json",
     "helper-routing-helper.json",
+    "helper-routing-quota.json",
     "helper-routing.json",
     "pairing-revoke.json",
     "pairing.json",

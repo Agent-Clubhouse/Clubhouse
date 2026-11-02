@@ -1,3 +1,5 @@
+import type { PlanQuotaReading } from '../../shared/helper-routing';
+import { probeCodexQuota } from './quota-probes';
 import * as path from 'path';
 import { execFile } from 'child_process';
 import { promisify } from 'util';
@@ -293,6 +295,11 @@ export class CodexCliProvider extends BaseProvider implements HeadlessCapable, H
   };
 
   /** app-server `model/list`: the catalog for this login, with effort levels. */
+  /** `account/rateLimits/read`: no prompt, and only the limit fields are kept. */
+  readPlanQuota(opts: ListModelsOptions = {}): Promise<PlanQuotaReading> {
+    return this.runQuotaProbe(opts, probeCodexQuota);
+  }
+
   protected probeLiveModels(ctx: ModelProbeContext) {
     return probeCodexModels(ctx);
   }

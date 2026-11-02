@@ -17,6 +17,7 @@ import type {
 import { findBinaryInPath, testBinaryOverride, testModelProbesDisabled } from './shared';
 import { getShellEnvironment } from '../util/shell';
 import type { ModelProbeContext } from './model-probes';
+import type { PlanQuotaReading } from '../../shared/helper-routing';
 import type { ContextWindowOptions } from '../../shared/context-window';
 import { appLog } from '../services/log-service';
 
@@ -264,7 +265,11 @@ export abstract class BaseProvider implements OrchestratorProvider {
    * .codex or hooks that load as if it were a project. User-level settings
    * still apply.
    */
-  private async runLiveProbe(opts: ListModelsOptions): Promise<ModelInfo[] | null> {
+  private runLiveProbe(opts: ListModelsOptions): Promise<ModelInfo[] | null> {
+    return this.runProbe('models', opts, (ctx) => this.probeLiveModels!(ctx));
+  }
+
+  private async runProbe<T>(what: string, opts: ListModelsOptions, run: (ctx: ModelProbeContext) => Promise<T>): Promise<T> {
     const binary = this.findBinary();
     const cwd = await fsp.mkdtemp(path.join(os.tmpdir(), 'clubhouse-models-'));
     const controller = new AbortController();
@@ -272,27 +277,33 @@ export abstract class BaseProvider implements OrchestratorProvider {
     const deadline = new Promise<never>((_, reject) => {
       timer = setTimeout(() => {
         controller.abort();
-        reject(new Error(`model handshake timed out after ${MODEL_PROBE_TIMEOUT_MS}ms`));
+        reject(new Error(`${what} handshake timed out after ${MODEL_PROBE_TIMEOUT_MS}ms`));
       }, MODEL_PROBE_TIMEOUT_MS);
     });
-    const probe = this.probeLiveModels!({
+    const probe = run({
       binary,
       cwd,
       env: opts.env,
       signal: controller.signal,
       timeoutMs: MODEL_PROBE_TIMEOUT_MS,
-      log: (level, message, meta) => appLog('core:orchestrator', level === 'info' ? 'debug' : level, `[models:${this.id}] ${message}`, { meta }),
+      log: (level, message, meta) => appLog('core:orchestrator', level === 'info' ? 'debug' : level, `[${what}:${this.id}] ${message}`, meta && { meta }),
     });
     // After a timeout the killed probe may still be exiting; remove the dir once it has.
-    void probe.catch((): null => null).finally(() => fsp.rm(cwd, { recursive: true, force: true, maxRetries: 3, retryDelay: 100 }).catch((err: unknown) => {
+    void probe.then((): void => undefined, (): void => undefined).finally(() => fsp.rm(cwd, { recursive: true, force: true, maxRetries: 3, retryDelay: 100 }).catch((err: unknown) => {
       // telemetry-exempt: an empty temp dir left behind; logged
-      appLog('core:orchestrator', 'debug', 'Could not remove the model probe dir', { meta: { provider: this.id, error: err instanceof Error ? err.message : String(err) } });
+      appLog('core:orchestrator', 'debug', 'Could not remove the probe dir', { meta: { provider: this.id, error: err instanceof Error ? err.message : String(err) } });
     }));
     try {
       return await Promise.race([probe, deadline]);
     } finally {
       clearTimeout(timer);
     }
+  }
+
+  /** Plan limits, for a provider with a quota probe. A subclass exposes it as `readPlanQuota`. */
+  protected runQuotaProbe(opts: ListModelsOptions, run: (ctx: ModelProbeContext) => Promise<PlanQuotaReading>): Promise<PlanQuotaReading> {
+    if (testModelProbesDisabled()) return Promise.reject(new Error('Model probes are off in this test run'));
+    return this.runProbe('quota', opts, run);
   }
 
   /** Get default permission sets */

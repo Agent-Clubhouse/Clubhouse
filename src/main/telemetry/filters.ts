@@ -56,6 +56,7 @@ export const USER_ACTIVITY = {
     'clubhouse.settings.changed',
     'clubhouse.helper.routed',
     'clubhouse.helper_routing.changed',
+    'clubhouse.helper_quota.read',
     'clubhouse.theme.changed',
     'clubhouse.blueprint.exported',
     'clubhouse.blueprint.imported',

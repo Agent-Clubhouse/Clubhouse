@@ -39,6 +39,7 @@ import { getAllProviders, getProvider } from '../orchestrators';
 import type { OrchestratorId } from '../orchestrators';
 import { helperPresetsChanged } from '../telemetry/feature-events';
 import { appLog } from './log-service';
+import { readProviderQuota } from './provider-quota';
 import { readLayeredPersonaRaw } from './materialization-service';
 import { checkHelperEffort, checkHelperModel, modelListFor } from './model-check';
 import * as orchestrationSettings from './orchestration-settings';
@@ -347,9 +348,13 @@ async function viewProvider(provider: PresetProvider, projectPath: string | unde
       appLog('core:mcp', 'warn', 'Helper presets: could not list models', { meta: { provider, error: errorText(err) } });
     }
   }
-  const cells = await Promise.all(HELPER_DIFFICULTIES.map((d) => viewCell(provider, d, projectPath)));
+  const [cells, quota] = await Promise.all([
+    Promise.all(HELPER_DIFFICULTIES.map((d) => viewCell(provider, d, projectPath))),
+    readProviderQuota(provider, projectPath),
+  ]);
   return {
     autoEligible: true,
+    quota,
     choices,
     cells: Object.fromEntries(HELPER_DIFFICULTIES.map((d, i) => [d, cells[i]])) as Record<HelperDifficulty, PresetCellView>,
   };
@@ -366,7 +371,9 @@ export async function readHelperRouting(options: { projectPath?: string } = {}):
   const providers: Record<string, ProviderRoutingView> = {};
   await Promise.all(PRESET_PROVIDERS.map(async (p) => { providers[p] = await viewProvider(p, options.projectPath); }));
   for (const other of getAllProviders()) {
-    if (!isPresetProvider(other.id)) providers[other.id] = { autoEligible: false, reason: 'auto_not_supported', cells: null };
+    if (!isPresetProvider(other.id)) {
+      providers[other.id] = { autoEligible: false, reason: 'auto_not_supported', quota: await readProviderQuota(other.id, options.projectPath), cells: null };
+    }
   }
   if (!options.projectPath) {
     const signature = JSON.stringify(PRESET_PROVIDERS.map((p) => {
@@ -380,7 +387,7 @@ export async function readHelperRouting(options: { projectPath?: string } = {}):
       emitChanged();
     }
   }
-  return { revision: helperRoutingRevision(), labels: HELPER_ROUTING_LABELS, providers };
+  return { revision: helperRoutingRevision(), serverTime: new Date(Date.now()).toISOString(), labels: HELPER_ROUTING_LABELS, providers };
 }
 
 // ── Changing them ────────────────────────────────────────────────────────

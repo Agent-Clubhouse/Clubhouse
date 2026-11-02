@@ -139,6 +139,22 @@
                 }
               ],
               "source": "live"
+            },
+            "quota": {
+              "asOf": "2027-01-15T08:00:00.000Z",
+              "fiveHour": {
+                "resetsAt": "2027-01-15T10:24:00.000Z",
+                "usedPercent": 12
+              },
+              "limitingWindow": "weekly",
+              "refreshAfterSeconds": 300,
+              "resetsAt": "2027-01-18T08:00:00.000Z",
+              "source": "cli_query",
+              "state": "known",
+              "weekly": {
+                "resetsAt": "2027-01-18T08:00:00.000Z",
+                "usedPercent": 41
+              }
             }
           },
           "codex-cli": {
@@ -219,15 +235,38 @@
                 }
               ],
               "source": "live"
+            },
+            "quota": {
+              "asOf": "2027-01-15T08:00:00.000Z",
+              "fiveHour": {
+                "resetsAt": "2027-01-15T10:24:00.000Z",
+                "usedPercent": 12
+              },
+              "limitingWindow": "weekly",
+              "refreshAfterSeconds": 300,
+              "resetsAt": "2027-01-18T08:00:00.000Z",
+              "source": "cli_query",
+              "state": "known",
+              "weekly": {
+                "resetsAt": "2027-01-18T08:00:00.000Z",
+                "usedPercent": 41
+              }
             }
           },
           "copilot-cli": {
             "autoEligible": false,
             "cells": null,
+            "quota": {
+              "asOf": null,
+              "source": "none",
+              "state": "unknown",
+              "unknownReason": "not_supported"
+            },
             "reason": "auto_not_supported"
           }
         },
         "revision": "r0.0",
+        "serverTime": "2027-01-15T08:00:00.000Z",
         "version": 1
       },
       "status": 200
@@ -382,6 +421,22 @@
                 }
               ],
               "source": "live"
+            },
+            "quota": {
+              "asOf": "2027-01-15T08:00:00.000Z",
+              "fiveHour": {
+                "resetsAt": "2027-01-15T10:24:00.000Z",
+                "usedPercent": 12
+              },
+              "limitingWindow": "weekly",
+              "refreshAfterSeconds": 300,
+              "resetsAt": "2027-01-18T08:00:00.000Z",
+              "source": "cli_query",
+              "state": "known",
+              "weekly": {
+                "resetsAt": "2027-01-18T08:00:00.000Z",
+                "usedPercent": 41
+              }
             }
           },
           "codex-cli": {
@@ -462,15 +517,38 @@
                 }
               ],
               "source": "live"
+            },
+            "quota": {
+              "asOf": "2027-01-15T08:00:00.000Z",
+              "fiveHour": {
+                "resetsAt": "2027-01-15T10:24:00.000Z",
+                "usedPercent": 12
+              },
+              "limitingWindow": "weekly",
+              "refreshAfterSeconds": 300,
+              "resetsAt": "2027-01-18T08:00:00.000Z",
+              "source": "cli_query",
+              "state": "known",
+              "weekly": {
+                "resetsAt": "2027-01-18T08:00:00.000Z",
+                "usedPercent": 41
+              }
             }
           },
           "copilot-cli": {
             "autoEligible": false,
             "cells": null,
+            "quota": {
+              "asOf": null,
+              "source": "none",
+              "state": "unknown",
+              "unknownReason": "not_supported"
+            },
             "reason": "auto_not_supported"
           }
         },
         "revision": "r0.0",
+        "serverTime": "2027-01-15T08:00:00.000Z",
         "version": 1
       },
       "status": 200
@@ -617,6 +695,22 @@
                 }
               ],
               "source": "live"
+            },
+            "quota": {
+              "asOf": "2027-01-15T08:00:00.000Z",
+              "fiveHour": {
+                "resetsAt": "2027-01-15T10:24:00.000Z",
+                "usedPercent": 12
+              },
+              "limitingWindow": "weekly",
+              "refreshAfterSeconds": 300,
+              "resetsAt": "2027-01-18T08:00:00.000Z",
+              "source": "cli_query",
+              "state": "known",
+              "weekly": {
+                "resetsAt": "2027-01-18T08:00:00.000Z",
+                "usedPercent": 41
+              }
             }
           },
           "codex-cli": {
@@ -697,15 +791,38 @@
                 }
               ],
               "source": "live"
+            },
+            "quota": {
+              "asOf": "2027-01-15T08:00:00.000Z",
+              "fiveHour": {
+                "resetsAt": "2027-01-15T10:24:00.000Z",
+                "usedPercent": 12
+              },
+              "limitingWindow": "weekly",
+              "refreshAfterSeconds": 300,
+              "resetsAt": "2027-01-18T08:00:00.000Z",
+              "source": "cli_query",
+              "state": "known",
+              "weekly": {
+                "resetsAt": "2027-01-18T08:00:00.000Z",
+                "usedPercent": 41
+              }
             }
           },
           "copilot-cli": {
             "autoEligible": false,
             "cells": null,
+            "quota": {
+              "asOf": null,
+              "source": "none",
+              "state": "unknown",
+              "unknownReason": "not_supported"
+            },
             "reason": "auto_not_supported"
           }
         },
         "revision": "r0.0",
+        "serverTime": "2027-01-15T08:00:00.000Z",
         "version": 1
       },
       "status": 200
@@ -852,6 +969,22 @@
                 }
               ],
               "source": "live"
+            },
+            "quota": {
+              "asOf": "2027-01-15T08:00:00.000Z",
+              "fiveHour": {
+                "resetsAt": "2027-01-15T10:24:00.000Z",
+                "usedPercent": 12
+              },
+              "limitingWindow": "weekly",
+              "refreshAfterSeconds": 300,
+              "resetsAt": "2027-01-18T08:00:00.000Z",
+              "source": "cli_query",
+              "state": "known",
+              "weekly": {
+                "resetsAt": "2027-01-18T08:00:00.000Z",
+                "usedPercent": 41
+              }
             }
           },
           "codex-cli": {
@@ -932,15 +1065,38 @@
                 }
               ],
               "source": "live"
+            },
+            "quota": {
+              "asOf": "2027-01-15T08:00:00.000Z",
+              "fiveHour": {
+                "resetsAt": "2027-01-15T10:24:00.000Z",
+                "usedPercent": 12
+              },
+              "limitingWindow": "weekly",
+              "refreshAfterSeconds": 300,
+              "resetsAt": "2027-01-18T08:00:00.000Z",
+              "source": "cli_query",
+              "state": "known",
+              "weekly": {
+                "resetsAt": "2027-01-18T08:00:00.000Z",
+                "usedPercent": 41
+              }
             }
           },
           "copilot-cli": {
             "autoEligible": false,
             "cells": null,
+            "quota": {
+              "asOf": null,
+              "source": "none",
+              "state": "unknown",
+              "unknownReason": "not_supported"
+            },
             "reason": "auto_not_supported"
           }
         },
         "revision": "r0.0",
+        "serverTime": "2027-01-15T08:00:00.000Z",
         "version": 1
       },
       "status": 200
@@ -1087,6 +1243,22 @@
                 }
               ],
               "source": "live"
+            },
+            "quota": {
+              "asOf": "2027-01-15T08:00:00.000Z",
+              "fiveHour": {
+                "resetsAt": "2027-01-15T10:24:00.000Z",
+                "usedPercent": 12
+              },
+              "limitingWindow": "weekly",
+              "refreshAfterSeconds": 300,
+              "resetsAt": "2027-01-18T08:00:00.000Z",
+              "source": "cli_query",
+              "state": "known",
+              "weekly": {
+                "resetsAt": "2027-01-18T08:00:00.000Z",
+                "usedPercent": 41
+              }
             }
           },
           "codex-cli": {
@@ -1167,15 +1339,38 @@
                 }
               ],
               "source": "live"
+            },
+            "quota": {
+              "asOf": "2027-01-15T08:00:00.000Z",
+              "fiveHour": {
+                "resetsAt": "2027-01-15T10:24:00.000Z",
+                "usedPercent": 12
+              },
+              "limitingWindow": "weekly",
+              "refreshAfterSeconds": 300,
+              "resetsAt": "2027-01-18T08:00:00.000Z",
+              "source": "cli_query",
+              "state": "known",
+              "weekly": {
+                "resetsAt": "2027-01-18T08:00:00.000Z",
+                "usedPercent": 41
+              }
             }
           },
           "copilot-cli": {
             "autoEligible": false,
             "cells": null,
+            "quota": {
+              "asOf": null,
+              "source": "none",
+              "state": "unknown",
+              "unknownReason": "not_supported"
+            },
             "reason": "auto_not_supported"
           }
         },
         "revision": "r0.0",
+        "serverTime": "2027-01-15T08:00:00.000Z",
         "version": 1
       },
       "status": 200
@@ -1318,6 +1513,22 @@
                 }
               ],
               "source": "live"
+            },
+            "quota": {
+              "asOf": "2027-01-15T08:00:00.000Z",
+              "fiveHour": {
+                "resetsAt": "2027-01-15T10:24:00.000Z",
+                "usedPercent": 12
+              },
+              "limitingWindow": "weekly",
+              "refreshAfterSeconds": 300,
+              "resetsAt": "2027-01-18T08:00:00.000Z",
+              "source": "cli_query",
+              "state": "known",
+              "weekly": {
+                "resetsAt": "2027-01-18T08:00:00.000Z",
+                "usedPercent": 41
+              }
             }
           },
           "codex-cli": {
@@ -1398,15 +1609,38 @@
                 }
               ],
               "source": "live"
+            },
+            "quota": {
+              "asOf": "2027-01-15T08:00:00.000Z",
+              "fiveHour": {
+                "resetsAt": "2027-01-15T10:24:00.000Z",
+                "usedPercent": 12
+              },
+              "limitingWindow": "weekly",
+              "refreshAfterSeconds": 300,
+              "resetsAt": "2027-01-18T08:00:00.000Z",
+              "source": "cli_query",
+              "state": "known",
+              "weekly": {
+                "resetsAt": "2027-01-18T08:00:00.000Z",
+                "usedPercent": 41
+              }
             }
           },
           "copilot-cli": {
             "autoEligible": false,
             "cells": null,
+            "quota": {
+              "asOf": null,
+              "source": "none",
+              "state": "unknown",
+              "unknownReason": "not_supported"
+            },
             "reason": "auto_not_supported"
           }
         },
         "revision": "r0.0",
+        "serverTime": "2027-01-15T08:00:00.000Z",
         "version": 1
       },
       "status": 200
@@ -1561,6 +1795,22 @@
                 }
               ],
               "source": "live"
+            },
+            "quota": {
+              "asOf": "2027-01-15T08:00:00.000Z",
+              "fiveHour": {
+                "resetsAt": "2027-01-15T10:24:00.000Z",
+                "usedPercent": 12
+              },
+              "limitingWindow": "weekly",
+              "refreshAfterSeconds": 300,
+              "resetsAt": "2027-01-18T08:00:00.000Z",
+              "source": "cli_query",
+              "state": "known",
+              "weekly": {
+                "resetsAt": "2027-01-18T08:00:00.000Z",
+                "usedPercent": 41
+              }
             }
           },
           "codex-cli": {
@@ -1646,15 +1896,38 @@
                 }
               ],
               "source": "live"
+            },
+            "quota": {
+              "asOf": "2027-01-15T08:00:00.000Z",
+              "fiveHour": {
+                "resetsAt": "2027-01-15T10:24:00.000Z",
+                "usedPercent": 12
+              },
+              "limitingWindow": "weekly",
+              "refreshAfterSeconds": 300,
+              "resetsAt": "2027-01-18T08:00:00.000Z",
+              "source": "cli_query",
+              "state": "known",
+              "weekly": {
+                "resetsAt": "2027-01-18T08:00:00.000Z",
+                "usedPercent": 41
+              }
             }
           },
           "copilot-cli": {
             "autoEligible": false,
             "cells": null,
+            "quota": {
+              "asOf": null,
+              "source": "none",
+              "state": "unknown",
+              "unknownReason": "not_supported"
+            },
             "reason": "auto_not_supported"
           }
         },
         "revision": "r0.1",
+        "serverTime": "2027-01-15T08:00:00.000Z",
         "version": 1
       },
       "status": 200
@@ -1797,6 +2070,22 @@
                 }
               ],
               "source": "live"
+            },
+            "quota": {
+              "asOf": "2027-01-15T08:00:00.000Z",
+              "fiveHour": {
+                "resetsAt": "2027-01-15T10:24:00.000Z",
+                "usedPercent": 12
+              },
+              "limitingWindow": "weekly",
+              "refreshAfterSeconds": 300,
+              "resetsAt": "2027-01-18T08:00:00.000Z",
+              "source": "cli_query",
+              "state": "known",
+              "weekly": {
+                "resetsAt": "2027-01-18T08:00:00.000Z",
+                "usedPercent": 41
+              }
             }
           },
           "codex-cli": {
@@ -1866,15 +2155,38 @@
                 }
               ],
               "source": "live"
+            },
+            "quota": {
+              "asOf": "2027-01-15T08:00:00.000Z",
+              "fiveHour": {
+                "resetsAt": "2027-01-15T10:24:00.000Z",
+                "usedPercent": 12
+              },
+              "limitingWindow": "weekly",
+              "refreshAfterSeconds": 300,
+              "resetsAt": "2027-01-18T08:00:00.000Z",
+              "source": "cli_query",
+              "state": "known",
+              "weekly": {
+                "resetsAt": "2027-01-18T08:00:00.000Z",
+                "usedPercent": 41
+              }
             }
           },
           "copilot-cli": {
             "autoEligible": false,
             "cells": null,
+            "quota": {
+              "asOf": null,
+              "source": "none",
+              "state": "unknown",
+              "unknownReason": "not_supported"
+            },
             "reason": "auto_not_supported"
           }
         },
         "revision": "r0.1",
+        "serverTime": "2027-01-15T08:00:00.000Z",
         "version": 1
       },
       "status": 200
@@ -2017,6 +2329,22 @@
                 }
               ],
               "source": "live"
+            },
+            "quota": {
+              "asOf": "2027-01-15T08:00:00.000Z",
+              "fiveHour": {
+                "resetsAt": "2027-01-15T10:24:00.000Z",
+                "usedPercent": 12
+              },
+              "limitingWindow": "weekly",
+              "refreshAfterSeconds": 300,
+              "resetsAt": "2027-01-18T08:00:00.000Z",
+              "source": "cli_query",
+              "state": "known",
+              "weekly": {
+                "resetsAt": "2027-01-18T08:00:00.000Z",
+                "usedPercent": 41
+              }
             }
           },
           "codex-cli": {
@@ -2102,15 +2430,38 @@
                 }
               ],
               "source": "live"
+            },
+            "quota": {
+              "asOf": "2027-01-15T08:00:00.000Z",
+              "fiveHour": {
+                "resetsAt": "2027-01-15T10:24:00.000Z",
+                "usedPercent": 12
+              },
+              "limitingWindow": "weekly",
+              "refreshAfterSeconds": 300,
+              "resetsAt": "2027-01-18T08:00:00.000Z",
+              "source": "cli_query",
+              "state": "known",
+              "weekly": {
+                "resetsAt": "2027-01-18T08:00:00.000Z",
+                "usedPercent": 41
+              }
             }
           },
           "copilot-cli": {
             "autoEligible": false,
             "cells": null,
+            "quota": {
+              "asOf": null,
+              "source": "none",
+              "state": "unknown",
+              "unknownReason": "not_supported"
+            },
             "reason": "auto_not_supported"
           }
         },
         "revision": "r0.1",
+        "serverTime": "2027-01-15T08:00:00.000Z",
         "version": 1
       },
       "status": 200
@@ -2237,6 +2588,22 @@
                 }
               ],
               "source": "fallback"
+            },
+            "quota": {
+              "asOf": "2027-01-15T08:00:00.000Z",
+              "fiveHour": {
+                "resetsAt": "2027-01-15T10:24:00.000Z",
+                "usedPercent": 12
+              },
+              "limitingWindow": "weekly",
+              "refreshAfterSeconds": 300,
+              "resetsAt": "2027-01-18T08:00:00.000Z",
+              "source": "cli_query",
+              "state": "known",
+              "weekly": {
+                "resetsAt": "2027-01-18T08:00:00.000Z",
+                "usedPercent": 41
+              }
             }
           },
           "codex-cli": {
@@ -2317,15 +2684,38 @@
                 }
               ],
               "source": "live"
+            },
+            "quota": {
+              "asOf": "2027-01-15T08:00:00.000Z",
+              "fiveHour": {
+                "resetsAt": "2027-01-15T10:24:00.000Z",
+                "usedPercent": 12
+              },
+              "limitingWindow": "weekly",
+              "refreshAfterSeconds": 300,
+              "resetsAt": "2027-01-18T08:00:00.000Z",
+              "source": "cli_query",
+              "state": "known",
+              "weekly": {
+                "resetsAt": "2027-01-18T08:00:00.000Z",
+                "usedPercent": 41
+              }
             }
           },
           "copilot-cli": {
             "autoEligible": false,
             "cells": null,
+            "quota": {
+              "asOf": null,
+              "source": "none",
+              "state": "unknown",
+              "unknownReason": "not_supported"
+            },
             "reason": "auto_not_supported"
           }
         },
         "revision": "r0.2",
+        "serverTime": "2027-01-15T08:00:00.000Z",
         "version": 1
       },
       "status": 200

@@ -2,6 +2,7 @@
  * IPC handlers for MCP binding management.
  */
 
+import { watchSessionQuota } from '../services/provider-quota';
 import { BrowserWindow, ipcMain } from 'electron';
 import { IPC } from '../../shared/ipc-channels';
 import { isMcpEnabledForAny, notifyMcpEnablementChanged } from '../services/mcp-settings';
@@ -110,6 +111,8 @@ export function registerMcpBindingHandlers(): void {
   registerSettingsReadTools();
   registerDispatcherControlTools();
   registerHelperQuestionTools();
+  // Running chat sessions report plan limits between reads (#2671).
+  watchSessionQuota();
   // Held helper starts (#2234) go to the main window only, for Needs you.
   watchHelperStartRequests((channel, payload) => {
     findMainWindow()?.webContents.send(channel, payload);

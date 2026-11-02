@@ -613,7 +613,8 @@ The model and effort a `difficulty` picks on each CLI (#2671), as Settings > Hel
 Gate on `helperRouting` in capabilities. It lists only what works now, so don't offer anything it doesn't list. Auto isn't there until `modes` has `auto`.
 
 ```json
-"helperRouting":{"version":1,"path":"/api/v1/mobile/helper-routing","modes":["explicit","preset"],"scopes":["app"],"quota":false,
+"helperRouting":{"version":1,"path":"/api/v1/mobile/helper-routing","modes":["explicit","preset"],"scopes":["app"],"quota":true,
+ "quotaStates":["known","low","near_limit","exhausted","unknown"],"unknownReasons":["not_read","stale","not_applicable","read_failed","not_supported"],"quotaSources":["cli_query","session_event","none"],
  "commands":["helperRouting.update"],"snapshotField":"helperRoutingRevision","event":"helper_routing:changed",
  "difficulties":["easy","medium","hard"],"reasons":["explicit_request","persona_pinned","preset_on_cli"],
  "fallbacks":["none","builtin_preset","model_unverified"],"cellStates":["valid","unverified","stale"]}
@@ -624,12 +625,14 @@ Gate on `helperRouting` in capabilities. It lists only what works now, so don't 
 `GET /api/v1/mobile/helper-routing`, with optional `projectId` or `agentId`. Either reads the model lists under that project's profile, since a profile can be a different login. 404 `project_not_found`, `agent_not_found`.
 
 ```json
-{"version":1,"epoch":"uuid","revision":"r12.0","labels":{…},
+{"version":1,"epoch":"uuid","revision":"r12.0","serverTime":"…","labels":{…},
  "providers":{
   "codex-cli":{"autoEligible":true,
+   "quota":{"state":"known","source":"cli_query","asOf":"…","limitingWindow":"weekly","resetsAt":"…",
+    "weekly":{"usedPercent":41,"resetsAt":"…"},"fiveHour":{"usedPercent":12,"resetsAt":"…"},"refreshAfterSeconds":300},
    "choices":{"source":"live","asOf":"…","models":[{"id":"gpt-6.1-sol","label":"Sol","efforts":["low","high"]}]},
    "cells":{"hard":{"effective":{"model":"gpt-6.1-sol","effort":"high"},"source":"builtin","state":"valid","custom":null,"builtin":{"model":"gpt-6.1-sol","effort":"high"},"editable":true},…}},
-  "copilot-cli":{"autoEligible":false,"reason":"auto_not_supported","cells":null}}}
+  "copilot-cli":{"autoEligible":false,"reason":"auto_not_supported","quota":{"state":"unknown","unknownReason":"not_supported","source":"none","asOf":null},"cells":null}}}
 ```
 
 - **labels**: the words for every code, in the families `reason`, `fallback`, `skipped`, `quota`, `unknown`, `cell` and `generic`. Every read has all of them, including a bare one, so cache them once per revision for rows that only have codes. For a code you don't have, use `labels.generic.unknownCode`, then your own generic "Other".
@@ -639,6 +642,27 @@ Gate on `helperRouting` in capabilities. It lists only what works now, so don't 
 - **agent**: with `agentId` only. `{usable: true}`, or `{usable: false, reason}` with `dispatcher_locked`, `mcp_off` or `orchestration_off`. The Dispatcher doesn't start helpers, and this gives it no new authority.
 
 The built-in presets are starting choices, not measured best ones. Don't present them as a recommendation.
+
+### Quota
+
+Each provider's `quota` is what its CLI says about its plan limits. Read token-free, with no prompt, only when this route or Settings asks. Under `projectId` or `agentId` it follows that project's profile, since a profile can be another login. Fixtures: `helper-routing-quota.json`.
+
+| `state` | Meaning |
+|---|---|
+| `known` | Under 80% used |
+| `low` | 80% up to 95% used |
+| `near_limit` | 95% or more used, and the provider hasn't said the limit is reached. Quota remains. Don't word this as exhausted. |
+| `exhausted` | The provider itself reported the limit reached. Used percent alone never produces this, even at 100%. |
+| `unknown` | No current reading. `unknownReason`: `not_read` (a read is going, or hasn't run), `stale` (over 15 minutes old, keeping its `asOf`), `not_applicable` (this login has no plan limit, such as an API key), `read_failed`, `not_supported` (this provider doesn't report it) |
+
+The thresholds are starting proposals, not measured values. `known` means under our threshold, not that capacity is guaranteed. `unknown` is never available capacity: use `labels.quota` and `labels.unknown`, and don't treat it as healthy in the UI.
+
+- **limitingWindow**: the most constrained readable window, `weekly`, `fiveHour` or `other`, which sets `state`. `resetsAt` is that window's. A limit the provider reports reached wins over a fuller window.
+- **weekly**, **fiveHour**: `{usedPercent, resetsAt}`, or null when there is no such window, which is normal on some plans. A window that exists but can't be read has `usedPercent: null` and is named in `unreadableWindows`. The other one decides.
+- **modelWindows**: limits for one model, `[{name, usedPercent, resetsAt}]`. They don't set `state`, because they only apply to that model. `name` is the provider's label for it, not a model id.
+- **source**: `cli_query`, `session_event` (a running chat session reported it) or `none`. A terminal session reports nothing.
+- **asOf**: when the reading was made, or the oldest that counted. Show its age against the response's `serverTime`, not the phone's clock.
+- **refreshAfterSeconds**: how long a fetch returns this same reading. Refetch while the page is open, no sooner than that, and on returning to the foreground. Nothing pushes quota, and `helperRoutingRevision` doesn't move for it. A read still going returns `not_read` after at most 3 seconds, with a short `refreshAfterSeconds`. Fetching can't cause extra CLI reads: they are shared and cached for 5 minutes per provider and profile, with a minute's wait after a failure.
 
 ### helperRouting.update
 

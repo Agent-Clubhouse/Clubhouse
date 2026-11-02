@@ -1,0 +1,181 @@
+{
+  "cases": {
+    "exhausted": {
+      "asOf": "2027-01-15T08:00:00.000Z",
+      "fiveHour": {
+        "resetsAt": "2027-01-15T10:24:00.000Z",
+        "usedPercent": 12
+      },
+      "limitingWindow": "weekly",
+      "refreshAfterSeconds": 300,
+      "resetsAt": "2027-01-18T08:00:00.000Z",
+      "source": "cli_query",
+      "state": "exhausted",
+      "weekly": {
+        "resetsAt": "2027-01-18T08:00:00.000Z",
+        "usedPercent": 96
+      }
+    },
+    "fiveHourLimiting": {
+      "asOf": "2027-01-15T08:00:00.000Z",
+      "fiveHour": {
+        "resetsAt": "2027-01-15T10:24:00.000Z",
+        "usedPercent": 88
+      },
+      "limitingWindow": "fiveHour",
+      "refreshAfterSeconds": 300,
+      "resetsAt": "2027-01-15T10:24:00.000Z",
+      "source": "cli_query",
+      "state": "low",
+      "weekly": {
+        "resetsAt": "2027-01-18T08:00:00.000Z",
+        "usedPercent": 41
+      }
+    },
+    "known": {
+      "asOf": "2027-01-15T08:00:00.000Z",
+      "fiveHour": {
+        "resetsAt": "2027-01-15T10:24:00.000Z",
+        "usedPercent": 12
+      },
+      "limitingWindow": "weekly",
+      "refreshAfterSeconds": 300,
+      "resetsAt": "2027-01-18T08:00:00.000Z",
+      "source": "cli_query",
+      "state": "known",
+      "weekly": {
+        "resetsAt": "2027-01-18T08:00:00.000Z",
+        "usedPercent": 41
+      }
+    },
+    "low": {
+      "asOf": "2027-01-15T08:00:00.000Z",
+      "fiveHour": {
+        "resetsAt": "2027-01-15T10:24:00.000Z",
+        "usedPercent": 12
+      },
+      "limitingWindow": "weekly",
+      "refreshAfterSeconds": 300,
+      "resetsAt": "2027-01-18T08:00:00.000Z",
+      "source": "cli_query",
+      "state": "low",
+      "weekly": {
+        "resetsAt": "2027-01-18T08:00:00.000Z",
+        "usedPercent": 85
+      }
+    },
+    "modelWindow": {
+      "asOf": "2027-01-15T08:00:00.000Z",
+      "fiveHour": null,
+      "limitingWindow": "weekly",
+      "modelWindows": [
+        {
+          "name": "Fable",
+          "resetsAt": "2027-01-18T08:00:00.000Z",
+          "usedPercent": 99
+        }
+      ],
+      "refreshAfterSeconds": 300,
+      "resetsAt": "2027-01-18T08:00:00.000Z",
+      "source": "cli_query",
+      "state": "known",
+      "weekly": {
+        "resetsAt": "2027-01-18T08:00:00.000Z",
+        "usedPercent": 41
+      }
+    },
+    "nearLimit": {
+      "asOf": "2027-01-15T08:00:00.000Z",
+      "fiveHour": {
+        "resetsAt": "2027-01-15T10:24:00.000Z",
+        "usedPercent": 12
+      },
+      "limitingWindow": "weekly",
+      "refreshAfterSeconds": 300,
+      "resetsAt": "2027-01-18T08:00:00.000Z",
+      "source": "cli_query",
+      "state": "near_limit",
+      "weekly": {
+        "resetsAt": "2027-01-18T08:00:00.000Z",
+        "usedPercent": 96
+      }
+    },
+    "noFiveHourWindow": {
+      "asOf": "2027-01-15T08:00:00.000Z",
+      "fiveHour": null,
+      "limitingWindow": "weekly",
+      "refreshAfterSeconds": 300,
+      "resetsAt": "2027-01-18T08:00:00.000Z",
+      "source": "cli_query",
+      "state": "known",
+      "weekly": {
+        "resetsAt": "2027-01-18T08:00:00.000Z",
+        "usedPercent": 41
+      }
+    },
+    "oneWindowUnreadable": {
+      "asOf": "2027-01-15T08:00:00.000Z",
+      "fiveHour": {
+        "resetsAt": null,
+        "usedPercent": null
+      },
+      "limitingWindow": "weekly",
+      "refreshAfterSeconds": 300,
+      "resetsAt": "2027-01-18T08:00:00.000Z",
+      "source": "cli_query",
+      "state": "known",
+      "unreadableWindows": [
+        "fiveHour"
+      ],
+      "weekly": {
+        "resetsAt": "2027-01-18T08:00:00.000Z",
+        "usedPercent": 41
+      }
+    },
+    "unknownNotApplicable": {
+      "asOf": "2027-01-15T08:00:00.000Z",
+      "refreshAfterSeconds": 300,
+      "source": "cli_query",
+      "state": "unknown",
+      "unknownReason": "not_applicable"
+    },
+    "unknownNotSupported": {
+      "asOf": null,
+      "source": "none",
+      "state": "unknown",
+      "unknownReason": "not_supported"
+    },
+    "unknownNothingReadable": {
+      "asOf": "2027-01-15T08:00:00.000Z",
+      "fiveHour": null,
+      "refreshAfterSeconds": 300,
+      "source": "cli_query",
+      "state": "unknown",
+      "unknownReason": "read_failed",
+      "unreadableWindows": [
+        "weekly"
+      ],
+      "weekly": {
+        "resetsAt": null,
+        "usedPercent": null
+      }
+    },
+    "unknownReadFailed": {
+      "asOf": null,
+      "refreshAfterSeconds": 60,
+      "source": "none",
+      "state": "unknown",
+      "unknownReason": "read_failed"
+    },
+    "unknownStale": {
+      "asOf": "2027-01-15T07:44:59.999Z",
+      "fiveHour": null,
+      "refreshAfterSeconds": 300,
+      "source": "cli_query",
+      "state": "unknown",
+      "unknownReason": "stale",
+      "weekly": null
+    }
+  },
+  "field": "providers[provider].quota"
+}

@@ -13,6 +13,7 @@ import {
   type HelperRoutingUpdate,
   type PresetCellView,
   type ProviderRoutingView,
+  type QuotaView,
 } from '../../../shared/helper-routing';
 import { Button } from '../../components/Button';
 import { SettingsBlock, SettingsSection, settingsHelp, settingsInput } from './SettingsLayout';
@@ -21,6 +22,32 @@ const PROVIDER_NAMES: Record<string, string> = { 'claude-code': 'Claude Code', '
 const DIFFICULTY_NAMES: Record<HelperDifficulty, string> = { easy: 'Easy', medium: 'Medium', hard: 'Hard' };
 
 type Eligible = Extract<ProviderRoutingView, { autoEligible: true }>;
+
+const REFETCH_FLOOR_SECONDS = 30;
+
+function ago(asOf: string, serverTime: string): string {
+  const minutes = Math.max(0, Math.round((Date.parse(serverTime) - Date.parse(asOf)) / 60_000));
+  return minutes < 1 ? 'just now' : minutes < 120 ? `${minutes} min ago` : `${Math.round(minutes / 60)} hr ago`;
+}
+
+function when(iso: string): string {
+  return new Date(iso).toLocaleString([], { weekday: 'short', hour: 'numeric', minute: '2-digit' });
+}
+
+/** A provider's limits in one line. Unknown is never worded as available. */
+function quotaLine(quota: QuotaView, settings: HelperRoutingSettings): string {
+  const { labels, serverTime } = settings;
+  const checked = quota.asOf ? ` Checked ${ago(quota.asOf, serverTime)}.` : '';
+  if (quota.state === 'unknown') {
+    const why = quota.unknownReason ? `${(labels.unknown as Record<string, string>)[quota.unknownReason] ?? labels.generic.unknownCode}.` : '';
+    return `Plan limit unknown. ${why}${checked}`;
+  }
+  const limit = quota.limitingWindow === 'weekly' ? quota.weekly : quota.limitingWindow === 'fiveHour' ? quota.fiveHour : null;
+  const which = quota.limitingWindow === 'weekly' ? 'Weekly limit' : quota.limitingWindow === 'fiveHour' ? '5-hour limit' : 'Plan limit';
+  const used = limit?.usedPercent != null ? ` ${limit.usedPercent}% used.` : '';
+  const reset = quota.resetsAt ? ` Resets ${when(quota.resetsAt)}.` : '';
+  return `${labels.quota[quota.state]}.${' '}${which}${used ? `:${used}` : '.'}${reset}${checked}`;
+}
 
 /** A sentence for a cell that isn't plainly fine. */
 function cellNote(cell: PresetCellView, labels: HelperRoutingSettings['labels']): string | null {
@@ -90,6 +117,8 @@ export function HelperPresetsSection() {
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
+  const [refetches, setRefetches] = useState(0);
+
   useEffect(() => {
     let alive = true;
     window.clubhouse.app.getHelperRouting().then(
@@ -98,7 +127,17 @@ export function HelperPresetsSection() {
       (err: unknown) => { if (alive) setError(`Couldn’t read the presets. ${err instanceof Error ? err.message : String(err)}`); },
     );
     return () => { alive = false; };
-  }, []);
+  }, [refetches]);
+
+  // While the page is open, read again when the limits would be new: never for a page nobody is looking at.
+  const refreshAfter = settings
+    ? Math.min(...Object.values(settings.providers).map((p) => p.quota?.refreshAfterSeconds ?? Infinity))
+    : Infinity;
+  useEffect(() => {
+    if (!Number.isFinite(refreshAfter)) return undefined;
+    const timer = setTimeout(() => setRefetches((n) => n + 1), Math.max(refreshAfter, REFETCH_FLOOR_SECONDS) * 1000);
+    return () => clearTimeout(timer);
+  }, [refreshAfter, settings]);
 
   const update = useCallback(async (change: Omit<HelperRoutingUpdate, 'revision'>) => {
     if (!settings) return;
@@ -140,6 +179,9 @@ export function HelperPresetsSection() {
                   Reset all
                 </Button>
               </div>
+              <p className="mt-0.5 text-xs text-ctp-overlay1" data-testid={`helper-presets-${provider}-quota`}>
+                {quotaLine(view.quota, settings!)} Limits for one model aren’t included.
+              </p>
               <ul className="flex flex-col">
                 {HELPER_DIFFICULTIES.map((difficulty) => (
                   <PresetRow

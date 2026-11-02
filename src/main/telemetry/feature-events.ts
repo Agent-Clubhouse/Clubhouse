@@ -62,6 +62,11 @@ export function helperPresetsChanged(
   ]);
 }
 
+/** A read of a CLI's plan limits. The state and outcome, never a percent or anything from the login. */
+export function helperQuotaRead(provider: string, state: 'known' | 'low' | 'near_limit' | 'exhausted' | 'unknown', ok: boolean): void {
+  tel.event('clubhouse.helper_quota.read', [ATTR.orchestrator(knownCli(provider)), ATTR.helperQuotaState(state), ATTR.outcome(ok ? 'ok' : 'error')]);
+}
+
 const builtinThemes = new Set<string>(BUILTIN_THEME_IDS);
 
 /** Plugin-contributed theme ids are never sent; they report `plugin` / `other`. */
