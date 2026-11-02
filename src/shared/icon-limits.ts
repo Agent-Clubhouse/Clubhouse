@@ -13,7 +13,7 @@ export const ICON_STORED_SIZE = 256;
 /** A snapshot's thumbnail fits in a square this many pixels wide. Phones draw avatars far smaller. */
 export const ICON_THUMBNAIL_SIZE = 128;
 
-/** An icon file up to this size goes in a snapshot as it is, so a small GIF or SVG keeps its format. */
+/** An icon file up to this size goes in a snapshot as it is, so a small GIF or WebP keeps its format. */
 export const ICON_THUMBNAIL_PASSTHROUGH_BYTES = 64 * 1024;
 
 /**

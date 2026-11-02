@@ -3056,15 +3056,22 @@ describe('annex-server', () => {
       expect(JSON.stringify(line)).not.toContain('base64');
     }, 30_000);
 
-    it('sends a small SVG as it is and leaves out one that cannot be resized', async () => {
-      const small = writeIcon('small.svg', '<svg xmlns="http://www.w3.org/2000/svg"></svg>');
-      const large = writeIcon('large.svg', `<svg xmlns="http://www.w3.org/2000/svg"><!--${'x'.repeat(200 * 1024)}--></svg>`);
-      serveAgentsWithIcons([small, large]);
+    it('never sends an SVG: phones can\'t draw one, so it is a raster copy or left out', async () => {
+      serveAgentsWithIcons([writeIcon('small.svg', '<svg xmlns="http://www.w3.org/2000/svg"></svg>')]);
 
-      const { payload } = await connect();
+      expect((await connect()).payload.agentIcons).toEqual({});
+      expect(vi.mocked(appLog).mock.calls.some(([, , message]) => message === 'An icon has no thumbnail, so snapshots leave it out')).toBe(true);
 
-      expect(payload.agentIcons.a0).toMatch(/^data:image\/svg\+xml;base64,/);
-      expect(payload.agentIcons.a1).toBeUndefined();
+      const thumbnailer = vi.fn(async () => ({
+        isEmpty: () => false, getSize: () => ({ width: 128, height: 128 }), toPNG: () => THUMBNAIL,
+      }));
+      (nativeImage as { createThumbnailFromPath?: unknown }).createThumbnailFromPath = thumbnailer;
+      try {
+        serveAgentsWithIcons([writeIcon('other.svg', '<svg xmlns="http://www.w3.org/2000/svg"><g/></svg>')]);
+        expect((await connect()).payload.agentIcons.a0).toBe(`data:image/png;base64,${THUMBNAIL.toString('base64')}`);
+      } finally {
+        delete (nativeImage as { createThumbnailFromPath?: unknown }).createThumbnailFromPath;
+      }
     }, 30_000);
 
     it('does not decode an icon again for later snapshots, until its file changes', async () => {

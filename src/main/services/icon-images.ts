@@ -72,12 +72,14 @@ export async function resizeIcon(bytes: Uint8Array, filePath: string, box: numbe
   }
 }
 
-/** Small enough to send as it is. SVG and ICO have no size to read here, and phones don't rasterize them to a size of their own choosing. */
+/**
+ * Small enough to send as it is. Only a raster image whose size can be read:
+ * phones can't draw SVG (`UIImage` returns nil), so it needs a raster copy.
+ */
 function canPassThrough(bytes: Uint8Array): boolean {
   if (bytes.length > ICON_THUMBNAIL_PASSTHROUGH_BYTES) return false;
   const type = sniffMediaType(bytes);
-  if (!type || type === 'image/svg+xml') return true;
-  const size = mediaDimensions(bytes, type);
+  const size = type && type !== 'image/svg+xml' ? mediaDimensions(bytes, type) : undefined;
   return !!size && Math.max(size.width, size.height) <= ICON_THUMBNAIL_PASSTHROUGH_SIZE;
 }
 

@@ -126,10 +126,10 @@ Each `snapshot` is complete, so replace the agent rows and `agentIcons` rather t
 
 Clubhouse Go closes a WebSocket with code 1009 on a frame over 16 MiB, and a phone that reconnects into the same frame never recovers. So a snapshot stays well under it:
 
-- `agentIcons` and `projectIcons` are still data URLs, but of thumbnails: a PNG within 128 by 128 pixels, or the file as it is when that's 64 KiB or less and within 256 by 256. An SVG has no pixel size to check. Don't assume a size or a format.
+- `agentIcons` and `projectIcons` are still data URLs, but of thumbnails: a PNG within 128 by 128 pixels, or a PNG, JPEG, GIF or WebP file as it is when that's 64 KiB or less and within 256 by 256. They're always raster: an SVG is sent as a PNG copy or left out, because `UIImage` can't draw one. Don't assume a size.
 - Icons in one snapshot total at most 4 MiB of data URL characters. Past that, icons are left out: the Dispatcher's is kept first, then projects', then agents', in list order.
 - A snapshot frame over 8 MiB is sent with both maps empty. The other fields are always sent.
-- An image that's too large and can't be resized is left out too: on Linux, a large GIF, WebP or SVG has no thumbnail.
+- An image that can't be made small enough is left out too: on Linux, that's any SVG, and any GIF or WebP that's large.
 
 So `icon` set with no `agentIcons[id]` is normal. Use `GET /api/v1/icons/agent/:agentId` or `GET /api/v1/icons/project/:projectId`, or draw initials. Those routes serve the same thumbnail, or a 404 when there's none, so draw initials then. Images set through `update_agent`, `update_project` or the CLI that are over 256 KiB, or wider or taller than 256 pixels, are stored as a PNG within 256 by 256. Files on disk are otherwise left as they are.
 
