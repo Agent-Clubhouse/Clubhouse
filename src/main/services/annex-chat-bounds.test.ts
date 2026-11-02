@@ -28,6 +28,22 @@ describe('previewText', () => {
     expect(head).toMatch(/(^|x)$/);
   });
 
+  it('measures what is sent, so control characters count as their escapes', () => {
+    const preview = previewText('\x01'.repeat(20 * 1024 * 1024), 256 * 1024);
+    expect(Buffer.byteLength(JSON.stringify(preview))).toBeLessThanOrEqual(256 * 1024);
+    expect(preview).toMatch(/\[Clubhouse: \d+ bytes/);
+  });
+
+  it('never starts the last part inside an escape sequence', () => {
+    const sequence = '\x1b[38;2;10;20;30mA';
+    for (let pad = 0; pad < sequence.length; pad++) {
+      const preview = previewText(`${'y'.repeat(pad)}${sequence.repeat(100_000)}`, 4096);
+      const tail = preview.slice(preview.lastIndexOf(']\n') + 2);
+      // Whole sequences, after at most the one character that followed the one it skipped.
+      expect(['', 'A']).toContain(tail.replaceAll(sequence, ''));
+    }
+  });
+
   it('cuts at a line when one is near', () => {
     const preview = previewText(`${'line of text\n'.repeat(100_000)}`, 4096);
     expect(preview.slice(0, preview.indexOf('\n[Clubhouse'))).toMatch(/line of text\n$/);
@@ -36,6 +52,36 @@ describe('previewText', () => {
 
 describe('boundChatEvent', () => {
   const big = 'x'.repeat(5 * 1024 * 1024);
+
+  it('previews a terminal block\'s command and cwd, not only its output', () => {
+    const event = update({ content: [{ type: 'terminal', command: 'c'.repeat(20 * 1024 * 1024), cwd: 'd'.repeat(2 * 1024 * 1024), output: 'ok', exitCode: 2 }] });
+    const bounded = boundChatEvent(event, bytes(event)) as any;
+    expect(bytes(bounded)).toBeLessThan(64 * 1024);
+    const [block] = bounded.data.content;
+    expect(block).toMatchObject({ type: 'terminal', output: 'ok', exitCode: 2 });
+    expect(block.command).toMatch(/\[Clubhouse: \d+ bytes/);
+    expect(block.cwd).toMatch(/\[Clubhouse: \d+ bytes/);
+  });
+
+  it('previews a diff\'s path', () => {
+    const event = update({ content: [{ type: 'diff', path: 'p'.repeat(2 * 1024 * 1024), newText: 'small' }] });
+    expect(bytes(boundChatEvent(event, bytes(event)))).toBeLessThan(8 * 1024);
+  });
+
+  it('says so whenever a diff becomes text, even if what is left looks whole', () => {
+    const event = update({ content: [{ type: 'diff', path: 'f', oldText: 'o'.repeat(3 * 1024 * 1024), newText: 'small' }] });
+    const [block] = (boundChatEvent(event, bytes(event)) as any).data.content;
+    expect(block.type).toBe('text');
+    expect(block.text).toContain('too large to show as a diff');
+    expect(block.text).toContain('small');
+  });
+
+  it('stays within its limit when the output is all control characters', () => {
+    const one = update({ content: [{ type: 'terminal', output: '\x01'.repeat(20 * 1024 * 1024) }] });
+    expect(bytes(boundChatEvent(one, bytes(one)))).toBeLessThanOrEqual(TOOL_EVENT_MAX_BYTES);
+    const two = update({ content: [{ type: 'text', text: '\x01'.repeat(10 * 1024 * 1024) }, { type: 'text', text: '\x02'.repeat(10 * 1024 * 1024) }] });
+    expect(bytes(boundChatEvent(two, bytes(two)))).toBeLessThanOrEqual(TOOL_EVENT_MAX_BYTES);
+  });
 
   it('passes everything else through, however large', () => {
     const event = { type: 'assistant_message', data: { text: big } } as never;
