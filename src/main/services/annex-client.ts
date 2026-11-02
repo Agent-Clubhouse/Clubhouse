@@ -737,6 +737,9 @@ async function connectToSatellite(sat: SatelliteConnectionInternal): Promise<voi
   }
 }
 
+/** Connections that have had a snapshot. */
+const socketsWithSnapshot = new WeakSet<WebSocket>();
+
 function handleSatelliteMessage(sat: SatelliteConnectionInternal, msg: Record<string, unknown>): void {
   const type = msg.type as string;
 
@@ -748,7 +751,10 @@ function handleSatelliteMessage(sat: SatelliteConnectionInternal, msg: Record<st
         return;
       }
       connectSucceeded(sat.fingerprint);
-      if (!sat.snapshot || incoming.lastSeq >= sat.snapshot.lastSeq) {
+      // A socket's first snapshot always stands. Seq only orders frames on one connection,
+      // and restarts from zero when the satellite does, so a stale check would refuse it for good.
+      if (!sat.snapshot || !socketsWithSnapshot.has(sat.ws!) || incoming.lastSeq >= sat.snapshot.lastSeq) {
+        if (sat.ws) socketsWithSnapshot.add(sat.ws);
         sat.lastError = null;
         sat.snapshot = incoming;
         broadcastSatellitesChanged();

@@ -743,6 +743,48 @@ describe('annex-client', () => {
 
   // ---- mTLS reconnection (no bearer token required) ----
 
+  describe('snapshot order', () => {
+    const FINGERPRINT = 'SNAP:ORDER';
+    const snapshot = (lastSeq: number, name: string) => Buffer.from(JSON.stringify({ type: 'snapshot', payload: {
+      protocolVersion: 2, projects: [{ id: name }], agents: {}, quickAgents: {}, theme: null, orchestrators: null, pendingPermissions: [], lastSeq,
+    } }));
+
+    it('drops an older snapshot on one connection, but always takes a new connection\'s first', async () => {
+      const { WebSocket: WsMock } = await import('ws');
+      let messageHandler: ((data: any) => void) | null = null;
+      mockHttpGetIdentity({ fingerprint: FINGERPRINT, alias: 'Order', icon: 'server', color: 'green', publicKey: 'order-key' });
+      vi.mocked(annexPeers.getPeer).mockReturnValue({ fingerprint: FINGERPRINT, alias: 'Order', icon: 'server', color: 'green', publicKey: 'order-key', pairedAt: '2024-01-01', lastSeen: '2024-01-01' });
+      vi.mocked(WsMock).mockImplementation(function (this: any) {
+        this.readyState = 1;
+        this.socket = makeMockSocket(FINGERPRINT);
+        this.on = vi.fn().mockImplementation((event: string, cb: any) => {
+          if (event === 'open') setTimeout(cb, 0);
+          if (event === 'message') messageHandler = cb;
+          return this;
+        });
+        this.send = vi.fn(); this.ping = vi.fn(); this.close = vi.fn(); this.terminate = vi.fn(); this.removeListener = vi.fn();
+        return this;
+      });
+      annexClient.startClient();
+      await bonjourFindCallback!(makeService());
+      await vi.waitFor(() => expect(messageHandler).not.toBeNull());
+      const shown = () => (annexClient.getSatellite(FINGERPRINT)!.snapshot!.projects[0] as { id: string }).id;
+
+      messageHandler!(snapshot(100, 'first'));
+      expect(shown()).toBe('first');
+      messageHandler!(snapshot(50, 'stale'));
+      expect(shown()).toBe('first');
+
+      // The satellite restarted, so its seq began again.
+      const before = messageHandler;
+      annexClient.disconnect(FINGERPRINT);
+      annexClient.connect(FINGERPRINT);
+      await vi.waitFor(() => expect(messageHandler).not.toBe(before));
+      messageHandler!(snapshot(0, 'after restart'));
+      expect(shown()).toBe('after restart');
+    });
+  });
+
   describe('mTLS reconnection', () => {
     it('attempts connection for discovered paired satellite without bearer token', async () => {
       const { WebSocket: WsMock } = await import('ws');
