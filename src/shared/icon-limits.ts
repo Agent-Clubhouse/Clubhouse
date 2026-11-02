@@ -25,6 +25,9 @@ export const ICON_THUMBNAIL_PASSTHROUGH_SIZE = 256;
 /** Clubhouse Go's WebSocket limit (`maximumMessageSize`): a larger frame closes the connection with code 1009. */
 export const MOBILE_WS_FRAME_MAX_BYTES = 16 * 1024 * 1024;
 
+/** The most any frame to a phone can be, in encoded bytes: well under what it can take, and what its memory should have to hold. */
+export const ANNEX_FRAME_MAX_BYTES = 8 * 1024 * 1024;
+
 /** A snapshot frame above this is sent without icons. The rest of the snapshot can't be left out. */
 export const SNAPSHOT_FRAME_MAX_BYTES = 8 * 1024 * 1024;
 

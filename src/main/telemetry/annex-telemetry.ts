@@ -129,6 +129,12 @@ export function recordSnapshotBuild(startMs: number, atMs = Date.now()): void {
   tel.count('clubhouse.annex.snapshot.build.duration', (atMs - startMs) / 1000);
 }
 
+/** A frame over the limit: replaced with its fallback, or sent because it has none yet. */
+export function recordFrameOverLimit(type: string, action: Parameters<typeof ATTR.annexFrameAction>[0]): void {
+  if (!isTelemetryActive()) return;
+  tel.count('clubhouse.annex.frames.over_limit', 1, [ATTR.annexEventType(eventType(type)), ATTR.annexFrameAction(action)]);
+}
+
 export type SnapshotResult = Parameters<typeof ATTR.annexSnapshotResult>[0];
 export type SnapshotTrigger = Parameters<typeof ATTR.annexSnapshotTrigger>[0];
 
@@ -157,7 +163,7 @@ export function recordSnapshotFailure(reason: 'build_failed' | 'send_failed'): v
 const EVENT_TYPES = new Set<string>([
   'pty:data', 'pty:exit', 'hook:event', 'chat:event', 'permission:request', 'permission:response',
   'agent:spawned', 'agent:woken', 'agent:status', 'agent:completed', 'snapshot', 'canvas:state', 'theme:changed',
-  'group-project:list', 'group-project:changed', 'bulletin:message',
+  'group-project:list', 'group-project:changed', 'bulletin:message', 'pty:attach:ack',
 ]);
 
 function eventType(type: string): EventType {

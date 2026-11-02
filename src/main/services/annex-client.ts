@@ -262,12 +262,17 @@ function disposeRemoteBuffers(satelliteId: string): void {
   connectionEpochs.set(satelliteId, (connectionEpochs.get(satelliteId) ?? 0) + 1);
 }
 
+/** Shown in place of a terminal's history when its satellite can't send it. */
+const TERMINAL_UNAVAILABLE_NOTICE = '[Clubhouse: this terminal\'s earlier output is too large to load here. New output appears below, and its screen may be out of step until it next redraws.]\r\n';
+
 interface SatelliteBuffer {
   data: string;
   /** Satellite output seq the buffer includes; absent from older satellites. */
   seq?: number;
   cols?: number;
   rows?: number;
+  /** The satellite can't send this terminal's state. */
+  unavailable?: boolean;
 }
 
 function headerInt(res: http.IncomingMessage, name: string): number | undefined {
@@ -286,6 +291,11 @@ function fetchSatelliteBuffer(sat: SatelliteConnectionInternal, agentId: string)
     const once = (val: SatelliteBuffer | null) => { if (!resolved) { resolved = true; resolve(val); } };
     const url = `https://${bracketHost(sat.host)}:${sat.mainPort}/api/v1/agents/${encodeURIComponent(agentId)}/buffer`;
     const req = https.get(url, { ...tlsOptions, timeout: 5000 }, (res) => {
+      if (res.statusCode === 503) {
+        res.resume();
+        once({ data: '', unavailable: true });
+        return;
+      }
       if (res.statusCode !== 200) {
         res.resume();
         once(null);
@@ -347,6 +357,12 @@ async function seedFromSatellite(satelliteId: string, agentId: string): Promise<
   if ((connectionEpochs.get(satelliteId) ?? 0) !== epoch) return;
   seededBuffers.add(key);
   const bufferKey = remoteBufferKey(satelliteId, agentId);
+  if (fetched?.unavailable) {
+    // Live output still arrives, so the terminal works, but it can't look like the whole story.
+    headlessTerminal.reset(bufferKey, { windowsPty: satelliteWindowsPty(satelliteId) });
+    headlessTerminal.feedData(bufferKey, `${TERMINAL_UNAVAILABLE_NOTICE}${during.map((chunk) => chunk.data).join('')}`, state.seq);
+    return;
+  }
   if (!fetched?.data) {
     // Nothing to seed. An empty cache marks the agent seeded, so the next
     // request does not fetch again.

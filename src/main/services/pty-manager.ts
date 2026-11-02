@@ -410,12 +410,20 @@ export function getSerializedBuffer(agentId: string): string {
  */
 export async function getSerializedBufferSnapshot(
   agentId: string,
-): Promise<{ data: string; seq: number; cols?: number; rows?: number }> {
-  const mirrored = await headlessTerminal.snapshot(agentId);
+  limit?: headlessTerminal.SnapshotLimit,
+): Promise<{ data: string; seq: number; cols?: number; rows?: number; scrollbackLines?: number }> {
+  const mirrored = await headlessTerminal.snapshot(agentId, limit);
   const session = sessions.get(agentId);
   const size = session ? currentSize(session) : {};
-  if (mirrored?.data && mirrored.seq !== undefined) return { data: mirrored.data, seq: mirrored.seq, ...size };
+  if (mirrored?.data && mirrored.seq !== undefined) {
+    return { data: mirrored.data, seq: mirrored.seq, ...size, ...(mirrored.scrollbackLines !== undefined && { scrollbackLines: mirrored.scrollbackLines }) };
+  }
   const { data, seq } = getBufferSnapshot(agentId);
+  // No mirror, so it's raw output, which can't be cut safely. A terminal can read it and say less.
+  if (limit && data.length * 6 + 2 > limit.maxEncodedBytes && Buffer.byteLength(JSON.stringify(data)) > limit.maxEncodedBytes) {
+    const fitted = await headlessTerminal.serializeRawWithin(data, { ...size, maxEncodedBytes: limit.maxEncodedBytes });
+    if (fitted) return { ...fitted, seq, ...size };
+  }
   return { data, seq, ...size };
 }
 

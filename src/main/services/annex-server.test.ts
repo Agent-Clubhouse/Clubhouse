@@ -304,7 +304,7 @@ import { generateQuickName } from '../../shared/name-generator';
 import * as agentIdModule from '../../shared/agent-id';
 import { appLog } from './log-service';
 import { nativeImage } from 'electron';
-import { MOBILE_WS_FRAME_MAX_BYTES, SNAPSHOT_FRAME_MAX_BYTES, SNAPSHOT_ICONS_MAX_BYTES } from '../../shared/icon-limits';
+import { ANNEX_FRAME_MAX_BYTES, MOBILE_WS_FRAME_MAX_BYTES, SNAPSHOT_FRAME_MAX_BYTES, SNAPSHOT_ICONS_MAX_BYTES } from '../../shared/icon-limits';
 import Bonjour from 'bonjour-service';
 import { registerChatRuntime, clearChatRuntimes, publishChatEvent } from './agent-runtime';
 
@@ -1049,7 +1049,7 @@ describe('annex-server', () => {
       ws.emit('message', JSON.stringify({ type: 'pty:attach', payload: { agentId: 'agent-1' } }));
       await vi.waitFor(() => expect(ws.send).toHaveBeenCalled());
       expect(sent(ws)).toEqual([{ type: 'pty:attach:ack', payload: { agentId: 'agent-1', buffer: 'screen', outputSeq: 42, cols: 120, rows: 40 } }]);
-      expect(ptyManagerModule.getSerializedBufferSnapshot).toHaveBeenCalledWith('agent-1');
+      expect(ptyManagerModule.getSerializedBufferSnapshot).toHaveBeenCalledWith('agent-1', { maxEncodedBytes: expect.any(Number) });
     });
 
     it('refuses to attach to chat agents, stopped agents and shells', async () => {
@@ -4363,6 +4363,170 @@ describe('annex-server', () => {
         expect(annexServer._testing.heldBytes(ws as never)).toBeLessThanOrEqual(32 * 1024 * 1024);
       }
       expect(ws.close).not.toHaveBeenCalled();
+    });
+  });
+
+  // ---------------------------------------------------------------------------
+  // Every frame, whatever sent it, within the budget
+  // ---------------------------------------------------------------------------
+
+  describe('frame budget', () => {
+    const MIB = 1024 * 1024;
+    const liveSocket = async (auth: 'mtls' | 'bearer' = 'mtls') => {
+      const ws = Object.assign(new EventEmitter(), { readyState: 1, send: vi.fn(), ping: () => {}, close: vi.fn() });
+      annexServer._testing.wsAuthTypes.set(ws as never, auth);
+      annexServer._testing.wss!.clients.add(ws as never);
+      annexServer._testing.wss!.emit('connection', ws);
+      await vi.waitFor(() => expect(ws.send).toHaveBeenCalled());
+      ws.send.mockClear();
+      return ws;
+    };
+    const overLimitLog = () => vi.mocked(appLog).mock.calls.filter(([, , message]) => message === 'A frame was over its limit');
+
+    beforeEach(async () => {
+      vi.mocked(pluginManifestRegistry.listAllManifests).mockReturnValue([]);
+      const { groupProjectRegistry } = await import('./group-project-registry');
+      vi.mocked(groupProjectRegistry.list).mockResolvedValue([]);
+      const themeService = await import('./theme-service');
+      vi.mocked(themeService.getSettings).mockReturnValue({ themeId: 'catppuccin-mocha' } as any);
+      vi.mocked(projectStore.list).mockReturnValue([]);
+      vi.mocked(ptyManagerModule.isRunning).mockReturnValue(true);
+      annexServer.start();
+      await new Promise((r) => setTimeout(r, 50));
+    });
+
+    function attach(ws: { emit: (event: string, data: string) => void }) {
+      ws.emit('message', JSON.stringify({ type: 'pty:attach', payload: { agentId: 'agent_pty' } }));
+    }
+
+    it('asks the terminal for a buffer that fits a frame, and says scrollback was left out', async () => {
+      vi.mocked(ptyManagerModule.getSerializedBufferSnapshot).mockResolvedValue({ data: 'screen', seq: 7, cols: 80, rows: 24, scrollbackLines: 120 } as never);
+      const ws = await liveSocket();
+
+      attach(ws);
+      await vi.waitFor(() => expect(ws.send).toHaveBeenCalled());
+
+      expect(ptyManagerModule.getSerializedBufferSnapshot).toHaveBeenCalledWith('agent_pty', { maxEncodedBytes: expect.any(Number) });
+      const limit = vi.mocked(ptyManagerModule.getSerializedBufferSnapshot).mock.lastCall![1]!.maxEncodedBytes;
+      expect(limit).toBeLessThan(ANNEX_FRAME_MAX_BYTES);
+      expect(JSON.parse(ws.send.mock.calls[0][0] as string)).toEqual({
+        type: 'pty:attach:ack', payload: { agentId: 'agent_pty', buffer: 'screen', outputSeq: 7, cols: 80, rows: 24, scrollbackLines: 120 },
+      });
+    });
+
+    it('answers an attach it can not fit with terminal_unavailable and no ack', async () => {
+      // Over even after the terminal has done what it can.
+      vi.mocked(ptyManagerModule.getSerializedBufferSnapshot).mockResolvedValue({ data: '\x1b'.repeat(2 * MIB), seq: 7, cols: 80, rows: 24 } as never);
+      const ws = await liveSocket();
+
+      attach(ws);
+      await vi.waitFor(() => expect(ws.send).toHaveBeenCalled());
+
+      expect(ws.send.mock.calls.map(([d]) => JSON.parse(d as string))).toEqual([
+        { type: 'error', payload: { message: 'terminal_unavailable', op: 'pty:attach', agentId: 'agent_pty' } },
+      ]);
+      expect(ws.close).not.toHaveBeenCalled();
+      const line = overLimitLog()[0];
+      expect(line?.[3]?.meta).toMatchObject({ type: 'pty:attach:ack', action: 'fallback' });
+      expect(JSON.stringify(line)).not.toContain('\\u001b');
+    });
+
+    it('never sends an oversized ack, even if one reaches the last check', async () => {
+      const ws = await liveSocket();
+      annexServer._testing.safeSendForTest(ws as never, JSON.stringify({ type: 'pty:attach:ack', payload: { agentId: 'agent_pty', buffer: 'x'.repeat(9 * MIB), outputSeq: 7 } }));
+      expect(ws.send.mock.calls.map(([d]) => JSON.parse(d as string))).toEqual([
+        { type: 'error', payload: { message: 'terminal_unavailable', op: 'pty:attach', agentId: 'agent_pty' } },
+      ]);
+    });
+
+    describe('GET /api/v1/agents/:id/buffer', () => {
+      const getBuffer = (port: number, token: string) => new Promise<{ status: number; headers: http.IncomingHttpHeaders; body: Buffer }>((resolve, reject) => {
+        http.get({ hostname: '127.0.0.1', port, path: '/api/v1/agents/agent_pty/buffer', headers: authHeaders(token) }, (res) => {
+          const chunks: Buffer[] = [];
+          res.on('data', (c: Buffer) => chunks.push(c));
+          res.on('end', () => resolve({ status: res.statusCode!, headers: res.headers, body: Buffer.concat(chunks) }));
+        }).on('error', reject);
+      });
+
+      it('answers 503 for a buffer it can not fit, over a real connection', async () => {
+        annexServer.stop();
+        vi.mocked(ptyManagerModule.getSerializedBufferSnapshot).mockResolvedValue({ data: 'r'.repeat(19 * MIB), seq: 7, cols: 80, rows: 24 } as never);
+        const { port, token } = await startAndPair();
+
+        const res = await getBuffer(port, token);
+
+        expect(res.status).toBe(503);
+        expect(JSON.parse(res.body.toString())).toEqual({ error: 'terminal_unavailable' });
+      }, 30_000);
+
+      it('says how much scrollback it kept when the terminal left some out', async () => {
+        annexServer.stop();
+        vi.mocked(ptyManagerModule.getSerializedBufferSnapshot).mockResolvedValue({ data: 'screen', seq: 7, cols: 80, rows: 24, scrollbackLines: 120 } as never);
+        const { port, token } = await startAndPair();
+
+        const res = await getBuffer(port, token);
+
+        expect(res.body.toString()).toBe('screen');
+        expect(res.headers['x-clubhouse-scrollback-lines']).toBe('120');
+      }, 30_000);
+
+      it('counts bytes on the wire, not characters', async () => {
+        annexServer.stop();
+        vi.mocked(ptyManagerModule.getSerializedBufferSnapshot).mockResolvedValue({ data: '€'.repeat(3 * MIB), seq: 7 } as never);
+        const { port, token } = await startAndPair();
+        expect((await getBuffer(port, token)).status).toBe(503);
+      }, 30_000);
+
+      it('leaves an ordinary buffer alone, with no new headers', async () => {
+        annexServer.stop();
+        vi.mocked(ptyManagerModule.getSerializedBufferSnapshot).mockResolvedValue({ data: 'hello', seq: 7 } as never);
+        const { port, token } = await startAndPair();
+        const res = await getBuffer(port, token);
+        expect(res.body.toString()).toBe('hello');
+        expect(res.headers).not.toHaveProperty('x-clubhouse-scrollback-lines');
+      }, 30_000);
+    });
+
+    it('reports a frame with no fallback yet, and sends it as before', async () => {
+      const ws = await liveSocket();
+      annexServer._testing.safeSendForTest(ws as never, JSON.stringify({ type: 'hook:event', payload: { text: 'x'.repeat(9 * MIB) } }));
+
+      expect(ws.send).toHaveBeenCalledTimes(1);
+      expect(overLimitLog()[0]?.[3]?.meta).toMatchObject({ type: 'hook:event', action: 'sent_over_limit', limitBytes: ANNEX_FRAME_MAX_BYTES });
+      expect(JSON.stringify(overLimitLog()[0])).not.toContain('xxxx');
+    });
+
+    it('covers a broadcast and a replayed frame the same way as a direct one', async () => {
+      const ws = await liveSocket();
+      const seq = _eventReplay.pushEvent('hook:event', { text: 'x'.repeat(9 * MIB) });
+      ws.emit('message', JSON.stringify({ type: 'replay', since: seq - 1 }));
+      expect(overLimitLog().map(([, , , o]) => (o?.meta as { type: string }).type)).toEqual(['hook:event']);
+
+      vi.mocked(appLog).mockClear();
+      annexServer._testing.resetFrameLogs();
+      annexServer._testing.broadcastForTest({ type: 'canvas:state', payload: { text: 'x'.repeat(9 * MIB) } });
+      expect(overLimitLog().map(([, , , o]) => (o?.meta as { type: string }).type)).toEqual(['canvas:state']);
+    });
+
+    it('leaves frames under the limit alone, at no cost past a length check', async () => {
+      const ws = await liveSocket();
+      const data = JSON.stringify({ type: 'hook:event', payload: { text: 'x'.repeat(1024) } });
+      annexServer._testing.safeSendForTest(ws as never, data);
+      expect(ws.send).toHaveBeenCalledWith(data);
+      expect(overLimitLog()).toEqual([]);
+    });
+
+    it('counts encoded bytes, not characters', async () => {
+      const ws = await liveSocket();
+      annexServer._testing.safeSendForTest(ws as never, JSON.stringify({ type: 'hook:event', payload: { text: '€'.repeat(3 * MIB) } }));
+      expect(overLimitLog()).toHaveLength(1);
+    });
+
+    it('leaves a snapshot to its own limits', async () => {
+      const ws = await liveSocket();
+      annexServer._testing.safeSendForTest(ws as never, JSON.stringify({ type: 'snapshot', payload: { text: 'x'.repeat(9 * MIB) } }));
+      expect(overLimitLog()).toEqual([]);
+      expect(ws.send).toHaveBeenCalledTimes(1);
     });
   });
 

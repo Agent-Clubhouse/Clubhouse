@@ -12,7 +12,7 @@ import { applyProjectStateChange, getProjectState, isProjectStateReady, onProjec
 import { isProjectIdle } from '../../shared/project-state';
 import { applyFinishedQuickAgentChange, getFinishedQuickAgents, isFinishedQuickAgentsReady, onFinishedQuickAgentsChange } from './finished-quick-agents-store';
 import type { CompletedQuickAgent, Project } from '../../shared/types';
-import { MOBILE_WS_FRAME_MAX_BYTES, SNAPSHOT_FRAME_MAX_BYTES, SNAPSHOT_ICONS_MAX_BYTES } from '../../shared/icon-limits';
+import { ANNEX_FRAME_MAX_BYTES, MOBILE_WS_FRAME_MAX_BYTES, SNAPSHOT_FRAME_MAX_BYTES, SNAPSHOT_ICONS_MAX_BYTES } from '../../shared/icon-limits';
 import { MobileCommandService, MobileControlError, chatControls, executeChatCommand, pendingInteractions, MOBILE_COMMAND_MAX_ENTRIES, MOBILE_COMMAND_TTL_MS } from './mobile-control';
 import { isRevertRunning } from './agent-runtime/checkpoint-tracker';
 import { readChatTranscript, listChatSessions } from './agent-runtime/chat-transcript';
@@ -102,6 +102,7 @@ import {
   recordBroadcast,
   recordClients,
   recordControlDenied,
+  recordFrameOverLimit,
   recordPairServed,
   recordReplay,
   recordServerStarted,
@@ -1099,6 +1100,68 @@ function noteFrameSize(data: string, type?: string): void {
   });
 }
 
+/**
+ * What a frame of each type becomes when it's over the limit, keeping what it means.
+ * Types not here go as they are and are counted, until each has one (#2673). A snapshot
+ * isn't here because it has its own limits, in snapshotFrame.
+ */
+const FRAME_FALLBACKS: Readonly<Record<string, (message: { payload: Record<string, unknown> }) => object>> = {
+  // readBoundedPtyBuffer stops this first. An empty ack would read as a real, blank terminal.
+  'pty:attach:ack': (message) => ({ type: 'error', payload: { message: TERMINAL_UNAVAILABLE, op: 'pty:attach', agentId: message.payload.agentId } }),
+};
+
+const lastFrameLimitLog = new Map<string, number>();
+
+/**
+ * The one check every outgoing frame passes, direct, broadcast or replayed: over
+ * ANNEX_FRAME_MAX_BYTES of encoded bytes, it takes its type's fallback. Logs the
+ * type and sizes, never the contents.
+ */
+function enforceFrameLimit(data: string, type?: string): string {
+  // A character is at most three UTF-8 bytes, so most frames skip the count.
+  if (data.length * 3 < ANNEX_FRAME_MAX_BYTES) return data;
+  const bytes = Buffer.byteLength(data);
+  if (bytes <= ANNEX_FRAME_MAX_BYTES) return data;
+  const frameType = type ?? data.match(/^\{"type":"([^"]+)"/)?.[1] ?? 'other';
+  if (frameType === 'snapshot') return data;
+  const fallback = FRAME_FALLBACKS[frameType];
+  const bounded = fallback ? JSON.stringify(fallback(JSON.parse(data))) : data;
+  reportFrameOverLimit(frameType, fallback ? 'fallback' : 'sent_over_limit', bytes, Buffer.byteLength(bounded));
+  return bounded;
+}
+
+function reportFrameOverLimit(type: string, action: 'fallback' | 'sent_over_limit', bytes: number, boundedBytes: number): void {
+  recordFrameOverLimit(type, action);
+  const now = Date.now();
+  if (now - (lastFrameLimitLog.get(type) ?? -Infinity) < LARGE_FRAME_LOG_INTERVAL_MS) return;
+  lastFrameLimitLog.set(type, now);
+  appLog('core:annex', 'warn', 'A frame was over its limit', {
+    meta: { type, action, bytes, boundedBytes, limitBytes: ANNEX_FRAME_MAX_BYTES },
+  });
+}
+
+const TERMINAL_UNAVAILABLE = 'terminal_unavailable';
+
+/** A terminal's buffer in a frame, leaving room for the rest of it. */
+const PTY_BUFFER_MAX_ENCODED_BYTES = ANNEX_FRAME_MAX_BYTES - 1024;
+
+/**
+ * A terminal's buffer for a phone, for the attach ack and the buffer route alike. The
+ * mirror and raw output both fit themselves by leaving out scrollback, down to the
+ * screen alone. This is the final check, for when that's still over. Null means
+ * there's no faithful terminal to send, and the caller says so rather than sending an
+ * empty one: Clubhouse Go showed 147 draws that as a blank screen with the wrong cursor.
+ */
+async function readBoundedPtyBuffer(agentId: string, frameType: string) {
+  const snapshot = await ptyManager.getSerializedBufferSnapshot(agentId, { maxEncodedBytes: PTY_BUFFER_MAX_ENCODED_BYTES });
+  // JSON at most sextuples a character, so most buffers skip the encoding.
+  if (snapshot.data.length * 6 + 2 <= PTY_BUFFER_MAX_ENCODED_BYTES) return snapshot;
+  const bytes = Buffer.byteLength(JSON.stringify(snapshot.data));
+  if (bytes <= PTY_BUFFER_MAX_ENCODED_BYTES) return snapshot;
+  reportFrameOverLimit(frameType, 'fallback', bytes, 0);
+  return null;
+}
+
 const SNAPSHOT_LOG_INTERVAL_MS = 60_000;
 let lastSnapshotLog: { result: string; atMs: number } | null = null;
 
@@ -1306,8 +1369,9 @@ function broadcastWs(message: object): void {
   broadcastFrame((message as { type?: string }).type ?? 'other', JSON.stringify(message));
 }
 
-function broadcastFrame(type: string, data: string): number {
+function broadcastFrame(type: string, frame: string): number {
   if (!wss) return 0;
+  const data = enforceFrameLimit(frame, type);
   noteFrameSize(data, type);
   let sendFailures = 0;
   for (const client of wss.clients) {
@@ -1607,9 +1671,15 @@ async function handleAttachWs(ws: WebSocket, payload: Record<string, unknown>): 
     sendPtyError(ws, op, 'agent_not_running', { agentId });
     return;
   }
-  const { data, seq, cols, rows } = await ptyManager.getSerializedBufferSnapshot(agentId);
+  const snapshot = await readBoundedPtyBuffer(agentId, 'pty:attach:ack');
+  if (!snapshot) {
+    sendPtyError(ws, op, TERMINAL_UNAVAILABLE, { agentId });
+    return;
+  }
+  const { data, seq, cols, rows, scrollbackLines } = snapshot;
   safeSend(ws, JSON.stringify({ type: 'pty:attach:ack', payload: {
     agentId, buffer: data, outputSeq: seq, ...(cols !== undefined && rows !== undefined && { cols, rows }),
+    ...(scrollbackLines !== undefined && { scrollbackLines }),
   } }));
 }
 
@@ -2104,7 +2174,12 @@ async function handleProjectAgentsRoute(ctx: AnnexRouteContext, match: RegExpMat
 
 async function handleAgentBufferRoute(ctx: AnnexRouteContext, match: RegExpMatchArray): Promise<void> {
   const agentId = decodeURIComponent(match[1]);
-  const { data: buffer, seq, cols, rows } = await ptyManager.getSerializedBufferSnapshot(agentId);
+  const snapshot = await readBoundedPtyBuffer(agentId, 'pty:buffer');
+  if (!snapshot) {
+    sendJson(ctx.res, 503, { error: TERMINAL_UNAVAILABLE });
+    return;
+  }
+  const { data: buffer, seq, cols, rows, scrollbackLines } = snapshot;
   ctx.res.writeHead(200, {
     'Content-Type': 'text/plain; charset=utf-8',
     'Content-Length': Buffer.byteLength(buffer),
@@ -2114,6 +2189,7 @@ async function handleAgentBufferRoute(ctx: AnnexRouteContext, match: RegExpMatch
       [ANNEX_BUFFER_HEADERS.cols]: String(cols),
       [ANNEX_BUFFER_HEADERS.rows]: String(rows),
     }),
+    ...(scrollbackLines !== undefined && { [ANNEX_BUFFER_HEADERS.scrollbackLines]: String(scrollbackLines) }),
   });
   ctx.res.end(buffer);
 }
@@ -3560,6 +3636,7 @@ function safeSend(ws: WebSocket, data: string): boolean {
       // Replay carries the original event context, never this request's context.
       if (!message.replayed) data = JSON.stringify({ ...message, tc });
     }
+    data = enforceFrameLimit(data);
     noteFrameSize(data);
     const held = heldFrames.get(ws);
     // A reply can go ahead of the snapshot: a phone has no cursor yet, and takes the snapshot after it.
@@ -4483,6 +4560,7 @@ export function stop(): void {
   if (snapshotOversizeRecheck) clearTimeout(snapshotOversizeRecheck);
   snapshotOversizeRecheck = null;
   lastLargeFrameLog.clear();
+  lastFrameLimitLog.clear();
   lastSnapshotLog = null;
   lastIconBudgetWarning = '';
 
@@ -5079,6 +5157,9 @@ export const _testing = {
     const held = heldFrames.get(ws);
     if (held) holdFrame(held, data);
   },
+  safeSendForTest: (ws: WebSocket, data: string) => safeSend(ws, data),
+  broadcastForTest: (message: object) => broadcastWs(message),
+  resetFrameLogs: () => lastFrameLimitLog.clear(),
   runMobileCommand,
   get sessionTokens() { return sessionTokens; },
   isValidToken,

@@ -29,6 +29,8 @@ export const ANNEX_BUFFER_HEADERS = {
   /** The satellite PTY's size, so a controller mirror wraps like the PTY. */
   cols: 'x-clubhouse-pty-cols',
   rows: 'x-clubhouse-pty-rows',
+  /** How many lines of scrollback the buffer has, when a limit left some out. */
+  scrollbackLines: 'x-clubhouse-scrollback-lines',
 } as const;
 
 export function annexPtyHost(platform: string, windowsPty: WindowsPtyInfo | undefined): AnnexPtyHost {
