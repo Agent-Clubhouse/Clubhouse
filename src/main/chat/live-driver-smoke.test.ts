@@ -13,8 +13,10 @@
  *
  * Each driver runs once, with no retry: a failure is recorded and never re-sent.
  * The user's MCP servers and tools are switched off for the session by flags
- * only; no CLI config is written. Codex keeps its built-in tools, which it has
- * no switch for. Any permission request is denied and fails the driver.
+ * only; no CLI config is written. Any permission request is denied and fails
+ * the driver. Not everything goes off: Codex keeps its built-in tools, Copilot
+ * over the SDK still connects github-mcp-server (its tools are disabled), and
+ * over ACP nothing reports whether Copilot's tools went away.
  */
 import { execFileSync } from 'child_process';
 import * as fs from 'fs';
@@ -111,6 +113,8 @@ interface Spec {
   make(): ChatDriver;
   /** The chat runtime, not this driver, reports session_started and session_ended. */
   runtimeLifecycle?: boolean;
+  /** The event carrying the reply. ACP only streams chunks. */
+  messageEvent?: 'agent_message_chunk';
   /** Binary, flags and env that keep the user's MCP servers and tools out of this session. */
   isolate(binary: string, dir: string): { binary: string; extraArgs?: string[]; env?: Record<string, string>; isolation: string[] };
 }
@@ -146,7 +150,7 @@ const SPECS: Spec[] = [
   { id: 'claude_agent_sdk', provider: 'claude-code', sdk: '@anthropic-ai/claude-agent-sdk', make: () => new ClaudeChatDriver('claude_agent_sdk'), isolate: claudeIsolation },
   { id: 'claude_stream_json', provider: 'claude-code', make: () => new ClaudeChatDriver('claude_stream_json'), isolate: claudeIsolation },
   { id: 'codex_app_server', provider: 'codex-cli', make: () => new CodexChatDriver(), isolate: codexIsolation },
-  { id: 'copilot_acp', provider: 'copilot-cli', runtimeLifecycle: true, make: () => createCopilotAcpChatDriver(), isolate: copilotIsolation },
+  { id: 'copilot_acp', provider: 'copilot-cli', runtimeLifecycle: true, messageEvent: 'agent_message_chunk', make: () => createCopilotAcpChatDriver(), isolate: copilotIsolation },
   {
     id: 'copilot_sdk',
     provider: 'copilot-cli',
@@ -316,10 +320,11 @@ describe.skipIf(!enabled)('chat drivers (real CLI, real model, local logins)', (
       expect(row.permissionRequests).toBe(0);
       if (!choice) return;
       const types = row.sequence as string[];
-      for (const type of ['turn_started', 'agent_message', 'usage', 'turn_ended', ...(spec.runtimeLifecycle ? [] : ['session_started', 'session_ended'])]) {
+      const message = spec.messageEvent ?? 'agent_message';
+      for (const type of ['turn_started', message, 'usage', 'turn_ended', ...(spec.runtimeLifecycle ? [] : ['session_started', 'session_ended'])]) {
         expect(types, `${type} missing`).toContain(type);
       }
-      expect(types.indexOf('turn_started')).toBeLessThan(types.indexOf('agent_message'));
+      expect(types.indexOf('turn_started')).toBeLessThan(types.indexOf(message));
       if (!spec.runtimeLifecycle) expect(types.lastIndexOf('turn_ended')).toBeLessThan(types.lastIndexOf('session_ended'));
       expect(String(row.reply).trim()).toMatch(/^ok\.?$/i);
     }, TURN_TIMEOUT_MS + CLOSE_TIMEOUT_MS + 60_000);
