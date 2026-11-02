@@ -1133,14 +1133,20 @@ function noteFrameSize(data: string, type?: string): void {
 
 /**
  * What a frame of each type becomes when it's over the limit, keeping what it means.
- * Types not here go as they are and are counted, until each has one (#2673). A snapshot
- * isn't here because it has its own limits, in snapshotFrame.
+ * Types not here go as they are and are counted: each either has its own bound before this
+ * or holds facts that can't be left out. A snapshot isn't here because it has its own
+ * limits, in snapshotFrame.
  */
 const FRAME_FALLBACKS: Readonly<Record<string, (message: { payload: Record<string, unknown> }) => object>> = {
   // Replay and anything else sending one that didn't start in broadcastAndBuffer.
   'chat:event': (message) => {
     const { event } = message.payload as { event: ChatEvent };
     return { ...message, payload: { ...message.payload, event: boundChatEvent(event, Buffer.byteLength(JSON.stringify(event))) } };
+  },
+  // A marker naming what changed, with no state. Its reader fetches it through the route a truncated snapshot uses.
+  'canvas:state': (message) => {
+    const { projectId, scope, state } = message.payload as { projectId?: string | null; scope?: string; state?: unknown };
+    return { type: 'canvas:state', payload: { projectId: projectId ?? null, ...(scope && { scope }), stateOmitted: { version: 1, reason: 'frame_limit', bytes: Buffer.byteLength(JSON.stringify(state) ?? '') } } };
   },
   // readBoundedPtyBuffer stops this first. An empty ack would read as a real, blank terminal.
   'pty:attach:ack': (message) => ({ type: 'error', payload: { message: TERMINAL_UNAVAILABLE, op: 'pty:attach', agentId: message.payload.agentId } }),
@@ -1162,7 +1168,9 @@ function enforceFrameLimit(data: string, type?: string): string {
   if (frameType === 'snapshot') return data;
   const fallback = FRAME_FALLBACKS[frameType];
   const bounded = fallback ? JSON.stringify(fallback(JSON.parse(data))) : data;
-  reportFrameOverLimit(frameType, fallback ? 'fallback' : 'sent_over_limit', bytes, Buffer.byteLength(bounded));
+  const boundedBytes = Buffer.byteLength(bounded);
+  // A fallback can leave what it can't shorten, and that's still a frame over the limit.
+  reportFrameOverLimit(frameType, boundedBytes <= ANNEX_FRAME_MAX_BYTES ? 'fallback' : 'sent_over_limit', bytes, boundedBytes);
   return bounded;
 }
 
@@ -1452,9 +1460,48 @@ function broadcastFrame(type: string, frame: string, form?: SnapshotForm): numbe
 function broadcastAndBuffer(type: string, payload: unknown, context?: string): void {
   const tc = validatedTraceparent(type === 'chat:event' ? context : context ?? currentRequestTraceparent());
   // Serialized once, here, because a frame's size decides what's kept for replay as well as what's sent.
-  const { payload: bounded, json } = boundEventPayload(type, payload);
-  const seq = eventReplay.pushEvent(type, bounded, tc, Buffer.byteLength(json));
-  broadcastFrame(type, `{"type":${JSON.stringify(type)},"payload":${json},"seq":${seq}${tc ? `,"tc":${JSON.stringify(tc)}` : ''}}`);
+  const { payload: bounded, json: boundedJson } = boundEventPayload(type, payload);
+  const omitted = omittedFrame(type, bounded, boundedJson);
+  const frameType = omitted ? 'frame:omitted' : type;
+  const kept = omitted ?? bounded;
+  const json = omitted ? JSON.stringify(omitted) : boundedJson;
+  const seq = eventReplay.pushEvent(frameType, kept, tc, Buffer.byteLength(json));
+  broadcastFrame(frameType, `{"type":${JSON.stringify(frameType)},"payload":${json},"seq":${seq}${tc ? `,"tc":${JSON.stringify(tc)}` : ''}}`);
+}
+
+/**
+ * What can be left out of the stream as the last resort: an event carrying no state.
+ * An allowlist, so a new type isn't one until someone decides that. Anything with an
+ * approval, a question, a queue or a status has its own path, or goes as it is and
+ * is reported. A phone advances its cursor past this and doesn't fetch, so the text
+ * shows on the next read of `/chat`, and stays on the desktop.
+ */
+const OMITTABLE_CHAT_EVENT_TYPES: ReadonlySet<string> = new Set(['agent_message', 'agent_message_chunk', 'agent_thought', 'agent_thought_chunk']);
+
+/** Room in a frame for its type, seq and trace context around the payload. */
+const FRAME_ENVELOPE_BYTES = 1024;
+
+/**
+ * An event no phone can receive: the transport closes the socket on it. Sent once live,
+ * that costs a reconnect, and the new connection's snapshot is past it. Sent on replay it
+ * would be every time, for as long as the buffer keeps it, so a phone resuming from before
+ * it gets `replay:gap` and reloads, which moves its cursor past.
+ */
+function cannotBeReplayed(event: { payload: unknown }): boolean {
+  const json = JSON.stringify(event.payload) ?? '';
+  return json.length * 3 + FRAME_ENVELOPE_BYTES > MOBILE_WS_FRAME_MAX_BYTES && Buffer.byteLength(json) + FRAME_ENVELOPE_BYTES > MOBILE_WS_FRAME_MAX_BYTES;
+}
+
+/** The frame:omitted payload for an event over the limit, in place of it, or null if it stays as it is. */
+function omittedFrame(type: string, payload: unknown, json: string): Record<string, unknown> | null {
+  if (type !== 'chat:event' || (json.length * 3 + FRAME_ENVELOPE_BYTES) < ANNEX_FRAME_MAX_BYTES) return null;
+  const bytes = Buffer.byteLength(json);
+  if (bytes + FRAME_ENVELOPE_BYTES <= ANNEX_FRAME_MAX_BYTES) return null;
+  const { agentId, event } = payload as { agentId: string; event: ChatEvent };
+  if (!OMITTABLE_CHAT_EVENT_TYPES.has(event.type)) return null;
+  const omitted = { version: 1, originalType: type, eventType: event.type, agentId, sessionId: event.sessionId, eventSeq: event.seq, bytes };
+  reportFrameOverLimit(type, 'fallback', bytes, Buffer.byteLength(JSON.stringify(omitted)));
+  return omitted;
 }
 
 /** An event's payload as Annex keeps and sends it, and that as JSON. Most pass through unchanged. */
@@ -3792,7 +3839,7 @@ function handleWsMessage(ws: WebSocket, data: string): void {
       ? eventReplay.getEventsSince(since!) : null;
     // Agent cleanup can remove interior events; never claim a partial replay is complete.
     if (events === null || events.length !== eventReplay.getLastSeq() - since!
-      || events.some((event, index) => event.seq !== since! + index + 1)) {
+      || events.some((event, index) => event.seq !== since! + index + 1) || events.some(cannotBeReplayed)) {
       safeSend(ws, JSON.stringify({ type: 'replay:gap', epoch, oldestAvailable: eventReplay.getOldestSeq(), lastSeq: eventReplay.getLastSeq() }));
       return;
     }
@@ -3806,7 +3853,7 @@ function handleWsMessage(ws: WebSocket, data: string): void {
   if (type === 'replay' && typeof msg.since === 'number') {
     const events = eventReplay.getEventsSince(msg.since);
 
-    if (events === null) {
+    if (events === null || events.some(cannotBeReplayed)) {
       recordReplay('gap');
       safeSend(ws, JSON.stringify({
         type: 'replay:gap',
@@ -4799,7 +4846,7 @@ let refreshGeneration = 0;
 const RACED_REFRESH_DELAY_MS = 250;
 
 /** Frames that never change a snapshot's fields. They can come many times a build, so they can't count as a race. */
-const OUTPUT_EVENT_TYPES = new Set(['pty:data', 'chat:event']);
+const OUTPUT_EVENT_TYPES = new Set(['pty:data', 'chat:event', 'frame:omitted']);
 
 /** Did anything a snapshot shows change since this seq? If the buffer can't say, assume so. */
 function snapshotStateChangedSince(seq: number): boolean {
@@ -5253,6 +5300,7 @@ export function getWsAuthType(ws: WebSocket): WsAuthType {
 
 /** @internal Exposed for testing only. */
 export const _testing = {
+  mobileEpoch: () => mobileCommands.epoch,
   PROJECTS_CHANGED_DEBOUNCE_MS,
   HELD_FRAMES_MAX,
   wsIconRefs,

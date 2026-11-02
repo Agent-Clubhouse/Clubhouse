@@ -4686,6 +4686,132 @@ describe('annex-server', () => {
       expect(overLimitLog().map(([, , , o]) => (o?.meta as { type: string }).type)).toEqual(['canvas:state']);
     });
 
+    describe('the last resort', () => {
+      const chat = (type: string, seq: number, data: object) => ({ v: 2, type, agentId: 'a', sessionId: 's', seq, ts: 0, data });
+      const sent = (ws: { send: ReturnType<typeof vi.fn> }) => ws.send.mock.calls.map(([data]) => JSON.parse(data as string));
+
+      it('sends a canvas over the limit as a marker naming it', async () => {
+        const ws = await liveSocket();
+        annexServer.broadcastCanvasStateToClients('proj_1', { canvasId: 'c', views: 'x'.repeat(9 * MIB) });
+        annexServer.broadcastAppCanvasStateToClients({ canvasId: 'c', views: 'x'.repeat(9 * MIB) });
+        const [project, app] = sent(ws).filter((f) => f.type === 'canvas:state');
+        expect(project.payload).toMatchObject({ projectId: 'proj_1', stateOmitted: { version: 1, reason: 'frame_limit' } });
+        expect(project.payload).not.toHaveProperty('state');
+        expect(project.payload.stateOmitted.bytes).toBeGreaterThan(9 * MIB);
+        expect(app.payload).toMatchObject({ projectId: null, scope: 'global', stateOmitted: {} });
+      });
+
+      it('leaves a canvas under the limit as it is', async () => {
+        const ws = await liveSocket();
+        annexServer.broadcastCanvasStateToClients('proj_1', { canvasId: 'c' });
+        expect(sent(ws).find((f) => f.type === 'canvas:state').payload.state).toEqual({ canvasId: 'c' });
+      });
+
+      it.each(['agent_message', 'agent_message_chunk', 'agent_thought', 'agent_thought_chunk'])('omits a %s over the limit, with its seq, live and on replay', async (type) => {
+        const ws = await liveSocket();
+        const before = _eventReplay.getLastSeq();
+        publishChatEvent(chat(type, 7, { messageId: 'm', text: 'x'.repeat(9 * MIB) }) as never);
+        const frame = sent(ws).find((f) => f.type === 'frame:omitted');
+        expect(frame.seq).toBe(before + 1);
+        expect(frame.payload).toMatchObject({ originalType: 'chat:event', eventType: type, agentId: 'a', sessionId: 's', eventSeq: 7 });
+        expect(frame.payload.bytes).toBeGreaterThan(9 * MIB);
+        expect(JSON.stringify(frame)).not.toContain('xxxx');
+        expect(_eventReplay.getEventsSince(before)![0]).toMatchObject({ type: 'frame:omitted', seq: before + 1 });
+      });
+
+      it('restores an omitted chunk\'s text with a final message that fits, and omits one that does not', async () => {
+        const ws = await liveSocket();
+        publishChatEvent(chat('agent_message_chunk', 7, { messageId: 'm', text: 'x'.repeat(9 * MIB) }) as never);
+        publishChatEvent(chat('agent_message', 8, { messageId: 'm', text: 'y'.repeat(3 * MIB) }) as never);
+        publishChatEvent(chat('agent_message', 9, { messageId: 'n', text: 'z'.repeat(9 * MIB) }) as never);
+        publishChatEvent(chat('turn_ended', 10, { stopReason: 'end_turn' }) as never);
+        expect(sent(ws).filter((f) => f.type === 'frame:omitted' || f.type === 'chat:event').map((f) => [f.type, f.payload.event?.type ?? f.payload.eventType])).toEqual([
+          ['frame:omitted', 'agent_message_chunk'],
+          ['chat:event', 'agent_message'],
+          ['frame:omitted', 'agent_message'],
+          ['chat:event', 'turn_ended'],
+        ]);
+        expect(sent(ws).find((f) => f.type === 'chat:event').payload.event.data.text).toHaveLength(3 * MIB);
+      });
+
+      describe('with a critical event a phone can not receive', () => {
+        const SIXTEEN = 16 * MIB;
+        const hugeQuestion = (seq: number) => chat('question', seq, { requestId: 'q', questions: [{ id: 'a', prompt: 'x'.repeat(SIXTEEN + MIB), header: 'H', options: [] }] });
+        const frameSeq = (ws: { send: ReturnType<typeof vi.fn> }) => sent(ws).find((f) => f.type === 'chat:event' && f.payload.event.type === 'question').seq;
+
+        it('is sent once live, and a new connection starts past it, so its replay has nothing to send', async () => {
+          const ws = await liveSocket();
+          publishChatEvent(hugeQuestion(7) as never);
+          expect(sent(ws).filter((f) => f.type === 'chat:event')).toHaveLength(1);
+          const seq = frameSeq(ws);
+
+          const next = Object.assign(new EventEmitter(), { readyState: 1, send: vi.fn(), ping: () => {}, close: vi.fn() });
+          annexServer._testing.wsAuthTypes.set(next as never, 'mtls');
+          annexServer._testing.wss!.clients.add(next as never);
+          annexServer._testing.wss!.emit('connection', next);
+          await vi.waitFor(() => expect(sent(next).some((f) => f.type === 'snapshot')).toBe(true));
+          const { lastSeq } = sent(next).find((f) => f.type === 'snapshot').payload;
+          expect(lastSeq).toBeGreaterThanOrEqual(seq);
+          next.send.mockClear();
+          next.emit('message', JSON.stringify({ type: 'replay', since: lastSeq }));
+          expect(sent(next).map((f) => f.type)).toEqual(['replay:start', 'replay:end']);
+        });
+
+        it.each(['replay', 'mobile:replay'])('is never sent again on %s from before it, which gets a gap', async (kind) => {
+          const ws = await liveSocket();
+          publishChatEvent(chat('notice', 6, { level: 'info', code: 'c', message: 'small' }) as never);
+          const before = _eventReplay.getLastSeq();
+          publishChatEvent(hugeQuestion(7) as never);
+          publishChatEvent(chat('notice', 8, { level: 'info', code: 'c', message: 'after' }) as never);
+          ws.send.mockClear();
+
+          const epoch = annexServer._testing.mobileEpoch();
+          ws.emit('message', JSON.stringify({ type: kind, since: before, ...(kind === 'mobile:replay' && { epoch }) }));
+
+          const frames = sent(ws);
+          expect(frames.map((f) => f.type)).toEqual(['replay:gap']);
+          expect(frames[0].lastSeq).toBe(_eventReplay.getLastSeq());
+          // The cursor a gap gives is past it, so the next replay can't reach it.
+          ws.send.mockClear();
+          ws.emit('message', JSON.stringify({ type: kind, since: frames[0].lastSeq, ...(kind === 'mobile:replay' && { epoch }) }));
+          expect(sent(ws).map((f) => f.type)).toEqual(['replay:start', 'replay:end']);
+        });
+
+        it('still replays one a phone can receive, whole, up to the transport limit', async () => {
+          const ws = await liveSocket();
+          const before = _eventReplay.getLastSeq();
+          publishChatEvent(chat('question', 7, { requestId: 'q', questions: [{ id: 'a', prompt: 'x'.repeat(9 * MIB), header: 'H', options: [] }] }) as never);
+          ws.send.mockClear();
+          ws.emit('message', JSON.stringify({ type: 'replay', since: before }));
+          const replayed = sent(ws).find((f) => f.type === 'chat:event');
+          expect(replayed.payload.event.data.questions[0].prompt).toHaveLength(9 * MIB);
+          expect(replayed.replayed).toBe(true);
+        });
+      });
+
+      it('leaves one that fits', async () => {
+        const ws = await liveSocket();
+        publishChatEvent(chat('agent_message', 7, { messageId: 'm', text: 'x'.repeat(3 * MIB) }) as never);
+        expect(sent(ws).some((f) => f.type === 'frame:omitted')).toBe(false);
+        expect(sent(ws).find((f) => f.type === 'chat:event').payload.event.data.text).toHaveLength(3 * MIB);
+      });
+
+      it.each([
+        ['question', { requestId: 'q', questions: [{ id: 'a', prompt: 'x'.repeat(9 * MIB), header: 'H', options: [] }] }],
+        ['question_resolved', { requestId: 'q', answers: { a: 'x'.repeat(9 * MIB) } }],
+        ['user_message', { messageId: 'm', source: 'user', delivery: 'queued', content: [{ type: 'text', text: 'x'.repeat(9 * MIB) }] }],
+        ['queue_state', { queuedMessageIds: ['x'.repeat(9 * MIB)], transition: { messageIds: [], status: 'queued' } }],
+        ['plan_document', { planId: 'p', markdown: 'x'.repeat(9 * MIB), status: 'ready' }],
+        ['some_future_event', { value: 'x'.repeat(9 * MIB) }],
+      ])('never omits a %s, and reports it', async (type, data) => {
+        const ws = await liveSocket();
+        publishChatEvent(chat(type, 7, data) as never);
+        expect(sent(ws).some((f) => f.type === 'frame:omitted')).toBe(false);
+        expect(sent(ws).find((f) => f.type === 'chat:event').payload.event.type).toBe(type);
+        expect(overLimitLog()[0]?.[3]?.meta).toMatchObject({ type: 'chat:event', action: 'sent_over_limit' });
+      });
+    });
+
     it('leaves frames under the limit alone, at no cost past a length check', async () => {
       const ws = await liveSocket();
       const data = JSON.stringify({ type: 'hook:event', payload: { text: 'x'.repeat(1024) } });

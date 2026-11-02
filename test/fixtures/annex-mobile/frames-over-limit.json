@@ -1,0 +1,40 @@
+{
+  "appCanvasMarker": {
+    "payload": {
+      "projectId": null,
+      "scope": "global",
+      "stateOmitted": {
+        "bytes": 9437218,
+        "reason": "frame_limit",
+        "version": 1
+      }
+    },
+    "type": "canvas:state"
+  },
+  "canvasMarker": {
+    "payload": {
+      "projectId": "proj_app",
+      "stateOmitted": {
+        "bytes": 9437218,
+        "reason": "frame_limit",
+        "version": 1
+      }
+    },
+    "type": "canvas:state"
+  },
+  "direction": "desktop-to-phone",
+  "note": "canvas:state with no state: ignore it, or fetch through snapshotTruncation.canvasPaths. frame:omitted: advance your cursor. It only stands in for agent text, never an approval, question, queue change or status.",
+  "omitted": {
+    "payload": {
+      "agentId": "durable_chat",
+      "bytes": 9437376,
+      "eventSeq": 98,
+      "eventType": "agent_message",
+      "originalType": "chat:event",
+      "sessionId": "session_fixture",
+      "version": 1
+    },
+    "seq": "<the seq the event would have had>",
+    "type": "frame:omitted"
+  }
+}

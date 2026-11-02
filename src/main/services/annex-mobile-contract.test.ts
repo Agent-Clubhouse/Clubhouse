@@ -2305,6 +2305,23 @@ describe('Annex mobile contract fixtures', { timeout: TEST_TIMEOUT_MS }, () => {
     if (W.iconDir) fs.rmSync(W.iconDir, { recursive: true, force: true });
   });
 
+  it('frames over the limit: a canvas marker, and the last resort', async () => {
+    const ws = await connect();
+    ws.send.mockClear();
+    annexServer.broadcastCanvasStateToClients('proj_app', { canvasId: 'canvas_1', views: 'v'.repeat(9 * 1024 * 1024) });
+    annexServer.broadcastAppCanvasStateToClients({ canvasId: 'canvas_1', views: 'v'.repeat(9 * 1024 * 1024) });
+    const [projectMarker, appMarker] = frames(ws).filter((f) => f.type === 'canvas:state');
+    expect(projectMarker.payload).not.toHaveProperty('state');
+    publishChatEvent({ v: 2, type: 'agent_message', agentId: 'durable_chat', sessionId: 'session_fixture', seq: 98, ts: NOW, data: { messageId: 'amsg_large', text: 't'.repeat(9 * 1024 * 1024) } } as never);
+    const omitted = frames(ws).find((f) => f.type === 'frame:omitted');
+    expect(omitted.seq).toEqual(expect.any(Number));
+    fixtures.set('frames-over-limit.json', {
+      direction: 'desktop-to-phone',
+      note: 'canvas:state with no state: ignore it, or fetch through snapshotTruncation.canvasPaths. frame:omitted: advance your cursor. It only stands in for agent text, never an approval, question, queue change or status.',
+      canvasMarker: projectMarker, appCanvasMarker: appMarker, omitted: { ...omitted, seq: '<the seq the event would have had>' },
+    });
+  }, TEST_TIMEOUT_MS);
+
   it('large tool output: a preview, live and on replay', async () => {
     const ws = await connect();
     ws.send.mockClear();
