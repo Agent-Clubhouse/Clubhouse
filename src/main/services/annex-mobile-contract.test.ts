@@ -2449,12 +2449,33 @@ describe('Annex mobile contract fixtures', { timeout: TEST_TIMEOUT_MS }, () => {
     expect(noPage.status).toBe(503);
     expect(noPage.body.error).toBe('pending_overflow');
 
+    // The same question, now answered: history, so the gap is marked, with no text and nothing to answer.
+    chat([hugeQuestion, envelope(301, 'question_resolved', { requestId: 'q_big', answers: {} })]);
+    const omitted = await send('GET', route);
+    expect(omitted.status).toBe(200);
+    expect(omitted.body.pendingQuestions).toEqual([]);
+    expect(omitted.body.nextBeforeSeq).toBe(301);
+    const older = await send('GET', `${route}?beforeSeq=301`);
+    expect(older.status).toBe(200);
+    const stub = older.body.events.find((e: any) => e.seq === 300);
+    expect(stub).toMatchObject({ type: 'notice', data: { code: 'event_omitted', omitted: { type: 'question' } } });
+
+    // An old queued row the tail would never reach, while its id is still in the queue.
+    chat([envelope(4, 'user_message', { messageId: 'msg_q', delivery: 'queued', content: [{ type: 'text', text: 'Then run the tests.' }] }), ...large]);
+    const withQueued = await send('GET', route);
+    expect(withQueued.body.queuedMessageIds).toContain('msg_q');
+    expect(withQueued.body.events[0].data.messageId).toBe('msg_q');
+    expect(withQueued.body.events[0].seq).toBe(4);
+    expect(withQueued.body.nextBeforeSeq).toBe(withQueued.body.events[1].seq);
+
     chat(LIVE_TRANSCRIPT);
     fixtures.set('chat-pages.json', {
       note: 'Bodies are shortened to what shows the rule. A 503 leaves a phone read-only until a refresh works.',
       byBytes: { status: byBytes.status, body: { ...shorten(byBytes.body), nextBeforeSeq: '<the oldest seq shown>' } },
       minimal: { status: minimal.status, body: { ...shorten(minimal.body), pendingPermissions: [{ ...row, data: { ...row.data, truncated: { originalBytes: 307400 } } }], pendingPermissionCount: minimal.body.pendingPermissions.length } },
       overflow: { status: noPage.status, body: noPage.body },
+      omittedQuestion: { note: 'A question in history too large for any page. Not pending, so nothing to answer.', event: stub },
+      queuedRow: { note: 'A row named by queuedMessageIds, in front of a tail that does not reach it. nextBeforeSeq does not count it.', firstEvents: withQueued.body.events.slice(0, 2).map((e: any) => ({ seq: e.seq, type: e.type, ...(e.type === 'user_message' && { data: e.data }) })), nextBeforeSeq: '<the seq of the second event>', queuedMessageIds: withQueued.body.queuedMessageIds },
     });
   }, TEST_TIMEOUT_MS);
 

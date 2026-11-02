@@ -88,7 +88,7 @@ function previewBlock(block: ToolCallContent, maxBytes: number): ToolCallContent
  * are collapsed, so this is seen when one's opened. It isn't an always-visible warning.
  */
 const TOOL_PREVIEW_NOTE = '[Clubhouse: this is a preview. This tool call is too large to show in full here. Open it on the desktop for all of it.]';
-const toolPreviewNote = (): ToolCallContent => ({ type: 'text', text: TOOL_PREVIEW_NOTE });
+export const toolPreviewNote = (): ToolCallContent => ({ type: 'text', text: TOOL_PREVIEW_NOTE });
 
 function previewContent(content: ToolCallContent[], totalBytes = TOOL_EVENT_MAX_BYTES / 2): ToolCallContent[] {
   const kept = content.slice(0, TOOL_BLOCKS_MAX);
@@ -204,21 +204,40 @@ export function incompleteInputWarning(options: readonly { kind: string }[], per
   return hasSupportedDeny(options, persistentApprovals) ? INCOMPLETE_INPUT_WARNING : INCOMPLETE_INPUT_WARNING_DESKTOP_ONLY;
 }
 
-/** Requests a phone has been shown a preview of. Approving one is refused, even if it would fit now. */
-const sentIncomplete = new Set<string>();
+/**
+ * Requests a phone has been shown a preview of. Approving one is refused, even if it
+ * would fit now. Per session, because a provider's request ids can repeat, and one
+ * busy chat must not lose another's record.
+ */
+const sentIncomplete = new Map<string, { requestIds: Set<string>; since?: number }>();
 const SENT_INCOMPLETE_MAX = 1000;
+const SENT_INCOMPLETE_SESSIONS_MAX = 256;
 /**
  * The record covers requests from this moment on: from when this process started,
- * or when it last forgot one. For anything older it can't say what a phone was
- * shown, so that isn't taken as complete.
+ * or when it last forgot a session, or for one session when it last forgot a
+ * request. For anything older it can't say what a phone was shown, so that isn't
+ * taken as complete.
  */
 let recordedSince = Date.now();
 
-export function rememberIncomplete(requestId: string): void {
-  sentIncomplete.add(requestId);
-  if (sentIncomplete.size <= SENT_INCOMPLETE_MAX) return;
-  sentIncomplete.delete(sentIncomplete.values().next().value!);
-  recordedSince = Date.now();
+type PermissionRequest = Extract<ChatEvent, { type: 'permission_request' }>;
+
+const recordKey = (event: { agentId: string; sessionId: string }) => `${event.agentId}\0${event.sessionId}`;
+
+export function rememberIncomplete(event: PermissionRequest): void {
+  const key = recordKey(event);
+  const record = sentIncomplete.get(key) ?? { requestIds: new Set<string>() };
+  sentIncomplete.delete(key);
+  sentIncomplete.set(key, record);
+  record.requestIds.add(event.data.requestId);
+  if (record.requestIds.size > SENT_INCOMPLETE_MAX) {
+    record.requestIds.delete(record.requestIds.values().next().value!);
+    record.since = Date.now();
+  }
+  if (sentIncomplete.size > SENT_INCOMPLETE_SESSIONS_MAX) {
+    sentIncomplete.delete(sentIncomplete.keys().next().value!);
+    recordedSince = Date.now();
+  }
 }
 
 /** For tests: as if this process had just started. */
@@ -226,8 +245,6 @@ export function _forgetSentPermissionsForTest(since = Date.now()): void {
   sentIncomplete.clear();
   recordedSince = since;
 }
-
-type PermissionRequest = Extract<ChatEvent, { type: 'permission_request' }>;
 
 /**
  * Can't it be shown that a phone has this whole request? Follows what was sent, not
@@ -240,11 +257,12 @@ type PermissionRequest = Extract<ChatEvent, { type: 'permission_request' }>;
  * event's, so if they differ, it hasn't seen what it would be approving.
  */
 export function isIncompletePermission(event: PermissionRequest, liveOptions?: readonly PermissionRequest['data']['options'][number][]): boolean {
-  if (sentIncomplete.has(event.data.requestId) || 'truncated' in event.data) return true;
+  const record = sentIncomplete.get(recordKey(event));
+  if (record?.requestIds.has(event.data.requestId) || 'truncated' in event.data) return true;
   if (liveOptions && JSON.stringify(liveOptions) !== JSON.stringify(event.data.options)) return true;
   const bytes = bytesOf(JSON.stringify(event.data));
   if (bytes <= PERMISSION_INPUT_MIN_BYTES) return false;
-  return bytes > PERMISSION_INPUT_MAX_BYTES || event.ts < recordedSince;
+  return bytes > PERMISSION_INPUT_MAX_BYTES || event.ts < Math.max(recordedSince, record?.since ?? 0);
 }
 
 /** A permission request's size as a closed set: enough to judge the caps, and nothing about the input. */
@@ -279,8 +297,8 @@ function permissionSourceText(data: PermissionRequest['data']): string {
   }).join('\n');
 }
 
-function permissionPreview(event: PermissionRequest, maxBytes: number, originalBytes: number): PermissionRequest {
-  rememberIncomplete(event.data.requestId);
+function permissionPreview(event: PermissionRequest, maxBytes: number, originalBytes: number, record = true): PermissionRequest {
+  if (record) rememberIncomplete(event);
   const warning = incompleteInputWarning(event.data.options);
   const room = Math.max(512, maxBytes - 2 * bytesOf(warning) - 2 * SMALL_FIELD_BYTES);
   const { rawInput, ...data } = event.data;
@@ -299,14 +317,18 @@ function permissionPreview(event: PermissionRequest, maxBytes: number, originalB
   };
 }
 
-/** A chat's pending permissions as a phone gets them: each within its cap, all within the total, and none dropped. */
-export function boundPendingPermissions(events: PermissionRequest[]): PermissionRequest[] {
+/**
+ * A chat's pending permissions as a phone gets them: each within its cap, all within
+ * the total, and none dropped. `record: false` is for a caller that may not send them,
+ * and then has to remember the previews it does send.
+ */
+export function boundPendingPermissions(events: PermissionRequest[], { record = true }: { record?: boolean } = {}): PermissionRequest[] {
   let remaining = PERMISSIONS_TOTAL_MAX_BYTES;
   return events.map((event, i) => {
     const share = Math.max(PERMISSION_INPUT_MIN_BYTES, Math.floor(remaining / (events.length - i)));
     const allowed = Math.min(PERMISSION_INPUT_MAX_BYTES, share);
     const bytes = bytesOf(JSON.stringify(event.data));
-    const bounded = bytes <= allowed ? event : permissionPreview(event, allowed, bytes);
+    const bounded = bytes <= allowed ? event : permissionPreview(event, allowed, bytes, record);
     remaining -= bounded === event ? bytes : bytesOf(JSON.stringify(bounded.data));
     return bounded;
   });

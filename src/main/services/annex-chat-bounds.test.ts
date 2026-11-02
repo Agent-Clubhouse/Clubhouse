@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import {
   INCOMPLETE_INPUT_WARNING, INCOMPLETE_INPUT_WARNING_DESKTOP_ONLY, OUTER_TOOL_INPUT_MAX_BYTES, PERMISSIONS_TOTAL_MAX_BYTES, PERMISSION_INPUT_MAX_BYTES,
-  TOOL_EVENT_MAX_BYTES, _forgetAppendedNotesForTest, _forgetSentPermissionsForTest, forgetAppendedNotes, boundChatEvent, boundPendingPermissions, boundToolInput, incompleteInputWarning, isIncompletePermission, previewText, toolInputSizeBucket,
+  TOOL_EVENT_MAX_BYTES, _forgetAppendedNotesForTest, _forgetSentPermissionsForTest, forgetAppendedNotes, boundChatEvent, boundPendingPermissions, boundToolInput, incompleteInputWarning, isIncompletePermission, previewText, rememberIncomplete, toolInputSizeBucket,
 } from './annex-chat-bounds';
 
 const update = (data: Record<string, unknown>) => ({ type: 'tool_call_update', agentId: 'a', seq: 1, ts: 0, sessionId: 's', data: { toolCallId: 't', ...data } }) as never;
@@ -321,6 +321,27 @@ describe('permission requests', () => {
       // The others are resolved, so it would fit. A phone still only saw part of it.
       expect(boundPendingPermissions([pending[0]])).toHaveLength(1);
       expect(isIncompletePermission(pending[0])).toBe(true);
+    });
+
+    it('keeps one chat\'s record through another filling its own', () => {
+      _forgetSentPermissionsForTest(Date.now() - 60_000);
+      const kept = { ...medium(), sessionId: 'quiet' };
+      boundPendingPermissions(Array.from({ length: 1 }, () => ({ ...kept, data: { ...kept.data, rawInput: { pad: 'p'.repeat(2 * 1024 * 1024) } } })));
+      expect(isIncompletePermission(kept)).toBe(true);
+      const whole = { ...medium(), agentId: 'other-agent', data: { ...medium().data, requestId: 'whole' } };
+
+      for (let i = 0; i < 1200; i++) rememberIncomplete({ ...medium(), sessionId: 'busy', data: { ...medium().data, requestId: `busy_${i}` } });
+
+      expect(isIncompletePermission(kept)).toBe(true);
+      // Its own record is what's forgotten, and it fails closed, without moving anyone else's.
+      expect(isIncompletePermission({ ...medium(), sessionId: 'busy', ts: Date.now() - 1000, data: { ...medium().data, requestId: 'busy_0' } })).toBe(true);
+      expect(isIncompletePermission(whole)).toBe(false);
+    });
+
+    it('does not mix up a request id reused in another session', () => {
+      _forgetSentPermissionsForTest(Date.now() - 60_000);
+      rememberIncomplete({ ...medium(), sessionId: 'first' });
+      expect(isIncompletePermission({ ...medium(), sessionId: 'second' })).toBe(false);
     });
 
     it('refuses one left pending across a restart, since nothing remembers what was shown', () => {

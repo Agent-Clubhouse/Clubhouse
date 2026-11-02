@@ -1,10 +1,12 @@
 import { beforeEach, describe, expect, it } from 'vitest';
-import { _forgetAppendedNotesForTest, isIncompletePermission } from './annex-chat-bounds';
+import { _forgetAppendedNotesForTest, _forgetSentPermissionsForTest, isIncompletePermission } from './annex-chat-bounds';
 import { CHAT_PAGE_MAX_BYTES, PENDING_MINIMAL_MAX_BYTES, buildChatPage } from './annex-chat-pages';
+import { remoteChatEvent } from './annex-chat-echo';
 
 const MIB = 1024 * 1024;
 const envelope = (seq: number, type: string, data: object) => ({ v: 1, type, agentId: 'a', sessionId: 's', seq, ts: Date.now() + 1000, data }) as any;
 const notice = (seq: number, bytes: number) => envelope(seq, 'notice', { level: 'info', message: 'n'.repeat(bytes) });
+const remote = remoteChatEvent;
 const allow = { optionId: 'a', kind: 'allow_once', label: 'Allow' };
 const deny = { optionId: 'd', kind: 'reject_once', label: 'Deny' };
 const permission = (i: number, options: object[] = [allow, deny], input = 300 * 1024) => envelope(i, 'permission_request', {
@@ -20,7 +22,10 @@ function page(parts: { eligible?: any[]; limit?: number; pendingPermissions?: an
 }
 
 describe('a chat page', () => {
-  beforeEach(() => _forgetAppendedNotesForTest());
+  beforeEach(() => {
+    _forgetAppendedNotesForTest();
+    _forgetSentPermissionsForTest(0);
+  });
 
   it('is all of it when it fits', () => {
     const eligible = [notice(1, 10), notice(2, 10)];
@@ -88,13 +93,145 @@ describe('a chat page', () => {
     expect(page({ eligible }).body).toEqual(page({ eligible }).body);
   });
 
-  it('never changes a question in history, and steps past one no page can hold', () => {
+  it('never changes a question in history, and marks one no page can hold', () => {
     const small = question(1, 'exact text');
     expect(page({ eligible: [small] }).body.events[0]).toEqual(small);
     const { body } = page({ eligible: [notice(1, 10), question(2, 'q'.repeat(9 * MIB))] });
-    expect(body.events).toEqual([]);
-    expect(body.truncated).toBe(true);
-    expect(body.nextBeforeSeq).toBe(2);
+    expect(body.events.map((e: any) => [e.seq, e.type])).toEqual([[1, 'notice'], [2, 'notice']]);
+    expect(body.events[1].data).toMatchObject({ code: 'event_omitted', omitted: { type: 'question' } });
+    expect(body.events[1].data.omitted.originalBytes).toBeGreaterThan(9 * MIB);
+    expect(JSON.stringify(body.events[1])).not.toContain('qqqq');
+    expect(body.truncated).toBe(false);
+  });
+
+  describe('with what is pending taking most of every page', () => {
+    const big = question(90, 'p'.repeat(7.9 * MIB));
+    const walk = (eligible: any[], pendingQuestions: any[]) => {
+      const seen: any[] = [];
+      let remaining = eligible;
+      for (let guard = 0; guard < 50; guard++) {
+        const { body } = page({ eligible: remaining, pendingQuestions });
+        seen.unshift(...body.events);
+        if (!body.truncated) return seen;
+        remaining = eligible.filter((e) => e.seq < body.nextBeforeSeq);
+      }
+      throw new Error('paging did not finish');
+    };
+
+    it('marks an event that would have fit a page without it, rather than skipping it', () => {
+      const { body } = page({ eligible: [notice(1, 200 * 1024)], pendingQuestions: [big] });
+      expect(body.events).toHaveLength(1);
+      expect(body.events[0]).toMatchObject({ seq: 1, type: 'notice', data: { code: 'event_omitted', omitted: { type: 'notice' } } });
+    });
+
+    it('shows a history question again once there is room', () => {
+      const old = question(1, 'q'.repeat(200 * 1024));
+      expect(page({ eligible: [old], pendingQuestions: [big] }).body.events[0].data.omitted.type).toBe('question');
+      expect(page({ eligible: [old] }).body.events[0]).toEqual(old);
+    });
+
+    it('accounts for every event when walked to the start', () => {
+      const eligible = Array.from({ length: 6 }, (_, i) => notice(i + 1, 200 * 1024));
+      expect(walk(eligible, [big]).map((e) => e.seq)).toEqual([1, 2, 3, 4, 5, 6]);
+    });
+
+    it('leaves out only the tail copy of the pending question itself, with the list keeping it whole', () => {
+      const active = question(5, 'p'.repeat(5 * MIB));
+      const { body } = page({ eligible: [notice(1, 10), active], pendingQuestions: [active] });
+      expect(body.pendingQuestions[0]).toEqual(active);
+      expect(body.events.map((e: any) => e.seq)).toEqual([1]);
+      expect(body.events.some((e: any) => e.data.code === 'event_omitted')).toBe(false);
+    });
+  });
+
+  describe('an event too large even as a preview', () => {
+    it('falls back to a stub when many strings add up, re-measured after previewing', () => {
+      const content = Array.from({ length: 60 }, () => ({ type: 'text', text: 't'.repeat(300 * 1024) }));
+      const event = envelope(1, 'user_message', { messageId: 'm1', delivery: 'prompt', content });
+      const { body } = page({ eligible: [event] });
+      expect(body.events).toHaveLength(1);
+      expect(body.events[0]).toMatchObject({ seq: 1, type: 'notice', data: { omitted: { type: 'user_message' } } });
+    });
+
+    it('keeps a tool update whose command is huge, with its id, status and exit code', () => {
+      const event = envelope(1, 'tool_call_update', {
+        toolCallId: 't1', status: 'completed', durationMs: 5,
+        content: [{ type: 'terminal', command: 'c'.repeat(9 * MIB), output: '', exitCode: 3 }],
+      });
+      const { body } = page({ eligible: [event] });
+      const [shown] = body.events;
+      expect(shown.type).toBe('tool_call_update');
+      expect(shown.data).toMatchObject({ toolCallId: 't1', status: 'completed', durationMs: 5, contentMode: 'replace' });
+      expect(shown.data.content.find((b: any) => b.type === 'terminal').exitCode).toBe(3);
+      expect(Buffer.byteLength(JSON.stringify(shown))).toBeLessThanOrEqual(MIB);
+    });
+
+    it('keeps a tool call as one', () => {
+      const event = envelope(1, 'tool_call', { toolCallId: 't1', kind: 'other', title: 'x'.repeat(2 * MIB), status: 'pending', content: Array.from({ length: 60 }, () => ({ type: 'text', text: 't'.repeat(300 * 1024) })) });
+      const [shown] = page({ eligible: [event] }).body.events;
+      expect(shown).toMatchObject({ type: 'tool_call', data: { toolCallId: 't1', kind: 'other', status: 'pending' } });
+      expect(Buffer.byteLength(JSON.stringify(shown))).toBeLessThanOrEqual(MIB);
+    });
+  });
+
+  describe('queued rows', () => {
+    const queued = (seq: number, messageId: string, extra: object = {}) => envelope(seq, 'user_message', {
+      messageId, delivery: 'queued', content: [{ type: 'text', text: `prompt ${seq}` }], routed: { source: 'mcp' }, ...extra,
+    });
+    const metadata = (ids: string[]) => ({ version: 1, queuedMessageIds: ids });
+
+    it('come on the tail however old, in order, without moving the cursor (a real capture: tail 15 to 29, row at 4)', () => {
+      const tail = Array.from({ length: 15 }, (_, i) => notice(i + 15, 512 * 1024));
+      const older = Array.from({ length: 10 }, (_, i) => notice(i + 5, 512 * 1024));
+      const row = queued(4, 'm4');
+      const eligible = [notice(1, 10), row, ...older, ...tail];
+      const result = buildChatPage({ metadata: metadata(['m4']), eligible, limit: 2000, pendingPermissions: [], pendingQuestions: [] });
+      if (result.ok === false) throw new Error('expected a page');
+      expect(Buffer.byteLength(result.body)).toBeLessThanOrEqual(CHAT_PAGE_MAX_BYTES);
+      const body = JSON.parse(result.body);
+      expect(body.events[0]).toEqual(remote(row));
+      expect(body.queuedMessageIds).toEqual(['m4']);
+      expect(body.truncated).toBe(true);
+      expect(body.nextBeforeSeq).toBe(body.events[1].seq);
+      expect(body.nextBeforeSeq).toBeGreaterThan(4);
+      expect(body.events.at(-1).seq).toBe(29);
+    });
+
+    it('include a join by queuedWith, with its source', () => {
+      const join = queued(5, 'm5', { queuedWith: 'm4' });
+      const eligible = [queued(4, 'm4'), join, ...Array.from({ length: 20 }, (_, i) => notice(i + 6, 512 * 1024))];
+      const result = buildChatPage({ metadata: metadata(['m4']), eligible, limit: 2000, pendingPermissions: [], pendingQuestions: [] });
+      const body = JSON.parse((result as any).body);
+      expect(body.events.slice(0, 2).map((e: any) => e.data.messageId)).toEqual(['m4', 'm5']);
+      expect(body.events[1].data).toMatchObject({ queuedWith: 'm4', routed: { source: 'mcp' } });
+    });
+
+    it('are not added once delivered, or from a list that does not name them', () => {
+      const eligible = [queued(4, 'm4'), ...Array.from({ length: 20 }, (_, i) => notice(i + 5, 512 * 1024))];
+      const result = buildChatPage({ metadata: metadata([]), eligible, limit: 2000, pendingPermissions: [], pendingQuestions: [] });
+      expect(JSON.parse((result as any).body).events[0].seq).toBeGreaterThan(4);
+    });
+
+    it('appear once when the walk reaches them', () => {
+      const result = buildChatPage({ metadata: metadata(['m4']), eligible: [notice(1, 10), queued(4, 'm4'), notice(5, 10)], limit: 2000, pendingPermissions: [], pendingQuestions: [] });
+      expect(JSON.parse((result as any).body).events.map((e: any) => e.seq)).toEqual([1, 4, 5]);
+    });
+
+    it('go to a preview when whole they would not fit, keeping their ids, and to a 503 only past that', () => {
+      const huge = (seq: number, id: string) => queued(seq, id, { content: [{ type: 'text', text: 'h'.repeat(5 * MIB) }] });
+      const previewed = buildChatPage({ metadata: metadata(['a', 'b']), eligible: [huge(1, 'a'), huge(2, 'b')], limit: 2000, pendingPermissions: [], pendingQuestions: [] });
+      const body = JSON.parse((previewed as any).body);
+      expect(Buffer.byteLength((previewed as any).body)).toBeLessThanOrEqual(CHAT_PAGE_MAX_BYTES);
+      expect(body.events.map((e: any) => e.data.messageId)).toEqual(['a', 'b']);
+      expect(body.events[0].data).toMatchObject({ delivery: 'queued', routed: { source: 'mcp' } });
+
+      const full = buildChatPage({ metadata: metadata(['a']), eligible: [huge(1, 'a')], limit: 2000, pendingPermissions: [], pendingQuestions: [question(2, 'p'.repeat(7.5 * MIB))] });
+      expect(full.ok).toBe(true);
+      expect(JSON.parse((full as any).body).events[0].data.messageId).toBe('a');
+
+      const none = buildChatPage({ metadata: metadata(['a']), eligible: [huge(1, 'a')], limit: 2000, pendingPermissions: [], pendingQuestions: [question(2, 'p'.repeat(7.9 * MIB))] });
+      expect(none.ok).toBe(false);
+    });
   });
 
   describe('pending permissions', () => {
@@ -140,6 +277,34 @@ describe('a chat page', () => {
       const pendingPermissions = Array.from({ length: 300 }, (_, i) => permission(i + 1));
       const { body } = page({ pendingPermissions, eligible: pendingPermissions.slice(-2) });
       expect(body.events.at(-1).data).toEqual(body.pendingPermissions.at(-1).data);
+    });
+
+    it('have no duplicate row when an old event reuses a pending request id', () => {
+      const current = permission(50, [allow, deny], 10);
+      const reused = { ...permission(3, [allow, deny], 10), data: { ...permission(3, [allow, deny], 10).data, requestId: current.data.requestId, title: 'Old' } };
+      const { body } = page({ eligible: [reused, current], pendingPermissions: [current] });
+      expect(body.events.map((e: any) => [e.seq, e.data.title])).toEqual([[3, 'Old'], [50, current.data.title]]);
+    });
+
+    it('go minimal rather than 503 when that is what lets a question fit', () => {
+      const pendingPermissions = Array.from({ length: 4 }, (_, i) => permission(i, [allow, deny], 200 * 1024));
+      const { result, body } = page({ pendingPermissions, pendingQuestions: [question(9, 'p'.repeat(7.5 * MIB))] });
+      expect(result).toMatchObject({ ok: true, stage: 'minimal' });
+      expect(body.pendingPermissions).toHaveLength(4);
+      expect(body.pendingQuestions[0].data.questions[0].prompt).toHaveLength(7.5 * MIB);
+    });
+
+    it('do not lock approve when the answer was a 503, since nothing was shown', () => {
+      const pendingPermissions = Array.from({ length: 4 }, (_, i) => permission(i, [allow, deny], 200 * 1024));
+      const { result } = page({ pendingPermissions, pendingQuestions: [question(9, 'p'.repeat(9 * MIB))] });
+      expect(result.ok).toBe(false);
+      for (const event of pendingPermissions) expect(isIncompletePermission(event)).toBe(false);
+    });
+
+    it('do lock approve on a request a page did shorten', () => {
+      const pendingPermissions = Array.from({ length: 12 }, (_, i) => permission(i, [allow, deny], 200 * 1024));
+      expect(page({ pendingPermissions }).result.ok).toBe(true);
+      for (const event of pendingPermissions) expect(isIncompletePermission(event)).toBe(true);
     });
 
     it('answer 503 past the minimal limit, with no partial list', () => {
