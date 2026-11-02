@@ -247,13 +247,13 @@ Desktop and phones apply the same rules to a busy transcript (#2664). They are c
 **What groups.** A run of adjacent groupable items with at least 2 counted items becomes one expandable row, for example "Made 6 tool calls, 2 messages from Orchestrator and go-helper". With fewer than 2, the item shows as its normal row.
 
 - Counted: a top-level `tool_call` that hasn't failed, didn't exit non-zero, has no open permission request and shows no images; and a routed message (`messageDisplay` says it's from others) with no `sendState` that isn't a helper question (text starting `[QUESTION FROM HELPER:`).
-- Carried: a thought, and an `agent_message` with no text. These stay in the group, in order, uncounted, and only when something counted follows. Otherwise they show after it.
+- Carried: a thought, and a finished, non-streaming `agent_message` with no text. These stay in the group, in order, uncounted, and only when something counted follows. Otherwise they show after it.
 
 A group's identity is its first item's id, so it survives growing. Its rows aren't built until it opens, and each keeps its own open state.
 
-**What breaks a group and always stays visible.** An `agent_message` with text, including while streaming; the user's own message; a question, plan, error, every notice, a turn end and a subagent card; a failed tool, a command that exited non-zero, a tool awaiting approval and a tool with visible images; a routed message with `sendState`, and a helper question; a change of subagent id. A tool that later fails or needs approval leaves its group and splits it. Compaction stays one notice row, in progress and then settled.
+**What breaks a group and always stays visible.** An `agent_message` with text, and one still streaming even with no text yet; the user's own message; a question, plan, error, every notice, a turn end and a subagent card; a failed tool, a command that exited non-zero, a tool awaiting approval and a tool with visible images; a routed message with `sendState`, and a helper question; a change of subagent id. A tool that later fails or needs approval leaves its group and splits it. Compaction stays one notice row, in progress and then settled.
 
-**Failed output.** The row, exit status and error always show. Output of 6 lines or fewer starts open. Longer output starts closed with its last line showing. The user's toggle wins.
+**Failed output.** The row, exit status and error always show. Output of 6 lines or fewer starts open. Longer output starts closed with its last line showing. Blank lines, including lines of only whitespace, are left out of both the length and that last line, on the desktop and in Clubhouse-Go#217. The user's toggle wins.
 
 **Navigation stops.** One stop per item, never merged, landing on the item's top:
 
@@ -281,7 +281,7 @@ Tools, thoughts, routed messages, the user's messages and subagent work aren't s
 
 Tool images break a group on both. Phones have no subagent rows.
 
-**Not in Clubhouse Go yet.** These are the shared rule, but phones don't do them yet: the long failed output fold (directed, not built), and telling the true bottom from paused near the bottom for Latest (in progress).
+**Implemented in an unmerged Clubhouse Go PR.** Clubhouse-Go#217 implements these shared rules, but it hasn't merged, so they haven't shipped on phones: the long failed output fold (status or exit code, with a last-line preview), and telling the true bottom from paused near the bottom for Latest.
 
 ### Queued messages
 
@@ -311,7 +311,7 @@ Only MCP messages join, and only an MCP row at the end of the queue. `queuedWith
 
 **The `turn_started` exception.** Some rows have no `queue_state` at all: a provider-held queue (capability `queue: "native"`, where `delivery: "queued"` comes with no queue events), and older desktops or transcripts (no `events.queueState` in capabilities). On `turn_started`, consume the oldest row that no `queue_state` has named, in `transition.messageIds` or `queuedMessageIds`. A runtime-owned row is always named before its turn starts, so this never takes one. Don't require `trigger: "queued"`: older transcripts drained their queue with `prompt`.
 
-**System turns.** A `turn_started` with `trigger: "system"` consumes no row, including under the exception above. It is the agent's own work (`/compact`, a permission or question with no turn open, an agent starting on its own), so the row stays for the next turn that isn't `system`.
+**System turns.** A `turn_started` with `trigger: "system"` consumes no row, including under the exception above. It is the agent's own work (`/compact`, a permission or question with no turn open, an agent starting on its own), so the row stays for the next turn that isn't `system`. `systemTurn` in `queued-bursts.json` shows this on a provider-held queue, with `rowId` naming the row that stays.
 
 **Settling.** When the run that held a row is over, the row becomes not delivered. This covers rows still queued, named or not, and rows at `dispatching` with no `delivered` or `failed` yet. They go at the end of the timeline. It happens on:
 
@@ -748,7 +748,7 @@ Errors use the existing envelope with correlation fields: `error {message, op, s
 
 A helper is `durable_docs` in `snapshot.json` and `agent-settings-helper.json`; the other agents there are top-level.
 
-`sender-identity.json` is for [Who sent a message](#who-sent-a-message). `catalog` is the snapshot's agent rows and `agentIcons`, `frames` are the live `chat:event`s, and `expected` is, for each event, what the desktop's code draws given only `catalog` and that event: `{from:"you", text}` or `{from:"others", parts:[{name, agentId, text, avatar}]}`, where `agentId` is the row it found or null. `avatar` is null, `{type:"quick"}`, `{type:"emoji", emoji, background}`, `{type:"image", image}` or `{type:"initials", initials, background}`, with `background` a CSS hex color. `history` and `replay` carry the same messages through the chat route and `mobile:replay`. `colors` and `initials` are the tables to check against. `queued-bursts.json` is for [Queued messages](#queued-messages): events from the real chat runtime for a burst, the same burst missing its first event, a failed send and a provider-held queue, with `rowId` and the combined `routed` to expect.
+`sender-identity.json` is for [Who sent a message](#who-sent-a-message). `catalog` is the snapshot's agent rows and `agentIcons`, `frames` are the live `chat:event`s, and `expected` is, for each event, what the desktop's code draws given only `catalog` and that event: `{from:"you", text}` or `{from:"others", parts:[{name, agentId, text, avatar}]}`, where `agentId` is the row it found or null. `avatar` is null, `{type:"quick"}`, `{type:"emoji", emoji, background}`, `{type:"image", image}` or `{type:"initials", initials, background}`, with `background` a CSS hex color. `history` and `replay` carry the same messages through the chat route and `mobile:replay`. `colors` and `initials` are the tables to check against. `queued-bursts.json` is for [Queued messages](#queued-messages): events from the real chat runtime for a burst, the same burst missing its first event, a failed send, a provider-held queue and a system turn over a held row, with `rowId` and the combined `routed` to expect.
 
 The Dispatcher has its own files: `snapshot-dispatcher.json` (the snapshot's `dispatcher` and its `agent-state` row while it is on), `dispatcher-changed.json` (the event), `agent-settings-dispatcher.json` and `dispatcher-routes.json` (its chat and sessions while on, its GET routes while off, git, and a shell in its folder).
 
