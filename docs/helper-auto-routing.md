@@ -1,6 +1,6 @@
 # Helper Auto routing
 
-**Status: proposed (#2671).** Stages 1 to 3 are built: an explicit `effort` on `start_helper`, presets by `difficulty`, and read-only quota. Everything else here is a design. Clubhouse Go has locked the stage 2 phone wire in [Phone contract](#phone-contract), which is presets only. Later stages are not locked.
+**Status: built through stage 4 (#2671):** an explicit `effort` on `start_helper`, presets by `difficulty`, read-only quota, and `cli: "auto"`. Stage 5, the wider settings audit, is a design. Clubhouse Go has locked the stage 2 phone wire in [Phone contract](#phone-contract), which is presets only. Later stages are not locked.
 
 An orchestrator can ask for a helper by difficulty instead of naming a model, and can opt in to letting Clubhouse pick the provider from load and quota. The choice is deterministic, explained, and made once.
 
@@ -134,7 +134,7 @@ The margin applies only between providers in the same tier. A worse tier always 
 
 From 0/0 with the orchestrator on A, seven starts go A A B B B B A. The spread stays within 2. That balances helper counts, not cost.
 
-**No candidate:** an immediate refusal naming each provider's reason. Nothing is queued. Explicit starts are never blocked by quota or a cooldown, only warned.
+**No candidate:** an immediate refusal naming each provider's reason. Nothing is queued. Explicit starts are never blocked by quota or a cooldown, only warned: `start_helper` returns `quotaWarning`, from what is already known, without asking a CLI.
 
 **One decision.** Routing never runs again for that helper. A wake reuses its saved CLI, model and effort and resumes its session. A quota change, rate limit or failure after the task is delivered never moves it. If a saved model has gone, the wake fails or falls to the CLI default as any agent does, and is reported.
 
@@ -151,7 +151,8 @@ Classified from existing signals: `auth_required`, `account_issue`, `rate_limite
 
 - A failed start can exclude a provider whose quota is unknown, but only for `auth`, `quota` or `availability`, and only for that cooldown. Unknown quota alone never excludes.
 - A `quota` or `auth` error after delivery sets the cooldown for future starts. That helper isn't moved or retried.
-- At most one alternate provider per start, only if the spawn failed and the task was never delivered. Cooldowns are fixed and in memory.
+- Cooldowns are fixed and in memory.
+- **No retry on another provider.** A worktree is set up for one CLI when it's created: its instructions file, skills and config follow that CLI's conventions. So a failed spawn isn't moved. It fails as any helper does, with its task saved for `wake_helper`, and the cooldown keeps the next start off that provider. `retried_after_spawn_failure` is not used.
 
 ## Context window
 
@@ -252,7 +253,7 @@ App-wide preset editing from the phone is in scope.
 
 A cell with nothing valid has `effective: null`. Until the `auto` mode is advertised, `autoEligible` only says whether a provider has presets. With `agentId`, stage 2 also returns `agent:{usable,reason?}`, where `reason` is `dispatcher_locked`, `mcp_off` or `orchestration_off`. The `auto` block appears from stage 4 and `quota` from stage 3. `source` under `auto` is `agent`, `project`, `persona`, `app`, `default`, `mcp_off` or `dispatcher_locked`, and `auto.reason` is set whenever `effective` is false.
 
-**Revisions.** The full snapshot has `helperRoutingRevision`, and a `helper_routing:changed` event carries `{revision}`, so an open or cached page knows to refetch. The revision moves when a saved value changes or when an app-wide read finds that a cell's state changed. It doesn't move for a quota sample, and no snapshot is broadcast for one. It is opaque to a client. A list changing doesn't make a write stale: only a saved value does.
+**Revisions.** The full snapshot has `helperRoutingRevision`, and a `helper_routing:changed` event carries `{revision}`, so an open or cached page knows to refetch. The revision moves when a saved value changes, when an app-wide read finds that a cell's state changed, or when something that decides Auto changes: a project's `off` or default persona from any surface, an orchestrator's switch or persona, or Clubhouse MCP. It doesn't move for a quota sample, and no snapshot is broadcast for one. It is opaque to a client. A list changing doesn't make a write stale: only a saved value does.
 
 **Quota freshness** is pulled. See `docs/mobile-control-v1.md#quota` for the rule: the smallest `refreshAfterSeconds` across providers, at least 5 seconds, with age measured from a `serverTime` anchor on suspend-aware monotonic time, never the phone's clock.
 
@@ -298,8 +299,6 @@ A cell with nothing valid has `effective: null`. Until the `auto` mode is advert
 
 **Write:** command `helperRouting.update` with `{revision,scope,projectId?,auto?,cells?:[{provider,difficulty,model,effort}],reset?:{provider?,difficulty?}}`, returning fresh settings. Only scopes the capability lists are accepted. A project scope accepts only `auto: "off"|null`. Errors: 400 `invalid_helper_routing`, 409 `helper_routing_stale`, 409 `model_unavailable`, 409 `effort_unavailable`. Agent scope stays in `orchestration.autoHelpers` through `agent.update`.
 
-**Stage 2** accepts `scope: "app"` only, with no `projectId`.
-
 **A stale write** writes nothing, for any part of the command, and its 409 returns `{revision, settings}`. A client shows the fresh values and lets the person apply their change again. It must not retry on its own, since that could overwrite someone else's edit.
 
 **Helper snapshot (minimal):** `routing:{mode,difficulty,provider,model,effort,reason}`, codes only. The snapshot frame size tests from #2659 cover these fields, on a helper in every row.
@@ -331,7 +330,6 @@ To replace the persona's model lines once Auto ships. The `start_helper` descrip
 ## Open items
 
 - **Terminal signal limit.** Terminal helpers report no error codes, so their failures after spawn aren't seen, no cooldown is set, and quota stays whatever the last read said.
-- **Worktree check, stage 4.** Whether a worktree prepared for one CLI can be switched to another. If it can't, the retry is dropped and the start fails as today with its task saved. Cooldowns stay either way.
 - **Phone wire** past stage 2 isn't locked.
 - **Context and Auto** haven't been tested together. Effort and context have, from stage 1.
 
@@ -342,5 +340,5 @@ One PR each.
 1. Explicit `effort` on `start_helper`. Built.
 2. Built. Mapping and `difficulty` in `preset` mode: settings, validation, reset, UI, explanation, telemetry, phone read and write including app-wide preset editing, restoring explicit fields after a persona applies, first audit rows.
 3. Built. Quota service: read-only, shown in Settings and on the phone. Routing doesn't use it yet.
-4. `cli: "auto"`: routing, load, sticky, reservations, cooldowns, retry, tool and persona guidance.
+4. Built. `cli: "auto"`: routing, load, sticky, reservations, cooldowns, retry, tool and persona guidance.
 5. Wider audit.

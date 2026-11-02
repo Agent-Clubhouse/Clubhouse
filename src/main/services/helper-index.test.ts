@@ -19,7 +19,7 @@ vi.mock('./project-store', () => ({
 }));
 
 import { clearAgentConfigCache, flushAllAgentConfigs, listDurable, projectKey, setParentAgent } from './agent-config';
-import { clearHelperIndexCache, findParent, listHelpersEverywhere } from './helper-index';
+import { clearHelperIndexCache, findParent, listAllHelpers, listHelpersEverywhere } from './helper-index';
 import type { DurableAgentConfig } from '../../shared/types';
 
 let root: string;
@@ -137,6 +137,19 @@ describe('listHelpersEverywhere', () => {
     expect(ids(await listHelpersEverywhere(home, 'durable_1_orch'))).toContain('durable_4_far');
     await setParentAgent(other, 'durable_4_far', null);
     expect(ids(await listHelpersEverywhere(home, 'durable_1_orch'))).toEqual(['durable_2_local']);
+  });
+});
+
+describe('listAllHelpers (#2671)', () => {
+  it('has every live helper, whoever its parent is, and no one else', async () => {
+    const ids = (await listAllHelpers(home)).map((h) => h.config.id);
+    const helpersOf = async (parent: string) => (await listHelpersEverywhere(home, parent)).map((h) => h.config.id);
+    expect(ids).toEqual(expect.arrayContaining(await helpersOf('durable_1_orch')));
+    expect(ids.length).toBeGreaterThan(0);
+    for (const { config } of await listAllHelpers(home)) {
+      expect(config.parentAgentId).toBeTruthy();
+      expect(config.disposedAt).toBeUndefined();
+    }
   });
 });
 

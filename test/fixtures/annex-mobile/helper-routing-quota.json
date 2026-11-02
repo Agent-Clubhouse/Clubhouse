@@ -182,6 +182,17 @@
     "mixedTtlsAndNotRead": {
       "nextFetchSeconds": 5,
       "response": {
+        "auto": {
+          "effective": false,
+          "reason": "not_enabled",
+          "scopes": {
+            "app": {
+              "editable": true,
+              "value": false
+            }
+          },
+          "source": "default"
+        },
         "epoch": "00000000-0000-4000-8000-000000000001",
         "providers": {
           "claude-code": {
@@ -379,7 +390,7 @@
             "reason": "auto_not_supported"
           }
         },
-        "revision": "r5.3",
+        "revision": "r6.3",
         "serverTime": "2027-01-15T08:00:00.000Z",
         "version": 1
       }
@@ -387,6 +398,17 @@
     "zeroAndMissingTtl": {
       "nextFetchSeconds": 5,
       "response": {
+        "auto": {
+          "effective": false,
+          "reason": "not_enabled",
+          "scopes": {
+            "app": {
+              "editable": true,
+              "value": false
+            }
+          },
+          "source": "default"
+        },
         "epoch": "00000000-0000-4000-8000-000000000001",
         "providers": {
           "claude-code": {
@@ -593,7 +615,7 @@
             "reason": "auto_not_supported"
           }
         },
-        "revision": "r5.3",
+        "revision": "r6.3",
         "serverTime": "2027-01-15T08:05:00.000Z",
         "version": 1
       }

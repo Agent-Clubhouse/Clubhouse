@@ -293,6 +293,14 @@ const AGENT_SECTIONS: ReadonlyArray<Section<AgentContext>> = [
       orchestrationField('maxHelpers', 'max_helpers'),
       orchestrationField('crossProjectHelpers', 'cross_project_helpers'),
       orchestrationField('connectToDispatcher', 'connect_to_dispatcher'),
+      // Whether Auto works for this agent, app and project included. `stored` is its own switch.
+      ['auto_helpers', ({ config, view }) => view.orchestration
+        ? {
+          stored: config.orchestration?.autoHelpers ?? null,
+          effective: view.orchestration.autoHelpersEffective,
+          source: view.orchestration.sources.autoHelpers,
+        }
+        : undefined],
     ],
   },
 ];

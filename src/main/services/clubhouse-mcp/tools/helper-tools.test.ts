@@ -55,6 +55,9 @@ vi.mock('../../agent-creation', () => ({
 
 const helperPathOf = (id: string) => where.get(id) ?? PROJECT;
 vi.mock('../../helper-index', () => ({
+  listAllHelpers: vi.fn(async () => [...agents.values()]
+    .filter((a) => a.parentAgentId && !a.disposedAt)
+    .map((config) => ({ projectPath: helperPathOf(config.id), config }))),
   // A helper's parent is in its parentProjectPath, else in the helper's own project.
   listHelpersEverywhere: vi.fn(async (home: string, id: string) => [...agents.values()]
     .filter((a) => a.parentAgentId === id && !a.disposedAt && (a.parentProjectPath ?? helperPathOf(a.id)) === home)
@@ -72,6 +75,7 @@ const gitDirs = new Map<string, string | null>();
 vi.mock('../../project-store', () => ({ list: async () => [...projects] }));
 const mockListPersonas = vi.fn();
 const personaFiles = new Map<string, string>();
+vi.mock('../../orchestrator-settings', () => ({ getSettings: () => ({ enabled: ['claude-code', 'codex-cli', 'copilot-cli'] }) }));
 vi.mock('../../settings-audit', () => ({ appendSettingsAudit: async () => true }));
 const mockContextCheck = vi.fn();
 vi.mock('../../context-window', () => ({ contextWindowCheck: (...args: unknown[]) => mockContextCheck(...args) }));
@@ -159,6 +163,7 @@ vi.mock('../../../orchestrators', () => ({
     ? {
       id,
       getCapabilities: () => ({}),
+      checkAvailability: async () => ({ available: true }),
       ...(modelLists.has(id) && { listModels: async () => modelLists.get(id) }),
       ...(id === 'claude-code' && { acceptsModel: (m: string, l: ModelList) => claudeAcceptsModel(m, l) }),
     }
@@ -190,6 +195,8 @@ import { listStartRequests, START_REQUEST_TTL_MS, _resetStartRequestsForTesting 
 import { callTool, getScopedToolList, _resetForTesting } from '../tool-registry';
 import { agentRegistry } from '../../agent-registry';
 import { setHelperStartFields as agentConfigSetStartFields } from '../../agent-config';
+import { _resetProviderQuotaForTesting, noteProviderFailure } from '../../provider-quota';
+import { _resetHelperRoutingForTesting } from '../../helper-routing';
 import { setOrchestrationEnabled, _resetOrchestrationGateForTesting } from '../orchestration-gate';
 
 // ── Fixtures ───────────────────────────────────────────────────────────────
@@ -236,6 +243,8 @@ function controllableCreation() {
       id: `helper_${params.name}`,
       name: params.name,
       parentAgentId: params.parentAgentId,
+      ...((params as { orchestrator?: DurableAgentConfig['orchestrator'] }).orchestrator && { orchestrator: (params as { orchestrator?: DurableAgentConfig['orchestrator'] }).orchestrator }),
+      ...((params as { routing?: DurableAgentConfig['routing'] }).routing && { routing: (params as { routing?: DurableAgentConfig['routing'] }).routing }),
       ...(params.parentProjectPath && { parentProjectPath: params.parentProjectPath }),
       disposable: true,
       branch: `${folder}/standby`,
@@ -739,11 +748,6 @@ describe('start_helper difficulty (#2671)', () => {
     expect(mockStartDurableCreation).not.toHaveBeenCalled();
   });
 
-  it('cli "auto" isn\'t offered yet', async () => {
-    const result = await start({ cli: 'auto', difficulty: 'hard' });
-    expect(result.isError).toBe(true);
-    expect(result.content[0].text).toContain('Unknown cli "auto"');
-  });
 
   it('refuses a difficulty on a CLI with no presets', async () => {
     const result = await start({ cli: 'copilot-cli', difficulty: 'easy' });
@@ -844,6 +848,145 @@ describe('start_helper difficulty (#2671)', () => {
     creation.ready('helper_h');
     await _settleHelperStartsForTesting();
     expect(vi.mocked(agentConfigSetStartFields)).toHaveBeenCalledWith(PROJECT, 'helper_h', { routingContext: 'not_applied' });
+  });
+});
+
+describe('start_helper cli "auto" (#2671)', () => {
+  const live = (models: Array<[string, string[]]>): ModelList => ({ source: 'live', via: 'handshake', fetchedAt: 0, models: models.map(([id, efforts]) => ({ id, label: id, efforts })) });
+  const start = (args: Record<string, unknown>) => callTool('orch', 'start_helper', { name: 'h', task: 't', cli: 'auto', difficulty: 'hard', ...args });
+  const policy = { orchestrate: true, access: 'same', control: 'hands-off', maxHelpers: 5, autoHelpers: true, sources: { autoHelpers: 'agent' } };
+
+  beforeEach(() => {
+    _resetProviderQuotaForTesting();
+    _resetHelperRoutingForTesting();
+    personaFiles.clear();
+    modelLists.set('claude-code', live([['opus', ['high']], ['sonnet', ['medium']], ['haiku', ['low']]]));
+    modelLists.set('codex-cli', live([['gpt-6.1-sol', ['high']], ['gpt-6.1-terra', ['medium']], ['gpt-6-luna', ['low']]]));
+    mockGetPolicy.mockResolvedValue(policy);
+    agents.set('orch', { ...agents.get('orch')!, orchestration: { orchestrate: true, autoHelpers: true } } as never);
+  });
+
+  it('needs a difficulty, and refuses a model or effort, which belong to one CLI', async () => {
+    for (const args of [{ difficulty: undefined }, { model: 'opus' }, { effort: 'high' }]) {
+      const result = await start(args);
+      expect(result.isError, JSON.stringify(args)).toBe(true);
+    }
+    expect(mockStartDurableCreation).not.toHaveBeenCalled();
+  });
+
+  it('refuses while Auto is off, and creates nothing', async () => {
+    mockGetPolicy.mockResolvedValue({ ...policy, autoHelpers: false, sources: { autoHelpers: 'default' } });
+    agents.set('orch', { ...agents.get('orch')!, orchestration: { orchestrate: true } } as never);
+    const result = await start({});
+    expect(result.isError).toBe(true);
+    expect(result.content[0].text).toContain('Auto provider is off');
+    expect(mockStartDurableCreation).not.toHaveBeenCalled();
+  });
+
+  it('picks a provider, passes its model and effort, and reports the decision', async () => {
+    controllableCreation();
+    const body = parse(await start({}));
+    expect(body).toMatchObject({ effort: 'high', routing: { mode: 'auto', balanced: true, requested: { provider: 'auto' }, resolved: { provider: 'claude-code', model: 'opus', effort: 'high' } } });
+    expect(mockStartDurableCreation.mock.calls[0][1]).toMatchObject({ orchestrator: 'claude-code', model: 'opus', effort: 'high' });
+    expect(mockPersonaInjection).toHaveBeenLastCalledWith(PROJECT, expect.anything(), ['orchestrator', 'model']);
+  });
+
+  it('a burst of parallel starts spreads out', async () => {
+    controllableCreation();
+    const bodies = await Promise.all(['a', 'b', 'c', 'd'].map((name) => start({ name, folder: name }).then(parse)));
+    const providers = bodies.map((b) => (b.routing as { resolved: { provider: string } }).resolved.provider);
+    // Whichever start reached the lock first: the decisions are in lock order, and the split is what counts.
+    expect([...providers].sort()).toEqual(['claude-code', 'claude-code', 'codex-cli', 'codex-cli']);
+  });
+
+  it('a sleeping helper isn\'t load', async () => {
+    controllableCreation();
+    addAgent({ id: 's1', parentAgentId: 'orch', orchestrator: 'claude-code' });
+    addAgent({ id: 's2', parentAgentId: 'orch', orchestrator: 'claude-code' });
+    const body = parse(await start({}));
+    expect(body.routing).toMatchObject({ resolved: { provider: 'claude-code' }, load: { 'claude-code': 0 } });
+  });
+
+  it('a running helper of another orchestrator is load', async () => {
+    controllableCreation();
+    addAgent({ id: 'r1', parentAgentId: 'other', orchestrator: 'claude-code' });
+    addAgent({ id: 'r2', parentAgentId: 'other', orchestrator: 'claude-code' });
+    running.add('r1');
+    running.add('r2');
+    const body = parse(await start({}));
+    expect(body.routing).toMatchObject({ reason: 'lower_load', resolved: { provider: 'codex-cli' }, load: { 'claude-code': 2, 'codex-cli': 0 } });
+  });
+
+  it('checks again under the lock: turned off while it read the candidates, it refuses and creates nothing', async () => {
+    controllableCreation();
+    // First the check before reading, then the one under the lock.
+    mockGetPolicy.mockResolvedValueOnce(policy);
+    mockGetPolicy.mockResolvedValueOnce(policy);
+    mockGetPolicy.mockImplementation(async () => ({ ...policy, autoHelpers: false, sources: { autoHelpers: 'agent' } }));
+    const result = await start({});
+    expect(result.isError).toBe(true);
+    expect(result.content[0].text).toContain('Auto provider is off');
+    expect(mockStartDurableCreation).not.toHaveBeenCalled();
+  });
+
+  it('an explicit start on a cooling provider isn\'t blocked, only told', async () => {
+    controllableCreation();
+    await noteProviderFailure('codex-cli', PROJECT, 'auth');
+    const body = parse(await callTool('orch', 'start_helper', { name: 'h', task: 't', cli: 'codex-cli', model: 'gpt-6.1-sol', effort: 'high' }));
+    expect(body.state).toBe('starting');
+    expect(body.quotaWarning).toContain('as asked');
+    expect(body.routing).toMatchObject({ warning: { code: 'cooling_down', asOf: expect.any(String) } });
+    expect(mockStartDurableCreation.mock.calls[0][1]).toMatchObject({ model: 'gpt-6.1-sol', orchestrator: 'codex-cli' });
+  });
+
+  it('a held start keeps the warning for the person, and an approval decides it again', async () => {
+    mockGetPolicy.mockResolvedValue({ ...policy, control: 'ask-before-start' });
+    await noteProviderFailure('codex-cli', PROJECT, 'auth');
+    await callTool('orch', 'start_helper', { name: 'h', task: 't', cli: 'codex-cli', model: 'gpt-6.1-sol' });
+    const [request] = listStartRequests();
+    expect(request.warning).toMatchObject({ code: 'cooling_down' });
+    controllableCreation();
+    _resetProviderQuotaForTesting();
+    const decision = await approveHelperStart(PROJECT, request.requestId);
+    expect(decision.ok).toBe(true);
+    expect(decision.warning).toBeUndefined();
+  });
+
+  it('a held start stays requested, and decides at approval', async () => {
+    mockGetPolicy.mockResolvedValue({ ...policy, control: 'ask-before-start' });
+    const held = parse(await start({}));
+    expect(held.state).toBe('needs_approval');
+    expect(held).not.toHaveProperty('routing');
+    expect(listStartRequests()[0].args).toMatchObject({ cli: 'auto', difficulty: 'hard' });
+  });
+
+  it('a failed spawn leaves the helper where it is, sets a cooldown, and doesn\'t move it', async () => {
+    const creation = controllableCreation();
+    mockSpawnAgent.mockRejectedValueOnce(new Error('spawn failed'));
+    await start({ task: 'the real task' });
+    creation.ready('helper_h');
+    await _settleHelperStartsForTesting();
+    // The failed helper stays on its provider, and keeps its task for a wake.
+    expect(agents.get('helper_h')).toMatchObject({ orchestrator: 'claude-code', pendingTask: 'the real task', routing: { resolved: { provider: 'claude-code' } } });
+    expect(sent.get('orch')?.at(-1)).toContain('failed to start');
+    expect(sent.get('orch')?.at(-1)).toContain('wake_helper delivers it');
+    expect(mockSpawnAgent).toHaveBeenCalledTimes(1);
+    const secondStart = await start({ name: 'h2', folder: 'h2' });
+    expect(secondStart.content[0].text).toContain('"cooling_down"');
+    const again = parse(secondStart);
+    expect(again.routing).toMatchObject({ resolved: { provider: 'codex-cli' }, skipped: { 'claude-code': 'cooling_down' } });
+  });
+
+  it('wake never decides again', async () => {
+    const creation = controllableCreation();
+    await start({});
+    creation.ready('helper_h');
+    await _settleHelperStartsForTesting();
+    running.delete('helper_h');
+    mockSpawnAgent.mockClear();
+    modelLists.delete('claude-code');
+    await callTool('orch', 'wake_helper', { helper: 'helper_h' });
+    expect(mockSpawnAgent.mock.calls[0][0]).toMatchObject({ orchestrator: 'claude-code' });
   });
 });
 

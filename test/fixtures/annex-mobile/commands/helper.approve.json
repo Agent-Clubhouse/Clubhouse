@@ -307,6 +307,82 @@
         },
         "status": 404
       }
+    },
+    {
+      "name": "no_candidate",
+      "request": {
+        "commandId": "cmd_163",
+        "epoch": "00000000-0000-4000-8000-000000000001",
+        "requestId": "hstart_00000000-0000-4000-8000-000000000016",
+        "type": "helper.approve",
+        "version": 1
+      },
+      "response": {
+        "body": {
+          "commandId": "cmd_163",
+          "epoch": "00000000-0000-4000-8000-000000000001",
+          "error": {
+            "code": "no_candidate",
+            "message": "Couldn’t start impl-ipc because no provider can take a hard task right now (claude-code: Close to its limit; codex-cli: The provider reports its limit reached)."
+          },
+          "status": "rejected",
+          "version": 1
+        },
+        "status": 409
+      }
+    },
+    {
+      "name": "accepted start, with a warning",
+      "request": {
+        "commandId": "cmd_164",
+        "epoch": "00000000-0000-4000-8000-000000000001",
+        "requestId": "hstart_00000000-0000-4000-8000-000000000017",
+        "type": "helper.approve",
+        "version": 1
+      },
+      "response": {
+        "body": {
+          "commandId": "cmd_164",
+          "epoch": "00000000-0000-4000-8000-000000000001",
+          "result": {
+            "approved": true,
+            "helperId": "durable_helper_new",
+            "kind": "start",
+            "requestId": "hstart_00000000-0000-4000-8000-000000000017",
+            "warning": {
+              "asOf": "2027-01-15T08:00:00.000Z",
+              "code": "quota_near_limit",
+              "message": "codex-cli is close to its plan limit. The helper is started on it anyway, as asked."
+            }
+          },
+          "status": "completed",
+          "version": 1
+        },
+        "status": 200
+      }
+    },
+    {
+      "name": "auto_off",
+      "request": {
+        "commandId": "cmd_165",
+        "epoch": "00000000-0000-4000-8000-000000000001",
+        "requestId": "hstart_00000000-0000-4000-8000-000000000018",
+        "type": "helper.approve",
+        "version": 1
+      },
+      "response": {
+        "body": {
+          "commandId": "cmd_165",
+          "epoch": "00000000-0000-4000-8000-000000000001",
+          "error": {
+            "code": "auto_off",
+            "message": "Couldn’t start impl-ipc because Auto provider is off: This project turned it off."
+          },
+          "status": "rejected",
+          "version": 1
+        },
+        "status": 409
+      }
     }
   ],
   "type": "helper.approve"

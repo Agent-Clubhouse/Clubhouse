@@ -530,17 +530,22 @@ export const ATTR = {
   profileActive: boolAttr('clubhouse.profile.active'),
   wrapperApplied: boolAttr('clubhouse.wrapper.applied'),
   // A helper's start and the presets behind it (#2671). Codes only: never a raw model id, a task or a persona.
-  helperRoutingRequestedCli: enumAttr('clubhouse.helper_routing.requested_cli', ['claude-code', 'codex-cli', 'copilot-cli', 'other', 'unset']),
+  helperRoutingRequestedCli: enumAttr('clubhouse.helper_routing.requested_cli', ['claude-code', 'codex-cli', 'copilot-cli', 'auto', 'other', 'unset']),
   helperRoutingDifficulty: enumAttr('clubhouse.helper_routing.difficulty', ['easy', 'medium', 'hard', 'none']),
-  helperRoutingMode: enumAttr('clubhouse.helper_routing.mode', ['explicit', 'preset']),
+  helperRoutingMode: enumAttr('clubhouse.helper_routing.mode', ['explicit', 'preset', 'auto']),
   helperRoutingEffort: enumAttr('clubhouse.helper_routing.effort', ['none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max', 'ultra', 'other']),
   helperRoutingPreset: enumAttr('clubhouse.helper_routing.preset', ['builtin', 'custom', 'none']),
-  helperRoutingConfigSource: enumAttr('clubhouse.helper_routing.config_source', ['request', 'persona', 'orchestrator', 'custom_mapping', 'builtin_mapping', 'cli_default']),
-  helperRoutingReason: enumAttr('clubhouse.helper_routing.reason', ['explicit_request', 'persona_pinned', 'preset_on_cli']),
-  helperRoutingFallback: enumAttr('clubhouse.helper_routing.fallback', ['none', 'builtin_preset', 'model_unverified']),
+  helperRoutingConfigSource: enumAttr('clubhouse.helper_routing.config_source', ['request', 'persona', 'orchestrator', 'auto', 'custom_mapping', 'builtin_mapping', 'cli_default']),
+  helperRoutingReason: enumAttr('clubhouse.helper_routing.reason', ['explicit_request', 'persona_pinned', 'preset_on_cli', 'only_candidate', 'lower_load', 'better_quota_tier', 'sticky', 'default_order']),
+  helperRoutingFallback: enumAttr('clubhouse.helper_routing.fallback', ['none', 'builtin_preset', 'candidate_skipped', 'model_unverified']),
   helperRoutingPolicyVersion: intAttr('clubhouse.helper_routing.policy_version'),
+  helperRoutingLoad: enumAttr('clubhouse.helper_routing.load_bucket', ['0', '1', '2-3', '4-7', '8+']),
+  helperRoutingQuotaBasis: enumAttr('clubhouse.helper_routing.quota_basis', ['known', 'unknown_scored_as_healthy', 'none']),
+  helperRoutingQuotaAge: enumAttr('clubhouse.helper_routing.quota_age', ['fresh', 'under_15m', 'over_15m', 'none']),
+  helperAutoRefusal: enumAttr('clubhouse.helper_auto.refusal', ['auto_off', 'no_candidate', 'no_valid_mapping', 'auto_not_supported']),
+  helperAutoCooldown: enumAttr('clubhouse.helper_auto.cooldown', ['auth', 'quota', 'availability']),
   helperQuotaState: enumAttr('clubhouse.helper_quota.state', ['known', 'low', 'near_limit', 'exhausted', 'unknown']),
-  helperPresetsAction: enumAttr('clubhouse.helper_presets.action', ['set', 'reset_cell', 'reset_provider', 'reset_all']),
+  helperPresetsAction: enumAttr('clubhouse.helper_presets.action', ['set', 'toggle', 'reset_cell', 'reset_provider', 'reset_all']),
   helperPresetsSurface: enumAttr('clubhouse.helper_presets.surface', ['ui', 'mcp', 'mobile', 'dispatcher', 'persona', 'system']),
   /** Bucketed from the model string; never the raw model name. */
   modelFamily: enumAttr('clubhouse.model.family', ['opus', 'sonnet', 'haiku', 'gpt-5', 'default', 'other']),
@@ -1419,6 +1424,10 @@ export const EVENTS = {
   'clubhouse.helper.routed': { level: 'standard' },
   /** Helper presets were changed or reset, or a change was refused. Attributes: action, surface, `clubhouse.outcome`. */
   'clubhouse.helper_routing.changed': { level: 'standard' },
+  /** `cli: "auto"` was refused. Attributes: the refusal's code. */
+  'clubhouse.helper_auto.refused': { level: 'standard' },
+  /** Auto is leaving a provider alone for a while after a failure. Attributes: `orchestrator`, the class. */
+  'clubhouse.helper_auto.cooling': { level: 'standard' },
   /** A CLI's plan limits were read, token-free. Attributes: `orchestrator`, the state, `clubhouse.outcome`. */
   'clubhouse.helper_quota.read': { level: 'standard' },
   /** Attributes: `clubhouse.theme.kind`, `clubhouse.theme.builtin_id`. */

@@ -146,10 +146,13 @@ export function mobileOrchestration(policy: ResolvedOrchestrationPolicy) {
   const { orchestrate, access, control, maxHelpers, crossProjectHelpers, connectToDispatcher, sources } = policy;
   return {
     orchestrate, access, control, maxHelpers, crossProjectHelpers, connectToDispatcher,
+    // This agent's own switch, or null while it follows the app. Whether Auto works is autoHelpersEffective.
+    autoHelpers: sources.autoHelpers === 'agent' ? policy.mcpOff?.autoHelpers ?? policy.autoHelpers : null,
+    autoHelpersEffective: policy.autoEffective?.effective ?? false,
     mcpEnabled: !policy.mcpOff,
     sources: {
       orchestrate: sources.orchestrate, access: sources.access, control: sources.control, maxHelpers: sources.maxHelpers,
-      crossProjectHelpers: sources.crossProjectHelpers, connectToDispatcher: sources.connectToDispatcher,
+      crossProjectHelpers: sources.crossProjectHelpers, connectToDispatcher: sources.connectToDispatcher, autoHelpers: sources.autoHelpers,
     },
     maxHelpersCap: maxHelpersCap(), controls: [...ORCHESTRATION_CONTROLS], accessLevels: [...ACCESS_CHOICES],
   };
@@ -163,7 +166,7 @@ export type MobileOrchestration = ReturnType<typeof mobileOrchestration>;
  * clears them too, as Reset on the desktop would.
  */
 const CLEAR_ALL: OrchestrationPolicyPatch = {
-  orchestrate: null, access: null, control: null, maxHelpers: null, crossProjectHelpers: null, connectToDispatcher: null,
+  orchestrate: null, access: null, control: null, maxHelpers: null, crossProjectHelpers: null, connectToDispatcher: null, autoHelpers: null,
 };
 
 /**

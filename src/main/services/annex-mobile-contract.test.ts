@@ -12,6 +12,9 @@
  * `npm run fixtures:annex-mobile -- --check`) fails when they are stale.
  */
 import { _resetProviderQuotaForTesting } from './provider-quota';
+import { noteRoutingPolicyChanged } from './helper-routing-changes';
+import { _settleHelperRoutingForTesting } from './helper-routing';
+import type { HelperStartWarning } from '../../shared/helper-routing';
 import { QUOTA_STALE_MS, quotaRefetchDelaySeconds } from '../../shared/helper-routing';
 import { CLAUDE_WORKING_WINDOW_NOTE } from '../../shared/context-window';
 import { describe, it, expect, beforeAll, afterAll, beforeEach, vi } from 'vitest';
@@ -36,9 +39,11 @@ const W = vi.hoisted(() => ({
   peers: new Map<string, any>(),
   tls: null as null | Record<string, unknown>,
   tlsFingerprint: '',
-  helperStart: 'approve' as 'approve' | 'blocked' | 'refused' | 'no_valid_mapping',
+  helperStart: 'approve' as 'approve' | 'blocked' | 'refused' | 'no_valid_mapping' | 'no_candidate' | 'auto_off' | 'warned',
   presets: {} as Record<string, Record<string, { model: string; effort: string | null }>>,
   presetsRevision: 0,
+  autoHelpers: false,
+  projectDefaults: {} as Record<string, unknown>,
   helperStartRefusals: 0,
   providers: {} as Record<string, any>,
   dispose: { ok: true } as Record<string, unknown>,
@@ -279,7 +284,13 @@ vi.mock('./agent-creation', async (importOriginal) => ({
   },
 }));
 vi.mock('./agent-settings-service', () => ({
-  readProjectAgentDefaults: async () => ({}),
+  readProjectAgentDefaults: async () => W.projectDefaults,
+  writeProjectAgentDefaults: async (_path: string, defaults: Record<string, unknown>) => {
+    const { noteRoutingPolicyChanged: note } = await import('./helper-routing-changes');
+    const changed = W.projectDefaults.helperAuto !== defaults.helperAuto;
+    W.projectDefaults = defaults;
+    if (changed) note();
+  },
   readMcpCatalog: async () => [
     { id: 'github', name: 'GitHub', description: 'Issues and pull requests', args: [] },
     { id: 'ado', name: 'Azure DevOps', description: 'Work items', args: [{ name: 'org' }] },
@@ -299,6 +310,9 @@ vi.mock('./orchestration-settings', () => ({
   getPresets: () => W.presets,
   getPresetsRevision: () => W.presetsRevision,
   savePresets: async (presets: unknown) => { W.presets = presets as never; W.presetsRevision++; },
+  getAutoHelpers: () => W.autoHelpers,
+  saveAutoHelpers: async (on: boolean) => { W.autoHelpers = on; W.presetsRevision++; },
+  bumpPresetsRevision: async () => { W.presetsRevision++; },
 }));
 vi.mock('./settings-audit', () => ({ appendSettingsAudit: async () => true }));
 // The helper presets read the CLIs' model lists: only those cases put providers here.
@@ -339,6 +353,15 @@ vi.mock('./clubhouse-mcp/tools/helper-tools', async () => {
       if (W.helperStart === 'no_valid_mapping') {
         W.helperStartRefusals++;
         return { ok: false, code: 'no_valid_mapping', message: 'Couldn’t start impl-ipc because no hard preset for codex-cli is offered now. Change it in Settings > Helpers.' };
+      }
+      if (W.helperStart === 'warned') {
+        return { ok: true, helperId: 'durable_helper_new', message: 'Started', warning: { code: 'quota_near_limit', asOf: new Date(NOW).toISOString(), message: 'codex-cli is close to its plan limit. The helper is started on it anyway, as asked.' } };
+      }
+      if (W.helperStart === 'no_candidate') {
+        return { ok: false, code: 'no_candidate', message: 'Couldn’t start impl-ipc because no provider can take a hard task right now (claude-code: Close to its limit; codex-cli: The provider reports its limit reached).' };
+      }
+      if (W.helperStart === 'auto_off') {
+        return { ok: false, code: 'auto_off', message: 'Couldn’t start impl-ipc because Auto provider is off: This project turned it off.' };
       }
       return { ok: true, helperId: 'durable_helper_new', message: 'Started' };
     },
@@ -540,8 +563,8 @@ function resetWorld() {
   _resetDisposeRequestsForTesting();
 }
 
-function helperStart(): string {
-  const result = recordStartRequest(APP, 'durable_chat', 'planner', { name: 'impl-ipc', task: 'Wire the IPC', model: 'opus' }, NOW - 600_000);
+function helperStart(args: Record<string, string> = { model: 'opus' }, warning?: HelperStartWarning): string {
+  const result = recordStartRequest(APP, 'durable_chat', 'planner', { name: 'impl-ipc', task: 'Wire the IPC', ...args }, NOW - 600_000, warning);
   if (!result.ok) throw new Error('start request not recorded');
   return result.request.requestId;
 }
@@ -1602,10 +1625,11 @@ describe('Annex mobile contract fixtures', { timeout: TEST_TIMEOUT_MS }, () => {
     const quotas: Record<string, () => Promise<unknown>> = { 'claude-code': async () => plan(41), 'codex-cli': async () => plan(41) };
     W.providers = Object.fromEntries(['claude-code', 'codex-cli', 'copilot-cli'].map((id) => [id, {
       id,
+      checkAvailability: async () => ({ available: true }),
       ...(id !== 'copilot-cli' && { listModels: async () => lists[id], readPlanQuota: () => quotas[id]() }),
     }]));
     const ROUTE = '/api/v1/mobile/helper-routing';
-    const FAMILIES = ['reason', 'fallback', 'skipped', 'quota', 'unknown', 'window', 'cell', 'generic'];
+    const FAMILIES = ['reason', 'fallback', 'skipped', 'quota', 'unknown', 'window', 'autoSource', 'autoOff', 'cell', 'generic'];
     const cell = (res: Awaited<ReturnType<typeof exchange>>, provider: string, difficulty: string) => res.response.body.providers[provider].cells[difficulty];
 
     // A bare read has every label family, so a phone can cache them once per revision.
@@ -1790,6 +1814,7 @@ describe('Annex mobile contract fixtures', { timeout: TEST_TIMEOUT_MS }, () => {
     expect(zeroTtl.providers['claude-code'].quota).toMatchObject({ state: 'known', refreshAfterSeconds: 0 });
     expect(nextFetch(zeroTtl)).toBe(5);
     finishRead(plan(41));
+    quotas['claude-code'] = async () => plan(41);
     vi.mocked(Date.now).mockReturnValue(NOW);
     const noTtl = { providers: { 'copilot-cli': zeroTtl.providers['copilot-cli'] } };
     expect(nextFetch(noTtl)).toBeNull();
@@ -1809,6 +1834,135 @@ describe('Annex mobile contract fixtures', { timeout: TEST_TIMEOUT_MS }, () => {
     expect(JSON.stringify(quotaCases)).not.toMatch(/accountId|planType|subscription|token|key/i);
 
     fixtures.set('helper-routing-helper.json', { snapshotField: 'routing', snapshotRow: row, snapshotRevisionField: 'helperRoutingRevision', settingsField: 'routing', cases: settings });
+
+    // Auto: on and off at each level, and what a decision looks like.
+    W.autoHelpers = false;
+    const autoOf = async (route: string) => (await exchange('GET', route)).response.body.auto;
+    const autoCases: Record<string, any> = { offByDefault: await autoOf(ROUTE) };
+    W.autoHelpers = true;
+    autoCases.onAppWide = await autoOf(ROUTE);
+    autoCases.projectScope = await autoOf(`${ROUTE}?projectId=proj_app`);
+    const projectDefaults = W.projectDefaults;
+    W.projectDefaults = { ...projectDefaults, helperAuto: 'off' };
+    autoCases.projectOff = await autoOf(`${ROUTE}?projectId=proj_app`);
+    W.projectDefaults = projectDefaults;
+    autoCases.agentFollowingApp = await autoOf(`${ROUTE}?agentId=durable_chat`);
+    autoCases.notOrchestrating = await autoOf(`${ROUTE}?agentId=durable_sleepy`);
+    W.durables[APP][0].mcpOverride = false;
+    autoCases.mcpOff = await autoOf(`${ROUTE}?agentId=durable_chat`);
+    delete W.durables[APP][0].mcpOverride;
+    W.dispatcher.enabled = true;
+    autoCases.dispatcherLocked = await autoOf(`${ROUTE}?agentId=durable_dispatcher`);
+    W.dispatcher.enabled = false;
+    expect(autoCases.offByDefault).toMatchObject({ effective: false, source: 'default', reason: 'not_enabled' });
+    expect(autoCases.onAppWide).toMatchObject({ effective: true, source: 'app' });
+    expect(autoCases.projectOff).toMatchObject({ effective: false, source: 'project', reason: 'project_off', scopes: { project: { value: 'off', choices: ['off', null] } } });
+    expect(autoCases.mcpOff).toMatchObject({ effective: false, source: 'mcp_off', reason: 'mcp_off' });
+    expect(autoCases.dispatcherLocked).toMatchObject({ effective: false, source: 'dispatcher_locked', reason: 'dispatcher_locked', scopes: { agent: { editable: false } } });
+    expect(autoCases.notOrchestrating).toMatchObject({ effective: false, reason: 'orchestration_off' });
+
+    const autoRevision = (await exchange('GET', ROUTE)).response.body.revision;
+    const on = await command('accepted auto off app-wide', write({ revision: autoRevision, auto: false }));
+    expect(on.body.result.auto).toMatchObject({ effective: false });
+    expect(W.autoHelpers).toBe(false);
+    const projectWrite = await command('accepted auto off for a project', { type: 'helperRouting.update', scope: 'project', projectId: 'proj_app', revision: on.body.result.revision, auto: 'off' });
+    expect(projectWrite.body.result.auto).toMatchObject({ source: 'project', reason: 'project_off' });
+    expect(W.projectDefaults).toMatchObject({ helperAuto: 'off' });
+    const projectClear = await command('accepted project override removed (null, which never enables)', { type: 'helperRouting.update', scope: 'project', projectId: 'proj_app', revision: projectWrite.body.result.revision, auto: null });
+    expect(projectClear.body.result.auto).toMatchObject({ effective: false, source: 'default', reason: 'not_enabled', scopes: { project: { value: null } } });
+    await command('invalid_helper_routing (project can\'t turn it on)', { type: 'helperRouting.update', scope: 'project', projectId: 'proj_app', revision: projectClear.body.result.revision, auto: true });
+    await command('invalid_helper_routing (app-wide off value)', write({ revision: projectClear.body.result.revision, auto: 'off' }));
+    await command('project_not_found', { type: 'helperRouting.update', scope: 'project', projectId: 'missing', revision: projectClear.body.result.revision, auto: 'off' });
+    W.autoHelpers = false;
+
+    // The desktop changes a project's defaults while a phone holds the page.
+    const held = (await exchange('GET', ROUTE)).response.body.revision;
+    const watching = await connect();
+    watching.send.mockClear();
+    noteRoutingPolicyChanged();
+    await _settleHelperRoutingForTesting();
+    const moved = frames(watching).filter((f) => f.type === 'helper_routing:changed').at(-1);
+    expect(moved.payload.revision).not.toBe(held);
+    const staleAfterDesktop = await command('helper_routing_stale (a desktop project change)', write({ revision: held, auto: true }));
+    expect(staleAfterDesktop).toMatchObject({ status: 409, body: { status: 'rejected', error: { code: 'helper_routing_stale' }, revision: moved.payload.revision, settings: { revision: moved.payload.revision } } });
+    expect(W.autoHelpers).toBe(false);
+
+    // A phone at a project's scope read null, and the desktop set off: its stale null can't clear that, and it gets the project's values.
+    const heldProject = (await exchange('GET', `${ROUTE}?projectId=proj_app`)).response.body.revision;
+    W.projectDefaults = { ...W.projectDefaults, helperAuto: 'off' };
+    noteRoutingPolicyChanged();
+    await _settleHelperRoutingForTesting();
+    const staleProject = await command('helper_routing_stale (project scope, fresh values for that project)', { type: 'helperRouting.update', scope: 'project', projectId: 'proj_app', revision: heldProject, auto: null });
+    expect(staleProject).toMatchObject({ status: 409, body: { error: { code: 'helper_routing_stale' }, settings: { auto: { source: 'project', reason: 'project_off', scopes: { project: { value: 'off' } } } } } });
+    expect(W.projectDefaults.helperAuto).toBe('off');
+    delete W.projectDefaults.helperAuto;
+
+    // An agent's own setting: true or false sets it, null clears it, so it follows the app again.
+    await command('accepted autoHelpers on', { type: 'agent.update', agentId: 'durable_chat', orchestration: { autoHelpers: true } });
+    expect(W.durables[APP][0].orchestration.autoHelpers).toBe(true);
+    await command('accepted autoHelpers off', { type: 'agent.update', agentId: 'durable_chat', orchestration: { autoHelpers: false } });
+    expect(W.durables[APP][0].orchestration.autoHelpers).toBe(false);
+    await command('accepted autoHelpers cleared (inherits)', { type: 'agent.update', agentId: 'durable_chat', orchestration: { autoHelpers: null } });
+    expect(W.durables[APP][0].orchestration).not.toHaveProperty('autoHelpers');
+    await command('invalid_orchestration (autoHelpers)', { type: 'agent.update', agentId: 'durable_chat', orchestration: { autoHelpers: 'yes' } });
+    W.durables[APP][0].mcpOverride = false;
+    await command('mcp_off (autoHelpers)', { type: 'agent.update', agentId: 'durable_chat', orchestration: { autoHelpers: true } });
+    delete W.durables[APP][0].mcpOverride;
+
+    const autoDecision = (fields: Record<string, unknown>) => decision({
+      mode: 'auto', balanced: true, requested: field('auto', null, null, 'hard'), resolved: field('codex-cli', 'gpt-6.1-sol', 'high', 'hard'),
+      source: { provider: 'auto', model: 'builtin_mapping', effort: 'builtin_mapping' }, reason: 'lower_load', quotaBasis: 'known',
+      load: { 'claude-code': 2, 'codex-cli': 0 },
+      quota: { 'claude-code': { state: 'known', asOf: new Date(NOW).toISOString(), limitingWindow: 'weekly' }, 'codex-cli': { state: 'known', asOf: new Date(NOW).toISOString(), limitingWindow: 'weekly' } },
+      ...fields,
+    });
+    const autoDecisions: Record<string, unknown> = {
+      lowerLoad: autoDecision({}),
+      sticky: autoDecision({ reason: 'sticky', load: { 'claude-code': 1, 'codex-cli': 2 } }),
+      unknownQuota: autoDecision({ reason: 'default_order', quotaBasis: 'unknown_scored_as_healthy', load: { 'claude-code': 0, 'codex-cli': 0 },
+        quota: { 'codex-cli': { state: 'unknown', unknownReason: 'not_applicable', asOf: new Date(NOW).toISOString() } } }),
+      skippedOne: autoDecision({ reason: 'only_candidate', fallback: 'candidate_skipped', skipped: { 'claude-code': 'quota_near_limit', 'copilot-cli': 'auto_not_supported' } }),
+      betterTier: autoDecision({ reason: 'better_quota_tier', quota: {
+        'claude-code': { state: 'low', asOf: new Date(NOW).toISOString(), limitingWindow: 'fiveHour' }, 'codex-cli': { state: 'known', asOf: new Date(NOW).toISOString(), limitingWindow: 'weekly' },
+      } }),
+      explicitWithWarning: decision({
+        mode: 'explicit', requested: field('codex-cli', 'gpt-6.1-sol', 'high', null), resolved: field('codex-cli', 'gpt-6.1-sol', 'high', null),
+        source: { provider: 'request', model: 'request', effort: 'request' }, reason: 'explicit_request',
+        warning: { code: 'cooling_down', asOf: new Date(NOW).toISOString(), message: 'codex-cli failed to start or hit its limit recently. The helper is started on it anyway, as asked.' },
+      }),
+      personaPinned: decision({ mode: 'auto', requested: field('auto', null, null, 'hard'), resolved: field('claude-code', 'opus', null, 'hard'),
+        source: { provider: 'persona', model: 'persona', effort: 'cli_default' }, reason: 'persona_pinned' }),
+    };
+    const autoSettings: Record<string, unknown> = {};
+    for (const [name, routing] of Object.entries(autoDecisions)) {
+      docs.routing = routing;
+      autoSettings[name] = (await exchange('GET', '/api/v1/mobile/agents/durable_docs/settings')).response.body.routing;
+    }
+    docs.routing = autoDecisions.lowerLoad;
+    const autoRow = frames(await connect()).find((f) => f.type === 'snapshot').payload.agents.proj_app.find((a: { id: string }) => a.id === 'durable_docs').routing;
+    expect(autoRow).toEqual({ mode: 'auto', difficulty: 'hard', provider: 'codex-cli', model: 'gpt-6.1-sol', effort: 'high', reason: 'lower_load' });
+    delete docs.routing;
+    // A held start that names Auto, and what refusing it looks like: definite, like no_valid_mapping.
+    W.helperStart = 'no_candidate';
+    const heldAuto = helperStart({ cli: 'auto', difficulty: 'hard' });
+    const heldRow = frames(await connect()).find((f) => f.type === 'snapshot').payload.helperRequests.find((r: { requestId: string }) => r.requestId === heldAuto);
+    expect(heldRow.requestedRouting).toEqual({ provider: 'auto', model: null, effort: null, difficulty: 'hard' });
+    const noProvider = await command('no_candidate', { type: 'helper.approve', requestId: heldAuto });
+    expect(noProvider).toMatchObject({ status: 409, body: { status: 'rejected', error: { code: 'no_candidate' } } });
+    // A start that names a provider looking unwell: it says so, as of when it was known, and never blocks.
+    _resetStartRequestsForTesting({ keepListeners: true });
+    const startWarning: HelperStartWarning = { code: 'quota_near_limit', asOf: new Date(NOW - 60_000).toISOString(), message: 'codex-cli is close to its plan limit. The helper is started on it anyway, as asked.' };
+    const warnedHeld = helperStart({ cli: 'codex-cli', model: 'gpt-6.1-sol' }, startWarning);
+    const warnedRow = frames(await connect()).find((f) => f.type === 'snapshot').payload.helperRequests.find((r: { requestId: string }) => r.requestId === warnedHeld);
+    expect(warnedRow.startWarning).toEqual(startWarning);
+    W.helperStart = 'warned';
+    const warnedApproval = await command('accepted start, with a warning', { type: 'helper.approve', requestId: warnedHeld });
+    expect(warnedApproval.body.result.warning).toMatchObject({ code: 'quota_near_limit', asOf: new Date(NOW).toISOString() });
+    W.helperStart = 'auto_off';
+    await command('auto_off', { type: 'helper.approve', requestId: helperStart({ cli: 'auto', difficulty: 'hard' }) });
+    W.helperStart = 'approve';
+    fixtures.set('helper-routing-auto.json', { direction: 'desktop-to-phone', field: 'auto', cases: autoCases, heldStart: heldRow, heldStartWithWarning: warnedRow, snapshotRow: autoRow, settingsRouting: autoSettings });
+
     W.providers = {};
     vi.mocked(Date.now).mockRestore();
   }, TEST_TIMEOUT_MS);

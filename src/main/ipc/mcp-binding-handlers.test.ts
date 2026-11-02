@@ -12,6 +12,7 @@ vi.mock('electron', () => ({
 vi.mock('../services/mcp-settings', () => ({
   isMcpEnabledForAny: vi.fn(() => true),
   notifyMcpEnablementChanged: vi.fn(),
+  onMcpEnablementChanged: vi.fn(() => () => undefined),
   mcpSettingsStore: { get: vi.fn(() => ({})), save: vi.fn() },
 }));
 

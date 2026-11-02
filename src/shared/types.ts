@@ -238,6 +238,8 @@ export interface ProjectAgentDefaults {
   lintCommand?: string;
   /** Default profile to use for agents in this project */
   profileId?: string;
+  /** `off` stops `cli: "auto"` in this project (#2671). A project can't turn it on. */
+  helperAuto?: 'off';
   /** Shell command prefix prepended before the CLI binary (e.g. ". ./init.ps1 &&") */
   commandPrefix?: string;
   /** Default mission ID. Resolved at materialization to .clubhouse/missions/<id>.md content; substituted for @@mission. */
@@ -497,12 +499,16 @@ export interface HelperStartRequest {
   /** ISO times. */
   createdAt: string;
   expiresAt: string;
+  /** A provider this start names looked unwell when it was asked. Decided again at approval, and it never blocks. */
+  warning?: import('./helper-routing').HelperStartWarning;
 }
 
 /** The result of approving or declining a helper start request. */
 export interface HelperStartDecisionResult {
   ok: boolean;
   message: string;
+  /** A provider the start named looked unwell. It started anyway. */
+  warning?: import('./helper-routing').HelperStartWarning;
   /** The new helper, when an approved start began creating it. */
   helperId?: string;
   /** A refused start's stable code, where it has one (no_valid_mapping, #2671). */

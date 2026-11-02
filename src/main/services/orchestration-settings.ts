@@ -10,6 +10,8 @@ export interface OrchestrationSettings {
   helperPresets?: SavedPresets;
   /** Moves on each presets write, so a stale edit can be refused. */
   helperPresetsRevision?: number;
+  /** "Auto provider" for orchestrators that don't set it themselves (#2671). Off unless the user turns it on. */
+  autoHelpers?: boolean;
 }
 
 function validRevision(value: unknown): number {
@@ -27,6 +29,7 @@ const store = createSettingsStore<OrchestrationSettings>(
     globalHelperCap: validCap(raw.globalHelperCap) ? raw.globalHelperCap : DEFAULT_GLOBAL_HELPER_CAP,
     helperPresets: normalizeSavedPresets(raw.helperPresets),
     helperPresetsRevision: validRevision(raw.helperPresetsRevision),
+    autoHelpers: raw.autoHelpers === true,
   }),
 );
 
@@ -39,6 +42,20 @@ export async function saveSettings(settings: OrchestrationSettings): Promise<voi
   }
   // Only the cap: presets have their own checked path, savePresets.
   await store.save({ ...getSettings(), globalHelperCap: settings.globalHelperCap });
+}
+
+export function getAutoHelpers(): boolean {
+  return getSettings().autoHelpers === true;
+}
+
+/** Turn Auto on or off for the app, moving the revision. */
+export async function saveAutoHelpers(on: boolean): Promise<void> {
+  await store.save({ ...getSettings(), autoHelpers: on, helperPresetsRevision: getPresetsRevision() + 1 });
+}
+
+/** A project's setting changed: an open page should refetch. */
+export async function bumpPresetsRevision(): Promise<void> {
+  await store.save({ ...getSettings(), helperPresetsRevision: getPresetsRevision() + 1 });
 }
 
 export function getPresets(): SavedPresets {

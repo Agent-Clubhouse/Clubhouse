@@ -77,7 +77,8 @@ vi.mock('./persona-change-hook', () => ({ onPersonaChanged: vi.fn(() => () => un
 vi.mock('./helper-index', () => ({
   listHelpersEverywhere: vi.fn(async (_p: string, id: string) => state.helpers.get(id) ?? []),
 }));
-vi.mock('./orchestration-settings', () => ({ getGlobalHelperCap: () => state.globalCap }));
+vi.mock('./orchestration-settings', () => ({
+  getAutoHelpers: vi.fn(() => false), getGlobalHelperCap: () => state.globalCap }));
 vi.mock('./orchestration-policy', () => {
   const resolve = (id: string) => {
     const stored = state.policies.get(id) ?? {};

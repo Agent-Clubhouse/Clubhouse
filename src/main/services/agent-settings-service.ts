@@ -1,3 +1,4 @@
+import { noteRoutingPolicyChanged } from './helper-routing-changes';
 import * as fsp from 'fs/promises';
 import { notifyProjectDefaultPersonaChanged } from './persona-change-hook';
 import * as path from 'path';
@@ -735,8 +736,11 @@ export async function writeProjectAgentDefaults(projectPath: string, defaults: P
   }
   const settings = await readSettings(projectPath);
   const previousDefault = settings.agentDefaults?.persona;
+  const previousAuto = settings.agentDefaults?.helperAuto;
   settings.agentDefaults = defaults;
   await writeSettings(projectPath, settings);
+  // A project's `off`, or the persona its agents default to, decides Auto (#2671).
+  if (defaults.helperAuto !== previousAuto || defaults.persona !== previousDefault) noteRoutingPolicyChanged();
   if (defaults.persona !== previousDefault) {
     // The orchestration policy re-checks agents that use the default persona (#2228).
     try {

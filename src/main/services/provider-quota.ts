@@ -15,6 +15,7 @@
 import {
   classifyQuota,
   QUOTA_STALE_MS,
+  type HelperStartWarning,
   type PlanQuotaReading,
   type QuotaSource,
   type QuotaView,
@@ -23,7 +24,9 @@ import {
 import type { UsageLimit } from '../../shared/chat/events';
 import { getProvider } from '../orchestrators';
 import type { OrchestratorId } from '../orchestrators';
-import { helperQuotaRead } from '../telemetry/feature-events';
+import { helperAutoCooldown, helperQuotaRead } from '../telemetry/feature-events';
+import { isLoginRequiredError } from './agent-runtime/login-error';
+import { AUTO_COOLDOWN_AUTH_MS, AUTO_COOLDOWN_AVAILABILITY_MS, AUTO_COOLDOWN_QUOTA_MS } from './helper-auto-policy';
 import { onChatEvent } from './agent-runtime/chat-event-bus';
 import { agentRegistry } from './agent-registry';
 import { resolveProfileEnv } from './agent-system';
@@ -43,6 +46,10 @@ interface QuotaEntry {
   readAt?: number;
   failedAt?: number;
   inFlight?: Promise<void>;
+  /** Auto leaves this provider and profile alone until then. Explicit starts aren't affected. */
+  coolingUntil?: number;
+  /** When the cooldown began, for saying how old a warning is. */
+  cooledAt?: number;
 }
 
 const entries = new Map<string, QuotaEntry>();
@@ -81,7 +88,7 @@ function startRead(providerId: string, entry: QuotaEntry, env: Record<string, st
   return entry.inFlight;
 }
 
-function viewOf(entry: QuotaEntry, now: number): QuotaView {
+function viewOf(entry: QuotaEntry, now: number, model?: string): QuotaView {
   const refreshAfter = entry.failedAt !== undefined
     ? entry.failedAt + QUOTA_FAILURE_BACKOFF_MS - now
     : entry.readAt !== undefined ? entry.readAt + QUOTA_CACHE_MS - now : 0;
@@ -96,7 +103,7 @@ function viewOf(entry: QuotaEntry, now: number): QuotaView {
       refreshAfterSeconds: entry.inFlight ? Math.ceil(QUOTA_READ_BUDGET_MS / 1000) : refreshAfterSeconds,
     };
   }
-  const classified = classifyQuota(entry.windows, now);
+  const classified = classifyQuota(entry.windows, now, model ? { model } : {});
   // A failed read isn't what made an old reading stale, but it is why there is no newer one.
   const stale = entry.windows.length > 0 && entry.windows.every((w) => now - w.asOf > QUOTA_STALE_MS);
   return {
@@ -110,8 +117,9 @@ function viewOf(entry: QuotaEntry, now: number): QuotaView {
 /**
  * What a provider's limits look like now. Never throws. A provider that can't
  * report is `not_supported`. Reads under `projectPath`'s profile when given.
+ * `model` also counts that model's own limit, for a choice of that model.
  */
-export async function readProviderQuota(providerId: string, projectPath?: string, options: { budgetMs?: number } = {}): Promise<QuotaView> {
+export async function readProviderQuota(providerId: string, projectPath?: string, options: { budgetMs?: number; model?: string } = {}): Promise<QuotaView> {
   const provider = getProvider(providerId as OrchestratorId);
   if (!provider?.readPlanQuota) return { state: 'unknown', unknownReason: 'not_supported', source: 'none', asOf: null };
   try {
@@ -125,7 +133,7 @@ export async function readProviderQuota(providerId: string, projectPath?: string
       await Promise.race([read, new Promise<void>((resolve) => { timer = setTimeout(resolve, options.budgetMs ?? QUOTA_READ_BUDGET_MS); })]);
       clearTimeout(timer);
     }
-    return viewOf(entry, Date.now());
+    return viewOf(entry, Date.now(), options.model);
   } catch (err) {
     // telemetry-exempt: it reads as unknown, which is what the caller shows; logged.
     appLog('core:orchestrator', 'warn', 'Could not check plan limits', { meta: { provider: providerId, error: err instanceof Error ? err.name : 'unknown' } });
@@ -156,9 +164,103 @@ function mergeSessionLimits(entry: QuotaEntry, limits: readonly UsageLimit[], no
   entry.source = 'session_event';
 }
 
-/** Keep quota current from running chat sessions. Returns the unsubscribe function. */
+export type StartFailureClass = 'auth' | 'quota' | 'availability';
+
+const COOLDOWN_MS: Record<StartFailureClass, number> = {
+  auth: AUTO_COOLDOWN_AUTH_MS,
+  quota: AUTO_COOLDOWN_QUOTA_MS,
+  availability: AUTO_COOLDOWN_AVAILABILITY_MS,
+};
+
+/** What a failed start tells Auto about the provider. A task's own failure isn't a start's. */
+export function classifyStartFailure(err: unknown): StartFailureClass {
+  const code = (err as { code?: unknown } | null)?.code;
+  const message = err instanceof Error ? err.message : String(err);
+  if (code === 'auth_required' || code === 'account_issue' || isLoginRequiredError(message)) return 'auth';
+  if (code === 'rate_limited' || /rate.?limit|usage limit/i.test(message)) return 'quota';
+  return 'availability';
+}
+
+/**
+ * Auto leaves this provider alone for a fixed while. A quota failure is the
+ * provider saying its limit is reached, so the state says so too, until a read
+ * says otherwise. Never throws.
+ */
+export async function noteProviderFailure(providerId: string, projectPath: string | undefined, kind: StartFailureClass, resetsAt?: number): Promise<void> {
+  try {
+    const { entry } = await entryFor(providerId, projectPath);
+    const now = Date.now();
+    // A limit we already know is reached says when it comes back.
+    const knownReset = kind === 'quota'
+      ? resetsAt ?? entry.windows.filter((w) => w.limitReached && w.resetsAt !== undefined && w.resetsAt > now).map((w) => w.resetsAt!).sort((a, b) => b - a)[0]
+      : undefined;
+    const until = knownReset && knownReset > now ? knownReset : now + COOLDOWN_MS[kind];
+    entry.coolingUntil = Math.max(entry.coolingUntil ?? 0, until);
+    entry.cooledAt = now;
+    if (kind === 'quota') {
+      entry.windows = [...entry.windows.filter((w) => w.name !== 'window'), { name: 'window', limitReached: true, resetsAt: until, asOf: now }];
+      entry.source = 'session_event';
+      entry.notApplicable = false;
+    }
+    helperAutoCooldown(providerId, kind);
+  } catch (err) {
+    // telemetry-exempt: logged; the worst case is that Auto tries this provider again.
+    appLog('core:orchestrator', 'warn', 'Could not note a provider failure', { meta: { provider: providerId, error: err instanceof Error ? err.name : 'unknown' } });
+  }
+}
+
+export async function isProviderCoolingDown(providerId: string, projectPath: string | undefined): Promise<boolean> {
+  const { entry } = await entryFor(providerId, projectPath);
+  return (entry.coolingUntil ?? 0) > Date.now();
+}
+
+/**
+ * A warning for a start that names this provider, from what is already known. An
+ * explicit start is never blocked by quota or a cooldown, and this reads nothing
+ * from a CLI, so it says nothing until something has. Never throws.
+ */
+export async function providerStartWarning(providerId: string, projectPath: string | undefined): Promise<HelperStartWarning | undefined> {
+  try {
+    const { entry } = await entryFor(providerId, projectPath);
+    const now = Date.now();
+    if ((entry.coolingUntil ?? 0) > now) {
+      return {
+        code: 'cooling_down',
+        asOf: new Date(entry.cooledAt ?? now).toISOString(),
+        message: `${providerId} failed to start or hit its limit recently. The helper is started on it anyway, as asked.`,
+      };
+    }
+    if (entry.windows.length === 0) return undefined;
+    const { state, asOf } = classifyQuota(entry.windows, now);
+    if (!asOf) return undefined;
+    if (state === 'exhausted') return { code: 'quota_exhausted', asOf, message: `${providerId} reports its plan limit reached. The helper is started on it anyway, as asked, and may stop right away.` };
+    if (state === 'near_limit') return { code: 'quota_near_limit', asOf, message: `${providerId} is close to its plan limit. The helper is started on it anyway, as asked.` };
+    return undefined;
+  } catch {
+    // telemetry-exempt: only a warning, and the start goes on
+    return undefined;
+  }
+}
+
+const SESSION_ERROR_CLASS: Record<string, StartFailureClass> = {
+  auth_required: 'auth',
+  account_issue: 'auth',
+  rate_limited: 'quota',
+};
+
+/**
+ * Keep quota current from running chat sessions, and notice a provider a session
+ * found out of quota or logged out. That helper isn't moved or retried: this only
+ * tells Auto about future starts. Returns the unsubscribe function.
+ */
 export function watchSessionQuota(): () => void {
   return onChatEvent((event) => {
+    if (event.type === 'error') {
+      const kind = SESSION_ERROR_CLASS[(event.data as { code?: string }).code ?? ''];
+      const running = kind && agentRegistry.get(event.agentId);
+      if (running && running.orchestrator) void noteProviderFailure(running.orchestrator, running.projectPath, kind);
+      return;
+    }
     if (event.type !== 'usage') return;
     const limits = (event.data as { limits?: UsageLimit[] }).limits;
     if (!limits?.length) return;

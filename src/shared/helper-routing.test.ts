@@ -68,6 +68,11 @@ describe('helper routing', () => {
     for (const claim of ['cheapest', 'best', 'optimal', 'guaranteed', 'verified capacity']) expect(words).not.toContain(claim);
   });
 
+  it('has words for every source of the Auto setting, and no label calls unknown quota healthy', () => {
+    for (const source of ['agent', 'project', 'persona', 'app', 'default', 'mcp_off', 'dispatcher_locked'] as const) expect(HELPER_ROUTING_LABELS.autoSource[source]).toBeTruthy();
+    expect(JSON.stringify(HELPER_ROUTING_LABELS).toLowerCase()).not.toContain('healthy');
+  });
+
   it('the snapshot form is codes only', () => {
     expect(minimalRouting(routing)).toEqual({ mode: 'preset', difficulty: 'hard', provider: 'codex-cli', model: 'gpt-6.1-sol', effort: 'high', reason: 'preset_on_cli' });
   });
@@ -82,7 +87,8 @@ describe('helper routing', () => {
     const persona = fs.readFileSync(path.join(__dirname, '../renderer/features/personas/orchestrator.md'), 'utf8');
     expect(persona).toContain('`difficulty` keeps the helper on its CLI.');
     expect(persona).toContain('Don\'t claim a choice is cheapest, best or preferred');
-    expect(persona).not.toContain('cli: "auto"');
+    expect(persona).toContain('Unknown quota means unknown, not available.');
+    expect(persona).toContain('A helper stays on its provider for its whole task.');
   });
 });
 
@@ -154,7 +160,8 @@ describe('classifyQuota', () => {
     });
     expect(classifyQuota(windows, NOW, { model: 'Fable' })).toMatchObject({ state: 'near_limit', limitingWindow: 'model:Fable' });
     expect(classifyQuota(windows, NOW, { model: 'opus' })).toMatchObject({ state: 'near_limit', limitingWindow: 'model:opus' });
-    expect(classifyQuota(windows, NOW, { model: 'fable' }).state).toBe('known');
+    expect(classifyQuota(windows, NOW, { model: 'fable' }).state).toBe('near_limit');
+    expect(classifyQuota(windows, NOW, { model: 'sonnet' }).state).toBe('known');
   });
 
   it('another duration still counts, named other', () => {

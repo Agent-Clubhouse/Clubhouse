@@ -43,7 +43,8 @@ vi.mock('./agent-runtime', () => ({ isChatAgent: vi.fn(() => false) }));
 vi.mock('./git-service', () => ({ isInsideGitRepo: vi.fn(async () => true), getBranchChanges: vi.fn() }));
 vi.mock('./persona-application', () => ({ applyPersonaToAgent: vi.fn(async () => undefined) }));
 vi.mock('./log-service', () => ({ appLog: vi.fn() }));
-vi.mock('./orchestration-settings', () => ({ getGlobalHelperCap: vi.fn(() => 8) }));
+vi.mock('./orchestration-settings', () => ({
+  getAutoHelpers: vi.fn(() => false), getGlobalHelperCap: vi.fn(() => 8) }));
 vi.mock('./orchestration-policy', async () => {
   const shared = await import('../../shared/orchestration-policy');
   return {
@@ -223,8 +224,8 @@ describe('agent settings', () => {
         contextWindow: expect.objectContaining({ value: null, configurable: false, editable: 'never', kind: null, applies: ['launch', 'resume'] }),
       },
       orchestration: {
-        orchestrate: false, access: 'same', control: 'hands-off', maxHelpers: 3, crossProjectHelpers: false, connectToDispatcher: false, mcpEnabled: true,
-        sources: { orchestrate: 'default', access: 'default', control: 'default', maxHelpers: 'persona', crossProjectHelpers: 'default', connectToDispatcher: 'default' },
+        orchestrate: false, access: 'same', control: 'hands-off', maxHelpers: 3, crossProjectHelpers: false, connectToDispatcher: false, autoHelpers: null, autoHelpersEffective: false, mcpEnabled: true,
+        sources: { orchestrate: 'default', access: 'default', control: 'default', maxHelpers: 'persona', crossProjectHelpers: 'default', connectToDispatcher: 'default', autoHelpers: 'default' },
         maxHelpersCap: 8, controls: ['hands-off', 'ask-before-start', 'ask-everything'], accessLevels: ['same', 'standard', 'auto', 'bypass'],
       },
     });
@@ -395,7 +396,7 @@ describe('orchestration policy from a phone (#2228)', () => {
     expect(setOrchestrationPolicy).toHaveBeenLastCalledWith('/work/app', 'durable_1', { control: null }, { surface: 'mobile' });
     await updateMobileAgent(project, agent(), { agentId: 'durable_1', orchestration: null }, { live: undefined, assertAuthorized: allow });
     expect(setOrchestrationPolicy).toHaveBeenLastCalledWith('/work/app', 'durable_1',
-      { orchestrate: null, access: null, control: null, maxHelpers: null, crossProjectHelpers: null, connectToDispatcher: null }, { surface: 'mobile' });
+      { orchestrate: null, access: null, control: null, maxHelpers: null, crossProjectHelpers: null, connectToDispatcher: null, autoHelpers: null }, { surface: 'mobile' });
   });
 
   it('refuses invalid fields with the reason, before writing anything', async () => {

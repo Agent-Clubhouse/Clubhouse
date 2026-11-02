@@ -10,6 +10,8 @@ import {
   ACCESS_LEVELS,
   ORCHESTRATION_CONTROLS,
   type HelperAccessResolution,
+  type HelperAutoOffReason,
+  type ResolvedOrchestrationPolicy,
   type OrchestrationAccess,
   type OrchestrationControl,
 } from '../../../../shared/orchestration-policy';
@@ -22,6 +24,7 @@ export const DISPATCHER_HELP = 'Let the Dispatcher message this agent and get it
 
 /** The help line under the "Cross-project helpers" switch (#2512). */
 export const CROSS_PROJECT_HELP = 'Let this agent start helpers in other projects.';
+export const AUTO_HELPERS_HELP = 'Let Clubhouse pick between Claude Code and Codex for a helper, from helper counts and plan limits. This balances counts, not cost.';
 
 /** Why the controls are disabled where Clubhouse MCP is off (#2589). Saved settings come back with MCP. */
 export function mcpOffNote(name: string): string {
@@ -125,6 +128,58 @@ export function HelperCountInput({ id, value, ceiling, disabled, className, onCo
 }
 
 /** "Cross-project helpers" (#2512): may this agent start helpers in other registered projects. */
+/** Why Auto is off where this agent's own switch can't change that. */
+const AUTO_LOCKED_NOTES: Partial<Record<HelperAutoOffReason, string>> = {
+  project_off: 'This project turned it off.',
+  persona_off: 'This agent’s persona turned it off.',
+  mcp_off: 'Clubhouse MCP is off for this agent.',
+};
+
+/**
+ * Whether Auto works for this agent, not only its own switch: the app and the
+ * project have a say. A project or persona that turned it off can't be overruled
+ * here. "Use the app’s setting" clears this agent's own switch.
+ */
+export function AutoHelpersToggle({ id, policy, name, disabled, onChange, testId }: {
+  id?: string;
+  policy: ResolvedOrchestrationPolicy;
+  name: string;
+  disabled?: boolean;
+  onChange: (on: boolean | null) => void;
+  testId?: string;
+}) {
+  const effective = policy.autoEffective?.effective ?? false;
+  const locked = policy.autoEffective?.reason ? AUTO_LOCKED_NOTES[policy.autoEffective.reason] : undefined;
+  const own = policy.sources.autoHelpers === 'agent';
+  return (
+    <span className="inline-flex items-center gap-2">
+      <Toggle
+        id={id}
+        checked={effective}
+        disabled={disabled || !!locked}
+        onChange={onChange}
+        aria-label={`Let Clubhouse pick the provider for ${name}’s helpers`}
+        data-testid={testId}
+      />
+      {locked && <span className="text-ctp-overlay1" data-testid={testId && `${testId}-locked`}>{locked}</span>}
+      {!locked && (
+        <span className="text-ctp-overlay1" data-testid={testId && `${testId}-source`}>{own ? 'Set on this agent' : 'Following the app setting'}</span>
+      )}
+      {own && (
+        <button
+          type="button"
+          className="text-ctp-accent hover:underline cursor-pointer"
+          disabled={disabled}
+          onClick={() => onChange(null)}
+          data-testid={testId && `${testId}-clear`}
+        >
+          Use the app’s setting
+        </button>
+      )}
+    </span>
+  );
+}
+
 export function CrossProjectToggle({ id, checked, name, disabled, onChange, testId }: {
   id?: string;
   checked: boolean;

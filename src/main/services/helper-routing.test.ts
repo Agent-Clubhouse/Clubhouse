@@ -8,11 +8,18 @@ const W = vi.hoisted(() => ({
   revision: 0,
   audit: [] as Array<Record<string, unknown>>,
   telemetry: [] as unknown[][],
+  appAuto: false,
+  enabled: [] as string[],
+  projects: new Map<string, Record<string, unknown>>(),
+  quota: new Map<string, unknown>(),
+  cooling: new Set<string>(),
+  unavailable: new Set<string>(),
 }));
 
 vi.mock('../orchestrators', () => {
   const provider = (id: string) => ({
     id,
+    checkAvailability: async () => ({ available: !W.unavailable.has(id) }),
     listModels: async () => { const list = W.lists.get(id); if (list instanceof Error) throw list; return list ?? null; },
     acceptsModel: (m: string, l: { models: Array<{ id: string; resolvedId?: string }> }) => m === 'default' || l.models.some((e) => e.id === m || e.resolvedId === m),
   });
@@ -21,26 +28,53 @@ vi.mock('../orchestrators', () => {
 });
 vi.mock('./agent-system', () => ({ resolveProfileEnv: vi.fn(async () => undefined) }));
 vi.mock('./log-service', () => ({ appLog: vi.fn() }));
+vi.mock('./mcp-settings', () => ({ onMcpEnablementChanged: () => () => undefined }));
 vi.mock('./materialization-service', () => ({ readLayeredPersonaRaw: async (_p: string, id: string) => W.personas.get(id) }));
 vi.mock('./orchestration-settings', () => ({
   getPresets: () => W.saved,
   getPresetsRevision: () => W.revision,
   savePresets: async (presets: typeof W.saved) => { W.saved = presets; W.revision++; },
+  getAutoHelpers: () => W.appAuto,
+  saveAutoHelpers: async (on: boolean) => { W.appAuto = on; W.revision++; },
+  bumpPresetsRevision: async () => { W.revision++; },
+}));
+vi.mock('./orchestrator-settings', () => ({ getSettings: () => ({ enabled: W.enabled }) }));
+vi.mock('./agent-settings-service', () => ({
+  readProjectAgentDefaults: async (path: string) => W.projects.get(path) ?? {},
+  // As the real one does, for a change that decides Auto.
+  writeProjectAgentDefaults: async (path: string, defaults: Record<string, unknown>) => {
+    const changed = W.projects.get(path)?.helperAuto !== defaults.helperAuto;
+    W.projects.set(path, defaults);
+    if (changed) noteRoutingPolicyChanged();
+  },
+}));
+vi.mock('./provider-quota', () => ({
+  readProviderQuota: async (provider: string) => W.quota.get(provider) ?? { state: 'unknown', unknownReason: 'not_supported', source: 'none', asOf: null },
+  isProviderCoolingDown: async (provider: string) => W.cooling.has(provider),
 }));
 vi.mock('./agent-runtime/chat-event-bus', () => ({ onChatEvent: () => () => undefined }));
 vi.mock('./settings-audit', () => ({ appendSettingsAudit: async (row: Record<string, unknown>) => { W.audit.push(row); return true; } }));
-vi.mock('../telemetry/feature-events', () => ({ helperPresetsChanged: (...args: unknown[]) => { W.telemetry.push(args); } }));
+vi.mock('../telemetry/feature-events', () => ({ helperAutoRefused: () => undefined, helperPresetsChanged: (...args: unknown[]) => { W.telemetry.push(args); } }));
 
 import { resolveProfileEnv } from './agent-system';
 import {
   HelperRoutingError,
   _resetHelperRoutingForTesting,
+  _settleHelperRoutingForTesting,
+  decideAutoPlan,
   helperRoutingRevision,
   onHelperRoutingChanged,
   planHelperStart,
+  readHelperAuto,
   readHelperRouting,
+  releaseAutoHelper,
+  reserveAutoHelper,
+  reservedLoad,
   updateHelperPresets,
 } from './helper-routing';
+import { AUTO_RESERVATION_MS, AUTO_STICKY_MS } from './helper-auto-policy';
+import { noteRoutingPolicyChanged } from './helper-routing-changes';
+import { resolveOrchestrationPolicy } from '../../shared/orchestration-policy';
 
 const m = (id: string, efforts: string[] = ['low', 'medium', 'high'], extra: Partial<ModelInfo> = {}): ModelInfo => ({ id, label: id, efforts, ...extra });
 const live = (models: ModelInfo[]): ModelList => ({ models, source: 'live', via: 'handshake', fetchedAt: 1000 });
@@ -62,6 +96,12 @@ beforeEach(() => {
   W.revision = 0;
   W.audit = [];
   W.telemetry = [];
+  W.appAuto = false;
+  W.enabled = [];
+  W.projects = new Map();
+  W.quota = new Map();
+  W.cooling = new Set();
+  W.unavailable = new Set();
   _resetHelperRoutingForTesting();
 });
 
@@ -273,7 +313,7 @@ describe('readHelperRouting', () => {
       choices: { source: 'live', asOf: new Date(1000).toISOString() },
       cells: { easy: { state: 'valid', source: 'builtin', custom: null, editable: true, effective: { model: 'gpt-6-luna', effort: 'low' } } },
     });
-    expect(Object.keys(settings.labels)).toEqual(['reason', 'fallback', 'skipped', 'quota', 'unknown', 'window', 'cell', 'generic']);
+    expect(Object.keys(settings.labels)).toEqual(['reason', 'fallback', 'skipped', 'quota', 'unknown', 'window', 'autoSource', 'autoOff', 'cell', 'generic']);
   });
 
   it('shows a stale saved choice with what is used instead, and nothing when nothing is left', async () => {
@@ -444,5 +484,284 @@ describe('updateHelperPresets', () => {
     expect(W.audit.filter((r) => r.after === null).map((r) => r.key)).toEqual([
       'helper_presets.codex-cli.easy', 'helper_presets.codex-cli.hard', 'helper_presets.claude-code.easy',
     ]);
+  });
+});
+
+describe('Auto (#2671)', () => {
+  const on = { effective: true, source: 'app' as const, scopes: { app: { value: true, editable: true } } };
+  const off = { effective: false, source: 'project' as const, reason: 'project_off' as const, scopes: { app: { value: true, editable: true } } };
+  const auto = (extra: Record<string, unknown> = {}) => planHelperStart({
+    ...base, cli: 'auto', difficulty: 'hard', auto: on, orchestratorId: 'orch', orchestratorCli: 'claude-code', ...extra,
+  });
+  const known = { state: 'known', source: 'cli_query', asOf: '2027-01-15T08:00:00.000Z', limitingWindow: 'weekly' };
+  const decided = async (load: Record<string, number> = {}, extra: Record<string, unknown> = {}) => {
+    const prepared = await auto(extra);
+    if (prepared.ok === false) throw new Error(prepared.message);
+    const result = decideAutoPlan(prepared.plan!, load);
+    if (result.ok === false) throw new Error(result.message);
+    return result.plan!;
+  };
+
+  beforeEach(() => {
+    W.quota.set('claude-code', known);
+    W.quota.set('codex-cli', known);
+  });
+
+  it('refuses when Auto is off, saying why, and reads nothing', async () => {
+    const result = await planHelperStart({ ...base, cli: 'auto', difficulty: 'hard', auto: off });
+    expect(result).toMatchObject({ ok: false, code: 'auto_off' });
+    if (result.ok === false) expect(result.message).toContain('This project turned it off');
+  });
+
+  it('decides under the lock: nothing is chosen until then', async () => {
+    const prepared = await auto();
+    if (prepared.ok === false) throw new Error('refused');
+    expect(prepared.plan!.pendingAuto).toBeDefined();
+    expect(prepared.plan!.provider).toBeUndefined();
+  });
+
+  it('records the whole decision', async () => {
+    const plan = await decided({ 'claude-code': 2 });
+    expect(plan).toMatchObject({ provider: 'codex-cli', model: 'gpt-6.1-sol', effort: 'high', keep: ['orchestrator', 'model'] });
+    expect(plan.routing).toMatchObject({
+      mode: 'auto', balanced: true, policyVersion: 1, reason: 'lower_load', fallback: 'none', quotaBasis: 'known',
+      requested: { provider: 'auto', model: null, effort: null, difficulty: 'hard' },
+      resolved: { provider: 'codex-cli', model: 'gpt-6.1-sol', effort: 'high', difficulty: 'hard' },
+      source: { provider: 'auto', model: 'builtin_mapping', effort: 'builtin_mapping' },
+      load: { 'claude-code': 2, 'codex-cli': 0 },
+      quota: { 'codex-cli': { state: 'known', asOf: known.asOf, limitingWindow: 'weekly' }, 'claude-code': { state: 'known' } },
+    });
+  });
+
+  it('unknown quota can win, says so, and is never recorded as anything else', async () => {
+    W.quota.set('claude-code', { state: 'unknown', unknownReason: 'read_failed', source: 'none', asOf: null });
+    const plan = await decided();
+    expect(plan.provider).toBe('claude-code');
+    expect(plan.routing).toMatchObject({ quotaBasis: 'unknown_scored_as_healthy', quota: { 'claude-code': { state: 'unknown', unknownReason: 'read_failed', asOf: null } } });
+  });
+
+  it('a persona\'s pin decides, so nothing claims Auto balanced it', async () => {
+    W.personas.set('pinned', '---\nmodel: gpt-6.1-terra\norchestrator: codex-cli\n---\nBody');
+    const result = await auto({ persona: 'pinned' });
+    if (result.ok === false) throw new Error('refused');
+    expect(result.plan!.pendingAuto).toBeUndefined();
+    expect(result.plan).toMatchObject({ provider: 'codex-cli', model: 'gpt-6.1-terra' });
+    expect(result.plan!.routing).toMatchObject({ mode: 'auto', balanced: false, reason: 'persona_pinned', requested: { provider: 'auto' }, source: { provider: 'persona', model: 'persona' } });
+  });
+
+  it.each([
+    ['cli_disabled', () => { W.enabled = ['claude-code']; }],
+    ['cli_unavailable', () => { W.unavailable.add('codex-cli'); }],
+    ['cooling_down', () => { W.cooling.add('codex-cli'); }],
+    ['no_valid_mapping', () => { W.lists.set('codex-cli', live([m('other')])); }],
+    ['quota_exhausted', () => { W.quota.set('codex-cli', { ...known, state: 'exhausted' }); }],
+    ['quota_near_limit', () => { W.quota.set('codex-cli', { ...known, state: 'near_limit' }); }],
+  ])('skips a provider for %s, and says so', async (code, setup) => {
+    setup();
+    const plan = await decided({ 'claude-code': 9 });
+    expect(plan.provider).toBe('claude-code');
+    expect(plan.routing.skipped).toMatchObject({ 'codex-cli': code });
+    expect(plan.routing).toMatchObject({ fallback: 'candidate_skipped', balanced: true });
+  });
+
+  it('lists Copilot as skipped with its reason', async () => {
+    const plan = await decided();
+    expect(plan.routing.skipped).toEqual({ 'copilot-cli': 'auto_not_supported' });
+  });
+
+  it('with nothing left, refuses at once, naming each provider, and queues nothing', async () => {
+    W.cooling.add('claude-code');
+    W.quota.set('codex-cli', { ...known, state: 'near_limit' });
+    const result = await auto();
+    expect(result).toMatchObject({ ok: false, code: 'no_candidate' });
+    if (result.ok === false) {
+      expect(result.message).toContain('claude-code: It failed to start recently');
+      expect(result.message).toContain('codex-cli: Close to its limit');
+      expect(result.message).toContain('Don\'t retry in a loop');
+      expect(result.userReason).not.toContain('retry');
+    }
+  });
+
+  it('a saved preset that went stale falls back to the built-in, and says that over skips', async () => {
+    W.saved = { 'codex-cli': { hard: { model: 'gone', effort: 'high' } } };
+    const plan = await decided({ 'claude-code': 2 });
+    expect(plan.routing).toMatchObject({ fallback: 'builtin_preset', resolved: { model: 'gpt-6.1-sol' } });
+  });
+
+  describe('sticky', () => {
+    it('holds for the same orchestrator and difficulty, then expires', async () => {
+      vi.useFakeTimers({ now: 1_800_000_000_000 });
+      try {
+        expect((await decided({ 'claude-code': 2 })).provider).toBe('codex-cli');
+        const held = await decided({ 'claude-code': 2, 'codex-cli': 1 });
+        expect(held).toMatchObject({ provider: 'codex-cli', routing: { reason: 'sticky' } });
+        // Another orchestrator or difficulty isn't held.
+        expect((await decided({}, { orchestratorId: 'other' })).provider).toBe('claude-code');
+        expect((await decided({}, { difficulty: 'easy' })).provider).toBe('claude-code');
+        vi.setSystemTime(1_800_000_000_000 + AUTO_STICKY_MS + 1);
+        expect((await decided()).provider).toBe('claude-code');
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+  });
+
+  describe('reservations', () => {
+    it('counts a chosen helper until it is seen live or released, without counting it twice', () => {
+      reserveAutoHelper('h1', 'codex-cli');
+      reserveAutoHelper('h2', 'codex-cli');
+      expect(reservedLoad(new Set())).toEqual({ 'codex-cli': 2 });
+      expect(reservedLoad(new Set(['h1']))).toEqual({ 'codex-cli': 1 });
+      releaseAutoHelper('h2');
+      expect(reservedLoad(new Set())).toEqual({ 'codex-cli': 1 });
+    });
+
+    it('has a backstop', () => {
+      vi.useFakeTimers({ now: 1_800_000_000_000 });
+      try {
+        reserveAutoHelper('h1', 'codex-cli');
+        vi.setSystemTime(1_800_000_000_000 + AUTO_RESERVATION_MS);
+        expect(reservedLoad(new Set())).toEqual({});
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+  });
+
+  describe('readHelperAuto', () => {
+    const config = (autoHelpers?: boolean) => ({ id: 'a', orchestration: autoHelpers === undefined ? {} : { autoHelpers } }) as never;
+    const policy = (agent: object = { orchestrate: true }, persona: object = {}, options: object = {}) => resolveOrchestrationPolicy(agent, persona, options);
+    const read = (autoHelpers: boolean | undefined, p = policy(), projectPath?: string) => readHelperAuto({ agent: { config: config(autoHelpers), policy: p }, ...(projectPath && { projectPath }) });
+
+    it('is off by default, and follows the app', async () => {
+      expect(await readHelperAuto()).toMatchObject({ effective: false, source: 'default', reason: 'not_enabled', scopes: { app: { value: false, editable: true } } });
+      W.appAuto = true;
+      expect(await readHelperAuto()).toMatchObject({ effective: true, source: 'app' });
+    });
+
+    it('the orchestrator\'s own choice wins over the app, either way', async () => {
+      W.appAuto = true;
+      expect(await read(false, policy({ orchestrate: true, autoHelpers: false }))).toMatchObject({ effective: false, source: 'agent', reason: 'not_enabled' });
+      W.appAuto = false;
+      expect(await read(true, policy({ orchestrate: true, autoHelpers: true }))).toMatchObject({ effective: true, source: 'agent', scopes: { agent: { value: true, editable: true } } });
+    });
+
+    it('a project can turn it off over everything, and never on', async () => {
+      W.appAuto = true;
+      W.projects.set('/p', { helperAuto: 'off' });
+      expect(await read(true, policy({ orchestrate: true, autoHelpers: true }), '/p')).toMatchObject({ effective: false, source: 'project', reason: 'project_off', scopes: { project: { value: 'off', editable: true } } });
+      // Nothing a project file can say turns it on.
+      W.appAuto = false;
+      W.projects.set('/p', { helperAuto: 'on' });
+      expect(await readHelperAuto({ projectPath: '/p' })).toMatchObject({ effective: false, source: 'default' });
+    });
+
+    it('a persona can turn it off and never on', async () => {
+      W.appAuto = true;
+      expect(await read(undefined, policy({ orchestrate: true }, { autoHelpers: false }))).toMatchObject({ effective: false, source: 'persona', reason: 'persona_off', scopes: { persona: { value: false, editable: false } } });
+      W.appAuto = false;
+      expect(await read(undefined, policy({ orchestrate: true }, { autoHelpers: true }))).toMatchObject({ effective: false, source: 'default' });
+    });
+
+    it('no MCP, no Auto, whatever is saved', async () => {
+      W.appAuto = true;
+      expect(await read(true, policy({ orchestrate: true, autoHelpers: true }, {}, { mcpOff: true }))).toMatchObject({ effective: false, source: 'mcp_off', reason: 'mcp_off', scopes: { agent: { value: true, editable: true } } });
+    });
+
+    it('an agent that doesn\'t orchestrate can\'t use it', async () => {
+      W.appAuto = true;
+      expect(await read(undefined, policy({ orchestrate: false }))).toMatchObject({ effective: false, reason: 'orchestration_off' });
+    });
+
+    it('the Dispatcher is locked', async () => {
+      W.appAuto = true;
+      expect(await readHelperAuto({ dispatcher: true })).toMatchObject({ effective: false, source: 'dispatcher_locked', reason: 'dispatcher_locked', scopes: { app: { editable: false }, agent: { value: null, editable: false } } });
+    });
+
+    it('a persona\'s off beats the agent\'s own on, whose value stays', async () => {
+      const result = await read(true, policy({ orchestrate: true, autoHelpers: true }, { autoHelpers: false }));
+      expect(result).toMatchObject({ effective: false, source: 'persona', reason: 'persona_off', scopes: { persona: { value: false }, agent: { value: true } } });
+    });
+  });
+
+  describe('writing it', () => {
+    const write = (fields: Record<string, unknown>, origin: Record<string, unknown> = {}) => updateHelperPresets({ revision: helperRoutingRevision(), ...fields } as never, { surface: 'mobile', ...origin });
+    const refused = (promise: Promise<unknown>) => promise.then(() => { throw new Error('not refused'); }, (err: HelperRoutingError) => err);
+
+    it('app-wide takes a boolean, moves the revision, audits and returns fresh values', async () => {
+      const settings = await write({ auto: true });
+      expect(W.appAuto).toBe(true);
+      expect(W.revision).toBe(1);
+      expect(settings.auto).toMatchObject({ effective: true, source: 'app' });
+      expect(W.audit).toEqual([{ surface: 'mobile', scope: 'app', key: 'helper_auto', before: false, after: true, outcome: 'ok' }]);
+      expect(W.telemetry).toEqual([['toggle', 'mobile', true]]);
+    });
+
+    it('a project takes only off or null, keeps its other defaults, and moves the revision', async () => {
+      W.projects.set('/p', { persona: 'qa' });
+      let settings = await write({ auto: 'off' }, { projectPath: '/p' });
+      expect(W.projects.get('/p')).toEqual({ persona: 'qa', helperAuto: 'off' });
+      expect(settings.auto).toMatchObject({ effective: false, source: 'project', reason: 'project_off' });
+      await _settleHelperRoutingForTesting();
+      expect(W.revision).toBe(1);
+      settings = await write({ auto: null }, { projectPath: '/p' });
+      await _settleHelperRoutingForTesting();
+      expect(W.projects.get('/p')).toEqual({ persona: 'qa' });
+      expect(settings.auto.scopes.project?.value).toBeNull();
+      expect(await refused(write({ auto: true }, { projectPath: '/p' }))).toMatchObject({ code: 'invalid_helper_routing' });
+      expect(await refused(write({ reset: {} }, { projectPath: '/p' }))).toMatchObject({ code: 'invalid_helper_routing' });
+    });
+
+    it('a change made elsewhere moves the revision, tells open pages once, and makes an older write stale with fresh values', async () => {
+      const changed: string[] = [];
+      onHelperRoutingChanged((revision) => changed.push(revision));
+      const old = helperRoutingRevision();
+      // What the desktop's project defaults save does.
+      W.projects.set('/p', { helperAuto: 'off' });
+      noteRoutingPolicyChanged();
+      await _settleHelperRoutingForTesting();
+      expect(helperRoutingRevision()).not.toBe(old);
+      expect(changed).toEqual([helperRoutingRevision()]);
+      const err = await refused(updateHelperPresets({ revision: old, auto: true } as never, { surface: 'mobile' }));
+      expect(err).toMatchObject({ code: 'helper_routing_stale', settings: { revision: helperRoutingRevision() } });
+      expect(W.appAuto).toBe(false);
+    });
+
+    it('a project write through here moves the revision once and tells pages once', async () => {
+      const changed: string[] = [];
+      onHelperRoutingChanged((revision) => changed.push(revision));
+      await write({ auto: 'off' }, { projectPath: '/p' });
+      await _settleHelperRoutingForTesting();
+      expect(W.revision).toBe(1);
+      expect(changed).toHaveLength(1);
+    });
+
+    it('a stale write at a project\'s scope gets that project\'s fresh values, not the app\'s', async () => {
+      const old = helperRoutingRevision();
+      W.projects.set('/p', { helperAuto: 'off' });
+      noteRoutingPolicyChanged();
+      await _settleHelperRoutingForTesting();
+      // The phone read null and the desktop set off: this null must not clear it.
+      const err = await refused(updateHelperPresets({ revision: old, auto: null } as never, { surface: 'mobile', projectPath: '/p' }));
+      expect(err).toMatchObject({ code: 'helper_routing_stale', settings: { auto: { source: 'project', reason: 'project_off', scopes: { project: { value: 'off' } } } } });
+      expect(W.projects.get('/p')).toEqual({ helperAuto: 'off' });
+    });
+
+    it('a project\'s null removes its override, and never enables: the app still decides', async () => {
+      W.projects.set('/p', { helperAuto: 'off' });
+      const settings = await write({ auto: null }, { projectPath: '/p' });
+      expect(settings.auto).toMatchObject({ effective: false, source: 'default', reason: 'not_enabled', scopes: { project: { value: null } } });
+    });
+
+    it('app-wide refuses a project\'s values', async () => {
+      expect(await refused(write({ auto: 'off' }))).toMatchObject({ code: 'invalid_helper_routing' });
+    });
+
+    it('a stale write changes nothing here too', async () => {
+      const old = helperRoutingRevision();
+      await write({ auto: true });
+      expect(await refused(updateHelperPresets({ revision: old, auto: false } as never, { surface: 'ui' }))).toMatchObject({ code: 'helper_routing_stale' });
+      expect(W.appAuto).toBe(true);
+    });
   });
 });

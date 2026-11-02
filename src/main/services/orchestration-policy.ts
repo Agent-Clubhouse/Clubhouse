@@ -76,6 +76,7 @@ import {
   setOrchestrationEnabled,
 } from './clubhouse-mcp/orchestration-gate';
 import { appLog } from './log-service';
+import { noteRoutingPolicyChanged } from './helper-routing-changes';
 import { appendSettingsAudit, type SettingsAuditRow, type SettingsAuditSurface } from './settings-audit';
 import { isMcpEnabled, onMcpEnablementChanged } from './mcp-settings';
 import { setPersonaChangeHook, type PersonaChange } from './persona-change-hook';
@@ -87,6 +88,7 @@ import {
   ORCHESTRATION_DEFAULTS,
   ORCHESTRATION_OFF_MESSAGE,
   applyOrchestrationPatch,
+  decideHelperAuto,
   checkHelperLimit,
   normalizeOrchestrationConfig,
   patchTurnsOnMcpSwitch,
@@ -161,7 +163,11 @@ export async function withAgentLock<T>(_projectPath: string, agentId: string, fn
 async function readPersonaPolicy(projectPath: string, personaId: string): Promise<OrchestrationPolicyConfig | undefined> {
   try {
     const raw = await readLayeredPersonaRaw(projectPath, personaId);
-    return raw === undefined ? undefined : normalizeOrchestrationConfig(readFrontMatterValue(raw, 'orchestration'));
+    if (raw === undefined) return undefined;
+    const config = normalizeOrchestrationConfig(readFrontMatterValue(raw, 'orchestration'));
+    // A persona can turn Auto off and never on, so its `true` can't hide another layer's `false` when they merge (#2671).
+    if (config?.autoHelpers === true) delete config.autoHelpers;
+    return config;
   } catch (err) {
     // telemetry-exempt: an unreadable persona falls back to the defaults
     appLog('core:orchestration', 'warn', 'Could not read orchestration defaults from a persona', {
@@ -209,7 +215,22 @@ async function resolveFor(
   agent: DurableAgentConfig,
   stored: OrchestrationPolicyConfig | undefined,
 ): Promise<ResolvedOrchestrationPolicy> {
-  return resolveOrchestrationPolicy(stored, await readPersonaOrchestrationDefaults(projectPath, agent), resolveOptions(projectPath, agent));
+  const policy = resolveOrchestrationPolicy(stored, await readPersonaOrchestrationDefaults(projectPath, agent), resolveOptions(projectPath, agent));
+  return withAutoEffective(policy, await projectAutoOff(projectPath));
+}
+
+async function projectAutoOff(projectPath: string): Promise<boolean> {
+  try {
+    return (await readProjectAgentDefaults(projectPath)).helperAuto === 'off';
+  } catch {
+    // telemetry-exempt: unreadable project defaults can't have said off, and the start reads them again
+    return false;
+  }
+}
+
+/** What the surfaces show: whether Auto would work, not only this agent's own switch (#2671). */
+function withAutoEffective(policy: ResolvedOrchestrationPolicy, projectOff: boolean): ResolvedOrchestrationPolicy {
+  return { ...policy, autoEffective: decideHelperAuto({ app: orchestrationSettings.getAutoHelpers(), projectOff, policy }) };
 }
 
 function resolveOptions(projectPath: string, agent: DurableAgentConfig): { helper: boolean; mcpOff: boolean } {
@@ -290,7 +311,10 @@ export async function resolveOrchestrationPolicies(
       try { personaId = resolvePersonaId(agent, defaults); } catch { /* telemetry-exempt: as effectivePersonaId, the agent's own persona */ }
     }
     if (!personas.has(personaId)) personas.set(personaId, personaDefaultsFor(projectPath, personaId));
-    out.set(agent.id, resolveOrchestrationPolicy(agent.orchestration, await personas.get(personaId), resolveOptions(projectPath, agent)));
+    out.set(agent.id, withAutoEffective(
+      resolveOrchestrationPolicy(agent.orchestration, await personas.get(personaId), resolveOptions(projectPath, agent)),
+      defaults?.helperAuto === 'off',
+    ));
   }));
   return out;
 }
@@ -359,11 +383,17 @@ async function countHelpersElsewhere(projectPath: string, agentId: string): Prom
 
 type PolicyAudit = Pick<SettingsAuditRow, 'surface' | 'actorId' | 'targetId'>;
 
-/** One row per field that changed. Every field is an enum, a boolean or a whole number. */
-async function auditPolicyChange(audit: PolicyAudit, before: ResolvedOrchestrationPolicy, after: ResolvedOrchestrationPolicy): Promise<void> {
+/**
+ * One row per field whose saved value changed: what the agent itself says, null
+ * when unset. Resolved values would miss a clear from false to unset, or anything
+ * written while MCP masks it. Every field is an enum, a boolean or a whole number.
+ */
+async function auditPolicyChange(audit: PolicyAudit, before: OrchestrationPolicyConfig | undefined, after: OrchestrationPolicyConfig | undefined): Promise<void> {
   for (const key of Object.keys(ORCHESTRATION_DEFAULTS) as Array<keyof OrchestrationPolicy>) {
-    if (before[key] === after[key]) continue;
-    await appendSettingsAudit({ ...audit, scope: 'agent', key: `orchestration.${key}`, before: before[key], after: after[key], outcome: 'ok' });
+    const was = before?.[key] ?? null;
+    const now = after?.[key] ?? null;
+    if (was === now) continue;
+    await appendSettingsAudit({ ...audit, scope: 'agent', key: `orchestration.${key}`, before: was, after: now, outcome: 'ok' });
   }
 }
 
@@ -424,9 +454,16 @@ export async function setOrchestrationPolicy(
       }
     }
 
+    // Copied now: the write can change this agent's own record.
+    const storedBefore = agent.orchestration && { ...agent.orchestration };
     await agentConfig.setOrchestrationConfig(projectPath, agentId, stored);
     applyGate(projectPath, agent, next);
-    await auditPolicyChange(audit, current, next);
+    await auditPolicyChange(audit, storedBefore, stored);
+    // Its own switch or orchestrate as saved, or the outcome: a clear from false to unset can change the outcome,
+    // and a write while MCP is off changes what comes back with it.
+    if (storedBefore?.autoHelpers !== stored?.autoHelpers
+      || storedBefore?.orchestrate !== stored?.orchestrate
+      || current.autoEffective?.effective !== next.autoEffective?.effective) noteRoutingPolicyChanged();
     appLog('core:orchestration', 'info', 'Orchestration policy changed', {
       meta: {
         agentId,
@@ -517,6 +554,8 @@ export async function turnOffOrchestration(
     if (savedOrchestrate(current)) {
       stored = applyOrchestrationPatch(fresh.orchestration, { orchestrate: false });
       await agentConfig.setOrchestrationConfig(projectPath, agentId, stored);
+      // Now, not at the end: the write stands even if settling a late helper fails below.
+      noteRoutingPolicyChanged();
     }
     // Closed again after the write, whatever happened to the gate meanwhile.
     setOrchestrationEnabled(agentId, false);
@@ -575,6 +614,8 @@ export async function reconcileAfterPersonaChange(
 
 /** Route a persona change to the agents it affects. */
 async function onPersonaChange(change: PersonaChange): Promise<void> {
+  // A persona can turn Auto off (#2671).
+  noteRoutingPolicyChanged();
   if (change.kind === 'agent') {
     const agent = await agentConfig.getDurableConfig(change.projectPath, change.agentId);
     if (!agent) return;

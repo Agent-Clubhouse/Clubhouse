@@ -5,6 +5,7 @@ const W = vi.hoisted(() => ({
   read: null as null | ((opts?: { env?: Record<string, string> }) => Promise<unknown>),
   chat: null as null | ((event: unknown) => void),
   telemetry: [] as unknown[][],
+  cooldowns: [] as unknown[][],
   logs: [] as unknown[],
   env: undefined as Record<string, string> | undefined,
   registrations: new Map<string, { projectPath: string; orchestrator: string }>(),
@@ -21,9 +22,15 @@ vi.mock('./agent-system', () => ({ resolveProfileEnv: async () => W.env }));
 vi.mock('./agent-registry', () => ({ agentRegistry: { get: (id: string) => W.registrations.get(id) } }));
 vi.mock('./agent-runtime/chat-event-bus', () => ({ onChatEvent: (listener: (event: unknown) => void) => { W.chat = listener; return () => { W.chat = null; }; } }));
 vi.mock('./log-service', () => ({ appLog: (...args: unknown[]) => { W.logs.push(args); } }));
-vi.mock('../telemetry/feature-events', () => ({ helperQuotaRead: (...args: unknown[]) => { W.telemetry.push(args); } }));
+vi.mock('../telemetry/feature-events', () => ({
+  helperQuotaRead: (...args: unknown[]) => { W.telemetry.push(args); },
+  helperAutoCooldown: (...args: unknown[]) => { W.cooldowns.push(args); },
+}));
 
-import { QUOTA_CACHE_MS, QUOTA_FAILURE_BACKOFF_MS, _resetProviderQuotaForTesting, readProviderQuota, watchSessionQuota } from './provider-quota';
+import {
+  QUOTA_CACHE_MS, QUOTA_FAILURE_BACKOFF_MS, _resetProviderQuotaForTesting, classifyStartFailure, isProviderCoolingDown, noteProviderFailure, providerStartWarning, readProviderQuota, watchSessionQuota,
+} from './provider-quota';
+import { AUTO_COOLDOWN_AUTH_MS, AUTO_COOLDOWN_AVAILABILITY_MS, AUTO_COOLDOWN_QUOTA_MS } from './helper-auto-policy';
 import { QUOTA_STALE_MS } from '../../shared/helper-routing';
 
 const NOW = 1_800_000_000_000;
@@ -35,6 +42,7 @@ beforeEach(() => {
   vi.useFakeTimers({ now: NOW });
   W.read = null;
   W.telemetry = [];
+  W.cooldowns = [];
   W.logs = [];
   W.env = undefined;
   W.registrations = new Map();
@@ -178,5 +186,88 @@ describe('watchSessionQuota', () => {
     usage([{ window: 'week', utilization: 1 }], 'nobody');
     await settle();
     expect(await readProviderQuota('claude-code', '/p')).toMatchObject({ state: 'known', weekly: { usedPercent: 10 } });
+  });
+});
+
+describe('failures and cooldowns', () => {
+  it.each<[unknown, string]>([
+    [Object.assign(new Error('x'), { code: 'auth_required' }), 'auth'],
+    [Object.assign(new Error('x'), { code: 'account_issue' }), 'auth'],
+    [new Error('You are not logged in'), 'auth'],
+    [Object.assign(new Error('x'), { code: 'rate_limited' }), 'quota'],
+    [new Error('Usage limit reached for the week'), 'quota'],
+    [new Error('spawn ENOENT'), 'availability'],
+    ['anything else', 'availability'],
+  ])('classifies %s as %s', (err, kind) => {
+    expect(classifyStartFailure(err)).toBe(kind);
+  });
+
+  it.each([
+    ['auth', AUTO_COOLDOWN_AUTH_MS],
+    ['availability', AUTO_COOLDOWN_AVAILABILITY_MS],
+  ] as const)('%s cools down for a fixed while, and nothing about quota changes', async (kind, ms) => {
+    await noteProviderFailure('claude-code', undefined, kind);
+    expect(await isProviderCoolingDown('claude-code', undefined)).toBe(true);
+    expect(W.cooldowns).toEqual([['claude-code', kind]]);
+    vi.setSystemTime(NOW + ms - 1);
+    expect(await isProviderCoolingDown('claude-code', undefined)).toBe(true);
+    vi.setSystemTime(NOW + ms);
+    expect(await isProviderCoolingDown('claude-code', undefined)).toBe(false);
+  });
+
+  it('a quota failure is the provider saying so: exhausted, until the cooldown ends or a read disagrees', async () => {
+    await noteProviderFailure('claude-code', undefined, 'quota');
+    W.read = async () => { throw new Error('no read'); };
+    expect(await readProviderQuota('claude-code')).toMatchObject({ state: 'exhausted', source: 'session_event' });
+    vi.setSystemTime(NOW + AUTO_COOLDOWN_QUOTA_MS);
+    expect(await isProviderCoolingDown('claude-code', undefined)).toBe(false);
+    expect((await readProviderQuota('claude-code')).state).not.toBe('exhausted');
+  });
+
+  it('a quota failure with a known reset waits until then', async () => {
+    await noteProviderFailure('claude-code', undefined, 'quota', NOW + 1000);
+    vi.setSystemTime(NOW + 1000);
+    expect(await isProviderCoolingDown('claude-code', undefined)).toBe(false);
+  });
+
+  it('a quota failure with no reset of its own uses a known limit\'s', async () => {
+    W.read = async () => ({ kind: 'windows', windows: [{ name: 'week', usedPercent: 90, limitReached: true, resetsAt: NOW + AUTO_COOLDOWN_QUOTA_MS * 3, asOf: NOW }] });
+    await readProviderQuota('claude-code');
+    await noteProviderFailure('claude-code', undefined, 'quota');
+    vi.setSystemTime(NOW + AUTO_COOLDOWN_QUOTA_MS * 2);
+    expect(await isProviderCoolingDown('claude-code', undefined)).toBe(true);
+    vi.setSystemTime(NOW + AUTO_COOLDOWN_QUOTA_MS * 3);
+    expect(await isProviderCoolingDown('claude-code', undefined)).toBe(false);
+  });
+
+  it('warns an explicit start from what is known, asking the CLI nothing', async () => {
+    const read = vi.fn(async () => reading(96));
+    W.read = read;
+    expect(await providerStartWarning('claude-code', undefined)).toBeUndefined();
+    expect(read).not.toHaveBeenCalled();
+    await readProviderQuota('claude-code');
+    expect(await providerStartWarning('claude-code', undefined)).toMatchObject({ code: 'quota_near_limit', asOf: new Date(NOW).toISOString(), message: expect.stringContaining('close to its plan limit') });
+    await noteProviderFailure('claude-code', undefined, 'auth');
+    expect(await providerStartWarning('claude-code', undefined)).toMatchObject({ code: 'cooling_down', asOf: new Date(NOW).toISOString() });
+    expect(read).toHaveBeenCalledTimes(1);
+  });
+
+  it('each profile cools down on its own', async () => {
+    await noteProviderFailure('claude-code', undefined, 'auth');
+    W.env = { CLAUDE_CONFIG_DIR: '/other' };
+    expect(await isProviderCoolingDown('claude-code', '/p')).toBe(false);
+  });
+
+  it('a session finding a limit or a logged-out CLI tells Auto; a task\'s own error doesn\'t', async () => {
+    watchSessionQuota();
+    W.registrations.set('a1', { projectPath: '/p', orchestrator: 'claude-code' });
+    W.chat!({ type: 'error', agentId: 'a1', data: { code: 'tool_failed', message: 'x' } });
+    W.chat!({ type: 'error', agentId: 'a1', data: { code: 'context_overflow', message: 'x' } });
+    await vi.advanceTimersByTimeAsync(0);
+    expect(await isProviderCoolingDown('claude-code', '/p')).toBe(false);
+    W.chat!({ type: 'error', agentId: 'a1', data: { code: 'rate_limited', message: 'x' } });
+    await vi.advanceTimersByTimeAsync(0);
+    expect(await isProviderCoolingDown('claude-code', '/p')).toBe(true);
+    expect(W.cooldowns).toEqual([['claude-code', 'quota']]);
   });
 });

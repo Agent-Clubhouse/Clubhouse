@@ -12,7 +12,7 @@ import { CardNote, CardRow, DetailsCard } from '../details/DetailsCard';
 import { CONTROL_LABELS, controlHelp } from './helper-model';
 import { maxHelpersCeiling, openHelpersSettings, type OrchestrationState } from './orchestration-hooks';
 import {
-  AccessSelect, CROSS_PROJECT_HELP, ControlSelect, CrossProjectToggle, DISPATCHER_HELP, DispatcherToggle, HelperCountInput, accessNote, mcpOffNote,
+  AccessSelect, CROSS_PROJECT_HELP, ControlSelect, AutoHelpersToggle, AUTO_HELPERS_HELP, CrossProjectToggle, DISPATCHER_HELP, DispatcherToggle, HelperCountInput, accessNote, mcpOffNote,
 } from './OrchestrationFields';
 import { useDispatcherEnabled } from '../../dispatcher/useDispatcherEnabled';
 import { TurnOffOrchestrationDialog } from './TurnOffOrchestrationDialog';
@@ -37,7 +37,7 @@ export function OrchestrateCard({ agent, projectPath, orch, open, onToggle }: {
   open: boolean;
   onToggle: () => void;
 }) {
-  const ids = { access: useId(), control: useId(), count: useId(), crossProject: useId(), dispatcher: useId() };
+  const ids = { auto: useId(), access: useId(), control: useId(), count: useId(), crossProject: useId(), dispatcher: useId() };
   // Connect to Dispatcher shows while the Dispatcher is turned on, with orchestration on or off (#2578).
   const showDispatcher = useDispatcherEnabled();
   const [countError, setCountError] = useState<string | null>(null);
@@ -138,6 +138,19 @@ export function OrchestrateCard({ agent, projectPath, orch, open, onToggle }: {
                   testId="orchestrate-cross-project"
                 />
                 <span className="text-ctp-overlay1">{CROSS_PROJECT_HELP}</span>
+              </span>
+            </CardRow>
+            <CardRow label="Auto provider">
+              <span className="flex flex-col items-start gap-1">
+                <AutoHelpersToggle
+                  id={ids.auto}
+                  policy={policy}
+                  name={agent.name}
+                  disabled={saving}
+                  onChange={(on) => void orch.setAutoHelpers(on)}
+                  testId="orchestrate-auto-helpers"
+                />
+                <span className="text-ctp-overlay1">{AUTO_HELPERS_HELP}</span>
               </span>
             </CardRow>
           </>

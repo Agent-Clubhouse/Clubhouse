@@ -82,6 +82,7 @@ export const agentSettings = {
   writeMcpRawJson: (worktreePath: string, content: string, projectPath?: string): Promise<{ ok: boolean; error?: string }> =>
     ipcRenderer.invoke(IPC.AGENT.WRITE_MCP_RAW_JSON, worktreePath, content, projectPath),
   readProjectAgentDefaults: (projectPath: string): Promise<{
+    helperAuto?: 'off';
     instructions?: string;
     permissions?: { allow?: string[]; deny?: string[] };
     mcpJson?: string;
@@ -97,6 +98,7 @@ export const agentSettings = {
   }> =>
     ipcRenderer.invoke(IPC.AGENT.READ_PROJECT_AGENT_DEFAULTS, projectPath),
   writeProjectAgentDefaults: (projectPath: string, defaults: {
+    helperAuto?: 'off';
     instructions?: string;
     permissions?: { allow?: string[]; deny?: string[] };
     mcpJson?: string;

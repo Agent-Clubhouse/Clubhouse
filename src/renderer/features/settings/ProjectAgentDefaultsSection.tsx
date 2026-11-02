@@ -32,6 +32,7 @@ interface ProjectAgentDefaults {
   permissions?: { allow?: string[]; deny?: string[] };
   mcpJson?: string;
   freeAgentMode?: boolean;
+  helperAuto?: 'off';
   sourceControlProvider?: SourceControlProvider;
   buildCommand?: string;
   testCommand?: string;
@@ -234,6 +235,7 @@ export function ProjectAgentDefaultsSection({ projectPath, clubhouseMode }: Prop
   const [permDeny, setPermDeny] = useState('');
   const [mcpJson, setMcpJson] = useState('');
   const [freeAgentMode, setFreeAgentMode] = useState(false);
+  const [helperAutoOff, setHelperAutoOff] = useState(false);
   const [sourceControlProvider, setSourceControlProvider] = useState<SourceControlProvider>('github');
   const [buildCommand, setBuildCommand] = useState('');
   const [testCommand, setTestCommand] = useState('');
@@ -273,6 +275,7 @@ export function ProjectAgentDefaultsSection({ projectPath, clubhouseMode }: Prop
       setPermDeny((d.permissions?.deny || []).join('\n'));
       setMcpJson(d.mcpJson || '');
       setFreeAgentMode(d.freeAgentMode ?? false);
+      setHelperAutoOff(d.helperAuto === 'off');
       setSourceControlProvider(d.sourceControlProvider ?? 'github');
       setBuildCommand(d.buildCommand || '');
       setTestCommand(d.testCommand || '');
@@ -350,6 +353,7 @@ export function ProjectAgentDefaultsSection({ projectPath, clubhouseMode }: Prop
     }
     if (mcpJson.trim()) newDefaults.mcpJson = mcpJson;
     if (freeAgentMode) newDefaults.freeAgentMode = true;
+    if (helperAutoOff) newDefaults.helperAuto = 'off';
     if (sourceControlProvider !== 'github') newDefaults.sourceControlProvider = sourceControlProvider;
     if (buildCommand.trim()) newDefaults.buildCommand = buildCommand.trim();
     if (testCommand.trim()) newDefaults.testCommand = testCommand.trim();
@@ -596,6 +600,17 @@ export function ProjectAgentDefaultsSection({ projectPath, clubhouseMode }: Prop
             aria-label="Free agent mode by default"
             checked={freeAgentMode}
             onChange={(v) => { setFreeAgentMode(v); markDirty(); }}
+          />
+        </SettingsField>
+        <SettingsField
+          label="Turn off Auto provider here"
+          help="Orchestrators here can’t let Clubhouse pick a helper’s provider. A project can turn this off, but not on."
+        >
+          <Toggle
+            aria-label="Turn off Auto provider in this project"
+            checked={helperAutoOff}
+            onChange={(v) => { setHelperAutoOff(v); markDirty(); }}
+            data-testid="project-helper-auto-off"
           />
         </SettingsField>
       </SettingsSection>

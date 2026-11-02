@@ -31,6 +31,8 @@
                 "auto",
                 "bypass"
               ],
+              "autoHelpers": null,
+              "autoHelpersEffective": false,
               "connectToDispatcher": false,
               "control": "ask-before-start",
               "controls": [
@@ -45,6 +47,7 @@
               "orchestrate": false,
               "sources": {
                 "access": "default",
+                "autoHelpers": "default",
                 "connectToDispatcher": "default",
                 "control": "persona",
                 "crossProjectHelpers": "default",
@@ -190,6 +193,8 @@
                 "auto",
                 "bypass"
               ],
+              "autoHelpers": null,
+              "autoHelpersEffective": false,
               "connectToDispatcher": false,
               "control": "hands-off",
               "controls": [
@@ -204,6 +209,7 @@
               "orchestrate": false,
               "sources": {
                 "access": "default",
+                "autoHelpers": "default",
                 "connectToDispatcher": "default",
                 "control": "default",
                 "crossProjectHelpers": "default",
@@ -346,6 +352,8 @@
                 "auto",
                 "bypass"
               ],
+              "autoHelpers": null,
+              "autoHelpersEffective": false,
               "connectToDispatcher": false,
               "control": "hands-off",
               "controls": [
@@ -360,6 +368,7 @@
               "orchestrate": false,
               "sources": {
                 "access": "default",
+                "autoHelpers": "default",
                 "connectToDispatcher": "default",
                 "control": "default",
                 "crossProjectHelpers": "default",
@@ -502,6 +511,8 @@
                 "auto",
                 "bypass"
               ],
+              "autoHelpers": null,
+              "autoHelpersEffective": false,
               "connectToDispatcher": true,
               "control": "hands-off",
               "controls": [
@@ -516,6 +527,7 @@
               "orchestrate": true,
               "sources": {
                 "access": "default",
+                "autoHelpers": "default",
                 "connectToDispatcher": "default",
                 "control": "default",
                 "crossProjectHelpers": "default",
@@ -949,6 +961,8 @@
                 "auto",
                 "bypass"
               ],
+              "autoHelpers": null,
+              "autoHelpersEffective": false,
               "connectToDispatcher": true,
               "control": "ask-everything",
               "controls": [
@@ -963,6 +977,7 @@
               "orchestrate": true,
               "sources": {
                 "access": "agent",
+                "autoHelpers": "default",
                 "connectToDispatcher": "default",
                 "control": "agent",
                 "crossProjectHelpers": "default",
@@ -1107,6 +1122,8 @@
                 "auto",
                 "bypass"
               ],
+              "autoHelpers": null,
+              "autoHelpersEffective": false,
               "connectToDispatcher": true,
               "control": "ask-everything",
               "controls": [
@@ -1121,6 +1138,7 @@
               "orchestrate": true,
               "sources": {
                 "access": "agent",
+                "autoHelpers": "default",
                 "connectToDispatcher": "default",
                 "control": "agent",
                 "crossProjectHelpers": "default",
@@ -1263,6 +1281,8 @@
                 "auto",
                 "bypass"
               ],
+              "autoHelpers": null,
+              "autoHelpersEffective": false,
               "connectToDispatcher": false,
               "control": "hands-off",
               "controls": [
@@ -1277,6 +1297,7 @@
               "orchestrate": false,
               "sources": {
                 "access": "default",
+                "autoHelpers": "default",
                 "connectToDispatcher": "default",
                 "control": "default",
                 "crossProjectHelpers": "default",
@@ -1957,6 +1978,8 @@
                 "auto",
                 "bypass"
               ],
+              "autoHelpers": null,
+              "autoHelpersEffective": false,
               "connectToDispatcher": true,
               "control": "hands-off",
               "controls": [
@@ -1971,6 +1994,7 @@
               "orchestrate": true,
               "sources": {
                 "access": "default",
+                "autoHelpers": "default",
                 "connectToDispatcher": "agent",
                 "control": "default",
                 "crossProjectHelpers": "agent",
@@ -2116,10 +2140,545 @@
       }
     },
     {
+      "name": "accepted autoHelpers on",
+      "request": {
+        "agentId": "durable_chat",
+        "commandId": "cmd_158",
+        "epoch": "00000000-0000-4000-8000-000000000001",
+        "orchestration": {
+          "autoHelpers": true
+        },
+        "type": "agent.update",
+        "version": 1
+      },
+      "response": {
+        "body": {
+          "commandId": "cmd_158",
+          "epoch": "00000000-0000-4000-8000-000000000001",
+          "result": {
+            "agentId": "durable_chat",
+            "orchestration": {
+              "access": "same",
+              "accessLevels": [
+                "same",
+                "standard",
+                "auto",
+                "bypass"
+              ],
+              "autoHelpers": true,
+              "autoHelpersEffective": true,
+              "connectToDispatcher": true,
+              "control": "hands-off",
+              "controls": [
+                "hands-off",
+                "ask-before-start",
+                "ask-everything"
+              ],
+              "crossProjectHelpers": false,
+              "maxHelpers": 3,
+              "maxHelpersCap": 20,
+              "mcpEnabled": true,
+              "orchestrate": true,
+              "sources": {
+                "access": "default",
+                "autoHelpers": "agent",
+                "connectToDispatcher": "default",
+                "control": "default",
+                "crossProjectHelpers": "default",
+                "maxHelpers": "agent",
+                "orchestrate": "agent"
+              }
+            },
+            "projectId": "proj_app",
+            "settings": {
+              "clubhouseMode": {
+                "editable": "never",
+                "projectEnabled": false,
+                "value": null
+              },
+              "color": {
+                "editable": "sleeping",
+                "value": "indigo"
+              },
+              "contextWindow": {
+                "applies": [
+                  "launch",
+                  "resume"
+                ],
+                "choices": [
+                  {
+                    "id": "100000",
+                    "label": "100K",
+                    "tokens": 100000
+                  },
+                  {
+                    "id": "200000",
+                    "label": "200K",
+                    "tokens": 200000
+                  },
+                  {
+                    "id": "300000",
+                    "label": "300K",
+                    "tokens": 300000
+                  },
+                  {
+                    "id": "500000",
+                    "label": "500K",
+                    "tokens": 500000
+                  },
+                  {
+                    "id": "750000",
+                    "label": "750K",
+                    "tokens": 750000
+                  },
+                  {
+                    "id": "1000000",
+                    "label": "1M",
+                    "tokens": 1000000
+                  }
+                ],
+                "configurable": true,
+                "costNote": "A larger size sends more history with each message, so long sessions use more tokens. Your plan or the model can cap it; a running session shows what it got.",
+                "defaultLabel": "Auto",
+                "defaultTokens": null,
+                "description": "How much conversation Claude Code keeps before it compacts. This doesn't change the model's own context window, and a lower value compacts sooner. It compacts a little below this size.",
+                "editable": "sleeping",
+                "kind": "working_window",
+                "label": "Working context",
+                "maxTokens": 1000000,
+                "notice": null,
+                "reason": null,
+                "state": null,
+                "value": null
+              },
+              "emoji": {
+                "editable": "sleeping",
+                "value": "🦊"
+              },
+              "freeAgentMode": {
+                "editable": "sleeping",
+                "value": false
+              },
+              "hasImageIcon": true,
+              "idleSleep": {
+                "applies": true,
+                "editable": "always",
+                "minutes": 30,
+                "source": "app",
+                "value": "inherit"
+              },
+              "model": {
+                "editable": "sleeping",
+                "value": "opus"
+              },
+              "name": {
+                "editable": "sleeping",
+                "value": "planner"
+              },
+              "orchestrator": {
+                "changeStartsNewSession": true,
+                "editable": "sleeping",
+                "resolved": "claude-code",
+                "value": "claude-code"
+              },
+              "persona": {
+                "editable": "sleeping",
+                "value": null
+              },
+              "runtime": {
+                "editable": "sleeping",
+                "resolved": "chat",
+                "value": "default"
+              }
+            },
+            "sleeping": false,
+            "state": "running"
+          },
+          "status": "completed",
+          "version": 1
+        },
+        "status": 200
+      }
+    },
+    {
+      "name": "accepted autoHelpers off",
+      "request": {
+        "agentId": "durable_chat",
+        "commandId": "cmd_159",
+        "epoch": "00000000-0000-4000-8000-000000000001",
+        "orchestration": {
+          "autoHelpers": false
+        },
+        "type": "agent.update",
+        "version": 1
+      },
+      "response": {
+        "body": {
+          "commandId": "cmd_159",
+          "epoch": "00000000-0000-4000-8000-000000000001",
+          "result": {
+            "agentId": "durable_chat",
+            "orchestration": {
+              "access": "same",
+              "accessLevels": [
+                "same",
+                "standard",
+                "auto",
+                "bypass"
+              ],
+              "autoHelpers": false,
+              "autoHelpersEffective": false,
+              "connectToDispatcher": true,
+              "control": "hands-off",
+              "controls": [
+                "hands-off",
+                "ask-before-start",
+                "ask-everything"
+              ],
+              "crossProjectHelpers": false,
+              "maxHelpers": 3,
+              "maxHelpersCap": 20,
+              "mcpEnabled": true,
+              "orchestrate": true,
+              "sources": {
+                "access": "default",
+                "autoHelpers": "agent",
+                "connectToDispatcher": "default",
+                "control": "default",
+                "crossProjectHelpers": "default",
+                "maxHelpers": "agent",
+                "orchestrate": "agent"
+              }
+            },
+            "projectId": "proj_app",
+            "settings": {
+              "clubhouseMode": {
+                "editable": "never",
+                "projectEnabled": false,
+                "value": null
+              },
+              "color": {
+                "editable": "sleeping",
+                "value": "indigo"
+              },
+              "contextWindow": {
+                "applies": [
+                  "launch",
+                  "resume"
+                ],
+                "choices": [
+                  {
+                    "id": "100000",
+                    "label": "100K",
+                    "tokens": 100000
+                  },
+                  {
+                    "id": "200000",
+                    "label": "200K",
+                    "tokens": 200000
+                  },
+                  {
+                    "id": "300000",
+                    "label": "300K",
+                    "tokens": 300000
+                  },
+                  {
+                    "id": "500000",
+                    "label": "500K",
+                    "tokens": 500000
+                  },
+                  {
+                    "id": "750000",
+                    "label": "750K",
+                    "tokens": 750000
+                  },
+                  {
+                    "id": "1000000",
+                    "label": "1M",
+                    "tokens": 1000000
+                  }
+                ],
+                "configurable": true,
+                "costNote": "A larger size sends more history with each message, so long sessions use more tokens. Your plan or the model can cap it; a running session shows what it got.",
+                "defaultLabel": "Auto",
+                "defaultTokens": null,
+                "description": "How much conversation Claude Code keeps before it compacts. This doesn't change the model's own context window, and a lower value compacts sooner. It compacts a little below this size.",
+                "editable": "sleeping",
+                "kind": "working_window",
+                "label": "Working context",
+                "maxTokens": 1000000,
+                "notice": null,
+                "reason": null,
+                "state": null,
+                "value": null
+              },
+              "emoji": {
+                "editable": "sleeping",
+                "value": "🦊"
+              },
+              "freeAgentMode": {
+                "editable": "sleeping",
+                "value": false
+              },
+              "hasImageIcon": true,
+              "idleSleep": {
+                "applies": true,
+                "editable": "always",
+                "minutes": 30,
+                "source": "app",
+                "value": "inherit"
+              },
+              "model": {
+                "editable": "sleeping",
+                "value": "opus"
+              },
+              "name": {
+                "editable": "sleeping",
+                "value": "planner"
+              },
+              "orchestrator": {
+                "changeStartsNewSession": true,
+                "editable": "sleeping",
+                "resolved": "claude-code",
+                "value": "claude-code"
+              },
+              "persona": {
+                "editable": "sleeping",
+                "value": null
+              },
+              "runtime": {
+                "editable": "sleeping",
+                "resolved": "chat",
+                "value": "default"
+              }
+            },
+            "sleeping": false,
+            "state": "running"
+          },
+          "status": "completed",
+          "version": 1
+        },
+        "status": 200
+      }
+    },
+    {
+      "name": "accepted autoHelpers cleared (inherits)",
+      "request": {
+        "agentId": "durable_chat",
+        "commandId": "cmd_160",
+        "epoch": "00000000-0000-4000-8000-000000000001",
+        "orchestration": {
+          "autoHelpers": null
+        },
+        "type": "agent.update",
+        "version": 1
+      },
+      "response": {
+        "body": {
+          "commandId": "cmd_160",
+          "epoch": "00000000-0000-4000-8000-000000000001",
+          "result": {
+            "agentId": "durable_chat",
+            "orchestration": {
+              "access": "same",
+              "accessLevels": [
+                "same",
+                "standard",
+                "auto",
+                "bypass"
+              ],
+              "autoHelpers": null,
+              "autoHelpersEffective": false,
+              "connectToDispatcher": true,
+              "control": "hands-off",
+              "controls": [
+                "hands-off",
+                "ask-before-start",
+                "ask-everything"
+              ],
+              "crossProjectHelpers": false,
+              "maxHelpers": 3,
+              "maxHelpersCap": 20,
+              "mcpEnabled": true,
+              "orchestrate": true,
+              "sources": {
+                "access": "default",
+                "autoHelpers": "default",
+                "connectToDispatcher": "default",
+                "control": "default",
+                "crossProjectHelpers": "default",
+                "maxHelpers": "agent",
+                "orchestrate": "agent"
+              }
+            },
+            "projectId": "proj_app",
+            "settings": {
+              "clubhouseMode": {
+                "editable": "never",
+                "projectEnabled": false,
+                "value": null
+              },
+              "color": {
+                "editable": "sleeping",
+                "value": "indigo"
+              },
+              "contextWindow": {
+                "applies": [
+                  "launch",
+                  "resume"
+                ],
+                "choices": [
+                  {
+                    "id": "100000",
+                    "label": "100K",
+                    "tokens": 100000
+                  },
+                  {
+                    "id": "200000",
+                    "label": "200K",
+                    "tokens": 200000
+                  },
+                  {
+                    "id": "300000",
+                    "label": "300K",
+                    "tokens": 300000
+                  },
+                  {
+                    "id": "500000",
+                    "label": "500K",
+                    "tokens": 500000
+                  },
+                  {
+                    "id": "750000",
+                    "label": "750K",
+                    "tokens": 750000
+                  },
+                  {
+                    "id": "1000000",
+                    "label": "1M",
+                    "tokens": 1000000
+                  }
+                ],
+                "configurable": true,
+                "costNote": "A larger size sends more history with each message, so long sessions use more tokens. Your plan or the model can cap it; a running session shows what it got.",
+                "defaultLabel": "Auto",
+                "defaultTokens": null,
+                "description": "How much conversation Claude Code keeps before it compacts. This doesn't change the model's own context window, and a lower value compacts sooner. It compacts a little below this size.",
+                "editable": "sleeping",
+                "kind": "working_window",
+                "label": "Working context",
+                "maxTokens": 1000000,
+                "notice": null,
+                "reason": null,
+                "state": null,
+                "value": null
+              },
+              "emoji": {
+                "editable": "sleeping",
+                "value": "🦊"
+              },
+              "freeAgentMode": {
+                "editable": "sleeping",
+                "value": false
+              },
+              "hasImageIcon": true,
+              "idleSleep": {
+                "applies": true,
+                "editable": "always",
+                "minutes": 30,
+                "source": "app",
+                "value": "inherit"
+              },
+              "model": {
+                "editable": "sleeping",
+                "value": "opus"
+              },
+              "name": {
+                "editable": "sleeping",
+                "value": "planner"
+              },
+              "orchestrator": {
+                "changeStartsNewSession": true,
+                "editable": "sleeping",
+                "resolved": "claude-code",
+                "value": "claude-code"
+              },
+              "persona": {
+                "editable": "sleeping",
+                "value": null
+              },
+              "runtime": {
+                "editable": "sleeping",
+                "resolved": "chat",
+                "value": "default"
+              }
+            },
+            "sleeping": false,
+            "state": "running"
+          },
+          "status": "completed",
+          "version": 1
+        },
+        "status": 200
+      }
+    },
+    {
+      "name": "invalid_orchestration (autoHelpers)",
+      "request": {
+        "agentId": "durable_chat",
+        "commandId": "cmd_161",
+        "epoch": "00000000-0000-4000-8000-000000000001",
+        "orchestration": {
+          "autoHelpers": "yes"
+        },
+        "type": "agent.update",
+        "version": 1
+      },
+      "response": {
+        "body": {
+          "commandId": "cmd_161",
+          "epoch": "00000000-0000-4000-8000-000000000001",
+          "error": {
+            "code": "invalid_orchestration",
+            "message": "autoHelpers must be a boolean"
+          },
+          "status": "rejected",
+          "version": 1
+        },
+        "status": 400
+      }
+    },
+    {
+      "name": "mcp_off (autoHelpers)",
+      "request": {
+        "agentId": "durable_chat",
+        "commandId": "cmd_162",
+        "epoch": "00000000-0000-4000-8000-000000000001",
+        "orchestration": {
+          "autoHelpers": true
+        },
+        "type": "agent.update",
+        "version": 1
+      },
+      "response": {
+        "body": {
+          "commandId": "cmd_162",
+          "epoch": "00000000-0000-4000-8000-000000000001",
+          "error": {
+            "code": "mcp_off",
+            "message": "This needs Clubhouse MCP, which is off for this agent. Turn it on first."
+          },
+          "status": "rejected",
+          "version": 1
+        },
+        "status": 409
+      }
+    },
+    {
       "name": "accepted contextWindow",
       "request": {
         "agentId": "durable_sleepy",
-        "commandId": "cmd_150",
+        "commandId": "cmd_166",
         "contextWindow": "500000",
         "epoch": "00000000-0000-4000-8000-000000000001",
         "type": "agent.update",
@@ -2127,7 +2686,7 @@
       },
       "response": {
         "body": {
-          "commandId": "cmd_150",
+          "commandId": "cmd_166",
           "epoch": "00000000-0000-4000-8000-000000000001",
           "result": {
             "agentId": "durable_sleepy",
@@ -2139,6 +2698,8 @@
                 "auto",
                 "bypass"
               ],
+              "autoHelpers": null,
+              "autoHelpersEffective": false,
               "connectToDispatcher": false,
               "control": "hands-off",
               "controls": [
@@ -2153,6 +2714,7 @@
               "orchestrate": false,
               "sources": {
                 "access": "default",
+                "autoHelpers": "default",
                 "connectToDispatcher": "default",
                 "control": "default",
                 "crossProjectHelpers": "default",
@@ -2275,7 +2837,7 @@
       "name": "accepted contextWindow null reset",
       "request": {
         "agentId": "durable_sleepy",
-        "commandId": "cmd_151",
+        "commandId": "cmd_167",
         "contextWindow": null,
         "epoch": "00000000-0000-4000-8000-000000000001",
         "type": "agent.update",
@@ -2283,7 +2845,7 @@
       },
       "response": {
         "body": {
-          "commandId": "cmd_151",
+          "commandId": "cmd_167",
           "epoch": "00000000-0000-4000-8000-000000000001",
           "result": {
             "agentId": "durable_sleepy",
@@ -2295,6 +2857,8 @@
                 "auto",
                 "bypass"
               ],
+              "autoHelpers": null,
+              "autoHelpersEffective": false,
               "connectToDispatcher": false,
               "control": "hands-off",
               "controls": [
@@ -2309,6 +2873,7 @@
               "orchestrate": false,
               "sources": {
                 "access": "default",
+                "autoHelpers": "default",
                 "connectToDispatcher": "default",
                 "control": "default",
                 "crossProjectHelpers": "default",
@@ -2431,7 +2996,7 @@
       "name": "invalid_context_window",
       "request": {
         "agentId": "durable_sleepy",
-        "commandId": "cmd_152",
+        "commandId": "cmd_168",
         "contextWindow": "123",
         "epoch": "00000000-0000-4000-8000-000000000001",
         "type": "agent.update",
@@ -2439,7 +3004,7 @@
       },
       "response": {
         "body": {
-          "commandId": "cmd_152",
+          "commandId": "cmd_168",
           "epoch": "00000000-0000-4000-8000-000000000001",
           "error": {
             "code": "invalid_context_window",
@@ -2455,7 +3020,7 @@
       "name": "agent_running (contextWindow)",
       "request": {
         "agentId": "durable_chat",
-        "commandId": "cmd_153",
+        "commandId": "cmd_169",
         "contextWindow": "500000",
         "epoch": "00000000-0000-4000-8000-000000000001",
         "type": "agent.update",
@@ -2463,7 +3028,7 @@
       },
       "response": {
         "body": {
-          "commandId": "cmd_153",
+          "commandId": "cmd_169",
           "epoch": "00000000-0000-4000-8000-000000000001",
           "error": {
             "code": "agent_running",
@@ -2479,7 +3044,7 @@
       "name": "accepted model change resets contextWindow",
       "request": {
         "agentId": "durable_sleepy",
-        "commandId": "cmd_154",
+        "commandId": "cmd_170",
         "epoch": "00000000-0000-4000-8000-000000000001",
         "model": "sonnet",
         "type": "agent.update",
@@ -2487,7 +3052,7 @@
       },
       "response": {
         "body": {
-          "commandId": "cmd_154",
+          "commandId": "cmd_170",
           "epoch": "00000000-0000-4000-8000-000000000001",
           "result": {
             "agentId": "durable_sleepy",
@@ -2503,6 +3068,8 @@
                 "auto",
                 "bypass"
               ],
+              "autoHelpers": null,
+              "autoHelpersEffective": false,
               "connectToDispatcher": false,
               "control": "hands-off",
               "controls": [
@@ -2517,6 +3084,7 @@
               "orchestrate": false,
               "sources": {
                 "access": "default",
+                "autoHelpers": "default",
                 "connectToDispatcher": "default",
                 "control": "default",
                 "crossProjectHelpers": "default",
@@ -2619,7 +3187,7 @@
       "name": "accepted contextWindow (Dispatcher)",
       "request": {
         "agentId": "durable_dispatcher",
-        "commandId": "cmd_155",
+        "commandId": "cmd_171",
         "contextWindow": "300000",
         "epoch": "00000000-0000-4000-8000-000000000001",
         "type": "agent.update",
@@ -2627,7 +3195,7 @@
       },
       "response": {
         "body": {
-          "commandId": "cmd_155",
+          "commandId": "cmd_171",
           "epoch": "00000000-0000-4000-8000-000000000001",
           "result": {
             "agentId": "durable_dispatcher",
@@ -2748,7 +3316,7 @@
       "name": "accepted contextWindow null reset (Dispatcher)",
       "request": {
         "agentId": "durable_dispatcher",
-        "commandId": "cmd_156",
+        "commandId": "cmd_172",
         "contextWindow": null,
         "epoch": "00000000-0000-4000-8000-000000000001",
         "type": "agent.update",
@@ -2756,7 +3324,7 @@
       },
       "response": {
         "body": {
-          "commandId": "cmd_156",
+          "commandId": "cmd_172",
           "epoch": "00000000-0000-4000-8000-000000000001",
           "result": {
             "agentId": "durable_dispatcher",
@@ -2877,7 +3445,7 @@
       "name": "invalid_context_window (Dispatcher)",
       "request": {
         "agentId": "durable_dispatcher",
-        "commandId": "cmd_157",
+        "commandId": "cmd_173",
         "contextWindow": "123",
         "epoch": "00000000-0000-4000-8000-000000000001",
         "type": "agent.update",
@@ -2885,7 +3453,7 @@
       },
       "response": {
         "body": {
-          "commandId": "cmd_157",
+          "commandId": "cmd_173",
           "epoch": "00000000-0000-4000-8000-000000000001",
           "error": {
             "code": "invalid_context_window",
@@ -2901,7 +3469,7 @@
       "name": "dispatcher_locked (name, with contextWindow)",
       "request": {
         "agentId": "durable_dispatcher",
-        "commandId": "cmd_158",
+        "commandId": "cmd_174",
         "contextWindow": "300000",
         "epoch": "00000000-0000-4000-8000-000000000001",
         "name": "Boss",
@@ -2910,7 +3478,7 @@
       },
       "response": {
         "body": {
-          "commandId": "cmd_158",
+          "commandId": "cmd_174",
           "epoch": "00000000-0000-4000-8000-000000000001",
           "error": {
             "code": "dispatcher_locked",

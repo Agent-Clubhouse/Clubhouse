@@ -12,14 +12,14 @@ import { Field, SectionHeading, inputClass, selectClass } from '../agentSettings
 import { controlHelp } from './helper-model';
 import { maxHelpersCeiling, useOrchestration } from './orchestration-hooks';
 import {
-  AccessSelect, CROSS_PROJECT_HELP, ControlSelect, CrossProjectToggle, DISPATCHER_HELP, DispatcherToggle, HelperCountInput, accessNote, mcpOffNote,
+  AccessSelect, CROSS_PROJECT_HELP, ControlSelect, AutoHelpersToggle, AUTO_HELPERS_HELP, CrossProjectToggle, DISPATCHER_HELP, DispatcherToggle, HelperCountInput, accessNote, mcpOffNote,
 } from './OrchestrationFields';
 import { useDispatcherEnabled } from '../../dispatcher/useDispatcherEnabled';
 import { TurnOffOrchestrationDialog } from './TurnOffOrchestrationDialog';
 
 export function AgentHelpersSettings({ agent, projectPath }: { agent: Agent; projectPath: string | undefined }) {
   const orch = useOrchestration(projectPath, agent);
-  const ids = { toggle: useId(), access: useId(), control: useId(), count: useId(), crossProject: useId(), dispatcher: useId() };
+  const ids = { auto: useId(), toggle: useId(), access: useId(), control: useId(), count: useId(), crossProject: useId(), dispatcher: useId() };
   // Connect to Dispatcher shows while the Dispatcher is turned on, with orchestration on or off (#2578).
   const showDispatcher = useDispatcherEnabled();
   const [countError, setCountError] = useState<string | null>(null);
@@ -85,6 +85,18 @@ export function AgentHelpersSettings({ agent, projectPath }: { agent: Agent; pro
             disabled={saving}
             onChange={(on) => void orch.setCrossProjectHelpers(on)}
             testId="settings-orchestrate-cross-project"
+          />
+        </Field>
+      )}
+      {policy.orchestrate && (
+        <Field label="Auto provider" htmlFor={ids.auto} help={AUTO_HELPERS_HELP}>
+          <AutoHelpersToggle
+            id={ids.auto}
+            policy={policy}
+            name={agent.name}
+            disabled={saving}
+            onChange={(on) => void orch.setAutoHelpers(on)}
+            testId="settings-orchestrate-auto-helpers"
           />
         </Field>
       )}

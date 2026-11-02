@@ -142,6 +142,8 @@
           "auto",
           "bypass"
         ],
+        "autoHelpers": null,
+        "autoHelpersEffective": false,
         "connectToDispatcher": true,
         "control": "hands-off",
         "controls": [
@@ -156,6 +158,7 @@
         "orchestrate": true,
         "sources": {
           "access": "default",
+          "autoHelpers": "default",
           "connectToDispatcher": "default",
           "control": "default",
           "crossProjectHelpers": "default",

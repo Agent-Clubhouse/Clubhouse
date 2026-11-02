@@ -8,7 +8,9 @@
 
 import {
   HELPER_DIFFICULTIES,
+  HELPER_AUTO_OFF_REASONS,
   HELPER_ROUTING_FALLBACKS,
+  HELPER_ROUTING_SKIPS,
   HELPER_ROUTING_MODES,
   HELPER_ROUTING_REASONS,
   PRESET_CELL_STATES,
@@ -36,7 +38,7 @@ export function helperRoutingCapability() {
     version: 1 as const,
     path: HELPER_ROUTING_PATH,
     modes: HELPER_ROUTING_MODES,
-    scopes: ['app'] as const,
+    scopes: ['app', 'project', 'agent'] as const,
     quota: true,
     quotaStates: QUOTA_STATES,
     unknownReasons: QUOTA_UNKNOWN_REASONS,
@@ -47,6 +49,8 @@ export function helperRoutingCapability() {
     difficulties: HELPER_DIFFICULTIES,
     reasons: HELPER_ROUTING_REASONS,
     fallbacks: HELPER_ROUTING_FALLBACKS,
+    skipped: HELPER_ROUTING_SKIPS,
+    autoOffReasons: HELPER_AUTO_OFF_REASONS,
     cellStates: PRESET_CELL_STATES,
   };
 }
@@ -69,7 +73,18 @@ async function agentUse(agentId: string, info: AgentLookup): Promise<HelperRouti
  * `projectId` or `agentId` reads the model lists under that project's profile.
  */
 export async function mobileHelperRouting(options: { projectPath?: string; agentId?: string; agent?: AgentLookup }): Promise<HelperRoutingSettings> {
-  const settings = await readHelperRouting({ ...(options.projectPath && { projectPath: options.projectPath }) });
+  const dispatcher = !!options.agentId && (!!activeDispatcher(options.agentId) || isDisabledDispatcherId(options.agentId));
+  const policy = options.agent && !dispatcher
+    ? (await resolveOrchestrationPolicies(options.agent.project.path, [options.agent.config])).get(options.agent.config.id)
+    : undefined;
+  const settings = await readHelperRouting({
+    ...(options.projectPath && { projectPath: options.projectPath }),
+    autoContext: {
+      ...(options.projectPath && { projectPath: options.projectPath }),
+      ...(dispatcher && { dispatcher }),
+      ...(options.agent && policy && { agent: { config: options.agent.config, policy } }),
+    },
+  });
   if (!options.agentId) return settings;
   return { ...settings, agent: await agentUse(options.agentId, options.agent) };
 }
@@ -83,15 +98,25 @@ const STATUS: Record<HelperRoutingError['code'], number> = {
 
 /** helperRouting.update. A refused write changes nothing; a stale one also carries fresh values. */
 export async function runHelperRoutingUpdate(
-  command: HelperRoutingUpdate & { scope: string },
+  command: HelperRoutingUpdate & { scope: string; projectId?: string },
   assertAuthorized: () => void,
+  findProject: (projectId: string) => Promise<{ path: string } | undefined | null>,
 ): Promise<HelperRoutingSettings> {
-  if (command.scope !== 'app') {
-    throw new MobileControlError('invalid_helper_routing', 400, 'rejected', 'Presets can only be changed app-wide.');
+  let projectPath: string | undefined;
+  if (command.scope === 'project') {
+    if (!command.projectId) throw new MobileControlError('invalid_helper_routing', 400, 'rejected', 'A project scope needs a projectId.');
+    const project = await findProject(command.projectId);
+    if (!project) throw new MobileControlError('project_not_found', 404);
+    projectPath = project.path;
+  } else if (command.scope !== 'app') {
+    throw new MobileControlError('invalid_helper_routing', 400, 'rejected', 'scope must be app or project. An agent\'s setting is orchestration.autoHelpers in agent.update.');
   }
   assertAuthorized();
   try {
-    return await updateHelperPresets({ revision: command.revision, cells: command.cells, reset: command.reset }, { surface: 'mobile' });
+    return await updateHelperPresets(
+      { revision: command.revision, cells: command.cells, reset: command.reset, ...(command.auto !== undefined && { auto: command.auto }) },
+      { surface: 'mobile', ...(projectPath && { projectPath }) },
+    );
   } catch (err) {
     if (!(err instanceof HelperRoutingError)) throw err;
     throw new MobileControlError(err.code, STATUS[err.code], 'rejected', err.message,
@@ -108,6 +133,7 @@ export function mobileHelperRoutingDetail(routing: HelperRouting | undefined) {
       summary: describeRouting(routing),
       reason: routingLabel('reason', routing.reason),
       ...(routing.fallback !== 'none' && { fallback: routingLabel('fallback', routing.fallback) }),
+      ...(routing.warning && { warning: routing.warning.message }),
     },
   };
 }

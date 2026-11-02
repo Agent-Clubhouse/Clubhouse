@@ -27,6 +27,17 @@ export function settingsChanged(key: SettingsKey): void {
   tel.event('clubhouse.settings.changed', [ATTR.settingsKey(key)]);
 }
 
+function loadBucket(load: number | undefined): '0' | '1' | '2-3' | '4-7' | '8+' {
+  const n = load ?? 0;
+  return n <= 0 ? '0' : n === 1 ? '1' : n <= 3 ? '2-3' : n <= 7 ? '4-7' : '8+';
+}
+
+function quotaAge(asOf: string | null | undefined, at: string): 'fresh' | 'under_15m' | 'over_15m' | 'none' {
+  if (!asOf) return 'none';
+  const age = Date.parse(at) - Date.parse(asOf);
+  return age < 5 * 60_000 ? 'fresh' : age <= 15 * 60_000 ? 'under_15m' : 'over_15m';
+}
+
 function knownCli(cli: string | null): 'claude-code' | 'codex-cli' | 'copilot-cli' | 'other' {
   return cli === 'claude-code' || cli === 'codex-cli' || cli === 'copilot-cli' ? cli : 'other';
 }
@@ -36,8 +47,9 @@ const EFFORT_LEVELS = new Set(['minimal', 'low', 'medium', 'high', 'xhigh', 'max
 /** A start's decision: closed codes and a model family, never the raw model id. */
 export function helperRouted(routing: HelperRouting): void {
   const { requested, resolved, source } = routing;
+  const chosen = resolved.provider;
   tel.event('clubhouse.helper.routed', [
-    ATTR.helperRoutingRequestedCli(requested.provider ? knownCli(requested.provider) : 'unset'),
+    ATTR.helperRoutingRequestedCli(requested.provider === 'auto' ? 'auto' : requested.provider ? knownCli(requested.provider) : 'unset'),
     ATTR.helperRoutingDifficulty(resolved.difficulty ?? 'none'),
     ATTR.helperRoutingMode(routing.mode),
     ATTR.orchestrator(knownCli(resolved.provider)),
@@ -48,12 +60,26 @@ export function helperRouted(routing: HelperRouting): void {
     ATTR.helperRoutingReason(routing.reason),
     ATTR.helperRoutingFallback(routing.fallback),
     ATTR.helperRoutingPolicyVersion(routing.policyVersion),
+    ATTR.helperRoutingLoad(loadBucket(chosen ? routing.load?.[chosen] : 0)),
+    ATTR.helperRoutingQuotaBasis(routing.quotaBasis ?? 'none'),
+    ATTR.helperRoutingQuotaAge(quotaAge(chosen ? routing.quota?.[chosen]?.asOf : null, routing.decidedAt)),
+    ...(chosen && routing.quota?.[chosen] ? [ATTR.helperQuotaState(routing.quota[chosen].state)] : []),
   ]);
+}
+
+/** `cli: "auto"` was refused. The code only. */
+export function helperAutoRefused(code: 'auto_off' | 'no_candidate' | 'no_valid_mapping' | 'auto_not_supported'): void {
+  tel.event('clubhouse.helper_auto.refused', [ATTR.helperAutoRefusal(code)]);
+}
+
+/** Auto is leaving a provider alone for a while. */
+export function helperAutoCooldown(provider: string, kind: 'auth' | 'quota' | 'availability'): void {
+  tel.event('clubhouse.helper_auto.cooling', [ATTR.orchestrator(knownCli(provider)), ATTR.helperAutoCooldown(kind)]);
 }
 
 /** Presets were changed or reset. Never the values. */
 export function helperPresetsChanged(
-  action: 'set' | 'reset_cell' | 'reset_provider' | 'reset_all',
+  action: 'set' | 'toggle' | 'reset_cell' | 'reset_provider' | 'reset_all',
   surface: 'ui' | 'mcp' | 'mobile' | 'dispatcher' | 'persona' | 'system',
   ok: boolean,
 ): void {
