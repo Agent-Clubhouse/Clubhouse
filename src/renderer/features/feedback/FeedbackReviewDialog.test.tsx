@@ -65,6 +65,20 @@ describe('FeedbackReviewDialog', () => {
       expect(screen.getByTestId('feedback-diagnostics-outcome').textContent).toBe('Diagnostics attached to this report (1 line).');
     });
 
+    it('shows an unavailable report as an error, never as saved, and keeps the review', async () => {
+      send.mockRejectedValueOnce(new Error('Feedback needs an enrollment'));
+      const onClose = vi.fn();
+      render(<FeedbackReviewDialog draft={{ ...DRAFT, diagnostics: available, diagnosticsInReport: true }} onClose={onClose} />);
+      await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Send' })); });
+      expect(screen.getByRole('alert').textContent).toBe('Feedback needs an enrollment');
+      expect(screen.queryByText(/Saved\.|Received\./)).toBeNull();
+      expect(screen.queryByTestId('feedback-diagnostics-outcome')).toBeNull();
+      expect(screen.getByTestId('feedback-diagnostics-lines')).toBeTruthy();
+      expect((screen.getByRole('button', { name: 'Send' }) as HTMLButtonElement).disabled).toBe(false);
+      expect(onClose).not.toHaveBeenCalled();
+      expect(cancel).not.toHaveBeenCalled();
+    });
+
     it('lets the reporter leave them out, and says so', async () => {
       send.mockResolvedValue({ id: 'rep-1', status: 'saved-local', diagnostics: { status: 'left_out', reason: 'reporter' } });
       render(<FeedbackReviewDialog draft={{ ...DRAFT, diagnostics: available }} onClose={() => {}} />);
