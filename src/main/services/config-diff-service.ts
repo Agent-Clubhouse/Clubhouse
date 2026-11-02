@@ -22,6 +22,7 @@ import {
 import { getDurableConfig } from './agent-config';
 import { buildWildcardContext, resolveSourceControlProvider } from './materialization-service';
 import { appLog } from './log-service';
+import { isClubhouseMcpEntry } from './clubhouse-mcp/injection';
 
 /**
  * Compute config diffs between an agent's current worktree state
@@ -279,7 +280,7 @@ async function diffMcp(
     try {
       const resolved = replaceWildcards(defaultMcpJson, ctx);
       const parsed = JSON.parse(resolved);
-      defaultServers = parsed.mcpServers || {};
+      defaultServers = withoutClubhouseBridge(parsed.mcpServers);
     } catch (err) {
       appLog('core:config-diff', 'warn', 'Failed to parse default MCP JSON for diff', { meta: { error: err instanceof Error ? err.message : String(err) } });
     }
@@ -289,7 +290,7 @@ async function diffMcp(
   try {
     const rawJson = await readMcpRawJson(worktreePath, conv);
     const parsed = JSON.parse(rawJson);
-    agentServers = parsed.mcpServers || {};
+    agentServers = withoutClubhouseBridge(parsed.mcpServers);
   } catch (err) {
     appLog('core:config-diff', 'warn', 'Failed to parse agent MCP config for diff', { meta: { error: err instanceof Error ? err.message : String(err) } });
   }
@@ -563,6 +564,19 @@ async function propagateAgentTemplate(
 }
 
 // ── Utilities ─────────────────────────────────────────────────────────────
+
+/**
+ * Drop Clubhouse's own bridge entry, which is injected at spawn and is never a
+ * user change. Matched by entry shape, not by name, so a user server named
+ * `clubhouse` is still diffed. Stripped from both sides so a bridge entry that
+ * already leaked into the defaults doesn't surface as "removed" or "modified".
+ */
+function withoutClubhouseBridge(servers: unknown): Record<string, unknown> {
+  if (!servers || typeof servers !== 'object') return {};
+  return Object.fromEntries(
+    Object.entries(servers as Record<string, unknown>).filter(([, entry]) => !isClubhouseMcpEntry(entry)),
+  );
+}
 
 function normalizeWhitespace(s: string): string {
   return s.trim().replace(/\r\n/g, '\n');
