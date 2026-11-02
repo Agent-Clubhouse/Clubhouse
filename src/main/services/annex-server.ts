@@ -69,7 +69,7 @@ import { injectPtyText } from './agent-runtime/pty-input';
 import { AgentStoppingError } from './agent-runtime/agent-stopping';
 import { spawnAgent, killAgent, getAvailableOrchestrators, isHeadlessAgent, resolveOrchestrator, resolveProfileEnv } from './agent-system';
 import { appLog } from './log-service';
-import { readIconThumbnail } from './icon-images';
+import { readIconImage, type IconImage } from './icon-images';
 
 /**
  * Check if an agent is currently running in any execution mode.
@@ -780,9 +780,18 @@ interface SnapshotIconStats {
   iconsLeftOut: number;
 }
 
+/** An icon as a phone that fetches them sees it: what to ask for and what will come. */
+type IconRef = Pick<IconImage, 'version' | 'type' | 'bytes' | 'width' | 'height'>;
+
+interface IconRefs {
+  agents: Record<string, IconRef>;
+  projects: Record<string, IconRef>;
+}
+
 interface BuiltSnapshot {
   payload: { projects: unknown[]; agents: Record<string, unknown[]>; [field: string]: unknown };
   icons: SnapshotIconStats;
+  iconRefs: IconRefs;
 }
 
 /** A snapshot's disk reads. */
@@ -810,25 +819,29 @@ async function buildSnapshotIcons(
   projects: Project[],
   durablesByProject: Record<string, DurableConfigs>,
   dispatcher?: DurableConfigs[number],
-): Promise<{ projectIcons: Record<string, string>; agentIcons: Record<string, string>; stats: SnapshotIconStats }> {
+): Promise<{ projectIcons: Record<string, string>; agentIcons: Record<string, string>; stats: SnapshotIconStats; iconRefs: IconRefs }> {
   const projectIcons: Record<string, string> = {};
   const agentIcons: Record<string, string> = {};
-  const agentIcon = (d: DurableConfigs[number]) => ({ into: agentIcons, id: d.id, locate: () => agentConfig.agentIconFilePath(d.icon!) });
+  const iconRefs: IconRefs = { agents: {}, projects: {} };
+  const agentIcon = (d: DurableConfigs[number]) => ({ into: agentIcons, refs: iconRefs.agents, id: d.id, locate: () => agentConfig.agentIconFilePath(d.icon!) });
   const wanted = [
     ...(dispatcher?.icon ? [agentIcon(dispatcher)] : []),
-    ...projects.filter((p) => p.icon).map((p) => ({ into: projectIcons, id: p.id, locate: () => projectStore.iconFilePath(p.icon!) })),
+    ...projects.filter((p) => p.icon).map((p) => ({ into: projectIcons, refs: iconRefs.projects, id: p.id, locate: () => projectStore.iconFilePath(p.icon!) })),
     ...projects.flatMap((p) => durablesByProject[p.id] ?? []).filter((d) => d.icon).map(agentIcon),
   ];
-  const dataUrls = await Promise.all(wanted.map(async ({ locate }) => {
+  const images = await Promise.all(wanted.map(async ({ locate }) => {
     const filePath = await locate();
-    return filePath ? readIconThumbnail(filePath) : null;
+    return filePath ? readIconImage(filePath) : null;
   }));
 
   let includedBytes = 0;
   let leftOutCount = 0;
   let leftOutBytes = 0;
-  dataUrls.forEach((dataUrl, i) => {
-    if (!dataUrl) return;
+  images.forEach((image, i) => {
+    if (!image) return;
+    const { dataUrl, ...ref } = image;
+    // A ref has no budget: it's a few fields, and the phone decides when to fetch.
+    wanted[i].refs[wanted[i].id] = ref;
     if (includedBytes + dataUrl.length > SNAPSHOT_ICONS_MAX_BYTES) {
       leftOutCount++;
       leftOutBytes += dataUrl.length;
@@ -849,6 +862,7 @@ async function buildSnapshotIcons(
   return {
     projectIcons,
     agentIcons,
+    iconRefs,
     stats: { iconCount: Object.keys(projectIcons).length + Object.keys(agentIcons).length, iconBytes: includedBytes, iconsLeftOut: leftOutCount },
   };
 }
@@ -962,7 +976,7 @@ async function readSnapshotSourcesData() {
  */
 function assembleSnapshot(sources: SnapshotSources): BuiltSnapshot {
   const { projects, durablesByProject, policiesByProject, iconSet, canvasState, appCanvasState, groupProjects, bulletinDigests } = sources;
-  const { projectIcons, agentIcons, stats: icons } = iconSet;
+  const { projectIcons, agentIcons, stats: icons, iconRefs } = iconSet;
   const agents: Record<string, unknown[]> = {};
   const quickAgents: Record<string, unknown[]> = {};
   for (const proj of projects) {
@@ -1030,7 +1044,7 @@ function assembleSnapshot(sources: SnapshotSources): BuiltSnapshot {
     // Binding manager not available — skip
   }
 
-  return { icons, payload: {
+  return { icons, iconRefs, payload: {
     protocolVersion: ANNEX_PROTOCOL_VERSION,
     projects,
     agents,
@@ -1072,7 +1086,8 @@ function reportClientCounts(): void {
   let mobile = 0;
   for (const client of wss?.clients ?? []) {
     if (client.readyState !== WebSocket.OPEN) continue;
-    if (wsAuthTypes.get(client) === 'mtls') desktop++;
+    // A phone uses pinned mTLS too: only its hello tells it from a desktop controller.
+    if (wsAuthTypes.get(client) === 'mtls' && wsTelemetryPeerServices.get(client) !== 'clubhouse-go') desktop++;
     else mobile++;
   }
   recordClients(desktop, mobile);
@@ -1098,6 +1113,11 @@ function noteFrameSize(data: string, type?: string): void {
   });
 }
 
+/** How a socket gets icons: `refs` if it opted in with `?iconRefs=1` at connect, else inline thumbnails. */
+type SnapshotForm = 'inline' | 'refs';
+const wsIconRefs = new WeakSet<WebSocket>();
+const snapshotFormOf = (ws: WebSocket): SnapshotForm => (wsIconRefs.has(ws) ? 'refs' : 'inline');
+
 const SNAPSHOT_LOG_INTERVAL_MS = 60_000;
 let lastSnapshotLog: { result: string; atMs: number } | null = null;
 
@@ -1117,8 +1137,16 @@ function reportSnapshot(result: SnapshotResult, trigger: SnapshotTrigger, bytes:
  * snapshot isn't bounded: when it runs large, losing the icons is better than a
  * phone that can't connect. The rest can't be left out, so it's reported instead.
  */
-function snapshotFrame({ payload, icons }: BuiltSnapshot, trigger: SnapshotTrigger): string {
+function snapshotFrame({ payload, icons, iconRefs }: BuiltSnapshot, trigger: SnapshotTrigger, form: SnapshotForm = 'inline'): string {
   const items = payload.projects.length + Object.values(payload.agents).reduce((sum, list) => sum + list.length, 0);
+  if (form === 'refs') {
+    // Both maps, and empty: a phone clears its inline icons when it sees either one.
+    const frame = JSON.stringify({ type: 'snapshot', payload: { ...payload, projectIcons: {}, agentIcons: {}, iconRefs } });
+    const bytes = Buffer.byteLength(frame);
+    const refCount = Object.keys(iconRefs.agents).length + Object.keys(iconRefs.projects).length;
+    reportSnapshot(bytes > MOBILE_WS_FRAME_MAX_BYTES ? 'over_mobile_limit' : 'ok', trigger, bytes, items, { iconCount: refCount, iconBytes: 0, iconsLeftOut: 0 });
+    return frame;
+  }
   const frame = JSON.stringify({ type: 'snapshot', payload });
   const bytes = Buffer.byteLength(frame);
   if (bytes <= SNAPSHOT_FRAME_MAX_BYTES) {
@@ -1229,7 +1257,7 @@ function firstSnapshotFailed(ws: WebSocket, delay: number, attempt: number): voi
 
 /** Send a built snapshot as this socket's first, and what was held after it. False if it's too large to send. */
 function deliverFirstSnapshot(ws: WebSocket, held: HeldFrames, built: BuiltSnapshot, trigger: SnapshotTrigger): boolean {
-  const frame = snapshotFrame({ ...built, payload: { ...built.payload, lastSeq: held.cursor } }, trigger);
+  const frame = snapshotFrame({ ...built, payload: { ...built.payload, lastSeq: held.cursor } }, trigger, snapshotFormOf(ws));
   if (Buffer.byteLength(frame) > MOBILE_WS_FRAME_MAX_BYTES) return false;
   noteFrameSize(frame, 'snapshot');
   ws.send(frame);
@@ -1290,12 +1318,12 @@ function broadcastWs(message: object): void {
   broadcastFrame((message as { type?: string }).type ?? 'other', JSON.stringify(message));
 }
 
-function broadcastFrame(type: string, data: string): number {
+function broadcastFrame(type: string, data: string, form?: SnapshotForm): number {
   if (!wss) return 0;
   noteFrameSize(data, type);
   let sendFailures = 0;
   for (const client of wss.clients) {
-    if (client.readyState === WebSocket.OPEN) {
+    if (client.readyState === WebSocket.OPEN && (!form || snapshotFormOf(client) === form)) {
       try {
         const held = heldFrames.get(client);
         // A socket whose first snapshot failed gets this one by way of deliverFirstSnapshot.
@@ -1326,9 +1354,37 @@ function broadcastAndBuffer(type: string, payload: unknown, context?: string): v
 // Icon endpoints (Issue 2)
 // ---------------------------------------------------------------------------
 
-async function handleIconRequest(res: http.ServerResponse, url: string): Promise<boolean> {
+/**
+ * An icon's bounded image, the same one a snapshot describes: a phone decodes all
+ * of it. No such image is a 404, and the phone draws initials. The ETag is the
+ * current version, whichever was asked for: `?v=` only decides how long it can be
+ * kept, so a stale request gets the new image and a short answer on caching.
+ */
+async function sendIconImage(req: http.IncomingMessage, res: http.ServerResponse, filePath: string | null | undefined, requested: string | null): Promise<void> {
+  const image = filePath ? await readIconImage(filePath) : null;
+  if (!image) {
+    sendJson(res, 404, { error: 'icon_not_found' });
+    return;
+  }
+  const etag = `"${image.version}"`;
+  const cacheControl = requested === null ? 'public, max-age=3600'
+    : requested === image.version ? 'private, max-age=31536000, immutable' : 'private, no-cache';
+  if (req.headers['if-none-match'] === etag) {
+    res.writeHead(304, { ETag: etag, 'Cache-Control': cacheControl });
+    res.end();
+    return;
+  }
+  const buf = Buffer.from(image.dataUrl.slice(image.dataUrl.indexOf(',') + 1), 'base64');
+  res.writeHead(200, { 'Content-Type': image.type, 'Content-Length': buf.length, ETag: etag, 'Cache-Control': cacheControl });
+  res.end(buf);
+}
+
+async function handleIconRequest(req: http.IncomingMessage, res: http.ServerResponse, url: string): Promise<boolean> {
+  const { pathname, searchParams } = new URL(url, 'http://icons');
+  const requested = searchParams.get('v');
+
   // GET /api/v1/icons/agent/:agentId
-  const agentIconMatch = url.match(/^\/api\/v1\/icons\/agent\/([^/]+)$/);
+  const agentIconMatch = pathname.match(/^\/api\/v1\/icons\/agent\/([^/]+)$/);
   if (agentIconMatch) {
     const agentId = decodeURIComponent(agentIconMatch[1]);
     // The Dispatcher is in no project (#2533); anyone else, find across all projects
@@ -1342,63 +1398,17 @@ async function handleIconRequest(res: http.ServerResponse, url: string): Promise
         break;
       }
     }
-    if (!iconFilename) {
-      sendJson(res, 404, { error: 'icon_not_found' });
-      return true;
-    }
-    // The snapshot's thumbnail: a phone decodes all of it, so these stay as small. No thumbnail is a 404.
-    const filePath = await agentConfig.agentIconFilePath(iconFilename);
-    const dataUrl = filePath ? await readIconThumbnail(filePath) : null;
-    if (!dataUrl) {
-      sendJson(res, 404, { error: 'icon_not_found' });
-      return true;
-    }
-    // Parse data URL → binary
-    const match = dataUrl.match(/^data:([^;]+);base64,(.+)$/);
-    if (!match) {
-      sendJson(res, 500, { error: 'invalid_icon_data' });
-      return true;
-    }
-    const [, mime, base64] = match;
-    const buf = Buffer.from(base64, 'base64');
-    res.writeHead(200, {
-      'Content-Type': mime,
-      'Content-Length': buf.length,
-      'Cache-Control': 'public, max-age=3600',
-    });
-    res.end(buf);
+    await sendIconImage(req, res, iconFilename ? await agentConfig.agentIconFilePath(iconFilename) : null, requested);
     return true;
   }
 
   // GET /api/v1/icons/project/:projectId
-  const projectIconMatch = url.match(/^\/api\/v1\/icons\/project\/([^/]+)$/);
+  const projectIconMatch = pathname.match(/^\/api\/v1\/icons\/project\/([^/]+)$/);
   if (projectIconMatch) {
     const projectId = decodeURIComponent(projectIconMatch[1]);
     const projects = await projectStore.list();
     const project = projects.find((p) => p.id === projectId);
-    if (!project?.icon) {
-      sendJson(res, 404, { error: 'icon_not_found' });
-      return true;
-    }
-    const filePath = await projectStore.iconFilePath(project.icon);
-    const dataUrl = filePath ? await readIconThumbnail(filePath) : null;
-    if (!dataUrl) {
-      sendJson(res, 404, { error: 'icon_not_found' });
-      return true;
-    }
-    const match = dataUrl.match(/^data:([^;]+);base64,(.+)$/);
-    if (!match) {
-      sendJson(res, 500, { error: 'invalid_icon_data' });
-      return true;
-    }
-    const [, mime, base64] = match;
-    const buf = Buffer.from(base64, 'base64');
-    res.writeHead(200, {
-      'Content-Type': mime,
-      'Content-Length': buf.length,
-      'Cache-Control': 'public, max-age=3600',
-    });
-    res.end(buf);
+    await sendIconImage(req, res, project?.icon ? await projectStore.iconFilePath(project.icon) : null, requested);
     return true;
   }
 
@@ -2790,13 +2800,13 @@ async function handleGroupProjectDeleteTopicRoute(ctx: AnnexRouteContext, match:
 }
 
 async function handleAgentIconRoute(ctx: AnnexRouteContext): Promise<void> {
-  const handled = await handleIconRequest(ctx.res, ctx.req.url || '/');
+  const handled = await handleIconRequest(ctx.req, ctx.res, ctx.req.url || '/');
   if (handled) return;
   sendJson(ctx.res, 404, { error: 'icon_not_found' });
 }
 
 async function handleProjectIconRoute(ctx: AnnexRouteContext): Promise<void> {
-  const handled = await handleIconRequest(ctx.res, ctx.req.url || '/');
+  const handled = await handleIconRequest(ctx.req, ctx.res, ctx.req.url || '/');
   if (handled) return;
   sendJson(ctx.res, 404, { error: 'icon_not_found' });
 }
@@ -2824,6 +2834,8 @@ async function handleMobileCapabilitiesRoute(ctx: AnnexRouteContext): Promise<vo
     idempotency: { scope: 'peer-and-epoch', maxEntries: MOBILE_COMMAND_MAX_ENTRIES, ttlMs: MOBILE_COMMAND_TTL_MS },
     projectState: { version: 1 },
     finishedQuickAgents: { version: 1 },
+    // Connect with `?iconRefs=1` and a snapshot carries `iconRefs` in place of image bytes.
+    iconRefs: { version: 1, connectParam: 'iconRefs=1', paths: { agent: '/api/v1/icons/agent/{agentId}?v={version}', project: '/api/v1/icons/project/{projectId}?v={version}' } },
     // Shells at the project root or an agent's worktree, and an agent's own PTY (#2476).
     terminal: { version: 1, projectShell: true, agentShell: true, agentAttach: true,
       maxShellsPerConnection: MAX_SHELLS_PER_CONNECTION, maxInputLength: MAX_PTY_INPUT_SIZE },
@@ -3326,8 +3338,8 @@ const ANNEX_HTTP_ROUTE_TABLE: AnnexHttpRoute[] = [
   { method: 'POST', pattern: /^\/api\/v1\/inject-message$/, handler: handleGroupProjectInjectRoute },
   { method: 'GET', pattern: /^\/api\/v1\/group-projects\/([^/]+)\/members$/, handler: handleGroupProjectMembersRoute },
   { method: 'PATCH', pattern: /^\/api\/v1\/group-projects\/([^/]+?)$/, handler: handleGroupProjectPatchRoute },
-  { method: 'GET', pattern: /^\/api\/v1\/icons\/agent\/([^/]+)$/, handler: handleAgentIconRoute },
-  { method: 'GET', pattern: /^\/api\/v1\/icons\/project\/([^/]+)$/, handler: handleProjectIconRoute },
+  { method: 'GET', pattern: /^\/api\/v1\/icons\/agent\/([^/?]+)(\?.*)?$/, handler: handleAgentIconRoute },
+  { method: 'GET', pattern: /^\/api\/v1\/icons\/project\/([^/?]+)(\?.*)?$/, handler: handleProjectIconRoute },
 ];
 
 /** The REST route table's methods and patterns (telemetry route templates are checked against it). */
@@ -3485,6 +3497,7 @@ function handleWsMessage(ws: WebSocket, data: string): void {
     const ack = prior ?? telemetryHelloAck(peer);
     wsTelemetryHandshakes.set(ws, ack);
     wsTelemetryPeerServices.set(ws, peer.serviceName);
+    reportClientCounts();
     withRemoteParent(validatedTraceparent(msg.tc), () => tel.flow('clubhouse.annex.command', {
       attrs: handshakeAttributes(ack),
     }, () => {
@@ -3985,6 +3998,7 @@ export function start(): void {
 
     wss!.handleUpgrade(req, socket, head, (ws) => {
       wsAuthTypes.set(ws, authType);
+      if (urlObj.searchParams.get('iconRefs') === '1') wsIconRefs.add(ws);
       if (peerFingerprintForWs) {
         wsPeerFingerprints.set(ws, peerFingerprintForWs);
       }
@@ -4523,15 +4537,22 @@ export function broadcastSnapshotRefresh(): void {
     const built = assembleSnapshot(sources);
     raced = snapshotStateChangedSince(cursor);
     if (raced) built.payload.lastSeq = cursor;
-    const frame = snapshotFrame(built, 'refresh');
-    // Never send a phone a frame it would close on. It keeps what it has, and the next change tries again.
-    if (Buffer.byteLength(frame) > MOBILE_WS_FRAME_MAX_BYTES) {
-      snapshotOversizeAt = Date.now();
-      return;
+    // Built once and encoded per form, so a phone that fetches images never gets one here.
+    const forms = new Set<SnapshotForm>(['inline']);
+    for (const client of wss?.clients ?? []) forms.add(snapshotFormOf(client));
+    let oversize = false;
+    for (const form of forms) {
+      const frame = snapshotFrame(built, 'refresh', form);
+      // Never send a phone a frame it would close on. It keeps what it has, and the next change tries again.
+      if (Buffer.byteLength(frame) > MOBILE_WS_FRAME_MAX_BYTES) {
+        oversize = true;
+        continue;
+      }
+      if (broadcastFrame('snapshot', frame, form) > 0) recordSnapshotFailure('send_failed');
     }
-    snapshotOversizeAt = null;
-    firstSnapshotBlockedUntil = 0;
-    if (broadcastFrame('snapshot', frame) > 0) recordSnapshotFailure('send_failed');
+    // Oversize if any form is: a phone on it is still waiting, so the window stays.
+    snapshotOversizeAt = oversize ? Date.now() : null;
+    if (!oversize) firstSnapshotBlockedUntil = 0;
     for (const client of wss?.clients ?? []) {
       const held = heldFrames.get(client);
       if (held?.retrying && client.readyState === WebSocket.OPEN) deliverFirstSnapshot(client, held, built, 'refresh');

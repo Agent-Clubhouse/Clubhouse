@@ -123,7 +123,12 @@ vi.mock('./annex-network-profile', async (importOriginal) => ({
 vi.mock('bonjour-service', () => ({ default: class { publish() { return { stop() {} }; } destroy() {} } }));
 vi.mock('./log-service', () => ({ appLog: () => {} }));
 // The fixture's icon bytes aren't whole images, so the "path" is the bytes and the thumbnail is them as they are.
-vi.mock('./icon-images', () => ({ readIconThumbnail: async (base64: string) => `data:image/png;base64,${base64}` }));
+vi.mock('./icon-images', () => ({
+  readIconImage: async (base64: string) => ({
+    dataUrl: `data:image/png;base64,${base64}`, version: `version-of-${base64.slice(0, 4)}`, type: 'image/png',
+    bytes: Buffer.from(base64, 'base64').length, width: 128, height: 128,
+  }),
+}));
 vi.mock('./project-store', () => ({
   list: async () => { if (W.projectsThrow) throw new Error('disk gone'); return W.projects; },
   readIconData: async (icon: string) => (icon ? 'data:image/png;base64,iVBORw0KGgo=' : null),

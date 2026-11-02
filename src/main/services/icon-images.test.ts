@@ -2,8 +2,10 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { createHash } from 'crypto';
 import { CHAT_MEDIA_MAX_PIXELS } from '../../shared/chat';
-import { jpegOrientation, readIconThumbnail, resizeIcon } from './icon-images';
+import { ICON_SERVED_MAX_BYTES } from '../../shared/icon-limits';
+import { jpegOrientation, readIconImage, resizeIcon } from './icon-images';
 
 const native = vi.hoisted(() => ({ createFromBuffer: vi.fn(), createFromBitmap: vi.fn(), createThumbnailFromPath: undefined as unknown }));
 vi.mock('electron', () => ({ nativeImage: native }));
@@ -22,6 +24,12 @@ function image(width: number, height: number, output = 'png-output') {
   const resized = { toPNG: () => Buffer.from(output) };
   const resize = vi.fn(() => resized);
   return { isEmpty: () => false, getSize: () => ({ width, height }), resize, toPNG: () => Buffer.from(`unscaled-${output}`) };
+}
+
+const THUMBNAIL = png(128, 128);
+
+function thumbnailOf(width: number, height: number) {
+  return { isEmpty: () => false, getSize: () => ({ width, height }), resize: () => ({ toPNG: () => THUMBNAIL }), toPNG: () => THUMBNAIL };
 }
 
 describe('resizeIcon', () => {
@@ -154,7 +162,7 @@ describe('orientation when resizing', () => {
   });
 });
 
-describe('readIconThumbnail', () => {
+describe('readIconImage', () => {
   let dir: string;
 
   beforeEach(() => {
@@ -167,45 +175,68 @@ describe('readIconThumbnail', () => {
   });
 
   it('is null, not an error, for a missing file', async () => {
-    expect(await readIconThumbnail(path.join(dir, 'gone.png'))).toBeNull();
+    expect(await readIconImage(path.join(dir, 'gone.png'))).toBeNull();
   });
 
   it('makes concurrent requests share one decode', async () => {
     const file = path.join(dir, 'a.png');
     fs.writeFileSync(file, png(2000, 2000, 100 * 1024));
-    native.createFromBuffer.mockReturnValue(image(2000, 2000));
-    const results = await Promise.all([readIconThumbnail(file), readIconThumbnail(file), readIconThumbnail(file)]);
+    native.createFromBuffer.mockReturnValue(thumbnailOf(2000, 2000));
+    const results = await Promise.all([readIconImage(file), readIconImage(file), readIconImage(file)]);
     expect(new Set(results).size).toBe(1);
-    expect(results[0]).toBe(`data:image/png;base64,${Buffer.from('png-output').toString('base64')}`);
+    expect(results[0]).toEqual({
+      dataUrl: `data:image/png;base64,${THUMBNAIL.toString('base64')}`,
+      version: createHash('sha256').update(THUMBNAIL).digest('hex'),
+      type: 'image/png', bytes: THUMBNAIL.length, width: 128, height: 128,
+    });
     expect(native.createFromBuffer).toHaveBeenCalledTimes(1);
   });
 
   it('sends a small file as it is only within the pixel cap', async () => {
-    native.createFromBuffer.mockReturnValue(image(4000, 4000));
+    native.createFromBuffer.mockReturnValue(thumbnailOf(4000, 4000));
     const within = path.join(dir, 'within.png');
     fs.writeFileSync(within, png(256, 256));
-    expect(await readIconThumbnail(within)).toBe(`data:image/png;base64,${png(256, 256).toString('base64')}`);
+    expect((await readIconImage(within))?.dataUrl).toBe(`data:image/png;base64,${png(256, 256).toString('base64')}`);
     expect(native.createFromBuffer).not.toHaveBeenCalled();
 
     // A few bytes can be a huge image, and a phone decodes all of it.
     const beyond = path.join(dir, 'beyond.png');
     fs.writeFileSync(beyond, png(4000, 4000));
-    expect(await readIconThumbnail(beyond)).toBe(`data:image/png;base64,${Buffer.from('png-output').toString('base64')}`);
+    expect((await readIconImage(beyond))?.dataUrl).toBe(`data:image/png;base64,${THUMBNAIL.toString('base64')}`);
   });
 
   it('leaves out a small GIF over the pixel cap that can\'t be resized', async () => {
     native.createThumbnailFromPath = undefined;
     const file = path.join(dir, 'wide.gif');
     fs.writeFileSync(file, Buffer.from('GIF89a\xe8\x03\xe8\x03', 'latin1'));
-    expect(await readIconThumbnail(file)).toBeNull();
+    expect(await readIconImage(file)).toBeNull();
+  });
+
+  it('takes the type and size from the bytes, whatever the file is called', async () => {
+    const file = path.join(dir, 'really-a-png.jpg');
+    fs.writeFileSync(file, png(64, 32));
+    expect(await readIconImage(file)).toMatchObject({ type: 'image/png', width: 64, height: 32 });
+  });
+
+  it('leaves out a result that breaks a guarantee, rather than sending it', async () => {
+    const tooManyBytes = path.join(dir, 'noise.png');
+    fs.writeFileSync(tooManyBytes, png(2000, 2000, 100 * 1024));
+    const huge = png(128, 128, ICON_SERVED_MAX_BYTES);
+    native.createFromBuffer.mockReturnValue({ ...thumbnailOf(2000, 2000), resize: () => ({ toPNG: () => huge }) });
+    expect(await readIconImage(tooManyBytes)).toBeNull();
+
+    const tooManyPixels = path.join(dir, 'big-thumbnailer.png');
+    fs.writeFileSync(tooManyPixels, png(2000, 2000, 100 * 1024));
+    native.createFromBuffer.mockReturnValue({ ...thumbnailOf(2000, 2000), resize: () => ({ toPNG: () => png(512, 512) }) });
+    expect(await readIconImage(tooManyPixels)).toBeNull();
   });
 
   it('remembers an icon that can\'t be resized rather than trying on every snapshot', async () => {
     const file = path.join(dir, 'a.png');
     fs.writeFileSync(file, png(2000, 2000, 100 * 1024));
     native.createFromBuffer.mockReturnValue({ isEmpty: () => true });
-    expect(await readIconThumbnail(file)).toBeNull();
-    expect(await readIconThumbnail(file)).toBeNull();
+    expect(await readIconImage(file)).toBeNull();
+    expect(await readIconImage(file)).toBeNull();
     expect(native.createFromBuffer).toHaveBeenCalledTimes(1);
   });
 
@@ -213,8 +244,8 @@ describe('readIconThumbnail', () => {
     const file = path.join(dir, 'a.png');
     const bytes = png(2000, 2000, 100 * 1024);
     fs.writeFileSync(file, bytes);
-    native.createFromBuffer.mockReturnValue(image(2000, 2000));
-    await readIconThumbnail(file);
+    native.createFromBuffer.mockReturnValue(thumbnailOf(2000, 2000));
+    await readIconImage(file);
     expect(fs.readFileSync(file).equals(bytes)).toBe(true);
   });
 });

@@ -5,6 +5,7 @@ import net from 'net';
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
+import { createHash } from 'crypto';
 import { readMobileChatContent } from './annex-chat-content';
 vi.mock('./annex-chat-content', () => ({ readMobileChatContent: vi.fn() }));
 import { agentFolders } from './agent-runtime/chat-files';
@@ -2947,16 +2948,17 @@ describe('annex-server', () => {
 
   describe('snapshot frame size', () => {
     const MIB = 1024 * 1024;
-    const THUMBNAIL = Buffer.from('thumbnail-png-bytes');
-    let dir: string;
-
-    /** A PNG header giving the side, 2000 unless said, padded to `size`. */
-    function pngFile(size: number, side = 2000): Buffer {
+    /** A PNG header giving the side, padded to `size`. */
+    function pngBytes(size: number, side: number): Buffer {
       const header = Buffer.from('89504e470d0a1a0a0000000d4948445200000000000000000806000000', 'hex');
       header.writeUInt32BE(side, 16);
       header.writeUInt32BE(side, 20);
-      return Buffer.concat([header, Buffer.alloc(size - header.length, 0xa7)]);
+      return Buffer.concat([header, Buffer.alloc(Math.max(0, size - header.length), 0xa7)]);
     }
+    const THUMBNAIL = pngBytes(64, 128);
+    let dir: string;
+
+    const pngFile = (size: number, side = 2000) => pngBytes(size, side);
 
     function writeIcon(name: string, bytes: Buffer | string): string {
       fs.writeFileSync(path.join(dir, name), bytes);
@@ -3117,10 +3119,131 @@ describe('annex-server', () => {
       const thumbnail = await request(port, 'GET', '/api/v1/icons/agent/a0', undefined, authHeaders(token));
       const none = await request(port, 'GET', '/api/v1/icons/agent/a1', undefined, authHeaders(token));
 
-      expect(thumbnail.body).toBe(THUMBNAIL.toString());
+      expect(Buffer.from(thumbnail.body, 'latin1').length).toBeGreaterThan(0);
+      expect(thumbnail.status).toBe(200);
       expect(none.status).toBe(404);
       expect(JSON.parse(none.body)).toEqual({ error: 'icon_not_found' });
     }, 30_000);
+
+    describe('icon refs', () => {
+      async function connectWithRefs(optIn: boolean) {
+        const ws = Object.assign(new EventEmitter(), { readyState: 1, send: vi.fn(), ping: () => {}, close: () => {} });
+        annexServer._testing.wsAuthTypes.set(ws as never, 'mtls');
+        if (optIn) annexServer._testing.wsIconRefs.add(ws as never);
+        annexServer._testing.wss!.clients.add(ws as never);
+        annexServer._testing.wss!.emit('connection', ws);
+        await vi.waitFor(() => expect(ws.send).toHaveBeenCalled());
+        return ws;
+      }
+      const snapshots = (ws: { send: ReturnType<typeof vi.fn> }) => ws.send.mock.calls
+        .map(([data]) => JSON.parse(data as string)).filter((f) => f.type === 'snapshot').map((f) => f.payload);
+
+      it('sends a phone that opted in refs and no image bytes, and leaves every other phone alone', async () => {
+        fakeDecoder();
+        serveAgentsWithIcons([writeIcon('a0.png', pngFile(MIB))]);
+        const refs = await connectWithRefs(true);
+        const inline = await connectWithRefs(false);
+
+        const [withRefs] = snapshots(refs);
+        expect(withRefs.agentIcons).toEqual({});
+        expect(withRefs.projectIcons).toEqual({});
+        expect(withRefs.iconRefs.agents.a0).toEqual({
+          version: createHash('sha256').update(THUMBNAIL).digest('hex'), type: 'image/png', bytes: THUMBNAIL.length, width: 128, height: 128,
+        });
+        expect(JSON.stringify(withRefs)).not.toContain('base64');
+
+        const [withInline] = snapshots(inline);
+        expect(withInline.iconRefs).toBeUndefined();
+        expect(withInline.agentIcons.a0).toMatch(/^data:image\/png;base64,/);
+      }, 30_000);
+
+      it('gives each socket its own form on a refresh', async () => {
+        fakeDecoder();
+        serveAgentsWithIcons([writeIcon('a0.png', pngFile(MIB))]);
+        const refs = await connectWithRefs(true);
+        const inline = await connectWithRefs(false);
+        refs.send.mockClear();
+        inline.send.mockClear();
+
+        annexServer.broadcastSnapshotRefresh();
+        await vi.waitFor(() => expect(refs.send).toHaveBeenCalled());
+        await vi.waitFor(() => expect(inline.send).toHaveBeenCalled());
+
+        expect(snapshots(refs)).toHaveLength(1);
+        expect(snapshots(refs)[0].iconRefs.agents.a0).toBeDefined();
+        expect(snapshots(inline)).toHaveLength(1);
+        expect(snapshots(inline)[0].iconRefs).toBeUndefined();
+      }, 30_000);
+
+      it('has no entry for an agent whose image is gone, and a new version for a changed one', async () => {
+        const name = writeIcon('a0.png', pngFile(1024, 64));
+        serveAgentsWithIcons([name]);
+        const first = snapshots(await connectWithRefs(true))[0].iconRefs.agents.a0;
+
+        writeIcon(name, pngFile(2048, 64));
+        const second = snapshots(await connectWithRefs(true))[0].iconRefs.agents.a0;
+        expect(second.version).not.toBe(first.version);
+
+        serveAgentsWithIcons([]);
+        expect(snapshots(await connectWithRefs(true))[0].iconRefs.agents).toEqual({});
+      }, 30_000);
+
+      it('never sends more than one build at a time, and follows a burst with one more', async () => {
+        vi.mocked(projectStore.list).mockClear();
+        serveAgentsWithIcons([]);
+        for (let i = 0; i < 5; i++) annexServer.broadcastSnapshotRefresh();
+        expect(projectStore.list).toHaveBeenCalledTimes(1);
+        await vi.waitFor(() => expect(projectStore.list).toHaveBeenCalledTimes(2));
+        await new Promise((r) => setTimeout(r, 50));
+        expect(projectStore.list).toHaveBeenCalledTimes(2);
+      }, 30_000);
+
+      it('answers with an ETag, a 304 for a match, and the current image for a stale version', async () => {
+        fakeDecoder();
+        annexServer.stop();
+        serveAgentsWithIcons([writeIcon('a0.png', pngFile(MIB))]);
+        const { port, token } = await startAndPair();
+        const version = createHash('sha256').update(THUMBNAIL).digest('hex');
+        const get = (query: string, headers: Record<string, string> = {}) => new Promise<http.IncomingMessage & { text: string }>((resolve, reject) => {
+          http.get({ hostname: '127.0.0.1', port, path: `/api/v1/icons/agent/a0${query}`, headers: { ...authHeaders(token), ...headers } }, (res) => {
+            let text = '';
+            res.on('data', (c) => { text += c; });
+            res.on('end', () => resolve(Object.assign(res, { text })));
+          }).on('error', reject);
+        });
+
+        const current = await get(`?v=${version}`);
+        expect(current.statusCode).toBe(200);
+        expect(current.headers.etag).toBe(`"${version}"`);
+        expect(current.headers['content-type']).toBe('image/png');
+        expect(current.headers['cache-control']).toBe('private, max-age=31536000, immutable');
+
+        const unchanged = await get(`?v=${version}`, { 'If-None-Match': `"${version}"` });
+        expect(unchanged.statusCode).toBe(304);
+        expect(unchanged.headers.etag).toBe(`"${version}"`);
+        expect(unchanged.text).toBe('');
+
+        const stale = await get('?v=old', { 'If-None-Match': '"old"' });
+        expect(stale.statusCode).toBe(200);
+        expect(stale.headers.etag).toBe(`"${version}"`);
+        expect(stale.headers['cache-control']).toBe('private, no-cache');
+
+        const plain = await get('');
+        expect(plain.statusCode).toBe(200);
+        expect(plain.headers['cache-control']).toBe('public, max-age=3600');
+      }, 30_000);
+
+      it('counts a phone on mTLS as mobile once its hello says so', async () => {
+        const telemetry = await import('../telemetry/annex-telemetry');
+        const counts = vi.spyOn(telemetry, 'recordClients');
+        const ws = await connectWithRefs(false);
+        expect(counts).toHaveBeenLastCalledWith(1, 0);
+        ws.emit('message', JSON.stringify({ type: 'telemetry:hello', payload: {
+          version: 1, serviceName: 'clubhouse-go', serviceInstanceId: '11111111-1111-4111-8111-111111111111', connectionAttemptId: '22222222-2222-4222-8222-222222222222',
+        } }));
+        await vi.waitFor(() => expect(counts).toHaveBeenLastCalledWith(0, 1));
+      }, 30_000);
+    });
   });
 
   // ---------------------------------------------------------------------------

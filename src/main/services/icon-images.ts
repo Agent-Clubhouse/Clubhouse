@@ -9,10 +9,11 @@
  */
 
 import { nativeImage, type NativeImage } from 'electron';
+import { createHash } from 'crypto';
 import * as fsp from 'fs/promises';
 import * as path from 'path';
 import { CHAT_MEDIA_MAX_PIXELS, mediaDimensions, sniffMediaType } from '../../shared/chat';
-import { ICON_SOURCE_MAX_BYTES, ICON_THUMBNAIL_PASSTHROUGH_BYTES, ICON_THUMBNAIL_PASSTHROUGH_SIZE, ICON_THUMBNAIL_SIZE } from '../../shared/icon-limits';
+import { ICON_SERVED_MAX_BYTES, ICON_SOURCE_MAX_BYTES, ICON_THUMBNAIL_PASSTHROUGH_BYTES, ICON_THUMBNAIL_PASSTHROUGH_SIZE, ICON_THUMBNAIL_SIZE } from '../../shared/icon-limits';
 import { appLog } from './log-service';
 
 /** The system thumbnailer gets this long: a stuck one must not hold up a snapshot. */
@@ -20,10 +21,6 @@ const SYSTEM_THUMBNAIL_TIMEOUT_MS = 5000;
 
 /** About 15 MB at a typical thumbnail's size. Past it the oldest is made again if asked for. */
 const THUMBNAIL_CACHE_MAX_ENTRIES = 512;
-
-const ICON_MIME: Readonly<Record<string, string>> = {
-  '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.gif': 'image/gif', '.webp': 'image/webp', '.svg': 'image/svg+xml', '.ico': 'image/x-icon',
-};
 
 /** The EXIF orientation of a JPEG, 1 to 8, or 1 when it has none. */
 export function jpegOrientation(b: Uint8Array): number {
@@ -135,7 +132,34 @@ function canPassThrough(bytes: Uint8Array): boolean {
   return !!size && Math.max(size.width, size.height) <= ICON_THUMBNAIL_PASSTHROUGH_SIZE;
 }
 
-async function makeThumbnail(filePath: string, fileBytes: number): Promise<string | null> {
+/** What a phone can be sent for an icon. Every field describes the served bytes. */
+export interface IconImage {
+  dataUrl: string;
+  /** A hash of the bytes, so it changes exactly when they do. */
+  version: string;
+  type: string;
+  bytes: number;
+  width: number;
+  height: number;
+}
+
+/** Describes the bytes to send, or null if they break a guarantee: a phone is promised these limits. */
+function describeImage(bytes: Buffer): IconImage | null {
+  const type = sniffMediaType(bytes);
+  const size = type && mediaDimensions(bytes, type);
+  if (!type || !size || bytes.length > ICON_SERVED_MAX_BYTES) return null;
+  if (Math.max(size.width, size.height) > ICON_THUMBNAIL_PASSTHROUGH_SIZE) return null;
+  return {
+    dataUrl: `data:${type};base64,${bytes.toString('base64')}`,
+    version: createHash('sha256').update(bytes).digest('hex'),
+    type,
+    bytes: bytes.length,
+    width: size.width,
+    height: size.height,
+  };
+}
+
+async function makeThumbnail(filePath: string, fileBytes: number): Promise<IconImage | null> {
   const leaveOut = (): null => {
     appLog('core:annex', 'warn', 'An icon has no thumbnail, so snapshots leave it out', {
       meta: { file: path.basename(filePath), bytes: fileBytes },
@@ -144,36 +168,33 @@ async function makeThumbnail(filePath: string, fileBytes: number): Promise<strin
   };
   if (fileBytes > ICON_SOURCE_MAX_BYTES) return leaveOut();
   const bytes = await fsp.readFile(filePath);
-  if (canPassThrough(bytes)) {
-    return `data:${ICON_MIME[path.extname(filePath).toLowerCase()] ?? 'image/png'};base64,${bytes.toString('base64')}`;
-  }
-  const png = await resizeIcon(bytes, filePath, ICON_THUMBNAIL_SIZE);
-  return png ? `data:image/png;base64,${png.toString('base64')}` : leaveOut();
+  const served = canPassThrough(bytes) ? bytes : await resizeIcon(bytes, filePath, ICON_THUMBNAIL_SIZE);
+  return (served && describeImage(served)) ?? leaveOut();
 }
 
-interface CachedThumbnail { mtimeMs: number; size: number; dataUrl: Promise<string | null> }
+interface CachedThumbnail { mtimeMs: number; size: number; image: Promise<IconImage | null> }
 
 const thumbnails = new Map<string, CachedThumbnail>();
 
 /**
- * A small data URL of an icon file, or null if there's no file or it can't be
+ * The bounded image for an icon file, or null if there's no file or it can't be
  * made small. Never rejects. A file small enough already is sent as it is, so it
  * keeps its format. Rebuilt snapshots only stat the file: the crop dialog reuses
  * a filename, so the name alone can't say the image is the same.
  */
-export async function readIconThumbnail(filePath: string): Promise<string | null> {
+export async function readIconImage(filePath: string): Promise<IconImage | null> {
   try {
     const { mtimeMs, size } = await fsp.stat(filePath);
     const cached = thumbnails.get(filePath);
     thumbnails.delete(filePath);
     if (cached && cached.mtimeMs === mtimeMs && cached.size === size) {
       thumbnails.set(filePath, cached);
-      return await cached.dataUrl;
+      return await cached.image;
     }
-    const dataUrl = makeThumbnail(filePath, size).catch((): null => null);
-    thumbnails.set(filePath, { mtimeMs, size, dataUrl });
+    const image = makeThumbnail(filePath, size).catch((): null => null);
+    thumbnails.set(filePath, { mtimeMs, size, image });
     if (thumbnails.size > THUMBNAIL_CACHE_MAX_ENTRIES) thumbnails.delete(thumbnails.keys().next().value!);
-    return await dataUrl;
+    return await image;
   } catch {
     // The file is gone: the same as no icon. // telemetry-exempt: expected, and the phone draws initials
     thumbnails.delete(filePath);
