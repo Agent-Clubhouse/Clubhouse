@@ -114,6 +114,26 @@ describe('readIconThumbnail', () => {
     expect(native.createFromBuffer).toHaveBeenCalledTimes(1);
   });
 
+  it('sends a small file as it is only within the pixel cap', async () => {
+    native.createFromBuffer.mockReturnValue(image(4000, 4000));
+    const within = path.join(dir, 'within.png');
+    fs.writeFileSync(within, png(256, 256));
+    expect(await readIconThumbnail(within)).toBe(`data:image/png;base64,${png(256, 256).toString('base64')}`);
+    expect(native.createFromBuffer).not.toHaveBeenCalled();
+
+    // A few bytes can be a huge image, and a phone decodes all of it.
+    const beyond = path.join(dir, 'beyond.png');
+    fs.writeFileSync(beyond, png(4000, 4000));
+    expect(await readIconThumbnail(beyond)).toBe(`data:image/png;base64,${Buffer.from('png-output').toString('base64')}`);
+  });
+
+  it('leaves out a small GIF over the pixel cap that can\'t be resized', async () => {
+    native.createThumbnailFromPath = undefined;
+    const file = path.join(dir, 'wide.gif');
+    fs.writeFileSync(file, Buffer.from('GIF89a\xe8\x03\xe8\x03', 'latin1'));
+    expect(await readIconThumbnail(file)).toBeNull();
+  });
+
   it('remembers an icon that can\'t be resized rather than trying on every snapshot', async () => {
     const file = path.join(dir, 'a.png');
     fs.writeFileSync(file, png(2000, 2000, 100 * 1024));

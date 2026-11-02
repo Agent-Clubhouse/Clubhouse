@@ -281,6 +281,20 @@ describe('image files', () => {
     expect(vi.mocked(agentConfig.writeAgentIconFile).mock.calls[0][1]).toEqual(bytes);
   });
 
+  it('resizes a small file with many pixels, and keeps it if it can\'t', async () => {
+    // Width and height in the IHDR: 4000 by 4000, in a few bytes.
+    const wide = Buffer.concat([Buffer.from('89504e470d0a1a0a0000000d49484452', 'hex'), Buffer.from('00000fa000000fa0', 'hex')]);
+    const small = Buffer.from('resized-png');
+    decode.mockReturnValue({ isEmpty: () => false, getSize: () => ({ width: 4000, height: 4000 }), resize: () => ({ toPNG: () => small }) });
+    await updateAgentAppearance(SELF, undefined, { imagePath: await fileWith('wide.png', wide) });
+    expect(agentConfig.writeAgentIconFile).toHaveBeenLastCalledWith('a1', small, 'png');
+
+    decode.mockReturnValue({ isEmpty: () => true });
+    await updateAgentAppearance(SELF, undefined, { imagePath: await fileWith('wide.png', wide) });
+    expect(vi.mocked(agentConfig.writeAgentIconFile).mock.lastCall?.[2]).toBe('png');
+    expect(vi.mocked(agentConfig.writeAgentIconFile).mock.lastCall?.[1]).toEqual(wide);
+  });
+
   it('stores a larger image resized, as a PNG, for agents and projects', async () => {
     const small = Buffer.from('resized-png');
     const resize = vi.fn(() => ({ toPNG: () => small }));

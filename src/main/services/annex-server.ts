@@ -1147,15 +1147,6 @@ function broadcastAndBuffer(type: string, payload: unknown, context?: string): v
 // Icon endpoints (Issue 2)
 // ---------------------------------------------------------------------------
 
-/**
- * The thumbnail, as in a snapshot. A phone fetches these when a snapshot leaves
- * icons out, so they stay as small. Null means serve the file: a response has no
- * frame limit, so an image that can't be resized still reaches the phone here.
- */
-async function iconRouteData(filePath: string | null | undefined): Promise<string | null> {
-  return filePath ? readIconThumbnail(filePath) : null;
-}
-
 async function handleIconRequest(res: http.ServerResponse, url: string): Promise<boolean> {
   // GET /api/v1/icons/agent/:agentId
   const agentIconMatch = url.match(/^\/api\/v1\/icons\/agent\/([^/]+)$/);
@@ -1176,8 +1167,9 @@ async function handleIconRequest(res: http.ServerResponse, url: string): Promise
       sendJson(res, 404, { error: 'icon_not_found' });
       return true;
     }
-    const dataUrl = await iconRouteData(await agentConfig.agentIconFilePath(iconFilename))
-      ?? await agentConfig.readAgentIconData(iconFilename);
+    // The snapshot's thumbnail: a phone decodes all of it, so these stay as small. No thumbnail is a 404.
+    const filePath = await agentConfig.agentIconFilePath(iconFilename);
+    const dataUrl = filePath ? await readIconThumbnail(filePath) : null;
     if (!dataUrl) {
       sendJson(res, 404, { error: 'icon_not_found' });
       return true;
@@ -1209,8 +1201,8 @@ async function handleIconRequest(res: http.ServerResponse, url: string): Promise
       sendJson(res, 404, { error: 'icon_not_found' });
       return true;
     }
-    const dataUrl = await iconRouteData(await projectStore.iconFilePath(project.icon))
-      ?? await projectStore.readIconData(project.icon);
+    const filePath = await projectStore.iconFilePath(project.icon);
+    const dataUrl = filePath ? await readIconThumbnail(filePath) : null;
     if (!dataUrl) {
       sendJson(res, 404, { error: 'icon_not_found' });
       return true;

@@ -16,6 +16,12 @@ export const ICON_THUMBNAIL_SIZE = 128;
 /** An icon file up to this size goes in a snapshot as it is, so a small GIF or SVG keeps its format. */
 export const ICON_THUMBNAIL_PASSTHROUGH_BYTES = 64 * 1024;
 
+/**
+ * Nor can that file be wider or taller than this. A phone decodes the whole image,
+ * so its memory follows pixels rather than bytes, and a small file can hold many.
+ */
+export const ICON_THUMBNAIL_PASSTHROUGH_SIZE = 256;
+
 /** Clubhouse Go's WebSocket limit (`maximumMessageSize`): a larger frame closes the connection with code 1009. */
 export const MOBILE_WS_FRAME_MAX_BYTES = 16 * 1024 * 1024;
 

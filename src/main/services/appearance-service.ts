@@ -21,7 +21,7 @@ import * as fs from 'fs';
 import * as fsp from 'fs/promises';
 import { isDisposedAgent } from '../../shared/agent-helpers';
 import { DISPATCHER_PROJECT_ID } from '../../shared/dispatcher-types';
-import { CHAT_MEDIA_TYPES, sniffMediaType } from '../../shared/chat';
+import { CHAT_MEDIA_TYPES, mediaDimensions, sniffMediaType } from '../../shared/chat';
 import { ICON_SOURCE_MAX_BYTES, ICON_STORED_MAX_BYTES, ICON_STORED_SIZE } from '../../shared/icon-limits';
 import { AGENT_COLORS } from '../../shared/name-generator';
 import type { DurableAgentConfig, Project } from '../../shared/types';
@@ -141,8 +141,13 @@ async function readImage(imagePath: string, cwd: string | undefined): Promise<{ 
   }
   const extension = CHAT_MEDIA_TYPES[sniffMediaType(bytes) ?? ''];
   if (!extension) throw imageError(imagePath, `it isn't a supported image (${IMAGE_TYPES}).`);
-  if (bytes.length <= ICON_STORED_MAX_BYTES) return { bytes, extension };
+  const type = sniffMediaType(bytes)!;
+  const size = mediaDimensions(bytes, type);
+  const small = bytes.length <= ICON_STORED_MAX_BYTES;
+  if (small && (!size || Math.max(size.width, size.height) <= ICON_STORED_SIZE)) return { bytes, extension };
   const resized = await resizeIcon(bytes, real, ICON_STORED_SIZE);
+  // Few bytes and many pixels: fine to keep when it can't be resized. Phones only ever get a thumbnail or nothing.
+  if (!resized && small) return { bytes, extension };
   if (!resized) {
     throw imageError(imagePath, `it's ${megabytes(bytes.length)} and can't be resized on this computer. Use a PNG or JPEG, or a file of ${ICON_STORED_MAX_BYTES / 1024} KB or less.`);
   }

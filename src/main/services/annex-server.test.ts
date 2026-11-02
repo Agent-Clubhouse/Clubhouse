@@ -2130,9 +2130,11 @@ describe('annex-server', () => {
       vi.mocked(agentConfigModule.listDurable).mockReturnValue([
         { id: 'durable_1', name: 'a1', color: 'indigo', icon: 'durable_1.png', createdAt: '2025-01-01' } as any,
       ]);
-      // Return a tiny 1x1 PNG data URL
+      // A tiny 1x1 PNG file
       const pngBase64 = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8/5+hHgAHggJ/PchI7wAAAABJRU5ErkJggg==';
-      vi.mocked(agentConfigModule.readAgentIconData).mockReturnValue(`data:image/png;base64,${pngBase64}`);
+      const iconFile = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'annex-icon-route-')), 'durable_1.png');
+      fs.writeFileSync(iconFile, Buffer.from(pngBase64, 'base64'));
+      vi.mocked(agentConfigModule.agentIconFilePath).mockResolvedValue(iconFile);
 
       const { port, token } = await startAndPair();
 
@@ -2948,9 +2950,11 @@ describe('annex-server', () => {
     const THUMBNAIL = Buffer.from('thumbnail-png-bytes');
     let dir: string;
 
-    /** A PNG header saying 2000x2000, padded to `size` with bytes that don't compress in base64. */
-    function pngFile(size: number): Buffer {
-      const header = Buffer.from('89504e470d0a1a0a0000000d49484452000007d0000007d008060000', 'hex');
+    /** A PNG header giving the side, 2000 unless said, padded to `size`. */
+    function pngFile(size: number, side = 2000): Buffer {
+      const header = Buffer.from('89504e470d0a1a0a0000000d4948445200000000000000000806000000', 'hex');
+      header.writeUInt32BE(side, 16);
+      header.writeUInt32BE(side, 20);
       return Buffer.concat([header, Buffer.alloc(size - header.length, 0xa7)]);
     }
 
@@ -3022,7 +3026,7 @@ describe('annex-server', () => {
 
     it('leaves icons out past the budget, in a set order, and warns with sizes only', async () => {
       // 60 KB files go in as they are, so 200 of them are about 16 MB of data URLs.
-      serveAgentsWithIcons(Array.from({ length: 200 }, (_, i) => writeIcon(`a${i}.png`, pngFile(60 * 1024))));
+      serveAgentsWithIcons(Array.from({ length: 200 }, (_, i) => writeIcon(`a${i}.png`, pngFile(60 * 1024, 256))));
 
       const { bytes, payload } = await connect();
 
@@ -3041,7 +3045,7 @@ describe('annex-server', () => {
     }, 30_000);
 
     it('reports each snapshot sent with sizes and counts, and no image data', async () => {
-      serveAgentsWithIcons([writeIcon('a0.png', pngFile(1024))]);
+      serveAgentsWithIcons([writeIcon('a0.png', pngFile(1024, 64))]);
 
       const { bytes } = await connect();
 
@@ -3078,7 +3082,7 @@ describe('annex-server', () => {
     }, 30_000);
 
     it('drops every icon when the rest of the snapshot is too large, and logs the size only', async () => {
-      serveAgentsWithIcons([writeIcon('a0.png', pngFile(1024))]);
+      serveAgentsWithIcons([writeIcon('a0.png', pngFile(1024, 64))]);
       vi.mocked(pluginStorage.readKey).mockImplementation(async ({ key, scope }: { key: string; scope: string }) => (
         scope === 'global' && key === 'canvas-instances' ? [{ id: 'c', secret: 'x'.repeat(SNAPSHOT_FRAME_MAX_BYTES) }] : null
       ) as never);
@@ -3095,23 +3099,20 @@ describe('annex-server', () => {
       expect(JSON.stringify(large)).not.toContain('xxxx');
     }, 30_000);
 
-    it('serves the thumbnail from the icon route, and the file when it cannot be resized', async () => {
+    it('serves the thumbnail from the icon route, and a 404 when there is none', async () => {
       fakeDecoder();
       annexServer.stop();
       const big = writeIcon('a0.png', pngFile(MIB));
       const svg = writeIcon('a1.svg', `<svg xmlns="http://www.w3.org/2000/svg"><!--${'x'.repeat(200 * 1024)}--></svg>`);
       serveAgentsWithIcons([big, svg]);
-      vi.mocked(agentConfigModule.readAgentIconData).mockImplementation(async (name: string) => (
-        `data:image/svg+xml;base64,${fs.readFileSync(path.join(dir, name)).toString('base64')}`
-      ));
       const { port, token } = await startAndPair();
 
       const thumbnail = await request(port, 'GET', '/api/v1/icons/agent/a0', undefined, authHeaders(token));
-      const whole = await request(port, 'GET', '/api/v1/icons/agent/a1', undefined, authHeaders(token));
+      const none = await request(port, 'GET', '/api/v1/icons/agent/a1', undefined, authHeaders(token));
 
       expect(thumbnail.body).toBe(THUMBNAIL.toString());
-      expect(whole.status).toBe(200);
-      expect(whole.body.length).toBeGreaterThan(200 * 1024);
+      expect(none.status).toBe(404);
+      expect(JSON.parse(none.body)).toEqual({ error: 'icon_not_found' });
     }, 30_000);
   });
 

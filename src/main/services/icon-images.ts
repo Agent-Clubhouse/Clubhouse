@@ -12,7 +12,7 @@ import { nativeImage, type NativeImage } from 'electron';
 import * as fsp from 'fs/promises';
 import * as path from 'path';
 import { CHAT_MEDIA_MAX_PIXELS, mediaDimensions, sniffMediaType } from '../../shared/chat';
-import { ICON_SOURCE_MAX_BYTES, ICON_THUMBNAIL_PASSTHROUGH_BYTES, ICON_THUMBNAIL_SIZE } from '../../shared/icon-limits';
+import { ICON_SOURCE_MAX_BYTES, ICON_THUMBNAIL_PASSTHROUGH_BYTES, ICON_THUMBNAIL_PASSTHROUGH_SIZE, ICON_THUMBNAIL_SIZE } from '../../shared/icon-limits';
 import { appLog } from './log-service';
 
 /** The system thumbnailer gets this long: a stuck one must not hold up a snapshot. */
@@ -72,6 +72,15 @@ export async function resizeIcon(bytes: Uint8Array, filePath: string, box: numbe
   }
 }
 
+/** Small enough to send as it is. SVG and ICO have no size to read here, and phones don't rasterize them to a size of their own choosing. */
+function canPassThrough(bytes: Uint8Array): boolean {
+  if (bytes.length > ICON_THUMBNAIL_PASSTHROUGH_BYTES) return false;
+  const type = sniffMediaType(bytes);
+  if (!type || type === 'image/svg+xml') return true;
+  const size = mediaDimensions(bytes, type);
+  return !!size && Math.max(size.width, size.height) <= ICON_THUMBNAIL_PASSTHROUGH_SIZE;
+}
+
 async function makeThumbnail(filePath: string, fileBytes: number): Promise<string | null> {
   const leaveOut = (): null => {
     appLog('core:annex', 'warn', 'An icon has no thumbnail, so snapshots leave it out', {
@@ -81,7 +90,7 @@ async function makeThumbnail(filePath: string, fileBytes: number): Promise<strin
   };
   if (fileBytes > ICON_SOURCE_MAX_BYTES) return leaveOut();
   const bytes = await fsp.readFile(filePath);
-  if (bytes.length <= ICON_THUMBNAIL_PASSTHROUGH_BYTES) {
+  if (canPassThrough(bytes)) {
     return `data:${ICON_MIME[path.extname(filePath).toLowerCase()] ?? 'image/png'};base64,${bytes.toString('base64')}`;
   }
   const png = await resizeIcon(bytes, filePath, ICON_THUMBNAIL_SIZE);

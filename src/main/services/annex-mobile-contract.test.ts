@@ -122,30 +122,19 @@ vi.mock('./annex-network-profile', async (importOriginal) => ({
 }));
 vi.mock('bonjour-service', () => ({ default: class { publish() { return { stop() {} }; } destroy() {} } }));
 vi.mock('./log-service', () => ({ appLog: () => {} }));
-/** A real file behind a fixture's icon: small, so it reaches the snapshot unchanged. */
-const iconFixtureFile = vi.hoisted(() => {
-  const nodeFs = require('fs') as typeof import('fs');
-  const nodeOs = require('os') as typeof import('os');
-  const nodePath = require('path') as typeof import('path');
-  const dir = nodeFs.mkdtempSync(nodePath.join(nodeOs.tmpdir(), 'annex-contract-icons-'));
-  return (name: string, base64: string) => {
-    const file = nodePath.join(dir, name);
-    nodeFs.writeFileSync(file, Buffer.from(base64, 'base64'));
-    return file;
-  };
-});
-
+// The fixture's icon bytes aren't whole images, so the "path" is the bytes and the thumbnail is them as they are.
+vi.mock('./icon-images', () => ({ readIconThumbnail: async (base64: string) => `data:image/png;base64,${base64}` }));
 vi.mock('./project-store', () => ({
   list: async () => { if (W.projectsThrow) throw new Error('disk gone'); return W.projects; },
   readIconData: async (icon: string) => (icon ? 'data:image/png;base64,iVBORw0KGgo=' : null),
-  iconFilePath: async (icon: string) => (icon ? iconFixtureFile('project-icon.png', 'iVBORw0KGgo=') : null),
+  iconFilePath: async (icon: string) => (icon ? 'iVBORw0KGgo=' : null),
 }));
 vi.mock('./agent-config', () => {
   const find = (projectPath: string, id: string) => (W.durables[projectPath] ?? []).find((d) => d.id === id) ?? null;
   return {
     listDurable: async (projectPath: string) => W.durables[projectPath] ?? [],
     readAgentIconData: async (icon: string) => (icon ? 'data:image/png;base64,R0lGODlhAQABAAAAACw=' : null),
-    agentIconFilePath: async (icon: string) => (icon ? iconFixtureFile('agent-icon.png', 'R0lGODlhAQABAAAAACw=') : null),
+    agentIconFilePath: async (icon: string) => (icon ? 'R0lGODlhAQABAAAAACw=' : null),
     getDurableConfig: async (projectPath: string, id: string) => find(projectPath, id),
     updateDurableConfig: async (projectPath: string, id: string, updates: Record<string, unknown>) => { Object.assign(find(projectPath, id) ?? {}, updates); },
     updateDurable: async (projectPath: string, id: string, updates: Record<string, unknown>) => { Object.assign(find(projectPath, id) ?? {}, updates); },
