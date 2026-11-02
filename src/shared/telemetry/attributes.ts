@@ -653,6 +653,8 @@ export const ATTR = {
     'agent:spawned', 'agent:woken', 'agent:status', 'agent:completed', 'snapshot', 'canvas:state', 'theme:changed',
     'group-project:list', 'group-project:changed', 'bulletin:message', 'pty:attach:ack', 'other',
   ]),
+  /** A permission request's encoded size, in fixed steps. No contents. */
+  annexToolInputBucket: enumAttr('clubhouse.annex.tool_input.bucket', ['<=64k', '<=256k', '<=1m', '>1m']),
   /** What was done with a frame over the limit. */
   annexFrameAction: enumAttr('clubhouse.annex.frame.action', ['fallback', 'sent_over_limit']),
   /** How a snapshot went: sent whole, sent with fewer icons, too large even so, or not sent. */
@@ -1230,6 +1232,11 @@ export const METRICS = {
     kind: 'histogram', unit: '{item}', level: 'standard',
     description: 'Projects and agents listed in a snapshot frame',
     attributes: [],
+  },
+  'clubhouse.annex.tool_input.requests': {
+    kind: 'counter', unit: '{request}', level: 'standard',
+    description: 'Permission requests sent to Annex clients, by the size of their input',
+    attributes: ['clubhouse.annex.tool_input.bucket'],
   },
   'clubhouse.annex.frames.over_limit': {
     kind: 'counter', unit: '{frame}', level: 'standard',

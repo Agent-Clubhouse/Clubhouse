@@ -72,7 +72,7 @@ import { injectPtyText } from './agent-runtime/pty-input';
 import { AgentStoppingError } from './agent-runtime/agent-stopping';
 import { spawnAgent, killAgent, getAvailableOrchestrators, isHeadlessAgent, resolveOrchestrator, resolveProfileEnv } from './agent-system';
 import { appLog } from './log-service';
-import { TOOL_EVENT_MAX_BYTES, boundChatEvent } from './annex-chat-bounds';
+import { forgetAppendedNotes, MOBILE_PERSISTENT_APPROVALS, OUTER_TOOL_INPUT_MAX_BYTES, PERMISSION_INPUT_MAX_BYTES, boundChatEvent, boundPendingPermissions, boundToolInput, toolInputSizeBucket } from './annex-chat-bounds';
 import { ICON_TEMPORARILY_UNAVAILABLE, readIconImage, type IconImage } from './icon-images';
 
 /**
@@ -104,6 +104,7 @@ import {
   recordClients,
   recordControlDenied,
   recordFrameOverLimit,
+  recordToolInputSize,
   recordPairServed,
   recordReplay,
   recordServerStarted,
@@ -1053,7 +1054,7 @@ function assembleSnapshot(sources: SnapshotSources): BuiltSnapshot {
     theme: getThemeColors(),
     terminalColors: getTerminalColors(),
     orchestrators: getOrchestratorsMap(),
-    pendingPermissions: permissionQueue.listPending(),
+    pendingPermissions: permissionQueue.listPending().map((pending) => ({ ...pending, ...boundToolInput(pending.toolInput) })),
     // Helper starts and disposes waiting on the user (#159); gated by capabilities.helperRequests.
     helperRequests: buildMobileHelperRequests(projects, durablesByProject),
     // Moves when presets or a cell's state change, so an open or cached page knows to refetch (#2671).
@@ -1457,8 +1458,28 @@ function broadcastAndBuffer(type: string, payload: unknown, context?: string): v
 /** An event's payload as Annex keeps and sends it, and that as JSON. Most pass through unchanged. */
 function boundEventPayload(type: string, payload: unknown): { payload: unknown; json: string } {
   const json = JSON.stringify(payload) ?? 'null';
+  if (type === 'chat:event' && (payload as { event?: ChatEvent }).event?.type === 'permission_request') {
+    recordToolInputSize(toolInputSizeBucket(Buffer.byteLength(json)));
+  }
   // A character is at most three UTF-8 bytes, so most events skip the count.
-  if (type !== 'chat:event' || json.length * 3 <= TOOL_EVENT_MAX_BYTES) return { payload, json };
+  if (json.length * 3 <= OUTER_TOOL_INPUT_MAX_BYTES) return { payload, json };
+  if (type === 'hook:event') {
+    const hook = payload as { event: AgentHookEvent };
+    const input = boundToolInput(hook.event.toolInput);
+    if (!input.toolInputTruncated) return { payload, json };
+    recordFrameOverLimit(type, 'fallback');
+    const next = { ...hook, event: { ...hook.event, ...input } };
+    return { payload: next, json: JSON.stringify(next) };
+  }
+  if (type === 'permission:request') {
+    const request = payload as { toolInput?: Record<string, unknown> };
+    const input = boundToolInput(request.toolInput);
+    if (!input.toolInputTruncated) return { payload, json };
+    recordFrameOverLimit(type, 'fallback');
+    const next = { ...request, ...input };
+    return { payload: next, json: JSON.stringify(next) };
+  }
+  if (type !== 'chat:event' || json.length * 3 <= PERMISSION_INPUT_MAX_BYTES) return { payload, json };
   const bytes = Buffer.byteLength(json);
   const { agentId, event } = payload as { agentId: string; event: ChatEvent };
   const bounded = boundChatEvent(event, bytes);
@@ -1996,6 +2017,13 @@ function handlePermissionResponse(
 
   if (!requestId) {
     sendJson(res, 400, { error: 'missing_request_id' });
+    return;
+  }
+
+  // A frame this came from left out most of a large input, so it can't be approved from here.
+  const queued = permissionQueue.listPending().find((p) => p.requestId === requestId);
+  if (decision === 'allow' && queued && boundToolInput(queued.toolInput).toolInputTruncated) {
+    sendJson(res, 409, { error: 'incomplete_representation' });
     return;
   }
 
@@ -2962,6 +2990,11 @@ async function handleMobileCanvasRoute(ctx: AnnexRouteContext, match: RegExpMatc
   sendJson(ctx.res, 200, { projectId, state: await readCanvasState(project.path) });
 }
 
+function boundedPendingInteractions(events: ChatEvent[]) {
+  const pending = pendingInteractions(events);
+  return { ...pending, pendingPermissions: boundPendingPermissions(pending.pendingPermissions) };
+}
+
 async function handleMobileCapabilitiesRoute(ctx: AnnexRouteContext): Promise<void> {
   sendJson(ctx.res, 200, {
     version: 1, epoch: mobileCommands.epoch, controlAuth: 'mtls-pinned-client',
@@ -2980,7 +3013,7 @@ async function handleMobileCapabilitiesRoute(ctx: AnnexRouteContext): Promise<vo
     // The composer's / menu: a live chat snapshot's `slashCommands`, updated by `commands_available` events.
     slashCommands: { version: 1, snapshotField: 'slashCommands', event: 'commands_available', maxCommands: MOBILE_SLASH_COMMANDS_MAX },
     // A paired phone has full control (#2462): persistent approvals and Free Agent Mode, as on the desktop.
-    permissions: { version: 1, persistentApprovals: true, freeAgentMode: true },
+    permissions: { version: 1, persistentApprovals: MOBILE_PERSISTENT_APPROVALS, freeAgentMode: true },
     // Durable agents' `orchestration` in the catalog and settings; agent.create and agent.update take it (#2228).
     orchestration: { version: 1 },
     idempotency: { scope: 'peer-and-epoch', maxEntries: MOBILE_COMMAND_MAX_ENTRIES, ttlMs: MOBILE_COMMAND_TTL_MS },
@@ -3112,13 +3145,13 @@ async function handleMobileChatRoute(ctx: AnnexRouteContext, match: RegExpMatchA
       canStart: !!durable && !isAgentRunning(agentId) && !mobileStartingAgents.has(agentId),
       currentSessionId: runtime?.kind === 'chat' ? runtime.getSessionId?.() ?? null : null, readOnly: !live,
       state: live ? runtime.getState() : 'sleeping', capabilities: live ? runtime.getCapabilities?.() ?? null : null,
-      events: page.map(remoteChatEvent), lastSeq: current[current.length - 1]?.seq ?? 0, truncated: eligible.length > limit,
+      events: page.map(remoteChatEvent).map((e) => (e.type === 'permission_request' ? boundChatEvent(e, Buffer.byteLength(JSON.stringify(e))) : e)), lastSeq: current[current.length - 1]?.seq ?? 0, truncated: eligible.length > limit,
       nextBeforeSeq: eligible.length > limit ? page[0]?.seq ?? null : null,
       contentRoots,
       contentAnyPath: richContent,
       ...(live ? runtime.getQueueState?.() ?? { queuedMessageIds: [], queueStateSeq: 0, queueRemovalSupported: false }
         : { queuedMessageIds: [], queueStateSeq: 0, queueRemovalSupported: false }),
-      ...(live ? pendingInteractions(current) : { pendingPermissions: [], pendingQuestions: [] }),
+      ...(live ? boundedPendingInteractions(current) : { pendingPermissions: [], pendingQuestions: [] }),
       // The composer's level, model and effort pills, for chat.setLevel / chat.setModel (#2462).
       chatControls: live ? chatControls(current, runtime.getCapabilities?.()) : null,
       // The composer's / menu; a page may not reach back to the session's commands_available.
@@ -4333,6 +4366,7 @@ export function start(): void {
 
   unsubChatEvent = onChatEvent((event) => {
     noteAgentActivity(event.agentId, event.ts);
+    if (event.type === 'session_ended') forgetAppendedNotes(event.agentId, event.sessionId);
     // Remote clients never get desktop paths or inline image bytes (#2453).
     broadcastAndBuffer('chat:event', { agentId: event.agentId, event: remoteChatEvent(event) }, chatEventTraceparent(event));
     pushChatStatus(event);

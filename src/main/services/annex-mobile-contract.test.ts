@@ -2331,6 +2331,87 @@ describe('Annex mobile contract fixtures', { timeout: TEST_TIMEOUT_MS }, () => {
   }, TEST_TIMEOUT_MS);
 
 
+  it('large permission requests: preview, refused approve, deny', async () => {
+    const big = { ...LIVE_TRANSCRIPT.find((e) => e.type === 'permission_request')! };
+    const large = { ...big, data: { ...(big as any).data, title: 'Write big.ts', description: 'big.ts', toolName: 'Write', rawInput: { file_path: '/work/app/big.ts', content: 'c'.repeat(300 * 1024) } } };
+    registerChatRuntime(chatRuntime('durable_chat', 'sess_live', CHAT_CAPS, [...LIVE_TRANSCRIPT.filter((e) => e !== big), large as never], true) as never);
+    const chat = { agentId: 'durable_chat', sessionId: 'sess_live' };
+
+    const snapshot = await exchange('GET', '/api/v1/mobile/agents/durable_chat/chat');
+    const [pending] = (snapshot.response.body as { pendingPermissions: any[] }).pendingPermissions;
+    expect(pending.data.description.startsWith('Incomplete input:')).toBe(true);
+    expect(pending.data.content[0].text.startsWith('Incomplete input:')).toBe(true);
+
+    const approve = await send('POST', '/api/v1/mobile/commands', { version: 1, epoch, commandId: 'cmd_incomplete_allow', type: 'chat.permission', ...chat, requestId: 'perm_1', optionId: 'allow' });
+    expect(approve.status).toBe(409);
+    expect(approve.body).toMatchObject({ status: 'rejected', error: { code: 'incomplete_representation' } });
+    const deny = await send('POST', '/api/v1/mobile/commands', { version: 1, epoch, commandId: 'cmd_incomplete_deny', type: 'chat.permission', ...chat, requestId: 'perm_1', optionId: PERMISSION_OPTIONS.find((o) => o.kind.startsWith('reject'))!.optionId });
+    expect(deny.status).toBe(200);
+
+    const preview = pending.data.content[0].text as string;
+    const ws = await connect();
+    ws.send.mockClear();
+    publishChatEvent(envelope(101, 'tool_call', { toolCallId: 'call_write', kind: 'edit', title: 'Write big.ts', status: 'pending', toolName: 'Write',
+      locations: [{ path: '/work/app/big.ts', line: 1 }],
+      rawInput: { file_path: '/work/app/big.ts', content: 'c'.repeat(300 * 1024) } }) as never);
+    const toolCall = frames(ws).find((f) => f.type === 'chat:event');
+    expect(toolCall.payload.event.data.rawInput).toEqual({ file_path: '/work/app/big.ts' });
+    expect(toolCall.payload.event.data.locations).toEqual([{ path: '/work/app/big.ts', line: 1 }]);
+    expect(toolCall.payload.event.data.content[0].text).toMatch(/this is a preview/);
+    fixtures.set('chat-event-tool-call-preview.json', {
+      direction: 'desktop-to-phone',
+      note: 'A tool_call over 256 KiB keeps its id, title, kind, status and locations. rawInput has only small plain fields. 147 ignores truncated, so content leads with a note, which it shows when the card is opened. originalBytes is pinned here.',
+      frame: { ...toolCall, seq: 1000, payload: { ...toolCall.payload, event: { ...toolCall.payload.event, data: { ...toolCall.payload.event.data, truncated: { originalBytes: 307400 } } } } },
+    });
+
+    fixtures.set('chat-permission-incomplete.json', {
+      note: 'Over 256 KiB. The middle of the preview is shortened here. The warning leads description and content; approve is refused and deny works.',
+      pendingPermission: { ...pending, data: { ...pending.data, truncated: { originalBytes: 307543 }, content: [{ type: 'text', text: `${preview.slice(0, preview.indexOf('\n\n'))}\n\n{\n  "file_path": "/work/app/big.ts",\n  "content": "ccc…"\n}` }] } },
+      approve: { request: { type: 'chat.permission', requestId: 'perm_1', optionId: 'allow' }, response: { status: approve.status, body: { ...approve.body, epoch: '<epoch>', commandId: '<commandId>' } } },
+      deny: { status: deny.status, body: { ...deny.body, epoch: '<epoch>', commandId: '<commandId>' } },
+    });
+    registerChatRuntime(chatRuntime('durable_chat', 'sess_live', CHAT_CAPS, LIVE_TRANSCRIPT, true) as never);
+  }, TEST_TIMEOUT_MS);
+
+
+  it('refuses approve through a real command when the options have changed since the phone was sent them', async () => {
+    const chat = { agentId: 'durable_chat', sessionId: 'sess_live' };
+    const runtime = chatRuntime('durable_chat', 'sess_live', CHAT_CAPS, LIVE_TRANSCRIPT, true);
+    const allow = PERMISSION_OPTIONS.find((o) => o.kind.startsWith('allow'))!;
+    const deny = PERMISSION_OPTIONS.find((o) => o.kind.startsWith('reject'))!;
+    registerChatRuntime({
+      ...runtime,
+      getPendingPermissionOptions: (id: string) => (id === 'perm_1' ? [...PERMISSION_OPTIONS, { optionId: 'added', kind: 'allow_always', label: 'Allow everything' }] : undefined),
+    } as never);
+
+    const approve = await send('POST', '/api/v1/mobile/commands', { version: 1, epoch, commandId: 'cmd_changed_allow', type: 'chat.permission', ...chat, requestId: 'perm_1', optionId: allow.optionId });
+    expect(approve.status).toBe(409);
+    expect(approve.body).toMatchObject({ status: 'rejected', error: { code: 'incomplete_representation' } });
+
+    const denied = await send('POST', '/api/v1/mobile/commands', { version: 1, epoch, commandId: 'cmd_changed_deny', type: 'chat.permission', ...chat, requestId: 'perm_1', optionId: deny.optionId });
+    expect(denied.status).toBe(200);
+    registerChatRuntime(runtime as never);
+  }, TEST_TIMEOUT_MS);
+
+
+  it('does not offer a deny a request does not have', async () => {
+    const chat = { agentId: 'durable_chat', sessionId: 'sess_live' };
+    const big = LIVE_TRANSCRIPT.find((e) => e.type === 'permission_request')! as any;
+    const allowOnly = PERMISSION_OPTIONS.filter((o) => o.kind.startsWith('allow'));
+    const large = { ...big, data: { ...big.data, requestId: 'perm_1', options: allowOnly, rawInput: { content: 'c'.repeat(300 * 1024) } } };
+    const runtime = chatRuntime('durable_chat', 'sess_live', CHAT_CAPS, [...LIVE_TRANSCRIPT.filter((e) => e !== big), large as never], true);
+    registerChatRuntime({ ...runtime, getPendingPermissionOptions: () => allowOnly } as never);
+
+    const snapshot = await exchange('GET', '/api/v1/mobile/agents/durable_chat/chat');
+    const [pending] = (snapshot.response.body as { pendingPermissions: any[] }).pendingPermissions;
+    expect(pending.data.description).not.toMatch(/deny/i);
+    const approve = await send('POST', '/api/v1/mobile/commands', { version: 1, epoch, commandId: 'cmd_no_deny_allow', type: 'chat.permission', ...chat, requestId: 'perm_1', optionId: allowOnly[0].optionId });
+    expect(approve.status).toBe(409);
+    expect(approve.body.error.message).toBe('This request is too large to review here. Review it on the desktop.');
+    registerChatRuntime(chatRuntime('durable_chat', 'sess_live', CHAT_CAPS, LIVE_TRANSCRIPT, true) as never);
+  }, TEST_TIMEOUT_MS);
+
+
   it('fixtures on disk match (npm run fixtures:annex-mobile to update)', () => {
     const rendered = render();
     if (WRITE) {

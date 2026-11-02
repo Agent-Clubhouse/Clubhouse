@@ -25,6 +25,7 @@ import { appendChatEvent } from './chat-transcript';
 import { FakeChatDriver } from './fake-chat-driver';
 import { registerChatRuntime, clearChatRuntimes, isChatAgent } from './index';
 import { onChatEvent, removeAllChatEventListeners } from './chat-event-bus';
+import { _forgetSentPermissionsForTest, isIncompletePermission } from '../annex-chat-bounds';
 import * as permissionQueue from '../annex-permission-queue';
 import { agentRegistry } from '../agent-registry';
 import { accessLevelOf } from '../../../shared/orchestration-policy';
@@ -377,6 +378,29 @@ describe('ChatAgentRuntime', () => {
     expect(runtime.getPendingPermissionOptions('pending')).toBeUndefined();
     finish(); await answering;
     expect(runtime.getPendingPermissionOptions('pending')).toBeUndefined();
+    await runtime.stop();
+  });
+
+  it('stamps events in milliseconds on the clock the approve check compares them with', async () => {
+    // No clock passed: the runtime's own default, as in the app.
+    const driver = new FakeChatDriver(); const { runtime } = makeRuntime(driver, { now: undefined });
+    await runtime.start();
+    const published: ChatEvent[] = [];
+    onChatEvent((e) => published.push(e));
+    _forgetSentPermissionsForTest(Date.now());
+    const before = Date.now();
+    // Over the floor and under the cap, so only the event's time decides.
+    driver.last.emit({ type: 'permission_request', data: { requestId: 'timed', title: 'Write', options: [], rawInput: { content: 'c'.repeat(16 * 1024) } } });
+    await flush();
+    const after = Date.now();
+
+    const event = published.find((e) => e.type === 'permission_request') as Extract<ChatEvent, { type: 'permission_request' }>;
+    expect(event.ts).toBeGreaterThanOrEqual(before);
+    expect(event.ts).toBeLessThanOrEqual(after);
+    expect(isIncompletePermission(event)).toBe(false);
+    // As if the desktop restarted with this still pending.
+    _forgetSentPermissionsForTest(after + 1);
+    expect(isIncompletePermission(event)).toBe(true);
     await runtime.stop();
   });
 
