@@ -829,7 +829,13 @@ function handleSatelliteMessage(sat: SatelliteConnectionInternal, msg: Record<st
     case 'permission:request':
     case 'permission:response':
     case 'theme:changed':
+      broadcastSatelliteEvent(sat.id, type, msg.payload);
+      break;
+
     case 'canvas:state':
+      // Kept too: a snapshot that leaves canvases out is refilled from here, and would otherwise put old ones back.
+      if (sat.ws) canvasEventsDuringFetch.get(sat.ws)?.push(msg.payload as CanvasStateEvent);
+      if (sat.snapshot) sat.snapshot = withCanvasEvent(sat.snapshot, msg.payload as CanvasStateEvent);
       broadcastSatelliteEvent(sat.id, type, msg.payload);
       break;
 
@@ -842,6 +848,43 @@ function handleSatelliteMessage(sat: SatelliteConnectionInternal, msg: Record<st
 
 /** Connections that have fetched their canvases. Later changes come as `canvas:state`. */
 const socketsWithCanvases = new WeakSet<WebSocket>();
+/** Changes that arrive while a connection's fetch is running: they go on top of what it returns. */
+const canvasEventsDuringFetch = new WeakMap<WebSocket, CanvasStateEvent[]>();
+
+interface CanvasStateEvent {
+  projectId?: string | null;
+  scope?: string;
+  state?: { canvasId: string; name: string; views: unknown[]; viewport: unknown; nextZIndex: number; zoomedViewId: string | null; selectedViewId?: string | null; allCanvasTabs?: Array<{ id: string; name: string }>; activeCanvasId?: string; wireDefinitions?: unknown[]; zoneWireDefinitions?: unknown[] };
+}
+interface CanvasStateRecord { canvases: Array<{ id: string }>; activeCanvasId: string; wireDefinitions?: unknown[]; zoneWireDefinitions?: unknown[] }
+
+/**
+ * One canvas's change on top of everything known, as the renderer merges it, without
+ * its id namespacing. With nothing known it's left out: it holds one canvas of perhaps
+ * several, so it can't stand for the whole set, and absent keeps what a renderer has.
+ */
+function mergeCanvasEvent(known: CanvasStateRecord | null | undefined, cs: NonNullable<CanvasStateEvent['state']>): CanvasStateRecord | null | undefined {
+  if (!known) return known;
+  const canvas = { id: cs.canvasId, name: cs.name, views: cs.views, viewport: cs.viewport, nextZIndex: cs.nextZIndex, zoomedViewId: cs.zoomedViewId, selectedViewId: cs.selectedViewId ?? null };
+  const canvases = cs.allCanvasTabs
+    ? cs.allCanvasTabs.map((tab) => (tab.id === cs.canvasId ? canvas : known.canvases.find((c) => c.id === tab.id) ?? { id: tab.id, name: tab.name, views: [], viewport: { panX: 0, panY: 0, zoom: 1 }, nextZIndex: 0, zoomedViewId: null, selectedViewId: null }))
+    : known.canvases.some((c) => c.id === cs.canvasId) ? known.canvases.map((c) => (c.id === cs.canvasId ? canvas : c)) : [...known.canvases, canvas];
+  return {
+    ...known,
+    canvases,
+    activeCanvasId: cs.activeCanvasId ?? known.activeCanvasId,
+    ...(cs.wireDefinitions && { wireDefinitions: cs.wireDefinitions }),
+    ...(cs.zoneWireDefinitions && { zoneWireDefinitions: cs.zoneWireDefinitions }),
+  };
+}
+
+function withCanvasEvent(snapshot: SatelliteSnapshot, { projectId, scope, state }: CanvasStateEvent): SatelliteSnapshot {
+  if (!state) return snapshot;
+  if (scope === 'global') return { ...snapshot, appCanvasState: mergeCanvasEvent(snapshot.appCanvasState as CanvasStateRecord | null | undefined, state) };
+  if (!projectId) return snapshot;
+  const merged = mergeCanvasEvent(snapshot.canvasState?.[projectId] as CanvasStateRecord | undefined, state);
+  return merged ? { ...snapshot, canvasState: { ...snapshot.canvasState, [projectId]: merged } } : snapshot;
+}
 
 /**
  * Fetch the canvases a satellite's snapshot left out for size, once per connection,
@@ -851,6 +894,8 @@ async function fetchOmittedCanvases(sat: SatelliteConnectionInternal): Promise<v
   const ws = sat.ws;
   if (!ws || socketsWithCanvases.has(ws)) return;
   socketsWithCanvases.add(ws);
+  const changes: CanvasStateEvent[] = [];
+  canvasEventsDuringFetch.set(ws, changes);
   const canvasState: Record<string, unknown> = {};
   let appCanvasState: unknown = null;
   try {
@@ -863,14 +908,16 @@ async function fetchOmittedCanvases(sat: SatelliteConnectionInternal): Promise<v
   } catch (err) {
     // Try again on the next snapshot that leaves them out. Until then it keeps what it has.
     socketsWithCanvases.delete(ws);
+    canvasEventsDuringFetch.delete(ws);
     appLog('core:annex', 'warn', 'Could not fetch canvases a satellite left out of its snapshot', {
       meta: { error: err instanceof Error ? err.message : String(err) },
     });
     return;
   }
+  canvasEventsDuringFetch.delete(ws);
   // Only onto a snapshot still missing them: a full one that arrived meanwhile is newer.
   if (sat.ws !== ws || !sat.snapshot?.snapshotTruncated?.omitted?.includes('canvasState')) return;
-  sat.snapshot = { ...sat.snapshot, canvasState, ...(appCanvasState ? { appCanvasState } : {}) };
+  sat.snapshot = changes.reduce(withCanvasEvent, { ...sat.snapshot, canvasState, ...(appCanvasState ? { appCanvasState } : {}) } as SatelliteSnapshot);
   broadcastSatellitesChanged();
   broadcastSatelliteEvent(sat.id, 'snapshot', sat.snapshot);
 }
