@@ -76,21 +76,28 @@ export function notifyMcpEnablementChanged(): void {
  * turned on gets it even when both are off.
  */
 export function isMcpEnabled(projectPath?: string, agentOverride?: boolean): boolean {
+  return resolveMcpEnabled(projectPath, agentOverride).enabled;
+}
+
+/** isMcpEnabled, and the level of the fallback chain that decided it. */
+export function resolveMcpEnabled(projectPath?: string, agentOverride?: boolean): { enabled: boolean; source: 'agent' | 'project' | 'app' } {
   // Agent-level override takes highest priority
-  if (agentOverride !== undefined) return agentOverride;
+  if (agentOverride !== undefined) return { enabled: agentOverride, source: 'agent' };
 
   const settings = getSettings();
 
   // Project-level override
   if (projectPath && settings.projectOverrides?.[projectPath] !== undefined) {
-    return settings.projectOverrides[projectPath];
+    return { enabled: settings.projectOverrides[projectPath], source: 'project' };
   }
 
   // Global MCP setting
-  if (settings.enabled) return true;
+  if (settings.enabled) return { enabled: true, source: 'app' };
 
   // Final fallback: inherit from clubhouse mode
-  return isClubhouseModeEnabled(projectPath);
+  const enabled = isClubhouseModeEnabled(projectPath);
+  const fromProject = !!projectPath && getClubhouseModeSettings().projectOverrides?.[projectPath] !== undefined;
+  return { enabled, source: fromProject ? 'project' : 'app' };
 }
 
 /**

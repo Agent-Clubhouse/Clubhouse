@@ -148,7 +148,7 @@ function describeAgent(config: DurableAgentConfig): AgentAppearance {
   return { id: config.id, name: config.name, color: config.color, emoji: config.emoji ?? null, hasImage: !!config.icon };
 }
 
-async function findOwnProject(projects: readonly Project[], projectPath: string): Promise<Project | undefined> {
+export async function findOwnProject(projects: readonly Project[], projectPath: string): Promise<Project | undefined> {
   for (const project of projects) {
     if (await agentConfig.isSameProject(project.path, projectPath)) return project;
   }
@@ -156,7 +156,7 @@ async function findOwnProject(projects: readonly Project[], projectPath: string)
 }
 
 /** A project by id, path or name, as list_projects shows them. */
-async function findProject(projects: readonly Project[], ref: string): Promise<Project> {
+export async function findProject(projects: readonly Project[], ref: string): Promise<Project> {
   const byId = projects.find((p) => p.id === ref);
   if (byId) return byId;
   const byPath = await findOwnProject(projects, ref);
