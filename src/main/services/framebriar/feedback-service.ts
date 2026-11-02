@@ -197,6 +197,8 @@ interface Draft {
   createdAt: number;
   /** Read once, when feedback opened: what is reviewed is what is sent. */
   diagnostics: FeedbackDiagnostics;
+  /** Reports waiting in the outbox when feedback opened; undefined if it couldn't be read. */
+  queuedAtCapture?: number;
   /** Fixed with the prepared report, so a retry records the same outcome. */
   diagnosticsOutcome?: FeedbackDiagnosticsOutcome;
   /** Once prepared, retry the same report identity even if saving had an uncertain outcome. */
@@ -402,6 +404,7 @@ export class FeedbackService {
     this.pruneDrafts();
     // open() checks eligibility and records the moment (and trace) feedback opened.
     const opened = await this.sdk().feedback.open();
+    const queuedAtCapture = this.readQueued();
     const shots: Shot[] = [];
     for (const [i, source] of sources.entries()) {
       let png: Buffer | null;
@@ -426,7 +429,7 @@ export class FeedbackService {
     }
     const snapshot: FramebriarSnapshot = { ...opened, ...correlation.data, png: shots[0]?.png ?? null };
     const draftId = randomUUID();
-    this.drafts.set(draftId, { snapshot, shots, createdAt: this.now(), diagnostics });
+    this.drafts.set(draftId, { snapshot, shots, createdAt: this.now(), diagnostics, queuedAtCapture });
     while (this.drafts.size > MAX_DRAFTS) this.drafts.delete(this.drafts.keys().next().value as string);
     const previews = shots.map((shot) => ({ shotId: shot.shotId, label: shot.label, preview: `data:image/png;base64,${shot.png.toString('base64')}` }));
     return { draftId, preview: previews[0]?.preview ?? null, shots: previews, ...(correlation.summary && { correlation: correlation.summary }), diagnostics };
@@ -441,6 +444,15 @@ export class FeedbackService {
     } catch (err) { // telemetry-exempt: logged here and recorded in the report as collection_failed
       this.log('warn', 'Feedback diagnostics could not be read', errorMeta(err));
       return { ...none, reason: 'collection_failed' };
+    }
+  }
+
+  /** Never throws: without a count, diagnostics v1 leaves it out. */
+  private readQueued(): number | undefined {
+    try {
+      return this.sdk().outbox.status().items;
+    } catch { // telemetry-exempt: only omits an optional count from the report
+      return undefined;
     }
   }
 
@@ -548,7 +560,7 @@ export class FeedbackService {
     const prepare = () => fb.feedback.prepare({
       notes,
       context: { scene, breadcrumbs },
-      ...(this.deps.reportDiagnosticsField === true && draft && { diagnostics: toDiagnosticsV1(draft.diagnostics, outcome) }),
+      ...(this.deps.reportDiagnosticsField === true && draft && { diagnostics: toDiagnosticsV1(draft.diagnostics, outcome, { queued: draft.queuedAtCapture }) }),
       ...(input.includeScreenshot && draft
         ? { ...draft.snapshot, png }
         : { ...(draft?.snapshot ?? {}), png: null }),

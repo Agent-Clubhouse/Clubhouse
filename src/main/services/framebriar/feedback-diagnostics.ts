@@ -139,7 +139,7 @@ const SYSTEM_ERROR = new RegExp(`\\b(${Object.keys(FAILURE_BY_CODE).join('|')})\
  * fields looks just like a state, so a pattern can't tell them apart. An unknown word is
  * dropped, so a new state goes missing from reports until it is added here.
  */
-const WORDS: Readonly<Record<'link' | 'state' | 'reason' | 'cli', ReadonlySet<string>>> = {
+export const DIAGNOSTICS_WORDS: Readonly<Record<'link' | 'state' | 'reason' | 'cli', ReadonlySet<string>>> = {
   link: new Set(['mtls', 'bearer', 'mtls-first']),
   state: new Set([
     'disconnected', 'discovering', 'connecting', 'connected',
@@ -189,7 +189,7 @@ export function createDiagnosticsRing(opts: { now?: () => number; salt?: Buffer;
       case 'link':
       case 'state':
       case 'reason':
-      case 'cli': return typeof value === 'string' && WORDS[kind].has(value) ? value : undefined;
+      case 'cli': return typeof value === 'string' && DIAGNOSTICS_WORDS[kind].has(value) ? value : undefined;
       case 'failure': return failure(value);
     }
   }
