@@ -38,6 +38,16 @@ async function addProject(dirPath: string) {
   });
 }
 
+/** Move the mouse off the rail and wait out its collapse, which takes longer than its 200ms on a busy runner. */
+async function moveOffRail() {
+  const innerRail = window.locator('[data-testid="nav-home"]').locator('..').locator('..').locator('> div').first();
+  await window.locator('[data-testid="title-bar"]').hover();
+  await expect(async () => {
+    const w = await innerRail.evaluate((el) => el.getBoundingClientRect().width);
+    expect(w).toBeLessThan(100);
+  }).toPass({ timeout: 5_000 });
+}
+
 // ---------------------------------------------------------------------------
 // Setup / Teardown
 // ---------------------------------------------------------------------------
@@ -50,6 +60,12 @@ test.beforeAll(async () => {
   await expect(window.locator('[data-testid="nav-add-project"]')).toBeVisible({
     timeout: 30_000,
   });
+
+  // Here, not in a test: a failed test restarts the worker, and every test
+  // after it runs on a new app with a new profile.
+  await addProject(FIXTURE_A);
+  // The add button is in the rail, so its click leaves the mouse there.
+  await moveOffRail();
 });
 
 test.afterAll(async () => {
@@ -62,9 +78,6 @@ test.afterAll(async () => {
 
 test.describe('Rail Hover Flyout', () => {
   test('rail expands beyond collapsed width on hover', async () => {
-    // Add a project so there is content to display in the flyout
-    await addProject(FIXTURE_A);
-
     // Locate the rail outer container (parent of the inner styled rail)
     // The ProjectRail root is the first child of the grid, with class "relative"
     const railOuter = window.locator('[data-testid="nav-home"]').locator('..').locator('..');
@@ -87,13 +100,8 @@ test.describe('Rail Hover Flyout', () => {
 
     const _expandedWidth = await innerRail.evaluate((el) => el.getBoundingClientRect().width);
 
-    // Move mouse away to collapse
-    await window.locator('[data-testid="title-bar"]').hover();
-    await window.waitForTimeout(300);
-
-    // Should return to collapsed width
-    const afterWidth = await innerRail.evaluate((el) => el.getBoundingClientRect().width);
-    expect(afterWidth).toBeLessThan(100);
+    // Move mouse away: the rail should return to collapsed width
+    await moveOffRail();
   });
 
   test('project labels are visible when rail is expanded', async () => {
@@ -116,7 +124,6 @@ test.describe('Rail Hover Flyout', () => {
     expect(bbox!.width).toBeGreaterThan(10);
 
     // Move away
-    await window.locator('[data-testid="title-bar"]').hover();
-    await window.waitForTimeout(300);
+    await moveOffRail();
   });
 });
