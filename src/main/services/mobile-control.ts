@@ -1,3 +1,4 @@
+import { withSettingsSurface } from './settings-audit';
 import { INPUT_WINDOW_NOTE, type ContextLimits } from '../../shared/context-window';
 import { createHash, randomUUID } from 'crypto';
 import type { AgentRuntime, ChatCapabilities, ChatEvent, ContentBlock, PermissionLevel } from '../../shared/chat';
@@ -134,7 +135,7 @@ export class MobileCommandService {
     // Reserve synchronously before executing, including while the first request is in flight.
     const entry: Entry = { fingerprint, expires: Infinity, settled: false, response: Promise.resolve().then(async () => {
       try {
-        const result = await run(command);
+        const result = await withSettingsSurface('mobile', undefined, () => run(command));
         return { statusCode: 200, body: { version: 1 as const, commandId: command.commandId, epoch, status: 'completed' as const, result } };
       } catch (err) {
         // telemetry-exempt: the receipt reports failure; runtime operations own detailed error telemetry.

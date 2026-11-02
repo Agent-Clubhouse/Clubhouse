@@ -9,6 +9,7 @@ import { getSettings as getSoundSettings, saveSettings as saveSoundSettings } fr
 import { pathExists } from './fs-utils';
 import { persist } from '../telemetry/persist';
 import { getBaseDirPath } from './base-dir';
+import { auditChanges, type AuditKeyFormat } from './settings-audit';
 
 const CURRENT_VERSION = 1;
 
@@ -472,6 +473,9 @@ export async function remove(id: string): Promise<void> {
   });
 }
 
+/** What the audit keeps of a project's own settings (#2671). A name is free text. */
+const PROJECT_AUDIT_CATALOG: Readonly<Record<string, AuditKeyFormat>> = { color: 'value', orchestrator: 'value', name: 'changed', displayName: 'changed', emoji: 'changed', icon: 'changed' };
+
 export async function update(id: string, updates: Partial<Pick<Project, 'color' | 'icon' | 'emoji' | 'name' | 'displayName' | 'orchestrator'>>): Promise<Project[]> {
   // Determine whether the icon file should be deleted before touching projects.json.
   // Deleting first avoids orphaned files if the process crashes between the JSON
@@ -481,9 +485,12 @@ export async function update(id: string, updates: Partial<Pick<Project, 'color' 
     await removeIconFile(id);
   }
 
-  return updateProjects((projects) => {
+  let auditBefore: Project | undefined;
+  let auditAfter: Project | undefined;
+  const updated = await updateProjects((projects) => {
     return projects.map((p) => {
       if (p.id !== id) return p;
+      auditBefore = p;
 
       const next = { ...p };
 
@@ -529,9 +536,14 @@ export async function update(id: string, updates: Partial<Pick<Project, 'color' 
         }
       }
 
+      auditAfter = next;
       return next;
     });
   });
+  if (auditBefore && auditAfter) {
+    await auditChanges('project', 'project', id, auditBefore as unknown as Record<string, unknown>, auditAfter as unknown as Record<string, unknown>, PROJECT_AUDIT_CATALOG);
+  }
+  return updated;
 }
 
 export async function setIcon(projectId: string, sourcePath: string): Promise<string> {

@@ -9,7 +9,7 @@ export interface DispatcherSettings {
   enabled: boolean;
 }
 
-const store = createSettingsStore<DispatcherSettings>('dispatcher-settings.json', { enabled: false });
+const store = createSettingsStore<DispatcherSettings>('dispatcher-settings.json', { enabled: false }, undefined, { audit: { key: 'dispatcher' } });
 
 export const getSettings = store.get;
 export const updateSettings = store.update;

@@ -1,3 +1,4 @@
+import { auditChanged, projectAuditTarget } from '../services/settings-audit';
 import { ipcMain, dialog, BrowserWindow } from 'electron';
 import { execSync } from 'child_process';
 import * as fsp from 'fs/promises';
@@ -184,6 +185,7 @@ export function registerProjectHandlers(): void {
 
   ipcMain.handle(IPC.PROJECT.RESET_PROJECT, withValidatedArgs([stringArg()], async (_event, projectPath: string): Promise<boolean> => {
     await assertAllowedPath(projectPath);
+    await auditChanged('project', 'project.reset', projectAuditTarget(projectPath as string));
     const clubhouseDir = path.join(projectPath, '.clubhouse');
     try {
       await fsp.access(clubhouseDir);

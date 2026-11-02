@@ -42,3 +42,21 @@ describe('helperStartRequestStore (#2234)', () => {
     expect(describeHelperStarts(grouped.other)).toBe('Wants to start the helper x');
   });
 });
+
+describe('describeHelperStarts with a warning (#2671)', () => {
+  const warning = { code: 'quota_near_limit' as const, asOf: '2027-01-15T08:00:00.000Z', message: 'codex-cli is close to its plan limit.' };
+  const start = (name: string, warned = false) => ({
+    requestId: name, projectPath: '/p', orchestratorId: 'o', orchestratorName: 'O', args: { name, task: 't' }, createdAt: '', expiresAt: '', ...(warned && { warning }),
+  });
+
+  it('adds the server\'s words for one start', () => {
+    expect(describeHelperStarts([start('a', true)])).toBe('Wants to start the helper a. codex-cli is close to its plan limit.');
+    expect(describeHelperStarts([start('a')])).not.toContain('plan limit');
+  });
+
+  it('counts them for several', () => {
+    expect(describeHelperStarts([start('a', true), start('b')])).toBe('Wants to start 2 helpers. Some name a provider that looks unwell');
+    expect(describeHelperStarts([start('a', true), start('b', true)])).toBe('Wants to start 2 helpers. Each names a provider that looks unwell');
+    expect(describeHelperStarts([start('a'), start('b')])).toBe('Wants to start 2 helpers');
+  });
+});

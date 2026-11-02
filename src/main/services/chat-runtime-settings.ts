@@ -14,7 +14,7 @@ export const CHAT_EXPERIMENTAL_FLAG = 'chat';
 /** Mode a provider gets when the flag is on and the user hasn't chosen. */
 export const DEFAULT_CHAT_PROVIDER_MODE: AgentRuntimeMode = 'chat';
 
-const store = createSettingsStore<ChatRuntimeSettings>('chat-runtime-settings.json', {});
+const store = createSettingsStore<ChatRuntimeSettings>('chat-runtime-settings.json', {}, undefined, { audit: { key: 'chat_runtime' } });
 
 export const getSettings = store.get;
 export const saveSettings = store.save;

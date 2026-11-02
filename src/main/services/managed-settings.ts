@@ -75,7 +75,7 @@ export function createManagedSettings<T>(
     ? { ...definition.defaults, ...options.defaultsOverride }
     : definition.defaults;
 
-  const store = options?.store ?? createSettingsStore<T>(definition.filename, defaults, options?.migrate, options?.mode != null ? { mode: options.mode } : undefined);
+  const store = options?.store ?? createSettingsStore<T>(definition.filename, defaults, options?.migrate, { ...(options?.mode != null && { mode: options.mode }), audit: { key: definition.key } });
 
   let registered = false;
 

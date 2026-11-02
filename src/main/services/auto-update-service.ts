@@ -89,7 +89,7 @@ const settingsStore = createSettingsStore<UpdateSettings>('update-settings.json'
   lastCheck: null,
   dismissedVersion: null,
   lastSeenVersion: null,
-});
+}, undefined, { audit: { key: 'update', ignore: ['lastCheck', 'dismissedVersion', 'lastSeenVersion'] } });
 
 export const getSettings = settingsStore.get;
 export const saveSettings = settingsStore.save;

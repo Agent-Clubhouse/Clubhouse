@@ -1,3 +1,4 @@
+import { withSettingsSurface } from '../services/settings-audit';
 import type { IpcMainEvent, IpcMainInvokeEvent } from 'electron';
 import type { DigestSince } from '../../shared/group-project-types';
 import { parseDigestSince } from '../../shared/digest-since';
@@ -154,7 +155,8 @@ export function withValidatedArgs<Args extends unknown[], Result>(
 ): IpcHandler<Args, Result> {
   return (event, ...rawArgs) => {
     const args = validateArgs(rawArgs, validators);
-    return handler(event, ...args);
+    // Whatever this writes, the app's own window asked (#2671).
+    return withSettingsSurface('ui', undefined, () => handler(event, ...args));
   };
 }
 

@@ -2,6 +2,7 @@
  * IPC handlers for MCP binding management.
  */
 
+import { auditChanged } from '../services/settings-audit';
 import { watchSessionQuota } from '../services/provider-quota';
 import { watchRoutingPolicy } from '../services/helper-routing';
 import { BrowserWindow, ipcMain } from 'electron';
@@ -217,6 +218,7 @@ export function registerMcpBindingHandlers(): void {
     (event, agentId, targetId, instructions) => {
       assertCallerIsAppWindow(event);
       assertNotPluginBinding(agentId as string, targetId as string);
+      void auditChanged('agent', 'agent.mcp_binding.instructions', agentId as string);
       // Allow setting instructions for sleeping (unregistered) durable agents.
       // Binding metadata is stored in memory and will be active when the agent
       // wakes up and connects to the MCP bridge. Blocking this for sleeping
@@ -235,6 +237,7 @@ export function registerMcpBindingHandlers(): void {
     (event, agentId, targetId, disabledTools) => {
       assertCallerIsAppWindow(event);
       assertNotPluginBinding(agentId as string, targetId as string);
+      void auditChanged('agent', 'agent.mcp_binding.disabled_tools', agentId as string);
       // Allow modifying disabled tools for sleeping agents (same rationale as
       // SET_INSTRUCTIONS above — binding metadata is just stored, not executed).
       if (!agentRegistry.get(agentId as string)) {

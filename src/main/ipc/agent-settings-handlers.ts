@@ -1,3 +1,4 @@
+import { auditChanged, projectAuditTarget } from '../services/settings-audit';
 import { ipcMain } from 'electron';
 import { IPC } from '../../shared/ipc-channels';
 import * as agentSettings from '../services/agent-settings-service';
@@ -41,6 +42,7 @@ export function registerAgentSettingsHandlers(): void {
   ipcMain.handle(IPC.AGENT.SAVE_INSTRUCTIONS, withValidatedArgs(
     [stringArg(), stringArg({ minLength: 0 }), stringArg({ optional: true })],
     async (_event, worktreePath, content, projectPath) => {
+      await auditChanged('agent', 'agent.instructions', projectAuditTarget(worktreePath));
       if (projectPath) {
         const provider = await resolveOrchestrator(projectPath);
         await provider.writeInstructions(worktreePath, content);
@@ -109,6 +111,7 @@ export function registerAgentSettingsHandlers(): void {
   ipcMain.handle(IPC.AGENT.SAVE_PERMISSIONS, withValidatedArgs(
     [stringArg(), objectArg<{ allow?: string[]; deny?: string[] }>(), stringArg({ optional: true })],
     async (_event, worktreePath, permissions, projectPath) => {
+      await auditChanged('agent', 'agent.permissions', projectAuditTarget(worktreePath));
       await agentSettings.writePermissions(worktreePath, permissions, await getConventions(projectPath));
     },
   ));

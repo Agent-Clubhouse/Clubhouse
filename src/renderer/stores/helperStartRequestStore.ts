@@ -45,6 +45,9 @@ export function startRequestsByOrchestrator(requests: Readonly<Record<string, He
 
 /** The Needs you line for an orchestrator's waiting starts. */
 export function describeHelperStarts(list: readonly HelperStartRequest[]): string {
-  if (list.length === 1) return describeHelperStart(list[0].args.name);
-  return `Wants to start ${list.length} helpers`;
+  // The same words the phone gets, so the desktop isn't told less (#2671). They never block an approval.
+  if (list.length === 1) return [describeHelperStart(list[0].args.name), list[0].warning?.message].filter(Boolean).join('. ');
+  const warned = list.filter((r) => r.warning).length;
+  const unwell = warned === 0 ? '' : warned === list.length ? '. Each names a provider that looks unwell' : '. Some name a provider that looks unwell';
+  return `Wants to start ${list.length} helpers${unwell}`;
 }

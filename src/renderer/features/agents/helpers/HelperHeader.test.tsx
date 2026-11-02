@@ -46,6 +46,15 @@ describe('Helper header (#2232)', () => {
     expect(await screen.findByTestId('helper-header-routing')).toHaveTextContent('gpt-6.1-sol, high effort. From the helper settings for this difficulty.');
   });
 
+  it('says when a provider it named looked unwell, in the server\'s words', async () => {
+    configs.h1 = { ...configs.h1, routing: {
+      resolved: { provider: 'codex-cli', model: 'gpt-6.1-sol', effort: null, difficulty: null }, reason: 'explicit_request',
+      warning: { code: 'quota_near_limit', asOf: '2027-01-15T08:00:00.000Z', message: 'codex-cli is close to its plan limit.' },
+    } as never };
+    render(<HelperHeader agent={helper} />);
+    expect(await screen.findByTestId('helper-header-routing')).toHaveTextContent('codex-cli is close to its plan limit.');
+  });
+
   it('leaves out the note for a helper that isn\'t disposable', async () => {
     configs.h1 = { ...configs.h1, disposable: false };
     render(<HelperHeader agent={helper} />);

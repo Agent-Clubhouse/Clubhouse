@@ -8,7 +8,7 @@ const store = createSettingsStore<LoggingSettings>('logging-settings.json', {
   minLogLevel: 'info',
   telemetryRecording: true,
   telemetryLevel: 'standard',
-});
+}, undefined, { audit: { key: 'logging' } });
 
 export const getSettings = store.get;
 export const saveSettings = store.save;

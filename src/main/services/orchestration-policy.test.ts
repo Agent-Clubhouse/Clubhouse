@@ -127,7 +127,11 @@ vi.mock('./materialization-service', () => ({
 
 vi.mock('./log-service', () => ({ appLog: vi.fn() }));
 const auditRows = vi.hoisted(() => [] as Array<Record<string, unknown>>);
-vi.mock('./settings-audit', () => ({ appendSettingsAudit: async (row: Record<string, unknown>) => { auditRows.push(row); return true; } }));
+vi.mock('./settings-audit', async (importOriginal) => ({
+  ...await importOriginal<typeof import('./settings-audit')>(),
+  appendSettingsAudit: async (row: Record<string, unknown>) => { auditRows.push(row); return true; },
+  currentSettingsOrigin: () => ({ surface: 'ui' }),
+}));
 
 /** App and project MCP settings, with isMcpEnabled's real precedence over them. */
 const mcp = vi.hoisted(() => ({

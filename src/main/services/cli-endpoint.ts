@@ -13,6 +13,7 @@
  * files anyway, so the token adds no privilege, only a safer way in.
  */
 
+import { withSettingsSurface } from './settings-audit';
 import * as fs from 'fs';
 import * as fsp from 'fs/promises';
 import * as http from 'http';
@@ -143,11 +144,11 @@ async function route(req: http.IncomingMessage, url: URL): Promise<unknown | nul
       return { agents: await appearance.listAgentAppearances(url.searchParams.get('project') ?? undefined) };
     case 'POST /cli/v1/projects/update': {
       const { project, ...updates } = pickFields(await readJsonBody(req), PROJECT_FIELDS);
-      return { project: await appearance.updateProjectAppearance({ scope: 'all' }, project, updates) };
+      return { project: await withSettingsSurface('cli', undefined, () => appearance.updateProjectAppearance({ scope: 'all' }, project, updates)) };
     }
     case 'POST /cli/v1/agents/update': {
       const { agentId, ...updates } = pickFields(await readJsonBody(req), AGENT_FIELDS);
-      return { agent: await appearance.updateAgentAppearance({ scope: 'all' }, agentId, updates) };
+      return { agent: await withSettingsSurface('cli', undefined, () => appearance.updateAgentAppearance({ scope: 'all' }, agentId, updates)) };
     }
     default:
       return null;

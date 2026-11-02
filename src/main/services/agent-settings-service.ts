@@ -1,3 +1,4 @@
+import { auditChanges, projectAuditTarget, type AuditKeyFormat } from './settings-audit';
 import { noteRoutingPolicyChanged } from './helper-routing-changes';
 import * as fsp from 'fs/promises';
 import { notifyProjectDefaultPersonaChanged } from './persona-change-hook';
@@ -728,6 +729,26 @@ export async function readProjectAgentDefaults(projectPath: string): Promise<Pro
 }
 
 /**
+ * What the audit keeps of a project's defaults (#2671). A key missing here doesn't
+ * compile, so a new one is a decision. Most can hold commands, env or text.
+ */
+const PROJECT_DEFAULTS_AUDIT_CATALOG: Readonly<Record<keyof ProjectAgentDefaults, AuditKeyFormat>> = {
+  freeAgentMode: 'value',
+  sourceControlProvider: 'value',
+  profileId: 'value',
+  persona: 'value',
+  mission: 'value',
+  helperAuto: 'value',
+  instructions: 'changed',
+  permissions: 'changed',
+  mcpJson: 'changed',
+  buildCommand: 'changed',
+  testCommand: 'changed',
+  lintCommand: 'changed',
+  commandPrefix: 'changed',
+} as Readonly<Record<keyof ProjectAgentDefaults, AuditKeyFormat>>;
+
+/**
  * Write project-level agent defaults to .clubhouse/settings.json.
  */
 export async function writeProjectAgentDefaults(projectPath: string, defaults: ProjectAgentDefaults): Promise<void> {
@@ -737,8 +758,10 @@ export async function writeProjectAgentDefaults(projectPath: string, defaults: P
   const settings = await readSettings(projectPath);
   const previousDefault = settings.agentDefaults?.persona;
   const previousAuto = settings.agentDefaults?.helperAuto;
+  const previous = settings.agentDefaults ?? {};
   settings.agentDefaults = defaults;
   await writeSettings(projectPath, settings);
+  await auditChanges('project', 'project.defaults', projectAuditTarget(projectPath), previous as Record<string, unknown>, defaults as Record<string, unknown>, PROJECT_DEFAULTS_AUDIT_CATALOG);
   // A project's `off`, or the persona its agents default to, decides Auto (#2671).
   if (defaults.helperAuto !== previousAuto || defaults.persona !== previousDefault) noteRoutingPolicyChanged();
   if (defaults.persona !== previousDefault) {

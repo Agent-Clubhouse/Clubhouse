@@ -164,6 +164,11 @@ vi.mock('./agent-settings-service', () => ({
 }));
 vi.mock('./agent-system', () => ({ resolveOrchestrator: vi.fn() }));
 const contextCheck = vi.hoisted(() => vi.fn());
+const auditCalls = vi.hoisted(() => [] as unknown[][]);
+vi.mock('./settings-audit', async (importOriginal) => ({
+  ...await importOriginal<typeof import('./settings-audit')>(),
+  auditChanges: async (...args: unknown[]) => { auditCalls.push(args); },
+}));
 vi.mock('./context-window', () => ({ contextWindowCheck: contextCheck }));
 vi.mock('./chat-idle-settings', () => ({ setAgentIdleSleep: vi.fn() }));
 /** Project paths the project store lists (#2511). */
@@ -192,6 +197,7 @@ import {
   setOrchestrationConfig,
   setHelperHandoff,
   setParentAgent,
+  updateDurable,
   updateDurableConfig,
 } from './agent-config';
 import { setPersonaChangeHook } from './persona-change-hook';
@@ -1129,6 +1135,31 @@ describe('helpers in another project (#2511)', () => {
     await flushAllAgentConfigs();
     expect(otherOnDisk('durable_3_far')?.parentAgentId).toBe('durable_5_own');
     expect(otherOnDisk('durable_3_far')).not.toHaveProperty('parentProjectPath');
+  });
+});
+
+describe('the settings audit (#2671)', () => {
+  const list = async () => (await listDurable(PROJECT_PATH)).find((a) => a.id === 'durable_1_a')!;
+
+  beforeEach(() => { auditCalls.length = 0; });
+
+  it('a settings change hands the audit before and after, with commands and env marked as changed only', async () => {
+    seed([agent('durable_1_a', { orchestrator: 'claude-code', model: 'opus', mcpConfigs: { x: { TOKEN: 'secret' } } })]);
+    await list();
+    await updateDurableConfig(PROJECT_PATH, 'durable_1_a', { model: 'sonnet', buildCommand: 'make secret' });
+    const [[scope, prefix, target, before, after, catalog]] = auditCalls as [[string, string, string, Record<string, unknown>, Record<string, unknown>, Record<string, string>]];
+    expect([scope, prefix, target]).toEqual(['agent', 'agent', 'durable_1_a']);
+    expect(before.model).toBe('opus');
+    expect(after.model).toBe('sonnet');
+    expect(catalog).toMatchObject({ model: 'value', effort: 'value', buildCommand: 'changed', mcpConfigs: 'changed' });
+    expect(catalog).not.toHaveProperty('lastSleep');
+    expect(catalog).not.toHaveProperty('lastSessionId');
+  });
+
+  it('a rename marks the name as changed only', async () => {
+    seed([agent('durable_1_a')]);
+    await updateDurable(PROJECT_PATH, 'durable_1_a', { name: 'new-name', color: 'red' });
+    expect(auditCalls.at(-1)?.[5]).toEqual({ name: 'changed', color: 'value', icon: 'changed', emoji: 'changed' });
   });
 });
 

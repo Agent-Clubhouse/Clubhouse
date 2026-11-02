@@ -26,7 +26,7 @@ const SETTINGS_FILENAME = 'orchestrator-settings.json';
 
 const store = createSettingsStore<OrchestratorSettings>(SETTINGS_FILENAME, {
   enabled: ['claude-code'],
-});
+}, undefined, { audit: { key: 'orchestrators' } });
 
 export const getSettings = store.get;
 export const saveSettings = store.save;

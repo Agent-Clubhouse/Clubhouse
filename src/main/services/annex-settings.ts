@@ -10,7 +10,7 @@ const store = createSettingsStore<AnnexSettings>('annex-settings.json', {
   icon: 'computer',
   color: 'indigo',
   autoReconnect: true,
-});
+}, undefined, { audit: { key: 'annex' } });
 
 /** Migrate legacy `enabled` field to `enableServer` + `enableClient`. */
 function migrateSettings(settings: AnnexSettings): AnnexSettings {
