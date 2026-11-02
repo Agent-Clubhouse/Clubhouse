@@ -3,10 +3,24 @@ import * as os from 'os';
 import * as path from 'path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-const W = vi.hoisted(() => ({ home: '' }));
+const W = vi.hoisted(() => ({ home: '', audits: [] as unknown[] }));
 
 vi.mock('electron', () => ({ app: { isPackaged: false, getPath: () => W.home } }));
 vi.mock('./log-service', () => ({ appLog: vi.fn() }));
+// A save starts its audit and doesn't return it, so keep each one for a test to wait on.
+vi.mock('./settings-store', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('./settings-store')>();
+  return {
+    ...actual,
+    setSettingsStoreAuditor: (auditor: Parameters<typeof actual.setSettingsStoreAuditor>[0]) => {
+      actual.setSettingsStoreAuditor(auditor && ((event) => {
+        const audit = auditor(event);
+        W.audits.push(audit);
+        return audit;
+      }));
+    },
+  };
+});
 
 import {
   _resetSettingsAuditForTesting,
@@ -23,6 +37,7 @@ import { createSettingsStore, resetAllSettingsStoresForTests, setSettingsStoreAu
 
 beforeEach(() => {
   W.home = fs.mkdtempSync(path.join(os.tmpdir(), 'settings-audit-'));
+  W.audits = [];
   _resetSettingsAuditForTesting(true);
 });
 
@@ -115,10 +130,13 @@ describe('settings stores', () => {
   beforeEach(() => { enableSettingsAudit(); });
   afterEach(() => { setSettingsStoreAuditor(null); });
 
+  /** A finished save or update has already started its audit, so this waits for all of them. */
+  const settled = () => Promise.allSettled(W.audits);
+
   it('a store that opted in reports each top-level key: switches and named keys by value, the rest only that it changed', async () => {
     const s = store({ key: 'thing', keys: ['mode'], ignore: ['noise'] });
     await withSettingsSurface('ui', undefined, () => s.save({ on: true, mode: 'b', secret: 'sk-very-secret', noise: 2 }));
-    await new Promise((resolve) => setTimeout(resolve, 20));
+    await settled();
     const written = (await rows()).reverse().map(({ ts: _ts, ...row }) => row);
     expect(written).toEqual(expect.arrayContaining([
       { surface: 'ui', scope: 'app', key: 'thing.on', outcome: 'ok', before: false, after: true },
@@ -128,8 +146,6 @@ describe('settings stores', () => {
     expect(written).toHaveLength(3);
     expect(JSON.stringify(written)).not.toContain('very-secret');
   });
-
-  const settled = async () => { await new Promise((resolve) => setTimeout(resolve, 20)); };
 
   it('update() is covered too, and saving the same values writes nothing', async () => {
     const s = store({ key: 'thing' });
