@@ -144,7 +144,8 @@ export interface StartPlan {
 
 export type StartPlanResult =
   | { ok: true; plan: StartPlan | null }
-  | { ok: false; code: 'no_valid_mapping' | 'auto_not_supported'; message: string };
+  /** `message` is for the orchestrator. `userReason` follows "because" in what a person who approved the start reads. */
+  | { ok: false; code: 'no_valid_mapping' | 'auto_not_supported'; message: string; userReason: string };
 
 /** What a persona's front-matter sets for a CLI and model. Unreadable means nothing: the creation refuses a missing persona. */
 async function personaPins(projectPath: string, persona: string | undefined): Promise<{ orchestrator?: string; model?: string }> {
@@ -195,6 +196,7 @@ export async function planHelperStart(request: StartPlanRequest): Promise<StartP
         ok: false,
         code: 'auto_not_supported',
         message: `${provider ?? 'This CLI'} has no presets, so difficulty can't pick for it. Name a model with list_models instead.`,
+        userReason: `${provider ?? 'its CLI'} has no presets.`,
       };
     }
     if (!resolvedModel) {
@@ -205,6 +207,7 @@ export async function planHelperStart(request: StartPlanRequest): Promise<StartP
           code: 'no_valid_mapping',
           message: `No ${validDifficulty} preset for ${provider} is offered now: ${problems.join('; ')} ` +
             'Name a model with list_models, or ask the user to update Settings > Helpers.',
+          userReason: `no ${validDifficulty} preset for ${provider} is offered now. Change it in Settings > Helpers.`,
         };
       }
       resolvedModel = resolved.cell.model;

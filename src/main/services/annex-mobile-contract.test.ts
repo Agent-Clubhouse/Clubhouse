@@ -332,7 +332,7 @@ vi.mock('./clubhouse-mcp/tools/helper-tools', async () => {
       starts.takeStartRequest(projectPath, requestId);
       if (W.helperStart === 'refused') return { ok: false, message: 'A helper named impl-ipc already exists.' };
       if (W.helperStart === 'no_valid_mapping') {
-        return { ok: false, code: 'no_valid_mapping', message: 'Couldn’t start impl-ipc because no hard preset for codex-cli is offered now.' };
+        return { ok: false, code: 'no_valid_mapping', message: 'Couldn’t start impl-ipc because no hard preset for codex-cli is offered now. Change it in Settings > Helpers.' };
       }
       return { ok: true, helperId: 'durable_helper_new', message: 'Started' };
     },
@@ -925,7 +925,10 @@ describe('Annex mobile contract fixtures', { timeout: TEST_TIMEOUT_MS }, () => {
     await command('helper_start_refused', { type: 'helper.approve', requestId: helperStart() });
     // The request is used up, as any refused approval: a phone shows the sentence and offers no retry (#2671).
     W.helperStart = 'no_valid_mapping';
-    await command('no_valid_mapping', { type: 'helper.approve', requestId: helperStart() });
+    const noMapping = await command('no_valid_mapping', { type: 'helper.approve', requestId: helperStart() });
+    expect(noMapping).toMatchObject({ status: 409, body: { status: 'failed', error: {
+      code: 'no_valid_mapping', message: 'Couldn’t start impl-ipc because no hard preset for codex-cli is offered now. Change it in Settings > Helpers.',
+    } } });
     W.helperStart = 'approve';
     await command('accepted dispose anyway', { type: 'helper.approve', requestId: helperDispose(), force: true });
     await command('accepted dispose (nothing at risk)', { type: 'helper.approve', requestId: helperDispose({ dirty: 0, unpushed: 0, unmerged: 3 }, false) });

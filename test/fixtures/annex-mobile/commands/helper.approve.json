@@ -86,7 +86,7 @@
           "epoch": "00000000-0000-4000-8000-000000000001",
           "error": {
             "code": "no_valid_mapping",
-            "message": "Couldn’t start impl-ipc because no hard preset for codex-cli is offered now."
+            "message": "Couldn’t start impl-ipc because no hard preset for codex-cli is offered now. Change it in Settings > Helpers."
           },
           "status": "failed",
           "version": 1

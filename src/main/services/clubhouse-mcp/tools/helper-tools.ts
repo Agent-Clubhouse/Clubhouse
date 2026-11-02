@@ -507,7 +507,7 @@ function parseStartArgs(args: Record<string, unknown>): HelperStartArgs {
 
 type StartOutcome =
   /** `message` for the orchestrator's tool result; `reason` to follow "because" in an approval's answer. */
-  | { kind: 'refused'; message: string; reason: string; code?: string }
+  | { kind: 'refused'; message: string; reason: string; code?: string; userReason?: string }
   | { kind: 'too_many'; waiting: number }
   | { kind: 'needs_approval'; control: OrchestrationControl; request: HelperStartRequest; reused: boolean; modelWarning?: string; effortWarning?: string }
   | { kind: 'starting'; helperId: string; name: string; branch?: string; launch: HelperLaunch; project: TargetProject; effort?: string; routing?: HelperRouting; modelWarning?: string; effortWarning?: string };
@@ -518,8 +518,8 @@ function asReason(text: string): string {
   return /^[A-Z][a-z]/.test(trimmed) ? trimmed[0].toLowerCase() + trimmed.slice(1) : trimmed;
 }
 
-function refused(message: string, code?: string): StartOutcome {
-  return { kind: 'refused', message, reason: asReason(message), ...(code && { code }) };
+function refused(message: string, code?: string, userReason?: string): StartOutcome {
+  return { kind: 'refused', message, reason: asReason(message), ...(code && { code }), ...(userReason && { userReason }) };
 }
 
 /** Raise the desktop notice for a held start, at most once a minute per orchestrator. */
@@ -574,7 +574,7 @@ async function runHelperStart(orchestratorId: string, args: HelperStartArgs, app
       cli, model, effort, difficulty, persona, projectPath: modelProject,
       orchestratorCli: orchestrator.orchestrator ?? agentRegistry.get(orchestratorId)?.orchestrator,
     });
-    if (planned.ok === false) return refused(planned.message, planned.code);
+    if (planned.ok === false) return refused(planned.message, planned.code, planned.userReason);
     plan = planned.plan;
     if (plan?.warning) modelWarning = plan.warning;
     if (model) {
@@ -829,7 +829,8 @@ export async function approveHelperStart(projectPath: string, requestId: string)
   const reason = outcome.kind === 'refused' ? outcome.reason : 'it could not be started.';
   appLog('core:mcp', 'info', 'Approved helper start refused', { meta: { orchestratorId, requestId, reason } });
   notifyOrchestrator(orchestratorId, `The user approved starting ${what}, but it was not started because ${reason}`);
-  return { ok: false, message: `Couldn’t start ${args.name} because ${reason}`, ...(outcome.kind === 'refused' && outcome.code && { code: outcome.code }) };
+  const told = outcome.kind === 'refused' && outcome.userReason ? outcome.userReason : reason;
+  return { ok: false, message: `Couldn’t start ${args.name} because ${told}`, ...(outcome.kind === 'refused' && outcome.code && { code: outcome.code }) };
 }
 
 /** The user declined a held start. Used up once; the orchestrator is told. */

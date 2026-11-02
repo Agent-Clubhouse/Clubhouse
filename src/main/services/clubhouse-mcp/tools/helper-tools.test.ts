@@ -809,7 +809,9 @@ describe('start_helper difficulty (#2671)', () => {
     modelLists.set('codex-cli', { ...codexLive, models: [{ id: 'gpt-6-luna', label: 'Luna', efforts: ['low'] }] });
     const decision = await approveHelperStart(PROJECT, request.requestId);
     expect(decision).toMatchObject({ ok: false, code: 'no_valid_mapping' });
-    expect(decision.message).toContain('no hard preset for codex-cli');
+    // What a person reads names no agent tool. The orchestrator is told the details.
+    expect(decision.message).toBe('Couldn’t start h because no hard preset for codex-cli is offered now. Change it in Settings > Helpers.');
+    expect(sent.get('orch')?.at(-1)).toContain('Name a model with list_models');
     expect(mockStartDurableCreation).not.toHaveBeenCalled();
     expect(listStartRequests()).toEqual([]);
   });
