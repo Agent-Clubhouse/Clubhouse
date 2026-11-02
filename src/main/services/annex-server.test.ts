@@ -3276,22 +3276,165 @@ describe('annex-server', () => {
       }, 30_000);
     });
 
-    it('drops every icon when the rest of the snapshot is too large, and logs the size only', async () => {
+    const hugeCanvases = () => vi.mocked(pluginStorage.readKey).mockImplementation(async ({ key, scope }: { key: string; scope: string }) => (
+      scope === 'global' && key === 'canvas-instances' ? [{ id: 'c', secret: 'x'.repeat(SNAPSHOT_FRAME_MAX_BYTES) }] : null
+    ) as never);
+
+    it('leaves canvases out first, keeps icons, and says what it left out', async () => {
       serveAgentsWithIcons([writeIcon('a0.png', pngFile(1024, 64))]);
-      vi.mocked(pluginStorage.readKey).mockImplementation(async ({ key, scope }: { key: string; scope: string }) => (
-        scope === 'global' && key === 'canvas-instances' ? [{ id: 'c', secret: 'x'.repeat(SNAPSHOT_FRAME_MAX_BYTES) }] : null
-      ) as never);
+      hugeCanvases();
+
+      const { bytes, payload } = await connect();
+
+      expect(bytes).toBeLessThan(SNAPSHOT_FRAME_MAX_BYTES);
+      expect(payload).not.toHaveProperty('appCanvasState');
+      expect(payload).not.toHaveProperty('canvasState');
+      expect(payload.agentIcons.a0).toBeDefined();
+      expect(payload.snapshotTruncated).toEqual({
+        version: 1, reason: 'frame_limit', omitted: ['canvasState', 'appCanvasState'], bytes: expect.any(Number),
+      });
+      expect(payload.snapshotTruncated.bytes).toBeGreaterThan(SNAPSHOT_FRAME_MAX_BYTES);
+      const line = vi.mocked(appLog).mock.calls.find(([, , message]) => message === 'Sending a snapshot');
+      expect(line?.[3]?.meta).toMatchObject({ result: 'canvas_omitted', iconCount: 1 });
+      const large = vi.mocked(appLog).mock.calls.find(([, , message]) => message === 'Sending a large WebSocket frame');
+      expect(JSON.stringify(line) + JSON.stringify(large)).not.toContain('xxxx');
+    }, 30_000);
+
+    it('never leaves out what a phone would read as removed', async () => {
+      serveAgentsWithIcons([writeIcon('a0.png', pngFile(1024, 64))]);
+      hugeCanvases();
 
       const { payload } = await connect();
 
+      for (const field of ['projects', 'agents', 'quickAgents', 'helperRequests', 'pendingPermissions', 'dispatcher', 'lastSeq']) {
+        expect(payload).toHaveProperty(field);
+      }
+      expect(payload.agents.proj_1).toHaveLength(1);
+    }, 30_000);
+
+    it('empties both icon maps next, when canvases were not enough', async () => {
+      const icons = Array.from({ length: 70 }, (_, i) => writeIcon(`a${i}.png`, pngFile(60 * 1024, 256)));
+      serveAgentsWithIcons(icons);
+      vi.mocked(projectStore.list).mockReturnValue([{ id: 'proj_1', name: 'P', path: '/p', displayName: 'n'.repeat(5 * MIB) } as any]);
+
+      const { bytes, payload } = await connect();
+
+      expect(bytes).toBeLessThan(SNAPSHOT_FRAME_MAX_BYTES);
       expect(payload.agentIcons).toEqual({});
-      expect(payload.appCanvasState.canvases).toHaveLength(1);
+      expect(payload.projectIcons).toEqual({});
+      expect(payload.snapshotTruncated.omitted).toEqual(['canvasState', 'appCanvasState', 'agentIcons', 'projectIcons']);
       const line = vi.mocked(appLog).mock.calls.find(([, , message]) => message === 'Sending a snapshot');
-      expect(line?.[2]).toBe('Sending a snapshot');
-      expect(line?.[3]?.meta).toMatchObject({ result: 'icons_dropped', iconCount: 0, iconsLeftOut: 1 });
-      const large = vi.mocked(appLog).mock.calls.find(([, , message]) => message === 'Sending a large WebSocket frame');
-      expect(large?.[3]?.meta).toMatchObject({ type: 'snapshot', mobileLimitBytes: MOBILE_WS_FRAME_MAX_BYTES });
-      expect(JSON.stringify(large)).not.toContain('xxxx');
+      expect(line?.[3]?.meta).toMatchObject({ result: 'icons_dropped', iconCount: 0 });
+    }, 30_000);
+
+    describe('with the oversize path', () => {
+      const socket = () => {
+        const ws = Object.assign(new EventEmitter(), { readyState: 1, send: vi.fn(), ping: () => {}, close: vi.fn() });
+        annexServer._testing.wsAuthTypes.set(ws as never, 'bearer');
+        annexServer._testing.wss!.clients.add(ws as never);
+        annexServer._testing.wss!.emit('connection', ws);
+        return ws;
+      };
+      const frames = (ws: { send: ReturnType<typeof vi.fn> }) => ws.send.mock.calls.map(([d]) => JSON.parse(d as string));
+      const hugeCanvas = () => vi.mocked(pluginStorage.readKey).mockImplementation(async ({ key, scope }: { key: string; scope: string }) => (
+        scope === 'global' && key === 'canvas-instances' ? [{ id: 'c', text: 'x'.repeat(17 * MIB) }] : null
+      ) as never);
+
+      it('canvases over 16 MiB: left out, so it goes out, with no snapshot_failed and no window', async () => {
+        serveAgentsWithIcons([writeIcon('a0.png', pngFile(1024, 64))]);
+        hugeCanvas();
+        const ws = socket();
+        await vi.waitFor(() => expect(ws.send).toHaveBeenCalled());
+
+        const [first] = frames(ws);
+        expect(first.type).toBe('snapshot');
+        expect(first.payload.snapshotTruncated.omitted).toEqual(['canvasState', 'appCanvasState']);
+        expect(first.payload.agentIcons.a0).toBeDefined();
+        expect(Buffer.byteLength(ws.send.mock.calls[0][0] as string)).toBeLessThan(SNAPSHOT_FRAME_MAX_BYTES);
+
+        // A refresh goes the same way, so nothing is blocked for anyone else.
+        ws.send.mockClear();
+        annexServer.broadcastSnapshotRefresh();
+        await vi.waitFor(() => expect(ws.send).toHaveBeenCalled());
+        expect(frames(ws)[0].payload.snapshotTruncated.omitted).toEqual(['canvasState', 'appCanvasState']);
+        const late = socket();
+        await vi.waitFor(() => expect(late.send).toHaveBeenCalled());
+        expect(frames(late)[0].type).toBe('snapshot');
+      }, 30_000);
+
+      it('required fields between 8 and 16 MiB: everything optional goes, and it is still sent', async () => {
+        serveAgentsWithIcons([writeIcon('a0.png', pngFile(1024, 64))]);
+        vi.mocked(projectStore.list).mockReturnValue([{ id: 'proj_1', name: 'P', path: '/p', displayName: 'n'.repeat(9 * MIB) } as any]);
+        const ws = socket();
+        await vi.waitFor(() => expect(ws.send).toHaveBeenCalled());
+
+        const [first] = frames(ws);
+        expect(first.type).toBe('snapshot');
+        expect(first.payload.agentIcons).toEqual({});
+        expect(first.payload.snapshotTruncated.omitted).toEqual(['canvasState', 'appCanvasState', 'agentIcons', 'projectIcons']);
+        const line = vi.mocked(appLog).mock.calls.find(([, , message]) => message === 'Sending a snapshot');
+        expect(line?.[3]?.meta).toMatchObject({ result: 'icons_dropped' });
+      }, 30_000);
+
+      it('required fields over 16 MiB: never sent, with snapshot_failed, however much was given up', async () => {
+        serveAgentsWithIcons([]);
+        vi.mocked(projectStore.list).mockReturnValue([{ id: 'proj_1', name: 'P', path: '/p', displayName: 'n'.repeat(17 * MIB) } as any]);
+        const ws = socket();
+        await vi.waitFor(() => expect(ws.send).toHaveBeenCalled());
+
+        expect(frames(ws)).toEqual([{ type: 'error', payload: { message: 'snapshot_failed' } }]);
+        const line = vi.mocked(appLog).mock.calls.find(([, , message]) => message === 'Sending a snapshot');
+        expect(line?.[1]).toBe('warn');
+        expect(line?.[3]?.meta).toMatchObject({ result: 'over_mobile_limit' });
+        expect(ws.close).not.toHaveBeenCalled();
+      }, 30_000);
+
+      it('a socket waiting after a failure gets the truncated form, with its own cursor', async () => {
+        vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] });
+        try {
+          vi.mocked(projectStore.list).mockRejectedValue(new Error('disk gone') as never);
+          const ws = socket();
+          await vi.waitFor(() => expect(ws.send).toHaveBeenCalled());
+          const cursor = _eventReplay.getLastSeq();
+
+          vi.mocked(projectStore.list).mockReset();
+          vi.mocked(projectStore.list).mockReturnValue([] as never);
+          hugeCanvas();
+          await vi.advanceTimersByTimeAsync(annexServer._testing.SNAPSHOT_RETRY_DELAYS_MS[0]);
+
+          const snapshot = frames(ws).find((f) => f.type === 'snapshot');
+          expect(snapshot.payload.lastSeq).toBe(cursor);
+          expect(snapshot.payload.snapshotTruncated.omitted).toContain('canvasState');
+        } finally {
+          vi.useRealTimers();
+        }
+      }, 30_000);
+    });
+
+    it('adds nothing to a snapshot that fits', async () => {
+      serveAgentsWithIcons([writeIcon('a0.png', pngFile(1024, 64))]);
+      const { payload } = await connect();
+      expect(payload).not.toHaveProperty('snapshotTruncated');
+      expect(payload).toHaveProperty('canvasState');
+    }, 30_000);
+
+    it('serves canvases a snapshot left out, one project at a time', async () => {
+      annexServer.stop();
+      vi.mocked(projectStore.list).mockReturnValue([{ id: 'proj_1', name: 'P', path: '/p' } as any]);
+      vi.mocked(pluginStorage.readKey).mockImplementation(async ({ key, scope, projectPath }: { key: string; scope: string; projectPath?: string }) => {
+        if (key !== 'canvas-instances') return null;
+        return [{ id: scope === 'global' ? 'app-canvas' : `canvas-of-${projectPath}` }];
+      });
+      const { port, token } = await startAndPair();
+
+      const project = await request(port, 'GET', '/api/v1/mobile/canvas/proj_1', undefined, authHeaders(token));
+      const app = await request(port, 'GET', '/api/v1/mobile/canvas', undefined, authHeaders(token));
+      const missing = await request(port, 'GET', '/api/v1/mobile/canvas/nope', undefined, authHeaders(token));
+
+      expect(JSON.parse(project.body)).toEqual({ projectId: 'proj_1', state: { canvases: [{ id: 'canvas-of-/p' }], activeCanvasId: 'canvas-of-/p' } });
+      expect(JSON.parse(app.body)).toEqual({ state: { canvases: [{ id: 'app-canvas' }], activeCanvasId: 'app-canvas' } });
+      expect(missing.status).toBe(404);
+      expect((await request(port, 'GET', '/api/v1/mobile/canvas/proj_1')).status).toBe(401);
     }, 30_000);
 
     it('serves the thumbnail from the icon route, and a 404 when there is none', async () => {
@@ -4035,15 +4178,16 @@ describe('annex-server', () => {
     });
 
     describe('a snapshot too large to send', () => {
-      const oversized = () => vi.mocked(pluginStorage.readKey).mockImplementation(async ({ key, scope }: { key: string; scope: string }) => (
-        scope === 'global' && key === 'canvas-instances' ? [{ id: 'c', text: 'x'.repeat(17 * 1024 * 1024) }] : null
-      ) as never);
+      // A required field: canvases are left out first, so they can't make it too large.
+      const HUGE = [{ id: 'big', name: 'B', path: '/b', displayName: 'x'.repeat(17 * 1024 * 1024) }] as never[];
+      const oversized = () => vi.mocked(projectStore.list).mockReturnValue(HUGE as never);
+      const fits = () => vi.mocked(projectStore.list).mockReturnValue([] as never);
       const builds = () => vi.mocked(projectStore.list).mock.calls.length;
 
       it('is never sent: the phone hears snapshot_failed once and the socket stays open', async () => {
         oversized();
         const ws = openDuringBuild();
-        finishList([]);
+        finishList(HUGE);
         await vi.waitFor(() => expect(ws.send).toHaveBeenCalled());
 
         expect(sent(ws)).toEqual([{ type: 'error', payload: { message: 'snapshot_failed' } }]);
@@ -4055,7 +4199,7 @@ describe('annex-server', () => {
         try {
           oversized();
           const ws = openDuringBuild();
-          finishList([]);
+          finishList(HUGE);
           await vi.waitFor(() => expect(ws.send).toHaveBeenCalled());
           const before = builds();
 
@@ -4083,7 +4227,7 @@ describe('annex-server', () => {
         try {
           oversized();
           const first = openDuringBuild();
-          finishList([]);
+          finishList(HUGE);
           await vi.waitFor(() => expect(first.send).toHaveBeenCalled());
           const before = builds();
 
@@ -4106,7 +4250,7 @@ describe('annex-server', () => {
         try {
           oversized();
           const first = openDuringBuild();
-          finishList([]);
+          finishList(HUGE);
           await vi.waitFor(() => expect(first.send).toHaveBeenCalled());
           const others = [await connectAgain(), await connectAgain(), await connectAgain()];
           const before = builds();
@@ -4125,7 +4269,7 @@ describe('annex-server', () => {
         try {
           oversized();
           const first = openDuringBuild();
-          finishList([]);
+          finishList(HUGE);
           await vi.waitFor(() => expect(first.send).toHaveBeenCalled());
           const before = builds();
 
@@ -4147,12 +4291,11 @@ describe('annex-server', () => {
         try {
           oversized();
           const first = openDuringBuild();
-          finishList([]);
+          finishList(HUGE);
           await vi.waitFor(() => expect(first.send).toHaveBeenCalled());
           const other = await connectAgain();
 
-          vi.mocked(pluginStorage.readKey).mockReset();
-          vi.mocked(pluginStorage.readKey).mockResolvedValue(null as never);
+          fits();
           const before = builds();
           annexServer.broadcastSnapshotRefresh();
           await vi.advanceTimersByTimeAsync(annexServer._testing.SNAPSHOT_OVERSIZE_RECHECK_MS + 1000);
@@ -4173,13 +4316,12 @@ describe('annex-server', () => {
         const ws = openDuringBuild();
         const before = _eventReplay.getLastSeq();
         const next = liveEvent();
-        finishList([]);
+        finishList(HUGE);
         await vi.waitFor(() => expect(ws.send).toHaveBeenCalled());
         publish();
         expect(sent(ws)).toHaveLength(1);
 
-        vi.mocked(pluginStorage.readKey).mockReset();
-        vi.mocked(pluginStorage.readKey).mockResolvedValue(null as never);
+        fits();
         vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] });
         try {
           annexServer.broadcastSnapshotRefresh();

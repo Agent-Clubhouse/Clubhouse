@@ -563,7 +563,7 @@ The 7 errors and 31 warnings in §2.1 (identity request errors, WS errors, heart
 - `c.annex.remote_spawn` covers the send. The satellite's ack isn't correlated today, so the satellite's own `c.agent.spawn`, continued from the same trace, is the end-to-end view.
 - `c.annex.rest` (Detailed) carries `c.annex.route` (40 templates kept in sync with `ANNEX_HTTP_ROUTE_TABLE` by a test) and `c.http.class`. It continues an inbound `traceparent` header from mTLS controllers only.
 - `c.annex.events.bytes` counts UTF-8 bytes of the serialized message.
-- `c.annex.snapshots` counts each snapshot by `c.annex.snapshot.result`: `ok`, `icons_left_out`, `icons_dropped`, `over_mobile_limit`, `build_failed` or `send_failed`. Histograms `c.annex.snapshot.bytes` and `c.annex.snapshot.icon_bytes` (split by `c.annex.snapshot.trigger`, `connect` or `refresh`), `c.annex.snapshot.icons`, `c.annex.snapshot.icons_left_out` and `c.annex.snapshot.items` give its sizes. No image data.
+- `c.annex.snapshots` counts each snapshot by `c.annex.snapshot.result`: `ok`, `icons_left_out`, `canvas_omitted`, `icons_dropped`, `over_mobile_limit`, `build_failed` or `send_failed`. Histograms `c.annex.snapshot.bytes` and `c.annex.snapshot.icon_bytes` (split by `c.annex.snapshot.trigger`, `connect` or `refresh`), `c.annex.snapshot.icons`, `c.annex.snapshot.icons_left_out` and `c.annex.snapshot.items` give its sizes. No image data.
 
 ### 4.13 Goobers (`goobers-*.ts`)
 

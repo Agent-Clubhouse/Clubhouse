@@ -205,6 +205,13 @@
         "snapshotField": "slashCommands",
         "version": 1
       },
+      "snapshotTruncation": {
+        "canvasPaths": {
+          "app": "/api/v1/mobile/canvas",
+          "project": "/api/v1/mobile/canvas/{projectId}"
+        },
+        "version": 1
+      },
       "terminal": {
         "agentAttach": true,
         "agentShell": true,

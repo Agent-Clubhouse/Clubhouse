@@ -102,7 +102,7 @@ vi.mock('http', async (importOriginal) => {
 // Mock https module for REST endpoints (requestFileTree, requestBulletinDigest, etc.)
 vi.mock('https', async (importOriginal) => {
   const actual = await importOriginal<typeof import('https')>();
-  return { ...actual, get: vi.fn() };
+  return { ...actual, get: vi.fn(), request: vi.fn(actual.request) };
 });
 
 import * as annexClient from './annex-client';
@@ -114,6 +114,7 @@ import * as annexTls from './annex-tls';
 import * as annexSettings from './annex-settings';
 import { broadcastToAllWindows } from '../util/ipc-broadcast';
 import { IPC } from '../../shared/ipc-channels';
+import { EventEmitter } from 'events';
 import * as http from 'http';
 import * as https from 'https';
 
@@ -782,6 +783,125 @@ describe('annex-client', () => {
       await vi.waitFor(() => expect(messageHandler).not.toBe(before));
       messageHandler!(snapshot(0, 'after restart'));
       expect(shown()).toBe('after restart');
+    });
+  });
+
+  describe('canvases a satellite left out of its snapshot', () => {
+    const FINGERPRINT = 'CANVAS:OMITTED';
+    const STATE = { canvases: [{ id: 'canvas_1', name: 'Main', views: [] }], activeCanvasId: 'canvas_1' };
+    let send: (frame: object) => void;
+    let routes: Record<string, { status: number; body: unknown }>;
+
+    async function connectedSatellite() {
+      const { WebSocket: WsMock } = await import('ws');
+      let messageHandler: ((data: any) => void) | null = null;
+      mockHttpGetIdentity({ fingerprint: FINGERPRINT, alias: 'Canvas', icon: 'server', color: 'green', publicKey: 'canvas-key' });
+      vi.mocked(annexPeers.getPeer).mockReturnValue({
+        fingerprint: FINGERPRINT, alias: 'Canvas', icon: 'server', color: 'green', publicKey: 'canvas-key', pairedAt: '2024-01-01', lastSeen: '2024-01-01',
+      });
+      vi.mocked(WsMock).mockImplementation(function (this: any) {
+        this.readyState = 1;
+        this.socket = makeMockSocket(FINGERPRINT);
+        this.on = vi.fn().mockImplementation((event: string, cb: any) => {
+          if (event === 'open') setTimeout(cb, 0);
+          if (event === 'message') messageHandler = cb;
+          return this;
+        });
+        this.send = vi.fn(); this.ping = vi.fn(); this.close = vi.fn(); this.terminate = vi.fn(); this.removeListener = vi.fn();
+        return this;
+      });
+      vi.mocked(https.request).mockImplementation(((url: string, _options: unknown, cb: (res: unknown) => void) => {
+        const { status, body } = routes[new URL(url).pathname] ?? { status: 404, body: {} };
+        const req = new EventEmitter() as any;
+        req.write = vi.fn();
+        req.destroy = vi.fn();
+        req.end = () => {
+          const res = new EventEmitter() as any;
+          res.statusCode = status;
+          cb(res);
+          res.emit('data', Buffer.from(JSON.stringify(body)));
+          res.emit('end');
+        };
+        return req;
+      }) as never);
+      annexClient.startClient();
+      await bonjourFindCallback!(makeService());
+      await vi.waitFor(() => expect(messageHandler).not.toBeNull());
+      send = (frame) => messageHandler!(Buffer.from(JSON.stringify(frame)));
+      await vi.waitFor(() => expect(annexClient.getSatellites()[0]?.state).toBe('connected'));
+    }
+
+    const truncated = (lastSeq: number) => ({
+      type: 'snapshot',
+      payload: {
+        protocolVersion: 2, projects: [{ id: 'proj_1' }], agents: {}, quickAgents: {}, theme: {}, orchestrators: {}, pendingPermissions: [], lastSeq,
+        snapshotTruncated: { version: 1, reason: 'frame_limit', omitted: ['canvasState', 'appCanvasState'], bytes: 9_000_000 },
+      },
+    });
+    const snapshotEvents = () => vi.mocked(broadcastToAllWindows).mock.calls
+      .filter(([channel, event]) => channel === IPC.ANNEX_CLIENT.SATELLITE_EVENT && (event as { type: string }).type === 'snapshot')
+      .map(([, event]) => (event as { payload: any }).payload);
+    const requested = () => vi.mocked(https.request).mock.calls.map(([url]) => new URL(url as string).pathname);
+
+    beforeEach(() => {
+      vi.mocked(https.request).mockClear();
+      routes = {
+        '/api/v1/mobile/canvas/proj_1': { status: 200, body: { projectId: 'proj_1', state: STATE } },
+        '/api/v1/mobile/canvas': { status: 200, body: { state: { ...STATE, activeCanvasId: 'app' } } },
+      };
+    });
+
+    it('a controller connecting fresh still gets them, through the routes, as a snapshot', async () => {
+      await connectedSatellite();
+      send(truncated(5));
+
+      await vi.waitFor(() => expect(snapshotEvents().at(-1)?.canvasState).toEqual({ proj_1: STATE }));
+      expect(snapshotEvents().at(-1).appCanvasState.activeCanvasId).toBe('app');
+      expect(annexClient.getSatellites().find((s) => s.fingerprint === FINGERPRINT)?.snapshot).toMatchObject({ canvasState: { proj_1: STATE } });
+    });
+
+    it('fetches once per connection, and keeps them through later truncated snapshots', async () => {
+      await connectedSatellite();
+      send(truncated(5));
+      await vi.waitFor(() => expect(snapshotEvents().at(-1)?.canvasState).toBeDefined());
+      const fetches = requested().length;
+
+      send(truncated(6));
+      await new Promise((r) => setTimeout(r, 10));
+
+      expect(requested()).toHaveLength(fetches);
+      expect(snapshotEvents().at(-1).lastSeq).toBe(6);
+      expect(snapshotEvents().at(-1).canvasState).toEqual({ proj_1: STATE });
+    });
+
+    it('does not fetch when nothing was left out', async () => {
+      await connectedSatellite();
+      send({ type: 'snapshot', payload: { ...truncated(5).payload, snapshotTruncated: undefined, canvasState: { proj_1: STATE }, appCanvasState: null } });
+      await new Promise((r) => setTimeout(r, 10));
+      expect(requested()).toEqual([]);
+      expect(snapshotEvents().at(-1).canvasState).toEqual({ proj_1: STATE });
+    });
+
+    it('stays connected if a satellite can not serve them, and tries on the next snapshot', async () => {
+      routes = {};
+      await connectedSatellite();
+      send(truncated(5));
+      await vi.waitFor(() => expect(requested().length).toBeGreaterThan(0));
+      await new Promise((r) => setTimeout(r, 10));
+      expect(annexClient.getSatellites().find((s) => s.fingerprint === FINGERPRINT)?.state).toBe('connected');
+
+      routes = { '/api/v1/mobile/canvas/proj_1': { status: 200, body: { state: STATE } }, '/api/v1/mobile/canvas': { status: 200, body: { state: null } } };
+      send(truncated(6));
+      await vi.waitFor(() => expect(snapshotEvents().at(-1)?.canvasState).toEqual({ proj_1: STATE }));
+    });
+
+    it('does not put an older fetch over a full snapshot that came meanwhile', async () => {
+      await connectedSatellite();
+      send(truncated(5));
+      const newer = { canvases: [], activeCanvasId: 'newer' };
+      send({ type: 'snapshot', payload: { ...truncated(6).payload, snapshotTruncated: undefined, canvasState: { proj_1: newer } } });
+      await new Promise((r) => setTimeout(r, 20));
+      expect(snapshotEvents().at(-1).canvasState).toEqual({ proj_1: newer });
     });
   });
 

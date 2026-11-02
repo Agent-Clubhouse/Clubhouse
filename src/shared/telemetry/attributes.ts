@@ -655,7 +655,7 @@ export const ATTR = {
   ]),
   /** How a snapshot went: sent whole, sent with fewer icons, too large even so, or not sent. */
   annexSnapshotResult: enumAttr('clubhouse.annex.snapshot.result', [
-    'ok', 'icons_left_out', 'icons_dropped', 'over_mobile_limit', 'build_failed', 'send_failed',
+    'ok', 'icons_left_out', 'canvas_omitted', 'icons_dropped', 'over_mobile_limit', 'build_failed', 'send_failed',
   ]),
   /** Why a snapshot went out: a client connected, or something changed and every client gets a new one. */
   annexSnapshotTrigger: enumAttr('clubhouse.annex.snapshot.trigger', ['connect', 'refresh']),
@@ -714,6 +714,8 @@ export const ATTR = {
     'POST /api/v1/mobile/agents/:id/attachments',
     'GET /api/v1/mobile/agents/:id/content',
     'GET /api/v1/mobile/capabilities',
+    'GET /api/v1/mobile/canvas',
+    'GET /api/v1/mobile/canvas/:id',
     'DELETE /api/v1/mobile/pairing',
     'GET /api/v1/mobile/agents/state',
     'GET /api/v1/mobile/agents/:id/chat',

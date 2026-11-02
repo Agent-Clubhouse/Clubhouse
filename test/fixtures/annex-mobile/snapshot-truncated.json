@@ -1,0 +1,15 @@
+{
+  "direction": "desktop-to-phone",
+  "note": "A field in omitted is unknown, not empty: keep what you have. bytes is pinned here, and is the frame size before anything was given up.",
+  "value": {
+    "snapshotTruncated": {
+      "bytes": 9437184,
+      "omitted": [
+        "canvasState",
+        "appCanvasState"
+      ],
+      "reason": "frame_limit",
+      "version": 1
+    }
+  }
+}

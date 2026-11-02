@@ -886,6 +886,27 @@ async function buildSnapshotIcons(
   };
 }
 
+type CanvasStateWire = { canvases: unknown[]; activeCanvasId: string; wireDefinitions?: unknown[] };
+
+/** A project's canvases and wires, or the app's with no path. Null when there are none or they can't be read. */
+async function readCanvasState(projectPath?: string): Promise<CanvasStateWire | null> {
+  const where = projectPath ? { scope: 'project-local' as const, projectPath } : { scope: 'global' as const };
+  try {
+    const [canvases, activeId, wires] = await Promise.all(['canvas-instances', 'canvas-active-id', 'canvas-wires'].map((key) => (
+      readPluginStorageKey({ pluginId: 'canvas', key, ...where })
+    )));
+    if (!canvases || !Array.isArray(canvases) || canvases.length === 0) return null;
+    return {
+      canvases,
+      activeCanvasId: (activeId as string) || (canvases[0] as any)?.id || '',
+      ...(wires && Array.isArray(wires) && wires.length > 0 ? { wireDefinitions: wires } : {}),
+    };
+  } catch {
+    // Canvas data not available — skip
+    return null;
+  }
+}
+
 type SnapshotSources = Awaited<ReturnType<typeof readSnapshotSourcesData>>;
 
 /** Everything that needs awaiting. Live state comes after, in assembleSnapshot. */
@@ -905,71 +926,14 @@ async function readSnapshotSourcesData() {
   const iconSet = await buildSnapshotIcons(projects, durablesByProject, activeDispatcher()?.config);
 
   // Read per-project canvas state in parallel (including wires)
-  const canvasState: Record<string, { canvases: unknown[]; activeCanvasId: string; wireDefinitions?: unknown[] }> = {};
+  const canvasState: Record<string, CanvasStateWire> = {};
   await Promise.all(projects.map(async (proj) => {
-    try {
-      const [canvases, activeId, wires] = await Promise.all([
-        readPluginStorageKey({
-          pluginId: 'canvas',
-          scope: 'project-local',
-          key: 'canvas-instances',
-          projectPath: proj.path,
-        }),
-        readPluginStorageKey({
-          pluginId: 'canvas',
-          scope: 'project-local',
-          key: 'canvas-active-id',
-          projectPath: proj.path,
-        }),
-        readPluginStorageKey({
-          pluginId: 'canvas',
-          scope: 'project-local',
-          key: 'canvas-wires',
-          projectPath: proj.path,
-        }),
-      ]);
-      if (canvases && Array.isArray(canvases) && canvases.length > 0) {
-        canvasState[proj.id] = {
-          canvases,
-          activeCanvasId: (activeId as string) || (canvases[0] as any)?.id || '',
-          ...(wires && Array.isArray(wires) && wires.length > 0 ? { wireDefinitions: wires } : {}),
-        };
-      }
-    } catch {
-      // Canvas data not available — skip
-    }
+    const state = await readCanvasState(proj.path);
+    if (state) canvasState[proj.id] = state;
   }));
 
   // Read app-level (global scope) canvas state (including wires)
-  let appCanvasState: { canvases: unknown[]; activeCanvasId: string; wireDefinitions?: unknown[] } | null = null;
-  try {
-    const [appCanvases, appActiveId, appWires] = await Promise.all([
-      readPluginStorageKey({
-        pluginId: 'canvas',
-        scope: 'global',
-        key: 'canvas-instances',
-      }),
-      readPluginStorageKey({
-        pluginId: 'canvas',
-        scope: 'global',
-        key: 'canvas-active-id',
-      }),
-      readPluginStorageKey({
-        pluginId: 'canvas',
-        scope: 'global',
-        key: 'canvas-wires',
-      }),
-    ]);
-    if (appCanvases && Array.isArray(appCanvases) && appCanvases.length > 0) {
-      appCanvasState = {
-        canvases: appCanvases,
-        activeCanvasId: (appActiveId as string) || (appCanvases[0] as any)?.id || '',
-        ...(appWires && Array.isArray(appWires) && appWires.length > 0 ? { wireDefinitions: appWires } : {}),
-      };
-    }
-  } catch {
-    // App-level canvas data not available — skip
-  }
+  const appCanvasState = await readCanvasState();
 
   // Read group project data
   const groupProjects = await groupProjectRegistry.list();
@@ -1150,24 +1114,55 @@ function reportSnapshot(result: SnapshotResult, trigger: SnapshotTrigger, bytes:
 }
 
 /**
- * A snapshot as one frame. Icons have their own budget, but the rest of a
- * snapshot isn't bounded: when it runs large, losing the icons is better than a
- * phone that can't connect. The rest can't be left out, so it's reported instead.
+ * What a snapshot can do without, in the order it's given up. Canvases go first: they
+ * have a route of their own, and phones don't draw them from here. Absent rather than
+ * empty, because a client reads an empty field as nothing being there. The icon maps
+ * are the exception: a phone keeps old icons only when both are absent, so both are
+ * sent empty, and its routes still serve them.
+ */
+const SNAPSHOT_TRUNCATION_STEPS: ReadonlyArray<{ result: SnapshotResult; omitted: string[]; apply: (payload: Record<string, unknown>) => void }> = [
+  {
+    result: 'canvas_omitted',
+    omitted: ['canvasState', 'appCanvasState'],
+    apply: (payload) => { delete payload.canvasState; delete payload.appCanvasState; },
+  },
+  {
+    result: 'icons_dropped',
+    omitted: ['agentIcons', 'projectIcons'],
+    apply: (payload) => { payload.agentIcons = {}; payload.projectIcons = {}; },
+  },
+];
+
+/**
+ * A snapshot as one frame, at most SNAPSHOT_FRAME_MAX_BYTES if what can be given up
+ * gets it there. `snapshotTruncated` says what was, and that the absence doesn't
+ * mean it's gone. The fields left can't be given up, so past that it's reported.
  */
 function snapshotFrame({ payload, icons }: BuiltSnapshot, trigger: SnapshotTrigger): string {
   const items = payload.projects.length + Object.values(payload.agents).reduce((sum, list) => sum + list.length, 0);
-  const frame = JSON.stringify({ type: 'snapshot', payload });
-  const bytes = Buffer.byteLength(frame);
+  let frame = JSON.stringify({ type: 'snapshot', payload });
+  let bytes = Buffer.byteLength(frame);
   if (bytes <= SNAPSHOT_FRAME_MAX_BYTES) {
     reportSnapshot(icons.iconsLeftOut > 0 ? 'icons_left_out' : 'ok', trigger, bytes, items, icons);
     return frame;
   }
-  const withoutIcons = JSON.stringify({ type: 'snapshot', payload: { ...payload, projectIcons: {}, agentIcons: {} } });
-  const withoutIconsBytes = Buffer.byteLength(withoutIcons);
-  reportSnapshot(withoutIconsBytes > MOBILE_WS_FRAME_MAX_BYTES ? 'over_mobile_limit' : 'icons_dropped', trigger, withoutIconsBytes, items, {
-    iconCount: 0, iconBytes: 0, iconsLeftOut: icons.iconCount + icons.iconsLeftOut,
-  });
-  return withoutIcons;
+  const fullBytes = bytes;
+  const reduced: Record<string, unknown> = { ...payload };
+  const omitted: string[] = [];
+  let result: SnapshotResult = 'ok';
+  for (const step of SNAPSHOT_TRUNCATION_STEPS) {
+    step.apply(reduced);
+    omitted.push(...step.omitted);
+    result = step.result;
+    frame = JSON.stringify({ type: 'snapshot', payload: { ...reduced, snapshotTruncated: { version: 1, reason: 'frame_limit', omitted, bytes: fullBytes } } });
+    bytes = Buffer.byteLength(frame);
+    if (bytes <= SNAPSHOT_FRAME_MAX_BYTES) break;
+  }
+  const iconsGone = omitted.includes('agentIcons');
+  reportSnapshot(bytes > MOBILE_WS_FRAME_MAX_BYTES ? 'over_mobile_limit' : result, trigger, bytes, items, iconsGone
+    ? { iconCount: 0, iconBytes: 0, iconsLeftOut: icons.iconCount + icons.iconsLeftOut }
+    : icons);
+  return frame;
 }
 
 /** Most frames held for one socket: as many as the replay buffer keeps. */
@@ -2822,6 +2817,21 @@ async function handleProjectIconRoute(ctx: AnnexRouteContext): Promise<void> {
   sendJson(ctx.res, 404, { error: 'icon_not_found' });
 }
 
+/** What a snapshot left out for size: one project's canvases, or the app's. Sent one at a time, so each stays small. */
+async function handleMobileCanvasRoute(ctx: AnnexRouteContext, match: RegExpMatchArray): Promise<void> {
+  if (!match[1]) {
+    sendJson(ctx.res, 200, { state: await readCanvasState() });
+    return;
+  }
+  const projectId = decodeURIComponent(match[1]);
+  const project = (await projectStore.list()).find((p) => p.id === projectId);
+  if (!project) {
+    sendJson(ctx.res, 404, { error: 'project_not_found' });
+    return;
+  }
+  sendJson(ctx.res, 200, { projectId, state: await readCanvasState(project.path) });
+}
+
 async function handleMobileCapabilitiesRoute(ctx: AnnexRouteContext): Promise<void> {
   sendJson(ctx.res, 200, {
     version: 1, epoch: mobileCommands.epoch, controlAuth: 'mtls-pinned-client',
@@ -2846,6 +2856,8 @@ async function handleMobileCapabilitiesRoute(ctx: AnnexRouteContext): Promise<vo
     idempotency: { scope: 'peer-and-epoch', maxEntries: MOBILE_COMMAND_MAX_ENTRIES, ttlMs: MOBILE_COMMAND_TTL_MS },
     projectState: { version: 1 },
     finishedQuickAgents: { version: 1 },
+    // A snapshot over its limit says what it left out in `snapshotTruncated`; these fetch canvases.
+    snapshotTruncation: { version: 1, canvasPaths: { project: '/api/v1/mobile/canvas/{projectId}', app: '/api/v1/mobile/canvas' } },
     // Shells at the project root or an agent's worktree, and an agent's own PTY (#2476).
     terminal: { version: 1, projectShell: true, agentShell: true, agentAttach: true,
       maxShellsPerConnection: MAX_SHELLS_PER_CONNECTION, maxInputLength: MAX_PTY_INPUT_SIZE },
@@ -3374,6 +3386,8 @@ const ANNEX_HTTP_ROUTE_TABLE: AnnexHttpRoute[] = [
   { method: 'POST', pattern: /^\/api\/v1\/mobile\/agents\/([^/]+)\/attachments$/, handler: handleMobileAttachmentRoute },
   { method: 'GET', pattern: /^\/api\/v1\/mobile\/agents\/([^/]+)\/content(\?.*)?$/, handler: handleMobileContentRoute },
   { method: 'GET', pattern: /^\/api\/v1\/mobile\/capabilities$/, handler: handleMobileCapabilitiesRoute },
+  { method: 'GET', pattern: /^\/api\/v1\/mobile\/canvas$/, handler: handleMobileCanvasRoute },
+  { method: 'GET', pattern: /^\/api\/v1\/mobile\/canvas\/([^/]+)$/, handler: handleMobileCanvasRoute },
   { method: 'DELETE', pattern: /^\/api\/v1\/mobile\/pairing$/, handler: handleMobilePairingDeleteRoute },
   { method: 'GET', pattern: /^\/api\/v1\/mobile\/agents\/state$/, handler: handleMobileAgentStateRoute },
   { method: 'GET', pattern: /^\/api\/v1\/mobile\/agents\/([^/]+)\/chat(\?.*)?$/, handler: handleMobileChatRoute },

@@ -1,0 +1,70 @@
+{
+  "app": {
+    "request": {
+      "method": "GET",
+      "path": "/api/v1/mobile/canvas"
+    },
+    "response": {
+      "body": {
+        "state": {
+          "activeCanvasId": "canvas_1",
+          "canvases": [
+            {
+              "id": "canvas_1",
+              "name": "Main",
+              "views": []
+            }
+          ]
+        }
+      },
+      "status": 200
+    }
+  },
+  "missing": {
+    "request": {
+      "method": "GET",
+      "path": "/api/v1/mobile/canvas/nope"
+    },
+    "response": {
+      "body": {
+        "error": "project_not_found"
+      },
+      "status": 404
+    }
+  },
+  "none": {
+    "request": {
+      "method": "GET",
+      "path": "/api/v1/mobile/canvas/proj_app"
+    },
+    "response": {
+      "body": {
+        "projectId": "proj_app",
+        "state": null
+      },
+      "status": 200
+    }
+  },
+  "project": {
+    "request": {
+      "method": "GET",
+      "path": "/api/v1/mobile/canvas/proj_app"
+    },
+    "response": {
+      "body": {
+        "projectId": "proj_app",
+        "state": {
+          "activeCanvasId": "canvas_1",
+          "canvases": [
+            {
+              "id": "canvas_1",
+              "name": "Main",
+              "views": []
+            }
+          ]
+        }
+      },
+      "status": 200
+    }
+  }
+}

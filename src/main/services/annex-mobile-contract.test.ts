@@ -54,6 +54,7 @@ const W = vi.hoisted(() => ({
   dispatcherListeners: new Set<(state: any) => void>(),
   // What the CLI offers for the model (#2660); a case sets it, else Claude's.
   contextOptions: null as null | Record<string, unknown>,
+  canvases: null as unknown[] | null,
 }));
 const DISPATCHER_PATH = vi.hoisted(() => '/Users/me/.clubhouse/dispatcher');
 
@@ -244,7 +245,10 @@ vi.mock('./annex-settings', () => ({
   saveLastPorts: async () => {},
 }));
 vi.mock('./plugin-manifest-registry', () => ({ listAllManifests: () => [] }));
-vi.mock('./plugin-storage', () => ({ readKey: async () => null, writeKey: async () => {} }));
+vi.mock('./plugin-storage', () => ({
+  readKey: async ({ key }: { key: string }) => (key === 'canvas-instances' ? W.canvases : null),
+  writeKey: async () => {},
+}));
 const ORCHESTRATORS = vi.hoisted(() => [
   { id: 'claude-code', displayName: 'Claude Code', shortName: 'CC', badge: 'Beta', capabilities: { permissions: true, headless: true, structuredOutput: true, hooks: true, sessionResume: true } },
   { id: 'codex-cli', displayName: 'Codex', shortName: 'CX', capabilities: { permissions: false, headless: true, structuredOutput: false, hooks: false, sessionResume: true } },
@@ -714,6 +718,32 @@ describe('Annex mobile contract fixtures', { timeout: TEST_TIMEOUT_MS }, () => {
       unknownProject: await exchange('GET', '/api/v1/projects/missing/agents'),
     });
   });
+
+  it('a snapshot over its limit, and the routes for what it left out', async () => {
+    W.canvases = [{ id: 'canvas_1', name: 'Main', views: [{ id: 'cv_1', type: 'sticky-note', content: 'x'.repeat(9 * 1024 * 1024) }] }];
+    const snapshot = frames(await connect()).find((f) => f.type === 'snapshot').payload;
+    expect(snapshot).not.toHaveProperty('canvasState');
+    expect(snapshot).not.toHaveProperty('appCanvasState');
+    expect(snapshot.snapshotTruncated.bytes).toBeGreaterThan(9 * 1024 * 1024);
+    // The agents and icons are still there.
+    expect(snapshot.agents.proj_app.length).toBeGreaterThan(0);
+    expect(Object.keys(snapshot.agentIcons).length).toBeGreaterThan(0);
+    fixtures.set('snapshot-truncated.json', {
+      direction: 'desktop-to-phone',
+      note: 'A field in omitted is unknown, not empty: keep what you have. bytes is pinned here, and is the frame size before anything was given up.',
+      value: { snapshotTruncated: { ...snapshot.snapshotTruncated, bytes: 9437184 } },
+    });
+
+    W.canvases = [{ id: 'canvas_1', name: 'Main', views: [] }];
+    const project = await exchange('GET', '/api/v1/mobile/canvas/proj_app');
+    const app = await exchange('GET', '/api/v1/mobile/canvas');
+    W.canvases = null;
+    const none = await exchange('GET', '/api/v1/mobile/canvas/proj_app');
+    const missing = await exchange('GET', '/api/v1/mobile/canvas/nope');
+    expect(project.response.status).toBe(200);
+    expect(missing.response.status).toBe(404);
+    fixtures.set('canvas-route.json', { project, app, none, missing });
+  }, TEST_TIMEOUT_MS);
 
   it('chat snapshots and sessions', async () => {
     const live = await exchange('GET', '/api/v1/mobile/agents/durable_chat/chat');

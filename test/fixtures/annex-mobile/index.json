@@ -11,6 +11,7 @@
     "agent-sleep.json",
     "agent-state.json",
     "attachments.json",
+    "canvas-route.json",
     "capabilities.json",
     "chat-events.json",
     "chat-page.json",
@@ -59,6 +60,7 @@
     "sender-identity.json",
     "snapshot-dispatcher.json",
     "snapshot-helper-requests.json",
+    "snapshot-truncated.json",
     "snapshot.json"
   ]
 }
