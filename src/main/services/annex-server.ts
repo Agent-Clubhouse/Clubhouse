@@ -793,14 +793,38 @@ interface BuiltSnapshot {
   icons: SnapshotIconStats;
 }
 
-async function buildSnapshot(): Promise<BuiltSnapshot> {
+/**
+ * A snapshot's reads get this long, then count as a failure. Everyone waiting on a
+ * build waits on all of it. `snapshot_failed` is what starts a phone's 30 second grace,
+ * after which it reconnects, so a phone waiting on a hung build has about 45 seconds
+ * from connecting. The reads can't be cancelled: whatever they return later is ignored.
+ */
+const SNAPSHOT_BUILD_TIMEOUT_MS = 15_000;
+/** Reads given up on and still running. While there's one, no more start, so retries can't pile up behind a hung disk. */
+const abandonedSnapshotReads = new Set<Promise<unknown>>();
+
+/** A snapshot's disk reads. */
+async function readSnapshotSources(): Promise<SnapshotSources> {
   const startMs = Date.now();
+  let timer: ReturnType<typeof setTimeout> | undefined;
   try {
-    return await buildSnapshotData();
+    if (abandonedSnapshotReads.size > 0) throw new Error('snapshot_build_stuck');
+    const read = readSnapshotSourcesData();
+    const timeout = new Promise<never>((_, reject) => {
+      timer = setTimeout(() => {
+        abandonedSnapshotReads.add(read);
+        const done = () => { abandonedSnapshotReads.delete(read); };
+        read.then(done, done);
+        reject(new Error('snapshot_build_timeout'));
+      }, SNAPSHOT_BUILD_TIMEOUT_MS);
+      timer.unref?.();
+    });
+    return await Promise.race([read, timeout]);
   } catch (err) {
     recordSnapshotFailure('build_failed');
     throw err;
   } finally {
+    clearTimeout(timer);
     recordSnapshotBuild(startMs);
   }
 }
@@ -860,62 +884,23 @@ async function buildSnapshotIcons(
   };
 }
 
-async function buildSnapshotData(): Promise<BuiltSnapshot> {
+type SnapshotSources = Awaited<ReturnType<typeof readSnapshotSourcesData>>;
+
+/** Everything that needs awaiting. Live state comes after, in assembleSnapshot. */
+async function readSnapshotSourcesData() {
   const projects = await projectStore.list();
-  const agents: Record<string, unknown[]> = {};
-  const quickAgents: Record<string, unknown[]> = {};
-  const durablesByProject: Record<string, Awaited<ReturnType<typeof agentConfig.listDurable>>> = {};
+  const durablesByProject: Record<string, DurableConfigs> = {};
+  const policiesByProject: Record<string, Awaited<ReturnType<typeof catalogOrchestration>>> = {};
 
   // Fetch agents per project in parallel
   await Promise.all(projects.map(async (proj) => {
     // Disposed helpers (#2224) keep a config row but are not agents to show.
     const durables = (await agentConfig.listDurable(proj.path)).filter((d) => !isDisposedAgent(d));
     durablesByProject[proj.id] = durables;
-    const policies = await catalogOrchestration(proj.path, durables);
-    agents[proj.id] = durables.map((d) => mapDurableAgent(d, proj.id, policies));
-    quickAgents[proj.id] = [];
+    policiesByProject[proj.id] = await catalogOrchestration(proj.path, durables);
   }));
 
-  // Add tracked quick agents to their project buckets
-  for (const qa of trackedQuickAgents.values()) {
-    if (!quickAgents[qa.projectId]) {
-      quickAgents[qa.projectId] = [];
-    }
-    quickAgents[qa.projectId].push({
-      ...quickAgentWireFields(qa),
-      color: QUICK_AGENT_COLOR,
-      detailedStatus: getDetailedStatus(qa.id),
-      lastActivityAt: lastActivityAt(qa.id, qa.spawnedAt),
-    });
-  }
-
-  // The Dispatcher (#2533): in no project, so on its own, and only while it is on.
-  const active = activeDispatcher();
-  const dispatcherAgent = active ? { ...mapDurableAgent(active.config, DISPATCHER_PROJECT_ID), isDispatcher: true as const } : null;
-  const { projectIcons, agentIcons, stats: icons } = await buildSnapshotIcons(projects, durablesByProject, active?.config);
-
-  // Build agents metadata (execution modes, detailed statuses)
-  const agentsMeta: Record<string, { executionMode: string | null; detailedStatus: AgentDetailedStatus | null }> = {};
-  for (const projectAgents of [...Object.values(agents), ...(dispatcherAgent ? [[dispatcherAgent]] : [])]) {
-    for (const agent of projectAgents as Array<{ id: string; status: string; executionMode: string | null }>) {
-      if (agent.status === 'running') {
-        agentsMeta[agent.id] = {
-          executionMode: agent.executionMode,
-          detailedStatus: getDetailedStatus(agent.id),
-        };
-      }
-    }
-  }
-
-  // Collect installed plugin summaries for remote plugin matching
-  const plugins = pluginManifestRegistry.listAllManifests().map((m) => ({
-    id: m.id,
-    name: m.name,
-    version: m.version,
-    scope: m.scope,
-    contributes: m.contributes,
-    annexEnabled: (m.permissions ?? []).includes('annex'),
-  }));
+  const iconSet = await buildSnapshotIcons(projects, durablesByProject, activeDispatcher()?.config);
 
   // Read per-project canvas state in parallel (including wires)
   const canvasState: Record<string, { canvases: unknown[]; activeCanvasId: string; wireDefinitions?: unknown[] }> = {};
@@ -994,6 +979,66 @@ async function buildSnapshotData(): Promise<BuiltSnapshot> {
     } catch {
       // Bulletin not available — skip
     }
+  }));
+
+  return { projects, durablesByProject, policiesByProject, iconSet, canvasState, appCanvasState, groupProjects, bulletinDigests };
+}
+
+/**
+ * The snapshot, from its disk reads and today's live state. All in one tick, and a
+ * caller sends it in that tick too, so `lastSeq` and every live field describe the
+ * same moment. An agent that starts during the reads shows as running, rather than
+ * a refresh overwriting that with a newer cursor. What came from disk can lag, but
+ * what changes it asks for another refresh, which follows this one.
+ */
+function assembleSnapshot(sources: SnapshotSources): BuiltSnapshot {
+  const { projects, durablesByProject, policiesByProject, iconSet, canvasState, appCanvasState, groupProjects, bulletinDigests } = sources;
+  const { projectIcons, agentIcons, stats: icons } = iconSet;
+  const agents: Record<string, unknown[]> = {};
+  const quickAgents: Record<string, unknown[]> = {};
+  for (const proj of projects) {
+    agents[proj.id] = durablesByProject[proj.id].map((d) => mapDurableAgent(d, proj.id, policiesByProject[proj.id]));
+    quickAgents[proj.id] = [];
+  }
+
+  // Add tracked quick agents to their project buckets
+  for (const qa of trackedQuickAgents.values()) {
+    if (!quickAgents[qa.projectId]) {
+      quickAgents[qa.projectId] = [];
+    }
+    quickAgents[qa.projectId].push({
+      ...quickAgentWireFields(qa),
+      color: QUICK_AGENT_COLOR,
+      detailedStatus: getDetailedStatus(qa.id),
+      lastActivityAt: lastActivityAt(qa.id, qa.spawnedAt),
+    });
+  }
+
+  // The Dispatcher (#2533): in no project, so on its own, and only while it is on.
+  const active = activeDispatcher();
+  const dispatcherAgent = active ? { ...mapDurableAgent(active.config, DISPATCHER_PROJECT_ID), isDispatcher: true as const } : null;
+
+  // Build agents metadata (execution modes, detailed statuses)
+  const agentsMeta: Record<string, { executionMode: string | null; detailedStatus: AgentDetailedStatus | null }> = {};
+  for (const projectAgents of [...Object.values(agents), ...(dispatcherAgent ? [[dispatcherAgent]] : [])]) {
+    for (const agent of projectAgents as Array<{ id: string; status: string; executionMode: string | null }>) {
+      if (agent.status === 'running') {
+        agentsMeta[agent.id] = {
+          executionMode: agent.executionMode,
+          detailedStatus: getDetailedStatus(agent.id),
+        };
+      }
+    }
+  }
+
+  // Collect installed plugin summaries for remote plugin matching
+  const plugins = pluginManifestRegistry.listAllManifests().map((m) => ({
+    id: m.id,
+    name: m.name,
+    version: m.version,
+    scope: m.scope,
+    contributes: m.contributes,
+    annexEnabled: (m.permissions ?? []).includes('annex'),
   }));
 
   // Read group project members from binding manager
@@ -1123,6 +1168,143 @@ function snapshotFrame({ payload, icons }: BuiltSnapshot, trigger: SnapshotTrigg
   return withoutIcons;
 }
 
+/** Most frames held for one socket: as many as the replay buffer keeps. */
+const HELD_FRAMES_MAX = 10_000;
+const HELD_BYTES_MAX = 32 * 1024 * 1024;
+
+interface HeldFrames {
+  frames: string[];
+  bytes: number;
+  /** A try at the snapshot failed and another is due: replies go out so commands work, events stay back. */
+  retrying: boolean;
+  /** The snapshot's `lastSeq`: every event after it is held. */
+  cursor: number;
+}
+
+/**
+ * Frames for a socket still waiting on its first snapshot. It's in `wss.clients`
+ * from the start and the build awaits disk, so without this it gets live events
+ * before it has a cursor to read them against. The strings are shared with every
+ * other socket, so holding them costs little.
+ */
+const heldFrames = new WeakMap<WebSocket, HeldFrames>();
+/** Every socket with frames held: what the next build serves. */
+const firstSnapshotWaiters = new Set<WebSocket>();
+
+/**
+ * Hold a frame for later. Past the limits, what's held is dropped, and the cursor
+ * stays where it was. The phone then sees a jump in seq after its snapshot, and
+ * replay fills that in, or says it can't. Moving the cursor would lose those events
+ * for good: a phone doesn't replay what's behind its cursor. Closing would not help
+ * either. iOS can't see a close code, and a phone reconnects within a second into
+ * another build.
+ */
+function holdFrame(held: HeldFrames, data: string): void {
+  held.frames.push(data);
+  held.bytes += Buffer.byteLength(data);
+  if (held.frames.length <= HELD_FRAMES_MAX && held.bytes <= HELD_BYTES_MAX) return;
+  appLog('core:annex', 'warn', 'Dropping held frames for a socket with no snapshot yet', {
+    meta: { frames: held.frames.length, bytes: held.bytes },
+  });
+  held.frames = [];
+  held.bytes = 0;
+}
+
+/** Send what was held, in order and in one tick, so nothing live can land between them. */
+function releaseFrames(ws: WebSocket): void {
+  const held = heldFrames.get(ws);
+  heldFrames.delete(ws);
+  firstSnapshotWaiters.delete(ws);
+  if (!held || ws.readyState !== WebSocket.OPEN) return;
+  for (const data of held.frames) ws.send(data);
+}
+
+/** After a failed build, how long until the next. Past the end, the last one repeats. */
+const SNAPSHOT_RETRY_DELAYS_MS = [2000, 8000, 30_000, 60_000];
+/**
+ * How long a snapshot too large to send is taken at its word. It stays too large
+ * until something changes, so this is only a backstop.
+ */
+const SNAPSHOT_OVERSIZE_RETRY_MS = 5 * 60_000;
+/** A change is worth a look, but only this often: a busy host could otherwise rebuild a huge snapshot nonstop. */
+const SNAPSHOT_OVERSIZE_RECHECK_MS = 30_000;
+
+/**
+ * Snapshots can't be sent right now, and when to try again. This covers the whole
+ * host rather than each socket: phones reconnect every few seconds, and each new
+ * socket wanting its own build is how a failure turns into constant work. Inside the
+ * window nothing builds, and a phone hears `snapshot_failed` at once. When it ends,
+ * one refresh runs and serves everyone waiting.
+ */
+let snapshotBlock: { kind: 'failed' | 'oversize'; until: number; startedAt: number } | null = null;
+let snapshotFailures = 0;
+let snapshotOversizeRecheck: ReturnType<typeof setTimeout> | null = null;
+let snapshotBlockTimer: ReturnType<typeof setTimeout> | null = null;
+
+function setSnapshotBlock(kind: 'failed' | 'oversize'): void {
+  // Several builds can fail together: that's one failure, not several steps of backoff.
+  if (kind === 'failed' && snapshotBlock && Date.now() < snapshotBlock.until) return;
+  const delay = kind === 'oversize'
+    ? SNAPSHOT_OVERSIZE_RETRY_MS
+    : SNAPSHOT_RETRY_DELAYS_MS[Math.min(snapshotFailures++, SNAPSHOT_RETRY_DELAYS_MS.length - 1)];
+  snapshotBlock = { kind, until: Date.now() + delay, startedAt: Date.now() };
+  if (snapshotBlockTimer) clearTimeout(snapshotBlockTimer);
+  snapshotBlockTimer = setTimeout(() => {
+    snapshotBlockTimer = null;
+    // A timer can fire just before the clock reaches `until`, and this retry must not hit its own gate.
+    if (snapshotBlock) snapshotBlock.until = 0;
+    // With no one connected there's no one to build for. The next to connect tries.
+    if (firstSnapshotWaiters.size > 0 || (wss && wss.clients.size > 0)) broadcastSnapshotRefresh();
+  }, delay);
+  snapshotBlockTimer.unref?.();
+}
+
+function clearSnapshotBlock(): void {
+  snapshotBlock = null;
+  snapshotFailures = 0;
+  if (snapshotBlockTimer) clearTimeout(snapshotBlockTimer);
+  snapshotBlockTimer = null;
+}
+
+/** Tell the phone once, and keep the socket and its commands. Events stay back until a snapshot goes out. */
+function firstSnapshotFailed(ws: WebSocket): void {
+  const held = heldFrames.get(ws);
+  if (!held || ws.readyState !== WebSocket.OPEN) return;
+  try {
+    if (!held.retrying) ws.send(JSON.stringify({ type: 'error', payload: { message: 'snapshot_failed' } }));
+  } catch (sendErr) {
+    appLog('core:annex', 'debug', 'Failed to send error to client (client likely disconnected)', {
+      meta: { error: sendErr instanceof Error ? sendErr.message : String(sendErr) },
+    });
+  }
+  held.retrying = true;
+}
+
+/** Send a built snapshot as this socket's first, and what was held after it. False if it's too large to send. */
+function deliverFirstSnapshot(ws: WebSocket, held: HeldFrames, built: BuiltSnapshot, trigger: SnapshotTrigger): boolean {
+  const frame = snapshotFrame({ ...built, payload: { ...built.payload, lastSeq: held.cursor } }, trigger);
+  if (Buffer.byteLength(frame) > MOBILE_WS_FRAME_MAX_BYTES) return false;
+  noteFrameSize(frame, 'snapshot');
+  ws.send(frame);
+  releaseFrames(ws);
+  return true;
+}
+
+/**
+ * A socket's first snapshot, then what was held for it. Until one is sent the
+ * phone has no baseline for events, so they stay back, within the limits in
+ * holdFrame, while WebSocket replies still go out. HTTP isn't involved at all.
+ * The socket waits on the host's one build, joining it if one is running.
+ * If none can be sent it hears `snapshot_failed` once, and the socket stays open: a
+ * phone has its own grace period, and closing would only bring it back sooner.
+ */
+function sendFirstSnapshot(ws: WebSocket): void {
+  if (snapshotBlock && Date.now() < snapshotBlock.until) firstSnapshotFailed(ws);
+  // The window is over but nothing has worked since, so connected phones are owed one too.
+  else if (snapshotBlock && !refreshInFlight) broadcastSnapshotRefresh();
+  else startSnapshotBuild();
+}
+
 function broadcastWs(message: object): void {
   broadcastFrame((message as { type?: string }).type ?? 'other', JSON.stringify(message));
 }
@@ -1134,7 +1316,11 @@ function broadcastFrame(type: string, data: string): number {
   for (const client of wss.clients) {
     if (client.readyState === WebSocket.OPEN) {
       try {
-        client.send(data);
+        const held = heldFrames.get(client);
+        // A socket waiting on its first snapshot gets it from the same build, with its own cursor.
+        if (held && type === 'snapshot') continue;
+        if (held) holdFrame(held, data);
+        else client.send(data);
       } catch (err) {
         sendFailures++;
         appLog('core:annex', 'warn', 'broadcastWs: failed to send to client', {
@@ -3344,6 +3530,11 @@ const MAX_PTY_INPUT_SIZE = 64 * 1024; // 64KB
  */
 export const WS_MAX_PAYLOAD = 11 * 1024 * 1024;
 
+function isReplayFrame(data: string): boolean {
+  const { type, seq } = JSON.parse(data) as { type?: string; seq?: unknown };
+  return seq !== undefined || type === 'replay:start' || type === 'replay:end';
+}
+
 /** Send data over a WebSocket only if the connection is still open. */
 function safeSend(ws: WebSocket, data: string): boolean {
   if (ws.readyState === WebSocket.OPEN) {
@@ -3354,7 +3545,11 @@ function safeSend(ws: WebSocket, data: string): boolean {
       if (!message.replayed) data = JSON.stringify({ ...message, tc });
     }
     noteFrameSize(data);
-    ws.send(data);
+    const held = heldFrames.get(ws);
+    // A reply can go ahead of the snapshot: a phone has no cursor yet, and takes the snapshot after it.
+    // Replay can't, because it carries seqs: it waits with the events it might repeat.
+    if (held && !held.retrying && isReplayFrame(data)) holdFrame(held, data);
+    else ws.send(data);
     return true;
   }
   return false;
@@ -3905,6 +4100,12 @@ export function start(): void {
     wsAlive.set(ws, true);
     ws.on('pong', () => { wsAlive.set(ws, true); });
 
+    // Nothing reaches this socket until its snapshot has. Events from here on come after it,
+    // so its cursor is this seq: the build reads state later, and an event it already
+    // reflects arriving again is safe, where one lost between the read and the cursor isn't.
+    heldFrames.set(ws, { frames: [], bytes: 0, retrying: false, cursor: eventReplay.getLastSeq() });
+    firstSnapshotWaiters.add(ws);
+
     // wsAuthTypes is set synchronously in handleUpgrade before 'connection' fires — safe to read here.
     const authType = wsAuthTypes.get(ws);
     reportClientCounts();
@@ -3929,6 +4130,8 @@ export function start(): void {
     // Register close handler before any await so a disconnect during buildSnapshot
     // is handled correctly and never leaves the satellite stuck in locked state.
     ws.on('close', (code, reason) => {
+      heldFrames.delete(ws);
+      firstSnapshotWaiters.delete(ws);
       appLog('core:annex', 'info', 'WebSocket client disconnected', {
         meta: { authType, code, reason: reason?.toString() || '' },
       });
@@ -3957,26 +4160,7 @@ export function start(): void {
     });
 
     // Send snapshot on connect — async I/O after all event handlers are registered
-    try {
-      const frame = snapshotFrame(await buildSnapshot(), 'connect');
-      try {
-        if (!safeSend(ws, frame)) recordSnapshotFailure('send_failed');
-      } catch (err) {
-        recordSnapshotFailure('send_failed');
-        throw err;
-      }
-    } catch (err) {
-      appLog('core:annex', 'error', 'Failed to send snapshot on connect', {
-        meta: { error: err instanceof Error ? err.message : String(err) },
-      });
-      try {
-        safeSend(ws, JSON.stringify({ type: 'error', payload: { message: 'snapshot_failed' } }));
-      } catch (sendErr) {
-        appLog('core:annex', 'debug', 'Failed to send error to client (client likely disconnected)', {
-          meta: { error: sendErr instanceof Error ? sendErr.message : String(sendErr) },
-        });
-      }
-    }
+    sendFirstSnapshot(ws);
   });
 
   // Subscribe to event bus (clean up any stale listeners first)
@@ -4271,6 +4455,17 @@ function rememberBoundPorts(): void {
 export function stop(): void {
   // Unsubscribe from event bus
   unsubscribeEventBus();
+  if (refreshFollowUp) clearTimeout(refreshFollowUp);
+  refreshFollowUp = null;
+  refreshAgain = false;
+  refreshWanted = false;
+  refreshInFlight = false;
+  firstSnapshotWaiters.clear();
+  refreshGeneration++;
+  abandonedSnapshotReads.clear();
+  clearSnapshotBlock();
+  if (snapshotOversizeRecheck) clearTimeout(snapshotOversizeRecheck);
+  snapshotOversizeRecheck = null;
   lastLargeFrameLog.clear();
   lastSnapshotLog = null;
   lastIconBudgetWarning = '';
@@ -4397,13 +4592,124 @@ function pairingLink(fingerprint: string, certFingerprint: string | undefined, n
  * Call after durable agent config changes (create, delete, rename) so
  * controllers see the update without needing to reconnect.
  */
+let refreshInFlight = false;
+let refreshAgain = false;
+let refreshWanted = false;
+let refreshFollowUp: ReturnType<typeof setTimeout> | null = null;
+/** Bumped by stop(), so a build still running then can't start another afterwards. */
+let refreshGeneration = 0;
+
+/** After a refresh that raced a change, the next waits this long, so a storm of changes can't mean building nonstop. */
+const RACED_REFRESH_DELAY_MS = 250;
+
+/** Frames that never change a snapshot's fields. They can come many times a build, so they can't count as a race. */
+const OUTPUT_EVENT_TYPES = new Set(['pty:data', 'chat:event']);
+
+/** Did anything a snapshot shows change since this seq? If the buffer can't say, assume so. */
+function snapshotStateChangedSince(seq: number): boolean {
+  const events = eventReplay.getEventsSince(seq);
+  return events === null || events.some((event) => !OUTPUT_EVENT_TYPES.has(event.type));
+}
+
+/**
+ * A new snapshot for every socket. One build at a time: changes during it get one
+ * more, so a burst costs two builds and an older build can't arrive after a newer
+ * one.
+ *
+ * A phone trusts a snapshot's state up to its `lastSeq`, and replay won't repair
+ * what it has already seen. So if something it shows changed during the reads, the
+ * snapshot says the seq from before them. A phone that has seen that change drops
+ * it as a duplicate, and a follow-up carries everything. With only output in
+ * between, nothing is stale, and an older cursor would have every refresh dropped
+ * while an agent streams. A refresh changes no state, so it can't cause another
+ * on its own: a follow-up needs a real change during the build.
+ */
 export function broadcastSnapshotRefresh(): void {
-  buildSnapshot().then((snapshot) => {
-    if (broadcastFrame('snapshot', snapshotFrame(snapshot, 'refresh')) > 0) recordSnapshotFailure('send_failed');
+  if (snapshotBlock && Date.now() < snapshotBlock.until) {
+    // A failure's retry covers any change. A snapshot too large might fit now, so look, but not often.
+    if (snapshotBlock.kind === 'failed') return;
+    const wait = snapshotBlock.startedAt + SNAPSHOT_OVERSIZE_RECHECK_MS - Date.now();
+    if (wait > 0) {
+      snapshotOversizeRecheck ??= setTimeout(() => {
+        snapshotOversizeRecheck = null;
+        broadcastSnapshotRefresh();
+      }, wait);
+      snapshotOversizeRecheck.unref?.();
+      return;
+    }
+  }
+  refreshWanted = true;
+  if (refreshInFlight) {
+    refreshAgain = true;
+    return;
+  }
+  startSnapshotBuild();
+}
+
+/**
+ * The host's one snapshot build: reads never run side by side, however many sockets
+ * connect, so what a host does is bounded by itself and not by its phones. It serves
+ * every socket waiting on a first snapshot, joined at any point, each with its own
+ * cursor, and connected phones too if a refresh asked. A socket that joined partway
+ * may have missed a change made before it connected and after these reads, as an
+ * event it won't be sent. That counts as a race, and the follow-up covers it.
+ */
+function startSnapshotBuild(): void {
+  if (refreshInFlight) return;
+  refreshInFlight = true;
+  const broadcast = refreshWanted;
+  refreshWanted = false;
+  const cursor = eventReplay.getLastSeq();
+  const generation = refreshGeneration;
+  let raced = false;
+  readSnapshotSources().then((sources) => {
+    if (generation !== refreshGeneration) return;
+    const built = assembleSnapshot(sources);
+    raced = snapshotStateChangedSince(cursor);
+    if (raced) built.payload.lastSeq = cursor;
+    let oversize = false;
+    if (broadcast) {
+      const frame = snapshotFrame(built, 'refresh');
+      // Never send a phone a frame it would close on. It keeps what it has, and the next change tries again.
+      if (Buffer.byteLength(frame) > MOBILE_WS_FRAME_MAX_BYTES) oversize = true;
+      else if (broadcastFrame('snapshot', frame) > 0) recordSnapshotFailure('send_failed');
+    }
+    for (const ws of [...firstSnapshotWaiters]) {
+      const held = heldFrames.get(ws);
+      if (!held || ws.readyState !== WebSocket.OPEN) continue;
+      try {
+        if (!deliverFirstSnapshot(ws, held, built, 'connect')) oversize = true;
+      } catch (err) {
+        recordSnapshotFailure('send_failed');
+        appLog('core:annex', 'error', 'Failed to send snapshot on connect', {
+          meta: { error: err instanceof Error ? err.message : String(err) },
+        });
+      }
+    }
+    if (oversize) {
+      setSnapshotBlock('oversize');
+      for (const ws of firstSnapshotWaiters) firstSnapshotFailed(ws);
+    } else {
+      clearSnapshotBlock();
+    }
   }).catch((err) => {
-    appLog('core:annex', 'error', 'broadcastSnapshotRefresh failed', {
-      meta: { error: err instanceof Error ? err.message : String(err) },
-    });
+    if (generation !== refreshGeneration) return;
+    const meta = { error: err instanceof Error ? err.message : String(err) };
+    if (broadcast) appLog('core:annex', 'error', 'broadcastSnapshotRefresh failed', { meta });
+    if (firstSnapshotWaiters.size > 0) appLog('core:annex', 'error', 'Failed to send snapshot on connect', { meta });
+    setSnapshotBlock('failed');
+    for (const ws of firstSnapshotWaiters) firstSnapshotFailed(ws);
+  }).finally(() => {
+    // The server stopped during the build: nothing left to tell, even if it has started again.
+    if (generation !== refreshGeneration) return;
+    refreshInFlight = false;
+    if (refreshAgain) {
+      refreshAgain = false;
+      broadcastSnapshotRefresh();
+    } else if (raced) {
+      refreshFollowUp = setTimeout(broadcastSnapshotRefresh, RACED_REFRESH_DELAY_MS);
+      refreshFollowUp.unref?.();
+    }
   });
 }
 
@@ -4747,6 +5053,16 @@ export function getWsAuthType(ws: WebSocket): WsAuthType {
 /** @internal Exposed for testing only. */
 export const _testing = {
   PROJECTS_CHANGED_DEBOUNCE_MS,
+  HELD_FRAMES_MAX,
+  SNAPSHOT_RETRY_DELAYS_MS,
+  SNAPSHOT_BUILD_TIMEOUT_MS,
+  SNAPSHOT_OVERSIZE_RETRY_MS,
+  SNAPSHOT_OVERSIZE_RECHECK_MS,
+  heldBytes: (ws: WebSocket) => heldFrames.get(ws)?.bytes,
+  holdForTest(ws: WebSocket, data: string) {
+    const held = heldFrames.get(ws);
+    if (held) holdFrame(held, data);
+  },
   runMobileCommand,
   get sessionTokens() { return sessionTokens; },
   isValidToken,
@@ -4770,7 +5086,7 @@ export const _testing = {
   getDetailedStatus,
   pushChatStatus,
   lastChatStatusPush,
-  buildSnapshot: async () => (await buildSnapshot()).payload,
+  buildSnapshot: async () => assembleSnapshot(await readSnapshotSources()).payload,
   agentLastActivity,
   noteAgentActivity,
 };
