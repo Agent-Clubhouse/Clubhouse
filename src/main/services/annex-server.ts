@@ -1111,6 +1111,50 @@ function snapshotFrame({ payload, icons }: BuiltSnapshot, trigger: SnapshotTrigg
   return withoutIcons;
 }
 
+/** Most frames held for one socket: as many as the replay buffer keeps. */
+const HELD_FRAMES_MAX = 10_000;
+const HELD_BYTES_MAX = 32 * 1024 * 1024;
+
+interface HeldFrames {
+  frames: string[];
+  bytes: number;
+  /** Where the newest held snapshot is: a newer one replaces it. */
+  snapshotAt: number;
+}
+
+/**
+ * Frames for a socket still waiting on its first snapshot. It's in `wss.clients`
+ * from the start and the build awaits disk, so without this it gets live events
+ * before it has a cursor to read them against. The strings are shared with every
+ * other socket, so holding them costs little.
+ */
+const heldFrames = new WeakMap<WebSocket, HeldFrames>();
+
+/** Hold a frame for later, or close a socket that has fallen too far behind: its next connection starts fresh. */
+function holdFrame(ws: WebSocket, held: HeldFrames, data: string, isSnapshot: boolean): void {
+  if (isSnapshot && held.snapshotAt >= 0) {
+    held.bytes -= held.frames[held.snapshotAt].length;
+    held.frames.splice(held.snapshotAt, 1);
+  }
+  if (isSnapshot) held.snapshotAt = held.frames.length;
+  held.frames.push(data);
+  held.bytes += data.length;
+  if (held.frames.length <= HELD_FRAMES_MAX && held.bytes <= HELD_BYTES_MAX) return;
+  appLog('core:annex', 'warn', 'Closing a socket that fell behind during its first snapshot', {
+    meta: { frames: held.frames.length, bytes: held.bytes },
+  });
+  heldFrames.delete(ws);
+  ws.close(1013, 'snapshot_overrun');
+}
+
+/** Send what was held, in order and in one tick, so nothing live can land between them. */
+function releaseFrames(ws: WebSocket): void {
+  const held = heldFrames.get(ws);
+  heldFrames.delete(ws);
+  if (!held || ws.readyState !== WebSocket.OPEN) return;
+  for (const data of held.frames) ws.send(data);
+}
+
 function broadcastWs(message: object): void {
   broadcastFrame((message as { type?: string }).type ?? 'other', JSON.stringify(message));
 }
@@ -1122,7 +1166,9 @@ function broadcastFrame(type: string, data: string): number {
   for (const client of wss.clients) {
     if (client.readyState === WebSocket.OPEN) {
       try {
-        client.send(data);
+        const held = heldFrames.get(client);
+        if (held) holdFrame(client, held, data, type === 'snapshot');
+        else client.send(data);
       } catch (err) {
         sendFailures++;
         appLog('core:annex', 'warn', 'broadcastWs: failed to send to client', {
@@ -3269,7 +3315,9 @@ function safeSend(ws: WebSocket, data: string): boolean {
       if (!message.replayed) data = JSON.stringify({ ...message, tc });
     }
     noteFrameSize(data);
-    ws.send(data);
+    const held = heldFrames.get(ws);
+    if (held) holdFrame(ws, held, data, false);
+    else ws.send(data);
     return true;
   }
   return false;
@@ -3820,6 +3868,12 @@ export function start(): void {
     wsAlive.set(ws, true);
     ws.on('pong', () => { wsAlive.set(ws, true); });
 
+    // Nothing reaches this socket until its snapshot has. Events from here on come after it,
+    // so its cursor is this seq: the build reads state later, and an event it already
+    // reflects arriving again is safe, where one lost between the read and the cursor isn't.
+    const snapshotCursor = eventReplay.getLastSeq();
+    heldFrames.set(ws, { frames: [], bytes: 0, snapshotAt: -1 });
+
     // wsAuthTypes is set synchronously in handleUpgrade before 'connection' fires — safe to read here.
     const authType = wsAuthTypes.get(ws);
     reportClientCounts();
@@ -3844,6 +3898,7 @@ export function start(): void {
     // Register close handler before any await so a disconnect during buildSnapshot
     // is handled correctly and never leaves the satellite stuck in locked state.
     ws.on('close', (code, reason) => {
+      heldFrames.delete(ws);
       appLog('core:annex', 'info', 'WebSocket client disconnected', {
         meta: { authType, code, reason: reason?.toString() || '' },
       });
@@ -3873,19 +3928,29 @@ export function start(): void {
 
     // Send snapshot on connect — async I/O after all event handlers are registered
     try {
-      const frame = snapshotFrame(await buildSnapshot(), 'connect');
-      try {
-        if (!safeSend(ws, frame)) recordSnapshotFailure('send_failed');
-      } catch (err) {
-        recordSnapshotFailure('send_failed');
-        throw err;
+      const built = await buildSnapshot();
+      built.payload.lastSeq = snapshotCursor;
+      const frame = snapshotFrame(built, 'connect');
+      // Closed or overrun during the build: there's no one to send it to.
+      if (heldFrames.has(ws)) {
+        try {
+          noteFrameSize(frame, 'snapshot');
+          if (ws.readyState === WebSocket.OPEN) ws.send(frame);
+          else recordSnapshotFailure('send_failed');
+        } catch (err) {
+          recordSnapshotFailure('send_failed');
+          throw err;
+        }
+        releaseFrames(ws);
       }
     } catch (err) {
       appLog('core:annex', 'error', 'Failed to send snapshot on connect', {
         meta: { error: err instanceof Error ? err.message : String(err) },
       });
       try {
-        safeSend(ws, JSON.stringify({ type: 'error', payload: { message: 'snapshot_failed' } }));
+        // The phone hears why first, then goes live as it would without a snapshot.
+        if (heldFrames.has(ws) && ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ type: 'error', payload: { message: 'snapshot_failed' } }));
+        releaseFrames(ws);
       } catch (sendErr) {
         appLog('core:annex', 'debug', 'Failed to send error to client (client likely disconnected)', {
           meta: { error: sendErr instanceof Error ? sendErr.message : String(sendErr) },
@@ -4294,6 +4359,8 @@ function pairingLink(fingerprint: string, certFingerprint: string | undefined, n
  */
 export function broadcastSnapshotRefresh(): void {
   buildSnapshot().then((snapshot) => {
+    // Sockets have every event up to now, so an earlier cursor would read as a gap.
+    snapshot.payload.lastSeq = eventReplay.getLastSeq();
     if (broadcastFrame('snapshot', snapshotFrame(snapshot, 'refresh')) > 0) recordSnapshotFailure('send_failed');
   }).catch((err) => {
     appLog('core:annex', 'error', 'broadcastSnapshotRefresh failed', {
@@ -4641,6 +4708,7 @@ export function getWsAuthType(ws: WebSocket): WsAuthType {
 
 /** @internal Exposed for testing only. */
 export const _testing = {
+  HELD_FRAMES_MAX,
   runMobileCommand,
   get sessionTokens() { return sessionTokens; },
   isValidToken,

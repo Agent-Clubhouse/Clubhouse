@@ -3123,6 +3123,144 @@ describe('annex-server', () => {
     }, 30_000);
   });
 
+  // ---------------------------------------------------------------------------
+  // A socket's first frame is its snapshot; what happens during the build follows
+  // ---------------------------------------------------------------------------
+
+  describe('frames during the first snapshot', () => {
+    let finishList: (projects: unknown[]) => void;
+    let failList: (err: Error) => void;
+
+    function openDuringBuild() {
+      vi.mocked(projectStore.list).mockImplementationOnce(() => new Promise((resolve, reject) => {
+        finishList = resolve as never;
+        failList = reject;
+      }) as never);
+      const ws = Object.assign(new EventEmitter(), { readyState: 1, send: vi.fn(), ping: () => {}, close: vi.fn() });
+      annexServer._testing.wsAuthTypes.set(ws as never, 'bearer');
+      annexServer._testing.wss!.clients.add(ws as never);
+      annexServer._testing.wss!.emit('connection', ws);
+      return ws;
+    }
+
+    const sent = (ws: { send: ReturnType<typeof vi.fn> }) => ws.send.mock.calls.map(([data]) => JSON.parse(data as string));
+    const sequenced = (seq: number) => expect.objectContaining({ type: 'chat:event', seq });
+    const liveEvent = () => _eventReplay.getLastSeq() + 1;
+
+    beforeEach(async () => {
+      vi.mocked(pluginManifestRegistry.listAllManifests).mockReturnValue([]);
+      const { groupProjectRegistry } = await import('./group-project-registry');
+      vi.mocked(groupProjectRegistry.list).mockResolvedValue([]);
+      const themeService = await import('./theme-service');
+      vi.mocked(themeService.getSettings).mockReturnValue({ themeId: 'catppuccin-mocha' } as any);
+      vi.mocked(projectStore.list).mockReturnValue([]);
+      annexServer.start();
+      await new Promise((r) => setTimeout(r, 50));
+      registerChatRuntime('a', { getState: () => 'idle' } as never);
+    });
+
+    afterEach(() => clearChatRuntimes());
+
+    function publish() {
+      publishChatEvent({ agentId: 'a', type: 'turn_ended' } as never);
+    }
+
+    it('sends nothing before the snapshot, then every event after its lastSeq, in order', async () => {
+      const ws = openDuringBuild();
+      const before = _eventReplay.getLastSeq();
+      const first = liveEvent();
+      publish();
+      publish();
+      expect(ws.send).not.toHaveBeenCalled();
+
+      finishList([]);
+      await vi.waitFor(() => expect(ws.send).toHaveBeenCalled());
+
+      const frames = sent(ws);
+      expect(frames[0].type).toBe('snapshot');
+      // The build read state after these two began, so they come after it, not inside its cursor.
+      expect(frames[0].payload.lastSeq).toBe(before);
+      expect(frames.slice(1)).toEqual([sequenced(first), sequenced(first + 1)]);
+    });
+
+    it('goes live once the snapshot is out', async () => {
+      const ws = openDuringBuild();
+      finishList([]);
+      await vi.waitFor(() => expect(ws.send).toHaveBeenCalled());
+      const next = liveEvent();
+      publish();
+      expect(sent(ws).at(-1)).toEqual(sequenced(next));
+    });
+
+    it('holds frames with no seq and direct replies in the same order', async () => {
+      const ws = openDuringBuild();
+      annexServer.broadcastThemeChanged();
+      ws.emit('message', JSON.stringify({ type: 'replay', since: _eventReplay.getLastSeq() }));
+      expect(ws.send).not.toHaveBeenCalled();
+
+      finishList([]);
+      await vi.waitFor(() => expect(ws.send).toHaveBeenCalled());
+
+      expect(sent(ws).map((f) => f.type)).toEqual(['snapshot', 'theme:changed', 'replay:start', 'replay:end']);
+    });
+
+    it('keeps only the newest refresh, with its own cursor, and no rewind', async () => {
+      const ws = openDuringBuild();
+      annexServer.broadcastSnapshotRefresh();
+      await new Promise((r) => setTimeout(r, 20));
+      publish();
+      annexServer.broadcastSnapshotRefresh();
+      await new Promise((r) => setTimeout(r, 20));
+
+      finishList([]);
+      await vi.waitFor(() => expect(ws.send).toHaveBeenCalled());
+
+      const frames = sent(ws);
+      const snapshots = frames.filter((f) => f.type === 'snapshot');
+      expect(snapshots).toHaveLength(2);
+      expect(frames[0].type).toBe('snapshot');
+      expect(frames.at(-1).type).toBe('snapshot');
+      expect(snapshots[1].payload.lastSeq).toBe(_eventReplay.getLastSeq());
+    });
+
+    it('still delivers what it held after a failed snapshot, behind the error', async () => {
+      const ws = openDuringBuild();
+      const first = liveEvent();
+      publish();
+
+      failList(new Error('disk gone'));
+      await vi.waitFor(() => expect(ws.send).toHaveBeenCalled());
+
+      const frames = sent(ws);
+      expect(frames[0]).toEqual({ type: 'error', payload: { message: 'snapshot_failed' } });
+      expect(frames[1]).toEqual(sequenced(first));
+      publish();
+      expect(sent(ws)).toHaveLength(3);
+    });
+
+    it('sends nothing to a socket that closed during the build', async () => {
+      const ws = openDuringBuild();
+      publish();
+      ws.readyState = 3;
+      ws.emit('close', 1006, Buffer.from(''));
+
+      finishList([]);
+      await new Promise((r) => setTimeout(r, 20));
+
+      expect(ws.send).not.toHaveBeenCalled();
+    });
+
+    it('closes a socket with too much held, so it reconnects rather than growing memory', async () => {
+      const ws = openDuringBuild();
+      for (let i = 0; i < annexServer._testing.HELD_FRAMES_MAX + 1; i++) publish();
+
+      expect(ws.close).toHaveBeenCalledWith(1013, 'snapshot_overrun');
+      finishList([]);
+      await new Promise((r) => setTimeout(r, 20));
+      expect(ws.send).not.toHaveBeenCalled();
+    });
+  });
+
   // -------------------------------------------------------------------------
   // Bug fix: buildSnapshot() rejection logs error (1a)
   // -------------------------------------------------------------------------

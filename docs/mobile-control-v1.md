@@ -145,6 +145,14 @@ When a durable agent's process exits (stopped, idle-slept, crashed; terminal or 
 
 ## Live events and replay
 
+### Order on connect
+
+A socket's first frame is always its `snapshot`, or `{type:"error",payload:{message:"snapshot_failed"}}` if one can't be built. Nothing comes before it, not even a reply to something you've already sent. Everything from the build follows, in order, then live frames:
+
+- The first snapshot's `lastSeq` is the seq when the socket connected. Events during the build follow it with no gap. The snapshot's state may already include some of them, so applying one must be safe.
+- A later `snapshot` has `lastSeq` equal to the newest seq sent to you, so it never moves your cursor back. While a socket waits for its first, only the newest refresh is kept.
+- If too much arrives during the build (10,000 frames or 32 MiB), the socket closes with code 1013 and no snapshot. Reconnect with your usual backoff.
+
 ### Authoritative local queue
 
 Chat snapshots add `queuedMessageIds: string[]`, `queueStateSeq: number`, and `queueRemovalSupported: boolean`. The IDs are the last published state of the runtime-owned queue, independent of history pagination. `queueStateSeq` is the session-local sequence of that state (zero before the first queue event), not the global Annex replay cursor. Native provider queues and historical sessions return `[]`, `0`, and `false`; do not offer local removal for provider-managed submissions.
