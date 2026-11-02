@@ -537,6 +537,10 @@ function send(method: string, route: string, body?: Buffer | object, opts: { cli
 }
 const exchange = async (method: string, route: string, body?: object) => ({ request: { method, path: route, ...(body && { body }) }, response: await send(method, route, body).then(({ status, body }) => ({ status, body })) });
 
+/** A busy machine is slow here, not wrong: each request is a fresh mTLS handshake. These only bound how long a failure takes to report. */
+const TEST_TIMEOUT_MS = 30_000;
+const eventually = (check: () => void) => vi.waitFor(check, { timeout: 10_000 });
+
 type FakeWs = EventEmitter & { readyState: number; send: ReturnType<typeof vi.fn>; ping: () => void; close: () => void };
 async function connect(auth: 'mtls' | 'bearer' = 'mtls'): Promise<FakeWs> {
   const ws = Object.assign(new EventEmitter(), { readyState: 1, send: vi.fn(), ping: () => {}, close: () => {} }) as FakeWs;
@@ -544,7 +548,7 @@ async function connect(auth: 'mtls' | 'bearer' = 'mtls'): Promise<FakeWs> {
   if (auth === 'mtls') annexServer._testing.wsPeerFingerprints.set(ws as never, 'mobile-fixture-identity');
   annexServer._testing.wss!.clients.add(ws as never);
   annexServer._testing.wss!.emit('connection', ws);
-  await vi.waitFor(() => expect(ws.send).toHaveBeenCalled());
+  await eventually(() => expect(ws.send).toHaveBeenCalled());
   return ws;
 }
 const frames = (ws: FakeWs) => ws.send.mock.calls.map((c) => JSON.parse(c[0] as string));
@@ -552,8 +556,8 @@ const frames = (ws: FakeWs) => ws.send.mock.calls.map((c) => JSON.parse(c[0] as 
 async function roundTrip(ws: FakeWs, frame: object, count = 1) {
   ws.send.mockClear();
   ws.emit('message', JSON.stringify(frame));
-  if (count > 0) await vi.waitFor(() => expect(ws.send.mock.calls.length).toBeGreaterThanOrEqual(count));
-  else await new Promise((r) => setTimeout(r, 20));
+  // count 0: frames that get no reply are handled synchronously, within the emit above.
+  if (count > 0) await eventually(() => expect(ws.send.mock.calls.length).toBeGreaterThanOrEqual(count));
   return frames(ws);
 }
 
@@ -581,7 +585,7 @@ function renumberFrames(list: any[], before: number) {
 
 // ── Suite ────────────────────────────────────────────────────────────────────
 
-describe('Annex mobile contract fixtures', () => {
+describe('Annex mobile contract fixtures', { timeout: TEST_TIMEOUT_MS }, () => {
   beforeAll(async () => {
     vi.spyOn(Date, 'now').mockReturnValue(NOW);
     const server = certificate('clubhouse-fixture-desktop');
@@ -590,7 +594,7 @@ describe('Annex mobile contract fixtures', () => {
     W.tlsFingerprint = new crypto.X509Certificate(server.cert).fingerprint256;
     resetWorld();
     annexServer.start();
-    await vi.waitFor(() => expect(annexServer.getStatus().port).toBeGreaterThan(0));
+    await eventually(() => expect(annexServer.getStatus().port).toBeGreaterThan(0));
     port = annexServer.getStatus().port;
     const publicKey = crypto.generateKeyPairSync('ed25519').publicKey.export({ format: 'der', type: 'spki' }).toString('base64');
     const pair = await send('POST', '/pair', { pin: annexServer.getStatus().pin, publicKey, alias: 'Mason’s iPhone', icon: 'iphone', color: 'emerald', pairingMode: 'persistent' });
@@ -599,7 +603,7 @@ describe('Annex mobile contract fixtures', () => {
     fixtures.set('pairing.json', { request: { method: 'POST', path: '/pair', body: { pin: '123456', publicKey: '<base64 Ed25519 SPKI DER>', alias: 'Mason’s iPhone', icon: 'iphone', color: 'emerald', pairingMode: 'persistent' } },
       // The client certificate is generated per run.
       response: { status: pair.status, body: { ...pair.body, tlsCertificateFingerprint: Array(32).fill('AB').join(':') } } });
-  });
+  }, TEST_TIMEOUT_MS);
   afterAll(() => { annexServer.stop(); clearChatRuntimes(); });
   // restoreMocks clears the clock between tests.
   beforeEach(() => { vi.spyOn(Date, 'now').mockReturnValue(NOW); });
@@ -1072,7 +1076,7 @@ describe('Annex mobile contract fixtures', () => {
     ws.send.mockClear();
     const on = await command('accepted', { type: 'dispatcher.setEnabled', enabled: true });
     expect(on.body.result).toEqual({ enabled: true, flagOn: true, agentId: 'durable_dispatcher' });
-    await vi.waitFor(() => expect(frames(ws).some((f) => f.type === 'snapshot')).toBe(true));
+    await eventually(() => expect(frames(ws).some((f) => f.type === 'snapshot')).toBe(true));
     const changedOn = frames(ws).find((f) => f.type === 'dispatcher:changed');
     const snapshot = frames(ws).find((f) => f.type === 'snapshot').payload;
     expect(snapshot.dispatcher.agent).toMatchObject({ id: 'durable_dispatcher', projectId: '__dispatcher__', isDispatcher: true });
@@ -1109,7 +1113,7 @@ describe('Annex mobile contract fixtures', () => {
 
     ws.send.mockClear();
     await command('accepted off', { type: 'dispatcher.setEnabled', enabled: false });
-    await vi.waitFor(() => expect(frames(ws).some((f) => f.type === 'snapshot')).toBe(true));
+    await eventually(() => expect(frames(ws).some((f) => f.type === 'snapshot')).toBe(true));
     const changedOff = frames(ws).find((f) => f.type === 'dispatcher:changed');
     expect(frames(ws).find((f) => f.type === 'snapshot').payload.dispatcher).toBeNull();
     const seq = (f: any) => ({ ...f, seq: 1000 });
@@ -1233,7 +1237,9 @@ describe('Annex mobile contract fixtures', () => {
 
   it('queued bursts, from the real runtime: delivery sends no user_message (#2414, #2605)', async () => {
     const part = (agentId: string, name: string, text: string) => [{ sender: { agentId, name }, text }];
-    const run = async (name: string, caps: ChatCapabilities, script: (driver: FakeChatDriver, runtime: ChatAgentRuntime) => Promise<void>) => {
+    // `drained`: this turn_ended sends the next queued message, and the wait includes that send's result.
+    type Turn = (type: 'turn_started' | 'turn_ended', drained?: 'delivered' | 'failed') => Promise<void>;
+    const run = async (name: string, caps: ChatCapabilities, script: (turn: Turn, driver: FakeChatDriver, runtime: ChatAgentRuntime) => Promise<void>) => {
       const seen: ChatEvent[] = [];
       const off = onChatEvent((event) => { if (event.agentId === `durable_${name}`) seen.push(event); });
       let n = 0;
@@ -1244,27 +1250,33 @@ describe('Annex mobile contract fixtures', () => {
         newId: () => `${name}_${++n}`, now: () => NOW, onEnded: () => {},
       });
       await runtime.start();
-      await script(driver, runtime);
+      const turn: Turn = async (type, drained) => {
+        const from = seen.length;
+        driver.last.emit(type === 'turn_started' ? { type, data: { trigger: 'prompt' } } : { type, data: { stopReason: 'end_turn' } });
+        await eventually(() => {
+          const since = seen.slice(from);
+          expect(since.some((e) => e.type === type)).toBe(true);
+          if (drained) expect(since.some((e) => e.type === 'queue_state' && e.data.transition.status === drained)).toBe(true);
+          // The state changes just after the event, and whether a send queues depends on it.
+          if (type === 'turn_started') expect(runtime.getState()).toBe('running');
+        });
+      };
+      await script(turn, driver, runtime);
       off();
       return seen.filter((e) => ['user_message', 'queue_state', 'queue_removed', 'turn_started', 'turn_ended'].includes(e.type));
     };
-    const settled = () => new Promise((resolve) => setTimeout(resolve, 20));
-    const turn = async (driver: FakeChatDriver, type: 'turn_started' | 'turn_ended') => {
-      driver.last.emit(type === 'turn_started' ? { type, data: { trigger: 'prompt' } } : { type, data: { stopReason: 'end_turn' } });
-      await settled();
-    };
     const steerless = { ...MINIMAL_CHAT_CAPABILITIES, steer: false, queue: 'client' as const, interrupt: true };
 
-    const burst = await run('burst', steerless, async (driver, runtime) => {
-      await turn(driver, 'turn_started');
+    const burst = await run('burst', steerless, async (turn, _driver, runtime) => {
+      await turn('turn_started');
       await runtime.sendMessage('[FROM HELPER:Docs (durable_docs)] One.', { source: 'mcp', routed: part('durable_docs', 'Docs', 'One.') });
       await runtime.sendMessage('[FROM:brave-otter@App] Two.', { source: 'mcp', routed: part('durable_sleepy', 'brave-otter', 'Two.') });
       await runtime.sendMessage('And another thing.', { source: 'annex' });
-      await turn(driver, 'turn_ended');
-      await turn(driver, 'turn_started');
-      await turn(driver, 'turn_ended');
-      await turn(driver, 'turn_started');
-      await turn(driver, 'turn_ended');
+      await turn('turn_ended', 'delivered');
+      await turn('turn_started');
+      await turn('turn_ended', 'delivered');
+      await turn('turn_started');
+      await turn('turn_ended');
     });
     const users = burst.filter((e): e is Extract<ChatEvent, { type: 'user_message' }> => e.type === 'user_message');
     expect(users.map((e) => [e.data.source, e.data.delivery, e.data.queuedWith])).toEqual([['mcp', 'queued', undefined], ['mcp', 'queued', users[0].data.messageId], ['annex', 'queued', undefined]]);
@@ -1278,19 +1290,19 @@ describe('Annex mobile contract fixtures', () => {
       ['delivered', [users[2].data.messageId], []],
     ]);
 
-    const failed = await run('failed', steerless, async (driver, runtime) => {
-      await turn(driver, 'turn_started');
+    const failed = await run('failed', steerless, async (turn, driver, runtime) => {
+      await turn('turn_started');
       await runtime.sendMessage('Never sent.', { source: 'annex' });
       driver.last.send = async () => { throw new Error('driver refused'); };
-      await turn(driver, 'turn_ended');
+      await turn('turn_ended', 'failed');
     });
     expect(failed.filter((e) => e.type === 'queue_state').map((e) => (e.data as any).transition.status)).toEqual(['queued', 'dispatching', 'failed']);
 
-    const native = await run('native', { ...steerless, queue: 'native' }, async (driver, runtime) => {
-      await turn(driver, 'turn_started');
+    const native = await run('native', { ...steerless, queue: 'native' }, async (turn, _driver, runtime) => {
+      await turn('turn_started');
       await runtime.sendMessage('Held by the CLI.', { source: 'annex', delivery: 'queued' });
-      await turn(driver, 'turn_ended');
-      await turn(driver, 'turn_started');
+      await turn('turn_ended');
+      await turn('turn_started');
     });
     expect(native.some((e) => e.type === 'queue_state')).toBe(false);
     expect(native.find((e) => e.type === 'user_message')?.data).toMatchObject({ delivery: 'queued' });
