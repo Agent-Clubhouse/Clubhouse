@@ -1293,13 +1293,6 @@ function deliverFirstSnapshot(ws: WebSocket, held: HeldFrames, built: BuiltSnaps
 /**
  * A socket's first snapshot, then what was held for it. Until one is sent the
  * phone has no baseline for events, so they stay back, within the limits in
- * holdFrame. If one can't be sent the phone hears `snapshot_failed` once, and the
- * socket stays open: a phone has its own grace period, commands work through it,
- * and closing would only bring it back sooner.
- */
-/**
- * A socket's first snapshot, then what was held for it. Until one is sent the
- * phone has no baseline for events, so they stay back, within the limits in
  * holdFrame, while WebSocket replies still go out. HTTP isn't involved at all.
  * The socket waits on the host's one build, joining it if one is running.
  * If none can be sent it hears `snapshot_failed` once, and the socket stays open: a
