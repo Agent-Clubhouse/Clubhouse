@@ -186,6 +186,7 @@ export class ClaudeCodeProvider extends BaseProvider implements HookCapable, Hea
     }
     // A flag rather than /autocompact, which saves to the user's own settings (#2660).
     if (opts.contextWindow) args.push('--autocompact', opts.contextWindow);
+    if (opts.effort) args.push('--effort', opts.effort);
 
     if (opts.allowedTools && opts.allowedTools.length > 0) {
       for (const tool of opts.allowedTools) {

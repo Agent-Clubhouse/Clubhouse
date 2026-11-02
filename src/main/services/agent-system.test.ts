@@ -581,6 +581,34 @@ describe('agent-system', () => {
       expect(mockProvider.getDefaultPermissions).toHaveBeenCalledWith('quick');
     });
 
+    describe('a saved effort (#2671)', () => {
+      afterEach(() => {
+        mockGetDurableConfig.mockReset();
+        mockGetDurableConfig.mockImplementation(() => null);
+      });
+      const spawnWith = (config: Record<string, unknown> | null, extra: Record<string, unknown> = {}) => {
+        mockGetDurableConfig.mockImplementation((async () => (config && { id: 'agent-1', ...config })) as never);
+        return spawnAgent({ agentId: 'agent-1', projectPath: '/project', cwd: '/project', kind: 'durable', ...extra });
+      };
+
+      it('reaches the provider on a start and on a resume', async () => {
+        await spawnWith({ effort: 'high' });
+        expect(mockProvider.buildSpawnCommand).toHaveBeenLastCalledWith(expect.objectContaining({ effort: 'high' }));
+        await spawnWith({ effort: 'high', lastSessionId: 's1' }, { resume: true, sessionId: 's1' });
+        expect(mockProvider.buildSpawnCommand).toHaveBeenLastCalledWith(expect.objectContaining({ effort: 'high', resume: true }));
+      });
+
+      it('passes none without one', async () => {
+        await spawnWith({});
+        expect(mockProvider.buildSpawnCommand).toHaveBeenLastCalledWith(expect.objectContaining({ effort: undefined }));
+      });
+
+      it('never passes a hand-edited value that can\'t be a level', async () => {
+        await spawnWith({ effort: 'high; rm -rf /' });
+        expect(mockProvider.buildSpawnCommand).toHaveBeenLastCalledWith(expect.objectContaining({ effort: undefined }));
+      });
+    });
+
     it('uses provided allowedTools over defaults', async () => {
       await spawnAgent({
         agentId: 'agent-1',

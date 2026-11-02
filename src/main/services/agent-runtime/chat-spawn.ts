@@ -58,6 +58,7 @@ export interface ChatSpawnParams {
   contextWindow?: string;
   /** Why the saved context choice wasn't used; shown in the chat as a notice. */
   contextWindowNotice?: ChatRuntimeNotice;
+  effort?: string;
   mission?: string;
   /** Who sent the mission, for chat to show. */
   missionRouted?: RoutedMessagePart[];
@@ -633,6 +634,7 @@ async function runChatStart(
         commandPrefix,
         model: params.model,
         ...(params.contextWindow ? { contextWindow: params.contextWindow } : {}),
+        ...(params.effort ? { effort: params.effort } : {}),
         level,
         systemPrompt: params.systemPrompt,
         resumeNativeSessionId: resumeId,

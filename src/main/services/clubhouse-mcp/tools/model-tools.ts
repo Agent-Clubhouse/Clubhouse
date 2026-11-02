@@ -1,7 +1,8 @@
 /**
  * Model tools (#2569): list_models tells an orchestrator which models each
  * CLI accepts, and checkHelperModel checks start_helper's `model` against the
- * same list before a helper is created.
+ * same list before a helper is created. checkHelperEffort does the same for its
+ * `effort` (#2671), against the levels the list gives for that model.
  *
  * Each provider lists its own models (BaseProvider.listModels): from the
  * CLI's handshake where it has one (`source: "live"`), else its older probe
@@ -88,6 +89,52 @@ export async function checkHelperModel(cli: string | undefined, model: string, p
   };
 }
 
+// ── start_helper's effort check ──────────────────────────────────────────
+
+/** The list's entry for `model`: by id or resolved id, without a `[1m]`; no model means the CLI's default. */
+function modelEntry(list: ModelList, model: string | undefined): ModelInfo | undefined {
+  if (!model || model === 'default') return list.models.find((m) => m.isDefault);
+  const base = model.replace(/\[1m\]$/i, '');
+  return list.models.find((m) => m.id === model || m.id === base || m.resolvedId === base);
+}
+
+/**
+ * Check `effort` for a helper on `cli` with `model` (unset for the CLI's
+ * default), as checkHelperModel checks a model: a live list refuses a level the
+ * model doesn't have, and a fallback list only warns. A warning, never a
+ * refusal, when nothing says what the model takes: the list can't be read, it
+ * has no levels at all (Copilot's doesn't report them), or it doesn't have the
+ * model (an alias the CLI accepts). Never throws.
+ */
+export async function checkHelperEffort(cli: string | undefined, model: string | undefined, effort: string, projectPath: string): Promise<ModelCheck> {
+  const unchecked = (why: string): ModelCheck => ({
+    ok: true,
+    warning: `Could not check effort "${effort}" for ${cli ?? 'this CLI'}: ${why} The helper is started with it anyway; if its CLI rejects it, it fails to start or uses its default.`,
+  });
+  const provider = cli ? getProvider(cli as OrchestratorId) : undefined;
+  if (!provider?.listModels) return unchecked('it has no model list.');
+  let list: ModelList | null;
+  try {
+    list = await modelListFor(provider, projectPath);
+  } catch (err) {
+    // telemetry-exempt: logged; the caller is warned in the start_helper result
+    appLog('core:mcp', 'warn', 'start_helper: could not list models', { meta: { cli, error: errorText(err) } });
+    return unchecked(`${errorText(err)}.`);
+  }
+  if (!list || !list.models.some((m) => m.efforts?.length)) return unchecked('its model list doesn\'t report effort levels.');
+  const entry = modelEntry(list, model);
+  const name = model && model !== 'default' ? `Model "${model}"` : `${cli}'s default model`;
+  if (!entry) return unchecked(`its model list doesn't have ${model && model !== 'default' ? `"${model}"` : 'a default model'}.`);
+  const levels = entry.efforts ?? [];
+  if (levels.includes(effort)) return { ok: true };
+  const problem = levels.length > 0 ? `${name} doesn't take effort "${effort}". Its levels: ${levels.join(', ')}.` : `${name} takes no effort level.`;
+  if (list.source === 'live') return { ok: false, message: `${problem} Call list_models for details.` };
+  return {
+    ok: true,
+    warning: `${problem} That is from ${cli}'s fallback model list, which may be stale, so the helper is started with it anyway; if its CLI rejects it, it fails to start or uses its default.`,
+  };
+}
+
 // ── list_models ──────────────────────────────────────────────────────────
 
 function describeModel(m: ModelInfo): Record<string, unknown> {
@@ -154,7 +201,7 @@ export function registerModelTools(): void {
     {
       description:
         'List the models each CLI accepts, to pick start_helper\'s model: pass a model\'s "id" as start_helper\'s ' +
-        '"model", with that provider\'s "cli". Each model has a label and, where the CLI reports them, whether it ' +
+        '"model", with that provider\'s "cli", and one of its "efforts" as "effort". Each model has a label and, where the CLI reports them, whether it ' +
         'is the CLI\'s default, its reasoning effort levels and a cost hint. "source" is "live" when the CLI listed ' +
         'the models itself, or "fallback" when Clubhouse fell back to an older or built-in list that may be stale. ' +
         'start_helper refuses a model missing from a live list and warns for one missing from a fallback list. ' +

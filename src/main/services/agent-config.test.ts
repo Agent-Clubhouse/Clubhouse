@@ -1841,6 +1841,22 @@ describe('updateDurableConfig: a new CLI (#2593)', () => {
     expect(config!.sessionHistory!.map((s) => s.orchestrator)).toEqual(['codex-cli', 'codex-cli', 'github-copilot']);
   });
 
+  it('clears an effort when the CLI or the model changes, and keeps it otherwise (#2671)', async () => {
+    const effortAfter = async (updates: Parameters<typeof updateDurableConfig>[2]) => {
+      setup({ orchestrator: 'claude-code', model: 'opus', effort: 'high' });
+      clearAgentConfigCache(PROJECT_PATH);
+      await updateDurableConfig(PROJECT_PATH, 'durable_cli', updates);
+      return (await getDurableConfig(PROJECT_PATH, 'durable_cli'))!.effort;
+    };
+    expect(await effortAfter({ orchestrator: 'codex-cli' })).toBeUndefined();
+    expect(await effortAfter({ orchestrator: 'codex-cli', model: 'opus' })).toBeUndefined();
+    expect(await effortAfter({ model: 'sonnet' })).toBeUndefined();
+    expect(await effortAfter({ model: 'default' })).toBeUndefined();
+    expect(await effortAfter({ model: 'opus' })).toBe('high');
+    expect(await effortAfter({ orchestrator: 'claude-code' })).toBe('high');
+    expect(await effortAfter({ name: 'renamed' } as never)).toBe('high');
+  });
+
   it('keeps a model chosen in the same update', async () => {
     setup({ orchestrator: 'claude-code', model: 'opus', lastSessionId: 's1' });
     await updateDurableConfig(PROJECT_PATH, 'durable_cli', { orchestrator: 'codex-cli', model: 'gpt-5' });

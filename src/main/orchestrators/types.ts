@@ -10,6 +10,8 @@ export type AgentExecutionMode = 'pty' | 'headless';
 export interface SpawnOpts {
   cwd: string;
   model?: string;
+  /** Reasoning effort, checked before it gets here (isEffortValue). */
+  effort?: string;
   mission?: string;
   systemPrompt?: string;
   allowedTools?: string[];

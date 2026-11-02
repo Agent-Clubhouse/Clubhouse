@@ -12,7 +12,7 @@ import * as orchestratorSettings from './orchestrator-settings';
 import * as clubhouseModeSettings from './clubhouse-mode-settings';
 import * as configPipeline from './config-pipeline';
 import { getDurableConfig, addSessionEntry, updateDurableConfig } from './agent-config';
-import { clubhouseMcpOverride, isDisposedAgent } from '../../shared/agent-helpers';
+import { clubhouseMcpOverride, isDisposedAgent, isEffortValue } from '../../shared/agent-helpers';
 import { materializeAgent, cleanupStaleJsonInTomlConfigs } from './materialization-service';
 import * as profileSettings from './profile-settings';
 import { readProjectAgentDefaults, readLaunchWrapper, readDefaultMcps, readMcpConfigs } from './agent-settings-service';
@@ -75,6 +75,8 @@ export interface SpawnAgentParams {
   contextWindow?: string;
   /** Why the saved choice wasn't used for this launch. */
   contextWindowNotice?: ChatRuntimeNotice;
+  /** Read from a durable agent's config here, so every start and wake gets it (#2671). */
+  effort?: string;
   mission?: string;
   /** Who sent the mission, for chat to show. The mission text itself is what the agent gets. */
   missionRouted?: RoutedMessagePart[];
@@ -391,6 +393,7 @@ async function spawnAgentInner(inParams: SpawnAgentParams, facts: SpawnFacts): P
         if (durableConfig) {
           if (params.freeAgentMode === undefined) params = { ...params, freeAgentMode: durableConfig.freeAgentMode };
           if (params.model === undefined && durableConfig.model) params = { ...params, model: durableConfig.model };
+          if (isEffortValue(durableConfig.effort)) params = { ...params, effort: durableConfig.effort };
           if (params.agentFile === undefined && durableConfig.agentFile) params = { ...params, agentFile: durableConfig.agentFile };
           if (params.agentSource === undefined && durableConfig.agentSource) params = { ...params, agentSource: durableConfig.agentSource };
         }
@@ -493,6 +496,7 @@ async function spawnAgentInner(inParams: SpawnAgentParams, facts: SpawnFacts): P
           model: p.model,
           contextWindow: p.contextWindow,
           contextWindowNotice: p.contextWindowNotice,
+          effort: p.effort,
           mission: p.mission,
           missionRouted: p.missionRouted,
           systemPrompt: p.systemPrompt,
@@ -693,6 +697,7 @@ async function spawnPtyAgent(
       cwd: params.cwd,
       model: params.model,
       contextWindow: params.contextWindow,
+      effort: params.effort,
       mission: params.mission,
       systemPrompt: params.systemPrompt,
       allowedTools,

@@ -1237,6 +1237,7 @@ export async function updateDurableConfig(
         agent.contextWindowNotice = 'Cleared the saved context choice, because it was for another CLI.';
         delete agent.contextWindow;
       }
+      delete agent.effort;
       // Older entries don't say whose they are; after this, nothing else can tell.
       if (previous) {
         for (const session of agent.sessionHistory ?? []) session.orchestrator ??= previous;
@@ -1245,11 +1246,14 @@ export async function updateDurableConfig(
     agent.orchestrator = updates.orchestrator;
   }
   if (updates.model !== undefined) {
+    const modelBefore = agent.model;
     if (updates.model && updates.model !== 'default') {
       agent.model = updates.model;
     } else {
       delete agent.model;
     }
+    // A level was checked against the old model (#2671).
+    if (agent.model !== modelBefore) delete agent.effort;
   }
   if (updates.contextWindow === null) {
     delete agent.contextWindow;
@@ -1889,7 +1893,7 @@ export async function beginDurableCreation(
   params: StartDurableCreationParams,
   options: DurableCreationRunOptions = {},
 ): Promise<DurableCreationHandle> {
-  const { name, color, model, orchestrator, freeAgentMode, mcpIds, mcpConfigs, persona } = params;
+  const { name, color, model, effort, orchestrator, freeAgentMode, mcpIds, mcpConfigs, persona } = params;
   const useWorktree = params.useWorktree !== false;
   // The folder and branch come from the request; refuse bad ones before anything touches disk.
   const plan = useWorktree ? planDurableWorktree(projectPath, name, params) : undefined;
@@ -1933,6 +1937,7 @@ export async function beginDurableCreation(
     ...(plan ? { branch: plan.branch, worktreePath: plan.wtPath, branchOwned: false } : {}),
     createdAt: startedAt,
     ...(model && model !== 'default' ? { model } : {}),
+    ...(effort ? { effort } : {}),
     ...(orchestrator ? { orchestrator } : {}),
     ...(effectiveFreeAgent ? { freeAgentMode: effectiveFreeAgent } : {}),
     ...(mcpIds && mcpIds.length > 0 ? { mcpIds } : {}),
@@ -2987,6 +2992,7 @@ function clearHelperLink(agent: DurableAgentConfig): void {
   delete agent.handoff;
   delete agent.pendingTask;
   delete agent.requestedAccess;
+  delete agent.effort;
 }
 
 /** A `git rev-list --count` result. Any failure throws, so a check never reads as zero. */

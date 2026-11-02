@@ -274,6 +274,12 @@ export interface DurableAgentConfig {
   contextWindow?: string;
   /** Why a saved context choice was cleared, shown until the next choice. */
   contextWindowNotice?: string;
+  /**
+   * The reasoning effort start_helper asked for (#2671), passed on every launch.
+   * Only the start writes it. A new model or CLI clears it, since a level means
+   * something only to the model it was checked against.
+   */
+  effort?: string;
   quickAgentDefaults?: QuickAgentDefaults;
   orchestrator?: OrchestratorId;
   freeAgentMode?: boolean;
@@ -458,6 +464,8 @@ export interface HelperStartArgs {
   persona?: string;
   cli?: string;
   model?: string;
+  /** A reasoning effort level the helper's model takes (#2671). */
+  effort?: string;
   /** `same` or an access level; never more than the orchestrator runs with. */
   access?: string;
   branchFrom?: string;
@@ -572,6 +580,8 @@ export interface StartDurableCreationParams extends DurableWorktreeOptions {
   name: string;
   color: string;
   model?: string;
+  /** Only start_helper sets it (#2671); the renderer's creation request doesn't carry it. */
+  effort?: string;
   useWorktree?: boolean;
   orchestrator?: OrchestratorId;
   freeAgentMode?: boolean;

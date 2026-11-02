@@ -395,6 +395,7 @@ export class CodexCliProvider extends BaseProvider implements HeadlessCapable, H
       args.push('--model', opts.model);
     }
     if (opts.contextWindow) args.push('-c', `model_context_window=${opts.contextWindow}`);
+    if (opts.effort) args.push('-c', `model_reasoning_effort=${opts.effort}`);
 
     // The mission/prompt is a bare positional argument for Codex (unlike
     // Claude Code's -p flag), so it must stay last even after buildMcpArgs()

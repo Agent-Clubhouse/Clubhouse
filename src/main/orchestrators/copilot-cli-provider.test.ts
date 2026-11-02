@@ -171,6 +171,12 @@ describe('CopilotCliProvider', () => {
   });
 
   describe('buildSpawnCommand', () => {
+    it('passes an effort as --reasoning-effort, and nothing without one (#2671)', async () => {
+      const { args } = await provider.buildSpawnCommand({ cwd: '/project', effort: 'high' });
+      expect(args).toEqual(expect.arrayContaining(['--reasoning-effort', 'high']));
+      expect((await provider.buildSpawnCommand({ cwd: '/project' })).args).not.toContain('--reasoning-effort');
+    });
+
     it('returns binary and empty args for basic spawn', async () => {
       const result = await provider.buildSpawnCommand({ cwd: '/project' });
       expect(result.binary).toBe('/usr/local/bin/copilot');
