@@ -97,12 +97,14 @@ vi.mock('./log-service', () => ({
 vi.mock('./project-store', () => ({
   list: vi.fn().mockReturnValue([]),
   readIconData: vi.fn().mockReturnValue(null),
+  iconFilePath: vi.fn(),
 }));
 
 // Mock agent-config
 vi.mock('./agent-config', () => ({
   listDurable: vi.fn().mockReturnValue([]),
   readAgentIconData: vi.fn().mockReturnValue(null),
+  agentIconFilePath: vi.fn(),
   createDurable: vi.fn().mockResolvedValue({ id: 'durable_new', name: 'test-agent', color: 'indigo', createdAt: '2025-01-01' }),
   deleteForce: vi.fn().mockResolvedValue({ ok: true, message: 'Force deleted' }),
   deleteUnregister: vi.fn().mockResolvedValue({ ok: true, message: 'Removed from agents list' }),
@@ -299,6 +301,8 @@ import * as fileServiceModule from './file-service';
 import { generateQuickName } from '../../shared/name-generator';
 import * as agentIdModule from '../../shared/agent-id';
 import { appLog } from './log-service';
+import { nativeImage } from 'electron';
+import { MOBILE_WS_FRAME_MAX_BYTES, SNAPSHOT_FRAME_MAX_BYTES, SNAPSHOT_ICONS_MAX_BYTES } from '../../shared/icon-limits';
 import Bonjour from 'bonjour-service';
 import { registerChatRuntime, clearChatRuntimes, publishChatEvent } from './agent-runtime';
 
@@ -2126,9 +2130,11 @@ describe('annex-server', () => {
       vi.mocked(agentConfigModule.listDurable).mockReturnValue([
         { id: 'durable_1', name: 'a1', color: 'indigo', icon: 'durable_1.png', createdAt: '2025-01-01' } as any,
       ]);
-      // Return a tiny 1x1 PNG data URL
+      // A tiny 1x1 PNG file
       const pngBase64 = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8/5+hHgAHggJ/PchI7wAAAABJRU5ErkJggg==';
-      vi.mocked(agentConfigModule.readAgentIconData).mockReturnValue(`data:image/png;base64,${pngBase64}`);
+      const iconFile = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'annex-icon-route-')), 'durable_1.png');
+      fs.writeFileSync(iconFile, Buffer.from(pngBase64, 'base64'));
+      vi.mocked(agentConfigModule.agentIconFilePath).mockResolvedValue(iconFile);
 
       const { port, token } = await startAndPair();
 
@@ -2933,6 +2939,188 @@ describe('annex-server', () => {
       expect(typeof projectStore.readIconData).toBe('function');
       expect(typeof agentConfigModule.readAgentIconData).toBe('function');
     });
+  });
+
+  // ---------------------------------------------------------------------------
+  // Snapshot frame size: icons can't push a frame past the phone's limit
+  // ---------------------------------------------------------------------------
+
+  describe('snapshot frame size', () => {
+    const MIB = 1024 * 1024;
+    const THUMBNAIL = Buffer.from('thumbnail-png-bytes');
+    let dir: string;
+
+    /** A PNG header giving the side, 2000 unless said, padded to `size`. */
+    function pngFile(size: number, side = 2000): Buffer {
+      const header = Buffer.from('89504e470d0a1a0a0000000d4948445200000000000000000806000000', 'hex');
+      header.writeUInt32BE(side, 16);
+      header.writeUInt32BE(side, 20);
+      return Buffer.concat([header, Buffer.alloc(size - header.length, 0xa7)]);
+    }
+
+    function writeIcon(name: string, bytes: Buffer | string): string {
+      fs.writeFileSync(path.join(dir, name), bytes);
+      return name;
+    }
+
+    function fakeDecoder() {
+      return vi.spyOn(nativeImage, 'createFromBuffer').mockReturnValue({
+        isEmpty: () => false,
+        getSize: () => ({ width: 2000, height: 2000 }),
+        resize: () => ({ toPNG: () => THUMBNAIL }),
+      } as never);
+    }
+
+    async function connect() {
+      const ws = Object.assign(new EventEmitter(), { readyState: 1, send: vi.fn(), ping: () => {}, close: () => {} });
+      annexServer._testing.wsAuthTypes.set(ws as never, 'bearer');
+      annexServer._testing.wss!.clients.add(ws as never);
+      annexServer._testing.wss!.emit('connection', ws);
+      await vi.waitFor(() => expect(ws.send.mock.calls.some(([data]) => (data as string).startsWith('{"type":"snapshot"'))).toBe(true), { timeout: 20_000 });
+      const frame = ws.send.mock.calls.map(([data]) => data as string).find((data) => data.startsWith('{"type":"snapshot"'))!;
+      annexServer._testing.wss!.clients.delete(ws as never);
+      return { bytes: Buffer.byteLength(frame), payload: JSON.parse(frame).payload };
+    }
+
+    function serveAgentsWithIcons(icons: string[]) {
+      vi.mocked(projectStore.list).mockReturnValue([{ id: 'proj_1', name: 'P', path: '/p' } as any]);
+      vi.mocked(agentConfigModule.listDurable).mockReturnValue(
+        icons.map((icon, i) => ({ id: `a${i}`, name: `a${i}`, color: 'indigo', icon, createdAt: '2025-01-01' })) as any,
+      );
+    }
+
+    beforeEach(async () => {
+      dir = fs.mkdtempSync(path.join(os.tmpdir(), 'annex-icons-'));
+      vi.mocked(pluginManifestRegistry.listAllManifests).mockReturnValue([]);
+      const { groupProjectRegistry } = await import('./group-project-registry');
+      vi.mocked(groupProjectRegistry.list).mockResolvedValue([]);
+      const themeService = await import('./theme-service');
+      vi.mocked(themeService.getSettings).mockReturnValue({ themeId: 'catppuccin-mocha' } as any);
+      // The stores as they are: a whole file as a data URL, or its path.
+      const readAsDataUrl = async (name: string) => `data:image/png;base64,${fs.readFileSync(path.join(dir, name)).toString('base64')}`;
+      vi.mocked(agentConfigModule.readAgentIconData).mockImplementation(readAsDataUrl);
+      vi.mocked(projectStore.readIconData).mockImplementation(readAsDataUrl);
+      const filePath = async (name: string) => path.join(dir, name);
+      vi.mocked(agentConfigModule.agentIconFilePath).mockImplementation(filePath);
+      vi.mocked(projectStore.iconFilePath).mockImplementation(filePath);
+      annexServer.start();
+      await new Promise((r) => setTimeout(r, 100));
+    });
+
+    afterEach(() => {
+      vi.restoreAllMocks();
+      fs.rmSync(dir, { recursive: true, force: true });
+    });
+
+    it('keeps a frame under the limit when twelve icons are 3.7 MB each', async () => {
+      fakeDecoder();
+      serveAgentsWithIcons(Array.from({ length: 12 }, (_, i) => writeIcon(`a${i}.png`, pngFile(Math.floor(3.7 * MIB)))));
+
+      const { bytes, payload } = await connect();
+
+      expect(bytes).toBeLessThan(SNAPSHOT_FRAME_MAX_BYTES);
+      expect(SNAPSHOT_FRAME_MAX_BYTES).toBeLessThan(MOBILE_WS_FRAME_MAX_BYTES);
+      expect(Object.keys(payload.agentIcons)).toHaveLength(12);
+      expect(payload.agentIcons.a0).toBe(`data:image/png;base64,${THUMBNAIL.toString('base64')}`);
+    }, 30_000);
+
+    it('leaves icons out past the budget, in a set order, and warns with sizes only', async () => {
+      // 60 KB files go in as they are, so 200 of them are about 16 MB of data URLs.
+      serveAgentsWithIcons(Array.from({ length: 200 }, (_, i) => writeIcon(`a${i}.png`, pngFile(60 * 1024, 256))));
+
+      const { bytes, payload } = await connect();
+
+      const included = Object.keys(payload.agentIcons);
+      expect(bytes).toBeLessThan(SNAPSHOT_FRAME_MAX_BYTES);
+      expect(included.length).toBeGreaterThan(0);
+      expect(included.length).toBeLessThan(200);
+      expect(payload.agentIcons.a0).toBeDefined();
+      expect(payload.agentIcons.a199).toBeUndefined();
+      expect(JSON.stringify(payload.agentIcons).length).toBeLessThan(SNAPSHOT_ICONS_MAX_BYTES + 200 * 32);
+      // Every agent row stays, so a phone knows to use the route or initials.
+      expect(payload.agents.proj_1).toHaveLength(200);
+      const warning = vi.mocked(appLog).mock.calls.find(([, , message]) => message === 'Snapshot left out icons to stay within its budget');
+      expect(warning?.[3]?.meta).toMatchObject({ leftOutCount: 200 - included.length, budgetBytes: SNAPSHOT_ICONS_MAX_BYTES });
+      expect(JSON.stringify(warning)).not.toContain('base64');
+    }, 30_000);
+
+    it('reports each snapshot sent with sizes and counts, and no image data', async () => {
+      serveAgentsWithIcons([writeIcon('a0.png', pngFile(1024, 64))]);
+
+      const { bytes } = await connect();
+
+      const line = vi.mocked(appLog).mock.calls.find(([, , message]) => message === 'Sending a snapshot');
+      expect(line?.[1]).toBe('info');
+      expect(line?.[3]?.meta).toMatchObject({ result: 'ok', trigger: 'connect', iconCount: 1, iconsLeftOut: 0, items: 2 });
+      expect((line?.[3]?.meta as { bytes: number }).bytes).toBe(bytes);
+      expect(JSON.stringify(line)).not.toContain('base64');
+    }, 30_000);
+
+    it('never sends an SVG: phones can\'t draw one, so it is a raster copy or left out', async () => {
+      serveAgentsWithIcons([writeIcon('small.svg', '<svg xmlns="http://www.w3.org/2000/svg"></svg>')]);
+
+      expect((await connect()).payload.agentIcons).toEqual({});
+      expect(vi.mocked(appLog).mock.calls.some(([, , message]) => message === 'An icon has no thumbnail, so snapshots leave it out')).toBe(true);
+
+      const thumbnailer = vi.fn(async () => ({
+        isEmpty: () => false, getSize: () => ({ width: 128, height: 128 }), toPNG: () => THUMBNAIL,
+      }));
+      (nativeImage as { createThumbnailFromPath?: unknown }).createThumbnailFromPath = thumbnailer;
+      try {
+        serveAgentsWithIcons([writeIcon('other.svg', '<svg xmlns="http://www.w3.org/2000/svg"><g/></svg>')]);
+        expect((await connect()).payload.agentIcons.a0).toBe(`data:image/png;base64,${THUMBNAIL.toString('base64')}`);
+      } finally {
+        delete (nativeImage as { createThumbnailFromPath?: unknown }).createThumbnailFromPath;
+      }
+    }, 30_000);
+
+    it('does not decode an icon again for later snapshots, until its file changes', async () => {
+      const decoder = fakeDecoder();
+      const name = writeIcon('a0.png', pngFile(MIB));
+      serveAgentsWithIcons([name]);
+
+      await connect();
+      await connect();
+      expect(decoder).toHaveBeenCalledTimes(1);
+
+      writeIcon(name, pngFile(MIB + 1));
+      await connect();
+      expect(decoder).toHaveBeenCalledTimes(2);
+    }, 30_000);
+
+    it('drops every icon when the rest of the snapshot is too large, and logs the size only', async () => {
+      serveAgentsWithIcons([writeIcon('a0.png', pngFile(1024, 64))]);
+      vi.mocked(pluginStorage.readKey).mockImplementation(async ({ key, scope }: { key: string; scope: string }) => (
+        scope === 'global' && key === 'canvas-instances' ? [{ id: 'c', secret: 'x'.repeat(SNAPSHOT_FRAME_MAX_BYTES) }] : null
+      ) as never);
+
+      const { payload } = await connect();
+
+      expect(payload.agentIcons).toEqual({});
+      expect(payload.appCanvasState.canvases).toHaveLength(1);
+      const line = vi.mocked(appLog).mock.calls.find(([, , message]) => message === 'Sending a snapshot');
+      expect(line?.[2]).toBe('Sending a snapshot');
+      expect(line?.[3]?.meta).toMatchObject({ result: 'icons_dropped', iconCount: 0, iconsLeftOut: 1 });
+      const large = vi.mocked(appLog).mock.calls.find(([, , message]) => message === 'Sending a large WebSocket frame');
+      expect(large?.[3]?.meta).toMatchObject({ type: 'snapshot', mobileLimitBytes: MOBILE_WS_FRAME_MAX_BYTES });
+      expect(JSON.stringify(large)).not.toContain('xxxx');
+    }, 30_000);
+
+    it('serves the thumbnail from the icon route, and a 404 when there is none', async () => {
+      fakeDecoder();
+      annexServer.stop();
+      const big = writeIcon('a0.png', pngFile(MIB));
+      const svg = writeIcon('a1.svg', `<svg xmlns="http://www.w3.org/2000/svg"><!--${'x'.repeat(200 * 1024)}--></svg>`);
+      serveAgentsWithIcons([big, svg]);
+      const { port, token } = await startAndPair();
+
+      const thumbnail = await request(port, 'GET', '/api/v1/icons/agent/a0', undefined, authHeaders(token));
+      const none = await request(port, 'GET', '/api/v1/icons/agent/a1', undefined, authHeaders(token));
+
+      expect(thumbnail.body).toBe(THUMBNAIL.toString());
+      expect(none.status).toBe(404);
+      expect(JSON.parse(none.body)).toEqual({ error: 'icon_not_found' });
+    }, 30_000);
   });
 
   // -------------------------------------------------------------------------

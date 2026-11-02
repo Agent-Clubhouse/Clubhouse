@@ -11,7 +11,8 @@ import { MOBILE_COMMAND_TYPES, type AnnexAgentUpdate, type MobileCommand } from 
 import { applyProjectStateChange, getProjectState, isProjectStateReady, onProjectStateChange } from './project-state-store';
 import { isProjectIdle } from '../../shared/project-state';
 import { applyFinishedQuickAgentChange, getFinishedQuickAgents, isFinishedQuickAgentsReady, onFinishedQuickAgentsChange } from './finished-quick-agents-store';
-import type { CompletedQuickAgent } from '../../shared/types';
+import type { CompletedQuickAgent, Project } from '../../shared/types';
+import { MOBILE_WS_FRAME_MAX_BYTES, SNAPSHOT_FRAME_MAX_BYTES, SNAPSHOT_ICONS_MAX_BYTES } from '../../shared/icon-limits';
 import { MobileCommandService, MobileControlError, chatControls, executeChatCommand, pendingInteractions, MOBILE_COMMAND_MAX_ENTRIES, MOBILE_COMMAND_TTL_MS } from './mobile-control';
 import { isRevertRunning } from './agent-runtime/checkpoint-tracker';
 import { readChatTranscript, listChatSessions } from './agent-runtime/chat-transcript';
@@ -68,6 +69,7 @@ import { injectPtyText } from './agent-runtime/pty-input';
 import { AgentStoppingError } from './agent-runtime/agent-stopping';
 import { spawnAgent, killAgent, getAvailableOrchestrators, isHeadlessAgent, resolveOrchestrator, resolveProfileEnv } from './agent-system';
 import { appLog } from './log-service';
+import { readIconThumbnail } from './icon-images';
 
 /**
  * Check if an agent is currently running in any execution mode.
@@ -100,9 +102,13 @@ import {
   recordPairServed,
   recordReplay,
   recordServerStarted,
+  recordSnapshot,
   recordSnapshotBuild,
+  recordSnapshotFailure,
   recordTlsFallback,
   restTraceparent,
+  type SnapshotResult,
+  type SnapshotTrigger,
   wsTraceparent,
 } from '../telemetry/annex-telemetry';
 import { validateAgentGitName } from '../../shared/agent-name';
@@ -768,32 +774,91 @@ function mapDurableAgent(d: DurableConfigs[number], projectId: string, policies?
 // Snapshot (Issues 1, 3, 6, 8)
 // ---------------------------------------------------------------------------
 
-async function buildSnapshot(): Promise<object> {
+interface SnapshotIconStats {
+  iconCount: number;
+  iconBytes: number;
+  iconsLeftOut: number;
+}
+
+interface BuiltSnapshot {
+  payload: { projects: unknown[]; agents: Record<string, unknown[]>; [field: string]: unknown };
+  icons: SnapshotIconStats;
+}
+
+async function buildSnapshot(): Promise<BuiltSnapshot> {
   const startMs = Date.now();
   try {
     return await buildSnapshotData();
+  } catch (err) {
+    recordSnapshotFailure('build_failed');
+    throw err;
   } finally {
     recordSnapshotBuild(startMs);
   }
 }
 
-async function buildSnapshotData(): Promise<object> {
+let lastIconBudgetWarning = '';
+
+/**
+ * The snapshot's icons, as thumbnails, up to SNAPSHOT_ICONS_MAX_BYTES. Past that
+ * an icon is left out and a phone uses the icon routes or initials. The Dispatcher
+ * comes first, then projects, then agents, in a set order, so the same icons stay
+ * from one snapshot to the next.
+ */
+async function buildSnapshotIcons(
+  projects: Project[],
+  durablesByProject: Record<string, DurableConfigs>,
+  dispatcher?: DurableConfigs[number],
+): Promise<{ projectIcons: Record<string, string>; agentIcons: Record<string, string>; stats: SnapshotIconStats }> {
+  const projectIcons: Record<string, string> = {};
+  const agentIcons: Record<string, string> = {};
+  const agentIcon = (d: DurableConfigs[number]) => ({ into: agentIcons, id: d.id, locate: () => agentConfig.agentIconFilePath(d.icon!) });
+  const wanted = [
+    ...(dispatcher?.icon ? [agentIcon(dispatcher)] : []),
+    ...projects.filter((p) => p.icon).map((p) => ({ into: projectIcons, id: p.id, locate: () => projectStore.iconFilePath(p.icon!) })),
+    ...projects.flatMap((p) => durablesByProject[p.id] ?? []).filter((d) => d.icon).map(agentIcon),
+  ];
+  const dataUrls = await Promise.all(wanted.map(async ({ locate }) => {
+    const filePath = await locate();
+    return filePath ? readIconThumbnail(filePath) : null;
+  }));
+
+  let includedBytes = 0;
+  let leftOutCount = 0;
+  let leftOutBytes = 0;
+  dataUrls.forEach((dataUrl, i) => {
+    if (!dataUrl) return;
+    if (includedBytes + dataUrl.length > SNAPSHOT_ICONS_MAX_BYTES) {
+      leftOutCount++;
+      leftOutBytes += dataUrl.length;
+      return;
+    }
+    includedBytes += dataUrl.length;
+    wanted[i].into[wanted[i].id] = dataUrl;
+  });
+
+  // Snapshots rebuild often: say it once, and again only when it changes.
+  const warning = leftOutCount > 0 ? `${leftOutCount}:${leftOutBytes}:${includedBytes}` : '';
+  if (warning && warning !== lastIconBudgetWarning) {
+    appLog('core:annex', 'warn', 'Snapshot left out icons to stay within its budget', {
+      meta: { leftOutCount, leftOutBytes, includedBytes, budgetBytes: SNAPSHOT_ICONS_MAX_BYTES },
+    });
+  }
+  lastIconBudgetWarning = warning;
+  return {
+    projectIcons,
+    agentIcons,
+    stats: { iconCount: Object.keys(projectIcons).length + Object.keys(agentIcons).length, iconBytes: includedBytes, iconsLeftOut: leftOutCount },
+  };
+}
+
+async function buildSnapshotData(): Promise<BuiltSnapshot> {
   const projects = await projectStore.list();
   const agents: Record<string, unknown[]> = {};
   const quickAgents: Record<string, unknown[]> = {};
-  const projectIcons: Record<string, string> = {};
-  const agentIcons: Record<string, string> = {};
   const durablesByProject: Record<string, Awaited<ReturnType<typeof agentConfig.listDurable>>> = {};
 
-  // Fetch project icons in parallel
-  await Promise.all(projects.map(async (proj) => {
-    if (proj.icon) {
-      const dataUrl = await projectStore.readIconData(proj.icon);
-      if (dataUrl) projectIcons[proj.id] = dataUrl;
-    }
-  }));
-
-  // Fetch agents and their icons per project in parallel
+  // Fetch agents per project in parallel
   await Promise.all(projects.map(async (proj) => {
     // Disposed helpers (#2224) keep a config row but are not agents to show.
     const durables = (await agentConfig.listDurable(proj.path)).filter((d) => !isDisposedAgent(d));
@@ -801,14 +866,6 @@ async function buildSnapshotData(): Promise<object> {
     const policies = await catalogOrchestration(proj.path, durables);
     agents[proj.id] = durables.map((d) => mapDurableAgent(d, proj.id, policies));
     quickAgents[proj.id] = [];
-
-    // Fetch agent icons in parallel within this project
-    await Promise.all(durables.map(async (d) => {
-      if (d.icon) {
-        const dataUrl = await agentConfig.readAgentIconData(d.icon);
-        if (dataUrl) agentIcons[d.id] = dataUrl;
-      }
-    }));
   }));
 
   // Add tracked quick agents to their project buckets
@@ -827,10 +884,7 @@ async function buildSnapshotData(): Promise<object> {
   // The Dispatcher (#2533): in no project, so on its own, and only while it is on.
   const active = activeDispatcher();
   const dispatcherAgent = active ? { ...mapDurableAgent(active.config, DISPATCHER_PROJECT_ID), isDispatcher: true as const } : null;
-  if (active?.config.icon) {
-    const dataUrl = await agentConfig.readAgentIconData(active.config.icon);
-    if (dataUrl) agentIcons[active.config.id] = dataUrl;
-  }
+  const { projectIcons, agentIcons, stats: icons } = await buildSnapshotIcons(projects, durablesByProject, active?.config);
 
   // Build agents metadata (execution modes, detailed statuses)
   const agentsMeta: Record<string, { executionMode: string | null; detailedStatus: AgentDetailedStatus | null }> = {};
@@ -954,7 +1008,7 @@ async function buildSnapshotData(): Promise<object> {
     // Binding manager not available — skip
   }
 
-  return {
+  return { icons, payload: {
     protocolVersion: ANNEX_PROTOCOL_VERSION,
     projects,
     agents,
@@ -983,7 +1037,7 @@ async function buildSnapshotData(): Promise<object> {
     dispatcher: dispatcherAgent
       ? { enabled: true, flagOn: true, projectId: DISPATCHER_PROJECT_ID, agent: dispatcherAgent }
       : null,
-  };
+  } };
 }
 
 // ---------------------------------------------------------------------------
@@ -1002,9 +1056,68 @@ function reportClientCounts(): void {
   recordClients(desktop, mobile);
 }
 
+/** A frame this size is worth knowing about: a phone can't take one over MOBILE_WS_FRAME_MAX_BYTES. */
+const LARGE_FRAME_LOG_BYTES = 4 * 1024 * 1024;
+const LARGE_FRAME_LOG_INTERVAL_MS = 60_000;
+const lastLargeFrameLog = new Map<string, number>();
+
+/** Logs a large frame's type and size, never its contents, at most once a minute for each type. */
+function noteFrameSize(data: string, type?: string): void {
+  // A character is at most three UTF-8 bytes, so most frames skip the count.
+  if (data.length * 3 < LARGE_FRAME_LOG_BYTES) return;
+  const bytes = Buffer.byteLength(data);
+  if (bytes < LARGE_FRAME_LOG_BYTES) return;
+  const frameType = type ?? data.match(/^\{"type":"([^"]+)"/)?.[1] ?? 'other';
+  const now = Date.now();
+  if (now - (lastLargeFrameLog.get(frameType) ?? -Infinity) < LARGE_FRAME_LOG_INTERVAL_MS) return;
+  lastLargeFrameLog.set(frameType, now);
+  appLog('core:annex', bytes > MOBILE_WS_FRAME_MAX_BYTES ? 'error' : 'warn', 'Sending a large WebSocket frame', {
+    meta: { type: frameType, bytes, mobileLimitBytes: MOBILE_WS_FRAME_MAX_BYTES },
+  });
+}
+
+const SNAPSHOT_LOG_INTERVAL_MS = 60_000;
+let lastSnapshotLog: { result: string; atMs: number } | null = null;
+
+/** Sizes and counts of a snapshot being sent, never its contents. At most once a minute unless the result changes. */
+function reportSnapshot(result: SnapshotResult, trigger: SnapshotTrigger, bytes: number, items: number, icons: SnapshotIconStats): void {
+  recordSnapshot(result, trigger, { bytes, items, ...icons });
+  const now = Date.now();
+  if (lastSnapshotLog?.result === result && now - lastSnapshotLog.atMs < SNAPSHOT_LOG_INTERVAL_MS) return;
+  lastSnapshotLog = { result, atMs: now };
+  appLog('core:annex', result === 'ok' ? 'info' : 'warn', 'Sending a snapshot', {
+    meta: { result, trigger, bytes, items, ...icons },
+  });
+}
+
+/**
+ * A snapshot as one frame. Icons have their own budget, but the rest of a
+ * snapshot isn't bounded: when it runs large, losing the icons is better than a
+ * phone that can't connect. The rest can't be left out, so it's reported instead.
+ */
+function snapshotFrame({ payload, icons }: BuiltSnapshot, trigger: SnapshotTrigger): string {
+  const items = payload.projects.length + Object.values(payload.agents).reduce((sum, list) => sum + list.length, 0);
+  const frame = JSON.stringify({ type: 'snapshot', payload });
+  const bytes = Buffer.byteLength(frame);
+  if (bytes <= SNAPSHOT_FRAME_MAX_BYTES) {
+    reportSnapshot(icons.iconsLeftOut > 0 ? 'icons_left_out' : 'ok', trigger, bytes, items, icons);
+    return frame;
+  }
+  const withoutIcons = JSON.stringify({ type: 'snapshot', payload: { ...payload, projectIcons: {}, agentIcons: {} } });
+  const withoutIconsBytes = Buffer.byteLength(withoutIcons);
+  reportSnapshot(withoutIconsBytes > MOBILE_WS_FRAME_MAX_BYTES ? 'over_mobile_limit' : 'icons_dropped', trigger, withoutIconsBytes, items, {
+    iconCount: 0, iconBytes: 0, iconsLeftOut: icons.iconCount + icons.iconsLeftOut,
+  });
+  return withoutIcons;
+}
+
 function broadcastWs(message: object): void {
-  if (!wss) return;
-  const data = JSON.stringify(message);
+  broadcastFrame((message as { type?: string }).type ?? 'other', JSON.stringify(message));
+}
+
+function broadcastFrame(type: string, data: string): number {
+  if (!wss) return 0;
+  noteFrameSize(data, type);
   let sendFailures = 0;
   for (const client of wss.clients) {
     if (client.readyState === WebSocket.OPEN) {
@@ -1018,7 +1131,8 @@ function broadcastWs(message: object): void {
       }
     }
   }
-  recordBroadcast((message as { type?: string }).type ?? 'other', Buffer.byteLength(data), sendFailures);
+  recordBroadcast(type, Buffer.byteLength(data), sendFailures);
+  return sendFailures;
 }
 
 /** Broadcast a message and push it to the replay buffer. */
@@ -1053,7 +1167,9 @@ async function handleIconRequest(res: http.ServerResponse, url: string): Promise
       sendJson(res, 404, { error: 'icon_not_found' });
       return true;
     }
-    const dataUrl = await agentConfig.readAgentIconData(iconFilename);
+    // The snapshot's thumbnail: a phone decodes all of it, so these stay as small. No thumbnail is a 404.
+    const filePath = await agentConfig.agentIconFilePath(iconFilename);
+    const dataUrl = filePath ? await readIconThumbnail(filePath) : null;
     if (!dataUrl) {
       sendJson(res, 404, { error: 'icon_not_found' });
       return true;
@@ -1085,7 +1201,8 @@ async function handleIconRequest(res: http.ServerResponse, url: string): Promise
       sendJson(res, 404, { error: 'icon_not_found' });
       return true;
     }
-    const dataUrl = await projectStore.readIconData(project.icon);
+    const filePath = await projectStore.iconFilePath(project.icon);
+    const dataUrl = filePath ? await readIconThumbnail(filePath) : null;
     if (!dataUrl) {
       sendJson(res, 404, { error: 'icon_not_found' });
       return true;
@@ -3151,6 +3268,7 @@ function safeSend(ws: WebSocket, data: string): boolean {
       // Replay carries the original event context, never this request's context.
       if (!message.replayed) data = JSON.stringify({ ...message, tc });
     }
+    noteFrameSize(data);
     ws.send(data);
     return true;
   }
@@ -3755,7 +3873,13 @@ export function start(): void {
 
     // Send snapshot on connect — async I/O after all event handlers are registered
     try {
-      safeSend(ws, JSON.stringify({ type: 'snapshot', payload: await buildSnapshot() }));
+      const frame = snapshotFrame(await buildSnapshot(), 'connect');
+      try {
+        if (!safeSend(ws, frame)) recordSnapshotFailure('send_failed');
+      } catch (err) {
+        recordSnapshotFailure('send_failed');
+        throw err;
+      }
     } catch (err) {
       appLog('core:annex', 'error', 'Failed to send snapshot on connect', {
         meta: { error: err instanceof Error ? err.message : String(err) },
@@ -4042,6 +4166,9 @@ function rememberBoundPorts(): void {
 export function stop(): void {
   // Unsubscribe from event bus
   unsubscribeEventBus();
+  lastLargeFrameLog.clear();
+  lastSnapshotLog = null;
+  lastIconBudgetWarning = '';
 
   if (staleEvictionInterval) {
     clearInterval(staleEvictionInterval);
@@ -4167,7 +4294,7 @@ function pairingLink(fingerprint: string, certFingerprint: string | undefined, n
  */
 export function broadcastSnapshotRefresh(): void {
   buildSnapshot().then((snapshot) => {
-    broadcastWs({ type: 'snapshot', payload: snapshot });
+    if (broadcastFrame('snapshot', snapshotFrame(snapshot, 'refresh')) > 0) recordSnapshotFailure('send_failed');
   }).catch((err) => {
     appLog('core:annex', 'error', 'broadcastSnapshotRefresh failed', {
       meta: { error: err instanceof Error ? err.message : String(err) },
@@ -4537,7 +4664,7 @@ export const _testing = {
   getDetailedStatus,
   pushChatStatus,
   lastChatStatusPush,
-  buildSnapshot,
+  buildSnapshot: async () => (await buildSnapshot()).payload,
   agentLastActivity,
   noteAgentActivity,
 };

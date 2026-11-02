@@ -49,7 +49,7 @@ async function guarded(tool: string, agentId: string, run: () => Promise<unknown
 
 const COLOR_IDS = AGENT_COLORS.map((c) => c.id);
 const IMAGE_DESCRIPTION =
-  'Path of an image file: PNG, JPEG, GIF, WebP or SVG, up to 3.7 MB. Relative paths start from your working directory. ' +
+  'Path of an image file: PNG, JPEG, GIF, WebP or SVG, up to 20 MB. Large images are resized. Relative paths start from your working directory. ' +
   'Replaces the emoji. Empty removes the image.';
 const EMOJI_DESCRIPTION = 'A single emoji. Replaces the image. Empty removes the emoji.';
 
