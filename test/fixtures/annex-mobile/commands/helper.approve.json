@@ -72,12 +72,11 @@
       }
     },
     {
-      "name": "accepted dispose anyway",
+      "name": "no_valid_mapping",
       "request": {
         "commandId": "cmd_103",
         "epoch": "00000000-0000-4000-8000-000000000001",
-        "force": true,
-        "requestId": "hdispose_00000000-0000-4000-8000-000000000009",
+        "requestId": "hstart_00000000-0000-4000-8000-000000000009",
         "type": "helper.approve",
         "version": 1
       },
@@ -85,23 +84,22 @@
         "body": {
           "commandId": "cmd_103",
           "epoch": "00000000-0000-4000-8000-000000000001",
-          "result": {
-            "approved": true,
-            "kind": "dispose",
-            "requestId": "hdispose_00000000-0000-4000-8000-000000000009",
-            "stopped": true
+          "error": {
+            "code": "no_valid_mapping",
+            "message": "Couldn’t start impl-ipc because no hard preset for codex-cli is offered now."
           },
-          "status": "completed",
+          "status": "failed",
           "version": 1
         },
-        "status": 200
+        "status": 409
       }
     },
     {
-      "name": "accepted dispose (nothing at risk)",
+      "name": "accepted dispose anyway",
       "request": {
         "commandId": "cmd_104",
         "epoch": "00000000-0000-4000-8000-000000000001",
+        "force": true,
         "requestId": "hdispose_00000000-0000-4000-8000-000000000010",
         "type": "helper.approve",
         "version": 1
@@ -123,7 +121,7 @@
       }
     },
     {
-      "name": "helper_work_at_risk",
+      "name": "accepted dispose (nothing at risk)",
       "request": {
         "commandId": "cmd_105",
         "epoch": "00000000-0000-4000-8000-000000000001",
@@ -134,6 +132,31 @@
       "response": {
         "body": {
           "commandId": "cmd_105",
+          "epoch": "00000000-0000-4000-8000-000000000001",
+          "result": {
+            "approved": true,
+            "kind": "dispose",
+            "requestId": "hdispose_00000000-0000-4000-8000-000000000011",
+            "stopped": true
+          },
+          "status": "completed",
+          "version": 1
+        },
+        "status": 200
+      }
+    },
+    {
+      "name": "helper_work_at_risk",
+      "request": {
+        "commandId": "cmd_106",
+        "epoch": "00000000-0000-4000-8000-000000000001",
+        "requestId": "hdispose_00000000-0000-4000-8000-000000000012",
+        "type": "helper.approve",
+        "version": 1
+      },
+      "response": {
+        "body": {
+          "commandId": "cmd_106",
           "epoch": "00000000-0000-4000-8000-000000000001",
           "error": {
             "code": "helper_work_at_risk",
@@ -148,15 +171,15 @@
     {
       "name": "helper_check_failed",
       "request": {
-        "commandId": "cmd_106",
+        "commandId": "cmd_107",
         "epoch": "00000000-0000-4000-8000-000000000001",
-        "requestId": "hdispose_00000000-0000-4000-8000-000000000012",
+        "requestId": "hdispose_00000000-0000-4000-8000-000000000013",
         "type": "helper.approve",
         "version": 1
       },
       "response": {
         "body": {
-          "commandId": "cmd_106",
+          "commandId": "cmd_107",
           "epoch": "00000000-0000-4000-8000-000000000001",
           "error": {
             "code": "helper_check_failed",
@@ -171,16 +194,16 @@
     {
       "name": "helper_work_changed",
       "request": {
-        "commandId": "cmd_107",
+        "commandId": "cmd_108",
         "epoch": "00000000-0000-4000-8000-000000000001",
         "force": true,
-        "requestId": "hdispose_00000000-0000-4000-8000-000000000013",
+        "requestId": "hdispose_00000000-0000-4000-8000-000000000014",
         "type": "helper.approve",
         "version": 1
       },
       "response": {
         "body": {
-          "commandId": "cmd_107",
+          "commandId": "cmd_108",
           "epoch": "00000000-0000-4000-8000-000000000001",
           "error": {
             "code": "helper_work_changed",
@@ -195,16 +218,16 @@
     {
       "name": "helper_dispose_failed",
       "request": {
-        "commandId": "cmd_108",
+        "commandId": "cmd_109",
         "epoch": "00000000-0000-4000-8000-000000000001",
         "force": true,
-        "requestId": "hdispose_00000000-0000-4000-8000-000000000014",
+        "requestId": "hdispose_00000000-0000-4000-8000-000000000015",
         "type": "helper.approve",
         "version": 1
       },
       "response": {
         "body": {
-          "commandId": "cmd_108",
+          "commandId": "cmd_109",
           "epoch": "00000000-0000-4000-8000-000000000001",
           "error": {
             "code": "helper_dispose_failed",
@@ -219,7 +242,7 @@
     {
       "name": "helper_request_not_found",
       "request": {
-        "commandId": "cmd_109",
+        "commandId": "cmd_110",
         "epoch": "00000000-0000-4000-8000-000000000001",
         "requestId": "hstart_gone",
         "type": "helper.approve",
@@ -227,7 +250,7 @@
       },
       "response": {
         "body": {
-          "commandId": "cmd_109",
+          "commandId": "cmd_110",
           "epoch": "00000000-0000-4000-8000-000000000001",
           "error": {
             "code": "helper_request_not_found",

@@ -1,6 +1,6 @@
 # Helper Auto routing
 
-**Status: proposed (#2671).** Only stage 1, an explicit `effort` on `start_helper`, is built. Everything else here is a design. Clubhouse Go has locked the stage 2 phone wire in [Phone contract](#phone-contract), which is presets only. Later stages are not locked.
+**Status: proposed (#2671).** Stages 1 and 2 are built: an explicit `effort` on `start_helper`, and presets by `difficulty`. Everything else here is a design. Clubhouse Go has locked the stage 2 phone wire in [Phone contract](#phone-contract), which is presets only. Later stages are not locked.
 
 An orchestrator can ask for a helper by difficulty instead of naming a model, and can opt in to letting Clubhouse pick the provider from load and quota. The choice is deterministic, explained, and made once.
 
@@ -30,6 +30,8 @@ Auto applies only where it is selected, and only to a new helper. It never write
 
 `preset` has no switch. It only changes anything when an orchestrator sends `difficulty`, it stays on one CLI, and an orchestrator can already name any model. This also means turning on a stage 2 setting can't quietly authorize cross-provider routing when stage 4 ships. The limitation: a project or persona `off` stops Auto but doesn't stop presets.
 
+A start that names no CLI, model, effort or difficulty is today's path. Nothing is decided and no `routing` is recorded, whatever its persona sets.
+
 **Each of CLI, model and effort**, highest first:
 
 1. An explicit request argument. A saved Sol choice that Go sends lands here and is authoritative.
@@ -39,7 +41,11 @@ Auto applies only where it is selected, and only to a new helper. It never write
 
 `preset` and `auto` have no step 4. With no valid cell they refuse with `no_valid_mapping`.
 
-**Behaviour change in stage 2.** A persona with `model:` or `orchestrator:` in its front-matter overwrites an explicit `start_helper` model today, because it is applied during creation. Stage 2 restores explicit fields after the persona applies, so rule 1 holds. Its PR description and release note must call this out, and a test uses a persona that pins both model and orchestrator.
+A persona's model goes with its CLI. If the request names a different CLI from the one the persona pins, the persona's model is dropped too, and the model comes from below that step.
+
+A cell's effort belongs to its model. So an explicit or pinned model takes no effort from a preset: it gets an explicit effort or the CLI's default. An explicit effort on a preset's model is checked against that model.
+
+**Behaviour change in stage 2.** Until stage 2, a persona with `model:` or `orchestrator:` in its front-matter overwrote an explicit `start_helper` CLI or model, because it is applied during creation. Now the persona step leaves alone what the request named, and still applies the rest. A start that names nothing is unchanged, so its persona still sets them.
 
 ## Difficulty
 
@@ -182,6 +188,8 @@ MCP calls the provider `cli`, as `start_helper` does.
 
 Closed allowlists in `src/shared/telemetry/attributes.ts`, with no prompts, secrets or raw config.
 
+Stage 2 lists only `explicit` and `preset`, its three reasons and its fallbacks. The rest come with their stages.
+
 - `clubhouse.helper.routed`: reuses `orchestrator` (resolved), `modelFamily` (never the raw id) and `outcome`. Adds requested CLI, difficulty, mode, effort, preset (`builtin`, `custom`, `none`), config source, reason, fallback, load bucket, quota state (the five above), limiting window, staleness bucket, `quotaBasis`, failure class and `policyVersion`.
 - `clubhouse.helper_routing.changed`: action (`set`, `toggle`, `reset_cell`, `reset_provider`, `reset_all`), surface and outcome.
 - Add `orchestration` to `SETTINGS_KEYS`. `SAVE_ORCHESTRATION_SETTINGS` emits nothing today.
@@ -197,7 +205,7 @@ The writers today, from greps, so close but not proven complete. The audit PR sh
 
 **Design.** Generalize `dispatcher-audit.ts` into a shared bounded log, with the same rotation and 1 MB cap. A row has surface (`ui`, `mcp`, `mobile`, `dispatcher`, `persona`, `system`), actor id, scope, key, target id, before, after, outcome and code. It hooks at service chokepoints and diffs the keys in the `settings-read-service` catalog. Values go through a per-key formatter (enum, bool, integer, provider id). Anything else, such as names or commands, records `changed: true` only. Bookkeeping fields are left out, and rows use project ids, not paths.
 
-The first audit covers helper routing and `setOrchestrationPolicy`. Appearance and agent config come next, then the rest.
+Built in stage 2: `settings-audit.jsonl`, covering helper presets and `setOrchestrationPolicy`, including refusals. Appearance and agent config come next, then the rest.
 
 ## Phone contract
 
@@ -235,13 +243,13 @@ App-wide preset editing from the phone is in scope.
   "copilot-cli":{"autoEligible":false,"reason":"auto_not_supported","quota":{"state":"unknown","unknownReason":"not_supported","asOf":null},"cells":null}}}
 ```
 
-A cell with nothing valid has `effective: null`. The `auto` block appears from stage 4 and `quota` from stage 3. `source` under `auto` is `agent`, `project`, `persona`, `app`, `default`, `mcp_off` or `dispatcher_locked`, and `auto.reason` is set whenever `effective` is false.
+A cell with nothing valid has `effective: null`. Until the `auto` mode is advertised, `autoEligible` only says whether a provider has presets. With `agentId`, stage 2 also returns `agent:{usable,reason?}`, where `reason` is `dispatcher_locked`, `mcp_off` or `orchestration_off`. The `auto` block appears from stage 4 and `quota` from stage 3. `source` under `auto` is `agent`, `project`, `persona`, `app`, `default`, `mcp_off` or `dispatcher_locked`, and `auto.reason` is set whenever `effective` is false.
 
-**Revisions.** The full snapshot has `helperRoutingRevision`, and a `helper_routing:changed` event carries `{revision}`, so an open or cached page knows to refetch. The revision moves when a saved value changes or a cell's state changes. It doesn't move for a quota sample, and no snapshot is broadcast for one.
+**Revisions.** The full snapshot has `helperRoutingRevision`, and a `helper_routing:changed` event carries `{revision}`, so an open or cached page knows to refetch. The revision moves when a saved value changes or when an app-wide read finds that a cell's state changed. It doesn't move for a quota sample, and no snapshot is broadcast for one. It is opaque to a client. A list changing doesn't make a write stale: only a saved value does.
 
 **Quota freshness** is pulled. `GET helper-routing` returns `serverTime`, and each `quota` has `asOf` and `refreshAfterSeconds`, the cache's remaining life. A phone refetches while the page is open, no sooner than that, and on returning to the foreground. It shows age from `asOf` against `serverTime`. A fetch uses the same shared 5 minute cache as routing, so phones can't make extra CLI reads.
 
-**Labels.** `GET helper-routing` returns `labels`, keyed by code family, and helper settings add `display:{reason,fallback,quota}` with the resolved text. So the desktop owns the words. A bare `GET helper-routing`, with no `agentId` or `projectId`, returns every label family, so a client can cache labels once per revision for code-only helper and Needs you rows. Precedence for a client: `display`, then `labels`, then `labels.unknownCode`, then its own generic "Other". The snapshot carries codes only.
+**Labels.** `GET helper-routing` returns `labels`, keyed by code family, and helper settings add `display:{summary,reason,fallback}` with the resolved text, and `quota` from stage 3. So the desktop owns the words. A bare `GET helper-routing`, with no `agentId` or `projectId`, returns every label family, so a client can cache labels once per revision for code-only helper and Needs you rows. Precedence for a client: `display`, then `labels`, then `labels.unknownCode`, then its own generic "Other". The snapshot carries codes only.
 
 | Family | Code | Text |
 |---|---|---|
@@ -283,9 +291,11 @@ A cell with nothing valid has `effective: null`. The `auto` block appears from s
 
 **Write:** command `helperRouting.update` with `{revision,scope,projectId?,auto?,cells?:[{provider,difficulty,model,effort}],reset?:{provider?,difficulty?}}`, returning fresh settings. Only scopes the capability lists are accepted. A project scope accepts only `auto: "off"|null`. Errors: 400 `invalid_helper_routing`, 409 `helper_routing_stale`, 409 `model_unavailable`, 409 `effort_unavailable`. Agent scope stays in `orchestration.autoHelpers` through `agent.update`.
 
+**Stage 2** accepts `scope: "app"` only, with no `projectId`.
+
 **A stale write** writes nothing, for any part of the command, and its 409 returns `{revision, settings}`. A client shows the fresh values and lets the person apply their change again. It must not retry on its own, since that could overwrite someone else's edit.
 
-**Helper snapshot (minimal):** `routing:{mode,difficulty,provider,model,effort,reason}`, codes only. A full snapshot size test covers these fields, on a helper in every row. Stage 2 writes a new one unless one exists by then (#2659 may add size coverage).
+**Helper snapshot (minimal):** `routing:{mode,difficulty,provider,model,effort,reason}`, codes only. The snapshot frame size tests from #2659 cover these fields, on a helper in every row.
 
 **Helper settings (detailed):** `GET /mobile/agents/:id/settings` carries the full `routing` above and `display`.
 
@@ -294,6 +304,8 @@ A cell with nothing valid has `effective: null`. The `auto` block appears from s
 **Fixtures:** the capability at each stage, and absent; each quota state, including `near_limit` with quota remaining, `exhausted` as reported, and `unknown` with and without a stale `asOf`; a limiting window with another window unreadable; an explicit override (Sol, `explicit_request`, `balanced: false`); a preset on a CLI; a persona pin; project-disabled; `mcp_off`; `dispatcher_locked`; a stale preset falling back to built-in; stale with nothing valid; Copilot excluded; a held approval failing with `no_valid_mapping`; context `reset` and `not_applied`; a stale-write 409 and reset results; labels, including an unknown code; the revision in the snapshot and the changed event.
 
 ## Where Auto is off
+
+From stage 4 these are `auto` states, as below. At stage 2 they are the `agent` block's `usable: false` and `reason`.
 
 **Dispatcher (`dispatcher_locked`).** The Dispatcher doesn't start helpers, and this feature doesn't expand its authority. It gets no `start_helper`, no write tools and no routing inputs. For the Dispatcher's agent, `auto` is `{effective: false, source: "dispatcher_locked", reason: "dispatcher_locked"}`, with every scope `editable: false`, and `orchestration.autoHelpers` in `agent.update` stays refused as its other orchestration fields are. App-wide preset editing is a person's action from Settings or a phone, never the Dispatcher's. There are no MCP write tools for any of this.
 
@@ -321,7 +333,7 @@ To replace the persona's model lines once Auto ships. The `start_helper` descrip
 One PR each.
 
 1. Explicit `effort` on `start_helper`. Built.
-2. Mapping and `difficulty` in `preset` mode: settings, validation, reset, UI, explanation, telemetry, phone read and write including app-wide preset editing, restoring explicit fields after a persona applies, first audit rows.
+2. Built. Mapping and `difficulty` in `preset` mode: settings, validation, reset, UI, explanation, telemetry, phone read and write including app-wide preset editing, restoring explicit fields after a persona applies, first audit rows.
 3. Quota service: read-only, shown in Settings and on the phone.
 4. `cli: "auto"`: routing, load, sticky, reservations, cooldowns, retry, tool and persona guidance.
 5. Wider audit.

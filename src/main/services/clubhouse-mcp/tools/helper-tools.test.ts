@@ -50,7 +50,7 @@ const mockPersonaInjection = vi.fn((projectPath: string, params: { persona?: str
 }));
 vi.mock('../../agent-creation', () => ({
   startDurableCreation: (...args: unknown[]) => mockStartDurableCreation(...args),
-  personaInjection: (projectPath: string, params: { persona?: string }) => mockPersonaInjection(projectPath, params),
+  personaInjection: (projectPath: string, params: { persona?: string }, keep?: unknown) => mockPersonaInjection(projectPath, params, ...(keep ? [keep] : [])),
 }));
 
 const helperPathOf = (id: string) => where.get(id) ?? PROJECT;
@@ -71,7 +71,11 @@ const projects: Array<{ id: string; name: string; path: string; displayName?: st
 const gitDirs = new Map<string, string | null>();
 vi.mock('../../project-store', () => ({ list: async () => [...projects] }));
 const mockListPersonas = vi.fn();
-vi.mock('../../materialization-service', () => ({ listAvailablePersonas: (...args: unknown[]) => mockListPersonas(...args) }));
+const personaFiles = new Map<string, string>();
+vi.mock('../../settings-audit', () => ({ appendSettingsAudit: async () => true }));
+const mockContextCheck = vi.fn();
+vi.mock('../../context-window', () => ({ contextWindowCheck: (...args: unknown[]) => mockContextCheck(...args) }));
+vi.mock('../../materialization-service', () => ({ readLayeredPersonaRaw: async (_p: string, id: string) => personaFiles.get(id), listAvailablePersonas: (...args: unknown[]) => mockListPersonas(...args) }));
 
 const running = new Set<string>();
 /** Helpers told to stop whose process has not exited: id → the exit the test triggers. */
@@ -185,6 +189,7 @@ import {
 import { listStartRequests, START_REQUEST_TTL_MS, _resetStartRequestsForTesting } from '../../helper-start-requests';
 import { callTool, getScopedToolList, _resetForTesting } from '../tool-registry';
 import { agentRegistry } from '../../agent-registry';
+import { setHelperStartFields as agentConfigSetStartFields } from '../../agent-config';
 import { setOrchestrationEnabled, _resetOrchestrationGateForTesting } from '../orchestration-gate';
 
 // ── Fixtures ───────────────────────────────────────────────────────────────
@@ -683,6 +688,147 @@ describe('start_helper effort (#2671)', () => {
     const unset = helpers.find((h) => h.helperId === 'unset')!;
     expect(unset).not.toHaveProperty('model');
     expect(unset).not.toHaveProperty('effort');
+  });
+});
+
+describe('start_helper difficulty (#2671)', () => {
+  const claudeLive: ModelList = {
+    source: 'live', via: 'handshake', fetchedAt: 0,
+    models: [{ id: 'haiku', label: 'Haiku', efforts: ['low'] }, { id: 'sonnet', label: 'Sonnet', efforts: ['medium'] }, { id: 'opus', label: 'Opus', efforts: ['low', 'high'] }],
+  };
+  const codexLive: ModelList = {
+    source: 'live', via: 'handshake', fetchedAt: 0,
+    models: [{ id: 'gpt-6-luna', label: 'Luna', efforts: ['low'] }, { id: 'gpt-6.1-sol', label: 'Sol', efforts: ['high'] }],
+  };
+  const start = (args: Record<string, unknown>) => callTool('orch', 'start_helper', { name: 'h', task: 't', ...args });
+  beforeEach(() => {
+    personaFiles.clear();
+    modelLists.set('claude-code', claudeLive);
+    modelLists.set('codex-cli', codexLive);
+  });
+
+  it('a start that names nothing is today\'s path: no routing, no fields, and a persona is left to set what it sets', async () => {
+    controllableCreation();
+    personaFiles.set('pinned', '---\nmodel: sonnet\n---\nBody');
+    const body = parse(await start({ persona: 'pinned' }));
+    expect(body).not.toHaveProperty('routing');
+    const params = mockStartDurableCreation.mock.calls[0][1];
+    expect(params).not.toHaveProperty('routing');
+    expect(params).not.toHaveProperty('model');
+    expect(params).not.toHaveProperty('effort');
+  });
+
+  it('takes model and effort from the preset, stays on the helper\'s CLI, and reports the decision', async () => {
+    controllableCreation();
+    const body = parse(await start({ difficulty: 'hard' }));
+    expect(body).toMatchObject({
+      effort: 'high',
+      routing: {
+        mode: 'preset', balanced: false, reason: 'preset_on_cli', fallback: 'none',
+        requested: { provider: null, model: null, effort: null, difficulty: 'hard' },
+        resolved: { provider: 'claude-code', model: 'opus', effort: 'high', difficulty: 'hard' },
+      },
+    });
+    expect(mockStartDurableCreation.mock.calls[0][1]).toMatchObject({ orchestrator: 'claude-code', model: 'opus', effort: 'high', routing: { reason: 'preset_on_cli' } });
+  });
+
+  it('refuses a bad difficulty before anything is created', async () => {
+    const result = await start({ difficulty: 'extreme' });
+    expect(result.isError).toBe(true);
+    expect(result.content[0].text).toContain('difficulty must be one of: easy, medium, hard');
+    expect(mockStartDurableCreation).not.toHaveBeenCalled();
+  });
+
+  it('cli "auto" isn\'t offered yet', async () => {
+    const result = await start({ cli: 'auto', difficulty: 'hard' });
+    expect(result.isError).toBe(true);
+    expect(result.content[0].text).toContain('Unknown cli "auto"');
+  });
+
+  it('refuses a difficulty on a CLI with no presets', async () => {
+    const result = await start({ cli: 'copilot-cli', difficulty: 'easy' });
+    expect(result.isError).toBe(true);
+    expect(result.content[0].text).toContain('has no presets');
+    expect(mockStartDurableCreation).not.toHaveBeenCalled();
+  });
+
+  it('an explicit model wins, is checked, and has no preset effort applied', async () => {
+    controllableCreation();
+    const body = parse(await start({ difficulty: 'hard', model: 'sonnet' }));
+    expect(body.effort).toBeUndefined();
+    expect(body.routing).toMatchObject({ reason: 'explicit_request', source: { model: 'request' }, resolved: { model: 'sonnet', effort: null } });
+    expect((await start({ name: 'h2', cli: 'codex-cli', difficulty: 'hard', model: 'nope' })).isError).toBe(true);
+  });
+
+  it('an explicit effort is checked against the preset\'s model', async () => {
+    controllableCreation();
+    expect(parse(await start({ difficulty: 'hard', effort: 'low' })).routing).toMatchObject({ resolved: { model: 'opus', effort: 'low' }, source: { effort: 'request' } });
+    const refused = await start({ name: 'h2', difficulty: 'easy', effort: 'high' });
+    expect(refused.isError).toBe(true);
+    expect(refused.content[0].text).toContain('Model "haiku" doesn\'t take effort "high"');
+  });
+
+  it('a persona\'s pin wins over a preset, and an explicit field wins over a persona (behaviour change)', async () => {
+    controllableCreation();
+    personaFiles.set('pinned', '---\nmodel: sonnet\norchestrator: codex-cli\n---\nBody');
+
+    // A pin fills what the request left open, so nothing is kept from the persona.
+    const pinned = parse(await start({ difficulty: 'easy', persona: 'pinned', name: 'a' }));
+    expect(pinned.routing).toMatchObject({ reason: 'persona_pinned', resolved: { provider: 'codex-cli', model: 'sonnet', effort: null } });
+
+    // What the request named stays, and the persona step is told to leave it.
+    const named = parse(await start({ cli: 'claude-code', model: 'opus', persona: 'pinned', name: 'b' }));
+    expect(named.routing).toMatchObject({ reason: 'explicit_request', resolved: { provider: 'claude-code', model: 'opus' } });
+    expect(mockStartDurableCreation.mock.calls[1][1]).toMatchObject({ orchestrator: 'claude-code', model: 'opus' });
+    expect(mockPersonaInjection).toHaveBeenLastCalledWith(PROJECT, expect.objectContaining({ persona: 'pinned' }), ['orchestrator', 'model']);
+  });
+
+  it('refuses with no_valid_mapping and creates nothing, with no CLI default as a substitute', async () => {
+    modelLists.set('codex-cli', { ...codexLive, models: [{ id: 'gpt-6-luna', label: 'Luna', efforts: ['low'] }] });
+    const result = await start({ cli: 'codex-cli', difficulty: 'hard' });
+    expect(result.isError).toBe(true);
+    expect(result.content[0].text).toContain('No hard preset for codex-cli is offered now');
+    expect(mockStartDurableCreation).not.toHaveBeenCalled();
+  });
+
+  it('refuses before holding a start, so the user is never asked about one that can\'t run', async () => {
+    mockGetPolicy.mockResolvedValue({ orchestrate: true, access: 'same', control: 'ask-before-start', maxHelpers: 5 });
+    modelLists.set('codex-cli', { ...codexLive, models: [{ id: 'gpt-6-luna', label: 'Luna', efforts: ['low'] }] });
+    expect((await start({ cli: 'codex-cli', difficulty: 'hard' })).isError).toBe(true);
+    expect(listStartRequests()).toEqual([]);
+  });
+
+  it('a held start keeps the difficulty, decides at approval, and a failed approval gives the code and no routing', async () => {
+    mockGetPolicy.mockResolvedValue({ orchestrate: true, access: 'same', control: 'ask-before-start', maxHelpers: 5 });
+    const held = parse(await start({ cli: 'codex-cli', difficulty: 'hard' }));
+    expect(held.state).toBe('needs_approval');
+    expect(held).not.toHaveProperty('routing');
+    const [request] = listStartRequests();
+    expect(request.args.difficulty).toBe('hard');
+
+    modelLists.set('codex-cli', { ...codexLive, models: [{ id: 'gpt-6-luna', label: 'Luna', efforts: ['low'] }] });
+    const decision = await approveHelperStart(PROJECT, request.requestId);
+    expect(decision).toMatchObject({ ok: false, code: 'no_valid_mapping' });
+    expect(decision.message).toContain('no hard preset for codex-cli');
+    expect(mockStartDurableCreation).not.toHaveBeenCalled();
+    expect(listStartRequests()).toEqual([]);
+  });
+
+  it('list_helpers shows a helper\'s routing', async () => {
+    const routing = { mode: 'preset', reason: 'preset_on_cli' };
+    addAgent({ id: 'routed', parentAgentId: 'orch', routing: routing as never });
+    const { helpers } = parse(await callTool('orch', 'list_helpers', {})) as { helpers: Array<Record<string, unknown>> };
+    expect(helpers.find((h) => h.helperId === 'routed')).toMatchObject({ routing });
+  });
+
+  it('records what became of a persona\'s context choice, using #2660\'s check', async () => {
+    const creation = controllableCreation();
+    await start({ difficulty: 'easy' });
+    agents.set('helper_h', { ...agents.get('helper_h')!, contextWindow: '500000', routing: { context: { status: 'none' } } as never });
+    mockContextCheck.mockResolvedValue({ state: 'unknown', message: 'no catalog' });
+    creation.ready('helper_h');
+    await _settleHelperStartsForTesting();
+    expect(vi.mocked(agentConfigSetStartFields)).toHaveBeenCalledWith(PROJECT, 'helper_h', { routingContext: 'not_applied' });
   });
 });
 

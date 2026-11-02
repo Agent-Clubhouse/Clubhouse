@@ -67,6 +67,7 @@ describe('buildMobileHelperRequests', () => {
         requestedAt: '2026-10-26T09:00:00.000Z', expiresAt: '2026-10-27T09:00:00.000Z',
         summary: 'Wants to start the helper impl-ipc',
         start: { task: 'Wire the IPC', persona: null, model: 'opus', access: null, branchFrom: null },
+        requestedRouting: { provider: null, model: 'opus', effort: null, difficulty: null },
       },
       {
         requestId: disposeId, kind: 'dispose', projectId: 'proj',

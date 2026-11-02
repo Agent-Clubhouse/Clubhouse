@@ -386,16 +386,16 @@ describe('orchestration policy from a phone (#2228)', () => {
 
   it('writes a partial patch through the desktop service, while the agent runs too', async () => {
     await updateMobileAgent(project, agent(), { agentId: 'durable_1', orchestration: { orchestrate: true, maxHelpers: 8, control: 'ask-before-start', access: 'auto' } }, { live: 'running', assertAuthorized: allow });
-    expect(setOrchestrationPolicy).toHaveBeenCalledWith('/work/app', 'durable_1', { orchestrate: true, maxHelpers: 8, control: 'ask-before-start', access: 'auto' });
+    expect(setOrchestrationPolicy).toHaveBeenCalledWith('/work/app', 'durable_1', { orchestrate: true, maxHelpers: 8, control: 'ask-before-start', access: 'auto' }, { surface: 'mobile' });
     expect(agentConfig.updateDurableConfig).not.toHaveBeenCalled();
   });
 
   it('clears a field with null, and every override with a null object', async () => {
     await updateMobileAgent(project, agent(), { agentId: 'durable_1', orchestration: { control: null } }, { live: undefined, assertAuthorized: allow });
-    expect(setOrchestrationPolicy).toHaveBeenLastCalledWith('/work/app', 'durable_1', { control: null });
+    expect(setOrchestrationPolicy).toHaveBeenLastCalledWith('/work/app', 'durable_1', { control: null }, { surface: 'mobile' });
     await updateMobileAgent(project, agent(), { agentId: 'durable_1', orchestration: null }, { live: undefined, assertAuthorized: allow });
     expect(setOrchestrationPolicy).toHaveBeenLastCalledWith('/work/app', 'durable_1',
-      { orchestrate: null, access: null, control: null, maxHelpers: null, crossProjectHelpers: null, connectToDispatcher: null });
+      { orchestrate: null, access: null, control: null, maxHelpers: null, crossProjectHelpers: null, connectToDispatcher: null }, { surface: 'mobile' });
   });
 
   it('refuses invalid fields with the reason, before writing anything', async () => {
@@ -422,7 +422,7 @@ describe('orchestration policy from a phone (#2228)', () => {
   it('sets the policy on a new agent, and refuses a bad one before creating it', async () => {
     const create = { projectId: 'p1', name: 'calm-otter', color: 'indigo' };
     await createMobileAgent(project, { ...create, orchestration: { orchestrate: true, maxHelpers: 4 } }, allow);
-    expect(setOrchestrationPolicy).toHaveBeenCalledWith('/work/app', 'durable_new', { orchestrate: true, maxHelpers: 4 });
+    expect(setOrchestrationPolicy).toHaveBeenCalledWith('/work/app', 'durable_new', { orchestrate: true, maxHelpers: 4 }, { surface: 'mobile' });
     vi.mocked(startDurableCreation).mockClear();
     expect(await refusal(createMobileAgent(project, { ...create, orchestration: { control: 'nope' } } as never, allow))).toMatchObject({ code: 'invalid_orchestration' });
     expect(await refusal(createMobileAgent(project, { ...create, orchestration: { control: null } } as never, allow))).toMatchObject({ code: 'invalid_orchestration' });
@@ -445,7 +445,7 @@ describe('cross-project helpers and Connect to Dispatcher (#2512, #2534)', () =>
 
   it('writes both, and turns Connect to Dispatcher on only while the Dispatcher is on', async () => {
     await updateMobileAgent(project, agent(), { agentId: 'durable_1', orchestration: { crossProjectHelpers: true, connectToDispatcher: false } }, { live: undefined, assertAuthorized: allow });
-    expect(setOrchestrationPolicy).toHaveBeenLastCalledWith('/work/app', 'durable_1', { crossProjectHelpers: true, connectToDispatcher: false });
+    expect(setOrchestrationPolicy).toHaveBeenLastCalledWith('/work/app', 'durable_1', { crossProjectHelpers: true, connectToDispatcher: false }, { surface: 'mobile' });
     vi.mocked(setOrchestrationPolicy).mockClear();
     const off = await refusal(updateMobileAgent(project, agent(), { agentId: 'durable_1', orchestration: { connectToDispatcher: true } }, { live: undefined, assertAuthorized: allow }));
     expect(off).toMatchObject({ code: 'dispatcher_off', statusCode: 409 });
@@ -454,7 +454,7 @@ describe('cross-project helpers and Connect to Dispatcher (#2512, #2534)', () =>
     expect(setOrchestrationPolicy).not.toHaveBeenCalled();
     vi.mocked(isDispatcherEnabled).mockReturnValue(true);
     await updateMobileAgent(project, agent(), { agentId: 'durable_1', orchestration: { connectToDispatcher: true } }, { live: undefined, assertAuthorized: allow });
-    expect(setOrchestrationPolicy).toHaveBeenLastCalledWith('/work/app', 'durable_1', { connectToDispatcher: true });
+    expect(setOrchestrationPolicy).toHaveBeenLastCalledWith('/work/app', 'durable_1', { connectToDispatcher: true }, { surface: 'mobile' });
     vi.mocked(isDispatcherEnabled).mockReturnValue(false);
   });
 });
@@ -495,7 +495,7 @@ describe('no Clubhouse MCP, no orchestration (#2589)', () => {
     expect(isMcpEnabled).toHaveBeenLastCalledWith('/work/app', undefined);
     // An agent turned on keeps it, whatever its project says.
     await update({ mcpOverride: true }, { orchestrate: true });
-    expect(setOrchestrationPolicy).toHaveBeenLastCalledWith('/work/app', 'durable_1', { orchestrate: true });
+    expect(setOrchestrationPolicy).toHaveBeenLastCalledWith('/work/app', 'durable_1', { orchestrate: true }, { surface: 'mobile' });
   });
 
   it('refuses a create that turns one on before anything is made', async () => {
@@ -508,7 +508,7 @@ describe('no Clubhouse MCP, no orchestration (#2589)', () => {
   it('still takes turning off, clearing and the other fields', async () => {
     for (const patch of [{ orchestrate: false }, { connectToDispatcher: null }, { maxHelpers: 2 }]) {
       await update(off, patch);
-      expect(setOrchestrationPolicy).toHaveBeenLastCalledWith('/work/app', 'durable_1', patch);
+      expect(setOrchestrationPolicy).toHaveBeenLastCalledWith('/work/app', 'durable_1', patch, { surface: 'mobile' });
     }
     await update(off, null);
     expect(setOrchestrationPolicy).toHaveBeenCalledTimes(4);

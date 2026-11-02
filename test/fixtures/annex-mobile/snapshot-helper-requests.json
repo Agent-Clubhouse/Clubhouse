@@ -10,8 +10,14 @@
       },
       "kind": "start",
       "projectId": "proj_app",
-      "requestId": "hstart_00000000-0000-4000-8000-000000000018",
+      "requestId": "hstart_00000000-0000-4000-8000-000000000019",
       "requestedAt": "2027-01-15T07:50:00.000Z",
+      "requestedRouting": {
+        "difficulty": null,
+        "effort": null,
+        "model": "opus",
+        "provider": null
+      },
       "requester": {
         "agentId": "durable_chat",
         "name": "planner"
@@ -42,7 +48,7 @@
       },
       "kind": "dispose",
       "projectId": "proj_app",
-      "requestId": "hdispose_00000000-0000-4000-8000-000000000019",
+      "requestId": "hdispose_00000000-0000-4000-8000-000000000020",
       "requestedAt": "2027-01-15T07:55:00.000Z",
       "requester": {
         "agentId": "durable_chat",

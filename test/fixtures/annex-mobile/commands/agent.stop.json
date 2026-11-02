@@ -50,14 +50,14 @@
       "name": "accepted (Dispatcher)",
       "request": {
         "agentId": "durable_dispatcher",
-        "commandId": "cmd_133",
+        "commandId": "cmd_134",
         "epoch": "00000000-0000-4000-8000-000000000001",
         "type": "agent.stop",
         "version": 1
       },
       "response": {
         "body": {
-          "commandId": "cmd_133",
+          "commandId": "cmd_134",
           "epoch": "00000000-0000-4000-8000-000000000001",
           "result": {
             "agentId": "durable_dispatcher",

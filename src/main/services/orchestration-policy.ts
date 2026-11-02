@@ -76,6 +76,7 @@ import {
   setOrchestrationEnabled,
 } from './clubhouse-mcp/orchestration-gate';
 import { appLog } from './log-service';
+import { appendSettingsAudit, type SettingsAuditRow, type SettingsAuditSurface } from './settings-audit';
 import { isMcpEnabled, onMcpEnablementChanged } from './mcp-settings';
 import { setPersonaChangeHook, type PersonaChange } from './persona-change-hook';
 import { clubhouseMcpOverride, isDisposedAgent } from '../../shared/agent-helpers';
@@ -83,6 +84,7 @@ import { readFrontMatterValue } from '../../shared/persona-pattern';
 import type { DurableAgentConfig } from '../../shared/types';
 import {
   MCP_REQUIRED_MESSAGE,
+  ORCHESTRATION_DEFAULTS,
   ORCHESTRATION_OFF_MESSAGE,
   applyOrchestrationPatch,
   checkHelperLimit,
@@ -97,7 +99,9 @@ import {
   type HelperProjectGroup,
   type HelperSummary,
   type OrchestrationOffChoice,
+  type OrchestrationPolicy,
   type OrchestrationPolicyConfig,
+  type OrchestrationPolicyPatch,
   type ResolvedOrchestrationPolicy,
   type SetOrchestrationPolicyResult,
   type TurnOffOrchestrationResult,
@@ -353,6 +357,22 @@ async function countHelpersElsewhere(projectPath: string, agentId: string): Prom
 
 // ── Changing the policy ──────────────────────────────────────────────────
 
+type PolicyAudit = Pick<SettingsAuditRow, 'surface' | 'actorId' | 'targetId'>;
+
+/** One row per field that changed. Every field is an enum, a boolean or a whole number. */
+async function auditPolicyChange(audit: PolicyAudit, before: ResolvedOrchestrationPolicy, after: ResolvedOrchestrationPolicy): Promise<void> {
+  for (const key of Object.keys(ORCHESTRATION_DEFAULTS) as Array<keyof OrchestrationPolicy>) {
+    if (before[key] === after[key]) continue;
+    await appendSettingsAudit({ ...audit, scope: 'agent', key: `orchestration.${key}`, before: before[key], after: after[key], outcome: 'ok' });
+  }
+}
+
+async function auditPolicyRefusal(audit: PolicyAudit, patch: OrchestrationPolicyPatch, code: string): Promise<void> {
+  for (const key of Object.keys(patch)) {
+    await appendSettingsAudit({ ...audit, scope: 'agent', key: `orchestration.${key}`, outcome: 'refused', code });
+  }
+}
+
 /**
  * Change an agent's policy. Fields set to null go back to the persona or
  * default value. Turning orchestration off while the agent has live helpers
@@ -365,9 +385,15 @@ export async function setOrchestrationPolicy(
   projectPath: string,
   agentId: string,
   rawPatch: unknown,
-  options: { precondition?: (agent: DurableAgentConfig, current: ResolvedOrchestrationPolicy) => void } = {},
+  options: {
+    precondition?: (agent: DurableAgentConfig, current: ResolvedOrchestrationPolicy) => void;
+    /** Who is asking, for the audit record. Defaults to the desktop's UI. */
+    surface?: SettingsAuditSurface;
+    actorId?: string;
+  } = {},
 ): Promise<SetOrchestrationPolicyResult> {
   const patch = validateOrchestrationPatch(rawPatch);
+  const audit = { surface: options.surface ?? 'ui' as const, ...(options.actorId && { actorId: options.actorId }), targetId: agentId };
   return withAgentLock(projectPath, agentId, async () => {
     const agent = await agentConfig.getDurableConfig(projectPath, agentId);
     if (!agent) return { ok: false, message: 'Agent not found' };
@@ -377,15 +403,18 @@ export async function setOrchestrationPolicy(
     const stored = applyOrchestrationPatch(agent.orchestration, patch);
     const next = await resolveFor(projectPath, agent, stored);
     if (next.mcpOff && patchTurnsOnMcpSwitch(patch)) {
+      await auditPolicyRefusal(audit, patch, 'mcp_required');
       return { ok: false, message: MCP_REQUIRED_MESSAGE, policy: current, mcpRequired: true };
     }
     if (savedOrchestrate(next) && isDisposedAgent(agent)) {
+      await auditPolicyRefusal(audit, patch, 'agent_disposed');
       return { ok: false, message: 'A disposed agent cannot orchestrate', policy: current };
     }
 
     if (savedOrchestrate(current) && !savedOrchestrate(next)) {
       const { helperIds, projects } = await getHelperSummary(projectPath, agentId);
       if (helperIds.length > 0) {
+        await auditPolicyRefusal(audit, patch, 'has_helpers');
         return {
           ok: false,
           message: `${agent.name} has ${helperIds.length} helper(s). Choose whether to keep or dispose them first.`,
@@ -397,6 +426,7 @@ export async function setOrchestrationPolicy(
 
     await agentConfig.setOrchestrationConfig(projectPath, agentId, stored);
     applyGate(projectPath, agent, next);
+    await auditPolicyChange(audit, current, next);
     appLog('core:orchestration', 'info', 'Orchestration policy changed', {
       meta: {
         agentId,

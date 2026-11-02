@@ -233,7 +233,7 @@ export type GitOp = (typeof GIT_OPS)[number];
  */
 export const SETTINGS_KEYS = [
   'clipboard', 'editor', 'mcp', 'security', 'goobers', 'annex', 'notifications', 'orchestrators', 'headless',
-  'free_agent', 'badge', 'update', 'logging', 'sound', 'session', 'clubhouse_mode', 'experimental', 'marketplace', 'theme', 'chat_idle',
+  'free_agent', 'badge', 'update', 'logging', 'sound', 'session', 'clubhouse_mode', 'experimental', 'marketplace', 'theme', 'chat_idle', 'orchestration',
 ] as const;
 
 /** Built-in theme ids (shared/types.ts BuiltinThemeId); plugin themes report `other`. */
@@ -529,6 +529,18 @@ export const ATTR = {
   hooksEnabled: boolAttr('clubhouse.hooks.enabled'),
   profileActive: boolAttr('clubhouse.profile.active'),
   wrapperApplied: boolAttr('clubhouse.wrapper.applied'),
+  // A helper's start and the presets behind it (#2671). Codes only: never a raw model id, a task or a persona.
+  helperRoutingRequestedCli: enumAttr('clubhouse.helper_routing.requested_cli', ['claude-code', 'codex-cli', 'copilot-cli', 'other', 'unset']),
+  helperRoutingDifficulty: enumAttr('clubhouse.helper_routing.difficulty', ['easy', 'medium', 'hard', 'none']),
+  helperRoutingMode: enumAttr('clubhouse.helper_routing.mode', ['explicit', 'preset']),
+  helperRoutingEffort: enumAttr('clubhouse.helper_routing.effort', ['none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max', 'ultra', 'other']),
+  helperRoutingPreset: enumAttr('clubhouse.helper_routing.preset', ['builtin', 'custom', 'none']),
+  helperRoutingConfigSource: enumAttr('clubhouse.helper_routing.config_source', ['request', 'persona', 'orchestrator', 'custom_mapping', 'builtin_mapping', 'cli_default']),
+  helperRoutingReason: enumAttr('clubhouse.helper_routing.reason', ['explicit_request', 'persona_pinned', 'preset_on_cli']),
+  helperRoutingFallback: enumAttr('clubhouse.helper_routing.fallback', ['none', 'builtin_preset', 'model_unverified']),
+  helperRoutingPolicyVersion: intAttr('clubhouse.helper_routing.policy_version'),
+  helperPresetsAction: enumAttr('clubhouse.helper_presets.action', ['set', 'reset_cell', 'reset_provider', 'reset_all']),
+  helperPresetsSurface: enumAttr('clubhouse.helper_presets.surface', ['ui', 'mcp', 'mobile', 'dispatcher', 'persona', 'system']),
   /** Bucketed from the model string; never the raw model name. */
   modelFamily: enumAttr('clubhouse.model.family', ['opus', 'sonnet', 'haiku', 'gpt-5', 'default', 'other']),
   /**
@@ -703,6 +715,7 @@ export const ATTR = {
     'POST /api/v1/mobile/commands',
     'GET /api/v1/mobile/projects/:id/create-options',
     'GET /api/v1/mobile/agents/:id/settings',
+    'GET /api/v1/mobile/helper-routing',
     'GET /api/v1/identity',
     'GET /api/v1/status',
     'GET /api/v1/projects',
@@ -1397,6 +1410,14 @@ export const EVENTS = {
   // Workspace 5b: settings and feature usage (§4.14), main-process call sites only.
   /** Attributes: `clubhouse.settings.key`. Never values. */
   'clubhouse.settings.changed': { level: 'standard' },
+  /**
+   * start_helper decided a helper's CLI, model and effort (#2671). Attributes:
+   * the requested CLI, difficulty, mode, resolved `orchestrator`, `modelFamily`,
+   * effort, preset, config source, reason, fallback and policy version.
+   */
+  'clubhouse.helper.routed': { level: 'standard' },
+  /** Helper presets were changed or reset, or a change was refused. Attributes: action, surface, `clubhouse.outcome`. */
+  'clubhouse.helper_routing.changed': { level: 'standard' },
   /** Attributes: `clubhouse.theme.kind`, `clubhouse.theme.builtin_id`. */
   'clubhouse.theme.changed': { level: 'standard' },
   /** Attributes: `clubhouse.popout.type`. */

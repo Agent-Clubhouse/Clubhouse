@@ -505,11 +505,23 @@ describe('start_helper fields (#2227)', () => {
     expect(released).not.toHaveProperty('requestedAccess');
   });
 
-  it('a released helper loses its effort too: an ordinary agent has no way to see or clear it (#2671)', async () => {
+  it('records a start\'s context outcome on its routing, only when it has one (#2671)', async () => {
+    const entry = (await listDurable(PROJECT_PATH)).find((a) => a.id === 'durable_2_help')!;
+    await setHelperStartFields(PROJECT_PATH, 'durable_2_help', { routingContext: 'reset' });
+    expect((await listDurable(PROJECT_PATH)).find((a) => a.id === 'durable_2_help')).not.toHaveProperty('routing');
+    entry.routing = { context: { status: 'none' } } as never;
+    await setHelperStartFields(PROJECT_PATH, 'durable_2_help', { routingContext: 'reset' });
+    expect((await listDurable(PROJECT_PATH)).find((a) => a.id === 'durable_2_help')!.routing?.context.status).toBe('reset');
+  });
+
+  it('a released helper loses its effort and routing too: an ordinary agent has no way to see or clear them (#2671)', async () => {
     const entry = (await listDurable(PROJECT_PATH)).find((a) => a.id === 'durable_2_help')!;
     entry.effort = 'high';
+    entry.routing = { context: { status: 'none' } } as never;
     await setParentAgent(PROJECT_PATH, 'durable_2_help', null);
-    expect((await listDurable(PROJECT_PATH)).find((a) => a.id === 'durable_2_help')).not.toHaveProperty('effort');
+    const released = (await listDurable(PROJECT_PATH)).find((a) => a.id === 'durable_2_help');
+    expect(released).not.toHaveProperty('effort');
+    expect(released).not.toHaveProperty('routing');
   });
 
   it('clears both when the parent is deleted and its helpers are kept', async () => {

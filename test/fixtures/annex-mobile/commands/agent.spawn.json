@@ -55,7 +55,7 @@
     {
       "name": "dispatcher_locked",
       "request": {
-        "commandId": "cmd_135",
+        "commandId": "cmd_136",
         "epoch": "00000000-0000-4000-8000-000000000001",
         "projectId": "__dispatcher__",
         "prompt": "x",
@@ -64,7 +64,7 @@
       },
       "response": {
         "body": {
-          "commandId": "cmd_135",
+          "commandId": "cmd_136",
           "epoch": "00000000-0000-4000-8000-000000000001",
           "error": {
             "code": "dispatcher_locked",

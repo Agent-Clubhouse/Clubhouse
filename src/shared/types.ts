@@ -280,6 +280,8 @@ export interface DurableAgentConfig {
    * something only to the model it was checked against.
    */
   effort?: string;
+  /** What start_helper decided and why (#2671). A later change of model or CLI clears it. */
+  routing?: import('./helper-routing').HelperRouting;
   quickAgentDefaults?: QuickAgentDefaults;
   orchestrator?: OrchestratorId;
   freeAgentMode?: boolean;
@@ -466,6 +468,8 @@ export interface HelperStartArgs {
   model?: string;
   /** A reasoning effort level the helper's model takes (#2671). */
   effort?: string;
+  /** How demanding the task is (#2671): model and effort come from the helper presets for the helper's CLI. */
+  difficulty?: string;
   /** `same` or an access level; never more than the orchestrator runs with. */
   access?: string;
   branchFrom?: string;
@@ -501,6 +505,8 @@ export interface HelperStartDecisionResult {
   message: string;
   /** The new helper, when an approved start began creating it. */
   helperId?: string;
+  /** A refused start's stable code, where it has one (no_valid_mapping, #2671). */
+  code?: string;
 }
 
 /**
@@ -582,6 +588,8 @@ export interface StartDurableCreationParams extends DurableWorktreeOptions {
   model?: string;
   /** Only start_helper sets it (#2671); the renderer's creation request doesn't carry it. */
   effort?: string;
+  /** Only start_helper sets it (#2671). */
+  routing?: import('./helper-routing').HelperRouting;
   useWorktree?: boolean;
   orchestrator?: OrchestratorId;
   freeAgentMode?: boolean;

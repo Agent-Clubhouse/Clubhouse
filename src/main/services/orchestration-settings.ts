@@ -1,10 +1,19 @@
 import { createSettingsStore } from './settings-store';
 import { DEFAULT_GLOBAL_HELPER_CAP, MAX_HELPER_LIMIT } from '../../shared/orchestration-policy';
+import { normalizeSavedPresets, type SavedPresets } from '../../shared/helper-routing';
 
 /** App-wide orchestration settings (#2228). Per-agent policy lives on the durable config. */
 export interface OrchestrationSettings {
   /** Live helpers allowed at once across every orchestrator. */
   globalHelperCap: number;
+  /** The user's helper presets (#2671): only what differs from the built-ins. */
+  helperPresets?: SavedPresets;
+  /** Moves on each presets write, so a stale edit can be refused. */
+  helperPresetsRevision?: number;
+}
+
+function validRevision(value: unknown): number {
+  return typeof value === 'number' && Number.isSafeInteger(value) && value >= 0 ? value : 0;
 }
 
 function validCap(value: unknown): value is number {
@@ -14,7 +23,11 @@ function validCap(value: unknown): value is number {
 const store = createSettingsStore<OrchestrationSettings>(
   'orchestration-settings.json',
   { globalHelperCap: DEFAULT_GLOBAL_HELPER_CAP },
-  (raw) => ({ globalHelperCap: validCap(raw.globalHelperCap) ? raw.globalHelperCap : DEFAULT_GLOBAL_HELPER_CAP }),
+  (raw) => ({
+    globalHelperCap: validCap(raw.globalHelperCap) ? raw.globalHelperCap : DEFAULT_GLOBAL_HELPER_CAP,
+    helperPresets: normalizeSavedPresets(raw.helperPresets),
+    helperPresetsRevision: validRevision(raw.helperPresetsRevision),
+  }),
 );
 
 export const getSettings = store.get;
@@ -24,7 +37,21 @@ export async function saveSettings(settings: OrchestrationSettings): Promise<voi
   if (!validCap(settings?.globalHelperCap)) {
     throw new Error(`globalHelperCap must be a whole number from 1 to ${MAX_HELPER_LIMIT}`);
   }
-  await store.save({ globalHelperCap: settings.globalHelperCap });
+  // Only the cap: presets have their own checked path, savePresets.
+  await store.save({ ...getSettings(), globalHelperCap: settings.globalHelperCap });
+}
+
+export function getPresets(): SavedPresets {
+  return getSettings().helperPresets ?? {};
+}
+
+export function getPresetsRevision(): number {
+  return getSettings().helperPresetsRevision ?? 0;
+}
+
+/** Save presets checked by services/helper-routing.ts, moving the revision. */
+export async function savePresets(presets: SavedPresets): Promise<void> {
+  await store.save({ ...getSettings(), helperPresets: presets, helperPresetsRevision: getPresetsRevision() + 1 });
 }
 
 export function getGlobalHelperCap(): number {

@@ -1841,6 +1841,18 @@ describe('updateDurableConfig: a new CLI (#2593)', () => {
     expect(config!.sessionHistory!.map((s) => s.orchestrator)).toEqual(['codex-cli', 'codex-cli', 'github-copilot']);
   });
 
+  it('clears a start\'s routing when the CLI or model changes, so it never names what isn\'t used (#2671)', async () => {
+    const after = async (updates: Parameters<typeof updateDurableConfig>[2]) => {
+      setup({ orchestrator: 'claude-code', model: 'opus', routing: { reason: 'preset_on_cli' } });
+      clearAgentConfigCache(PROJECT_PATH);
+      await updateDurableConfig(PROJECT_PATH, 'durable_cli', updates);
+      return (await getDurableConfig(PROJECT_PATH, 'durable_cli'))!.routing;
+    };
+    expect(await after({ orchestrator: 'codex-cli' })).toBeUndefined();
+    expect(await after({ model: 'sonnet' })).toBeUndefined();
+    expect(await after({ model: 'opus' })).toEqual({ reason: 'preset_on_cli' });
+  });
+
   it('clears an effort when the CLI or the model changes, and keeps it otherwise (#2671)', async () => {
     const effortAfter = async (updates: Parameters<typeof updateDurableConfig>[2]) => {
       setup({ orchestrator: 'claude-code', model: 'opus', effort: 'high' });

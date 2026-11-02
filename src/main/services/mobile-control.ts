@@ -7,7 +7,14 @@ import { AGENT_IDLE_SLEEP_MINUTES } from '../../shared/idle-sleep';
 
 export class MobileControlError extends Error {
   /** `detail` is a sentence for the user (e.g. why a name was refused); the receipt's message falls back to the code. */
-  constructor(readonly code: string, readonly statusCode = 409, readonly outcome: 'rejected' | 'failed' = 'rejected', readonly detail?: string) { super(code); }
+  constructor(
+    readonly code: string,
+    readonly statusCode = 409,
+    readonly outcome: 'rejected' | 'failed' = 'rejected',
+    readonly detail?: string,
+    /** Fields for the refusal's body, such as fresh values for a stale write. */
+    readonly extra?: Record<string, unknown>,
+  ) { super(code); }
 }
 
 /** Every field each command accepts besides version, commandId, epoch and type; anything else is invalid_command. */
@@ -31,9 +38,10 @@ export const MOBILE_COMMAND_FIELDS: Readonly<Record<MobileCommand['type'], reado
   'quick.dismiss': ['projectId', 'agentId'],
   'quick.clear': ['projectId'],
   'dispatcher.setEnabled': ['enabled'],
+  'helperRouting.update': ['revision', 'scope', 'cells', 'reset'],
 };
 /** Fields a command may leave out. Every agent.update setting is optional, but it needs at least one. */
-const OPTIONAL = new Set(['delivery', 'message', 'resume', 'model', 'orchestrator', 'attachmentIds', 'force', 'effort']);
+const OPTIONAL = new Set(['delivery', 'message', 'resume', 'model', 'orchestrator', 'attachmentIds', 'force', 'effort', 'cells', 'reset']);
 const CREATE_OPTIONAL = new Set(['orchestrator', 'model', 'persona', 'freeAgentMode', 'useWorktree', 'mcpIds', 'branchName', 'branchFrom', 'folderName', 'orchestration']);
 export const isOptionalCommandField = (type: MobileCommand['type'], key: string): boolean =>
   type === 'agent.update' ? key !== 'agentId' : type === 'agent.create' ? CREATE_OPTIONAL.has(key)
@@ -69,6 +77,11 @@ export function parseMobileCommand(value: unknown): MobileCommand {
     } else if (key === 'orchestration') {
       // The fields are checked against the policy rules (and the app-wide cap) when the command runs, so errors can say why.
       if (!record(v) || Object.keys(v).length > 16) throw new MobileControlError('invalid_command', 400);
+    } else if (key === 'cells') {
+      // Checked against the presets rules when the command runs, so errors can say why.
+      if (!Array.isArray(v) || v.length === 0 || v.length > 32 || v.some((c) => !record(c))) throw new MobileControlError('invalid_command', 400);
+    } else if (key === 'reset') {
+      if (!record(v) || Object.keys(v).length > 2) throw new MobileControlError('invalid_command', 400);
     } else if (key === 'idleSleep') { if (!idleSleep(v)) throw new MobileControlError('invalid_command', 400); }
     else if (key === 'effort') { if (v !== null && !text(v, 64)) throw new MobileControlError('invalid_command', 400); }
     else if (key === 'level') { if (!(PERMISSION_LEVELS as readonly unknown[]).includes(v)) throw new MobileControlError('invalid_command', 400); }
@@ -77,6 +90,7 @@ export function parseMobileCommand(value: unknown): MobileCommand {
   }
   if (value.delivery !== undefined && !['auto', 'prompt', 'steer', 'queued'].includes(value.delivery as string)) throw new MobileControlError('invalid_command', 400);
   if (type === 'agent.update' && !fields.some((k) => k !== 'agentId' && value[k] !== undefined)) throw new MobileControlError('invalid_command', 400);
+  if (type === 'helperRouting.update' && value.cells === undefined && value.reset === undefined) throw new MobileControlError('invalid_command', 400);
   return value as unknown as MobileCommand;
 }
 
@@ -123,7 +137,7 @@ export class MobileCommandService {
         const known = err instanceof MobileControlError;
         const code = known ? err.code : 'command_failed';
         const message = known && err.detail ? err.detail : code;
-        return { statusCode: known ? err.statusCode : 500, body: { version: 1 as const, commandId: command.commandId, epoch, status: known ? err.outcome : 'failed' as const, error: { code, message } } };
+        return { statusCode: known ? err.statusCode : 500, body: { version: 1 as const, commandId: command.commandId, epoch, status: known ? err.outcome : 'failed' as const, error: { code, message }, ...(known && err.extra) } };
       } finally { entry.settled = true; entry.expires = this.now() + MOBILE_COMMAND_TTL_MS; }
     }) };
     this.entries.set(key, entry);

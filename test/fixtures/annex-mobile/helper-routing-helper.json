@@ -1,0 +1,208 @@
+{
+  "cases": {
+    "builtinFallback": {
+      "balanced": false,
+      "context": {
+        "status": "none"
+      },
+      "decidedAt": "2027-01-15T08:00:00.000Z",
+      "display": {
+        "fallback": "The saved choice is no longer offered, so the default was used",
+        "reason": "From the helper settings for this difficulty",
+        "summary": "gpt-6.1-sol, high effort. From the helper settings for this difficulty."
+      },
+      "fallback": "builtin_preset",
+      "mode": "preset",
+      "policyVersion": 1,
+      "reason": "preset_on_cli",
+      "requested": {
+        "difficulty": "hard",
+        "effort": null,
+        "model": null,
+        "provider": null
+      },
+      "resolved": {
+        "difficulty": "hard",
+        "effort": "high",
+        "model": "gpt-6.1-sol",
+        "provider": "codex-cli"
+      },
+      "source": {
+        "effort": "builtin_mapping",
+        "model": "builtin_mapping",
+        "provider": "orchestrator"
+      }
+    },
+    "contextNotApplied": {
+      "balanced": false,
+      "context": {
+        "status": "not_applied"
+      },
+      "decidedAt": "2027-01-15T08:00:00.000Z",
+      "display": {
+        "reason": "From the helper settings for this difficulty",
+        "summary": "haiku, low effort. From the helper settings for this difficulty."
+      },
+      "fallback": "none",
+      "mode": "preset",
+      "policyVersion": 1,
+      "reason": "preset_on_cli",
+      "requested": {
+        "difficulty": "easy",
+        "effort": null,
+        "model": null,
+        "provider": null
+      },
+      "resolved": {
+        "difficulty": "easy",
+        "effort": "low",
+        "model": "haiku",
+        "provider": "claude-code"
+      },
+      "source": {
+        "effort": "builtin_mapping",
+        "model": "builtin_mapping",
+        "provider": "orchestrator"
+      }
+    },
+    "contextReset": {
+      "balanced": false,
+      "context": {
+        "status": "reset"
+      },
+      "decidedAt": "2027-01-15T08:00:00.000Z",
+      "display": {
+        "reason": "From the helper settings for this difficulty",
+        "summary": "haiku, low effort. From the helper settings for this difficulty."
+      },
+      "fallback": "none",
+      "mode": "preset",
+      "policyVersion": 1,
+      "reason": "preset_on_cli",
+      "requested": {
+        "difficulty": "easy",
+        "effort": null,
+        "model": null,
+        "provider": null
+      },
+      "resolved": {
+        "difficulty": "easy",
+        "effort": "low",
+        "model": "haiku",
+        "provider": "claude-code"
+      },
+      "source": {
+        "effort": "builtin_mapping",
+        "model": "builtin_mapping",
+        "provider": "orchestrator"
+      }
+    },
+    "explicitOverride": {
+      "balanced": false,
+      "context": {
+        "status": "none"
+      },
+      "decidedAt": "2027-01-15T08:00:00.000Z",
+      "display": {
+        "reason": "You or the orchestrator chose this",
+        "summary": "gpt-6.1-sol, high effort. You or the orchestrator chose this."
+      },
+      "fallback": "none",
+      "mode": "explicit",
+      "policyVersion": 1,
+      "reason": "explicit_request",
+      "requested": {
+        "difficulty": null,
+        "effort": "high",
+        "model": "gpt-6.1-sol",
+        "provider": "codex-cli"
+      },
+      "resolved": {
+        "difficulty": null,
+        "effort": "high",
+        "model": "gpt-6.1-sol",
+        "provider": "codex-cli"
+      },
+      "source": {
+        "effort": "request",
+        "model": "request",
+        "provider": "request"
+      }
+    },
+    "personaPin": {
+      "balanced": false,
+      "context": {
+        "status": "none"
+      },
+      "decidedAt": "2027-01-15T08:00:00.000Z",
+      "display": {
+        "reason": "Set by the persona",
+        "summary": "opus. Set by the persona."
+      },
+      "fallback": "none",
+      "mode": "preset",
+      "policyVersion": 1,
+      "reason": "persona_pinned",
+      "requested": {
+        "difficulty": "easy",
+        "effort": null,
+        "model": null,
+        "provider": null
+      },
+      "resolved": {
+        "difficulty": "easy",
+        "effort": null,
+        "model": "opus",
+        "provider": "claude-code"
+      },
+      "source": {
+        "effort": "cli_default",
+        "model": "persona",
+        "provider": "persona"
+      }
+    },
+    "preset": {
+      "balanced": false,
+      "context": {
+        "status": "none"
+      },
+      "decidedAt": "2027-01-15T08:00:00.000Z",
+      "display": {
+        "reason": "From the helper settings for this difficulty",
+        "summary": "gpt-6.1-sol, high effort. From the helper settings for this difficulty."
+      },
+      "fallback": "none",
+      "mode": "preset",
+      "policyVersion": 1,
+      "reason": "preset_on_cli",
+      "requested": {
+        "difficulty": "hard",
+        "effort": null,
+        "model": null,
+        "provider": null
+      },
+      "resolved": {
+        "difficulty": "hard",
+        "effort": "high",
+        "model": "gpt-6.1-sol",
+        "provider": "codex-cli"
+      },
+      "source": {
+        "effort": "builtin_mapping",
+        "model": "builtin_mapping",
+        "provider": "orchestrator"
+      }
+    }
+  },
+  "settingsField": "routing",
+  "snapshotField": "routing",
+  "snapshotRevisionField": "helperRoutingRevision",
+  "snapshotRow": {
+    "difficulty": "hard",
+    "effort": "high",
+    "mode": "preset",
+    "model": "gpt-6.1-sol",
+    "provider": "codex-cli",
+    "reason": "preset_on_cli"
+  }
+}

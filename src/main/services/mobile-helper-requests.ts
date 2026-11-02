@@ -92,6 +92,9 @@ export function buildMobileHelperRequests(
         access: r.args.access ?? null,
         branchFrom: r.args.branchFrom ?? null,
       },
+      ...((r.args.cli || r.args.model || r.args.effort || r.args.difficulty) && {
+        requestedRouting: { provider: r.args.cli ?? null, model: r.args.model ?? null, effort: r.args.effort ?? null, difficulty: r.args.difficulty ?? null },
+      }),
     });
   }
   for (const { requestId, request, createdAt } of listDisposeRequests()) {
@@ -148,7 +151,7 @@ export async function runHelperCommand(command: HelperCommand, deps: HelperComma
     if (!result.ok) {
       // Still waiting means a fixable refusal (wake the orchestrator); gone means it was used up or answered.
       const waiting = peekStartRequest(start.projectPath, requestId);
-      throw new MobileControlError(waiting ? 'helper_start_blocked' : 'helper_start_refused', 409, waiting ? 'rejected' : 'failed', result.message);
+      throw new MobileControlError(result.code ?? (waiting ? 'helper_start_blocked' : 'helper_start_refused'), 409, waiting ? 'rejected' : 'failed', result.message);
     }
     return { requestId, kind: 'start', approved: true, helperId: result.helperId ?? null };
   }

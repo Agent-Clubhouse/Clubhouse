@@ -310,6 +310,8 @@ export const IPC = {
     GET_ORCHESTRATION_SETTINGS: 'app:get-orchestration-settings',
     SAVE_ORCHESTRATION_SETTINGS: 'app:save-orchestration-settings',
     ORCHESTRATION_SETTINGS_CHANGED: 'app:orchestration-settings-changed',
+    GET_HELPER_ROUTING: 'app:get-helper-routing',
+    UPDATE_HELPER_ROUTING: 'app:update-helper-routing',
     SET_DOCK_BADGE: 'app:set-dock-badge',
     GET_BADGE_SETTINGS: 'app:get-badge-settings',
     SAVE_BADGE_SETTINGS: 'app:save-badge-settings',

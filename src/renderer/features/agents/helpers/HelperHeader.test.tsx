@@ -38,6 +38,14 @@ describe('Helper header (#2232)', () => {
     expect(useAgentStore.getState().activeAgentId).toBe('lead');
   });
 
+  it('says what a helper runs on and why, when its start decided that (#2671)', async () => {
+    configs.h1 = { ...configs.h1, routing: {
+      resolved: { provider: 'codex-cli', model: 'gpt-6.1-sol', effort: 'high', difficulty: 'hard' }, reason: 'preset_on_cli',
+    } as never };
+    render(<HelperHeader agent={helper} />);
+    expect(await screen.findByTestId('helper-header-routing')).toHaveTextContent('gpt-6.1-sol, high effort. From the helper settings for this difficulty.');
+  });
+
   it('leaves out the note for a helper that isn\'t disposable', async () => {
     configs.h1 = { ...configs.h1, disposable: false };
     render(<HelperHeader agent={helper} />);

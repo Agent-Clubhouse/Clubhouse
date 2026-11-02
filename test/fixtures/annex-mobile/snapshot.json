@@ -353,6 +353,7 @@
       "groupProjectMembers": {},
       "groupProjects": [],
       "helperRequests": [],
+      "helperRoutingRevision": "r0.0",
       "idleDays": 7,
       "lastSeq": 0,
       "orchestrators": {

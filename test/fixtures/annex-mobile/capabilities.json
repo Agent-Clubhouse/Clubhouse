@@ -46,7 +46,8 @@
         "chat.setLevel",
         "quick.dismiss",
         "quick.clear",
-        "dispatcher.setEnabled"
+        "dispatcher.setEnabled",
+        "helperRouting.update"
       ],
       "contextWindow": {
         "version": 1
@@ -84,6 +85,43 @@
           "helper.decline"
         ],
         "snapshotField": "helperRequests",
+        "version": 1
+      },
+      "helperRouting": {
+        "cellStates": [
+          "valid",
+          "unverified",
+          "stale"
+        ],
+        "commands": [
+          "helperRouting.update"
+        ],
+        "difficulties": [
+          "easy",
+          "medium",
+          "hard"
+        ],
+        "event": "helper_routing:changed",
+        "fallbacks": [
+          "none",
+          "builtin_preset",
+          "model_unverified"
+        ],
+        "modes": [
+          "explicit",
+          "preset"
+        ],
+        "path": "/api/v1/mobile/helper-routing",
+        "quota": false,
+        "reasons": [
+          "explicit_request",
+          "persona_pinned",
+          "preset_on_cli"
+        ],
+        "scopes": [
+          "app"
+        ],
+        "snapshotField": "helperRoutingRevision",
         "version": 1
       },
       "idempotency": {

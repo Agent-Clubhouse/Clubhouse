@@ -106,10 +106,16 @@ export function startDurableCreation(
  * project-default instructions the worktree was just seeded with. Failures are
  * logged, not thrown. Returns true when the persona was applied.
  */
-export async function injectPersona(projectPath: string, agentId: string, persona: string, agentName: string): Promise<boolean> {
+export async function injectPersona(
+  projectPath: string,
+  agentId: string,
+  persona: string,
+  agentName: string,
+  keep?: ReadonlyArray<'orchestrator' | 'model'>,
+): Promise<boolean> {
   try {
     await tel.step('clubhouse.agent.persona_inject', () =>
-      applyPersonaToAgent(projectPath, agentId, persona, { appendToExisting: true }));
+      applyPersonaToAgent(projectPath, agentId, persona, { appendToExisting: true, ...(keep?.length && { keep }) }));
     return true;
   } catch (err) {
     // telemetry-exempt: the clubhouse.agent.persona_inject step records the failure; the agent is created without the persona.
@@ -121,10 +127,14 @@ export async function injectPersona(projectPath: string, agentId: string, person
 }
 
 /** The `inject` option that applies a persona to the new worktree, as the New agent page does. */
-export function personaInjection(projectPath: string, { persona, name }: StartDurableCreationParams): StartDurableCreationOptions {
+export function personaInjection(
+  projectPath: string,
+  { persona, name }: StartDurableCreationParams,
+  keep?: ReadonlyArray<'orchestrator' | 'model'>,
+): StartDurableCreationOptions {
   return {
     inject: persona
-      ? async (created) => { if (created.worktreePath) await injectPersona(projectPath, created.id, persona, name); }
+      ? async (created) => { if (created.worktreePath) await injectPersona(projectPath, created.id, persona, name, keep); }
       : undefined,
   };
 }

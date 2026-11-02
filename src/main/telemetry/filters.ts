@@ -54,6 +54,8 @@ export const USER_ACTIVITY = {
     'clubhouse.ui.slow_interaction',
     'clubhouse.popout.opened',
     'clubhouse.settings.changed',
+    'clubhouse.helper.routed',
+    'clubhouse.helper_routing.changed',
     'clubhouse.theme.changed',
     'clubhouse.blueprint.exported',
     'clubhouse.blueprint.imported',
