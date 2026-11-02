@@ -92,7 +92,7 @@ export function startWatch(watchId: string, glob: string, sender: Electron.WebCo
     destroyedListener: null,
   };
 
-  const isMatch = picomatch(glob);
+  const isMatch = compileWatchGlob(glob);
 
   try {
     const watcher = fs.watch(baseDir, { recursive: true }, async (eventType, filename) => {
@@ -194,6 +194,17 @@ export { activeWatches as _activeWatches, watchKey as _watchKey, MAX_PENDING_EVE
 /** Return the number of currently active watches (for testing). */
 export function getActiveWatchCount(): number {
   return activeWatches.size;
+}
+
+/**
+ * Compile a watch glob for matching full paths from fs.watch. On Windows a
+ * backslash is a path separator, but picomatch reads it as an escape in a glob
+ * and won't match it in a path, so both sides use forward slashes there.
+ */
+export function compileWatchGlob(glob: string): (filePath: string) => boolean {
+  if (process.platform !== 'win32') return picomatch(glob);
+  const isMatch = picomatch(glob.replace(/\\/g, '/'));
+  return (filePath) => isMatch(filePath.replace(/\\/g, '/'));
 }
 
 /**
