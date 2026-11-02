@@ -40,10 +40,16 @@ Plain HTTP on `127.0.0.1:<controlPort>`. Every answer is the current state: `{"f
 | `POST /fixture {"projects":40,"agentsPerProject":10}` | Sets how many snapshots list |
 | `POST /refresh` | Asks for a refresh, as a change would |
 | `POST /projects-changed {"count":20}` | Fires Annex's real project list listener that many times, through its real debounce |
+| `POST /theme` | Sends a frame with no seq, `theme:changed` |
+| `POST /reset-seq` | Restarts the event seq from zero, as a desktop restart does |
 | `POST /chat-event {"agentId":"…"}` | Sends a sequenced `chat:event` |
 | `POST /stop` | Stops the harness |
 
 `reads` counts snapshot builds that reached disk. It also counts a REST call while `fail` is set, because the fault is on the project list. `maxReadsRunning` is the most running at once, and is reset by nothing, so read it before and after.
+
+## Our own controller
+
+`npm run harness:annex-client` runs the real `annex-client` against a harness in its own process: real pairing, mTLS and WebSockets, for a first connection, events held until the snapshot, a failed build and a cold start on one, an oversized snapshot, and reconnects. It takes about a minute, so it isn't part of `npm test`. There's no renderer in it.
 
 ## What it doesn't cover
 
