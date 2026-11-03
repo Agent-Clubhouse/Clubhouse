@@ -44,7 +44,7 @@ import { getDiagNamespaces } from '../telemetry/diag';
 import { listLogNamespaces } from '../../shared/log-namespaces';
 import { settingsChanged, themeChanged } from '../telemetry/feature-events';
 import * as helperRouting from '../services/helper-routing';
-import type { HelperRoutingUpdate, HelperRoutingUpdateResult } from '../../shared/helper-routing';
+import type { HelperRoutingReadOptions, HelperRoutingUpdate, HelperRoutingUpdateResult } from '../../shared/helper-routing';
 import { newChromeEnabled, usesTitleBarOverlay } from '../window-chrome';
 
 /** Protocols allowed for shell.openExternal — blocks file://, data:, javascript:, etc. */
@@ -292,7 +292,15 @@ export function registerAppHandlers(): void {
     return orchestrationSettings.getSettings();
   });
 
-  ipcMain.handle(IPC.APP.GET_HELPER_ROUTING, () => helperRouting.readHelperRouting());
+  ipcMain.handle(IPC.APP.GET_HELPER_ROUTING, withValidatedArgs(
+    [objectArg<HelperRoutingReadOptions>({
+      optional: true,
+      validate: (options, argName) => {
+        if (options.refresh !== true || Object.keys(options).length !== 1) throw new Error(`${argName} must be { refresh: true }`);
+      },
+    })],
+    (_event, options) => helperRouting.readHelperRouting(options),
+  ));
 
   ipcMain.handle(IPC.APP.UPDATE_HELPER_ROUTING, withValidatedArgs(
     [objectArg<HelperRoutingUpdate>()],

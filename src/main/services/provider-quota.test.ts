@@ -28,7 +28,7 @@ vi.mock('../telemetry/feature-events', () => ({
 }));
 
 import {
-  QUOTA_CACHE_MS, QUOTA_FAILURE_BACKOFF_MS, _resetProviderQuotaForTesting, classifyStartFailure, isProviderCoolingDown, noteProviderFailure, providerStartWarning, readProviderQuota, watchSessionQuota,
+  QUOTA_CACHE_MS, QUOTA_FAILURE_BACKOFF_MS, QUOTA_FORCED_READ_BUDGET_MS, _resetProviderQuotaForTesting, classifyStartFailure, forceProviderQuota, isProviderCoolingDown, noteProviderFailure, providerStartWarning, readProviderQuota, watchSessionQuota,
 } from './provider-quota';
 import { AUTO_COOLDOWN_AUTH_MS, AUTO_COOLDOWN_AVAILABILITY_MS, AUTO_COOLDOWN_QUOTA_MS } from './helper-auto-policy';
 import { QUOTA_STALE_MS } from '../../shared/helper-routing';
@@ -141,6 +141,132 @@ describe('readProviderQuota', () => {
   });
 });
 
+describe('forceProviderQuota (#2786)', () => {
+  it('reads inside the cache and the failure backoff', async () => {
+    const read = vi.fn(async () => reading(41));
+    W.read = read;
+    await readProviderQuota('claude-code');
+    read.mockImplementation(async () => reading(70));
+    expect(await forceProviderQuota('claude-code')).toMatchObject({ outcome: 'ok', quota: { weekly: { usedPercent: 70 } } });
+    expect(read).toHaveBeenCalledTimes(2);
+
+    read.mockImplementation(async () => { throw new Error('no'); });
+    expect((await forceProviderQuota('claude-code')).outcome).toBe('failed');
+    read.mockImplementation(async () => reading(12));
+    expect((await readProviderQuota('claude-code')).weekly?.usedPercent).toBe(70);
+    expect((await forceProviderQuota('claude-code')).quota.weekly?.usedPercent).toBe(12);
+    expect(read).toHaveBeenCalledTimes(4);
+  });
+
+  it('shares a read already going', async () => {
+    let finish!: (value: PlanQuotaReading) => void;
+    const read = vi.fn(() => new Promise<PlanQuotaReading>((resolve) => { finish = resolve; }));
+    W.read = read;
+    const plain = readProviderQuota('claude-code');
+    const forced = [forceProviderQuota('claude-code'), forceProviderQuota('claude-code')];
+    await vi.advanceTimersByTimeAsync(0);
+    finish(reading(41));
+    await Promise.all([plain, ...forced]);
+    expect(read).toHaveBeenCalledTimes(1);
+  });
+
+  it('a provider that can\'t report is not_supported, and nothing is read', async () => {
+    expect(await forceProviderQuota('copilot-cli')).toMatchObject({ outcome: 'not_supported', quota: { unknownReason: 'not_supported' } });
+  });
+
+  it('success ends an auth cooldown, and Auto and an explicit start see that', async () => {
+    W.read = async () => reading(41);
+    await noteProviderFailure('claude-code', undefined, 'auth');
+    expect(await providerStartWarning('claude-code', undefined)).toMatchObject({ code: 'cooling_down' });
+    await forceProviderQuota('claude-code');
+    expect(await isProviderCoolingDown('claude-code', undefined)).toBe(false);
+    expect(await providerStartWarning('claude-code', undefined)).toBeUndefined();
+  });
+
+  it.each(['quota', 'availability'] as const)('success leaves a %s cooldown', async (kind) => {
+    W.read = async () => reading(41);
+    await noteProviderFailure('claude-code', undefined, kind);
+    await forceProviderQuota('claude-code');
+    expect(await isProviderCoolingDown('claude-code', undefined)).toBe(true);
+  });
+
+  it.each([
+    ['quota', AUTO_COOLDOWN_QUOTA_MS],
+    ['availability', AUTO_COOLDOWN_AVAILABILITY_MS],
+  ] as const)('ends only the auth part when %s was noted too, whichever came last', async (kind, ms) => {
+    W.read = async () => reading(41);
+    await noteProviderFailure('claude-code', undefined, kind);
+    await noteProviderFailure('claude-code', undefined, 'auth');
+    await forceProviderQuota('claude-code');
+    expect(await isProviderCoolingDown('claude-code', undefined)).toBe(true);
+    vi.setSystemTime(NOW + ms);
+    expect(await isProviderCoolingDown('claude-code', undefined)).toBe(false);
+  });
+
+  it('a warning left after the auth part ends says how old what remains is', async () => {
+    W.read = async () => reading(41);
+    await noteProviderFailure('claude-code', undefined, 'availability');
+    vi.setSystemTime(NOW + 1000);
+    await noteProviderFailure('claude-code', undefined, 'auth');
+    await forceProviderQuota('claude-code');
+    expect(await providerStartWarning('claude-code', undefined)).toMatchObject({ code: 'cooling_down', asOf: new Date(NOW).toISOString() });
+  });
+
+  it('a failed read clears nothing', async () => {
+    W.read = async () => { throw new Error('still logged out'); };
+    await noteProviderFailure('claude-code', undefined, 'auth');
+    expect((await forceProviderQuota('claude-code')).outcome).toBe('failed');
+    expect(await isProviderCoolingDown('claude-code', undefined)).toBe(true);
+  });
+
+  it('not_applicable doesn\'t prove a login, so it clears nothing', async () => {
+    W.read = async () => ({ kind: 'not_applicable' });
+    await noteProviderFailure('claude-code', undefined, 'auth');
+    expect((await forceProviderQuota('claude-code')).outcome).toBe('ok');
+    expect(await isProviderCoolingDown('claude-code', undefined)).toBe(true);
+  });
+
+  it('an ordinary read clears nothing', async () => {
+    W.read = async () => reading(41);
+    await noteProviderFailure('claude-code', undefined, 'auth');
+    await readProviderQuota('claude-code');
+    expect(await isProviderCoolingDown('claude-code', undefined)).toBe(true);
+  });
+
+  it('a failure noted while the read was going isn\'t answered by it', async () => {
+    let finish!: (value: PlanQuotaReading) => void;
+    W.read = () => new Promise<PlanQuotaReading>((resolve) => { finish = resolve; });
+    const forced = forceProviderQuota('claude-code');
+    await vi.advanceTimersByTimeAsync(1000);
+    await noteProviderFailure('claude-code', undefined, 'auth');
+    finish(reading(41));
+    await forced;
+    expect(await isProviderCoolingDown('claude-code', undefined)).toBe(true);
+  });
+
+  it('a read past the budget returns timed_out, and still ends the cooldown when it succeeds', async () => {
+    let finish!: (value: PlanQuotaReading) => void;
+    W.read = () => new Promise<PlanQuotaReading>((resolve) => { finish = resolve; });
+    await noteProviderFailure('claude-code', undefined, 'auth');
+    const forced = forceProviderQuota('claude-code');
+    await vi.advanceTimersByTimeAsync(QUOTA_FORCED_READ_BUDGET_MS);
+    expect((await forced).outcome).toBe('timed_out');
+    expect(await isProviderCoolingDown('claude-code', undefined)).toBe(true);
+    finish(reading(41));
+    await vi.advanceTimersByTimeAsync(0);
+    expect(await isProviderCoolingDown('claude-code', undefined)).toBe(false);
+  });
+
+  it('only touches the profile it read', async () => {
+    W.read = async () => reading(41);
+    await noteProviderFailure('claude-code', undefined, 'auth');
+    W.env = { CLAUDE_CONFIG_DIR: '/other' };
+    await forceProviderQuota('claude-code', '/p');
+    W.env = undefined;
+    expect(await isProviderCoolingDown('claude-code', undefined)).toBe(true);
+  });
+});
+
 describe('watchSessionQuota', () => {
   const usage = (limits: unknown[], agentId = 'a1') => W.chat!({ type: 'usage', agentId, data: { scope: 'session', limits } });
   const settle = () => vi.advanceTimersByTimeAsync(0);
@@ -250,6 +376,17 @@ describe('failures and cooldowns', () => {
     await noteProviderFailure('claude-code', undefined, 'auth');
     expect(await providerStartWarning('claude-code', undefined)).toMatchObject({ code: 'cooling_down', asOf: new Date(NOW).toISOString() });
     expect(read).toHaveBeenCalledTimes(1);
+  });
+
+  it('a shorter failure of any kind doesn\'t shorten what is already running', async () => {
+    await noteProviderFailure('claude-code', undefined, 'quota', NOW + AUTO_COOLDOWN_QUOTA_MS * 3);
+    await noteProviderFailure('claude-code', undefined, 'quota', NOW + 1000);
+    await noteProviderFailure('claude-code', undefined, 'availability');
+    await noteProviderFailure('claude-code', undefined, 'auth');
+    vi.setSystemTime(NOW + AUTO_COOLDOWN_QUOTA_MS * 3 - 1);
+    expect(await isProviderCoolingDown('claude-code', undefined)).toBe(true);
+    vi.setSystemTime(NOW + AUTO_COOLDOWN_QUOTA_MS * 3);
+    expect(await isProviderCoolingDown('claude-code', undefined)).toBe(false);
   });
 
   it('each profile cools down on its own', async () => {

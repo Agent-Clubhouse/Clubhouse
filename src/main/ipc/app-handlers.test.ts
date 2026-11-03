@@ -107,6 +107,9 @@ vi.mock('../services/sound-service', () => ({
   getSoundData: vi.fn(() => 'base64-audio'),
 }));
 
+const readHelperRouting = vi.hoisted(() => vi.fn(async () => ({ revision: 'r0.0' })));
+vi.mock('../services/helper-routing', () => ({ readHelperRouting, updateHelperPresets: vi.fn(), HelperRoutingError: class extends Error {} }));
+
 vi.mock('../services/log-service', () => ({
   appLog: vi.fn(),
 }));
@@ -986,6 +989,32 @@ describe('app-handlers', () => {
   it('rejects non-string for DELETE_SOUND_PACK', () => {
     const handler = handleHandlers.get(IPC.APP.DELETE_SOUND_PACK)!;
     expect(() => handler({}, null)).toThrow('must be a string');
+  });
+
+  describe('GET_HELPER_ROUTING (#2786)', () => {
+    it('with no argument, reads as it always did', async () => {
+      await handleHandlers.get(IPC.APP.GET_HELPER_ROUTING)!({});
+      expect(readHelperRouting).toHaveBeenCalledTimes(1);
+      expect(readHelperRouting).toHaveBeenCalledWith(undefined);
+    });
+
+    it('passes { refresh: true } on', async () => {
+      await handleHandlers.get(IPC.APP.GET_HELPER_ROUTING)!({}, { refresh: true });
+      expect(readHelperRouting).toHaveBeenCalledWith({ refresh: true });
+    });
+
+    it.each<[string, unknown]>([
+      ['refresh false', { refresh: false }],
+      ['refresh not a boolean', { refresh: 'true' }],
+      ['an empty object', {}],
+      ['a key it does not take', { refresh: true, projectPath: '/p' }],
+      ['null', null],
+      ['a boolean', true],
+      ['an array', [{ refresh: true }]],
+    ])('refuses %s, and reads nothing', (_name, arg) => {
+      expect(() => handleHandlers.get(IPC.APP.GET_HELPER_ROUTING)!({}, arg)).toThrow(/arg1 must be/);
+      expect(readHelperRouting).not.toHaveBeenCalled();
+    });
   });
 
   it('SAVE_ORCHESTRATION_SETTINGS saves and broadcasts the new settings (#2228)', async () => {

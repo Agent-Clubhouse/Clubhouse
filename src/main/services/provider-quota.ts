@@ -7,7 +7,8 @@
  * read at a time, kept for {@link QUOTA_CACHE_MS}, with {@link QUOTA_FAILURE_BACKOFF_MS}
  * after a failure. A caller waits at most its budget, and sees `not_read` if the
  * read is still going. Running chat sessions also report limits, which fill in
- * between reads.
+ * between reads. Check again in Settings skips the cache and the backoff: see
+ * {@link forceProviderQuota}.
  *
  * Reading quota says nothing about capacity for sure. `unknown` stays `unknown`.
  */
@@ -36,6 +37,20 @@ import { appLog } from './log-service';
 export const QUOTA_CACHE_MS = 5 * 60_000;
 export const QUOTA_FAILURE_BACKOFF_MS = 60_000;
 export const QUOTA_READ_BUDGET_MS = 3_000;
+/** A person pressed a button and is waiting on the answer. Past a handshake's own 10 second deadline, so it's only a backstop. */
+export const QUOTA_FORCED_READ_BUDGET_MS = 12_000;
+
+interface SettledRead {
+  /** A cooldown noted after this isn't answered by this read. */
+  startedAt: number;
+  outcome: PlanQuotaReading['kind'] | 'failed';
+}
+
+interface Cooldown {
+  until: number;
+  /** When it began, for saying how old a warning is. */
+  at: number;
+}
 
 interface QuotaEntry {
   windows: QuotaWindow[];
@@ -45,11 +60,13 @@ interface QuotaEntry {
   /** When the last whole read came back. */
   readAt?: number;
   failedAt?: number;
-  inFlight?: Promise<void>;
-  /** Auto leaves this provider and profile alone until then. Explicit starts aren't affected. */
-  coolingUntil?: number;
-  /** When the cooldown began, for saying how old a warning is. */
-  cooledAt?: number;
+  inFlight?: Promise<SettledRead>;
+  /**
+   * Auto leaves this provider and profile alone until the last of these ends.
+   * Explicit starts aren't affected. By kind, since one can be cleared and the
+   * others can't.
+   */
+  cooldowns: Partial<Record<StartFailureClass, Cooldown>>;
 }
 
 const entries = new Map<string, QuotaEntry>();
@@ -59,17 +76,19 @@ async function entryFor(providerId: string, projectPath: string | undefined): Pr
   const key = JSON.stringify([providerId, Object.entries(env ?? {}).sort()]);
   let entry = entries.get(key);
   if (!entry) {
-    entry = { windows: [], source: 'none' };
+    entry = { windows: [], source: 'none', cooldowns: {} };
     entries.set(key, entry);
   }
   return { entry, ...(env && { env }) };
 }
 
-function startRead(providerId: string, entry: QuotaEntry, env: Record<string, string> | undefined): Promise<void> {
+function startRead(providerId: string, entry: QuotaEntry, env: Record<string, string> | undefined): Promise<SettledRead> {
+  if (entry.inFlight) return entry.inFlight;
   const provider = getProvider(providerId as OrchestratorId);
-  entry.inFlight ??= Promise.resolve()
+  const startedAt = Date.now();
+  entry.inFlight = Promise.resolve()
     .then(() => provider!.readPlanQuota!({ ...(env && { env }) }))
-    .then((reading: PlanQuotaReading) => {
+    .then((reading: PlanQuotaReading): SettledRead => {
       const now = Date.now();
       entry.readAt = now;
       entry.failedAt = undefined;
@@ -77,12 +96,14 @@ function startRead(providerId: string, entry: QuotaEntry, env: Record<string, st
       entry.notApplicable = reading.kind === 'not_applicable';
       entry.windows = reading.kind === 'windows' ? reading.windows : [];
       helperQuotaRead(providerId, viewOf(entry, now).state, true);
+      return { startedAt, outcome: reading.kind };
     })
-    .catch((err: unknown) => {
+    .catch((err: unknown): SettledRead => {
       // telemetry-exempt: helperQuotaRead below records it. Only the error's type is logged: a CLI's message could hold anything.
       entry.failedAt = Date.now();
       helperQuotaRead(providerId, 'unknown', false);
       appLog('core:orchestrator', 'warn', 'Could not read plan limits', { meta: { provider: providerId, error: err instanceof Error ? err.name : 'unknown' } });
+      return { startedAt, outcome: 'failed' };
     })
     .finally(() => { entry.inFlight = undefined; });
   return entry.inFlight;
@@ -141,6 +162,40 @@ export async function readProviderQuota(providerId: string, projectPath?: string
   }
 }
 
+export type ForcedQuotaOutcome = 'ok' | 'failed' | 'timed_out' | 'not_supported';
+
+/**
+ * Read now, whatever the cache and the failure backoff say, for a person who has
+ * just signed back in. Still one read at a time: one already going is shared.
+ * Never throws.
+ *
+ * Reading limits proves a login, so it ends an auth cooldown older than the read,
+ * even if that read outlasts this caller's budget. Only a reading with windows
+ * counts: Codex answers `not_applicable` when logged out as well as for an API key.
+ * A quota or availability cooldown says nothing about the login, so it stays.
+ */
+export async function forceProviderQuota(providerId: string, projectPath?: string, options: { budgetMs?: number } = {}): Promise<{ quota: QuotaView; outcome: ForcedQuotaOutcome }> {
+  const provider = getProvider(providerId as OrchestratorId);
+  if (!provider?.readPlanQuota) return { quota: { state: 'unknown', unknownReason: 'not_supported', source: 'none', asOf: null }, outcome: 'not_supported' };
+  try {
+    const { entry, env } = await entryFor(providerId, projectPath);
+    let outcome: ForcedQuotaOutcome = 'timed_out';
+    const read = startRead(providerId, entry, env).then((settled) => {
+      outcome = settled.outcome === 'failed' ? 'failed' : 'ok';
+      const auth = entry.cooldowns.auth;
+      if (settled.outcome === 'windows' && auth && auth.at <= settled.startedAt) delete entry.cooldowns.auth;
+    });
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    await Promise.race([read, new Promise<void>((resolve) => { timer = setTimeout(resolve, options.budgetMs ?? QUOTA_FORCED_READ_BUDGET_MS); })]);
+    clearTimeout(timer);
+    return { quota: viewOf(entry, Date.now()), outcome };
+  } catch (err) {
+    // telemetry-exempt: it reads as unknown, which is what the caller shows; logged.
+    appLog('core:orchestrator', 'warn', 'Could not check plan limits', { meta: { provider: providerId, error: err instanceof Error ? err.name : 'unknown' } });
+    return { quota: { state: 'unknown', unknownReason: 'read_failed', source: 'none', asOf: null }, outcome: 'failed' };
+  }
+}
+
 /** A session reports these too, but they aren't limits on work: credits past the plan, and other apps' share. */
 const SESSION_WINDOWS_LEFT_OUT = new Set(['overage', 'week_oauth_apps', 'week_overage_included']);
 
@@ -195,8 +250,7 @@ export async function noteProviderFailure(providerId: string, projectPath: strin
       ? resetsAt ?? entry.windows.filter((w) => w.limitReached && w.resetsAt !== undefined && w.resetsAt > now).map((w) => w.resetsAt!).sort((a, b) => b - a)[0]
       : undefined;
     const until = knownReset && knownReset > now ? knownReset : now + COOLDOWN_MS[kind];
-    entry.coolingUntil = Math.max(entry.coolingUntil ?? 0, until);
-    entry.cooledAt = now;
+    entry.cooldowns[kind] = { until: Math.max(entry.cooldowns[kind]?.until ?? 0, until), at: now };
     if (kind === 'quota') {
       entry.windows = [...entry.windows.filter((w) => w.name !== 'window'), { name: 'window', limitReached: true, resetsAt: until, asOf: now }];
       entry.source = 'session_event';
@@ -209,9 +263,13 @@ export async function noteProviderFailure(providerId: string, projectPath: strin
   }
 }
 
+function activeCooldowns(entry: QuotaEntry, now: number): Cooldown[] {
+  return Object.values(entry.cooldowns).filter((cooldown) => cooldown.until > now);
+}
+
 export async function isProviderCoolingDown(providerId: string, projectPath: string | undefined): Promise<boolean> {
   const { entry } = await entryFor(providerId, projectPath);
-  return (entry.coolingUntil ?? 0) > Date.now();
+  return activeCooldowns(entry, Date.now()).length > 0;
 }
 
 /**
@@ -223,10 +281,11 @@ export async function providerStartWarning(providerId: string, projectPath: stri
   try {
     const { entry } = await entryFor(providerId, projectPath);
     const now = Date.now();
-    if ((entry.coolingUntil ?? 0) > now) {
+    const cooling = activeCooldowns(entry, now);
+    if (cooling.length > 0) {
       return {
         code: 'cooling_down',
-        asOf: new Date(entry.cooledAt ?? now).toISOString(),
+        asOf: new Date(Math.max(...cooling.map((cooldown) => cooldown.at))).toISOString(),
         message: `${providerId} failed to start or hit its limit recently. The helper is started on it anyway, as asked.`,
       };
     }

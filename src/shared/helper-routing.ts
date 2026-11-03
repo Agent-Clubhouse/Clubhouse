@@ -296,6 +296,11 @@ export interface HelperAutoView {
   };
 }
 
+/** Asks each CLI again rather than using what's cached. Changes nothing saved. */
+export interface HelperRoutingReadOptions {
+  refresh: true;
+}
+
 export interface HelperRoutingUpdate {
   /** The revision the change was made from. */
   revision: string;

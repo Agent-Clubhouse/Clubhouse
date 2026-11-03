@@ -44,7 +44,7 @@ import { getAllProviders, getProvider } from '../orchestrators';
 import type { OrchestratorId } from '../orchestrators';
 import { helperPresetsChanged } from '../telemetry/feature-events';
 import { appLog } from './log-service';
-import { isProviderCoolingDown, readProviderQuota } from './provider-quota';
+import { forceProviderQuota, isProviderCoolingDown, readProviderQuota } from './provider-quota';
 import { noteRoutingPolicyChanged, setRoutingPolicyListener } from './helper-routing-changes';
 import { onMcpEnablementChanged } from './mcp-settings';
 import { readLayeredPersonaRaw } from './materialization-service';
@@ -572,26 +572,40 @@ async function viewCell(provider: PresetProvider, difficulty: HelperDifficulty, 
   };
 }
 
-async function viewProvider(provider: PresetProvider, projectPath: string | undefined): Promise<ProviderRoutingView> {
+async function viewProvider(provider: PresetProvider, projectPath: string | undefined, refresh: boolean): Promise<ProviderRoutingView> {
   const instance = getProvider(provider as OrchestratorId);
   let choices: Extract<ProviderRoutingView, { autoEligible: true }>['choices'] = { source: 'fallback', asOf: null, models: [] };
+  const forcedQuota = refresh ? forceProviderQuota(provider, projectPath) : null;
+  let listSource = 'none';
+  let modelCount = 0;
+  let listFailed = false;
   if (instance) {
     try {
       // App-wide, whatever profile the cells are read under: presets are app-wide, so this is what a write takes.
-      const list = await modelListFor(instance, undefined);
+      // Forced first, so the cells below read the new list from the cache.
+      const list = await modelListFor(instance, undefined, refresh);
       if (list) {
+        listSource = list.source;
+        modelCount = list.models.length;
         const models: PresetChoice[] = list.models.filter((m) => !m.hidden && m.id !== CLI_DEFAULT_MODEL).map((m) => ({ id: m.id, label: m.label, efforts: m.efforts ?? [] }));
         choices = { source: list.source, asOf: new Date(list.fetchedAt).toISOString(), models };
       }
     } catch (err) {
       // telemetry-exempt: logged; the page shows the saved choices as unverified
+      listFailed = true;
       appLog('core:mcp', 'warn', 'Helper presets: could not list models', { meta: { provider, error: errorText(err) } });
     }
   }
   const [cells, quota] = await Promise.all([
     Promise.all(HELPER_DIFFICULTIES.map((d) => viewCell(provider, d, projectPath))),
-    readProviderQuota(provider, projectPath),
+    forcedQuota ? forcedQuota.then((forced) => forced.quota) : readProviderQuota(provider, projectPath),
   ]);
+  if (forcedQuota) {
+    const quotaOutcome = (await forcedQuota).outcome;
+    const quotaProblem = quotaOutcome === 'failed' || quotaOutcome === 'timed_out' ? `quota_${quotaOutcome}` : null;
+    const outcome = [...(listFailed ? ['list_failed'] : []), ...(quotaProblem ? [quotaProblem] : [])].join('+') || 'ok';
+    appLog('core:mcp', 'info', 'Helper presets: asked a CLI again', { meta: { provider, source: listSource, models: modelCount, outcome } });
+  }
   return {
     autoEligible: true,
     quota,
@@ -605,11 +619,12 @@ async function viewProvider(provider: PresetProvider, projectPath: string | unde
  * minutes. `projectPath` reads cells under that project's profile, so their state
  * says what a start there would do; `choices` stay app-wide, since a write is.
  * Reads made without one also notice a cell whose state changed, and move the
- * revision.
+ * revision. `refresh` asks each preset CLI again first, for its app-wide list and
+ * its limits, for someone who just signed in. A project's own list isn't forced.
  */
-export async function readHelperRouting(options: { projectPath?: string; autoContext?: Parameters<typeof readHelperAuto>[0] } = {}): Promise<HelperRoutingSettings> {
+export async function readHelperRouting(options: { projectPath?: string; autoContext?: Parameters<typeof readHelperAuto>[0]; refresh?: boolean } = {}): Promise<HelperRoutingSettings> {
   const providers: Record<string, ProviderRoutingView> = {};
-  await Promise.all(PRESET_PROVIDERS.map(async (p) => { providers[p] = await viewProvider(p, options.projectPath); }));
+  await Promise.all(PRESET_PROVIDERS.map(async (p) => { providers[p] = await viewProvider(p, options.projectPath, options.refresh === true); }));
   for (const other of getAllProviders()) {
     if (!isPresetProvider(other.id)) {
       providers[other.id] = { autoEligible: false, reason: 'auto_not_supported', quota: await readProviderQuota(other.id, options.projectPath), cells: null };
