@@ -3,6 +3,11 @@ import type { ModelInfo, ModelList } from '../orchestrators';
 
 const W = vi.hoisted(() => ({
   lists: new Map<string, unknown>(),
+  /** What a provider's own cache holds. Only a forced read goes past it. */
+  listCache: new Map<string, unknown>(),
+  listCalls: [] as Array<{ provider: string; refresh: boolean }>,
+  forcedQuota: [] as string[],
+  forcedOutcome: 'ok' as string,
   personas: new Map<string, string>(),
   saved: {} as Record<string, Record<string, { model: string; effort: string | null }>>,
   revision: 0,
@@ -20,7 +25,14 @@ vi.mock('../orchestrators', () => {
   const provider = (id: string) => ({
     id,
     checkAvailability: async () => ({ available: !W.unavailable.has(id) }),
-    listModels: async () => { const list = W.lists.get(id); if (list instanceof Error) throw list; return list ?? null; },
+    listModels: async (opts: { refresh?: boolean } = {}) => {
+      W.listCalls.push({ provider: id, refresh: opts.refresh === true });
+      if (!opts.refresh && W.listCache.has(id)) return W.listCache.get(id);
+      const list = W.lists.get(id);
+      if (list instanceof Error) throw list;
+      if (W.listCache.has(id)) W.listCache.set(id, list);
+      return list ?? null;
+    },
     acceptsModel: (m: string, l: { models: Array<{ id: string; resolvedId?: string }> }) => m === 'default' || l.models.some((e) => e.id === m || e.resolvedId === m),
   });
   const all = ['claude-code', 'codex-cli', 'copilot-cli'].map(provider);
@@ -50,6 +62,10 @@ vi.mock('./agent-settings-service', () => ({
 }));
 vi.mock('./provider-quota', () => ({
   readProviderQuota: async (provider: string) => W.quota.get(provider) ?? { state: 'unknown', unknownReason: 'not_supported', source: 'none', asOf: null },
+  forceProviderQuota: async (provider: string) => {
+    W.forcedQuota.push(provider);
+    return { quota: W.quota.get(provider) ?? { state: 'unknown', unknownReason: 'not_supported', source: 'none', asOf: null }, outcome: W.forcedOutcome };
+  },
   isProviderCoolingDown: async (provider: string) => W.cooling.has(provider),
 }));
 vi.mock('./agent-runtime/chat-event-bus', () => ({ onChatEvent: () => () => undefined }));
@@ -60,6 +76,7 @@ vi.mock('./settings-audit', async (importOriginal) => ({
 vi.mock('../telemetry/feature-events', () => ({ helperAutoRefused: () => undefined, helperPresetsChanged: (...args: unknown[]) => { W.telemetry.push(args); } }));
 
 import { resolveProfileEnv } from './agent-system';
+import { appLog } from './log-service';
 import {
   HelperRoutingError,
   _resetHelperRoutingForTesting,
@@ -94,6 +111,11 @@ async function plan(request: Partial<Parameters<typeof planHelperStart>[0]>) {
 
 beforeEach(() => {
   W.lists = new Map<string, unknown>([['claude-code', live(CLAUDE)], ['codex-cli', live(CODEX)]]);
+  W.listCache = new Map();
+  W.listCalls = [];
+  W.forcedQuota = [];
+  W.forcedOutcome = 'ok';
+  vi.mocked(appLog).mockClear();
   W.personas = new Map();
   W.saved = {};
   W.revision = 0;
@@ -378,6 +400,82 @@ describe('readHelperRouting', () => {
     const first = (await readHelperRouting()).revision;
     W.lists.set('codex-cli', live([m('gpt-6-luna')]));
     expect((await readHelperRouting({ projectPath: '/p' })).revision).toBe(first);
+  });
+});
+
+describe('readHelperRouting with refresh (#2786)', () => {
+  const forcedLines = () => vi.mocked(appLog).mock.calls.filter(([, , message]) => message === 'Helper presets: asked a CLI again');
+  const SONNET_SAVED = { 'claude-code': { hard: { model: 'sonnet', effort: 'high' } } };
+
+  it('forces each preset CLI\'s list once, and its quota, and leaves Copilot alone', async () => {
+    await readHelperRouting({ refresh: true });
+    expect(W.listCalls.filter((c) => c.refresh).map((c) => c.provider).sort()).toEqual(['claude-code', 'codex-cli']);
+    expect([...W.forcedQuota].sort()).toEqual(['claude-code', 'codex-cli']);
+  });
+
+  it('without it, nothing is forced and the cached list is what cells use', async () => {
+    W.listCache.set('claude-code', live([m('opus')]));
+    W.saved = SONNET_SAVED;
+    const settings = await readHelperRouting();
+    expect(W.listCalls.some((c) => c.refresh)).toBe(false);
+    expect(W.forcedQuota).toEqual([]);
+    expect(forcedLines()).toEqual([]);
+    const claude = settings.providers['claude-code'];
+    expect(claude.autoEligible && claude.cells.hard.state).toBe('stale');
+  });
+
+  it('a cell stale from an old live list is valid after a refresh, and the revision moves', async () => {
+    // The state modelled: `stale` with `model_unavailable`, which the page words as
+    // "No longer offered". What the #2786 report really showed isn't identified, so
+    // this pins what a refresh does for this state, not that it was the report's.
+    W.listCache.set('claude-code', live([m('opus'), m('haiku')]));
+    W.saved = SONNET_SAVED;
+    const before = await readHelperRouting();
+    const old = before.providers['claude-code'];
+    expect(old.autoEligible && old.cells.hard).toMatchObject({ state: 'stale', staleReason: 'model_unavailable', fallback: 'builtin_preset', custom: { model: 'sonnet' } });
+    expect(old.autoEligible && old.choices.models.map((c) => c.id)).toEqual(['opus', 'haiku']);
+
+    const changed: string[] = [];
+    onHelperRoutingChanged((revision) => changed.push(revision));
+    const after = await readHelperRouting({ refresh: true });
+    const fresh = after.providers['claude-code'];
+    expect(fresh.autoEligible && fresh.cells.hard).toMatchObject({ state: 'valid', source: 'custom', effective: { model: 'sonnet', effort: 'high' } });
+    expect(fresh.autoEligible && fresh.choices.models.map((c) => c.id)).toContain('sonnet');
+    expect(after.revision).not.toBe(before.revision);
+    expect(changed).toEqual([after.revision]);
+  });
+
+  it('changes no saved value and audits nothing', async () => {
+    W.saved = SONNET_SAVED;
+    await readHelperRouting({ refresh: true });
+    expect(W.saved).toEqual(SONNET_SAVED);
+    expect(W.revision).toBe(0);
+    expect(W.audit).toEqual([]);
+    expect(W.telemetry).toEqual([]);
+  });
+
+  it('a list that can\'t be read doesn\'t fail the page, and the other CLI still answers', async () => {
+    W.lists.set('codex-cli', new Error('probe blew up'));
+    const settings = await readHelperRouting({ refresh: true });
+    expect(settings.providers['codex-cli']).toMatchObject({ autoEligible: true, choices: { source: 'fallback', models: [] } });
+    expect(settings.providers['claude-code']).toMatchObject({ autoEligible: true, choices: { source: 'live' } });
+  });
+
+  it('logs one line per provider, with its source, a count and the outcome, and no model names', async () => {
+    W.lists.set('codex-cli', new Error('probe blew up'));
+    W.forcedOutcome = 'failed';
+    await readHelperRouting({ refresh: true });
+    const metas = forcedLines().map(([namespace, level, , options]) => ({ namespace, level, ...options?.meta }));
+    expect(metas).toHaveLength(2);
+    expect(metas).toEqual(expect.arrayContaining([
+      { namespace: 'core:mcp', level: 'info', provider: 'claude-code', source: 'live', models: CLAUDE.length, outcome: 'quota_failed' },
+      { namespace: 'core:mcp', level: 'info', provider: 'codex-cli', source: 'none', models: 0, outcome: 'list_failed+quota_failed' },
+    ]));
+    W.lists.set('codex-cli', live(CODEX));
+    W.forcedOutcome = 'not_supported';
+    vi.mocked(appLog).mockClear();
+    await readHelperRouting({ refresh: true });
+    expect(forcedLines().map(([, , , options]) => options?.meta?.outcome)).toEqual(['ok', 'ok']);
   });
 });
 
