@@ -5,6 +5,9 @@ import { CHAT_STREAM_WINDOW_SIZE, ChatStream } from './ChatStream';
 import { chatFixture, ChatFixture, FIXTURE_AGENT_ID, PROFILES } from './fixtures';
 import { NEXT_AGENT_MESSAGE_EVENT, PREVIOUS_AGENT_MESSAGE_EVENT } from '../../../stores/keyboardShortcutsStore';
 
+const rendererLog = vi.hoisted(() => vi.fn());
+vi.mock('../../../plugins/renderer-logger', () => ({ rendererLog }));
+
 const ROW_HEIGHT = 100;
 const VIEWPORT = 400;
 
@@ -28,18 +31,19 @@ class FakeLayout {
   above = 0;
   top = 0;
   extraHeight = 0;
+  viewport = VIEWPORT;
 
   constructor(private readonly el: HTMLElement) {
     const rows = () => el.querySelectorAll<HTMLElement>('[data-block-key]');
-    Object.defineProperty(el, 'clientHeight', { configurable: true, get: () => VIEWPORT });
+    Object.defineProperty(el, 'clientHeight', { configurable: true, get: () => this.viewport });
     Object.defineProperty(el, 'scrollHeight', { configurable: true, get: () => this.above + rows().length * ROW_HEIGHT + this.extraHeight });
     Object.defineProperty(el, 'scrollTop', {
       configurable: true,
       get: () => this.top,
-      set: (v: number) => { this.top = Math.max(0, Math.min(v, Math.max(0, el.scrollHeight - VIEWPORT))); },
+      set: (v: number) => { this.top = Math.max(0, Math.min(v, Math.max(0, el.scrollHeight - this.viewport))); },
     });
     el.scrollTo = ((opts: ScrollToOptions) => { el.scrollTop = opts.top ?? 0; }) as typeof el.scrollTo;
-    el.getBoundingClientRect = () => ({ top: 0, bottom: VIEWPORT, height: VIEWPORT }) as DOMRect;
+    el.getBoundingClientRect = () => ({ top: 0, bottom: this.viewport, height: this.viewport }) as DOMRect;
     vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function rect(this: HTMLElement) {
       const index = [...rows()].indexOf(this);
       const top = this.above(index);
@@ -51,14 +55,15 @@ class FakeLayout {
     return this.above + index * ROW_HEIGHT - this.top;
   }
 
-  /** A real scroll: the browser moves the view, then the event fires. */
+  /** A real scroll: the reader's input, then the browser moves the view, then the event fires. */
   scrollTo(top: number): void {
+    fireEvent.wheel(this.el, { deltaY: top - this.top });
     this.el.scrollTop = top;
     fireEvent.scroll(this.el);
   }
 
   bottom(): number {
-    return Math.max(0, this.el.scrollHeight - VIEWPORT);
+    return Math.max(0, this.el.scrollHeight - this.viewport);
   }
 }
 
@@ -86,7 +91,298 @@ globalThis.ResizeObserver = class {
 
 afterEach(() => {
   vi.restoreAllMocks();
+  rendererLog.mockClear();
   observers.length = 0;
+});
+
+function addRow(fixture: ChatFixture, state: ChatViewState, turn: string, id: string): ChatViewState {
+  fixture.say(turn, id, `Row ${id}`);
+  let next = state;
+  for (const e of fixture.events.slice(-2)) next = reduceChatEvent(next, e);
+  return next;
+}
+
+describe('a reader at the bottom has no saved place (#2748)', () => {
+  it('does not go back to a row read earlier when the view is moved under it as a row arrives', () => {
+    const { state, fixture } = transcript(10);
+    const { view, el, layout } = setup(state);
+    layout.scrollTo(200);
+    layout.scrollTo(layout.bottom());
+    expect(screen.queryByTestId('chat-window-latest')).not.toBeInTheDocument();
+
+    // A clamp nobody asked for, then a row, before the scroll event.
+    layout.top = layout.bottom() - 300;
+    view.rerender(<ChatStream state={addRow(fixture, state, 'turn-10', 'after-clamp')} />);
+    resizeContent();
+    fireEvent.scroll(el);
+    expect(layout.top).toBe(layout.bottom());
+    expect(screen.queryByTestId('chat-window-latest')).not.toBeInTheDocument();
+  });
+
+  it('has no place to go back to after Latest, as new rows arrive', () => {
+    const { state, fixture } = transcript(10);
+    const { view, el, layout } = setup(state);
+    layout.scrollTo(200);
+    fireEvent.click(screen.getByTestId('chat-window-latest'));
+    expect(layout.top).toBe(layout.bottom());
+
+    layout.top = layout.bottom() - 300;
+    view.rerender(<ChatStream state={addRow(fixture, state, 'turn-10', 'after-latest')} />);
+    resizeContent();
+    fireEvent.scroll(el);
+    expect(layout.top).toBe(layout.bottom());
+    expect(screen.queryByTestId('chat-window-latest')).not.toBeInTheDocument();
+  });
+
+  it('never re-centers the window on an old row while pinned', () => {
+    const { state, fixture } = transcript(120);
+    const { view, el, layout } = setup(state);
+    // Save a place far back, in another window, then come back with Latest.
+    fireEvent.click(screen.getByTestId('chat-window-older'));
+    layout.scrollTo(100);
+    fireEvent.click(screen.getByTestId('chat-window-latest'));
+    expect(screen.queryByTestId('chat-window-later')).not.toBeInTheDocument();
+
+    layout.top = 0;
+    const next = addRow(fixture, state, 'turn-120', 'pinned-row');
+    view.rerender(<ChatStream state={next} />);
+    fireEvent.scroll(el);
+    view.rerender(<ChatStream state={addRow(fixture, next, 'turn-120', 'pinned-row-2')} />);
+    expect(screen.queryByTestId('chat-window-later')).not.toBeInTheDocument();
+    expect(screen.getAllByTestId('chat-agent-message').at(-1)).toHaveTextContent('Row pinned-row-2');
+    expect(layout.top).toBe(layout.bottom());
+  });
+});
+
+describe('only a user scroll stops a pinned view following (#2748)', () => {
+  const inputs: Array<[string, (el: HTMLElement) => void]> = [
+    ['the wheel or a trackpad', (el) => { fireEvent.wheel(el, { deltaY: -120 }); }],
+    ['a key', () => { fireEvent.keyDown(document.body, { key: 'PageUp' }); }],
+    ['a scrollbar or a selection drag', (el) => { fireEvent.pointerDown(el); }],
+    ['a touch', (el) => { fireEvent.touchMove(el); }],
+  ];
+
+  it.each(inputs)('pauses straight away for %s', (_name, input) => {
+    const { state, fixture } = transcript(10);
+    const { view, el, layout } = setup(state);
+    input(el);
+    layout.top = layout.bottom() - 250;
+    fireEvent.scroll(el);
+    const held = layout.top;
+    expect(screen.getByTestId('chat-window-latest')).toBeInTheDocument();
+    view.rerender(<ChatStream state={addRow(fixture, state, 'turn-10', 'while-away')} />);
+    expect(layout.top).toBe(held);
+  });
+
+  it('goes back to the bottom when anything else moved it', () => {
+    const { el, layout } = setup(transcript(10).state);
+    layout.top = 100;
+    fireEvent.scroll(el);
+    expect(layout.top).toBe(layout.bottom());
+    expect(screen.queryByTestId('chat-window-latest')).not.toBeInTheDocument();
+  });
+
+  it('does not count a wheel going down, or one long finished', () => {
+    const { el, layout } = setup(transcript(10).state);
+    fireEvent.wheel(el, { deltaY: 120 });
+    layout.top = 100;
+    fireEvent.scroll(el);
+    expect(layout.top).toBe(layout.bottom());
+
+    const now = vi.spyOn(Date, 'now').mockReturnValue(1_000_000);
+    fireEvent.wheel(el, { deltaY: -120 });
+    now.mockReturnValue(1_002_000);
+    layout.top = 100;
+    fireEvent.scroll(el);
+    expect(layout.top).toBe(layout.bottom());
+  });
+
+  it('does not count keys typed in the composer', () => {
+    const { el, layout } = setup(transcript(10).state);
+    const composer = document.body.appendChild(document.createElement('textarea'));
+    fireEvent.keyDown(composer, { key: 'ArrowUp' });
+    composer.remove();
+    layout.top = 100;
+    fireEvent.scroll(el);
+    expect(layout.top).toBe(layout.bottom());
+  });
+
+  it('stops counting a pointer once it is released', () => {
+    const { el, layout } = setup(transcript(10).state);
+    const now = vi.spyOn(Date, 'now').mockReturnValue(1_000_000);
+    fireEvent.pointerDown(el);
+    fireEvent.pointerUp(window);
+    now.mockReturnValue(1_002_000);
+    layout.top = 100;
+    fireEvent.scroll(el);
+    expect(layout.top).toBe(layout.bottom());
+  });
+
+  it('stays at the bottom when content shrinks, even as a row arrives', () => {
+    const { state, fixture } = transcript(10);
+    const { view, el, layout } = setup(state);
+    layout.extraHeight = 600;
+    resizeContent();
+    expect(layout.top).toBe(layout.bottom());
+
+    // Folded or closed: the browser clamps scrollTop to the smaller range.
+    layout.extraHeight = 0;
+    layout.top = layout.bottom();
+    view.rerender(<ChatStream state={addRow(fixture, state, 'turn-10', 'after-shrink')} />);
+    fireEvent.scroll(el);
+    expect(layout.top).toBe(layout.bottom());
+    expect(screen.queryByTestId('chat-window-latest')).not.toBeInTheDocument();
+  });
+
+  it('follows when the dock changes the view, without the rows changing', () => {
+    const { layout } = setup(transcript(10).state);
+    layout.viewport = VIEWPORT - 150;
+    resizeContent();
+    expect(layout.top).toBe(layout.bottom());
+    layout.viewport = VIEWPORT + 150;
+    layout.top = layout.bottom();
+    resizeContent();
+    expect(layout.top).toBe(layout.bottom());
+    expect(screen.queryByTestId('chat-window-latest')).not.toBeInTheDocument();
+  });
+
+  it('keeps a paused reader paused while the stream is hidden for a review', () => {
+    const { layout } = setup(transcript(10).state);
+    layout.scrollTo(200);
+    const held = layout.top;
+    const shown = layout.viewport;
+    layout.viewport = 0;
+    resizeContent();
+    layout.viewport = shown;
+    layout.top = held;
+    resizeContent();
+    expect(layout.top).toBe(held);
+    expect(screen.getByTestId('chat-window-latest')).toBeInTheDocument();
+  });
+});
+
+describe('sending returns to the bottom (#2748)', () => {
+  it('stays at the bottom when sent from there', () => {
+    const { state, fixture } = transcript(10);
+    const { view, layout } = setup(state);
+    view.rerender(<ChatStream state={state} latestRequest={1} />);
+    const next = addRow(fixture, state, 'turn-10', 'sent');
+    view.rerender(<ChatStream state={next} latestRequest={1} />);
+    expect(layout.top).toBe(layout.bottom());
+    expect(screen.queryByTestId('chat-window-latest')).not.toBeInTheDocument();
+  });
+
+  it('comes back from a reader far up, and from another window', () => {
+    const { state } = transcript(120);
+    const { view, layout } = setup(state);
+    fireEvent.click(screen.getByTestId('chat-window-older'));
+    layout.scrollTo(100);
+    expect(screen.getByTestId('chat-window-later')).toBeInTheDocument();
+    view.rerender(<ChatStream state={state} latestRequest={1} />);
+    expect(screen.queryByTestId('chat-window-later')).not.toBeInTheDocument();
+    expect(layout.top).toBe(layout.bottom());
+    expect(screen.queryByTestId('chat-window-latest')).not.toBeInTheDocument();
+  });
+});
+
+describe('reading older messages while rows arrive (#2748)', () => {
+  it('holds the reader on the same row as new rows slide the window', () => {
+    const { state, fixture } = transcript(70);
+    const { view, el, layout } = setup(state);
+    layout.scrollTo(layout.bottom() - 800);
+    const firstMounted = () => el.querySelector<HTMLElement>('[data-block-index]')!;
+    const rows = () => [...el.querySelectorAll<HTMLElement>('[data-block-key]')];
+    const read = rows()[Math.floor(layout.top / ROW_HEIGHT)].dataset.blockKey!;
+    const before = layout.rowTop(rows().findIndex((r) => r.dataset.blockKey === read));
+    const firstBefore = firstMounted().dataset.blockIndex;
+
+    let next = state;
+    for (const id of ['slide-1', 'slide-2', 'slide-3']) {
+      next = addRow(fixture, next, 'turn-70', id);
+      view.rerender(<ChatStream state={next} />);
+    }
+    expect(firstMounted().dataset.blockIndex).not.toBe(firstBefore);
+    expect(layout.rowTop(rows().findIndex((r) => r.dataset.blockKey === read))).toBe(before);
+    expect(screen.getAllByTestId('chat-agent-message').at(-1)).toHaveTextContent('Row slide-3');
+    expect(screen.getByTestId('chat-window-latest')).toBeInTheDocument();
+  });
+});
+
+describe('scroll logging (#2748)', () => {
+  const lines = () => rendererLog.mock.calls.filter(([, , msg]) => /following|moved more than/.test(String(msg)));
+
+  it('writes nothing while following in ordinary use', () => {
+    const { state, fixture } = transcript(10);
+    const { view, layout } = setup(state);
+    let next = state;
+    for (const id of ['n1', 'n2', 'n3']) {
+      next = addRow(fixture, next, 'turn-10', id);
+      view.rerender(<ChatStream state={next} latestRequest={1} />);
+      layout.extraHeight += 40;
+      resizeContent();
+    }
+    expect(lines()).toEqual([]);
+  });
+
+  it('says when following stops and resumes, and why', () => {
+    const { layout } = setup(transcript(10).state);
+    layout.scrollTo(100);
+    expect(rendererLog).toHaveBeenLastCalledWith('app:chat', 'info', 'Chat stopped following the bottom', expect.objectContaining({
+      meta: expect.objectContaining({ why: 'wheel', start: expect.any(Number), end: expect.any(Number), blocks: expect.any(Number) }),
+    }));
+    fireEvent.click(screen.getByTestId('chat-window-latest'));
+    expect(rendererLog).toHaveBeenLastCalledWith('app:chat', 'info', 'Chat resumed following the bottom', expect.objectContaining({
+      meta: expect.objectContaining({ why: 'latest', pinned: true }),
+    }));
+  });
+
+  it('records a large move nobody scrolled, with what it can say about the cause', () => {
+    const { el, layout } = setup(transcript(10).state);
+    rendererLog.mockClear();
+    const bottom = layout.top;
+    layout.top = 0;
+    fireEvent.scroll(el);
+    expect(lines()).toHaveLength(1);
+    const [ns, level, , opts] = lines()[0];
+    expect([ns, level]).toEqual(['app:chat', 'warn']);
+    expect(opts.meta).toMatchObject({
+      cause: 'unknown',
+      before: { scrollTop: bottom, clientHeight: VIEWPORT },
+      after: { scrollTop: 0, clientHeight: VIEWPORT },
+      followTail: true,
+      pinned: true,
+      anchorIndex: null,
+    });
+    expect(layout.top).toBe(bottom);
+  });
+
+  it('names a clamp when the content shrank under the view', () => {
+    const { el, layout } = setup(transcript(10).state);
+    layout.extraHeight = VIEWPORT * 2;
+    resizeContent();
+    rendererLog.mockClear();
+    layout.extraHeight = 0;
+    layout.top = layout.bottom();
+    fireEvent.scroll(el);
+    expect(lines()[0][3].meta.cause).toBe('clamp');
+  });
+
+  it('holds no message text, row keys or paths, and limits how much it writes', () => {
+    const { el, layout } = setup(transcript(10).state);
+    const rowKeys = [...el.querySelectorAll<HTMLElement>('[data-block-key]')].map((r) => r.dataset.blockKey!);
+    for (let i = 0; i < 40; i++) {
+      layout.scrollTo(100 + i);
+      layout.top = layout.bottom();
+      resizeContent();
+      fireEvent.click(screen.queryByTestId('chat-window-latest') ?? el);
+      layout.top = 0;
+      fireEvent.scroll(el);
+    }
+    const written = JSON.stringify(lines());
+    expect(lines().length).toBeLessThanOrEqual(12);
+    expect(lines().length).toBeGreaterThan(0);
+    for (const text of ['Step ', 'Reply ', '/', '\\\\', ...rowKeys]) expect(written).not.toContain(text);
+  });
 });
 
 describe('following the bottom', () => {
@@ -106,6 +402,7 @@ describe('following the bottom', () => {
   it('resumes when content shrinks under a paused reader, with no scroll event', () => {
     const { layout } = setup(transcript(5).state);
     layout.extraHeight = 300;
+    resizeContent();
     layout.scrollTo(layout.bottom() - 200);
     expect(screen.getByTestId('chat-window-latest')).toBeInTheDocument();
     layout.extraHeight = 0;
@@ -228,7 +525,9 @@ describe('reaching Show earlier while the agent streams', () => {
 
   it('does not snap a reader back when rows arrive before their scroll event', () => {
     const { state, fixture } = transcript(10);
-    const { view, layout } = setup(state);
+    const { view, el, layout } = setup(state);
+    vi.spyOn(Date, 'now').mockReturnValue(1_000_000);
+    fireEvent.wheel(el, { deltaY: -200 });
     layout.top = layout.bottom() - 200;
     const held = layout.top;
     fixture.say('turn-10', 'x', 'More');

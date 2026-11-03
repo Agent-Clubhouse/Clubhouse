@@ -36,7 +36,7 @@ const PLUGIN_NS_PREFIX = 'plugin:';
 const PLUGIN_NS_HASH_CHARS = 9;
 
 /** FNV-1a, 32 bits: no crypto, so the renderer and main get the same value. */
-function fnv1a(s: string): string {
+export function fnv1a(s: string): string {
   let h = 0x811c9dc5;
   for (let i = 0; i < s.length; i++) {
     h ^= s.charCodeAt(i);

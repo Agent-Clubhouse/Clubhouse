@@ -4,7 +4,7 @@ import type { ChatViewState } from '../../../stores/chatStore';
 import { stripTaskMarker } from '../../../../shared/chat';
 import { useAgentStore } from '../../../stores/agentStore';
 import { agentMessagesToName, buildStreamBlocks, commandOutputIds, isNavigationStop, toolErrorText, type StreamBlock } from './view-model';
-import { firstVisibleIndex, scrollWithin } from './scroll';
+import { firstVisibleIndex, measureScroll, movedAScreen, scrollLogLimiter, scrollWithin, unexplainedMoveCause, type ScrollMeasure, type ScrollMoveCause } from './scroll';
 import { Tooltip } from '../../../components/Tooltip';
 import { NEXT_AGENT_MESSAGE_EVENT, PREVIOUS_AGENT_MESSAGE_EVENT } from '../../../stores/keyboardShortcutsStore';
 import { RichLinkProvider } from './rich/RichLinks';
@@ -12,6 +12,7 @@ import { useRichChatContent } from './rich/rich-flag';
 import { ChatMediaContext } from './rich/ChatImages';
 import { FileChipProvider } from './rich/FileChips';
 import { rendererLog } from '../../../plugins/renderer-logger';
+import { fnv1a } from '../../../../shared/telemetry/diag';
 import {
   AgentMessage,
   ErrorRow,
@@ -39,6 +40,22 @@ const STICK_THRESHOLD = 16;
 const MOVED_UP_PX = 1;
 /** Rows kept mounted above the reader's place when a window attached to the tail slides. */
 const WINDOW_OVERSCAN = 25;
+/** How long after the reader's input a moving scrollTop still counts as theirs: the browser moves it a frame or an animation later. */
+const USER_SCROLL_MS = 400;
+/** Lines each stream may log a minute about following and large moves. */
+const SCROLL_LOG_PER_MINUTE = 12;
+
+const SCROLL_KEYS_UP = new Set(['ArrowUp', 'PageUp', 'Home']);
+const SCROLL_KEYS_DOWN = new Set(['ArrowDown', 'PageDown', 'End', ' ']);
+
+/** Which way a key would scroll the stream, or null when it wouldn't. Typing in a field moves its caret instead. */
+function keyScrollDirection(e: KeyboardEvent): 'up' | 'down' | null {
+  // Tab scrolls to wherever focus lands, which can be above the view.
+  if (e.key === 'Tab') return 'up';
+  if (e.target instanceof Element && e.target.closest('input, textarea, select, [contenteditable="true"], .monaco-editor, .xterm')) return null;
+  if (SCROLL_KEYS_UP.has(e.key) || (e.key === ' ' && e.shiftKey)) return 'up';
+  return SCROLL_KEYS_DOWN.has(e.key) ? 'down' : null;
+}
 
 /**
  * The block that makes the stream wider than its column, for the sideways
@@ -181,6 +198,8 @@ export interface ChatStreamProps {
   announce?: boolean;
   /** Shown as "Show earlier" above the first message when earlier history wasn't loaded. */
   onShowEarlier?: () => void;
+  /** Bump to go back to the bottom and follow it: sending a message does. */
+  latestRequest?: number;
   /** Saved conversations cannot invite the user to send a message. */
   emptyMessage?: string;
   /** The agent's name. Saved history leaves it out: the agent's record has it, while it exists. */
@@ -243,6 +262,7 @@ const ChatStreamInner = memo(function ChatStreamInner({
   jump,
   onJumpResult,
   announce = true,
+  latestRequest = 0,
   emptyMessage = 'No messages yet. Send one to start.',
   onShowEarlier,
   agentName,
@@ -252,7 +272,12 @@ const ChatStreamInner = memo(function ChatStreamInner({
   const pinned = useRef(true);
   /** The reader's place: a row's key and how far its top sits below the viewport's. */
   const anchor = useRef<{ key: string; top: number } | null>(null);
-  const lastScrollTop = useRef(0);
+  /** Where the view last was, to tell what moved it since. */
+  const measured = useRef<ScrollMeasure>({ scrollTop: 0, scrollHeight: 0, clientHeight: 0, start: 0 });
+  /** The reader's last input that scrolls. Only this stops a pinned view following (#2748). */
+  const userInput = useRef<{ kind: string; up: boolean; at: number } | null>(null);
+  const pointerHeld = useRef(false);
+  const scrollLogAllowed = useMemo(() => scrollLogLimiter(SCROLL_LOG_PER_MINUTE), []);
   /** Where the viewport goes once a window move has mounted its rows. */
   const pendingScroll = useRef<{ edge: 'top' | 'bottom' } | { key: string } | null>(null);
   /** The stop Previous/Next last landed on, while the viewport stays there. */
@@ -282,6 +307,8 @@ const ChatStreamInner = memo(function ChatStreamInner({
   const atTail = end === blocks.length;
   const atTailRef = useRef(atTail);
   atTailRef.current = atTail;
+  const viewRef = useRef({ blocks, start, end, followTail });
+  viewRef.current = { blocks, start, end, followTail };
   const turnNumbers = useMemo(() => {
     const m = new Map<string, number>();
     let n = 0;
@@ -311,35 +338,96 @@ const ChatStreamInner = memo(function ChatStreamInner({
     };
   }, []);
 
+  const noteUserInput = useCallback((kind: string, up: boolean) => {
+    userInput.current = { kind, up, at: Date.now() };
+  }, []);
+
+  /** Whether the reader just scrolled (or is dragging): `up` asks for a scroll that can leave the bottom. */
+  const userScrolling = useCallback((direction?: 'up') => {
+    if (pointerHeld.current) return true;
+    const input = userInput.current;
+    return !!input && (direction !== 'up' || input.up) && Date.now() - input.at < USER_SCROLL_MS;
+  }, []);
+
+  /** Local diagnostics only (`app:chat`): sizes and positions, and a hash of the anchor row's key, never its text. */
+  const logScroll = useCallback((level: 'info' | 'warn', msg: string, meta: Record<string, unknown>) => {
+    const suppressed = scrollLogAllowed(Date.now());
+    if (suppressed === null) return;
+    const { blocks: all, start: first, end: last, followTail: following } = viewRef.current;
+    const key = anchor.current?.key;
+    rendererLog('app:chat', level, msg, {
+      meta: {
+        ...meta,
+        start: first,
+        end: last,
+        blocks: all.length,
+        followTail: following,
+        pinned: pinned.current,
+        anchorIndex: key === undefined ? null : all.findIndex((b) => b.key === key),
+        anchorHash: key === undefined ? null : fnv1a(key),
+        ...(suppressed > 0 && { suppressed }),
+      },
+    });
+  }, [scrollLogAllowed]);
+
+  const logMove = useCallback((cause: ScrollMoveCause, before: ScrollMeasure, after: ScrollMeasure) => {
+    logScroll('warn', 'Chat view moved more than a screen without a user scroll', { cause, before, after });
+  }, [logScroll]);
+
+  /** Stops following, for a reason the reader chose. Their place is saved by whoever moves them. */
+  const leaveBottom = useCallback((why: string) => {
+    if (pinned.current) logScroll('info', 'Chat stopped following the bottom', { why });
+    pinned.current = false;
+  }, [logScroll]);
+
+  /** At the bottom there is no place to go back to: everything saved about one goes. */
+  const resumeFollowing = useCallback((why: string) => {
+    const wasPinned = pinned.current;
+    pinned.current = true;
+    anchor.current = null;
+    pendingScroll.current = null;
+    userInput.current = null;
+    setFollowTail(true);
+    if (!wasPinned) logScroll('info', 'Chat resumed following the bottom', { why });
+  }, [logScroll]);
+
   const rowElement = (key: string) => scroller.current?.querySelector<HTMLElement>(`[data-block-key="${CSS.escape(key)}"]`) ?? null;
 
   /** Keeps the view where it belongs after anything changed its height, then says whether it's at the bottom. */
   const settle = useCallback(() => {
     const root = scroller.current;
-    if (!root) return;
+    // Hidden, every size reads 0: nothing can be kept, and a paused reader isn't at the bottom. Showing it settles again.
+    if (!root || root.clientHeight === 0) return;
+    const { start: first } = viewRef.current;
+    const before = measured.current;
     if (pinned.current) {
+      const found = measureScroll(root, first);
+      const fell = before.scrollTop - found.scrollTop;
       // The reader moved up and its scroll event hasn't fired yet: don't snap them back. onScroll takes it from here.
-      if (root.scrollTop < lastScrollTop.current - MOVED_UP_PX && root.scrollHeight - root.scrollTop - root.clientHeight > MOVED_UP_PX) {
-        pinned.current = false;
+      if (fell > MOVED_UP_PX && found.scrollHeight - found.scrollTop - found.clientHeight > MOVED_UP_PX && userScrolling('up')) {
+        leaveBottom(userInput.current?.kind ?? 'pointer');
+        captureAnchor();
         return;
       }
+      // Nobody scrolled: a shrink, a clamp or the window moved it. A pinned view goes back.
+      if (fell >= found.clientHeight) logMove(unexplainedMoveCause(before, found), before, found);
       root.scrollTop = root.scrollHeight;
     } else if (anchor.current) {
       const row = rowElement(anchor.current.key);
       if (row) {
         const moved = row.getBoundingClientRect().top - root.getBoundingClientRect().top - anchor.current.top;
-        if (Math.abs(moved) >= 0.5) root.scrollTop += moved;
+        if (Math.abs(moved) >= 0.5) {
+          root.scrollTop += moved;
+          if (Math.abs(moved) >= root.clientHeight) logMove('anchor-restore', before, measureScroll(root, first));
+        }
       }
     }
-    lastScrollTop.current = root.scrollTop;
+    measured.current = measureScroll(root, first);
     const distance = root.scrollHeight - root.scrollTop - root.clientHeight;
     // Content shrank under a paused reader (a card closed, the window grew): the true bottom always resumes.
-    if (!pinned.current && distance <= MOVED_UP_PX && atTailRef.current) {
-      pinned.current = true;
-      setFollowTail(true);
-    }
+    if (!pinned.current && distance <= MOVED_UP_PX && atTailRef.current) resumeFollowing('content-shrank');
     setAwayFromBottom(!pinned.current || distance > STICK_THRESHOLD);
-  }, []);
+  }, [captureAnchor, leaveBottom, logMove, resumeFollowing, userScrolling]);
 
   // New rows, a slid window, a loaded history page.
   useLayoutEffect(() => {
@@ -347,6 +435,7 @@ const ChatStreamInner = memo(function ChatStreamInner({
     const pending = pendingScroll.current;
     if (root && pending) {
       pendingScroll.current = null;
+      const before = measured.current;
       if ('edge' in pending) {
         root.scrollTop = pending.edge === 'top' ? 0 : root.scrollHeight;
         captureAnchor();
@@ -358,9 +447,11 @@ const ChatStreamInner = memo(function ChatStreamInner({
           captureAnchor();
         }
       }
+      const after = measureScroll(root, viewRef.current.start);
+      if (movedAScreen(before, after)) logMove('pending-scroll', before, after);
     }
     settle();
-  }, [visibleBlocks, settle, captureAnchor]);
+  }, [visibleBlocks, settle, captureAnchor, logMove]);
 
   // Heights that change without a new row: an opened card, a loaded image, a message still rendering.
   useEffect(() => {
@@ -368,15 +459,42 @@ const ChatStreamInner = memo(function ChatStreamInner({
     if (!el) return;
     const observer = new ResizeObserver(settle);
     observer.observe(el);
+    // The dock below it grows and shrinks the view without changing the rows.
+    if (scroller.current) observer.observe(scroller.current);
     return () => observer.disconnect();
   }, [settle]);
+
+  // What the reader does to scroll, as opposed to anything else that moves the view.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      const direction = keyScrollDirection(e);
+      if (direction) noteUserInput('key', direction === 'up');
+    };
+    const onRelease = (e: Event) => {
+      // A scrollbar can swallow the release, so a move with no button down ends the drag too.
+      if (pointerHeld.current && (e.type !== 'pointermove' || (e as PointerEvent).buttons === 0)) pointerHeld.current = false;
+    };
+    window.addEventListener('keydown', onKey, true);
+    window.addEventListener('pointerup', onRelease, true);
+    window.addEventListener('pointercancel', onRelease, true);
+    window.addEventListener('pointermove', onRelease, true);
+    window.addEventListener('blur', onRelease);
+    return () => {
+      window.removeEventListener('keydown', onKey, true);
+      window.removeEventListener('pointerup', onRelease, true);
+      window.removeEventListener('pointercancel', onRelease, true);
+      window.removeEventListener('pointermove', onRelease, true);
+      window.removeEventListener('blur', onRelease);
+    };
+  }, [noteUserInput]);
 
   // Keep the reader's row mounted as rows change, and keep a window that reached the tail attached to it.
   const previousTail = useRef({ length: blocks.length, end });
   useLayoutEffect(() => {
     const previous = previousTail.current;
     previousTail.current = { length: blocks.length, end };
-    if (followTail) return;
+    // A pinned reader has no row to keep, so the window never re-centers for them.
+    if (followTail || pinned.current) return;
     const index = anchor.current ? blocks.findIndex((b) => b.key === anchor.current!.key) : -1;
     if (index >= 0 && (index < start || index >= end)) {
       setWindowStart(Math.max(0, Math.min(index - Math.floor(CHAT_STREAM_WINDOW_SIZE / 2), tailStart)));
@@ -418,7 +536,7 @@ const ChatStreamInner = memo(function ChatStreamInner({
       return;
     }
     if (jumpTargetStatus === 'outside') {
-      pinned.current = false;
+      leaveBottom('jump');
       // The reader is going elsewhere: don't let their old place pull the window back.
       anchor.current = null;
       setFollowTail(false);
@@ -429,7 +547,8 @@ const ChatStreamInner = memo(function ChatStreamInner({
     const target = root?.querySelector<HTMLElement>(`[data-subagent-id="${CSS.escape(jumpRequest.subagentId)}"]`);
     onJumpResultRef.current?.(jumpRequest, !!target);
     if (!root || !target) return;
-    pinned.current = false;
+    leaveBottom('jump');
+    noteUserInput('jump', false);
     scrollWithin(root, target, 'center', 'smooth');
     target.classList.add(...JUMP_HIGHLIGHT_CLASSES);
     target.setAttribute('data-jump-highlight', 'true');
@@ -440,7 +559,7 @@ const ChatStreamInner = memo(function ChatStreamInner({
     const t = setTimeout(clear, JUMP_HIGHLIGHT_MS);
     // A newer jump (or unmount) clears this one's outline straight away.
     return () => { clearTimeout(t); clear(); };
-  }, [jumpRequest, jumpTargetStatus, jumpWindowStart]);
+  }, [jumpRequest, jumpTargetStatus, jumpWindowStart, leaveBottom, noteUserInput]);
 
   const onScroll = () => {
     const el = scroller.current;
@@ -462,22 +581,35 @@ const ChatStreamInner = memo(function ChatStreamInner({
       }
       el.scrollLeft = 0;
     }
+    const before = measured.current;
     const distance = el.scrollHeight - el.scrollTop - el.clientHeight;
-    const movedUp = el.scrollTop < lastScrollTop.current - MOVED_UP_PX;
-    lastScrollTop.current = el.scrollTop;
-    const atBottom = distance <= STICK_THRESHOLD && !(movedUp && distance > MOVED_UP_PX);
-    // The bottom of a window that stops short of the tail isn't the bottom.
-    const isPinned = atBottom && atTail;
-    setAwayFromBottom(!isPinned);
-    pinned.current = isPinned;
-    if (navStop.current && Math.abs(el.scrollTop - navStop.current.scrollTop) > 2) navStop.current = null;
-    if (!isPinned) captureAnchor();
-    if (!isPinned && followTail) {
-      setFollowTail(false);
-      setWindowStart(start);
-    } else if (isPinned && !followTail) {
-      setFollowTail(true);
+    const movedUp = el.scrollTop < before.scrollTop - MOVED_UP_PX;
+    const leaving = movedUp && distance > MOVED_UP_PX && userScrolling('up');
+    if (pinned.current && !leaving) {
+      // Following, and the reader didn't move it: back to the bottom.
+      settle();
+    } else {
+      const after = measureScroll(el, start);
+      if (!pinned.current && !userScrolling() && movedAScreen(before, after)) logMove(unexplainedMoveCause(before, after), before, after);
+      const atBottom = distance <= STICK_THRESHOLD && !(movedUp && distance > MOVED_UP_PX);
+      // The bottom of a window that stops short of the tail isn't the bottom.
+      const isPinned = atBottom && atTail;
+      measured.current = after;
+      setAwayFromBottom(!isPinned);
+      if (isPinned) {
+        resumeFollowing('reached-bottom');
+      } else {
+        leaveBottom(userInput.current?.kind ?? 'pointer');
+        captureAnchor();
+        if (followTail) {
+          setFollowTail(false);
+          setWindowStart(start);
+        }
+      }
     }
+    // A long fling or an animated scroll goes on after its input.
+    if (userInput.current && userScrolling() && (movedUp || !pinned.current)) userInput.current.at = Date.now();
+    if (navStop.current && Math.abs(el.scrollTop - navStop.current.scrollTop) > 2) navStop.current = null;
   };
 
   /** Previous or next stop from the reader's place: `blocks` index, or -1 when there's nowhere further. */
@@ -508,7 +640,7 @@ const ChatStreamInner = memo(function ChatStreamInner({
     if (index < 0) return;
     const root = scroller.current;
     const key = blocks[index].key;
-    pinned.current = false;
+    leaveBottom('previous-next');
     setFollowTail(false);
     if (index < start || index >= end) {
       pendingScroll.current = { key };
@@ -522,7 +654,7 @@ const ChatStreamInner = memo(function ChatStreamInner({
     if (!root || !row) return;
     scrollWithin(root, row, 'start');
     navStop.current = { key, scrollTop: root.scrollTop };
-    lastScrollTop.current = root.scrollTop;
+    measured.current = measureScroll(root, start);
     captureAnchor();
     settle();
   };
@@ -547,7 +679,7 @@ const ChatStreamInner = memo(function ChatStreamInner({
 
   // Older rows replace the window, so read on from where they meet the ones just left.
   const showOlder = () => {
-    pinned.current = false;
+    leaveBottom('show-older');
     anchor.current = null;
     pendingScroll.current = { edge: 'bottom' };
     setFollowTail(false);
@@ -556,20 +688,25 @@ const ChatStreamInner = memo(function ChatStreamInner({
 
   const showLater = () => {
     const next = Math.min(tailStart, start + CHAT_STREAM_WINDOW_SIZE);
-    pinned.current = false;
+    leaveBottom('show-later');
     anchor.current = null;
     pendingScroll.current = { edge: 'top' };
     setFollowTail(false);
     setWindowStart(next);
   };
 
-  const showLatest = () => {
-    pinned.current = true;
+  const showLatest = (why: string) => {
     navStop.current = null;
-    setFollowTail(true);
+    resumeFollowing(why);
     setWindowStart(tailStart);
     settle();
   };
+
+  const showLatestRef = useRef(showLatest);
+  showLatestRef.current = showLatest;
+  useLayoutEffect(() => {
+    if (latestRequest) showLatestRef.current('send');
+  }, [latestRequest]);
 
   const showLatestButton = awayFromBottom || !atTail;
 
@@ -578,7 +715,13 @@ const ChatStreamInner = memo(function ChatStreamInner({
     <LiveTurnContext.Provider value={state.turnId}>
     <AwaitingApprovalContext.Provider value={awaiting}>
     <div className="relative flex-1 min-h-0 flex flex-col">
-    <div ref={scroller} onScroll={onScroll} className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden px-7 pt-5 pb-10" data-testid="chat-stream">
+    <div
+      ref={scroller}
+      onScroll={onScroll}
+      onWheel={(e) => { if (e.deltaY !== 0) noteUserInput('wheel', e.deltaY < 0); }}
+      onTouchMove={() => noteUserInput('touch', true)}
+      onPointerDown={() => { pointerHeld.current = true; noteUserInput('pointer', true); }}
+      className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden px-7 pt-5 pb-10" data-testid="chat-stream">
       <div ref={content} className="mx-auto w-full min-w-0 max-w-[740px] flex flex-col gap-2.5 min-h-full justify-end">
         {announce && <div className="sr-only" aria-live="polite" aria-atomic="true" data-testid="chat-live-region">{announcement}</div>}
         {start > 0 && (
@@ -594,7 +737,7 @@ const ChatStreamInner = memo(function ChatStreamInner({
         {start === 0 && onShowEarlier && (
           <button
             type="button"
-            onClick={() => { pinned.current = false; captureAnchor(); onShowEarlier(); }}
+            onClick={() => { leaveBottom('show-earlier'); captureAnchor(); onShowEarlier(); }}
             className="self-center h-7 px-3 rounded-md bg-surface-0 text-ctp-subtext1 text-[12px]"
             data-testid="chat-show-earlier"
           >
@@ -649,7 +792,7 @@ const ChatStreamInner = memo(function ChatStreamInner({
           </>
         )}
         {showLatestButton && (
-          <button type="button" onClick={showLatest} className={`${NAV_BUTTON} text-[12px]`} data-testid="chat-window-latest">Latest</button>
+          <button type="button" onClick={() => showLatest('latest')} className={`${NAV_BUTTON} text-[12px]`} data-testid="chat-window-latest">Latest</button>
         )}
       </div>
     )}
