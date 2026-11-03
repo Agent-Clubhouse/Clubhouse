@@ -50,3 +50,55 @@ export function firstVisibleIndex(container: HTMLElement, elements: ArrayLike<HT
   }
   return low < elements.length ? low : -1;
 }
+
+/** A scroller's position and size, and the first block its window had mounted. */
+export interface ScrollMeasure {
+  scrollTop: number;
+  scrollHeight: number;
+  clientHeight: number;
+  start: number;
+}
+
+export function measureScroll(el: HTMLElement, start: number): ScrollMeasure {
+  return { scrollTop: el.scrollTop, scrollHeight: el.scrollHeight, clientHeight: el.clientHeight, start };
+}
+
+/** Whether a view moved at least a screen. A hidden view has no screen, and doesn't move. */
+export function movedAScreen(before: ScrollMeasure, after: ScrollMeasure): boolean {
+  return after.clientHeight > 0 && Math.abs(after.scrollTop - before.scrollTop) >= after.clientHeight;
+}
+
+/** What moved a view that no user scrolled. */
+export type ScrollMoveCause = 'anchor-restore' | 'window-move' | 'pending-scroll' | 'clamp' | 'unknown';
+
+/** For a move with no known author: the window changed under it, or the browser clamped it to a smaller range. */
+export function unexplainedMoveCause(before: ScrollMeasure, after: ScrollMeasure): ScrollMoveCause {
+  if (after.start !== before.start) return 'window-move';
+  const rangeShrank = after.scrollHeight - after.clientHeight < before.scrollHeight - before.clientHeight;
+  const atEnd = after.scrollHeight - after.clientHeight - after.scrollTop <= 1;
+  return rangeShrank && atEnd ? 'clamp' : 'unknown';
+}
+
+/**
+ * Up to `limit` lines a minute. Asks with the time; answers null past the limit,
+ * otherwise how many lines went unwritten since the last one.
+ */
+export function scrollLogLimiter(limit: number): (now: number) => number | null {
+  let windowStart = 0;
+  let written = 0;
+  let suppressed = 0;
+  return (now) => {
+    if (now - windowStart >= 60_000) {
+      windowStart = now;
+      written = 0;
+    }
+    if (written >= limit) {
+      suppressed++;
+      return null;
+    }
+    written++;
+    const reported = suppressed;
+    suppressed = 0;
+    return reported;
+  };
+}

@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { scrollWithin } from './scroll';
+import { scrollLogLimiter, scrollWithin, unexplainedMoveCause } from './scroll';
 
 function box(top: number, height: number) {
   return { top, bottom: top + height, height, left: 0, right: 0, width: 0, x: 0, y: top, toJSON: () => ({}) } as DOMRect;
@@ -50,5 +50,38 @@ describe('scrollWithin', () => {
     scrollWithin(below.container, below.target, 'nearest');
     // offset = 880; bottom-aligned = 880 + 40 - 400 = 520
     expect(below.scrollTo).toHaveBeenCalledWith({ top: 520, behavior: 'auto' });
+  });
+});
+
+describe('unexplainedMoveCause', () => {
+  const at = (scrollTop: number, scrollHeight: number, start = 0, clientHeight = 400) => ({ scrollTop, scrollHeight, clientHeight, start });
+
+  it('blames the window when it changed under the view', () => {
+    expect(unexplainedMoveCause(at(2000, 2400, 10), at(100, 2400, 40))).toBe('window-move');
+  });
+
+  it('calls it a clamp when the range shrank and the view sits at its new end', () => {
+    expect(unexplainedMoveCause(at(2000, 2400), at(600, 1000))).toBe('clamp');
+  });
+
+  it('does not call it a clamp when the view stopped short of the end', () => {
+    expect(unexplainedMoveCause(at(2000, 2400), at(100, 1000))).toBe('unknown');
+    expect(unexplainedMoveCause(at(2000, 2400), at(100, 2400))).toBe('unknown');
+  });
+
+  it('counts a taller viewport as a smaller range', () => {
+    expect(unexplainedMoveCause(at(2000, 2400), at(1800, 2400, 0, 600))).toBe('clamp');
+  });
+});
+
+describe('scrollLogLimiter', () => {
+  it('allows the limit a minute, then says how many it held back', () => {
+    const allow = scrollLogLimiter(2);
+    expect(allow(100_000)).toBe(0);
+    expect(allow(100_001)).toBe(0);
+    expect(allow(100_002)).toBeNull();
+    expect(allow(100_003)).toBeNull();
+    expect(allow(160_000)).toBe(2);
+    expect(allow(160_001)).toBe(0);
   });
 });

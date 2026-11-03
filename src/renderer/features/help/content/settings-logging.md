@@ -69,6 +69,7 @@ Settings lists every namespace Clubhouse writes to, plus any plugin namespaces (
 | `core:git` | Git commands |
 | `core:agent`, `core:pty`, `core:headless` | Agent spawn, terminal sessions and exits |
 | `core:chat` | Chat sessions and their drivers |
+| `app:chat` | The chat view: when it stops or resumes following the bottom, and moves of more than a screen that no scroll caused. These lines hold positions and sizes, never message text. To find them, search the record for `"ns":"app:chat"` |
 | `core:orchestrator` | Orchestrator CLI communication |
 | `core:plugins` | Plugin discovery and loading |
 | `core:safe-mode` | Crash-loop detection and safe mode |

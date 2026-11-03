@@ -148,6 +148,9 @@ export function ChatViewBody({ agent, state, actions, loading, onSwitchToTermina
   const [draft, setDraft] = useChatDraft(agent.id);
   const [attachments, setAttachments] = useChatAttachments(agent.id);
   const [jump, setJump] = useState<StreamJump | null>(null);
+  // Sending from anywhere in the conversation goes back to the bottom to see the reply.
+  const [latestRequest, setLatestRequest] = useState(0);
+  const returnToLatest = () => setLatestRequest((n) => n + 1);
   const { items, subagents, capabilities } = state;
   const runState = state.state;
   const agentMap = useMemo(() => buildAgentMap({ items, subagents, capabilities, state: runState }), [items, subagents, capabilities, runState]);
@@ -173,6 +176,7 @@ export function ChatViewBody({ agent, state, actions, loading, onSwitchToTermina
   }, []);
 
   const onSend = (text: string, action: SendAction, blocks?: string[]) => {
+    returnToLatest();
     const sentAttachments = attachments;
     const send = (delivery: 'auto' | 'steer' | 'queued') => (blocks ? actions.send(text, delivery, blocks) : actions.send(text, delivery));
     void (async () => {
@@ -199,6 +203,7 @@ export function ChatViewBody({ agent, state, actions, loading, onSwitchToTermina
     void (async () => {
       // Implementing in the old level would run the plan unapproved (or not at all).
       if (!(await actions.setLevel(level))) return;
+      returnToLatest();
       await actions.send('Implement the plan.', 'auto');
     })();
   };
@@ -304,7 +309,7 @@ export function ChatViewBody({ agent, state, actions, loading, onSwitchToTermina
           branch={review.branch}
           onChanged={review.reload}
           refreshKey={`${state.turnId ?? 'idle'}:${state.state ?? ''}:${state.workspaceRevision}`}
-          onAskAgent={ended ? undefined : (text) => { void actions.send(text, running ? 'queued' : 'auto'); }}
+          onAskAgent={ended ? undefined : (text) => { returnToLatest(); void actions.send(text, running ? 'queued' : 'auto'); }}
         />
       )}
       {/* Hidden, not unmounted, while reviewing: the stream keeps its scroll and the draft its focus. */}
@@ -317,6 +322,7 @@ export function ChatViewBody({ agent, state, actions, loading, onSwitchToTermina
             onOpenSubagent={hasAgentMap ? openSubagent : undefined}
             jump={jump}
             onJumpResult={onJumpResult}
+            latestRequest={latestRequest}
             announce={context !== 'canvas'}
             onShowEarlier={onShowEarlier}
           />

@@ -52,6 +52,32 @@ function extend(events: ChatEvent[], ...more: Array<Pick<ChatEvent, 'type' | 'da
   return [...events, ...more.map((m, i) => ({ ...last, seq: last.seq + 1 + i, type: m.type, data: m.data }) as ChatEvent)];
 }
 
+describe('sending from the composer', () => {
+  it('asks the stream to return to the bottom, before the send reports back', () => {
+    const actions = makeActions();
+    actions.send.mockImplementation(() => new Promise(() => { /* still sending */ }));
+    useChatDraftStore.setState({ drafts: { [FIXTURE_AGENT_ID]: 'One more thing' }, attachments: {} });
+    renderState(fold(chatFixture('claude', 'conversation')), actions);
+
+    // jsdom has no layout: a view at its bottom, then a real scroll up that pauses it.
+    const stream = screen.getByTestId('chat-stream');
+    let top = 1600;
+    Object.defineProperty(stream, 'clientHeight', { configurable: true, get: () => 400 });
+    Object.defineProperty(stream, 'scrollHeight', { configurable: true, get: () => 2000 });
+    Object.defineProperty(stream, 'scrollTop', { configurable: true, get: () => top, set: (v: number) => { top = Math.min(v, 1600); } });
+    fireEvent.scroll(stream);
+    fireEvent.wheel(stream, { deltaY: -100 });
+    top = 500;
+    fireEvent.scroll(stream);
+    expect(screen.getByTestId('chat-window-latest')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByTestId('chat-send'));
+    expect(actions.send).toHaveBeenCalledWith('One more thing', 'auto');
+    expect(top).toBe(1600);
+    expect(screen.queryByTestId('chat-window-latest')).not.toBeInTheDocument();
+  });
+});
+
 describe('ChatView conversation', () => {
   it.each(['claude', 'codex', 'copilot'] as const)('renders one stream for %s', (p) => {
     renderFixture(p, 'conversation');
