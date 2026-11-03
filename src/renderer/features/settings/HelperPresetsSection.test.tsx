@@ -151,6 +151,102 @@ describe('HelperPresetsSection (#2671)', () => {
     expect((await screen.findByTestId('helper-preset-claude-code-hard-note')).textContent).toContain('refused until you change it');
   });
 
+  describe('Check again (#2786)', () => {
+    const button = () => screen.getByRole('button', { name: /^(Check again|Checking…)$/ }) as HTMLButtonElement;
+    function deferred<T>() {
+      let resolve!: (value: T) => void;
+      let reject!: (reason: unknown) => void;
+      const promise = new Promise<T>((res, rej) => { resolve = res; reject = rej; });
+      return { promise, resolve, reject };
+    }
+
+    it('says what it is for in one sentence, and the ordinary read doesn\'t refresh', async () => {
+      render(<HelperPresetsSection />);
+      await screen.findByTestId('helper-presets-claude-code');
+      expect(screen.getByText('Asks each CLI again for its models and limits, for after you sign in.')).toBeTruthy();
+      expect(screen.getByRole('button', { name: 'Check again' })).toBeTruthy();
+      expect(app().getHelperRouting).toHaveBeenCalledWith();
+    });
+
+    it('asks with refresh, is busy until it answers, then shows the new state and saves nothing', async () => {
+      // `stale` with no effective cell is the worst state the page can show. Whether
+      // this is what the #2786 report showed isn't known: this pins the action only.
+      app().getHelperRouting.mockResolvedValue(settings({ state: 'stale', staleReason: 'model_unavailable', effective: null, custom: { model: 'sonnet', effort: null } }));
+      render(<HelperPresetsSection />);
+      expect((await screen.findByTestId('helper-preset-claude-code-hard-note')).textContent).toContain('refused until you change it');
+
+      const answer = deferred<HelperRoutingSettings>();
+      app().getHelperRouting.mockReturnValue(answer.promise);
+      fireEvent.click(button());
+      await waitFor(() => expect(app().getHelperRouting).toHaveBeenLastCalledWith({ refresh: true }));
+      expect(button().disabled).toBe(true);
+      expect(button().getAttribute('aria-busy')).toBe('true');
+      expect(button().textContent).toBe('Checking…');
+      expect((screen.getByTestId('helper-preset-claude-code-hard-model') as HTMLSelectElement).disabled).toBe(true);
+
+      await act(async () => { answer.resolve(settings({ state: 'valid', source: 'custom', effective: { model: 'sonnet', effort: null }, custom: { model: 'sonnet', effort: null } }, 'r1.1')); });
+      expect(screen.queryByTestId('helper-preset-claude-code-hard-note')).toBeNull();
+      expect(button().disabled).toBe(false);
+      expect(button().textContent).toBe('Check again');
+      expect(app().updateHelperRouting).not.toHaveBeenCalled();
+    });
+
+    it('a later save uses the revision the check brought back', async () => {
+      render(<HelperPresetsSection />);
+      await screen.findByTestId('helper-presets-claude-code');
+      app().getHelperRouting.mockResolvedValue(settings({}, 'r1.1'));
+      fireEvent.click(button());
+      await waitFor(() => expect(button().disabled).toBe(false));
+      fireEvent.change(screen.getByTestId('helper-preset-claude-code-hard-effort'), { target: { value: 'low' } });
+      await waitFor(() => expect(app().updateHelperRouting).toHaveBeenCalledWith(expect.objectContaining({ revision: 'r1.1' })));
+    });
+
+    it('shows a failure the way the page does, and keeps what it had', async () => {
+      render(<HelperPresetsSection />);
+      await screen.findByTestId('helper-presets-claude-code');
+      app().getHelperRouting.mockRejectedValue(new Error('main went away'));
+      fireEvent.click(button());
+      expect((await screen.findByTestId('helper-presets-error')).textContent).toBe('Couldn’t check again. main went away');
+      expect(screen.getByRole('alert')).toBeTruthy();
+      expect(screen.getByTestId('helper-presets-claude-code')).toBeTruthy();
+      expect(button().disabled).toBe(false);
+    });
+
+    it('a timed read that overlapped it can\'t put the old state back', async () => {
+      vi.useFakeTimers();
+      try {
+        providerQuota = { state: 'unknown', unknownReason: 'not_read', source: 'none', asOf: null, refreshAfterSeconds: 5 };
+        render(<HelperPresetsSection />);
+        await act(async () => { await vi.advanceTimersByTimeAsync(0); });
+
+        const timed = deferred<HelperRoutingSettings>();
+        app().getHelperRouting.mockReturnValueOnce(timed.promise);
+        await act(async () => { await vi.advanceTimersByTimeAsync(5_000); });
+        expect(app().getHelperRouting).toHaveBeenCalledTimes(2);
+
+        const checked = deferred<HelperRoutingSettings>();
+        app().getHelperRouting.mockReturnValueOnce(checked.promise);
+        await act(async () => { fireEvent.click(button()); });
+        await act(async () => { checked.resolve(settings({ state: 'valid', source: 'custom', effective: { model: 'sonnet', effort: null }, custom: { model: 'sonnet', effort: null } })); });
+        expect((screen.getByTestId('helper-preset-claude-code-hard-model') as HTMLSelectElement).value).toBe('sonnet');
+
+        await act(async () => { timed.resolve(settings({ state: 'stale', staleReason: 'model_unavailable', effective: null, custom: { model: 'gone', effort: null } })); });
+        expect((screen.getByTestId('helper-preset-claude-code-hard-model') as HTMLSelectElement).value).toBe('sonnet');
+        expect(screen.queryByTestId('helper-preset-claude-code-hard-note')).toBeNull();
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it('Reset still removes the override and doesn\'t ask the CLIs again', async () => {
+      app().getHelperRouting.mockResolvedValue(settings({ source: 'custom', custom: { model: 'sonnet', effort: null } }));
+      render(<HelperPresetsSection />);
+      fireEvent.click(await screen.findByTestId('helper-preset-claude-code-hard-reset'));
+      await waitFor(() => expect(app().updateHelperRouting).toHaveBeenCalledWith({ revision: 'r1.0', reset: { provider: 'claude-code', difficulty: 'hard' } }));
+      expect(app().getHelperRouting).not.toHaveBeenCalledWith({ refresh: true });
+    });
+  });
+
   it('shows a stale write\'s sentence and the fresh values, and doesn\'t retry', async () => {
     app().updateHelperRouting.mockResolvedValue({
       ok: false, code: 'helper_routing_stale', message: 'These presets changed since this page loaded.',

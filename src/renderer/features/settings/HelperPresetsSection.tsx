@@ -5,7 +5,7 @@
  * instead, with Reset. These are starting choices, not measured best ones.
  */
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   HELPER_DIFFICULTIES,
   quotaRefetchDelaySeconds,
@@ -116,15 +116,20 @@ export function HelperPresetsSection() {
   const [settings, setSettings] = useState<HelperRoutingSettings | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [checking, setChecking] = useState(false);
 
   const [refetches, setRefetches] = useState(0);
+  /** Moves around Check again, so a timed read that overlapped it can't put back what it replaced. */
+  const checkEpoch = useRef(0);
 
   useEffect(() => {
     let alive = true;
+    const epoch = checkEpoch.current;
+    const current = () => alive && epoch === checkEpoch.current;
     window.clubhouse.app.getHelperRouting().then(
-      (loaded) => { if (alive) setSettings(loaded); },
+      (loaded) => { if (current()) setSettings(loaded); },
       // telemetry-exempt: shown on the page.
-      (err: unknown) => { if (alive) setError(`Couldn’t read the presets. ${err instanceof Error ? err.message : String(err)}`); },
+      (err: unknown) => { if (current()) setError(`Couldn’t read the presets. ${err instanceof Error ? err.message : String(err)}`); },
     );
     return () => { alive = false; };
   }, [refetches]);
@@ -153,6 +158,23 @@ export function HelperPresetsSection() {
     }
   }, [settings]);
 
+  const checkAgain = useCallback(async () => {
+    checkEpoch.current++;
+    setBusy(true);
+    setChecking(true);
+    setError(null);
+    try {
+      setSettings(await window.clubhouse.app.getHelperRouting({ refresh: true }));
+    } catch (err) {
+      // telemetry-exempt: shown on the page.
+      setError(`Couldn’t check again. ${err instanceof Error ? err.message : String(err)}`);
+    } finally {
+      checkEpoch.current++;
+      setChecking(false);
+      setBusy(false);
+    }
+  }, []);
+
   const providers = settings ? Object.entries(settings.providers) : [];
   return (
     <SettingsSection title="Presets by difficulty">
@@ -177,6 +199,12 @@ export function HelperPresetsSection() {
         <p className={settingsHelp}>
           An orchestrator can name a difficulty instead of a model. These are what it picks on each CLI. They are starting choices, so change them to suit your work. Anything an orchestrator names itself still wins.
         </p>
+        <div className="mt-1.5 flex items-center gap-2.5">
+          <p className={`${settingsHelp} min-w-0 flex-1`}>Asks each CLI again for its models and limits, for after you sign in.</p>
+          <Button kind="quiet" disabled={busy} aria-busy={checking} onClick={() => void checkAgain()} data-testid="helper-presets-check-again">
+            {checking ? 'Checking…' : 'Check again'}
+          </Button>
+        </div>
         {!settings && !error && <p className={settingsHelp}>Loading…</p>}
         {providers.map(([provider, view]) => (
           view.autoEligible ? (
