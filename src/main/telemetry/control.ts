@@ -59,6 +59,7 @@ import {
 import type { ExportRecord } from './types';
 import { getBoundFramebriarSession, getFramebriarTelemetrySource, onFramebriarConnectionChanged } from './destinations/framebriar-source';
 import { appLog } from '../services/log-service';
+import { isPreviewEligible } from '../services/preview-eligible';
 
 const last4 = (value: string): string => value.slice(-4);
 
@@ -506,6 +507,10 @@ let syncing: Promise<void> = Promise.resolve();
  */
 export function syncFramebriarDestination(): Promise<void> {
   syncing = syncing.then(async () => {
+    // Without the flag in force, Framebriar would follow off and the save would
+    // change what the user set. In a build that isn't preview-eligible they didn't
+    // turn anything off, so what they saved stays as it is for when Preview is back.
+    if (!isPreviewEligible()) return;
     const settings = getTelemetrySettings();
     const entry = findDestination(settings, 'framebriar');
     if (!entry) return;

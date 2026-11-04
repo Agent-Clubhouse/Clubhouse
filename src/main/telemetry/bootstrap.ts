@@ -28,6 +28,7 @@ import { restartLocalRecording, syncLocalRecording } from './local-control';
 import { createIdentity, isValidIdentity, type TelemetryIdentity } from './ids';
 import { deleteOfflineData, getOfflineDir, OFFLINE_PRUNE_INTERVAL_MS, pruneOfflineDir } from './offline';
 import { buildResourceAttributes, type ResourceInputs } from './resource';
+import { getSettings as getExperimentalSettings } from '../services/experimental-settings';
 import { NEW_CHROME_FLAG } from '../../shared/chrome-flag';
 import { createScrubber } from './scrubber';
 import {
@@ -139,10 +140,9 @@ function annexRole(): ResourceInputs['annexRole'] {
  * flag once at startup and switching takes effect on the next launch, so the
  * value cannot change mid-session (docs/chrome-redesign-spec.md §4.1, §8).
  */
-function uiChrome(): ResourceInputs['uiChrome'] {
+export function uiChrome(): ResourceInputs['uiChrome'] {
   try {
-    const { getSettings } = require('../services/experimental-settings') as typeof import('../services/experimental-settings');
-    return getSettings()[NEW_CHROME_FLAG] === true ? 'v2' : 'legacy';
+    return getExperimentalSettings()[NEW_CHROME_FLAG] === true ? 'v2' : 'legacy';
   } catch {
     // Settings unreadable: the renderer falls back to the legacy shell too.
     return 'legacy';

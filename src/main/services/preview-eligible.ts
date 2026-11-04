@@ -1,23 +1,15 @@
 import { app } from 'electron';
-import * as autoUpdateService from './auto-update-service';
-import { appLog } from './log-service';
+import { getSettings as getUpdateSettings } from './update-settings';
 
-/** Returns true when the build is a prerelease (beta, rc, etc.), user opted into preview channel, or running unpackaged (dev/test). */
+/**
+ * Returns true when the build is a prerelease (beta, rc, etc.), user opted into preview channel, or running unpackaged (dev/test).
+ *
+ * Every experimental flag read goes through this, including before `ready`
+ * (initTelemetry), so it stays this small: nothing here needs the app ready, it
+ * doesn't log, and it imports only the settings store.
+ */
 export function isPreviewEligible(): boolean {
-  if (!app.isPackaged) {
-    appLog('core:annex', 'debug', 'Preview eligible: unpackaged (dev) build');
-    return true;
-  }
-  const version = app.getVersion();
-  if (/-(beta|rc|alpha|dev|canary)/.test(version)) {
-    appLog('core:annex', 'debug', `Preview eligible: prerelease version ${version}`);
-    return true;
-  }
-  const updateSettings = autoUpdateService.getSettings();
-  if (updateSettings.previewChannel) {
-    appLog('core:annex', 'debug', 'Preview eligible: preview channel enabled');
-    return true;
-  }
-  appLog('core:annex', 'debug', `Not preview eligible: packaged stable build v${version}, preview channel off`);
-  return false;
+  if (!app.isPackaged) return true;
+  if (/-(beta|rc|alpha|dev|canary)/.test(app.getVersion())) return true;
+  return getUpdateSettings().previewChannel;
 }
