@@ -88,16 +88,14 @@ function ComposerPreview({ frame, snapshot, onOpen, disabled }: { frame: Screens
 }
 
 /** The SDK's ready-made view inside the app's Modal, for comparing. Its theme comes through custom properties. */
-function MountedEditor({ model, carriedOver, onClose }: { model: ScreenshotEditorModel; carriedOver: boolean; onClose: () => void }) {
+function MountedEditor({ model, onClose }: { model: ScreenshotEditorModel; onClose: () => void }) {
   const ref = useRef<HTMLDivElement>(null);
   const close = useRef(onClose);
   close.current = onClose;
   useEffect(() => {
-    // No API says a fresh model's edits are final, so a reopened draft swaps the words instead.
-    const copy = carriedOver ? { ...FEEDBACK_COPY, confirm: { ...FEEDBACK_COPY.confirm, clearReversible: FEEDBACK_COPY.confirm.clearFinal } } : FEEDBACK_COPY;
-    const view = mountScreenshotEditor(ref.current!, { model, copy, onDone: () => close.current(), onCancel: () => close.current() });
+    const view = mountScreenshotEditor(ref.current!, { model, copy: FEEDBACK_COPY, onDone: () => close.current(), onCancel: () => close.current() });
     return () => view.destroy();
-  }, [model, carriedOver]);
+  }, [model]);
   return (
     <div
       ref={ref}
@@ -151,14 +149,13 @@ export function FeedbackReviewDialog({ draft, reopened = null, onClose, editorOp
   const received = useFeedbackStore((s) => (reportId ? s.status?.received.includes(reportId) === true : false));
   const saved = useFeedbackStore((s) => savedText(s.status));
   const shots = shotsOf(draft);
-  const { model, snapshot } = useScreenshotEditorModel(shots, editorOptions ?? pilotHooks.editorOptions);
+  const { model, snapshot } = useScreenshotEditorModel(shots, editorOptions ?? pilotHooks.editorOptions, reopened?.carriedFlattened === true);
   const frame = useEditorPreview(model, snapshot);
   const [editor, setEditor] = useState<'react' | 'mounted' | null>(null);
   const shotIndex = Math.max(0, snapshot?.views.findIndex((view) => view.id === snapshot.activeView) ?? 0);
   const views = snapshot?.views ?? [];
   const hasScreenshot = snapshot !== null && snapshot.status !== 'removed' && snapshot.status !== 'failed' && snapshot.included;
   const canSend = hasScreenshot || notes.trim() !== '';
-  const carriedOver = reopened !== null;
   const setShotIndex = (i: number) => { if (views[i]) model?.setActiveView(views[i].id); };
   const logs = logsControl(logsFacts(draft, includeDiagnostics));
 
@@ -188,9 +185,9 @@ export function FeedbackReviewDialog({ draft, reopened = null, onClose, editorOp
       const begun = model ? await model.beginSend() : null;
       // Not `!begun.ok`: with strictNullChecks off, as here, that doesn't narrow the union.
       if (begun?.ok === false) {
-        // Nothing has ended and no save starts. A disposed model means the dialog has gone.
-        if (begun.code !== 'disposed') {
-          setError(snapshot?.included === false ? `${begun.block} Remove the screenshot to send your note.` : begun.block);
+        // Nothing has ended and no save starts. Gone or already running: the words are for neither.
+        if (begun.code !== 'disposed' && begun.code !== 'in-progress') {
+          setError(begun.block);
           setPhase('review');
         }
         return;
@@ -209,7 +206,9 @@ export function FeedbackReviewDialog({ draft, reopened = null, onClose, editorOp
       if (result.status === 'enrollment-changed') {
         // Nothing was saved. A new report with new contents needs its own review and Send.
         const lostScreenshot = reopened?.lostScreenshot === true || (hasScreenshot && shotsOf(result.draft).length === 0);
-        reopenDraft(result.draft, { notes, includeCorrelation, includeDiagnostics, lostScreenshot });
+        // Only what the model says isn't the attachment is flattened: a carried capture stays a capture, for noEdits.
+        const carriedFlattened = begun?.ok === true && begun.finalBytes !== null && !begun.original;
+        reopenDraft(result.draft, { notes, includeCorrelation, includeDiagnostics, lostScreenshot, carriedFlattened });
         return;
       }
       setReportId(result.id);
@@ -291,12 +290,13 @@ export function FeedbackReviewDialog({ draft, reopened = null, onClose, editorOp
                 </div>
                 <p className="text-xs text-ctp-subtext0" data-testid="pilot-state">
                   {!snapshot.included ? FEEDBACK_COPY.notes.screenshotLeftOut
-                    : snapshot.editsAreFinal || carriedOver ? FEEDBACK_COPY.notes.editedFinal
+                    : snapshot.editsAreFinal ? FEEDBACK_COPY.notes.editedFinal
                     : snapshot.edited ? FEEDBACK_COPY.notes.edited.replace('{action}', 'Click')
                     : FEEDBACK_COPY.notes.imageTools.replace('{action}', 'Click')}
                 </p>
-                {editor === 'react' && <ScreenshotAnnotator model={model!} snapshot={snapshot} frame={frame} carriedOver={carriedOver} onClose={() => setEditor(null)} />}
-                {editor === 'mounted' && <MountedEditor model={model!} carriedOver={carriedOver} onClose={() => setEditor(null)} />}
+                {snapshot.otherViewsMarked && <p className="text-xs text-ctp-subtext0" data-testid="pilot-other-views">{FEEDBACK_COPY.notes.otherViewMarks}</p>}
+                {editor === 'react' && <ScreenshotAnnotator model={model!} snapshot={snapshot} frame={frame} onClose={() => setEditor(null)} />}
+                {editor === 'mounted' && <MountedEditor model={model!} onClose={() => setEditor(null)} />}
               </div>
             ) : (
               <p className="text-sm text-ctp-subtext0">{reopened ? 'This report has no screenshot.' : snapshot ? 'The screenshot was removed. You can still send a note.' : 'No screenshot could be taken. You can still send a note.'}</p>

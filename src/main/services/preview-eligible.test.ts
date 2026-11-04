@@ -4,16 +4,12 @@ vi.mock('electron', () => ({
   app: { getVersion: vi.fn(() => '0.38.0'), isPackaged: true },
 }));
 
-vi.mock('./auto-update-service', () => ({
+vi.mock('./update-settings', () => ({
   getSettings: vi.fn(() => ({ previewChannel: false })),
 }));
 
-vi.mock('./log-service', () => ({
-  appLog: vi.fn(),
-}));
-
 import { app } from 'electron';
-import * as autoUpdateService from './auto-update-service';
+import * as updateSettings from './update-settings';
 import { isPreviewEligible } from './preview-eligible';
 
 describe('isPreviewEligible', () => {
@@ -21,7 +17,7 @@ describe('isPreviewEligible', () => {
     vi.clearAllMocks();
     (app as any).isPackaged = true;
     vi.mocked(app.getVersion).mockReturnValue('0.38.0');
-    vi.mocked(autoUpdateService.getSettings).mockReturnValue({
+    vi.mocked(updateSettings.getSettings).mockReturnValue({
       previewChannel: false,
       autoUpdate: true,
       lastCheck: null,
@@ -61,7 +57,7 @@ describe('isPreviewEligible', () => {
   });
 
   it('returns true when previewChannel is enabled', () => {
-    vi.mocked(autoUpdateService.getSettings).mockReturnValue({
+    vi.mocked(updateSettings.getSettings).mockReturnValue({
       previewChannel: true,
       autoUpdate: true,
       lastCheck: null,
@@ -73,5 +69,32 @@ describe('isPreviewEligible', () => {
 
   it('returns false for stable packaged build without preview channel', () => {
     expect(isPreviewEligible()).toBe(false);
+  });
+
+  it.each([
+    ['0.42.0', false],
+    ['0.42.0-beta.14', true],
+    ['0.42.0-rc.1', true],
+    ['0.42.0-alpha.1', true],
+    ['0.42.0-dev.1', true],
+    ['0.42.0-canary.1', true],
+    // Not a preview version: the legacy rc form has no hyphen, and the unsigned CI artifact is its own suffix.
+    ['0.42.0rc', false],
+    ['0.0.0-integration.123.1', false],
+  ])('a packaged %s with Preview off is eligible: %s', (version, eligible) => {
+    vi.mocked(app.getVersion).mockReturnValue(version);
+    expect(isPreviewEligible()).toBe(eligible);
+  });
+
+  it('a packaged stable version stays eligible with the explicit Preview opt-in', () => {
+    vi.mocked(app.getVersion).mockReturnValue('0.42.0');
+    vi.mocked(updateSettings.getSettings).mockReturnValue({
+      previewChannel: true,
+      autoUpdate: true,
+      lastCheck: null,
+      dismissedVersion: null,
+      lastSeenVersion: null,
+    });
+    expect(isPreviewEligible()).toBe(true);
   });
 });

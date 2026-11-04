@@ -4,7 +4,7 @@ import { launchApp, type LaunchedApp } from './launch';
 import { runScenario } from './feedback-editor-pilot-scenario.mjs';
 
 /**
- * PILOT, DO NOT MERGE. The Framebriar screenshot editor pinned to 2974cb8, in the real Electron renderer:
+ * PILOT, DO NOT MERGE. The Framebriar screenshot editor pinned to e9a4276, in the real Electron renderer:
  * file://, the production CSP header, the forge webpack build. Prints what it found as one PILOT_RESULT line.
  * No enrollment, no server and no report: the IPC call to main is replaced in pilot-hooks.ts.
  */

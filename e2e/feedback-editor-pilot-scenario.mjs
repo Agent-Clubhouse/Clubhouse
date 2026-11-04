@@ -73,6 +73,16 @@ async function steps(page, fixture, { perf = false }, report) {
   expectThat('createImageBitmap under the production CSP', report.csp.createImageBitmapFromBlob);
   expectThat('constructable stylesheet under the production CSP', report.csp.constructableSheet);
   report.worker = await call('probeWorker');
+  report.revertCases = await call('revertCases');
+  for (const row of report.revertCases.rows) {
+    if (/^(after failed|carried)/.test(row.name)) {
+      expectThat(`${row.name}: no original pixel in the bytes`, JSON.stringify(row.covered) === '[0,0,0]', row);
+      expectThat(`${row.name}: no original pixel in the preview`, JSON.stringify(row.preview) === '[0,0,0]', row);
+      expectThat(`${row.name}: edits stay final`, row.editsAreFinal === true && row.original === false, row);
+    }
+  }
+  report.concurrentCases = await call('concurrentCases');
+  expectThat('a second call in flight is refused in-progress', report.concurrentCases.secondCode === 'in-progress' && report.concurrentCases.first === true, report.concurrentCases);
   report.beginSendCases = await call('beginSendCases');
   for (const row of report.beginSendCases.rows) {
     if (row.edited) expectThat(`${row.name}: no original pixel under the redaction`, JSON.stringify(row.coveredPixel) === '[0,0,0]', row);
@@ -152,6 +162,23 @@ async function steps(page, fixture, { perf = false }, report) {
   await click('[data-testid="feedback-shot-0"]');
   await until(() => page.evaluate(() => document.querySelector('[data-testid="feedback-preview"]')?.width > 450), 'the first window preview');
 
+  // The warning: s0 has marks from the visits above. It's for the view not selected, so it follows the picker.
+  const warning = () => text('[data-testid="pilot-other-views"]');
+  report.otherViews = { onMarkedWindow: await warning() };
+  await click('[data-testid="feedback-shot-1"]');
+  await until(() => page.evaluate(() => document.querySelector('[data-testid="feedback-preview"]')?.width === 400), 'the second window for the warning');
+  report.otherViews.afterSwitch = await warning();
+  expectThat('the warning appears after a picker switch', /won't be sent/.test(report.otherViews.afterSwitch ?? ''), report.otherViews);
+  await click('[data-testid="feedback-include"]');
+  await wait(50);
+  report.otherViews.leftOut = await warning();
+  await click('[data-testid="feedback-include"]');
+  await wait(50);
+  await click('[data-testid="feedback-shot-0"]');
+  await until(() => page.evaluate(() => document.querySelector('[data-testid="feedback-preview"]')?.width > 450), 'the first window for the warning');
+  report.otherViews.afterSwitchBack = await warning();
+  expectThat('the warning clears on switching back', report.otherViews.afterSwitchBack === null, report.otherViews);
+
   // First Send fails: the view locks, Clear changes its words, the same bytes retry.
   report.storeBeforeSend = await call('storeHoldsImages');
   await call('failNextSend', 'storage full');
@@ -165,6 +192,8 @@ async function steps(page, fixture, { perf = false }, report) {
   report.storeAfterSend = await call('storeHoldsImages');
   expectThat('the store drops the windows after the first Send', report.storeAfterSend === false);
   expectThat('the picker has gone after the first Send', !(await exists('[data-testid="feedback-shots"]')));
+  report.otherViews.afterFirstSend = await warning();
+  expectThat('the warning has gone after the first Send', report.otherViews.afterFirstSend === null, report.otherViews);
   report.afterFailedSend = await text('[data-testid="pilot-state"]');
   expectThat('after a failed Send the note says final', /can't be undone/.test(report.afterFailedSend ?? ''), report.afterFailedSend);
 
@@ -203,7 +232,35 @@ async function steps(page, fixture, { perf = false }, report) {
   await until(() => exists('[data-testid="feedback-reopened"]'), 'the reopened draft', 30000);
   await until(() => exists('[data-testid="feedback-preview"]'), 'the reopened composer');
   report.reopenedState = await text('[data-testid="pilot-state"]');
-  // A reopened draft brings its bytes on every included Send, though the fresh model says original.
+  // The carried image is final from creation: the Clear words are right before any new Send, in both editors.
+  await click('[data-testid="pilot-edit-react"]');
+  await until(() => exists('[data-testid="pilot-stage"]'), 'the React editor on the carried image');
+  await wait(300);
+  await click('[data-testid="pilot-tool-pen"]');
+  await dragIn('[data-testid="pilot-stage"]', [0.3, 0.8], [0.5, 0.8]);
+  await click('[data-testid="pilot-clear"]');
+  await until(() => exists('[data-testid="pilot-clear-text"]'), 'Clear on the carried image');
+  report.carriedClearReact = await text('[data-testid="pilot-clear-text"]');
+  expectThat('carried: Clear says covered stays covered', /stays covered/.test(report.carriedClearReact ?? ''), report.carriedClearReact);
+  await click('[data-testid="pilot-clear-yes"]');
+  await wait(50);
+  await click('[data-testid="pilot-cancel"]');
+  await until(async () => !(await exists('[data-testid="pilot-stage"]')), 'Cancel on the carried image');
+  await click('[data-testid="pilot-edit-mounted"]');
+  await until(async () => (await call('mountedState')).open, 'the mounted view on the carried image');
+  await wait(300);
+  await click('[data-tool="pen"]');
+  await dragIn('canvas', [0.3, 0.8], [0.5, 0.8]);
+  await click('[data-action="clear"]');
+  await wait(100);
+  report.carriedClearMounted = (await call('mountedState')).confirmText;
+  expectThat('carried, mounted: Clear says covered stays covered', /stays covered/.test(report.carriedClearMounted ?? ''), report.carriedClearMounted);
+  await page.keyboard.press('Escape');
+  await wait(100);
+  await click('[data-action="cancel"]');
+  await until(async () => !(await call('mountedState')).mounted, 'Cancel in the mounted view on the carried image');
+  // Bytes still go on every included Send.
+  // A reopened draft brings its bytes on every included Send.
   await click('[data-testid="feedback-send"]');
   await until(() => exists('[data-testid="feedback-sent-state"]'), 'the Send after a reopen', 30000);
   report.reopenedSend = await lastSend();
@@ -406,6 +463,20 @@ async function steps(page, fixture, { perf = false }, report) {
   await until(() => exists('[data-testid="feedback-sent-state"]'), 'the note after Remove', 30000);
   report.excludedBlock.afterRemove = await lastSend();
   expectThat('Remove gets the note out', report.excludedBlock.afterRemove?.input.includeScreenshot === false && report.excludedBlock.afterRemove?.bytes === null, report.excludedBlock.afterRemove);
+  await call('clearFailures');
+  await call('close');
+  await wait(100);
+
+  // The same refusal with the image included and no note: the words talk about a note that isn't there.
+  await call('open', [{ width: 6016, height: 3384, label: 'Main window' }]);
+  await until(() => page.evaluate(() => document.querySelector('[data-testid="feedback-preview"]')?.width > 300), 'the included 6K composer', 30000);
+  await call('failFlattenOf', 6016);
+  await click('[data-testid="feedback-send"]');
+  await until(() => exists('[data-testid="feedback-error"]'), 'the included block', 30000);
+  report.includedBlock = { words: await text('[data-testid="feedback-error"]'), final: await call('storeHoldsImages') };
+  await click('[data-testid="feedback-remove"]');
+  await wait(100);
+  report.includedBlock.sendDisabledAfterRemove = await page.evaluate(() => document.querySelector('[data-testid="feedback-send"]').disabled);
   await call('clearFailures');
   await call('close');
   await wait(100);

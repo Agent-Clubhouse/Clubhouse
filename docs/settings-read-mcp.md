@@ -109,6 +109,7 @@ Each value has `effective` and `source`, and `stored` with `detail`.
 - **`app` means saved, not chosen.** Presence in the file is what's checked, never the value, because the stores merge defaults in. The stores also save the whole object, so changing one setting on a page can save its neighbors at their default values, and those then read `app`.
 - **A save still queued** shows on the next read. The file is checked, while `effective` comes from the store's memory.
 - **`uncertain` still has an `effective`.** It's what the app is using: its in-memory value, or the default if it never loaded the file.
+- **A preview-only experimental flag in a stable build** keeps `stored` and `source: app` when it's saved, and its `effective` is `false`. The flag is still in the file and comes back with Preview, but the build doesn't honour it. Compare `stored` with `detail` on.
 - **Fixed rules read `default`.** A helper always gets Clubhouse MCP and is never connected to the Dispatcher, whatever is saved. Compare `stored` with `detail` on.
 - **A sleeping helper's `free_agent_mode`** is its saved value, before its orchestrator's ceiling applies at the next start. Awake, it's what the helper runs with.
 - **`agent.cli.model`** reads `default` when the CLI picks. No CLI is asked which model that means, since that can spawn a process.

@@ -17,6 +17,8 @@ export interface ScreenshotView {
   label?: string;
   /** A Promise means the capture is frozen and its raster is still finishing. */
   source: ScreenshotSource|Promise<ScreenshotSource>;
+  /** This source already has edits flattened in, because a host carried it from an earlier composer. `original` is relative to what the model was given, not capture provenance. */
+  editsAreFinal?: boolean;
 }
 
 export interface ScreenshotEditorState {
@@ -28,12 +30,14 @@ export interface ScreenshotEditorState {
   /** Working marks on the selected view. */
   readonly marks: readonly ScreenshotMark[];
   readonly included: boolean;
-  /** The bytes to send differ from the attachment by edits, in committed state. Pending marks are `dirty`, so "any edits" is `edited||dirty`. */
+  /** The bytes to send differ from the attachment by edits, in committed state, so false with no image. Pending marks are `dirty`, so "any edits" is `edited||dirty`. */
   readonly edited: boolean;
   /** `marks` differ from the last commit. */
   readonly dirty: boolean;
   /** Edits already flattened into the source can't be taken out. */
   readonly editsAreFinal: boolean;
+  /** An unselected view has marks. A Send drops them, so tell the tester (`notes.otherViewMarks`). */
+  readonly otherViewsMarked: boolean;
   /** Increases whenever the media a report would carry changes. A new revision needs a new report ID. */
   readonly revision: number;
   readonly canUndo: boolean;
@@ -53,16 +57,16 @@ export interface ScreenshotSendStarted {
   readonly finalBytes: Blob|null;
   /** `finalBytes` is the unmodified attachment. False for a re-encode or fit-down, and with no image. */
   readonly original: boolean;
-  /** Edits are in `finalBytes`. False with `original` false means a re-encode with no edits. */
+  /** Edits are in `finalBytes`, so false with no image. False with `original` false and bytes present means a re-encode with no edits. */
   readonly edited: boolean;
 }
 
 /** No save should start. Nothing has ended: every view and mark is as it was, and edits are still reversible. */
 export interface ScreenshotSendRefused {
   readonly ok: false;
-  /** `pending`: a capture still finishing, and included. `prepare-failed`: can't flatten or encode. `disposed`: the model is gone. */
-  readonly code: 'pending'|'prepare-failed'|'disposed';
-  /** The words for why, from the copy file. */
+  /** `pending`: a capture still finishing, and included. `prepare-failed`: can't flatten or encode. `in-progress`: a call is already running, which goes on to finish, so show nothing new. `disposed`: the model is gone. */
+  readonly code: 'pending'|'prepare-failed'|'in-progress'|'disposed';
+  /** The words for why, from the copy file. For `prepare-failed` they name the way out, Remove. */
   readonly block: string;
   readonly viewId: null;
   readonly bytes: null;
@@ -101,7 +105,7 @@ export interface ScreenshotEditorModel {
   remove(): void;
   /**
    * Flattens the marks on every view. On a rejection nothing changes, and `dirty` stays true. Bytes land only
-   * if they're still wanted: a revert or the first Send tap during the flatten wins and the call resolves
+   * if they're still wanted: a revert during the flatten wins and the call resolves
    * with nothing changed, and a newer mark flattens again before it resolves.
    */
   commit(): Promise<void>;
@@ -123,6 +127,7 @@ export interface ScreenshotEditorModel {
    * The Send tap, whether or not the image is included. Commits only the selected view, prepares its bytes, and
    * only then ends reversibility, dropping the other views. If it can't, nothing has ended and no save should
    * start. A mark made while it runs is in the bytes, or it refuses. A retry with no new marks has the same bytes.
+   * It queues behind a commit already running, which lands first. A second call while one runs refuses with `in-progress`.
    */
   beginSend(): Promise<ScreenshotSendStarted|ScreenshotSendRefused>;
   /** For a host's own order of the parts; hosts use beginSend. Throws if any view has uncommitted marks. */

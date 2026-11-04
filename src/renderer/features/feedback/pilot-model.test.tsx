@@ -541,6 +541,59 @@ describe('Framebriar\'s stated behavior, against ac13f32', () => {
 
 // The interim mapping is gone on this branch: src/main/pilot-beginsend-main.test.ts covers beginSend against main.
 
+describe('otherViewsMarked', () => {
+  const two = () => createScreenshotEditorModel({ views: [{ id: 's0', source: pngOf(4, 4, 1) }, { id: 's1', source: pngOf(8, 8, 2) }], raster: fakeRaster() });
+
+  it('follows the selection, committed or not, and goes at the first Send', async () => {
+    const model = two();
+    model.addMark(REDACT);
+    expect(model.getSnapshot().otherViewsMarked).toBe(false);
+    model.setActiveView('s1');
+    expect(model.getSnapshot().otherViewsMarked).toBe(true);
+    model.setActiveView('s0');
+    expect(model.getSnapshot().otherViewsMarked).toBe(false);
+    await model.commit();
+    model.setActiveView('s1');
+    expect(model.getSnapshot().otherViewsMarked).toBe(true);
+    await model.beginSend();
+    expect(model.getSnapshot().otherViewsMarked).toBe(false);
+  });
+
+  it('with marks on both, stays on whichever is selected, and goes on Undo of the other', () => {
+    const model = two();
+    model.addMark(REDACT);
+    model.setActiveView('s1');
+    model.addMark(REDACT);
+    expect(model.getSnapshot().otherViewsMarked).toBe(true);
+    model.setActiveView('s0');
+    expect(model.getSnapshot().otherViewsMarked).toBe(true);
+    model.setActiveView('s1');
+    model.undo();
+    model.setActiveView('s0');
+    expect(model.getSnapshot().otherViewsMarked).toBe(false);
+  });
+
+  it('a refused Send keeps it, because nothing has ended', async () => {
+    const a = pngOf(9000, 4, 1);
+    const model = createScreenshotEditorModel({ views: [{ id: 's0', source: a }, { id: 's1', source: pngOf(8, 8, 2) }], raster: fakeRaster({ fail: (s) => s === a }) });
+    model.setActiveView('s1');
+    model.addMark(REDACT);
+    model.setActiveView('s0');
+    expect((await model.beginSend()).ok).toBe(false);
+    expect(model.getSnapshot().otherViewsMarked).toBe(true);
+  });
+
+  it('stays while the image is left out, and Revert clears uncommitted marks on the other view with it', () => {
+    const model = two();
+    model.addMark(REDACT);
+    model.setActiveView('s1');
+    model.setIncluded(false);
+    expect(model.getSnapshot().otherViewsMarked).toBe(true);
+    model.revert();
+    expect(model.getSnapshot().otherViewsMarked).toBe(false);
+  });
+});
+
 describe('under React', () => {
   function Naive({ onModel }: { onModel: (m: ScreenshotEditorModel) => void }) {
     // The obvious shape: create once, dispose on unmount.

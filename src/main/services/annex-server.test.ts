@@ -1080,6 +1080,16 @@ describe('annex-server', () => {
       expect(ptyManagerModule.spawnShell).not.toHaveBeenCalled();
     });
 
+    it('advertises rich content only while the flag reads as on', async () => {
+      const { port, token } = await startAndPair();
+      const capabilities = async () => JSON.parse((await request(port, 'GET', '/api/v1/mobile/capabilities', undefined, authHeaders(token))).body);
+      expect((await capabilities()).richContent.enabled).toBe(false);
+      vi.mocked(getExperimentalSettings).mockReturnValue({ richChatContent: true } as any);
+      try {
+        expect((await capabilities()).richContent.enabled).toBe(true);
+      } finally { vi.mocked(getExperimentalSettings).mockReturnValue({} as any); }
+    });
+
     it('advertises the terminal capability', async () => {
       const { port, token } = await startAndPair();
       const body = JSON.parse((await request(port, 'GET', '/api/v1/mobile/capabilities', undefined, authHeaders(token))).body);

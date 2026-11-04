@@ -1,4 +1,5 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { app } from 'electron';
 import { TELEMETRY_SETTINGS } from '../../shared/settings-definitions';
 
 const state = vi.hoisted(() => ({
@@ -372,6 +373,34 @@ describe('Framebriar destination follows Feedback', () => {
     expect(state.active).toEqual(['azure', 'framebriar']);
     state.calls = [];
   }
+
+  describe('in a build that is not preview-eligible', () => {
+    const asPackagedStable = (packaged: boolean) => { (app as { isPackaged: boolean }).isPackaged = packaged; };
+    afterEach(() => asPackagedStable(false));
+
+    it('leaves consent and the destinations as saved when Feedback connects or drops', async () => {
+      await shared();
+      const saved = JSON.stringify(state.settings);
+      // The gate reads the flag as off, as getSettings does in this build.
+      state.experiment = false;
+      asPackagedStable(true);
+
+      disconnect();
+      await control.syncFramebriarDestination();
+      connect('s-later');
+      await control.syncFramebriarDestination();
+
+      expect(JSON.stringify(state.settings)).toBe(saved);
+      expect(state.calls).toEqual([]);
+    });
+  });
+
+  it('with the flag turned off in an eligible build, Framebriar still follows it off', async () => {
+    await shared();
+    state.experiment = false;
+    await control.syncFramebriarDestination();
+    expect(fbEntry().enabled).toBe(false);
+  });
 
   it('defaults to off with the "User activity and errors" filter', () => {
     expect(fbEntry()).toMatchObject({ enabled: false, preset: 'user_activity', framebriar: { userOff: false } });

@@ -2,6 +2,7 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { app } from 'electron';
 import type { DurableAgentConfig } from '../../shared/types';
 
 const dirs = vi.hoisted(() => ({ userData: '', base: '' }));
@@ -205,6 +206,33 @@ describe('the allowlist', () => {
     expect(JSON.stringify(seen)).not.toContain(CANARY);
     // And the read really did cover the planted records.
     expect(JSON.stringify(seen)).toContain('a1');
+  });
+});
+
+describe('a preview-only flag in a stable build', () => {
+  const packaged = (on: boolean) => { (app as { isPackaged: boolean }).isPackaged = on; };
+  afterEach(() => { packaged(false); resetAllSettingsStoresForTests(); });
+
+  it('reports what is saved, and that the build does not honour it', async () => {
+    writeApp('experimental-settings.json', { chat: true, copilotSdk: true, dispatcher: true });
+    resetAllSettingsStoresForTests();
+    packaged(true);
+
+    const { targets } = await read(dispatcher, { select: ['app.defaults.chat_enabled', 'app.system.experimental_dispatcher', 'app.system.experimental_copilot_sdk'], detail: true });
+    const off = { stored: true, effective: false, source: 'app' };
+    expect(targets[0].settings).toMatchObject({
+      'app.defaults.chat_enabled': off,
+      'app.system.experimental_dispatcher': off,
+      'app.system.experimental_copilot_sdk': off,
+    });
+  });
+
+  it('agrees with what the same flags read as in a preview build', async () => {
+    writeApp('experimental-settings.json', { chat: true });
+    resetAllSettingsStoresForTests();
+
+    const { targets } = await read(dispatcher, { select: ['app.defaults.chat_enabled'], detail: true });
+    expect(targets[0].settings['app.defaults.chat_enabled']).toEqual({ stored: true, effective: true, source: 'app' });
   });
 });
 

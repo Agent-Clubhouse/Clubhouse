@@ -37,9 +37,9 @@ const NO_SNAPSHOT = (): null => null;
  * dispose() can't be undone, and StrictMode's simulated unmount runs cleanups, so disposing in a plain
  * cleanup would leave a dead model on the second mount. The dispose waits a task and a remount cancels it.
  */
-export function useScreenshotEditorModel(shots: readonly FeedbackShot[], options: EditorOptions = {}) {
+export function useScreenshotEditorModel(shots: readonly FeedbackShot[], options: EditorOptions = {}, carriedFlattened = false) {
   const [model] = useState<ScreenshotEditorModel | null>(() => (shots.length === 0 ? null : createScreenshotEditorModel({
-    views: shots.map((shot, i) => ({ id: shot.shotId || `shot-${i}`, label: shot.label, source: dataUrlToPngBlob(shot.preview) })),
+    views: shots.map((shot, i) => ({ id: shot.shotId || `shot-${i}`, label: shot.label, source: dataUrlToPngBlob(shot.preview), ...(carriedFlattened && { editsAreFinal: true }) })),
     ...options,
   })));
   const pendingDispose = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -88,10 +88,9 @@ export async function blobToBase64(blob: Blob): Promise<string> {
 }
 
 /**
- * What a started Send tells main under #2794's rules at a8167f999. Nothing here compares bytes. Included always
- * brings its bytes, and main takes its capture's own bytes by hash, so a reopened draft needs no branch here: on
- * one, `original` means the carried image, not main's capture. Left out, `original` is safe to use: noEdits keeps
- * an unedited capture, and is inert on a carried flattened image, which brings bytes on its next included Send anyway.
+ * What a started Send tells main under its rules on origin/main. Nothing here compares bytes. Included always
+ * brings its bytes, and main takes its capture's own bytes by hash. Left out: noEdits keeps an unedited capture,
+ * and anything else brings its final bytes, a carried flattened image included, since editsAreFinal makes it not original.
  */
 export async function sendFields(begun: ScreenshotSendStarted): Promise<Pick<FeedbackSendInput, 'includeScreenshot' | 'annotatedPng' | 'shotId' | 'noEdits'>> {
   const { viewId, bytes, finalBytes, original } = begun;

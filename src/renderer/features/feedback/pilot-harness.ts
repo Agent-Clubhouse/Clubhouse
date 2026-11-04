@@ -132,6 +132,129 @@ const api = {
   clearFailures: () => { failingWidths.clear(); },
   sendCount: () => sends.length,
 
+  // ---- Revert, Cancel and Clear after finality, with real pixels: can anything from before it come back? ----
+  async revertCases() {
+    const SECRET = [250, 10, 20];
+    const canvas = new OffscreenCanvas(64, 64);
+    const context = canvas.getContext('2d')!;
+    context.fillStyle = `rgb(${SECRET.join(',')})`;
+    context.fillRect(0, 0, 64, 64);
+    const source = await canvas.convertToBlob({ type: 'image/png' });
+    const RED: ScreenshotMark = { type: 'redact', x: 0, y: 0, width: 32, height: 32 };
+    const LATER: ScreenshotMark = { type: 'redact', x: 40, y: 40, width: 8, height: 8 };
+    const pixelOf = async (blob: Blob | null, x = 10, y = 10) => {
+      if (!blob) return null;
+      const bitmap = await createImageBitmap(blob);
+      const read = new OffscreenCanvas(bitmap.width, bitmap.height).getContext('2d', { willReadFrequently: true })!;
+      read.drawImage(bitmap, 0, 0);
+      bitmap.close();
+      return Array.from(read.getImageData(x, y, 1, 1).data.slice(0, 3));
+    };
+    const previewOf = async (model: ScreenshotEditorModel) => {
+      const frame = await model.openPreview();
+      const read = new OffscreenCanvas(64, 64).getContext('2d', { willReadFrequently: true })!;
+      frame?.draw(read);
+      frame?.close();
+      return Array.from(read.getImageData(10, 10, 1, 1).data.slice(0, 3));
+    };
+    // A Send that started, whose save then failed: what a Cancel or Clear from here can reach.
+    const afterFailedSend = async () => {
+      const model = createScreenshotEditorModel({ views: [{ id: 's0', source }] });
+      model.addMark(RED);
+      const first = await model.beginSend();
+      return { model, first };
+    };
+    const rows: Array<Record<string, unknown>> = [];
+    const row = async (name: string, model: ScreenshotEditorModel, extra: Record<string, unknown> = {}) => {
+      const { marks, editsAreFinal, edited, dirty } = model.getSnapshot();
+      const begun = await model.beginSend();
+      rows.push({ name, marks: marks.length, editsAreFinal, edited, dirty, ok: begun.ok, original: begun.original, covered: await pixelOf(begun.finalBytes), preview: await previewOf(model), ...extra });
+      model.dispose();
+    };
+    {
+      const { model, first } = await afterFailedSend();
+      model.addMark(LATER);
+      model.revert();
+      await row('after failed Send: mark, then Cancel', model, { sameBytes: (await model.beginSend()).finalBytes === first.finalBytes });
+    }
+    {
+      const { model } = await afterFailedSend();
+      model.addMark(LATER);
+      await model.commit();
+      model.undo();
+      model.revert();
+      await row('after failed Send: mark, Done, Undo, then Cancel', model);
+    }
+    {
+      const { model } = await afterFailedSend();
+      model.addMark(LATER);
+      await model.commit();
+      model.clear();
+      await model.commit();
+      await row('after failed Send: mark, Done, Clear, Done', model);
+    }
+    {
+      const { model } = await afterFailedSend();
+      model.revert();
+      model.clear();
+      await row('after failed Send: Cancel and Clear with no new marks', model);
+    }
+    {
+      const model = createScreenshotEditorModel({ views: [{ id: 's0', source }] });
+      model.addMark(RED);
+      await model.commit();
+      model.addMark(LATER);
+      model.revert();
+      await row('before any Send: Done, mark, Cancel returns to the Done', model);
+    }
+    {
+      const model = createScreenshotEditorModel({ views: [{ id: 's0', source }] });
+      model.addMark(RED);
+      model.revert();
+      await row('before any Send: mark, Cancel: the original, which is honest and no Send has started', model);
+    }
+    {
+      const flattened = (await (await afterFailedSend()).first).finalBytes!;
+      const model = createScreenshotEditorModel({ views: [{ id: 's0', source: flattened, editsAreFinal: true }] });
+      model.addMark(LATER);
+      await model.commit();
+      model.clear();
+      await model.commit();
+      await row('carried: mark, Done, Clear, Done', model);
+    }
+    {
+      const flattened = (await (await afterFailedSend()).first).finalBytes!;
+      const model = createScreenshotEditorModel({ views: [{ id: 's0', source: flattened, editsAreFinal: true }] });
+      model.addMark(LATER);
+      model.revert();
+      await row('carried: mark, Cancel', model);
+    }
+    // A refused Send ends nothing, so a revert there is still reversible: what it can reach.
+    {
+      const failing: ScreenshotRaster = { ...realRaster, surface() { throw new Error('Canvas unavailable.'); } };
+      const model = createScreenshotEditorModel({ views: [{ id: 's0', source }], raster: failing });
+      model.addMark(RED);
+      const refused = await model.beginSend();
+      model.revert();
+      const after = model.getSnapshot();
+      await row('refused Send, then revert', model, { refused: 'code' in refused ? refused.code : null, finalAfterRevert: after.editsAreFinal });
+    }
+    return { secret: SECRET, rows };
+  },
+
+  // ---- Two calls at once, and one during the save, with real pixels ----
+  async concurrentCases() {
+    const source = await pngOf(pictureOf(1600, 1000));
+    const model = createScreenshotEditorModel({ views: [{ id: 's0', source }] });
+    model.addMark({ type: 'redact', x: 0, y: 0, width: 32, height: 32 });
+    const before = model.getSnapshot().revision;
+    const [one, two] = await Promise.all([model.beginSend(), model.beginSend()]);
+    const during = await model.beginSend();
+    const row = { first: one.ok, second: two.ok, secondCode: 'code' in two ? two.code : null, secondBlock: 'block' in two ? two.block : null, afterFirstEnds: during.ok, sameBytesAfter: during.finalBytes === one.finalBytes, revisionMoved: model.getSnapshot().revision - before };
+    model.dispose();
+    return row;
+  },
+
   // ---- Begin-Send with real pixels, one row per case, and what a retry does ----
   async beginSendCases() {
     const SECRET = [250, 10, 20];

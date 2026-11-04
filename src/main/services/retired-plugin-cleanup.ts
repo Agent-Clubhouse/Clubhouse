@@ -16,11 +16,6 @@ export interface RetiredPluginCleanupOptions {
   communityPluginsDir: string;
   /** Every known project. */
   projects: readonly { id: string; path: string }[];
-  /**
-   * Directories owned by removed features that aren't plugins (e.g. the
-   * Assistant workspace, Agent Queue state). Deleted unconditionally.
-   */
-  retiredFeatureDirs?: readonly string[];
 }
 
 async function exists(p: string): Promise<boolean> {
@@ -45,6 +40,8 @@ async function removeIfPresent(p: string, removed: string[]): Promise<void> {
  * - its per-project local storage (`<project>/.clubhouse/plugin-data-local/<id>`)
  *
  * Skips an ID entirely when a community plugin with the same ID is installed.
+ * `~/.clubhouse/agent-queues` and `~/.clubhouse/assistant` aren't touched: they
+ * can hold an agent's results and a chat history that exist nowhere else durable.
  * Best-effort: failures are logged, never thrown. Returns the removed paths.
  */
 export async function cleanupRetiredPluginData(opts: RetiredPluginCleanupOptions): Promise<string[]> {
@@ -71,16 +68,6 @@ export async function cleanupRetiredPluginData(opts: RetiredPluginCleanupOptions
     } catch (err) {
       appLog('core:plugins', 'warn', `Failed to clean up data for retired plugin "${pluginId}"`, {
         meta: { pluginId, error: err instanceof Error ? err.message : String(err) },
-      });
-    }
-  }
-
-  for (const dir of opts.retiredFeatureDirs ?? []) {
-    try {
-      await removeIfPresent(dir, removed);
-    } catch (err) {
-      appLog('core:plugins', 'warn', 'Failed to remove data for a retired feature', {
-        meta: { dir, error: err instanceof Error ? err.message : String(err) },
       });
     }
   }

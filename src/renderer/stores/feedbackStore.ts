@@ -14,6 +14,8 @@ export interface FeedbackReopened {
   includeDiagnostics: boolean;
   /** The Send left its image out, so the new report doesn't have it. */
   lostScreenshot?: boolean;
+  /** Pilot: the new report's image is flattened, so its model starts with edits final. */
+  carriedFlattened?: boolean;
 }
 
 export const FEEDBACK_NOTICE_TEXT: Record<FeedbackNotice, string> = {

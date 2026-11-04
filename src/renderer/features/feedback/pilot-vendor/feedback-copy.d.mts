@@ -5,7 +5,7 @@ export interface FeedbackCopy {
   readonly v: 1;
   readonly inks: Readonly<{default: 'red'; red: RGB; yellow: RGB; blue: RGB; white: RGB}>;
   readonly labels: Readonly<Record<'title'|'includeScreenshot'|'sendLogs'|'move'|'pen'|'redact'|'undo'|'clearEdits'|'cancel'|'done'|'screenshotLeftOut', string>>;
-  readonly notes: Readonly<Record<'capturedScreen'|'imageTools'|'screenshotLeftOut'|'edited'|'editedFinal'|'unavailableSecure'|'unavailableFailed'|'emptySend'|'cannotFinish'|'capturePending', string>>;
+  readonly notes: Readonly<Record<'capturedScreen'|'imageTools'|'screenshotLeftOut'|'edited'|'editedFinal'|'unavailableSecure'|'unavailableFailed'|'emptySend'|'cannotFinish'|'capturePending'|'otherViewMarks'|'cannotPrepare', string>>;
   readonly confirm: Readonly<Record<'clearReversible'|'clearFinal', string>>;
   readonly editorHints: Readonly<Record<'move'|'pen'|'redact', string>>;
   readonly logs: Readonly<Record<'addsExcerpt'|'disabledSettingsOff'|'disabledNotEnrolled'|'disabledUnavailable'|'automaticWhileEnrolled'|'automaticSeparateConsent'|'automaticNone'|'addsLines'|'addsMarker'|'replayUploads'|'replayServerRecords'|'replayOffClears'|'replayOffStops'|'addsLinesSeparate'|'linesLostOnQuit'|'replayDeviceOffClears'|'replayDeviceOffStops'|'automaticSwitch'|'addsExcerptOnly'|'replayServerRecordsOnly'|'markerStill'|'addsMarkerOnly', string>> & {readonly dataClasses: Readonly<Record<LogsDataClass, string>>};

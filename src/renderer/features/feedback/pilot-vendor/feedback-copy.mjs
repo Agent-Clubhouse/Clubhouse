@@ -35,6 +35,8 @@ export const FEEDBACK_COPY=freeze({
     emptySend:"Add a note or include a screenshot to send.",
     cannotFinish:"This image couldn't be prepared. It hasn't changed.",
     capturePending:"Preparing the image…",
+    otherViewMarks:"Marks on the other view won't be sent. Check this one before sending.",
+    cannotPrepare:"This image couldn't be prepared, so nothing was sent. Remove the screenshot to send your note.",
   },
   confirm:{
     clearReversible:"Clear all edits? The original image comes back, including anything you covered, and that's what will be sent.",
@@ -77,7 +79,7 @@ export const FEEDBACK_COPY=freeze({
     addsExcerptOnly:"This report also sends a copy of recent events, labeled with its ID. That copy may be empty.",
     replayServerRecordsOnly:"The game server records matches whatever you choose here.",
     markerStill:"A marker with this report's ID still goes with your diagnostics.",
-    addsMarkerOnly:"A marker with this report's ID goes to the developer whether or not this is on.",
+    addsMarkerOnly:"This report also queues a marker with its ID for the developer.",
   },
   status:{
     saving:"Saving…",
@@ -158,9 +160,11 @@ export function logsControl({attach='none',available=false,unavailableReason='un
     }else explanation.push(logs.addsLines);
     if(typeof lines.retention==='string'&&lines.retention)explanation.push(lines.retention);
   }
-  if(enabled&&marker===true)explanation.push(automatic==='none'?logs.addsMarkerOnly:logs.addsMarker);
-  // A box that can't be on still says so: off in Settings or not connected, no marker goes.
-  else if(shown&&!enabled&&why==='unavailable'&&marker===true&&automatic!=='none')explanation.push(logs.markerStill);
+  // Off in Settings or not connected, no marker goes, so neither says so. Any other box that can't be on still does.
+  if(marker===true&&(enabled||(why!=='settings-off'&&why!=='not-enrolled'))){
+    if(automatic==='none'||!shown)explanation.push(logs.addsMarkerOnly);
+    else explanation.push(enabled?logs.addsMarker:logs.markerStill);
+  }
   if(replay){
     if(uploading)explanation.push(logs.replayUploads);
     if(replay.serverRecords)explanation.push(uploading?logs.replayServerRecords:logs.replayServerRecordsOnly);

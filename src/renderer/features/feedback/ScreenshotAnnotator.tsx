@@ -15,8 +15,6 @@ interface Props {
   model: ScreenshotEditorModel;
   snapshot: ScreenshotEditorState;
   frame: ScreenshotPreview | null;
-  /** Set on a model built for a reopened draft, which can't say its edits are final (no API for it). */
-  carriedOver?: boolean;
   onClose: () => void;
 }
 
@@ -32,7 +30,7 @@ function liveMark(live: Live): ScreenshotMark {
  * and the camera helpers do the sums, this holds the tool, ink, camera and the mark being made. Keyboard
  * Pen and Redact and pinch aren't here: the contract requires both, and the mounted view already has them.
  */
-export function ScreenshotAnnotator({ model, snapshot, frame, carriedOver = false, onClose }: Props) {
+export function ScreenshotAnnotator({ model, snapshot, frame, onClose }: Props) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const stageRef = useRef<HTMLDivElement>(null);
   const [tool, setTool] = useState<Tool>('move');
@@ -172,7 +170,7 @@ export function ScreenshotAnnotator({ model, snapshot, frame, carriedOver = fals
     else if (e.key === '0') toFit();
   };
 
-  const final = snapshot.editsAreFinal || carriedOver;
+  const final = snapshot.editsAreFinal;
   return (
     <Modal open onClose={cancel} aria-label={FEEDBACK_COPY.labels.title} width="w-[calc(100vw-48px)] h-[calc(100vh-48px)]" padding="none" testId="pilot-react-editor">
       <div className="flex flex-col h-[calc(100vh-50px)]" onKeyDown={onKeyDown}>

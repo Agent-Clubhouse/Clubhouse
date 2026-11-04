@@ -268,11 +268,11 @@ export function createScreenshotEditorModel({views,activeView,limits,raster,work
   const max={...SCREENSHOT_LIMITS,...limits},byId=new Map(),listeners=new Set(),decoder=raster??canvasRaster;
   const abort=new AbortController(),aborted=new Promise(resolve=>abort.signal.addEventListener('abort',resolve,{once:true}));
   let mediaCounter=0,queue=Promise.resolve();
-  let included=true,revision=0,flattening=0,imageVersion=0,finality=0,disposed=false,removed=false,lastMedia,snapshot;
-  for(const {id,label,source} of views){
+  let included=true,revision=0,flattening=0,imageVersion=0,finality=0,disposed=false,removed=false,sending=false,lastMedia,snapshot;
+  for(const {id,label,source,editsAreFinal} of views){
     if(typeof id!=='string'||!id||byId.has(id))throw Error('Each view needs its own id.');
     const view={id,label:String(label??id),source:null,status:'pending',marks:NO_MARKS,applied:NO_MARKS,
-      bytes:null,attached:false,exported:null,final:false,media:++mediaCounter,settled:Promise.resolve(),frames:new Set()};
+      bytes:null,attached:false,exported:null,final:editsAreFinal===true,media:++mediaCounter,settled:Promise.resolve(),frames:new Set()};
     byId.set(id,view);
     // Frozen, because a live canvas could change after review. A host converts its canvas once.
     if(typeof source?.then==='function'){
@@ -297,10 +297,10 @@ export function createScreenshotEditorModel({views,activeView,limits,raster,work
   const anyDirty=()=>[...byId.values()].some(isDirty);
   const mediaKey=()=>removed?'removed':included?`${activeId}:${active().media}`:'left-out';
   function build(){
-    if(removed)return Object.freeze({status:'removed',activeView:null,views:NO_MARKS,marks:NO_MARKS,included,edited:false,dirty:false,editsAreFinal:false,revision,canUndo:false,flattening:false,imageVersion});
+    if(removed)return Object.freeze({status:'removed',activeView:null,views:NO_MARKS,marks:NO_MARKS,included,edited:false,dirty:false,editsAreFinal:false,otherViewsMarked:false,revision,canUndo:false,flattening:false,imageVersion});
     const view=active();
     return Object.freeze({status:view.status,activeView:activeId,views:Object.freeze([...byId.values()].map(({id,label,status})=>Object.freeze({id,label,status}))),
-      marks:view.marks,included,edited:view.applied.length>0||view.final,dirty:isDirty(view),editsAreFinal:view.final,revision,canUndo:view.marks.length>0,flattening:flattening>0,imageVersion});
+      marks:view.marks,included,edited:view.status==='ready'&&(view.applied.length>0||view.final),dirty:isDirty(view),editsAreFinal:view.final,otherViewsMarked:[...byId.values()].some(other=>other!==view&&other.marks.length>0),revision,canUndo:view.marks.length>0,flattening:flattening>0,imageVersion});
   }
   // `revision` follows the media a report would carry, never the working marks, so Cancel doesn't move it.
   function changed(){
@@ -315,8 +315,8 @@ export function createScreenshotEditorModel({views,activeView,limits,raster,work
   const live=()=>!disposed&&!removed;
   const flatten=(source,marks)=>flattenScreenshot(source,marks,{limits:max,raster,workerFactory,signal:abort.signal});
   function serial(task){const run=queue.then(task);queue=run.then(()=>{},()=>{});return run;}
-  // Bytes land only if they're still what's wanted: a revert or the first Send tap during the flatten wins,
-  // and a newer mark on a picked view flattens again, so this ends with nothing there left uncommitted.
+  // Bytes land only if they're still what's wanted: a revert during the flatten wins, and a newer mark on a
+  // picked view flattens again, so this ends with nothing there left uncommitted. beginSend queues behind this.
   async function flattenMarks(pick){
     for(;;){
       if(!live())throw cancelled();
@@ -377,8 +377,15 @@ export function createScreenshotEditorModel({views,activeView,limits,raster,work
   }
   const notSent=(code,block)=>Object.freeze({ok:false,code,block,viewId:null,bytes:null,finalBytes:null,original:false,edited:false});
   // All in one turn of the queue, and the last check and finality have no await between them, so what's
-  // returned is the view selected and the marks made at the moment reversibility ended.
-  function beginSend(){
+  // returned is the view selected and the marks made at the moment reversibility ended. A second call while
+  // one runs refuses, so a double tap can't start two saves.
+  async function beginSend(){
+    if(sending)return notSent('in-progress',FEEDBACK_COPY.notes.capturePending);
+    sending=true;
+    try{return await sendWhenPrepared();}
+    finally{sending=false;}
+  }
+  function sendWhenPrepared(){
     return serial(async()=>{
       for(;;){
         if(disposed)return notSent('disposed',FEEDBACK_COPY.notes.cannotFinish);
@@ -390,13 +397,13 @@ export function createScreenshotEditorModel({views,activeView,limits,raster,work
           if(live()&&view===active())await encoded(view);
         }catch{
           // A failure only counts if it's about what's selected now. Otherwise go round for the current state.
-          if(live()&&view===active()&&view.marks===marks)return notSent('prepare-failed',FEEDBACK_COPY.notes.cannotFinish);
+          if(live()&&view===active()&&view.marks===marks)return notSent('prepare-failed',FEEDBACK_COPY.notes.cannotPrepare);
           continue;
         }
         if(!live()||view!==active()||isDirty(view)||(view.status==='ready'&&!view.bytes)||(view.status==='pending'&&included))continue;
         endHere();
         const finalBytes=view.status==='ready'?view.bytes:null;
-        return Object.freeze({ok:true,viewId:view.id,bytes:included?finalBytes:null,finalBytes,original:Boolean(finalBytes)&&view.attached,edited:view.final});
+        return Object.freeze({ok:true,viewId:view.id,bytes:included?finalBytes:null,finalBytes,original:Boolean(finalBytes)&&view.attached&&!view.final,edited:Boolean(finalBytes)&&view.final});
       }
     });
   }
@@ -623,9 +630,10 @@ export function mountScreenshotEditor(container,{model,copy=FEEDBACK_COPY,onDone
   const inkRow=make('div',{class:'row',role:'group','aria-label':words.inks},...Object.values(inkButtons));
   const zoomRow=make('div',{class:'row',role:'group','aria-label':words.zoom},zoomButtons.out,zoomButtons.in,zoomButtons.fit);
   const hint=make('p',{class:'hint'});
+  const othersLine=make('p',{class:'hint others'});
   const problemLine=make('p',{class:'problem',role:'alert'});
   const clearButton=button(copy.labels.clearEdits,()=>askClear(),{class:'danger','data-action':'clear'});
-  const panel=make('div',{class:'panel'},viewRow,make('div',{class:'row',role:'group','aria-label':words.tools},...Object.values(toolButtons)),inkRow,zoomRow,hint,make('div',{class:'row'},clearButton),problemLine);
+  const panel=make('div',{class:'panel'},viewRow,make('div',{class:'row',role:'group','aria-label':words.tools},...Object.values(toolButtons)),inkRow,zoomRow,hint,othersLine,make('div',{class:'row'},clearButton),problemLine);
   const announce=make('p',{class:'quiet',role:'status'});
   const confirmText=make('p');
   const keepButton=button(copy.labels.cancel,()=>confirmDialog.close(),{'data-confirm':'keep'});
@@ -680,6 +688,7 @@ export function mountScreenshotEditor(container,{model,copy=FEEDBACK_COPY,onDone
     if(viewRow.childElementCount!==state.views.length)viewRow.replaceChildren(...state.views.map(({id,label})=>button(label,()=>{finishMark();stopGesture();model.setActiveView(id);},{'data-view':id})));
     for(const node of viewRow.children){node.disabled=busy;node.setAttribute('aria-pressed',String(node.dataset.view===state.activeView));}
     hint.textContent=state.status==='pending'?copy.notes.capturePending:copy.editorHints[tool];
+    othersLine.textContent=state.otherViewsMarked?copy.notes.otherViewMarks:'';othersLine.hidden=!othersLine.textContent;
     // Only for someone on the keyboard, who otherwise couldn't find these.
     keyHint.textContent=tool==='move'?words.keysMove:words.keysDraw;
     keyHint.hidden=!ok||!onKeyboard||shadow.activeElement!==canvas;
