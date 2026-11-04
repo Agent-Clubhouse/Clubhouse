@@ -12,7 +12,10 @@ import { isInLayerPortal, isTopModal, pushModal, removeModal } from './layers';
 
 interface Props {
   open: boolean;
+  /** The close button. Also Esc and the backdrop, unless `onDismiss` is given. */
   onClose: () => void;
+  /** Esc and the backdrop, for a dialog those mustn't close while it holds unsaved work. */
+  onDismiss?: () => void;
   /** When provided, renders the 44px title row with the title and a close button. */
   title?: ReactNode;
   /** Accessible name when there's no title row. */
@@ -41,13 +44,14 @@ function focusables(root: HTMLElement): HTMLElement[] {
 }
 
 export function Modal({
-  open, onClose, title, 'aria-label': ariaLabel, width = 'w-[360px]', backdrop = 'default', backdropTestId, testId,
+  open, onClose, onDismiss, title, 'aria-label': ariaLabel, width = 'w-[360px]', backdrop = 'default', backdropTestId, testId,
   footer, padding = 'default', initialFocusRef, children,
 }: Props) {
   const panelRef = useRef<HTMLDivElement>(null);
   const titleId = useId();
-  const onCloseRef = useRef(onClose);
-  onCloseRef.current = onClose;
+  const dismiss = onDismiss ?? onClose;
+  const dismissRef = useRef(dismiss);
+  dismissRef.current = dismiss;
 
   useEffect(() => {
     if (!open) return;
@@ -64,7 +68,7 @@ export function Modal({
     const onKey = (e: KeyboardEvent) => {
       if (!isTopModal(token)) return;
       // A menu or tooltip over the modal handled this Esc (layers.ts).
-      if (e.key === 'Escape') { if (!e.defaultPrevented) onCloseRef.current(); return; }
+      if (e.key === 'Escape') { if (!e.defaultPrevented) dismissRef.current(); return; }
       if (e.key !== 'Tab' || !panelRef.current) return;
       // Focus in a menu or tooltip portaled from this modal counts as inside; the popup handles Tab.
       if (isInLayerPortal(document.activeElement)) return;
@@ -90,7 +94,7 @@ export function Modal({
   return createPortal(
     <div
       className={`fixed inset-0 z-modal flex items-center justify-center ${backdrop === 'heavy' ? 'bg-ctp-crust/80' : 'bg-ctp-crust/55'}`}
-      onClick={onClose}
+      onClick={dismiss}
       data-testid={backdropTestId}
     >
       <div
