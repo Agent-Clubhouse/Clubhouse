@@ -6,6 +6,21 @@ import * as path from 'path';
 import { createDisposableProfile, seedProfile, type DisposableProfile } from './app-profile';
 import { launchApp, type LaunchedApp } from './launch';
 import { addProject } from './smoke-helpers';
+import {
+  AGENT_ID,
+    BETA_FLAGS,
+  BETA_TRANSCRIPT,
+  CHROME_STORAGE_KEY,
+  LAST_SESSION,
+  ORCHESTRATOR,
+  PREVIEW_ONLY_FLAGS,
+  PREVIEW_PAGES,
+  SAVED_SIDEBAR_WIDTH,
+  UNTOUCHED_FILES,
+  betaAgents,
+  betaFiles,
+  updateSettings,
+} from './stable-state-seeds.mjs';
 
 /**
  * Stable mode end to end: Preview off and on, with no saved flags and with the
@@ -19,57 +34,6 @@ import { addProject } from './smoke-helpers';
  */
 
 const STABLE_BUILD = { CLUBHOUSE_TEST_STABLE_BUILD: '1' };
-
-const BETA_FLAGS = {
-  newChrome: true,
-  goobers: true,
-  chat: true,
-  richChatContent: true,
-  copilotSdk: true,
-  dispatcher: true,
-  telemetry: true,
-};
-const PREVIEW_ONLY_FLAGS = Object.keys(BETA_FLAGS);
-
-const AGENT_ID = 'durable_stable_mode';
-const AGENT_NAME = 'stable-mode-agent';
-const ORCHESTRATOR = 'claude-code';
-const LAST_SESSION = '11111111-2222-4333-8444-555555555555';
-const CHROME_STORAGE_KEY = 'clubhouse_chrome_v2';
-const SAVED_SIDEBAR_WIDTH = 300;
-
-/** Preview-gated files a stable launch must not change, byte for byte. */
-const UNTOUCHED_FILES = [
-  'experimental-settings.json',
-  'chat-runtime-settings.json',
-  'dispatcher-settings.json',
-  'telemetry-settings.json',
-  path.join('agent-logs', 'chat', AGENT_ID, `${LAST_SESSION}.jsonl`),
-];
-
-const updateSettings = (previewChannel: boolean): Record<string, unknown> => ({
-  'update-settings.json': { autoUpdate: false, previewChannel, lastCheck: null, dismissedVersion: null, lastSeenVersion: null },
-});
-
-/** What a beta user with everything on has saved, apart from the flags. */
-function betaFiles(previewChannel: boolean): Record<string, unknown> {
-  return {
-    ...updateSettings(previewChannel),
-    // The provider is installed (the stand-in), so no first-run CLI probe.
-    'orchestrator-settings.json': { enabled: [ORCHESTRATOR], autoDetected: true },
-    'chat-runtime-settings.json': { [ORCHESTRATOR]: { mode: 'chat', driver: 'claude_stream_json' } },
-    'dispatcher-settings.json': { enabled: true },
-    // Consent recorded and an address saved, with nothing switched on, so nothing exports with Preview on either.
-    'telemetry-settings.json': {
-      consentVersion: 1,
-      sampleRate: 1,
-      destinations: [
-        { id: 'azure', kind: 'azure', enabled: false, level: 'standard', preset: 'all' },
-        { id: 'otlp', kind: 'otlp', enabled: false, level: 'standard', preset: 'all', otlp: { endpoint: 'http://127.0.0.1:9/', headerNames: [], temporality: 'cumulative' } },
-      ],
-    },
-  };
-}
 
 let app: LaunchedApp | undefined;
 let profile: DisposableProfile | undefined;
@@ -131,15 +95,7 @@ function installIdleCli(): { env: Record<string, string>; argvFile: string } {
 function makeProject(): string {
   const dir = tempDir('clubhouse-e2e-stable-project-');
   fs.mkdirSync(path.join(dir, '.clubhouse'));
-  fs.writeFileSync(path.join(dir, '.clubhouse', 'agents.json'), JSON.stringify([{
-    id: AGENT_ID,
-    name: AGENT_NAME,
-    color: 'emerald',
-    createdAt: new Date().toISOString(),
-    orchestrator: ORCHESTRATOR,
-    runtimeMode: 'chat',
-    lastSessionId: LAST_SESSION,
-  }]));
+  fs.writeFileSync(path.join(dir, '.clubhouse', 'agents.json'), JSON.stringify(betaAgents()));
   fs.writeFileSync(path.join(dir, 'README.md'), '# stable mode e2e\n');
   const env = { ...process.env, GIT_AUTHOR_NAME: 'E2E', GIT_AUTHOR_EMAIL: 'e2e@test.local', GIT_COMMITTER_NAME: 'E2E', GIT_COMMITTER_EMAIL: 'e2e@test.local' };
   execSync('git init -q && git add -A && git commit -qm init', { cwd: dir, env, stdio: 'pipe' });
@@ -149,7 +105,7 @@ function makeProject(): string {
 function seedTranscript(target: DisposableProfile): void {
   const file = path.join(target.userDataDir, 'agent-logs', 'chat', AGENT_ID, `${LAST_SESSION}.jsonl`);
   fs.mkdirSync(path.dirname(file), { recursive: true });
-  fs.writeFileSync(file, '{"seq":1,"type":"user_message","text":"from a beta"}\n');
+  fs.writeFileSync(file, BETA_TRANSCRIPT);
 }
 
 const readText = (file: string) => fs.promises.readFile(file, 'utf8');
@@ -203,8 +159,6 @@ async function expectSettingsPages(w: Page, listed: string[]): Promise<void> {
   await w.locator('[data-testid="nav-settings"]').click();
   await expect(settingsNav(w, 'Updates')).toBeHidden();
 }
-
-const PREVIEW_PAGES = ['Experimental', 'Annex', 'Annex control', 'Dispatcher', 'Goobers'];
 
 test('Preview off, fresh install: the legacy layout, and turning Preview on is the only way in', async () => {
   profile = createDisposableProfile({ label: 'stable-fresh' });
