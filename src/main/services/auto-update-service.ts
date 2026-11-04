@@ -7,8 +7,8 @@ import * as path from 'path';
 import * as crypto from 'crypto';
 import { spawn, execFileSync } from 'child_process';
 import { IPC } from '../../shared/ipc-channels';
-import { UpdateSettings, UpdateStatus, UpdateState, UpdateManifest, UpdateArtifact, PendingReleaseNotes, VersionHistoryEntry } from '../../shared/types';
-import { createSettingsStore } from './settings-store';
+import { UpdateStatus, UpdateState, UpdateManifest, UpdateArtifact, PendingReleaseNotes, VersionHistoryEntry } from '../../shared/types';
+import { getSettings, saveSettings } from './update-settings';
 import { appLog, flush as flushLogs, flushSync as flushLogsSync } from './log-service';
 import { applyRemoteCliDenylist } from './agent-runtime/chat-version-policy';
 import { isChatEnabled } from './chat-runtime-settings';
@@ -83,16 +83,7 @@ export async function withRetry<T>(
 // Settings persistence
 // ---------------------------------------------------------------------------
 
-const settingsStore = createSettingsStore<UpdateSettings>('update-settings.json', {
-  autoUpdate: true,
-  previewChannel: false,
-  lastCheck: null,
-  dismissedVersion: null,
-  lastSeenVersion: null,
-}, undefined, { audit: { key: 'update', ignore: ['lastCheck', 'dismissedVersion', 'lastSeenVersion'] } });
-
-export const getSettings = settingsStore.get;
-export const saveSettings = settingsStore.save;
+export { getSettings, saveSettings };
 
 // ---------------------------------------------------------------------------
 // State
