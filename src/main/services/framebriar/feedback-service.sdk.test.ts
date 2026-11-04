@@ -566,16 +566,429 @@ describe('the report field with the real SDK', () => {
         expect(savedId(await send(h, draftId, { includeScreenshot: false }))).toBe(first.report.id);
       });
 
-      it('can still include the image as flattened bytes, as a new report, from whichever window', async () => {
+      it('can still include the image as flattened bytes, as a new report, from the window it chose', async () => {
+        const h = harness();
+        const { draftId } = await opened(h);
+        h.state.submitFails = FAILED_SAVE;
+        await expect(send(h, draftId, { includeScreenshot: false, shotId: 's1' })).rejects.toMatchObject({ code: 'storage-full' });
+        const first = await h.prepared.at(-1) as { report: { id: string } };
+        const drawn = pngOf(1600, 1000, 'pop-out with ink');
+        await expect(send(h, draftId, { shotId: 's0', annotatedPng: b64(INK) })).rejects.toMatchObject({ code: 'shot-unavailable' });
+        const id = savedId(await send(h, draftId, { shotId: 's1', annotatedPng: b64(drawn) }));
+        expect(id).not.toBe(first.report.id);
+        expect(h.media(id).equals(drawn)).toBe(true);
+      });
+
+      it('with no window named, it chose the first, as elsewhere', async () => {
         const h = harness();
         const { draftId } = await opened(h);
         h.state.submitFails = FAILED_SAVE;
         await expect(send(h, draftId, { includeScreenshot: false })).rejects.toMatchObject({ code: 'storage-full' });
+        await expect(send(h, draftId, { shotId: 's1', annotatedPng: b64(pngOf(1600, 1000, 'pop-out with ink')) })).rejects.toMatchObject({ code: 'shot-unavailable' });
+        expect(h.media(savedId(await send(h, draftId, { annotatedPng: b64(INK) }))).equals(INK)).toBe(true);
+      });
+
+      it('a window it can\'t find doesn\'t stop the note, and leaves nothing to include', async () => {
+        const h = harness();
+        const { draftId } = await opened(h);
+        h.state.submitFails = FAILED_SAVE;
+        await expect(send(h, draftId, { includeScreenshot: false, shotId: 's9', noEdits: true })).rejects.toMatchObject({ code: 'storage-full' });
+        await expect(send(h, draftId)).rejects.toMatchObject({ code: 'screenshot-expired' });
+        savedId(await send(h, draftId, { includeScreenshot: false, shotId: 's9', noEdits: true }));
+      });
+
+      it('after an unedited first Send, it drops the capture all the same', async () => {
+        const h = harness();
+        const { draftId } = await opened(h);
+        h.state.submitFails = FAILED_SAVE;
+        await expect(send(h, draftId)).rejects.toMatchObject({ code: 'storage-full' });
+        h.state.submitFails = FAILED_SAVE;
+        await expect(send(h, draftId, { includeScreenshot: false })).rejects.toMatchObject({ code: 'storage-full' });
+        await expect(send(h, draftId)).rejects.toMatchObject({ code: 'flattened-required' });
+        await expect(send(h, draftId, { annotatedPng: b64(CAPTURE) })).rejects.toMatchObject({ code: 'flattened-required' });
+        expect(await h.saved()).toEqual([]);
+      });
+    });
+
+    describe('flattened bytes on a Send that leaves the image out', () => {
+      const leftOut = (h: Harness, draftId: string, over: Partial<FeedbackSendInput> = {}) => {
+        h.state.submitFails = FAILED_SAVE;
+        return expect(send(h, draftId, { includeScreenshot: false, ...over })).rejects.toMatchObject({ code: 'storage-full' });
+      };
+      const TRUE_MESSAGE = /can't be sent from this report.*Send without it, or close this and open a new report/;
+
+      it('marked: left out with bytes, then those bytes, no bytes, the capture\'s bytes and the flag: only the bytes go', async () => {
+        const h = harness();
+        const { draftId } = await opened(h);
+        await leftOut(h, draftId, { annotatedPng: b64(INK) });
+        const textOnly = await h.prepared.at(-1) as { report: { id: string; media: unknown } };
+        expect(textOnly.report.media).toBeNull();
+
+        h.state.submitFails = FAILED_SAVE;
+        await expect(send(h, draftId, { annotatedPng: b64(INK) })).rejects.toMatchObject({ code: 'storage-full' });
+        const pinned = await h.prepared.at(-1) as { report: { id: string } };
+        expect(pinned.report.id).not.toBe(textOnly.report.id);
+
+        await expect(send(h, draftId)).rejects.toMatchObject({ code: 'flattened-required', message: expect.stringMatching(TRUE_MESSAGE) });
+        await expect(send(h, draftId, { annotatedPng: b64(CAPTURE) })).rejects.toMatchObject({ code: 'flattened-required' });
+        await expect(send(h, draftId, { noEdits: true })).rejects.toMatchObject({ code: 'flattened-required' });
+        await leftOut(h, draftId, { shotId: 's0', noEdits: true });
+        await expect(send(h, draftId)).rejects.toMatchObject({ code: 'flattened-required' });
+        expect(await h.saved()).toEqual([]);
+
+        expect(h.media(savedId(await send(h, draftId, { annotatedPng: b64(INK) }))).equals(INK)).toBe(true);
+      });
+
+      it('with no image in the report, the saved report has no media, and the bytes aren\'t on disk', async () => {
+        const h = harness();
+        const { draftId } = await opened(h);
+        const id = savedId(await send(h, draftId, { includeScreenshot: false, annotatedPng: b64(INK) }));
+        const [report] = await h.saved();
+        expect(report).toMatchObject({ id, media: null });
+        expect(() => h.media(id)).toThrow();
+      });
+
+      it('moves the size: a later image can\'t be larger than a fit-down', async () => {
+        const h = harness();
+        const { draftId } = await opened(h);
+        const fitted = pngOf(1440, 900, 'fitted');
+        await leftOut(h, draftId, { annotatedPng: b64(fitted) });
+        await expect(send(h, draftId, { annotatedPng: b64(INK) })).rejects.toMatchObject({ code: 'invalid-media' });
+        expect(h.media(savedId(await send(h, draftId, { annotatedPng: b64(fitted) }))).equals(fitted)).toBe(true);
+      });
+
+      it('never resends older bytes when bytes are missing', async () => {
+        const h = harness();
+        const { draftId } = await opened(h);
+        h.state.submitFails = FAILED_SAVE;
+        await expect(send(h, draftId, { annotatedPng: b64(INK) })).rejects.toMatchObject({ code: 'storage-full' });
+        await leftOut(h, draftId, { annotatedPng: b64(pngOf(2880, 1800, 'newer marks')) });
+        await expect(send(h, draftId)).rejects.toMatchObject({ code: 'flattened-required' });
+        expect(await h.saved()).toEqual([]);
+      });
+
+      describe.each<[string, Buffer]>([
+        ['not a PNG', Buffer.from('not an image')],
+        ['larger than the capture', pngOf(5760, 3600, 'too big')],
+        ['another shape', pngOf(1440, 1000, 'wrong shape')],
+        ['over the size cap', Buffer.concat([pngOf(2880, 1800, 'huge'), Buffer.alloc(8 * 1024 * 1024)])],
+      ])('bytes that are %s', (_name, bad) => {
+        it('don\'t fail the text report, are logged with no bytes, and report no media', async () => {
+          const log = vi.fn<FeedbackLog>();
+          const h = harness({ log });
+          const { draftId } = await opened(h);
+          const id = savedId(await send(h, draftId, { includeScreenshot: false, annotatedPng: b64(bad) }));
+          const [report] = await h.saved();
+          expect(report).toMatchObject({ id, media: null, notes: 'it broke' });
+          expect(log).toHaveBeenCalledWith('warn', 'Feedback flattened image refused on a Send without it', expect.objectContaining({ code: 'invalid-media' }));
+          expect(JSON.stringify(log.mock.calls)).not.toContain(b64(bad));
+        });
+
+        it.each<[string, Partial<FeedbackSendInput>]>([
+          ['no bytes', {}],
+          ['the capture\'s own bytes', { annotatedPng: b64(CAPTURE) }],
+          ['the flag', { noEdits: true }],
+        ])('after a failed save, the capture is gone: included with %s fails, and says what to do', async (_flag, included) => {
+          const h = harness();
+          const { draftId } = await opened(h);
+          await leftOut(h, draftId, { annotatedPng: b64(bad) });
+          await expect(send(h, draftId, included)).rejects.toMatchObject({ code: 'flattened-required', message: expect.stringMatching(TRUE_MESSAGE) });
+          expect(await h.saved()).toEqual([]);
+        });
+      });
+
+      it.each<[string, Partial<FeedbackSendInput>]>([
+        ['no bytes', {}],
+        ['the capture\'s own bytes', { annotatedPng: b64(CAPTURE) }],
+      ])('after the text report saves, included with %s fails, the capture stays gone, and the error says so plainly', async (_name, included) => {
+        const h = harness();
+        const { draftId } = await opened(h);
+        savedId(await send(h, draftId, { includeScreenshot: false, annotatedPng: b64(Buffer.from('not an image')) }));
+        const error = await send(h, draftId, included).catch((err: Error) => err) as Error;
+        expect(error.message).toMatch(/already sent.*Open feedback again to send a screenshot/);
+        expect(error.message).not.toMatch(/expired|try again|no longer available/i);
+        expect(await h.saved()).toHaveLength(1);
+      });
+
+      it('a draft nobody sent still says it expired', async () => {
+        const h = harness();
+        await h.service.connect(FIRST_INVITE);
+        await expect(send(h, '00000000-0000-4000-8000-000000000000')).rejects.toThrow(/expired/);
+      });
+    });
+
+    describe('a re-encode after Clear is just flattened bytes', () => {
+      const REENCODED = pngOf(2880, 1800, 'the capture encoded again');
+
+      it('included: accepted, the capture is gone, and no bytes then fails', async () => {
+        const h = harness();
+        const { draftId } = await opened(h);
+        h.state.submitFails = FAILED_SAVE;
+        await expect(send(h, draftId, { annotatedPng: b64(REENCODED) })).rejects.toMatchObject({ code: 'storage-full' });
+        await expect(send(h, draftId)).rejects.toMatchObject({ code: 'flattened-required' });
+        await expect(send(h, draftId, { annotatedPng: b64(CAPTURE) })).rejects.toMatchObject({ code: 'flattened-required' });
+        expect(h.media(savedId(await send(h, draftId, { annotatedPng: b64(REENCODED) }))).equals(REENCODED)).toBe(true);
+      });
+
+      it('left out with those bytes: the same', async () => {
+        const h = harness();
+        const { draftId } = await opened(h);
+        h.state.submitFails = FAILED_SAVE;
+        await expect(send(h, draftId, { includeScreenshot: false, annotatedPng: b64(REENCODED) })).rejects.toMatchObject({ code: 'storage-full' });
+        await expect(send(h, draftId)).rejects.toMatchObject({ code: 'flattened-required' });
+        expect(h.media(savedId(await send(h, draftId, { annotatedPng: b64(REENCODED) }))).equals(REENCODED)).toBe(true);
+      });
+
+      it('left out with the flag and no bytes, then included as a re-encode: accepted, since the flag doesn\'t mean equal bytes', async () => {
+        const h = harness();
+        const { draftId } = await opened(h);
+        h.state.submitFails = FAILED_SAVE;
+        await expect(send(h, draftId, { includeScreenshot: false, shotId: 's0', noEdits: true })).rejects.toMatchObject({ code: 'storage-full' });
+        expect(h.media(savedId(await send(h, draftId, { annotatedPng: b64(REENCODED) }))).equals(REENCODED)).toBe(true);
+      });
+    });
+
+    describe('other windows go in each first Send', () => {
+      it.each<[string, Partial<FeedbackSendInput>]>([
+        ['included, flattened', { annotatedPng: b64(INK) }],
+        ['included, no edits', {}],
+        ['included, the capture\'s bytes', { annotatedPng: b64(CAPTURE) }],
+        ['left out, flattened', { includeScreenshot: false, annotatedPng: b64(INK) }],
+        ['left out, invalid bytes', { includeScreenshot: false, annotatedPng: b64(Buffer.from('not an image')) }],
+        ['left out, the flag', { includeScreenshot: false, shotId: 's0', noEdits: true }],
+        ['left out, neither', { includeScreenshot: false }],
+      ])('%s', async (_name, first) => {
+        const h = harness();
+        const { draftId } = await opened(h);
+        h.state.submitFails = FAILED_SAVE;
+        await expect(send(h, draftId, first)).rejects.toMatchObject({ code: 'storage-full' });
+        await expect(send(h, draftId, { shotId: 's1' })).rejects.toMatchObject({ code: 'shot-unavailable' });
+        await expect(send(h, draftId, { shotId: 's1', annotatedPng: b64(OTHER) })).rejects.toMatchObject({ code: 'shot-unavailable' });
+        expect(await h.saved()).toEqual([]);
+      });
+    });
+
+    describe('noEdits: main\'s own state decides, and the flag only keeps what it still holds', () => {
+      const leftOut = (h: Harness, draftId: string, over: Partial<FeedbackSendInput> = {}) => {
+        h.state.submitFails = FAILED_SAVE;
+        return expect(send(h, draftId, { includeScreenshot: false, ...over })).rejects.toMatchObject({ code: 'storage-full' });
+      };
+
+      it.each<[string, (h: Harness) => Partial<FeedbackSendInput>]>([
+        ['no bytes', () => ({})],
+        ['the capture\'s own bytes', () => ({ annotatedPng: b64(CAPTURE) })],
+      ])('never edited: left out with the flag, then included with %s, sends the capture under a new id', async (_name, included) => {
+        const h = harness();
+        const { draftId } = await opened(h);
+        await leftOut(h, draftId, { shotId: 's0', noEdits: true });
         const first = await h.prepared.at(-1) as { report: { id: string } };
-        const drawn = pngOf(1600, 1000, 'pop-out with ink');
-        const id = savedId(await send(h, draftId, { shotId: 's1', annotatedPng: b64(drawn) }));
+        const id = savedId(await send(h, draftId, included(h)));
         expect(id).not.toBe(first.report.id);
-        expect(h.media(id).equals(drawn)).toBe(true);
+        expect(h.media(id).equals(CAPTURE)).toBe(true);
+        expect((await h.saved()).map((report) => report.id)).toEqual([id]);
+      });
+
+      it('the selected window keeps its capture, and the others go', async () => {
+        const h = harness();
+        const { draftId } = await opened(h);
+        await leftOut(h, draftId, { shotId: 's1', noEdits: true });
+        await expect(send(h, draftId, { shotId: 's0' })).rejects.toMatchObject({ code: 'shot-unavailable' });
+        expect(h.media(savedId(await send(h, draftId, { shotId: 's1' }))).equals(OTHER)).toBe(true);
+      });
+
+      it.each<[string, Partial<FeedbackSendInput>]>([
+        ['no bytes', {}],
+        ['the capture\'s own bytes', { annotatedPng: b64(CAPTURE) }],
+      ])('with no window named, every capture goes: included with %s fails, and no original comes back', async (_name, included) => {
+        // Redact s0, select s1, leave the image out: if the name went missing, s0 mustn't be assumed.
+        const h = harness();
+        const { draftId } = await opened(h);
+        await leftOut(h, draftId, { noEdits: true });
+        await expect(send(h, draftId, included)).rejects.toMatchObject({ code: 'flattened-required' });
+        await expect(send(h, draftId, { shotId: 's1' })).rejects.toMatchObject({ code: 'shot-unavailable' });
+        expect(await h.saved()).toEqual([]);
+      });
+
+      describe.each<[string, string, Buffer, string, Buffer]>([
+        ['redacted s0, unedited s1 selected', 's1', OTHER, 's0', CAPTURE],
+        ['redacted s1, unedited s0 selected', 's0', CAPTURE, 's1', OTHER],
+      ])('%s', (_name, selected, selectedCapture, redacted, redactedCapture) => {
+        it('keeps only the selected capture, and that\'s what a later Send sends', async () => {
+          const h = harness();
+          const { draftId } = await opened(h);
+          await leftOut(h, draftId, { shotId: selected, noEdits: true });
+          await expect(send(h, draftId, { shotId: redacted })).rejects.toMatchObject({ code: 'shot-unavailable' });
+          const id = savedId(await send(h, draftId, { shotId: selected }));
+          expect(h.media(id).equals(selectedCapture)).toBe(true);
+          expect((await h.saved()).map((report) => report.id)).toEqual([id]);
+        });
+
+        it('the other window\'s capture can\'t be sent, even offered as its own bytes', async () => {
+          const h = harness();
+          const { draftId } = await opened(h);
+          await leftOut(h, draftId, { shotId: selected, noEdits: true });
+          await expect(send(h, draftId, { shotId: redacted, annotatedPng: b64(redactedCapture) })).rejects.toMatchObject({ code: 'shot-unavailable' });
+          // No id names it now, and with no id the selected window is what's meant.
+          await expect(send(h, draftId, { annotatedPng: b64(redactedCapture) })).rejects.toMatchObject({ code: 'invalid-media' });
+          expect(await h.saved()).toEqual([]);
+        });
+      });
+
+      it('another window\'s original that happens to fit is never a flattened image, and adds nothing to a later fit', async () => {
+        const h = harness();
+        const { draftId } = await opened(h);
+        // 1600x1000 is a fit-down of 2880x1800, so only its origin gives it away.
+        await expect(send(h, draftId, { annotatedPng: b64(OTHER) })).rejects.toMatchObject({ code: 'invalid-media' });
+        h.state.submitFails = FAILED_SAVE;
+        await expect(send(h, draftId, { includeScreenshot: false, annotatedPng: b64(OTHER) })).rejects.toMatchObject({ code: 'storage-full' });
+        await expect(send(h, draftId, { annotatedPng: b64(OTHER) })).rejects.toMatchObject({ code: 'invalid-media' });
+        // Refused, so the size didn't move.
+        expect(h.media(savedId(await send(h, draftId, { annotatedPng: b64(INK) }))).equals(INK)).toBe(true);
+      });
+
+      it('nor on a reopened draft, which no longer lists that window', async () => {
+        const h = harness();
+        const draft = await opened(h);
+        await enrollAgain(h);
+        const reopened = reopenedFrom(await send(h, draft.draftId, { annotatedPng: b64(INK) }));
+        await expect(send(h, reopened.draftId, { annotatedPng: b64(OTHER) })).rejects.toMatchObject({ code: 'invalid-media' });
+        expect(await h.saved()).toEqual([]);
+      });
+
+      it('with s1 named, s1 keeps its capture, s0 goes, and a later Send naming s0 fails', async () => {
+        const h = harness();
+        const { draftId } = await opened(h);
+        await leftOut(h, draftId, { shotId: 's1', noEdits: true });
+        await expect(send(h, draftId, { shotId: 's0' })).rejects.toMatchObject({ code: 'shot-unavailable' });
+        await expect(send(h, draftId, { shotId: 's0', annotatedPng: b64(CAPTURE) })).rejects.toMatchObject({ code: 'shot-unavailable' });
+        expect(await h.saved()).toEqual([]);
+      });
+
+      it('left out with neither flag nor bytes, then an included retry with flattened bytes saves those bytes', async () => {
+        const h = harness();
+        const { draftId } = await opened(h);
+        await leftOut(h, draftId, { shotId: 's0' });
+        const first = await h.prepared.at(-1) as { report: { id: string } };
+        const id = savedId(await send(h, draftId, { shotId: 's0', annotatedPng: b64(INK) }));
+        expect(id).not.toBe(first.report.id);
+        expect(h.media(id).equals(INK)).toBe(true);
+        expect((await h.saved()).map((report) => report.id)).toEqual([id]);
+      });
+
+      it('a retry of the same left-out Send keeps its id and still holds the capture', async () => {
+        const h = harness();
+        const { draftId } = await opened(h);
+        await leftOut(h, draftId, { shotId: 's0', noEdits: true });
+        const count = h.prepared.length;
+        await leftOut(h, draftId, { shotId: 's0', noEdits: true });
+        expect(h.prepared).toHaveLength(count);
+        expect(h.media(savedId(await send(h, draftId))).equals(CAPTURE)).toBe(true);
+      });
+
+      it('an unedited first Send, then left out with the flag, still holds the capture', async () => {
+        const h = harness();
+        const { draftId } = await opened(h);
+        h.state.submitFails = FAILED_SAVE;
+        await expect(send(h, draftId)).rejects.toMatchObject({ code: 'storage-full' });
+        await leftOut(h, draftId, { shotId: 's0', noEdits: true });
+        expect(h.media(savedId(await send(h, draftId))).equals(CAPTURE)).toBe(true);
+      });
+
+      it.each<[string, Partial<FeedbackSendInput>]>([
+        ['no bytes', {}],
+        ['the capture\'s own bytes', { annotatedPng: b64(CAPTURE) }],
+      ])('marked Send, then left out with the flag, then included with %s: fails, and nothing is saved', async (_name, included) => {
+        const h = harness();
+        const { draftId } = await opened(h);
+        h.state.submitFails = FAILED_SAVE;
+        await expect(send(h, draftId, { annotatedPng: b64(INK) })).rejects.toMatchObject({ code: 'storage-full' });
+        await leftOut(h, draftId, { shotId: 's0', noEdits: true });
+        await expect(send(h, draftId, included)).rejects.toMatchObject({ code: 'flattened-required' });
+        expect(await h.saved()).toEqual([]);
+      });
+
+      it.each<[string, Partial<FeedbackSendInput>]>([
+        ['no bytes', {}],
+        ['the capture\'s own bytes', { annotatedPng: b64(CAPTURE) }],
+      ])('flattened bytes that failed validation, then left out with the flag, then included with %s: fails', async (_name, included) => {
+        const h = harness();
+        const { draftId } = await opened(h);
+        await expect(send(h, draftId, { annotatedPng: b64(Buffer.from('not an image')) })).rejects.toMatchObject({ code: 'invalid-media' });
+        await leftOut(h, draftId, { shotId: 's0', noEdits: true });
+        await expect(send(h, draftId, included)).rejects.toMatchObject({ code: 'flattened-required' });
+        expect(await h.saved()).toEqual([]);
+      });
+
+      it.each<[string, Partial<FeedbackSendInput>]>([
+        ['no bytes', {}],
+        ['the capture\'s own bytes', { annotatedPng: b64(CAPTURE) }],
+      ])('left out without the flag, then with it, then included with %s: fails, and nothing is saved', async (_name, included) => {
+        const h = harness();
+        const { draftId } = await opened(h);
+        await leftOut(h, draftId);
+        await leftOut(h, draftId, { shotId: 's0', noEdits: true });
+        await expect(send(h, draftId, included)).rejects.toMatchObject({ code: 'flattened-required' });
+        expect(await h.saved()).toEqual([]);
+      });
+
+      it('left out with the flag, then without it, drops the capture', async () => {
+        const h = harness();
+        const { draftId } = await opened(h);
+        await leftOut(h, draftId, { shotId: 's0', noEdits: true });
+        await leftOut(h, draftId);
+        await expect(send(h, draftId)).rejects.toMatchObject({ code: 'flattened-required' });
+      });
+
+      it('is ignored on a Send that includes the image: flattened bytes still end the fallback', async () => {
+        const h = harness();
+        const { draftId } = await opened(h);
+        h.state.submitFails = FAILED_SAVE;
+        await expect(send(h, draftId, { noEdits: true, annotatedPng: b64(INK) })).rejects.toMatchObject({ code: 'storage-full' });
+        await expect(send(h, draftId, { noEdits: true })).rejects.toMatchObject({ code: 'flattened-required' });
+        expect(await h.saved()).toEqual([]);
+      });
+
+      it('saying no edits while bringing different bytes isn\'t believed', async () => {
+        const h = harness();
+        const { draftId } = await opened(h);
+        await leftOut(h, draftId, { noEdits: true, annotatedPng: b64(INK) });
+        await expect(send(h, draftId)).rejects.toMatchObject({ code: 'flattened-required' });
+      });
+
+      it('for a window other than the one fixed, it isn\'t believed', async () => {
+        const h = harness();
+        const { draftId } = await opened(h);
+        h.state.submitFails = FAILED_SAVE;
+        await expect(send(h, draftId)).rejects.toMatchObject({ code: 'storage-full' });
+        await leftOut(h, draftId, { shotId: 's1', noEdits: true });
+        await expect(send(h, draftId)).rejects.toMatchObject({ code: 'flattened-required' });
+      });
+
+      it('a reopened draft carrying a flattened image keeps it, with or without the flag', async () => {
+        const h = harness();
+        const draft = await opened(h);
+        await enrollAgain(h);
+        const reopened = reopenedFrom(await send(h, draft.draftId, { annotatedPng: b64(INK) }));
+        await leftOut(h, reopened.draftId);
+        expect(h.media(savedId(await send(h, reopened.draftId))).equals(INK)).toBe(true);
+      });
+
+      it('a reopened draft carrying the capture follows the same rule as a capture', async () => {
+        const h = harness();
+        const draft = await opened(h);
+        await enrollAgain(h);
+        const reopened = reopenedFrom(await send(h, draft.draftId));
+        await leftOut(h, reopened.draftId, { shotId: 's0', noEdits: true });
+        await leftOut(h, reopened.draftId);
+        await expect(send(h, reopened.draftId)).rejects.toMatchObject({ code: 'flattened-required' });
+      });
+
+      it('a reopen after a flagged left-out Send has no image, and takes nothing from the capture', async () => {
+        const h = harness();
+        const draft = await opened(h);
+        await enrollAgain(h);
+        const reopened = reopenedFrom(await send(h, draft.draftId, { includeScreenshot: false, noEdits: true }));
+        expect(reopened.shots).toEqual([]);
       });
     });
 
@@ -838,25 +1251,77 @@ describe('the report field with the real SDK', () => {
         await expect(send(h, reopened.draftId, { includeDiagnostics: false })).resolves.toMatchObject({ diagnostics: { status: 'left_out', reason: 'reporter' } });
       });
 
-      it('fresh diagnostics lose trace references that don\'t match the carried trace, and keep the ones that do', async () => {
+      it('fresh diagnostic lines are left alone: their trace attrs belong to their own window, and what was reviewed is what goes', async () => {
         const { h, live, later } = provenanceHarness();
         const draft = await opened(h);
         later();
         const line = AVAILABLE.lines[0];
-        live.diagnostics = { ...live.diagnostics, lines: [
-          { ...line, attrs: { closeCode: 1006, traceId: FRESH_TRACE.traceId, spanId: FRESH_TRACE.spanId } },
+        const lines = [
+          { ...line, attrs: { closeCode: 1006, ...FRESH_TRACE } },
           { ...line, attrs: { closeCode: 1007, ...TRACE } },
           { ...line, attrs: { closeCode: 1008, spanId: FRESH_TRACE.spanId } },
-          { ...line, attrs: { closeCode: 1009 } },
-        ] };
+        ];
+        live.diagnostics = { ...live.diagnostics, lines };
         await enrollAgain(h);
         const reopened = reopenedFrom(await send(h, draft.draftId, { includeDiagnostics: true, annotatedPng: b64(INK) }));
-        expect(reopened.diagnostics?.lines.map((l) => l.attrs)).toEqual([{ closeCode: 1006 }, { closeCode: 1007, ...TRACE }, { closeCode: 1008 }, { closeCode: 1009 }]);
+        expect(reopened.diagnostics?.lines).toEqual(lines);
         savedId(await send(h, reopened.draftId, { includeDiagnostics: true }));
         const [report] = await h.saved();
-        expect(JSON.stringify(report.diagnostics)).not.toContain(FRESH_TRACE.traceId);
-        expect(JSON.stringify(report.diagnostics)).not.toContain(FRESH_TRACE.spanId);
-        expect(JSON.stringify(report.diagnostics)).toContain(TRACE.traceId);
+        expect(report.diagnostics.entries.map((entry: { attrs: unknown }) => entry.attrs)).toEqual(lines.map((l) => l.attrs));
+        expect(report).toMatchObject(TRACE);
+      });
+
+      describe('the incident and the flat references', () => {
+        const refsOf = (report: { traceId?: string; spanId?: string; incident?: { traces: Array<{ traceId: string; spanId: string }> } }) => ({ flat: { traceId: report.traceId, spanId: report.spanId }, first: report.incident?.traces[0] });
+
+        it('carry together, and match', async () => {
+          const { h, later } = provenanceHarness();
+          const draft = await opened(h);
+          later();
+          await enrollAgain(h);
+          const reopened = reopenedFrom(await send(h, draft.draftId, { annotatedPng: b64(INK) }));
+          savedId(await send(h, reopened.draftId));
+          const [report] = await h.saved();
+          expect(refsOf(report)).toEqual({ flat: TRACE, first: TRACE });
+        });
+
+        it('go together when the tester turns tracing off', async () => {
+          const { h, later } = provenanceHarness();
+          const draft = await opened(h);
+          later();
+          await enrollAgain(h);
+          const reopened = reopenedFrom(await send(h, draft.draftId, { includeCorrelation: false, annotatedPng: b64(INK) }));
+          savedId(await send(h, reopened.draftId, { includeCorrelation: false }));
+          const [report] = await h.saved();
+          expect(report).not.toHaveProperty('incident');
+          expect(report).not.toHaveProperty('traceId');
+          expect(report).not.toHaveProperty('spanId');
+        });
+
+        it('an incident with no traces carries with no flat references', async () => {
+          const at = CAPTURED_AT;
+          const empty = incidentAt(at, TRACE);
+          const { traceId: _traceId, spanId: _spanId, ...data } = empty.data;
+          const h = harness({ captureCorrelation: () => ({ ...empty, data: { ...data, incident: { ...empty.data.incident!, availability: 'unavailable', traces: [] } } }) });
+          const draft = await opened(h);
+          await enrollAgain(h);
+          const reopened = reopenedFrom(await send(h, draft.draftId, { annotatedPng: b64(INK) }));
+          savedId(await send(h, reopened.draftId));
+          const [report] = await h.saved();
+          expect(report.incident).toMatchObject({ availability: 'unavailable', traces: [] });
+          expect(report).not.toHaveProperty('traceId');
+        });
+
+        it('flat references that disagree can\'t get past the incident: the report still matches', async () => {
+          const mismatched = incidentAt(CAPTURED_AT, TRACE);
+          const h = harness({ captureCorrelation: () => ({ ...mismatched, data: { ...mismatched.data, ...FRESH_TRACE } }) });
+          const draft = await opened(h);
+          await enrollAgain(h);
+          const reopened = reopenedFrom(await send(h, draft.draftId, { annotatedPng: b64(INK) }));
+          savedId(await send(h, reopened.draftId));
+          const [report] = await h.saved();
+          expect(refsOf(report)).toEqual({ flat: TRACE, first: TRACE });
+        });
       });
 
       it('a no-image reopen takes fresh values', async () => {
@@ -871,19 +1336,6 @@ describe('the report field with the real SDK', () => {
         const [report] = await h.saved();
         expect(report).toMatchObject({ media: null, capturedAt: new Date(h.state.now).toISOString(), scene: 'settings', ...FRESH_TRACE });
         expect(appCrumbs(report)).toEqual(['view.settings']);
-      });
-
-      it('a reopen keeps the tester\'s tracing choice out of the report but the carried references in the draft', async () => {
-        const { h, later } = provenanceHarness();
-        const draft = await opened(h);
-        later();
-        await enrollAgain(h);
-        const reopened = reopenedFrom(await send(h, draft.draftId, { includeCorrelation: false, annotatedPng: b64(INK) }));
-        savedId(await send(h, reopened.draftId, { includeCorrelation: false }));
-        const [off] = await h.saved();
-        expect(off.capturedAt).toBe(CAPTURED_AT);
-        expect(off).not.toHaveProperty('incident');
-        expect(off).not.toHaveProperty('traceId');
       });
 
       it('with a retry\'s scene and app events changing under one enrollment, the first Send\'s stay', async () => {

@@ -88,7 +88,7 @@ function requireEnabled(event: Electron.IpcMainInvokeEvent): BrowserWindow {
 }
 
 export function validateSendInput(value: FeedbackSendInput, argName: string): void {
-  const allowed = new Set(['draftId', 'notes', 'includeScreenshot', 'includeCorrelation', 'includeDiagnostics', 'scene', 'annotatedPng', 'shotId']);
+  const allowed = new Set(['draftId', 'notes', 'includeScreenshot', 'includeCorrelation', 'includeDiagnostics', 'scene', 'annotatedPng', 'shotId', 'noEdits']);
   for (const key of Object.keys(value)) {
     if (!allowed.has(key)) throw new Error(`${argName}.${key} is not a recognized field`);
   }
@@ -99,8 +99,11 @@ export function validateSendInput(value: FeedbackSendInput, argName: string): vo
   if (typeof value.draftId !== 'string' || !DRAFT_ID.test(value.draftId)) throw new Error(`${argName}.draftId is invalid`);
   if (value.scene !== undefined && (typeof value.scene !== 'string' || value.scene.length > 40)) throw new Error(`${argName}.scene is invalid`);
   if (value.shotId !== undefined && (typeof value.shotId !== 'string' || !SHOT_ID.test(value.shotId))) throw new Error(`${argName}.shotId is invalid`);
-  // Shape only here; the service decodes it and enforces the byte cap and dimensions.
-  if (value.annotatedPng !== undefined && (typeof value.annotatedPng !== 'string' || value.annotatedPng.length > MAX_ANNOTATED_BASE64 || !BASE64.test(value.annotatedPng))) {
+  if (value.noEdits !== undefined && (value.noEdits !== true || value.includeScreenshot)) throw new Error(`${argName}.noEdits is only for a send that leaves the image out`);
+  // Shape only here; the service decodes it and enforces the byte cap and dimensions. With the
+  // image left out, bad bytes can't stop the note: the service refuses them and it still goes.
+  if (value.annotatedPng !== undefined && typeof value.annotatedPng !== 'string') throw new Error(`${argName}.annotatedPng must be base64 PNG data of at most ${FEEDBACK_MAX_PNG_BYTES} bytes`);
+  if (value.annotatedPng !== undefined && value.includeScreenshot && (value.annotatedPng.length > MAX_ANNOTATED_BASE64 || !BASE64.test(value.annotatedPng))) {
     throw new Error(`${argName}.annotatedPng must be base64 PNG data of at most ${FEEDBACK_MAX_PNG_BYTES} bytes`);
   }
 }

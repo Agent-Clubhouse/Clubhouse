@@ -283,9 +283,14 @@ describe('validateSendInput', () => {
   });
   it('accepts a shot id', () => {
     expect(() => validateSendInput({ ...ok, includeScreenshot: true, shotId: 's1' }, 'arg1')).not.toThrow();
+    expect(() => validateSendInput({ ...ok, includeScreenshot: false, shotId: 's1', noEdits: true }, 'arg1')).not.toThrow();
   });
   it('accepts a base64 annotated screenshot', () => {
     expect(() => validateSendInput({ ...ok, includeScreenshot: true, annotatedPng: Buffer.from('png-bytes').toString('base64') }, 'arg1')).not.toThrow();
+  });
+  it('lets bad bytes through with the image left out, so they can\'t stop the note', () => {
+    expect(() => validateSendInput({ ...ok, annotatedPng: 'not base64!' }, 'arg1')).not.toThrow();
+    expect(() => validateSendInput({ ...ok, annotatedPng: 'A'.repeat(Math.ceil((8 * 1024 * 1024) / 3) * 4 + 4) }, 'arg1')).not.toThrow();
   });
   it.each([
     [{ ...ok, extra: 1 }, /not a recognized field/],
@@ -298,9 +303,11 @@ describe('validateSendInput', () => {
     [{ ...ok, scene: 'x'.repeat(41) }, /scene/],
     [{ ...ok, annotatedPng: 42 }, /annotatedPng/],
     [{ ...ok, shotId: 'main' }, /shotId/],
+    [{ ...ok, includeScreenshot: false, noEdits: false }, /noEdits/],
+    [{ ...ok, includeScreenshot: true, noEdits: true }, /noEdits/],
     [{ ...ok, shotId: 3 }, /shotId/],
-    [{ ...ok, annotatedPng: 'not base64!' }, /annotatedPng/],
-    [{ ...ok, annotatedPng: 'A'.repeat(Math.ceil((8 * 1024 * 1024) / 3) * 4 + 4) }, /annotatedPng/],
+    [{ ...ok, includeScreenshot: true, annotatedPng: 'not base64!' }, /annotatedPng/],
+    [{ ...ok, includeScreenshot: true, annotatedPng: 'A'.repeat(Math.ceil((8 * 1024 * 1024) / 3) * 4 + 4) }, /annotatedPng/],
   ])('rejects %s', (value, error) => {
     expect(() => validateSendInput(value as never, 'arg1')).toThrow(error);
   });

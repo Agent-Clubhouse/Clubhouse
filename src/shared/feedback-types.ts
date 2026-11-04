@@ -125,13 +125,24 @@ export interface FeedbackSendInput {
   scene?: string;
   /**
    * The flattened image: the screenshot with the user's edits baked in, as base64 PNG (no
-   * data: prefix). Only used with includeScreenshot. It must be the size of the image it was
-   * made from, or fitted down from it with the same aspect ratio. Once a Send has brought one,
-   * every later Send with the image has to bring one too: main never falls back to the original.
+   * data: prefix). It must be the size of the image it was made from, or fitted down from it with
+   * the same aspect ratio. Once a Send has brought one, every later Send with the image has to
+   * bring one too: main never falls back to the original. A Send that leaves the image out brings
+   * it as well, if there are marks: the report has no media, but the edits are final all the same.
    */
   annotatedPng?: string;
-  /** Which window's screenshot to send (FeedbackShot.shotId); the first when omitted. */
+  /**
+   * Which window's screenshot this Send is about (FeedbackShot.shotId); the first when omitted.
+   * Also on a Send that leaves the image out: the first Send fixes the window either way.
+   */
   shotId?: string;
+  /**
+   * Only on a Send that leaves the image out and brings no flattened image: the window named by
+   * shotId, which it needs, has no edits, so main may keep its capture for a later Send. Without
+   * both, main assumes there may be edits and drops the capture. It only keeps what main still
+   * holds. It never brings a capture back.
+   */
+  noEdits?: true;
 }
 
 /** The feedback capture shortcut's key label per platform (main's menu accelerator is CmdOrCtrl+Shift+2). */

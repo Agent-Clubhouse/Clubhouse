@@ -32,7 +32,8 @@
  *   releases or clears them.
  * - Reviewed bytes (feedback composer contract, sections 2, 3 and 5): the first Send ends
  *   reversibility here too, so the other windows' captures go, and once edits may exist the
- *   original can't be sent. The renderer's bytes are untrusted. Changed content is a new report
+ *   original can't be sent, and the first flattened image fixes what later ones must fit. The
+ *   renderer's bytes are untrusted. Changed content is a new report
  *   id, only one prepared report can send a draft, and unchanged content retries under its id.
  */
 
@@ -125,23 +126,6 @@ export interface FeedbackBreadcrumb {
   atMs: number;
   code: string;
   value?: number;
-}
-
-/**
- * Fresh diagnostics for a carried image: a line's trace references stay only if they point at
- * the trace that came with the pixels, so nothing links the old image to an unrelated trace.
- */
-function withoutOtherTraces(diagnostics: FeedbackDiagnostics, { traceId, incident }: Pick<FramebriarSnapshot, 'traceId' | 'incident'>): FeedbackDiagnostics {
-  const carried = new Set<string | undefined>([traceId, ...(incident?.traces ?? []).map((trace) => trace.traceId)]);
-  return {
-    ...diagnostics,
-    lines: diagnostics.lines.map((line) => {
-      const attrs = line.attrs;
-      if (!attrs || (!('traceId' in attrs) && !('spanId' in attrs))) return line;
-      if (typeof attrs.traceId === 'string' && carried.has(attrs.traceId)) return line;
-      return { ...line, attrs: Object.fromEntries(Object.entries(attrs).filter(([key]) => key !== 'traceId' && key !== 'spanId')) };
-    }),
-  };
 }
 
 export type FeedbackLogLevel = 'debug' | 'info' | 'warn' | 'error';
@@ -269,7 +253,7 @@ interface Shot {
   png: Buffer | null;
   /** What flattened bytes must fit. Moves down with each flattened image accepted. */
   size: { width: number; height: number } | null;
-  /** The original's hash, so those bytes can be refused after it's dropped. Memory only, never logged. */
+  /** The original's hash, so it can be told from a flattened image after it's dropped. Memory only, never logged. */
   captureSha: string;
 }
 
@@ -279,9 +263,11 @@ interface Draft {
    * bytes. snapshot.enrollmentRef is what binds the report to its enrollment.
    */
   snapshot: FramebriarSnapshot;
-  /** Every window captured, then from the first Send that includes an image, only that one. */
+  /** Every window captured, then from the first Send, only the one it chose. */
   shots: Shot[];
-  /** A Send has included an image, so its window can't change and its bytes are the source. */
+  /** Every window's original, which is never a flattened image: another window's could fit this one. Memory only, never logged. */
+  captureShas: ReadonlySet<string>;
+  /** A Send has chosen the window, so it can't change. */
   imageFixed?: boolean;
   /** Fixed by the first Send: it stays with the pixels, whatever the renderer says later. */
   context?: { scene: string; breadcrumbs: FeedbackBreadcrumb[] };
@@ -314,6 +300,8 @@ export class FeedbackService {
   private starting: Promise<void> | null = null;
   private readonly drafts = new Map<string, Draft>();
   private readonly received: string[] = [];
+  /** Drafts already saved as reports, so a late Send on one can say what really happened. */
+  private readonly sentDrafts = new Set<string>();
   private readonly excerpts = new Set<FramebriarTelemetry>();
   private readonly listeners = new Set<(status: FeedbackStatus) => void>();
   private readonly now: () => number;
@@ -534,10 +522,10 @@ export class FeedbackService {
     return this.addDraft(opened, correlation, diagnostics, queuedAtCapture, shots);
   }
 
-  private addDraft(opened: FramebriarSnapshot, correlation: FeedbackCorrelationSnapshot, diagnostics: FeedbackDiagnostics, queuedAtCapture: number | undefined, shots: CapturedShot[], carried: Pick<Draft, 'imageFixed' | 'context' | 'earlierMayDeliver'> = {}): FeedbackCaptureResult {
+  private addDraft(opened: FramebriarSnapshot, correlation: FeedbackCorrelationSnapshot, diagnostics: FeedbackDiagnostics, queuedAtCapture: number | undefined, shots: CapturedShot[], carried: Partial<Pick<Draft, 'captureShas' | 'imageFixed' | 'context' | 'earlierMayDeliver'>> = {}): FeedbackCaptureResult {
     const snapshot: FramebriarSnapshot = { ...opened, ...correlation.data, png: null };
     const draftId = randomUUID();
-    this.drafts.set(draftId, { snapshot, shots, correlationSummary: correlation.summary, createdAt: this.now(), diagnostics, queuedAtCapture, ...carried });
+    this.drafts.set(draftId, { snapshot, shots, captureShas: new Set(shots.map((shot) => shot.captureSha)), correlationSummary: correlation.summary, createdAt: this.now(), diagnostics, queuedAtCapture, ...carried });
     while (this.drafts.size > MAX_DRAFTS) this.drafts.delete(this.drafts.keys().next().value as string);
     const previews = shots.map((shot) => ({ shotId: shot.shotId, label: shot.label, preview: `data:image/png;base64,${shot.png.toString('base64')}` }));
     return { draftId, preview: previews[0]?.preview ?? null, shots: previews, ...(correlation.summary && { correlation: correlation.summary }), diagnostics, ...(this.deps.reportDiagnosticsField === true && { diagnosticsInReport: true as const }) };
@@ -686,6 +674,7 @@ export class FeedbackService {
     const fb = this.sdk();
     if (!input.draftId) throw Object.assign(new Error('Open feedback again to send a report.'), { code: 'draft-required' });
     const draft = this.drafts.get(input.draftId);
+    if (!draft && this.sentDrafts.has(input.draftId)) throw Object.assign(new Error('This report was already sent, so nothing more can be added to it. Open feedback again to send a screenshot.'), { code: 'screenshot-expired' });
     if (!draft) throw Object.assign(new Error('This feedback draft expired. Open feedback again.'), { code: 'screenshot-expired' });
     if (draft.sending) throw Object.assign(new Error('This report is already being sent.'), { code: 'busy' });
     draft.sending = true;
@@ -757,6 +746,8 @@ export class FeedbackService {
     // Only a committed report consumes the draft: a failed save (e.g. storage full) keeps
     // the reviewed screenshot so the user can retry.
     this.drafts.delete(input.draftId);
+    this.sentDrafts.add(input.draftId);
+    if (this.sentDrafts.size > RECEIPT_MEMORY) this.sentDrafts.delete(this.sentDrafts.values().next().value as string);
     if (inReport) this.afterSave(() => this.emit());
     else this.emit();
     // Never `attached`: those lines are already in the report, and would go twice.
@@ -794,7 +785,7 @@ export class FeedbackService {
       const { label, captureSha } = draft.shots[0];
       const shot: CapturedShot = { shotId: 's0', label, png: png as Buffer, size: pngSize(png as Buffer), captureSha };
       const snapshot = { ...draft.snapshot, enrollmentRef: opened.enrollmentRef };
-      return { status: 'enrollment-changed', draft: this.addDraft(snapshot, { data: snapshot, summary: draft.correlationSummary }, withoutOtherTraces(fresh, snapshot), this.readQueued(), [shot], { ...carried, imageFixed: true, context: draft.context }) };
+      return { status: 'enrollment-changed', draft: this.addDraft(snapshot, { data: snapshot, summary: draft.correlationSummary }, fresh, this.readQueued(), [shot], { ...carried, captureShas: draft.captureShas, imageFixed: true, context: draft.context }) };
     }
     return { status: 'enrollment-changed', draft: this.addDraft(opened, correlation, fresh, this.readQueued(), [], carried) };
   }
@@ -824,40 +815,61 @@ export class FeedbackService {
   /**
    * The bytes this Send carries, or null when it leaves the image out. The first Send ends
    * reversibility, whether or not it includes the image and whatever then happens to the save:
-   * only the chosen window stays, and it can't change. From the first sign that edits may exist,
-   * a Send with the image has to bring valid flattened bytes, and nothing here can send the
-   * original. A Send that leaves the image out is such a sign, because the renderer doesn't say
-   * whether it held edits. The capture's own bytes aren't a flattened image, so they count as none.
+   * only the chosen window stays, and it can't change. Flattened bytes that differ from the
+   * capture drop it, valid or not, and from then on a Send with the image has to bring valid
+   * ones: older flattened bytes are never resent, because newer marks may cover more. They count
+   * on a Send that leaves the image out too, but can't fail its note. Otherwise a Send that leaves
+   * the image out drops a capture unless it says noEdits and names the window. No name can't mean
+   * the first window here: its edits may be why another one is selected. The flag only keeps a
+   * capture main still holds, and nothing brings one back. An already flattened image a reopened
+   * draft carried stays.
+   * The capture's own bytes aren't a flattened image, so they count as none.
    */
   private imageToSend(draft: Draft, input: FeedbackSendInput): Buffer | null {
+    const shot = input.shotId === undefined ? draft.shots[0] : draft.shots.find((s) => s.shotId === input.shotId);
+    const flattened = input.annotatedPng === undefined ? null : Buffer.from(input.annotatedPng, 'base64');
+    const edited = flattened !== null && sha256(flattened) !== shot?.captureSha;
+    if (edited) for (const each of draft.shots) each.png = null;
     if (!input.includeScreenshot) {
-      if (!draft.imageFixed) for (const shot of draft.shots) shot.png = null;
+      if (!draft.imageFixed) {
+        draft.shots = shot ? [shot] : [];
+        draft.imageFixed = true;
+      }
+      if (edited) this.fixLeftOutImage(draft, shot, flattened);
+      else if (input.noEdits !== true || input.shotId === undefined || !shot) for (const each of draft.shots) if (each.png && sha256(each.png) === each.captureSha) each.png = null;
       return null;
     }
     if (draft.shots.length === 0) throw Object.assign(new Error('This screenshot expired. Capture it again.'), { code: 'screenshot-expired' });
-    const flattened = input.annotatedPng === undefined ? null : Buffer.from(input.annotatedPng, 'base64');
-    const shot = input.shotId === undefined ? draft.shots[0] : draft.shots.find((s) => s.shotId === input.shotId);
-    const edited = flattened !== null && sha256(flattened) !== shot?.captureSha;
-    if (edited) for (const each of draft.shots) each.png = null;
     if (!shot) throw Object.assign(new Error('That screenshot is no longer available. Capture it again.'), { code: 'shot-unavailable' });
     draft.shots = [shot];
     draft.imageFixed = true;
-    if (edited) return this.checkedFlattened(shot, flattened);
-    if (!shot.png) throw Object.assign(new Error('The original screenshot can\'t be sent after an earlier Send. Send this without the screenshot, or close it and open a new report.'), { code: 'flattened-required' });
+    if (edited) return this.checkedFlattened(draft, shot, flattened);
+    if (!shot.png) throw Object.assign(new Error('This screenshot can\'t be sent from this report, because the original was dropped at your earlier Send. Send without it, or close this and open a new report.'), { code: 'flattened-required' });
     return shot.png;
+  }
+
+  /** Flattened bytes on a Send with no image: they fix what a later flatten must fit, or are refused and logged. Never throws. */
+  private fixLeftOutImage(draft: Draft, shot: Shot | undefined, flattened: Buffer): void {
+    try {
+      if (!shot) throw Object.assign(new Error('The flattened image is for another window'), { code: 'shot-unavailable' });
+      this.checkedFlattened(draft, shot, flattened);
+    } catch (err) { // telemetry-exempt: this report has no image, so its note still goes; logged for diagnosis
+      this.log('warn', 'Feedback flattened image refused on a Send without it', errorMeta(err));
+    }
   }
 
   /**
    * The renderer's flattened image (#2099), which is untrusted: a PNG within the size cap that
-   * fits the shot. It's now what any later flatten has to fit, since it's the source.
+   * fits the shot and isn't any window's original. It's now what any later flatten has to fit,
+   * since it's the source.
    */
-  private checkedFlattened(shot: Shot, flattened: Buffer): Buffer {
+  private checkedFlattened(draft: Draft, shot: Shot, flattened: Buffer): Buffer {
     if (flattened.length > MAX_PNG_BYTES) {
       throw Object.assign(new Error('The screenshot with your drawing is too large to send (8 MiB at most)'), { code: 'invalid-media' });
     }
     const size = pngSize(flattened);
     if (!size) throw Object.assign(new Error('The screenshot with your drawing is not a PNG image'), { code: 'invalid-media' });
-    if (!shot.size || !fitsSource(size, shot.size)) {
+    if (!shot.size || !fitsSource(size, shot.size) || draft.captureShas.has(sha256(flattened))) {
       throw Object.assign(new Error("The screenshot with your drawing doesn't match the captured screenshot"), { code: 'invalid-media' });
     }
     shot.size = size;
@@ -895,6 +907,7 @@ export class FeedbackService {
 
   async shutdown(): Promise<void> {
     this.drafts.clear();
+    this.sentDrafts.clear();
     this.listeners.clear();
     for (const excerpt of this.excerpts) {
       try { excerpt.dispose(); } catch { /* telemetry-exempt: shutting down */ }
