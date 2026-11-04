@@ -112,6 +112,10 @@ export function FeedbackReviewDialog({ draft, reopened = null, onClose }: Props)
     onClose();
   }, [phase, draft.draftId, onClose]);
 
+  // Esc and the backdrop can't discard a note or a drawing (feedback composer contract, section 2). Cancel is the explicit way.
+  const holdsWork = notes.trim() !== '' || inkByShot.some((ink) => ink.length > 0) || reopened?.carriedMarks === true;
+  const dismiss = phase === 'sending' || (phase === 'review' && holdsWork) ? (): void => undefined : cancel;
+
   const send = async (includeScreenshot: boolean) => {
     setPhase('sending');
     setSendTried(true);
@@ -140,7 +144,8 @@ export function FeedbackReviewDialog({ draft, reopened = null, onClose }: Props)
       if (result.status === 'enrollment-changed') {
         // Nothing was saved. A new report with new contents needs its own review and Send.
         const lostScreenshot = reopened?.lostScreenshot === true || (hasScreenshot && shotsOf(result.draft).length === 0);
-        reopenDraft(result.draft, { notes, includeCorrelation, includeDiagnostics, lostScreenshot });
+        const carriedMarks = shotsOf(result.draft).length > 0 && (reopened?.carriedMarks === true || strokes.length > 0);
+        reopenDraft(result.draft, { notes, includeCorrelation, includeDiagnostics, lostScreenshot, carriedMarks });
         return;
       }
       setReportId(result.id);
@@ -155,7 +160,7 @@ export function FeedbackReviewDialog({ draft, reopened = null, onClose }: Props)
   };
 
   return (
-    <Modal open onClose={phase === 'sending' ? () => undefined : cancel} title="Send feedback" width="w-[560px]">
+    <Modal open onClose={phase === 'sending' ? () => undefined : cancel} onDismiss={dismiss} title="Send feedback" width="w-[560px]">
       <div className="px-5 pb-5 pt-3 space-y-3" data-testid="feedback-review">
         {phase === 'saved' ? (
           <div className="space-y-3">

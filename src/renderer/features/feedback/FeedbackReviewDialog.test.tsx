@@ -622,3 +622,197 @@ describe('FeedbackReviewDialog with several windows (#2100)', () => {
     await act(async () => { resolveSend({ id: 'rep-1', status: 'saved-local' }); });
   });
 });
+
+describe('dismissing the review (contract section 2)', () => {
+  const composite = vi.mocked(compositeAnnotatedPng);
+  const MULTI = {
+    draftId: '3e8f9d5b-4c6a-4fb1-8dae-5a7b9c1d3f4b',
+    preview: 'data:image/png;base64,TUFJTg==',
+    shots: [
+      { shotId: 's0', label: 'Main window', preview: 'data:image/png;base64,TUFJTg==' },
+      { shotId: 's1', label: 'Pop-out', preview: 'data:image/png;base64,UE9QT1VU' },
+    ],
+  };
+  const NEXT = { draftId: '4f9a0e6c-5d7b-40c2-9ebf-6b8c0d2e4a5c', preview: 'data:image/png;base64,bmV3', shots: [{ shotId: 's0', label: 'Main window', preview: 'data:image/png;base64,bmV3' }] };
+
+  const notesField = () => screen.getByLabelText('What happened?') as HTMLTextAreaElement;
+  const write = (value: string) => fireEvent.change(notesField(), { target: { value } });
+  // The real thing: the Modal's own overlay and its keydown listener on document.
+  const clickBackdrop = () => fireEvent.click(screen.getByRole('dialog').parentElement as HTMLElement);
+  const pressEsc = () => fireEvent.keyDown(document.body, { key: 'Escape' });
+  const WAYS: Array<[string, () => void]> = [['a backdrop click', clickBackdrop], ['Esc', pressEsc]];
+
+  function drawOnce() {
+    const img = screen.getByTestId('feedback-preview');
+    Object.defineProperty(img, 'naturalWidth', { value: 200, configurable: true });
+    Object.defineProperty(img, 'naturalHeight', { value: 200, configurable: true });
+    fireEvent.load(img);
+    const canvas = screen.getByTestId('feedback-ink-canvas');
+    fireEvent.pointerDown(canvas, { pointerId: 1, button: 0, clientX: 10, clientY: 10 });
+    fireEvent.pointerUp(canvas, { pointerId: 1 });
+  }
+
+  beforeEach(() => {
+    composite.mockReset().mockResolvedValue('ANNOTATED');
+    vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue({ clearRect: vi.fn(), beginPath: vi.fn(), moveTo: vi.fn(), lineTo: vi.fn(), stroke: vi.fn(), arc: vi.fn(), fill: vi.fn() } as never);
+    vi.spyOn(HTMLCanvasElement.prototype, 'getBoundingClientRect').mockReturnValue({ left: 0, top: 0, width: 100, height: 100, right: 100, bottom: 100, x: 0, y: 0, toJSON: () => ({}) });
+  });
+  afterEach(() => vi.restoreAllMocks());
+
+  describe.each(WAYS)('%s', (_name, dismiss) => {
+    it('keeps a typed note, and cancels nothing', () => {
+      const onClose = vi.fn();
+      render(<FeedbackReviewDialog draft={DRAFT} onClose={onClose} />);
+      write('my note');
+      dismiss();
+      expect(onClose).not.toHaveBeenCalled();
+      expect(cancel).not.toHaveBeenCalled();
+      expect(notesField().value).toBe('my note');
+    });
+
+    it('keeps a drawing, and cancels nothing', () => {
+      const onClose = vi.fn();
+      render(<FeedbackReviewDialog draft={DRAFT} onClose={onClose} />);
+      drawOnce();
+      dismiss();
+      expect(onClose).not.toHaveBeenCalled();
+      expect(cancel).not.toHaveBeenCalled();
+      expect(screen.getByTestId('feedback-ink-canvas').getAttribute('aria-label')).toBe('Drawing area, 1 mark');
+    });
+
+    it('keeps a drawing on a window that isn\'t selected', () => {
+      const onClose = vi.fn();
+      render(<FeedbackReviewDialog draft={MULTI} onClose={onClose} />);
+      drawOnce();
+      fireEvent.click(screen.getByTestId('feedback-shot-1'));
+      dismiss();
+      expect(onClose).not.toHaveBeenCalled();
+      expect(cancel).not.toHaveBeenCalled();
+    });
+
+    it('with no note and no drawing, closes and cancels the draft as it always did', () => {
+      const onClose = vi.fn();
+      render(<FeedbackReviewDialog draft={DRAFT} onClose={onClose} />);
+      dismiss();
+      expect(onClose).toHaveBeenCalledTimes(1);
+      expect(cancel).toHaveBeenCalledWith(DRAFT.draftId);
+    });
+
+    it('treats a blank note as no note, as Send does', () => {
+      const onClose = vi.fn();
+      render(<FeedbackReviewDialog draft={DRAFT} onClose={onClose} />);
+      write('   \n ');
+      dismiss();
+      expect(onClose).toHaveBeenCalledTimes(1);
+    });
+
+    it('closes again once the note is deleted and the drawing undone', () => {
+      const onClose = vi.fn();
+      render(<FeedbackReviewDialog draft={DRAFT} onClose={onClose} />);
+      write('my note');
+      drawOnce();
+      write('');
+      dismiss();
+      expect(onClose).not.toHaveBeenCalled();
+      fireEvent.click(screen.getByTestId('feedback-ink-undo'));
+      dismiss();
+      expect(onClose).toHaveBeenCalledTimes(1);
+      expect(cancel).toHaveBeenCalledWith(DRAFT.draftId);
+    });
+
+    it('keeps a reopened draft\'s note', () => {
+      const onClose = vi.fn();
+      render(<FeedbackReviewDialog draft={NEXT} reopened={{ notes: 'carried note', includeCorrelation: true, includeDiagnostics: true }} onClose={onClose} />);
+      dismiss();
+      expect(onClose).not.toHaveBeenCalled();
+      expect(cancel).not.toHaveBeenCalled();
+      expect(notesField().value).toBe('carried note');
+    });
+
+    it('closes a reopened draft with no note and no drawing', () => {
+      const onClose = vi.fn();
+      render(<FeedbackReviewDialog draft={NEXT} reopened={{ notes: '', includeCorrelation: true, includeDiagnostics: true }} onClose={onClose} />);
+      dismiss();
+      expect(onClose).toHaveBeenCalledTimes(1);
+      expect(cancel).toHaveBeenCalledWith(NEXT.draftId);
+    });
+
+    it('keeps a reopened draft whose image carries the drawing, with no note and no new marks', async () => {
+      useFeedbackStore.setState({ draft: DRAFT });
+      send.mockResolvedValueOnce({ status: 'enrollment-changed', draft: NEXT });
+      render(<FeedbackDialogHost />);
+      drawOnce();
+      await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Send' })); });
+      expect(screen.getByTestId('feedback-reopened')).toBeTruthy();
+      dismiss();
+      expect(useFeedbackStore.getState().draft?.draftId).toBe(NEXT.draftId);
+      expect(cancel).not.toHaveBeenCalled();
+    });
+
+    it('closes a reopened draft that lost its image, when there\'s no note, however it was drawn on', async () => {
+      useFeedbackStore.setState({ draft: DRAFT });
+      send.mockResolvedValueOnce({ status: 'enrollment-changed', draft: { ...NEXT, preview: null, shots: [] } });
+      render(<FeedbackDialogHost />);
+      drawOnce();
+      write('words');
+      await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Send without screenshot' })); });
+      write('');
+      dismiss();
+      expect(useFeedbackStore.getState().draft).toBeNull();
+      expect(cancel).toHaveBeenCalledWith(NEXT.draftId);
+    });
+
+    it('still does nothing while sending, with a note or without', async () => {
+      const onClose = vi.fn();
+      let finish!: (value: unknown) => void;
+      send.mockReturnValueOnce(new Promise((resolve) => { finish = resolve; }));
+      render(<FeedbackReviewDialog draft={DRAFT} onClose={onClose} />);
+      await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Send' })); });
+      dismiss();
+      expect(onClose).not.toHaveBeenCalled();
+      expect(cancel).not.toHaveBeenCalled();
+      await act(async () => { finish({ id: 'rep-1', status: 'saved-local' }); });
+    });
+
+    it('closes the Saved state even with a note, and cancels nothing, since it was sent', async () => {
+      const onClose = vi.fn();
+      render(<FeedbackReviewDialog draft={DRAFT} onClose={onClose} />);
+      write('my note');
+      await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Send' })); });
+      expect(screen.getByTestId('feedback-sent-state')).toBeTruthy();
+      dismiss();
+      expect(onClose).toHaveBeenCalledTimes(1);
+      expect(cancel).not.toHaveBeenCalled();
+    });
+
+    it('through the host, leaves the draft in the store', () => {
+      useFeedbackStore.setState({ draft: DRAFT });
+      render(<FeedbackDialogHost />);
+      write('my note');
+      dismiss();
+      expect(useFeedbackStore.getState().draft?.draftId).toBe(DRAFT.draftId);
+      expect(screen.getByTestId('feedback-review')).toBeTruthy();
+    });
+  });
+
+  describe('the explicit ways out', () => {
+    it('Cancel closes with a note and a drawing, and cancels the draft', () => {
+      const onClose = vi.fn();
+      render(<FeedbackReviewDialog draft={DRAFT} onClose={onClose} />);
+      write('my note');
+      drawOnce();
+      fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+      expect(onClose).toHaveBeenCalledTimes(1);
+      expect(cancel).toHaveBeenCalledWith(DRAFT.draftId);
+    });
+
+    it('the title bar\'s close button acts like Cancel: a button that visibly did nothing would be worse', () => {
+      const onClose = vi.fn();
+      render(<FeedbackReviewDialog draft={DRAFT} onClose={onClose} />);
+      write('my note');
+      fireEvent.click(screen.getByRole('button', { name: 'Close' }));
+      expect(onClose).toHaveBeenCalledTimes(1);
+      expect(cancel).toHaveBeenCalledWith(DRAFT.draftId);
+    });
+  });
+});

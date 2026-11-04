@@ -210,5 +210,41 @@ describe('Modal', () => {
     document.dispatchEvent(e);
     expect(onClose).not.toHaveBeenCalled();
   });
-});
 
+  describe('onDismiss', () => {
+    function open() {
+      const onClose = vi.fn();
+      const onDismiss = vi.fn();
+      render(<Modal open onClose={onClose} onDismiss={onDismiss} title="Title"><button>one</button></Modal>);
+      return { onClose, onDismiss };
+    }
+
+    it('takes Esc instead of onClose', () => {
+      const { onClose, onDismiss } = open();
+      fireEvent.keyDown(document, { key: 'Escape' });
+      expect(onDismiss).toHaveBeenCalledTimes(1);
+      expect(onClose).not.toHaveBeenCalled();
+    });
+
+    it('takes a backdrop click instead of onClose', () => {
+      const { onClose, onDismiss } = open();
+      fireEvent.click(screen.getByRole('dialog').parentElement as HTMLElement);
+      expect(onDismiss).toHaveBeenCalledTimes(1);
+      expect(onClose).not.toHaveBeenCalled();
+    });
+
+    it('leaves the close button to onClose', () => {
+      const { onClose, onDismiss } = open();
+      fireEvent.click(screen.getByRole('button', { name: 'Close' }));
+      expect(onClose).toHaveBeenCalledTimes(1);
+      expect(onDismiss).not.toHaveBeenCalled();
+    });
+
+    it('doesn\'t see a click inside the panel', () => {
+      const { onClose, onDismiss } = open();
+      fireEvent.click(screen.getByRole('button', { name: 'one' }));
+      expect(onDismiss).not.toHaveBeenCalled();
+      expect(onClose).not.toHaveBeenCalled();
+    });
+  });
+});
