@@ -129,14 +129,68 @@ describe('after an enrollment change', () => {
     });
   });
 
-  it('says a reopened report has no screenshot when the Send left it out', async () => {
-    useFeedbackStore.setState({ draft: DRAFT });
-    send.mockResolvedValueOnce({ status: 'enrollment-changed', draft: { draftId: NEXT.draftId, preview: null, shots: [] } });
-    render(<FeedbackDialogHost />);
-    fireEvent.change(screen.getByLabelText('What happened?'), { target: { value: 'my note' } });
-    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Send without screenshot' })); });
-    expect(screen.getByText('This report has no screenshot.')).toBeTruthy();
-    expect(screen.queryByText(/could be taken/)).toBeNull();
+  describe('a reopened draft\'s image', () => {
+    const reviewReopened = () => {
+      useFeedbackStore.setState({ draft: NEXT, reopened: { notes: 'my note', includeCorrelation: true, includeDiagnostics: true } });
+      render(<FeedbackDialogHost />);
+    };
+
+    it('goes back with every Send as its own bytes when there are no marks', async () => {
+      send.mockRejectedValueOnce(new Error('Local feedback storage is full'));
+      reviewReopened();
+      await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Send' })); });
+      expect(send).toHaveBeenLastCalledWith(expect.objectContaining({ draftId: NEXT.draftId, includeScreenshot: true, shotId: 's0', annotatedPng: 'bmV3' }));
+      await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Send' })); });
+      expect(send).toHaveBeenCalledTimes(2);
+      expect(send).toHaveBeenLastCalledWith(expect.objectContaining({ annotatedPng: 'bmV3' }));
+    });
+
+    it('isn\'t brought along when the Send leaves it out', async () => {
+      reviewReopened();
+      await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Send without screenshot' })); });
+      expect(send.mock.lastCall![0]).toMatchObject({ includeScreenshot: false, shotId: 's0', noEdits: true });
+      expect(send.mock.lastCall![0]).not.toHaveProperty('annotatedPng');
+    });
+  });
+
+  describe('a Send that left its image out', () => {
+    const LOST = /no longer has its screenshot\. To send one, close this and open a new report\./;
+    const NO_IMAGE = { draftId: NEXT.draftId, preview: null, shots: [] };
+
+    it('says the new report lost its screenshot, and doesn\'t claim to have an image', async () => {
+      useFeedbackStore.setState({ draft: OLD });
+      send.mockResolvedValueOnce({ status: 'enrollment-changed', draft: NO_IMAGE });
+      render(<FeedbackDialogHost />);
+      fireEvent.change(screen.getByLabelText('What happened?'), { target: { value: 'my note' } });
+      await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Send without screenshot' })); });
+      expect(screen.getByTestId('feedback-lost-screenshot').textContent).toMatch(LOST);
+      expect(screen.getByTestId('feedback-reopened').textContent).toMatch(/with your note\./);
+      expect(screen.queryByText('This report has no screenshot.')).toBeNull();
+      expect(screen.queryByText(/could be taken/)).toBeNull();
+    });
+
+    it('keeps saying so through a second reopen', async () => {
+      const THIRD = { ...NO_IMAGE, draftId: '2d7e8c4a-3b5f-4e0a-9c9d-4f6a8b0c2e3a' };
+      useFeedbackStore.setState({ draft: OLD });
+      send.mockResolvedValueOnce({ status: 'enrollment-changed', draft: NO_IMAGE }).mockResolvedValueOnce({ status: 'enrollment-changed', draft: THIRD });
+      render(<FeedbackDialogHost />);
+      fireEvent.change(screen.getByLabelText('What happened?'), { target: { value: 'my note' } });
+      await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Send without screenshot' })); });
+      await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Send without screenshot' })); });
+      expect(useFeedbackStore.getState().draft?.draftId).toBe(THIRD.draftId);
+      expect(screen.getByTestId('feedback-lost-screenshot').textContent).toMatch(LOST);
+    });
+
+    it('a report that never had an image doesn\'t say it lost one', async () => {
+      useFeedbackStore.setState({ draft: { draftId: DRAFT.draftId, preview: null, shots: [] } });
+      send.mockResolvedValueOnce({ status: 'enrollment-changed', draft: NO_IMAGE });
+      render(<FeedbackDialogHost />);
+      fireEvent.change(screen.getByLabelText('What happened?'), { target: { value: 'my note' } });
+      await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Send without screenshot' })); });
+      expect(screen.queryByTestId('feedback-lost-screenshot')).toBeNull();
+      expect(screen.getByText('This report has no screenshot.')).toBeTruthy();
+      expect(screen.getByTestId('feedback-reopened').textContent).toMatch(/with your note\./);
+    });
   });
 
   it('a later capture starts empty', async () => {

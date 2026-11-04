@@ -121,7 +121,10 @@ export function FeedbackReviewDialog({ draft, reopened = null, onClose }: Props)
       // It goes with the image left out too: the edits are final either way. There, a failed
       // composite can't stop the note, and sending neither this nor noEdits drops the capture.
       const composite = shot && strokes.length > 0 ? compositeAnnotatedPng(shot.preview, strokes) : undefined;
-      const annotatedPng = includeScreenshot ? await composite : await composite?.catch((): undefined => undefined); // telemetry-exempt: main drops the capture, and the note goes
+      // A reopened draft's image has to come back too: main can't take no bytes to mean no newer marks.
+      const annotatedPng = includeScreenshot
+        ? await composite ?? (reopened ? shot?.preview.split(',')[1] : undefined)
+        : await composite?.catch((): undefined => undefined); // telemetry-exempt: main drops the capture, and the note goes
       const result = await window.clubhouse.feedback.send({
         draftId: draft.draftId,
         notes,
@@ -136,7 +139,8 @@ export function FeedbackReviewDialog({ draft, reopened = null, onClose }: Props)
       });
       if (result.status === 'enrollment-changed') {
         // Nothing was saved. A new report with new contents needs its own review and Send.
-        reopenDraft(result.draft, { notes, includeCorrelation, includeDiagnostics });
+        const lostScreenshot = reopened?.lostScreenshot === true || (hasScreenshot && shotsOf(result.draft).length === 0);
+        reopenDraft(result.draft, { notes, includeCorrelation, includeDiagnostics, lostScreenshot });
         return;
       }
       setReportId(result.id);
@@ -172,7 +176,7 @@ export function FeedbackReviewDialog({ draft, reopened = null, onClose }: Props)
           <>
             {reopened && (
               <p className="text-sm text-ctp-text" role="status" data-testid="feedback-reopened">
-                Your feedback connection changed, so nothing was sent. This is a new report with your note and image. Check what it includes below, then choose Send.
+                Your feedback connection changed, so nothing was sent. This is a new report with your note{shot ? ' and image' : ''}. Check what it includes below, then choose Send.
               </p>
             )}
             {shots.length > 1 && (
@@ -198,6 +202,8 @@ export function FeedbackReviewDialog({ draft, reopened = null, onClose }: Props)
             )}
             {shot ? (
               <ScreenshotAnnotator key={shotIndex} src={shot.preview} strokes={strokes} onChange={setStrokes} disabled={phase === 'sending'} />
+            ) : reopened?.lostScreenshot ? (
+              <p className="text-sm text-ctp-text" role="status" data-testid="feedback-lost-screenshot">Your feedback connection changed, so this report no longer has its screenshot. To send one, close this and open a new report.</p>
             ) : (
               <p className="text-sm text-ctp-subtext0">{reopened ? 'This report has no screenshot.' : 'No screenshot could be taken. You can still send a note.'}</p>
             )}

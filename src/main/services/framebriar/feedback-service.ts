@@ -247,8 +247,8 @@ interface Shot {
   shotId: string;
   label: string;
   /**
-   * What a Send with no flattened bytes sends: the capture, or the image a reopened draft carried.
-   * Null once edits may exist, because then a Send has to bring its flattened bytes.
+   * The unedited capture, which a Send with no flattened bytes sends, and only ever that. Null
+   * once edits may exist, because then a Send has to bring its flattened bytes.
    */
   png: Buffer | null;
   /** What flattened bytes must fit. Moves down with each flattened image accepted. */
@@ -286,8 +286,6 @@ interface Draft {
   /** Once prepared, retry the same report identity even if saving had an uncertain outcome. */
   prepared?: { key: string; value: Promise<FramebriarPrepared>; mayBeSaved: boolean };
 }
-
-type CapturedShot = Shot & { png: Buffer };
 
 /** A window to screenshot. The first one is the window feedback was started from. */
 export interface CaptureSource {
@@ -497,7 +495,7 @@ export class FeedbackService {
       throw Object.assign(new Error('Feedback access changed while this report was opening. Try again.'), { code: 'enrollment-changed' });
     });
     const queuedAtCapture = this.readQueued();
-    const shots: CapturedShot[] = [];
+    const shots: Shot[] = [];
     for (const [i, source] of sources.entries()) {
       let png: Buffer | null;
       try {
@@ -522,12 +520,13 @@ export class FeedbackService {
     return this.addDraft(opened, correlation, diagnostics, queuedAtCapture, shots);
   }
 
-  private addDraft(opened: FramebriarSnapshot, correlation: FeedbackCorrelationSnapshot, diagnostics: FeedbackDiagnostics, queuedAtCapture: number | undefined, shots: CapturedShot[], carried: Partial<Pick<Draft, 'captureShas' | 'imageFixed' | 'context' | 'earlierMayDeliver'>> = {}): FeedbackCaptureResult {
+  private addDraft(opened: FramebriarSnapshot, correlation: FeedbackCorrelationSnapshot, diagnostics: FeedbackDiagnostics, queuedAtCapture: number | undefined, shots: Shot[], carried: Partial<Pick<Draft, 'captureShas' | 'imageFixed' | 'context' | 'earlierMayDeliver'>> = {}, carriedFlattened: Buffer | null = null): FeedbackCaptureResult {
     const snapshot: FramebriarSnapshot = { ...opened, ...correlation.data, png: null };
     const draftId = randomUUID();
     this.drafts.set(draftId, { snapshot, shots, captureShas: new Set(shots.map((shot) => shot.captureSha)), correlationSummary: correlation.summary, createdAt: this.now(), diagnostics, queuedAtCapture, ...carried });
     while (this.drafts.size > MAX_DRAFTS) this.drafts.delete(this.drafts.keys().next().value as string);
-    const previews = shots.map((shot) => ({ shotId: shot.shotId, label: shot.label, preview: `data:image/png;base64,${shot.png.toString('base64')}` }));
+    // A carried flattened image is only shown: main can't tell from no bytes that there are no newer marks.
+    const previews = shots.map((shot) => ({ shotId: shot.shotId, label: shot.label, preview: `data:image/png;base64,${(shot.png ?? carriedFlattened as Buffer).toString('base64')}` }));
     return { draftId, preview: previews[0]?.preview ?? null, shots: previews, ...(correlation.summary && { correlation: correlation.summary }), diagnostics, ...(this.deps.reportDiagnosticsField === true && { diagnosticsInReport: true as const }) };
   }
 
@@ -761,8 +760,9 @@ export class FeedbackService {
   /**
    * The enrollment changed, so the prepared report can never send. Open a new report with a new
    * id and ref, keeping only the image reviewed for this Send (the renderer keeps the text). That
-   * image keeps the capture's provenance, so old pixels never get fresh labels, and it's now the
-   * draft's source. A report with no image takes fresh values. Diagnostics are always read again:
+   * image keeps the capture's provenance, so old pixels never get fresh labels. An unedited capture
+   * stays on the same path as a first Send. A flattened image is only shown, so every Send with it
+   * has to bring current bytes. A report with no image takes fresh values. Diagnostics are always read again:
    * they have their own window and time. Until open() succeeds the old draft stays, unprepared,
    * and its old ref sends the next Send back here.
    */
@@ -782,10 +782,10 @@ export class FeedbackService {
     this.drafts.delete(draftId);
     const carried = { earlierMayDeliver: draft.earlierMayDeliver };
     if (!correlation) {
-      const { label, captureSha } = draft.shots[0];
-      const shot: CapturedShot = { shotId: 's0', label, png: png as Buffer, size: pngSize(png as Buffer), captureSha };
+      const { label, captureSha, png: capture } = draft.shots[0];
+      const shot: Shot = { shotId: 's0', label, png: capture, size: pngSize(png as Buffer), captureSha };
       const snapshot = { ...draft.snapshot, enrollmentRef: opened.enrollmentRef };
-      return { status: 'enrollment-changed', draft: this.addDraft(snapshot, { data: snapshot, summary: draft.correlationSummary }, fresh, this.readQueued(), [shot], { ...carried, captureShas: draft.captureShas, imageFixed: true, context: draft.context }) };
+      return { status: 'enrollment-changed', draft: this.addDraft(snapshot, { data: snapshot, summary: draft.correlationSummary }, fresh, this.readQueued(), [shot], { ...carried, captureShas: draft.captureShas, imageFixed: true, context: draft.context }, png) };
     }
     return { status: 'enrollment-changed', draft: this.addDraft(opened, correlation, fresh, this.readQueued(), [], carried) };
   }
@@ -821,8 +821,7 @@ export class FeedbackService {
    * on a Send that leaves the image out too, but can't fail its note. Otherwise a Send that leaves
    * the image out drops a capture unless it says noEdits and names the window. No name can't mean
    * the first window here: its edits may be why another one is selected. The flag only keeps a
-   * capture main still holds, and nothing brings one back. An already flattened image a reopened
-   * draft carried stays.
+   * capture main still holds, and nothing brings one back.
    * The capture's own bytes aren't a flattened image, so they count as none.
    */
   private imageToSend(draft: Draft, input: FeedbackSendInput): Buffer | null {
@@ -836,7 +835,7 @@ export class FeedbackService {
         draft.imageFixed = true;
       }
       if (edited) this.fixLeftOutImage(draft, shot, flattened);
-      else if (input.noEdits !== true || input.shotId === undefined || !shot) for (const each of draft.shots) if (each.png && sha256(each.png) === each.captureSha) each.png = null;
+      else if (input.noEdits !== true || input.shotId === undefined || !shot) for (const each of draft.shots) each.png = null;
       return null;
     }
     if (draft.shots.length === 0) throw Object.assign(new Error('This screenshot expired. Capture it again.'), { code: 'screenshot-expired' });

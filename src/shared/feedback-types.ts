@@ -129,6 +129,8 @@ export interface FeedbackSendInput {
    * the same aspect ratio. Once a Send has brought one, every later Send with the image has to
    * bring one too: main never falls back to the original. A Send that leaves the image out brings
    * it as well, if there are marks: the report has no media, but the edits are final all the same.
+   * A draft reopened with a flattened image needs it on every Send with the image: its own bytes,
+   * or a new flatten if there are marks.
    */
   annotatedPng?: string;
   /**
