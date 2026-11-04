@@ -21,6 +21,9 @@
  *   itself, so its status goes in a breadcrumb (diagnostics.*) that travels with it. With the
  *   report field on, the same reviewed lines go in the report through the outbox instead, and
  *   no excerpt is sent.
+ * - A rejected redeem reply (#2787): the invitation was probably spent and the old session is
+ *   gone, but its ref stays, so reports saved now bind to it. They only go out after a new
+ *   enrollment and an explicit release. noticeReason goes to the local log, never to the renderer.
  * - Enrollment binding (#2658): open() gives a draft its enrollmentRef, kept in the draft's
  *   snapshot only, never in the review hash, report bytes, logs or anything the renderer sees.
  *   If the enrollment changes under a draft, its prepared report can never send: the draft is
@@ -80,8 +83,11 @@ const INVITATION = /^[A-Za-z0-9_-]{43}$/;
 /** A failed connect this slow may have exhausted at least one SDK access-call timeout. */
 export const LIKELY_TIMEOUT_MS = ACCESS_TIMEOUT_MS - 500;
 
+/** The SDK refused a 2xx JSON redeem reply: the invitation was probably spent, and no session is left. */
+const REJECTED = 'enrollment-response-rejected';
+
 /** Access states that need the user (or a retry) before feedback can be delivered. */
-const ACCESS_PROBLEMS = new Set(['offline', 'expired', 'access-required', 'connection-uncertain', 'storage-unavailable', 'migration-required']);
+const ACCESS_PROBLEMS = new Set(['offline', 'expired', 'access-required', 'connection-uncertain', REJECTED, 'storage-unavailable', 'migration-required']);
 /** In-between states, logged at debug only. */
 const ACCESS_TRANSIENT = new Set(['checking', 'connecting', 'disconnecting']);
 
@@ -113,6 +119,28 @@ const errorMeta = (err: unknown): Record<string, unknown> => ({
   ...(typeof (err as { code?: unknown })?.code === 'string' ? { code: (err as { code: string }).code } : {}),
 });
 
+/** SDK wording that reads as internals, by code. Electron passes only the message to the renderer. */
+const USER_TEXT_BY_CODE: Readonly<Record<string, string>> = {
+  'feedback-unavailable': 'Feedback isn\'t connected. Connect in Settings, Feedback.',
+  'invalid-input': 'This report couldn\'t be saved. Close it and open a new report.',
+  conflict: 'This report couldn\'t be saved. Close it and open a new report.',
+  'secure-store-unavailable': 'Secure storage isn\'t available right now, so feedback can\'t be used.',
+  'invalid-store': 'Saved feedback access couldn\'t be read. Connect again in Settings, Feedback.',
+  busy: 'Feedback is busy. Try again.',
+};
+
+/**
+ * Plain wording for what the renderer shows. The code stays for telemetry, and the SDK's own
+ * text has already gone to the local log. Never throws.
+ */
+function withUserText(err: unknown): unknown {
+  if (!(err instanceof Error)) return err;
+  const text = USER_TEXT_BY_CODE[String((err as { code?: unknown }).code)];
+  if (text) err.message = text;
+  else if (/framebriar/i.test(err.message)) err.message = 'Feedback isn\'t available right now.';
+  return err;
+}
+
 export interface FeedbackServiceDeps {
   safeStorage: SafeStorageLike;
   dataDir: string;
@@ -143,7 +171,7 @@ export interface FeedbackServiceDeps {
 }
 
 const DISCONNECTED_ACCESS: FramebriarAccessView = Object.freeze({
-  state: 'disconnected', connected: false, enrolled: false, canCapture: false, notice: null, expiresAt: null,
+  state: 'disconnected', connected: false, enrolled: false, canCapture: false, notice: null, noticeReason: null, expiresAt: null,
 });
 const EMPTY_OUTBOX: FramebriarOutboxView = Object.freeze({
   state: 'checking', items: 0, bytes: 0, maxItems: 10, maxBytes: 32 * 1024 * 1024, blocked: 0, heldForEnrollment: 0, heldBytes: 0, releaseToken: null, retention: 'until-delivered-or-cleared',
@@ -181,7 +209,8 @@ export function toFeedbackStatus(
       ...(outbox.correlationWaiting ? { correlationWaiting: outbox.correlationWaiting } : {}),
       heldForEnrollment: outbox.heldForEnrollment,
       heldBytes: outbox.heldBytes,
-      releaseToken: outbox.releaseToken,
+      // The SDK's outbox doesn't refresh on this notice, so an older token can linger. It can't release.
+      releaseToken: access.notice === REJECTED ? null : outbox.releaseToken,
       bytes: outbox.bytes,
       maxItems: outbox.maxItems,
       maxBytes: outbox.maxBytes,
@@ -293,7 +322,7 @@ export class FeedbackService {
       this.log('warn', 'Feedback start failed', errorMeta(err));
       recordFeedbackFailed('start', feedbackErrorClass(err));
       if (err && typeof err === 'object') this.startFailures.add(err);
-      throw err;
+      throw withUserText(err);
     }).finally(() => { this.starting = null; });
     return this.starting;
   }
@@ -353,7 +382,7 @@ export class FeedbackService {
     } catch (err) {
       this.log('error', 'Feedback connect threw', { ...errorMeta(err), durationMs: this.now() - t0 });
       recordFeedbackFailed('connect', feedbackErrorClass(err));
-      throw err;
+      throw withUserText(err);
     }
     const durationMs = this.now() - t0;
     const status = this.status();
@@ -364,6 +393,7 @@ export class FeedbackService {
       const failure = connectFailureClass(trimmed, before, status.state, status.notice, durationMs);
       this.log('warn', 'Feedback connect failed', {
         durationMs, state: status.state, notice: status.notice, reason: connectFailureText(failure, trimmed),
+        ...(access.status().noticeReason && { noticeReason: access.status().noticeReason }),
       });
       recordFeedbackFailed('connect', failure);
     }
@@ -395,7 +425,7 @@ export class FeedbackService {
     } catch (err) {
       this.log('warn', 'Feedback capture failed', errorMeta(err));
       if (!this.isStartFailure(err)) recordFeedbackFailed('capture', feedbackErrorClass(err));
-      throw err;
+      throw withUserText(err);
     }
   }
 
@@ -420,7 +450,10 @@ export class FeedbackService {
     await this.recheckStorage();
     this.pruneDrafts();
     // open() checks eligibility and records the moment (and trace) feedback opened.
-    const opened = await this.sdk().feedback.open();
+    const opened = await this.sdk().feedback.open().catch((err: unknown) => {
+      if ((err as { code?: unknown } | null)?.code !== 'enrollment-changed') throw err;
+      throw Object.assign(new Error('Feedback access changed while this report was opening. Try again.'), { code: 'enrollment-changed' });
+    });
     const queuedAtCapture = this.readQueued();
     const shots: Shot[] = [];
     for (const [i, source] of sources.entries()) {
@@ -563,20 +596,23 @@ export class FeedbackService {
     } catch (err) {
       this.log('warn', 'Feedback send failed', { ...meta, ...errorMeta(err) });
       if (!this.isStartFailure(err)) recordFeedbackFailed('submit', feedbackErrorClass(err));
-      throw this.withHeldHint(err);
+      throw this.withQueueHint(withUserText(err));
     }
   }
 
-  /** Held reports take up capacity, so a full queue can consist entirely of them. Never throws. */
-  private withHeldHint(err: unknown): unknown {
+  /** Saved reports take up capacity, so a full queue can consist entirely of ones that can't go yet. Never throws. */
+  private withQueueHint(err: unknown): unknown {
     if (!(err instanceof Error) || (err as { code?: unknown }).code !== 'storage-full') return err;
     let held = 0;
+    let saved = 0;
     try {
       held = this.fb?.outbox.status().heldForEnrollment ?? 0;
+      if (this.fb?.access.status().notice === REJECTED) saved = this.fb.outbox.status().items;
     } catch { // telemetry-exempt: only omits a hint from an error that is already reported
       return err;
     }
     if (held > 0) err.message += ` ${held} held ${held === 1 ? 'report takes' : 'reports take'} up space. You can send or clear them in Settings, Feedback.`;
+    else if (saved > 0) err.message += ` ${saved} saved ${saved === 1 ? 'report takes' : 'reports take'} up space. Settings, Feedback says how to send or clear them.`;
     return err;
   }
 
@@ -802,6 +838,7 @@ export class FeedbackService {
     const level: FeedbackLogLevel = ACCESS_PROBLEMS.has(view.state) ? 'warn' : ACCESS_TRANSIENT.has(view.state) ? 'debug' : 'info';
     this.log(level, `Feedback access: ${view.state}`, {
       from: prev?.state ?? null, notice: view.notice, enrolled: view.enrolled, expiresAt: view.expiresAt,
+      ...(view.noticeReason && { noticeReason: view.noticeReason }),
     });
     this.noteSettledAccess(view);
   }
@@ -860,7 +897,7 @@ export class FeedbackService {
 }
 
 /** Why a connect returned false, as a telemetry error class. */
-export type ConnectFailureClass = Extract<FeedbackErrorClass, 'invitation-malformed' | 'busy' | 'storage-unavailable' | 'access-refused' | 'timeout' | 'connection-uncertain' | 'unknown'>;
+export type ConnectFailureClass = Extract<FeedbackErrorClass, 'invitation-malformed' | 'busy' | 'storage-unavailable' | 'access-refused' | 'timeout' | 'connection-uncertain' | 'enrollment-response-rejected' | 'unknown'>;
 
 /**
  * Best guess at why a connect returned false (the SDK reports only false). Exported for tests.
@@ -870,6 +907,7 @@ export function connectFailureClass(invitation: string, before: string, state: s
   if (before === 'connecting' || before === 'disconnecting') return 'busy';
   if (state === 'storage-unavailable') return 'storage-unavailable';
   if (notice === 'access-required') return 'access-refused';
+  if (notice === REJECTED) return REJECTED;
   if (notice === 'connection-uncertain' && durationMs >= LIKELY_TIMEOUT_MS) return 'timeout';
   if (notice === 'connection-uncertain') return 'connection-uncertain';
   return 'unknown';
@@ -883,7 +921,8 @@ function connectFailureText(failure: ConnectFailureClass, invitation: string): s
     case 'storage-unavailable': return 'secure storage failed while saving the enrollment';
     case 'access-refused': return 'server refused the invitation (expired, revoked, used up, or not for this app)';
     case 'timeout': return `request may have timed out (the SDK waits ${ACCESS_TIMEOUT_MS / 1000} s per call and retries twice); the server may still have accepted the invitation, so retry the same one`;
-    case 'connection-uncertain': return 'request failed or the response was rejected; the server may still have accepted the invitation';
+    case 'connection-uncertain': return 'request failed or the reply was not JSON; the server may still have accepted the invitation';
+    case REJECTED: return 'the server replied, but the reply failed validation here; the invitation was probably used, see noticeReason';
     default: return 'unknown';
   }
 }

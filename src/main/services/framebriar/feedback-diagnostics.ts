@@ -143,10 +143,10 @@ export const DIAGNOSTICS_WORDS: Readonly<Record<'link' | 'state' | 'reason' | 'c
   link: new Set(['mtls', 'bearer', 'mtls-first']),
   state: new Set([
     'disconnected', 'discovering', 'connecting', 'connected',
-    'checking', 'offline', 'stopped', 'disconnecting', 'expired', 'access-required', 'connection-uncertain', 'storage-unavailable', 'migration-required',
+    'checking', 'offline', 'stopped', 'disconnecting', 'expired', 'access-required', 'connection-uncertain', 'enrollment-response-rejected', 'storage-unavailable', 'migration-required',
     'available',
   ]),
-  reason: new Set(['stopped', 'idle_timeout', 'process_exit', 'fallback', 'error', 'killed', 'superseded', 'expired', 'access-required', 'connection-uncertain', 'migration-required']),
+  reason: new Set(['stopped', 'idle_timeout', 'process_exit', 'fallback', 'error', 'killed', 'superseded', 'expired', 'access-required', 'connection-uncertain', 'enrollment-response-rejected', 'migration-required']),
   cli: new Set(['claude-code', 'copilot-cli', 'codex-cli', 'claude_agent_sdk', 'claude_stream_json', 'codex_app_server', 'copilot_acp', 'copilot_sdk', 'acp']),
 };
 

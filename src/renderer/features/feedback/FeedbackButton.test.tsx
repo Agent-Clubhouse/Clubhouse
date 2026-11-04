@@ -47,6 +47,21 @@ describe('FeedbackButton', () => {
     expect(button.textContent).toContain('Feedback');
   });
 
+  it('after a rejected connection, says where saved reports stand instead of waiting to send', () => {
+    setFeedback(true, feedbackStatus({ state: 'enrollment-response-rejected', connected: false, notice: 'enrollment-response-rejected', expiresAt: null, outbox: { ...feedbackStatus().outbox, pending: 2 } }));
+    render(<FeedbackButton variant="rail" expanded />);
+    expect(screen.getByTestId('feedback-marker').getAttribute('data-kind')).toBe('notice');
+    const title = screen.getByTestId('nav-feedback').getAttribute('title');
+    expect(title).toMatch(/That invitation was used.*2 feedback reports saved on this computer, see Settings, Feedback/);
+    expect(title).not.toMatch(/waiting to send/);
+  });
+
+  it('never shows a button for an install that never enrolled, whatever the notice', () => {
+    setFeedback(true, feedbackStatus({ state: 'enrollment-response-rejected', connected: false, enrolled: false, canCapture: false, notice: 'enrollment-response-rejected', expiresAt: null }));
+    render(<FeedbackButton variant="rail" />);
+    expect(screen.queryByTestId('nav-feedback')).toBeNull();
+  });
+
   it('captures first, then opens the review dialog with the preview', async () => {
     setFeedback(true);
     render(<><FeedbackButton variant="sidebar" /><FeedbackDialogHost /></>);

@@ -52,6 +52,13 @@ describe('createDiagnosticsRing', () => {
       expect(ring.collect()).toMatchObject({ status: 'none', reason: 'no_lines', lines: [] });
     });
 
+    it('keeps a rejected connection\'s state and notice, and never its reason code', () => {
+      ring.note({ ns: 'core:feedback', level: 'warn', msg: 'Feedback access: enrollment-response-rejected', meta: { from: 'connecting', notice: 'enrollment-response-rejected', noticeReason: 'invalid-deadline', enrolled: true } });
+      const { lines } = ring.collect();
+      expect(lines[0]).toMatchObject({ event: 'feedback.access', attrs: { fromState: 'connecting', reason: 'enrollment-response-rejected', toState: 'enrollment-response-rejected' } });
+      expect(JSON.stringify(lines)).not.toContain('invalid-deadline');
+    });
+
     it('keeps only namespace, level, time and failure for a warning outside the catalog', () => {
       ring.note({ ns: 'core:git', level: 'error', msg: `git failed in ${SECRETS[3]}`, meta: { error: `spawn ENOENT ${SECRETS[0]}`, cwd: SECRETS[3] } });
       ring.note({ ns: 'core:file', level: 'fatal', msg: 'read failed', meta: { error: 'connect ETIMEDOUT' } });

@@ -18,7 +18,7 @@ it('typechecks the public Framebriar surface used by Clubhouse', () => {
         safeStorage: { isEncryptionAvailable: () => true,
           encryptString: (s: string) => Buffer.from(s), decryptString: (b: Buffer) => b.toString() },
         fetchImpl: fetch,
-        onAccessChange: (view: FramebriarAccessView) => { const expiry: string | null = view.expiresAt; void expiry; },
+        onAccessChange: (view: FramebriarAccessView) => { const expiry: string | null = view.expiresAt; const reason: 'invalid-deadline' | 'invalid-token' | 'wrong-game' | 'invalid-response' | null = view.noticeReason; void expiry; void reason; },
       };
       const fb = createFramebriar(options);
       // Electron 46 has only the async safeStorage API.
@@ -44,6 +44,8 @@ it('typechecks the public Framebriar surface used by Clubhouse', () => {
         const ack: FramebriarSubmitAck = await fb.feedback.submit(prepared, { includeDiagnostics: false });
         const retention: 'until-delivered-or-cleared' = fb.outbox.status().retention;
         const storage: { available: boolean; reason?: string } = await fb.store.probeAsync();
+        const rejected: 'enrollment-response-rejected' | null = fb.access.status().notice === 'enrollment-response-rejected' ? 'enrollment-response-rejected' : null;
+        void rejected;
         // @ts-expect-error Credentials are never present in the renderer-facing access view.
         fb.access.status().refreshToken;
         // @ts-expect-error The convenience factory does not forward low-level access options.

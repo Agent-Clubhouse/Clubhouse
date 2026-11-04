@@ -2,9 +2,9 @@
 
 export type FeedbackAccessState =
   | 'disconnected' | 'checking' | 'connecting' | 'connected' | 'offline' | 'stopped' | 'disconnecting'
-  | 'expired' | 'access-required' | 'connection-uncertain' | 'storage-unavailable' | 'migration-required';
+  | 'expired' | 'access-required' | 'connection-uncertain' | 'enrollment-response-rejected' | 'storage-unavailable' | 'migration-required';
 
-export type FeedbackNotice = 'expired' | 'access-required' | 'connection-uncertain' | 'migration-required';
+export type FeedbackNotice = 'expired' | 'access-required' | 'connection-uncertain' | 'enrollment-response-rejected' | 'migration-required';
 
 
 export interface FeedbackStatus {
@@ -17,7 +17,7 @@ export interface FeedbackStatus {
   canCapture: boolean;
   /** Persistent notice to show outside Settings until replaced or Disconnect. */
   notice: FeedbackNotice | null;
-  /** ISO time: the 30-day enrollment deadline. */
+  /** ISO time: the enrollment deadline, set per invitation (30 days by default, up to 365). */
   expiresAt: string | null;
   storage: { available: true } | { available: false; reason: string };
   outbox: {
