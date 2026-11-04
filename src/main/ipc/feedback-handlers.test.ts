@@ -55,6 +55,7 @@ vi.mock('../services/framebriar', () => ({
 import { ipcMain } from 'electron';
 import { IPC } from '../../shared/ipc-channels';
 import { captureFromShortcut, captureSources, registerFeedbackHandlers, validateSendInput } from './feedback-handlers';
+import { appLog } from '../services/log-service';
 import { recordFeedbackRefused } from '../telemetry/feedback-telemetry';
 import { _resetBreadcrumbsForTests, recentBreadcrumbs } from '../services/breadcrumbs';
 
@@ -270,6 +271,41 @@ describe('captureFromShortcut (#2101)', () => {
   });
 });
 
+describe('flattened bytes the service never sees, on a Send that leaves the image out', () => {
+  const OVER_CAP = 'A'.repeat(Math.ceil((8 * 1024 * 1024) / 3) * 4 + 4);
+  const left = { draftId: DRAFT_ID, notes: 'n', includeScreenshot: false, shotId: 's1' };
+  beforeEach(() => { vi.mocked(appLog).mockClear(); registerFeedbackHandlers(); });
+
+  it.each([
+    ['over the cap', OVER_CAP, 'too-large'],
+    ['not base64', 'not base64!', 'not-base64'],
+  ])('%s: dropped with any flag, logged with no bytes, and the note still goes', async (_name, annotatedPng, reason) => {
+    await call(IPC.FEEDBACK.SEND, { ...left, annotatedPng, noEdits: true });
+    expect(svc.service.send).toHaveBeenLastCalledWith(left);
+    expect(appLog).toHaveBeenCalledWith('core:feedback', 'warn', expect.any(String), { meta: { reason, length: annotatedPng.length } });
+    expect(JSON.stringify(vi.mocked(appLog).mock.calls)).not.toContain(annotatedPng);
+  });
+
+  it('bytes of a usable shape go on to the service, which validates them', async () => {
+    const input = { ...left, annotatedPng: Buffer.from('png-bytes').toString('base64') };
+    await call(IPC.FEEDBACK.SEND, input);
+    expect(svc.service.send).toHaveBeenLastCalledWith(input);
+    expect(appLog).not.toHaveBeenCalled();
+  });
+
+  it('a Send with the image is refused for the same bytes, not trimmed', async () => {
+    svc.service.send.mockClear();
+    expect(() => call(IPC.FEEDBACK.SEND, { ...left, includeScreenshot: true, annotatedPng: OVER_CAP })).toThrow(/annotatedPng/);
+    expect(svc.service.send).not.toHaveBeenCalled();
+  });
+
+  it('a value that isn\'t a string stays a hard error', async () => {
+    svc.service.send.mockClear();
+    expect(() => call(IPC.FEEDBACK.SEND, { ...left, annotatedPng: 42 })).toThrow(/annotatedPng/);
+    expect(svc.service.send).not.toHaveBeenCalled();
+  });
+});
+
 describe('validateSendInput', () => {
   it('accepts only a boolean includeDiagnostics', () => {
     const ok = { draftId: DRAFT_ID, notes: '', includeScreenshot: true };
@@ -288,9 +324,10 @@ describe('validateSendInput', () => {
   it('accepts a base64 annotated screenshot', () => {
     expect(() => validateSendInput({ ...ok, includeScreenshot: true, annotatedPng: Buffer.from('png-bytes').toString('base64') }, 'arg1')).not.toThrow();
   });
-  it('lets bad bytes through with the image left out, so they can\'t stop the note', () => {
+  it('doesn\'t refuse a string of bad bytes with the image left out, so they can\'t stop the note', () => {
     expect(() => validateSendInput({ ...ok, annotatedPng: 'not base64!' }, 'arg1')).not.toThrow();
     expect(() => validateSendInput({ ...ok, annotatedPng: 'A'.repeat(Math.ceil((8 * 1024 * 1024) / 3) * 4 + 4) }, 'arg1')).not.toThrow();
+    expect(() => validateSendInput({ ...ok, annotatedPng: 42 } as never, 'arg1')).toThrow(/annotatedPng/);
   });
   it.each([
     [{ ...ok, extra: 1 }, /not a recognized field/],
