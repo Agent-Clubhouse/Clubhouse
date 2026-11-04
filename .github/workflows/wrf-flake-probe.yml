@@ -18,26 +18,14 @@ jobs:
           cache: npm
       - run: npm ci
       - run: node scripts/wrf-raw-windows-semantics.mjs
-      - name: Repeat the flow, three contending processes plus one that waits like a person
-        shell: pwsh
+      - name: Repeat the flow in four contending processes, each with its own env
+        shell: bash
         run: |
-          $probe = 'src/main/services/framebriar/zz-flake-probe.test.ts'
-          $jobs = @(
-            @{ m = 'settled'; n = 200; o = 'probe-a.jsonl' },
-            @{ m = 'settled'; n = 200; o = 'probe-b.jsonl' },
-            @{ m = 'settled'; n = 200; o = 'probe-c.jsonl' },
-            @{ m = 'host'; n = 100; o = 'probe-d.jsonl' }
-          ) | ForEach-Object {
-            $j = $_
-            Start-ThreadJob -ThrottleLimit 4 -ArgumentList $j.m, $j.n, $j.o, $probe, $PWD.Path -ScriptBlock {
-              param($m, $n, $o, $probe, $cwd)
-              Set-Location $cwd
-              $env:PROBE_MODE = $m; $env:PROBE_N = "$n"; $env:PROBE_OUT = $o
-              npx vitest run --project main $probe --reporter=dot 2>&1 | Select-Object -Last 4
-            }
-          }
-          $jobs | Wait-Job -Timeout 1080 | Receive-Job
-          $jobs | Stop-Job
+          probe=src/main/services/framebriar/zz-flake-probe.test.ts
+          for o in a b c d; do
+            PROBE_MODE=settled PROBE_N=200 PROBE_OUT=probe-$o.jsonl timeout 1080 npx vitest run --project main $probe --reporter=dot 2>&1 | tail -4 &
+          done
+          wait
           exit 0
       - uses: actions/upload-artifact@v7
         if: always()
