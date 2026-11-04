@@ -87,22 +87,66 @@ describe('cleanupRetiredPluginData', () => {
     expect(fs.existsSync(path.join(projectPath, '.clubhouse', 'plugin-data-local', 'sessions'))).toBe(false);
   });
 
-  it('removes retired feature dirs (Assistant workspace, Agent Queue state)', async () => {
-    const assistantDir = path.join(root, 'home', '.clubhouse', 'assistant');
-    const queuesDir = path.join(root, 'home', '.clubhouse', 'agent-queues');
-    const keepDir = path.join(root, 'home', '.clubhouse', 'blueprints');
-    touch(path.join(assistantDir, 'chat-history.json'));
-    touch(path.join(queuesDir, 'registry.json'));
-    touch(path.join(keepDir, 'bp.json'));
+  describe('in a Clubhouse home with Assistant and Agent Queue records', () => {
+    const RECORDS: Record<string, string> = {
+      'assistant/chat-history.json': JSON.stringify([{ type: 'message', message: { id: 'm1', role: 'user', content: 'hello', timestamp: 1 } }]),
+      'assistant/CLAUDE.md': '# Assistant\n',
+      'assistant/.clubhouse/settings.json': '{}',
+      'assistant/a-file-an-agent-wrote.txt': 'kept\n',
+      'agent-queues/registry.json': JSON.stringify([{ id: 'aq_1', name: 'queue', concurrency: 1, createdAt: '2026-01-01', metadata: {} }]),
+      'agent-queues/aq_1/tasks/aqt_1/state.json': JSON.stringify({ id: 'aqt_1', queueId: 'aq_1', mission: 'look', status: 'completed', createdAt: '2026-01-01', summary: 'found', detail: 'details', filesModified: ['a.ts'] }),
+    };
 
-    const removed = await cleanupRetiredPluginData({
-      globalPluginDataDir: globalDir,
-      communityPluginsDir: communityDir,
-      projects: [],
-      retiredFeatureDirs: [assistantDir, queuesDir],
+    let clubhouseDir: string;
+    const records = () => Object.fromEntries(
+      Object.keys(RECORDS).map((relative) => [relative, fs.readFileSync(path.join(clubhouseDir, relative), 'utf-8')]),
+    );
+    const cleanupHome = () => cleanupRetiredPluginData({
+      globalPluginDataDir: path.join(clubhouseDir, 'plugin-data'),
+      communityPluginsDir: path.join(clubhouseDir, 'plugins'),
+      projects: [{ id: 'proj_1', path: projectPath }],
     });
 
-    expect(removed).toEqual([assistantDir, queuesDir]);
-    expect(fs.existsSync(keepDir)).toBe(true);
+    beforeEach(() => {
+      clubhouseDir = path.join(root, 'home', '.clubhouse');
+      for (const [relative, content] of Object.entries(RECORDS)) touch(path.join(clubhouseDir, relative), content);
+    });
+
+    it('leaves both folders byte-identical and writes nothing into a home with nothing to clean', async () => {
+      expect(await cleanupHome()).toEqual([]);
+      expect(records()).toEqual(RECORDS);
+    });
+
+    it('still deletes a stale Hub beside them', async () => {
+      const staleHub = path.join(clubhouseDir, 'plugin-data', 'hub');
+      const staleSettings = path.join(clubhouseDir, 'plugin-data', '_system', 'kv', 'settings-app-hub.json');
+      const staleLocalHub = path.join(projectPath, '.clubhouse', 'plugin-data-local', 'hub');
+      touch(path.join(staleHub, 'kv', 'hub-instances.json'));
+      touch(staleSettings);
+      touch(path.join(staleLocalHub, 'kv', 'hub-instances.json'));
+
+      const removed = await cleanupHome();
+
+      expect(removed).toEqual(expect.arrayContaining([staleHub, staleSettings, staleLocalHub]));
+      expect(removed).toHaveLength(3);
+      for (const stale of [staleHub, staleSettings, staleLocalHub]) expect(fs.existsSync(stale)).toBe(false);
+      expect(records()).toEqual(RECORDS);
+    });
+
+    it('changes nothing on a re-run', async () => {
+      touch(path.join(clubhouseDir, 'plugin-data', 'hub', 'kv', 'hub-instances.json'));
+      await cleanupHome();
+
+      expect(await cleanupHome()).toEqual([]);
+      expect(records()).toEqual(RECORDS);
+    });
+
+    it('keeps them when the agent-queue plugin data is deleted', async () => {
+      const queuePluginData = path.join(clubhouseDir, 'plugin-data', 'agent-queue');
+      touch(path.join(queuePluginData, 'kv', 'x.json'));
+
+      expect(await cleanupHome()).toEqual([queuePluginData]);
+      expect(records()).toEqual(RECORDS);
+    });
   });
 });

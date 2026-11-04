@@ -389,17 +389,13 @@ app.on('ready', () => {
   // Start periodic plugin update checks
   startPeriodicPluginUpdateChecks();
 
-  // Delete data left behind by removed built-in features (Hub, Sessions,
-  // Agent Queue, Assistant).
+  // Delete plugin data left behind by removed built-in plugins (Hub, Sessions,
+  // Agent Queue).
   projectStore.list()
     .then((projects) => cleanupRetiredPluginData({
       globalPluginDataDir: getGlobalPluginDataDir(),
       communityPluginsDir: getCommunityPluginsDir(),
       projects,
-      retiredFeatureDirs: [
-        path.join(app.getPath('home'), '.clubhouse', 'assistant'),
-        path.join(app.getPath('home'), app.isPackaged ? '.clubhouse' : '.clubhouse-dev', 'agent-queues'),
-      ],
     }))
     .catch((err) => {
       appLog('core:plugins', 'warn', `Retired plugin cleanup failed: ${err instanceof Error ? err.message : String(err)}`);
