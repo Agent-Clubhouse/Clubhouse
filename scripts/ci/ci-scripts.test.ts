@@ -35,6 +35,18 @@ describe('classify-changes', () => {
       .toEqual({ docsOnly: false, e2e: false, macosBuild: false });
   });
 
+  it('the dispatch-only stable candidate files need neither E2E nor the macOS build', () => {
+    const files = ['.github/workflows/stable-candidate.yml', 'scripts/ci/stable-candidate.mjs', 'scripts/ci/stable-candidate-lib.mjs', 'scripts/ci/stable-candidate.test.ts'];
+    expect(run(diff(Object.fromEntries(files.map((file) => [file, ['+x']])))))
+      .toEqual({ docsOnly: false, e2e: false, macosBuild: false });
+  });
+
+  it('the stable candidate exception covers only its own files', () => {
+    expect(run(diff({ 'scripts/ci/stable-candidate.mjs': ['+x'], 'src/main/index.ts': ['+x'] }))).toMatchObject({ e2e: true });
+    expect(run(diff({ 'scripts/ci/stable-candidate.mjs': ['+x'], 'scripts/ci/package-integration.mjs': ['+x'] }))).toMatchObject({ macosBuild: true });
+    expect(run(diff({ 'e2e/stable-state-seeds.mjs': ['+x'] }))).toMatchObject({ e2e: true });
+  });
+
   it('an ordinary source change gets E2E but not the macOS build', () => {
     expect(run(diff({ 'src/main/services/agent-config.ts': ['+const a = 1;'] })))
       .toEqual({ docsOnly: false, e2e: true, macosBuild: false });

@@ -54,6 +54,8 @@ import { getAgentOrchestrator } from './services/agent-registry';
 import { NEW_CHROME_ARG } from '../shared/chrome-flag';
 import { windowsPtyLaunchArgs } from './util/windows-pty';
 import { newChromeEnabled, titleBarOptions } from './window-chrome';
+import { isPreviewEligible } from './services/preview-eligible';
+import { isChatEnabled } from './services/chat-runtime-settings';
 import { shutdownFeedback, startFeedback } from './services/framebriar';
 import { installHelperDeliverySeam } from './services/clubhouse-mcp/tools/helper-delivery-seam';
 
@@ -294,6 +296,10 @@ app.on('ready', () => {
       node: process.versions.node,
       chrome: process.versions.chrome,
       packaged: app.isPackaged,
+      // What's in force for this launch, not what's saved. scripts/ci/stable-candidate.mjs reads these.
+      previewEligible: isPreviewEligible(),
+      newChrome: newChromeEnabled(),
+      chatEnabled: isChatEnabled(),
     },
   });
 

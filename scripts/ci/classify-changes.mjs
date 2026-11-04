@@ -44,6 +44,17 @@ const MACOS_BUILD_PATHS = [
 ];
 
 /**
+ * The dispatch-only stable candidate job. It's outside the app bundle and outside
+ * Validate's jobs, so its files need neither E2E nor the macOS build. Validate's
+ * unit job runs its tests, and the workflow lint job checks the file.
+ */
+const STABLE_CANDIDATE_ONLY = [
+  /^\.github\/workflows\/stable-candidate\.yml$/,
+  /^scripts\/ci\/stable-candidate(-lib)?\.mjs$/,
+  /^scripts\/ci\/stable-candidate\.test\.ts$/,
+];
+
+/**
  * A changed line, in any non-test source file, that touches macOS-only
  * behaviour. Matching changed lines rather than whole files keeps an
  * unrelated edit to a file with a darwin branch elsewhere from counting.
@@ -79,6 +90,7 @@ const PACKAGING_DEPENDENCY = new RegExp([
 
 const matchesAny = (patterns, file) => patterns.some((re) => re.test(file));
 const isTest = (file) => matchesAny(UNIT_TEST_ONLY, file);
+const isStableCandidateOnly = (file) => matchesAny(STABLE_CANDIDATE_ONLY, file);
 
 /** Changed lines (added or removed) per file, from `git diff -U0` output. */
 export function changedLinesByFile(diff) {
@@ -106,12 +118,12 @@ export function classify(files, changedLines = new Map()) {
   if (changed.length === 0) return { docsOnly: false, e2e: true, macosBuild: true, macosBuildReason: 'no changed files listed' };
 
   const docsOnly = changed.every((f) => matchesAny(DOCS_ONLY, f));
-  const e2e = !docsOnly && changed.some((f) => !matchesAny(DOCS_ONLY, f) && !isTest(f));
+  const e2e = !docsOnly && changed.some((f) => !matchesAny(DOCS_ONLY, f) && !isTest(f) && !isStableCandidateOnly(f));
 
   let reason;
   if (!docsOnly) {
     const lines = (f) => changedLines.get(f) ?? [];
-    const byPath = changed.find((f) => matchesAny(MACOS_BUILD_PATHS, f));
+    const byPath = changed.find((f) => matchesAny(MACOS_BUILD_PATHS, f) && !isStableCandidateOnly(f));
     const byDependency = changed.find((f) => /^package(-lock)?\.json$/.test(f) && lines(f).some((l) => PACKAGING_DEPENDENCY.test(l)));
     const byMarker = changed.find((f) => /^src\/.*\.(ts|tsx)$/.test(f) && !isTest(f) && lines(f).some((l) => MACOS_MARKERS.test(l)));
     if (byPath) reason = `path ${byPath}`;
