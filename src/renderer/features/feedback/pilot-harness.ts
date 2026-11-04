@@ -6,7 +6,7 @@
 import type { FeedbackCaptureResult, FeedbackSendInput, FeedbackSendResult } from '../../../shared/feedback-types';
 import { useFeedbackStore } from '../../stores/feedbackStore';
 import { pilotHooks } from './pilot-hooks';
-import { createScreenshotEditorModel, flattenScreenshot, screenshotEditorSupported, type ScreenshotEditorModel, type ScreenshotMark } from './pilot-vendor/screenshot-editor.mjs';
+import { createScreenshotEditorModel, flattenScreenshot, screenshotEditorSupported, type ScreenshotEditorModel, type ScreenshotMark, type ScreenshotRaster } from './pilot-vendor/screenshot-editor.mjs';
 import { patternPixels, readRgbPng, vectorFailures, withTextChunk } from './pilot-vendor/test-support/flatten-vectors.mjs';
 import { createPilotWorker } from './pilot-worker-factory';
 
@@ -41,6 +41,32 @@ async function pngOf(image: ImageData): Promise<Blob> {
 
 const toDataUrl = async (blob: Blob) => `data:image/png;base64,${btoa(Array.from(new Uint8Array(await blob.arrayBuffer()), (b) => String.fromCharCode(b)).join(''))}`;
 
+/**
+ * The model's own canvas raster, which isn't exported, with one way to fail: a surface of a chosen width can't be
+ * made, as when a canvas allocation fails. The preview only decodes, so it still shows, and only a flatten fails.
+ */
+const failingWidths = new Set<number>();
+const realRaster: ScreenshotRaster = {
+  async decode(source) {
+    if (source instanceof ImageBitmap) return { width: source.width, height: source.height, image: source };
+    const bitmap = await createImageBitmap(source, { imageOrientation: 'from-image' });
+    return { width: bitmap.width, height: bitmap.height, image: bitmap, close() { bitmap.close(); } };
+  },
+  surface(width, height) {
+    if (failingWidths.has(width)) throw new Error('Canvas unavailable.');
+    const canvas = new OffscreenCanvas(width, height);
+    const context = canvas.getContext('2d', { alpha: false, colorSpace: 'srgb', willReadFrequently: true })!;
+    context.imageSmoothingEnabled = true;
+    context.imageSmoothingQuality = 'high';
+    return {
+      context: context as never, image: canvas,
+      draw(image) { context.drawImage(image as CanvasImageSource, 0, 0, width, height); },
+      read() { return context.getImageData(0, 0, width, height).data; },
+      release() { canvas.width = 0; canvas.height = 0; },
+    };
+  },
+};
+
 const sends: Array<{ input: Omit<FeedbackSendInput, 'annotatedPng'>; bytes: number | null; sha: string | null; annotatedPng: string | null }> = [];
 let nextResults: Array<FeedbackSendResult | Error> = [];
 
@@ -71,6 +97,7 @@ const api = {
   }),
   /** Opens the real dialog on the real store, with windows drawn here. Returns the shots' sizes and hashes. */
   async open(specs: Array<{ width: number; height: number; label: string; seed?: number }>) {
+    pilotHooks.editorOptions = { raster: realRaster };
     pilotHooks.send = async (input) => {
       const { annotatedPng = null, ...rest } = input;
       sends.push({ input: rest, bytes: annotatedPng ? Math.floor(annotatedPng.length * 3 / 4) : null, sha: annotatedPng ? await sha(annotatedPng) : null, annotatedPng });
@@ -101,6 +128,72 @@ const api = {
     };
   },
   deepActive,
+  failFlattenOf: (width: number) => { failingWidths.add(width); },
+  clearFailures: () => { failingWidths.clear(); },
+  sendCount: () => sends.length,
+
+  // ---- Begin-Send with real pixels, one row per case, and what a retry does ----
+  async beginSendCases() {
+    const SECRET = [250, 10, 20];
+    const canvas = new OffscreenCanvas(64, 64);
+    const context = canvas.getContext('2d')!;
+    context.fillStyle = `rgb(${SECRET.join(',')})`;
+    context.fillRect(0, 0, 64, 64);
+    const source = await canvas.convertToBlob({ type: 'image/png' });
+    const other = await pngOf(pictureOf(48, 48));
+    const RED: ScreenshotMark = { type: 'redact', x: 0, y: 0, width: 32, height: 32 };
+    const covered = async (blob: Blob | null) => {
+      if (!blob) return null;
+      const bitmap = await createImageBitmap(blob);
+      const read = new OffscreenCanvas(bitmap.width, bitmap.height).getContext('2d', { willReadFrequently: true })!;
+      read.drawImage(bitmap, 0, 0);
+      bitmap.close();
+      return Array.from(read.getImageData(10, 10, 1, 1).data.slice(0, 3));
+    };
+    const run = async (name: string, setUp: (model: ScreenshotEditorModel) => Promise<void> | void, views = [{ id: 's0', label: 'Main', source }]) => {
+      const model = createScreenshotEditorModel({ views });
+      await setUp(model);
+      const begun = await model.beginSend();
+      const before = model.getSnapshot();
+      let notified = 0;
+      model.subscribe(() => { notified++; });
+      const again = await model.beginSend();
+      const row = {
+        name, ok: begun.ok, viewId: begun.viewId, hasBytes: begun.bytes !== null, hasFinal: begun.finalBytes !== null, original: begun.original, edited: begun.edited,
+        finalIsSource: begun.finalBytes === source, coveredPixel: await covered(begun.finalBytes),
+        final: before.editsAreFinal, viewsLeft: before.views.length,
+        retry: { sameBytes: again.bytes === begun.bytes, sameFinal: again.finalBytes === begun.finalBytes, sameFlags: again.original === begun.original && again.edited === begun.edited && again.viewId === begun.viewId, notified, sameSnapshot: model.getSnapshot() === before },
+      };
+      model.dispose();
+      return row;
+    };
+    const big = await pngOf(pictureOf(6016, 3384));
+    const during = async (act: 'dispose' | 'remove') => {
+      const model = createScreenshotEditorModel({ views: [{ id: 's0', source: big }] });
+      const pending = model.beginSend();
+      await new Promise((r) => setTimeout(r, 20));
+      if (act === 'dispose') model.dispose(); else model.remove();
+      const answer: { settled: string; ok: boolean | null; code: string | null; hasFinal: boolean | null } = await pending.then((value) => ({ settled: 'resolved', ok: value.ok, code: 'code' in value ? value.code : null, hasFinal: value.finalBytes !== null }), (error: Error) => ({ settled: `rejected ${error.name}`, ok: null as boolean | null, code: null as string | null, hasFinal: null as boolean | null }));
+      await new Promise((r) => setTimeout(r, 200));
+      return { ...answer, later: await model.beginSend().then((value) => ('code' in value ? value.code : 'ok')) };
+    };
+    return {
+      secret: SECRET,
+      rows: [
+        await run('never edited', () => undefined),
+        await run('marked', (m) => { m.addMark(RED); }),
+        await run('marked, committed, cleared', async (m) => { m.addMark(RED); await m.commit(); m.clear(); }),
+        await run('marked, cleared, no commit', (m) => { m.addMark(RED); m.clear(); }),
+        await run('left out, never edited', (m) => { m.setIncluded(false); }),
+        await run('left out, marked', (m) => { m.addMark(RED); m.setIncluded(false); }),
+        await run('left out, committed, cleared', async (m) => { m.addMark(RED); await m.commit(); m.clear(); m.setIncluded(false); }),
+        await run('removed', (m) => { m.addMark(RED); m.remove(); }),
+        await run('second of two windows selected', (m) => { m.addMark(RED); m.setActiveView('s1'); }, [{ id: 's0', label: 'Main', source }, { id: 's1', label: 'Pop-out', source: other }]),
+      ],
+      dispose: await during('dispose'),
+      remove: await during('remove'),
+    };
+  },
   /** The SDK view's inner element for a selector, through its shadow root. */
   deepRect(selector: string) {
     const host = document.querySelector('[data-feedback-capture="exclude"]');

@@ -73,14 +73,13 @@ async function steps(page, fixture, { perf = false }, report) {
   expectThat('createImageBitmap under the production CSP', report.csp.createImageBitmapFromBlob);
   expectThat('constructable stylesheet under the production CSP', report.csp.constructableSheet);
   report.worker = await call('probeWorker');
-  report.leftOutCases = await call('leftOutCases');
-  for (const name of ['neverEdited', 'edited']) {
-    for (const row of report.leftOutCases[name].rows) {
-      if (row.bytes && name === 'edited' && row.step !== 'open') expectThat(`${name} ${row.step} is not the source`, !row.bytes.isSource, row);
-      if (row.bytes && name === 'edited' && row.step !== 'open') expectThat(`${name} ${row.step} has the covered pixels black`, JSON.stringify(row.bytes.covered) === '[0,0,0]', row);
-    }
+  report.beginSendCases = await call('beginSendCases');
+  for (const row of report.beginSendCases.rows) {
+    if (row.edited) expectThat(`${row.name}: no original pixel under the redaction`, JSON.stringify(row.coveredPixel) === '[0,0,0]', row);
+    if (row.edited) expectThat(`${row.name}: never the source`, row.finalIsSource === false, row);
+    expectThat(`${row.name}: a retry is the same and tells no one`, row.retry.sameBytes && row.retry.sameFinal && row.retry.sameFlags && row.retry.notified === 0 && row.retry.sameSnapshot, row);
   }
-  expectThat('after the left-out Send, the preview shows no original pixel under a redaction', JSON.stringify(report.leftOutCases.edited.previewAfter) === '[0,0,0]', report.leftOutCases.edited.previewAfter);
+  expectThat('dispose during beginSend resolves disposed', report.beginSendCases.dispose.settled === 'resolved' && report.beginSendCases.dispose.code === 'disposed', report.beginSendCases.dispose);
   const violationsBeforeUi = await page.evaluate(() => window.__feedbackEditorPilot.violations.length);
 
   // ---- own React UI, two windows ----
@@ -159,6 +158,7 @@ async function steps(page, fixture, { perf = false }, report) {
   await click('[data-testid="feedback-send"]');
   await until(() => exists('[data-testid="feedback-error"]'), 'the failed Send', 30000);
   const first = await lastSend();
+  const sendsBeforeRetry = await call('sendCount');
   report.firstSend = first;
   expectThat('first Send carries bytes of the first window', first?.bytes > 0 && first?.input.shotId === 's0' && first?.input.includeScreenshot === true, first);
   expectThat('edited bytes differ from the capture', first?.sha !== shots[0].sha, { sent: first?.sha, capture: shots[0].sha });
@@ -189,7 +189,15 @@ async function steps(page, fixture, { perf = false }, report) {
   await click('[data-testid="pilot-cancel"]');
   await until(async () => !(await exists('[data-testid="pilot-stage"]')), 'Cancel after Clear');
 
-  // Retry: the same bytes, then the reopen a moved enrollment causes.
+  // Retry after a second save failure: the same bytes under Begin-Send.
+  await call('failNextSend', 'storage full');
+  await click('[data-testid="feedback-send"]');
+  await until(async () => (await lastSend())?.sha === first?.sha && (await call('sendCount')) === sendsBeforeRetry + 1, 'the retried Send', 30000);
+  report.retriedSend = await lastSend();
+  expectThat('a retry carries the same bytes', report.retriedSend?.sha === first?.sha, { first: first?.sha, retry: report.retriedSend?.sha });
+  await until(() => exists('[data-testid="feedback-error"]'), 'the retried Send error', 30000);
+
+  // Then the reopen a moved enrollment causes.
   await call('reopenOnNextSend');
   await click('[data-testid="feedback-send"]');
   await until(() => exists('[data-testid="feedback-reopened"]'), 'the reopened draft', 30000);
@@ -269,8 +277,8 @@ async function steps(page, fixture, { perf = false }, report) {
   await click('[data-testid="feedback-send"]');
   await until(() => exists('[data-testid="feedback-sent-state"]'), 'the unedited Send', 30000);
   const unedited = await lastSend();
-  report.unedited = { sent: unedited?.sha, capture: plain[0].sha };
-  expectThat('unedited bytes are the capture', unedited?.sha === plain[0].sha, report.unedited);
+  report.unedited = { input: unedited?.input, bytes: unedited?.bytes, capture: plain[0].sha };
+  expectThat('unedited sends no bytes, and names the shot', unedited?.bytes === null && unedited?.input.shotId === 's0' && unedited?.input.includeScreenshot === true, report.unedited);
   await call('close');
 
   // Remove: gone, and a note still sends.
@@ -325,8 +333,9 @@ async function steps(page, fixture, { perf = false }, report) {
     const retry = await lastSend();
     leftOut.push({ edit, leftOut: sent, retry });
     expectThat(`left-out Send carries shotId, edit=${edit}`, sent?.input.shotId === 's0', sent);
-    expectThat(`left-out Send has no bytes, edit=${edit}`, sent?.bytes === null, sent);
+    expectThat(`left-out bytes, edit=${edit}`, edit ? sent?.bytes > 0 : sent?.bytes === null, sent);
     expectThat(`left-out noEdits, edit=${edit}`, sent?.input.noEdits === (edit ? undefined : true), sent);
+    expectThat(`included retry after left-out, edit=${edit}`, edit ? retry?.sha === sent?.sha : retry?.bytes === null, { sent, retry });
     await call('close');
     await wait(100);
   }
@@ -361,6 +370,100 @@ async function steps(page, fixture, { perf = false }, report) {
   await wait(100);
   report.escClosedTheComposer = !(await exists('[data-testid="feedback-review"]'));
   await call('close');
+
+  // An excluded capture that can't be prepared: a 6K window is over the pixel limit, so it has to flatten even left out.
+  await call('open', [{ width: 6016, height: 3384, label: 'Main window' }, { width: 800, height: 600, label: 'Pop-out' }]);
+  await until(() => page.evaluate(() => document.querySelector('[data-testid="feedback-preview"]')?.width > 300), 'the 6K composer', 30000);
+  await call('failFlattenOf', 6016);
+  await click('[data-testid="feedback-include"]');
+  await wait(50);
+  await page.evaluate(() => {
+    const box = document.querySelector('#feedback-notes');
+    Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value').set.call(box, 'only my note');
+    box.dispatchEvent(new Event('input', { bubbles: true }));
+  });
+  await wait(50);
+  const sendsBeforeBlock = await call('sendCount');
+  await click('[data-testid="feedback-send"]');
+  await until(() => exists('[data-testid="feedback-error"]'), 'the excluded block', 30000);
+  report.excludedBlock = {
+    words: await text('[data-testid="feedback-error"]'),
+    reachedMain: (await call('sendCount')) !== sendsBeforeBlock,
+    storeKeptImages: await call('storeHoldsImages'),
+    pickerStays: await exists('[data-testid="feedback-shots"]'),
+    removeReachable: await exists('[data-testid="feedback-remove"]'),
+  };
+  expectThat('a refused Send does not reach main', !report.excludedBlock.reachedMain);
+  expectThat('a refused Send ends nothing', report.excludedBlock.storeKeptImages && report.excludedBlock.pickerStays, report.excludedBlock);
+  await click('[data-testid="feedback-remove"]');
+  await wait(100);
+  await click('[data-testid="feedback-send"]');
+  await until(() => exists('[data-testid="feedback-sent-state"]'), 'the note after Remove', 30000);
+  report.excludedBlock.afterRemove = await lastSend();
+  expectThat('Remove gets the note out', report.excludedBlock.afterRemove?.input.includeScreenshot === false && report.excludedBlock.afterRemove?.bytes === null, report.excludedBlock.afterRemove);
+  await call('clearFailures');
+  await call('close');
+  await wait(100);
+
+  // Done failing because of the window that isn't selected, in the mounted view, which is where it can happen.
+  const markBoth = async () => {
+    await call('open', [{ width: 1200, height: 800, label: 'Main window' }, { width: 800, height: 600, label: 'Pop-out' }]);
+    await until(() => page.evaluate(() => document.querySelector('[data-testid="feedback-preview"]')?.width > 300), 'the composer for Done');
+    await click('[data-testid="pilot-edit-mounted"]');
+    await until(async () => (await call('mountedState')).open, 'the mounted view for Done');
+    await wait(300);
+    await click('[data-view="s1"]');
+    await wait(300);
+    await click('[data-tool="redact"]');
+    await dragIn('canvas', [0.1, 0.1], [0.3, 0.3]);
+    await click('[data-view="s0"]');
+    await wait(300);
+    await click('[data-tool="redact"]');
+    await dragIn('canvas', [0.1, 0.1], [0.3, 0.3]);
+    await call('failFlattenOf', 800);
+    await click('[data-action="done"]');
+    await until(async () => (await text('.problem'))?.length > 0, 'Done to fail', 30000);
+  };
+  const canvasLabel = () => page.evaluate(() => document.querySelector('[data-feedback-capture="exclude"]').shadowRoot.querySelector('canvas').getAttribute('aria-label'));
+  await markBoth();
+  report.doneOnOtherWindow = {
+    words: await text('.problem'),
+    stillOpen: (await call('mountedState')).open,
+    selected: await page.evaluate(() => document.querySelector('[data-feedback-capture="exclude"]').shadowRoot.querySelector('[data-view][aria-pressed="true"]')?.textContent),
+    selectedMarks: await canvasLabel(),
+  };
+  // Way out one: go to the other window, Undo there, and Done keeps the good marks.
+  await click('[data-view="s1"]');
+  await wait(300);
+  await click('[data-action="undo"]');
+  await wait(50);
+  await click('[data-view="s0"]');
+  await wait(300);
+  await click('[data-action="done"]');
+  await until(async () => !(await call('mountedState')).mounted, 'Done after Undo on the other window', 30000);
+  report.doneOnOtherWindow.afterUndoElsewhere = await text('[data-testid="pilot-state"]');
+  expectThat('Undo on the other window lets Done through', /You edited this image/.test(report.doneOnOtherWindow.afterUndoElsewhere ?? ''), report.doneOnOtherWindow);
+  await call('clearFailures');
+  await call('close');
+  await wait(100);
+  // Way out two: Cancel, which takes the good window's marks with it.
+  await markBoth();
+  await click('[data-action="cancel"]');
+  await until(async () => !(await call('mountedState')).mounted, 'Cancel after a failed Done');
+  report.doneOnOtherWindow.afterCancel = await text('[data-testid="pilot-state"]');
+  await call('clearFailures');
+  await call('close');
+  await wait(100);
+
+  // The dialog closing while a Send prepares: dispose during beginSend, and nothing may reach main after.
+  await call('open', [{ width: 6016, height: 3384, label: 'Main window' }]);
+  await until(() => page.evaluate(() => document.querySelector('[data-testid="feedback-preview"]')?.width > 300), 'the 6K composer for close', 30000);
+  const sendsBeforeClose = await call('sendCount');
+  await click('[data-testid="feedback-send"]');
+  await call('close');
+  await wait(4000);
+  report.closedDuringSend = { reachedMain: (await call('sendCount')) !== sendsBeforeClose, stillRendered: await exists('[data-testid="feedback-review"]') };
+  expectThat('closing during a Send reaches nothing', !report.closedDuringSend.reachedMain && !report.closedDuringSend.stillRendered, report.closedDuringSend);
 
   report.violationsDuringUi = await page.evaluate((from) => window.__feedbackEditorPilot.violations.slice(from), violationsBeforeUi);
   expectThat('no CSP violations from the UI', report.violationsDuringUi.length === 0, report.violationsDuringUi);

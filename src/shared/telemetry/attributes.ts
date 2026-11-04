@@ -695,7 +695,7 @@ export const ATTR = {
     'capture-failed', 'invalid-media', 'feedback-unavailable', 'storage-full', 'storage-unavailable', 'invalid-input',
     'conflict', 'secure-store-unavailable', 'invalid-store', 'network', 'invalid-ack',
     // Clubhouse's own send checks
-    'screenshot-expired', 'notes-required', 'shot-unavailable', 'not-running', 'draft-required', 'enrollment-changed',
+    'screenshot-expired', 'notes-required', 'shot-unavailable', 'flattened-required', 'not-running', 'draft-required', 'enrollment-changed',
     // Why a connect returned false (connectFailureClass)
     'invitation-malformed', 'busy', 'access-refused', 'timeout', 'connection-uncertain', 'enrollment-response-rejected',
     // A queued report the outbox gave up on

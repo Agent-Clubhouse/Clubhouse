@@ -1,10 +1,10 @@
 import { useCallback, useEffect, useRef, useState, type KeyboardEvent } from 'react';
 import { Modal } from '../../components/Modal';
-import { FEEDBACK_DIAGNOSTICS, type FeedbackCaptureResult, type FeedbackDiagnosticLine, type FeedbackDiagnosticsOutcome, type FeedbackSendInput, type FeedbackShot, type FeedbackStatus } from '../../../shared/feedback-types';
+import { FEEDBACK_DIAGNOSTICS, type FeedbackCaptureResult, type FeedbackDiagnosticLine, type FeedbackDiagnosticsOutcome, type FeedbackShot, type FeedbackStatus } from '../../../shared/feedback-types';
 import { savedReportsNeedSend, useFeedbackStore, type FeedbackReopened } from '../../stores/feedbackStore';
 import { useUIStore } from '../../stores/uiStore';
 import { ipcErrorMessage } from '../../utils/ipc-error';
-import { beginSend, blobToBase64, useEditorPreview, useScreenshotEditorModel, type EditorOptions } from './pilot-editor';
+import { sendFields, useEditorPreview, useScreenshotEditorModel, type EditorOptions } from './pilot-editor';
 import { pilotHooks } from './pilot-hooks';
 import { FEEDBACK_COPY, logsControl, type LogsFacts } from './pilot-vendor/feedback-copy.mjs';
 import { mountScreenshotEditor, renderMarks, type ScreenshotEditorModel, type ScreenshotEditorState, type ScreenshotPreview } from './pilot-vendor/screenshot-editor.mjs';
@@ -146,6 +146,7 @@ export function FeedbackReviewDialog({ draft, reopened = null, onClose, editorOp
   const [includeCorrelation, setIncludeCorrelation] = useState(reopened?.includeCorrelation ?? true);
   const [includeDiagnostics, setIncludeDiagnostics] = useState(reopened?.includeDiagnostics ?? true);
   const [outcome, setOutcome] = useState<FeedbackDiagnosticsOutcome | null>(null);
+  const [earlierMayDeliver, setEarlierMayDeliver] = useState(false);
   const diagnostics = draft.diagnostics;
   const received = useFeedbackStore((s) => (reportId ? s.status?.received.includes(reportId) === true : false));
   const saved = useFeedbackStore((s) => savedText(s.status));
@@ -176,28 +177,32 @@ export function FeedbackReviewDialog({ draft, reopened = null, onClose, editorOp
   }, [phase, draft.draftId, onClose]);
 
   const send = async () => {
+    // beginSend takes no note, and ok:true means final, so the empty Send is refused before it.
+    if (!canSend) return;
     setPhase('sending');
     setError(null);
     try {
-      // The first tap ends reversibility, and a retry goes through here with the same bytes.
-      const begun = model ? await beginSend(model) : null;
-      const bytes = begun?.bytes ?? null;
+      const begun = model ? await model.beginSend() : null;
+      // Not `!begun.ok`: with strictNullChecks off, as here, that doesn't narrow the union.
+      if (begun?.ok === false) {
+        // Nothing has ended and no save starts. A disposed model means the dialog has gone.
+        if (begun.code !== 'disposed') {
+          setError(snapshot?.included === false ? `${begun.block} Remove the screenshot to send your note.` : begun.block);
+          setPhase('review');
+        }
+        return;
+      }
       // The model dropped the other windows and the original, and these strings still hold them.
       if (model) useFeedbackStore.setState({ draft: { ...draft, preview: null, shots: [] } });
-      // Always the bytes: `edited` can't say whether they differ from the capture. Main compares.
-      const annotatedPng = bytes ? await blobToBase64(bytes) : undefined;
+      const fields = begun?.ok === true ? await sendFields(begun) : { includeScreenshot: false };
       const result = await (pilotHooks.send ?? window.clubhouse.feedback.send)({
         draftId: draft.draftId,
         notes,
-        includeScreenshot: bytes !== null,
         ...(draft.correlation && { includeCorrelation }),
         ...(diagnostics?.status === 'available' && { includeDiagnostics }),
         scene: currentScene(),
-        ...(annotatedPng !== undefined && { annotatedPng }),
-        ...(begun?.shotId && { shotId: begun.shotId }),
-        // feedback-main-pin is adding this on its own branch: a left-out Send only.
-        ...(begun && !bytes && begun.noEdits && { noEdits: true }),
-      } as FeedbackSendInput);
+        ...fields,
+      });
       if (result.status === 'enrollment-changed') {
         // Nothing was saved. A new report with new contents needs its own review and Send.
         reopenDraft(result.draft, { notes, includeCorrelation, includeDiagnostics });
@@ -205,6 +210,7 @@ export function FeedbackReviewDialog({ draft, reopened = null, onClose, editorOp
       }
       setReportId(result.id);
       setOutcome(result.diagnostics ?? null);
+      setEarlierMayDeliver(result.earlierMayDeliver === true);
       setPhase('saved');
     } catch (err) {
       // telemetry-exempt: shown to the user; the reviewed draft is kept for a retry.
@@ -221,6 +227,11 @@ export function FeedbackReviewDialog({ draft, reopened = null, onClose, editorOp
             <p className="text-sm text-ctp-text" role="status" data-testid="feedback-sent-state">
               {received ? 'Received. Thanks for the feedback.' : saved}
             </p>
+            {earlierMayDeliver && (
+              <p className="text-sm text-ctp-text" data-testid="feedback-both-may-deliver">
+                Clubhouse couldn't confirm whether your earlier try was saved, so the developer may get both reports.
+              </p>
+            )}
             {outcome && <p className="text-xs text-ctp-subtext0" data-testid="feedback-diagnostics-outcome">{diagnosticsOutcomeText(outcome)}</p>}
             <div className="flex justify-end">
               <button type="button" onClick={onClose} className="px-3 py-1.5 text-sm rounded-md bg-surface-0 text-ctp-text hover:bg-surface-1">Close</button>

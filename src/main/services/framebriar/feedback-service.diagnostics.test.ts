@@ -362,12 +362,20 @@ describe('FeedbackService diagnostics', () => {
       expect(fb.feedback.prepare).toHaveBeenCalledTimes(1);
     });
 
-    it('refuses a retry that changes the choice: the saved report may already say otherwise', async () => {
-      const { fb } = fakeSdk(async () => { throw new Error('uncertain'); });
-      const { s } = serviceWith(fb);
+    it('a retry that changes the choice is a new report with its own outcome, and says both may be delivered', async () => {
+      let fail = true;
+      const { fb } = fakeSdk(async () => {
+        if (fail) throw new Error('uncertain');
+        return { id: REPORT_ID, status: 'saved-local' };
+      });
+      const create = vi.fn(() => fakeExcerpt()) as never;
+      const { s } = serviceWith(fb, { createExcerptTelemetry: create });
       const draft = await capture(s);
       await expect(s.send({ draftId: draft.draftId, notes: '', includeScreenshot: true, includeDiagnostics: true })).rejects.toThrow('uncertain');
-      await expect(s.send({ draftId: draft.draftId, notes: '', includeScreenshot: true, includeDiagnostics: false })).rejects.toMatchObject({ code: 'feedback-review-changed' });
+      fail = false;
+      await expect(s.send({ draftId: draft.draftId, notes: '', includeScreenshot: true, includeDiagnostics: false })).resolves.toMatchObject({ diagnostics: { status: 'left_out', reason: 'reporter' }, earlierMayDeliver: true });
+      expect(fb.feedback.prepare).toHaveBeenCalledTimes(2);
+      expect(create).not.toHaveBeenCalled();
     });
   });
 

@@ -259,9 +259,9 @@ async function attachable(source,limits){
 const NO_MARKS=Object.freeze([]);
 
 /**
- * What a composer holds for its image. Edits stay reversible until the first Send tap, and
- * `endReversibility()` makes the flattened bytes the only source, so if that save fails what was covered
- * can't come back. No DOM and no global state, and each model belongs to one composer.
+ * What a composer holds for its image. Edits stay reversible until a Send starts, and `beginSend()` makes
+ * the flattened bytes the only source, so if that save fails what was covered can't come back. No DOM and
+ * no global state, and each model belongs to one composer.
  */
 export function createScreenshotEditorModel({views,activeView,limits,raster,workerFactory}={}){
   if(!Array.isArray(views)||!views.length)throw Error('At least one view is required.');
@@ -272,7 +272,7 @@ export function createScreenshotEditorModel({views,activeView,limits,raster,work
   for(const {id,label,source} of views){
     if(typeof id!=='string'||!id||byId.has(id))throw Error('Each view needs its own id.');
     const view={id,label:String(label??id),source:null,status:'pending',marks:NO_MARKS,applied:NO_MARKS,
-      bytes:null,exported:null,final:false,media:++mediaCounter,settled:Promise.resolve(),frames:new Set()};
+      bytes:null,attached:false,exported:null,final:false,media:++mediaCounter,settled:Promise.resolve(),frames:new Set()};
     byId.set(id,view);
     // Frozen, because a live canvas could change after review. A host converts its canvas once.
     if(typeof source?.then==='function'){
@@ -315,46 +315,44 @@ export function createScreenshotEditorModel({views,activeView,limits,raster,work
   const live=()=>!disposed&&!removed;
   const flatten=(source,marks)=>flattenScreenshot(source,marks,{limits:max,raster,workerFactory,signal:abort.signal});
   function serial(task){const run=queue.then(task);queue=run.then(()=>{},()=>{});return run;}
-  // Several views can hold marks. All of them go in, or none do. Bytes land only if they're still what's
-  // wanted: a revert or the first Send tap during the flatten wins, and a newer mark on any view flattens
-  // again, so this resolves only with nothing left uncommitted.
-  function commit(){
-    return serial(async()=>{
-      for(;;){
+  // Bytes land only if they're still what's wanted: a revert or the first Send tap during the flatten wins,
+  // and a newer mark on a picked view flattens again, so this ends with nothing there left uncommitted.
+  async function flattenMarks(pick){
+    for(;;){
+      if(!live())throw cancelled();
+      const dirty=pick().filter(isDirty).map(view=>({view,marks:view.marks,source:view.source})),started=finality;
+      if(!dirty.length)return;
+      flattening++;changed();
+      try{
+        const done=[];
+        for(const job of dirty){
+          const bytes=await flatten(job.source,job.marks);
+          if(typeTag(bytes)!=='Blob'||bytes===job.source)throw Error('The flattener must return new bytes.');
+          done.push(bytes);
+        }
         if(!live())throw cancelled();
-        const dirty=[...byId.values()].filter(isDirty).map(view=>({view,marks:view.marks,source:view.source})),started=finality;
-        if(!dirty.length)return;
-        flattening++;changed();
-        try{
-          const done=[];
-          for(const job of dirty){
-            const bytes=await flatten(job.source,job.marks);
-            if(typeTag(bytes)!=='Blob'||bytes===job.source)throw Error('The flattener must return new bytes.');
-            done.push(bytes);
-          }
-          if(!live())throw cancelled();
-          if(started===finality&&dirty.every(job=>job.view.marks===job.marks&&job.view.source===job.source)){
-            dirty.forEach((job,i)=>{job.view.bytes=done[i];job.view.exported=null;job.view.applied=job.marks;job.view.media=++mediaCounter;});
-          }
-        }finally{flattening--;changed();}
-      }
-    });
+        if(started===finality&&dirty.every(job=>job.view.marks===job.marks&&job.view.source===job.source)){
+          dirty.forEach((job,i)=>{job.view.bytes=done[i];job.view.attached=false;job.view.exported=null;job.view.applied=job.marks;job.view.media=++mediaCounter;});
+        }
+      }finally{flattening--;changed();}
+    }
   }
+  // Several views can hold marks. All of them go in, or none do.
+  function commit(){return serial(()=>flattenMarks(()=>[...byId.values()]));}
   const untilSettled=view=>Promise.race([view.settled,aborted]);
   const closeFrames=view=>{for(const frame of [...view.frames])frame.close();};
   // Encoded once, and those bytes are then fixed.
-  function prepared(view){
-    return serial(async()=>{
-      if(view.bytes||!live()||view.status!=='ready')return view.bytes;
-      const source=view.source;
-      const bytes=await attachable(source,max)?source:await flatten(source,[]);
-      if(!live()||byId.get(view.id)!==view)return null;
-      // Never the new source here, even after a Send tap: fitted bytes are smaller, and marks and any open
-      // preview are in this source's coordinates. Only endReversibility() changes what marks go on.
-      view.bytes=bytes;
-      return bytes;
-    });
+  async function encoded(view){
+    if(view.bytes||!live()||view.status!=='ready')return view.bytes;
+    const source=view.source,attached=await attachable(source,max);
+    const bytes=attached?source:await flatten(source,[]);
+    if(!live()||byId.get(view.id)!==view)return null;
+    // Never the new source here, even after a Send tap: fitted bytes are smaller, and marks and any open
+    // preview are in this source's coordinates. Only the end of reversibility changes what marks go on.
+    view.bytes=bytes;view.attached=attached;
+    return bytes;
   }
+  const prepared=view=>serial(()=>encoded(view));
   function dropView(view){closeFrames(view);view.source=null;view.bytes=null;view.exported=null;view.marks=NO_MARKS;view.applied=NO_MARKS;}
   const exportable=view=>view.bytes&&view.bytes!==view.source?view.bytes:view.exported;
   function exported(view){
@@ -363,6 +361,43 @@ export function createScreenshotEditorModel({views,activeView,limits,raster,work
       const source=view.source,bytes=await flatten(source,[]);
       if(live()&&byId.get(view.id)===view&&view.source===source)view.exported=bytes;
       return live()?exportable(view):null;
+    });
+  }
+  // The first Send tap: the selected view's bytes become the only source and the other views go. Quiet if
+  // nothing moved, so a retry after a failed save tells no one anything.
+  function endHere(){
+    const view=active(),final=view.final||view.applied.length>0,image=view.bytes&&view.bytes!==view.source;
+    const moved=image||final!==view.final||view.marks.length>0||byId.size>1;
+    finality++;
+    view.final=final;
+    if(image){view.source=view.bytes;imageVersion++;closeFrames(view);}
+    view.marks=NO_MARKS;view.applied=NO_MARKS;view.exported=null;
+    for(const other of [...byId.values()])if(other!==view){dropView(other);byId.delete(other.id);}
+    if(moved)changed();
+  }
+  const notSent=(code,block)=>Object.freeze({ok:false,code,block,viewId:null,bytes:null,finalBytes:null,original:false,edited:false});
+  // All in one turn of the queue, and the last check and finality have no await between them, so what's
+  // returned is the view selected and the marks made at the moment reversibility ended.
+  function beginSend(){
+    return serial(async()=>{
+      for(;;){
+        if(disposed)return notSent('disposed',FEEDBACK_COPY.notes.cannotFinish);
+        if(removed)return Object.freeze({ok:true,viewId:null,bytes:null,finalBytes:null,original:false,edited:false});
+        const view=active(),marks=view.marks;
+        if(view.status==='pending'&&included)return notSent('pending',FEEDBACK_COPY.notes.capturePending);
+        try{
+          await flattenMarks(()=>[active()]);
+          if(live()&&view===active())await encoded(view);
+        }catch{
+          // A failure only counts if it's about what's selected now. Otherwise go round for the current state.
+          if(live()&&view===active()&&view.marks===marks)return notSent('prepare-failed',FEEDBACK_COPY.notes.cannotFinish);
+          continue;
+        }
+        if(!live()||view!==active()||isDirty(view)||(view.status==='ready'&&!view.bytes)||(view.status==='pending'&&included))continue;
+        endHere();
+        const finalBytes=view.status==='ready'?view.bytes:null;
+        return Object.freeze({ok:true,viewId:view.id,bytes:included?finalBytes:null,finalBytes,original:Boolean(finalBytes)&&view.attached,edited:view.final});
+      }
     });
   }
   // Whatever happens while waiting, the answer is about the state when it's returned: anything the tester
@@ -442,17 +477,16 @@ export function createScreenshotEditorModel({views,activeView,limits,raster,work
       view.frames.add(frame);
       return frame;
     },
-    /** On the first Send tap, whether or not the image is included. Throws if any view has uncommitted marks. */
+    /**
+     * The Send tap in one call: commits the selected view, prepares its bytes whether or not they're included,
+     * and only then ends reversibility. If it can't, nothing has ended and no save should start.
+     */
+    beginSend,
+    /** For a host's own order of the parts; hosts use beginSend. Throws if any view has uncommitted marks. */
     endReversibility(){
       if(!live())return;
       if(anyDirty())throw Error('Commit or revert marks before sending.');
-      const view=active();
-      finality++;
-      view.final=view.final||view.applied.length>0;
-      if(view.bytes&&view.bytes!==view.source){view.source=view.bytes;imageVersion++;closeFrames(view);}
-      view.marks=NO_MARKS;view.applied=NO_MARKS;view.exported=null;
-      for(const other of [...byId.values()])if(other!==view){dropView(other);byId.delete(other.id);}
-      changed();
+      endHere();
     },
     /** Cancels anything in progress: a pending call rejects or resolves to nothing, and no bytes arrive late. */
     dispose(){

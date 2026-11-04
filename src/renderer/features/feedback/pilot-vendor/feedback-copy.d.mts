@@ -8,7 +8,7 @@ export interface FeedbackCopy {
   readonly notes: Readonly<Record<'capturedScreen'|'imageTools'|'screenshotLeftOut'|'edited'|'editedFinal'|'unavailableSecure'|'unavailableFailed'|'emptySend'|'cannotFinish'|'capturePending', string>>;
   readonly confirm: Readonly<Record<'clearReversible'|'clearFinal', string>>;
   readonly editorHints: Readonly<Record<'move'|'pen'|'redact', string>>;
-  readonly logs: Readonly<Record<'addsExcerpt'|'disabledSettingsOff'|'disabledNotEnrolled'|'disabledUnavailable'|'automaticWhileEnrolled'|'automaticSeparateConsent'|'automaticNone'|'addsLines'|'addsMarker'|'replayUploads'|'replayServerRecords'|'replayOffClears'|'replayOffStops'|'addsLinesSeparate'|'linesLostOnQuit'|'replayDeviceOffClears'|'replayDeviceOffStops'|'automaticSwitch'|'addsExcerptOnly'|'replayServerRecordsOnly'|'markerStill', string>> & {readonly dataClasses: Readonly<Record<LogsDataClass, string>>};
+  readonly logs: Readonly<Record<'addsExcerpt'|'disabledSettingsOff'|'disabledNotEnrolled'|'disabledUnavailable'|'automaticWhileEnrolled'|'automaticSeparateConsent'|'automaticNone'|'addsLines'|'addsMarker'|'replayUploads'|'replayServerRecords'|'replayOffClears'|'replayOffStops'|'addsLinesSeparate'|'linesLostOnQuit'|'replayDeviceOffClears'|'replayDeviceOffStops'|'automaticSwitch'|'addsExcerptOnly'|'replayServerRecordsOnly'|'markerStill'|'addsMarkerOnly', string>> & {readonly dataClasses: Readonly<Record<LogsDataClass, string>>};
   /** The editor's icon labels, ink names and keyboard hints. */
   readonly editor: Readonly<Record<'screenshot'|'mark'|'marks'|'zoom'|'zoomIn'|'zoomOut'|'zoomFit'|'tools'|'inks'|'views'|'keysMove'|'keysDraw'|'red'|'yellow'|'blue'|'white', string>>;
   readonly status: Readonly<Record<'saving'|'savedSending'|'savedSendingDetail'|'sent'|'sentDetail'|'savedOffline'|'serviceBusy'|'accessRequired'|'heldForEnrollment'|'heldPrompt'|'heldClearPrompt'|'enrollmentChanged'|'rejected'|'storageFull'|'storageUnconfirmed'|'tooLarge'|'enrollmentRejected'|'queueFullHeld'|'queueFullBlocked'|'queueFullWaiting', string>>;
@@ -21,7 +21,7 @@ export function fillCopy(text: string, values: Readonly<Record<string, string|nu
 /** 'Tap' on touch, 'Click' with a mouse. */
 export function actionWord(touch?: boolean): 'Tap'|'Click';
 
-export type LogsDataClass = 'events'|'timings'|'errors'|'ids'|'gameplay';
+export type LogsDataClass = 'events'|'timings'|'errors'|'ids'|'gameplay'|'sizes'|'crashes'|'app';
 
 /** The host's true facts. A sentence appears only if its fact is true. */
 export interface LogsFacts {

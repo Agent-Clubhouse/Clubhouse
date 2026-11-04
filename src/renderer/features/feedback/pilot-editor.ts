@@ -3,13 +3,14 @@
  * shot, a model whose life follows the dialog's, and the preview frame the model draws.
  */
 import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
-import type { FeedbackShot } from '../../../shared/feedback-types';
+import type { FeedbackSendInput, FeedbackShot } from '../../../shared/feedback-types';
 import {
   createScreenshotEditorModel,
   type ScreenshotEditorModel,
   type ScreenshotEditorState,
   type ScreenshotPreview,
   type ScreenshotRaster,
+  type ScreenshotSendStarted,
   type ScreenshotWorkerFactory,
 } from './pilot-vendor/screenshot-editor.mjs';
 
@@ -23,6 +24,7 @@ export function dataUrlToPngBlob(dataUrl: string): Blob {
 
 export interface EditorOptions {
   raster?: ScreenshotRaster;
+  limits?: { maxBytes?: number; maxPixels?: number; maxSide?: number };
   workerFactory?: ScreenshotWorkerFactory;
 }
 
@@ -77,25 +79,24 @@ export function useEditorPreview(model: ScreenshotEditorModel | null, snapshot: 
   return frame;
 }
 
-/**
- * The first Send tap, in the only order the model allows. Commit can reject: nothing is final then.
- * `noEdits` has to be read after commit, because `edited` is false while marks are pending, and it's only
- * about the selected view, so the Send carries `shotId` too. Included: always the bytes, and main compares
- * hashes. Left out: no bytes (the model has none to give), just `noEdits`.
- */
-export async function beginSend(model: ScreenshotEditorModel): Promise<{ bytes: Blob | null; noEdits: boolean; shotId: string | null }> {
-  // commit() rejects once removed, though bytesToSend() and endReversibility() are quiet. A removed image sends the note alone.
-  if (model.getSnapshot().status === 'removed') return { bytes: null, noEdits: false, shotId: null };
-  await model.commit();
-  const { edited, activeView } = model.getSnapshot();
-  model.endReversibility();
-  return { bytes: await model.bytesToSend(), noEdits: !edited, shotId: activeView };
-}
-
 /** What main's `annotatedPng` takes today. A Uint8Array over IPC would save the base64 step. */
 export async function blobToBase64(blob: Blob): Promise<string> {
   const bytes = new Uint8Array(await blob.arrayBuffer());
   let binary = '';
   for (let i = 0; i < bytes.length; i += 0x8000) binary += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
   return btoa(binary);
+}
+
+/**
+ * What a started Send tells main under #2794's rules. Nothing here compares bytes: `original` says whether
+ * main's own capture is what's wanted. Non-original bytes go even with the image left out, so main can drop
+ * the capture and fix what a later flatten must fit.
+ */
+export async function sendFields(begun: ScreenshotSendStarted): Promise<Pick<FeedbackSendInput, 'includeScreenshot' | 'annotatedPng' | 'shotId' | 'noEdits'>> {
+  const { viewId, bytes, finalBytes, original } = begun;
+  const includeScreenshot = bytes !== null;
+  // Removed, or a capture that never finished: no flag and no bytes, so main drops what it holds.
+  if (viewId === null || finalBytes === null) return { includeScreenshot };
+  if (original) return { includeScreenshot, shotId: viewId, ...(!includeScreenshot && { noEdits: true as const }) };
+  return { includeScreenshot, shotId: viewId, annotatedPng: await blobToBase64(finalBytes) };
 }

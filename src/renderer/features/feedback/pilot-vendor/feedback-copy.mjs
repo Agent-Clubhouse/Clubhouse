@@ -59,6 +59,9 @@ export const FEEDBACK_COPY=freeze({
       errors:"error classes",
       ids:"random session and connection IDs",
       gameplay:"gameplay details",
+      sizes:"message and text sizes",
+      crashes:"crash and hang details, such as signal and duration",
+      app:"app version, platform and build",
     },
     addsLines:"This report also includes the recent log lines shown here.",
     addsMarker:"Whether or not this is on, a marker with this report's ID goes with your diagnostics.",
@@ -74,6 +77,7 @@ export const FEEDBACK_COPY=freeze({
     addsExcerptOnly:"This report also sends a copy of recent events, labeled with its ID. That copy may be empty.",
     replayServerRecordsOnly:"The game server records matches whatever you choose here.",
     markerStill:"A marker with this report's ID still goes with your diagnostics.",
+    addsMarkerOnly:"A marker with this report's ID goes to the developer whether or not this is on.",
   },
   status:{
     saving:"Saving…",
@@ -90,6 +94,7 @@ export const FEEDBACK_COPY=freeze({
     enrollmentChanged:"Your connection changed before this was saved, so it hasn't been sent. Review it and send again.",
     rejected:"The service didn't accept this report. It stays on this device until you clear it, and it won't be retried.",
     storageFull:"Not saved: local feedback storage is full. Your draft is still here.",
+    bothMayDeliver:"This app couldn't confirm whether your earlier try was saved, so the developer may get both reports.",
     storageUnconfirmed:"Couldn't confirm this saved, because local storage reported an error. Your draft is still here, so you can try Send again. A copy may still send.",
     tooLarge:"Not saved: use at most 2,000 characters and an image up to 8 MiB. Your draft is still here.",
     enrollmentRejected:"This app could not accept the connection response. Ask for a new invitation or update the app.",
@@ -153,7 +158,7 @@ export function logsControl({attach='none',available=false,unavailableReason='un
     }else explanation.push(logs.addsLines);
     if(typeof lines.retention==='string'&&lines.retention)explanation.push(lines.retention);
   }
-  if(enabled&&marker===true&&automatic!=='none')explanation.push(logs.addsMarker);
+  if(enabled&&marker===true)explanation.push(automatic==='none'?logs.addsMarkerOnly:logs.addsMarker);
   // A box that can't be on still says so: off in Settings or not connected, no marker goes.
   else if(shown&&!enabled&&why==='unavailable'&&marker===true&&automatic!=='none')explanation.push(logs.markerStill);
   if(replay){

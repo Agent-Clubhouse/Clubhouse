@@ -28,7 +28,7 @@ export interface ScreenshotEditorState {
   /** Working marks on the selected view. */
   readonly marks: readonly ScreenshotMark[];
   readonly included: boolean;
-  /** The image to send differs from the attachment. */
+  /** The bytes to send differ from the attachment by edits, in committed state. Pending marks are `dirty`, so "any edits" is `edited||dirty`. */
   readonly edited: boolean;
   /** `marks` differ from the last commit. */
   readonly dirty: boolean;
@@ -40,6 +40,35 @@ export interface ScreenshotEditorState {
   readonly flattening: boolean;
   /** Moves when a Send tap changes the image marks go on, which is the only thing that does. Open a new preview then. */
   readonly imageVersion: number;
+}
+
+/** A Send can start: reversibility has ended, and these are the bytes as they stood at that moment. */
+export interface ScreenshotSendStarted {
+  readonly ok: true;
+  /** The view selected at that moment, which the bytes belong to. Null after Remove. Dimensions alone don't prove which view bytes came from. */
+  readonly viewId: string|null;
+  /** What goes in the report. Null if left out, or there's no image. */
+  readonly bytes: Blob|null;
+  /** The prepared PNG whether or not it's included, so a host's main process can validate it now. Null only with no image. */
+  readonly finalBytes: Blob|null;
+  /** `finalBytes` is the unmodified attachment. False for a re-encode or fit-down, and with no image. */
+  readonly original: boolean;
+  /** Edits are in `finalBytes`. False with `original` false means a re-encode with no edits. */
+  readonly edited: boolean;
+}
+
+/** No save should start. Nothing has ended: every view and mark is as it was, and edits are still reversible. */
+export interface ScreenshotSendRefused {
+  readonly ok: false;
+  /** `pending`: a capture still finishing, and included. `prepare-failed`: can't flatten or encode. `disposed`: the model is gone. */
+  readonly code: 'pending'|'prepare-failed'|'disposed';
+  /** The words for why, from the copy file. */
+  readonly block: string;
+  readonly viewId: null;
+  readonly bytes: null;
+  readonly finalBytes: null;
+  readonly original: false;
+  readonly edited: false;
 }
 
 /** The selected view, drawn for a host's own UI. It never hands out the source. */
@@ -90,7 +119,13 @@ export interface ScreenshotEditorModel {
    * it: open a new one when `imageVersion` moves.
    */
   openPreview(): Promise<ScreenshotPreview|null>;
-  /** On the first Send tap, whether or not the image is included. Throws if any view has uncommitted marks. */
+  /**
+   * The Send tap, whether or not the image is included. Commits only the selected view, prepares its bytes, and
+   * only then ends reversibility, dropping the other views. If it can't, nothing has ended and no save should
+   * start. A mark made while it runs is in the bytes, or it refuses. A retry with no new marks has the same bytes.
+   */
+  beginSend(): Promise<ScreenshotSendStarted|ScreenshotSendRefused>;
+  /** For a host's own order of the parts; hosts use beginSend. Throws if any view has uncommitted marks. */
   endReversibility(): void;
   /** Cancels anything in progress: a pending call rejects or resolves to nothing, and no bytes arrive late. */
   dispose(): void;

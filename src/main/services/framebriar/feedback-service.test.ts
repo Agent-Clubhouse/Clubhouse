@@ -317,7 +317,7 @@ describe('FeedbackService (fake SDK)', () => {
       expect(fb.feedback.prepare).toHaveBeenLastCalledWith(expect.objectContaining({ png: drawn, capturedAt: '2026-10-17T10:00:00.000Z' }));
     });
 
-    it('ignores the drawing on a text-only send', async () => {
+    it('leaves the drawing out of a text-only report', async () => {
       const { create, fb } = fakeSdk();
       const s = service(create);
       const draft = await s.captureDraft(async () => captured);
@@ -326,17 +326,19 @@ describe('FeedbackService (fake SDK)', () => {
     });
 
     it.each([
-      ['a different size', pngOf(1440, 900).toString('base64'), /doesn't match/],
+      ['a different shape', pngOf(1440, 1000).toString('base64'), /doesn't match/],
+      ['larger', pngOf(5760, 3600).toString('base64'), /doesn't match/],
       ['not a PNG', Buffer.from('<svg xmlns="http://www.w3.org/2000/svg"/>').toString('base64'), /not a PNG/],
       ['over the decoded size cap', Buffer.concat([pngOf(2880, 1800), Buffer.alloc(8 * 1024 * 1024)]).toString('base64'), /too large/],
-    ])('refuses a drawing that is %s and keeps the draft for a retry', async (_label, annotatedPng, error) => {
+    ])('refuses a drawing that is %s, keeps the draft for a retry, and never falls back to the capture', async (_label, annotatedPng, error) => {
       const { create, fb } = fakeSdk();
       const s = service(create);
       const draft = await s.captureDraft(async () => captured);
       await expect(s.send({ draftId: draft.draftId, notes: 'n', includeScreenshot: true, annotatedPng })).rejects.toThrow(error);
+      await expect(s.send({ draftId: draft.draftId, notes: 'n', includeScreenshot: true })).rejects.toMatchObject({ code: 'flattened-required' });
       expect(fb.feedback.prepare).not.toHaveBeenCalled();
-      await s.send({ draftId: draft.draftId, notes: 'n', includeScreenshot: true });
-      expect(fb.feedback.prepare).toHaveBeenLastCalledWith(expect.objectContaining({ png: captured }));
+      await s.send({ draftId: draft.draftId, notes: 'n', includeScreenshot: true, annotatedPng: drawn.toString('base64') });
+      expect(fb.feedback.prepare).toHaveBeenLastCalledWith(expect.objectContaining({ png: drawn }));
     });
   });
 
@@ -449,13 +451,12 @@ describe('FeedbackService (fake SDK)', () => {
     fb.feedback.submit.mockRejectedValueOnce(Object.assign(new Error('Local feedback storage is full'), { code: 'storage-full' }));
     await expect(s.send({ draftId: draft.draftId, notes: 'n', includeScreenshot: true })).rejects.toThrow(/full/);
     const original = fb.feedback.submit.mock.calls[0][0];
-    await expect(s.send({ draftId: draft.draftId, notes: 'edited after uncertain save', includeScreenshot: true })).rejects.toThrow(/Retry the feedback unchanged/);
     await expect(s.send({ draftId: draft.draftId, notes: 'n', includeScreenshot: true })).resolves.toMatchObject({ status: 'saved-local' });
     expect(fb.feedback.prepare).toHaveBeenCalledTimes(1);
     expect(fb.feedback.submit.mock.calls[1][0]).toBe(original);
     // Consumed now.
-    await expect(s.send({ draftId: draft.draftId, notes: 'n', includeScreenshot: true })).rejects.toThrow(/expired/);
-    await expect(s.send({ draftId: draft.draftId, notes: 'n', includeScreenshot: false })).rejects.toThrow(/expired/);
+    await expect(s.send({ draftId: draft.draftId, notes: 'n', includeScreenshot: true })).rejects.toThrow(/already sent/);
+    await expect(s.send({ draftId: draft.draftId, notes: 'n', includeScreenshot: false })).rejects.toThrow(/already sent/);
   });
 
   it('allows correcting a draft when preparation failed before any save', async () => {
@@ -670,6 +671,15 @@ describe('FeedbackService (fake SDK)', () => {
         ATTR.feedbackError('unknown'),
       ]);
       expect(named('clubhouse.feedback.failed').every((a) => a[0].value === 'submit')).toBe(true);
+    });
+
+    it('records a Send that needed flattened bytes under its own class', async () => {
+      const { create } = fakeSdk();
+      const s = service(create);
+      const draft = await s.captureDraft(async () => pngOf(4, 3, 'shot'));
+      await expect(s.send({ draftId: draft.draftId, notes: NOTES, includeScreenshot: true, annotatedPng: Buffer.from('not an image').toString('base64') })).rejects.toMatchObject({ code: 'invalid-media' });
+      await expect(s.send({ draftId: draft.draftId, notes: NOTES, includeScreenshot: true })).rejects.toMatchObject({ code: 'flattened-required' });
+      expect(named('clubhouse.feedback.failed').map((a) => a[1])).toEqual([ATTR.feedbackError('invalid-media'), ATTR.feedbackError('flattened-required')]);
     });
 
     it('records delivery, undeliverable reports and an unusable outbox', async () => {
