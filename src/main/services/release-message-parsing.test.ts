@@ -90,6 +90,10 @@ describe('release message parsing (workflow shell pipeline)', () => {
       resolve(__dirname, '../../../.github/workflows/release.yml'),
       'utf8',
     );
+    const publishScript = readFileSync(
+      resolve(__dirname, '../../../scripts/ci/release-publish.sh'),
+      'utf8',
+    );
     const publishJob = workflow.slice(workflow.indexOf('\n  publish:'));
     const runScripts = extractRunScripts(workflow).join('\n');
 
@@ -104,8 +108,8 @@ describe('release message parsing (workflow shell pipeline)', () => {
     );
     expect(publishJob).toContain('MESSAGE="$RELEASE_MESSAGE"');
     expect(publishJob).toContain('NOTES="$RELEASE_NOTES"');
-    expect(publishJob).toContain('RELEASE_TITLE="v${VERSION} — ${RELEASE_MESSAGE}"');
-    expect(publishJob).toContain('RELEASE_BODY="$RELEASE_NOTES"');
+    expect(publishScript).toContain('RELEASE_TITLE="v${VERSION} — ${RELEASE_MESSAGE}"');
+    expect(publishScript).toContain('RELEASE_BODY="$RELEASE_NOTES"');
   });
 
   it('passes shell-special release text literally through title and body construction', () => {
