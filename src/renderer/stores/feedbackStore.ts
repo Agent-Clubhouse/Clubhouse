@@ -12,6 +12,8 @@ export interface FeedbackReopened {
   /** The user's opt-outs: what they turned off stays off, whatever the new contents are. */
   includeCorrelation: boolean;
   includeDiagnostics: boolean;
+  /** The Send left its image out, so the new report doesn't have it. */
+  lostScreenshot?: boolean;
 }
 
 export const FEEDBACK_NOTICE_TEXT: Record<FeedbackNotice, string> = {

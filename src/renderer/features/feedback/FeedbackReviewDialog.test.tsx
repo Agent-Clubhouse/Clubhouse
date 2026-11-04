@@ -27,6 +27,26 @@ beforeEach(() => {
 });
 afterEach(() => resetFeedbackStore());
 
+describe('after a save whose earlier try had an unknown outcome', () => {
+  it('says both may be delivered', async () => {
+    useFeedbackStore.setState({ draft: DRAFT });
+    send.mockResolvedValueOnce({ id: 'rep-2', status: 'saved-local', earlierMayDeliver: true });
+    render(<FeedbackDialogHost />);
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Send' })); });
+    const text = screen.getByTestId('feedback-both-may-deliver').textContent ?? '';
+    expect(text).toMatch(/may get both reports/);
+    expect(text).not.toMatch(/framebriar|\u2014/i);
+  });
+
+  it('says nothing about it otherwise', async () => {
+    useFeedbackStore.setState({ draft: DRAFT });
+    render(<FeedbackDialogHost />);
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Send' })); });
+    expect(screen.getByTestId('feedback-sent-state')).toBeTruthy();
+    expect(screen.queryByTestId('feedback-both-may-deliver')).toBeNull();
+  });
+});
+
 describe('after an enrollment change', () => {
   const NEXT = {
     draftId: '1c6d7b3f-2a4e-4d9f-8b8c-3e5f7a9b1d2f', preview: 'data:image/png;base64,bmV3', shots: [{ shotId: 's0', label: 'Main window', preview: 'data:image/png;base64,bmV3' }],
@@ -109,14 +129,68 @@ describe('after an enrollment change', () => {
     });
   });
 
-  it('says a reopened report has no screenshot when the Send left it out', async () => {
-    useFeedbackStore.setState({ draft: DRAFT });
-    send.mockResolvedValueOnce({ status: 'enrollment-changed', draft: { draftId: NEXT.draftId, preview: null, shots: [] } });
-    render(<FeedbackDialogHost />);
-    fireEvent.change(screen.getByLabelText('What happened?'), { target: { value: 'my note' } });
-    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Send without screenshot' })); });
-    expect(screen.getByText('This report has no screenshot.')).toBeTruthy();
-    expect(screen.queryByText(/could be taken/)).toBeNull();
+  describe('a reopened draft\'s image', () => {
+    const reviewReopened = () => {
+      useFeedbackStore.setState({ draft: NEXT, reopened: { notes: 'my note', includeCorrelation: true, includeDiagnostics: true } });
+      render(<FeedbackDialogHost />);
+    };
+
+    it('goes back with every Send as its own bytes when there are no marks', async () => {
+      send.mockRejectedValueOnce(new Error('Local feedback storage is full'));
+      reviewReopened();
+      await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Send' })); });
+      expect(send).toHaveBeenLastCalledWith(expect.objectContaining({ draftId: NEXT.draftId, includeScreenshot: true, shotId: 's0', annotatedPng: 'bmV3' }));
+      await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Send' })); });
+      expect(send).toHaveBeenCalledTimes(2);
+      expect(send).toHaveBeenLastCalledWith(expect.objectContaining({ annotatedPng: 'bmV3' }));
+    });
+
+    it('isn\'t brought along when the Send leaves it out', async () => {
+      reviewReopened();
+      await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Send without screenshot' })); });
+      expect(send.mock.lastCall![0]).toMatchObject({ includeScreenshot: false, shotId: 's0', noEdits: true });
+      expect(send.mock.lastCall![0]).not.toHaveProperty('annotatedPng');
+    });
+  });
+
+  describe('a Send that left its image out', () => {
+    const LOST = /no longer has its screenshot\. To send one, close this and open a new report\./;
+    const NO_IMAGE = { draftId: NEXT.draftId, preview: null, shots: [] };
+
+    it('says the new report lost its screenshot, and doesn\'t claim to have an image', async () => {
+      useFeedbackStore.setState({ draft: OLD });
+      send.mockResolvedValueOnce({ status: 'enrollment-changed', draft: NO_IMAGE });
+      render(<FeedbackDialogHost />);
+      fireEvent.change(screen.getByLabelText('What happened?'), { target: { value: 'my note' } });
+      await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Send without screenshot' })); });
+      expect(screen.getByTestId('feedback-lost-screenshot').textContent).toMatch(LOST);
+      expect(screen.getByTestId('feedback-reopened').textContent).toMatch(/with your note\./);
+      expect(screen.queryByText('This report has no screenshot.')).toBeNull();
+      expect(screen.queryByText(/could be taken/)).toBeNull();
+    });
+
+    it('keeps saying so through a second reopen', async () => {
+      const THIRD = { ...NO_IMAGE, draftId: '2d7e8c4a-3b5f-4e0a-9c9d-4f6a8b0c2e3a' };
+      useFeedbackStore.setState({ draft: OLD });
+      send.mockResolvedValueOnce({ status: 'enrollment-changed', draft: NO_IMAGE }).mockResolvedValueOnce({ status: 'enrollment-changed', draft: THIRD });
+      render(<FeedbackDialogHost />);
+      fireEvent.change(screen.getByLabelText('What happened?'), { target: { value: 'my note' } });
+      await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Send without screenshot' })); });
+      await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Send without screenshot' })); });
+      expect(useFeedbackStore.getState().draft?.draftId).toBe(THIRD.draftId);
+      expect(screen.getByTestId('feedback-lost-screenshot').textContent).toMatch(LOST);
+    });
+
+    it('a report that never had an image doesn\'t say it lost one', async () => {
+      useFeedbackStore.setState({ draft: { draftId: DRAFT.draftId, preview: null, shots: [] } });
+      send.mockResolvedValueOnce({ status: 'enrollment-changed', draft: NO_IMAGE });
+      render(<FeedbackDialogHost />);
+      fireEvent.change(screen.getByLabelText('What happened?'), { target: { value: 'my note' } });
+      await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Send without screenshot' })); });
+      expect(screen.queryByTestId('feedback-lost-screenshot')).toBeNull();
+      expect(screen.getByText('This report has no screenshot.')).toBeTruthy();
+      expect(screen.getByTestId('feedback-reopened').textContent).toMatch(/with your note\./);
+    });
   });
 
   it('a later capture starts empty', async () => {
@@ -360,14 +434,14 @@ describe('FeedbackReviewDialog drawing (#2099)', () => {
     expect(send.mock.calls[0][0]).not.toHaveProperty('annotatedPng');
   });
 
-  it('leaves text-only feedback unaffected by a drawing', async () => {
+  it('brings a drawing along with text-only feedback, since those edits are final too', async () => {
     render(<FeedbackReviewDialog draft={DRAFT} onClose={vi.fn()} />);
     drawOnce();
     fireEvent.change(screen.getByLabelText('What happened?'), { target: { value: 'words only' } });
     await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Send without screenshot' })); });
-    expect(composite).not.toHaveBeenCalled();
-    expect(send.mock.calls[0][0]).toEqual(expect.objectContaining({ includeScreenshot: false }));
-    expect(send.mock.calls[0][0]).not.toHaveProperty('annotatedPng');
+    expect(composite).toHaveBeenCalledTimes(1);
+    expect(send.mock.calls[0][0]).toEqual(expect.objectContaining({ includeScreenshot: false, annotatedPng: 'ANNOTATED' }));
+    expect(send.mock.calls[0][0]).not.toHaveProperty('noEdits');
   });
 
   it('starts a new capture without the previous drawing', () => {
@@ -425,6 +499,79 @@ describe('FeedbackReviewDialog with several windows (#2100)', () => {
     expect(screen.getByTestId('feedback-preview').getAttribute('src')).toBe(MULTI.shots[0].preview);
   });
 
+  it('fixes the window once a Send has been tried, even if it failed', async () => {
+    send.mockRejectedValueOnce(new Error('Local feedback storage is full'));
+    render(<FeedbackReviewDialog draft={MULTI} onClose={vi.fn()} />);
+    const other = screen.getByRole('radio', { name: /faithful-urchin/ });
+    expect(other).toBeEnabled();
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Send' })); });
+    expect(screen.getByRole('alert').textContent).toMatch(/full/);
+    expect(other).toBeDisabled();
+    fireEvent.click(other);
+    fireEvent.keyDown(screen.getByTestId('feedback-shots'), { key: 'ArrowRight' });
+    expect(screen.getByTestId('feedback-preview').getAttribute('src')).toBe(MULTI.shots[0].preview);
+  });
+
+  it('a Send that leaves the image out says which window, and that it has no edits', async () => {
+    render(<FeedbackReviewDialog draft={MULTI} onClose={vi.fn()} />);
+    fireEvent.click(screen.getByRole('radio', { name: /faithful-urchin/ }));
+    fireEvent.change(screen.getByLabelText('What happened?'), { target: { value: 'no picture' } });
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Send without screenshot' })); });
+    expect(send).toHaveBeenCalledWith(expect.objectContaining({ includeScreenshot: false, shotId: 's1', noEdits: true }));
+  });
+
+  it('a Send that leaves the image out brings the flattened image when this window has marks, and never says no edits', async () => {
+    render(<FeedbackReviewDialog draft={MULTI} onClose={vi.fn()} />);
+    drawOnce();
+    fireEvent.change(screen.getByLabelText('What happened?'), { target: { value: 'no picture' } });
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Send without screenshot' })); });
+    expect(send).toHaveBeenCalledWith(expect.objectContaining({ includeScreenshot: false, shotId: 's0', annotatedPng: 'ANNOTATED' }));
+    expect(send.mock.lastCall![0]).not.toHaveProperty('noEdits');
+  });
+
+  it.each([
+    ['s0', 's1', /faithful-urchin/, /Main window/],
+    ['s1', 's0', /Main window/, /faithful-urchin/],
+  ])('marks on %s with unmarked %s selected: no edits, for the selected window only', async (marked, selected, select, start) => {
+    render(<FeedbackReviewDialog draft={MULTI} onClose={vi.fn()} />);
+    fireEvent.click(screen.getByRole('radio', { name: start }));
+    drawOnce();
+    fireEvent.click(screen.getByRole('radio', { name: select }));
+    fireEvent.change(screen.getByLabelText('What happened?'), { target: { value: 'no picture' } });
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Send without screenshot' })); });
+    expect(marked).not.toBe(selected);
+    expect(composite).not.toHaveBeenCalled();
+    expect(send.mock.lastCall![0]).toMatchObject({ includeScreenshot: false, shotId: selected, noEdits: true });
+    expect(send.mock.lastCall![0]).not.toHaveProperty('annotatedPng');
+  });
+
+  it('a composite that fails can\'t stop a Send that leaves the image out, and it doesn\'t claim no edits', async () => {
+    composite.mockRejectedValueOnce(new Error('canvas broke'));
+    render(<FeedbackReviewDialog draft={MULTI} onClose={vi.fn()} />);
+    drawOnce();
+    fireEvent.change(screen.getByLabelText('What happened?'), { target: { value: 'no picture' } });
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Send without screenshot' })); });
+    expect(send).toHaveBeenCalledTimes(1);
+    expect(send.mock.lastCall![0]).not.toHaveProperty('annotatedPng');
+    expect(send.mock.lastCall![0]).not.toHaveProperty('noEdits');
+    expect(screen.getByTestId('feedback-sent-state')).toBeTruthy();
+  });
+
+  it('a composite that fails does stop a Send with the image', async () => {
+    composite.mockRejectedValueOnce(new Error('canvas broke'));
+    render(<FeedbackReviewDialog draft={MULTI} onClose={vi.fn()} />);
+    drawOnce();
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Send' })); });
+    expect(send).not.toHaveBeenCalled();
+    expect(screen.getByRole('alert').textContent).toMatch(/canvas broke/);
+  });
+
+  it('a Send with the image never says no edits', async () => {
+    render(<FeedbackReviewDialog draft={MULTI} onClose={vi.fn()} />);
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Send' })); });
+    expect(send.mock.lastCall![0]).not.toHaveProperty('noEdits');
+  });
+
   it('sends the chosen window', async () => {
     render(<FeedbackReviewDialog draft={MULTI} onClose={vi.fn()} />);
     fireEvent.click(screen.getByRole('radio', { name: /faithful-urchin/ }));
@@ -445,12 +592,12 @@ describe('FeedbackReviewDialog with several windows (#2100)', () => {
     expect(send).toHaveBeenCalledWith(expect.objectContaining({ shotId: 's0', annotatedPng: 'ANNOTATED' }));
   });
 
-  it('shows no picker for a single window, and no shotId on a text-only send', async () => {
+  it('shows no picker for a single window, and a text-only send still names it', async () => {
     render(<FeedbackReviewDialog draft={{ ...MULTI, shots: [MULTI.shots[0]] }} onClose={vi.fn()} />);
     expect(screen.queryByRole('radiogroup')).toBeNull();
     fireEvent.change(screen.getByLabelText('What happened?'), { target: { value: 'text' } });
     await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Send without screenshot' })); });
-    expect(send.mock.calls[0][0]).not.toHaveProperty('shotId');
+    expect(send.mock.calls[0][0]).toMatchObject({ includeScreenshot: false, shotId: 's0', noEdits: true });
   });
 
   it('moves between windows with the arrow keys, one Tab stop for the group', () => {
