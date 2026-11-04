@@ -1,10 +1,13 @@
-import { useCallback, useEffect, useState, type KeyboardEvent } from 'react';
+import { useCallback, useEffect, useRef, useState, type KeyboardEvent } from 'react';
 import { Modal } from '../../components/Modal';
-import { FEEDBACK_DIAGNOSTICS, type FeedbackCaptureResult, type FeedbackDiagnosticLine, type FeedbackDiagnosticsOutcome, type FeedbackShot, type FeedbackStatus } from '../../../shared/feedback-types';
+import { FEEDBACK_DIAGNOSTICS, type FeedbackCaptureResult, type FeedbackDiagnosticLine, type FeedbackDiagnosticsOutcome, type FeedbackSendInput, type FeedbackShot, type FeedbackStatus } from '../../../shared/feedback-types';
 import { savedReportsNeedSend, useFeedbackStore, type FeedbackReopened } from '../../stores/feedbackStore';
 import { useUIStore } from '../../stores/uiStore';
 import { ipcErrorMessage } from '../../utils/ipc-error';
-import { compositeAnnotatedPng, type Stroke } from './annotation';
+import { beginSend, blobToBase64, useEditorPreview, useScreenshotEditorModel, type EditorOptions } from './pilot-editor';
+import { pilotHooks } from './pilot-hooks';
+import { FEEDBACK_COPY, logsControl, type LogsFacts } from './pilot-vendor/feedback-copy.mjs';
+import { mountScreenshotEditor, renderMarks, type ScreenshotEditorModel, type ScreenshotEditorState, type ScreenshotPreview } from './pilot-vendor/screenshot-editor.mjs';
 import { ScreenshotAnnotator } from './ScreenshotAnnotator';
 
 interface Props {
@@ -12,6 +15,8 @@ interface Props {
   /** Set when this draft replaced one whose enrollment changed: what it keeps. */
   reopened?: FeedbackReopened | null;
   onClose: () => void;
+  /** Pilot: tests inject a raster, as jsdom has no canvas or createImageBitmap. */
+  editorOptions?: EditorOptions;
 }
 
 type Phase = 'review' | 'sending' | 'saved';
@@ -47,6 +52,70 @@ function diagnosticsOutcomeText(outcome: FeedbackDiagnosticsOutcome): string {
   return outcome.status === 'left_out' ? 'Diagnostics left out.' : NO_DIAGNOSTICS_TEXT[outcome.reason];
 }
 
+/** Clubhouse's true facts for the logs control. Whether diagnostics are in the report is main's to say. */
+function logsFacts(draft: FeedbackCaptureResult, checked: boolean): LogsFacts {
+  return {
+    attach: draft.diagnostics?.status === 'available' ? 'report-lines' : 'none',
+    available: draft.diagnostics?.status === 'available',
+    // Telemetry is off unless turned on in Settings, and an unticked box sends no marker (feedback-service.ts sendExcerpt).
+    automatic: 'separate-consent',
+    marker: false,
+    checked,
+    lines: draft.diagnosticsInReport
+      ? { delivery: 'in-report' }
+      : { delivery: 'separate', lostOnQuit: true, retention: `They are kept for ${FEEDBACK_DIAGNOSTICS.retentionDays} days, even if the report is deleted.` },
+  };
+}
+
+/** The selected view with its marks, at the size it's shown: a full-size canvas would hold a second copy of the image. */
+function ComposerPreview({ frame, snapshot, onOpen, disabled }: { frame: ScreenshotPreview | null; snapshot: ScreenshotEditorState; onOpen: () => void; disabled: boolean }) {
+  const ref = useRef<HTMLCanvasElement>(null);
+  useEffect(() => {
+    const canvas = ref.current;
+    const context = canvas?.getContext('2d', { alpha: false });
+    if (!canvas || !context || !frame) return;
+    const scale = Math.min(1, 520 / frame.width, 300 / frame.height);
+    canvas.width = Math.max(1, Math.round(frame.width * scale));
+    canvas.height = Math.max(1, Math.round(frame.height * scale));
+    context.setTransform(scale, 0, 0, scale, 0, 0);
+    if (frame.draw(context)) renderMarks(context, snapshot.marks, { width: frame.width, height: frame.height });
+  }, [frame, snapshot.marks]);
+  return (
+    <button type="button" onClick={onOpen} disabled={disabled || !frame} aria-label="Open the screenshot editor" className="block mx-auto rounded-md border border-surface-0 focus-ring disabled:cursor-default" data-testid="pilot-edit-react">
+      <canvas ref={ref} className="block max-w-full max-h-[300px]" data-testid="feedback-preview" />
+    </button>
+  );
+}
+
+/** The SDK's ready-made view inside the app's Modal, for comparing. Its theme comes through custom properties. */
+function MountedEditor({ model, carriedOver, onClose }: { model: ScreenshotEditorModel; carriedOver: boolean; onClose: () => void }) {
+  const ref = useRef<HTMLDivElement>(null);
+  const close = useRef(onClose);
+  close.current = onClose;
+  useEffect(() => {
+    // No API says a fresh model's edits are final, so a reopened draft swaps the words instead.
+    const copy = carriedOver ? { ...FEEDBACK_COPY, confirm: { ...FEEDBACK_COPY.confirm, clearReversible: FEEDBACK_COPY.confirm.clearFinal } } : FEEDBACK_COPY;
+    const view = mountScreenshotEditor(ref.current!, { model, copy, onDone: () => close.current(), onCancel: () => close.current() });
+    return () => view.destroy();
+  }, [model, carriedOver]);
+  return (
+    <div
+      ref={ref}
+      data-testid="pilot-mounted-slot"
+      style={{
+        '--feedback-editor-background': 'rgb(var(--ctp-base))',
+        '--feedback-editor-text': 'rgb(var(--ctp-text))',
+        '--feedback-editor-panel': 'rgb(var(--ctp-mantle))',
+        '--feedback-editor-stage': 'rgb(var(--ctp-crust))',
+        '--feedback-editor-accent': 'rgb(var(--ctp-accent))',
+        '--feedback-editor-on-accent': 'rgb(var(--ctp-crust))',
+        '--feedback-editor-button': 'rgb(var(--ctp-surface0))',
+        '--feedback-editor-border': 'rgb(var(--ctp-surface1))',
+      } as React.CSSProperties}
+    />
+  );
+}
+
 /** States that still hold the enrollment's credential, so delivery only needs the network. */
 const DELIVERS_WHEN_REACHABLE: ReadonlySet<FeedbackStatus['state']> = new Set(['connected', 'offline', 'checking', 'stopped']);
 
@@ -68,7 +137,7 @@ function savedText(status: FeedbackStatus | null): string {
  * "Send without screenshot" or Cancel. After sending it shows "Saved" (queued on this
  * computer), then "Received" once the server acknowledges the report.
  */
-export function FeedbackReviewDialog({ draft, reopened = null, onClose }: Props) {
+export function FeedbackReviewDialog({ draft, reopened = null, onClose, editorOptions }: Props) {
   const reopenDraft = useFeedbackStore((s) => s.reopenDraft);
   const [notes, setNotes] = useState(reopened?.notes ?? '');
   const [phase, setPhase] = useState<Phase>('review');
@@ -81,24 +150,22 @@ export function FeedbackReviewDialog({ draft, reopened = null, onClose }: Props)
   const received = useFeedbackStore((s) => (reportId ? s.status?.received.includes(reportId) === true : false));
   const saved = useFeedbackStore((s) => savedText(s.status));
   const shots = shotsOf(draft);
-  const [shotIndex, setShotIndex] = useState(0);
-  // Ink is per window: switching windows keeps each one's drawing.
-  const [inkByShot, setInkByShot] = useState<Stroke[][]>([]);
-  const shot = shots[shotIndex] ?? null;
-  const strokes = inkByShot[shotIndex] ?? [];
-  const setStrokes = useCallback((next: Stroke[]) => {
-    setInkByShot((all) => { const copy = [...all]; copy[shotIndex] = next; return copy; });
-  }, [shotIndex]);
-  const hasScreenshot = shot !== null;
-
-  // Ink belongs to one capture: a new capture starts clean.
-  useEffect(() => { setInkByShot([]); setShotIndex(0); }, [draft.draftId]);
+  const { model, snapshot } = useScreenshotEditorModel(shots, editorOptions ?? pilotHooks.editorOptions);
+  const frame = useEditorPreview(model, snapshot);
+  const [editor, setEditor] = useState<'react' | 'mounted' | null>(null);
+  const shotIndex = Math.max(0, snapshot?.views.findIndex((view) => view.id === snapshot.activeView) ?? 0);
+  const views = snapshot?.views ?? [];
+  const hasScreenshot = snapshot !== null && snapshot.status !== 'removed' && snapshot.status !== 'failed' && snapshot.included;
+  const canSend = hasScreenshot || notes.trim() !== '';
+  const carriedOver = reopened !== null;
+  const setShotIndex = (i: number) => { if (views[i]) model?.setActiveView(views[i].id); };
+  const logs = logsControl(logsFacts(draft, includeDiagnostics));
 
   const onShotKey = (e: KeyboardEvent<HTMLDivElement>) => {
     const step = e.key === 'ArrowRight' || e.key === 'ArrowDown' ? 1 : e.key === 'ArrowLeft' || e.key === 'ArrowUp' ? -1 : 0;
     if (!step || phase === 'sending') return;
     e.preventDefault();
-    const next = (shotIndex + step + shots.length) % shots.length;
+    const next = (shotIndex + step + views.length) % views.length;
     setShotIndex(next);
     e.currentTarget.querySelectorAll<HTMLButtonElement>('[role="radio"]')[next]?.focus();
   };
@@ -108,24 +175,29 @@ export function FeedbackReviewDialog({ draft, reopened = null, onClose }: Props)
     onClose();
   }, [phase, draft.draftId, onClose]);
 
-  const send = async (includeScreenshot: boolean) => {
+  const send = async () => {
     setPhase('sending');
     setError(null);
     try {
-      // The drawing is baked into the capture at full size; main checks it is the same image size.
-      const annotatedPng = includeScreenshot && shot && strokes.length > 0
-        ? await compositeAnnotatedPng(shot.preview, strokes)
-        : undefined;
-      const result = await window.clubhouse.feedback.send({
+      // The first tap ends reversibility, and a retry goes through here with the same bytes.
+      const begun = model ? await beginSend(model) : null;
+      const bytes = begun?.bytes ?? null;
+      // The model dropped the other windows and the original, and these strings still hold them.
+      if (model) useFeedbackStore.setState({ draft: { ...draft, preview: null, shots: [] } });
+      // Always the bytes: `edited` can't say whether they differ from the capture. Main compares.
+      const annotatedPng = bytes ? await blobToBase64(bytes) : undefined;
+      const result = await (pilotHooks.send ?? window.clubhouse.feedback.send)({
         draftId: draft.draftId,
         notes,
-        includeScreenshot,
+        includeScreenshot: bytes !== null,
         ...(draft.correlation && { includeCorrelation }),
         ...(diagnostics?.status === 'available' && { includeDiagnostics }),
         scene: currentScene(),
         ...(annotatedPng !== undefined && { annotatedPng }),
-        ...(includeScreenshot && shot?.shotId && { shotId: shot.shotId }),
-      });
+        ...(begun?.shotId && { shotId: begun.shotId }),
+        // feedback-main-pin is adding this on its own branch: a left-out Send only.
+        ...(begun && !bytes && begun.noEdits && { noEdits: true }),
+      } as FeedbackSendInput);
       if (result.status === 'enrollment-changed') {
         // Nothing was saved. A new report with new contents needs its own review and Send.
         reopenDraft(result.draft, { notes, includeCorrelation, includeDiagnostics });
@@ -161,31 +233,56 @@ export function FeedbackReviewDialog({ draft, reopened = null, onClose }: Props)
                 Your feedback connection changed, so nothing was sent. This is a new report with your note and image. Check what it includes below, then choose Send.
               </p>
             )}
-            {shots.length > 1 && (
+            {views.length > 1 && (
               <div className="flex gap-2 overflow-x-auto" role="radiogroup" aria-label="Window to send" onKeyDown={onShotKey} data-testid="feedback-shots">
-                {shots.map((s, i) => (
-                  <button
-                    key={s.shotId || i}
-                    type="button"
-                    role="radio"
-                    aria-checked={i === shotIndex}
-                    // Roving tabindex: one Tab stop for the group, arrows move between windows.
-                    tabIndex={i === shotIndex ? 0 : -1}
-                    disabled={phase === 'sending'}
-                    onClick={() => setShotIndex(i)}
-                    className={`flex-shrink-0 w-32 p-1 rounded-md border text-left focus-ring disabled:opacity-50 ${i === shotIndex ? 'border-ctp-accent bg-surface-0' : 'border-surface-1 hover:bg-surface-0'}`}
-                    data-testid={`feedback-shot-${i}`}
-                  >
-                    <img src={s.preview} alt="" className="block w-full h-16 object-cover rounded-sm bg-ctp-base" draggable={false} />
-                    <span className="block mt-1 text-xs text-ctp-subtext1 truncate" title={s.label}>{s.label}</span>
-                  </button>
-                ))}
+                {views.map((view, i) => {
+                  const thumb = shots.find((s) => s.shotId === view.id)?.preview;
+                  return (
+                    <button
+                      key={view.id}
+                      type="button"
+                      role="radio"
+                      aria-checked={i === shotIndex}
+                      // Roving tabindex: one Tab stop for the group, arrows move between windows.
+                      tabIndex={i === shotIndex ? 0 : -1}
+                      disabled={phase === 'sending'}
+                      onClick={() => setShotIndex(i)}
+                      className={`flex-shrink-0 w-32 p-1 rounded-md border text-left focus-ring disabled:opacity-50 ${i === shotIndex ? 'border-ctp-accent bg-surface-0' : 'border-surface-1 hover:bg-surface-0'}`}
+                      data-testid={`feedback-shot-${i}`}
+                    >
+                      {thumb && <img src={thumb} alt="" className="block w-full h-16 object-cover rounded-sm bg-ctp-base" draggable={false} />}
+                      <span className="block mt-1 text-xs text-ctp-subtext1 truncate" title={view.label}>{view.label}</span>
+                    </button>
+                  );
+                })}
               </div>
             )}
-            {shot ? (
-              <ScreenshotAnnotator key={shotIndex} src={shot.preview} strokes={strokes} onChange={setStrokes} disabled={phase === 'sending'} />
+            {snapshot && snapshot.status !== 'removed' ? (
+              <div className="space-y-2">
+                {snapshot.status === 'failed' ? (
+                  <p className="text-sm text-ctp-subtext0" data-testid="pilot-failed">{FEEDBACK_COPY.notes.unavailableFailed}</p>
+                ) : (
+                  <ComposerPreview frame={frame} snapshot={snapshot} disabled={phase === 'sending' || !snapshot.included} onOpen={() => setEditor('react')} />
+                )}
+                <div className="flex flex-wrap items-center gap-3 text-xs text-ctp-subtext0">
+                  <label>
+                    <input type="checkbox" checked={snapshot.included} disabled={phase === 'sending'} onChange={(e) => model?.setIncluded(e.target.checked)} data-testid="feedback-include" />{' '}
+                    {FEEDBACK_COPY.labels.includeScreenshot}
+                  </label>
+                  <button type="button" disabled={phase === 'sending'} onClick={() => model?.remove()} className="underline disabled:opacity-50" data-testid="feedback-remove">Remove</button>
+                  <button type="button" disabled={phase === 'sending' || !snapshot.included || !frame} onClick={() => setEditor('mounted')} className="underline disabled:opacity-50" data-testid="pilot-edit-mounted">Edit (mounted view)</button>
+                </div>
+                <p className="text-xs text-ctp-subtext0" data-testid="pilot-state">
+                  {!snapshot.included ? FEEDBACK_COPY.notes.screenshotLeftOut
+                    : snapshot.editsAreFinal || carriedOver ? FEEDBACK_COPY.notes.editedFinal
+                    : snapshot.edited ? FEEDBACK_COPY.notes.edited.replace('{action}', 'Click')
+                    : FEEDBACK_COPY.notes.imageTools.replace('{action}', 'Click')}
+                </p>
+                {editor === 'react' && <ScreenshotAnnotator model={model!} snapshot={snapshot} frame={frame} carriedOver={carriedOver} onClose={() => setEditor(null)} />}
+                {editor === 'mounted' && <MountedEditor model={model!} carriedOver={carriedOver} onClose={() => setEditor(null)} />}
+              </div>
             ) : (
-              <p className="text-sm text-ctp-subtext0">{reopened ? 'This report has no screenshot.' : 'No screenshot could be taken. You can still send a note.'}</p>
+              <p className="text-sm text-ctp-subtext0">{reopened ? 'This report has no screenshot.' : snapshot ? 'The screenshot was removed. You can still send a note.' : 'No screenshot could be taken. You can still send a note.'}</p>
             )}
             <label htmlFor="feedback-notes" className="block text-sm text-ctp-text">What happened?</label>
             <textarea
@@ -214,14 +311,12 @@ export function FeedbackReviewDialog({ draft, reopened = null, onClose }: Props)
             {diagnostics?.status === 'available' && (
               <div className="text-xs text-ctp-subtext0" data-testid="feedback-diagnostics">
                 <label className="block">
-                  <input type="checkbox" checked={includeDiagnostics} disabled={phase === 'sending'} onChange={e => setIncludeDiagnostics(e.target.checked)} />{' '}
-                  Include recent diagnostics
+                  <input type="checkbox" checked={logs.checked} disabled={phase === 'sending' || !logs.enabled} onChange={e => setIncludeDiagnostics(e.target.checked)} />{' '}
+                  {logs.label}
                 </label>
-                <span className="block mt-1">
+                <span className="block mt-1" data-testid="pilot-logs-explanation">
                   Connection, agent and chat events from the last {FEEDBACK_DIAGNOSTICS.windowMinutes} minutes, with no messages, paths or chat content.
-                  {' '}{draft.diagnosticsInReport
-                    ? 'They are saved and sent with this report.'
-                    : `They are sent separately from this report and kept for ${FEEDBACK_DIAGNOSTICS.retentionDays} days, even if the report is deleted. They can be lost if Clubhouse quits before they are sent.`}
+                  {' '}{logs.explanation.join(' ')}
                 </span>
                 <details className="mt-1">
                   <summary className="cursor-pointer">Show {diagnostics.lines.length} {diagnostics.lines.length === 1 ? 'line' : 'lines'}{diagnostics.dropped > 0 && ` (${diagnostics.dropped} older left out)`}</summary>
@@ -241,18 +336,11 @@ export function FeedbackReviewDialog({ draft, reopened = null, onClose }: Props)
               </button>
               <button
                 type="button"
-                onClick={() => void send(false)}
-                disabled={phase === 'sending' || notes.trim() === ''}
-                title={notes.trim() === '' ? 'Add a note to send without the screenshot' : undefined}
-                className="px-3 py-1.5 text-sm rounded-md bg-surface-0 text-ctp-text hover:bg-surface-1 disabled:opacity-50"
-              >
-                Send without screenshot
-              </button>
-              <button
-                type="button"
-                onClick={() => void send(hasScreenshot)}
-                disabled={phase === 'sending' || (!hasScreenshot && notes.trim() === '')}
+                onClick={() => void send()}
+                disabled={phase === 'sending' || !canSend || snapshot?.flattening === true}
+                title={canSend ? undefined : FEEDBACK_COPY.notes.emptySend}
                 className="px-3 py-1.5 text-sm rounded-md bg-ctp-accent text-white disabled:opacity-50"
+                data-testid="feedback-send"
               >
                 {phase === 'sending' ? 'Sending…' : 'Send'}
               </button>

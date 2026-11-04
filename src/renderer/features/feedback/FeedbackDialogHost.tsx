@@ -1,4 +1,5 @@
 import { useEffect } from 'react';
+import './pilot-harness';
 import { useFeedbackStore } from '../../stores/feedbackStore';
 import { FeedbackReviewDialog } from './FeedbackReviewDialog';
 
