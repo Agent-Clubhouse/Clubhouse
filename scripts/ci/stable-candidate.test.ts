@@ -805,7 +805,8 @@ describe('.github/workflows/stable-candidate.yml', () => {
 });
 
 describe('scripts/ci/stable-candidate.mjs', () => {
-  const text = readFileSync(SCRIPT, 'utf8');
+  // Windows checks this out with CRLF.
+  const text = readFileSync(SCRIPT, 'utf8').replace(/\r\n/g, '\n');
 
   it('checks the context before it imports Forge or does anything else', () => {
     const guard = text.indexOf('assertDispatchContext(process.env);');
