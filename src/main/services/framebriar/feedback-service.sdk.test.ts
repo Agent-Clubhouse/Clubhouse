@@ -8,15 +8,17 @@
  * `connection-uncertain` and `enrollment-response-rejected` never turn an enrolled install off. Only disconnect turns it off, or
  * finding the stored enrollment gone. An invitation that fails on a fresh install leaves it off.
  */
+import { createHash } from 'crypto';
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createFramebriar, type Framebriar } from '../../vendor/framebriar/adapters/node/index.mjs';
 import { asyncOnlySafeStorage, fakeKeychain } from '../../telemetry/__test-utils__/fake-safe-storage';
-import type { FeedbackDiagnostics } from '../../../shared/feedback-types';
+import type { FeedbackDiagnostics, FeedbackSendInput, FeedbackSendResult } from '../../../shared/feedback-types';
+import type { FeedbackCorrelationSnapshot } from '../../telemetry/feedback-incident';
 import { toDiagnosticsV1 } from './feedback-diagnostics-v1';
-import { FeedbackService, type FeedbackLog } from './feedback-service';
+import { FeedbackService, fitsSource, type FeedbackBreadcrumb, type FeedbackLog } from './feedback-service';
 import fixture from './fixtures/held-reports-v1.json';
 
 const NOW = Date.parse('2026-11-01T12:00:00.000Z');
@@ -55,8 +57,12 @@ const cleanups: Array<() => Promise<void> | void> = [];
 let dataDir: string;
 let keychain: ReturnType<typeof fakeKeychain>;
 
-function harness({ reportDiagnosticsField = true, online = false, log }: { reportDiagnosticsField?: boolean; online?: boolean; log?: FeedbackLog } = {}) {
-  const state = { now: NOW, online, statusThrows: false };
+function harness({ reportDiagnosticsField = true, online = false, log, breadcrumbs, captureCorrelation, diagnostics = () => AVAILABLE }: {
+  reportDiagnosticsField?: boolean; online?: boolean; log?: FeedbackLog; breadcrumbs?: () => FeedbackBreadcrumb[];
+  captureCorrelation?: () => FeedbackCorrelationSnapshot; diagnostics?: () => FeedbackDiagnostics;
+} = {}) {
+  /** submitFails: what the next submit throws, `saved` first if the report really reached the outbox. */
+  const state = { now: NOW, online, statusThrows: false, submitFails: null as { code: string; saved: boolean } | null, holdSubmit: null as Promise<void> | null };
   const reports: Array<{ authorization: string; body: { id: string; diagnostics?: unknown } }> = [];
   /** Set by a test to answer the next access calls; the default grants the first enrollment. */
   const access: { redeem: () => Response | Promise<Response>; refresh: () => Response } = {
@@ -93,11 +99,22 @@ function harness({ reportDiagnosticsField = true, online = false, log }: { repor
         now: () => { if (state.statusThrows) throw new Error('clock broke'); return state.now; },
       }) as RealSdk;
       // The SDK's objects are frozen, so this records through a copy.
-      sdk = { ...real, feedback: { ...real.feedback, prepare: (input) => { const result = real.feedback.prepare(input); prepared.push(result); return result; } } };
+      sdk = { ...real, feedback: { ...real.feedback,
+        prepare: (input) => { const result = real.feedback.prepare(input); prepared.push(result); return result; },
+        submit: async (value, options) => {
+          await state.holdSubmit;
+          const fails = state.submitFails;
+          state.submitFails = null;
+          if (fails && !fails.saved) throw Object.assign(new Error('Local feedback storage failed'), { code: fails.code });
+          const ack = await real.feedback.submit(value, options);
+          if (fails) throw Object.assign(new Error('Local feedback storage failed'), { code: fails.code });
+          return ack;
+        },
+      } };
       return sdk;
     }) as never,
-    now: () => state.now, captureCorrelation: () => ({ data: {} }) as never,
-    diagnostics: () => AVAILABLE, createExcerptTelemetry: excerpt as never, reportDiagnosticsField, log,
+    now: () => state.now, captureCorrelation: captureCorrelation ?? (() => ({ data: {} }) as never), breadcrumbs,
+    diagnostics, createExcerptTelemetry: excerpt as never, reportDiagnosticsField, log,
   });
   cleanups.push(async () => { state.statusThrows = false; await service.shutdown(); });
   return {
@@ -117,6 +134,9 @@ function harness({ reportDiagnosticsField = true, online = false, log }: { repor
       const items = await (sdk as RealSdk).outbox.list();
       return items.map((item) => JSON.parse(readFileSync(join((sdk as RealSdk).outbox.dir, 'reports', item.id, 'report.json'), 'utf-8')).report);
     },
+    /** The image bytes a saved report would deliver. */
+    media: (id: string) => readFileSync(join((sdk as RealSdk).outbox.dir, 'reports', id, 'media.png')),
+    binding: (id: string) => JSON.parse(readFileSync(join((sdk as RealSdk).outbox.dir, 'reports', id, 'binding.json'), 'utf-8')).enrollmentRef,
   };
 }
 type Harness = ReturnType<typeof harness>;
@@ -338,7 +358,7 @@ describe('the report field with the real SDK', () => {
       expect(JSON.stringify(saved)).toBe(JSON.stringify(first.report));
     }, 30_000);
 
-    it('through the service: a retry after a change reopens with a new id, and only a new Send saves', async () => {
+    it('through the service: a retry after a change reopens with a new id and the same capture time, and only a new Send saves', async () => {
       const h = harness();
       await h.service.connect(FIRST_INVITE);
       const draft = await failedSave(h);
@@ -363,7 +383,7 @@ describe('the report field with the real SDK', () => {
       expect(sent.status).toBe('saved-local');
       const saved = (await h.saved()).find((report) => report.id === (sent as { id: string }).id);
       expect(saved?.id).not.toBe(old.report.id);
-      expect(saved?.capturedAt).not.toBe(old.report.capturedAt);
+      expect(saved?.capturedAt).toBe(old.report.capturedAt);
       expect(await h.saved()).toHaveLength(count + 1);
       expect(h.excerpt).not.toHaveBeenCalled();
     }, 30_000);
@@ -407,12 +427,550 @@ describe('the report field with the real SDK', () => {
       await expect(h.service.send({ draftId: draft.draftId, notes: 'edited', includeScreenshot: true, includeDiagnostics: true })).resolves.toMatchObject({ status: 'enrollment-changed' });
     }, 30_000);
 
-    it('an edited retry under the same enrollment is still refused', async () => {
-      const h = harness();
+  });
+
+  /** Feedback composer contract, sections 2, 3 and 5, and the hosts-holding-bytes rule in section 8. */
+  describe('the reviewed bytes', () => {
+    const CAPTURE = pngOf(2880, 1800, 'the original capture');
+    const OTHER = pngOf(1600, 1000, 'another window');
+    const INK = pngOf(2880, 1800, 'capture with ink');
+    const b64 = (png: Buffer) => png.toString('base64');
+    const FAILED_SAVE = { code: 'storage-full', saved: false };
+    const UNKNOWN_SAVE = { code: 'storage-unavailable', saved: true };
+
+    async function opened(h: Harness) {
       await h.service.connect(FIRST_INVITE);
-      const draft = await failedSave(h);
-      await expect(h.service.send({ draftId: draft.draftId, notes: 'edited', includeScreenshot: true, includeDiagnostics: true })).rejects.toMatchObject({ code: 'feedback-review-changed' });
-    }, 30_000);
+      return h.service.captureDraft([{ label: 'Main window', grab: async () => CAPTURE }, { label: 'Pop-out', grab: async () => OTHER }]);
+    }
+    const send = (h: Harness, draftId: string, over: Partial<FeedbackSendInput> = {}) => h.service.send({ draftId, notes: 'it broke', includeScreenshot: true, ...over });
+    const enrollAgain = async (h: Harness) => {
+      await h.service.disconnect();
+      h.access.redeem = () => json(h.grant(SECOND_TOKEN, 's'));
+      await h.service.connect(SECOND_INVITE);
+    };
+    const reopenedFrom = (result: FeedbackSendResult) => {
+      if (result.status !== 'enrollment-changed') throw new Error(`Expected a reopen, got ${result.status}`);
+      return result.draft;
+    };
+    const savedId = (result: FeedbackSendResult) => {
+      if (result.status !== 'saved-local') throw new Error(`Expected a save, got ${result.status}`);
+      return result.id;
+    };
+
+    describe('no fallback to the original', () => {
+      it('a pinned Send, a cached prepare: omitted bytes fail, nothing is saved, and the same bytes keep the id', async () => {
+        const h = harness();
+        const { draftId } = await opened(h);
+        h.state.submitFails = FAILED_SAVE;
+        await expect(send(h, draftId, { annotatedPng: b64(INK) })).rejects.toMatchObject({ code: 'storage-full' });
+        const first = await h.prepared.at(-1) as { report: { id: string } };
+
+        await expect(send(h, draftId)).rejects.toMatchObject({ code: 'flattened-required' });
+        await expect(send(h, draftId)).rejects.toMatchObject({ code: 'flattened-required' });
+        expect(await h.saved()).toEqual([]);
+
+        const id = savedId(await send(h, draftId, { annotatedPng: b64(INK) }));
+        expect(id).toBe(first.report.id);
+        expect(h.media(id).equals(INK)).toBe(true);
+      });
+
+      it('a pinned Send, a failed prepare with no key cached: omitted bytes still fail', async () => {
+        const h = harness();
+        const { draftId } = await opened(h);
+        h.state.statusThrows = true;
+        await expect(send(h, draftId, { annotatedPng: b64(INK) })).rejects.toMatchObject({ code: 'feedback-unavailable' });
+        h.state.statusThrows = false;
+        await expect(send(h, draftId)).rejects.toMatchObject({ code: 'flattened-required' });
+        expect(await h.saved()).toEqual([]);
+        expect(h.media(savedId(await send(h, draftId, { annotatedPng: b64(INK) }))).equals(INK)).toBe(true);
+      });
+
+      it('the original offered as the flattened image is refused too', async () => {
+        const h = harness();
+        const { draftId } = await opened(h);
+        h.state.submitFails = FAILED_SAVE;
+        await expect(send(h, draftId, { annotatedPng: b64(INK) })).rejects.toMatchObject({ code: 'storage-full' });
+        await expect(send(h, draftId, { annotatedPng: b64(CAPTURE) })).rejects.toMatchObject({ code: 'flattened-required' });
+        expect(await h.saved()).toEqual([]);
+      });
+
+      it('flattened bytes that fail validation also end the fallback', async () => {
+        const h = harness();
+        const { draftId } = await opened(h);
+        await expect(send(h, draftId, { annotatedPng: b64(Buffer.from('not an image')) })).rejects.toMatchObject({ code: 'invalid-media' });
+        await expect(send(h, draftId)).rejects.toMatchObject({ code: 'flattened-required' });
+        expect(await h.saved()).toEqual([]);
+      });
+
+      it('a text-only retry after a pinned Send goes, with no image', async () => {
+        const h = harness();
+        const { draftId } = await opened(h);
+        h.state.submitFails = FAILED_SAVE;
+        await expect(send(h, draftId, { annotatedPng: b64(INK) })).rejects.toMatchObject({ code: 'storage-full' });
+        savedId(await send(h, draftId, { includeScreenshot: false }));
+        const [report] = await h.saved();
+        expect(report.media).toBeNull();
+      });
+
+      it('a first Send without edits sends the capture, and retries it under its id with no bytes', async () => {
+        const h = harness();
+        const { draftId } = await opened(h);
+        h.state.submitFails = FAILED_SAVE;
+        await expect(send(h, draftId)).rejects.toMatchObject({ code: 'storage-full' });
+        const first = await h.prepared.at(-1) as { report: { id: string } };
+        const id = savedId(await send(h, draftId));
+        expect(id).toBe(first.report.id);
+        expect(h.media(id).equals(CAPTURE)).toBe(true);
+      });
+
+      it('the capture offered as flattened bytes on a first Send is that same unedited Send', async () => {
+        const h = harness();
+        const { draftId } = await opened(h);
+        h.state.submitFails = FAILED_SAVE;
+        await expect(send(h, draftId, { annotatedPng: b64(CAPTURE) })).rejects.toMatchObject({ code: 'storage-full' });
+        const first = await h.prepared.at(-1) as { report: { id: string } };
+        const id = savedId(await send(h, draftId, { annotatedPng: b64(CAPTURE) }));
+        expect(id).toBe(first.report.id);
+      });
+
+      it('marks after an unedited first Send pin those bytes, and the capture is gone from then on', async () => {
+        const h = harness();
+        const { draftId } = await opened(h);
+        h.state.submitFails = FAILED_SAVE;
+        await expect(send(h, draftId)).rejects.toMatchObject({ code: 'storage-full' });
+        h.state.submitFails = FAILED_SAVE;
+        await expect(send(h, draftId, { annotatedPng: b64(INK) })).rejects.toMatchObject({ code: 'storage-full' });
+        await expect(send(h, draftId)).rejects.toMatchObject({ code: 'flattened-required' });
+        await expect(send(h, draftId, { annotatedPng: b64(CAPTURE) })).rejects.toMatchObject({ code: 'flattened-required' });
+        expect(await h.saved()).toEqual([]);
+      });
+    });
+
+    describe('a first Send that leaves the image out', () => {
+      it('ends reversibility: including the image later needs flattened bytes, and the capture is refused', async () => {
+        const h = harness();
+        const { draftId } = await opened(h);
+        h.state.submitFails = FAILED_SAVE;
+        await expect(send(h, draftId, { includeScreenshot: false })).rejects.toMatchObject({ code: 'storage-full' });
+        await expect(send(h, draftId)).rejects.toMatchObject({ code: 'flattened-required' });
+        await expect(send(h, draftId, { annotatedPng: b64(CAPTURE) })).rejects.toMatchObject({ code: 'flattened-required' });
+        expect(await h.saved()).toEqual([]);
+      });
+
+      it('retries text-only under its id', async () => {
+        const h = harness();
+        const { draftId } = await opened(h);
+        h.state.submitFails = FAILED_SAVE;
+        await expect(send(h, draftId, { includeScreenshot: false })).rejects.toMatchObject({ code: 'storage-full' });
+        const first = await h.prepared.at(-1) as { report: { id: string } };
+        expect(savedId(await send(h, draftId, { includeScreenshot: false }))).toBe(first.report.id);
+      });
+
+      it('can still include the image as flattened bytes, as a new report, from whichever window', async () => {
+        const h = harness();
+        const { draftId } = await opened(h);
+        h.state.submitFails = FAILED_SAVE;
+        await expect(send(h, draftId, { includeScreenshot: false })).rejects.toMatchObject({ code: 'storage-full' });
+        const first = await h.prepared.at(-1) as { report: { id: string } };
+        const drawn = pngOf(1600, 1000, 'pop-out with ink');
+        const id = savedId(await send(h, draftId, { shotId: 's1', annotatedPng: b64(drawn) }));
+        expect(id).not.toBe(first.report.id);
+        expect(h.media(id).equals(drawn)).toBe(true);
+      });
+    });
+
+    describe('other windows', () => {
+      it.each<[string, (h: Harness, draftId: string) => Promise<unknown>]>([
+        ['with flattened bytes', (h, draftId) => send(h, draftId, { annotatedPng: b64(INK) })],
+        ['without edits', (h, draftId) => send(h, draftId)],
+      ])('are gone after a first Send %s, whatever the failure', async (_name, first) => {
+        const h = harness();
+        const { draftId } = await opened(h);
+        h.state.submitFails = FAILED_SAVE;
+        await expect(first(h, draftId)).rejects.toMatchObject({ code: 'storage-full' });
+        await expect(send(h, draftId, { shotId: 's1' })).rejects.toMatchObject({ code: 'shot-unavailable' });
+        await expect(send(h, draftId, { shotId: 's1', annotatedPng: b64(pngOf(1600, 1000, 'pop-out with ink')) })).rejects.toMatchObject({ code: 'shot-unavailable' });
+        expect(await h.saved()).toEqual([]);
+      });
+
+      it('a window chosen by id is the one that stays, with no id meaning that one from then on', async () => {
+        const h = harness();
+        const { draftId } = await opened(h);
+        h.state.submitFails = FAILED_SAVE;
+        await expect(send(h, draftId, { shotId: 's1' })).rejects.toMatchObject({ code: 'storage-full' });
+        expect(h.media(savedId(await send(h, draftId))).equals(OTHER)).toBe(true);
+      });
+
+      it('an unknown window with flattened bytes still ends the fallback', async () => {
+        const h = harness();
+        const { draftId } = await opened(h);
+        await expect(send(h, draftId, { shotId: 's9', annotatedPng: b64(INK) })).rejects.toMatchObject({ code: 'shot-unavailable' });
+        await expect(send(h, draftId)).rejects.toMatchObject({ code: 'flattened-required' });
+      });
+    });
+
+    describe('fit-down', () => {
+      it.each([
+        ['half the size', 1440, 900],
+        ['rounded up a pixel', 1441, 900],
+        ['rounded down a pixel', 1440, 899],
+        ['fitted to a long-side limit', 2048, 1280],
+        ['one pixel narrower', 2879, 1800],
+      ])('accepts %s, and sends those bytes', async (_name, width, height) => {
+        const h = harness();
+        const { draftId } = await opened(h);
+        const fitted = pngOf(width, height, 'fitted');
+        const id = savedId(await send(h, draftId, { annotatedPng: b64(fitted) }));
+        expect(h.media(id).equals(fitted)).toBe(true);
+        const [report] = await h.saved();
+        expect(report.media).toMatchObject({ bytes: fitted.length });
+      });
+
+      it.each([
+        ['larger', 2881, 1801],
+        ['twice the size', 5760, 3600],
+        ['wider only', 2881, 1800],
+        ['another shape', 1440, 1000],
+        ['a far smaller shape', 100, 100],
+        ['no pixels', 0, 0],
+      ])('refuses %s', async (_name, width, height) => {
+        const h = harness();
+        const { draftId } = await opened(h);
+        await expect(send(h, draftId, { annotatedPng: b64(pngOf(width, height, 'wrong')) })).rejects.toMatchObject({ code: 'invalid-media' });
+        expect(await h.saved()).toEqual([]);
+      });
+
+      it('after a fit-down, that image is the source: anything larger is refused, and the same size or smaller is fine', async () => {
+        const h = harness();
+        const { draftId } = await opened(h);
+        h.state.submitFails = FAILED_SAVE;
+        const fitted = pngOf(1440, 900, 'fitted');
+        await expect(send(h, draftId, { annotatedPng: b64(fitted) })).rejects.toMatchObject({ code: 'storage-full' });
+        await expect(send(h, draftId, { annotatedPng: b64(INK) })).rejects.toMatchObject({ code: 'invalid-media' });
+        const marked = pngOf(1440, 900, 'fitted with a new mark');
+        expect(h.media(savedId(await send(h, draftId, { annotatedPng: b64(marked) }))).equals(marked)).toBe(true);
+      });
+
+      it('a capture with no readable size refuses any flattened image rather than guessing', async () => {
+        const h = harness();
+        await h.service.connect(FIRST_INVITE);
+        const { draftId } = await h.capture();
+        await expect(send(h, draftId, { annotatedPng: b64(INK) })).rejects.toMatchObject({ code: 'invalid-media' });
+      });
+
+      it('the size check is exact arithmetic on the rounding allowance', () => {
+        const source = { width: 3000, height: 2000 };
+        expect(fitsSource({ width: 1501, height: 1000 }, source)).toBe(true);
+        expect(fitsSource({ width: 1503, height: 1000 }, source)).toBe(false);
+        expect(fitsSource(source, source)).toBe(true);
+      });
+    });
+
+    describe('changed content after a failed Send', () => {
+      it('a definite failure: new id, only the new report saved, and no word about both', async () => {
+        const h = harness();
+        const { draftId } = await opened(h);
+        h.state.submitFails = FAILED_SAVE;
+        await expect(send(h, draftId, { annotatedPng: b64(INK) })).rejects.toMatchObject({ code: 'storage-full' });
+        const first = await h.prepared.at(-1) as { report: { id: string } };
+        const next = pngOf(2880, 1800, 'capture with more ink');
+        const result = await send(h, draftId, { annotatedPng: b64(next) });
+        expect(savedId(result)).not.toBe(first.report.id);
+        expect(result).not.toHaveProperty('earlierMayDeliver');
+        expect((await h.saved()).map((report) => report.id)).toEqual([savedId(result)]);
+        expect(h.media(savedId(result)).equals(next)).toBe(true);
+      });
+
+      it.each<[string, Partial<FeedbackSendInput>]>([
+        ['the note', { notes: 'it broke badly', annotatedPng: b64(INK) }],
+        ['the image', { annotatedPng: b64(pngOf(2880, 1800, 'capture with more ink')) }],
+        ['the diagnostics choice', { includeDiagnostics: true, annotatedPng: b64(INK) }],
+        ['leaving the image out', { includeScreenshot: false }],
+      ])('an unknown outcome, then %s changes: a new id, and both may be delivered', async (_name, over) => {
+        const h = harness();
+        const { draftId } = await opened(h);
+        h.state.submitFails = UNKNOWN_SAVE;
+        await expect(send(h, draftId, { annotatedPng: b64(INK) })).rejects.toMatchObject({ code: 'storage-unavailable' });
+        const first = await h.prepared.at(-1) as { report: { id: string } };
+        const result = await send(h, draftId, over);
+        expect(savedId(result)).not.toBe(first.report.id);
+        expect(result).toMatchObject({ earlierMayDeliver: true });
+        expect((await h.saved()).map((report) => report.id).sort()).toEqual([first.report.id, savedId(result)].sort());
+      });
+
+      it('an unknown outcome, then unchanged bytes: the same id, one report, and no word about both', async () => {
+        const h = harness();
+        const { draftId } = await opened(h);
+        h.state.submitFails = UNKNOWN_SAVE;
+        await expect(send(h, draftId, { annotatedPng: b64(INK) })).rejects.toMatchObject({ code: 'storage-unavailable' });
+        const first = await h.prepared.at(-1) as { report: { id: string } };
+        const count = h.prepared.length;
+        const result = await send(h, draftId, { annotatedPng: b64(INK) });
+        expect(savedId(result)).toBe(first.report.id);
+        expect(result).not.toHaveProperty('earlierMayDeliver');
+        expect(h.prepared).toHaveLength(count);
+        expect(await h.saved()).toHaveLength(1);
+      });
+
+      it('the word survives a later definite failure, and going back to the first content', async () => {
+        const h = harness();
+        const { draftId } = await opened(h);
+        h.state.submitFails = UNKNOWN_SAVE;
+        await expect(send(h, draftId, { annotatedPng: b64(INK) })).rejects.toMatchObject({ code: 'storage-unavailable' });
+        h.state.submitFails = FAILED_SAVE;
+        await expect(send(h, draftId, { notes: 'changed', annotatedPng: b64(INK) })).rejects.toMatchObject({ code: 'storage-full' });
+        await expect(send(h, draftId, { annotatedPng: b64(INK) })).resolves.toMatchObject({ earlierMayDeliver: true });
+      });
+
+      it('a second Send while one is running is refused, so only one prepared report can save', async () => {
+        const h = harness();
+        const { draftId } = await opened(h);
+        let release: () => void = () => {};
+        h.state.holdSubmit = new Promise<void>((resolve) => { release = resolve; });
+        const running = send(h, draftId, { annotatedPng: b64(INK) });
+        await vi.waitFor(() => expect(h.prepared).toHaveLength(1));
+        await expect(send(h, draftId, { notes: 'changed', annotatedPng: b64(pngOf(2880, 1800, 'more ink')) })).rejects.toMatchObject({ code: 'busy' });
+        await expect(send(h, draftId)).rejects.toMatchObject({ code: 'busy' });
+        h.state.holdSubmit = null;
+        release();
+        const id = savedId(await running);
+        expect(h.prepared).toHaveLength(1);
+        expect((await h.saved()).map((report) => report.id)).toEqual([id]);
+        expect(h.media(id).equals(INK)).toBe(true);
+      });
+
+      it('a retry changed while the enrollment moved reopens rather than saving', async () => {
+        const h = harness();
+        const { draftId } = await opened(h);
+        h.state.submitFails = FAILED_SAVE;
+        await expect(send(h, draftId, { annotatedPng: b64(INK) })).rejects.toMatchObject({ code: 'storage-full' });
+        await enrollAgain(h);
+        const next = pngOf(2880, 1800, 'more ink');
+        const reopened = reopenedFrom(await send(h, draftId, { annotatedPng: b64(next) }));
+        expect(reopened.preview).toBe(`data:image/png;base64,${b64(next)}`);
+        expect(await h.saved()).toEqual([]);
+      });
+    });
+
+    describe('provenance on reopen', () => {
+      const TRACE = { traceId: 'a'.repeat(32), spanId: 'b'.repeat(16) };
+      const FRESH_TRACE = { traceId: 'c'.repeat(32), spanId: 'd'.repeat(16) };
+      const CAPTURED_AT = new Date(NOW).toISOString();
+      /** What the app's correlation snapshot makes: an incident, and its first trace as the flat pair. */
+      const incidentAt = (at: string, trace: { traceId: string; spanId: string }): FeedbackCorrelationSnapshot => ({
+        data: {
+          capturedAt: at, ...trace,
+          incident: {
+            version: 1, id: '11111111-1111-4111-8111-111111111111', capturedAt: at, windowStart: at, windowEnd: at, availability: 'recorded',
+            phoneInstanceId: '22222222-2222-4222-8222-222222222222', hostInstanceIds: ['33333333-3333-4333-8333-333333333333'],
+            connectionIds: ['44444444-4444-4444-8444-444444444444'], traces: [trace],
+          },
+        } as FeedbackCorrelationSnapshot['data'],
+        summary: { scope: 'incident', capturedAt: at, traceCount: 1, hostCount: 1, phoneCount: 1, connectionCount: 1 },
+      });
+      /** Everything here changes between opening the report and sending the reopened one. */
+      function provenanceHarness() {
+        const live = { correlation: incidentAt(CAPTURED_AT, TRACE), crumb: 'view.agent', diagnostics: AVAILABLE };
+        const h = harness({
+          captureCorrelation: () => live.correlation,
+          breadcrumbs: () => [{ kind: 'event', atMs: NOW, code: live.crumb }],
+          diagnostics: () => live.diagnostics,
+        });
+        const later = () => {
+          h.state.now += HOUR;
+          const at = new Date(h.state.now).toISOString();
+          live.correlation = incidentAt(at, FRESH_TRACE);
+          live.crumb = 'view.settings';
+          live.diagnostics = { ...AVAILABLE, windowStart: new Date(h.state.now - HOUR).toISOString(), windowEnd: at, lines: [{ ...AVAILABLE.lines[0], at }] };
+        };
+        return { h, live, later };
+      }
+      const appCrumbs = (report: { breadcrumbs: Array<{ code: string }> }) => report.breadcrumbs.map((crumb) => crumb.code).filter((code) => !code.startsWith('diagnostics.'));
+
+      it('capture time, scene, session, traces and context stay with the pixels; only the id and ref change', async () => {
+        const { h, later } = provenanceHarness();
+        const draft = await opened(h);
+        h.state.submitFails = FAILED_SAVE;
+        await expect(send(h, draft.draftId, { scene: 'agents', annotatedPng: b64(INK) })).rejects.toMatchObject({ code: 'storage-full' });
+        const first = (await h.prepared.at(-1) as { report: Record<string, unknown> }).report;
+        const firstRef = (await h.fb().access.enrollmentState()).enrollmentRef;
+
+        later();
+        await enrollAgain(h);
+        const secondRef = (await h.fb().access.enrollmentState()).enrollmentRef;
+        expect(secondRef).not.toBe(firstRef);
+        const reopened = reopenedFrom(await send(h, draft.draftId, { scene: 'settings', annotatedPng: b64(INK) }));
+        expect(reopened.correlation).toEqual(draft.correlation);
+
+        const id = savedId(await send(h, reopened.draftId, { scene: 'settings' }));
+        const [report] = await h.saved();
+        expect(id).not.toBe(first.id);
+        expect(h.binding(id)).toBe(secondRef);
+        for (const field of ['capturedAt', 'scene', 'sessionId', 'traceId', 'spanId', 'incident', 'platform', 'input', 'seed', 'appVersion', 'buildSha'] as const) {
+          expect(report[field], field).toEqual(first[field]);
+        }
+        expect(report).toMatchObject({ capturedAt: CAPTURED_AT, scene: 'agents', ...TRACE });
+        expect(appCrumbs(report)).toEqual(['view.agent']);
+        expect(h.media(id).equals(INK)).toBe(true);
+      });
+
+      it('report.diagnostics is not carried: it has its own window and follows the new draft', async () => {
+        const { h, later } = provenanceHarness();
+        const draft = await opened(h);
+        const firstWindow = draft.diagnostics?.windowEnd;
+        later();
+        await enrollAgain(h);
+        const reopened = reopenedFrom(await send(h, draft.draftId, { includeDiagnostics: true, annotatedPng: b64(INK) }));
+        expect(reopened.diagnostics?.windowEnd).not.toBe(firstWindow);
+        const id = savedId(await send(h, reopened.draftId, { includeDiagnostics: true }));
+        const [report] = await h.saved();
+        expect(report.capturedAt).toBe(CAPTURED_AT);
+        expect(report.diagnostics).toMatchObject({ state: 'attached', windowEnd: reopened.diagnostics?.windowEnd });
+        expect(id).toEqual(expect.any(String));
+      });
+
+      it('leaving diagnostics out on the new draft is honoured: consent doesn\'t pass over', async () => {
+        const { h, later } = provenanceHarness();
+        const draft = await opened(h);
+        later();
+        await enrollAgain(h);
+        const reopened = reopenedFrom(await send(h, draft.draftId, { includeDiagnostics: true, annotatedPng: b64(INK) }));
+        await expect(send(h, reopened.draftId, { includeDiagnostics: false })).resolves.toMatchObject({ diagnostics: { status: 'left_out', reason: 'reporter' } });
+      });
+
+      it('fresh diagnostics lose trace references that don\'t match the carried trace, and keep the ones that do', async () => {
+        const { h, live, later } = provenanceHarness();
+        const draft = await opened(h);
+        later();
+        const line = AVAILABLE.lines[0];
+        live.diagnostics = { ...live.diagnostics, lines: [
+          { ...line, attrs: { closeCode: 1006, traceId: FRESH_TRACE.traceId, spanId: FRESH_TRACE.spanId } },
+          { ...line, attrs: { closeCode: 1007, ...TRACE } },
+          { ...line, attrs: { closeCode: 1008, spanId: FRESH_TRACE.spanId } },
+          { ...line, attrs: { closeCode: 1009 } },
+        ] };
+        await enrollAgain(h);
+        const reopened = reopenedFrom(await send(h, draft.draftId, { includeDiagnostics: true, annotatedPng: b64(INK) }));
+        expect(reopened.diagnostics?.lines.map((l) => l.attrs)).toEqual([{ closeCode: 1006 }, { closeCode: 1007, ...TRACE }, { closeCode: 1008 }, { closeCode: 1009 }]);
+        savedId(await send(h, reopened.draftId, { includeDiagnostics: true }));
+        const [report] = await h.saved();
+        expect(JSON.stringify(report.diagnostics)).not.toContain(FRESH_TRACE.traceId);
+        expect(JSON.stringify(report.diagnostics)).not.toContain(FRESH_TRACE.spanId);
+        expect(JSON.stringify(report.diagnostics)).toContain(TRACE.traceId);
+      });
+
+      it('a no-image reopen takes fresh values', async () => {
+        const { h, later } = provenanceHarness();
+        const draft = await opened(h);
+        later();
+        await enrollAgain(h);
+        const reopened = reopenedFrom(await send(h, draft.draftId, { scene: 'agents', includeScreenshot: false }));
+        expect(reopened.shots).toEqual([]);
+        expect(reopened.correlation?.capturedAt).toBe(new Date(h.state.now).toISOString());
+        savedId(await send(h, reopened.draftId, { scene: 'settings', includeScreenshot: false }));
+        const [report] = await h.saved();
+        expect(report).toMatchObject({ media: null, capturedAt: new Date(h.state.now).toISOString(), scene: 'settings', ...FRESH_TRACE });
+        expect(appCrumbs(report)).toEqual(['view.settings']);
+      });
+
+      it('a reopen keeps the tester\'s tracing choice out of the report but the carried references in the draft', async () => {
+        const { h, later } = provenanceHarness();
+        const draft = await opened(h);
+        later();
+        await enrollAgain(h);
+        const reopened = reopenedFrom(await send(h, draft.draftId, { includeCorrelation: false, annotatedPng: b64(INK) }));
+        savedId(await send(h, reopened.draftId, { includeCorrelation: false }));
+        const [off] = await h.saved();
+        expect(off.capturedAt).toBe(CAPTURED_AT);
+        expect(off).not.toHaveProperty('incident');
+        expect(off).not.toHaveProperty('traceId');
+      });
+
+      it('with a retry\'s scene and app events changing under one enrollment, the first Send\'s stay', async () => {
+        const { h, later } = provenanceHarness();
+        const { draftId } = await opened(h);
+        h.state.submitFails = FAILED_SAVE;
+        await expect(send(h, draftId, { scene: 'agents', annotatedPng: b64(INK) })).rejects.toMatchObject({ code: 'storage-full' });
+        const first = await h.prepared.at(-1) as { report: { id: string } };
+        later();
+        // Not changed content: the same note and bytes, so the same report.
+        expect(savedId(await send(h, draftId, { scene: 'settings', annotatedPng: b64(INK) }))).toBe(first.report.id);
+        const [report] = await h.saved();
+        expect(report.scene).toBe('agents');
+        expect(appCrumbs(report)).toEqual(['view.agent']);
+      });
+
+      it('the reopened draft\'s source is the flattened image: no bytes sends that, never the original', async () => {
+        const h = harness();
+        const draft = await opened(h);
+        await enrollAgain(h);
+        const reopened = reopenedFrom(await send(h, draft.draftId, { annotatedPng: b64(INK) }));
+        expect(reopened.shots.map((shot) => shot.preview)).toEqual([`data:image/png;base64,${b64(INK)}`]);
+        expect(JSON.stringify(reopened)).not.toContain(b64(CAPTURE));
+        expect(JSON.stringify(reopened)).not.toContain(b64(OTHER));
+        const id = savedId(await send(h, reopened.draftId));
+        expect(h.media(id).equals(INK)).toBe(true);
+      });
+
+      it('a reopened draft refuses the original, and new marks then need bytes', async () => {
+        const h = harness();
+        const draft = await opened(h);
+        await enrollAgain(h);
+        const reopened = reopenedFrom(await send(h, draft.draftId, { annotatedPng: b64(INK) }));
+        h.state.submitFails = FAILED_SAVE;
+        await expect(send(h, reopened.draftId, { annotatedPng: b64(pngOf(2880, 1800, 'new mark')) })).rejects.toMatchObject({ code: 'storage-full' });
+        await expect(send(h, reopened.draftId, { annotatedPng: b64(CAPTURE) })).rejects.toMatchObject({ code: 'flattened-required' });
+        await expect(send(h, reopened.draftId)).rejects.toMatchObject({ code: 'flattened-required' });
+        expect(await h.saved()).toEqual([]);
+      });
+
+      it('leaving the image out on a reopened draft doesn\'t lose it', async () => {
+        const h = harness();
+        const draft = await opened(h);
+        await enrollAgain(h);
+        const reopened = reopenedFrom(await send(h, draft.draftId, { annotatedPng: b64(INK) }));
+        h.state.submitFails = FAILED_SAVE;
+        await expect(send(h, reopened.draftId, { includeScreenshot: false })).rejects.toMatchObject({ code: 'storage-full' });
+        expect(h.media(savedId(await send(h, reopened.draftId))).equals(INK)).toBe(true);
+      });
+
+      it('an unknown earlier save carries through the reopen: both may be delivered', async () => {
+        const h = harness();
+        const draft = await opened(h);
+        h.state.submitFails = UNKNOWN_SAVE;
+        await expect(send(h, draft.draftId, { annotatedPng: b64(INK) })).rejects.toMatchObject({ code: 'storage-unavailable' });
+        await enrollAgain(h);
+        const reopened = reopenedFrom(await send(h, draft.draftId, { annotatedPng: b64(INK) }));
+        await expect(send(h, reopened.draftId)).resolves.toMatchObject({ status: 'saved-local', earlierMayDeliver: true });
+      });
+    });
+
+    it('an unknown earlier save survives an open() that fails during the reopen', async () => {
+      const h = harness();
+      const draft = await opened(h);
+      h.state.submitFails = UNKNOWN_SAVE;
+      await expect(send(h, draft.draftId, { annotatedPng: b64(INK) })).rejects.toMatchObject({ code: 'storage-unavailable' });
+      await h.service.disconnect();
+      // Nothing can open while disconnected, and that Send must not forget the earlier one.
+      await expect(send(h, draft.draftId, { annotatedPng: b64(INK) })).rejects.toMatchObject({ code: 'feedback-unavailable' });
+      h.access.redeem = () => json(h.grant(SECOND_TOKEN, 's'));
+      await h.service.connect(SECOND_INVITE);
+      const reopened = reopenedFrom(await send(h, draft.draftId, { annotatedPng: b64(INK) }));
+      await expect(send(h, reopened.draftId)).resolves.toMatchObject({ earlierMayDeliver: true });
+    });
+
+    it('logs and telemetry meta carry no bytes or hashes', async () => {
+      const log = vi.fn<FeedbackLog>();
+      const h = harness({ log });
+      const { draftId } = await opened(h);
+      h.state.submitFails = UNKNOWN_SAVE;
+      await expect(send(h, draftId, { annotatedPng: b64(INK) })).rejects.toThrow();
+      await expect(send(h, draftId)).rejects.toThrow();
+      const logged = JSON.stringify(log.mock.calls);
+      expect(logged).not.toContain(b64(INK));
+      expect(logged).not.toContain(createHash('sha256').update(INK).digest('hex'));
+      expect(logged).not.toContain(createHash('sha256').update(CAPTURE).digest('hex'));
+    });
   });
 
   it('keeps the ref out of the report bytes and the renderer, and beside the report on disk', async () => {

@@ -124,8 +124,10 @@ export interface FeedbackSendInput {
   /** Where in Clubhouse feedback was given, e.g. 'agents' or 'settings'. A code, never user text. */
   scene?: string;
   /**
-   * The captured screenshot with the user's drawing baked in, as base64 PNG (no data:
-   * prefix). Only used with includeScreenshot; it must match the capture's dimensions.
+   * The flattened image: the screenshot with the user's edits baked in, as base64 PNG (no
+   * data: prefix). Only used with includeScreenshot. It must be the size of the image it was
+   * made from, or fitted down from it with the same aspect ratio. Once a Send has brought one,
+   * every later Send with the image has to bring one too: main never falls back to the original.
    */
   annotatedPng?: string;
   /** Which window's screenshot to send (FeedbackShot.shotId); the first when omitted. */
@@ -144,6 +146,8 @@ export type FeedbackSendResult =
     /** Saved locally; "Received" arrives later in FeedbackStatus.received. */
     status: 'saved-local';
     diagnostics?: FeedbackDiagnosticsOutcome;
+    /** An earlier version of this report may have been saved too, so both may be delivered. */
+    earlierMayDeliver?: true;
   }
   /** Nothing was saved: the enrollment changed, and this new draft needs a review and a new Send. */
   | { status: 'enrollment-changed'; draft: FeedbackCaptureResult };

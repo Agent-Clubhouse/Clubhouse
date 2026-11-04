@@ -326,17 +326,19 @@ describe('FeedbackService (fake SDK)', () => {
     });
 
     it.each([
-      ['a different size', pngOf(1440, 900).toString('base64'), /doesn't match/],
+      ['a different shape', pngOf(1440, 1000).toString('base64'), /doesn't match/],
+      ['larger', pngOf(5760, 3600).toString('base64'), /doesn't match/],
       ['not a PNG', Buffer.from('<svg xmlns="http://www.w3.org/2000/svg"/>').toString('base64'), /not a PNG/],
       ['over the decoded size cap', Buffer.concat([pngOf(2880, 1800), Buffer.alloc(8 * 1024 * 1024)]).toString('base64'), /too large/],
-    ])('refuses a drawing that is %s and keeps the draft for a retry', async (_label, annotatedPng, error) => {
+    ])('refuses a drawing that is %s, keeps the draft for a retry, and never falls back to the capture', async (_label, annotatedPng, error) => {
       const { create, fb } = fakeSdk();
       const s = service(create);
       const draft = await s.captureDraft(async () => captured);
       await expect(s.send({ draftId: draft.draftId, notes: 'n', includeScreenshot: true, annotatedPng })).rejects.toThrow(error);
+      await expect(s.send({ draftId: draft.draftId, notes: 'n', includeScreenshot: true })).rejects.toMatchObject({ code: 'flattened-required' });
       expect(fb.feedback.prepare).not.toHaveBeenCalled();
-      await s.send({ draftId: draft.draftId, notes: 'n', includeScreenshot: true });
-      expect(fb.feedback.prepare).toHaveBeenLastCalledWith(expect.objectContaining({ png: captured }));
+      await s.send({ draftId: draft.draftId, notes: 'n', includeScreenshot: true, annotatedPng: drawn.toString('base64') });
+      expect(fb.feedback.prepare).toHaveBeenLastCalledWith(expect.objectContaining({ png: drawn }));
     });
   });
 
@@ -449,7 +451,6 @@ describe('FeedbackService (fake SDK)', () => {
     fb.feedback.submit.mockRejectedValueOnce(Object.assign(new Error('Local feedback storage is full'), { code: 'storage-full' }));
     await expect(s.send({ draftId: draft.draftId, notes: 'n', includeScreenshot: true })).rejects.toThrow(/full/);
     const original = fb.feedback.submit.mock.calls[0][0];
-    await expect(s.send({ draftId: draft.draftId, notes: 'edited after uncertain save', includeScreenshot: true })).rejects.toThrow(/Retry the feedback unchanged/);
     await expect(s.send({ draftId: draft.draftId, notes: 'n', includeScreenshot: true })).resolves.toMatchObject({ status: 'saved-local' });
     expect(fb.feedback.prepare).toHaveBeenCalledTimes(1);
     expect(fb.feedback.submit.mock.calls[1][0]).toBe(original);
