@@ -451,6 +451,61 @@ jobs:
           name: chat-e2e-traces-${{ matrix.os }}-${{ matrix.shard }}
           path: test-results/
 
+  # A build with Preview off and on, with the saved state a beta leaves behind
+  # (e2e/stable-mode.spec.ts). A job of its own so it never lengthens the E2E
+  # shards, and Linux and Windows only: the gates are the same on macOS. It runs
+  # unpackaged through CLUBHOUSE_TEST_STABLE_BUILD, so it proves the gates and not
+  # a packaged build.
+  e2e-stable:
+    needs: [changes, build]
+    if: ${{ !cancelled() && needs.build.result == 'success' }}
+    name: Stable-mode E2E Tests (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-2022]
+    env:
+      PLAYWRIGHT_JUNIT_OUTPUT_NAME: test-results/junit.xml
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '22.23.4'
+          cache: npm
+      - name: Exclude workspace from Windows Defender
+        if: runner.os == 'Windows'
+        continue-on-error: true
+        run: Add-MpPreference -ExclusionPath "${{ github.workspace }}"
+        shell: pwsh
+      # The Electron binary npm ci downloads (~100 MB), in its default cache dir per OS.
+      - uses: actions/cache@v6
+        with:
+          path: |
+            ~/.cache/electron
+            ~/Library/Caches/electron
+            ~/AppData/Local/electron/Cache
+          key: electron-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
+      - run: npm ci
+      - uses: actions/download-artifact@v8
+        with:
+          name: webpack-${{ matrix.os }}
+          path: .webpack/
+      - name: Run stable-mode E2E tests
+        if: runner.os != 'Linux'
+        run: npx playwright test e2e/stable-mode.spec.ts --reporter=line,junit
+      - name: Run stable-mode E2E tests (Linux — requires virtual display)
+        if: runner.os == 'Linux'
+        run: xvfb-run --auto-servernum npx playwright test e2e/stable-mode.spec.ts --reporter=line,junit
+        env:
+          # chrome-sandbox is not SUID root on GitHub runners
+          ELECTRON_DISABLE_SANDBOX: '1'
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: stable-e2e-traces-${{ matrix.os }}
+          path: test-results/
+
   # Packaging guard for @github/copilot-sdk (docs/copilot-sdk-driver.md). A job of
   # its own so it never lengthens a unit shard or the build. It needs the Electron
   # binary, which the unit jobs skip, to run the bundled chunk under Electron's
