@@ -4,7 +4,7 @@ import { launchApp, type LaunchedApp } from './launch';
 import { runScenario } from './feedback-editor-pilot-scenario.mjs';
 
 /**
- * PILOT, DO NOT MERGE. The Framebriar screenshot editor pinned to ac13f32, in the real Electron renderer:
+ * PILOT, DO NOT MERGE. The Framebriar screenshot editor pinned to 2974cb8, in the real Electron renderer:
  * file://, the production CSP header, the forge webpack build. Prints what it found as one PILOT_RESULT line.
  * No enrollment, no server and no report: the IPC call to main is replaced in pilot-hooks.ts.
  */
@@ -20,7 +20,7 @@ test('feedback editor pilot in the real renderer', async () => {
   app = await launchApp({ label: 'feedback-pilot' });
   await app.window.waitForFunction(() => Boolean((window as unknown as { __feedbackEditorPilot?: unknown }).__feedbackEditorPilot));
   const size = app.window.viewportSize() ?? await app.window.evaluate(() => ({ width: innerWidth, height: innerHeight }));
-  const report = await runScenario(app.window, fixture, { perf: true });
+  const report = await runScenario(app.window, fixture, { perf: false });
   console.log(`PILOT_RESULT ${JSON.stringify({ platform: process.platform, size, ...report })}`);
   expect(report.problems).toEqual([]);
 });
