@@ -379,6 +379,20 @@ describe('beginSend through #2794: reopen', () => {
 });
 
 describe('refusals and the way out', () => {
+  it('two beginSend calls at once: both say ok with the same bytes, so without a host guard main answers the second busy', async () => {
+    const h = harness();
+    const { draft, model } = await opened(h);
+    model.addMark(REDACT);
+    const [one, two] = await Promise.all([model.beginSend(), model.beginSend()]);
+    if (one.ok !== true || two.ok !== true) throw new Error('refused');
+    expect(two.bytes).toBe(one.bytes);
+    const [a, b] = await Promise.allSettled([send(h, draft.draftId, one), send(h, draft.draftId, two)]);
+    expect([a.status, b.status].sort()).toEqual(['fulfilled', 'rejected']);
+    const refused = [a, b].find((r) => r.status === 'rejected') as PromiseRejectedResult;
+    expect(refused.reason).toMatchObject({ code: 'busy' });
+    expect(await h.savedIds()).toHaveLength(1);
+  });
+
   it('prepare-failed on an excluded unattachable capture: nothing ends, the block is the words, only Remove gets the note out', async () => {
     const big = pngOf(6016, 3384, 'a full-screen capture on a 6K display');
     const fail = { on: true };

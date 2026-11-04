@@ -455,6 +455,17 @@ async function steps(page, fixture, { perf = false }, report) {
   await call('close');
   await wait(100);
 
+  // Two Send clicks in one task, past the disabled button: only the host's guard can stop the second.
+  await call('open', [{ width: 1000, height: 700, label: 'Main window' }]);
+  await until(() => page.evaluate(() => document.querySelector('[data-testid="feedback-preview"]')?.width > 300), 'the composer for a double Send');
+  const sendsBeforeDouble = await call('sendCount');
+  await page.evaluate(() => { const b = document.querySelector('[data-testid="feedback-send"]'); b.click(); b.click(); });
+  await until(() => exists('[data-testid="feedback-sent-state"]'), 'the double Send', 30000);
+  report.doubleSend = { sends: (await call('sendCount')) - sendsBeforeDouble, error: await exists('[data-testid="feedback-error"]') };
+  expectThat('two clicks are one Send', report.doubleSend.sends === 1, report.doubleSend);
+  await call('close');
+  await wait(100);
+
   // The dialog closing while a Send prepares: dispose during beginSend, and nothing may reach main after.
   await call('open', [{ width: 6016, height: 3384, label: 'Main window' }]);
   await until(() => page.evaluate(() => document.querySelector('[data-testid="feedback-preview"]')?.width > 300), 'the 6K composer for close', 30000);

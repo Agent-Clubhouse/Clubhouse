@@ -176,9 +176,12 @@ export function FeedbackReviewDialog({ draft, reopened = null, onClose, editorOp
     onClose();
   }, [phase, draft.draftId, onClose]);
 
+  const sendRunning = useRef(false);
   const send = async () => {
     // beginSend takes no note, and ok:true means final, so the empty Send is refused before it.
-    if (!canSend) return;
+    // A second call while one runs gets ok:true too, so the host has to stop it (main would answer busy).
+    if (!canSend || sendRunning.current) return;
+    sendRunning.current = true;
     setPhase('sending');
     setError(null);
     try {
@@ -216,6 +219,8 @@ export function FeedbackReviewDialog({ draft, reopened = null, onClose, editorOp
       // telemetry-exempt: shown to the user; the reviewed draft is kept for a retry.
       setError(ipcErrorMessage(err));
       setPhase('review');
+    } finally {
+      sendRunning.current = false;
     }
   };
 
