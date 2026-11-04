@@ -1,14 +1,19 @@
 // Enrollment controller for Node/Electron main processes: a port of
 // adapters/browser/playtest-access.mjs onto the secure store (secure-store.mjs).
 // v2 contract (docs/general-feedback-v2.md): explicit redemption with bounded same-attempt
-// recovery, persisted 'connection-uncertain' marker, coalesced refresh, a 30-day family
-// with one-hour upload tokens, and persistent notices until replacement or explicit clear.
+// recovery, persisted 'connection-uncertain' marker, coalesced refresh, an issuer-chosen family
+// deadline (30 days by default, at most 365) with one-hour upload tokens, and persistent notices until replacement or explicit clear.
 // enrollmentRef: a random local identity minted on each successful redemption. Refresh keeps it,
 // expiry/revocation keep it (capture stays allowed), Disconnect clears it. Never on the wire.
 // Requests carry no Origin header; the service accepts originless clients.
 import {randomBytes,randomUUID} from 'node:crypto';
+import {RESPONSE_REJECTED,REJECTION_REASONS} from './secure-store.mjs';
 export const FRAMEBRIAR_ENDPOINT='https://framebriar-masra91-poc.azurewebsites.net/api';
-const HOUR=3600000,MONTH=30*86400000;
+// Tolerated on upper bounds only: a device clock behind the issuer's sees its deadlines as further away.
+const CLOCK_SKEW=5*60000;
+const MAX_ACCESS=3600000+CLOCK_SKEW;
+// The issuer's enrollmentMaxDays.
+const MAX_ENROLLMENT=365*86400000+CLOCK_SKEW;
 const token=x=>typeof x==='string'&&/^[A-Za-z0-9_-]{43}$/.test(x);
 const fault=kind=>Object.assign(new Error('Framebriar access unavailable'),{kind});
 export const unrefTimer=(fn,ms)=>{const t=setTimeout(fn,ms);t.unref?.();return t;};
@@ -21,7 +26,8 @@ export function validEndpoint(endpoint){
   }catch{return false;}
 }
 const iso=v=>{const t=Date.parse(v);return Number.isFinite(t)?new Date(t).toISOString():null;};
-const noticeOf=n=>n?{state:n.state,expiresAt:n.expiresAt?iso(n.expiresAt):null,enrolled:n.enrolled!==false}:null;
+const noticeOf=n=>n?{state:n.state,expiresAt:n.expiresAt?iso(n.expiresAt):null,enrolled:n.enrolled!==false,
+  ...(n.state===RESPONSE_REJECTED?{reason:REJECTION_REASONS.includes(n.reason)?n.reason:'invalid-response'}:{})}:null;
 
 // Cold starts of a scaled-to-zero service can take well over 10 s, so allow 45 s per access call.
 export const ACCESS_TIMEOUT_MS=45000;
@@ -32,22 +38,23 @@ export function createAccess({accessTimeoutMs=ACCESS_TIMEOUT_MS,retryDelay=ms=>n
   if(typeof store?.read!=='function'||typeof store.replace!=='function')throw Error('Framebriar access requires a secure store');
   let running=false,disposed=false,generation=0,revision=null,session,timer,controller,inflight,operation,failures=0;
   let notice=null,optedIn=false,writes=0,enrollmentRef=null;
-  let view=Object.freeze({state:'disconnected',connected:false,enrolled:false,canCapture:false,notice:null,expiresAt:null});
+  let view=Object.freeze({state:'disconnected',connected:false,enrolled:false,canCapture:false,notice:null,noticeReason:null,expiresAt:null});
   const listeners=new Set([onChange]),changeHooks=new Set();
   // Awaited after an enrollment change is durable and before its token can be used, so a queue
   // can fence its held reports first. A failing hook can't stop the change; delivery stays gated.
   const enrollmentChanged=ref=>Promise.allSettled([...changeHooks].map(async fn=>fn(Object.freeze({enrollmentRef:ref})))).catch(()=>{});
   const emit=(state,expiresAt=session?.refreshExpiresAt??null)=>{
-    view=Object.freeze({state,connected:state==='connected',enrolled:optedIn,canCapture:optedIn,notice:notice?.state??null,expiresAt:expiresAt??notice?.expiresAt??null,
+    view=Object.freeze({state,connected:state==='connected',enrolled:optedIn,canCapture:optedIn,notice:notice?.state??null,noticeReason:notice?.reason??null,expiresAt:expiresAt??notice?.expiresAt??null,
       feedbackCorrelationVersion:session?.token&&Date.parse(session.expiresAt)>now()&&session.feedbackCorrelationVersion===1?1:null});
     for(const fn of listeners)try{fn(view);}catch{/* UI cannot change enrollment */}
     return view;
   };
   const halt=()=>{generation++;clearTimer(timer);timer=undefined;controller?.abort();controller=undefined;inflight=undefined;operation=undefined;session=undefined;};
   const current=ticket=>running&&!disposed&&ticket===generation;
-  const valid=x=>x?.v===1&&x.gameId===gameId&&x.scopeVersion===2&&token(x.token)&&token(x.refreshToken)&&
-    Date.parse(x.expiresAt)>now()&&Date.parse(x.expiresAt)<=now()+HOUR&&
-    Date.parse(x.refreshExpiresAt)>=Date.parse(x.expiresAt)&&Date.parse(x.refreshExpiresAt)<=now()+MONTH;
+  // Why a parsed reply can't be used, or null. Only the reason leaves here, never the reply's values.
+  const rejection=x=>x?.v!==1||x.scopeVersion!==2?'invalid-response':x.gameId!==gameId?'wrong-game':!token(x.token)||!token(x.refreshToken)?'invalid-token':
+    Date.parse(x.expiresAt)>now()&&Date.parse(x.expiresAt)<=now()+MAX_ACCESS&&
+    Date.parse(x.refreshExpiresAt)>=Date.parse(x.expiresAt)&&Date.parse(x.refreshExpiresAt)<=now()+MAX_ENROLLMENT?null:'invalid-deadline';
   // Storage seam: an undecryptable record (e.g. the OS key was reset) reads as empty for an
   // explicit connect/disconnect, so the user can always replace or clear it.
   async function load({recover=false}={}){
@@ -110,7 +117,9 @@ export function createAccess({accessTimeoutMs=ACCESS_TIMEOUT_MS,retryDelay=ms=>n
   }
   // A redemption is a new enrollment, even under the same invitation. A refresh is not.
   async function accept(value,ticket,{redeemed=false}={}){
-    if(!valid(value))throw fault('invalid');
+    const reason=rejection(value);
+    // A reply that isn't a JSON object may never have come from the issuer, so it gets no reason.
+    if(reason)throw Object.assign(fault('invalid'),value&&typeof value==='object'&&!Array.isArray(value)?{reason}:{});
     if(!current(ticket))return false;
     const ref=redeemed?randomUUID():session?.enrollmentRef??enrollmentRef;
     const next=await put(revision,{refreshToken:value.refreshToken,expiresAt:iso(value.refreshExpiresAt)},null,ref);
@@ -210,7 +219,8 @@ export function createAccess({accessTimeoutMs=ACCESS_TIMEOUT_MS,retryDelay=ms=>n
         return accepted;
       }catch(e){
         if(current(ticket)){
-          session=undefined;notice={state:e?.kind==='denied'?'access-required':'connection-uncertain',expiresAt:null,enrolled:optedIn};
+          session=undefined;notice=e?.reason?{state:RESPONSE_REJECTED,reason:e.reason,expiresAt:null,enrolled:optedIn}:
+            {state:e?.kind==='denied'?'access-required':'connection-uncertain',expiresAt:null,enrolled:optedIn};
           try{const next=await put(revision,null,notice);if(current(ticket)&&next!==null)revision=next;}catch{}
           if(current(ticket))emit(e?.kind?notice.state:'storage-unavailable',null);
         }

@@ -103,7 +103,7 @@ were compared with source and packaging:
   the next major; no encryption fallback or keychain setting was changed here.
   **Done (#2521):** both stores now use the async API when Electron has it, with
   the sync API as a fallback. Existing files decrypt unchanged. See
-  `docs/framebriar-sdk-drop-20261102.md`.
+  `docs/framebriar-sdk-drop-20261104.md`.
 
 ## Patched build archive dependencies
 

@@ -110,7 +110,7 @@ Feedback upload and tracing remain separate configurations. The feedback adapter
 keeps its own telemetry disabled. Desktop vendors the canonical Framebriar Node
 SDK at release `v0.7.0` (`f57b75fe5d38d7e2c3d221d246c9e01445da41dc`), with
 unchanged upstream files and SHA-256 provenance in `VENDORED.json`. See
-`docs/framebriar-sdk-drop-20261102.md`.
+`docs/framebriar-sdk-drop-20261104.md`.
 
 Desktop snapshots references synchronously at feedback opening, before async
 SDK startup or screenshot capture. A bounded memory-only window keeps up to 32

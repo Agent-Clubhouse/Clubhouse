@@ -4,6 +4,7 @@ import { ACCESS_TIMEOUT_MS, createAccess } from '../../vendor/framebriar/adapter
 
 const INVITE = 'i'.repeat(43);
 const DAY = 86_400_000;
+const SKEW = 5 * 60_000;
 const NOW = Date.parse('2026-10-17T19:00:00Z');
 const grant = (overrides = {}) => ({
   v: 1, gameId: 'clubhouse', scopeVersion: 2,
@@ -181,15 +182,39 @@ describe('Framebriar SDK access drop', () => {
     expect(controller.status().connected).toBe(false);
   });
 
-  it.each([
-    { gameId: 'other-app' },
-    { expiresAt: new Date(NOW + 3_600_001).toISOString() },
-    { refreshExpiresAt: new Date(NOW + 30 * DAY + 1).toISOString() },
-  ])('still rejects grants outside app/one-hour/30-day contracts: %j', async (invalid) => {
+  it.each<[string, Record<string, unknown>]>([
+    ['wrong-game', { gameId: 'other-app' }],
+    ['invalid-deadline', { expiresAt: new Date(NOW + 3_600_000 + SKEW + 1).toISOString() }],
+    ['invalid-deadline', { refreshExpiresAt: new Date(NOW + 365 * DAY + SKEW + 1).toISOString() }],
+    ['invalid-token', { refreshToken: 'short' }],
+    ['invalid-response', { scopeVersion: 1 }],
+  ])('rejects grants outside the contract as %s: %j', async (noticeReason, invalid) => {
     const fetchImpl = vi.fn<typeof fetch>().mockResolvedValue(json(grant(invalid)));
-    const { controller, retryDelay } = access(fetchImpl);
+    const { controller, retryDelay, store } = access(fetchImpl);
     expect(await controller.connect(INVITE)).toBe(false);
     expect(await controller.getToken()).toBeUndefined();
     expect(retryDelay).not.toHaveBeenCalled();
+    expect(controller.status()).toMatchObject({ state: 'enrollment-response-rejected', notice: 'enrollment-response-rejected', noticeReason, connected: false, expiresAt: null });
+    const saved = JSON.stringify(await store.read());
+    expect(saved).not.toContain('r'.repeat(43));
+    expect(saved).not.toContain('t'.repeat(43));
+  });
+
+  it.each([
+    ['a 180-day enrollment', { refreshExpiresAt: new Date(NOW + 180 * DAY).toISOString() }],
+    ['the longest enrollment, with skew', { refreshExpiresAt: new Date(NOW + 365 * DAY + SKEW).toISOString() }],
+    ['a token that looks long to a clock five minutes behind', { expiresAt: new Date(NOW + 3_600_000 + SKEW).toISOString() }],
+  ])('accepts %s', async (_name, valid) => {
+    const { controller } = access(vi.fn<typeof fetch>().mockResolvedValue(json(grant(valid))));
+    expect(await controller.connect(INVITE)).toBe(true);
+  });
+
+  it('keeps JSON that can\'t be parsed as uncertain, and retries the same attempt', async () => {
+    const fetchImpl = vi.fn<typeof fetch>().mockImplementation(async () => new Response('{"v":1', { status: 200, headers: { 'content-type': 'application/json' } }));
+    const { controller, retryDelay } = access(fetchImpl);
+    expect(await controller.connect(INVITE)).toBe(false);
+    expect(fetchImpl).toHaveBeenCalledTimes(3);
+    expect(retryDelay).toHaveBeenCalledTimes(2);
+    expect(controller.status()).toMatchObject({ state: 'connection-uncertain', notice: 'connection-uncertain', noticeReason: null });
   });
 });

@@ -15,10 +15,13 @@ export const SECURE_STORE_PAYLOAD_MAX=2048;
 const UUID=/^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/;
 const ISO=/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d{3})?Z$/;
 const NOTICES=['expired','access-required','connection-uncertain'];
+// A 2xx redeem reply that failed local validation. Its reason is a closed set, never response text.
+export const RESPONSE_REJECTED='enrollment-response-rejected';
+export const REJECTION_REASONS=Object.freeze(['invalid-deadline','invalid-token','wrong-game','invalid-response']);
 const plain=x=>x!==null&&typeof x==='object'&&!Array.isArray(x);
 export const validStoredSession=s=>s===null||(plain(s)&&Object.keys(s).length===2&&
   typeof s.refreshToken==='string'&&/^[A-Za-z0-9_-]{43}$/.test(s.refreshToken)&&typeof s.expiresAt==='string'&&ISO.test(s.expiresAt));
-export const validStoredNotice=n=>n===null||(plain(n)&&Object.keys(n).length===3&&NOTICES.includes(n.state)&&
+export const validStoredNotice=n=>n===null||(plain(n)&&(n.state===RESPONSE_REJECTED?Object.keys(n).length===4&&REJECTION_REASONS.includes(n.reason):Object.keys(n).length===3&&NOTICES.includes(n.state))&&
   typeof n.enrolled==='boolean'&&(n.expiresAt===null||(typeof n.expiresAt==='string'&&ISO.test(n.expiresAt))));
 
 // Random local identity of an enrollment (docs/general-feedback-v2.md). Stored beside session,

@@ -24,9 +24,12 @@ export type SafeStorageLike = AsyncSafeStorageLike | SyncSafeStorageLike;
 
 export type FramebriarAccessState =
   | 'disconnected' | 'checking' | 'connecting' | 'connected' | 'offline' | 'stopped' | 'disconnecting'
-  | 'expired' | 'access-required' | 'connection-uncertain' | 'storage-unavailable' | 'migration-required';
+  | 'expired' | 'access-required' | 'connection-uncertain' | 'enrollment-response-rejected' | 'storage-unavailable' | 'migration-required';
 
-export type FramebriarNotice = 'expired' | 'access-required' | 'connection-uncertain' | 'migration-required';
+export type FramebriarNotice = 'expired' | 'access-required' | 'connection-uncertain' | 'enrollment-response-rejected' | 'migration-required';
+
+/** Why a 2xx JSON redeem reply was refused. A closed set, never response text. */
+export type FramebriarNoticeReason = 'invalid-deadline' | 'invalid-token' | 'wrong-game' | 'invalid-response';
 
 export interface FramebriarAccessView {
   state: FramebriarAccessState;
@@ -34,7 +37,9 @@ export interface FramebriarAccessView {
   enrolled: boolean;
   canCapture: boolean;
   notice: FramebriarNotice | null;
-  /** ISO time: the 30-day enrollment deadline. */
+  /** Null except with `enrollment-response-rejected`. Clubhouse keeps it in the local log only. */
+  noticeReason: FramebriarNoticeReason | null;
+  /** ISO time: the enrollment deadline (30 days by default, up to 365 per invitation). */
   expiresAt: string | null;
   /** Only the current, unexpired access token can advertise incident support. */
   feedbackCorrelationVersion?: 1 | null;
