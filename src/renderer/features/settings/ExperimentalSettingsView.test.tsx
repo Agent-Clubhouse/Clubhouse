@@ -1,5 +1,6 @@
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
-import { ExperimentalSettingsView } from './ExperimentalSettingsView';
+import { EXPERIMENTAL_FEATURES, ExperimentalSettingsView } from './ExperimentalSettingsView';
+import { PREVIEW_ONLY_EXPERIMENTAL_FLAGS } from '../../../shared/types';
 
 const mockGetExperimentalSettings = vi.fn();
 const mockSaveExperimentalSettings = vi.fn();
@@ -23,6 +24,11 @@ beforeEach(() => {
 });
 
 describe('ExperimentalSettingsView', () => {
+  it('lists only preview-only flags, so a new one has to join the gate or say why not', () => {
+    const offered = EXPERIMENTAL_FEATURES.map((f) => f.id).filter((id) => id !== 'themeGradients');
+    expect([...offered].sort()).toEqual([...PREVIEW_ONLY_EXPERIMENTAL_FLAGS].sort());
+  });
+
   it('renders the heading and disclaimer', async () => {
     render(<ExperimentalSettingsView />);
     await waitFor(() => {

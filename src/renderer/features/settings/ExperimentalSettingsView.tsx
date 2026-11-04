@@ -6,7 +6,7 @@ import { RICH_CHAT_CONTENT_FLAG, resetRichChatContentFlag } from '../agents/chat
 import { COPILOT_SDK_FLAG } from '../../../shared/chat';
 
 /** Feature definitions for the experimental settings page. */
-const EXPERIMENTAL_FEATURES: Array<{
+export const EXPERIMENTAL_FEATURES: Array<{
   id: string;
   label: string;
   description: string;

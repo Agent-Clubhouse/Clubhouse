@@ -90,7 +90,7 @@ vi.mock('../agent-system', () => ({
 import * as agentConfig from '../agent-config';
 import * as agentSystem from '../agent-system';
 import * as svc from './dispatcher-service';
-import { updateSettings } from './dispatcher-settings';
+import { getSettings, updateSettings } from './dispatcher-settings';
 
 const dispatcherDir = () => path.join(h.baseDir, 'dispatcher');
 
@@ -172,6 +172,17 @@ describe('gating', () => {
     await svc.onExperimentalSettingsChanged();
     expect(agentSystem.killAgent).toHaveBeenCalledWith('durable_1', dispatcherDir(), 'claude-code');
     expect(svc.getDispatcherState().enabled).toBe(false);
+  });
+
+  it('with the flag reading as off, keeps the agent, its files and the saved switch', async () => {
+    h.experimental = { dispatcher: true };
+    await svc.setDispatcherEnabled(true);
+    const created = svc.getDispatcherState().agentId;
+    h.experimental = {};
+    await svc.initDispatcher();
+    expect(svc.getDispatcherState()).toMatchObject({ enabled: false, flagOn: false, agentId: created });
+    expect(getSettings().enabled).toBe(true);
+    expect(fs.existsSync(dispatcherDir())).toBe(true);
   });
 });
 
