@@ -5,7 +5,7 @@
  *
  * How enrollment moves in the SDK (access.mjs): canCapture is optedIn. A notice keeps the optedIn
  * it was raised with, and restores it after a restart, so `expired`, `access-required` and
- * `connection-uncertain` never turn an enrolled install off. Only disconnect turns it off, or
+ * `connection-uncertain` and `enrollment-response-rejected` never turn an enrolled install off. Only disconnect turns it off, or
  * finding the stored enrollment gone. An invitation that fails on a fresh install leaves it off.
  */
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync } from 'fs';
@@ -16,7 +16,7 @@ import { createFramebriar, type Framebriar } from '../../vendor/framebriar/adapt
 import { asyncOnlySafeStorage, fakeKeychain } from '../../telemetry/__test-utils__/fake-safe-storage';
 import type { FeedbackDiagnostics } from '../../../shared/feedback-types';
 import { toDiagnosticsV1 } from './feedback-diagnostics-v1';
-import { FeedbackService } from './feedback-service';
+import { FeedbackService, type FeedbackLog } from './feedback-service';
 import fixture from './fixtures/held-reports-v1.json';
 
 const NOW = Date.parse('2026-11-01T12:00:00.000Z');
@@ -42,6 +42,8 @@ const AVAILABLE: FeedbackDiagnostics = {
 };
 
 const json = (value: unknown, status = 200) => new Response(JSON.stringify(value), { status, headers: { 'content-type': 'application/json' } });
+/** A 2xx that a proxy could produce: never evidence of what the service did. */
+const notJson = () => new Response('<html>sign in</html>', { status: 200, headers: { 'content-type': 'text/html' } });
 
 /** Access and outbox calls the shipped typings leave out; both are in the vendored source. */
 type RealSdk = Framebriar & {
@@ -53,7 +55,7 @@ const cleanups: Array<() => Promise<void> | void> = [];
 let dataDir: string;
 let keychain: ReturnType<typeof fakeKeychain>;
 
-function harness({ reportDiagnosticsField = true, online = false }: { reportDiagnosticsField?: boolean; online?: boolean } = {}) {
+function harness({ reportDiagnosticsField = true, online = false, log }: { reportDiagnosticsField?: boolean; online?: boolean; log?: FeedbackLog } = {}) {
   const state = { now: NOW, online, statusThrows: false };
   const reports: Array<{ authorization: string; body: { id: string; diagnostics?: unknown } }> = [];
   /** Set by a test to answer the next access calls; the default grants the first enrollment. */
@@ -95,11 +97,11 @@ function harness({ reportDiagnosticsField = true, online = false }: { reportDiag
       return sdk;
     }) as never,
     now: () => state.now, captureCorrelation: () => ({ data: {} }) as never,
-    diagnostics: () => AVAILABLE, createExcerptTelemetry: excerpt as never, reportDiagnosticsField,
+    diagnostics: () => AVAILABLE, createExcerptTelemetry: excerpt as never, reportDiagnosticsField, log,
   });
   cleanups.push(async () => { state.statusThrows = false; await service.shutdown(); });
   return {
-    service, state, access, excerpt, reports, grant, prepared,
+    service, state, access, excerpt, reports, grant, prepared, fetchImpl,
     /** Status once the SDK's own refresh after an enrollment change has landed. */
     settled: async (held: number, enrolled = true) => {
       await vi.waitFor(() => {
@@ -138,7 +140,8 @@ const ENROLLED_STATES: Array<[string, (h: Harness) => Promise<unknown> | void, {
   ['offline', (h) => { h.access.refresh = () => json({}, 503); return h.fb().access.refresh(); }, { state: 'offline', notice: null }],
   ['the expired notice', (h) => { h.state.now += 31 * DAY; return h.fb().access.refresh(); }, { state: 'expired', notice: 'expired' }],
   ['the access-required notice', (h) => { h.access.refresh = () => json({}, 401); return h.fb().access.refresh(); }, { state: 'access-required', notice: 'access-required' }],
-  ['the connection-uncertain notice', (h) => { h.access.redeem = () => json({ not: 'a grant' }); return h.service.connect(SECOND_INVITE); }, { state: 'connection-uncertain', notice: 'connection-uncertain' }],
+  ['the connection-uncertain notice', (h) => { h.access.redeem = notJson; return h.service.connect(SECOND_INVITE); }, { state: 'connection-uncertain', notice: 'connection-uncertain' }],
+  ['the enrollment-response-rejected notice', (h) => { h.access.redeem = () => json({ not: 'a grant' }); return h.service.connect(SECOND_INVITE); }, { state: 'enrollment-response-rejected', notice: 'enrollment-response-rejected' }],
 ];
 const NOTICES = ENROLLED_STATES.filter(([, , view]) => view.notice !== null);
 
@@ -223,7 +226,8 @@ describe('the report field with the real SDK', () => {
 
     it.each([
       ['access-required', () => json({}, 401)],
-      ['connection-uncertain', () => json({ not: 'a grant' })],
+      ['connection-uncertain', notJson],
+      ['enrollment-response-rejected', () => json({ not: 'a grant' })],
     ])('a fresh install whose invitation ended in %s stays unenrolled, across a restart', async (notice, redeem) => {
       const h = harness();
       h.access.redeem = redeem;
@@ -548,5 +552,304 @@ describe('the report field with the real SDK', () => {
       const draft = await h.capture();
       await expect(h.send(draft.draftId)).rejects.toThrow(/10 held reports take up space\. You can send or clear them in Settings, Feedback\./);
     }, 30_000);
+  });
+
+  describe('enrollments longer than 30 days (#2787)', () => {
+    const longGrant = (h: Harness, days: number) => ({ ...h.grant(FIRST_TOKEN, 'r'), refreshExpiresAt: new Date(h.state.now + days * DAY).toISOString() });
+
+    it('a 180-day enrollment connects, and survives a restart and a refresh', async () => {
+      const h = harness();
+      const grant = longGrant(h, 180);
+      h.access.redeem = () => json(grant);
+      h.access.refresh = () => json(grant);
+      await expect(h.service.connect(FIRST_INVITE)).resolves.toMatchObject({ connected: true, status: { state: 'connected', notice: null, expiresAt: grant.refreshExpiresAt } });
+      const { enrollmentRef } = await h.fb().access.enrollmentState();
+      await h.fb().access.refresh();
+      expect(h.service.status()).toMatchObject({ connected: true, expiresAt: grant.refreshExpiresAt });
+      await h.service.shutdown();
+
+      const after = harness();
+      // Well past the old 30-day limit: the deadline still can't move.
+      after.state.now += 40 * DAY;
+      after.access.refresh = () => json({ ...grant, expiresAt: new Date(after.state.now + HOUR).toISOString() });
+      await after.service.start();
+      await vi.waitFor(() => expect(after.service.status().connected).toBe(true));
+      expect(after.service.status()).toMatchObject({ notice: null, expiresAt: grant.refreshExpiresAt });
+      expect((await after.fb().access.enrollmentState()).enrollmentRef).toBe(enrollmentRef);
+      const fetched = after.fetchImpl.mock.calls.map(([url]) => new URL(String(url)).pathname);
+      expect(fetched.every((path) => path.endsWith('/v1/access/refresh'))).toBe(true);
+    });
+
+    it.each([
+      [365, true],
+      [366, false],
+    ])('%i days: connected is %s', async (days, connected) => {
+      const h = harness();
+      h.access.redeem = () => json(longGrant(h, days));
+      await expect(h.service.connect(FIRST_INVITE)).resolves.toMatchObject({ connected });
+      if (!connected) expect(h.fb().access.status()).toMatchObject({ notice: 'enrollment-response-rejected', noticeReason: 'invalid-deadline' });
+    });
+  });
+
+  describe('a rejected redeem reply (#2787)', () => {
+    const NOTICE = 'enrollment-response-rejected';
+    const rejectedStatus = { state: NOTICE, notice: NOTICE, connected: false, expiresAt: null };
+    /** Fails redeem validation. The token shape proves nothing is kept from a refused reply. */
+    const refused = (h: Harness) => { h.access.redeem = () => json({ ...h.grant(SECOND_TOKEN, 's'), gameId: 'other-app' }); };
+    const clean = (h: Harness) => { h.access.redeem = () => json(h.grant(SECOND_TOKEN, 's')); };
+    const paths = (h: Harness) => h.fetchImpl.mock.calls.map(([url]) => new URL(String(url)).pathname);
+
+    /** Enrolled with one report saved, then a replacement invitation is refused. */
+    async function rejectedAfterEnrolled(h: Harness) {
+      await h.service.connect(FIRST_INVITE);
+      const before = await h.send((await h.capture()).draftId) as { id: string };
+      const { enrollmentRef } = await h.fb().access.enrollmentState();
+      refused(h);
+      await expect(h.service.connect(SECOND_INVITE)).resolves.toMatchObject({ connected: false, status: rejectedStatus });
+      return { before, enrollmentRef };
+    }
+
+    describe('never enrolled', () => {
+      it.each<[string, (h: Harness) => object]>([
+        ['invalid-deadline', (h) => ({ ...h.grant(FIRST_TOKEN, 'r'), refreshExpiresAt: new Date(h.state.now + 366 * DAY).toISOString() })],
+        ['invalid-token', (h) => ({ ...h.grant(FIRST_TOKEN, 'r'), token: 'short' })],
+        ['wrong-game', (h) => ({ ...h.grant(FIRST_TOKEN, 'r'), gameId: 'other-app' })],
+        ['invalid-response', (h) => ({ ...h.grant(FIRST_TOKEN, 'r'), v: 2 })],
+      ])('%s: no capture, the code stays out of the status, and goes to the local log only', async (reason, reply) => {
+        const log = vi.fn<FeedbackLog>();
+        const h = harness({ log });
+        h.access.redeem = () => json(reply(h));
+        const { status } = await h.service.connect(FIRST_INVITE);
+        expect(status).toMatchObject({ ...rejectedStatus, enrolled: false, canCapture: false });
+        expect(h.fb().access.status()).toMatchObject({ noticeReason: reason });
+        expect(JSON.stringify(h.service.status())).not.toContain(reason);
+        await expect(h.capture()).rejects.toMatchObject({ code: 'feedback-unavailable', message: expect.not.stringMatching(/enrollment/i) });
+        expect((await h.fb().store.read())).toMatchObject({ session: null, notice: { state: NOTICE, reason } });
+        expect(log).toHaveBeenCalledWith('warn', 'Feedback connect failed', expect.objectContaining({ notice: NOTICE, noticeReason: reason }));
+        expect(log).toHaveBeenCalledWith('warn', `Feedback access: ${NOTICE}`, expect.objectContaining({ noticeReason: reason }));
+        expect(JSON.stringify(log.mock.calls)).not.toContain(FIRST_TOKEN);
+      });
+
+      it('survives a restart with no request, and Disconnect clears it', async () => {
+        const h = harness();
+        refused(h);
+        await h.service.connect(FIRST_INVITE);
+        await h.service.shutdown();
+        const after = harness();
+        await after.service.start();
+        expect(after.service.status()).toMatchObject({ ...rejectedStatus, enrolled: false, canCapture: false });
+        expect(after.fb().access.status().noticeReason).toBe('wrong-game');
+        expect(after.fetchImpl).not.toHaveBeenCalled();
+        await expect(after.service.disconnect()).resolves.toMatchObject({ forgotten: true, revoked: null, status: { state: 'disconnected', notice: null } });
+        expect(after.fetchImpl).not.toHaveBeenCalled();
+      });
+    });
+
+    it.each<[string, () => Response]>([
+      ['not JSON', notJson],
+      ['a JSON array', () => json([1])],
+      ['JSON null', () => json(null)],
+    ])('a 2xx reply that is %s stays connection-uncertain', async (_name, reply) => {
+      const h = harness();
+      h.access.redeem = reply;
+      const { status } = await h.service.connect(FIRST_INVITE);
+      expect(status).toMatchObject({ state: 'connection-uncertain', notice: 'connection-uncertain', connected: false });
+      expect(h.fb().access.status().noticeReason).toBeNull();
+    });
+
+    describe('previously enrolled', () => {
+      it('keeps capture on and the old ref inactive, and a new report binds to it with nothing held', async () => {
+        const h = harness();
+        const { enrollmentRef } = await rejectedAfterEnrolled(h);
+        expect(h.service.status()).toMatchObject({ enrolled: true, canCapture: true });
+        await expect(h.fb().access.enrollmentState()).resolves.toEqual({ enrollmentRef, active: false });
+        expect(await h.fb().access.getToken()).toBeUndefined();
+
+        const saved = await h.send((await h.capture()).draftId) as { id: string };
+        expect(saved).toMatchObject({ status: 'saved-local', diagnostics: { status: 'attached' } });
+        const binding = readFileSync(join(h.fb().outbox.dir, 'reports', saved.id, 'binding.json'), 'utf-8');
+        expect(JSON.parse(binding)).toEqual({ enrollmentRef });
+        await vi.waitFor(() => expect(h.service.status().outbox.pending).toBe(2));
+        // The count has to come from pending: the SDK reports none of these as held.
+        expect(h.service.status().outbox).toMatchObject({ heldForEnrollment: 0, heldBytes: 0, releaseToken: null, blocked: 0 });
+      });
+
+      it('a draft opened before the rejection saves under the same old ref', async () => {
+        const h = harness();
+        await h.service.connect(FIRST_INVITE);
+        const draft = await h.capture();
+        const { enrollmentRef } = await h.fb().access.enrollmentState();
+        refused(h);
+        await h.service.connect(SECOND_INVITE);
+        const saved = await h.send(draft.draftId) as { id: string };
+        expect(JSON.parse(readFileSync(join(h.fb().outbox.dir, 'reports', saved.id, 'binding.json'), 'utf-8'))).toEqual({ enrollmentRef });
+      });
+
+      it('nothing is delivered and nothing is requested, through a flush and a restart', async () => {
+        const h = harness({ online: true });
+        h.state.online = false;
+        const { enrollmentRef } = await rejectedAfterEnrolled(h);
+        await h.send((await h.capture()).draftId);
+        h.state.online = true;
+        h.fetchImpl.mockClear();
+        await h.fb().outbox.resume();
+        await h.fb().outbox.flush();
+        expect(h.fetchImpl).not.toHaveBeenCalled();
+        expect(h.reports).toEqual([]);
+        expect((await h.fb().outbox.list()).every((item) => item.code !== 'permanent')).toBe(true);
+        await h.service.shutdown();
+
+        const after = harness({ online: true });
+        await after.service.start();
+        await vi.waitFor(() => expect(after.service.status().outbox.pending).toBe(2));
+        await after.fb().outbox.flush();
+        expect(after.fetchImpl).not.toHaveBeenCalled();
+        expect(after.reports).toEqual([]);
+        expect(after.service.status()).toMatchObject({ ...rejectedStatus, enrolled: true, canCapture: true, outbox: { heldForEnrollment: 0, releaseToken: null } });
+        expect(after.fb().access.status().noticeReason).toBe('wrong-game');
+        await expect(after.fb().access.enrollmentState()).resolves.toEqual({ enrollmentRef, active: false });
+      });
+
+      it('a new clean invitation restores the connection, holds the reports, and only a release sends them', async () => {
+        const h = harness({ online: true });
+        h.state.online = false;
+        const { before } = await rejectedAfterEnrolled(h);
+        const during = await h.send((await h.capture()).draftId) as { id: string };
+        const bytes = readFileSync(join(h.fb().outbox.dir, 'reports', during.id, 'report.json'));
+
+        clean(h);
+        await expect(h.service.connect(SECOND_INVITE)).resolves.toMatchObject({ connected: true, status: { state: 'connected', notice: null } });
+        expect(paths(h)).not.toContain('/api/v1/access/disconnect');
+        const { releaseToken } = await h.settled(2);
+
+        h.state.online = true;
+        await h.fb().outbox.resume();
+        await h.fb().outbox.flush();
+        expect(h.reports).toEqual([]);
+
+        await expect(h.service.releaseHeldReports(releaseToken as string)).resolves.toMatchObject({ released: 2, remaining: 0, failed: 0 });
+        expect(readFileSync(join(h.fb().outbox.dir, 'reports', during.id, 'report.json')).equals(bytes)).toBe(true);
+        await vi.waitFor(() => expect(h.reports).toHaveLength(2), { timeout: 10_000 });
+        expect(h.reports.map((report) => report.body.id).sort()).toEqual([before.id, during.id].sort());
+        expect(h.reports.every((report) => report.authorization === `Bearer ${SECOND_TOKEN}`)).toBe(true);
+        // A second release does nothing, and the queue is empty.
+        await expect(h.service.releaseHeldReports(releaseToken as string)).resolves.toMatchObject({ released: 0, code: 'stale-release' });
+        await vi.waitFor(() => expect(h.service.status().outbox.pending).toBe(0));
+      }, 30_000);
+
+      it('after the new connection, Clear is the other way out: nothing is sent', async () => {
+        const h = harness({ online: true });
+        h.state.online = false;
+        await rejectedAfterEnrolled(h);
+        clean(h);
+        await h.service.connect(SECOND_INVITE);
+        await h.settled(1);
+        await expect(h.service.clearHeldReports()).resolves.toMatchObject({ cleared: 1, remaining: 0, failed: 0, status: { outbox: { heldForEnrollment: 0, pending: 0, releaseToken: null } } });
+        h.state.online = true;
+        await h.fb().outbox.resume();
+        await h.fb().outbox.flush();
+        expect(h.reports).toEqual([]);
+      });
+
+      it('with no new invitation, Disconnect clears the state, keeps the reports, and Clear can delete them', async () => {
+        const h = harness();
+        await rejectedAfterEnrolled(h);
+        await h.send((await h.capture()).draftId);
+        await expect(h.service.disconnect()).resolves.toMatchObject({ forgotten: true, revoked: null, status: { state: 'disconnected', notice: null, enrolled: false, canCapture: false, expiresAt: null } });
+        expect(paths(h)).not.toContain('/api/v1/access/disconnect');
+        const outbox = await h.settled(2, false);
+        expect(outbox).toMatchObject({ pending: 2, releaseToken: null });
+        await expect(h.service.releaseHeldReports('anything')).resolves.toMatchObject({ released: 0, code: 'not-enrolled' });
+        await expect(h.service.clearHeldReports()).resolves.toMatchObject({ cleared: 2, remaining: 0, status: { outbox: { pending: 0 } } });
+      });
+
+      it('after Disconnect, a clean invitation can still send them', async () => {
+        const h = harness();
+        await rejectedAfterEnrolled(h);
+        await h.service.disconnect();
+        await h.settled(1, false);
+        clean(h);
+        await h.service.connect(SECOND_INVITE);
+        const { releaseToken } = await h.settled(1);
+        await expect(h.service.releaseHeldReports(releaseToken as string)).resolves.toMatchObject({ released: 1, remaining: 0 });
+      });
+
+      it('a second rejection changes nothing, and release and clear do nothing', async () => {
+        const h = harness();
+        const { enrollmentRef } = await rejectedAfterEnrolled(h);
+        await expect(h.service.connect(SECOND_INVITE)).resolves.toMatchObject({ connected: false, status: rejectedStatus });
+        await expect(h.fb().access.enrollmentState()).resolves.toEqual({ enrollmentRef, active: false });
+        await expect(h.service.releaseHeldReports('anything')).resolves.toMatchObject({ released: 0, remaining: 0, code: 'not-enrolled' });
+        await expect(h.service.clearHeldReports()).resolves.toMatchObject({ cleared: 0, remaining: 0 });
+        expect(h.service.status().outbox).toMatchObject({ pending: 1, heldForEnrollment: 0, releaseToken: null });
+      });
+
+      it('reports already held stay clearable, with no token to send them, until a new connection', async () => {
+        const h = harness();
+        await h.service.connect(FIRST_INVITE);
+        await h.send((await h.capture()).draftId);
+        clean(h);
+        await h.service.disconnect();
+        await h.service.connect(SECOND_INVITE);
+        const shown = (await h.settled(1)).releaseToken as string;
+        refused(h);
+        await h.service.connect(FIRST_INVITE);
+        // The SDK's view still has the old token here: it must not reach the renderer as usable.
+        expect(h.service.status().outbox).toMatchObject({ heldForEnrollment: 1, releaseToken: null });
+        await expect(h.service.releaseHeldReports(shown)).resolves.toMatchObject({ released: 0, remaining: 1, code: 'not-enrolled' });
+        h.access.redeem = () => json(h.grant(SECOND_TOKEN, 'v'));
+        await h.service.connect(FIRST_INVITE);
+        const { releaseToken } = await h.settled(1);
+        expect(releaseToken).not.toBe(shown);
+        await expect(h.service.releaseHeldReports(releaseToken as string)).resolves.toMatchObject({ released: 1, remaining: 0 });
+      });
+
+      it('a full queue says where to go, with none of them held', async () => {
+        const h = harness();
+        await h.service.connect(FIRST_INVITE);
+        for (let i = 0; i < 10; i++) await h.send((await h.capture()).draftId);
+        refused(h);
+        await h.service.connect(SECOND_INVITE);
+        const draft = await h.capture();
+        await expect(h.send(draft.draftId)).rejects.toThrow(/10 saved reports take up space\. Settings, Feedback says how to send or clear them\./);
+      }, 30_000);
+    });
+  });
+
+  describe('upgrading from v0.7.0 (#2787)', () => {
+    it('keeps the identity and the queue of a store in the v0.7.0 shape', async () => {
+      const h = harness();
+      await h.service.connect(FIRST_INVITE);
+      const saved = await h.send((await h.capture()).draftId) as { id: string };
+      const record = await h.fb().store.read();
+      // Nothing new is written for a working enrollment, so v0.7.0 can read it and this can read v0.7.0's.
+      expect(Object.keys(record).sort()).toEqual(['enrollmentRef', 'notice', 'revision', 'session']);
+      expect(record.notice).toBeNull();
+      expect(Object.keys(record.session as object).sort()).toEqual(['expiresAt', 'refreshToken']);
+      await h.service.shutdown();
+
+      const after = harness();
+      await after.service.start();
+      await vi.waitFor(() => expect(after.service.status().connected).toBe(true));
+      expect((await after.fb().access.enrollmentState()).enrollmentRef).toBe(record.enrollmentRef);
+      await vi.waitFor(() => expect(after.service.status().outbox).toMatchObject({ pending: 1, heldForEnrollment: 0 }));
+      expect((await after.saved()).map((report) => report.id)).toEqual([saved.id]);
+    });
+
+    it.each([false, true])('someone stuck on v0.7.0\'s connection-uncertain, enrolled %s, stays there with no request, and a spent invitation then reads as used up', async (enrolled) => {
+      const h = harness();
+      await h.service.start();
+      const { revision } = await h.fb().store.read();
+      // Exactly what v0.7.0 stores, three keys, for a 45-day reply it refused.
+      await h.fb().store.replace(revision, { session: null, notice: { state: 'connection-uncertain', expiresAt: null, enrolled }, ...(enrolled && { enrollmentRef: '11111111-1111-4111-8111-111111111111' }) });
+      await h.service.shutdown();
+
+      const after = harness();
+      await after.service.start();
+      expect(after.service.status()).toMatchObject({ state: 'connection-uncertain', notice: 'connection-uncertain', enrolled, canCapture: enrolled, connected: false });
+      expect(after.fetchImpl).not.toHaveBeenCalled();
+      after.access.redeem = () => json({}, 401);
+      await expect(after.service.connect(FIRST_INVITE)).resolves.toMatchObject({ connected: false, status: { state: 'access-required', notice: 'access-required', enrolled } });
+    });
   });
 });

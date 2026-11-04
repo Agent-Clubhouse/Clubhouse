@@ -265,7 +265,7 @@ function ipcChannelNames(): string[] {
 /** Framebriar access states (the SDK's FramebriarAccessState). */
 export const FEEDBACK_ACCESS_STATES = [
   'disconnected', 'checking', 'connecting', 'connected', 'offline', 'stopped', 'disconnecting',
-  'expired', 'access-required', 'connection-uncertain', 'storage-unavailable', 'migration-required',
+  'expired', 'access-required', 'connection-uncertain', 'enrollment-response-rejected', 'storage-unavailable', 'migration-required',
 ] as const;
 
 export const ATTR = {
@@ -697,7 +697,7 @@ export const ATTR = {
     // Clubhouse's own send checks
     'screenshot-expired', 'notes-required', 'shot-unavailable', 'not-running', 'draft-required', 'enrollment-changed',
     // Why a connect returned false (connectFailureClass)
-    'invitation-malformed', 'busy', 'access-refused', 'timeout', 'connection-uncertain',
+    'invitation-malformed', 'busy', 'access-refused', 'timeout', 'connection-uncertain', 'enrollment-response-rejected',
     // A queued report the outbox gave up on
     'undeliverable',
     'unknown', 'other',
@@ -709,7 +709,7 @@ export const ATTR = {
   feedbackTrigger: enumAttr('clubhouse.feedback.trigger', ['button', 'shortcut']),
   feedbackAccessState: enumAttr('clubhouse.feedback.access.state', [...FEEDBACK_ACCESS_STATES]),
   feedbackAccessFrom: enumAttr('clubhouse.feedback.access.from', [...FEEDBACK_ACCESS_STATES, 'none']),
-  feedbackNotice: enumAttr('clubhouse.feedback.notice', ['none', 'expired', 'access-required', 'connection-uncertain', 'migration-required']),
+  feedbackNotice: enumAttr('clubhouse.feedback.notice', ['none', 'expired', 'access-required', 'connection-uncertain', 'enrollment-response-rejected', 'migration-required']),
   feedbackRefusal: enumAttr('clubhouse.feedback.refusal', ['not-configured', 'no-main-window', 'unauthorized-caller']),
   /**
    * IPC channel, from the fixed IPC constants; never a dynamic name. Channels

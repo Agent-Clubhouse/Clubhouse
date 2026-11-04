@@ -5,12 +5,12 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createFramebriar } from '../../vendor/framebriar/adapters/node/index.mjs';
 import type { Framebriar, FramebriarAccessView, FramebriarOutboxView, FramebriarIncident } from '../../vendor/framebriar/adapters/node/index.mjs';
 import incidentFixture from './fixtures/incident-report-v1.json';
-import { ATTR } from '../../../shared/telemetry/attributes';
+import { ATTR, FEEDBACK_ACCESS_STATES } from '../../../shared/telemetry/attributes';
 import { setProducingRuntime } from '../../telemetry/__test-utils__/producing-runtime';
 import { asyncOnlySafeStorage, bothApisSafeStorage, fakeKeychain, syncOnlySafeStorage } from '../../telemetry/__test-utils__/fake-safe-storage';
 import type { TelemetryRuntime } from '../../telemetry/types';
 import { createDiagRedactor } from '../../telemetry/diag-redaction';
-import { connectFailureClass, connectFailureReason, FeedbackService, pngSize, sdkVersion, toFeedbackStatus } from './feedback-service';
+import { connectFailureClass, connectFailureReason, FeedbackService, type FeedbackLog, pngSize, sdkVersion, toFeedbackStatus } from './feedback-service';
 
 const ACCESS: FramebriarAccessView = { state: 'connected', connected: true, enrolled: true, canCapture: true, notice: null, expiresAt: '2026-11-15T00:00:00.000Z' };
 const OUTBOX: FramebriarOutboxView = { state: 'available', items: 2, bytes: 1234, maxItems: 10, maxBytes: 33554432, blocked: 1, heldForEnrollment: 0, heldBytes: 0, releaseToken: null, retention: 'until-delivered-or-cleared' };
@@ -110,8 +110,8 @@ describe('FeedbackService (fake SDK)', () => {
     return { fb, create, calls, opts: () => options! };
   }
 
-  function service(create: ReturnType<typeof fakeSdk>['create']) {
-    return new FeedbackService({ safeStorage, dataDir: '/data', appVersion: '0.42.0-beta.1', isOnline: () => true, create: create as never, now: () => Date.parse('2026-10-17T10:00:00.000Z') });
+  function service(create: ReturnType<typeof fakeSdk>['create'], log?: FeedbackLog) {
+    return new FeedbackService({ safeStorage, dataDir: '/data', appVersion: '0.42.0-beta.1', isOnline: () => true, create: create as never, now: () => Date.parse('2026-10-17T10:00:00.000Z'), log });
   }
 
   it('starts once with the app id, version, window capture and telemetry off', async () => {
@@ -417,7 +417,7 @@ describe('FeedbackService (fake SDK)', () => {
       const draft = await s.captureDraft(async () => PNG);
       fb.outbox.status = (() => ({ ...OUTBOX, heldForEnrollment: 1 })) as never;
       fb.feedback.prepare.mockRejectedValueOnce(Object.assign(new Error('Invalid'), { code: 'invalid-input' }));
-      await expect(s.send({ draftId: draft.draftId, notes: 'n', includeScreenshot: true })).rejects.toThrow(/^Invalid$/);
+      await expect(s.send({ draftId: draft.draftId, notes: 'n', includeScreenshot: true })).rejects.toThrow(/^This report couldn't be saved/);
       fb.feedback.submit.mockRejectedValueOnce(Object.assign(new Error('Full.'), { code: 'storage-full' }));
       await expect(s.send({ draftId: draft.draftId, notes: 'n', includeScreenshot: true })).rejects.toThrow('Full. 1 held report takes up space.');
     });
@@ -540,7 +540,7 @@ describe('FeedbackService (fake SDK)', () => {
       const bad = fakeSdk();
       bad.fb.start.mockRejectedValueOnce(Object.assign(new Error('locked'), { code: 'busy' }));
       const failed = logged(bad.create);
-      await expect(failed.s.start()).rejects.toThrow('locked');
+      await expect(failed.s.start()).rejects.toThrow('Feedback is busy');
       expect(failed.find('Feedback start failed')).toEqual(['warn', 'Feedback start failed', { error: 'locked', code: 'busy' }]);
     });
 
@@ -704,6 +704,38 @@ describe('FeedbackService (fake SDK)', () => {
         [ATTR.feedbackStage('connect'), ATTR.feedbackError('access-refused')],
         [ATTR.feedbackStage('connect'), ATTR.feedbackError('secure-store-unavailable')],
       ]);
+    });
+
+    it('records a rejected reply as its own class and notice, never as other', async () => {
+      const { create, fb } = fakeSdk();
+      const s = service(create);
+      let access = { ...ACCESS, state: 'disconnected' as const, connected: false, noticeReason: null as string | null };
+      fb.access.status = () => access as never;
+      fb.access.connect.mockImplementationOnce(async () => {
+        access = { ...access, state: 'enrollment-response-rejected' as never, notice: 'enrollment-response-rejected', noticeReason: 'invalid-deadline' };
+        return false;
+      });
+      await s.connect(INVITE);
+      expect(named('clubhouse.feedback.failed')).toEqual([[ATTR.feedbackStage('connect'), ATTR.feedbackError('enrollment-response-rejected')]]);
+      expect(() => ATTR.feedbackNotice('enrollment-response-rejected')).not.toThrow();
+      expect(FEEDBACK_ACCESS_STATES).toContain('enrollment-response-rejected');
+    });
+
+    it.each([
+      ['feedback-unavailable', 'Feedback needs an enrollment', /isn't connected\. Connect in Settings, Feedback/],
+      ['invalid-input', 'Invalid reviewed feedback', /couldn't be saved/],
+      ['conflict', 'Local feedback identity conflict', /couldn't be saved/],
+      ['some-other-code', 'Framebriar access unavailable', /^Feedback isn't available right now\.$/],
+    ])('shows plain words for the SDK\'s %s, keeping the code and logging the original', async (code, raw, shown) => {
+      const { create, fb } = fakeSdk();
+      const log = vi.fn();
+      const s = service(create, log);
+      fb.feedback.open.mockRejectedValueOnce(Object.assign(new Error(raw), { code }));
+      const err = await s.captureDraft(async () => PNG).catch((e: Error & { code: string }) => e) as Error & { code: string };
+      expect(err.message).toMatch(shown);
+      expect(err.message).not.toMatch(/Framebriar|enrollment/i);
+      expect(err.code).toBe(code);
+      expect(log).toHaveBeenCalledWith('warn', 'Feedback capture failed', expect.objectContaining({ error: raw, code }));
     });
 
     it('records a failed start', async () => {
@@ -1114,6 +1146,8 @@ describe('connectFailureClass', () => {
     expect(connectFailureClass(INVITE, 'disconnected', 'access-required', 'access-required', 300)).toBe('access-refused');
     expect(connectFailureClass(INVITE, 'disconnected', 'connection-uncertain', 'connection-uncertain', 142_000)).toBe('timeout');
     expect(connectFailureClass(INVITE, 'disconnected', 'connection-uncertain', 'connection-uncertain', 800)).toBe('connection-uncertain');
+    // Whatever the duration: the reply came, so this is never a timeout.
+    expect(connectFailureClass(INVITE, 'connected', 'enrollment-response-rejected', 'enrollment-response-rejected', 142_000)).toBe('enrollment-response-rejected');
     expect(connectFailureClass(INVITE, 'disconnected', 'disconnected', null, 800)).toBe('unknown');
   });
 });
