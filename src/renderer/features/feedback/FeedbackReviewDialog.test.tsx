@@ -27,6 +27,26 @@ beforeEach(() => {
 });
 afterEach(() => resetFeedbackStore());
 
+describe('after a save whose earlier try had an unknown outcome', () => {
+  it('says both may be delivered', async () => {
+    useFeedbackStore.setState({ draft: DRAFT });
+    send.mockResolvedValueOnce({ id: 'rep-2', status: 'saved-local', earlierMayDeliver: true });
+    render(<FeedbackDialogHost />);
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Send' })); });
+    const text = screen.getByTestId('feedback-both-may-deliver').textContent ?? '';
+    expect(text).toMatch(/may get both reports/);
+    expect(text).not.toMatch(/framebriar|\u2014/i);
+  });
+
+  it('says nothing about it otherwise', async () => {
+    useFeedbackStore.setState({ draft: DRAFT });
+    render(<FeedbackDialogHost />);
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Send' })); });
+    expect(screen.getByTestId('feedback-sent-state')).toBeTruthy();
+    expect(screen.queryByTestId('feedback-both-may-deliver')).toBeNull();
+  });
+});
+
 describe('after an enrollment change', () => {
   const NEXT = {
     draftId: '1c6d7b3f-2a4e-4d9f-8b8c-3e5f7a9b1d2f', preview: 'data:image/png;base64,bmV3', shots: [{ shotId: 's0', label: 'Main window', preview: 'data:image/png;base64,bmV3' }],

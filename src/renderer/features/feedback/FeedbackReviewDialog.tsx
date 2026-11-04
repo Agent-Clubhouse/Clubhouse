@@ -77,6 +77,7 @@ export function FeedbackReviewDialog({ draft, reopened = null, onClose }: Props)
   const [includeCorrelation, setIncludeCorrelation] = useState(reopened?.includeCorrelation ?? true);
   const [includeDiagnostics, setIncludeDiagnostics] = useState(reopened?.includeDiagnostics ?? true);
   const [outcome, setOutcome] = useState<FeedbackDiagnosticsOutcome | null>(null);
+  const [earlierMayDeliver, setEarlierMayDeliver] = useState(false);
   const diagnostics = draft.diagnostics;
   const received = useFeedbackStore((s) => (reportId ? s.status?.received.includes(reportId) === true : false));
   const saved = useFeedbackStore((s) => savedText(s.status));
@@ -112,7 +113,7 @@ export function FeedbackReviewDialog({ draft, reopened = null, onClose }: Props)
     setPhase('sending');
     setError(null);
     try {
-      // The drawing is baked into the capture at full size; main checks it is the same image size.
+      // The drawing is baked into the capture at full size; main checks it fits the image it came from.
       const annotatedPng = includeScreenshot && shot && strokes.length > 0
         ? await compositeAnnotatedPng(shot.preview, strokes)
         : undefined;
@@ -133,6 +134,7 @@ export function FeedbackReviewDialog({ draft, reopened = null, onClose }: Props)
       }
       setReportId(result.id);
       setOutcome(result.diagnostics ?? null);
+      setEarlierMayDeliver(result.earlierMayDeliver === true);
       setPhase('saved');
     } catch (err) {
       // telemetry-exempt: shown to the user; the reviewed draft is kept for a retry.
@@ -149,6 +151,11 @@ export function FeedbackReviewDialog({ draft, reopened = null, onClose }: Props)
             <p className="text-sm text-ctp-text" role="status" data-testid="feedback-sent-state">
               {received ? 'Received. Thanks for the feedback.' : saved}
             </p>
+            {earlierMayDeliver && (
+              <p className="text-sm text-ctp-text" data-testid="feedback-both-may-deliver">
+                Clubhouse couldn't confirm whether your earlier try was saved, so the developer may get both reports.
+              </p>
+            )}
             {outcome && <p className="text-xs text-ctp-subtext0" data-testid="feedback-diagnostics-outcome">{diagnosticsOutcomeText(outcome)}</p>}
             <div className="flex justify-end">
               <button type="button" onClick={onClose} className="px-3 py-1.5 text-sm rounded-md bg-surface-0 text-ctp-text hover:bg-surface-1">Close</button>
