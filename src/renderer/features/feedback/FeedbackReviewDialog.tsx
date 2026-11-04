@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState, type KeyboardEvent } from 'react';
 import { Modal } from '../../components/Modal';
 import { FEEDBACK_DIAGNOSTICS, type FeedbackCaptureResult, type FeedbackDiagnosticLine, type FeedbackDiagnosticsOutcome, type FeedbackShot, type FeedbackStatus } from '../../../shared/feedback-types';
-import { useFeedbackStore, type FeedbackReopened } from '../../stores/feedbackStore';
+import { savedReportsNeedSend, useFeedbackStore, type FeedbackReopened } from '../../stores/feedbackStore';
 import { useUIStore } from '../../stores/uiStore';
 import { ipcErrorMessage } from '../../utils/ipc-error';
 import { compositeAnnotatedPng, type Stroke } from './annotation';
@@ -53,8 +53,9 @@ const DELIVERS_WHEN_REACHABLE: ReadonlySet<FeedbackStatus['state']> = new Set(['
 /** Where a saved report stands. In any other state it can't go until a new connection is made. */
 function savedText(status: FeedbackStatus | null): string {
   // Bound to a connection that can't come back, so it's held once a new one is made.
-  if (status?.notice === 'enrollment-response-rejected') {
-    return 'Saved on this computer, but it can\'t be sent yet. Connect with a new invitation in Settings, Feedback, then send it from there.';
+  if (status && savedReportsNeedSend(status.notice)) {
+    const connect = status.notice === 'connection-uncertain' ? 'Connect again' : 'Connect with a new invitation';
+    return `Saved on this computer, but it can't be sent yet. ${connect} in Settings, Feedback, then send it from there.`;
   }
   const waiting = status !== null && (status.notice !== null || !DELIVERS_WHEN_REACHABLE.has(status.state));
   return waiting

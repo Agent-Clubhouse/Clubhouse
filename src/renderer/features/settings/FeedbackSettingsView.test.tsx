@@ -351,6 +351,24 @@ describe('FeedbackSettingsView', () => {
     });
   });
 
+  it.each([
+    ['expired', 'connect with a new invitation'],
+    ['access-required', 'connect with a new invitation'],
+    ['connection-uncertain', 'connect again'],
+  ] as const)('with the %s notice, says saved reports need a connection and a Send', (notice, connect) => {
+    const status = feedbackStatus({ ...disconnected, state: notice, notice, enrolled: true, canCapture: true });
+    setFeedback(true, { ...status, outbox: { ...status.outbox, pending: 2, correlationWaiting: 1 } });
+    render(<FeedbackSettingsView />);
+    expect(screen.getByTestId('feedback-outbox').textContent).toBe(`2 reports are saved on this computer and can't be sent yet. To send, ${connect}, then choose Send under Held reports. To delete, choose Disconnect, then Clear under Held reports.`);
+  });
+
+  it('offline still says waiting to send', () => {
+    const status = feedbackStatus({ ...disconnected, state: 'offline', enrolled: true, canCapture: true });
+    setFeedback(true, { ...status, outbox: { ...status.outbox, pending: 2 } });
+    render(<FeedbackSettingsView />);
+    expect(screen.getByTestId('feedback-outbox').textContent).toBe('2 reports are saved and waiting to send.');
+  });
+
   it('shows feedback waiting to send and blocked reports', () => {
     setFeedback(true, feedbackStatus({ outbox: { ...feedbackStatus().outbox, pending: 2, blocked: 1 } }));
     render(<FeedbackSettingsView />);

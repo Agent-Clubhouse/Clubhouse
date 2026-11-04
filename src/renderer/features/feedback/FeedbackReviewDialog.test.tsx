@@ -231,8 +231,22 @@ describe('FeedbackReviewDialog', () => {
       expect(await savedWith(feedbackStatus({ state, connected: state === 'connected' }))).toMatch(REACHABLE);
     });
 
-    it.each(['expired', 'access-required', 'connection-uncertain', 'migration-required'] as const)('%s notice: waits for a connection', async (notice) => {
-      expect(await savedWith(feedbackStatus({ state: notice, connected: false, notice }))).toMatch(WAITING);
+    it('migration-required notice: waits for a connection', async () => {
+      expect(await savedWith(feedbackStatus({ state: 'migration-required', connected: false, notice: 'migration-required' }))).toMatch(WAITING);
+    });
+
+    it.each([
+      ['expired', 'Connect with a new invitation'],
+      ['access-required', 'Connect with a new invitation'],
+      ['connection-uncertain', 'Connect again'],
+    ] as const)('%s notice: says a connection and a Send are both needed', async (notice, connect) => {
+      const text = await savedWith(feedbackStatus({ state: notice, connected: false, notice }));
+      expect(text).toBe(`Saved on this computer, but it can't be sent yet. ${connect} in Settings, Feedback, then send it from there.`);
+      expect(text).not.toMatch(/as soon as|waits until/);
+    });
+
+    it('offline keeps its promise, because the same connection comes back', async () => {
+      expect(await savedWith(feedbackStatus({ state: 'offline', connected: false, notice: null }))).toMatch(REACHABLE);
     });
 
     it.each(['disconnected', 'disconnecting', 'connecting', 'storage-unavailable'] as const)('%s: waits for a connection', async (state) => {
@@ -246,7 +260,7 @@ describe('FeedbackReviewDialog', () => {
     });
 
     it('a notice wins over a state that could otherwise deliver', async () => {
-      expect(await savedWith(feedbackStatus({ state: 'checking', connected: false, notice: 'expired' }))).toMatch(WAITING);
+      expect(await savedWith(feedbackStatus({ state: 'checking', connected: false, notice: 'migration-required' }))).toMatch(WAITING);
     });
 
     it('with no status yet, keeps the plain promise', async () => {
@@ -256,7 +270,7 @@ describe('FeedbackReviewDialog', () => {
     it('follows the access state while the sheet stays open', async () => {
       expect(await savedWith(feedbackStatus())).toMatch(REACHABLE);
       act(() => { useFeedbackStore.setState({ status: feedbackStatus({ state: 'expired', connected: false, notice: 'expired' }) }); });
-      expect(screen.getByTestId('feedback-sent-state').textContent).toMatch(WAITING);
+      expect(screen.getByTestId('feedback-sent-state').textContent).toMatch(/then send it from there\.$/);
     });
   });
 

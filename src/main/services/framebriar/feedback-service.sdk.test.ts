@@ -816,6 +816,82 @@ describe('the report field with the real SDK', () => {
     });
   });
 
+  describe('a report saved while enrolled, with no working connection (#2787)', () => {
+    const newGrant = (h: Harness) => { h.access.redeem = () => json(h.grant(SECOND_TOKEN, 's')); };
+
+    /** One report from before the problem and one saved during it. */
+    async function savedDuring(h: Harness, enter: (h: Harness) => Promise<unknown> | void, view: { state: string; notice: string | null }) {
+      await h.service.connect(FIRST_INVITE);
+      const before = await h.send((await h.capture()).draftId) as { id: string };
+      await enter(h);
+      expect(h.service.status()).toMatchObject({ ...view, connected: false, enrolled: true, canCapture: true });
+      const during = await h.send((await h.capture()).draftId) as { id: string };
+      await vi.waitFor(() => expect(h.service.status().outbox.pending).toBe(2));
+      return [before.id, during.id].sort();
+    }
+
+    describe.each(NOTICES.filter(([, , view]) => view.notice !== 'enrollment-response-rejected'))('%s', (_name, enter, view) => {
+      it('waits unheld, then a new invitation holds both reports, and only a release sends them', async () => {
+        const h = harness();
+        const ids = await savedDuring(h, enter, view);
+        expect(h.service.status().outbox).toMatchObject({ heldForEnrollment: 0, releaseToken: null });
+        h.state.online = true;
+        await h.fb().outbox.resume();
+        await h.fb().outbox.flush();
+        expect(h.reports).toEqual([]);
+
+        newGrant(h);
+        await expect(h.service.connect(SECOND_INVITE)).resolves.toMatchObject({ connected: true, status: { notice: null } });
+        const { releaseToken } = await h.settled(2);
+        await h.fb().outbox.resume();
+        await h.fb().outbox.flush();
+        expect(h.reports).toEqual([]);
+
+        await expect(h.service.releaseHeldReports(releaseToken as string)).resolves.toMatchObject({ released: 2, remaining: 0, failed: 0 });
+        await vi.waitFor(() => expect(h.reports).toHaveLength(2), { timeout: 10_000 });
+        expect(h.reports.map((report) => report.body.id).sort()).toEqual(ids);
+        expect(h.reports.every((report) => report.authorization === `Bearer ${SECOND_TOKEN}`)).toBe(true);
+      }, 30_000);
+
+      it('with no invitation, Disconnect keeps them, and Clear can delete them', async () => {
+        const h = harness();
+        await savedDuring(h, enter, view);
+        await h.service.disconnect();
+        await h.settled(2, false);
+        await expect(h.service.clearHeldReports()).resolves.toMatchObject({ cleared: 2, remaining: 0, status: { outbox: { pending: 0 } } });
+      });
+    });
+
+    it('connection-uncertain: the same invitation recovering is still a new enrollment, so they are held', async () => {
+      const h = harness();
+      await h.service.connect(FIRST_INVITE);
+      h.access.redeem = notJson;
+      await h.service.connect(SECOND_INVITE);
+      await h.send((await h.capture()).draftId);
+      newGrant(h);
+      await expect(h.service.connect(SECOND_INVITE)).resolves.toMatchObject({ connected: true });
+      await h.settled(1);
+      h.state.online = true;
+      await h.fb().outbox.resume();
+      await h.fb().outbox.flush();
+      expect(h.reports).toEqual([]);
+    });
+
+    it('offline is different: the same enrollment comes back, and the reports go by themselves', async () => {
+      const h = harness();
+      const ids = await savedDuring(h, (x) => { x.access.refresh = () => json({}, 503); return x.fb().access.refresh(); }, { state: 'offline', notice: null });
+      const { enrollmentRef } = await h.fb().access.enrollmentState();
+      h.state.online = true;
+      h.access.refresh = () => json(h.grant(FIRST_TOKEN, 'r'));
+      await h.fb().access.refresh();
+      await vi.waitFor(() => expect(h.reports).toHaveLength(2), { timeout: 10_000 });
+      expect(h.reports.map((report) => report.body.id).sort()).toEqual(ids);
+      expect(h.reports.every((report) => report.authorization === `Bearer ${FIRST_TOKEN}`)).toBe(true);
+      expect((await h.fb().access.enrollmentState()).enrollmentRef).toBe(enrollmentRef);
+      expect(h.service.status().outbox.heldForEnrollment).toBe(0);
+    }, 30_000);
+  });
+
   describe('upgrading from v0.7.0 (#2787)', () => {
     it('keeps the identity and the queue of a store in the v0.7.0 shape', async () => {
       const h = harness();
