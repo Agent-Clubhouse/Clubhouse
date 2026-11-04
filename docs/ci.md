@@ -192,10 +192,14 @@ Gating the `build` job on `complete`, as #1984 did, gives a lean PR:
 It's a file of its own because dispatching `validate.yml` runs its complete matrix. Its only trigger is `workflow_dispatch`, with a `stable_candidate` input that's off by default, and `scripts/ci/stable-candidate.mjs` refuses to do anything unless it's on a hosted runner, on that dispatch, with the input on. To run it, once the workflow is on the default branch:
 
 ```
-gh workflow run stable-candidate.yml --ref main -f stable_candidate=true
+gh workflow run stable-candidate.yml --ref main -f stable_candidate=true -f candidate_sha=<full sha>
 ```
 
-**What it builds:** this source with `package.json` at its base version (`0.42.0-beta.13` becomes `0.42.0`), for packaging only, restored afterwards. It has no signing, notarization, secrets, environment or installers, and it commits and publishes nothing. On macOS, Apple Silicon needs a signature to run, so a copy in the runner temp gets `codesign --force --deep -s -`. On Linux, the job makes `chrome-sandbox` root-owned with mode 4755, as the package does at install, and the sandbox stays on. `provenance.json` records the source commit, ASAR hash, fuses (they must match the hardened values) and every difference from a release.
+**Which source is which:** there are two checkouts, and `provenance.json` records both SHAs.
+- **Candidate:** `candidate/`, at `candidate_sha`. This is the only source packaged, with its own `forge.config.ts` and `node_modules`. `candidate_sha` must be a full 40-character SHA of a commit on `main`, and it must include the `core:startup` fields below. The run checks the input's format before checking anything out, then checks that `git rev-parse HEAD` equals it, that it's on `main` and that no tracked file changed. It does that before `npm ci`, before packaging, after packaging and before every launch. The packaged main bundle must also carry `candidate_sha` as its build commit.
+- **Harness:** `harness/`, at the workflow's own revision (`github.sha`, from `--ref`). This is the script, its checks and the seeds, and none of it is packaged. A harness fix can be re-run against the same candidate without moving it, and the candidate can't change the checks.
+
+**What it builds:** the candidate with `package.json` at its base version (`0.42.0-beta.13` becomes `0.42.0`), for packaging only, restored afterwards. It has no signing, notarization, secrets, environment or installers, and it commits and publishes nothing. On macOS, Apple Silicon needs a signature to run, so a copy in the runner temp gets `codesign --force --deep -s -`. On Linux, the job makes `chrome-sandbox` root-owned with mode 4755, as the package does at install, and the sandbox stays on. `provenance.json` records the source commit, ASAR hash, fuses (they must match the hardened values) and every difference from a release.
 
 **How it launches:** each launch gets a disposable `CLUBHOUSE_USER_DATA` under the runner temp, which also redirects home, plus `CLUBHOUSE_DISABLE_AUTO_UPDATE=1`, `CLUBHOUSE_ANNEX_LOOPBACK_ONLY=1` and `CLUBHOUSE_ANNEX_EPHEMERAL=1`. The environment is an allowlist, so no CI credential reaches the app, and `CLUBHOUSE_TEST_STABLE_BUILD` is refused. No agent wakes and no CLI runs.
 

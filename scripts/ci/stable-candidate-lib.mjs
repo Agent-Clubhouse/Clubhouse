@@ -14,6 +14,8 @@ export const LAUNCH_ENV_ALLOWLIST = [
   'DISPLAY', 'XAUTHORITY', 'XDG_RUNTIME_DIR',
 ];
 
+const FULL_SHA = /^[0-9a-f]{40}$/;
+
 /** Everything this job may leave in its artifact: no app, archive or installer. */
 const RESULT_EXTENSIONS = new Set(['.json', '.jsonl', '.txt', '.log']);
 
@@ -31,7 +33,54 @@ export function assertDispatchContext(env) {
   need('STABLE_CANDIDATE', 'true');
   if (!env.RUNNER_TEMP) throw new Error('stable-candidate needs RUNNER_TEMP for its disposable profiles');
   if (!env.GITHUB_WORKSPACE) throw new Error('stable-candidate needs GITHUB_WORKSPACE');
+  assertFullSha('CANDIDATE_SHA', env.CANDIDATE_SHA);
+  assertFullSha('GITHUB_SHA', env.GITHUB_SHA);
   if (env.CLUBHOUSE_TEST_STABLE_BUILD !== undefined) throw new Error('CLUBHOUSE_TEST_STABLE_BUILD must be unset: a packaged build is the thing under test');
+}
+
+function assertFullSha(name, value) {
+  if (!FULL_SHA.test(value ?? '')) throw new Error(`${name} must be a full 40-character lower-case SHA, not ${value ?? 'unset'}`);
+}
+
+/**
+ * Throws unless the candidate checkout is exactly `sha`, on main, with no tracked
+ * file changed. Runs before packaging and again before every launch. `git` runs
+ * in the candidate checkout and throws on a non-zero exit.
+ */
+export function verifyCandidateCheckout({ sha, git }) {
+  assertFullSha('candidate_sha', sha);
+  const head = git(['rev-parse', 'HEAD']).trim();
+  if (head !== sha) throw new Error(`The checkout is at ${head}, not candidate_sha ${sha}`);
+  try {
+    git(['rev-parse', '--verify', 'refs/remotes/origin/main']);
+  } catch {
+    throw new Error('No origin/main in the candidate checkout, so candidate_sha can\'t be checked against it');
+  }
+  try {
+    git(['merge-base', '--is-ancestor', sha, 'refs/remotes/origin/main']);
+  } catch {
+    throw new Error(`candidate_sha ${sha} is not on main`);
+  }
+  const changed = git(['status', '--porcelain', '--untracked-files=no']).trim();
+  if (changed) throw new Error(`Tracked files differ from candidate_sha ${sha}:\n${changed}`);
+}
+
+/** The harness has to be the workflow's own revision, or provenance would be wrong. */
+export function verifyHarnessCheckout({ sha, git }) {
+  assertFullSha('GITHUB_SHA', sha);
+  const head = git(['rev-parse', 'HEAD']).trim();
+  if (head !== sha) throw new Error(`The harness is at ${head}, not the workflow's revision ${sha}`);
+}
+
+/** A candidate older than these startup fields can't report its gates, so stop before packaging it. */
+export function assertCandidateReportsGates(startupSource) {
+  const missing = ['previewEligible:', 'newChrome:', 'chatEnabled:'].filter((field) => !startupSource.includes(field));
+  if (missing.length) throw new Error(`candidate_sha predates the startup record this job reads: src/main/index.ts has no ${missing.join(', ')}`);
+}
+
+/** The packaged main bundle's path inside the asar. */
+export function findMainBundle(asarFiles) {
+  return asarFiles.find((file) => /^[\\/]?\.webpack[\\/](?:[^\\/]+[\\/])?main[\\/]index\.js$/.test(file))?.replace(/^[\\/]/, '') ?? null;
 }
 
 /** The version a stable build of this source would carry. */

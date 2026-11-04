@@ -6,6 +6,7 @@ import * as os from 'os';
 import * as path from 'path';
 import * as vm from 'vm';
 import {
+  assertCandidateReportsGates,
   assertDispatchContext,
   assertHardenedFuses,
   assertResultsOnly,
@@ -15,6 +16,7 @@ import {
   checkStartupRecord,
   connectCdp,
   expectedFor,
+  findMainBundle,
   metadataDifferences,
   parseDevToolsPort,
   parseStartupRecord,
@@ -22,6 +24,8 @@ import {
   rendererProbeSource,
   SCENARIOS,
   summarize,
+  verifyCandidateCheckout,
+  verifyHarnessCheckout,
   withCandidateVersion,
 } from './stable-candidate-lib.mjs';
 import { BETA_FLAGS, PREVIEW_PAGES } from '../../e2e/stable-state-seeds.mjs';
@@ -46,7 +50,12 @@ afterEach(() => {
   for (const dir of tempDirs.splice(0)) fs.rmSync(dir, { recursive: true, force: true });
 });
 
+const CANDIDATE_SHA = 'a'.repeat(40);
+const WORKFLOW_SHA = 'b'.repeat(40);
+
 const DISPATCH = {
+  CANDIDATE_SHA,
+  GITHUB_SHA: WORKFLOW_SHA,
   GITHUB_ACTIONS: 'true',
   GITHUB_EVENT_NAME: 'workflow_dispatch',
   RUNNER_ENVIRONMENT: 'github-hosted',
@@ -75,6 +84,172 @@ describe('assertDispatchContext', () => {
   });
 });
 
+describe('candidate_sha format', () => {
+  it.each([
+    ['empty', ''],
+    ['unset', undefined],
+    ['short', 'a'.repeat(39)],
+    ['long', 'a'.repeat(41)],
+    ['abbreviated', 'abc1234'],
+    ['upper case', 'A'.repeat(40)],
+    ['not hex', 'g'.repeat(40)],
+    ['a branch', 'main'],
+    ['a tag', 'v0.42.0'],
+    ['a ref', 'refs/heads/main'],
+    ['a line break', `${'a'.repeat(40)}\n`],
+    ['a shell injection', `${'a'.repeat(40)}; touch hacked`],
+    ['a revision expression', `${'a'.repeat(40)}^`],
+  ])('refuses %s', (_label, sha) => {
+    expect(() => assertDispatchContext({ ...DISPATCH, CANDIDATE_SHA: sha })).toThrow(/CANDIDATE_SHA/);
+  });
+
+  it('also needs the workflow revision', () => {
+    expect(() => assertDispatchContext({ ...DISPATCH, GITHUB_SHA: undefined })).toThrow(/GITHUB_SHA/);
+  });
+});
+
+describe('verifyCandidateCheckout', () => {
+  /** A fake git. Each case changes one answer from a good checkout. */
+  function fakeGit(change: { head?: string; onMain?: boolean; hasMain?: boolean; changed?: string } = {}) {
+    const calls: string[][] = [];
+    const git = (args: string[]) => {
+      calls.push(args);
+      if (args[0] === 'rev-parse' && args[1] === 'HEAD') return `${change.head ?? CANDIDATE_SHA}\n`;
+      if (args[0] === 'rev-parse' && args[1] === '--verify') {
+        if (change.hasMain === false) throw new Error('fatal: Needed a single revision');
+        return `${'c'.repeat(40)}\n`;
+      }
+      if (args[0] === 'merge-base') {
+        if (change.onMain === false) throw new Error('exit 1');
+        return '';
+      }
+      if (args[0] === 'status') return change.changed ?? '';
+      throw new Error(`Unexpected git ${args.join(' ')}`);
+    };
+    return { git, calls };
+  }
+
+  it('passes the exact commit, on main, with nothing changed', () => {
+    const { git, calls } = fakeGit();
+    expect(() => verifyCandidateCheckout({ sha: CANDIDATE_SHA, git })).not.toThrow();
+    expect(calls).toContainEqual(['merge-base', '--is-ancestor', CANDIDATE_SHA, 'refs/remotes/origin/main']);
+    expect(calls).toContainEqual(['status', '--porcelain', '--untracked-files=no']);
+  });
+
+  it('refuses a checkout at another commit', () => {
+    const { git } = fakeGit({ head: 'd'.repeat(40) });
+    expect(() => verifyCandidateCheckout({ sha: CANDIDATE_SHA, git })).toThrow(/not candidate_sha/);
+  });
+
+  it('refuses a commit that is not on main', () => {
+    const { git } = fakeGit({ onMain: false });
+    expect(() => verifyCandidateCheckout({ sha: CANDIDATE_SHA, git })).toThrow(/is not on main/);
+  });
+
+  it('refuses when origin/main is not there to check against', () => {
+    const { git } = fakeGit({ hasMain: false });
+    expect(() => verifyCandidateCheckout({ sha: CANDIDATE_SHA, git })).toThrow(/No origin\/main/);
+  });
+
+  it('refuses a changed tracked file', () => {
+    const { git } = fakeGit({ changed: ' M package.json\n' });
+    expect(() => verifyCandidateCheckout({ sha: CANDIDATE_SHA, git })).toThrow(/package\.json/);
+  });
+
+  it('refuses a malformed sha without asking git', () => {
+    const { git, calls } = fakeGit();
+    expect(() => verifyCandidateCheckout({ sha: 'main', git })).toThrow(/40-character/);
+    expect(calls).toEqual([]);
+  });
+
+  describe('against a real scratch repo', () => {
+    const run = (cwd: string, ...args: string[]) => spawnSync('git', ['-c', 'user.name=T', '-c', 'user.email=t@example.com', '-c', 'commit.gpgsign=false', ...args], { cwd, encoding: 'utf8' });
+    const realGit = (cwd: string) => (args: string[]) => {
+      const result = run(cwd, ...args);
+      if (result.status !== 0) throw new Error(result.stderr);
+      return result.stdout;
+    };
+
+    function setup() {
+      const dir = tempDir();
+      run(dir, 'init', '-q', '-b', 'main');
+      fs.writeFileSync(path.join(dir, 'a.txt'), '1');
+      run(dir, 'add', '-A');
+      run(dir, 'commit', '-qm', 'one');
+      const onMain = realGit(dir)(['rev-parse', 'HEAD']).trim();
+      run(dir, 'update-ref', 'refs/remotes/origin/main', onMain);
+      run(dir, 'checkout', '-q', '-b', 'side');
+      fs.writeFileSync(path.join(dir, 'a.txt'), '2');
+      run(dir, 'commit', '-qam', 'two');
+      const offMain = realGit(dir)(['rev-parse', 'HEAD']).trim();
+      return { dir, onMain, offMain };
+    }
+
+    it('tells a commit on main from one that is not', () => {
+      const { dir, onMain, offMain } = setup();
+      expect(() => verifyCandidateCheckout({ sha: offMain, git: realGit(dir) })).toThrow(/is not on main/);
+      run(dir, 'checkout', '-q', onMain);
+      expect(() => verifyCandidateCheckout({ sha: onMain, git: realGit(dir) })).not.toThrow();
+    });
+
+    it('notices the checkout moving or a tracked file changing', () => {
+      const { dir, onMain, offMain } = setup();
+      run(dir, 'checkout', '-q', onMain);
+      fs.writeFileSync(path.join(dir, 'a.txt'), 'edited');
+      expect(() => verifyCandidateCheckout({ sha: onMain, git: realGit(dir) })).toThrow(/a\.txt/);
+      run(dir, 'checkout', '-q', '--', 'a.txt');
+      run(dir, 'checkout', '-q', offMain);
+      expect(() => verifyCandidateCheckout({ sha: onMain, git: realGit(dir) })).toThrow(/not candidate_sha/);
+    });
+
+    it('ignores untracked files, as out/ and node_modules are', () => {
+      const { dir, onMain } = setup();
+      run(dir, 'checkout', '-q', onMain);
+      fs.writeFileSync(path.join(dir, 'untracked.txt'), 'x');
+      expect(() => verifyCandidateCheckout({ sha: onMain, git: realGit(dir) })).not.toThrow();
+    });
+  });
+});
+
+describe('verifyHarnessCheckout', () => {
+  it('passes the workflow revision and refuses anything else', () => {
+    expect(() => verifyHarnessCheckout({ sha: WORKFLOW_SHA, git: () => `${WORKFLOW_SHA}\n` })).not.toThrow();
+    expect(() => verifyHarnessCheckout({ sha: WORKFLOW_SHA, git: () => `${CANDIDATE_SHA}\n` })).toThrow(/workflow's revision/);
+  });
+});
+
+describe('assertCandidateReportsGates', () => {
+  it('passes source with the startup fields', () => {
+    expect(() => assertCandidateReportsGates('previewEligible: a(),\nnewChrome: b(),\nchatEnabled: c(),')).not.toThrow();
+  });
+
+  it('stops a candidate that predates them, naming what is missing', () => {
+    expect(() => assertCandidateReportsGates('packaged: app.isPackaged,\nnewChrome: b(),')).toThrow(/predates.*previewEligible:, chatEnabled:/);
+  });
+
+  it('passes the real startup code, using the functions behaviour uses', () => {
+    const source = readFileSync(path.join(REPO, 'src/main/index.ts'), 'utf8');
+    expect(() => assertCandidateReportsGates(source)).not.toThrow();
+    expect(source).toContain('previewEligible: isPreviewEligible(),');
+    expect(source).toContain('newChrome: newChromeEnabled(),');
+    expect(source).toContain('chatEnabled: isChatEnabled(),');
+  });
+});
+
+describe('findMainBundle', () => {
+  it.each([
+    ['/.webpack/x64/main/index.js', '.webpack/x64/main/index.js'],
+    ['/.webpack/main/index.js', '.webpack/main/index.js'],
+    ['\\.webpack\\arm64\\main\\index.js', '.webpack\\arm64\\main\\index.js'],
+  ])('finds %s', (file, expected) => {
+    expect(findMainBundle(['/package.json', '/.webpack/x64/renderer/main_window/index.js', file])).toBe(expected);
+  });
+
+  it('gives null when there is none', () => {
+    expect(findMainBundle(['/package.json', '/.webpack/x64/renderer/main_window/index.js'])).toBeNull();
+  });
+});
+
 describe('the script refuses before doing anything', () => {
   const packageJson = () => readFileSync(path.join(REPO, 'package.json'), 'utf8');
 
@@ -85,13 +260,16 @@ describe('the script refuses before doing anything', () => {
     ['a push on a hosted runner', { ...DISPATCH, GITHUB_EVENT_NAME: 'push' }],
     ['a schedule on a hosted runner', { ...DISPATCH, GITHUB_EVENT_NAME: 'schedule' }],
     ['a dispatch with the input off', { ...DISPATCH, STABLE_CANDIDATE: 'false' }],
+    ['a dispatch with no candidate', { ...DISPATCH, CANDIDATE_SHA: undefined }],
+    ['a dispatch with a branch as the candidate', { ...DISPATCH, CANDIDATE_SHA: 'main' }],
+    ['a dispatch with an abbreviated candidate', { ...DISPATCH, CANDIDATE_SHA: 'abc1234' }],
   ])('%s', (_label, env) => {
     const before = packageJson();
     const results = path.join(REPO, 'stable-candidate-results');
     const existed = fs.existsSync(results);
     const run = spawnSync(process.execPath, [SCRIPT], { encoding: 'utf8', cwd: tempDir(), env: { PATH: process.env.PATH, ...(process.env.SystemRoot ? { SystemRoot: process.env.SystemRoot } : {}), ...env } });
     expect(run.status).not.toBe(0);
-    expect(run.stderr).toContain('stable-candidate runs only from its dispatch');
+    expect(run.stderr).toMatch(/stable-candidate runs only from its dispatch|CANDIDATE_SHA must be/);
     expect(packageJson()).toBe(before);
     expect(fs.existsSync(results)).toBe(existed);
   });
@@ -532,6 +710,56 @@ describe('.github/workflows/stable-candidate.yml', () => {
     expect(code).toContain("if: ${{ github.event_name == 'workflow_dispatch' && inputs.stable_candidate == true }}");
   });
 
+  it('requires candidate_sha as a string with no default', () => {
+    const block = code.slice(code.indexOf('candidate_sha:'), code.indexOf('permissions:'));
+    expect(block).toContain('required: true');
+    expect(block).toContain('type: string');
+    expect(block).not.toContain('default:');
+  });
+
+  it('passes candidate_sha to scripts through the environment, never into a shell', () => {
+    expect(code).toContain('CANDIDATE_SHA: ${{ inputs.candidate_sha }}');
+    for (const line of lines.filter((l) => l.includes('inputs.candidate_sha'))) {
+      expect(line).toMatch(/^\s*(CANDIDATE_SHA:|ref:|name: stable-candidate-)/);
+    }
+    expect(code).not.toMatch(/run:.*inputs\./);
+  });
+
+  it('checks out the harness at its own revision and the candidate at candidate_sha, with no credentials', () => {
+    const steps = code.split(/\n(?= {6}- )/);
+    const checkouts = steps.filter((step) => step.includes('actions/checkout'));
+    expect(checkouts).toHaveLength(2);
+    const [harness, candidate] = checkouts;
+    expect(harness).toContain('ref: ${{ github.sha }}');
+    expect(harness).toContain('path: harness');
+    expect(candidate).toContain('ref: ${{ inputs.candidate_sha }}');
+    expect(candidate).toContain('path: candidate');
+    expect(candidate).toContain('fetch-depth: 0');
+    for (const step of checkouts) expect(step).toContain('persist-credentials: false');
+  });
+
+  it('checks in order: input, candidate checkout, on main, install, package', () => {
+    const order = [
+      'stable-candidate.mjs --check-input',
+      'ref: ${{ inputs.candidate_sha }}',
+      'stable-candidate.mjs --verify-candidate',
+      'run: npm ci',
+      'node ../harness/scripts/ci/stable-candidate.mjs\n',
+    ].map((marker) => code.indexOf(marker));
+    expect(order.every((index) => index >= 0)).toBe(true);
+    expect([...order].sort((a, b) => a - b)).toEqual(order);
+    for (const marker of ['run: npm ci', 'node ../harness/scripts/ci/stable-candidate.mjs']) {
+      expect(code.indexOf('working-directory: candidate')).toBeLessThan(code.indexOf(marker) + marker.length + 40);
+    }
+  });
+
+  it('installs and builds only from the candidate, with no shared npm cache', () => {
+    expect(code.match(/npm ci/g)).toHaveLength(1);
+    expect(code).toMatch(/run: npm ci\n\s+working-directory: candidate/);
+    expect(code).not.toMatch(/cache:/);
+    expect(code).not.toContain('actions/cache');
+  });
+
   it('reads the repo and nothing else', () => {
     expect(childrenOf('permissions')).toEqual(['contents']);
     expect(code).toMatch(/^permissions:\n {2}contents: read$/m);
@@ -566,7 +794,7 @@ describe('.github/workflows/stable-candidate.yml', () => {
   });
 
   it('checks package.json came back', () => {
-    expect(code).toMatch(/if: always\(\)\n\s+run: git diff --exit-code -- package\.json/);
+    expect(code).toMatch(/if: always\(\) && steps\.candidate\.outcome == 'success'\n\s+working-directory: candidate\n\s+run: git diff --exit-code -- package\.json/);
   });
 
   it('leaves Validate and Release out of it', () => {
@@ -582,10 +810,56 @@ describe('scripts/ci/stable-candidate.mjs', () => {
   it('checks the context before it imports Forge or does anything else', () => {
     const guard = text.indexOf('assertDispatchContext(process.env);');
     expect(guard).toBeGreaterThan(-1);
-    for (const later of ['jiti', 'forge.config.ts', 'api.package', 'spawn(binary']) {
+    for (const later of ["require('jiti')", 'jiti.import(', 'api.package', 'spawn(binary']) {
       expect(text.indexOf(later), later).toBeGreaterThan(guard);
     }
     expect(text.slice(0, guard)).not.toMatch(/from '(jiti|@electron)/);
+  });
+
+  it('stops --check-input and --verify-candidate before any package or launch', () => {
+    const packaged = text.indexOf('api.package');
+    const checkInput = text.indexOf("process.argv[2] === '--check-input'");
+    const verify = text.indexOf("process.argv[2] === '--verify-candidate'");
+    expect(checkInput).toBeGreaterThan(-1);
+    expect(verify).toBeGreaterThan(checkInput);
+    expect(packaged).toBeGreaterThan(verify);
+    expect(text.indexOf('fs.mkdirSync(results')).toBeGreaterThan(verify);
+  });
+
+  it('verifies the candidate before installing, before and after packaging, and before every launch', () => {
+    const verifications = [...text.matchAll(/verifyCandidate\(\);/g)].map((match) => match.index);
+    expect(verifications).toHaveLength(3);
+    const packaged = text.indexOf('api.package');
+    expect(verifications[0]).toBeLessThan(text.indexOf("process.argv[2] === '--verify-candidate'"));
+    expect(verifications[1]).toBeGreaterThan(packaged);
+    const launchStart = text.indexOf('async function launch(');
+    expect(verifications[2]).toBeGreaterThan(launchStart);
+    expect(verifications[2]).toBeLessThan(text.indexOf('spawn(binary'));
+    // Not inside the launch's try, so a moved checkout stops the run.
+    expect(text.slice(launchStart, verifications[2])).not.toContain('try {');
+  });
+
+  it('packages only the candidate, from its own config and dependencies', () => {
+    expect(text).toContain("const root = path.join(workspace, 'candidate');");
+    expect(text).toContain("assert.equal(harnessRoot, path.join(workspace, 'harness')");
+    expect(text).toContain("createRequire(path.join(root, 'package.json'))");
+    expect(text).toContain("jiti.import(path.join(root, 'forge.config.ts'))");
+    expect(text).toContain('api.package({ dir: root,');
+    expect(text).not.toContain('import.meta.url);\nconst require');
+  });
+
+  it('bakes in candidate_sha as the build commit, and checks it arrived', () => {
+    expect(text).toContain('process.env.CLUBHOUSE_BUILD_SHA = candidateSha;');
+    expect(text.indexOf('process.env.CLUBHOUSE_BUILD_SHA')).toBeLessThan(text.indexOf('api.package'));
+    expect(text).toContain('assert.equal(packaged.bakedBuildSha, candidateSha');
+  });
+
+  it('records the candidate and the workflow revision separately', () => {
+    const provenance = text.slice(text.indexOf('const provenance = {'));
+    expect(provenance).toMatch(/^const provenance = \{\n {2}candidateSha,/);
+    expect(provenance).toContain('workflowSha,');
+    expect(provenance).toContain('workflowRef: process.env.GITHUB_REF,');
+    expect(text).toContain('verifyHarnessCheckout({ sha: workflowSha,');
   });
 
   it('never signs with an identity, notarizes, publishes or commits to the checkout', () => {

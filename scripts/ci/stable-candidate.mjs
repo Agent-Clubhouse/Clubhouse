@@ -1,6 +1,11 @@
-// Dispatch only: packages this source as a stable version and launches it on a
+// Dispatch only: packages candidate_sha as a stable version and launches it on a
 // hosted runner, to check the Preview gates in a real packaged build. Never signs,
 // notarizes or publishes, commits nothing and uploads no build. See docs/ci.md.
+//
+// Two checkouts, so what was built is never in doubt. This harness runs from the
+// workflow's revision, in harness/. The app is packaged only from candidate/, at
+// candidate_sha, with that checkout's own forge.config.ts and node_modules. So a
+// harness fix doesn't move the candidate, and the candidate can't change the checks.
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
@@ -10,29 +15,48 @@ import { execFileSync, spawn } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import {
-  assertDispatchContext, assertHardenedFuses, assertResultsOnly, buildLaunchEnv, candidateVersion, checkRenderer,
-  checkStartupRecord, connectCdp, expectedFor, metadataDifferences, parseDevToolsPort, parseStartupRecord,
-  pickRendererTarget, rendererProbeSource, SCENARIOS, summarize, withCandidateVersion,
+  assertCandidateReportsGates, assertDispatchContext, assertHardenedFuses, assertResultsOnly, buildLaunchEnv,
+  candidateVersion, checkRenderer, checkStartupRecord, connectCdp, expectedFor, findMainBundle, metadataDifferences,
+  parseDevToolsPort, parseStartupRecord, pickRendererTarget, rendererProbeSource, SCENARIOS, summarize,
+  verifyCandidateCheckout, verifyHarnessCheckout, withCandidateVersion,
 } from './stable-candidate-lib.mjs';
 
 // Before anything is imported from Forge, packaged or launched.
 assertDispatchContext(process.env);
+// The input's format is all that can be checked before the candidate is checked out.
+if (process.argv[2] === '--check-input') process.exit(0);
 
+const workspace = path.resolve(process.env.GITHUB_WORKSPACE);
+const harnessRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
+assert.equal(harnessRoot, path.join(workspace, 'harness'), 'The harness must run from harness/ in the workspace');
+const root = path.join(workspace, 'candidate');
+const candidateSha = process.env.CANDIDATE_SHA;
+const workflowSha = process.env.GITHUB_SHA;
 const seeds = await import('../../e2e/stable-state-seeds.mjs');
-const { createJiti } = await import('jiti');
-const require = createRequire(import.meta.url);
-const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
-assert.equal(path.resolve(process.env.GITHUB_WORKSPACE), root);
+const pause = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+const writeJson = (file, value) => fs.writeFileSync(file, JSON.stringify(value, null, 2) + '\n');
+const git = (args, cwd = root) => execFileSync('git', args, { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], env: {
+  ...process.env, GIT_AUTHOR_NAME: 'Candidate', GIT_AUTHOR_EMAIL: 'candidate@test.local', GIT_COMMITTER_NAME: 'Candidate', GIT_COMMITTER_EMAIL: 'candidate@test.local',
+} }).trim();
+
+const verifyCandidate = () => verifyCandidateCheckout({ sha: candidateSha, git });
+verifyHarnessCheckout({ sha: workflowSha, git: (args) => git(args, harnessRoot) });
+verifyCandidate();
+assertCandidateReportsGates(fs.readFileSync(path.join(root, 'src/main/index.ts'), 'utf8'));
+// Run before npm ci, so a wrong commit never installs anything.
+if (process.argv[2] === '--verify-candidate') {
+  console.log(`Candidate ${candidateSha} is on main and clean. Harness is ${workflowSha}.`);
+  process.exit(0);
+}
+
 const platform = process.platform;
 const arch = process.arch;
 const runnerTemp = process.env.RUNNER_TEMP;
-const results = path.join(root, 'stable-candidate-results');
+const results = path.join(workspace, 'stable-candidate-results');
 fs.mkdirSync(results, { recursive: true });
-const pause = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
-const writeJson = (file, value) => fs.writeFileSync(file, JSON.stringify(value, null, 2) + '\n');
-const git = (args, cwd = root) => execFileSync('git', args, { cwd, encoding: 'utf8', env: {
-  ...process.env, GIT_AUTHOR_NAME: 'Candidate', GIT_AUTHOR_EMAIL: 'candidate@test.local', GIT_COMMITTER_NAME: 'Candidate', GIT_COMMITTER_EMAIL: 'candidate@test.local',
-} }).trim();
+process.chdir(root);
+// Every dependency, Forge included, comes from the candidate's own node_modules.
+const require = createRequire(path.join(root, 'package.json'));
 
 // ---------------------------------------------------------------------------
 // Package
@@ -41,9 +65,9 @@ const git = (args, cwd = root) => execFileSync('git', args, { cwd, encoding: 'ut
 const packagePath = path.join(root, 'package.json');
 const pkg = JSON.parse(fs.readFileSync(packagePath, 'utf8'));
 const version = candidateVersion(pkg.version);
-const sourceCommit = git(['rev-parse', 'HEAD']);
 
-const jiti = createJiti(import.meta.url);
+const { createJiti } = require('jiti');
+const jiti = createJiti(path.join(root, 'package.json'));
 const { default: base, assertHardenedFuseWire } = await jiti.import(path.join(root, 'forge.config.ts'));
 const { FusesPlugin } = require('@electron-forge/plugin-fuses');
 const { getCurrentFuseWire } = require('@electron/fuses');
@@ -74,6 +98,9 @@ config.hooks = { ...base.hooks, prePackage: async (resolved, ...args) => {
 const configLoader = require('@electron-forge/core/dist/util/forge-config');
 // A config file path is insufficient: Forge auto-discovery can override it.
 configLoader.registerForgeConfigForDirectory(root, config);
+// What webpack bakes in as the build commit. Without this, anything but a git
+// checkout falls back to GITHUB_SHA, which here is the workflow's revision.
+process.env.CLUBHOUSE_BUILD_SHA = candidateSha;
 try {
   await withCandidateVersion(packagePath, version, async () => {
     const { api } = require('@electron-forge/core');
@@ -83,6 +110,7 @@ try {
   configLoader.unregisterForgeConfigForDirectory(root);
 }
 assert.equal(JSON.parse(fs.readFileSync(packagePath, 'utf8')).version, pkg.version, 'package.json was not restored');
+verifyCandidate();
 
 const outDir = path.join(root, 'out', `Clubhouse-${platform}-${arch}`);
 let appPath = platform === 'darwin' ? path.join(outDir, 'Clubhouse.app') : outDir;
@@ -114,6 +142,10 @@ assertHardenedFuses(fuses);
 
 const packaged = { asarPackageVersion: JSON.parse(asar.extractFile(asarPath, 'package.json').toString()).version };
 assert.equal(packaged.asarPackageVersion, version);
+const mainBundle = findMainBundle(asar.listPackage(asarPath));
+assert.ok(mainBundle, 'No main bundle in the packaged app.asar');
+packaged.bakedBuildSha = asar.extractFile(asarPath, mainBundle).toString().includes(candidateSha) ? candidateSha : null;
+assert.equal(packaged.bakedBuildSha, candidateSha, 'The packaged build does not carry candidate_sha as its build commit');
 if (platform === 'darwin') {
   const plist = path.join(appPath, 'Contents/Info.plist');
   const field = (key) => execFileSync('/usr/libexec/PlistBuddy', ['-c', `Print :${key}`, plist], { encoding: 'utf8' }).trim();
@@ -126,10 +158,13 @@ if (platform === 'win32') {
 }
 
 const provenance = {
-  sourceCommit,
+  candidateSha,
+  packagedFrom: 'candidate/, at candidateSha, with its own forge.config.ts and node_modules',
+  workflowSha,
+  workflowRef: process.env.GITHUB_REF,
+  harnessFrom: 'harness/, at workflowSha: this script, its checks and the seeds. None of it is packaged.',
   runId: process.env.GITHUB_RUN_ID,
   attempt: process.env.GITHUB_RUN_ATTEMPT,
-  ref: process.env.GITHUB_REF,
   platform,
   arch,
   sourceVersion: pkg.version,
@@ -213,6 +248,8 @@ async function waitFor(read, ms, interval = 250) {
 
 /** Starts the app, runs `drive` if CDP connects, and always stops only its own process tree. */
 async function launch(profile, drive) {
+  // Outside the try on purpose: a checkout that moved stops the whole run.
+  verifyCandidate();
   const env = buildLaunchEnv(process.env, { profile, runnerTemp });
   const child = spawn(binary, ['--remote-debugging-port=0'], { cwd: profile, env, detached: true, stdio: ['ignore', 'pipe', 'pipe'] });
   let consoleOutput = '';
@@ -404,7 +441,8 @@ writeJson(path.join(results, 'provenance.json'), provenance);
 
 const summary = summarize(scenarioResults);
 writeJson(path.join(results, 'results.json'), {
-  sourceCommit,
+  candidateSha,
+  workflowSha,
   platform,
   arch,
   candidateVersion: version,
