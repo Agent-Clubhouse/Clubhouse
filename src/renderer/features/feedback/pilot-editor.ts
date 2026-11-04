@@ -84,6 +84,8 @@ export function useEditorPreview(model: ScreenshotEditorModel | null, snapshot: 
  * hashes. Left out: no bytes (the model has none to give), just `noEdits`.
  */
 export async function beginSend(model: ScreenshotEditorModel): Promise<{ bytes: Blob | null; noEdits: boolean; shotId: string | null }> {
+  // commit() rejects once removed, though bytesToSend() and endReversibility() are quiet. A removed image sends the note alone.
+  if (model.getSnapshot().status === 'removed') return { bytes: null, noEdits: false, shotId: null };
   await model.commit();
   const { edited, activeView } = model.getSnapshot();
   model.endReversibility();

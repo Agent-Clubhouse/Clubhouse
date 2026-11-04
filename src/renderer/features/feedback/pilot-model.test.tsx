@@ -540,6 +540,45 @@ describe('Framebriar\'s stated behavior, against ac13f32', () => {
 });
 
 describe('the interim Send mapping', () => {
+  it('GAP: after Remove, commit rejects while bytesToSend and endReversibility are quiet, so the glue has to check first', async () => {
+    const model = createScreenshotEditorModel({ views: [{ id: 's0', source: pngOf(4, 4) }], raster: fakeRaster() });
+    model.remove();
+    await expect(model.commit()).rejects.toMatchObject({ name: 'AbortError' });
+    expect(() => model.endReversibility()).not.toThrow();
+    expect(await model.bytesToSend()).toBeNull();
+    expect(await beginSend(model)).toEqual({ bytes: null, noEdits: false, shotId: null });
+  });
+
+  describe('a flatten failure on a note-only Send: what the host can do with the model as it stands', () => {
+    const failing = () => {
+      const source = pngOf(4, 4);
+      const model = createScreenshotEditorModel({ views: [{ id: 's0', source }], raster: fakeRaster({ fail: (s) => s === source }) });
+      model.addMark(REDACT);
+      model.setIncluded(false);
+      return { model, source };
+    };
+
+    it('UNSAFE: revert unblocks the Send, but says no edits and leaves the unmarked original to Include on', async () => {
+      const { model, source } = failing();
+      await expect(beginSend(model)).rejects.toThrow(/decode failed/);
+      model.revert();
+      const begun = await beginSend(model);
+      expect(begun).toEqual({ bytes: null, noEdits: true, shotId: 's0' });
+      model.setIncluded(true);
+      expect(await model.bytesToSend()).toBe(source);
+    });
+
+    it('SAFE: remove gives a note-only Send with no flag and no bytes, and nothing can bring the image back', async () => {
+      const { model } = failing();
+      await expect(beginSend(model)).rejects.toThrow(/decode failed/);
+      model.remove();
+      expect(await beginSend(model)).toEqual({ bytes: null, noEdits: false, shotId: null });
+      model.setIncluded(true);
+      expect(await model.bytesToSend()).toBeNull();
+      expect(model.getSnapshot().status).toBe('removed');
+    });
+  });
+
   it('included always gives bytes, and left out gives noEdits read after commit, plus the shot', async () => {
     const source = pngOf(4, 4);
     const unedited = createScreenshotEditorModel({ views: [{ id: 's0', source }], raster: fakeRaster() });

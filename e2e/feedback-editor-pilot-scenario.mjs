@@ -280,6 +280,16 @@ async function steps(page, fixture, { perf = false }, report) {
   await wait(100);
   expectThat('Remove empties the composer', !(await exists('[data-testid="feedback-preview"]')));
   report.afterRemove = await text('[data-testid="feedback-review"]');
+  await page.evaluate(() => {
+    const box = document.querySelector('#feedback-notes');
+    Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value').set.call(box, 'a note after Remove');
+    box.dispatchEvent(new Event('input', { bubbles: true }));
+  });
+  await wait(50);
+  await click('[data-testid="feedback-send"]');
+  await until(() => exists('[data-testid="feedback-sent-state"]'), 'Send after Remove', 30000);
+  report.removedSend = await lastSend();
+  expectThat('Send after Remove goes with no flag, shot or bytes', report.removedSend?.input.includeScreenshot === false && report.removedSend?.input.noEdits === undefined && report.removedSend?.input.shotId === undefined && report.removedSend?.bytes === null, report.removedSend);
   await call('close');
 
   // A left-out Send through the real dialog: what would reach main, never edited and edited.
@@ -336,6 +346,20 @@ async function steps(page, fixture, { perf = false }, report) {
   await page.mouse.up();
   await wait(100);
   report.backdropClickClosedTheComposer = !(await exists('[data-testid="feedback-review"]'));
+  await call('close');
+
+  // Esc on the composer itself, with a note in it.
+  await call('open', [{ width: 800, height: 600, label: 'Main window' }]);
+  await until(() => page.evaluate(() => document.querySelector('[data-testid="feedback-preview"]')?.width > 300), 'the composer for Esc');
+  await page.evaluate(() => {
+    const box = document.querySelector('#feedback-notes');
+    Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value').set.call(box, 'a note I wrote');
+    box.dispatchEvent(new Event('input', { bubbles: true }));
+  });
+  await wait(50);
+  await page.keyboard.press('Escape');
+  await wait(100);
+  report.escClosedTheComposer = !(await exists('[data-testid="feedback-review"]'));
   await call('close');
 
   report.violationsDuringUi = await page.evaluate((from) => window.__feedbackEditorPilot.violations.slice(from), violationsBeforeUi);
