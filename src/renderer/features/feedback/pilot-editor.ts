@@ -88,15 +88,16 @@ export async function blobToBase64(blob: Blob): Promise<string> {
 }
 
 /**
- * What a started Send tells main under #2794's rules. Nothing here compares bytes: `original` says whether
- * main's own capture is what's wanted. Non-original bytes go even with the image left out, so main can drop
- * the capture and fix what a later flatten must fit.
+ * What a started Send tells main under #2794's rules at a8167f999. Nothing here compares bytes. Included always
+ * brings its bytes, and main takes its capture's own bytes by hash, so a reopened draft needs no branch here: on
+ * one, `original` means the carried image, not main's capture. Left out, `original` is safe to use: noEdits keeps
+ * an unedited capture, and is inert on a carried flattened image, which brings bytes on its next included Send anyway.
  */
 export async function sendFields(begun: ScreenshotSendStarted): Promise<Pick<FeedbackSendInput, 'includeScreenshot' | 'annotatedPng' | 'shotId' | 'noEdits'>> {
   const { viewId, bytes, finalBytes, original } = begun;
   const includeScreenshot = bytes !== null;
   // Removed, or a capture that never finished: no flag and no bytes, so main drops what it holds.
   if (viewId === null || finalBytes === null) return { includeScreenshot };
-  if (original) return { includeScreenshot, shotId: viewId, ...(!includeScreenshot && { noEdits: true as const }) };
+  if (!includeScreenshot && original) return { includeScreenshot, shotId: viewId, noEdits: true };
   return { includeScreenshot, shotId: viewId, annotatedPng: await blobToBase64(finalBytes) };
 }

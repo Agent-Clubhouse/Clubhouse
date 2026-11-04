@@ -1,6 +1,6 @@
 /**
  * PILOT, never ships. The state-level check of Begin-Send against main: the real model (Framebriar PR 69,
- * ccc59cd) with a fake raster, feeding the real FeedbackService and vendored SDK from #2794 on a temp directory,
+ * ccc59cd) with a fake raster, feeding the real FeedbackService and vendored SDK from #2794 at a8167f999 on a temp directory,
  * with the network refused. No pixels are real here. A row of the mapping per case, through to the saved media.
  */
 import { createHash } from 'crypto';
@@ -129,13 +129,13 @@ const idOf = (result: FeedbackSendResult) => {
 const noPayload = ({ annotatedPng, ...rest }: Awaited<ReturnType<typeof sendFields>>) => ({ ...rest, ...(annotatedPng !== undefined && { annotatedPng: 'bytes' }) });
 
 describe('beginSend through #2794: included', () => {
-  it('never edited: the original, no bytes over IPC, and main sends its capture', async () => {
+  it('never edited: the original, its bytes go, and main takes its capture by hash', async () => {
     const h = harness();
     const { draft, model } = await opened(h);
     const begun = await started(model);
     expect([begun.original, begun.edited, begun.viewId]).toEqual([true, false, 's0']);
     const { fields, result } = await send(h, draft.draftId, begun);
-    expect(noPayload(fields)).toEqual({ includeScreenshot: true, shotId: 's0' });
+    expect(noPayload(fields)).toEqual({ includeScreenshot: true, shotId: 's0', annotatedPng: 'bytes' });
     expect(sha(h.media(idOf(result)))).toBe(sha(CAPTURE));
   });
 
@@ -309,44 +309,163 @@ describe('beginSend through #2794: left out, and a retry', () => {
 });
 
 describe('beginSend through #2794: reopen', () => {
-  it('marked: a fresh model on the carried image says original, and main sends what it carried', async () => {
-    const h = harness();
+  async function reopened(h: ReturnType<typeof harness>, edit: 'mark' | 'none' | 'second-window') {
     const { draft, model } = await opened(h);
-    model.addMark(REDACT);
+    if (edit === 'mark') model.addMark(REDACT);
+    if (edit === 'second-window') model.setActiveView('s1');
     const begun = await started(model);
-    const fields = await sendFields(begun);
     await h.reconnect();
-    const { result } = { result: await h.service.send({ draftId: draft.draftId, notes: 'it broke', ...fields }) };
+    const result = await h.service.send({ draftId: draft.draftId, notes: 'it broke', ...(await sendFields(begun)) });
     if (result.status !== 'enrollment-changed') throw new Error('expected a reopen');
+    return { begun, model, next: result.draft };
+  }
+  const bytesOf = async (blob: Blob | null) => Buffer.from(await blob!.arrayBuffer());
+  const FAILED = { code: 'storage-full', saved: false };
 
-    const next = modelFor(result.draft);
-    expect(next.getSnapshot().editsAreFinal).toBe(false); // No API for it: the Clear words have to come from the host.
-    const carried = await started(next);
+  it('carried flattened, included: original is true for it, no bytes is refused, and bytes save', async () => {
+    const h = harness();
+    const { begun, next } = await reopened(h, 'mark');
+    const model = modelFor(next);
+    const carried = await started(model);
     expect([carried.original, carried.edited, carried.viewId]).toEqual([true, false, 's0']);
-    const sent = await send(h, result.draft.draftId, carried);
-    expect(noPayload(sent.fields)).toEqual({ includeScreenshot: true, shotId: 's0' });
-    expect(sha(h.media(idOf(sent.result)))).toBe(sha(Buffer.from(await begun.bytes!.arrayBuffer())));
+    // Why `original` can't mean "main's capture" here: the mapping that omits bytes fails closed.
+    await expect(h.service.send({ draftId: next.draftId, notes: 'it broke', includeScreenshot: true, shotId: 's0' })).rejects.toMatchObject({ code: 'flattened-required' });
+    const sent = await send(h, next.draftId, carried);
+    expect(noPayload(sent.fields)).toEqual({ includeScreenshot: true, shotId: 's0', annotatedPng: 'bytes' });
+    expect(sha(h.media(idOf(sent.result)))).toBe(sha(await bytesOf(begun.bytes)));
   });
 
-  it('never edited, second window: the carried draft renames it s0, so a kept model would name a window main no longer has', async () => {
+  it('carried capture, included: the bytes are the capture, and main takes its original path by hash', async () => {
     const h = harness();
-    const { draft, model } = await opened(h);
-    model.setActiveView('s1');
-    const begun = await started(model);
-    expect(begun.viewId).toBe('s1');
-    const fields = await sendFields(begun);
-    await h.reconnect();
-    const result = await h.service.send({ draftId: draft.draftId, notes: 'it broke', ...fields });
-    if (result.status !== 'enrollment-changed') throw new Error('expected a reopen');
-    expect(result.draft.shots.map((s) => s.shotId)).toEqual(['s0']);
-    await expect(h.service.send({ draftId: result.draft.draftId, notes: 'it broke', ...(await sendFields(await started(model))) })).rejects.toMatchObject({ code: 'shot-unavailable' });
-    const fresh = await started(modelFor(result.draft));
-    expect(fresh.viewId).toBe('s0');
-    const sent = await send(h, result.draft.draftId, fresh);
+    const { next } = await reopened(h, 'none');
+    const sent = await send(h, next.draftId, await started(modelFor(next)));
+    expect(noPayload(sent.fields)).toEqual({ includeScreenshot: true, shotId: 's0', annotatedPng: 'bytes' });
+    expect(sha(h.media(idOf(sent.result)))).toBe(sha(CAPTURE));
+  });
+
+  it('carried capture of the second window: renamed s0, and a fresh model sends it', async () => {
+    const h = harness();
+    const { next } = await reopened(h, 'second-window');
+    expect(next.shots.map((s) => s.shotId)).toEqual(['s0']);
+    const sent = await send(h, next.draftId, await started(modelFor(next)));
     expect(sha(h.media(idOf(sent.result)))).toBe(sha(OTHER));
   });
 
-  it('left out: the reopened draft has no image, so there is no model', async () => {
+  it('TRAP: a kept model naming s1 is refused, and those capture bytes count as edits, so the capture is stranded', async () => {
+    const h = harness();
+    const { model, next } = await reopened(h, 'second-window');
+    await expect(h.service.send({ draftId: next.draftId, notes: 'it broke', ...(await sendFields(await started(model))) })).rejects.toMatchObject({ code: 'shot-unavailable' });
+    // No shot matches, so `edited` is true by imageToSend's hash test, and the png went before the refusal.
+    await expect(send(h, next.draftId, await started(modelFor(next)))).rejects.toMatchObject({ code: 'flattened-required' });
+  });
+
+  it('carried flattened, new marks: a new flatten, and it fits', async () => {
+    const h = harness();
+    const { begun, next } = await reopened(h, 'mark');
+    const model = modelFor(next);
+    model.addMark({ type: 'redact', x: 5, y: 5, width: 2, height: 2 });
+    const carried = await started(model);
+    expect([carried.original, carried.edited]).toEqual([false, true]);
+    const sent = await send(h, next.draftId, carried);
+    const media = h.media(idOf(sent.result));
+    // The fake raster's pixels are all the same, so whether the new flatten differs is for the real renderer.
+    expect(sha(media)).toBe(sha(await bytesOf(carried.bytes)));
+    expect(carried.bytes).not.toBe(begun.bytes);
+  });
+
+  it('carried flattened, left out, then included: noEdits changes nothing, and the next included Send brings the bytes', async () => {
+    const h = harness();
+    const { begun, next } = await reopened(h, 'mark');
+    const model = modelFor(next);
+    model.setIncluded(false);
+    const fields = await sendFields(await started(model));
+    expect(noPayload(fields)).toEqual({ includeScreenshot: false, shotId: 's0', noEdits: true });
+    h.state.submitFails = FAILED;
+    await expect(h.service.send({ draftId: next.draftId, notes: 'it broke', ...fields })).rejects.toMatchObject({ code: 'storage-full' });
+    await expect(h.service.send({ draftId: next.draftId, notes: 'it broke', includeScreenshot: true, shotId: 's0' })).rejects.toMatchObject({ code: 'flattened-required' });
+    model.setIncluded(true);
+    const sent = await send(h, next.draftId, await started(model));
+    expect(sha(h.media(idOf(sent.result)))).toBe(sha(await bytesOf(begun.bytes)));
+  });
+
+  it('carried capture, left out, then included: noEdits keeps it, and the bytes go by hash', async () => {
+    const h = harness();
+    const { next } = await reopened(h, 'none');
+    const model = modelFor(next);
+    model.setIncluded(false);
+    const fields = await sendFields(await started(model));
+    expect(noPayload(fields)).toEqual({ includeScreenshot: false, shotId: 's0', noEdits: true });
+    h.state.submitFails = FAILED;
+    await expect(h.service.send({ draftId: next.draftId, notes: 'it broke', ...fields })).rejects.toMatchObject({ code: 'storage-full' });
+    model.setIncluded(true);
+    const sent = await send(h, next.draftId, await started(model));
+    expect(sha(h.media(idOf(sent.result)))).toBe(sha(CAPTURE));
+  });
+
+  it('TRAP: carried capture left out with bytes and no flag: main drops it, and the included retry is refused', async () => {
+    const h = harness();
+    const { next } = await reopened(h, 'none');
+    const model = modelFor(next);
+    model.setIncluded(false);
+    const begun = await started(model);
+    h.state.submitFails = FAILED;
+    const annotatedPng = Buffer.from(await begun.finalBytes!.arrayBuffer()).toString('base64');
+    await expect(h.service.send({ draftId: next.draftId, notes: 'it broke', includeScreenshot: false, shotId: 's0', annotatedPng })).rejects.toMatchObject({ code: 'storage-full' });
+    model.setIncluded(true);
+    await expect(send(h, next.draftId, await started(model))).rejects.toMatchObject({ code: 'flattened-required' });
+  });
+
+  it('a flat capture left out with both bytes and the flag keeps it, so the flag is what matters, but the rule is no bytes', async () => {
+    const h = harness();
+    const { next } = await reopened(h, 'none');
+    const model = modelFor(next);
+    model.setIncluded(false);
+    const begun = await started(model);
+    h.state.submitFails = FAILED;
+    const annotatedPng = Buffer.from(await begun.finalBytes!.arrayBuffer()).toString('base64');
+    await expect(h.service.send({ draftId: next.draftId, notes: 'it broke', includeScreenshot: false, shotId: 's0', annotatedPng, noEdits: true })).rejects.toMatchObject({ code: 'storage-full' });
+    model.setIncluded(true);
+    const sent = await send(h, next.draftId, await started(model));
+    expect(sha(h.media(idOf(sent.result)))).toBe(sha(CAPTURE));
+  });
+
+  it('marks after a reopen, left out, then included: the flatten goes both times, and the capture is gone', async () => {
+    const h = harness();
+    const { next } = await reopened(h, 'none');
+    const model = modelFor(next);
+    model.addMark(REDACT);
+    model.setIncluded(false);
+    const begun = await started(model);
+    const fields = await sendFields(begun);
+    expect(noPayload(fields)).toEqual({ includeScreenshot: false, shotId: 's0', annotatedPng: 'bytes' });
+    h.state.submitFails = FAILED;
+    await expect(h.service.send({ draftId: next.draftId, notes: 'it broke', ...fields })).rejects.toMatchObject({ code: 'storage-full' });
+    await expect(h.service.send({ draftId: next.draftId, notes: 'it broke', includeScreenshot: true, shotId: 's0' })).rejects.toMatchObject({ code: 'flattened-required' });
+    model.setIncluded(true);
+    const sent = await send(h, next.draftId, await started(model));
+    expect(sha(h.media(idOf(sent.result)))).toBe(sha(await bytesOf(begun.finalBytes)));
+  });
+
+  it('a second reopen: carried flattened and carried capture both still work', async () => {
+    for (const edit of ['mark', 'none'] as const) {
+      const h = harness();
+      const { begun, next } = await reopened(h, edit);
+      const model = modelFor(next);
+      const carried = await started(model);
+      await h.service.disconnect();
+      await h.service.connect(FIRST_INVITE);
+      const again = await h.service.send({ draftId: next.draftId, notes: 'it broke', ...(await sendFields(carried)) });
+      if (again.status !== 'enrollment-changed') throw new Error('expected a second reopen');
+      const sent = await send(h, again.draft.draftId, await started(modelFor(again.draft)));
+      expect(sha(h.media(idOf(sent.result)))).toBe(sha(edit === 'mark' ? await bytesOf(begun.bytes) : CAPTURE));
+      await h.service.shutdown();
+      rmSync(dataDir, { recursive: true, force: true });
+      dataDir = mkdtempSync(join(tmpdir(), 'pilot-beginsend-'));
+      keychain = fakeKeychain();
+    }
+  });
+
+  it('left out at the reopen itself: no image comes across, so there is no model', async () => {
     const h = harness();
     const { draft, model } = await opened(h);
     model.addMark(REDACT);
@@ -356,25 +475,6 @@ describe('beginSend through #2794: reopen', () => {
     const result = await h.service.send({ draftId: draft.draftId, notes: 'it broke', ...fields });
     if (result.status !== 'enrollment-changed') throw new Error('expected a reopen');
     expect(result.draft.shots).toEqual([]);
-  });
-
-  it('left out on a carried image: noEdits keeps what was carried for a later included Send', async () => {
-    const h = harness();
-    const { draft, model } = await opened(h);
-    model.addMark(REDACT);
-    const begun = await started(model);
-    await h.reconnect();
-    const result = await h.service.send({ draftId: draft.draftId, notes: 'it broke', ...(await sendFields(begun)) });
-    if (result.status !== 'enrollment-changed') throw new Error('expected a reopen');
-    const next = modelFor(result.draft);
-    next.setIncluded(false);
-    const fields = await sendFields(await started(next));
-    expect(noPayload(fields)).toEqual({ includeScreenshot: false, shotId: 's0', noEdits: true });
-    h.state.submitFails = { code: 'storage-full', saved: false };
-    await expect(h.service.send({ draftId: result.draft.draftId, notes: 'it broke', ...fields })).rejects.toMatchObject({ code: 'storage-full' });
-    next.setIncluded(true);
-    const sent = await send(h, result.draft.draftId, await started(next));
-    expect(sha(h.media(idOf(sent.result)))).toBe(sha(Buffer.from(await begun.bytes!.arrayBuffer())));
   });
 });
 

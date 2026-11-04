@@ -208,7 +208,8 @@ export function FeedbackReviewDialog({ draft, reopened = null, onClose, editorOp
       });
       if (result.status === 'enrollment-changed') {
         // Nothing was saved. A new report with new contents needs its own review and Send.
-        reopenDraft(result.draft, { notes, includeCorrelation, includeDiagnostics });
+        const lostScreenshot = reopened?.lostScreenshot === true || (hasScreenshot && shotsOf(result.draft).length === 0);
+        reopenDraft(result.draft, { notes, includeCorrelation, includeDiagnostics, lostScreenshot });
         return;
       }
       setReportId(result.id);
@@ -246,7 +247,7 @@ export function FeedbackReviewDialog({ draft, reopened = null, onClose, editorOp
           <>
             {reopened && (
               <p className="text-sm text-ctp-text" role="status" data-testid="feedback-reopened">
-                Your feedback connection changed, so nothing was sent. This is a new report with your note and image. Check what it includes below, then choose Send.
+                Your feedback connection changed, so nothing was sent. This is a new report with your note{snapshot && snapshot.status !== 'removed' ? ' and image' : ''}. Check what it includes below, then choose Send.
               </p>
             )}
             {views.length > 1 && (

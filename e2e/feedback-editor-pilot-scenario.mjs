@@ -203,6 +203,11 @@ async function steps(page, fixture, { perf = false }, report) {
   await until(() => exists('[data-testid="feedback-reopened"]'), 'the reopened draft', 30000);
   await until(() => exists('[data-testid="feedback-preview"]'), 'the reopened composer');
   report.reopenedState = await text('[data-testid="pilot-state"]');
+  // A reopened draft brings its bytes on every included Send, though the fresh model says original.
+  await click('[data-testid="feedback-send"]');
+  await until(() => exists('[data-testid="feedback-sent-state"]'), 'the Send after a reopen', 30000);
+  report.reopenedSend = await lastSend();
+  expectThat('a reopened Send brings the carried bytes', report.reopenedSend?.sha === first?.sha && report.reopenedSend?.input.shotId === 's0', { first: first?.sha, reopened: report.reopenedSend });
   await call('close');
   await wait(100);
 
@@ -277,8 +282,8 @@ async function steps(page, fixture, { perf = false }, report) {
   await click('[data-testid="feedback-send"]');
   await until(() => exists('[data-testid="feedback-sent-state"]'), 'the unedited Send', 30000);
   const unedited = await lastSend();
-  report.unedited = { input: unedited?.input, bytes: unedited?.bytes, capture: plain[0].sha };
-  expectThat('unedited sends no bytes, and names the shot', unedited?.bytes === null && unedited?.input.shotId === 's0' && unedited?.input.includeScreenshot === true, report.unedited);
+  report.unedited = { input: unedited?.input, sent: unedited?.sha, capture: plain[0].sha };
+  expectThat('unedited sends the capture\'s own bytes', unedited?.sha === plain[0].sha && unedited?.input.shotId === 's0' && unedited?.input.includeScreenshot === true, report.unedited);
   await call('close');
 
   // Remove: gone, and a note still sends.
@@ -303,7 +308,7 @@ async function steps(page, fixture, { perf = false }, report) {
   // A left-out Send through the real dialog: what would reach main, never edited and edited.
   const leftOut = [];
   for (const edit of [false, true]) {
-    await call('open', [{ width: 1000, height: 700, label: 'Main window' }]);
+    const [{ sha: captureSha }] = await call('open', [{ width: 1000, height: 700, label: 'Main window' }]);
     await until(() => page.evaluate(() => document.querySelector('[data-testid="feedback-preview"]')?.width > 300), 'the left-out composer');
     if (edit) {
       await click('[data-testid="pilot-edit-react"]');
@@ -335,7 +340,7 @@ async function steps(page, fixture, { perf = false }, report) {
     expectThat(`left-out Send carries shotId, edit=${edit}`, sent?.input.shotId === 's0', sent);
     expectThat(`left-out bytes, edit=${edit}`, edit ? sent?.bytes > 0 : sent?.bytes === null, sent);
     expectThat(`left-out noEdits, edit=${edit}`, sent?.input.noEdits === (edit ? undefined : true), sent);
-    expectThat(`included retry after left-out, edit=${edit}`, edit ? retry?.sha === sent?.sha : retry?.bytes === null, { sent, retry });
+    expectThat(`included retry after left-out, edit=${edit}`, edit ? retry?.sha === sent?.sha : retry?.sha === captureSha, { sent, retry, captureSha });
     await call('close');
     await wait(100);
   }

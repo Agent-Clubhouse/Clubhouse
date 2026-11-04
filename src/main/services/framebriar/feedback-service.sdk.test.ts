@@ -964,15 +964,6 @@ describe('the report field with the real SDK', () => {
         await expect(send(h, draftId)).rejects.toMatchObject({ code: 'flattened-required' });
       });
 
-      it('a reopened draft carrying a flattened image keeps it, with or without the flag', async () => {
-        const h = harness();
-        const draft = await opened(h);
-        await enrollAgain(h);
-        const reopened = reopenedFrom(await send(h, draft.draftId, { annotatedPng: b64(INK) }));
-        await leftOut(h, reopened.draftId);
-        expect(h.media(savedId(await send(h, reopened.draftId))).equals(INK)).toBe(true);
-      });
-
       it('a reopened draft carrying the capture follows the same rule as a capture', async () => {
         const h = harness();
         const draft = await opened(h);
@@ -1215,7 +1206,7 @@ describe('the report field with the real SDK', () => {
         const reopened = reopenedFrom(await send(h, draft.draftId, { scene: 'settings', annotatedPng: b64(INK) }));
         expect(reopened.correlation).toEqual(draft.correlation);
 
-        const id = savedId(await send(h, reopened.draftId, { scene: 'settings' }));
+        const id = savedId(await send(h, reopened.draftId, { scene: 'settings', annotatedPng: b64(INK) }));
         const [report] = await h.saved();
         expect(id).not.toBe(first.id);
         expect(h.binding(id)).toBe(secondRef);
@@ -1235,7 +1226,7 @@ describe('the report field with the real SDK', () => {
         await enrollAgain(h);
         const reopened = reopenedFrom(await send(h, draft.draftId, { includeDiagnostics: true, annotatedPng: b64(INK) }));
         expect(reopened.diagnostics?.windowEnd).not.toBe(firstWindow);
-        const id = savedId(await send(h, reopened.draftId, { includeDiagnostics: true }));
+        const id = savedId(await send(h, reopened.draftId, { includeDiagnostics: true, annotatedPng: b64(INK) }));
         const [report] = await h.saved();
         expect(report.capturedAt).toBe(CAPTURED_AT);
         expect(report.diagnostics).toMatchObject({ state: 'attached', windowEnd: reopened.diagnostics?.windowEnd });
@@ -1248,7 +1239,7 @@ describe('the report field with the real SDK', () => {
         later();
         await enrollAgain(h);
         const reopened = reopenedFrom(await send(h, draft.draftId, { includeDiagnostics: true, annotatedPng: b64(INK) }));
-        await expect(send(h, reopened.draftId, { includeDiagnostics: false })).resolves.toMatchObject({ diagnostics: { status: 'left_out', reason: 'reporter' } });
+        await expect(send(h, reopened.draftId, { includeDiagnostics: false, annotatedPng: b64(INK) })).resolves.toMatchObject({ diagnostics: { status: 'left_out', reason: 'reporter' } });
       });
 
       it('fresh diagnostic lines are left alone: their trace attrs belong to their own window, and what was reviewed is what goes', async () => {
@@ -1265,7 +1256,7 @@ describe('the report field with the real SDK', () => {
         await enrollAgain(h);
         const reopened = reopenedFrom(await send(h, draft.draftId, { includeDiagnostics: true, annotatedPng: b64(INK) }));
         expect(reopened.diagnostics?.lines).toEqual(lines);
-        savedId(await send(h, reopened.draftId, { includeDiagnostics: true }));
+        savedId(await send(h, reopened.draftId, { includeDiagnostics: true, annotatedPng: b64(INK) }));
         const [report] = await h.saved();
         expect(report.diagnostics.entries.map((entry: { attrs: unknown }) => entry.attrs)).toEqual(lines.map((l) => l.attrs));
         expect(report).toMatchObject(TRACE);
@@ -1280,7 +1271,7 @@ describe('the report field with the real SDK', () => {
           later();
           await enrollAgain(h);
           const reopened = reopenedFrom(await send(h, draft.draftId, { annotatedPng: b64(INK) }));
-          savedId(await send(h, reopened.draftId));
+          savedId(await send(h, reopened.draftId, { annotatedPng: b64(INK) }));
           const [report] = await h.saved();
           expect(refsOf(report)).toEqual({ flat: TRACE, first: TRACE });
         });
@@ -1291,7 +1282,7 @@ describe('the report field with the real SDK', () => {
           later();
           await enrollAgain(h);
           const reopened = reopenedFrom(await send(h, draft.draftId, { includeCorrelation: false, annotatedPng: b64(INK) }));
-          savedId(await send(h, reopened.draftId, { includeCorrelation: false }));
+          savedId(await send(h, reopened.draftId, { includeCorrelation: false, annotatedPng: b64(INK) }));
           const [report] = await h.saved();
           expect(report).not.toHaveProperty('incident');
           expect(report).not.toHaveProperty('traceId');
@@ -1306,7 +1297,7 @@ describe('the report field with the real SDK', () => {
           const draft = await opened(h);
           await enrollAgain(h);
           const reopened = reopenedFrom(await send(h, draft.draftId, { annotatedPng: b64(INK) }));
-          savedId(await send(h, reopened.draftId));
+          savedId(await send(h, reopened.draftId, { annotatedPng: b64(INK) }));
           const [report] = await h.saved();
           expect(report.incident).toMatchObject({ availability: 'unavailable', traces: [] });
           expect(report).not.toHaveProperty('traceId');
@@ -1318,7 +1309,7 @@ describe('the report field with the real SDK', () => {
           const draft = await opened(h);
           await enrollAgain(h);
           const reopened = reopenedFrom(await send(h, draft.draftId, { annotatedPng: b64(INK) }));
-          savedId(await send(h, reopened.draftId));
+          savedId(await send(h, reopened.draftId, { annotatedPng: b64(INK) }));
           const [report] = await h.saved();
           expect(refsOf(report)).toEqual({ flat: TRACE, first: TRACE });
         });
@@ -1352,38 +1343,114 @@ describe('the report field with the real SDK', () => {
         expect(appCrumbs(report)).toEqual(['view.agent']);
       });
 
-      it('the reopened draft\'s source is the flattened image: no bytes sends that, never the original', async () => {
-        const h = harness();
-        const draft = await opened(h);
-        await enrollAgain(h);
-        const reopened = reopenedFrom(await send(h, draft.draftId, { annotatedPng: b64(INK) }));
-        expect(reopened.shots.map((shot) => shot.preview)).toEqual([`data:image/png;base64,${b64(INK)}`]);
-        expect(JSON.stringify(reopened)).not.toContain(b64(CAPTURE));
-        expect(JSON.stringify(reopened)).not.toContain(b64(OTHER));
-        const id = savedId(await send(h, reopened.draftId));
-        expect(h.media(id).equals(INK)).toBe(true);
+      describe('a carried flattened image', () => {
+        async function reopenedFlattened(h: Harness) {
+          const draft = await opened(h);
+          await enrollAgain(h);
+          return reopenedFrom(await send(h, draft.draftId, { annotatedPng: b64(INK) }));
+        }
+
+        it('is shown, with no original in the new draft', async () => {
+          const h = harness();
+          const reopened = await reopenedFlattened(h);
+          expect(reopened.shots.map((shot) => shot.preview)).toEqual([`data:image/png;base64,${b64(INK)}`]);
+          expect(JSON.stringify(reopened)).not.toContain(b64(CAPTURE));
+          expect(JSON.stringify(reopened)).not.toContain(b64(OTHER));
+        });
+
+        it('with no bytes fails, and says what to do: no bytes can\'t mean no newer marks', async () => {
+          const h = harness();
+          const reopened = await reopenedFlattened(h);
+          await expect(send(h, reopened.draftId)).rejects.toMatchObject({ code: 'flattened-required', message: expect.stringMatching(/can't be sent from this report/) });
+          expect(await h.saved()).toEqual([]);
+        });
+
+        it('with its own bytes saves under a new report id', async () => {
+          const h = harness();
+          const draft = await opened(h);
+          h.state.submitFails = FAILED_SAVE;
+          await expect(send(h, draft.draftId, { annotatedPng: b64(INK) })).rejects.toMatchObject({ code: 'storage-full' });
+          const old = await h.prepared.at(-1) as { report: { id: string } };
+          await enrollAgain(h);
+          const reopened = reopenedFrom(await send(h, draft.draftId, { annotatedPng: b64(INK) }));
+          const id = savedId(await send(h, reopened.draftId, { annotatedPng: b64(INK) }));
+          expect(id).not.toBe(old.report.id);
+          expect(h.media(id).equals(INK)).toBe(true);
+        });
+
+        it('then new marks: those bytes go, and the older image isn\'t resent without them', async () => {
+          const h = harness();
+          const reopened = await reopenedFlattened(h);
+          const marked = pngOf(2880, 1800, 'new mark');
+          h.state.submitFails = FAILED_SAVE;
+          await expect(send(h, reopened.draftId, { annotatedPng: b64(marked) })).rejects.toMatchObject({ code: 'storage-full' });
+          await expect(send(h, reopened.draftId)).rejects.toMatchObject({ code: 'flattened-required' });
+          expect(await h.saved()).toEqual([]);
+          expect(h.media(savedId(await send(h, reopened.draftId, { annotatedPng: b64(marked) }))).equals(marked)).toBe(true);
+        });
+
+        it.each<[string, Buffer, string]>([
+          ['its capture', CAPTURE, 'flattened-required'],
+          ['another window\'s original', OTHER, 'invalid-media'],
+        ])('refuses %s, and nothing is saved', async (_name, original, code) => {
+          const h = harness();
+          const reopened = await reopenedFlattened(h);
+          await expect(send(h, reopened.draftId, { annotatedPng: b64(original) })).rejects.toMatchObject({ code });
+          expect(await h.saved()).toEqual([]);
+        });
+
+        it('left out, whatever the flag says, still needs bytes afterwards', async () => {
+          const h = harness();
+          const reopened = await reopenedFlattened(h);
+          h.state.submitFails = FAILED_SAVE;
+          await expect(send(h, reopened.draftId, { includeScreenshot: false, shotId: 's0', noEdits: true })).rejects.toMatchObject({ code: 'storage-full' });
+          await expect(send(h, reopened.draftId)).rejects.toMatchObject({ code: 'flattened-required' });
+          expect(h.media(savedId(await send(h, reopened.draftId, { annotatedPng: b64(INK) }))).equals(INK)).toBe(true);
+        });
+
+        it('can\'t grow past the image it carried', async () => {
+          const h = harness();
+          const draft = await opened(h);
+          await enrollAgain(h);
+          const fitted = pngOf(1440, 900, 'fitted');
+          const reopened = reopenedFrom(await send(h, draft.draftId, { annotatedPng: b64(fitted) }));
+          await expect(send(h, reopened.draftId, { annotatedPng: b64(INK) })).rejects.toMatchObject({ code: 'invalid-media' });
+          expect(h.media(savedId(await send(h, reopened.draftId, { annotatedPng: b64(fitted) }))).equals(fitted)).toBe(true);
+        });
       });
 
-      it('a reopened draft refuses the original, and new marks then need bytes', async () => {
-        const h = harness();
-        const draft = await opened(h);
-        await enrollAgain(h);
-        const reopened = reopenedFrom(await send(h, draft.draftId, { annotatedPng: b64(INK) }));
-        h.state.submitFails = FAILED_SAVE;
-        await expect(send(h, reopened.draftId, { annotatedPng: b64(pngOf(2880, 1800, 'new mark')) })).rejects.toMatchObject({ code: 'storage-full' });
-        await expect(send(h, reopened.draftId, { annotatedPng: b64(CAPTURE) })).rejects.toMatchObject({ code: 'flattened-required' });
-        await expect(send(h, reopened.draftId)).rejects.toMatchObject({ code: 'flattened-required' });
-        expect(await h.saved()).toEqual([]);
-      });
+      describe('a carried capture that was never edited stays on the original path', () => {
+        async function reopenedCapture(h: Harness) {
+          const draft = await opened(h);
+          await enrollAgain(h);
+          return reopenedFrom(await send(h, draft.draftId));
+        }
 
-      it('leaving the image out on a reopened draft doesn\'t lose it', async () => {
-        const h = harness();
-        const draft = await opened(h);
-        await enrollAgain(h);
-        const reopened = reopenedFrom(await send(h, draft.draftId, { annotatedPng: b64(INK) }));
-        h.state.submitFails = FAILED_SAVE;
-        await expect(send(h, reopened.draftId, { includeScreenshot: false })).rejects.toMatchObject({ code: 'storage-full' });
-        expect(h.media(savedId(await send(h, reopened.draftId))).equals(INK)).toBe(true);
+        it.each<[string, Partial<FeedbackSendInput>]>([
+          ['no bytes', {}],
+          ['its own bytes', { annotatedPng: b64(CAPTURE) }],
+        ])('with %s, it sends the capture', async (_name, included) => {
+          const h = harness();
+          const reopened = await reopenedCapture(h);
+          expect(h.media(savedId(await send(h, reopened.draftId, included))).equals(CAPTURE)).toBe(true);
+        });
+
+        it('marks then need flattened bytes as usual', async () => {
+          const h = harness();
+          const reopened = await reopenedCapture(h);
+          h.state.submitFails = FAILED_SAVE;
+          await expect(send(h, reopened.draftId, { annotatedPng: b64(INK) })).rejects.toMatchObject({ code: 'storage-full' });
+          await expect(send(h, reopened.draftId)).rejects.toMatchObject({ code: 'flattened-required' });
+          await expect(send(h, reopened.draftId, { annotatedPng: b64(CAPTURE) })).rejects.toMatchObject({ code: 'flattened-required' });
+          expect(await h.saved()).toEqual([]);
+          expect(h.media(savedId(await send(h, reopened.draftId, { annotatedPng: b64(INK) }))).equals(INK)).toBe(true);
+        });
+
+        it('refuses another window\'s original', async () => {
+          const h = harness();
+          const reopened = await reopenedCapture(h);
+          await expect(send(h, reopened.draftId, { annotatedPng: b64(OTHER) })).rejects.toMatchObject({ code: 'invalid-media' });
+        });
       });
 
       it('an unknown earlier save carries through the reopen: both may be delivered', async () => {
@@ -1393,7 +1460,7 @@ describe('the report field with the real SDK', () => {
         await expect(send(h, draft.draftId, { annotatedPng: b64(INK) })).rejects.toMatchObject({ code: 'storage-unavailable' });
         await enrollAgain(h);
         const reopened = reopenedFrom(await send(h, draft.draftId, { annotatedPng: b64(INK) }));
-        await expect(send(h, reopened.draftId)).resolves.toMatchObject({ status: 'saved-local', earlierMayDeliver: true });
+        await expect(send(h, reopened.draftId, { annotatedPng: b64(INK) })).resolves.toMatchObject({ status: 'saved-local', earlierMayDeliver: true });
       });
     });
 
@@ -1408,7 +1475,7 @@ describe('the report field with the real SDK', () => {
       h.access.redeem = () => json(h.grant(SECOND_TOKEN, 's'));
       await h.service.connect(SECOND_INVITE);
       const reopened = reopenedFrom(await send(h, draft.draftId, { annotatedPng: b64(INK) }));
-      await expect(send(h, reopened.draftId)).resolves.toMatchObject({ earlierMayDeliver: true });
+      await expect(send(h, reopened.draftId, { annotatedPng: b64(INK) })).resolves.toMatchObject({ earlierMayDeliver: true });
     });
 
     it('logs and telemetry meta carry no bytes or hashes', async () => {

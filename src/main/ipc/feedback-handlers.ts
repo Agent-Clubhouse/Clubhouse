@@ -101,11 +101,25 @@ export function validateSendInput(value: FeedbackSendInput, argName: string): vo
   if (value.shotId !== undefined && (typeof value.shotId !== 'string' || !SHOT_ID.test(value.shotId))) throw new Error(`${argName}.shotId is invalid`);
   if (value.noEdits !== undefined && (value.noEdits !== true || value.includeScreenshot)) throw new Error(`${argName}.noEdits is only for a send that leaves the image out`);
   // Shape only here; the service decodes it and enforces the byte cap and dimensions. With the
-  // image left out, bad bytes can't stop the note: the service refuses them and it still goes.
+  // image left out, bad bytes can't stop the note: withoutUnusableFlattened removes them.
   if (value.annotatedPng !== undefined && typeof value.annotatedPng !== 'string') throw new Error(`${argName}.annotatedPng must be base64 PNG data of at most ${FEEDBACK_MAX_PNG_BYTES} bytes`);
   if (value.annotatedPng !== undefined && value.includeScreenshot && (value.annotatedPng.length > MAX_ANNOTATED_BASE64 || !BASE64.test(value.annotatedPng))) {
     throw new Error(`${argName}.annotatedPng must be base64 PNG data of at most ${FEEDBACK_MAX_PNG_BYTES} bytes`);
   }
+}
+
+/**
+ * Oversized or malformed flattened bytes on a Send that leaves the image out never reach the
+ * service, so it doesn't decode or hash them. The Send then has neither bytes nor a flag, so the
+ * note goes and the capture drops. Call after validateSendInput.
+ */
+export function withoutUnusableFlattened(input: FeedbackSendInput): FeedbackSendInput {
+  if (input.includeScreenshot || input.annotatedPng === undefined) return input;
+  const tooLarge = input.annotatedPng.length > MAX_ANNOTATED_BASE64;
+  if (!tooLarge && BASE64.test(input.annotatedPng)) return input;
+  appLog('core:feedback', 'warn', 'Feedback flattened image dropped on a Send without it', { meta: { reason: tooLarge ? 'too-large' : 'not-base64', length: input.annotatedPng.length } });
+  const { annotatedPng: _annotatedPng, noEdits: _noEdits, ...rest } = input;
+  return rest;
 }
 
 export function registerFeedbackHandlers(): void {
@@ -133,7 +147,7 @@ export function registerFeedbackHandlers(): void {
 
   ipcMain.handle(IPC.FEEDBACK.SEND, withValidatedArgs([objectArg<FeedbackSendInput>({ validate: validateSendInput })], async (event, input) => {
     requireEnabled(event);
-    return getFeedbackService().send(input);
+    return getFeedbackService().send(withoutUnusableFlattened(input));
   }));
 
   ipcMain.handle(IPC.FEEDBACK.RELEASE_HELD, withValidatedArgs([stringArg({ maxLength: MAX_RELEASE_TOKEN })], async (event, releaseToken) => {
