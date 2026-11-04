@@ -91,13 +91,16 @@ export function FeedbackReviewDialog({ draft, reopened = null, onClose }: Props)
     setInkByShot((all) => { const copy = [...all]; copy[shotIndex] = next; return copy; });
   }, [shotIndex]);
   const hasScreenshot = shot !== null;
+  // The first Send fixes the window in main, so another can't be chosen after it, however it ended.
+  const [sendTried, setSendTried] = useState(false);
+  const windowLocked = phase === 'sending' || sendTried;
 
   // Ink belongs to one capture: a new capture starts clean.
   useEffect(() => { setInkByShot([]); setShotIndex(0); }, [draft.draftId]);
 
   const onShotKey = (e: KeyboardEvent<HTMLDivElement>) => {
     const step = e.key === 'ArrowRight' || e.key === 'ArrowDown' ? 1 : e.key === 'ArrowLeft' || e.key === 'ArrowUp' ? -1 : 0;
-    if (!step || phase === 'sending') return;
+    if (!step || windowLocked) return;
     e.preventDefault();
     const next = (shotIndex + step + shots.length) % shots.length;
     setShotIndex(next);
@@ -111,12 +114,14 @@ export function FeedbackReviewDialog({ draft, reopened = null, onClose }: Props)
 
   const send = async (includeScreenshot: boolean) => {
     setPhase('sending');
+    setSendTried(true);
     setError(null);
     try {
       // The drawing is baked into the capture at full size; main checks it fits the image it came from.
-      const annotatedPng = includeScreenshot && shot && strokes.length > 0
-        ? await compositeAnnotatedPng(shot.preview, strokes)
-        : undefined;
+      // It goes with the image left out too: the edits are final either way. There, a failed
+      // composite can't stop the note, and sending neither this nor noEdits drops the capture.
+      const composite = shot && strokes.length > 0 ? compositeAnnotatedPng(shot.preview, strokes) : undefined;
+      const annotatedPng = includeScreenshot ? await composite : await composite?.catch((): undefined => undefined); // telemetry-exempt: main drops the capture, and the note goes
       const result = await window.clubhouse.feedback.send({
         draftId: draft.draftId,
         notes,
@@ -125,7 +130,9 @@ export function FeedbackReviewDialog({ draft, reopened = null, onClose }: Props)
         ...(diagnostics?.status === 'available' && { includeDiagnostics }),
         scene: currentScene(),
         ...(annotatedPng !== undefined && { annotatedPng }),
-        ...(includeScreenshot && shot?.shotId && { shotId: shot.shotId }),
+        ...(shot?.shotId && { shotId: shot.shotId }),
+        // Main decides what this can keep: it never brings back a capture already dropped.
+        ...(!includeScreenshot && shot?.shotId && !composite && { noEdits: true as const }),
       });
       if (result.status === 'enrollment-changed') {
         // Nothing was saved. A new report with new contents needs its own review and Send.
@@ -178,7 +185,7 @@ export function FeedbackReviewDialog({ draft, reopened = null, onClose }: Props)
                     aria-checked={i === shotIndex}
                     // Roving tabindex: one Tab stop for the group, arrows move between windows.
                     tabIndex={i === shotIndex ? 0 : -1}
-                    disabled={phase === 'sending'}
+                    disabled={windowLocked}
                     onClick={() => setShotIndex(i)}
                     className={`flex-shrink-0 w-32 p-1 rounded-md border text-left focus-ring disabled:opacity-50 ${i === shotIndex ? 'border-ctp-accent bg-surface-0' : 'border-surface-1 hover:bg-surface-0'}`}
                     data-testid={`feedback-shot-${i}`}
