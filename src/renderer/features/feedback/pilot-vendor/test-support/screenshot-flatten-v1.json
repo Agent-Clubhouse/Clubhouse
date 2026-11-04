@@ -1,0 +1,124 @@
+{
+  "v": 1,
+  "note": "Shared flattener vectors (docs/feedback-composer-contract.md section 3). Every adapter builds each source from its pattern, flattens it with the marks in its real renderer, and applies every check below. Coordinates are upright source pixels with a top-left origin.",
+  "limits": {"maxBytes": 8388608, "maxPixels": 20000000, "maxSide": 8192},
+  "patterns": {
+    "solid": "Every pixel is `color`, as [r, g, b, a].",
+    "stripes": "Vertical stripes `size` pixels wide. Pixel x takes colors[floor(x / size) % 2].",
+    "halves": "Pixels with x < floor(width / 2) take colors[0], the rest colors[1].",
+    "noise": "Opaque. For each pixel in row order, advance a 32-bit xorshift state (x ^= x << 13; x ^= x >>> 17; x ^= x << 5, all unsigned, starting from `seed`) and take r, g, b from its low three bytes, low byte first."
+  },
+  "checks": [
+    "A vector with expect.rejects must fail, and return no bytes. Every other check is for a vector that succeeds.",
+    "The output must not be the source bytes, whatever the marks.",
+    "PNG signature, then only the chunks in allowedChunks, with allowedColorTypes in IHDR at 8 bits. No alpha and no metadata.",
+    "If source.metadataText is set, write it as a tEXt chunk just before the source's first IDAT. Those bytes must not appear in the output.",
+    "Width, height and encoded size within the effective limits: the vector's limits over the top-level ones. expect.fitDown says whether the output must be smaller than the source.",
+    "Let sx = outputWidth / sourceWidth and sy = outputHeight / sourceHeight. Each redact mark covers output pixels floor(x * sx) to ceil((x + width) * sx) - 1 and floor(y * sy) to ceil((y + height) * sy) - 1, clipped to the image. Every one of those pixels must be exactly [0, 0, 0].",
+    "Each probe (x, y) is read at output pixel floor(x * sx), floor(y * sy), and must match rgb within tolerance (default 0)."
+  ],
+  "allowedChunks": ["IHDR", "IDAT", "IEND", "sRGB", "gAMA", "cHRM", "pHYs"],
+  "allowedColorTypes": [2],
+  "vectors": [
+    {
+      "id": "redaction-expands-outward-without-fit",
+      "source": {"width": 320, "height": 200, "pattern": {"kind": "stripes", "size": 2, "colors": [[255, 255, 255, 255], [255, 0, 255, 255]]}},
+      "marks": [{"type": "redact", "x": 40.4, "y": 30.6, "width": 100.2, "height": 50.3}],
+      "expect": {"fitDown": false, "probes": [
+        {"x": 39, "y": 50, "rgb": [255, 0, 255]},
+        {"x": 141, "y": 50, "rgb": [255, 255, 255]},
+        {"x": 60, "y": 29, "rgb": [255, 255, 255]},
+        {"x": 60, "y": 81, "rgb": [255, 255, 255]}
+      ]}
+    },
+    {
+      "id": "pen-inks-are-exact",
+      "source": {"width": 400, "height": 240, "pattern": {"kind": "solid", "color": [128, 128, 128, 255]}},
+      "marks": [
+        {"type": "pen", "points": [[20, 30], [380, 30]], "width": 20, "ink": "red"},
+        {"type": "pen", "points": [[20, 80], [380, 80]], "width": 20, "ink": "yellow"},
+        {"type": "pen", "points": [[20, 130], [380, 130]], "width": 20, "ink": "blue"},
+        {"type": "pen", "points": [[20, 180], [380, 180]], "width": 20, "ink": "white"},
+        {"type": "pen", "points": [[200, 220]], "width": 20, "ink": "red"}
+      ],
+      "expect": {"fitDown": false, "probes": [
+        {"x": 200, "y": 30, "rgb": [255, 0, 0]},
+        {"x": 200, "y": 80, "rgb": [255, 204, 0]},
+        {"x": 200, "y": 130, "rgb": [0, 122, 255]},
+        {"x": 200, "y": 180, "rgb": [255, 255, 255]},
+        {"x": 200, "y": 220, "rgb": [255, 0, 0]},
+        {"x": 200, "y": 55, "rgb": [128, 128, 128]}
+      ]}
+    },
+    {
+      "id": "redaction-covers-a-pen-drawn-before-it",
+      "source": {"width": 200, "height": 120, "pattern": {"kind": "solid", "color": [200, 200, 200, 255]}},
+      "marks": [
+        {"type": "pen", "points": [[10, 60], [190, 60]], "width": 16, "ink": "blue"},
+        {"type": "redact", "x": 60, "y": 20, "width": 80, "height": 80}
+      ],
+      "expect": {"fitDown": false, "probes": [{"x": 30, "y": 60, "rgb": [0, 122, 255]}, {"x": 170, "y": 60, "rgb": [0, 122, 255]}]}
+    },
+    {
+      "id": "redaction-covers-a-pen-drawn-after-it",
+      "source": {"width": 200, "height": 120, "pattern": {"kind": "solid", "color": [200, 200, 200, 255]}},
+      "marks": [
+        {"type": "redact", "x": 60, "y": 20, "width": 80, "height": 80},
+        {"type": "pen", "points": [[10, 60], [190, 60]], "width": 16, "ink": "blue"}
+      ],
+      "expect": {"fitDown": false, "probes": [{"x": 30, "y": 60, "rgb": [0, 122, 255]}, {"x": 170, "y": 60, "rgb": [0, 122, 255]}]}
+    },
+    {
+      "id": "redaction-past-the-edges-is-clipped",
+      "source": {"width": 100, "height": 100, "pattern": {"kind": "solid", "color": [10, 200, 30, 255]}},
+      "marks": [
+        {"type": "redact", "x": -20, "y": -20, "width": 50, "height": 50},
+        {"type": "redact", "x": 500, "y": 500, "width": 10, "height": 10}
+      ],
+      "expect": {"fitDown": false, "probes": [{"x": 29, "y": 29, "rgb": [0, 0, 0]}, {"x": 30, "y": 30, "rgb": [10, 200, 30]}, {"x": 99, "y": 99, "rgb": [10, 200, 30]}]}
+    },
+    {
+      "id": "alpha-composites-over-white",
+      "source": {"width": 64, "height": 32, "pattern": {"kind": "halves", "colors": [[0, 0, 0, 0], [0, 0, 255, 255]]}},
+      "marks": [],
+      "expect": {"fitDown": false, "probes": [{"x": 8, "y": 8, "rgb": [255, 255, 255]}, {"x": 48, "y": 8, "rgb": [0, 0, 255]}]}
+    },
+    {
+      "id": "source-metadata-does-not-survive",
+      "source": {"width": 32, "height": 32, "pattern": {"kind": "solid", "color": [40, 90, 160, 255]}, "metadataText": "secret-source-metadata"},
+      "marks": [],
+      "expect": {"fitDown": false, "probes": [{"x": 16, "y": 16, "rgb": [40, 90, 160]}]}
+    },
+    {
+      "id": "fit-down-by-side",
+      "source": {"width": 9000, "height": 300, "pattern": {"kind": "stripes", "size": 1, "colors": [[255, 255, 255, 255], [255, 0, 255, 255]]}},
+      "marks": [
+        {"type": "redact", "x": 4500.5, "y": 10.25, "width": 1, "height": 280.5},
+        {"type": "pen", "points": [[100, 150], [1000, 150]], "width": 80, "ink": "yellow"}
+      ],
+      "expect": {"fitDown": true, "probes": [{"x": 500, "y": 150, "rgb": [255, 204, 0]}]}
+    },
+    {
+      "id": "fit-down-by-pixels",
+      "source": {"width": 6000, "height": 4000, "pattern": {"kind": "stripes", "size": 1, "colors": [[255, 255, 255, 255], [255, 0, 255, 255]]}},
+      "marks": [
+        {"type": "pen", "points": [[500, 3500], [5500, 3500]], "width": 160, "ink": "yellow"},
+        {"type": "redact", "x": 1500.5, "y": 1000.25, "width": 2000.5, "height": 1000.5}
+      ],
+      "expect": {"fitDown": true, "probes": [{"x": 3000, "y": 3500, "rgb": [255, 204, 0]}]}
+    },
+    {
+      "id": "fit-down-by-bytes",
+      "source": {"width": 3000, "height": 3000, "pattern": {"kind": "noise", "seed": 2463534242}},
+      "marks": [{"type": "redact", "x": 700.5, "y": 700.5, "width": 1200, "height": 900}],
+      "expect": {"fitDown": true}
+    },
+    {
+      "id": "cannot-fit-fails",
+      "source": {"width": 64, "height": 64, "pattern": {"kind": "noise", "seed": 88172645}},
+      "marks": [{"type": "redact", "x": 8, "y": 8, "width": 8, "height": 8}],
+      "limits": {"maxBytes": 16},
+      "expect": {"rejects": true}
+    }
+  ]
+}

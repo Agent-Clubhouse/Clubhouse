@@ -201,6 +201,8 @@ export default tseslint.config(
       'src/main/orchestrators/adapters/codex-protocol/generated/**',
       // Vendored Framebriar SDK, pinned in VENDORED.json; see scripts/vendor-framebriar.mjs.
       'src/main/vendor/framebriar/**',
+      // PILOT, never ships: byte-for-byte copies pinned to Framebriar ac13f32.
+      'src/renderer/features/feedback/pilot-vendor/**',
     ],
   },
   {
