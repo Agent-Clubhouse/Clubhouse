@@ -3,8 +3,9 @@ import { getBaseDirPath } from '../base-dir';
 
 /**
  * The Dispatcher's folder (#2533): `dispatcher` under the Clubhouse base dir.
- * Not `~/.clubhouse/assistant`, which cleanupRetiredPluginData deletes. It is
- * no git repo, and the Dispatcher's agent config lives in its `.clubhouse/`.
+ * Not `~/.clubhouse/assistant`, which is the removed Assistant's and may still
+ * hold its data. It is no git repo, and the Dispatcher's agent config lives in
+ * its `.clubhouse/`.
  */
 export function getDispatcherPath(): string {
   return path.join(getBaseDirPath(), 'dispatcher');
