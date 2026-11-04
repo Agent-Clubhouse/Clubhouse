@@ -1,0 +1,47 @@
+name: Throwaway flake probe
+on:
+  push:
+    branches: ['windows-release-flake/probe-tmp']
+permissions:
+  contents: read
+jobs:
+  probe:
+    runs-on: windows-latest
+    timeout-minutes: 25
+    env:
+      ELECTRON_SKIP_BINARY_DOWNLOAD: '1'
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '22.23.4'
+          cache: npm
+      - run: npm ci
+      - run: node scripts/wrf-raw-windows-semantics.mjs
+      - name: Repeat the flow, three contending processes plus one that waits like a person
+        shell: pwsh
+        run: |
+          $probe = 'src/main/services/framebriar/zz-flake-probe.test.ts'
+          $jobs = @(
+            @{ m = 'settled'; n = 200; o = 'probe-a.jsonl' },
+            @{ m = 'settled'; n = 200; o = 'probe-b.jsonl' },
+            @{ m = 'settled'; n = 200; o = 'probe-c.jsonl' },
+            @{ m = 'host'; n = 100; o = 'probe-d.jsonl' }
+          ) | ForEach-Object {
+            $j = $_
+            Start-ThreadJob -ThrottleLimit 4 -ArgumentList $j.m, $j.n, $j.o, $probe, $PWD.Path -ScriptBlock {
+              param($m, $n, $o, $probe, $cwd)
+              Set-Location $cwd
+              $env:PROBE_MODE = $m; $env:PROBE_N = "$n"; $env:PROBE_OUT = $o
+              npx vitest run --project main $probe --reporter=dot 2>&1 | Select-Object -Last 4
+            }
+          }
+          $jobs | Wait-Job -Timeout 1080 | Receive-Job
+          $jobs | Stop-Job
+          exit 0
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: wrf-probe-results
+          path: probe-*.jsonl
+          if-no-files-found: warn
