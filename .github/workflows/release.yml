@@ -6,7 +6,9 @@ on:
       - 'v*'
 
 # Recovery: after fixing the underlying cause of a failed release run, use
-# GitHub's "re-run failed jobs" action instead of cutting a new version.
+# GitHub's "re-run failed jobs" action instead of cutting a new version. Publish
+# can be repeated safely. Build artifacts last 5 days; after that a re-run
+# rebuilds, the bytes differ, and it stops: cut a new version.
 concurrency:
   group: release
   cancel-in-progress: false
@@ -60,12 +62,16 @@ jobs:
           VERSION="${GITHUB_REF_NAME#v}"
           echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
 
-          # Detect preview tags: v1.0.0rc or v1.0.0-beta.1 → is_preview=true
-          if [[ "$VERSION" == *rc ]] || [[ "$VERSION" == *-beta.* ]]; then
+          # Only these tag shapes are releases. Clients can't order anything else:
+          # 0.42.0-rc.1 parses as 0.42.0 stable, and 0.42.0 is never offered over it.
+          if [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "is_preview=false" >> "$GITHUB_OUTPUT"
+          elif [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-beta\.[0-9]+|rc)$ ]]; then
             echo "is_preview=true" >> "$GITHUB_OUTPUT"
             echo "Preview release detected: ${VERSION}"
           else
-            echo "is_preview=false" >> "$GITHUB_OUTPUT"
+            echo "::error::Tag ${GITHUB_REF_NAME} isn't vX.Y.Z or vX.Y.Z-beta.N. Use -beta.N for a release candidate."
+            exit 1
           fi
 
           # Verify tag version matches package.json (skip for legacy rc tags
@@ -496,6 +502,8 @@ jobs:
     runs-on: ubuntu-latest
     environment: release
     steps:
+      - uses: actions/checkout@v7
+
       - name: Download all build artifacts
         uses: actions/download-artifact@v8
         with:
@@ -594,312 +602,13 @@ jobs:
           tenant-id: ${{ secrets.AZURE_TENANT_ID }}
           subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
 
-      - name: Update history.json
-        if: needs.verify-tag.outputs.is_preview != 'true'
-        env:
-          RELEASE_MESSAGE: ${{ needs.verify-tag.outputs.release_message }}
-          RELEASE_NOTES: ${{ needs.verify-tag.outputs.release_notes }}
-        run: |
-          VERSION="${{ needs.verify-tag.outputs.version }}"
-          ACCOUNT="stclubhousereleases"
-          CONTAINER="releases"
-          MESSAGE="$RELEASE_MESSAGE"
-          NOTES="$RELEASE_NOTES"
-
-          # Download existing history.json (or start with empty array)
-          az storage blob download \
-            --account-name "$ACCOUNT" \
-            --container-name "$CONTAINER" \
-            --name "updates/v2/history.json" \
-            --file history-existing.json \
-            --auth-mode login 2>/dev/null || echo '[]' > history-existing.json
-
-          # Validate existing history is valid JSON array
-          if ! jq -e 'type == "array"' history-existing.json > /dev/null 2>&1; then
-            echo "::warning::Existing history.json is not a valid array, starting fresh"
-            echo '[]' > history-existing.json
-          fi
-
-          # Create the new entry
-          jq -n \
-            --arg version "$VERSION" \
-            --arg date "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
-            --arg message "$MESSAGE" \
-            --arg notes "$NOTES" \
-            '{
-              version: $version,
-              releaseDate: $date,
-              releaseMessage: $message,
-              releaseNotes: $notes
-            }' > new-entry.json
-
-          # Replace an existing version in place; prepend new versions.
-          jq --slurpfile entry new-entry.json 'if any(.[]; .version == $entry[0].version) then map(if .version == $entry[0].version then $entry[0] else . end) else [$entry[0]] + . end' history-existing.json > artifacts/history.json
-
-          echo "Updated history.json ($(jq length artifacts/history.json) entries):"
-          jq '.[0]' artifacts/history.json
-
-      - name: Upload to Azure Blob Storage
-        run: |
-          VERSION="${{ needs.verify-tag.outputs.version }}"
-          IS_PREVIEW="${{ needs.verify-tag.outputs.is_preview }}"
-          ACCOUNT="stclubhousereleases"
-          CONTAINER="releases"
-
-          # Upload versioned artifacts (immutable)
-          for file in artifacts/Clubhouse-*.zip artifacts/Clubhouse-*.dmg artifacts/Clubhouse-*.exe artifacts/Clubhouse-*.deb artifacts/Clubhouse-*.rpm; do
-            [ -f "$file" ] || continue
-            BLOB_NAME="artifacts/$(basename "$file")"
-            az storage blob upload \
-              --account-name "$ACCOUNT" \
-              --container-name "$CONTAINER" \
-              --name "$BLOB_NAME" \
-              --file "$file" \
-              --overwrite false \
-              --auth-mode login
-          done
-
-          if [ "$IS_PREVIEW" = "true" ]; then
-            # Preview release: upload preview.json manifest to v2 path
-            az storage blob upload \
-              --account-name "$ACCOUNT" \
-              --container-name "$CONTAINER" \
-              --name "updates/v2/preview.json" \
-              --file artifacts/preview.json \
-              --overwrite \
-              --content-type "application/json" \
-              --auth-mode login
-
-            # Dual-publish to legacy path so clients on old URLs can bridge
-            # to this version, which knows how to check v2 paths.
-            # Remove this once legacy paths are pinned with static message (#458).
-            az storage blob upload \
-              --account-name "$ACCOUNT" \
-              --container-name "$CONTAINER" \
-              --name "updates/preview.json" \
-              --file artifacts/preview.json \
-              --overwrite \
-              --content-type "application/json" \
-              --auth-mode login
-
-            # Seed v2/latest.json from the legacy path if it doesn't exist yet.
-            # This is needed because no stable release may have shipped since the
-            # v2 migration, and clients check both manifests in parallel.
-            EXISTS=$(az storage blob exists \
-              --account-name "$ACCOUNT" \
-              --container-name "$CONTAINER" \
-              --name "updates/v2/latest.json" \
-              --auth-mode login \
-              --query "exists" --output tsv)
-            if [ "$EXISTS" != "true" ]; then
-              echo "Seeding v2/latest.json from legacy latest.json"
-              az storage blob copy start \
-                --account-name "$ACCOUNT" \
-                --destination-container "$CONTAINER" \
-                --destination-blob "updates/v2/latest.json" \
-                --source-uri "https://${ACCOUNT}.blob.core.windows.net/${CONTAINER}/updates/latest.json" \
-                --auth-mode login
-            fi
-
-            # Copy installers to the preview/ slot (constantly overwritten)
-            SLOT="preview"
-          else
-            # Stable release: upload latest.json and history.json to v2 paths
-            az storage blob upload \
-              --account-name "$ACCOUNT" \
-              --container-name "$CONTAINER" \
-              --name "updates/v2/latest.json" \
-              --file artifacts/latest.json \
-              --overwrite \
-              --content-type "application/json" \
-              --auth-mode login
-
-            az storage blob upload \
-              --account-name "$ACCOUNT" \
-              --container-name "$CONTAINER" \
-              --name "updates/v2/history.json" \
-              --file artifacts/history.json \
-              --overwrite \
-              --content-type "application/json" \
-              --auth-mode login
-
-            # Dual-publish to legacy paths so clients on old URLs can bridge
-            # to this version, which knows how to check v2 paths.
-            # Remove this once legacy paths are pinned with static message (#458).
-            az storage blob upload \
-              --account-name "$ACCOUNT" \
-              --container-name "$CONTAINER" \
-              --name "updates/latest.json" \
-              --file artifacts/latest.json \
-              --overwrite \
-              --content-type "application/json" \
-              --auth-mode login
-
-            az storage blob upload \
-              --account-name "$ACCOUNT" \
-              --container-name "$CONTAINER" \
-              --name "updates/history.json" \
-              --file artifacts/history.json \
-              --overwrite \
-              --content-type "application/json" \
-              --auth-mode login
-
-            SLOT="latest"
-          fi
-
-          # Copy DMGs to the appropriate slot (latest/ or preview/)
-          for ARCH in arm64 x64; do
-            az storage blob copy start \
-              --account-name "$ACCOUNT" \
-              --destination-container "$CONTAINER" \
-              --destination-blob "${SLOT}/Clubhouse-${SLOT}-darwin-${ARCH}.dmg" \
-              --source-uri "https://${ACCOUNT}.blob.core.windows.net/${CONTAINER}/artifacts/Clubhouse-${VERSION}-darwin-${ARCH}.dmg" \
-              --auth-mode login
-          done
-
-          # Copy Windows installers to the appropriate slot
-          for WIN_ARCH in x64 arm64; do
-            az storage blob copy start \
-              --account-name "$ACCOUNT" \
-              --destination-container "$CONTAINER" \
-              --destination-blob "${SLOT}/Clubhouse-${SLOT}-win32-${WIN_ARCH}-Setup.exe" \
-              --source-uri "https://${ACCOUNT}.blob.core.windows.net/${CONTAINER}/artifacts/Clubhouse-${VERSION}-win32-${WIN_ARCH}-Setup.exe" \
-              --auth-mode login
-          done
-
-          # Copy Linux packages to the appropriate slot
-          for LINUX_ARCH in x64; do
-            for EXT in deb rpm; do
-              SRC_BLOB="artifacts/Clubhouse-${VERSION}-linux-${LINUX_ARCH}.${EXT}"
-              DEST_BLOB="${SLOT}/Clubhouse-${SLOT}-linux-${LINUX_ARCH}.${EXT}"
-              # Only copy if the source artifact exists
-              EXISTS=$(az storage blob exists \
-                --account-name "$ACCOUNT" \
-                --container-name "$CONTAINER" \
-                --name "$SRC_BLOB" \
-                --auth-mode login \
-                --query "exists" --output tsv)
-              if [ "$EXISTS" = "true" ]; then
-                az storage blob copy start \
-                  --account-name "$ACCOUNT" \
-                  --destination-container "$CONTAINER" \
-                  --destination-blob "$DEST_BLOB" \
-                  --source-uri "https://${ACCOUNT}.blob.core.windows.net/${CONTAINER}/${SRC_BLOB}" \
-                  --auth-mode login
-              fi
-            done
-          done
-
-          # Wait for copies to complete
-          SLOT_BLOBS=(
-            "${SLOT}/Clubhouse-${SLOT}-darwin-arm64.dmg"
-            "${SLOT}/Clubhouse-${SLOT}-darwin-x64.dmg"
-            "${SLOT}/Clubhouse-${SLOT}-win32-x64-Setup.exe"
-            "${SLOT}/Clubhouse-${SLOT}-win32-arm64-Setup.exe"
-          )
-
-          # Add Linux blobs to wait list if they were uploaded
-          for LINUX_ARCH in x64; do
-            for EXT in deb rpm; do
-              BLOB="${SLOT}/Clubhouse-${SLOT}-linux-${LINUX_ARCH}.${EXT}"
-              EXISTS=$(az storage blob exists \
-                --account-name "$ACCOUNT" \
-                --container-name "$CONTAINER" \
-                --name "$BLOB" \
-                --auth-mode login \
-                --query "exists" --output tsv 2>/dev/null)
-              if [ "$EXISTS" = "true" ]; then
-                SLOT_BLOBS+=("$BLOB")
-              fi
-            done
-          done
-          for BLOB in "${SLOT_BLOBS[@]}"; do
-            while true; do
-              STATUS=$(az storage blob show \
-                --account-name "$ACCOUNT" \
-                --container-name "$CONTAINER" \
-                --name "$BLOB" \
-                --query "properties.copy.status" \
-                --output tsv \
-                --auth-mode login)
-              if [ "$STATUS" = "success" ]; then
-                echo "Copy complete: $BLOB"
-                break
-              elif [ "$STATUS" = "failed" ] || [ "$STATUS" = "aborted" ]; then
-                echo "::error::Blob copy failed for $BLOB"
-                exit 1
-              fi
-              sleep 2
-            done
-          done
-
-      - name: Upload Squirrel native update files
-        run: |
-          SLOT="${{ needs.verify-tag.outputs.is_preview == 'true' && 'preview' || 'stable' }}"
-          ACCOUNT="stclubhousereleases"
-          CONTAINER="releases"
-
-          for WIN_ARCH in x64 arm64; do
-            SQUIRREL_SRC="artifacts/squirrel-win32-${WIN_ARCH}"
-            SQUIRREL_DEST="squirrel/${SLOT}/win32-${WIN_ARCH}"
-
-            if [ ! -d "$SQUIRREL_SRC" ]; then
-              echo "::warning::No Squirrel files for win32-${WIN_ARCH}"
-              continue
-            fi
-
-            echo "Uploading Squirrel files for win32-${WIN_ARCH} to ${SQUIRREL_DEST}/"
-
-            # Upload RELEASES file
-            az storage blob upload \
-              --account-name "$ACCOUNT" \
-              --container-name "$CONTAINER" \
-              --name "${SQUIRREL_DEST}/RELEASES" \
-              --file "${SQUIRREL_SRC}/RELEASES" \
-              --overwrite \
-              --auth-mode login
-
-            # Upload nupkg files
-            for nupkg in "${SQUIRREL_SRC}"/*.nupkg; do
-              [ -f "$nupkg" ] || continue
-              echo "  Uploading $(basename "$nupkg")"
-              az storage blob upload \
-                --account-name "$ACCOUNT" \
-                --container-name "$CONTAINER" \
-                --name "${SQUIRREL_DEST}/$(basename "$nupkg")" \
-                --file "$nupkg" \
-                --overwrite \
-                --auth-mode login
-            done
-          done
-
-      - name: Create GitHub Release
+      - name: Publish
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ needs.verify-tag.outputs.version }}
+          IS_PREVIEW: ${{ needs.verify-tag.outputs.is_preview }}
           RELEASE_MESSAGE: ${{ needs.verify-tag.outputs.release_message }}
           RELEASE_NOTES: ${{ needs.verify-tag.outputs.release_notes }}
-        run: |
-          VERSION="${{ needs.verify-tag.outputs.version }}"
-          IS_PREVIEW="${{ needs.verify-tag.outputs.is_preview }}"
-
-          RELEASE_TITLE="v${VERSION} — ${RELEASE_MESSAGE}"
-          RELEASE_BODY="$RELEASE_NOTES"
-
-          PRERELEASE_FLAG=""
-          MANIFEST_FILE="artifacts/latest.json"
-          if [ "$IS_PREVIEW" = "true" ]; then
-            PRERELEASE_FLAG="--prerelease"
-            MANIFEST_FILE="artifacts/preview.json"
-          fi
-
-          gh release create "v${VERSION}" \
-            --repo "${{ github.repository }}" \
-            --title "${RELEASE_TITLE}" \
-            --notes "${RELEASE_BODY}" \
-            $PRERELEASE_FLAG \
-            artifacts/Clubhouse-*.zip \
-            artifacts/Clubhouse-*.dmg \
-            artifacts/Clubhouse-*.exe \
-            artifacts/Clubhouse-*.deb \
-            artifacts/Clubhouse-*.rpm \
-            "${MANIFEST_FILE}"
+        # What a failure at each step leaves for users, and how to recover or
+        # roll back: docs/release-publishing.md.
+        run: bash scripts/ci/release-publish.sh

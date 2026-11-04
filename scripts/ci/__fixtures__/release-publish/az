@@ -1,0 +1,43 @@
+#!/usr/bin/env bash
+# Fake az for release-publish.test.ts: a directory (STORE) is the container. Exits 99 on
+# anything it does not know, so a new real command can't pass unnoticed.
+args="$*"
+echo "az $args" >> "$CALLS"
+if [ -n "${FAIL_MATCH:-}" ] && [[ "$args" == *"$FAIL_MATCH"* ]]; then
+  echo "az: injected failure" >&2
+  exit 1
+fi
+name=""; file=""; overwrite=""; dest=""; source=""
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --name) name="$2"; shift ;;
+    --file) file="$2"; shift ;;
+    --overwrite) if [ "${2:-}" = "false" ]; then overwrite=false; shift; else overwrite=true; fi ;;
+    --destination-blob) dest="$2"; shift ;;
+    --source-uri) source="$2"; shift ;;
+  esac
+  shift
+done
+case "$args" in
+  "storage blob exists"*)
+    if [ -f "$STORE/$name" ]; then echo true; else echo false; fi ;;
+  "storage blob download"*)
+    [ -f "$STORE/$name" ] || { echo "BlobNotFound: $name" >&2; exit 3; }
+    cp "$STORE/$name" "$file" ;;
+  "storage blob upload"*)
+    if [ "$overwrite" = "false" ] && [ -f "$STORE/$name" ]; then echo "ResourceExistsError: $name" >&2; exit 1; fi
+    mkdir -p "$STORE/$(dirname "$name")"
+    cp "$file" "$STORE/$name"
+    echo "upload $name" >> "$WRITES" ;;
+  "storage blob copy start"*)
+    src="$STORE/${source#https://*/*/}"
+    [ -f "$src" ] || { echo "CannotVerifyCopySource: $source" >&2; exit 1; }
+    mkdir -p "$STORE/$(dirname "$dest")"
+    cp "$src" "$STORE/$dest"
+    echo "copy $dest" >> "$WRITES" ;;
+  "storage blob show"*)
+    echo success ;;
+  *)
+    echo "fake az: unknown command: $args" >&2
+    exit 99 ;;
+esac

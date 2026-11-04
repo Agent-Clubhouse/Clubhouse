@@ -1,0 +1,36 @@
+#!/usr/bin/env bash
+# Fake gh for release-publish.test.ts. Exits 99 on anything it does not know.
+args="$*"
+echo "gh $args" >> "$CALLS"
+if [ -n "${FAIL_MATCH:-}" ] && [[ "$args" == *"$FAIL_MATCH"* ]]; then
+  echo "gh: injected failure" >&2
+  exit 1
+fi
+case "$1 $2" in
+  "release view")
+    [ -f "$STORE/.github-release" ] ;;
+  "release create")
+    if [ -f "$STORE/.github-release" ]; then echo "a release with the same tag name already exists" >&2; exit 1; fi
+    shift 2
+    title=""; notes=""
+    while [ $# -gt 0 ]; do
+      case "$1" in
+        --title) title="$2"; shift ;;
+        --notes) notes="$2"; shift ;;
+      esac
+      shift
+    done
+    printf '%s\n%s\n' "$title" "$notes" > "$STORE/.github-release"
+    case "$args" in
+      *--prerelease*) echo "gh-create prerelease" >> "$WRITES" ;;
+      *) echo "gh-create" >> "$WRITES" ;;
+    esac ;;
+  "release upload")
+    case "$args" in
+      *--clobber*) echo "gh-upload" >> "$WRITES" ;;
+      *) echo "fake gh: upload without --clobber" >&2; exit 1 ;;
+    esac ;;
+  *)
+    echo "fake gh: unknown command: $args" >&2
+    exit 99 ;;
+esac
