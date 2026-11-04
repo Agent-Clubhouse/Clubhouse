@@ -22,6 +22,17 @@ export const FEEDBACK_NOTICE_TEXT: Record<FeedbackNotice, string> = {
   'migration-required': 'Feedback needs to be set up again. Paste a new invitation in Settings, Feedback.',
 };
 
+/**
+ * Saved reports stay tied to the connection they were saved under, and it can't come back: any new
+ * connection holds them until the user chooses Send. Offline is different, since the same connection
+ * returns and they go by themselves. feedback-service.sdk.test.ts pins this against the real SDK.
+ */
+const SAVED_REPORTS_NEED_SEND: ReadonlySet<FeedbackNotice> = new Set<FeedbackNotice>(['expired', 'access-required', 'connection-uncertain', 'enrollment-response-rejected']);
+
+export function savedReportsNeedSend(notice: FeedbackNotice | null): boolean {
+  return notice !== null && SAVED_REPORTS_NEED_SEND.has(notice);
+}
+
 interface FeedbackState {
   status: FeedbackStatus | null;
   loaded: boolean;

@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { FEEDBACK_CAPTURE_SHORTCUT_LABEL } from '../../../shared/feedback-types';
-import { FEEDBACK_NOTICE_TEXT, useFeedbackStore } from '../../stores/feedbackStore';
+import { FEEDBACK_NOTICE_TEXT, savedReportsNeedSend, useFeedbackStore } from '../../stores/feedbackStore';
 import { useToastStore } from '../../stores/toastStore';
 
 interface Props {
@@ -53,9 +53,9 @@ export function FeedbackButton({ variant, expanded = false }: Props) {
     }
   };
 
-  // After a rejected connection nothing is waiting on the network: these need a new connection and a Send.
+  // With these notices nothing is waiting on the network: the reports need a new connection and a Send.
   const pendingText = pending > 0
-    ? `${pending} feedback ${pending === 1 ? 'report' : 'reports'} ${notice === 'enrollment-response-rejected' ? 'saved on this computer, see Settings, Feedback' : 'waiting to send'}`
+    ? `${pending} feedback ${pending === 1 ? 'report' : 'reports'} ${savedReportsNeedSend(notice) ? 'saved on this computer, see Settings, Feedback' : 'waiting to send'}`
     : null;
   const shortcut = window.clubhouse.platform === 'darwin' ? FEEDBACK_CAPTURE_SHORTCUT_LABEL.mac : FEEDBACK_CAPTURE_SHORTCUT_LABEL.other;
   const heldText = held > 0 ? `${held} feedback ${held === 1 ? 'report' : 'reports'} held, see Settings, Feedback` : null;

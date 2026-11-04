@@ -39,11 +39,11 @@ describe('FeedbackButton', () => {
   });
 
   it('keeps a marker and explanation while a notice or unsent feedback is pending', () => {
-    setFeedback(true, feedbackStatus({ notice: 'expired', outbox: { ...feedbackStatus().outbox, pending: 2 } }));
+    setFeedback(true, feedbackStatus({ notice: 'migration-required', outbox: { ...feedbackStatus().outbox, pending: 2 } }));
     render(<FeedbackButton variant="rail" expanded />);
     expect(screen.getByTestId('feedback-marker').getAttribute('data-kind')).toBe('notice');
     const button = screen.getByTestId('nav-feedback');
-    expect(button.getAttribute('title')).toMatch(/expired.*2 feedback reports waiting to send/);
+    expect(button.getAttribute('title')).toMatch(/set up again.*2 feedback reports waiting to send/);
     expect(button.textContent).toContain('Feedback');
   });
 
@@ -54,6 +54,20 @@ describe('FeedbackButton', () => {
     const title = screen.getByTestId('nav-feedback').getAttribute('title');
     expect(title).toMatch(/That invitation was used.*2 feedback reports saved on this computer, see Settings, Feedback/);
     expect(title).not.toMatch(/waiting to send/);
+  });
+
+  it.each(['expired', 'access-required', 'connection-uncertain'] as const)('with the %s notice, says where saved reports stand too', (notice) => {
+    setFeedback(true, feedbackStatus({ state: notice, connected: false, notice, outbox: { ...feedbackStatus().outbox, pending: 1 } }));
+    render(<FeedbackButton variant="rail" expanded />);
+    const title = screen.getByTestId('nav-feedback').getAttribute('title');
+    expect(title).toMatch(/1 feedback report saved on this computer, see Settings, Feedback/);
+    expect(title).not.toMatch(/waiting to send/);
+  });
+
+  it('offline still says waiting to send', () => {
+    setFeedback(true, feedbackStatus({ state: 'offline', connected: false, outbox: { ...feedbackStatus().outbox, pending: 2 } }));
+    render(<FeedbackButton variant="rail" expanded />);
+    expect(screen.getByTestId('nav-feedback').getAttribute('title')).toMatch(/2 feedback reports waiting to send/);
   });
 
   it('never shows a button for an install that never enrolled, whatever the notice', () => {

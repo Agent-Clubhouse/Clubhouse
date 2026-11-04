@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import type { FeedbackStatus } from '../../../shared/feedback-types';
-import { FEEDBACK_NOTICE_TEXT, useFeedbackStore } from '../../stores/feedbackStore';
+import { FEEDBACK_NOTICE_TEXT, savedReportsNeedSend, useFeedbackStore } from '../../stores/feedbackStore';
 import { FeedbackHeldReports } from './FeedbackHeldReports';
 import { FeedbackTelemetryPrompt, type TelemetryShareAsk } from './FeedbackTelemetryPrompt';
 import { DeveloperTelemetrySection, shareAskFrom, shareTelemetry } from './DeveloperTelemetrySection';
@@ -147,6 +147,7 @@ export function FeedbackSettingsView() {
   // Held reports are in pending too, but don't wait for the network.
   const waiting = status.outbox.pending - status.outbox.heldForEnrollment;
   const rejected = status.notice === 'enrollment-response-rejected';
+  const needsSend = savedReportsNeedSend(status.notice);
   const noticeText = status.notice ? FEEDBACK_NOTICE_TEXT[status.notice] : null;
 
   return (
@@ -241,10 +242,10 @@ export function FeedbackSettingsView() {
 
       {(waiting > 0 || status.outbox.blocked > 0) && (
         <p className={`${settingsHelp} mt-2`} data-testid="feedback-outbox">
-          {waiting > 0 && !rejected && `${waiting} ${waiting === 1 ? 'report is' : 'reports are'} saved and waiting to send.`}
-          {waiting > 0 && rejected && `${waiting} ${waiting === 1 ? 'report is' : 'reports are'} saved on this computer and can't be sent yet. To send, connect with a new invitation, then choose Send under Held reports. To delete, choose Disconnect, then Clear under Held reports.`}
+          {waiting > 0 && !needsSend && `${waiting} ${waiting === 1 ? 'report is' : 'reports are'} saved and waiting to send.`}
+          {waiting > 0 && needsSend && `${waiting} ${waiting === 1 ? 'report is' : 'reports are'} saved on this computer and can't be sent yet. To send, ${status.notice === 'connection-uncertain' ? 'connect again' : 'connect with a new invitation'}, then choose Send under Held reports. To delete, choose Disconnect, then Clear under Held reports.`}
           {status.outbox.blocked > 0 && ` ${status.outbox.blocked} couldn't be delivered and are kept on this computer.`}
-          {!rejected && (status.outbox.correlationWaiting ?? 0) > 0 && ` ${status.outbox.correlationWaiting} are waiting for the feedback service to support their tracing references. Their reviewed contents are kept unchanged.`}
+          {!needsSend && (status.outbox.correlationWaiting ?? 0) > 0 && ` ${status.outbox.correlationWaiting} are waiting for the feedback service to support their tracing references. Their reviewed contents are kept unchanged.`}
         </p>
       )}
     </SettingsPage>
