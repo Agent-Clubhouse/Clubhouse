@@ -22,6 +22,11 @@ import { toDiagnosticsV1 } from './feedback-diagnostics-v1';
 import { FeedbackService, fitsSource, type FeedbackBreadcrumb, type FeedbackLog } from './feedback-service';
 import fixture from './fixtures/held-reports-v1.json';
 
+// These tests do real durable writes, about 50 fsyncs in a flow. On Windows CI a slow disk stretch
+// makes several tests in a row take 2 to 20 times as long, and short ones have passed 5 s. A hang
+// still fails here, and settled() still gives up after 5 s and says what it saw.
+vi.setConfig({ testTimeout: 15_000 });
+
 const NOW = Date.parse('2026-11-01T12:00:00.000Z');
 const HOUR = 3_600_000;
 const DAY = 24 * HOUR;
