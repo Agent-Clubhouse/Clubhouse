@@ -219,7 +219,7 @@ describe('FeedbackReviewDialog', () => {
 
   describe('what Saved promises', () => {
     const REACHABLE = /^Saved\. It's queued on this computer and is sent as soon as Clubhouse can reach the server\.$/;
-    const WAITING = /^Saved\. It's queued on this computer and waits until Clubhouse is connected to Framebriar again\.$/;
+    const WAITING = /^Saved\. It's queued on this computer and waits until Clubhouse is connected again\.$/;
     const savedWith = async (status: FeedbackStatus | null) => {
       setFeedback(true, status);
       render(<FeedbackReviewDialog draft={DRAFT} onClose={() => {}} />);
@@ -237,6 +237,12 @@ describe('FeedbackReviewDialog', () => {
 
     it.each(['disconnected', 'disconnecting', 'connecting', 'storage-unavailable'] as const)('%s: waits for a connection', async (state) => {
       expect(await savedWith(feedbackStatus({ state, connected: false }))).toMatch(WAITING);
+    });
+
+    it('a rejected connection: says a new connection and a Send are both needed, and promises no delivery', async () => {
+      const text = await savedWith(feedbackStatus({ state: 'enrollment-response-rejected', connected: false, notice: 'enrollment-response-rejected', expiresAt: null }));
+      expect(text).toBe('Saved on this computer, but it can\'t be sent yet. Connect with a new invitation in Settings, Feedback, then send it from there.');
+      expect(text).not.toMatch(/Framebriar|as soon as|waits until|—/);
     });
 
     it('a notice wins over a state that could otherwise deliver', async () => {

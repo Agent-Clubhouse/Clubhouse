@@ -16,8 +16,9 @@ export interface FeedbackReopened {
 
 export const FEEDBACK_NOTICE_TEXT: Record<FeedbackNotice, string> = {
   expired: 'Your feedback access expired. Paste a new invitation in Settings, Feedback.',
-  'access-required': 'Feedback access was revoked or isn\'t allowed any more. Paste a new invitation in Settings, Feedback.',
-  'connection-uncertain': 'Clubhouse couldn\'t confirm the feedback connection. The server may still have accepted it, so paste the same invitation again in Settings, Feedback.',
+  'access-required': 'Feedback access was revoked, or the invitation has been used up. Paste a new invitation in Settings, Feedback.',
+  'connection-uncertain': 'Clubhouse couldn\'t confirm the feedback connection. The server may still have accepted it, so paste the same invitation again in Settings, Feedback. If it\'s refused, ask for a new one.',
+  'enrollment-response-rejected': 'That invitation was used, but Clubhouse couldn\'t finish connecting. Update Clubhouse, or ask for a new invitation. If it keeps happening, check your computer\'s date and time.',
   'migration-required': 'Feedback needs to be set up again. Paste a new invitation in Settings, Feedback.',
 };
 

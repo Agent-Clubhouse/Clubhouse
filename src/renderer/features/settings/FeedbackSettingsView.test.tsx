@@ -1,8 +1,8 @@
 import { act, fireEvent, render, screen, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { resetFeedbackStore, useFeedbackStore } from '../../stores/feedbackStore';
+import { FEEDBACK_NOTICE_TEXT, resetFeedbackStore, useFeedbackStore } from '../../stores/feedbackStore';
 import { clearResultText, releaseResultText } from './FeedbackHeldReports';
-import { FeedbackSettingsView } from './FeedbackSettingsView';
+import { connectFailedMessage, FeedbackSettingsView } from './FeedbackSettingsView';
 import { feedbackStatus, setFeedback } from '../feedback/feedback-test-utils';
 
 const withHeld = (held: number, bytes: number, releaseToken: string | null, over: Parameters<typeof feedbackStatus>[0] = {}) => {
@@ -185,8 +185,8 @@ describe('FeedbackSettingsView', () => {
   });
 
   it.each([
-    ['connection-uncertain', /may still have accepted the invitation, so try the same one again/],
-    ['access-required', /wasn't accepted\. It may have expired, been revoked or been used up/],
+    ['connection-uncertain', /may still have accepted the invitation, so try the same one again\. If it's refused, ask for a new one\.$/],
+    ['access-required', /wasn't accepted\. It may have expired, been revoked or been used up\. Ask for a new one\.$/],
     [null, /^Couldn't connect with that invitation\.$/],
   ] as const)('explains a failed connect with notice %s', async (notice, text) => {
     setFeedback(true, disconnected);
@@ -252,6 +252,103 @@ describe('FeedbackSettingsView', () => {
     render(<FeedbackSettingsView />);
     expect(screen.getByTestId('feedback-storage-unavailable').textContent).toMatch(/never stores the credential in plain text/);
     expect(screen.getByRole('button', { name: 'Connect' }).hasAttribute('disabled')).toBe(true);
+  });
+
+  describe('after a rejected connection', () => {
+    const release = () => vi.mocked(window.clubhouse.feedback.releaseHeld);
+    const clear = () => vi.mocked(window.clubhouse.feedback.clearHeld);
+    const held = () => screen.getByTestId('feedback-held').textContent ?? '';
+    const none = withHeld(0, 0, null);
+    const openSend = () => fireEvent.click(within(screen.getByTestId('feedback-held')).getByRole('button', { name: 'Send' }));
+    const REJECTION = 'That invitation was used, but Clubhouse couldn\'t finish connecting. Update Clubhouse, or ask for a new invitation. If it keeps happening, check your computer\'s date and time.';
+    const rejected = (pending = 0, over: Parameters<typeof feedbackStatus>[0] = {}) => {
+      const base = feedbackStatus({ ...disconnected, state: 'enrollment-response-rejected', notice: 'enrollment-response-rejected', enrolled: true, canCapture: true, expiresAt: null, ...over });
+      return { ...base, outbox: { ...base.outbox, pending } };
+    };
+
+    it('has the agreed message, which offers no retry and names no service', () => {
+      expect(connectFailedMessage('enrollment-response-rejected')).toBe(REJECTION);
+      expect(FEEDBACK_NOTICE_TEXT['enrollment-response-rejected']).toBe(REJECTION);
+      expect(REJECTION).not.toMatch(/try again|same one|Framebriar|—/i);
+    });
+
+    it('uses plain words in every notice', () => {
+      for (const text of Object.values(FEEDBACK_NOTICE_TEXT)) expect(text).not.toMatch(/Framebriar|enrollment|—/i);
+    });
+
+    it('shows the message once after a failed connect, and doesn\'t say connected', async () => {
+      setFeedback(true, disconnected);
+      vi.mocked(window.clubhouse.feedback.connect).mockResolvedValue({ connected: false, status: rejected() } as never);
+      render(<FeedbackSettingsView />);
+      fireEvent.change(screen.getByLabelText('Invitation'), { target: { value: 'inv' } });
+      await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Connect' })); });
+      expect(screen.getByTestId('feedback-notice').textContent).toBe(REJECTION);
+      expect(screen.queryByTestId('feedback-message')).toBeNull();
+      expect(screen.queryByTestId('feedback-connected')).toBeNull();
+      expect(screen.getByTestId('feedback-settings').textContent).not.toMatch(/Connected|invalid-|wrong-game|access is saved/);
+      expect(screen.getByLabelText('Invitation')).toBeTruthy();
+    });
+
+    it('says why the saved reports can\'t go, what to do, and how to delete them, with no Send to press', () => {
+      setFeedback(true, rejected(2));
+      render(<FeedbackSettingsView />);
+      const text = screen.getByTestId('feedback-outbox').textContent;
+      expect(text).toBe('2 reports are saved on this computer and can\'t be sent yet. To send, connect with a new invitation, then choose Send under Held reports. To delete, choose Disconnect, then Clear under Held reports.');
+      expect(screen.queryByTestId('feedback-held')).toBeNull();
+    });
+
+    it('doesn\'t blame the service for tracing references while there is no connection', () => {
+      const status = rejected(1);
+      setFeedback(true, { ...status, outbox: { ...status.outbox, correlationWaiting: 1 } });
+      render(<FeedbackSettingsView />);
+      expect(screen.getByTestId('feedback-outbox').textContent).not.toMatch(/tracing references/);
+    });
+
+    it('Disconnect clears it and leaves the reports to clear, held', async () => {
+      setFeedback(true, rejected(2));
+      const after = withHeld(2, 0, null, { ...disconnected });
+      vi.mocked(window.clubhouse.feedback.disconnect).mockResolvedValue({ forgotten: true, revoked: null, status: after });
+      clear().mockResolvedValue({ cleared: 2, remaining: 0, failed: 0, status: none });
+      render(<FeedbackSettingsView />);
+      expect(screen.getByTestId('feedback-enrolled').textContent).toMatch(/Failed connection.*Disconnect clears this message, and saved reports stay on this computer/);
+      await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Disconnect' })); });
+      expect(screen.queryByTestId('feedback-notice')).toBeNull();
+      expect(held()).toMatch(/2 reports held/);
+      expect(within(screen.getByTestId('feedback-held')).getByRole('button', { name: 'Send' })).toBeDisabled();
+      fireEvent.click(within(screen.getByTestId('feedback-held')).getByRole('button', { name: 'Clear' }));
+      await act(async () => { fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Clear' })); });
+      expect(clear()).toHaveBeenCalledOnce();
+      expect(screen.getByTestId('feedback-held-message').textContent).toBe('2 reports cleared.');
+    });
+
+    it('with reports already held: Send is off and says why, and Clear works', async () => {
+      const status = withHeld(1, 0, null, { ...rejected(1) });
+      setFeedback(true, status);
+      clear().mockResolvedValue({ cleared: 1, remaining: 0, failed: 0, status: rejected() });
+      render(<FeedbackSettingsView />);
+      expect(held()).toMatch(/Send isn't available without a working connection\. You can clear them now, or connect and send them\./);
+      const area = within(screen.getByTestId('feedback-held'));
+      expect(area.getByRole('button', { name: 'Send' })).toBeDisabled();
+      fireEvent.click(area.getByRole('button', { name: 'Clear' }));
+      await act(async () => { fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Clear' })); });
+      expect(screen.getByTestId('feedback-held-message').textContent).toBe('1 report cleared.');
+    });
+
+    it('a new connection turns them into held reports that Send releases with the token shown', async () => {
+      setFeedback(true, rejected(2));
+      const connected = withHeld(2, 0, 'token-after');
+      vi.mocked(window.clubhouse.feedback.connect).mockResolvedValue({ connected: true, status: connected } as never);
+      release().mockResolvedValue({ released: 2, remaining: 0, failed: 0, status: none });
+      render(<FeedbackSettingsView />);
+      fireEvent.change(screen.getByLabelText('Invitation'), { target: { value: 'inv' } });
+      await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Connect' })); });
+      expect(screen.getByTestId('feedback-connected')).toBeTruthy();
+      expect(release()).not.toHaveBeenCalled();
+      openSend();
+      await act(async () => { fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Send' })); });
+      expect(release()).toHaveBeenCalledWith('token-after');
+      expect(screen.getByTestId('feedback-held-message').textContent).toBe('2 reports queued to send.');
+    });
   });
 
   it('shows feedback waiting to send and blocked reports', () => {

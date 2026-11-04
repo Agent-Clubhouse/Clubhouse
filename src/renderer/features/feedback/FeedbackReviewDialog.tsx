@@ -52,9 +52,13 @@ const DELIVERS_WHEN_REACHABLE: ReadonlySet<FeedbackStatus['state']> = new Set(['
 
 /** Where a saved report stands. In any other state it can't go until a new connection is made. */
 function savedText(status: FeedbackStatus | null): string {
+  // Bound to a connection that can't come back, so it's held once a new one is made.
+  if (status?.notice === 'enrollment-response-rejected') {
+    return 'Saved on this computer, but it can\'t be sent yet. Connect with a new invitation in Settings, Feedback, then send it from there.';
+  }
   const waiting = status !== null && (status.notice !== null || !DELIVERS_WHEN_REACHABLE.has(status.state));
   return waiting
-    ? 'Saved. It\'s queued on this computer and waits until Clubhouse is connected to Framebriar again.'
+    ? 'Saved. It\'s queued on this computer and waits until Clubhouse is connected again.'
     : 'Saved. It\'s queued on this computer and is sent as soon as Clubhouse can reach the server.';
 }
 

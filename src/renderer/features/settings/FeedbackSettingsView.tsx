@@ -40,9 +40,10 @@ function formatDate(iso: string | null): string | null {
 /** Why the invitation we just sent didn't connect, as far as the notice tells. */
 export function connectFailedMessage(notice: FeedbackStatus['notice']): string {
   if (notice === 'connection-uncertain') {
-    return 'Couldn\'t confirm the connection. The feedback server can be slow to wake up and may still have accepted the invitation, so try the same one again.';
+    return 'Couldn\'t confirm the connection. The feedback server can be slow to wake up and may still have accepted the invitation, so try the same one again. If it\'s refused, ask for a new one.';
   }
-  if (notice === 'access-required') return 'That invitation wasn\'t accepted. It may have expired, been revoked or been used up.';
+  if (notice === 'access-required') return 'That invitation wasn\'t accepted. It may have expired, been revoked or been used up. Ask for a new one.';
+  if (notice === 'enrollment-response-rejected') return FEEDBACK_NOTICE_TEXT[notice];
   return 'Couldn\'t connect with that invitation.';
 }
 
@@ -145,6 +146,8 @@ export function FeedbackSettingsView() {
   const stateText = STATE_TEXT[status.state];
   // Held reports are in pending too, but don't wait for the network.
   const waiting = status.outbox.pending - status.outbox.heldForEnrollment;
+  const rejected = status.notice === 'enrollment-response-rejected';
+  const noticeText = status.notice ? FEEDBACK_NOTICE_TEXT[status.notice] : null;
 
   return (
     <SettingsPage
@@ -163,7 +166,7 @@ export function FeedbackSettingsView() {
       )}
 
       {status.notice && (
-        <p className="text-xs text-ctp-warning mt-3" role="status" data-testid="feedback-notice">{FEEDBACK_NOTICE_TEXT[status.notice]}</p>
+        <p className="text-xs text-ctp-warning mt-3" role="status" data-testid="feedback-notice">{noticeText}</p>
       )}
 
       <SettingsSection title="Connection">
@@ -210,7 +213,11 @@ export function FeedbackSettingsView() {
 
         {/* Offline, expired or revoked access is still an enrollment: Disconnect clears it and its notice. */}
         {!status.connected && (status.enrolled || status.notice) && (
-          <SettingsField testId="feedback-enrolled" label="Saved access" help="Feedback access is saved on this computer.">
+          <SettingsField
+            testId="feedback-enrolled"
+            label={rejected ? 'Failed connection' : 'Saved access'}
+            help={rejected ? 'Feedback isn\'t connected. Disconnect clears this message, and saved reports stay on this computer.' : 'Feedback access is saved on this computer.'}
+          >
             <Button
               onClick={() => void disconnect()}
               disabled={busy}
@@ -223,7 +230,8 @@ export function FeedbackSettingsView() {
       </SettingsSection>
 
       {stateText && <p className={`${settingsHelp} mt-2`} data-testid="feedback-state">{stateText}</p>}
-      {message && <p className="text-xs text-ctp-subtext1 mt-2" role="status" data-testid="feedback-message">{message}</p>}
+      {/* The notice above already says it, in the same words. */}
+      {message && message !== noticeText && <p className="text-xs text-ctp-subtext1 mt-2" role="status" data-testid="feedback-message">{message}</p>}
 
       {shareAsk && <FeedbackTelemetryPrompt ask={shareAsk} onShare={() => void share()} onDecline={declineShare} />}
 
@@ -233,9 +241,10 @@ export function FeedbackSettingsView() {
 
       {(waiting > 0 || status.outbox.blocked > 0) && (
         <p className={`${settingsHelp} mt-2`} data-testid="feedback-outbox">
-          {waiting > 0 && `${waiting} ${waiting === 1 ? 'report is' : 'reports are'} saved and waiting to send.`}
+          {waiting > 0 && !rejected && `${waiting} ${waiting === 1 ? 'report is' : 'reports are'} saved and waiting to send.`}
+          {waiting > 0 && rejected && `${waiting} ${waiting === 1 ? 'report is' : 'reports are'} saved on this computer and can't be sent yet. To send, connect with a new invitation, then choose Send under Held reports. To delete, choose Disconnect, then Clear under Held reports.`}
           {status.outbox.blocked > 0 && ` ${status.outbox.blocked} couldn't be delivered and are kept on this computer.`}
-          {(status.outbox.correlationWaiting ?? 0) > 0 && ` ${status.outbox.correlationWaiting} are waiting for the feedback service to support their tracing references. Their reviewed contents are kept unchanged.`}
+          {!rejected && (status.outbox.correlationWaiting ?? 0) > 0 && ` ${status.outbox.correlationWaiting} are waiting for the feedback service to support their tracing references. Their reviewed contents are kept unchanged.`}
         </p>
       )}
     </SettingsPage>

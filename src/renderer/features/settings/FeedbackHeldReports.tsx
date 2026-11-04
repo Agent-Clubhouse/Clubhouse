@@ -93,7 +93,7 @@ export function FeedbackHeldReports({ status, onStatus }: { status: FeedbackStat
             label={`${reports(held)} held${sizeText(bytes)}`}
             help={releaseToken
               ? 'Saved under an earlier feedback connection. They stay on this computer until you send or clear them.'
-              : 'Saved under an earlier feedback connection. They stay on this computer until you clear them, or connect and send them.'}
+              : 'Saved under an earlier feedback connection. Send isn\'t available without a working connection. You can clear them now, or connect and send them.'}
           >
             <Button
               onClick={() => { setMessage(null); if (releaseToken) setAsk({ kind: 'send', releaseToken, held, bytes, changed: false }); }}

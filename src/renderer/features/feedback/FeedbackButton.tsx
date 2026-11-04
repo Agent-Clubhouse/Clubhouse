@@ -53,7 +53,10 @@ export function FeedbackButton({ variant, expanded = false }: Props) {
     }
   };
 
-  const pendingText = pending > 0 ? `${pending} feedback ${pending === 1 ? 'report' : 'reports'} waiting to send` : null;
+  // After a rejected connection nothing is waiting on the network: these need a new connection and a Send.
+  const pendingText = pending > 0
+    ? `${pending} feedback ${pending === 1 ? 'report' : 'reports'} ${notice === 'enrollment-response-rejected' ? 'saved on this computer, see Settings, Feedback' : 'waiting to send'}`
+    : null;
   const shortcut = window.clubhouse.platform === 'darwin' ? FEEDBACK_CAPTURE_SHORTCUT_LABEL.mac : FEEDBACK_CAPTURE_SHORTCUT_LABEL.other;
   const heldText = held > 0 ? `${held} feedback ${held === 1 ? 'report' : 'reports'} held, see Settings, Feedback` : null;
   const label = ['Send feedback', notice ? FEEDBACK_NOTICE_TEXT[notice] : null, pendingText, heldText].filter(Boolean).join('. ');
