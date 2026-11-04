@@ -12,6 +12,7 @@ import { createHash } from 'crypto';
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
+import { setImmediate as nextTurn } from 'timers/promises';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createFramebriar, createOutbox, type Framebriar } from '../../vendor/framebriar/adapters/node/index.mjs';
 import { asyncOnlySafeStorage, fakeKeychain } from '../../telemetry/__test-utils__/fake-safe-storage';
@@ -20,6 +21,11 @@ import type { FeedbackCorrelationSnapshot } from '../../telemetry/feedback-incid
 import { toDiagnosticsV1 } from './feedback-diagnostics-v1';
 import { FeedbackService, fitsSource, type FeedbackBreadcrumb, type FeedbackLog } from './feedback-service';
 import fixture from './fixtures/held-reports-v1.json';
+
+// These tests do real durable writes, about 50 fsyncs in a flow. On Windows CI a slow disk stretch
+// makes several tests in a row take 2 to 20 times as long, and short ones have passed 5 s. A hang
+// still fails here, and settled() still gives up after 5 s and says what it saw.
+vi.setConfig({ testTimeout: 15_000 });
 
 const NOW = Date.parse('2026-11-01T12:00:00.000Z');
 const HOUR = 3_600_000;
@@ -174,6 +180,10 @@ beforeEach(() => {
 afterEach(async () => {
   for (const cleanup of cleanups.splice(0)) await cleanup();
   vi.unstubAllGlobals();
+  // Shutdown doesn't wait for a status pass the SDK already started, which can still be taking its
+  // lock. rmSync blocks the event loop and doesn't list the folder again, so a lock file created
+  // under it fails the cleanup with ENOTEMPTY. A hang here fails on the hook timeout.
+  do { await nextTurn(); } while (process.getActiveResourcesInfo().includes('FSReqPromise'));
   rmSync(dataDir, { recursive: true, force: true, maxRetries: 3 });
 });
 
