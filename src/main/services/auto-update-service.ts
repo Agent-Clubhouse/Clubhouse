@@ -111,6 +111,9 @@ let status: UpdateStatus = {
 };
 
 let checkTimer: ReturnType<typeof setInterval> | null = null;
+// Which Squirrel feed holds the version the last check picked. A preview-channel
+// user can be offered a stable build, which the preview feed may not carry.
+let squirrelFeedIsPreview: boolean | null = null;
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -664,7 +667,8 @@ export async function checkForUpdates(
     // On Windows, use Squirrel native update — skip our own download.
     // Update.exe will download the nupkg when we apply.
     if (process.platform === 'win32') {
-      const releasesUrl = getSquirrelReleasesUrl(settings.previewChannel);
+      squirrelFeedIsPreview = sourceUrl === PREVIEW_UPDATE_URL;
+      const releasesUrl = getSquirrelReleasesUrl(squirrelFeedIsPreview);
       appLog('update:check', 'info', 'Windows: Squirrel native update ready', {
         meta: { releasesUrl },
       });
@@ -885,7 +889,7 @@ export async function applyWindowsUpdate(context: ApplyContext, { relaunch, befo
   if (!await pathExists(updateExe)) {
     throw new Error('Update.exe not found. Please reinstall the app from https://www.agent-clubhouse.com/reinstall');
   }
-  const releasesUrl = getSquirrelReleasesUrl(getSettings().previewChannel);
+  const releasesUrl = getSquirrelReleasesUrl(squirrelFeedIsPreview ?? getSettings().previewChannel);
   const appExeName = path.basename(process.execPath);
   if (relaunch) {
     execFileSync(updateExe, ['--update', releasesUrl], {
