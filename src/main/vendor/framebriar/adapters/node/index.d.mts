@@ -59,6 +59,8 @@ export interface FramebriarOutboxView {
   heldBytes: number;
   /** Opaque: pass it back to release. Null when nothing is held or there's no active enrollment. */
   releaseToken: string | null;
+  /** Opaque: pass it back to clear, never in place of releaseToken. Null when nothing is held or the enrollment can't be read. Works unenrolled. */
+  clearToken: string | null;
   retention: 'until-delivered-or-cleared';
 }
 
@@ -94,8 +96,8 @@ export interface FramebriarOutbox {
   clear(): Promise<void>;
   /** `released` doesn't mean delivered: delivery follows asynchronously. */
   releaseHeldReports(input: { releaseToken: string }): Promise<{ released: number; remaining: number; failed: number; code?: FramebriarHeldCode }>;
-  /** Discards held reports only, and works unenrolled. */
-  clearHeldReports(): Promise<{ cleared: number; remaining: number; failed: number; code?: FramebriarHeldCode }>;
+  /** Discards held reports only, and works unenrolled. A stale token removes nothing and says stale-release. */
+  clearHeldReports(input: { clearToken: string }): Promise<{ cleared: number; remaining: number; failed: number; code?: FramebriarHeldCode }>;
   dispose(): void;
 }
 

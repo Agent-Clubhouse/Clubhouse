@@ -192,7 +192,7 @@ const DISCONNECTED_ACCESS: FramebriarAccessView = Object.freeze({
   state: 'disconnected', connected: false, enrolled: false, canCapture: false, notice: null, noticeReason: null, expiresAt: null,
 });
 const EMPTY_OUTBOX: FramebriarOutboxView = Object.freeze({
-  state: 'checking', items: 0, bytes: 0, maxItems: 10, maxBytes: 32 * 1024 * 1024, blocked: 0, heldForEnrollment: 0, heldBytes: 0, releaseToken: null, retention: 'until-delivered-or-cleared',
+  state: 'checking', items: 0, bytes: 0, maxItems: 10, maxBytes: 32 * 1024 * 1024, blocked: 0, heldForEnrollment: 0, heldBytes: 0, releaseToken: null, clearToken: null, retention: 'until-delivered-or-cleared',
 });
 
 /** What the renderer sees while Feedback isn't running (switch off, or before start). */
@@ -227,8 +227,10 @@ export function toFeedbackStatus(
       ...(outbox.correlationWaiting ? { correlationWaiting: outbox.correlationWaiting } : {}),
       heldForEnrollment: outbox.heldForEnrollment,
       heldBytes: outbox.heldBytes,
-      // The SDK's outbox doesn't refresh on this notice, so an older token can linger. It can't release.
+      // The SDK's outbox refreshes after this notice, so an older token can linger. It can't release.
       releaseToken: access.notice === REJECTED ? null : outbox.releaseToken,
+      // Not hidden with it: clearing needs no connection, and the SDK checks this token itself.
+      clearToken: outbox.clearToken,
       bytes: outbox.bytes,
       maxItems: outbox.maxItems,
       maxBytes: outbox.maxBytes,
@@ -803,11 +805,14 @@ export class FeedbackService {
     return { released, remaining, failed, ...(code && { code }), status: this.status() };
   }
 
-  /** Discard the held reports only. Takes no token and sends nothing, so it works unenrolled. */
-  async clearHeldReports(): Promise<FeedbackHeldClearResult> {
+  /**
+   * Discard the held reports only. The token must be the one shown when the user confirmed, for the
+   * same reason as a release. Takes no access token and sends nothing, so it works unenrolled.
+   */
+  async clearHeldReports(clearToken: string): Promise<FeedbackHeldClearResult> {
     await this.start();
     await this.recheckStorage();
-    const { cleared, remaining, failed, code } = await this.sdk().outbox.clearHeldReports();
+    const { cleared, remaining, failed, code } = await this.sdk().outbox.clearHeldReports({ clearToken });
     this.log(failed > 0 || code ? 'warn' : 'info', 'Feedback held reports clear', { cleared, remaining, failed, code: code ?? null });
     return { cleared, remaining, failed, ...(code && { code }), status: this.status() };
   }

@@ -9,11 +9,11 @@
  * finding the stored enrollment gone. An invitation that fails on a fresh install leaves it off.
  */
 import { createHash } from 'crypto';
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync } from 'fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { createFramebriar, type Framebriar } from '../../vendor/framebriar/adapters/node/index.mjs';
+import { createFramebriar, createOutbox, type Framebriar } from '../../vendor/framebriar/adapters/node/index.mjs';
 import { asyncOnlySafeStorage, fakeKeychain } from '../../telemetry/__test-utils__/fake-safe-storage';
 import type { FeedbackDiagnostics, FeedbackSendInput, FeedbackSendResult } from '../../../shared/feedback-types';
 import type { FeedbackCorrelationSnapshot } from '../../telemetry/feedback-incident';
@@ -1604,9 +1604,10 @@ describe('the report field with the real SDK', () => {
       await h.send((await h.capture()).draftId);
       await h.send((await h.capture()).draftId);
       await h.service.disconnect();
-      await h.settled(2, false);
+      const { clearToken } = await h.settled(2, false);
+      expect(clearToken).toEqual(expect.any(String));
       await expect(h.service.releaseHeldReports('anything')).resolves.toMatchObject(fixture.release.notEnrolled);
-      await expect(h.service.clearHeldReports()).resolves.toMatchObject({ ...fixture.clear.whileUnenrolled, status: { outbox: { heldForEnrollment: 0, pending: 0 } } });
+      await expect(h.service.clearHeldReports(clearToken as string)).resolves.toMatchObject({ ...fixture.clear.whileUnenrolled, status: { outbox: { heldForEnrollment: 0, pending: 0, clearToken: null } } });
       expect(await h.saved()).toEqual([]);
       expect(h.reports).toEqual([]);
     });
@@ -1615,8 +1616,155 @@ describe('the report field with the real SDK', () => {
       const h = harness();
       await heldReport(h);
       const current = await h.send((await h.capture()).draftId) as { id: string };
-      await expect(h.service.clearHeldReports()).resolves.toMatchObject({ cleared: 1, remaining: 0, failed: 0 });
+      await vi.waitFor(() => expect(h.service.status().outbox.pending).toBe(2));
+      await expect(h.service.clearHeldReports(h.service.status().outbox.clearToken as string)).resolves.toMatchObject({ cleared: 1, remaining: 0, failed: 0 });
       expect((await h.saved()).map((report) => report.id)).toEqual([current.id]);
+    });
+
+    it('status has both tokens in the fixture shape, and neither works in place of the other', async () => {
+      const h = harness();
+      await heldReport(h);
+      const { releaseToken, clearToken } = h.service.status().outbox;
+      expect(Object.keys(fixture.status.heldWhileEnrolled)).toEqual(expect.arrayContaining(['releaseToken', 'clearToken']));
+      expect(clearToken).toEqual(expect.any(String));
+      expect(clearToken).not.toBe(releaseToken);
+      await expect(h.service.clearHeldReports(releaseToken as string)).resolves.toMatchObject({ cleared: 0, remaining: 1, code: 'stale-release' });
+      await expect(h.service.releaseHeldReports(clearToken as string)).resolves.toMatchObject({ released: 0, remaining: 1, code: 'stale-release' });
+      expect(await h.saved()).toHaveLength(1);
+    });
+
+    it('a stale clear token deletes nothing, and the refreshed status has the token to ask with', async () => {
+      const h = harness();
+      await heldReport(h);
+      const shown = h.service.status().outbox.clearToken as string;
+      await h.send((await h.capture()).draftId);
+      // A third enrollment holds the second report too, so the shown token no longer matches.
+      h.access.redeem = () => json(h.grant(SECOND_TOKEN, 'v'));
+      await h.service.disconnect();
+      await h.service.connect(SECOND_INVITE);
+      await h.settled(2);
+      const result = await h.service.clearHeldReports(shown);
+      expect(result).toMatchObject({ ...fixture.clear.staleAfterHeldSetChange, status: { outbox: { heldForEnrollment: 2, pending: 2 } } });
+      expect(await h.saved()).toHaveLength(2);
+      expect(result.status.outbox.clearToken).toEqual(expect.any(String));
+      expect(result.status.outbox.clearToken).not.toBe(shown);
+      await expect(h.service.clearHeldReports(result.status.outbox.clearToken as string)).resolves.toMatchObject({ cleared: 2, remaining: 0 });
+      expect(await h.saved()).toEqual([]);
+    });
+
+    it('an absent, empty or repeated clear token deletes nothing', async () => {
+      const h = harness();
+      await heldReport(h);
+      const token = h.service.status().outbox.clearToken as string;
+      await expect(h.fb().outbox.clearHeldReports()).resolves.toMatchObject(fixture.clear.missingToken);
+      await expect(h.service.clearHeldReports('')).resolves.toMatchObject(fixture.clear.missingToken);
+      expect(await h.saved()).toHaveLength(1);
+      await expect(h.service.clearHeldReports(token)).resolves.toMatchObject({ cleared: 1, remaining: 0 });
+      await expect(h.service.clearHeldReports(token)).resolves.toMatchObject(fixture.clear.nothingHeld);
+    });
+
+    it('a token shown before Disconnect is stale after it, and the new one still clears', async () => {
+      const h = harness();
+      await heldReport(h);
+      const shown = h.service.status().outbox.clearToken as string;
+      await h.service.disconnect();
+      // During the Disconnect the ref hasn't moved, so a view can have no release token and the old clear token.
+      await vi.waitFor(() => expect(h.service.status().outbox.clearToken).not.toBe(shown), { timeout: 5_000 });
+      const { clearToken } = await h.settled(1, false);
+      await expect(h.service.clearHeldReports(shown)).resolves.toMatchObject({ cleared: 0, remaining: 1, code: 'stale-release' });
+      expect(await h.saved()).toHaveLength(1);
+      await expect(h.service.clearHeldReports(clearToken as string)).resolves.toMatchObject({ cleared: 1, remaining: 0 });
+    });
+
+    it('with the enrollment unreadable the count stays, there\'s no token to clear with, and a shown token deletes nothing', async () => {
+      const h = harness();
+      await heldReport(h);
+      const dir = h.fb().outbox.dir;
+      await h.service.shutdown();
+      const state = { ref: '00000000-0000-4000-8000-000000000000' as string | null, readable: true };
+      const outbox = createOutbox({
+        dir, appId: 'clubhouse', endpoint: 'https://framebriar.test/api', isOnline: () => false,
+        access: {
+          gameId: 'clubhouse',
+          enrollmentState: async () => { if (!state.readable) throw new Error('storage'); return { enrollmentRef: state.ref, active: true }; },
+          getTokenFor: async () => undefined,
+        },
+      });
+      cleanups.push(async () => outbox.dispose());
+      const shown = (await outbox.start()).clearToken as string;
+      expect(shown).toEqual(expect.any(String));
+      state.readable = false;
+      expect(await outbox.start()).toMatchObject({ state: 'available', heldForEnrollment: 1, releaseToken: null, clearToken: null });
+      await expect(outbox.clearHeldReports({ clearToken: shown })).resolves.toMatchObject({ cleared: 0, remaining: 1, code: 'storage-unavailable' });
+      state.readable = true;
+      await expect(outbox.clearHeldReports({ clearToken: shown })).resolves.toMatchObject({ cleared: 1, remaining: 0 });
+    });
+
+    describe('a report of the current enrollment with a garbled state file', () => {
+      async function garbled(h: Harness) {
+        h.state.online = false;
+        await h.service.connect(FIRST_INVITE);
+        const { id } = await h.send((await h.capture()).draftId) as { id: string };
+        const file = join(h.fb().outbox.dir, 'reports', id, 'state.json');
+        writeFileSync(file, '{not json');
+        await h.fb().outbox.resume();
+        const { releaseToken, clearToken } = await h.settled(1);
+        return { id, file, releaseToken: releaseToken as string, clearToken: clearToken as string };
+      }
+      const deliver = async (h: Harness) => {
+        h.state.online = true;
+        await h.fb().outbox.resume();
+        await h.fb().outbox.flush();
+      };
+
+      it('if the read recovers before Clear, the token is stale, nothing is deleted, and it delivers', async () => {
+        const h = harness({ online: true });
+        const { id, file, clearToken } = await garbled(h);
+        rmSync(file);
+        await expect(h.service.clearHeldReports(clearToken)).resolves.toMatchObject({ cleared: 0, remaining: 0, code: 'stale-release' });
+        await deliver(h);
+        await vi.waitFor(() => expect(h.reports.map((report) => report.body.id)).toEqual([id]), { timeout: 10_000 });
+      }, 30_000);
+
+      it('if it is still unreadable, Send delivers it', async () => {
+        const h = harness({ online: true });
+        const { id, releaseToken } = await garbled(h);
+        await expect(h.service.releaseHeldReports(releaseToken)).resolves.toMatchObject({ released: 1, remaining: 0, failed: 0 });
+        await deliver(h);
+        await vi.waitFor(() => expect(h.reports.map((report) => report.body.id)).toEqual([id]), { timeout: 10_000 });
+      }, 30_000);
+
+      // Upstream keeps this on purpose, so the copy says a held report may still be sendable.
+      it('if it is still unreadable, a confirmed Clear deletes that same report', async () => {
+        const h = harness({ online: true });
+        const { clearToken } = await garbled(h);
+        await expect(h.service.clearHeldReports(clearToken)).resolves.toMatchObject({ cleared: 1, remaining: 0, failed: 0 });
+        await deliver(h);
+        expect(h.reports).toEqual([]);
+        expect(await h.saved()).toEqual([]);
+      });
+    });
+
+    it('a state file it can\'t read is held and unsent, a release fails with it still held, and clear removes it', async () => {
+      const h = harness({ online: true });
+      h.state.online = false;
+      await h.service.connect(FIRST_INVITE);
+      const saved = await h.send((await h.capture()).draftId) as { id: string };
+      // A directory where the file goes can't be read or replaced, on every platform.
+      mkdirSync(join(h.fb().outbox.dir, 'reports', saved.id, 'state.json'));
+      await h.fb().outbox.resume();
+      const { releaseToken, clearToken } = await h.settled(1);
+      h.state.online = true;
+      await h.fb().outbox.resume();
+      await h.fb().outbox.flush();
+      expect(h.reports).toEqual([]);
+
+      await expect(h.service.releaseHeldReports(releaseToken as string)).resolves.toMatchObject({ released: 0, remaining: 1, failed: 1 });
+      await h.fb().outbox.resume();
+      await h.fb().outbox.flush();
+      expect(h.reports).toEqual([]);
+      await expect(h.service.clearHeldReports(clearToken as string)).resolves.toMatchObject({ cleared: 1, remaining: 0, failed: 0 });
+      expect(await h.saved()).toEqual([]);
     });
 
     it('a full queue of held reports says where to go', async () => {
@@ -1820,8 +1968,8 @@ describe('the report field with the real SDK', () => {
         await rejectedAfterEnrolled(h);
         clean(h);
         await h.service.connect(SECOND_INVITE);
-        await h.settled(1);
-        await expect(h.service.clearHeldReports()).resolves.toMatchObject({ cleared: 1, remaining: 0, failed: 0, status: { outbox: { heldForEnrollment: 0, pending: 0, releaseToken: null } } });
+        const { clearToken } = await h.settled(1);
+        await expect(h.service.clearHeldReports(clearToken as string)).resolves.toMatchObject({ cleared: 1, remaining: 0, failed: 0, status: { outbox: { heldForEnrollment: 0, pending: 0, releaseToken: null, clearToken: null } } });
         h.state.online = true;
         await h.fb().outbox.resume();
         await h.fb().outbox.flush();
@@ -1837,7 +1985,7 @@ describe('the report field with the real SDK', () => {
         const outbox = await h.settled(2, false);
         expect(outbox).toMatchObject({ pending: 2, releaseToken: null });
         await expect(h.service.releaseHeldReports('anything')).resolves.toMatchObject({ released: 0, code: 'not-enrolled' });
-        await expect(h.service.clearHeldReports()).resolves.toMatchObject({ cleared: 2, remaining: 0, status: { outbox: { pending: 0 } } });
+        await expect(h.service.clearHeldReports(outbox.clearToken as string)).resolves.toMatchObject({ cleared: 2, remaining: 0, status: { outbox: { pending: 0 } } });
       });
 
       it('after Disconnect, a clean invitation can still send them', async () => {
@@ -1857,8 +2005,8 @@ describe('the report field with the real SDK', () => {
         await expect(h.service.connect(SECOND_INVITE)).resolves.toMatchObject({ connected: false, status: rejectedStatus });
         await expect(h.fb().access.enrollmentState()).resolves.toEqual({ enrollmentRef, active: false });
         await expect(h.service.releaseHeldReports('anything')).resolves.toMatchObject({ released: 0, remaining: 0, code: 'not-enrolled' });
-        await expect(h.service.clearHeldReports()).resolves.toMatchObject({ cleared: 0, remaining: 0 });
-        expect(h.service.status().outbox).toMatchObject({ pending: 1, heldForEnrollment: 0, releaseToken: null });
+        await expect(h.service.clearHeldReports('anything')).resolves.toMatchObject(fixture.clear.nothingHeld);
+        expect(h.service.status().outbox).toMatchObject({ pending: 1, heldForEnrollment: 0, releaseToken: null, clearToken: null });
       });
 
       it('reports already held stay clearable, with no token to send them, until a new connection', async () => {
@@ -1868,17 +2016,60 @@ describe('the report field with the real SDK', () => {
         clean(h);
         await h.service.disconnect();
         await h.service.connect(SECOND_INVITE);
-        const shown = (await h.settled(1)).releaseToken as string;
+        const { releaseToken: shown, clearToken: shownClear } = await h.settled(1);
         refused(h);
         await h.service.connect(FIRST_INVITE);
-        // The SDK's view still has the old token here: it must not reach the renderer as usable.
+        // The SDK's view can still have the old token here: it must not reach the renderer as usable.
         expect(h.service.status().outbox).toMatchObject({ heldForEnrollment: 1, releaseToken: null });
-        await expect(h.service.releaseHeldReports(shown)).resolves.toMatchObject({ released: 0, remaining: 1, code: 'not-enrolled' });
+        await expect(h.service.releaseHeldReports(shown as string)).resolves.toMatchObject({ released: 0, remaining: 1, code: 'not-enrolled' });
+        // Rejection moves neither the ref nor the held set, so the clear token is the same one.
+        expect(h.service.status().outbox.clearToken).toBe(shownClear);
         h.access.redeem = () => json(h.grant(SECOND_TOKEN, 'v'));
         await h.service.connect(FIRST_INVITE);
         const { releaseToken } = await h.settled(1);
         expect(releaseToken).not.toBe(shown);
         await expect(h.service.releaseHeldReports(releaseToken as string)).resolves.toMatchObject({ released: 1, remaining: 0 });
+      });
+
+      it('Clear works during the rejection with the token shown, and leaves a report saved during it alone', async () => {
+        const h = harness();
+        await h.service.connect(FIRST_INVITE);
+        const earlier = await h.send((await h.capture()).draftId) as { id: string };
+        clean(h);
+        await h.service.disconnect();
+        await h.service.connect(SECOND_INVITE);
+        await h.settled(1);
+        refused(h);
+        await h.service.connect(FIRST_INVITE);
+        const during = await h.send((await h.capture()).draftId) as { id: string };
+        await vi.waitFor(() => expect(h.service.status().outbox.pending).toBe(2));
+        const { state, outbox } = h.service.status();
+        expect(state).toBe('enrollment-response-rejected');
+        expect(outbox).toMatchObject({ heldForEnrollment: 1, releaseToken: null, clearToken: expect.any(String) });
+
+        await expect(h.service.clearHeldReports(outbox.clearToken as string)).resolves.toMatchObject({ cleared: 1, remaining: 0, failed: 0, status: { state: 'enrollment-response-rejected', outbox: { pending: 1, heldForEnrollment: 0, clearToken: null } } });
+        const left = (await h.saved()).map((report) => report.id);
+        expect(left).toEqual([during.id]);
+        expect(left).not.toContain(earlier.id);
+      });
+
+      it('a stale clear token during the rejection deletes nothing', async () => {
+        const h = harness();
+        await h.service.connect(FIRST_INVITE);
+        await h.send((await h.capture()).draftId);
+        clean(h);
+        await h.service.disconnect();
+        await h.service.connect(SECOND_INVITE);
+        const shown = (await h.settled(1)).clearToken as string;
+        await h.send((await h.capture()).draftId);
+        h.access.redeem = () => json(h.grant(SECOND_TOKEN, 'v'));
+        await h.service.disconnect();
+        await h.service.connect(FIRST_INVITE);
+        await h.settled(2);
+        refused(h);
+        await h.service.connect(SECOND_INVITE);
+        await expect(h.service.clearHeldReports(shown)).resolves.toMatchObject({ cleared: 0, remaining: 2, failed: 0, code: 'stale-release', status: { state: 'enrollment-response-rejected', outbox: { heldForEnrollment: 2, releaseToken: null, clearToken: expect.any(String) } } });
+        expect(await h.saved()).toHaveLength(2);
       });
 
       it('a full queue says where to go, with none of them held', async () => {
@@ -1934,8 +2125,8 @@ describe('the report field with the real SDK', () => {
         const h = harness();
         await savedDuring(h, enter, view);
         await h.service.disconnect();
-        await h.settled(2, false);
-        await expect(h.service.clearHeldReports()).resolves.toMatchObject({ cleared: 2, remaining: 0, status: { outbox: { pending: 0 } } });
+        const { clearToken } = await h.settled(2, false);
+        await expect(h.service.clearHeldReports(clearToken as string)).resolves.toMatchObject({ cleared: 2, remaining: 0, status: { outbox: { pending: 0 } } });
       });
     });
 

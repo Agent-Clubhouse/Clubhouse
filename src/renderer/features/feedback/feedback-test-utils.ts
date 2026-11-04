@@ -5,7 +5,7 @@ export function feedbackStatus(over: Partial<FeedbackStatus> = {}): FeedbackStat
   return {
     started: true, state: 'connected', connected: true, enrolled: true, canCapture: true, notice: null,
     expiresAt: '2026-11-16T00:00:00.000Z', storage: { available: true },
-    outbox: { state: 'available', pending: 0, blocked: 0, heldForEnrollment: 0, heldBytes: 0, releaseToken: null, bytes: 0, maxItems: 10, maxBytes: 33554432 },
+    outbox: { state: 'available', pending: 0, blocked: 0, heldForEnrollment: 0, heldBytes: 0, releaseToken: null, clearToken: null, bytes: 0, maxItems: 10, maxBytes: 33554432 },
     received: [],
     ...over,
   };

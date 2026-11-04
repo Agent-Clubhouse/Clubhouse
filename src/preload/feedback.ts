@@ -21,8 +21,8 @@ export const feedback = {
     /** Queue held reports under the current enrollment. Pass the token the user confirmed. */
     releaseHeld: (releaseToken: string): Promise<FeedbackHeldReleaseResult> =>
       ipcRenderer.invoke(IPC.FEEDBACK.RELEASE_HELD, releaseToken),
-    clearHeld: (): Promise<FeedbackHeldClearResult> =>
-      ipcRenderer.invoke(IPC.FEEDBACK.CLEAR_HELD),
+    clearHeld: (clearToken: string): Promise<FeedbackHeldClearResult> =>
+      ipcRenderer.invoke(IPC.FEEDBACK.CLEAR_HELD, clearToken),
     /** Note a breadcrumb for feedback reports (#2303), whatever the logging and feedback settings are. */
     recordBreadcrumb: (crumb: RendererBreadcrumb) =>
       ipcRenderer.send(IPC.FEEDBACK.RECORD_BREADCRUMB, crumb),

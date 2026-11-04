@@ -5,9 +5,9 @@ import { clearResultText, releaseResultText } from './FeedbackHeldReports';
 import { connectFailedMessage, FeedbackSettingsView } from './FeedbackSettingsView';
 import { feedbackStatus, setFeedback } from '../feedback/feedback-test-utils';
 
-const withHeld = (held: number, bytes: number, releaseToken: string | null, over: Parameters<typeof feedbackStatus>[0] = {}) => {
+const withHeld = (held: number, bytes: number, releaseToken: string | null, over: Parameters<typeof feedbackStatus>[0] = {}, clearToken: string | null = held > 0 ? 'clear-token' : null) => {
   const base = feedbackStatus(over);
-  return { ...base, outbox: { ...base.outbox, pending: held, heldForEnrollment: held, heldBytes: bytes, releaseToken } };
+  return { ...base, outbox: { ...base.outbox, pending: held, heldForEnrollment: held, heldBytes: bytes, releaseToken, clearToken } };
 };
 const disconnected = feedbackStatus({ state: 'disconnected', connected: false, enrolled: false, canCapture: false, expiresAt: null });
 
@@ -55,7 +55,7 @@ describe('held reports', () => {
     release().mockResolvedValue({ released: 0, remaining: 0, failed: 0, status: none });
     render(<FeedbackSettingsView />);
     openSend();
-    expect(screen.getByTestId('feedback-held-confirm').textContent).toMatch(/2 reports saved under an earlier feedback connection will be queued to send/);
+    expect(screen.getByTestId('feedback-held-confirm').textContent).toMatch(/2 reports held on this computer will be queued to send/);
     expect(release()).not.toHaveBeenCalled();
     act(() => { useFeedbackStore.setState({ status: withHeld(3, 0, 'token-newer') }); });
     expect(screen.getByTestId('feedback-held-confirm').textContent).toMatch(/2 reports/);
@@ -110,8 +110,136 @@ describe('held reports', () => {
     render(<FeedbackSettingsView />);
     openSend();
     await confirm('Send');
-    expect(screen.getByTestId('feedback-held-message').textContent).toBe('1 report queued to send. 1 still held. 1 failed.');
+    expect(screen.getByTestId('feedback-held-message').textContent).toBe('1 report queued to send. 1 still held. Try Send again.');
     expect(held()).toMatch(/1 report held/);
+  });
+
+  it('a release that failed outright says the report is still held, and Send stays on', async () => {
+    setFeedback(true, withHeld(1, 0, 'token-a'));
+    release().mockResolvedValue({ released: 0, remaining: 1, failed: 1, status: withHeld(1, 0, 'token-a') });
+    render(<FeedbackSettingsView />);
+    openSend();
+    await confirm('Send');
+    expect(screen.queryByRole('dialog')).toBeNull();
+    expect(screen.getByTestId('feedback-held-message').textContent).toBe('0 reports queued to send. 1 still held. Try Send again.');
+    expect(within(screen.getByTestId('feedback-held')).getByRole('button', { name: 'Send' })).not.toBeDisabled();
+  });
+
+  it('a stale release before status catches up says so, rather than asking with the same token', async () => {
+    setFeedback(true, withHeld(1, 0, 'token-a'));
+    release().mockResolvedValue({ released: 0, remaining: 2, failed: 0, code: 'stale-release', status: withHeld(1, 0, 'token-a') });
+    render(<FeedbackSettingsView />);
+    openSend();
+    await confirm('Send');
+    expect(screen.queryByRole('dialog')).toBeNull();
+    expect(screen.getByTestId('feedback-held-message').textContent).toBe('The held reports changed. Nothing was queued.');
+  });
+
+  describe('Clear', () => {
+    const openClear = () => fireEvent.click(within(screen.getByTestId('feedback-held')).getByRole('button', { name: 'Clear' }));
+
+    it('clears with the token shown when the confirmation opened, even if status moved on', async () => {
+      setFeedback(true, withHeld(2, 0, 'token-a', {}, 'clear-shown'));
+      clear().mockResolvedValue({ cleared: 2, remaining: 0, failed: 0, status: none });
+      render(<FeedbackSettingsView />);
+      openClear();
+      expect(clear()).not.toHaveBeenCalled();
+      act(() => { useFeedbackStore.setState({ status: withHeld(3, 0, 'token-b', {}, 'clear-newer') }); });
+      expect(screen.getByTestId('feedback-held-confirm').textContent).toMatch(/2 reports will be deleted/);
+      await confirm('Clear');
+      expect(clear()).toHaveBeenCalledTimes(1);
+      expect(clear()).toHaveBeenCalledWith('clear-shown');
+      expect(window.clubhouse.feedback.getStatus).not.toHaveBeenCalled();
+    });
+
+    it('a stale token deletes nothing and asks again with the new count and token', async () => {
+      setFeedback(true, withHeld(2, 0, 'token-a', {}, 'clear-old'));
+      clear().mockResolvedValueOnce({ cleared: 0, remaining: 3, failed: 0, code: 'stale-release', status: withHeld(3, 0, 'token-b', {}, 'clear-new') });
+      render(<FeedbackSettingsView />);
+      openClear();
+      await confirm('Clear');
+      expect(clear()).toHaveBeenCalledTimes(1);
+      const asked = screen.getByTestId('feedback-held-confirm').textContent ?? '';
+      expect(asked).toMatch(/The held reports changed\. Check the count and confirm again\./);
+      expect(asked).toMatch(/3 reports will be deleted/);
+      expect(useFeedbackStore.getState().status?.outbox.clearToken).toBe('clear-new');
+      clear().mockResolvedValueOnce({ cleared: 3, remaining: 0, failed: 0, status: none });
+      await confirm('Clear');
+      expect(clear()).toHaveBeenLastCalledWith('clear-new');
+      expect(screen.getByTestId('feedback-held-message').textContent).toBe('3 reports cleared.');
+    });
+
+    it('a stale token with nothing left to clear stops asking, in its own words', async () => {
+      setFeedback(true, withHeld(1, 0, 'token-a'));
+      clear().mockResolvedValue({ cleared: 0, remaining: 0, failed: 0, code: 'stale-release', status: none });
+      render(<FeedbackSettingsView />);
+      openClear();
+      await confirm('Clear');
+      expect(screen.queryByRole('dialog')).toBeNull();
+      expect(screen.getByTestId('feedback-held-message').textContent).toBe('The held reports changed. Nothing was cleared.');
+    });
+
+    it('a stale token before status catches up says so, rather than asking with the same token', async () => {
+      setFeedback(true, withHeld(1, 0, 'token-a', {}, 'clear-a'));
+      clear().mockResolvedValue({ cleared: 0, remaining: 2, failed: 0, code: 'stale-release', status: withHeld(1, 0, 'token-a', {}, 'clear-a') });
+      render(<FeedbackSettingsView />);
+      openClear();
+      await confirm('Clear');
+      expect(screen.queryByRole('dialog')).toBeNull();
+      expect(screen.getByTestId('feedback-held-message').textContent).toBe('The held reports changed. Nothing was cleared.');
+    });
+
+    it('says what a failed clear leaves behind', async () => {
+      setFeedback(true, withHeld(2, 0, 'token-a'));
+      clear().mockResolvedValue({ cleared: 1, remaining: 1, failed: 1, status: withHeld(1, 0, 'token-b') });
+      render(<FeedbackSettingsView />);
+      openClear();
+      await confirm('Clear');
+      expect(screen.getByTestId('feedback-held-message').textContent).toBe('1 report cleared. 1 still held. Try Clear again.');
+    });
+
+    it('says when storage stopped it, and that nothing went', async () => {
+      setFeedback(true, withHeld(1, 0, 'token-a'));
+      clear().mockResolvedValue({ cleared: 0, remaining: 1, failed: 0, code: 'storage-unavailable', status: withHeld(1, 0, 'token-a') });
+      render(<FeedbackSettingsView />);
+      openClear();
+      await confirm('Clear');
+      expect(screen.getByTestId('feedback-held-message').textContent).toBe('Couldn\'t read saved feedback on this computer. Nothing was cleared. Try Clear again. If it keeps happening, restart Clubhouse.');
+    });
+
+    it('is off with no token, and says why', () => {
+      setFeedback(true, withHeld(2, 0, null, {}, null));
+      render(<FeedbackSettingsView />);
+      const area = within(screen.getByTestId('feedback-held'));
+      expect(area.getByRole('button', { name: 'Clear' })).toBeDisabled();
+      expect(area.getByRole('button', { name: 'Send' })).toBeDisabled();
+      expect(held()).toMatch(/Couldn't read saved feedback on this computer, so these can't be sent or cleared right now\./);
+    });
+
+    const WHY = 'These reports are waiting for your choice. They may be from an earlier feedback connection, or their saved state can\'t be read right now.';
+
+    it.each([
+      ['token-a', 'They stay on this computer until you send or clear them.'],
+      [null, 'Send isn\'t available without a working connection.'],
+    ])('names both reasons a report is held, with release token %s', (releaseToken, rest) => {
+      setFeedback(true, withHeld(1, 0, releaseToken));
+      render(<FeedbackSettingsView />);
+      expect(held()).toContain(`${WHY} ${rest}`);
+      expect(held()).not.toMatch(/usually|because|Framebriar|\u2014/);
+    });
+
+    it.each([
+      ['token-a', 'A held report may be one that could still be sent. To queue them to send instead, choose Cancel, then Send.'],
+      [null, 'A held report may be one that could still be sent. Send isn\'t available without a working connection, so choose Cancel to keep them.'],
+    ])('says before deleting that a held report may still be sendable, with release token %s', (releaseToken, line) => {
+      setFeedback(true, withHeld(1, 0, releaseToken));
+      render(<FeedbackSettingsView />);
+      openClear();
+      const asked = screen.getByTestId('feedback-held-confirm').textContent ?? '';
+      expect(asked).toContain('1 report will be deleted from this computer. They can\'t be sent after this.');
+      expect(asked).toContain(line);
+      expect(asked).not.toMatch(/earlier|delivered|Framebriar|\u2014/);
+    });
   });
 
   it('unenrolled: Send is off and says to connect, and Clear still works', async () => {
@@ -126,6 +254,7 @@ describe('held reports', () => {
     expect(screen.getByTestId('feedback-held-confirm').textContent).toMatch(/2 reports will be deleted/);
     await confirm('Clear');
     expect(clear()).toHaveBeenCalledTimes(1);
+    expect(clear()).toHaveBeenCalledWith('clear-token');
     expect(release()).not.toHaveBeenCalled();
     expect(screen.getByTestId('feedback-held-message').textContent).toBe('2 reports cleared.');
   });
@@ -141,7 +270,7 @@ describe('held reports', () => {
 
   it.each([
     [{ released: 0, remaining: 2, failed: 0, code: 'not-enrolled' as const }, /Connect to Feedback/],
-    [{ released: 0, remaining: 2, failed: 0, code: 'storage-unavailable' as const }, /Nothing was queued/],
+    [{ released: 0, remaining: 2, failed: 0, code: 'storage-unavailable' as const }, /^Couldn't read saved feedback on this computer\. Nothing was queued\. Try Send again\. If it keeps happening, restart Clubhouse\.$/],
   ])('explains %o', (result, text) => {
     expect(releaseResultText(result)).toMatch(text);
   });
@@ -150,8 +279,10 @@ describe('held reports', () => {
     const lines = [
       releaseResultText({ released: 1, remaining: 1, failed: 1 }),
       releaseResultText({ released: 0, remaining: 0, failed: 0, code: 'stale-release' }),
+      releaseResultText({ released: 0, remaining: 1, failed: 0, code: 'storage-unavailable' }),
       clearResultText({ cleared: 1, remaining: 1, failed: 1 }),
       clearResultText({ cleared: 0, remaining: 1, failed: 0, code: 'storage-unavailable' }),
+      clearResultText({ cleared: 0, remaining: 1, failed: 0, code: 'stale-release' }),
     ].join(' ');
     expect(lines).not.toMatch(/\u2014/);
     expect(lines).not.toMatch(/\bSent\b/i);
@@ -318,6 +449,7 @@ describe('FeedbackSettingsView', () => {
       fireEvent.click(within(screen.getByTestId('feedback-held')).getByRole('button', { name: 'Clear' }));
       await act(async () => { fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Clear' })); });
       expect(clear()).toHaveBeenCalledOnce();
+      expect(clear()).toHaveBeenCalledWith('clear-token');
       expect(screen.getByTestId('feedback-held-message').textContent).toBe('2 reports cleared.');
     });
 
@@ -331,6 +463,7 @@ describe('FeedbackSettingsView', () => {
       expect(area.getByRole('button', { name: 'Send' })).toBeDisabled();
       fireEvent.click(area.getByRole('button', { name: 'Clear' }));
       await act(async () => { fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Clear' })); });
+      expect(clear()).toHaveBeenCalledWith('clear-token');
       expect(screen.getByTestId('feedback-held-message').textContent).toBe('1 report cleared.');
     });
 

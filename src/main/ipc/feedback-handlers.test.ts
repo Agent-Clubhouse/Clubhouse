@@ -113,7 +113,7 @@ describe('feedback IPC', () => {
     await expect(call(IPC.FEEDBACK.CAPTURE)).rejects.toThrow(/quitting/);
     await expect(call(IPC.FEEDBACK.SEND, { draftId: DRAFT_ID, notes: 'x', includeScreenshot: false })).rejects.toThrow(/quitting/);
     await expect(call(IPC.FEEDBACK.RELEASE_HELD, 'token')).rejects.toThrow(/quitting/);
-    await expect(call(IPC.FEEDBACK.CLEAR_HELD)).rejects.toThrow(/quitting/);
+    await expect(call(IPC.FEEDBACK.CLEAR_HELD, 'token')).rejects.toThrow(/quitting/);
     expect(svc.service.releaseHeldReports).not.toHaveBeenCalled();
     expect(svc.service.clearHeldReports).not.toHaveBeenCalled();
     await call(IPC.FEEDBACK.CANCEL, 'd1');
@@ -173,15 +173,20 @@ describe('feedback IPC', () => {
     expect(svc.service.releaseHeldReports).toHaveBeenCalledTimes(1);
   });
 
-  it('clears held reports through the service', async () => {
-    expect(await call(IPC.FEEDBACK.CLEAR_HELD)).toMatchObject({ cleared: 2 });
+  it('clears with exactly the token the renderer confirmed, and never without one', async () => {
+    expect(await call(IPC.FEEDBACK.CLEAR_HELD, 'the-confirmed-token')).toMatchObject({ cleared: 2 });
+    expect(svc.service.clearHeldReports).toHaveBeenCalledWith('the-confirmed-token');
+    expect(() => call(IPC.FEEDBACK.CLEAR_HELD)).toThrow();
+    expect(() => call(IPC.FEEDBACK.CLEAR_HELD, '')).toThrow();
+    expect(() => call(IPC.FEEDBACK.CLEAR_HELD, 42)).toThrow();
+    expect(() => call(IPC.FEEDBACK.CLEAR_HELD, 'x'.repeat(129))).toThrow();
     expect(svc.service.clearHeldReports).toHaveBeenCalledTimes(1);
   });
 
   it('refuses held actions from callers that are not application windows', async () => {
     win.current = null;
     await expect(call(IPC.FEEDBACK.RELEASE_HELD, 'token')).rejects.toThrow(/unauthorized caller/);
-    await expect(call(IPC.FEEDBACK.CLEAR_HELD)).rejects.toThrow(/unauthorized caller/);
+    await expect(call(IPC.FEEDBACK.CLEAR_HELD, 'token')).rejects.toThrow(/unauthorized caller/);
     expect(svc.service.releaseHeldReports).not.toHaveBeenCalled();
     expect(svc.service.clearHeldReports).not.toHaveBeenCalled();
   });

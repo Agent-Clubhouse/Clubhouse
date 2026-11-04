@@ -28,11 +28,13 @@ export interface FeedbackStatus {
     blocked: number;
     /** Retained unchanged until the current service session supports incident metadata. */
     correlationWaiting?: number;
-    /** Part of pending: reports saved under another enrollment, which wait for the user's choice. */
+    /** Part of pending: reports saved under another enrollment or with a state the SDK can't read, which wait for the user's choice. */
     heldForEnrollment: number;
     heldBytes: number;
     /** Opaque, what a release confirms. Null when nothing is held or there's no active enrollment. */
     releaseToken: string | null;
+    /** Opaque, what a clear confirms. Null when nothing is held or the enrollment can't be read; there's one while unenrolled. */
+    clearToken: string | null;
     bytes: number;
     maxItems: number;
     maxBytes: number;
