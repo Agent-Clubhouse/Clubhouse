@@ -12,6 +12,7 @@ import { createHash } from 'crypto';
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
+import { setImmediate as nextTurn } from 'timers/promises';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createFramebriar, type Framebriar } from '../../vendor/framebriar/adapters/node/index.mjs';
 import { asyncOnlySafeStorage, fakeKeychain } from '../../telemetry/__test-utils__/fake-safe-storage';
@@ -174,6 +175,10 @@ beforeEach(() => {
 afterEach(async () => {
   for (const cleanup of cleanups.splice(0)) await cleanup();
   vi.unstubAllGlobals();
+  // Shutdown doesn't wait for a status pass the SDK already started, which can still be taking its
+  // lock. rmSync blocks the event loop and doesn't list the folder again, so a lock file created
+  // under it fails the cleanup with ENOTEMPTY. A hang here fails on the hook timeout.
+  do { await nextTurn(); } while (process.getActiveResourcesInfo().includes('FSReqPromise'));
   rmSync(dataDir, { recursive: true, force: true, maxRetries: 3 });
 });
 
