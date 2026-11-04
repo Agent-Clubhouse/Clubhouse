@@ -150,6 +150,27 @@ jobs:
       # enforced on protected branches instead of remaining advisory.
       - run: npm run lint
 
+  # Linux only, no npm ci, and nothing needs it, so it can't lengthen the long pole.
+  actionlint:
+    needs: changes
+    if: ${{ !cancelled() && needs.changes.result == 'success' }}
+    name: Workflow lint (actionlint)
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    env:
+      ACTIONLINT_VERSION: '1.7.12'
+      ACTIONLINT_SHA256: 8aca8db96f1b94770f1b0d72b6dddcb1ebb8123cb3712530b08cc387b349a3d8
+    steps:
+      - uses: actions/checkout@v7
+      - name: Download actionlint
+        run: |
+          curl -fsSL -o actionlint.tar.gz "https://github.com/rhysd/actionlint/releases/download/v${ACTIONLINT_VERSION}/actionlint_${ACTIONLINT_VERSION}_linux_amd64.tar.gz"
+          echo "${ACTIONLINT_SHA256}  actionlint.tar.gz" | sha256sum --check
+          tar -xzf actionlint.tar.gz actionlint
+      # Workflow structure and expressions only. Passing no shellcheck keeps the
+      # result the same whatever the runner image has installed.
+      - run: ./actionlint -shellcheck= -pyflakes=
+
   codex-schema-drift:
     needs: changes
     if: ${{ !cancelled() && needs.changes.result == 'success' }}
