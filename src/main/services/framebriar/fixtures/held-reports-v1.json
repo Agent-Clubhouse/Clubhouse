@@ -2,9 +2,9 @@
   "v": 1,
   "codes": {"enrollmentChanged": "enrollment-changed", "staleRelease": "stale-release", "notEnrolled": "not-enrolled"},
   "status": {
-    "heldWhileEnrolled": {"items": 2, "bytes": 0, "maxItems": 10, "maxBytes": 33554432, "heldForEnrollment": 2, "heldBytes": 0, "releaseToken": "<opaque string>"},
-    "nothingHeld": {"items": 1, "bytes": 0, "maxItems": 10, "maxBytes": 33554432, "heldForEnrollment": 0, "heldBytes": 0, "releaseToken": null},
-    "heldWhileUnenrolled": {"items": 2, "bytes": 0, "maxItems": 10, "maxBytes": 33554432, "heldForEnrollment": 2, "heldBytes": 0, "releaseToken": null}
+    "heldWhileEnrolled": {"items": 2, "bytes": 0, "maxItems": 10, "maxBytes": 33554432, "heldForEnrollment": 2, "heldBytes": 0, "releaseToken": "<opaque string>", "clearToken": "<opaque string>"},
+    "nothingHeld": {"items": 1, "bytes": 0, "maxItems": 10, "maxBytes": 33554432, "heldForEnrollment": 0, "heldBytes": 0, "releaseToken": null, "clearToken": null},
+    "heldWhileUnenrolled": {"items": 2, "bytes": 0, "maxItems": 10, "maxBytes": 33554432, "heldForEnrollment": 2, "heldBytes": 0, "releaseToken": null, "clearToken": "<opaque string>"}
   },
   "release": {
     "success": {"released": 2, "remaining": 0, "failed": 0},
@@ -16,10 +16,16 @@
     "notEnrolled": {"released": 0, "remaining": 2, "failed": 0, "code": "not-enrolled"}
   },
   "clear": {
-    "whileUnenrolled": {"cleared": 2, "remaining": 0, "failed": 0}
+    "success": {"cleared": 2, "remaining": 0, "failed": 0},
+    "whileUnenrolled": {"cleared": 2, "remaining": 0, "failed": 0},
+    "partial": {"cleared": 1, "remaining": 1, "failed": 1},
+    "staleAfterHeldSetChange": {"cleared": 0, "remaining": 2, "failed": 0, "code": "stale-release"},
+    "missingToken": {"cleared": 0, "remaining": 1, "failed": 0, "code": "stale-release"},
+    "nothingHeld": {"cleared": 0, "remaining": 0, "failed": 0, "code": "stale-release"}
   },
   "notes": {
     "partial": "After a partial release the failed reports stay held and status carries a new releaseToken, because the held set changed.",
-    "releaseToken": "Opaque. Compare only for equality by passing it back. It changes with the current enrollment or the set of held reports."
+    "releaseToken": "Opaque. Compare only for equality by passing it back. It changes with the current enrollment or the set of held reports.",
+    "clearToken": "Opaque, same rule as releaseToken, and never interchangeable with it. Present whenever something is held and the enrollment is readable, including while unenrolled. A stale or missing one clears nothing, and status then carries the new count and token."
   }
 }

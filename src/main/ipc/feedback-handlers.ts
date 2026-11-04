@@ -23,8 +23,8 @@ const MAX_ANNOTATED_BASE64 = Math.ceil(FEEDBACK_MAX_PNG_BYTES / 3) * 4;
 const BASE64 = /^[A-Za-z0-9+/]*={0,2}$/;
 const DRAFT_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const SHOT_ID = /^s\d{1,2}$/;
-/** The SDK's token is opaque, so only its size is checked here. */
-const MAX_RELEASE_TOKEN = 128;
+/** The SDK's tokens are opaque, so only their size is checked here. */
+const MAX_HELD_TOKEN = 128;
 
 /**
  * Every Clubhouse window worth a screenshot (#2100): `first` (the window feedback started
@@ -150,15 +150,15 @@ export function registerFeedbackHandlers(): void {
     return getFeedbackService().send(withoutUnusableFlattened(input));
   }));
 
-  ipcMain.handle(IPC.FEEDBACK.RELEASE_HELD, withValidatedArgs([stringArg({ maxLength: MAX_RELEASE_TOKEN })], async (event, releaseToken) => {
+  ipcMain.handle(IPC.FEEDBACK.RELEASE_HELD, withValidatedArgs([stringArg({ maxLength: MAX_HELD_TOKEN })], async (event, releaseToken) => {
     requireEnabled(event);
     return getFeedbackService().releaseHeldReports(releaseToken);
   }));
 
-  ipcMain.handle(IPC.FEEDBACK.CLEAR_HELD, async (event) => {
+  ipcMain.handle(IPC.FEEDBACK.CLEAR_HELD, withValidatedArgs([stringArg({ maxLength: MAX_HELD_TOKEN })], async (event, clearToken) => {
     requireEnabled(event);
-    return getFeedbackService().clearHeldReports();
-  });
+    return getFeedbackService().clearHeldReports(clearToken);
+  }));
 
   // Breadcrumbs (#2303) are noted whether or not feedback is set up or logging is on,
   // so a report sent later has them. App windows only; main checks the code.

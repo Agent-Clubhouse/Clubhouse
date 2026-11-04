@@ -13,7 +13,7 @@ import { createDiagRedactor } from '../../telemetry/diag-redaction';
 import { connectFailureClass, connectFailureReason, FeedbackService, type FeedbackLog, pngSize, sdkVersion, toFeedbackStatus } from './feedback-service';
 
 const ACCESS: FramebriarAccessView = { state: 'connected', connected: true, enrolled: true, canCapture: true, notice: null, expiresAt: '2026-11-15T00:00:00.000Z' };
-const OUTBOX: FramebriarOutboxView = { state: 'available', items: 2, bytes: 1234, maxItems: 10, maxBytes: 33554432, blocked: 1, heldForEnrollment: 0, heldBytes: 0, releaseToken: null, retention: 'until-delivered-or-cleared' };
+const OUTBOX: FramebriarOutboxView = { state: 'available', items: 2, bytes: 1234, maxItems: 10, maxBytes: 33554432, blocked: 1, heldForEnrollment: 0, heldBytes: 0, releaseToken: null, clearToken: null, retention: 'until-delivered-or-cleared' };
 const PNG = Buffer.concat([Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]), Buffer.from('fake-image-bytes')]);
 
 /** A PNG header with a real IHDR chunk (the body is never decoded). */
@@ -51,7 +51,7 @@ describe('toFeedbackStatus', () => {
       notice: null,
       expiresAt: '2026-11-15T00:00:00.000Z',
       storage: { available: true },
-      outbox: { state: 'available', pending: 2, blocked: 1, heldForEnrollment: 0, heldBytes: 0, releaseToken: null, bytes: 1234, maxItems: 10, maxBytes: 33554432 },
+      outbox: { state: 'available', pending: 2, blocked: 1, heldForEnrollment: 0, heldBytes: 0, releaseToken: null, clearToken: null, bytes: 1234, maxItems: 10, maxBytes: 33554432 },
       received: ['r2', 'r1'],
     });
   });
@@ -73,6 +73,13 @@ describe('toFeedbackStatus', () => {
   it('keeps notices and expiry for a lapsed enrollment', () => {
     const s = toFeedbackStatus(true, { available: true }, { state: 'expired', connected: false, enrolled: true, canCapture: true, notice: 'expired', expiresAt: null }, OUTBOX, []);
     expect(s).toMatchObject({ connected: false, canCapture: true, notice: 'expired' });
+  });
+
+  it('hides the release token during a rejected connection, and never the clear token', () => {
+    const rejected = { ...ACCESS, state: 'enrollment-response-rejected' as const, connected: false, notice: 'enrollment-response-rejected' as const };
+    const held = { ...OUTBOX, heldForEnrollment: 1, releaseToken: 'release', clearToken: 'clear' };
+    expect(toFeedbackStatus(true, { available: true }, rejected, held, []).outbox).toMatchObject({ releaseToken: null, clearToken: 'clear' });
+    expect(toFeedbackStatus(true, { available: true }, ACCESS, held, []).outbox).toMatchObject({ releaseToken: 'release', clearToken: 'clear' });
   });
 
   it('passes only SDK-safe versions', () => {

@@ -23,7 +23,7 @@ function fakeSdk(submit?: () => Promise<unknown>) {
   const fb = {
     store: { probeAsync: async () => ({ available: true }) },
     access: { endpoint: 'https://fb.example', gameId: 'clubhouse', status: () => access, subscribe: () => () => {}, getToken: async () => 'upload-credential', onEnrollmentChange: () => () => {} },
-    outbox: { status: () => ({ state: 'available', items: 0, bytes: 0, maxItems: 10, maxBytes: 1, blocked: 0, heldForEnrollment: 0, heldBytes: 0, releaseToken: null, retention: 'until-delivered-or-cleared' }) },
+    outbox: { status: () => ({ state: 'available', items: 0, bytes: 0, maxItems: 10, maxBytes: 1, blocked: 0, heldForEnrollment: 0, heldBytes: 0, releaseToken: null, clearToken: null, retention: 'until-delivered-or-cleared' }) },
     feedback: {
       sessionId: SESSION,
       open: vi.fn(async () => ({ capturedAt: WINDOW.windowEnd, enrollmentRef: 'ref-a' })),
