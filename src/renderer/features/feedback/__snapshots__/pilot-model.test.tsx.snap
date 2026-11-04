@@ -1,0 +1,14 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`what jsdom has > records the globals the modules reach for 1`] = `
+{
+  "CompressionStream": "function",
+  "OffscreenCanvas": "undefined",
+  "ResizeObserver": "function",
+  "Response": "function",
+  "blobArrayBuffer": "function",
+  "createImageBitmap": "undefined",
+  "replaceSync": true,
+  "showModal": "undefined",
+}
+`;
