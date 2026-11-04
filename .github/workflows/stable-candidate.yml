@@ -1,0 +1,66 @@
+name: Stable candidate
+
+# Packages this source as a stable version and launches it on hosted runners, to
+# check the Preview gates in a real packaged build. See docs/ci.md.
+#
+# A file of its own because dispatching validate.yml runs its complete matrix
+# (`changes` sets complete=true for workflow_dispatch). Dispatch is the only
+# trigger here: no pull_request, push, schedule or label can start it.
+#
+# Never signs, notarizes or publishes, and uploads no build: results, provenance
+# and logs only. Uses no secrets and no environment.
+
+on:
+  workflow_dispatch:
+    inputs:
+      stable_candidate:
+        description: Package as a stable version and launch it on hosted runners
+        required: true
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: stable-candidate-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  stable-candidate:
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.stable_candidate == true }}
+    name: Stable candidate (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
+    env:
+      STABLE_CANDIDATE: ${{ inputs.stable_candidate }}
+    strategy:
+      fail-fast: false
+      matrix:
+        # windows-2022: see the pin in validate.yml (#1652).
+        os: [ubuntu-latest, windows-2022, macos-latest]
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '22.23.4'
+          cache: npm
+      - run: npm ci
+      - name: Package and launch
+        if: runner.os != 'Linux'
+        run: node scripts/ci/stable-candidate.mjs
+      - name: Package and launch (Linux, virtual display)
+        if: runner.os == 'Linux'
+        run: xvfb-run --auto-servernum node scripts/ci/stable-candidate.mjs
+      - name: Check package.json was restored
+        if: always()
+        run: git diff --exit-code -- package.json
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: stable-candidate-${{ matrix.os }}-${{ github.sha }}
+          path: stable-candidate-results/
+          retention-days: 7
+          if-no-files-found: error

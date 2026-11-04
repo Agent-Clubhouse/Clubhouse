@@ -18,6 +18,7 @@ The rules, in short:
 | `full-ci` label, manual dispatch | everything | everything (unit, build, sharded E2E, Annex E2E), except Chat E2E and Stable-mode E2E, which stay on Linux and Windows |
 | Push to `main` | everything, plus the Linux package smoke test | macOS unit, plus macOS build if the push is macOS-relevant |
 | Daily, 07:00 UTC | everything | macOS unit and macOS build. This catches runner-image and Xcode drift that no change would trigger, for about 12 macOS minutes a day. |
+| `stable-candidate.yml`, dispatched by hand | Linux and Windows package and launch | macOS package and launch. Nothing else runs, and nothing in Validate starts it |
 
 **Pushes to main are an accepted tradeoff toward the macOS cut.** They run the same reduced macOS set as a PR: macOS unit, plus macOS build when the merged diff is macOS-relevant. The complete macOS matrix doesn't run on merges. Together with the daily run of both macOS jobs, that's the deliberate trade for the cut in macOS minutes.
 
@@ -183,6 +184,38 @@ Gating the `build` job on `complete`, as #1984 did, gives a lean PR:
 
 - **Webpack-only build:** E2E only needs `.webpack/`, but `electron-forge package` also packages the app into `out/`. A webpack-only build, or a webpack filesystem cache, would take a minute or two off each `build` job, which is the critical path.
 - **Shard balancing:** the per-shard JUnit artifacts will give real spec timings, so the shards can be balanced by duration instead of by file.
+
+## Stable candidate
+
+`.github/workflows/stable-candidate.yml` checks the Preview gates in a real packaged build. `isPreviewEligible` is always true unpackaged and on a prerelease version, so neither E2E nor a beta can show what a stable build does.
+
+It's a file of its own because dispatching `validate.yml` runs its complete matrix. Its only trigger is `workflow_dispatch`, with a `stable_candidate` input that's off by default, and `scripts/ci/stable-candidate.mjs` refuses to do anything unless it's on a hosted runner, on that dispatch, with the input on. To run it, once the workflow is on the default branch:
+
+```
+gh workflow run stable-candidate.yml --ref main -f stable_candidate=true
+```
+
+**What it builds:** this source with `package.json` at its base version (`0.42.0-beta.13` becomes `0.42.0`), for packaging only, restored afterwards. It has no signing, notarization, secrets, environment or installers, and it commits and publishes nothing. On macOS, Apple Silicon needs a signature to run, so a copy in the runner temp gets `codesign --force --deep -s -`. On Linux, the job makes `chrome-sandbox` root-owned with mode 4755, as the package does at install, and the sandbox stays on. `provenance.json` records the source commit, ASAR hash, fuses (they must match the hardened values) and every difference from a release.
+
+**How it launches:** each launch gets a disposable `CLUBHOUSE_USER_DATA` under the runner temp, which also redirects home, plus `CLUBHOUSE_DISABLE_AUTO_UPDATE=1`, `CLUBHOUSE_ANNEX_LOOPBACK_ONLY=1` and `CLUBHOUSE_ANNEX_EPHEMERAL=1`. The environment is an allowlist, so no CI credential reaches the app, and `CLUBHOUSE_TEST_STABLE_BUILD` is refused. No agent wakes and no CLI runs.
+
+**The matrix:** Preview off and on, flags absent and present, on fresh and beta state, plus beta state through Preview on, off and on in one profile. The seeds are shared with `e2e/stable-mode.spec.ts`, in `e2e/stable-state-seeds.mjs`.
+
+**What each result proves** (`results.json`):
+
+| Result | Source | Proves | Doesn't prove |
+|---|---|---|---|
+| `main` | `previewEligible`, `newChrome` and `chatEnabled` in the app's `core:startup` record | The packaged app's main-process gates, its real version and that it starts | What the window drew |
+| `renderer` | `--remote-debugging-port` and CDP `Runtime.evaluate` | The layout on screen, the Settings pages, the flags the preload returns, and main's runtime decision for the Chat-mode agent | A real wake |
+| `files` | Bytes on disk after quitting | With Preview off, saved beta state is untouched | |
+
+Playwright's `_electron.launch` can't drive a hardened build, because it needs `--inspect` and that fuse is off. CDP is used directly, since all this needs is `Runtime.evaluate`, and it doesn't rely on Playwright's browser-level commands.
+
+The job is green only if every result ran and passed. If CDP can't connect, `main` and `files` still report, the summary says `incomplete`, and the job fails.
+
+**Artifact:** results, provenance and logs for 7 days, checked to hold no app, archive or installer.
+
+**CI budget:** nothing depends on it, so it can't lengthen the long pole. It costs one macOS job per dispatch, of up to 45 minutes. A PR touching only its files runs lint, workflow lint, typecheck and unit tests, with no E2E and no macOS build.
 
 ## Unsigned desktop integration artifacts
 
