@@ -1199,6 +1199,76 @@ describe('the renderer doesn\'t own the telemetry flag', () => {
   });
 });
 
+describe('reading the flags while this process is writing them', () => {
+  const FLAG_FILE = 'experimental-settings.json';
+
+  /** The next write of the flags file leaves part of itself on disk, as a real write does, until released. */
+  function holdNextWrite(): () => void {
+    const realWrite = fs.promises.writeFile;
+    let release: () => void = () => undefined;
+    const held = new Promise<void>((resolve) => { release = resolve; });
+    let first = true;
+    vi.spyOn(fs.promises, 'writeFile').mockImplementation(async (target, data, options) => {
+      if (first && String(target).endsWith(FLAG_FILE)) {
+        first = false;
+        fs.writeFileSync(String(target), String(data).slice(0, 5));
+        await held;
+      }
+      return realWrite(target, data, options as never);
+    });
+    return release;
+  }
+
+  it('a healthy file isn\'t taken for unreadable: the structured-mode notice saving at startup can\'t skip the chat tip or turn chat off', async () => {
+    seedGate(undefined, true);
+    writeJson(FLAG_FILE, { structuredModeRemovedNotice: true, themeGradients: true });
+    resetAllSettingsStoresForTests();
+    const release = holdNextWrite();
+
+    const saving = experimentalSettings.saveSettings({ themeGradients: true });
+    await vi.waitFor(() => expect(readText(FLAG_FILE)).toHaveLength(5));
+
+    expect(experimentalSettings.savedSettingsUnreadable()).toBe(false);
+    expect(experimentalSettings.getSettingsForRenderer()).not.toHaveProperty('chat');
+    expect(experimentalSettings.isGraduatedFeatureOn('chat')).toBe(true);
+
+    release();
+    await saving;
+    expect(experimentalSettings.savedSettingsUnreadable()).toBe(false);
+  });
+
+  it('an unreadable file stays unreadable until the write over it lands, so nothing is guessed on meanwhile', async () => {
+    seedGate(undefined, true);
+    fs.writeFileSync(userDataPath(FLAG_FILE), '{broken');
+    resetAllSettingsStoresForTests();
+    const release = holdNextWrite();
+
+    const saving = experimentalSettings.saveSettings({ themeGradients: true });
+    expect(experimentalSettings.savedSettingsUnreadable()).toBe(true);
+    await vi.waitFor(() => expect(readText(FLAG_FILE)).toHaveLength(5));
+    expect(experimentalSettings.savedSettingsUnreadable()).toBe(true);
+    expect(experimentalSettings.isGraduatedFeatureOn('chat')).toBe(false);
+
+    release();
+    await saving;
+    expect(experimentalSettings.savedSettingsUnreadable()).toBe(false);
+    expect(experimentalSettings.isGraduatedFeatureOn('chat')).toBe(false);
+  });
+
+  it('a write that fails part way shows as unreadable afterwards: nothing hides a real one', async () => {
+    seedGate(undefined, true);
+    writeJson(FLAG_FILE, { themeGradients: true });
+    resetAllSettingsStoresForTests();
+    vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    vi.spyOn(fs.promises, 'writeFile').mockImplementationOnce(async (target) => {
+      fs.writeFileSync(String(target), '{"them');
+      throw new Error('disk full');
+    });
+    await expect(experimentalSettings.saveSettings({ themeGradients: false })).rejects.toThrow('disk full');
+    expect(experimentalSettings.savedSettingsUnreadable()).toBe(true);
+  });
+});
+
 describe('a failed save of the experimental flags, through the real store', () => {
   const FLAG_FILE = 'experimental-settings.json';
   const saved = () => JSON.parse(readText(FLAG_FILE));

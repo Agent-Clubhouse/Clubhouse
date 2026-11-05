@@ -36,7 +36,27 @@ const isPreviewOnly = (key: string): boolean => PREVIEW_ONLY_EXPERIMENTAL_FLAGS.
  * read as on when the person's saved false may be in that file.
  */
 export function savedSettingsUnreadable(): boolean {
-  return peekStoredSettingsSync(FILENAME) === 'unreadable';
+  return savesInFlight > 0 ? unreadableBeforeSaves : fileUnreadableNow();
+}
+
+const fileUnreadableNow = (): boolean => peekStoredSettingsSync(FILENAME) === 'unreadable';
+
+/**
+ * Saves queued or being written by this process. A write truncates the file
+ * first, so until it finishes a read can see part of it, which isn't a broken
+ * file. Meanwhile the answer stays what it was before they started.
+ */
+let savesInFlight = 0;
+let unreadableBeforeSaves = false;
+
+async function updateFlags(fn: (current: ExperimentalSettings) => ExperimentalSettings): Promise<void> {
+  if (savesInFlight === 0) unreadableBeforeSaves = fileUnreadableNow();
+  savesInFlight++;
+  try {
+    await store.update(fn);
+  } finally {
+    savesInFlight--;
+  }
 }
 
 /** Off while the file can't be read: a saved false in it is an opt-out, so it isn't guessed away. */
@@ -88,7 +108,7 @@ export function peekStoredFlag(key: string): 'true' | 'false' | 'missing' | 'unr
  * Throws if it can't, and the save must then not happen.
  */
 export function preserveUnreadableFile(): void {
-  if (savedSettingsUnreadable()) backupUnreadableSettings(FILENAME);
+  if (fileUnreadableNow()) backupUnreadableSettings(FILENAME);
 }
 
 /** Where a copy of the unreadable file was kept, if one was. */
@@ -103,8 +123,8 @@ export function recoveryCopyPath(): string | undefined {
  */
 export async function setStoredFlag(key: string, value: boolean): Promise<void> {
   if (store.get()[key] === value && !savedSettingsUnreadable()) return;
-  await store.update((current) => {
-    const unreadable = savedSettingsUnreadable();
+  await updateFlags((current) => {
+    const unreadable = fileUnreadableNow();
     if (unreadable) preserveUnreadableFile();
     return { ...current, ...(unreadable ? offWhenUnreadable() : {}), [key]: value };
   });
@@ -128,8 +148,8 @@ export async function saveSettings(settings: ExperimentalSettings): Promise<void
   const keepSaved = (key: string): boolean => MAIN_OWNED_FLAGS.includes(key) || (!eligible && isPreviewOnly(key));
   // Inside the update, so it runs after any save still being written: a file
   // part way through a write mustn't read as unreadable.
-  await store.update((saved) => {
-    const unreadable = savedSettingsUnreadable();
+  await updateFlags((saved) => {
+    const unreadable = fileUnreadableNow();
     if (unreadable) preserveUnreadableFile();
     return {
       ...(unreadable ? offWhenUnreadable() : {}),
