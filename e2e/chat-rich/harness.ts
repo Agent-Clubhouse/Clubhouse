@@ -6,6 +6,7 @@ import * as path from 'path';
 import { installFakeClis, ORCHESTRATOR_FOR_CLI, type FakeClis } from '../chat-fake-cli';
 import { launchApp, type ElectronApp } from '../launch';
 import { addProject } from '../smoke-helpers';
+import { reportActionFailure } from '../renderer-diagnostics';
 import type { ChatFixtureCli } from '../../src/main/orchestrators/adapters/testing/fake-cli';
 import { buildChatScript, writeChatScript, type ChatScript } from '../../src/main/orchestrators/adapters/testing/chat-script';
 
@@ -185,6 +186,7 @@ export async function openRichChat(opts: RichChatOptions): Promise<RichChat> {
   };
 
   let electronApp: ElectronApp | undefined;
+  let rendererWindow: Page | undefined;
   try {
     const app = await launchApp({
       experimental: { newChrome: false },
@@ -193,6 +195,7 @@ export async function openRichChat(opts: RichChatOptions): Promise<RichChat> {
     });
     electronApp = app.electronApp;
     const { window } = app;
+    rendererWindow = window;
     if (opts.flags) await setExperimentalFlags(window, opts.flags);
 
     await addProject(electronApp, window, projectDir);
@@ -263,6 +266,7 @@ export async function openRichChat(opts: RichChatOptions): Promise<RichChat> {
       },
     };
   } catch (err) {
+    if (electronApp && rendererWindow) await reportActionFailure(electronApp, rendererWindow, 'rich-chat-setup', err);
     await electronApp?.close().catch(() => {});
     await removeAll();
     throw err;
