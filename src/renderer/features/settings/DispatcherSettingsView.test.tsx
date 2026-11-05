@@ -160,7 +160,7 @@ describe('DispatcherSettingsView', () => {
     const toggle = await screen.findByRole('switch', { name: 'Turn on Dispatcher' });
     expect((toggle as HTMLButtonElement).disabled).toBe(true);
     expect(document.getElementById('dispatcher-enabled-help')?.textContent)
-      .toBe('The Dispatcher needs the new layout. Turn off Classic layout in Settings > Display & UI.');
+      .toBe('The Dispatcher needs the new layout. Turn off Classic layout in Settings > Display & UI, then restart Clubhouse.');
     fireEvent.click(toggle);
     expect(window.clubhouse.dispatcher.setEnabled).not.toHaveBeenCalled();
     unmount();

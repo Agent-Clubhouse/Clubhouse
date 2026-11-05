@@ -232,5 +232,5 @@ test('beta user on classic: a Dispatcher that is on can be turned off, and then 
   await dispatcher.click();
   await expect(dispatcher).toHaveAttribute('aria-checked', 'false', { timeout: 15_000 });
   await expect(dispatcher).toBeDisabled();
-  await expect(w.locator('#dispatcher-enabled-help')).toHaveText('The Dispatcher needs the new layout. Turn off Classic layout in Settings > Display & UI.');
+  await expect(w.locator('#dispatcher-enabled-help')).toHaveText('The Dispatcher needs the new layout. Turn off Classic layout in Settings > Display & UI, then restart Clubhouse.');
 });
