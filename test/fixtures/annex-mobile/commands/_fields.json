@@ -28,6 +28,28 @@
         "color"
       ]
     },
+    "agent.providerChange": {
+      "fields": [
+        "agentId",
+        "provider",
+        "expectedState"
+      ],
+      "required": [
+        "agentId",
+        "provider",
+        "expectedState"
+      ]
+    },
+    "agent.providerPreview": {
+      "fields": [
+        "agentId",
+        "provider"
+      ],
+      "required": [
+        "agentId",
+        "provider"
+      ]
+    },
     "agent.spawn": {
       "fields": [
         "projectId",
@@ -44,7 +66,9 @@
       "fields": [
         "agentId",
         "message",
-        "resume"
+        "resume",
+        "expectedProvider",
+        "expectedSessionId"
       ],
       "required": [
         "agentId"
@@ -52,7 +76,8 @@
     },
     "agent.stop": {
       "fields": [
-        "agentId"
+        "agentId",
+        "waitForStopped"
       ],
       "required": [
         "agentId"

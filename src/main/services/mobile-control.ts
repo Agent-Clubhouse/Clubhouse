@@ -1,3 +1,4 @@
+import { AgentResumeError, AgentTransitionError } from './agent-transition';
 import { withSettingsSurface } from './settings-audit';
 import { INPUT_WINDOW_NOTE, type ContextLimits } from '../../shared/context-window';
 import { createHash, randomUUID } from 'crypto';
@@ -32,8 +33,10 @@ export const MOBILE_COMMAND_FIELDS: Readonly<Record<MobileCommand['type'], reado
   'chat.question': ['agentId', 'sessionId', 'requestId', 'answers'],
   'chat.setModel': ['agentId', 'sessionId', 'model', 'effort'],
   'chat.setLevel': ['agentId', 'sessionId', 'level'],
-  'agent.start': ['agentId', 'message', 'resume'],
-  'agent.stop': ['agentId'],
+  'agent.start': ['agentId', 'message', 'resume', 'expectedProvider', 'expectedSessionId'],
+  'agent.stop': ['agentId', 'waitForStopped'],
+  'agent.providerPreview': ['agentId', 'provider'],
+  'agent.providerChange': ['agentId', 'provider', 'expectedState'],
   'agent.spawn': ['projectId', 'prompt', 'model', 'orchestrator'],
   'agent.create': ['projectId', 'name', 'color', 'orchestrator', 'model', 'persona', 'freeAgentMode', 'useWorktree', 'mcpIds', 'branchName', 'branchFrom', 'folderName', 'orchestration'],
   'agent.update': ['agentId', 'name', 'color', 'emoji', 'orchestrator', 'model', 'runtime', 'persona', 'clubhouseMode', 'freeAgentMode', 'idleSleep', 'contextWindow', 'orchestration'],
@@ -47,14 +50,14 @@ export const MOBILE_COMMAND_FIELDS: Readonly<Record<MobileCommand['type'], reado
   'helperRouting.update': ['revision', 'scope', 'projectId', 'cells', 'reset', 'auto'],
 };
 /** Fields a command may leave out. Every agent.update setting is optional, but it needs at least one. */
-const OPTIONAL = new Set(['delivery', 'message', 'resume', 'model', 'orchestrator', 'attachmentIds', 'force', 'effort', 'cells', 'reset']);
+const OPTIONAL = new Set(['delivery', 'message', 'resume', 'model', 'orchestrator', 'attachmentIds', 'force', 'effort', 'cells', 'reset', 'expectedProvider', 'expectedSessionId', 'waitForStopped']);
 const ROUTING_OPTIONAL = new Set(['projectId', 'auto']);
 const CREATE_OPTIONAL = new Set(['orchestrator', 'model', 'persona', 'freeAgentMode', 'useWorktree', 'mcpIds', 'branchName', 'branchFrom', 'folderName', 'orchestration']);
 export const isOptionalCommandField = (type: MobileCommand['type'], key: string): boolean =>
   type === 'agent.update' ? key !== 'agentId' : type === 'agent.create' ? CREATE_OPTIONAL.has(key)
     : type === 'helperRouting.update' && ROUTING_OPTIONAL.has(key) ? true
       : type === 'chat.setModel' && key === 'model' ? false : OPTIONAL.has(key);
-const BOOLEAN_FIELDS = new Set(['resume', 'useWorktree', 'clubhouseMode', 'pinned', 'inactive', 'force', 'freeAgentMode', 'enabled']);
+const BOOLEAN_FIELDS = new Set(['waitForStopped', 'resume', 'useWorktree', 'clubhouseMode', 'pinned', 'inactive', 'force', 'freeAgentMode', 'enabled']);
 /** Fields agent.update clears with null. */
 export const NULLABLE_ON_UPDATE = new Set(['emoji', 'persona', 'orchestration', 'contextWindow']);
 const record = (v: unknown): v is Record<string, unknown> => !!v && typeof v === 'object' && !Array.isArray(v);
@@ -101,6 +104,7 @@ export function parseMobileCommand(value: unknown): MobileCommand {
   if (value.delivery !== undefined && !['auto', 'prompt', 'steer', 'queued'].includes(value.delivery as string)) throw new MobileControlError('invalid_command', 400);
   if (type === 'agent.update' && !fields.some((k) => k !== 'agentId' && value[k] !== undefined)) throw new MobileControlError('invalid_command', 400);
   if (type === 'helperRouting.update' && value.cells === undefined && value.reset === undefined && value.auto === undefined) throw new MobileControlError('invalid_command', 400);
+  if (type === 'agent.start' && value.expectedSessionId !== undefined && (value.resume !== true || !text(value.expectedProvider))) throw new MobileControlError('invalid_command', 400);
   return value as unknown as MobileCommand;
 }
 
@@ -140,14 +144,15 @@ export class MobileCommandService {
     // Reserve synchronously before executing, including while the first request is in flight.
     const entry: Entry = { fingerprint, expires: Infinity, settled: false, response: Promise.resolve().then(async () => {
       try {
-        const result = await withSettingsSurface('mobile', undefined, () => run(command));
+        const result = await withSettingsSurface('mobile', principal, () => run(command));
         return { statusCode: 200, body: { version: 1 as const, commandId: command.commandId, epoch, status: 'completed' as const, result } };
       } catch (err) {
         // telemetry-exempt: the receipt reports failure; runtime operations own detailed error telemetry.
-        const known = err instanceof MobileControlError;
-        const code = known ? err.code : 'command_failed';
-        const message = known && err.detail ? err.detail : code;
-        return { statusCode: known ? err.statusCode : 500, body: { version: 1 as const, commandId: command.commandId, epoch, status: known ? err.outcome : 'failed' as const, error: { code, message }, ...(known && err.extra) } };
+        const failure = err instanceof AgentTransitionError || err instanceof AgentResumeError ? new MobileControlError(err.code) : err;
+        const known = failure instanceof MobileControlError;
+        const code = known ? failure.code : 'command_failed';
+        const message = known && failure.detail ? failure.detail : code;
+        return { statusCode: known ? failure.statusCode : 500, body: { version: 1 as const, commandId: command.commandId, epoch, status: known ? failure.outcome : 'failed' as const, error: { code, message }, ...(known && failure.extra) } };
       } finally { entry.settled = true; entry.expires = this.now() + MOBILE_COMMAND_TTL_MS; }
     }) };
     this.entries.set(key, entry);

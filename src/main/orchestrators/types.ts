@@ -401,6 +401,8 @@ export interface OrchestratorProvider {
 
   // Instructions
   readInstructions(worktreePath: string): Promise<string>;
+  /** Bounded primary-file inspection; unlike the editor read, errors must not look empty. */
+  inspectInstructions?(worktreePath: string): Promise<string>;
   writeInstructions(worktreePath: string, content: string): Promise<void>;
 
   // Conventions

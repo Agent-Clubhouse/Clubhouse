@@ -1,3 +1,4 @@
+import { constants } from 'fs';
 import * as fsp from 'fs/promises';
 import * as os from 'os';
 import * as path from 'path';
@@ -156,6 +157,37 @@ export abstract class BaseProvider implements OrchestratorProvider {
     } catch {
       return '';
     }
+  }
+
+  /** Inspect only the conventional primary file, never a symlink or special file. */
+  async inspectInstructions(worktreePath: string): Promise<string> {
+    const filePath = this.getInstructionsPath(worktreePath);
+    let file: Awaited<ReturnType<typeof fsp.open>> | undefined;
+    try {
+      const root = await fsp.realpath(worktreePath);
+      const parent = await fsp.realpath(path.dirname(filePath));
+      const relative = path.relative(root, parent);
+      if (relative.startsWith('..') || path.isAbsolute(relative)) throw new Error('instructions_outside_worktree');
+      const before = await fsp.lstat(filePath);
+      if (!before.isFile() || before.isSymbolicLink() || before.size > 2 * 1024 * 1024) throw new Error('instructions_unreadable');
+      file = await fsp.open(filePath, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK);
+      const opened = await file.stat();
+      if (!opened.isFile() || opened.dev !== before.dev || opened.ino !== before.ino || opened.size > 2 * 1024 * 1024) throw new Error('instructions_changed');
+      const buffer = Buffer.alloc(2 * 1024 * 1024 + 1);
+      let bytesRead = 0;
+      while (bytesRead < buffer.length) {
+        const read = await file.read(buffer, bytesRead, buffer.length - bytesRead, bytesRead);
+        if (!read.bytesRead) break;
+        bytesRead += read.bytesRead;
+      }
+      if (bytesRead > 2 * 1024 * 1024) throw new Error('instructions_too_large');
+      const after = await file.stat();
+      if (after.size !== bytesRead || after.size !== opened.size || after.mtimeMs !== opened.mtimeMs || after.ctimeMs !== opened.ctimeMs) throw new Error('instructions_changed');
+      return buffer.subarray(0, bytesRead).toString('utf8');
+    } catch (err) {
+      if ((err as NodeJS.ErrnoException).code === 'ENOENT') return '';
+      throw err;
+    } finally { await file?.close(); }
   }
 
   /** Write project instructions to the conventional file location */

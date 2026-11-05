@@ -4,7 +4,7 @@ import type { AgentIdleSleep } from './idle-sleep';
 import type { ContextWindowApplies, ContextWindowChoice, ContextWindowKind } from './context-window';
 import type { OrchestrationPolicy, OrchestrationPolicyPatch } from './orchestration-policy';
 export const MOBILE_PROTOCOL_VERSION = 1;
-export const MOBILE_COMMAND_TYPES = ['chat.send', 'chat.interrupt', 'chat.permission', 'chat.question', 'chat.queue.remove', 'agent.start', 'agent.stop', 'agent.spawn', 'agent.create', 'agent.update', 'project.setPinned', 'project.setInactive', 'helper.approve', 'helper.decline', 'chat.setModel', 'chat.setLevel', 'quick.dismiss', 'quick.clear', 'dispatcher.setEnabled', 'helperRouting.update'] as const;
+export const MOBILE_COMMAND_TYPES = ['chat.send', 'chat.interrupt', 'chat.permission', 'chat.question', 'chat.queue.remove', 'agent.start', 'agent.stop', 'agent.spawn', 'agent.create', 'agent.update', 'project.setPinned', 'project.setInactive', 'helper.approve', 'helper.decline', 'chat.setModel', 'chat.setLevel', 'quick.dismiss', 'quick.clear', 'dispatcher.setEnabled', 'helperRouting.update', 'agent.providerPreview', 'agent.providerChange'] as const;
 interface CommandBase { version: 1; commandId: string; epoch: string }
 interface ChatTarget { agentId: string; sessionId: string }
 export type MobileCommand = CommandBase & (
@@ -17,8 +17,10 @@ export type MobileCommand = CommandBase & (
   // `effort` omitted keeps a chosen effort the new model offers; null is the provider's default (capabilities.effortDefault).
   | (ChatTarget & { type: 'chat.setModel'; model: string; effort?: string | null })
   | (ChatTarget & { type: 'chat.setLevel'; level: PermissionLevel })
-  | { type: 'agent.start'; agentId: string; message?: string; resume?: boolean }
-  | { type: 'agent.stop'; agentId: string }
+  | { type: 'agent.start'; agentId: string; message?: string; resume?: boolean; expectedProvider?: string; expectedSessionId?: string }
+  | { type: 'agent.stop'; agentId: string; waitForStopped?: boolean }
+  | { type: 'agent.providerPreview'; agentId: string; provider: string }
+  | { type: 'agent.providerChange'; agentId: string; provider: string; expectedState: string }
   | { type: 'agent.spawn'; projectId: string; prompt: string; model?: string; orchestrator?: string }
   | ({ type: 'agent.create' } & MobileAgentCreate)
   | ({ type: 'agent.update' } & MobileAgentUpdate)

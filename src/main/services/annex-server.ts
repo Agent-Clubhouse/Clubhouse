@@ -1,3 +1,7 @@
+import { hasSessionCaptureFailure } from './session-capture-barrier';
+import { waitForAgentStopped } from './agent-system';
+import { previewAgentProvider, changeAgentProvider, persistGuidedSessionCapture } from './agent-provider-control';
+import { withAgentTransition } from './agent-transition';
 import * as http from 'http';
 import * as https from 'https';
 import * as tls from 'tls';
@@ -3064,6 +3068,7 @@ async function handleMobileCapabilitiesRoute(ctx: AnnexRouteContext): Promise<vo
     createOptions: { version: 1, path: '/api/v1/mobile/projects/{projectId}/create-options' },
     agentSettings: { version: 1, path: '/api/v1/mobile/agents/{agentId}/settings' },
     contextWindow: { version: 1 },
+    providerControl: { version: 1, preview: 'agent.providerPreview', change: 'agent.providerChange', stoppedAcknowledgment: true, strictStart: true },
     // Every agent's live state in one read, for catching up after a reconnect.
     agentState: { version: 1, path: '/api/v1/mobile/agents/state' },
     helperRequests: { version: 1, snapshotField: 'helperRequests', commands: ['helper.approve', 'helper.decline'] },
@@ -3430,6 +3435,19 @@ async function runMobileCommand(command: MobileCommand, assertAuthorized: () => 
     broadcastSnapshotRefresh();
     return created;
   }
+  if (command.type === 'agent.providerPreview' || command.type === 'agent.providerChange') {
+    const durable = await findMobileAgent(command.agentId);
+    if (!durable || isDisposedAgent(durable.config)) throw new MobileControlError('agent_not_found', 404);
+    const actor = { key: `phone:${principal}`, assertAuthorized };
+    const result = command.type === 'agent.providerPreview'
+      ? await previewAgentProvider(durable.project.path, command.agentId, command.provider, actor)
+      : await changeAgentProvider(durable.project.path, command.agentId, command.provider, command.expectedState, actor);
+    if (command.type === 'agent.providerChange') {
+      broadcastToAllWindows(IPC.WINDOW.REQUEST_DURABLE_RELOAD, durable.project.id);
+      broadcastSnapshotRefresh();
+    }
+    return result;
+  }
   if (command.type === 'agent.update') {
     const durable = await findMobileAgent(command.agentId);
     if (!durable || isDisposedAgent(durable.config)) throw new MobileControlError('agent_not_found', 404);
@@ -3466,20 +3484,43 @@ async function runMobileCommand(command: MobileCommand, assertAuthorized: () => 
   if (command.type === 'agent.stop') {
     const starting = mobileStartingAgents.get(command.agentId);
     if (starting) starting.cancelled = true;
+    if (command.waitForStopped) {
+      return withAgentTransition(command.agentId, async () => {
+        assertAuthorized();
+        await stopAgentForAnnex(command.agentId, project.path, info?.config.orchestrator);
+        if (!(await waitForAgentStopped(command.agentId))) throw new MobileControlError('agent_stopping');
+        await persistGuidedSessionCapture(project.path, command.agentId);
+        assertAuthorized();
+        broadcastSnapshotRefresh();
+        return { agentId: command.agentId, stopRequested: true, state: 'sleeping', stopped: true };
+      });
+    }
     await killAgent(command.agentId, project.path, info?.config.orchestrator);
     broadcastSnapshotRefresh();
     return { agentId: command.agentId, stopRequested: true };
   }
   if (!info) throw new MobileControlError('agent_not_found', 404);
   if (isAgentRunning(command.agentId) || mobileStartingAgents.has(command.agentId)) throw new MobileControlError('agent_already_running');
+  const start = async () => {
   const starting = { cancelled: false };
   mobileStartingAgents.set(command.agentId, starting);
   try {
-    const { config } = info;
+    const config = command.expectedProvider !== undefined ? await agentConfig.getDurableConfig(project.path, command.agentId) : info.config;
+    if (!config || isDisposedAgent(config)) throw new MobileControlError('agent_not_found', 404);
+    if (command.expectedProvider !== undefined) {
+      if (command.resume && hasSessionCaptureFailure(command.agentId)) throw new MobileControlError('session_capture_failed');
+      const provider = await resolveOrchestrator(project.path, config.orchestrator);
+      if (provider.id !== command.expectedProvider) throw new MobileControlError('stale_state');
+      if (command.resume && (!command.expectedSessionId || command.expectedSessionId !== config.lastSessionId
+        || config.sessionHistory?.find((entry) => entry.sessionId === command.expectedSessionId)?.orchestrator !== provider.id)) {
+        throw new MobileControlError('resume_unverified');
+      }
+      assertAuthorized();
+    }
     const resume = command.resume === true && !!config.lastSessionId;
     await spawnAgent({ agentId: config.id, projectPath: project.path, cwd: config.worktreePath || project.path,
       kind: 'durable', mission: command.message, model: config.model, orchestrator: config.orchestrator,
-      freeAgentMode: config.freeAgentMode, resume, sessionId: resume ? config.lastSessionId : undefined });
+      freeAgentMode: config.freeAgentMode, resume, strictResume: command.expectedProvider !== undefined && resume, sessionId: resume ? config.lastSessionId : undefined });
     if (starting.cancelled) {
       await killAgent(command.agentId, project.path, config.orchestrator);
       throw new MobileControlError('start_cancelled', 409, 'failed');
@@ -3489,6 +3530,8 @@ async function runMobileCommand(command: MobileCommand, assertAuthorized: () => 
     broadcastSnapshotRefresh();
     return { agentId: config.id, executionMode: getAgentExecutionMode(config.id) };
   } finally { finishMobileStart(command.agentId, starting); }
+  };
+  return command.expectedProvider !== undefined ? withAgentTransition(command.agentId, start) : start();
 }
 
 /** How much of a refused upload is discarded, and for how long, so the client gets to read its 413. */

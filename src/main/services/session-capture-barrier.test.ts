@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from 'vitest';
-import { clearSessionCaptures, sessionCaptureFor, trackSessionCapture, whenSessionCapturesSettled } from './session-capture-barrier';
+import { clearSessionCaptures, hasSessionCaptureFailure, sessionCaptureFor, trackSessionCapture, whenSessionCapturesSettled } from './session-capture-barrier';
 
 afterEach(() => clearSessionCaptures());
 
@@ -29,5 +29,9 @@ describe('session capture barrier', () => {
     trackSessionCapture('a', later(1, log, 'boom', true));
     await expect(sessionCaptureFor('a')).resolves.toBeUndefined();
     await expect(whenSessionCapturesSettled()).resolves.toBeUndefined();
+    expect(hasSessionCaptureFailure('a')).toBe(true);
+    trackSessionCapture('a', Promise.resolve());
+    await whenSessionCapturesSettled();
+    expect(hasSessionCaptureFailure('a')).toBe(true);
   });
 });

@@ -37,7 +37,7 @@ import { driverHealthKey, driverPausedReason, probeDriver, recordDriverFailure, 
 import { cliLabel, evaluateCliVersion, type CliVersionStatus } from './chat-version-policy';
 import { ChatAgentRuntime, ChatStartCancelledError } from './chat-runtime';
 import { listChatRuntimes, registerChatRuntime, unregisterChatRuntime } from './index';
-import { trackSessionCapture } from '../session-capture-barrier';
+import { trackSessionCapture, noteSessionCaptureFailure } from '../session-capture-barrier';
 import { listChatSessions } from './chat-transcript';
 import { captureBeforePrompt } from './checkpoint-tracker';
 import { noteChatStartFailure } from './stale-session';
@@ -67,6 +67,7 @@ export interface ChatSpawnParams {
   freeAgentMode?: boolean;
   permissionMode: FreeAgentPermissionMode;
   resume?: boolean;
+  strictResume?: boolean;
   sessionId?: string;
   extraArgs?: string[];
   /** A quick agent someone will talk to (started from a phone) gets chat like a durable one. */
@@ -581,6 +582,7 @@ async function runChatStart(
         appLog('core:chat', 'warn', 'Failed to persist native session id', {
           meta: { agentId: params.agentId, error: err instanceof Error ? err.message : String(err) },
         });
+        noteSessionCaptureFailure(params.agentId);
         captured('persist_failed');
       }));
     };
@@ -637,6 +639,10 @@ async function runChatStart(
         ...(params.extraArgs?.length ? { extraArgs: params.extraArgs } : {}),
         ...(startSignal ? { signal: startSignal } : {}),
         });
+        if (params.strictResume && resumeId && (session.nativeSessionId !== resumeId || session.resumeFallback)) {
+          await session.close();
+          throw new Error('resume_not_honored');
+        }
         sessionStarted = true;
         if (resumeId) resumeResult = chatResumeResult(resumeId, session.nativeSessionId, session.resumeFallback);
         return session;

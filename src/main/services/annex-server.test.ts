@@ -275,6 +275,7 @@ vi.mock('./agent-system', () => ({
   getAvailableOrchestrators: vi.fn().mockReturnValue([]),
   spawnAgent: vi.fn().mockResolvedValue(undefined),
   killAgent: vi.fn().mockResolvedValue(undefined),
+  waitForAgentStopped: vi.fn().mockResolvedValue(true),
   isHeadlessAgent: vi.fn().mockReturnValue(false),
 }));
 
@@ -357,6 +358,7 @@ function authHeaders(token: string): Record<string, string> {
 
 describe('annex-server', () => {
   beforeEach(() => {
+    vi.mocked(agentSystem.waitForAgentStopped).mockResolvedValue(true);
     // Re-apply mock return values after mockReset clears them
     vi.mocked(annexSettings.getSettings).mockReturnValue({ enabled: false, deviceName: 'Test Machine', alias: 'Test Machine', icon: 'computer', color: 'indigo', autoReconnect: false });
     vi.mocked(annexSettings.getLastPorts).mockReturnValue({ mainPort: 0, pairingPort: 0 });

@@ -174,7 +174,7 @@ export function clearTargetToolTemplates(targetKind: BindingTargetKind, targetId
  * tool is listed whatever the target's state, and the handlers answer a target
  * in the wrong state (#2603).
  */
-const SLEEPING_TARGET_TOOLS: ReadonlySet<string> = new Set(['get_status', 'wake_agent']);
+const SLEEPING_TARGET_TOOLS: ReadonlySet<string> = new Set(['get_status', 'wake_agent', 'preview_provider', 'change_provider']);
 
 /**
  * Global tools — available to ALL agents regardless of bindings.

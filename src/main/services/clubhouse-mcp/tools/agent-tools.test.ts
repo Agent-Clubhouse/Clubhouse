@@ -772,7 +772,7 @@ describe('AgentTools', () => {
     afterEach(() => { _resetDispatcherGateForTesting(); });
 
     it('are registered in the dispatcher group: the Dispatcher sees them by target state', () => {
-      expect(suffixes('dispatcher-1')).toEqual(['get_status', 'wake_agent']);
+      expect(suffixes('dispatcher-1')).toEqual(['preview_provider', 'change_provider', 'get_status', 'wake_agent']);
       mockAgentRegistryGet.mockImplementation((id: string) => (id === 'orch-1' ? { runtime: 'chat' } : undefined));
       invalidateToolListCache();
       expect(suffixes('dispatcher-1')).toContain('sleep_agent');
@@ -780,6 +780,8 @@ describe('AgentTools', () => {
     });
 
     it('are not listed for a caller that is not the Dispatcher', () => {
+      expect(suffixes('agent-1')).not.toContain('preview_provider');
+      expect(suffixes('agent-1')).not.toContain('change_provider');
       expect(suffixes('agent-1')).not.toContain('sleep_agent');
       expect(suffixes('agent-1')).not.toContain('wake_agent');
     });

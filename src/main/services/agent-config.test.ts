@@ -72,6 +72,7 @@ import { watch } from 'fs';
 import { setAgentIdleSleep } from './chat-idle-settings';
 import { execFile } from 'child_process';
 import { pathExists } from './fs-utils';
+import { assertProviderSelection, noteProviderSelection } from './agent-transition';
 import { registerProvider } from '../orchestrators/registry';
 import { isInsideGitRepo } from './git-service';
 import {
@@ -1828,6 +1829,19 @@ describe('updateDurableConfig: a new CLI (#2593)', () => {
     vi.mocked(fsp.mkdir).mockResolvedValue(undefined);
   }
 
+  it('rolls back a failed guided provider persistence without rejecting the old provider wake', async () => {
+    setup({ orchestrator: 'claude-code', lastSessionId: 'claude-native', model: 'opus' });
+    noteProviderSelection('durable_cli', 'claude-code');
+    vi.mocked(fsp.rename).mockRejectedValueOnce(new Error('disk write failed'));
+    await expect(updateDurableConfig(PROJECT_PATH, 'durable_cli', { orchestrator: 'codex-cli' }, async () => {})).rejects.toThrow('disk write failed');
+    expect(await getDurableConfig(PROJECT_PATH, 'durable_cli')).toMatchObject({ orchestrator: 'claude-code', lastSessionId: 'claude-native', model: 'opus' });
+    expect(() => assertProviderSelection('durable_cli', 'claude-code')).not.toThrow();
+    expect(() => assertProviderSelection('durable_cli', 'codex-cli')).toThrow('changing state');
+    await flushAgentConfig(PROJECT_PATH);
+    clearAgentConfigCache(PROJECT_PATH);
+    expect(await getDurableConfig(PROJECT_PATH, 'durable_cli')).toMatchObject({ orchestrator: 'claude-code', lastSessionId: 'claude-native' });
+  });
+
   it('drops the old CLI\'s resume id and model, and marks its sessions as its own', async () => {
     setup({
       orchestrator: 'codex-cli', model: 'gpt-5', lastSessionId: 'codex-2',
@@ -1940,6 +1954,14 @@ describe('addSessionEntry', () => {
     expect(config!.sessionHistory).toHaveLength(1);
     expect(config!.sessionHistory![0].sessionId).toBe('sess-001');
     expect(config!.lastSessionId).toBe('sess-001');
+  });
+
+  it('retains late old-provider history without restoring its resume pointer', async () => {
+    setupWritableAgents([{ id: 'durable_1', name: 'agent-1', color: 'indigo', createdAt: '2024-01-01', orchestrator: 'codex-cli', lastSessionId: 'codex-new' }]);
+    await addSessionEntry(PROJECT_PATH, 'durable_1', { sessionId: 'claude-old', orchestrator: 'claude-code', startedAt: '2024-06-01', lastActiveAt: '2024-06-01' });
+    const config = await getDurableConfig(PROJECT_PATH, 'durable_1');
+    expect(config!.lastSessionId).toBe('codex-new');
+    expect(config!.sessionHistory).toEqual([expect.objectContaining({ sessionId: 'claude-old', orchestrator: 'claude-code' })]);
   });
 
   it('updates existing session entry and preserves friendly name', async () => {
