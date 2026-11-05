@@ -127,7 +127,15 @@ const REAL_FS: InventoryFs = {
   realpath: (p) => fsp.realpath(p),
 };
 
-interface InventoryBaseOptions {
+export interface InventoryOptions {
+  /**
+   * The home folder user-level config is read from. Required, absolute and always
+   * the caller's: there's no fallback to the real one, so nothing can scan it by
+   * leaving this out. Read only with `includeProviderConfig`.
+   */
+  homeDir: string;
+  /** Also read provider folders in project roots and user-level config. Off by default. */
+  includeProviderConfig?: boolean;
   /** Selectable scope: these project ids, or all when omitted. Orphans are still judged against all. */
   projectIds?: readonly string[];
   signal?: AbortSignal;
@@ -137,16 +145,6 @@ interface InventoryBaseOptions {
   projectTimeoutMs?: number;
   fs?: InventoryFs;
 }
-
-/**
- * Provider folders in project roots and user-level config are off by default.
- * Asking for them means saying which home: there's no fallback to the real one,
- * so a test can't scan it by leaving this out.
- */
-export type InventoryOptions = InventoryBaseOptions & (
-  | { includeProviderConfig?: false; homeDir?: string }
-  | { includeProviderConfig: true; homeDir: string }
-);
 
 const DEFAULT_PROJECT_TIMEOUT_MS = 60_000;
 
@@ -921,7 +919,9 @@ async function scanProject(
   };
 }
 
-async function scanGlobal(ctx: Context, homeDir: string, baseDir: string): Promise<RawItem[]> {
+async function scanGlobal(ctx: Context, homeDir: string): Promise<RawItem[]> {
+  // The app's folder name (dev or packaged), under the home this scan was given.
+  const baseDir = path.join(homeDir, path.basename(getBaseDirPath()));
   const items: RawItem[] = [];
   items.push(...await scanProviderFolders(ctx, homeDir, 'global', GLOBAL_SOURCES.map((s) => s.dir)));
   for (const source of GLOBAL_SOURCES) {
@@ -1097,13 +1097,16 @@ async function withDeadline<T>(
  * status of its own and the rest carry on. On cancel the result holds the
  * projects that finished.
  */
-export async function scanImportInventory(options: InventoryOptions = {}): Promise<ImportInventory> {
+export async function scanImportInventory(options: InventoryOptions): Promise<ImportInventory> {
+  // First, before anything is read. A relative path would resolve against wherever the app runs.
+  if (typeof options?.homeDir !== 'string' || !path.isAbsolute(options.homeDir)) {
+    throw new Error('scanImportInventory needs an absolute homeDir');
+  }
   const fs = options.fs ?? REAL_FS;
   const limits = { ...DEFAULT_INVENTORY_LIMITS, ...options.limits };
   const outerSignal = options.signal ?? new AbortController().signal;
   const timeoutMs = options.projectTimeoutMs ?? DEFAULT_PROJECT_TIMEOUT_MS;
   const includeProviderConfig = options.includeProviderConfig === true;
-  if (includeProviderConfig && !options.homeDir) throw new Error('includeProviderConfig needs homeDir');
   // Never run synchronously inside the caller's tick.
   await new Promise<void>((resolve) => setImmediate(resolve));
 
@@ -1218,7 +1221,7 @@ export async function scanImportInventory(options: InventoryOptions = {}): Promi
     let ctx: Context | null = null;
     const outcome = await withDeadline(async (signal) => {
       ctx = newContext(fs, limits, signal);
-      const items = await scanGlobal(ctx, options.homeDir as string, getBaseDirPath());
+      const items = await scanGlobal(ctx, options.homeDir);
       return toSources(items, signal, null);
     }, outerSignal, timeoutMs).catch((err: unknown) => {
       // telemetry-exempt: global config is optional; a failure leaves it out and the projects stand

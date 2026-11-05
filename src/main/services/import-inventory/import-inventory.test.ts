@@ -21,6 +21,7 @@ vi.mock('../agent-system', () => ({ resolveOrchestrator: vi.fn() }));
 vi.mock('../chat-idle-settings', () => ({ setAgentIdleSleep: vi.fn() }));
 
 import { appLog } from '../log-service';
+import * as projectStore from '../project-store';
 import { ensureDefaultSkills, getDefaultAgentTemplates } from '../materialization-service';
 import { ClaudeCodeProvider } from '../../orchestrators/claude-code-provider';
 import { CodexCliProvider } from '../../orchestrators/codex-cli-provider';
@@ -28,13 +29,19 @@ import { CopilotCliProvider } from '../../orchestrators/copilot-cli-provider';
 import { PERSONA_TEMPLATES } from '../../../renderer/features/personas';
 import type { ImportInventory, InventoryEntry } from '../../../shared/import-inventory-types';
 import type { DurableAgentConfig } from '../../../shared/types';
-import { INSTRUCTION_FILES, PROJECT_MCP_FILES, confinedJoin, projectPathKey, scanImportInventory, type InventoryFs } from './inventory';
+import { INSTRUCTION_FILES, PROJECT_MCP_FILES, confinedJoin, projectPathKey, scanImportInventory, type InventoryFs, type InventoryOptions } from './inventory';
 import { readGitStates, toGitPath } from './git-state';
 
 // Real git on Windows CI is slow, and these spawn it several times each.
 vi.setConfig({ testTimeout: 30_000 });
 
 let root: string;
+let savedEnv: Record<string, string | undefined> = {};
+
+/** Every scan here names the fixture home. A scan without one is refused; see 'the home folder'. */
+function scan(options: Partial<InventoryOptions> = {}): Promise<ImportInventory> {
+  return scanImportInventory({ homeDir: dirs.home, ...options });
+}
 
 function sha(content: string): string {
   return createHash('sha256').update(content).digest('hex');
@@ -139,10 +146,69 @@ beforeEach(() => {
   fs.mkdirSync(dirs.home, { recursive: true });
   fs.mkdirSync(dirs.userData, { recursive: true });
   vi.mocked(appLog).mockClear();
+  // A second wall behind the required homeDir: os.homedir() and git's user config land in the fixture too.
+  savedEnv = {};
+  const emptyGitConfig = write(dirs.home, '.gitconfig-empty', '');
+  const fixtureEnv: NodeJS.ProcessEnv = {
+    HOME: dirs.home, USERPROFILE: dirs.home, XDG_CONFIG_HOME: dirs.home,
+    GIT_CONFIG_GLOBAL: emptyGitConfig, GIT_CONFIG_NOSYSTEM: '1',
+  };
+  for (const [name, value] of Object.entries(fixtureEnv)) {
+    savedEnv[name] = process.env[name];
+    process.env[name] = value;
+  }
 });
 
 afterEach(() => {
+  for (const [name, value] of Object.entries(savedEnv)) {
+    if (value === undefined) delete process.env[name];
+    else process.env[name] = value;
+  }
   fs.rmSync(root, { recursive: true, force: true });
+});
+
+describe('the home folder', () => {
+  it.each([
+    ['nothing', undefined],
+    ['no homeDir', {}],
+    ['no homeDir with provider config on', { includeProviderConfig: true }],
+    ['an empty homeDir', { homeDir: '' }],
+    ['a relative homeDir', { homeDir: 'relative-home' }],
+  ])('refuses %s, before any read', async (_label, options) => {
+    registerProjects([makeProject('alpha')]);
+    const recording = recordingFs();
+    const projectsRead = vi.spyOn(projectStore, 'peekProjects');
+
+    await expect(scanImportInventory({ ...(options as InventoryOptions), fs: recording.fs })).rejects.toThrow('homeDir');
+    if (options === undefined) await expect((scanImportInventory as unknown as () => Promise<unknown>)()).rejects.toThrow('homeDir');
+
+    expect(recording.touched).toEqual([]);
+    expect(projectsRead).not.toHaveBeenCalled();
+    projectsRead.mockRestore();
+  });
+
+  it('reads user-level config only under the home it was given', async () => {
+    write(dirs.home, '.claude/skills/from-given/SKILL.md', 'x\n');
+    const other = path.join(root, '_other-home');
+    write(other, '.claude/skills/from-other/SKILL.md', 'y\n');
+    write(other, '.clubhouse-dev/personas/from-other-persona.md', 'z\n');
+    registerProjects([makeProject('alpha')]);
+    const recording = recordingFs();
+
+    const result = await scan({ homeDir: other, includeProviderConfig: true, fs: recording.fs });
+
+    expect(result.providerEntries.map((e) => e.name).sort()).toEqual(['from-other', 'from-other-persona']);
+    expect(recording.touched.filter((p) => p.startsWith(dirs.home))).toEqual([]);
+  });
+
+  it('has no way to the real home in library code', () => {
+    const sources = fs.readdirSync(__dirname).filter((f) => f.endsWith('.ts') && !f.endsWith('.test.ts'));
+    expect(sources.length).toBeGreaterThan(3);
+    for (const file of sources) {
+      const text = fs.readFileSync(path.join(__dirname, file), 'utf-8');
+      expect(text, file).not.toMatch(/homedir|from 'os'|getPath\(/);
+    }
+  });
 });
 
 describe('project source folders', () => {
@@ -157,7 +223,7 @@ describe('project source folders', () => {
     setSettings(project, { agentDefaults: { instructions: 'House rules for @@AgentName', permissions: { allow: ['Read(@@Path**)'] } } });
     registerProjects([project]);
 
-    const result = await scanImportInventory();
+    const result = await scan();
 
     expect(result.status).toBe('complete');
     const deploy = entry(result, 'skill', 'deploy');
@@ -189,7 +255,7 @@ describe('project source folders', () => {
     setSettings(project, { agentDefaults: { instructions: 'UNIQUE-DEFAULTS-TEXT' } });
     registerProjects([project]);
 
-    const serialized = JSON.stringify(await scanImportInventory());
+    const serialized = JSON.stringify(await scan());
     expect(serialized).not.toContain('UNIQUE-BODY-TEXT');
     expect(serialized).not.toContain('UNIQUE-DEFAULTS-TEXT');
   });
@@ -201,7 +267,7 @@ describe('project source folders', () => {
     setSettings(project, { defaultSkillsPath: 'my-skills', defaultAgentsPath: path.join('..', '..', 'outside') });
     registerProjects([project]);
 
-    const result = await scanImportInventory();
+    const result = await scan();
 
     expect(entry(result, 'skill', 'deploy').sources[0].files).toHaveLength(1);
     expect(result.entries.some((e) => e.name === 'stolen')).toBe(false);
@@ -214,7 +280,7 @@ describe('project source folders', () => {
     setSettings(project, { defaultSkillsPath: 'Agents', defaultAgentsPath: '.' });
     registerProjects([project]);
 
-    const result = await scanImportInventory();
+    const result = await scan();
 
     expect(result.entries).toEqual([]);
     expect(result.projects[0].warnings).toEqual(['source-folder-outside-clubhouse:agent-templates', 'source-folder-outside-clubhouse:skills']);
@@ -226,7 +292,7 @@ describe('project source folders', () => {
     write(project, '.clubhouse/agent-templates/loose.md', 'Listed by nothing\n');
     registerProjects([project]);
 
-    const result = await scanImportInventory();
+    const result = await scan();
 
     expect(result.entries).toEqual([]);
     expect(result.projects[0].missionsNotInventoried).toBe(1);
@@ -239,7 +305,7 @@ describe('project source folders', () => {
     write(project, '.clubhouse/settings.json.bak', JSON.stringify({ agentDefaults: { instructions: 'From backup' } }));
     registerProjects([project]);
 
-    const result = await scanImportInventory();
+    const result = await scan();
 
     expect(entry(result, 'default-instructions', 'default instructions').contentHash).toBe(sha('From backup'));
     expect(result.projects[0].warnings).toEqual(expect.arrayContaining(['settings-read-from-backup', 'settings-unparsable']));
@@ -262,7 +328,7 @@ describe('git state per file', () => {
     write(project, '.git/info/exclude', '.clubhouse/skills/excluded/\n');
     registerProjects([project]);
 
-    const result = await scanImportInventory();
+    const result = await scan();
 
     const state = (name: string) => entry(result, 'skill', name).sources[0].files[0].gitState;
     expect(state('tracked')).toBe('tracked');
@@ -279,7 +345,7 @@ describe('git state per file', () => {
     git(project, 'add', '.clubhouse/skills/odd/a.md');
     registerProjects([project]);
 
-    const result = await scanImportInventory();
+    const result = await scan();
 
     const files = entry(result, 'skill', 'odd').sources[0].files;
     expect(files.find((f) => f.relativePath.endsWith('[a].md'))?.gitState).toBe('untracked');
@@ -291,7 +357,7 @@ describe('git state per file', () => {
     write(project, '.clubhouse/skills/deploy/SKILL.md', 'x\n');
     registerProjects([project]);
 
-    const result = await scanImportInventory();
+    const result = await scan();
 
     expect(entry(result, 'skill', 'deploy').sources[0].files[0].gitState).toBe('not-a-repo');
   });
@@ -302,7 +368,7 @@ describe('git state per file', () => {
     fs.writeFileSync(path.join(project, '.git', 'index'), 'not an index');
     registerProjects([project]);
 
-    const result = await scanImportInventory();
+    const result = await scan();
 
     expect(entry(result, 'skill', 'deploy').sources[0].files[0].gitState).toBe('unknown');
   });
@@ -319,7 +385,7 @@ describe('git config can\'t run anything', () => {
     registerProjects([project]);
     const marker = path.join(project, 'fsmonitor-ran');
 
-    await scanImportInventory();
+    await scan();
     expect(fs.existsSync(marker)).toBe(false);
 
     // The control: without the override this config does run, so the check above can fail.
@@ -347,7 +413,7 @@ describe('git config can\'t run anything', () => {
     }
     registerProjects([project]);
 
-    const result = await scanImportInventory();
+    const result = await scan();
 
     expect(entry(result, 'skill', 'tracked').sources[0].files[0].gitState).toBe('tracked');
     expect(fs.readdirSync(project).filter((f) => f.includes('-ran'))).toEqual([]);
@@ -379,7 +445,7 @@ describe('symlinked parents', () => {
     registerProjects([project]);
     const before = snapshotTree(outside);
 
-    const result = await scanImportInventory();
+    const result = await scan();
 
     expect(result.entries).toEqual([]);
     expect(result.projects[0].excluded.symlink).toBeGreaterThan(0);
@@ -398,7 +464,7 @@ describe('symlinked parents', () => {
     setAgents(project, [{ id: 'a1', name: 'lead', worktreePath: worktree }]);
     registerProjects([project]);
 
-    const result = await scanImportInventory({ includeProviderConfig: true, homeDir: dirs.home });
+    const result = await scan({ includeProviderConfig: true });
 
     expect(result.entries).toEqual([]);
     expect(result.providerEntries).toEqual([]);
@@ -428,7 +494,7 @@ describe('symlinked parents', () => {
     setSettings(project, { defaultSkillsPath: 'sneaky' });
     registerProjects([project]);
 
-    const result = await scanImportInventory();
+    const result = await scan();
 
     expect(result.entries).toEqual([]);
     expect(result.projects[0].warnings).toEqual(['source-folder-outside-clubhouse:skills']);
@@ -461,7 +527,7 @@ describe('reads only', () => {
     registerProjects([project]);
     const before = snapshotTree(project);
 
-    const result = await scanImportInventory();
+    const result = await scan();
 
     expect(result.projects[0].status).toBe('scanned');
     expect(result.entries.length).toBeGreaterThan(3);
@@ -486,7 +552,7 @@ describe('reads only', () => {
     const home = snapshotTree(dirs.home);
     const userData = snapshotTree(dirs.userData);
 
-    await scanImportInventory({ includeProviderConfig: true, homeDir: dirs.home });
+    await scan({ includeProviderConfig: true });
 
     expect(snapshotTree(dirs.home)).toEqual(home);
     expect(snapshotTree(dirs.userData)).toEqual(userData);
@@ -498,7 +564,7 @@ describe('reads only', () => {
     const before = snapshotTree(project);
     const controller = new AbortController();
 
-    await scanImportInventory({ signal: controller.signal, onProgress: () => controller.abort() });
+    await scan({ signal: controller.signal, onProgress: () => controller.abort() });
 
     expect(snapshotTree(project)).toEqual(before);
   });
@@ -507,7 +573,7 @@ describe('reads only', () => {
     registerProjects([makeProject('alpha')]);
     const recording = recordingFs();
 
-    const pending = scanImportInventory({ fs: recording.fs });
+    const pending = scan({ fs: recording.fs });
     expect(recording.touched).toEqual([]);
     await pending;
     expect(recording.touched.length).toBeGreaterThan(0);
@@ -528,7 +594,7 @@ describe('agent instructions and worktrees', () => {
     setAgents(project, [{ id: 'a1', name: 'lead', worktreePath: worktree }]);
     registerProjects([project]);
 
-    const result = await scanImportInventory();
+    const result = await scan();
 
     const instructions = entry(result, 'agent-instructions', 'lead/CLAUDE.md');
     expect(instructions.sources[0].agent).toEqual({ id: 'a1', name: 'lead' });
@@ -551,7 +617,7 @@ describe('agent instructions and worktrees', () => {
     setAgents(project, [{ id: 'a1', name: 'lead', worktreePath: worktree }, { id: 'a2', name: 'quiet', worktreePath: bridgeOnly }]);
     registerProjects([project]);
 
-    const result = await scanImportInventory();
+    const result = await scan();
 
     expect(result.entries).toEqual([]);
     expect(result.projects[0].agents.map((a) => a.mcpFilesNotInventoried)).toEqual([2, 0]);
@@ -570,7 +636,7 @@ describe('agent instructions and worktrees', () => {
     registerProjects([project]);
     const recording = recordingFs();
 
-    const result = await scanImportInventory({ fs: recording.fs });
+    const result = await scan({ fs: recording.fs });
 
     expect(result.entries).toEqual([]);
     expect(result.projects[0].agents[0]).toMatchObject({ status: 'generated', managed: true });
@@ -590,7 +656,7 @@ describe('agent instructions and worktrees', () => {
     setClubhouseMode({ enabled: true });
     registerProjects([project]);
 
-    const result = await scanImportInventory();
+    const result = await scan();
 
     expect(result.entries.map((e) => e.name)).toEqual(['out/CLAUDE.md']);
   });
@@ -603,7 +669,7 @@ describe('agent instructions and worktrees', () => {
     write(dirs.userData, 'clubhouse-mode-settings.json', '{ corrupt');
     registerProjects([project]);
 
-    const result = await scanImportInventory();
+    const result = await scan();
 
     expect(result.entries).toEqual([]);
     expect(result.projects[0].agents[0]).toMatchObject({ status: 'skipped-mode-unknown', managed: 'unknown' });
@@ -618,7 +684,7 @@ describe('agent instructions and worktrees', () => {
     ]);
     registerProjects([project]);
 
-    const result = await scanImportInventory();
+    const result = await scan();
 
     expect(result.projects[0].agents.map((a) => a.status)).toEqual(['missing-worktree', 'no-worktree']);
     expect(result.projects[0].status).toBe('scanned');
@@ -651,7 +717,7 @@ describe('Clubhouse Mode projects', () => {
     setClubhouseMode({ enabled: false, projectOverrides: { [project]: true } });
     registerProjects([project]);
 
-    const result = await scanImportInventory();
+    const result = await scan();
 
     expect(result.projects[0].clubhouseMode).toEqual({
       enabled: true,
@@ -675,7 +741,7 @@ describe('Clubhouse Mode projects', () => {
     setClubhouseMode({ enabled: true, projectOverrides: { [off]: false } });
     registerProjects([on, off]);
 
-    const result = await scanImportInventory();
+    const result = await scan();
 
     expect(result.projects[0].clubhouseMode).toMatchObject({ enabled: true, source: 'app' });
     expect(result.projects[1].clubhouseMode).toEqual({ enabled: false, source: 'project' });
@@ -691,7 +757,7 @@ describe('orphaned config', () => {
     registerProjects([project]);
     const recording = recordingFs();
 
-    const result = await scanImportInventory({ fs: recording.fs });
+    const result = await scan({ fs: recording.fs });
 
     expect(result.orphaned).toEqual([{ settingsFile: 'clubhouse-mode-settings.json', path: stale, reason: 'unregistered' }]);
     expect(result.entries).toEqual([]);
@@ -703,7 +769,7 @@ describe('orphaned config', () => {
     setClubhouseMode({ enabled: false, projectOverrides: { [gone]: true } });
     registerProjects([gone]);
 
-    const result = await scanImportInventory();
+    const result = await scan();
 
     expect(result.orphaned).toEqual([{ settingsFile: 'clubhouse-mode-settings.json', path: gone, reason: 'project-missing' }]);
   });
@@ -714,7 +780,7 @@ describe('orphaned config', () => {
     setClubhouseMode({ enabled: false, projectOverrides: { [variant]: true } });
     registerProjects([project]);
 
-    const result = await scanImportInventory();
+    const result = await scan();
 
     expect(result.orphaned).toEqual([{ settingsFile: 'clubhouse-mode-settings.json', path: variant, reason: 'path-variant' }]);
     expect(result.projects[0].clubhouseMode).toEqual({ enabled: false, source: 'app' });
@@ -729,7 +795,7 @@ describe('orphaned config', () => {
     write(dirs.userData, 'sound-settings.json', JSON.stringify({ projectOverrides: { [stale]: true } }));
     registerProjects([project]);
 
-    const result = await scanImportInventory();
+    const result = await scan();
 
     expect(result.orphaned).toEqual(['free-agent-settings.json', 'headless-settings.json', 'mcp-settings.json', 'session-settings.json']
       .map((settingsFile) => ({ settingsFile, path: stale, reason: 'unregistered' })));
@@ -741,7 +807,7 @@ describe('orphaned config', () => {
     setClubhouseMode({ enabled: false, projectOverrides: { [other]: true } });
     registerProjects([selected, other]);
 
-    const result = await scanImportInventory({ projectIds: ['id-selected'] });
+    const result = await scan({ projectIds: ['id-selected'] });
 
     expect(result.projects.map((p) => p.projectId)).toEqual(['id-selected']);
     expect(result.orphaned).toEqual([]);
@@ -768,7 +834,7 @@ describe('MCP definitions', () => {
     }));
     registerProjects([project]);
 
-    const result = await scanImportInventory();
+    const result = await scan();
 
     expect(result.entries.map((e) => e.name)).toEqual(['github']);
     expect(result.projects[0].bridgeEntriesFiltered).toBe(2);
@@ -793,7 +859,7 @@ describe('MCP definitions', () => {
     write(project, '.mcp.json', JSON.stringify({ mcpServers: { clubhouse: { command: 'my-own-server' } } }));
     registerProjects([project]);
 
-    const result = await scanImportInventory();
+    const result = await scan();
 
     expect(entry(result, 'mcp-server', 'clubhouse').mcp?.command).toBe('my-own-server');
     expect(result.projects[0].bridgeEntriesFiltered).toBe(0);
@@ -806,47 +872,39 @@ describe('MCP definitions', () => {
     write(b, '.mcp.json', JSON.stringify({ mcpServers: { s: { command: 'x', env: { KEY: 'value-two' } } } }));
     registerProjects([a, b]);
 
-    const result = await scanImportInventory();
+    const result = await scan();
 
     const merged = entry(result, 'mcp-server', 's');
     expect(merged.conflict).toBe(false);
     expect(merged.sources.map((s) => s.projectId)).toEqual(['id-a', 'id-b']);
   });
 
-  it('withholds credentials in args and URLs, says so on the definition, and counts them', async () => {
-    const project = makeProject('alpha');
-    const servers: Record<string, unknown> = {
-      flag: { command: 'x', args: ['--api-key', 'LITERAL-ARG'] },
-      assign: { command: 'x', args: ['--token=LITERAL-ASSIGN'] },
-      header: { command: 'x', args: ['--header', 'Authorization: Bearer LITERAL-HEADER'] },
-      headerShort: { command: 'x', args: ['-H', 'X-Custom: LITERAL-SHORT'] },
-      headerInline: { command: 'x', args: ['--header=Cookie: LITERAL-INLINE'] },
-      headerBare: { command: 'x', args: ['Authorization: Bearer LITERAL-BARE'] },
-      dbArg: { command: 'x', args: ['postgresql://admin:LITERAL-DB@db/prod'] },
-      dbFlag: { command: 'x', args: ['--db=postgresql://admin:LITERAL-DBFLAG@db/prod'] },
-      keyValue: { command: 'x', args: ['API_KEY=LITERAL-KEYVALUE'] },
-      inCommand: { command: 'x --password LITERAL-COMMAND' },
-      userinfo: { url: 'https://user:LITERAL-USERINFO@example.com/mcp' },
-      query: { url: 'https://example.com/mcp?key=LITERAL-QUERY&page=2' },
-      fragment: { url: 'https://example.com/mcp#access_token=LITERAL-FRAGMENT' },
-      opaque: { command: 'x', args: ['--x', `a1${'LITERALOPAQUE'.repeat(3)}`] },
-    };
-    write(project, '.mcp.json', JSON.stringify({ mcpServers: servers }));
+  // One server per shape, so a broken rule names the shapes it lets through.
+  it.each<[string, Record<string, unknown>, Record<string, unknown>]>([
+    ['flag and value', { command: 'x', args: ['--api-key', 'LITERAL-A'] }, { args: ['--api-key', '<withheld>'] }],
+    ['flag=value', { command: 'x', args: ['--token=LITERAL-B'] }, { args: ['--token=<withheld>'] }],
+    ['--header', { command: 'x', args: ['--header', 'Authorization: Bearer LITERAL-C'] }, { args: ['--header', 'Authorization: <withheld>'] }],
+    ['-H with any header', { command: 'x', args: ['-H', 'X-Custom: LITERAL-D'] }, { args: ['-H', 'X-Custom: <withheld>'] }],
+    ['--header=', { command: 'x', args: ['--header=Cookie: LITERAL-E'] }, { args: ['--header=Cookie: <withheld>'] }],
+    ['a bare auth header', { command: 'x', args: ['Authorization: Bearer LITERAL-F'] }, { args: ['Authorization: <withheld>'] }],
+    ['connection string', { command: 'x', args: ['postgresql://admin:LITERAL-G@db/prod'] }, { args: ['postgresql://<withheld>@db/prod'] }],
+    ['connection string in a flag', { command: 'x', args: ['--db=postgresql://admin:LITERAL-H@db/prod'] }, { args: ['--db=postgresql://<withheld>@db/prod'] }],
+    ['KEY=value', { command: 'x', args: ['API_KEY=LITERAL-I'] }, { args: ['API_KEY=<withheld>'] }],
+    ['a flag inside the command', { command: 'x --password LITERAL-J' }, { command: 'x --password <withheld>' }],
+    ['URL userinfo', { url: 'https://user:LITERAL-K@example.com/mcp' }, { url: 'https://<withheld>@example.com/mcp' }],
+    ['URL query', { url: 'https://example.com/mcp?key=LITERAL-L' }, { url: 'https://example.com/mcp?key=<withheld>' }],
+    ['URL fragment', { url: 'https://example.com/mcp#access_token=LITERAL-M' }, { url: 'https://example.com/mcp#access_token=<withheld>' }],
+    ['an opaque token', { command: 'x', args: ['--x', `a1${'LITERALN'.repeat(5)}`] }, { args: ['--x', '<withheld>'] }],
+  ])('withholds a credential in %s, says so, and counts it', async (_shape, definition, expected) => {
+    const project = makeProject('alpha', { repo: false });
+    write(project, '.mcp.json', JSON.stringify({ mcpServers: { s: definition } }));
     registerProjects([project]);
 
-    const result = await scanImportInventory();
+    const result = await scan();
 
-    expect(result.entries.map((e) => e.name).sort()).toEqual(Object.keys(servers).sort());
-    for (const e of result.entries) {
-      expect(e.mcp?.withheldValues, e.name).toBeGreaterThan(0);
-      expect(JSON.stringify(e.mcp), e.name).toContain('<withheld>');
-    }
-    expect(result.projects[0].excluded['credential-value']).toBe(15);
+    expect(entry(result, 'mcp-server', 's').mcp).toMatchObject({ ...expected, withheldValues: 1 });
+    expect(result.projects[0].excluded['credential-value']).toBe(1);
     expect(JSON.stringify([result, vi.mocked(appLog).mock.calls])).not.toContain('LITERAL');
-    expect(entry(result, 'mcp-server', 'header').mcp?.args).toEqual(['--header', 'Authorization: <withheld>']);
-    expect(entry(result, 'mcp-server', 'dbArg').mcp?.args).toEqual(['postgresql://<withheld>@db/prod']);
-    expect(entry(result, 'mcp-server', 'query').mcp?.url).toBe('https://example.com/mcp?key=<withheld>&page=<withheld>');
-    expect(entry(result, 'mcp-server', 'keyValue').mcp?.args).toEqual(['API_KEY=<withheld>']);
   });
 
   it('leaves references, wildcards and ordinary args readable', async () => {
@@ -858,7 +916,7 @@ describe('MCP definitions', () => {
     } }));
     registerProjects([project]);
 
-    const result = await scanImportInventory();
+    const result = await scan();
 
     expect(entry(result, 'mcp-server', 'ok').mcp).toMatchObject({ args, withheldValues: 0 });
     expect(entry(result, 'mcp-server', 'url').mcp).toMatchObject({ url: 'https://${USER}:${PASS}@example.com/mcp?token=${TOKEN}', withheldValues: 0 });
@@ -872,7 +930,7 @@ describe('MCP definitions', () => {
     write(b, '.mcp.json', JSON.stringify({ mcpServers: { s: { command: 'x', args: ['--token', 'value-two'] } } }));
     registerProjects([a, b]);
 
-    const result = await scanImportInventory();
+    const result = await scan();
 
     expect(entry(result, 'mcp-server', 's').sources).toHaveLength(2);
     expect(entry(result, 'mcp-server', 's').conflict).toBe(false);
@@ -912,7 +970,7 @@ describe('MCP definitions', () => {
       ].join('\n'));
       registerProjects([project]);
 
-      const result = await scanImportInventory();
+      const result = await scan();
 
       expect(({} as Record<string, unknown>).polluted).toBeUndefined();
       expect(result.entries.map((e) => e.name)).toEqual(['good', 'last']);
@@ -931,7 +989,7 @@ describe('MCP definitions', () => {
       ].join(''));
       registerProjects([project]);
 
-      const result = await scanImportInventory();
+      const result = await scan();
 
       expect(result.entries.map((e) => e.name)).toEqual(['good']);
       expect(entry(result, 'mcp-server', 'good').mcp).toMatchObject({ env: [{ name: 'KEEP' }], headerNames: [], omittedKeys: [] });
@@ -970,7 +1028,7 @@ describe('MCP definitions', () => {
     ].join('\n'));
     registerProjects([project]);
 
-    const result = await scanImportInventory();
+    const result = await scan();
 
     expect(entry(result, 'mcp-server', 'fromDefaults').sources[0].pointer).toBe('agentDefaults.mcpJson#fromDefaults');
     expect(entry(result, 'mcp-server', 'toml_server').mcp).toEqual({
@@ -995,7 +1053,7 @@ describe('MCP definitions', () => {
     write(project, '.mcp.json', '{ BROKEN-JSON-TEXT');
     registerProjects([project]);
 
-    const result = await scanImportInventory();
+    const result = await scan();
 
     expect(result.projects[0].warnings).toEqual(['mcp-config-unparsable:.mcp.json']);
     expect(JSON.stringify(result)).not.toContain('BROKEN-JSON-TEXT');
@@ -1010,7 +1068,7 @@ describe('built-in dedupe', () => {
     setSettings(project, { defaultSkillsPath: 'skills', agentDefaults: { instructions: defaults.instructions, permissions: defaults.permissions } });
     registerProjects([project]);
 
-    const result = await scanImportInventory();
+    const result = await scan();
 
     expect(result.entries).toEqual([]);
     expect(result.builtinMatches.map((m) => m.name)).toEqual(expect.arrayContaining(['mission', 'create-pr', 'go-standby', 'build', 'test', 'lint', 'validate-changes', 'default instructions', 'default permissions']));
@@ -1025,7 +1083,7 @@ describe('built-in dedupe', () => {
     write(project, '.clubhouse/skills/test/notes.md', 'extra\n');
     registerProjects([project]);
 
-    const result = await scanImportInventory();
+    const result = await scan();
 
     expect(result.entries.map((e) => e.name).sort()).toEqual(['build', 'test']);
     expect(result.builtinMatches).toHaveLength(5);
@@ -1038,7 +1096,7 @@ describe('built-in dedupe', () => {
     write(project, '.clubhouse/personas/edited.md', `${template.content}\nmore\n`);
     registerProjects([project]);
 
-    const result = await scanImportInventory();
+    const result = await scan();
 
     expect(result.builtinMatches.map((m) => m.builtinId)).toEqual([template.id]);
     expect(result.entries.map((e) => e.name)).toEqual(['edited']);
@@ -1053,7 +1111,7 @@ describe('conflicts and merging', () => {
     write(b, '.clubhouse/skills/deploy/SKILL.md', 'two\n');
     registerProjects([a, b]);
 
-    const result = await scanImportInventory();
+    const result = await scan();
 
     expect(result.entries).toHaveLength(2);
     expect(result.entries.every((e) => e.conflict)).toBe(true);
@@ -1069,7 +1127,7 @@ describe('conflicts and merging', () => {
     git(b, 'add', '.');
     registerProjects([a, b]);
 
-    const result = await scanImportInventory();
+    const result = await scan();
 
     expect(result.entries).toHaveLength(1);
     expect(result.entries[0].conflict).toBe(false);
@@ -1083,7 +1141,7 @@ describe('conflicts and merging', () => {
     write(b, '.clubhouse/skills/deploy/SKILL.md', 'two\n');
     registerProjects([a, b]);
 
-    const result = await scanImportInventory();
+    const result = await scan();
 
     expect(result.entries.every((e) => e.conflict)).toBe(true);
   });
@@ -1094,7 +1152,7 @@ describe('conflicts and merging', () => {
     write(project, '.clubhouse/personas/deploy.md', 'two\n');
     registerProjects([project]);
 
-    const result = await scanImportInventory();
+    const result = await scan();
 
     expect(result.entries.some((e) => e.conflict)).toBe(false);
   });
@@ -1117,7 +1175,7 @@ describe('exclusions', () => {
     setSettings(project, { agentDefaults: { instructions: `use ${fakeToken}` } });
     registerProjects([project]);
 
-    const result = await scanImportInventory();
+    const result = await scan();
 
     expect(result.projects[0].excluded['secret-looking']).toBe(7);
     const deploy = entry(result, 'skill', 'deploy');
@@ -1135,7 +1193,7 @@ describe('exclusions', () => {
     write(project, '.clubhouse/skills/deploy/SKILL.md', 'password: ${DB_PASSWORD}\napi_key: <your key>\n');
     registerProjects([project]);
 
-    const result = await scanImportInventory();
+    const result = await scan();
 
     expect(entry(result, 'skill', 'deploy').sources[0].excludedFileCount).toBe(0);
   });
@@ -1149,7 +1207,7 @@ describe('exclusions', () => {
     write(project, '.clubhouse/skills/deploy/huge.md', 'x'.repeat(2048));
     registerProjects([project]);
 
-    const result = await scanImportInventory({ limits: { maxFileBytes: 1024 } });
+    const result = await scan({ limits: { maxFileBytes: 1024 } });
 
     expect(result.projects[0].excluded['non-definition']).toBe(3);
     expect(result.projects[0].excluded['too-large']).toBe(1);
@@ -1167,7 +1225,7 @@ describe('exclusions', () => {
     }
     registerProjects([project]);
 
-    const result = await scanImportInventory();
+    const result = await scan();
 
     expect(result.projects[0].excluded.symlink).toBe(1);
     expect(entry(result, 'skill', 'deploy').sources[0].files).toHaveLength(1);
@@ -1182,7 +1240,7 @@ describe('bounds', () => {
     write(project, '.clubhouse/skills/ccc/SKILL.md', 'never reached\n');
     registerProjects([project]);
 
-    const result = await scanImportInventory({ limits: { maxFilesPerProject: 10 } });
+    const result = await scan({ limits: { maxFilesPerProject: 10 } });
 
     expect(result.projects[0].truncated).toBe(true);
     expect(result.projects[0].status).toBe('scanned');
@@ -1196,7 +1254,7 @@ describe('bounds', () => {
     write(project, '.clubhouse/skills/bbb/SKILL.md', 'y'.repeat(600));
     registerProjects([project]);
 
-    const result = await scanImportInventory({ limits: { maxBytesPerProject: 1000 } });
+    const result = await scan({ limits: { maxBytesPerProject: 1000 } });
 
     expect(result.projects[0].truncated).toBe(true);
     expect(result.entries.map((e) => e.name)).toEqual(['aaa']);
@@ -1210,7 +1268,7 @@ describe('missing and offline paths', () => {
     write(present, '.clubhouse/skills/deploy/SKILL.md', 'x\n');
     registerProjects([gone, present]);
 
-    const result = await scanImportInventory();
+    const result = await scan();
 
     expect(result.status).toBe('complete');
     expect(result.projects.map((p) => p.status)).toEqual(['missing', 'scanned']);
@@ -1221,7 +1279,7 @@ describe('missing and offline paths', () => {
     const file = write(root, 'not-a-folder', 'x');
     registerProjects([file]);
 
-    const result = await scanImportInventory();
+    const result = await scan();
 
     expect(result.projects[0]).toMatchObject({ status: 'unavailable', reason: 'ENOTDIR' });
   });
@@ -1239,7 +1297,7 @@ describe('missing and offline paths', () => {
         : real.stat(p)),
     };
 
-    const result = await scanImportInventory({ fs: failing });
+    const result = await scan({ fs: failing });
 
     expect(result.projects[0]).toMatchObject({ status: 'unavailable', reason: 'EIO' });
     expect(result.projects[1].status).toBe('scanned');
@@ -1259,7 +1317,7 @@ describe('missing and offline paths', () => {
     };
 
     // Long enough for the healthy project's git calls on a slow runner, which share the deadline.
-    const result = await scanImportInventory({ fs: hanging, projectTimeoutMs: 5000 });
+    const result = await scan({ fs: hanging, projectTimeoutMs: 5000 });
 
     expect(result.projects[0]).toMatchObject({ status: 'unavailable', reason: 'timeout' });
     expect(result.projects[1].status).toBe('scanned');
@@ -1267,7 +1325,7 @@ describe('missing and offline paths', () => {
   });
 
   it('survives no project store and no settings at all', async () => {
-    const result = await scanImportInventory();
+    const result = await scan();
 
     expect(result).toMatchObject({ status: 'complete', entries: [], projects: [], orphaned: [] });
   });
@@ -1278,7 +1336,7 @@ describe('progress and cancel', () => {
     registerProjects([makeProject('a'), makeProject('b')]);
     const phases: string[] = [];
 
-    await scanImportInventory({
+    await scan({
       onProgress: (p) => {
         if (p.phase !== 'files') phases.push(`${p.phase}:${p.projectName}:${p.projectIndex}/${p.projectCount}`);
       },
@@ -1295,7 +1353,7 @@ describe('progress and cancel', () => {
   it('isn\'t stopped by a progress listener that throws', async () => {
     registerProjects([makeProject('a')]);
 
-    const result = await scanImportInventory({ onProgress: () => { throw new Error('listener'); } });
+    const result = await scan({ onProgress: () => { throw new Error('listener'); } });
 
     expect(result.status).toBe('complete');
   });
@@ -1310,7 +1368,7 @@ describe('progress and cancel', () => {
     registerProjects([first, second, third]);
     const controller = new AbortController();
 
-    const result = await scanImportInventory({
+    const result = await scan({
       signal: controller.signal,
       onProgress: (p) => {
         if (p.phase === 'project-started' && p.projectName === 'second') controller.abort();
@@ -1340,7 +1398,7 @@ describe('progress and cancel', () => {
       },
     };
 
-    const result = await scanImportInventory({ signal: controller.signal, fs: cancelling });
+    const result = await scan({ signal: controller.signal, fs: cancelling });
 
     expect(result.status).toBe('cancelled');
     expect(result.projects.map((p) => p.status)).toEqual(['scanned', 'cancelled']);
@@ -1371,7 +1429,7 @@ describe('progress and cancel', () => {
       const controller = new AbortController();
       const at = Date.now();
 
-      const pending = scanImportInventory({ signal: controller.signal });
+      const pending = scan({ signal: controller.signal });
       await vi.waitFor(() => expect(fs.existsSync(started)).toBe(true), { timeout: 10_000, interval: 20 });
       controller.abort();
       const result = await pending;
@@ -1404,7 +1462,7 @@ describe('progress and cancel', () => {
     controller.abort();
     const recording = recordingFs();
 
-    const result = await scanImportInventory({ signal: controller.signal, fs: recording.fs });
+    const result = await scan({ signal: controller.signal, fs: recording.fs });
 
     expect(result.status).toBe('cancelled');
     expect(result.projects[0].status).toBe('not-started');
@@ -1418,7 +1476,7 @@ describe('progress and cancel', () => {
     write(b, '.clubhouse/skills/two/SKILL.md', 'y\n');
     registerProjects([a, b]);
 
-    const result = await scanImportInventory({ projectIds: ['id-b'] });
+    const result = await scan({ projectIds: ['id-b'] });
 
     expect(result.entries.map((e) => e.name)).toEqual(['two']);
   });
@@ -1444,7 +1502,7 @@ describe('provider and global config', () => {
     registerProjects([project]);
     const recording = recordingFs();
 
-    const result = await scanImportInventory({ fs: recording.fs, homeDir: dirs.home });
+    const result = await scan({ fs: recording.fs });
 
     expect(result.providerEntries).toEqual([]);
     expect(result.globalStatus).toBe('not-requested');
@@ -1461,7 +1519,7 @@ describe('provider and global config', () => {
     write(project, '.clubhouse/skills/deploy/SKILL.md', 'x\n');
     registerProjects([project]);
 
-    const result = await scanImportInventory({ includeProviderConfig: true, homeDir: dirs.home });
+    const result = await scan({ includeProviderConfig: true });
 
     expect(result.entries.map((e) => e.name)).toEqual(['deploy']);
     expect(result.globalStatus).toBe('scanned');
@@ -1481,13 +1539,6 @@ describe('provider and global config', () => {
     expect(serialized).not.toContain('GLOBAL-ENV-VALUE');
   });
 
-  it('refuses to read provider config without being told which home', async () => {
-    registerProjects([makeProject('alpha')]);
-    const options = { includeProviderConfig: true } as Parameters<typeof scanImportInventory>[0];
-
-    await expect(scanImportInventory(options)).rejects.toThrow('homeDir');
-  });
-
   it('offers native subagent files as their own kind, with provider config', async () => {
     const project = makeProject('alpha');
     write(project, '.claude/agents/reviewer.md', 'Reviews\n');
@@ -1498,10 +1549,10 @@ describe('provider and global config', () => {
     write(dirs.home, '.claude/agents/mine.md', 'Mine\n');
     registerProjects([project]);
 
-    const off = await scanImportInventory();
+    const off = await scan();
     expect(off.entries).toEqual([]);
 
-    const on = await scanImportInventory({ includeProviderConfig: true, homeDir: dirs.home });
+    const on = await scan({ includeProviderConfig: true });
     expect(on.entries).toEqual([]);
     const subagents = on.providerEntries.filter((e) => e.kind === 'native-subagent');
     expect(subagents.map((e) => [e.name, e.scope])).toEqual([['helper', 'provider'], ['mine', 'global'], ['rev', 'provider'], ['reviewer', 'provider']]);
@@ -1518,7 +1569,7 @@ describe('provider and global config', () => {
     const real = recordingFs().fs;
     const hanging: InventoryFs = { ...real, readFile: (p) => (p.startsWith(dirs.home) ? new Promise<Buffer>(() => undefined) : real.readFile(p)) };
 
-    const result = await scanImportInventory({ includeProviderConfig: true, homeDir: dirs.home, fs: hanging, projectTimeoutMs: 5000 });
+    const result = await scan({ includeProviderConfig: true, fs: hanging, projectTimeoutMs: 5000 });
 
     expect(result.globalStatus).toBe('unavailable');
     expect(result.entries.map((e) => e.name)).toEqual(['deploy']);
@@ -1530,7 +1581,7 @@ describe('provider and global config', () => {
     write(project, '.claude/skills/deploy/SKILL.md', 'same\n');
     registerProjects([project]);
 
-    const result = await scanImportInventory({ includeProviderConfig: true, homeDir: dirs.home });
+    const result = await scan({ includeProviderConfig: true });
 
     expect(result.providerEntries.map((e) => e.scope).sort()).toEqual(['global', 'provider']);
   });
