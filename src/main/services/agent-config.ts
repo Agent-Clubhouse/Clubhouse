@@ -1,3 +1,4 @@
+import { noteProviderSelection, withAgentActivity } from './agent-transition';
 import { execFile } from 'child_process';
 import { watch, type FSWatcher } from 'fs';
 import * as fsp from 'fs/promises';
@@ -1253,16 +1254,18 @@ function pickAudited(agent: DurableAgentConfig, catalog: Readonly<Record<string,
   return Object.fromEntries(Object.keys(catalog).map((key) => [key, record[key]]));
 }
 
-export async function updateDurableConfig(
+async function updateDurableConfigInner(
   projectPath: string,
   agentId: string,
   updates: DurableConfigUpdates,
+  beforeCommit?: () => void | Promise<void>,
 ): Promise<void> {
   if (updates.persona !== undefined) assertPersonaAllowed(projectPath, updates.persona);
   const preflight = await preflightContextWindow(projectPath, agentId, updates);
   const { agents, agentsById } = await readAgentsEntry(projectPath);
   const agent = agentsById.get(agentId);
   if (!agent) return;
+  if (beforeCommit) await beforeCommit();
   const auditBefore = pickAudited(agent, AGENT_AUDIT_CATALOG);
   const previousPersona = agent.persona;
   if (updates.quickAgentDefaults !== undefined) {
@@ -1289,6 +1292,7 @@ export async function updateDurableConfig(
       }
     }
     agent.orchestrator = updates.orchestrator;
+    noteProviderSelection(agentId, updates.orchestrator);
   }
   if (updates.model !== undefined) {
     const modelBefore = agent.model;
@@ -2417,7 +2421,7 @@ export async function reorderDurable(projectPath: string, orderedIds: string[]):
   return result;
 }
 
-export async function renameDurable(projectPath: string, agentId: string, newName: string): Promise<void> {
+async function renameDurableGuardedInner(projectPath: string, agentId: string, newName: string): Promise<void> {
   const { agents, agentsById } = await readAgentsEntry(projectPath);
   const agent = agentsById.get(agentId);
   if (!agent) return;
@@ -2425,7 +2429,7 @@ export async function renameDurable(projectPath: string, agentId: string, newNam
   await writeAgents(projectPath, agents);
 }
 
-export async function updateDurable(
+async function updateDurableInner(
   projectPath: string,
   agentId: string,
   updates: { name?: string; color?: string; icon?: string | null; emoji?: string | null },
@@ -2456,7 +2460,7 @@ export async function updateDurable(
   await auditChanges('agent', 'agent', agentId, auditBefore, pickAudited(agent, AGENT_IDENTITY_AUDIT_CATALOG), AGENT_IDENTITY_AUDIT_CATALOG);
 }
 
-export async function deleteDurable(projectPath: string, agentId: string): Promise<void> {
+async function deleteDurableGuardedInner(projectPath: string, agentId: string): Promise<void> {
   // Deleting an agent that is still being created stops the creation, which
   // cleans up after itself. If it finished just before the stop took effect,
   // the record is still there and is deleted below like any other (#2226).
@@ -2647,7 +2651,7 @@ async function saveWorktreeBeforeDelete(
   }
 }
 
-export async function deleteCommitAndPush(projectPath: string, agentId: string): Promise<DeleteResult> {
+async function deleteCommitAndPushGuardedInner(projectPath: string, agentId: string): Promise<DeleteResult> {
   // Mid-create there is no finished worktree to save; deleting cancels the creation (#2226).
   if (isDurableCreationActive(agentId)) {
     await deleteDurable(projectPath, agentId);
@@ -2691,7 +2695,7 @@ export function cleanupBranchFor(agent: Pick<DurableAgentConfig, 'id' | 'name' |
   return 'clubhouse-agent/cleanup';
 }
 
-export async function deleteWithCleanupBranch(projectPath: string, agentId: string): Promise<DeleteResult> {
+async function deleteWithCleanupBranchGuardedInner(projectPath: string, agentId: string): Promise<DeleteResult> {
   // Mid-create there is no finished worktree to save; deleting cancels the creation (#2226).
   if (isDurableCreationActive(agentId)) {
     await deleteDurable(projectPath, agentId);
@@ -2733,7 +2737,7 @@ export async function deleteWithCleanupBranch(projectPath: string, agentId: stri
   return { ok: true, message: `Saved to ${cleanupBranch} and deleted` };
 }
 
-export async function deleteSaveAsPatch(projectPath: string, agentId: string, savePath: string): Promise<DeleteResult> {
+async function deleteSaveAsPatchGuardedInner(projectPath: string, agentId: string, savePath: string): Promise<DeleteResult> {
   // Mid-create there is no finished worktree to save; deleting cancels the creation (#2226).
   if (isDurableCreationActive(agentId)) {
     await deleteDurable(projectPath, agentId);
@@ -2813,7 +2817,7 @@ export async function deleteSaveAsPatch(projectPath: string, agentId: string, sa
   return { ok: true, message: `Patch saved to ${savePath}` };
 }
 
-export async function deleteForce(projectPath: string, agentId: string): Promise<DeleteResult> {
+async function deleteForceGuardedInner(projectPath: string, agentId: string): Promise<DeleteResult> {
   try {
     await deleteDurable(projectPath, agentId);
     return { ok: true, message: 'Force deleted' };
@@ -2822,7 +2826,7 @@ export async function deleteForce(projectPath: string, agentId: string): Promise
   }
 }
 
-export async function deleteUnregister(projectPath: string, agentId: string): Promise<DeleteResult> {
+async function deleteUnregisterGuardedInner(projectPath: string, agentId: string): Promise<DeleteResult> {
   // "Remove from list" keeps the files, which a creation in progress cannot promise (#2226).
   const creating = creationInProgressResult(agentId);
   if (creating) return creating;
@@ -2942,7 +2946,7 @@ export async function getParentAgent(projectPath: string, agentId: string): Prom
  * agents on either side. `disposable` is set alongside when given; releasing
  * a helper always clears it.
  */
-export async function setParentAgent(
+async function setParentAgentGuardedInner(
   projectPath: string,
   agentId: string,
   parentAgentId: string | null,
@@ -2994,7 +2998,7 @@ export async function setHelperHandoff(
  * with undefined. Callers go through services/orchestration-policy.ts, which
  * validates, keeps the tool gate in sync and handles helpers on turn-off.
  */
-export async function setOrchestrationConfig(
+async function setOrchestrationConfigInner(
   projectPath: string,
   agentId: string,
   config: OrchestrationPolicyConfig | undefined,
@@ -3021,7 +3025,7 @@ export interface HelperStartFields {
  * helper tools, never through updateDurableConfig. A missing agent is a
  * no-op.
  */
-export async function setHelperStartFields(projectPath: string, agentId: string, fields: HelperStartFields): Promise<void> {
+async function setHelperStartFieldsInner(projectPath: string, agentId: string, fields: HelperStartFields): Promise<void> {
   const { agents, agentsById } = await readAgentsEntry(projectPath);
   const agent = agentsById.get(agentId);
   if (!agent) return;
@@ -3630,4 +3634,53 @@ export async function auditRecovery(
   });
 
   return result;
+}
+
+export async function updateDurableConfig(projectPath: string, agentId: string, updates: DurableConfigUpdates, beforeCommit?: () => void | Promise<void>): Promise<void> {
+  if (Object.keys(updates).every((key) => key === 'lastSessionId' || key === 'lastSleep')) return updateDurableConfigInner(projectPath, agentId, updates, beforeCommit);
+  return withAgentActivity(agentId, () => updateDurableConfigInner(projectPath, agentId, updates, beforeCommit));
+}
+
+export async function updateDurable(projectPath: string, agentId: string, updates: { name?: string; color?: string; icon?: string | null; emoji?: string | null }): Promise<void> {
+  return withAgentActivity(agentId, () => updateDurableInner(projectPath, agentId, updates));
+}
+
+export async function setOrchestrationConfig(projectPath: string, agentId: string, config: OrchestrationPolicyConfig | undefined): Promise<void> {
+  return withAgentActivity(agentId, () => setOrchestrationConfigInner(projectPath, agentId, config));
+}
+
+export async function setHelperStartFields(projectPath: string, agentId: string, fields: HelperStartFields): Promise<void> {
+  return withAgentActivity(agentId, () => setHelperStartFieldsInner(projectPath, agentId, fields));
+}
+
+export async function renameDurable(...args: Parameters<typeof renameDurableGuardedInner>): ReturnType<typeof renameDurableGuardedInner> {
+  return withAgentActivity(args[1], () => renameDurableGuardedInner(...args));
+}
+
+export async function deleteDurable(...args: Parameters<typeof deleteDurableGuardedInner>): ReturnType<typeof deleteDurableGuardedInner> {
+  return withAgentActivity(args[1], () => deleteDurableGuardedInner(...args));
+}
+
+export async function deleteCommitAndPush(...args: Parameters<typeof deleteCommitAndPushGuardedInner>): ReturnType<typeof deleteCommitAndPushGuardedInner> {
+  return withAgentActivity(args[1], () => deleteCommitAndPushGuardedInner(...args));
+}
+
+export async function deleteWithCleanupBranch(...args: Parameters<typeof deleteWithCleanupBranchGuardedInner>): ReturnType<typeof deleteWithCleanupBranchGuardedInner> {
+  return withAgentActivity(args[1], () => deleteWithCleanupBranchGuardedInner(...args));
+}
+
+export async function deleteSaveAsPatch(...args: Parameters<typeof deleteSaveAsPatchGuardedInner>): ReturnType<typeof deleteSaveAsPatchGuardedInner> {
+  return withAgentActivity(args[1], () => deleteSaveAsPatchGuardedInner(...args));
+}
+
+export async function deleteForce(...args: Parameters<typeof deleteForceGuardedInner>): ReturnType<typeof deleteForceGuardedInner> {
+  return withAgentActivity(args[1], () => deleteForceGuardedInner(...args));
+}
+
+export async function deleteUnregister(...args: Parameters<typeof deleteUnregisterGuardedInner>): ReturnType<typeof deleteUnregisterGuardedInner> {
+  return withAgentActivity(args[1], () => deleteUnregisterGuardedInner(...args));
+}
+
+export async function setParentAgent(...args: Parameters<typeof setParentAgentGuardedInner>): ReturnType<typeof setParentAgentGuardedInner> {
+  return withAgentActivity(args[1], () => setParentAgentGuardedInner(...args));
 }

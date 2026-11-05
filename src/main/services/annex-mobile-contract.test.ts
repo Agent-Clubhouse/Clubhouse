@@ -35,6 +35,7 @@ const W = vi.hoisted(() => ({
   transcripts: {} as Record<string, unknown[]>,
   sessions: {} as Record<string, unknown[]>,
   projectsThrow: false,
+  guidedAvailable: false,
   iconsUnavailable: false,
   iconDir: null as string | null,
   spawnShellError: null as string | null,
@@ -192,6 +193,7 @@ vi.mock('./agent-config', () => {
     getDurableConfig: async (projectPath: string, id: string) => find(projectPath, id),
     updateDurableConfig: async (projectPath: string, id: string, updates: Record<string, unknown>) => {
       const agent = find(projectPath, id) ?? {};
+      if (updates.orchestrator && updates.orchestrator !== agent.orchestrator) { delete agent.lastSessionId; delete agent.model; delete agent.effort; delete agent.routing; delete agent.contextWindow; }
       Object.assign(agent, updates);
       // agent-config's own rule (its tests cover it): null clears; a choice the new model lacks clears with a notice.
       if (agent.contextWindow === null) { delete agent.contextWindow; delete agent.contextWindowNotice; }
@@ -292,9 +294,11 @@ const ORCHESTRATORS = vi.hoisted(() => [
 ]);
 vi.mock('./agent-system', () => ({
   getAvailableOrchestrators: () => ORCHESTRATORS,
-  checkAvailability: async (_path: string, id: string) => (id === 'codex-cli' ? { available: false, error: 'Codex CLI not found' } : { available: true }),
+  checkAvailability: async (_path: string, id: string) => (id === 'codex-cli' && !W.guidedAvailable ? { available: false, error: 'Codex CLI not found' } : { available: true }),
   resolveOrchestrator: async (_path: string, id?: string) => ({
     id: id ?? 'claude-code',
+    getCapabilities: () => ({ permissions: true, sessionResume: true }),
+    inspectInstructions: async () => 'Fixture shared instructions',
     getContextWindowOptions: async (model?: string) => W.contextOptions ?? (await import('../../shared/context-window')).claudeContextWindowOptions(model),
     getModelOptions: async () => (id === 'codex-cli'
       ? [{ id: 'default', label: 'Default' }, { id: 'gpt-5', label: 'GPT-5' }]
@@ -302,7 +306,10 @@ vi.mock('./agent-system', () => ({
   }),
   resolveProfileEnv: async () => undefined,
   spawnAgent: async () => {},
-  killAgent: async () => {},
+  killAgent: async (id: string, _p: string, _o: string, _t: string, opts?: { waitForExit?: boolean }) => { if (opts?.waitForExit) W.running.delete(id); },
+  isAgentRunning: (id: string) => W.running.has(id),
+  isAgentStopping: () => false,
+  waitForAgentStopped: async (id: string) => !W.running.has(id),
   isHeadlessAgent: () => false,
 }));
 vi.mock('../../shared/name-generator', async (importOriginal) => ({
@@ -2073,24 +2080,6 @@ describe('Annex mobile contract fixtures', { timeout: TEST_TIMEOUT_MS }, () => {
     fixtures.set('pairing-revoke.json', { persistent: await exchange('DELETE', '/api/v1/mobile/pairing') });
   });
 
-  it('every command type has an accepted request and receipt', () => {
-    for (const type of MOBILE_COMMAND_TYPES) {
-      const list = commandFixtures.get(type) ?? [];
-      expect(list.some((c) => c.response.body?.status === 'completed'), type).toBe(true);
-      fixtures.set(`commands/${type}.json`, { type, cases: list });
-    }
-    fixtures.set('commands/_common.json', { type: null, cases: commandFixtures.get('_common') });
-    // What parseMobileCommand accepts: anything else is invalid_command, so the phone checks its encoder against this.
-    fixtures.set('commands/_fields.json', {
-      base: ['version', 'commandId', 'epoch', 'type'],
-      commands: Object.fromEntries(MOBILE_COMMAND_TYPES.map((type) => [type, {
-        fields: [...MOBILE_COMMAND_FIELDS[type]],
-        required: MOBILE_COMMAND_FIELDS[type].filter((k) => !isOptionalCommandField(type, k)),
-        ...(type === 'agent.update' && { nullable: [...NULLABLE_ON_UPDATE], atLeastOne: MOBILE_COMMAND_FIELDS[type].filter((k) => k !== 'agentId') }),
-      }])),
-    });
-  });
-
   it('context choices: each kind, current and pending, resets and the Dispatcher (#2660)', async () => {
     const shared = await import('../../shared/context-window');
     const settingsOf = async (id: string) => (await exchange('GET', `/api/v1/mobile/agents/${id}/settings`));
@@ -2747,6 +2736,45 @@ describe('Annex mobile contract fixtures', { timeout: TEST_TIMEOUT_MS }, () => {
       W.running.delete('durable_dispatcher');
       W.dispatcher = { flagOn: false, enabled: false, newLayout: true, running: false, classicUnsaved: false };
     }, TEST_TIMEOUT_MS);
+  });
+
+  it('guided provider flow keeps stop, save and start separate', async () => {
+    resetWorld();
+    const stopped = await command('guided: settled sleep', { type: 'agent.stop', agentId: 'durable_term', waitForStopped: true });
+    expect(stopped.body.result).toMatchObject({ stopped: true, state: 'sleeping' });
+    const unavailable = await command('guided: unavailable provider', { type: 'agent.providerPreview', agentId: 'durable_term', provider: 'codex-cli' });
+    expect(unavailable.body.result).toMatchObject({ canSave: false, blocked: 'orchestrator_unavailable' });
+    W.guidedAvailable = true;
+    const preview = await command('guided: preview', { type: 'agent.providerPreview', agentId: 'durable_term', provider: 'codex-cli' });
+    expect(preview.body.result).toMatchObject({ canSave: true, contextTransferred: false, nextStart: 'new_session' });
+    const changed = await command('guided: explicit save', { type: 'agent.providerChange', agentId: 'durable_term', provider: 'codex-cli', expectedState: preview.body.result.expectedState });
+    expect(changed.body.result).toMatchObject({ status: 'changed', state: 'sleeping', savedProvider: 'codex-cli' });
+    expect(W.running.has('durable_term')).toBe(false);
+    const stale = await command('guided: stale preview', { type: 'agent.providerChange', agentId: 'durable_term', provider: 'codex-cli', expectedState: preview.body.result.expectedState });
+    expect(stale.body.error.code).toBe('stale_state');
+    const wrongResume = await command('guided: no cross-provider resume', { type: 'agent.start', agentId: 'durable_term', resume: true, expectedProvider: 'codex-cli', expectedSessionId: 'claude-native' });
+    expect(wrongResume.body.error.code).toBe('resume_unverified');
+    const start = await command('guided: explicit fresh start', { type: 'agent.start', agentId: 'durable_term', resume: false, expectedProvider: 'codex-cli' });
+    expect(start.status).toBe(200);
+    W.guidedAvailable = false;
+  });
+
+  it('every command type has an accepted request and receipt', () => {
+    for (const type of MOBILE_COMMAND_TYPES) {
+      const list = commandFixtures.get(type) ?? [];
+      expect(list.some((c) => c.response.body?.status === 'completed'), type).toBe(true);
+      fixtures.set(`commands/${type}.json`, { type, cases: list });
+    }
+    fixtures.set('commands/_common.json', { type: null, cases: commandFixtures.get('_common') });
+    // What parseMobileCommand accepts: anything else is invalid_command, so the phone checks its encoder against this.
+    fixtures.set('commands/_fields.json', {
+      base: ['version', 'commandId', 'epoch', 'type'],
+      commands: Object.fromEntries(MOBILE_COMMAND_TYPES.map((type) => [type, {
+        fields: [...MOBILE_COMMAND_FIELDS[type]],
+        required: MOBILE_COMMAND_FIELDS[type].filter((k) => !isOptionalCommandField(type, k)),
+        ...(type === 'agent.update' && { nullable: [...NULLABLE_ON_UPDATE], atLeastOne: MOBILE_COMMAND_FIELDS[type].filter((k) => k !== 'agentId') }),
+      }])),
+    });
   });
 
   it('fixtures on disk match (npm run fixtures:annex-mobile to update)', () => {

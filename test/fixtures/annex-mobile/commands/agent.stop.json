@@ -68,6 +68,32 @@
         },
         "status": 200
       }
+    },
+    {
+      "name": "guided: settled sleep",
+      "request": {
+        "agentId": "durable_term",
+        "commandId": "cmd_175",
+        "epoch": "00000000-0000-4000-8000-000000000001",
+        "type": "agent.stop",
+        "version": 1,
+        "waitForStopped": true
+      },
+      "response": {
+        "body": {
+          "commandId": "cmd_175",
+          "epoch": "00000000-0000-4000-8000-000000000001",
+          "result": {
+            "agentId": "durable_term",
+            "state": "sleeping",
+            "stopRequested": true,
+            "stopped": true
+          },
+          "status": "completed",
+          "version": 1
+        },
+        "status": 200
+      }
     }
   ],
   "type": "agent.stop"

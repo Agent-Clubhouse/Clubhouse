@@ -406,6 +406,16 @@ require('readline').createInterface({ input: process.stdin }).on('line', line =>
     await vi.waitFor(() => expect(agentConfig.touchSessionEntry).toHaveBeenCalledWith('/p', 'agent-1', 'native-1', 'claude-code'));
   });
 
+  it('guided resume closes a fresh substitute before any prompt', async () => {
+    const driver = new FakeChatDriver();
+    driver.resumeFallback = 'not_found';
+    registerChatDriver(driver);
+    expect(await tryStartChatAgent({ ...params, mission: 'must not send', resume: true, strictResume: true, sessionId: 'n9' }, provider, undefined, undefined, null)).toBe('terminal');
+    expect(driver.last.sent).toEqual([]);
+    expect(driver.last.closed).toBe(true);
+    expect(getAgentRuntime(params.agentId)).toBeUndefined();
+  });
+
   it('resumes the native session and continues the chat session sequence', async () => {
     const driver = new FakeChatDriver();
     registerChatDriver(driver);

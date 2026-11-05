@@ -141,6 +141,57 @@
         },
         "status": 200
       }
+    },
+    {
+      "name": "guided: no cross-provider resume",
+      "request": {
+        "agentId": "durable_term",
+        "commandId": "cmd_180",
+        "epoch": "00000000-0000-4000-8000-000000000001",
+        "expectedProvider": "codex-cli",
+        "expectedSessionId": "claude-native",
+        "resume": true,
+        "type": "agent.start",
+        "version": 1
+      },
+      "response": {
+        "body": {
+          "commandId": "cmd_180",
+          "epoch": "00000000-0000-4000-8000-000000000001",
+          "error": {
+            "code": "resume_unverified",
+            "message": "resume_unverified"
+          },
+          "status": "rejected",
+          "version": 1
+        },
+        "status": 409
+      }
+    },
+    {
+      "name": "guided: explicit fresh start",
+      "request": {
+        "agentId": "durable_term",
+        "commandId": "cmd_181",
+        "epoch": "00000000-0000-4000-8000-000000000001",
+        "expectedProvider": "codex-cli",
+        "resume": false,
+        "type": "agent.start",
+        "version": 1
+      },
+      "response": {
+        "body": {
+          "commandId": "cmd_181",
+          "epoch": "00000000-0000-4000-8000-000000000001",
+          "result": {
+            "agentId": "durable_term",
+            "executionMode": "pty"
+          },
+          "status": "completed",
+          "version": 1
+        },
+        "status": 200
+      }
     }
   ],
   "type": "agent.start"

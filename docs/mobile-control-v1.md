@@ -1110,3 +1110,72 @@ A helper is `durable_docs` in `snapshot.json` and `agent-settings-helper.json`; 
 The Dispatcher has its own files: `snapshot-dispatcher.json` (the snapshot's `dispatcher` and its `agent-state` row while it is on), `dispatcher-changed.json` (the event), `agent-settings-dispatcher.json` and `dispatcher-routes.json` (its chat and sessions while on, its GET routes while off, git, and a shell in its folder).
 
 `commands/<type>.json` lists `cases` of `{name, request, response:{status, body}}`; `name` is `accepted…` or the error code. `commands/_common.json` has the refusals any command can get (`invalid_command`, `unsupported_version`, `epoch_mismatch`, `command_conflict`, `client_certificate_required`, `command_capacity`) and an identical retry. Not covered: `authorization_revoked`, `start_cancelled` and the upload `quota_exceeded` / `authorization_revoked`, which need races or a day of uploads; `/content` previews and git routes.
+
+## Guided Sleep and provider Save (draft additive contract)
+
+Gate this flow on `providerControl.version: 1` and the advertised commands.
+`agent.stop` accepts optional `waitForStopped: true`. Only its successful receipt
+`{agentId, stopRequested: true, state: "sleeping", stopped: true}` acknowledges
+both process exit and settled session capture. A failed stop or capture rejects;
+`stopRequested` alone is not a stopped acknowledgment. Legacy stop is unchanged.
+
+`agent.providerPreview` accepts `{agentId, provider}`. Its result contains:
+
+| Field | Draft values and meaning |
+| --- | --- |
+| `savedProvider`, `provider` | Current saved provider and requested provider IDs |
+| `activeProvider` | Running registry provider ID, or null |
+| `state` | `running`, `stopping`, `starting`, `creating`, `sleeping` |
+| `expectedState` | Opaque precondition bound to actor, target, configuration and lifecycle; never parse it |
+| `available`, `availabilityMeaning` | Boolean and `local_cli_only`; not authentication or remaining quota |
+| `instructions`, `instructionScope` | `equivalent`, `different`, `unverified`; scope `native_primary_only` |
+| `targetRuntime` | `terminal` or `chat` |
+| `blocked`, `canSave` | Refusal code or null, and whether Save is allowed |
+| `historyRetained`, `contextTransferred` | true and false; existing recorded history is retained, context is not transferred |
+| `nextStart` | `new_session` or `resume_requires_validation` |
+| `settingsReset` | Empty for same provider; otherwise `model`, `effort`, `contextWindow`, `routing`, `resumePointer` |
+
+Instruction inspection compares only the two native primary instruction files.
+It does not establish equivalent global/nested instructions, skills, or effective
+MCP composition. Missing files are empty; unreadable, linked or oversized files
+block verification. Permission defaults that cannot be safely translated block
+Save. Existing access, MCP and orchestration settings are preserved.
+
+`agent.providerChange` accepts `{agentId, provider, expectedState}`. It never stops
+or starts the agent. A stopped-state reservation, authorization recheck and fresh
+preview are required before mutation. Success adds `status: "changed"` or
+`"already_selected"`. A changed result omits `expectedState`, reports the new saved
+provider, `activeProvider: null`, `state: "sleeping"`, and `nextStart: "new_session"`.
+Refresh after Save. Start is a separate explicit user action.
+
+Refusals use the existing receipt, e.g. HTTP 409:
+`{version:1,commandId,epoch,status:"rejected",error:{code:"stale_state",message:"stale_state"}}`.
+Codes include `agent_running`, `agent_stopping`, `agent_starting`, `agent_creating`,
+`orchestrator_unavailable`, `incompatible_permissions`, `incompatible_runtime`,
+`instructions_not_equivalent`, `session_capture_failed`, `agent_transition_busy`,
+`stale_state`, `resume_unverified`, and `resume_failed`. Authorization and argument
+validation retain their existing statuses. Clients must handle unknown refusal codes.
+A capture failure conservatively blocks guided Save/resume for the current desktop
+process; later best-effort capture does not erase evidence of a lost history write.
+
+Retry identical commands with the existing commandId and epoch for receipt replay.
+A new commandId with an old pre-change token rejects as stale. A fresh preview of
+the already selected provider can return `already_selected` without mutation.
+No extra command-id field is introduced.
+
+`agent.start` accepts opt-in `expectedProvider` and, with `resume: true`,
+`expectedSessionId`. It checks the saved provider and provider-tagged history;
+strict resume never falls back to a fresh session. Native chat resume must honor
+the exact requested native ID. Terminal strict resume is conservatively refused
+in this slice; legacy start remains compatible. Switching back does not promise
+resumption of the previous provider's session. A fresh start is explicit.
+
+The paired phone retains its existing manual controller authority. Dispatcher MCP
+`preview_provider` and `change_provider` use existing target control policy, not a
+new grant: the caller must be an enabled, running Dispatcher with open MCP and a
+current permitted wire to an opted-in durable orchestrator. User removals,
+disabled tools, target MCP off, helper/self targets and denied control still block.
+`hands-off` and `ask-before-start` allow saved provider changes; `ask-everything`
+returns `control_requires_user` for manual settings. Wake remains separately gated.
+Preview and commit resolve the same target policy, with revocation rechecks and
+redacted audit records. These tools do not expose general model/settings control.

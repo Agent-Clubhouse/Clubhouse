@@ -1935,6 +1935,16 @@ describe('agent-system', () => {
         });
       });
 
+      it('guided resume refuses a missing native session without falling back fresh', async () => {
+        sessionCapable(mockCodexProvider);
+        config.sessionHistory = [{ sessionId: DEAD, orchestrator: 'codex-cli' }];
+        (mockCodexProvider as Record<string, unknown>).hasSession = vi.fn(async () => false);
+        mockPtySpawn.mockClear();
+        await expect(spawnAgent({ agentId: 'agent-1', projectPath: '/project', cwd: '/project', kind: 'durable', orchestrator: 'codex-cli', resume: true, strictResume: true, sessionId: DEAD })).rejects.toThrow('resume_unverified');
+        expect(mockPtySpawn).not.toHaveBeenCalled();
+        expect(config.lastSessionId).toBe(DEAD);
+      });
+
       it('chat could not resume a gone session: cleared chat_not_found, fresh_not_found in the terminal', async () => {
         const { noteChatStartFailure } = await import('./agent-runtime/stale-session');
         const realStart = mockTryStartChatAgent.getMockImplementation()!;

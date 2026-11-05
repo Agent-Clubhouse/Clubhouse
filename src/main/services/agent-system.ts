@@ -1,3 +1,4 @@
+import { AgentResumeError, assertProviderSelection, withAgentActivity } from './agent-transition';
 import * as path from 'path';
 import { randomUUID } from 'crypto';
 import { getProvider, getAllProviders, OrchestratorId, OrchestratorProvider, isHookCapable, isHeadlessCapable, isSessionCapable } from '../orchestrators';
@@ -47,7 +48,7 @@ import { cancelChatStart, tryStartChatAgent, type ChatRuntimeNotice, type ChatSt
 import { clearStaleResume, isSessionNotFound, takeChatStartFailure, type StaleResumeReason } from './agent-runtime/stale-session';
 import { noteKillRequest, recordSleep, sleepInfoForExit, takeKillRequest } from './agent-runtime/sleep-reason';
 import { onAgentExit } from './agent-exit-broadcast';
-import { sessionCaptureFor, trackSessionCapture } from './session-capture-barrier';
+import { sessionCaptureFor, trackSessionCapture, noteSessionCaptureFailure } from './session-capture-barrier';
 import { assertLaunchesOpen } from './launch-gate';
 import { ATTR } from '../../shared/telemetry/attributes';
 import { tel, tagError, withErrorType } from '../telemetry/facade';
@@ -92,6 +93,8 @@ export interface SpawnAgentParams {
   freeAgentMode?: boolean;
   /** When true, attempt to resume the previous CLI session instead of starting fresh */
   resume?: boolean;
+  /** Guided resume must fail rather than substitute a fresh conversation. */
+  strictResume?: boolean;
   /** Specific session ID to resume (provider-specific format) */
   sessionId?: string;
   /** Plugin ID that owns this companion agent (required when kind === 'companion'). @since 0.9 */
@@ -147,8 +150,7 @@ export async function waitForAgentStopped(agentId: string): Promise<boolean> {
     await settleKill(agentId, exited);
   } else {
     // Exited already; its session capture may still be in flight.
-    const capture = sessionCaptureFor(agentId);
-    if (capture) await capture;
+    while (sessionCaptureFor(agentId)) await sessionCaptureFor(agentId);
   }
   return !isAgentRunning(agentId);
 }
@@ -237,7 +239,10 @@ async function capHelperLaunch(
 export async function spawnAgent(params: SpawnAgentParams): Promise<void> {
   // Quit and update close this before stopping runtimes (#2053).
   assertLaunchesOpen();
-  const spawn = spawnAgentTracked(params);
+  const spawn = withAgentActivity(params.agentId, () => {
+    assertProviderSelection(params.agentId, params.orchestrator);
+    return spawnAgentTracked(params);
+  });
   inflightSpawns.add(spawn);
   try {
     await spawn;
@@ -474,6 +479,7 @@ async function spawnAgentInner(inParams: SpawnAgentParams, facts: SpawnFacts): P
       const exists = madeBy && madeBy !== provider.id ? false
         : isSessionCapable(provider) && provider.hasSession ? await provider.hasSession(params.sessionId, profileEnv).catch((): undefined => undefined)
           : undefined;
+      if (params.strictResume && (exists === false || madeBy !== provider.id)) throw new AgentResumeError('resume_unverified');
       if (exists === false) {
         appLog('core:agent', 'warn', 'Saved session is gone from the CLI store; starting fresh', {
           meta: { agentId: params.agentId, sessionId: params.sessionId },
@@ -497,7 +503,7 @@ async function spawnAgentInner(inParams: SpawnAgentParams, facts: SpawnFacts): P
     takeKillRequest(params.agentId);
     // The last sleep's reason describes the previous run, not this one: drop it
     // before the run can end and record its own (#2104).
-    if (params.kind === 'durable' && durableConfig?.lastSleep) {
+    if (params.kind === 'durable' && durableConfig?.lastSleep && !params.strictResume) {
       try {
         await updateDurableConfig(params.projectPath, params.agentId, { lastSleep: null });
       } catch (err) {
@@ -527,6 +533,7 @@ async function spawnAgentInner(inParams: SpawnAgentParams, facts: SpawnFacts): P
           freeAgentMode: p.freeAgentMode,
           permissionMode,
           resume: p.resume,
+          strictResume: p.strictResume,
           sessionId: p.sessionId,
           interactive: p.interactive,
         }, provider, profileEnv, commandPrefix, durableConfig, () => { chatStartMs = Date.now(); }, chatFacts));
@@ -546,6 +553,7 @@ async function spawnAgentInner(inParams: SpawnAgentParams, facts: SpawnFacts): P
     // silently lands it in the terminal.
     if (chatStart !== 'chat' && chatStart !== 'cancelled') {
       const chatFailure = takeChatStartFailure(params.agentId);
+      if (params.strictResume && params.resume) throw new AgentResumeError('resume_failed');
       if (params.kind === 'durable' && params.resume && params.sessionId && isSessionNotFound(chatFailure)) {
         await clearResume(params.projectPath, provider.id, params.agentId, params.sessionId, 'chat_not_found');
         params = { ...params, resume: false, sessionId: undefined };
@@ -968,6 +976,7 @@ async function captureSession(
       appLog('core:agent', 'warn', 'Failed to persist session entry', {
         meta: { agentId, sessionId: capturedId, error: entryErr instanceof Error ? entryErr.message : String(entryErr) },
       });
+      noteSessionCaptureFailure(agentId);
       record('persist_failed');
     });
   } catch (err) {
@@ -975,6 +984,7 @@ async function captureSession(
     appLog('core:agent', 'warn', 'Failed to capture session ID', {
       meta: { agentId, error: err instanceof Error ? err.message : String(err) },
     });
+    noteSessionCaptureFailure(agentId);
     record('capture_failed');
     return undefined;
   } finally {

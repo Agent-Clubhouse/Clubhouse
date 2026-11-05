@@ -5,11 +5,17 @@
  * the final config flush (#2053), or the next launch resumes a stale id.
  */
 const pending = new Map<string, Promise<void>>();
+// A settled write is not proof of a persisted session. Keep failures conservative
+// for this process: later best-effort writes must not erase evidence of lost history.
+const failed = new Set<string>();
+export function noteSessionCaptureFailure(agentId: string): void { failed.add(agentId); }
+export function hasSessionCaptureFailure(agentId: string): boolean { return failed.has(agentId); }
 
 /** Track a session-id write for the agent. Writes for the same agent chain, so waiting covers each one. */
 export function trackSessionCapture(agentId: string, write: Promise<void>): void {
+  const checked = write.catch(() => { noteSessionCaptureFailure(agentId); });
   const previous = pending.get(agentId);
-  const settled = (previous ? Promise.allSettled([previous, write]) : Promise.allSettled([write])).then((): void => undefined);
+  const settled = (previous ? Promise.allSettled([previous, checked]) : Promise.allSettled([checked])).then((): void => undefined);
   pending.set(agentId, settled);
   void settled.then(() => {
     if (pending.get(agentId) === settled) pending.delete(agentId);
@@ -29,4 +35,5 @@ export async function whenSessionCapturesSettled(): Promise<void> {
 /** For tests. */
 export function clearSessionCaptures(): void {
   pending.clear();
+  failed.clear();
 }

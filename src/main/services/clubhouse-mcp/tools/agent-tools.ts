@@ -1,3 +1,4 @@
+import { dispatcherProviderControl } from '../../dispatcher-provider-control';
 /**
  * Agent-to-Agent MCP Tools — allows linked agents to communicate.
  */
@@ -97,6 +98,24 @@ export function scheduleMessageCleanup(filePath: string, delayMs = 5 * 60 * 1000
 
 /** Register all agent-to-agent tool templates. */
 export function registerAgentTools(): void {
+  for (const change of [false, true]) {
+    mcpAdapter.registerMcpCommand({
+      id: change ? 'agent.changeProvider' : 'agent.previewProvider', category: 'agent',
+      label: change ? 'Change Provider' : 'Preview Provider',
+      mcp: { targetKind: 'agent', nameSuffix: change ? 'change_provider' : 'preview_provider', group: 'dispatcher' },
+      description: change
+        ? 'Save the previewed provider for this sleeping connected orchestrator. Requires expectedState from preview_provider. Never stops, wakes, resumes across providers, or changes access/model policy. Old sessions remain in history.'
+        : 'Preview a provider change for this connected orchestrator: active versus saved provider, local CLI availability, instruction compatibility, reset settings and an expectedState token. Sleep separately first; unavailable or incompatible targets are blocked.',
+      inputSchema: { type: 'object', additionalProperties: false,
+        properties: { provider: { type: 'string' }, ...(change ? { expectedState: { type: 'string' } } : {}) },
+        required: change ? ['provider', 'expectedState'] : ['provider'] },
+      handler: async (targetId, callerId, args) => {
+        try { return { content: [{ type: 'text', text: JSON.stringify(await dispatcherProviderControl(callerId, targetId, change, args)) }] }; }
+        catch (err) { return { content: [{ type: 'text', text: JSON.stringify({ status: 'blocked', code: (err as { code?: string }).code ?? 'provider_control_failed' }) }], isError: true }; }
+      },
+    });
+  }
+
   // clubhouse__<project>_<name>_<hash>__send_message
   mcpAdapter.registerMcpCommand({
     id: 'agent.sendMessage',

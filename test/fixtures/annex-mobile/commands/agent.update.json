@@ -377,6 +377,7 @@
               }
             },
             "projectId": "proj_app",
+            "sessionReset": true,
             "settings": {
               "clubhouseMode": {
                 "editable": "never",
@@ -456,14 +457,14 @@
               },
               "model": {
                 "editable": "sleeping",
-                "value": "sonnet"
+                "value": "default"
               },
               "name": {
                 "editable": "sleeping",
                 "value": "bright-otter"
               },
               "orchestrator": {
-                "changeStartsNewSession": true,
+                "changeStartsNewSession": false,
                 "editable": "sleeping",
                 "resolved": "claude-code",
                 "value": "claude-code"
@@ -1385,14 +1386,14 @@
               },
               "model": {
                 "editable": "sleeping",
-                "value": "sonnet"
+                "value": "default"
               },
               "name": {
                 "editable": "sleeping",
                 "value": "bright-otter"
               },
               "orchestrator": {
-                "changeStartsNewSession": true,
+                "changeStartsNewSession": false,
                 "editable": "sleeping",
                 "resolved": "claude-code",
                 "value": "claude-code"
@@ -1743,6 +1744,7 @@
             "isDispatcher": true,
             "orchestration": null,
             "projectId": "__dispatcher__",
+            "sessionReset": true,
             "settings": {
               "clubhouseMode": {
                 "editable": "never",
@@ -1829,7 +1831,7 @@
                 "value": "Dispatcher"
               },
               "orchestrator": {
-                "changeStartsNewSession": true,
+                "changeStartsNewSession": false,
                 "editable": "always",
                 "resolved": "codex-cli",
                 "value": "codex-cli"

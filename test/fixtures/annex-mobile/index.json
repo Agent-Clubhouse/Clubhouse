@@ -27,6 +27,8 @@
     "commands/_common.json",
     "commands/_fields.json",
     "commands/agent.create.json",
+    "commands/agent.providerChange.json",
+    "commands/agent.providerPreview.json",
     "commands/agent.spawn.json",
     "commands/agent.start.json",
     "commands/agent.stop.json",

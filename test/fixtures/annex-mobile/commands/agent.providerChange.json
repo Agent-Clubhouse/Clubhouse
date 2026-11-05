@@ -1,0 +1,76 @@
+{
+  "cases": [
+    {
+      "name": "guided: explicit save",
+      "request": {
+        "agentId": "durable_term",
+        "commandId": "cmd_178",
+        "epoch": "00000000-0000-4000-8000-000000000001",
+        "expectedState": "4449159000beccdcd58583365e0c446662318ad03eb977b7db626cfc49919fce",
+        "provider": "codex-cli",
+        "type": "agent.providerChange",
+        "version": 1
+      },
+      "response": {
+        "body": {
+          "commandId": "cmd_178",
+          "epoch": "00000000-0000-4000-8000-000000000001",
+          "result": {
+            "activeProvider": null,
+            "agentId": "durable_term",
+            "availabilityMeaning": "local_cli_only",
+            "available": true,
+            "blocked": null,
+            "canSave": true,
+            "contextTransferred": false,
+            "historyRetained": true,
+            "instructionScope": "native_primary_only",
+            "instructions": "equivalent",
+            "nextStart": "new_session",
+            "provider": "codex-cli",
+            "savedProvider": "codex-cli",
+            "settingsReset": [
+              "model",
+              "effort",
+              "contextWindow",
+              "routing",
+              "resumePointer"
+            ],
+            "state": "sleeping",
+            "status": "changed",
+            "targetRuntime": "terminal"
+          },
+          "status": "completed",
+          "version": 1
+        },
+        "status": 200
+      }
+    },
+    {
+      "name": "guided: stale preview",
+      "request": {
+        "agentId": "durable_term",
+        "commandId": "cmd_179",
+        "epoch": "00000000-0000-4000-8000-000000000001",
+        "expectedState": "4449159000beccdcd58583365e0c446662318ad03eb977b7db626cfc49919fce",
+        "provider": "codex-cli",
+        "type": "agent.providerChange",
+        "version": 1
+      },
+      "response": {
+        "body": {
+          "commandId": "cmd_179",
+          "epoch": "00000000-0000-4000-8000-000000000001",
+          "error": {
+            "code": "stale_state",
+            "message": "stale_state"
+          },
+          "status": "rejected",
+          "version": 1
+        },
+        "status": 409
+      }
+    }
+  ],
+  "type": "agent.providerChange"
+}

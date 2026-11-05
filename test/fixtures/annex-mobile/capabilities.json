@@ -47,7 +47,9 @@
         "quick.dismiss",
         "quick.clear",
         "dispatcher.setEnabled",
-        "helperRouting.update"
+        "helperRouting.update",
+        "agent.providerPreview",
+        "agent.providerChange"
       ],
       "contextWindow": {
         "version": 1
@@ -195,6 +197,13 @@
         "version": 1
       },
       "projectState": {
+        "version": 1
+      },
+      "providerControl": {
+        "change": "agent.providerChange",
+        "preview": "agent.providerPreview",
+        "stoppedAcknowledgment": true,
+        "strictStart": true,
         "version": 1
       },
       "richContent": {
