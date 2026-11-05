@@ -33,7 +33,7 @@ vi.mock('fs/promises', async (orig) => {
 });
 
 import { hasSecretLookingContent, isSafeEnvName, isSafeIdentifier } from './classify';
-import { meetsMinimumGit } from './git-state';
+import { gitEnv, gitPrefix, meetsMinimumGit } from './git-state';
 import { scanImportInventory } from './inventory';
 import { UnsafeFileError, readRegularFile } from './safe-read';
 import { isGitConfigAllowed } from './untrusted-paths';
@@ -761,6 +761,18 @@ describe('git only runs on a repo it can\'t be led out of', () => {
     } finally {
       logging.restore();
     }
+  });
+
+  // runGit reads a failure as `unknown` and keeps no stderr, so a setting git rejects would
+  // only show as every file reading `unknown`. This one fails with git's own message.
+  it('uses settings this platform\'s git accepts', () => {
+    const project = plainRepo();
+    write(project, 'tracked.md', 'x');
+    git(project, 'add', 'tracked.md');
+
+    const listed = execFileSync('git', [...gitPrefix(project), 'ls-files', '--cached'], { env: gitEnv(project), encoding: 'utf-8', stdio: ['ignore', 'pipe', 'pipe'] });
+
+    expect(listed.trim()).toBe('tracked.md');
   });
 
   it('allows only config it recognizes, syntax included', () => {

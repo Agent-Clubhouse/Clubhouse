@@ -1,5 +1,4 @@
 import { describe, it, expect, vi } from 'vitest';
-import * as os from 'os';
 import * as path from 'path';
 
 const spawned = vi.hoisted(() => ({ calls: [] as Array<{ args: string[]; options: Record<string, unknown> }> }));
@@ -41,7 +40,7 @@ describe('how git is spawned', () => {
       expect(env.GIT_OPTIONAL_LOCKS).toBe('0');
       expect(env.GIT_NO_LAZY_FETCH).toBe('1');
       expect(env.GIT_CONFIG_NOSYSTEM).toBe('1');
-      expect(env.GIT_CONFIG_GLOBAL).toBe(os.devNull);
+      expect(env.GIT_CONFIG_GLOBAL).toBe('/dev/null');
       expect(env.GIT_DIR).toBeUndefined();
     }
     for (const { args } of repoCalls) {

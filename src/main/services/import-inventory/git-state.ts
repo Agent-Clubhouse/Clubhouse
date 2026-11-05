@@ -23,7 +23,6 @@
  * anything older, or if the version can't be read, git isn't run on a repository.
  */
 import { execFile } from 'child_process';
-import * as os from 'os';
 import * as path from 'path';
 import type { InventoryGitState } from '../../../shared/import-inventory-types';
 
@@ -43,13 +42,14 @@ export function newGitContext(): GitContext {
   return {};
 }
 
-function gitEnv(root: string | null): NodeJS.ProcessEnv {
+export function gitEnv(root: string | null): NodeJS.ProcessEnv {
   const env: NodeJS.ProcessEnv = {};
   for (const [name, value] of Object.entries(process.env)) {
     if (!/^GIT_/i.test(name)) env[name] = value;
   }
   delete env.XDG_CONFIG_HOME;
-  env.GIT_CONFIG_GLOBAL = os.devNull;
+  // This spelling on every platform: Git for Windows maps it, and os.devNull there is `\\\\.\\nul`.
+  env.GIT_CONFIG_GLOBAL = '/dev/null';
   env.GIT_CONFIG_NOSYSTEM = '1';
   env.GIT_OPTIONAL_LOCKS = '0';
   env.GIT_NO_LAZY_FETCH = '1';
@@ -87,11 +87,16 @@ interface GitResult {
   stderr: string;
 }
 
+/** What every call on a repository starts with. */
+export function gitPrefix(root: string): string[] {
+  return ['-C', root, '--no-lazy-fetch', '-c', 'safe.bareRepository=explicit', '-c', 'core.fsmonitor=false', '-c', 'core.excludesFile=', '-c', 'core.attributesFile='];
+}
+
 function runGit(args: string[], root: string, signal: AbortSignal, input?: string): Promise<GitResult> {
   return new Promise((resolve) => {
     const child = execFile(
       'git',
-      ['-C', root, '--no-lazy-fetch', '-c', 'safe.bareRepository=explicit', '-c', 'core.fsmonitor=false', '-c', 'core.excludesFile=', '-c', 'core.attributesFile=', ...args],
+      [...gitPrefix(root), ...args],
       { env: gitEnv(root), encoding: 'utf-8', maxBuffer: MAX_BUFFER, timeout: GIT_TIMEOUT_MS, signal, windowsHide: true },
       (error, stdout, stderr) => {
         const code = error ? (typeof error.code === 'number' ? error.code : -1) : 0;
