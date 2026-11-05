@@ -237,6 +237,11 @@ test('Preview off, saved beta state with Chat off: the new layout, a terminal, a
   expect(agents.find((a: { id: string }) => a.id === AGENT_ID).runtimeMode).toBe('chat');
   // The switch saved on is honoured: it has a record and a row, and nothing started it.
   expect(fs.existsSync(path.join(dispatcherFolder(profile), '.clubhouse', 'agents.json'))).toBe(true);
+  // The dormant telemetry setup was switched off, consent kept, and the developer destination can't follow Feedback on.
+  const telemetry = JSON.parse(await readText(path.join(profile.userDataDir, 'telemetry-settings.json')));
+  expect(telemetry).toMatchObject({ consentVersion: 1, exportGraduation: 1 });
+  expect(telemetry.destinations.filter((d: { enabled: boolean }) => d.enabled)).toEqual([]);
+  expect(telemetry.destinations.find((d: { id: string }) => d.id === 'framebriar').framebriar.userOff).toBe(true);
 });
 
 test('Preview on, no saved flags: the new layout with the Preview pages to opt in from', async () => {

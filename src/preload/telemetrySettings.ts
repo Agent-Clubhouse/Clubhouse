@@ -34,5 +34,6 @@ export const telemetrySettings = {
     resetId: (): Promise<TelemetryActionResult> => ipcRenderer.invoke(IPC.TELEMETRY_SETTINGS.RESET_ID),
     clearOffline: (): Promise<TelemetryActionResult> => ipcRenderer.invoke(IPC.TELEMETRY_SETTINGS.CLEAR_OFFLINE),
     deleteLocalData: (): Promise<TelemetryActionResult> => ipcRenderer.invoke(IPC.TELEMETRY_SETTINGS.DELETE_LOCAL_DATA),
+    resume: (): Promise<TelemetryActionResult> => ipcRenderer.invoke(IPC.TELEMETRY_SETTINGS.RESUME),
   },
 };

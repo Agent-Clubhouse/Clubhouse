@@ -1,11 +1,17 @@
 /**
- * E2E: telemetry export (docs/telemetry-otel-spec.md, Phase 1).
+ * E2E: telemetry export (docs/telemetry-otel-spec.md, Phase 1 and §6.8).
  *
- * Boots the webpack-built app with `experimental.telemetry` on and a
- * destination pointing at a mock ingestion server on 127.0.0.1, quits it
- * through the normal before-quit path (which awaits the telemetry flush), and
- * checks what arrived: `clubhouse.app.sessions`, the hand-built resource, and
- * nothing that identifies the machine.
+ * Boots the webpack-built app with a destination pointing at a mock ingestion
+ * server on 127.0.0.1, quits it through the normal before-quit path (which
+ * awaits the telemetry flush), and checks what arrived: `clubhouse.app.sessions`,
+ * the hand-built resource, and nothing that identifies the machine. Nothing here
+ * sends beyond loopback.
+ *
+ * Seeded setups with `experimental: { telemetry: true }` are upgrades that
+ * passed the old gate (flag, preview-eligible, consent) and keep exporting.
+ * The rest of them end up off, once, on the first launch (the migration tests).
+ * After that a saved `telemetry: false` still means off: only an older build or
+ * a hand edit can leave one behind, since every opt-in here saves it as true.
  */
 import { test, expect } from '@playwright/test';
 import * as fs from 'fs';
@@ -16,6 +22,7 @@ import * as os from 'os';
 import * as path from 'path';
 import * as zlib from 'zlib';
 import selfsigned from 'selfsigned';
+import { createDisposableProfile } from './app-profile';
 import { launchApp } from './launch';
 
 interface Received {
@@ -74,14 +81,14 @@ async function secureStorageAvailable(electronApp: Awaited<ReturnType<typeof lau
  * by design the plaintext stays put (it is the only copy) and no secret file
  * is created.
  */
-async function expectLegacySecretHandled(dir: string, encryption: boolean): Promise<void> {
+async function expectLegacySecretHandled(dir: string, encryption: boolean, azureEnabled: boolean): Promise<void> {
   const settingsText = await fs.promises.readFile(path.join(dir, 'telemetry-settings.json'), 'utf-8');
   const secretExists = fs.existsSync(path.join(dir, 'telemetry-secret.bin'));
   if (encryption) {
     expect(secretExists).toBe(true);
     expect(settingsText).not.toContain('InstrumentationKey');
-    // Migrated to the multi-destination shape: Azure is the one enabled destination.
-    expect(JSON.parse(settingsText).destinations.find((d: { id: string }) => d.id === 'azure')).toMatchObject({ enabled: true });
+    // Migrated to the multi-destination shape.
+    expect(JSON.parse(settingsText).destinations.find((d: { id: string }) => d.id === 'azure')).toMatchObject({ enabled: azureEnabled });
   } else {
     expect(secretExists).toBe(false);
     expect(settingsText).toContain('InstrumentationKey');
@@ -94,6 +101,24 @@ function expectNoMachineIdentifiers(received: Received[]): void {
   expect(all).not.toContain(os.homedir());
   expect(all).not.toContain('host.name');
   expect(all).not.toContain('process.command_args');
+}
+
+/** `isPreviewEligible` follows the opt-in instead of always being true (see e2e/stable-mode.spec.ts). */
+const STABLE_BUILD = { CLUBHOUSE_TEST_STABLE_BUILD: '1' };
+
+/** Saved by an earlier version: consent on record, a confirmed destination on, the developer destination confirmed. */
+function upgradeSettings(port: number) {
+  return {
+    consentVersion: 1,
+    sampleRate: 1,
+    destinations: [
+      {
+        id: 'otlp', kind: 'otlp', enabled: true, level: 'standard', preset: 'all', confirmedHost: `127.0.0.1:${port}`,
+        otlp: { endpoint: `http://127.0.0.1:${port}`, headerNames: [] as string[], temporality: 'cumulative' },
+      },
+      { id: 'framebriar', kind: 'framebriar', enabled: false, level: 'standard', preset: 'user_activity', confirmedHost: 'framebriar.invalid', framebriar: { userOff: false } },
+    ],
+  };
 }
 
 test.describe('Telemetry export', () => {
@@ -133,6 +158,9 @@ test.describe('Telemetry export', () => {
       const saved = JSON.parse(await fs.promises.readFile(settingsPath, 'utf-8'));
       expect(saved.installId).toMatch(/^[0-9a-f-]{36}$/);
       expect(body).toContain(saved.installId);
+      // Passed the old gate, so the migration left it on.
+      expect(saved.exportGraduation).toBe(1);
+      expect(saved.destinations.find((d: { id: string }) => d.id === 'otlp').enabled).toBe(true);
       if (process.platform !== 'win32') {
         expect(fs.statSync(settingsPath).mode & 0o777).toBe(0o600);
       }
@@ -192,7 +220,7 @@ test.describe('Telemetry export', () => {
       for (const r of mock.received) expect(r.url.startsWith('/v2.1/track')).toBe(true);
 
       // The seeded file is the Phase 1 shape with a plaintext secret.
-      await expectLegacySecretHandled(launched.userDataDir!, encryption);
+      await expectLegacySecretHandled(launched.userDataDir!, encryption, true);
     } finally {
       if (prevCa === undefined) delete process.env.NODE_EXTRA_CA_CERTS;
       else process.env.NODE_EXTRA_CA_CERTS = prevCa;
@@ -203,7 +231,7 @@ test.describe('Telemetry export', () => {
     }
   });
 
-  test('Phase 1 file with the flag off: plaintext secret is still migrated, nothing exported', async () => {
+  test('Phase 1 file with the flag off: plaintext secret is still migrated, the destination ends up off, nothing exported', async () => {
     const mock = await startMockIngestion();
     const { electronApp, window, userDataDir } = await launchApp({
       experimental: { newChrome: false, telemetry: false },
@@ -227,7 +255,7 @@ test.describe('Telemetry export', () => {
         await expect.poll(() => fs.existsSync(path.join(userDataDir!, 'telemetry-secret.bin')), { timeout: 15_000 }).toBe(true);
       }
       await quitAndWait(electronApp);
-      await expectLegacySecretHandled(userDataDir!, encryption);
+      await expectLegacySecretHandled(userDataDir!, encryption, false);
       expect(mock.received).toEqual([]);
     } finally {
       await electronApp.close().catch(() => {});
@@ -318,6 +346,151 @@ test.describe('Telemetry export', () => {
       await electronApp.close().catch(() => {});
       mock.server.close();
       if (userDataDir) fs.rmSync(userDataDir, { recursive: true, force: true });
+    }
+  });
+
+  test('upgrade with old consent and the flag off: zero requests, on this launch and the next', async () => {
+    const mock = await startMockIngestion();
+    const profile = createDisposableProfile({ label: 'telemetry-upgrade-flag-off' });
+    let open: Awaited<ReturnType<typeof launchApp>> | undefined;
+    try {
+      const first = open = await launchApp({ profile, experimental: { telemetry: false }, userDataFiles: { 'telemetry-settings.json': upgradeSettings(mock.port) } });
+      await expect(first.window.locator('body')).toBeVisible();
+      expect(await first.window.evaluate(() => window.clubhouse.telemetrySettings.getStatus().then((s) => s.running))).toBe(false);
+      await quitAndWait(first.electronApp);
+      expect(mock.received).toEqual([]);
+
+      const saved = JSON.parse(await fs.promises.readFile(path.join(profile.userDataDir, 'telemetry-settings.json'), 'utf-8'));
+      expect(saved).toMatchObject({ consentVersion: 1, exportGraduation: 1 });
+      expect(saved.destinations.filter((d: { enabled: boolean }) => d.enabled)).toEqual([]);
+      expect(saved.destinations.find((d: { id: string }) => d.id === 'framebriar').framebriar.userOff).toBe(true);
+      // Saved as the user left it, for a downgrade.
+      expect(JSON.parse(await fs.promises.readFile(path.join(profile.userDataDir, 'experimental-settings.json'), 'utf-8')).telemetry).toBe(false);
+
+      const second = open = await launchApp({ profile });
+      await expect(second.window.locator('body')).toBeVisible();
+      await quitAndWait(second.electronApp);
+      expect(mock.received).toEqual([]);
+    } finally {
+      await open?.electronApp.close().catch(() => {});
+      mock.server.close();
+      profile.dispose();
+    }
+  });
+
+  test('opt-out on an older build: a migrated install with the flag now false sends zero requests', async () => {
+    const mock = await startMockIngestion();
+    const { electronApp, window, userDataDir } = await launchApp({
+      experimental: { telemetry: false },
+      userDataFiles: { 'telemetry-settings.json': { ...upgradeSettings(mock.port), exportGraduation: 1 } },
+    });
+    try {
+      await expect(window.locator('body')).toBeVisible();
+      await quitAndWait(electronApp);
+      expect(mock.received).toEqual([]);
+      const saved = JSON.parse(await fs.promises.readFile(path.join(userDataDir, 'telemetry-settings.json'), 'utf-8'));
+      expect(saved.destinations.filter((d: { enabled: boolean }) => d.enabled)).toEqual([]);
+      expect(saved.destinations.find((d: { id: string }) => d.id === 'framebriar').framebriar.userOff).toBe(true);
+    } finally {
+      await electronApp.close().catch(() => {});
+      mock.server.close();
+      fs.rmSync(userDataDir, { recursive: true, force: true });
+    }
+  });
+
+  test('unreadable flag file: export pauses with zero requests, the file is kept, and Resume starts it', async () => {
+    const mock = await startMockIngestion();
+    const profile = createDisposableProfile({ label: 'telemetry-flag-unreadable' });
+    const flagFile = path.join(profile.userDataDir, 'experimental-settings.json');
+    fs.writeFileSync(flagFile, '{"telemetry": tru');
+    let open: Awaited<ReturnType<typeof launchApp>> | undefined;
+    try {
+      const first = open = await launchApp({ profile, userDataFiles: { 'telemetry-settings.json': { ...upgradeSettings(mock.port), exportGraduation: 1 } } });
+      await expect(first.window.locator('body')).toBeVisible();
+      expect((await first.window.evaluate(() => window.clubhouse.telemetrySettings.getStatus())).exportPaused).toBe(true);
+      await quitAndWait(first.electronApp);
+      expect(mock.received).toEqual([]);
+      expect(await fs.promises.readFile(`${flagFile}.unreadable`, 'utf-8')).toBe('{"telemetry": tru');
+      const saved = JSON.parse(await fs.promises.readFile(path.join(profile.userDataDir, 'telemetry-settings.json'), 'utf-8'));
+      expect(saved.exportSuspended).toBe('flag_unreadable');
+      expect(saved.destinations.find((d: { id: string }) => d.id === 'otlp').enabled).toBe(true);
+
+      const second = open = await launchApp({ profile });
+      await expect(second.window.locator('body')).toBeVisible();
+      const resumed = await second.window.evaluate(() => window.clubhouse.telemetrySettings.resume());
+      expect(resumed.status.exportPaused).toBe(false);
+      await quitAndWait(second.electronApp);
+      expect(mock.received.length).toBeGreaterThan(0);
+      expect(JSON.parse(await fs.promises.readFile(flagFile, 'utf-8')).telemetry).toBe(true);
+    } finally {
+      await open?.electronApp.close().catch(() => {});
+      mock.server.close();
+      profile.dispose();
+    }
+  });
+
+  test('upgrade with the flag saved on in a stable build with Preview off: zero requests', async () => {
+    const mock = await startMockIngestion();
+    const { electronApp, window, userDataDir } = await launchApp({
+      experimental: { telemetry: true },
+      env: STABLE_BUILD,
+      userDataFiles: { 'update-settings.json': { previewChannel: false }, 'telemetry-settings.json': upgradeSettings(mock.port) },
+    });
+    try {
+      await expect(window.locator('body')).toBeVisible();
+      await quitAndWait(electronApp);
+      expect(mock.received).toEqual([]);
+      const saved = JSON.parse(await fs.promises.readFile(path.join(userDataDir, 'telemetry-settings.json'), 'utf-8'));
+      expect(saved.destinations.filter((d: { enabled: boolean }) => d.enabled)).toEqual([]);
+    } finally {
+      await electronApp.close().catch(() => {});
+      mock.server.close();
+      fs.rmSync(userDataDir, { recursive: true, force: true });
+    }
+  });
+
+  test('fresh install in a stable build: the section shows, nothing sends until the user opts in, and the opt-in lasts', async () => {
+    const mock = await startMockIngestion();
+    const profile = createDisposableProfile({ label: 'telemetry-stable-fresh' });
+    const settingsFile = path.join(profile.userDataDir, 'telemetry-settings.json');
+    const host = `127.0.0.1:${mock.port}`;
+    let open: Awaited<ReturnType<typeof launchApp>> | undefined;
+    try {
+      const first = open = await launchApp({ profile, env: STABLE_BUILD });
+      const w = first.window;
+      expect(await w.evaluate(() => window.clubhouse.app.isPreviewEligible())).toBe(false);
+      await w.locator('[data-testid="nav-settings"]').click();
+      await w.getByRole('button', { name: 'Logging', exact: true }).click();
+      await expect(w.locator('[data-testid="telemetry-settings"]')).toBeVisible({ timeout: 15_000 });
+
+      const status = await w.evaluate(() => window.clubhouse.telemetrySettings.getStatus());
+      expect(status.consentAccepted).toBe(false);
+      expect(status.destinations.filter((d) => d.enabled)).toEqual([]);
+      expect(status.destinations.find((d) => d.id === 'framebriar')?.userOff).toBe(false);
+      expect(fs.existsSync(settingsFile)).toBe(false);
+
+      await w.evaluate((endpoint) => window.clubhouse.telemetrySettings.saveOtlp({ endpoint, headers: [] }), `http://${host}`);
+      const asked = await w.evaluate(() => window.clubhouse.telemetrySettings.setEnabled('otlp', true, {}));
+      expect(asked).toMatchObject({ ok: false, reason: 'needs_confirmation', needs: ['consent', 'destination'] });
+      expect(mock.received).toEqual([]);
+
+      const confirmed = await w.evaluate((h) => window.clubhouse.telemetrySettings.setEnabled('otlp', true, { consent: true, host: h }), host);
+      expect(confirmed.ok).toBe(true);
+      await quitAndWait(first.electronApp);
+      // Saved as true, so the next launch doesn't take this for an older build's opt-out.
+      expect(JSON.parse(await fs.promises.readFile(path.join(profile.userDataDir, 'experimental-settings.json'), 'utf-8')).telemetry).toBe(true);
+      expect(mock.received.map((r) => r.body).join('\n')).toContain('clubhouse.telemetry.enabled');
+
+      mock.received.length = 0;
+      const second = open = await launchApp({ profile, env: STABLE_BUILD });
+      await expect(second.window.locator('body')).toBeVisible();
+      await quitAndWait(second.electronApp);
+      expect(mock.received.filter((r) => r.url === '/v1/metrics').map((r) => r.body).join('\n')).toContain('clubhouse.app.sessions');
+      expect(JSON.parse(await fs.promises.readFile(settingsFile, 'utf-8')).destinations.find((d: { id: string }) => d.id === 'otlp').enabled).toBe(true);
+    } finally {
+      await open?.electronApp.close().catch(() => {});
+      mock.server.close();
+      profile.dispose();
     }
   });
 
