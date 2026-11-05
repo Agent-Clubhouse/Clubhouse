@@ -352,6 +352,24 @@ describe('git state per file', () => {
     expect(files.find((f) => f.relativePath.endsWith('/a.md'))?.gitState).toBe('tracked');
   });
 
+  it('answers unknown only for a path git rejects, not for the rest of its batch', async () => {
+    const project = makeProject('alpha');
+    write(project, '.gitignore', 'ignored.md\n');
+    write(project, 'ignored.md', 'x\n');
+    write(project, 'plain.md', 'y\n');
+    // Refused by check-ignore on every platform (bad pathspec magic), and exits 128 for the whole batch.
+    const rejected = ':(nonsense)rejected.md';
+
+    const states = await readGitStates(project, ['plain.md', rejected, 'ignored.md', 'README.md'], new AbortController().signal);
+
+    expect(Object.fromEntries(states)).toEqual({
+      'plain.md': 'untracked',
+      [rejected]: 'unknown',
+      'ignored.md': 'ignored',
+      'README.md': 'tracked',
+    });
+  });
+
   it('says not-a-repo outside a repository, rather than untracked', async () => {
     const project = makeProject('plain', { repo: false });
     write(project, '.clubhouse/skills/deploy/SKILL.md', 'x\n');
@@ -470,7 +488,8 @@ describe('symlinked parents', () => {
     expect(result.providerEntries).toEqual([]);
   });
 
-  it('follows a symlink that stays inside, and still answers for its neighbours in git', async () => {
+  // git on Windows sees a junction as a plain folder, so only POSIX has this failure.
+  it.skipIf(process.platform === 'win32')('answers unknown for a path beyond a symlink, and for that path alone', async () => {
     const project = makeProject('alpha');
     write(project, '.clubhouse/real-skills/deploy/SKILL.md', 'x\n');
     write(project, '.clubhouse/skills/plain/SKILL.md', 'y\n');
@@ -482,7 +501,6 @@ describe('symlinked parents', () => {
       new AbortController().signal,
     );
 
-    // git calls the first path "beyond a symbolic link" and fails the batch; only that path pays.
     expect(states.get('.clubhouse/linked/deploy/SKILL.md')).toBe('unknown');
     expect(states.get('.clubhouse/skills/plain/SKILL.md')).toBe('untracked');
   });
