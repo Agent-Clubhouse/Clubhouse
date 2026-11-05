@@ -16,7 +16,8 @@ import { useOrchestration } from './orchestration-hooks';
 
 /** Whether the Dispatcher is turned on, for the "Connect to Dispatcher" switch (#2534). */
 let dispatcherOn = false;
-vi.mock('../../dispatcher/useDispatcherEnabled', () => ({ useDispatcherEnabled: () => dispatcherOn }));
+let dispatcherOffForMcp = false;
+vi.mock('../../dispatcher/useDispatcherEnabled', () => ({ useDispatcherConnection: () => ({ show: dispatcherOn || dispatcherOffForMcp, offForMcp: dispatcherOffForMcp }) }));
 
 const PROJECT = path.join('/work', 'proj');
 
@@ -43,6 +44,7 @@ function config(id: string, name: string, extra: Partial<DurableAgentConfig> = {
 
 beforeEach(() => {
   dispatcherOn = false;
+  dispatcherOffForMcp = false;
   stored = { orchestrate: false, access: 'same', control: 'hands-off', maxHelpers: 5, crossProjectHelpers: false, connectToDispatcher: false };
   helperIds = [];
   helperProjects = undefined;
@@ -197,6 +199,16 @@ describe('Orchestration card (#2232)', () => {
     await renderCard();
     expect(screen.getByText('Orchestration')).toBeInTheDocument();
     expect(screen.queryByText('Orchestrate')).not.toBeInTheDocument();
+  });
+
+  it('shows Connect to Dispatcher off and disabled, with why, while the Dispatcher is off for want of MCP', async () => {
+    dispatcherOffForMcp = true;
+    stored = { ...stored, orchestrate: true, connectToDispatcher: true };
+    await renderCard();
+    const toggle = await screen.findByTestId('orchestrate-dispatcher');
+    expect(toggle).toHaveAttribute('aria-checked', 'false');
+    expect(toggle).toBeDisabled();
+    expect(screen.getByText(/The Dispatcher is off because Clubhouse MCP is off\. Turn on Clubhouse MCP in Settings\. Your setting here is kept\./)).toBeInTheDocument();
   });
 
   it('shows Connect to Dispatcher with orchestration on as well as off', async () => {

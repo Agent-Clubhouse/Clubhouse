@@ -25,7 +25,10 @@ vi.mock('./log-service', () => ({ appLog: vi.fn() }));
 vi.mock('./dispatcher/dispatcher-service', async () => {
   const settings = await vi.importActual<typeof import('./dispatcher/dispatcher-settings')>('./dispatcher/dispatcher-settings');
   return {
-    getDispatcherState: () => ({ enabled: settings.isDispatcherEnabled(), flagOn: settings.isDispatcherFlagOn(), agentId: null, path: null, config: null }),
+    getDispatcherState: () => {
+      const { enabled, savedOn, reason } = settings.dispatcherEnablement();
+      return { enabled, savedOn, offReason: reason, flagOn: reason !== 'mcp_off', mcpOff: reason === 'mcp_off', classic: false, running: false, agentId: null, path: null, config: null };
+    },
     isDispatcherAgentId: () => false,
     onDispatcherChanged: () => () => {},
   };
@@ -35,8 +38,8 @@ import { resetAllSettingsStoresForTests } from './settings-store';
 import { getSettings, getStoredSettings, saveSettings } from './experimental-settings';
 import { isPreviewEligible } from './preview-eligible';
 import { CHAT_EXPERIMENTAL_FLAG, isChatEnabled, isCopilotSdkEnabled, resolveRuntimeMode } from './chat-runtime-settings';
-import { DISPATCHER_FLAG, isDispatcherEnabled, isDispatcherFlagOn } from './dispatcher/dispatcher-settings';
-import { isMcpEnabledForAny } from './mcp-settings';
+import { dispatcherEnablement, isDispatcherEnabled } from './dispatcher/dispatcher-settings';
+import { isMcpEnabledForAny, isMcpOnAtAppLevel } from './mcp-settings';
 import { dispatcherCapability } from './mobile-dispatcher';
 import { EXPERIMENTAL_FLAG as TELEMETRY_FLAG, getTelemetrySettings, isExperimentEnabled } from '../telemetry/settings';
 import { isTelemetryConfigured, uiChrome } from '../telemetry/bootstrap';
@@ -51,7 +54,6 @@ const ALL_SAVED = {
   chat: true,
   richChatContent: true,
   copilotSdk: true,
-  dispatcher: true,
   telemetry: true,
   themeGradients: true,
   [STRUCTURED_MODE_REMOVED_NOTICE_KEY]: true,
@@ -97,8 +99,77 @@ afterEach(() => {
 describe('the preview-only list', () => {
   it('names each feature by the same key its reader uses', () => {
     expect([...PREVIEW_ONLY_EXPERIMENTAL_FLAGS].sort()).toEqual([
-      'goobers', CHAT_EXPERIMENTAL_FLAG, RICH_CHAT_CONTENT_FLAG, COPILOT_SDK_FLAG, DISPATCHER_FLAG, TELEMETRY_FLAG,
+      'goobers', CHAT_EXPERIMENTAL_FLAG, RICH_CHAT_CONTENT_FLAG, COPILOT_SDK_FLAG, TELEMETRY_FLAG,
     ].sort());
+  });
+});
+
+describe('the Dispatcher on the real default layout and the real Classic setting', () => {
+  const ON = { enabled: true, savedOn: true, reason: null };
+  const CLASSIC = { enabled: false, savedOn: false, reason: 'classic_layout' };
+  const exists = (name: string) => fs.existsSync(path.join(h.userData, name));
+
+  it.each([false, true])('a fresh profile has it on, with MCP and nothing saved (Preview %s)', (previewChannel) => {
+    if (previewChannel) write(UPDATE_FILE, { autoUpdate: false, previewChannel, lastCheck: null, dismissedVersion: null, lastSeenVersion: null });
+    relaunch();
+    expect(newChromeEnabled()).toBe(true);
+    expect(isMcpOnAtAppLevel()).toBe(true);
+    expect(isMcpEnabledForAny()).toBe(true);
+    expect(dispatcherEnablement()).toEqual(ON);
+    for (const name of [EXPERIMENTAL_FILE, DISPATCHER_FILE, 'mcp-settings.json']) expect(exists(name)).toBe(false);
+  });
+
+  it('MCP saved off derives it off on the default layout, and it returns to on without a save of its own', async () => {
+    write('mcp-settings.json', { enabled: false, projectDefault: false });
+    relaunch();
+    expect(dispatcherEnablement()).toEqual({ enabled: false, savedOn: true, reason: 'mcp_off' });
+    expect(exists(DISPATCHER_FILE)).toBe(false);
+
+    write('mcp-settings.json', { enabled: true, projectDefault: false });
+    relaunch();
+    expect(dispatcherEnablement()).toEqual(ON);
+    expect(exists(DISPATCHER_FILE)).toBe(false);
+  });
+
+  it('Classic layout with nothing saved has it off, and the phone is told the layout is why', () => {
+    write(EXPERIMENTAL_FILE, { newChrome: false });
+    relaunch();
+    expect(dispatcherEnablement()).toEqual(CLASSIC);
+    expect(dispatcherCapability()).toMatchObject({ newLayout: false, flagOn: true, enabled: false });
+  });
+
+  it('Classic layout honours a saved switch both ways', () => {
+    write(EXPERIMENTAL_FILE, { newChrome: false });
+    write(DISPATCHER_FILE, { enabled: true });
+    relaunch();
+    expect(dispatcherEnablement()).toEqual(ON);
+
+    write(DISPATCHER_FILE, { enabled: false });
+    relaunch();
+    expect(dispatcherEnablement()).toEqual({ enabled: false, savedOn: false, reason: 'switch_off' });
+  });
+
+  it('unreadable flags start on classic, so it reads as Classic layout, whatever the file held', () => {
+    fs.writeFileSync(path.join(h.userData, EXPERIMENTAL_FILE), '{"newChrome": tr');
+    relaunch();
+    expect(newChromeEnabled()).toBe(false);
+    expect(dispatcherEnablement()).toEqual(CLASSIC);
+  });
+
+  it('the Classic switch applies at the next launch, in both directions, and never saves the Dispatcher', async () => {
+    relaunch();
+    expect(newChromeEnabled()).toBe(true);
+    await saveSettings({ newChrome: false });
+    // The session keeps its layout, so it is still on until the restart the help text asks for.
+    expect(dispatcherEnablement()).toEqual(ON);
+    relaunch();
+    expect(dispatcherEnablement()).toEqual(CLASSIC);
+
+    await saveSettings({ newChrome: true });
+    expect(dispatcherEnablement()).toEqual(CLASSIC);
+    relaunch();
+    expect(dispatcherEnablement()).toEqual(ON);
+    expect(exists(DISPATCHER_FILE)).toBe(false);
   });
 });
 
@@ -125,7 +196,7 @@ describe('a packaged stable build with Preview off', () => {
   it('starts on the new layout, for main, telemetry and the phone', () => {
     expect(newChromeEnabled()).toBe(true);
     expect(uiChrome()).toBe('v2');
-    expect(dispatcherCapability()).toMatchObject({ newLayout: true, flagOn: false, enabled: false });
+    expect(dispatcherCapability()).toMatchObject({ newLayout: true, flagOn: true, enabled: true });
   });
 
   it('starts on the classic layout with a saved false, for main, telemetry and the phone', () => {
@@ -133,7 +204,8 @@ describe('a packaged stable build with Preview off', () => {
     relaunch();
     expect(newChromeEnabled()).toBe(false);
     expect(uiChrome()).toBe('legacy');
-    expect(dispatcherCapability()).toMatchObject({ newLayout: false, flagOn: false, enabled: false });
+    // A saved true stays on in the classic layout, where it can be turned off and not on again (#2565).
+    expect(dispatcherCapability()).toMatchObject({ newLayout: false, flagOn: true, enabled: true });
   });
 
   it('leaves the saved layout as it is on the way through a launch', () => {
@@ -153,12 +225,10 @@ describe('a packaged stable build with Preview off', () => {
     expect(bytes(CHAT_RUNTIME_FILE)).toBe(saved);
   });
 
-  it('turns the Dispatcher off without changing its saved switch', () => {
-    // With MCP off in its own settings, only the Dispatcher could turn it on.
+  it('keeps the Dispatcher off with MCP off, without changing its saved switch, and starts no bridge for it', () => {
     write('mcp-settings.json', { enabled: false, projectDefault: false });
     relaunch();
     const saved = bytes(DISPATCHER_FILE);
-    expect(isDispatcherFlagOn()).toBe(false);
     expect(isDispatcherEnabled()).toBe(false);
     expect(isMcpEnabledForAny()).toBe(false);
     expect(bytes(DISPATCHER_FILE)).toBe(saved);
@@ -249,12 +319,12 @@ describe('a packaged stable build with Preview off', () => {
 });
 
 describe('with no saved flags, a packaged stable build', () => {
-  it('starts on the new layout with everything else off and writes nothing', () => {
+  it('starts on the new layout with the Dispatcher on, the Preview features off, and writes nothing', () => {
     expect(getSettings()).toEqual({});
     expect(newChromeEnabled()).toBe(true);
     expect(uiChrome()).toBe('v2');
     expect(isChatEnabled()).toBe(false);
-    expect(isDispatcherFlagOn()).toBe(false);
+    expect(isDispatcherEnabled()).toBe(true);
     expect(fs.readdirSync(h.userData)).toEqual([]);
   });
 });

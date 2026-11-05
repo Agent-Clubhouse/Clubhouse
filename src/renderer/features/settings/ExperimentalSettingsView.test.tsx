@@ -64,9 +64,10 @@ describe('ExperimentalSettingsView', () => {
     });
   });
 
-  it('points the Dispatcher flag at Settings > Dispatcher', async () => {
+  it('no longer offers a Dispatcher flag: it has its own page', async () => {
     render(<ExperimentalSettingsView />);
-    expect(await screen.findByText(/Needs New layout\. After turning this on, switch it on in Settings > Dispatcher\./)).toBeInTheDocument();
+    await screen.findByText('Goobers');
+    expect(screen.queryByRole('switch', { name: 'Dispatcher' })).toBeNull();
   });
 
   it('offers the Copilot SDK driver flag, off by default, and says when it needs Chat', async () => {

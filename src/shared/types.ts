@@ -1035,7 +1035,6 @@ export const PREVIEW_ONLY_EXPERIMENTAL_FLAGS: readonly string[] = [
   'chat',
   'richChatContent',
   'copilotSdk',
-  'dispatcher',
   'telemetry',
 ];
 

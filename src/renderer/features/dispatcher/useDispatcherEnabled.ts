@@ -13,8 +13,8 @@ export interface DispatcherRead {
 
 /**
  * The Dispatcher's state from main (#2533), with the read's error. Follows
- * `dispatcher:changed`, so it updates when the experimental flag, the app
- * setting or the agent's config changes.
+ * `dispatcher:changed`, so it updates when its switch, MCP at app level or the
+ * agent's config changes.
  */
 export function useDispatcherRead(): DispatcherRead {
   const [state, setState] = useState<DispatcherState | null>(null);
@@ -54,30 +54,13 @@ export function useDispatcherState(): DispatcherState | null {
   return useDispatcherRead().state;
 }
 
-/** True only while the experimental flag and the Dispatcher setting are both on. */
-export function useDispatcherEnabled(): boolean {
-  return useDispatcherState()?.enabled ?? false;
-}
-
 /**
- * True while the experimental flag is on, which shows Settings > Dispatcher.
- * Follows `dispatcher:changed`. If the read fails before any state arrives,
- * the flag is read from the experimental settings instead, so the page and
- * its error and Retry can still be reached (#2572).
+ * The "Connect to Dispatcher" row. It shows while the Dispatcher is on, and while
+ * it is off only because of Clubhouse MCP: then it reads off and can't change,
+ * and the agent's saved value comes back with MCP.
  */
-export function useDispatcherFlagOn(): boolean {
-  const { state, error } = useDispatcherRead();
-  const [fallback, setFallback] = useState(false);
-  const failed = !state && !!error;
-  useEffect(() => {
-    if (!failed) return;
-    let cancelled = false;
-    window.clubhouse.app.getExperimentalSettings().then((s) => {
-      if (!cancelled) setFallback(!!s.dispatcher);
-    }).catch(() => {
-      // telemetry-exempt: the item stays hidden, as it was.
-    });
-    return () => { cancelled = true; };
-  }, [failed]);
-  return state ? state.flagOn : failed && fallback;
+export function useDispatcherConnection(): { show: boolean; offForMcp: boolean } {
+  const state = useDispatcherState();
+  const offForMcp = !!state && state.offReason === 'mcp_off';
+  return { show: !!state?.enabled || offForMcp, offForMcp };
 }

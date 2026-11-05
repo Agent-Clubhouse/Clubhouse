@@ -17,6 +17,7 @@ import { _settleHelperRoutingForTesting } from './helper-routing';
 import type { HelperStartWarning } from '../../shared/helper-routing';
 import { QUOTA_STALE_MS, quotaRefetchDelaySeconds } from '../../shared/helper-routing';
 import { CLAUDE_WORKING_WINDOW_NOTE } from '../../shared/context-window';
+import { MCP_REQUIRED_MESSAGE } from '../../shared/orchestration-policy';
 import { describe, it, expect, beforeAll, afterAll, beforeEach, vi } from 'vitest';
 import fs from 'fs';
 import path from 'path';
@@ -53,7 +54,7 @@ const W = vi.hoisted(() => ({
   projectStateReady: true,
   finishedReady: true,
   // The app-wide Dispatcher (#2533): off unless a test turns it on.
-  dispatcher: { flagOn: false, enabled: false, newLayout: true },
+  dispatcher: { flagOn: false, enabled: false, newLayout: true, running: false, classicUnsaved: false },
   dispatcherListeners: new Set<(state: any) => void>(),
   // What the CLI offers for the model (#2660); a case sets it, else Claude's.
   contextOptions: null as null | Record<string, unknown>,
@@ -64,7 +65,7 @@ const DISPATCHER_PATH = vi.hoisted(() => '/Users/me/.clubhouse/dispatcher');
 vi.mock('./dispatcher/dispatcher-service', () => {
   const config = () => (W.durables[DISPATCHER_PATH] ?? [])[0] ?? null;
   const enabled = () => W.dispatcher.flagOn && W.dispatcher.enabled;
-  const state = () => ({ enabled: enabled(), flagOn: W.dispatcher.flagOn, agentId: config()?.id ?? null,
+  const state = () => ({ enabled: enabled(), flagOn: W.dispatcher.flagOn, savedOn: W.dispatcher.enabled, mcpOff: !W.dispatcher.flagOn, classic: !W.dispatcher.newLayout, offReason: enabled() ? null : W.dispatcher.enabled ? 'mcp_off' : W.dispatcher.classicUnsaved ? 'classic_layout' : 'switch_off', running: W.dispatcher.running, agentId: config()?.id ?? null,
     path: config() ? DISPATCHER_PATH : null, config: config() ? { ...config() } : null });
   return {
     DISPATCHER_NAME: 'Dispatcher',
@@ -80,7 +81,14 @@ vi.mock('./dispatcher/dispatcher-service', () => {
     },
   };
 });
-vi.mock('./dispatcher/dispatcher-settings', () => ({ isDispatcherEnabled: () => W.dispatcher.flagOn && W.dispatcher.enabled }));
+vi.mock('./dispatcher/dispatcher-settings', () => ({
+  isDispatcherEnabled: () => W.dispatcher.flagOn && W.dispatcher.enabled,
+  dispatcherEnablement: () => ({
+    savedOn: W.dispatcher.enabled,
+    enabled: W.dispatcher.flagOn && W.dispatcher.enabled,
+    reason: !W.dispatcher.enabled ? 'switch_off' : W.dispatcher.flagOn ? null : 'mcp_off',
+  }),
+}));
 vi.mock('../window-chrome', () => ({ newChromeEnabled: () => W.dispatcher.newLayout }));
 
 vi.mock('./annex-chat-content', () => ({ readMobileChatContent: async () => ({ kind: 'text', name: 'README.md', text: '# App' }) }));
@@ -420,7 +428,8 @@ import * as finishedQuickStore from './finished-quick-agents-store';
 import * as eventReplay from './annex-event-replay';
 import { recordStartRequest, _resetStartRequestsForTesting } from './helper-start-requests';
 import { listDisposeRequests, recordDisposeRequest, _resetDisposeRequestsForTesting } from './helper-dispose-requests';
-import { getAgentRuntime, registerChatRuntime, clearChatRuntimes, publishChatEvent } from './agent-runtime';
+import { getAgentRuntime, registerChatRuntime, unregisterChatRuntime, clearChatRuntimes, publishChatEvent } from './agent-runtime';
+import { getDispatcherState } from './dispatcher/dispatcher-service';
 import { ChatAgentRuntime } from './agent-runtime/chat-runtime';
 import { onChatEvent } from './agent-runtime/chat-event-bus';
 import { FakeChatDriver } from './agent-runtime/fake-chat-driver';
@@ -455,11 +464,38 @@ const UUID = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/gi;
  * appearance across the files (sorted by name), so output doesn't depend on
  * how many UUIDs the desktop happens to draw.
  */
+/** Files for the fields a Dispatcher adds while it is off. Every other file keeps the shape phones vendored. */
+const DISPATCHER_OFF_FIXTURES = new Set(['snapshot-dispatcher-mcp-off-running.json', 'dispatcher-off-states.json', 'dispatcher-off-routes.json']);
+
+/**
+ * What a phone that doesn't know those fields reads: they are optional and it
+ * ignores them, and a snapshot's `dispatcher` that is off reads as none, which is
+ * what such a phone does with it.
+ */
+function withoutDispatcherOffFields(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(withoutDispatcherOffFields);
+  if (!value || typeof value !== 'object') return value;
+  const out: Record<string, unknown> = {};
+  for (const [key, item] of Object.entries(value)) {
+    if (key === 'dispatcher' && (item as { enabled?: boolean; agent?: unknown } | null)?.enabled === false && (item as { agent?: unknown }).agent !== undefined && !('event' in (item as object))) {
+      out[key] = null;
+      continue;
+    }
+    out[key] = withoutDispatcherOffFields(item);
+  }
+  if ('flagOn' in out) {
+    for (const field of ['offReason', 'running', 'status', 'detail', 'commandsWhileOff']) delete out[field];
+    if (out.enabled === false) delete out.agent;
+  }
+  return out;
+}
+
 function render(): Map<string, string> {
   const ids = new Map<string, string>();
   const out = new Map<string, string>();
   for (const name of [...fixtures.keys()].sort()) {
-    const text = `${JSON.stringify(stable(fixtures.get(name)), null, 2)}\n`.replace(UUID, (id) => {
+    const value = fixtures.get(name);
+    const text = `${JSON.stringify(stable(DISPATCHER_OFF_FIXTURES.has(name) ? value : withoutDispatcherOffFields(value)), null, 2)}\n`.replace(UUID, (id) => {
       const key = id.toLowerCase();
       if (!ids.has(key)) ids.set(key, `00000000-0000-4000-8000-${String(ids.size + 1).padStart(12, '0')}`);
       return ids.get(key)!;
@@ -549,7 +585,7 @@ function resetWorld() {
         idleSleep: 'never', runtimeMode: 'chat', mcpOverride: true, createdAt: '2026-10-07T09:00:00.000Z', lastSessionId: 'sess_dispatch' },
     ],
   };
-  W.dispatcher = { flagOn: false, enabled: false, newLayout: true };
+  W.dispatcher = { flagOn: false, enabled: false, newLayout: true, running: false, classicUnsaved: false };
   W.running = new Set(['durable_term']);
   W.revert = new Set();
   W.transcripts = {
@@ -1385,10 +1421,14 @@ describe('Annex mobile contract fixtures', { timeout: TEST_TIMEOUT_MS }, () => {
 
   it('the Dispatcher (#2533)', async () => {
     const off = { type: 'dispatcher.setEnabled', enabled: true };
-    await command('dispatcher_flag_off', off);
+    const flagOff = await command('dispatcher_flag_off', off);
+    expect(flagOff.body.error).toMatchObject({ code: 'dispatcher_flag_off', message: MCP_REQUIRED_MESSAGE });
+    // The words phones vendored: the code is the contract, and `message` can change (docs/mobile-control-v1.md).
+    flagOff.body.error.message = 'Turn on Dispatcher in Settings > Experimental on the desktop first.';
     W.dispatcher.flagOn = true;
     W.dispatcher.newLayout = false;
-    await command('dispatcher_layout_off', off);
+    const layoutOff = await command('dispatcher_layout_off', off);
+    expect(layoutOff.body.error.message).toContain('Turn off Classic layout in Settings > Display & UI');
     W.dispatcher.newLayout = true;
     // Off: its id answers nothing, and nothing connects to it.
     const routes: Record<string, unknown> = {
@@ -1441,12 +1481,12 @@ describe('Annex mobile contract fixtures', { timeout: TEST_TIMEOUT_MS }, () => {
     ws.send.mockClear();
     await command('accepted off', { type: 'dispatcher.setEnabled', enabled: false });
     // A refresh from before the switch can still be on its way: wait for the one after it.
-    await eventually(() => expect(frames(ws).some((f) => f.type === 'snapshot' && f.payload.dispatcher === null)).toBe(true));
+    await eventually(() => expect(frames(ws).some((f) => f.type === 'snapshot' && f.payload.dispatcher?.enabled === false)).toBe(true));
     const changedOff = frames(ws).find((f) => f.type === 'dispatcher:changed');
     const seq = (f: any) => ({ ...f, seq: 1000 });
     fixtures.set('dispatcher-changed.json', { direction: 'desktop-to-phone', note: 'seq is the replay sequence; a snapshot follows each.', frames: [seq(changedOn), seq(changedOff)] });
     fixtures.set('dispatcher-routes.json', routes);
-    W.dispatcher = { flagOn: false, enabled: false, newLayout: true };
+    W.dispatcher = { flagOn: false, enabled: false, newLayout: true, running: false, classicUnsaved: false };
     W.durables[DISPATCHER_PATH][0] = { ...W.durables[DISPATCHER_PATH][0], model: undefined, orchestrator: 'claude-code' };
   });
 
@@ -1454,16 +1494,16 @@ describe('Annex mobile contract fixtures', { timeout: TEST_TIMEOUT_MS }, () => {
     const route = '/api/v1/icons/agent/durable_dispatcher';
     const saved = W.durables[DISPATCHER_PATH][0];
     W.durables[DISPATCHER_PATH][0] = { ...saved, icon: 'durable_dispatcher.abc.png' };
-    W.dispatcher = { flagOn: true, enabled: true, newLayout: true };
+    W.dispatcher = { flagOn: true, enabled: true, newLayout: true, running: false, classicUnsaved: false };
     expect((await send('GET', route)).status).toBe(200);
-    W.dispatcher = { flagOn: false, enabled: false, newLayout: true };
+    W.dispatcher = { flagOn: false, enabled: false, newLayout: true, running: false, classicUnsaved: false };
     expect((await send('GET', route)).status).toBe(404);
     W.durables[DISPATCHER_PATH][0] = saved;
   });
 
   it('sender identity: every kind of sender, drawn from the snapshot alone', async () => {
     resetWorld();
-    W.dispatcher = { flagOn: true, enabled: true, newLayout: true };
+    W.dispatcher = { flagOn: true, enabled: true, newLayout: true, running: false, classicUnsaved: false };
     W.durables[DISPATCHER_PATH][0] = { ...W.durables[DISPATCHER_PATH][0], icon: 'durable_dispatcher.abc.png' };
     // A disposed helper keeps its config row; a helper in another project shares a name with one here.
     W.durables[APP].push({ id: 'durable_gone', name: 'old-helper', color: 'rose', parentAgentId: 'durable_chat', disposedAt: '2026-10-09T09:00:00.000Z', createdAt: '2026-10-08T09:00:00.000Z' });
@@ -2137,7 +2177,7 @@ describe('Annex mobile contract fixtures', { timeout: TEST_TIMEOUT_MS }, () => {
   it('icon refs: the snapshot forms, changes, removals and the routes', async () => {
     const saved = W.durables[DISPATCHER_PATH][0];
     W.durables[DISPATCHER_PATH][0] = { ...saved, icon: 'durable_dispatcher.png' };
-    W.dispatcher = { flagOn: true, enabled: true, newLayout: true };
+    W.dispatcher = { flagOn: true, enabled: true, newLayout: true, running: false, classicUnsaved: false };
     const refsSocket = () => connect('mtls', { iconRefs: true });
     const firstSnapshot = async () => frames(await refsSocket()).find((f) => f.type === 'snapshot').payload;
     const SHA = /^[0-9a-f]{64}$/;
@@ -2298,7 +2338,7 @@ describe('Annex mobile contract fixtures', { timeout: TEST_TIMEOUT_MS }, () => {
     fixtures.set('icon-images.json', { note: 'One real image of each type, as the real code describes it.', images });
 
     W.durables[DISPATCHER_PATH][0] = saved;
-    W.dispatcher = { flagOn: false, enabled: false, newLayout: true };
+    W.dispatcher = { flagOn: false, enabled: false, newLayout: true, running: false, classicUnsaved: false };
   }, TEST_TIMEOUT_MS);
 
   afterAll(() => {
@@ -2539,6 +2579,175 @@ describe('Annex mobile contract fixtures', { timeout: TEST_TIMEOUT_MS }, () => {
       queuedRow: { note: 'A row named by queuedMessageIds, in front of a tail that does not reach it. nextBeforeSeq does not count it.', firstEvents: withQueued.body.events.slice(0, 2).map((e: any) => ({ seq: e.seq, type: e.type, ...(e.type === 'user_message' && { data: e.data }) })), nextBeforeSeq: '<the seq of the second event>', queuedMessageIds: withQueued.body.queuedMessageIds },
     });
   }, TEST_TIMEOUT_MS);
+
+  describe('a Dispatcher that is off', () => {
+    const OFF_STATES = {
+      mcpOffRunning: { flagOn: false, enabled: true, newLayout: true, running: true, classicUnsaved: false },
+      mcpOffStopped: { flagOn: false, enabled: true, newLayout: true, running: false, classicUnsaved: false },
+      switchedOff: { flagOn: true, enabled: false, newLayout: true, running: false, classicUnsaved: false },
+      classicLayout: { flagOn: true, enabled: false, newLayout: false, running: false, classicUnsaved: true },
+    };
+    let serial = 0;
+    /** Apart from `command`, so the fixtures before this keep their ids. */
+    const offCommand = (fields: Record<string, unknown>) => send('POST', '/api/v1/mobile/commands', { version: 1, epoch, commandId: `cmd_off_${++serial}`, ...fields });
+    const enter = (state: typeof OFF_STATES[keyof typeof OFF_STATES]) => {
+      W.dispatcher = { ...state };
+      if (state.running) W.running.add('durable_dispatcher');
+      else W.running.delete('durable_dispatcher');
+    };
+
+    /** The three payloads, as a phone gets them. */
+    async function payloads(ws: FakeWs) {
+      ws.send.mockClear();
+      for (const listener of W.dispatcherListeners) listener(getDispatcherState());
+      await eventually(() => {
+        expect(frames(ws).some((f) => f.type === 'dispatcher:changed')).toBe(true);
+        expect(frames(ws).some((f) => f.type === 'snapshot')).toBe(true);
+      });
+      return {
+        capabilities: (await send('GET', '/api/v1/mobile/capabilities')).body.dispatcher,
+        changed: frames(ws).filter((f) => f.type === 'dispatcher:changed').at(-1).payload,
+        snapshot: frames(ws).filter((f) => f.type === 'snapshot').at(-1).payload.dispatcher,
+      };
+    }
+
+    it('says the same in all three payloads, in every state', async () => {
+      const ws = await connect();
+      const states: Record<string, unknown> = {};
+      const expected = {
+        mcpOffRunning: { offReason: 'mcp_off', running: true, status: 'running', detail: 'MCP off; session running' },
+        mcpOffStopped: { offReason: 'mcp_off', running: false, status: 'sleeping', detail: 'MCP off', commandsWhileOff: ['dispatcher.setEnabled'] },
+        switchedOff: { offReason: 'switched_off', running: false, status: 'sleeping', detail: 'Turned off', commandsWhileOff: ['dispatcher.setEnabled'] },
+        classicLayout: { offReason: 'classic_layout', running: false, status: 'sleeping', detail: 'Needs the new layout', commandsWhileOff: ['dispatcher.setEnabled'] },
+      };
+      for (const [name, state] of Object.entries(OFF_STATES)) {
+        // Off the state it left, so the event has something to report.
+        enter({ ...OFF_STATES.mcpOffRunning, running: !state.running, enabled: state.running ? false : true, flagOn: state.running ? true : false });
+        for (const listener of W.dispatcherListeners) listener(getDispatcherState());
+        enter(state);
+        const { capabilities, changed, snapshot } = await payloads(ws);
+        for (const payload of [capabilities, changed, snapshot]) {
+          expect(payload, name).toMatchObject({ ...expected[name as keyof typeof expected], enabled: false });
+          expect(payload.agent, name).toMatchObject({ id: 'durable_dispatcher', isDispatcher: true });
+          expect(payload.commandsWhileOff, name).toEqual(snapshot.commandsWhileOff);
+          expect(payload.agent, name).toEqual(snapshot.agent);
+        }
+        // Nobody is told it's on, and a phone that knows none of this drops it.
+        expect(changed.agentId, name).toBeNull();
+        states[name] = { capabilities, 'dispatcher:changed': changed, snapshot };
+      }
+      fixtures.set('dispatcher-off-states.json', { direction: 'desktop-to-phone', note: 'The fields added while the Dispatcher is off, the same in all three payloads.', states });
+      fixtures.set('snapshot-dispatcher-mcp-off-running.json', { direction: 'desktop-to-phone', field: 'dispatcher', value: (states.mcpOffRunning as { snapshot: unknown }).snapshot });
+    }, TEST_TIMEOUT_MS);
+
+    it('adds nothing, and starts nothing, when MCP is back', async () => {
+      const ws = await connect();
+      enter(OFF_STATES.mcpOffStopped);
+      for (const listener of W.dispatcherListeners) listener(getDispatcherState());
+      W.dispatcher = { ...OFF_STATES.mcpOffStopped, flagOn: true };
+      const { capabilities, changed, snapshot } = await payloads(ws);
+      for (const payload of [capabilities, changed, snapshot]) {
+        expect(payload).toMatchObject({ enabled: true, flagOn: true });
+        for (const field of ['offReason', 'running', 'status', 'detail', 'commandsWhileOff']) expect(payload).not.toHaveProperty(field);
+      }
+      expect(W.running.has('durable_dispatcher')).toBe(false);
+    }, TEST_TIMEOUT_MS);
+
+    it('accepts exactly what it advertises, and holds the payload limits', async () => {
+      const session = { agentId: 'durable_dispatcher', sessionId: 'sess_dispatch' };
+      const runtime = chatRuntime('durable_dispatcher', 'sess_dispatch', CHAT_CAPS, LIVE_TRANSCRIPT, true);
+      const COMMANDS: Record<string, Record<string, unknown>> = {
+        'agent.start': { type: 'agent.start', agentId: 'durable_dispatcher' },
+        'agent.update': { type: 'agent.update', agentId: 'durable_dispatcher', model: 'sonnet' },
+        'agent.stop': { type: 'agent.stop', agentId: 'durable_dispatcher' },
+        'chat.send': { type: 'chat.send', ...session, text: 'hello' },
+        'chat.interrupt': { type: 'chat.interrupt', ...session },
+        'chat.permission': { type: 'chat.permission', ...session, requestId: 'perm_1', optionId: PERMISSION_OPTIONS[0].optionId },
+        'chat.question': { type: 'chat.question', ...session, requestId: 'q_1', answers: { which: 'main' } },
+        'chat.queue.remove': { type: 'chat.queue.remove', ...session, messageIds: ['msg_q'] },
+        'chat.setModel': { type: 'chat.setModel', ...session, model: 'sonnet' },
+        'chat.setLevel': { type: 'chat.setLevel', ...session, level: 'auto' },
+      };
+      const cases: Array<Record<string, unknown>> = [];
+      const record = (state: string, name: string, request: Record<string, unknown>, response: { status: number; body: any }) => {
+        const { commandId: _commandId, epoch: _epoch, version: _version, ...rest } = request;
+        cases.push({ state, name, request: rest, response: { status: response.status, ...(response.body.error ? { error: response.body.error } : { status_: response.body.status }) } });
+      };
+      for (const [name, state] of Object.entries(OFF_STATES)) {
+        enter(state);
+        registerChatRuntime(runtime as never);
+        const advertised: string[] = (await send('GET', '/api/v1/mobile/capabilities')).body.dispatcher.commandsWhileOff;
+        const refusal = name.startsWith('mcpOff') ? 'mcp_off' : 'dispatcher_off';
+        const accepted: string[] = [];
+        for (const [type, fields] of Object.entries(COMMANDS)) {
+          enter(state);
+          const res = await offCommand(fields);
+          record(name, type, fields, res);
+          if (res.body.error?.code === refusal) expect(res.status, `${name} ${type}`).toBe(409);
+          else accepted.push(type);
+        }
+        expect(accepted.sort(), name).toEqual(advertised.filter((c) => c !== 'dispatcher.setEnabled').sort());
+        expect(advertised, name).toContain('dispatcher.setEnabled');
+        unregisterChatRuntime('durable_dispatcher');
+
+        // Off always works, in every state, and is how a phone stops it for good.
+        enter(state);
+        const off = await offCommand({ type: 'dispatcher.setEnabled', enabled: false });
+        record(name, 'dispatcher.setEnabled false', { type: 'dispatcher.setEnabled', enabled: false }, off);
+        expect(off.status, name).toBe(200);
+      }
+
+      // On is refused where it can't take effect. Switched off with MCP on it is the normal way to turn it on.
+      enter(OFF_STATES.mcpOffRunning);
+      const onMcpOff = await offCommand({ type: 'dispatcher.setEnabled', enabled: true });
+      record('mcpOffRunning', 'dispatcher.setEnabled true', { type: 'dispatcher.setEnabled', enabled: true }, onMcpOff);
+      expect(onMcpOff.body.error.code).toBe('mcp_off');
+      enter(OFF_STATES.mcpOffStopped);
+      expect((await offCommand({ type: 'dispatcher.setEnabled', enabled: true })).body.error.code).toBe('mcp_off');
+      enter(OFF_STATES.classicLayout);
+      const onClassic = await offCommand({ type: 'dispatcher.setEnabled', enabled: true });
+      record('classicLayout', 'dispatcher.setEnabled true', { type: 'dispatcher.setEnabled', enabled: true }, onClassic);
+      expect(onClassic.body.error.code).toBe('dispatcher_layout_off');
+
+      // Only for requests already pending.
+      enter(OFF_STATES.mcpOffRunning);
+      registerChatRuntime(runtime as never);
+      for (const [type, fields] of [
+        ['chat.permission', { ...COMMANDS['chat.permission'], requestId: 'perm_gone' }],
+        ['chat.question', { ...COMMANDS['chat.question'], requestId: 'q_gone' }],
+      ] as const) {
+        const res = await offCommand(fields);
+        record('mcpOffRunning', `${type} with nothing pending`, fields, res);
+        expect(res.status, type).toBe(409);
+        expect(res.body.error.code, type).toBe('mcp_off');
+      }
+      expect((await offCommand(COMMANDS['chat.permission'])).body.error?.code).not.toBe('mcp_off');
+      unregisterChatRuntime('durable_dispatcher');
+
+      // chat.send goes to a session. With none it is refused and wakes nothing.
+      enter(OFF_STATES.mcpOffStopped);
+      const asleep = await offCommand(COMMANDS['chat.send']);
+      record('mcpOffStopped', 'chat.send', COMMANDS['chat.send'], asleep);
+      expect(asleep.body.error.code).toBe('mcp_off');
+      expect(W.running.has('durable_dispatcher')).toBe(false);
+
+      // Reads: history stays for MCP off, even stopped. Switched off they answer as they always have.
+      const routes = ['/api/v1/mobile/agents/durable_dispatcher/chat', '/api/v1/mobile/agents/durable_dispatcher/chat/sessions'];
+      for (const [name, state, status] of [['mcpOffRunning', OFF_STATES.mcpOffRunning, 200], ['mcpOffStopped', OFF_STATES.mcpOffStopped, 200], ['switchedOff', OFF_STATES.switchedOff, 404], ['classicLayout', OFF_STATES.classicLayout, 404]] as const) {
+        enter(state);
+        for (const route of routes) {
+          const res = await send('GET', route);
+          expect(res.status, `${name} ${route}`).toBe(status);
+          cases.push({ state: name, name: 'read', request: { method: 'GET', path: route }, response: { status: res.status } });
+          if (status === 200 && route.endsWith('/chat')) expect(res.body.canStart, name).toBe(false);
+        }
+      }
+
+      fixtures.set('dispatcher-off-routes.json', { note: 'What each state accepts for the Dispatcher\'s id. An accepted command can still answer with its own rules.', cases });
+      W.running.delete('durable_dispatcher');
+      W.dispatcher = { flagOn: false, enabled: false, newLayout: true, running: false, classicUnsaved: false };
+    }, TEST_TIMEOUT_MS);
+  });
 
   it('fixtures on disk match (npm run fixtures:annex-mobile to update)', () => {
     const rendered = render();

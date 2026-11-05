@@ -460,14 +460,14 @@ describe('the matrix', () => {
 
   it('expects nothing Preview-gated without Preview', () => {
     for (const scenario of SCENARIOS.filter((s: { preview: boolean }) => !s.preview)) {
-      expect(expectedFor(scenario)).toMatchObject({ previewEligible: false, newChrome: true, chatEnabled: false, flagsInForce: null, settingsPages: [], dispatcherRow: false, dispatcherFolderAbsent: true });
+      expect(expectedFor(scenario)).toMatchObject({ previewEligible: false, newChrome: true, chatEnabled: false, flagsInForce: null, settingsPages: [], dispatcherRow: true });
     }
   });
 
   it('expects flags to take effect only with Preview on', () => {
     expect(expectedFor({ state: 'beta', preview: true, flags: true })).toMatchObject({ previewEligible: true, newChrome: true, chatEnabled: true, flagsInForce: BETA_FLAGS, settingsPages: PREVIEW_PAGES, dispatcherRow: true, wakesInChatMustBeFalse: false });
-    expect(expectedFor({ state: 'beta', preview: true, flags: false })).toMatchObject({ previewEligible: true, newChrome: true, chatEnabled: false, flagsInForce: null, settingsPages: ['Experimental', 'Annex', 'Annex control'], wakesInChatMustBeFalse: true });
-    expect(expectedFor({ state: 'fresh', preview: true, flags: true })).toMatchObject({ newChrome: true, dispatcherRow: false, wakesInChatMustBeFalse: false });
+    expect(expectedFor({ state: 'beta', preview: true, flags: false })).toMatchObject({ previewEligible: true, newChrome: true, chatEnabled: false, flagsInForce: null, settingsPages: ['Experimental', 'Annex', 'Annex control'], dispatcherRow: true, wakesInChatMustBeFalse: true });
+    expect(expectedFor({ state: 'fresh', preview: true, flags: true })).toMatchObject({ newChrome: true, dispatcherRow: true, wakesInChatMustBeFalse: false });
   });
 
   it('expects saved beta files to stay byte for byte only with Preview off', () => {
@@ -507,7 +507,7 @@ describe('checkStartupRecord', () => {
 describe('checkRenderer', () => {
   const offObserved = {
     eligible: false, flags: {}, newChromeLayout: true, titleBar: false, chromeTitleBar: true, chromeSidebar: true,
-    dispatcherRow: false, wakesInChat: false, settingsPages: [],
+    dispatcherRow: true, wakesInChat: false, settingsPages: [],
   };
 
   it('passes the new layout with Preview off', () => {
@@ -520,7 +520,7 @@ describe('checkRenderer', () => {
     ['title-bar', { titleBar: true }],
     ['chrome-title-bar', { chromeTitleBar: false }],
     ['chrome-sidebar', { chromeSidebar: false }],
-    ['dispatcher-row', { dispatcherRow: true }],
+    ['dispatcher-row', { dispatcherRow: false }],
     ['settings pages', { settingsPages: ['Experimental'] }],
     ['wakes in chat', { wakesInChat: true }],
     ['flags in force', { flags: { chat: true } }],

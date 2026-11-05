@@ -83,13 +83,14 @@ export function createSettingsStore<T extends object, U = Partial<T>>(
 
     saveSettings: async (updates: U) => {
       const next = normalizeUpdate(updates);
-      const keys = Object.keys(getDefaultState());
 
       // optimisticUpdate only rolls back keys no newer save has claimed since.
       await optimisticUpdate(set, get, next as Partial<SettingsStoreState<T, U>>, () => {
+        // Every setting the store holds, not only those with a default: main saves
+        // what it is given whole, so a key left out here is deleted from the file.
         const full: Record<string, unknown> = {};
-        for (const key of keys) {
-          full[key] = (get() as Record<string, unknown>)[key];
+        for (const [key, value] of Object.entries(get() as Record<string, unknown>)) {
+          if (key !== 'loaded' && typeof value !== 'function') full[key] = value;
         }
         return window.clubhouse.settings.save(definition.key, full);
       });

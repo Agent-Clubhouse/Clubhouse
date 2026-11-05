@@ -12,9 +12,9 @@ import { CardNote, CardRow, DetailsCard } from '../details/DetailsCard';
 import { CONTROL_LABELS, controlHelp } from './helper-model';
 import { maxHelpersCeiling, openHelpersSettings, type OrchestrationState } from './orchestration-hooks';
 import {
-  AccessSelect, CROSS_PROJECT_HELP, ControlSelect, AutoHelpersToggle, AUTO_HELPERS_HELP, CrossProjectToggle, DISPATCHER_HELP, DispatcherToggle, HelperCountInput, accessNote, mcpOffNote,
+  AccessSelect, CROSS_PROJECT_HELP, ControlSelect, AutoHelpersToggle, AUTO_HELPERS_HELP, CrossProjectToggle, DISPATCHER_HELP, DISPATCHER_MCP_OFF_HELP, DispatcherToggle, HelperCountInput, accessNote, mcpOffNote,
 } from './OrchestrationFields';
-import { useDispatcherEnabled } from '../../dispatcher/useDispatcherEnabled';
+import { useDispatcherConnection } from '../../dispatcher/useDispatcherEnabled';
 import { TurnOffOrchestrationDialog } from './TurnOffOrchestrationDialog';
 
 const SELECT_CLASS = 'h-6 max-w-full px-1.5 rounded-md border border-surface-1 bg-ctp-crust text-xs text-ctp-text focus-ring disabled:opacity-50';
@@ -38,8 +38,8 @@ export function OrchestrateCard({ agent, projectPath, orch, open, onToggle }: {
   onToggle: () => void;
 }) {
   const ids = { auto: useId(), access: useId(), control: useId(), count: useId(), crossProject: useId(), dispatcher: useId() };
-  // Connect to Dispatcher shows while the Dispatcher is turned on, with orchestration on or off (#2578).
-  const showDispatcher = useDispatcherEnabled();
+  // Connect to Dispatcher shows while the Dispatcher is turned on, with orchestration on or off (#2578), and off for want of MCP.
+  const { show: showDispatcher, offForMcp } = useDispatcherConnection();
   const [countError, setCountError] = useState<string | null>(null);
   const { policy, access, saving, globalCap } = orch;
   const running = agent.status === 'running';
@@ -160,13 +160,13 @@ export function OrchestrateCard({ agent, projectPath, orch, open, onToggle }: {
             <span className="flex flex-col items-start gap-1">
               <DispatcherToggle
                 id={ids.dispatcher}
-                checked={policy.connectToDispatcher}
+                checked={policy.connectToDispatcher && !offForMcp}
                 name={agent.name}
-                disabled={saving || !!policy.mcpOff}
+                disabled={saving || !!policy.mcpOff || offForMcp}
                 onChange={(on) => void orch.setConnectToDispatcher(on)}
                 testId="orchestrate-dispatcher"
               />
-              <span className="text-ctp-overlay1">{DISPATCHER_HELP}</span>
+              <span className="text-ctp-overlay1">{offForMcp ? DISPATCHER_MCP_OFF_HELP : DISPATCHER_HELP}</span>
             </span>
           </CardRow>
         )}
