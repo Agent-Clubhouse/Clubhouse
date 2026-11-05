@@ -16,12 +16,10 @@ import { buildChatScript, writeChatScript, type ChatScript } from '../../src/mai
  * this folder.
  *
  * `openRichChat` builds a scripted fixture (chat-script.ts) for one provider,
- * installs it as the fake CLI, launches the app, turns on the experimental
- * flags through the settings IPC, then adds a project and opens a durable
- * agent's chat. Every wait is on the DOM or the fake's report: no sleeps.
+ * installs it as the fake CLI, launches the app with Chat and rich content on
+ * by default, saves any flags the test asks for through the settings IPC, then
+ * adds a project and opens a durable agent's chat. Every wait is on the DOM or the fake's report: no sleeps.
  */
-
-export const RICH_FLAGS = { richChatContent: true } as const;
 
 /** Every provider enabled and in chat mode; Claude on stream-json, which the fixtures speak. */
 const USER_DATA_FILES = {
@@ -50,7 +48,7 @@ export interface RichChatOptions {
    * that name files in them), or the name of a committed fixture.
    */
   script: ChatScript | string | ((dirs: { projectDir: string; outsideDir: string }) => ChatScript);
-  /** Experimental flags set through the settings IPC before the chat opens. Default: rich content on. */
+  /** Experimental flags set through the settings IPC before the chat opens. Default: none, so Chat and rich content are on by default. */
   flags?: Record<string, boolean>;
   /** Files to create in the project before it is added, keyed by relative path. */
   projectFiles?: Record<string, SeedFile>;
@@ -189,13 +187,12 @@ export async function openRichChat(opts: RichChatOptions): Promise<RichChat> {
   let electronApp: ElectronApp | undefined;
   try {
     const app = await launchApp({
-      experimental: { chat: true },
       userDataFiles: USER_DATA_FILES,
       env: { ...fakes.env, CLUBHOUSE_TEST_HELPER_SEAM: '1', [GITHUB_REFS_ENV]: githubRefsDir, ...(copilotHome && { COPILOT_HOME: copilotHome }) },
     });
     electronApp = app.electronApp;
     const { window } = app;
-    await setExperimentalFlags(window, opts.flags ?? RICH_FLAGS);
+    if (opts.flags) await setExperimentalFlags(window, opts.flags);
 
     await addProject(electronApp, window, projectDir);
     const name = `rich-${opts.cli}-${Date.now()}`;

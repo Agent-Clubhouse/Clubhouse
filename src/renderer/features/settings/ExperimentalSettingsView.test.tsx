@@ -25,7 +25,7 @@ beforeEach(() => {
 
 describe('ExperimentalSettingsView', () => {
   it('lists only preview-only flags, so a new one has to join the gate or say why not', () => {
-    const offered = EXPERIMENTAL_FEATURES.map((f) => f.id).filter((id) => id !== 'themeGradients');
+    const offered = EXPERIMENTAL_FEATURES.map((f) => f.id);
     expect([...offered].sort()).toEqual([...PREVIEW_ONLY_EXPERIMENTAL_FLAGS].sort());
   });
 
@@ -48,8 +48,12 @@ describe('ExperimentalSettingsView', () => {
   it('renders feature toggles', async () => {
     render(<ExperimentalSettingsView />);
     await waitFor(() => {
-      expect(screen.getByText('Theme gradients & fonts')).toBeInTheDocument();
+      expect(screen.getByText('New layout')).toBeInTheDocument();
     });
+    // Graduated features moved to their own settings pages
+    expect(screen.queryByText('Theme gradients & fonts')).not.toBeInTheDocument();
+    expect(screen.queryByText('Chat')).not.toBeInTheDocument();
+    expect(screen.queryByText('Rich chat content')).not.toBeInTheDocument();
     // Removed features no longer have toggles
     expect(screen.queryByText('Structured Mode')).not.toBeInTheDocument();
     expect(screen.queryByText('Assistant')).not.toBeInTheDocument();
@@ -70,34 +74,19 @@ describe('ExperimentalSettingsView', () => {
   });
 
   it('offers the Copilot SDK driver flag, off by default, and says when it needs Chat', async () => {
-    mockGetExperimentalSettings.mockResolvedValue({});
+    mockGetExperimentalSettings.mockResolvedValue({ chat: false });
     const { unmount } = render(<ExperimentalSettingsView />);
     const toggle = await screen.findByRole('switch', { name: 'Copilot SDK driver' });
     expect(toggle).toHaveAttribute('aria-checked', 'false');
-    expect(screen.getByText(/Needs Chat, which is off\./)).toBeInTheDocument();
+    expect(screen.getByText(/Needs Chat, which is off in Settings > Agents & providers\./)).toBeInTheDocument();
     fireEvent.click(toggle);
-    await waitFor(() => expect(mockSaveExperimentalSettings).toHaveBeenCalledWith({ copilotSdk: true }));
+    await waitFor(() => expect(mockSaveExperimentalSettings).toHaveBeenCalledWith({ chat: false, copilotSdk: true }));
     unmount();
 
-    mockGetExperimentalSettings.mockResolvedValue({ chat: true });
+    mockGetExperimentalSettings.mockResolvedValue({});
     render(<ExperimentalSettingsView />);
     await screen.findByRole('switch', { name: 'Copilot SDK driver' });
-    expect(screen.queryByText(/Needs Chat, which is off\./)).not.toBeInTheDocument();
-  });
-
-  it('renders the Chat feature toggle and saves it under the chat id', async () => {
-    mockGetExperimentalSettings.mockResolvedValue({ goobers: true });
-    render(<ExperimentalSettingsView />);
-    await waitFor(() => {
-      expect(screen.getByText('Chat')).toBeInTheDocument();
-    });
-    expect(screen.getByText(/native chat view\. The CLI view stays available for every provider\./)).toBeInTheDocument();
-
-    fireEvent.click(screen.getByRole('switch', { name: 'Chat' }));
-
-    await waitFor(() => {
-      expect(mockSaveExperimentalSettings).toHaveBeenCalledWith({ goobers: true, chat: true });
-    });
+    expect(screen.queryByText(/Needs Chat/)).not.toBeInTheDocument();
   });
 
   it('renders the Telemetry export toggle and saves it under the telemetry id', async () => {
@@ -115,27 +104,27 @@ describe('ExperimentalSettingsView', () => {
   it('does not list Clubhouse MCP as experimental (promoted)', async () => {
     render(<ExperimentalSettingsView />);
     await waitFor(() => {
-      expect(screen.getByText('Theme gradients & fonts')).toBeInTheDocument();
+      expect(screen.getByText('New layout')).toBeInTheDocument();
     });
     expect(screen.queryByText('Clubhouse MCP')).not.toBeInTheDocument();
   });
 
   it('toggles a feature and saves', async () => {
-    mockGetExperimentalSettings.mockResolvedValue({ themeGradients: false });
+    mockGetExperimentalSettings.mockResolvedValue({ newChrome: false });
     const { container } = render(<ExperimentalSettingsView />);
 
     await waitFor(() => {
-      expect(screen.getByText('Theme gradients & fonts')).toBeInTheDocument();
+      expect(screen.getByText('New layout')).toBeInTheDocument();
     });
 
     // The Toggle component renders a button with a rounded-full class
-    // First toggle is the Theme Gradients & Fonts feature
+    // First toggle is the New layout feature
     const toggleBtn = container.querySelector('button.rounded-full') as HTMLElement;
     expect(toggleBtn).toBeInTheDocument();
     fireEvent.click(toggleBtn);
 
     await waitFor(() => {
-      expect(mockSaveExperimentalSettings).toHaveBeenCalledWith({ themeGradients: true });
+      expect(mockSaveExperimentalSettings).toHaveBeenCalledWith({ newChrome: true });
     });
   });
 

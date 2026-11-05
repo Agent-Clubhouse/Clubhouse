@@ -118,7 +118,7 @@ let window: Page;
 test.beforeAll(async () => {
   writeLifecycleAgent();
 
-  ({ electronApp, window } = await launchApp({ experimental: {} }));
+  ({ electronApp, window } = await launchApp({ experimental: { chat: false } }));
 
   await installLifecycleStub(electronApp);
   await addProject(electronApp, window, FIXTURE_DIR);

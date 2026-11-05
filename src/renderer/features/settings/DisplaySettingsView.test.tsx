@@ -52,6 +52,16 @@ describe('DisplaySettingsView', () => {
     expect(mockSetTheme).toHaveBeenCalledWith('catppuccin-latte');
   });
 
+  it('offers Theme gradients & fonts, on unless saved off, and changes it through the store', () => {
+    const setThemeGradients = vi.fn();
+    useThemeStore.setState({ experimentalGradients: true, setThemeGradients });
+    render(<DisplaySettingsView />);
+    const toggle = screen.getByRole('switch', { name: 'Theme gradients & fonts' });
+    expect(toggle).toHaveAttribute('aria-checked', 'true');
+    fireEvent.click(toggle);
+    expect(setThemeGradients).toHaveBeenCalledWith(false);
+  });
+
   it('renders Home view toggle', () => {
     render(<DisplaySettingsView />);
     expect(screen.getByText('Home')).toBeInTheDocument();

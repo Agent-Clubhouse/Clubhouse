@@ -1,78 +1,101 @@
 /**
- * First-launch tip for Chat as the default runtime
- * (docs/structured-chat-research.md §8.0 step 4): "Agents now open in Chat…"
- * next to the Chat / CLI switch, once per user.
+ * One-time tip for people whose agents now open in Chat because it became the
+ * default: a toast that links to Settings > Agents & providers, where they can
+ * choose the CLI view.
  *
- * It only shows when chat came from the default: never once the user has
- * explicitly chosen CLI anywhere (a provider setting, any durable agent
- * set to CLI, or the switch), and not for a provider or agent explicitly
- * set to Chat. The decision is remembered in localStorage (per user profile)
- * as soon as the tip is shown, so it never reappears, even if neither button
- * is pressed. If that write fails, the tip doesn't show at all: a tip that
- * can't be remembered would come back on every launch.
+ * Two markers in localStorage (per user profile), each one-time:
+ *
+ * - `chatMessageShown`: the user has been told about chat. The toast sets it
+ *   when it shows, and anything else that tells them, like a welcome intro's
+ *   chat step (#2814), calls markChatMessageShown so the toast never shows.
+ * - `clubhouse_chat_default_tip`: this user doesn't need telling. Set when a
+ *   launch rules the toast out, and by the tip earlier builds showed. A new
+ *   install has no agents, so it's ruled out on its first launch and doesn't
+ *   show after it gets some.
+ *
+ * It only shows when chat comes from the default for an agent that already
+ * exists: never with the flag saved either way, any saved provider or agent
+ * choice, or no agent that would open in chat. If the marker can't be written,
+ * it doesn't show at all: a tip that can't be remembered would come back on
+ * every launch. A launch that can't read the settings decides nothing, so the
+ * next one asks again.
  */
 
-import type { Agent } from '../../../../shared/types';
-import { isRemoteProjectId } from '../../../stores/remoteProjectStore';
+import { useToastStore } from '../../../stores/toastStore';
+import { useUIStore } from '../../../stores/uiStore';
 
-export const CHAT_DEFAULT_TIP_KEY = 'clubhouse_chat_default_tip';
+export const CHAT_MESSAGE_SHOWN_KEY = 'chatMessageShown';
+export const CHAT_TIP_RULED_OUT_KEY = 'clubhouse_chat_default_tip';
 
-export type ChatTipResolution = 'shown' | 'dismissed' | 'opened_settings' | 'chose_terminal' | 'chose_chat';
+type ChatTipRuledOut = 'saved_choice' | 'no_chat_agents';
 
-export const CHAT_DEFAULT_TIP_TEXT = 'Agents now open in Chat. Prefer the CLI view? You can change it for each provider in Settings.';
+export const CHAT_DEFAULT_TIP_TEXT = 'Agents now open in Chat. You can choose the CLI view in Settings > Agents & providers.';
+export const CHAT_DEFAULT_TIP_ACTION = 'Open settings';
 
-/** True once the tip has been shown or ruled out. Storage errors count as resolved: never nag. */
-export function isChatTipResolved(): boolean {
+const DEFAULT_PROVIDER = 'claude-code';
+
+function isMarked(key: string): boolean {
   try {
-    return localStorage.getItem(CHAT_DEFAULT_TIP_KEY) !== null;
+    return localStorage.getItem(key) !== null;
   } catch { // telemetry-exempt: no storage means never nag
     return true;
   }
 }
 
-/** Record why the tip is done; any stored value means it never shows again. False when storage refused the write. */
-export function resolveChatTip(how: ChatTipResolution): boolean {
+function mark(key: string, value: string): boolean {
   try {
-    localStorage.setItem(CHAT_DEFAULT_TIP_KEY, how);
+    localStorage.setItem(key, value);
     return true;
   } catch { // telemetry-exempt: storage unavailable; callers treat a failed write as "don't show"
     return false;
   }
 }
 
-/** Record an explicit CLI choice: the user never needs the tip after that. */
-export function noteExplicitTerminalChoice(): void {
-  resolveChatTip('chose_terminal');
+/** Record that the user has been told about chat, so the toast doesn't show. False when storage refused the write. */
+export function markChatMessageShown(): boolean {
+  return mark(CHAT_MESSAGE_SHOWN_KEY, 'true');
+}
+
+/** The first saved agent that main says will wake in chat, or why the tip isn't needed. */
+async function findDefaultChatAgent(): Promise<{ provider: string } | ChatTipRuledOut> {
+  const flags = await window.clubhouse.app.getExperimentalSettings();
+  if (typeof flags?.chat === 'boolean') return 'saved_choice';
+  const settings = await window.clubhouse.chat.getRuntimeSettings();
+  if (Object.values(settings ?? {}).some((s) => s?.mode)) return 'saved_choice';
+
+  type Saved = { id?: string; orchestrator?: string; runtimeMode?: string | null };
+  const projects: Array<{ path: string }> = await window.clubhouse.project.list();
+  const lists = await Promise.all(projects.map(async (p) => ({
+    path: p.path,
+    configs: await (window.clubhouse.agent.listDurable(p.path) as Promise<Saved[]>).catch((): Saved[] => []),
+  })));
+  if (lists.some(({ configs }) => configs.some((c) => c?.runtimeMode))) return 'saved_choice';
+
+  for (const { path, configs } of lists) {
+    for (const { id, orchestrator } of configs) {
+      if (!id) continue;
+      const { chat } = await window.clubhouse.chat.getAgentRuntime(id, orchestrator, { projectPath: path, starting: true });
+      if (chat) return { provider: orchestrator ?? DEFAULT_PROVIDER };
+    }
+  }
+  return 'no_chat_agents';
 }
 
 /**
- * Whether to show the tip for this chat agent. Checks the saved choices,
- * provider settings first and then every local project's durable agents, and
- * resolves the tip when they rule it out for good. Runs until the tip is
- * resolved, so the scan happens at most a few times per user.
+ * Show the tip if this launch calls for it. Rejects, deciding nothing, when the
+ * settings can't be read. Called from one place, initAppEventBridge, so a
+ * welcome intro (#2814) can run first or gate it there.
  */
-export async function shouldShowChatDefaultTip(agent: Agent, projects: ReadonlyArray<{ id: string; path: string }>): Promise<boolean> {
-  if (isChatTipResolved()) return false;
-  const provider = agent.orchestrator ?? 'claude-code';
-  const settings = await window.clubhouse.chat.getRuntimeSettings();
-  if (Object.values(settings ?? {}).some((s) => s?.mode === 'terminal')) {
-    noteExplicitTerminalChoice();
-    return false;
+export async function showChatDefaultTip(): Promise<void> {
+  if (isMarked(CHAT_MESSAGE_SHOWN_KEY) || isMarked(CHAT_TIP_RULED_OUT_KEY)) return;
+  const found = await findDefaultChatAgent();
+  if (typeof found === 'string') {
+    mark(CHAT_TIP_RULED_OUT_KEY, found);
+    return;
   }
-  if (settings?.[provider]?.mode === 'chat') {
-    resolveChatTip('chose_chat');
-    return false;
-  }
-  const local = projects.filter((p) => p.path && !isRemoteProjectId(p.id));
-  type Saved = { id?: string; runtimeMode?: string | null };
-  const lists = await Promise.all(local.map((p) =>
-    (window.clubhouse.agent.listDurable(p.path) as Promise<Saved[]>).catch((): Saved[] => [])));
-  const configs = lists.flat();
-  if (configs.some((c) => c?.runtimeMode === 'terminal')) {
-    noteExplicitTerminalChoice();
-    return false;
-  }
-  // This agent was explicitly set to Chat: nothing to tell it.
-  if (configs.some((c) => c?.id === agent.id && c.runtimeMode === 'chat')) return false;
-  return true;
+  if (!markChatMessageShown()) return;
+  useToastStore.getState().addToast(CHAT_DEFAULT_TIP_TEXT, 'info', {
+    label: CHAT_DEFAULT_TIP_ACTION,
+    onClick: () => useUIStore.getState().openRuntimeSettings(found.provider),
+  });
 }

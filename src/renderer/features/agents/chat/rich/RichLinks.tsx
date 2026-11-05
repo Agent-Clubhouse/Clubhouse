@@ -20,7 +20,7 @@ import { findFilePaths } from './file-paths';
 const FILE_CHIP_TEXT_MAX = 200_000;
 
 /**
- * Link tokens in chat (#2351), behind experimental.richChatContent. A
+ * Link tokens in chat (#2351), behind the richChatContent flag. A
  * RichLinkProvider around a transcript turns them on; without one (or with the
  * flag off) Markdown and tool output render exactly as before.
  *

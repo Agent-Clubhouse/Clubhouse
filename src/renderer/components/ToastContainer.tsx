@@ -23,6 +23,18 @@ function ToastItem({ toast }: { toast: Toast }) {
     >
       <span className={`w-2 h-2 rounded-full flex-shrink-0 ${toast.type === 'error' ? 'bg-ctp-error' : 'bg-ctp-info'}`} aria-hidden="true" />
       <span className="flex-1 min-w-0 break-words">{toast.message}</span>
+      {toast.action && (
+        <Button
+          kind="ghost"
+          data-testid="toast-action"
+          onClick={() => {
+            toast.action?.onClick();
+            removeToast(toast.id);
+          }}
+        >
+          {toast.action.label}
+        </Button>
+      )}
       <Button
         kind="quiet"
         aria-label="Dismiss notification"

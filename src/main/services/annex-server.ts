@@ -17,6 +17,8 @@ import { MobileCommandService, MobileControlError, chatControls, executeChatComm
 import { isRevertRunning } from './agent-runtime/checkpoint-tracker';
 import { readChatTranscript, listChatSessions } from './agent-runtime/chat-transcript';
 import { getSettings as getExperimentalSettings } from './experimental-settings';
+import { isGraduatedFlagOn } from '../../shared/graduated-flags';
+import { RICH_CHAT_CONTENT_FLAG } from '../../shared/chat';
 import { readMobileChatContent } from './annex-chat-content';
 import { agentFolders } from './agent-runtime/chat-files';
 import { buildAgentDetails, buildAgentSettings, buildAgentSettingsOptions, buildCreateOptions, createMobileAgent, mobileOrchestration, updateMobileAgent, updateMobileDispatcher } from './mobile-agents';
@@ -3045,7 +3047,7 @@ async function handleMobileCapabilitiesRoute(ctx: AnnexRouteContext): Promise<vo
     version: 1, epoch: mobileCommands.epoch, controlAuth: 'mtls-pinned-client',
     controlAvailable: !!ctx.mobilePrincipal, commands: MOBILE_COMMAND_TYPES,
     pairing: { sessionRevokePath: '/api/v1/mobile/pairing' },
-    richContent: { version: 1, enabled: getExperimentalSettings().richChatContent === true, maximumBytes: 8 * 1024 * 1024 },
+    richContent: { version: 1, enabled: isGraduatedFlagOn(getExperimentalSettings(), RICH_CHAT_CONTENT_FLAG), maximumBytes: 8 * 1024 * 1024 },
     attachments: MOBILE_ATTACHMENTS_CAPABILITY,
     events: { transport: 'annex-websocket', replayRequest: 'mobile:replay', queueState: 'queue_state' },
     createOptions: { version: 1, path: '/api/v1/mobile/projects/{projectId}/create-options' },
@@ -3182,7 +3184,7 @@ async function handleMobileChatRoute(ctx: AnnexRouteContext, match: RegExpMatchA
     const eligible = beforeSeq === undefined ? current : current.filter((e) => e.seq < beforeSeq);
     // The agent's folders (#2457): relative paths resolve against the first. Older phones
     // link only absolute paths under them; `contentAnyPath` says any readable path is served (#2478).
-    const richContent = getExperimentalSettings().richChatContent === true;
+    const richContent = isGraduatedFlagOn(getExperimentalSettings(), RICH_CHAT_CONTENT_FLAG);
     const contentRoots = richContent ? await agentFolders(agentId).catch((): string[] => []) : [];
     const pending = live ? pendingInteractions(current) : { pendingPermissions: [], pendingQuestions: [] };
     const page = buildChatPage({
@@ -3219,7 +3221,7 @@ async function handleMobileChatRoute(ctx: AnnexRouteContext, match: RegExpMatchA
   }
 }
 
-/** Rich content stays behind the desktop experimental opt-in and pinned mobile mTLS.
+/** Rich content stays behind the desktop setting (on unless saved off) and pinned mobile mTLS.
  * Recheck authorization after filesystem IO; revocation may race a preview read. */
 async function handleMobileContentRoute(ctx: AnnexRouteContext, match: RegExpMatchArray): Promise<void> {
   const principal = ctx.mobilePrincipal;
@@ -3238,7 +3240,7 @@ async function handleMobileContentRoute(ctx: AnnexRouteContext, match: RegExpMat
       sendJson(ctx.res, 404, { error: 'agent_not_found' }); return;
     }
     const query = new URL(ctx.url, 'http://localhost').searchParams;
-    const result = await readMobileChatContent(query, agentId, () => getExperimentalSettings().richChatContent === true);
+    const result = await readMobileChatContent(query, agentId, () => isGraduatedFlagOn(getExperimentalSettings(), RICH_CHAT_CONTENT_FLAG));
     if (!authorized()) { sendJson(ctx.res, 403, { error: 'authorization_revoked' }); return; }
     ctx.res.setHeader('Cache-Control', 'no-store');
     sendJson(ctx.res, 200, result);

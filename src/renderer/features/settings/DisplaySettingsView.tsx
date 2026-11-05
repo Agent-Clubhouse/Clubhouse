@@ -1,4 +1,3 @@
-import { useEffect, useState } from 'react';
 import { useThemeStore } from '../../stores/themeStore';
 import { useUIStore } from '../../stores/uiStore';
 import { getTheme } from '../../themes';
@@ -83,13 +82,8 @@ export function DisplaySettingsView() {
     showHome: { value: showHome, set: setShowHome },
   };
 
-  const [gradientsEnabled, setGradientsEnabled] = useState(false);
-
-  useEffect(() => {
-    window.clubhouse.app.getExperimentalSettings().then((s) => {
-      setGradientsEnabled(!!s.themeGradients);
-    });
-  }, []);
+  const gradientsEnabled = useThemeStore((s) => s.experimentalGradients);
+  const setThemeGradients = useThemeStore((s) => s.setThemeGradients);
 
   return (
     <SettingsPage title="Display & UI" description="App appearance and sidebar views.">
@@ -112,6 +106,13 @@ export function DisplaySettingsView() {
       </SettingsSection>
 
       <SettingsSection title="Color theme">
+        <SettingsField
+          label="Theme gradients & fonts"
+          help="Let themes use their own font families and background gradients. Themes that don't define any look the same either way."
+          testId="theme-gradients-row"
+        >
+          <Toggle aria-label="Theme gradients & fonts" checked={gradientsEnabled} onChange={(on) => { void setThemeGradients(on); }} />
+        </SettingsField>
         <SettingsBlock>
           <div className="grid grid-cols-2 gap-2">
             {availableThemeIds.map((id) => {

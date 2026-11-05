@@ -1028,13 +1028,11 @@ export const STRUCTURED_MODE_REMOVED_NOTICE_KEY = 'structuredModeRemovedNotice';
  * Experimental features that count only in preview-eligible builds, where the
  * Experimental settings page is shown. Elsewhere they read as off and stay saved,
  * so a stable build never runs a feature it offers no way to turn off.
- * `themeGradients` isn't here: stable builds have honoured it since before the page was gated.
+ * Graduated flags (`chat`, `richChatContent`, `themeGradients`) aren't here: every build honours them as saved.
  */
 export const PREVIEW_ONLY_EXPERIMENTAL_FLAGS: readonly string[] = [
   'newChrome',
   'goobers',
-  'chat',
-  'richChatContent',
   'copilotSdk',
   'dispatcher',
   'telemetry',

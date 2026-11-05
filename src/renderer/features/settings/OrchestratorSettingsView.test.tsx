@@ -8,7 +8,6 @@ import { useSessionSettingsStore } from '../../stores/sessionSettingsStore';
 import { useMcpSettingsStore } from '../../stores/mcpSettingsStore';
 import { OrchestratorSettingsView } from './OrchestratorSettingsView';
 import { useUIStore } from '../../stores/uiStore';
-import { CHAT_DEFAULT_TIP_KEY } from '../agents/chat/chat-default-tip';
 
 // Mock ProjectAgentDefaultsSection to avoid deep component tree
 vi.mock('./ProjectAgentDefaultsSection', () => ({
@@ -321,8 +320,8 @@ describe('OrchestratorSettingsView', () => {
     });
 
     function setChatFlag(on: boolean) {
-      window.clubhouse.app.getExperimentalSettings = vi.fn().mockResolvedValue(on ? { chat: true } : {});
-      window.clubhouse.app.isPreviewEligible = vi.fn().mockResolvedValue(true);
+      window.clubhouse.app.getExperimentalSettings = vi.fn().mockResolvedValue(on ? {} : { chat: false });
+      window.clubhouse.app.saveExperimentalSettings = vi.fn().mockResolvedValue(undefined);
     }
 
     it('offers the chat idle timeout when chat is on, and saves Never as 0 (#2104)', async () => {
@@ -351,26 +350,60 @@ describe('OrchestratorSettingsView', () => {
     it('hides the chat idle timeout when chat is off (#2104)', async () => {
       setChatFlag(false);
       render(<OrchestratorSettingsView />);
-      await waitFor(() => expect(window.clubhouse.app.getExperimentalSettings).toHaveBeenCalled());
+      await screen.findByRole('switch', { name: 'Chat view' });
       expect(screen.queryByTestId('chat-idle-timeout')).not.toBeInTheDocument();
     });
 
-    it('is hidden on stable builds even when a Chat flag is saved', async () => {
-      setChatFlag(true);
-      window.clubhouse.app.isPreviewEligible = vi.fn().mockResolvedValue(false);
-      render(<OrchestratorSettingsView />);
-      await waitFor(() => expect(window.clubhouse.app.isPreviewEligible).toHaveBeenCalled());
-      expect(screen.queryByText('Runtime')).not.toBeInTheDocument();
-      expect(getRuntimeSettings).not.toHaveBeenCalled();
-    });
-
-    it('is hidden when the experimental Chat flag is off', async () => {
+    it('is hidden when Chat is saved off, whatever is saved for the provider', async () => {
       setChatFlag(false);
+      getRuntimeSettings.mockResolvedValue({ 'claude-code': { mode: 'chat' } });
       render(<OrchestratorSettingsView />);
-      await waitFor(() => expect(window.clubhouse.app.getExperimentalSettings).toHaveBeenCalled());
+      await screen.findByRole('switch', { name: 'Chat view' });
       expect(screen.getByText('Hook server')).toBeInTheDocument();
       expect(screen.queryByText('Runtime')).not.toBeInTheDocument();
-      expect(getRuntimeSettings).not.toHaveBeenCalled();
+    });
+
+    describe('the Chat section', () => {
+      it('turns a saved-off Chat back on, keeping other flags and provider choices', async () => {
+        setChatFlag(false);
+        window.clubhouse.app.getExperimentalSettings = vi.fn().mockResolvedValue({ chat: false, goobers: true });
+        getRuntimeSettings.mockResolvedValue({ 'claude-code': { mode: 'terminal' } });
+        render(<OrchestratorSettingsView />);
+        const toggle = await screen.findByRole('switch', { name: 'Chat view' });
+        expect(toggle).toHaveAttribute('aria-checked', 'false');
+        fireEvent.click(toggle);
+        await waitFor(() => expect(window.clubhouse.app.saveExperimentalSettings).toHaveBeenCalledWith({ chat: true, goobers: true }));
+        expect(toggle).toHaveAttribute('aria-checked', 'true');
+        const row = await screen.findByTestId('runtime-mode-claude-code');
+        expect(within(row).getByRole('radio', { name: 'CLI' })).toHaveAttribute('aria-checked', 'true');
+        expect(saveRuntimeSettings).not.toHaveBeenCalled();
+      });
+
+      it('reads both flags as on when nothing is saved, and a change saves only that flag', async () => {
+        setChatFlag(true);
+        render(<OrchestratorSettingsView />);
+        const rich = await screen.findByRole('switch', { name: 'Rich chat content' });
+        expect(rich).toHaveAttribute('aria-checked', 'true');
+        expect(screen.getByRole('switch', { name: 'Chat view' })).toHaveAttribute('aria-checked', 'true');
+        fireEvent.click(rich);
+        await waitFor(() => expect(window.clubhouse.app.saveExperimentalSettings).toHaveBeenCalledWith({ richChatContent: false }));
+      });
+
+      it('shows a saved-off rich content setting, even with Chat off, so it can be changed', async () => {
+        window.clubhouse.app.getExperimentalSettings = vi.fn().mockResolvedValue({ chat: false, richChatContent: false });
+        window.clubhouse.app.saveExperimentalSettings = vi.fn().mockResolvedValue(undefined);
+        render(<OrchestratorSettingsView />);
+        const rich = await screen.findByRole('switch', { name: 'Rich chat content' });
+        expect(rich).toHaveAttribute('aria-checked', 'false');
+        fireEvent.click(rich);
+        await waitFor(() => expect(window.clubhouse.app.saveExperimentalSettings).toHaveBeenCalledWith({ chat: false, richChatContent: true }));
+      });
+
+      it('says what the rich content setting lets paired phones do', async () => {
+        setChatFlag(true);
+        render(<OrchestratorSettingsView />);
+        expect(await screen.findByText(/paired phones \(Clubhouse Go\) can also read any file your user account can read on this computer, up to a size limit/)).toBeInTheDocument();
+      });
     });
 
     describe('the Copilot chat driver choice', () => {
@@ -386,8 +419,7 @@ describe('OrchestratorSettingsView', () => {
       });
 
       function setSdkFlag() {
-        window.clubhouse.app.getExperimentalSettings = vi.fn().mockResolvedValue({ chat: true, copilotSdk: true });
-        window.clubhouse.app.isPreviewEligible = vi.fn().mockResolvedValue(true);
+        window.clubhouse.app.getExperimentalSettings = vi.fn().mockResolvedValue({ copilotSdk: true });
       }
 
       it('is not offered with its flag off, even with the SDK saved, and the choice stays saved', async () => {
@@ -432,7 +464,7 @@ describe('OrchestratorSettingsView', () => {
         unmount();
         setChatFlag(false);
         render(<OrchestratorSettingsView />);
-        await waitFor(() => expect(window.clubhouse.app.getExperimentalSettings).toHaveBeenCalled());
+        await screen.findByRole('switch', { name: 'Chat view' });
         expect(screen.queryByTestId('chat-driver-copilot-cli')).not.toBeInTheDocument();
       });
     });
@@ -493,16 +525,6 @@ describe('OrchestratorSettingsView', () => {
       render(<OrchestratorSettingsView />);
       expect(await screen.findByTestId('runtime-mode-github-copilot')).toBeInTheDocument();
       expect(screen.queryByText('Hook server')).not.toBeInTheDocument();
-    });
-
-    it('records an explicit Terminal choice so the Chat default tip never shows', async () => {
-      setChatFlag(true);
-      localStorage.removeItem(CHAT_DEFAULT_TIP_KEY);
-      render(<OrchestratorSettingsView />);
-      const row = await screen.findByTestId('runtime-mode-claude-code');
-      fireEvent.click(within(row).getByRole('radio', { name: 'CLI' }));
-      expect(localStorage.getItem(CHAT_DEFAULT_TIP_KEY)).toBe('chose_terminal');
-      localStorage.removeItem(CHAT_DEFAULT_TIP_KEY);
     });
 
     it('scrolls to and outlines the provider runtime row for the deep link, then clears the focus', async () => {

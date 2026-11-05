@@ -169,7 +169,8 @@ test.beforeAll(async () => {
     { id: 'popout_agent_3', name: 'gamma-popout', color: 'red' },
   ]);
 
-  ({ electronApp, window: mainWindow } = await launchApp());
+  // These cover the CLI view in a pop-out: a fake PTY never answers as a chat runtime.
+  ({ electronApp, window: mainWindow } = await launchApp({ experimental: { chat: false } }));
   await addProject(FIXTURE_DIR);
   await waitForDurableAgents();
 });

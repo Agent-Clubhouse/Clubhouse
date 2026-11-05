@@ -460,14 +460,14 @@ describe('the matrix', () => {
 
   it('expects nothing Preview-gated without Preview', () => {
     for (const scenario of SCENARIOS.filter((s: { preview: boolean }) => !s.preview)) {
-      expect(expectedFor(scenario)).toMatchObject({ previewEligible: false, newChrome: false, chatEnabled: false, flagsInForce: null, settingsPages: [], dispatcherRow: false, dispatcherFolderAbsent: true });
+      expect(expectedFor(scenario)).toMatchObject({ previewEligible: false, newChrome: false, chatEnabled: true, flagsInForce: null, settingsPages: [], dispatcherRow: false, dispatcherFolderAbsent: true });
     }
   });
 
   it('expects flags to take effect only with Preview on', () => {
-    expect(expectedFor({ state: 'beta', preview: true, flags: true })).toMatchObject({ previewEligible: true, newChrome: true, chatEnabled: true, flagsInForce: BETA_FLAGS, settingsPages: PREVIEW_PAGES, dispatcherRow: true, wakesInChatMustBeFalse: false });
-    expect(expectedFor({ state: 'beta', preview: true, flags: false })).toMatchObject({ previewEligible: true, newChrome: false, chatEnabled: false, flagsInForce: null, settingsPages: ['Experimental', 'Annex', 'Annex control'], wakesInChatMustBeFalse: true });
-    expect(expectedFor({ state: 'fresh', preview: true, flags: true })).toMatchObject({ newChrome: true, dispatcherRow: false, wakesInChatMustBeFalse: false });
+    expect(expectedFor({ state: 'beta', preview: true, flags: true })).toMatchObject({ previewEligible: true, newChrome: true, chatEnabled: true, flagsInForce: BETA_FLAGS, settingsPages: PREVIEW_PAGES, dispatcherRow: true });
+    expect(expectedFor({ state: 'beta', preview: true, flags: false })).toMatchObject({ previewEligible: true, newChrome: false, chatEnabled: true, flagsInForce: null, settingsPages: ['Experimental', 'Annex', 'Annex control'] });
+    expect(expectedFor({ state: 'fresh', preview: true, flags: true })).toMatchObject({ newChrome: true, dispatcherRow: false });
   });
 
   it('expects saved beta files to stay byte for byte only with Preview off', () => {
@@ -480,7 +480,7 @@ describe('the matrix', () => {
 
 describe('checkStartupRecord', () => {
   const expected = expectedFor({ state: 'fresh', preview: false, flags: false });
-  const good = { packaged: true, version: '0.42.0', electron: '45.1.0', previewEligible: false, newChrome: false, chatEnabled: false };
+  const good = { packaged: true, version: '0.42.0', electron: '45.1.0', previewEligible: false, newChrome: false, chatEnabled: true };
   const opts = { version: '0.42.0', electron: '45.1.0' };
 
   it('passes a matching record', () => {
@@ -493,7 +493,7 @@ describe('checkStartupRecord', () => {
     ['electron', { electron: '45.2.0' }],
     ['previewEligible', { previewEligible: true }],
     ['newChrome', { newChrome: true }],
-    ['chatEnabled', { chatEnabled: true }],
+    ['chatEnabled', { chatEnabled: false }],
   ])('fails on %s', (field, change) => {
     expect(checkStartupRecord({ ...good, ...change }, expected, opts).join()).toContain(field);
   });
@@ -522,8 +522,7 @@ describe('checkRenderer', () => {
     ['chrome-sidebar', { chromeSidebar: true }],
     ['dispatcher-row', { dispatcherRow: true }],
     ['settings pages', { settingsPages: ['Experimental'] }],
-    ['wakes in chat', { wakesInChat: true }],
-    ['flags in force', { flags: { chat: true } }],
+    ['flags in force', { flags: { dispatcher: true } }],
   ])('fails on %s', (label, change) => {
     expect(checkRenderer({ ...offObserved, ...change }, expectedFor({ state: 'beta', preview: false, flags: true })).join()).toContain(label);
   });

@@ -12,7 +12,7 @@ export function buildThemeInfo(): ThemeInfo {
     hljs: { ...theme.hljs },
     terminal: { ...theme.terminal },
   };
-  // Only expose fonts/gradients when the experimental flag is on
+  // Fonts and gradients are exposed unless the themeGradients setting is saved off
   if (state.experimentalGradients) {
     if (theme.fonts) info.fonts = { ...theme.fonts };
     if (theme.gradients) info.gradients = { ...theme.gradients };
@@ -30,10 +30,13 @@ export function createThemeAPI(ctx: PluginContext): ThemeAPI {
       // unregistered the store keeps themeId and only swaps in the fallback theme.
       // The definition, not just its id: a pack update re-registers the same id
       // with new colours (#2123).
+      // And the setting: turning it on or off changes what a theme exposes.
       let prev = useThemeStore.getState().theme;
+      let prevGradients = useThemeStore.getState().experimentalGradients;
       const unsub = useThemeStore.subscribe((state) => {
-        if (state.theme !== prev) {
+        if (state.theme !== prev || state.experimentalGradients !== prevGradients) {
           prev = state.theme;
+          prevGradients = state.experimentalGradients;
           const info: ThemeInfo = {
             id: state.theme.id,
             name: state.theme.name,

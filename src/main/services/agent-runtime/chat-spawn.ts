@@ -28,6 +28,7 @@ import { appLog } from '../log-service';
 import { resolveRuntimeMode } from '../chat-runtime-settings';
 import { getSettings as getExperimentalSettings } from '../experimental-settings';
 import { RICH_CHAT_CONTENT_FLAG } from '../../../shared/chat';
+import { isGraduatedFlagOn } from '../../../shared/graduated-flags';
 import type { ChatDriver } from '../../../shared/chat';
 import type { ChatResumeTiming, McpHttpEndpoint } from '../../../shared/chat/runtime';
 import { IPC } from '../../../shared/ipc-channels';
@@ -606,7 +607,7 @@ async function runChatStart(
       provider: provider.id,
       driverId: driver.id,
       cwd: params.cwd,
-      richMedia: () => getExperimentalSettings()[RICH_CHAT_CONTENT_FLAG] === true,
+      richMedia: () => isGraduatedFlagOn(getExperimentalSettings(), RICH_CHAT_CONTENT_FLAG),
       // Read from the env the CLI runs with: a profile's COPILOT_HOME moves it.
       sessionOutputDir: (nativeSessionId) => sessionOutputDir(provider.id, nativeSessionId, env),
       level,

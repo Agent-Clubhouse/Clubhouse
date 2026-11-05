@@ -54,7 +54,19 @@ describe('themeStore', () => {
     useThemeStore.setState({
       themeId: 'catppuccin-mocha',
       theme: THEMES['catppuccin-mocha'],
-      experimentalGradients: false,
+      experimentalGradients: true,
+    });
+  });
+
+  // ---- the setting ----
+  describe('setThemeGradients', () => {
+    it('applies to the current theme at once and saves, keeping other flags', async () => {
+      mockApp.getExperimentalSettings.mockResolvedValueOnce({ goobers: true });
+      mockApp.saveExperimentalSettings = vi.fn().mockResolvedValue(undefined);
+      await getState().setThemeGradients(false);
+      expect(applyTheme).toHaveBeenLastCalledWith(getState().theme, { experimentalGradients: false });
+      expect(getState().experimentalGradients).toBe(false);
+      expect(mockApp.saveExperimentalSettings).toHaveBeenCalledWith({ goobers: true, themeGradients: false });
     });
   });
 
@@ -69,6 +81,22 @@ describe('themeStore', () => {
 
   // ---- loadTheme ----
   describe('loadTheme', () => {
+    it('applies fonts and gradients unless the flag is saved off', async () => {
+      mockApp.getTheme.mockResolvedValue({ themeId: 'dracula' });
+      await getState().loadTheme();
+      expect(getState().experimentalGradients).toBe(true);
+
+      mockApp.getExperimentalSettings.mockResolvedValueOnce({ themeGradients: false });
+      await getState().loadTheme();
+      expect(getState().experimentalGradients).toBe(false);
+      expect(applyTheme).toHaveBeenLastCalledWith(THEMES['dracula'], { experimentalGradients: false });
+
+      // A saved true means what it did before.
+      mockApp.getExperimentalSettings.mockResolvedValueOnce({ themeGradients: true });
+      await getState().loadTheme();
+      expect(getState().experimentalGradients).toBe(true);
+    });
+
     it('loads theme from IPC settings', async () => {
       mockApp.getTheme.mockResolvedValueOnce({ themeId: 'dracula' });
 
@@ -76,7 +104,7 @@ describe('themeStore', () => {
 
       expect(getState().themeId).toBe('dracula');
       expect(getState().theme).toBe(THEMES['dracula']);
-      expect(applyTheme).toHaveBeenCalledWith(THEMES['dracula'], { experimentalGradients: false });
+      expect(applyTheme).toHaveBeenCalledWith(THEMES['dracula'], { experimentalGradients: true });
       expect(mockApp.updateTitleBarOverlay).toHaveBeenCalledWith({
         color: THEMES['dracula'].colors.mantle,
         symbolColor: THEMES['dracula'].colors.text,
@@ -133,7 +161,7 @@ describe('themeStore', () => {
 
       expect(getState().themeId).toBe('nord');
       expect(getState().theme).toBe(THEMES['nord']);
-      expect(applyTheme).toHaveBeenCalledWith(THEMES['nord'], { experimentalGradients: false });
+      expect(applyTheme).toHaveBeenCalledWith(THEMES['nord'], { experimentalGradients: true });
       expect(mockApp.updateTitleBarOverlay).toHaveBeenCalledWith({
         color: THEMES['nord'].colors.mantle,
         symbolColor: THEMES['nord'].colors.text,
@@ -202,7 +230,7 @@ describe('themeStore', () => {
       // Plugin registers — triggers onRegistryChange
       registerTheme(fakePluginTheme);
 
-      expect(applyTheme).toHaveBeenCalledWith(fakePluginTheme, { experimentalGradients: false });
+      expect(applyTheme).toHaveBeenCalledWith(fakePluginTheme, { experimentalGradients: true });
       expect(mockApp.updateTitleBarOverlay).toHaveBeenCalledWith({
         color: fakePluginTheme.colors.mantle,
         symbolColor: fakePluginTheme.colors.text,
@@ -233,7 +261,7 @@ describe('themeStore', () => {
       unregisterTheme(otherTheme.id);
 
       // applyTheme is called to regenerate the flash-prevention cache atomically
-      expect(applyTheme).toHaveBeenCalledWith(fakePluginTheme, { experimentalGradients: false });
+      expect(applyTheme).toHaveBeenCalledWith(fakePluginTheme, { experimentalGradients: true });
     });
 
     it('falls back to catppuccin-mocha when the active plugin theme is unregistered', async () => {
@@ -243,7 +271,7 @@ describe('themeStore', () => {
 
       unregisterTheme(fakePluginTheme.id);
 
-      expect(applyTheme).toHaveBeenCalledWith(THEMES['catppuccin-mocha'], { experimentalGradients: false });
+      expect(applyTheme).toHaveBeenCalledWith(THEMES['catppuccin-mocha'], { experimentalGradients: true });
       expect(mockApp.updateTitleBarOverlay).toHaveBeenCalledWith({
         color: THEMES['catppuccin-mocha'].colors.mantle,
         symbolColor: THEMES['catppuccin-mocha'].colors.text,
@@ -264,7 +292,7 @@ describe('themeStore', () => {
 
       expect(useThemeStore.getState().themeId).toBe(fakePluginTheme.id);
       expect(useThemeStore.getState().theme).toBe(fakePluginTheme);
-      expect(applyTheme).toHaveBeenLastCalledWith(fakePluginTheme, { experimentalGradients: false });
+      expect(applyTheme).toHaveBeenLastCalledWith(fakePluginTheme, { experimentalGradients: true });
       expect(mockApp.saveTheme).not.toHaveBeenCalled();
     });
 
@@ -456,7 +484,7 @@ describe('themeStore', () => {
       unregisterTheme(other.id);
 
       // applyTheme must be called to keep CSS vars and flash-prevention cache in sync
-      expect(applyTheme).toHaveBeenCalledWith(pluginTheme, { experimentalGradients: false });
+      expect(applyTheme).toHaveBeenCalledWith(pluginTheme, { experimentalGradients: true });
     });
 
     it('removes localStorage cache when active plugin theme is unregistered', async () => {
@@ -479,7 +507,7 @@ describe('themeStore', () => {
       unregisterTheme(pluginTheme.id);
 
       expect(useThemeStore.getState().theme).toBe(THEMES['catppuccin-mocha']);
-      expect(applyTheme).toHaveBeenCalledWith(THEMES['catppuccin-mocha'], { experimentalGradients: false });
+      expect(applyTheme).toHaveBeenCalledWith(THEMES['catppuccin-mocha'], { experimentalGradients: true });
       // Cache was removed, not left stale
       expect(localStorageStore['clubhouse-theme-vars']).toBeUndefined();
     });

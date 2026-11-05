@@ -6,7 +6,6 @@ import { useProjectStore } from '../../../stores/projectStore';
 import { useAgentStore } from '../../../stores/agentStore';
 import { AgentRuntimePane, resetChatFlagCache, switchAgentRuntime } from './AgentRuntimePane';
 import { chatFixture, FIXTURE_AGENT_ID } from './fixtures';
-import { CHAT_DEFAULT_TIP_KEY } from './chat-default-tip';
 import { CHAT_CONTRACT_VERSION, MINIMAL_CHAT_CAPABILITIES, type ChatEvent } from '../../../../shared/chat';
 
 const agent: Agent = {
@@ -60,13 +59,13 @@ describe('AgentRuntimePane', () => {
     expect(container.firstChild).toBe(screen.getByTestId('fake-terminal'));
   });
 
-  it('keeps the flag off in builds that are not preview-eligible', async () => {
-    setFlag(true, false);
+  it('asks main for the runtime with the flag missing, in any build', async () => {
+    api.app.getExperimentalSettings = vi.fn(async () => ({})) as typeof api.app.getExperimentalSettings;
+    api.app.isPreviewEligible = vi.fn(async () => false);
     setRuntime(true, true);
     render(<AgentRuntimePane agent={agent} terminal={terminal} />);
-    await act(async () => { await Promise.resolve(); });
-    expect(screen.getByTestId('fake-terminal')).toBeInTheDocument();
-    expect(api.chat.getAgentRuntime).not.toHaveBeenCalled();
+    await waitFor(() => expect(api.chat.getAgentRuntime).toHaveBeenCalled());
+    expect(screen.queryByTestId('fake-terminal')).not.toBeInTheDocument();
   });
 
   it('shows ChatView for an agent running in chat', async () => {
@@ -232,9 +231,6 @@ describe('AgentRuntimePane', () => {
     // Waits for the exit so the respawn resumes the session the old process just saved.
     expect(killAgent).toHaveBeenCalledWith(FIXTURE_AGENT_ID, '/work/clubhouse', { waitForExit: true });
     expect(spawnDurableAgent).toHaveBeenCalledWith('proj-1', '/work/clubhouse', config, true);
-    // Choosing Terminal is explicit: the "Agents now open in Chat" tip is never needed again.
-    expect(localStorage.getItem(CHAT_DEFAULT_TIP_KEY)).toBe('chose_terminal');
-    localStorage.removeItem(CHAT_DEFAULT_TIP_KEY);
   });
 
   it('asks before switching during a turn', async () => {

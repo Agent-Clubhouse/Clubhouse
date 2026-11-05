@@ -122,7 +122,7 @@ async function createThenWakeProviderAgent(providerCase: ProviderCase): Promise<
   expect(fs.existsSync(PACKAGED_EXECUTABLE)).toBe(true);
 
   const app = await launchApp({
-    experimental: {},
+    experimental: { chat: false },
     executablePath: PACKAGED_EXECUTABLE,
   });
   const electronApp = app.electronApp;

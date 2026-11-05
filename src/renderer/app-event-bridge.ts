@@ -37,6 +37,7 @@ import { initChatEventListener } from './stores/chatStore';
 import { initToolActivityListener } from './plugins/builtin/canvas/useWireActivity';
 import { usePendingPermissionStore } from './stores/pendingPermissionStore';
 import { showStructuredModeRemovedNotice } from './services/structured-mode-removal-notice';
+import { showChatDefaultTip } from './features/agents/chat/chat-default-tip';
 import { isDispatcherAgent, isDispatcherProjectId, useDispatcherStore } from './features/dispatcher/dispatcherStore';
 import { DISPATCHER_PROJECT_ID } from '../shared/dispatcher-types';
 import { closeDispatcher, openDispatcher } from './features/dispatcher/dispatcherNav';
@@ -850,6 +851,8 @@ export function initAppEventBridge(): () => void {
   cleanups.push(initStaleStatusCleanup());
 
   showStructuredModeRemovedNotice().catch(() => { /* best-effort one-time notice */ });
+  // The one call site for the first-launch Chat tip: a welcome intro (#2814) can run first or gate it here.
+  showChatDefaultTip().catch(() => { /* best-effort one-time tip; asked again next launch */ });
   cleanups.push(initKeyboardShortcuts());
   cleanups.push(initAnnexListener());
   cleanups.push(initAnnexClientListener());

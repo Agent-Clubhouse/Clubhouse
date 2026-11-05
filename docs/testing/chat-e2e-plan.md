@@ -101,7 +101,7 @@ Recording costs tokens, and a recording names your machine's paths, so area fixt
 
 ## Harness
 
-- **`openRichChat({ cli, script, flags?, projectFiles?, outsideFiles? })`:** builds and installs the script, launches with Chat on (seeded, since it's read at mount), sets the flags through the settings IPC (`setExperimentalFlags`, default `richChatContent: true`), adds a temp project, creates a durable agent on that provider and opens its chat. It checks that the app spawned the fake before returning. `script` can be a function of `{ projectDir, outsideDir }`.
+- **`openRichChat({ cli, script, flags?, projectFiles?, outsideFiles? })`:** builds and installs the script, launches with nothing saved, so Chat and rich content are on by default, saves any `flags` through the settings IPC (`setExperimentalFlags`), adds a temp project, creates a durable agent on that provider and opens its chat. It checks that the app spawned the fake before returning. `script` can be a function of `{ projectDir, outsideDir }`.
 - **`setExperimentalFlags(window, flags)`:** saves through `window.clubhouse.app.saveExperimentalSettings`, as the Settings toggle does, then reads the flags back. The renderer reads `richChatContent` once, when the first chat pane mounts, so set flags before opening a chat, or `window.reload()` after changing them mid-session.
 - **`chatDom(window)`:** locators for file chips (`fileChip(path)`, `mutedChip(path)`), the preview popover and PDF canvas, tool images, the lightbox, media cards, the permission and question dock, the queue, and the composer.
 - **`expectImageLoaded`, `expectCanvasPainted`, `expectNoPageScroll`:** state checks that poll until true. "Painted" means not every pixel is the same, which proves pdf.js drew the page.
@@ -146,7 +146,7 @@ Recording costs tokens, and a recording names your machine's paths, so area fixt
 
 ## Phase 3 graduation gate
 
-`richChatContent` becomes the default only when all of these hold:
+`richChatContent` became the default for v1.0.0 (the harness now runs on the default, and the flag-off spec turns it off). The gate as it was written:
 
 - [ ] Every area spec (0 to 8) is merged and green on Linux and Windows.
 - [ ] Five consecutive Validate runs on `main` have every `Chat E2E Tests` job green on the first attempt, with no test marked flaky.

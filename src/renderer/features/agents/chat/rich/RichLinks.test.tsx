@@ -26,7 +26,7 @@ const MD = [
 const prOpen: GithubRefResult = { ok: true, details: { kind: 'pull', title: 'Add tokens', state: 'open', author: 'octo', updatedAt: new Date().toISOString(), checks: 'passing' } };
 
 function setFlag(on: boolean) {
-  vi.mocked(window.clubhouse.app.getExperimentalSettings).mockResolvedValue(on ? { richChatContent: true } : {});
+  vi.mocked(window.clubhouse.app.getExperimentalSettings).mockResolvedValue({ richChatContent: on });
 }
 
 async function renderIn(ui: React.ReactElement) {
@@ -74,6 +74,17 @@ describe('flag off', () => {
     const { container, getByRole } = await renderIn(<CommandCard tool={tool} />);
     fireEvent.click(getByRole('button'));
     expect(container.innerHTML).toBe(html);
+  });
+});
+
+describe('flag missing', () => {
+  it('counts as on', async () => {
+    vi.mocked(window.clubhouse.app.getExperimentalSettings).mockResolvedValue({});
+    const plain = render(<Markdown text={MD} />);
+    const html = plain.container.innerHTML;
+    plain.unmount();
+    const { container } = await renderIn(<Markdown text={MD} />);
+    expect(container.innerHTML).not.toBe(html);
   });
 });
 

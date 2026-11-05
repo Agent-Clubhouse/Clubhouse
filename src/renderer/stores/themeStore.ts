@@ -3,6 +3,7 @@ import { ThemeId, ThemeDefinition } from '../../shared/types';
 import { getTheme, getAllThemeIds, getAllThemes, BUILTIN_THEMES, onRegistryChange } from '../themes';
 import { applyTheme } from '../themes/apply-theme';
 import { rendererLog } from '../plugins/renderer-logger';
+import { isGraduatedFlagOn } from '../../shared/graduated-flags';
 
 /** Notify the main process to update the Windows title bar overlay colors. */
 function syncTitleBarOverlay(theme: ThemeDefinition): void {
@@ -50,10 +51,12 @@ interface ThemeState {
   theme: ThemeDefinition;
   /** All available theme IDs (builtins + plugin-contributed). */
   availableThemeIds: ThemeId[];
-  /** Whether the experimental themeGradients flag is enabled. */
+  /** Whether themes may use their fonts and gradients: the themeGradients flag, on unless saved off. */
   experimentalGradients: boolean;
   loadTheme: () => Promise<void>;
   setTheme: (id: ThemeId) => Promise<void>;
+  /** Save the themeGradients flag and apply it to the current theme. */
+  setThemeGradients: (on: boolean) => Promise<void>;
   /** Refresh the available themes list from the registry. */
   refreshAvailable: () => void;
 }
@@ -62,7 +65,7 @@ export const useThemeStore = create<ThemeState>((set, get) => ({
   themeId: 'catppuccin-mocha',
   theme: BUILTIN_THEMES['catppuccin-mocha'],
   availableThemeIds: getAllThemeIds(),
-  experimentalGradients: false,
+  experimentalGradients: true,
 
   loadTheme: async () => {
     try {
@@ -72,7 +75,7 @@ export const useThemeStore = create<ThemeState>((set, get) => ({
       ]);
       const id = (settings?.themeId || 'catppuccin-mocha') as ThemeId;
       const theme = resolveTheme(id);
-      const experimentalGradients = !!experimental?.themeGradients;
+      const experimentalGradients = isGraduatedFlagOn(experimental, 'themeGradients');
       applyTheme(theme, { experimentalGradients });
       syncAppliedTheme(theme);
       set({ themeId: id, theme, experimentalGradients, availableThemeIds: getAllThemeIds() });
@@ -90,6 +93,13 @@ export const useThemeStore = create<ThemeState>((set, get) => ({
     syncAppliedTheme(theme);
     set({ themeId: id, theme });
     await window.clubhouse.app.saveTheme({ themeId: id });
+  },
+
+  setThemeGradients: async (on) => {
+    applyTheme(get().theme, { experimentalGradients: on });
+    set({ experimentalGradients: on });
+    const current = await window.clubhouse.app.getExperimentalSettings();
+    await window.clubhouse.app.saveExperimentalSettings({ ...current, themeGradients: on });
   },
 
   refreshAvailable: () => {

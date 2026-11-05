@@ -221,10 +221,25 @@ describe('a preview-only flag in a stable build', () => {
     const { targets } = await read(dispatcher, { select: ['app.defaults.chat_enabled', 'app.system.experimental_dispatcher', 'app.system.experimental_copilot_sdk'], detail: true });
     const off = { stored: true, effective: false, source: 'app' };
     expect(targets[0].settings).toMatchObject({
-      'app.defaults.chat_enabled': off,
+      // Graduated: a stable build honours it as saved.
+      'app.defaults.chat_enabled': { stored: true, effective: true, source: 'app' },
       'app.system.experimental_dispatcher': off,
       'app.system.experimental_copilot_sdk': off,
     });
+  });
+
+  it('reads Chat as on by default, and off once saved off, in a stable build', async () => {
+    packaged(true);
+    const missing = await read(dispatcher, { select: ['app.defaults.chat_enabled', 'app.system.experimental_chat'], detail: true });
+    expect(missing.targets[0].settings).toMatchObject({
+      'app.defaults.chat_enabled': { stored: null, effective: true, source: 'default' },
+      'app.system.experimental_chat': { stored: null, effective: true, source: 'default' },
+    });
+
+    writeApp('experimental-settings.json', { chat: false });
+    resetAllSettingsStoresForTests();
+    const saved = await read(dispatcher, { select: ['app.defaults.chat_enabled'], detail: true });
+    expect(saved.targets[0].settings['app.defaults.chat_enabled']).toEqual({ stored: false, effective: false, source: 'app' });
   });
 
   it('agrees with what the same flags read as in a preview build', async () => {
@@ -350,6 +365,7 @@ describe('scope', () => {
 describe('values and sources', () => {
   it('shows effective and source by default, and adds stored and names with detail', async () => {
     writeApp('chat-idle-settings.json', { idleTimeoutMinutes: 60 });
+    writeApp('experimental-settings.json', { chat: false });
     resetAllSettingsStoresForTests();
     const compact = await read(ordinary(), { select: ['agent.idle.idle_sleep'] });
     expect(compact.targets[0]).toEqual({

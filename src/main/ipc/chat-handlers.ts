@@ -8,6 +8,7 @@ import { app, BrowserWindow, clipboard, ClipboardItem, ipcMain, nativeImage, net
 import { IPC } from '../../shared/ipc-channels';
 import type { ChatAgentRuntimeInfo, ChatDriverId, ChatQuestionAnswers, ChatRuntimeSettings, ContentBlock, MessageDelivery, PermissionLevel, PermissionResponseExtras } from '../../shared/chat';
 import { CHAT_ATTACHMENTS_MAX, CHAT_IMAGE_MAX_BYTES, PERMISSION_LEVELS, RICH_CHAT_CONTENT_FLAG, isMediaRef } from '../../shared/chat';
+import { isGraduatedFlagOn } from '../../shared/graduated-flags';
 import { getAgentRuntime, readChatTranscript, listChatSessions, onChatEvent } from '../services/agent-runtime';
 import { getAgentRuntimeInfo, type AgentRuntimeQuery } from '../services/agent-runtime/runtime-info';
 import { createStatusBridge } from '../services/agent-runtime/chat-status-bridge';
@@ -40,9 +41,9 @@ function assertTopFrameOfAppWindow(event: IpcMainInvokeEvent, message = 'Attachm
   }
 }
 
-/** Rich chat content channels: only with the flag on, and only from a Clubhouse window's own page. */
+/** Rich chat content channels: unless the flag is saved off, and only from a Clubhouse window's own page. */
 function assertRichMedia(event: IpcMainInvokeEvent): void {
-  if (getExperimentalSettings()[RICH_CHAT_CONTENT_FLAG] !== true) throw new Error('Rich chat content is off');
+  if (!isGraduatedFlagOn(getExperimentalSettings(), RICH_CHAT_CONTENT_FLAG)) throw new Error('Rich chat content is off');
   assertTopFrameOfAppWindow(event, 'Chat images can only be opened from a Clubhouse window');
 }
 

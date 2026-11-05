@@ -1,14 +1,15 @@
 /**
- * Chat runtime preferences: the experimental `chat` flag and the per-provider
- * Chat / CLI choice. With the flag off, every agent runs in the terminal.
+ * Chat runtime preferences: the `chat` flag and the per-provider Chat / CLI
+ * choice. With the flag saved off, every agent runs in the terminal.
  */
 
 import { createSettingsStore } from './settings-store';
 import * as experimentalSettings from './experimental-settings';
 import { isPreviewEligible } from './preview-eligible';
+import { isGraduatedFlagOn } from '../../shared/graduated-flags';
 import { COPILOT_SDK_FLAG, type AgentRuntimeMode, type ChatDriverId, type ChatRuntimeSettings } from '../../shared/chat';
 
-/** Experimental flag id (Settings › Experimental › Chat). */
+/** The flag's id in experimental settings (Settings › Agents & providers › Chat view). */
 export const CHAT_EXPERIMENTAL_FLAG = 'chat';
 
 /** Mode a provider gets when the flag is on and the user hasn't chosen. */
@@ -19,16 +20,12 @@ const store = createSettingsStore<ChatRuntimeSettings>('chat-runtime-settings.js
 export const getSettings = store.get;
 export const saveSettings = store.save;
 
-/**
- * Chat is experimental and beta-only: the flag counts only in builds where
- * the Experimental settings page is shown (dev, pre-release, preview channel),
- * so a flag saved on a beta doesn't switch a stable build into chat.
- */
+/** Chat is on in every build unless the flag is saved off. */
 export function isChatEnabled(): boolean {
-  return isPreviewEligible() && experimentalSettings.getSettings()[CHAT_EXPERIMENTAL_FLAG] === true;
+  return isGraduatedFlagOn(experimentalSettings.getSettings(), CHAT_EXPERIMENTAL_FLAG);
 }
 
-/** The Copilot SDK driver's own flag, with the same beta-only gate as Chat. */
+/** The Copilot SDK driver's own flag: still experimental, so beta-only. */
 export function isCopilotSdkEnabled(): boolean {
   return isPreviewEligible() && experimentalSettings.getSettings()[COPILOT_SDK_FLAG] === true;
 }
