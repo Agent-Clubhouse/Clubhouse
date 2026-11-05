@@ -1112,6 +1112,20 @@ describe('agents can only read', () => {
     expect(refused.find((row) => row.key === 'assetCatalog.copy')).toMatchObject({ surface, targetId: 'agent-9' });
   });
 
+  it('a subagent\'s tool list goes through without a person, and reaches the plan and the preview', async () => {
+    const role = await store.createAsset({ kind: 'block', name: 'Role', payload: doc() });
+    const sub = await store.createAsset({ kind: 'subagent', name: 'Helper', payload: { agentName: 'helper', description: 'x', blocks: [ref('Role', role)], skills: [], mcps: [], provider: { claude: { tools: ['Read', 'Agent', 'mcp__clubhouse__send_message'], model: 'distinctive-model' } } } });
+    const template = await store.createAsset({ kind: 'template', name: 'T', payload: { entries: [ref('Role', role)], subagents: [{ entryId: 'Helper', subagentId: sub.id, subagentRevision: 1 }], skills: [], mcps: [] } });
+    const stored = await compose('a', instanceOf(template));
+    expect(stored.authorityApprovals).toEqual({});
+
+    const plan = await store.plan({ agentId: 'a', adoption: ACCEPTED });
+    const expected = { path: 'claude.tools', list: 'allow', names: ['Read', 'Agent', 'mcp__clubhouse__send_message'], delegation: ['Agent'], clubhouseMcp: ['mcp__clubhouse__send_message'], hasUnlisted: false };
+    expect(plan.subagents[0].toolFields).toEqual([expected]);
+    expect(await store.previewRevision(sub.id, 1)).toMatchObject({ toolFields: [expected] });
+    expect(JSON.stringify(plan)).not.toContain('distinctive-model');
+  });
+
   it('a person\'s resolution of authority fields can only come from a person', async () => {
     const role = await store.createAsset({ kind: 'block', name: 'Role', payload: doc() });
     const sub = await store.createAsset({ kind: 'subagent', name: 'Risky', payload: { agentName: 'risky', description: 'x', blocks: [ref('Role', role)], skills: [], mcps: [], provider: { claude: { permissionMode: 'bypassPermissions' } } } });

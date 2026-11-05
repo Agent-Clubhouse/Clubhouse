@@ -30,6 +30,7 @@ import type {
   SkillFile,
   SubagentAssetPayload,
   SubagentRef,
+  SubagentToolField,
   TemplateAssetPayload,
   TemplateOperationalDefaults,
   UpstreamPackage,
@@ -526,6 +527,46 @@ function collectAuthorityFields(value: unknown, path: string, out: string[]): vo
   }
 }
 
+const TOOL_ALLOW_FIELDS = new Set(['tools', 'allowedtools', 'availabletools']);
+const TOOL_DENY_FIELDS = new Set(['disallowedtools', 'deniedtools', 'excludedtools']);
+const DELEGATION_TOOL_RE = /^(?:Agent|Task)(?:\(.*\))?$/;
+const CLUBHOUSE_MCP_TOOL_RE = /^mcp__clubhouse(?:__|$)/i;
+
+/** A list of names, or the comma-separated string native definition files use. Anything else stays unlisted, and says so. */
+function toolFieldOf(value: unknown, path: string, list: SubagentToolField['list']): SubagentToolField {
+  const items: unknown[] = typeof value === 'string' ? value.split(',').map((name) => name.trim()).filter(Boolean) : Array.isArray(value) ? value : [value];
+  const names = items.filter((item): item is string => typeof item === 'string');
+  return {
+    path,
+    list,
+    names,
+    delegation: names.filter((name) => DELEGATION_TOOL_RE.test(name)),
+    clubhouseMcp: names.filter((name) => CLUBHOUSE_MCP_TOOL_RE.test(name)),
+    hasUnlisted: names.length !== items.length,
+  };
+}
+
+function collectToolFields(value: unknown, path: string, out: SubagentToolField[]): void {
+  if (Array.isArray(value)) {
+    value.forEach((item, index) => collectToolFields(item, `${path}[${index}]`, out));
+    return;
+  }
+  if (!isRecord(value)) return;
+  for (const [key, item] of Object.entries(value)) {
+    const at = `${path}.${safeKey(key)}`;
+    const field = normalizedField(key);
+    if (TOOL_ALLOW_FIELDS.has(field)) out.push(toolFieldOf(item, at, 'allow'));
+    else if (TOOL_DENY_FIELDS.has(field)) out.push(toolFieldOf(item, at, 'deny'));
+    else collectToolFields(item, at, out);
+  }
+}
+
+function toolFieldsOf(provider: SubagentAssetPayload['provider']): SubagentToolField[] {
+  const fields: SubagentToolField[] = [];
+  for (const [id, section] of Object.entries(provider ?? {})) collectToolFields(section, safeKey(id), fields);
+  return fields.sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0));
+}
+
 function validateSubagent(raw: Record<string, unknown>, issues: Issues, reservedAllowed: boolean): SubagentAssetPayload | null {
   issues.closed(raw, ['agentName', 'description', 'blocks', 'skills', 'mcps', 'provider'], '');
   const { agentName, description, provider } = raw;
@@ -606,6 +647,7 @@ export function projectionOf(kind: AssetKind, payload: AssetPayload): AssetProje
         mcps: subagent.mcps,
         providers: Object.keys(subagent.provider ?? {}).sort(),
         authorityFields: authorityFields.sort(),
+        toolFields: toolFieldsOf(subagent.provider),
       };
     }
     case 'template': {
@@ -880,6 +922,7 @@ export function previewPayload(kind: AssetKind, payload: AssetPayload): AssetPre
         providerFields: Object.fromEntries(
           Object.entries(subagent.provider ?? {}).map(([id, section]) => [id, Object.keys(section).sort()]),
         ),
+        toolFields: toolFieldsOf(subagent.provider),
       };
     }
     case 'template':

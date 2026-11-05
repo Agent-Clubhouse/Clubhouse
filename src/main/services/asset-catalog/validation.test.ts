@@ -331,6 +331,53 @@ describe('native subagent definitions', () => {
     expect(authority(claude(section))).toEqual([path]);
   });
 
+  describe('tool lists', () => {
+    const toolFields = (section: Record<string, unknown>) => {
+      const result = validatePayload('subagent', claude(section));
+      if (result.ok !== true || result.projection.kind !== 'subagent') throw new Error('expected a valid subagent');
+      return result.projection.toolFields;
+    };
+
+    it('don\'t raise authority: an allowlist is an ordinary definition', () => {
+      expect(authority(claude({ tools: ['Read', 'Agent', 'mcp__clubhouse__send_message'] }))).toEqual([]);
+    });
+
+    it('are kept for a person to see, by name', () => {
+      expect(toolFields({ tools: ['Read', 'Grep'] })).toEqual([
+        { path: 'claude.tools', list: 'allow', names: ['Read', 'Grep'], delegation: [], clubhouseMcp: [], hasUnlisted: false },
+      ]);
+    });
+
+    it('point out delegation, with or without a scope', () => {
+      expect(toolFields({ tools: ['Read', 'Agent', 'Agent(worker, researcher)', 'Task', 'AgentSomething'] })[0].delegation).toEqual(['Agent', 'Agent(worker, researcher)', 'Task']);
+    });
+
+    it('point out Clubhouse\'s own MCP tools', () => {
+      const names = ['mcp__clubhouse__send_message', 'mcp__Clubhouse__clubhouse__x_y', 'mcp__clubhouse', 'mcp__clubhouses__other', 'mcp__github__search'];
+      expect(toolFields({ tools: names })[0].clubhouseMcp).toEqual(names.slice(0, 3));
+    });
+
+    it('read the comma-separated string native definitions use', () => {
+      expect(toolFields({ tools: 'Read, Agent , mcp__clubhouse__x' })[0]).toMatchObject({ names: ['Read', 'Agent', 'mcp__clubhouse__x'], delegation: ['Agent'], clubhouseMcp: ['mcp__clubhouse__x'] });
+    });
+
+    it('tell an allow list from a deny list, and find them at any depth', () => {
+      expect(toolFields({ disallowedTools: ['Agent'], nested: { allowedTools: ['Read'] } }).map((field) => [field.path, field.list])).toEqual([
+        ['claude.disallowedTools', 'deny'],
+        ['claude.nested.allowedTools', 'allow'],
+      ]);
+    });
+
+    it('say so when something in one isn\'t a name, rather than dropping it quietly', () => {
+      expect(toolFields({ tools: ['Read', { custom: true }] })[0]).toMatchObject({ names: ['Read'], hasUnlisted: true });
+      expect(toolFields({ tools: { custom: true } })[0]).toMatchObject({ names: [], hasUnlisted: true });
+    });
+
+    it('none declared is an empty list, and nothing more is claimed', () => {
+      expect(toolFields({ model: 'inherit' })).toEqual([]);
+    });
+  });
+
   it('an MCP referred to by name raises nothing', () => {
     expect(authority(claude({ mcpServers: ['named', 'other'] }))).toEqual([]);
   });
@@ -471,9 +518,13 @@ describe('redaction', () => {
     expect(JSON.stringify(preview)).not.toContain('aGk=');
   });
 
-  it('previews a subagent with field names by provider, never their values', () => {
-    const preview = previewPayload('subagent', { ...subagent, provider: { claude: { model: 'distinctive-model', tools: ['distinctive-tool'] } } });
-    expect(preview).toMatchObject({ agentName: 'test-runner', providerFields: { claude: ['model', 'tools'] } });
+  it('previews a subagent with field names by provider, and no values but tool names', () => {
+    const preview = previewPayload('subagent', { ...subagent, provider: { claude: { model: 'distinctive-model', tools: ['Agent', 'mcp__clubhouse__x'] } } });
+    expect(preview).toMatchObject({
+      agentName: 'test-runner',
+      providerFields: { claude: ['model', 'tools'] },
+      toolFields: [{ path: 'claude.tools', names: ['Agent', 'mcp__clubhouse__x'], delegation: ['Agent'], clubhouseMcp: ['mcp__clubhouse__x'] }],
+    });
     expect(JSON.stringify(preview)).not.toContain('distinctive');
   });
 

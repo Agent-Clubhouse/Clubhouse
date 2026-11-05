@@ -712,6 +712,7 @@ function planResolved(
       mcps: pinnedLatest(projection.mcps, 'mcp'),
       providers: projection.providers,
       authorityFields: projection.authorityFields,
+      toolFields: projection.toolFields,
       ...(origin && { origin }),
       update: contentState,
     });

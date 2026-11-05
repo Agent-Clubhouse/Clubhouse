@@ -166,6 +166,7 @@ export type AssetProjection =
     providers: string[];
     /** Where a field that can raise authority sits, such as `claude.permissionMode`. Never its value. */
     authorityFields: string[];
+    toolFields: SubagentToolField[];
   }
   | {
     kind: 'template';
@@ -175,6 +176,25 @@ export type AssetProjection =
     mcps: string[];
     operationalDefaults?: TemplateOperationalDefaults;
   };
+
+/**
+ * A tool list on a native subagent definition, for a person to see before it's
+ * delivered. It doesn't block. It's only what the provider section declares, and
+ * says nothing about what the definition can really reach. No list means none
+ * declared, not none available.
+ */
+export interface SubagentToolField {
+  /** Where it sits, such as `claude.tools`. */
+  path: string;
+  list: 'allow' | 'deny';
+  names: string[];
+  /** Of those, the ones that delegate further: `Agent`, with or without a scope, and `Task`. */
+  delegation: string[];
+  /** Of those, the ones naming Clubhouse's own MCP tools. */
+  clubhouseMcp: string[];
+  /** It held something that isn't a tool name, which is stored and not listed here. */
+  hasUnlisted: boolean;
+}
 
 /** Set once, at publication. Republishing a reference to an existing revision adds no tag. */
 export interface BundledBy {
@@ -545,6 +565,7 @@ export interface PlannedSubagent {
   mcps: Array<{ assetId: string; revision: number; contentHash: string }>;
   providers: string[];
   authorityFields: string[];
+  toolFields: SubagentToolField[];
   origin?: OriginStatus;
   update: PlannedContentUpdate | null;
 }
@@ -885,8 +906,9 @@ export type AssetPreview =
     blocks: BlockRef[];
     skills: string[];
     mcps: string[];
-    /** Field names by provider, never values. */
+    /** Field names by provider. Tool names are the only values shown, in `toolFields`. */
     providerFields: Record<string, string[]>;
+    toolFields: SubagentToolField[];
   }
   | ({ kind: 'template' } & TemplateAssetPayload);
 

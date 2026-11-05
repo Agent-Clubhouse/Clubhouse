@@ -70,7 +70,7 @@ function tmpl(entries: BlockRef[], more: { subagents?: SubagentRef[]; skills?: s
 }
 
 function subagent(agentName: string, more: Partial<Extract<AssetProjection, { kind: 'subagent' }>> = {}): AssetProjection {
-  return { kind: 'subagent', agentName, blocks: [], skills: [], mcps: [], providers: ['claude'], authorityFields: [], ...more };
+  return { kind: 'subagent', agentName, blocks: [], skills: [], mcps: [], providers: ['claude'], authorityFields: [], toolFields: [], ...more };
 }
 
 function indexOf(assets: CatalogEntry[], compositions: AgentComposition[] = []): CatalogIndex {
@@ -891,6 +891,43 @@ describe('native subagents', () => {
     const index = withSubagent();
     const result = plan(index, instanceOf(index, 't'), ACCEPTED, [{ key: 'subagents/test-runner', owner: 'native' }]);
     expect(result.blockers[0]).toMatchObject({ code: 'foreign_destination_collision', foreignOwner: 'native' });
+  });
+
+  describe('tool lists', () => {
+    const toolField = {
+      path: 'claude.tools',
+      list: 'allow' as const,
+      names: ['Read', 'Agent', 'mcp__clubhouse__send_message'],
+      delegation: ['Agent'],
+      clubhouseMcp: ['mcp__clubhouse__send_message'],
+      hasUnlisted: false,
+    };
+
+    it('don\'t block, and the plan shows them for a person to see', () => {
+      const index = withSubagent(definitions({ toolFields: [toolField] }));
+      const result = plan(index, instanceOf(index, 't'));
+      expect(result.blockers).toEqual([]);
+      expect(result.activation).not.toBeNull();
+      expect(result.subagents[0].toolFields).toEqual([toolField]);
+    });
+
+    it('don\'t make a revision wait', () => {
+      const index = indexOf([
+        block('a'),
+        entry('sub', [subagent('tester', { toolFields: [toolField] })]),
+        entry('t', [tmpl([ref('A', 'a')]), tmpl([ref('A', 'a')], { subagents: [subRef('Sub', 'sub')] })]),
+      ]);
+      expect(plan(index, instanceOf(index, 't'), LATEST).structure).toMatchObject({ resolvedRevision: 2, update: { status: 'clean', subagentReasons: [] } });
+    });
+
+    it('none declared stays empty, and the plan claims nothing about isolation', () => {
+      const index = withSubagent();
+      const result = plan(index, instanceOf(index, 't'));
+      expect(result.subagents[0].toolFields).toEqual([]);
+      expect(JSON.stringify(result)).not.toMatch(/isolat|sandbox|restricted|confined/i);
+      const declared = withSubagent(definitions({ toolFields: [toolField] }));
+      expect(JSON.stringify(plan(declared, instanceOf(declared, 't')))).not.toMatch(/isolat|sandbox|restricted|confined/i);
+    });
   });
 
   describe('authority', () => {
