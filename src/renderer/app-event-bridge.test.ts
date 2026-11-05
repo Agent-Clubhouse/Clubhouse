@@ -467,7 +467,7 @@ describe('initAppEventBridge', () => {
       headless: true, orchestrator: 'claude-code', freeAgentMode: true, runCwd: '/repo/wt', runBaseSha: 'abc1234',
     };
 
-    it('records a finished headless run that has no mission, so its view can end (#2813)', async () => {
+    it('records a run marked headless that has no mission (a PTY fallback), so its view can end (#2813)', async () => {
       const completed = await exitQuickAgent({ ...headlessAgent, mission: undefined }, null, 0);
       expect(completed).toMatchObject({ id: 'q1', mission: '', summary: null, exitCode: 0, headless: true });
     });

@@ -1599,6 +1599,19 @@ describe('headless-manager', () => {
       expect(onExit).toHaveBeenCalledWith('test-agent', 128 + os.constants.signals.SIGTERM);
     });
 
+    it('does not escalate to SIGKILL once SIGTERM has ended the process (#2813)', async () => {
+      await spawnHeadless('test-agent', '/project', '/usr/bin/claude', ['-p', 'test']);
+      kill('test-agent');
+      (mockProcess as any).signalCode = 'SIGTERM';
+      mockProcess.kill.mockClear();
+
+      vi.advanceTimersByTime(5000);
+
+      expect(mockProcess.kill).not.toHaveBeenCalled();
+      expect(vi.mocked(appLog).mock.calls.filter((c) => c[2] === 'Failed to kill headless process')).toEqual([]);
+      expect(isHeadless('test-agent')).toBe(true);
+    });
+
     it('a close after the sweep does not report the exit twice (#2813)', async () => {
       const onExit = vi.fn();
       await spawnHeadless('test-agent', '/project', '/usr/bin/claude', ['-p', 'test'], undefined, 'stream-json', onExit);

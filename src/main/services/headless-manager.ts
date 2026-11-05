@@ -716,6 +716,8 @@ export function kill(agentId: string): void {
   session.killTimer = setTimeout(() => {
     const current = sessions.get(agentId);
     if (current && current.process === proc) {
+      // SIGTERM worked, and a child holding stdout is delaying close. The sweep reports the exit.
+      if (hasExited(proc)) return;
       agentKillStage(agentId, 'sigkill');
       try {
         if (proc.kill('SIGKILL') === false) throw new Error('Kill signal was not delivered');

@@ -24,10 +24,15 @@ vi.mock('electron', () => ({
 vi.mock('./log-service', () => ({ appLog: vi.fn() }));
 vi.mock('./annex-event-bus', () => ({ emitHookEvent: vi.fn(), emitPtyExit: vi.fn() }));
 vi.mock('./pty-manager', () => ({ validateSpawnCwd: vi.fn(async () => undefined) }));
+vi.mock('../telemetry/agent-telemetry', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../telemetry/agent-telemetry')>()),
+  agentKillStage: vi.fn(),
+}));
 
 import { IPC } from '../../shared/ipc-channels';
 import { summarizeHeadlessTranscript } from '../../shared/headless-transcript';
 import { TimelineBuilder } from '../../renderer/features/agents/states/timeline';
+import { agentKillStage } from '../telemetry/agent-telemetry';
 import { appLog } from './log-service';
 import { isHeadless, kill, spawnHeadless, startStaleSweep, stopStaleSweep } from './headless-manager';
 
@@ -99,6 +104,7 @@ describe('headless-manager with a fake CLI (#2813)', () => {
     holderPidFile = path.join(hoisted.userData.dir, 'holder.pid');
     vi.mocked(appLog).mockClear();
     onExit.mockClear();
+    vi.mocked(agentKillStage).mockClear();
     vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval', 'setTimeout', 'clearTimeout', 'Date'] });
     startStaleSweep();
   });
@@ -209,6 +215,11 @@ describe('headless-manager with a fake CLI (#2813)', () => {
       await realSleep(100);
       expect(exits()).toEqual([]);
 
+      // The kill timer fires on a process that is already gone: nothing to escalate.
+      vi.advanceTimersByTime(KILL_ESCALATION_MS);
+      expect(logLines('Failed to kill headless process')).toEqual([]);
+      expect(agentKillStage).not.toHaveBeenCalledWith(AGENT, 'sigkill');
+
       vi.advanceTimersByTime(SWEEP_MS);
       expect(isHeadless(AGENT)).toBe(false);
       expect(exits().map((e) => e[1])).toEqual([128 + os.constants.signals.SIGTERM]);
@@ -223,6 +234,7 @@ describe('headless-manager with a fake CLI (#2813)', () => {
       expect(isAlive(cliPid())).toBe(true);
 
       vi.advanceTimersByTime(KILL_ESCALATION_MS);
+      expect(agentKillStage).toHaveBeenCalledWith(AGENT, 'sigkill');
       await until(() => !isAlive(cliPid()), 'the CLI to die');
       await realSleep(100);
 

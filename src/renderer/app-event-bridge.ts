@@ -198,8 +198,9 @@ function initPtyExitListener(): () => void {
       useAgentStore.getState().updateAgentStatus(agentId, 'sleeping' as AgentStatus, exitCode, undefined, lastOutput);
 
       // Handle quick agent completion FIRST (before plugin events which could throw)
-      // A headless run needs its record even with no mission: its view has no
-      // other way to end (#2813).
+      // With no mission the provider has no headless command and the run falls
+      // back to a PTY, but the agent is still marked headless and shows the run
+      // monitor, which only a record can end (#2813).
       if (agent?.kind === 'quick' && (agent.mission || agent.headless)) {
         let summary: string | null = null;
         let filesModified: string[] = [];
