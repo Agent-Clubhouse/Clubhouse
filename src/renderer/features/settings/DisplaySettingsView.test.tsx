@@ -1,4 +1,4 @@
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { DisplaySettingsView } from './DisplaySettingsView';
 import { useThemeStore } from '../../stores/themeStore';
 import { useUIStore } from '../../stores/uiStore';
@@ -14,6 +14,7 @@ vi.mock('../../themes', async (importOriginal) => {
   };
 });
 
+const realSetThemeGradients = useThemeStore.getState().setThemeGradients;
 const mockSetTheme = vi.fn();
 const mockSetShowHome = vi.fn();
 
@@ -53,13 +54,32 @@ describe('DisplaySettingsView', () => {
   });
 
   it('offers Theme gradients & fonts, on unless saved off, and changes it through the store', () => {
-    const setThemeGradients = vi.fn();
+    const setThemeGradients = vi.fn().mockResolvedValue(true);
     useThemeStore.setState({ experimentalGradients: true, setThemeGradients });
     render(<DisplaySettingsView />);
     const toggle = screen.getByRole('switch', { name: 'Theme gradients & fonts' });
     expect(toggle).toHaveAttribute('aria-checked', 'true');
     fireEvent.click(toggle);
     expect(setThemeGradients).toHaveBeenCalledWith(false);
+  });
+
+  it('reverts Theme gradients & fonts and says so when the save is refused, and a retry works', async () => {
+    const save = vi.fn().mockRejectedValueOnce(new Error('refused')).mockResolvedValue(undefined);
+    window.clubhouse.app.getExperimentalSettings = vi.fn().mockResolvedValue({});
+    window.clubhouse.app.saveExperimentalSettings = save;
+    useThemeStore.setState({ experimentalGradients: true, setThemeGradients: realSetThemeGradients });
+    render(<DisplaySettingsView />);
+    const toggle = screen.getByRole('switch', { name: 'Theme gradients & fonts' });
+
+    fireEvent.click(toggle);
+    expect(await screen.findByRole('alert')).toHaveTextContent("Couldn't save that setting, so it wasn't changed. Try again.");
+    expect(toggle).toHaveAttribute('aria-checked', 'true');
+
+    fireEvent.click(toggle);
+    await waitFor(() => expect(toggle).toHaveAttribute('aria-checked', 'false'));
+    await waitFor(() => expect(screen.queryByRole('alert')).not.toBeInTheDocument());
+    expect(save).toHaveBeenLastCalledWith({ themeGradients: false });
+    expect(save).toHaveBeenCalledTimes(2);
   });
 
   it('renders Home view toggle', () => {

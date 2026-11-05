@@ -68,6 +68,26 @@ describe('themeStore', () => {
       expect(getState().experimentalGradients).toBe(false);
       expect(mockApp.saveExperimentalSettings).toHaveBeenCalledWith({ goobers: true, themeGradients: false });
     });
+
+    it('goes back to what is saved when the save is refused, and a retry works', async () => {
+      mockApp.saveExperimentalSettings = vi.fn().mockRejectedValueOnce(new Error('refused')).mockResolvedValue(undefined);
+      expect(await getState().setThemeGradients(false)).toBe(false);
+      expect(getState().experimentalGradients).toBe(true);
+      expect(applyTheme).toHaveBeenLastCalledWith(getState().theme, { experimentalGradients: true });
+
+      expect(await getState().setThemeGradients(false)).toBe(true);
+      expect(getState().experimentalGradients).toBe(false);
+      expect(applyTheme).toHaveBeenLastCalledWith(getState().theme, { experimentalGradients: false });
+      expect(mockApp.saveExperimentalSettings).toHaveBeenCalledTimes(2);
+    });
+
+    it('goes back when the settings can\'t be read before the save', async () => {
+      mockApp.saveExperimentalSettings = vi.fn().mockResolvedValue(undefined);
+      mockApp.getExperimentalSettings.mockRejectedValueOnce(new Error('unreadable'));
+      expect(await getState().setThemeGradients(false)).toBe(false);
+      expect(getState().experimentalGradients).toBe(true);
+      expect(mockApp.saveExperimentalSettings).not.toHaveBeenCalled();
+    });
   });
 
   // ---- defaults ----

@@ -55,8 +55,8 @@ interface ThemeState {
   experimentalGradients: boolean;
   loadTheme: () => Promise<void>;
   setTheme: (id: ThemeId) => Promise<void>;
-  /** Save the themeGradients flag and apply it to the current theme. */
-  setThemeGradients: (on: boolean) => Promise<void>;
+  /** Apply the themeGradients flag to the current theme and save it. If that fails it goes back, and this answers false. */
+  setThemeGradients: (on: boolean) => Promise<boolean>;
   /** Refresh the available themes list from the registry. */
   refreshAvailable: () => void;
 }
@@ -96,10 +96,21 @@ export const useThemeStore = create<ThemeState>((set, get) => ({
   },
 
   setThemeGradients: async (on) => {
-    applyTheme(get().theme, { experimentalGradients: on });
-    set({ experimentalGradients: on });
-    const current = await window.clubhouse.app.getExperimentalSettings();
-    await window.clubhouse.app.saveExperimentalSettings({ ...current, themeGradients: on });
+    const previous = get().experimentalGradients;
+    const show = (value: boolean) => {
+      applyTheme(get().theme, { experimentalGradients: value });
+      set({ experimentalGradients: value });
+    };
+    show(on);
+    try {
+      const current = await window.clubhouse.app.getExperimentalSettings();
+      await window.clubhouse.app.saveExperimentalSettings({ ...current, themeGradients: on });
+      return true;
+    } catch {
+      // telemetry-exempt: the settings page says so, and the theme goes back to what's saved.
+      show(previous);
+      return false;
+    }
   },
 
   refreshAvailable: () => {

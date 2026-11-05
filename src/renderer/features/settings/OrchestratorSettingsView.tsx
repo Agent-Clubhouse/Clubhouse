@@ -12,7 +12,7 @@ import { useUIStore } from '../../stores/uiStore';
 import { resetChatFlagCache } from '../agents/chat/AgentRuntimePane';
 import { RICH_CHAT_CONTENT_FLAG, resetRichChatContentFlag } from '../agents/chat/rich/rich-flag';
 import { ProjectAgentDefaultsSection } from './ProjectAgentDefaultsSection';
-import { SettingsPage, SettingsSection, SettingsField, SettingsBlock, settingsInput, settingsHelp } from './SettingsLayout';
+import { SettingsPage, SettingsSection, SettingsField, SettingsBlock, settingsInput, settingsHelp, settingsError, SETTING_NOT_SAVED_TEXT } from './SettingsLayout';
 import type { FreeAgentPermissionMode, SourceControlProvider } from '../../../shared/types';
 import { COPILOT_SDK_FLAG, type AgentRuntimeMode, type ChatDriverId, type ChatRuntimeSettings } from '../../../shared/chat';
 import { isGraduatedFlagOn } from '../../../shared/graduated-flags';
@@ -53,6 +53,8 @@ function useChatRuntimeSettings() {
   const [copilotSdkEnabled, setCopilotSdkEnabled] = useState(false);
   /** The flags and settings have loaded, whatever the answer. */
   const [chatResolved, setChatResolved] = useState(false);
+  /** The last Chat view or Rich chat content change couldn't be saved. */
+  const [flagSaveFailed, setFlagSaveFailed] = useState(false);
   const [runtimeSettings, setRuntimeSettings] = useState<ChatRuntimeSettings>({});
 
   useEffect(() => {
@@ -76,22 +78,31 @@ function useChatRuntimeSettings() {
     return () => { cancelled = true; };
   }, []);
 
-  const saveFlag = async (key: string, on: boolean) => {
-    const current = await window.clubhouse.app.getExperimentalSettings();
-    await window.clubhouse.app.saveExperimentalSettings({ ...current, [key]: on });
+  /** Show the change, save it, and go back to what's saved if that fails. True once it's saved. */
+  const saveFlag = async (key: string, on: boolean, show: (on: boolean) => void): Promise<boolean> => {
+    show(on);
+    setFlagSaveFailed(false);
+    try {
+      const current = await window.clubhouse.app.getExperimentalSettings();
+      await window.clubhouse.app.saveExperimentalSettings({ ...current, [key]: on });
+      return true;
+    } catch {
+      // telemetry-exempt: shown to the user, and the switch goes back to what's saved.
+      show(!on);
+      setFlagSaveFailed(true);
+      return false;
+    }
   };
 
   const setChatFlag = async (on: boolean) => {
-    setChatEnabled(on);
-    await saveFlag('chat', on);
+    if (!await saveFlag('chat', on, setChatEnabled)) return;
     // Panes read the flag once. Turning on, nothing runs in chat yet, so they can read it again.
     // Turning off, they keep their answer: main decides each wake, and a live chat keeps its view until it sleeps.
     if (on) resetChatFlagCache();
   };
 
   const setRichChatFlag = async (on: boolean) => {
-    setRichChatEnabled(on);
-    await saveFlag(RICH_CHAT_CONTENT_FLAG, on);
+    if (!await saveFlag(RICH_CHAT_CONTENT_FLAG, on, setRichChatEnabled)) return;
     // Chat panes opened from now on read the new value.
     resetRichChatContentFlag();
   };
@@ -122,7 +133,7 @@ function useChatRuntimeSettings() {
     }
   };
 
-  return { chatEnabled, richChatEnabled, copilotSdkEnabled, chatResolved, runtimeSettings, setChatFlag, setRichChatFlag, setRuntimeMode, setChatDriver };
+  return { chatEnabled, richChatEnabled, copilotSdkEnabled, chatResolved, flagSaveFailed, runtimeSettings, setChatFlag, setRichChatFlag, setRuntimeMode, setChatDriver };
 }
 
 /**
@@ -201,7 +212,7 @@ function AppAgentSettings() {
   const setFreeAgentDefaultMode = useFreeAgentSettingsStore((s) => s.setDefaultMode);
   const loadFreeAgentSettings = useFreeAgentSettingsStore((s) => s.loadSettings);
   const [showConfirm, setShowConfirm] = useState(false);
-  const { chatEnabled, richChatEnabled, copilotSdkEnabled, chatResolved, runtimeSettings, setChatFlag, setRichChatFlag, setRuntimeMode, setChatDriver } = useChatRuntimeSettings();
+  const { chatEnabled, richChatEnabled, copilotSdkEnabled, chatResolved, flagSaveFailed, runtimeSettings, setChatFlag, setRichChatFlag, setRuntimeMode, setChatDriver } = useChatRuntimeSettings();
   const idleMinutes = useChatIdleSettingsStore((st) => st.idleTimeoutMinutes as number);
   const saveIdle = useChatIdleSettingsStore((st) => st.saveSettings);
   const loadIdle = useChatIdleSettingsStore((st) => st.loadSettings);
@@ -402,6 +413,11 @@ function AppAgentSettings() {
           >
             <Toggle aria-label="Rich chat content" checked={richChatEnabled} onChange={(on) => { void setRichChatFlag(on); }} />
           </SettingsField>
+          {flagSaveFailed && (
+            <SettingsBlock>
+              <p className={settingsError} role="alert">{SETTING_NOT_SAVED_TEXT}</p>
+            </SettingsBlock>
+          )}
         </SettingsSection>
       )}
 

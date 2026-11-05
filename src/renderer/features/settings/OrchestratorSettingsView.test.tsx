@@ -7,6 +7,8 @@ import { useClubhouseModeStore } from '../../stores/clubhouseModeStore';
 import { useSessionSettingsStore } from '../../stores/sessionSettingsStore';
 import { useMcpSettingsStore } from '../../stores/mcpSettingsStore';
 import { OrchestratorSettingsView } from './OrchestratorSettingsView';
+import { loadChatFlag, resetChatFlag } from '../agents/chat/chat-flag';
+import { loadRichChatContentFlag, resetRichChatContentFlag } from '../agents/chat/rich/rich-flag';
 import { useUIStore } from '../../stores/uiStore';
 
 // Mock ProjectAgentDefaultsSection to avoid deep component tree
@@ -397,6 +399,67 @@ describe('OrchestratorSettingsView', () => {
         expect(rich).toHaveAttribute('aria-checked', 'false');
         fireEvent.click(rich);
         await waitFor(() => expect(window.clubhouse.app.saveExperimentalSettings).toHaveBeenCalledWith({ chat: false, richChatContent: true }));
+      });
+
+      it.each([
+        ['Chat view', 'chat', {}],
+        ['Rich chat content', 'richChatContent', {}],
+        ['Chat view', 'chat', { chat: false }],
+        ['Rich chat content', 'richChatContent', { richChatContent: false }],
+      ])('%s (saved %s, from %j): a refused save reverts the switch and says so, and a retry works', async (name, key, saved) => {
+        const was = (saved as Record<string, boolean>)[key] !== false;
+        const save = vi.fn().mockRejectedValueOnce(new Error('refused')).mockResolvedValue(undefined);
+        window.clubhouse.app.getExperimentalSettings = vi.fn().mockResolvedValue(saved);
+        window.clubhouse.app.saveExperimentalSettings = save;
+        render(<OrchestratorSettingsView />);
+        const toggle = await screen.findByRole('switch', { name });
+        expect(toggle).toHaveAttribute('aria-checked', String(was));
+        expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+
+        fireEvent.click(toggle);
+        expect(await screen.findByRole('alert')).toHaveTextContent("Couldn't save that setting, so it wasn't changed. Try again.");
+        expect(toggle).toHaveAttribute('aria-checked', String(was));
+
+        fireEvent.click(toggle);
+        await waitFor(() => expect(toggle).toHaveAttribute('aria-checked', String(!was)));
+        await waitFor(() => expect(screen.queryByRole('alert')).not.toBeInTheDocument());
+        expect(save).toHaveBeenLastCalledWith({ ...saved, [key]: !was });
+        expect(save).toHaveBeenCalledTimes(2);
+      });
+
+      it('treats a failed read before the save the same way', async () => {
+        setChatFlag(true);
+        window.clubhouse.app.getExperimentalSettings = vi.fn()
+          .mockResolvedValueOnce({})
+          .mockRejectedValueOnce(new Error('unreadable'))
+          .mockResolvedValue({});
+        render(<OrchestratorSettingsView />);
+        const toggle = await screen.findByRole('switch', { name: 'Chat view' });
+        fireEvent.click(toggle);
+        expect(await screen.findByRole('alert')).toHaveTextContent("Couldn't save that setting");
+        expect(toggle).toHaveAttribute('aria-checked', 'true');
+        expect(window.clubhouse.app.saveExperimentalSettings).not.toHaveBeenCalled();
+      });
+
+      it('keeps the panes\' flags as they are when the save fails', async () => {
+        window.clubhouse.app.getExperimentalSettings = vi.fn().mockResolvedValue({ chat: false, richChatContent: false });
+        window.clubhouse.app.saveExperimentalSettings = vi.fn().mockRejectedValue(new Error('refused'));
+        resetChatFlag();
+        resetRichChatContentFlag();
+        expect(await loadChatFlag()).toBe(false);
+        expect(await loadRichChatContentFlag()).toBe(false);
+        render(<OrchestratorSettingsView />);
+        fireEvent.click(await screen.findByRole('switch', { name: 'Chat view' }));
+        fireEvent.click(screen.getByRole('switch', { name: 'Rich chat content' }));
+        await screen.findByRole('alert');
+
+        // Still the answers loaded above: nothing was forgotten, so main isn't asked again.
+        const reads = vi.mocked(window.clubhouse.app.getExperimentalSettings).mock.calls.length;
+        await loadChatFlag();
+        await loadRichChatContentFlag();
+        expect(vi.mocked(window.clubhouse.app.getExperimentalSettings).mock.calls.length).toBe(reads);
+        resetChatFlag();
+        resetRichChatContentFlag();
       });
 
       it('says what the rich content setting lets paired phones do', async () => {

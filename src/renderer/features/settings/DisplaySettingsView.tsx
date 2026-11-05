@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { useThemeStore } from '../../stores/themeStore';
 import { useUIStore } from '../../stores/uiStore';
 import { getTheme } from '../../themes';
@@ -5,7 +6,7 @@ import { useChromeFlagStore } from '../../chrome/chromeFlag';
 import { useChromeStore, SIDEBAR_SORTS, type SidebarSort } from '../../chrome/chromeStore';
 import { IDLE_DAY_CHOICES } from '../../chrome/projectActivity';
 import { Toggle } from '../../components/Toggle';
-import { SettingsPage, SettingsSection, SettingsField, SettingsBlock, settingsInput } from './SettingsLayout';
+import { SettingsPage, SettingsSection, SettingsField, SettingsBlock, settingsInput, settingsError, SETTING_NOT_SAVED_TEXT } from './SettingsLayout';
 
 /** The new layout's idle window (docs/chrome-redesign-spec.md §2 idle rule). */
 function IdleProjectsSetting() {
@@ -84,6 +85,11 @@ export function DisplaySettingsView() {
 
   const gradientsEnabled = useThemeStore((s) => s.experimentalGradients);
   const setThemeGradients = useThemeStore((s) => s.setThemeGradients);
+  const [gradientsSaveFailed, setGradientsSaveFailed] = useState(false);
+  const changeGradients = async (on: boolean) => {
+    setGradientsSaveFailed(false);
+    setGradientsSaveFailed(!await setThemeGradients(on));
+  };
 
   return (
     <SettingsPage title="Display & UI" description="App appearance and sidebar views.">
@@ -111,8 +117,13 @@ export function DisplaySettingsView() {
           help="Let themes use their own font families and background gradients. Themes that don't define any look the same either way."
           testId="theme-gradients-row"
         >
-          <Toggle aria-label="Theme gradients & fonts" checked={gradientsEnabled} onChange={(on) => { void setThemeGradients(on); }} />
+          <Toggle aria-label="Theme gradients & fonts" checked={gradientsEnabled} onChange={(on) => { void changeGradients(on); }} />
         </SettingsField>
+        {gradientsSaveFailed && (
+          <SettingsBlock>
+            <p className={settingsError} role="alert">{SETTING_NOT_SAVED_TEXT}</p>
+          </SettingsBlock>
+        )}
         <SettingsBlock>
           <div className="grid grid-cols-2 gap-2">
             {availableThemeIds.map((id) => {
