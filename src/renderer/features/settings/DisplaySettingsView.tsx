@@ -8,7 +8,7 @@ import { IDLE_DAY_CHOICES } from '../../chrome/projectActivity';
 import { isGraduatedFlagOn } from '../../../shared/graduated-flags';
 import { Button } from '../../components/Button';
 import { Toggle } from '../../components/Toggle';
-import { SettingsPage, SettingsSection, SettingsField, SettingsBlock, settingsInput } from './SettingsLayout';
+import { SettingsPage, SettingsSection, SettingsField, SettingsBlock, settingsError, settingsInput } from './SettingsLayout';
 
 /**
  * The way back to the classic layout, saved as the newChrome flag (on = false).
@@ -18,6 +18,8 @@ import { SettingsPage, SettingsSection, SettingsField, SettingsBlock, settingsIn
 function ClassicLayoutSetting() {
   const newChrome = useChromeFlagStore((s) => s.enabled);
   const [classic, setClassic] = useState(!newChrome);
+  const [saving, setSaving] = useState(false);
+  const [saveFailed, setSaveFailed] = useState(false);
 
   useEffect(() => {
     window.clubhouse.app.getExperimentalSettings().then((s) => {
@@ -27,8 +29,18 @@ function ClassicLayoutSetting() {
 
   const handleToggle = async (on: boolean) => {
     setClassic(on);
-    const saved = await window.clubhouse.app.getExperimentalSettings();
-    await window.clubhouse.app.saveExperimentalSettings({ ...saved, [NEW_CHROME_FLAG]: !on });
+    setSaving(true);
+    setSaveFailed(false);
+    try {
+      const saved = await window.clubhouse.app.getExperimentalSettings();
+      await window.clubhouse.app.saveExperimentalSettings({ ...saved, [NEW_CHROME_FLAG]: !on });
+    } catch {
+      // telemetry-exempt: shown under the switch, which goes back to the saved value.
+      setClassic(!on);
+      setSaveFailed(true);
+    } finally {
+      setSaving(false);
+    }
   };
 
   return (
@@ -37,8 +49,9 @@ function ClassicLayoutSetting() {
         label="Classic layout"
         help="Use the project rail and agent column instead of the sidebar. Applies after a restart. The classic layout will go away in a future update."
       >
-        <Toggle aria-label="Classic layout" checked={classic} onChange={handleToggle} />
+        <Toggle aria-label="Classic layout" checked={classic} disabled={saving} onChange={handleToggle} />
       </SettingsField>
+      {saveFailed && <p className={`${settingsError} mt-1.5`} role="alert">Couldn't save that setting, so it wasn't changed. Try again.</p>}
       {classic === newChrome && (
         <SettingsField label="Restart Clubhouse" help="Restart Clubhouse to apply the layout change.">
           <Button onClick={() => window.clubhouse.app.restart()} kind="ghost">

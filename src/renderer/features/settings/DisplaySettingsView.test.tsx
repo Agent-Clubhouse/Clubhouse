@@ -136,6 +136,46 @@ describe('DisplaySettingsView', () => {
       expect(screen.getByRole('button', { name: 'Restart' })).toBeInTheDocument();
     });
 
+    const SAVE_FAILED = "Couldn't save that setting, so it wasn't changed. Try again.";
+
+    it.each([
+      ['the save', () => saveExperimentalSettings.mockRejectedValueOnce(new Error('read-only'))],
+      ['the read before it', () => getExperimentalSettings.mockRejectedValueOnce(new Error('gone'))],
+    ])('when %s fails, goes back to the saved value and says so', async (_name, fail) => {
+      const toggle = await renderIn(true, {});
+      fail();
+      await act(async () => { fireEvent.click(toggle); });
+      expect(toggle.getAttribute('aria-checked')).toBe('false');
+      expect(screen.getByRole('alert').textContent).toBe(SAVE_FAILED);
+      // Nothing changed, so there's nothing to restart for.
+      expect(screen.queryByRole('button', { name: 'Restart' })).toBeNull();
+    });
+
+    it('a retry after a failed save works and clears the message', async () => {
+      const toggle = await renderIn(true, { chat: true });
+      saveExperimentalSettings.mockRejectedValueOnce(new Error('read-only'));
+      await act(async () => { fireEvent.click(toggle); });
+      expect(screen.getByRole('alert').textContent).toBe(SAVE_FAILED);
+
+      await act(async () => { fireEvent.click(toggle); });
+      expect(saveExperimentalSettings).toHaveBeenLastCalledWith({ chat: true, newChrome: false });
+      expect(toggle.getAttribute('aria-checked')).toBe('true');
+      expect(screen.queryByRole('alert')).toBeNull();
+      expect(screen.getByRole('button', { name: 'Restart' })).toBeInTheDocument();
+    });
+
+    it('holds the switch while a save is in flight', async () => {
+      const toggle = await renderIn(true, {});
+      let finishSave!: () => void;
+      saveExperimentalSettings.mockReturnValueOnce(new Promise<void>((resolve) => { finishSave = resolve; }));
+      await act(async () => { fireEvent.click(toggle); });
+      expect((toggle as HTMLButtonElement).disabled).toBe(true);
+      fireEvent.click(toggle);
+      expect(saveExperimentalSettings).toHaveBeenCalledTimes(1);
+      await act(async () => { finishSave(); });
+      expect((toggle as HTMLButtonElement).disabled).toBe(false);
+    });
+
     it('takes the restart away when the choice goes back to this session', async () => {
       const toggle = await renderIn(true, {});
       await act(async () => { fireEvent.click(toggle); });
