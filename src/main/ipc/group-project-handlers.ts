@@ -5,7 +5,7 @@
 import { ipcMain } from 'electron';
 import { IPC } from '../../shared/ipc-channels';
 import { groupProjectRegistry } from '../services/group-project-registry';
-import { setProjectPolling } from '../services/group-project-polling';
+import { setProjectPolling, watchPollingForMcp } from '../services/group-project-polling';
 import { getBulletinBoard, destroyBulletinBoard } from '../services/group-project-bulletin';
 import { initGroupProjectLifecycle } from '../services/group-project-lifecycle';
 import { executeShoulderTap } from '../services/group-project-shoulder-tap';
@@ -54,6 +54,7 @@ export function registerGroupProjectHandlers(): void {
 
   // Tool registration is handled centrally in registerMcpBindingHandlers().
   initGroupProjectLifecycle();
+  watchPollingForMcp();
 
   appLog('core:group-project', 'info', 'Group project handlers registered');
 

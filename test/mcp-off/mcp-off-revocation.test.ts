@@ -66,7 +66,7 @@ import { connectionsStorePath, orchestratorConnectionSource, _resetOrchestratorC
 import { rebuildPersistedBindings, registerPersistedBindingSource, _resetPersistedBindingSourcesForTesting } from '../../src/main/services/persisted-bindings';
 import { readMcpOffImpact } from '../../src/main/services/mcp-off-impact';
 import { groupProjectRegistry } from '../../src/main/services/group-project-registry';
-import { setProjectPolling, _pendingStartsForTesting } from '../../src/main/services/group-project-polling';
+import { setProjectPolling, watchPollingForMcp, _pendingStartsForTesting } from '../../src/main/services/group-project-polling';
 import { executeShoulderTap } from '../../src/main/services/group-project-shoulder-tap';
 
 const ORCH = 'durable_orch';
@@ -295,6 +295,13 @@ describe('Clubhouse MCP going off, for running agents', () => {
 
     beforeAll(async () => {
       pushed = await clients[PLAIN].stream();
+      // A member already polling, through the real toggle.
+      watchPollingForMcp();
+      polledSent = fakeRuntime(CODEX);
+      const looping = await groupProjectRegistry.create('looping');
+      bindingManager.bind(CODEX, { targetId: looping.id, targetKind: 'group-project', label: 'looping' });
+      await setProjectPolling(looping.id, true);
+      expect(polledSent.filter((m) => m.includes('start polling for "looping"'))).toHaveLength(1);
       await save({ enabled: false, projectDefault: true, projectOverrides: { [overridePath]: true } });
       await saveClubhouseMode({ enabled: false, projectOverrides: { [clubhousePath]: true } });
       // Pruning follows the save within moments; the rebuild is debounced.
@@ -397,14 +404,22 @@ describe('Clubhouse MCP going off, for running agents', () => {
       expect(agentRegistry.get(PEER)).toBeUndefined();
     });
 
+    it('polling: a member that was polling gets one stop, over the real settings and gate', async () => {
+      const stops = () => polledSent.filter((m) => m.includes('stop') && m.includes('"looping"'));
+      await vi.waitFor(() => expect(stops()).toHaveLength(1), { timeout: 10_000 });
+      // Later saves that leave it off send nothing more.
+      await save({ enabled: false, projectDefault: true, projectOverrides: { [overridePath]: true } });
+      await new Promise((resolve) => setTimeout(resolve, 200));
+      expect(stops()).toHaveLength(1);
+    });
+
     it('polling: a running member without MCP gets no start and still gets a shoulder tap, and a dormant one stays dormant', async () => {
       const project = await groupProjectRegistry.create('polled');
       polledProject = project.id;
-      polledSent = fakeRuntime(CODEX);
       for (const id of [CODEX, PEER]) bindingManager.bind(id, { targetId: project.id, targetKind: 'group-project', label: 'polled' });
       await setProjectPolling(project.id, true);
       await new Promise((resolve) => setTimeout(resolve, 50));
-      expect(polledSent.join()).not.toContain('start polling');
+      expect(polledSent.join()).not.toContain('start polling for "polled"');
       const before = [...agentRegistry.getAllRegistrations().keys()];
 
       await executeShoulderTap({ projectId: project.id, senderLabel: 'the user', targetAgentId: CODEX, message: 'are you there' });
@@ -511,8 +526,11 @@ describe('Clubhouse MCP going off, for running agents', () => {
     });
 
     it('polling: the running member gets its start back, in the same session, and nothing is woken', async () => {
-      await vi.waitFor(() => expect(polledSent.join()).toContain('start polling'), { timeout: 10_000 });
-      expect(polledSent.filter((m) => m.includes('start polling'))).toHaveLength(1);
+      await vi.waitFor(() => {
+        expect(polledSent.filter((m) => m.includes('start polling for "polled"'))).toHaveLength(1);
+        // Its first when it joined, and one more now.
+        expect(polledSent.filter((m) => m.includes('start polling for "looping"'))).toHaveLength(2);
+      }, { timeout: 10_000 });
       expect(agentRegistry.get(PEER)).toBeUndefined();
       expect(_pendingStartsForTesting.get(PEER)?.has(polledProject)).toBe(true);
     });

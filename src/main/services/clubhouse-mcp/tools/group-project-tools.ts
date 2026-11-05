@@ -9,6 +9,7 @@ import { getBulletinBoard } from '../../group-project-bulletin';
 import { groupProjectRegistry } from '../../group-project-registry';
 import { isProjectAdmin } from '../../../../shared/group-project-admin';
 import { canPoll, isAgentAlive, injectPtyMessage } from '../../group-project-lifecycle';
+import { notePollingRead, notePollingStart } from '../../group-project-polling-runs';
 import { getAgentRuntime } from '../../agent-runtime';
 import { executeShoulderTap } from '../../group-project-shoulder-tap';
 import * as agentSystem from '../../agent-system';
@@ -199,7 +200,9 @@ export function registerGroupProjectTools(): void {
           },
         },
       },
-    handler: async (targetId: string, _agentId: string, args: Record<string, unknown>): Promise<McpToolResult> => {
+    handler: async (targetId: string, agentId: string, args: Record<string, unknown>): Promise<McpToolResult> => {
+      // A loop reads here, which is how a session is known to be polling.
+      notePollingRead(agentId, targetId);
       const since = optionalString(args, 'since');
       const channels = Array.isArray(args.channels)
         ? (args.channels as unknown[]).filter((c): c is string => typeof c === 'string')
@@ -769,6 +772,7 @@ export function registerGroupProjectTools(): void {
       const msg = pollingNudgeMsg(projectName, orchestrator);
 
       injectPtyMessage(targetAgentId, msg);
+      notePollingStart(targetAgentId, targetId);
 
       return {
         content: [{

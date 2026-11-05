@@ -152,7 +152,11 @@ A helper's forced `clubhouseMcpOverride` still decides whether the bridge is inj
 
 **Not gated:** inbound messages. The rule is about the caller, so an agent with MCP on can still message a running agent with MCP off, and a shoulder tap still reaches a running member. A dormant recipient isn't woken: the sender is told it is sleeping. The `clubhouse` CLI endpoint isn't an MCP tool and isn't gated: it changes a project's or agent's appearance and has no route to orchestration or other agents.
 
-**Polling instructions stop too.** A member without MCP can't read the board, so it gets no polling start, and `nudge_polling` to it is refused. A start it missed is sent when MCP is back for it while it runs, or after its next start otherwise. Nothing is woken for this. A polling stop still goes out. A loop the agent already set up is its own, so it keeps firing and being refused until MCP is back or polling is turned off. `test/mcp-off/mcp-off-revocation.test.ts` checks each row over HTTP.
+**Polling instructions stop too.** A member without MCP can't read the board, so it gets no polling start, and `nudge_polling` to it is refused. A start it missed is sent when MCP is back for it while it runs, or after its next start otherwise. Nothing is woken for this. A polling stop still goes out.
+
+A running member whose session is polling gets one stop when it loses MCP, and that same session gets one start when MCP is back. Polling is a loop the agent runs itself, so otherwise it keeps firing and being refused, spending a turn each time. The stop and the start cost one turn each, per project.
+
+The app can't see inside the loop. A session counts as polling if it was told to in this session and has called `read_bulletin` in the last 5 minutes, or was told within them. So a loop the agent ended itself counts as ended after 5 minutes, and a turn longer than that with no read costs a loop its stop and its resume, leaving it to be refused until polling is restarted. A stopped, sleeping or replaced session gets nothing, and neither does a loop the user turned off. `test/mcp-off/mcp-off-revocation.test.ts` checks each row over HTTP.
 
 ## Reads change nothing
 

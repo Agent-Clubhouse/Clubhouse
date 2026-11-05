@@ -16,6 +16,7 @@ import { getAgentOrchestrator } from './agent-registry';
 import { getProvider } from '../orchestrators/registry';
 import { pollingStartMsg } from '../../shared/polling-messages';
 import { mcpCallAccess } from './clubhouse-mcp/mcp-call-gate';
+import { notePollingStart } from './group-project-polling-runs';
 
 /** Debounce window (ms) — suppress rejoins within this period after a leave unless agent is verified running. */
 const REJOIN_DEBOUNCE_MS = 30_000;
@@ -220,7 +221,10 @@ async function syncMemberships(agentId: string): Promise<void> {
         }
         const orchestrator = getAgentOrchestrator(agentId);
         // Small delay so the welcome message is processed first
-        setTimeout(() => injectPtyMessage(agentId, pollingStartMsg(projectName, orchestrator, inboxName)), 500);
+        setTimeout(() => {
+          injectPtyMessage(agentId, pollingStartMsg(projectName, orchestrator, inboxName));
+          notePollingStart(agentId, projectId);
+        }, 500);
       }
     }
   }
