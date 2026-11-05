@@ -130,6 +130,8 @@ export interface TelemetryDestinationStatus {
 export interface TelemetryStatus {
   /** Export is paused because a settings file couldn't be read. Resume is offered. */
   exportPaused: boolean;
+  /** While paused: where a copy of that file was kept, if one was. */
+  pausedFileCopy?: string;
   /** At least one destination is enabled (with consent recorded). */
   enabled: boolean;
   /** An exporter is running right now. */

@@ -51,6 +51,7 @@ export const EXPERIMENTAL_FEATURES: Array<{
 export function ExperimentalSettingsView() {
   const [settings, setSettings] = useState<Record<string, boolean>>({});
   const [loaded, setLoaded] = useState(false);
+  const [saveFailed, setSaveFailed] = useState(false);
 
   useEffect(() => {
     window.clubhouse.app.getExperimentalSettings().then((s) => {
@@ -62,7 +63,15 @@ export function ExperimentalSettingsView() {
   const handleToggle = async (id: string, enabled: boolean) => {
     const updated = { ...settings, [id]: enabled };
     setSettings(updated);
-    await window.clubhouse.app.saveExperimentalSettings(updated);
+    setSaveFailed(false);
+    try {
+      await window.clubhouse.app.saveExperimentalSettings(updated);
+    } catch {
+      // telemetry-exempt: shown to the user, and the switch goes back to what's saved.
+      setSettings(settings);
+      setSaveFailed(true);
+      return;
+    }
     // Chat panes opened from now on read the new value.
     if (id === RICH_CHAT_CONTENT_FLAG) resetRichChatContentFlag();
   };
@@ -81,6 +90,8 @@ export function ExperimentalSettingsView() {
       <p className="text-xs text-ctp-overlay1 mt-3">
         Experimental features may change or go away in future releases. Turning one on or off may need a restart to take full effect.
       </p>
+
+      {saveFailed && <p className="text-xs text-ctp-error mt-3" role="alert">Couldn&apos;t save that setting, so it wasn&apos;t changed. Try again.</p>}
 
       <SettingsSection title="Features">
         {EXPERIMENTAL_FEATURES.map(({ id, label, description }) => (

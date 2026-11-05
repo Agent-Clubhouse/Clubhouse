@@ -414,6 +414,11 @@ export function applyExportGraduation(): { outcome: ExportGraduationOutcome; sav
   return { outcome, saved: updateTelemetrySettings((current) => current) };
 }
 
+/** Where a copy of the flag file was kept, if one was. */
+export function suspendedFlagFileCopy(): string | undefined {
+  return experimentalSettings.recoveryCopyPath();
+}
+
 /**
  * While export is paused on an unreadable flag file, keep a copy of that file
  * before anything can overwrite it. Throws if it can't: this run stays paused and

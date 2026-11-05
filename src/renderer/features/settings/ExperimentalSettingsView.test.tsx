@@ -113,6 +113,16 @@ describe('ExperimentalSettingsView', () => {
     });
   });
 
+  it('shows a failed save and puts the switch back', async () => {
+    mockGetExperimentalSettings.mockResolvedValue({});
+    mockSaveExperimentalSettings.mockRejectedValueOnce(new Error('refused'));
+    render(<ExperimentalSettingsView />);
+    const toggle = await screen.findByRole('switch', { name: 'Theme gradients & fonts' });
+    fireEvent.click(toggle);
+    expect(await screen.findByRole('alert')).toHaveTextContent('Couldn\'t save that setting');
+    expect(toggle).toHaveAttribute('aria-checked', 'false');
+  });
+
   it('does not list Clubhouse MCP as experimental (promoted)', async () => {
     render(<ExperimentalSettingsView />);
     await waitFor(() => {

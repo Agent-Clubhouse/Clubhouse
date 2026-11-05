@@ -52,6 +52,7 @@ import {
   parseConnectionString,
   recordExportOptIn,
   RESERVED_HEADERS,
+  suspendedFlagFileCopy,
   updateTelemetrySettings,
   validateDestination,
   withDestination,
@@ -155,6 +156,7 @@ export async function getStatus(): Promise<TelemetryStatus> {
   const anyEnabled = destinations.some((d) => d.enabled);
   return {
     exportPaused: settings.exportSuspended !== undefined,
+    pausedFileCopy: settings.exportSuspended !== undefined ? suspendedFlagFileCopy() : undefined,
     // A Phase 1 file can be enabled without recorded consent; it isn't
     // exporting, so show it as off until the user turns it on (and consents).
     enabled: anyEnabled,
@@ -476,10 +478,16 @@ export async function resumeExport(): Promise<TelemetryActionResult> {
     });
     return fail('opt_in_not_saved', 'Couldn\'t save this choice, so telemetry stays paused. Try again.');
   }
+  // The flag now reads true, so if this save fails the next load clears the pause anyway.
   await updateTelemetrySettings((s) => {
     const next = { ...s };
     delete next.exportSuspended;
     return next;
+  }).catch((err) => {
+    // telemetry-exempt: logged; the saved flag resolves it on the next load.
+    appLog('telemetry:control', 'warn', 'Could not save that telemetry export resumed', {
+      meta: { code: (err as NodeJS.ErrnoException)?.code ?? 'unknown' },
+    });
   });
   await applyRuntime();
   return done();

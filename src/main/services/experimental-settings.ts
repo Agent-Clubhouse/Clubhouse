@@ -1,4 +1,4 @@
-import { backupUnreadableSettings, createSettingsStore, peekStoredSettingsSync } from './settings-store';
+import { backupUnreadableSettings, createSettingsStore, latestRecoveryCopy, peekStoredSettingsSync } from './settings-store';
 import { isPreviewEligible } from './preview-eligible';
 import { PREVIEW_ONLY_EXPERIMENTAL_FLAGS, STRUCTURED_MODE_REMOVED_NOTICE_KEY, type ExperimentalSettings } from '../../shared/types';
 
@@ -28,10 +28,11 @@ const isPreviewOnly = (key: string): boolean => PREVIEW_ONLY_EXPERIMENTAL_FLAGS.
 /** What is saved, whatever this build honours. */
 export const getStoredSettings = store.get;
 
-/** The flags in force: in a build that isn't preview-eligible, the preview-only ones read as off. */
+/** The flags in force: in a build that isn't preview-eligible, the preview-only ones read as off. An unverified main-owned flag isn't a flag at all. */
 export function getSettings(): ExperimentalSettings {
   const saved = store.get();
-  return isPreviewEligible() ? saved : pickFlags(saved, (key) => !isPreviewOnly(key));
+  const eligible = isPreviewEligible();
+  return pickFlags(saved, (key) => (eligible || !isPreviewOnly(key)) && !(MAIN_OWNED_FLAGS.includes(key) && typeof saved[key] !== 'boolean'));
 }
 
 /**
@@ -39,6 +40,15 @@ export function getSettings(): ExperimentalSettings {
  * it sends back for them, including nothing, leaves the saved value alone.
  */
 const MAIN_OWNED_FLAGS: readonly string[] = ['telemetry'];
+
+/**
+ * A main-owned flag whose value was lost: the file couldn't be read and is being
+ * overwritten. Its key stays, so the next load still knows the value can't be
+ * verified, however any other save went. `null` because it's falsy everywhere:
+ * older builds read their flags with `=== true` and `!!`, and keep the key.
+ */
+const unverifiedFlags = (): ExperimentalSettings =>
+  Object.fromEntries(MAIN_OWNED_FLAGS.map((key): [string, null] => [key, null])) as unknown as ExperimentalSettings;
 
 /** What one flag holds on disk right now, not what this run has in memory. A value of the wrong type is unreadable. */
 export function peekStoredFlag(key: string): 'true' | 'false' | 'missing' | 'unreadable' {
@@ -56,6 +66,11 @@ export function preserveUnreadableFile(): void {
   if (peekStoredSettingsSync(FILE) === 'unreadable') backupUnreadableSettings(FILE);
 }
 
+/** Where a copy of the unreadable file was kept, if one was. */
+export function recoveryCopyPath(): string | undefined {
+  return latestRecoveryCopy(FILE);
+}
+
 /**
  * Set one saved flag and leave the rest as they are, whatever this build honours.
  * Rejects if it can't be saved, with this run back on the value it had: the store
@@ -63,16 +78,23 @@ export function preserveUnreadableFile(): void {
  */
 export async function setStoredFlag(key: string, value: boolean): Promise<void> {
   const saved = store.get();
-  const unreadable = peekStoredSettingsSync(FILE) === 'unreadable';
-  if (saved[key] === value && !unreadable) return;
-  if (unreadable) preserveUnreadableFile();
+  if (saved[key] === value && peekStoredSettingsSync(FILE) !== 'unreadable') return;
+  let copyKept = false;
   try {
-    await store.update((current) => ({ ...current, [key]: value }));
-  } catch (err) {
     await store.update((current) => {
-      const { [key]: _attempted, ...rest } = current;
-      return key in saved ? { ...rest, [key]: saved[key] } : rest;
-    }).catch((): void => undefined);
+      preserveUnreadableFile();
+      copyKept = true;
+      return { ...current, [key]: value };
+    });
+  } catch (err) {
+    // No copy means no write was tried, and the file mustn't be replaced now.
+    if (copyKept) {
+      await store.update((current) => {
+        const { [key]: _attempted, ...rest } = current;
+        const restored = key in saved ? { ...rest, [key]: saved[key] } : rest;
+        return peekStoredSettingsSync(FILE) === 'unreadable' ? { ...restored, ...unverifiedFlags() } : restored;
+      }).catch((): void => undefined);
+    }
     throw err;
   }
 }
@@ -84,11 +106,17 @@ export async function setStoredFlag(key: string, value: boolean): Promise<void> 
  * saved in every build.
  */
 export async function saveSettings(settings: ExperimentalSettings): Promise<void> {
-  preserveUnreadableFile();
   const eligible = isPreviewEligible();
   const keepSaved = (key: string): boolean => MAIN_OWNED_FLAGS.includes(key) || (!eligible && isPreviewOnly(key));
-  await store.update((saved) => ({
-    ...pickFlags(settings, (key) => !keepSaved(key)),
-    ...pickFlags(saved, keepSaved),
-  }));
+  // Inside the update, so it runs after any save still being written: a file
+  // part way through a write mustn't read as unreadable.
+  await store.update((saved) => {
+    const unreadable = peekStoredSettingsSync(FILE) === 'unreadable';
+    if (unreadable) preserveUnreadableFile();
+    return {
+      ...pickFlags(settings, (key) => !keepSaved(key)),
+      ...pickFlags(saved, keepSaved),
+      ...(unreadable ? unverifiedFlags() : {}),
+    };
+  });
 }

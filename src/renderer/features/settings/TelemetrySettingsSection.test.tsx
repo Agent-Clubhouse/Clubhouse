@@ -60,14 +60,23 @@ describe('TelemetrySettingsSection', () => {
   });
 
   it('says export is paused and offers Resume, which takes the new status', async () => {
-    const api = mockApi(makeStatus({ exportPaused: true }));
+    const api = mockApi(makeStatus({ exportPaused: true, pausedFileCopy: '/data/experimental-settings.json.unreadable' }));
     const resume = vi.spyOn(api, 'resume').mockResolvedValue({ ok: true, status: makeStatus({ exportPaused: false }) });
     render(<TelemetrySettingsSection />);
     const notice = await screen.findByTestId('telemetry-paused');
-    expect(notice).toHaveTextContent('Clubhouse couldn\'t read a settings file, so telemetry export is paused. Your settings are kept.');
+    expect(notice).toHaveTextContent('Clubhouse couldn\'t read a settings file, so telemetry export is paused. Your telemetry settings are kept. Other experimental settings may be back to their defaults. The file as it was is saved at /data/experimental-settings.json.unreadable.');
     fireEvent.click(screen.getByRole('button', { name: 'Resume' }));
     await waitFor(() => expect(resume).toHaveBeenCalled());
     await waitFor(() => expect(screen.queryByTestId('telemetry-paused')).toBeNull());
+  });
+
+  it('doesn\'t name a copy when none was kept, and doesn\'t claim the other settings were kept', async () => {
+    mockApi(makeStatus({ exportPaused: true }));
+    render(<TelemetrySettingsSection />);
+    const notice = await screen.findByTestId('telemetry-paused');
+    expect(notice).toHaveTextContent('Other experimental settings may be back to their defaults.');
+    expect(notice).not.toHaveTextContent('saved at');
+    expect(notice).not.toHaveTextContent('Your settings are kept');
   });
 
   it('shows why Resume failed, and stays paused', async () => {

@@ -686,7 +686,9 @@ describe('an unreadable flag file', () => {
       expect(prefs(readSaved())).toBe(prefs(before));
       expect(readSaved().consentVersion).toBe(1);
       expect(await fsp.readFile(path.join(getOfflineDir(), 'queued.ai.json'), 'utf8')).toBe('[1]');
-      expect((await control.getStatus()).exportPaused).toBe(true);
+      const status = await control.getStatus();
+      expect(status.exportPaused).toBe(true);
+      expect(status.pausedFileCopy).toBe(userDataPath(`${FLAG_FILE}.unreadable`));
     });
 
     it('a flag of the wrong type pauses too', async () => {
@@ -800,7 +802,7 @@ describe('an unreadable flag file', () => {
     it('an unrelated save from the renderer doesn\'t clear it', async () => {
       await paused();
       await experimentalSettings.saveSettings({ themeGradients: true });
-      await vi.waitFor(() => expect(JSON.parse(readText(FLAG_FILE))).toEqual({ themeGradients: true }));
+      await vi.waitFor(() => expect(JSON.parse(readText(FLAG_FILE))).toEqual({ themeGradients: true, telemetry: null }));
       await launch();
       expect(getTelemetrySettings().exportSuspended).toBe('flag_unreadable');
       expect(exportAttempts()).toBe(0);
@@ -871,23 +873,189 @@ describe('an unreadable flag file', () => {
     expect(exportAttempts()).toBe(0);
   });
 
-  it('known limit: a failed save of the pause, then a rewrite in that run, leaves no record, and export resumes', async () => {
-    seedGate(undefined, true);
-    corruptFlags();
-    writeJson(SETTINGS_FILE, active());
-    failWritesTo(SETTINGS_FILE);
-    const quiet = vi.spyOn(console, 'error').mockImplementation(() => undefined);
-    await launch();
-    await vi.waitFor(() => expect(quiet).toHaveBeenCalled());
-    await experimentalSettings.saveSettings({ themeGradients: true });
-    await vi.waitFor(() => expect(JSON.parse(readText(FLAG_FILE))).toEqual({ themeGradients: true }));
+  describe('a failed save of the pause, then an unrelated save rewriting the flag file', () => {
+    /** Paused in memory only, then the file rewritten as valid. The next launch finds no pause on disk. */
+    async function pausedInMemoryThenRewritten(): Promise<void> {
+      seedGate(undefined, true);
+      corruptFlags();
+      writeJson(SETTINGS_FILE, active());
+      failWritesTo(SETTINGS_FILE);
+      const quiet = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+      await launch();
+      await vi.waitFor(() => expect(quiet).toHaveBeenCalled());
+      expect(readSaved().exportSuspended).toBeUndefined();
+      await experimentalSettings.saveSettings({ themeGradients: true });
+      await vi.waitFor(() => expect(JSON.parse(readText(FLAG_FILE)).themeGradients).toBe(true));
+      vi.mocked(fs.promises.writeFile).mockRestore();
+    }
 
-    vi.mocked(fs.promises.writeFile).mockRestore();
-    await launch();
-    expect(getTelemetrySettings().exportSuspended).toBeUndefined();
-    expect(exportAttempts()).toBe(1);
-    // The copy of the original is there to see what happened.
-    expect(readText(`${FLAG_FILE}.unreadable`)).toBe(RAW);
+    /** A launch where the pause can't be saved, and it isn't. */
+    async function launchWithPauseSaveFailing(): Promise<void> {
+      failWritesTo(SETTINGS_FILE);
+      const quiet = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+      await launch();
+      await vi.waitFor(() => expect(quiet).toHaveBeenCalled());
+      expect(readSaved().exportSuspended).toBeUndefined();
+      expect(getTelemetrySettings().exportSuspended).toBe('flag_unreadable');
+      expect(exportAttempts()).toBe(0);
+    }
+    const endFailures = () => vi.mocked(fs.promises.writeFile).mockRestore();
+
+    it.each([2, 3])('%i unrelated saves in one run keep the marker, on disk and in memory', async (saves) => {
+      seedGate(undefined, true);
+      corruptFlags();
+      writeJson(SETTINGS_FILE, active());
+      await launchWithPauseSaveFailing();
+      for (let n = 1; n <= saves; n++) {
+        await experimentalSettings.saveSettings({ themeGradients: n % 2 === 0, chat: true });
+        expect(JSON.parse(readText(FLAG_FILE))).toEqual({ themeGradients: n % 2 === 0, chat: true, telemetry: null });
+        expect(experimentalSettings.getStoredSettings().telemetry).toBeNull();
+        expect(experimentalSettings.peekStoredFlag('telemetry')).toBe('unreadable');
+      }
+      endFailures();
+      await launch();
+      expect(getTelemetrySettings().exportSuspended).toBe('flag_unreadable');
+      expect(exportAttempts()).toBe(0);
+      expect(recoveryCopies()).toEqual([`${FLAG_FILE}.unreadable`]);
+    });
+
+    it('a restart between saves, with the pause save still failing, gives the same result', async () => {
+      seedGate(undefined, true);
+      corruptFlags();
+      writeJson(SETTINGS_FILE, active());
+      for (let run = 0; run < 3; run++) {
+        await launchWithPauseSaveFailing();
+        await experimentalSettings.saveSettings({ themeGradients: run % 2 === 0 });
+        expect(JSON.parse(readText(FLAG_FILE))).toEqual({ themeGradients: run % 2 === 0, telemetry: null });
+        endFailures();
+      }
+      await launch();
+      expect(getTelemetrySettings().exportSuspended).toBe('flag_unreadable');
+      expect(exportAttempts()).toBe(0);
+      await vi.waitFor(() => expect(readSaved().exportSuspended).toBe('flag_unreadable'));
+      expect(recoveryCopies()).toEqual([`${FLAG_FILE}.unreadable`]);
+      expect(readText(`${FLAG_FILE}.unreadable`)).toBe(RAW);
+    });
+
+    it('Resume over the marker writes true and resumes, and lasts', async () => {
+      await pausedInMemoryThenRewritten();
+      await launch();
+      await vi.waitFor(() => expect(readSaved().exportSuspended).toBe('flag_unreadable'));
+      expect((await control.getStatus()).exportPaused).toBe(true);
+      const result = await control.resumeExport();
+      expect(result.status.exportPaused).toBe(false);
+      await vi.waitFor(() => expect(JSON.parse(readText(FLAG_FILE))).toEqual({ themeGradients: true, telemetry: true }));
+      await launch();
+      expect(getTelemetrySettings().exportSuspended).toBeUndefined();
+      expect(exportAttempts()).toBe(1);
+    });
+
+    it('Resume stays paused while the opt-in can\'t be saved, even with the marker in place', async () => {
+      await pausedInMemoryThenRewritten();
+      await launch();
+      await vi.waitFor(() => expect(readSaved().exportSuspended).toBe('flag_unreadable'));
+      const flagFile = readText(FLAG_FILE);
+      failWritesTo(FLAG_FILE);
+      vi.spyOn(console, 'error').mockImplementation(() => undefined);
+      expect(await control.resumeExport()).toMatchObject({ ok: false, reason: 'opt_in_not_saved' });
+      expect(getTelemetrySettings().exportSuspended).toBe('flag_unreadable');
+      expect(exportAttempts()).toBe(0);
+      expect(readText(FLAG_FILE)).toBe(flagFile);
+      expect(experimentalSettings.getStoredSettings().telemetry).toBeNull();
+    });
+
+    it('Resume with the flag saved but the pause not cleared on disk still resolves on the next load', async () => {
+      await pausedInMemoryThenRewritten();
+      await launch();
+      await vi.waitFor(() => expect(readSaved().exportSuspended).toBe('flag_unreadable'));
+      failWritesTo(SETTINGS_FILE);
+      vi.spyOn(console, 'error').mockImplementation(() => undefined);
+      expect((await control.resumeExport()).status.exportPaused).toBe(false);
+      expect(readSaved().exportSuspended).toBe('flag_unreadable');
+      endFailures();
+      await launch();
+      expect(getTelemetrySettings().exportSuspended).toBeUndefined();
+      expect(exportAttempts()).toBe(1);
+    });
+
+    it('an older build\'s false over the marker switches off', async () => {
+      await pausedInMemoryThenRewritten();
+      writeJson(FLAG_FILE, { themeGradients: true, telemetry: false });
+      await launch();
+      expect(getTelemetrySettings().exportSuspended).toBeUndefined();
+      expect(getTelemetrySettings().destinations.some((d) => d.enabled)).toBe(false);
+      expect(exportAttempts()).toBe(0);
+    });
+
+    it('repeated starts over the marker are no-ops, and the recovery copy stays', async () => {
+      await pausedInMemoryThenRewritten();
+      await launch();
+      await vi.waitFor(() => expect(readSaved().exportSuspended).toBe('flag_unreadable'));
+      const settings = readText(SETTINGS_FILE);
+      const flags = readText(FLAG_FILE);
+      for (let run = 0; run < 2; run++) {
+        await launch();
+        expect(readText(SETTINGS_FILE)).toBe(settings);
+        expect(readText(FLAG_FILE)).toBe(flags);
+        expect(exportAttempts()).toBe(0);
+      }
+      expect(recoveryCopies()).toEqual([`${FLAG_FILE}.unreadable`]);
+      expect(readText(`${FLAG_FILE}.unreadable`)).toBe(RAW);
+    });
+
+    it('the marker doesn\'t reach the renderer, and a page that writes back what it read keeps it', async () => {
+      await pausedInMemoryThenRewritten();
+      resetAllSettingsStoresForTests();
+      const read = experimentalSettings.getSettings();
+      expect(read).not.toHaveProperty('telemetry');
+      await experimentalSettings.saveSettings({ ...read, chat: true });
+      expect(JSON.parse(readText(FLAG_FILE))).toEqual({ themeGradients: true, chat: true, telemetry: null });
+    });
+
+    // What v0.42.0 leaves behind, from running its real code over the marker. See the PR.
+    it.each<[string, Record<string, unknown>, 'paused' | 'off' | 'on']>([
+      ['its page saving another flag keeps null', { telemetry: null, chat: true }, 'paused'],
+      ['its Preview-off save keeps null', { telemetry: null, themeGradients: true }, 'paused'],
+      ['its page turned on', { telemetry: true }, 'on'],
+      ['its page turned on and off', { telemetry: false }, 'off'],
+    ])('re-upgrading after v0.42.0: %s', async (_name, flags, expected) => {
+      seedGate(undefined, true);
+      writeJson(FLAG_FILE, flags);
+      writeJson(SETTINGS_FILE, { ...active(), exportSuspended: 'flag_unreadable' });
+      await launch();
+      if (expected === 'paused') expect(getTelemetrySettings().exportSuspended).toBe('flag_unreadable');
+      else expect(getTelemetrySettings().exportSuspended).toBeUndefined();
+      expect(getTelemetrySettings().destinations.some((d) => d.enabled)).toBe(expected !== 'off');
+      expect(exportAttempts()).toBe(expected === 'on' ? 1 : 0);
+    });
+
+    it('a save while another is part way through its write doesn\'t take the file for unreadable', async () => {
+      seedGate(true, true);
+      writeJson(SETTINGS_FILE, graduated(otlp(true), framebriar()));
+      await launch();
+      const realWrite = fs.promises.writeFile;
+      let release: () => void = () => undefined;
+      const held = new Promise<void>((resolve) => { release = resolve; });
+      let first = true;
+      vi.spyOn(fs.promises, 'writeFile').mockImplementation(async (target, data, options) => {
+        if (first && String(target).endsWith(FLAG_FILE)) {
+          first = false;
+          // A real write truncates first: this is what's on disk while it runs.
+          fs.writeFileSync(String(target), String(data).slice(0, 5));
+          await held;
+        }
+        return realWrite(target, data, options as never);
+      });
+
+      const firstSave = experimentalSettings.saveSettings({ themeGradients: true });
+      await vi.waitFor(() => expect(readText(FLAG_FILE)).toHaveLength(5));
+      const secondSave = experimentalSettings.saveSettings({ themeGradients: false });
+      release();
+      await Promise.all([firstSave, secondSave]);
+
+      expect(JSON.parse(readText(FLAG_FILE))).toEqual({ telemetry: true, themeGradients: false });
+      expect(recoveryCopies()).toEqual([]);
+    });
   });
 
   describe('Resume', () => {
@@ -897,6 +1065,7 @@ describe('an unreadable flag file', () => {
       expect((await control.getStatus()).consentAccepted).toBe(true);
       const result = await control.resumeExport();
       expect(result.status.exportPaused).toBe(false);
+      expect(result.status.pausedFileCopy).toBeUndefined();
       expect('needs' in result).toBe(false);
       expect(exportAttempts()).toBeGreaterThan(0);
       await vi.waitFor(() => expect(JSON.parse(readText(FLAG_FILE)).telemetry).toBe(true));
@@ -918,6 +1087,21 @@ describe('an unreadable flag file', () => {
       expect(getTelemetrySettings().exportSuspended).toBe('flag_unreadable');
       expect(exportAttempts()).toBe(0);
       expect(readText(FLAG_FILE)).toBe(RAW);
+    });
+
+    it('a save that fails once, over a corrupt file, can\'t leave a valid file with no key: it stays paused', async () => {
+      await paused();
+      const realWrite = fs.promises.writeFile;
+      vi.spyOn(fs.promises, 'writeFile').mockImplementationOnce(() => Promise.reject(new Error('disk full')));
+      vi.spyOn(console, 'error').mockImplementation(() => undefined);
+      expect(await control.resumeExport()).toMatchObject({ ok: false, reason: 'opt_in_not_saved' });
+      vi.mocked(fs.promises.writeFile).mockRestore();
+      expect(fs.promises.writeFile).toBe(realWrite);
+      await vi.waitFor(() => expect(JSON.parse(readText(FLAG_FILE))).toEqual({ telemetry: null }));
+      expect(readText(`${FLAG_FILE}.unreadable`)).toBe(RAW);
+      await launch();
+      expect(getTelemetrySettings().exportSuspended).toBe('flag_unreadable');
+      expect(exportAttempts()).toBe(0);
     });
 
     it('does nothing when nothing is paused', async () => {
@@ -972,7 +1156,7 @@ describe('the renderer doesn\'t own the telemetry flag', () => {
     await launch();
     await vi.waitFor(() => expect(readSaved().exportSuspended).toBe('flag_unreadable'));
     await experimentalSettings.saveSettings({ telemetry: true, themeGradients: true });
-    await vi.waitFor(() => expect(saved()).toEqual({ themeGradients: true }));
+    await vi.waitFor(() => expect(saved()).toEqual({ themeGradients: true, telemetry: null }));
     await launch();
     expect(getTelemetrySettings().exportSuspended).toBe('flag_unreadable');
     expect(exportAttempts()).toBe(0);

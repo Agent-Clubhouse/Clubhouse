@@ -31,6 +31,7 @@ export function shareTelemetry(ask: TelemetryShareAsk): Promise<TelemetryEnableR
 export function DeveloperTelemetrySection({ refreshKey }: { refreshKey?: unknown }) {
   const [dest, setDest] = useState<TelemetryDestinationStatus | null>(null);
   const [paused, setPaused] = useState(false);
+  const [fileCopy, setFileCopy] = useState<string | undefined>();
   const [ask, setAsk] = useState<TelemetryShareAsk | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [test, setTest] = useState<string | null>(null);
@@ -40,6 +41,7 @@ export function DeveloperTelemetrySection({ refreshKey }: { refreshKey?: unknown
       const status = await api().getStatus();
       setDest(status?.destinations.find((d) => d.id === 'framebriar') ?? null);
       setPaused(status?.exportPaused === true);
+      setFileCopy(status?.pausedFileCopy);
     } catch {
       // telemetry-exempt: the section stays hidden when telemetry can't be read.
       setDest(null);
@@ -75,6 +77,7 @@ export function DeveloperTelemetrySection({ refreshKey }: { refreshKey?: unknown
       <SettingsSection title="Telemetry for the developer">
         {paused && (
           <TelemetryPausedNotice
+            fileCopy={fileCopy}
             onResume={() => {
               setError(null);
               void api().resume().then(apply);

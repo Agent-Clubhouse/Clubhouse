@@ -102,6 +102,8 @@ export function peekStoredSettingsSync(filename: string): PeekedSettings {
 
 const MAX_RECOVERY_COPIES = 100;
 
+const recoveryCopyPath = (source: string, n: number): string => `${source}.unreadable${n === 0 ? '' : `.${n}`}`;
+
 /**
  * Copy a file next to itself as `<name>.unreadable`, with its permissions, before
  * something overwrites it. An existing copy is never overwritten: different bytes
@@ -113,7 +115,7 @@ export function backupUnreadableSettings(filename: string): void {
   const bytes = fs.readFileSync(source);
   const mode = fs.statSync(source).mode & 0o777;
   for (let n = 0; n < MAX_RECOVERY_COPIES; n++) {
-    const target = `${source}.unreadable${n === 0 ? '' : `.${n}`}`;
+    const target = recoveryCopyPath(source, n);
     if (fs.existsSync(target)) {
       if (fs.readFileSync(target).equals(bytes)) return;
       continue;
@@ -124,6 +126,14 @@ export function backupUnreadableSettings(filename: string): void {
     return;
   }
   throw new Error('Too many recovery copies');
+}
+
+/** The newest recovery copy of a settings file, if there is one. */
+export function latestRecoveryCopy(filename: string): string | undefined {
+  const source = path.join(app.getPath('userData'), filename);
+  let latest: string | undefined;
+  for (let n = 0; n < MAX_RECOVERY_COPIES && fs.existsSync(recoveryCopyPath(source, n)); n++) latest = recoveryCopyPath(source, n);
+  return latest;
 }
 
 export function createSettingsStore<T>(
