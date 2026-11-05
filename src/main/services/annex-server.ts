@@ -1,6 +1,6 @@
 import { hasSessionCaptureFailure } from './session-capture-barrier';
 import { waitForAgentStopped } from './agent-system';
-import { previewAgentProvider, changeAgentProvider } from './agent-provider-control';
+import { previewAgentProvider, changeAgentProvider, persistGuidedSessionCapture } from './agent-provider-control';
 import { withAgentTransition } from './agent-transition';
 import * as http from 'http';
 import * as https from 'https';
@@ -3489,7 +3489,7 @@ async function runMobileCommand(command: MobileCommand, assertAuthorized: () => 
         assertAuthorized();
         await stopAgentForAnnex(command.agentId, project.path, info?.config.orchestrator);
         if (!(await waitForAgentStopped(command.agentId))) throw new MobileControlError('agent_stopping');
-        if (hasSessionCaptureFailure(command.agentId)) throw new MobileControlError('session_capture_failed');
+        await persistGuidedSessionCapture(project.path, command.agentId);
         assertAuthorized();
         broadcastSnapshotRefresh();
         return { agentId: command.agentId, stopRequested: true, state: 'sleeping', stopped: true };

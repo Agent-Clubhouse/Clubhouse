@@ -1266,6 +1266,7 @@ async function updateDurableConfigInner(
   const agent = agentsById.get(agentId);
   if (!agent) return;
   if (beforeCommit) await beforeCommit();
+  const rollbackProvider = beforeCommit && updates.orchestrator !== undefined ? structuredClone(agent) : undefined;
   const auditBefore = pickAudited(agent, AGENT_AUDIT_CATALOG);
   const previousPersona = agent.persona;
   if (updates.quickAgentDefaults !== undefined) {
@@ -1292,7 +1293,6 @@ async function updateDurableConfigInner(
       }
     }
     agent.orchestrator = updates.orchestrator;
-    noteProviderSelection(agentId, updates.orchestrator);
   }
   if (updates.model !== undefined) {
     const modelBefore = agent.model;
@@ -1420,7 +1420,24 @@ async function updateDurableConfigInner(
       delete agent.sourceControlProvider;
     }
   }
-  await writeAgents(projectPath, agents);
+  try {
+    await writeAgents(projectPath, agents);
+    // Guided Save acknowledges durable persistence, not just the debounced cache.
+    if (rollbackProvider) await flushAgentConfig(projectPath);
+  } catch (err) {
+    if (rollbackProvider) {
+      const current = configCache.get(projectPath);
+      if (current) {
+        current.agents = current.agents.map((item) => item.id === agentId ? rollbackProvider : item);
+        current.agentsById = buildAgentsById(current.agents);
+        current.revision++;
+        current.dirty = true;
+        scheduleFlush(projectPath, current);
+      }
+    }
+    throw err;
+  }
+  if (updates.orchestrator !== undefined) noteProviderSelection(agentId, updates.orchestrator);
   await auditChanges('agent', 'agent', agentId, auditBefore, pickAudited(agent, AGENT_AUDIT_CATALOG), AGENT_AUDIT_CATALOG);
   // A running chat session picks the new timeout up now.
   if (updates.idleSleep !== undefined) setAgentIdleSleep(agentId, agent.idleSleep);

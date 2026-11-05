@@ -1,10 +1,10 @@
 /** Guided provider changes. No implicit stop, wake, context transfer or file migration. */
 import { createHash } from 'node:crypto';
-import { getDurableConfig, updateDurableConfig } from './agent-config';
+import { getDurableConfig, updateDurableConfig, flushAgentConfig } from './agent-config';
 import { agentRegistry } from './agent-registry';
 import { agentTransitionGeneration, withAgentTransition } from './agent-transition';
 import { isAgentRunning, isAgentStopping, checkAvailability, resolveOrchestrator, resolveProfileEnv, waitForAgentStopped } from './agent-system';
-import { sessionCaptureFor, hasSessionCaptureFailure } from './session-capture-barrier';
+import { sessionCaptureFor, hasSessionCaptureFailure, noteSessionCaptureFailure } from './session-capture-barrier';
 import { effectiveOrchestrators } from './mobile-agents';
 import { readProjectAgentDefaults } from './agent-settings-service';
 import { isDisposedAgent } from '../../shared/agent-helpers';
@@ -19,7 +19,7 @@ const hash = (value: unknown): string => createHash('sha256').update(JSON.string
 const snapshot = (value: DurableAgentConfig): DurableAgentConfig => JSON.parse(JSON.stringify(value));
 const fail = (code: string): never => { throw new MobileControlError(code, 409); };
 
-export async function previewAgentProvider(projectPath: string, agentId: string, providerId: string, actor: ProviderControlActor) {
+export async function previewAgentProvider(projectPath: string, agentId: string, providerId: string, actor: ProviderControlActor, tokenGeneration?: number) {
   await actor.assertAuthorized();
   const found = await getDurableConfig(projectPath, agentId);
   if (!found || isDisposedAgent(found)) return fail('agent_not_found');
@@ -54,9 +54,10 @@ export async function previewAgentProvider(projectPath: string, agentId: string,
           : instructions !== 'equivalent' ? 'instructions_not_equivalent' : null;
   await actor.assertAuthorized();
   const fresh = await getDurableConfig(projectPath, agentId);
+  if (hash(resolveRuntimeMode(providerId, config.runtimeMode)) !== hash(mode)) return fail('stale_state');
   if (hash(fresh) !== hash(config) || agentTransitionGeneration(agentId) !== generation) return fail('stale_state');
   // Secrets and source text participate only in this opaque precondition; neither is returned/logged.
-  const expectedState = hash([actor.key, projectPath, config, generation, providerId, current.id, state,
+  const expectedState = hash([actor.key, projectPath, config, tokenGeneration ?? generation, providerId, current.id, state,
     defaults, env, mode, getPermissionMode(projectPath), instructionFingerprint, blocked]);
   return {
     agentId, savedProvider: current.id, activeProvider, provider: providerId, state, expectedState,
@@ -68,11 +69,19 @@ export async function previewAgentProvider(projectPath: string, agentId: string,
   };
 }
 
+export async function persistGuidedSessionCapture(projectPath: string, agentId: string): Promise<void> {
+  try { await flushAgentConfig(projectPath); }
+  catch { noteSessionCaptureFailure(agentId); return fail('session_capture_failed'); }
+  if (hasSessionCaptureFailure(agentId)) return fail('session_capture_failed');
+}
+
 export async function changeAgentProvider(projectPath: string, agentId: string, provider: string, expectedState: string, actor: ProviderControlActor) {
   // Capture settles before acquiring the exclusive reservation; an exit must be able to persist history.
   if (isAgentRunning(agentId) || isAgentStopping(agentId)) return fail('agent_running');
   if (!(await waitForAgentStopped(agentId))) return fail('agent_stopping');
   return withAgentTransition(agentId, async () => {
+    await persistGuidedSessionCapture(projectPath, agentId);
+    const generation = agentTransitionGeneration(agentId);
     const preview = await previewAgentProvider(projectPath, agentId, provider, actor);
     if (preview.expectedState !== expectedState) return fail('stale_state');
     if (preview.blocked) return fail(preview.blocked);
@@ -80,7 +89,8 @@ export async function changeAgentProvider(projectPath: string, agentId: string, 
     if (preview.savedProvider === provider) return { ...preview, status: 'already_selected' as const };
     const before = hash(await getDurableConfig(projectPath, agentId));
     await updateDurableConfig(projectPath, agentId, { orchestrator: provider }, async () => {
-      await actor.assertAuthorized();
+      const final = await previewAgentProvider(projectPath, agentId, provider, actor, generation);
+      if (final.expectedState !== expectedState || final.blocked) return fail('stale_state');
       if (hash(await getDurableConfig(projectPath, agentId)) !== before) return fail('stale_state');
     });
     return { ...preview, expectedState: undefined as string | undefined, savedProvider: provider, activeProvider: null as string | null,

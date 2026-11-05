@@ -2,10 +2,11 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { agentRegistry } from './agent-registry';
 import { withAgentActivity, withAgentTransition } from './agent-transition';
 import { changeAgentProvider, previewAgentProvider } from './agent-provider-control';
-const w = vi.hoisted(() => ({ config: {} as any, available: true, instructions: 'same', runtime: 'terminal', running: false, captureFailed: false, beforeAvailability: undefined as undefined | (() => void) }));
+const w = vi.hoisted(() => ({ config: {} as any, available: true, instructions: 'same', runtime: 'terminal', running: false, captureFailed: false, beforeCommit: undefined as undefined | (() => void), beforeAvailability: undefined as undefined | (() => void) }));
 vi.mock('./agent-config', () => ({
   getDurableConfig: async () => w.config,
-  updateDurableConfig: vi.fn(async (_p, _id, update) => { w.config.orchestrator = update.orchestrator; delete w.config.lastSessionId; }),
+  flushAgentConfig: async () => {},
+  updateDurableConfig: vi.fn(async (_p, _id, update, check) => { w.beforeCommit?.(); await check?.(); w.config.orchestrator = update.orchestrator; delete w.config.lastSessionId; }),
 }));
 vi.mock('./agent-system', () => ({
   resolveOrchestrator: async (_p: string, id = 'claude-code') => ({ id, getCapabilities: () => ({ permissions: true }), inspectInstructions: async () => id === 'codex-cli' ? w.instructions : 'same' }),
@@ -20,13 +21,13 @@ vi.mock('./free-agent-settings', () => ({ getPermissionMode: () => 'skip-all' })
 vi.mock('./chat-runtime-settings', () => ({ isChatEnabled: () => true, resolveRuntimeMode: () => ({ mode: w.runtime }) }));
 vi.mock('./agent-runtime/chat-drivers', () => ({ resolveChatDriver: () => ({}) }));
 vi.mock('./agent-registry', () => ({ agentRegistry: { get: vi.fn(() => undefined) } }));
-vi.mock('./session-capture-barrier', () => ({ sessionCaptureFor: () => undefined, hasSessionCaptureFailure: () => w.captureFailed }));
+vi.mock('./session-capture-barrier', () => ({ sessionCaptureFor: () => undefined, hasSessionCaptureFailure: () => w.captureFailed, noteSessionCaptureFailure: () => { w.captureFailed = true; } }));
 import { updateDurableConfig } from './agent-config';
 const actor = { key: 'phone:paired', assertAuthorized: () => {} };
 const preview = () => previewAgentProvider('/fixture', 'a', 'codex-cli', actor);
 beforeEach(() => {
   w.config = { id: 'a', name: 'Agent', orchestrator: 'claude-code', lastSessionId: 'claude-native', sessionHistory: [{ sessionId: 'claude-native', orchestrator: 'claude-code' }], worktreePath: '/fixture/work', orchestration: { control: 'hands-off' }, mcpIds: ['workiq'] };
-  w.runtime = 'terminal'; w.captureFailed = false; w.available = true; w.instructions = 'same'; w.running = false; w.beforeAvailability = undefined;
+  w.beforeCommit = undefined; w.runtime = 'terminal'; w.captureFailed = false; w.available = true; w.instructions = 'same'; w.running = false; w.beforeAvailability = undefined;
   vi.mocked(updateDurableConfig).mockClear(); vi.mocked(agentRegistry.get).mockReturnValue(undefined);
 });
 describe('guided provider control', () => {
@@ -62,6 +63,12 @@ describe('guided provider control', () => {
     let revoked = false;
     w.beforeAvailability = () => { revoked = true; };
     await expect(previewAgentProvider('/fixture', 'a', 'codex-cli', { key: 'phone', assertAuthorized: () => { if (revoked) throw new Error('revoked'); } })).rejects.toThrow('revoked');
+  });
+  it('rechecks runtime after config preflight, immediately before mutation', async () => {
+    const p = await preview();
+    w.beforeCommit = () => { w.runtime = 'chat'; };
+    await expect(changeAgentProvider('/fixture', 'a', 'codex-cli', p.expectedState, actor)).rejects.toMatchObject({ code: 'stale_state' });
+    expect(w.config.orchestrator).toBe('claude-code');
   });
   it('rejects a preview after the target runtime changes', async () => {
     const p = await preview(); w.runtime = 'chat';

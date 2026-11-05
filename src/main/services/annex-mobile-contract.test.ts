@@ -189,6 +189,7 @@ vi.mock('./project-store', () => ({
 vi.mock('./agent-config', () => {
   const find = (projectPath: string, id: string) => (W.durables[projectPath] ?? []).find((d) => d.id === id) ?? null;
   return {
+    flushAgentConfig: async () => {},
     listDurable: async (projectPath: string) => W.durables[projectPath] ?? [],
     readAgentIconData: async (icon: string) => (icon ? 'data:image/png;base64,R0lGODlhAQABAAAAACw=' : null),
     agentIconFilePath: async (icon: string) => (icon ? `R0lGODlhAQABAAAAACw=|${icon}` : null),
