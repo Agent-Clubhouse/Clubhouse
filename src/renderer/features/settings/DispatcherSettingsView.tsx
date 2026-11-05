@@ -121,7 +121,7 @@ export function DispatcherSettingsView() {
               {!state.flagOn
                 ? 'Turn on Dispatcher in Settings > Experimental first.'
                 : !newLayout
-                  ? 'The Dispatcher needs the new layout. Turn off Classic layout in Settings > Display & UI.'
+                  ? 'The Dispatcher needs the new layout. Turn off Classic layout in Settings > Display & UI, then restart Clubhouse.'
                   : 'Turning it off stops it. Its folder and notes are kept, so turning it back on carries on where it left off.'}
             </span>
           )}
