@@ -27,7 +27,7 @@ function harness(overrides: Partial<LocalRecorderOptions> = {}): Harness {
     level: 'standard',
     hashSalt: SALT,
     scrub: createScrubber({ homeDir: HOME, username: 'sam-tester', hostname: 'sams-laptop' }),
-    session: { appVersion: '1.2.3', platform: 'darwin', arch: 'arm64' },
+    session: { appVersion: '1.2.3', platform: 'darwin', arch: 'arm64', uiChrome: 'legacy' },
     flushIntervalMs: 60_000,
     appendFile: async (file, data) => {
       files.set(file, (files.get(file) ?? '') + data);
@@ -79,6 +79,15 @@ describe('local telemetry recorder', () => {
     await h.rec.flush();
     expect(h.records()[0]).toMatchObject({ t: 'session', v: LOCAL_FORMAT_VERSION, appVersion: '1.2.3', platform: 'darwin', level: 'standard' });
     expect([...h.files.keys()]).toEqual([path.join('/logs', 'telemetry-run.jsonl')]);
+  });
+
+  it.each(['legacy', 'v2'] as const)('says which shell the session ran in: %s', async (uiChrome) => {
+    const h = harness({ session: { appVersion: '1.2.3', platform: 'darwin', arch: 'arm64', uiChrome } });
+    await h.rec.flush();
+    const lines = h.records();
+    expect(lines[0]).toMatchObject({ t: 'session', v: LOCAL_FORMAT_VERSION, uiChrome });
+    // The session line only: it isn't repeated on anything else.
+    expect(lines.filter((r) => 'uiChrome' in r)).toHaveLength(1);
   });
 
   it('records flows and steps with durations, outcomes and parent links', async () => {

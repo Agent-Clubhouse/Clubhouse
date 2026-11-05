@@ -56,8 +56,8 @@ import {
   type TraceIds,
 } from './types';
 
-/** 2: adds `diag` lines, `dropped.diag` and `session.signals` (#2299). */
-export const LOCAL_FORMAT_VERSION = 2;
+/** 2: adds `diag` lines, `dropped.diag` and `session.signals` (#2299). 3: adds `session.uiChrome`. */
+export const LOCAL_FORMAT_VERSION = 3;
 export const LOCAL_FILE_PREFIX = 'telemetry-';
 export const LOCAL_FLUSH_INTERVAL_MS = 2_000;
 export const LOCAL_FLUSH_AT_LINES = 100;
@@ -114,7 +114,8 @@ export interface LocalRecorderOptions {
   signals?: boolean;
   hashSalt: Buffer;
   scrub: Scrubber;
-  session: { appVersion: string; platform: string; arch: string };
+  /** `uiChrome` is `clubhouse.ui.chrome`, the shell this session runs. */
+  session: { appVersion: string; platform: string; arch: string; uiChrome: 'legacy' | 'v2' };
   now?: () => number;
   flushIntervalMs?: number;
   metricIntervalMs?: number;
@@ -705,6 +706,7 @@ export function createLocalRecorder(opts: LocalRecorderOptions): LocalRecorder {
       appVersion: opts.session.appVersion,
       platform: opts.session.platform,
       arch: opts.session.arch,
+      uiChrome: opts.session.uiChrome,
       level,
     };
     if (!signals) record.signals = false;
