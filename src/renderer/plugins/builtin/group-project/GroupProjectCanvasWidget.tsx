@@ -129,7 +129,7 @@ export function PausedPolling({ groupProjectId }: { groupProjectId: string }) {
           <span className="flex-1 min-w-0 truncate">{member.agentName}: polling paused</span>
           <Button
             kind="ghost"
-            onClick={() => { void window.clubhouse.groupProject.resumePolling(groupProjectId, member.agentId).catch(() => undefined).finally(load); }}
+            onClick={() => { void window.clubhouse.groupProject.resumePolling(groupProjectId, member.agentId).catch((): boolean => false).finally(load); }}
             data-testid={`polling-resume-${member.agentId}`}
           >
             Resume
