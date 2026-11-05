@@ -7,6 +7,7 @@
 import { expect, Page } from '@playwright/test';
 import * as path from 'path';
 import * as fs from 'fs';
+import { reportActionFailure } from './renderer-diagnostics';
 
 type ElectronApp = Awaited<ReturnType<typeof import('@playwright/test')._electron.launch>>;
 
@@ -44,7 +45,12 @@ export async function stubDialogForPath(electronApp: ElectronApp, dirPath: strin
 export async function addProject(electronApp: ElectronApp, window: Page, dirPath: string) {
   await stubDialogForPath(electronApp, dirPath);
   const addBtn = window.locator('[data-testid="nav-add-project"]');
-  await addBtn.click();
+  try {
+    await addBtn.click();
+  } catch (cause) {
+    await reportActionFailure(electronApp, window, 'nav-add-project', cause);
+    throw cause;
+  }
   const name = path.basename(dirPath);
   await expect(window.locator(`text=${name}`).first()).toBeVisible({
     timeout: 10_000,

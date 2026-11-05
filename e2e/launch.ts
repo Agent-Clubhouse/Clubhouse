@@ -8,6 +8,7 @@ import {
   type DisposableProfile,
 } from './app-profile';
 import { recordElectronApp, trackOpenApp, untrackOpenApp } from './e2e-cleanup';
+import { installFrameMonitor, reportActionFailure } from './renderer-diagnostics';
 
 const APP_PATH = path.resolve(__dirname, '..');
 const MAIN_ENTRY = path.join(APP_PATH, '.webpack', process.arch, 'main');
@@ -118,7 +119,8 @@ export async function launchApp(opts: LaunchOptions = {}): Promise<LaunchedApp> 
     // Collect all windows that open, then pick the renderer (non-devtools) one.
     const rendererWindow = await findRendererWindow(electronApp);
     await rendererWindow.waitForLoadState('load');
-    if ((opts.onboarding ?? 'skip') === 'skip') await dismissOnboarding(rendererWindow);
+    await installFrameMonitor(rendererWindow);
+    if ((opts.onboarding ?? 'skip') === 'skip') await dismissOnboarding(electronApp, rendererWindow);
     return { electronApp, window: rendererWindow, userDataDir: profile.userDataDir, profile };
   } catch (err) {
     untrackOpenApp(electronApp);
@@ -128,24 +130,25 @@ export async function launchApp(opts: LaunchOptions = {}): Promise<LaunchedApp> 
   }
 }
 
-async function dismissOnboarding(rendererWindow: Page): Promise<void> {
+async function dismissOnboarding(electronApp: ElectronApp, rendererWindow: Page): Promise<void> {
   // Mark onboarding as completed so it doesn't appear during E2E tests.
   await rendererWindow.evaluate(() => {
     localStorage.setItem('clubhouse_onboarding', JSON.stringify({ completed: true, cohort: null }));
   });
 
-  // The onboarding store reads localStorage at module-load time (before our
-  // evaluate runs), so a 500ms timer in App.tsx may still fire startOnboarding().
-  // Use waitFor (which polls) instead of isVisible (which returns instantly and
-  // misses the backdrop on slow Windows CI runners).
+  // The store already read localStorage; startup can still show the modal
+  // later. Handle it whenever it blocks an action, including after slow init,
+  // rather than giving up after a fixed visibility wait.
   const onboardingBackdrop = rendererWindow.locator('[data-testid="onboarding-backdrop"]');
-  try {
-    await onboardingBackdrop.waitFor({ state: 'visible', timeout: 3_000 });
-    await rendererWindow.locator('[data-testid="onboarding-skip"]').click();
-    await onboardingBackdrop.waitFor({ state: 'hidden', timeout: 5_000 });
-  } catch {
-    // Modal never appeared — onboarding was already completed
-  }
+  await rendererWindow.addLocatorHandler(onboardingBackdrop, async () => {
+    try {
+      await rendererWindow.locator('[data-testid="onboarding-skip"]').click();
+      await onboardingBackdrop.waitFor({ state: 'hidden', timeout: 5_000 });
+    } catch (cause) {
+      await reportActionFailure(electronApp, rendererWindow, 'onboarding-skip', cause);
+      throw new Error(`Onboarding dismissal failed; cannot continue with a blocking modal. ${String(cause)}`, { cause });
+    }
+  });
 }
 
 async function findRendererWindow(electronApp: ElectronApp) {

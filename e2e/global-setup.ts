@@ -11,7 +11,19 @@ import * as path from 'path';
 
 const FIXTURES_DIR = path.resolve(__dirname, 'fixtures');
 
-export default function globalSetup() {
+/** Electron 45 installs lazily on require, not during npm ci. Cached archives
+ * still need extracting. Do that once, outside every spec's 120s test clock. */
+export async function prepareElectron(): Promise<void> {
+  console.log('[e2e global-setup] Preparing Electron before test timers');
+  const executablePath: unknown = (await import('electron')).default;
+  if (typeof executablePath !== 'string' || !fs.existsSync(executablePath)) {
+    throw new Error(`Electron preparation did not produce an executable: ${String(executablePath)}`);
+  }
+  console.log(`[e2e global-setup] Electron executable ready: ${executablePath}`);
+}
+
+export default async function globalSetup() {
+  await prepareElectron();
   if (!fs.existsSync(FIXTURES_DIR)) return;
 
   const fixtures = fs.readdirSync(FIXTURES_DIR, { withFileTypes: true })

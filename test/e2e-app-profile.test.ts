@@ -14,6 +14,10 @@ import * as path from 'path';
 
 const launchMock = vi.hoisted(() => vi.fn());
 vi.mock('@playwright/test', () => ({ _electron: { launch: launchMock } }));
+vi.mock('../e2e/renderer-diagnostics', () => ({
+  installFrameMonitor: vi.fn(),
+  reportActionFailure: vi.fn(),
+}));
 
 import {
   PROFILE_DIR_PREFIX,
@@ -25,6 +29,7 @@ import {
   type DisposableProfile,
 } from '../e2e/app-profile';
 import { launchApp } from '../e2e/launch';
+import { reportActionFailure } from '../e2e/renderer-diagnostics';
 
 let sandbox: string;
 
@@ -197,15 +202,15 @@ describe('buildLaunchEnv', () => {
 const RENDERER_URL = 'file:///app/.webpack/x64/renderer/main_window/index.html';
 
 function fakePage(url = RENDERER_URL) {
+  const backdrop = { waitFor: vi.fn(async () => {}) };
+  const skip = { click: vi.fn(async () => {}) };
   return {
     url: () => url,
     waitForLoadState: vi.fn(async () => {}),
     waitForTimeout: vi.fn(async () => {}),
     evaluate: vi.fn(async () => {}),
-    locator: vi.fn(() => ({
-      waitFor: vi.fn(async () => { throw new Error('not visible'); }),
-      click: vi.fn(async () => {}),
-    })),
+    locator: vi.fn((selector: string) => selector.includes('onboarding-skip') ? skip : backdrop),
+    addLocatorHandler: vi.fn(async (_locator: unknown, _handler: () => Promise<void>) => {}),
   };
 }
 
@@ -324,6 +329,39 @@ describe('launchApp', () => {
     launchMock.mockResolvedValue(fakeApp([page]));
     const launched = await launchApp({ onboarding: 'show' });
     expect(page.evaluate).not.toHaveBeenCalled();
+    expect(page.addLocatorHandler).not.toHaveBeenCalled();
+    launched.profile.dispose();
+  });
+
+  it('handles onboarding that appears after the old three-second visibility window', async () => {
+    vi.useFakeTimers();
+    try {
+      const page = fakePage();
+      launchMock.mockResolvedValue(fakeApp([page]));
+      const launched = await launchApp();
+      const [backdrop, handleBackdrop] = page.addLocatorHandler.mock.calls[0];
+      expect(page.locator).toHaveBeenCalledWith('[data-testid="onboarding-backdrop"]');
+      expect(backdrop).toEqual({ waitFor: expect.any(Function) });
+      await vi.advanceTimersByTimeAsync(10_000);
+      await handleBackdrop();
+      expect(page.locator).toHaveBeenCalledWith('[data-testid="onboarding-skip"]');
+      expect((page.locator('[data-testid="onboarding-skip"]') as { click: ReturnType<typeof vi.fn> }).click).toHaveBeenCalledOnce();
+      launched.profile.dispose();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('reports and propagates a failed Skip click instead of continuing with a modal', async () => {
+    const page = fakePage();
+    const cause = new Error('waiting for element to be visible, enabled and stable');
+    (page.locator('[data-testid="onboarding-skip"]') as { click: ReturnType<typeof vi.fn> }).click.mockRejectedValue(cause);
+    const app = fakeApp([page]);
+    launchMock.mockResolvedValue(app);
+    const launched = await launchApp();
+    const handleBackdrop = page.addLocatorHandler.mock.calls[0][1];
+    await expect(handleBackdrop()).rejects.toThrow('Onboarding dismissal failed; cannot continue with a blocking modal. Error: waiting for element to be visible, enabled and stable');
+    expect(reportActionFailure).toHaveBeenCalledWith(app, page, 'onboarding-skip', cause);
     launched.profile.dispose();
   });
 
