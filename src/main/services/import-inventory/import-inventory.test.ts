@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import { describe, it, expect, beforeAll, afterAll, beforeEach, afterEach, vi } from 'vitest';
 import { execFileSync } from 'child_process';
 import { createHash } from 'crypto';
 import * as fs from 'fs';
@@ -37,6 +37,8 @@ import { checkConfiguredPath, parseWorktreeList } from './untrusted-paths';
 vi.setConfig({ testTimeout: 30_000 });
 
 let root: string;
+let templateRoot: string;
+let templateRepo: string;
 let savedEnv: Record<string, string | undefined> = {};
 
 /** Every scan here names the fixture home. A scan without one is refused; see 'the home folder'. */
@@ -64,13 +66,8 @@ function git(cwd: string, ...args: string[]): string {
 
 function makeProject(name: string, opts: { repo?: boolean } = {}): string {
   const dir = path.join(root, name);
-  fs.mkdirSync(dir, { recursive: true });
-  if (opts.repo !== false) {
-    git(dir, 'init', '-q', '-b', 'main');
-    write(dir, 'README.md', `# ${name}\n`);
-    git(dir, 'add', '.');
-    git(dir, 'commit', '-q', '-m', 'init');
-  }
+  if (opts.repo === false) fs.mkdirSync(dir, { recursive: true });
+  else fs.cpSync(templateRepo, dir, { recursive: true });
   return dir;
 }
 
@@ -147,6 +144,30 @@ function recordingFs(): { fs: InventoryFs; touched: string[]; resolved: string[]
     },
   };
 }
+
+// Copied per test: three git spawns for each of a hundred projects made this the
+// slowest file in its Windows shard. No sample hooks, so there's little to copy.
+beforeAll(() => {
+  templateRoot = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), 'import-inventory-template-')));
+  templateRepo = path.join(templateRoot, 'repo');
+  const emptyTemplate = path.join(templateRoot, 'empty-template');
+  const emptyConfig = write(templateRoot, 'empty-gitconfig', '');
+  fs.mkdirSync(emptyTemplate);
+  fs.mkdirSync(templateRepo);
+  const env = { ...process.env, GIT_CONFIG_GLOBAL: emptyConfig, GIT_CONFIG_NOSYSTEM: '1' };
+  const run = (...args: string[]) => execFileSync('git', [
+    '-c', 'user.name=Clubhouse Test', '-c', 'user.email=test@example.com', '-c', 'commit.gpgsign=false', ...args,
+  ], { cwd: templateRepo, env, stdio: ['ignore', 'pipe', 'pipe'] });
+  run('init', '-q', '-b', 'main', `--template=${emptyTemplate}`);
+  fs.mkdirSync(path.join(templateRepo, '.git', 'info'), { recursive: true });
+  write(templateRepo, 'README.md', '# fixture\n');
+  run('add', '.');
+  run('commit', '-q', '-m', 'init');
+});
+
+afterAll(() => {
+  fs.rmSync(templateRoot, { recursive: true, force: true });
+});
 
 beforeEach(() => {
   // Native, as the service's is: Windows runners' temp path holds an 8.3 name only that expands.
