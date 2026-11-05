@@ -1279,7 +1279,7 @@ The `tel.*` signals are also written to local files, so flow timings and classif
 
 | `t` | Fields |
 |---|---|
-| `session` | `v` (format version, 2), `ts`, `appVersion`, `platform`, `arch`, `level`, `signals?` (`false` when only diag lines are recorded). First line of the first file. |
+| `session` | `v` (format version, 3), `ts`, `appVersion`, `platform`, `arch`, `uiChrome` (the `clubhouse.ui.chrome` value, `legacy` or `v2`), `level`, `signals?` (`false` when only diag lines are recorded). First line of the first file. |
 | `span` | `ts` (end), `name`, `traceId`, `spanId`, `parentSpanId?`, `startMs`, `durationMs`, `outcome` (`ok`/`error`/`cancelled`/...), `errorType?`, `attrs` |
 | `event` | `ts`, `name`, `severity` (`info`/`warn`/`error`/`fatal`), `traceId?`, `spanId?`, `attrs` |
 | `exception` | `ts`, `type` (class name only), `stack` (sanitized frames), `traceId?`, `spanId?`, `attrs` (origin, handled, extras) |

@@ -16,7 +16,7 @@ Each line is one JSON record. Its `t` field says what kind it is.
 |-----|---------------|
 | `diag` | Diagnostic lines: what Clubhouse and its plugins log, with a namespace, a level, a message and details |
 | `span`, `event`, `exception`, `metric` | Telemetry signals: how long each flow took, how it ended, error types, and per-minute metric totals |
-| `session` | The first line of a run: app version, platform and detail level |
+| `session` | The first line of a run: app version, platform, layout and detail level |
 | `dropped`, `evicted` | Counts of lines that were dropped or deleted to stay within the limits below |
 
 **Diagnostic lines** keep file paths, error messages and session ids as written, so they are useful for debugging. They are not anonymized. Before a line is written, your home folder is replaced by `<home>`, and prompts, chat messages, tool and command arguments, environment values and secrets such as tokens and API keys are replaced with a placeholder where Clubhouse can recognize them.
