@@ -124,7 +124,8 @@ describe('PopoutAgentView', () => {
     };
     render(<PopoutAgentView agentId="agent-1" projectId="proj-1" />);
     const terminal = await screen.findByTestId('agent-terminal');
-    const toolbar = screen.getByTestId('agent-pane-toolbar');
+    // It waits for main's answer, so it and a chat's own toolbar never both show.
+    const toolbar = await screen.findByTestId('agent-pane-toolbar');
     expect(toolbar.className).not.toContain('absolute');
     // A sibling before the terminal's container, not layered over it.
     expect(toolbar.compareDocumentPosition(terminal) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
