@@ -166,6 +166,7 @@ import {
 import { isCrossProjectEnabled, isOrchestrationEnabled, setOrchestrationEnabled, _resetOrchestrationGateForTesting } from './clubhouse-mcp/orchestration-gate';
 import { notifyPersonaChanged, notifyProjectDefaultPersonaChanged } from './persona-change-hook';
 import * as agentConfig from './agent-config';
+import { mcpCallAccess, mcpCallerKind, setMcpCallerUnreadable } from './clubhouse-mcp/mcp-call-gate';
 import { disposeHelperTool } from './clubhouse-mcp/tools/helper-dispose-tools';
 
 function agent(id: string, extra: Partial<DurableAgentConfig> = {}): DurableAgentConfig {
@@ -1432,5 +1433,30 @@ describe('no Clubhouse MCP, no orchestration (#2589)', () => {
     live('orch');
     await syncOrchestrationGate(PROJECT, 'orch');
     expect(isOrchestrationEnabled('orch')).toBe(true);
+  });
+});
+
+describe('an agent whose config couldn\'t be read at start', () => {
+  it('stays closed while the read fails, and opens when a refresh reads it', async () => {
+    const agentId = 'unreadable-agent';
+    live(agentId);
+    setMcpCallerUnreadable(agentId, PROJECT);
+    const read = vi.mocked(agentConfig.getDurableConfig);
+    const stop = watchMcpForOrchestration();
+    try {
+      read.mockRejectedValueOnce(new Error('still unreadable'));
+      for (const listener of mcp.configListeners) listener(PROJECT);
+      await vi.waitFor(() => expect(read).toHaveBeenCalled());
+      await new Promise((resolve) => setTimeout(resolve, 10));
+      expect(mcpCallAccess(agentId, PROJECT)).toBe('closed');
+
+      read.mockResolvedValueOnce({ id: agentId, name: 'found', color: 'indigo', createdAt: 'now', mcpOverride: true } as never);
+      for (const listener of mcp.configListeners) listener(PROJECT);
+      await vi.waitFor(() => expect(mcpCallerKind(agentId)).toBe('durable'));
+      expect(mcpCallAccess(agentId, PROJECT)).toBe('open');
+    } finally {
+      stop();
+      registry.delete(agentId);
+    }
   });
 });

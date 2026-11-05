@@ -64,7 +64,7 @@ async function getTitleBarText(): Promise<string> {
 // ---------------------------------------------------------------------------
 
 test.beforeAll(async () => {
-  ({ electronApp, window } = await launchApp());
+  ({ electronApp, window } = await launchApp({ experimental: { newChrome: false } }));
 
   // Expose Zustand stores globally so tests can inspect state via evaluate().
   await window.evaluate(() => {

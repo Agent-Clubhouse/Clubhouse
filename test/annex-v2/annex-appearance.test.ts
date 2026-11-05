@@ -50,12 +50,15 @@ import * as agentConfig from '../../src/main/services/agent-config';
 import * as projectStore from '../../src/main/services/project-store';
 import * as dispatcher from '../../src/main/services/dispatcher/dispatcher-service';
 import * as experimentalSettings from '../../src/main/services/experimental-settings';
+import { resetNewChromeCacheForTests } from '../../src/main/window-chrome';
+import { NEW_CHROME_FLAG } from '../../src/shared/chrome-flag';
 import { agentRegistry } from '../../src/main/services/agent-registry';
 import { CLI_TOKEN_HEADER, handleCliRequest, publishCliEndpoint, unpublishCliEndpoint } from '../../src/main/services/cli-endpoint';
 import { registerAgentHandlers } from '../../src/main/ipc/agent-handlers';
 import { registerProjectHandlers } from '../../src/main/ipc/project-handlers';
 import { registerAppearanceTools } from '../../src/main/services/clubhouse-mcp/tools/appearance-tools';
 import { callTool } from '../../src/main/services/clubhouse-mcp/tool-registry';
+import { setMcpCaller } from '../../src/main/services/clubhouse-mcp/mcp-call-gate';
 
 /** A PNG as far as anything reading its header can tell, small enough to go as it is. `fill` makes it a different image. */
 function png(fill: number, padding = 32): Buffer {
@@ -185,6 +188,7 @@ describe('every appearance change reaches a phone as a snapshot', () => {
     agentId = (await agentConfig.createDurable(projectPath, 'first-agent', 'indigo', undefined, false)).id;
     await agentConfig.flushAgentConfig(projectPath);
     agentRegistry.register(agentId, { projectPath, orchestrator: 'claude-code', runtime: 'pty' } as never);
+    setMcpCaller(agentId, projectPath, null);
 
     const der = crypto.generateKeyPairSync('ed25519').publicKey.export({ format: 'der', type: 'spki' });
     const commonName = crypto.createHash('sha256').update(der).digest('hex').slice(0, 32).match(/.{2}/g)!.join(':');
@@ -432,7 +436,8 @@ describe('every appearance change reaches a phone as a snapshot', () => {
     const dispatcherPath = () => dispatcher.getDispatcherState().path!;
 
     it('turned on', async () => {
-      experimentalSettings.saveSettings({ ...experimentalSettings.getSettings(), [dispatcher.DISPATCHER_FLAG]: true });
+      experimentalSettings.saveSettings({ ...experimentalSettings.getSettings(), [NEW_CHROME_FLAG]: true });
+      resetNewChromeCacheForTests();
       await expectSnapshotAfter(() => dispatcher.setDispatcherEnabled(true), (p) => !!shown(p));
       dispatcherId = dispatcher.getDispatcherAgentId()!;
       expect(shown(snapshots().at(-1)).id).toBe(dispatcherId);
@@ -443,6 +448,7 @@ describe('every appearance change reaches a phone as a snapshot', () => {
         expect((await cli('/cli/v1/agents/update', { agentId: dispatcherId, color: 'amber' })).status).toBe(200);
       }, (p) => shown(p)?.color === 'amber');
       agentRegistry.register(dispatcherId, { projectPath: dispatcherPath(), orchestrator: 'claude-code', runtime: 'chat' } as never);
+      setMcpCaller(dispatcherId, dispatcherPath(), null);
       await expectSnapshotAfter(() => callTool(dispatcherId, 'update_agent', { emoji: '🛰️' }), (p) => shown(p)?.emoji === '🛰️');
     }, 30_000);
 
@@ -466,7 +472,12 @@ describe('every appearance change reaches a phone as a snapshot', () => {
     }, 60_000);
 
     it('turned off', async () => {
-      await expectSnapshotAfter(() => dispatcher.setDispatcherEnabled(false), (p) => !shown(p));
+      await expectSnapshotAfter(async () => {
+        // Stopped, as turning it off does to a real one: it was only ever registered here.
+        agentRegistry.untrack(dispatcherId);
+        await dispatcher.setDispatcherEnabled(false);
+      // Its record stays listed while it is off, so history isn't lost.
+      }, (p) => p.dispatcher?.enabled === false && p.dispatcher.offReason === 'switched_off' && !!shown(p));
     }, 30_000);
   });
 });

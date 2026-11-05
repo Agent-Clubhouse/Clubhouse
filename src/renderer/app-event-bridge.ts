@@ -37,6 +37,7 @@ import { initChatEventListener } from './stores/chatStore';
 import { initToolActivityListener } from './plugins/builtin/canvas/useWireActivity';
 import { usePendingPermissionStore } from './stores/pendingPermissionStore';
 import { showStructuredModeRemovedNotice } from './services/structured-mode-removal-notice';
+import { showChatDefaultTip } from './features/agents/chat/chat-default-tip';
 import { isDispatcherAgent, isDispatcherProjectId, useDispatcherStore } from './features/dispatcher/dispatcherStore';
 import { DISPATCHER_PROJECT_ID } from '../shared/dispatcher-types';
 import { closeDispatcher, openDispatcher } from './features/dispatcher/dispatcherNav';
@@ -198,7 +199,10 @@ function initPtyExitListener(): () => void {
       useAgentStore.getState().updateAgentStatus(agentId, 'sleeping' as AgentStatus, exitCode, undefined, lastOutput);
 
       // Handle quick agent completion FIRST (before plugin events which could throw)
-      if (agent?.kind === 'quick' && agent.mission) {
+      // With no mission the provider has no headless command and the run falls
+      // back to a PTY, but the agent is still marked headless and shows the run
+      // monitor, which only a record can end (#2813).
+      if (agent?.kind === 'quick' && (agent.mission || agent.headless)) {
         let summary: string | null = null;
         let filesModified: string[] = [];
         let costUsd: number | undefined;
@@ -257,7 +261,7 @@ function initPtyExitListener(): () => void {
           id: agentId,
           projectId: agent.projectId,
           name: agent.name,
-          mission: agent.mission,
+          mission: agent.mission ?? '',
           summary,
           filesModified,
           exitCode: effectiveExitCode,
@@ -850,6 +854,8 @@ export function initAppEventBridge(): () => void {
   cleanups.push(initStaleStatusCleanup());
 
   showStructuredModeRemovedNotice().catch(() => { /* best-effort one-time notice */ });
+  // The one call site for the first-launch Chat tip: a welcome intro (#2814) can run first or gate it here.
+  showChatDefaultTip().catch(() => { /* best-effort one-time tip; asked again next launch */ });
   cleanups.push(initKeyboardShortcuts());
   cleanups.push(initAnnexListener());
   cleanups.push(initAnnexClientListener());

@@ -20,7 +20,7 @@ vi.mock('./agent-system', () => ({
   })),
   resolveProfileEnv: vi.fn(async () => undefined),
 }));
-vi.mock('./dispatcher/dispatcher-settings', () => ({ isDispatcherEnabled: vi.fn(() => false) }));
+vi.mock('./dispatcher/dispatcher-settings', () => ({ dispatcherEnablement: vi.fn(() => ({ savedOn: false, enabled: false, reason: 'switch_off' })) }));
 vi.mock('./mcp-settings', () => ({ isMcpEnabled: vi.fn((_projectPath?: string, agentOverride?: boolean) => agentOverride ?? true) }));
 vi.mock('./agent-settings-service', () => ({
   readProjectAgentDefaults: vi.fn(async () => ({})),
@@ -57,7 +57,7 @@ vi.mock('./orchestration-policy', async () => {
 import * as agentConfig from './agent-config';
 import { startDurableCreation } from './agent-creation';
 import { checkAvailability, getAvailableOrchestrators, resolveProfileEnv } from './agent-system';
-import { isDispatcherEnabled } from './dispatcher/dispatcher-settings';
+import { dispatcherEnablement } from './dispatcher/dispatcher-settings';
 import { isMcpEnabled } from './mcp-settings';
 import { readProjectAgentDefaults } from './agent-settings-service';
 import { getProfile } from './profile-settings';
@@ -453,10 +453,10 @@ describe('cross-project helpers and Connect to Dispatcher (#2512, #2534)', () =>
     expect(await refusal(createMobileAgent(project, { projectId: 'p1', name: 'calm-otter', color: 'indigo', orchestration: { connectToDispatcher: true } }, allow)))
       .toMatchObject({ code: 'dispatcher_off' });
     expect(setOrchestrationPolicy).not.toHaveBeenCalled();
-    vi.mocked(isDispatcherEnabled).mockReturnValue(true);
+    vi.mocked(dispatcherEnablement).mockReturnValue({ savedOn: true, enabled: true, reason: null });
     await updateMobileAgent(project, agent(), { agentId: 'durable_1', orchestration: { connectToDispatcher: true } }, { live: undefined, assertAuthorized: allow });
     expect(setOrchestrationPolicy).toHaveBeenLastCalledWith('/work/app', 'durable_1', { connectToDispatcher: true }, { surface: 'mobile' });
-    vi.mocked(isDispatcherEnabled).mockReturnValue(false);
+    vi.mocked(dispatcherEnablement).mockReturnValue({ savedOn: false, enabled: false, reason: 'switch_off' });
   });
 });
 
@@ -465,10 +465,10 @@ describe('no Clubhouse MCP, no orchestration (#2589)', () => {
     vi.mocked(agentConfig.getDurableConfig).mockResolvedValue(null);
     vi.mocked(setOrchestrationPolicy).mockClear();
     vi.mocked(startDurableCreation).mockClear();
-    vi.mocked(isDispatcherEnabled).mockReturnValue(true);
+    vi.mocked(dispatcherEnablement).mockReturnValue({ savedOn: true, enabled: true, reason: null });
   });
   afterEach(() => {
-    vi.mocked(isDispatcherEnabled).mockReturnValue(false);
+    vi.mocked(dispatcherEnablement).mockReturnValue({ savedOn: false, enabled: false, reason: 'switch_off' });
     vi.mocked(isMcpEnabled).mockImplementation((_projectPath?: string, agentOverride?: boolean) => agentOverride ?? true);
   });
 

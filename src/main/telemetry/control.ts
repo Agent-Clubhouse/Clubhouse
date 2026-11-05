@@ -43,23 +43,25 @@ import { countOfflineItems, deleteOfflineData, getOfflineDir } from './offline';
 import { getSecureStorageState, readSecrets, updateSecrets, type TelemetrySecrets } from './secret-store';
 import {
   enabledDestinations,
+  exportPermitted,
   findDestination,
   getTelemetrySettings,
   HEADER_TOKEN_RE,
-  isExperimentEnabled,
   legacySecrets,
   migrateLegacySecrets,
   parseConnectionString,
+  recordExportOptIn,
   RESERVED_HEADERS,
+  suspendedFlagFileCopy,
   updateTelemetrySettings,
   validateDestination,
   withDestination,
+  withoutIdleSuspension,
   type TelemetrySettings,
 } from './settings';
 import type { ExportRecord } from './types';
 import { getBoundFramebriarSession, getFramebriarTelemetrySource, onFramebriarConnectionChanged } from './destinations/framebriar-source';
 import { appLog } from '../services/log-service';
-import { isPreviewEligible } from '../services/preview-eligible';
 
 const last4 = (value: string): string => value.slice(-4);
 
@@ -96,8 +98,8 @@ export function describeTestFailure(record: ExportRecord, kind: TelemetryDestina
   return record.errorMessage ? `Export failed: ${record.errorMessage}` : 'Export failed.';
 }
 
-function healthOf(entry: TelemetryDestinationEntry, consented: boolean): TelemetryDestinationHealth {
-  if (!entry.enabled || !consented) return { state: 'off' };
+function healthOf(entry: TelemetryDestinationEntry, consented: boolean, paused: boolean): TelemetryDestinationHealth {
+  if (!entry.enabled || !consented || paused) return { state: 'off' };
   const active = getActiveDestinations().some((d) => d.id === entry.id);
   if (!active) {
     const message = getDestinationStartError(entry.id) ?? (isRunning() ? undefined : getLastStartError());
@@ -146,14 +148,15 @@ export async function getStatus(): Promise<TelemetryStatus> {
       configured: config !== null,
       host: hostOf(entry, settings, secrets),
       active: active.has(entry.id),
-      health: healthOf(entry, consented),
+      health: healthOf(entry, consented, settings.exportSuspended !== undefined),
       offlineQueue: getAdapter(entry.kind).usesOfflineQueue === true,
       ...(entry.kind === 'framebriar' ? { userOff: entry.framebriar?.userOff === true } : {}),
     };
   });
   const anyEnabled = destinations.some((d) => d.enabled);
   return {
-    available: isExperimentEnabled(),
+    exportPaused: settings.exportSuspended !== undefined,
+    pausedFileCopy: settings.exportSuspended !== undefined ? suspendedFlagFileCopy() : undefined,
     // A Phase 1 file can be enabled without recorded consent; it isn't
     // exporting, so show it as off until the user turns it on (and consents).
     enabled: anyEnabled,
@@ -198,7 +201,7 @@ async function done(): Promise<TelemetryActionResult> {
  */
 async function applyRuntime({ clearOffline = false } = {}): Promise<boolean> {
   const settings = getTelemetrySettings();
-  if (enabledDestinations(settings).length === 0 || settings.consentVersion < TELEMETRY_CONSENT_VERSION) {
+  if (enabledDestinations(settings).length === 0 || !exportPermitted(settings)) {
     if (isRunning()) await disableTelemetry();
     else if (clearOffline) await deleteOfflineData().catch(() => {});
     return true;
@@ -374,7 +377,7 @@ export async function setEnabled(
     if (clearOffline || enabledIds(next) !== before) await applyRuntime({ clearOffline });
     return done();
   }
-  if (!isExperimentEnabled()) return fail('not_available', 'Telemetry export is an experimental feature. Turn it on in Experimental settings first.');
+  if (settings.exportSuspended !== undefined) return fail('export_paused', 'Telemetry export is paused. Choose Resume first.');
 
   const { config, validation } = resolveEntry(entry, settings, secrets);
   if (!config || !('host' in validation)) {
@@ -422,6 +425,16 @@ export async function setEnabled(
     };
   }
 
+  try {
+    await recordExportOptIn();
+  } catch (err) {
+    // telemetry-exempt: logged and shown to the user; nothing was turned on.
+    appLog('telemetry:control', 'warn', 'Could not save the telemetry opt-in', {
+      meta: { error: err instanceof Error ? err.message : String(err) },
+    });
+    return fail('opt_in_not_saved', 'Couldn\'t save this choice, so telemetry stays off. Try again.');
+  }
+
   await updateTelemetrySettings((s) => withFramebriarFollowing({
     ...withDestination(
       // The dialog named Framebriar's host as well: that confirms it.
@@ -448,6 +461,38 @@ export async function setEnabled(
   return done();
 }
 
+/**
+ * Resume export paused on an unreadable flag file. Consent is on record, so
+ * there's no dialog. Saving the flag as true is the opt-in the pause was waiting
+ * for; if it can't be saved, or the file can't be kept first, export stays paused.
+ */
+export async function resumeExport(): Promise<TelemetryActionResult> {
+  const { settings } = await prepare();
+  if (settings.exportSuspended === undefined) return done();
+  try {
+    await recordExportOptIn();
+  } catch (err) {
+    // telemetry-exempt: logged and shown to the user; export stays paused. The code only: never the file's contents.
+    appLog('telemetry:control', 'warn', 'Could not save the telemetry opt-in', {
+      meta: { code: (err as NodeJS.ErrnoException)?.code ?? 'unknown' },
+    });
+    return fail('opt_in_not_saved', 'Couldn\'t save this choice, so telemetry stays paused. Try again.');
+  }
+  // The flag now reads true, so if this save fails the next load clears the pause anyway.
+  await updateTelemetrySettings((s) => {
+    const next = { ...s };
+    delete next.exportSuspended;
+    return next;
+  }).catch((err) => {
+    // telemetry-exempt: logged; the saved flag resolves it on the next load.
+    appLog('telemetry:control', 'warn', 'Could not save that telemetry export resumed', {
+      meta: { code: (err as NodeJS.ErrnoException)?.code ?? 'unknown' },
+    });
+  });
+  await applyRuntime();
+  return done();
+}
+
 const NOT_CONFIGURED: Record<TelemetryDestinationEntry['kind'], string> = {
   azure: 'Save a connection string first.',
   otlp: 'Save an OTLP endpoint first.',
@@ -455,11 +500,6 @@ const NOT_CONFIGURED: Record<TelemetryDestinationEntry['kind'], string> = {
 };
 
 // --- Framebriar follows Feedback (spec §6.11) ------------------------------------
-
-/** Telemetry may export at all: the experiment is on and the user consented (#2097: no other destination needed). */
-function exportAllowed(settings: TelemetrySettings): boolean {
-  return isExperimentEnabled() && settings.consentVersion >= TELEMETRY_CONSENT_VERSION;
-}
 
 function currentFramebriarHost(): string | undefined {
   return getFramebriarTelemetrySource()?.()?.host;
@@ -474,20 +514,22 @@ function framebriarFollowHost(settings: TelemetrySettings): string | undefined {
 
 /**
  * Whether the developer destination should be exporting (spec §6.11): while
- * Feedback is connected, telemetry is allowed (experiment and consent), its
+ * Feedback is connected, consent is recorded, its
  * current host is the one the user confirmed, and the user hasn't switched it
  * off. It doesn't need another destination on (#2097).
  */
 function framebriarWanted(settings: TelemetrySettings): boolean {
   const entry = findDestination(settings, 'framebriar');
   const host = currentFramebriarHost();
-  return !!entry && host !== undefined && exportAllowed(settings) && !entry.framebriar?.userOff && entry.confirmedHost === host;
+  return !!entry && host !== undefined && exportPermitted(settings) && !entry.framebriar?.userOff && entry.confirmedHost === host;
 }
 
 /** The settings with Framebriar's switch matching framebriarWanted. Every path that changes another destination goes through this. */
 function withFramebriarFollowing(settings: TelemetrySettings): TelemetrySettings {
   const entry = findDestination(settings, 'framebriar');
   if (!entry) return settings;
+  // While paused the user's settings stay as they are, this derived one too.
+  if (settings.exportSuspended !== undefined) return withoutIdleSuspension(settings);
   const want = framebriarWanted(settings);
   return entry.enabled === want ? settings : withDestination(settings, 'framebriar', (d) => ({ ...d, enabled: want }));
 }
@@ -507,10 +549,6 @@ let syncing: Promise<void> = Promise.resolve();
  */
 export function syncFramebriarDestination(): Promise<void> {
   syncing = syncing.then(async () => {
-    // Without the flag in force, Framebriar would follow off and the save would
-    // change what the user set. In a build that isn't preview-eligible they didn't
-    // turn anything off, so what they saved stays as it is for when Preview is back.
-    if (!isPreviewEligible()) return;
     const settings = getTelemetrySettings();
     const entry = findDestination(settings, 'framebriar');
     if (!entry) return;
@@ -591,7 +629,7 @@ export async function deleteLocalData(): Promise<TelemetryActionResult> {
   await prepare();
   // Off for good: the developer destination is derived, so it's also marked
   // switched off, or Feedback reconnecting would turn it back on (#2097).
-  await updateTelemetrySettings((s) => ({
+  await updateTelemetrySettings((s) => withoutIdleSuspension({
     ...s,
     destinations: s.destinations.map((d) => ({ ...d, enabled: false, ...(d.kind === 'framebriar' ? { framebriar: { userOff: true } } : {}) })),
   }));

@@ -193,15 +193,15 @@ export function expectedFor({ state, preview, flags }) {
   const inForce = preview && flags;
   return {
     previewEligible: preview,
-    newChrome: inForce,
-    chatEnabled: inForce,
+    // The default, and what BETA_FLAGS saves, in every scenario.
+    newChrome: true,
+    // On unless saved off, and no scenario saves it off.
+    chatEnabled: true,
     flagsInForce: inForce ? BETA_FLAGS : null,
     settingsPages: !preview ? [] : flags ? PREVIEW_PAGES : ['Experimental', 'Annex', 'Annex control'],
-    dispatcherRow: inForce && state === 'beta',
-    // Only asserted when it must be false: with no CLI on the runner, true can't be reached.
-    wakesInChatMustBeFalse: state === 'beta' && !inForce,
+    // On by default in the new layout, which every scenario runs, and Preview doesn't gate it.
+    dispatcherRow: true,
     savedFilesUntouched: state === 'beta' && !preview,
-    dispatcherFolderAbsent: !inForce || state !== 'beta',
   };
 }
 
@@ -267,7 +267,6 @@ export function checkRenderer(observed, expected) {
       if (observed.flags && flag in observed.flags) problems.push(`flags in force: ${flag} should be hidden`);
     }
   }
-  if (expected.wakesInChatMustBeFalse) expect('wakes in chat', observed.wakesInChat, false);
   return problems;
 }
 

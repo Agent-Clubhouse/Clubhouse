@@ -7,8 +7,9 @@ import { useClubhouseModeStore } from '../../stores/clubhouseModeStore';
 import { useSessionSettingsStore } from '../../stores/sessionSettingsStore';
 import { useMcpSettingsStore } from '../../stores/mcpSettingsStore';
 import { OrchestratorSettingsView } from './OrchestratorSettingsView';
+import { loadChatFlag, resetChatFlag } from '../agents/chat/chat-flag';
+import { loadRichChatContentFlag, resetRichChatContentFlag } from '../agents/chat/rich/rich-flag';
 import { useUIStore } from '../../stores/uiStore';
-import { CHAT_DEFAULT_TIP_KEY } from '../agents/chat/chat-default-tip';
 
 // Mock ProjectAgentDefaultsSection to avoid deep component tree
 vi.mock('./ProjectAgentDefaultsSection', () => ({
@@ -16,6 +17,8 @@ vi.mock('./ProjectAgentDefaultsSection', () => ({
     <div data-testid="project-agent-defaults" data-path={projectPath} data-clubhouse-mode={String(clubhouseMode)} />
   ),
 }));
+
+const originalMcpOffImpact = window.clubhouse.app.getMcpOffImpact;
 
 function resetStores() {
   useOrchestratorStore.setState({
@@ -58,6 +61,7 @@ function resetStores() {
     setProjectOverride: vi.fn(),
     clearProjectOverride: vi.fn(),
   });
+  window.clubhouse.app.getMcpOffImpact = originalMcpOffImpact;
   useMcpSettingsStore.setState({
     enabled: false,
     projectDefault: true,
@@ -153,14 +157,14 @@ describe('OrchestratorSettingsView', () => {
         expect(screen.queryByText('Enable Clubhouse Mode?')).not.toBeInTheDocument();
       });
 
-      it('disables without confirmation when already enabled', () => {
+      it('disables without confirmation when already enabled, if MCP stays on', async () => {
         const setEnabled = vi.fn();
         useClubhouseModeStore.setState({ enabled: true, setEnabled });
 
         render(<OrchestratorSettingsView />);
         fireEvent.click(screen.getByRole('switch', { name: 'Clubhouse Mode' }));
 
-        expect(setEnabled).toHaveBeenCalledWith(false);
+        await waitFor(() => expect(setEnabled).toHaveBeenCalledWith(false));
         expect(screen.queryByText('Enable Clubhouse Mode?')).not.toBeInTheDocument();
       });
 
@@ -321,8 +325,8 @@ describe('OrchestratorSettingsView', () => {
     });
 
     function setChatFlag(on: boolean) {
-      window.clubhouse.app.getExperimentalSettings = vi.fn().mockResolvedValue(on ? { chat: true } : {});
-      window.clubhouse.app.isPreviewEligible = vi.fn().mockResolvedValue(true);
+      window.clubhouse.app.getExperimentalSettings = vi.fn().mockResolvedValue(on ? {} : { chat: false });
+      window.clubhouse.app.saveExperimentalSettings = vi.fn().mockResolvedValue(undefined);
     }
 
     it('offers the chat idle timeout when chat is on, and saves Never as 0 (#2104)', async () => {
@@ -351,26 +355,121 @@ describe('OrchestratorSettingsView', () => {
     it('hides the chat idle timeout when chat is off (#2104)', async () => {
       setChatFlag(false);
       render(<OrchestratorSettingsView />);
-      await waitFor(() => expect(window.clubhouse.app.getExperimentalSettings).toHaveBeenCalled());
+      await screen.findByRole('switch', { name: 'Chat view' });
       expect(screen.queryByTestId('chat-idle-timeout')).not.toBeInTheDocument();
     });
 
-    it('is hidden on stable builds even when a Chat flag is saved', async () => {
-      setChatFlag(true);
-      window.clubhouse.app.isPreviewEligible = vi.fn().mockResolvedValue(false);
-      render(<OrchestratorSettingsView />);
-      await waitFor(() => expect(window.clubhouse.app.isPreviewEligible).toHaveBeenCalled());
-      expect(screen.queryByText('Runtime')).not.toBeInTheDocument();
-      expect(getRuntimeSettings).not.toHaveBeenCalled();
-    });
-
-    it('is hidden when the experimental Chat flag is off', async () => {
+    it('is hidden when Chat is saved off, whatever is saved for the provider', async () => {
       setChatFlag(false);
+      getRuntimeSettings.mockResolvedValue({ 'claude-code': { mode: 'chat' } });
       render(<OrchestratorSettingsView />);
-      await waitFor(() => expect(window.clubhouse.app.getExperimentalSettings).toHaveBeenCalled());
+      await screen.findByRole('switch', { name: 'Chat view' });
       expect(screen.getByText('Hook server')).toBeInTheDocument();
       expect(screen.queryByText('Runtime')).not.toBeInTheDocument();
-      expect(getRuntimeSettings).not.toHaveBeenCalled();
+    });
+
+    describe('the Chat section', () => {
+      it('turns a saved-off Chat back on, keeping other flags and provider choices', async () => {
+        setChatFlag(false);
+        window.clubhouse.app.getExperimentalSettings = vi.fn().mockResolvedValue({ chat: false, goobers: true });
+        getRuntimeSettings.mockResolvedValue({ 'claude-code': { mode: 'terminal' } });
+        render(<OrchestratorSettingsView />);
+        const toggle = await screen.findByRole('switch', { name: 'Chat view' });
+        expect(toggle).toHaveAttribute('aria-checked', 'false');
+        fireEvent.click(toggle);
+        await waitFor(() => expect(window.clubhouse.app.saveExperimentalSettings).toHaveBeenCalledWith({ chat: true, goobers: true }));
+        expect(toggle).toHaveAttribute('aria-checked', 'true');
+        const row = await screen.findByTestId('runtime-mode-claude-code');
+        expect(within(row).getByRole('radio', { name: 'CLI' })).toHaveAttribute('aria-checked', 'true');
+        expect(saveRuntimeSettings).not.toHaveBeenCalled();
+      });
+
+      it('reads both flags as on when nothing is saved, and a change saves only that flag', async () => {
+        setChatFlag(true);
+        render(<OrchestratorSettingsView />);
+        const rich = await screen.findByRole('switch', { name: 'Rich chat content' });
+        expect(rich).toHaveAttribute('aria-checked', 'true');
+        expect(screen.getByRole('switch', { name: 'Chat view' })).toHaveAttribute('aria-checked', 'true');
+        fireEvent.click(rich);
+        await waitFor(() => expect(window.clubhouse.app.saveExperimentalSettings).toHaveBeenCalledWith({ richChatContent: false }));
+      });
+
+      it('shows a saved-off rich content setting, even with Chat off, so it can be changed', async () => {
+        window.clubhouse.app.getExperimentalSettings = vi.fn().mockResolvedValue({ chat: false, richChatContent: false });
+        window.clubhouse.app.saveExperimentalSettings = vi.fn().mockResolvedValue(undefined);
+        render(<OrchestratorSettingsView />);
+        const rich = await screen.findByRole('switch', { name: 'Rich chat content' });
+        expect(rich).toHaveAttribute('aria-checked', 'false');
+        fireEvent.click(rich);
+        await waitFor(() => expect(window.clubhouse.app.saveExperimentalSettings).toHaveBeenCalledWith({ chat: false, richChatContent: true }));
+      });
+
+      it.each([
+        ['Chat view', 'chat', {}],
+        ['Rich chat content', 'richChatContent', {}],
+        ['Chat view', 'chat', { chat: false }],
+        ['Rich chat content', 'richChatContent', { richChatContent: false }],
+      ])('%s (saved %s, from %j): a refused save reverts the switch and says so, and a retry works', async (name, key, saved) => {
+        const was = (saved as Record<string, boolean>)[key] !== false;
+        const save = vi.fn().mockRejectedValueOnce(new Error('refused')).mockResolvedValue(undefined);
+        window.clubhouse.app.getExperimentalSettings = vi.fn().mockResolvedValue(saved);
+        window.clubhouse.app.saveExperimentalSettings = save;
+        render(<OrchestratorSettingsView />);
+        const toggle = await screen.findByRole('switch', { name });
+        expect(toggle).toHaveAttribute('aria-checked', String(was));
+        expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+
+        fireEvent.click(toggle);
+        expect(await screen.findByRole('alert')).toHaveTextContent("Couldn't save that setting, so it wasn't changed. Try again.");
+        expect(toggle).toHaveAttribute('aria-checked', String(was));
+
+        fireEvent.click(toggle);
+        await waitFor(() => expect(toggle).toHaveAttribute('aria-checked', String(!was)));
+        await waitFor(() => expect(screen.queryByRole('alert')).not.toBeInTheDocument());
+        expect(save).toHaveBeenLastCalledWith({ ...saved, [key]: !was });
+        expect(save).toHaveBeenCalledTimes(2);
+      });
+
+      it('treats a failed read before the save the same way', async () => {
+        setChatFlag(true);
+        window.clubhouse.app.getExperimentalSettings = vi.fn()
+          .mockResolvedValueOnce({})
+          .mockRejectedValueOnce(new Error('unreadable'))
+          .mockResolvedValue({});
+        render(<OrchestratorSettingsView />);
+        const toggle = await screen.findByRole('switch', { name: 'Chat view' });
+        fireEvent.click(toggle);
+        expect(await screen.findByRole('alert')).toHaveTextContent("Couldn't save that setting");
+        expect(toggle).toHaveAttribute('aria-checked', 'true');
+        expect(window.clubhouse.app.saveExperimentalSettings).not.toHaveBeenCalled();
+      });
+
+      it('keeps the panes\' flags as they are when the save fails', async () => {
+        window.clubhouse.app.getExperimentalSettings = vi.fn().mockResolvedValue({ chat: false, richChatContent: false });
+        window.clubhouse.app.saveExperimentalSettings = vi.fn().mockRejectedValue(new Error('refused'));
+        resetChatFlag();
+        resetRichChatContentFlag();
+        expect(await loadChatFlag()).toBe(false);
+        expect(await loadRichChatContentFlag()).toBe(false);
+        render(<OrchestratorSettingsView />);
+        fireEvent.click(await screen.findByRole('switch', { name: 'Chat view' }));
+        fireEvent.click(screen.getByRole('switch', { name: 'Rich chat content' }));
+        await screen.findByRole('alert');
+
+        // Still the answers loaded above: nothing was forgotten, so main isn't asked again.
+        const reads = vi.mocked(window.clubhouse.app.getExperimentalSettings).mock.calls.length;
+        await loadChatFlag();
+        await loadRichChatContentFlag();
+        expect(vi.mocked(window.clubhouse.app.getExperimentalSettings).mock.calls.length).toBe(reads);
+        resetChatFlag();
+        resetRichChatContentFlag();
+      });
+
+      it('says what the rich content setting lets paired phones do', async () => {
+        setChatFlag(true);
+        render(<OrchestratorSettingsView />);
+        expect(await screen.findByText(/paired phones \(Clubhouse Go\) can also read any file your user account can read on this computer, up to a size limit/)).toBeInTheDocument();
+      });
     });
 
     describe('the Copilot chat driver choice', () => {
@@ -386,8 +485,7 @@ describe('OrchestratorSettingsView', () => {
       });
 
       function setSdkFlag() {
-        window.clubhouse.app.getExperimentalSettings = vi.fn().mockResolvedValue({ chat: true, copilotSdk: true });
-        window.clubhouse.app.isPreviewEligible = vi.fn().mockResolvedValue(true);
+        window.clubhouse.app.getExperimentalSettings = vi.fn().mockResolvedValue({ copilotSdk: true });
       }
 
       it('is not offered with its flag off, even with the SDK saved, and the choice stays saved', async () => {
@@ -432,7 +530,7 @@ describe('OrchestratorSettingsView', () => {
         unmount();
         setChatFlag(false);
         render(<OrchestratorSettingsView />);
-        await waitFor(() => expect(window.clubhouse.app.getExperimentalSettings).toHaveBeenCalled());
+        await screen.findByRole('switch', { name: 'Chat view' });
         expect(screen.queryByTestId('chat-driver-copilot-cli')).not.toBeInTheDocument();
       });
     });
@@ -493,16 +591,6 @@ describe('OrchestratorSettingsView', () => {
       render(<OrchestratorSettingsView />);
       expect(await screen.findByTestId('runtime-mode-github-copilot')).toBeInTheDocument();
       expect(screen.queryByText('Hook server')).not.toBeInTheDocument();
-    });
-
-    it('records an explicit Terminal choice so the Chat default tip never shows', async () => {
-      setChatFlag(true);
-      localStorage.removeItem(CHAT_DEFAULT_TIP_KEY);
-      render(<OrchestratorSettingsView />);
-      const row = await screen.findByTestId('runtime-mode-claude-code');
-      fireEvent.click(within(row).getByRole('radio', { name: 'CLI' }));
-      expect(localStorage.getItem(CHAT_DEFAULT_TIP_KEY)).toBe('chose_terminal');
-      localStorage.removeItem(CHAT_DEFAULT_TIP_KEY);
     });
 
     it('scrolls to and outlines the provider runtime row for the deep link, then clears the focus', async () => {
@@ -636,14 +724,76 @@ describe('OrchestratorSettingsView', () => {
         }
       });
 
-      it('Clubhouse Mode dropdown responds to change events when clubhouse is on', () => {
+      describe('turning MCP off for the project', () => {
+        const losing = {
+          turnsOff: true, appLoses: false, appKeptByClubhouseMode: false, projectsLosing: ['my-app'], agentsLosing: 2, quickAgentsLosing: 0, agentsKeeping: 1, helpersReportOnly: 1, orchestratorsLosing: 1, connectedLosing: 1,
+          runningLosing: 1, runningOrchestratorsWithHelpers: 1, dispatcherGoesOff: false, dispatcherRunning: true, keeps: { projects: [], agents: [{ name: 'lead', project: 'my-app' }] }, unreadableProjects: [],
+        };
+
+        it('shows the MCP override with the app-wide bridge off: it still works then', () => {
+          render(<OrchestratorSettingsView projectId="proj-1" />);
+          expect(screen.getByLabelText('MCP override')).toBeInTheDocument();
+        });
+
+        it('asks before saving an override off, names what stays, and Cancel leaves it', async () => {
+          const saveSettings = vi.fn().mockResolvedValue(undefined);
+          useMcpSettingsStore.setState({ enabled: true, saveSettings } as never);
+          window.clubhouse.app.getMcpOffImpact = vi.fn(async () => losing);
+          render(<OrchestratorSettingsView projectId="proj-1" />);
+          fireEvent.change(screen.getByLabelText('MCP override'), { target: { value: 'off' } });
+          expect(await screen.findByTestId('mcp-off-dialog')).toBeInTheDocument();
+          expect(window.clubhouse.app.getMcpOffImpact).toHaveBeenCalledWith({ mcp: { projectOverrides: { '/home/user/my-app': false } } });
+          expect(screen.getByTestId('mcp-off-lead')).toHaveTextContent('In my-app, helpers, orchestration and connections to the Dispatcher stop working.');
+          expect(screen.getByTestId('mcp-off-keeps')).toHaveTextContent('These keep Clubhouse MCP: lead in my-app (its own setting).');
+          // App-level only: a project going off leaves the Dispatcher alone.
+          expect(screen.queryByTestId('mcp-off-stop-dispatcher')).toBeNull();
+          fireEvent.click(screen.getByTestId('mcp-off-cancel'));
+          expect(saveSettings).not.toHaveBeenCalled();
+        });
+
+        it('saves once confirmed', async () => {
+          const saveSettings = vi.fn(async (updates: object) => { useMcpSettingsStore.setState(updates as never); });
+          useMcpSettingsStore.setState({ enabled: true, saveSettings } as never);
+          window.clubhouse.app.getMcpOffImpact = vi.fn(async () => losing);
+          render(<OrchestratorSettingsView projectId="proj-1" />);
+          fireEvent.change(screen.getByLabelText('MCP override'), { target: { value: 'off' } });
+          fireEvent.click(await screen.findByTestId('mcp-off-confirm'));
+          await waitFor(() => expect(saveSettings).toHaveBeenCalledWith({ projectOverrides: { '/home/user/my-app': false } }));
+          await waitFor(() => expect(screen.queryByTestId('mcp-off-dialog')).toBeNull());
+        });
+
+        it('asks when turning Clubhouse mode off for the project would take MCP with it', async () => {
+          const setProjectOverride = vi.fn();
+          useClubhouseModeStore.setState({ enabled: true, setProjectOverride });
+          window.clubhouse.app.getMcpOffImpact = vi.fn(async () => losing);
+          render(<OrchestratorSettingsView projectId="proj-1" />);
+          fireEvent.change(screen.getByLabelText('Clubhouse Mode'), { target: { value: 'off' } });
+          await screen.findByTestId('mcp-off-dialog');
+          expect(window.clubhouse.app.getMcpOffImpact).toHaveBeenCalledWith({ clubhouseMode: { projectOverrides: { '/home/user/my-app': false } } });
+          expect(setProjectOverride).not.toHaveBeenCalled();
+        });
+
+        it('asks when turning Clubhouse mode off at app level would take MCP with it', async () => {
+          const setEnabled = vi.fn(async (enabled: boolean) => { useClubhouseModeStore.setState({ enabled }); });
+          useClubhouseModeStore.setState({ enabled: true, setEnabled });
+          window.clubhouse.app.getMcpOffImpact = vi.fn(async () => ({ ...losing, appLoses: true, dispatcherGoesOff: true }));
+          render(<OrchestratorSettingsView />);
+          fireEvent.click(screen.getByRole('switch', { name: 'Clubhouse Mode' }));
+          await screen.findByTestId('mcp-off-dialog');
+          expect(setEnabled).not.toHaveBeenCalled();
+          fireEvent.click(screen.getByTestId('mcp-off-confirm'));
+          await waitFor(() => expect(setEnabled).toHaveBeenCalledWith(false));
+        });
+      });
+
+      it('Clubhouse Mode dropdown responds to change events when clubhouse is on', async () => {
         const setProjectOverride = vi.fn();
         useClubhouseModeStore.setState({ enabled: true, setProjectOverride });
 
         render(<OrchestratorSettingsView projectId="proj-1" />);
         const select = screen.getByLabelText('Clubhouse Mode');
         fireEvent.change(select, { target: { value: 'on' } });
-        expect(setProjectOverride).toHaveBeenCalledWith('/home/user/my-app', true);
+        await waitFor(() => expect(setProjectOverride).toHaveBeenCalledWith('/home/user/my-app', true));
       });
     });
   });

@@ -25,24 +25,28 @@ vi.mock('./log-service', () => ({ appLog: vi.fn() }));
 vi.mock('./dispatcher/dispatcher-service', async () => {
   const settings = await vi.importActual<typeof import('./dispatcher/dispatcher-settings')>('./dispatcher/dispatcher-settings');
   return {
-    getDispatcherState: () => ({ enabled: settings.isDispatcherEnabled(), flagOn: settings.isDispatcherFlagOn(), agentId: null, path: null, config: null }),
+    getDispatcherState: () => {
+      const { enabled, savedOn, reason } = settings.dispatcherEnablement();
+      return { enabled, savedOn, offReason: reason, flagOn: reason !== 'mcp_off', mcpOff: reason === 'mcp_off', classic: false, running: false, agentId: null, path: null, config: null };
+    },
     isDispatcherAgentId: () => false,
     onDispatcherChanged: () => () => {},
   };
 });
 
 import { resetAllSettingsStoresForTests } from './settings-store';
-import { getSettings, getStoredSettings, saveSettings } from './experimental-settings';
+import { getSettings, getSettingsForRenderer, getStoredSettings, isGraduatedFeatureOn, saveSettings } from './experimental-settings';
 import { isPreviewEligible } from './preview-eligible';
-import { CHAT_EXPERIMENTAL_FLAG, isChatEnabled, isCopilotSdkEnabled, resolveRuntimeMode } from './chat-runtime-settings';
-import { DISPATCHER_FLAG, isDispatcherEnabled, isDispatcherFlagOn } from './dispatcher/dispatcher-settings';
-import { isMcpEnabledForAny } from './mcp-settings';
+import { isChatEnabled, isCopilotSdkEnabled, resolveRuntimeMode } from './chat-runtime-settings';
+import { dispatcherEnablement, isDispatcherEnabled } from './dispatcher/dispatcher-settings';
+import { isMcpEnabledForAny, isMcpOnAtAppLevel } from './mcp-settings';
 import { dispatcherCapability } from './mobile-dispatcher';
-import { EXPERIMENTAL_FLAG as TELEMETRY_FLAG, getTelemetrySettings, isExperimentEnabled } from '../telemetry/settings';
+import { applyExportGraduation, getTelemetrySettings } from '../telemetry/settings';
 import { isTelemetryConfigured, uiChrome } from '../telemetry/bootstrap';
 import { newChromeEnabled, resetNewChromeCacheForTests } from '../window-chrome';
 import { NEW_CHROME_FLAG } from '../../shared/chrome-flag';
 import { COPILOT_SDK_FLAG, RICH_CHAT_CONTENT_FLAG } from '../../shared/chat';
+import { isGraduatedFlagOn } from '../../shared/graduated-flags';
 import { TELEMETRY_CONSENT_VERSION } from '../../shared/telemetry/settings-types';
 import { PREVIEW_ONLY_EXPERIMENTAL_FLAGS, STRUCTURED_MODE_REMOVED_NOTICE_KEY } from '../../shared/types';
 
@@ -52,7 +56,6 @@ const ALL_SAVED = {
   chat: true,
   richChatContent: true,
   copilotSdk: true,
-  dispatcher: true,
   telemetry: true,
   themeGradients: true,
   [STRUCTURED_MODE_REMOVED_NOTICE_KEY]: true,
@@ -95,11 +98,143 @@ afterEach(() => {
   fs.rmSync(h.userData, { recursive: true, force: true });
 });
 
+describe('chat and rich content, in any build', () => {
+  const corrupt = () => {
+    fs.writeFileSync(path.join(h.userData, EXPERIMENTAL_FILE), '{ "chat": fal');
+    relaunch();
+  };
+
+  it('are on with the file or key missing', () => {
+    expect(isChatEnabled()).toBe(true);
+    expect(isGraduatedFeatureOn(RICH_CHAT_CONTENT_FLAG)).toBe(true);
+    write(EXPERIMENTAL_FILE, { goobers: true });
+    relaunch();
+    expect(isChatEnabled()).toBe(true);
+    expect(isGraduatedFeatureOn(RICH_CHAT_CONTENT_FLAG)).toBe(true);
+    expect(getSettingsForRenderer()).not.toHaveProperty('chat');
+  });
+
+  it('are off when saved false', () => {
+    write(EXPERIMENTAL_FILE, { chat: false, [RICH_CHAT_CONTENT_FLAG]: false });
+    relaunch();
+    expect(isChatEnabled()).toBe(false);
+    expect(isGraduatedFeatureOn(RICH_CHAT_CONTENT_FLAG)).toBe(false);
+    expect(resolveRuntimeMode('claude-code', 'chat')).toEqual({ mode: 'terminal' });
+  });
+
+  it('are off while the file can\'t be read, since a saved false may be in it', () => {
+    corrupt();
+    expect(getSettings()).toEqual({});
+    expect(isChatEnabled()).toBe(false);
+    expect(isGraduatedFeatureOn(RICH_CHAT_CONTENT_FLAG)).toBe(false);
+    expect(resolveRuntimeMode('claude-code', 'chat')).toEqual({ mode: 'terminal' });
+  });
+
+  it('an unrelated save over the file keeps the classic layout, and the toggle returns to new', async () => {
+    corrupt();
+    expect(newChromeEnabled()).toBe(false);
+    await saveSettings({ ...getSettingsForRenderer(), themeGradients: true });
+    expect(JSON.parse(bytes(EXPERIMENTAL_FILE))).toMatchObject({ [NEW_CHROME_FLAG]: false, themeGradients: true });
+
+    relaunch();
+    expect(newChromeEnabled()).toBe(false);
+    expect(uiChrome()).toBe('legacy');
+
+    await saveSettings({ ...getSettingsForRenderer(), [NEW_CHROME_FLAG]: true });
+    relaunch();
+    expect(newChromeEnabled()).toBe(true);
+    expect(uiChrome()).toBe('v2');
+  });
+
+  it('read the same way in the renderer, and only they are forced off', () => {
+    corrupt();
+    expect(getSettingsForRenderer()).toEqual({ chat: false, [RICH_CHAT_CONTENT_FLAG]: false, [NEW_CHROME_FLAG]: false });
+    expect(isGraduatedFlagOn(getSettingsForRenderer(), 'themeGradients')).toBe(true);
+  });
+
+  it('come back once the file is readable again', () => {
+    corrupt();
+    write(EXPERIMENTAL_FILE, { goobers: true });
+    relaunch();
+    expect(isChatEnabled()).toBe(true);
+    expect(isGraduatedFeatureOn(RICH_CHAT_CONTENT_FLAG)).toBe(true);
+  });
+});
+
 describe('the preview-only list', () => {
   it('names each feature by the same key its reader uses', () => {
     expect([...PREVIEW_ONLY_EXPERIMENTAL_FLAGS].sort()).toEqual([
-      NEW_CHROME_FLAG, 'goobers', CHAT_EXPERIMENTAL_FLAG, RICH_CHAT_CONTENT_FLAG, COPILOT_SDK_FLAG, DISPATCHER_FLAG, TELEMETRY_FLAG,
+      'goobers', COPILOT_SDK_FLAG,
     ].sort());
+  });
+});
+
+describe('the Dispatcher on the real default layout and the real Classic setting', () => {
+  const ON = { enabled: true, savedOn: true, reason: null };
+  const CLASSIC = { enabled: false, savedOn: false, reason: 'classic_layout' };
+  const exists = (name: string) => fs.existsSync(path.join(h.userData, name));
+
+  it.each([false, true])('a fresh profile has it on, with MCP and nothing saved (Preview %s)', (previewChannel) => {
+    if (previewChannel) write(UPDATE_FILE, { autoUpdate: false, previewChannel, lastCheck: null, dismissedVersion: null, lastSeenVersion: null });
+    relaunch();
+    expect(newChromeEnabled()).toBe(true);
+    expect(isMcpOnAtAppLevel()).toBe(true);
+    expect(isMcpEnabledForAny()).toBe(true);
+    expect(dispatcherEnablement()).toEqual(ON);
+    for (const name of [EXPERIMENTAL_FILE, DISPATCHER_FILE, 'mcp-settings.json']) expect(exists(name)).toBe(false);
+  });
+
+  it('MCP saved off derives it off on the default layout, and it returns to on without a save of its own', async () => {
+    write('mcp-settings.json', { enabled: false, projectDefault: false });
+    relaunch();
+    expect(dispatcherEnablement()).toEqual({ enabled: false, savedOn: true, reason: 'mcp_off' });
+    expect(exists(DISPATCHER_FILE)).toBe(false);
+
+    write('mcp-settings.json', { enabled: true, projectDefault: false });
+    relaunch();
+    expect(dispatcherEnablement()).toEqual(ON);
+    expect(exists(DISPATCHER_FILE)).toBe(false);
+  });
+
+  it('Classic layout with nothing saved has it off, and the phone is told the layout is why', () => {
+    write(EXPERIMENTAL_FILE, { newChrome: false });
+    relaunch();
+    expect(dispatcherEnablement()).toEqual(CLASSIC);
+    expect(dispatcherCapability()).toMatchObject({ newLayout: false, flagOn: true, enabled: false });
+  });
+
+  it('Classic layout honours a saved switch both ways', () => {
+    write(EXPERIMENTAL_FILE, { newChrome: false });
+    write(DISPATCHER_FILE, { enabled: true });
+    relaunch();
+    expect(dispatcherEnablement()).toEqual(ON);
+
+    write(DISPATCHER_FILE, { enabled: false });
+    relaunch();
+    expect(dispatcherEnablement()).toEqual({ enabled: false, savedOn: false, reason: 'switch_off' });
+  });
+
+  it('unreadable flags start on classic, so it reads as Classic layout, whatever the file held', () => {
+    fs.writeFileSync(path.join(h.userData, EXPERIMENTAL_FILE), '{"newChrome": tr');
+    relaunch();
+    expect(newChromeEnabled()).toBe(false);
+    expect(dispatcherEnablement()).toEqual(CLASSIC);
+  });
+
+  it('the Classic switch applies at the next launch, in both directions, and never saves the Dispatcher', async () => {
+    relaunch();
+    expect(newChromeEnabled()).toBe(true);
+    await saveSettings({ newChrome: false });
+    // The session keeps its layout, so it is still on until the restart the help text asks for.
+    expect(dispatcherEnablement()).toEqual(ON);
+    relaunch();
+    expect(dispatcherEnablement()).toEqual(CLASSIC);
+
+    await saveSettings({ newChrome: true });
+    expect(dispatcherEnablement()).toEqual(CLASSIC);
+    relaunch();
+    expect(dispatcherEnablement()).toEqual(ON);
+    expect(exists(DISPATCHER_FILE)).toBe(false);
   });
 });
 
@@ -115,41 +250,65 @@ describe('a packaged stable build with Preview off', () => {
     for (const flag of PREVIEW_ONLY_EXPERIMENTAL_FLAGS) expect(flags).not.toHaveProperty(flag);
   });
 
-  it('keeps honouring themeGradients and the structured-mode notice marker', () => {
-    expect(getSettings()).toEqual({ themeGradients: true, [STRUCTURED_MODE_REMOVED_NOTICE_KEY]: true });
+  it('keeps honouring the saved layout, the graduated flags and the structured-mode notice marker, and reads through the saved telemetry flag', () => {
+    expect(getSettings()).toEqual({ newChrome: true, chat: true, [RICH_CHAT_CONTENT_FLAG]: true, themeGradients: true, telemetry: true, [STRUCTURED_MODE_REMOVED_NOTICE_KEY]: true });
   });
 
   it('still reports what is saved through getStoredSettings', () => {
     expect(getStoredSettings()).toEqual(ALL_SAVED);
   });
 
-  it('starts on the legacy layout, for main, telemetry and the phone', () => {
-    expect(newChromeEnabled()).toBe(false);
-    expect(uiChrome()).toBe('legacy');
-    expect(dispatcherCapability()).toMatchObject({ newLayout: false, flagOn: false, enabled: false });
+  it('starts on the new layout, for main, telemetry and the phone', () => {
+    expect(newChromeEnabled()).toBe(true);
+    expect(uiChrome()).toBe('v2');
+    expect(dispatcherCapability()).toMatchObject({ newLayout: true, flagOn: true, enabled: true });
   });
 
-  it('runs a Chat-mode agent in the terminal and leaves its saved choices alone', () => {
+  it('starts on the classic layout with a saved false, for main, telemetry and the phone', () => {
+    write(EXPERIMENTAL_FILE, { ...ALL_SAVED, newChrome: false });
+    relaunch();
+    expect(newChromeEnabled()).toBe(false);
+    expect(uiChrome()).toBe('legacy');
+    // A saved true stays on in the classic layout, where it can be turned off and not on again (#2565).
+    expect(dispatcherCapability()).toMatchObject({ newLayout: false, flagOn: true, enabled: true });
+  });
+
+  it('leaves the saved layout as it is on the way through a launch', () => {
+    write(EXPERIMENTAL_FILE, { newChrome: false });
+    relaunch();
+    const saved = bytes(EXPERIMENTAL_FILE);
+    expect(newChromeEnabled()).toBe(false);
+    expect(bytes(EXPERIMENTAL_FILE)).toBe(saved);
+  });
+
+  it('runs a Chat-mode agent in chat, without the preview-only Copilot SDK, and leaves its saved choices alone', () => {
     const saved = bytes(CHAT_RUNTIME_FILE);
-    expect(isChatEnabled()).toBe(false);
+    expect(isChatEnabled()).toBe(true);
     expect(isCopilotSdkEnabled()).toBe(false);
-    expect(resolveRuntimeMode('claude-code', 'chat')).toEqual({ mode: 'terminal' });
-    expect(resolveRuntimeMode('claude-code')).toEqual({ mode: 'terminal' });
+    expect(resolveRuntimeMode('claude-code', 'chat')).toEqual({ mode: 'chat' });
+    expect(resolveRuntimeMode('claude-code')).toEqual({ mode: 'chat' });
     expect(bytes(CHAT_RUNTIME_FILE)).toBe(saved);
   });
 
-  it('turns the Dispatcher off without changing its saved switch', () => {
-    // With MCP off in its own settings, only the Dispatcher could turn it on.
+  it('runs a Chat-mode agent in the terminal once Chat is saved off, and leaves its saved choices alone', () => {
+    write(EXPERIMENTAL_FILE, { ...ALL_SAVED, chat: false });
+    relaunch();
+    const saved = bytes(CHAT_RUNTIME_FILE);
+    expect(isChatEnabled()).toBe(false);
+    expect(resolveRuntimeMode('claude-code', 'chat')).toEqual({ mode: 'terminal' });
+    expect(bytes(CHAT_RUNTIME_FILE)).toBe(saved);
+  });
+
+  it('keeps the Dispatcher off with MCP off, without changing its saved switch, and starts no bridge for it', () => {
     write('mcp-settings.json', { enabled: false, projectDefault: false });
     relaunch();
     const saved = bytes(DISPATCHER_FILE);
-    expect(isDispatcherFlagOn()).toBe(false);
     expect(isDispatcherEnabled()).toBe(false);
     expect(isMcpEnabledForAny()).toBe(false);
     expect(bytes(DISPATCHER_FILE)).toBe(saved);
   });
 
-  it('stops telemetry without rewriting consent or destinations', () => {
+  it('switches a dormant telemetry setup off for good, keeping consent and the confirmed host', async () => {
     const file = {
       consentVersion: TELEMETRY_CONSENT_VERSION,
       sampleRate: 1,
@@ -160,16 +319,18 @@ describe('a packaged stable build with Preview off', () => {
     };
     write(TELEMETRY_FILE, file);
     relaunch();
-    const saved = bytes(TELEMETRY_FILE);
 
-    expect(isExperimentEnabled()).toBe(false);
     expect(isTelemetryConfigured()).toBe(false);
-
-    // Consent and the enabled destination are still what the app loads.
     const loaded = getTelemetrySettings();
     expect(loaded.consentVersion).toBe(TELEMETRY_CONSENT_VERSION);
-    expect(loaded.destinations.find((d) => d.id === 'azure')).toMatchObject({ enabled: true, confirmedHost: file.destinations[0].confirmedHost });
-    expect(bytes(TELEMETRY_FILE)).toBe(saved);
+    expect(loaded.destinations.find((d) => d.id === 'azure')).toMatchObject({ enabled: false, confirmedHost: file.destinations[0].confirmedHost });
+    await applyExportGraduation()?.saved;
+
+    // Turning Preview on later doesn't bring it back: the flag was the old gate, and it's gone.
+    write(UPDATE_FILE, { autoUpdate: false, previewChannel: true, lastCheck: null, dismissedVersion: null, lastSeenVersion: null });
+    relaunch();
+    expect(getTelemetrySettings().destinations.some((d) => d.enabled)).toBe(false);
+    expect(isTelemetryConfigured()).toBe(false);
   });
 
   describe('a write', () => {
@@ -190,10 +351,24 @@ describe('a packaged stable build with Preview off', () => {
     });
 
     it('cannot turn on or change a preview-only flag', async () => {
-      write(EXPERIMENTAL_FILE, { chat: false });
+      write(EXPERIMENTAL_FILE, { copilotSdk: false });
       relaunch();
-      await saveSettings({ chat: true, newChrome: true });
-      expect(JSON.parse(bytes(EXPERIMENTAL_FILE))).toEqual({ chat: false });
+      await saveSettings({ copilotSdk: true });
+      expect(JSON.parse(bytes(EXPERIMENTAL_FILE))).toEqual({ copilotSdk: false });
+    });
+
+    it('can change a graduated flag, so a saved false has a way back', async () => {
+      write(EXPERIMENTAL_FILE, { chat: false, [RICH_CHAT_CONTENT_FLAG]: false, themeGradients: false, goobers: true });
+      relaunch();
+      await saveSettings({ ...getSettings(), chat: true, [RICH_CHAT_CONTENT_FLAG]: true, themeGradients: true });
+      expect(JSON.parse(bytes(EXPERIMENTAL_FILE))).toEqual({ chat: true, [RICH_CHAT_CONTENT_FLAG]: true, themeGradients: true, goobers: true });
+    });
+
+    it('saves the layout choice, as the Display toggle does, and keeps the preview-only flags', async () => {
+      await saveSettings({ ...getSettings(), newChrome: false });
+      expect(JSON.parse(bytes(EXPERIMENTAL_FILE))).toEqual({ ...ALL_SAVED, newChrome: false });
+      relaunch();
+      expect(newChromeEnabled()).toBe(false);
     });
 
     it('never touches the Preview opt-in', async () => {
@@ -204,8 +379,8 @@ describe('a packaged stable build with Preview off', () => {
     });
 
     it('serializes with the store, so two writes in a row both land and keep the flags', async () => {
-      await Promise.all([saveSettings({ themeGradients: false }), saveSettings({ themeGradients: true })]);
-      const { [STRUCTURED_MODE_REMOVED_NOTICE_KEY]: _shown, ...expected } = ALL_SAVED;
+      await Promise.all([saveSettings({ newChrome: true, themeGradients: false }), saveSettings({ newChrome: true, themeGradients: true })]);
+      const { [STRUCTURED_MODE_REMOVED_NOTICE_KEY]: _shown, chat: _chat, richChatContent: _rich, ...expected } = ALL_SAVED;
       expect(JSON.parse(bytes(EXPERIMENTAL_FILE))).toEqual(expected);
     });
   });
@@ -222,17 +397,32 @@ describe('a packaged stable build with Preview off', () => {
     expect(newChromeEnabled()).toBe(true);
     expect(isChatEnabled()).toBe(true);
     expect(isDispatcherEnabled()).toBe(true);
-    expect(isExperimentEnabled()).toBe(true);
   });
 });
 
 describe('with no saved flags, a packaged stable build', () => {
-  it('stays on the legacy layout with everything off and writes nothing', () => {
+  it('starts on the new layout with Chat and the Dispatcher on, the Preview features off, and writes nothing', () => {
     expect(getSettings()).toEqual({});
-    expect(newChromeEnabled()).toBe(false);
-    expect(isChatEnabled()).toBe(false);
-    expect(isDispatcherFlagOn()).toBe(false);
+    expect(newChromeEnabled()).toBe(true);
+    expect(uiChrome()).toBe('v2');
+    expect(isChatEnabled()).toBe(true);
+    expect(isDispatcherEnabled()).toBe(true);
     expect(fs.readdirSync(h.userData)).toEqual([]);
+  });
+});
+
+describe.each([
+  ['truncated JSON', '{"newChrome": fal'],
+  ['an empty file', ''],
+  ['null', 'null'],
+  ['an array', '[]'],
+])('with %s for saved flags', (_name, content) => {
+  it('starts on the classic layout, as it did before the default changed, and leaves the file', () => {
+    fs.writeFileSync(path.join(h.userData, EXPERIMENTAL_FILE), content);
+    relaunch();
+    expect(newChromeEnabled()).toBe(false);
+    expect(uiChrome()).toBe('legacy');
+    expect(bytes(EXPERIMENTAL_FILE)).toBe(content);
   });
 });
 
@@ -256,12 +446,11 @@ describe.each([
     expect(isCopilotSdkEnabled()).toBe(true);
     expect(resolveRuntimeMode('claude-code').mode).toBe('chat');
     expect(isDispatcherEnabled()).toBe(true);
-    expect(isExperimentEnabled()).toBe(true);
     expect(dispatcherCapability()).toMatchObject({ newLayout: true, flagOn: true, enabled: true });
   });
 
-  it('saves exactly what it is given', async () => {
-    await saveSettings({ chat: false });
-    expect(JSON.parse(bytes(EXPERIMENTAL_FILE))).toEqual({ chat: false });
+  it('saves what it is given, except the telemetry flag, which main owns', async () => {
+    await saveSettings({ chat: false, telemetry: false });
+    expect(JSON.parse(bytes(EXPERIMENTAL_FILE))).toEqual({ chat: false, telemetry: true });
   });
 });

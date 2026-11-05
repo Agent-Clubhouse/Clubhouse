@@ -12,16 +12,16 @@ import { Field, SectionHeading, inputClass, selectClass } from '../agentSettings
 import { controlHelp } from './helper-model';
 import { maxHelpersCeiling, useOrchestration } from './orchestration-hooks';
 import {
-  AccessSelect, CROSS_PROJECT_HELP, ControlSelect, AutoHelpersToggle, AUTO_HELPERS_HELP, CrossProjectToggle, DISPATCHER_HELP, DispatcherToggle, HelperCountInput, accessNote, mcpOffNote,
+  AccessSelect, CROSS_PROJECT_HELP, ControlSelect, AutoHelpersToggle, AUTO_HELPERS_HELP, CrossProjectToggle, DISPATCHER_HELP, DISPATCHER_MCP_OFF_HELP, DispatcherToggle, HelperCountInput, accessNote, mcpOffNote,
 } from './OrchestrationFields';
-import { useDispatcherEnabled } from '../../dispatcher/useDispatcherEnabled';
+import { useDispatcherConnection } from '../../dispatcher/useDispatcherEnabled';
 import { TurnOffOrchestrationDialog } from './TurnOffOrchestrationDialog';
 
 export function AgentHelpersSettings({ agent, projectPath }: { agent: Agent; projectPath: string | undefined }) {
   const orch = useOrchestration(projectPath, agent);
   const ids = { auto: useId(), toggle: useId(), access: useId(), control: useId(), count: useId(), crossProject: useId(), dispatcher: useId() };
-  // Connect to Dispatcher shows while the Dispatcher is turned on, with orchestration on or off (#2578).
-  const showDispatcher = useDispatcherEnabled();
+  // Connect to Dispatcher shows while the Dispatcher is turned on, with orchestration on or off (#2578), and off for want of MCP.
+  const { show: showDispatcher, offForMcp } = useDispatcherConnection();
   const [countError, setCountError] = useState<string | null>(null);
   const { policy, access, saving } = orch;
   const running = agent.status === 'running';
@@ -101,12 +101,12 @@ export function AgentHelpersSettings({ agent, projectPath }: { agent: Agent; pro
         </Field>
       )}
       {showDispatcher && (
-        <Field label="Connect to Dispatcher" htmlFor={ids.dispatcher} help={DISPATCHER_HELP}>
+        <Field label="Connect to Dispatcher" htmlFor={ids.dispatcher} help={offForMcp ? DISPATCHER_MCP_OFF_HELP : DISPATCHER_HELP}>
           <DispatcherToggle
             id={ids.dispatcher}
-            checked={policy.connectToDispatcher}
+            checked={policy.connectToDispatcher && !offForMcp}
             name={agent.name}
-            disabled={saving || !!policy.mcpOff}
+            disabled={saving || !!policy.mcpOff || offForMcp}
             onChange={(on) => void orch.setConnectToDispatcher(on)}
             testId="settings-orchestrate-dispatcher"
           />

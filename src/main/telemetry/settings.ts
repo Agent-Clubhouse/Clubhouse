@@ -1,5 +1,5 @@
 /**
- * Telemetry settings and the `experimental.telemetry` gate (spec §6.8).
+ * Telemetry settings (spec §6.8).
  *
  * Non-secret settings live in `telemetry-settings.json` (0600) through the
  * TELEMETRY_SETTINGS managed-settings definition. Secrets (the connection
@@ -17,14 +17,20 @@
  * `destinations` list, one entry per kind, each with its own switch, level
  * and preset; `migrate()` converts the Phase 2 shape with no change in what
  * is sent.
+ *
+ * Export left Experimental in v1.0.0. Every load goes through `graduateExport`
+ * and `applySavedFlag`, so nothing can read settings that an older build's gate,
+ * an opt-out made in one, or a flag that can't be verified should keep from running.
  */
 import * as fs from 'fs';
 import { app } from 'electron';
 import { createManagedSettings } from '../services/managed-settings';
 import * as experimentalSettings from '../services/experimental-settings';
+import { isPreviewEligible } from '../services/preview-eligible';
 import { TELEMETRY_SETTINGS } from '../../shared/settings-definitions';
 import { TELEMETRY_LEVELS, type TelemetryLevel } from '../../shared/telemetry/attributes';
 import {
+  TELEMETRY_CONSENT_VERSION,
   TELEMETRY_DESTINATION_KINDS,
   TELEMETRY_FILTER_PRESETS,
   type OtlpTemporality,
@@ -34,8 +40,6 @@ import {
 } from '../../shared/telemetry/settings-types';
 import { getSecretPath, getSecureStorageState, updateSecrets, type TelemetrySecrets } from './secret-store';
 import { getFramebriarTelemetrySource } from './destinations/framebriar-source';
-
-export const EXPERIMENTAL_FLAG = 'telemetry';
 
 export interface AzureDestinationConfig {
   kind: 'azure';
@@ -213,13 +217,216 @@ function migrateDeveloperRule(settings: TelemetrySettings): void {
   if (!ownOn) developer.framebriar = { ...developer.framebriar, userOff: true };
 }
 
+/**
+ * The saved `experimental.telemetry` flag. It stays on disk so a downgrade behaves
+ * as the user left it, and this build has no control for it. Every opt-in here
+ * saves it as true (`recordExportOptIn`) and the renderer can't change it, so a
+ * saved false alongside anything active can only come from an older build or a
+ * hand edit, and means off.
+ */
+const LEGACY_EXPERIMENT_FLAG = 'telemetry';
+
+/** The graduation this file has been through: 1 once export left Experimental (v1.0.0). */
+export const EXPORT_GRADUATION = 1;
+
+/** What the old gate asked for besides consent. */
+export interface LegacyExportGate {
+  /** The saved flag, whatever this build honours. */
+  flagOn: boolean;
+  previewEligible: boolean;
+}
+
+function readSavedFlag(): boolean | undefined {
+  try {
+    return experimentalSettings.getStoredSettings()[LEGACY_EXPERIMENT_FLAG];
+  } catch {
+    // telemetry-exempt: unreadable reads as not saved. The gate takes that as off.
+    return undefined;
+  }
+}
+
+/** Anything unreadable counts against: the flag reads as off, the build as not eligible. */
+export function readLegacyExportGate(): LegacyExportGate {
+  const flagOn = readSavedFlag() === true;
+  let previewEligible = false;
+  try {
+    previewEligible = isPreviewEligible() === true;
+  } catch {
+    // telemetry-exempt: unreadable counts as not eligible, which is the safe answer.
+  }
+  return { flagOn, previewEligible };
+}
+
+function isGraduated(settings: TelemetrySettings): boolean {
+  return typeof settings.exportGraduation === 'number' && settings.exportGraduation >= EXPORT_GRADUATION;
+}
+
+/** An old setup stays active only if all of the old gate held. */
+function passedLegacyGate(settings: TelemetrySettings, gate: LegacyExportGate): boolean {
+  return gate.flagOn && gate.previewEligible && settings.consentVersion >= TELEMETRY_CONSENT_VERSION;
+}
+
+/**
+ * Every destination off. The developer destination is also recorded as switched
+ * off if it was confirmed or consent exists, or it would follow Feedback on later.
+ * A setup with no consent and no confirmed host keeps its offer: that one still
+ * asks for the user's choice.
+ */
+function switchOffExport(settings: TelemetrySettings): TelemetrySettings {
+  const consented = settings.consentVersion >= TELEMETRY_CONSENT_VERSION;
+  return {
+    ...settings,
+    destinations: settings.destinations.map((d) => {
+      const followsLater = d.kind === 'framebriar' && (d.confirmedHost !== undefined || consented);
+      return { ...d, enabled: false, ...(followsLater ? { framebriar: { ...d.framebriar, userOff: true } } : {}) };
+    }),
+  };
+}
+
+/**
+ * Export used to run only behind the flag, in a preview-eligible build, with
+ * consent. Without the gate, every setup it held back would start, so anything
+ * that didn't pass it is switched off here.
+ * Runs once: the marker keeps a later opt-in from being undone.
+ */
+export function graduateExport(settings: TelemetrySettings, gate: LegacyExportGate): TelemetrySettings {
+  if (isGraduated(settings)) return settings;
+  if (passedLegacyGate(settings, gate)) return { ...settings, exportGraduation: EXPORT_GRADUATION };
+  return { ...switchOffExport(settings), exportGraduation: EXPORT_GRADUATION };
+}
+
+export type SavedFlagState = ReturnType<typeof experimentalSettings.peekStoredFlag>;
+
+function readSavedFlagState(): SavedFlagState {
+  try {
+    return experimentalSettings.peekStoredFlag(LEGACY_EXPERIMENT_FLAG);
+  } catch {
+    // telemetry-exempt: it can't be verified, which is what unreadable means.
+    return 'unreadable';
+  }
+}
+
+function hasActiveSetup(settings: TelemetrySettings): boolean {
+  const couldFollow = (d: TelemetrySettings['destinations'][number]) =>
+    d.kind === 'framebriar' && d.confirmedHost !== undefined && !d.framebriar?.userOff;
+  return settings.destinations.some((d) => d.enabled || couldFollow(d));
+}
+
+function withoutSuspension(settings: TelemetrySettings): TelemetrySettings {
+  const next = { ...settings };
+  delete next.exportSuspended;
+  return next;
+}
+
+/**
+ * What the saved flag says on every load, once the file is graduated.
+ *
+ * False always wins, for a user who went back to an older build and turned the
+ * flag off there: without this, the marker would let what they stopped start
+ * again here. Unreadable is no verified opt-in, so an active setup is paused and
+ * nothing else changes. A paused setup stays paused until the flag reads true or
+ * false, or the user chooses Resume: a flag rewritten without the key, by a save
+ * of some other flag, says nothing. Missing isn't false.
+ */
+export function applySavedFlag(settings: TelemetrySettings, state: SavedFlagState): TelemetrySettings {
+  const suspended = settings.exportSuspended !== undefined;
+  if (state === 'true') return suspended ? withoutSuspension(settings) : settings;
+  const active = hasActiveSetup(settings);
+  if (state === 'false') {
+    if (active) return switchOffExport(withoutSuspension(settings));
+    return suspended ? withoutSuspension(settings) : settings;
+  }
+  if (state === 'unreadable' && !suspended && active && settings.consentVersion >= TELEMETRY_CONSENT_VERSION) {
+    return { ...settings, exportSuspended: 'flag_unreadable' };
+  }
+  return settings;
+}
+
+/** The user turned everything off while paused: with nothing active, nothing is suspended. */
+export function withoutIdleSuspension(settings: TelemetrySettings): TelemetrySettings {
+  return settings.exportSuspended !== undefined && !hasActiveSetup(settings) ? withoutSuspension(settings) : settings;
+}
+
+/** The gate on every export path: consent is recorded and export isn't paused. */
+export function exportPermitted(settings: TelemetrySettings): boolean {
+  return settings.consentVersion >= TELEMETRY_CONSENT_VERSION && settings.exportSuspended === undefined;
+}
+
+/**
+ * Keeps a saved false meaning what it says: call before anything turns a
+ * destination on. Rejects if the flag can't be saved, and the opt-in must then
+ * fail, or the next launch would take it for an older build's opt-out.
+ */
+export function recordExportOptIn(): Promise<void> {
+  return experimentalSettings.setStoredFlag(LEGACY_EXPERIMENT_FLAG, true);
+}
+
+/** `opted_out`: a saved false switched this install off. `suspended` and `resumed`: the saved flag paused it, or let it go on. */
+export type ExportGraduationOutcome = 'kept' | 'off' | 'opted_out' | 'suspended' | 'resumed';
+
+const SAVED_FLAG_OUTCOME: Partial<Record<SavedFlagState, ExportGraduationOutcome>> = {
+  false: 'opted_out',
+  unreadable: 'suspended',
+  true: 'resumed',
+};
+
+/** Set when this run's load changed the settings and that hasn't been saved yet. */
+let unsavedGraduation: ExportGraduationOutcome | null = null;
+
 const managed = createManagedSettings<TelemetrySettings>(TELEMETRY_SETTINGS as typeof TELEMETRY_SETTINGS & { defaults: TelemetrySettings }, {
-  migrate: migrateTelemetrySettings,
+  migrate: (raw) => {
+    const settings = migrateTelemetrySettings(raw);
+    const gate = readLegacyExportGate();
+    const graduated = graduateExport(settings, gate);
+    const state = readSavedFlagState();
+    const applied = applySavedFlag(graduated, state);
+    if (applied !== graduated) unsavedGraduation = SAVED_FLAG_OUTCOME[state] ?? null;
+    else if (graduated !== settings) unsavedGraduation = passedLegacyGate(settings, gate) ? 'kept' : 'off';
+    return applied;
+  },
   mode: 0o600,
 });
 
 export const getTelemetrySettings = managed.store.get;
-export const updateTelemetrySettings = managed.store.update;
+
+/**
+ * Every save carries the markers. They can't be in the defaults, because the
+ * store merges those over the file before migrating, and an old file would then
+ * look migrated. A file first written by this build (no file or an unreadable
+ * one reads as the defaults, unmigrated) would otherwise have its first opt-in
+ * undone by these migrations on the next launch.
+ */
+export function updateTelemetrySettings(fn: (current: TelemetrySettings) => TelemetrySettings): Promise<TelemetrySettings> {
+  return managed.store.update((current) => ({ ...fn(current), developerRule: DEVELOPER_RULE, exportGraduation: EXPORT_GRADUATION }));
+}
+
+/**
+ * Load the settings, which applies the graduation and the saved flag in memory
+ * before this returns, and start saving the result. `null` when there was nothing
+ * to do. If the save fails, this run still uses the result, and the next launch,
+ * finding the same files, applies it again.
+ */
+export function applyExportGraduation(): { outcome: ExportGraduationOutcome; saved: Promise<unknown> } | null {
+  getTelemetrySettings();
+  const outcome = unsavedGraduation;
+  if (!outcome) return null;
+  unsavedGraduation = null;
+  return { outcome, saved: updateTelemetrySettings((current) => current) };
+}
+
+/** Where a copy of the flag file was kept, if one was. */
+export function suspendedFlagFileCopy(): string | undefined {
+  return experimentalSettings.recoveryCopyPath();
+}
+
+/**
+ * While export is paused on an unreadable flag file, keep a copy of that file
+ * before anything can overwrite it. Throws if it can't: this run stays paused and
+ * the next launch tries again, and writers of the flag file try first too.
+ */
+export function preserveSuspendedFlagFile(): void {
+  if (getTelemetrySettings().exportSuspended !== undefined) experimentalSettings.preserveUnreadableFile();
+}
 
 /** Secrets carried by a not-yet-migrated Phase 1 file. */
 export function legacySecrets(settings: TelemetrySettings = getTelemetrySettings()): TelemetrySecrets {
@@ -313,14 +520,6 @@ export function isEntryConfigured(entry: TelemetryDestinationEntry, settings: Te
 /** Some enabled destination looks configured. */
 export function hasDestinationConfigured(settings: TelemetrySettings): boolean {
   return enabledDestinations(settings).some((d) => isEntryConfigured(d, settings));
-}
-
-export function isExperimentEnabled(): boolean {
-  try {
-    return experimentalSettings.getSettings()[EXPERIMENTAL_FLAG] === true;
-  } catch {
-    return false;
-  }
 }
 
 // --- Destination validation -------------------------------------------------

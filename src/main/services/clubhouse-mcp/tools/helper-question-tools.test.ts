@@ -1,5 +1,5 @@
 import * as path from 'path';
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { afterEach, describe, it, expect, vi, beforeEach } from 'vitest';
 import type { DurableAgentConfig } from '../../../../shared/types';
 import type { ChatEventDataMap, ChatQuestion } from '../../../../shared/chat';
 
@@ -17,6 +17,9 @@ vi.mock('../../helper-index', () => ({
     return config ? { projectPath: helper.parentProjectPath || helperPath, config } : null;
   }),
 }));
+
+const access = vi.hoisted(() => ({ value: 'open' as 'open' | 'report_only' | 'closed' }));
+vi.mock('../mcp-call-gate', async (original) => ({ ...await original<typeof import('../mcp-call-gate')>(), mcpCallAccess: () => access.value }));
 
 const mockGetPolicy = vi.fn();
 vi.mock('../../orchestration-policy', () => ({
@@ -78,7 +81,7 @@ import {
 import { deliverHelperUpdate, _resetHelperDeliveryForTesting } from './helper-delivery';
 import { callTool, _resetForTesting } from '../tool-registry';
 import { agentRegistry } from '../../agent-registry';
-import { setOrchestrationEnabled, _resetOrchestrationGateForTesting } from '../orchestration-gate';
+import { notifyToolGateChange, setOrchestrationEnabled, _resetOrchestrationGateForTesting } from '../orchestration-gate';
 
 // ── Fixtures ───────────────────────────────────────────────────────────────
 
@@ -197,6 +200,46 @@ describe('routeHelperQuestion', () => {
 });
 
 // ── answer_helper_question ─────────────────────────────────────────────────
+
+describe('a parent without Clubhouse MCP', () => {
+  afterEach(() => { access.value = 'open'; });
+
+  it('never gets the question: it couldn\'t call answer_helper_question, so it stays with the user', async () => {
+    addAgent({ id: 'lead' });
+    addAgent({ id: 'worker', parentAgentId: 'lead' });
+    const parent = run('lead', true);
+    run('worker');
+    mockGetPolicy.mockResolvedValue({ orchestrate: true, control: 'hands-off' });
+    for (const closed of ['closed', 'report_only'] as const) {
+      access.value = closed;
+      expect(await routeHelperQuestion('worker', question('q1', [BRANCH]))).toBeNull();
+    }
+    expect(parent.sent).toEqual([]);
+  });
+
+  it('hands over an open question when it loses MCP, so the helper isn\'t left waiting', async () => {
+    addAgent({ id: 'lead' });
+    addAgent({ id: 'worker', parentAgentId: 'lead' });
+    run('lead', true);
+    const helper = run('worker');
+    helper.pending.add('q1');
+    mockGetPolicy.mockResolvedValue({ orchestrate: true, control: 'hands-off' });
+    registerHelperQuestionTools();
+    expect(await routeHelperQuestion('worker', question('q1', [BRANCH]))).toEqual({ agentId: 'lead', name: 'lead' });
+
+    // A gate change that leaves it with MCP hands over nothing.
+    notifyToolGateChange('lead');
+    expect(helper.escalated).toEqual([]);
+
+    access.value = 'closed';
+    notifyToolGateChange('lead');
+    await vi.waitFor(() => expect(helper.escalated).toEqual([{ requestId: 'q1', notice: 'Clubhouse MCP is off for the agent that was asked, so this question is yours.' }]));
+    // Once: it's the user's now, and MCP coming back doesn't take it away.
+    access.value = 'open';
+    notifyToolGateChange('lead');
+    expect(helper.escalated).toHaveLength(1);
+  });
+});
 
 describe('answer_helper_question', () => {
   it('answers the helper, matching option labels', async () => {

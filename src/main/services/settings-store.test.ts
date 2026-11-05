@@ -437,4 +437,33 @@ describe('LB-SP-003: write errors are surfaced, not silently swallowed', () => {
 
     await expect(store.save(DEFAULTS)).rejects.toThrow('write error');
   });
+
+  describe('rollBackFailedSaves', () => {
+    const named = (name: string): TestSettings => ({ ...DEFAULTS, name });
+
+    it('keeps a failed save in memory by default, which some stores rely on', async () => {
+      const store = createSettingsStore<TestSettings>('test.json', DEFAULTS);
+      vi.mocked(fs.promises.writeFile).mockRejectedValueOnce(new Error('write error'));
+      await expect(store.save(named('attempted'))).rejects.toThrow('write error');
+      expect(store.get().name).toBe('attempted');
+    });
+
+    it('goes back to the value before a failed save when asked', async () => {
+      const store = createSettingsStore<TestSettings>('test.json', DEFAULTS, undefined, { rollBackFailedSaves: true });
+      await store.save(named('saved'));
+      vi.mocked(fs.promises.writeFile).mockRejectedValueOnce(new Error('write error'));
+      await expect(store.save(named('attempted'))).rejects.toThrow('write error');
+      expect(store.get().name).toBe('saved');
+    });
+
+    it('doesn\'t undo a newer save that has replaced the failed one', async () => {
+      const store = createSettingsStore<TestSettings>('test.json', DEFAULTS, undefined, { rollBackFailedSaves: true });
+      vi.mocked(fs.promises.writeFile).mockRejectedValueOnce(new Error('write error'));
+      const failed = store.save(named('attempted'));
+      const newer = store.save(named('newer'));
+      await expect(failed).rejects.toThrow('write error');
+      await newer;
+      expect(store.get().name).toBe('newer');
+    });
+  });
 });

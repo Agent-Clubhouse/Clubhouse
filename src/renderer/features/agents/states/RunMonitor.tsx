@@ -282,7 +282,12 @@ export function RunMonitor({ run, steps, totals, files, cwd, now, actions, stack
             Show {plural(rows.length - MAX_ROWS, 'earlier step')}
           </button>
         )}
-        {rows.length === 0 && live ? (
+        {rows.length === 0 && run.phase === 'run' ? (
+          <div data-testid="run-no-steps">
+            <div className="h-[30px] flex items-center gap-2 text-[13px] text-ctp-subtext1"><StateDot kind="working" />Running {run.name}</div>
+            <p className="pl-4 text-xs leading-normal text-ctp-overlay1">No steps to show yet. Some CLIs don't report steps in a form this view can read.</p>
+          </div>
+        ) : rows.length === 0 && live ? (
           <div data-testid="run-starting">
             <div className="h-[30px] flex items-center gap-2 text-[13px] text-ctp-subtext1"><StateDot kind="working" />Starting {run.name}</div>
             <p className="pl-4 text-xs leading-normal text-ctp-overlay1">The first step shows here as soon as the CLI reports it, usually within a few seconds.</p>
@@ -354,7 +359,7 @@ export function RunMonitor({ run, steps, totals, files, cwd, now, actions, stack
           <header className="flex gap-[22px] items-center pb-[18px] border-b border-surface-0" data-testid="run-header">
             <Treehouse phase={run.phase} size={stacked ? 64 : 96} />
             <div className="flex-1 min-w-0 flex flex-col gap-1.5">
-              <h1 className="text-[15px] leading-normal font-normal text-ctp-text break-words" data-testid="run-mission">{run.mission}</h1>
+              <h1 className="text-[15px] leading-normal font-normal text-ctp-text break-words" data-testid="run-mission">{run.mission || run.name}</h1>
               <div className="text-xs text-ctp-overlay1">{meta}</div>
               {run.phase === 'done' && run.summary && (
                 <div className="mt-1" data-testid="run-summary-text">

@@ -2,11 +2,11 @@
 
 Depends on mobile-control-v1 from PR2430 and the isolated integration support from PR2431. Existing Satellite/Annex routes and default binding/discovery are unchanged.
 
-`GET /api/v1/mobile/capabilities` adds `richContent: {version:1, enabled:boolean, maximumBytes:8388608}`. Enabled mirrors the existing desktop experimental `richChatContent` flag.
+`GET /api/v1/mobile/capabilities` adds `richContent: {version:1, enabled:boolean, maximumBytes:8388608}`. Enabled mirrors the desktop `richChatContent` setting, which is on unless saved off or the settings file can't be read (Settings > Agents & providers > Rich chat content).
 
 `GET /api/v1/mobile/agents/:id/chat` adds `canStart:boolean`, true only for a known non-disposed durable that is neither running nor starting. Mobile uses it for explicit Wake and wake-with-message; commands retain their existing mTLS/idempotency semantics.
 
-`GET /api/v1/mobile/agents/:id/content?mediaRef=<sha256.ext>` reads a stored image; alternatively `?path=<agent-relative-or-absolute-path>` uses the desktop file-preview policy. Exactly one selector is required. All responses require the pinned mobile client certificate, a known agent and the experimental feature. Authorization is rechecked after IO. There is no remote URL fetch, shell/reveal action, custom root or bearer-only access. Errors return bounded `content_unavailable`/authorization responses without logging paths or bytes.
+`GET /api/v1/mobile/agents/:id/content?mediaRef=<sha256.ext>` reads a stored image; alternatively `?path=<agent-relative-or-absolute-path>` uses the desktop file-preview policy. Exactly one selector is required. All responses require the pinned mobile client certificate, a known agent and the setting. Authorization is rechecked after IO. There is no remote URL fetch, shell/reveal action, custom root or bearer-only access. Errors return bounded `content_unavailable`/authorization responses without logging paths or bytes.
 
 ### Absolute paths: `contentRoots` and `contentAnyPath`
 
@@ -26,4 +26,4 @@ The opt-in process-local `CLUBHOUSE_ANNEX_BIND_ADDRESS` accepts only an existing
 
 Images in a `user_message` (sent from the phone through [image attachments](mobile-control-v1.md#image-attachments), or from the desktop composer) reach Annex clients as `{type:"image", mimeType, mediaRef?, width?, height?, path?}`, both in live `chat:event` frames and in `/chat` snapshots. Annex never sends a desktop path or inline base64 in `user_message`: `path` is cut to the bare file name, `data` and `data:` URIs are dropped, and file blocks keep only their name (`{type:"file", path:"notes.txt"}`).
 
-`mediaRef` points at a copy the desktop stores in the agent's media folder when the message is sent, whatever the `richChatContent` setting. Reading it uses the same `GET /api/v1/mobile/agents/:id/content?mediaRef=` as tool images, so **it follows the `richContent.enabled` gate**: with the experimental setting off, `/content` refuses and the phone shows its own local copy (it has the bytes it uploaded) or a placeholder. Turning the setting on later makes earlier images readable, because the copy was stored anyway. Messages sent before this change, and images whose copy couldn't be stored, have no `mediaRef`: show a placeholder with the name.
+`mediaRef` points at a copy the desktop stores in the agent's media folder when the message is sent, whatever the `richChatContent` setting. Reading it uses the same `GET /api/v1/mobile/agents/:id/content?mediaRef=` as tool images, so **it follows the `richContent.enabled` gate**: with the setting off, `/content` refuses and the phone shows its own local copy (it has the bytes it uploaded) or a placeholder. Turning the setting on later makes earlier images readable, because the copy was stored anyway. Messages sent before this change, and images whose copy couldn't be stored, have no `mediaRef`: show a placeholder with the name.

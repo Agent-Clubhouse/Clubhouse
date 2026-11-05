@@ -752,7 +752,8 @@ Every durable agent in the snapshot (`agents[projectId][]`), `GET /api/v1/projec
 - **control**: one of `controls` (hands-off, ask before starting helpers, ask about everything).
 - **maxHelpers**: "Helpers at once", a whole number from 1 to `maxHelpersCap` (the app-wide helper cap, at most 100).
 - **crossProjectHelpers**: "Cross-project helpers" (#2512): the agent may start helpers in other registered projects. The desktop shows it while `orchestrate` is on; turning it off leaves helpers already running elsewhere alone.
-- **connectToDispatcher**: "Connect to Dispatcher" (#2534): the Dispatcher may message this agent and get its reports. The desktop shows it while the [Dispatcher](#dispatcher) is on, with `orchestrate` on or off; turning it on while the Dispatcher is off is 409 `dispatcher_off`. Unset (source `default`), it follows `orchestrate` (#2578). A helper (an agent with `parentAgentId`) talks only to its parent, so on a helper it is always `false` with source `default`, and a value sent for one has no effect while it is a helper. Don't offer the switch on a helper. So an agent can report `true` with the Dispatcher off: send this field only when the user changes it.
+- **mcpReportOnly**: present and `true` on a helper whose own MCP setting resolves off. It describes what the helper can do, apart from its bridge: `mcpEnabled` stays `true` because its bridge is always injected, but its only working Clubhouse tool is `message_parent`. Treat its orchestration switches as off. Turning `orchestrate`, `crossProjectHelpers`, `connectToDispatcher` or `autoHelpers` on is refused with 409 `mcp_off`, with nothing saved. Turning one off or clearing it still works. A value it already had stays, and applies again when MCP is back.
+- **connectToDispatcher**: "Connect to Dispatcher" (#2534): the Dispatcher may message this agent and get its reports. The desktop shows it while the [Dispatcher](#dispatcher) is on, with `orchestrate` on or off; turning it on while the Dispatcher is off is 409 `dispatcher_off`, or `mcp_off` when Clubhouse MCP at app level is why it is off. Unset (source `default`), it follows `orchestrate` (#2578). A helper (an agent with `parentAgentId`) talks only to its parent, so on a helper it is always `false` with source `default`, and a value sent for one has no effect while it is a helper. Don't offer the switch on a helper. So an agent can report `true` with the Dispatcher off: send this field only when the user changes it.
 - **mcpEnabled**: whether Clubhouse MCP is on for this agent (#2589), following its own setting, then its project's, then the app's. A helper always has it (#2610). No Clubhouse MCP means no orchestration: while it is `false`, `orchestrate`, `crossProjectHelpers` and `connectToDispatcher` read `false`, the agent gets no Dispatcher wire and isn't in the Dispatcher's `list_agents`. Their `sources` still describe the saved settings, which are kept and come back when MCP does. Disable those switches and say they need Clubhouse MCP. Helpers already running keep running. The snapshot refreshes when an MCP setting changes.
 - **sources**: where each field comes from. `agent` is an override on the agent, which `null` clears; `persona` is the persona's front-matter; `default` is the built-in default.
 
@@ -762,8 +763,8 @@ Rejections:
 
 - 400 `invalid_orchestration`, with the reason in `message`: an unknown field, a bad `access` or `control`, `maxHelpers` outside 1 to `maxHelpersCap`, an empty object, or a null on create.
 - 409 `orchestration_has_helpers`: turning `orchestrate` off while the agent has live helpers. Nothing changes; the desktop asks whether to keep or dispose them.
-- 409 `dispatcher_off`: `connectToDispatcher: true` while the Dispatcher is off.
-- 409 `mcp_off`: `orchestrate`, `crossProjectHelpers` or `connectToDispatcher` set to `true` while `mcpEnabled` is `false` (on `agent.create`, while Clubhouse MCP is off for the project), with the reason in `message`. Nothing is created or changed. Setting them to `false`, clearing them with `null`, and the other fields are still accepted.
+- 409 `dispatcher_off`: `connectToDispatcher: true` while the Dispatcher's switch is off.
+- 409 `mcp_off`: `orchestrate`, `crossProjectHelpers` or `connectToDispatcher` set to `true` while `mcpEnabled` is `false` or `mcpReportOnly` is `true` (on `agent.create`, while Clubhouse MCP is off for the project), with the reason in `message`. Nothing is created or changed. Setting them to `false`, clearing them with `null`, and the other fields are still accepted.
 - A non-object `orchestration` (or `null` on create) is 400 `invalid_command`.
 
 ## Helper presets
@@ -921,15 +922,15 @@ A held start's helper request has `requestedRouting:{provider,model,effort,diffi
 
 ## Dispatcher
 
-The app-wide Dispatcher (#2533): one durable agent that coordinates the orchestrators in every project. It lives in its own folder under the Clubhouse base dir, which is no git repo, and is in no project, so it never appears in `projects`, `agents{}`, `GET /api/v1/projects` or `GET /api/v1/projects/:id/agents`. It is on only when the desktop's experimental flag (`flagOn`) and the switch in Settings > Dispatcher are both on. Gated on `dispatcher.version >= 1` in capabilities:
+The app-wide Dispatcher (#2533): one durable agent that coordinates the orchestrators in every project. It lives in its own folder under the Clubhouse base dir, which is no git repo, and is in no project, so it never appears in `projects`, `agents{}`, `GET /api/v1/projects` or `GET /api/v1/projects/:id/agents`. It is on by default in the new layout, unless the switch in Settings > Dispatcher is saved off. In the classic layout it is on only if that switch was saved on. It is off whenever Clubhouse MCP is off at app level: that changes nothing saved, stops nothing, and turning MCP back on restores it without starting anything. Gated on `dispatcher.version >= 1` in capabilities:
 
 ```json
 "dispatcher":{"version":1,"enabled":false,"flagOn":true,"newLayout":true,"projectId":"__dispatcher__",
  "snapshotField":"dispatcher","event":"dispatcher:changed","commands":["dispatcher.setEnabled"]}
 ```
 
-- **enabled**: the flag and the switch are both on.
-- **flagOn**: the experimental flag. A phone never changes it; without it, the switch says "Turn on Dispatcher in Settings > Experimental on the desktop".
+- **enabled**: it is on now.
+- **flagOn**: `false` while Clubhouse MCP is off at app level. The experimental flag it once reported is gone. See [While it is off](#while-it-is-off).
 - **newLayout**: the desktop runs the New layout this session. The Dispatcher's view is in the new layout only, so turning it on needs it; one that is still on can always be turned off.
 
 ### Snapshot
@@ -949,13 +950,43 @@ The snapshot's `dispatcher` is `null` while the Dispatcher is off (or was never 
 
 `dispatcher:changed` is broadcast and buffered for `mobile:replay` whenever `enabled`, `flagOn` or the agent id change, from the desktop or a phone: `{"enabled":bool,"flagOn":bool,"agentId":"id"|null}` (`agentId` is null while it is off). A fresh `snapshot` follows it, and also follows any change to its config (its CLI or model changed on the desktop). Add or drop the Dispatcher from that snapshot.
 
+### While it is off
+
+Optional fields on the snapshot's `dispatcher`, `dispatcher:changed` and the capabilities' `dispatcher`, present only while it is off, and the same in all three. A phone that doesn't know them keeps working: `enabled` is `false`, and `agentId` in `dispatcher:changed` is `null`, as ever. An older phone drops the Dispatcher then, so it may not show one still running. The desktop can stop it.
+
+| Field | Meaning |
+| --- | --- |
+| `offReason` | `switched_off` (its switch is off, which wins over `mcp_off`), `mcp_off` (Clubhouse MCP is off at app level) or `classic_layout` (the classic layout with nothing saved on). Saved on with the classic layout is on. Tolerate other values. |
+| `running` | Whether its session is running. MCP going off stops nothing. |
+| `status` | The same as `agent.status`, which for a desktop agent is `running` or `sleeping`. |
+| `detail` | Plain text to show. `MCP off; session running`, `MCP off`, `Turned off` or `Needs the new layout`. |
+| `commandsWhileOff` | What is accepted for its id now. |
+| `agent` | The record, in the same shape as `agents[projectId][]`, or `null` before it was first created. The snapshot's `dispatcher` keeps it while it is off, so history isn't lost. |
+
+| State | `commandsWhileOff` | Reads | Anything else |
+| --- | --- | --- | --- |
+| `mcp_off`, running | `agent.stop`, `chat.interrupt`, `chat.send`, `chat.queue.remove`, `chat.permission`, `chat.question`, `dispatcher.setEnabled` | Answer | 409 `mcp_off` |
+| `mcp_off`, stopped | `dispatcher.setEnabled` | Answer, as history | 409 `mcp_off` |
+| `switched_off` | `dispatcher.setEnabled` | 404 `agent_not_found`, as ever | 409 `dispatcher_off`, as ever |
+| `classic_layout` | `dispatcher.setEnabled` | 404 `agent_not_found`, as ever | 409 `dispatcher_off`, as ever |
+
+- `dispatcher.setEnabled` with `enabled: false` always works. With `true` it answers as under [dispatcher.setEnabled](#dispatchersetenabled).
+- `chat.permission` and `chat.question` are for requests already pending. With nothing pending, 409 `mcp_off`.
+- `chat.send` goes to the running session, as the desktop's composer does. It never wakes: with no session it is refused.
+- A shell in its folder is only for while it is on.
+- When MCP is back, `enabled` is `true`, these fields are gone, and nothing has been started.
+
+Fixtures: `snapshot-dispatcher-mcp-off-running.json`, and `dispatcher-off-states.json` and `dispatcher-off-routes.json` for every state. Fixtures from before these fields show the older shape: they are what a phone that doesn't know the fields reads.
+
 ### dispatcher.setEnabled
 
-`{type:"dispatcher.setEnabled", enabled:bool}` is Settings > Dispatcher's switch. Result `{enabled, flagOn, agentId}`, as `dispatcher:changed`. Turning it off stops the agent and keeps its folder, notes and config, so turning it on again carries on. Refusals (409): `dispatcher_flag_off` (turning it on with the flag off) and `dispatcher_layout_off` (turning it on while the desktop runs the classic layout). Turning on one that is on, or off one that is off, succeeds with the current state.
+`{type:"dispatcher.setEnabled", enabled:bool}` is Settings > Dispatcher's switch. Result `{enabled, flagOn, agentId}`, as `dispatcher:changed`. Turning it off stops the agent and keeps its folder, notes and config, so turning it on again carries on. Refusals (409): `mcp_off` (turning it on while its switch is on and Clubhouse MCP is off at app level), `dispatcher_flag_off` (turning it on while its switch is off and Clubhouse MCP is off too) and `dispatcher_layout_off` (turning it on while the desktop runs the classic layout, unless its switch is already saved on). Turning on one that is on, or off one that is off, succeeds with the current state.
 
 ### Its agent
 
-While it is on, its id works wherever an agent id does: the chat snapshot, chat history pages, `/chat/sessions`, `/content`, attachments, `/settings`, every `chat.*` command, `agent.start`, `agent.stop`, `agent.update`, `pty:attach`, and `GET /api/v1/agents/:id/sessions…` with `projectId=__dispatcher__`. While it is off, GET routes answer 404 `agent_not_found` and commands 409 `dispatcher_off`.
+While it is on, its id works wherever an agent id does: the chat snapshot, chat history pages, `/chat/sessions`, `/content`, attachments, `/settings`, every `chat.*` command, `agent.start`, `agent.stop`, `agent.update`, `pty:attach`, and `GET /api/v1/agents/:id/sessions…` with `projectId=__dispatcher__`. While it is off and stopped, GET routes answer 404 `agent_not_found` and commands 409 `dispatcher_off`.
+
+See [While it is off](#while-it-is-off) for what changes with Clubhouse MCP off.
 
 - **Shells.** `pty:spawn-shell` with `projectId: "__dispatcher__"` (with or without its `agentId`) opens a shell in its folder while it is on; otherwise `project_not_found`.
 - **No git.** Git routes for `__dispatcher__` answer 409 `{"error":"not_git_repo"}`. Its settings' `details.changes`, `branch` and `worktree` are null.

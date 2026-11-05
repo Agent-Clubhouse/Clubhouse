@@ -1360,6 +1360,7 @@ describe('headless-manager', () => {
       mockProcess.kill.mockReset();
       kill('test-agent');
       vi.advanceTimersByTime(5000);
+      mockProcess.emit('close', null, 'SIGKILL');
       expect(isHeadless('test-agent')).toBe(false);
     });
 
@@ -1400,7 +1401,9 @@ describe('headless-manager', () => {
 
       // Process should have received SIGKILL
       expect(mockProcess.kill).toHaveBeenCalledWith('SIGKILL');
-      // Session should be cleaned up
+      // The session stays until the exit can be reported
+      expect(isHeadless('test-agent')).toBe(true);
+      mockProcess.emit('close', null, 'SIGKILL');
       expect(isHeadless('test-agent')).toBe(false);
     });
 
@@ -1581,6 +1584,120 @@ describe('headless-manager', () => {
       // Session should be cleaned up and onExit should have been called
       expect(isHeadless('test-agent')).toBe(false);
       expect(onExit).toHaveBeenCalledWith('test-agent', 1);
+    });
+
+    it('sweep treats a process killed by a signal as exited (#2813)', async () => {
+      const onExit = vi.fn();
+      await spawnHeadless('test-agent', '/project', '/usr/bin/claude', ['-p', 'test'], undefined, 'stream-json', onExit);
+
+      (mockProcess as any).signalCode = 'SIGTERM';
+
+      startStaleSweep();
+      vi.advanceTimersByTime(30_000);
+
+      expect(isHeadless('test-agent')).toBe(false);
+      expect(onExit).toHaveBeenCalledWith('test-agent', 128 + os.constants.signals.SIGTERM);
+    });
+
+    it('does not escalate to SIGKILL once SIGTERM has ended the process (#2813)', async () => {
+      await spawnHeadless('test-agent', '/project', '/usr/bin/claude', ['-p', 'test']);
+      kill('test-agent');
+      (mockProcess as any).signalCode = 'SIGTERM';
+      mockProcess.kill.mockClear();
+
+      vi.advanceTimersByTime(5000);
+
+      expect(mockProcess.kill).not.toHaveBeenCalled();
+      expect(vi.mocked(appLog).mock.calls.filter((c) => c[2] === 'Failed to kill headless process')).toEqual([]);
+      expect(isHeadless('test-agent')).toBe(true);
+    });
+
+    it('a close after the sweep does not report the exit twice (#2813)', async () => {
+      const onExit = vi.fn();
+      await spawnHeadless('test-agent', '/project', '/usr/bin/claude', ['-p', 'test'], undefined, 'stream-json', onExit);
+      (mockProcess as any).exitCode = 0;
+
+      startStaleSweep();
+      vi.advanceTimersByTime(30_000);
+      mockProcess.emit('close', 0);
+
+      expect(onExit).toHaveBeenCalledTimes(1);
+      expect(mockEmitPtyExit).toHaveBeenCalledTimes(1);
+      expect(mockWriteStream.end).toHaveBeenCalled();
+    });
+
+    describe('live run diagnostics (#2813)', () => {
+      const liveReports = () => vi.mocked(appLog).mock.calls.filter((c) => c[2] === 'Headless run still live and quiet');
+      const reportMeta = (call: ReturnType<typeof liveReports>[number]) => call[3]?.meta as Record<string, unknown>;
+      const PROMPT = 'super secret prompt';
+
+      it('reports a quiet run with its pid, last event and result, then backs off', async () => {
+        await spawnHeadless('test-agent', '/project', '/usr/bin/copilot', ['-p', PROMPT]);
+        mockProcess.stdout!.emit('data', Buffer.from(JSON.stringify({ type: 'assistant.message', data: { content: PROMPT } }) + '\n'));
+        mockProcess.stdout!.emit('data', Buffer.from(JSON.stringify({ type: 'result', result: PROMPT }) + '\n'));
+
+        startStaleSweep();
+        vi.advanceTimersByTime(30_000);
+        expect(liveReports()).toHaveLength(0);
+
+        vi.advanceTimersByTime(30_000);
+        expect(liveReports()).toHaveLength(1);
+        expect(liveReports()[0][1]).toBe('warn');
+        expect(reportMeta(liveReports()[0])).toMatchObject({
+          agentId: 'test-agent',
+          pid: 12345,
+          resultSeen: true,
+          msSinceLastEvent: 60_000,
+          msSinceResult: 60_000,
+          events: 2,
+          rawEventTypes: { 'assistant.message': 1, result: 1 },
+        });
+        expect(JSON.stringify(liveReports()[0][3])).not.toContain(PROMPT);
+
+        // The next report waits for twice the quiet time.
+        vi.advanceTimersByTime(30_000);
+        expect(liveReports()).toHaveLength(1);
+        vi.advanceTimersByTime(30_000);
+        expect(liveReports()).toHaveLength(2);
+      });
+
+      it('logs a run with no result at info, and starts over when output resumes', async () => {
+        await spawnHeadless('test-agent', '/project', '/usr/bin/copilot', ['-p', 'x']);
+
+        startStaleSweep();
+        vi.advanceTimersByTime(60_000);
+        expect(liveReports()).toHaveLength(1);
+        expect(liveReports()[0][1]).toBe('info');
+        expect(reportMeta(liveReports()[0])).toMatchObject({ resultSeen: false, msSinceLastEvent: null, msSinceResult: null });
+
+        mockProcess.stdout!.emit('data', Buffer.from('{"type":"session.info"}\n'));
+        vi.advanceTimersByTime(30_000);
+        expect(liveReports()).toHaveLength(1);
+        vi.advanceTimersByTime(30_000);
+        expect(liveReports()).toHaveLength(2);
+      });
+
+      it('keeps the set of raw event types bounded', async () => {
+        await spawnHeadless('test-agent', '/project', '/usr/bin/copilot', ['-p', 'x']);
+        const lines = Array.from({ length: 40 }, (_, i) => JSON.stringify({ type: `t${i}` })).join('\n') + '\n';
+        mockProcess.stdout!.emit('data', Buffer.from(lines));
+
+        startStaleSweep();
+        vi.advanceTimersByTime(60_000);
+
+        const types = reportMeta(liveReports()[0]).rawEventTypes as Record<string, number>;
+        expect(Object.keys(types)).toHaveLength(33);
+        expect(types['(other)']).toBe(8);
+      });
+
+      it('adds the same facts to the exit line', async () => {
+        await spawnHeadless('test-agent', '/project', '/usr/bin/claude', ['-p', 'x']);
+        mockProcess.stdout!.emit('data', Buffer.from('{"type":"result","result":"done"}\n'));
+        mockProcess.emit('close', 0);
+
+        const line = vi.mocked(appLog).mock.calls.find((c) => c[2] === 'Process exited');
+        expect(line?.[3]?.meta).toMatchObject({ pid: 12345, resultSeen: true, rawEventTypes: { result: 1 }, exitCode: 0 });
+      });
     });
   });
 
@@ -2072,11 +2189,13 @@ describe('headless-manager stopAll (#2053)', () => {
   });
 
   beforeEach(async () => {
-    // Earlier suites can leave runs whose mock processes never close: SIGKILL
-    // them (kill() drops the session at 5s) so they don't hold these up.
+    // Earlier suites can leave runs whose mock processes never close: clear
+    // their kill timers and sessions so they don't hold these up.
     const sweep = stopAll(0);
     await vi.advanceTimersByTimeAsync(5_000);
     await sweep;
+    for (const session of _internal.sessions.values()) clearTimeout(session.killTimer);
+    _internal.sessions.clear();
     // Their mock streams never call back from end().
     _internal.closingTranscripts.clear();
     vi.clearAllMocks();

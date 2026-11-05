@@ -1,7 +1,7 @@
 /**
  * Telemetry lifecycle (spec §6.7): startup, runtime enable/disable, test
- * event and offline-queue maintenance. Everything is gated behind the
- * `experimental.telemetry` flag plus `enabled` in telemetry-settings.json.
+ * event and offline-queue maintenance. Everything is gated behind recorded
+ * consent plus an enabled destination in telemetry-settings.json.
  *
  * `initTelemetry()` runs synchronously near the top of main/index.ts. When
  * telemetry is off it reads two small settings files and returns; the SDK
@@ -13,7 +13,6 @@ import { telemetryInstanceId as instanceId } from './instance';
 import { app } from 'electron';
 import { appLog } from '../services/log-service';
 import { ATTR } from '../../shared/telemetry/attributes';
-import { TELEMETRY_CONSENT_VERSION } from '../../shared/telemetry/settings-types';
 import {
   abortPending,
   beginPending,
@@ -28,16 +27,17 @@ import { restartLocalRecording, syncLocalRecording } from './local-control';
 import { createIdentity, isValidIdentity, type TelemetryIdentity } from './ids';
 import { deleteOfflineData, getOfflineDir, OFFLINE_PRUNE_INTERVAL_MS, pruneOfflineDir } from './offline';
 import { buildResourceAttributes, type ResourceInputs } from './resource';
-import { getSettings as getExperimentalSettings } from '../services/experimental-settings';
-import { NEW_CHROME_FLAG } from '../../shared/chrome-flag';
+import { newChromeEnabled } from '../window-chrome';
 import { createScrubber } from './scrubber';
 import {
   enabledDestinations,
   getTelemetrySettings,
+  applyExportGraduation,
+  exportPermitted,
   hasDestinationConfigured,
-  isExperimentEnabled,
   migrateLegacySecrets,
   normalizeSampleRate,
+  preserveSuspendedFlagFile,
   updateTelemetrySettings,
   withDestination,
   type TelemetrySettings,
@@ -65,16 +65,15 @@ let destinationStartErrors = new Map<string, string>();
 let lastStartError: string | undefined;
 
 /**
- * Synchronous pre-check, safe before `ready`: the flag is on, consent is
- * recorded and some enabled destination looks configured. Secrets are decrypted and
+ * Synchronous pre-check, safe before `ready`: consent is recorded and some
+ * enabled destination looks configured. Secrets are decrypted and
  * validated in start(), after `ready`.
  */
 export function isTelemetryConfigured(settings: TelemetrySettings = getTelemetrySettings()): boolean {
   return (
-    isExperimentEnabled() &&
     // Consent is recorded before anything is exported. Phase 1 files predate
     // it (consentVersion 0), so those users are asked once in Settings.
-    settings.consentVersion >= TELEMETRY_CONSENT_VERSION &&
+    exportPermitted(settings) &&
     hasDestinationConfigured(settings)
   );
 }
@@ -136,17 +135,12 @@ function annexRole(): ResourceInputs['annexRole'] {
 }
 
 /**
- * The chrome shell for this session. The renderer reads the same experimental
- * flag once at startup and switching takes effect on the next launch, so the
- * value cannot change mid-session (docs/chrome-redesign-spec.md §4.1, §8).
+ * The chrome shell for this session, as the windows were told. Switching takes
+ * effect on the next launch, so the value cannot change mid-session
+ * (docs/chrome-redesign-spec.md §4.1, §8).
  */
 export function uiChrome(): ResourceInputs['uiChrome'] {
-  try {
-    return getExperimentalSettings()[NEW_CHROME_FLAG] === true ? 'v2' : 'legacy';
-  } catch {
-    // Settings unreadable: the renderer falls back to the legacy shell too.
-    return 'legacy';
-  }
+  return newChromeEnabled() ? 'v2' : 'legacy';
 }
 
 /** Ports of Clubhouse's own loopback servers; OTLP must never post into them. */
@@ -322,8 +316,8 @@ async function start(): Promise<boolean> {
  */
 /**
  * Move a Phase 1 plaintext secret out of telemetry-settings.json once the app
- * is ready, whatever the flags say: a user who turned telemetry or the
- * experiment off must not keep the plaintext forever.
+ * is ready, whatever the settings say: a user who turned telemetry off, or had
+ * it switched off when export left Experimental, must not keep the plaintext forever.
  */
 export async function migrateLegacySecretsOnReady(): Promise<void> {
   await app.whenReady();
@@ -339,10 +333,35 @@ export async function migrateLegacySecretsOnReady(): Promise<void> {
   }
 }
 
+/** Log what the graduation did and clear what a switched-off setup leaves behind. Never throws. */
+function finishExportGraduation(graduation: NonNullable<ReturnType<typeof applyExportGraduation>>): void {
+  appLog(LOG_NS, 'info', 'Telemetry export settings migrated for this install', { meta: { outcome: graduation.outcome } });
+  // As turning a destination off does: a queue from before must not be sent if it's turned on again.
+  if (graduation.outcome === 'off' || graduation.outcome === 'opted_out') void deleteOfflineData().catch(() => {});
+  graduation.saved.catch((err) => {
+    // telemetry-exempt: logged; this run uses the migrated settings and the next launch saves again.
+    appLog(LOG_NS, 'warn', 'Could not save the telemetry export settings migration', {
+      meta: { error: err instanceof Error ? err.message : String(err) },
+    });
+  });
+}
+
 export function initTelemetry(): void {
+  // Before anything reads the settings to decide: local recording's level
+  // migration below included, and a Feedback sync can't come sooner.
+  const graduation = applyExportGraduation();
+  try {
+    preserveSuspendedFlagFile();
+  } catch (err) {
+    // telemetry-exempt: logged; this run stays paused and the next launch tries again. The code only: never the file's contents.
+    appLog(LOG_NS, 'warn', 'Could not keep a copy of the unreadable settings file', {
+      meta: { code: (err as NodeJS.ErrnoException)?.code ?? 'unknown' },
+    });
+  }
   // Local recording (spec §6.12) has its own switch and starts synchronously,
   // so startup signals are recorded even with no export destination.
   void syncLocalRecording();
+  if (graduation) finishExportGraduation(graduation);
   try {
     if (getTelemetrySettings().legacyDestination) void migrateLegacySecretsOnReady();
     if (!isTelemetryConfigured()) return;

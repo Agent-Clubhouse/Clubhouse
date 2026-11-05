@@ -30,6 +30,9 @@ vi.mock('./log-service', () => ({
 
 const mockPtyWrite = vi.fn();
 const mockIsRunning = vi.fn().mockReturnValue(false);
+// What the gate decides for polling is covered in group-project-polling.test.ts.
+vi.mock('./clubhouse-mcp/mcp-call-gate', async (original) => ({ ...await original<typeof import('./clubhouse-mcp/mcp-call-gate')>(), mcpCallAccess: () => 'open' }));
+
 vi.mock('./pty-manager', () => ({
   write: (...args: unknown[]) => mockPtyWrite(...args),
   isRunning: (...args: unknown[]) => mockIsRunning(...args),

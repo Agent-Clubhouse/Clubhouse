@@ -28,6 +28,7 @@ import * as annexServer from '../services/annex-server';
 import * as experimentalSettings from '../services/experimental-settings';
 import { withValidatedArgs, stringArg, objectArg, numberArg, booleanArg, arrayArg } from './validation';
 import { onMcpSettingsChanged } from './mcp-binding-handlers';
+import type { McpProposal } from '../services/mcp-settings';
 import { getLiveAgentsForUpdate, loadPendingResume, clearPendingResume, captureSessionState } from '../services/restart-session-service';
 import * as ptyManager from '../services/pty-manager';
 import * as headlessManager from '../services/headless-manager';
@@ -539,6 +540,15 @@ export function registerAppHandlers(): void {
     },
   ));
 
+  ipcMain.handle(IPC.APP.GET_MCP_OFF_IMPACT, withValidatedArgs(
+    [objectArg<McpProposal>()],
+    async (_event, proposal) => {
+      // Loaded on use, as below: the service pulls in the agent system.
+      const { readMcpOffImpact } = await import('../services/mcp-off-impact');
+      return readMcpOffImpact(proposal);
+    },
+  ));
+
   // --- App Restart ---
   ipcMain.handle(IPC.APP.RESTART, async () => {
     await runAppShutdown('restart');
@@ -549,15 +559,17 @@ export function registerAppHandlers(): void {
 
   // --- Experimental Settings ---
   ipcMain.handle(IPC.APP.GET_EXPERIMENTAL_SETTINGS, () => {
-    return experimentalSettings.getSettings();
+    return experimentalSettings.getSettingsForRenderer();
   });
+
+  ipcMain.handle(IPC.APP.IS_EXPERIMENTAL_SETTINGS_UNREADABLE, () => experimentalSettings.savedSettingsUnreadable());
 
   ipcMain.handle(IPC.APP.SAVE_EXPERIMENTAL_SETTINGS, withValidatedArgs(
     [objectArg<ExperimentalSettings>()],
     async (_event, settings) => {
       await experimentalSettings.saveSettings(settings);
       settingsChanged('experimental');
-      // The Dispatcher's flag may have flipped: create it, or stop it (#2535).
+      // A saved `dispatcher` may have flipped: create it, or stop it (#2535).
       // Loaded on use: the service pulls in the agent system.
       const dispatcher = await import('../services/dispatcher/dispatcher-service');
       await dispatcher.onExperimentalSettingsChanged();

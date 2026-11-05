@@ -45,6 +45,15 @@ export const groupProject = {
     ipcRenderer.invoke(IPC.GROUP_PROJECT.INJECT_MESSAGE, agentId, message),
   setPolling: (projectId: string, enabled: boolean): Promise<unknown> =>
     ipcRenderer.invoke(IPC.GROUP_PROJECT.SET_POLLING, projectId, enabled),
+  getPausedPolling: (projectId: string): Promise<Array<{ agentId: string; agentName: string }>> =>
+    ipcRenderer.invoke(IPC.GROUP_PROJECT.GET_PAUSED_POLLING, projectId),
+  resumePolling: (projectId: string, agentId: string): Promise<boolean> =>
+    ipcRenderer.invoke(IPC.GROUP_PROJECT.RESUME_POLLING, projectId, agentId),
+  onPausedPollingChanged: (callback: () => void) => {
+    const listener = () => callback();
+    ipcRenderer.on(IPC.GROUP_PROJECT.PAUSED_POLLING_CHANGED, listener);
+    return () => { ipcRenderer.removeListener(IPC.GROUP_PROJECT.PAUSED_POLLING_CHANGED, listener); };
+  },
   onChanged: (callback: (projects: unknown[]) => void) => {
     const listener = (_event: Electron.IpcRendererEvent, projects: unknown[]) => callback(projects);
     ipcRenderer.on(IPC.GROUP_PROJECT.CHANGED, listener);

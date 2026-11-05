@@ -9,11 +9,14 @@ import { useFreeAgentSettingsStore } from '../../stores/freeAgentSettingsStore';
 import { Toggle } from '../../components/Toggle';
 import { Modal } from '../../components/Modal';
 import { useUIStore } from '../../stores/uiStore';
-import { noteExplicitTerminalChoice } from '../agents/chat/chat-default-tip';
+import { resetChatFlagCache } from '../agents/chat/AgentRuntimePane';
+import { RICH_CHAT_CONTENT_FLAG, resetRichChatContentFlag } from '../agents/chat/rich/rich-flag';
 import { ProjectAgentDefaultsSection } from './ProjectAgentDefaultsSection';
-import { SettingsPage, SettingsSection, SettingsField, SettingsBlock, settingsInput, settingsHelp } from './SettingsLayout';
+import { useMcpOffConfirm } from './McpOffConfirm';
+import { SettingsPage, SettingsSection, SettingsField, SettingsBlock, settingsInput, settingsHelp, settingsError, SETTING_NOT_SAVED_TEXT } from './SettingsLayout';
 import type { FreeAgentPermissionMode, SourceControlProvider } from '../../../shared/types';
 import { COPILOT_SDK_FLAG, type AgentRuntimeMode, type ChatDriverId, type ChatRuntimeSettings } from '../../../shared/chat';
+import { isGraduatedFlagOn } from '../../../shared/graduated-flags';
 import { Button } from '../../components/Button';
 import { useChatIdleSettingsStore } from '../../stores/chatIdleSettingsStore';
 import { CHAT_IDLE_TIMEOUT_CHOICES } from '../../../shared/settings-definitions';
@@ -30,7 +33,7 @@ const CLUBHOUSE_WILDCARDS = [
 const SELECT_CLASS = `${settingsInput} w-[200px]`;
 const CODE_CLASS = 'font-mono text-ctp-subtext1';
 
-// ── Per-provider Chat / CLI runtime (experimental 'chat' flag) ──────
+// ── Chat view, rich content and the per-provider Chat / CLI runtime ──────
 
 const RUNTIME_MODE_OPTIONS: Array<{ value: AgentRuntimeMode; label: string }> = [
   { value: 'chat', label: 'Chat' },
@@ -41,28 +44,29 @@ const RUNTIME_MODE_OPTIONS: Array<{ value: AgentRuntimeMode; label: string }> = 
 const DEFAULT_RUNTIME_MODE: AgentRuntimeMode = 'chat';
 
 /**
- * Loads the experimental Chat flag and, when it's on, the per-provider
- * runtime settings. Saves merge into the latest stored settings so other
- * providers' entries are never clobbered.
+ * Loads the Chat and rich content flags and the per-provider runtime settings.
+ * Saves merge into the latest stored settings so other flags and providers'
+ * entries are never clobbered.
  */
 function useChatRuntimeSettings() {
   const [chatEnabled, setChatEnabled] = useState(false);
+  const [richChatEnabled, setRichChatEnabled] = useState(false);
   const [copilotSdkEnabled, setCopilotSdkEnabled] = useState(false);
-  /** The flag (and, when on, the settings) have loaded, whatever the answer. */
+  /** The flags and settings have loaded, whatever the answer. */
   const [chatResolved, setChatResolved] = useState(false);
+  /** The last Chat view or Rich chat content change couldn't be saved. */
+  const [flagSaveFailed, setFlagSaveFailed] = useState(false);
   const [runtimeSettings, setRuntimeSettings] = useState<ChatRuntimeSettings>({});
 
   useEffect(() => {
     let cancelled = false;
     (async () => {
       try {
-        // Same gate as main: the flag only counts in preview-eligible builds.
-        const [experimental, eligible] = await Promise.all([
-          window.clubhouse.app.getExperimentalSettings(),
-          window.clubhouse.app.isPreviewEligible(),
-        ]);
-        if (cancelled || experimental?.chat !== true || !eligible) return;
-        setChatEnabled(true);
+        // Same gate as main: on unless saved off. The Copilot SDK flag reads as off outside preview builds.
+        const experimental = await window.clubhouse.app.getExperimentalSettings();
+        if (cancelled) return;
+        setChatEnabled(isGraduatedFlagOn(experimental, 'chat'));
+        setRichChatEnabled(isGraduatedFlagOn(experimental, RICH_CHAT_CONTENT_FLAG));
         setCopilotSdkEnabled(experimental?.[COPILOT_SDK_FLAG] === true);
         const settings = await window.clubhouse.chat.getRuntimeSettings();
         if (!cancelled) setRuntimeSettings(settings ?? {});
@@ -75,9 +79,36 @@ function useChatRuntimeSettings() {
     return () => { cancelled = true; };
   }, []);
 
+  /** Show the change, save it, and go back to what's saved if that fails. True once it's saved. */
+  const saveFlag = async (key: string, on: boolean, show: (on: boolean) => void): Promise<boolean> => {
+    show(on);
+    setFlagSaveFailed(false);
+    try {
+      const current = await window.clubhouse.app.getExperimentalSettings();
+      await window.clubhouse.app.saveExperimentalSettings({ ...current, [key]: on });
+      return true;
+    } catch {
+      // telemetry-exempt: shown to the user, and the switch goes back to what's saved.
+      show(!on);
+      setFlagSaveFailed(true);
+      return false;
+    }
+  };
+
+  const setChatFlag = async (on: boolean) => {
+    if (!await saveFlag('chat', on, setChatEnabled)) return;
+    // Panes read the flag once. Turning on, nothing runs in chat yet, so they can read it again.
+    // Turning off, they keep their answer: main decides each wake, and a live chat keeps its view until it sleeps.
+    if (on) resetChatFlagCache();
+  };
+
+  const setRichChatFlag = async (on: boolean) => {
+    if (!await saveFlag(RICH_CHAT_CONTENT_FLAG, on, setRichChatEnabled)) return;
+    // Chat panes opened from now on read the new value.
+    resetRichChatContentFlag();
+  };
+
   const setRuntimeMode = async (orchestratorId: string, mode: AgentRuntimeMode) => {
-    // An explicit CLI choice means the "Agents now open in Chat" tip is never needed.
-    if (mode === 'terminal') noteExplicitTerminalChoice();
     setRuntimeSettings((prev) => ({ ...prev, [orchestratorId]: { ...prev[orchestratorId], mode } }));
     try {
       const current = (await window.clubhouse.chat.getRuntimeSettings()) ?? {};
@@ -103,7 +134,7 @@ function useChatRuntimeSettings() {
     }
   };
 
-  return { chatEnabled, copilotSdkEnabled, chatResolved, runtimeSettings, setRuntimeMode, setChatDriver };
+  return { chatEnabled, richChatEnabled, copilotSdkEnabled, chatResolved, flagSaveFailed, runtimeSettings, setChatFlag, setRichChatFlag, setRuntimeMode, setChatDriver };
 }
 
 /**
@@ -175,6 +206,7 @@ function AppAgentSettings() {
   const loadClubhouseSettings = useClubhouseModeStore((s) => s.loadSettings);
   const clubhouseScp = useClubhouseModeStore((s) => s.sourceControlProvider);
   const setClubhouseScp = useClubhouseModeStore((s) => s.setSourceControlProvider);
+  const { requestMcpChange, mcpOffDialog } = useMcpOffConfirm();
   const promptForName = useSessionSettingsStore((s) => s.promptForName);
   const setPromptForName = useSessionSettingsStore((s) => s.setPromptForName);
   const loadSessionSettings = useSessionSettingsStore((s) => s.loadSettings);
@@ -182,7 +214,7 @@ function AppAgentSettings() {
   const setFreeAgentDefaultMode = useFreeAgentSettingsStore((s) => s.setDefaultMode);
   const loadFreeAgentSettings = useFreeAgentSettingsStore((s) => s.loadSettings);
   const [showConfirm, setShowConfirm] = useState(false);
-  const { chatEnabled, copilotSdkEnabled, chatResolved, runtimeSettings, setRuntimeMode, setChatDriver } = useChatRuntimeSettings();
+  const { chatEnabled, richChatEnabled, copilotSdkEnabled, chatResolved, flagSaveFailed, runtimeSettings, setChatFlag, setRichChatFlag, setRuntimeMode, setChatDriver } = useChatRuntimeSettings();
   const idleMinutes = useChatIdleSettingsStore((st) => st.idleTimeoutMinutes as number);
   const saveIdle = useChatIdleSettingsStore((st) => st.saveSettings);
   const loadIdle = useChatIdleSettingsStore((st) => st.loadSettings);
@@ -237,7 +269,8 @@ function AppAgentSettings() {
     if (!clubhouseEnabled) {
       setShowConfirm(true);
     } else {
-      setClubhouseEnabled(false);
+      // MCP falls back to Clubhouse mode, so this can turn MCP off too.
+      void requestMcpChange({ proposal: { clubhouseMode: { enabled: false } }, apply: () => setClubhouseEnabled(false), saved: () => useClubhouseModeStore.getState().enabled === false });
     }
   };
 
@@ -346,6 +379,7 @@ function AppAgentSettings() {
         )}
       </SettingsSection>
 
+      {mcpOffDialog}
       <Modal open={showConfirm} onClose={() => setShowConfirm(false)} title="Enable Clubhouse Mode?" width="w-[420px] max-w-[calc(100vw-32px)]" testId="clubhouse-mode-confirm" footer={
         <>
           <Button onClick={() => setShowConfirm(false)} kind="ghost">
@@ -367,6 +401,30 @@ function AppAgentSettings() {
         </div>
       </Modal>
 
+      {chatResolved && (
+        <SettingsSection title="Chat">
+          <SettingsField
+            label="Chat view"
+            help="Agents open in a native chat view. Turn this off to run every agent in the CLI view, whatever its provider or its own setting says. Agents already running stay as they are until they sleep."
+            testId="chat-view-row"
+          >
+            <Toggle aria-label="Chat view" checked={chatEnabled} onChange={(on) => { void setChatFlag(on); }} />
+          </SettingsField>
+          <SettingsField
+            label="Rich chat content"
+            help="Show images agents return inline in chat, links as links, file chips with previews, and GitHub pull requests, issues and commits as references with a hover card. Images from the web load only when you click them, and GitHub details load through the gh CLI only when you hover one. While this is on, paired phones (Clubhouse Go) can also read any file your user account can read on this computer, up to a size limit. Chats opened after a change use the new setting."
+            testId="rich-chat-content-row"
+          >
+            <Toggle aria-label="Rich chat content" checked={richChatEnabled} onChange={(on) => { void setRichChatFlag(on); }} />
+          </SettingsField>
+          {flagSaveFailed && (
+            <SettingsBlock>
+              <p className={settingsError} role="alert">{SETTING_NOT_SAVED_TEXT}</p>
+            </SettingsBlock>
+          )}
+        </SettingsSection>
+      )}
+
       <SettingsSection title="Agent providers">
         {allOrchestrators.map((o) => {
           const isEnabled = enabled.includes(o.id);
@@ -382,7 +440,7 @@ function AppAgentSettings() {
             : isOnlyEnabled && !notInstalled ? 'At least one agent provider must be enabled' : undefined;
           // The sub-rows only render when the orchestrator is enabled. The
           // hook server option shows only for hook-capable orchestrators, the
-          // runtime option only with the experimental Chat flag. Resolve the
+          // runtime option only with Chat on. Resolve the
           // effective hook pref reactively from the subscribed prefs map.
           const hookCapable = !!o.capabilities?.hooks;
           const showExpansion = isEnabled && (hookCapable || chatEnabled);
@@ -509,6 +567,7 @@ function ProjectAgentSettings({ projectId }: { projectId: string }) {
   const clubhouseOverrides = useClubhouseModeStore((s) => s.projectOverrides);
   const setClubhouseOverride = useClubhouseModeStore((s) => s.setProjectOverride);
   const clearClubhouseOverride = useClubhouseModeStore((s) => s.clearProjectOverride);
+  const { requestMcpChange, mcpOffDialog } = useMcpOffConfirm();
   const loadClubhouseSettings = useClubhouseModeStore((s) => s.loadSettings);
 
   const sessionPromptGlobal = useSessionSettingsStore((s) => s.promptForName);
@@ -539,6 +598,7 @@ function ProjectAgentSettings({ projectId }: { projectId: string }) {
   if (!project) return null;
 
   const projectPath = project.path;
+  const projectName = project.displayName || project.name;
   const currentOrchestrator = project.orchestrator || 'claude-code';
 
   // Headless mode
@@ -558,8 +618,17 @@ function ProjectAgentSettings({ projectId }: { projectId: string }) {
     ? clubhouseOverrides[projectPath]
     : clubhouseGlobal;
   const handleClubhouseModeChange = (value: string) => {
-    if (value === 'global') clearClubhouseOverride(projectPath);
-    else setClubhouseOverride(projectPath, value === 'on');
+    const apply = () => (value === 'global' ? clearClubhouseOverride(projectPath) : setClubhouseOverride(projectPath, value === 'on'));
+    const projectOverrides = { ...clubhouseOverrides };
+    if (value === 'global') delete projectOverrides[projectPath];
+    else projectOverrides[projectPath] = value === 'on';
+    // MCP falls back to Clubhouse mode, so this can turn MCP off for the project too.
+    void requestMcpChange({
+      proposal: { clubhouseMode: { projectOverrides } },
+      projectName,
+      apply,
+      saved: () => useClubhouseModeStore.getState().projectOverrides[projectPath] === projectOverrides[projectPath],
+    });
   };
 
   // Session name
@@ -589,7 +658,12 @@ function ProjectAgentSettings({ projectId }: { projectId: string }) {
     } else {
       updated[projectPath] = value === 'on';
     }
-    mcpSaveSettings({ projectOverrides: Object.keys(updated).length > 0 ? updated : undefined });
+    void requestMcpChange({
+      proposal: { mcp: { projectOverrides: updated } },
+      projectName,
+      apply: () => mcpSaveSettings({ projectOverrides: Object.keys(updated).length > 0 ? updated : undefined }),
+      saved: () => (useMcpSettingsStore.getState().projectOverrides as Record<string, boolean> | undefined)?.[projectPath] === updated[projectPath],
+    });
   };
 
   const onOff = (v: boolean) => (v ? 'On' : 'Off');
@@ -664,9 +738,9 @@ function ProjectAgentSettings({ projectId }: { projectId: string }) {
           </select>
         </SettingsField>
 
-        {/* MCP override, shown when the app-wide MCP bridge is on */}
-        {mcpLoaded && mcpGlobalEnabled && (
-          <SettingsField label="MCP override" help="Override MCP bridge injection for this project." htmlFor={`${idBase}-mcp`}>
+        {/* Shown with the app-wide MCP bridge off too: an override keeps working then, and this is where to see it. */}
+        {mcpLoaded && (
+          <SettingsField label="MCP override" help="Override MCP bridge injection for this project. An override here doesn’t keep the Dispatcher on." htmlFor={`${idBase}-mcp`}>
             <select
               id={`${idBase}-mcp`}
               value={currentMcpMode}
@@ -681,6 +755,7 @@ function ProjectAgentSettings({ projectId }: { projectId: string }) {
         )}
       </SettingsSection>
 
+      {mcpOffDialog}
       <ProjectAgentDefaultsSection projectPath={project.path} clubhouseMode={clubhouseEffective} />
     </>
   );
