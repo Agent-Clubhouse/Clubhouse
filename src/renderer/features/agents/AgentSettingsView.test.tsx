@@ -198,6 +198,13 @@ describe('AgentSettingsView', () => {
     });
   });
 
+  it('keeps Builder hidden in Classic layout and shows its one-line note', () => {
+    useChromeFlagStore.setState({ enabled: false });
+    renderSettings();
+    expect(screen.queryByTestId('agent-builder')).not.toBeInTheDocument();
+    expect(screen.getByText(/Builder is available in the new layout/)).toBeVisible();
+  });
+
   describe('header', () => {
     it('renders agent name', () => {
       renderSettings();
@@ -829,6 +836,28 @@ describe('AgentSettingsView', () => {
     });
 
     const visiblePage = () => screen.getAllByTestId(/^agent-settings-page-/).filter((el) => !el.hidden);
+
+    it('loads Builder only when opened, keeps its saved-only notice visible in Clubhouse Mode, and guards unsaved edits', async () => {
+      const view = {
+        revision: 1, templateId: 'builtin-builder-custom', templates: [{ id: 'builtin-builder-custom', name: 'Custom' }], customOrder: true,
+        text: 'Local @@AgentName', blocks: [{ key: 'local:notes', entry: { localId: 'notes', source: { kind: 'local' as const, blockId: 'notes' } }, assetId: 'notes', revision: 1, name: 'Notes', content: 'Local @@AgentName', source: "This agent's", editable: true }],
+      };
+      window.clubhouse.agentSettings.builderRead = vi.fn(async () => ({ ok: true, view }));
+      useClubhouseModeStore.setState({ isEnabledForProject: () => true });
+      renderSettings({ status: 'running' });
+      expect(window.clubhouse.agentSettings.builderRead).not.toHaveBeenCalled();
+      act(() => useAgentSettingsPages.getState().setPage('builder'));
+      await screen.findByLabelText('Notes text');
+      expect(screen.getByText("Changes are saved here and aren't used by this agent yet.")).toBeVisible();
+      fireEvent.change(screen.getByLabelText('Notes text'), { target: { value: 'Unsaved' } });
+      expect(useAgentSettingsPages.getState().dirtyPages).toContain('builder');
+      act(() => requestCloseAgentSettings());
+      expect(screen.getByRole('heading', { name: 'Leave with unsaved changes?' })).toBeVisible();
+      fireEvent.click(screen.getByRole('button', { name: 'Cancel', exact: true }));
+      expect(window.clubhouse.agentSettings.saveInstructions).not.toHaveBeenCalled();
+      expect(window.clubhouse.agent.updateDurableConfig).not.toHaveBeenCalled();
+    });
+
 
     it('has no header and opens on General', () => {
       renderSettings();

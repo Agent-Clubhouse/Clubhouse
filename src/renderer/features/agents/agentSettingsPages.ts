@@ -11,6 +11,7 @@ import type { Agent } from '../../../shared/types';
  */
 export type AgentSettingsPage =
   | 'general'
+  | 'builder'
   | 'instructions'
   | 'skills'
   | 'definitions'
@@ -21,6 +22,7 @@ export type AgentSettingsPage =
 
 export const AGENT_SETTINGS_PAGES: ReadonlyArray<{ page: AgentSettingsPage; label: string }> = [
   { page: 'general', label: 'General' },
+  { page: 'builder', label: 'Builder' },
   { page: 'instructions', label: 'Instructions' },
   { page: 'skills', label: 'Skills' },
   { page: 'definitions', label: 'Agent definitions' },
@@ -167,5 +169,5 @@ export function useAgentSettingsTarget(explorerTab: string): Agent | null {
  * there. The same rule as the Orchestration card.
  */
 export function hiddenAgentSettingsPages(agent: Pick<Agent, 'parentAgentId' | 'projectId'>, remote: boolean): AgentSettingsPage[] {
-  return agent.parentAgentId || remote ? ['helpers'] : [];
+  return remote ? ['helpers', 'builder'] : agent.parentAgentId ? ['helpers'] : [];
 }

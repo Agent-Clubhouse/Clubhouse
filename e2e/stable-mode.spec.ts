@@ -1,5 +1,5 @@
 import { test, expect, type Page } from '@playwright/test';
-import { execSync } from 'child_process';
+import { execFileSync, execSync } from 'child_process';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
@@ -402,4 +402,88 @@ test('saved beta state survives Preview on, then off, then on', async () => {
   await expect(w.locator('[data-testid="dispatcher-row"]')).toBeVisible({ timeout: 15_000 });
   expect(await wakesInChat(w, projectDir)).toBe(true);
   expect(await savedLayoutWidth(w)).toBe(SAVED_SIDEBAR_WIDTH);
+});
+
+// Saved-only Builder, on the default layout, in the existing Linux/Windows job.
+// Every CLI points at a nonexistent path and model probes are disabled.
+async function openBuilder(w: Page) {
+  const agent = w.getByTestId(`agent-item-${AGENT_ID}`);
+  if (!await agent.isVisible()) await w.locator('[data-testid^="sleeping-fold-"]').first().click();
+  await agent.click({ button: 'right' });
+  await w.getByTestId('ctx-settings').click();
+  await w.getByTestId('agent-settings-nav-builder').click();
+  await expect(w.getByTestId('agent-builder')).toBeVisible();
+  await expect(w.getByText("Changes are saved here and aren't used by this agent yet.")).toBeVisible();
+}
+
+test('default-layout Builder saves blocks, previews exact text, forks independently and survives restart without changing the agent', async () => {
+  test.setTimeout(90_000);
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'clubhouse-e2e-builder-project-'));
+  tempDirs.push(root);
+  const worktree = path.join(root, 'worktree');
+  fs.mkdirSync(path.join(root, '.clubhouse'));
+  fs.mkdirSync(worktree);
+  const originalAgents = JSON.stringify(stableAgents({ worktreePath: worktree, persona: 'researcher' }));
+  fs.writeFileSync(path.join(root, '.clubhouse', 'agents.json'), originalAgents);
+  fs.writeFileSync(path.join(worktree, 'CLAUDE.md'), 'Existing instructions\n');
+  fs.writeFileSync(path.join(root, '.clubhouse', 'wires.json'), '[]\n');
+  fs.writeFileSync(path.join(root, 'README.md'), '# builder e2e\n');
+  const env = { ...process.env, GIT_AUTHOR_NAME: 'E2E', GIT_AUTHOR_EMAIL: 'e2e@test.local', GIT_COMMITTER_NAME: 'E2E', GIT_COMMITTER_EMAIL: 'e2e@test.local' };
+  for (const args of [['init', '-q'], ['add', '-A'], ['commit', '-qm', 'init']]) execFileSync('git', args, { cwd: root, env, stdio: 'pipe' });
+  const noCli = {
+    CLUBHOUSE_TEST_STABLE_BUILD: '1', CLUBHOUSE_TEST_NO_MODEL_PROBES: '1',
+    CLUBHOUSE_TEST_CLI_BINARIES: JSON.stringify(Object.fromEntries(['claude-code', 'codex-cli', 'copilot-cli'].map((id) => [id, path.join(root, 'not-installed', id)]))),
+  };
+  profile = createDisposableProfile({ label: 'builder' });
+  app = await launchApp({ profile, userDataFiles: { ...stableFiles(), 'dispatcher-settings.json': { enabled: false } }, env: noCli });
+  let w = app.window;
+  await expect(w.getByTestId('chrome-sidebar')).toBeVisible();
+  await addProject(app.electronApp, w, root);
+  await openBuilder(w);
+  const builder = w.getByTestId('agent-builder');
+  await builder.getByLabel('Choose a template').selectOption('builtin-builder-orchestrator');
+  await builder.getByRole('button', { name: 'Save template', exact: true }).click();
+  await expect(builder.getByTestId('builder-block')).toHaveCount(2);
+  await expect(builder.getByText('Saving in Builder…')).toHaveCount(0);
+  const first = builder.getByTestId('builder-block').first();
+  await first.getByRole('button', { name: 'Fork block', exact: true }).click();
+  const identity = builder.getByLabel('Identity text', { exact: true });
+  await expect(identity).toHaveValue(/@@AgentName/);
+  await identity.fill('You are @@AgentName. Keep this local.');
+  await builder.getByRole('button', { name: 'Save block', exact: true }).click();
+  await expect(builder.getByText('Saving in Builder…')).toHaveCount(0);
+  await expect(first.getByText('Fork of Identity at revision 1')).toBeVisible();
+  await builder.getByLabel('Block name', { exact: true }).fill('Local rules');
+  await builder.getByLabel('Block text', { exact: true }).fill('Leave @@Path intact.');
+  await builder.getByRole('button', { name: 'Add block', exact: true }).click();
+  await expect(builder.getByTestId('builder-block')).toHaveCount(3);
+  await builder.getByRole('button', { name: 'Move Local rules up', exact: true }).click();
+  await expect(builder.getByTestId('builder-block').nth(1)).toContainText('Local rules');
+  await expect(builder.getByText('Saving in Builder…')).toHaveCount(0);
+  const saved = await w.evaluate(async ({ project, id }) => window.clubhouse.agentSettings.builderRead(project, id), { project: root, id: AGENT_ID });
+  expect(saved.ok).toBe(true);
+  if (saved.ok === false) throw new Error('Builder failed to read');
+  // This text came from the shared composer in main; boundary labels stay outside.
+  await expect.poll(() => builder.getByTestId('builder-effective-preview').textContent()).toBe(saved.view.text);
+  await expect(builder.getByRole('list', { name: 'Preview block boundaries' })).toContainText('Lines 1 to 1');
+  const originalIdentity = await w.evaluate(async ({ project, id, revision }) => {
+    const result = await window.clubhouse.agentSettings.builderCommand(project, id, revision, { type: 'template', templateId: 'builtin-builder-custom', confirm: false });
+    return result.ok ? result.view.blocks[0].content : '';
+  }, { project: root, id: AGENT_ID, revision: saved.view.revision });
+  expect(originalIdentity).toContain('@@AgentName');
+  expect(originalIdentity).not.toContain('Keep this local.');
+  await app.electronApp.close();
+  app = await launchApp({ profile, env: noCli });
+  w = app.window;
+  await openBuilder(w);
+  const reopened = w.getByTestId('agent-builder');
+  await expect(reopened.getByLabel('Local rules text', { exact: true })).toHaveValue('Leave @@Path intact.');
+  await expect.poll(() => reopened.getByTestId('builder-effective-preview').textContent()).toBe(saved.view.text);
+  await reopened.getByRole('button', { name: 'Return to template', exact: true }).click();
+  await expect(reopened.getByLabel('Identity text', { exact: true })).toHaveCount(0);
+  await reopened.getByRole('button', { name: 'Remove block', exact: true }).click();
+  await expect(reopened.getByTestId('builder-block')).toHaveCount(2);
+  expect(await readText(path.join(worktree, 'CLAUDE.md'))).toBe('Existing instructions\n');
+  expect(await readText(path.join(root, '.clubhouse', 'agents.json'))).toBe(originalAgents);
+  expect(await readText(path.join(root, '.clubhouse', 'wires.json'))).toBe('[]\n');
 });

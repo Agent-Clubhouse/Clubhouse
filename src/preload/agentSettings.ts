@@ -1,9 +1,17 @@
 import { ipcRenderer } from 'electron';
 import { IPC } from '../shared/ipc-channels';
+import type { BuilderCommand, BuilderResult } from '../shared/agent-builder-types';
+import type { ComposedInstructions } from '../main/services/asset-catalog/composer';
 import type { AgentWildcardSettings } from '../shared/types';
 
 export const agentSettings = {
   agentSettings: {
+  builderRead: (projectPath: string, agentId: string): Promise<BuilderResult> =>
+    ipcRenderer.invoke(IPC.AGENT.BUILDER_READ, projectPath, agentId),
+  builderCommand: (projectPath: string, agentId: string, revision: number, command: BuilderCommand): Promise<BuilderResult> =>
+    ipcRenderer.invoke(IPC.AGENT.BUILDER_COMMAND, projectPath, agentId, revision, command),
+  builderPreview: (contents: string[]): Promise<ComposedInstructions> =>
+    ipcRenderer.invoke(IPC.AGENT.BUILDER_PREVIEW, contents),
   readInstructions: (worktreePath: string, projectPath?: string) =>
     ipcRenderer.invoke(IPC.AGENT.READ_INSTRUCTIONS, worktreePath, projectPath),
   saveInstructions: (worktreePath: string, content: string, projectPath?: string) =>
