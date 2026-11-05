@@ -15,7 +15,7 @@ export const BETA_FLAGS = {
   copilotSdk: true,
   telemetry: true,
 };
-export const PREVIEW_ONLY_FLAGS = Object.keys(BETA_FLAGS);
+export const PREVIEW_ONLY_FLAGS = Object.keys(BETA_FLAGS).filter((flag) => flag !== 'newChrome');
 
 export const AGENT_ID = 'durable_stable_mode';
 export const AGENT_NAME = 'stable-mode-agent';

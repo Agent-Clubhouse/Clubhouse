@@ -46,7 +46,7 @@ async function stubDialogForPath(dirPath: string) {
 }
 
 test.beforeAll(async () => {
-  ({ electronApp, window } = await launchApp({ experimental: {} }));
+  ({ electronApp, window } = await launchApp({ experimental: { newChrome: false } }));
 });
 
 test.afterAll(async () => {

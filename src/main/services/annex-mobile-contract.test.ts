@@ -1429,8 +1429,6 @@ describe('Annex mobile contract fixtures', { timeout: TEST_TIMEOUT_MS }, () => {
     W.dispatcher.newLayout = false;
     const layoutOff = await command('dispatcher_layout_off', off);
     expect(layoutOff.body.error.message).toContain('Turn off Classic layout in Settings > Display & UI');
-    // The words phones vendored, for the same reason.
-    layoutOff.body.error.message = 'The Dispatcher needs the new layout. Turn on New layout in Settings > Experimental on the desktop.';
     W.dispatcher.newLayout = true;
     // Off: its id answers nothing, and nothing connects to it.
     const routes: Record<string, unknown> = {

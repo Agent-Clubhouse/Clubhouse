@@ -186,7 +186,7 @@ describe('dispatcher.setEnabled', () => {
     S.flagOn = true;
     S.newLayout = false;
     expect(await refusal(setDispatcherEnabledFromPhone(true, allow))).toMatchObject({
-      code: 'dispatcher_layout_off', statusCode: 409, detail: 'The Dispatcher needs the new layout. Turn off Classic layout in Settings > Display & UI on the desktop.',
+      code: 'dispatcher_layout_off', statusCode: 409, detail: 'The Dispatcher needs the new layout. Turn off Classic layout in Settings > Display & UI on the desktop, then restart Clubhouse.',
     });
     expect(dispatcher.setDispatcherEnabled).not.toHaveBeenCalled();
   });

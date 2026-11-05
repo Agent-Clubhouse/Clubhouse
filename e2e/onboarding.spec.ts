@@ -10,7 +10,7 @@ let window: Page;
  * dismissing onboarding the way it does for every other suite.
  */
 async function launchFresh() {
-  ({ electronApp, window } = await launchApp({ onboarding: 'show' }));
+  ({ electronApp, window } = await launchApp({ onboarding: 'show', experimental: { newChrome: false } }));
 
   // Ensure onboarding state is cleared so modal appears
   await window.evaluate(() => {

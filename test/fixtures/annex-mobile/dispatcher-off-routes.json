@@ -737,7 +737,7 @@
       "response": {
         "error": {
           "code": "dispatcher_layout_off",
-          "message": "The Dispatcher needs the new layout. Turn off Classic layout in Settings > Display & UI on the desktop."
+          "message": "The Dispatcher needs the new layout. Turn off Classic layout in Settings > Display & UI on the desktop, then restart Clubhouse."
         },
         "status": 409
       },

@@ -107,7 +107,7 @@ async function connectMcp(env: Record<string, string | null>) {
 async function launch(experimental: Record<string, boolean> = {}, files: Record<string, unknown> = {}): Promise<LaunchedApp> {
   app = await launchApp({
     profile,
-    experimental: { newChrome: true, chat: true, ...experimental },
+    experimental: { chat: true, ...experimental },
     userDataFiles: { ...USER_DATA_FILES, ...files },
     env: fakes!.env,
   });

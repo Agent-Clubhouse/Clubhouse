@@ -89,7 +89,7 @@ function QuickAgentFinished({ completed, onDismiss, onDelete }: Props) {
       />
       <div className="flex-1 min-h-0 overflow-y-auto">
         <div className="max-w-[760px] mx-auto px-7 pt-[30px] pb-8 flex flex-col gap-1.5">
-          <h1 className="text-[15px] leading-normal font-normal text-ctp-text break-words" data-testid="quick-mission">{completed.mission}</h1>
+          <h1 className="text-[15px] leading-normal font-normal text-ctp-text break-words" data-testid="quick-mission">{completed.mission || completed.name}</h1>
           <div className="text-xs text-ctp-overlay1">{meta}</div>
           {completed.summary ? (
             <div className="mt-2.5" data-testid="quick-summary">
@@ -188,7 +188,7 @@ export function QuickAgentGhostCompact({ completed, onDismiss, onDelete: _onDele
         className="flex-1 min-w-0 text-left focus-ring rounded"
         onClick={(e) => { e.stopPropagation(); onSelect?.(); }}
       >
-        <div className="text-xs text-ctp-text truncate">{completed.mission}</div>
+        <div className="text-xs text-ctp-text truncate">{completed.mission || completed.name}</div>
         <div className="text-xs text-ctp-overlay1 truncate mt-0.5">
           <span>{meta}</span>
           {detail && <span> · {detail}</span>}

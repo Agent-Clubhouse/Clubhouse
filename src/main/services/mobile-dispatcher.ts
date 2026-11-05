@@ -167,7 +167,7 @@ export async function setDispatcherEnabledFromPhone(enabled: boolean, assertAuth
   // Switched off as well as no MCP: an existing path with its existing code, and `message` says what to do now.
   if (enabled && !state.flagOn) throw new MobileControlError('dispatcher_flag_off', 409, 'rejected', MCP_REQUIRED_MESSAGE);
   if (enabled && !state.savedOn && !newChromeEnabled()) {
-    throw new MobileControlError('dispatcher_layout_off', 409, 'rejected', 'The Dispatcher needs the new layout. Turn off Classic layout in Settings > Display & UI on the desktop.');
+    throw new MobileControlError('dispatcher_layout_off', 409, 'rejected', 'The Dispatcher needs the new layout. Turn off Classic layout in Settings > Display & UI on the desktop, then restart Clubhouse.');
   }
   assertAuthorized();
   return dispatcherChange(await dispatcher.setDispatcherEnabled(enabled));

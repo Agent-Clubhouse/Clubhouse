@@ -31,7 +31,7 @@ test.beforeAll(async () => {
     { id: 'smoke_agent_2', name: 'smoke-beta', color: 'green' },
   ]);
 
-  ({ electronApp, window } = await launchApp());
+  ({ electronApp, window } = await launchApp({ experimental: { newChrome: false } }));
 
   // Add smoke project (agents.json was pre-written above)
   await addProject(electronApp, window, FIXTURE_SMOKE);

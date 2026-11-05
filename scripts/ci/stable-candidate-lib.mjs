@@ -193,17 +193,16 @@ export function expectedFor({ state, preview, flags }) {
   const inForce = preview && flags;
   return {
     previewEligible: preview,
-    newChrome: inForce,
+    // The default, and what BETA_FLAGS saves, in every scenario.
+    newChrome: true,
     chatEnabled: inForce,
     flagsInForce: inForce ? BETA_FLAGS : null,
     settingsPages: !preview ? [] : flags ? PREVIEW_PAGES : ['Experimental', 'Annex', 'Annex control'],
-    // On by default in the new layout. The classic layout has no row, whatever is saved.
-    dispatcherRow: inForce,
+    // On by default in the new layout, which every scenario runs, and Preview doesn't gate it.
+    dispatcherRow: true,
     // Only asserted when it must be false: with no CLI on the runner, true can't be reached.
     wakesInChatMustBeFalse: state === 'beta' && !inForce,
     savedFilesUntouched: state === 'beta' && !preview,
-    // A saved true is honoured on the classic layout too, so only a fresh classic profile has none.
-    dispatcherFolderAbsent: !inForce && state !== 'beta',
   };
 }
 

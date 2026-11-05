@@ -8,7 +8,7 @@
  */
 
 import { useEffect, useState } from 'react';
-import type { DispatcherState } from '../../../shared/dispatcher-types';
+import { DISPATCHER_CLASSIC_MESSAGE, type DispatcherState } from '../../../shared/dispatcher-types';
 import type { DurableConfigUpdates } from '../../../shared/types';
 import { AGENT_IDLE_SLEEP_MINUTES, formatIdleMinutes, normalizeIdleSleep } from '../../../shared/idle-sleep';
 import { Button } from '../../components/Button';
@@ -30,19 +30,19 @@ const DESCRIPTION = 'One agent for the whole app that coordinates the orchestrat
 export function dispatcherSwitchHelp({ enabled, savedOn, mcpOff, classic }: Pick<DispatcherState, 'enabled' | 'savedOn' | 'mcpOff' | 'classic'>): string {
   const mcpReturn = 'Turning it back on restores your settings and doesn’t start any session.';
   if (mcpOff && classic && !savedOn) {
-    return `On by default in the new layout only, and it needs Clubhouse MCP. To turn it on, turn on Clubhouse MCP in Settings and turn off Classic layout in Settings > Display & UI. ${mcpReturn}`;
+    return `On by default in the new layout only, and it needs Clubhouse MCP. To turn it on, turn on Clubhouse MCP in Settings and turn off Classic layout in Settings > Display & UI, then restart Clubhouse. ${mcpReturn}`;
   }
   if (mcpOff && classic) {
-    return `Off because Clubhouse MCP is off. Turn on Clubhouse MCP in Settings. ${mcpReturn} Its view is in the new layout only, so turn off Classic layout in Settings > Display & UI to use it.`;
+    return `Off because Clubhouse MCP is off. Turn on Clubhouse MCP in Settings. ${mcpReturn} Its view is in the new layout only. To use it, turn off Classic layout in Settings > Display & UI, then restart Clubhouse.`;
   }
   if (mcpOff) {
     return `${savedOn ? 'Off because Clubhouse MCP is off.' : 'It needs Clubhouse MCP, which is off.'} Turn on Clubhouse MCP in Settings. ${mcpReturn}`;
   }
   if (classic && enabled) {
-    return 'On because you turned it on before. It has no row here because its row and view are in the new layout only. To use it, turn off Classic layout in Settings > Display & UI. You can turn it off here, and on the classic layout it can’t be turned back on.';
+    return 'On because you turned it on before. It has no row here because its row and view are in the new layout only. To use it, turn off Classic layout in Settings > Display & UI, then restart Clubhouse. You can turn it off here, and on the classic layout it can’t be turned back on.';
   }
   if (classic) {
-    return 'On by default in the new layout only. To turn it on, turn off Classic layout in Settings > Display & UI.';
+    return DISPATCHER_CLASSIC_MESSAGE;
   }
   const kept = 'Its folder and notes are kept, so turning it back on carries on where it left off.';
   return enabled

@@ -45,7 +45,7 @@ export function resolveDispatcherEnablement({ saved, graduatedFlagOn, newLayout,
 }
 
 /** The refusal for turning the Dispatcher on in the classic layout (#2565). */
-export const DISPATCHER_CLASSIC_MESSAGE = 'The Dispatcher needs the new layout. Turn off Classic layout in Settings > Display & UI first.';
+export const DISPATCHER_CLASSIC_MESSAGE = 'The Dispatcher needs the new layout. Turn off Classic layout in Settings > Display & UI, then restart Clubhouse.';
 
 /**
  * What the renderer and other services see of the app-wide Dispatcher

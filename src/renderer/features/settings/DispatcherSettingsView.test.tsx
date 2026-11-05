@@ -173,7 +173,7 @@ describe('DispatcherSettingsView', () => {
       expect((toggle as HTMLButtonElement).disabled).toBe(true);
       expect(toggle.getAttribute('aria-checked')).toBe('false');
       expect(document.getElementById('dispatcher-enabled-help')?.textContent)
-        .toBe('On by default in the new layout only. To turn it on, turn off Classic layout in Settings > Display & UI.');
+        .toBe('The Dispatcher needs the new layout. Turn off Classic layout in Settings > Display & UI, then restart Clubhouse.');
       fireEvent.click(toggle);
       expect(window.clubhouse.dispatcher.setEnabled).not.toHaveBeenCalled();
       unmount();
@@ -188,7 +188,7 @@ describe('DispatcherSettingsView', () => {
     expect((on as HTMLButtonElement).disabled).toBe(false);
     const help = document.getElementById('dispatcher-enabled-help')?.textContent;
     expect(help).toContain('It has no row here because its row and view are in the new layout only.');
-    expect(help).toContain('Classic layout in Settings > Display & UI');
+    expect(help).toContain('Classic layout in Settings > Display & UI, then restart Clubhouse.');
     expect(help).toContain('can’t be turned back on');
     await act(async () => { fireEvent.click(on); });
     expect(window.clubhouse.dispatcher.setEnabled).toHaveBeenCalledWith(false);
@@ -202,10 +202,10 @@ describe('DispatcherSettingsView', () => {
       ['new layout, off', {}, ['On by default in the new layout, and turned off here.'], ['Classic layout', 'Clubhouse MCP']],
       ['new layout, MCP off, saved on', { savedOn: true, mcpOff: true }, ['Off because Clubhouse MCP is off.', 'Clubhouse MCP in Settings', 'doesn’t start any session'], ['Classic layout']],
       ['new layout, MCP off, saved off', { mcpOff: true }, ['Clubhouse MCP in Settings', 'doesn’t start any session'], ['Classic layout']],
-      ['classic, saved on', { enabled: true, savedOn: true, classic: true }, ['Classic layout in Settings > Display & UI', 'can’t be turned back on'], ['Clubhouse MCP']],
-      ['classic, off', { classic: true }, ['On by default in the new layout only.', 'Classic layout in Settings > Display & UI'], ['Clubhouse MCP']],
-      ['classic, MCP off, saved on', { savedOn: true, mcpOff: true, classic: true }, ['Clubhouse MCP in Settings', 'Classic layout in Settings > Display & UI', 'doesn’t start any session'], []],
-      ['classic, MCP off, off', { mcpOff: true, classic: true }, ['new layout only', 'Clubhouse MCP in Settings', 'Classic layout in Settings > Display & UI'], []],
+      ['classic, saved on', { enabled: true, savedOn: true, classic: true }, ['Classic layout in Settings > Display & UI, then restart Clubhouse.', 'can’t be turned back on'], ['Clubhouse MCP']],
+      ['classic, off', { classic: true }, ['The Dispatcher needs the new layout.', 'Classic layout in Settings > Display & UI, then restart Clubhouse.'], ['Clubhouse MCP']],
+      ['classic, MCP off, saved on', { savedOn: true, mcpOff: true, classic: true }, ['Clubhouse MCP in Settings', 'Classic layout in Settings > Display & UI, then restart Clubhouse.', 'doesn’t start any session'], []],
+      ['classic, MCP off, off', { mcpOff: true, classic: true }, ['new layout only', 'Clubhouse MCP in Settings', 'Classic layout in Settings > Display & UI, then restart Clubhouse.'], []],
     ] as const)('%s', (_name, s, has, hasNot) => {
       const text = help(s);
       for (const part of has) expect(text).toContain(part);

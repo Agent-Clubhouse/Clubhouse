@@ -86,7 +86,7 @@ async function ensureUnpinned() {
 // ---------------------------------------------------------------------------
 
 test.beforeAll(async () => {
-  ({ electronApp, window } = await launchApp());
+  ({ electronApp, window } = await launchApp({ experimental: { newChrome: false } }));
   await window.waitForLoadState('load');
   await expect(window.locator('[data-testid="nav-add-project"]')).toBeVisible({
     timeout: 30_000,

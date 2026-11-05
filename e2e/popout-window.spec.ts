@@ -169,7 +169,7 @@ test.beforeAll(async () => {
     { id: 'popout_agent_3', name: 'gamma-popout', color: 'red' },
   ]);
 
-  ({ electronApp, window: mainWindow } = await launchApp());
+  ({ electronApp, window: mainWindow } = await launchApp({ experimental: { newChrome: false } }));
   await addProject(FIXTURE_DIR);
   await waitForDurableAgents();
 });
