@@ -77,6 +77,7 @@ interface ManagedSession {
   killTimer?: ReturnType<typeof setTimeout>;
   /** Stored so stale sweeper and kill-timeout paths can invoke it. */
   /** `killed`: the exit followed a kill request rather than the CLI quitting on its own. */
+  requireObservedExit?: boolean;
   onExitCallback?: (agentId: string, exitCode: number, buffer?: string, killed?: boolean) => void;
 }
 
@@ -203,7 +204,7 @@ function reportSpawnFailure(err: unknown, msg: string, meta: Record<string, unkn
  * resize (terminal got its real size) paths.
  */
 function flushPendingCommand(session: ManagedSession): boolean {
-  if (!session.pendingCommand) return false;
+  if (!session.pendingCommand || session.killing) return false;
   const cmd = session.pendingCommand;
   session.pendingCommand = undefined;
   if (process.platform === 'win32') {
@@ -227,6 +228,7 @@ const staleSweeper = new StaleSweeper<ManagedSession>(sessions, {
     }
   },
   onStale: (agentId, session) => {
+    if (session.requireObservedExit) return;
     const capturedGeneration = session.generation;
     const current = sessions.get(agentId);
     if (!current || current.generation !== capturedGeneration) return;
@@ -432,6 +434,23 @@ export function isRunning(agentId: string): boolean {
   return sessions.has(agentId);
 }
 
+/** Opaque identity of this exact PTY process, for failed-launch cleanup only. */
+export function processIdentity(agentId: string): string | undefined {
+  const session = sessions.get(agentId);
+  return session ? `pty:${session.generation}:${session.process.pid}` : undefined;
+}
+
+/** Failed-start cleanup targets only the exact newly created PTY, cancels its delayed command,
+ * and retains manager/registry state until the real onExit event. Signal dispatch is not exit proof. */
+export function stopCreatedProcessIfCurrent(agentId: string, identity: string): boolean {
+  const session = sessions.get(agentId);
+  if (!session || processIdentity(agentId) !== identity) return false;
+  session.pendingCommand = undefined;
+  session.killing = true;
+  session.process.kill('SIGTERM');
+  return true;
+}
+
 /** Whether an agent's PTY is still alive after a graceful kill began. */
 export function isStopping(agentId: string): boolean {
   return sessions.get(agentId)?.killing === true;
@@ -448,10 +467,11 @@ function cleanupSession(agentId: string): void {
   renderDiag.forget(agentId);
 }
 
-export async function spawn(agentId: string, cwd: string, binary: string, args: string[] = [], extraEnv?: Record<string, string>, onExit?: (agentId: string, exitCode: number, buffer?: string, killed?: boolean) => void, commandPrefix?: string): Promise<void> {
+export async function spawn(agentId: string, cwd: string, binary: string, args: string[] = [], extraEnv?: Record<string, string>, onExit?: (agentId: string, exitCode: number, buffer?: string, killed?: boolean) => void, commandPrefix?: string, managed?: { beforeCreate(): void; onCreated(identity: string): void; onObservedExit(): void }): Promise<void> {
   await validateSpawnCwd(cwd);
 
   if (sessions.has(agentId)) {
+    if (managed || sessions.get(agentId)?.requireObservedExit) throw tagError(new Error('The previous managed PTY has not exited.'), 'pty_spawn_failed');
     const existing = sessions.get(agentId)!;
     try { existing.process.kill(); } catch {}
     cleanupSession(agentId);
@@ -477,6 +497,7 @@ export async function spawn(agentId: string, cwd: string, binary: string, args: 
       const shellCmd = buildWindowsCmdLine(binary, args);
       pendingCommand = commandPrefix ? `${validateCommandPrefix(commandPrefix)} & ${shellCmd}` : shellCmd;
 
+      managed?.beforeCreate();
       proc = pty.spawn('cmd.exe', ['/v:off'], {
         name: 'xterm-256color',
         cwd,
@@ -491,6 +512,7 @@ export async function spawn(agentId: string, cwd: string, binary: string, args: 
         ? `${validateCommandPrefix(commandPrefix)} && exec ${shellCmd}`
         : `exec ${shellCmd}`;
 
+      managed?.beforeCreate();
       proc = pty.spawn(shell, ['-il'], {
         name: 'xterm-256color',
         cwd,
@@ -507,6 +529,8 @@ export async function spawn(agentId: string, cwd: string, binary: string, args: 
   const session = createSession(proc, agentId, pendingCommand);
   session.onExitCallback = onExit;
   sessions.set(agentId, session);
+  session.requireObservedExit = !!managed;
+  managed?.onCreated(processIdentity(agentId)!);
   // A respawn under the same id starts at the spawn size; views still
   // following the previous PTY's size must hear about it.
   broadcastToAllWindows(IPC.PTY.RESIZED, agentId, SPAWN_COLS, SPAWN_ROWS);
@@ -537,6 +561,7 @@ export async function spawn(agentId: string, cwd: string, binary: string, args: 
   });
 
   proc.onExit(({ exitCode }) => {
+    managed?.onObservedExit();
     const current = sessions.get(agentId);
     if (!current || current.generation !== expectedGeneration) return;
 
@@ -750,6 +775,7 @@ export function gracefulKill(agentId: string, exitCommand: string = '/exit\r'): 
   if (session.killing) return;
 
   session.killing = true;
+  if (session.requireObservedExit) session.pendingCommand = undefined;
   agentKillRequested(agentId, 'other'); // no-op when the caller already named a trigger
   agentKillStage(agentId, 'exit_command');
 
@@ -795,6 +821,7 @@ export function gracefulKill(agentId: string, exitCommand: string = '/exit\r'): 
         });
         return;
       }
+      if (current.requireObservedExit) return;
       const { onExitCallback } = current;
       cleanupSession(agentId);
       broadcastAgentExit(agentId, 1, '');
@@ -809,6 +836,7 @@ export function gracefulKill(agentId: string, exitCommand: string = '/exit\r'): 
 export function kill(agentId: string): void {
   const session = sessions.get(agentId);
   if (session) {
+    if (session.requireObservedExit) { stopCreatedProcessIfCurrent(agentId, processIdentity(agentId)!); return; }
     try { session.process.kill(); } catch { /* dead */ }
     if (annexEventBus.isActive()) {
       headlessTerminal.dispose(agentId);
@@ -828,6 +856,7 @@ export function killAll(exitCommand: string = '/exit\r'): Promise<void> {
   for (const id of ids) {
     const session = sessions.get(id);
     if (!session) continue;
+    if (session.requireObservedExit) { session.pendingCommand = undefined; session.killing = true; }
     agentKillRequested(id, 'shutdown');
     agentKillStage(id, 'exit_command');
     try {
@@ -846,7 +875,7 @@ export function killAll(exitCommand: string = '/exit\r'): Promise<void> {
           try { session.process.kill(); } catch { /* dead */ }
           agentRunKilled(id, 'sigkill');
         }
-        cleanupSession(id);
+        if (!session?.requireObservedExit) cleanupSession(id);
       }
       resolve();
     }, 2000);

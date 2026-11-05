@@ -2120,3 +2120,48 @@ describe('pty-manager', () => {
     });
   });
 });
+
+describe('managed PTY creation and truthful cleanup', () => {
+  beforeEach(() => {
+    vi.useFakeTimers(); vi.clearAllMocks();
+    mockRealpath.mockImplementation((p: string) => Promise.resolve(p));
+    mockStat.mockResolvedValue({ isDirectory: () => true });
+  });
+  afterEach(() => { vi.useRealTimers(); });
+  it('cancels pending Claude command and retains the exact PTY until real exit, never a signal timeout', async () => {
+    const { processIdentity, stopCreatedProcessIfCurrent } = await import('./pty-manager');
+    const created = vi.fn(); const observed = vi.fn(); const exited = vi.fn();
+    await spawn('managed-pending', '/test', '/fake/claude', [], {}, exited, undefined, { beforeCreate: vi.fn(), onCreated: created, onObservedExit: observed });
+    const identity = processIdentity('managed-pending')!;
+    expect(created).toHaveBeenCalledWith(identity); expect(observed).not.toHaveBeenCalled();
+    expect(stopCreatedProcessIfCurrent('managed-pending', 'pty:replacement:999')).toBe(false);
+    expect(mockProcess.kill).not.toHaveBeenCalled();
+    expect(stopCreatedProcessIfCurrent('managed-pending', identity)).toBe(true);
+    resize('managed-pending', 100, 30);
+    const data = mockProcess.onData.mock.calls.at(-1)![0]; data('shell ready');
+    expect(mockProcess.write).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(10_000);
+    expect(isRunning('managed-pending')).toBe(true); expect(exited).not.toHaveBeenCalled(); expect(observed).not.toHaveBeenCalled();
+    const onExit = mockProcess.onExit.mock.calls.at(-1)![0]; onExit({ exitCode: 0 });
+    expect(observed).toHaveBeenCalledOnce(); expect(exited).toHaveBeenCalledOnce(); expect(isRunning('managed-pending')).toBe(false);
+  });
+  it('normal managed graceful-kill fallback dispatches a signal without synthesizing process exit', async () => {
+    const observed = vi.fn(); const exited = vi.fn();
+    await spawn('managed-timeout', '/test', '/fake/claude', [], {}, exited, undefined, { beforeCreate: vi.fn(), onCreated: vi.fn(), onObservedExit: observed });
+    gracefulKill('managed-timeout'); await vi.advanceTimersByTimeAsync(10_000);
+    expect(isRunning('managed-timeout')).toBe(true); expect(observed).not.toHaveBeenCalled(); expect(exited).not.toHaveBeenCalled();
+    mockProcess.onExit.mock.calls.at(-1)![0]({ exitCode: 0 });
+    expect(isRunning('managed-timeout')).toBe(false);
+  });
+  it('checks final managed policy only after cwd validation and before native process creation', async () => {
+    const nativePty = await import('node-pty');
+    let compatible = true;
+    mockRealpath.mockImplementation(async (cwd: string) => { compatible = false; return cwd; });
+    const beforeCreate = vi.fn(() => { if (!compatible) throw new Error('final policy changed'); });
+    await expect(spawn('managed-policy', '/test', '/fake/claude', [], {}, vi.fn(), undefined,
+      { beforeCreate, onCreated: vi.fn(), onObservedExit: vi.fn() })).rejects.toThrow('final policy changed');
+    expect(beforeCreate).toHaveBeenCalledOnce(); expect(nativePty.spawn).not.toHaveBeenCalled();
+    expect(isRunning('managed-policy')).toBe(false);
+  });
+
+});
