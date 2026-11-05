@@ -47,8 +47,8 @@ const EXACT_VERSION_RE = /^(\d+)\.(\d+)\.(\d+)(?:-([0-9A-Za-z-]+(?:\.[0-9A-Za-z-
 // Stricter than the client, because each of these is accepted there and then
 // does the wrong thing silently: an unknown id never matches, so the entry blocks
 // nothing, and an unknown key is ignored, so `{ form, to }` becomes `{ to }` and
-// blocks every older version. A new driver or provider has to be added here, and
-// until then the publish refuses it by name.
+// blocks every older version. cli-denylist.test.ts fails until a new driver or
+// provider is added here.
 export const KNOWN_DRIVERS = ['claude_agent_sdk', 'claude_stream_json', 'codex_app_server', 'copilot_acp', 'copilot_sdk', 'acp'];
 export const KNOWN_PROVIDERS = ['claude-code', 'codex-cli', 'copilot-cli'];
 const ENTRY_KEYS = ['driver', 'provider', 'versions', 'range', 'reason'];

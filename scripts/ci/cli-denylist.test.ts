@@ -22,11 +22,11 @@ import {
 import {
   MAX_DENYLIST_ENTRIES,
   MAX_VERSIONS_PER_ENTRY,
-  TESTED_CLI_VERSIONS,
-  cliLabel,
   compareCliVersions,
   sanitizeDenylist,
 } from '../../src/main/services/agent-runtime/chat-version-policy';
+import { getAllProviders, registerBuiltinProviders } from '../../src/main/orchestrators/registry';
+import { CHAT_DRIVER_IDS } from '../../src/shared/chat/capabilities';
 
 const REPO = path.resolve(__dirname, '../..');
 const REASON = 'hangs on start';
@@ -149,13 +149,16 @@ describe('validateDenylist against the client', () => {
   });
 });
 
+// A publish refuses an id that isn't in the script's lists. These fail on the PR
+// that adds a driver or provider, so that refusal can't first show up in an incident.
 describe('the known ids', () => {
-  it('cover every driver with a tested version range', () => {
-    expect(KNOWN_DRIVERS).toEqual(expect.arrayContaining(Object.keys(TESTED_CLI_VERSIONS)));
+  it('are exactly the chat drivers', () => {
+    expect([...KNOWN_DRIVERS].sort()).toEqual([...CHAT_DRIVER_IDS].sort());
   });
 
-  it('are all providers a client has a label for', () => {
-    for (const provider of KNOWN_PROVIDERS) expect(cliLabel(provider)).not.toBe(provider);
+  it('are exactly the built-in providers', () => {
+    registerBuiltinProviders();
+    expect([...KNOWN_PROVIDERS].sort()).toEqual(getAllProviders().map((p) => p.id).sort());
   });
 });
 

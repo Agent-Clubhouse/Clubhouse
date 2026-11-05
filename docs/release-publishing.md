@@ -118,7 +118,7 @@ An entry names a `driver` or a `provider`, and has `versions`, a `range`, or bot
    ```
    gh workflow run publish-cli-denylist.yml --ref <branch>
    ```
-3. Merge the PR. Nothing reaches clients yet, except through a release that happens to start after this.
+3. Merge the PR once Validate is green. A PR that edits only this file runs no E2E or macOS build, and its unit job checks the file. Nothing reaches clients yet, except through a release that happens to start after this.
 4. Publish from main, and approve the `release` environment. It re-reads the file from main at this point.
    ```
    gh workflow run publish-cli-denylist.yml --ref main -f dry_run=false
