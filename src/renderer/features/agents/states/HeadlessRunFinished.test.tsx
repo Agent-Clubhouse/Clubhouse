@@ -145,6 +145,12 @@ describe('HeadlessRunFinished', () => {
       );
     });
 
+    it('offers no Retry and titles the run by name when it has no mission (#2813)', () => {
+      render(<HeadlessRunFinished completed={{ ...failed, mission: '' }} onDismiss={vi.fn()} />);
+      expect(screen.queryByTestId('run-retry-button')).not.toBeInTheDocument();
+      expect(screen.getByTestId('run-mission')).toHaveTextContent(failed.name);
+    });
+
     it('says stopped for a cancelled run', () => {
       render(<HeadlessRunFinished completed={{ ...failed, cancelled: true, exitCode: 143 }} onDismiss={vi.fn()} />);
       expect(screen.getByTestId('run-toolbar')).toHaveTextContent('stopped after 2m 18s');
