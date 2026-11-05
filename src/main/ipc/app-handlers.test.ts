@@ -151,6 +151,7 @@ vi.mock('../services/annex-server', () => ({
 vi.mock('../services/experimental-settings', () => ({
   savedSettingsUnreadable: vi.fn(() => false),
   getSettings: vi.fn(() => ({})),
+  getSettingsForRenderer: vi.fn(() => ({})),
   saveSettings: vi.fn(),
 }));
 

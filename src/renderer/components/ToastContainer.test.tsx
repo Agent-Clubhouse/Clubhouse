@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { render, screen, fireEvent, act } from '@testing-library/react';
 import { ToastContainer } from './ToastContainer';
 import { useToastStore } from '../stores/toastStore';
@@ -9,6 +9,21 @@ describe('ToastContainer', () => {
   it('renders nothing without toasts', () => {
     const { container } = render(<ToastContainer />);
     expect(container.firstChild).toBeNull();
+  });
+
+  it('runs a toast action once and closes the toast', () => {
+    const onClick = vi.fn();
+    act(() => { useToastStore.getState().addToast('Tip', 'info', { label: 'Open settings', onClick }); });
+    render(<ToastContainer />);
+    fireEvent.click(screen.getByTestId('toast-action'));
+    expect(onClick).toHaveBeenCalledTimes(1);
+    expect(screen.queryByTestId('toast-message')).not.toBeInTheDocument();
+  });
+
+  it('draws no action button without one', () => {
+    act(() => { useToastStore.getState().addToast('Saved', 'info'); });
+    render(<ToastContainer />);
+    expect(screen.queryByTestId('toast-action')).not.toBeInTheDocument();
   });
 
   it('draws a status dot in place of glyphs, red for errors', () => {

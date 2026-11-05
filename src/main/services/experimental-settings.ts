@@ -1,6 +1,8 @@
 import { createSettingsStore, peekStoredSettingsSync } from './settings-store';
 import { isPreviewEligible } from './preview-eligible';
 import { PREVIEW_ONLY_EXPERIMENTAL_FLAGS, STRUCTURED_MODE_REMOVED_NOTICE_KEY, type ExperimentalSettings } from '../../shared/types';
+import { RICH_CHAT_CONTENT_FLAG } from '../../shared/chat';
+import { isGraduatedFlagOn } from '../../shared/graduated-flags';
 
 /**
  * Drop the removed `structuredMode` flag. Agents that used structured mode now
@@ -35,6 +37,14 @@ export function savedSettingsUnreadable(): boolean {
   return peekStoredSettingsSync(FILENAME) === 'unreadable';
 }
 
+/** Off while the file can't be read: a saved false in it is an opt-out, so it isn't guessed away. */
+const OFF_WHEN_UNREADABLE = ['chat', RICH_CHAT_CONTENT_FLAG];
+
+/** Chat or rich content: on unless saved off, and off while the file can't be read. */
+export function isGraduatedFeatureOn(key: string): boolean {
+  return !savedSettingsUnreadable() && isGraduatedFlagOn(getSettings(), key);
+}
+
 /** What is saved, whatever this build honours. */
 export const getStoredSettings = store.get;
 
@@ -42,6 +52,13 @@ export const getStoredSettings = store.get;
 export function getSettings(): ExperimentalSettings {
   const saved = store.get();
   return isPreviewEligible() ? saved : pickFlags(saved, (key) => !isPreviewOnly(key));
+}
+
+/** The flags as the renderer reads them, so it agrees with isGraduatedFeatureOn. */
+export function getSettingsForRenderer(): ExperimentalSettings {
+  const settings = getSettings();
+  if (!savedSettingsUnreadable()) return settings;
+  return { ...settings, ...Object.fromEntries(OFF_WHEN_UNREADABLE.map((key) => [key, false])) };
 }
 
 /**

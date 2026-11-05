@@ -8,7 +8,7 @@ import { IDLE_DAY_CHOICES } from '../../chrome/projectActivity';
 import { isGraduatedFlagOn } from '../../../shared/graduated-flags';
 import { Button } from '../../components/Button';
 import { Toggle } from '../../components/Toggle';
-import { SettingsPage, SettingsSection, SettingsField, SettingsBlock, settingsError, settingsInput } from './SettingsLayout';
+import { SettingsPage, SettingsSection, SettingsField, SettingsBlock, settingsInput, settingsError, SETTING_NOT_SAVED_TEXT } from './SettingsLayout';
 
 /**
  * The way back to the classic layout, saved as the newChrome flag (on = false).
@@ -53,7 +53,7 @@ function ClassicLayoutSetting() {
       >
         <Toggle aria-label="Classic layout" checked={classic} disabled={saving} onChange={handleToggle} />
       </SettingsField>
-      {saveFailed && <p className={`${settingsError} mt-1.5`} role="alert">Couldn't save that setting, so it wasn't changed. Try again.</p>}
+      {saveFailed && <p className={`${settingsError} mt-1.5`} role="alert">{SETTING_NOT_SAVED_TEXT}</p>}
       {classic === newChrome && (
         <SettingsField label="Restart Clubhouse" help="Restart Clubhouse to apply the layout change.">
           <Button onClick={() => window.clubhouse.app.restart()} kind="ghost">
@@ -140,15 +140,13 @@ export function DisplaySettingsView() {
     showHome: { value: showHome, set: setShowHome },
   };
 
-  const [gradientsEnabled, setGradientsEnabled] = useState(false);
-
-  useEffect(() => {
-    window.clubhouse.app.getExperimentalSettings().then((s) => {
-      setGradientsEnabled(!!s.themeGradients);
-    }).catch(() => {
-      // telemetry-exempt: the theme cards just preview without gradients.
-    });
-  }, []);
+  const gradientsEnabled = useThemeStore((s) => s.experimentalGradients);
+  const setThemeGradients = useThemeStore((s) => s.setThemeGradients);
+  const [gradientsSaveFailed, setGradientsSaveFailed] = useState(false);
+  const changeGradients = async (on: boolean) => {
+    setGradientsSaveFailed(false);
+    setGradientsSaveFailed(!await setThemeGradients(on));
+  };
 
   return (
     <SettingsPage title="Display & UI" description="App appearance and sidebar views.">
@@ -175,6 +173,18 @@ export function DisplaySettingsView() {
       </SettingsSection>
 
       <SettingsSection title="Color theme">
+        <SettingsField
+          label="Theme gradients & fonts"
+          help="Let themes use their own font families and background gradients. Themes that don't define any look the same either way."
+          testId="theme-gradients-row"
+        >
+          <Toggle aria-label="Theme gradients & fonts" checked={gradientsEnabled} onChange={(on) => { void changeGradients(on); }} />
+        </SettingsField>
+        {gradientsSaveFailed && (
+          <SettingsBlock>
+            <p className={settingsError} role="alert">{SETTING_NOT_SAVED_TEXT}</p>
+          </SettingsBlock>
+        )}
         <SettingsBlock>
           <div className="grid grid-cols-2 gap-2">
             {availableThemeIds.map((id) => {

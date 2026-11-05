@@ -28,6 +28,25 @@ function api() {
   return createThemeAPI(ctx);
 }
 
+describe('fonts and gradients', () => {
+  it('are exposed by default and hidden, with an onDidChange, when the setting turns off', () => {
+    const fancy = { ...THEMES['catppuccin-mocha'], fonts: { ui: 'Inter' }, gradients: { background: 'linear-gradient(red, blue)' } };
+    useThemeStore.setState({ themeId: fancy.id as ThemeId, theme: fancy, experimentalGradients: true });
+    const api = createThemeAPI({ subscriptions: [] } as never);
+    expect(api.getCurrent()).toMatchObject({ fonts: { ui: 'Inter' }, gradients: { background: 'linear-gradient(red, blue)' } });
+
+    const seen: ThemeInfo[] = [];
+    const sub = api.onDidChange((t) => seen.push(t));
+    useThemeStore.setState({ experimentalGradients: false });
+    sub.dispose();
+
+    expect(seen).toHaveLength(1);
+    expect(seen[0].fonts).toBeUndefined();
+    expect(seen[0].gradients).toBeUndefined();
+    expect(api.getCurrent().fonts).toBeUndefined();
+  });
+});
+
 describe('theme.onDidChange', () => {
   beforeEach(() => {
     mockApp.updateTitleBarOverlay.mockResolvedValue(undefined);

@@ -101,7 +101,7 @@ Recording costs tokens, and a recording names your machine's paths, so area fixt
 
 ## Harness
 
-- **`openRichChat({ cli, script, flags?, projectFiles?, outsideFiles? })`:** builds and installs the script, launches with Chat on (seeded, since it's read at mount), sets the flags through the settings IPC (`setExperimentalFlags`, default `richChatContent: true`), adds a temp project, creates a durable agent on that provider and opens its chat. It checks that the app spawned the fake before returning. `script` can be a function of `{ projectDir, outsideDir }`.
+- **`openRichChat({ cli, script, flags?, projectFiles?, outsideFiles? })`:** builds and installs the script, launches with nothing saved, so Chat and rich content are on by default, saves any `flags` through the settings IPC (`setExperimentalFlags`), adds a temp project, creates a durable agent on that provider and opens its chat. It checks that the app spawned the fake before returning. `script` can be a function of `{ projectDir, outsideDir }`.
 - **`setExperimentalFlags(window, flags)`:** saves through `window.clubhouse.app.saveExperimentalSettings`, as the Settings toggle does, then reads the flags back. The renderer reads `richChatContent` once, when the first chat pane mounts, so set flags before opening a chat, or `window.reload()` after changing them mid-session.
 - **`chatDom(window)`:** locators for file chips (`fileChip(path)`, `mutedChip(path)`), the preview popover and PDF canvas, tool images, the lightbox, media cards, the permission and question dock, the queue, and the composer.
 - **`expectImageLoaded`, `expectCanvasPainted`, `expectNoPageScroll`:** state checks that poll until true. "Painted" means not every pixel is the same, which proves pdf.js drew the page.
@@ -145,6 +145,8 @@ Recording costs tokens, and a recording names your machine's paths, so area fixt
 - The graduation gate below needs **zero** flaky chat tests across its window.
 
 ## Phase 3 graduation gate
+
+Status: the default flipped for v1.0.0. The window starts with the first main run after that. Counted: five completed main Validate runs that actually ran chat jobs, first attempt, no retry-passes. Skipped runs, runs with no chat jobs, and runs cancelled before chat results neither count nor reset. An observed chat failure or retry-pass resets the count even if the run was later cancelled. An unrelated job failure doesn't reset it. Critical path is compared against comparable PR runs. macOS stays unmeasured until a baseline number exists.
 
 `richChatContent` becomes the default only when all of these hold:
 

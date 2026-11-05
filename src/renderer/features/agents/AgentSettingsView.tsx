@@ -42,6 +42,7 @@ import {
 import { isRemoteProjectId } from '../../stores/remoteProjectStore';
 import { Field, FieldLabel, inputClass, PageTitle, SectionHeading, selectClass, textareaClass } from './agentSettingsUi';
 import { AgentHelpersSettings } from './helpers/AgentHelpersSettings';
+import { isGraduatedFlagOn } from '../../../shared/graduated-flags';
 
 interface Props {
   agent: Agent;
@@ -476,7 +477,7 @@ export function AgentSettingsView({ agent }: Props) {
   const [agentPersona, setAgentPersona] = useState('');
 
   // Chat / CLI runtime override ('' = provider default). Only offered
-  // when the experimental Chat flag is on.
+  // when Chat is on.
   const [chatFlagEnabled, setChatFlagEnabled] = useState(false);
   const [runtimeMode, setRuntimeMode] = useState<AgentRuntimeMode | ''>('');
 
@@ -486,9 +487,9 @@ export function AgentSettingsView({ agent }: Props) {
 
   useEffect(() => {
     let cancelled = false;
-    // Same gate as main: the flag only counts in preview-eligible builds.
-    Promise.all([window.clubhouse.app.getExperimentalSettings(), window.clubhouse.app.isPreviewEligible()])
-      .then(([s, eligible]) => { if (!cancelled) setChatFlagEnabled(s?.chat === true && eligible === true); })
+    // Same gate as main: on unless the flag is saved off.
+    window.clubhouse.app.getExperimentalSettings()
+      .then((s) => { if (!cancelled) setChatFlagEnabled(isGraduatedFlagOn(s, 'chat')); })
       .catch(() => { /* flag stays off */ });
     return () => { cancelled = true; };
   }, []);

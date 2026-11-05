@@ -30,5 +30,5 @@ export function AgentView({ agentId, focused, zoneThemeId, context = 'plugin' }:
 
 /** True when the agent is running in chat, for hosts that lay out around the view. */
 export function useAgentInChat(agent: Agent): boolean {
-  return useAgentRuntimeInfo(agent, useChatFlag() === true)?.chat === true;
+  return useAgentRuntimeInfo(agent, useChatFlag() !== null)?.chat === true;
 }

@@ -15,7 +15,9 @@ export const BETA_FLAGS = {
   copilotSdk: true,
   telemetry: true,
 };
-export const PREVIEW_ONLY_FLAGS = Object.keys(BETA_FLAGS).filter((flag) => flag !== 'newChrome');
+/** Left Experimental for v1.0.0, so a stable build honours them as saved. */
+export const GRADUATED_FLAGS = ['newChrome', 'chat', 'richChatContent'];
+export const PREVIEW_ONLY_FLAGS = Object.keys(BETA_FLAGS).filter((flag) => !GRADUATED_FLAGS.includes(flag));
 
 export const AGENT_ID = 'durable_stable_mode';
 export const AGENT_NAME = 'stable-mode-agent';
@@ -70,5 +72,27 @@ export function betaAgents() {
     lastSessionId: LAST_SESSION,
   }];
 }
+
+/** The agent a stable user has: nothing saved for its runtime. */
+export function stableAgents(extra = {}) {
+  const [{ runtimeMode: _saved, ...agent }] = betaAgents();
+  return [{ ...agent, ...extra }];
+}
+
+/** What a stable 0.42 user has saved: a provider, and no Chat flag or choice. */
+export function stableFiles() {
+  return {
+    ...updateSettings(false),
+    'orchestrator-settings.json': { enabled: [ORCHESTRATOR], autoDetected: true },
+  };
+}
+
+/** What 0.41 could leave behind: the Structured Mode flag and its per-agent field, which 0.42 has no equivalent for. */
+export const V041_FLAGS = { structuredMode: true, themeGradients: true };
+export const v041Agents = () => stableAgents({ structuredMode: true });
+
+/** The one-time Chat tip's localStorage markers (chat-default-tip.ts). */
+export const CHAT_MESSAGE_SHOWN_KEY = 'chatMessageShown';
+export const CHAT_TIP_RULED_OUT_KEY = 'clubhouse_chat_default_tip';
 
 export const BETA_TRANSCRIPT = '{"seq":1,"type":"user_message","text":"from a beta"}\n';

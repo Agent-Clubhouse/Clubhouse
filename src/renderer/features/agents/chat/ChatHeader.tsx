@@ -5,7 +5,6 @@ import type { ChatViewState } from '../../../stores/chatStore';
 import { chatDot } from '../agent-status';
 import { AgentPaneToolbar, type PaneUsage, type ReviewView } from '../pane/AgentPaneToolbar';
 import { formatElapsed, formatTokens, modelLabel } from './view-model';
-import { ChatDefaultTip } from './ChatDefaultTip';
 
 export const DRIVER_LABELS: Record<ChatDriverId, string> = {
   claude_agent_sdk: 'Agent SDK',
@@ -174,7 +173,7 @@ export function ChatHeader({ agent, state, onSwitchToTerminal, switching, detail
       details={chatDetails(agent, state)}
       usage={chatUsage(state)}
       runtime={onSwitchToTerminal
-        ? { value: 'chat', onChange: onSwitchToTerminal, disabled: switching, tip: <ChatDefaultTip agent={agent} /> }
+        ? { value: 'chat', onChange: onSwitchToTerminal, disabled: switching }
         : { value: 'chat' }}
       review={review}
       detailsToggle={detailsToggle}

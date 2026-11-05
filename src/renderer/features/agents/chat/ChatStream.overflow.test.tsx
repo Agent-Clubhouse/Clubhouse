@@ -81,8 +81,8 @@ describe('ChatStream: restored text stays inside the pane (#2292)', () => {
 
   it("pushes user bubbles to the column's right edge, where agent rows end (#2365)", () => {
     render(<ChatStream state={wokenCopilotState()} announce={false} />);
-    const column = screen.getByTestId('chat-stream').firstElementChild;
     const userRow = screen.getByTestId('chat-user-message').parentElement!;
+    const column = userRow.parentElement;
     const agentRow = screen.getByTestId('chat-agent-message').closest('[data-testid="chat-stream-block"]')!;
     // Both rows are full-width blocks of the same column.
     expect(userRow).toHaveAttribute('data-testid', 'chat-stream-block');
