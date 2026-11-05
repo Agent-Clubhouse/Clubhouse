@@ -44,7 +44,14 @@ export function looksBinary(bytes: Buffer): boolean {
 }
 
 const IDENTIFIER = /^[A-Za-z0-9_][A-Za-z0-9_.+-]*$/;
-const CONTROL_OR_REPLACEMENT = /[\u0000-\u001f\u007f�]/;
+/** A control character, or U+FFFD, which is what a name that wasn't valid UTF-8 arrives with. */
+function hasControlOrReplacement(text: string): boolean {
+  for (let i = 0; i < text.length; i++) {
+    const code = text.charCodeAt(i);
+    if (code < 0x20 || code === 0x7f || code === 0xfffd) return true;
+  }
+  return false;
+}
 
 /**
  * One run of letters and digits that reads as generated rather than named: long,
@@ -87,7 +94,7 @@ export function isSafeEnvName(value: unknown): value is string {
 export function isSafeName(name: string): boolean {
   return name.length > 0
     && name.length <= 128
-    && !CONTROL_OR_REPLACEMENT.test(name)
+    && !hasControlOrReplacement(name)
     && !name.includes('://')
     && !(name.includes('@') && name.includes(':'))
     && !holdsGeneratedRun(name)
