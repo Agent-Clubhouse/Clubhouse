@@ -12,6 +12,8 @@ import {
   normalizeOrchestrationConfig,
   patchTurnsOnMcpSwitch,
   savedOrchestrate,
+  asShownPolicy,
+  isMcpDependentOff,
   resolveHelperAccess,
   resolveOrchestrationPolicy,
   validateOrchestrationPatch,
@@ -359,5 +361,27 @@ describe('autoHelpers (#2671)', () => {
     expect(patchTurnsOnMcpSwitch({ autoHelpers: true })).toBe(true);
     expect(patchTurnsOnMcpSwitch({ autoHelpers: false })).toBe(false);
     expect(resolveOrchestrationPolicy({ autoHelpers: true }, undefined, { mcpOff: true })).toMatchObject({ autoHelpers: false, mcpOff: { autoHelpers: true } });
+  });
+});
+
+describe('a report-only helper', () => {
+  const saved = { orchestrate: true, crossProjectHelpers: true, connectToDispatcher: true, autoHelpers: true };
+
+  it('counts as off, and reads off with what is saved kept', () => {
+    const policy = resolveOrchestrationPolicy(saved, undefined, { mcpReportOnly: true });
+    expect(isMcpDependentOff(policy)).toBe(true);
+    expect(asShownPolicy(policy)).toMatchObject({ orchestrate: false, crossProjectHelpers: false, autoHelpers: false, mcpOff: { orchestrate: true, crossProjectHelpers: true, autoHelpers: true } });
+    expect(savedOrchestrate(asShownPolicy(policy))).toBe(true);
+  });
+
+  it('leaves anyone else as it was', () => {
+    const policy = resolveOrchestrationPolicy(saved);
+    expect(isMcpDependentOff(policy)).toBe(false);
+    expect(asShownPolicy(policy)).toBe(policy);
+  });
+
+  it('has Auto off for good', () => {
+    const policy = resolveOrchestrationPolicy(saved, undefined, { mcpReportOnly: true });
+    expect(decideHelperAuto({ app: true, projectOff: false, policy })).toEqual({ effective: false, source: 'mcp_off', reason: 'mcp_off' });
   });
 });

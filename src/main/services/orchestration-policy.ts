@@ -30,6 +30,11 @@
  * that decide about helpers compare the saved values, so a turn-off still
  * asks about helpers and a persona change still pins, with MCP off too.
  *
+ * A helper's bridge is forced on so it can start and report, which is why
+ * isMcpEnabled above can read true for it. Its own calls follow its raw `mcpOverride`.
+ * Where that resolves off (`mcpReportOnly`), the same rules hold: turning a switch on
+ * is refused, nothing opens the gate, and what is saved stays and applies again.
+ *
  * Helpers aren't touched when MCP goes off: they keep running and keep their
  * parent. The orchestrator's gate closes, so it loses the helper tools until
  * MCP is back, and the Helpers card still lets the user manage them. New tool
@@ -95,6 +100,7 @@ import {
   applyOrchestrationPatch,
   decideHelperAuto,
   checkHelperLimit,
+  isMcpDependentOff,
   normalizeOrchestrationConfig,
   patchTurnsOnMcpSwitch,
   resolveHelperAccess,
@@ -265,16 +271,16 @@ function noteMcpClosure(agentId: string, mcpOff: boolean): void {
 
 /** Open or close the gate from a policy. Only spawn, setOrchestrationPolicy and reconcileMcpGate call this. */
 function applyGate(projectPath: string, agent: DurableAgentConfig, policy: ResolvedOrchestrationPolicy): void {
-  noteMcpClosure(agent.id, !!policy.mcpOff);
-  setOrchestrationEnabled(agent.id, policy.orchestrate && !isDisposedAgent(agent) && isLiveIn(projectPath, agent.id), {
+  noteMcpClosure(agent.id, isMcpDependentOff(policy));
+  setOrchestrationEnabled(agent.id, policy.orchestrate && !policy.mcpReportOnly && !isDisposedAgent(agent) && isLiveIn(projectPath, agent.id), {
     crossProject: policy.crossProjectHelpers,
   });
 }
 
 /** Close the gate, or only the crossProject gate, when the policy is off. Never opens either. */
 function closeGateIfOff(agent: DurableAgentConfig, policy: ResolvedOrchestrationPolicy): void {
-  noteMcpClosure(agent.id, !!policy.mcpOff);
-  if (!policy.orchestrate || isDisposedAgent(agent)) setOrchestrationEnabled(agent.id, false);
+  noteMcpClosure(agent.id, isMcpDependentOff(policy));
+  if (!policy.orchestrate || policy.mcpReportOnly || isDisposedAgent(agent)) setOrchestrationEnabled(agent.id, false);
   else if (!policy.crossProjectHelpers) closeCrossProject(agent.id);
 }
 
@@ -443,7 +449,7 @@ export async function setOrchestrationPolicy(
     options.precondition?.(agent, current);
     const stored = applyOrchestrationPatch(agent.orchestration, patch);
     const next = await resolveFor(projectPath, agent, stored);
-    if (next.mcpOff && patchTurnsOnMcpSwitch(patch)) {
+    if (isMcpDependentOff(next) && patchTurnsOnMcpSwitch(patch)) {
       await auditPolicyRefusal(audit, patch, 'mcp_required');
       return { ok: false, message: MCP_REQUIRED_MESSAGE, policy: current, mcpRequired: true };
     }
@@ -742,7 +748,8 @@ async function reconcileMcpGate(projectPath: string, agentId: string): Promise<v
     if (!live || (!isOrchestrationEnabled(agentId) && !closedByMcp.has(agentId))) return;
     const agent = await agentConfig.getDurableConfig(projectPath, agentId);
     if (!agent) return;
-    if (!isMcpEnabled(projectPath, clubhouseMcpOverride(agent))) {
+    // Its own setting, not a helper's forced bridge: this gate is about what it can call.
+    if (!isMcpEnabled(projectPath, agent.mcpOverride)) {
       noteMcpClosure(agentId, true);
       setOrchestrationEnabled(agentId, false);
       return;

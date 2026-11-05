@@ -14,7 +14,6 @@ import type { MobileAgentCreate, MobileAgentUpdate, MobileContextWindow, MobileS
 import { AGENT_IDLE_SLEEP_MINUTES, normalizeIdleSleep, resolveIdleSleep } from '../../shared/idle-sleep';
 import { AGENT_COLORS, generateDurableName } from '../../shared/name-generator';
 import { validateAgentGitName } from '../../shared/agent-name';
-import { clubhouseMcpOverride } from '../../shared/agent-helpers';
 import * as agentConfig from './agent-config';
 import { parseStartCreationParams, personaInjection, startDurableCreation } from './agent-creation';
 import { checkAvailability, getAvailableOrchestrators, resolveOrchestrator, resolveProfileEnv } from './agent-system';
@@ -175,8 +174,9 @@ const CLEAR_ALL: OrchestrationPolicyPatch = {
  * A phone's orchestration patch, checked with the desktop's rules: the shared
  * validator, and Helpers at once no higher than the app-wide cap. `null`
  * clears a field on update; create only sets fields. `mcpEnabled` is whether
- * Clubhouse MCP is on for the agent: without it, turning a switch that needs it
- * on is refused, and turning one off or clearing it is still allowed (#2589).
+ * Clubhouse MCP is on for the agent's own calls, by its own setting and not a
+ * helper's forced bridge: without it, turning a switch that needs it on is refused,
+ * and turning one off or clearing it is still allowed (#2589).
  */
 export function parseMobileOrchestration(raw: unknown, mode: 'update' | 'create', { mcpEnabled }: { mcpEnabled: boolean }): OrchestrationPolicyPatch {
   if (raw === null && mode === 'update') return { ...CLEAR_ALL };
@@ -518,7 +518,7 @@ export async function updateMobileAgent(
     await assertContextWindow(project, orchestrator, command.model ?? (command.orchestrator !== undefined ? undefined : config.model), command.contextWindow);
     updates.contextWindow = command.contextWindow;
   }
-  const orchestration = command.orchestration !== undefined ? parseMobileOrchestration(command.orchestration, 'update', { mcpEnabled: isMcpEnabled(project.path, clubhouseMcpOverride(config)) }) : undefined;
+  const orchestration = command.orchestration !== undefined ? parseMobileOrchestration(command.orchestration, 'update', { mcpEnabled: isMcpEnabled(project.path, config.mcpOverride) }) : undefined;
 
   assertAuthorized();
   const hadSession = !!config.lastSessionId;

@@ -122,8 +122,25 @@ export interface ResolvedOrchestrationPolicy extends OrchestrationPolicy {
   /**
    * A helper whose own MCP setting resolves off. Its forced bridge keeps `mcpOff`
    * unset, so it can start and report, but the call gate leaves it only message_parent.
+   * The switches above hold what is saved: as with `mcpOff`, none can be turned on
+   * and none opens a gate. Decide with {@link isMcpDependentOff}.
    */
   mcpReportOnly?: true;
+}
+
+/** No Clubhouse MCP for this agent's own calls, a helper's forced bridge aside: its switches can't be turned on and open nothing. */
+export function isMcpDependentOff(policy: Pick<ResolvedOrchestrationPolicy, 'mcpOff' | 'mcpReportOnly'>): boolean {
+  return !!policy.mcpOff || !!policy.mcpReportOnly;
+}
+
+/** A report-only helper as the surfaces show one: its switches off, what is saved in `mcpOff`, as for any agent without MCP. */
+export function asShownPolicy(policy: ResolvedOrchestrationPolicy): ResolvedOrchestrationPolicy {
+  if (!policy.mcpReportOnly) return policy;
+  const { orchestrate, crossProjectHelpers, connectToDispatcher, autoHelpers } = policy;
+  return {
+    ...policy, orchestrate: false, crossProjectHelpers: false, connectToDispatcher: false, autoHelpers: false,
+    mcpOff: { orchestrate, crossProjectHelpers, connectToDispatcher, autoHelpers },
+  };
 }
 
 /** What `orchestrate` resolves to from the saved settings, MCP on or off. */
@@ -143,10 +160,10 @@ export type HelperAutoSource = 'agent' | 'project' | 'persona' | 'app' | 'defaul
 export function decideHelperAuto(input: {
   app: boolean;
   projectOff: boolean;
-  policy?: Pick<ResolvedOrchestrationPolicy, 'orchestrate' | 'autoHelpers' | 'sources' | 'personaAutoOff' | 'mcpOff'>;
+  policy?: Pick<ResolvedOrchestrationPolicy, 'orchestrate' | 'autoHelpers' | 'sources' | 'personaAutoOff' | 'mcpOff' | 'mcpReportOnly'>;
 }): { effective: boolean; reason?: HelperAutoOffReason; source: HelperAutoSource } {
   const { app, projectOff, policy } = input;
-  if (policy?.mcpOff) return { effective: false, source: 'mcp_off', reason: 'mcp_off' };
+  if (policy && isMcpDependentOff(policy)) return { effective: false, source: 'mcp_off', reason: 'mcp_off' };
   if (projectOff) return { effective: false, source: 'project', reason: 'project_off' };
   if (policy?.personaAutoOff) return { effective: false, source: 'persona', reason: 'persona_off' };
   const own = policy?.sources.autoHelpers === 'agent' ? policy.autoHelpers : undefined;
