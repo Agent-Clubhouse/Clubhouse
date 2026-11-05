@@ -4,11 +4,12 @@
  * imports and writes nothing, and nothing calls it yet but tests.
  *
  * Reads only, which rules out most of the app's usual readers:
- *   - projects and agents come from peekProjects and peekDurableConfigs, since
- *     list() and listDurable() can migrate, restore and start watchers;
+ *   - projects come from peekProjects, since list() can migrate and restore, and
+ *     agents.json is read here, since agent-config's readers can do that and more;
  *   - project settings are parsed here, since readProjectAgentDefaults logs parse
  *     errors, and a JSON parse error can quote the file;
- *   - git state comes from git-state.ts, which never refreshes the index.
+ *   - git state comes from git-state.ts, which never refreshes the index, and only
+ *     when gitBlockedReason finds nothing that could lead git elsewhere.
  *
  * Paths from a repository aren't trusted either. A default scan touches only
  * registered project roots and worktrees shown to belong to them: see
@@ -21,7 +22,6 @@ import { createHash, createHmac, randomBytes } from 'crypto';
 import type { Dirent, Stats } from 'fs';
 import * as fsp from 'fs/promises';
 import * as path from 'path';
-import { peekDurableConfigs } from '../agent-config';
 import { getBaseDirPath } from '../base-dir';
 import { appLog } from '../log-service';
 import { getDefaultAgentTemplates } from '../materialization-service';
@@ -45,7 +45,9 @@ import type {
   InventoryBuiltinMatch,
   InventoryClubhouseMode,
   InventoryConfigRef,
+  InventoryConfiguredPath,
   InventoryEntry,
+  InventoryExclusion,
   InventoryExclusionCounts,
   InventoryExclusionReason,
   InventoryExternalReason,
@@ -67,11 +69,14 @@ import {
   hasDefinitionExtension,
   hasSecretLookingContent,
   isSafeIdentifier,
+  isSafeName,
+  isSafePathText,
   isSecretLookingName,
   looksBinary,
 } from './classify';
-import { isGitUsable, newGitContext, readGitCommonDir, readGitStates, readGitWorktrees, toGitPath, type GitContext } from './git-state';
-import { checkConfiguredPath, isOutside, isUncPath, projectPathKey } from './untrusted-paths';
+import { isGitUsable, newGitContext, readGitStates, toGitPath, type GitContext } from './git-state';
+import { UnsafeFileError, readRegularFile, unsafeReason, type UnsafeFileReason } from './safe-read';
+import { checkConfiguredPath, isGitConfigAllowed, isOutside, isUncPath, projectPathKey } from './untrusted-paths';
 import { isForbiddenKey, parseJsonMcpServers, parseTomlMcpServers, readMcpEntry } from './mcp-definitions';
 
 export { projectPathKey };
@@ -135,7 +140,8 @@ export interface InventoryFs {
   stat(p: string): Promise<Stats>;
   lstat(p: string): Promise<Stats>;
   readdir(p: string): Promise<Dirent[]>;
-  readFile(p: string): Promise<Buffer>;
+  /** Refuses anything but a plain regular file: see safe-read.ts. */
+  readFile(p: string, maxBytes: number): Promise<Buffer>;
   /** Called only on a root, or on a path already authorized. */
   realpath(p: string): Promise<string>;
   readlink(p: string): Promise<string>;
@@ -145,7 +151,7 @@ const REAL_FS: InventoryFs = {
   stat: (p) => fsp.stat(p),
   lstat: (p) => fsp.lstat(p),
   readdir: (p) => fsp.readdir(p, { withFileTypes: true }),
-  readFile: (p) => fsp.readFile(p),
+  readFile: (p, maxBytes) => readRegularFile(p, maxBytes),
   realpath: (p) => fsp.realpath(p),
   readlink: (p) => fsp.readlink(p),
 };
@@ -180,7 +186,7 @@ const DEFAULT_PROJECT_TIMEOUT_MS = 60_000;
 class ScanStopped extends Error {}
 
 function emptyExclusions(): InventoryExclusionCounts {
-  return { 'secret-looking': 0, 'non-definition': 0, 'too-large': 0, unreadable: 0, symlink: 0, 'over-limit': 0 };
+  return { 'secret-looking': 0, 'unsafe-name': 0, 'hard-link': 0, 'special-file': 0, 'non-definition': 0, 'too-large': 0, unreadable: 0, symlink: 0, 'over-limit': 0 };
 }
 
 function sha256(data: string | Buffer): string {
@@ -306,6 +312,8 @@ interface RawItem {
   agent?: { id: string; name: string };
   files: ScannedFile[];
   excludedFileCount: number;
+  /** Tells apart items with one `contentHash`, within this scan only. */
+  comparisonKey?: string;
   builtinId?: string;
   mcp?: InventoryMcpDefinition;
   persona?: InventoryPersonaMetadata;
@@ -318,6 +326,7 @@ interface Context {
   limits: InventoryLimits;
   signal: AbortSignal;
   excluded: InventoryExclusionCounts;
+  exclusions: InventoryExclusion[];
   filesSeen: number;
   bytesRead: number;
   truncated: boolean;
@@ -327,10 +336,9 @@ interface Context {
   dirChecks: Map<string, Promise<DirCheck>>;
   realRoots: Map<string, Promise<string>>;
   git: GitContext;
-  /** Keys MCP hashes, so they can't confirm a guess at a value and don't outlive the scan. */
+  /** Keys the comparison of withheld MCP details, which can't leave the scan. */
   scanKey: Buffer;
-  /** Worktrees whose `.git` isn't verified, so git isn't asked about them. */
-  gitUntrustedRoots: Set<string>;
+
   onFiles?: (filesSeen: number) => void;
 }
 
@@ -347,8 +355,9 @@ function newContext(
     fs, limits, signal, onFiles,
     git: shared.git,
     scanKey: shared.scanKey,
-    gitUntrustedRoots: new Set(),
+
     excluded: emptyExclusions(),
+    exclusions: [],
     filesSeen: 0,
     bytesRead: 0,
     truncated: false,
@@ -357,6 +366,16 @@ function newContext(
     dirChecks: new Map(),
     realRoots: new Map(),
   };
+}
+
+const MAX_EXCLUSIONS_LISTED = 200;
+
+/** Counts it, and lists the path if there's room and it's fit to show. No path means a count only. */
+function exclude(ctx: Context, reason: InventoryExclusionReason, root?: string, file?: string): void {
+  ctx.excluded[reason]++;
+  if (ctx.exclusions.length >= MAX_EXCLUSIONS_LISTED) return;
+  const relativePath = root && file ? toGitPath(root, file) : undefined;
+  ctx.exclusions.push(relativePath && isSafePathText(relativePath) ? { reason, relativePath } : { reason });
 }
 
 /** Lets the main process breathe and honors a cancel. Called once per directory entry. */
@@ -382,7 +401,7 @@ function isMissing(err: unknown): boolean {
 function countEntry(ctx: Context): boolean {
   if (ctx.filesSeen >= ctx.limits.maxFilesPerProject) {
     ctx.truncated = true;
-    ctx.excluded['over-limit']++;
+    exclude(ctx, 'over-limit');
     return false;
   }
   ctx.filesSeen++;
@@ -461,17 +480,25 @@ function checkDir(ctx: Context, root: string, dir: string): Promise<DirCheck> {
 /** A folder's entries, once it's known to be inside `root`. A folder that isn't there is empty. */
 async function readConfinedDir(ctx: Context, root: string, dir: string): Promise<Dirent[]> {
   const check = await checkDir(ctx, root, dir);
-  if (check === 'outside') ctx.excluded.symlink++;
-  if (check === 'unreadable') ctx.excluded.unreadable++;
+  if (check === 'outside') exclude(ctx, 'symlink');
+  if (check === 'unreadable') exclude(ctx, 'unreadable');
   if (check !== 'inside') return [];
   try {
     return await ctx.fs.readdir(dir);
   } catch (err) {
     // telemetry-exempt: counted; one unreadable folder must not stop the project
-    if (!isMissing(err)) ctx.excluded.unreadable++;
+    if (!isMissing(err)) exclude(ctx, 'unreadable');
     return [];
   }
 }
+
+const EXCLUSION_FOR_UNSAFE: Record<UnsafeFileReason, InventoryExclusionReason> = {
+  symlink: 'symlink',
+  'special-file': 'special-file',
+  'hard-link': 'hard-link',
+  'too-large': 'too-large',
+  changed: 'unreadable',
+};
 
 type ReadOutcome = { file: ScannedFile } | 'excluded' | 'missing';
 
@@ -490,7 +517,7 @@ async function readDefinitionFile(
   const check = await checkDir(ctx, root, path.dirname(file));
   if (check === 'missing') return 'missing';
   if (check !== 'inside') {
-    ctx.excluded[check === 'outside' ? 'symlink' : 'unreadable']++;
+    exclude(ctx, check === 'outside' ? 'symlink' : 'unreadable', root, file);
     return 'excluded';
   }
   let stats: Stats;
@@ -499,16 +526,19 @@ async function readDefinitionFile(
   } catch (err) {
     // telemetry-exempt: counted; one unreadable file must not stop the project
     if (isMissing(err)) return 'missing';
-    ctx.excluded.unreadable++;
+    exclude(ctx, 'unreadable', root, file);
     return 'excluded';
   }
   if (!countEntry(ctx)) return 'excluded';
   const fail = (reason: InventoryExclusionReason): ReadOutcome => {
-    ctx.excluded[reason]++;
+    exclude(ctx, reason, root, file);
     return 'excluded';
   };
+  if (!isSafeName(name)) return fail('unsafe-name');
   if (stats.isSymbolicLink()) return fail('symlink');
-  if (!stats.isFile()) return fail('non-definition');
+  if (stats.isDirectory()) return fail('non-definition');
+  const unsafe = unsafeReason(stats);
+  if (unsafe) return fail(unsafe === 'hard-link' ? 'hard-link' : 'special-file');
   if (isSecretLookingName(name)) return fail('secret-looking');
   if (!opts.allowAnyExtension && !hasDefinitionExtension(name)) return fail('non-definition');
   if (stats.size > (opts.maxBytes ?? ctx.limits.maxFileBytes)) return fail('too-large');
@@ -519,9 +549,10 @@ async function readDefinitionFile(
 
   let bytes: Buffer;
   try {
-    bytes = await ctx.fs.readFile(file);
+    bytes = await ctx.fs.readFile(file, opts.maxBytes ?? ctx.limits.maxFileBytes);
   } catch (err) {
     // telemetry-exempt: counted; one unreadable file must not stop the project
+    if (err instanceof UnsafeFileError) return fail(EXCLUSION_FOR_UNSAFE[err.reason]);
     if (isMissing(err)) return 'missing';
     return fail('unreadable');
   }
@@ -555,7 +586,7 @@ async function walkDefinitionFiles(ctx: Context, root: string, dir: string): Pro
       dirents = await ctx.fs.readdir(current);
     } catch (err) {
       // telemetry-exempt: counted; one unreadable folder must not stop the project
-      if (!isMissing(err)) ctx.excluded.unreadable++;
+      if (!isMissing(err)) exclude(ctx, 'unreadable');
       excluded++;
       return;
     }
@@ -568,11 +599,14 @@ async function walkDefinitionFiles(ctx: Context, root: string, dir: string): Pro
           overLimit = true;
           return;
         }
-        if (NON_DEFINITION_DIRS.has(dirent.name) || depth >= ctx.limits.maxDepth) {
-          ctx.excluded['non-definition']++;
+        if (!isSafeName(dirent.name)) {
+          exclude(ctx, 'unsafe-name', root, full);
+          excluded++;
+        } else if (NON_DEFINITION_DIRS.has(dirent.name) || depth >= ctx.limits.maxDepth) {
+          exclude(ctx, 'non-definition', root, full);
           excluded++;
         } else if (isSecretLookingName(dirent.name)) {
-          ctx.excluded['secret-looking']++;
+          exclude(ctx, 'secret-looking', root, full);
           excluded++;
         } else {
           await visit(full, depth + 1);
@@ -595,6 +629,14 @@ async function walkDefinitionFiles(ctx: Context, root: string, dir: string): Pro
 
   await visit(dir, 0);
   return { files, excluded, overLimit };
+}
+
+/** A path from config, shown only if it's plainly one. A URL with a password or a pasted document comes back as its identity. */
+function configuredPathOf(configured: unknown): InventoryConfiguredPath {
+  const text = typeof configured === 'string' ? configured : '';
+  const shown: InventoryConfiguredPath = { hash: sha256(text), length: text.length };
+  if (text && isSafePathText(text)) shown.text = text;
+  return shown;
 }
 
 /** A folder's hash: each file's path and hash, so a rename changes it too. */
@@ -627,11 +669,15 @@ async function scanFolderItems(
         continue;
       }
       if (!countEntry(ctx)) break;
-      ctx.excluded[dirent.isSymbolicLink() ? 'symlink' : 'non-definition']++;
+      exclude(ctx, dirent.isSymbolicLink() ? 'symlink' : dirent.isFile() ? 'non-definition' : 'special-file', root, path.join(dir, dirent.name));
       continue;
     }
     if (!countEntry(ctx)) break;
     const folder = path.join(dir, dirent.name);
+    if (!isSafeName(dirent.name)) {
+      exclude(ctx, 'unsafe-name', root, folder);
+      continue;
+    }
     const { files, excluded, overLimit } = await walkDefinitionFiles(ctx, root, folder);
     // A folder cut short by the bound would read as a complete, different item.
     if (overLimit) break;
@@ -679,7 +725,7 @@ async function scanPersonaFolder(ctx: Context, root: string, dir: string, scope:
     if (!dirent.name.endsWith('.md')) {
       await checkpoint(ctx);
       if (!countEntry(ctx)) break;
-      ctx.excluded['non-definition']++;
+      exclude(ctx, 'non-definition', root, path.join(dir, dirent.name));
       continue;
     }
     const outcome = await readDefinitionFile(ctx, root, path.join(dir, dirent.name));
@@ -712,7 +758,7 @@ async function mcpItems(
     if (result.kind === 'bridge') {
       ctx.bridgeFiltered++;
     } else if (result.kind === 'invalid') {
-      ctx.excluded['non-definition']++;
+      exclude(ctx, 'non-definition');
     } else {
       const name = safeLabel(rawName, 'server');
       items.push({
@@ -721,7 +767,8 @@ async function mcpItems(
         path: file.path,
         pointer: name === rawName ? pointer(rawName) : undefined,
         files: [file],
-        contentHash: createHmac('sha256', ctx.scanKey).update(result.details).digest('hex'),
+        contentHash: sha256(canonical(result.definition)),
+        comparisonKey: createHmac('sha256', ctx.scanKey).update(result.details).digest('hex'),
         wildcards: wildcardsIn(result.details),
         excludedFileCount: 0,
         mcp: result.definition,
@@ -793,11 +840,11 @@ function settingsValueItem(
   builtinId: string | undefined,
 ): RawItem[] {
   if (serialized.length > ctx.limits.maxFileBytes) {
-    ctx.excluded['too-large']++;
+    exclude(ctx, 'too-large');
     return [];
   }
   if (hasSecretLookingContent(serialized)) {
-    ctx.excluded['secret-looking']++;
+    exclude(ctx, 'secret-looking');
     return [];
   }
   return [{
@@ -862,7 +909,7 @@ async function sourceFolder(ctx: Context, projectPath: string, stored: unknown, 
     const refused = realBase === 'outside' || realJoined === 'outside'
       || (typeof realBase === 'object' && typeof realJoined === 'object' && !confinedJoin(realBase.real, path.relative(realBase.real, realJoined.real)));
     if (refused) {
-      ctx.excluded.symlink++;
+      exclude(ctx, 'symlink');
       joined = null;
     } else if (typeof realBase === 'object' && typeof realJoined === 'object' && await isAgentsFolder(ctx, realBase.real, realJoined.real)) {
       joined = null;
@@ -906,7 +953,8 @@ async function countWorktreeMcpFiles(ctx: Context, worktree: string): Promise<nu
   let count = 0;
   for (const { file, format } of PROJECT_MCP_FILES) {
     const before = { ...ctx.excluded };
-    const outcome = await readDefinitionFile(ctx, worktree, path.join(worktree, ...file.split('/')), { maxBytes: ctx.limits.maxConfigFileBytes, allowAnyExtension: true, skipContentCheck: true });
+    const maxBytes = format === 'toml' ? ctx.limits.maxTomlBytes : ctx.limits.maxConfigFileBytes;
+    const outcome = await readDefinitionFile(ctx, worktree, path.join(worktree, ...file.split('/')), { maxBytes, allowAnyExtension: true, skipContentCheck: true });
     if (outcome === 'missing') continue;
     if (outcome === 'excluded') {
       // A file over the limit or unreadable can't be shown to be only Clubhouse's either.
@@ -966,56 +1014,7 @@ interface WorktreeAuthorizer {
   resolve(configured: string, by: InventoryWorktreeAccess['by']): Promise<{ root: string } | { external: InventoryExternalReason } | 'missing'>;
 }
 
-const MAX_GIT_POINTER_BYTES = 4096;
-
-async function readGitPointer(ctx: Context, file: string): Promise<string | 'absent' | null> {
-  try {
-    const stats = await ctx.fs.lstat(file);
-    if (!stats.isFile() || stats.size > MAX_GIT_POINTER_BYTES) return null;
-    return (await ctx.fs.readFile(file)).toString('utf-8').trim();
-  } catch (err) {
-    // telemetry-exempt: the caller treats this as unverified; nothing about it is kept
-    return isMissing(err) ? 'absent' : null;
-  }
-}
-
-/**
- * Whether a worktree belongs to this project's repository, from both ends: its
- * `.git` file must name `<common>/worktrees/<id>`, and that folder's `gitdir` must
- * name this `.git`. `.git/worktrees` alone can be written to name any path, and a
- * `.git` folder is another repository with config of its own. `absent` is a plain
- * folder, where git finds the project's own repository.
- */
-async function verifyWorktreeGit(ctx: Context, projectPath: string, worktree: string): Promise<'ok' | 'absent' | 'bad'> {
-  const dotGit = path.join(worktree, '.git');
-  const pointer = await readGitPointer(ctx, dotGit);
-  if (pointer === 'absent') return 'absent';
-  const gitdir = pointer?.match(/^gitdir:[ \t]*(.+)$/)?.[1];
-  if (!gitdir) return 'bad';
-  const common = await readGitCommonDir(projectPath, ctx.signal, ctx.git);
-  if (!common) return 'bad';
-  let realCommon: string;
-  try {
-    realCommon = await ctx.fs.realpath(common);
-  } catch {
-    // telemetry-exempt: git named it and it isn't there, so nothing can be verified
-    return 'bad';
-  }
-  const worktreeGitDir = path.resolve(worktree, gitdir);
-  // Before reading anything it names: the first file is what's being checked.
-  if (projectPathKey(path.dirname(worktreeGitDir)) !== projectPathKey(path.join(realCommon, 'worktrees'))) return 'bad';
-  const back = await readGitPointer(ctx, path.join(worktreeGitDir, 'gitdir'));
-  if (!back || back === 'absent') return 'bad';
-  return projectPathKey(path.resolve(worktreeGitDir, back)) === projectPathKey(dotGit) ? 'ok' : 'bad';
-}
-
 function worktreeAuthorizer(ctx: Context, projectPath: string, roots: ExternalRoots): WorktreeAuthorizer {
-  // Asked only when an agent points outside, and once per project.
-  let gitWorktrees: Promise<Set<string>> | null = null;
-  const listedByGit = (configured: string) => {
-    gitWorktrees ??= readGitWorktrees(projectPath, ctx.signal, ctx.git).then((list) => new Set(list.map((p) => projectPathKey(p))));
-    return gitWorktrees.then((set) => set.has(projectPathKey(configured)));
-  };
   // The user chose these, so finding their real paths touches only what they selected.
   let included: Promise<Array<{ given: string; real: string | null }>> | null = null;
   const includedRoots = () => {
@@ -1041,7 +1040,6 @@ function worktreeAuthorizer(ctx: Context, projectPath: string, roots: ExternalRo
         return { by: 'explicit-inclusion', includedRoot: match.given };
       }
       if (lexical === 'inside-project') return { by: 'project-root' };
-      if (lexical === 'outside-project' && await listedByGit(configured as string)) return { by: 'git-worktree' };
       return { external: lexical };
     },
 
@@ -1060,10 +1058,6 @@ function worktreeAuthorizer(ctx: Context, projectPath: string, roots: ExternalRo
         if (!isMissing(err)) ctx.warnings.add(`worktree-unavailable:${errorCode(err)}`);
         return 'missing';
       }
-      if (by === 'git-worktree') {
-        // Git registered this exact folder; if it's now a link, it isn't what git meant.
-        return projectPathKey(real) === projectPathKey(configured) ? { root: real } : { external: 'symlink-outside-project' };
-      }
       const chosen = await includedRoots();
       return chosen.some((root) => root.real && projectPathKey(root.real) === projectPathKey(real)) ? { root: real } : { external: 'outside-project' };
     },
@@ -1071,33 +1065,42 @@ function worktreeAuthorizer(ctx: Context, projectPath: string, roots: ExternalRo
 }
 
 /**
- * The project's agents, once `agents.json` and its backup are known to be inside
- * the project. peekDurableConfigs reads them directly, past every check here, and
- * a symlinked `.clubhouse` or `agents.json` would lead it out.
+ * The project's agents, from `agents.json` or its backup. Read through the same
+ * door as everything else, and not through agent-config: it follows links, opens
+ * whatever's there and knows nothing of these limits. So this is what's on disk,
+ * even if the app holds a newer copy in memory.
  */
 async function readAgentConfigs(ctx: Context, projectPath: string): Promise<readonly DurableAgentConfig[]> {
   for (const name of ['agents.json', 'agents.json.bak']) {
-    const file = path.join(projectPath, '.clubhouse', name);
-    const resolved = await resolveInside(ctx, projectPath, file);
-    if (resolved === 'outside' || resolved === 'unreadable') {
-      ctx.excluded[resolved === 'outside' ? 'symlink' : 'unreadable']++;
+    const outcome = await readDefinitionFile(ctx, projectPath, path.join(projectPath, '.clubhouse', name), {
+      maxBytes: ctx.limits.maxConfigFileBytes,
+      allowAnyExtension: true,
+      skipContentCheck: true,
+    });
+    if (outcome === 'missing') continue;
+    if (outcome === 'excluded') {
       ctx.warnings.add('agent-config-not-read');
       return [];
     }
-    // Parsed whole, past any yield, so its size is checked first.
-    if (resolved !== 'missing' && (await ctx.fs.lstat(file)).size > ctx.limits.maxConfigFileBytes) {
-      ctx.excluded['too-large']++;
-      ctx.warnings.add('agent-config-not-read');
-      return [];
+    await checkpoint(ctx, true);
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(outcome.file.text);
+    } catch {
+      // telemetry-exempt: falls through to the backup; a parse error can quote the file, so it goes nowhere
+      continue;
     }
+    if (!Array.isArray(parsed)) continue;
+    const agents = parsed.filter((a): a is DurableAgentConfig => !!a && typeof a === 'object' && typeof a.id === 'string' && typeof a.name === 'string');
+    if (agents.length === 0 && parsed.length > 0) continue;
+    if (agents.length > ctx.limits.maxAgentsPerProject) {
+      ctx.truncated = true;
+      ctx.excluded['over-limit'] += agents.length - ctx.limits.maxAgentsPerProject;
+      return agents.slice(0, ctx.limits.maxAgentsPerProject);
+    }
+    return agents;
   }
-  const agents = await peekDurableConfigs(projectPath);
-  if (agents.length > ctx.limits.maxAgentsPerProject) {
-    ctx.truncated = true;
-    ctx.excluded['over-limit'] += agents.length - ctx.limits.maxAgentsPerProject;
-    return agents.slice(0, ctx.limits.maxAgentsPerProject);
-  }
-  return agents;
+  return [];
 }
 
 // ── One project ──────────────────────────────────────────────────────────
@@ -1107,7 +1110,7 @@ interface ProjectScan {
   missionsNotInventoried: number;
   clubhouseMode: InventoryClubhouseMode;
   agents: InventoryAgentReport[];
-  external: Array<{ agent: { id: string; name: string }; configuredPath: string; reason: InventoryExternalReason }>;
+  external: Array<{ agent: { id: string; name: string }; configuredPath: InventoryConfiguredPath; reason: InventoryExternalReason }>;
 }
 
 async function scanProject(
@@ -1145,7 +1148,7 @@ async function scanProject(
     const configured: unknown = agent.worktreePath;
     const agentLabel = { id: safeLabel(agent.id, 'agent'), name: safeLabel(agent.name, 'agent') };
     const report: InventoryAgentReport = {
-      id: agentLabel.id, name: agentLabel.name, worktreePath: typeof configured === 'string' ? configured : undefined, managed,
+      id: agentLabel.id, name: agentLabel.name, worktreePath: configured ? configuredPathOf(configured) : undefined, managed,
       status: 'no-worktree',
       persona: configRef(agent.persona ?? defaults.persona),
       mission: configRef(agent.mission ?? defaults.mission),
@@ -1155,7 +1158,7 @@ async function scanProject(
     if (!configured) continue;
     const reportExternal = (reason: InventoryExternalReason) => {
       report.status = 'external';
-      external.push({ agent: agentLabel, configuredPath: typeof configured === 'string' ? configured : '', reason });
+      external.push({ agent: agentLabel, configuredPath: configuredPathOf(configured), reason });
     };
     const authority = await authorizer.authority(configured);
     if ('external' in authority) {
@@ -1180,13 +1183,7 @@ async function scanProject(
       reportExternal(resolved.external);
       continue;
     }
-    const gitCheck = await verifyWorktreeGit(ctx, projectPath, resolved.root);
-    if (authority.by === 'git-worktree' && gitCheck !== 'ok') {
-      reportExternal('unverified-worktree');
-      continue;
-    }
-    if (gitCheck === 'bad') ctx.gitUntrustedRoots.add(resolved.root);
-    const access: InventoryWorktreeAccess = { by: authority.by, configuredPath: worktreePath };
+    const access: InventoryWorktreeAccess = { by: authority.by, configuredPath: configuredPathOf(configured) };
     if (authority.includedRoot) access.includedRoot = authority.includedRoot;
     report.worktreeAccess = access;
     report.status = 'scanned';
@@ -1248,6 +1245,65 @@ async function scanGlobal(ctx: Context, homeDir: string): Promise<RawItem[]> {
 // ── Output ───────────────────────────────────────────────────────────────
 
 /** Ask git about each file once, whichever items share it, and fill in the sources. */
+const MAX_GIT_CONFIG_BYTES = 64 * 1024;
+const MAX_GIT_FOLDER_ENTRIES = 1000;
+
+async function lstatOrNull(ctx: Context, file: string): Promise<Stats | null> {
+  try {
+    return await ctx.fs.lstat(file);
+  } catch (err) {
+    // telemetry-exempt: absence is what the caller is checking for; anything else is rethrown
+    if (isMissing(err)) return null;
+    throw err;
+  }
+}
+
+/**
+ * Why git mustn't run at `root`, or null. Git opens what `.git` and its config name,
+ * outside the project and through FIFOs, and those can decide its answers. So it
+ * runs only on a plain repo, read here first: a real `.git` folder at the root, not
+ * linked anywhere, holding only plain files, with a config that passes the
+ * allow-list. Everything else reads `unknown`. A linked worktree's `.git` file does
+ * name somewhere else, so its files are `unknown` too.
+ */
+async function gitBlockedReason(ctx: Context, root: string, gitPaths: readonly string[]): Promise<string | null> {
+  try {
+    const gitDir = path.join(root, '.git');
+    const stats = await lstatOrNull(ctx, gitDir);
+    if (!stats) return 'no-git-folder';
+    if (!stats.isDirectory()) return 'not-a-plain-git-folder';
+    const dirents = await ctx.fs.readdir(gitDir);
+    if (dirents.length > MAX_GIT_FOLDER_ENTRIES) return 'unsafe-git-folder';
+    for (const dirent of dirents) {
+      if (!dirent.isFile() && !dirent.isDirectory()) return 'unsafe-git-folder';
+      if (['commondir', 'gitdir', 'config.worktree'].includes(dirent.name)) return 'linked-git-folder';
+    }
+    for (const rel of ['HEAD', 'index', 'packed-refs', path.join('info', 'exclude')]) {
+      const file = await lstatOrNull(ctx, path.join(gitDir, rel));
+      if (file && unsafeReason(file)) return 'unsafe-git-folder';
+    }
+    const infoDir = await lstatOrNull(ctx, path.join(gitDir, 'info'));
+    if (infoDir && !infoDir.isDirectory()) return 'unsafe-git-folder';
+    if (await lstatOrNull(ctx, path.join(gitDir, 'objects', 'info', 'alternates'))) return 'unsafe-git-folder';
+    const config = await ctx.fs.readFile(path.join(gitDir, 'config'), MAX_GIT_CONFIG_BYTES);
+    if (!isGitConfigAllowed(config.toString('utf-8'))) return 'git-config-not-allowed';
+    // check-ignore opens every `.gitignore` above the paths it's given.
+    const folders = new Set<string>(['']);
+    for (const gitPath of gitPaths) {
+      const parts = gitPath.split('/').slice(0, -1);
+      for (let i = 1; i <= parts.length; i++) folders.add(parts.slice(0, i).join('/'));
+    }
+    for (const folder of folders) {
+      const file = await lstatOrNull(ctx, path.join(root, ...folder.split('/').filter(Boolean), '.gitignore'));
+      if (file && unsafeReason(file)) return 'unsafe-gitignore';
+    }
+    return null;
+  } catch {
+    // telemetry-exempt: reported as a closed reason; anything unexplained means git isn't run
+    return 'git-folder-unreadable';
+  }
+}
+
 async function toSources(ctx: Context, items: readonly RawItem[], signal: AbortSignal, project: { id: string; name: string } | null): Promise<Map<RawItem, InventorySource>> {
   const byRoot = new Map<string, Set<string>>();
   for (const item of items) {
@@ -1257,7 +1313,11 @@ async function toSources(ctx: Context, items: readonly RawItem[], signal: AbortS
   }
   const states = new Map<string, Awaited<ReturnType<typeof readGitStates>>>();
   for (const [root, paths] of byRoot) {
-    if (ctx.gitUntrustedRoots.has(root)) continue;
+    const blocked = await gitBlockedReason(ctx, root, [...paths]);
+    if (blocked) {
+      ctx.warnings.add(`git-not-asked:${blocked}`);
+      continue;
+    }
     states.set(root, await readGitStates(root, [...paths], signal, ctx.git));
     if (signal.aborted) throw new ScanStopped();
   }
@@ -1272,6 +1332,7 @@ async function toSources(ctx: Context, items: readonly RawItem[], signal: AbortS
       sizeBytes: f.sizeBytes,
     }));
     const source: InventorySource = {
+      id: sha256(JSON.stringify([project?.id ?? item.scope, item.agent?.id ?? '', item.kind, item.name, toGitPath(item.root, item.path), item.pointer ?? ''])).slice(0, 32),
       projectId: project?.id ?? null,
       projectName: project?.name ?? null,
       root: item.root,
@@ -1299,15 +1360,18 @@ interface Sourced {
 export function mergeEntries(sourced: readonly Sourced[]): InventoryEntry[] {
   const nameKey = (s: { kind: string; name: string }) => `${s.kind}\0${s.name.toLowerCase()}`;
   const byContent = new Map<string, InventoryEntry>();
-  const hashesByName = new Map<string, Set<string>>();
+  const variantsByName = new Map<string, Set<string>>();
   for (const { item, source } of sourced) {
     // Scope stays apart in the key, so a global source is never labeled as its project twin's.
-    const key = `${nameKey(item)}\0${item.scope}\0${item.contentHash}`;
+    const variant = `${item.contentHash}\0${item.comparisonKey ?? ''}`;
+    const key = `${nameKey(item)}\0${item.scope}\0${variant}`;
     const existing = byContent.get(key);
     if (existing) {
       existing.sources.push(source);
+      if (source.id < existing.id) existing.id = source.id;
     } else {
       const entry: InventoryEntry = {
+        id: source.id,
         kind: item.kind,
         name: item.name,
         scope: item.scope,
@@ -1321,17 +1385,17 @@ export function mergeEntries(sourced: readonly Sourced[]): InventoryEntry[] {
       if (item.persona) entry.persona = item.persona;
       byContent.set(key, entry);
     }
-    const hashes = hashesByName.get(nameKey(item)) ?? new Set<string>();
-    hashes.add(item.contentHash);
-    hashesByName.set(nameKey(item), hashes);
+    const variants = variantsByName.get(nameKey(item)) ?? new Set<string>();
+    variants.add(variant);
+    variantsByName.set(nameKey(item), variants);
   }
   const entries = [...byContent.values()];
   for (const entry of entries) {
-    const hashes = hashesByName.get(nameKey(entry)) ?? new Set<string>();
-    entry.conflict = hashes.size > 1;
-    entry.conflictingHashes = [...hashes].filter((h) => h !== entry.contentHash).sort();
+    const variants = variantsByName.get(nameKey(entry)) ?? new Set<string>();
+    entry.conflict = variants.size > 1;
+    entry.conflictingHashes = [...new Set([...variants].map((v) => v.split('\0')[0]))].filter((h) => h !== entry.contentHash).sort();
   }
-  return entries.sort((a, b) => a.kind.localeCompare(b.kind) || a.name.localeCompare(b.name) || a.contentHash.localeCompare(b.contentHash));
+  return entries.sort((a, b) => a.kind.localeCompare(b.kind) || a.name.localeCompare(b.name) || a.contentHash.localeCompare(b.contentHash) || a.id.localeCompare(b.id));
 }
 
 function mergeBuiltinMatches(sourced: readonly Sourced[]): InventoryBuiltinMatch[] {
@@ -1428,7 +1492,7 @@ export async function scanImportInventory(options: InventoryOptions): Promise<Im
     }
   };
 
-  const shared = { git: newGitContext(options.homeDir), scanKey: randomBytes(32) };
+  const shared = { git: newGitContext(), scanKey: randomBytes(32) };
   const registered = await peekProjects();
   const selected = options.projectIds
     ? registered.filter((p) => options.projectIds?.includes(p.id))
@@ -1451,6 +1515,7 @@ export async function scanImportInventory(options: InventoryOptions): Promise<Im
       truncated: false,
       filesSeen: 0,
       excluded: emptyExclusions(),
+      exclusions: [],
       bridgeEntriesFiltered: 0,
       missionsNotInventoried: 0,
       warnings: [],
@@ -1484,6 +1549,7 @@ export async function scanImportInventory(options: InventoryOptions): Promise<Im
     if (finished) {
       projectReport.filesSeen = finished.filesSeen;
       projectReport.excluded = finished.excluded;
+      projectReport.exclusions = finished.exclusions;
       projectReport.truncated = finished.truncated;
       projectReport.bridgeEntriesFiltered = finished.bridgeFiltered;
       projectReport.warnings = [...finished.warnings].sort();
@@ -1531,6 +1597,7 @@ export async function scanImportInventory(options: InventoryOptions): Promise<Im
 
   const globalSourced: Sourced[] = [];
   let globalExcluded = emptyExclusions();
+  let globalExclusions: InventoryExclusion[] = [];
   let globalStatus: ImportInventory['globalStatus'] = 'not-requested';
   if (includeProviderConfig && !outerSignal.aborted) {
     report({ phase: 'global', projectIndex: selected.length, projectCount: selected.length, filesSeen: 0 });
@@ -1544,7 +1611,10 @@ export async function scanImportInventory(options: InventoryOptions): Promise<Im
       return err instanceof ScanStopped ? { stopped: 'cancelled' as const } : { failed: true as const };
     });
     const finished = ctx as Context | null;
-    if (finished) globalExcluded = finished.excluded;
+    if (finished) {
+      globalExcluded = finished.excluded;
+      globalExclusions = finished.exclusions;
+    }
     if ('value' in outcome) {
       globalStatus = 'scanned';
       for (const [item, source] of outcome.value) globalSourced.push({ item, source });
@@ -1570,6 +1640,7 @@ export async function scanImportInventory(options: InventoryOptions): Promise<Im
     unmatchedExternalRoots: externalRoots.given.filter((root) => !externalRoots.matched.has(root)),
     globalStatus,
     globalExcluded,
+    globalExclusions,
   };
 
   // Counts only: paths and names can be private, and contents never reach this far.

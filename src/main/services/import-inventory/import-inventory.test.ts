@@ -31,7 +31,8 @@ import type { ImportInventory, InventoryEntry } from '../../../shared/import-inv
 import type { DurableAgentConfig } from '../../../shared/types';
 import { INSTRUCTION_FILES, PROJECT_MCP_FILES, confinedJoin, projectPathKey, scanImportInventory, type InventoryFs, type InventoryOptions } from './inventory';
 import { newGitContext, readGitStates, toGitPath } from './git-state';
-import { checkConfiguredPath, parseWorktreeList } from './untrusted-paths';
+import { readRegularFile } from './safe-read';
+import { checkConfiguredPath } from './untrusted-paths';
 
 // Real git on Windows CI is slow, and these spawn it several times each.
 vi.setConfig({ testTimeout: 30_000 });
@@ -134,7 +135,7 @@ function recordingFs(): { fs: InventoryFs; touched: string[]; resolved: string[]
       stat: (p) => record(p, () => fsp.stat(p)),
       lstat: (p) => record(p, () => fsp.lstat(p)),
       readdir: (p) => record(p, () => fsp.readdir(p, { withFileTypes: true })),
-      readFile: (p) => record(p, () => fsp.readFile(p)),
+      readFile: (p, maxBytes) => record(p, () => readRegularFile(p, maxBytes)),
       realpath: (p) => record(p, async () => {
         const real = await fsp.realpath(p);
         resolved.push(real);
@@ -239,7 +240,7 @@ describe('the home folder', () => {
     expect(sources.length).toBeGreaterThan(3);
     for (const file of sources) {
       const text = fs.readFileSync(path.join(__dirname, file), 'utf-8');
-      expect(text, file).not.toMatch(/homedir|from 'os'|getPath\(/);
+      expect(text, file).not.toMatch(/homedir|getPath\(/);
     }
   });
 });
@@ -393,7 +394,7 @@ describe('git state per file', () => {
     // Refused by check-ignore on every platform (bad pathspec magic), and exits 128 for the whole batch.
     const rejected = ':(nonsense)rejected.md';
 
-    const states = await readGitStates(project, ['plain.md', rejected, 'ignored.md', 'README.md'], new AbortController().signal, newGitContext(dirs.home));
+    const states = await readGitStates(project, ['plain.md', rejected, 'ignored.md', 'README.md'], new AbortController().signal, newGitContext());
 
     expect(Object.fromEntries(states)).toEqual({
       'plain.md': 'untracked',
@@ -403,14 +404,15 @@ describe('git state per file', () => {
     });
   });
 
-  it('says not-a-repo outside a repository, rather than untracked', async () => {
+  it('says unknown outside a repository, and why, rather than untracked', async () => {
     const project = makeProject('plain', { repo: false });
     write(project, '.clubhouse/skills/deploy/SKILL.md', 'x\n');
     registerProjects([project]);
 
     const result = await scan();
 
-    expect(entry(result, 'skill', 'deploy').sources[0].files[0].gitState).toBe('not-a-repo');
+    expect(entry(result, 'skill', 'deploy').sources[0].files[0].gitState).toBe('unknown');
+    expect(result.projects[0].warnings).toContain('git-not-asked:no-git-folder');
   });
 
   it('says unknown when git fails, rather than guessing', async () => {
@@ -444,25 +446,33 @@ describe('git config can\'t run anything', () => {
     expect(fs.existsSync(marker)).toBe(true);
   });
 
-  it('runs nothing from any other config key or hook that names a program', async () => {
-    const project = makeProject('alpha');
-    write(project, '.clubhouse/skills/tracked/SKILL.md', 'x\n');
-    write(project, '.gitattributes', '*.md filter=evil diff=evil\n');
-    git(project, 'add', '.clubhouse/skills/tracked/SKILL.md');
-    write(project, '.clubhouse/skills/untracked/SKILL.md', 'y\n');
+  it('doesn\'t run git at all on a config naming a program, whichever key', async () => {
     const keys = [
-      'core.pager', 'core.sshCommand', 'core.editor', 'core.askPass', 'core.alternateRefsCommand', 'core.gitProxy',
+      'core.fsmonitor', 'core.pager', 'core.sshCommand', 'core.editor', 'core.askPass', 'core.alternateRefsCommand', 'core.gitProxy',
       'pager.ls-files', 'pager.check-ignore', 'filter.evil.clean', 'filter.evil.smudge', 'filter.evil.process',
       'diff.external', 'diff.evil.command', 'diff.evil.textconv', 'credential.helper', 'gpg.program',
       'sequence.editor', 'alias.ls-files', 'alias.check-ignore',
     ];
-    for (const [i, key] of keys.entries()) git(project, 'config', key, leaveMarker(`config-ran-${i}`));
-    // Makes the scan ask `git worktree list` under the same config.
-    setAgents(project, [{ id: 'a1', name: 'far', worktreePath: path.join(root, 'elsewhere') }]);
-    git(project, 'config', 'core.hooksPath', 'evil-hooks');
+    for (const [i, key] of keys.entries()) {
+      const project = makeProject(`config-${i}`);
+      write(project, '.clubhouse/skills/deploy/SKILL.md', 'x\n');
+      git(project, 'config', key, leaveMarker('config-ran'));
+      registerProjects([project]);
+
+      const result = await scan();
+
+      expect(entry(result, 'skill', 'deploy').sources[0].files[0].gitState, key).toBe('unknown');
+      expect(result.projects[0].warnings, key).toContain('git-not-asked:git-config-not-allowed');
+      expect(fs.existsSync(path.join(project, 'config-ran')), key).toBe(false);
+    }
+  });
+
+  it('runs no hook where it does ask git', async () => {
+    const project = makeProject('alpha');
+    write(project, '.clubhouse/skills/tracked/SKILL.md', 'x\n');
+    git(project, 'add', '.clubhouse/skills/tracked/SKILL.md');
     for (const hook of ['post-index-change', 'pre-commit', 'post-checkout', 'reference-transaction', 'fsmonitor-watchman']) {
-      const file = write(project, `evil-hooks/${hook}`, `#!/bin/sh\n${leaveMarker(`hook-ran-${hook}`)}\n`);
-      fs.chmodSync(file, 0o755);
+      fs.chmodSync(write(project, `.git/hooks/${hook}`, `#!/bin/sh\n${leaveMarker(`hook-ran-${hook}`)}\n`), 0o755);
     }
     registerProjects([project]);
 
@@ -534,7 +544,7 @@ describe('symlinked parents', () => {
       project,
       ['.clubhouse/linked/deploy/SKILL.md', '.clubhouse/skills/plain/SKILL.md'],
       new AbortController().signal,
-      newGitContext(dirs.home),
+      newGitContext(),
     );
 
     expect(states.get('.clubhouse/linked/deploy/SKILL.md')).toBe('unknown');
@@ -605,7 +615,7 @@ describe('untrusted worktree paths', () => {
 
     expectUntouched(touched, outside);
     expectNoTrace(result);
-    expect(result.externalReferences).toEqual([{ projectId: 'id-alpha', projectName: 'alpha', agent: { id: 'a1', name: 'lead' }, configuredPath: outside, reason: 'outside-project' }]);
+    expect(result.externalReferences).toEqual([{ projectId: 'id-alpha', projectName: 'alpha', agent: { id: 'a1', name: 'lead' }, configuredPath: { text: outside, hash: sha(outside), length: outside.length }, reason: 'outside-project' }]);
     expect(result.projects[0].agents[0].status).toBe('external');
   });
 
@@ -638,7 +648,7 @@ describe('untrusted worktree paths', () => {
       expectUntouched(touched, outside);
       expectUntouched(touched, path.join(project, 'inner'));
       expectNoTrace(result);
-      expect(result.externalReferences[0]).toMatchObject({ configuredPath: configured, reason: 'parent-traversal' });
+      expect(result.externalReferences[0]).toMatchObject({ configuredPath: { hash: sha(configured) }, reason: 'parent-traversal' });
     }
   });
 
@@ -650,7 +660,7 @@ describe('untrusted worktree paths', () => {
     expect(touched.filter((p) => p.includes('attacker') || p.includes('outside'))).toEqual([]);
     expect(touched.filter((p) => /^[\\/]{2}/.test(p))).toEqual([]);
     expectNoTrace(result);
-    expect(result.externalReferences[0]).toMatchObject({ configuredPath: configured, reason: 'unc-path' });
+    expect(result.externalReferences[0]).toMatchObject({ configuredPath: { hash: sha(configured) }, reason: 'unc-path' });
   });
 
   it('reports a config value that isn\'t a usable path', async () => {
@@ -658,8 +668,9 @@ describe('untrusted worktree paths', () => {
 
     const { result } = await scanAgentAt(project, { not: 'a string' });
 
-    expect(result.externalReferences[0]).toMatchObject({ configuredPath: '', reason: 'invalid-path' });
-    expect(result.projects[0].agents[0].worktreePath).toBeUndefined();
+    expect(result.externalReferences[0]).toMatchObject({ configuredPath: { length: 0 }, reason: 'invalid-path' });
+    expect(result.externalReferences[0].configuredPath.text).toBeUndefined();
+    expect(JSON.stringify(result)).not.toContain('a string');
   });
 
   it('won\'t go through a case variant of the project', async () => {
@@ -705,7 +716,7 @@ describe('untrusted worktree paths', () => {
 
       expectUntouched(touched, outside);
       expectNoTrace(result);
-      expect(result.externalReferences[0]).toMatchObject({ configuredPath: configured, reason: 'symlink-outside-project' });
+      expect(result.externalReferences[0]).toMatchObject({ configuredPath: { text: configured }, reason: 'symlink-outside-project' });
     });
 
     it('follows a chain only as far as it stays inside', async () => {
@@ -805,21 +816,22 @@ describe('untrusted worktree paths', () => {
       const { result } = await scanAgentAt(project, worktree);
 
       const source = entry(result, 'agent-instructions', 'lead/CLAUDE.md').sources[0];
-      expect(source.worktreeAccess).toEqual({ by: 'project-root', configuredPath: worktree });
+      expect(source.worktreeAccess).toEqual({ by: 'project-root', configuredPath: { text: worktree, hash: sha(worktree), length: worktree.length } });
+      expect(source.files[0].gitState).toBe('unknown');
       expect(result.externalReferences).toEqual([]);
     });
 
-    it('keeps a linked worktree outside the project in scope, because git reports it', async () => {
+    it('treats a real linked worktree outside the project as external: git\'s word isn\'t enough', async () => {
       const project = makeProject('alpha');
       const worktree = path.join(root, 'elsewhere');
       git(project, 'worktree', 'add', '-q', '-b', 'lead/standby', worktree, 'main');
-      write(worktree, 'CLAUDE.md', 'Mine\n');
+      plantCanary(worktree);
 
-      const { result } = await scanAgentAt(project, worktree);
+      const { result, touched } = await scanAgentAt(project, worktree);
 
-      const source = entry(result, 'agent-instructions', 'lead/CLAUDE.md').sources[0];
-      expect(source.worktreeAccess).toEqual({ by: 'git-worktree', configuredPath: worktree });
-      expect(source.files[0].gitState).toBe('untracked');
+      expectUntouched(touched, worktree);
+      expectNoTrace(result);
+      expect(result.externalReferences[0].reason).toBe('outside-project');
     });
 
     it('doesn\'t let another repo\'s worktree vouch for itself', async () => {
@@ -879,10 +891,10 @@ describe('untrusted worktree paths', () => {
         return; // telemetry-exempt: nothing to test without the privilege
       }
 
-      // Canonicalizing is the one touch allowed here, because git vouched for the path.
-      const { result, readsOnly } = await scanAgentAt(project, worktree);
+      const { result, touched } = await scanAgentAt(project, worktree);
 
-      expect(readsOnly.filter((p) => p.startsWith(outside))).toEqual([]);
+      expectUntouched(touched, outside);
+      expectUntouched(touched, worktree);
       expect(result.entries).toEqual([]);
       expect(JSON.stringify(result)).not.toContain('CANARY');
     });
@@ -902,7 +914,7 @@ describe('untrusted worktree paths', () => {
       expect(result.externalReferences).toEqual([]);
       expect(result.unmatchedExternalRoots).toEqual([]);
       const source = entry(result, 'agent-instructions', 'lead/CLAUDE.md').sources[0];
-      expect(source.worktreeAccess).toEqual({ by: 'explicit-inclusion', configuredPath: outside, includedRoot: outside });
+      expect(source.worktreeAccess).toEqual({ by: 'explicit-inclusion', configuredPath: { text: outside, hash: sha(outside), length: outside.length }, includedRoot: outside });
       expect(source.files[0].contentHash).toBe(sha(OUTSIDE_FILES['CLAUDE.md']));
       expect(result.projects[0].agents[0]).toMatchObject({ status: 'scanned', mcpFilesNotInventoried: 1 });
     });
@@ -999,11 +1011,6 @@ describe('untrusted worktree paths', () => {
     expect(check(`C:\\repo\\a\0b`)).toBe('invalid-path');
     expect(check(`C:\\repo\\${'a'.repeat(5000)}`)).toBe('invalid-path');
   });
-
-  it('drops a prunable worktree from what git vouches for', () => {
-    const output = ['worktree /a', 'HEAD 1', 'branch refs/heads/main', '', 'worktree /b', 'HEAD 2', 'prunable gitdir file points to non-existent location', '', 'worktree /c', 'detached', ''].join('\n');
-    expect(parseWorktreeList(output)).toEqual(['/a', '/c']);
-  });
 });
 
 describe('reads only', () => {
@@ -1019,7 +1026,6 @@ describe('reads only', () => {
     const worktree = path.join(project, '.clubhouse', 'agents', 'lead');
     git(project, 'worktree', 'add', '-q', '-b', 'lead/standby', worktree, 'main');
     write(worktree, 'CLAUDE.md', 'hand-edited\n');
-    // The outside path makes the scan ask `git worktree list` too.
     setAgents(project, [{ id: 'a1', name: 'lead', worktreePath: worktree }, { id: 'a2', name: 'far', worktreePath: path.join(root, 'elsewhere') }]);
     setSettings(project, { agentDefaults: { instructions: 'x', mcpJson: JSON.stringify({ mcpServers: { s: { command: 'x' } } }) } });
     write(project, '.mcp.json', JSON.stringify({ mcpServers: { t: { command: 'y' } } }));
@@ -1107,7 +1113,7 @@ describe('agent instructions and worktrees', () => {
     expect(instructions.sources[0].agent).toEqual({ id: 'a1', name: 'lead' });
     expect(instructions.sources[0].path).toBe(path.join(worktree, 'CLAUDE.md'));
     expect(instructions.sources[0].root).toBe(worktree);
-    expect(instructions.sources[0].files[0].gitState).toBe('untracked');
+    expect(instructions.sources[0].files[0].gitState).toBe('unknown');
     expect(instructions.sources[0].caveats).toEqual(['wildcards-may-be-expanded', 'git-state-is-a-hint']);
     expect(result.projects[0].agents[0]).toMatchObject({ status: 'scanned', managed: false });
   });
@@ -1480,14 +1486,17 @@ describe('MCP definitions', () => {
     expect(JSON.stringify(result)).not.toContain('value-');
   });
 
-  it('keys its hashes per scan, so one can\'t confirm a guess at a value', async () => {
+  it('gives the same hash on every scan, from nothing withheld', async () => {
     const project = makeProject('a');
     write(project, '.mcp.json', JSON.stringify({ mcpServers: { s: { command: 'x', args: ['guessable'] } } }));
     registerProjects([project]);
 
     const [first, second] = [await scan(), await scan()];
+    write(project, '.mcp.json', JSON.stringify({ mcpServers: { s: { command: 'x', args: ['different'] } } }));
+    const third = await scan();
 
-    expect(first.entries[0].contentHash).not.toBe(second.entries[0].contentHash);
+    expect(first.entries[0].contentHash).toBe(second.entries[0].contentHash);
+    expect(third.entries[0].contentHash).toBe(first.entries[0].contentHash);
   });
 
   describe('hostile keys', () => {
@@ -1734,7 +1743,7 @@ describe('exclusions', () => {
     expect(deploy.sources[0].excludedFileCount).toBe(5);
     expect(result.entries.map((e) => e.name)).toEqual(['deploy']);
     const everything = JSON.stringify([result, vi.mocked(appLog).mock.calls]);
-    for (const text of [fakeToken, fakeKey, 'hunter2', 'ENV-FILE-CONTENT', 'PEM-FILE-CONTENT', 'server.pem', 'notes.md', 'leaky']) {
+    for (const text of [fakeToken, fakeKey, 'hunter2', 'ENV-FILE-CONTENT', 'PEM-FILE-CONTENT']) {
       expect(everything).not.toContain(text);
     }
   });
@@ -1864,7 +1873,7 @@ describe('missing and offline paths', () => {
     const hanging: InventoryFs = {
       ...real,
       // Never settles, as a call on a dead network mount can.
-      readFile: (p) => (p.startsWith(hung) ? new Promise<Buffer>(() => undefined) : real.readFile(p)),
+      readFile: (p, maxBytes) => (p.startsWith(hung) ? new Promise<Buffer>(() => undefined) : real.readFile(p, maxBytes)),
     };
 
     // Long enough for the healthy project's git calls on a slow runner, which share the deadline.
@@ -1942,10 +1951,10 @@ describe('progress and cancel', () => {
     const reads: string[] = [];
     const cancelling: InventoryFs = {
       ...real,
-      readFile: (p) => {
+      readFile: (p, maxBytes) => {
         reads.push(p);
         if (p.includes(`${path.sep}bbb${path.sep}`)) controller.abort();
-        return real.readFile(p);
+        return real.readFile(p, maxBytes);
       },
     };
 
@@ -1997,7 +2006,7 @@ describe('progress and cancel', () => {
       const started = slowGit();
       const controller = new AbortController();
 
-      const pending = readGitStates(project, ['a.md', 'b.md'], controller.signal, newGitContext(dirs.home));
+      const pending = readGitStates(project, ['a.md', 'b.md'], controller.signal, newGitContext());
       await vi.waitFor(() => expect(fs.existsSync(started)).toBe(true), { timeout: 10_000, interval: 20 });
       controller.abort();
       const states = await pending;
@@ -2118,7 +2127,7 @@ describe('provider and global config', () => {
     write(project, '.clubhouse/skills/deploy/SKILL.md', 'x\n');
     registerProjects([project]);
     const real = recordingFs().fs;
-    const hanging: InventoryFs = { ...real, readFile: (p) => (p.startsWith(dirs.home) ? new Promise<Buffer>(() => undefined) : real.readFile(p)) };
+    const hanging: InventoryFs = { ...real, readFile: (p, maxBytes) => (p.startsWith(dirs.home) ? new Promise<Buffer>(() => undefined) : real.readFile(p, maxBytes)) };
 
     const result = await scan({ includeProviderConfig: true, fs: hanging, projectTimeoutMs: 5000 });
 
@@ -2168,7 +2177,7 @@ describe('Windows paths', () => {
     write(project, 'Tracked.md', 'x\n');
     git(project, 'add', 'Tracked.md');
 
-    const asWindows = await readGitStates(project, ['Tracked.md'], new AbortController().signal, newGitContext(dirs.home), 'win32');
+    const asWindows = await readGitStates(project, ['Tracked.md'], new AbortController().signal, newGitContext(), 'win32');
 
     expect(asWindows.get('Tracked.md')).toBe('tracked');
   });

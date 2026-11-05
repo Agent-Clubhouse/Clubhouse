@@ -8,7 +8,7 @@
  */
 import { isClubhouseMcpEntry } from '../clubhouse-mcp/injection';
 import type { InventoryMcpDefinition } from '../../../shared/import-inventory-types';
-import { isSafeIdentifier } from './classify';
+import { isSafeEnvName, isSafeIdentifier } from './classify';
 
 /** Keys that reach Object.prototype or mean nothing as a name. Refused in every parser here. */
 const FORBIDDEN_KEYS = new Set(['__proto__', 'constructor', 'prototype']);
@@ -28,6 +28,15 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 function stringArray(value: unknown): string[] | undefined {
   return Array.isArray(value) && value.every((v) => typeof v === 'string') ? value as string[] : undefined;
+}
+
+const MAX_ENTRY_DEPTH = 16;
+
+/** Hostile nesting overflows a recursive serializer and costs the project its scan. This refuses the one entry. */
+function withinDepth(value: unknown, depthLeft: number): boolean {
+  if (!value || typeof value !== 'object') return true;
+  if (depthLeft === 0) return false;
+  return Object.values(value).every((child) => withinDepth(child, depthLeft - 1));
 }
 
 const KNOWN_TRANSPORTS = new Set(['stdio', 'http', 'sse', 'streamable-http', 'streamableHttp', 'ws']);
@@ -62,7 +71,7 @@ function urlOriginOf(url: string): { scheme: string; host?: string } | null {
  */
 export function readMcpEntry(entry: unknown): McpEntryResult {
   if (isClubhouseMcpEntry(entry)) return { kind: 'bridge' };
-  if (!isRecord(entry)) return { kind: 'invalid' };
+  if (!isRecord(entry) || !withinDepth(entry, MAX_ENTRY_DEPTH)) return { kind: 'invalid' };
 
   const command = typeof entry.command === 'string' ? entry.command : undefined;
   const url = typeof entry.url === 'string' ? entry.url : undefined;
@@ -76,7 +85,7 @@ export function readMcpEntry(entry: unknown): McpEntryResult {
   const otherKeys = Object.keys(entry).filter((key) => !['command', 'args', 'url', 'type', 'env', 'env_vars', 'headers', 'http_headers'].includes(key) && !isForbiddenKey(key));
 
   const candidates = [...rawEnvNames, ...forwarded];
-  const envNames = [...new Set(candidates.filter((name) => isSafeIdentifier(name)))].sort();
+  const envNames = [...new Set(candidates.filter(isSafeEnvName))].sort();
   const commandName = command ? commandNameOf(command) : undefined;
   const origin = url ? urlOriginOf(url) : null;
   const transport = typeof entry.type === 'string' && KNOWN_TRANSPORTS.has(entry.type) ? entry.type : undefined;

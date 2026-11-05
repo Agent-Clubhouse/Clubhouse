@@ -19,11 +19,20 @@ export type InventoryKind =
 /** `provider` and `global` are read only on request and kept apart from `project`. */
 export type InventoryScope = 'project' | 'provider' | 'global';
 
-/** What git answered for one file. `not-a-repo` and `unknown` are never guessed into the others. */
-export type InventoryGitState = 'tracked' | 'untracked' | 'ignored' | 'not-a-repo' | 'unknown';
+/**
+ * What git answered for one file. `unknown` means git wasn't asked or couldn't say,
+ * and is common: git runs only on a plain repo at the root, so a linked worktree's
+ * files read this. It says nothing about the file, and mustn't read as safe to import.
+ */
+export type InventoryGitState = 'tracked' | 'untracked' | 'ignored' | 'unknown';
 
 export type InventoryExclusionReason =
   | 'secret-looking'
+  /** A name that could itself hold a credential, or that isn't valid text. */
+  | 'unsafe-name'
+  | 'hard-link'
+  /** A FIFO, socket or device. Never opened. */
+  | 'special-file'
   | 'non-definition'
   | 'too-large'
   | 'unreadable'
@@ -31,6 +40,20 @@ export type InventoryExclusionReason =
   | 'over-limit';
 
 export type InventoryExclusionCounts = Record<InventoryExclusionReason, number>;
+
+/** One thing left out. Bounded per project; `excluded` has the full counts. */
+export interface InventoryExclusion {
+  reason: InventoryExclusionReason;
+  /** Relative to the source root, `/` separated. Absent when the path itself isn't fit to show. */
+  relativePath?: string;
+}
+
+/** A value from config that's a path: shown only if it's plainly one, identified either way. */
+export interface InventoryConfiguredPath {
+  text?: string;
+  hash: string;
+  length: number;
+}
 
 export interface InventoryFile {
   /** Absolute, in the platform's own form. */
@@ -56,18 +79,16 @@ export type InventoryExternalReason =
   | 'relative-path'
   | 'unc-path'
   | 'parent-traversal'
-  /** Not inside the project, and not a worktree git reports for it. */
+  /** Not inside the project. Only `includeExternalRoots` can bring it in, whatever git says about it. */
   | 'outside-project'
-  /** Git reports it, but its `.git` doesn't point back at this repository. Only that file was read. */
-  | 'unverified-worktree'
   /** Inside the project as written, but a symlink leads out. Only the links inside the project were read. */
   | 'symlink-outside-project';
 
 /** Why a worktree outside the plain project scan may be read. */
 export interface InventoryWorktreeAccess {
-  by: 'project-root' | 'git-worktree' | 'explicit-inclusion';
-  /** The string `agents.json` holds. */
-  configuredPath: string;
+  by: 'project-root' | 'explicit-inclusion';
+  /** What `agents.json` holds. */
+  configuredPath: InventoryConfiguredPath;
   /** Set for `explicit-inclusion`: the entry in `includeExternalRoots` that allowed it. */
   includedRoot?: string;
 }
@@ -81,13 +102,15 @@ export interface InventoryExternalReference {
   projectId: string;
   projectName: string;
   agent: { id: string; name: string };
-  /** As configured, and untrusted. Empty when it wasn't a string. */
-  configuredPath: string;
+  /** Untrusted. `text` is absent when it isn't plainly a path, so a credential or a pasted document never comes back. */
+  configuredPath: InventoryConfiguredPath;
   reason: InventoryExternalReason;
 }
 
 /** One place an entry was found. */
 export interface InventorySource {
+  /** Stable across scans: from the project, kind, name and relative path, not content or an absolute path. */
+  id: string;
   /** Null for global sources, which belong to no project. */
   projectId: string | null;
   projectName: string | null;
@@ -112,8 +135,11 @@ export interface InventorySource {
  * credential, whatever its shape. No arguments, URL path or query, env or header
  * values. A later import step reads the details on the user's explicit action.
  *
- * Such an entry's `contentHash` is keyed for this scan: it tells two definitions
- * apart here, env and header values aside, and isn't comparable between scans.
+ * Such an entry's `contentHash` covers only these fields, so it's the same from
+ * scan to scan and can't confirm a guess at a withheld value. It doesn't change when
+ * only withheld details do; two definitions that differ there are separate entries
+ * with `conflict` set and possibly the same hash, compared inside the scan by a key
+ * that never leaves it.
  */
 export interface InventoryMcpDefinition {
   /** The executable's plain name. Absent when the command doesn't reduce to one. */
@@ -150,6 +176,8 @@ export interface InventoryPersonaMetadata {
  * have `conflict` set.
  */
 export interface InventoryEntry {
+  /** Stable across scans while this source remains: its first source's id. */
+  id: string;
   kind: InventoryKind;
   name: string;
   scope: InventoryScope;
@@ -187,7 +215,7 @@ export type InventoryAgentStatus =
 export interface InventoryAgentReport {
   id: string;
   name: string;
-  worktreePath?: string;
+  worktreePath?: InventoryConfiguredPath;
   status: InventoryAgentStatus;
   /** Whether Clubhouse Mode writes this agent's worktree at wake, as agent-system decides it. */
   managed: boolean | 'unknown';
@@ -235,6 +263,7 @@ export interface InventoryProjectReport {
   truncated: boolean;
   filesSeen: number;
   excluded: InventoryExclusionCounts;
+  exclusions: InventoryExclusion[];
   /** MCP entries dropped because they are the injected Clubhouse bridge. */
   bridgeEntriesFiltered: number;
   /** Mission files. In the code, not in #2820's table, so counted and not offered. */
@@ -274,6 +303,7 @@ export interface ImportInventory {
   globalStatus: 'not-requested' | 'scanned' | 'unavailable' | 'cancelled';
   /** Exclusions outside any project, from the global scan. */
   globalExcluded: InventoryExclusionCounts;
+  globalExclusions: InventoryExclusion[];
 }
 
 export interface InventoryProgress {

@@ -1,4 +1,6 @@
 import { describe, it, expect, vi } from 'vitest';
+import * as os from 'os';
+import * as path from 'path';
 
 const spawned = vi.hoisted(() => ({ calls: [] as Array<{ args: string[]; options: Record<string, unknown> }> }));
 
@@ -24,10 +26,13 @@ describe('how git is spawned', () => {
   it('names the repo with -C and never makes it the cwd', async () => {
     process.env.GIT_CONFIG_GLOBAL = 'inherited';
     process.env.GIT_DIR = 'inherited';
-    await readGitStates('some-repo', ['a.md'], new AbortController().signal, newGitContext('the-home'));
+    await readGitStates('some-repo', ['a.md'], new AbortController().signal, newGitContext());
     delete process.env.GIT_CONFIG_GLOBAL;
     delete process.env.GIT_DIR;
 
+    for (const { args, options } of spawned.calls) {
+      if (args[0] !== '--version') expect((options.env as NodeJS.ProcessEnv).GIT_CEILING_DIRECTORIES).toBe(path.dirname('some-repo'));
+    }
     const repoCalls = spawned.calls.filter(({ args }) => args[0] !== '--version');
     expect(repoCalls.length).toBeGreaterThan(0);
     for (const { options } of spawned.calls) {
@@ -36,12 +41,11 @@ describe('how git is spawned', () => {
       expect(env.GIT_OPTIONAL_LOCKS).toBe('0');
       expect(env.GIT_NO_LAZY_FETCH).toBe('1');
       expect(env.GIT_CONFIG_NOSYSTEM).toBe('1');
-      expect(env.HOME).toBe('the-home');
-      expect(env.GIT_CONFIG_GLOBAL).toBeUndefined();
+      expect(env.GIT_CONFIG_GLOBAL).toBe(os.devNull);
       expect(env.GIT_DIR).toBeUndefined();
     }
     for (const { args } of repoCalls) {
-      expect(args.slice(0, 7)).toEqual(['-C', 'some-repo', '--no-lazy-fetch', '-c', 'safe.bareRepository=explicit', '-c', 'core.fsmonitor=false']);
+      expect(args.slice(0, 11)).toEqual(['-C', 'some-repo', '--no-lazy-fetch', '-c', 'safe.bareRepository=explicit', '-c', 'core.fsmonitor=false', '-c', 'core.excludesFile=', '-c', 'core.attributesFile=']);
     }
   });
 });

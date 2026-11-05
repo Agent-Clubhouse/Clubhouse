@@ -43,8 +43,24 @@ export function looksBinary(bytes: Buffer): boolean {
   return bytes.subarray(0, 8192).includes(0);
 }
 
-const OPAQUE_TOKEN = /^(?=.*\d)(?=.*[A-Za-z])[A-Za-z0-9_=+-]{32,}$/;
 const IDENTIFIER = /^[A-Za-z0-9_][A-Za-z0-9_.+-]*$/;
+const CONTROL_OR_REPLACEMENT = /[\u0000-\u001f\u007f�]/;
+
+/**
+ * One run of letters and digits that reads as generated rather than named: long,
+ * all hex, or mixing lower, upper and digits. A heuristic, so `hunter2` passes. It
+ * decides only what a result may show, and everything else about the value is
+ * withheld anyway.
+ */
+function looksGenerated(run: string): boolean {
+  if (run.length >= 32) return true;
+  if (run.length >= 16 && /^[0-9a-f]+$/i.test(run) && /\d/.test(run)) return true;
+  return run.length >= 12 && /[a-z]/.test(run) && /[A-Z]/.test(run) && /\d/.test(run);
+}
+
+function holdsGeneratedRun(value: string): boolean {
+  return value.split(/[^A-Za-z0-9]+/).some(looksGenerated);
+}
 
 /**
  * A short plain name that doesn't look like a credential, for the few strings a
@@ -56,6 +72,32 @@ export function isSafeIdentifier(value: unknown, maxLength = 64): value is strin
     && value.length > 0
     && value.length <= maxLength
     && IDENTIFIER.test(value)
-    && !OPAQUE_TOKEN.test(value)
+    && !holdsGeneratedRun(value)
     && !hasSecretLookingContent(value);
+}
+
+export function isSafeEnvName(value: unknown): value is string {
+  return isSafeIdentifier(value) && /^[A-Za-z_][A-Za-z0-9_]*$/.test(value);
+}
+
+/**
+ * A file or folder name fit to report and to open. A name that wasn't valid UTF-8
+ * arrives with U+FFFD in it and wouldn't open anyway.
+ */
+export function isSafeName(name: string): boolean {
+  return name.length > 0
+    && name.length <= 128
+    && !CONTROL_OR_REPLACEMENT.test(name)
+    && !name.includes('://')
+    && !(name.includes('@') && name.includes(':'))
+    && !holdsGeneratedRun(name)
+    && !hasSecretLookingContent(name);
+}
+
+/** A path as configured, if it's fit to show: every part a safe name, and bounded. */
+export function isSafePathText(text: string): boolean {
+  if (text.length > 512 || text.includes('@') || text.includes('://')) return false;
+  const withoutDrive = text.replace(/^[A-Za-z]:(?=[\\/])/, '');
+  if (withoutDrive.includes(':')) return false;
+  return withoutDrive.split(/[\\/]/).filter(Boolean).every(isSafeName);
 }

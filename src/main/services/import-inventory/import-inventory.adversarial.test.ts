@@ -32,9 +32,11 @@ vi.mock('fs/promises', async (orig) => {
   return { ...wrapped, default: wrapped };
 });
 
-import { hasSecretLookingContent } from './classify';
+import { hasSecretLookingContent, isSafeEnvName, isSafeIdentifier } from './classify';
 import { meetsMinimumGit } from './git-state';
 import { scanImportInventory } from './inventory';
+import { UnsafeFileError, readRegularFile } from './safe-read';
+import { isGitConfigAllowed } from './untrusted-paths';
 import type { ImportInventory } from '../../../shared/import-inventory-types';
 import type { InventoryOptions } from './inventory';
 
@@ -209,69 +211,75 @@ describe('a repo-carried worktrees/ entry can\'t vouch for an outside path', () 
     expect(touchedOutside()).toEqual([]);
   });
 
-  describe('with local write access to .git/worktrees', () => {
-    function localEntry(pointsAt: string): string {
-      const project = makeDir('local');
-      git(project, 'init', '-q', '-b', 'main');
-      git(project, 'commit', '-q', '--allow-empty', '-m', 'x');
-      write(project, '.git/worktrees/x/gitdir', `${pointsAt}\n`);
-      write(project, '.git/worktrees/x/HEAD', 'ref: refs/heads/main\n');
-      write(project, '.git/worktrees/x/commondir', '../..\n');
-      setAgents(project, [{ id: 'a', name: 'a', worktreePath: outside }]);
-      register([project]);
-      return project;
+  describe('whatever the repo\'s own .git says', () => {
+    /** Someone else's real repo, with a real linked worktree holding what a scan would like. */
+    function victim(): { repo: string; worktree: string } {
+      const repo = path.join(outside, 'repo');
+      fs.mkdirSync(repo, { recursive: true });
+      git(repo, 'init', '-q', '-b', 'main');
+      git(repo, 'commit', '-q', '--allow-empty', '-m', 'x');
+      const worktree = path.join(outside, 'wt');
+      git(repo, 'worktree', 'add', '-q', '-b', 'wt/standby', worktree, 'main');
+      write(worktree, 'CLAUDE.md', 'VICTIM INSTRUCTIONS');
+      write(worktree, '.mcp.json', JSON.stringify({ mcpServers: { v: { command: 'v' } } }));
+      return { repo, worktree };
     }
 
-    /** All the check may do outside: look at that one `.git`. */
-    const onlyItsGitFile = (call: string) => call.endsWith(`${outside}${path.sep}.git`) || call.endsWith(' ' + outside);
-
-    it('refuses a `.git` folder', async () => {
-      fs.mkdirSync(path.join(outside, '.git'));
-      localEntry(`${outside}/.git`);
-
-      const result = await scan();
-
-      expect(result.externalReferences[0].reason).toBe('unverified-worktree');
-      expect(result.entries).toEqual([]);
-      expect(touchedOutside(onlyItsGitFile)).toEqual([]);
-    });
-
-    it('refuses a `.git` file naming some other git folder, without reading what it names', async () => {
-      const elsewhere = path.join(root, 'elsewhere-gitdir');
-      write(elsewhere, 'gitdir', `${outside}/.git\n`);
-      write(outside, '.git', `gitdir: ${elsewhere}\n`);
-      localEntry(`${outside}/.git`);
-
-      const result = await scan();
-
-      expect(result.externalReferences[0].reason).toBe('unverified-worktree');
-      expect(result.entries).toEqual([]);
-      expect(touchedOutside(onlyItsGitFile)).toEqual([]);
-      expect(dirs.calls.filter((c) => c.includes(elsewhere))).toEqual([]);
-    });
-
-    it('refuses a `.git` naming a second entry that doesn\'t name it back', async () => {
-      fs.mkdirSync(outside, { recursive: true });
-      const project = localEntry(`${outside}/.git`);
-      const second = path.join(project, '.git', 'worktrees', 'y');
-      write(second, 'gitdir', `${path.join(root, 'somewhere-else', '.git')}\n`);
-      write(outside, '.git', `gitdir: ${second}\n`);
-
-      const result = await scan();
-
-      expect(result.externalReferences[0].reason).toBe('unverified-worktree');
-      expect(result.entries).toEqual([]);
-    });
-
-    it('refuses a `.git` file pointing at the entry when the entry points elsewhere', async () => {
-      const project = localEntry(path.join(root, 'not-outside', '.git'));
-      write(outside, '.git', `gitdir: ${path.join(project, '.git', 'worktrees', 'x')}\n`);
-
-      const result = await scan();
-
-      // git calls this entry prunable or lists another path, so it never vouches at all.
+    function expectLeftAlone(result: ImportInventory): void {
       expect(result.projects[0].agents[0].status).toBe('external');
+      expect(result.externalReferences[0].reason).toBe('outside-project');
       expect(result.entries).toEqual([]);
+      expect(result.projects[0].agents[0].mcpFilesNotInventoried).toBe(0);
+      expect(touchedOutside()).toEqual([]);
+    }
+
+    it('won\'t read another repo\'s worktree because the project\'s .git file names that repo', async () => {
+      const { repo, worktree } = victim();
+      const project = makeDir('alpha');
+      write(project, '.git', `gitdir: ${path.join(repo, '.git')}\n`);
+      setAgents(project, [{ id: 'a', name: 'a', worktreePath: worktree }]);
+      register([project]);
+
+      expectLeftAlone(await scan());
+    });
+
+    it('won\'t read it because .git/commondir names that repo', async () => {
+      const { repo, worktree } = victim();
+      const project = makeDir('alpha');
+      git(project, 'init', '-q', '-b', 'main');
+      write(project, '.git/commondir', `${path.join(repo, '.git')}\n`);
+      setAgents(project, [{ id: 'a', name: 'a', worktreePath: worktree }]);
+      register([project]);
+
+      expectLeftAlone(await scan());
+    });
+
+    it('won\'t read it because .git/worktrees names it', async () => {
+      const { worktree } = victim();
+      const project = makeDir('alpha');
+      git(project, 'init', '-q', '-b', 'main');
+      git(project, 'commit', '-q', '--allow-empty', '-m', 'x');
+      write(project, '.git/worktrees/x/gitdir', `${path.join(worktree, '.git')}\n`);
+      write(project, '.git/worktrees/x/HEAD', 'ref: refs/heads/main\n');
+      write(project, '.git/worktrees/x/commondir', '../..\n');
+      setAgents(project, [{ id: 'a', name: 'a', worktreePath: worktree }]);
+      register([project]);
+
+      expectLeftAlone(await scan());
+    });
+
+    it('reads it once the person selects it, and then still doesn\'t ask git', async () => {
+      const { worktree } = victim();
+      const project = makeDir('alpha');
+      git(project, 'init', '-q', '-b', 'main');
+      setAgents(project, [{ id: 'a', name: 'a', worktreePath: worktree }]);
+      register([project]);
+
+      const result = await scan({ includeExternalRoots: [worktree] });
+
+      const source = result.entries.find((e) => e.kind === 'agent-instructions')?.sources[0];
+      expect(source?.worktreeAccess?.by).toBe('explicit-inclusion');
+      expect(source?.files[0].gitState).toBe('unknown');
     });
   });
 });
@@ -342,12 +350,13 @@ describe('an embedded bare repo can\'t control git', () => {
     expect(instructionStates(result)).toEqual(['unknown']);
   });
 
-  it('doesn\'t ask git about a nested folder with a `.git` folder of its own', async () => {
+  it('doesn\'t ask git about a nested repo with a config it can\'t vouch for', async () => {
     const project = makeDir('alpha');
     git(project, 'init', '-q', '-b', 'main');
     const nested = path.join(project, 'nested');
     fs.mkdirSync(nested);
     git(nested, 'init', '-q', '-b', 'main');
+    git(nested, 'config', 'core.excludesFile', path.join(outside, 'x').split(path.sep).join('/'));
     write(nested, 'CLAUDE.md', 'x');
     setAgents(project, [{ id: 'a', name: 'a', worktreePath: nested }]);
     register([project]);
@@ -355,18 +364,24 @@ describe('an embedded bare repo can\'t control git', () => {
     const result = await scan();
 
     expect(instructionStates(result)).toEqual(['unknown']);
+    expect(result.projects[0].warnings).toContain('git-not-asked:git-config-not-allowed');
   });
 
-  it('still answers for a plain folder inside the project, through the project\'s repo', async () => {
+  it('doesn\'t answer for a plain folder or a linked worktree inside the project', async () => {
     const project = makeDir('alpha');
     git(project, 'init', '-q', '-b', 'main');
+    git(project, 'commit', '-q', '--allow-empty', '-m', 'x');
     write(project, 'plain/CLAUDE.md', 'x');
-    setAgents(project, [{ id: 'a', name: 'a', worktreePath: path.join(project, 'plain') }]);
+    const linked = path.join(project, 'linked');
+    git(project, 'worktree', 'add', '-q', '-b', 'linked/standby', linked, 'main');
+    write(linked, 'AGENTS.md', 'y');
+    setAgents(project, [{ id: 'a', name: 'a', worktreePath: path.join(project, 'plain') }, { id: 'b', name: 'b', worktreePath: linked }]);
     register([project]);
 
     const result = await scan();
 
-    expect(instructionStates(result)).toEqual(['untracked']);
+    expect(instructionStates(result)).toEqual(['unknown', 'unknown']);
+    expect(result.projects[0].warnings).toEqual(expect.arrayContaining(['git-not-asked:no-git-folder', 'git-not-asked:not-a-plain-git-folder']));
   });
 });
 
@@ -622,22 +637,558 @@ describe('the home folder', () => {
     expect(touchedOutside()).toEqual([]);
   });
 
-  it('reads git user config from the given home, not the process\'s', async () => {
+  it('reads no user config for git, from the process or the given home', async () => {
     const project = makeDir('hm');
     git(project, 'init', '-q', '-b', 'main');
     write(project, '.clubhouse/skills/s/SKILL.md', 'x');
     register([project]);
-    // Forward slashes: a backslash starts an escape in git config, and `\U` makes the file invalid.
     const ignoreFile = write(root, 'global-ignore', 'SKILL.md\n').split(path.sep).join('/');
+    const config = `[core]\n\texcludesFile = ${ignoreFile}\n`;
     const state = async (options: Partial<InventoryOptions> = {}) => (await scan(options)).entries[0].sources[0].files[0].gitState;
 
-    // What the process has set makes no difference.
-    process.env.GIT_CONFIG_GLOBAL = write(root, 'process-config', `[core]\n\texcludesFile = ${ignoreFile}\n`);
+    process.env.GIT_CONFIG_GLOBAL = write(root, 'process-config', config);
     expect(await state()).toBe('untracked');
 
-    // What the given home has set does.
     const given = makeDir('home-with-config');
-    write(given, '.gitconfig', `[core]\n\texcludesFile = ${ignoreFile}\n`);
-    expect(await state({ homeDir: given })).toBe('ignored');
+    write(given, '.gitconfig', config);
+    write(given, '.config/git/ignore', 'SKILL.md\n');
+    expect(await state({ homeDir: given })).toBe('untracked');
+    process.env.HOME = given;
+    process.env.USERPROFILE = given;
+    expect(await state()).toBe('untracked');
+  });
+});
+
+// Reproductions from the third review, each with what it found.
+describe('git only runs on a repo it can\'t be led out of', () => {
+  /** A stand-in git that logs each call and runs the real one. POSIX only: Windows won't run it by that name. */
+  function loggingGit(): { repoCalls: () => string[]; restore: () => void } {
+    const real = execFileSync('sh', ['-c', 'command -v git'], { encoding: 'utf-8' }).trim();
+    const log = path.join(root, 'git-calls');
+    const bin = makeDir('logging-git-bin');
+    fs.chmodSync(write(bin, 'git', `#!/bin/sh\necho "$*" >> "${log}"\nexec "${real}" "$@"\n`), 0o755);
+    const originalPath = process.env.PATH;
+    process.env.PATH = `${bin}${path.delimiter}${originalPath}`;
+    return {
+      repoCalls: () => (fs.existsSync(log) ? fs.readFileSync(log, 'utf-8').trim().split('\n').filter((l) => l !== '--version') : []),
+      restore: () => { process.env.PATH = originalPath; },
+    };
+  }
+
+  function plainRepo(): string {
+    const project = makeDir('alpha');
+    git(project, 'init', '-q', '-b', 'main');
+    write(project, '.clubhouse/skills/deploy/SKILL.md', 'x');
+    return project;
+  }
+
+  /** A FIFO git would block on, were it opened. */
+  function fifo(file: string): string {
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    execFileSync('mkfifo', [file]);
+    return file;
+  }
+
+  const appendConfig = (project: string, text: string) => fs.appendFileSync(path.join(project, '.git', 'config'), text);
+  const hostile: Array<[string, (project: string, target: string) => void, string]> = [
+    ['include.path', (p, t) => appendConfig(p, `[include]\n\tpath = ${t}\n`), 'git-config-not-allowed'],
+    ['includeIf', (p, t) => appendConfig(p, `[includeIf "gitdir:**"]\n\tpath = ${t}\n`), 'git-config-not-allowed'],
+    ['core.excludesFile', (p, t) => appendConfig(p, `[core]\n\texcludesFile = ${t}\n`), 'git-config-not-allowed'],
+    ['core.worktree', (p, t) => appendConfig(p, `[core]\n\tworktree = ${t}\n`), 'git-config-not-allowed'],
+    ['a key in a different case', (p, t) => appendConfig(p, `[CORE]\n\tEXCLUDESFILE = ${t}\n`), 'git-config-not-allowed'],
+    ['a .git file', (p, t) => { fs.rmSync(path.join(p, '.git'), { recursive: true }); write(p, '.git', `gitdir: ${t}\n`); }, 'not-a-plain-git-folder'],
+    ['a .git symlink', (p, t) => { fs.rmSync(path.join(p, '.git'), { recursive: true }); fs.symlinkSync(t, path.join(p, '.git')); }, 'not-a-plain-git-folder'],
+    ['commondir', (p, t) => write(p, '.git/commondir', `${t}\n`), 'linked-git-folder'],
+    ['a symlinked info/exclude', (p, t) => { fs.mkdirSync(path.join(p, '.git', 'info'), { recursive: true }); fs.rmSync(path.join(p, '.git', 'info', 'exclude'), { force: true }); fs.symlinkSync(t, path.join(p, '.git', 'info', 'exclude')); }, 'unsafe-git-folder'],
+    ['a symlinked config', (p, t) => { fs.rmSync(path.join(p, '.git', 'config')); fs.symlinkSync(t, path.join(p, '.git', 'config')); }, 'unsafe-git-folder'],
+    ['a FIFO in .git', (p) => { fifo(path.join(p, '.git', 'sharedindex.x')); }, 'unsafe-git-folder'],
+    ['a FIFO .gitignore', (p) => { fifo(path.join(p, '.clubhouse', '.gitignore')); }, 'unsafe-gitignore'],
+    ['a hard-linked index', (p, t) => { fs.linkSync(write(root, 'some-index', 'x'), path.join(p, '.git', 'index')); void t; }, 'unsafe-git-folder'],
+    ['alternates', (p, t) => write(p, '.git/objects/info/alternates', `${t}\n`), 'unsafe-git-folder'],
+  ];
+
+  it.skipIf(POSIX_ONLY).each(hostile)('doesn\'t spawn git on %s', async (_label, shape, reason) => {
+    const project = plainRepo();
+    const target = fifo(path.join(outside, 'trap'));
+    shape(project, target);
+    register([project]);
+    const logging = loggingGit();
+    const started = Date.now();
+
+    try {
+      const result = await scan();
+
+      expect(Date.now() - started).toBeLessThan(15_000);
+      expect(logging.repoCalls()).toEqual([]);
+      expect(result.projects[0].warnings).toContain(`git-not-asked:${reason}`);
+      expect(result.entries[0].sources[0].files[0].gitState).toBe('unknown');
+      expect(touchedOutside()).toEqual([]);
+    } finally {
+      logging.restore();
+    }
+  });
+
+  it.skipIf(POSIX_ONLY)('doesn\'t let a parent repo answer for a plain project below it', async () => {
+    const parent = makeDir('parent');
+    git(parent, 'init', '-q', '-b', 'main');
+    write(parent, '.gitignore', 'SKILL.md\n');
+    const project = path.join(parent, 'project');
+    write(project, '.clubhouse/skills/deploy/SKILL.md', 'x');
+    register([project]);
+    const logging = loggingGit();
+
+    try {
+      const result = await scan();
+
+      expect(logging.repoCalls()).toEqual([]);
+      expect(result.entries[0].sources[0].files[0].gitState).toBe('unknown');
+    } finally {
+      logging.restore();
+    }
+  });
+
+  it.skipIf(POSIX_ONLY)('does spawn git on a plain repo, so the checks above aren\'t passing by never running it', async () => {
+    const project = plainRepo();
+    register([project]);
+    const logging = loggingGit();
+
+    try {
+      const result = await scan();
+
+      expect(logging.repoCalls().length).toBeGreaterThan(0);
+      expect(result.entries[0].sources[0].files[0].gitState).toBe('untracked');
+      expect(result.projects[0].warnings.filter((w) => w.startsWith('git-not-asked'))).toEqual([]);
+    } finally {
+      logging.restore();
+    }
+  });
+
+  it('allows only config it recognizes, syntax included', () => {
+    const allowed = isGitConfigAllowed;
+    expect(allowed('[core]\n\trepositoryformatversion = 0\n\tfilemode = true\n\tbare = false\n\tignorecase = true\n')).toBe(true);
+    expect(allowed('[remote "origin"]\n\turl = git@example.com:a/b.git\n\tfetch = +refs/heads/*:refs/remotes/origin/*\n[branch "main"]\n\tremote = origin\n\tmerge = refs/heads/main\n')).toBe(true);
+    expect(allowed('# comment\n; comment\n\n[user]\n\tname = A\n')).toBe(true);
+    for (const text of [
+      '[include]\n\tpath = x\n',
+      '[INCLUDE]\n\tPATH = x\n',
+      '[includeIf "gitdir:x"]\n\tpath = y\n',
+      '[core]\n\tworktree = x\n',
+      '[core]\n\texcludesFile = x\n',
+      '[core]\n\tattributesFile = x\n',
+      '[core]\n\tfsmonitor = x\n',
+      '[core]\n\tbare = true\n',
+      '[core]\n\tbare\n',
+      '[core]\n\trepositoryformatversion = 2\n',
+      '[extensions]\n\tworktreeConfig = true\n',
+      '[extensions]\n\tpartialClone = origin\n',
+      '[remote "o"]\n\tpromisor = true\n',
+      '[remote "o"]\n\turl = \\\\host\\share\n',
+      '[remote "o"]\n\turl = //host/share\n',
+      '[user]\n\tname = a\\\n\tpath = x\n',
+      '[user]\n\tname = "quoted\n',
+      '[core.worktree]\n',
+      '[core] filemode = true\n',
+      'filemode = true\n',
+      'not config at all',
+    ]) {
+      expect(allowed(text), text).toBe(false);
+    }
+  });
+
+  it('accepts the config git itself writes, on this platform', () => {
+    const project = plainRepo();
+    expect(isGitConfigAllowed(fs.readFileSync(path.join(project, '.git', 'config'), 'utf-8'))).toBe(true);
+  });
+});
+
+describe('special files', () => {
+  function fifo(file: string): string {
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    execFileSync('mkfifo', [file]);
+    return file;
+  }
+
+  it.skipIf(POSIX_ONLY)('isn\'t hung by FIFO agents.json files, and nothing else in the process stalls', async () => {
+    const projects: string[] = [];
+    for (let i = 0; i < 5; i++) {
+      const project = makeDir(`fifo-${i}`);
+      fifo(path.join(project, '.clubhouse', 'agents.json'));
+      projects.push(project);
+    }
+    register(projects);
+    const started = Date.now();
+
+    const result = await scan({ projectTimeoutMs: 300 });
+
+    expect(Date.now() - started).toBeLessThan(10_000);
+    for (const report of result.projects) {
+      expect(report.status).toBe('scanned');
+      expect(report.excluded['special-file']).toBe(1);
+      expect(report.warnings).toContain('agent-config-not-read');
+    }
+    const other = Date.now();
+    await fs.promises.readFile(path.join(root, 'empty-gitconfig'));
+    expect(Date.now() - other).toBeLessThan(2000);
+  });
+
+  it.skipIf(POSIX_ONLY).each([
+    '.clubhouse/agents.json.bak',
+    '.clubhouse/settings.json',
+    '.clubhouse/skills/s/SKILL.md',
+    '.clubhouse/personas/p.md',
+    '.mcp.json',
+    '.codex/config.toml',
+    '.github/mcp.json',
+  ])('never opens a FIFO at %s', async (rel) => {
+    const project = makeDir('alpha');
+    fifo(path.join(project, ...rel.split('/')));
+    register([project]);
+
+    const result = await scan({ projectTimeoutMs: 5000 });
+
+    expect(result.projects[0].status).toBe('scanned');
+    expect(result.projects[0].excluded['special-file']).toBe(1);
+    expect(result.projects[0].exclusions).toContainEqual({ reason: 'special-file', relativePath: rel });
+    expect(dirs.calls.filter((c) => c.startsWith('open ') && c.endsWith(path.basename(rel)))).toEqual([]);
+  });
+
+  it.skipIf(POSIX_ONLY)('never opens a FIFO in a worktree either, or a character device through a link', async () => {
+    const project = makeDir('alpha');
+    const worktree = path.join(project, 'wt');
+    fifo(path.join(worktree, 'CLAUDE.md'));
+    fifo(path.join(worktree, '.mcp.json'));
+    fs.mkdirSync(path.join(project, '.clubhouse', 'skills', 's'), { recursive: true });
+    fs.symlinkSync(os.devNull, path.join(project, '.clubhouse', 'skills', 's', 'SKILL.md'));
+    setAgents(project, [{ id: 'a', name: 'a', worktreePath: worktree }]);
+    register([project]);
+
+    const result = await scan({ projectTimeoutMs: 5000 });
+
+    expect(result.projects[0].status).toBe('scanned');
+    expect(result.projects[0].excluded['special-file']).toBe(2);
+    expect(result.projects[0].excluded.symlink).toBe(1);
+    expect(result.entries).toEqual([]);
+  });
+});
+
+describe('a file swapped after the check', () => {
+  const swapTo = async (file: string, make: () => void) => {
+    const hooks = { beforeOpen: () => { fs.rmSync(file); make(); } };
+    return readRegularFile(file, 1024, hooks).then(() => 'read', (err: unknown) => (err instanceof UnsafeFileError ? err.reason : `other: ${(err as Error).message}`));
+  };
+
+  it('refuses a plain file read normally, as the control', async () => {
+    const file = write(root, 'plain.md', 'x');
+    expect((await readRegularFile(file, 1024)).toString()).toBe('x');
+  });
+
+  it.skipIf(POSIX_ONLY)('refuses a swap to a FIFO, without blocking', async () => {
+    const file = write(root, 'swap.md', 'x');
+    expect(await swapTo(file, () => execFileSync('mkfifo', [file]))).toBe('special-file');
+  });
+
+  it.skipIf(POSIX_ONLY)('refuses a swap to a symlink', async () => {
+    const file = write(root, 'swap.md', 'x');
+    const target = path.join(outside, 'CLAUDE.md');
+    expect(await swapTo(file, () => fs.symlinkSync(target, file))).toBe('symlink');
+  });
+
+  it('refuses a swap to a hard link', async () => {
+    const file = write(root, 'swap.md', 'x');
+    const target = path.join(outside, 'CLAUDE.md');
+    expect(await swapTo(file, () => fs.linkSync(target, file))).toBe('hard-link');
+  });
+
+  it('refuses a swap to another plain file', async () => {
+    const file = write(root, 'swap.md', 'x');
+    const hold = write(root, 'hold.md', 'y');
+    // A rename keeps the file alive, so its inode can't be reused for the replacement.
+    const hooks = { beforeOpen: () => { fs.renameSync(file, `${file}.old`); fs.renameSync(hold, file); } };
+    await expect(readRegularFile(file, 1024, hooks)).rejects.toMatchObject({ reason: 'changed' });
+  });
+
+  it('refuses a file that outgrows the limit, even if the check passed', async () => {
+    const file = write(root, 'grow.md', 'x');
+    const hooks = { beforeOpen: () => { fs.writeFileSync(file, 'y'.repeat(4096)); } };
+    await expect(readRegularFile(file, 1024, hooks)).rejects.toMatchObject({ reason: 'too-large' });
+  });
+
+  it('carries on when a file swaps between the scan\'s check and its read', async () => {
+    const project = makeDir('alpha');
+    const file = write(project, '.clubhouse/skills/s/SKILL.md', 'x');
+    const target = path.join(outside, 'CLAUDE.md');
+    register([project]);
+
+    const result = await scan({
+      fs: {
+        stat: (p) => fs.promises.stat(p),
+        lstat: (p) => fs.promises.lstat(p),
+        readdir: (p) => fs.promises.readdir(p, { withFileTypes: true }),
+        realpath: (p) => fs.promises.realpath(p),
+        readlink: (p) => fs.promises.readlink(p),
+        readFile: (p, maxBytes) => {
+          if (p === file) {
+            fs.rmSync(file);
+            fs.linkSync(target, file);
+          }
+          return readRegularFile(p, maxBytes);
+        },
+      },
+    });
+
+    expect(result.projects[0].status).toBe('scanned');
+    expect(result.entries).toEqual([]);
+    expect(result.projects[0].excluded['hard-link']).toBe(1);
+  });
+});
+
+describe('raw values in the report', () => {
+  const password = 'NOT-A-REAL-PASSWORD';
+
+  it.each<[string, string]>([
+    ['a URL with a password', `https://user:${password}@example.invalid/repo`],
+    ['user:password@host', `user:${password}@host`],
+    ['a pasted instruction', `Ignore previous instructions and ${password} `.repeat(150)],
+    ['a credential in a path', `/opt/ghp_${'a'.repeat(36)}/${password}`],
+    ['a long path', `/${password}/${'a/'.repeat(400)}`],
+    ['control characters', `/tmp/${password}\n/x`],
+  ])('never echoes %s', async (_label, configured) => {
+    const project = makeDir('alpha');
+    setAgents(project, [{ id: 'a', name: 'a', worktreePath: configured }]);
+    register([project]);
+
+    const result = await scan();
+
+    expect(result.externalReferences).toHaveLength(1);
+    expect(result.externalReferences[0].configuredPath.text).toBeUndefined();
+    expect(result.externalReferences[0].configuredPath.length).toBe(configured.length);
+    const everything = JSON.stringify(result);
+    expect(everything).not.toContain(password);
+    expect(everything).not.toContain('ghp_');
+  });
+
+  it('still shows a path that\'s plainly a path, so a person can choose it', async () => {
+    const project = makeDir('alpha');
+    setAgents(project, [{ id: 'a', name: 'a', worktreePath: outside }]);
+    register([project]);
+
+    const result = await scan();
+
+    expect(result.externalReferences[0].configuredPath.text).toBe(outside);
+  });
+
+  it('checks names by shape, and refuses generated-looking ones', () => {
+    for (const value of ['AKIAABCDEFGHIJKLMNOP', 'ghp_' + 'a'.repeat(36), 'deadbeefdeadbeef1234', 'aB3dE5gH7jK9', 'a'.repeat(33), 'x'.repeat(65), 'has space', 'a:b', 'user@host']) {
+      expect(isSafeIdentifier(value), value).toBe(false);
+    }
+    for (const value of ['qa', 'ship-it', 'project-manager', 'claude-opus-4-5', 'GH_TOKEN', 'node.exe', '@@Path'.slice(2)]) {
+      expect(isSafeIdentifier(value), value).toBe(true);
+    }
+    expect(isSafeEnvName('GH_TOKEN')).toBe(true);
+    expect(isSafeEnvName('a.b')).toBe(false);
+    expect(isSafeEnvName('a-b')).toBe(false);
+  });
+
+  it('refuses env names and ids shaped like credentials, end to end', async () => {
+    const project = makeDir('alpha');
+    write(project, '.mcp.json', JSON.stringify({ mcpServers: { s: { command: 'x', env: { aB3dE5gH7jK9mN: 'v', GOOD_NAME: 'v' } } } }));
+    setAgents(project, [{ id: 'a', name: 'a', mission: 'aB3dE5gH7jK9mN' }]);
+    register([project]);
+
+    const result = await scan();
+
+    expect(result.entries[0].mcp?.envNames).toEqual(['GOOD_NAME']);
+    expect(result.projects[0].agents[0].mission?.id).toBeUndefined();
+    expect(JSON.stringify(result)).not.toContain('aB3dE5gH7jK9mN');
+  });
+
+  it('refuses a folder or file name shaped like a credential, without showing it', async () => {
+    const project = makeDir('alpha');
+    const token = `ghp_${'a'.repeat(36)}`;
+    write(project, `.clubhouse/skills/${token}/SKILL.md`, 'x');
+    write(project, `.clubhouse/skills/ok/${token}.md`, 'y');
+    write(project, '.clubhouse/skills/ok/SKILL.md', 'z');
+    write(project, `.clubhouse/personas/${token}.md`, 'p');
+    register([project]);
+
+    const result = await scan();
+
+    expect(result.entries.map((e) => e.name)).toEqual(['ok']);
+    expect(result.projects[0].excluded['unsafe-name']).toBe(3);
+    expect(JSON.stringify(result)).not.toContain(token);
+  });
+
+  it.skipIf(process.platform === 'darwin' || POSIX_ONLY)('refuses a name that isn\'t valid UTF-8', async () => {
+    const project = makeDir('alpha');
+    write(project, '.clubhouse/skills/ok/SKILL.md', 'z');
+    const skills = path.join(project, '.clubhouse', 'skills');
+    fs.mkdirSync(Buffer.concat([Buffer.from(`${skills}/`), Buffer.from([0x66, 0xff, 0x6f])]));
+    register([project]);
+
+    const result = await scan();
+
+    expect(result.entries.map((e) => e.name)).toEqual(['ok']);
+    expect(result.projects[0].excluded['unsafe-name']).toBe(1);
+  });
+
+  it('keeps names differing only in case apart by id, where the filesystem has both', async () => {
+    const project = makeDir('alpha');
+    write(project, '.clubhouse/skills/Deploy/SKILL.md', 'one');
+    const lower = path.join(project, '.clubhouse', 'skills', 'deploy');
+    const distinct = !fs.existsSync(lower);
+    if (distinct) write(project, '.clubhouse/skills/deploy/SKILL.md', 'two');
+    register([project]);
+
+    const result = await scan();
+
+    if (distinct) {
+      expect(new Set(result.entries.map((e) => e.id)).size).toBe(2);
+      expect(result.entries.every((e) => e.conflict)).toBe(true);
+    } else {
+      expect(result.entries).toHaveLength(1);
+    }
+  });
+});
+
+describe('hard links', () => {
+  it.each([
+    ['a skill', '.clubhouse/skills/s/SKILL.md'],
+    ['a persona', '.clubhouse/personas/p.md'],
+    ['.mcp.json', '.mcp.json'],
+    ['an agent\'s instructions', 'wt/CLAUDE.md'],
+  ])('won\'t read outside content through %s', async (_label, rel) => {
+    const project = makeDir('alpha');
+    const at = path.join(project, ...rel.split('/'));
+    fs.mkdirSync(path.dirname(at), { recursive: true });
+    const secret = path.join(outside, 'CLAUDE.md');
+    fs.linkSync(secret, at);
+    if (rel.startsWith('wt')) setAgents(project, [{ id: 'a', name: 'a', worktreePath: path.dirname(at) }]);
+    register([project]);
+
+    const result = await scan();
+
+    expect(result.entries).toEqual([]);
+    expect(result.projects[0].excluded['hard-link']).toBe(1);
+    expect(result.projects[0].exclusions).toContainEqual({ reason: 'hard-link', relativePath: rel.startsWith('wt') ? 'CLAUDE.md' : rel });
+    expect(JSON.stringify(result)).not.toContain(createHash('sha256').update('OUTSIDE INSTRUCTIONS').digest('hex'));
+    expect(dirs.calls.filter((c) => c.startsWith('open ') && c.endsWith(rel.split('/').pop() as string))).toEqual([]);
+  });
+});
+
+describe('one bad MCP entry', () => {
+  const deep = (depth: number) => `${'['.repeat(depth)}${']'.repeat(depth)}`;
+  const config = (depth: number) => `{"mcpServers":{"deep":{"command":"x","args":${deep(depth)}},"good":{"command":"g"}}}`;
+
+  it('costs only itself when nested deeply, in .mcp.json', async () => {
+    const project = makeDir('alpha');
+    write(project, '.mcp.json', config(5000));
+    write(project, '.clubhouse/skills/s/SKILL.md', 'x');
+    register([project]);
+
+    const result = await scan();
+
+    expect(result.projects[0].status).toBe('scanned');
+    expect(result.entries.map((e) => e.name)).toEqual(['good', 's']);
+    expect(result.projects[0].excluded['non-definition']).toBe(1);
+  });
+
+  it('costs only itself in the project defaults and a worktree', async () => {
+    const project = makeDir('alpha');
+    write(project, '.clubhouse/settings.json', `{"agentDefaults":{"mcpJson":${JSON.stringify(config(5000))}}}`);
+    write(project, 'wt/.mcp.json', config(5000));
+    setAgents(project, [{ id: 'a', name: 'a', worktreePath: path.join(project, 'wt') }]);
+    register([project]);
+
+    const result = await scan();
+
+    expect(result.projects[0].status).toBe('scanned');
+    expect(result.entries.map((e) => e.name)).toEqual(['good']);
+    expect(result.projects[0].agents[0].mcpFilesNotInventoried).toBe(1);
+  });
+
+  it('caps a worktree\'s TOML as hard as a project\'s', async () => {
+    const project = makeDir('alpha');
+    write(project, 'wt/.codex/config.toml', `[mcp_servers.a]\ncommand = "x"\nnote = "${'n'.repeat(4096)}"\n`);
+    setAgents(project, [{ id: 'a', name: 'a', worktreePath: path.join(project, 'wt') }]);
+    register([project]);
+
+    const result = await scan({ limits: { maxTomlBytes: 1024 } });
+
+    expect(result.projects[0].excluded['too-large']).toBe(1);
+    expect(result.projects[0].exclusions).toContainEqual({ reason: 'too-large', relativePath: '.codex/config.toml' });
+  });
+});
+
+describe('what an import UI needs', () => {
+  it('gives each entry an id that survives a rescan, and a move, and doesn\'t hold a path', async () => {
+    const project = makeDir('alpha');
+    write(project, '.clubhouse/skills/s/SKILL.md', 'x');
+    write(project, '.clubhouse/personas/p.md', 'y');
+    write(project, '.mcp.json', JSON.stringify({ mcpServers: { m: { command: 'c', args: ['a'] } } }));
+    register([project]);
+
+    const first = await scan();
+    const second = await scan();
+    write(project, '.clubhouse/skills/s/SKILL.md', 'changed');
+    const edited = await scan();
+    const moved = path.join(root, 'moved', 'alpha');
+    fs.mkdirSync(path.dirname(moved));
+    fs.renameSync(project, moved);
+    register([moved]);
+    const afterMove = await scan();
+
+    const ids = (r: ImportInventory) => Object.fromEntries(r.entries.map((e) => [e.name, e.id]));
+    expect(new Set(first.entries.map((e) => e.id)).size).toBe(3);
+    expect(ids(second)).toEqual(ids(first));
+    expect(ids(edited)).toEqual(ids(first));
+    expect(ids(afterMove)).toEqual(ids(first));
+    for (const e of first.entries) expect(e.id).toMatch(/^[0-9a-f]{32}$/);
+  });
+
+  it('gives the same MCP entry the same id and hash on every scan', async () => {
+    const project = makeDir('alpha');
+    write(project, '.mcp.json', JSON.stringify({ mcpServers: { m: { command: 'c', args: ['a'] } } }));
+    register([project]);
+
+    const [first, second] = [await scan(), await scan()];
+
+    expect(second.entries[0].id).toBe(first.entries[0].id);
+    expect(second.entries[0].contentHash).toBe(first.entries[0].contentHash);
+  });
+
+  it('keeps the id of a merged entry when a source is added, as long as its first remains', async () => {
+    const a = makeDir('a');
+    const b = makeDir('b');
+    write(a, '.clubhouse/skills/s/SKILL.md', 'same');
+    register([a]);
+    const alone = await scan();
+    write(b, '.clubhouse/skills/s/SKILL.md', 'same');
+    register([a, b]);
+    const merged = await scan();
+
+    expect(merged.entries).toHaveLength(1);
+    expect(merged.entries[0].sources.map((s) => s.id)).toContain(alone.entries[0].id);
+    expect(merged.entries[0].sources.map((s) => s.id).sort()[0]).toBe(merged.entries[0].id);
+  });
+
+  it('lists exclusions with their relative path and a closed reason, up to a bound', async () => {
+    const project = makeDir('alpha');
+    write(project, '.clubhouse/skills/s/SKILL.md', 'ok');
+    write(project, '.clubhouse/skills/s/.env', 'X=1');
+    write(project, '.clubhouse/skills/s/logo.png', 'x');
+    register([project]);
+
+    const result = await scan();
+
+    expect(result.projects[0].exclusions).toEqual(expect.arrayContaining([
+      { reason: 'secret-looking', relativePath: '.clubhouse/skills/s/.env' },
+      { reason: 'non-definition', relativePath: '.clubhouse/skills/s/logo.png' },
+    ]));
+
+    for (let i = 0; i < 250; i++) write(project, `.clubhouse/skills/s/f${i}.png`, 'x');
+    const many = await scan();
+
+    expect(many.projects[0].exclusions).toHaveLength(200);
+    expect(many.projects[0].excluded['non-definition']).toBe(251);
   });
 });

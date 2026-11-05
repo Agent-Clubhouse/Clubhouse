@@ -1,6 +1,7 @@
 /**
- * Checks on paths that come from a repository, such as `worktreePath` in
- * `agents.json`, which a clone can carry. These look at the string only:
+ * Checks on what a repository says, such as `worktreePath` in `agents.json` or
+ * its `.git/config`, which a clone or an archive can carry. These look at the
+ * string only:
  * touching an arbitrary path isn't safe even to stat it. On Windows a UNC path
  * can send credentials to the host it names, and anywhere a dead mount can hang.
  */
@@ -45,16 +46,43 @@ export function checkConfiguredPath(
   return isOutside(impl.relative(projectRoot, impl.normalize(configured)), impl) ? 'outside-project' : 'inside-project';
 }
 
+const ALLOWED_GIT_CONFIG: Record<string, ReadonlySet<string> | undefined> = {
+  core: new Set(['repositoryformatversion', 'filemode', 'bare', 'logallrefupdates', 'ignorecase', 'precomposeunicode', 'symlinks', 'autocrlf', 'eol', 'safecrlf', 'longpaths']),
+  remote: new Set(['url', 'pushurl', 'fetch', 'push', 'tagopt', 'prune', 'gh-resolved']),
+  branch: new Set(['remote', 'merge', 'rebase', 'pushremote', 'description', 'github-pr-owner-number']),
+  user: new Set(['name', 'email']),
+  pull: new Set(['rebase', 'ff']),
+  push: new Set(['default', 'autosetupremote']),
+  fetch: new Set(['prune']),
+  init: new Set(['defaultbranch']),
+  gc: new Set(['auto']),
+};
+
 /**
- * The worktrees in `git worktree list --porcelain`. One git calls prunable has
- * lost its folder, so anything now at that path isn't what git registered.
+ * Whether a repository's `.git/config` is plainly harmless. An allow-list on
+ * purpose, of syntax as well as keys: git has many ways to name a path or a
+ * program (`include`, `includeIf`, `core.worktree`, `core.excludesFile`), and a
+ * denylist would be only as good as this file's memory of them. Anything not
+ * recognized means git isn't asked.
  */
-export function parseWorktreeList(stdout: string): string[] {
-  const worktrees: string[] = [];
-  for (const block of stdout.split(/\r?\n\r?\n/)) {
-    const lines = block.split(/\r?\n/);
-    const worktree = lines.find((line) => line.startsWith('worktree '));
-    if (worktree && !lines.some((line) => line.startsWith('prunable'))) worktrees.push(worktree.slice('worktree '.length));
+export function isGitConfigAllowed(text: string): boolean {
+  let allowed: ReadonlySet<string> | undefined;
+  for (const raw of text.split(/\r?\n/)) {
+    const line = raw.trim();
+    if (!line || line.startsWith('#') || line.startsWith(';')) continue;
+    const section = line.match(/^\[([A-Za-z0-9-]+)(?:\s+"[^"\\\n]*")?\]$/);
+    if (section) {
+      allowed = ALLOWED_GIT_CONFIG[section[1].toLowerCase()];
+      if (!allowed) return false;
+      continue;
+    }
+    const entry = line.match(/^([A-Za-z][A-Za-z0-9-]*)\s*=\s*(.*)$/);
+    if (!entry || !allowed?.has(entry[1].toLowerCase())) return false;
+    const [, key, value] = entry;
+    // A trailing backslash continues the line, and an inline comment or quote can hide more of it.
+    if (value.endsWith('\\') || /^["']/.test(value) || isUncPath(value)) return false;
+    if (key.toLowerCase() === 'bare' && value.toLowerCase() !== 'false') return false;
+    if (key.toLowerCase() === 'repositoryformatversion' && value !== '0' && value !== '1') return false;
   }
-  return worktrees;
+  return true;
 }
