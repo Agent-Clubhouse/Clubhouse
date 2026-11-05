@@ -61,6 +61,8 @@ describe('settings audit inventory', () => {
     expect(read('services/helper-routing.ts')).toContain('auditPresetChanges(before, result, surface)');
     expect(read('services/asset-catalog/store.ts')).toContain("auditChanged('app', `assetCatalog.${entry.kind}.revision`, entry.id)");
     expect(read('services/asset-catalog/store.ts')).toContain("auditChanged('agent', 'assetCatalog.composition', input.agentId)");
+    expect(read('services/asset-catalog/store.ts')).toContain("auditChanged('agent', 'assetCatalog.structure', agentId)");
+    expect(read('services/asset-catalog/store.ts')).toContain("auditChanged('app', 'assetCatalog.template.published', input.templateId)");
     expect(read('ipc/index.ts')).toContain('enableSettingsAudit()');
   });
 

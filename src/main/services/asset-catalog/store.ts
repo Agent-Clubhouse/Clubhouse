@@ -1,23 +1,27 @@
 /**
- * The installation-local asset catalog (#2737), under the Clubhouse base dir:
+ * The installation-local asset catalog (#2737, with the composition model on
+ * #2819), under the Clubhouse base dir:
  *
  *   asset-catalog/catalog.json                   the index: entries, compositions, run records
  *   asset-catalog/revisions/<asset>/<n>.json     one immutable payload per revision
  *
- * A write puts any payload file in place first, then replaces the index with a
- * temp file and rename, and only that rename commits. A crash before it leaves a
- * file nothing refers to and the catalog as it was; the next save of that
- * revision number replaces it. Every write checks an expected revision against
- * what's on disk, one at a time, so nothing is last-write-wins.
+ * A write puts any payload files in place first, then replaces the index with a
+ * temp file and rename, and only that rename commits. A crash before it leaves
+ * files nothing refers to and the catalog as it was; the next save of that
+ * revision number replaces them. Every write checks expected revisions against
+ * what's on disk, one at a time, so nothing is last-write-wins. A publication
+ * writes many payloads and still commits with one rename, so a reader sees all of
+ * it or none, and never a tagged revision before its template.
  *
  * Reads never write, and a missing catalog reads as empty without creating it.
  * An index that won't parse fails explicitly and is left alone: continuing empty
  * would let the next save replace it, and with it every agent's composition.
  *
  * Not a settings-store store: that writes in place and has no expected revision.
- * Writes report to the settings audit by id alone, and refusals too. Asset and
- * composition writes are refused from agent surfaces: agents can't create, edit,
- * delete or copy assets, and agent assignment arrives with grants (#2738).
+ * Writes report to the settings audit by id alone, and refusals too. Instruction
+ * text never reaches a log, an error or the index. Asset and composition writes
+ * are refused from agent surfaces: agents can't create, edit, delete or copy
+ * assets, and agent assignment arrives with grants (#2738).
  */
 
 import { randomUUID } from 'crypto';
@@ -30,12 +34,14 @@ import {
   type AssetCatalogErrorCode,
   type AssetImpact,
   type AssetKind,
+  type AssetOwner,
   type AssetPayload,
   type AssetPreview,
   type AssetProjection,
   type AssetRevisionRecord,
   type AssetSource,
   type BaseAdoption,
+  type BundledAssetKind,
   type CatalogEntry,
   type CatalogIndex,
   type CompositionInput,
@@ -45,6 +51,11 @@ import {
   type ImpactContext,
   type OriginStatus,
   type RunRecord,
+  type StructureBinding,
+  type StructureCheck,
+  type StructureChoice,
+  type SubagentSetCheck,
+  type TemplateSwitchSelection,
   type ValidationIssue,
 } from '../../../shared/asset-catalog-types';
 import { persist } from '../../telemetry/persist';
@@ -53,15 +64,29 @@ import { pathExists } from '../fs-utils';
 import { appLog } from '../log-service';
 import { appendSettingsAudit, auditChanged, currentSettingsOrigin } from '../settings-audit';
 import {
+  acceptedRefsOf,
   canonicalHash,
   emptyComposition,
   hasHardReference,
+  instanceFingerprint,
   listConsumers,
   originStatusOf,
   planComposition,
   previewAssetImpact,
+  previewCatalogChange,
+  structureInput,
+  subagentSetInput,
+  templateTargetOf,
 } from './planner';
 import {
+  applyCleanUpdate,
+  applyStructureChoice,
+  checkStructure,
+  checkSubagentSet,
+  switchTemplate as switchedComposition,
+} from './structure';
+import {
+  collisionKey,
   hasOwn,
   isAssetId,
   isCatalogId,
@@ -83,6 +108,8 @@ export class AssetCatalogError extends Error {
       plan?: CompositionPlan;
       impact?: AssetImpact;
       assetId?: string;
+      check?: StructureCheck;
+      subagentCheck?: SubagentSetCheck;
     } = {},
   ) {
     // The code alone: messages get logged, and a value never belongs in one.
@@ -127,7 +154,8 @@ function isEntryShape(key: string, entry: unknown): boolean {
 }
 
 function isCompositionShape(composition: unknown): boolean {
-  return isRecord(composition) && Array.isArray(composition.additions) && Array.isArray(composition.removals);
+  return isRecord(composition) && Array.isArray(composition.entries) && Array.isArray(composition.subagents)
+    && Array.isArray(composition.additions) && Array.isArray(composition.removals) && isRecord(composition.floors);
 }
 
 /** Agent-facing ways in. A user's are `ui` and `mobile`; `persona` and `system` are Clubhouse acting for one. */
@@ -148,10 +176,39 @@ export interface AssetCatalogStoreOptions {
 
 export interface PlanRequest {
   agentId: string;
+  /** The project this agent is planned under, for project-owned assets. */
+  projectId?: string;
   adoption: BaseAdoption;
   /** The composition to preview. Without it, what's stored. */
   draft?: unknown;
   foreign?: readonly ForeignDestination[];
+}
+
+/** One asset in a publication. `expectedRevision` 0 creates it, under an id from `mintAssetId`. */
+export interface PublicationWrite {
+  assetId: string;
+  kind: BundledAssetKind;
+  expectedRevision: number;
+  payload: unknown;
+  /** New assets only. */
+  name?: string;
+  owner?: AssetOwner;
+  source?: AssetSource;
+}
+
+export interface PublicationRequest {
+  templateId: string;
+  /** 0 creates the template. */
+  expectedRevision: number;
+  /** New templates only. */
+  name?: string;
+  owner?: AssetOwner;
+  source?: AssetSource;
+  /** Every one gets `bundledBy` naming the new template revision, which has to refer to it. */
+  writes: readonly PublicationWrite[];
+  /** The new template revision, referring to writes at `expectedRevision + 1`. */
+  payload: unknown;
+  context?: ImpactContext;
 }
 
 export type AssetCatalogStore = ReturnType<typeof createAssetCatalogStore>;
@@ -261,20 +318,47 @@ export function createAssetCatalogStore(options: AssetCatalogStoreOptions) {
     return entry;
   }
 
-  /** A preset refers only to library assets of the right kind that exist now. No preset refers to a preset. */
-  function checkPresetReferences(index: CatalogIndex, projection: AssetProjection): void {
-    if (projection.kind !== 'preset') return;
+  /** An owner may refer to library assets and its own. Nothing else, so one agent's copy can't leak into a shared definition. */
+  function canRefer(referrer: AssetOwner, target: AssetOwner): boolean {
+    if (target.kind === 'library') return true;
+    if (target.kind === 'agent') return referrer.kind === 'agent' && referrer.agentId === target.agentId;
+    return referrer.kind === 'project' && referrer.projectId === target.projectId;
+  }
+
+  /** What a template or subagent revision refers to has to exist now, at that revision, with the right kind and owner. */
+  function checkReferences(index: CatalogIndex, owner: AssetOwner, projection: AssetProjection): void {
     const issues: ValidationIssue[] = [];
-    const check = (assetId: string, kind: AssetKind, at: string): void => {
-      const entry = hasOwn(index.assets, assetId) ? index.assets[assetId] : null;
-      if (!entry || entry.deletedAt) issues.push({ code: 'invalid_identifier', path: at });
-      else if (entry.kind === 'preset') issues.push({ code: 'nested_preset', path: at });
-      else if (entry.kind !== kind) issues.push({ code: 'invalid_identifier', path: at });
-      else if (entry.owner.kind !== 'library') issues.push({ code: 'invalid_identifier', path: at });
+    const bad = (at: string): void => {
+      issues.push({ code: 'invalid_identifier', path: at });
     };
-    check(projection.instruction, 'instruction', 'instruction');
-    projection.skills.forEach((assetId, position) => check(assetId, 'skill', `skills[${position}]`));
-    projection.mcps.forEach((assetId, position) => check(assetId, 'mcp', `mcps[${position}]`));
+    const check = (assetId: string, kind: AssetKind, at: string, revision?: number): CatalogEntry | null => {
+      const entry = hasOwn(index.assets, assetId) ? index.assets[assetId] : null;
+      if (!entry || entry.deletedAt) bad(at);
+      else if (entry.kind === 'template') issues.push({ code: 'nested_template', path: at });
+      else if (entry.kind !== kind || !canRefer(owner, entry.owner)) bad(at);
+      else if (revision !== undefined && !entry.revisions.some((record) => record.revision === revision)) issues.push({ code: 'invalid_revision', path: at });
+      else return entry;
+      return null;
+    };
+    if (projection.kind === 'template') {
+      projection.entries.forEach((ref, position) => check(ref.blockId, 'block', `entries[${position}]`, ref.blockRevision));
+      projection.skills.forEach((assetId, position) => check(assetId, 'skill', `skills[${position}]`));
+      projection.mcps.forEach((assetId, position) => check(assetId, 'mcp', `mcps[${position}]`));
+      const names = new Set<string>();
+      projection.subagents.forEach((ref, position) => {
+        const at = `subagents[${position}]`;
+        const entry = check(ref.subagentId, 'subagent', at, ref.subagentRevision);
+        const subagent = entry?.revisions.find((record) => record.revision === ref.subagentRevision)?.projection;
+        if (subagent?.kind !== 'subagent') return;
+        const name = collisionKey(subagent.agentName);
+        if (names.has(name)) issues.push({ code: 'duplicate_subagent_name', path: at });
+        names.add(name);
+      });
+    } else if (projection.kind === 'subagent') {
+      projection.blocks.forEach((ref, position) => check(ref.blockId, 'block', `blocks[${position}]`, ref.blockRevision));
+      projection.skills.forEach((assetId, position) => check(assetId, 'skill', `skills[${position}]`));
+      projection.mcps.forEach((assetId, position) => check(assetId, 'mcp', `mcps[${position}]`));
+    }
     if (issues.length > 0) throw new AssetCatalogError('invalid_reference', { issues });
   }
 
@@ -322,7 +406,7 @@ export function createAssetCatalogStore(options: AssetCatalogStoreOptions) {
 
   function planWith(index: CatalogIndex, request: PlanRequest): CompositionPlan {
     requireAgentId(request.agentId);
-    if (request.adoption?.mode !== 'latest' && request.adoption?.mode !== 'hold') throw new AssetCatalogError('adoption_policy_required');
+    requireAdoption(request.adoption);
     const stored = storedComposition(index, request.agentId);
     let composition: CompositionInput = stored ?? emptyComposition();
     if (request.draft !== undefined) {
@@ -332,6 +416,7 @@ export function createAssetCatalogStore(options: AssetCatalogStoreOptions) {
     }
     return planComposition(index, {
       agentId: request.agentId,
+      ...(request.projectId !== undefined && { projectId: request.projectId }),
       composition,
       compositionRevision: stored?.revision ?? 0,
       adoption: request.adoption,
@@ -339,8 +424,25 @@ export function createAssetCatalogStore(options: AssetCatalogStoreOptions) {
     });
   }
 
+  function requireAdoption(adoption: BaseAdoption | undefined): void {
+    const content = adoption?.content?.mode;
+    const structure = adoption?.structure?.mode;
+    if ((content !== 'takeable' && content !== 'hold') || (structure !== 'accepted' && structure !== 'latest-if-clean')) {
+      throw new AssetCatalogError('adoption_policy_required');
+    }
+  }
+
+  function switched(index: CatalogIndex, stored: AgentComposition | null, templateId: string, selection: TemplateSwitchSelection): CompositionInput {
+    const targetRevision = getLiveEntry(index, templateId).headRevision;
+    const target = templateAt(index, templateId, targetRevision);
+    const from = stored ?? emptyComposition();
+    const result = switchedComposition(from, templateTargetOf(templateId, targetRevision, target.projection), selection, acceptedRefsOf(acceptedProjection(index, from)));
+    if (result.ok === false) throw new AssetCatalogError('invalid_choice', { issues: result.issues });
+    return result.composition;
+  }
+
   function candidateRecord(index: CatalogIndex, entry: CatalogEntry, projection: AssetProjection, payload: AssetPayload): AssetRevisionRecord {
-    checkPresetReferences(index, projection);
+    checkReferences(index, entry.owner, projection);
     return { revision: entry.headRevision + 1, savedAt: now(), contentHash: canonicalHash(payload), projection };
   }
 
@@ -356,7 +458,169 @@ export function createAssetCatalogStore(options: AssetCatalogStoreOptions) {
       if (entry.deletedAt) continue;
       if (entry.source.kind === 'copy' && entry.source.originAssetId === assetId) retained.add(entry.source.originRevision);
     }
+    for (const composition of Object.values(index.compositions)) {
+      for (const map of [composition.floors, composition.keepMarkers, composition.authorityApprovals]) {
+        if (hasOwn(map, assetId)) retained.add(map[assetId]);
+      }
+      if (!composition.template) continue;
+      if (composition.template.templateId === assetId) retained.add(composition.template.acceptedRevision);
+      const accepted = acceptedProjection(index, composition);
+      for (const ref of accepted?.entries ?? []) if (ref.blockId === assetId) retained.add(ref.blockRevision);
+      for (const ref of accepted?.subagents ?? []) if (ref.subagentId === assetId) retained.add(ref.subagentRevision);
+    }
     return retained;
+  }
+
+  function acceptedProjection(index: CatalogIndex, composition: CompositionInput): Extract<AssetProjection, { kind: 'template' }> | null {
+    if (!composition.template || !hasOwn(index.assets, composition.template.templateId)) return null;
+    const { templateId, acceptedRevision } = composition.template;
+    const projection = index.assets[templateId].revisions.find((record) => record.revision === acceptedRevision)?.projection;
+    return projection?.kind === 'template' ? projection : null;
+  }
+
+  function templateAt(index: CatalogIndex, templateId: string, revision: number): { entry: CatalogEntry; record: AssetRevisionRecord; projection: Extract<AssetProjection, { kind: 'template' }> } {
+    const entry = getLiveEntry(index, templateId);
+    const record = entry.revisions.find((candidate) => candidate.revision === revision);
+    if (entry.kind !== 'template' || record?.projection.kind !== 'template') throw new AssetCatalogError('revision_unavailable', { assetId: templateId });
+    return { entry, record, projection: record.projection };
+  }
+
+  /** What a choice has to match: the revision accepted, the revision on offer, and this instance as it stood. */
+  function bindingFor(index: CatalogIndex, stored: AgentComposition | null, agentId: string, targetHash: string): StructureBinding {
+    const composition = stored ?? { ...emptyComposition(), agentId, revision: 0, updatedAt: '' };
+    const accepted = composition.template && hasOwn(index.assets, composition.template.templateId)
+      ? index.assets[composition.template.templateId].revisions.find((record) => record.revision === composition.template?.acceptedRevision)
+      : null;
+    return {
+      fromFingerprint: accepted?.contentHash ?? 'none',
+      toFingerprint: targetHash,
+      instanceFingerprint: instanceFingerprint(composition),
+    };
+  }
+
+  function sameBinding(a: StructureBinding | undefined, b: StructureBinding): boolean {
+    return a?.fromFingerprint === b.fromFingerprint && a.toFingerprint === b.toFingerprint && a.instanceFingerprint === b.instanceFingerprint;
+  }
+
+  /** The latest revision of an instance's template, and what taking it would mean. No intermediate adoption. */
+  function structureUpdate(index: CatalogIndex, stored: AgentComposition, foreign: readonly ForeignDestination[]) {
+    if (!stored.template) throw new AssetCatalogError('invalid_composition');
+    const { templateId, acceptedRevision } = stored.template;
+    const latest = getLiveEntry(index, templateId).headRevision;
+    const target = templateAt(index, templateId, latest);
+    const accepted = acceptedProjection(index, stored);
+    return {
+      latest,
+      target,
+      accepted,
+      acceptedRevision,
+      refs: templateTargetOf(templateId, latest, target.projection),
+      check: checkStructure(structureInput(index, stored, accepted, target.projection)),
+      subagentCheck: checkSubagentSet(subagentSetInput(index, stored, accepted, target.projection, foreign)),
+      binding: bindingFor(index, stored, stored.agentId, target.record.contentHash),
+    };
+  }
+
+  /** Everything a publication would change, unwritten. Refuses before any file exists. */
+  function buildPublication(index: CatalogIndex, input: PublicationRequest) {
+    if (!isAssetId(input.templateId)) throw new AssetCatalogError('asset_missing');
+    const creating = input.expectedRevision === 0;
+    if (creating && hasOwn(index.assets, input.templateId)) throw new AssetCatalogError('asset_exists', { assetId: input.templateId });
+    const existingTemplate = creating ? null : getLiveEntry(index, input.templateId);
+    if (existingTemplate && existingTemplate.kind !== 'template') throw new AssetCatalogError('invalid_publication', { assetId: input.templateId });
+    if (existingTemplate && existingTemplate.headRevision !== input.expectedRevision) {
+      throw new AssetCatalogError('stale_revision', { assetId: input.templateId, expected: input.expectedRevision, current: existingTemplate.headRevision });
+    }
+    const templateRevision = input.expectedRevision + 1;
+    const bundledBy = { templateId: input.templateId, templateRevision };
+    const savedAt = now();
+    const assets = { ...index.assets };
+    const records: Array<{ entry: CatalogEntry; record: AssetRevisionRecord; payload: AssetPayload }> = [];
+
+    const seen = new Set<string>([input.templateId]);
+    for (const write of input.writes) {
+      if (!isAssetId(write.assetId) || seen.has(write.assetId) || (write.kind !== 'block' && write.kind !== 'subagent')) {
+        throw new AssetCatalogError('invalid_publication', { assetId: write.assetId });
+      }
+      seen.add(write.assetId);
+      let base: CatalogEntry;
+      if (write.expectedRevision === 0) {
+        if (hasOwn(index.assets, write.assetId)) throw new AssetCatalogError('asset_exists', { assetId: write.assetId });
+        const source = write.source ?? { kind: 'user' as const };
+        const issues = [...nameIssues(write.name), ...sourceIssues(source)];
+        if (issues.length > 0) throw new AssetCatalogError('invalid_publication', { issues });
+        base = {
+          id: write.assetId, kind: write.kind, name: write.name as string, owner: write.owner ?? { kind: 'library' },
+          source, createdAt: savedAt, headRevision: 0, revisions: [],
+        };
+      } else {
+        base = getLiveEntry(index, write.assetId);
+        if (base.kind !== write.kind) throw new AssetCatalogError('invalid_publication', { assetId: write.assetId });
+        if (base.headRevision !== write.expectedRevision) {
+          throw new AssetCatalogError('stale_revision', { assetId: write.assetId, expected: write.expectedRevision, current: base.headRevision });
+        }
+      }
+      const { payload, projection } = validated(write.kind, write.payload, base.source);
+      const record: AssetRevisionRecord = {
+        revision: base.headRevision + 1, savedAt, contentHash: canonicalHash(payload), projection, bundledBy,
+      };
+      const entry: CatalogEntry = { ...base, headRevision: record.revision, revisions: [...base.revisions, record] };
+      assets[entry.id] = entry;
+      records.push({ entry, record, payload });
+    }
+
+    const source = existingTemplate?.source ?? input.source ?? { kind: 'user' as const };
+    if (creating) {
+      const issues = [...nameIssues(input.name), ...sourceIssues(source)];
+      if (issues.length > 0) throw new AssetCatalogError('invalid_publication', { issues });
+    }
+    const { payload, projection } = validated('template', input.payload, source);
+    if (projection.kind !== 'template') throw new AssetCatalogError('invalid_publication');
+    const record: AssetRevisionRecord = { revision: templateRevision, savedAt, contentHash: canonicalHash(payload), projection };
+    const templateEntry: CatalogEntry = existingTemplate
+      ? { ...existingTemplate, headRevision: templateRevision, revisions: [...existingTemplate.revisions, record] }
+      : {
+        id: input.templateId, kind: 'template', name: input.name as string, owner: input.owner ?? { kind: 'library' },
+        source, createdAt: savedAt, headRevision: templateRevision, revisions: [record],
+      };
+    assets[templateEntry.id] = templateEntry;
+    const next: CatalogIndex = { ...index, assets };
+
+    for (const item of records) checkReferences(next, item.entry.owner, item.record.projection);
+    checkReferences(next, templateEntry.owner, projection);
+
+    // A tagged revision nothing refers to could never be accepted, so it would hold everyone back for good.
+    const reachable = new Set<string>();
+    for (const ref of projection.entries) reachable.add(`${ref.blockId}@${ref.blockRevision}`);
+    for (const ref of projection.subagents) reachable.add(`${ref.subagentId}@${ref.subagentRevision}`);
+    for (const item of records) {
+      if (item.record.projection.kind !== 'subagent' || !reachable.has(`${item.entry.id}@${item.record.revision}`)) continue;
+      for (const ref of item.record.projection.blocks) reachable.add(`${ref.blockId}@${ref.blockRevision}`);
+    }
+    const unreferenced = records
+      .filter((item) => !reachable.has(`${item.entry.id}@${item.record.revision}`))
+      .map((item): ValidationIssue => ({ code: 'unreferenced_bundle_write', path: item.entry.id }));
+    if (unreferenced.length > 0) throw new AssetCatalogError('invalid_publication', { issues: unreferenced });
+
+    return {
+      next,
+      records,
+      templateEntry,
+      record,
+      payload,
+      contentHash: canonicalHash([record.contentHash, ...records.map((item) => [item.entry.id, item.record.contentHash])]),
+      alsoAffected: records.map((item) => item.entry.id),
+    };
+  }
+
+  function publicationImpact(index: CatalogIndex, input: PublicationRequest, built: ReturnType<typeof buildPublication>): AssetImpact {
+    return previewCatalogChange(index, built.next, {
+      assetId: input.templateId,
+      fromRevision: input.expectedRevision,
+      toRevision: input.expectedRevision + 1,
+      contentHash: built.contentHash,
+      alsoAffected: built.alsoAffected,
+    }, input.context);
   }
 
   /** Marks an asset deleted, keeping only what's still referred to. With nothing left, its entry goes too. */
@@ -436,15 +700,21 @@ export function createAssetCatalogStore(options: AssetCatalogStoreOptions) {
       return previewPayload(entry.kind, await readRevisionFile(entry, revision));
     },
 
-    /** Save a new, unassigned library asset. */
-    createAsset(input: { kind: AssetKind; name: string; payload: unknown; source?: AssetSource }): Promise<CatalogEntry> {
+    /** An id for an asset a publication is about to create, so a template payload can refer to it. */
+    mintAssetId(): string {
+      return newId();
+    },
+
+    /** Save a new asset, unassigned. */
+    createAsset(input: { kind: AssetKind; name: string; payload: unknown; source?: AssetSource; owner?: AssetOwner }): Promise<CatalogEntry> {
       return guarded({ scope: 'app', key: `assetCatalog.${input.kind}` }, () => serial(async () => {
         const source = input.source ?? { kind: 'user' as const };
         const issues = [...nameIssues(input.name), ...sourceIssues(source)];
         if (issues.length > 0) throw new AssetCatalogError('invalid_payload', { issues });
         const { payload, projection } = validated(input.kind, input.payload, source);
         const index = await loadIndex();
-        checkPresetReferences(index, projection);
+        const owner = input.owner ?? { kind: 'library' as const };
+        checkReferences(index, owner, projection);
 
         const savedAt = now();
         const record: AssetRevisionRecord = { revision: 1, savedAt, contentHash: canonicalHash(payload), projection };
@@ -452,7 +722,7 @@ export function createAssetCatalogStore(options: AssetCatalogStoreOptions) {
           id: newId(),
           kind: input.kind,
           name: input.name,
-          owner: { kind: 'library' },
+          owner,
           source,
           createdAt: savedAt,
           headRevision: 1,
@@ -498,7 +768,7 @@ export function createAssetCatalogStore(options: AssetCatalogStoreOptions) {
 
         const impact = previewAssetImpact(index, entry.id, record, input.context);
         if (impact.blocked) throw new AssetCatalogError('consumer_conflict', { assetId: entry.id, impact });
-        if (impact.agents.length > 0 || impact.presets.length > 0) {
+        if (impact.agents.length > 0 || impact.templates.length > 0 || impact.subagents.length > 0) {
           if (input.impactFingerprint === undefined) throw new AssetCatalogError('impact_confirmation_required', { assetId: entry.id, impact });
           if (input.impactFingerprint !== impact.fingerprint) throw new AssetCatalogError('stale_preview', { assetId: entry.id, impact });
         }
@@ -526,7 +796,7 @@ export function createAssetCatalogStore(options: AssetCatalogStoreOptions) {
     },
 
     /**
-     * Delete an asset nothing depends on. Refused while a preset or an agent uses
+     * Delete an asset nothing depends on. Refused while a template, subagent or agent uses
      * it. Revisions a recorded run or a copy's origin names stay readable; the rest
      * of its payloads go.
      */
@@ -547,7 +817,7 @@ export function createAssetCatalogStore(options: AssetCatalogStoreOptions) {
     },
 
     /**
-     * A user's copy of an instruction document or skill, owned by one agent, which
+     * A user's copy of a block, skill or subagent definition, owned by one agent, which
      * records the exact origin revision it started from. It's only a copy: nothing
      * merges, rebases or syncs it, and it isn't assigned until a composition says so.
      * A copy of a built-in keeps a reserved skill name until the user saves one of their own.
@@ -557,7 +827,7 @@ export function createAssetCatalogStore(options: AssetCatalogStoreOptions) {
         requireAgentId(input.agentId);
         const index = await loadIndex();
         const origin = getLiveEntry(index, input.assetId);
-        const copyable: readonly CopyableAssetKind[] = ['skill', 'instruction'];
+        const copyable: readonly CopyableAssetKind[] = ['skill', 'block', 'subagent'];
         if (!(copyable as readonly string[]).includes(origin.kind)) throw new AssetCatalogError('not_copyable', { assetId: origin.id });
         const name = input.name ?? origin.name;
         requireValidName(name);
@@ -593,6 +863,205 @@ export function createAssetCatalogStore(options: AssetCatalogStoreOptions) {
       return planWith(await loadIndex(), request);
     },
 
+    /** What the template's latest revision would mean for this instance, and what a choice has to bind to. Writes nothing. */
+    async previewStructureUpdate(input: { agentId: string; adoption: BaseAdoption; foreign?: readonly ForeignDestination[]; projectId?: string }): Promise<{
+      binding: StructureBinding;
+      targetRevision: number;
+      check: StructureCheck;
+      subagentCheck: SubagentSetCheck;
+      plan: CompositionPlan;
+    }> {
+      requireAgentId(input.agentId);
+      requireAdoption(input.adoption);
+      const index = await loadIndex();
+      const stored = storedComposition(index, input.agentId);
+      if (!stored?.template) throw new AssetCatalogError('invalid_composition');
+      const update = structureUpdate(index, stored, input.foreign ?? []);
+      const clean = update.check.clean && update.subagentCheck.clean;
+      const draft = clean ? applyCleanUpdate(stored, update.refs, update.check.order) : stored;
+      return {
+        binding: update.binding,
+        targetRevision: update.latest,
+        check: update.check,
+        subagentCheck: update.subagentCheck,
+        plan: planComposition(index, {
+          agentId: input.agentId,
+          ...(input.projectId !== undefined && { projectId: input.projectId }),
+          composition: draft,
+          compositionRevision: stored.revision,
+          adoption: input.adoption,
+          foreign: input.foreign,
+        }),
+      };
+    },
+
+    /**
+     * Accept the template's latest revision: everything it changed or none of it.
+     * A clean one takes no choice. Anything else needs a choice accounting for every
+     * entry. Either way the binding has to match what the person saw. Updates
+     * desired state only: a running session never changes.
+     */
+    acceptStructureUpdate(input: {
+      agentId: string;
+      expectedRevision: number;
+      targetRevision: number;
+      binding: StructureBinding;
+      choice?: StructureChoice;
+      adoption: BaseAdoption;
+      foreign?: readonly ForeignDestination[];
+      projectId?: string;
+    }): Promise<AgentComposition> {
+      return guarded({ scope: 'agent', key: 'assetCatalog.structure', targetId: isCatalogId(input.agentId) ? input.agentId : undefined }, () => serial(async () => {
+        requireAgentId(input.agentId);
+        requireAdoption(input.adoption);
+        const index = await loadIndex();
+        const stored = storedComposition(index, input.agentId);
+        if (!stored?.template) throw new AssetCatalogError('invalid_composition');
+        if (stored.revision !== input.expectedRevision) {
+          throw new AssetCatalogError('stale_revision', { expected: input.expectedRevision, current: stored.revision });
+        }
+        const update = structureUpdate(index, stored, input.foreign ?? []);
+        if (input.targetRevision !== update.latest || update.latest === update.acceptedRevision) {
+          throw new AssetCatalogError('stale_revision', { expected: input.targetRevision, current: update.latest });
+        }
+        if (!sameBinding(input.binding, update.binding)) throw new AssetCatalogError('stale_choice');
+
+        let next: CompositionInput;
+        if (input.choice) {
+          const applied = applyStructureChoice(stored, update.refs, input.choice, acceptedRefsOf(update.accepted));
+          if (applied.ok === false) throw new AssetCatalogError('invalid_choice', { issues: applied.issues });
+          next = applied.composition;
+        } else {
+          if (!update.check.clean || !update.subagentCheck.clean) {
+            throw new AssetCatalogError('structure_needs_choice', { check: update.check, subagentCheck: update.subagentCheck });
+          }
+          next = applyCleanUpdate(stored, update.refs, update.check.order);
+        }
+        const plan = planComposition(index, {
+          agentId: input.agentId,
+          ...(input.projectId !== undefined && { projectId: input.projectId }),
+          composition: next,
+          compositionRevision: stored.revision,
+          adoption: input.adoption,
+          foreign: input.foreign,
+        });
+        if (plan.blockers.length > 0) throw new AssetCatalogError('composition_blocked', { plan });
+
+        const { agentId } = stored;
+        const { template, entries, excludedEntryIds, subagents, excludedSubagentEntryIds, additions, removals, floors, keepMarkers, authorityApprovals } = next;
+        const saved: AgentComposition = {
+          template, entries, excludedEntryIds, subagents, excludedSubagentEntryIds, additions, removals, floors, keepMarkers, authorityApprovals,
+          agentId, revision: stored.revision + 1, updatedAt: now(),
+        };
+        await commitIndex({ ...index, compositions: { ...index.compositions, [agentId]: saved } });
+        await auditChanged('agent', 'assetCatalog.structure', agentId);
+        return saved;
+      }));
+    },
+
+    /** A switch to another template as a replace: the result, and what the commit has to bind to. Writes nothing. */
+    async previewTemplateSwitch(input: {
+      agentId: string;
+      templateId: string;
+      selection: TemplateSwitchSelection;
+      adoption: BaseAdoption;
+      foreign?: readonly ForeignDestination[];
+      projectId?: string;
+    }): Promise<{ binding: StructureBinding; targetRevision: number; composition: CompositionInput; plan: CompositionPlan }> {
+      requireAgentId(input.agentId);
+      requireAdoption(input.adoption);
+      const index = await loadIndex();
+      const stored = storedComposition(index, input.agentId);
+      const composition = switched(index, stored, input.templateId, input.selection);
+      const targetRevision = getLiveEntry(index, input.templateId).headRevision;
+      return {
+        binding: bindingFor(index, stored, input.agentId, templateAt(index, input.templateId, targetRevision).record.contentHash),
+        targetRevision,
+        composition,
+        plan: planComposition(index, {
+          agentId: input.agentId,
+          ...(input.projectId !== undefined && { projectId: input.projectId }),
+          composition,
+          compositionRevision: stored?.revision ?? 0,
+          adoption: input.adoption,
+          foreign: input.foreign,
+        }),
+      };
+    },
+
+    /** Commit a template switch. Only what was selected carries over. The agent id, and all that hangs off it, stays. */
+    switchTemplate(input: {
+      agentId: string;
+      expectedRevision: number;
+      templateId: string;
+      selection: TemplateSwitchSelection;
+      binding: StructureBinding;
+      adoption: BaseAdoption;
+      foreign?: readonly ForeignDestination[];
+      projectId?: string;
+    }): Promise<AgentComposition> {
+      return guarded({ scope: 'agent', key: 'assetCatalog.structure', targetId: isCatalogId(input.agentId) ? input.agentId : undefined }, () => serial(async () => {
+        requireAgentId(input.agentId);
+        requireAdoption(input.adoption);
+        const index = await loadIndex();
+        const stored = storedComposition(index, input.agentId);
+        if ((stored?.revision ?? 0) !== input.expectedRevision) {
+          throw new AssetCatalogError('stale_revision', { expected: input.expectedRevision, current: stored?.revision ?? 0 });
+        }
+        const targetRevision = getLiveEntry(index, input.templateId).headRevision;
+        const binding = bindingFor(index, stored, input.agentId, templateAt(index, input.templateId, targetRevision).record.contentHash);
+        if (!sameBinding(input.binding, binding)) throw new AssetCatalogError('stale_choice');
+
+        const next = switched(index, stored, input.templateId, input.selection);
+        const plan = planComposition(index, {
+          agentId: input.agentId,
+          ...(input.projectId !== undefined && { projectId: input.projectId }),
+          composition: next,
+          compositionRevision: stored?.revision ?? 0,
+          adoption: input.adoption,
+          foreign: input.foreign,
+        });
+        if (plan.blockers.length > 0) throw new AssetCatalogError('composition_blocked', { plan });
+
+        const saved: AgentComposition = { ...next, agentId: input.agentId, revision: (stored?.revision ?? 0) + 1, updatedAt: now() };
+        await commitIndex({ ...index, compositions: { ...index.compositions, [input.agentId]: saved } });
+        await auditChanged('agent', 'assetCatalog.structure', input.agentId);
+        return saved;
+      }));
+    },
+
+    /** What publishing would do to every consumer. Writes nothing. */
+    previewPublication(input: PublicationRequest): Promise<AssetImpact> {
+      return serial(async () => {
+        const index = await loadIndex();
+        return publicationImpact(index, input, buildPublication(index, input));
+      });
+    },
+
+    /**
+     * Publish a template revision and the block and subagent revisions that go with
+     * it, as one commit. Tags are set here and never again. An independent block
+     * edit is {@link saveRevision}, a separate action on purpose: Clubhouse makes no
+     * claim to detect whether an edit is safe to flow, so the author chooses.
+     */
+    publishTemplate(input: PublicationRequest & { impactFingerprint?: string }): Promise<CatalogEntry> {
+      return guarded({ scope: 'app', key: 'assetCatalog.template.published', targetId: isAssetId(input.templateId) ? input.templateId : undefined }, () => serial(async () => {
+        const index = await loadIndex();
+        const built = buildPublication(index, input);
+        const impact = publicationImpact(index, input, built);
+        if (impact.blocked) throw new AssetCatalogError('consumer_conflict', { assetId: input.templateId, impact });
+        if (impact.agents.length > 0 || impact.templates.length > 0 || impact.subagents.length > 0) {
+          if (input.impactFingerprint === undefined) throw new AssetCatalogError('impact_confirmation_required', { assetId: input.templateId, impact });
+          if (input.impactFingerprint !== impact.fingerprint) throw new AssetCatalogError('stale_preview', { assetId: input.templateId, impact });
+        }
+        for (const item of built.records) await writeRevisionFile(item.entry, item.record, item.payload);
+        await writeRevisionFile(built.templateEntry, built.record, built.payload);
+        await commitIndex(built.next);
+        await auditChanged('app', 'assetCatalog.template.published', input.templateId);
+        return built.templateEntry;
+      }));
+    },
+
     /**
      * Commit a desired composition. It must match the preview the user saw
      * (`previewFingerprint`), and nothing may block: no partial application.
@@ -604,18 +1073,31 @@ export function createAssetCatalogStore(options: AssetCatalogStoreOptions) {
       adoption: BaseAdoption;
       previewFingerprint: string;
       foreign?: readonly ForeignDestination[];
+      projectId?: string;
     }): Promise<AgentComposition> {
       return guarded({ scope: 'agent', key: 'assetCatalog.composition', targetId: isCatalogId(input.agentId) ? input.agentId : undefined }, () => serial(async () => {
         const index = await loadIndex();
-        const plan = planWith(index, { agentId: input.agentId, adoption: input.adoption, draft: input.composition, foreign: input.foreign });
+        const plan = planWith(index, {
+          agentId: input.agentId,
+          ...(input.projectId !== undefined && { projectId: input.projectId }),
+          adoption: input.adoption,
+          draft: input.composition,
+          foreign: input.foreign,
+        });
         if (input.expectedRevision !== plan.compositionRevision) {
           throw new AssetCatalogError('stale_revision', { expected: input.expectedRevision, current: plan.compositionRevision });
+        }
+        const composition = validateComposition(input.composition);
+        if (composition.ok === false) throw new AssetCatalogError('invalid_composition', { issues: composition.issues });
+        // A new template revision or another template arrives through accepting or switching, which check it.
+        const was = storedComposition(index, input.agentId)?.template;
+        const nextTemplate = composition.composition.template;
+        if (was && (was.templateId !== nextTemplate?.templateId || was.acceptedRevision !== nextTemplate?.acceptedRevision)) {
+          throw new AssetCatalogError('structure_change_requires_acceptance');
         }
         if (plan.blockers.length > 0) throw new AssetCatalogError('composition_blocked', { plan });
         if (input.previewFingerprint !== plan.fingerprint) throw new AssetCatalogError('stale_preview', { plan });
 
-        const composition = validateComposition(input.composition);
-        if (composition.ok === false) throw new AssetCatalogError('invalid_composition', { issues: composition.issues });
         const stored: AgentComposition = {
           ...composition.composition,
           agentId: input.agentId,
@@ -651,7 +1133,8 @@ export function createAssetCatalogStore(options: AssetCatalogStoreOptions) {
     },
 
     /**
-     * Freeze the exact revisions a run started with, so they stay readable however
+     * The receipt of a start: the structure accepted and available, the exact
+     * revisions used, and whether an update was waiting. They stay readable however
      * desired state moves. Clubhouse's own bookkeeping, whoever asked for the start.
      */
     recordRun(input: { runId: string; plan: ActivationPlan }): Promise<RunRecord> {
@@ -660,10 +1143,18 @@ export function createAssetCatalogStore(options: AssetCatalogStoreOptions) {
         const index = await loadIndex();
         if (hasOwn(index.runs, input.runId)) throw new AssetCatalogError('run_exists');
         const { plan } = input;
-        const revisions: RunRecord['revisions'] = [
-          ...(plan.base ? [{ assetId: plan.base.presetId, kind: 'preset' as const, revision: plan.base.revision }] : []),
+        const listed: RunRecord['revisions'] = [
+          ...(plan.structure ? [{ assetId: plan.structure.templateId, kind: 'template' as const, revision: plan.structure.resolvedRevision }] : []),
+          ...(plan.instructions?.blocks ?? []).map((block) => ({ assetId: block.assetId, kind: 'block' as const, revision: block.revision })),
           ...plan.assets.map((asset) => ({ assetId: asset.assetId, kind: asset.kind, revision: asset.revision })),
+          ...plan.subagents.flatMap((subagent): RunRecord['revisions'] => [
+            { assetId: subagent.assetId, kind: 'subagent', revision: subagent.revision },
+            ...subagent.blocks.map((block) => ({ assetId: block.assetId, kind: 'block' as const, revision: block.revision })),
+            ...subagent.skills.map((skill) => ({ assetId: skill.assetId, kind: 'skill' as const, revision: skill.revision })),
+            ...subagent.mcps.map((mcp) => ({ assetId: mcp.assetId, kind: 'mcp' as const, revision: mcp.revision })),
+          ]),
         ];
+        const revisions = [...new Map(listed.map((frozen) => [`${frozen.assetId}@${frozen.revision}`, frozen])).values()];
         for (const frozen of revisions) {
           const entry = getEntry(index, frozen.assetId);
           if (!entry.revisions.some((record) => record.revision === frozen.revision)) {
@@ -675,6 +1166,7 @@ export function createAssetCatalogStore(options: AssetCatalogStoreOptions) {
           agentId: plan.agentId,
           recordedAt: now(),
           planFingerprint: plan.fingerprint,
+          structure: plan.structure,
           revisions,
         };
         await commitIndex({ ...index, runs: { ...index.runs, [run.runId]: run } });

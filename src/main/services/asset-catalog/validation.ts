@@ -13,27 +13,34 @@ import {
 } from '../../../shared/orchestration-policy';
 import { parsePersonaFile } from '../../../shared/persona-pattern';
 import type {
-  AgentPresetPayload,
   AssetAgentMetadata,
   AssetKind,
   AssetPayload,
   AssetPayloadByKind,
   AssetPreview,
   AssetProjection,
+  BlockAssetPayload,
+  BlockRef,
   CatalogEntry,
   CompositionInput,
-  InstructionAssetPayload,
+  InstanceEntry,
+  InstanceSubagent,
   McpAssetPayload,
-  PresetOperationalDefaults,
   SkillAssetPayload,
   SkillFile,
+  SubagentAssetPayload,
+  SubagentRef,
+  TemplateAssetPayload,
+  TemplateOperationalDefaults,
   UpstreamPackage,
   ValidationCode,
   ValidationIssue,
 } from '../../../shared/asset-catalog-types';
 import { containsSecretToken, isSecretKey, redactSecretValues, REDACTED } from '../../telemetry/diag-redaction';
 
-export const MAX_INSTRUCTION_BYTES = 1024 * 1024;
+export const MAX_BLOCK_BYTES = 1024 * 1024;
+export const MAX_SUBAGENT_PROVIDER_BYTES = 256 * 1024;
+export const MAX_PROVIDER_DEPTH = 8;
 export const MAX_SKILL_FILE_BYTES = 5 * 1024 * 1024;
 export const MAX_SKILL_BUNDLE_BYTES = 25 * 1024 * 1024;
 export const MAX_SKILL_FILES = 500;
@@ -48,6 +55,8 @@ const ID_RE = /^[A-Za-z0-9][\w.:-]{0,127}$/;
 const ASSET_ID_RE = /^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/;
 const ENV_NAME_RE = /^[A-Za-z_][A-Za-z0-9_]{0,127}$/;
 const SERVER_KEY_RE = /^[A-Za-z0-9][A-Za-z0-9_.-]{0,63}$/;
+const AGENT_NAME_RE = /^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/;
+const MAX_DESCRIPTION_CHARS = 2000;
 const EXACT_VERSION_RE = /^\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.+-]+)?$/;
 // eslint-disable-next-line no-control-regex
 const CONTROL_CHARS_RE = /[\u0000-\u001f\u007f]/;
@@ -61,8 +70,8 @@ const RESERVED_ENV_RE = /^CLUBHOUSE_/i;
 /** Files that hold credentials by convention. A skill bundle never carries them. */
 const CREDENTIAL_FILE_RE = /^(?:\.env(?:\..*)?|\.npmrc|\.pypirc|\.netrc|\.git-credentials|id_(?:rsa|dsa|ecdsa|ed25519)|credentials(?:\.json)?|.*\.(?:pem|key|p12|pfx))$/i;
 
-/** Launch settings, under the spellings they go by. Separately coded so a preset's refusal says why. */
-const FORBIDDEN_PRESET_FIELDS = new Set([
+/** Launch settings, under the spellings they go by. Separately coded so a template's refusal says why. */
+const FORBIDDEN_TEMPLATE_FIELDS = new Set([
   'provider', 'providerid', 'providerrouting', 'orchestrator',
   'model', 'modelid', 'modelrouting', 'modelreasoningeffort',
   'effort', 'reasoningeffort',
@@ -328,34 +337,74 @@ function validateSkill(raw: Record<string, unknown>, issues: Issues, reservedAll
   return { skillName: skillName as string, files: clean };
 }
 
-// ── Instructions ─────────────────────────────────────────────────────────
+// ── Blocks ───────────────────────────────────────────────────────────────
 
-function validateInstruction(raw: Record<string, unknown>, issues: Issues): InstructionAssetPayload | null {
+function validateBlock(raw: Record<string, unknown>, issues: Issues): BlockAssetPayload | null {
   issues.closed(raw, ['content'], '');
   const { content } = raw;
   if (typeof content !== 'string' || !content.trim()) {
     issues.add('invalid_shape', 'content');
     return null;
   }
-  if (Buffer.byteLength(content, 'utf8') > MAX_INSTRUCTION_BYTES) issues.add('too_large', 'content');
+  if (Buffer.byteLength(content, 'utf8') > MAX_BLOCK_BYTES) issues.add('too_large', 'content');
   if (containsSecretToken(content)) issues.add('secret_value', 'content');
-  // Persona front matter carries model and orchestrator. An import splits them out, so a document can't smuggle them in.
+  // Persona front matter carries model and orchestrator. An import splits them out, so a block can't smuggle them in.
   if (Object.keys(parsePersonaFile(content).settings).length > 0) issues.add('launch_settings_in_instruction', 'content');
   return { content };
 }
 
-// ── Presets ──────────────────────────────────────────────────────────────
+function isRevision(value: unknown): value is number {
+  return typeof value === 'number' && Number.isSafeInteger(value) && value >= 1;
+}
 
-const PRESET_FIELDS = ['instruction', 'skills', 'mcps', 'operationalDefaults'] as const;
+/** An ordered list of stable entry ids, each referring to one block revision. Each id and each block once. */
+function validateBlockRefs(raw: unknown, path: string, issues: Issues): BlockRef[] {
+  if (!Array.isArray(raw)) {
+    issues.add('invalid_shape', path);
+    return [];
+  }
+  const refs: BlockRef[] = [];
+  const entryIds = new Set<string>();
+  const blockIds = new Set<string>();
+  raw.forEach((item: unknown, index) => {
+    const at = `${path}[${index}]`;
+    if (!isRecord(item)) {
+      issues.add('invalid_shape', at);
+      return;
+    }
+    issues.closed(item, ['entryId', 'blockId', 'blockRevision'], `${at}.`);
+    if (!isCatalogId(item.entryId)) issues.add('invalid_identifier', `${at}.entryId`);
+    if (!isAssetId(item.blockId)) issues.add('invalid_identifier', `${at}.blockId`);
+    if (!isRevision(item.blockRevision)) issues.add('invalid_revision', `${at}.blockRevision`);
+    if (entryIds.has(item.entryId as string) || blockIds.has(item.blockId as string)) issues.add('duplicate_reference', at);
+    entryIds.add(item.entryId as string);
+    blockIds.add(item.blockId as string);
+    refs.push({ entryId: item.entryId as string, blockId: item.blockId as string, blockRevision: item.blockRevision as number });
+  });
+  return refs;
+}
+
+function validateAssetIdList(raw: unknown, path: string, issues: Issues): string[] {
+  const list = stringList(raw, path, issues);
+  list.forEach((id, index) => {
+    if (!isAssetId(id)) issues.add('invalid_identifier', `${path}[${index}]`);
+  });
+  if (new Set(list).size !== list.length) issues.add('duplicate_reference', path);
+  return list;
+}
+
+// ── Templates ────────────────────────────────────────────────────────────
+
+const TEMPLATE_FIELDS = ['entries', 'subagents', 'skills', 'mcps', 'operationalDefaults'] as const;
 
 function checkForbidden(raw: Record<string, unknown>, prefix: string, issues: Issues, allowed: readonly string[]): void {
   for (const key of Object.keys(raw)) {
-    if (FORBIDDEN_PRESET_FIELDS.has(normalizedField(key))) issues.add('forbidden_preset_field', `${prefix}${safeKey(key)}`);
+    if (FORBIDDEN_TEMPLATE_FIELDS.has(normalizedField(key))) issues.add('forbidden_template_field', `${prefix}${safeKey(key)}`);
     else if (!allowed.includes(key)) issues.add('unknown_field', `${prefix}${safeKey(key)}`);
   }
 }
 
-function validateOperationalDefaults(raw: unknown, issues: Issues): PresetOperationalDefaults | undefined {
+function validateOperationalDefaults(raw: unknown, issues: Issues): TemplateOperationalDefaults | undefined {
   if (raw === undefined) return undefined;
   if (!isRecord(raw)) {
     issues.add('invalid_operational_default', 'operationalDefaults');
@@ -364,7 +413,7 @@ function validateOperationalDefaults(raw: unknown, issues: Issues): PresetOperat
   const { agentAccess, ...policy } = raw;
   const known = ['orchestrate', 'access', 'control', 'maxHelpers', 'crossProjectHelpers', 'connectToDispatcher', 'autoHelpers'];
   checkForbidden(policy, 'operationalDefaults.', issues, known);
-  const out: PresetOperationalDefaults = {};
+  const out: TemplateOperationalDefaults = {};
   if (agentAccess !== undefined) {
     if (ACCESS_LEVELS.includes(agentAccess as AgentAccessLevel)) out.agentAccess = agentAccess as AgentAccessLevel;
     else issues.add('invalid_operational_default', 'operationalDefaults.agentAccess');
@@ -384,26 +433,137 @@ function validateOperationalDefaults(raw: unknown, issues: Issues): PresetOperat
   return Object.keys(out).length > 0 ? out : undefined;
 }
 
-function validatePreset(raw: Record<string, unknown>, issues: Issues): AgentPresetPayload | null {
-  checkForbidden(raw, '', issues, [...PRESET_FIELDS, 'instructions', 'presets', 'preset']);
-  if ('instructions' in raw) issues.add('invalid_instruction_cardinality', 'instructions');
-  if ('presets' in raw || 'preset' in raw) issues.add('nested_preset', 'presets' in raw ? 'presets' : 'preset');
-  const { instruction } = raw;
-  if (!isAssetId(instruction)) issues.add('invalid_instruction_cardinality', 'instruction');
-  const skills = stringList(raw.skills, 'skills', issues);
-  const mcps = stringList(raw.mcps, 'mcps', issues);
-  for (const [path, list] of [['skills', skills], ['mcps', mcps]] as const) {
-    list.forEach((id, index) => {
-      if (!isAssetId(id)) issues.add('invalid_identifier', `${path}[${index}]`);
-    });
-    if (new Set(list).size !== list.length) issues.add('duplicate_reference', path);
+function validateSubagentRefs(raw: unknown, issues: Issues): SubagentRef[] {
+  if (raw === undefined) return [];
+  if (!Array.isArray(raw)) {
+    issues.add('invalid_shape', 'subagents');
+    return [];
   }
+  const refs: SubagentRef[] = [];
+  const entryIds = new Set<string>();
+  const subagentIds = new Set<string>();
+  raw.forEach((item: unknown, index) => {
+    const at = `subagents[${index}]`;
+    if (!isRecord(item)) {
+      issues.add('invalid_shape', at);
+      return;
+    }
+    issues.closed(item, ['entryId', 'subagentId', 'subagentRevision'], `${at}.`);
+    if (!isCatalogId(item.entryId)) issues.add('invalid_identifier', `${at}.entryId`);
+    if (!isAssetId(item.subagentId)) issues.add('invalid_identifier', `${at}.subagentId`);
+    if (!isRevision(item.subagentRevision)) issues.add('invalid_revision', `${at}.subagentRevision`);
+    if (entryIds.has(item.entryId as string) || subagentIds.has(item.subagentId as string)) issues.add('duplicate_reference', at);
+    entryIds.add(item.entryId as string);
+    subagentIds.add(item.subagentId as string);
+    refs.push({ entryId: item.entryId as string, subagentId: item.subagentId as string, subagentRevision: item.subagentRevision as number });
+  });
+  // A set: saved in one order, so the same set always hashes the same.
+  return refs.sort((a, b) => (a.entryId < b.entryId ? -1 : a.entryId > b.entryId ? 1 : 0));
+}
+
+function validateTemplate(raw: Record<string, unknown>, issues: Issues): TemplateAssetPayload | null {
+  checkForbidden(raw, '', issues, [...TEMPLATE_FIELDS, 'templates', 'template']);
+  if ('templates' in raw || 'template' in raw) issues.add('nested_template', 'templates' in raw ? 'templates' : 'template');
+  const entries = validateBlockRefs(raw.entries, 'entries', issues);
+  if (Array.isArray(raw.entries) && raw.entries.length === 0) issues.add('no_instruction_entries', 'entries');
+  const subagents = validateSubagentRefs(raw.subagents, issues);
+  const skills = validateAssetIdList(raw.skills, 'skills', issues);
+  const mcps = validateAssetIdList(raw.mcps, 'mcps', issues);
   const operationalDefaults = validateOperationalDefaults(raw.operationalDefaults, issues);
+  return { entries, subagents, skills, mcps, ...(operationalDefaults && { operationalDefaults }) };
+}
+
+// ── Native subagents ─────────────────────────────────────────────────────
+
+/** A field that can raise authority, by name, wherever it sits in a provider section. */
+const AUTHORITY_FIELDS = new Set(['permissionmode', 'hooks', 'dangerouslyskippermissions', 'allowdangerouslyskippermissions']);
+const INLINE_MCP_FIELDS = new Set(['mcpservers']);
+
+/** Strings in an inline MCP definition are config, where a secret name means a secret. Elsewhere they can be prose. */
+function scanProviderValue(value: unknown, path: string, depth: number, inMcp: boolean, issues: Issues): void {
+  if (depth > MAX_PROVIDER_DEPTH) {
+    issues.add('too_large', path);
+    return;
+  }
+  if (typeof value === 'string') {
+    if (containsSecretToken(value) || (inMcp && hasSecretValue(value))) issues.add('secret_value', path);
+    return;
+  }
+  if (Array.isArray(value)) {
+    value.forEach((item, index) => scanProviderValue(item, `${path}[${index}]`, depth + 1, inMcp, issues));
+    return;
+  }
+  if (!isRecord(value)) return;
+  for (const [key, item] of Object.entries(value)) {
+    const at = `${path}.${safeKey(key)}`;
+    if (OBJECT_KEY_TRAPS.has(key)) {
+      issues.add('invalid_identifier', at);
+      continue;
+    }
+    if (isSecretKey(key) && typeof item === 'string' && isSecretLiteral(key, item)) issues.add('secret_value', at);
+    scanProviderValue(item, at, depth + 1, inMcp || INLINE_MCP_FIELDS.has(normalizedField(key)), issues);
+  }
+}
+
+function collectAuthorityFields(value: unknown, path: string, out: string[]): void {
+  if (Array.isArray(value)) {
+    value.forEach((item, index) => collectAuthorityFields(item, `${path}[${index}]`, out));
+    return;
+  }
+  if (!isRecord(value)) return;
+  for (const [key, item] of Object.entries(value)) {
+    const at = `${path}.${safeKey(key)}`;
+    const field = normalizedField(key);
+    if (AUTHORITY_FIELDS.has(field)) {
+      out.push(at);
+    } else if (INLINE_MCP_FIELDS.has(field)) {
+      // A reference by name is fine. A definition written inline can run anything.
+      const inline = Array.isArray(item) ? item.some((server) => typeof server !== 'string') : item !== undefined && typeof item !== 'string';
+      if (inline) out.push(at);
+    } else {
+      collectAuthorityFields(item, at, out);
+    }
+  }
+}
+
+function validateSubagent(raw: Record<string, unknown>, issues: Issues, reservedAllowed: boolean): SubagentAssetPayload | null {
+  issues.closed(raw, ['agentName', 'description', 'blocks', 'skills', 'mcps', 'provider'], '');
+  const { agentName, description, provider } = raw;
+  if (typeof agentName !== 'string' || !AGENT_NAME_RE.test(agentName) || OBJECT_KEY_TRAPS.has(agentName)) {
+    issues.add('invalid_identifier', 'agentName');
+  } else if (RESERVED_NAME_RE.test(agentName) && !reservedAllowed) {
+    issues.add('reserved_namespace', 'agentName');
+  }
+  if (typeof description !== 'string' || !description.trim() || description.length > MAX_DESCRIPTION_CHARS) {
+    issues.add('invalid_shape', 'description');
+  } else if (containsSecretToken(description)) {
+    issues.add('secret_value', 'description');
+  }
+  const blocks = validateBlockRefs(raw.blocks, 'blocks', issues);
+  if (Array.isArray(raw.blocks) && raw.blocks.length === 0) issues.add('no_instruction_entries', 'blocks');
+  const skills = validateAssetIdList(raw.skills, 'skills', issues);
+  const mcps = validateAssetIdList(raw.mcps, 'mcps', issues);
+
+  if (provider !== undefined) {
+    if (!isRecord(provider)) {
+      issues.add('invalid_shape', 'provider');
+    } else {
+      for (const [id, section] of Object.entries(provider)) {
+        const at = `provider.${safeKey(id)}`;
+        if (!isCatalogId(id)) issues.add('invalid_identifier', at);
+        if (!isRecord(section)) issues.add('invalid_shape', at);
+        else scanProviderValue(section, at, 0, false, issues);
+      }
+      if (Buffer.byteLength(JSON.stringify(provider), 'utf8') > MAX_SUBAGENT_PROVIDER_BYTES) issues.add('too_large', 'provider');
+    }
+  }
   return {
-    instruction: instruction as string,
+    agentName: agentName as string,
+    description: description as string,
+    blocks,
     skills,
     mcps,
-    ...(operationalDefaults && { operationalDefaults }),
+    ...(isRecord(provider) && Object.keys(provider).length > 0 && { provider: provider as SubagentAssetPayload['provider'] }),
   };
 }
 
@@ -432,16 +592,31 @@ export function projectionOf(kind: AssetKind, payload: AssetPayload): AssetProje
       const skill = payload as SkillAssetPayload;
       return { kind, skillName: skill.skillName, filePaths: skill.files.map((file) => file.path) };
     }
-    case 'instruction':
-      return { kind };
-    case 'preset': {
-      const preset = payload as AgentPresetPayload;
+    case 'block':
+      return { kind, bytes: Buffer.byteLength((payload as BlockAssetPayload).content, 'utf8') };
+    case 'subagent': {
+      const subagent = payload as SubagentAssetPayload;
+      const authorityFields: string[] = [];
+      for (const [id, section] of Object.entries(subagent.provider ?? {})) collectAuthorityFields(section, safeKey(id), authorityFields);
       return {
         kind,
-        instruction: preset.instruction,
-        skills: preset.skills,
-        mcps: preset.mcps,
-        ...(preset.operationalDefaults && { operationalDefaults: preset.operationalDefaults }),
+        agentName: subagent.agentName,
+        blocks: subagent.blocks,
+        skills: subagent.skills,
+        mcps: subagent.mcps,
+        providers: Object.keys(subagent.provider ?? {}).sort(),
+        authorityFields: authorityFields.sort(),
+      };
+    }
+    case 'template': {
+      const template = payload as TemplateAssetPayload;
+      return {
+        kind,
+        entries: template.entries,
+        subagents: template.subagents,
+        skills: template.skills,
+        mcps: template.mcps,
+        ...(template.operationalDefaults && { operationalDefaults: template.operationalDefaults }),
       };
     }
   }
@@ -455,8 +630,9 @@ export function validatePayload<K extends AssetKind>(kind: K, raw: unknown, rese
   switch (kind) {
     case 'mcp': payload = validateMcp(raw, issues, reservedAllowed); break;
     case 'skill': payload = validateSkill(raw, issues, reservedAllowed); break;
-    case 'instruction': payload = validateInstruction(raw, issues); break;
-    case 'preset': payload = validatePreset(raw, issues); break;
+    case 'block': payload = validateBlock(raw, issues); break;
+    case 'subagent': payload = validateSubagent(raw, issues, reservedAllowed); break;
+    case 'template': payload = validateTemplate(raw, issues); break;
     default: issues.add('invalid_shape', 'kind');
   }
   if (issues.list.length > 0 || !payload) return { ok: false, issues: issues.list };
@@ -481,7 +657,7 @@ export function sourceIssues(raw: unknown): ValidationIssue[] {
       return Object.keys(raw).length === 2 && isCatalogId(raw.builtinId) ? [] : invalid;
     case 'import': {
       const known = Object.keys(raw).every((key) => ['kind', 'from', 'projectId', 'nativeName'].includes(key));
-      const from = raw.from === 'native-mcp' || raw.from === 'project-skill' || raw.from === 'persona';
+      const from = raw.from === 'native-mcp' || raw.from === 'project-skill' || raw.from === 'persona' || raw.from === 'native-subagent';
       const ids = (raw.projectId === undefined || isCatalogId(raw.projectId)) && (raw.nativeName === undefined || isCatalogId(raw.nativeName));
       return known && from && ids ? [] : invalid;
     }
@@ -490,36 +666,104 @@ export function sourceIssues(raw: unknown): ValidationIssue[] {
   }
 }
 
-const COMPOSITION_FIELDS = ['basePresetId', 'additions', 'removals', 'instructionAssetId'] as const;
+const COMPOSITION_FIELDS = [
+  'template', 'entries', 'excludedEntryIds', 'subagents', 'excludedSubagentEntryIds',
+  'additions', 'removals', 'floors', 'keepMarkers', 'authorityApprovals',
+] as const;
+
+/** Exactly one of `baseEntryId` and `localId`, and a source that fits it. */
+function validateEntryIdentity(raw: Record<string, unknown>, at: string, issues: Issues): boolean {
+  const base = raw.baseEntryId !== undefined;
+  const local = raw.localId !== undefined;
+  if (base === local) {
+    issues.add('invalid_entry', at);
+    return false;
+  }
+  if (!isCatalogId(base ? raw.baseEntryId : raw.localId)) issues.add('invalid_identifier', at);
+  return base;
+}
+
+function validateEntries(raw: unknown, path: string, assetField: 'blockId' | 'subagentId', issues: Issues): Array<InstanceEntry | InstanceSubagent> {
+  if (!Array.isArray(raw)) {
+    issues.add('invalid_shape', path);
+    return [];
+  }
+  const seen = new Set<string>();
+  return raw.flatMap((item: unknown, index) => {
+    const at = `${path}[${index}]`;
+    if (!isRecord(item) || !isRecord(item.source)) {
+      issues.add('invalid_entry', at);
+      return [];
+    }
+    issues.closed(item, ['baseEntryId', 'localId', 'source'], `${at}.`);
+    const isBase = validateEntryIdentity(item, at, issues);
+    const key = `${isBase ? 'base' : 'local'}:${String(isBase ? item.baseEntryId : item.localId)}`;
+    if (seen.has(key)) issues.add('duplicate_reference', at);
+    seen.add(key);
+
+    const source = item.source;
+    const asset = source[assetField];
+    const allowed = source.kind === 'fork' ? ['kind', assetField, 'forkedFrom'] : ['kind', assetField];
+    issues.closed(source, allowed, `${at}.source.`);
+    if (source.kind === 'follow') {
+      // A base entry takes its asset from the template. A local one has to name what it follows.
+      if (isBase ? asset !== undefined : !isAssetId(asset)) issues.add('invalid_entry', `${at}.source`);
+    } else if (source.kind === 'fork') {
+      const from = source.forkedFrom;
+      if (!isAssetId(asset) || !isRecord(from) || !isAssetId(from.assetId) || !isRevision(from.revision)) issues.add('invalid_entry', `${at}.source`);
+    } else if (source.kind === 'local') {
+      if (isBase || !isAssetId(asset)) issues.add('invalid_entry', `${at}.source`);
+    } else {
+      issues.add('invalid_entry', `${at}.source`);
+    }
+    return [item as unknown as InstanceEntry | InstanceSubagent];
+  });
+}
+
+function validateRevisionMap(raw: unknown, path: string, issues: Issues): Record<string, number> {
+  if (!isRecord(raw)) {
+    issues.add('invalid_shape', path);
+    return {};
+  }
+  for (const [key, value] of Object.entries(raw)) {
+    if (!isAssetId(key)) issues.add('invalid_identifier', `${path}.${safeKey(key)}`);
+    if (!isRevision(value)) issues.add('invalid_revision', `${path}.${safeKey(key)}`);
+  }
+  return raw as Record<string, number>;
+}
+
+function validateIdList(raw: unknown, path: string, isValid: (id: unknown) => boolean, issues: Issues): string[] {
+  if (!Array.isArray(raw) || raw.some((id) => !isValid(id))) {
+    issues.add('invalid_identifier', path);
+    return [];
+  }
+  if (new Set(raw).size !== raw.length) issues.add('duplicate_reference', path);
+  return raw as string[];
+}
 
 /** Closed, so nothing about a session, wire, worktree, helper or launch setting can be tied to a composition. */
 export function validateComposition(raw: unknown): { ok: true; composition: CompositionInput } | { ok: false; issues: ValidationIssue[] } {
   const issues = new Issues();
   if (!isRecord(raw)) return { ok: false, issues: [{ code: 'invalid_shape', path: '' }] };
   issues.closed(raw, COMPOSITION_FIELDS, '');
-  const { basePresetId, instructionAssetId } = raw;
-  if (basePresetId !== null && !isAssetId(basePresetId)) issues.add('invalid_identifier', 'basePresetId');
-  if (instructionAssetId !== null && !isAssetId(instructionAssetId)) issues.add('invalid_identifier', 'instructionAssetId');
-  const lists: Record<'additions' | 'removals', string[]> = { additions: [], removals: [] };
-  for (const key of ['additions', 'removals'] as const) {
-    const list = raw[key];
-    if (!Array.isArray(list) || list.some((id) => !isAssetId(id))) {
-      issues.add('invalid_identifier', key);
-      continue;
-    }
-    if (new Set(list).size !== list.length) issues.add('duplicate_reference', key);
-    lists[key] = list as string[];
+  const { template } = raw;
+  if (template !== null) {
+    if (!isRecord(template) || !isAssetId(template.templateId) || !isRevision(template.acceptedRevision)) issues.add('invalid_identifier', 'template');
+    else issues.closed(template, ['templateId', 'acceptedRevision'], 'template.');
   }
-  if (issues.list.length > 0) return { ok: false, issues: issues.list };
-  return {
-    ok: true,
-    composition: {
-      basePresetId: basePresetId as string | null,
-      additions: lists.additions,
-      removals: lists.removals,
-      instructionAssetId: instructionAssetId as string | null,
-    },
+  const composition: CompositionInput = {
+    template: template as CompositionInput['template'],
+    entries: validateEntries(raw.entries, 'entries', 'blockId', issues) as InstanceEntry[],
+    excludedEntryIds: validateIdList(raw.excludedEntryIds, 'excludedEntryIds', isCatalogId, issues),
+    subagents: validateEntries(raw.subagents, 'subagents', 'subagentId', issues) as InstanceSubagent[],
+    excludedSubagentEntryIds: validateIdList(raw.excludedSubagentEntryIds, 'excludedSubagentEntryIds', isCatalogId, issues),
+    additions: validateIdList(raw.additions, 'additions', isAssetId, issues),
+    removals: validateIdList(raw.removals, 'removals', isAssetId, issues),
+    floors: validateRevisionMap(raw.floors, 'floors', issues),
+    keepMarkers: validateRevisionMap(raw.keepMarkers, 'keepMarkers', issues),
+    authorityApprovals: validateRevisionMap(raw.authorityApprovals, 'authorityApprovals', issues),
   };
+  return issues.list.length > 0 ? { ok: false, issues: issues.list } : { ok: true, composition };
 }
 
 // ── Native adoption ──────────────────────────────────────────────────────
@@ -622,10 +866,24 @@ export function previewPayload(kind: AssetKind, payload: AssetPayload): AssetPre
         })),
       };
     }
-    case 'instruction':
-      return { kind, text: redactSecretValues((payload as InstructionAssetPayload).content) };
-    case 'preset':
-      return { kind, ...(payload as AgentPresetPayload) };
+    case 'block':
+      return { kind, text: redactSecretValues((payload as BlockAssetPayload).content) };
+    case 'subagent': {
+      const subagent = payload as SubagentAssetPayload;
+      return {
+        kind,
+        agentName: subagent.agentName,
+        description: redactSecretValues(subagent.description),
+        blocks: subagent.blocks,
+        skills: subagent.skills,
+        mcps: subagent.mcps,
+        providerFields: Object.fromEntries(
+          Object.entries(subagent.provider ?? {}).map(([id, section]) => [id, Object.keys(section).sort()]),
+        ),
+      };
+    }
+    case 'template':
+      return { kind, ...(payload as TemplateAssetPayload) };
   }
 }
 
