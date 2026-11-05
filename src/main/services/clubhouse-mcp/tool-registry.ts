@@ -12,7 +12,8 @@ import { deniedGroupProjectTools } from '../../../shared/group-project-admin';
 import { appLog } from '../log-service';
 import { isCrossProjectEnabled, isOrchestrationEnabled, onOrchestrationGateChange } from './orchestration-gate';
 import { isDispatcherAgent, isTrackedDispatcher } from './dispatcher-gate';
-import { CROSS_PROJECT_OFF_MESSAGE, ORCHESTRATION_OFF_MESSAGE } from '../../../shared/orchestration-policy';
+import { HELPER_REPORT_TOOL, mcpCallAccess } from './mcp-call-gate';
+import { CROSS_PROJECT_OFF_MESSAGE, MCP_OFF_HELPER_TOOL_MESSAGE, MCP_OFF_TOOL_MESSAGE, ORCHESTRATION_OFF_MESSAGE } from '../../../shared/orchestration-policy';
 import { getProvider } from '../../orchestrators';
 
 /** The refusal a Dispatcher tool returns for any other agent. */
@@ -370,6 +371,12 @@ function wakeKey(bindings: McpBinding[]): string {
  * A target's state doesn't change the list of a CLI that keeps its first one.
  */
 export function getScopedToolList(agentId: string): McpToolDefinition[] {
+  const access = mcpCallAccess(agentId, agentRegistry.get(agentId)?.projectPath);
+  if (access === 'closed') return [];
+  if (access === 'report_only') {
+    const report = globalTools.get(HELPER_REPORT_TOOL);
+    return report ? [report.definition] : [];
+  }
   const currentVersion = bindingManager.getVersion();
   const bindings = bindingManager.getBindingsForAgent(agentId);
   const allWireTools = keepsFirstToolList(agentId);
@@ -461,6 +468,11 @@ export async function callTool(
   toolName: string,
   args: Record<string, unknown>,
 ): Promise<McpToolResult> {
+  // Before everything else: without MCP, no tool is reached, whatever list the client holds.
+  const access = mcpCallAccess(agentId, agentRegistry.get(agentId)?.projectPath);
+  if (access === 'closed') return refuse('mcp_off', MCP_OFF_TOOL_MESSAGE);
+  if (access === 'report_only' && toolName !== HELPER_REPORT_TOOL) return refuse('mcp_off', MCP_OFF_HELPER_TOOL_MESSAGE);
+
   // Check global tools first (no binding required)
   const globalTool = globalTools.get(toolName);
   if (globalTool) {

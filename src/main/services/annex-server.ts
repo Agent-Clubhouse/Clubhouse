@@ -21,10 +21,11 @@ import { readMobileChatContent } from './annex-chat-content';
 import { agentFolders } from './agent-runtime/chat-files';
 import { buildAgentDetails, buildAgentSettings, buildAgentSettingsOptions, buildCreateOptions, createMobileAgent, mobileOrchestration, updateMobileAgent, updateMobileDispatcher } from './mobile-agents';
 import {
-  DISPATCHER_CHANGED_EVENT, DISPATCHER_PROJECT_ID, activeDispatcher, dispatcherCapability, dispatcherChange, dispatcherFolderProject,
-  isDisabledDispatcherId, isDispatcherProjectId, setDispatcherEnabledFromPhone, type MobileDispatcherChange,
+  DISPATCHER_CHANGED_EVENT, DISPATCHER_PROJECT_ID, activeDispatcher, assertDispatcherCommand, dispatcherCapability, dispatcherChange, dispatcherFolderProject,
+  dispatcherNothingPending, dispatcherOffFields, dispatcherRecord, dispatcherShellProject, dispatcherSnapshotFlags, isDisabledDispatcherId, isDispatcherProjectId,
+  setDispatcherEnabledFromPhone,
 } from './mobile-dispatcher';
-import { onDispatcherChanged } from './dispatcher/dispatcher-service';
+import { getDispatcherState, onDispatcherChanged } from './dispatcher/dispatcher-service';
 import { helperRoutingRevision, onHelperRoutingChanged } from './helper-routing';
 import { HELPER_ROUTING_CHANGED_EVENT, helperRoutingCapability, mobileHelperRouting, runHelperRoutingUpdate } from './mobile-helper-routing';
 import { minimalRouting } from '../../shared/helper-routing';
@@ -750,6 +751,17 @@ async function catalogOrchestration(projectPath: string, durables: DurableConfig
   }
 }
 
+/** The Dispatcher can't start while it is off, though its history can still be read. */
+function isDispatcherOffForStart(agentId: string): boolean {
+  const state = getDispatcherState();
+  return state.agentId === agentId && !state.enabled;
+}
+
+/** The Dispatcher as the snapshot, dispatcher:changed and the capabilities carry it: the same shape in all three. */
+function dispatcherAgentView(config: DurableConfigs[number]) {
+  return { ...mapDurableAgent(config, DISPATCHER_PROJECT_ID), isDispatcher: true as const };
+}
+
 function mapDurableAgent(d: DurableConfigs[number], projectId: string, policies?: Awaited<ReturnType<typeof catalogOrchestration>>) {
   const agentId = d.id;
   const isRunning = isAgentRunning(agentId);
@@ -943,7 +955,7 @@ async function readSnapshotSourcesData() {
     policiesByProject[proj.id] = await catalogOrchestration(proj.path, durables);
   }));
 
-  const iconSet = await buildSnapshotIcons(projects, durablesByProject, activeDispatcher()?.config);
+  const iconSet = await buildSnapshotIcons(projects, durablesByProject, dispatcherRecord() ?? undefined);
 
   // Read per-project canvas state in parallel (including wires)
   const canvasState: Record<string, CanvasStateWire> = {};
@@ -1000,9 +1012,9 @@ function assembleSnapshot(sources: SnapshotSources): BuiltSnapshot {
     });
   }
 
-  // The Dispatcher (#2533): in no project, so on its own, and only while it is on.
-  const active = activeDispatcher();
-  const dispatcherAgent = active ? { ...mapDurableAgent(active.config, DISPATCHER_PROJECT_ID), isDispatcher: true as const } : null;
+  // The Dispatcher (#2533): in no project, so on its own. Its record stays listed while it is off, so history isn't lost.
+  const record = dispatcherRecord();
+  const dispatcherAgent = record ? dispatcherAgentView(record) : null;
 
   // Build agents metadata (execution modes, detailed statuses)
   const agentsMeta: Record<string, { executionMode: string | null; detailedStatus: AgentDetailedStatus | null }> = {};
@@ -1074,9 +1086,9 @@ function assembleSnapshot(sources: SnapshotSources): BuiltSnapshot {
     bulletinDigests,
     groupProjectMembers,
     ptyHost: annexPtyHost(process.platform, detectWindowsPty()),
-    // Null while the Dispatcher is off; its agent is the agents[projectId][] shape plus isDispatcher.
+    // Null until the Dispatcher exists; its agent is the agents[projectId][] shape plus isDispatcher.
     dispatcher: dispatcherAgent
-      ? { enabled: true, flagOn: true, projectId: DISPATCHER_PROJECT_ID, agent: dispatcherAgent }
+      ? { ...dispatcherSnapshotFlags(), projectId: DISPATCHER_PROJECT_ID, ...dispatcherOffFields(getDispatcherState(), dispatcherAgentView), agent: dispatcherAgent }
       : null,
   } };
 }
@@ -1731,7 +1743,7 @@ async function handleSpawnShellWs(ws: WebSocket, payload: Record<string, unknown
     return;
   }
   // The Dispatcher's folder too while it is on (#2533): a shell there, as for any agent's folder.
-  const project = dispatcherFolderProject(projectId) ?? (typeof projectId === 'string' ? await findProjectById(projectId) : undefined);
+  const project = dispatcherShellProject(projectId) ?? (typeof projectId === 'string' ? await findProjectById(projectId) : undefined);
   if (!project) {
     sendPtyError(ws, op, 'project_not_found', { sessionId });
     return;
@@ -3072,7 +3084,7 @@ async function handleMobileCapabilitiesRoute(ctx: AnnexRouteContext): Promise<vo
     terminal: { version: 1, projectShell: true, agentShell: true, agentAttach: true,
       maxShellsPerConnection: MAX_SHELLS_PER_CONNECTION, maxInputLength: MAX_PTY_INPUT_SIZE },
     // The app-wide Dispatcher (#2533): the snapshot's `dispatcher`, dispatcher:changed and dispatcher.setEnabled.
-    dispatcher: dispatcherCapability(),
+    dispatcher: dispatcherCapability(dispatcherAgentView),
     // App-wide helper presets (#2671). It lists only what works now.
     helperRouting: helperRoutingCapability(),
     ...phoneRoutes(),
@@ -3192,7 +3204,7 @@ async function handleMobileChatRoute(ctx: AnnexRouteContext, match: RegExpMatchA
       pendingQuestions: pending.pendingQuestions,
       metadata: {
         version: 1, epoch: mobileCommands.epoch, agentId, sessionId: sessionId ?? null,
-        canStart: !!durable && !isAgentRunning(agentId) && !mobileStartingAgents.has(agentId),
+        canStart: !!durable && !isAgentRunning(agentId) && !mobileStartingAgents.has(agentId) && !(isDispatcherOffForStart(agentId)),
         currentSessionId: runtime?.kind === 'chat' ? runtime.getSessionId?.() ?? null : null, readOnly: !live,
         state: live ? runtime.getState() : 'sleeping', capabilities: live ? runtime.getCapabilities?.() ?? null : null,
         lastSeq: current[current.length - 1]?.seq ?? 0,
@@ -3330,9 +3342,7 @@ async function runMobileCommand(command: MobileCommand, assertAuthorized: () => 
   if ('projectId' in command && isDispatcherProjectId(command.projectId)) {
     throw new MobileControlError('dispatcher_locked', 409, 'rejected', 'The Dispatcher is in no project.');
   }
-  if ('agentId' in command && isDisabledDispatcherId(command.agentId)) {
-    throw new MobileControlError('dispatcher_off', 409, 'rejected', 'The Dispatcher is turned off.');
-  }
+  if ('agentId' in command) assertDispatcherCommand(command.type, command.agentId);
   if ('sessionId' in command) {
     const info = await findMobileAgent(command.agentId);
     if ((!info || isDisposedAgent(info.config)) && !trackedQuickAgents.has(command.agentId)) throw new MobileControlError('agent_not_found', 404);
@@ -3340,7 +3350,9 @@ async function runMobileCommand(command: MobileCommand, assertAuthorized: () => 
     return executeChatCommand(command, runtime, async () => !await isRevertRunning(command.agentId), () => {
       assertAuthorized();
       if (getAgentRuntime(command.agentId) !== runtime) throw new MobileControlError('session_mismatch');
-    }, (ids, caps) => mobileAttachments.resolveFor(principal, command.agentId, ids, caps));
+    }, (ids, caps) => mobileAttachments.resolveFor(principal, command.agentId, ids, caps)).catch((err: unknown) => {
+      throw dispatcherNothingPending(command.agentId, err) ?? err;
+    });
   }
   if (command.type === 'project.setPinned' || command.type === 'project.setInactive') {
     const project = await findProjectById(command.projectId);
@@ -4536,9 +4548,10 @@ export function start(): void {
   unsubHelperRouting = onHelperRoutingChanged((revision) => broadcastAndBuffer(HELPER_ROUTING_CHANGED_EVENT, { revision }));
 
   // The Dispatcher turned on or off, or its config changed (#2533): phones add, drop or update it live.
-  let lastDispatcherChange = JSON.stringify(dispatcherChange());
+  const dispatcherChangedPayload = (state: ReturnType<typeof getDispatcherState>) => ({ ...dispatcherChange(state), ...dispatcherOffFields(state, dispatcherAgentView) });
+  let lastDispatcherChange = JSON.stringify(dispatcherChangedPayload(getDispatcherState()));
   unsubDispatcher = onDispatcherChanged((state) => {
-    const change: MobileDispatcherChange = dispatcherChange(state);
+    const change = dispatcherChangedPayload(state);
     const key = JSON.stringify(change);
     if (key !== lastDispatcherChange) {
       lastDispatcherChange = key;

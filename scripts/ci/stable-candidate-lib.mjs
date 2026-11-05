@@ -198,11 +198,11 @@ export function expectedFor({ state, preview, flags }) {
     chatEnabled: inForce,
     flagsInForce: inForce ? BETA_FLAGS : null,
     settingsPages: !preview ? [] : flags ? PREVIEW_PAGES : ['Experimental', 'Annex', 'Annex control'],
-    dispatcherRow: inForce && state === 'beta',
+    // On by default in the new layout, which every scenario runs, and Preview doesn't gate it.
+    dispatcherRow: true,
     // Only asserted when it must be false: with no CLI on the runner, true can't be reached.
     wakesInChatMustBeFalse: state === 'beta' && !inForce,
     savedFilesUntouched: state === 'beta' && !preview,
-    dispatcherFolderAbsent: !inForce || state !== 'beta',
   };
 }
 

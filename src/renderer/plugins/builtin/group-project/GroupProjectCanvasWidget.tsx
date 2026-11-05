@@ -99,6 +99,57 @@ export function GroupProjectCanvasWidget({
 
 /* ---------- Creation Form ---------- */
 
+
+/**
+ * Members whose polling stopped because Clubhouse MCP went off, once it is back.
+ * Nothing restarts a loop by itself, since main can't tell it from one someone has
+ * since ended, so each gets a Resume. Main decides who is offered it, and checks
+ * again on the click. Local group projects only.
+ */
+export function PausedPolling({ groupProjectId }: { groupProjectId: string }) {
+  const [paused, setPaused] = useState<Array<{ agentId: string; agentName: string }>>([]);
+  const [failed, setFailed] = useState<string | null>(null);
+
+  const resume = (agentId: string) => {
+    setFailed(null);
+    void window.clubhouse.groupProject.resumePolling(groupProjectId, agentId).catch(() => {
+      // telemetry-exempt: main logs the read that failed; shown here, and the offer stays to try again.
+      setFailed(agentId);
+    }).finally(load);
+  };
+
+  const load = useCallback(() => {
+    window.clubhouse.groupProject.getPausedPolling(groupProjectId).then(setPaused).catch(() => {
+      // telemetry-exempt: no offer shows, and the next change reads again.
+      setPaused([]);
+    });
+  }, [groupProjectId]);
+
+  useEffect(() => {
+    load();
+    return window.clubhouse.groupProject.onPausedPollingChanged(load);
+  }, [load]);
+
+  if (paused.length === 0) return null;
+  return (
+    <div className="flex flex-col gap-1 px-3 py-1.5 border-b border-surface-0 text-xs text-ctp-subtext0 flex-shrink-0" data-testid="polling-paused">
+      {paused.map((member) => (
+        <div key={member.agentId} className="flex items-center gap-2">
+          <span className="flex-1 min-w-0 truncate">{member.agentName}: polling paused</span>
+          <Button
+            kind="ghost"
+            onClick={() => resume(member.agentId)}
+            data-testid={`polling-resume-${member.agentId}`}
+          >
+            Resume
+          </Button>
+          {failed === member.agentId && <span role="alert" className="text-ctp-error" data-testid="polling-resume-error">Couldn’t resume. Try again.</span>}
+        </div>
+      ))}
+    </div>
+  );
+}
+
 function CreationForm({
   onUpdateMetadata,
 }: {
@@ -326,6 +377,8 @@ function ProjectCard({
           <div className="px-3 pt-1 text-xs text-ctp-subtext0 truncate flex-shrink-0">{description}</div>
         </Tooltip>
       )}
+
+      {!ctx.isRemote && <PausedPolling groupProjectId={groupProjectId} />}
 
       {/* Members: the star makes an agent a project lead (admin), which gets the privileged tools. */}
       {members.length > 0 && (
@@ -920,6 +973,8 @@ function ExpandedProjectView({
           )}
         </div>
       </div>
+
+      {!ctx.isRemote && <PausedPolling groupProjectId={groupProjectId} />}
 
       <div className="h-[30px] flex items-center px-3 border-t border-surface-0 text-xs text-ctp-overlay1 flex-shrink-0">
         {members.length} {members.length === 1 ? 'agent' : 'agents'} connected

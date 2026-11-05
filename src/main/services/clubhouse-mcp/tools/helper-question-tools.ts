@@ -7,12 +7,13 @@
  * helper whose parent orchestrates hands-off and is running, it sends the
  * parent the question, its options and a request id, and the helper stays
  * blocked. Anything else (no parent, an "ask" control level, a sleeping
- * parent, a failed delivery) leaves the question with the user, as before.
- * Terminal agents answer in their terminal and are never routed.
+ * parent, a parent without Clubhouse MCP, a failed delivery) leaves the question
+ * with the user, as before. Terminal agents answer in their terminal and are
+ * never routed.
  *
  * The parent answers with answer_helper_question, or passes the question to
- * the user with `escalate`. If the parent stops first, its helpers' open
- * questions go to the user. The user can still answer a routed question in
+ * the user with `escalate`. If the parent stops first, or loses Clubhouse MCP and
+ * so can't call the tool, its helpers' open questions go to the user. The user can still answer a routed question in
  * the helper's chat; whichever answer comes first wins. The tool is in the
  * `orchestration` group, like the other tools an orchestrator uses on its
  * helpers.
@@ -20,6 +21,8 @@
 
 import { randomUUID } from 'crypto';
 import { registerGlobalTool } from '../tool-registry';
+import { mcpCallAccess } from '../mcp-call-gate';
+import { onOrchestrationGateChange } from '../orchestration-gate';
 import type { McpToolResult } from '../types';
 import * as agentConfig from '../../agent-config';
 import { agentRegistry } from '../../agent-registry';
@@ -108,6 +111,8 @@ export async function routeHelperQuestion(helperId: string, question: QuestionDa
     const found = await findParent(projectPath, helper);
     if (!found || isDisposedAgent(found.config)) return null;
     const parent = found.config;
+    // It couldn't call answer_helper_question. A helper parent resolves on through its forced bridge, so this says more than its policy.
+    if (mcpCallAccess(parent.id, found.projectPath) !== 'open') return null;
     const policy = await getOrchestrationPolicy(found.projectPath, parent.id);
     if (!policy?.orchestrate || policy.control !== 'hands-off') return null;
     const runtime = getAgentRuntime(parent.id);
@@ -149,20 +154,31 @@ function watchParent(parentId: string, parentName: string, runtime: { onExit(lis
   const unsubscribe = runtime.onExit(() => {
     watchedParents.get(parentId)?.();
     watchedParents.delete(parentId);
-    for (const [id, entry] of [...routed]) {
-      if (entry.parentId !== parentId) continue;
-      routed.delete(id);
-      const helper = getAgentRuntime(entry.helperId);
-      void helper?.escalateQuestion?.(entry.requestId, `${parentName} stopped before answering, so this question is yours.`)
-        .catch((err: unknown) => {
-          // telemetry-exempt: logged; the question stays in the helper's chat
-          appLog('core:mcp', 'warn', 'Could not pass a helper question to the user', {
-            meta: { helperId: entry.helperId, error: errorText(err) },
-          });
-        });
-    }
+    handQuestionsToUser(parentId, `${parentName} stopped before answering, so this question is yours.`);
   });
   watchedParents.set(parentId, unsubscribe);
+}
+
+/** Give a parent's open helper questions to the user. */
+function handQuestionsToUser(parentId: string, why: string): void {
+  for (const [id, entry] of [...routed]) {
+    if (entry.parentId !== parentId) continue;
+    routed.delete(id);
+    const helper = getAgentRuntime(entry.helperId);
+    void helper?.escalateQuestion?.(entry.requestId, why)
+      .catch((err: unknown) => {
+        // telemetry-exempt: logged; the question stays in the helper's chat
+        appLog('core:mcp', 'warn', 'Could not pass a helper question to the user', {
+          meta: { helperId: entry.helperId, error: errorText(err) },
+        });
+      });
+  }
+}
+
+/** A parent that has lost Clubhouse MCP can't answer: its open questions go to the user now. */
+function onParentAccessChanged(parentId: string): void {
+  if (mcpCallAccess(parentId, agentRegistry.get(parentId)?.projectPath) === 'open') return;
+  handQuestionsToUser(parentId, 'Clubhouse MCP is off for the agent that was asked, so this question is yours.');
 }
 
 /** Forget questions answered elsewhere (the user, in the helper's chat) or whose helper stopped. */
@@ -268,7 +284,10 @@ async function parentNameOf(agentId: string): Promise<string | undefined> {
 
 // ── Registration ─────────────────────────────────────────────────────────
 
+let unwatchParentAccess: (() => void) | null = null;
+
 export function registerHelperQuestionTools(): void {
+  unwatchParentAccess ??= onOrchestrationGateChange(onParentAccessChanged);
   registerGlobalTool(
     'answer_helper_question',
     {
@@ -309,6 +328,8 @@ export function registerHelperQuestionTools(): void {
 }
 
 export function _resetHelperQuestionsForTesting(): void {
+  unwatchParentAccess?.();
+  unwatchParentAccess = null;
   routed.clear();
   for (const unsubscribe of watchedParents.values()) unsubscribe();
   watchedParents.clear();
