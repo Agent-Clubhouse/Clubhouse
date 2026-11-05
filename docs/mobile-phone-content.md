@@ -2,7 +2,7 @@
 
 Depends on mobile-control-v1 from PR2430 and the isolated integration support from PR2431. Existing Satellite/Annex routes and default binding/discovery are unchanged.
 
-`GET /api/v1/mobile/capabilities` adds `richContent: {version:1, enabled:boolean, maximumBytes:8388608}`. Enabled mirrors the desktop `richChatContent` setting, which is on unless saved off (Settings > Agents & providers > Rich chat content).
+`GET /api/v1/mobile/capabilities` adds `richContent: {version:1, enabled:boolean, maximumBytes:8388608}`. Enabled mirrors the desktop `richChatContent` setting, which is on unless saved off or the settings file can't be read (Settings > Agents & providers > Rich chat content).
 
 `GET /api/v1/mobile/agents/:id/chat` adds `canStart:boolean`, true only for a known non-disposed durable that is neither running nor starting. Mobile uses it for explicit Wake and wake-with-message; commands retain their existing mTLS/idempotency semantics.
 

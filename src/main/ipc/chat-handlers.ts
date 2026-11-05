@@ -8,7 +8,6 @@ import { app, BrowserWindow, clipboard, ClipboardItem, ipcMain, nativeImage, net
 import { IPC } from '../../shared/ipc-channels';
 import type { ChatAgentRuntimeInfo, ChatDriverId, ChatQuestionAnswers, ChatRuntimeSettings, ContentBlock, MessageDelivery, PermissionLevel, PermissionResponseExtras } from '../../shared/chat';
 import { CHAT_ATTACHMENTS_MAX, CHAT_IMAGE_MAX_BYTES, PERMISSION_LEVELS, RICH_CHAT_CONTENT_FLAG, isMediaRef } from '../../shared/chat';
-import { isGraduatedFlagOn } from '../../shared/graduated-flags';
 import { getAgentRuntime, readChatTranscript, listChatSessions, onChatEvent } from '../services/agent-runtime';
 import { getAgentRuntimeInfo, type AgentRuntimeQuery } from '../services/agent-runtime/runtime-info';
 import { createStatusBridge } from '../services/agent-runtime/chat-status-bridge';
@@ -20,7 +19,7 @@ import { withValidatedArgs, stringArg, numberArg, objectArg, arrayArg, booleanAr
 import { resolveAttachments, stageAttachmentData, stageAttachmentPath } from '../services/agent-runtime/chat-attachments';
 import { fetchRemoteImage, mediaFilePath, readMedia } from '../services/agent-runtime/chat-media';
 import { importChatImage, MAX_STAT_PATHS, readChatFilePreview, resolveChatFile, statChatPaths } from '../services/agent-runtime/chat-files';
-import { getSettings as getExperimentalSettings } from '../services/experimental-settings';
+import { isGraduatedFeatureOn } from '../services/experimental-settings';
 
 /** An effort: a level, omitted to keep the current one, or null for the provider's default. */
 const effortArg: ArgValidator<string | null | undefined> = (value, argName) => (value === null ? null : stringArg({ optional: true })(value, argName));
@@ -43,7 +42,7 @@ function assertTopFrameOfAppWindow(event: IpcMainInvokeEvent, message = 'Attachm
 
 /** Rich chat content channels: unless the flag is saved off, and only from a Clubhouse window's own page. */
 function assertRichMedia(event: IpcMainInvokeEvent): void {
-  if (!isGraduatedFlagOn(getExperimentalSettings(), RICH_CHAT_CONTENT_FLAG)) throw new Error('Rich chat content is off');
+  if (!isGraduatedFeatureOn(RICH_CHAT_CONTENT_FLAG)) throw new Error('Rich chat content is off');
   assertTopFrameOfAppWindow(event, 'Chat images can only be opened from a Clubhouse window');
 }
 

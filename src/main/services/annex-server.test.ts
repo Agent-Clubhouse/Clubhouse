@@ -14,12 +14,21 @@ vi.mock('./agent-runtime/chat-files', async (importOriginal) => ({
   ...await importOriginal<typeof import('./agent-runtime/chat-files')>(),
   agentFolders: vi.fn(async () => ['/test/project/.clubhouse/agents/a', '/test/project']),
 }));
-import { getSettings as getExperimentalSettings } from './experimental-settings';
+import { getSettings as getExperimentalSettings, savedSettingsUnreadable } from './experimental-settings';
 vi.mock('./mobile-helper-requests', () => ({
   buildMobileHelperRequests: vi.fn(() => []),
   runHelperCommand: vi.fn(async () => ({ requestId: 'hstart_1', kind: 'start', declined: true })),
 }));
-vi.mock('./experimental-settings', () => ({ getSettings: vi.fn(() => ({})), saveSettings: vi.fn() }));
+vi.mock('./experimental-settings', () => {
+  const getSettings = vi.fn((): Record<string, boolean> => ({}));
+  const savedSettingsUnreadable = vi.fn(() => false);
+  return {
+    getSettings,
+    savedSettingsUnreadable,
+    isGraduatedFeatureOn: (key: string) => !savedSettingsUnreadable() && getSettings()[key] !== false,
+    saveSettings: vi.fn(),
+  };
+});
 import * as projectStateStore from './project-state-store';
 // An in-memory main store running the real shared rules (#2458).
 vi.mock('./project-state-store', async () => {
@@ -1088,6 +1097,15 @@ describe('annex-server', () => {
       try {
         expect((await capabilities()).richContent.enabled).toBe(false);
       } finally { vi.mocked(getExperimentalSettings).mockReturnValue({} as any); }
+    });
+
+    it('advertises no rich content while the settings file can\'t be read', async () => {
+      const { port, token } = await startAndPair();
+      vi.mocked(savedSettingsUnreadable).mockReturnValue(true);
+      try {
+        const body = JSON.parse((await request(port, 'GET', '/api/v1/mobile/capabilities', undefined, authHeaders(token))).body);
+        expect(body.richContent.enabled).toBe(false);
+      } finally { vi.mocked(savedSettingsUnreadable).mockReturnValue(false); }
     });
 
     it('advertises the terminal capability', async () => {

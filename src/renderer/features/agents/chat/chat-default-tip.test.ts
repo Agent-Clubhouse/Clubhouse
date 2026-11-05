@@ -121,6 +121,17 @@ describe('showChatDefaultTip', () => {
     expect(toasts()).toHaveLength(1);
   });
 
+  it('decides nothing when a project\'s agents can\'t be listed, so the next launch asks again', async () => {
+    listDurable.mockRejectedValueOnce(new Error('unreadable'));
+    await expect(showChatDefaultTip()).rejects.toThrow('unreadable');
+    expect(toasts()).toEqual([]);
+    expect(localStorage.getItem(CHAT_MESSAGE_SHOWN_KEY)).toBeNull();
+    expect(localStorage.getItem(CHAT_TIP_RULED_OUT_KEY)).toBeNull();
+
+    await showChatDefaultTip();
+    expect(toasts()).toHaveLength(1);
+  });
+
   it('shows nothing when the marker can\'t be written, rather than every launch', async () => {
     const setItem = vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => { throw new Error('quota'); });
     try {

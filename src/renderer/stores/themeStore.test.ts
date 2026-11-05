@@ -373,6 +373,28 @@ describe('themeStore', () => {
       });
     });
 
+    it('keeps gradients from phones with the setting off, and pushes again when it changes', async () => {
+      registerTheme(workshop);
+      useThemeStore.setState({ experimentalGradients: false });
+      mockApp.syncActiveTheme.mockClear();
+      await getState().setTheme(workshop.id as ThemeId);
+      expect(mockApp.syncActiveTheme).toHaveBeenLastCalledWith({ id: workshop.id, type: 'dark', colors: workshop.colors, terminal: workshop.terminal });
+
+      mockApp.saveExperimentalSettings = vi.fn().mockResolvedValue(undefined);
+      await getState().setThemeGradients(true);
+      expect(mockApp.syncActiveTheme).toHaveBeenLastCalledWith(expect.objectContaining({ gradients: workshop.gradients }));
+      await getState().setThemeGradients(false);
+      expect(mockApp.syncActiveTheme.mock.lastCall?.[0]).not.toHaveProperty('gradients');
+    });
+
+    it('pushes the old state back to phones when the save is refused', async () => {
+      registerTheme(workshop);
+      useThemeStore.setState({ themeId: workshop.id as ThemeId, theme: workshop, experimentalGradients: true });
+      mockApp.saveExperimentalSettings = vi.fn().mockRejectedValue(new Error('refused'));
+      await getState().setThemeGradients(false);
+      expect(mockApp.syncActiveTheme).toHaveBeenLastCalledWith(expect.objectContaining({ gradients: workshop.gradients }));
+    });
+
     it('pushes a selected plugin theme once it registers after a fallback load', () => {
       useThemeStore.setState({ themeId: workshop.id as ThemeId, theme: THEMES['catppuccin-mocha'] });
       mockApp.syncActiveTheme.mockClear();

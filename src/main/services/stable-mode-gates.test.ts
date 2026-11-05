@@ -35,7 +35,7 @@ vi.mock('./dispatcher/dispatcher-service', async () => {
 });
 
 import { resetAllSettingsStoresForTests } from './settings-store';
-import { getSettings, getStoredSettings, saveSettings } from './experimental-settings';
+import { getSettings, getSettingsForRenderer, getStoredSettings, isGraduatedFeatureOn, saveSettings } from './experimental-settings';
 import { isPreviewEligible } from './preview-eligible';
 import { isChatEnabled, isCopilotSdkEnabled, resolveRuntimeMode } from './chat-runtime-settings';
 import { dispatcherEnablement, isDispatcherEnabled } from './dispatcher/dispatcher-settings';
@@ -45,6 +45,7 @@ import { EXPERIMENTAL_FLAG as TELEMETRY_FLAG, getTelemetrySettings, isExperiment
 import { isTelemetryConfigured, uiChrome } from '../telemetry/bootstrap';
 import { newChromeEnabled, resetNewChromeCacheForTests } from '../window-chrome';
 import { COPILOT_SDK_FLAG, RICH_CHAT_CONTENT_FLAG } from '../../shared/chat';
+import { isGraduatedFlagOn } from '../../shared/graduated-flags';
 import { TELEMETRY_CONSENT_VERSION } from '../../shared/telemetry/settings-types';
 import { PREVIEW_ONLY_EXPERIMENTAL_FLAGS, STRUCTURED_MODE_REMOVED_NOTICE_KEY } from '../../shared/types';
 
@@ -94,6 +95,53 @@ beforeEach(() => {
 afterEach(() => {
   relaunch();
   fs.rmSync(h.userData, { recursive: true, force: true });
+});
+
+describe('chat and rich content, in any build', () => {
+  const corrupt = () => {
+    fs.writeFileSync(path.join(h.userData, EXPERIMENTAL_FILE), '{ "chat": fal');
+    relaunch();
+  };
+
+  it('are on with the file or key missing', () => {
+    expect(isChatEnabled()).toBe(true);
+    expect(isGraduatedFeatureOn(RICH_CHAT_CONTENT_FLAG)).toBe(true);
+    write(EXPERIMENTAL_FILE, { goobers: true });
+    relaunch();
+    expect(isChatEnabled()).toBe(true);
+    expect(isGraduatedFeatureOn(RICH_CHAT_CONTENT_FLAG)).toBe(true);
+    expect(getSettingsForRenderer()).not.toHaveProperty('chat');
+  });
+
+  it('are off when saved false', () => {
+    write(EXPERIMENTAL_FILE, { chat: false, [RICH_CHAT_CONTENT_FLAG]: false });
+    relaunch();
+    expect(isChatEnabled()).toBe(false);
+    expect(isGraduatedFeatureOn(RICH_CHAT_CONTENT_FLAG)).toBe(false);
+    expect(resolveRuntimeMode('claude-code', 'chat')).toEqual({ mode: 'terminal' });
+  });
+
+  it('are off while the file can\'t be read, since a saved false may be in it', () => {
+    corrupt();
+    expect(getSettings()).toEqual({});
+    expect(isChatEnabled()).toBe(false);
+    expect(isGraduatedFeatureOn(RICH_CHAT_CONTENT_FLAG)).toBe(false);
+    expect(resolveRuntimeMode('claude-code', 'chat')).toEqual({ mode: 'terminal' });
+  });
+
+  it('read the same way in the renderer, and only they are forced off', () => {
+    corrupt();
+    expect(getSettingsForRenderer()).toEqual({ chat: false, [RICH_CHAT_CONTENT_FLAG]: false });
+    expect(isGraduatedFlagOn(getSettingsForRenderer(), 'themeGradients')).toBe(true);
+  });
+
+  it('come back once the file is readable again', () => {
+    corrupt();
+    write(EXPERIMENTAL_FILE, { goobers: true });
+    relaunch();
+    expect(isChatEnabled()).toBe(true);
+    expect(isGraduatedFeatureOn(RICH_CHAT_CONTENT_FLAG)).toBe(true);
+  });
 });
 
 describe('the preview-only list', () => {

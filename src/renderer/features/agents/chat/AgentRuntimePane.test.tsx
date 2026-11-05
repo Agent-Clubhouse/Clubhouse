@@ -38,22 +38,40 @@ describe('AgentRuntimePane', () => {
     useProjectStore.setState({ projects: [{ id: 'proj-1', name: 'Clubhouse', path: '/work/clubhouse' }] } as never);
   });
 
-  it('renders the terminal under the pane toolbar and never asks for the runtime with the flag off', async () => {
+  it('shows an agent still live in chat with the flag off, as a window opened after Chat went off', async () => {
     setFlag(false);
-    setRuntime(true, true);
+    setRuntime(true, false);
+    render(<AgentRuntimePane agent={agent} terminal={terminal} />);
+    expect(await screen.findByTestId('chat-view')).toBeInTheDocument();
+    expect(screen.queryByTestId('fake-terminal')).not.toBeInTheDocument();
+  });
+
+  it('renders the terminal under the pane toolbar with the flag off, with no Chat to switch to', async () => {
+    setFlag(false);
+    setRuntime(false, false);
     render(<AgentRuntimePane agent={agent} terminal={terminal} />);
     await act(async () => { await Promise.resolve(); });
     expect(screen.getByTestId('fake-terminal')).toBeInTheDocument();
     expect(screen.getByTestId('terminal-pane-bar')).toBeInTheDocument();
     expect(screen.getByTestId('agent-details-toggle')).toBeInTheDocument();
-    expect(api.chat.getAgentRuntime).not.toHaveBeenCalled();
     // No Chat to switch to: the switch is CLI, with the Changes review beside it.
     expect(screen.getAllByRole('radio').map((r) => r.textContent)).toEqual(['CLI']);
     expect(screen.getByTestId('view-changes')).toBeInTheDocument();
   });
 
+  it('offers no Chat switch when main says none is available, so nothing can write over a saved CLI choice', async () => {
+    setFlag(true);
+    setRuntime(false, false);
+    render(<AgentRuntimePane agent={agent} terminal={terminal} />);
+    await screen.findByTestId('fake-terminal');
+    await waitFor(() => expect(api.chat.getAgentRuntime).toHaveBeenCalled());
+    expect(screen.getAllByRole('radio').map((r) => r.textContent)).toEqual(['CLI']);
+    expect(screen.queryByRole('radio', { name: 'Chat' })).not.toBeInTheDocument();
+  });
+
   it('renders the terminal alone outside the main pane', async () => {
     setFlag(false);
+    setRuntime(false, false);
     const { container } = render(<AgentRuntimePane agent={agent} terminal={terminal} canSwitch={false} />);
     await act(async () => { await Promise.resolve(); });
     expect(container.firstChild).toBe(screen.getByTestId('fake-terminal'));

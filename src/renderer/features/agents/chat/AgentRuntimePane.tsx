@@ -1,7 +1,9 @@
 /**
  * Picks the agent pane's view: ChatView for agents running in the chat
  * runtime, the terminal otherwise. With the Chat flag saved off it renders the
- * terminal exactly as before and never loads the chat view.
+ * terminal from the first paint, and loads the chat view only for an agent main
+ * says is still live in chat: one started before Chat went off, seen from a
+ * window opened after.
  *
  * The Chat / CLI switch hands the agent over by setting its runtime
  * override and restarting it with resume, so the CLI keeps its context
@@ -198,7 +200,7 @@ function RuntimePending({ agentName }: { agentName: string }) {
 
 export function AgentRuntimePane({ agent, terminal, canSwitch = true, context = 'main' }: Props) {
   const flag = useChatFlag();
-  const info = useAgentRuntimeInfo(agent, flag === true);
+  const info = useAgentRuntimeInfo(agent, flag !== null);
   // Only a local durable agent can be in chat; everything else is the terminal from the first paint.
   const couldBeChat = agent.kind === 'durable' && !isRemoteProjectId(agent.projectId);
   // Busy in either runtime: chat from its events, the terminal from hook status.
@@ -223,7 +225,7 @@ export function AgentRuntimePane({ agent, terminal, canSwitch = true, context = 
 
   // The main pane always gets the toolbar and Agent details; other views show the terminal alone.
   const plainTerminal = canSwitch ? <MainTerminal agent={agent} terminal={terminal} /> : <>{terminal}</>;
-  if (flag === false || !couldBeChat) return plainTerminal;
+  if (!couldBeChat || (flag === false && !info?.chat)) return plainTerminal;
   // Flag or runtime still loading: a terminal here would flash before ChatView replaces it.
   if (flag === null || info === null) return <RuntimePending agentName={agent.name} />;
 

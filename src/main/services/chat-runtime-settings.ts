@@ -6,7 +6,6 @@
 import { createSettingsStore } from './settings-store';
 import * as experimentalSettings from './experimental-settings';
 import { isPreviewEligible } from './preview-eligible';
-import { isGraduatedFlagOn } from '../../shared/graduated-flags';
 import { COPILOT_SDK_FLAG, type AgentRuntimeMode, type ChatDriverId, type ChatRuntimeSettings } from '../../shared/chat';
 
 /** The flag's id in experimental settings (Settings › Agents & providers › Chat view). */
@@ -20,9 +19,9 @@ const store = createSettingsStore<ChatRuntimeSettings>('chat-runtime-settings.js
 export const getSettings = store.get;
 export const saveSettings = store.save;
 
-/** Chat is on in every build unless the flag is saved off. */
+/** Chat is on in every build unless the flag is saved off, or the file that may say so can't be read. */
 export function isChatEnabled(): boolean {
-  return isGraduatedFlagOn(experimentalSettings.getSettings(), CHAT_EXPERIMENTAL_FLAG);
+  return experimentalSettings.isGraduatedFeatureOn(CHAT_EXPERIMENTAL_FLAG);
 }
 
 /** The Copilot SDK driver's own flag: still experimental, so beta-only. */

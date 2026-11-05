@@ -345,6 +345,13 @@ describe('a preview-only flag in a stable build', () => {
     });
   });
 
+  it('reads Chat as off, and uncertain, while the file can\'t be read', async () => {
+    writeApp('experimental-settings.json', '{ "chat": fal');
+    resetAllSettingsStoresForTests();
+    const { targets } = await read(dispatcher, { select: ['app.defaults.chat_enabled'], detail: true });
+    expect(targets[0].settings['app.defaults.chat_enabled']).toMatchObject({ effective: false, source: 'uncertain' });
+  });
+
   it('reads Chat as on by default, and off once saved off, in a stable build', async () => {
     packaged(true);
     const missing = await read(dispatcher, { select: ['app.defaults.chat_enabled', 'app.system.experimental_chat'], detail: true });

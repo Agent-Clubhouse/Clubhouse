@@ -1,7 +1,10 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 const flags = vi.hoisted(() => ({ value: {} as Record<string, boolean> }));
-vi.mock('./experimental-settings', () => ({ getSettings: () => flags.value }));
+vi.mock('./experimental-settings', () => ({
+  getSettings: () => flags.value,
+  isGraduatedFeatureOn: (key: string) => (flags.value as Record<string, boolean>)[key] !== false,
+}));
 const preview = vi.hoisted(() => ({ value: true }));
 vi.mock('./preview-eligible', () => ({ isPreviewEligible: () => preview.value }));
 const stored = vi.hoisted(() => ({ value: {} as Record<string, unknown> }));

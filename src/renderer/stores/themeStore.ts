@@ -17,14 +17,14 @@ function syncTitleBarOverlay(theme: ThemeDefinition): void {
  * Push the applied theme to main. Main can't look plugin or custom themes up
  * by id, and Annex sends these colors to phones.
  */
-function syncActiveThemeToMain(theme: ThemeDefinition): void {
+function syncActiveThemeToMain(theme: ThemeDefinition, gradientsOn: boolean): void {
   try {
     Promise.resolve(window.clubhouse.app.syncActiveTheme({
       id: theme.id,
       type: theme.type,
       colors: theme.colors,
       terminal: theme.terminal,
-      ...(theme.gradients ? { gradients: theme.gradients } : {}),
+      ...(theme.gradients && gradientsOn ? { gradients: theme.gradients } : {}),
     })).catch((err: unknown) => {
       // Main rejected it (or isn't ready yet); phones keep the previous theme (#2472).
       rendererLog('core:theme', 'warn', 'Active theme sync failed', {
@@ -37,9 +37,9 @@ function syncActiveThemeToMain(theme: ThemeDefinition): void {
 }
 
 /** Main-process side effects of applying a theme. */
-function syncAppliedTheme(theme: ThemeDefinition): void {
+function syncAppliedTheme(theme: ThemeDefinition, gradientsOn: boolean): void {
   syncTitleBarOverlay(theme);
-  syncActiveThemeToMain(theme);
+  syncActiveThemeToMain(theme, gradientsOn);
 }
 
 function resolveTheme(id: ThemeId): ThemeDefinition {
@@ -77,7 +77,7 @@ export const useThemeStore = create<ThemeState>((set, get) => ({
       const theme = resolveTheme(id);
       const experimentalGradients = isGraduatedFlagOn(experimental, 'themeGradients');
       applyTheme(theme, { experimentalGradients });
-      syncAppliedTheme(theme);
+      syncAppliedTheme(theme, experimentalGradients);
       set({ themeId: id, theme, experimentalGradients, availableThemeIds: getAllThemeIds() });
     } catch {
       // Use default on error
@@ -90,7 +90,7 @@ export const useThemeStore = create<ThemeState>((set, get) => ({
     if (!theme) return;
     const { experimentalGradients } = get();
     applyTheme(theme, { experimentalGradients });
-    syncAppliedTheme(theme);
+    syncAppliedTheme(theme, experimentalGradients);
     set({ themeId: id, theme });
     await window.clubhouse.app.saveTheme({ themeId: id });
   },
@@ -99,6 +99,7 @@ export const useThemeStore = create<ThemeState>((set, get) => ({
     const previous = get().experimentalGradients;
     const show = (value: boolean) => {
       applyTheme(get().theme, { experimentalGradients: value });
+      syncActiveThemeToMain(get().theme, value);
       set({ experimentalGradients: value });
     };
     show(on);
@@ -152,7 +153,7 @@ export const unsubscribeThemeRegistryListener = onRegistryChange(() => {
     if (store.theme.id !== fallback.id) {
       try { localStorage.removeItem('clubhouse-theme-vars'); } catch { /* ignore */ }
       applyTheme(fallback, { experimentalGradients: store.experimentalGradients });
-      syncAppliedTheme(fallback);
+      syncAppliedTheme(fallback, store.experimentalGradients);
       useThemeStore.setState({ theme: fallback });
     }
   } else {
@@ -160,7 +161,7 @@ export const unsubscribeThemeRegistryListener = onRegistryChange(() => {
     // plugin themes. applyTheme atomically re-writes the flash-prevention cache so it stays
     // consistent with the CSS variables that were just written to the document.
     applyTheme(currentTheme, { experimentalGradients: store.experimentalGradients });
-    syncAppliedTheme(currentTheme);
+    syncAppliedTheme(currentTheme, store.experimentalGradients);
     if (currentTheme !== store.theme) {
       // A previously unavailable theme is now registered, or the active one was
       // re-registered with new colours under the same id (a pack update, #2123):
