@@ -169,7 +169,7 @@ async function expectSettingsPages(w: Page, listed: string[]): Promise<void> {
 
 test('Preview off, fresh install: the new layout, and turning Preview on is the only way in', async () => {
   profile = createDisposableProfile({ label: 'stable-fresh' });
-  app = await launchApp({ profile, env: STABLE_BUILD });
+  app = await launchApp({ preserveFirstLoad: true, profile, env: STABLE_BUILD });
   const w = app.window;
 
   expect(await eligible(w)).toBe(false);
@@ -203,7 +203,7 @@ test('Preview off, saved beta state with Chat off: the new layout, a terminal, a
   seedTranscript(profile);
   seedProfile(profile, { experimental: { ...BETA_FLAGS, chat: false }, userDataFiles: betaFiles(false) });
   const seeded = await readUntouched(profile);
-  app = await launchApp({ profile, env: { ...STABLE_BUILD, ...cli.env } });
+  app = await launchApp({ preserveFirstLoad: true, profile, env: { ...STABLE_BUILD, ...cli.env } });
   const { electronApp, window: w } = app;
 
   expect(await eligible(w)).toBe(false);
@@ -246,7 +246,7 @@ test('Preview off, saved beta state with Chat off: the new layout, a terminal, a
 
 test('Preview on, no saved flags: the new layout with the Preview pages to opt in from', async () => {
   profile = createDisposableProfile({ label: 'stable-preview-on' });
-  app = await launchApp({ profile, userDataFiles: updateSettings(true), env: STABLE_BUILD });
+  app = await launchApp({ preserveFirstLoad: true, profile, userDataFiles: updateSettings(true), env: STABLE_BUILD });
   const w = app.window;
 
   expect(await eligible(w)).toBe(true);
@@ -258,7 +258,7 @@ test('Preview on, no saved flags: the new layout with the Preview pages to opt i
 test('Preview off, fresh install: Chat is on, no tip, and a saved agent choice wins', async () => {
   const cli = installIdleCli();
   profile = createDisposableProfile({ label: 'stable-chat-fresh' });
-  app = await launchApp({ profile, userDataFiles: stableFiles(), env: { ...STABLE_BUILD, ...cli.env } });
+  app = await launchApp({ preserveFirstLoad: true, profile, userDataFiles: stableFiles(), env: { ...STABLE_BUILD, ...cli.env } });
   const { electronApp, window: w } = app;
 
   expect(await eligible(w)).toBe(false);
@@ -293,7 +293,7 @@ for (const seed of [
     const baseDir = path.join(profile.userDataDir, '.clubhouse-dev');
     fs.mkdirSync(baseDir, { recursive: true });
     fs.writeFileSync(path.join(baseDir, 'projects.json'), JSON.stringify({ version: 1, projects: [{ id: 'proj_stable_mode', name: 'stable', path: projectDir }] }));
-    app = await launchApp({ profile, env: { ...STABLE_BUILD, ...cli.env } });
+    app = await launchApp({ preserveFirstLoad: true, profile, env: { ...STABLE_BUILD, ...cli.env } });
     const w = app.window;
 
     expect(await eligible(w)).toBe(false);
@@ -309,7 +309,7 @@ test('Preview off, saved Chat off: Agents & providers turns it back on', async (
   const cli = installIdleCli();
   const projectDir = makeProject(stableAgents());
   profile = createDisposableProfile({ label: 'stable-chat-off' });
-  app = await launchApp({ profile, experimental: { chat: false }, userDataFiles: stableFiles(), env: { ...STABLE_BUILD, ...cli.env } });
+  app = await launchApp({ preserveFirstLoad: true, profile, experimental: { chat: false }, userDataFiles: stableFiles(), env: { ...STABLE_BUILD, ...cli.env } });
   const { electronApp, window: w } = app;
 
   await addProject(electronApp, w, projectDir);
@@ -335,7 +335,7 @@ test('Preview off: the Dispatcher wakes in chat', async () => {
   profile = createDisposableProfile({ label: 'stable-dispatcher-chat' });
   // Stream-json, which the fixtures speak.
   const userDataFiles = { ...stableFiles(), 'chat-runtime-settings.json': { [ORCHESTRATOR]: { mode: 'chat', driver: 'claude_stream_json' } } };
-  app = await launchApp({ profile, userDataFiles, env: { ...STABLE_BUILD, ...fakes.env } });
+  app = await launchApp({ preserveFirstLoad: true, profile, userDataFiles, env: { ...STABLE_BUILD, ...fakes.env } });
   const w = app.window;
 
   expect(await eligible(w)).toBe(false);
@@ -352,7 +352,7 @@ test('saved beta state survives Preview on, then off, then on', async () => {
   const env = { ...STABLE_BUILD, ...cli.env };
 
   // Preview on: everything saved is in force, including a Dispatcher it creates.
-  app = await launchApp({ profile, experimental: BETA_FLAGS, userDataFiles: betaFiles(true), env });
+  app = await launchApp({ preserveFirstLoad: true, profile, experimental: BETA_FLAGS, userDataFiles: betaFiles(true), env });
   let w = app.window;
   expect(await eligible(w)).toBe(true);
   await expectNewLayout(w);
@@ -380,7 +380,7 @@ test('saved beta state survives Preview on, then off, then on', async () => {
   const savedLayoutWidth = (page: Page) => page.evaluate((key) => JSON.parse(localStorage.getItem(key) ?? '{}').sidebarWidth, CHROME_STORAGE_KEY);
 
   // Preview off: only the graduated features are in force, the Dispatcher stays, and all of it is still there.
-  app = await launchApp({ profile, userDataFiles: updateSettings(false), env });
+  app = await launchApp({ preserveFirstLoad: true, profile, userDataFiles: updateSettings(false), env });
   w = app.window;
   expect(await eligible(w)).toBe(false);
   await expectNewLayout(w);
@@ -394,7 +394,7 @@ test('saved beta state survives Preview on, then off, then on', async () => {
   expect(await Promise.all(savedFiles.map(readText))).toEqual(saved);
 
   // Preview on again: everything comes back.
-  app = await launchApp({ profile, userDataFiles: updateSettings(true), env });
+  app = await launchApp({ preserveFirstLoad: true, profile, userDataFiles: updateSettings(true), env });
   w = app.window;
   expect(await eligible(w)).toBe(true);
   await expectNewLayout(w);

@@ -7,6 +7,7 @@
 import { expect, Page } from '@playwright/test';
 import * as path from 'path';
 import * as fs from 'fs';
+import { reportActionFailure } from './renderer-diagnostics';
 
 type ElectronApp = Awaited<ReturnType<typeof import('@playwright/test')._electron.launch>>;
 
@@ -44,11 +45,34 @@ export async function stubDialogForPath(electronApp: ElectronApp, dirPath: strin
 export async function addProject(electronApp: ElectronApp, window: Page, dirPath: string) {
   await stubDialogForPath(electronApp, dirPath);
   const addBtn = window.locator('[data-testid="nav-add-project"]');
-  await addBtn.click();
+  try {
+    await addBtn.click();
+  } catch (cause) {
+    await reportActionFailure(electronApp, window, 'nav-add-project', cause);
+    throw cause;
+  }
   const name = path.basename(dirPath);
   await expect(window.locator(`text=${name}`).first()).toBeVisible({
     timeout: 10_000,
   });
+}
+
+/** Leave the classic rail's hover flyout before clicking a tab behind it. */
+export async function clickExplorerTab(electronApp: ElectronApp, window: Page, testId: string) {
+  try {
+    // The flyout can be wider than the rail's collapsed layout box, including
+    // while it animates. The viewport's far edge leaves the whole hover region.
+    if (await window.locator('[data-testid="rail-container"]').count()) {
+      const point = await window.evaluate(() => ({ x: globalThis.innerWidth - 1, y: globalThis.innerHeight / 2 }));
+      await window.mouse.move(point.x, point.y);
+    }
+    // Normal actionability waits for the real close transition; never bypass
+    // the overlay with a forced or programmatic click.
+    await window.getByTestId(testId).click();
+  } catch (cause) {
+    await reportActionFailure(electronApp, window, testId, cause);
+    throw cause;
+  }
 }
 
 // ---------------------------------------------------------------------------

@@ -1,6 +1,7 @@
 import { test, expect } from '@playwright/test';
 import * as path from 'path';
 import { launchApp } from './launch';
+import { clickExplorerTab } from './smoke-helpers';
 
 // Exercise the real lazy-loaded Mermaid bundle in Electron: component tests
 // mock Mermaid and cannot catch packaging or browser API incompatibilities.
@@ -17,7 +18,7 @@ test('markdown preview renders diagrams and preserves invalid source', async () 
     }, fixturePath);
 
     await window.getByTestId('nav-add-project').click();
-    await window.getByTestId('explorer-tab-plugin:files').click();
+    await clickExplorerTab(electronApp, window, 'explorer-tab-plugin:files');
     await window.getByText('diagrams.md', { exact: true }).click();
 
     const diagrams = window.getByTestId('mermaid-diagram');

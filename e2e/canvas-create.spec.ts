@@ -21,6 +21,7 @@
 import { test, expect, _electron as electron, Page } from '@playwright/test';
 import * as path from 'path';
 import { launchApp } from './launch';
+import { clickExplorerTab } from './smoke-helpers';
 
 let electronApp: Awaited<ReturnType<typeof electron.launch>>;
 let window: Page;
@@ -66,7 +67,7 @@ test('clicking the canvas + button → New Canvas creates a new canvas tab', asy
   // 2. Select the project's Canvas tab, distinct from the app-wide Canvas button.
   const canvasNavBtn = window.locator('[data-testid="explorer-tab-plugin:canvas"]');
   await expect(canvasNavBtn).toBeVisible({ timeout: 10_000 });
-  await canvasNavBtn.click();
+  await clickExplorerTab(electronApp, window, 'explorer-tab-plugin:canvas');
   const canvasPanel = window.locator('[data-testid="canvas-panel"]');
   await expect(canvasPanel).toBeVisible({ timeout: 10_000 });
 

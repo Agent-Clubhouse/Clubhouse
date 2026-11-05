@@ -60,7 +60,7 @@ test.beforeAll(async () => {
   writeKv('canvas-instances-backup', instances);
   writeKv('canvas-active-id', 'canvas_e2e_1544');
   writeKv('canvas-wires', wires);
-  ({ electronApp, window } = await launchApp({ profile, experimental: { newChrome: false } }));
+  ({ electronApp, window } = await launchApp({ profile, experimental: { newChrome: false }, preserveFirstLoad: true }));
 });
 
 test.afterAll(async () => {
