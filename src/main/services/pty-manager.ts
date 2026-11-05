@@ -467,7 +467,7 @@ function cleanupSession(agentId: string): void {
   renderDiag.forget(agentId);
 }
 
-export async function spawn(agentId: string, cwd: string, binary: string, args: string[] = [], extraEnv?: Record<string, string>, onExit?: (agentId: string, exitCode: number, buffer?: string, killed?: boolean) => void, commandPrefix?: string, managed?: { onCreated(identity: string): void; onObservedExit(): void }): Promise<void> {
+export async function spawn(agentId: string, cwd: string, binary: string, args: string[] = [], extraEnv?: Record<string, string>, onExit?: (agentId: string, exitCode: number, buffer?: string, killed?: boolean) => void, commandPrefix?: string, managed?: { beforeCreate(): void; onCreated(identity: string): void; onObservedExit(): void }): Promise<void> {
   await validateSpawnCwd(cwd);
 
   if (sessions.has(agentId)) {
@@ -497,6 +497,7 @@ export async function spawn(agentId: string, cwd: string, binary: string, args: 
       const shellCmd = buildWindowsCmdLine(binary, args);
       pendingCommand = commandPrefix ? `${validateCommandPrefix(commandPrefix)} & ${shellCmd}` : shellCmd;
 
+      managed?.beforeCreate();
       proc = pty.spawn('cmd.exe', ['/v:off'], {
         name: 'xterm-256color',
         cwd,
@@ -511,6 +512,7 @@ export async function spawn(agentId: string, cwd: string, binary: string, args: 
         ? `${validateCommandPrefix(commandPrefix)} && exec ${shellCmd}`
         : `exec ${shellCmd}`;
 
+      managed?.beforeCreate();
       proc = pty.spawn(shell, ['-il'], {
         name: 'xterm-256color',
         cwd,

@@ -3437,7 +3437,7 @@ describe('managed instructions in the real terminal launch seam', () => {
     mockPtyIsRunning.mockReturnValue(false);
     mockGetDurableConfig.mockResolvedValue({ id: 'managed-launch', name: 'managed', worktreePath: '/workspace', orchestrator: 'claude-code', model: 'opus', runtimeMode: 'terminal' } as never);
     lease = { attemptId: 'attempt-fixture', instructionFile: '/private/generation/instructions.txt', pluginDir: '/private/generation/plugin', binary: '/usr/local/bin/claude',
-      beforeStart: vi.fn(async () => undefined), started: vi.fn(async () => undefined), notCreated: vi.fn(async () => undefined), cleanup: vi.fn(async () => undefined), exited: vi.fn(async () => undefined) };
+      assertCanCreate: vi.fn(), beforeStart: vi.fn(async () => undefined), started: vi.fn(async () => undefined), notCreated: vi.fn(async () => undefined), cleanup: vi.fn(async () => undefined), exited: vi.fn(async () => undefined) };
     vi.spyOn(managedActivation, 'withManagedActivationLaunch').mockImplementation((params, _isRunning, run) => withAgentActivity(params.agentId, () => run(lease)));
     mockPtySpawn.mockImplementation(async (...args: unknown[]) => {
       (args[7] as { onCreated(id: string): void }).onCreated('pty:fixture:123');
@@ -3482,4 +3482,15 @@ describe('managed instructions in the real terminal launch seam', () => {
     await expect(start()).rejects.toThrow('spawn failed');
     expect(lease.notCreated).toHaveBeenCalled(); expect(lease.started).not.toHaveBeenCalled();
   });
+  it.each([false, true])('records known shutdown rejection after intent, preserving original error when notCreated fails=%s', async (failReceipt) => {
+    const { closeLaunches, reopenLaunches } = await import('./launch-gate');
+    vi.mocked(lease.beforeStart).mockImplementation(async () => { closeLaunches('quitting'); });
+    if (failReceipt) vi.mocked(lease.notCreated).mockRejectedValue(new Error('secondary receipt failure'));
+    try {
+      await expect(start()).rejects.toMatchObject({ name: 'LaunchesClosedError' });
+      expect(lease.notCreated).toHaveBeenCalledOnce(); expect(mockPtySpawn).not.toHaveBeenCalled();
+      expect(agentRegistry.get('managed-launch')).toBeUndefined();
+    } finally { reopenLaunches(); }
+  });
+
 });

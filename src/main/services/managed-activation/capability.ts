@@ -1,5 +1,6 @@
 /** Installed CLI flag evidence only. No auth, model, quota or policy readiness probe. */
 import * as fs from 'fs/promises';
+import * as syncFs from 'fs';
 import * as path from 'path';
 import { execFile } from 'child_process';
 import { createHash } from 'crypto';
@@ -65,4 +66,13 @@ export async function assertDeliveryCapability(capability: DeliveryCapability, b
     || JSON.stringify(capability.identity) !== JSON.stringify(await cliIdentity(binary))) {
     throw new ManagedActivationError('activation_capability_stale');
   }
+}
+
+/** Last same-process boundary check, after asynchronous cwd validation and immediately before PTY creation. */
+export function assertDeliveryCapabilitySync(capability: DeliveryCapability, binary: string): void {
+  const resolved = syncFs.realpathSync(binary);
+  const stat = syncFs.statSync(resolved);
+  const sha256 = createHash('sha256').update(syncFs.readFileSync(resolved)).digest('hex');
+  const identity: CliIdentity = { path: resolved, dev: stat.dev, ino: stat.ino, size: stat.size, mtimeMs: stat.mtimeMs, ctimeMs: stat.ctimeMs, sha256 };
+  if (JSON.stringify(identity) !== JSON.stringify(capability.identity)) throw new ManagedActivationError('activation_capability_stale');
 }

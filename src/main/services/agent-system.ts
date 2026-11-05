@@ -850,7 +850,6 @@ async function spawnPtyAgent(
     // Freeze PATH/symlink resolution to the exact installed binary that supplied flag evidence.
     binary = managed.binary;
   }
-  assertLaunchesOpen();
   const spawnArgs: Parameters<typeof ptyManager.spawn> = [params.agentId, params.cwd, binary, args, spawnEnv, (exitAgentId, exitCode, buffer, killed) => {
     if (managed) {
       void managed.exited().catch(() => {
@@ -873,11 +872,17 @@ async function spawnPtyAgent(
       if (capture) trackSessionCapture(exitAgentId, capture);
     }
   }, commandPrefix];
-  if (managed) spawnArgs.push({ onCreated: (identity: string) => { createdIdentity = identity; }, onObservedExit: () => { managedExitConfirmed = true; } });
+  if (managed) spawnArgs.push({ beforeCreate: () => { assertLaunchesOpen(); managed.assertCanCreate(); }, onCreated: (identity: string) => { createdIdentity = identity; }, onObservedExit: () => { managedExitConfirmed = true; } });
   try {
+    assertLaunchesOpen();
     await tel.step('clubhouse.pty.spawn', () => withErrorType('pty_spawn_failed', () => ptyManager.spawn(...spawnArgs)));
   } catch (err) {
-    if (managed && !createdIdentity) await managed.notCreated();
+    if (managed && !createdIdentity) {
+      try { await managed.notCreated(); } catch {
+        // telemetry-exempt: preserve the known pre-creation error; unresolved durable intent stays fail-closed.
+        appLog('core:agent', 'warn', 'Could not record managed pre-creation rejection', { meta: { agentId: params.agentId } });
+      }
+    }
     if (managed && createdIdentity) {
       await cleanupManagedReceiptFailure(managed, new ProcessStartedReceiptError(managed.attemptId, createdIdentity), {
         requestIfCurrent: (identity) => ptyManager.stopCreatedProcessIfCurrent(params.agentId, identity),

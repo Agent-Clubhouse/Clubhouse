@@ -1,6 +1,7 @@
 /** Main-only activation entry points. No agent tools, IPC handlers or renderer API expose this yet. */
 import * as path from 'path';
 import * as fs from 'fs';
+import type { DurableAgentConfig } from '../../../shared/types';
 import type { BaseAdoption } from '../../../shared/asset-catalog-types';
 import type { SpawnAgentParams } from '../agent-system';
 import { getBaseDirPath } from '../base-dir';
@@ -34,7 +35,12 @@ function assertUser() {
   const origin = currentSettingsOrigin();
   if (origin.actorId || ['mcp', 'cli', 'dispatcher'].includes(origin.surface)) throw new ManagedActivationError('activation_not_permitted');
 }
-async function context(projectPath: string, agentId: string, launch?: SpawnAgentParams): Promise<{ workspace: WorkspaceRequest; binary: string }> {
+function assertSynchronousCompatibility(projectPath: string, config: DurableAgentConfig): void {
+  if (process.platform !== 'darwin' || resolveRuntimeMode('claude-code', config.runtimeMode).mode !== 'terminal') throw new ManagedActivationError('activation_unsupported');
+  if ((isClubhouseModeEnabled(projectPath) && !config.clubhouseModeOverride) || isHookServerEnabled('claude-code')
+    || isMcpEnabled(projectPath, clubhouseMcpOverride(config))) throw new ManagedActivationError('activation_incompatible_config');
+}
+async function context(projectPath: string, agentId: string, launch?: SpawnAgentParams): Promise<{ workspace: WorkspaceRequest; binary: string; assertCanCreate(): void }> {
   if (process.platform !== 'darwin') throw new ManagedActivationError('activation_unsupported');
   const configs = await peekDurableConfigs(projectPath);
   const config = configs.find((agent) => agent.id === agentId);
@@ -53,7 +59,11 @@ async function context(projectPath: string, agentId: string, launch?: SpawnAgent
   }
   const otherWorkspaces = [...configs.filter((agent) => agent.id !== agentId).flatMap((agent) => agent.worktreePath ? [agent.worktreePath] : []),
     ...[...agentRegistry.getAllRegistrations()].filter(([id]) => id !== agentId).flatMap(([, registration]) => registration.cwd ? [registration.cwd] : [])];
-  return { binary: provider.getBinaryPath(), workspace: { projectPath, workspacePath: config.worktreePath, agentName: config.name, provider: provider.id, otherWorkspaces } };
+  const selectedBinary = provider.getBinaryPath();
+  return { binary: selectedBinary, assertCanCreate: () => {
+    assertSynchronousCompatibility(projectPath, config);
+    if (fs.realpathSync(provider.getBinaryPath!()) !== fs.realpathSync(selectedBinary)) throw new ManagedActivationError('activation_capability_stale');
+  }, workspace: { projectPath, workspacePath: config.worktreePath, agentName: config.name, provider: provider.id, otherWorkspaces } };
 }
 
 export interface PreviewManagedActivationRequest {
@@ -124,10 +134,12 @@ export async function withManagedActivationLaunch<T>(params: SpawnAgentParams, i
     }, isRunning, async (lease) => {
       // Once adopted, inability to deliver cannot silently become a legacy start.
       if (!lease) throw new ManagedActivationError('activation_stale');
+      let assertLatestPolicy: () => void = () => { throw new ManagedActivationError('activation_stale'); };
       return run({ ...lease, beforeStart: async (binary) => {
         const latest = await context(params.projectPath, params.agentId, params);
         if (JSON.stringify(await cliIdentity(latest.binary)) !== JSON.stringify(await cliIdentity(binary))) throw new ManagedActivationError('activation_capability_stale');
         await lease.beforeStart(binary);
-      } });
+        assertLatestPolicy = latest.assertCanCreate;
+      }, assertCanCreate: () => { assertLatestPolicy(); lease.assertCanCreate(); } });
     })));
 }

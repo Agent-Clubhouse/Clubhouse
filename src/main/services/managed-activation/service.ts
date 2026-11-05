@@ -12,7 +12,7 @@ import { canonicalHash } from '../asset-catalog/planner';
 import { currentSettingsOrigin, auditChanged, appendSettingsAudit } from '../settings-audit';
 import { appLog } from '../log-service';
 import { stageOutputs, outputsOf, verifyOutputs, byteHash } from './owned-output';
-import { assertDeliveryCapability, type DeliveryCapability } from './capability';
+import { assertDeliveryCapability, assertDeliveryCapabilitySync, type DeliveryCapability } from './capability';
 import { ManagedActivationError, ProcessStartedReceiptError, type ActivationReceipt, type ActivationScope, type PreparedGeneration } from './types';
 
 const queues = new Map<string, Promise<unknown>>();
@@ -48,6 +48,7 @@ export interface ManagedLaunchLease {
   attemptId: string;
   /** Persist intent and validate exact staged bytes immediately before process creation. */
   beforeStart(binary: string): Promise<void>;
+  assertCanCreate(): void;
   /** The observed runtime identity must be the newly created process, never an existing runtime. */
   started(runtimeIdentity: string): Promise<void>;
   notCreated(): Promise<void>;
@@ -262,6 +263,10 @@ export function createManagedActivationService(options: ManagedActivationOptions
             binary: generation.capability.identity.path,
             instructionFile: path.join(root, 'instructions.txt'),
             ...(output.skillNames.length ? { pluginDir: path.join(root, 'plugin') } : {}),
+            assertCanCreate: () => {
+              if (!launches.has(launchKey) || uncertainRuntimes.has(launchKey) || isRunning()) fail('activation_busy');
+              assertDeliveryCapabilitySync(generation.capability, generation.capability.identity.path);
+            },
             beforeStart: async (binary) => {
               await assertDeliveryCapability(generation.capability, binary, platform);
               if (isRunning()) fail('activation_busy');

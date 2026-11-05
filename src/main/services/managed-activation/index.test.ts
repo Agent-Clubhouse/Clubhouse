@@ -94,4 +94,19 @@ describe('guarded production activation entry points with fake CLI flag evidence
     await expect(withManagedActivationLaunch({ ...start, ...(kind === 'resume' ? { resume: true, sessionId: 'old' } : {}), ...(kind === 'systemPrompt' ? { systemPrompt: 'extra hidden text' } : {}) }, () => false, runtime)).rejects.toMatchObject({ code: kind === 'resume' ? 'activation_resume_unproven' : 'activation_unsupported' });
     expect(runtime).not.toHaveBeenCalled();
   });
+  it.each(['hooks', 'mcp', 'runtime', 'binary'] as const)('rechecks %s synchronously after intent save, at actual process-create boundary', async (setting) => {
+    const delivery = await preview(); await adoptManagedActivation('agent-1', delivery.token);
+    await withManagedActivationLaunch(params(), () => false, async (lease) => {
+      await lease!.beforeStart(W.binary);
+      if (setting === 'hooks') W.hooks = true;
+      if (setting === 'mcp') W.mcp = true;
+      if (setting === 'runtime') W.runtime = 'chat';
+      if (setting === 'binary') { W.binary = path.join(W.home, 'late-B'); await fs.writeFile(W.binary, 'late binary B'); }
+      expect(() => lease!.assertCanCreate()).toThrow(setting === 'binary' ? 'activation_capability_stale' : setting === 'runtime' ? 'activation_unsupported' : 'activation_incompatible_config');
+      await lease!.notCreated();
+    });
+    const state = (await readManagedActivation('agent-1'))!;
+    expect(state.generations[state.desired!].runs[0]).toMatchObject({ outcome: 'process_not_created', endedAt: expect.any(String) });
+  });
+
 });
