@@ -228,6 +228,8 @@ Stage 2 lists only `explicit` and `preset`, its three reasons and its fallbacks.
 | Project | Reset | Changed only |
 | App | Every `createSettingsStore` that holds a person's choices | Top-level keys |
 | App | Helper presets and Auto | Each cell and switch, refusals too |
+| App | The asset catalog (`asset-catalog/store.ts`): new assets, revisions, names, deletions | Changed only, by asset id, refusals too |
+| Agent | The asset catalog: compositions and copies | Changed only, refusals too |
 
 `settings-audit-inventory.test.ts` pins this: a new settings store has to report or be named as not settings, and the writers and entry points are checked. **Not settings:** `annex-ports.json`, `finished-quick-agents.json`, `project-state.json`, `chat-cli-denylist.json`.
 
