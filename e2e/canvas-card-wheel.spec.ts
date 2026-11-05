@@ -13,6 +13,7 @@
 import { test, expect, _electron as electron, type Page } from '@playwright/test';
 import * as path from 'path';
 import { launchApp } from './launch';
+import { clickExplorerTab } from './smoke-helpers';
 
 const FIXTURE_PROJECT = path.resolve(__dirname, 'fixtures/project-a');
 
@@ -49,7 +50,7 @@ test.beforeAll(async () => {
   await expect(window.locator(`text=${path.basename(FIXTURE_PROJECT)}`).first()).toBeVisible({ timeout: 10_000 });
   const canvasTab = window.locator('[data-testid="explorer-tab-plugin:canvas"]');
   await expect(canvasTab).toBeVisible({ timeout: 10_000 });
-  await canvasTab.click();
+  await clickExplorerTab(electronApp, window, 'explorer-tab-plugin:canvas');
   await expect(window.locator('[data-testid="canvas-panel"]')).toBeVisible({ timeout: 10_000 });
 });
 

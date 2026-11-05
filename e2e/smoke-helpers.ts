@@ -57,6 +57,24 @@ export async function addProject(electronApp: ElectronApp, window: Page, dirPath
   });
 }
 
+/** Leave the classic rail's hover flyout before clicking a tab behind it. */
+export async function clickExplorerTab(electronApp: ElectronApp, window: Page, testId: string) {
+  try {
+    // The flyout can be wider than the rail's collapsed layout box, including
+    // while it animates. The viewport's far edge leaves the whole hover region.
+    if (await window.locator('[data-testid="rail-container"]').count()) {
+      const point = await window.evaluate(() => ({ x: globalThis.innerWidth - 1, y: globalThis.innerHeight / 2 }));
+      await window.mouse.move(point.x, point.y);
+    }
+    // Normal actionability waits for the real close transition; never bypass
+    // the overlay with a forced or programmatic click.
+    await window.getByTestId(testId).click();
+  } catch (cause) {
+    await reportActionFailure(electronApp, window, testId, cause);
+    throw cause;
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Assertion helpers
 // ---------------------------------------------------------------------------

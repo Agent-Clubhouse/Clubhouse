@@ -30,10 +30,12 @@ describe('renderer stall diagnostics', () => {
     Object.assign(page, { content: vi.fn().mockResolvedValue('<html></html>'), screenshot: vi.fn().mockRejectedValue(new Error('no paint')) });
     vi.spyOn(console, 'error').mockImplementation(() => {});
     vi.mocked(performance.now).mockReturnValue(30_020);
+    document.dispatchEvent(new MouseEvent('pointermove', { clientX: 209, clientY: 440 }));
     await reportActionFailure(app, page, 'nav-add-project', new Error('stable check stalled'));
     const summary = JSON.parse(attach.mock.calls[0][1].body);
     expect(summary.renderer.monitor.frames).toBe(1);
     expect(summary.renderer.lastFrameAgeMs).toBe(30_000);
+    expect(summary.renderer.monitor.lastPointer).toEqual({ x: 209, y: 440, at: 30_020 });
     expect(summary.windows).toEqual([{ visible: false, minimized: true }]);
     expect(summary.cause).toContain('stable check stalled');
     expect(summary.screenshot).toBe('rejected');

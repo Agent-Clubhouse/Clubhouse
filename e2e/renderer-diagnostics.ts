@@ -5,6 +5,7 @@ interface FrameMonitor {
   frames: number;
   startedAt: number;
   lastFrameAt: number | null;
+  lastPointer?: { x: number; y: number; at: number };
 }
 
 /** Observe frames without changing focus, throttling, or actionability. */
@@ -14,6 +15,9 @@ export async function installFrameMonitor(page: Page): Promise<void> {
     if (target.__clubhouseE2EFrames) return;
     const monitor: FrameMonitor = { frames: 0, startedAt: performance.now(), lastFrameAt: null };
     target.__clubhouseE2EFrames = monitor;
+    document.addEventListener('pointermove', (event) => {
+      monitor.lastPointer = { x: event.clientX, y: event.clientY, at: performance.now() };
+    });
     const frame = () => {
       monitor.frames++;
       monitor.lastFrameAt = performance.now();
@@ -55,7 +59,7 @@ export async function reportActionFailure(app: ElectronApp, page: Page, control:
           now,
           monitor,
           lastFrameAgeMs: monitor ? now - (monitor.lastFrameAt ?? monitor.startedAt) : null,
-          controls: ['nav-add-project', 'onboarding-backdrop', 'onboarding-skip'].map((id) => {
+          controls: ['nav-add-project', 'onboarding-backdrop', 'onboarding-skip', 'rail-container'].map((id) => {
             const el = document.querySelector(`[data-testid="${id}"]`);
             if (!el) return { id, present: false };
             const rect = el.getBoundingClientRect();
@@ -63,6 +67,11 @@ export async function reportActionFailure(app: ElectronApp, page: Page, control:
             return {
               id, rect: rect.toJSON(), display: style.display, visibility: style.visibility,
               pointerEvents: style.pointerEvents,
+              hovered: el.matches(':hover'),
+              panel: id === 'rail-container' ? {
+                className: el.firstElementChild?.className,
+                rect: el.firstElementChild?.getBoundingClientRect().toJSON(),
+              } : undefined,
               hitTarget: document.elementFromPoint(rect.x + rect.width / 2, rect.y + rect.height / 2)?.outerHTML.slice(0, 500),
             };
           }),
