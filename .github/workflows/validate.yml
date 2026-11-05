@@ -672,6 +672,7 @@ jobs:
         run: >-
           npx playwright test --reporter=line,junit
           e2e/app-launch.spec.ts
+          e2e/default-shell-macos.spec.ts
           e2e/smoke-blank-screen.spec.ts
           e2e/popout-window.spec.ts
           e2e/command-palette.spec.ts

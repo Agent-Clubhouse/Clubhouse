@@ -18,6 +18,7 @@ import { isValidIdentity } from './ids';
 import { createLocalRecorder, type LocalRecorder } from './local-recorder';
 import { pruneLogDir, RETENTION_INTERVAL_MS } from './local-retention';
 import { createScrubber } from './scrubber';
+import { newChromeEnabled } from '../window-chrome';
 import { enabledDestinations, getTelemetrySettings } from './settings';
 
 /** The default level: flows and errors; Detailed-only signals (per-IPC spans, tool calls) stay off. */
@@ -148,7 +149,7 @@ function start(level: LocalTelemetryLevel, signals: boolean): void {
     signals,
     hashSalt: hashSalt(),
     scrub: createScrubber({ homeDir: os.homedir(), username, hostname: os.hostname() }),
-    session: { appVersion: app.getVersion(), platform: process.platform, arch: process.arch },
+    session: { appVersion: app.getVersion(), platform: process.platform, arch: process.arch, uiChrome: newChromeEnabled() ? 'v2' : 'legacy' },
     onRotate: () => void runRetention(),
   });
   if (signals) setLocalSink(recorder);
