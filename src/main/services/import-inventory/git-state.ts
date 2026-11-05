@@ -4,14 +4,22 @@
  * here: none refreshes or writes the index, which `git status` does (see the test that
  * proves the fixture would catch it).
  *
- * The scanned repository's contents and config aren't trusted, since a clone can
- * carry anything. What could run or fetch something on these two commands:
+ * A repository's contents and config aren't trusted, since a clone can carry
+ * anything, including a folder shaped like a bare repo with its own `config`. So:
+ *   - `safe.bareRepository=explicit` stops git treating such a folder as a repo,
+ *     where its config and `worktrees/` entries would otherwise count.
  *   - `core.fsmonitor` names a program git runs on any index read: turned off.
  *   - On Windows, libuv looks for `git.exe` in the spawn's cwd before PATH, so a
  *     repo holding one would run it: git gets the repo through `-C`, never as cwd.
- *   - A partial clone can fetch a skip-worktree `.gitignore`: GIT_NO_LAZY_FETCH.
- * Hooks, filters, pagers and the like don't run here; import-inventory.test.ts
- * sets them all to prove it.
+ *   - A partial clone can fetch a skip-worktree `.gitignore`, which could run
+ *     `core.sshCommand`: lazy fetching is off.
+ *   - Nothing is inherited: every `GIT_*` variable is dropped, and user config
+ *     comes from the scan's `homeDir`.
+ * Those need git 2.45 (`--no-lazy-fetch`; `safe.bareRepository` is 2.38). On
+ * anything older, or if the version can't be read, git isn't run on a repository:
+ * every file reads `unknown` and git vouches for no worktree.
+ * Hooks, filters, pagers and the like don't run on these commands;
+ * import-inventory.test.ts sets them all to prove it.
  */
 import { execFile } from 'child_process';
 import * as path from 'path';
@@ -23,13 +31,55 @@ const GIT_TIMEOUT_MS = 30_000;
 /** Stays under Windows' 32K command line. */
 const MAX_ARGS_CHARS = 20_000;
 
-/** A worktree's own variables would point git at another repository. */
-const INHERITED_GIT_ENV = ['GIT_DIR', 'GIT_WORK_TREE', 'GIT_INDEX_FILE', 'GIT_COMMON_DIR', 'GIT_OBJECT_DIRECTORY', 'GIT_PREFIX'];
+export const MINIMUM_GIT_VERSION: readonly [number, number] = [2, 45];
 
-function gitEnv(): NodeJS.ProcessEnv {
-  const env: NodeJS.ProcessEnv = { ...process.env, GIT_OPTIONAL_LOCKS: '0', GIT_NO_LAZY_FETCH: '1', LC_ALL: 'C' };
-  for (const name of INHERITED_GIT_ENV) delete env[name];
+/** One scan's git: whose user config it reads, and whether this git is new enough. */
+export interface GitContext {
+  homeDir: string;
+  usable?: boolean;
+}
+
+export function newGitContext(homeDir: string): GitContext {
+  return { homeDir };
+}
+
+function gitEnv(homeDir: string): NodeJS.ProcessEnv {
+  const env: NodeJS.ProcessEnv = {};
+  for (const [name, value] of Object.entries(process.env)) {
+    if (!/^GIT_/i.test(name)) env[name] = value;
+  }
+  // Windows reads HOME first too. No system config: this scan's inputs are what it's given.
+  env.HOME = homeDir;
+  env.USERPROFILE = homeDir;
+  delete env.XDG_CONFIG_HOME;
+  env.GIT_CONFIG_NOSYSTEM = '1';
+  env.GIT_OPTIONAL_LOCKS = '0';
+  env.GIT_NO_LAZY_FETCH = '1';
+  env.LC_ALL = 'C';
   return env;
+}
+
+/** `git version 2.50.1 (Apple Git-155)`, `git version 2.47.1.windows.2`. */
+export function meetsMinimumGit(versionOutput: string): boolean {
+  const match = versionOutput.match(/^git version (\d+)\.(\d+)/);
+  if (!match) return false;
+  const [major, minor] = [Number(match[1]), Number(match[2])];
+  return major > MINIMUM_GIT_VERSION[0] || (major === MINIMUM_GIT_VERSION[0] && minor >= MINIMUM_GIT_VERSION[1]);
+}
+
+/** Asked once a scan. No repository is involved, so nothing of one can answer. An interrupted answer isn't kept. */
+export async function isGitUsable(git: GitContext, signal: AbortSignal): Promise<boolean> {
+  if (git.usable !== undefined) return git.usable;
+  const output = await new Promise<string>((resolve) => {
+    const child = execFile('git', ['--version'], { env: gitEnv(git.homeDir), encoding: 'utf-8', timeout: GIT_TIMEOUT_MS, signal, windowsHide: true }, (error, stdout) => {
+      resolve(error ? '' : stdout);
+    });
+    child.stdin?.on('error', () => undefined);
+    child.stdin?.end();
+  });
+  const usable = meetsMinimumGit(output);
+  if (!signal.aborted) git.usable = usable;
+  return usable;
 }
 
 interface GitResult {
@@ -38,12 +88,12 @@ interface GitResult {
   stderr: string;
 }
 
-function runGit(args: string[], root: string, signal: AbortSignal, input?: string): Promise<GitResult> {
+function runGit(git: GitContext, args: string[], root: string, signal: AbortSignal, input?: string): Promise<GitResult> {
   return new Promise((resolve) => {
     const child = execFile(
       'git',
-      ['-C', root, '-c', 'core.fsmonitor=false', ...args],
-      { env: gitEnv(), encoding: 'utf-8', maxBuffer: MAX_BUFFER, timeout: GIT_TIMEOUT_MS, signal, windowsHide: true },
+      ['-C', root, '--no-lazy-fetch', '-c', 'safe.bareRepository=explicit', '-c', 'core.fsmonitor=false', ...args],
+      { env: gitEnv(git.homeDir), encoding: 'utf-8', maxBuffer: MAX_BUFFER, timeout: GIT_TIMEOUT_MS, signal, windowsHide: true },
       (error, stdout, stderr) => {
         const code = error ? (typeof error.code === 'number' ? error.code : -1) : 0;
         resolve({ code, stdout, stderr });
@@ -56,12 +106,21 @@ function runGit(args: string[], root: string, signal: AbortSignal, input?: strin
 
 /**
  * The worktrees git reports for the repository at `root`, or none if it can't
- * say. Paths come from the repo's own `.git`, which a clone doesn't carry. Reads
- * only: nothing runs and `.git` doesn't change, which import-inventory.test.ts checks.
+ * say. Not enough to trust a path: `.git/worktrees` can be written locally, so
+ * the caller also checks the worktree points back. Reads only: nothing runs and
+ * `.git` doesn't change, which import-inventory.test.ts checks.
  */
-export async function readGitWorktrees(root: string, signal: AbortSignal): Promise<string[]> {
-  const result = await runGit(['worktree', 'list', '--porcelain'], root, signal);
+export async function readGitWorktrees(root: string, signal: AbortSignal, git: GitContext): Promise<string[]> {
+  if (!await isGitUsable(git, signal)) return [];
+  const result = await runGit(git, ['worktree', 'list', '--porcelain'], root, signal);
   return result.code === 0 ? parseWorktreeList(result.stdout) : [];
+}
+
+/** The repository's shared git folder, absolute, or null if git won't say. */
+export async function readGitCommonDir(root: string, signal: AbortSignal, git: GitContext): Promise<string | null> {
+  if (!await isGitUsable(git, signal)) return null;
+  const result = await runGit(git, ['rev-parse', '--path-format=absolute', '--git-common-dir'], root, signal);
+  return result.code === 0 ? result.stdout.trim() || null : null;
 }
 
 /** `file` relative to `root` with git's `/` separators. */
@@ -81,13 +140,14 @@ function comparisonKey(gitPath: string, platform: NodeJS.Platform): string {
  * are left, and those alone go in `failed`.
  */
 async function checkIgnored(
+  git: GitContext,
   root: string,
   paths: readonly string[],
   signal: AbortSignal,
   ignored: Set<string>,
   failed: Set<string>,
 ): Promise<void> {
-  const result = await runGit(['check-ignore', '-z', '--stdin'], root, signal, `${paths.join('\0')}\0`);
+  const result = await runGit(git, ['check-ignore', '-z', '--stdin'], root, signal, `${paths.join('\0')}\0`);
   // 0: some are ignored. 1: none are. Anything else is a failure, not an answer.
   if (result.code === 0 || result.code === 1) {
     for (const name of result.stdout.split('\0')) {
@@ -97,8 +157,8 @@ async function checkIgnored(
     for (const p of paths) failed.add(p);
   } else {
     const middle = Math.floor(paths.length / 2);
-    await checkIgnored(root, paths.slice(0, middle), signal, ignored, failed);
-    await checkIgnored(root, paths.slice(middle), signal, ignored, failed);
+    await checkIgnored(git, root, paths.slice(0, middle), signal, ignored, failed);
+    await checkIgnored(git, root, paths.slice(middle), signal, ignored, failed);
   }
 }
 
@@ -127,6 +187,7 @@ export async function readGitStates(
   root: string,
   gitPaths: readonly string[],
   signal: AbortSignal,
+  git: GitContext,
   platform: NodeJS.Platform = process.platform,
 ): Promise<Map<string, InventoryGitState>> {
   const states = new Map<string, InventoryGitState>();
@@ -135,10 +196,11 @@ export async function readGitStates(
     return states;
   };
   if (gitPaths.length === 0) return states;
+  if (!await isGitUsable(git, signal)) return fill('unknown');
 
   const tracked = new Set<string>();
   for (const chunk of chunkPaths(gitPaths)) {
-    const result = await runGit(['--literal-pathspecs', 'ls-files', '-z', '--cached', '--', ...chunk], root, signal);
+    const result = await runGit(git, ['--literal-pathspecs', 'ls-files', '-z', '--cached', '--', ...chunk], root, signal);
     if (result.code !== 0) return fill(/not a git repository/i.test(result.stderr) ? 'not-a-repo' : 'unknown');
     for (const name of result.stdout.split('\0')) {
       if (name) tracked.add(comparisonKey(name, platform));
@@ -150,7 +212,7 @@ export async function readGitStates(
   const failed = new Set<string>();
   if (untrackedOrIgnored.length > 0) {
     // check-ignore refuses --literal-pathspecs (exit 128). It takes each path whole anyway.
-    await checkIgnored(root, untrackedOrIgnored, signal, ignoredNames, failed);
+    await checkIgnored(git, root, untrackedOrIgnored, signal, ignoredNames, failed);
   }
   const ignored = new Set([...ignoredNames].map((n) => comparisonKey(n, platform)));
 

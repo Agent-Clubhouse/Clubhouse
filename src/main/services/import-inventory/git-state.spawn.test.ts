@@ -10,26 +10,38 @@ vi.mock('child_process', () => ({
     callback: (error: Error | null, stdout: string, stderr: string) => void,
   ) => {
     spawned.calls.push({ args, options });
-    callback(null, '', '');
+    callback(null, args[0] === '--version' ? 'git version 2.50.1' : '', '');
     return { stdin: { on: () => undefined, end: () => undefined } };
   },
 }));
 
-import { readGitStates } from './git-state';
+import { newGitContext, readGitStates } from './git-state';
 
 // On Windows libuv looks for git.exe in the spawn's cwd before PATH, so a repo
 // holding one would run it. Only this spawn shape prevents that, and no POSIX
 // runner can show it by running anything.
 describe('how git is spawned', () => {
   it('names the repo with -C and never makes it the cwd', async () => {
-    await readGitStates('some-repo', ['a.md'], new AbortController().signal);
+    process.env.GIT_CONFIG_GLOBAL = 'inherited';
+    process.env.GIT_DIR = 'inherited';
+    await readGitStates('some-repo', ['a.md'], new AbortController().signal, newGitContext('the-home'));
+    delete process.env.GIT_CONFIG_GLOBAL;
+    delete process.env.GIT_DIR;
 
-    expect(spawned.calls.length).toBeGreaterThan(0);
-    for (const { args, options } of spawned.calls) {
+    const repoCalls = spawned.calls.filter(({ args }) => args[0] !== '--version');
+    expect(repoCalls.length).toBeGreaterThan(0);
+    for (const { options } of spawned.calls) {
       expect(options.cwd).toBeUndefined();
-      expect(args.slice(0, 4)).toEqual(['-C', 'some-repo', '-c', 'core.fsmonitor=false']);
-      expect((options.env as NodeJS.ProcessEnv).GIT_OPTIONAL_LOCKS).toBe('0');
-      expect((options.env as NodeJS.ProcessEnv).GIT_NO_LAZY_FETCH).toBe('1');
+      const env = options.env as NodeJS.ProcessEnv;
+      expect(env.GIT_OPTIONAL_LOCKS).toBe('0');
+      expect(env.GIT_NO_LAZY_FETCH).toBe('1');
+      expect(env.GIT_CONFIG_NOSYSTEM).toBe('1');
+      expect(env.HOME).toBe('the-home');
+      expect(env.GIT_CONFIG_GLOBAL).toBeUndefined();
+      expect(env.GIT_DIR).toBeUndefined();
+    }
+    for (const { args } of repoCalls) {
+      expect(args.slice(0, 7)).toEqual(['-C', 'some-repo', '--no-lazy-fetch', '-c', 'safe.bareRepository=explicit', '-c', 'core.fsmonitor=false']);
     }
   });
 });

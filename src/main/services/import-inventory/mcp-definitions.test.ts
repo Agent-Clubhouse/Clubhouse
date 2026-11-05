@@ -64,22 +64,30 @@ describe('readMcpEntry', () => {
     expect(readMcpEntry(null)).toEqual({ kind: 'invalid' });
   });
 
-  it('keeps an env value out unless all of it is a reference', () => {
-    const result = readMcpEntry({ command: 'x', env: { A: '${REF}', B: '$REF', C: '%REF%', D: 'Bearer ${REF}', E: 'plain' } });
+  it('keeps every env value out, references included', () => {
+    const result = readMcpEntry({ command: 'x', env: { A: '${REF}', B: 'plain' } });
 
-    expect(result.kind === 'definition' && result.definition.env).toEqual([
-      { name: 'A', reference: '${REF}' },
-      { name: 'B', reference: '$REF' },
-      { name: 'C', reference: '%REF%' },
-      { name: 'D' },
-      { name: 'E' },
-    ]);
+    expect(result.kind === 'definition' && result.definition).toEqual({ commandName: 'x', argumentCount: 0, envNames: ['A', 'B'], detailsWithheld: true });
+    expect(JSON.stringify(result.kind === 'definition' && result.definition)).not.toContain('REF');
   });
 
-  it('allows URLs and args that aren\'t credentials', () => {
-    expect(readMcpEntry({ url: 'https://example.com/mcp' })).toMatchObject({ definition: { url: 'https://example.com/mcp', withheldValues: 0 } });
-    expect(readMcpEntry({ url: '@@ServerUrl' }).kind).toBe('definition');
-    expect(readMcpEntry({ command: 'x', args: ['--verbose', '--port', '3000'] }).kind).toBe('definition');
-    expect(readMcpEntry({ command: 'x', args: ['--auth', '--verbose'] }).kind).toBe('definition');
+  it('reduces a command to its plain name, on either kind of path', () => {
+    const name = (command: string) => {
+      const result = readMcpEntry({ command });
+      return result.kind === 'definition' ? result.definition.commandName : 'invalid';
+    };
+    expect(name('npx')).toBe('npx');
+    expect(name('/usr/local/bin/node')).toBe('node');
+    expect(name('C:\\Program Files\\nodejs\\node.exe')).toBeUndefined();
+    expect(name('D:\\tools\\node.exe')).toBe('node.exe');
+    expect(name('x --flag')).toBeUndefined();
+    expect(name(`/opt/ghp_${'a'.repeat(36)}`)).toBeUndefined();
+    expect(name('a'.repeat(100))).toBeUndefined();
+    expect(name('a'.repeat(8 * 1024 * 1024))).toBeUndefined();
+  });
+
+  it('reads a definition that is nothing but its name as complete', () => {
+    const result = readMcpEntry({ command: 'x' });
+    expect(result.kind === 'definition' && result.definition.detailsWithheld).toBe(false);
   });
 });

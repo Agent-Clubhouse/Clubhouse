@@ -1,6 +1,6 @@
 /**
  * What the existing-user import inventory reports (#2820). Paths, hashes and
- * names only: no file contents, and no MCP env values. The mapping onto the
+ * names only: no file contents, and no MCP argument, URL or env values. The mapping onto the
  * library comes later, so nothing here refers to it.
  */
 
@@ -24,8 +24,6 @@ export type InventoryGitState = 'tracked' | 'untracked' | 'ignored' | 'not-a-rep
 
 export type InventoryExclusionReason =
   | 'secret-looking'
-  /** A credential in an MCP definition's args or URL, replaced by a marker. The definition stays listed. */
-  | 'credential-value'
   | 'non-definition'
   | 'too-large'
   | 'unreadable'
@@ -60,6 +58,8 @@ export type InventoryExternalReason =
   | 'parent-traversal'
   /** Not inside the project, and not a worktree git reports for it. */
   | 'outside-project'
+  /** Git reports it, but its `.git` doesn't point back at this repository. Only that file was read. */
+  | 'unverified-worktree'
   /** Inside the project as written, but a symlink leads out. Only the links inside the project were read. */
   | 'symlink-outside-project';
 
@@ -107,25 +107,34 @@ export interface InventorySource {
   excludedFileCount: number;
 }
 
-/** An MCP server definition. Env and header values never appear, except env references. */
+/**
+ * What can be said about an MCP server without showing anything that could be a
+ * credential, whatever its shape. No arguments, URL path or query, env or header
+ * values. A later import step reads the details on the user's explicit action.
+ *
+ * Such an entry's `contentHash` is keyed for this scan: it tells two definitions
+ * apart here, env and header values aside, and isn't comparable between scans.
+ */
 export interface InventoryMcpDefinition {
-  command?: string;
-  args?: string[];
-  url?: string;
-  type?: string;
-  /** `reference` is set only when the stored value is wholly `${VAR}`, `$VAR` or `%VAR%`. */
-  env: Array<{ name: string; reference?: string }>;
-  /** Variables the CLI forwards by name (Codex's `env_vars`). */
-  forwardedEnv: string[];
-  headerNames: string[];
-  /** Keys in the stored definition that this list doesn't carry. */
-  omittedKeys: string[];
-  /**
-   * Credentials in `command`, `args` or `url` replaced by `<withheld>`. Nonzero
-   * means this can't be used as it stands: a library entry needs them moved to
-   * references first, since the catalog refuses secrets.
-   */
-  withheldValues: number;
+  /** The executable's plain name. Absent when the command doesn't reduce to one. */
+  commandName?: string;
+  argumentCount: number;
+  /** Scheme and host only. */
+  url?: { scheme: string; host?: string };
+  /** Only a known transport name. */
+  transport?: string;
+  /** Env and forwarded variable names that pass a safe-name check. */
+  envNames: string[];
+  /** There's more to this definition than these fields show. */
+  detailsWithheld: boolean;
+}
+
+/** A value from config that's free text, so only its identity is reported. */
+export interface InventoryConfigRef {
+  /** Set only when the value is a plain id that doesn't look like a credential. */
+  id?: string;
+  hash: string;
+  length: number;
 }
 
 export interface InventoryPersonaMetadata {
@@ -182,8 +191,8 @@ export interface InventoryAgentReport {
   status: InventoryAgentStatus;
   /** Whether Clubhouse Mode writes this agent's worktree at wake, as agent-system decides it. */
   managed: boolean | 'unknown';
-  persona?: string;
-  mission?: string;
+  persona?: InventoryConfigRef;
+  mission?: InventoryConfigRef;
   /** MCP config files in this worktree holding more than the bridge. Counted, not offered. Always 0 for an external path. */
   mcpFilesNotInventoried: number;
   worktreeAccess?: InventoryWorktreeAccess;
@@ -196,8 +205,8 @@ export interface InventoryClubhouseModeResult {
   mcpServerNames: string[];
   skills: string[];
   agentTemplates: string[];
-  defaultPersona?: string;
-  defaultMission?: string;
+  defaultPersona?: InventoryConfigRef;
+  defaultMission?: InventoryConfigRef;
 }
 
 export interface InventoryClubhouseMode {

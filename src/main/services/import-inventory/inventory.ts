@@ -17,7 +17,7 @@
  * Results hold names, paths and hashes. File contents stay in this module, for
  * hashing and secret checks, and logs get counts.
  */
-import { createHash } from 'crypto';
+import { createHash, createHmac, randomBytes } from 'crypto';
 import type { Dirent, Stats } from 'fs';
 import * as fsp from 'fs/promises';
 import * as path from 'path';
@@ -44,6 +44,7 @@ import type {
   InventoryAgentReport,
   InventoryBuiltinMatch,
   InventoryClubhouseMode,
+  InventoryConfigRef,
   InventoryEntry,
   InventoryExclusionCounts,
   InventoryExclusionReason,
@@ -65,10 +66,11 @@ import {
   NON_DEFINITION_DIRS,
   hasDefinitionExtension,
   hasSecretLookingContent,
+  isSafeIdentifier,
   isSecretLookingName,
   looksBinary,
 } from './classify';
-import { readGitStates, readGitWorktrees, toGitPath } from './git-state';
+import { isGitUsable, newGitContext, readGitCommonDir, readGitStates, readGitWorktrees, toGitPath, type GitContext } from './git-state';
 import { checkConfiguredPath, isOutside, isUncPath, projectPathKey } from './untrusted-paths';
 import { isForbiddenKey, parseJsonMcpServers, parseTomlMcpServers, readMcpEntry } from './mcp-definitions';
 
@@ -108,16 +110,24 @@ export interface InventoryLimits {
   maxFileBytes: number;
   /** Larger for config files, where only the MCP section is kept. */
   maxConfigFileBytes: number;
+  /** A TOML config is parsed by hand here, so it gets less room than JSON. */
+  maxTomlBytes: number;
   maxBytesPerProject: number;
   maxDepth: number;
+  /** MCP servers read from one config, and agents from one project. */
+  maxServersPerFile: number;
+  maxAgentsPerProject: number;
 }
 
 export const DEFAULT_INVENTORY_LIMITS: InventoryLimits = {
   maxFilesPerProject: 5000,
   maxFileBytes: 1024 * 1024,
   maxConfigFileBytes: 8 * 1024 * 1024,
+  maxTomlBytes: 2 * 1024 * 1024,
   maxBytesPerProject: 64 * 1024 * 1024,
   maxDepth: 12,
+  maxServersPerFile: 1000,
+  maxAgentsPerProject: 2000,
 };
 
 /** The filesystem calls a scan makes. A test swaps them to stand in for a hung network drive. */
@@ -170,7 +180,7 @@ const DEFAULT_PROJECT_TIMEOUT_MS = 60_000;
 class ScanStopped extends Error {}
 
 function emptyExclusions(): InventoryExclusionCounts {
-  return { 'secret-looking': 0, 'credential-value': 0, 'non-definition': 0, 'too-large': 0, unreadable: 0, symlink: 0, 'over-limit': 0 };
+  return { 'secret-looking': 0, 'non-definition': 0, 'too-large': 0, unreadable: 0, symlink: 0, 'over-limit': 0 };
 }
 
 function sha256(data: string | Buffer): string {
@@ -193,8 +203,36 @@ function canonical(value: unknown): string {
   return JSON.stringify(value) ?? 'null';
 }
 
+/** Only the tokens wildcard-replacer knows: other text after `@@` is just text, and could be anything. */
+const WILDCARD_TOKENS = /@@(?:AgentName|StandbyBranch|Path|SourceControlProvider|BuildCommand|TestCommand|LintCommand|Mission|Persona|If|EndIf)(?![A-Za-z])/g;
+
 function wildcardsIn(text: string): string[] {
-  return [...new Set(text.match(/@@[A-Za-z]+/g) ?? [])].sort();
+  return [...new Set(text.match(WILDCARD_TOKENS) ?? [])].sort();
+}
+
+/** A label from config as written if it's plain, and a stand-in if it could be anything. */
+function safeLabel(value: unknown, fallback: string): string {
+  if (typeof value === 'string' && value.length <= 128 && /^[\w .@+-]+$/.test(value) && !hasSecretLookingContent(value)) return value;
+  return `${fallback}-${sha256(typeof value === 'string' ? value : canonicalOrEmpty(value)).slice(0, 12)}`;
+}
+
+/** Hostile config can nest deeply enough to overflow the stack, which shouldn't cost the project its scan. */
+function canonicalOrEmpty(value: unknown): string {
+  try {
+    return canonical(value);
+  } catch {
+    // telemetry-exempt: too deep to serialize; it reads as empty and nothing about it is kept
+    return '';
+  }
+}
+
+/** Free text from config: its identity, and the text only if it's a plain id. */
+function configRef(value: unknown): InventoryConfigRef | undefined {
+  if (value === undefined || value === null) return undefined;
+  const text = typeof value === 'string' ? value : canonicalOrEmpty(value);
+  const ref: InventoryConfigRef = { hash: sha256(text), length: text.length };
+  if (isSafeIdentifier(value, 128)) ref.id = value;
+  return ref;
 }
 
 /**
@@ -288,6 +326,11 @@ interface Context {
   /** Folders already checked against their root's real path. */
   dirChecks: Map<string, Promise<DirCheck>>;
   realRoots: Map<string, Promise<string>>;
+  git: GitContext;
+  /** Keys MCP hashes, so they can't confirm a guess at a value and don't outlive the scan. */
+  scanKey: Buffer;
+  /** Worktrees whose `.git` isn't verified, so git isn't asked about them. */
+  gitUntrustedRoots: Set<string>;
   onFiles?: (filesSeen: number) => void;
 }
 
@@ -297,10 +340,14 @@ function newContext(
   fs: InventoryFs,
   limits: InventoryLimits,
   signal: AbortSignal,
+  shared: { git: GitContext; scanKey: Buffer },
   onFiles?: (filesSeen: number) => void,
 ): Context {
   return {
     fs, limits, signal, onFiles,
+    git: shared.git,
+    scanKey: shared.scanKey,
+    gitUntrustedRoots: new Set(),
     excluded: emptyExclusions(),
     filesSeen: 0,
     bytesRead: 0,
@@ -313,9 +360,9 @@ function newContext(
 }
 
 /** Lets the main process breathe and honors a cancel. Called once per directory entry. */
-async function checkpoint(ctx: Context): Promise<void> {
+async function checkpoint(ctx: Context, force = false): Promise<void> {
   if (ctx.signal.aborted) throw new ScanStopped();
-  if (ctx.filesSeen % 25 === 0) {
+  if (force || ctx.filesSeen % 25 === 0) {
     ctx.onFiles?.(ctx.filesSeen);
     await new Promise<void>((resolve) => setImmediate(resolve));
     if (ctx.signal.aborted) throw new ScanStopped();
@@ -620,7 +667,7 @@ function personaMetadata(text: string): InventoryPersonaMetadata {
   const skills = Array.isArray(settings.skills) ? settings.skills : [];
   return {
     frontMatterKeys: Object.keys(settings).sort(),
-    inertSkillDeclarations: skills.map((s) => (typeof s?.name === 'string' ? s.name : '')).filter(Boolean),
+    inertSkillDeclarations: skills.map((s) => s?.name).filter((name): name is string => isSafeIdentifier(name)),
   };
 }
 
@@ -646,30 +693,36 @@ async function scanPersonaFolder(ctx: Context, root: string, dir: string, scope:
 }
 
 /** MCP servers in one text, as items. Env values are gone by the time the hash is taken. */
-function mcpItems(
+async function mcpItems(
   ctx: Context,
   servers: Record<string, unknown>,
   scope: InventoryScope,
   file: ScannedFile,
   pointer: (name: string) => string | undefined,
-): RawItem[] {
+): Promise<RawItem[]> {
   const items: RawItem[] = [];
-  for (const [name, entry] of Object.entries(servers)) {
-    const result = isForbiddenKey(name) ? { kind: 'invalid' as const } : readMcpEntry(entry);
+  const names = Object.keys(servers);
+  if (names.length > ctx.limits.maxServersPerFile) {
+    ctx.truncated = true;
+    ctx.excluded['over-limit'] += names.length - ctx.limits.maxServersPerFile;
+  }
+  for (const [index, rawName] of names.slice(0, ctx.limits.maxServersPerFile).entries()) {
+    if (index % 50 === 0) await checkpoint(ctx, true);
+    const result = isForbiddenKey(rawName) ? { kind: 'invalid' as const } : readMcpEntry(servers[rawName]);
     if (result.kind === 'bridge') {
       ctx.bridgeFiltered++;
     } else if (result.kind === 'invalid') {
       ctx.excluded['non-definition']++;
     } else {
-      ctx.excluded['credential-value'] += result.definition.withheldValues;
+      const name = safeLabel(rawName, 'server');
       items.push({
         kind: 'mcp-server', name, scope,
         root: file.root,
         path: file.path,
-        pointer: pointer(name),
+        pointer: name === rawName ? pointer(rawName) : undefined,
         files: [file],
-        contentHash: sha256(canonical(result.definition)),
-        wildcards: wildcardsIn(canonical(result.definition)),
+        contentHash: createHmac('sha256', ctx.scanKey).update(result.details).digest('hex'),
+        wildcards: wildcardsIn(result.details),
         excludedFileCount: 0,
         mcp: result.definition,
       });
@@ -687,14 +740,16 @@ async function scanMcpFile(
 ): Promise<RawItem[]> {
   // The file's whole text may hold tokens next to the servers (`.claude.json` does),
   // so the check runs per definition, in readMcpEntry, and not on the file.
-  const outcome = await readDefinitionFile(ctx, root, file, { maxBytes: ctx.limits.maxConfigFileBytes, allowAnyExtension: true, skipContentCheck: true });
+  const maxBytes = format === 'toml' ? ctx.limits.maxTomlBytes : ctx.limits.maxConfigFileBytes;
+  const outcome = await readDefinitionFile(ctx, root, file, { maxBytes, allowAnyExtension: true, skipContentCheck: true });
   if (outcome === 'excluded' || outcome === 'missing') return [];
+  await checkpoint(ctx, true);
   const servers = format === 'toml' ? parseTomlMcpServers(outcome.file.text) : parseJsonMcpServers(outcome.file.text);
   if (!servers) {
     ctx.warnings.add(`mcp-config-unparsable:${outcome.file.relativePath}`);
     return [];
   }
-  return mcpItems(ctx, servers, scope, outcome.file, (name) => (format === 'toml' ? `mcp_servers.${name}` : `mcpServers.${name}`));
+  return await mcpItems(ctx, servers, scope, outcome.file, (name) => (format === 'toml' ? `mcp_servers.${name}` : `mcpServers.${name}`));
 }
 
 interface StoredProjectSettings {
@@ -737,6 +792,10 @@ function settingsValueItem(
   serialized: string,
   builtinId: string | undefined,
 ): RawItem[] {
+  if (serialized.length > ctx.limits.maxFileBytes) {
+    ctx.excluded['too-large']++;
+    return [];
+  }
   if (hasSecretLookingContent(serialized)) {
     ctx.excluded['secret-looking']++;
     return [];
@@ -754,7 +813,7 @@ function settingsValueItem(
   }];
 }
 
-function defaultsItems(ctx: Context, defaults: ProjectAgentDefaults, file: ScannedFile): RawItem[] {
+async function defaultsItems(ctx: Context, defaults: ProjectAgentDefaults, file: ScannedFile): Promise<RawItem[]> {
   const items: RawItem[] = [];
   const table = builtins();
   if (typeof defaults.instructions === 'string' && defaults.instructions) {
@@ -762,13 +821,13 @@ function defaultsItems(ctx: Context, defaults: ProjectAgentDefaults, file: Scann
     items.push(...settingsValueItem(ctx, file, 'default-instructions', 'default instructions', 'agentDefaults.instructions', defaults.instructions, isBuiltin ? 'default-instructions' : undefined));
   }
   if (defaults.permissions && typeof defaults.permissions === 'object') {
-    const serialized = canonical(defaults.permissions);
+    const serialized = canonicalOrEmpty(defaults.permissions);
     items.push(...settingsValueItem(ctx, file, 'default-permissions', 'default permissions', 'agentDefaults.permissions', serialized, serialized === table.permissions ? 'default-permissions' : undefined));
   }
   if (typeof defaults.mcpJson === 'string' && defaults.mcpJson) {
     const servers = parseJsonMcpServers(defaults.mcpJson);
     if (servers) {
-      items.push(...mcpItems(ctx, servers, 'project', file, (name) => `agentDefaults.mcpJson#${name}`));
+      items.push(...await mcpItems(ctx, servers, 'project', file, (name) => `agentDefaults.mcpJson#${name}`));
     } else {
       ctx.warnings.add('default-mcp-json-unparsable');
     }
@@ -777,6 +836,22 @@ function defaultsItems(ctx: Context, defaults: ProjectAgentDefaults, file: Scann
 }
 
 /** Where a project's source folder lives, honoring the setting the code honors, kept under `.clubhouse`. */
+/**
+ * Whether `folder` is `.clubhouse/agents` or inside it, by identity. A name can't
+ * settle this: filesystems fold names their own ways, so `agentſ` is `agents` on APFS.
+ */
+async function isAgentsFolder(ctx: Context, realBase: string, folder: string): Promise<boolean> {
+  const first = path.relative(realBase, folder).split(path.sep)[0];
+  if (!first) return false;
+  try {
+    const [agents, candidate] = await Promise.all([ctx.fs.lstat(path.join(realBase, 'agents')), ctx.fs.lstat(path.join(realBase, first))]);
+    return agents.dev === candidate.dev && agents.ino === candidate.ino;
+  } catch {
+    // telemetry-exempt: with no `agents` folder, or no such folder, there's nothing it could be
+    return false;
+  }
+}
+
 async function sourceFolder(ctx: Context, projectPath: string, stored: unknown, fallback: string): Promise<string | null> {
   const sub = typeof stored === 'string' && stored ? stored : fallback;
   const base = path.join(projectPath, '.clubhouse');
@@ -788,6 +863,8 @@ async function sourceFolder(ctx: Context, projectPath: string, stored: unknown, 
       || (typeof realBase === 'object' && typeof realJoined === 'object' && !confinedJoin(realBase.real, path.relative(realBase.real, realJoined.real)));
     if (refused) {
       ctx.excluded.symlink++;
+      joined = null;
+    } else if (typeof realBase === 'object' && typeof realJoined === 'object' && await isAgentsFolder(ctx, realBase.real, realJoined.real)) {
       joined = null;
     }
   }
@@ -806,7 +883,7 @@ async function countMissions(ctx: Context, projectPath: string): Promise<number>
  * outside Clubhouse Mode writes expanded text here, and turning the mode off
  * leaves its output behind. The caveats on the source say so.
  */
-async function scanAgentInstructions(ctx: Context, agent: DurableAgentConfig, worktree: string, access: InventoryWorktreeAccess): Promise<RawItem[]> {
+async function scanAgentInstructions(ctx: Context, agent: { id: string; name: string }, worktree: string, access: InventoryWorktreeAccess): Promise<RawItem[]> {
   const items: RawItem[] = [];
   for (const rel of INSTRUCTION_FILES) {
     const outcome = await readDefinitionFile(ctx, worktree, path.join(worktree, ...rel.split('/')));
@@ -889,11 +966,54 @@ interface WorktreeAuthorizer {
   resolve(configured: string, by: InventoryWorktreeAccess['by']): Promise<{ root: string } | { external: InventoryExternalReason } | 'missing'>;
 }
 
+const MAX_GIT_POINTER_BYTES = 4096;
+
+async function readGitPointer(ctx: Context, file: string): Promise<string | 'absent' | null> {
+  try {
+    const stats = await ctx.fs.lstat(file);
+    if (!stats.isFile() || stats.size > MAX_GIT_POINTER_BYTES) return null;
+    return (await ctx.fs.readFile(file)).toString('utf-8').trim();
+  } catch (err) {
+    // telemetry-exempt: the caller treats this as unverified; nothing about it is kept
+    return isMissing(err) ? 'absent' : null;
+  }
+}
+
+/**
+ * Whether a worktree belongs to this project's repository, from both ends: its
+ * `.git` file must name `<common>/worktrees/<id>`, and that folder's `gitdir` must
+ * name this `.git`. `.git/worktrees` alone can be written to name any path, and a
+ * `.git` folder is another repository with config of its own. `absent` is a plain
+ * folder, where git finds the project's own repository.
+ */
+async function verifyWorktreeGit(ctx: Context, projectPath: string, worktree: string): Promise<'ok' | 'absent' | 'bad'> {
+  const dotGit = path.join(worktree, '.git');
+  const pointer = await readGitPointer(ctx, dotGit);
+  if (pointer === 'absent') return 'absent';
+  const gitdir = pointer?.match(/^gitdir:[ \t]*(.+)$/)?.[1];
+  if (!gitdir) return 'bad';
+  const common = await readGitCommonDir(projectPath, ctx.signal, ctx.git);
+  if (!common) return 'bad';
+  let realCommon: string;
+  try {
+    realCommon = await ctx.fs.realpath(common);
+  } catch {
+    // telemetry-exempt: git named it and it isn't there, so nothing can be verified
+    return 'bad';
+  }
+  const worktreeGitDir = path.resolve(worktree, gitdir);
+  // Before reading anything it names: the first file is what's being checked.
+  if (projectPathKey(path.dirname(worktreeGitDir)) !== projectPathKey(path.join(realCommon, 'worktrees'))) return 'bad';
+  const back = await readGitPointer(ctx, path.join(worktreeGitDir, 'gitdir'));
+  if (!back || back === 'absent') return 'bad';
+  return projectPathKey(path.resolve(worktreeGitDir, back)) === projectPathKey(dotGit) ? 'ok' : 'bad';
+}
+
 function worktreeAuthorizer(ctx: Context, projectPath: string, roots: ExternalRoots): WorktreeAuthorizer {
   // Asked only when an agent points outside, and once per project.
   let gitWorktrees: Promise<Set<string>> | null = null;
   const listedByGit = (configured: string) => {
-    gitWorktrees ??= readGitWorktrees(projectPath, ctx.signal).then((list) => new Set(list.map((p) => projectPathKey(p))));
+    gitWorktrees ??= readGitWorktrees(projectPath, ctx.signal, ctx.git).then((list) => new Set(list.map((p) => projectPathKey(p))));
     return gitWorktrees.then((set) => set.has(projectPathKey(configured)));
   };
   // The user chose these, so finding their real paths touches only what they selected.
@@ -957,14 +1077,27 @@ function worktreeAuthorizer(ctx: Context, projectPath: string, roots: ExternalRo
  */
 async function readAgentConfigs(ctx: Context, projectPath: string): Promise<readonly DurableAgentConfig[]> {
   for (const name of ['agents.json', 'agents.json.bak']) {
-    const resolved = await resolveInside(ctx, projectPath, path.join(projectPath, '.clubhouse', name));
+    const file = path.join(projectPath, '.clubhouse', name);
+    const resolved = await resolveInside(ctx, projectPath, file);
     if (resolved === 'outside' || resolved === 'unreadable') {
       ctx.excluded[resolved === 'outside' ? 'symlink' : 'unreadable']++;
       ctx.warnings.add('agent-config-not-read');
       return [];
     }
+    // Parsed whole, past any yield, so its size is checked first.
+    if (resolved !== 'missing' && (await ctx.fs.lstat(file)).size > ctx.limits.maxConfigFileBytes) {
+      ctx.excluded['too-large']++;
+      ctx.warnings.add('agent-config-not-read');
+      return [];
+    }
   }
-  return peekDurableConfigs(projectPath);
+  const agents = await peekDurableConfigs(projectPath);
+  if (agents.length > ctx.limits.maxAgentsPerProject) {
+    ctx.truncated = true;
+    ctx.excluded['over-limit'] += agents.length - ctx.limits.maxAgentsPerProject;
+    return agents.slice(0, ctx.limits.maxAgentsPerProject);
+  }
+  return agents;
 }
 
 // ── One project ──────────────────────────────────────────────────────────
@@ -994,7 +1127,7 @@ async function scanProject(
   const templates = templatesDir ? await scanFolderItems(ctx, projectPath, templatesDir, 'agent-template', 'project') : [];
   items.push(...skills, ...templates);
   items.push(...await scanPersonaFolder(ctx, projectPath, path.join(projectPath, '.clubhouse', 'personas'), 'project'));
-  if (settingsFile) items.push(...defaultsItems(ctx, defaults, settingsFile));
+  if (settingsFile) items.push(...await defaultsItems(ctx, defaults, settingsFile));
 
   for (const { file, format } of PROJECT_MCP_FILES) {
     items.push(...await scanMcpFile(ctx, projectPath, path.join(projectPath, ...file.split('/')), format, 'project'));
@@ -1010,18 +1143,19 @@ async function scanProject(
       ? false
       : mode.enabled === 'unknown' ? 'unknown' : mode.enabled && !agent.clubhouseModeOverride;
     const configured: unknown = agent.worktreePath;
+    const agentLabel = { id: safeLabel(agent.id, 'agent'), name: safeLabel(agent.name, 'agent') };
     const report: InventoryAgentReport = {
-      id: agent.id, name: agent.name, worktreePath: typeof configured === 'string' ? configured : undefined, managed,
+      id: agentLabel.id, name: agentLabel.name, worktreePath: typeof configured === 'string' ? configured : undefined, managed,
       status: 'no-worktree',
-      persona: agent.persona ?? defaults.persona,
-      mission: agent.mission ?? defaults.mission,
+      persona: configRef(agent.persona ?? defaults.persona),
+      mission: configRef(agent.mission ?? defaults.mission),
       mcpFilesNotInventoried: 0,
     };
     agents.push(report);
     if (!configured) continue;
     const reportExternal = (reason: InventoryExternalReason) => {
       report.status = 'external';
-      external.push({ agent: { id: agent.id, name: agent.name }, configuredPath: typeof configured === 'string' ? configured : '', reason });
+      external.push({ agent: agentLabel, configuredPath: typeof configured === 'string' ? configured : '', reason });
     };
     const authority = await authorizer.authority(configured);
     if ('external' in authority) {
@@ -1046,11 +1180,17 @@ async function scanProject(
       reportExternal(resolved.external);
       continue;
     }
+    const gitCheck = await verifyWorktreeGit(ctx, projectPath, resolved.root);
+    if (authority.by === 'git-worktree' && gitCheck !== 'ok') {
+      reportExternal('unverified-worktree');
+      continue;
+    }
+    if (gitCheck === 'bad') ctx.gitUntrustedRoots.add(resolved.root);
     const access: InventoryWorktreeAccess = { by: authority.by, configuredPath: worktreePath };
     if (authority.includedRoot) access.includedRoot = authority.includedRoot;
     report.worktreeAccess = access;
     report.status = 'scanned';
-    items.push(...await scanAgentInstructions(ctx, agent, resolved.root, access));
+    items.push(...await scanAgentInstructions(ctx, agentLabel, resolved.root, access));
     report.mcpFilesNotInventoried = await countWorktreeMcpFiles(ctx, resolved.root);
   }
 
@@ -1068,12 +1208,12 @@ async function scanProject(
     const mcpNames = typeof defaults.mcpJson === 'string' ? parseJsonMcpServers(defaults.mcpJson) : null;
     clubhouseMode.effective = {
       hasInstructions: !!defaults.instructions,
-      permissionRuleCount: (permissions?.allow?.length ?? 0) + (permissions?.deny?.length ?? 0),
-      mcpServerNames: Object.keys(mcpNames ?? {}).sort(),
+      permissionRuleCount: (Array.isArray(permissions?.allow) ? permissions.allow.length : 0) + (Array.isArray(permissions?.deny) ? permissions.deny.length : 0),
+      mcpServerNames: Object.keys(mcpNames ?? {}).map((name) => safeLabel(name, 'server')).sort(),
       skills: skills.map((s) => s.name),
       agentTemplates: templates.map((t) => t.name),
-      defaultPersona: defaults.persona,
-      defaultMission: defaults.mission,
+      defaultPersona: configRef(defaults.persona),
+      defaultMission: configRef(defaults.mission),
     };
   }
 
@@ -1087,7 +1227,7 @@ async function scanProject(
 }
 
 async function scanGlobal(ctx: Context, homeDir: string): Promise<RawItem[]> {
-  // The app's folder name (dev or packaged), under the home this scan was given.
+  // Only the app's folder name (dev or packaged) comes from the app. Rooted at the home, so a link there is refused.
   const baseDir = path.join(homeDir, path.basename(getBaseDirPath()));
   const items: RawItem[] = [];
   items.push(...await scanProviderFolders(ctx, homeDir, 'global', GLOBAL_SOURCES.map((s) => s.dir)));
@@ -1101,14 +1241,14 @@ async function scanGlobal(ctx: Context, homeDir: string): Promise<RawItem[]> {
       items.push(...await scanMcpFile(ctx, homeDir, path.join(homeDir, ...source.mcp.file.split('/')), source.mcp.format, 'global'));
     }
   }
-  items.push(...await scanPersonaFolder(ctx, baseDir, path.join(baseDir, 'personas'), 'global'));
+  items.push(...await scanPersonaFolder(ctx, homeDir, path.join(baseDir, 'personas'), 'global'));
   return items;
 }
 
 // ── Output ───────────────────────────────────────────────────────────────
 
 /** Ask git about each file once, whichever items share it, and fill in the sources. */
-async function toSources(items: readonly RawItem[], signal: AbortSignal, project: { id: string; name: string } | null): Promise<Map<RawItem, InventorySource>> {
+async function toSources(ctx: Context, items: readonly RawItem[], signal: AbortSignal, project: { id: string; name: string } | null): Promise<Map<RawItem, InventorySource>> {
   const byRoot = new Map<string, Set<string>>();
   for (const item of items) {
     const paths = byRoot.get(item.root) ?? new Set<string>();
@@ -1117,9 +1257,11 @@ async function toSources(items: readonly RawItem[], signal: AbortSignal, project
   }
   const states = new Map<string, Awaited<ReturnType<typeof readGitStates>>>();
   for (const [root, paths] of byRoot) {
-    states.set(root, await readGitStates(root, [...paths], signal));
+    if (ctx.gitUntrustedRoots.has(root)) continue;
+    states.set(root, await readGitStates(root, [...paths], signal, ctx.git));
     if (signal.aborted) throw new ScanStopped();
   }
+  if (byRoot.size > 0 && !await isGitUsable(ctx.git, signal)) ctx.warnings.add('git-below-minimum-version');
   const sources = new Map<RawItem, InventorySource>();
   for (const item of items) {
     const files: InventoryFile[] = item.files.map((f) => ({
@@ -1286,6 +1428,7 @@ export async function scanImportInventory(options: InventoryOptions): Promise<Im
     }
   };
 
+  const shared = { git: newGitContext(options.homeDir), scanKey: randomBytes(32) };
   const registered = await peekProjects();
   const selected = options.projectIds
     ? registered.filter((p) => options.projectIds?.includes(p.id))
@@ -1323,13 +1466,13 @@ export async function scanImportInventory(options: InventoryOptions): Promise<Im
 
     let ctx: Context | null = null;
     const outcome = await withDeadline(async (signal) => {
-      ctx = newContext(fs, limits, signal, (filesSeen) => {
+      ctx = newContext(fs, limits, signal, shared, (filesSeen) => {
         report({ phase: 'files', projectIndex: index, projectCount: selected.length, projectName: projectReport.projectName, filesSeen });
       });
       const stats = await fs.stat(project.path);
       if (!stats.isDirectory()) return { unavailable: 'ENOTDIR' as const };
       const scan = await scanProject(ctx, project.path, projectReport.clubhouseMode, includeProviderConfig, externalRoots);
-      const sources = await toSources(scan.items, signal, { id: project.id, name: projectReport.projectName });
+      const sources = await toSources(ctx, scan.items, signal, { id: project.id, name: projectReport.projectName });
       return { scan, sources };
     }, outerSignal, timeoutMs).catch((err: unknown) => {
       // telemetry-exempt: reported on the project as a code; the error's message isn't kept
@@ -1393,9 +1536,9 @@ export async function scanImportInventory(options: InventoryOptions): Promise<Im
     report({ phase: 'global', projectIndex: selected.length, projectCount: selected.length, filesSeen: 0 });
     let ctx: Context | null = null;
     const outcome = await withDeadline(async (signal) => {
-      ctx = newContext(fs, limits, signal);
+      ctx = newContext(fs, limits, signal, shared);
       const items = await scanGlobal(ctx, options.homeDir);
-      return toSources(items, signal, null);
+      return toSources(ctx, items, signal, null);
     }, outerSignal, timeoutMs).catch((err: unknown) => {
       // telemetry-exempt: global config is optional; a failure leaves it out and the projects stand
       return err instanceof ScanStopped ? { stopped: 'cancelled' as const } : { failed: true as const };

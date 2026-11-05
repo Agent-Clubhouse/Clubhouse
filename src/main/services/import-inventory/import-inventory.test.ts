@@ -30,7 +30,7 @@ import { PERSONA_TEMPLATES } from '../../../renderer/features/personas';
 import type { ImportInventory, InventoryEntry } from '../../../shared/import-inventory-types';
 import type { DurableAgentConfig } from '../../../shared/types';
 import { INSTRUCTION_FILES, PROJECT_MCP_FILES, confinedJoin, projectPathKey, scanImportInventory, type InventoryFs, type InventoryOptions } from './inventory';
-import { readGitStates, toGitPath } from './git-state';
+import { newGitContext, readGitStates, toGitPath } from './git-state';
 import { checkConfiguredPath, parseWorktreeList } from './untrusted-paths';
 
 // Real git on Windows CI is slow, and these spawn it several times each.
@@ -232,7 +232,9 @@ describe('the home folder', () => {
     expect(recording.touched.filter((p) => p.startsWith(dirs.home))).toEqual([]);
   });
 
-  it('has no way to the real home in library code', () => {
+  // The app's own stores still go through electron: projects.json under app.getPath('home'),
+  // the settings files under userData, and the folder name getBaseDirPath gives.
+  it('never asks for the home folder itself in this folder\'s code', () => {
     const sources = fs.readdirSync(__dirname).filter((f) => f.endsWith('.ts') && !f.endsWith('.test.ts'));
     expect(sources.length).toBeGreaterThan(3);
     for (const file of sources) {
@@ -391,7 +393,7 @@ describe('git state per file', () => {
     // Refused by check-ignore on every platform (bad pathspec magic), and exits 128 for the whole batch.
     const rejected = ':(nonsense)rejected.md';
 
-    const states = await readGitStates(project, ['plain.md', rejected, 'ignored.md', 'README.md'], new AbortController().signal);
+    const states = await readGitStates(project, ['plain.md', rejected, 'ignored.md', 'README.md'], new AbortController().signal, newGitContext(dirs.home));
 
     expect(Object.fromEntries(states)).toEqual({
       'plain.md': 'untracked',
@@ -532,6 +534,7 @@ describe('symlinked parents', () => {
       project,
       ['.clubhouse/linked/deploy/SKILL.md', '.clubhouse/skills/plain/SKILL.md'],
       new AbortController().signal,
+      newGitContext(dirs.home),
     );
 
     expect(states.get('.clubhouse/linked/deploy/SKILL.md')).toBe('unknown');
@@ -1232,7 +1235,7 @@ describe('Clubhouse Mode projects', () => {
         mcpServerNames: ['github'],
         skills: ['deploy'],
         agentTemplates: ['reviewer'],
-        defaultPersona: 'qa',
+        defaultPersona: { id: 'qa', hash: sha('qa'), length: 2 },
         defaultMission: undefined,
       },
     });
@@ -1321,16 +1324,17 @@ describe('orphaned config', () => {
 describe('MCP definitions', () => {
   const bridge = { command: 'node', args: [path.join('app', 'clubhouse-mcp-bridge.js')], env: { CLUBHOUSE_MCP_FALLBACK_PORT: '1234' } };
 
-  it('keeps definitions, drops env values, keeps references, and filters the bridge', async () => {
+  it('reports names and counts only, and filters the bridge', async () => {
     const project = makeProject('alpha');
     write(project, '.mcp.json', JSON.stringify({
       mcpServers: {
         clubhouse: bridge,
         renamed: bridge,
         github: {
-          command: 'gh-mcp',
-          args: ['--read-only', '--path', '@@Path'],
+          command: path.join('opt', 'bin', 'gh-mcp'),
+          args: ['--read-only', '--path', '@@Path', 'ARG-VALUE'],
           env: { GH_TOKEN: 'SECRET-ENV-VALUE-123', REF: '${GH_TOKEN}', PLAIN: 'SECOND-ENV-VALUE' },
+          env_vars: ['FORWARDED'],
           headers: { Authorization: 'HEADER-VALUE-XYZ' },
           timeout: 30,
         },
@@ -1344,18 +1348,17 @@ describe('MCP definitions', () => {
     expect(result.projects[0].bridgeEntriesFiltered).toBe(2);
     const github = entry(result, 'mcp-server', 'github');
     expect(github.mcp).toEqual({
-      command: 'gh-mcp',
-      args: ['--read-only', '--path', '@@Path'],
-      env: [{ name: 'GH_TOKEN' }, { name: 'PLAIN' }, { name: 'REF', reference: '${GH_TOKEN}' }],
-      forwardedEnv: [],
-      headerNames: ['Authorization'],
-      omittedKeys: ['timeout'],
-      withheldValues: 0,
+      commandName: 'gh-mcp',
+      argumentCount: 4,
+      envNames: ['FORWARDED', 'GH_TOKEN', 'PLAIN', 'REF'],
+      detailsWithheld: true,
     });
     expect(github.wildcards).toEqual(['@@Path']);
     expect(github.sources[0].files[0].relativePath).toBe('.mcp.json');
     const everything = JSON.stringify([result, vi.mocked(appLog).mock.calls]);
-    for (const value of ['SECRET-ENV-VALUE-123', 'SECOND-ENV-VALUE', 'HEADER-VALUE-XYZ']) expect(everything).not.toContain(value);
+    for (const value of ['SECRET-ENV-VALUE-123', 'SECOND-ENV-VALUE', 'HEADER-VALUE-XYZ', 'ARG-VALUE', '--read-only', 'GH_TOKEN}', 'Authorization']) {
+      expect(everything).not.toContain(value);
+    }
   });
 
   it('keeps a user server that is merely named clubhouse, since only the shape marks the bridge', async () => {
@@ -1365,7 +1368,7 @@ describe('MCP definitions', () => {
 
     const result = await scan();
 
-    expect(entry(result, 'mcp-server', 'clubhouse').mcp?.command).toBe('my-own-server');
+    expect(entry(result, 'mcp-server', 'clubhouse').mcp?.commandName).toBe('my-own-server');
     expect(result.projects[0].bridgeEntriesFiltered).toBe(0);
   });
 
@@ -1383,51 +1386,87 @@ describe('MCP definitions', () => {
     expect(merged.sources.map((s) => s.projectId)).toEqual(['id-a', 'id-b']);
   });
 
-  // One server per shape, so a broken rule names the shapes it lets through.
-  it.each<[string, Record<string, unknown>, Record<string, unknown>]>([
-    ['flag and value', { command: 'x', args: ['--api-key', 'LITERAL-A'] }, { args: ['--api-key', '<withheld>'] }],
-    ['flag=value', { command: 'x', args: ['--token=LITERAL-B'] }, { args: ['--token=<withheld>'] }],
-    ['--header', { command: 'x', args: ['--header', 'Authorization: Bearer LITERAL-C'] }, { args: ['--header', 'Authorization: <withheld>'] }],
-    ['-H with any header', { command: 'x', args: ['-H', 'X-Custom: LITERAL-D'] }, { args: ['-H', 'X-Custom: <withheld>'] }],
-    ['--header=', { command: 'x', args: ['--header=Cookie: LITERAL-E'] }, { args: ['--header=Cookie: <withheld>'] }],
-    ['a bare auth header', { command: 'x', args: ['Authorization: Bearer LITERAL-F'] }, { args: ['Authorization: <withheld>'] }],
-    ['connection string', { command: 'x', args: ['postgresql://admin:LITERAL-G@db/prod'] }, { args: ['postgresql://<withheld>@db/prod'] }],
-    ['connection string in a flag', { command: 'x', args: ['--db=postgresql://admin:LITERAL-H@db/prod'] }, { args: ['--db=postgresql://<withheld>@db/prod'] }],
-    ['KEY=value', { command: 'x', args: ['API_KEY=LITERAL-I'] }, { args: ['API_KEY=<withheld>'] }],
-    ['a flag inside the command', { command: 'x --password LITERAL-J' }, { command: 'x --password <withheld>' }],
-    ['URL userinfo', { url: 'https://user:LITERAL-K@example.com/mcp' }, { url: 'https://<withheld>@example.com/mcp' }],
-    ['URL query', { url: 'https://example.com/mcp?key=LITERAL-L' }, { url: 'https://example.com/mcp?key=<withheld>' }],
-    ['URL fragment', { url: 'https://example.com/mcp#access_token=LITERAL-M' }, { url: 'https://example.com/mcp#access_token=<withheld>' }],
-    ['an opaque token', { command: 'x', args: ['--x', `a1${'LITERALN'.repeat(5)}`] }, { args: ['--x', '<withheld>'] }],
-  ])('withholds a credential in %s, says so, and counts it', async (_shape, definition, expected) => {
+  // Every shape a pattern-based redactor let through, and the ones it caught. Nothing here
+  // depends on recognizing a shape: arguments and URLs simply aren't in a result.
+  const LEAK = 'LITERALVALUE';
+  it.each<[string, Record<string, unknown>]>([
+    ['flag and value', { command: 'x', args: ['--api-key', LEAK] }],
+    ['flag=value', { command: 'x', args: [`--token=${LEAK}`] }],
+    ['--header split', { command: 'x', args: ['--header', `Authorization: Bearer ${LEAK}`] }],
+    ['-H', { command: 'x', args: ['-H', `X-Foo: ${LEAK}`] }],
+    ['-H attached', { command: 'x', args: [`-HAuthorization: Bearer ${LEAK}`] }],
+    ['--header=', { command: 'x', args: [`--header=Authorization: Bearer ${LEAK}`] }],
+    ['--password dash-prefixed', { command: 'x', args: ['--password', `-${LEAK}`] }],
+    ['--db.password', { command: 'x', args: ['--db.password', LEAK] }],
+    ['--passphrase', { command: 'x', args: ['--passphrase', LEAK] }],
+    ['--license-key', { command: 'x', args: ['--license-key', LEAK] }],
+    ['a JWT', { command: 'x', args: [`eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxIn0.${LEAK}`] }],
+    ['-p attached', { command: 'x', args: [`-p${LEAK}`] }],
+    ['KEY=value', { command: 'x', args: [`API_KEY=${LEAK}`] }],
+    ['connection string pairs', { command: 'x', args: [`Server=x;Password=${LEAK};`] }],
+    ['schemeless DSN', { command: 'x', args: ['--dsn', `user:${LEAK}@tcp(db:3306)/x`] }],
+    ['connection string', { command: 'x', args: [`postgresql://admin:${LEAK}@db/prod`] }],
+    ['sh -c with curl', { command: 'sh', args: ['-c', `curl -H 'Authorization: Bearer ${LEAK}' https://x.example`] }],
+    ['sh -c with --header=', { command: 'sh', args: ['-c', `tool --header="Authorization: Bearer ${LEAK}"`] }],
+    ['a whole command line', { command: `curl -H "X-Api-Key: ${LEAK}" https://x.example` }],
+    ['a flag in the command', { command: `x --password ${LEAK}` }],
+    ['a path holding it', { command: `/opt/${LEAK}/secrets dir/x` }],
+    ['URL userinfo', { url: `https://user:${LEAK}@example.com/mcp` }],
+    ['slash in a URL password', { url: `https://u:a/${LEAK}@example.com/x` }],
+    ['URL query', { url: `https://example.com/mcp?key=${LEAK}` }],
+    ['URL fragment', { url: `https://example.com/mcp#access_token=${LEAK}` }],
+    ['URL path token', { url: `https://hooks.slack.com/services/T000/B000/${LEAK}` }],
+    ['the type field', { command: 'x', type: `https://u:${LEAK}@h` }],
+    ['env_vars', { command: 'x', env_vars: [`${LEAK}-with-dash!`, `ghp_${'a'.repeat(36)}`] }],
+    ['an env name', { command: 'x', env: { [`sk-${'a'.repeat(30)}`]: 'v', [`Bearer ${LEAK}`]: 'v' } }],
+    ['a header name', { command: 'x', headers: { [`Bearer ${LEAK}`]: 'v' } }],
+    ['an unknown key', { command: 'x', [`https://u:${LEAK}@h`]: 1 }],
+  ])('carries nothing of %s, and says details are withheld', async (_shape, definition) => {
     const project = makeProject('alpha', { repo: false });
     write(project, '.mcp.json', JSON.stringify({ mcpServers: { s: definition } }));
     registerProjects([project]);
 
     const result = await scan();
 
-    expect(entry(result, 'mcp-server', 's').mcp).toMatchObject({ ...expected, withheldValues: 1 });
-    expect(result.projects[0].excluded['credential-value']).toBe(1);
-    expect(JSON.stringify([result, vi.mocked(appLog).mock.calls])).not.toContain('LITERAL');
+    expect(entry(result, 'mcp-server', 's').mcp?.detailsWithheld).toBe(true);
+    const everything = JSON.stringify([result, vi.mocked(appLog).mock.calls]);
+    expect(everything).not.toContain(LEAK);
+    expect(everything).not.toContain('ghp_');
+    expect(everything).not.toContain('sk-a');
   });
 
-  it('leaves references, wildcards and ordinary args readable', async () => {
-    const project = makeProject('alpha');
-    const args = ['--token', '${TOKEN}', '--header', 'Authorization: Bearer ${TOKEN}', '--path', '@@Path', '--port', '3000', 'pkg@1.2.3', '--auth', '--verbose'];
+  it('keeps a server name out too when it could be anything', async () => {
+    const project = makeProject('alpha', { repo: false });
+    write(project, '.mcp.json', JSON.stringify({ mcpServers: { [`https://u:${LEAK}@h`]: { command: 'x' } } }));
+    registerProjects([project]);
+
+    const result = await scan();
+
+    expect(result.entries[0].name).toMatch(/^server-[0-9a-f]{12}$/);
+    expect(result.entries[0].sources[0].pointer).toBeUndefined();
+    expect(JSON.stringify(result)).not.toContain(LEAK);
+  });
+
+  it('shows scheme and host, and calls a bare origin complete', async () => {
+    const project = makeProject('alpha', { repo: false });
     write(project, '.mcp.json', JSON.stringify({ mcpServers: {
-      ok: { command: 'x', args },
-      url: { url: 'https://${USER}:${PASS}@example.com/mcp?token=${TOKEN}' },
+      bare: { url: 'https://example.com', type: 'http' },
+      pathed: { url: 'https://example.com/mcp' },
+      wildcard: { url: '@@Path' },
+      opaque: { url: `https://${'a1'.repeat(20)}.example.com/` },
     } }));
     registerProjects([project]);
 
     const result = await scan();
 
-    expect(entry(result, 'mcp-server', 'ok').mcp).toMatchObject({ args, withheldValues: 0 });
-    expect(entry(result, 'mcp-server', 'url').mcp).toMatchObject({ url: 'https://${USER}:${PASS}@example.com/mcp?token=${TOKEN}', withheldValues: 0 });
-    expect(result.projects[0].excluded['credential-value']).toBe(0);
+    expect(entry(result, 'mcp-server', 'bare').mcp).toEqual({ argumentCount: 0, envNames: [], url: { scheme: 'https', host: 'example.com' }, transport: 'http', detailsWithheld: false });
+    expect(entry(result, 'mcp-server', 'pathed').mcp).toMatchObject({ url: { scheme: 'https', host: 'example.com' }, detailsWithheld: true });
+    expect(entry(result, 'mcp-server', 'wildcard').mcp?.url).toBeUndefined();
+    expect(entry(result, 'mcp-server', 'wildcard').wildcards).toEqual(['@@Path']);
+    expect(entry(result, 'mcp-server', 'opaque').mcp?.url).toEqual({ scheme: 'https' });
   });
 
-  it('merges definitions differing only in a withheld value, because the hash never sees it', async () => {
+  it('tells apart definitions differing only in withheld args, within one scan', async () => {
     const a = makeProject('a');
     const b = makeProject('b');
     write(a, '.mcp.json', JSON.stringify({ mcpServers: { s: { command: 'x', args: ['--token', 'value-one'] } } }));
@@ -1436,8 +1475,19 @@ describe('MCP definitions', () => {
 
     const result = await scan();
 
-    expect(entry(result, 'mcp-server', 's').sources).toHaveLength(2);
-    expect(entry(result, 'mcp-server', 's').conflict).toBe(false);
+    expect(result.entries).toHaveLength(2);
+    expect(result.entries.every((e) => e.conflict)).toBe(true);
+    expect(JSON.stringify(result)).not.toContain('value-');
+  });
+
+  it('keys its hashes per scan, so one can\'t confirm a guess at a value', async () => {
+    const project = makeProject('a');
+    write(project, '.mcp.json', JSON.stringify({ mcpServers: { s: { command: 'x', args: ['guessable'] } } }));
+    registerProjects([project]);
+
+    const [first, second] = [await scan(), await scan()];
+
+    expect(first.entries[0].contentHash).not.toBe(second.entries[0].contentHash);
   });
 
   describe('hostile keys', () => {
@@ -1478,7 +1528,7 @@ describe('MCP definitions', () => {
 
       expect(({} as Record<string, unknown>).polluted).toBeUndefined();
       expect(result.entries.map((e) => e.name)).toEqual(['good', 'last']);
-      expect(entry(result, 'mcp-server', 'good').mcp?.command).toBe('c');
+      expect(entry(result, 'mcp-server', 'good').mcp?.commandName).toBe('c');
     });
 
     it('refuses the same keys from JSON, without treating them as names', async () => {
@@ -1496,7 +1546,7 @@ describe('MCP definitions', () => {
       const result = await scan();
 
       expect(result.entries.map((e) => e.name)).toEqual(['good']);
-      expect(entry(result, 'mcp-server', 'good').mcp).toMatchObject({ env: [{ name: 'KEEP' }], headerNames: [], omittedKeys: [] });
+      expect(entry(result, 'mcp-server', 'good').mcp).toMatchObject({ commandName: 'c', envNames: ['KEEP'] });
       expect(result.projects[0].excluded['non-definition']).toBe(3);
     });
   });
@@ -1536,15 +1586,12 @@ describe('MCP definitions', () => {
 
     expect(entry(result, 'mcp-server', 'fromDefaults').sources[0].pointer).toBe('agentDefaults.mcpJson#fromDefaults');
     expect(entry(result, 'mcp-server', 'toml_server').mcp).toEqual({
-      command: 'npx',
-      args: ['-y', 'server'],
-      env: [{ name: 'TOKEN' }],
-      forwardedEnv: ['FORWARDED'],
-      headerNames: [],
-      omittedKeys: [],
-      withheldValues: 0,
+      commandName: 'npx',
+      argumentCount: 2,
+      envNames: ['FORWARDED', 'TOKEN'],
+      detailsWithheld: true,
     });
-    expect(entry(result, 'mcp-server', 'inline').mcp?.env).toEqual([{ name: 'A' }]);
+    expect(entry(result, 'mcp-server', 'inline').mcp?.envNames).toEqual(['A']);
     expect(result.projects[0].bridgeEntriesFiltered).toBe(2);
     const serialized = JSON.stringify(result);
     for (const value of ['TOP-LEVEL-TOML-SECRET', 'PROFILE-TOML-SECRET', 'TOML-ENV-VALUE', 'INLINE-ENV-VALUE', 'DEFAULTS-ENV-VALUE']) {
@@ -1950,7 +1997,7 @@ describe('progress and cancel', () => {
       const started = slowGit();
       const controller = new AbortController();
 
-      const pending = readGitStates(project, ['a.md', 'b.md'], controller.signal);
+      const pending = readGitStates(project, ['a.md', 'b.md'], controller.signal, newGitContext(dirs.home));
       await vi.waitFor(() => expect(fs.existsSync(started)).toBe(true), { timeout: 10_000, interval: 20 });
       controller.abort();
       const states = await pending;
@@ -2121,7 +2168,7 @@ describe('Windows paths', () => {
     write(project, 'Tracked.md', 'x\n');
     git(project, 'add', 'Tracked.md');
 
-    const asWindows = await readGitStates(project, ['Tracked.md'], new AbortController().signal, 'win32');
+    const asWindows = await readGitStates(project, ['Tracked.md'], new AbortController().signal, newGitContext(dirs.home), 'win32');
 
     expect(asWindows.get('Tracked.md')).toBe('tracked');
   });

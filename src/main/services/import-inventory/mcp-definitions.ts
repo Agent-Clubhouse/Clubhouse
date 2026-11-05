@@ -1,14 +1,14 @@
 /**
  * MCP server definitions for the import inventory (#2820). Reads the JSON and
- * TOML shapes the CLIs use and keeps what defines a server: env and header
- * values are dropped here, before anything else sees them, and the injected
- * Clubhouse bridge is filtered with isClubhouseMcpEntry.
+ * TOML shapes the CLIs use. A result carries no argument, URL or env value: a
+ * credential can take any shape, so patterns can't be relied on to find one. It
+ * gets the command's name, how many arguments, env names that pass a check and
+ * the URL's scheme and host. A later import step reads details on the user's
+ * explicit action. The injected bridge is filtered with isClubhouseMcpEntry.
  */
-import { isClubhouseMcpEntry, isEnvReference } from '../clubhouse-mcp/injection';
+import { isClubhouseMcpEntry } from '../clubhouse-mcp/injection';
 import type { InventoryMcpDefinition } from '../../../shared/import-inventory-types';
-import { redactDefinitionValues } from './classify';
-
-const CARRIED_KEYS = new Set(['command', 'args', 'url', 'type', 'env', 'env_vars', 'headers', 'http_headers']);
+import { isSafeIdentifier } from './classify';
 
 /** Keys that reach Object.prototype or mean nothing as a name. Refused in every parser here. */
 const FORBIDDEN_KEYS = new Set(['__proto__', 'constructor', 'prototype']);
@@ -20,7 +20,7 @@ export function isForbiddenKey(key: string): boolean {
 export type McpEntryResult =
   | { kind: 'bridge' }
   | { kind: 'invalid' }
-  | { kind: 'definition'; definition: InventoryMcpDefinition };
+  | { kind: 'definition'; definition: InventoryMcpDefinition; details: string };
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return !!value && typeof value === 'object' && !Array.isArray(value);
@@ -30,36 +30,76 @@ function stringArray(value: unknown): string[] | undefined {
   return Array.isArray(value) && value.every((v) => typeof v === 'string') ? value as string[] : undefined;
 }
 
-/** One stored entry as a definition, or why it isn't offered. */
+const KNOWN_TRANSPORTS = new Set(['stdio', 'http', 'sse', 'streamable-http', 'streamableHttp', 'ws']);
+const MAX_URL_CHARS = 4096;
+
+/** A plain executable name, or nothing: a command holding spaces is a whole command line. */
+function commandNameOf(command: string): string | undefined {
+  if (command.length > 4096 || /\s/.test(command)) return undefined;
+  const name = command.slice(Math.max(command.lastIndexOf('/'), command.lastIndexOf('\\')) + 1);
+  return isSafeIdentifier(name) ? name : undefined;
+}
+
+/** Scheme and host only. Userinfo, path, query and fragment never leave here. */
+function urlOriginOf(url: string): { scheme: string; host?: string } | null {
+  const scheme = url.slice(0, 32).match(/^([a-z][a-z0-9+.-]{0,15}):\/\//i)?.[1].toLowerCase();
+  if (!scheme) return null;
+  if (url.length > MAX_URL_CHARS) return { scheme };
+  try {
+    const host = new URL(url).hostname;
+    const labelsAreShort = host.split('.').every((label) => label.length < 32);
+    return /^[a-z0-9.-]{1,253}$/i.test(host) && labelsAreShort && isSafeIdentifier(host, 253) ? { scheme, host } : { scheme };
+  } catch {
+    // telemetry-exempt: not a URL this can read, so only the scheme is known; nothing about it is kept
+    return { scheme };
+  }
+}
+
+/**
+ * One stored entry, or why it isn't offered. `details` holds what makes it differ
+ * from another definition, env and header values excluded. It's for comparing
+ * within one scan through a keyed hash, and never goes in a result.
+ */
 export function readMcpEntry(entry: unknown): McpEntryResult {
   if (isClubhouseMcpEntry(entry)) return { kind: 'bridge' };
   if (!isRecord(entry)) return { kind: 'invalid' };
 
-  const rawCommand = typeof entry.command === 'string' ? entry.command : undefined;
-  const rawUrl = typeof entry.url === 'string' ? entry.url : undefined;
-  if (!rawCommand && !rawUrl) return { kind: 'invalid' };
-  const { command, args, url, withheld } = redactDefinitionValues(
-    { command: rawCommand, args: stringArray(entry.args), url: rawUrl },
-    isEnvReference,
-  );
+  const command = typeof entry.command === 'string' ? entry.command : undefined;
+  const url = typeof entry.url === 'string' ? entry.url : undefined;
+  if (!command && !url) return { kind: 'invalid' };
 
-  const env = isRecord(entry.env)
-    ? Object.entries(entry.env).filter(([name]) => !isForbiddenKey(name)).map(([name, value]) => (isEnvReference(value) ? { name, reference: value as string } : { name }))
-    : [];
+  const args = Array.isArray(entry.args) ? entry.args : [];
+  const rawEnvNames = isRecord(entry.env) ? Object.keys(entry.env).filter((name) => !isForbiddenKey(name)) : [];
+  const forwarded = stringArray(entry.env_vars) ?? [];
   const headers = isRecord(entry.headers) ? entry.headers : isRecord(entry.http_headers) ? entry.http_headers : {};
+  const headerNames = Object.keys(headers).filter((name) => !isForbiddenKey(name));
+  const otherKeys = Object.keys(entry).filter((key) => !['command', 'args', 'url', 'type', 'env', 'env_vars', 'headers', 'http_headers'].includes(key) && !isForbiddenKey(key));
+
+  const candidates = [...rawEnvNames, ...forwarded];
+  const envNames = [...new Set(candidates.filter((name) => isSafeIdentifier(name)))].sort();
+  const commandName = command ? commandNameOf(command) : undefined;
+  const origin = url ? urlOriginOf(url) : null;
+  const transport = typeof entry.type === 'string' && KNOWN_TRANSPORTS.has(entry.type) ? entry.type : undefined;
 
   const definition: InventoryMcpDefinition = {
-    env: env.sort((a, b) => a.name.localeCompare(b.name)),
-    forwardedEnv: [...(stringArray(entry.env_vars) ?? [])].sort(),
-    headerNames: Object.keys(headers).filter((k) => !isForbiddenKey(k)).sort(),
-    omittedKeys: Object.keys(entry).filter((k) => !CARRIED_KEYS.has(k) && !isForbiddenKey(k)).sort(),
-    withheldValues: withheld,
+    argumentCount: args.length,
+    envNames,
+    // Near every real server has something past these fields. It's false only when what's shown is all there is.
+    detailsWithheld: args.length > 0
+      || (command !== undefined && commandName !== command)
+      || (url !== undefined && (!origin || !origin.host || url.replace(/\/$/, '').toLowerCase() !== `${origin.scheme}://${origin.host}`))
+      || (typeof entry.type === 'string' && !transport)
+      || rawEnvNames.length > 0
+      || candidates.some((name) => !envNames.includes(name))
+      || headerNames.length > 0
+      || otherKeys.length > 0,
   };
-  if (command) definition.command = command;
-  if (args) definition.args = args;
-  if (url) definition.url = url;
-  if (typeof entry.type === 'string') definition.type = entry.type;
-  return { kind: 'definition', definition };
+  if (commandName) definition.commandName = commandName;
+  if (origin) definition.url = origin;
+  if (transport) definition.transport = transport;
+
+  const details = JSON.stringify([command ?? null, args, url ?? null, entry.type ?? null, rawEnvNames.sort(), [...forwarded].sort(), headerNames.sort(), otherKeys.sort()]);
+  return { kind: 'definition', definition, details };
 }
 
 /** The server map in a JSON config, or null when it doesn't parse as an object. */
