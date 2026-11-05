@@ -12,9 +12,9 @@ describe('help-content', () => {
     expect(ids).toEqual(['general', 'projects', 'agents', 'plugins', 'settings', 'troubleshooting', 'personas']);
   });
 
-  it('has 36 total topics', () => {
+  it('has 37 total topics', () => {
     const total = HELP_SECTIONS.reduce((sum, s) => sum + s.topics.length, 0);
-    expect(total).toBe(36);
+    expect(total).toBe(37);
   });
 
   it('each section has at least 1 topic', () => {
@@ -51,9 +51,9 @@ describe('help-content', () => {
     expect(agents?.topics).toHaveLength(7);
   });
 
-  it('Settings section has 4 topics', () => {
+  it('Settings section has 5 topics', () => {
     const settings = HELP_SECTIONS.find((s) => s.id === 'settings');
-    expect(settings?.topics).toHaveLength(4);
+    expect(settings?.topics).toHaveLength(5);
   });
 
   it('includes key new topics', () => {
@@ -210,10 +210,10 @@ describe('help-content in the new shell', () => {
     }
   });
 
-  it('lists Annex under Settings only when asked', () => {
+  it('lists Annex under Settings in both shells (#2811)', () => {
+    const settingsIds = () => getHelpSections().find((s) => s.id === 'settings')!.topics.map((t) => t.id);
+    expect(settingsIds()).toContain('settings-annex');
     useChromeFlagStore.setState({ enabled: true });
-    const settingsIds = (sections: typeof HELP_SECTIONS) => sections.find((s) => s.id === 'settings')!.topics.map((t) => t.id);
-    expect(settingsIds(getHelpSections())).not.toContain('settings-annex');
-    expect(settingsIds(getHelpSections({ annex: true }))).toContain('settings-annex');
+    expect(settingsIds()).toContain('settings-annex');
   });
 });

@@ -2,7 +2,7 @@
 
 Annex connects Clubhouse instances on the same local network, so one machine can watch and drive the agents on another. The machine being controlled is the **satellite**. The one doing the controlling is the **controller**. The Annex iOS app pairs the same way a controller does.
 
-Open Settings with `⌘,` to find the two Annex pages: **Annex** for this machine as a satellite, and **Annex control** for this machine as a controller.
+Annex is off until you turn it on. Open Settings with `⌘,` to find the two Annex pages: **Annex** for this machine as a satellite, and **Annex control** for this machine as a controller.
 
 ## Let another machine control this one
 

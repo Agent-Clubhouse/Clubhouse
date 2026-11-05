@@ -20,6 +20,7 @@ import pluginsCreating from './content/plugins-creating.md';
 import settingsThemes from './content/settings-themes.md';
 import settingsSound from './content/settings-sound.md';
 import settingsNotifications from './content/settings-notifications.md';
+import settingsAnnex from './content/settings-annex.md';
 import settingsLogging from './content/settings-logging.md';
 import troubleshootingCommon from './content/troubleshooting-common.md';
 import troubleshootingSafeMode from './content/troubleshooting-safe-mode.md';
@@ -119,7 +120,7 @@ export const HELP_SECTIONS: HelpSection[] = [
       { id: 'settings-themes', title: 'Display & Themes', content: settingsThemes },
       { id: 'settings-sound', title: 'Sound & Audio', content: settingsSound },
       { id: 'settings-notifications', title: 'Notifications & Badges', content: settingsNotifications },
-      // Annex help topics are gated behind the experimental flag (visible only when opted in)
+      { id: 'settings-annex', title: 'Annex', content: settingsAnnex },
       { id: 'settings-logging', title: 'Logging & Diagnostics', content: settingsLogging },
     ],
   },
@@ -220,6 +221,7 @@ export const CHROME_HELP_SECTIONS: HelpSection[] = [
       { id: 'settings-themes', title: 'Display and themes', content: settingsThemesChrome },
       { id: 'settings-sound', title: 'Sound', content: settingsSoundChrome },
       { id: 'settings-notifications', title: 'Notifications and badges', content: settingsNotificationsChrome },
+      { id: 'settings-annex', title: 'Annex', content: settingsAnnexChrome },
       { id: 'settings-logging', title: 'Logging and diagnostics', content: settingsLogging },
     ],
   },
@@ -234,14 +236,7 @@ export const CHROME_HELP_SECTIONS: HelpSection[] = [
   { ...section('personas'), title: 'Agent personas', topics: retitle(section('personas').topics, PERSONA_TITLES) },
 ];
 
-/** Annex lives in Settings only on builds that show the Annex pages (preview-eligible). */
-const ANNEX_TOPIC: HelpTopic = { id: 'settings-annex', title: 'Annex', content: settingsAnnexChrome };
-
 /** The active shell's built-in sections. */
-export function getHelpSections(opts: { annex?: boolean } = {}): HelpSection[] {
-  if (!isNewChromeEnabled()) return HELP_SECTIONS;
-  if (!opts.annex) return CHROME_HELP_SECTIONS;
-  return CHROME_HELP_SECTIONS.map((s) => (s.id === 'settings'
-    ? { ...s, topics: [...s.topics.slice(0, 3), ANNEX_TOPIC, ...s.topics.slice(3)] }
-    : s));
+export function getHelpSections(): HelpSection[] {
+  return isNewChromeEnabled() ? CHROME_HELP_SECTIONS : HELP_SECTIONS;
 }

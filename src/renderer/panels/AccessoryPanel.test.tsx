@@ -64,6 +64,18 @@ describe('SettingsCategoryNav (via AccessoryPanel)', () => {
     unmount();
   });
 
+  it('shows the Annex pages on every build, Preview or not (#2811)', async () => {
+    window.clubhouse.app.isPreviewEligible = vi.fn().mockResolvedValue(false);
+    render(<AccessoryPanel />);
+    // Listed at once, and still listed once the eligibility answer has arrived.
+    expect(screen.getByText('Annex')).toBeInTheDocument();
+    expect(screen.getByText('Annex control')).toBeInTheDocument();
+    await waitFor(() => expect(window.clubhouse.app.isPreviewEligible).toHaveBeenCalled());
+    expect(screen.getByText('Annex')).toBeInTheDocument();
+    expect(screen.getByText('Annex control')).toBeInTheDocument();
+    expect(screen.queryByText('Experimental')).not.toBeInTheDocument();
+  });
+
   it('re-evaluates preview eligibility when previewChannel changes', async () => {
     window.clubhouse.app.isPreviewEligible = vi.fn().mockResolvedValue(false);
     const { unmount, rerender } = render(<AccessoryPanel />);

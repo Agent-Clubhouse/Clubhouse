@@ -1,36 +1,37 @@
-# Annex (iOS Companion)
+# Annex
 
-Annex lets you monitor and interact with your agents from an iOS device on the same local network.
+Annex connects Clubhouse instances on the same local network, so one machine can watch and drive the agents on another. The machine being controlled is the **satellite**. The one doing the controlling is the **controller**. The Annex iOS app pairs the same way a controller does.
 
-## Setup
+Annex is off until you turn it on. Open Settings to find the two Annex pages: **Annex** for this machine as a satellite, and **Annex control** for this machine as a controller.
 
-1. Open **Settings > Annex**
-2. Toggle the local server **on**
-3. A 6-digit PIN is displayed
-4. On your iOS device, open the Annex app and enter the PIN to pair
+## Let another machine or the iOS app control this one
 
-Devices are discovered automatically via Bonjour/mDNS on your local network.
+1. Open **Settings > Annex** and turn on **Allow remote control**.
+2. Set a **Device name**, and an **Alias** and **Color** under **Identity**, so the controller can tell machines apart.
+3. Note the **Pairing PIN**. **Regenerate** gives you a new one.
 
-## What You Can Do from iOS
+The page also shows the server status and how many devices are connected.
 
-- See agent status in real time (working, idle, error, needs permission)
-- **Approve or deny** permission requests remotely
-- View tool call details and agent activity
+## Control another machine
 
-> **Example:** Step away from your desk and approve a permission request from your phone when an agent is waiting.
+1. Open **Settings > Annex control** and turn on **Connect to satellites**.
+2. Click **Add satellite**. Satellites found on the network are listed. Click **Scan** to look again.
+3. Click **Pair** on the satellite you want.
+4. Enter the satellite's PIN and click **Pair**.
 
-## Settings
-
-| Setting | Description |
-|---------|-------------|
-| **Server toggle** | Enable/disable the local Annex server |
-| **Status & port** | Shows whether the server is running and on which port |
-| **Connected devices** | Count of currently paired devices |
-| **PIN** | Display and regenerate the pairing PIN |
-| **Device name** | Custom name shown to iOS clients |
+After pairing, the two machines reconnect on their own. No PIN is needed again.
 
 ## Security
 
-- All communication stays on your **local network** — nothing goes to external servers
-- PIN pairing prevents unauthorized device access
-- Regenerate the PIN anytime to revoke existing pairings
+- Everything stays on your local network. There's no cloud service in between.
+- Each instance has its own key pair. After pairing, connections use mutual TLS, and each side checks the other's certificate.
+- After 3 wrong PINs from one address, pairing slows down. After 6, it locks for 5 minutes.
+- **Reset Annex** on the Annex page, and **Forget all satellites** on the Annex control page, drop all pairings, so every device has to pair again.
+
+## If something goes wrong
+
+| Problem | Try |
+|---------|-----|
+| Satellite not found | Check both machines are on the same network and remote control is on. Click **Scan**. A firewall can block discovery. |
+| Connection keeps dropping | Check the network between the machines. The controller retries on its own. |
+| Pairing locked | Wait 5 minutes and try again. |

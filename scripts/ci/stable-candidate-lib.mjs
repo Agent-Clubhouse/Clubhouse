@@ -2,7 +2,7 @@
 // anything, kept apart so they can be tested with fakes.
 import fs from 'node:fs';
 import path from 'node:path';
-import { BETA_FLAGS, PREVIEW_ONLY_FLAGS, PREVIEW_PAGES } from '../../e2e/stable-state-seeds.mjs';
+import { ANNEX_PAGES, BETA_FLAGS, PREVIEW_ONLY_FLAGS, PREVIEW_PAGES } from '../../e2e/stable-state-seeds.mjs';
 
 /** Fuse wire values are ASCII '0'/'1', in the order of forge.config.ts `hardenedFuseValues`. */
 export const HARDENED_FUSE_WIRE = [48, 49, 48, 48, 49, 49];
@@ -196,7 +196,7 @@ export function expectedFor({ state, preview, flags }) {
     newChrome: inForce,
     chatEnabled: inForce,
     flagsInForce: inForce ? BETA_FLAGS : null,
-    settingsPages: !preview ? [] : flags ? PREVIEW_PAGES : ['Experimental', 'Annex', 'Annex control'],
+    settingsPages: !preview ? ANNEX_PAGES : flags ? [...ANNEX_PAGES, ...PREVIEW_PAGES] : [...ANNEX_PAGES, 'Experimental'],
     dispatcherRow: inForce && state === 'beta',
     // Only asserted when it must be false: with no CLI on the runner, true can't be reached.
     wakesInChatMustBeFalse: state === 'beta' && !inForce,
@@ -240,7 +240,7 @@ export function rendererProbeSource({ agentId, orchestrator, projectPath }) {
     document.querySelector('[data-testid="nav-settings"]').click();
     await until(() => navLabels().includes('Updates'), 10000);
     await new Promise((r) => setTimeout(r, 2000));
-    observed.settingsPages = ${JSON.stringify(PREVIEW_PAGES)}.filter((page) => navLabels().includes(page));
+    observed.settingsPages = ${JSON.stringify([...ANNEX_PAGES, ...PREVIEW_PAGES])}.filter((page) => navLabels().includes(page));
     document.querySelector('[data-testid="nav-settings"]').click();
     return observed;
   })()`;
