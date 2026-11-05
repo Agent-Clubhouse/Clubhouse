@@ -250,6 +250,19 @@ describe('a repo-carried worktrees/ entry can\'t vouch for an outside path', () 
       expect(dirs.calls.filter((c) => c.includes(elsewhere))).toEqual([]);
     });
 
+    it('refuses a `.git` naming a second entry that doesn\'t name it back', async () => {
+      fs.mkdirSync(outside, { recursive: true });
+      const project = localEntry(`${outside}/.git`);
+      const second = path.join(project, '.git', 'worktrees', 'y');
+      write(second, 'gitdir', `${path.join(root, 'somewhere-else', '.git')}\n`);
+      write(outside, '.git', `gitdir: ${second}\n`);
+
+      const result = await scan();
+
+      expect(result.externalReferences[0].reason).toBe('unverified-worktree');
+      expect(result.entries).toEqual([]);
+    });
+
     it('refuses a `.git` file pointing at the entry when the entry points elsewhere', async () => {
       const project = localEntry(path.join(root, 'not-outside', '.git'));
       write(outside, '.git', `gitdir: ${path.join(project, '.git', 'worktrees', 'x')}\n`);
@@ -399,9 +412,10 @@ describe('the git version floor', () => {
 });
 
 describe('huge input', () => {
-  it('stays linear on text built to make the secret patterns rescan', () => {
+  it('keeps the secret patterns linear on long repetitive text', () => {
     const size = 200_000;
     for (const text of [
+      'a'.repeat(size),
       'sk-'.repeat(size / 3),
       'xoxb-'.repeat(size / 5),
       '-----BEGIN '.repeat(size / 11),
@@ -414,6 +428,20 @@ describe('huge input', () => {
       hasSecretLookingContent(text);
       expect(Date.now() - started).toBeLessThan(5000);
     }
+  });
+
+  // What once took 10 s at 160k characters, on the main process, past any deadline: a regex over
+  // these strings. Short enough here that a quadratic one fails this rather than hanging the run.
+  it('isn\'t held up by long strings in a definition', async () => {
+    const project = makeDir('long');
+    const long = 'a'.repeat(300_000);
+    write(project, '.mcp.json', JSON.stringify({ mcpServers: { a: { command: long, args: [long], url: long }, b: { url: `https://${long}` } } }));
+    register([project]);
+    const started = Date.now();
+
+    await scan();
+
+    expect(Date.now() - started).toBeLessThan(15_000);
   });
 
   it('handles a config at the size limit, past a short deadline, without being held up', async () => {
@@ -441,6 +469,19 @@ describe('huge input', () => {
     expect(result.projects[0].truncated).toBe(true);
     expect(result.entries).toHaveLength(1000);
     expect(result.projects[0].excluded['over-limit']).toBe(199_000);
+  });
+
+  it('lets a short deadline fire while reading a very long list of servers', async () => {
+    const project = makeDir('manyfast');
+    const servers: Record<string, unknown> = {};
+    for (let i = 0; i < 200_000; i++) servers[`s${i}`] = { command: 'x' };
+    write(project, '.mcp.json', JSON.stringify({ mcpServers: servers }));
+    register([project]);
+
+    const result = await scan({ projectTimeoutMs: 20, limits: { maxServersPerFile: 1_000_000 } });
+
+    expect(result.projects[0]).toMatchObject({ status: 'unavailable', reason: 'timeout' });
+    expect(result.entries).toEqual([]);
   });
 
   it('survives settings nested deep enough to overflow a recursive walk', async () => {

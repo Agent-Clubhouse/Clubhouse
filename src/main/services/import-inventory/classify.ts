@@ -6,8 +6,8 @@ import * as path from 'path';
 
 const SECRET_FILE_NAMES = /^\.env(\..*)?$|\.(pem|key|p12|pfx|keystore|jks)$|^id_(rsa|dsa|ecdsa|ed25519)(\.pub)?$|^\.(netrc|npmrc|pypirc)$|credential|secret|token|password|passwd/i;
 
-// Bounded runs only, no `{n,}` and no trailing `\b`: text like `sk-sk-sk-...` otherwise
-// rescans the rest of the file from every start, and a regex can't be cancelled.
+// Bounded runs only, so no match can scan far from its start. A regex can't be
+// cancelled and runs on the main process; a test holds these to linear time.
 const SECRET_CONTENT = [
   /-----BEGIN [A-Z ]{0,40}PRIVATE KEY-----/,
   /\bAKIA[0-9A-Z]{16}/,
