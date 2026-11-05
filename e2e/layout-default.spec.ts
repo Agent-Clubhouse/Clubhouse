@@ -279,7 +279,7 @@ test.describe.serial('default path smoke', () => {
   }
 
   test.beforeAll(async () => {
-    smokeFakes = await installFakeClis({ claude: 'session-info' });
+    smokeFakes = await installFakeClis({ claude: 'session-info' }, { npmStyleShims: true });
     const dirs = [
       makeProject('smoke-alpha', { owner: smokeDirs, agents: [{
         id: SEEDED_AGENT_ID, name: SEEDED_AGENT, color: 'emerald', createdAt: new Date().toISOString(), orchestrator: 'claude-code',
