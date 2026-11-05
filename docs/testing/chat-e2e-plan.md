@@ -146,7 +146,9 @@ Recording costs tokens, and a recording names your machine's paths, so area fixt
 
 ## Phase 3 graduation gate
 
-`richChatContent` became the default for v1.0.0 (the harness now runs on the default, and the flag-off spec turns it off). The gate as it was written:
+Status: the default flipped for v1.0.0. The window starts with the first main run after that. Counted: five completed main Validate runs that actually ran chat jobs, first attempt, no retry-passes. Skipped runs, runs with no chat jobs, and runs cancelled before chat results neither count nor reset. An observed chat failure or retry-pass resets the count even if the run was later cancelled. An unrelated job failure doesn't reset it. Critical path is compared against comparable PR runs. macOS stays unmeasured until a baseline number exists.
+
+`richChatContent` becomes the default only when all of these hold:
 
 - [ ] Every area spec (0 to 8) is merged and green on Linux and Windows.
 - [ ] Five consecutive Validate runs on `main` have every `Chat E2E Tests` job green on the first attempt, with no test marked flaky.
