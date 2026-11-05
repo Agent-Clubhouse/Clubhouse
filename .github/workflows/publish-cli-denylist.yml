@@ -7,7 +7,7 @@ name: Publish CLI Denylist
 #
 # Preview the change, from main or from the branch of the PR that adds the entry:
 #   gh workflow run publish-cli-denylist.yml --ref <branch>
-# Publish, once that PR has merged:
+# Publish, once that PR has merged. This writes at once, with no approval step:
 #   gh workflow run publish-cli-denylist.yml --ref main -f dry_run=false
 #
 # There is no input for the list. The only thing this can publish is the file on
@@ -56,8 +56,8 @@ jobs:
       contents: read
       id-token: write
     steps:
-      # Main as it is now, not as it was at dispatch: the environment's approval
-      # can take a while, and a re-run of an old run mustn't publish an old list.
+      # Main as it is now, not as it was at dispatch: a run can queue behind
+      # another, and a re-run of an old run mustn't publish an old list.
       - uses: actions/checkout@v7
         with:
           ref: main

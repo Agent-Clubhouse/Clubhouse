@@ -49,7 +49,7 @@ case "$args" in
   "storage blob show"*)
     if [ "$query" = "properties.etag" ]; then
       [ -f "$STORE/$name" ] || { echo "BlobNotFound: $name" >&2; exit 3; }
-      etag
+      if [ "${EMPTY_ETAG_OF:-}" != "$name" ]; then etag; fi
     else
       echo success
     fi ;;

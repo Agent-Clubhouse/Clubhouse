@@ -26,13 +26,23 @@
 // is the publish path: sets chatCliDenylist in a live manifest, leaving every
 // other byte as it was. Prints `status=updated|unchanged`. A null list fails, and
 // [] fails without --allow-clear.
+//
+//   node scripts/ci/cli-denylist.mjs check-change --base REV --head REV
+//
+// is the Validate check: fails when the change from base to head takes the file
+// from an array back to null, or deletes it. A release would then leave the field
+// out, which keeps the saved list, so clients stay blocked by an entry nobody
+// lists any more. A `git revert` of the first entry's PR does exactly this.
+// Prints `status=ok|skipped`; skipped means there's no usable base to compare.
 
+import { execFileSync } from 'node:child_process';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { encodeLike, valueSpans } from './release-notes.mjs';
 
 const FIELD = 'chatCliDenylist';
+const LIST_PATH = 'release/chat-cli-denylist.json';
 
 // The client's rules, from sanitizeDenylist in
 // src/main/services/agent-runtime/chat-version-policy.ts. A client drops a bad
@@ -199,6 +209,25 @@ export function setManifestList(text, list) {
   return { status: 'updated', text: out };
 }
 
+/**
+ * Why the file can't go from `before` to `after`, or undefined when it can. Each
+ * is the file's text, or null when it doesn't exist. Whether `after` is a valid
+ * list is the unit job's check, so text that doesn't parse isn't judged here.
+ */
+export function listChangeProblem(before, after) {
+  const parse = (text) => {
+    try {
+      return { value: JSON.parse(text) };
+    } catch {
+      return undefined;
+    }
+  };
+  if (before === null || !Array.isArray(parse(before)?.value)) return undefined;
+  if (after !== null && parse(after)?.value !== null) return undefined;
+  const change = after === null ? 'deletes it' : 'sets it back to null';
+  return `${LIST_PATH} holds a list, and this change ${change}. A release would then leave the field out, which keeps the saved list, so clients that saved an entry stay blocked. To lift the last entry, use [] instead.`;
+}
+
 // ── CLI ─────────────────────────────────────────────────────────────────────
 
 function parseArgs(argv) {
@@ -255,7 +284,32 @@ export function main(argv) {
     return 0;
   }
 
-  throw new DenylistError(`Unknown command "${command ?? ''}". Use validate, add-to-manifest or rewrite-manifest.`);
+  if (command === 'check-change') {
+    const git = (...a) => execFileSync('git', a, { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] });
+    const head = need(args, 'head');
+    const show = (rev) => {
+      try {
+        return git('show', `${rev}:${LIST_PATH}`);
+      } catch {
+        return null;
+      }
+    };
+    // What this change did, not how it compares to a base that moved on since the
+    // branch was cut. A new branch or a force-push has no base to compare.
+    let base;
+    try {
+      base = git('merge-base', args.base ?? '', head).trim();
+    } catch {
+      console.log('status=skipped');
+      return 0;
+    }
+    const problem = listChangeProblem(show(base), show(head));
+    if (problem) throw new DenylistError(problem);
+    console.log('status=ok');
+    return 0;
+  }
+
+  throw new DenylistError(`Unknown command "${command ?? ''}". Use validate, add-to-manifest, rewrite-manifest or check-change.`);
 }
 
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {

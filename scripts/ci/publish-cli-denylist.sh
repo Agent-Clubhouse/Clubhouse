@@ -62,6 +62,10 @@ for BLOB in "${BLOBS[@]}"; do
     # Pin the blob's ETag so anything else writing it at the same time makes the
     # upload fail instead of being overwritten.
     ETAG=$(az storage blob show "${AZ_BLOB[@]}" --name "$BLOB" --query properties.etag --output tsv)
+    if [ -z "$ETAG" ]; then
+      echo "::error::No ETag for ${BLOB}, so an upload couldn't be pinned to what was read. Nothing was written; re-run."
+      exit 1
+    fi
     az storage blob download "${AZ_BLOB[@]}" --name "$BLOB" --file "$FILE" --if-match "$ETAG" --output none
   fi
 

@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { readFileSync } from 'node:fs';
+import { execFileSync, spawnSync } from 'node:child_process';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
@@ -14,6 +15,7 @@ import {
   MAX_DENYLIST_ENTRIES as SCRIPT_MAX_ENTRIES,
   MAX_VERSIONS_PER_ENTRY as SCRIPT_MAX_VERSIONS,
   compareVersions,
+  listChangeProblem,
   main,
   readList,
   setManifestList,
@@ -205,6 +207,125 @@ describe('setManifestList', () => {
 
   it.each([['not JSON', 'nope'], ['an array', '[]'], ['no version', '{}'], ['a truncated file', '{"version":"1.0.0"']])('refuses %s', (_label, text) => {
     expect(() => setManifestList(text, LIST)).toThrow();
+  });
+});
+
+describe('listChangeProblem', () => {
+  const LIST = JSON.stringify([entry()]);
+
+  it.each([
+    ['entries to null', LIST, 'null\n', 'sets it back to null'],
+    ['[] to null', '[]\n', 'null\n', 'sets it back to null'],
+    ['entries to deleted', LIST, null, 'deletes it'],
+    ['[] to deleted', '[]\n', null, 'deletes it'],
+  ])('refuses %s, and says to use []', (_label, before, after, says) => {
+    const problem = listChangeProblem(before, after);
+    expect(problem).toContain(says);
+    expect(problem).toContain('use [] instead');
+  });
+
+  it.each([
+    ['null to entries', 'null\n', LIST],
+    ['null to null', 'null\n', 'null\n'],
+    ['null to []', 'null\n', '[]\n'],
+    ['entries to []', LIST, '[]\n'],
+    ['[] to entries', '[]\n', LIST],
+    ['entries to other entries', LIST, JSON.stringify([entry({ reason: 'other' })])],
+    ['a new file', null, 'null\n'],
+    ['never existing', null, null],
+    ['null to deleted', 'null\n', null],
+    ['a base that does not parse', 'nope', 'null\n'],
+    ['a head that does not parse, which the unit job catches', LIST, 'nope'],
+  ])('allows %s', (_label, before, after) => {
+    expect(listChangeProblem(before, after)).toBeUndefined();
+  });
+});
+
+describe('check-change against real git history', () => {
+  const SCRIPT = path.join(__dirname, 'cli-denylist.mjs');
+  const FILE = 'release/chat-cli-denylist.json';
+  const REPO_VALIDATE = readFileSync(path.join(REPO, '.github/workflows/validate.yml'), 'utf8');
+  let dir: string;
+
+  const git = (...args: string[]) => execFileSync('git', [
+    '-c', 'user.name=Test', '-c', 'user.email=test@example.com', '-c', 'commit.gpgsign=false', ...args,
+  ], { cwd: dir, encoding: 'utf8' }).trim();
+  const commitList = (text: string, message = 'list') => {
+    fs.writeFileSync(path.join(dir, FILE), text);
+    git('add', '-A');
+    git('commit', '-q', '-m', message);
+    return git('rev-parse', 'HEAD');
+  };
+  const check = (base: string, head: string) => {
+    const result = spawnSync(process.execPath, [SCRIPT, 'check-change', '--base', base, '--head', head], { cwd: dir, encoding: 'utf8' });
+    return { status: result.status, output: `${result.stdout}${result.stderr}` };
+  };
+
+  beforeEach(() => {
+    dir = fs.mkdtempSync(path.join(os.tmpdir(), 'cli-denylist-git-'));
+    git('init', '-q', '-b', 'main');
+    fs.mkdirSync(path.join(dir, 'release'));
+  });
+  afterEach(() => {
+    fs.rmSync(dir, { recursive: true, force: true });
+  });
+
+  it('refuses a git revert of the PR that added the first entry', () => {
+    commitList('null\n');
+    const first = commitList(`${JSON.stringify([entry()])}\n`, 'First entry');
+    git('revert', '--no-edit', first);
+    const result = check(first, 'HEAD');
+    expect(result.status).toBe(1);
+    expect(result.output).toContain('use [] instead');
+  });
+
+  it('allows lifting the last entry with []', () => {
+    commitList('null\n');
+    const first = commitList(`${JSON.stringify([entry()])}\n`);
+    expect(check(first, commitList('[]\n'))).toMatchObject({ status: 0, output: 'status=ok\n' });
+  });
+
+  it('refuses deleting the file', () => {
+    const first = commitList(`${JSON.stringify([entry()])}\n`);
+    git('rm', '-q', FILE);
+    git('commit', '-q', '-m', 'gone');
+    expect(check(first, 'HEAD').status).toBe(1);
+  });
+
+  it('judges the branch, not a base that moved on: main gaining an entry doesn\'t fail an older PR', () => {
+    const cut = commitList('null\n');
+    const main = commitList(`${JSON.stringify([entry()])}\n`);
+    git('checkout', '-q', '-b', 'pr', cut);
+    fs.writeFileSync(path.join(dir, 'other.txt'), 'x');
+    git('add', '-A');
+    git('commit', '-q', '-m', 'unrelated');
+    expect(check(main, 'HEAD')).toMatchObject({ status: 0 });
+  });
+
+  it('refuses a reset on a branch even after main moved on', () => {
+    const cut = commitList(`${JSON.stringify([entry()])}\n`);
+    const main = commitList(`${JSON.stringify([entry({ reason: 'later' })])}\n`);
+    git('checkout', '-q', '-b', 'pr', cut);
+    commitList('null\n');
+    expect(check(main, 'HEAD').status).toBe(1);
+  });
+
+  it.each([
+    ['empty', ''],
+    ['all zeros, from a new branch', '0'.repeat(40)],
+    ['gone, from a force-push', 'a'.repeat(40)],
+  ])('skips with a base that is %s', (_label, base) => {
+    commitList('null\n');
+    expect(check(base, 'HEAD')).toMatchObject({ status: 0, output: 'status=skipped\n' });
+  });
+
+  it('runs in the job every change goes through, with the history it needs', () => {
+    const plan = REPO_VALIDATE.slice(REPO_VALIDATE.indexOf('\n  changes:'), REPO_VALIDATE.indexOf('\n  lint:'));
+    const step = plan.slice(plan.indexOf('- name: Check the CLI kill switch list'), plan.indexOf('- name: Classify the change'));
+    expect(step).toContain('node scripts/ci/cli-denylist.mjs check-change --base "$BASE" --head "$HEAD"');
+    expect(step).toContain('github.event.pull_request.base.sha || github.event.before');
+    expect(step).toContain('github.event.pull_request.head.sha || github.sha');
+    expect(plan).toContain('fetch-depth: 0');
   });
 });
 

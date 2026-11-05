@@ -27,12 +27,13 @@ Tags must be `vX.Y.Z` or `vX.Y.Z-beta.N`, and legacy `vX.Y.Zrc` tags still parse
 
 ## If a step fails
 
-The recovery is GitHub's **Re-run failed jobs** once the cause is fixed. No step is a reason to cut a new version, with the two exceptions below.
+The recovery is GitHub's **Re-run failed jobs** once the cause is fixed. No step is a reason to cut a new version, with the exceptions below.
 
 These are the effects for a stable tag. A beta tag is the same with the preview feed and slots, and stable users are never affected.
 
 | Failed at | What users see | Notes |
 |---|---|---|
+| Generate update manifest | Nothing changes | Nothing was written. This step checks main's `release/chat-cli-denylist.json` with the tag's copy of the script. See below for a bad list, and for a re-run of an older tag |
 | 0. Preflight | Nothing changes | Nothing was written |
 | 1. Artifacts | Nothing changes | Nothing points at the uploaded files. A re-run skips identical files |
 | 2. Squirrel | Nothing changes on macOS or Linux. Windows clients don't update until a manifest says to | A preview client with a beta restart pending may land on the stable build, which is fine |
@@ -44,6 +45,9 @@ These are the effects for a stable tag. A beta tag is the same with the preview 
 **When a re-run isn't enough, cut a new version:**
 - An artifact already exists with different bytes. The run stops rather than replacing a published file.
 - Build artifacts last 5 days. After that a re-run rebuilds them, the signed bytes differ, and the run stops for the same reason.
+- A re-run of an older tag, when main's chat CLI list names a driver or provider that tag's script doesn't know. Generate update manifest fails before any write. Don't take the entry off the list to get past it: that release's manifest would then replace clients' lists without the entry.
+
+**A list on main that fails validation stops Generate update manifest too.** Fix the file on main, then re-run. The step reads main again.
 
 **Preflight also stops the run for these**, and they need fixing first:
 - `updates/v2/history.json` can't be read, is missing, or isn't a non-empty array. Restore it. The run won't start a new history.
@@ -119,7 +123,7 @@ An entry names a `driver` or a `provider`, and has `versions`, a `range`, or bot
    gh workflow run publish-cli-denylist.yml --ref <branch>
    ```
 3. Merge the PR once Validate is green. A PR that edits only this file runs no E2E or macOS build, and its unit job checks the file. Nothing reaches clients yet, except through a release that happens to start after this.
-4. Publish from main, and approve the `release` environment. It re-reads the file from main at this point.
+4. Publish from main. This writes at once: the `release` environment has no protection rules, so nobody approves it, and the dispatch is the last check. It re-reads the file from main at this point.
    ```
    gh workflow run publish-cli-denylist.yml --ref main -f dry_run=false
    ```
@@ -134,7 +138,9 @@ An entry names a `driver` or a `provider`, and has `versions`, a `range`, or bot
 
 Follow the same steps with the entry removed. Clients replace their list with the new one, and a blocked CLI goes back to chat at the agent's next start.
 
-Removing the last entry leaves `[]`, and step 4 needs `-f clear_list=true`. Don't set the file back to `null`.
+Removing the last entry leaves `[]`, and step 4 needs `-f clear_list=true`.
+
+Don't set the file back to `null`, which leaves every client that saved the entry blocked. A `git revert` of the PR that added the first entry does exactly that. The Plan the run job in Validate fails on any change from an array to `null`, or one that deletes the file, and says to use `[]`.
 
 ### What a failed publish leaves
 

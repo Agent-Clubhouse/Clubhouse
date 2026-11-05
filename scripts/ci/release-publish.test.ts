@@ -507,12 +507,40 @@ describe.skipIf(!CAN_RUN)('chat CLI denylist', { timeout: 60_000 }, () => {
       expect(s.writes()).toEqual(['upload updates/latest.json']);
     });
 
-    it('refuses while a release is running', () => {
+    // The fake gh applies the script's own --jq filter to these runs.
+    it.each([
+      ['in progress', ['in_progress']],
+      ['queued', ['queued']],
+      ['waiting', ['waiting']],
+      ['requested', ['requested']],
+      ['pending', ['pending']],
+      ['active among finished ones', ['completed', 'in_progress', 'completed']],
+    ])('refuses while a release is %s', (_label, statuses) => {
       const s = sandbox([ENTRY]);
-      s.seed('.active-releases', '1\n');
+      s.seed('.release-runs', JSON.stringify(statuses.map((status) => ({ status }))));
       expect(publish(s)).not.toBe(0);
       expect(s.lastOutput).toContain('A Release run is in progress');
       expect(s.writes()).toEqual([]);
+      expect(s.calls().filter((c) => c.startsWith('az '))).toEqual([]);
+    });
+
+    it.each([
+      ['every recent release finished', ['completed', 'completed']],
+      ['no recent release', []],
+    ])('goes ahead with %s', (_label, statuses) => {
+      const s = sandbox([ENTRY]);
+      s.seed('.release-runs', JSON.stringify(statuses.map((status) => ({ status }))));
+      expect(publish(s)).toBe(0);
+      expect(s.writes()).toEqual(UPLOADS);
+    });
+
+    it.each(ALL_BLOBS)('stops on an empty ETag for %s, rather than passing it to az', (blob) => {
+      const s = sandbox([ENTRY]);
+      expect(publish(s, { EMPTY_ETAG_OF: blob })).not.toBe(0);
+      expect(s.lastOutput).toContain(`No ETag for ${blob}`);
+      expect(s.writes()).toEqual([]);
+      expect(s.calls().some((c) => c.includes('blob download') && c.includes(`--name ${blob} `))).toBe(false);
+      expect(s.calls().some((c) => /--if-match( |$)(--|$)/.test(c))).toBe(false);
     });
 
     it.each([['a branch', 'refs/heads/some-branch'], ['a tag', 'refs/tags/v1.0.0'], ['no ref', '']])('refuses from %s', (_label, ref) => {
@@ -689,6 +717,19 @@ describe.skipIf(!CAN_RUN)('chat CLI denylist', { timeout: 60_000 }, () => {
       expect(s.lastOutput).toContain('entry 0 needs a reason');
     });
 
+    it.each([
+      ['driver', { driver: 'future_driver', versions: ['1.0.0'], reason: 'hangs' }],
+      ['provider', { provider: 'future-cli', versions: ['1.0.0'], reason: 'hangs' }],
+    ])('a re-run of an older tag fails before any write when main names a %s the tag doesn\'t know', (_label, entry) => {
+      const s = sandbox(null);
+      setOrigin(s, [entry]);
+      expect(generate(s)).not.toBe(0);
+      expect(s.lastOutput).toContain('names an unknown');
+      expect(s.writes()).toEqual([]);
+      expect(s.calls().filter((c) => c.startsWith('az ') || c.startsWith('gh '))).toEqual([]);
+      for (const blob of ALL_BLOBS) expect(s.blob(blob)).toBe(manifestBytes(blob));
+    });
+
     it('fails when main can\'t be read rather than publish without the list', () => {
       const s = sandbox(null);
       expect(generate(s)).not.toBe(0);
@@ -749,7 +790,7 @@ describe('publish-cli-denylist.yml wiring', () => {
     expect(previewJob).toContain("DRY_RUN: 'true'");
   });
 
-  it('publishes only when not dry, from main, behind the release environment', () => {
+  it('publishes only when not dry, from main, with the release environment\'s credentials', () => {
     expect(publishJob).toContain('if: ${{ !inputs.dry_run }}');
     expect(publishJob).toContain('environment: release');
     expect(publishJob).toMatch(/actions\/checkout@\S+\r?\n\s+with:\r?\n\s+ref: main/);
