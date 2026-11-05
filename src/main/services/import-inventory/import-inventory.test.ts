@@ -149,7 +149,8 @@ function recordingFs(): { fs: InventoryFs; touched: string[]; resolved: string[]
 }
 
 beforeEach(() => {
-  root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'import-inventory-')));
+  // Native, as the service's is: Windows runners' temp path holds an 8.3 name only that expands.
+  root = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), 'import-inventory-')));
   dirs.home = path.join(root, '_home');
   dirs.userData = path.join(root, '_userData');
   fs.mkdirSync(dirs.home, { recursive: true });
