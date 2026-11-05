@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { describe, it, expect, afterEach, beforeEach, vi } from 'vitest';
 
 const mockIsStopping = vi.hoisted(() => vi.fn((_id?: unknown) => false));
 vi.mock('electron', () => ({
@@ -31,6 +31,12 @@ vi.mock('./log-service', () => ({
 
 const mockPtyWrite = vi.fn();
 const mockIsRunning = vi.fn().mockReturnValue(false);
+const gate = vi.hoisted(() => ({ closed: new Set<string>() }));
+vi.mock('./clubhouse-mcp/mcp-call-gate', async (original) => ({
+  ...await original<typeof import('./clubhouse-mcp/mcp-call-gate')>(),
+  mcpCallAccess: (id: string) => (gate.closed.has(id) ? 'closed' : 'open'),
+}));
+
 vi.mock('./pty-manager', () => ({
   write: (...args: unknown[]) => mockPtyWrite(...args),
   getBuffer: vi.fn(() => ''),
@@ -49,6 +55,7 @@ import {
   _DEFERRED_POLLING_DELAY_MS_FOR_TESTING,
 } from './group-project-polling';
 import { emitAgentMcpConnected } from './clubhouse-mcp/connection-events';
+import { notifyToolGateChange } from './clubhouse-mcp/orchestration-gate';
 
 function bindMember(projectId: string, agentId: string, agentName: string): void {
   bindingManager.bind(agentId, {
@@ -65,9 +72,108 @@ describe('group-project-polling', () => {
     store.clear();
     mockPtyWrite.mockClear();
     mockIsRunning.mockReturnValue(false);
+    gate.closed.clear();
     bindingManager._resetForTesting();
     groupProjectRegistry._resetForTesting();
     _resetPollingForTesting();
+  });
+
+  describe('a member without Clubhouse MCP', () => {
+    const wrote = (id: string, text: string) => mockPtyWrite.mock.calls.some((c: unknown[]) => c[0] === id && typeof c[1] === 'string' && (c[1] as string).includes(text));
+
+    async function offMember(id: string) {
+      const project = await groupProjectRegistry.create('Off');
+      agentRegistry.register(id, { projectPath: '/t', orchestrator: 'claude-code', runtime: 'pty' });
+      mockIsRunning.mockImplementation((agent: string) => agent === id);
+      bindMember(project.id, id, 'off-member');
+      gate.closed.add(id);
+      return project;
+    }
+
+    afterEach(() => { vi.useRealTimers(); });
+
+    it('gets no start instruction, and its membership and status are untouched', async () => {
+      const project = await offMember('m-off');
+      const state = await setProjectPolling(project.id, true);
+      expect(wrote('m-off', 'start polling')).toBe(false);
+      expect(state?.members).toEqual([{ agentId: 'm-off', agentName: 'off-member', status: 'connected' }]);
+      expect(_pendingStartsForTesting.get('m-off')?.has(project.id)).toBe(true);
+    });
+
+    it('gets it when MCP is back, with no restart, and only once', async () => {
+      vi.useFakeTimers();
+      const project = await offMember('m-back');
+      await setProjectPolling(project.id, true);
+
+      // A change that leaves it off sends nothing, and keeps it held.
+      notifyToolGateChange('m-back');
+      await vi.advanceTimersByTimeAsync(_DEFERRED_POLLING_DELAY_MS_FOR_TESTING + 10);
+      expect(wrote('m-back', 'start polling')).toBe(false);
+      expect(_pendingStartsForTesting.has('m-back')).toBe(true);
+
+      gate.closed.delete('m-back');
+      notifyToolGateChange('m-back');
+      await vi.advanceTimersByTimeAsync(_DEFERRED_POLLING_DELAY_MS_FOR_TESTING + 10);
+      expect(wrote('m-back', 'start polling')).toBe(true);
+      expect(_pendingStartsForTesting.has('m-back')).toBe(false);
+
+      mockPtyWrite.mockClear();
+      notifyToolGateChange('m-back');
+      await vi.advanceTimersByTimeAsync(_DEFERRED_POLLING_DELAY_MS_FOR_TESTING + 10);
+      expect(wrote('m-back', 'start polling')).toBe(false);
+    });
+
+    it('wakes nothing: one that stopped while MCP was off gets it at its next handshake', async () => {
+      vi.useFakeTimers();
+      const project = await offMember('m-gone');
+      await setProjectPolling(project.id, true);
+      agentRegistry.untrack('m-gone');
+      mockIsRunning.mockReturnValue(false);
+      gate.closed.delete('m-gone');
+      notifyToolGateChange('m-gone');
+      await vi.advanceTimersByTimeAsync(_DEFERRED_POLLING_DELAY_MS_FOR_TESTING + 10);
+      expect(mockPtyWrite).not.toHaveBeenCalled();
+      expect(_pendingStartsForTesting.has('m-gone')).toBe(true);
+      expect(agentRegistry.get('m-gone')).toBeUndefined();
+
+      agentRegistry.register('m-gone', { projectPath: '/t', orchestrator: 'claude-code', runtime: 'pty' });
+      mockIsRunning.mockImplementation((agent: string) => agent === 'm-gone');
+      emitAgentMcpConnected('m-gone');
+      await vi.advanceTimersByTimeAsync(_DEFERRED_POLLING_DELAY_MS_FOR_TESTING + 10);
+      expect(wrote('m-gone', 'start polling')).toBe(true);
+    });
+
+    it('a handshake while MCP is still off sends nothing', async () => {
+      vi.useFakeTimers();
+      const project = await offMember('m-shake');
+      await setProjectPolling(project.id, true);
+      emitAgentMcpConnected('m-shake');
+      await vi.advanceTimersByTimeAsync(_DEFERRED_POLLING_DELAY_MS_FOR_TESTING + 10);
+      expect(wrote('m-shake', 'start polling')).toBe(false);
+      expect(_pendingStartsForTesting.has('m-shake')).toBe(true);
+    });
+
+    it('polling turned off meanwhile drops the held start, and the stop instruction still goes out', async () => {
+      vi.useFakeTimers();
+      const project = await offMember('m-stop');
+      await setProjectPolling(project.id, true);
+      await setProjectPolling(project.id, false);
+      expect(wrote('m-stop', 'stop p')).toBe(true);
+      gate.closed.delete('m-stop');
+      notifyToolGateChange('m-stop');
+      await vi.advanceTimersByTimeAsync(_DEFERRED_POLLING_DELAY_MS_FOR_TESTING + 10);
+      expect(wrote('m-stop', 'start polling')).toBe(false);
+    });
+
+    it('a member with MCP still gets it at once, beside one without', async () => {
+      const project = await offMember('m-off2');
+      agentRegistry.register('m-on', { projectPath: '/t', orchestrator: 'claude-code', runtime: 'pty' });
+      mockIsRunning.mockImplementation((agent: string) => agent === 'm-off2' || agent === 'm-on');
+      bindMember(project.id, 'm-on', 'on-member');
+      await setProjectPolling(project.id, true);
+      expect(wrote('m-on', 'start polling')).toBe(true);
+      expect(wrote('m-off2', 'start polling')).toBe(false);
+    });
   });
 
   describe('setProjectPolling', () => {

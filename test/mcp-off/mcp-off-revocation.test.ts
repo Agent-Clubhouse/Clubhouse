@@ -65,6 +65,9 @@ import { helperWireBindingSource, _resetHelperWireSourceForTesting } from '../..
 import { connectionsStorePath, orchestratorConnectionSource, _resetOrchestratorConnectionsForTesting } from '../../src/main/services/orchestrator-connections';
 import { rebuildPersistedBindings, registerPersistedBindingSource, _resetPersistedBindingSourcesForTesting } from '../../src/main/services/persisted-bindings';
 import { readMcpOffImpact } from '../../src/main/services/mcp-off-impact';
+import { groupProjectRegistry } from '../../src/main/services/group-project-registry';
+import { setProjectPolling, _pendingStartsForTesting } from '../../src/main/services/group-project-polling';
+import { executeShoulderTap } from '../../src/main/services/group-project-shoulder-tap';
 
 const ORCH = 'durable_orch';
 const HELPER = 'durable_helper';
@@ -151,6 +154,9 @@ describe('Clubhouse MCP going off, for running agents', () => {
     setMcpCaller(id, path_, await agentConfig.getDurableConfig(path_, id));
     clients[id] = await client(id);
   }
+
+  let polledProject = '';
+  let polledSent: string[] = [];
 
   /** Every group, as [caller, tool]. Filled in once the wires are up. */
   let everyGroup: Array<[label: string, caller: string, tool: string]> = [];
@@ -391,6 +397,22 @@ describe('Clubhouse MCP going off, for running agents', () => {
       expect(agentRegistry.get(PEER)).toBeUndefined();
     });
 
+    it('polling: a running member without MCP gets no start and still gets a shoulder tap, and a dormant one stays dormant', async () => {
+      const project = await groupProjectRegistry.create('polled');
+      polledProject = project.id;
+      polledSent = fakeRuntime(CODEX);
+      for (const id of [CODEX, PEER]) bindingManager.bind(id, { targetId: project.id, targetKind: 'group-project', label: 'polled' });
+      await setProjectPolling(project.id, true);
+      await new Promise((resolve) => setTimeout(resolve, 50));
+      expect(polledSent.join()).not.toContain('start polling');
+      const before = [...agentRegistry.getAllRegistrations().keys()];
+
+      await executeShoulderTap({ projectId: project.id, senderLabel: 'the user', targetAgentId: CODEX, message: 'are you there' });
+      await vi.waitFor(() => expect(polledSent.join()).toContain('are you there'));
+      expect([...agentRegistry.getAllRegistrations().keys()]).toEqual(before);
+      expect(agentRegistry.get(PEER)).toBeUndefined();
+    });
+
     it('refuses starting the Dispatcher, at the one place every start goes through', async () => {
       const { spawnAgent } = await import('../../src/main/services/agent-system');
       agentRegistry.untrack(dispatcherId);
@@ -486,6 +508,13 @@ describe('Clubhouse MCP going off, for running agents', () => {
         if (caller === HELPER && tool.includes('walker')) continue;
         await vi.waitFor(async () => expect(refusedForMcp(await clients[caller].call(tool)), `${label}: ${tool}`).toBe(false), { timeout: 10_000 });
       }
+    });
+
+    it('polling: the running member gets its start back, in the same session, and nothing is woken', async () => {
+      await vi.waitFor(() => expect(polledSent.join()).toContain('start polling'), { timeout: 10_000 });
+      expect(polledSent.filter((m) => m.includes('start polling'))).toHaveLength(1);
+      expect(agentRegistry.get(PEER)).toBeUndefined();
+      expect(_pendingStartsForTesting.get(PEER)?.has(polledProject)).toBe(true);
     });
 
     it('returns the Dispatcher to its saved state, without starting anything new', () => {

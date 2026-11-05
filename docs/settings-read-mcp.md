@@ -150,7 +150,9 @@ When MCP is back, new calls work again at once in a session that started with th
 
 A helper's forced `clubhouseMcpOverride` still decides whether the bridge is injected. The gate decides what is callable, with its raw `mcpOverride`.
 
-**Not gated:** inbound messages. The rule is about the caller, so an agent with MCP on can still message a running agent with MCP off, and a group project still nudges a running member. A dormant recipient isn't woken: the sender is told it is sleeping. The `clubhouse` CLI endpoint isn't an MCP tool and isn't gated. `test/mcp-off/mcp-off-revocation.test.ts` checks each row over HTTP.
+**Not gated:** inbound messages. The rule is about the caller, so an agent with MCP on can still message a running agent with MCP off, and a shoulder tap still reaches a running member. A dormant recipient isn't woken: the sender is told it is sleeping. The `clubhouse` CLI endpoint isn't an MCP tool and isn't gated: it changes a project's or agent's appearance and has no route to orchestration or other agents.
+
+**Polling instructions stop too.** A member without MCP can't read the board, so it gets no polling start, and `nudge_polling` to it is refused. A start it missed is sent when MCP is back for it while it runs, or after its next start otherwise. Nothing is woken for this. A polling stop still goes out. A loop the agent already set up is its own, so it keeps firing and being refused until MCP is back or polling is turned off. `test/mcp-off/mcp-off-revocation.test.ts` checks each row over HTTP.
 
 ## Reads change nothing
 

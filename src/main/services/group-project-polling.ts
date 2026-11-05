@@ -7,17 +7,24 @@
  * injected start/stop instructions can never diverge. This mirrors what the UI
  * toggle historically did inline: persist `pollingEnabled` **and** inject the
  * orchestrator-aware start/stop message into every connected member's PTY.
+ *
+ * A member without Clubhouse MCP can't call read_bulletin, so it gets no start
+ * instruction: it would spend tokens and achieve nothing. The instruction is held
+ * and sent when MCP is back for it, if polling is still on. That wakes and starts
+ * nothing: a member that has since stopped gets it after its next handshake. A
+ * stop instruction still goes out, since that one saves tokens.
  */
 
 import { bindingManager } from './clubhouse-mcp/binding-manager';
 import { groupProjectRegistry } from './group-project-registry';
 import { getAgentOrchestrator } from './agent-registry';
-import { isAgentAlive, injectPtyMessage } from './group-project-lifecycle';
+import { canPoll, isAgentAlive, injectPtyMessage } from './group-project-lifecycle';
 import { inboxChannelName } from './group-project-bulletin';
 import { pollingStartMsg, pollingStopMsg } from '../../shared/polling-messages';
 import * as annexEventBus from './annex-event-bus';
 import { appLog } from './log-service';
 import { onAgentMcpConnected } from './clubhouse-mcp/connection-events';
+import { onOrchestrationGateChange } from './clubhouse-mcp/orchestration-gate';
 
 /**
  * Delay (ms) between a member's MCP handshake and its deferred polling-start
@@ -26,13 +33,15 @@ import { onAgentMcpConnected } from './clubhouse-mcp/connection-events';
 const DEFERRED_POLLING_DELAY_MS = 3_000;
 
 /**
- * Members that were asleep when the user turned polling on: agentId →
- * projectIds. They get the start message after their next MCP handshake.
- * Only the user's toggle queues here; restoring bindings never does (#1544).
- * In memory only, so nothing carries over a restart.
+ * Members that were asleep when the user turned polling on, or without Clubhouse
+ * MCP: agentId → projectIds. They get the start message after their next MCP
+ * handshake, or when MCP comes back while they run. Only the user's toggle and a
+ * new member queue here; restoring bindings never does (#1544). In memory only,
+ * so nothing carries over a restart.
  */
 const pendingStarts = new Map<string, Set<string>>();
 let unsubscribeConnected: (() => void) | null = null;
+let unsubscribeGate: (() => void) | null = null;
 
 function queuePendingStart(agentId: string, projectId: string): void {
   let pending = pendingStarts.get(agentId);
@@ -44,6 +53,15 @@ function queuePendingStart(agentId: string, projectId: string): void {
   if (!unsubscribeConnected) {
     unsubscribeConnected = onAgentMcpConnected((id) => { void flushPendingStarts(id); });
   }
+  if (!unsubscribeGate) {
+    // A member's access moving arrives here, whichever setting moved it. One that isn't running waits for its handshake.
+    unsubscribeGate = onOrchestrationGateChange((id) => { if (isAgentAlive(id)) void flushPendingStarts(id); });
+  }
+}
+
+/** A new member without Clubhouse MCP: it gets its start message when it has MCP again. */
+export function holdPollingStart(agentId: string, projectId: string): void {
+  queuePendingStart(agentId, projectId);
 }
 
 function clearPendingStarts(projectId: string): void {
@@ -56,7 +74,7 @@ function clearPendingStarts(projectId: string): void {
 /** Send the start message a member missed while asleep, if it still applies. */
 async function flushPendingStarts(agentId: string): Promise<void> {
   const pending = pendingStarts.get(agentId);
-  if (!pending) return;
+  if (!pending || !canPoll(agentId)) return;
   pendingStarts.delete(agentId);
   for (const projectId of pending) {
     const binding = groupProjectMemberBindings(projectId).find((b) => b.agentId === agentId);
@@ -141,7 +159,9 @@ export async function setProjectPolling(projectId: string, enabled: boolean): Pr
 
   const members = groupProjectMemberBindings(projectId).map((b) => {
     const state = toMemberState(b);
-    if (state.status === 'connected') {
+    if (state.status === 'connected' && enabled && !canPoll(b.agentId)) {
+      queuePendingStart(b.agentId, projectId);
+    } else if (state.status === 'connected') {
       const orchestrator = getAgentOrchestrator(b.agentId);
       const inbox = inboxChannelName(state.agentName);
       const msg = enabled
@@ -170,6 +190,8 @@ export function _resetPollingForTesting(): void {
   pendingStarts.clear();
   unsubscribeConnected?.();
   unsubscribeConnected = null;
+  unsubscribeGate?.();
+  unsubscribeGate = null;
 }
 
 export { pendingStarts as _pendingStartsForTesting, DEFERRED_POLLING_DELAY_MS as _DEFERRED_POLLING_DELAY_MS_FOR_TESTING };

@@ -1,7 +1,8 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 
 // What the gate decides is covered in mcp-call-gate.test.ts and test/mcp-off.
-vi.mock('../mcp-call-gate', async (original) => ({ ...await original<typeof import('../mcp-call-gate')>(), mcpCallAccess: () => 'open' }));
+const gateClosed = vi.hoisted(() => new Set<string>());
+vi.mock('../mcp-call-gate', async (original) => ({ ...await original<typeof import('../mcp-call-gate')>(), mcpCallAccess: (id: string) => (gateClosed.has(id) ? 'closed' : 'open') }));
 
 const mockIsStopping = vi.hoisted(() => vi.fn((_id?: unknown) => false));
 vi.mock('electron', () => ({
@@ -1139,6 +1140,22 @@ describe('GroupProjectTools', () => {
     expect(statuses['agent-1']).toBe('sleeping');
 
     agentRegistry.untrack('agent-2');
+  });
+
+  it('nudge_polling refuses a member without Clubhouse MCP, which can\'t poll, and injects nothing', async () => {
+    const project = await groupProjectRegistry.create('Nudge off');
+    await groupProjectRegistry.update(project.id, { metadata: { admins: ['agent-1'] } });
+    bindingManager.bind('agent-1', { targetId: project.id, targetKind: 'group-project', label: 'Nudge off' });
+    bindingManager.bind('agent-2', { targetId: project.id, targetKind: 'group-project', label: 'Nudge off' });
+    agentRegistry.register('agent-2', { projectPath: '/test', orchestrator: 'claude-code', runtime: 'pty' });
+    mockIsRunning.mockImplementation((id: string) => id === 'agent-2');
+    const binding = bindingManager.getBindingsForAgent('agent-1').find((b) => b.targetId === project.id)!;
+    gateClosed.add('agent-2');
+    const result = await callTool('agent-1', buildToolName(binding, 'nudge_polling'), { target_agent_id: 'agent-2' });
+    gateClosed.delete('agent-2');
+    expect(result.isError).toBe(true);
+    expect(result.content[0]).toMatchObject({ text: expect.stringContaining('has Clubhouse MCP off, so it can\'t poll and wasn\'t nudged') });
+    expect(mockPtyWrite).not.toHaveBeenCalled();
   });
 
   it('nudge_polling injects a nudge into a connected agent without changing the setting', async () => {

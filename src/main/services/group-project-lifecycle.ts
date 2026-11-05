@@ -15,6 +15,7 @@ import { getAgentRuntime } from './agent-runtime';
 import { getAgentOrchestrator } from './agent-registry';
 import { getProvider } from '../orchestrators/registry';
 import { pollingStartMsg } from '../../shared/polling-messages';
+import { mcpCallAccess } from './clubhouse-mcp/mcp-call-gate';
 
 /** Debounce window (ms) — suppress rejoins within this period after a leave unless agent is verified running. */
 const REJOIN_DEBOUNCE_MS = 30_000;
@@ -89,6 +90,15 @@ export function isAgentAlive(agentId: string): boolean {
   if (ptyManager.isRunning(agentId)) return true;
   // Agent may be running in headless mode — check registry
   return agentRegistry.get(agentId) !== undefined;
+}
+
+/**
+ * Whether a member can use group project tools now. A polling instruction is
+ * no use to one that can't, and would spend its tokens for nothing. Ordinary
+ * messages, shoulder taps included, don't ask this.
+ */
+export function canPoll(agentId: string): boolean {
+  return mcpCallAccess(agentId, agentRegistry.get(agentId)?.projectPath) === 'open';
 }
 
 async function syncMemberships(agentId: string): Promise<void> {
@@ -203,6 +213,11 @@ async function syncMemberships(agentId: string): Promise<void> {
 
       // Auto-send polling instruction if polling is enabled
       if (project?.metadata?.pollingEnabled) {
+        if (!canPoll(agentId)) {
+          // Loaded here: group-project-polling imports this file.
+          void import('./group-project-polling').then(({ holdPollingStart }) => holdPollingStart(agentId, projectId));
+          continue;
+        }
         const orchestrator = getAgentOrchestrator(agentId);
         // Small delay so the welcome message is processed first
         setTimeout(() => injectPtyMessage(agentId, pollingStartMsg(projectName, orchestrator, inboxName)), 500);

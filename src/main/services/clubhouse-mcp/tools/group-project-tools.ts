@@ -8,7 +8,7 @@ import { mcpAdapter } from '../mcp-adapter';
 import { getBulletinBoard } from '../../group-project-bulletin';
 import { groupProjectRegistry } from '../../group-project-registry';
 import { isProjectAdmin } from '../../../../shared/group-project-admin';
-import { isAgentAlive, injectPtyMessage } from '../../group-project-lifecycle';
+import { canPoll, isAgentAlive, injectPtyMessage } from '../../group-project-lifecycle';
 import { getAgentRuntime } from '../../agent-runtime';
 import { executeShoulderTap } from '../../group-project-shoulder-tap';
 import * as agentSystem from '../../agent-system';
@@ -752,6 +752,13 @@ export function registerGroupProjectTools(): void {
       if (!isAgentAlive(targetAgentId)) {
         return {
           content: [{ type: 'text', text: `Agent ${targetAgentId} is sleeping — wake it first.` }],
+          isError: true,
+        };
+      }
+
+      if (!canPoll(targetAgentId)) {
+        return {
+          content: [{ type: 'text', text: `Agent ${targetAgentId} has Clubhouse MCP off, so it can't poll and wasn't nudged.` }],
           isError: true,
         };
       }
