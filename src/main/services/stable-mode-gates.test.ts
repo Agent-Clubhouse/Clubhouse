@@ -115,7 +115,7 @@ describe('a packaged stable build with Preview off', () => {
     for (const flag of PREVIEW_ONLY_EXPERIMENTAL_FLAGS) expect(flags).not.toHaveProperty(flag);
   });
 
-  it('keeps honouring themeGradients and the structured-mode notice marker, and reads through the saved telemetry flag, which gates nothing', () => {
+  it('keeps honouring themeGradients and the structured-mode notice marker, and reads through the saved telemetry flag, which isn\'t preview-only', () => {
     expect(getSettings()).toEqual({ themeGradients: true, telemetry: true, [STRUCTURED_MODE_REMOVED_NOTICE_KEY]: true });
   });
 

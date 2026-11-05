@@ -18,9 +18,9 @@
  * and preset; `migrate()` converts the Phase 2 shape with no change in what
  * is sent.
  *
- * Export left Experimental in v1.0.0. Every load of a file from before that
- * goes through `graduateExport`, so nothing can read settings the old gate
- * would have kept from running.
+ * Export left Experimental in v1.0.0. Every load goes through `graduateExport`
+ * and `honourSavedOptOut`, so nothing can read settings that an older build's
+ * gate, or an opt-out made in one, would have kept from running.
  */
 import * as fs from 'fs';
 import { app } from 'electron';
@@ -218,9 +218,10 @@ function migrateDeveloperRule(settings: TelemetrySettings): void {
 }
 
 /**
- * The saved `experimental.telemetry` flag. Nothing is gated on it any more:
- * this migration is its only reader, and it stays on disk so a downgrade
- * behaves as the user left it.
+ * The saved `experimental.telemetry` flag. It stays on disk so a downgrade behaves
+ * as the user left it, and this build has no control for it. Every opt-in here
+ * saves it as true (`recordExportOptIn`), so a saved false alongside anything
+ * active can only come from an older build or a hand edit, and means off.
  */
 const LEGACY_EXPERIMENT_FLAG = 'telemetry';
 
@@ -234,15 +235,19 @@ export interface LegacyExportGate {
   previewEligible: boolean;
 }
 
+function readSavedFlag(): boolean | undefined {
+  try {
+    return experimentalSettings.getStoredSettings()[LEGACY_EXPERIMENT_FLAG];
+  } catch {
+    // telemetry-exempt: unreadable reads as not saved. The gate takes that as off.
+    return undefined;
+  }
+}
+
 /** Anything unreadable counts against: the flag reads as off, the build as not eligible. */
 export function readLegacyExportGate(): LegacyExportGate {
-  let flagOn = false;
+  const flagOn = readSavedFlag() === true;
   let previewEligible = false;
-  try {
-    flagOn = experimentalSettings.getStoredSettings()[LEGACY_EXPERIMENT_FLAG] === true;
-  } catch {
-    // telemetry-exempt: unreadable counts as off, which is the safe answer.
-  }
   try {
     previewEligible = isPreviewEligible() === true;
   } catch {
@@ -261,21 +266,15 @@ function passedLegacyGate(settings: TelemetrySettings, gate: LegacyExportGate): 
 }
 
 /**
- * Export used to run only behind the flag, in a preview-eligible build, with
- * consent. Without the gate, every setup it held back would start, so anything
- * that didn't pass it is switched off here. The developer destination is also
- * recorded as switched off if it was confirmed or consent exists, or it would
- * follow Feedback on later. A setup with no consent and no confirmed host keeps
- * its offer: that one still asks for the user's choice.
- * Runs once: the marker keeps a later opt-in from being undone.
+ * Every destination off. The developer destination is also recorded as switched
+ * off if it was confirmed or consent exists, or it would follow Feedback on later.
+ * A setup with no consent and no confirmed host keeps its offer: that one still
+ * asks for the user's choice.
  */
-export function graduateExport(settings: TelemetrySettings, gate: LegacyExportGate): TelemetrySettings {
-  if (isGraduated(settings)) return settings;
-  if (passedLegacyGate(settings, gate)) return { ...settings, exportGraduation: EXPORT_GRADUATION };
+function switchOffExport(settings: TelemetrySettings): TelemetrySettings {
   const consented = settings.consentVersion >= TELEMETRY_CONSENT_VERSION;
   return {
     ...settings,
-    exportGraduation: EXPORT_GRADUATION,
     destinations: settings.destinations.map((d) => {
       const followsLater = d.kind === 'framebriar' && (d.confirmedHost !== undefined || consented);
       return { ...d, enabled: false, ...(followsLater ? { framebriar: { ...d.framebriar, userOff: true } } : {}) };
@@ -283,9 +282,43 @@ export function graduateExport(settings: TelemetrySettings, gate: LegacyExportGa
   };
 }
 
-export type ExportGraduationOutcome = 'kept' | 'off';
+/**
+ * Export used to run only behind the flag, in a preview-eligible build, with
+ * consent. Without the gate, every setup it held back would start, so anything
+ * that didn't pass it is switched off here.
+ * Runs once: the marker keeps a later opt-in from being undone.
+ */
+export function graduateExport(settings: TelemetrySettings, gate: LegacyExportGate): TelemetrySettings {
+  if (isGraduated(settings)) return settings;
+  if (passedLegacyGate(settings, gate)) return { ...settings, exportGraduation: EXPORT_GRADUATION };
+  return { ...switchOffExport(settings), exportGraduation: EXPORT_GRADUATION };
+}
 
-/** Set when this run's load applied the graduation and it hasn't been saved yet. */
+/**
+ * A saved false always wins. Runs on every load, for a user who went back to an
+ * older build and turned the flag off there: without this, the marker would let
+ * what they stopped start again here. Missing isn't false.
+ */
+export function honourSavedOptOut(settings: TelemetrySettings, savedFlag: boolean | undefined): TelemetrySettings {
+  if (savedFlag !== false) return settings;
+  const couldFollow = (d: TelemetrySettings['destinations'][number]) =>
+    d.kind === 'framebriar' && d.confirmedHost !== undefined && !d.framebriar?.userOff;
+  return settings.destinations.some((d) => d.enabled || couldFollow(d)) ? switchOffExport(settings) : settings;
+}
+
+/**
+ * Keeps a saved false meaning what it says: call before anything turns a
+ * destination on. Rejects if the flag can't be saved, and the opt-in must then
+ * fail, or the next launch would take it for an older build's opt-out.
+ */
+export function recordExportOptIn(): Promise<void> {
+  return experimentalSettings.setStoredFlag(LEGACY_EXPERIMENT_FLAG, true);
+}
+
+/** `opted_out`: a saved false switched this install off. */
+export type ExportGraduationOutcome = 'kept' | 'off' | 'opted_out';
+
+/** Set when this run's load changed the settings and that hasn't been saved yet. */
 let unsavedGraduation: ExportGraduationOutcome | null = null;
 
 const managed = createManagedSettings<TelemetrySettings>(TELEMETRY_SETTINGS as typeof TELEMETRY_SETTINGS & { defaults: TelemetrySettings }, {
@@ -293,8 +326,10 @@ const managed = createManagedSettings<TelemetrySettings>(TELEMETRY_SETTINGS as t
     const settings = migrateTelemetrySettings(raw);
     const gate = readLegacyExportGate();
     const graduated = graduateExport(settings, gate);
-    if (graduated !== settings) unsavedGraduation = passedLegacyGate(settings, gate) ? 'kept' : 'off';
-    return graduated;
+    const honoured = honourSavedOptOut(graduated, readSavedFlag());
+    if (honoured !== graduated) unsavedGraduation = 'opted_out';
+    else if (graduated !== settings) unsavedGraduation = passedLegacyGate(settings, gate) ? 'kept' : 'off';
+    return honoured;
   },
   mode: 0o600,
 });
@@ -313,10 +348,10 @@ export function updateTelemetrySettings(fn: (current: TelemetrySettings) => Tele
 }
 
 /**
- * Load the settings, which applies the graduation in memory before this returns,
- * and start saving the result. `null` when there was nothing to do. If the save
- * fails, this run still uses the migrated settings, and the next launch, finding
- * no marker on disk, migrates again.
+ * Load the settings, which applies the graduation and a saved opt-out in memory
+ * before this returns, and start saving the result. `null` when there was nothing
+ * to do. If the save fails, this run still uses the result, and the next launch,
+ * finding the same file, applies it again.
  */
 export function applyExportGraduation(): { outcome: ExportGraduationOutcome; saved: Promise<unknown> } | null {
   getTelemetrySettings();

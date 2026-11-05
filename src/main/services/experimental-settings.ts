@@ -34,6 +34,25 @@ export function getSettings(): ExperimentalSettings {
 }
 
 /**
+ * Set one saved flag and leave the rest as they are, whatever this build honours.
+ * Rejects if it can't be saved, with this run back on the value it had: the store
+ * takes a new value into memory before writing it.
+ */
+export async function setStoredFlag(key: string, value: boolean): Promise<void> {
+  const saved = store.get();
+  if (saved[key] === value) return;
+  try {
+    await store.update((current) => ({ ...current, [key]: value }));
+  } catch (err) {
+    await store.update((current) => {
+      const { [key]: _attempted, ...rest } = current;
+      return key in saved ? { ...rest, [key]: saved[key] } : rest;
+    }).catch((): void => undefined);
+    throw err;
+  }
+}
+
+/**
  * Save the flags. Callers write back what getSettings gave them, so in a build
  * that isn't preview-eligible the saved preview-only flags are kept as they are,
  * and turning Preview on later finds them again.

@@ -39,6 +39,7 @@ vi.mock('./settings', async (importActual) => {
       return state.settings;
     },
     migrateLegacySecrets: async () => true,
+    recordExportOptIn: async () => {},
   };
 });
 

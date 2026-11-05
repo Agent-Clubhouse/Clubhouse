@@ -340,12 +340,12 @@ export async function migrateLegacySecretsOnReady(): Promise<void> {
 
 /** Log what the graduation did and clear what a switched-off setup leaves behind. Never throws. */
 function finishExportGraduation(graduation: NonNullable<ReturnType<typeof applyExportGraduation>>): void {
-  appLog(LOG_NS, 'info', 'Telemetry export left Experimental: migrated this install', { meta: { outcome: graduation.outcome } });
+  appLog(LOG_NS, 'info', 'Telemetry export settings migrated for this install', { meta: { outcome: graduation.outcome } });
   // As turning a destination off does: a queue from before must not be sent if it's turned on again.
-  if (graduation.outcome === 'off') void deleteOfflineData().catch(() => {});
+  if (graduation.outcome !== 'kept') void deleteOfflineData().catch(() => {});
   graduation.saved.catch((err) => {
     // telemetry-exempt: logged; this run uses the migrated settings and the next launch saves again.
-    appLog(LOG_NS, 'warn', 'Could not save the telemetry export migration', {
+    appLog(LOG_NS, 'warn', 'Could not save the telemetry export settings migration', {
       meta: { error: err instanceof Error ? err.message : String(err) },
     });
   });

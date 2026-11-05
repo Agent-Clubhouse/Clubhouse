@@ -16,7 +16,7 @@ export const BETA_FLAGS = {
   dispatcher: true,
   telemetry: true,
 };
-// Telemetry left the preview gate: its saved flag still reads through, and does nothing.
+// Telemetry left the preview gate: its saved flag reads through in every build.
 export const PREVIEW_ONLY_FLAGS = Object.keys(BETA_FLAGS).filter((flag) => flag !== 'telemetry');
 
 export const AGENT_ID = 'durable_stable_mode';

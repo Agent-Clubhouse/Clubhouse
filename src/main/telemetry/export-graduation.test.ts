@@ -68,6 +68,16 @@ function exportAttempts(): number {
   return Object.values(chunks).reduce((sum, load) => sum + load.mock.calls.length, 0);
 }
 
+/** Writes to this one settings file fail; everything else goes through. */
+function failWritesTo(name: string): void {
+  const realWrite = fs.promises.writeFile;
+  vi.spyOn(fs.promises, 'writeFile').mockImplementation((target, ...rest) => (
+    String(target).endsWith(name)
+      ? Promise.reject(new Error('disk full'))
+      : realWrite(target, ...rest as [string])
+  ));
+}
+
 /** One run of the app, as far as telemetry's startup goes. */
 async function launch(): Promise<void> {
   await _resetLocalRecordingForTests();
@@ -329,7 +339,7 @@ describe('Feedback connecting later', () => {
 describe('opting in after the migration', () => {
   const otlpEntry = () => getTelemetrySettings().destinations.find((d) => d.kind === 'otlp')!;
 
-  it('survives the next launch on a fresh install, with the saved flag still absent', async () => {
+  it('survives the next launch on a fresh install, and saves the flag as true', async () => {
     seedGate(undefined, false);
     await launch();
     expect(await control.saveOtlpConfig({ endpoint: `http://${LOOPBACK_HOST}`, headers: [] })).toMatchObject({ ok: true });
@@ -338,22 +348,9 @@ describe('opting in after the migration', () => {
     expect(otlpEntry().enabled).toBe(true);
 
     await vi.waitFor(() => expect(readSaved().exportGraduation).toBe(1));
+    expect(JSON.parse(readText('experimental-settings.json')).telemetry).toBe(true);
     await launch();
     expect(otlpEntry()).toMatchObject({ enabled: true, confirmedHost: LOOPBACK_HOST });
-    expect(exportAttempts()).toBe(1);
-  });
-
-  it('survives the next launch on an install that was switched off, with the saved flag still false', async () => {
-    seedGate(false, false);
-    writeJson(SETTINGS_FILE, file(1, otlp(true), framebriar()));
-    await launchAndWaitForMarker();
-    expect(otlpEntry().enabled).toBe(false);
-
-    await control.setEnabled('otlp', true, { host: LOOPBACK_HOST });
-    expect(otlpEntry().enabled).toBe(true);
-
-    await launch();
-    expect(otlpEntry().enabled).toBe(true);
     expect(exportAttempts()).toBe(1);
   });
 
@@ -367,21 +364,12 @@ describe('opting in after the migration', () => {
 });
 
 describe('a failed save', () => {
-  function failSettingsWrites(): void {
-    const realWrite = fs.promises.writeFile;
-    vi.spyOn(fs.promises, 'writeFile').mockImplementation((target, ...rest) => (
-      String(target).endsWith(SETTINGS_FILE)
-        ? Promise.reject(new Error('disk full'))
-        : realWrite(target, ...rest as [string])
-    ));
-  }
-
   it('does not let export start on this run, and the next launch saves it', async () => {
     seedGate(false, true);
     const raw = file(1, otlp(true), framebriar({ confirmedHost: FB_HOST }));
     writeJson(SETTINGS_FILE, raw);
     const before = readText(SETTINGS_FILE);
-    failSettingsWrites();
+    failWritesTo(SETTINGS_FILE);
     const quiet = vi.spyOn(console, 'error').mockImplementation(() => undefined);
 
     await launch();
@@ -418,13 +406,255 @@ describe('the saved flag', () => {
     await experimentalSettings.saveSettings({ ...experimentalSettings.getSettings(), themeGradients: true });
     await vi.waitFor(() => expect(JSON.parse(readText('experimental-settings.json'))).toEqual({ telemetry: true, themeGradients: true }));
   });
+});
 
-  it('no longer changes anything once the file has the marker: turning it off starts nothing and stops nothing', async () => {
-    seedGate(false, true);
-    writeJson(SETTINGS_FILE, { ...file(1, otlp(true), framebriar()), exportGraduation: 1 });
+describe('a saved false always wins', () => {
+  const graduated = (...destinations: object[]) => ({ ...file(1, ...destinations), exportGraduation: 1 });
+  const entryOf = (kind: string) => getTelemetrySettings().destinations.find((d) => d.kind === kind)!;
+  const anyOn = () => getTelemetrySettings().destinations.some((d) => d.enabled);
+  const savedFlags = () => JSON.parse(readText('experimental-settings.json'));
+  const connect = () => setFramebriarTelemetrySource(() => ({
+    host: FB_HOST,
+    sessionId: 's-1',
+    options: (signal) => ({ url: `https://${FB_HOST}/v1/${signal}`, headers: async () => ({}) }),
+  }));
+  /** What an older preview-eligible build's Experimental page leaves behind. Its own file is rewritten whole. */
+  const olderBuildSavesFlag = (flag: boolean) => writeJson('experimental-settings.json', { telemetry: flag });
+  /** The next launch, once its save has landed. */
+  async function upgradeAndWaitForOff(): Promise<void> {
     await launch();
-    expect(getTelemetrySettings().destinations.find((d) => d.kind === 'otlp')?.enabled).toBe(true);
-    expect(isTelemetryConfigured()).toBe(true);
-    expect(exportAttempts()).toBe(1);
+    await vi.waitFor(() => expect(readSaved().destinations.some((d) => d.enabled)).toBe(false));
+  }
+
+  it('kept install, older build turns the flag off, upgrade: off, with no export attempt and the queue cleared', async () => {
+    seedGate(true, true);
+    writeJson(SETTINGS_FILE, file(1, otlp(true), framebriar({ enabled: true, confirmedHost: FB_HOST })));
+    await launchAndWaitForMarker();
+    expect(anyOn()).toBe(true);
+    expect(exportAttempts()).toBeGreaterThan(0);
+
+    olderBuildSavesFlag(false);
+    await fsp.mkdir(getOfflineDir(), { recursive: true });
+    await upgradeAndWaitForOff();
+
+    expect(exportAttempts()).toBe(0);
+    expect(isTelemetryConfigured()).toBe(false);
+    expect(readSaved().consentVersion).toBe(1);
+    expect(entryOf('otlp')).toMatchObject({ enabled: false, confirmedHost: LOOPBACK_HOST });
+    expect(entryOf('framebriar')).toMatchObject({ enabled: false, confirmedHost: FB_HOST, framebriar: { userOff: true } });
+    await vi.waitFor(() => expect(fs.existsSync(getOfflineDir())).toBe(false));
+
+    // Repeated starts are no-ops.
+    const bytes = readText(SETTINGS_FILE);
+    for (let run = 0; run < 2; run++) {
+      await launch();
+      expect(readText(SETTINGS_FILE)).toBe(bytes);
+      expect(exportAttempts()).toBe(0);
+    }
+  });
+
+  it('migration switched off, deliberate opt-in with no downgrade: stays on across repeated starts', async () => {
+    seedGate(false, true);
+    writeJson(SETTINGS_FILE, file(1, otlp(true), framebriar()));
+    await launchAndWaitForMarker();
+    expect(entryOf('otlp').enabled).toBe(false);
+
+    await control.setEnabled('otlp', true, { host: LOOPBACK_HOST });
+    expect(entryOf('otlp').enabled).toBe(true);
+    await vi.waitFor(() => expect(savedFlags().telemetry).toBe(true));
+
+    for (let run = 0; run < 3; run++) {
+      await launch();
+      expect(entryOf('otlp').enabled).toBe(true);
+      expect(exportAttempts()).toBe(1);
+    }
+  });
+
+  it('recorded false, opt-in, older build turns it on and then off, upgrade: off', async () => {
+    seedGate(false, true);
+    writeJson(SETTINGS_FILE, file(1, otlp(true), framebriar()));
+    await launchAndWaitForMarker();
+    await control.setEnabled('otlp', true, { host: LOOPBACK_HOST });
+    await vi.waitFor(() => expect(savedFlags().telemetry).toBe(true));
+    await vi.waitFor(() => expect(readSaved().destinations.find((d) => d.kind === 'otlp')?.enabled).toBe(true));
+
+    // Back to true on the older build changes nothing, so the install stays on through that launch.
+    olderBuildSavesFlag(true);
+    await launch();
+    expect(entryOf('otlp').enabled).toBe(true);
+
+    olderBuildSavesFlag(false);
+    await upgradeAndWaitForOff();
+    expect(anyOn()).toBe(false);
+    expect(exportAttempts()).toBe(0);
+  });
+
+  it('a failed save stays off in memory and is retried', async () => {
+    seedGate(false, true);
+    writeJson(SETTINGS_FILE, graduated(otlp(true), framebriar({ confirmedHost: FB_HOST })));
+    const before = readText(SETTINGS_FILE);
+    failWritesTo(SETTINGS_FILE);
+    const quiet = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+
+    await launch();
+    await vi.waitFor(() => expect(quiet).toHaveBeenCalled());
+    expect(readText(SETTINGS_FILE)).toBe(before);
+    expect(anyOn()).toBe(false);
+    expect(isTelemetryConfigured()).toBe(false);
+    expect(exportAttempts()).toBe(0);
+
+    vi.mocked(fs.promises.writeFile).mockRestore();
+    await upgradeAndWaitForOff();
+    expect(readSaved().destinations.find((d) => d.kind === 'framebriar')?.framebriar).toEqual({ userOff: true });
+    expect(exportAttempts()).toBe(0);
+  });
+
+  describe('a failed flag write refuses the opt-in', () => {
+    it.each([
+      { name: 'a destination', id: 'otlp', ack: { host: LOOPBACK_HOST } },
+      { name: 'Share with the developer', id: 'framebriar', ack: { host: FB_HOST } },
+    ])('$name', async ({ id, ack }) => {
+      seedGate(false, true);
+      writeJson(SETTINGS_FILE, graduated(otlp(false), framebriar({ userOff: true })));
+      await launch();
+      connect();
+      const beforeSettings = readText(SETTINGS_FILE);
+      const beforeFlags = readText('experimental-settings.json');
+      failWritesTo('experimental-settings.json');
+      vi.spyOn(console, 'error').mockImplementation(() => undefined);
+
+      const result = await control.setEnabled(id, true, ack);
+      expect(result).toMatchObject({ ok: false, reason: 'opt_in_not_saved', message: expect.stringContaining('stays off') });
+      expect(anyOn()).toBe(false);
+      expect(entryOf('framebriar').framebriar).toEqual({ userOff: true });
+      expect(exportAttempts()).toBe(0);
+      expect(readText(SETTINGS_FILE)).toBe(beforeSettings);
+      expect(readText('experimental-settings.json')).toBe(beforeFlags);
+      // This run is back on the saved value too, so nothing reads a true that never landed.
+      expect(experimentalSettings.getStoredSettings().telemetry).toBe(false);
+
+      vi.mocked(fs.promises.writeFile).mockRestore();
+      await control.setEnabled(id, true, ack);
+      expect(entryOf(id).enabled).toBe(true);
+      await vi.waitFor(() => expect(savedFlags().telemetry).toBe(true));
+    });
+  });
+
+  it('the flag write touches only that flag, whatever this build honours', async () => {
+    seedGate(false, false);
+    writeJson('experimental-settings.json', { telemetry: false, chat: true, dispatcher: false, themeGradients: true });
+    writeJson(SETTINGS_FILE, graduated(otlp(false)));
+    await launch();
+    await control.setEnabled('otlp', true, { host: LOOPBACK_HOST });
+    await vi.waitFor(() => expect(savedFlags()).toEqual({ telemetry: true, chat: true, dispatcher: false, themeGradients: true }));
+  });
+
+  it('Framebriar confirmed, flag false, Feedback connects later: doesn\'t follow on, and a Share still works and sets the flag', async () => {
+    seedGate(false, true);
+    writeJson(SETTINGS_FILE, graduated(otlp(false), framebriar({ confirmedHost: FB_HOST })));
+    await launch();
+    await vi.waitFor(() => expect(readSaved().destinations.find((d) => d.kind === 'framebriar')?.framebriar).toEqual({ userOff: true }));
+
+    connect();
+    await control.syncFramebriarDestination();
+    expect(entryOf('framebriar').enabled).toBe(false);
+    expect(exportAttempts()).toBe(0);
+    expect(savedFlags().telemetry).toBe(false);
+
+    await control.setEnabled('framebriar', true, { host: FB_HOST });
+    expect(entryOf('framebriar')).toMatchObject({ enabled: true, framebriar: { userOff: false } });
+    await vi.waitFor(() => expect(savedFlags().telemetry).toBe(true));
+
+    await launch();
+    await control.syncFramebriarDestination();
+    expect(entryOf('framebriar')).toMatchObject({ enabled: true, framebriar: { userOff: false } });
+  });
+
+  it('fresh install: no key, nothing active, and the offer is still shown', async () => {
+    seedGate(undefined, false);
+    await launch();
+    connect();
+    expect(experimentalSettings.getStoredSettings()).not.toHaveProperty('telemetry');
+    expect(anyOn()).toBe(false);
+    expect((await control.getStatus()).destinations.find((d) => d.id === 'framebriar')).toMatchObject({ enabled: false, userOff: false, configured: true });
+    expect(await control.setEnabled('framebriar', true, {})).toMatchObject({ reason: 'needs_confirmation', needs: ['consent', 'destination'] });
+    // Asking saves nothing. Only the answer does.
+    expect(experimentalSettings.getStoredSettings()).not.toHaveProperty('telemetry');
+  });
+
+  it('turning a destination off doesn\'t touch the flag', async () => {
+    seedGate(true, true);
+    writeJson(SETTINGS_FILE, graduated(otlp(true), framebriar()));
+    await launch();
+    const flags = readText('experimental-settings.json');
+    await control.setEnabled('otlp', false);
+    await control.setEnabled('framebriar', false);
+    expect(readText('experimental-settings.json')).toBe(flags);
+    expect(anyOn()).toBe(false);
+    await launch();
+    expect(anyOn()).toBe(false);
+  });
+
+  it('a false with nothing active or able to follow changes nothing', async () => {
+    seedGate(false, true);
+    writeJson(SETTINGS_FILE, graduated(otlp(false), framebriar({ confirmedHost: FB_HOST, userOff: true })));
+    const bytes = readText(SETTINGS_FILE);
+    await launch();
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(readText(SETTINGS_FILE)).toBe(bytes);
+  });
+
+  describe('what a saved false can\'t speak to', () => {
+    it('a missing flag isn\'t false: an active setup stays on', async () => {
+      seedGate(undefined, false);
+      writeJson(SETTINGS_FILE, graduated(otlp(true), framebriar()));
+      await launch();
+      expect(entryOf('otlp').enabled).toBe(true);
+      expect(exportAttempts()).toBe(1);
+    });
+
+    it('a corrupt flag file reads as missing once migrated: an active setup stays on', async () => {
+      seedGate('corrupt', true);
+      writeJson(SETTINGS_FILE, graduated(otlp(true), framebriar()));
+      await launch();
+      expect(entryOf('otlp').enabled).toBe(true);
+    });
+
+    it('the older build never changed the flag (Preview off there, say): the flag is still true, so it resumes', async () => {
+      seedGate(true, false);
+      writeJson(SETTINGS_FILE, graduated(otlp(true), framebriar()));
+      await launch();
+      expect(entryOf('otlp').enabled).toBe(true);
+    });
+  });
+
+  describe('a stale save over a newer true', () => {
+    async function optedIn(): Promise<void> {
+      await launch();
+      await control.saveOtlpConfig({ endpoint: `http://${LOOPBACK_HOST}`, headers: [] });
+      await control.setEnabled('otlp', true, { consent: true, host: LOOPBACK_HOST });
+      await vi.waitFor(() => expect(savedFlags().telemetry).toBe(true));
+      await vi.waitFor(() => expect(readSaved().destinations.find((d) => d.kind === 'otlp')?.enabled).toBe(true));
+    }
+
+    it.each([
+      { name: 'a preview-eligible build', eligible: true },
+      { name: 'a stable build with Preview off', eligible: false },
+    ])('with a stale false fails toward off on the next launch: $name', async ({ eligible }) => {
+      seedGate(undefined, eligible);
+      await optedIn();
+      await experimentalSettings.saveSettings({ telemetry: false, themeGradients: true });
+      await upgradeAndWaitForOff();
+      expect(exportAttempts()).toBe(0);
+    });
+
+    it('with no key at all, drops the flag and leaves the opt-in on', async () => {
+      seedGate(undefined, true);
+      await optedIn();
+      await experimentalSettings.saveSettings({ themeGradients: true });
+      await vi.waitFor(() => expect(savedFlags()).toEqual({ themeGradients: true }));
+      await launch();
+      expect(entryOf('otlp').enabled).toBe(true);
+    });
   });
 });

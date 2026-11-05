@@ -10,6 +10,8 @@
  * Seeded setups with `experimental: { telemetry: true }` are upgrades that
  * passed the old gate (flag, preview-eligible, consent) and keep exporting.
  * The rest of them end up off, once, on the first launch (the migration tests).
+ * After that a saved `telemetry: false` still means off: only an older build or
+ * a hand edit can leave one behind, since every opt-in here saves it as true.
  */
 import { test, expect } from '@playwright/test';
 import * as fs from 'fs';
@@ -376,6 +378,26 @@ test.describe('Telemetry export', () => {
     }
   });
 
+  test('opt-out on an older build: a migrated install with the flag now false sends zero requests', async () => {
+    const mock = await startMockIngestion();
+    const { electronApp, window, userDataDir } = await launchApp({
+      experimental: { telemetry: false },
+      userDataFiles: { 'telemetry-settings.json': { ...upgradeSettings(mock.port), exportGraduation: 1 } },
+    });
+    try {
+      await expect(window.locator('body')).toBeVisible();
+      await quitAndWait(electronApp);
+      expect(mock.received).toEqual([]);
+      const saved = JSON.parse(await fs.promises.readFile(path.join(userDataDir, 'telemetry-settings.json'), 'utf-8'));
+      expect(saved.destinations.filter((d: { enabled: boolean }) => d.enabled)).toEqual([]);
+      expect(saved.destinations.find((d: { id: string }) => d.id === 'framebriar').framebriar.userOff).toBe(true);
+    } finally {
+      await electronApp.close().catch(() => {});
+      mock.server.close();
+      fs.rmSync(userDataDir, { recursive: true, force: true });
+    }
+  });
+
   test('upgrade with the flag saved on in a stable build with Preview off: zero requests', async () => {
     const mock = await startMockIngestion();
     const { electronApp, window, userDataDir } = await launchApp({
@@ -424,6 +446,8 @@ test.describe('Telemetry export', () => {
       const confirmed = await w.evaluate((h) => window.clubhouse.telemetrySettings.setEnabled('otlp', true, { consent: true, host: h }), host);
       expect(confirmed.ok).toBe(true);
       await quitAndWait(first.electronApp);
+      // Saved as true, so the next launch doesn't take this for an older build's opt-out.
+      expect(JSON.parse(await fs.promises.readFile(path.join(profile.userDataDir, 'experimental-settings.json'), 'utf-8')).telemetry).toBe(true);
       expect(mock.received.map((r) => r.body).join('\n')).toContain('clubhouse.telemetry.enabled');
 
       mock.received.length = 0;

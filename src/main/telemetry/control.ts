@@ -49,6 +49,7 @@ import {
   legacySecrets,
   migrateLegacySecrets,
   parseConnectionString,
+  recordExportOptIn,
   RESERVED_HEADERS,
   updateTelemetrySettings,
   validateDestination,
@@ -416,6 +417,16 @@ export async function setEnabled(
       ...(followNeedsConfirm ? { followHost } : {}),
       status: await getStatus(),
     };
+  }
+
+  try {
+    await recordExportOptIn();
+  } catch (err) {
+    // telemetry-exempt: logged and shown to the user; nothing was turned on.
+    appLog('telemetry:control', 'warn', 'Could not save the telemetry opt-in', {
+      meta: { error: err instanceof Error ? err.message : String(err) },
+    });
+    return fail('opt_in_not_saved', 'Couldn\'t save this choice, so telemetry stays off. Try again.');
   }
 
   await updateTelemetrySettings((s) => withFramebriarFollowing({
