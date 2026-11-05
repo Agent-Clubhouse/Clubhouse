@@ -166,6 +166,9 @@ vi.stubGlobal('clubhouse', {
     githubRef: async () => ({ ok: false, reason: 'unavailable' }),
   },
   agentSettings: {
+    builderRead: async () => ({ ok: true, view: { revision: 0, templateId: null, templates: [], blocks: [], customOrder: false, text: '' } }),
+    builderCommand: async () => ({ ok: false, code: 'failed' }),
+    builderPreview: async (contents: string[]) => ({ ok: true, text: contents.join('\n\n'), bytes: 0 }),
     readInstructions: async () => '',
     saveInstructions: asyncNoop,
     readMcpConfig: async () => [],

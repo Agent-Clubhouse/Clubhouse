@@ -1,3 +1,4 @@
+import { AgentBuilderSection } from './AgentBuilderSection';
 import { useEffect, useMemo, useState, useRef } from 'react';
 import { Agent, QuickAgentDefaults, MaterializationPreview, McpCatalogArg, McpCatalogEntry, McpCatalogEntryWithState } from '../../../shared/types';
 import { AGENT_COLORS } from '../../../shared/name-generator';
@@ -176,7 +177,10 @@ export function AgentSettingsView({ agent }: Props) {
   // The new chrome lists the pages in the sidebar and shows one at a time;
   // the classic shell stacks them on one page.
   const pageMode = useChromeFlagStore((s) => s.enabled);
+  const [builderDirty, setBuilderDirty] = useState(false);
   const page = useAgentSettingsPages((s) => s.page);
+  const [builderHasOpened, setBuilderHasOpened] = useState(false);
+  useEffect(() => { if (page === 'builder') setBuilderHasOpened(true); }, [page]);
   const setPage = useAgentSettingsPages((s) => s.setPage);
   const setDirtyPages = useAgentSettingsPages((s) => s.setDirtyPages);
   const setCount = useAgentSettingsPages((s) => s.setCount);
@@ -889,6 +893,7 @@ export function AgentSettingsView({ agent }: Props) {
 
   const dirtyPages = useMemo(() => {
     const dirty = new Set<AgentSettingsPage>();
+    if (builderDirty) dirty.add('builder');
     if (sectionDirty.wildcards) dirty.add('general');
     if (instructionsDirty) dirty.add('instructions');
     if (sectionDirty.skills) dirty.add('skills');
@@ -897,7 +902,7 @@ export function AgentSettingsView({ agent }: Props) {
     if (permDirty) dirty.add('permissions');
     if (qadDirty) dirty.add('quick');
     return AGENT_SETTINGS_PAGES.map((p) => p.page).filter((p) => dirty.has(p));
-  }, [sectionDirty, instructionsDirty, permDirty, qadDirty]);
+  }, [builderDirty, sectionDirty, instructionsDirty, permDirty, qadDirty]);
 
   useEffect(() => {
     setDirtyPages(dirtyPages);
@@ -1513,6 +1518,7 @@ export function AgentSettingsView({ agent }: Props) {
   let body: React.ReactNode;
   if (pageMode) {
     const sub: Record<AgentSettingsPage, React.ReactNode> = {
+      builder: 'Compose instructions for this agent',
       general: `How ${agent.name} looks and what it runs on`,
       instructions: <><span className="font-mono">{instructionsFileLabel}</span> in the agent worktree</>,
       skills: undefined,
@@ -1524,6 +1530,7 @@ export function AgentSettingsView({ agent }: Props) {
     };
     const content: Record<AgentSettingsPage, React.ReactNode> = {
       general,
+      builder: page === 'builder' || builderHasOpened ? <AgentBuilderSection key={agent.id} agentId={agent.id} projectPath={projectPath} onDirtyChange={setBuilderDirty} /> : null,
       instructions: instructionsEditor,
       skills: skillsSection,
       definitions: definitionsSection,
@@ -1536,7 +1543,7 @@ export function AgentSettingsView({ agent }: Props) {
     // inside a page (an open skill editor, .mcp.json) survive a page switch.
     body = AGENT_SETTINGS_PAGES.filter(({ page: p }) => !hiddenPages.includes(p)).map(({ page: p, label }) => {
       // Clubhouse Mode manages files in the worktree; the orchestration policy isn't one.
-      const managed = isManagedByClubhouse && p !== 'general' && p !== 'quick' && p !== 'helpers';
+      const managed = isManagedByClubhouse && p !== 'general' && p !== 'quick' && p !== 'helpers' && p !== 'builder';
       return (
         <div key={p} data-testid={`agent-settings-page-${p}`} hidden={p !== page}>
           <PageTitle title={label} sub={sub[p]} right={p === page ? reloadButton : undefined} />
@@ -1548,6 +1555,7 @@ export function AgentSettingsView({ agent }: Props) {
     body = (
       <>
         {general}
+        <p className="mt-3 text-xs text-ctp-overlay1">Builder is available in the new layout. Turn off Classic layout in Settings &gt; Display &amp; UI, then restart Clubhouse.</p>
         {!isManagedByClubhouse && (
           <>
             <SectionHeading title="Instructions" sub={<span className="font-mono">{instructionsFileLabel}</span>} />

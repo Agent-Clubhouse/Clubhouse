@@ -1,3 +1,4 @@
+vi.mock('./agent-builder-handlers', () => ({ registerAgentBuilderHandlers: vi.fn() }));
 import { describe, it, expect, vi } from 'vitest';
 
 // Mock all handler registration functions
@@ -43,6 +44,7 @@ import { registerProjectHandlers } from './project-handlers';
 import { registerFileHandlers } from './file-handlers';
 import { registerGitHandlers } from './git-handlers';
 import { registerAgentHandlers } from './agent-handlers';
+import { registerAgentBuilderHandlers } from './agent-builder-handlers';
 import { registerAgentSettingsHandlers } from './agent-settings-handlers';
 import { registerAppHandlers } from './app-handlers';
 import { registerPluginHandlers } from './plugin-handlers';
@@ -71,6 +73,7 @@ describe('registerAllHandlers', () => {
     expect(registerGitHandlers).toHaveBeenCalled();
     expect(registerAgentHandlers).toHaveBeenCalled();
     expect(registerAgentSettingsHandlers).toHaveBeenCalled();
+    expect(registerAgentBuilderHandlers).toHaveBeenCalled();
     expect(registerAppHandlers).toHaveBeenCalled();
     expect(registerPluginHandlers).toHaveBeenCalled();
     expect(registerPluginMcpHandlers).toHaveBeenCalled();

@@ -13,7 +13,7 @@ describe('AgentSettingsNav', () => {
     render(<AgentSettingsNav />);
     const labels = screen.getAllByRole('button').map((b) => b.textContent);
     expect(labels).toEqual([
-      'General', 'Instructions', 'Skills', 'Agent definitions', 'MCP servers', 'Permissions', 'Helpers', 'Quick agents', 'Shell in worktree',
+      'General', 'Builder', 'Instructions', 'Skills', 'Agent definitions', 'MCP servers', 'Permissions', 'Helpers', 'Quick agents', 'Shell in worktree',
     ]);
     expect(screen.getByTestId('agent-settings-nav-general').getAttribute('aria-current')).toBe('page');
   });
@@ -29,7 +29,7 @@ describe('AgentSettingsNav', () => {
   it('hides Helpers for a helper and for a remote agent', () => {
     expect(hiddenAgentSettingsPages({ projectId: 'p1' }, false)).toEqual([]);
     expect(hiddenAgentSettingsPages({ projectId: 'p1', parentAgentId: 'lead' }, false)).toEqual(['helpers']);
-    expect(hiddenAgentSettingsPages({ projectId: 'remote||sat||p1' }, true)).toEqual(['helpers']);
+    expect(hiddenAgentSettingsPages({ projectId: 'remote||sat||p1' }, true)).toEqual(['helpers', 'builder']);
   });
 
   it('selects a page', () => {
