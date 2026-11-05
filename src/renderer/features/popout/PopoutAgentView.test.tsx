@@ -59,6 +59,20 @@ describe('PopoutAgentView', () => {
     window.clubhouse.app.getExperimentalSettings = vi.fn(async () => ({ chat: false })) as typeof window.clubhouse.app.getExperimentalSettings;
   });
 
+  it('shows an agent still live in chat when this pop-out opened after Chat went off, with one toolbar', async () => {
+    window.clubhouse.app.getExperimentalSettings = vi.fn(async () => ({ chat: false })) as typeof window.clubhouse.app.getExperimentalSettings;
+    window.clubhouse.chat.getAgentRuntime = vi.fn(async () => ({ chat: true, chatAvailable: false }));
+    window.clubhouse.chat.readTranscript = vi.fn(async () => chatFixture('codex', 'conversation'));
+    mockAgents['agent-1'] = {
+      id: 'agent-1', name: 'test-agent', status: 'running',
+      kind: 'durable', projectId: 'proj-1', color: 'red', orchestrator: 'codex-cli',
+    };
+    render(<PopoutAgentView agentId="agent-1" projectId="proj-1" />);
+    expect(await screen.findByTestId('chat-view', undefined, { timeout: 5000 })).toBeInTheDocument();
+    expect(screen.queryByTestId('agent-terminal')).not.toBeInTheDocument();
+    expect(screen.getAllByTestId('agent-pane-toolbar')).toHaveLength(1);
+  });
+
   it('shows chat for an agent running in chat, with one toolbar', async () => {
     window.clubhouse.app.getExperimentalSettings = vi.fn(async () => ({ chat: true })) as typeof window.clubhouse.app.getExperimentalSettings;
     window.clubhouse.app.isPreviewEligible = vi.fn(async () => true);
@@ -110,7 +124,8 @@ describe('PopoutAgentView', () => {
     };
     render(<PopoutAgentView agentId="agent-1" projectId="proj-1" />);
     const terminal = await screen.findByTestId('agent-terminal');
-    const toolbar = screen.getByTestId('agent-pane-toolbar');
+    // It waits for main's answer, so it and a chat's own toolbar never both show.
+    const toolbar = await screen.findByTestId('agent-pane-toolbar');
     expect(toolbar.className).not.toContain('absolute');
     // A sibling before the terminal's container, not layered over it.
     expect(toolbar.compareDocumentPosition(terminal) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();

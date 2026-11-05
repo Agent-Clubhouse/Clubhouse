@@ -559,8 +559,10 @@ export function registerAppHandlers(): void {
 
   // --- Experimental Settings ---
   ipcMain.handle(IPC.APP.GET_EXPERIMENTAL_SETTINGS, () => {
-    return experimentalSettings.getSettings();
+    return experimentalSettings.getSettingsForRenderer();
   });
+
+  ipcMain.handle(IPC.APP.IS_EXPERIMENTAL_SETTINGS_UNREADABLE, () => experimentalSettings.savedSettingsUnreadable());
 
   ipcMain.handle(IPC.APP.SAVE_EXPERIMENTAL_SETTINGS, withValidatedArgs(
     [objectArg<ExperimentalSettings>()],

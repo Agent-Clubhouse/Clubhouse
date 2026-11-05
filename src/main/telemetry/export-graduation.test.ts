@@ -802,7 +802,7 @@ describe('an unreadable flag file', () => {
     it('an unrelated save from the renderer doesn\'t clear it', async () => {
       await paused();
       await experimentalSettings.saveSettings({ themeGradients: true });
-      await vi.waitFor(() => expect(JSON.parse(readText(FLAG_FILE))).toEqual({ themeGradients: true, telemetry: null }));
+      await vi.waitFor(() => expect(JSON.parse(readText(FLAG_FILE))).toMatchObject({ themeGradients: true, telemetry: null }));
       await launch();
       expect(getTelemetrySettings().exportSuspended).toBe('flag_unreadable');
       expect(exportAttempts()).toBe(0);
@@ -908,7 +908,7 @@ describe('an unreadable flag file', () => {
       await launchWithPauseSaveFailing();
       for (let n = 1; n <= saves; n++) {
         await experimentalSettings.saveSettings({ themeGradients: n % 2 === 0, chat: true });
-        expect(JSON.parse(readText(FLAG_FILE))).toEqual({ themeGradients: n % 2 === 0, chat: true, telemetry: null });
+        expect(JSON.parse(readText(FLAG_FILE))).toMatchObject({ themeGradients: n % 2 === 0, chat: true, telemetry: null });
         expect(experimentalSettings.getStoredSettings().telemetry).toBeNull();
         expect(experimentalSettings.peekStoredFlag('telemetry')).toBe('unreadable');
       }
@@ -926,7 +926,7 @@ describe('an unreadable flag file', () => {
       for (let run = 0; run < 3; run++) {
         await launchWithPauseSaveFailing();
         await experimentalSettings.saveSettings({ themeGradients: run % 2 === 0 });
-        expect(JSON.parse(readText(FLAG_FILE))).toEqual({ themeGradients: run % 2 === 0, telemetry: null });
+        expect(JSON.parse(readText(FLAG_FILE))).toMatchObject({ themeGradients: run % 2 === 0, telemetry: null });
         endFailures();
       }
       await launch();
@@ -944,7 +944,7 @@ describe('an unreadable flag file', () => {
       expect((await control.getStatus()).exportPaused).toBe(true);
       const result = await control.resumeExport();
       expect(result.status.exportPaused).toBe(false);
-      await vi.waitFor(() => expect(JSON.parse(readText(FLAG_FILE))).toEqual({ themeGradients: true, telemetry: true }));
+      await vi.waitFor(() => expect(JSON.parse(readText(FLAG_FILE))).toMatchObject({ themeGradients: true, telemetry: true }));
       await launch();
       expect(getTelemetrySettings().exportSuspended).toBeUndefined();
       expect(exportAttempts()).toBe(1);
@@ -1009,7 +1009,7 @@ describe('an unreadable flag file', () => {
       const read = experimentalSettings.getSettings();
       expect(read).not.toHaveProperty('telemetry');
       await experimentalSettings.saveSettings({ ...read, chat: true });
-      expect(JSON.parse(readText(FLAG_FILE))).toEqual({ themeGradients: true, chat: true, telemetry: null });
+      expect(JSON.parse(readText(FLAG_FILE))).toMatchObject({ themeGradients: true, chat: true, telemetry: null });
     });
 
     // What v0.42.0 leaves behind, from running its real code over the marker. See the PR.
@@ -1077,6 +1077,26 @@ describe('an unreadable flag file', () => {
       expect(getTelemetrySettings().exportSuspended).toBeUndefined();
       expect(entryOf('otlp').enabled).toBe(true);
       expect(exportAttempts()).toBe(1);
+    });
+
+    it('over a corrupt file, keeps a choice it can\'t read from being guessed away, in the same write', async () => {
+      await paused();
+      const writes = vi.spyOn(fs.promises, 'writeFile');
+      await control.resumeExport();
+      const flagWrites = writes.mock.calls.filter(([target]) => String(target).endsWith(FLAG_FILE));
+      expect(flagWrites).toHaveLength(1);
+      expect(JSON.parse(String(flagWrites[0][1]))).toEqual({ telemetry: true, chat: false, richChatContent: false, newChrome: false });
+      await launch();
+      expect(experimentalSettings.isGraduatedFeatureOn('chat')).toBe(false);
+      expect(experimentalSettings.isGraduatedFeatureOn('richChatContent')).toBe(false);
+    });
+
+    it('an opt-in over a readable file touches only its own key', async () => {
+      seedGate(undefined, true);
+      writeJson(FLAG_FILE, { chat: true });
+      resetAllSettingsStoresForTests();
+      await experimentalSettings.setStoredFlag('telemetry', true);
+      expect(JSON.parse(readText(FLAG_FILE))).toEqual({ chat: true, telemetry: true });
     });
 
     it('stays paused if the flag can\'t be saved', async () => {
@@ -1154,10 +1174,18 @@ describe('the renderer doesn\'t own the telemetry flag', () => {
     await launch();
     await vi.waitFor(() => expect(readSaved().exportSuspended).toBe('flag_unreadable'));
     await experimentalSettings.saveSettings({ telemetry: true, themeGradients: true });
-    await vi.waitFor(() => expect(saved()).toEqual({ themeGradients: true, telemetry: null }));
+    await vi.waitFor(() => expect(saved()).toMatchObject({ themeGradients: true, telemetry: null }));
     await launch();
     expect(getTelemetrySettings().exportSuspended).toBe('flag_unreadable');
     expect(exportAttempts()).toBe(0);
+  });
+
+  it('over an unreadable file, a choice the renderer does send wins over the stand-in', async () => {
+    seedGate(undefined, true);
+    fs.writeFileSync(userDataPath(FLAG_FILE), '{broken');
+    resetAllSettingsStoresForTests();
+    await experimentalSettings.saveSettings({ newChrome: true });
+    expect(saved()).toEqual({ newChrome: true, chat: false, richChatContent: false, telemetry: null });
   });
 
   it('main\'s opt-in still writes it, and a later renderer save keeps it', async () => {

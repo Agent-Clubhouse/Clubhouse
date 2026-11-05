@@ -1,6 +1,9 @@
 import { backupUnreadableSettings, createSettingsStore, latestRecoveryCopy, peekStoredSettingsSync } from './settings-store';
 import { isPreviewEligible } from './preview-eligible';
 import { PREVIEW_ONLY_EXPERIMENTAL_FLAGS, STRUCTURED_MODE_REMOVED_NOTICE_KEY, type ExperimentalSettings } from '../../shared/types';
+import { RICH_CHAT_CONTENT_FLAG } from '../../shared/chat';
+import { NEW_CHROME_FLAG } from '../../shared/chrome-flag';
+import { isGraduatedFlagOn } from '../../shared/graduated-flags';
 
 /**
  * Drop the removed `structuredMode` flag. Agents that used structured mode now
@@ -34,6 +37,17 @@ const isPreviewOnly = (key: string): boolean => PREVIEW_ONLY_EXPERIMENTAL_FLAGS.
  */
 export function savedSettingsUnreadable(): boolean {
   return peekStoredSettingsSync(FILENAME) === 'unreadable';
+}
+
+/** Off while the file can't be read: a saved false in it is an opt-out, so it isn't guessed away. */
+const OFF_WHEN_UNREADABLE = ['chat', RICH_CHAT_CONTENT_FLAG, NEW_CHROME_FLAG];
+
+/** What those read as, for the renderer and for a write over the file: a choice in it isn't guessed away. */
+const offWhenUnreadable = (): ExperimentalSettings => Object.fromEntries(OFF_WHEN_UNREADABLE.map((key) => [key, false]));
+
+/** Chat or rich content: on unless saved off, and off while the file can't be read. */
+export function isGraduatedFeatureOn(key: string): boolean {
+  return !savedSettingsUnreadable() && isGraduatedFlagOn(getSettings(), key);
 }
 
 /** What is saved, whatever this build honours. */
@@ -90,9 +104,17 @@ export function recoveryCopyPath(): string | undefined {
 export async function setStoredFlag(key: string, value: boolean): Promise<void> {
   if (store.get()[key] === value && !savedSettingsUnreadable()) return;
   await store.update((current) => {
-    preserveUnreadableFile();
-    return { ...current, [key]: value };
+    const unreadable = savedSettingsUnreadable();
+    if (unreadable) preserveUnreadableFile();
+    return { ...current, ...(unreadable ? offWhenUnreadable() : {}), [key]: value };
   });
+}
+
+/** The flags as the renderer reads them, so it agrees with isGraduatedFeatureOn. */
+export function getSettingsForRenderer(): ExperimentalSettings {
+  const settings = getSettings();
+  if (!savedSettingsUnreadable()) return settings;
+  return { ...settings, ...offWhenUnreadable() };
 }
 
 /**
@@ -110,6 +132,7 @@ export async function saveSettings(settings: ExperimentalSettings): Promise<void
     const unreadable = savedSettingsUnreadable();
     if (unreadable) preserveUnreadableFile();
     return {
+      ...(unreadable ? offWhenUnreadable() : {}),
       ...pickFlags(settings, (key) => !keepSaved(key)),
       ...pickFlags(saved, keepSaved),
       ...(unreadable ? unverifiedFlags() : {}),

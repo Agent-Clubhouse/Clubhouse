@@ -605,7 +605,7 @@ describe('FeedbackSettingsView telemetry prompt', () => {
     setFeedback(true);
     render(<FeedbackSettingsView />);
     await act(async () => {});
-    expect(screen.getByTestId('telemetry-paused')).toHaveTextContent('Other experimental settings may be back to their defaults.');
+    expect(screen.getByTestId('telemetry-paused')).toHaveTextContent('Other experimental settings may not be as you left them.');
     await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Resume' })); });
     expect(resume).toHaveBeenCalled();
     expect(screen.queryByTestId('telemetry-paused')).toBeNull();

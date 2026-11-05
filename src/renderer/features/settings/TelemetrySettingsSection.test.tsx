@@ -64,7 +64,7 @@ describe('TelemetrySettingsSection', () => {
     const resume = vi.spyOn(api, 'resume').mockResolvedValue({ ok: true, status: makeStatus({ exportPaused: false }) });
     render(<TelemetrySettingsSection />);
     const notice = await screen.findByTestId('telemetry-paused');
-    expect(notice).toHaveTextContent('Clubhouse couldn\'t read a settings file, so telemetry export is paused. Your telemetry settings are kept. Other experimental settings may be back to their defaults. The file as it was is saved at /data/experimental-settings.json.unreadable.');
+    expect(notice).toHaveTextContent('Clubhouse couldn\'t read a settings file, so telemetry export is paused. Your telemetry settings are kept. Other experimental settings may not be as you left them. The file as it was is saved at /data/experimental-settings.json.unreadable.');
     fireEvent.click(screen.getByRole('button', { name: 'Resume' }));
     await waitFor(() => expect(resume).toHaveBeenCalled());
     await waitFor(() => expect(screen.queryByTestId('telemetry-paused')).toBeNull());
@@ -74,7 +74,7 @@ describe('TelemetrySettingsSection', () => {
     mockApi(makeStatus({ exportPaused: true }));
     render(<TelemetrySettingsSection />);
     const notice = await screen.findByTestId('telemetry-paused');
-    expect(notice).toHaveTextContent('Other experimental settings may be back to their defaults.');
+    expect(notice).toHaveTextContent('Other experimental settings may not be as you left them.');
     expect(notice).not.toHaveTextContent('saved at');
     expect(notice).not.toHaveTextContent('Your settings are kept');
   });

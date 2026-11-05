@@ -144,7 +144,7 @@ export function TelemetryPausedNotice({ fileCopy, onResume, error }: { fileCopy?
   return (
     <div className="flex flex-wrap items-center gap-3 my-2" data-testid="telemetry-paused">
       <p className="text-xs text-ctp-subtext1">
-        Clubhouse couldn&apos;t read a settings file, so telemetry export is paused. Your telemetry settings are kept. Other experimental settings may be back to their defaults.
+        Clubhouse couldn&apos;t read a settings file, so telemetry export is paused. Your telemetry settings are kept. Other experimental settings may not be as you left them.
         {fileCopy && <> The file as it was is saved at <span className="font-mono break-all">{fileCopy}</span>.</>}
       </p>
       <Button kind="ghost" onClick={onResume}>Resume</Button>

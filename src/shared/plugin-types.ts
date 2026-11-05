@@ -276,9 +276,9 @@ export interface PluginThemeDeclaration {
   hljs: HljsColors;
   /** Terminal colors. */
   terminal: TerminalColors;
-  /** Custom font families (experimental — requires themeGradients feature flag). */
+  /** Custom font families. Not applied when the user turns off Theme gradients & fonts. */
   fonts?: ThemeFonts;
-  /** CSS gradients (experimental — requires themeGradients feature flag). */
+  /** CSS gradients. Not applied when the user turns off Theme gradients & fonts. */
   gradients?: ThemeGradients;
 }
 
@@ -1145,9 +1145,9 @@ export interface ThemeInfo {
   colors: Record<string, string>;
   hljs: Record<string, string>;
   terminal: Record<string, string>;
-  /** Custom font families (only present when themeGradients experimental flag is on). */
+  /** Custom font families (absent when the user turns off Theme gradients & fonts). */
   fonts?: { ui?: string; mono?: string };
-  /** CSS gradients (only present when themeGradients experimental flag is on). */
+  /** CSS gradients (absent when the user turns off Theme gradients & fonts). */
   gradients?: { background?: string; surface?: string; accent?: string };
 }
 

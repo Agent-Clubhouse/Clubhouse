@@ -27,7 +27,8 @@ vi.mock('electron', () => ({
   ClipboardItem: class { constructor(public data: Record<string, Blob>) {} },
   nativeImage: { createFromBuffer: () => ({ isEmpty: () => false, toPNG: () => Buffer.from('encoded-png') }) },
 }));
-vi.mock('../services/experimental-settings', () => ({ getSettings: () => ({ richChatContent: true }) }));
+const richContent = vi.hoisted(() => ({ on: true }));
+vi.mock('../services/experimental-settings', () => ({ isGraduatedFeatureOn: () => richContent.on }));
 vi.mock('../services/agent-runtime/chat-media', async (importOriginal) => ({
   ...await importOriginal<typeof import('../services/agent-runtime/chat-media')>(),
   readMedia: async () => ({ data: new Uint8Array([1, 2]), mimeType: 'image/png' }),
@@ -110,6 +111,17 @@ describe('chat handlers: rich call counts (unpackaged test seam, #2491)', () => 
 
   it('starts every rich channel at zero, and no other channel', () => {
     expect(counts()).toEqual(Object.fromEntries(RICH_CHAT_CHANNELS.map((c) => [c, 0])));
+  });
+
+  it('refuses rich channels while rich content reads as off, and serves them again after', async () => {
+    richContent.on = false;
+    try {
+      await expect(call(IPC.CHAT.READ_FILE_PREVIEW, 'agent-1', '/tmp/a.txt')).rejects.toThrow('Rich chat content is off');
+      await expect(call(IPC.CHAT.STAT_PATHS, 'agent-1', ['/tmp/a.txt'])).rejects.toThrow('Rich chat content is off');
+    } finally {
+      richContent.on = true;
+    }
+    await expect(call(IPC.CHAT.STAT_PATHS, 'agent-1', ['/tmp/a.txt'])).resolves.toBeDefined();
   });
 
   it('counts a call before validation and the flag check, including ones that fail', async () => {

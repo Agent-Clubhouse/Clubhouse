@@ -342,6 +342,7 @@ export const IPC = {
     SAVE_SESSION_SETTINGS: 'app:save-session-settings',
     RESTART: 'app:restart',
     GET_EXPERIMENTAL_SETTINGS: 'app:get-experimental-settings',
+    IS_EXPERIMENTAL_SETTINGS_UNREADABLE: 'app:is-experimental-settings-unreadable',
     SAVE_EXPERIMENTAL_SETTINGS: 'app:save-experimental-settings',
     // Session resume on update
     GET_PENDING_RESUMES: 'app:get-pending-resumes',

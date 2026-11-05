@@ -20,6 +20,8 @@ Pick a theme and it applies right away, terminals included.
 
 Plugins can add more themes, which show up in the same list.
 
+**Theme gradients & fonts** lets a theme use its own font families and background gradients, including themes from plugins. Turn it off to keep every theme to its colors and the standard fonts.
+
 Every theme includes terminal colors: the 16 ANSI colors, the cursor and the selection. Open terminals update when you switch.
 
 ## Idle projects

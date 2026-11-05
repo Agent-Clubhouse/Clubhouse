@@ -34,3 +34,4 @@ Devices are discovered automatically via Bonjour/mDNS on your local network.
 - All communication stays on your **local network** — nothing goes to external servers
 - PIN pairing prevents unauthorized device access
 - Regenerate the PIN anytime to revoke existing pairings
+- While **Rich chat content** is on in **Settings > Agents & providers**, paired phones (Clubhouse Go) can read any file your user account can read on this computer, up to a size limit, with no prompt for each file. Turn it off to stop that.

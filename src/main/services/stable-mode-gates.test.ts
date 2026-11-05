@@ -35,16 +35,18 @@ vi.mock('./dispatcher/dispatcher-service', async () => {
 });
 
 import { resetAllSettingsStoresForTests } from './settings-store';
-import { getSettings, getStoredSettings, saveSettings } from './experimental-settings';
+import { getSettings, getSettingsForRenderer, getStoredSettings, isGraduatedFeatureOn, saveSettings } from './experimental-settings';
 import { isPreviewEligible } from './preview-eligible';
-import { CHAT_EXPERIMENTAL_FLAG, isChatEnabled, isCopilotSdkEnabled, resolveRuntimeMode } from './chat-runtime-settings';
+import { isChatEnabled, isCopilotSdkEnabled, resolveRuntimeMode } from './chat-runtime-settings';
 import { dispatcherEnablement, isDispatcherEnabled } from './dispatcher/dispatcher-settings';
 import { isMcpEnabledForAny, isMcpOnAtAppLevel } from './mcp-settings';
 import { dispatcherCapability } from './mobile-dispatcher';
 import { applyExportGraduation, getTelemetrySettings } from '../telemetry/settings';
 import { isTelemetryConfigured, uiChrome } from '../telemetry/bootstrap';
 import { newChromeEnabled, resetNewChromeCacheForTests } from '../window-chrome';
+import { NEW_CHROME_FLAG } from '../../shared/chrome-flag';
 import { COPILOT_SDK_FLAG, RICH_CHAT_CONTENT_FLAG } from '../../shared/chat';
+import { isGraduatedFlagOn } from '../../shared/graduated-flags';
 import { TELEMETRY_CONSENT_VERSION } from '../../shared/telemetry/settings-types';
 import { PREVIEW_ONLY_EXPERIMENTAL_FLAGS, STRUCTURED_MODE_REMOVED_NOTICE_KEY } from '../../shared/types';
 
@@ -96,10 +98,73 @@ afterEach(() => {
   fs.rmSync(h.userData, { recursive: true, force: true });
 });
 
+describe('chat and rich content, in any build', () => {
+  const corrupt = () => {
+    fs.writeFileSync(path.join(h.userData, EXPERIMENTAL_FILE), '{ "chat": fal');
+    relaunch();
+  };
+
+  it('are on with the file or key missing', () => {
+    expect(isChatEnabled()).toBe(true);
+    expect(isGraduatedFeatureOn(RICH_CHAT_CONTENT_FLAG)).toBe(true);
+    write(EXPERIMENTAL_FILE, { goobers: true });
+    relaunch();
+    expect(isChatEnabled()).toBe(true);
+    expect(isGraduatedFeatureOn(RICH_CHAT_CONTENT_FLAG)).toBe(true);
+    expect(getSettingsForRenderer()).not.toHaveProperty('chat');
+  });
+
+  it('are off when saved false', () => {
+    write(EXPERIMENTAL_FILE, { chat: false, [RICH_CHAT_CONTENT_FLAG]: false });
+    relaunch();
+    expect(isChatEnabled()).toBe(false);
+    expect(isGraduatedFeatureOn(RICH_CHAT_CONTENT_FLAG)).toBe(false);
+    expect(resolveRuntimeMode('claude-code', 'chat')).toEqual({ mode: 'terminal' });
+  });
+
+  it('are off while the file can\'t be read, since a saved false may be in it', () => {
+    corrupt();
+    expect(getSettings()).toEqual({});
+    expect(isChatEnabled()).toBe(false);
+    expect(isGraduatedFeatureOn(RICH_CHAT_CONTENT_FLAG)).toBe(false);
+    expect(resolveRuntimeMode('claude-code', 'chat')).toEqual({ mode: 'terminal' });
+  });
+
+  it('an unrelated save over the file keeps the classic layout, and the toggle returns to new', async () => {
+    corrupt();
+    expect(newChromeEnabled()).toBe(false);
+    await saveSettings({ ...getSettingsForRenderer(), themeGradients: true });
+    expect(JSON.parse(bytes(EXPERIMENTAL_FILE))).toMatchObject({ [NEW_CHROME_FLAG]: false, themeGradients: true });
+
+    relaunch();
+    expect(newChromeEnabled()).toBe(false);
+    expect(uiChrome()).toBe('legacy');
+
+    await saveSettings({ ...getSettingsForRenderer(), [NEW_CHROME_FLAG]: true });
+    relaunch();
+    expect(newChromeEnabled()).toBe(true);
+    expect(uiChrome()).toBe('v2');
+  });
+
+  it('read the same way in the renderer, and only they are forced off', () => {
+    corrupt();
+    expect(getSettingsForRenderer()).toEqual({ chat: false, [RICH_CHAT_CONTENT_FLAG]: false, [NEW_CHROME_FLAG]: false });
+    expect(isGraduatedFlagOn(getSettingsForRenderer(), 'themeGradients')).toBe(true);
+  });
+
+  it('come back once the file is readable again', () => {
+    corrupt();
+    write(EXPERIMENTAL_FILE, { goobers: true });
+    relaunch();
+    expect(isChatEnabled()).toBe(true);
+    expect(isGraduatedFeatureOn(RICH_CHAT_CONTENT_FLAG)).toBe(true);
+  });
+});
+
 describe('the preview-only list', () => {
   it('names each feature by the same key its reader uses', () => {
     expect([...PREVIEW_ONLY_EXPERIMENTAL_FLAGS].sort()).toEqual([
-      'goobers', CHAT_EXPERIMENTAL_FLAG, RICH_CHAT_CONTENT_FLAG, COPILOT_SDK_FLAG,
+      'goobers', COPILOT_SDK_FLAG,
     ].sort());
   });
 });
@@ -185,8 +250,8 @@ describe('a packaged stable build with Preview off', () => {
     for (const flag of PREVIEW_ONLY_EXPERIMENTAL_FLAGS) expect(flags).not.toHaveProperty(flag);
   });
 
-  it('keeps honouring the saved layout, themeGradients and the structured-mode notice marker, and reads through the saved telemetry flag, which isn\'t preview-only', () => {
-    expect(getSettings()).toEqual({ newChrome: true, themeGradients: true, telemetry: true, [STRUCTURED_MODE_REMOVED_NOTICE_KEY]: true });
+  it('keeps honouring the saved layout, the graduated flags and the structured-mode notice marker, and reads through the saved telemetry flag', () => {
+    expect(getSettings()).toEqual({ newChrome: true, chat: true, [RICH_CHAT_CONTENT_FLAG]: true, themeGradients: true, telemetry: true, [STRUCTURED_MODE_REMOVED_NOTICE_KEY]: true });
   });
 
   it('still reports what is saved through getStoredSettings', () => {
@@ -216,12 +281,21 @@ describe('a packaged stable build with Preview off', () => {
     expect(bytes(EXPERIMENTAL_FILE)).toBe(saved);
   });
 
-  it('runs a Chat-mode agent in the terminal and leaves its saved choices alone', () => {
+  it('runs a Chat-mode agent in chat, without the preview-only Copilot SDK, and leaves its saved choices alone', () => {
+    const saved = bytes(CHAT_RUNTIME_FILE);
+    expect(isChatEnabled()).toBe(true);
+    expect(isCopilotSdkEnabled()).toBe(false);
+    expect(resolveRuntimeMode('claude-code', 'chat')).toEqual({ mode: 'chat' });
+    expect(resolveRuntimeMode('claude-code')).toEqual({ mode: 'chat' });
+    expect(bytes(CHAT_RUNTIME_FILE)).toBe(saved);
+  });
+
+  it('runs a Chat-mode agent in the terminal once Chat is saved off, and leaves its saved choices alone', () => {
+    write(EXPERIMENTAL_FILE, { ...ALL_SAVED, chat: false });
+    relaunch();
     const saved = bytes(CHAT_RUNTIME_FILE);
     expect(isChatEnabled()).toBe(false);
-    expect(isCopilotSdkEnabled()).toBe(false);
     expect(resolveRuntimeMode('claude-code', 'chat')).toEqual({ mode: 'terminal' });
-    expect(resolveRuntimeMode('claude-code')).toEqual({ mode: 'terminal' });
     expect(bytes(CHAT_RUNTIME_FILE)).toBe(saved);
   });
 
@@ -277,10 +351,17 @@ describe('a packaged stable build with Preview off', () => {
     });
 
     it('cannot turn on or change a preview-only flag', async () => {
-      write(EXPERIMENTAL_FILE, { chat: false });
+      write(EXPERIMENTAL_FILE, { copilotSdk: false });
       relaunch();
-      await saveSettings({ chat: true });
-      expect(JSON.parse(bytes(EXPERIMENTAL_FILE))).toEqual({ chat: false });
+      await saveSettings({ copilotSdk: true });
+      expect(JSON.parse(bytes(EXPERIMENTAL_FILE))).toEqual({ copilotSdk: false });
+    });
+
+    it('can change a graduated flag, so a saved false has a way back', async () => {
+      write(EXPERIMENTAL_FILE, { chat: false, [RICH_CHAT_CONTENT_FLAG]: false, themeGradients: false, goobers: true });
+      relaunch();
+      await saveSettings({ ...getSettings(), chat: true, [RICH_CHAT_CONTENT_FLAG]: true, themeGradients: true });
+      expect(JSON.parse(bytes(EXPERIMENTAL_FILE))).toEqual({ chat: true, [RICH_CHAT_CONTENT_FLAG]: true, themeGradients: true, goobers: true });
     });
 
     it('saves the layout choice, as the Display toggle does, and keeps the preview-only flags', async () => {
@@ -299,7 +380,7 @@ describe('a packaged stable build with Preview off', () => {
 
     it('serializes with the store, so two writes in a row both land and keep the flags', async () => {
       await Promise.all([saveSettings({ newChrome: true, themeGradients: false }), saveSettings({ newChrome: true, themeGradients: true })]);
-      const { [STRUCTURED_MODE_REMOVED_NOTICE_KEY]: _shown, ...expected } = ALL_SAVED;
+      const { [STRUCTURED_MODE_REMOVED_NOTICE_KEY]: _shown, chat: _chat, richChatContent: _rich, ...expected } = ALL_SAVED;
       expect(JSON.parse(bytes(EXPERIMENTAL_FILE))).toEqual(expected);
     });
   });
@@ -320,11 +401,11 @@ describe('a packaged stable build with Preview off', () => {
 });
 
 describe('with no saved flags, a packaged stable build', () => {
-  it('starts on the new layout with the Dispatcher on, the Preview features off, and writes nothing', () => {
+  it('starts on the new layout with Chat and the Dispatcher on, the Preview features off, and writes nothing', () => {
     expect(getSettings()).toEqual({});
     expect(newChromeEnabled()).toBe(true);
     expect(uiChrome()).toBe('v2');
-    expect(isChatEnabled()).toBe(false);
+    expect(isChatEnabled()).toBe(true);
     expect(isDispatcherEnabled()).toBe(true);
     expect(fs.readdirSync(h.userData)).toEqual([]);
   });
