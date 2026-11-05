@@ -154,7 +154,8 @@ describe('telemetry secret store, moving from the sync to the async API', () => 
   });
 
   it('re-encrypts under the new key when the async API asks to, keeping a later save', async () => {
-    storage.current = asyncOnlySafeStorage(chain);
+    const store = asyncOnlySafeStorage(chain);
+    storage.current = store;
     await writeSecrets({ connectionString: CS });
     chain.previousKeys = ['k1'];
     chain.key = 'k2';
@@ -169,10 +170,26 @@ describe('telemetry secret store, moving from the sync to the async API', () => 
     await writeSecrets({ connectionString: 'old' });
     chain.previousKeys = ['k2'];
     chain.key = 'k3';
+    // Calling readSecrets first does not mean its async file read captured
+    // the old bytes. Hold that read after decryption, then finish the later
+    // save before releasing it to enqueue the stale rewrap.
+    let captured!: () => void;
+    let release!: () => void;
+    const oldCaptured = new Promise<void>((resolve) => { captured = resolve; });
+    const continueRead = new Promise<void>((resolve) => { release = resolve; });
+    const decrypt = store.decryptStringAsync;
+    vi.spyOn(store, 'decryptStringAsync').mockImplementationOnce(async (bytes) => {
+      const result = await decrypt(bytes);
+      captured();
+      await continueRead;
+      return result;
+    });
     const read = readSecrets();
-    const saved = updateSecrets(() => ({ connectionString: 'new' }));
+    await oldCaptured;
+    try {
+      await updateSecrets(() => ({ connectionString: 'new' }));
+    } finally { release(); }
     expect(await read).toEqual({ connectionString: 'old' });
-    await saved;
     await updateSecrets((s) => s);
     expect(await readSecrets()).toEqual({ connectionString: 'new' });
   });
