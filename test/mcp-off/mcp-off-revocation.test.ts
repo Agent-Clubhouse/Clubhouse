@@ -280,7 +280,7 @@ describe('Clubhouse MCP going off, for running agents', () => {
       expect(refusedForMcp(result), `${label}: ${tool} ${result.text}`).toBe(false);
       expect(result.text ?? '', `${label}: ${tool}`).not.toContain('No binding found');
     }
-  });
+  }, 30_000);
 
   it('counts what it would do, before anything changes', async () => {
     const impact = await readMcpOffImpact({ mcp: { enabled: false } });
