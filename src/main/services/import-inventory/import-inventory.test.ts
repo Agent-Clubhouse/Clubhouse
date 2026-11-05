@@ -127,6 +127,7 @@ function recordingFs(): { fs: InventoryFs; touched: string[] } {
       lstat: (p) => record(p, () => fsp.lstat(p)),
       readdir: (p) => record(p, () => fsp.readdir(p, { withFileTypes: true })),
       readFile: (p) => record(p, () => fsp.readFile(p)),
+      realpath: (p) => record(p, () => fsp.realpath(p)),
     },
   };
 }
@@ -207,10 +208,10 @@ describe('project source folders', () => {
     expect(result.projects[0].warnings).toContain('source-folder-outside-clubhouse:agent-templates');
   });
 
-  it('won\'t take a source folder that would walk generated worktrees', async () => {
+  it('won\'t take a source folder that would walk generated worktrees, whatever its case', async () => {
     const project = makeProject('alpha');
     write(project, '.clubhouse/agents/lead/CLAUDE.md', 'generated\n');
-    setSettings(project, { defaultSkillsPath: 'agents', defaultAgentsPath: '.' });
+    setSettings(project, { defaultSkillsPath: 'Agents', defaultAgentsPath: '.' });
     registerProjects([project]);
 
     const result = await scanImportInventory();
@@ -307,6 +308,133 @@ describe('git state per file', () => {
   });
 });
 
+describe('git config can\'t run anything', () => {
+  /** A command that leaves a file named `marker` in the repo root when git runs it. */
+  const leaveMarker = (marker: string) => `echo ran > ${marker}`;
+
+  it('turns core.fsmonitor off, which would otherwise run on these same commands', async () => {
+    const project = makeProject('alpha');
+    write(project, '.clubhouse/skills/deploy/SKILL.md', 'x\n');
+    git(project, 'config', 'core.fsmonitor', leaveMarker('fsmonitor-ran'));
+    registerProjects([project]);
+    const marker = path.join(project, 'fsmonitor-ran');
+
+    await scanImportInventory();
+    expect(fs.existsSync(marker)).toBe(false);
+
+    // The control: without the override this config does run, so the check above can fail.
+    execFileSync('git', ['ls-files', '-z', '--cached'], { cwd: project, stdio: 'ignore' });
+    expect(fs.existsSync(marker)).toBe(true);
+  });
+
+  it('runs nothing from any other config key or hook that names a program', async () => {
+    const project = makeProject('alpha');
+    write(project, '.clubhouse/skills/tracked/SKILL.md', 'x\n');
+    write(project, '.gitattributes', '*.md filter=evil diff=evil\n');
+    git(project, 'add', '.clubhouse/skills/tracked/SKILL.md');
+    write(project, '.clubhouse/skills/untracked/SKILL.md', 'y\n');
+    const keys = [
+      'core.pager', 'core.sshCommand', 'core.editor', 'core.askPass', 'core.alternateRefsCommand', 'core.gitProxy',
+      'pager.ls-files', 'pager.check-ignore', 'filter.evil.clean', 'filter.evil.smudge', 'filter.evil.process',
+      'diff.external', 'diff.evil.command', 'diff.evil.textconv', 'credential.helper', 'gpg.program',
+      'sequence.editor', 'alias.ls-files', 'alias.check-ignore',
+    ];
+    for (const [i, key] of keys.entries()) git(project, 'config', key, leaveMarker(`config-ran-${i}`));
+    git(project, 'config', 'core.hooksPath', 'evil-hooks');
+    for (const hook of ['post-index-change', 'pre-commit', 'post-checkout', 'reference-transaction', 'fsmonitor-watchman']) {
+      const file = write(project, `evil-hooks/${hook}`, `#!/bin/sh\n${leaveMarker(`hook-ran-${hook}`)}\n`);
+      fs.chmodSync(file, 0o755);
+    }
+    registerProjects([project]);
+
+    const result = await scanImportInventory();
+
+    expect(entry(result, 'skill', 'tracked').sources[0].files[0].gitState).toBe('tracked');
+    expect(fs.readdirSync(project).filter((f) => f.includes('-ran'))).toEqual([]);
+  });
+});
+
+describe('symlinked parents', () => {
+  /** Skips quietly where symlinks need a privilege, as on Windows runners without it. */
+  function link(target: string, at: string): boolean {
+    fs.mkdirSync(path.dirname(at), { recursive: true });
+    try {
+      fs.symlinkSync(target, at, 'junction');
+      return true;
+    } catch {
+      return false; // telemetry-exempt: nothing to test without the privilege
+    }
+  }
+
+  it.each([
+    ['.clubhouse/skills', 'deploy/SKILL.md'],
+    ['.clubhouse/agent-templates', 'deploy/README.md'],
+    ['.clubhouse/personas', 'deploy.md'],
+    ['.clubhouse', 'skills/deploy/SKILL.md'],
+  ])('won\'t follow %s out of the project', async (linked, rel) => {
+    const project = makeProject('alpha');
+    const outside = path.join(root, 'outside');
+    write(outside, rel, 'OUTSIDE\n');
+    if (!link(outside, path.join(project, ...linked.split('/')))) return;
+    registerProjects([project]);
+    const before = snapshotTree(outside);
+
+    const result = await scanImportInventory();
+
+    expect(result.entries).toEqual([]);
+    expect(result.projects[0].excluded.symlink).toBeGreaterThan(0);
+    expect(snapshotTree(outside)).toEqual(before);
+  });
+
+  it('won\'t follow a config folder out for instructions or MCP', async () => {
+    const project = makeProject('alpha');
+    const outside = path.join(root, 'outside');
+    write(outside, 'copilot-instructions.md', 'OUTSIDE\n');
+    write(outside, 'mcp.json', JSON.stringify({ mcpServers: { outside: { command: 'x' } } }));
+    if (!link(outside, path.join(project, '.github'))) return;
+    const worktree = path.join(project, '.clubhouse', 'agents', 'lead');
+    fs.mkdirSync(worktree, { recursive: true });
+    if (!link(outside, path.join(worktree, '.github'))) return;
+    setAgents(project, [{ id: 'a1', name: 'lead', worktreePath: worktree }]);
+    registerProjects([project]);
+
+    const result = await scanImportInventory({ includeProviderConfig: true, homeDir: dirs.home });
+
+    expect(result.entries).toEqual([]);
+    expect(result.providerEntries).toEqual([]);
+  });
+
+  it('follows a symlink that stays inside, and still answers for its neighbours in git', async () => {
+    const project = makeProject('alpha');
+    write(project, '.clubhouse/real-skills/deploy/SKILL.md', 'x\n');
+    write(project, '.clubhouse/skills/plain/SKILL.md', 'y\n');
+    if (!link(path.join(project, '.clubhouse', 'real-skills'), path.join(project, '.clubhouse', 'linked'))) return;
+
+    const states = await readGitStates(
+      project,
+      ['.clubhouse/linked/deploy/SKILL.md', '.clubhouse/skills/plain/SKILL.md'],
+      new AbortController().signal,
+    );
+
+    // git calls the first path "beyond a symbolic link" and fails the batch; only that path pays.
+    expect(states.get('.clubhouse/linked/deploy/SKILL.md')).toBe('unknown');
+    expect(states.get('.clubhouse/skills/plain/SKILL.md')).toBe('untracked');
+  });
+
+  it('won\'t take a source folder that links to generated worktrees', async () => {
+    const project = makeProject('alpha');
+    write(project, '.clubhouse/agents/lead/CLAUDE.md', 'generated\n');
+    if (!link(path.join(project, '.clubhouse', 'agents'), path.join(project, '.clubhouse', 'sneaky'))) return;
+    setSettings(project, { defaultSkillsPath: 'sneaky' });
+    registerProjects([project]);
+
+    const result = await scanImportInventory();
+
+    expect(result.entries).toEqual([]);
+    expect(result.projects[0].warnings).toEqual(['source-folder-outside-clubhouse:skills']);
+  });
+});
+
 describe('reads only', () => {
   /** A worktree-bearing repo whose index is stale, so anything that refreshes it would write. */
   function staleRepoFixture(): string {
@@ -358,7 +486,7 @@ describe('reads only', () => {
     const home = snapshotTree(dirs.home);
     const userData = snapshotTree(dirs.userData);
 
-    await scanImportInventory({ includeProviderConfig: true });
+    await scanImportInventory({ includeProviderConfig: true, homeDir: dirs.home });
 
     expect(snapshotTree(dirs.home)).toEqual(home);
     expect(snapshotTree(dirs.userData)).toEqual(userData);
@@ -652,6 +780,7 @@ describe('MCP definitions', () => {
       forwardedEnv: [],
       headerNames: ['Authorization'],
       omittedKeys: ['timeout'],
+      withheldValues: 0,
     });
     expect(github.wildcards).toEqual(['@@Path']);
     expect(github.sources[0].files[0].relativePath).toBe('.mcp.json');
@@ -684,23 +813,130 @@ describe('MCP definitions', () => {
     expect(merged.sources.map((s) => s.projectId)).toEqual(['id-a', 'id-b']);
   });
 
-  it('excludes a definition with a credential in its args or URL, and counts it', async () => {
+  it('withholds credentials in args and URLs, says so on the definition, and counts them', async () => {
     const project = makeProject('alpha');
-    const servers = {
-      flag: { command: 'x', args: ['--api-key', 'LITERAL-ARG-SECRET'] },
-      assign: { command: 'x', args: ['--token=LITERAL-ASSIGN-SECRET'] },
-      url: { url: 'https://user:LITERAL-URL-SECRET@example.com/mcp' },
-      query: { url: 'https://example.com/mcp?token=LITERAL-QUERY-SECRET' },
-      ok: { command: 'x', args: ['--token', '${TOKEN}'] },
+    const servers: Record<string, unknown> = {
+      flag: { command: 'x', args: ['--api-key', 'LITERAL-ARG'] },
+      assign: { command: 'x', args: ['--token=LITERAL-ASSIGN'] },
+      header: { command: 'x', args: ['--header', 'Authorization: Bearer LITERAL-HEADER'] },
+      headerShort: { command: 'x', args: ['-H', 'X-Custom: LITERAL-SHORT'] },
+      headerInline: { command: 'x', args: ['--header=Cookie: LITERAL-INLINE'] },
+      headerBare: { command: 'x', args: ['Authorization: Bearer LITERAL-BARE'] },
+      dbArg: { command: 'x', args: ['postgresql://admin:LITERAL-DB@db/prod'] },
+      dbFlag: { command: 'x', args: ['--db=postgresql://admin:LITERAL-DBFLAG@db/prod'] },
+      keyValue: { command: 'x', args: ['API_KEY=LITERAL-KEYVALUE'] },
+      inCommand: { command: 'x --password LITERAL-COMMAND' },
+      userinfo: { url: 'https://user:LITERAL-USERINFO@example.com/mcp' },
+      query: { url: 'https://example.com/mcp?key=LITERAL-QUERY&page=2' },
+      fragment: { url: 'https://example.com/mcp#access_token=LITERAL-FRAGMENT' },
+      opaque: { command: 'x', args: ['--x', `a1${'LITERALOPAQUE'.repeat(3)}`] },
     };
     write(project, '.mcp.json', JSON.stringify({ mcpServers: servers }));
     registerProjects([project]);
 
     const result = await scanImportInventory();
 
-    expect(result.entries.map((e) => e.name)).toEqual(['ok']);
-    expect(result.projects[0].excluded['secret-looking']).toBe(4);
-    expect(JSON.stringify(result)).not.toContain('LITERAL-');
+    expect(result.entries.map((e) => e.name).sort()).toEqual(Object.keys(servers).sort());
+    for (const e of result.entries) {
+      expect(e.mcp?.withheldValues, e.name).toBeGreaterThan(0);
+      expect(JSON.stringify(e.mcp), e.name).toContain('<withheld>');
+    }
+    expect(result.projects[0].excluded['credential-value']).toBe(15);
+    expect(JSON.stringify([result, vi.mocked(appLog).mock.calls])).not.toContain('LITERAL');
+    expect(entry(result, 'mcp-server', 'header').mcp?.args).toEqual(['--header', 'Authorization: <withheld>']);
+    expect(entry(result, 'mcp-server', 'dbArg').mcp?.args).toEqual(['postgresql://<withheld>@db/prod']);
+    expect(entry(result, 'mcp-server', 'query').mcp?.url).toBe('https://example.com/mcp?key=<withheld>&page=<withheld>');
+    expect(entry(result, 'mcp-server', 'keyValue').mcp?.args).toEqual(['API_KEY=<withheld>']);
+  });
+
+  it('leaves references, wildcards and ordinary args readable', async () => {
+    const project = makeProject('alpha');
+    const args = ['--token', '${TOKEN}', '--header', 'Authorization: Bearer ${TOKEN}', '--path', '@@Path', '--port', '3000', 'pkg@1.2.3', '--auth', '--verbose'];
+    write(project, '.mcp.json', JSON.stringify({ mcpServers: {
+      ok: { command: 'x', args },
+      url: { url: 'https://${USER}:${PASS}@example.com/mcp?token=${TOKEN}' },
+    } }));
+    registerProjects([project]);
+
+    const result = await scanImportInventory();
+
+    expect(entry(result, 'mcp-server', 'ok').mcp).toMatchObject({ args, withheldValues: 0 });
+    expect(entry(result, 'mcp-server', 'url').mcp).toMatchObject({ url: 'https://${USER}:${PASS}@example.com/mcp?token=${TOKEN}', withheldValues: 0 });
+    expect(result.projects[0].excluded['credential-value']).toBe(0);
+  });
+
+  it('merges definitions differing only in a withheld value, because the hash never sees it', async () => {
+    const a = makeProject('a');
+    const b = makeProject('b');
+    write(a, '.mcp.json', JSON.stringify({ mcpServers: { s: { command: 'x', args: ['--token', 'value-one'] } } }));
+    write(b, '.mcp.json', JSON.stringify({ mcpServers: { s: { command: 'x', args: ['--token', 'value-two'] } } }));
+    registerProjects([a, b]);
+
+    const result = await scanImportInventory();
+
+    expect(entry(result, 'mcp-server', 's').sources).toHaveLength(2);
+    expect(entry(result, 'mcp-server', 's').conflict).toBe(false);
+  });
+
+  describe('hostile keys', () => {
+    afterEach(() => {
+      expect(({} as Record<string, unknown>).polluted).toBeUndefined();
+      expect(({} as Record<string, unknown>).y).toBeUndefined();
+      expect(({} as Record<string, unknown>).NODE_OPTIONS).toBeUndefined();
+    });
+
+    it('doesn\'t let a repo\'s TOML reach Object.prototype, and keeps the servers around it', async () => {
+      const project = makeProject('alpha');
+      write(project, '.codex/config.toml', [
+        '__proto__.polluted = "yes"',
+        'x = { __proto__.y = "z" }',
+        'constructor.prototype.polluted = "yes"',
+        '"__proto__".polluted = "yes"',
+        '[__proto__]',
+        'polluted = "yes"',
+        '[mcp_servers.good]',
+        'command = "c"',
+        '__proto__.polluted = "yes"',
+        'NODE_OPTIONS.__proto__.polluted = "yes"',
+        'env = { __proto__ = { NODE_OPTIONS = "--require=evil" } }',
+        'constructor = { prototype = { polluted = "yes" } }',
+        '[mcp_servers.__proto__]',
+        'polluted = "yes"',
+        'command = "must-not-land-in-good"',
+        '[mcp_servers.good2.__proto__]',
+        'polluted = "yes"',
+        '[mcp_servers.constructor.prototype]',
+        'polluted = "yes"',
+        '[mcp_servers.last]',
+        'command = "l"',
+      ].join('\n'));
+      registerProjects([project]);
+
+      const result = await scanImportInventory();
+
+      expect(({} as Record<string, unknown>).polluted).toBeUndefined();
+      expect(result.entries.map((e) => e.name)).toEqual(['good', 'last']);
+      expect(entry(result, 'mcp-server', 'good').mcp?.command).toBe('c');
+    });
+
+    it('refuses the same keys from JSON, without treating them as names', async () => {
+      const project = makeProject('alpha');
+      write(project, '.mcp.json', [
+        '{"mcpServers":{',
+        '"__proto__":{"command":"x"},',
+        '"constructor":{"command":"x"},',
+        '"prototype":{"command":"x"},',
+        '"good":{"command":"c","__proto__":{"polluted":"yes"},"env":{"__proto__":"v","KEEP":"v"},"headers":{"constructor":"v"}}',
+        '}}',
+      ].join(''));
+      registerProjects([project]);
+
+      const result = await scanImportInventory();
+
+      expect(result.entries.map((e) => e.name)).toEqual(['good']);
+      expect(entry(result, 'mcp-server', 'good').mcp).toMatchObject({ env: [{ name: 'KEEP' }], headerNames: [], omittedKeys: [] });
+      expect(result.projects[0].excluded['non-definition']).toBe(3);
+    });
   });
 
   it('reads definitions from the project defaults and Codex TOML, and ignores the rest of the TOML', async () => {
@@ -744,6 +980,7 @@ describe('MCP definitions', () => {
       forwardedEnv: ['FORWARDED'],
       headerNames: [],
       omittedKeys: [],
+      withheldValues: 0,
     });
     expect(entry(result, 'mcp-server', 'inline').mcp?.env).toEqual([{ name: 'A' }]);
     expect(result.projects[0].bridgeEntriesFiltered).toBe(2);
@@ -1085,6 +1322,81 @@ describe('progress and cancel', () => {
     expect(result.entries.map((e) => e.name)).toEqual(['done']);
   });
 
+  it('cancels mid-scan, in the middle of a project\'s files, and reads no further', async () => {
+    const first = makeProject('first');
+    const second = makeProject('second');
+    write(first, '.clubhouse/skills/done/SKILL.md', 'x\n');
+    for (const name of ['aaa', 'bbb', 'ccc', 'ddd']) write(second, `.clubhouse/skills/${name}/SKILL.md`, `${name}\n`);
+    registerProjects([first, second]);
+    const controller = new AbortController();
+    const real = recordingFs().fs;
+    const reads: string[] = [];
+    const cancelling: InventoryFs = {
+      ...real,
+      readFile: (p) => {
+        reads.push(p);
+        if (p.includes(`${path.sep}bbb${path.sep}`)) controller.abort();
+        return real.readFile(p);
+      },
+    };
+
+    const result = await scanImportInventory({ signal: controller.signal, fs: cancelling });
+
+    expect(result.status).toBe('cancelled');
+    expect(result.projects.map((p) => p.status)).toEqual(['scanned', 'cancelled']);
+    expect(result.entries.map((e) => e.name)).toEqual(['done']);
+    expect(reads.filter((p) => p.includes(`${path.sep}ccc${path.sep}`) || p.includes(`${path.sep}ddd${path.sep}`))).toEqual([]);
+  });
+
+  // A stand-in git on PATH, which only POSIX can run by that name without a shell.
+  describe.skipIf(process.platform === 'win32')('during a git call', () => {
+    const originalPath = process.env.PATH;
+    afterEach(() => { process.env.PATH = originalPath; });
+
+    /** After this, `git` announces itself and then hangs until killed. */
+    function slowGit(): string {
+      const bin = path.join(root, '_bin');
+      const started = path.join(root, '_git-started');
+      fs.chmodSync(write(bin, 'git', `#!/bin/sh\necho started > "${started}"\nexec sleep 60\n`), 0o755);
+      process.env.PATH = `${bin}${path.delimiter}${originalPath}`;
+      return started;
+    }
+
+    it('stops a running git, keeps no part of the project, and changes nothing', async () => {
+      const project = makeProject('alpha');
+      write(project, '.clubhouse/skills/deploy/SKILL.md', 'x\n');
+      registerProjects([project]);
+      const before = snapshotTree(project);
+      const started = slowGit();
+      const controller = new AbortController();
+      const at = Date.now();
+
+      const pending = scanImportInventory({ signal: controller.signal });
+      await vi.waitFor(() => expect(fs.existsSync(started)).toBe(true), { timeout: 10_000, interval: 20 });
+      controller.abort();
+      const result = await pending;
+
+      expect(Date.now() - at).toBeLessThan(20_000);
+      expect(result.status).toBe('cancelled');
+      expect(result.projects[0].status).toBe('cancelled');
+      expect(result.entries).toEqual([]);
+      expect(snapshotTree(project)).toEqual(before);
+    });
+
+    it('gives back every path as unknown when readGitStates itself is aborted', async () => {
+      const project = makeProject('alpha');
+      const started = slowGit();
+      const controller = new AbortController();
+
+      const pending = readGitStates(project, ['a.md', 'b.md'], controller.signal);
+      await vi.waitFor(() => expect(fs.existsSync(started)).toBe(true), { timeout: 10_000, interval: 20 });
+      controller.abort();
+      const states = await pending;
+
+      expect([...states.values()]).toEqual(['unknown', 'unknown']);
+    });
+  });
+
   it('does nothing when cancelled before it starts', async () => {
     const project = makeProject('a');
     registerProjects([project]);
@@ -1169,6 +1481,35 @@ describe('provider and global config', () => {
     expect(serialized).not.toContain('GLOBAL-ENV-VALUE');
   });
 
+  it('refuses to read provider config without being told which home', async () => {
+    registerProjects([makeProject('alpha')]);
+    const options = { includeProviderConfig: true } as Parameters<typeof scanImportInventory>[0];
+
+    await expect(scanImportInventory(options)).rejects.toThrow('homeDir');
+  });
+
+  it('offers native subagent files as their own kind, with provider config', async () => {
+    const project = makeProject('alpha');
+    write(project, '.claude/agents/reviewer.md', 'Reviews\n');
+    write(project, '.github/agents/rev.agent.md', 'Reviews too\n');
+    write(project, '.codex/agents/helper.toml', 'name = "helper"\n');
+    write(project, '.claude/agents/notes.png', Buffer.from([1, 2]));
+    write(project, '.claude/agents/foldered/README.md', 'A template\n');
+    write(dirs.home, '.claude/agents/mine.md', 'Mine\n');
+    registerProjects([project]);
+
+    const off = await scanImportInventory();
+    expect(off.entries).toEqual([]);
+
+    const on = await scanImportInventory({ includeProviderConfig: true, homeDir: dirs.home });
+    expect(on.entries).toEqual([]);
+    const subagents = on.providerEntries.filter((e) => e.kind === 'native-subagent');
+    expect(subagents.map((e) => [e.name, e.scope])).toEqual([['helper', 'provider'], ['mine', 'global'], ['rev', 'provider'], ['reviewer', 'provider']]);
+    expect(subagents[3].sources[0].files[0].relativePath).toBe('.claude/agents/reviewer.md');
+    expect(on.providerEntries.find((e) => e.name === 'foldered')?.kind).toBe('agent-template');
+    expect(on.projects[0].excluded['non-definition']).toBe(1);
+  });
+
   it('says so when the global scan can\'t finish, and keeps the projects', async () => {
     write(dirs.home, '.claude/CLAUDE.md', 'x\n');
     const project = makeProject('alpha');
@@ -1214,6 +1555,10 @@ describe('Windows paths', () => {
     expect(confinedJoin(base, '..dots', path.win32)).toBe('C:\\repo\\.clubhouse\\..dots');
     expect(confinedJoin(base, '.', path.win32)).toBeNull();
     expect(confinedJoin(base, 'agents\\lead', path.win32)).toBeNull();
+    expect(confinedJoin(base, 'Agents', path.win32)).toBeNull();
+    expect(confinedJoin(base, 'AGENTS\\lead', path.win32)).toBeNull();
+    expect(confinedJoin(base, 'agents.', path.win32)).toBeNull();
+    expect(confinedJoin(base, 'agents-old', path.win32)).toBe('C:\\repo\\.clubhouse\\agents-old');
   });
 
   it('matches git\'s answer to another spelling of the path where the filesystem folds case', async () => {

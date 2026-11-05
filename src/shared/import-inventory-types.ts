@@ -12,6 +12,8 @@ export type InventoryKind =
   | 'default-permissions'
   | 'agent-instructions'
   | 'provider-instructions'
+  /** A CLI's own subagent file (`.claude/agents/x.md`, `.github/agents/x.agent.md`). Provider config, so off by default. */
+  | 'native-subagent'
   | 'mcp-server';
 
 /** `provider` and `global` are read only on request and kept apart from `project`. */
@@ -22,6 +24,8 @@ export type InventoryGitState = 'tracked' | 'untracked' | 'ignored' | 'not-a-rep
 
 export type InventoryExclusionReason =
   | 'secret-looking'
+  /** A credential in an MCP definition's args or URL, replaced by a marker. The definition stays listed. */
+  | 'credential-value'
   | 'non-definition'
   | 'too-large'
   | 'unreadable'
@@ -80,6 +84,12 @@ export interface InventoryMcpDefinition {
   headerNames: string[];
   /** Keys in the stored definition that this list doesn't carry. */
   omittedKeys: string[];
+  /**
+   * Credentials in `command`, `args` or `url` replaced by `<withheld>`. Nonzero
+   * means this can't be used as it stands: a library entry needs them moved to
+   * references first, since the catalog refuses secrets.
+   */
+  withheldValues: number;
 }
 
 export interface InventoryPersonaMetadata {

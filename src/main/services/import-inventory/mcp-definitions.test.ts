@@ -77,7 +77,7 @@ describe('readMcpEntry', () => {
   });
 
   it('allows URLs and args that aren\'t credentials', () => {
-    expect(readMcpEntry({ url: 'https://example.com/mcp?page=2' }).kind).toBe('definition');
+    expect(readMcpEntry({ url: 'https://example.com/mcp' })).toMatchObject({ definition: { url: 'https://example.com/mcp', withheldValues: 0 } });
     expect(readMcpEntry({ url: '@@ServerUrl' }).kind).toBe('definition');
     expect(readMcpEntry({ command: 'x', args: ['--verbose', '--port', '3000'] }).kind).toBe('definition');
     expect(readMcpEntry({ command: 'x', args: ['--auth', '--verbose'] }).kind).toBe('definition');

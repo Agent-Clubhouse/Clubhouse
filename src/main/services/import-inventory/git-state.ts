@@ -4,8 +4,14 @@
  * refreshes or writes the index, which `git status` does (see the test that
  * proves the fixture would catch it).
  *
- * The scanned repository is the user's, so its config isn't trusted to stay
- * read-only either: `core.fsmonitor` can name a program to run, and is turned off.
+ * The scanned repository's contents and config aren't trusted, since a clone can
+ * carry anything. What could run or fetch something on these two commands:
+ *   - `core.fsmonitor` names a program git runs on any index read: turned off.
+ *   - On Windows, libuv looks for `git.exe` in the spawn's cwd before PATH, so a
+ *     repo holding one would run it: git gets the repo through `-C`, never as cwd.
+ *   - A partial clone can fetch a skip-worktree `.gitignore`: GIT_NO_LAZY_FETCH.
+ * Hooks, filters, pagers and the like don't run here; import-inventory.test.ts
+ * sets them all to prove it.
  */
 import { execFile } from 'child_process';
 import * as path from 'path';
@@ -20,7 +26,7 @@ const MAX_ARGS_CHARS = 20_000;
 const INHERITED_GIT_ENV = ['GIT_DIR', 'GIT_WORK_TREE', 'GIT_INDEX_FILE', 'GIT_COMMON_DIR', 'GIT_OBJECT_DIRECTORY', 'GIT_PREFIX'];
 
 function gitEnv(): NodeJS.ProcessEnv {
-  const env: NodeJS.ProcessEnv = { ...process.env, GIT_OPTIONAL_LOCKS: '0', LC_ALL: 'C' };
+  const env: NodeJS.ProcessEnv = { ...process.env, GIT_OPTIONAL_LOCKS: '0', GIT_NO_LAZY_FETCH: '1', LC_ALL: 'C' };
   for (const name of INHERITED_GIT_ENV) delete env[name];
   return env;
 }
@@ -31,12 +37,12 @@ interface GitResult {
   stderr: string;
 }
 
-function runGit(args: string[], cwd: string, signal: AbortSignal, input?: string): Promise<GitResult> {
+function runGit(args: string[], root: string, signal: AbortSignal, input?: string): Promise<GitResult> {
   return new Promise((resolve) => {
     const child = execFile(
       'git',
-      ['-c', 'core.fsmonitor=false', ...args],
-      { cwd, env: gitEnv(), encoding: 'utf-8', maxBuffer: MAX_BUFFER, timeout: GIT_TIMEOUT_MS, signal, windowsHide: true },
+      ['-C', root, '-c', 'core.fsmonitor=false', ...args],
+      { env: gitEnv(), encoding: 'utf-8', maxBuffer: MAX_BUFFER, timeout: GIT_TIMEOUT_MS, signal, windowsHide: true },
       (error, stdout, stderr) => {
         const code = error ? (typeof error.code === 'number' ? error.code : -1) : 0;
         resolve({ code, stdout, stderr });
@@ -56,6 +62,33 @@ export function toGitPath(root: string, file: string, impl: path.PlatformPath = 
 function comparisonKey(gitPath: string, platform: NodeJS.Platform): string {
   const nfc = gitPath.normalize('NFC');
   return platform === 'win32' || platform === 'darwin' ? nfc.toLowerCase() : nfc;
+}
+
+/**
+ * Fills `ignored` from check-ignore. One path can fail a whole batch (`is beyond
+ * a symbolic link` exits 128), so a failed batch splits until only the bad paths
+ * are left, and those alone go in `failed`.
+ */
+async function checkIgnored(
+  root: string,
+  paths: readonly string[],
+  signal: AbortSignal,
+  ignored: Set<string>,
+  failed: Set<string>,
+): Promise<void> {
+  const result = await runGit(['check-ignore', '-z', '--stdin'], root, signal, `${paths.join('\0')}\0`);
+  // 0: some are ignored. 1: none are. Anything else is a failure, not an answer.
+  if (result.code === 0 || result.code === 1) {
+    for (const name of result.stdout.split('\0')) {
+      if (name) ignored.add(name);
+    }
+  } else if (paths.length === 1 || signal.aborted) {
+    for (const p of paths) failed.add(p);
+  } else {
+    const middle = Math.floor(paths.length / 2);
+    await checkIgnored(root, paths.slice(0, middle), signal, ignored, failed);
+    await checkIgnored(root, paths.slice(middle), signal, ignored, failed);
+  }
 }
 
 function chunkPaths(paths: readonly string[]): string[][] {
@@ -102,21 +135,17 @@ export async function readGitStates(
   }
 
   const untrackedOrIgnored = gitPaths.filter((p) => !tracked.has(comparisonKey(p, platform)));
-  let ignored = new Set<string>();
+  const ignoredNames = new Set<string>();
+  const failed = new Set<string>();
   if (untrackedOrIgnored.length > 0) {
     // check-ignore refuses --literal-pathspecs (exit 128). It takes each path whole anyway.
-    const result = await runGit(['check-ignore', '-z', '--stdin'], root, signal, `${untrackedOrIgnored.join('\0')}\0`);
-    // 0: some are ignored. 1: none are. Anything else is a failure, not an answer.
-    if (result.code !== 0 && result.code !== 1) {
-      for (const p of gitPaths) states.set(p, tracked.has(comparisonKey(p, platform)) ? 'tracked' : 'unknown');
-      return states;
-    }
-    ignored = new Set(result.stdout.split('\0').filter(Boolean).map((n) => comparisonKey(n, platform)));
+    await checkIgnored(root, untrackedOrIgnored, signal, ignoredNames, failed);
   }
+  const ignored = new Set([...ignoredNames].map((n) => comparisonKey(n, platform)));
 
   for (const p of gitPaths) {
     const key = comparisonKey(p, platform);
-    states.set(p, tracked.has(key) ? 'tracked' : ignored.has(key) ? 'ignored' : 'untracked');
+    states.set(p, tracked.has(key) ? 'tracked' : failed.has(p) ? 'unknown' : ignored.has(key) ? 'ignored' : 'untracked');
   }
   return states;
 }

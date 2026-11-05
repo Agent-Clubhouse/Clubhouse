@@ -6,13 +6,19 @@
  */
 import { isClubhouseMcpEntry, isEnvReference } from '../clubhouse-mcp/injection';
 import type { InventoryMcpDefinition } from '../../../shared/import-inventory-types';
-import { definitionHoldsSecret } from './classify';
+import { redactDefinitionValues } from './classify';
 
 const CARRIED_KEYS = new Set(['command', 'args', 'url', 'type', 'env', 'env_vars', 'headers', 'http_headers']);
 
+/** Keys that reach Object.prototype or mean nothing as a name. Refused in every parser here. */
+const FORBIDDEN_KEYS = new Set(['__proto__', 'constructor', 'prototype']);
+
+export function isForbiddenKey(key: string): boolean {
+  return FORBIDDEN_KEYS.has(key);
+}
+
 export type McpEntryResult =
   | { kind: 'bridge' }
-  | { kind: 'secret' }
   | { kind: 'invalid' }
   | { kind: 'definition'; definition: InventoryMcpDefinition };
 
@@ -29,22 +35,25 @@ export function readMcpEntry(entry: unknown): McpEntryResult {
   if (isClubhouseMcpEntry(entry)) return { kind: 'bridge' };
   if (!isRecord(entry)) return { kind: 'invalid' };
 
-  const command = typeof entry.command === 'string' ? entry.command : undefined;
-  const url = typeof entry.url === 'string' ? entry.url : undefined;
-  const args = stringArray(entry.args);
-  if (!command && !url) return { kind: 'invalid' };
-  if (definitionHoldsSecret({ command, args, url }, isEnvReference)) return { kind: 'secret' };
+  const rawCommand = typeof entry.command === 'string' ? entry.command : undefined;
+  const rawUrl = typeof entry.url === 'string' ? entry.url : undefined;
+  if (!rawCommand && !rawUrl) return { kind: 'invalid' };
+  const { command, args, url, withheld } = redactDefinitionValues(
+    { command: rawCommand, args: stringArray(entry.args), url: rawUrl },
+    isEnvReference,
+  );
 
   const env = isRecord(entry.env)
-    ? Object.entries(entry.env).map(([name, value]) => (isEnvReference(value) ? { name, reference: value as string } : { name }))
+    ? Object.entries(entry.env).filter(([name]) => !isForbiddenKey(name)).map(([name, value]) => (isEnvReference(value) ? { name, reference: value as string } : { name }))
     : [];
   const headers = isRecord(entry.headers) ? entry.headers : isRecord(entry.http_headers) ? entry.http_headers : {};
 
   const definition: InventoryMcpDefinition = {
     env: env.sort((a, b) => a.name.localeCompare(b.name)),
     forwardedEnv: [...(stringArray(entry.env_vars) ?? [])].sort(),
-    headerNames: Object.keys(headers).sort(),
-    omittedKeys: Object.keys(entry).filter((k) => !CARRIED_KEYS.has(k)).sort(),
+    headerNames: Object.keys(headers).filter((k) => !isForbiddenKey(k)).sort(),
+    omittedKeys: Object.keys(entry).filter((k) => !CARRIED_KEYS.has(k) && !isForbiddenKey(k)).sort(),
+    withheldValues: withheld,
   };
   if (command) definition.command = command;
   if (args) definition.args = args;
@@ -64,7 +73,12 @@ export function parseJsonMcpServers(text: string): Record<string, unknown> | nul
   }
   if (!isRecord(parsed)) return null;
   const servers = parsed.mcpServers ?? parsed.mcp_servers;
-  return isRecord(servers) ? servers : {};
+  // A null prototype makes `__proto__` a plain key here; mcpItems refuses it by name.
+  const safe: Record<string, unknown> = Object.create(null);
+  if (isRecord(servers)) {
+    for (const [name, entry] of Object.entries(servers)) safe[name] = entry;
+  }
+  return safe;
 }
 
 class TomlScanner {
@@ -73,6 +87,10 @@ class TomlScanner {
 
   get done(): boolean {
     return this.pos >= this.text.length;
+  }
+
+  get atHeader(): boolean {
+    return this.text[this.pos] === '[';
   }
 
   private peek(): string {
@@ -111,7 +129,9 @@ class TomlScanner {
     const keys: string[] = [];
     for (;;) {
       this.skipBlank(false);
-      keys.push(this.key());
+      const key = this.key();
+      if (isForbiddenKey(key)) throw new Error('forbidden key');
+      keys.push(key);
       this.skipBlank(false);
       if (this.peek() !== '.') return keys;
       this.pos++;
@@ -182,7 +202,7 @@ class TomlScanner {
 
   private inlineTable(): Record<string, unknown> {
     this.pos++;
-    const table: Record<string, unknown> = {};
+    const table: Record<string, unknown> = Object.create(null);
     for (;;) {
       this.skipBlank(true);
       if (this.peek() === '}') {
@@ -201,9 +221,10 @@ class TomlScanner {
 }
 
 function setPath(target: Record<string, unknown>, keys: string[], value: unknown): void {
+  if (keys.some(isForbiddenKey)) throw new Error('forbidden key');
   let at = target;
   for (const key of keys.slice(0, -1)) {
-    if (!isRecord(at[key])) at[key] = {};
+    if (!isRecord(at[key])) at[key] = Object.create(null);
     at = at[key] as Record<string, unknown>;
   }
   at[keys[keys.length - 1]] = value;
@@ -216,17 +237,18 @@ function setPath(target: Record<string, unknown>, keys: string[], value: unknown
  * outside these tables, is parsed past and dropped.
  */
 export function parseTomlMcpServers(text: string): Record<string, unknown> {
-  const servers: Record<string, unknown> = {};
+  const servers: Record<string, unknown> = Object.create(null);
   const scanner = new TomlScanner(text);
   let table: string[] = [];
   while (!scanner.done) {
     scanner.skipBlank(true);
     if (scanner.done) break;
+    const atHeader = scanner.atHeader;
     try {
       const header = scanner.header();
       if (header) {
         table = header;
-        if (table[0] === 'mcp_servers' && table.length >= 2) setPath(servers, table.slice(1), {});
+        if (table[0] === 'mcp_servers' && table.length >= 2) setPath(servers, table.slice(1), Object.create(null));
       } else {
         const keys = scanner.dottedKey();
         scanner.expect('=');
@@ -237,6 +259,8 @@ export function parseTomlMcpServers(text: string): Record<string, unknown> {
       }
     } catch {
       // telemetry-exempt: a line this small reader can't follow; skipped, and nothing about it is kept
+      // A bad header's keys must not land in the table before it.
+      if (atHeader) table = [];
       scanner.skipLine();
     }
   }

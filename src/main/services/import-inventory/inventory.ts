@@ -16,7 +16,6 @@
 import { createHash } from 'crypto';
 import type { Dirent, Stats } from 'fs';
 import * as fsp from 'fs/promises';
-import * as os from 'os';
 import * as path from 'path';
 import { peekDurableConfigs } from '../agent-config';
 import { getBaseDirPath } from '../base-dir';
@@ -63,7 +62,7 @@ import {
   looksBinary,
 } from './classify';
 import { readGitStates, toGitPath } from './git-state';
-import { parseJsonMcpServers, parseTomlMcpServers, readMcpEntry } from './mcp-definitions';
+import { isForbiddenKey, parseJsonMcpServers, parseTomlMcpServers, readMcpEntry } from './mcp-definitions';
 
 const LOG_NS = 'core:import-inventory';
 const CLUBHOUSE_MODE_SETTINGS_FILE = 'clubhouse-mode-settings.json';
@@ -117,6 +116,7 @@ export interface InventoryFs {
   lstat(p: string): Promise<Stats>;
   readdir(p: string): Promise<Dirent[]>;
   readFile(p: string): Promise<Buffer>;
+  realpath(p: string): Promise<string>;
 }
 
 const REAL_FS: InventoryFs = {
@@ -124,28 +124,36 @@ const REAL_FS: InventoryFs = {
   lstat: (p) => fsp.lstat(p),
   readdir: (p) => fsp.readdir(p, { withFileTypes: true }),
   readFile: (p) => fsp.readFile(p),
+  realpath: (p) => fsp.realpath(p),
 };
 
-export interface InventoryOptions {
+interface InventoryBaseOptions {
   /** Selectable scope: these project ids, or all when omitted. Orphans are still judged against all. */
   projectIds?: readonly string[];
-  /** Also read provider folders in project roots and user-level config. Off by default. */
-  includeProviderConfig?: boolean;
   signal?: AbortSignal;
   onProgress?: (progress: InventoryProgress) => void;
   limits?: Partial<InventoryLimits>;
   /** How long one project may take. A hung mount is reported as unavailable and the scan moves on. */
   projectTimeoutMs?: number;
-  homeDir?: string;
   fs?: InventoryFs;
 }
+
+/**
+ * Provider folders in project roots and user-level config are off by default.
+ * Asking for them means saying which home: there's no fallback to the real one,
+ * so a test can't scan it by leaving this out.
+ */
+export type InventoryOptions = InventoryBaseOptions & (
+  | { includeProviderConfig?: false; homeDir?: string }
+  | { includeProviderConfig: true; homeDir: string }
+);
 
 const DEFAULT_PROJECT_TIMEOUT_MS = 60_000;
 
 class ScanStopped extends Error {}
 
 function emptyExclusions(): InventoryExclusionCounts {
-  return { 'secret-looking': 0, 'non-definition': 0, 'too-large': 0, unreadable: 0, symlink: 0, 'over-limit': 0 };
+  return { 'secret-looking': 0, 'credential-value': 0, 'non-definition': 0, 'too-large': 0, unreadable: 0, symlink: 0, 'over-limit': 0 };
 }
 
 function sha256(data: string | Buffer): string {
@@ -193,7 +201,8 @@ export function confinedJoin(base: string, sub: string, impl: path.PlatformPath 
   const joined = impl.join(base, sub);
   const rel = impl.relative(base, joined);
   if (rel === '' || rel === '..' || rel.startsWith(`..${impl.sep}`) || impl.isAbsolute(rel)) return null;
-  return rel.split(impl.sep)[0] === 'agents' ? null : joined;
+  // Whatever the case or Windows' dropped trailing dots: on those filesystems it's the same folder.
+  return rel.split(impl.sep)[0].replace(/[. ]+$/, '').toLowerCase() === 'agents' ? null : joined;
 }
 
 // ── Built-ins ────────────────────────────────────────────────────────────
@@ -270,8 +279,12 @@ interface Context {
   truncated: boolean;
   bridgeFiltered: number;
   warnings: Set<string>;
+  /** Folders already checked against their root's real path. */
+  dirChecks: Map<string, Promise<DirCheck>>;
   onFiles?: (filesSeen: number) => void;
 }
+
+type DirCheck = 'inside' | 'outside' | 'missing' | 'unreadable';
 
 function newContext(
   fs: InventoryFs,
@@ -287,6 +300,7 @@ function newContext(
     truncated: false,
     bridgeFiltered: 0,
     warnings: new Set(),
+    dirChecks: new Map(),
   };
 }
 
@@ -320,6 +334,45 @@ function countEntry(ctx: Context): boolean {
   return true;
 }
 
+/**
+ * Whether `dir`, symlinks resolved, is inside `root`. lstat and readdir see only
+ * the last component, so `.clubhouse/skills` or `.github` as a symlink would
+ * otherwise lead out of the project.
+ */
+function checkDir(ctx: Context, root: string, dir: string): Promise<DirCheck> {
+  const key = `${root}\0${dir}`;
+  let check = ctx.dirChecks.get(key);
+  if (!check) {
+    check = (async (): Promise<DirCheck> => {
+      try {
+        const [realRoot, realDir] = await Promise.all([ctx.fs.realpath(root), ctx.fs.realpath(dir)]);
+        const rel = path.relative(realRoot, realDir);
+        return rel === '..' || rel.startsWith(`..${path.sep}`) || path.isAbsolute(rel) ? 'outside' : 'inside';
+      } catch (err) {
+        // telemetry-exempt: the caller counts this; a folder that isn't there is the common case
+        return isMissing(err) ? 'missing' : 'unreadable';
+      }
+    })();
+    ctx.dirChecks.set(key, check);
+  }
+  return check;
+}
+
+/** A folder's entries, once it's known to be inside `root`. A folder that isn't there is empty. */
+async function readConfinedDir(ctx: Context, root: string, dir: string): Promise<Dirent[]> {
+  const check = await checkDir(ctx, root, dir);
+  if (check === 'outside') ctx.excluded.symlink++;
+  if (check === 'unreadable') ctx.excluded.unreadable++;
+  if (check !== 'inside') return [];
+  try {
+    return await ctx.fs.readdir(dir);
+  } catch (err) {
+    // telemetry-exempt: counted; one unreadable folder must not stop the project
+    if (!isMissing(err)) ctx.excluded.unreadable++;
+    return [];
+  }
+}
+
 type ReadOutcome = { file: ScannedFile } | 'excluded' | 'missing';
 
 /**
@@ -334,6 +387,12 @@ async function readDefinitionFile(
 ): Promise<ReadOutcome> {
   await checkpoint(ctx);
   const name = path.basename(file);
+  const check = await checkDir(ctx, root, path.dirname(file));
+  if (check === 'missing') return 'missing';
+  if (check !== 'inside') {
+    ctx.excluded[check === 'outside' ? 'symlink' : 'unreadable']++;
+    return 'excluded';
+  }
   let stats: Stats;
   try {
     stats = await ctx.fs.lstat(file);
@@ -453,20 +512,20 @@ async function scanFolderItems(
   dir: string,
   kind: 'skill' | 'agent-template',
   scope: InventoryScope,
+  opts: { looseSubagents?: boolean } = {},
 ): Promise<RawItem[]> {
-  let dirents: Dirent[];
-  try {
-    dirents = await ctx.fs.readdir(dir);
-  } catch (err) {
-    // telemetry-exempt: a project without this folder is the common case; anything else is counted
-    if (!isMissing(err)) ctx.excluded.unreadable++;
-    return [];
-  }
+  const dirents = await readConfinedDir(ctx, root, dir);
   dirents.sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
   const items: RawItem[] = [];
   for (const dirent of dirents) {
     await checkpoint(ctx);
     if (!dirent.isDirectory()) {
+      const subagent = opts.looseSubagents && dirent.isFile() ? dirent.name.match(/^(.+?)(?:\.agent\.md|\.md|\.toml)$/) : null;
+      if (subagent) {
+        const outcome = await readDefinitionFile(ctx, root, path.join(dir, dirent.name));
+        if (outcome !== 'excluded' && outcome !== 'missing') items.push(singleFileItem('native-subagent', subagent[1], scope, outcome.file));
+        continue;
+      }
       if (!countEntry(ctx)) break;
       ctx.excluded[dirent.isSymbolicLink() ? 'symlink' : 'non-definition']++;
       continue;
@@ -513,14 +572,7 @@ function personaMetadata(text: string): InventoryPersonaMetadata {
 }
 
 async function scanPersonaFolder(ctx: Context, root: string, dir: string, scope: InventoryScope): Promise<RawItem[]> {
-  let dirents: Dirent[];
-  try {
-    dirents = await ctx.fs.readdir(dir);
-  } catch (err) {
-    // telemetry-exempt: a project without this folder is the common case; anything else is counted
-    if (!isMissing(err)) ctx.excluded.unreadable++;
-    return [];
-  }
+  const dirents = await readConfinedDir(ctx, root, dir);
   dirents.sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
   const items: RawItem[] = [];
   for (const dirent of dirents) {
@@ -550,14 +602,13 @@ function mcpItems(
 ): RawItem[] {
   const items: RawItem[] = [];
   for (const [name, entry] of Object.entries(servers)) {
-    const result = readMcpEntry(entry);
+    const result = isForbiddenKey(name) ? { kind: 'invalid' as const } : readMcpEntry(entry);
     if (result.kind === 'bridge') {
       ctx.bridgeFiltered++;
-    } else if (result.kind === 'secret') {
-      ctx.excluded['secret-looking']++;
     } else if (result.kind === 'invalid') {
       ctx.excluded['non-definition']++;
     } else {
+      ctx.excluded['credential-value'] += result.definition.withheldValues;
       items.push({
         kind: 'mcp-server', name, scope,
         root: file.root,
@@ -673,22 +724,29 @@ function defaultsItems(ctx: Context, defaults: ProjectAgentDefaults, file: Scann
 }
 
 /** Where a project's source folder lives, honoring the setting the code honors, kept under `.clubhouse`. */
-function sourceFolder(ctx: Context, projectPath: string, stored: unknown, fallback: string): string | null {
+async function sourceFolder(ctx: Context, projectPath: string, stored: unknown, fallback: string): Promise<string | null> {
   const sub = typeof stored === 'string' && stored ? stored : fallback;
   const base = path.join(projectPath, '.clubhouse');
-  const joined = confinedJoin(base, sub);
+  let joined = confinedJoin(base, sub);
+  if (joined) {
+    // The same test on the real paths, for a folder inside `.clubhouse` that links to `agents`.
+    try {
+      const [realBase, realJoined] = await Promise.all([ctx.fs.realpath(base), ctx.fs.realpath(joined)]);
+      if (!confinedJoin(realBase, path.relative(realBase, realJoined))) {
+        ctx.excluded.symlink++;
+        joined = null;
+      }
+    } catch {
+      // telemetry-exempt: a folder that isn't there has nothing to confine; reading it reports anything else
+    }
+  }
   if (!joined) ctx.warnings.add(`source-folder-outside-clubhouse:${fallback}`);
   return joined;
 }
 
 async function countMissions(ctx: Context, projectPath: string): Promise<number> {
-  try {
-    const dirents = await ctx.fs.readdir(path.join(projectPath, '.clubhouse', 'missions'));
-    return dirents.filter((d) => d.isFile() && d.name.endsWith('.md')).length;
-  } catch {
-    // telemetry-exempt: a project without missions is the common case
-    return 0;
-  }
+  const dirents = await readConfinedDir(ctx, projectPath, path.join(projectPath, '.clubhouse', 'missions'));
+  return dirents.filter((d) => d.isFile() && d.name.endsWith('.md')).length;
 }
 
 /**
@@ -736,7 +794,7 @@ async function scanProviderFolders(ctx: Context, root: string, scope: InventoryS
   const items: RawItem[] = [];
   for (const dir of configDirs) {
     items.push(...await scanFolderItems(ctx, root, path.join(root, dir, 'skills'), 'skill', scope));
-    items.push(...await scanFolderItems(ctx, root, path.join(root, dir, 'agents'), 'agent-template', scope));
+    items.push(...await scanFolderItems(ctx, root, path.join(root, dir, 'agents'), 'agent-template', scope, { looseSubagents: true }));
   }
   return items;
 }
@@ -783,9 +841,9 @@ async function scanProject(
   const { settings, file: settingsFile } = await readProjectSettings(ctx, projectPath);
   const defaults: ProjectAgentDefaults = settings.agentDefaults && typeof settings.agentDefaults === 'object' ? settings.agentDefaults : {};
 
-  const skillsDir = sourceFolder(ctx, projectPath, settings.defaultSkillsPath, 'skills');
+  const skillsDir = await sourceFolder(ctx, projectPath, settings.defaultSkillsPath, 'skills');
   const skills = skillsDir ? await scanFolderItems(ctx, projectPath, skillsDir, 'skill', 'project') : [];
-  const templatesDir = sourceFolder(ctx, projectPath, settings.defaultAgentsPath, 'agent-templates');
+  const templatesDir = await sourceFolder(ctx, projectPath, settings.defaultAgentsPath, 'agent-templates');
   const templates = templatesDir ? await scanFolderItems(ctx, projectPath, templatesDir, 'agent-template', 'project') : [];
   items.push(...skills, ...templates);
   items.push(...await scanPersonaFolder(ctx, projectPath, path.join(projectPath, '.clubhouse', 'personas'), 'project'));
@@ -1045,6 +1103,7 @@ export async function scanImportInventory(options: InventoryOptions = {}): Promi
   const outerSignal = options.signal ?? new AbortController().signal;
   const timeoutMs = options.projectTimeoutMs ?? DEFAULT_PROJECT_TIMEOUT_MS;
   const includeProviderConfig = options.includeProviderConfig === true;
+  if (includeProviderConfig && !options.homeDir) throw new Error('includeProviderConfig needs homeDir');
   // Never run synchronously inside the caller's tick.
   await new Promise<void>((resolve) => setImmediate(resolve));
 
@@ -1159,7 +1218,7 @@ export async function scanImportInventory(options: InventoryOptions = {}): Promi
     let ctx: Context | null = null;
     const outcome = await withDeadline(async (signal) => {
       ctx = newContext(fs, limits, signal);
-      const items = await scanGlobal(ctx, options.homeDir ?? os.homedir(), getBaseDirPath());
+      const items = await scanGlobal(ctx, options.homeDir as string, getBaseDirPath());
       return toSources(items, signal, null);
     }, outerSignal, timeoutMs).catch((err: unknown) => {
       // telemetry-exempt: global config is optional; a failure leaves it out and the projects stand
