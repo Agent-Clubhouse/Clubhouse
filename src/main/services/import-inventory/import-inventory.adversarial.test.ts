@@ -1171,6 +1171,20 @@ describe('what an import UI needs', () => {
     expect(merged.entries[0].sources.map((s) => s.id).sort()[0]).toBe(merged.entries[0].id);
   });
 
+  it('gives a merged entry the same id whichever order its sources are found in', async () => {
+    const a = makeDir('a');
+    const b = makeDir('b');
+    write(a, '.clubhouse/skills/s/SKILL.md', 'same');
+    write(b, '.clubhouse/skills/s/SKILL.md', 'same');
+    register([a, b]);
+    const forward = await scan();
+    register([b, a]);
+    const backward = await scan();
+
+    expect(forward.entries).toHaveLength(1);
+    expect(backward.entries[0].id).toBe(forward.entries[0].id);
+  });
+
   it('lists exclusions with their relative path and a closed reason, up to a bound', async () => {
     const project = makeDir('alpha');
     write(project, '.clubhouse/skills/s/SKILL.md', 'ok');
