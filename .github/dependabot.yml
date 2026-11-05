@@ -74,6 +74,11 @@ updates:
         update-types: ["version-update:semver-major"]
       - dependency-name: "@electron-forge/*"
         versions: [">=8.0.0"]
+      # @types/node follows the Node embedded in Electron (Electron 45 ships
+      # Node 24), so newer typings would allow APIs the app can't call. Raise
+      # this with the Electron major that moves to a newer Node.
+      - dependency-name: "@types/node"
+        versions: [">=25.0.0"]
       # The OTel packages and the Azure exporter move as one pinned train
       # (docs/telemetry-otel-spec.md §6.3): exporter 1.0.0-beta.46 needs
       # sdk-logs/api-logs ^0.221.0 (a 0.x caret pins the minor), and the OTLP
@@ -84,8 +89,9 @@ updates:
         update-types: ["version-update:semver-major"]
       - dependency-name: "@azure/monitor-opentelemetry-exporter"
         versions: [">1.0.0-beta.46"]
+      # context-async-hooks 2.10.0 peer-requires api <1.10.0.
       - dependency-name: "@opentelemetry/api"
-        versions: [">=2.0.0"]
+        versions: [">=1.10.0"]
       - dependency-name: "@opentelemetry/sdk-trace-base"
         versions: [">=2.11.0"]
       - dependency-name: "@opentelemetry/sdk-metrics"
