@@ -5,7 +5,7 @@ import * as os from 'os';
 import * as path from 'path';
 import { createDisposableProfile, seedProfile, type DisposableProfile } from './app-profile';
 import { installFakeClis, type FakeClis } from './chat-fake-cli';
-import { launchApp, type LaunchedApp, type LaunchOptions } from './launch';
+import { launchApp, type ElectronApp, type LaunchedApp, type LaunchOptions } from './launch';
 import { addProject } from './smoke-helpers';
 import { BETA_FLAGS, betaFiles } from './stable-state-seeds.mjs';
 
@@ -18,6 +18,9 @@ import { BETA_FLAGS, betaFiles } from './stable-state-seeds.mjs';
  * This build plays both sides of the upgrade: a classic session writes the state,
  * then a launch with no saved flag reads it. An upgrade from a released build is
  * not run. See docs/ci.md for the budget: this runs in the Stable-mode E2E job.
+ *
+ * The last group is a smoke of the default layout's paths. It lives here because
+ * this file already runs in that job on Linux and Windows.
  */
 
 const STABLE_BUILD = { CLUBHOUSE_TEST_STABLE_BUILD: '1' };
@@ -53,10 +56,11 @@ async function quit(): Promise<void> {
   app = undefined;
 }
 
-function makeProject(name: string): string {
+function makeProject(name: string, { owner = tempDirs, agents = [] }: { owner?: string[]; agents?: unknown[] } = {}): string {
   const dir = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'clubhouse-e2e-layout-')), name);
-  tempDirs.push(path.dirname(dir));
-  fs.mkdirSync(dir);
+  owner.push(path.dirname(dir));
+  fs.mkdirSync(path.join(dir, '.clubhouse'), { recursive: true });
+  fs.writeFileSync(path.join(dir, '.clubhouse', 'agents.json'), JSON.stringify(agents));
   fs.writeFileSync(path.join(dir, 'README.md'), '# layout default e2e\n');
   const env = { ...process.env, GIT_AUTHOR_NAME: 'E2E', GIT_AUTHOR_EMAIL: 'e2e@test.local', GIT_COMMITTER_NAME: 'E2E', GIT_COMMITTER_EMAIL: 'e2e@test.local' };
   execSync('git init -q && git add -A && git commit -qm init', { cwd: dir, env, stdio: 'pipe' });
@@ -233,4 +237,170 @@ test('beta user on classic: a Dispatcher that is on can be turned off, and then 
   await expect(dispatcher).toHaveAttribute('aria-checked', 'false', { timeout: 15_000 });
   await expect(dispatcher).toBeDisabled();
   await expect(w.locator('#dispatcher-enabled-help')).toHaveText('The Dispatcher needs the new layout. Turn off Classic layout in Settings > Display & UI.');
+});
+
+/**
+ * A smoke: each path works once, on one launch with no pinned flags. It is not the
+ * depth the classic layout's specs have, and doesn't replace them. `claude` is the
+ * fake CLI and the other providers point at nothing, so no prompt can reach a real one.
+ */
+test.describe.serial('default path smoke', () => {
+  const SEEDED_AGENT_ID = 'durable_default_smoke';
+  const SEEDED_AGENT = 'smoke-seeded';
+  const CREATED_AGENT = 'smoke-created';
+  const MISSION = 'smoke-mission';
+
+  let smokeApp: ElectronApp;
+  let w: Page;
+  let smokeFakes: FakeClis;
+  let projects: Array<{ id: string; name: string; dir: string }>;
+  const smokeDirs: string[] = [];
+
+  const projectHeader = (id: string) => w.locator(`[data-testid="project-${id}"]`);
+  const newAgentPage = () => w.locator('[data-testid="new-agent-page"]');
+  const palette = () => w.locator('[data-testid="command-palette-overlay"]');
+
+  /** A tab is in the title bar or, when they don't all fit, in its More menu. */
+  async function selectTab(id: string): Promise<void> {
+    const tab = w.locator(`[data-testid="explorer-tab-${id}"]`);
+    await expect(async () => {
+      const more = w.locator('[data-testid="title-more"]');
+      if (!(await tab.isVisible()) && await more.isVisible()) await more.click();
+      await expect(tab).toBeVisible({ timeout: 1_000 });
+    }).toPass({ timeout: 20_000 });
+    await tab.click();
+  }
+
+  async function runPaletteCommand(label: string): Promise<void> {
+    await palette().locator('input').fill(label);
+    await expect(palette().locator('[role="option"][aria-selected="true"]')).toContainText(label);
+    await w.keyboard.press('Enter');
+    await expect(palette()).toBeHidden({ timeout: 5_000 });
+  }
+
+  test.beforeAll(async () => {
+    smokeFakes = await installFakeClis({ claude: 'session-info' });
+    const dirs = [
+      makeProject('smoke-alpha', { owner: smokeDirs, agents: [{
+        id: SEEDED_AGENT_ID, name: SEEDED_AGENT, color: 'emerald', createdAt: new Date().toISOString(), orchestrator: 'claude-code',
+      }] }),
+      makeProject('smoke-beta', { owner: smokeDirs }),
+    ];
+    ({ electronApp: smokeApp, window: w } = await launchApp({
+      label: 'default-smoke',
+      userDataFiles: { 'orchestrator-settings.json': { enabled: ['claude-code'], autoDetected: true } },
+      env: smokeFakes.env,
+    }));
+    await expect(w.locator('[data-testid="chrome-title-bar"]')).toBeVisible({ timeout: 15_000 });
+    for (const dir of dirs) await addProject(smokeApp, w, dir);
+    const listed = await w.evaluate(async () => (await window.clubhouse.project.list() as Array<{ id: string; path: string }>).map(({ id, path: p }) => ({ id, path: p })));
+    projects = dirs.map((dir) => ({ id: listed.find((p) => p.path === dir)!.id, name: path.basename(dir), dir }));
+  });
+
+  test.afterAll(async () => {
+    await smokeApp?.close();
+    await smokeFakes?.cleanup();
+    for (const dir of smokeDirs) await fs.promises.rm(dir, { recursive: true, force: true, maxRetries: 20, retryDelay: 100 });
+  });
+
+  test('sidebar: selects a project, an agent and the tabs', async () => {
+    const [alpha, beta] = projects;
+    await projectHeader(beta.id).click();
+    await expect(projectHeader(beta.id)).toHaveAttribute('data-active', 'true');
+    await expect(projectHeader(alpha.id)).toHaveAttribute('data-active', 'false');
+
+    await projectHeader(alpha.id).click();
+    await expect(projectHeader(alpha.id)).toHaveAttribute('data-active', 'true');
+    await w.locator(`[data-testid="sleeping-fold-${alpha.id}"]`).click();
+    await w.locator(`[data-testid="agent-item-${SEEDED_AGENT_ID}"]`).click();
+    await expect(w.locator('[data-testid="wake-button"]')).toBeVisible({ timeout: 10_000 });
+
+    // A tab's own list takes over the sidebar, and Agents brings the tree back.
+    await selectTab('plugin:files');
+    await expect(w.locator('[data-testid="project-tree"]')).toBeHidden({ timeout: 10_000 });
+    await selectTab('agents');
+    await expect(w.locator('[data-testid="project-tree"]')).toBeVisible({ timeout: 10_000 });
+    await expect(w.locator('[data-testid="wake-button"]')).toBeVisible({ timeout: 10_000 });
+  });
+
+  test('settings: opens, moves between pages, closes and returns to the agent', async () => {
+    await w.locator('[data-testid="nav-settings"]').click();
+    await expect(w.locator('[data-testid="settings-nav"]')).toBeVisible({ timeout: 10_000 });
+
+    for (const [page, title] of [['keyboard-shortcuts', 'Keyboard shortcuts'], ['about', 'About']]) {
+      await w.locator(`[data-testid="settings-nav-app-${page}"]`).click();
+      await expect(w.getByRole('heading', { name: title, exact: true })).toBeVisible({ timeout: 10_000 });
+    }
+
+    await w.locator('[data-testid="nav-settings"]').click();
+    await expect(w.locator('[data-testid="settings-nav"]')).toBeHidden({ timeout: 10_000 });
+    await expect(w.locator('[data-testid="project-tree"]')).toBeVisible();
+    await expect(w.locator('[data-testid="wake-button"]')).toBeVisible({ timeout: 10_000 });
+  });
+
+  test('palette: opens, runs a command and closes', async () => {
+    const sidebarToggle = w.locator('[data-testid="chrome-sidebar-toggle"]');
+    await expect(sidebarToggle).toHaveAttribute('aria-pressed', 'true');
+
+    await w.locator('[data-testid="chrome-palette-button"]').click();
+    await expect(palette()).toBeVisible({ timeout: 5_000 });
+    await runPaletteCommand('Toggle sidebar');
+    await expect(sidebarToggle).toHaveAttribute('aria-pressed', 'false');
+
+    // The sidebar's button is gone with it, so back by the shortcut.
+    await w.keyboard.press('Meta+k');
+    await expect(palette()).toBeVisible({ timeout: 5_000 });
+    await runPaletteCommand('Toggle sidebar');
+    await expect(sidebarToggle).toHaveAttribute('aria-pressed', 'true');
+
+    await w.keyboard.press('Meta+k');
+    await expect(palette()).toBeVisible({ timeout: 5_000 });
+    await w.keyboard.press('Escape');
+    await expect(palette()).toBeHidden({ timeout: 5_000 });
+  });
+
+  test('new agent page: offers both kinds, and cancels', async () => {
+    await w.locator('[data-testid="chrome-new"]').click();
+    await w.getByRole('menuitem', { name: 'Quick agent…' }).click();
+    await expect(newAgentPage()).toBeVisible({ timeout: 10_000 });
+    await expect(w.locator('[data-testid="new-agent-kind-quick"]')).toHaveAttribute('aria-checked', 'true');
+    await expect(w.locator('[data-testid="new-agent-mission"]')).toBeVisible();
+
+    await w.locator('[data-testid="new-agent-kind-durable"]').click();
+    await expect(w.locator('[data-testid="new-agent-kind-durable"]')).toHaveAttribute('aria-checked', 'true');
+    await expect(w.locator('[data-testid="new-agent-name"]')).toBeVisible();
+
+    await newAgentPage().getByRole('button', { name: 'Cancel', exact: true }).click();
+    await expect(newAgentPage()).toBeHidden({ timeout: 5_000 });
+  });
+
+  test('new agent page: creates a durable agent from a project row', async () => {
+    const [alpha] = projects;
+    await projectHeader(alpha.id).hover();
+    await w.getByRole('button', { name: `New agent in ${alpha.name}`, exact: true }).click();
+    await expect(newAgentPage()).toBeVisible({ timeout: 10_000 });
+
+    await w.locator('[data-testid="new-agent-name"]').fill(CREATED_AGENT);
+    await expect(w.locator('[data-testid="new-agent-submit"]')).toBeEnabled({ timeout: 10_000 });
+    await w.locator('[data-testid="new-agent-submit"]').click();
+
+    await expect(newAgentPage()).toBeHidden({ timeout: 30_000 });
+    await expect(w.locator(`[data-agent-name="${CREATED_AGENT}"]`)).toBeVisible({ timeout: 15_000 });
+    const saved = JSON.parse(await fs.promises.readFile(path.join(alpha.dir, '.clubhouse', 'agents.json'), 'utf8'));
+    expect(saved.map((a: { name: string }) => a.name)).toContain(CREATED_AGENT);
+  });
+
+  test('new agent page: starts a quick agent on the fake CLI', async () => {
+    await w.locator('[data-testid="chrome-new"]').click();
+    await w.getByRole('menuitem', { name: 'Quick agent…' }).click();
+    await expect(newAgentPage()).toBeVisible({ timeout: 10_000 });
+
+    await w.locator('[data-testid="new-agent-mission"]').fill(MISSION);
+    await w.locator('[data-testid="new-agent-submit"]').click();
+
+    await expect(newAgentPage()).toBeHidden({ timeout: 30_000 });
+    await expect(w.locator('[data-testid="new-agent-error"]')).toHaveCount(0);
+    // The fake was what started, and it was given the mission.
+    await expect.poll(async () => (await smokeFakes.report('claude').catch(() => null))?.argv.join(' ') ?? '', { timeout: 20_000 }).toContain(MISSION);
+  });
 });
