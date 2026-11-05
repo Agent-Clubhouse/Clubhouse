@@ -3,6 +3,7 @@ import { ThemeId, ThemeDefinition } from '../../shared/types';
 import { getTheme, getAllThemeIds, getAllThemes, BUILTIN_THEMES, onRegistryChange } from '../themes';
 import { applyTheme } from '../themes/apply-theme';
 import { rendererLog } from '../plugins/renderer-logger';
+import { isGraduatedFlagOn } from '../../shared/graduated-flags';
 
 /** Notify the main process to update the Windows title bar overlay colors. */
 function syncTitleBarOverlay(theme: ThemeDefinition): void {
@@ -16,14 +17,14 @@ function syncTitleBarOverlay(theme: ThemeDefinition): void {
  * Push the applied theme to main. Main can't look plugin or custom themes up
  * by id, and Annex sends these colors to phones.
  */
-function syncActiveThemeToMain(theme: ThemeDefinition): void {
+function syncActiveThemeToMain(theme: ThemeDefinition, gradientsOn: boolean): void {
   try {
     Promise.resolve(window.clubhouse.app.syncActiveTheme({
       id: theme.id,
       type: theme.type,
       colors: theme.colors,
       terminal: theme.terminal,
-      ...(theme.gradients ? { gradients: theme.gradients } : {}),
+      ...(theme.gradients && gradientsOn ? { gradients: theme.gradients } : {}),
     })).catch((err: unknown) => {
       // Main rejected it (or isn't ready yet); phones keep the previous theme (#2472).
       rendererLog('core:theme', 'warn', 'Active theme sync failed', {
@@ -36,9 +37,9 @@ function syncActiveThemeToMain(theme: ThemeDefinition): void {
 }
 
 /** Main-process side effects of applying a theme. */
-function syncAppliedTheme(theme: ThemeDefinition): void {
+function syncAppliedTheme(theme: ThemeDefinition, gradientsOn: boolean): void {
   syncTitleBarOverlay(theme);
-  syncActiveThemeToMain(theme);
+  syncActiveThemeToMain(theme, gradientsOn);
 }
 
 function resolveTheme(id: ThemeId): ThemeDefinition {
@@ -50,10 +51,12 @@ interface ThemeState {
   theme: ThemeDefinition;
   /** All available theme IDs (builtins + plugin-contributed). */
   availableThemeIds: ThemeId[];
-  /** Whether the experimental themeGradients flag is enabled. */
+  /** Whether themes may use their fonts and gradients: the themeGradients flag, on unless saved off. */
   experimentalGradients: boolean;
   loadTheme: () => Promise<void>;
   setTheme: (id: ThemeId) => Promise<void>;
+  /** Apply the themeGradients flag to the current theme and save it. If that fails it goes back, and this answers false. */
+  setThemeGradients: (on: boolean) => Promise<boolean>;
   /** Refresh the available themes list from the registry. */
   refreshAvailable: () => void;
 }
@@ -62,7 +65,7 @@ export const useThemeStore = create<ThemeState>((set, get) => ({
   themeId: 'catppuccin-mocha',
   theme: BUILTIN_THEMES['catppuccin-mocha'],
   availableThemeIds: getAllThemeIds(),
-  experimentalGradients: false,
+  experimentalGradients: true,
 
   loadTheme: async () => {
     try {
@@ -72,9 +75,9 @@ export const useThemeStore = create<ThemeState>((set, get) => ({
       ]);
       const id = (settings?.themeId || 'catppuccin-mocha') as ThemeId;
       const theme = resolveTheme(id);
-      const experimentalGradients = !!experimental?.themeGradients;
+      const experimentalGradients = isGraduatedFlagOn(experimental, 'themeGradients');
       applyTheme(theme, { experimentalGradients });
-      syncAppliedTheme(theme);
+      syncAppliedTheme(theme, experimentalGradients);
       set({ themeId: id, theme, experimentalGradients, availableThemeIds: getAllThemeIds() });
     } catch {
       // Use default on error
@@ -87,9 +90,28 @@ export const useThemeStore = create<ThemeState>((set, get) => ({
     if (!theme) return;
     const { experimentalGradients } = get();
     applyTheme(theme, { experimentalGradients });
-    syncAppliedTheme(theme);
+    syncAppliedTheme(theme, experimentalGradients);
     set({ themeId: id, theme });
     await window.clubhouse.app.saveTheme({ themeId: id });
+  },
+
+  setThemeGradients: async (on) => {
+    const previous = get().experimentalGradients;
+    const show = (value: boolean) => {
+      applyTheme(get().theme, { experimentalGradients: value });
+      syncActiveThemeToMain(get().theme, value);
+      set({ experimentalGradients: value });
+    };
+    show(on);
+    try {
+      const current = await window.clubhouse.app.getExperimentalSettings();
+      await window.clubhouse.app.saveExperimentalSettings({ ...current, themeGradients: on });
+      return true;
+    } catch {
+      // telemetry-exempt: the settings page says so, and the theme goes back to what's saved.
+      show(previous);
+      return false;
+    }
   },
 
   refreshAvailable: () => {
@@ -131,7 +153,7 @@ export const unsubscribeThemeRegistryListener = onRegistryChange(() => {
     if (store.theme.id !== fallback.id) {
       try { localStorage.removeItem('clubhouse-theme-vars'); } catch { /* ignore */ }
       applyTheme(fallback, { experimentalGradients: store.experimentalGradients });
-      syncAppliedTheme(fallback);
+      syncAppliedTheme(fallback, store.experimentalGradients);
       useThemeStore.setState({ theme: fallback });
     }
   } else {
@@ -139,7 +161,7 @@ export const unsubscribeThemeRegistryListener = onRegistryChange(() => {
     // plugin themes. applyTheme atomically re-writes the flash-prevention cache so it stays
     // consistent with the CSS variables that were just written to the document.
     applyTheme(currentTheme, { experimentalGradients: store.experimentalGradients });
-    syncAppliedTheme(currentTheme);
+    syncAppliedTheme(currentTheme, store.experimentalGradients);
     if (currentTheme !== store.theme) {
       // A previously unavailable theme is now registered, or the active one was
       // re-registered with new colours under the same id (a pack update, #2123):

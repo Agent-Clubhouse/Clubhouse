@@ -1,6 +1,6 @@
 # CLI and transcripts
 
-Select an agent and the pane shows what it's doing, usually in its CLI view. With the experimental Chat feature turned on, an agent's **Runtime** setting can show it as a chat instead.
+Select an agent and the pane shows what it's doing, in a chat or in its CLI view. Agents open in chat by default. To use the CLI view, choose **CLI** for a provider in **Settings > Agents & providers**, or set one agent's **Runtime** setting. If a provider's CLI can't run chat, its agents open in the CLI view.
 
 ## The agent's CLI view
 

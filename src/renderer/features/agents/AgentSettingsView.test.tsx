@@ -462,7 +462,8 @@ describe('AgentSettingsView', () => {
   });
 
   describe('runtime override', () => {
-    it('is hidden when the experimental Chat flag is off', async () => {
+    it('is hidden when Chat is saved off', async () => {
+      window.clubhouse.app.getExperimentalSettings = vi.fn().mockResolvedValue({ chat: false });
       renderSettings();
       expect(await screen.findByTestId('agent-settings-free-agent-mode')).toBeInTheDocument();
       await waitFor(() => expect(window.clubhouse.app.getExperimentalSettings).toHaveBeenCalled());
@@ -470,8 +471,7 @@ describe('AgentSettingsView', () => {
     });
 
     it('shows Provider default when no override is saved', async () => {
-      window.clubhouse.app.getExperimentalSettings = vi.fn().mockResolvedValue({ chat: true });
-      window.clubhouse.app.isPreviewEligible = vi.fn().mockResolvedValue(true);
+      window.clubhouse.app.getExperimentalSettings = vi.fn().mockResolvedValue({});
       renderSettings();
       const select = await screen.findByLabelText('Runtime') as HTMLSelectElement;
       expect(select.value).toBe('');

@@ -1,5 +1,5 @@
 /**
- * File chips in chat (experimental `richChatContent`, #2350).
+ * File chips in chat (`richChatContent`, #2350).
  *
  * The renderer finds path-like text in agent messages and tool output and asks
  * here which of them are real files. Main resolves each one, symlinks

@@ -9,7 +9,7 @@
 import type { ChatAgentRuntimeInfo } from '../../../shared/chat';
 import * as ptyManager from '../pty-manager';
 import { getDurableConfig } from '../agent-config';
-import { resolveRuntimeMode } from '../chat-runtime-settings';
+import { isChatEnabled, resolveRuntimeMode } from '../chat-runtime-settings';
 import { appLog } from '../log-service';
 import { hasChatStartInFlight } from './chat-spawn';
 import { resolveChatDriver } from './chat-drivers';
@@ -25,7 +25,8 @@ export interface AgentRuntimeQuery {
 const DEFAULT_PROVIDER = 'claude-code';
 
 export async function getAgentRuntimeInfo(agentId: string, provider: string | undefined, query: AgentRuntimeQuery = {}): Promise<ChatAgentRuntimeInfo> {
-  const chatAvailable = !!resolveChatDriver(provider || DEFAULT_PROVIDER);
+  // With Chat off nothing can start in it, so there's no switch to offer.
+  const chatAvailable = isChatEnabled() && !!resolveChatDriver(provider || DEFAULT_PROVIDER);
   const live = isChatAgent(agentId);
   if (live || hasChatStartInFlight(agentId)) return { chat: true, live, chatAvailable };
   // A running terminal answers it, including a chat start that fell back.

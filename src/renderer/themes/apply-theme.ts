@@ -20,7 +20,7 @@ function brandColorMap(theme: ThemeDefinition): Record<string, string | undefine
 }
 
 export interface ApplyThemeOptions {
-  /** When true, apply experimental font and gradient CSS variables from the theme. */
+  /** When true, apply font and gradient CSS variables from the theme. */
   experimentalGradients?: boolean;
 }
 
@@ -127,7 +127,7 @@ export function applyTheme(theme: ThemeDefinition, options?: ApplyThemeOptions):
     localStorage.removeItem('clubhouse-theme-font');
   }
 
-  // Experimental: custom fonts and gradients
+  // Custom fonts and gradients
   if (options?.experimentalGradients) {
     // Fonts
     if (theme.fonts?.ui) {
@@ -170,7 +170,7 @@ export function applyTheme(theme: ThemeDefinition, options?: ApplyThemeOptions):
       s.removeProperty('--theme-gradient-accent');
     }
   } else {
-    // Feature disabled — clean up any previously set experimental variables
+    // Feature disabled — clean up any previously set font and gradient variables
     s.removeProperty('--theme-font-ui');
     s.removeProperty('--theme-font-mono');
     s.removeProperty('--theme-gradient-bg');

@@ -194,7 +194,7 @@ Levels: `plan` is `mode.set('plan')`, `ask` is the handler, `full_access` is `se
 
 The driver is off by default. To turn it on, in a beta or dev build:
 
-1. Settings › Experimental: turn on **Chat** and **Copilot SDK driver**.
+1. Settings › Experimental: turn on **Copilot SDK driver**. It needs Chat, which is on unless **Chat view** is off in Settings › Agents & providers.
 2. Settings › Agents & providers › Copilot CLI: leave Runtime on Chat, and set **Chat driver** to **Copilot SDK (experimental)**.
 3. Start or restart a Copilot agent.
 

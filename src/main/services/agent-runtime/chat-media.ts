@@ -1,5 +1,5 @@
 /**
- * Rich chat content media (experimental `richChatContent`, #2350).
+ * Rich chat content media (`richChatContent`, #2350).
  *
  * Drivers attach images to tool events as base64 `data` or a `sourcePath`
  * (ChatImage). Before the runtime writes or publishes an event,
