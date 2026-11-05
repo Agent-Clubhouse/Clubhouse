@@ -1031,12 +1031,10 @@ export const STRUCTURED_MODE_REMOVED_NOTICE_KEY = 'structuredModeRemovedNotice';
  * `themeGradients` isn't here: stable builds have honoured it since before the page was gated.
  */
 export const PREVIEW_ONLY_EXPERIMENTAL_FLAGS: readonly string[] = [
-  'newChrome',
   'goobers',
   'chat',
   'richChatContent',
   'copilotSdk',
-  'dispatcher',
 ];
 
 // --- Security settings ---

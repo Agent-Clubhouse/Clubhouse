@@ -1,5 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+// What the gate decides is covered in mcp-call-gate.test.ts and test/mcp-off.
+vi.mock('../mcp-call-gate', async (original) => ({ ...await original<typeof import('../mcp-call-gate')>(), mcpCallAccess: () => 'open' }));
+
 const mocks = vi.hoisted(() => ({
   updateProjectAppearance: vi.fn(async () => ({ id: 'p1' })),
   updateAgentAppearance: vi.fn(async () => ({ id: 'a1' })),

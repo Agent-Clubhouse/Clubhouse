@@ -1,0 +1,15 @@
+#!/usr/bin/env bash
+# Fake curl for release-publish.test.ts: reads the public URL of a blob out of the
+# fake container (STORE). Never touches the network.
+echo "curl $*" >> "$CALLS"
+out=""; url=""
+while [ $# -gt 0 ]; do
+  case "$1" in
+    -o) out="$2"; shift ;;
+    https://*) url="$1" ;;
+  esac
+  shift
+done
+blob="${url#https://*/*/}"
+[ -f "$STORE/$blob" ] || { echo "curl: (22) The requested URL returned error: 404" >&2; exit 22; }
+cp "$STORE/$blob" "$out"

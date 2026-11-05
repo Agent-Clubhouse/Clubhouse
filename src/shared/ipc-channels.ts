@@ -329,6 +329,8 @@ export const IPC = {
     READ_CLIPBOARD_TEXT: 'app:read-clipboard-text',
     READ_CLIPBOARD_IMAGE: 'app:read-clipboard-image',
     GET_CLUBHOUSE_MODE_SETTINGS: 'app:get-clubhouse-mode-settings',
+    /** What a proposed MCP or Clubhouse mode change would turn off, before it is saved. */
+    GET_MCP_OFF_IMPACT: 'app:get-mcp-off-impact',
     SAVE_CLUBHOUSE_MODE_SETTINGS: 'app:save-clubhouse-mode-settings',
     GET_SOUND_SETTINGS: 'app:get-sound-settings',
     SAVE_SOUND_SETTINGS: 'app:save-sound-settings',
@@ -525,6 +527,12 @@ export const IPC = {
     GET_MESSAGE: 'group-project:get-message',
     INJECT_MESSAGE: 'group-project:inject-message',
     SET_POLLING: 'group-project:set-polling',
+    /** Members whose polling Clubhouse MCP going off stopped, now that it is back. */
+    GET_PAUSED_POLLING: 'group-project:get-paused-polling',
+    /** Send one such member its start. */
+    RESUME_POLLING: 'group-project:resume-polling',
+    /** Main → renderer: those members changed. */
+    PAUSED_POLLING_CHANGED: 'group-project:paused-polling-changed',
   },
   MCP_BINDING: {
     GET_BINDINGS: 'mcp-binding:get-bindings',
@@ -584,6 +592,8 @@ export const IPC = {
   DISPATCHER: {
     GET: 'dispatcher:get',
     SET_ENABLED: 'dispatcher:set-enabled',
+    /** Stop its running agent and keep every saved value. */
+    STOP: 'dispatcher:stop',
     /** Main → renderer broadcast: DispatcherState after any change. */
     CHANGED: 'dispatcher:changed',
   },

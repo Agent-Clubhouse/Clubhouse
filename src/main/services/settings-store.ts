@@ -88,7 +88,7 @@ export async function peekStoredSettings(filename: string): Promise<PeekedSettin
   return parsePeeked(raw);
 }
 
-/** `peekStoredSettings` for a decision that has to be made before anything else runs. */
+/** `peekStoredSettings` for a decision that can't wait: the startup path, or a telemetry gate. */
 export function peekStoredSettingsSync(filename: string): PeekedSettings {
   let raw: string;
   try {
@@ -140,7 +140,16 @@ export function createSettingsStore<T>(
   filename: string,
   defaults: T,
   migrate?: (raw: Record<string, unknown>) => T,
-  options?: { mode?: number; audit?: SettingsStoreAudit },
+  options?: {
+    mode?: number;
+    audit?: SettingsStoreAudit;
+    /**
+     * After a failed write, go back to the value before it. Off by default: a
+     * store's new value is in memory before it's written, and some rely on that
+     * (telemetry's migration must hold for the run even if it can't be saved).
+     */
+    rollBackFailedSaves?: boolean;
+  },
 ): SettingsStore<T> {
   // Resolve filePath lazily on each access. `createSettingsStore` runs at
   // module-load time (e.g. when ipc/app-handlers imports a settings module),
@@ -250,9 +259,16 @@ export function createSettingsStore<T>(
     },
     save(settings: T) {
       const before = auditSnapshot();
-      cachedSettings = cloneSettings(settings);
+      const previous = options?.rollBackFailedSaves ? store.get() : undefined;
+      const attempted = cloneSettings(settings);
+      cachedSettings = attempted;
       cacheLoaded = true;
-      const written = queueWrite(cachedSettings);
+      const queued = queueWrite(attempted);
+      const written = previous === undefined ? queued : queued.catch((err) => {
+        // Unless something newer has replaced it since.
+        if (cachedSettings === attempted) cachedSettings = previous;
+        throw err;
+      });
       if (before === undefined) return written;
       const after = cloneSettings(settings);
       // A failed write stays this promise's failure, and records nothing. The audit's own failure stays out of it.

@@ -2,11 +2,68 @@ import { useEffect, useState } from 'react';
 import { useThemeStore } from '../../stores/themeStore';
 import { useUIStore } from '../../stores/uiStore';
 import { getTheme } from '../../themes';
-import { useChromeFlagStore } from '../../chrome/chromeFlag';
+import { useChromeFlagStore, NEW_CHROME_FLAG } from '../../chrome/chromeFlag';
 import { useChromeStore, SIDEBAR_SORTS, type SidebarSort } from '../../chrome/chromeStore';
 import { IDLE_DAY_CHOICES } from '../../chrome/projectActivity';
+import { isGraduatedFlagOn } from '../../../shared/graduated-flags';
+import { Button } from '../../components/Button';
 import { Toggle } from '../../components/Toggle';
-import { SettingsPage, SettingsSection, SettingsField, SettingsBlock, settingsInput } from './SettingsLayout';
+import { SettingsPage, SettingsSection, SettingsField, SettingsBlock, settingsError, settingsInput } from './SettingsLayout';
+
+/**
+ * The way back to the classic layout, saved as the newChrome flag (on = false).
+ * This session's layout is fixed (docs/chrome-redesign-spec.md §4.1), so the
+ * restart is offered while the saved choice differs from it.
+ */
+function ClassicLayoutSetting() {
+  const newChrome = useChromeFlagStore((s) => s.enabled);
+  const [classic, setClassic] = useState(!newChrome);
+  const [saving, setSaving] = useState(false);
+  const [saveFailed, setSaveFailed] = useState(false);
+
+  useEffect(() => {
+    window.clubhouse.app.getExperimentalSettings().then((s) => {
+      setClassic(!isGraduatedFlagOn(s, NEW_CHROME_FLAG));
+    }).catch(() => {
+      // telemetry-exempt: the switch keeps showing this session's layout, and a save reports its own failure.
+    });
+  }, []);
+
+  const handleToggle = async (on: boolean) => {
+    setClassic(on);
+    setSaving(true);
+    setSaveFailed(false);
+    try {
+      const saved = await window.clubhouse.app.getExperimentalSettings();
+      await window.clubhouse.app.saveExperimentalSettings({ ...saved, [NEW_CHROME_FLAG]: !on });
+    } catch {
+      // telemetry-exempt: shown under the switch, which goes back to the saved value.
+      setClassic(!on);
+      setSaveFailed(true);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <>
+      <SettingsField
+        label="Classic layout"
+        help="Use the project rail and agent column instead of the sidebar. Applies after a restart. The classic layout will go away in a future update."
+      >
+        <Toggle aria-label="Classic layout" checked={classic} disabled={saving} onChange={handleToggle} />
+      </SettingsField>
+      {saveFailed && <p className={`${settingsError} mt-1.5`} role="alert">Couldn't save that setting, so it wasn't changed. Try again.</p>}
+      {classic === newChrome && (
+        <SettingsField label="Restart Clubhouse" help="Restart Clubhouse to apply the layout change.">
+          <Button onClick={() => window.clubhouse.app.restart()} kind="ghost">
+            Restart
+          </Button>
+        </SettingsField>
+      )}
+    </>
+  );
+}
 
 /** The new layout's idle window (docs/chrome-redesign-spec.md §2 idle rule). */
 function IdleProjectsSetting() {
@@ -88,11 +145,17 @@ export function DisplaySettingsView() {
   useEffect(() => {
     window.clubhouse.app.getExperimentalSettings().then((s) => {
       setGradientsEnabled(!!s.themeGradients);
+    }).catch(() => {
+      // telemetry-exempt: the theme cards just preview without gradients.
     });
   }, []);
 
   return (
     <SettingsPage title="Display & UI" description="App appearance and sidebar views.">
+      <SettingsSection title="Layout">
+        <ClassicLayoutSetting />
+      </SettingsSection>
+
       <SettingsSection title="Views">
         {newChrome && <IdleProjectsSetting />}
         {newChrome && <SidebarSortSetting kind="project" />}

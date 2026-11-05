@@ -5,7 +5,7 @@ import { launchApp } from './launch';
 // Exercise the real lazy-loaded Mermaid bundle in Electron: component tests
 // mock Mermaid and cannot catch packaging or browser API incompatibilities.
 test('markdown preview renders diagrams and preserves invalid source', async () => {
-  const { electronApp, window } = await launchApp({ experimental: {} });
+  const { electronApp, window } = await launchApp({ experimental: { newChrome: false } });
   try {
     const fixturePath = path.resolve(__dirname, 'fixtures/project-mermaid');
     await electronApp.evaluate(({ dialog, BrowserWindow }, dir) => {

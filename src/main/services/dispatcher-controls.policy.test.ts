@@ -12,6 +12,9 @@ import * as os from 'os';
 import * as path from 'path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+// What the gate decides is covered in mcp-call-gate.test.ts and test/mcp-off.
+vi.mock('./clubhouse-mcp/mcp-call-gate', async (original) => ({ ...await original<typeof import('./clubhouse-mcp/mcp-call-gate')>(), mcpCallAccess: () => 'open' }));
+
 const state = vi.hoisted(() => ({
   base: '',
   project: '',

@@ -16,14 +16,25 @@ export function migrateExperimentalSettings(raw: Record<string, unknown>): Exper
   return settings as ExperimentalSettings;
 }
 
-const FILE = 'experimental-settings.json';
-const store = createSettingsStore<ExperimentalSettings>(FILE, {}, migrateExperimentalSettings, { audit: { key: 'experimental' } });
+const FILENAME = 'experimental-settings.json';
+
+// A failed save must not stay in memory: a toggle that reverted would show it again on remount, and the next save would write it.
+const store = createSettingsStore<ExperimentalSettings>(FILENAME, {}, migrateExperimentalSettings, { audit: { key: 'experimental' }, rollBackFailedSaves: true });
 
 function pickFlags(settings: ExperimentalSettings, keep: (key: string) => boolean): ExperimentalSettings {
   return Object.fromEntries(Object.entries(settings).filter(([key]) => keep(key)));
 }
 
 const isPreviewOnly = (key: string): boolean => PREVIEW_ONLY_EXPERIMENTAL_FLAGS.includes(key);
+
+/**
+ * Whether there is a file and it can't be read. The store falls back to `{}`
+ * then, which on its own looks the same as nothing saved: a graduated flag would
+ * read as on when the person's saved false may be in that file.
+ */
+export function savedSettingsUnreadable(): boolean {
+  return peekStoredSettingsSync(FILENAME) === 'unreadable';
+}
 
 /** What is saved, whatever this build honours. */
 export const getStoredSettings = store.get;
@@ -52,7 +63,7 @@ const unverifiedFlags = (): ExperimentalSettings =>
 
 /** What one flag holds on disk right now, not what this run has in memory. A value of the wrong type is unreadable. */
 export function peekStoredFlag(key: string): 'true' | 'false' | 'missing' | 'unreadable' {
-  const stored = peekStoredSettingsSync(FILE);
+  const stored = peekStoredSettingsSync(FILENAME);
   if (stored === 'missing' || stored === 'unreadable') return stored;
   if (!(key in stored)) return 'missing';
   return stored[key] === true ? 'true' : stored[key] === false ? 'false' : 'unreadable';
@@ -63,40 +74,25 @@ export function peekStoredFlag(key: string): 'true' | 'false' | 'missing' | 'unr
  * Throws if it can't, and the save must then not happen.
  */
 export function preserveUnreadableFile(): void {
-  if (peekStoredSettingsSync(FILE) === 'unreadable') backupUnreadableSettings(FILE);
+  if (savedSettingsUnreadable()) backupUnreadableSettings(FILENAME);
 }
 
 /** Where a copy of the unreadable file was kept, if one was. */
 export function recoveryCopyPath(): string | undefined {
-  return latestRecoveryCopy(FILE);
+  return latestRecoveryCopy(FILENAME);
 }
 
 /**
  * Set one saved flag and leave the rest as they are, whatever this build honours.
- * Rejects if it can't be saved, with this run back on the value it had: the store
- * takes a new value into memory before writing it.
+ * Rejects if it can't be saved, with the file as it was and this run back on the
+ * value it had.
  */
 export async function setStoredFlag(key: string, value: boolean): Promise<void> {
-  const saved = store.get();
-  if (saved[key] === value && peekStoredSettingsSync(FILE) !== 'unreadable') return;
-  let copyKept = false;
-  try {
-    await store.update((current) => {
-      preserveUnreadableFile();
-      copyKept = true;
-      return { ...current, [key]: value };
-    });
-  } catch (err) {
-    // No copy means no write was tried, and the file mustn't be replaced now.
-    if (copyKept) {
-      await store.update((current) => {
-        const { [key]: _attempted, ...rest } = current;
-        const restored = key in saved ? { ...rest, [key]: saved[key] } : rest;
-        return peekStoredSettingsSync(FILE) === 'unreadable' ? { ...restored, ...unverifiedFlags() } : restored;
-      }).catch((): void => undefined);
-    }
-    throw err;
-  }
+  if (store.get()[key] === value && !savedSettingsUnreadable()) return;
+  await store.update((current) => {
+    preserveUnreadableFile();
+    return { ...current, [key]: value };
+  });
 }
 
 /**
@@ -111,7 +107,7 @@ export async function saveSettings(settings: ExperimentalSettings): Promise<void
   // Inside the update, so it runs after any save still being written: a file
   // part way through a write mustn't read as unreadable.
   await store.update((saved) => {
-    const unreadable = peekStoredSettingsSync(FILE) === 'unreadable';
+    const unreadable = savedSettingsUnreadable();
     if (unreadable) preserveUnreadableFile();
     return {
       ...pickFlags(settings, (key) => !keepSaved(key)),

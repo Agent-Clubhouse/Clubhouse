@@ -93,6 +93,14 @@ jobs:
       # with no clear message (#2347).
       - name: Check paths are valid on Windows
         run: node scripts/ci/check-windows-paths.mjs
+      # Here because this job runs on every change, including one that edits only
+      # the list. docs/release-publishing.md, "Lifting an entry".
+      - name: Check the CLI kill switch list isn't reset
+        if: ${{ github.event_name == 'pull_request' || github.event_name == 'push' }}
+        env:
+          BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
+          HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: node scripts/ci/cli-denylist.mjs check-change --base "$BASE" --head "$HEAD"
       - name: Classify the change
         id: plan
         env:
@@ -473,7 +481,8 @@ jobs:
           path: test-results/
 
   # A build with Preview off and on, with the saved state a beta leaves behind
-  # (e2e/stable-mode.spec.ts). A job of its own so it never lengthens the E2E
+  # (e2e/stable-mode.spec.ts), and which layout each saved state starts on
+  # (e2e/layout-default.spec.ts). A job of its own so it never lengthens the E2E
   # shards, and Linux and Windows only: the gates are the same on macOS. It runs
   # unpackaged through CLUBHOUSE_TEST_STABLE_BUILD, so it proves the gates and not
   # a packaged build.
@@ -514,10 +523,10 @@ jobs:
           path: .webpack/
       - name: Run stable-mode E2E tests
         if: runner.os != 'Linux'
-        run: npx playwright test e2e/stable-mode.spec.ts --reporter=line,junit
+        run: npx playwright test e2e/stable-mode.spec.ts e2e/layout-default.spec.ts --reporter=line,junit
       - name: Run stable-mode E2E tests (Linux — requires virtual display)
         if: runner.os == 'Linux'
-        run: xvfb-run --auto-servernum npx playwright test e2e/stable-mode.spec.ts --reporter=line,junit
+        run: xvfb-run --auto-servernum npx playwright test e2e/stable-mode.spec.ts e2e/layout-default.spec.ts --reporter=line,junit
         env:
           # chrome-sandbox is not SUID root on GitHub runners
           ELECTRON_DISABLE_SANDBOX: '1'

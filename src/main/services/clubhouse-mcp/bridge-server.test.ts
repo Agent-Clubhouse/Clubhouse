@@ -1,4 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+
+// What the gate decides is covered in mcp-call-gate.test.ts and test/mcp-off.
+vi.mock('./mcp-call-gate', async (original) => ({ ...await original<typeof import('./mcp-call-gate')>(), mcpCallAccess: () => 'open' }));
 import * as http from 'http';
 
 vi.mock('electron', () => {

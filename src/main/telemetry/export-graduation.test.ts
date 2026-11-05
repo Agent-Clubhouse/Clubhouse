@@ -1089,16 +1089,14 @@ describe('an unreadable flag file', () => {
       expect(readText(FLAG_FILE)).toBe(RAW);
     });
 
-    it('a save that fails once, over a corrupt file, can\'t leave a valid file with no key: it stays paused', async () => {
+    it('a save that fails once, over a corrupt file, leaves the file as it was: it stays paused', async () => {
       await paused();
-      const realWrite = fs.promises.writeFile;
       vi.spyOn(fs.promises, 'writeFile').mockImplementationOnce(() => Promise.reject(new Error('disk full')));
       vi.spyOn(console, 'error').mockImplementation(() => undefined);
       expect(await control.resumeExport()).toMatchObject({ ok: false, reason: 'opt_in_not_saved' });
       vi.mocked(fs.promises.writeFile).mockRestore();
-      expect(fs.promises.writeFile).toBe(realWrite);
-      await vi.waitFor(() => expect(JSON.parse(readText(FLAG_FILE))).toEqual({ telemetry: null }));
-      expect(readText(`${FLAG_FILE}.unreadable`)).toBe(RAW);
+      expect(readText(FLAG_FILE)).toBe(RAW);
+      expect(experimentalSettings.getStoredSettings()).not.toHaveProperty('telemetry');
       await launch();
       expect(getTelemetrySettings().exportSuspended).toBe('flag_unreadable');
       expect(exportAttempts()).toBe(0);
@@ -1170,5 +1168,63 @@ describe('the renderer doesn\'t own the telemetry flag', () => {
     await vi.waitFor(() => expect(saved().telemetry).toBe(true));
     await experimentalSettings.saveSettings({ telemetry: false, themeGradients: true });
     await vi.waitFor(() => expect(saved()).toEqual({ telemetry: true, themeGradients: true }));
+  });
+});
+
+describe('a failed save of the experimental flags, through the real store', () => {
+  const FLAG_FILE = 'experimental-settings.json';
+  const saved = () => JSON.parse(readText(FLAG_FILE));
+  beforeEach(() => {
+    seedGate(undefined, true);
+    writeJson(FLAG_FILE, { telemetry: true, themeGradients: false });
+    resetAllSettingsStoresForTests();
+    vi.spyOn(console, 'error').mockImplementation(() => undefined);
+  });
+  const failNextWrite = () => vi.spyOn(fs.promises, 'writeFile').mockImplementationOnce(() => Promise.reject(new Error('disk full')));
+
+  it('doesn\'t stay in memory: a page opened again reads what\'s saved', async () => {
+    failNextWrite();
+    await expect(experimentalSettings.saveSettings({ themeGradients: true })).rejects.toThrow('disk full');
+    expect(experimentalSettings.getSettings().themeGradients).toBe(false);
+    expect(experimentalSettings.getStoredSettings().themeGradients).toBe(false);
+    expect(saved().themeGradients).toBe(false);
+  });
+
+  it('doesn\'t get written by the next save, which starts from a fresh read', async () => {
+    failNextWrite();
+    await expect(experimentalSettings.saveSettings({ themeGradients: true })).rejects.toThrow('disk full');
+    vi.mocked(fs.promises.writeFile).mockRestore();
+    await experimentalSettings.saveSettings({ ...experimentalSettings.getSettings(), chat: true });
+    expect(saved()).toEqual({ telemetry: true, themeGradients: false, chat: true });
+  });
+
+  it('a later save\'s value isn\'t undone when an earlier one fails', async () => {
+    failNextWrite();
+    const results = await Promise.allSettled([
+      experimentalSettings.saveSettings({ themeGradients: true }),
+      experimentalSettings.saveSettings({ chat: true }),
+    ]);
+    expect(results.map((r) => r.status)).toEqual(['rejected', 'fulfilled']);
+    expect(experimentalSettings.getStoredSettings()).toEqual({ telemetry: true, chat: true });
+    expect(saved()).toEqual({ telemetry: true, chat: true });
+  });
+
+  it('a failed opt-in goes back too', async () => {
+    writeJson(FLAG_FILE, { telemetry: false });
+    resetAllSettingsStoresForTests();
+    failNextWrite();
+    await expect(experimentalSettings.setStoredFlag('telemetry', true)).rejects.toThrow('disk full');
+    expect(experimentalSettings.getStoredSettings().telemetry).toBe(false);
+    expect(saved().telemetry).toBe(false);
+  });
+
+  it('the telemetry store keeps its value on purpose: the migration has to hold for the run', async () => {
+    seedGate(false, true);
+    writeJson(SETTINGS_FILE, file(1, otlp(true), framebriar()));
+    failWritesTo(SETTINGS_FILE);
+    await launch();
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(getTelemetrySettings().exportGraduation).toBe(1);
+    expect(getTelemetrySettings().destinations.some((d) => d.enabled)).toBe(false);
   });
 });

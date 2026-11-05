@@ -24,13 +24,8 @@ vi.mock('./clubhouse-mode-settings', () => ({
   getSettings: vi.fn(() => ({ ...cmStored })),
 }));
 
-let dispatcherOn = false;
-vi.mock('./dispatcher/dispatcher-settings', () => ({
-  isDispatcherEnabled: vi.fn(() => dispatcherOn),
-}));
-
 import {
-  _resetAgentBridgeNeedForTesting, ensureMcpBridgeForAgent, isMcpEnabled, isMcpEnabledForAny, notifyMcpEnablementChanged, onMcpEnablementChanged, saveSettings, setMcpBridgeStarter,
+  _resetAgentBridgeNeedForTesting, ensureMcpBridgeForAgent, isMcpEnabled, isMcpEnabledForAny, isMcpOnAtAppLevel, notifyMcpEnablementChanged, resolveMcpWithProposal, onMcpEnablementChanged, saveSettings, setMcpBridgeStarter,
 } from './mcp-settings';
 import { isClubhouseModeEnabled } from './clubhouse-mode-settings';
 import { resetAllSettingsStoresForTests } from './settings-store';
@@ -40,7 +35,6 @@ describe('mcp-settings', () => {
     vi.clearAllMocks();
     resetAllSettingsStoresForTests();
     cmStored = { enabled: false };
-    dispatcherOn = false;
   });
 
   describe('isMcpEnabled', () => {
@@ -141,17 +135,10 @@ describe('mcp-settings', () => {
       expect(isMcpEnabledForAny()).toBe(true);
     });
 
-    it('returns true while the Dispatcher is on, with everything else off (#2535)', async () => {
+    it('starts no bridge with MCP off at app level and nobody else using it: the Dispatcher gives it no reason to', async () => {
       await saveSettings({ enabled: false });
+      cmStored = { enabled: false };
       expect(isMcpEnabledForAny()).toBe(false);
-      dispatcherOn = true;
-      expect(isMcpEnabledForAny()).toBe(true);
-    });
-
-    it('lets the Dispatcher\'s mcpOverride turn MCP on for its folder', async () => {
-      await saveSettings({ enabled: false });
-      expect(isMcpEnabled('/dispatcher')).toBe(false);
-      expect(isMcpEnabled('/dispatcher', true)).toBe(true);
     });
 
     it('returns false when all Clubhouse Mode project overrides are false', async () => {
@@ -182,7 +169,6 @@ describe('ensureMcpBridgeForAgent (#2610)', () => {
     resetAllSettingsStoresForTests();
     _resetAgentBridgeNeedForTesting();
     cmStored = { enabled: false };
-    dispatcherOn = false;
   });
 
   it('counts as MCP on for any, with everything else off, and starts the bridge each time', async () => {
@@ -196,5 +182,36 @@ describe('ensureMcpBridgeForAgent (#2610)', () => {
     expect(isMcpEnabledForAny()).toBe(true);
     // It is about the bridge: no other agent's MCP changes.
     expect(isMcpEnabled('/project')).toBe(false);
+  });
+
+  describe('at app level', () => {
+    it('reads the MCP switch, then the global Clubhouse mode, and no override', async () => {
+      await saveSettings({ enabled: false, projectOverrides: { '/x': true } });
+      vi.mocked(isClubhouseModeEnabled).mockReturnValue(false);
+      expect(isMcpOnAtAppLevel()).toBe(false);
+      vi.mocked(isClubhouseModeEnabled).mockReturnValue(true);
+      expect(isMcpOnAtAppLevel()).toBe(true);
+      await saveSettings({ enabled: true });
+      vi.mocked(isClubhouseModeEnabled).mockReturnValue(false);
+      expect(isMcpOnAtAppLevel()).toBe(true);
+    });
+  });
+
+  describe('resolving a proposal', () => {
+    it('follows the chain with the change applied, and saves nothing', async () => {
+      await saveSettings({ enabled: true });
+      cmStored = { enabled: false, projectOverrides: { '/cm': true } };
+      const off = { mcp: { enabled: false } };
+      expect(resolveMcpWithProposal(off)).toBe(false);
+      expect(resolveMcpWithProposal(off, '/x')).toBe(false);
+      expect(resolveMcpWithProposal(off, '/cm')).toBe(true);
+      expect(resolveMcpWithProposal(off, '/x', true)).toBe(true);
+      expect(resolveMcpWithProposal({ mcp: { enabled: false, projectOverrides: { '/x': true } } }, '/x')).toBe(true);
+      expect(resolveMcpWithProposal({ mcp: { projectOverrides: { '/x': false } } }, '/x')).toBe(false);
+      cmStored = { enabled: true };
+      expect(resolveMcpWithProposal(off, '/x')).toBe(true);
+      expect(resolveMcpWithProposal({ ...off, clubhouseMode: { enabled: false } }, '/x')).toBe(false);
+      expect(isMcpEnabled('/x')).toBe(true);
+    });
   });
 });

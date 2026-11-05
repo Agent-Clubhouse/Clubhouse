@@ -104,9 +104,12 @@ export function HeadlessRunFinished({ completed, onDismiss, onDelete, onRetried,
       <ToolbarSeparator />
       {failed ? (
         <>
-          <Button kind="primary" onClick={() => { void retry(); }} disabled={!project || retrying} data-testid="run-retry-button">
-            Retry
-          </Button>
+          {/* With no mission a retry would open a PTY waiting for input, behind a view with no terminal. */}
+          {completed.mission && (
+            <Button kind="primary" onClick={() => { void retry(); }} disabled={!project || retrying} data-testid="run-retry-button">
+              Retry
+            </Button>
+          )}
           {transcriptButton}
           <Button kind="quiet" onClick={onDismiss} data-testid="run-dismiss-button">Dismiss</Button>
         </>

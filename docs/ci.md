@@ -26,10 +26,10 @@ The rules, in short:
 
 ## Deciding what a change needs
 
-The `changes` job classifies the diff with `node scripts/ci/classify-changes.mjs`. For a PR it diffs the base against the head; for a push to main it diffs `before` against the new head. With no usable base, for example a new branch, it runs everything. The step summary prints the decision and the reason.
+The `changes` job also fails a change that resets `release/chat-cli-denylist.json` from an array to `null` or deletes it ([why](release-publishing.md#lifting-an-entry)), which stops every job that needs it. It classifies the diff with `node scripts/ci/classify-changes.mjs`. For a PR it diffs the base against the head; for a push to main it diffs `before` against the new head. With no usable base, for example a new branch, it runs everything. The step summary prints the decision and the reason.
 
 - **Docs-only:** everything under `docs/`, `notes/`, top-level `*.md`, `.github` templates, or `LICENSE`. `paths-ignore` skips these PRs before any runner starts. Markdown under `src/` is bundled app content, so it doesn't count as docs.
-- **E2E:** every change except docs and unit tests (`*.test.ts(x)`, `__fixtures__`, `__mocks__`, `test/`).
+- **E2E:** every change except docs, unit tests (`*.test.ts(x)`, `__fixtures__`, `__mocks__`, `test/`) and an edit to `release/chat-cli-denylist.json`, which the unit job checks. The app build never reads that file, and an edit to it answers an incident ([the operation](release-publishing.md#chats-cli-kill-switch)).
 - **macOS build:** any one of these.
   - **A packaging input:** `forge.config.ts`, `entitlements.plist`, `scripts/fix-node-pty.js` or `.icns` icons.
   - **Window and app chrome:** `src/main/menu.ts` (the app menu) and anything under `src/renderer/chrome/`.
@@ -99,6 +99,7 @@ The table below shows where every behaviour the old macOS legs tested is covered
 | Annex E2E (dual instance, `bonjour-service` discovery) | Linux and Windows Annex E2E, every PR | `bonjour-service` is pure-JS multicast DNS, and Annex has no darwin code path |
 | (new) Rich chat content and chat UX specs, `e2e/chat-rich` (#2480) | Linux and Windows Chat E2E, every PR; never macOS, not even on `full-ci` | Paths, pdf.js, media playback and IPC have no darwin branch; see docs/testing/chat-e2e-plan.md |
 | (new) Stable mode, `e2e/stable-mode.spec.ts` | Linux and Windows Stable-mode E2E, every PR; never macOS, not even on `full-ci` | Preview off and on, with no saved flags and with the saved state a beta leaves behind, through `CLUBHOUSE_TEST_STABLE_BUILD`. It runs unpackaged, so it proves the gates and not a packaged build. |
+| (new) Layout default, `e2e/layout-default.spec.ts` | In the same Stable-mode E2E job | Which layout each saved state starts on, the Display toggle across relaunches, and what a stable upgrader keeps. This build writes the state and reads it back, so no released build is upgraded. Specs that use legacy selectors pin `newChrome: false`. |
 
 The one narrowing: a change that touches none of the triggers can't break the macOS-specific UI and packaging checks by construction. Even so, if a runner image or Xcode update changes behaviour, the daily run surfaces it within a day, and `full-ci` runs the complete macOS matrix on demand.
 

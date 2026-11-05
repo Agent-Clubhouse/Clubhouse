@@ -359,7 +359,6 @@ async function runScenario(scenario) {
       const agents = JSON.parse(fs.readFileSync(path.join(project, '.clubhouse', 'agents.json'), 'utf8'));
       if (agents.find((a) => a.id === seeds.AGENT_ID)?.runtimeMode !== 'chat') problems.push('The agent lost its saved Chat mode');
     }
-    if (expected.dispatcherFolderAbsent && fs.existsSync(path.join(profile, '.clubhouse', 'dispatcher'))) problems.push('A Dispatcher folder was created');
     result.files = { status: problems.length ? 'fail' : 'pass', problems };
     saveLogs(profile, scenario.name, outcome.console);
   } finally {

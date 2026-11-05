@@ -1,5 +1,8 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
+const gate = vi.hoisted(() => ({ access: 'open' as 'open' | 'report_only' | 'closed' }));
+vi.mock('./mcp-call-gate', async (original) => ({ ...await original<typeof import('./mcp-call-gate')>(), mcpCallAccess: () => gate.access }));
+
 vi.mock('electron', () => ({
   app: { isPackaged: false, getPath: () => '/tmp/test-clubhouse' },
 }));
@@ -1413,5 +1416,41 @@ describe('ToolRegistry', () => {
       agentRegistry.untrack('dispatcher');
       expect(names('dispatcher')).toEqual([]);
     });
+  });
+});
+
+describe('with Clubhouse MCP off for the caller', () => {
+  beforeEach(() => {
+    _resetForTesting();
+    registerGlobalTool('message_parent', { description: 'report', inputSchema: { type: 'object', properties: {} } }, async () => ({ content: [{ type: 'text', text: 'reported' }] }));
+    registerGlobalTool('list_settings', { description: 'settings', inputSchema: { type: 'object', properties: {} } }, async () => ({ content: [{ type: 'text', text: 'settings' }] }));
+  });
+  afterEach(() => { gate.access = 'open'; });
+
+  it('refuses every tool before any lookup, with a reason for telemetry', async () => {
+    gate.access = 'closed';
+    for (const name of ['message_parent', 'list_settings', 'clubhouse__p_a_1__send_message', 'not a tool at all']) {
+      const result = await callTool('agent-1', name, {});
+      expect(result).toEqual({ isError: true, content: [{ type: 'text', text: 'Clubhouse MCP is off for this agent, so Clubhouse tools are unavailable. Tell the user.' }] });
+      expect(refusalReasonOf(result)).toBe('mcp_off');
+    }
+  });
+
+  it('lists nothing', () => {
+    expect(getScopedToolList('agent-1').length).toBe(2);
+    gate.access = 'closed';
+    expect(getScopedToolList('agent-1')).toEqual([]);
+    // No stale cache either way.
+    gate.access = 'open';
+    expect(getScopedToolList('agent-1').length).toBe(2);
+  });
+
+  it('leaves a helper message_parent alone, in the list and to call', async () => {
+    gate.access = 'report_only';
+    expect(getScopedToolList('helper-1').map((t) => t.name)).toEqual(['message_parent']);
+    expect(await callTool('helper-1', 'message_parent', {})).toMatchObject({ content: [{ text: 'reported' }] });
+    const refused = await callTool('helper-1', 'list_settings', {});
+    expect(refusalReasonOf(refused)).toBe('mcp_off');
+    expect(refused.content[0]).toMatchObject({ text: 'Clubhouse MCP is off for this agent, so the only Clubhouse tool available is message_parent. Tell your parent or the user.' });
   });
 });

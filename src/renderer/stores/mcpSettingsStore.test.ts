@@ -60,3 +60,35 @@ describe('mcpSettingsStore', () => {
     });
   });
 });
+
+describe('project overrides, which have no default', () => {
+  beforeEach(() => {
+    window.clubhouse.settings.save = vi.fn(async () => {}) as never;
+    window.clubhouse.settings.get = vi.fn(async () => ({ enabled: true, projectDefault: false, projectOverrides: { keep: true } })) as never;
+  });
+  const lastSaved = () => vi.mocked(window.clubhouse.settings.save).mock.calls.at(-1)?.[1];
+
+  it('survive turning MCP off at app level, with every other saved key', async () => {
+    await useMcpSettingsStore.getState().loadSettings();
+    await useMcpSettingsStore.getState().saveSettings({ enabled: false });
+    expect(lastSaved()).toEqual({ enabled: false, projectDefault: false, projectOverrides: { keep: true } });
+  });
+
+  it('are saved when set', async () => {
+    await useMcpSettingsStore.getState().loadSettings();
+    await useMcpSettingsStore.getState().saveSettings({ projectOverrides: { keep: true, other: false } } as never);
+    expect(lastSaved()).toEqual({ enabled: true, projectDefault: false, projectOverrides: { keep: true, other: false } });
+  });
+
+  it('can be cleared', async () => {
+    await useMcpSettingsStore.getState().loadSettings();
+    await useMcpSettingsStore.getState().saveSettings({ projectOverrides: undefined } as never);
+    expect((lastSaved() as { projectOverrides?: unknown }).projectOverrides).toBeUndefined();
+  });
+
+  it('sends no store internals', async () => {
+    await useMcpSettingsStore.getState().loadSettings();
+    await useMcpSettingsStore.getState().saveSettings({ enabled: false });
+    expect(Object.keys(lastSaved() as object).sort()).toEqual(['enabled', 'projectDefault', 'projectOverrides']);
+  });
+});

@@ -30,6 +30,16 @@ case "$1 $2" in
       *--clobber*) echo "gh-upload" >> "$WRITES" ;;
       *) echo "fake gh: upload without --clobber" >&2; exit 1 ;;
     esac ;;
+  "run list")
+    # The Release runs in .release-runs, through whatever --jq the caller passed,
+    # so the caller's real filter is what decides.
+    shift 2
+    filter="."
+    while [ $# -gt 0 ]; do
+      if [ "$1" = "--jq" ]; then filter="$2"; shift; fi
+      shift
+    done
+    if [ -f "$STORE/.release-runs" ]; then jq -r "$filter" "$STORE/.release-runs"; else echo '[]' | jq -r "$filter"; fi ;;
   *)
     echo "fake gh: unknown command: $args" >&2
     exit 99 ;;

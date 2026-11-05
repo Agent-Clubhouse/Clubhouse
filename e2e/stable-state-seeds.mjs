@@ -13,11 +13,10 @@ export const BETA_FLAGS = {
   chat: true,
   richChatContent: true,
   copilotSdk: true,
-  dispatcher: true,
   telemetry: true,
 };
-// Telemetry left the preview gate: its saved flag reads through in every build.
-export const PREVIEW_ONLY_FLAGS = Object.keys(BETA_FLAGS).filter((flag) => flag !== 'telemetry');
+// The layout and telemetry left the preview gate: their saved flags read through in every build.
+export const PREVIEW_ONLY_FLAGS = Object.keys(BETA_FLAGS).filter((flag) => flag !== 'newChrome' && flag !== 'telemetry');
 
 export const AGENT_ID = 'durable_stable_mode';
 export const AGENT_NAME = 'stable-mode-agent';
@@ -25,7 +24,7 @@ export const ORCHESTRATOR = 'claude-code';
 export const LAST_SESSION = '11111111-2222-4333-8444-555555555555';
 export const CHROME_STORAGE_KEY = 'clubhouse_chrome_v2';
 export const SAVED_SIDEBAR_WIDTH = 300;
-export const PREVIEW_PAGES = ['Experimental', 'Annex', 'Annex control', 'Dispatcher', 'Goobers'];
+export const PREVIEW_PAGES = ['Experimental', 'Annex', 'Annex control', 'Goobers'];
 
 /** Preview-gated files a stable launch must not change, byte for byte. */
 export const UNTOUCHED_FILES = [

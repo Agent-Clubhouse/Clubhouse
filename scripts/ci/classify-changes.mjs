@@ -55,6 +55,13 @@ const STABLE_CANDIDATE_ONLY = [
 ];
 
 /**
+ * Chat's CLI kill switch list. It's data the app build never reads, and an edit is
+ * how an incident gets answered, so it shouldn't wait on E2E. It isn't docs-only:
+ * Validate's unit job checks the file (scripts/ci/cli-denylist.test.ts).
+ */
+const CLI_DENYLIST_ONLY = [/^release\/chat-cli-denylist\.json$/];
+
+/**
  * A changed line, in any non-test source file, that touches macOS-only
  * behaviour. Matching changed lines rather than whole files keeps an
  * unrelated edit to a file with a darwin branch elsewhere from counting.
@@ -91,6 +98,7 @@ const PACKAGING_DEPENDENCY = new RegExp([
 const matchesAny = (patterns, file) => patterns.some((re) => re.test(file));
 const isTest = (file) => matchesAny(UNIT_TEST_ONLY, file);
 const isStableCandidateOnly = (file) => matchesAny(STABLE_CANDIDATE_ONLY, file);
+const isCliDenylistOnly = (file) => matchesAny(CLI_DENYLIST_ONLY, file);
 
 /** Changed lines (added or removed) per file, from `git diff -U0` output. */
 export function changedLinesByFile(diff) {
@@ -118,7 +126,7 @@ export function classify(files, changedLines = new Map()) {
   if (changed.length === 0) return { docsOnly: false, e2e: true, macosBuild: true, macosBuildReason: 'no changed files listed' };
 
   const docsOnly = changed.every((f) => matchesAny(DOCS_ONLY, f));
-  const e2e = !docsOnly && changed.some((f) => !matchesAny(DOCS_ONLY, f) && !isTest(f) && !isStableCandidateOnly(f));
+  const e2e = !docsOnly && changed.some((f) => !matchesAny(DOCS_ONLY, f) && !isTest(f) && !isStableCandidateOnly(f) && !isCliDenylistOnly(f));
 
   let reason;
   if (!docsOnly) {

@@ -1,4 +1,5 @@
 import '@testing-library/jest-dom';
+import { DISPATCHER_OFF } from '../src/shared/dispatcher-types';
 
 // jsdom doesn't have ResizeObserver — provide a no-op polyfill for tests
 if (typeof globalThis.ResizeObserver === 'undefined') {
@@ -355,6 +356,10 @@ vi.stubGlobal('clubhouse', {
     saveSessionSettings: asyncNoop,
     getClubhouseModeSettings: async () => ({ enabled: false }),
     saveClubhouseModeSettings: asyncNoop,
+    getMcpOffImpact: async () => ({
+      turnsOff: false, appLoses: false, appKeptByClubhouseMode: false, projectsLosing: [], agentsLosing: 0, quickAgentsLosing: 0, agentsKeeping: 0, helpersReportOnly: 0, orchestratorsLosing: 0, connectedLosing: 0,
+      runningLosing: 0, runningOrchestratorsWithHelpers: 0, dispatcherGoesOff: false, dispatcherRunning: false, keeps: { projects: [], agents: [] }, unreadableProjects: [],
+    }),
     getSoundSettings: async () => ({ activePack: null, slotAssignments: {}, eventSettings: {}, projectOverrides: {} }),
     saveSoundSettings: asyncNoop,
     listSoundPacks: async () => [],
@@ -471,6 +476,9 @@ vi.stubGlobal('clubhouse', {
     getMessage: async () => null,
     injectMessage: async () => true,
     setPolling: async () => ({ pollingEnabled: false, members: [] }),
+    getPausedPolling: async () => [],
+    resumePolling: async () => false,
+    onPausedPollingChanged: () => noop,
     onChanged: () => noop,
   },
   mcpBinding: {
@@ -514,8 +522,9 @@ vi.stubGlobal('clubhouse', {
     onAgentsNeedRestart: () => noop,
   },
   dispatcher: {
-    get: async () => ({ enabled: false, flagOn: false, agentId: null, path: null, config: null }),
-    setEnabled: async () => ({ enabled: false, flagOn: false, agentId: null, path: null, config: null }),
+    get: async () => DISPATCHER_OFF,
+    setEnabled: async () => DISPATCHER_OFF,
+    stop: async () => DISPATCHER_OFF,
     onChanged: () => noop,
   },
   feedback: {

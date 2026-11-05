@@ -125,7 +125,7 @@ test.describe('Telemetry export', () => {
   test('OTLP: sends clubhouse.app.sessions with the hand-built resource on quit', async () => {
     const mock = await startMockIngestion();
     const { electronApp, window, userDataDir } = await launchApp({
-      experimental: { telemetry: true },
+      experimental: { newChrome: false, telemetry: true },
       userDataFiles: {
         'telemetry-settings.json': {
           enabled: true,
@@ -190,7 +190,7 @@ test.describe('Telemetry export', () => {
     let launched: Awaited<ReturnType<typeof launchApp>> | undefined;
     try {
       launched = await launchApp({
-        experimental: { telemetry: true },
+        experimental: { newChrome: false, telemetry: true },
         // Unpackaged-only override of the App Insights host allowlist (settings.ts).
         env: { CLUBHOUSE_TELEMETRY_TEST_AZURE_HOST: `127.0.0.1:${mock.port}` },
         userDataFiles: {
@@ -234,7 +234,7 @@ test.describe('Telemetry export', () => {
   test('Phase 1 file with the flag off: plaintext secret is still migrated, the destination ends up off, nothing exported', async () => {
     const mock = await startMockIngestion();
     const { electronApp, window, userDataDir } = await launchApp({
-      experimental: { telemetry: false },
+      experimental: { newChrome: false, telemetry: false },
       userDataFiles: {
         'telemetry-settings.json': {
           enabled: true,
@@ -268,7 +268,7 @@ test.describe('Telemetry export', () => {
     // Phase 3a: renderer facade → telemetry:emit → main re-validation → SDK.
     const mock = await startMockIngestion();
     const { electronApp, window, userDataDir } = await launchApp({
-      experimental: { telemetry: true },
+      experimental: { newChrome: false, telemetry: true },
       userDataFiles: {
         'telemetry-settings.json': {
           enabled: true,
@@ -312,7 +312,7 @@ test.describe('Telemetry export', () => {
     // Phase 3b: startup ends on renderer-ready; shutdown is recorded before the final flush.
     const mock = await startMockIngestion();
     const { electronApp, window, userDataDir } = await launchApp({
-      experimental: { telemetry: true },
+      experimental: { newChrome: false, telemetry: true },
       userDataFiles: {
         'telemetry-settings.json': {
           enabled: true,
@@ -495,7 +495,7 @@ test.describe('Telemetry export', () => {
   });
 
   test('flag on but not enabled: nothing exported and no install id created', async () => {
-    const { electronApp, window, userDataDir } = await launchApp({ experimental: { telemetry: true } });
+    const { electronApp, window, userDataDir } = await launchApp({ experimental: { newChrome: false, telemetry: true } });
     try {
       await expect(window.locator('body')).toBeVisible();
       await quitAndWait(electronApp);
