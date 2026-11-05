@@ -1,0 +1,77 @@
+name: Publish CLI Denylist
+
+# Chat's CLI kill switch (#2827): sets chatCliDenylist in the stable and preview
+# update manifests to what release/chat-cli-denylist.json says, without a
+# release. Every other manifest field keeps its exact bytes. The operation is in
+# docs/release-publishing.md.
+#
+# Preview the change, from main or from the branch of the PR that adds the entry:
+#   gh workflow run publish-cli-denylist.yml --ref <branch>
+# Publish, once that PR has merged:
+#   gh workflow run publish-cli-denylist.yml --ref main -f dry_run=false
+#
+# There is no input for the list. The only thing this can publish is the file on
+# main, which is also what every release reads, so the two can't disagree.
+
+on:
+  workflow_dispatch:
+    inputs:
+      clear_list:
+        description: Allow publishing an empty list, which empties the saved list on every client
+        type: boolean
+        default: false
+      dry_run:
+        description: Show what would change without publishing it
+        type: boolean
+        default: true
+
+concurrency:
+  group: publish-cli-denylist
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  preview:
+    name: Show changes
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Check the list and show what would change
+        env:
+          DRY_RUN: 'true'
+          CLEAR_LIST: ${{ inputs.clear_list }}
+        run: bash scripts/ci/publish-cli-denylist.sh
+
+  publish:
+    name: Publish list
+    needs: preview
+    if: ${{ !inputs.dry_run }}
+    runs-on: ubuntu-latest
+    environment: release
+    permissions:
+      actions: read
+      contents: read
+      id-token: write
+    steps:
+      # Main as it is now, not as it was at dispatch: the environment's approval
+      # can take a while, and a re-run of an old run mustn't publish an old list.
+      - uses: actions/checkout@v7
+        with:
+          ref: main
+
+      - name: Authenticate to Azure
+        uses: azure/login@v3
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Update manifests
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          DRY_RUN: 'false'
+          CLEAR_LIST: ${{ inputs.clear_list }}
+        run: bash scripts/ci/publish-cli-denylist.sh
