@@ -52,6 +52,40 @@ export interface InventoryFile {
  */
 export type InventorySourceCaveat = 'wildcards-may-be-expanded' | 'git-state-is-a-hint';
 
+/** Why a repository-configured path was left alone. None of these paths were touched, except where noted. */
+export type InventoryExternalReason =
+  | 'invalid-path'
+  | 'relative-path'
+  | 'unc-path'
+  | 'parent-traversal'
+  /** Not inside the project, and not a worktree git reports for it. */
+  | 'outside-project'
+  /** Inside the project as written, but a symlink leads out. Only the links inside the project were read. */
+  | 'symlink-outside-project';
+
+/** Why a worktree outside the plain project scan may be read. */
+export interface InventoryWorktreeAccess {
+  by: 'project-root' | 'git-worktree' | 'explicit-inclusion';
+  /** The string `agents.json` holds. */
+  configuredPath: string;
+  /** Set for `explicit-inclusion`: the entry in `includeExternalRoots` that allowed it. */
+  includedRoot?: string;
+}
+
+/**
+ * A path in a repository's config that points outside the authorized roots.
+ * Metadata only: no read, hash or count of anything there. Passing the path in
+ * `includeExternalRoots` is the only way to have it scanned.
+ */
+export interface InventoryExternalReference {
+  projectId: string;
+  projectName: string;
+  agent: { id: string; name: string };
+  /** As configured, and untrusted. Empty when it wasn't a string. */
+  configuredPath: string;
+  reason: InventoryExternalReason;
+}
+
 /** One place an entry was found. */
 export interface InventorySource {
   /** Null for global sources, which belong to no project. */
@@ -65,6 +99,8 @@ export interface InventorySource {
   pointer?: string;
   /** Set for `agent-instructions`: whose worktree this came from. */
   agent?: { id: string; name: string };
+  /** Set on anything read from an agent's worktree: what allowed it. */
+  worktreeAccess?: InventoryWorktreeAccess;
   caveats?: InventorySourceCaveat[];
   files: InventoryFile[];
   /** Files in this source left out of `files` and of the hash. Nonzero means the entry is partial. */
@@ -134,6 +170,8 @@ export type InventoryAgentStatus =
   | 'scanned'
   | 'missing-worktree'
   | 'no-worktree'
+  /** Its configured path is outside the authorized roots: see `externalReferences`. Nothing there was touched. */
+  | 'external'
   /** Clubhouse Mode's settings can't be read, so this may be generated. Nothing in it was read. */
   | 'skipped-mode-unknown';
 
@@ -146,8 +184,9 @@ export interface InventoryAgentReport {
   managed: boolean | 'unknown';
   persona?: string;
   mission?: string;
-  /** MCP config files in this worktree holding more than the bridge. Counted, not offered. */
+  /** MCP config files in this worktree holding more than the bridge. Counted, not offered. Always 0 for an external path. */
   mcpFilesNotInventoried: number;
+  worktreeAccess?: InventoryWorktreeAccess;
 }
 
 /** What Clubhouse Mode produces for a project, from its source folders. Names and counts only. */
@@ -220,6 +259,9 @@ export interface ImportInventory {
   builtinMatches: InventoryBuiltinMatch[];
   projects: InventoryProjectReport[];
   orphaned: InventoryOrphanedConfig[];
+  externalReferences: InventoryExternalReference[];
+  /** Entries in `includeExternalRoots` no agent's configured path matched. Nothing was scanned for them. */
+  unmatchedExternalRoots: string[];
   globalStatus: 'not-requested' | 'scanned' | 'unavailable' | 'cancelled';
   /** Exclusions outside any project, from the global scan. */
   globalExcluded: InventoryExclusionCounts;

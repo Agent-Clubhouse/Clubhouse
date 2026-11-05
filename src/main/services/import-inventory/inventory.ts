@@ -10,6 +10,10 @@
  *     errors, and a JSON parse error can quote the file;
  *   - git state comes from git-state.ts, which never refreshes the index.
  *
+ * Paths from a repository aren't trusted either. A default scan touches only
+ * registered project roots and worktrees shown to belong to them: see
+ * authorizeWorktree and resolveInside. Anything else is reported by its string.
+ *
  * Results hold names, paths and hashes. File contents stay in this module, for
  * hashing and secret checks, and logs get counts.
  */
@@ -43,6 +47,8 @@ import type {
   InventoryEntry,
   InventoryExclusionCounts,
   InventoryExclusionReason,
+  InventoryExternalReason,
+  InventoryExternalReference,
   InventoryFile,
   InventoryKind,
   InventoryMcpDefinition,
@@ -53,6 +59,7 @@ import type {
   InventoryScope,
   InventorySource,
   InventorySourceCaveat,
+  InventoryWorktreeAccess,
 } from '../../../shared/import-inventory-types';
 import {
   NON_DEFINITION_DIRS,
@@ -61,8 +68,11 @@ import {
   isSecretLookingName,
   looksBinary,
 } from './classify';
-import { readGitStates, toGitPath } from './git-state';
+import { readGitStates, readGitWorktrees, toGitPath } from './git-state';
+import { checkConfiguredPath, isOutside, isUncPath, projectPathKey } from './untrusted-paths';
 import { isForbiddenKey, parseJsonMcpServers, parseTomlMcpServers, readMcpEntry } from './mcp-definitions';
+
+export { projectPathKey };
 
 const LOG_NS = 'core:import-inventory';
 const CLUBHOUSE_MODE_SETTINGS_FILE = 'clubhouse-mode-settings.json';
@@ -116,7 +126,9 @@ export interface InventoryFs {
   lstat(p: string): Promise<Stats>;
   readdir(p: string): Promise<Dirent[]>;
   readFile(p: string): Promise<Buffer>;
+  /** Called only on a root, or on a path already authorized. */
   realpath(p: string): Promise<string>;
+  readlink(p: string): Promise<string>;
 }
 
 const REAL_FS: InventoryFs = {
@@ -125,6 +137,7 @@ const REAL_FS: InventoryFs = {
   readdir: (p) => fsp.readdir(p, { withFileTypes: true }),
   readFile: (p) => fsp.readFile(p),
   realpath: (p) => fsp.realpath(p),
+  readlink: (p) => fsp.readlink(p),
 };
 
 export interface InventoryOptions {
@@ -136,6 +149,12 @@ export interface InventoryOptions {
   homeDir: string;
   /** Also read provider folders in project roots and user-level config. Off by default. */
   includeProviderConfig?: boolean;
+  /**
+   * Folders the user chose to have scanned though a project's config points
+   * outside it, as reported in `externalReferences`. The only way to read those:
+   * an agent's path must match one of these, canonically, before it's touched.
+   */
+  includeExternalRoots?: readonly string[];
   /** Selectable scope: these project ids, or all when omitted. Orphans are still judged against all. */
   projectIds?: readonly string[];
   signal?: AbortSignal;
@@ -176,18 +195,6 @@ function canonical(value: unknown): string {
 
 function wildcardsIn(text: string): string[] {
   return [...new Set(text.match(/@@[A-Za-z]+/g) ?? [])].sort();
-}
-
-/**
- * A path as a comparison key: separators, `.` segments and trailing separators
- * don't count, nor does case on Windows. Only for telling whether a stored key
- * names a project; isClubhouseModeEnabled itself matches the exact string.
- */
-export function projectPathKey(p: string, platform: NodeJS.Platform = process.platform): string {
-  const impl = platform === 'win32' ? path.win32 : path.posix;
-  let normal = impl.normalize(p);
-  while (normal.length > impl.parse(normal).root.length && normal.endsWith(impl.sep)) normal = normal.slice(0, -1);
-  return platform === 'win32' ? normal.toLowerCase() : normal;
 }
 
 /**
@@ -264,6 +271,7 @@ interface RawItem {
   builtinId?: string;
   mcp?: InventoryMcpDefinition;
   persona?: InventoryPersonaMetadata;
+  worktreeAccess?: InventoryWorktreeAccess;
   caveats?: InventorySourceCaveat[];
 }
 
@@ -279,6 +287,7 @@ interface Context {
   warnings: Set<string>;
   /** Folders already checked against their root's real path. */
   dirChecks: Map<string, Promise<DirCheck>>;
+  realRoots: Map<string, Promise<string>>;
   onFiles?: (filesSeen: number) => void;
 }
 
@@ -299,6 +308,7 @@ function newContext(
     bridgeFiltered: 0,
     warnings: new Set(),
     dirChecks: new Map(),
+    realRoots: new Map(),
   };
 }
 
@@ -332,25 +342,70 @@ function countEntry(ctx: Context): boolean {
   return true;
 }
 
+const MAX_SYMLINK_HOPS = 40;
+
+function realRoot(ctx: Context, root: string): Promise<string> {
+  let real = ctx.realRoots.get(root);
+  if (!real) {
+    real = ctx.fs.realpath(root);
+    ctx.realRoots.set(root, real);
+  }
+  return real;
+}
+
 /**
- * Whether `dir`, symlinks resolved, is inside `root`. lstat and readdir see only
- * the last component, so `.clubhouse/skills` or `.github` as a symlink would
- * otherwise lead out of the project.
+ * `target`'s real path, walking down from `root` and reading each symlink rather
+ * than following it, so a link leading out is known from its text and what it
+ * points at is never touched. realpath would stat it. Absolute link targets must
+ * be spelled from the real root; any other spelling reads as outside.
  */
+async function resolveInside(ctx: Context, root: string, target: string): Promise<{ real: string } | 'outside' | 'missing' | 'unreadable'> {
+  const rel = path.relative(root, target);
+  if (isOutside(rel)) return 'outside';
+  try {
+    const base = await realRoot(ctx, root);
+    let current = base;
+    const pending = rel.split(path.sep).filter(Boolean);
+    let hops = 0;
+    while (pending.length > 0) {
+      const segment = pending.shift() as string;
+      if (segment === '.') continue;
+      if (segment === '..') {
+        current = path.dirname(current);
+        if (isOutside(path.relative(base, current))) return 'outside';
+        continue;
+      }
+      const next = path.join(current, segment);
+      const stats = await ctx.fs.lstat(next);
+      if (!stats.isSymbolicLink()) {
+        current = next;
+        continue;
+      }
+      if (++hops > MAX_SYMLINK_HOPS) return 'outside';
+      const link = await ctx.fs.readlink(next);
+      if (isUncPath(link)) return 'outside';
+      if (path.isAbsolute(link)) {
+        const fromBase = path.relative(base, path.normalize(link));
+        if (isOutside(fromBase)) return 'outside';
+        current = base;
+        pending.unshift(...fromBase.split(path.sep).filter(Boolean));
+      } else {
+        pending.unshift(...link.split(/[\\/]/).filter(Boolean));
+      }
+    }
+    return { real: current };
+  } catch (err) {
+    // telemetry-exempt: the caller counts this; a folder that isn't there is the common case
+    return isMissing(err) ? 'missing' : 'unreadable';
+  }
+}
+
+/** Whether `dir`, symlinks resolved, is inside `root`. lstat and readdir alone see only the last component. */
 function checkDir(ctx: Context, root: string, dir: string): Promise<DirCheck> {
   const key = `${root}\0${dir}`;
   let check = ctx.dirChecks.get(key);
   if (!check) {
-    check = (async (): Promise<DirCheck> => {
-      try {
-        const [realRoot, realDir] = await Promise.all([ctx.fs.realpath(root), ctx.fs.realpath(dir)]);
-        const rel = path.relative(realRoot, realDir);
-        return rel === '..' || rel.startsWith(`..${path.sep}`) || path.isAbsolute(rel) ? 'outside' : 'inside';
-      } catch (err) {
-        // telemetry-exempt: the caller counts this; a folder that isn't there is the common case
-        return isMissing(err) ? 'missing' : 'unreadable';
-      }
-    })();
+    check = resolveInside(ctx, root, dir).then((resolved) => (typeof resolved === 'string' ? resolved : 'inside'));
     ctx.dirChecks.set(key, check);
   }
   return check;
@@ -727,15 +782,13 @@ async function sourceFolder(ctx: Context, projectPath: string, stored: unknown, 
   const base = path.join(projectPath, '.clubhouse');
   let joined = confinedJoin(base, sub);
   if (joined) {
-    // The same test on the real paths, for a folder inside `.clubhouse` that links to `agents`.
-    try {
-      const [realBase, realJoined] = await Promise.all([ctx.fs.realpath(base), ctx.fs.realpath(joined)]);
-      if (!confinedJoin(realBase, path.relative(realBase, realJoined))) {
-        ctx.excluded.symlink++;
-        joined = null;
-      }
-    } catch {
-      // telemetry-exempt: a folder that isn't there has nothing to confine; reading it reports anything else
+    // The same test on the real paths, for a folder inside `.clubhouse` that links to `agents` or out.
+    const [realBase, realJoined] = await Promise.all([resolveInside(ctx, projectPath, base), resolveInside(ctx, projectPath, joined)]);
+    const refused = realBase === 'outside' || realJoined === 'outside'
+      || (typeof realBase === 'object' && typeof realJoined === 'object' && !confinedJoin(realBase.real, path.relative(realBase.real, realJoined.real)));
+    if (refused) {
+      ctx.excluded.symlink++;
+      joined = null;
     }
   }
   if (!joined) ctx.warnings.add(`source-folder-outside-clubhouse:${fallback}`);
@@ -753,13 +806,14 @@ async function countMissions(ctx: Context, projectPath: string): Promise<number>
  * outside Clubhouse Mode writes expanded text here, and turning the mode off
  * leaves its output behind. The caveats on the source say so.
  */
-async function scanAgentInstructions(ctx: Context, agent: DurableAgentConfig, worktree: string): Promise<RawItem[]> {
+async function scanAgentInstructions(ctx: Context, agent: DurableAgentConfig, worktree: string, access: InventoryWorktreeAccess): Promise<RawItem[]> {
   const items: RawItem[] = [];
   for (const rel of INSTRUCTION_FILES) {
     const outcome = await readDefinitionFile(ctx, worktree, path.join(worktree, ...rel.split('/')));
     if (outcome === 'excluded' || outcome === 'missing') continue;
     const item = singleFileItem('agent-instructions', `${agent.name}/${rel}`, 'project', outcome.file);
     item.agent = { id: agent.id, name: agent.name };
+    item.worktreeAccess = access;
     item.caveats = ['wildcards-may-be-expanded', 'git-state-is-a-hint'];
     items.push(item);
   }
@@ -820,6 +874,99 @@ function resolveMode(mode: StoredMode, projectPath: string): InventoryClubhouseM
   return { enabled: mode.enabled, source: 'app' };
 }
 
+// ── Whose worktree is it ─────────────────────────────────────────────────
+
+/** A scan's `includeExternalRoots`, and which have matched an agent so far. */
+interface ExternalRoots {
+  given: readonly string[];
+  matched: Set<string>;
+}
+
+interface WorktreeAuthorizer {
+  /** From the string alone, with no path touched: who could allow this, or why nobody can. */
+  authority(configured: unknown): Promise<{ by: InventoryWorktreeAccess['by']; includedRoot?: string } | { external: InventoryExternalReason }>;
+  /** The real folder to read, once there's an authority. Touches only an authorized path. */
+  resolve(configured: string, by: InventoryWorktreeAccess['by']): Promise<{ root: string } | { external: InventoryExternalReason } | 'missing'>;
+}
+
+function worktreeAuthorizer(ctx: Context, projectPath: string, roots: ExternalRoots): WorktreeAuthorizer {
+  // Asked only when an agent points outside, and once per project.
+  let gitWorktrees: Promise<Set<string>> | null = null;
+  const listedByGit = (configured: string) => {
+    gitWorktrees ??= readGitWorktrees(projectPath, ctx.signal).then((list) => new Set(list.map((p) => projectPathKey(p))));
+    return gitWorktrees.then((set) => set.has(projectPathKey(configured)));
+  };
+  // The user chose these, so finding their real paths touches only what they selected.
+  let included: Promise<Array<{ given: string; real: string | null }>> | null = null;
+  const includedRoots = () => {
+    included ??= Promise.all(roots.given.filter((given) => path.isAbsolute(given) || isUncPath(given)).map(async (given) => {
+      try {
+        return { given, real: await ctx.fs.realpath(given) };
+      } catch {
+        // telemetry-exempt: a chosen folder that's gone matches only by its string, and then reads as missing
+        return { given, real: null };
+      }
+    }));
+    return included;
+  };
+
+  return {
+    async authority(configured) {
+      const lexical = checkConfiguredPath(configured, projectPath);
+      if (lexical === 'invalid-path' || lexical === 'relative-path') return { external: lexical };
+      const key = projectPathKey(configured as string);
+      const match = (await includedRoots()).find((root) => projectPathKey(root.given) === key || (root.real && projectPathKey(root.real) === key));
+      if (match) {
+        roots.matched.add(match.given);
+        return { by: 'explicit-inclusion', includedRoot: match.given };
+      }
+      if (lexical === 'inside-project') return { by: 'project-root' };
+      if (lexical === 'outside-project' && await listedByGit(configured as string)) return { by: 'git-worktree' };
+      return { external: lexical };
+    },
+
+    async resolve(configured, by) {
+      if (by === 'project-root') {
+        const resolved = await resolveInside(ctx, projectPath, configured);
+        if (resolved === 'outside') return { external: 'symlink-outside-project' };
+        if (resolved === 'unreadable') ctx.warnings.add('worktree-unavailable');
+        return typeof resolved === 'string' ? 'missing' : { root: resolved.real };
+      }
+      let real: string;
+      try {
+        real = await ctx.fs.realpath(configured);
+      } catch (err) {
+        // telemetry-exempt: reported on the agent; a worktree that's gone doesn't stop the project
+        if (!isMissing(err)) ctx.warnings.add(`worktree-unavailable:${errorCode(err)}`);
+        return 'missing';
+      }
+      if (by === 'git-worktree') {
+        // Git registered this exact folder; if it's now a link, it isn't what git meant.
+        return projectPathKey(real) === projectPathKey(configured) ? { root: real } : { external: 'symlink-outside-project' };
+      }
+      const chosen = await includedRoots();
+      return chosen.some((root) => root.real && projectPathKey(root.real) === projectPathKey(real)) ? { root: real } : { external: 'outside-project' };
+    },
+  };
+}
+
+/**
+ * The project's agents, once `agents.json` and its backup are known to be inside
+ * the project. peekDurableConfigs reads them directly, past every check here, and
+ * a symlinked `.clubhouse` or `agents.json` would lead it out.
+ */
+async function readAgentConfigs(ctx: Context, projectPath: string): Promise<readonly DurableAgentConfig[]> {
+  for (const name of ['agents.json', 'agents.json.bak']) {
+    const resolved = await resolveInside(ctx, projectPath, path.join(projectPath, '.clubhouse', name));
+    if (resolved === 'outside' || resolved === 'unreadable') {
+      ctx.excluded[resolved === 'outside' ? 'symlink' : 'unreadable']++;
+      ctx.warnings.add('agent-config-not-read');
+      return [];
+    }
+  }
+  return peekDurableConfigs(projectPath);
+}
+
 // ── One project ──────────────────────────────────────────────────────────
 
 interface ProjectScan {
@@ -827,6 +974,7 @@ interface ProjectScan {
   missionsNotInventoried: number;
   clubhouseMode: InventoryClubhouseMode;
   agents: InventoryAgentReport[];
+  external: Array<{ agent: { id: string; name: string }; configuredPath: string; reason: InventoryExternalReason }>;
 }
 
 async function scanProject(
@@ -834,6 +982,7 @@ async function scanProject(
   projectPath: string,
   mode: InventoryClubhouseMode,
   includeProviderConfig: boolean,
+  externalRoots: ExternalRoots,
 ): Promise<ProjectScan> {
   const items: RawItem[] = [];
   const { settings, file: settingsFile } = await readProjectSettings(ctx, projectPath);
@@ -852,21 +1001,33 @@ async function scanProject(
   }
 
   const agents: InventoryAgentReport[] = [];
-  for (const agent of await peekDurableConfigs(projectPath)) {
+  const external: ProjectScan['external'] = [];
+  const authorizer = worktreeAuthorizer(ctx, projectPath, externalRoots);
+  for (const agent of await readAgentConfigs(ctx, projectPath)) {
     await checkpoint(ctx);
     // The rule agent-system applies before materializing at wake.
     const managed: boolean | 'unknown' = !agent.worktreePath
       ? false
       : mode.enabled === 'unknown' ? 'unknown' : mode.enabled && !agent.clubhouseModeOverride;
+    const configured: unknown = agent.worktreePath;
     const report: InventoryAgentReport = {
-      id: agent.id, name: agent.name, worktreePath: agent.worktreePath, managed,
+      id: agent.id, name: agent.name, worktreePath: typeof configured === 'string' ? configured : undefined, managed,
       status: 'no-worktree',
       persona: agent.persona ?? defaults.persona,
       mission: agent.mission ?? defaults.mission,
       mcpFilesNotInventoried: 0,
     };
     agents.push(report);
-    if (!agent.worktreePath) continue;
+    if (!configured) continue;
+    const reportExternal = (reason: InventoryExternalReason) => {
+      report.status = 'external';
+      external.push({ agent: { id: agent.id, name: agent.name }, configuredPath: typeof configured === 'string' ? configured : '', reason });
+    };
+    const authority = await authorizer.authority(configured);
+    if ('external' in authority) {
+      reportExternal(authority.external);
+      continue;
+    }
     if (managed === true) {
       report.status = 'generated';
       continue;
@@ -875,17 +1036,22 @@ async function scanProject(
       report.status = 'skipped-mode-unknown';
       continue;
     }
-    try {
-      await ctx.fs.stat(agent.worktreePath);
-    } catch (err) {
-      // telemetry-exempt: reported on the agent; a worktree that's gone doesn't stop the project
-      if (!isMissing(err)) ctx.warnings.add(`worktree-unavailable:${errorCode(err)}`);
+    const worktreePath = configured as string;
+    const resolved = await authorizer.resolve(worktreePath, authority.by);
+    if (resolved === 'missing') {
       report.status = 'missing-worktree';
       continue;
     }
+    if ('external' in resolved) {
+      reportExternal(resolved.external);
+      continue;
+    }
+    const access: InventoryWorktreeAccess = { by: authority.by, configuredPath: worktreePath };
+    if (authority.includedRoot) access.includedRoot = authority.includedRoot;
+    report.worktreeAccess = access;
     report.status = 'scanned';
-    items.push(...await scanAgentInstructions(ctx, agent, agent.worktreePath));
-    report.mcpFilesNotInventoried = await countWorktreeMcpFiles(ctx, agent.worktreePath);
+    items.push(...await scanAgentInstructions(ctx, agent, resolved.root, access));
+    report.mcpFilesNotInventoried = await countWorktreeMcpFiles(ctx, resolved.root);
   }
 
   if (includeProviderConfig) {
@@ -916,6 +1082,7 @@ async function scanProject(
     missionsNotInventoried: await countMissions(ctx, projectPath),
     clubhouseMode,
     agents,
+    external,
   };
 }
 
@@ -972,6 +1139,7 @@ async function toSources(items: readonly RawItem[], signal: AbortSignal, project
     };
     if (item.pointer) source.pointer = item.pointer;
     if (item.agent) source.agent = item.agent;
+    if (item.worktreeAccess) source.worktreeAccess = item.worktreeAccess;
     if (item.caveats) source.caveats = item.caveats;
     sources.set(item, source);
   }
@@ -1126,6 +1294,8 @@ export async function scanImportInventory(options: InventoryOptions): Promise<Im
 
   const projects: InventoryProjectReport[] = [];
   const projectSourced: Sourced[] = [];
+  const externalReferences: InventoryExternalReference[] = [];
+  const externalRoots: ExternalRoots = { given: options.includeExternalRoots ?? [], matched: new Set() };
   const missingPaths = new Set<string>();
   let cancelled = false;
 
@@ -1158,7 +1328,7 @@ export async function scanImportInventory(options: InventoryOptions): Promise<Im
       });
       const stats = await fs.stat(project.path);
       if (!stats.isDirectory()) return { unavailable: 'ENOTDIR' as const };
-      const scan = await scanProject(ctx, project.path, projectReport.clubhouseMode, includeProviderConfig);
+      const scan = await scanProject(ctx, project.path, projectReport.clubhouseMode, includeProviderConfig, externalRoots);
       const sources = await toSources(scan.items, signal, { id: project.id, name: projectReport.projectName });
       return { scan, sources };
     }, outerSignal, timeoutMs).catch((err: unknown) => {
@@ -1200,6 +1370,9 @@ export async function scanImportInventory(options: InventoryOptions): Promise<Im
       projectReport.status = 'scanned';
       projectReport.clubhouseMode = scan.clubhouseMode;
       projectReport.agents = scan.agents;
+      for (const reference of scan.external) {
+        externalReferences.push({ projectId: project.id, projectName: projectReport.projectName, ...reference });
+      }
       projectReport.missionsNotInventoried = scan.missionsNotInventoried;
       for (const [item, source] of sources) projectSourced.push({ item, source });
     }
@@ -1250,6 +1423,8 @@ export async function scanImportInventory(options: InventoryOptions): Promise<Im
     builtinMatches: mergeBuiltinMatches([...inProject, ...providerSourced].filter((s) => !offered(s))),
     projects,
     orphaned,
+    externalReferences,
+    unmatchedExternalRoots: externalRoots.given.filter((root) => !externalRoots.matched.has(root)),
     globalStatus,
     globalExcluded,
   };
@@ -1263,6 +1438,7 @@ export async function scanImportInventory(options: InventoryOptions): Promise<Im
       providerEntries: inventory.providerEntries.length,
       builtinMatches: inventory.builtinMatches.length,
       orphaned: orphaned.length,
+      externalReferences: externalReferences.length,
     },
   });
   return inventory;

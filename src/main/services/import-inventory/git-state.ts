@@ -1,7 +1,7 @@
 /**
  * Git state per file for the import inventory (#2820), asked of git and never
- * inferred. Only `ls-files --cached` and `check-ignore` run here: neither
- * refreshes or writes the index, which `git status` does (see the test that
+ * inferred. Only `ls-files --cached`, `check-ignore` and `worktree list` run
+ * here: none refreshes or writes the index, which `git status` does (see the test that
  * proves the fixture would catch it).
  *
  * The scanned repository's contents and config aren't trusted, since a clone can
@@ -16,6 +16,7 @@
 import { execFile } from 'child_process';
 import * as path from 'path';
 import type { InventoryGitState } from '../../../shared/import-inventory-types';
+import { parseWorktreeList } from './untrusted-paths';
 
 const MAX_BUFFER = 64 * 1024 * 1024;
 const GIT_TIMEOUT_MS = 30_000;
@@ -51,6 +52,16 @@ function runGit(args: string[], root: string, signal: AbortSignal, input?: strin
     child.stdin?.on('error', () => undefined);
     child.stdin?.end(input ?? '');
   });
+}
+
+/**
+ * The worktrees git reports for the repository at `root`, or none if it can't
+ * say. Paths come from the repo's own `.git`, which a clone doesn't carry. Reads
+ * only: nothing runs and `.git` doesn't change, which import-inventory.test.ts checks.
+ */
+export async function readGitWorktrees(root: string, signal: AbortSignal): Promise<string[]> {
+  const result = await runGit(['worktree', 'list', '--porcelain'], root, signal);
+  return result.code === 0 ? parseWorktreeList(result.stdout) : [];
 }
 
 /** `file` relative to `root` with git's `/` separators. */

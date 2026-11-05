@@ -31,6 +31,7 @@ import type { ImportInventory, InventoryEntry } from '../../../shared/import-inv
 import type { DurableAgentConfig } from '../../../shared/types';
 import { INSTRUCTION_FILES, PROJECT_MCP_FILES, confinedJoin, projectPathKey, scanImportInventory, type InventoryFs, type InventoryOptions } from './inventory';
 import { readGitStates, toGitPath } from './git-state';
+import { checkConfiguredPath, parseWorktreeList } from './untrusted-paths';
 
 // Real git on Windows CI is slow, and these spawn it several times each.
 vi.setConfig({ testTimeout: 30_000 });
@@ -121,20 +122,28 @@ function snapshotTree(dir: string): Snapshot {
 }
 
 /** Real filesystem, recording every path touched. */
-function recordingFs(): { fs: InventoryFs; touched: string[] } {
+function recordingFs(): { fs: InventoryFs; touched: string[]; resolved: string[] } {
   const touched: string[] = [];
+  // Where realpath ended up: it touches every step on the way, not just the path it's given.
+  const resolved: string[] = [];
   const record = <T>(p: string, run: () => Promise<T>) => {
     touched.push(p);
     return run();
   };
   return {
     touched,
+    resolved,
     fs: {
       stat: (p) => record(p, () => fsp.stat(p)),
       lstat: (p) => record(p, () => fsp.lstat(p)),
       readdir: (p) => record(p, () => fsp.readdir(p, { withFileTypes: true })),
       readFile: (p) => record(p, () => fsp.readFile(p)),
-      realpath: (p) => record(p, () => fsp.realpath(p)),
+      realpath: (p) => record(p, async () => {
+        const real = await fsp.realpath(p);
+        resolved.push(real);
+        return real;
+      }),
+      readlink: (p) => record(p, () => fsp.readlink(p)),
     },
   };
 }
@@ -424,6 +433,8 @@ describe('git config can\'t run anything', () => {
       'sequence.editor', 'alias.ls-files', 'alias.check-ignore',
     ];
     for (const [i, key] of keys.entries()) git(project, 'config', key, leaveMarker(`config-ran-${i}`));
+    // Makes the scan ask `git worktree list` under the same config.
+    setAgents(project, [{ id: 'a1', name: 'far', worktreePath: path.join(root, 'elsewhere') }]);
     git(project, 'config', 'core.hooksPath', 'evil-hooks');
     for (const hook of ['post-index-change', 'pre-commit', 'post-checkout', 'reference-transaction', 'fsmonitor-watchman']) {
       const file = write(project, `evil-hooks/${hook}`, `#!/bin/sh\n${leaveMarker(`hook-ran-${hook}`)}\n`);
@@ -519,6 +530,457 @@ describe('symlinked parents', () => {
   });
 });
 
+describe('untrusted worktree paths', () => {
+  const OUTSIDE_FILES = {
+    'CLAUDE.md': 'CANARY-INSTRUCTIONS\n',
+    'AGENTS.md': 'CANARY-AGENTS\n',
+    '.github/copilot-instructions.md': 'CANARY-COPILOT\n',
+    '.mcp.json': JSON.stringify({ mcpServers: { canary: { command: 'canary' } } }),
+  };
+
+  /** A folder holding what a hostile config would like read. */
+  function plantCanary(dir: string): void {
+    for (const [rel, content] of Object.entries(OUTSIDE_FILES)) write(dir, rel, content);
+  }
+
+  /** Nothing at or under `dir` was touched, through the one door a scan has to the filesystem. */
+  function expectUntouched(touched: readonly string[], dir: string): void {
+    expect(touched.filter((p) => projectPathKey(p).startsWith(projectPathKey(dir)))).toEqual([]);
+  }
+
+  /** No trace in the results: no entry, no hash, no count. */
+  function expectNoTrace(result: ImportInventory): void {
+    expect(result.entries).toEqual([]);
+    expect(result.providerEntries).toEqual([]);
+    const report = result.projects[0];
+    expect(Object.values(report.excluded).every((n) => n === 0)).toBe(true);
+    expect(report.agents[0].mcpFilesNotInventoried).toBe(0);
+    expect(report.bridgeEntriesFiltered).toBe(0);
+    const serialized = JSON.stringify(result);
+    for (const content of Object.values(OUTSIDE_FILES)) expect(serialized).not.toContain(sha(content));
+    expect(serialized).not.toContain('CANARY');
+    expect(serialized).not.toContain('canary"');
+  }
+
+  /** An agent configured with `worktreePath`, scanned with the recording filesystem. */
+  async function scanAgentAt(project: string, worktreePath: unknown, options: Partial<InventoryOptions> = {}) {
+    setAgents(project, [{ id: 'a1', name: 'lead', worktreePath: worktreePath as string }]);
+    registerProjects([project]);
+    const recording = recordingFs();
+    const result = await scan({ fs: recording.fs, ...options });
+    return { result, touched: [...recording.touched, ...recording.resolved], readsOnly: recording.touched };
+  }
+
+  it('leaves an absolute path outside the project alone', async () => {
+    const project = makeProject('alpha');
+    const outside = path.join(root, 'outside');
+    plantCanary(outside);
+
+    const { result, touched } = await scanAgentAt(project, outside);
+
+    expectUntouched(touched, outside);
+    expectNoTrace(result);
+    expect(result.externalReferences).toEqual([{ projectId: 'id-alpha', projectName: 'alpha', agent: { id: 'a1', name: 'lead' }, configuredPath: outside, reason: 'outside-project' }]);
+    expect(result.projects[0].agents[0].status).toBe('external');
+  });
+
+  it('leaves a relative path alone, even one that climbs out', async () => {
+    const project = makeProject('alpha');
+    const outside = path.join(root, 'outside');
+    plantCanary(outside);
+    const configured = ['..', 'outside'].join(path.sep);
+
+    const { result, touched } = await scanAgentAt(project, configured);
+
+    expectUntouched(touched, outside);
+    expectUntouched(touched, configured);
+    expectNoTrace(result);
+    expect(result.externalReferences[0].reason).toBe('relative-path');
+  });
+
+  it('leaves a path with .. in it alone, wherever it would land', async () => {
+    const project = makeProject('alpha');
+    const outside = path.join(root, 'outside');
+    plantCanary(outside);
+    plantCanary(path.join(project, 'inner'));
+
+    for (const configured of [
+      [project, '..', 'outside'].join(path.sep),
+      [project, '.clubhouse', '..', 'inner'].join(path.sep),
+    ]) {
+      const { result, touched } = await scanAgentAt(project, configured);
+
+      expectUntouched(touched, outside);
+      expectUntouched(touched, path.join(project, 'inner'));
+      expectNoTrace(result);
+      expect(result.externalReferences[0]).toMatchObject({ configuredPath: configured, reason: 'parent-traversal' });
+    }
+  });
+
+  it.each(['\\\\attacker\\share\\repo', '//attacker/share/repo', '\\\\?\\C:\\outside'])('never touches the UNC path %s', async (configured) => {
+    const project = makeProject('alpha');
+
+    const { result, touched } = await scanAgentAt(project, configured);
+
+    expect(touched.filter((p) => p.includes('attacker') || p.includes('outside'))).toEqual([]);
+    expect(touched.filter((p) => /^[\\/]{2}/.test(p))).toEqual([]);
+    expectNoTrace(result);
+    expect(result.externalReferences[0]).toMatchObject({ configuredPath: configured, reason: 'unc-path' });
+  });
+
+  it('reports a config value that isn\'t a usable path', async () => {
+    const project = makeProject('alpha');
+
+    const { result } = await scanAgentAt(project, { not: 'a string' });
+
+    expect(result.externalReferences[0]).toMatchObject({ configuredPath: '', reason: 'invalid-path' });
+    expect(result.projects[0].agents[0].worktreePath).toBeUndefined();
+  });
+
+  it('won\'t go through a case variant of the project', async () => {
+    const project = makeProject('alpha');
+    const variant = path.join(root, 'ALPHA');
+    // Case-insensitive filesystems already have it, as the project itself.
+    const distinct = !fs.existsSync(variant);
+    if (distinct) plantCanary(variant);
+    const configured = path.join(variant, '.clubhouse', 'agents', 'lead');
+    if (distinct) plantCanary(configured);
+
+    const { result, touched } = await scanAgentAt(project, configured);
+
+    if (process.platform === 'win32') {
+      // The same path by Windows' own rule, so it's inside, and it's simply missing.
+      expect(result.projects[0].agents[0].status).toBe('missing-worktree');
+      return;
+    }
+    expectUntouched(touched, variant);
+    expect(result.projects[0].agents[0].status).toBe('external');
+    expect(result.externalReferences[0].reason).toBe('outside-project');
+  });
+
+  describe('symlinks inside the project', () => {
+    function link(target: string, at: string): boolean {
+      fs.mkdirSync(path.dirname(at), { recursive: true });
+      try {
+        fs.symlinkSync(target, at, 'junction');
+        return true;
+      } catch {
+        return false; // telemetry-exempt: nothing to test without the privilege
+      }
+    }
+
+    it('reads the link and not what it points at', async () => {
+      const project = makeProject('alpha');
+      const outside = path.join(root, 'outside');
+      plantCanary(outside);
+      const configured = path.join(project, '.clubhouse', 'agents', 'evil');
+      if (!link(outside, configured)) return;
+
+      const { result, touched } = await scanAgentAt(project, configured);
+
+      expectUntouched(touched, outside);
+      expectNoTrace(result);
+      expect(result.externalReferences[0]).toMatchObject({ configuredPath: configured, reason: 'symlink-outside-project' });
+    });
+
+    it('follows a chain only as far as it stays inside', async () => {
+      const project = makeProject('alpha');
+      const outside = path.join(root, 'outside');
+      plantCanary(outside);
+      const lastHop = path.join(project, '.clubhouse', 'hop2');
+      const firstHop = path.join(project, '.clubhouse', 'agents', 'hop1');
+      if (!link(outside, lastHop) || !link(lastHop, firstHop)) return;
+
+      const { result, touched } = await scanAgentAt(project, path.join(firstHop, 'nested'));
+
+      expectUntouched(touched, outside);
+      expectNoTrace(result);
+      expect(result.externalReferences[0].reason).toBe('symlink-outside-project');
+    });
+
+    it('isn\'t led out by a folder partway down', async () => {
+      const project = makeProject('alpha');
+      const outside = path.join(root, 'outside');
+      plantCanary(path.join(outside, 'lead'));
+      if (!link(outside, path.join(project, '.clubhouse', 'agents'))) return;
+
+      const { result, touched } = await scanAgentAt(project, path.join(project, '.clubhouse', 'agents', 'lead'));
+
+      expectUntouched(touched, outside);
+      expectNoTrace(result);
+      expect(result.externalReferences[0].reason).toBe('symlink-outside-project');
+    });
+
+    it('doesn\'t touch a source folder or config folder\'s target either', async () => {
+      const project = makeProject('alpha');
+      const outside = path.join(root, 'outside');
+      plantCanary(outside);
+      write(outside, 'deploy/SKILL.md', 'CANARY-SKILL\n');
+      if (!link(outside, path.join(project, '.clubhouse', 'skills')) || !link(outside, path.join(project, '.github'))) return;
+      registerProjects([project]);
+      const recording = recordingFs();
+
+      const result = await scan({ fs: recording.fs });
+
+      expectUntouched([...recording.touched, ...recording.resolved], outside);
+      expect(result.entries).toEqual([]);
+    });
+
+    it.each([
+      ['the .clubhouse folder', '.clubhouse'],
+      ['agents.json itself', '.clubhouse/agents.json'],
+      ['the backup', '.clubhouse/agents.json.bak'],
+    ])('won\'t read agent config through a link at %s', async (_label, linked) => {
+      const project = makeProject('alpha');
+      const outside = path.join(root, 'outside');
+      const planted = path.join(project, 'planted');
+      plantCanary(planted);
+      const agents = JSON.stringify([{ id: 'a1', name: 'planted', color: 'blue', createdAt: '2026-11-04T00:00:00.000Z', worktreePath: planted }]);
+      write(outside, 'agents.json', agents);
+      write(outside, 'agents.json.bak', agents);
+      fs.mkdirSync(path.join(project, '.clubhouse'), { recursive: true });
+      const at = path.join(project, ...linked.split('/'));
+      if (linked === '.clubhouse') fs.rmSync(at, { recursive: true });
+      try {
+        if (linked === '.clubhouse') fs.symlinkSync(outside, at, 'junction');
+        else fs.symlinkSync(path.join(outside, path.basename(at)), at, 'file');
+      } catch {
+        return; // telemetry-exempt: nothing to test without the privilege
+      }
+      registerProjects([project]);
+
+      const result = await scan();
+
+      expect(result.projects[0].agents).toEqual([]);
+      expect(result.projects[0].warnings).toContain('agent-config-not-read');
+      expect(result.entries).toEqual([]);
+    });
+
+    it('still reads through a link that stays inside', async () => {
+      const project = makeProject('alpha');
+      const real = path.join(project, 'real-worktrees', 'lead');
+      write(real, 'CLAUDE.md', 'Inside\n');
+      const configured = path.join(project, '.clubhouse', 'agents', 'lead');
+      if (!link(real, configured)) return;
+
+      const { result } = await scanAgentAt(project, configured);
+
+      expect(result.externalReferences).toEqual([]);
+      expect(entry(result, 'agent-instructions', 'lead/CLAUDE.md').sources[0].root).toBe(real);
+    });
+  });
+
+  describe('real git worktrees', () => {
+    it('keeps a linked worktree inside the project in scope', async () => {
+      const project = makeProject('alpha');
+      const worktree = path.join(project, '.clubhouse', 'agents', 'lead');
+      git(project, 'worktree', 'add', '-q', '-b', 'lead/standby', worktree, 'main');
+      write(worktree, 'CLAUDE.md', 'Mine\n');
+
+      const { result } = await scanAgentAt(project, worktree);
+
+      const source = entry(result, 'agent-instructions', 'lead/CLAUDE.md').sources[0];
+      expect(source.worktreeAccess).toEqual({ by: 'project-root', configuredPath: worktree });
+      expect(result.externalReferences).toEqual([]);
+    });
+
+    it('keeps a linked worktree outside the project in scope, because git reports it', async () => {
+      const project = makeProject('alpha');
+      const worktree = path.join(root, 'elsewhere');
+      git(project, 'worktree', 'add', '-q', '-b', 'lead/standby', worktree, 'main');
+      write(worktree, 'CLAUDE.md', 'Mine\n');
+
+      const { result } = await scanAgentAt(project, worktree);
+
+      const source = entry(result, 'agent-instructions', 'lead/CLAUDE.md').sources[0];
+      expect(source.worktreeAccess).toEqual({ by: 'git-worktree', configuredPath: worktree });
+      expect(source.files[0].gitState).toBe('untracked');
+    });
+
+    it('doesn\'t let another repo\'s worktree vouch for itself', async () => {
+      const project = makeProject('alpha');
+      const other = makeProject('other');
+      const worktree = path.join(root, 'others-worktree');
+      git(other, 'worktree', 'add', '-q', '-b', 'x/standby', worktree, 'main');
+      plantCanary(worktree);
+
+      const { result, touched } = await scanAgentAt(project, worktree);
+
+      expectUntouched(touched, worktree);
+      expectNoTrace(result);
+    });
+
+    it('treats a worktree moved after registration as external, whatever now sits at the old path', async () => {
+      const project = makeProject('alpha');
+      const oldPath = path.join(root, 'old-home');
+      const newPath = path.join(root, 'new-home');
+      git(project, 'worktree', 'add', '-q', '-b', 'lead/standby', oldPath, 'main');
+      git(project, 'worktree', 'move', oldPath, newPath);
+      plantCanary(oldPath);
+
+      const { result, touched } = await scanAgentAt(project, oldPath);
+
+      expectUntouched(touched, oldPath);
+      expectUntouched(touched, newPath);
+      expectNoTrace(result);
+      expect(result.externalReferences[0].reason).toBe('outside-project');
+    });
+
+    it('doesn\'t take git\'s word for a worktree that lost its folder and was refilled', async () => {
+      const project = makeProject('alpha');
+      const worktree = path.join(root, 'moved-by-hand');
+      git(project, 'worktree', 'add', '-q', '-b', 'lead/standby', worktree, 'main');
+      fs.renameSync(worktree, path.join(root, 'moved-by-hand-2'));
+      plantCanary(worktree);
+
+      const { result, touched } = await scanAgentAt(project, worktree);
+
+      expectUntouched(touched, worktree);
+      expectNoTrace(result);
+    });
+
+    it('stops at a registered worktree swapped for a link, without reading what it leads to', async () => {
+      const project = makeProject('alpha');
+      const worktree = path.join(root, 'swapped');
+      const outside = path.join(root, 'outside');
+      plantCanary(outside);
+      git(project, 'worktree', 'add', '-q', '-b', 'lead/standby', worktree, 'main');
+      // git still calls it valid if the gitdir pointer survives in the new target.
+      fs.copyFileSync(path.join(worktree, '.git'), path.join(outside, '.git'));
+      fs.rmSync(worktree, { recursive: true, force: true });
+      try {
+        fs.symlinkSync(outside, worktree, 'junction');
+      } catch {
+        return; // telemetry-exempt: nothing to test without the privilege
+      }
+
+      // Canonicalizing is the one touch allowed here, because git vouched for the path.
+      const { result, readsOnly } = await scanAgentAt(project, worktree);
+
+      expect(readsOnly.filter((p) => p.startsWith(outside))).toEqual([]);
+      expect(result.entries).toEqual([]);
+      expect(JSON.stringify(result)).not.toContain('CANARY');
+    });
+  });
+
+  describe('explicit inclusion', () => {
+    it('reads the folder only when named, recording what allowed it', async () => {
+      const project = makeProject('alpha');
+      const outside = path.join(root, 'outside');
+      plantCanary(outside);
+
+      const before = await scanAgentAt(project, outside);
+      expectUntouched(before.touched, outside);
+
+      const { result } = await scanAgentAt(project, outside, { includeExternalRoots: [outside] });
+
+      expect(result.externalReferences).toEqual([]);
+      expect(result.unmatchedExternalRoots).toEqual([]);
+      const source = entry(result, 'agent-instructions', 'lead/CLAUDE.md').sources[0];
+      expect(source.worktreeAccess).toEqual({ by: 'explicit-inclusion', configuredPath: outside, includedRoot: outside });
+      expect(source.files[0].contentHash).toBe(sha(OUTSIDE_FILES['CLAUDE.md']));
+      expect(result.projects[0].agents[0]).toMatchObject({ status: 'scanned', mcpFilesNotInventoried: 1 });
+    });
+
+    it('matches on the real path, so a link to the folder also names it', async () => {
+      const project = makeProject('alpha');
+      const outside = path.join(root, 'outside');
+      plantCanary(outside);
+      const alias = path.join(root, 'alias');
+      try {
+        fs.symlinkSync(outside, alias, 'junction');
+      } catch {
+        return; // telemetry-exempt: nothing to test without the privilege
+      }
+
+      const { result } = await scanAgentAt(project, outside, { includeExternalRoots: [alias] });
+
+      expect(entry(result, 'agent-instructions', 'lead/CLAUDE.md').sources[0].worktreeAccess?.includedRoot).toBe(alias);
+    });
+
+    it('needs a match on the whole path: a parent or a neighbor doesn\'t count', async () => {
+      const project = makeProject('alpha');
+      const outside = path.join(root, 'outside');
+      const neighbor = path.join(root, 'neighbor');
+      plantCanary(outside);
+      plantCanary(neighbor);
+      const notAbsolute = 'outside';
+
+      const { result, touched } = await scanAgentAt(project, outside, { includeExternalRoots: [root, neighbor, notAbsolute] });
+
+      expectUntouched(touched, outside);
+      expect(result.entries).toEqual([]);
+      expect(result.externalReferences[0].reason).toBe('outside-project');
+      expect(result.unmatchedExternalRoots).toEqual([root, neighbor, notAbsolute]);
+    });
+
+    it('rescues a link inside the project, when the user names it', async () => {
+      const project = makeProject('alpha');
+      const outside = path.join(root, 'outside');
+      plantCanary(outside);
+      const configured = path.join(project, '.clubhouse', 'agents', 'evil');
+      fs.mkdirSync(path.dirname(configured), { recursive: true });
+      try {
+        fs.symlinkSync(outside, configured, 'junction');
+      } catch {
+        return; // telemetry-exempt: nothing to test without the privilege
+      }
+
+      const { result } = await scanAgentAt(project, configured, { includeExternalRoots: [configured] });
+
+      expect(entry(result, 'agent-instructions', 'lead/CLAUDE.md').sources[0].worktreeAccess?.by).toBe('explicit-inclusion');
+    });
+
+    it('still never reads a managed worktree', async () => {
+      const project = makeProject('alpha');
+      const outside = path.join(root, 'outside');
+      plantCanary(outside);
+      setClubhouseMode({ enabled: true });
+
+      const { result } = await scanAgentAt(project, outside, { includeExternalRoots: [outside] });
+
+      expect(result.entries).toEqual([]);
+      expect(result.projects[0].agents[0].status).toBe('generated');
+    });
+  });
+
+  it('reports an external path on a managed agent too, without touching it', async () => {
+    const project = makeProject('alpha');
+    const outside = path.join(root, 'outside');
+    plantCanary(outside);
+    setClubhouseMode({ enabled: true });
+
+    const { result, touched } = await scanAgentAt(project, outside);
+
+    expectUntouched(touched, outside);
+    expect(result.externalReferences).toHaveLength(1);
+  });
+
+  it('judges paths by the target platform\'s rules', () => {
+    const projectRoot = 'C:\\repo';
+    const check = (p: unknown) => checkConfiguredPath(p, projectRoot, path.win32);
+    expect(check('C:\\repo\\.clubhouse\\agents\\lead')).toBe('inside-project');
+    expect(check('c:/REPO/.clubhouse/agents/lead')).toBe('inside-project');
+    expect(check('C:\\elsewhere')).toBe('outside-project');
+    expect(check('D:\\repo')).toBe('outside-project');
+    expect(check('C:elsewhere')).toBe('relative-path');
+    expect(check('\\\\host\\share')).toBe('unc-path');
+    expect(check('//host/share')).toBe('unc-path');
+    expect(check('\\\\?\\C:\\repo')).toBe('unc-path');
+    expect(check('C:\\repo\\..\\elsewhere')).toBe('parent-traversal');
+    expect(check('C:/repo/a/../b')).toBe('parent-traversal');
+    expect(check('')).toBe('invalid-path');
+    expect(check(42)).toBe('invalid-path');
+    expect(check(`C:\\repo\\a\0b`)).toBe('invalid-path');
+    expect(check(`C:\\repo\\${'a'.repeat(5000)}`)).toBe('invalid-path');
+  });
+
+  it('drops a prunable worktree from what git vouches for', () => {
+    const output = ['worktree /a', 'HEAD 1', 'branch refs/heads/main', '', 'worktree /b', 'HEAD 2', 'prunable gitdir file points to non-existent location', '', 'worktree /c', 'detached', ''].join('\n');
+    expect(parseWorktreeList(output)).toEqual(['/a', '/c']);
+  });
+});
+
 describe('reads only', () => {
   /** A worktree-bearing repo whose index is stale, so anything that refreshes it would write. */
   function staleRepoFixture(): string {
@@ -532,7 +994,8 @@ describe('reads only', () => {
     const worktree = path.join(project, '.clubhouse', 'agents', 'lead');
     git(project, 'worktree', 'add', '-q', '-b', 'lead/standby', worktree, 'main');
     write(worktree, 'CLAUDE.md', 'hand-edited\n');
-    setAgents(project, [{ id: 'a1', name: 'lead', worktreePath: worktree }]);
+    // The outside path makes the scan ask `git worktree list` too.
+    setAgents(project, [{ id: 'a1', name: 'lead', worktreePath: worktree }, { id: 'a2', name: 'far', worktreePath: path.join(root, 'elsewhere') }]);
     setSettings(project, { agentDefaults: { instructions: 'x', mcpJson: JSON.stringify({ mcpServers: { s: { command: 'x' } } }) } });
     write(project, '.mcp.json', JSON.stringify({ mcpServers: { t: { command: 'y' } } }));
     const future = new Date(Date.now() + 86_400_000);
@@ -550,6 +1013,7 @@ describe('reads only', () => {
     expect(result.projects[0].status).toBe('scanned');
     expect(result.entries.length).toBeGreaterThan(3);
     expect(snapshotTree(project)).toEqual(before);
+    expect(result.externalReferences.map((r) => r.agent.name)).toEqual(['far']);
   });
 
   it('has a fixture that would catch an index refresh: git status does write it', () => {
