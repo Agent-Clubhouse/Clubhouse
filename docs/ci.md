@@ -26,10 +26,10 @@ The rules, in short:
 
 ## Deciding what a change needs
 
-The `changes` job classifies the diff with `node scripts/ci/classify-changes.mjs`. For a PR it diffs the base against the head; for a push to main it diffs `before` against the new head. With no usable base, for example a new branch, it runs everything. The step summary prints the decision and the reason.
+The `changes` job also fails a change that resets `release/chat-cli-denylist.json` from an array to `null` or deletes it ([why](release-publishing.md#lifting-an-entry)), which stops every job that needs it. It classifies the diff with `node scripts/ci/classify-changes.mjs`. For a PR it diffs the base against the head; for a push to main it diffs `before` against the new head. With no usable base, for example a new branch, it runs everything. The step summary prints the decision and the reason.
 
 - **Docs-only:** everything under `docs/`, `notes/`, top-level `*.md`, `.github` templates, or `LICENSE`. `paths-ignore` skips these PRs before any runner starts. Markdown under `src/` is bundled app content, so it doesn't count as docs.
-- **E2E:** every change except docs and unit tests (`*.test.ts(x)`, `__fixtures__`, `__mocks__`, `test/`).
+- **E2E:** every change except docs, unit tests (`*.test.ts(x)`, `__fixtures__`, `__mocks__`, `test/`) and an edit to `release/chat-cli-denylist.json`, which the unit job checks. The app build never reads that file, and an edit to it answers an incident ([the operation](release-publishing.md#chats-cli-kill-switch)).
 - **macOS build:** any one of these.
   - **A packaging input:** `forge.config.ts`, `entitlements.plist`, `scripts/fix-node-pty.js` or `.icns` icons.
   - **Window and app chrome:** `src/main/menu.ts` (the app menu) and anything under `src/renderer/chrome/`.
