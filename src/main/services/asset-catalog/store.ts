@@ -91,6 +91,7 @@ import {
   isAssetId,
   isCatalogId,
   nameIssues,
+  ownerIssues,
   previewPayload,
   projectionOf,
   sourceIssues,
@@ -123,6 +124,11 @@ export function assetCatalogDir(): string {
 }
 
 const INDEX_FILE = 'catalog.json';
+/**
+ * One turn at a time per catalog, in this process. Other processes are kept out by
+ * the app's single-instance lock, and a dev build's base dir differs from a packaged one's.
+ */
+const writeQueues = new Map<string, Promise<unknown>>();
 const RENAME_RETRY_CODES = new Set(['EPERM', 'EACCES', 'EBUSY']);
 const RENAME_ATTEMPTS = 5;
 const RENAME_BACKOFF_MS = 50;
@@ -211,6 +217,29 @@ export interface PublicationRequest {
   context?: ImpactContext;
 }
 
+/** A built-in's definition, as Clubhouse ships it. */
+export interface BuiltinInstall {
+  assetId: string;
+  kind: AssetKind;
+  name: string;
+  builtinId: string;
+  expectedRevision: number;
+  payload: unknown;
+}
+
+const builtinInstallers = new WeakMap<object, (input: BuiltinInstall) => Promise<CatalogEntry>>();
+
+/**
+ * The only way to write a built-in, and the only way into Clubhouse's reserved
+ * namespaces. Not on the store, so nothing that hands out the store's API can reach
+ * it. Clubhouse itself only: refused from any surface a person or agent comes in on.
+ */
+export function installBuiltinAsset(store: object, input: BuiltinInstall): Promise<CatalogEntry> {
+  const install = builtinInstallers.get(store);
+  if (!install) throw new TypeError('not an asset catalog store');
+  return install(input);
+}
+
 export type AssetCatalogStore = ReturnType<typeof createAssetCatalogStore>;
 
 export function createAssetCatalogStore(options: AssetCatalogStoreOptions) {
@@ -223,10 +252,11 @@ export function createAssetCatalogStore(options: AssetCatalogStoreOptions) {
   const revisionsDir = path.join(dir, 'revisions');
   const revisionPath = (assetId: string, revision: number): string => path.join(revisionsDir, assetId, `${revision}.json`);
 
-  let queue: Promise<unknown> = Promise.resolve();
+  // By directory, not by instance: two stores on one catalog take turns, so neither commits over the other.
+  const queueKey = path.resolve(dir);
   const serial = <T>(fn: () => Promise<T>): Promise<T> => {
-    const run = queue.catch((): void => undefined).then(fn);
-    queue = run.catch((): void => undefined);
+    const run = (writeQueues.get(queueKey) ?? Promise.resolve()).catch((): void => undefined).then(fn);
+    writeQueues.set(queueKey, run.catch((): void => undefined));
     return run;
   };
 
@@ -373,6 +403,18 @@ export function createAssetCatalogStore(options: AssetCatalogStoreOptions) {
     if (issues.length > 0) throw new AssetCatalogError('invalid_payload', { issues });
   }
 
+  /** The write has committed by now, so a failed record of it can't report the write as failed. */
+  async function auditCommitted(scope: 'app' | 'agent', key: string, targetId: string): Promise<void> {
+    try {
+      await auditChanged(scope, key, targetId);
+    } catch (err) {
+      // telemetry-exempt: the change it describes has happened, and the log says the record is missing
+      appLog('core:asset-catalog', 'warn', 'Could not record a committed catalog write', {
+        meta: { key, targetId, error: err instanceof Error ? err.message : String(err) },
+      });
+    }
+  }
+
   /** Runs a write, recording the refusal if it's refused. Agents are stopped first. */
   async function guarded<T>(
     audit: { scope: 'app' | 'agent'; key: string; targetId?: string },
@@ -438,6 +480,13 @@ export function createAssetCatalogStore(options: AssetCatalogStoreOptions) {
     const from = stored ?? emptyComposition();
     const result = switchedComposition(from, templateTargetOf(templateId, targetRevision, target.projection), selection, acceptedRefsOf(acceptedProjection(index, from)));
     if (result.ok === false) throw new AssetCatalogError('invalid_choice', { issues: result.issues });
+    return checkedComposition(result.composition);
+  }
+
+  /** What a choice or selection produces goes through the same check as anything else saved. */
+  function checkedComposition(composition: CompositionInput): CompositionInput {
+    const result = validateComposition(composition);
+    if (result.ok === false) throw new AssetCatalogError('invalid_choice', { issues: result.issues });
     return result.composition;
   }
 
@@ -459,14 +508,20 @@ export function createAssetCatalogStore(options: AssetCatalogStoreOptions) {
       if (entry.source.kind === 'copy' && entry.source.originAssetId === assetId) retained.add(entry.source.originRevision);
     }
     for (const composition of Object.values(index.compositions)) {
-      for (const map of [composition.floors, composition.keepMarkers, composition.authorityApprovals]) {
+      for (const map of [composition.floors, composition.keepMarkers]) {
         if (hasOwn(map, assetId)) retained.add(map[assetId]);
       }
+      if (hasOwn(composition.authorityApprovals, assetId)) retained.add(composition.authorityApprovals[assetId].revision);
       if (!composition.template) continue;
       if (composition.template.templateId === assetId) retained.add(composition.template.acceptedRevision);
       const accepted = acceptedProjection(index, composition);
       for (const ref of accepted?.entries ?? []) if (ref.blockId === assetId) retained.add(ref.blockRevision);
-      for (const ref of accepted?.subagents ?? []) if (ref.subagentId === assetId) retained.add(ref.subagentRevision);
+      for (const ref of accepted?.subagents ?? []) {
+        if (ref.subagentId === assetId) retained.add(ref.subagentRevision);
+        const subagent = hasOwn(index.assets, ref.subagentId) ? index.assets[ref.subagentId] : null;
+        const nested = subagent?.revisions.find((record) => record.revision === ref.subagentRevision)?.projection;
+        if (nested?.kind === 'subagent') for (const block of nested.blocks) if (block.blockId === assetId) retained.add(block.blockRevision);
+      }
     }
     return retained;
   }
@@ -528,6 +583,7 @@ export function createAssetCatalogStore(options: AssetCatalogStoreOptions) {
     if (creating && hasOwn(index.assets, input.templateId)) throw new AssetCatalogError('asset_exists', { assetId: input.templateId });
     const existingTemplate = creating ? null : getLiveEntry(index, input.templateId);
     if (existingTemplate && existingTemplate.kind !== 'template') throw new AssetCatalogError('invalid_publication', { assetId: input.templateId });
+    if (existingTemplate?.source.kind === 'builtin') throw new AssetCatalogError('builtin_read_only', { assetId: input.templateId });
     if (existingTemplate && existingTemplate.headRevision !== input.expectedRevision) {
       throw new AssetCatalogError('stale_revision', { assetId: input.templateId, expected: input.expectedRevision, current: existingTemplate.headRevision });
     }
@@ -547,7 +603,7 @@ export function createAssetCatalogStore(options: AssetCatalogStoreOptions) {
       if (write.expectedRevision === 0) {
         if (hasOwn(index.assets, write.assetId)) throw new AssetCatalogError('asset_exists', { assetId: write.assetId });
         const source = write.source ?? { kind: 'user' as const };
-        const issues = [...nameIssues(write.name), ...sourceIssues(source)];
+        const issues = [...nameIssues(write.name), ...sourceIssues(source), ...ownerIssues(write.owner ?? { kind: 'library' })];
         if (issues.length > 0) throw new AssetCatalogError('invalid_publication', { issues });
         base = {
           id: write.assetId, kind: write.kind, name: write.name as string, owner: write.owner ?? { kind: 'library' },
@@ -556,6 +612,7 @@ export function createAssetCatalogStore(options: AssetCatalogStoreOptions) {
       } else {
         base = getLiveEntry(index, write.assetId);
         if (base.kind !== write.kind) throw new AssetCatalogError('invalid_publication', { assetId: write.assetId });
+        if (base.source.kind === 'builtin') throw new AssetCatalogError('builtin_read_only', { assetId: write.assetId });
         if (base.headRevision !== write.expectedRevision) {
           throw new AssetCatalogError('stale_revision', { assetId: write.assetId, expected: write.expectedRevision, current: base.headRevision });
         }
@@ -571,7 +628,7 @@ export function createAssetCatalogStore(options: AssetCatalogStoreOptions) {
 
     const source = existingTemplate?.source ?? input.source ?? { kind: 'user' as const };
     if (creating) {
-      const issues = [...nameIssues(input.name), ...sourceIssues(source)];
+      const issues = [...nameIssues(input.name), ...sourceIssues(source), ...ownerIssues(input.owner ?? { kind: 'library' })];
       if (issues.length > 0) throw new AssetCatalogError('invalid_publication', { issues });
     }
     const { payload, projection } = validated('template', input.payload, source);
@@ -683,7 +740,36 @@ export function createAssetCatalogStore(options: AssetCatalogStoreOptions) {
     }
   }
 
-  return {
+  function installBuiltin(input: BuiltinInstall): Promise<CatalogEntry> {
+    return guarded({ scope: 'app', key: 'assetCatalog.builtin', targetId: isAssetId(input.assetId) ? input.assetId : undefined }, () => serial(async () => {
+      if (currentSettingsOrigin().surface !== 'system') throw new AssetCatalogError('agent_not_permitted');
+      const source: AssetSource = { kind: 'builtin', builtinId: input.builtinId };
+      const issues = [...nameIssues(input.name), ...sourceIssues(source, true)];
+      if (!isAssetId(input.assetId)) issues.push({ code: 'invalid_identifier', path: 'assetId' });
+      if (issues.length > 0) throw new AssetCatalogError('invalid_payload', { issues });
+      const { payload, projection } = validated(input.kind, input.payload, source);
+      const index = await loadIndex();
+      const existing = hasOwn(index.assets, input.assetId) ? index.assets[input.assetId] : null;
+      if ((existing?.headRevision ?? 0) !== input.expectedRevision) {
+        throw new AssetCatalogError('stale_revision', { assetId: input.assetId, expected: input.expectedRevision, current: existing?.headRevision ?? 0 });
+      }
+      if (existing && (existing.source.kind !== 'builtin' || existing.kind !== input.kind)) throw new AssetCatalogError('asset_exists', { assetId: input.assetId });
+      const savedAt = now();
+      const owner = { kind: 'library' as const };
+      checkReferences(index, owner, projection);
+      const record: AssetRevisionRecord = { revision: input.expectedRevision + 1, savedAt, contentHash: canonicalHash(payload), projection };
+      const entry: CatalogEntry = existing
+        ? { ...existing, headRevision: record.revision, revisions: [...existing.revisions, record] }
+        : { id: input.assetId, kind: input.kind, name: input.name, owner, source, createdAt: savedAt, headRevision: record.revision, revisions: [record] };
+      if (existing && previewAssetImpact(index, entry.id, record).blocked) throw new AssetCatalogError('consumer_conflict', { assetId: entry.id });
+      await writeRevisionFile(entry, record, payload);
+      await commitIndex({ ...index, assets: { ...index.assets, [entry.id]: entry } });
+      await auditCommitted('app', 'assetCatalog.builtin', entry.id);
+      return entry;
+    }));
+  }
+
+  const api = {
     /** The whole index, as stored. Holds no payload content: for planning and listing. */
     read(): Promise<CatalogIndex> {
       return loadIndex();
@@ -709,11 +795,11 @@ export function createAssetCatalogStore(options: AssetCatalogStoreOptions) {
     createAsset(input: { kind: AssetKind; name: string; payload: unknown; source?: AssetSource; owner?: AssetOwner }): Promise<CatalogEntry> {
       return guarded({ scope: 'app', key: `assetCatalog.${input.kind}` }, () => serial(async () => {
         const source = input.source ?? { kind: 'user' as const };
-        const issues = [...nameIssues(input.name), ...sourceIssues(source)];
+        const owner = input.owner ?? { kind: 'library' as const };
+        const issues = [...nameIssues(input.name), ...sourceIssues(source), ...ownerIssues(owner)];
         if (issues.length > 0) throw new AssetCatalogError('invalid_payload', { issues });
         const { payload, projection } = validated(input.kind, input.payload, source);
         const index = await loadIndex();
-        const owner = input.owner ?? { kind: 'library' as const };
         checkReferences(index, owner, projection);
 
         const savedAt = now();
@@ -730,7 +816,7 @@ export function createAssetCatalogStore(options: AssetCatalogStoreOptions) {
         };
         await writeRevisionFile(entry, record, payload);
         await commitIndex({ ...index, assets: { ...index.assets, [entry.id]: entry } });
-        await auditChanged('app', `assetCatalog.${entry.kind}.created`, entry.id);
+        await auditCommitted('app', `assetCatalog.${entry.kind}.created`, entry.id);
         return entry;
       }));
     },
@@ -760,6 +846,7 @@ export function createAssetCatalogStore(options: AssetCatalogStoreOptions) {
       return guarded({ scope: 'app', key: 'assetCatalog.revision', targetId: isAssetId(input.assetId) ? input.assetId : undefined }, () => serial(async () => {
         const index = await loadIndex();
         const entry = getLiveEntry(index, input.assetId);
+        if (entry.source.kind === 'builtin') throw new AssetCatalogError('builtin_read_only', { assetId: entry.id });
         if (input.expectedRevision !== entry.headRevision) {
           throw new AssetCatalogError('stale_revision', { assetId: entry.id, expected: input.expectedRevision, current: entry.headRevision });
         }
@@ -776,7 +863,7 @@ export function createAssetCatalogStore(options: AssetCatalogStoreOptions) {
         const updated: CatalogEntry = { ...entry, headRevision: record.revision, revisions: [...entry.revisions, record] };
         await writeRevisionFile(entry, record, payload);
         await commitIndex({ ...index, assets: { ...index.assets, [entry.id]: updated } });
-        await auditChanged('app', `assetCatalog.${entry.kind}.revision`, entry.id);
+        await auditCommitted('app', `assetCatalog.${entry.kind}.revision`, entry.id);
         return updated;
       }));
     },
@@ -790,7 +877,7 @@ export function createAssetCatalogStore(options: AssetCatalogStoreOptions) {
         if (entry.name !== input.expectedName) throw new AssetCatalogError('stale_name', { assetId: entry.id });
         const updated: CatalogEntry = { ...entry, name: input.name };
         await commitIndex({ ...index, assets: { ...index.assets, [entry.id]: updated } });
-        await auditChanged('app', `assetCatalog.${entry.kind}.name`, entry.id);
+        await auditCommitted('app', `assetCatalog.${entry.kind}.name`, entry.id);
         return updated;
       }));
     },
@@ -811,7 +898,7 @@ export function createAssetCatalogStore(options: AssetCatalogStoreOptions) {
         // A copy going can free what its origin kept for it, so tombstones are looked at again.
         const next = pruneTombstones(tombstoned(index, entry, now()));
         await commitIndex(next);
-        await auditChanged('app', `assetCatalog.${entry.kind}.deleted`, entry.id);
+        await auditCommitted('app', `assetCatalog.${entry.kind}.deleted`, entry.id);
         await sweepAfterCommit(next);
       }));
     },
@@ -847,7 +934,7 @@ export function createAssetCatalogStore(options: AssetCatalogStoreOptions) {
         };
         await writeRevisionFile(entry, record, payload);
         await commitIndex({ ...index, assets: { ...index.assets, [entry.id]: entry } });
-        await auditChanged('agent', 'assetCatalog.copy', input.agentId);
+        await auditCommitted('agent', 'assetCatalog.copy', input.agentId);
         return entry;
       }));
     },
@@ -930,7 +1017,8 @@ export function createAssetCatalogStore(options: AssetCatalogStoreOptions) {
         if (input.choice) {
           const applied = applyStructureChoice(stored, update.refs, input.choice, acceptedRefsOf(update.accepted));
           if (applied.ok === false) throw new AssetCatalogError('invalid_choice', { issues: applied.issues });
-          next = applied.composition;
+          const { template, entries, excludedEntryIds, subagents, excludedSubagentEntryIds, additions, removals, floors, keepMarkers, authorityApprovals } = applied.composition;
+          next = checkedComposition({ template, entries, excludedEntryIds, subagents, excludedSubagentEntryIds, additions, removals, floors, keepMarkers, authorityApprovals });
         } else {
           if (!update.check.clean || !update.subagentCheck.clean) {
             throw new AssetCatalogError('structure_needs_choice', { check: update.check, subagentCheck: update.subagentCheck });
@@ -954,7 +1042,7 @@ export function createAssetCatalogStore(options: AssetCatalogStoreOptions) {
           agentId, revision: stored.revision + 1, updatedAt: now(),
         };
         await commitIndex({ ...index, compositions: { ...index.compositions, [agentId]: saved } });
-        await auditChanged('agent', 'assetCatalog.structure', agentId);
+        await auditCommitted('agent', 'assetCatalog.structure', agentId);
         return saved;
       }));
     },
@@ -1025,7 +1113,7 @@ export function createAssetCatalogStore(options: AssetCatalogStoreOptions) {
 
         const saved: AgentComposition = { ...next, agentId: input.agentId, revision: (stored?.revision ?? 0) + 1, updatedAt: now() };
         await commitIndex({ ...index, compositions: { ...index.compositions, [input.agentId]: saved } });
-        await auditChanged('agent', 'assetCatalog.structure', input.agentId);
+        await auditCommitted('agent', 'assetCatalog.structure', input.agentId);
         return saved;
       }));
     },
@@ -1057,7 +1145,7 @@ export function createAssetCatalogStore(options: AssetCatalogStoreOptions) {
         for (const item of built.records) await writeRevisionFile(item.entry, item.record, item.payload);
         await writeRevisionFile(built.templateEntry, built.record, built.payload);
         await commitIndex(built.next);
-        await auditChanged('app', 'assetCatalog.template.published', input.templateId);
+        await auditCommitted('app', 'assetCatalog.template.published', input.templateId);
         return built.templateEntry;
       }));
     },
@@ -1105,7 +1193,7 @@ export function createAssetCatalogStore(options: AssetCatalogStoreOptions) {
           updatedAt: now(),
         };
         await commitIndex({ ...index, compositions: { ...index.compositions, [input.agentId]: stored } });
-        await auditChanged('agent', 'assetCatalog.composition', input.agentId);
+        await auditCommitted('agent', 'assetCatalog.composition', input.agentId);
         return stored;
       }));
     },
@@ -1127,7 +1215,7 @@ export function createAssetCatalogStore(options: AssetCatalogStoreOptions) {
         for (const entry of owned) next = tombstoned(next, entry, deletedAt);
         next = pruneTombstones(next);
         await commitIndex(next);
-        await auditChanged('agent', 'assetCatalog.composition', input.agentId);
+        await auditCommitted('agent', 'assetCatalog.composition', input.agentId);
         await sweepAfterCommit(next);
       }));
     },
@@ -1205,4 +1293,6 @@ export function createAssetCatalogStore(options: AssetCatalogStoreOptions) {
       });
     },
   };
+  builtinInstallers.set(api, installBuiltin);
+  return api;
 }

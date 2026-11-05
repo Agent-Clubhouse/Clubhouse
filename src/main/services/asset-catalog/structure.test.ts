@@ -10,6 +10,7 @@ import {
   mergeOrder,
   switchTemplate,
   takeableRevision,
+  takeableThroughRefs,
 } from './structure';
 import type {
   CompositionInput,
@@ -91,6 +92,26 @@ describe('takeableRevision', () => {
 
   it('reads history in revision order whatever order it arrives in', () => {
     expect(takeableRevision([independent(3), bundled(4, 2), independent(2)], 1)).toBe(3);
+  });
+
+  describe('through references', () => {
+    it('stops at an independent revision that would pull a bundle past the floor, and names it', () => {
+      const tag = { templateId: 'T', templateRevision: 2 };
+      const crossing = (record: { revision: number }) => (record.revision === 3 ? tag : null);
+      expect(takeableThroughRefs([independent(1), independent(2), independent(3), independent(4)], 1, crossing)).toEqual({ takeable: 2, heldBy: tag });
+    });
+
+    it('stops at its own bundled revision too, and is otherwise takeableRevision', () => {
+      const history = [independent(1), bundled(2, 2), independent(3)];
+      expect(takeableThroughRefs(history, 1, () => null)).toEqual({ takeable: 1, heldBy: { templateId: 'T', templateRevision: 2 } });
+      expect(takeableThroughRefs(history, 2, () => null)).toEqual({ takeable: 3, heldBy: null });
+    });
+  });
+
+  it('names the first bundle above a floor, up to a revision', () => {
+    const history = [independent(1), independent(2), bundled(3, 2)];
+    expect(firstBundleAbove(history, 1, 2)).toBeNull();
+    expect(firstBundleAbove(history, 1, 3)).toEqual({ templateId: 'T', templateRevision: 2 });
   });
 
   it('names the first bundle above a floor', () => {
@@ -301,6 +322,34 @@ describe('identity', () => {
     expect(checkStructure({ accepted: base(...A), target, instance: entries, excluded: [] }).reasons).toContainEqual({ code: 'identity_conflict', entries: ['base:Again'] });
   });
 
+  it('a base pointing an entry at a block named like a local one needs a choice', () => {
+    const check = checkStructure({
+      accepted: [{ entryId: 'e', blockId: 'old', name: 'Old' }],
+      target: [{ entryId: 'e', blockId: 'new', name: 'Rules' }],
+      instance: [...instance('e'), ...instance('+Rules')],
+      excluded: [],
+    });
+    expect(check.clean).toBe(false);
+    expect(check.reasons).toContainEqual({ code: 'identity_conflict', entries: ['base:e'] });
+  });
+
+  it('or at a block something else here already is', () => {
+    const check = checkStructure({
+      accepted: [{ entryId: 'e', blockId: 'old', name: 'Old' }],
+      target: [{ entryId: 'e', blockId: 'shared', name: 'Other name' }],
+      instance: [...instance('e'), { key: 'local:mine', baseEntryId: null, sources: ['shared'], name: 'Mine', forked: false }],
+      excluded: [],
+    });
+    expect(check.reasons).toContainEqual({ code: 'identity_conflict', entries: ['base:e'] });
+  });
+
+  it('pointing an entry elsewhere with nothing in the way is clean, and a fork keeps its own', () => {
+    const repoint = { accepted: [{ entryId: 'e', blockId: 'old', name: 'Old' }], target: [{ entryId: 'e', blockId: 'new', name: 'New' }], excluded: [] };
+    expect(checkStructure({ ...repoint, instance: instance('e', '+Rules') }).clean).toBe(true);
+    const named = { ...repoint, target: [{ entryId: 'e', blockId: 'new', name: 'Rules' }] };
+    expect(checkStructure({ ...named, instance: [...instance('*e'), ...instance('+Rules')] }).reasons.filter((reason) => reason.code === 'identity_conflict')).toEqual([]);
+  });
+
   it('an entry this revision removes no longer counts as existing', () => {
     const accepted = base('Identity', 'Job');
     const target = [...base('Identity'), { entryId: 'Job2', blockId: 'block-Job2', name: 'Job' }];
@@ -397,8 +446,8 @@ describe('native subagent set', () => {
   });
 
   it('anything raising authority needs a person', () => {
-    const result = check({ target: set([['a', 'one']]), authorityEntries: ['a'] });
-    expect(result.reasons).toEqual([{ code: 'authority_fields', entries: ['base:a'] }]);
+    const result = check({ target: set([['a', 'one']]), reviewEntries: ['a'] });
+    expect(result.reasons).toEqual([{ code: 'review_fields', entries: ['base:a'] }]);
   });
 });
 
@@ -494,6 +543,33 @@ describe('applying', () => {
       expect(result.ok === true && result.composition.entries[1]).toEqual({ localId: 'Job', source: fork.source });
     });
 
+    it('a removed fork goes only by name, never by being left out', () => {
+      const fork = { baseEntryId: 'Job', source: { kind: 'fork' as const, blockId: 'my-job', forkedFrom: { assetId: 'block-Job', revision: 5 } } };
+      const forked = instanceOf({ entries: [{ baseEntryId: 'Identity', source: { kind: 'follow' } }, fork, { baseEntryId: 'Handoff', source: { kind: 'follow' } }] });
+      const removing = { templateId: 'T', revision: 2, entryIds: ['Identity', 'Handoff'], subagentIds: [] };
+      expect(applyStructureChoice(forked, removing, { order: ['base:Identity', 'base:Handoff'] }, context).ok).toBe(false);
+      const dropped = applyStructureChoice(forked, removing, { order: ['base:Identity', 'base:Handoff'], dropRemoved: ['base:Job'] }, context);
+      expect(dropped.ok === true && dropped.composition.entries.map((entry) => entry.baseEntryId)).toEqual(['Identity', 'Handoff']);
+    });
+
+    it('a removed forked subagent is the same: keep it or drop it by name', () => {
+      const forkedSub = { baseEntryId: 'sub-old', source: { kind: 'fork' as const, subagentId: 'my-sub', forkedFrom: { assetId: 'subagent-old', revision: 3 } } };
+      const withFork = instanceOf({ subagents: [forkedSub] });
+      const removing = { templateId: 'T', revision: 2, entryIds: ['Identity', 'Job', 'Handoff'], subagentIds: [] };
+      const order3 = ['base:Identity', 'base:Job', 'base:Handoff'];
+      expect(applyStructureChoice(withFork, removing, { order: order3 }, context).ok).toBe(false);
+      const dropped = applyStructureChoice(withFork, removing, { order: order3, subagents: { dropRemoved: ['base:sub-old'] } }, context);
+      expect(dropped.ok === true && dropped.composition.subagents).toEqual([]);
+      const kept = applyStructureChoice(withFork, removing, { order: order3, subagents: { keepRemoved: ['base:sub-old'] } }, context);
+      expect(kept.ok === true && kept.composition.subagents).toEqual([{ localId: 'sub-old', source: forkedSub.source }]);
+    });
+
+    it('a choice can carry a person\'s approval of what the revision brings', () => {
+      const approval = { revision: 2, contentHash: 'a'.repeat(64) };
+      const result = applyStructureChoice(current(), target, { order, authorityApprovals: { 'subagent-new': approval } }, context);
+      expect(result.ok === true && result.composition.authorityApprovals).toEqual({ 'subagent-new': approval });
+    });
+
     it('refuses to keep something the base didn\'t remove, or something local', () => {
       const removing = { templateId: 'T', revision: 2, entryIds: ['Identity', 'Job'], subagentIds: [] };
       const order2 = ['base:Identity', 'base:Job', 'local:Rules'];
@@ -537,7 +613,7 @@ describe('applying', () => {
       excludedEntryIds: ['Gone'],
       additions: ['skill-1', 'skill-2'],
       keepMarkers: { 'block-Job': 9 },
-      authorityApprovals: { x: 1 },
+      authorityApprovals: { x: { revision: 1, contentHash: 'a'.repeat(64) } },
     });
     const other = { templateId: 'U', revision: 4, entryIds: ['One', 'Two'], subagentIds: [] };
 
@@ -568,6 +644,30 @@ describe('applying', () => {
       const result = switchTemplate(current(), other, { entries: ['base:Handoff'] }, context);
       expect(result.ok === true && result.composition.entries[2]).toEqual({ localId: 'Handoff', source: { kind: 'follow', blockId: 'block-Handoff' } });
       expect(result.ok === true && result.composition.floors).toEqual({ 'block-Handoff': 1 });
+    });
+
+    it('can leave out what the new template brings, so nothing about it is a dead end', () => {
+      const approval = { revision: 1, contentHash: 'a'.repeat(64) };
+      const withSubs = { templateId: 'U', revision: 4, entryIds: ['One', 'Two'], subagentIds: ['sub'] };
+      const result = switchTemplate(current(), withSubs, {
+        excludeEntries: ['Two'],
+        excludeSubagents: ['sub'],
+        removeBaseAssets: ['skill-9'],
+        authorityApprovals: { x: approval },
+      }, context);
+      expect(result).toMatchObject({ ok: true, composition: {
+        entries: [{ baseEntryId: 'One', source: { kind: 'follow' } }],
+        excludedEntryIds: ['Two'],
+        subagents: [],
+        excludedSubagentEntryIds: ['sub'],
+        removals: ['skill-9'],
+        authorityApprovals: { x: approval },
+      } });
+    });
+
+    it('refuses to leave out what the new template doesn\'t have', () => {
+      expect(switchTemplate(current(), other, { excludeEntries: ['Nope'] }, context).ok).toBe(false);
+      expect(switchTemplate(current(), other, { excludeSubagents: ['Nope'] }, context).ok).toBe(false);
     });
 
     it('refuses a selection of something not there', () => {

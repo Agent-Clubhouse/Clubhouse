@@ -30,6 +30,7 @@ import type {
   SkillFile,
   SubagentAssetPayload,
   SubagentRef,
+  SubagentReviewField,
   SubagentToolField,
   TemplateAssetPayload,
   TemplateOperationalDefaults,
@@ -53,7 +54,8 @@ const SKILL_ENTRYPOINT = 'SKILL.md';
 const OBJECT_KEY_TRAPS = new Set(['__proto__', 'constructor', 'prototype']);
 const ID_RE = /^[A-Za-z0-9][\w.:-]{0,127}$/;
 /** An asset id is also a directory name, so it has to be a safe one on every platform. */
-const ASSET_ID_RE = /^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/;
+const ASSET_ID_RE = /^[a-z0-9][a-z0-9_-]{0,63}$/;
+const CONTENT_HASH_RE = /^[0-9a-f]{64}$/;
 const ENV_NAME_RE = /^[A-Za-z_][A-Za-z0-9_]{0,127}$/;
 const SERVER_KEY_RE = /^[A-Za-z0-9][A-Za-z0-9_.-]{0,63}$/;
 const AGENT_NAME_RE = /^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/;
@@ -86,13 +88,14 @@ export function collisionKey(value: string): string {
   return value.normalize('NFC').toLowerCase();
 }
 
-/** An agent, run, project or built-in id: only ever a key or a value in the index. */
+/** An agent, run, project or built-in id: only ever a key or a value in the index. Never something shaped like a credential. */
 export function isCatalogId(value: unknown): value is string {
-  return typeof value === 'string' && ID_RE.test(value) && !OBJECT_KEY_TRAPS.has(value);
+  return typeof value === 'string' && ID_RE.test(value) && !OBJECT_KEY_TRAPS.has(value) && !containsSecretToken(value);
 }
 
+/** Lower case only: on macOS and Windows, two ids that differ by case would be one directory. */
 export function isAssetId(value: unknown): value is string {
-  return typeof value === 'string' && ASSET_ID_RE.test(value) && !WINDOWS_DEVICE_RE.test(value) && !OBJECT_KEY_TRAPS.has(value);
+  return typeof value === 'string' && ASSET_ID_RE.test(value) && !WINDOWS_DEVICE_RE.test(value) && !OBJECT_KEY_TRAPS.has(value) && !containsSecretToken(value);
 }
 
 /** Ids arrive from outside, so index lookups can't fall through to a prototype. */
@@ -158,14 +161,30 @@ const MCP_FIELDS = ['serverKey', 'transport', 'command', 'args', 'url', 'env', '
 
 /** A flag named like a secret takes its value from the next argument or after `=`, and the value is literal. */
 const SECRET_FLAG_RE = /^--?([A-Za-z][\w-]*)(?:=(.*))?$/;
+/** Flags too short or common for the shared list of secret names. */
+const SECRET_FLAG_NAME_RE = /^(?:pass|pwd|pat|cred|creds|key)$/i;
+
+function isSecretFlag(name: string): boolean {
+  return isSecretKey(name) || SECRET_FLAG_NAME_RE.test(name);
+}
+
+/**
+ * Which arguments give a secret away. A secret flag's next argument counts even
+ * if it starts with a dash: a password can. Whole-number values pass, for
+ * `--max-tokens 4000`.
+ */
+function secretArgs(args: readonly string[]): number[] {
+  return args.flatMap((arg, index) => {
+    const flag = SECRET_FLAG_RE.exec(arg);
+    if (hasSecretValue(arg)) return [index];
+    if (!flag || !isSecretFlag(flag[1])) return [];
+    const value = flag[2] ?? args[index + 1];
+    return value !== undefined && !/^\d{1,9}$/.test(value) ? [index] : [];
+  });
+}
 
 function checkArgs(args: string[], issues: Issues): void {
-  args.forEach((arg, index) => {
-    const flag = SECRET_FLAG_RE.exec(arg);
-    const value = flag?.[2] ?? (args[index + 1]?.startsWith('-') ? undefined : args[index + 1]);
-    const literal = !!flag && value !== undefined && isSecretLiteral(flag[1], value);
-    if (literal || hasSecretValue(arg)) issues.add('secret_value', `args[${index}]`);
-  });
+  for (const index of secretArgs(args)) issues.add('secret_value', `args[${index}]`);
 }
 
 function checkUrl(url: string, issues: Issues): void {
@@ -182,7 +201,8 @@ function checkUrl(url: string, issues: Issues): void {
   for (const key of parsed.searchParams.keys()) {
     if (isSecretKey(key)) issues.add('secret_value', 'url');
   }
-  if (containsSecretToken(url)) issues.add('secret_value', 'url');
+  // Fragments and matrix parameters aren't query strings, and carry tokens too.
+  if (hasSecretValue(url)) issues.add('secret_value', 'url');
 }
 
 function checkUpstream(raw: unknown, issues: Issues): UpstreamPackage | undefined {
@@ -199,7 +219,7 @@ function checkUpstream(raw: unknown, issues: Issues): UpstreamPackage | undefine
 function validateMcp(raw: Record<string, unknown>, issues: Issues, reservedAllowed: boolean): McpAssetPayload | null {
   issues.closed(raw, MCP_FIELDS, '');
   const { serverKey, transport } = raw;
-  if (typeof serverKey !== 'string' || !SERVER_KEY_RE.test(serverKey) || OBJECT_KEY_TRAPS.has(serverKey)) {
+  if (typeof serverKey !== 'string' || !SERVER_KEY_RE.test(serverKey) || OBJECT_KEY_TRAPS.has(serverKey) || containsSecretToken(serverKey)) {
     issues.add('invalid_identifier', 'serverKey');
   } else if (RESERVED_NAME_RE.test(serverKey) && !reservedAllowed) {
     issues.add('reserved_namespace', 'serverKey');
@@ -219,7 +239,7 @@ function validateMcp(raw: Record<string, unknown>, issues: Issues, reservedAllow
   if (raw.env !== undefined && !isRecord(raw.env)) issues.add('invalid_shape', 'env');
   for (const [name, value] of Object.entries(isRecord(raw.env) ? raw.env : {})) {
     const at = `env.${safeKey(name)}`;
-    if (!ENV_NAME_RE.test(name) || OBJECT_KEY_TRAPS.has(name)) issues.add('invalid_identifier', at);
+    if (!ENV_NAME_RE.test(name) || OBJECT_KEY_TRAPS.has(name) || containsSecretToken(name)) issues.add('invalid_identifier', at);
     else if (RESERVED_ENV_RE.test(name)) issues.add('reserved_namespace', at);
     if (typeof value !== 'string') {
       issues.add('invalid_shape', at);
@@ -231,7 +251,7 @@ function validateMcp(raw: Record<string, unknown>, issues: Issues, reservedAllow
 
   const envVars = stringList(raw.envVars, 'envVars', issues);
   envVars.forEach((name, index) => {
-    if (!ENV_NAME_RE.test(name) || OBJECT_KEY_TRAPS.has(name)) issues.add('invalid_identifier', `envVars[${index}]`);
+    if (!ENV_NAME_RE.test(name) || OBJECT_KEY_TRAPS.has(name) || containsSecretToken(name)) issues.add('invalid_identifier', `envVars[${index}]`);
     else if (RESERVED_ENV_RE.test(name)) issues.add('reserved_namespace', `envVars[${index}]`);
     else if (name in env) issues.add('invalid_shape', `envVars[${index}]`);
   });
@@ -276,7 +296,7 @@ function isCanonicalBase64(content: string): boolean {
 function validateSkill(raw: Record<string, unknown>, issues: Issues, reservedAllowed: boolean): SkillAssetPayload | null {
   issues.closed(raw, ['skillName', 'files'], '');
   const { skillName, files } = raw;
-  if (typeof skillName !== 'string' || !isSafePathSegment(skillName) || skillName.length > 64 || OBJECT_KEY_TRAPS.has(skillName)) {
+  if (typeof skillName !== 'string' || !isSafePathSegment(skillName) || skillName.length > 64 || OBJECT_KEY_TRAPS.has(skillName) || containsSecretToken(skillName)) {
     issues.add('invalid_identifier', 'skillName');
   } else if (RESERVED_NAME_RE.test(skillName) && !reservedAllowed) {
     issues.add('reserved_namespace', 'skillName');
@@ -303,6 +323,7 @@ function validateSkill(raw: Record<string, unknown>, issues: Issues, reservedAll
       return;
     }
     if (segments.some((segment) => CREDENTIAL_FILE_RE.test(segment))) issues.add('credential_file', `${at}.path`);
+    if (containsSecretToken(file.path)) issues.add('secret_value', `${at}.path`);
     const key = collisionKey(file.path);
     if (seen.has(key)) issues.add('duplicate_skill_path', `${at}.path`);
     seen.add(key);
@@ -476,9 +497,33 @@ function validateTemplate(raw: Record<string, unknown>, issues: Issues): Templat
 
 // ── Native subagents ─────────────────────────────────────────────────────
 
-/** A field that can raise authority, by name, wherever it sits in a provider section. */
-const AUTHORITY_FIELDS = new Set(['permissionmode', 'hooks', 'dangerouslyskippermissions', 'allowdangerouslyskippermissions']);
-const INLINE_MCP_FIELDS = new Set(['mcpservers']);
+/**
+ * Provider fields believed harmless, by provider. A short allowlist, not a
+ * statement about any CLI: it comes from docs and source and isn't verified
+ * against a running version. Everything else, under any spelling and for any other
+ * provider, blocks for a person, because a list of dangerous names is always
+ * missing one. Activation decides what a delivery path really supports.
+ */
+const KNOWN_PROVIDER_FIELDS: Readonly<Record<string, ReadonlySet<string>>> = {
+  claude: new Set(['model', 'effort', 'tools', 'disallowedtools', 'maxturns', 'color', 'initialprompt', 'mcpservers']),
+};
+
+/** Named to say why it's blocked. These block whether or not they're named here. */
+const AUTHORITY_FIELD_RE = /permission|hook|dangerous|bypass|sandbox|approval|yolo|autoapprove|allowall|trust/;
+const INLINE_MCP_FIELDS = new Set(['mcpservers', 'mcpserver', 'mcp', 'mcpconfig']);
+const SERVER_NAME_RE = /^[\w.-]{1,64}$/;
+
+/** A string holding JSON is that JSON: a stringified field counts as the field. */
+function parsedJson(value: string): unknown {
+  const text = value.trim();
+  if (!text.startsWith('{') && !text.startsWith('[')) return undefined;
+  try {
+    return JSON.parse(text);
+  } catch {
+    // telemetry-exempt: not JSON, so it's only text
+    return undefined;
+  }
+}
 
 /** Strings in an inline MCP definition are config, where a secret name means a secret. Elsewhere they can be prose. */
 function scanProviderValue(value: unknown, path: string, depth: number, inMcp: boolean, issues: Issues): void {
@@ -488,9 +533,12 @@ function scanProviderValue(value: unknown, path: string, depth: number, inMcp: b
   }
   if (typeof value === 'string') {
     if (containsSecretToken(value) || (inMcp && hasSecretValue(value))) issues.add('secret_value', path);
+    const parsed = parsedJson(value);
+    if (parsed !== undefined) scanProviderValue(parsed, path, depth + 1, true, issues);
     return;
   }
   if (Array.isArray(value)) {
+    if (value.every((item) => typeof item === 'string') && secretArgs(value as string[]).length > 0) issues.add('secret_value', path);
     value.forEach((item, index) => scanProviderValue(item, `${path}[${index}]`, depth + 1, inMcp, issues));
     return;
   }
@@ -506,36 +554,70 @@ function scanProviderValue(value: unknown, path: string, depth: number, inMcp: b
   }
 }
 
-function collectAuthorityFields(value: unknown, path: string, out: string[]): void {
-  if (Array.isArray(value)) {
-    value.forEach((item, index) => collectAuthorityFields(item, `${path}[${index}]`, out));
-    return;
+/** Whether a value, at any depth and in any stringified form, names something that raises authority. */
+function holdsAuthority(value: unknown, depth = 0): boolean {
+  if (depth > MAX_PROVIDER_DEPTH) return true;
+  if (typeof value === 'string') {
+    const parsed = parsedJson(value);
+    return parsed !== undefined ? holdsAuthority(parsed, depth + 1) : AUTHORITY_FIELD_RE.test(normalizedField(value));
   }
-  if (!isRecord(value)) return;
-  for (const [key, item] of Object.entries(value)) {
-    const at = `${path}.${safeKey(key)}`;
-    const field = normalizedField(key);
-    if (AUTHORITY_FIELDS.has(field)) {
-      out.push(at);
-    } else if (INLINE_MCP_FIELDS.has(field)) {
-      // A reference by name is fine. A definition written inline can run anything.
-      const inline = Array.isArray(item) ? item.some((server) => typeof server !== 'string') : item !== undefined && typeof item !== 'string';
-      if (inline) out.push(at);
-    } else {
-      collectAuthorityFields(item, at, out);
+  if (Array.isArray(value)) return value.some((item) => holdsAuthority(item, depth + 1));
+  if (!isRecord(value)) return false;
+  return Object.entries(value).some(([key, item]) => (
+    AUTHORITY_FIELD_RE.test(normalizedField(key)) || INLINE_MCP_FIELDS.has(normalizedField(key)) || holdsAuthority(item, depth + 1)
+  ));
+}
+
+/** A known field still has to look like one: a scalar or a flat list, not an object or stringified JSON. */
+function isPlainValue(value: unknown): boolean {
+  if (typeof value === 'number' || typeof value === 'boolean') return true;
+  if (typeof value === 'string') return parsedJson(value) === undefined;
+  return Array.isArray(value) && value.every((item) => typeof item === 'string' && parsedJson(item) === undefined);
+}
+
+function reviewReason(provider: string, key: string, value: unknown): SubagentReviewField['reason'] | null {
+  const field = normalizedField(key);
+  if (AUTHORITY_FIELD_RE.test(field)) return 'authority';
+  if (INLINE_MCP_FIELDS.has(field)) {
+    // A reference by name is fine. A definition written inline can run anything.
+    const names = typeof value === 'string' ? [value] : Array.isArray(value) ? value : [value];
+    if (!names.every((name) => typeof name === 'string' && SERVER_NAME_RE.test(name))) return 'authority';
+    return KNOWN_PROVIDER_FIELDS[provider]?.has(field) ? null : 'unknown';
+  }
+  if (KNOWN_PROVIDER_FIELDS[provider]?.has(field) && isPlainValue(value)) return null;
+  return holdsAuthority(value) ? 'authority' : 'unknown';
+}
+
+function reviewFieldsOf(provider: SubagentAssetPayload['provider']): SubagentReviewField[] {
+  const fields: SubagentReviewField[] = [];
+  for (const [id, section] of Object.entries(provider ?? {})) {
+    for (const [key, value] of Object.entries(section)) {
+      const reason = reviewReason(hasOwn(KNOWN_PROVIDER_FIELDS, id) ? id : '', key, value);
+      if (reason) fields.push({ path: `${safeKey(id)}.${safeKey(key)}`, reason });
     }
   }
+  return fields.sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0));
 }
 
 const TOOL_ALLOW_FIELDS = new Set(['tools', 'allowedtools', 'availabletools']);
 const TOOL_DENY_FIELDS = new Set(['disallowedtools', 'deniedtools', 'excludedtools']);
 const DELEGATION_TOOL_RE = /^(?:Agent|Task)(?:\(.*\))?$/;
 const CLUBHOUSE_MCP_TOOL_RE = /^mcp__clubhouse(?:__|$)/i;
+/** A delegation scope is a list of names. Any other tool's scope is a command, which can hold anything. */
+const SIMPLE_SCOPE_RE = /^[\w-]+\([\w\s,*-]*\)$/;
+const USERINFO_ARG_RE = /(?:^|[\s(])(?:-u|--user)[\s=]+\S+:\S+/;
+
+/** How a rule shows: its name, and its scope only when that's plainly just names. */
+function toolDisplayName(rule: string): string {
+  const open = rule.indexOf('(');
+  if (open < 0 || (DELEGATION_TOOL_RE.test(rule) && SIMPLE_SCOPE_RE.test(rule))) return redactSecretValues(rule);
+  return `${redactSecretValues(rule.slice(0, open))}(${REDACTED})`;
+}
 
 /** A list of names, or the comma-separated string native definition files use. Anything else stays unlisted, and says so. */
 function toolFieldOf(value: unknown, path: string, list: SubagentToolField['list']): SubagentToolField {
   const items: unknown[] = typeof value === 'string' ? value.split(',').map((name) => name.trim()).filter(Boolean) : Array.isArray(value) ? value : [value];
-  const names = items.filter((item): item is string => typeof item === 'string');
+  const names = items.filter((item): item is string => typeof item === 'string').map(toolDisplayName);
   return {
     path,
     list,
@@ -561,6 +643,18 @@ function collectToolFields(value: unknown, path: string, out: SubagentToolField[
   }
 }
 
+function collectToolValues(value: unknown, out: unknown[]): void {
+  if (Array.isArray(value)) {
+    for (const item of value) collectToolValues(item, out);
+  } else if (isRecord(value)) {
+    for (const [key, item] of Object.entries(value)) {
+      const field = normalizedField(key);
+      if (TOOL_ALLOW_FIELDS.has(field) || TOOL_DENY_FIELDS.has(field)) out.push(...(Array.isArray(item) ? item : [item]));
+      else collectToolValues(item, out);
+    }
+  }
+}
+
 function toolFieldsOf(provider: SubagentAssetPayload['provider']): SubagentToolField[] {
   const fields: SubagentToolField[] = [];
   for (const [id, section] of Object.entries(provider ?? {})) collectToolFields(section, safeKey(id), fields);
@@ -570,7 +664,7 @@ function toolFieldsOf(provider: SubagentAssetPayload['provider']): SubagentToolF
 function validateSubagent(raw: Record<string, unknown>, issues: Issues, reservedAllowed: boolean): SubagentAssetPayload | null {
   issues.closed(raw, ['agentName', 'description', 'blocks', 'skills', 'mcps', 'provider'], '');
   const { agentName, description, provider } = raw;
-  if (typeof agentName !== 'string' || !AGENT_NAME_RE.test(agentName) || OBJECT_KEY_TRAPS.has(agentName)) {
+  if (typeof agentName !== 'string' || !AGENT_NAME_RE.test(agentName) || OBJECT_KEY_TRAPS.has(agentName) || containsSecretToken(agentName)) {
     issues.add('invalid_identifier', 'agentName');
   } else if (RESERVED_NAME_RE.test(agentName) && !reservedAllowed) {
     issues.add('reserved_namespace', 'agentName');
@@ -592,8 +686,14 @@ function validateSubagent(raw: Record<string, unknown>, issues: Issues, reserved
       for (const [id, section] of Object.entries(provider)) {
         const at = `provider.${safeKey(id)}`;
         if (!isCatalogId(id)) issues.add('invalid_identifier', at);
-        if (!isRecord(section)) issues.add('invalid_shape', at);
-        else scanProviderValue(section, at, 0, false, issues);
+        if (!isRecord(section)) {
+          issues.add('invalid_shape', at);
+          continue;
+        }
+        scanProviderValue(section, at, 0, false, issues);
+        const tools: unknown[] = [];
+        collectToolValues(section, tools);
+        if (tools.some((rule) => typeof rule === 'string' && USERINFO_ARG_RE.test(rule))) issues.add('secret_value', at);
       }
       if (Buffer.byteLength(JSON.stringify(provider), 'utf8') > MAX_SUBAGENT_PROVIDER_BYTES) issues.add('too_large', 'provider');
     }
@@ -637,8 +737,6 @@ export function projectionOf(kind: AssetKind, payload: AssetPayload): AssetProje
       return { kind, bytes: Buffer.byteLength((payload as BlockAssetPayload).content, 'utf8') };
     case 'subagent': {
       const subagent = payload as SubagentAssetPayload;
-      const authorityFields: string[] = [];
-      for (const [id, section] of Object.entries(subagent.provider ?? {})) collectAuthorityFields(section, safeKey(id), authorityFields);
       return {
         kind,
         agentName: subagent.agentName,
@@ -646,7 +744,7 @@ export function projectionOf(kind: AssetKind, payload: AssetPayload): AssetProje
         skills: subagent.skills,
         mcps: subagent.mcps,
         providers: Object.keys(subagent.provider ?? {}).sort(),
-        authorityFields: authorityFields.sort(),
+        reviewFields: reviewFieldsOf(subagent.provider),
         toolFields: toolFieldsOf(subagent.provider),
       };
     }
@@ -688,15 +786,31 @@ export function nameIssues(name: unknown): ValidationIssue[] {
   return containsSecretToken(name) ? [{ code: 'secret_value', path: 'name' }] : [];
 }
 
-/** Ids and short names only, so provenance can't carry a path or a value. Copies come only from a user's copy action. */
-export function sourceIssues(raw: unknown): ValidationIssue[] {
+/** Closed, so nothing extra reaches the index. A project owner is representable; nothing here decides what one means. */
+export function ownerIssues(raw: unknown): ValidationIssue[] {
+  const invalid: ValidationIssue[] = [{ code: 'invalid_shape', path: 'owner' }];
+  if (!isRecord(raw)) return invalid;
+  const keys = Object.keys(raw);
+  switch (raw.kind) {
+    case 'library': return keys.length === 1 ? [] : invalid;
+    case 'agent': return keys.length === 2 && isCatalogId(raw.agentId) ? [] : invalid;
+    case 'project': return keys.length === 2 && isCatalogId(raw.projectId) ? [] : invalid;
+    default: return invalid;
+  }
+}
+
+/**
+ * Ids and short names only, so provenance can't carry a path or a value. Copies
+ * come only from a user's copy action, and built-ins only from the installer.
+ */
+export function sourceIssues(raw: unknown, allowBuiltin = false): ValidationIssue[] {
   const invalid: ValidationIssue[] = [{ code: 'invalid_shape', path: 'source' }];
   if (!isRecord(raw)) return invalid;
   switch (raw.kind) {
     case 'user':
       return Object.keys(raw).length === 1 ? [] : invalid;
     case 'builtin':
-      return Object.keys(raw).length === 2 && isCatalogId(raw.builtinId) ? [] : invalid;
+      return allowBuiltin && Object.keys(raw).length === 2 && isCatalogId(raw.builtinId) ? [] : invalid;
     case 'import': {
       const known = Object.keys(raw).every((key) => ['kind', 'from', 'projectId', 'nativeName'].includes(key));
       const from = raw.from === 'native-mcp' || raw.from === 'project-skill' || raw.from === 'persona' || raw.from === 'native-subagent';
@@ -753,6 +867,7 @@ function validateEntries(raw: unknown, path: string, assetField: 'blockId' | 'su
     } else if (source.kind === 'fork') {
       const from = source.forkedFrom;
       if (!isAssetId(asset) || !isRecord(from) || !isAssetId(from.assetId) || !isRevision(from.revision)) issues.add('invalid_entry', `${at}.source`);
+      else issues.closed(from, ['assetId', 'revision'], `${at}.source.forkedFrom.`);
     } else if (source.kind === 'local') {
       if (isBase || !isAssetId(asset)) issues.add('invalid_entry', `${at}.source`);
     } else {
@@ -772,6 +887,20 @@ function validateRevisionMap(raw: unknown, path: string, issues: Issues): Record
     if (!isRevision(value)) issues.add('invalid_revision', `${path}.${safeKey(key)}`);
   }
   return raw as Record<string, number>;
+}
+
+function validateApprovals(raw: unknown, issues: Issues): CompositionInput['authorityApprovals'] {
+  if (!isRecord(raw)) {
+    issues.add('invalid_shape', 'authorityApprovals');
+    return {};
+  }
+  for (const [key, value] of Object.entries(raw)) {
+    const at = `authorityApprovals.${safeKey(key)}`;
+    if (!isAssetId(key)) issues.add('invalid_identifier', at);
+    if (!isRecord(value) || !isRevision(value.revision) || typeof value.contentHash !== 'string' || !CONTENT_HASH_RE.test(value.contentHash)) issues.add('invalid_revision', at);
+    else issues.closed(value, ['revision', 'contentHash'], `${at}.`);
+  }
+  return raw as CompositionInput['authorityApprovals'];
 }
 
 function validateIdList(raw: unknown, path: string, isValid: (id: unknown) => boolean, issues: Issues): string[] {
@@ -803,7 +932,7 @@ export function validateComposition(raw: unknown): { ok: true; composition: Comp
     removals: validateIdList(raw.removals, 'removals', isAssetId, issues),
     floors: validateRevisionMap(raw.floors, 'floors', issues),
     keepMarkers: validateRevisionMap(raw.keepMarkers, 'keepMarkers', issues),
-    authorityApprovals: validateRevisionMap(raw.authorityApprovals, 'authorityApprovals', issues),
+    authorityApprovals: validateApprovals(raw.authorityApprovals, issues),
   };
   return issues.list.length > 0 ? { ok: false, issues: issues.list } : { ok: true, composition };
 }
@@ -871,7 +1000,7 @@ export function adoptNativeMcpServer(serverKey: string, raw: unknown): PayloadVa
 function redactedUrl(url: string): string {
   try {
     const parsed = new URL(url);
-    return `${parsed.protocol}//${parsed.host}${parsed.pathname}`;
+    return redactSecretValues(`${parsed.protocol}//${parsed.host}${parsed.pathname}`);
   } catch {
     // telemetry-exempt: not parseable, so nothing in it can be shown
     return REDACTED;

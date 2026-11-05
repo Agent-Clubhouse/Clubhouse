@@ -3,16 +3,23 @@ import * as os from 'os';
 import * as path from 'path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-const W = vi.hoisted(() => ({ home: '' }));
+const W = vi.hoisted(() => ({ home: '', auditFails: false }));
 
 vi.mock('electron', () => ({ app: { isPackaged: false, getPath: () => W.home } }));
 vi.mock('../log-service', () => ({ appLog: vi.fn() }));
+vi.mock('../settings-audit', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../settings-audit')>();
+  return {
+    ...actual,
+    auditChanged: (...args: Parameters<typeof actual.auditChanged>) => (W.auditFails ? Promise.reject(new Error('audit down')) : actual.auditChanged(...args)),
+  };
+});
 
 import { appLog } from '../log-service';
 import { _resetSettingsAuditForTesting, readSettingsAudit, withSettingsSurface } from '../settings-audit';
 import { composeInstructions } from './composer';
 import { instanceFromTemplate } from './structure';
-import { AssetCatalogError, assetCatalogDir, createAssetCatalogStore, type AssetCatalogStore, type PublicationRequest } from './store';
+import { AssetCatalogError, assetCatalogDir, createAssetCatalogStore, installBuiltinAsset, type AssetCatalogStore, type PublicationRequest } from './store';
 import type {
   AssetKind,
   BaseAdoption,
@@ -59,6 +66,7 @@ beforeEach(() => {
   dir = path.join(W.home, 'catalog');
   nextId = 0;
   renameFault = null;
+  W.auditFails = false;
   store = makeStore();
   vi.mocked(appLog).mockClear();
   _resetSettingsAuditForTesting(true);
@@ -218,12 +226,102 @@ describe('saving unassigned assets', () => {
     }
   });
 
-  it('records provenance, and a built-in may use the reserved namespace', async () => {
-    expect(await code(store.createAsset({ kind: 'mcp', name: 'Bridge', payload: mcpOf('clubhouse') }))).toBe('invalid_payload');
-    const bridge = await store.createAsset({ kind: 'mcp', name: 'Bridge', payload: mcpOf('clubhouse'), source: { kind: 'builtin', builtinId: 'clubhouse-bridge' } });
-    expect(bridge.source).toEqual({ kind: 'builtin', builtinId: 'clubhouse-bridge' });
+  it('records provenance', async () => {
     const imported = await store.createAsset({ kind: 'skill', name: 'Imported', payload: skillOf('imported'), source: { kind: 'import', from: 'project-skill', projectId: 'p1', nativeName: 'imported' } });
     expect(imported.source).toMatchObject({ from: 'project-skill', projectId: 'p1' });
+  });
+
+  describe('built-ins', () => {
+    const bridge = { assetId: 'builtin-bridge', kind: 'mcp' as const, name: 'Bridge', builtinId: 'clubhouse-bridge', expectedRevision: 0, payload: mcpOf('clubhouse') };
+
+    it('the general API can\'t make one or reach the reserved namespace', async () => {
+      expect(await code(store.createAsset({ kind: 'mcp', name: 'Bridge', payload: mcpOf('clubhouse') }))).toBe('invalid_payload');
+      expect(await code(store.createAsset({ kind: 'mcp', name: 'Bridge', payload: mcpOf('clubhouse'), source: { kind: 'builtin', builtinId: 'clubhouse-bridge' } }))).toBe('invalid_payload');
+      expect(await code(store.createAsset({ kind: 'block', name: 'x', payload: doc(), source: { kind: 'builtin', builtinId: 'x' } }))).toBe('invalid_payload');
+      expect(await code(store.publishTemplate({
+        templateId: 'new-template',
+        expectedRevision: 0,
+        name: 'x',
+        source: { kind: 'builtin', builtinId: 'x' },
+        writes: [{ assetId: 'new-block', kind: 'block', expectedRevision: 0, name: 'x', payload: doc() }],
+        payload: { entries: [ref('A', 'new-block')], subagents: [], skills: [], mcps: [] },
+      }))).toBe('invalid_publication');
+      expect('installBuiltin' in store).toBe(false);
+    });
+
+    it('the installer can, for Clubhouse itself, and appends revisions under an expected revision', async () => {
+      const made = await installBuiltinAsset(store, bridge);
+      expect(made).toMatchObject({ source: { kind: 'builtin', builtinId: 'clubhouse-bridge' }, owner: { kind: 'library' }, headRevision: 1 });
+      expect(await code(installBuiltinAsset(store, bridge))).toBe('stale_revision');
+      expect((await installBuiltinAsset(store, { ...bridge, expectedRevision: 1 })).headRevision).toBe(2);
+    });
+
+    it('no surface a person or agent comes in on reaches it', async () => {
+      for (const surface of ['ui', 'mobile', 'persona', 'mcp', 'cli', 'dispatcher'] as const) {
+        await withSettingsSurface(surface, undefined, async () => {
+          expect(await code(installBuiltinAsset(store, bridge))).toBe('agent_not_permitted');
+        });
+      }
+      expect(() => installBuiltinAsset({}, bridge)).toThrow('not an asset catalog store');
+    });
+
+    it('takes no edits through the general API: a person forks one', async () => {
+      const made = await installBuiltinAsset(store, bridge);
+      expect(await code(store.saveRevision({ assetId: made.id, expectedRevision: 1, payload: mcpOf('clubhouse') }))).toBe('builtin_read_only');
+      const skill = await installBuiltinAsset(store, { assetId: 'builtin-block', kind: 'block', name: 'B', builtinId: 'b', expectedRevision: 0, payload: doc() });
+      const template = await installBuiltinAsset(store, { assetId: 'builtin-template', kind: 'template', name: 'T', builtinId: 't', expectedRevision: 0, payload: { entries: [ref('B', skill)], subagents: [], skills: [], mcps: [] } });
+      expect(await code(store.publishTemplate({ templateId: template.id, expectedRevision: 1, writes: [], payload: { entries: [ref('B', skill)], subagents: [], skills: [], mcps: [] } }))).toBe('builtin_read_only');
+      expect(await code(store.publishTemplate({
+        templateId: 'mine',
+        expectedRevision: 0,
+        name: 'Mine',
+        writes: [{ assetId: skill.id, kind: 'block', expectedRevision: 1, payload: doc('edited') }],
+        payload: { entries: [ref('B', skill, 2)], subagents: [], skills: [], mcps: [] },
+      }))).toBe('builtin_read_only');
+    });
+  });
+
+  it('an owner holds nothing extra, in a save or a publication', async () => {
+    expect(await code(store.createAsset({ kind: 'block', name: 'x', payload: doc(), owner: { kind: 'library', extra: 'kept' } as never }))).toBe('invalid_payload');
+    expect(await code(store.publishTemplate({
+      templateId: 'tmpl',
+      expectedRevision: 0,
+      name: 'x',
+      writes: [{ assetId: 'blk', kind: 'block', expectedRevision: 0, name: 'x', owner: { kind: 'agent', agentId: 'a', extra: 'kept' } as never, payload: doc() }],
+      payload: { entries: [ref('A', 'blk')], subagents: [], skills: [], mcps: [] },
+    }))).toBe('invalid_publication');
+    expect((await store.read()).assets).toEqual({});
+  });
+
+  it('asset ids differing only by case can\'t both exist', async () => {
+    expect(await code(store.publishTemplate({
+      templateId: 'case-t',
+      expectedRevision: 0,
+      name: 'T',
+      writes: [
+        { assetId: 'Same', kind: 'block', expectedRevision: 0, name: 'x', payload: doc('x') },
+        { assetId: 'same', kind: 'block', expectedRevision: 0, name: 'y', payload: doc('y') },
+      ],
+      payload: { entries: [ref('X', 'Same'), ref('Y', 'same')], subagents: [], skills: [], mcps: [] },
+    }))).toBe('invalid_publication');
+    expect((await store.read()).assets).toEqual({});
+  });
+
+  it('two store instances on one catalog lose nothing', async () => {
+    const other = makeStore();
+    await Promise.all(Array.from({ length: 6 }, (_, position) => (position % 2 === 0 ? store : other).createAsset({ kind: 'block', name: `Block ${position}`, payload: doc() })));
+    expect(Object.keys((await store.read()).assets)).toHaveLength(6);
+    const asset = await store.createAsset({ kind: 'block', name: 'Raced', payload: doc() });
+    const results = await Promise.allSettled([store, other].map((each) => each.saveRevision({ assetId: asset.id, expectedRevision: 1, payload: doc('mine') })));
+    expect(results.map((result) => result.status).sort()).toEqual(['fulfilled', 'rejected']);
+  });
+
+  it('a failed audit doesn\'t report a committed write as failed', async () => {
+    W.auditFails = true;
+    const asset = await store.createAsset({ kind: 'block', name: 'Kept', payload: doc() });
+    expect((await store.read()).assets[asset.id].name).toBe('Kept');
+    expect((await store.saveRevision({ assetId: asset.id, expectedRevision: 1, payload: doc('two') })).headRevision).toBe(2);
+    expect(vi.mocked(appLog)).toHaveBeenCalledWith('core:asset-catalog', 'warn', expect.any(String), expect.anything());
   });
 
   it('an owner is representable: library by default, or one agent, or one project', async () => {
@@ -365,6 +463,31 @@ describe('deletion', () => {
       payload: { entries: [ref('Identity', seed.identity)], subagents: [], skills: [seed.review.id], mcps: [seed.git.id] },
     });
     expect(await code(store.deleteAsset({ assetId: seed.job.id, expectedRevision: 1 }))).toBe('asset_in_use');
+  });
+
+  it('is refused while an instance is on a subagent revision that uses it, though a later revision doesn\'t', async () => {
+    const job = await store.createAsset({ kind: 'block', name: 'Job', payload: doc('job') });
+    const other = await store.createAsset({ kind: 'block', name: 'Other', payload: doc('other') });
+    const definition = (block: CatalogEntry) => ({ agentName: 's', description: 'x', blocks: [ref('Role', block)], skills: [], mcps: [] });
+    const sub = await store.createAsset({ kind: 'subagent', name: 'S', payload: definition(job) });
+    const template = await store.createAsset({ kind: 'template', name: 'T', payload: { entries: [ref('Other', other)], subagents: [{ entryId: 'S', subagentId: sub.id, subagentRevision: 1 }], skills: [], mcps: [] } });
+    await compose('agent-1', instanceOf(template));
+    await saveEdit(sub.id, definition(other), 1);
+
+    expect(await code(store.deleteAsset({ assetId: job.id, expectedRevision: 1 }))).toBe('asset_in_use');
+    expect((await store.plan({ agentId: 'agent-1', adoption: ACCEPTED })).activation).not.toBeNull();
+  });
+
+  it('keeps what an accepted subagent revision refers to, even once nothing else does', async () => {
+    const job = await store.createAsset({ kind: 'block', name: 'Job', payload: doc('job') });
+    await store.saveRevision({ assetId: job.id, expectedRevision: 1, payload: doc('job two') });
+    const sub = await store.createAsset({ kind: 'subagent', name: 'S', payload: { agentName: 's', description: 'x', blocks: [ref('Role', job)], skills: [], mcps: [] } });
+    const template = await store.createAsset({ kind: 'template', name: 'T', payload: { entries: [ref('Role', job, 2)], subagents: [{ entryId: 'S', subagentId: sub.id, subagentRevision: 1 }], skills: [], mcps: [] } });
+    await compose('agent-1', instanceOf(template));
+    const plan = await store.plan({ agentId: 'agent-1', adoption: ACCEPTED });
+    expect(plan.activation).not.toBeNull();
+    expect(await code(store.deleteAsset({ assetId: job.id, expectedRevision: 2 }))).toBe('asset_in_use');
+    expect(await store.readRevision(job.id, 1)).toEqual(doc('job'));
   });
 
   it('removes an unreferenced asset and its payloads', async () => {
@@ -830,6 +953,34 @@ describe('accepting a structure update', () => {
     expect((await store.plan({ agentId: 'agent-1', adoption: ACCEPTED })).instructions?.blocks.map((block) => block.revision)).toEqual([1, 1, 1, 2]);
   });
 
+  it('an independent subagent revision can\'t pull a bundled block past an agent that hasn\'t accepted it', async () => {
+    const job = await store.createAsset({ kind: 'block', name: 'Job', payload: doc('job') });
+    const definition = (blockRevision: number) => ({ agentName: 's', description: 'x', blocks: [ref('Role', job, blockRevision)], skills: [], mcps: [] });
+    const sub = await store.createAsset({ kind: 'subagent', name: 'S', payload: definition(1) });
+    const template = await store.createAsset({ kind: 'template', name: 'T', payload: { entries: [ref('Job', job)], subagents: [{ entryId: 'S', subagentId: sub.id, subagentRevision: 1 }], skills: [], mcps: [] } });
+    await compose('a', instanceOf(template));
+    await publish({
+      templateId: template.id,
+      expectedRevision: 1,
+      writes: [
+        { assetId: 'safety-id', kind: 'block', expectedRevision: 0, name: 'Safety', payload: doc('safety') },
+        { assetId: job.id, kind: 'block', expectedRevision: 1, payload: doc('job two') },
+      ],
+      payload: { entries: [ref('Safety', 'safety-id'), ref('Job', job, 2)], subagents: [{ entryId: 'S', subagentId: sub.id, subagentRevision: 1 }], skills: [], mcps: [] },
+    });
+    await saveEdit(sub.id, definition(2), 1);
+
+    const plan = await store.plan({ agentId: 'a', adoption: ACCEPTED });
+    expect(plan.structure?.acceptedRevision).toBe(1);
+    expect(plan.subagents[0]).toMatchObject({ revision: 1, update: { heldBy: { templateId: template.id, templateRevision: 2 }, resolution: 'accept-template' } });
+    expect(plan.subagents[0].blocks[0]).toMatchObject({ assetId: job.id, revision: 1 });
+
+    const preview = await store.previewStructureUpdate({ agentId: 'a', adoption: ACCEPTED });
+    await store.acceptStructureUpdate({ agentId: 'a', expectedRevision: 1, targetRevision: 2, binding: preview.binding, adoption: ACCEPTED });
+    const after = await store.plan({ agentId: 'a', adoption: ACCEPTED });
+    expect(after.subagents[0]).toMatchObject({ revision: 2, blocks: [{ assetId: job.id, revision: 2 }] });
+  });
+
   describe('a choice can\'t go stale', () => {
     async function pending() {
       const seed = await seedBase();
@@ -962,6 +1113,81 @@ describe('switching template', () => {
     expect(await code(store.switchTemplate({ agentId: 'agent-1', expectedRevision: 1, templateId: other.id, selection, binding: preview.binding, adoption: ACCEPTED }))).toBe('composition_blocked');
   });
 
+  describe('has a way through what would block it', () => {
+    async function riskyTemplate() {
+      const role = await store.createAsset({ kind: 'block', name: 'Role', payload: doc() });
+      const sub = await store.createAsset({ kind: 'subagent', name: 'Risky', payload: { agentName: 'risky', description: 'x', blocks: [ref('Role', role)], skills: [], mcps: [], provider: { claude: { hooks: {} } } } });
+      const template = await store.createAsset({ kind: 'template', name: 'T', payload: { entries: [ref('Role', role)], subagents: [{ entryId: 'Risky', subagentId: sub.id, subagentRevision: 1 }], skills: [], mcps: [] } });
+      return { sub, template };
+    }
+
+    it('a subagent needing a person blocks, then goes through approved', async () => {
+      const { sub, template } = await riskyTemplate();
+      const blocked = await store.previewTemplateSwitch({ agentId: 'a', templateId: template.id, selection: {}, adoption: ACCEPTED });
+      expect(blocked.plan.blockers.map((issue) => issue.code)).toEqual(['subagent_review_fields']);
+      expect(await code(store.switchTemplate({ agentId: 'a', expectedRevision: 0, templateId: template.id, selection: {}, binding: blocked.binding, adoption: ACCEPTED }))).toBe('composition_blocked');
+
+      const selection = { authorityApprovals: { [sub.id]: { revision: 1, contentHash: sub.revisions[0].contentHash } } };
+      const approved = await store.previewTemplateSwitch({ agentId: 'a', templateId: template.id, selection, adoption: ACCEPTED });
+      expect(approved.plan.blockers).toEqual([]);
+      const saved = await store.switchTemplate({ agentId: 'a', expectedRevision: 0, templateId: template.id, selection, binding: approved.binding, adoption: ACCEPTED });
+      expect(saved.subagents).toHaveLength(1);
+    });
+
+    it('or goes through with it left out', async () => {
+      const { template } = await riskyTemplate();
+      const selection = { excludeSubagents: ['Risky'] };
+      const preview = await store.previewTemplateSwitch({ agentId: 'a', templateId: template.id, selection, adoption: ACCEPTED });
+      expect(preview.plan.blockers).toEqual([]);
+      const saved = await store.switchTemplate({ agentId: 'a', expectedRevision: 0, templateId: template.id, selection, binding: preview.binding, adoption: ACCEPTED });
+      expect(saved).toMatchObject({ subagents: [], excludedSubagentEntryIds: ['Risky'] });
+    });
+
+    it('a foreign collision goes through with what collides left out', async () => {
+      const seed = await seedBase();
+      const foreign = [{ key: 'skills/code-review', owner: 'native' as const }];
+      const blocked = await store.previewTemplateSwitch({ agentId: 'a', templateId: seed.base.id, selection: {}, adoption: ACCEPTED, foreign });
+      expect(blocked.plan.blockers.map((issue) => issue.code)).toEqual(['foreign_destination_collision']);
+
+      const selection = { removeBaseAssets: [seed.review.id] };
+      const preview = await store.previewTemplateSwitch({ agentId: 'a', templateId: seed.base.id, selection, adoption: ACCEPTED, foreign });
+      expect(preview.plan.blockers).toEqual([]);
+      const saved = await store.switchTemplate({ agentId: 'a', expectedRevision: 0, templateId: seed.base.id, selection, binding: preview.binding, adoption: ACCEPTED, foreign });
+      expect(saved.removals).toEqual([seed.review.id]);
+    });
+
+    it('an approval that doesn\'t bind is refused, and one with the wrong shape never gets that far', async () => {
+      const { sub, template } = await riskyTemplate();
+      const unbound = { authorityApprovals: { [sub.id]: { revision: 2, contentHash: sub.revisions[0].contentHash } } };
+      const preview = await store.previewTemplateSwitch({ agentId: 'a', templateId: template.id, selection: unbound, adoption: ACCEPTED });
+      expect(preview.plan.blockers.map((issue) => issue.code)).toContain('approval_unbound');
+      expect(await code(store.previewTemplateSwitch({ agentId: 'a', templateId: template.id, selection: { authorityApprovals: { [sub.id]: 1 as never } }, adoption: ACCEPTED }))).toBe('invalid_choice');
+    });
+
+    it('an accept that needs a person can carry the approval in its choice', async () => {
+      const seed = await seedBase();
+      const role = await store.createAsset({ kind: 'block', name: 'Role', payload: doc() });
+      const risky = store.mintAssetId();
+      await compose('a', instanceOf(seed.base));
+      const definition = { agentName: 'risky', description: 'x', blocks: [ref('Role', role)], skills: [], mcps: [], provider: { claude: { hooks: {} } } };
+      await publish({
+        templateId: seed.base.id,
+        expectedRevision: 1,
+        writes: [{ assetId: risky, kind: 'subagent', expectedRevision: 0, name: 'Risky', payload: definition }],
+        payload: { entries: [ref('Identity', seed.identity), ref('Job', seed.job)], subagents: [{ entryId: 'Risky', subagentId: risky, subagentRevision: 1 }], skills: [seed.review.id], mcps: [seed.git.id] },
+      });
+      const preview = await store.previewStructureUpdate({ agentId: 'a', adoption: ACCEPTED });
+      expect(preview.subagentCheck.reasons).toEqual([{ code: 'review_fields', entries: ['base:Risky'] }]);
+      const order = ['base:Identity', 'base:Job'];
+      const accept = (choice: Parameters<typeof store.acceptStructureUpdate>[0]['choice']) => store.acceptStructureUpdate({ agentId: 'a', expectedRevision: 1, targetRevision: 2, binding: preview.binding, adoption: ACCEPTED, choice });
+      expect(await code(accept({ order }))).toBe('composition_blocked');
+      const contentHash = (await store.read()).assets[risky].revisions[0].contentHash;
+      const saved = await accept({ order, authorityApprovals: { [risky]: { revision: 1, contentHash } } });
+      expect(saved.template?.acceptedRevision).toBe(2);
+      expect((await store.plan({ agentId: 'a', adoption: ACCEPTED })).blockers).toEqual([]);
+    });
+  });
+
   it('a first template for an agent with none goes the same way', async () => {
     const seed = await seedBase();
     const preview = await store.previewTemplateSwitch({ agentId: 'new-agent', templateId: seed.base.id, selection: {}, adoption: ACCEPTED });
@@ -1016,7 +1242,7 @@ describe('copies', () => {
   });
 
   it('a copy of a built-in keeps its reserved name until the user saves another', async () => {
-    const builtin = await store.createAsset({ kind: 'skill', name: 'Built in', payload: skillOf('clubhouse-tour'), source: { kind: 'builtin', builtinId: 'tour' } });
+    const builtin = await installBuiltinAsset(store, { assetId: 'builtin-tour', kind: 'skill', name: 'Built in', builtinId: 'tour', expectedRevision: 0, payload: skillOf('clubhouse-tour') });
     const copy = await store.copyAsset({ assetId: builtin.id, revision: 1, agentId: 'agent-1' });
     expect(await code(store.saveRevision({ assetId: copy.id, expectedRevision: 1, payload: skillOf('clubhouse-tour', 'edited') }))).toBe('invalid_payload');
     expect((await store.saveRevision({ assetId: copy.id, expectedRevision: 1, payload: skillOf('my-tour', 'edited') })).headRevision).toBe(2);
@@ -1126,29 +1352,63 @@ describe('agents can only read', () => {
     expect(JSON.stringify(plan)).not.toContain('distinctive-model');
   });
 
-  it('a person\'s resolution of authority fields can only come from a person', async () => {
-    const role = await store.createAsset({ kind: 'block', name: 'Role', payload: doc() });
-    const sub = await store.createAsset({ kind: 'subagent', name: 'Risky', payload: { agentName: 'risky', description: 'x', blocks: [ref('Role', role)], skills: [], mcps: [], provider: { claude: { permissionMode: 'bypassPermissions' } } } });
-    const template = await store.createAsset({ kind: 'template', name: 'T', payload: { entries: [ref('Role', role)], subagents: [{ entryId: 'Risky', subagentId: sub.id, subagentRevision: 1 }], skills: [], mcps: [] } });
+  describe('a person\'s resolution of review fields', () => {
+    async function risky() {
+      const role = await store.createAsset({ kind: 'block', name: 'Role', payload: doc() });
+      const definition = (description: string, section: Record<string, unknown>) => ({ agentName: 'risky', description, blocks: [ref('Role', role)], skills: [], mcps: [], provider: { claude: section } });
+      const sub = await store.createAsset({ kind: 'subagent', name: 'Risky', payload: definition('x', { permissionMode: 'bypassPermissions' }) });
+      const template = await store.createAsset({ kind: 'template', name: 'T', payload: { entries: [ref('Role', role)], subagents: [{ entryId: 'Risky', subagentId: sub.id, subagentRevision: 1 }], skills: [], mcps: [] } });
+      return { sub, template, definition, approval: { revision: 1, contentHash: sub.revisions[0].contentHash } };
+    }
 
-    const blocked = instanceOf(template);
-    const planned = await store.plan({ agentId: 'a', adoption: ACCEPTED, draft: blocked });
-    expect(planned.blockers).toEqual([{ code: 'subagent_authority_fields', assetIds: [sub.id], fields: ['claude.permissionMode'] }]);
-    expect(JSON.stringify(planned)).not.toContain('bypassPermissions');
-    expect(await code(store.saveComposition({ agentId: 'a', expectedRevision: 0, composition: blocked, adoption: ACCEPTED, previewFingerprint: planned.fingerprint }))).toBe('composition_blocked');
+    it('can only come from a person', async () => {
+      const { sub, template, approval } = await risky();
+      const blocked = instanceOf(template);
+      const planned = await store.plan({ agentId: 'a', adoption: ACCEPTED, draft: blocked });
+      expect(planned.blockers).toEqual([{ code: 'subagent_review_fields', assetIds: [sub.id], fields: ['claude.permissionMode'] }]);
+      expect(JSON.stringify(planned)).not.toContain('bypassPermissions');
+      expect(await code(store.saveComposition({ agentId: 'a', expectedRevision: 0, composition: blocked, adoption: ACCEPTED, previewFingerprint: planned.fingerprint }))).toBe('composition_blocked');
 
-    const approved = instanceOf(template, { authorityApprovals: { [sub.id]: 1 } });
-    const preview = await store.plan({ agentId: 'a', adoption: ACCEPTED, draft: approved });
-    expect(preview.blockers).toEqual([]);
-    await withSettingsSurface('mcp', 'a', async () => {
-      expect(await code(store.saveComposition({ agentId: 'a', expectedRevision: 0, composition: approved, adoption: ACCEPTED, previewFingerprint: preview.fingerprint }))).toBe('agent_not_permitted');
+      const approved = instanceOf(template, { authorityApprovals: { [sub.id]: approval } });
+      const preview = await store.plan({ agentId: 'a', adoption: ACCEPTED, draft: approved });
+      expect(preview.blockers).toEqual([]);
+      await withSettingsSurface('mcp', 'a', async () => {
+        expect(await code(store.saveComposition({ agentId: 'a', expectedRevision: 0, composition: approved, adoption: ACCEPTED, previewFingerprint: preview.fingerprint }))).toBe('agent_not_permitted');
+      });
+      await withSettingsSurface('ui', undefined, () => store.saveComposition({ agentId: 'a', expectedRevision: 0, composition: approved, adoption: ACCEPTED, previewFingerprint: preview.fingerprint }));
     });
-    await withSettingsSurface('ui', undefined, () => store.saveComposition({ agentId: 'a', expectedRevision: 0, composition: approved, adoption: ACCEPTED, previewFingerprint: preview.fingerprint }));
 
-    // A resolution covers that revision alone, so a new one would block this agent and is refused until it's resolved.
-    const edited = { agentName: 'risky', description: 'y', blocks: [ref('Role', role)], skills: [], mcps: [], provider: { claude: { permissionMode: 'bypassPermissions' } } };
-    expect(await code(saveEdit(sub.id, edited, 1))).toBe('consumer_conflict');
-    expect((await store.plan({ agentId: 'a', adoption: ACCEPTED })).blockers).toEqual([]);
+    it('covers that revision alone: a new one would block this agent, so it\'s refused', async () => {
+      const { sub, template, definition, approval } = await risky();
+      await compose('a', instanceOf(template, { authorityApprovals: { [sub.id]: approval } }));
+      expect(await code(saveEdit(sub.id, definition('y', { permissionMode: 'bypassPermissions' }), 1))).toBe('consumer_conflict');
+      expect((await store.plan({ agentId: 'a', adoption: ACCEPTED })).blockers).toEqual([]);
+    });
+
+    it('can\'t be given ahead of time: approving a revision that doesn\'t exist is refused, and the later save is caught', async () => {
+      const role = await store.createAsset({ kind: 'block', name: 'Role', payload: doc() });
+      const clean = { agentName: 's', description: 'x', blocks: [ref('Role', role)], skills: [], mcps: [] };
+      const sub = await store.createAsset({ kind: 'subagent', name: 'S', payload: clean });
+      const template = await store.createAsset({ kind: 'template', name: 'T', payload: { entries: [ref('Role', role)], subagents: [{ entryId: 'S', subagentId: sub.id, subagentRevision: 1 }], skills: [], mcps: [] } });
+      const ahead = instanceOf(template, { authorityApprovals: { [sub.id]: { revision: 2, contentHash: 'a'.repeat(64) } } });
+      const preview = await store.plan({ agentId: 'a', adoption: ACCEPTED, draft: ahead });
+      expect(preview.blockers.map((issue) => issue.code)).toEqual(['approval_unbound']);
+      expect(await code(store.saveComposition({ agentId: 'a', expectedRevision: 0, composition: ahead, adoption: ACCEPTED, previewFingerprint: preview.fingerprint }))).toBe('composition_blocked');
+
+      await compose('a', instanceOf(template));
+      const dangerous = { ...clean, provider: { claude: { hooks: {}, permissionMode: 'bypassPermissions' } } };
+      expect(await code(saveEdit(sub.id, dangerous, 1))).toBe('consumer_conflict');
+      expect((await store.read()).assets[sub.id].headRevision).toBe(1);
+    });
+  });
+
+  it('a subagent\'s unknown provider field blocks too, until a person looks at it', async () => {
+    const role = await store.createAsset({ kind: 'block', name: 'Role', payload: doc() });
+    const sub = await store.createAsset({ kind: 'subagent', name: 'S', payload: { agentName: 's', description: 'x', blocks: [ref('Role', role)], skills: [], mcps: [], provider: { other: { sandbox_mode: 'danger-full-access' } } } });
+    const template = await store.createAsset({ kind: 'template', name: 'T', payload: { entries: [ref('Role', role)], subagents: [{ entryId: 'S', subagentId: sub.id, subagentRevision: 1 }], skills: [], mcps: [] } });
+    const planned = await store.plan({ agentId: 'a', adoption: ACCEPTED, draft: instanceOf(template) });
+    expect(planned.blockers).toEqual([{ code: 'subagent_review_fields', assetIds: [sub.id], fields: ['other.sandbox_mode'] }]);
+    expect(planned.subagents[0].reviewFields).toEqual([{ path: 'other.sandbox_mode', reason: 'authority' }]);
   });
 
   it('a user and Clubhouse itself may write', async () => {

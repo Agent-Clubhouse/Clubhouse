@@ -2,8 +2,11 @@ import { describe, expect, it } from 'vitest';
 import {
   adoptNativeMcpServer,
   agentMetadata,
+  isAssetId,
+  isCatalogId,
   MAX_SKILL_FILE_BYTES,
   nameIssues,
+  ownerIssues,
   previewPayload,
   sourceIssues,
   validateComposition,
@@ -82,6 +85,23 @@ describe('MCP definitions', () => {
       expect(JSON.stringify(result)).not.toContain('abc');
       expect(JSON.stringify(result)).not.toContain(FAKE_GH_TOKEN);
       expect(JSON.stringify(result)).not.toContain(FAKE_JWT);
+    });
+
+    it.each([
+      ['--token plain', ['--token', 'plain']],
+      ['--password -x, whose value starts with a dash', ['--password', '-x']],
+      ['--pass x', ['--pass', 'x']],
+      ['--pwd=x', ['--pwd=x']],
+      ['--key x', ['--key', 'x']],
+    ])('rejects the argument %s', (_label, args) => {
+      expect(issuesOf(validatePayload('mcp', { ...stdio, args }))).toContainEqual({ code: 'secret_value', path: 'args[0]' });
+    });
+
+    it.each([
+      ['a fragment', 'https://example.test/#access_token=hunter2'],
+      ['a matrix parameter', 'https://example.test/a;token=hunter2'],
+    ])('rejects a credential in %s of a URL', (_label, url) => {
+      expect(issuesOf(validatePayload('mcp', { serverKey: 'a', transport: 'http', url }))).toContainEqual({ code: 'secret_value', path: 'url' });
     });
 
     it('rejects credentials in a URL', () => {
@@ -295,7 +315,7 @@ describe('native subagent definitions', () => {
   const authority = (payload: unknown): string[] => {
     const result = validatePayload('subagent', payload);
     if (result.ok !== true || result.projection.kind !== 'subagent') throw new Error('expected a valid subagent');
-    return result.projection.authorityFields;
+    return result.projection.reviewFields;
   };
 
   it('accepts its own blocks, refs and a provider section', () => {
@@ -306,14 +326,19 @@ describe('native subagent definitions', () => {
   it('a model is allowed here: it is a native field on the definition, unlike on a template', () => {
     const result = validatePayload('subagent', claude({ model: 'inherit' }));
     expect(result.ok).toBe(true);
-    expect(authority(claude({ model: 'inherit' }))).toEqual([]);
+    expect(authority(claude({ model: 'inherit', maxTurns: 3 }))).toEqual([]);
   });
 
-  it('stores provider fields this layer has never heard of: activation decides what a delivery path supports', () => {
+  it('stores a field this layer has never heard of, and blocks it for a person as unknown', () => {
     const payload = claude({ someFutureField: { nested: [1, 2] } });
     const result = validatePayload('subagent', payload);
     expect(result.ok === true && result.payload.provider).toEqual(payload.provider);
-    expect(result.ok === true && result.projection).toMatchObject({ providers: ['claude'], authorityFields: [] });
+    expect(result.ok === true && result.projection).toMatchObject({ providers: ['claude'], reviewFields: [{ path: 'claude.someFutureField', reason: 'unknown' }] });
+  });
+
+  it('allows only its short list, per provider: another provider\'s fields are all unknown', () => {
+    const payload = { ...subagent, provider: { codex: { model: 'x' }, claude: { model: 'x' } } };
+    expect(authority(payload)).toEqual([{ path: 'codex.model', reason: 'unknown' }]);
   });
 
   it('keeps provider values out of the projection', () => {
@@ -324,11 +349,32 @@ describe('native subagent definitions', () => {
   it.each([
     ['permissionMode', { permissionMode: 'bypassPermissions' }, 'claude.permissionMode'],
     ['hooks', { hooks: { PreToolUse: [] } }, 'claude.hooks'],
-    ['nested hooks', { nested: { hooks: {} } }, 'claude.nested.hooks'],
+    ['hooks nested in something else', { nested: { hooks: {} } }, 'claude.nested'],
+    ['an approval-bypass flag', { dangerously_bypass_approvals_and_sandbox: true }, 'claude.dangerously_bypass_approvals_and_sandbox'],
+    ['a sandbox mode', { sandbox_mode: 'danger-full-access' }, 'claude.sandbox_mode'],
+    ['permissions.defaultMode', { permissions: { defaultMode: 'bypassPermissions' } }, 'claude.permissions'],
     ['an inline MCP object', { mcpServers: { local: { command: 'run-me' } } }, 'claude.mcpServers'],
     ['an inline MCP in a list', { mcpServers: ['named', { local: { command: 'run-me' } }] }, 'claude.mcpServers'],
-  ])('flags %s as raising authority, by where it sits', (_label, section, path) => {
-    expect(authority(claude(section))).toEqual([path]);
+    ['an MCP under another key', { mcp: { local: { command: 'run-me' } } }, 'claude.mcp'],
+    ['mcpServers as a JSON string', { mcpServers: '{"local":{"command":"run-me"}}' }, 'claude.mcpServers'],
+    ['a known field holding stringified authority', { tools: '{"hooks":{}}' }, 'claude.tools'],
+  ])('blocks %s for a person, as authority, by where it sits', (_label, section, path) => {
+    expect(authority(claude(section))).toEqual([{ path, reason: 'authority' }]);
+  });
+
+  it.each([
+    ['flags in args', { args: ['--yolo-mode'] }, 'claude.args'],
+    ['a nested object of no known kind', { settings: { anything: 1 } }, 'claude.settings'],
+    ['a known field with the wrong shape', { model: { name: 'x' } }, 'claude.model'],
+    ['a known list holding stringified JSON', { tools: ['{"x":1}'] }, 'claude.tools'],
+  ])('blocks %s for a person, as unknown or authority, by where it sits', (_label, section, path) => {
+    expect(authority(claude(section)).map((field) => field.path)).toEqual([path]);
+  });
+
+  it('checks stringified values for secrets too, and inline args by flag', () => {
+    expect(codes(validatePayload('subagent', claude({ mcpServers: { a: { args: ['--token', 'plain'] } } })))).toContain('secret_value');
+    expect(codes(validatePayload('subagent', claude({ mcpServers: '{"a":{"args":["--token","plain"]}}' })))).toContain('secret_value');
+    expect(codes(validatePayload('subagent', claude({ config: `{"apiKey":"abc"}` })))).toContain('secret_value');
   });
 
   describe('tool lists', () => {
@@ -340,6 +386,16 @@ describe('native subagent definitions', () => {
 
     it('don\'t raise authority: an allowlist is an ordinary definition', () => {
       expect(authority(claude({ tools: ['Read', 'Agent', 'mcp__clubhouse__send_message'] }))).toEqual([]);
+    });
+
+    it('show a command rule by its tool alone, since a scope can hold anything', () => {
+      expect(toolFields({ tools: ['Bash(git status)', 'Agent(worker, researcher)', 'Agent(curl x; y)'] })[0].names).toEqual(['Bash(<redacted>)', 'Agent(worker, researcher)', 'Agent(<redacted>)']);
+    });
+
+    it('refuse a rule holding a credential', () => {
+      expect(codes(validatePayload('subagent', claude({ tools: ['Bash(curl -u a:b https://example.test)'] })))).toContain('secret_value');
+      expect(codes(validatePayload('subagent', claude({ tools: 'Bash(curl --user a:b x)' })))).toContain('secret_value');
+      expect(codes(validatePayload('subagent', claude({ tools: [`Bash(curl ${FAKE_GH_TOKEN})`] })))).toContain('secret_value');
     });
 
     it('are kept for a person to see, by name', () => {
@@ -378,8 +434,10 @@ describe('native subagent definitions', () => {
     });
   });
 
-  it('an MCP referred to by name raises nothing', () => {
+  it('an MCP referred to by name raises nothing, and its name has to be just a name', () => {
     expect(authority(claude({ mcpServers: ['named', 'other'] }))).toEqual([]);
+    expect(authority(claude({ mcpServers: 'named' }))).toEqual([]);
+    expect(authority(claude({ mcpServers: 'not a name; run this' }))).toEqual([{ path: 'claude.mcpServers', reason: 'authority' }]);
   });
 
   it('refuses secrets in a provider section, including inside inline MCP config', () => {
@@ -415,6 +473,43 @@ describe('native subagent definitions', () => {
   });
 });
 
+describe('nothing shaped like a credential is taken as an identifier', () => {
+  const token = `sk-${'a'.repeat(20)}`;
+  const aws = `AKIA${'A'.repeat(16)}`;
+
+  it('refuses it as an id, a server key, an env name, a skill name, a path or an agent name', () => {
+    expect(isCatalogId(token)).toBe(false);
+    expect(isAssetId(token)).toBe(false);
+    expect(codes(validatePayload('mcp', { ...stdio, serverKey: token }))).toContain('invalid_identifier');
+    expect(codes(validatePayload('mcp', { ...stdio, envVars: [aws] }))).toContain('invalid_identifier');
+    expect(codes(validatePayload('mcp', { ...stdio, env: { [aws]: 'x' } }))).toContain('invalid_identifier');
+    expect(codes(validatePayload('skill', { ...skill, skillName: token }))).toContain('invalid_identifier');
+    expect(codes(validatePayload('skill', { skillName: 'a', files: [...skill.files, { path: `${token}.md`, content: '' }] }))).toContain('secret_value');
+    expect(codes(validatePayload('subagent', { ...subagent, agentName: token }))).toContain('invalid_identifier');
+  });
+
+  it('asset ids are lower case only: two differing by case would be one directory on macOS and Windows', () => {
+    expect(isAssetId('same')).toBe(true);
+    expect(isAssetId('Same')).toBe(false);
+  });
+});
+
+describe('closed provenance and ownership', () => {
+  it('an owner holds nothing extra', () => {
+    expect(ownerIssues({ kind: 'library' })).toEqual([]);
+    expect(ownerIssues({ kind: 'agent', agentId: 'a' })).toEqual([]);
+    expect(ownerIssues({ kind: 'project', projectId: 'p' })).toEqual([]);
+    for (const owner of [{ kind: 'library', extra: 'x' }, { kind: 'agent', agentId: 'a', extra: 'x' }, { kind: 'agent' }, { kind: 'mystery' }, null]) {
+      expect(ownerIssues(owner)).not.toEqual([]);
+    }
+  });
+
+  it('a built-in source is only for the installer', () => {
+    expect(sourceIssues({ kind: 'builtin', builtinId: 'orchestrator' })).not.toEqual([]);
+    expect(sourceIssues({ kind: 'builtin', builtinId: 'orchestrator' }, true)).toEqual([]);
+  });
+});
+
 describe('names, provenance, compositions', () => {
   it('checks names', () => {
     expect(nameIssues('Release notes')).toEqual([]);
@@ -425,7 +520,6 @@ describe('names, provenance, compositions', () => {
 
   it('keeps provenance to ids, and copies out of ordinary saves', () => {
     expect(sourceIssues({ kind: 'user' })).toEqual([]);
-    expect(sourceIssues({ kind: 'builtin', builtinId: 'orchestrator' })).toEqual([]);
     expect(sourceIssues({ kind: 'import', from: 'project-skill', projectId: 'p1', nativeName: 'code-review' })).toEqual([]);
     expect(sourceIssues({ kind: 'import', from: 'native-subagent', nativeName: 'tester' })).toEqual([]);
     expect(sourceIssues({ kind: 'import', from: 'project-skill', nativeName: '/Users/someone/skill' })).not.toEqual([]);
@@ -484,6 +578,18 @@ describe('names, provenance, compositions', () => {
         { baseEntryId: 'a' },
       ];
       for (const entry of bad) expect(codes(validateComposition({ ...valid, entries: [entry] }))).toContain('invalid_entry');
+    });
+
+    it('holds nothing extra in a fork\'s origin or an approval, and an approval is bound to content', () => {
+      const entry = (forkedFrom: unknown) => ({ baseEntryId: 'a', source: { kind: 'fork', blockId: 'x', forkedFrom } });
+      expect(validateComposition({ ...valid, entries: [entry({ assetId: 'o', revision: 1 })] }).ok).toBe(true);
+      expect(codes(validateComposition({ ...valid, entries: [entry({ assetId: 'o', revision: 1, extra: 'kept' })] }))).toContain('unknown_field');
+
+      const contentHash = 'a'.repeat(64);
+      expect(validateComposition({ ...valid, authorityApprovals: { sub: { revision: 1, contentHash } } }).ok).toBe(true);
+      expect(codes(validateComposition({ ...valid, authorityApprovals: { sub: 1 } }))).toContain('invalid_revision');
+      expect(codes(validateComposition({ ...valid, authorityApprovals: { sub: { revision: 1 } } }))).toContain('invalid_revision');
+      expect(codes(validateComposition({ ...valid, authorityApprovals: { sub: { revision: 1, contentHash, extra: 'x' } } }))).toContain('unknown_field');
     });
 
     it('rejects the same entry twice', () => {

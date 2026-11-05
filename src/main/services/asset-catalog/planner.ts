@@ -25,6 +25,7 @@ import type {
   AssetProjection,
   AssetRevisionRecord,
   BaseAdoption,
+  BundledBy,
   CatalogEntry,
   CatalogIndex,
   CompositionInput,
@@ -67,6 +68,7 @@ import {
   firstBundleAbove,
   hasMovedEntries,
   takeableRevision,
+  takeableThroughRefs,
 } from './structure';
 import { collisionKey, hasOwn } from './validation';
 
@@ -231,20 +233,20 @@ export function subagentSetInput(
   const asSet = (ref: { entryId: string; subagentId: string; subagentRevision: number }) => ({ entryId: ref.entryId, name: agentNameAt(index, ref.subagentId, ref.subagentRevision) });
   const acceptedRefs = new Map((accepted?.subagents ?? []).map((ref) => [ref.entryId, ref]));
   const excluded = new Set(composition.excludedSubagentEntryIds);
-  const authorityEntries = target.subagents.filter((ref) => {
+  const reviewEntries = target.subagents.filter((ref) => {
     if (excluded.has(ref.entryId)) return false;
     const was = acceptedRefs.get(ref.entryId);
     if (was?.subagentId === ref.subagentId && was.subagentRevision === ref.subagentRevision) return false;
     const entry = entryOf(index, ref.subagentId);
-    const projection = entry && revisionOf(entry, ref.subagentRevision)?.projection;
-    return projection?.kind === 'subagent' && projection.authorityFields.length > 0 && !isApproved(composition, ref.subagentId, ref.subagentRevision);
+    const record = entry && revisionOf(entry, ref.subagentRevision);
+    return record?.projection.kind === 'subagent' && record.projection.reviewFields.length > 0 && !isApproved(composition, ref.subagentId, record);
   }).map((ref) => ref.entryId);
   return {
     accepted: (accepted?.subagents ?? []).map(asSet),
     target: target.subagents.map(asSet),
     excluded: composition.excludedSubagentEntryIds,
     foreignNames: foreign.filter((item) => item.key.startsWith('subagents/')).map((item) => item.key.slice('subagents/'.length)),
-    authorityEntries,
+    reviewEntries,
     instance: composition.subagents.map((entry) => {
       const assetId = subagentIdOf(entry, accepted);
       const ref = acceptedRefs.get(entry.baseEntryId ?? '');
@@ -258,8 +260,11 @@ export function subagentSetInput(
   };
 }
 
-function isApproved(composition: CompositionInput, subagentId: string, revision: number): boolean {
-  return hasOwn(composition.authorityApprovals, subagentId) && composition.authorityApprovals[subagentId] === revision;
+/** A person's approval counts for exactly this revision's content. */
+function isApproved(composition: CompositionInput, subagentId: string, record: AssetRevisionRecord): boolean {
+  if (!hasOwn(composition.authorityApprovals, subagentId)) return false;
+  const approval = composition.authorityApprovals[subagentId];
+  return approval.revision === record.revision && approval.contentHash === record.contentHash;
 }
 
 interface PlanRequest {
@@ -372,6 +377,32 @@ function planResolved(
   if (templateEntry && !templateRecord) block('revision_unavailable', [templateEntry.id]);
   const accepted = templateRecord?.projection.kind === 'template' ? templateRecord.projection : null;
 
+  // This consumer's floor for each asset: what its accepted template revision refers to, nested
+  // references included, and whatever it explicitly applied. Everything a bundle tagged is in that closure.
+  const consumerFloors = new Map<string, number>();
+  const raiseFloor = (assetId: string, revision: number): void => {
+    consumerFloors.set(assetId, Math.max(consumerFloors.get(assetId) ?? 0, revision));
+  };
+  for (const ref of accepted?.entries ?? []) raiseFloor(ref.blockId, ref.blockRevision);
+  for (const ref of accepted?.subagents ?? []) {
+    raiseFloor(ref.subagentId, ref.subagentRevision);
+    const subagent = entryOf(index, ref.subagentId);
+    const projection = subagent && revisionOf(subagent, ref.subagentRevision)?.projection;
+    if (projection?.kind === 'subagent') for (const nested of projection.blocks) raiseFloor(nested.blockId, nested.blockRevision);
+  }
+  for (const [assetId, revision] of Object.entries(composition.floors)) raiseFloor(assetId, revision);
+
+  /** The first bundle a set of references would pull past this consumer's floors. */
+  const bundleCrossedBy = (record: AssetRevisionRecord): BundledBy | null => {
+    if (record.projection.kind !== 'subagent') return null;
+    for (const ref of record.projection.blocks) {
+      const target = entryOf(index, ref.blockId);
+      const crossed = target && firstBundleAbove(target.revisions, consumerFloors.get(ref.blockId) ?? 0, ref.blockRevision);
+      if (crossed) return crossed;
+    }
+    return null;
+  };
+
   /** Applies the two tracks to something followed: its floor, what it can take, and what this plan resolves. */
   const resolveFollowed = (entry: CatalogEntry, referenced: number | null): {
     record: AssetRevisionRecord | null;
@@ -382,12 +413,14 @@ function planResolved(
     const explicit = hasOwn(composition.floors, entry.id) ? composition.floors[entry.id] : 0;
     const floor = Math.max(referenced ?? 0, explicit);
     const history = entry.revisions;
-    const takeable = takeableRevision(history, floor);
+    const { takeable, heldBy } = entry.kind === 'subagent'
+      ? takeableThroughRefs(history, floor, bundleCrossedBy)
+      : { takeable: takeableRevision(history, floor), heldBy: null };
 
     // Apply can't jump this instance's own template: that arrives only by accepting it.
     if (templateRef && explicit > (referenced ?? 0)) {
       const crossed = history.filter((record) => record.revision > (referenced ?? 0) && record.revision <= explicit)
-        .some((record) => record.bundledBy?.templateId === templateRef.templateId && record.bundledBy.templateRevision > templateRef.acceptedRevision);
+        .some((record) => isOwnUnacceptedBundle(record.bundledBy));
       if (crossed) block('floor_bypasses_template', [entry.id]);
     }
 
@@ -404,13 +437,34 @@ function planResolved(
     }
     const record = revisionOf(entry, revision);
     if (!record) block('revision_unavailable', [entry.id]);
-    return { record, floor, takeable, update: record ? contentUpdate(entry, record.revision, floor) : null };
+    return { record, floor, takeable, update: record ? contentUpdate(entry, record.revision, floor, heldBy) : null };
   };
 
-  const contentUpdate = (entry: CatalogEntry, revision: number, floor: number): PlannedContentUpdate | null => {
+  const isOwnUnacceptedBundle = (bundle: BundledBy | undefined): boolean => (
+    !!bundle && !!templateRef && bundle.templateId === templateRef.templateId && bundle.templateRevision > templateRef.acceptedRevision
+  );
+
+  /** Something this agent owns, or added by id: its latest, or under a hold, exactly what's held. */
+  const resolveLatest = (entry: CatalogEntry): AssetRevisionRecord | null => {
+    if (adoption.content.mode === 'hold') {
+      const held = heldRevision(entry.id);
+      if (held === undefined) {
+        block('hold_incomplete', [entry.id]);
+        return null;
+      }
+      const record = revisionOf(entry, held);
+      if (!record) block('revision_unavailable', [entry.id]);
+      return record;
+    }
+    const record = headOf(entry);
+    if (!record) block('revision_unavailable', [entry.id]);
+    return record;
+  };
+
+  const contentUpdate = (entry: CatalogEntry, revision: number, floor: number, crossed: BundledBy | null = null): PlannedContentUpdate | null => {
     if (entry.headRevision <= revision) return null;
-    const heldBy = firstBundleAbove(entry.revisions, floor);
-    const ownBundle = !!heldBy && heldBy.templateId === templateRef?.templateId && heldBy.templateRevision > templateRef.acceptedRevision;
+    const heldBy = crossed ?? firstBundleAbove(entry.revisions, floor);
+    const ownBundle = isOwnUnacceptedBundle(heldBy ?? undefined);
     const kept = hasOwn(composition.keepMarkers, entry.id) && composition.keepMarkers[entry.id] >= entry.headRevision;
     return {
       range: { from: floor, to: entry.headRevision },
@@ -420,6 +474,19 @@ function planResolved(
       kept,
     };
   };
+
+  // A floor or keep can't name a revision that doesn't exist yet: it would go quiet about, or skip to, whatever comes.
+  for (const map of [composition.floors, composition.keepMarkers]) {
+    for (const [assetId, revision] of Object.entries(map)) {
+      const entry = entryOf(index, assetId);
+      if (entry && revision > entry.headRevision) block('revision_unavailable', [assetId]);
+    }
+  }
+  // An approval names a revision that exists, with the content the person saw.
+  for (const [assetId, approval] of Object.entries(composition.authorityApprovals)) {
+    const record = entryOf(index, assetId)?.revisions.find((candidate) => candidate.revision === approval.revision);
+    if (record?.contentHash !== approval.contentHash) block('approval_unbound', [assetId]);
+  }
 
   // Instructions: the instance's own order. Every block goes to one destination, so nothing here can collide.
   const presentKeys = new Set(composition.entries.map(entryKeyOf));
@@ -468,8 +535,7 @@ function planResolved(
       contentState = followed.update;
     } else {
       // A fork or local block is this agent's own, at its latest. Nothing changes it from outside.
-      record = headOf(entry);
-      if (!record) block('revision_unavailable', [blockId]);
+      record = resolveLatest(entry);
       if (entry.owner.kind === 'library') block('owner_mismatch', [blockId]);
       if (item.source.kind === 'fork') {
         const { forkedFrom } = item.source;
@@ -502,12 +568,6 @@ function planResolved(
       ...(origin && { origin }),
       update: contentState,
     });
-  }
-
-  // Name the assets a bundle brought that this consumer doesn't have, for the range diff.
-  const heldAssets = new Set(plannedBlocks.map((planned) => planned.assetId));
-  for (const planned of plannedBlocks) {
-    if (planned.update?.heldBy) planned.update.missingCompanions = companionsOf(index, planned.update.heldBy, planned.assetId, heldAssets);
   }
 
   const contents = new Map<string, string>();
@@ -568,18 +628,8 @@ function planResolved(
         continue;
       }
       const entry = usable(assetId, [kind]);
-      if (!entry) continue;
-      let record = headOf(entry);
-      const held = heldRevision(assetId);
-      if (adoption.content.mode === 'hold') {
-        if (held === undefined) {
-          block('hold_incomplete', [assetId]);
-          continue;
-        }
-        record = revisionOf(entry, held);
-        if (!record) block('revision_unavailable', [assetId]);
-      }
-      if (record) contribute(entry, record, via);
+      const record = entry && resolveLatest(entry);
+      if (entry && record) contribute(entry, record, via);
     }
   }
 
@@ -595,7 +645,7 @@ function planResolved(
       continue;
     }
     const entry = usable(assetId, ['skill', 'mcp']);
-    const record = entry && headOf(entry);
+    const record = entry && resolveLatest(entry);
     if (entry && record) contribute(entry, record, { via: 'addition' });
   }
 
@@ -622,13 +672,8 @@ function planResolved(
   const plannedSubagents: PlannedSubagent[] = [];
   const pinnedLatest = (assetIds: readonly string[], kind: AddableAssetKind): Array<{ assetId: string; revision: number; contentHash: string }> => assetIds.flatMap((assetId) => {
     const entry = usable(assetId, [kind]);
-    const record = entry && headOf(entry);
-    if (!entry) return [];
-    if (!record) {
-      block('revision_unavailable', [assetId]);
-      return [];
-    }
-    return [{ assetId, revision: record.revision, contentHash: record.contentHash }];
+    const record = entry && resolveLatest(entry);
+    return record ? [{ assetId, revision: record.revision, contentHash: record.contentHash }] : [];
   });
 
   for (const item of composition.subagents) {
@@ -658,8 +703,7 @@ function planResolved(
       takeable = followed.takeable;
       contentState = followed.update;
     } else {
-      record = headOf(entry);
-      if (!record) block('revision_unavailable', [subagentId]);
+      record = resolveLatest(entry);
       if (entry.owner.kind === 'library') block('owner_mismatch', [subagentId]);
       if (item.source.kind === 'fork') {
         const { forkedFrom } = item.source;
@@ -670,18 +714,27 @@ function planResolved(
     if (!record || record.projection.kind !== 'subagent') continue;
     const projection = record.projection;
 
-    if (projection.authorityFields.length > 0 && !isApproved(composition, entry.id, record.revision)) {
-      block('subagent_authority_fields', [entry.id], { fields: projection.authorityFields });
+    if (projection.reviewFields.length > 0 && !isApproved(composition, entry.id, record)) {
+      block('subagent_review_fields', [entry.id], { fields: projection.reviewFields.map((field) => field.path) });
+    }
+
+    // A revision this agent took by name, or its own fork, still can't bring its own template's bundle in early.
+    for (const ref of projection.blocks) {
+      const target = entryOf(index, ref.blockId);
+      const crossed = target?.revisions.some((candidate) => (
+        candidate.revision > (consumerFloors.get(ref.blockId) ?? 0) && candidate.revision <= ref.blockRevision && isOwnUnacceptedBundle(candidate.bundledBy)
+      ));
+      if (crossed) block('floor_bypasses_template', [ref.blockId], { entries: [key] });
     }
 
     const blocks = projection.blocks.flatMap((blockRef) => {
       const blockEntry = usable(blockRef.blockId, ['block']);
       if (!blockEntry) return [];
       if (item.source.kind !== 'follow' && blockEntry.owner.kind !== 'library') {
-        const own = headOf(blockEntry);
+        const own = resolveLatest(blockEntry);
         return own ? [{ entryId: blockRef.entryId, assetId: blockEntry.id, revision: own.revision, contentHash: own.contentHash, update: null }] : [];
       }
-      const followed = resolveFollowed(blockEntry, blockRef.blockRevision);
+      const followed = resolveFollowed(blockEntry, Math.max(blockRef.blockRevision, consumerFloors.get(blockRef.blockId) ?? 0));
       if (!followed.record) return [];
       return [{ entryId: blockRef.entryId, assetId: blockEntry.id, revision: followed.record.revision, contentHash: followed.record.contentHash, update: followed.update }];
     });
@@ -711,11 +764,20 @@ function planResolved(
       skills: pinnedLatest(projection.skills, 'skill'),
       mcps: pinnedLatest(projection.mcps, 'mcp'),
       providers: projection.providers,
-      authorityFields: projection.authorityFields,
+      reviewFields: projection.reviewFields,
       toolFields: projection.toolFields,
       ...(origin && { origin }),
       update: contentState,
     });
+  }
+
+  // Name the assets a bundle brought that this consumer doesn't have, for the range diff.
+  const present = new Set([
+    ...plannedBlocks.map((item) => item.assetId),
+    ...plannedSubagents.flatMap((item) => [item.assetId, ...item.blocks.map((nested) => nested.assetId)]),
+  ]);
+  for (const item of [...plannedBlocks, ...plannedSubagents, ...plannedSubagents.flatMap((subagent) => subagent.blocks)]) {
+    if (item.update?.heldBy) item.update.missingCompanions = companionsOf(index, item.update.heldBy, item.assetId, present);
   }
 
   // Destinations: two owners on one key block, naming both. Nothing picks a winner. Blocks aren't here: they share one by design.
@@ -968,12 +1030,16 @@ function relationsOf(index: CatalogIndex, composition: AgentComposition, assetId
   }
   for (const entry of composition.subagents) {
     if (entry.source.subagentId === assetId) relations.add(entry.source.kind === 'follow' ? 'direct' : 'own-entry');
+    // Every revision it could resolve to: what the accepted revision refers to, up to its latest.
     const subagentId = subagentIdOf(entry, accepted);
     const subagent = subagentId ? entryOf(index, subagentId) : null;
-    const projection = subagent && headOf(subagent)?.projection;
-    if (projection?.kind === 'subagent' && (projection.blocks.some((ref) => ref.blockId === assetId) || projection.skills.includes(assetId) || projection.mcps.includes(assetId))) {
-      relations.add('via-subagent');
-    }
+    const from = accepted?.subagents.find((ref) => ref.entryId === entry.baseEntryId)?.subagentRevision ?? subagent?.headRevision ?? 0;
+    const refersTo = subagent?.revisions.filter((record) => record.revision >= from).some((record) => (
+      record.projection.kind === 'subagent' && (
+        record.projection.blocks.some((ref) => ref.blockId === assetId) || record.projection.skills.includes(assetId) || record.projection.mcps.includes(assetId)
+      )
+    ));
+    if (refersTo) relations.add('via-subagent');
   }
 
   if (accepted?.skills.includes(assetId) || accepted?.mcps.includes(assetId)) {

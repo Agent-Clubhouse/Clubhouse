@@ -61,9 +61,30 @@ export function takeableRevision(history: readonly HistoryRevision[], floor: num
   return takeable;
 }
 
-/** The first bundled revision above a floor: what's in the way, if anything is. */
-export function firstBundleAbove(history: readonly HistoryRevision[], floor: number): BundledBy | null {
-  const above = history.filter((record) => record.revision > floor).sort((a, b) => a.revision - b.revision);
+/**
+ * {@link takeableRevision} for something that refers to other assets, such as a
+ * subagent definition and its blocks. An independent revision can't pull a
+ * bundled revision past this consumer's floor, so it stops there too.
+ */
+export function takeableThroughRefs<T extends HistoryRevision>(
+  history: readonly T[],
+  floor: number,
+  crossedBy: (record: T) => BundledBy | null,
+): { takeable: number; heldBy: BundledBy | null } {
+  let takeable = floor;
+  for (const record of [...history].sort((a, b) => a.revision - b.revision)) {
+    if (record.revision <= floor) continue;
+    if (record.bundledBy) return { takeable, heldBy: record.bundledBy };
+    const crossed = crossedBy(record);
+    if (crossed) return { takeable, heldBy: crossed };
+    takeable = record.revision;
+  }
+  return { takeable, heldBy: null };
+}
+
+/** The first bundled revision above a floor, up to `upTo`: what's in the way, if anything is. */
+export function firstBundleAbove(history: readonly HistoryRevision[], floor: number, upTo = Number.POSITIVE_INFINITY): BundledBy | null {
+  const above = history.filter((record) => record.revision > floor && record.revision <= upTo).sort((a, b) => a.revision - b.revision);
   return above.find((record) => record.bundledBy)?.bundledBy ?? null;
 }
 
@@ -331,6 +352,18 @@ export function checkStructure(input: StructureInput): StructureCheck {
     if (clash) reasons.push({ code: 'identity_conflict', entries: [baseKey(entry.entryId)] });
   }
 
+  // So does an entry the base points at another block: it's that block's name and source from now on.
+  const acceptedBlocks = new Map(input.accepted.map((entry) => [entry.entryId, entry.blockId]));
+  for (const entry of input.target) {
+    const was = acceptedBlocks.get(entry.entryId);
+    if (was === undefined || was === entry.blockId || analysis.excluded.has(entry.entryId)) continue;
+    const key = baseKey(entry.entryId);
+    if (staying.find((other) => other.key === key)?.forked) continue;
+    const name = collisionKey(entry.name);
+    const clash = staying.some((other) => other.key !== key && (other.sources.includes(entry.blockId) || collisionKey(other.name) === name));
+    if (clash) reasons.push({ code: 'identity_conflict', entries: [key] });
+  }
+
   const unique = new Map(reasons.map((reason) => [`${reason.code}|${reason.entries.join(',')}`, reason]));
   return {
     clean: unique.size === 0,
@@ -381,7 +414,7 @@ export function checkSubagentSet(input: SubagentSetInput): SubagentSetCheck {
     if (foreign.has(name)) reasons.push({ code: 'foreign_name_collision', entries: [entry.key] });
   }
 
-  for (const entryId of input.authorityEntries ?? []) reasons.push({ code: 'authority_fields', entries: [baseKey(entryId)] });
+  for (const entryId of input.reviewEntries ?? []) reasons.push({ code: 'review_fields', entries: [baseKey(entryId)] });
 
   const unique = new Map(reasons.map((reason) => [`${reason.code}|${reason.entries.join(',')}`, reason]));
   return {
@@ -469,6 +502,7 @@ export function applyStructureChoice(
   if (inOrder.size !== order.length) invalid('order');
   const excludeBase = new Set(choice.excludeBaseEntries ?? []);
   const keepRemoved = new Set(choice.keepRemoved ?? []);
+  const dropRemoved = new Set(choice.dropRemoved ?? []);
   const dropLocal = new Set(choice.dropLocal ?? []);
   const targetIds = new Set(target.entryIds);
   const excludedBefore = new Set(composition.excludedEntryIds);
@@ -485,6 +519,7 @@ export function applyStructureChoice(
     if (entry.baseEntryId) {
       if (targetIds.has(entry.baseEntryId)) continue;
       if (inOrder.has(key) !== keepRemoved.has(key)) invalid(`entry:${key}`);
+      if (entry.source.kind === 'fork' && keepRemoved.has(key) === dropRemoved.has(key)) invalid(`entry:${key}`);
     } else if (inOrder.has(key) === dropLocal.has(key)) {
       invalid(`entry:${key}`);
     }
@@ -511,6 +546,7 @@ export function applyStructureChoice(
   const subagentTargets = new Set(target.subagentIds);
   const excludeSubagents = new Set(choiceSubagents.excludeBaseEntries ?? []);
   const keepSubagents = new Set(choiceSubagents.keepRemoved ?? []);
+  const dropRemovedSubagents = new Set(choiceSubagents.dropRemoved ?? []);
   const dropSubagents = new Set(choiceSubagents.dropLocal ?? []);
   const currentSubagents = new Map(composition.subagents.map((entry) => [entryKeyOf(entry), entry]));
   for (const key of excludeSubagents) {
@@ -522,6 +558,11 @@ export function applyStructureChoice(
   }
   for (const key of dropSubagents) {
     if (!key.startsWith('local:') || !currentSubagents.has(key)) invalid(`subagents.dropLocal:${key}`);
+  }
+  // A fork the base removed is someone's work: keep it or drop it by name, as for blocks.
+  for (const [key, entry] of currentSubagents) {
+    if (!entry.baseEntryId || subagentTargets.has(entry.baseEntryId) || entry.source.kind !== 'fork') continue;
+    if (keepSubagents.has(key) === dropRemovedSubagents.has(key)) invalid(`subagents.entry:${key}`);
   }
   if (issues.length > 0) return { ok: false, issues };
 
@@ -563,6 +604,7 @@ export function applyStructureChoice(
       subagents: sortSubagents(subagents),
       excludedSubagentEntryIds: [...excludedSubagents].sort(compareText),
       floors,
+      authorityApprovals: { ...composition.authorityApprovals, ...(choice.authorityApprovals ?? {}) },
     },
   };
 }
@@ -603,9 +645,13 @@ export function switchTemplate(
   for (const key of subagentKeys) if (!knownSubagents.has(key)) issues.push({ code: 'invalid_choice', path: `subagents:${key}` });
   for (const id of selection.additions ?? []) if (!composition.additions.includes(id)) issues.push({ code: 'invalid_choice', path: `additions:${id}` });
   for (const id of selection.removals ?? []) if (!composition.removals.includes(id)) issues.push({ code: 'invalid_choice', path: `removals:${id}` });
+  for (const id of selection.excludeEntries ?? []) if (!target.entryIds.includes(id)) issues.push({ code: 'invalid_choice', path: `excludeEntries:${id}` });
+  for (const id of selection.excludeSubagents ?? []) if (!target.subagentIds.includes(id)) issues.push({ code: 'invalid_choice', path: `excludeSubagents:${id}` });
   if (issues.length > 0) return { ok: false, issues };
 
   const next = instanceFromTemplate(target);
+  const excludeEntries = new Set(selection.excludeEntries ?? []);
+  const excludeSubagents = new Set(selection.excludeSubagents ?? []);
   const floors: Record<string, number> = {};
   const carriedEntries = composition.entries.filter((entry) => entryKeys.has(entryKeyOf(entry))).map((entry): InstanceEntry => {
     if (!entry.baseEntryId) {
@@ -634,11 +680,14 @@ export function switchTemplate(
     ok: true,
     composition: {
       ...next,
-      entries: [...next.entries, ...carriedEntries],
-      subagents: sortSubagents([...next.subagents, ...carriedSubagents]),
+      entries: [...next.entries.filter((entry) => !excludeEntries.has(entry.baseEntryId as string)), ...carriedEntries],
+      excludedEntryIds: [...excludeEntries].sort(compareText),
+      subagents: sortSubagents([...next.subagents.filter((entry) => !excludeSubagents.has(entry.baseEntryId as string)), ...carriedSubagents]),
+      excludedSubagentEntryIds: [...excludeSubagents].sort(compareText),
       additions: composition.additions.filter((id) => selection.additions?.includes(id)),
-      removals: composition.removals.filter((id) => selection.removals?.includes(id)),
+      removals: [...new Set([...composition.removals.filter((id) => selection.removals?.includes(id)), ...(selection.removeBaseAssets ?? [])])].sort(compareText),
       floors,
+      authorityApprovals: selection.authorityApprovals ?? {},
     },
   };
 }

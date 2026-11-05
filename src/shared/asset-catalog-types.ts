@@ -164,8 +164,7 @@ export type AssetProjection =
     mcps: string[];
     /** Provider ids it has a section for. */
     providers: string[];
-    /** Where a field that can raise authority sits, such as `claude.permissionMode`. Never its value. */
-    authorityFields: string[];
+    reviewFields: SubagentReviewField[];
     toolFields: SubagentToolField[];
   }
   | {
@@ -194,6 +193,17 @@ export interface SubagentToolField {
   clubhouseMcp: string[];
   /** It held something that isn't a tool name, which is stored and not listed here. */
   hasUnlisted: boolean;
+}
+
+/**
+ * A provider-section field a person has to look at before it's delivered:
+ * `authority` can raise what the definition may do, and `unknown` isn't on the
+ * short list of fields believed harmless. Blocks either way, until resolved.
+ */
+export interface SubagentReviewField {
+  /** Where it sits, such as `claude.permissionMode`. Never its value. */
+  path: string;
+  reason: 'authority' | 'unknown';
 }
 
 /** Set once, at publication. Republishing a reference to an existing revision adds no tag. */
@@ -225,6 +235,12 @@ export interface CatalogEntry {
 }
 
 // ── Instances ────────────────────────────────────────────────────────────
+
+/** Binds to a revision that exists and to its content, so it can't be given ahead of time or outlive an edit. */
+export interface AuthorityApproval {
+  revision: number;
+  contentHash: string;
+}
 
 export type InstanceEntrySource =
   /** A base entry takes its block from the template. A local entry following a shared block names it. */
@@ -274,8 +290,8 @@ export interface CompositionInput {
   floors: Record<string, number>;
   /** Keep, by asset id: quiet about anything up to this revision. Changes nothing else. */
   keepMarkers: Record<string, number>;
-  /** A person's resolution of authority fields, by subagent asset id, for exactly that revision. */
-  authorityApprovals: Record<string, number>;
+  /** A person's resolution of a definition's review fields, by subagent asset id. */
+  authorityApprovals: Record<string, AuthorityApproval>;
 }
 
 export interface AgentComposition extends CompositionInput {
@@ -381,11 +397,11 @@ export interface SubagentSetInput {
   excluded: readonly string[];
   /** Names held by definitions outside the catalog. */
   foreignNames?: readonly string[];
-  /** New or changed entries with authority fields no person has resolved. */
-  authorityEntries?: readonly string[];
+  /** New or changed entries with review fields no person has resolved. */
+  reviewEntries?: readonly string[];
 }
 
-export type SubagentSetReasonCode = 'name_collision' | 'foreign_name_collision' | 'removed_forked' | 'renamed_onto_existing' | 'authority_fields';
+export type SubagentSetReasonCode = 'name_collision' | 'foreign_name_collision' | 'removed_forked' | 'renamed_onto_existing' | 'review_fields';
 
 export interface SubagentSetReason {
   code: SubagentSetReasonCode;
@@ -411,13 +427,18 @@ export interface StructureChoice {
   excludeBaseEntries?: string[];
   /** Entries the new base removed that stay. A followed one keeps following its block as a direct consumer. */
   keepRemoved?: string[];
+  /** Forks the new base removed that go. A fork has to be kept or dropped by name, never by being left out. */
+  dropRemoved?: string[];
   /** Local entries to drop. */
   dropLocal?: string[];
   subagents?: {
     excludeBaseEntries?: string[];
     keepRemoved?: string[];
+    dropRemoved?: string[];
     dropLocal?: string[];
   };
+  /** A person's resolution of what the new revision's subagents bring. */
+  authorityApprovals?: Record<string, AuthorityApproval>;
 }
 
 /** Accepting a revision binds what the person was shown. If any of these moved, it's stale. */
@@ -427,12 +448,22 @@ export interface StructureBinding {
   instanceFingerprint: string;
 }
 
-/** Template switch is a replace: only what's selected carries over, and it carries over as local. */
+/**
+ * Template switch is a replace: only what's selected carries over, and it carries
+ * over as local. A person can also say now what they'd otherwise be blocked on.
+ */
 export interface TemplateSwitchSelection {
   entries?: string[];
   subagents?: string[];
   additions?: string[];
   removals?: string[];
+  /** Entries of the new template to leave out, by id. */
+  excludeEntries?: string[];
+  /** Native subagents of the new template to leave out, by id. */
+  excludeSubagents?: string[];
+  /** Skills and MCP definitions of the new template to leave out, by asset id. */
+  removeBaseAssets?: string[];
+  authorityApprovals?: Record<string, AuthorityApproval>;
 }
 
 // ── Planner ──────────────────────────────────────────────────────────────
@@ -440,7 +471,7 @@ export interface TemplateSwitchSelection {
 export type ContentAdoption =
   /** The highest revision each consumer can take. */
   | { mode: 'takeable' }
-  /** Exactly these revisions, such as a last run's. Refused if below a floor or past a bundle. */
+  /** Exactly these revisions of everything planned, such as a last run's. Refused if one's left out, below a floor or past a bundle. */
   | { mode: 'hold'; revisions: Readonly<Record<string, number>> };
 
 export type StructureAdoption =
@@ -564,7 +595,7 @@ export interface PlannedSubagent {
   skills: Array<{ assetId: string; revision: number; contentHash: string }>;
   mcps: Array<{ assetId: string; revision: number; contentHash: string }>;
   providers: string[];
-  authorityFields: string[];
+  reviewFields: SubagentReviewField[];
   toolFields: SubagentToolField[];
   origin?: OriginStatus;
   update: PlannedContentUpdate | null;
@@ -593,7 +624,8 @@ export type PlanIssueCode =
   | 'missing_floor'
   | 'floor_bypasses_template'
   | 'instructions_too_large'
-  | 'subagent_authority_fields';
+  | 'subagent_review_fields'
+  | 'approval_unbound';
 
 export type PlanNoticeCode =
   | 'inert_removal'
@@ -879,6 +911,7 @@ export type AssetCatalogErrorCode =
   | 'run_exists'
   | 'run_missing'
   | 'plan_blocked'
+  | 'builtin_read_only'
   | 'adoption_policy_required'
   | 'agent_not_permitted';
 

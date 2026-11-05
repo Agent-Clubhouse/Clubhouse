@@ -70,7 +70,7 @@ function tmpl(entries: BlockRef[], more: { subagents?: SubagentRef[]; skills?: s
 }
 
 function subagent(agentName: string, more: Partial<Extract<AssetProjection, { kind: 'subagent' }>> = {}): AssetProjection {
-  return { kind: 'subagent', agentName, blocks: [], skills: [], mcps: [], providers: ['claude'], authorityFields: [], toolFields: [], ...more };
+  return { kind: 'subagent', agentName, blocks: [], skills: [], mcps: [], providers: ['claude'], reviewFields: [], toolFields: [], ...more };
 }
 
 function indexOf(assets: CatalogEntry[], compositions: AgentComposition[] = []): CatalogIndex {
@@ -567,6 +567,49 @@ describe('content adoption', () => {
   });
 });
 
+describe('a hold is honoured for everything planned', () => {
+  const sub = () => entry('s', [subagent('s', { blocks: [ref('Role', 'role')], skills: ['review'], mcps: ['git'] })]);
+  const all = () => indexOf([
+    block('a'), block('role'), skill('review', 'code-review'), mcp('git'), skill('notes', 'release-notes'),
+    block('mine', [BLOCK, BLOCK], owned()),
+    sub(),
+    entry('t', [tmpl([ref('A', 'a')], { subagents: [subRef('S', 's')] })]),
+  ]);
+  const composition = (index: CatalogIndex) => instanceOf(index, 't', 1, { additions: ['notes'], entries: [follow('A'), local('Mine', 'mine')] });
+  const complete = { a: 1, role: 1, review: 1, git: 1, notes: 1, mine: 1, s: 1 };
+
+  it('resolves additions, subagent refs and own blocks exactly as held', () => {
+    const index = all();
+    index.assets.notes = { ...entry('notes', [{ kind: 'skill', skillName: 'release-notes', filePaths: [] }, { kind: 'skill', skillName: 'release-notes', filePaths: [] }]) };
+    index.assets.review = { ...entry('review', [{ kind: 'skill', skillName: 'code-review', filePaths: [] }, { kind: 'skill', skillName: 'code-review', filePaths: [] }]) };
+    const result = plan(index, composition(index), held(complete));
+    expect(result.blockers).toEqual([]);
+    expect(result.skills[0]).toMatchObject({ assetId: 'notes', revision: 1 });
+    expect(result.subagents[0].skills).toEqual([expect.objectContaining({ assetId: 'review', revision: 1 })]);
+    expect(result.instructions?.blocks[1]).toMatchObject({ assetId: 'mine', revision: 1 });
+  });
+
+  it.each(Object.keys(complete))('leaving out %s blocks', (assetId) => {
+    const index = all();
+    const { [assetId as keyof typeof complete]: _left, ...rest } = complete;
+    expect(blockerCodes(plan(index, composition(index), held(rest)))).toContain('hold_incomplete');
+  });
+
+  it('a held revision that isn\'t there blocks', () => {
+    const index = all();
+    expect(blockerCodes(plan(index, composition(index), held({ ...complete, notes: 9 })))).toContain('revision_unavailable');
+  });
+});
+
+describe('floors and keep markers name revisions that exist', () => {
+  it('a floor or keep past the head blocks: it would skip to, or go quiet about, what comes later', () => {
+    const index = library();
+    expect(blockerCodes(plan(index, instanceOf(index, 'base', 1, { floors: { job: 9 } })))).toContain('revision_unavailable');
+    expect(blockerCodes(plan(index, instanceOf(index, 'base', 1, { keepMarkers: { job: 9 } })))).toEqual(['revision_unavailable']);
+    expect(plan(index, instanceOf(index, 'base', 1, { keepMarkers: { job: 1 } })).blockers).toEqual([]);
+  });
+});
+
 describe('structure adoption', () => {
   const twoRevisions = () => indexOf([
     block('a'), block('b'), block('new'), block('rules', [BLOCK], owned()),
@@ -785,7 +828,7 @@ describe('native subagents', () => {
       revision: 1,
       destination: { kind: 'native-subagent', key: 'subagents/test-runner' },
       providers: ['claude'],
-      authorityFields: [],
+      reviewFields: [],
     });
     expect(result.subagents[0].blocks.map((item) => [item.entryId, item.assetId, item.revision])).toEqual([['Role', 'role', 1]]);
     expect(result.subagents[0].skills.map((item) => item.assetId)).toEqual(['review']);
@@ -893,6 +936,88 @@ describe('native subagents', () => {
     expect(result.blockers[0]).toMatchObject({ code: 'foreign_destination_collision', foreignOwner: 'native' });
   });
 
+  describe('the chain rule through a definition\'s own references', () => {
+    // On T r1 with S r1 using Job r1. T r2 bundles Job r2 and Safety, then an independent S r2 points at Job r2.
+    const crossing = (more: Revision[] = []) => indexOf([
+      block('job', [BLOCK, tagged('t', 2)]),
+      block('safety', [tagged('t', 2)]),
+      entry('s', [subagent('s', { blocks: [ref('Role', 'job', 1)] }), subagent('s', { blocks: [ref('Role', 'job', 2)] }), ...more]),
+      entry('t', [
+        tmpl([ref('Job', 'job', 1)], { subagents: [subRef('S', 's', 1)] }),
+        tmpl([ref('Safety', 'safety', 1), ref('Job', 'job', 2)], { subagents: [subRef('S', 's', 1)] }),
+      ]),
+    ]);
+
+    it('an independent revision can\'t pull a tagged block past the floor', () => {
+      const index = crossing();
+      const result = plan(index, instanceOf(index, 't'));
+      expect(result.blockers).toEqual([]);
+      expect(result.subagents[0]).toMatchObject({ revision: 1, floor: 1, takeableRevision: 1, headRevision: 2 });
+      expect(result.subagents[0].blocks[0]).toMatchObject({ assetId: 'job', revision: 1 });
+      expect(blockRevisions(result)).toEqual([['base:Job', 'job', 1]]);
+    });
+
+    it('says what it\'s held with, and what accepting would bring', () => {
+      const index = crossing();
+      expect(plan(index, instanceOf(index, 't')).subagents[0].update).toEqual({
+        range: { from: 1, to: 2 },
+        heldBy: { templateId: 't', templateRevision: 2 },
+        resolution: 'accept-template',
+        missingCompanions: ['safety'],
+        kept: false,
+      });
+    });
+
+    it('a later independent revision built on that one waits too', () => {
+      const index = crossing([subagent('s', { blocks: [ref('Role', 'job', 1)] })]);
+      expect(plan(index, instanceOf(index, 't')).subagents[0]).toMatchObject({ revision: 1, takeableRevision: 1, headRevision: 3 });
+    });
+
+    it('accepting T r2 moves the floor past the tag, and it flows', () => {
+      const index = crossing();
+      const result = plan(index, instanceOf(index, 't', 2));
+      expect(result.blockers).toEqual([]);
+      expect(result.subagents[0]).toMatchObject({ revision: 2, floor: 1 });
+      expect(result.subagents[0].blocks[0]).toMatchObject({ assetId: 'job', revision: 2 });
+    });
+
+    it('a hold can\'t reach past it, and an Apply can\'t jump this instance\'s own template', () => {
+      const index = crossing();
+      expect(blockerCodes(plan(index, instanceOf(index, 't'), held({ job: 1, s: 2 })))).toContain('hold_past_bundle');
+      expect(blockerCodes(plan(index, instanceOf(index, 't', 1, { floors: { s: 2 } })))).toContain('floor_bypasses_template');
+    });
+
+    it('a definition\'s reference to a tagged block it\'s never had is held too', () => {
+      const index = indexOf([
+        block('a'),
+        block('other', [tagged('u', 1)]),
+        entry('s', [subagent('s', { blocks: [ref('A', 'a', 1)] }), subagent('s', { blocks: [ref('Other', 'other', 1)] })]),
+        entry('t', [tmpl([ref('A', 'a')], { subagents: [subRef('S', 's', 1)] })]),
+      ]);
+      expect(plan(index, instanceOf(index, 't')).subagents[0]).toMatchObject({ revision: 1, update: { heldBy: { templateId: 'u', templateRevision: 1 }, resolution: 'explicit' } });
+    });
+
+    it('another template\'s consumer can Apply it, and an untagged reference flows as ever', () => {
+      const index = indexOf([
+        block('a'),
+        block('job', [BLOCK, tagged('u', 2)]),
+        entry('s', [subagent('s', { blocks: [ref('Role', 'job', 1)] }), subagent('s', { blocks: [ref('Role', 'job', 2)] })]),
+        entry('t', [tmpl([ref('A', 'a')], { subagents: [subRef('S', 's', 1)] })]),
+      ]);
+      const applied = plan(index, instanceOf(index, 't', 1, { floors: { s: 2 } }));
+      expect(applied.blockers).toEqual([]);
+      expect(applied.subagents[0]).toMatchObject({ revision: 2 });
+
+      const plain = indexOf([
+        block('a'),
+        block('job', [BLOCK, BLOCK]),
+        entry('s', [subagent('s', { blocks: [ref('Role', 'job', 1)] }), subagent('s', { blocks: [ref('Role', 'job', 2)] })]),
+        entry('t', [tmpl([ref('A', 'a')], { subagents: [subRef('S', 's', 1)] })]),
+      ]);
+      expect(plan(plain, instanceOf(plain, 't')).subagents[0]).toMatchObject({ revision: 2, update: null });
+    });
+  });
+
   describe('tool lists', () => {
     const toolField = {
       path: 'claude.tools',
@@ -931,19 +1056,40 @@ describe('native subagents', () => {
   });
 
   describe('authority', () => {
-    const risky = () => withSubagent(definitions({ authorityFields: ['claude.hooks', 'claude.permissionMode'] }));
+    const review = [{ path: 'claude.hooks', reason: 'authority' as const }, { path: 'claude.permissionMode', reason: 'authority' as const }];
+    const risky = () => withSubagent(definitions({ reviewFields: review }));
+    const approvalOf = (index: CatalogIndex, revision = 1) => ({ revision, contentHash: index.assets.tester.revisions[revision - 1].contentHash });
 
     it('a field that can raise authority blocks for a person, naming where it sits and never its value', () => {
       const index = risky();
       const result = plan(index, instanceOf(index, 't'));
-      expect(result.blockers).toEqual([{ code: 'subagent_authority_fields', assetIds: ['tester'], fields: ['claude.hooks', 'claude.permissionMode'] }]);
+      expect(result.blockers).toEqual([{ code: 'subagent_review_fields', assetIds: ['tester'], fields: ['claude.hooks', 'claude.permissionMode'] }]);
       expect(result.activation).toBeNull();
     });
 
     it('a person\'s resolution counts for exactly that revision', () => {
       const index = risky();
-      expect(plan(index, instanceOf(index, 't', 1, { authorityApprovals: { tester: 1 } })).blockers).toEqual([]);
-      expect(blockerCodes(plan(index, instanceOf(index, 't', 1, { authorityApprovals: { tester: 2 } })))).toEqual(['subagent_authority_fields']);
+      expect(plan(index, instanceOf(index, 't', 1, { authorityApprovals: { tester: approvalOf(index) } })).blockers).toEqual([]);
+    });
+
+    it('an approval can\'t be given ahead of time: a revision that doesn\'t exist yet binds to nothing', () => {
+      const index = risky();
+      const ahead = { revision: 2, contentHash: canonicalHash('anything') };
+      expect(blockerCodes(plan(index, instanceOf(index, 't', 1, { authorityApprovals: { tester: ahead } })))).toEqual(['approval_unbound', 'subagent_review_fields']);
+    });
+
+    it('an approval binds to content: the right number with another hash counts for nothing', () => {
+      const index = risky();
+      const wrong = { revision: 1, contentHash: canonicalHash('other content') };
+      expect(blockerCodes(plan(index, instanceOf(index, 't', 1, { authorityApprovals: { tester: wrong } })))).toEqual(['approval_unbound', 'subagent_review_fields']);
+    });
+
+    it('an approval of an earlier revision doesn\'t reach a later one', () => {
+      const index = risky();
+      index.assets.tester = entry('tester', [subagent('test-runner', { reviewFields: review }), subagent('test-runner-2', { reviewFields: review })]);
+      const earlier = approvalOf(index, 1);
+      expect(blockerCodes(plan(index, instanceOf(index, 't', 1, { authorityApprovals: { tester: earlier } })))).toEqual(['subagent_review_fields']);
+      expect(plan(index, instanceOf(index, 't', 1, { authorityApprovals: { tester: approvalOf(index, 2) } })).blockers).toEqual([]);
     });
 
     it('excluding the definition resolves it too', () => {
@@ -955,13 +1101,13 @@ describe('native subagents', () => {
       const index = indexOf([
         block('a'),
         entry('safe', [subagent('safe')]),
-        entry('danger', [subagent('danger', { authorityFields: ['claude.hooks'] })]),
+        entry('danger', [subagent('danger', { reviewFields: [{ path: 'claude.hooks', reason: 'authority' }] })]),
         entry('t', [tmpl([ref('A', 'a')], { subagents: [subRef('Safe', 'safe')] }), tmpl([ref('A', 'a')], { subagents: [subRef('Safe', 'safe'), subRef('Danger', 'danger')] })]),
       ]);
       const result = plan(index, instanceOf(index, 't'), LATEST);
       expect(result.blockers).toEqual([]);
       expect(result.structure).toMatchObject({ resolvedRevision: 1, update: { status: 'needs-choice' } });
-      expect(result.structure?.update.subagentReasons).toEqual([{ code: 'authority_fields', entries: ['base:Danger'] }]);
+      expect(result.structure?.update.subagentReasons).toEqual([{ code: 'review_fields', entries: ['base:Danger'] }]);
     });
   });
 });
@@ -1082,6 +1228,19 @@ describe('consumers', () => {
     expect(listConsumers(withAgent, 'role')).toMatchObject({ subagents: ['sub'], agents: [{ agentId: 'agent', relations: ['via-subagent'] }] });
     expect(listConsumers(withAgent, 'review').subagents).toEqual(['sub']);
     expect(listConsumers(withAgent, 'sub').templates).toEqual([{ templateId: 't', role: 'subagent' }]);
+  });
+
+  it('a subagent revision an instance accepted counts, though a later revision has moved on', () => {
+    const assets = [
+      block('job'), block('other'),
+      entry('s', [subagent('s', { blocks: [ref('Role', 'job')] }), subagent('s', { blocks: [ref('Role', 'other')] })]),
+      entry('t', [tmpl([ref('Other', 'other')], { subagents: [subRef('S', 's', 1)] })]),
+    ];
+    const start = indexOf(assets);
+    const consumers = listConsumers(indexOf(assets, [stored('agent', instanceOf(start, 't'))]), 'job');
+    expect(consumers.subagents).toEqual([]);
+    expect(consumers.agents).toEqual([{ agentId: 'agent', relations: ['via-subagent'], effective: true }]);
+    expect(hasHardReference(consumers)).toBe(true);
   });
 
   it('an exclusion alone is no reason to refuse deletion', () => {
