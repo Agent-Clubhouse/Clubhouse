@@ -24,6 +24,16 @@ An orchestrator agent is a different thing. It's an agent that starts and manage
 
 You cannot disable the last remaining agent provider.
 
+## Chat and the CLI view
+
+Agents open in chat by default, and the CLI view stays available for every provider.
+
+- **Runtime**, under each provider, chooses Chat or CLI for that provider's agents. One agent can override it with its own **Runtime** setting.
+- **Chat view** in the **Chat** section turns chat off for every agent. With it off, all agents use the CLI view, whatever a provider or agent has saved, and those saved choices apply again if you turn it back on.
+- **Rich chat content** in the **Chat** section shows images agents return, links, file chips with previews, and GitHub references with a hover card. Images from the web load only when you click them, and GitHub details load through the gh CLI only when you hover one.
+
+While **Rich chat content** is on, paired phones (Clubhouse Go) can read any file your user account can read on this computer, up to a size limit, without another prompt. Turn it off to stop that. It applies only when Annex is on and a phone is paired.
+
 ## Capability matrix
 
 | Capability | Claude Code | Copilot CLI | Codex CLI |

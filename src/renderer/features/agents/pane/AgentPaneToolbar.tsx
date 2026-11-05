@@ -202,7 +202,7 @@ export interface AgentPaneToolbarProps {
   /** Context fill and plan limits; omitted hides the meter. */
   usage?: PaneUsage | null;
   /** The runtime switch. Without `onChange` it only names the current runtime, beside Changes. */
-  runtime?: { value: RuntimeView; onChange?: (v: RuntimeView) => void; disabled?: boolean; tip?: ReactNode };
+  runtime?: { value: RuntimeView; onChange?: (v: RuntimeView) => void; disabled?: boolean };
   /** The Changes review button (#2032), main pane only. */
   review?: ReviewView;
   /** The Agent details toggle (#2032), before the runtime switch. */
@@ -242,10 +242,7 @@ export function AgentPaneToolbar({ agent, orchestrator, dot, activity, model, de
         {(switchShown || detailsToggle) && <span className="w-px h-4 bg-surface-0 mx-1" aria-hidden="true" />}
         {detailsToggle}
         {runtime && switchShown && (
-          <span className="relative">
-            <RuntimeSwitch value={runtime.value} onChange={runtime.onChange} disabled={runtime.disabled} compact={narrow} review={review} />
-            {runtime.tip}
-          </span>
+          <RuntimeSwitch value={runtime.value} onChange={runtime.onChange} disabled={runtime.disabled} compact={narrow} review={review} />
         )}
         {showMenu && <PaneMenu agent={agent} />}
       </span>

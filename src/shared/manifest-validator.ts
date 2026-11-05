@@ -319,7 +319,7 @@ export function validateManifest(raw: unknown): ValidationResult {
             if (!theme.terminal || typeof theme.terminal !== 'object') {
               errors.push(`contributes.themes[${i}].terminal must be an object`);
             }
-            // Optional fonts/gradients validation (experimental)
+            // Optional fonts/gradients validation
             if (theme.fonts !== undefined) {
               if (typeof theme.fonts !== 'object' || theme.fonts === null) {
                 errors.push(`contributes.themes[${i}].fonts must be an object`);

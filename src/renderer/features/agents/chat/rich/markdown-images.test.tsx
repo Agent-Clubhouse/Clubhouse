@@ -84,6 +84,7 @@ describe('renderChatMarkdown', () => {
 
 describe('Markdown images', () => {
   it('with rich chat content off, renders exactly the sanitized markdown', async () => {
+    flags = { richChatContent: false };
     const { container } = render(<Markdown text={TEXT} />);
     await waitFor(() => expect(window.clubhouse.app.getExperimentalSettings).toHaveBeenCalled());
     expect(container.firstElementChild!.innerHTML).toBe(renderMarkdownSafe(TEXT));
@@ -158,6 +159,7 @@ describe('Markdown local images (#2422)', () => {
   });
 
   it('with rich chat content off, asks main nothing', async () => {
+    flags = { richChatContent: false };
     const { container } = withAgent(<Markdown text="![a](./a.png)" />);
     await waitFor(() => expect(window.clubhouse.app.getExperimentalSettings).toHaveBeenCalled());
     expect(container.firstElementChild!.innerHTML).toBe(renderMarkdownSafe('![a](./a.png)'));

@@ -55,7 +55,7 @@ function PopoutAgentBody({ agent }: { agent: Agent }) {
   // events, PTY exit, broadcasts, and PTY data wake detection.
   const isRunning = agent.status === 'running' || agent.status === 'creating';
   const flag = useChatFlag();
-  const runtime = useAgentRuntimeInfo(agent, flag === true);
+  const runtime = useAgentRuntimeInfo(agent, flag !== null);
   // Only once it's known the agent isn't in chat, so the chat toolbar and this one never both show.
   const terminalToolbar = isRunning && flag !== null && runtime !== null && !runtime.chat;
 

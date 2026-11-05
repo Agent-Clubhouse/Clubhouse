@@ -10,6 +10,8 @@ const state = vi.hoisted(() => ({
   drivers: new Set<string>(['claude-code', 'github-copilot']),
   /** Mode resolveRuntimeMode gives when the agent has no override (the flag and provider settings). */
   providerMode: 'chat' as 'chat' | 'terminal',
+  /** The Chat flag. */
+  chatOn: true,
 }));
 
 vi.mock('./index', () => ({ isChatAgent: () => state.live }));
@@ -24,6 +26,7 @@ vi.mock('../agent-config', () => ({
   }),
 }));
 vi.mock('../chat-runtime-settings', () => ({
+  isChatEnabled: () => state.chatOn,
   resolveRuntimeMode: (_provider: string, override?: 'chat' | 'terminal') => ({ mode: override ?? state.providerMode }),
 }));
 
@@ -33,6 +36,20 @@ import { getDurableConfig } from '../agent-config';
 const waking = { projectPath: '/work/proj', starting: true };
 
 describe('getAgentRuntimeInfo (#2206)', () => {
+  it('offers no Chat switch with Chat off, even with a driver, and still reports a live chat', async () => {
+    state.chatOn = false;
+    state.providerMode = 'terminal';
+    try {
+      expect((await getAgentRuntimeInfo('a1', 'claude-code', {})).chatAvailable).toBe(false);
+      state.live = true;
+      expect(await getAgentRuntimeInfo('a1', 'claude-code', {})).toMatchObject({ chat: true, live: true, chatAvailable: false });
+    } finally {
+      state.chatOn = true;
+      state.live = false;
+      state.providerMode = 'chat';
+    }
+  });
+
   beforeEach(() => {
     Object.assign(state, { live: false, inflight: false, ptyRunning: false, config: null, configError: null, providerMode: 'chat' });
     state.drivers = new Set(['claude-code', 'github-copilot']);

@@ -565,6 +565,7 @@ vi.stubGlobal('clubhouse', {
     mediaAction: asyncNoop,
     fetchRemoteImage: async () => { throw new Error('No network in tests'); },
     importLocalImage: async () => ({ ok: false as const, reason: 'missing' as const }),
+    statPaths: async (_agentId: string, paths: string[]) => paths.map((path) => ({ path, exists: false as const })),
     interrupt: asyncNoop,
     respondPermission: asyncNoop,
     answerQuestion: asyncNoop,

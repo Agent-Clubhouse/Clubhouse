@@ -407,8 +407,9 @@ export async function initializePluginSystem(): Promise<void> {
     // - 'canvas': migrated to app-enabled above
     // - 'mcp': promoted to regular setting (mcp-settings.json)
     // - retired features (Assistant, Agent Queue, Sessions): removed outright
+    // - 'annex', 'clubhouseMcp', 'review': graduated long ago, and nothing reads them
     {
-      const staleKeys = ['canvas', 'mcp', ...RETIRED_EXPERIMENTAL_FLAGS];
+      const staleKeys = ['canvas', 'mcp', 'annex', 'clubhouseMcp', 'review', ...RETIRED_EXPERIMENTAL_FLAGS];
       const keysToRemove = staleKeys.filter((k) => experimentalFlags && k in experimentalFlags);
       if (keysToRemove.length > 0) {
         try {

@@ -2,8 +2,8 @@ import { useEffect, useState } from 'react';
 import { Toggle } from '../../components/Toggle';
 import { SettingsPage, SettingsSection, SettingsField } from './SettingsLayout';
 import { Button } from '../../components/Button';
-import { RICH_CHAT_CONTENT_FLAG, resetRichChatContentFlag } from '../agents/chat/rich/rich-flag';
 import { COPILOT_SDK_FLAG } from '../../../shared/chat';
+import { isGraduatedFlagOn } from '../../../shared/graduated-flags';
 
 /** Feature definitions for the experimental settings page. */
 export const EXPERIMENTAL_FEATURES: Array<{
@@ -12,24 +12,9 @@ export const EXPERIMENTAL_FEATURES: Array<{
   description: string;
 }> = [
   {
-    id: 'themeGradients',
-    label: 'Theme gradients & fonts',
-    description: 'Allow themes to define custom font families and background gradients. Requires app restart.',
-  },
-  {
     id: 'goobers',
     label: 'Goobers',
     description: 'Monitor and control a local Goobers instance from an app-level panel. Not available on Windows. Requires app restart.',
-  },
-  {
-    id: 'chat',
-    label: 'Chat',
-    description: 'Talk to Claude Code, Codex and Copilot agents in a native chat view. The CLI view stays available for every provider.',
-  },
-  {
-    id: RICH_CHAT_CONTENT_FLAG,
-    label: 'Rich chat content',
-    description: 'Show images agents return inline in chat, links as links, and GitHub pull requests, issues and commits as references with a hover card. Images from the web load only when you click them, and GitHub details load through the gh CLI only when you hover one.',
   },
   {
     id: COPILOT_SDK_FLAG,
@@ -58,8 +43,6 @@ export function ExperimentalSettingsView() {
     const updated = { ...settings, [id]: enabled };
     setSettings(updated);
     await window.clubhouse.app.saveExperimentalSettings(updated);
-    // Chat panes opened from now on read the new value.
-    if (id === RICH_CHAT_CONTENT_FLAG) resetRichChatContentFlag();
   };
 
   const handleRestart = () => {
@@ -79,7 +62,7 @@ export function ExperimentalSettingsView() {
 
       <SettingsSection title="Features">
         {EXPERIMENTAL_FEATURES.map(({ id, label, description }) => (
-          <SettingsField key={id} label={label} help={id === COPILOT_SDK_FLAG && !settings.chat ? `${description} Needs Chat, which is off.` : description}>
+          <SettingsField key={id} label={label} help={id === COPILOT_SDK_FLAG && !isGraduatedFlagOn(settings, 'chat') ? `${description} Needs Chat, which is off in Settings > Agents & providers.` : description}>
             <Toggle
               aria-label={label}
               checked={!!settings[id]}

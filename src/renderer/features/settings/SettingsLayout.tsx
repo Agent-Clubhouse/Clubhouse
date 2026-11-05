@@ -24,6 +24,9 @@ export const settingsHelp = 'text-xs text-ctp-overlay1';
 /** An error line. Give it `role="alert"` so screen readers announce it. */
 export const settingsError = 'text-xs text-ctp-error';
 
+/** Shown when a settings switch couldn't save and went back to what's saved. */
+export const SETTING_NOT_SAVED_TEXT = "Couldn't save that setting, so it wasn't changed. Try again.";
+
 export function SettingsPage({
   title,
   description,

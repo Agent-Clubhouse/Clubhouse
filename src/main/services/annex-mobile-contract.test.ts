@@ -96,7 +96,7 @@ vi.mock('./agent-runtime/chat-files', async (importOriginal) => ({
   ...await importOriginal<typeof import('./agent-runtime/chat-files')>(),
   agentFolders: async () => ['/work/app/.clubhouse/agents/planner', '/work/app'],
 }));
-vi.mock('./experimental-settings', () => ({ getSettings: () => ({ richChatContent: true }), saveSettings: () => {} }));
+vi.mock('./experimental-settings', () => ({ getSettings: () => ({ richChatContent: true }), isGraduatedFeatureOn: () => true, saveSettings: () => {} }));
 vi.mock('./agent-runtime/checkpoint-tracker', async (importOriginal) => ({
   ...await importOriginal<typeof import('./agent-runtime/checkpoint-tracker')>(),
   isRevertRunning: async (id: string) => W.revert.has(id),
