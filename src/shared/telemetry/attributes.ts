@@ -326,6 +326,12 @@ export const ATTR = {
     'sidebar_agents', 'sidebar_list', 'sidebar_settings', 'sidebar_help', 'sidebar_agent_settings', 'start_page', 'first_run', 'host_menu', 'more_menu', 'hover_card', 'row_menu', 'new_agent', 'satellite_start',
   ]),
   /**
+   * Which shell this session runs (docs/chrome-redesign-spec.md §8). main/telemetry/resource.ts
+   * sets it on the resource for the whole session, so nothing passes it on a signal.
+   * Registered so a Workbook query may read it.
+   */
+  uiChrome: enumAttr('clubhouse.ui.chrome', ['legacy', 'v2']),
+  /**
    * The kind of input behind a hang or a measured interaction (#2126). Event
    * Timing names map onto these; never the key or the target.
    */
