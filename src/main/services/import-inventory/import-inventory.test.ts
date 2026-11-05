@@ -797,7 +797,7 @@ describe('built-in dedupe', () => {
   it('matches a built-in persona by content, whatever the line endings', async () => {
     const project = makeProject('alpha');
     const template = PERSONA_TEMPLATES[0];
-    write(project, `.clubhouse/personas/${template.id}.md`, template.content.replace(/\n/g, '\r\n'));
+    write(project, `.clubhouse/personas/${template.id}.md`, template.content.replace(/\r?\n/g, '\r\n'));
     write(project, '.clubhouse/personas/edited.md', `${template.content}\nmore\n`);
     registerProjects([project]);
 
