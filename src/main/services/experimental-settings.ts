@@ -1,4 +1,4 @@
-import { createSettingsStore } from './settings-store';
+import { createSettingsStore, peekStoredSettingsSync } from './settings-store';
 import { isPreviewEligible } from './preview-eligible';
 import { PREVIEW_ONLY_EXPERIMENTAL_FLAGS, STRUCTURED_MODE_REMOVED_NOTICE_KEY, type ExperimentalSettings } from '../../shared/types';
 
@@ -16,13 +16,24 @@ export function migrateExperimentalSettings(raw: Record<string, unknown>): Exper
   return settings as ExperimentalSettings;
 }
 
-const store = createSettingsStore<ExperimentalSettings>('experimental-settings.json', {}, migrateExperimentalSettings, { audit: { key: 'experimental' } });
+const FILENAME = 'experimental-settings.json';
+
+const store = createSettingsStore<ExperimentalSettings>(FILENAME, {}, migrateExperimentalSettings, { audit: { key: 'experimental' } });
 
 function pickFlags(settings: ExperimentalSettings, keep: (key: string) => boolean): ExperimentalSettings {
   return Object.fromEntries(Object.entries(settings).filter(([key]) => keep(key)));
 }
 
 const isPreviewOnly = (key: string): boolean => PREVIEW_ONLY_EXPERIMENTAL_FLAGS.includes(key);
+
+/**
+ * Whether there is a file and it can't be read. The store falls back to `{}`
+ * then, which on its own looks the same as nothing saved: a graduated flag would
+ * read as on when the person's saved false may be in that file.
+ */
+export function savedSettingsUnreadable(): boolean {
+  return peekStoredSettingsSync(FILENAME) === 'unreadable';
+}
 
 /** What is saved, whatever this build honours. */
 export const getStoredSettings = store.get;

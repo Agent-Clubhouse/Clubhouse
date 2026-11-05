@@ -3,11 +3,11 @@ import { defineConfig } from '@playwright/test';
 export default defineConfig({
   testDir: './e2e',
   // Annex E2E, the rich chat specs (e2e/chat-rich, #2480), the Dispatcher spec
-  // (#2533) and the stable-mode spec run in their own Validate jobs; the sharded
+  // (#2533), the stable-mode and layout-default specs run in their own Validate jobs; the sharded
   // E2E run sets these to skip them.
   testIgnore: [
     ...(process.env.PLAYWRIGHT_IGNORE_ANNEX ? ['**/annex-v2/**'] : []),
-    ...(process.env.PLAYWRIGHT_IGNORE_CHAT_RICH ? ['**/chat-rich/**', '**/dispatcher.spec.ts', '**/stable-mode.spec.ts'] : []),
+    ...(process.env.PLAYWRIGHT_IGNORE_CHAT_RICH ? ['**/chat-rich/**', '**/dispatcher.spec.ts', '**/stable-mode.spec.ts', '**/layout-default.spec.ts'] : []),
   ],
   timeout: 120_000,
   // CI keeps its flake tolerance. Locally a retry discards the worker and

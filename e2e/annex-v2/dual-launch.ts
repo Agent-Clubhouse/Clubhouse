@@ -28,7 +28,7 @@ export interface DualInstanceHandles {
  * Launch a single Electron instance with its own disposable profile.
  */
 async function launchInstance(label: string): Promise<InstanceHandle> {
-  return launchApp({ label, args: ['--disable-gpu'] });
+  return launchApp({ label, args: ['--disable-gpu'], experimental: { newChrome: false } });
 }
 
 /**

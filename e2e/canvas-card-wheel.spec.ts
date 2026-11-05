@@ -42,7 +42,7 @@ async function viewportTransform(): Promise<string> {
 }
 
 test.beforeAll(async () => {
-  ({ electronApp, window } = await launchApp({ experimental: {} }));
+  ({ electronApp, window } = await launchApp({ experimental: { newChrome: false } }));
   await stubDialogForPath(FIXTURE_PROJECT);
   await expect(window.locator('[data-testid="nav-add-project"]')).toBeVisible({ timeout: 5_000 });
   await window.locator('[data-testid="nav-add-project"]').click();

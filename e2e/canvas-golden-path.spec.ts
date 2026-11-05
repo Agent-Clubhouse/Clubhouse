@@ -78,7 +78,7 @@ async function waitForEmptyCanvas(win: Page) {
 }
 
 test.beforeAll(async () => {
-  ({ electronApp, window } = await launchApp({ experimental: {} }));
+  ({ electronApp, window } = await launchApp({ experimental: { newChrome: false } }));
 
   // Add the project once — reused across all tests
   await stubDialogForPath(FIXTURE_PROJECT);

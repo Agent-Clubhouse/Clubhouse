@@ -121,7 +121,7 @@ export function DispatcherSettingsView() {
               {!state.flagOn
                 ? 'Turn on Dispatcher in Settings > Experimental first.'
                 : !newLayout
-                  ? 'The Dispatcher needs the new layout. Turn on New layout in Settings > Experimental.'
+                  ? 'The Dispatcher needs the new layout. Turn off Classic layout in Settings > Display & UI.'
                   : 'Turning it off stops it. Its folder and notes are kept, so turning it back on carries on where it left off.'}
             </span>
           )}

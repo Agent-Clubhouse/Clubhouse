@@ -56,19 +56,9 @@ export function resetAllSettingsStoresForTests(): void {
   }
 }
 
-/**
- * What a settings file holds right now, before any defaults are merged in, for
- * telling a saved value from an absent one (#2653). Reads and nothing else: no
- * cache, no recovery. A save still queued shows on the next read.
- */
-export async function peekStoredSettings(filename: string): Promise<Record<string, unknown> | 'missing' | 'unreadable'> {
-  let raw: string;
-  try {
-    raw = await fs.promises.readFile(path.join(app.getPath('userData'), filename), 'utf-8');
-  } catch (err) {
-    // telemetry-exempt: the caller reports the source as uncertain
-    return (err as NodeJS.ErrnoException)?.code === 'ENOENT' ? 'missing' : 'unreadable';
-  }
+type PeekedSettings = Record<string, unknown> | 'missing' | 'unreadable';
+
+function parsePeeked(raw: string): PeekedSettings {
   try {
     const parsed: unknown = JSON.parse(raw);
     return parsed !== null && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed as Record<string, unknown> : 'unreadable';
@@ -76,6 +66,34 @@ export async function peekStoredSettings(filename: string): Promise<Record<strin
     // telemetry-exempt: the caller reports the source as uncertain
     return 'unreadable';
   }
+}
+
+/**
+ * What a settings file holds right now, before any defaults are merged in, for
+ * telling a saved value from an absent one (#2653). Reads and nothing else: no
+ * cache, no recovery. A save still queued shows on the next read.
+ */
+export async function peekStoredSettings(filename: string): Promise<PeekedSettings> {
+  let raw: string;
+  try {
+    raw = await fs.promises.readFile(path.join(app.getPath('userData'), filename), 'utf-8');
+  } catch (err) {
+    // telemetry-exempt: the caller reports the source as uncertain
+    return (err as NodeJS.ErrnoException)?.code === 'ENOENT' ? 'missing' : 'unreadable';
+  }
+  return parsePeeked(raw);
+}
+
+/** peekStoredSettings for the startup path, where a window can't wait for it. */
+export function peekStoredSettingsSync(filename: string): PeekedSettings {
+  let raw: string;
+  try {
+    raw = fs.readFileSync(path.join(app.getPath('userData'), filename), 'utf-8');
+  } catch (err) {
+    // telemetry-exempt: the caller reports the source as uncertain
+    return (err as NodeJS.ErrnoException)?.code === 'ENOENT' ? 'missing' : 'unreadable';
+  }
+  return parsePeeked(raw);
 }
 
 export function createSettingsStore<T>(

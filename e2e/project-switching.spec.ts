@@ -36,7 +36,7 @@ async function addProject(dirPath: string) {
 }
 
 test.beforeAll(async () => {
-  ({ electronApp, window } = await launchApp());
+  ({ electronApp, window } = await launchApp({ experimental: { newChrome: false } }));
 });
 
 test.afterAll(async () => {

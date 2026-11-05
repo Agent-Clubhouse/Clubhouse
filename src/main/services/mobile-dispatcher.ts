@@ -71,7 +71,7 @@ export async function setDispatcherEnabledFromPhone(enabled: boolean, assertAuth
     throw new MobileControlError('dispatcher_flag_off', 409, 'rejected', 'Turn on Dispatcher in Settings > Experimental on the desktop first.');
   }
   if (enabled && !newChromeEnabled()) {
-    throw new MobileControlError('dispatcher_layout_off', 409, 'rejected', 'The Dispatcher needs the new layout. Turn on New layout in Settings > Experimental on the desktop.');
+    throw new MobileControlError('dispatcher_layout_off', 409, 'rejected', 'The Dispatcher needs the new layout. Turn off Classic layout in Settings > Display & UI on the desktop.');
   }
   assertAuthorized();
   return dispatcherChange(await dispatcher.setDispatcherEnabled(enabled));

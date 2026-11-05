@@ -41,7 +41,6 @@ import { dispatcherCapability } from './mobile-dispatcher';
 import { EXPERIMENTAL_FLAG as TELEMETRY_FLAG, getTelemetrySettings, isExperimentEnabled } from '../telemetry/settings';
 import { isTelemetryConfigured, uiChrome } from '../telemetry/bootstrap';
 import { newChromeEnabled, resetNewChromeCacheForTests } from '../window-chrome';
-import { NEW_CHROME_FLAG } from '../../shared/chrome-flag';
 import { COPILOT_SDK_FLAG, RICH_CHAT_CONTENT_FLAG } from '../../shared/chat';
 import { TELEMETRY_CONSENT_VERSION } from '../../shared/telemetry/settings-types';
 import { PREVIEW_ONLY_EXPERIMENTAL_FLAGS, STRUCTURED_MODE_REMOVED_NOTICE_KEY } from '../../shared/types';
@@ -98,7 +97,7 @@ afterEach(() => {
 describe('the preview-only list', () => {
   it('names each feature by the same key its reader uses', () => {
     expect([...PREVIEW_ONLY_EXPERIMENTAL_FLAGS].sort()).toEqual([
-      NEW_CHROME_FLAG, 'goobers', CHAT_EXPERIMENTAL_FLAG, RICH_CHAT_CONTENT_FLAG, COPILOT_SDK_FLAG, DISPATCHER_FLAG, TELEMETRY_FLAG,
+      'goobers', CHAT_EXPERIMENTAL_FLAG, RICH_CHAT_CONTENT_FLAG, COPILOT_SDK_FLAG, DISPATCHER_FLAG, TELEMETRY_FLAG,
     ].sort());
   });
 });
@@ -115,18 +114,34 @@ describe('a packaged stable build with Preview off', () => {
     for (const flag of PREVIEW_ONLY_EXPERIMENTAL_FLAGS) expect(flags).not.toHaveProperty(flag);
   });
 
-  it('keeps honouring themeGradients and the structured-mode notice marker', () => {
-    expect(getSettings()).toEqual({ themeGradients: true, [STRUCTURED_MODE_REMOVED_NOTICE_KEY]: true });
+  it('keeps honouring the saved layout, themeGradients and the structured-mode notice marker', () => {
+    expect(getSettings()).toEqual({ newChrome: true, themeGradients: true, [STRUCTURED_MODE_REMOVED_NOTICE_KEY]: true });
   });
 
   it('still reports what is saved through getStoredSettings', () => {
     expect(getStoredSettings()).toEqual(ALL_SAVED);
   });
 
-  it('starts on the legacy layout, for main, telemetry and the phone', () => {
+  it('starts on the new layout, for main, telemetry and the phone', () => {
+    expect(newChromeEnabled()).toBe(true);
+    expect(uiChrome()).toBe('v2');
+    expect(dispatcherCapability()).toMatchObject({ newLayout: true, flagOn: false, enabled: false });
+  });
+
+  it('starts on the classic layout with a saved false, for main, telemetry and the phone', () => {
+    write(EXPERIMENTAL_FILE, { ...ALL_SAVED, newChrome: false });
+    relaunch();
     expect(newChromeEnabled()).toBe(false);
     expect(uiChrome()).toBe('legacy');
     expect(dispatcherCapability()).toMatchObject({ newLayout: false, flagOn: false, enabled: false });
+  });
+
+  it('leaves the saved layout as it is on the way through a launch', () => {
+    write(EXPERIMENTAL_FILE, { newChrome: false });
+    relaunch();
+    const saved = bytes(EXPERIMENTAL_FILE);
+    expect(newChromeEnabled()).toBe(false);
+    expect(bytes(EXPERIMENTAL_FILE)).toBe(saved);
   });
 
   it('runs a Chat-mode agent in the terminal and leaves its saved choices alone', () => {
@@ -192,8 +207,15 @@ describe('a packaged stable build with Preview off', () => {
     it('cannot turn on or change a preview-only flag', async () => {
       write(EXPERIMENTAL_FILE, { chat: false });
       relaunch();
-      await saveSettings({ chat: true, newChrome: true });
+      await saveSettings({ chat: true });
       expect(JSON.parse(bytes(EXPERIMENTAL_FILE))).toEqual({ chat: false });
+    });
+
+    it('saves the layout choice, as the Display toggle does, and keeps the preview-only flags', async () => {
+      await saveSettings({ ...getSettings(), newChrome: false });
+      expect(JSON.parse(bytes(EXPERIMENTAL_FILE))).toEqual({ ...ALL_SAVED, newChrome: false });
+      relaunch();
+      expect(newChromeEnabled()).toBe(false);
     });
 
     it('never touches the Preview opt-in', async () => {
@@ -204,7 +226,7 @@ describe('a packaged stable build with Preview off', () => {
     });
 
     it('serializes with the store, so two writes in a row both land and keep the flags', async () => {
-      await Promise.all([saveSettings({ themeGradients: false }), saveSettings({ themeGradients: true })]);
+      await Promise.all([saveSettings({ newChrome: true, themeGradients: false }), saveSettings({ newChrome: true, themeGradients: true })]);
       const { [STRUCTURED_MODE_REMOVED_NOTICE_KEY]: _shown, ...expected } = ALL_SAVED;
       expect(JSON.parse(bytes(EXPERIMENTAL_FILE))).toEqual(expected);
     });
@@ -227,12 +249,28 @@ describe('a packaged stable build with Preview off', () => {
 });
 
 describe('with no saved flags, a packaged stable build', () => {
-  it('stays on the legacy layout with everything off and writes nothing', () => {
+  it('starts on the new layout with everything else off and writes nothing', () => {
     expect(getSettings()).toEqual({});
-    expect(newChromeEnabled()).toBe(false);
+    expect(newChromeEnabled()).toBe(true);
+    expect(uiChrome()).toBe('v2');
     expect(isChatEnabled()).toBe(false);
     expect(isDispatcherFlagOn()).toBe(false);
     expect(fs.readdirSync(h.userData)).toEqual([]);
+  });
+});
+
+describe.each([
+  ['truncated JSON', '{"newChrome": fal'],
+  ['an empty file', ''],
+  ['null', 'null'],
+  ['an array', '[]'],
+])('with %s for saved flags', (_name, content) => {
+  it('starts on the classic layout, as it did before the default changed, and leaves the file', () => {
+    fs.writeFileSync(path.join(h.userData, EXPERIMENTAL_FILE), content);
+    relaunch();
+    expect(newChromeEnabled()).toBe(false);
+    expect(uiChrome()).toBe('legacy');
+    expect(bytes(EXPERIMENTAL_FILE)).toBe(content);
   });
 });
 

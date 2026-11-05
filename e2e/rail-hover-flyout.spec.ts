@@ -53,7 +53,7 @@ async function moveOffRail() {
 // ---------------------------------------------------------------------------
 
 test.beforeAll(async () => {
-  ({ electronApp, window } = await launchApp());
+  ({ electronApp, window } = await launchApp({ experimental: { newChrome: false } }));
 
   // Wait for the app shell to be ready before running tests
   await window.waitForLoadState('load');

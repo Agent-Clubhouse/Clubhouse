@@ -95,7 +95,7 @@ async function navigateToTerminal() {
 // ---------------------------------------------------------------------------
 
 test.beforeAll(async () => {
-  ({ electronApp, window } = await launchApp());
+  ({ electronApp, window } = await launchApp({ experimental: { newChrome: false } }));
 
   // Add a project so plugin tabs become available
   await addProject(FIXTURE_A);
