@@ -122,6 +122,10 @@ test('unreadable flags: the classic layout, and the file is left as it was', asy
   const w = await launch();
 
   await expectClassicLayout(w);
+  // The switch agrees with the layout, so there's no restart to offer.
+  await openSettingsPage(w, 'Display & UI');
+  await expect(classicToggle(w)).toHaveAttribute('aria-checked', 'true');
+  await expect(restartButton(w)).toHaveCount(0);
   await quit();
   expect(await savedFlagsText(profile)).toBe('{"newChrome": fal');
 });
