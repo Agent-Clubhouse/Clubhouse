@@ -16,8 +16,7 @@ import { Button } from '../../components/Button';
 async function developerTelemetryAsk(): Promise<TelemetryShareAsk | null> {
   const api = window.clubhouse.telemetrySettings;
   const status = await api.getStatus();
-  if (!status?.available) return null;
-  const fb = status.destinations.find((d) => d.id === 'framebriar');
+  const fb = status?.destinations.find((d) => d.id === 'framebriar');
   // Already on, or the user said "Not now" before: don't ask again.
   if (!fb || fb.enabled || fb.userOff) return null;
   return shareAskFrom(await api.setEnabled('framebriar', true, {}));

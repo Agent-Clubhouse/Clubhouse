@@ -637,7 +637,7 @@ describe('structure adoption', () => {
 
   it('is current when nothing newer exists', () => {
     const index = twoRevisions();
-    expect(plan(index, instanceOf(index, 't', 2)).structure?.update).toEqual({ status: 'current', targetRevision: 2, reasons: [], subagentReasons: [], blockers: [] });
+    expect(plan(index, instanceOf(index, 't', 2)).structure?.update).toEqual({ status: 'current', targetRevision: 2, reasons: [], subagentReasons: [], operationalIncreases: [], blockers: [] });
   });
 
   it('a new revision whose skill would collide isn\'t clean, and doesn\'t stop this start', () => {
@@ -650,6 +650,34 @@ describe('structure adoption', () => {
     expect(result.structure).toMatchObject({ resolvedRevision: 1, update: { status: 'needs-choice' } });
     expect(result.structure?.update.blockers.map((issue) => issue.code)).toEqual(['destination_collision']);
     expect(result.activation).not.toBeNull();
+  });
+
+  describe('a revision raising operational authority', () => {
+    const raising = (from: TemplateOperationalDefaults, to: TemplateOperationalDefaults) => indexOf([
+      block('a'),
+      entry('t', [tmpl([ref('A', 'a')], { operationalDefaults: from }), tmpl([ref('A', 'a')], { operationalDefaults: to })]),
+    ]);
+
+    it('is never clean: it stays on what was accepted, and says what it would raise', () => {
+      const index = raising({ agentAccess: 'standard' }, { agentAccess: 'bypass', orchestrate: true });
+      const result = plan(index, instanceOf(index, 't'), LATEST);
+      expect(result.structure).toMatchObject({
+        acceptedRevision: 1,
+        resolvedRevision: 1,
+        update: { status: 'needs-choice', targetRevision: 2, operationalIncreases: ['agentAccess', 'orchestrate'], reasons: [] },
+      });
+      expect(result.operationalDefaults.map((item) => [item.key, item.value])).toEqual([['agentAccess', 'standard']]);
+      expect(result.blockers).toEqual([]);
+      expect(noticeCodes(result)).toContain('structure_update_waiting');
+      expect(result.activation?.structure?.updateWaiting).toBe(true);
+    });
+
+    it('a decrease stays clean', () => {
+      const index = raising({ agentAccess: 'bypass', orchestrate: true }, { agentAccess: 'standard' });
+      const result = plan(index, instanceOf(index, 't'), LATEST);
+      expect(result.structure).toMatchObject({ resolvedRevision: 2, update: { status: 'clean', operationalIncreases: [] } });
+      expect(result.operationalDefaults.map((item) => [item.key, item.value])).toEqual([['agentAccess', 'standard']]);
+    });
   });
 
   it('counterexample, re-add of an excluded id: stays excluded, with a notice', () => {
@@ -1135,6 +1163,35 @@ describe('determinism', () => {
   });
 });
 
+describe('what a subagent refers to', () => {
+  const nested = (skillRevisions: number) => {
+    const skillProjection: AssetProjection = { kind: 'skill', skillName: 'nested', filePaths: [] };
+    return indexOf([
+      block('a'), block('role'),
+      entry('nested', Array.from({ length: skillRevisions }, () => skillProjection)),
+      entry('sub', [subagent('tester', { blocks: [ref('Role', 'role')], skills: ['nested'] })]),
+      entry('t', [tmpl([ref('A', 'a')], { subagents: [subRef('Sub', 'sub')] })]),
+    ]);
+  };
+
+  it('moves the fingerprint when it moves', () => {
+    const before = nested(1);
+    const after = nested(2);
+    const one = plan(before, instanceOf(before, 't'));
+    const two = plan(after, instanceOf(after, 't'));
+    expect(two.activation?.subagents[0].skills[0].revision).toBe(2);
+    expect(two.fingerprint).not.toBe(one.fingerprint);
+  });
+
+  it('shows in impact preview as a change where it\'s delivered', () => {
+    const index = nested(1);
+    const withAgent = indexOf(Object.values(index.assets), [stored('agent', instanceOf(index, 't'))]);
+    const projection: AssetProjection = { kind: 'skill', skillName: 'nested', filePaths: [] };
+    const impact = previewAssetImpact(withAgent, 'nested', { revision: 2, savedAt: 't', contentHash: 'next', projection });
+    expect(impact.agents[0].changes).toEqual([{ assetId: 'nested', fromRevision: 1, toRevision: 2, destination: 'subagents/tester' }]);
+  });
+});
+
 describe('the activation plan', () => {
   it('is provider-neutral and whole', () => {
     const index = library();
@@ -1243,6 +1300,30 @@ describe('consumers', () => {
     expect(hasHardReference(consumers)).toBe(true);
   });
 
+  it('a subagent followed directly goes from its floor: the revision it\'s on counts, though a bundle has moved on', () => {
+    const assets = [
+      block('job'), block('other'),
+      entry('s', [
+        subagent('s', { blocks: [ref('Role', 'job')] }),
+        [subagent('s', { blocks: [ref('Role', 'other')] }), { templateId: 'u', templateRevision: 1 }],
+      ]),
+    ];
+    const agent = stored('agent', { ...emptyComposition(), subagents: [{ localId: 'S', source: { kind: 'follow', subagentId: 's' } }], floors: { s: 1 } });
+    const consumers = listConsumers(indexOf(assets, [agent]), 'job');
+    expect(consumers.agents).toEqual([{ agentId: 'agent', relations: ['via-subagent'], effective: true }]);
+    expect(hasHardReference(consumers)).toBe(true);
+  });
+
+  it('an agent\'s own fork of a definition goes from its latest', () => {
+    const assets = [
+      block('job'), block('other'),
+      entry('mine', [subagent('s', { blocks: [ref('Role', 'job')] }), subagent('s', { blocks: [ref('Role', 'other')] })], { ...owned('agent'), source: { kind: 'copy', originAssetId: 's', originRevision: 1 } }),
+    ];
+    const agent = stored('agent', { ...emptyComposition(), subagents: [{ localId: 'S', source: { kind: 'fork', subagentId: 'mine', forkedFrom: { assetId: 's', revision: 1 } } }] });
+    expect(listConsumers(indexOf(assets, [agent]), 'job').agents).toEqual([]);
+    expect(listConsumers(indexOf(assets, [agent]), 'other').agents).toEqual([{ agentId: 'agent', relations: ['via-subagent'], effective: true }]);
+  });
+
   it('an exclusion alone is no reason to refuse deletion', () => {
     const only = indexOf([skill('loner')], [stored('a', { ...emptyComposition(), removals: ['loner'] })]);
     const consumers = listConsumers(only, 'loner');
@@ -1320,7 +1401,7 @@ describe('impact of a central edit', () => {
   });
 
   it('a template edit changes nothing yet for its linked agents, and says where each stands', () => {
-    const impact = previewAssetImpact(index(), 'base', candidate(tmpl([ref('Identity', 'identity'), ref('Job', 'job'), ref('Handoff', 'handoff')], { skills: ['review', 'notes'], mcps: ['git'] })));
+    const impact = previewAssetImpact(index(), 'base', candidate(tmpl([ref('Identity', 'identity'), ref('Job', 'job'), ref('Handoff', 'handoff')], { skills: ['review', 'notes'], mcps: ['git'], operationalDefaults: { orchestrate: true, control: 'ask-before-start' } })));
     const linked = impact.agents.find((agent) => agent.agentId === 'linked')!;
     expect(linked.relations).toEqual(['base-template']);
     expect(linked.changes).toEqual([]);

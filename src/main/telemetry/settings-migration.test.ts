@@ -141,7 +141,7 @@ describe('developer destination after #2097', () => {
 describe('migrateLegacySecrets', () => {
   it('moves a Phase 1 plaintext connection string into the secret store and wipes it from the file', async () => {
     const file = path.join(userData.dir, 'telemetry-settings.json');
-    await fsp.writeFile(file, JSON.stringify({ enabled: true, level: 'standard', sampleRate: 1, destination: { kind: 'azure', connectionString: CS } }));
+    await fsp.writeFile(file, JSON.stringify({ enabled: true, level: 'standard', sampleRate: 1, exportGraduation: 1, destination: { kind: 'azure', connectionString: CS } }));
     resetAllSettingsStoresForTests();
 
     expect(findDestination(getTelemetrySettings(), 'azure')?.enabled).toBe(true);
@@ -160,7 +160,7 @@ describe('migrateLegacySecrets', () => {
 });
 
 describe('migrateLegacySecretsOnReady', () => {
-  it('migrates even when telemetry and the experiment are off, and startup stays gated on consent', async () => {
+  it('migrates even when telemetry is off, and startup stays gated on consent', async () => {
     const { migrateLegacySecretsOnReady, isTelemetryConfigured } = await import('./bootstrap');
     const file = path.join(userData.dir, 'telemetry-settings.json');
     await fsp.rm(path.join(userData.dir, 'telemetry-secret.bin'), { force: true });

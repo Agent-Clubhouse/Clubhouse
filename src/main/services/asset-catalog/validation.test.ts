@@ -104,6 +104,16 @@ describe('MCP definitions', () => {
       expect(issuesOf(validatePayload('mcp', { serverKey: 'a', transport: 'http', url }))).toContainEqual({ code: 'secret_value', path: 'url' });
     });
 
+    it.each([
+      ['a key in the query', 'https://example.test/mcp?key=abc123'],
+      ['a password short form in the query', 'https://example.test/mcp?pwd=abc123'],
+      ['a Slack webhook', 'https://hooks.slack.com/services/T000/B000/XXXXXXXX'],
+      ['a Discord webhook', 'https://discord.com/api/webhooks/123/abc'],
+      ['an Office webhook', 'https://contoso.webhook.office.com/webhookb2/abc'],
+    ])('rejects %s', (_label, url) => {
+      expect(issuesOf(validatePayload('mcp', { serverKey: 'a', transport: 'http', url }))).toContainEqual({ code: 'secret_value', path: 'url' });
+    });
+
     it('rejects credentials in a URL', () => {
       const http = { serverKey: 'a', transport: 'http' };
       expect(issuesOf(validatePayload('mcp', { ...http, url: 'https://user:hunter2@example.test/' }))).toContainEqual({ code: 'secret_value', path: 'url' });
@@ -432,6 +442,40 @@ describe('native subagent definitions', () => {
     it('none declared is an empty list, and nothing more is claimed', () => {
       expect(toolFields({ model: 'inherit' })).toEqual([]);
     });
+  });
+
+  it.each([
+    ['a flag as a tool', { tools: ['--dangerously-skip-permissions'] }, 'authority'],
+    ['a flag after a model', { model: 'x --dangerously-skip-permissions' }, 'authority'],
+    ['an assignment as a tool list', { tools: 'permissionMode=bypassPermissions' }, 'authority'],
+    ['double-stringified JSON', { tools: JSON.stringify(JSON.stringify({ hooks: {} })) }, 'authority'],
+    ['almost-JSON', { tools: '{hooks: {x: 1}}' }, 'authority'],
+    ['a word that isn\'t a tool', { tools: ['Read', '--verbose'] }, 'unknown'],
+    ['a model with spaces', { model: 'some model' }, 'unknown'],
+    ['turns that aren\'t a number', { maxTurns: '3' }, 'unknown'],
+    ['negative turns', { maxTurns: -1 }, 'unknown'],
+    ['an effort with a flag', { effort: '--high' }, 'unknown'],
+  ])('a known field is still checked by shape: %s blocks', (_label, section, reason) => {
+    const [field] = authority(claude(section));
+    expect(field).toEqual({ path: `claude.${Object.keys(section)[0]}`, reason });
+  });
+
+  it.each([
+    [{ model: 'claude-opus-5-5' }], [{ model: 'claude-opus-4-8[1m]' }], [{ model: 'inherit' }], [{ model: 'us.anthropic.claude-sonnet-5-5:0' }],
+    [{ tools: ['Read', 'Grep', 'mcp__github__search'] }], [{ tools: 'Read, Grep' }], [{ tools: ['Bash(git status)', 'Agent(worker, researcher)'] }],
+    [{ disallowedTools: ['Agent'] }], [{ maxTurns: 3 }], [{ effort: 'high' }], [{ color: 'blue' }],
+  ])('and an ordinary value passes: %j', (section) => {
+    expect(authority(claude(section))).toEqual([]);
+  });
+
+  it('a prompt isn\'t on the short list: it\'s text a person should see delivered', () => {
+    expect(authority(claude({ initialPrompt: 'Start here.' }))).toEqual([{ path: 'claude.initialPrompt', reason: 'unknown' }]);
+  });
+
+  it('Clubhouse\'s own MCP can\'t be referred to by name from a definition', () => {
+    for (const mcpServers of [['clubhouse'], 'Clubhouse-bridge', ['named', 'clubhouse_x']]) {
+      expect(authority(claude({ mcpServers }))).toEqual([{ path: 'claude.mcpServers', reason: 'authority' }]);
+    }
   });
 
   it('an MCP referred to by name raises nothing, and its name has to be just a name', () => {

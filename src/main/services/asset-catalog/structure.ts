@@ -14,6 +14,7 @@
  * it last accepted. Choices are applied whole or refused.
  */
 
+import { ACCESS_LEVELS, DEFAULT_MAX_HELPERS, ORCHESTRATION_CONTROLS } from '../../../shared/orchestration-policy';
 import type {
   BundledBy,
   CompositionInput,
@@ -26,6 +27,7 @@ import type {
   SubagentSetCheck,
   SubagentSetInput,
   SubagentSetReason,
+  TemplateOperationalDefaults,
   TemplateSwitchSelection,
   ValidationIssue,
 } from '../../../shared/asset-catalog-types';
@@ -343,25 +345,27 @@ export function checkStructure(input: StructureInput): StructureCheck {
     }
   }
 
-  // Identity holds for everyone. What the revision removes no longer counts as existing.
-  const staying = instance.filter((entry) => entry.baseEntryId === null || targetSet.has(entry.baseEntryId));
-  for (const entry of input.target) {
-    if (analysis.excluded.has(entry.entryId) || acceptedSet.has(entry.entryId)) continue;
-    const name = collisionKey(entry.name);
-    const clash = staying.some((other) => other.sources.includes(entry.blockId) || collisionKey(other.name) === name);
-    if (clash) reasons.push({ code: 'identity_conflict', entries: [baseKey(entry.entryId)] });
-  }
-
-  // So does an entry the base points at another block: it's that block's name and source from now on.
+  // Identity holds for everyone, against how things stand afterwards: what the revision removes no longer
+  // counts, and a followed entry the base points elsewhere is its new block, so a swap isn't a clash.
+  const targetById = new Map(input.target.map((entry) => [entry.entryId, entry]));
+  const after = instance
+    .filter((entry) => entry.baseEntryId === null || targetSet.has(entry.baseEntryId))
+    .map((entry) => {
+      const target = entry.baseEntryId !== null && !entry.forked ? targetById.get(entry.baseEntryId) : undefined;
+      return target ? { key: entry.key, sources: [target.blockId], name: target.name } : { key: entry.key, sources: entry.sources, name: entry.name };
+    });
+  const clashes = (key: string, blockId: string, name: string): boolean => after.some((other) => (
+    other.key !== key && (other.sources.includes(blockId) || collisionKey(other.name) === collisionKey(name))
+  ));
   const acceptedBlocks = new Map(input.accepted.map((entry) => [entry.entryId, entry.blockId]));
   for (const entry of input.target) {
-    const was = acceptedBlocks.get(entry.entryId);
-    if (was === undefined || was === entry.blockId || analysis.excluded.has(entry.entryId)) continue;
+    if (analysis.excluded.has(entry.entryId)) continue;
     const key = baseKey(entry.entryId);
-    if (staying.find((other) => other.key === key)?.forked) continue;
-    const name = collisionKey(entry.name);
-    const clash = staying.some((other) => other.key !== key && (other.sources.includes(entry.blockId) || collisionKey(other.name) === name));
-    if (clash) reasons.push({ code: 'identity_conflict', entries: [key] });
+    const was = acceptedBlocks.get(entry.entryId);
+    const isNew = !acceptedSet.has(entry.entryId);
+    // A new entry, or one the base pointed at another block. A fork keeps its own.
+    const repointed = !isNew && was !== entry.blockId && !instance.find((other) => other.key === key)?.forked;
+    if ((isNew || repointed) && clashes(key, entry.blockId, entry.name)) reasons.push({ code: 'identity_conflict', entries: [key] });
   }
 
   const unique = new Map(reasons.map((reason) => [`${reason.code}|${reason.entries.join(',')}`, reason]));
@@ -374,6 +378,49 @@ export function checkStructure(input: StructureInput): StructureCheck {
       .map((entry) => entry.entryId)
       .sort(compareText),
   };
+}
+
+// ── Operational defaults ─────────────────────────────────────────────────
+
+const ACCESS_RANK = new Map<string, number>(ACCESS_LEVELS.map((level, rank) => [level, rank]));
+const TOP_ACCESS = ACCESS_LEVELS.length - 1;
+
+/**
+ * Whether access goes up. Null means it isn't known from here: `same`, or the
+ * agent's own setting. Going to something unknown is a rise unless it was already
+ * the most it could be, and coming from it unless it's now the least.
+ */
+function accessRaised(from: number | null, to: number | null): boolean {
+  if (from === null && to === null) return false;
+  if (to === null) return from !== TOP_ACCESS;
+  if (from === null) return to !== 0;
+  return to > from;
+}
+
+const accessRank = (value: string | undefined): number | null => (value === undefined ? null : ACCESS_RANK.get(value) ?? null);
+
+/**
+ * The defaults a template revision raises: more access, more orchestration, fewer
+ * questions, more helpers. Each needs a person. A decrease can stay clean. A field
+ * left out reads as what it falls back to, so taking one away can raise it too.
+ */
+export function operationalIncreases(
+  from: TemplateOperationalDefaults | undefined,
+  to: TemplateOperationalDefaults | undefined,
+): Array<keyof TemplateOperationalDefaults> {
+  const was = from ?? {};
+  const now = to ?? {};
+  // Listed most careful first, and hands-off is what an unset control means.
+  const controlRank = (value: string | undefined): number => ORCHESTRATION_CONTROLS.length - 1 - ORCHESTRATION_CONTROLS.indexOf((value ?? 'hands-off') as typeof ORCHESTRATION_CONTROLS[number]);
+  const raised: Array<keyof TemplateOperationalDefaults> = [];
+  if (accessRaised(accessRank(was.agentAccess), accessRank(now.agentAccess))) raised.push('agentAccess');
+  if (accessRaised(accessRank(was.access), accessRank(now.access))) raised.push('access');
+  if (controlRank(now.control) > controlRank(was.control)) raised.push('control');
+  if ((now.maxHelpers ?? DEFAULT_MAX_HELPERS) > (was.maxHelpers ?? DEFAULT_MAX_HELPERS)) raised.push('maxHelpers');
+  for (const key of ['orchestrate', 'crossProjectHelpers', 'connectToDispatcher', 'autoHelpers'] as const) {
+    if (now[key] && !was[key]) raised.push(key);
+  }
+  return raised;
 }
 
 // ── Native subagent set ──────────────────────────────────────────────────

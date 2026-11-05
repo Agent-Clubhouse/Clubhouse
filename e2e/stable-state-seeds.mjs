@@ -15,8 +15,8 @@ export const BETA_FLAGS = {
   copilotSdk: true,
   telemetry: true,
 };
-/** Left Experimental for v1.0.0, so a stable build honours them as saved. */
-export const GRADUATED_FLAGS = ['newChrome', 'chat', 'richChatContent'];
+/** Left Experimental for v1.0.0, so a stable build reads them as saved. */
+export const GRADUATED_FLAGS = ['newChrome', 'chat', 'richChatContent', 'telemetry'];
 export const PREVIEW_ONLY_FLAGS = Object.keys(BETA_FLAGS).filter((flag) => !GRADUATED_FLAGS.includes(flag));
 
 export const AGENT_ID = 'durable_stable_mode';
@@ -32,7 +32,6 @@ export const UNTOUCHED_FILES = [
   'experimental-settings.json',
   'chat-runtime-settings.json',
   'dispatcher-settings.json',
-  'telemetry-settings.json',
   path.join('agent-logs', 'chat', AGENT_ID, `${LAST_SESSION}.jsonl`),
 ];
 
@@ -49,6 +48,7 @@ export function betaFiles(previewChannel) {
     'chat-runtime-settings.json': { [ORCHESTRATOR]: { mode: 'chat', driver: 'claude_stream_json' } },
     'dispatcher-settings.json': { enabled: true },
     // Consent recorded and an address saved, with nothing switched on, so nothing exports with Preview on either.
+    // A launch with Preview off migrates this file (spec §6.8), so it isn't in UNTOUCHED_FILES.
     'telemetry-settings.json': {
       consentVersion: 1,
       sampleRate: 1,

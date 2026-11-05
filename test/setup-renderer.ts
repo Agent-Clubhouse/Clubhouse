@@ -372,6 +372,7 @@ vi.stubGlobal('clubhouse', {
     onUpdateStatusChanged: () => noop,
     restart: asyncNoop,
     getExperimentalSettings: async () => ({}),
+    isExperimentalSettingsUnreadable: async () => false,
     saveExperimentalSettings: asyncNoop,
     getOrchestrationSettings: async () => ({ globalHelperCap: 20 }),
     saveOrchestrationSettings: asyncNoop,
@@ -558,6 +559,7 @@ vi.stubGlobal('clubhouse', {
     resetId: async () => ({ ok: false }),
     clearOffline: async () => ({ ok: false }),
     deleteLocalData: async () => ({ ok: false }),
+    resume: async () => ({ ok: false }),
   },
   chat: {
     readTranscript: async () => [],

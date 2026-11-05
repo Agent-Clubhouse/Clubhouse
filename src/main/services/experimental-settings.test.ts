@@ -6,7 +6,7 @@ vi.mock('electron', () => ({
 
 vi.mock('fs', () => ({
   existsSync: vi.fn(() => false),
-  readFileSync: vi.fn(() => { throw new Error('ENOENT'); }),
+  readFileSync: vi.fn(() => { throw Object.assign(new Error('ENOENT'), { code: 'ENOENT' }); }),
   promises: {
     writeFile: vi.fn(async () => {}),
   },

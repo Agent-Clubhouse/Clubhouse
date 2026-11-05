@@ -52,9 +52,8 @@ export interface TelemetryDestinationEntry {
 
 /**
  * The developer destination follows Feedback (spec §6.11): its `enabled` is
- * derived, true exactly while Feedback is connected, telemetry is allowed
- * (experiment and consent), its host is confirmed, and the user hasn't
- * switched it off. Since #2097 it doesn't need another destination on.
+ * derived, true exactly while Feedback is connected, consent is recorded,
+ * its host is confirmed, and the user hasn't switched it off. Since #2097 it doesn't need another destination on.
  */
 export interface FramebriarDestinationSettings {
   /** The user turned it off themselves ("Not now", or its switch): it stays off until they turn it on. */
@@ -84,6 +83,17 @@ export interface TelemetrySettingsFile {
    * own export doesn't start alone after the update).
    */
   developerRule?: number;
+  /**
+   * 1 once the file has been through export leaving Experimental (v1.0.0): a
+   * setup the old gate held back was switched off, so it doesn't start.
+   */
+  exportGraduation?: number;
+  /**
+   * Export is paused: the saved flag couldn't be read, so an active setup has no
+   * verified opt-in. Nothing else is changed. Set until the flag reads true or
+   * false, or the user chooses Resume.
+   */
+  exportSuspended?: 'flag_unreadable';
 }
 
 export type SecureStorageState = 'available' | 'weak' | 'unavailable';
@@ -118,8 +128,10 @@ export interface TelemetryDestinationStatus {
 }
 
 export interface TelemetryStatus {
-  /** `experimental.telemetry` is on; the section is hidden otherwise. */
-  available: boolean;
+  /** Export is paused because a settings file couldn't be read. Resume is offered. */
+  exportPaused: boolean;
+  /** While paused: where a copy of that file was kept, if one was. */
+  pausedFileCopy?: string;
   /** At least one destination is enabled (with consent recorded). */
   enabled: boolean;
   /** An exporter is running right now. */

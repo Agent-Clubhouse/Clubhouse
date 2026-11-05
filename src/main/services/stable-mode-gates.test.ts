@@ -41,9 +41,10 @@ import { isChatEnabled, isCopilotSdkEnabled, resolveRuntimeMode } from './chat-r
 import { dispatcherEnablement, isDispatcherEnabled } from './dispatcher/dispatcher-settings';
 import { isMcpEnabledForAny, isMcpOnAtAppLevel } from './mcp-settings';
 import { dispatcherCapability } from './mobile-dispatcher';
-import { EXPERIMENTAL_FLAG as TELEMETRY_FLAG, getTelemetrySettings, isExperimentEnabled } from '../telemetry/settings';
+import { applyExportGraduation, getTelemetrySettings } from '../telemetry/settings';
 import { isTelemetryConfigured, uiChrome } from '../telemetry/bootstrap';
 import { newChromeEnabled, resetNewChromeCacheForTests } from '../window-chrome';
+import { NEW_CHROME_FLAG } from '../../shared/chrome-flag';
 import { COPILOT_SDK_FLAG, RICH_CHAT_CONTENT_FLAG } from '../../shared/chat';
 import { isGraduatedFlagOn } from '../../shared/graduated-flags';
 import { TELEMETRY_CONSENT_VERSION } from '../../shared/telemetry/settings-types';
@@ -129,9 +130,25 @@ describe('chat and rich content, in any build', () => {
     expect(resolveRuntimeMode('claude-code', 'chat')).toEqual({ mode: 'terminal' });
   });
 
+  it('an unrelated save over the file keeps the classic layout, and the toggle returns to new', async () => {
+    corrupt();
+    expect(newChromeEnabled()).toBe(false);
+    await saveSettings({ ...getSettingsForRenderer(), themeGradients: true });
+    expect(JSON.parse(bytes(EXPERIMENTAL_FILE))).toMatchObject({ [NEW_CHROME_FLAG]: false, themeGradients: true });
+
+    relaunch();
+    expect(newChromeEnabled()).toBe(false);
+    expect(uiChrome()).toBe('legacy');
+
+    await saveSettings({ ...getSettingsForRenderer(), [NEW_CHROME_FLAG]: true });
+    relaunch();
+    expect(newChromeEnabled()).toBe(true);
+    expect(uiChrome()).toBe('v2');
+  });
+
   it('read the same way in the renderer, and only they are forced off', () => {
     corrupt();
-    expect(getSettingsForRenderer()).toEqual({ chat: false, [RICH_CHAT_CONTENT_FLAG]: false });
+    expect(getSettingsForRenderer()).toEqual({ chat: false, [RICH_CHAT_CONTENT_FLAG]: false, [NEW_CHROME_FLAG]: false });
     expect(isGraduatedFlagOn(getSettingsForRenderer(), 'themeGradients')).toBe(true);
   });
 
@@ -147,7 +164,7 @@ describe('chat and rich content, in any build', () => {
 describe('the preview-only list', () => {
   it('names each feature by the same key its reader uses', () => {
     expect([...PREVIEW_ONLY_EXPERIMENTAL_FLAGS].sort()).toEqual([
-      'goobers', COPILOT_SDK_FLAG, TELEMETRY_FLAG,
+      'goobers', COPILOT_SDK_FLAG,
     ].sort());
   });
 });
@@ -233,8 +250,8 @@ describe('a packaged stable build with Preview off', () => {
     for (const flag of PREVIEW_ONLY_EXPERIMENTAL_FLAGS) expect(flags).not.toHaveProperty(flag);
   });
 
-  it('keeps honouring the saved layout, the graduated flags and the structured-mode notice marker', () => {
-    expect(getSettings()).toEqual({ newChrome: true, chat: true, [RICH_CHAT_CONTENT_FLAG]: true, themeGradients: true, [STRUCTURED_MODE_REMOVED_NOTICE_KEY]: true });
+  it('keeps honouring the saved layout, the graduated flags and the structured-mode notice marker, and reads through the saved telemetry flag', () => {
+    expect(getSettings()).toEqual({ newChrome: true, chat: true, [RICH_CHAT_CONTENT_FLAG]: true, themeGradients: true, telemetry: true, [STRUCTURED_MODE_REMOVED_NOTICE_KEY]: true });
   });
 
   it('still reports what is saved through getStoredSettings', () => {
@@ -291,7 +308,7 @@ describe('a packaged stable build with Preview off', () => {
     expect(bytes(DISPATCHER_FILE)).toBe(saved);
   });
 
-  it('stops telemetry without rewriting consent or destinations', () => {
+  it('switches a dormant telemetry setup off for good, keeping consent and the confirmed host', async () => {
     const file = {
       consentVersion: TELEMETRY_CONSENT_VERSION,
       sampleRate: 1,
@@ -302,16 +319,18 @@ describe('a packaged stable build with Preview off', () => {
     };
     write(TELEMETRY_FILE, file);
     relaunch();
-    const saved = bytes(TELEMETRY_FILE);
 
-    expect(isExperimentEnabled()).toBe(false);
     expect(isTelemetryConfigured()).toBe(false);
-
-    // Consent and the enabled destination are still what the app loads.
     const loaded = getTelemetrySettings();
     expect(loaded.consentVersion).toBe(TELEMETRY_CONSENT_VERSION);
-    expect(loaded.destinations.find((d) => d.id === 'azure')).toMatchObject({ enabled: true, confirmedHost: file.destinations[0].confirmedHost });
-    expect(bytes(TELEMETRY_FILE)).toBe(saved);
+    expect(loaded.destinations.find((d) => d.id === 'azure')).toMatchObject({ enabled: false, confirmedHost: file.destinations[0].confirmedHost });
+    await applyExportGraduation()?.saved;
+
+    // Turning Preview on later doesn't bring it back: the flag was the old gate, and it's gone.
+    write(UPDATE_FILE, { autoUpdate: false, previewChannel: true, lastCheck: null, dismissedVersion: null, lastSeenVersion: null });
+    relaunch();
+    expect(getTelemetrySettings().destinations.some((d) => d.enabled)).toBe(false);
+    expect(isTelemetryConfigured()).toBe(false);
   });
 
   describe('a write', () => {
@@ -378,7 +397,6 @@ describe('a packaged stable build with Preview off', () => {
     expect(newChromeEnabled()).toBe(true);
     expect(isChatEnabled()).toBe(true);
     expect(isDispatcherEnabled()).toBe(true);
-    expect(isExperimentEnabled()).toBe(true);
   });
 });
 
@@ -428,12 +446,11 @@ describe.each([
     expect(isCopilotSdkEnabled()).toBe(true);
     expect(resolveRuntimeMode('claude-code').mode).toBe('chat');
     expect(isDispatcherEnabled()).toBe(true);
-    expect(isExperimentEnabled()).toBe(true);
     expect(dispatcherCapability()).toMatchObject({ newLayout: true, flagOn: true, enabled: true });
   });
 
-  it('saves exactly what it is given', async () => {
-    await saveSettings({ chat: false });
-    expect(JSON.parse(bytes(EXPERIMENTAL_FILE))).toEqual({ chat: false });
+  it('saves what it is given, except the telemetry flag, which main owns', async () => {
+    await saveSettings({ chat: false, telemetry: false });
+    expect(JSON.parse(bytes(EXPERIMENTAL_FILE))).toEqual({ chat: false, telemetry: true });
   });
 });

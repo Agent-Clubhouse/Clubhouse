@@ -11,6 +11,7 @@ import {
 } from './chat-default-tip';
 
 const getExperimentalSettings = vi.fn();
+const isExperimentalSettingsUnreadable = vi.fn();
 const getRuntimeSettings = vi.fn();
 const getAgentRuntime = vi.fn();
 const listDurable = vi.fn();
@@ -27,7 +28,9 @@ beforeEach(() => {
   getAgentRuntime.mockReset().mockResolvedValue({ chat: true });
   listDurable.mockReset().mockResolvedValue([{ id: 'a1', orchestrator: 'codex-cli' }]);
   listProjects.mockReset().mockResolvedValue([{ id: 'p1', path: '/proj' }]);
+  isExperimentalSettingsUnreadable.mockReset().mockResolvedValue(false);
   window.clubhouse.app.getExperimentalSettings = getExperimentalSettings;
+  window.clubhouse.app.isExperimentalSettingsUnreadable = isExperimentalSettingsUnreadable;
   window.clubhouse.chat.getRuntimeSettings = getRuntimeSettings;
   window.clubhouse.chat.getAgentRuntime = getAgentRuntime;
   window.clubhouse.agent.listDurable = listDurable;
@@ -119,6 +122,22 @@ describe('showChatDefaultTip', () => {
 
     await showChatDefaultTip();
     expect(toasts()).toHaveLength(1);
+  });
+
+  it('decides nothing while the flags file is unreadable: no marker and no toast, and a readable launch evaluates normally', async () => {
+    isExperimentalSettingsUnreadable.mockResolvedValue(true);
+    // What main sends the renderer for that file: a stand-in, not a saved choice.
+    getExperimentalSettings.mockResolvedValue({ chat: false, richChatContent: false, newChrome: false });
+    await showChatDefaultTip();
+    expect(toasts()).toEqual([]);
+    expect(localStorage.getItem(CHAT_TIP_RULED_OUT_KEY)).toBeNull();
+    expect(localStorage.getItem(CHAT_MESSAGE_SHOWN_KEY)).toBeNull();
+
+    isExperimentalSettingsUnreadable.mockResolvedValue(false);
+    getExperimentalSettings.mockResolvedValue({});
+    await showChatDefaultTip();
+    expect(toasts()).toHaveLength(1);
+    expect(localStorage.getItem(CHAT_MESSAGE_SHOWN_KEY)).toBe('true');
   });
 
   it('decides nothing when a project\'s agents can\'t be listed, so the next launch asks again', async () => {

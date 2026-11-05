@@ -216,6 +216,9 @@ export const app = {
     ipcRenderer.invoke(IPC.APP.RESTART),
   getExperimentalSettings: (): Promise<Record<string, boolean>> =>
     ipcRenderer.invoke(IPC.APP.GET_EXPERIMENTAL_SETTINGS),
+  /** The flags file exists and can't be read, so getExperimentalSettings is partly a stand-in. */
+  isExperimentalSettingsUnreadable: (): Promise<boolean> =>
+    ipcRenderer.invoke(IPC.APP.IS_EXPERIMENTAL_SETTINGS_UNREADABLE),
   saveExperimentalSettings: (settings: Record<string, boolean>) =>
     ipcRenderer.invoke(IPC.APP.SAVE_EXPERIMENTAL_SETTINGS, settings),
   },

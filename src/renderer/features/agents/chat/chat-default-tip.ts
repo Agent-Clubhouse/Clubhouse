@@ -19,7 +19,8 @@
  * so it never counts. If the marker can't be written, it doesn't show at all: a
  * tip that can't be remembered would come back on every launch. A launch that
  * can't read the settings or a project's agents decides nothing, so the next one
- * asks again.
+ * asks again. That includes an unreadable flags file: the renderer's `chat: false`
+ * is a stand-in then, not a choice.
  */
 
 import { useToastStore } from '../../../stores/toastStore';
@@ -89,6 +90,7 @@ async function findDefaultChatAgent(): Promise<{ provider: string } | ChatTipRul
  */
 export async function showChatDefaultTip(): Promise<void> {
   if (isMarked(CHAT_MESSAGE_SHOWN_KEY) || isMarked(CHAT_TIP_RULED_OUT_KEY)) return;
+  if (await window.clubhouse.app.isExperimentalSettingsUnreadable()) return;
   const found = await findDefaultChatAgent();
   if (typeof found === 'string') {
     mark(CHAT_TIP_RULED_OUT_KEY, found);

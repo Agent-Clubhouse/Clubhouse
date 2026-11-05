@@ -67,6 +67,7 @@ import {
   entryKeyOf,
   firstBundleAbove,
   hasMovedEntries,
+  operationalIncreases,
   takeableRevision,
   takeableThroughRefs,
 } from './structure';
@@ -313,7 +314,8 @@ export function planComposition(index: CatalogIndex, request: PlanRequest): Comp
     if (target) {
       const structure = checkStructure(structureInput(index, composition, accepted, target));
       const subagents = checkSubagentSet(subagentSetInput(index, composition, accepted, target, foreign));
-      const candidate = structure.clean && subagents.clean
+      const increases = operationalIncreases(accepted.operationalDefaults, target.operationalDefaults);
+      const candidate = structure.clean && subagents.clean && increases.length === 0
         ? applyCleanUpdate(composition, templateTargetOf(template.templateId, latest as number, target), structure.order)
         : null;
       const blockers = candidate
@@ -325,11 +327,12 @@ export function planComposition(index: CatalogIndex, request: PlanRequest): Comp
         targetRevision: latest as number,
         reasons: structure.reasons,
         subagentReasons: subagents.reasons,
+        operationalIncreases: increases,
         blockers,
       };
       if (clean && adoption.structure.mode === 'latest-if-clean') resolved = candidate;
     } else {
-      update = { status: 'current', targetRevision: template.acceptedRevision, reasons: [], subagentReasons: [], blockers: [] };
+      update = { status: 'current', targetRevision: template.acceptedRevision, reasons: [], subagentReasons: [], operationalIncreases: [], blockers: [] };
     }
   }
   return planResolved(index, { ...request, composition: resolved }, update, composition);
@@ -832,7 +835,7 @@ function planResolved(
       resolvedRevision: composition.template.acceptedRevision,
       latestRevision: templateEntry.headRevision,
       customOrder: moved || hasLocal || hasExclusion,
-      update: update ?? { status: 'current', targetRevision: composition.template.acceptedRevision, reasons: [], subagentReasons: [], blockers: [] },
+      update: update ?? { status: 'current', targetRevision: composition.template.acceptedRevision, reasons: [], subagentReasons: [], operationalIncreases: [], blockers: [] },
     };
     const waiting = structure.update.status !== 'current' && structure.resolvedRevision < structure.latestRevision;
     if (waiting) {
@@ -870,7 +873,13 @@ function planResolved(
     adoption: { content: adoption.content.mode, structure: adoption.structure.mode },
     blocks: plannedBlocks.map((item) => [item.entryKey, item.assetId, item.revision, item.contentHash]),
     assets: [...skills, ...mcpServers].map((asset) => [asset.assetId, asset.revision, asset.contentHash, asset.destination.key]),
-    subagentAssets: subagents.map((asset) => [asset.entryKey, asset.assetId, asset.revision, asset.contentHash, asset.blocks.map((item) => [item.assetId, item.revision, item.contentHash])]),
+    subagentAssets: subagents.map((asset) => [
+      asset.entryKey,
+      asset.assetId,
+      asset.revision,
+      asset.contentHash,
+      ...[asset.blocks, asset.skills, asset.mcps].map((items) => items.map((item) => [item.assetId, item.revision, item.contentHash])),
+    ]),
     excluded,
     foreign: [...(request.foreign ?? [])].map((f) => [collisionKey(f.key), f.owner]).sort((a, b) => compareText(a.join('|'), b.join('|'))),
     blockers: sortedBlockers,
@@ -1033,7 +1042,10 @@ function relationsOf(index: CatalogIndex, composition: AgentComposition, assetId
     // Every revision it could resolve to: what the accepted revision refers to, up to its latest.
     const subagentId = subagentIdOf(entry, accepted);
     const subagent = subagentId ? entryOf(index, subagentId) : null;
-    const from = accepted?.subagents.find((ref) => ref.entryId === entry.baseEntryId)?.subagentRevision ?? subagent?.headRevision ?? 0;
+    // Something followed goes from its floor, however it got there. An agent's own goes from its latest.
+    const referenced = accepted?.subagents.find((ref) => ref.entryId === entry.baseEntryId)?.subagentRevision ?? 0;
+    const explicit = subagentId && hasOwn(composition.floors, subagentId) ? composition.floors[subagentId] : 0;
+    const from = entry.source.kind === 'follow' ? Math.max(referenced, explicit) : subagent?.headRevision ?? 0;
     const refersTo = subagent?.revisions.filter((record) => record.revision >= from).some((record) => (
       record.projection.kind === 'subagent' && (
         record.projection.blocks.some((ref) => ref.blockId === assetId) || record.projection.skills.includes(assetId) || record.projection.mcps.includes(assetId)
@@ -1104,20 +1116,32 @@ function plannedDestinations(plan: CompositionPlan): Array<{ assetId: string; re
   return [
     ...(plan.instructions?.blocks ?? []).map((item) => ({ assetId: item.assetId, revision: item.revision, key: INSTRUCTION_DESTINATION.key })),
     ...[...plan.skills, ...plan.mcpServers, ...plan.subagents].map((asset) => ({ assetId: asset.assetId, revision: asset.revision, key: asset.destination.key })),
+    // What a subagent refers to goes where it goes: a new revision of one changes what's delivered there.
+    ...plan.subagents.flatMap((asset) => [...asset.blocks, ...asset.skills, ...asset.mcps].map((nested) => ({ assetId: nested.assetId, revision: nested.revision, key: asset.destination.key }))),
   ];
 }
 
 function changesBetween(before: CompositionPlan, after: CompositionPlan): PlannedAssetChange[] {
-  const was = new Map(plannedDestinations(before).map((asset) => [asset.assetId, asset]));
-  const now = new Map(plannedDestinations(after).map((asset) => [asset.assetId, asset]));
+  const place = (asset: { assetId: string; key: string }): string => `${asset.assetId}\u0000${asset.key}`;
+  const was = new Map(plannedDestinations(before).map((asset) => [place(asset), asset]));
+  const now = new Map(plannedDestinations(after).map((asset) => [place(asset), asset]));
   const changes: PlannedAssetChange[] = [];
-  for (const assetId of [...new Set([...was.keys(), ...now.keys()])].sort()) {
-    const from = was.get(assetId);
-    const to = now.get(assetId);
-    if (from?.revision === to?.revision && from?.key === to?.key) continue;
-    changes.push({ assetId, fromRevision: from?.revision ?? null, toRevision: to?.revision ?? null, destination: (to ?? from)!.key });
+  for (const key of [...new Set([...was.keys(), ...now.keys()])].sort()) {
+    const from = was.get(key);
+    const to = now.get(key);
+    if (from?.revision === to?.revision) continue;
+    const { assetId, key: destination } = (to ?? from)!;
+    changes.push({ assetId, fromRevision: from?.revision ?? null, toRevision: to?.revision ?? null, destination });
   }
-  return changes;
+  // One asset moving to a new key is one change, not a removal and an addition.
+  const moved = new Map<string, PlannedAssetChange>();
+  for (const change of changes) {
+    const other = moved.get(change.assetId);
+    if (other && other.toRevision === null && change.fromRevision === null) moved.set(change.assetId, { ...change, fromRevision: other.fromRevision });
+    else if (other && other.fromRevision === null && change.toRevision === null) moved.set(change.assetId, { ...other, fromRevision: change.fromRevision });
+    else moved.set(other ? `${change.assetId}\u0000${change.destination}` : change.assetId, change);
+  }
+  return [...moved.values()];
 }
 
 function heldAssetsOf(plan: CompositionPlan): string[] {

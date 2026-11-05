@@ -8,6 +8,7 @@ import {
   hasMovedEntries,
   instanceFromTemplate,
   mergeOrder,
+  operationalIncreases,
   switchTemplate,
   takeableRevision,
   takeableThroughRefs,
@@ -350,6 +351,24 @@ describe('identity', () => {
     expect(checkStructure({ ...named, instance: [...instance('*e'), ...instance('+Rules')] }).reasons.filter((reason) => reason.code === 'identity_conflict')).toEqual([]);
   });
 
+  it('a base swapping blocks between two entries is no clash: each is compared as it stands afterwards', () => {
+    const accepted = [{ entryId: 'one', blockId: 'a', name: 'A' }, { entryId: 'two', blockId: 'b', name: 'B' }];
+    const target = [{ entryId: 'one', blockId: 'b', name: 'B' }, { entryId: 'two', blockId: 'a', name: 'A' }];
+    expect(checkStructure({ accepted, target, instance: instance('one', 'two'), excluded: [] })).toMatchObject({ clean: true, reasons: [] });
+  });
+
+  it('a new entry named like one the base just renamed away from is no clash either', () => {
+    const accepted = [{ entryId: 'one', blockId: 'a', name: 'Job' }];
+    const target = [{ entryId: 'one', blockId: 'b', name: 'Old job' }, { entryId: 'two', blockId: 'c', name: 'Job' }];
+    expect(checkStructure({ accepted, target, instance: instance('one'), excluded: [] }).clean).toBe(true);
+  });
+
+  it('two entries ending up on one block still clash', () => {
+    const accepted = [{ entryId: 'one', blockId: 'a', name: 'A' }, { entryId: 'two', blockId: 'b', name: 'B' }];
+    const target = [{ entryId: 'one', blockId: 'b', name: 'B' }, { entryId: 'two', blockId: 'b', name: 'B' }];
+    expect(checkStructure({ accepted, target, instance: instance('one', 'two'), excluded: [] }).reasons).toContainEqual({ code: 'identity_conflict', entries: ['base:one'] });
+  });
+
   it('an entry this revision removes no longer counts as existing', () => {
     const accepted = base('Identity', 'Job');
     const target = [...base('Identity'), { entryId: 'Job2', blockId: 'block-Job2', name: 'Job' }];
@@ -389,6 +408,43 @@ describe('runs and whole revisions', () => {
 
   it('a base with everything replaced, on a follower', () => {
     expect(checkStructure(input(['a'], ['z'], ['a']))).toMatchObject({ clean: true, order: keys('z') });
+  });
+});
+
+describe('operational increases', () => {
+  it.each([
+    ['agent access up', { agentAccess: 'standard' }, { agentAccess: 'bypass' }, ['agentAccess']],
+    ['orchestration on', {}, { orchestrate: true }, ['orchestrate']],
+    ['both', { agentAccess: 'standard' }, { agentAccess: 'bypass', orchestrate: true }, ['agentAccess', 'orchestrate']],
+    ['helper access up', { access: 'standard' }, { access: 'auto' }, ['access']],
+    ['fewer questions', { control: 'ask-everything' }, { control: 'ask-before-start' }, ['control']],
+    ['an ask taken away', { control: 'ask-everything' }, {}, ['control']],
+    ['more helpers', { maxHelpers: 2 }, { maxHelpers: 3 }, ['maxHelpers']],
+    ['more helpers than the fallback', {}, { maxHelpers: 100 }, ['maxHelpers']],
+    ['cross-project on', {}, { crossProjectHelpers: true }, ['crossProjectHelpers']],
+    ['Dispatcher on', { connectToDispatcher: false }, { connectToDispatcher: true }, ['connectToDispatcher']],
+    ['auto helpers on', {}, { autoHelpers: true }, ['autoHelpers']],
+    ['setting access where it was unknown', {}, { agentAccess: 'auto' }, ['agentAccess']],
+    ['leaving access to the agent\'s own, from something it could exceed', { agentAccess: 'standard' }, {}, ['agentAccess']],
+    ['helpers on the same access as the agent, from less', { access: 'standard' }, { access: 'same' }, ['access']],
+    ['from the same access to possibly more', { access: 'same' }, { access: 'auto' }, ['access']],
+  ] as const)('%s is an increase', (_label, from, to, expected) => {
+    expect(operationalIncreases(from, to)).toEqual(expected);
+  });
+
+  it.each([
+    ['nothing at all', undefined, undefined],
+    ['no change', { agentAccess: 'auto', orchestrate: true }, { agentAccess: 'auto', orchestrate: true }],
+    ['agent access down', { agentAccess: 'bypass' }, { agentAccess: 'standard' }],
+    ['orchestration off', { orchestrate: true }, { orchestrate: false }],
+    ['orchestration taken away', { orchestrate: true }, {}],
+    ['more questions', {}, { control: 'ask-everything' }],
+    ['fewer helpers', {}, { maxHelpers: 1 }],
+    ['down to the least, from unknown', {}, { agentAccess: 'standard' }],
+    ['leaving it to the agent, from the most', { agentAccess: 'bypass' }, {}],
+    ['helpers to the same, from the most', { access: 'bypass' }, { access: 'same' }],
+  ] as const)('%s is not', (_label, from, to) => {
+    expect(operationalIncreases(from, to)).toEqual([]);
   });
 });
 
