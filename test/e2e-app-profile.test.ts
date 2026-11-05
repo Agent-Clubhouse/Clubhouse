@@ -208,14 +208,17 @@ function fakePage(url = RENDERER_URL) {
     url: () => url,
     waitForLoadState: vi.fn(async () => {}),
     waitForTimeout: vi.fn(async () => {}),
-    evaluate: vi.fn(async () => {}),
+    evaluate: vi.fn(async () => ({ newChrome: false, preseeded: true, completed: true })),
+    reload: vi.fn(async () => {}),
     locator: vi.fn((selector: string) => selector.includes('onboarding-skip') ? skip : backdrop),
     addLocatorHandler: vi.fn(async (_locator: unknown, _handler: () => Promise<void>) => {}),
   };
 }
 
 function fakeApp(pages: ReturnType<typeof fakePage>[]) {
+  const context = { addInitScript: vi.fn(async (_script: () => void) => {}) };
   return {
+    context: () => context,
     process: () => ({ pid: undefined as number | undefined }),
     windows: () => pages,
     waitForEvent: vi.fn(async () => { throw new Error('no more windows'); }),
@@ -326,11 +329,53 @@ describe('launchApp', () => {
 
   it("leaves onboarding alone with onboarding: 'show'", async () => {
     const page = fakePage();
-    launchMock.mockResolvedValue(fakeApp([page]));
+    const app = fakeApp([page]);
+    launchMock.mockResolvedValue(app);
     const launched = await launchApp({ onboarding: 'show' });
     expect(page.evaluate).not.toHaveBeenCalled();
     expect(page.addLocatorHandler).not.toHaveBeenCalled();
+    expect(app.context().addInitScript).not.toHaveBeenCalled();
+    expect(page.reload).not.toHaveBeenCalled();
     launched.profile.dispose();
+  });
+
+  it.each([
+    { newChrome: true, preseeded: false, completed: false },
+    { newChrome: false, preseeded: true, completed: true },
+    { newChrome: false, preseeded: false, completed: true },
+  ])('preserves the first load when no classic fallback is needed: %j', async (state) => {
+    const page = fakePage();
+    page.evaluate.mockResolvedValue(state);
+    const app = fakeApp([page]);
+    launchMock.mockResolvedValue(app);
+    const launched = await launchApp({ preserveFirstLoad: true });
+    expect(app.context().addInitScript).toHaveBeenCalledOnce();
+    expect(app.context().addInitScript.mock.invocationCallOrder[0]).toBeLessThan(page.waitForLoadState.mock.invocationCallOrder[0]);
+    expect(page.reload).not.toHaveBeenCalled();
+    launched.profile.dispose();
+  });
+
+  it('reloads only when the first-script seed missed incomplete classic onboarding', async () => {
+    const page = fakePage();
+    page.evaluate.mockResolvedValue({ newChrome: false, preseeded: false, completed: false });
+    launchMock.mockResolvedValue(fakeApp([page]));
+    const launched = await launchApp();
+    expect(page.evaluate).toHaveBeenCalledTimes(2);
+    expect(page.evaluate.mock.invocationCallOrder[1]).toBeLessThan(page.reload.mock.invocationCallOrder[0]);
+    expect(page.reload).toHaveBeenCalledOnce();
+    expect(page.reload.mock.invocationCallOrder[0]).toBeLessThan(page.addLocatorHandler.mock.invocationCallOrder[0]);
+    launched.profile.dispose();
+  });
+
+  it('fails explicitly if seeding missed a startup spec instead of testing a second init', async () => {
+    const page = fakePage();
+    page.evaluate.mockResolvedValue({ newChrome: false, preseeded: false, completed: false });
+    const app = fakeApp([page]);
+    launchMock.mockResolvedValue(app);
+    await expect(launchApp({ preserveFirstLoad: true })).rejects.toThrow('preserveFirstLoad forbids reloading startup');
+    expect(page.reload).not.toHaveBeenCalled();
+    expect(app.close).toHaveBeenCalled();
+    expect(reportActionFailure).toHaveBeenCalledWith(app, page, 'onboarding-preseed', expect.any(Error));
   });
 
   it('handles onboarding that appears after the old three-second visibility window', async () => {

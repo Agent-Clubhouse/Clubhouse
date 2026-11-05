@@ -44,7 +44,7 @@ test.afterEach(async () => {
 });
 
 async function launch(opts: LaunchOptions = {}): Promise<Page> {
-  app = await launchApp({ profile, env: STABLE_BUILD, ...opts });
+  app = await launchApp({ profile, env: STABLE_BUILD, ...opts, preserveFirstLoad: true });
   return app.window;
 }
 

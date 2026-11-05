@@ -5,7 +5,7 @@ let electronApp: Awaited<ReturnType<typeof electron.launch>>;
 let window: Awaited<ReturnType<typeof electronApp.firstWindow>>;
 
 test.beforeAll(async () => {
-  ({ electronApp, window } = await launchApp());
+  ({ electronApp, window } = await launchApp({ preserveFirstLoad: true }));
 });
 
 test.afterAll(async () => {

@@ -61,6 +61,9 @@ export interface LaunchOptions {
    */
   onboarding?: 'skip' | 'show';
 
+  /** Startup-path specs must exercise the first renderer load, never a reload. */
+  preserveFirstLoad?: boolean;
+
   /** Launch a packaged Clubhouse executable instead of the webpack entry. */
   executablePath?: string;
 
@@ -91,6 +94,7 @@ export interface LaunchedApp {
  * owned profile is removed before the error propagates.
  */
 export async function launchApp(opts: LaunchOptions = {}): Promise<LaunchedApp> {
+  const launchStarted = Date.now();
   const ownsProfile = !opts.profile;
   const profile = opts.profile ?? createDisposableProfile({ label: opts.label });
 
@@ -116,11 +120,25 @@ export async function launchApp(opts: LaunchOptions = {}): Promise<LaunchedApp> 
   trackOpenApp(electronApp);
 
   try {
+    const electronReady = Date.now();
+    // Electron may return before or after the first page starts loading. The
+    // marker below tells us whether this beat the renderer's app scripts.
+    if ((opts.onboarding ?? 'skip') === 'skip') {
+      await electronApp.context().addInitScript(seedClassicOnboarding);
+    }
     // Collect all windows that open, then pick the renderer (non-devtools) one.
     const rendererWindow = await findRendererWindow(electronApp);
     await rendererWindow.waitForLoadState('load');
+    const rendererReady = Date.now();
+    const onboardingMode = (opts.onboarding ?? 'skip') === 'skip'
+      ? await dismissOnboarding(electronApp, rendererWindow, opts.preserveFirstLoad ?? false)
+      : 'show';
     await installFrameMonitor(rendererWindow);
-    if ((opts.onboarding ?? 'skip') === 'skip') await dismissOnboarding(electronApp, rendererWindow);
+    console.log(`[e2e launch] ${JSON.stringify({
+      label: opts.label, onboardingMode, preserveFirstLoad: opts.preserveFirstLoad ?? false,
+      electronMs: electronReady - launchStarted, rendererMs: rendererReady - electronReady,
+      onboardingMs: Date.now() - rendererReady, totalMs: Date.now() - launchStarted,
+    })}`);
     return { electronApp, window: rendererWindow, userDataDir: profile.userDataDir, profile };
   } catch (err) {
     untrackOpenApp(electronApp);
@@ -130,11 +148,44 @@ export async function launchApp(opts: LaunchOptions = {}): Promise<LaunchedApp> 
   }
 }
 
-async function dismissOnboarding(electronApp: ElectronApp, rendererWindow: Page): Promise<void> {
-  // Mark onboarding as completed so it doesn't appear during E2E tests.
-  await rendererWindow.evaluate(() => {
-    localStorage.setItem('clubhouse_onboarding', JSON.stringify({ completed: true, cohort: null }));
+/** Serialized into the page by addInitScript; it must be self-contained. */
+export function seedClassicOnboarding(): void {
+  const target = window as Window & {
+    clubhouse?: { newChromeLayout?: boolean };
+    __clubhouseE2EOnboardingSeeded?: boolean;
+  };
+  // The default shell completes onboarding itself. Do not change its startup.
+  if (target.clubhouse?.newChromeLayout !== false) return;
+  localStorage.setItem('clubhouse_onboarding', JSON.stringify({ completed: true, cohort: null }));
+  target.__clubhouseE2EOnboardingSeeded = true;
+}
+
+async function dismissOnboarding(electronApp: ElectronApp, rendererWindow: Page, preserveFirstLoad: boolean): Promise<string> {
+  const state = await rendererWindow.evaluate(() => {
+    const target = window as Window & {
+      clubhouse?: { newChromeLayout?: boolean };
+      __clubhouseE2EOnboardingSeeded?: boolean;
+    };
+    let completed = false;
+    try { completed = JSON.parse(localStorage.getItem('clubhouse_onboarding') ?? '{}').completed === true; } catch { /* fresh state */ }
+    return { newChrome: target.clubhouse?.newChromeLayout === true, preseeded: target.__clubhouseE2EOnboardingSeeded === true, completed };
   });
+  if (state.newChrome) return 'new-shell';
+  let mode = state.preseeded ? 'preseeded' : 'already-completed';
+  if (!state.completed) {
+    if (preserveFirstLoad) {
+      const cause = new Error('Onboarding preseed missed the first app scripts; preserveFirstLoad forbids reloading startup');
+      await reportActionFailure(electronApp, rendererWindow, 'onboarding-preseed', cause);
+      throw cause;
+    }
+    // Only an incomplete classic profile needs this fallback. Destroy the old
+    // store/timer and let the next module load read completion before initApp.
+    await rendererWindow.evaluate(() => {
+      localStorage.setItem('clubhouse_onboarding', JSON.stringify({ completed: true, cohort: null }));
+    });
+    await rendererWindow.reload();
+    mode = 'classic-reload';
+  }
 
   // The store already read localStorage; startup can still show the modal
   // later. Handle it whenever it blocks an action, including after slow init,
@@ -149,6 +200,7 @@ async function dismissOnboarding(electronApp: ElectronApp, rendererWindow: Page)
       throw new Error(`Onboarding dismissal failed; cannot continue with a blocking modal. ${String(cause)}`, { cause });
     }
   });
+  return mode;
 }
 
 async function findRendererWindow(electronApp: ElectronApp) {
