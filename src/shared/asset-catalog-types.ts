@@ -439,6 +439,8 @@ export interface StructureChoice {
   };
   /** A person's resolution of what the new revision's subagents bring. */
   authorityApprovals?: Record<string, AuthorityApproval>;
+  /** The operational defaults the person agreed to raise. All of them, or the choice is refused. */
+  acceptOperationalIncreases?: Array<keyof TemplateOperationalDefaults>;
 }
 
 /** Accepting a revision binds what the person was shown. If any of these moved, it's stale. */
@@ -655,6 +657,8 @@ export interface PlannedStructureUpdate {
   targetRevision: number;
   reasons: StructureReason[];
   subagentReasons: SubagentSetReason[];
+  /** Operational defaults the new revision raises. Each needs a person's choice: never clean. */
+  operationalIncreases: Array<keyof TemplateOperationalDefaults>;
   /** Blockers the new revision would bring, such as a skill colliding. */
   blockers: PlanIssue[];
 }

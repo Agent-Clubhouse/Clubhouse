@@ -187,6 +187,9 @@ function checkArgs(args: string[], issues: Issues): void {
   for (const index of secretArgs(args)) issues.add('secret_value', `args[${index}]`);
 }
 
+/** Webhook URLs are the credential: whoever holds one can post. */
+const WEBHOOK_URL_RE = /\/\/(?:hooks\.slack\.com\/(?:services|workflows)\/|(?:[\w-]+\.)?discord(?:app)?\.com\/api\/webhooks\/|[\w.-]+\.webhook\.office\.com\/)/i;
+
 function checkUrl(url: string, issues: Issues): void {
   let parsed: URL;
   try {
@@ -199,8 +202,9 @@ function checkUrl(url: string, issues: Issues): void {
   if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') issues.add('invalid_url', 'url');
   if (parsed.username || parsed.password) issues.add('secret_value', 'url');
   for (const key of parsed.searchParams.keys()) {
-    if (isSecretKey(key)) issues.add('secret_value', 'url');
+    if (isSecretFlag(key)) issues.add('secret_value', 'url');
   }
+  if (WEBHOOK_URL_RE.test(url)) issues.add('secret_value', 'url');
   // Fragments and matrix parameters aren't query strings, and carry tokens too.
   if (hasSecretValue(url)) issues.add('secret_value', 'url');
 }
@@ -504,8 +508,26 @@ function validateTemplate(raw: Record<string, unknown>, issues: Issues): Templat
  * provider, blocks for a person, because a list of dangerous names is always
  * missing one. Activation decides what a delivery path really supports.
  */
-const KNOWN_PROVIDER_FIELDS: Readonly<Record<string, ReadonlySet<string>>> = {
-  claude: new Set(['model', 'effort', 'tools', 'disallowedtools', 'maxturns', 'color', 'initialprompt', 'mcpservers']),
+const MODEL_VALUE_RE = /^[A-Za-z0-9][\w.:/@[\]-]{0,127}$/;
+const WORD_VALUE_RE = /^[A-Za-z0-9#][\w#-]{0,31}$/;
+/** A tool, with an optional scope: `Read`, `mcp__server__tool`, `Bash(git status)`. Not a flag, an assignment or JSON. */
+const TOOL_RULE_RE = /^[A-Za-z][\w-]*(?:\(.*\))?$/;
+
+function isToolList(value: unknown): boolean {
+  const items = typeof value === 'string' ? value.split(',').map((item) => item.trim()) : value;
+  return Array.isArray(items) && items.every((item) => typeof item === 'string' && TOOL_RULE_RE.test(item));
+}
+
+/** Each field's value is checked by shape too: a known name is no reason to trust what's in it. */
+const KNOWN_PROVIDER_FIELDS: Readonly<Record<string, Readonly<Record<string, (value: unknown) => boolean>>>> = {
+  claude: {
+    model: (value) => typeof value === 'string' && MODEL_VALUE_RE.test(value),
+    effort: (value) => typeof value === 'string' && WORD_VALUE_RE.test(value),
+    color: (value) => typeof value === 'string' && WORD_VALUE_RE.test(value),
+    maxturns: (value) => typeof value === 'number' && Number.isSafeInteger(value) && value > 0,
+    tools: isToolList,
+    disallowedtools: isToolList,
+  },
 };
 
 /** Named to say why it's blocked. These block whether or not they're named here. */
@@ -516,7 +538,7 @@ const SERVER_NAME_RE = /^[\w.-]{1,64}$/;
 /** A string holding JSON is that JSON: a stringified field counts as the field. */
 function parsedJson(value: string): unknown {
   const text = value.trim();
-  if (!text.startsWith('{') && !text.startsWith('[')) return undefined;
+  if (!text.startsWith('{') && !text.startsWith('[') && !text.startsWith('"')) return undefined;
   try {
     return JSON.parse(text);
   } catch {
@@ -568,23 +590,18 @@ function holdsAuthority(value: unknown, depth = 0): boolean {
   ));
 }
 
-/** A known field still has to look like one: a scalar or a flat list, not an object or stringified JSON. */
-function isPlainValue(value: unknown): boolean {
-  if (typeof value === 'number' || typeof value === 'boolean') return true;
-  if (typeof value === 'string') return parsedJson(value) === undefined;
-  return Array.isArray(value) && value.every((item) => typeof item === 'string' && parsedJson(item) === undefined);
-}
-
 function reviewReason(provider: string, key: string, value: unknown): SubagentReviewField['reason'] | null {
   const field = normalizedField(key);
   if (AUTHORITY_FIELD_RE.test(field)) return 'authority';
   if (INLINE_MCP_FIELDS.has(field)) {
-    // A reference by name is fine. A definition written inline can run anything.
+    // A reference by name is fine, if it isn't Clubhouse's own. A definition written inline can run anything.
     const names = typeof value === 'string' ? [value] : Array.isArray(value) ? value : [value];
-    if (!names.every((name) => typeof name === 'string' && SERVER_NAME_RE.test(name))) return 'authority';
-    return KNOWN_PROVIDER_FIELDS[provider]?.has(field) ? null : 'unknown';
+    const plain = names.every((name) => typeof name === 'string' && SERVER_NAME_RE.test(name) && !RESERVED_NAME_RE.test(name));
+    if (!plain) return 'authority';
+    return provider === 'claude' && field === 'mcpservers' ? null : 'unknown';
   }
-  if (KNOWN_PROVIDER_FIELDS[provider]?.has(field) && isPlainValue(value)) return null;
+  const check = hasOwn(KNOWN_PROVIDER_FIELDS, provider) && hasOwn(KNOWN_PROVIDER_FIELDS[provider], field) ? KNOWN_PROVIDER_FIELDS[provider][field] : null;
+  if (check?.(value)) return null;
   return holdsAuthority(value) ? 'authority' : 'unknown';
 }
 

@@ -265,9 +265,12 @@ describe('saving unassigned assets', () => {
       expect(() => installBuiltinAsset({}, bridge)).toThrow('not an asset catalog store');
     });
 
-    it('takes no edits through the general API: a person forks one', async () => {
+    it('takes no edits, renames or deletion through the general API: a person forks one', async () => {
       const made = await installBuiltinAsset(store, bridge);
       expect(await code(store.saveRevision({ assetId: made.id, expectedRevision: 1, payload: mcpOf('clubhouse') }))).toBe('builtin_read_only');
+      expect(await code(store.renameAsset({ assetId: made.id, expectedName: 'Bridge', name: 'Mine now' }))).toBe('builtin_read_only');
+      expect(await code(store.deleteAsset({ assetId: made.id, expectedRevision: 1 }))).toBe('builtin_read_only');
+      expect((await store.read()).assets[made.id]).toMatchObject({ name: 'Bridge', headRevision: 1 });
       const skill = await installBuiltinAsset(store, { assetId: 'builtin-block', kind: 'block', name: 'B', builtinId: 'b', expectedRevision: 0, payload: doc() });
       const template = await installBuiltinAsset(store, { assetId: 'builtin-template', kind: 'template', name: 'T', builtinId: 't', expectedRevision: 0, payload: { entries: [ref('B', skill)], subagents: [], skills: [], mcps: [] } });
       expect(await code(store.publishTemplate({ templateId: template.id, expectedRevision: 1, writes: [], payload: { entries: [ref('B', skill)], subagents: [], skills: [], mcps: [] } }))).toBe('builtin_read_only');
@@ -488,6 +491,33 @@ describe('deletion', () => {
     expect(plan.activation).not.toBeNull();
     expect(await code(store.deleteAsset({ assetId: job.id, expectedRevision: 2 }))).toBe('asset_in_use');
     expect(await store.readRevision(job.id, 1)).toEqual(doc('job'));
+  });
+
+  it('is refused while an agent that kept a removed subagent, following it, is still on the revision that uses it', async () => {
+    const job = await store.createAsset({ kind: 'block', name: 'Job', payload: doc('job') });
+    const other = await store.createAsset({ kind: 'block', name: 'Other', payload: doc('other') });
+    const definition = (block: CatalogEntry) => ({ agentName: 's', description: 'x', blocks: [ref('Role', block)], skills: [], mcps: [] });
+    const sub = await store.createAsset({ kind: 'subagent', name: 'S', payload: definition(job) });
+    const t = await store.createAsset({ kind: 'template', name: 'T', payload: { entries: [ref('Other', other)], subagents: [{ entryId: 'S', subagentId: sub.id, subagentRevision: 1 }], skills: [], mcps: [] } });
+    await compose('a', instanceOf(t));
+    // T r2 removes S, and the agent keeps it: now followed directly, with a floor at r1.
+    await publish({ templateId: t.id, expectedRevision: 1, writes: [], payload: { entries: [ref('Other', other)], subagents: [], skills: [], mcps: [] } });
+    const preview = await store.previewStructureUpdate({ agentId: 'a', adoption: ACCEPTED });
+    const kept = await store.acceptStructureUpdate({ agentId: 'a', expectedRevision: 1, targetRevision: 2, binding: preview.binding, adoption: ACCEPTED, choice: { order: ['base:Other'], subagents: { keepRemoved: ['base:S'] } } });
+    expect(kept.subagents).toEqual([{ localId: 'S', source: { kind: 'follow', subagentId: sub.id } }]);
+    expect(kept.floors[sub.id]).toBe(1);
+    // U publishes a bundled S r2 that drops Job. The agent stays on r1, which still needs it.
+    await publish({
+      templateId: 'template-u',
+      expectedRevision: 0,
+      name: 'U',
+      writes: [{ assetId: sub.id, kind: 'subagent', expectedRevision: 1, payload: definition(other) }],
+      payload: { entries: [ref('Other', other)], subagents: [{ entryId: 'S', subagentId: sub.id, subagentRevision: 2 }], skills: [], mcps: [] },
+    });
+    expect((await store.plan({ agentId: 'a', adoption: ACCEPTED })).subagents[0].revision).toBe(1);
+
+    expect(await code(store.deleteAsset({ assetId: job.id, expectedRevision: 1 }))).toBe('asset_in_use');
+    expect((await store.plan({ agentId: 'a', adoption: ACCEPTED })).activation).not.toBeNull();
   });
 
   it('removes an unreferenced asset and its payloads', async () => {
@@ -1049,6 +1079,44 @@ describe('accepting a structure update', () => {
     expect((await store.plan({ agentId: 'agent-1', adoption: LATEST })).activation).not.toBeNull();
   });
 
+  describe('a revision raising access or orchestration', () => {
+    async function raised() {
+      const block = await store.createAsset({ kind: 'block', name: 'B', payload: doc() });
+      const entries = [ref('B', block)];
+      const template = await store.createAsset({ kind: 'template', name: 'T', payload: { entries, subagents: [], skills: [], mcps: [], operationalDefaults: { agentAccess: 'standard' } } });
+      await compose('a', instanceOf(template));
+      await publish({ templateId: template.id, expectedRevision: 1, writes: [], payload: { entries, subagents: [], skills: [], mcps: [], operationalDefaults: { agentAccess: 'bypass', orchestrate: true } } });
+      return { template, preview: await store.previewStructureUpdate({ agentId: 'a', adoption: ACCEPTED }) };
+    }
+    const accept = (binding: unknown, choice?: Parameters<AssetCatalogStore['acceptStructureUpdate']>[0]['choice']) => store.acceptStructureUpdate({ agentId: 'a', expectedRevision: 1, targetRevision: 2, binding: binding as never, adoption: ACCEPTED, choice });
+
+    it('can\'t be taken without a person, though everything else about it is clean', async () => {
+      const { preview } = await raised();
+      expect(preview.check.clean).toBe(true);
+      expect(preview.operationalIncreases).toEqual(['agentAccess', 'orchestrate']);
+      const error = await rejection(accept(preview.binding));
+      expect(error.code).toBe('structure_needs_choice');
+      expect(error.details.operationalIncreases).toEqual(['agentAccess', 'orchestrate']);
+      expect((await store.plan({ agentId: 'a', adoption: LATEST })).operationalDefaults.map((item) => item.value)).toEqual(['standard']);
+    });
+
+    it('a choice has to name every key it raises', async () => {
+      const { preview } = await raised();
+      expect(await code(accept(preview.binding, { order: ['base:B'] }))).toBe('invalid_choice');
+      expect(await code(accept(preview.binding, { order: ['base:B'], acceptOperationalIncreases: ['agentAccess'] }))).toBe('invalid_choice');
+      const saved = await accept(preview.binding, { order: ['base:B'], acceptOperationalIncreases: ['agentAccess', 'orchestrate'] });
+      expect(saved.template?.acceptedRevision).toBe(2);
+      expect((await store.plan({ agentId: 'a', adoption: ACCEPTED })).operationalDefaults.map((item) => [item.key, item.value])).toEqual([['agentAccess', 'bypass'], ['orchestrate', true]]);
+    });
+
+    it('a switch shows what it would raise', async () => {
+      const { template } = await raised();
+      const other = await store.createAsset({ kind: 'template', name: 'Other', payload: { entries: template.revisions[0].projection.kind === 'template' ? template.revisions[0].projection.entries : [], subagents: [], skills: [], mcps: [], operationalDefaults: { agentAccess: 'auto', connectToDispatcher: true } } });
+      const preview = await store.previewTemplateSwitch({ agentId: 'a', templateId: other.id, selection: {}, adoption: ACCEPTED });
+      expect(preview.operationalIncreases).toEqual(['agentAccess', 'connectToDispatcher']);
+    });
+  });
+
   it('skipping T2 for T3: only the latest is on offer, and T2\'s tags are absorbed', async () => {
     const seed = await seedBase();
     await compose('agent-1', instanceOf(seed.base));
@@ -1514,6 +1582,56 @@ describe('recorded runs', () => {
     expect(await code(store.recordRun({ runId: '../x', plan }))).toBe('invalid_composition');
   });
 
+  describe('a crafted plan', () => {
+    async function realPlan() {
+      const { base } = await seedBase();
+      await compose('agent-1', instanceOf(base));
+      return (await store.plan({ agentId: 'agent-1', adoption: ACCEPTED })).activation!;
+    }
+
+    it.each([
+      ['a token as the agent id', { agentId: FAKE_GH_TOKEN }],
+      ['a token as the fingerprint', { fingerprint: FAKE_GH_TOKEN }],
+      ['a fingerprint that isn\'t one', { fingerprint: 'f' }],
+    ])('%s reaches nothing', async (_label, over) => {
+      const plan = await realPlan();
+      const before = fs.readFileSync(path.join(dir, 'catalog.json'), 'utf8');
+      expect(await code(store.recordRun({ runId: 'run-1', plan: { ...plan, ...over } }))).toBe('invalid_composition');
+      expect(fs.readFileSync(path.join(dir, 'catalog.json'), 'utf8')).toBe(before);
+    });
+
+    it('a structure with anything extra or wrong reaches nothing', async () => {
+      const plan = await realPlan();
+      const good = plan.structure!;
+      for (const structure of [{ ...good, extra: FAKE_GH_TOKEN }, { ...good, templateId: FAKE_GH_TOKEN }, { ...good, latestRevision: '2' }, { ...good, updateWaiting: 'no' }, 'nope']) {
+        expect(await code(store.recordRun({ runId: 'run-1', plan: { ...plan, structure: structure as never } }))).toBe('invalid_composition');
+      }
+      expect(fs.readFileSync(path.join(dir, 'catalog.json'), 'utf8')).not.toContain(FAKE_GH_TOKEN);
+    });
+
+    it('a plan\'s word for what kind an asset is doesn\'t reach a receipt', async () => {
+      const plan = await realPlan();
+      const assets = plan.assets.map((asset) => ({ ...asset, kind: 'mcp' as const }));
+      const run = await store.recordRun({ runId: 'run-1', plan: { ...plan, assets } });
+      const index = await store.read();
+      for (const frozen of run.revisions) expect(frozen.kind).toBe(index.assets[frozen.assetId].kind);
+    });
+  });
+
+  it('agent surfaces can\'t release a run or sweep, since either can remove what deletion kept', async () => {
+    const asset = await store.createAsset({ kind: 'skill', name: 'Skill', payload: skillOf('s') });
+    await compose('agent-1', blank({ additions: [asset.id] }));
+    const plan = (await store.plan({ agentId: 'agent-1', adoption: ACCEPTED })).activation!;
+    await store.recordRun({ runId: 'run-1', plan });
+    await withSettingsSurface('mcp', 'agent-9', async () => {
+      expect(await code(store.releaseRun('run-1'))).toBe('agent_not_permitted');
+      expect(await code(store.sweep())).toBe('agent_not_permitted');
+    });
+    expect((await store.read()).runs['run-1']).toBeDefined();
+    await store.releaseRun('run-1');
+    expect((await store.read()).runs['run-1']).toBeUndefined();
+  });
+
   it('a run started through an agent surface is still recorded', async () => {
     const asset = await store.createAsset({ kind: 'skill', name: 'Skill', payload: skillOf('s') });
     await compose('agent-1', blank({ additions: [asset.id] }));
@@ -1760,6 +1878,50 @@ describe('the audit', () => {
     await store.plan({ agentId: 'a', adoption: ACCEPTED });
     await store.previewAssetEdit({ assetId: asset.id, payload: doc('x') });
     expect((await readSettingsAudit(50)).length).toBe(before);
+  });
+});
+
+describe('previewInstructions', () => {
+  it('gives each block\'s text and the composed result, the same bytes activation would use', async () => {
+    const seed = await seedBase();
+    const rules = await store.createAsset({ kind: 'block', name: 'Rules', payload: doc('Local rule.'), owner: { kind: 'agent', agentId: 'a' } });
+    await compose('a', instanceOf(seed.base, { entries: [follow('Identity'), { localId: 'Rules', source: { kind: 'local', blockId: rules.id } }, follow('Job')] }));
+    const preview = await store.previewInstructions({ agentId: 'a', adoption: ACCEPTED });
+    expect(preview.blocks.map((block) => [block.entryKey, block.source, block.name, block.revision, block.text])).toEqual([
+      ['base:Identity', 'follow', 'Identity', 1, 'You are @@AgentName.'],
+      ['local:Rules', 'local', 'Rules', 1, 'Local rule.'],
+      ['base:Job', 'follow', 'Job', 1, 'Do the work. Keep the rules.'],
+    ]);
+    expect(preview.composed).toMatchObject({ ok: true, text: await textOf(preview.plan) });
+    expect(preview.plan.activation).not.toBeNull();
+  });
+
+  it('previews a draft, and a blocked one is still worth seeing', async () => {
+    const seed = await seedBase();
+    const rival = await store.createAsset({ kind: 'mcp', name: 'Rival', payload: mcpOf('git') });
+    const preview = await store.previewInstructions({ agentId: 'a', adoption: ACCEPTED, draft: instanceOf(seed.base, { additions: [rival.id] }) });
+    expect(preview.plan.activation).toBeNull();
+    expect(preview.composed).toMatchObject({ ok: true, text: 'You are @@AgentName.\n\nDo the work. Keep the rules.' });
+  });
+
+  it('with nothing adopted, there\'s nothing to compose', async () => {
+    expect(await store.previewInstructions({ agentId: 'a', adoption: ACCEPTED })).toMatchObject({ blocks: [], composed: { ok: true, text: '' } });
+  });
+
+  it('needs an adoption policy, and isn\'t for agents: it\'s the unredacted text', async () => {
+    expect(await code(store.previewInstructions({ agentId: 'a' } as never))).toBe('adoption_policy_required');
+    await withSettingsSurface('mcp', 'agent-9', async () => {
+      expect(await code(store.previewInstructions({ agentId: 'a', adoption: ACCEPTED }))).toBe('agent_not_permitted');
+    });
+  });
+
+  it('writes nothing and logs no text', async () => {
+    const { base } = await seedBase();
+    await compose('a', instanceOf(base));
+    const stamp = fs.statSync(path.join(dir, 'catalog.json')).mtimeMs;
+    await store.previewInstructions({ agentId: 'a', adoption: ACCEPTED });
+    expect(fs.statSync(path.join(dir, 'catalog.json')).mtimeMs).toBe(stamp);
+    expect(JSON.stringify(vi.mocked(appLog).mock.calls)).not.toContain('Keep the rules');
   });
 });
 

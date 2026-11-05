@@ -41,6 +41,7 @@ import {
   type AssetRevisionRecord,
   type AssetSource,
   type BaseAdoption,
+  type BlockAssetPayload,
   type BundledAssetKind,
   type CatalogEntry,
   type CatalogIndex,
@@ -55,6 +56,7 @@ import {
   type StructureCheck,
   type StructureChoice,
   type SubagentSetCheck,
+  type TemplateOperationalDefaults,
   type TemplateSwitchSelection,
   type ValidationIssue,
 } from '../../../shared/asset-catalog-types';
@@ -83,8 +85,10 @@ import {
   applyStructureChoice,
   checkStructure,
   checkSubagentSet,
+  operationalIncreases,
   switchTemplate as switchedComposition,
 } from './structure';
+import { composeInstructions, type ComposedInstructions } from './composer';
 import {
   collisionKey,
   hasOwn,
@@ -111,6 +115,7 @@ export class AssetCatalogError extends Error {
       assetId?: string;
       check?: StructureCheck;
       subagentCheck?: SubagentSetCheck;
+      operationalIncreases?: readonly string[];
     } = {},
   ) {
     // The code alone: messages get logged, and a value never belongs in one.
@@ -466,6 +471,24 @@ export function createAssetCatalogStore(options: AssetCatalogStoreOptions) {
     });
   }
 
+  /** Only these fields of a plan reach a receipt, each checked. A plan is only as trustworthy as whoever built it. */
+  function receiptStructure(plan: ActivationPlan): RunRecord['structure'] {
+    const issues: ValidationIssue[] = [];
+    if (!isCatalogId(plan.agentId)) issues.push({ code: 'invalid_identifier', path: 'plan.agentId' });
+    if (typeof plan.fingerprint !== 'string' || !/^[0-9a-f]{64}$/.test(plan.fingerprint)) issues.push({ code: 'invalid_identifier', path: 'plan.fingerprint' });
+    const { structure } = plan;
+    const isCount = (value: unknown): boolean => typeof value === 'number' && Number.isSafeInteger(value) && value >= 1;
+    if (structure !== null && (
+      !isRecord(structure) || !isAssetId(structure.templateId) || !isCount(structure.acceptedRevision) || !isCount(structure.resolvedRevision)
+      || !isCount(structure.latestRevision) || typeof structure.updateWaiting !== 'boolean'
+      || Object.keys(structure).length !== 5
+    )) {
+      issues.push({ code: 'invalid_shape', path: 'plan.structure' });
+    }
+    if (issues.length > 0) throw new AssetCatalogError('invalid_composition', { issues });
+    return structure;
+  }
+
   function requireAdoption(adoption: BaseAdoption | undefined): void {
     const content = adoption?.content?.mode;
     const structure = adoption?.structure?.mode;
@@ -572,6 +595,7 @@ export function createAssetCatalogStore(options: AssetCatalogStoreOptions) {
       refs: templateTargetOf(templateId, latest, target.projection),
       check: checkStructure(structureInput(index, stored, accepted, target.projection)),
       subagentCheck: checkSubagentSet(subagentSetInput(index, stored, accepted, target.projection, foreign)),
+      operationalIncreases: operationalIncreases(accepted?.operationalDefaults, target.projection.operationalDefaults),
       binding: bindingFor(index, stored, stored.agentId, target.record.contentHash),
     };
   }
@@ -874,6 +898,7 @@ export function createAssetCatalogStore(options: AssetCatalogStoreOptions) {
         requireValidName(input.name);
         const index = await loadIndex();
         const entry = getLiveEntry(index, input.assetId);
+        if (entry.source.kind === 'builtin') throw new AssetCatalogError('builtin_read_only', { assetId: entry.id });
         if (entry.name !== input.expectedName) throw new AssetCatalogError('stale_name', { assetId: entry.id });
         const updated: CatalogEntry = { ...entry, name: input.name };
         await commitIndex({ ...index, assets: { ...index.assets, [entry.id]: updated } });
@@ -891,6 +916,7 @@ export function createAssetCatalogStore(options: AssetCatalogStoreOptions) {
       return guarded({ scope: 'app', key: 'assetCatalog.delete', targetId: isAssetId(input.assetId) ? input.assetId : undefined }, () => serial(async () => {
         const index = await loadIndex();
         const entry = getLiveEntry(index, input.assetId);
+        if (entry.source.kind === 'builtin') throw new AssetCatalogError('builtin_read_only', { assetId: entry.id });
         if (input.expectedRevision !== entry.headRevision) {
           throw new AssetCatalogError('stale_revision', { assetId: entry.id, expected: input.expectedRevision, current: entry.headRevision });
         }
@@ -956,6 +982,7 @@ export function createAssetCatalogStore(options: AssetCatalogStoreOptions) {
       targetRevision: number;
       check: StructureCheck;
       subagentCheck: SubagentSetCheck;
+      operationalIncreases: ReadonlyArray<keyof TemplateOperationalDefaults>;
       plan: CompositionPlan;
     }> {
       requireAgentId(input.agentId);
@@ -964,13 +991,14 @@ export function createAssetCatalogStore(options: AssetCatalogStoreOptions) {
       const stored = storedComposition(index, input.agentId);
       if (!stored?.template) throw new AssetCatalogError('invalid_composition');
       const update = structureUpdate(index, stored, input.foreign ?? []);
-      const clean = update.check.clean && update.subagentCheck.clean;
+      const clean = update.check.clean && update.subagentCheck.clean && update.operationalIncreases.length === 0;
       const draft = clean ? applyCleanUpdate(stored, update.refs, update.check.order) : stored;
       return {
         binding: update.binding,
         targetRevision: update.latest,
         check: update.check,
         subagentCheck: update.subagentCheck,
+        operationalIncreases: update.operationalIncreases,
         plan: planComposition(index, {
           agentId: input.agentId,
           ...(input.projectId !== undefined && { projectId: input.projectId }),
@@ -1015,13 +1043,19 @@ export function createAssetCatalogStore(options: AssetCatalogStoreOptions) {
 
         let next: CompositionInput;
         if (input.choice) {
+          // Raising access or orchestration is a person's call, named key by key.
+          const agreed = input.choice.acceptOperationalIncreases ?? [];
+          const unagreed = update.operationalIncreases.filter((key) => !agreed.includes(key));
+          if (unagreed.length > 0) {
+            throw new AssetCatalogError('invalid_choice', { issues: unagreed.map((key): ValidationIssue => ({ code: 'invalid_choice', path: `acceptOperationalIncreases:${key}` })) });
+          }
           const applied = applyStructureChoice(stored, update.refs, input.choice, acceptedRefsOf(update.accepted));
           if (applied.ok === false) throw new AssetCatalogError('invalid_choice', { issues: applied.issues });
           const { template, entries, excludedEntryIds, subagents, excludedSubagentEntryIds, additions, removals, floors, keepMarkers, authorityApprovals } = applied.composition;
           next = checkedComposition({ template, entries, excludedEntryIds, subagents, excludedSubagentEntryIds, additions, removals, floors, keepMarkers, authorityApprovals });
         } else {
-          if (!update.check.clean || !update.subagentCheck.clean) {
-            throw new AssetCatalogError('structure_needs_choice', { check: update.check, subagentCheck: update.subagentCheck });
+          if (!update.check.clean || !update.subagentCheck.clean || update.operationalIncreases.length > 0) {
+            throw new AssetCatalogError('structure_needs_choice', { check: update.check, subagentCheck: update.subagentCheck, operationalIncreases: update.operationalIncreases });
           }
           next = applyCleanUpdate(stored, update.refs, update.check.order);
         }
@@ -1055,7 +1089,14 @@ export function createAssetCatalogStore(options: AssetCatalogStoreOptions) {
       adoption: BaseAdoption;
       foreign?: readonly ForeignDestination[];
       projectId?: string;
-    }): Promise<{ binding: StructureBinding; targetRevision: number; composition: CompositionInput; plan: CompositionPlan }> {
+    }): Promise<{
+      binding: StructureBinding;
+      targetRevision: number;
+      composition: CompositionInput;
+      /** What this switch would raise, for the person making it to see. Making the switch is their choice. */
+      operationalIncreases: ReadonlyArray<keyof TemplateOperationalDefaults>;
+      plan: CompositionPlan;
+    }> {
       requireAgentId(input.agentId);
       requireAdoption(input.adoption);
       const index = await loadIndex();
@@ -1066,6 +1107,10 @@ export function createAssetCatalogStore(options: AssetCatalogStoreOptions) {
         binding: bindingFor(index, stored, input.agentId, templateAt(index, input.templateId, targetRevision).record.contentHash),
         targetRevision,
         composition,
+        operationalIncreases: operationalIncreases(
+          stored ? acceptedProjection(index, stored)?.operationalDefaults : undefined,
+          templateAt(index, input.templateId, targetRevision).projection.operationalDefaults,
+        ),
         plan: planComposition(index, {
           agentId: input.agentId,
           ...(input.projectId !== undefined && { projectId: input.projectId }),
@@ -1151,6 +1196,28 @@ export function createAssetCatalogStore(options: AssetCatalogStoreOptions) {
     },
 
     /**
+     * The effective instructions, exactly as they'd be delivered, with each block's
+     * text: for a person's preview in a local UI, and so not redacted, since a preview
+     * that differs from what's delivered isn't one. Refused from agent surfaces, and
+     * never to be logged. Works on a blocked plan, whose blocks are still worth seeing.
+     */
+    async previewInstructions(request: PlanRequest): Promise<{
+      plan: CompositionPlan;
+      blocks: Array<{ entryKey: string; assetId: string; name: string; source: string; revision: number; text: string }>;
+      composed: ComposedInstructions;
+    }> {
+      if (!isUserWritePermitted()) throw new AssetCatalogError('agent_not_permitted');
+      const index = await loadIndex();
+      const plan = planWith(index, request);
+      const blocks = await Promise.all((plan.instructions?.blocks ?? []).map(async (block) => {
+        const payload = await readRevisionFile(getEntry(index, block.assetId), block.revision);
+        const text = (payload as BlockAssetPayload).content;
+        return { entryKey: block.entryKey, assetId: block.assetId, name: block.name, source: block.source, revision: block.revision, text };
+      }));
+      return { plan, blocks, composed: composeInstructions(blocks.map((block) => ({ content: block.text }))) };
+    },
+
+    /**
      * Commit a desired composition. It must match the preview the user saw
      * (`previewFingerprint`), and nothing may block: no partial application.
      */
@@ -1223,7 +1290,9 @@ export function createAssetCatalogStore(options: AssetCatalogStoreOptions) {
     /**
      * The receipt of a start: the structure accepted and available, the exact
      * revisions used, and whether an update was waiting. They stay readable however
-     * desired state moves. Clubhouse's own bookkeeping, whoever asked for the start.
+     * desired state moves. Clubhouse's own bookkeeping, whoever asked for the start,
+     * so agent surfaces aren't refused: it only ever keeps things, and nothing from
+     * the plan reaches the index unchecked.
      */
     recordRun(input: { runId: string; plan: ActivationPlan }): Promise<RunRecord> {
       return serial(async () => {
@@ -1231,6 +1300,7 @@ export function createAssetCatalogStore(options: AssetCatalogStoreOptions) {
         const index = await loadIndex();
         if (hasOwn(index.runs, input.runId)) throw new AssetCatalogError('run_exists');
         const { plan } = input;
+        const structure = receiptStructure(plan);
         const listed: RunRecord['revisions'] = [
           ...(plan.structure ? [{ assetId: plan.structure.templateId, kind: 'template' as const, revision: plan.structure.resolvedRevision }] : []),
           ...(plan.instructions?.blocks ?? []).map((block) => ({ assetId: block.assetId, kind: 'block' as const, revision: block.revision })),
@@ -1248,13 +1318,15 @@ export function createAssetCatalogStore(options: AssetCatalogStoreOptions) {
           if (!entry.revisions.some((record) => record.revision === frozen.revision)) {
             throw new AssetCatalogError('revision_unavailable', { assetId: frozen.assetId });
           }
+          // The catalog says what kind it is. A plan only says which one it means.
+          frozen.kind = entry.kind;
         }
         const run: RunRecord = {
           runId: input.runId,
           agentId: plan.agentId,
           recordedAt: now(),
           planFingerprint: plan.fingerprint,
-          structure: plan.structure,
+          structure,
           revisions,
         };
         await commitIndex({ ...index, runs: { ...index.runs, [run.runId]: run } });
@@ -1274,7 +1346,8 @@ export function createAssetCatalogStore(options: AssetCatalogStoreOptions) {
 
     /** Forget a run. Revisions only it kept, of assets since deleted, go with it. */
     releaseRun(runId: string): Promise<void> {
-      return serial(async () => {
+      // This can free what deletion kept, so it's refused from agent surfaces like any other write that removes things.
+      return guarded({ scope: 'agent', key: 'assetCatalog.run', targetId: isCatalogId(runId) ? runId : undefined }, () => serial(async () => {
         const index = await loadIndex();
         if (!hasOwn(index.runs, runId)) throw new AssetCatalogError('run_missing');
         const runs = { ...index.runs };
@@ -1282,15 +1355,15 @@ export function createAssetCatalogStore(options: AssetCatalogStoreOptions) {
         const next = pruneTombstones({ ...index, runs });
         await commitIndex(next);
         await sweepAfterCommit(next);
-      });
+      }));
     },
 
     /** Clear leftovers from an interrupted write. Never part of a read. */
     sweep(): Promise<void> {
-      return serial(async () => {
+      return guarded({ scope: 'app', key: 'assetCatalog.sweep' }, () => serial(async () => {
         // No index says nothing about what's wanted, so it can't mean every payload is unwanted.
         if (await pathExists(indexPath)) await sweepUnlocked(await loadIndex());
-      });
+      }));
     },
   };
   builtinInstallers.set(api, installBuiltin);
