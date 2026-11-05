@@ -23,7 +23,7 @@ import { agentRegistry, resolveOrchestrator, untrackAgent, readProjectOrchestrat
 import { waitReady as waitMcpBridgeReady } from './clubhouse-mcp/bridge-server';
 import { injectClubhouseMcp } from './clubhouse-mcp/injection';
 import { syncDispatcherGate } from './clubhouse-mcp/dispatcher-gate';
-import { setMcpCaller } from './clubhouse-mcp/mcp-call-gate';
+import { setMcpCaller, setMcpCallerQuick, setMcpCallerUnreadable } from './clubhouse-mcp/mcp-call-gate';
 import { isDispatcherPath } from './dispatcher/dispatcher-paths';
 import { dispatcherEnablement } from './dispatcher/dispatcher-settings';
 import { bindingManager } from './clubhouse-mcp/binding-manager';
@@ -404,6 +404,7 @@ async function spawnAgentInner(inParams: SpawnAgentParams, facts: SpawnFacts): P
     // fields).  This ensures freeAgentMode, model and the agent file are
     // honoured even when the resume path doesn't explicitly provide them.
     let durableConfig: Awaited<ReturnType<typeof getDurableConfig>> | undefined;
+    let configUnreadable = false;
     if (params.kind === 'durable') {
       try {
         durableConfig = await getDurableConfig(params.projectPath, params.agentId);
@@ -419,6 +420,7 @@ async function spawnAgentInner(inParams: SpawnAgentParams, facts: SpawnFacts): P
         // Unreadable config: we can't tell whether this is a helper (or a
         // disposed one), so start at standard rather than trust the caller.
         // A missing row (null) isn't an error and keeps the caller's values.
+        configUnreadable = true;
         appLog('core:agent', 'warn', 'Could not read the agent\'s config; starting it at standard access', {
           meta: { agentId: params.agentId, error: err instanceof Error ? err.message : String(err) },
         });
@@ -448,8 +450,11 @@ async function spawnAgentInner(inParams: SpawnAgentParams, facts: SpawnFacts): P
     if (params.kind === 'durable') await syncOrchestrationGate(params.projectPath, params.agentId);
     // Likewise the Dispatcher's tools (#2536), only for the Dispatcher.
     await syncDispatcherGate(params.projectPath, params.agentId);
-    // Before the MCP connects. Its config was read above, and a quick agent has none.
-    setMcpCaller(params.agentId, params.projectPath, params.kind === 'durable' ? durableConfig : null);
+    // Before the nonce, which the bridge needs, so no tool call can come first.
+    // Its config was read above.
+    if (params.kind !== 'durable') setMcpCallerQuick(params.agentId, params.projectPath);
+    else if (configUnreadable) setMcpCallerUnreadable(params.agentId, params.projectPath);
+    else setMcpCaller(params.agentId, params.projectPath, durableConfig);
     facts.model = params.model;
     if (params.kind === 'durable' && durableConfig?.contextWindow) {
       const { value, notice } = await contextWindowForLaunch(params.projectPath, provider.id, params.agentId, params.model, durableConfig.contextWindow);

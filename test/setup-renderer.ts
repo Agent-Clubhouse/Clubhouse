@@ -357,7 +357,7 @@ vi.stubGlobal('clubhouse', {
     getClubhouseModeSettings: async () => ({ enabled: false }),
     saveClubhouseModeSettings: asyncNoop,
     getMcpOffImpact: async () => ({
-      turnsOff: false, appLoses: false, appKeptByClubhouseMode: false, projectsLosing: [], agentsLosing: 0, agentsKeeping: 0, helpersReportOnly: 0, orchestratorsLosing: 0, connectedLosing: 0,
+      turnsOff: false, appLoses: false, appKeptByClubhouseMode: false, projectsLosing: [], agentsLosing: 0, quickAgentsLosing: 0, agentsKeeping: 0, helpersReportOnly: 0, orchestratorsLosing: 0, connectedLosing: 0,
       runningLosing: 0, runningOrchestratorsWithHelpers: 0, dispatcherGoesOff: false, dispatcherRunning: false, keeps: { projects: [], agents: [] }, unreadableProjects: [],
     }),
     getSoundSettings: async () => ({ activePack: null, slotAssignments: {}, eventSettings: {}, projectOverrides: {} }),

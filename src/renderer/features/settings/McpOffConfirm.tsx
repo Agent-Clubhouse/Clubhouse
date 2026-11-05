@@ -10,7 +10,7 @@ import type { McpOffImpact } from '../../../shared/mcp-off-impact';
 import { Button } from '../../components/Button';
 import { Modal } from '../../components/Modal';
 import { rendererLog } from '../../plugins/renderer-logger';
-import { settingsHelp } from './SettingsLayout';
+import { settingsError, settingsHelp } from './SettingsLayout';
 
 export type McpProposal = Parameters<typeof window.clubhouse.app.getMcpOffImpact>[0];
 
@@ -38,6 +38,7 @@ export function mcpOffCounts(impact: McpOffImpact): string {
   const losing = `${plural(impact.agentsLosing, 'agent')} ${impact.agentsLosing === 1 ? 'loses' : 'lose'} Clubhouse tools`;
   const parts = [
     impact.agentsKeeping > 0 ? `${losing}, and ${impact.agentsKeeping} ${impact.agentsKeeping === 1 ? 'keeps' : 'keep'} them.` : `${losing}.`,
+    ...(impact.quickAgentsLosing > 0 ? [`${plural(impact.quickAgentsLosing, 'running quick agent')} ${impact.quickAgentsLosing === 1 ? 'loses' : 'lose'} them too.`] : []),
     ...(impact.helpersReportOnly > 0 ? [`${plural(impact.helpersReportOnly, 'helper')} can only report to ${impact.helpersReportOnly === 1 ? 'its' : 'their'} parent.`] : []),
     `${plural(impact.runningOrchestratorsWithHelpers, 'running orchestrator')} ${impact.runningOrchestratorsWithHelpers === 1 ? 'has' : 'have'} helpers.`,
   ];
@@ -62,7 +63,11 @@ interface Pending {
   impact: McpOffImpact | null;
   projectName?: string;
   apply: () => unknown;
+  saved: () => boolean;
 }
+
+export const MCP_OFF_SAVE_FAILED = 'Couldn’t save, so Clubhouse MCP hasn’t changed. Try again.';
+export const MCP_OFF_STOP_FAILED = 'Clubhouse MCP is off, but the Dispatcher couldn’t be stopped. You can stop it from its view.';
 
 /**
  * `requestMcpChange` asks main what a change would turn off, and applies it
@@ -73,12 +78,19 @@ interface Pending {
 export function useMcpOffConfirm() {
   const [pending, setPending] = useState<Pending | null>(null);
   const [stopDispatcher, setStopDispatcher] = useState(false);
+  const [failure, setFailure] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
 
-  const requestMcpChange = useCallback(async ({ proposal, projectName, always, apply }: {
+  /**
+   * `saved` says whether the change took: the stores roll a failed save back and
+   * don't reject, so `apply` resolving proves nothing.
+   */
+  const requestMcpChange = useCallback(async ({ proposal, projectName, always, apply, saved }: {
     proposal: McpProposal;
     projectName?: string;
     always?: boolean;
     apply: () => unknown;
+    saved: () => boolean;
   }): Promise<void> => {
     let impact: McpOffImpact | null = null;
     try {
@@ -94,14 +106,44 @@ export function useMcpOffConfirm() {
       return;
     }
     setStopDispatcher(false);
-    setPending({ impact, projectName, apply });
+    setFailure(null);
+    setPending({ impact, projectName, apply, saved });
   }, []);
 
+  /** Stays open until the save has taken, so a failed one can't read as done. It stops nothing then. */
   const confirm = async () => {
-    if (!pending) return;
-    setPending(null);
-    await pending.apply();
-    if (stopDispatcher && pending.impact?.dispatcherRunning) await window.clubhouse.dispatcher.stop();
+    if (!pending || saving) return;
+    setSaving(true);
+    setFailure(null);
+    try {
+      let took = false;
+      try {
+        await pending.apply();
+        took = pending.saved();
+      } catch (err) {
+        rendererLog('core:mcp', 'warn', 'Could not save turning off Clubhouse MCP', {
+          meta: { error: err instanceof Error ? err.message : String(err) },
+        });
+      }
+      if (!took) {
+        setFailure(MCP_OFF_SAVE_FAILED);
+        return;
+      }
+      if (stopDispatcher && pending.impact?.dispatcherRunning) {
+        try {
+          await window.clubhouse.dispatcher.stop();
+        } catch (err) {
+          rendererLog('core:mcp', 'warn', 'Could not stop the Dispatcher after turning off Clubhouse MCP', {
+            meta: { error: err instanceof Error ? err.message : String(err) },
+          });
+          setFailure(MCP_OFF_STOP_FAILED);
+          return;
+        }
+      }
+      setPending(null);
+    } finally {
+      setSaving(false);
+    }
   };
 
   const impact = pending?.impact ?? null;
@@ -116,7 +158,7 @@ export function useMcpOffConfirm() {
       footer={(
         <>
           <Button kind="ghost" onClick={() => setPending(null)} data-testid="mcp-off-cancel">Cancel</Button>
-          <Button kind="primary" onClick={() => void confirm()} data-testid="mcp-off-confirm">Turn off</Button>
+          <Button kind="primary" disabled={saving} onClick={() => void confirm()} data-testid="mcp-off-confirm">Turn off</Button>
         </>
       )}
     >
@@ -140,6 +182,7 @@ export function useMcpOffConfirm() {
           </label>
         )}
         {offerStop && <p data-testid="mcp-off-older-go">{MCP_OFF_OLDER_GO_NOTE}</p>}
+        {failure && <p className={settingsError} role="alert" data-testid="mcp-off-failure">{failure}</p>}
       </div>
     </Modal>
   );

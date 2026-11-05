@@ -115,7 +115,7 @@ export function dispatcherChange(state: DispatcherState = dispatcher.getDispatch
 export type MobileDispatcherChange = ReturnType<typeof dispatcherChange>;
 
 /** The agent as a phone's payloads carry it. annex-server maps it, in the one shape all three use. */
-type AgentView = (config: DurableConfig) => unknown;
+type AgentView = (config: DurableConfig) => { status?: string } | DurableConfig;
 
 /**
  * What the snapshot, dispatcher:changed and the capabilities all add while it is
@@ -127,13 +127,15 @@ export function dispatcherOffFields(state: DispatcherState, view: AgentView) {
   const detail = offReason === 'mcp_off'
     ? (state.running ? 'MCP off; session running' : 'MCP off')
     : offReason === 'classic_layout' ? 'Needs the new layout' : 'Turned off';
+  const agent = state.config ? view(state.config) : null;
   return {
     offReason,
     running: state.running,
-    status: state.running ? 'running' : 'sleeping',
+    // What the agent itself says, so the two can't differ. Before it exists, nothing is running.
+    status: (agent as { status?: string } | null)?.status ?? (state.running ? 'running' : 'sleeping'),
     detail,
     commandsWhileOff: [...dispatcherCommandsWhileOff(state)],
-    agent: state.config ? view(state.config) : null,
+    agent,
   };
 }
 
@@ -165,7 +167,7 @@ export async function setDispatcherEnabledFromPhone(enabled: boolean, assertAuth
   // Switched off as well as no MCP: an existing path with its existing code, and `message` says what to do now.
   if (enabled && !state.flagOn) throw new MobileControlError('dispatcher_flag_off', 409, 'rejected', MCP_REQUIRED_MESSAGE);
   if (enabled && !state.savedOn && !newChromeEnabled()) {
-    throw new MobileControlError('dispatcher_layout_off', 409, 'rejected', 'The Dispatcher needs the new layout. Turn on New layout in Settings > Experimental on the desktop.');
+    throw new MobileControlError('dispatcher_layout_off', 409, 'rejected', 'The Dispatcher needs the new layout. Turn off Classic layout in Settings > Display & UI on the desktop.');
   }
   assertAuthorized();
   return dispatcherChange(await dispatcher.setDispatcherEnabled(enabled));

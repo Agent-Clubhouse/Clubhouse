@@ -22,7 +22,7 @@ export function McpSettingsView() {
   const change = (value: boolean) => {
     const apply = () => saveSettings({ enabled: value });
     if (value) void apply();
-    else void requestMcpChange({ proposal: { mcp: { enabled: false } }, always: true, apply });
+    else void requestMcpChange({ proposal: { mcp: { enabled: false } }, always: true, apply, saved: () => useMcpSettingsStore.getState().enabled === false });
   };
 
   return (

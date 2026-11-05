@@ -49,7 +49,7 @@ import { syncOrchestrationGate, getOrchestrationPolicy } from '../../src/main/se
 import { syncDispatcherGate } from '../../src/main/services/clubhouse-mcp/dispatcher-gate';
 import { bindingManager, bridgeServer } from '../../src/main/services/clubhouse-mcp';
 import { setTargetToolTemplates } from '../../src/main/services/clubhouse-mcp/tool-registry';
-import { setMcpCaller } from '../../src/main/services/clubhouse-mcp/mcp-call-gate';
+import { setMcpCaller, setMcpCallerQuick } from '../../src/main/services/clubhouse-mcp/mcp-call-gate';
 import { injectClubhouseMcp } from '../../src/main/services/clubhouse-mcp/injection';
 import { registerBuiltinProviders } from '../../src/main/orchestrators';
 import { registerChatRuntime } from '../../src/main/services/agent-runtime';
@@ -652,6 +652,15 @@ describe('Clubhouse MCP going off, for running agents', () => {
       expect(impact.keeps.projects).toEqual([{ name: 'project-override', via: 'project_setting' }, { name: 'project-clubhouse', via: 'clubhouse_mode' }]);
       expect(impact.projectsLosing).toEqual(['project-one']);
       expect(impact.agentsKeeping).toBe(4);
+    });
+
+    it('counts a running quick agent the gate would close, by the same rule', async () => {
+      agentRegistry.register('quick_one', { projectPath, orchestrator: 'claude-code', runtime: 'pty' } as never);
+      setMcpCallerQuick('quick_one', projectPath);
+      expect((await readMcpOffImpact({ mcp: { enabled: false } })).quickAgentsLosing).toBe(1);
+      expect((await readMcpOffImpact({ mcp: { projectOverrides: { [overridePath]: false } } })).quickAgentsLosing).toBe(0);
+      expect((await readMcpOffImpact({ mcp: { enabled: false, projectOverrides: { [projectPath]: true } } })).quickAgentsLosing).toBe(0);
+      agentRegistry.untrack('quick_one');
     });
 
     it('says nothing goes off at app level while Clubhouse mode keeps it on', async () => {

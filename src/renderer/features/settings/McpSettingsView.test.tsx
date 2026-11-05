@@ -12,6 +12,7 @@ const IMPACT: McpOffImpact = {
   appKeptByClubhouseMode: false,
   projectsLosing: ['site'],
   agentsLosing: 3,
+  quickAgentsLosing: 0,
   agentsKeeping: 4,
   helpersReportOnly: 2,
   orchestratorsLosing: 2,
@@ -24,11 +25,18 @@ const IMPACT: McpOffImpact = {
   unreadableProjects: [],
 };
 
-const saveSettings = vi.fn(async () => {});
+const realSaveSettings = useMcpSettingsStore.getState().saveSettings;
+
+/** As the real store: a save that takes shows in its state, and a failed one rolls back and resolves. */
+let saveWorks = true;
+const saveSettings = vi.fn(async (updates: object) => {
+  if (saveWorks) useMcpSettingsStore.setState(updates as never);
+});
 const toggle = () => screen.getByRole('switch', { name: 'MCP bridge' });
 
 beforeEach(() => {
   saveSettings.mockClear();
+  saveWorks = true;
   useMcpSettingsStore.setState({ enabled: true, projectDefault: true, loaded: true, loadSettings: async () => {}, saveSettings } as never);
   useClubhouseModeStore.setState({ enabled: false, loadSettings: (async () => {}) as never });
   window.clubhouse.app.getMcpOffImpact = vi.fn(async () => IMPACT);
@@ -101,6 +109,64 @@ describe('McpSettingsView', () => {
     await act(async () => { fireEvent.click(screen.getByTestId('mcp-off-confirm')); });
     expect(saveSettings).toHaveBeenCalledWith({ enabled: false });
     expect(window.clubhouse.dispatcher.stop).not.toHaveBeenCalled();
+    expect(screen.queryByTestId('mcp-off-dialog')).toBeNull();
+  });
+
+  it('a save that fails says so, stays open, and stops nothing', async () => {
+    saveWorks = false;
+    await openDialog();
+    fireEvent.click(screen.getByTestId('mcp-off-stop-dispatcher'));
+    await act(async () => { fireEvent.click(screen.getByTestId('mcp-off-confirm')); });
+    expect(screen.getByTestId('mcp-off-failure')).toHaveTextContent('Couldn’t save, so Clubhouse MCP hasn’t changed. Try again.');
+    expect(screen.getByTestId('mcp-off-dialog')).toBeInTheDocument();
+    expect(window.clubhouse.dispatcher.stop).not.toHaveBeenCalled();
+    expect(toggle().getAttribute('aria-checked')).toBe('true');
+
+    // And it can be tried again.
+    saveWorks = true;
+    await act(async () => { fireEvent.click(screen.getByTestId('mcp-off-confirm')); });
+    expect(screen.queryByTestId('mcp-off-dialog')).toBeNull();
+    expect(window.clubhouse.dispatcher.stop).toHaveBeenCalledTimes(1);
+  });
+
+  it('through the real store: a failed save leaves the switch on what is saved, and a retry saves it', async () => {
+    useMcpSettingsStore.setState({ saveSettings: realSaveSettings });
+    const save = vi.fn().mockRejectedValueOnce(new Error('disk')).mockResolvedValue(undefined);
+    window.clubhouse.settings.save = save as never;
+    await openDialog();
+    await act(async () => { fireEvent.click(screen.getByTestId('mcp-off-confirm')); });
+    expect(save).toHaveBeenCalledTimes(1);
+    expect(screen.getByTestId('mcp-off-failure')).toHaveTextContent('Couldn’t save');
+    expect(toggle().getAttribute('aria-checked')).toBe('true');
+    expect(useMcpSettingsStore.getState().enabled).toBe(true);
+
+    await act(async () => { fireEvent.click(screen.getByTestId('mcp-off-confirm')); });
+    expect(save).toHaveBeenCalledTimes(2);
+    expect(save.mock.calls[1][1]).toMatchObject({ enabled: false });
+    expect(screen.queryByTestId('mcp-off-dialog')).toBeNull();
+    expect(toggle().getAttribute('aria-checked')).toBe('false');
+  });
+
+  it('a save that throws reads the same', async () => {
+    saveSettings.mockRejectedValueOnce(new Error('disk'));
+    await openDialog();
+    await act(async () => { fireEvent.click(screen.getByTestId('mcp-off-confirm')); });
+    expect(screen.getByTestId('mcp-off-failure')).toHaveTextContent('Couldn’t save');
+  });
+
+  it('a stop that fails after a good save says so plainly', async () => {
+    window.clubhouse.dispatcher.stop = vi.fn(async () => { throw new Error('busy'); });
+    await openDialog();
+    fireEvent.click(screen.getByTestId('mcp-off-stop-dispatcher'));
+    await act(async () => { fireEvent.click(screen.getByTestId('mcp-off-confirm')); });
+    expect(saveSettings).toHaveBeenCalled();
+    expect(screen.getByTestId('mcp-off-failure')).toHaveTextContent('Clubhouse MCP is off, but the Dispatcher couldn’t be stopped.');
+  });
+
+  it('counts running quick agents', () => {
+    expect(mcpOffCounts({ ...IMPACT, quickAgentsLosing: 2 })).toContain('2 running quick agents lose them too.');
+    expect(mcpOffCounts({ ...IMPACT, quickAgentsLosing: 1 })).toContain('1 running quick agent loses them too.');
+    expect(mcpOffCounts(IMPACT)).not.toContain('quick');
   });
 
   it('stops it when asked to, after saving', async () => {

@@ -238,8 +238,12 @@ function withAutoEffective(policy: ResolvedOrchestrationPolicy, projectOff: bool
   return { ...policy, autoEffective: decideHelperAuto({ app: orchestrationSettings.getAutoHelpers(), projectOff, policy }) };
 }
 
-function resolveOptions(projectPath: string, agent: DurableAgentConfig): { helper: boolean; mcpOff: boolean } {
-  return { helper: !!agent.parentAgentId, mcpOff: !isMcpEnabled(projectPath, clubhouseMcpOverride(agent)) };
+function resolveOptions(projectPath: string, agent: DurableAgentConfig): { helper: boolean; mcpOff: boolean; mcpReportOnly: boolean } {
+  return {
+    helper: !!agent.parentAgentId,
+    mcpOff: !isMcpEnabled(projectPath, clubhouseMcpOverride(agent)),
+    mcpReportOnly: !!agent.parentAgentId && !isMcpEnabled(projectPath, agent.mcpOverride),
+  };
 }
 
 /** Resolve as if the agent's effective persona were `personaId`. */
@@ -770,7 +774,7 @@ function refreshMcpCallers(onlyProject?: string): void {
   for (const [agentId, { projectPath }] of agentRegistry.getAllRegistrations()) {
     if (onlyProject !== undefined && !samePath(projectPath, onlyProject)) continue;
     agentConfig.getDurableConfig(projectPath, agentId).then((config) => setMcpCaller(agentId, projectPath, config)).catch((err) => {
-      // telemetry-exempt: logged; the gate keeps the config it had, and the next change retries
+      // telemetry-exempt: logged; the gate keeps what it had, closed if it never had a config, and the next change retries
       appLog('core:orchestration', 'warn', 'Could not update the MCP call gate after a change', {
         meta: { agentId, error: errorText(err) },
       });

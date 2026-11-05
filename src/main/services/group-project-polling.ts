@@ -159,28 +159,37 @@ export function listPausedPolling(projectId: string): Array<{ agentId: string; a
     .map((b) => ({ agentId: b.agentId, agentName: b.agentName || b.agentId }));
 }
 
+/** Resumes in flight, so a second click can't send a second start. */
+const resuming = new Set<string>();
+
 /**
  * Resume: one start, to a member offered it. Anything else sends nothing and wakes
- * nothing. Returns whether it was sent.
+ * nothing, and returns false. A read that fails keeps the offer and throws, so the
+ * click can say so and be tried again.
  */
 export async function resumePausedPolling(projectId: string, agentId: string): Promise<boolean> {
+  const key = `${agentId}\u0000${projectId}`;
+  if (resuming.has(key)) return false;
   if (!pauseStands(agentId, projectId) || !canPoll(agentId) || !isAgentAlive(agentId)) {
     notifyPauseChanged();
     return false;
   }
-  // Taken now, so a second click can't send a second start.
-  forgetPause(agentId, projectId);
-  const project = await groupProjectRegistry.get(projectId);
-  if (!project?.metadata?.pollingEnabled) {
+  resuming.add(key);
+  try {
+    const project = await groupProjectRegistry.get(projectId);
+    // Things may have moved during the read. MCP going off again keeps the offer for when it's back.
+    if (!pauseStands(agentId, projectId) || !canPoll(agentId) || !isAgentAlive(agentId)) return false;
+    forgetPause(agentId, projectId);
+    if (!project?.metadata?.pollingEnabled) return false;
+    const agentName = groupProjectMemberBindings(projectId).find((b) => b.agentId === agentId)?.agentName || agentId;
+    injectPtyMessage(agentId, pollingStartMsg(project.name || projectId, getAgentOrchestrator(agentId), inboxChannelName(agentName)));
+    notePollingStart(agentId, projectId);
+    appLog('core:group-project', 'info', 'Resumed polling for a member on request', { meta: { agentId, projectId } });
+    return true;
+  } finally {
+    resuming.delete(key);
     notifyPauseChanged();
-    return false;
   }
-  const agentName = groupProjectMemberBindings(projectId).find((b) => b.agentId === agentId)?.agentName || agentId;
-  injectPtyMessage(agentId, pollingStartMsg(project.name || projectId, getAgentOrchestrator(agentId), inboxChannelName(agentName)));
-  notePollingStart(agentId, projectId);
-  appLog('core:group-project', 'info', 'Resumed polling for a member on request', { meta: { agentId, projectId } });
-  notifyPauseChanged();
-  return true;
 }
 
 /** A new member without Clubhouse MCP: it gets its start message when it has MCP again. */
@@ -328,6 +337,7 @@ export async function setProjectPolling(projectId: string, enabled: boolean): Pr
 export function _resetPollingForTesting(): void {
   pendingStarts.clear();
   pausedByMcp.clear();
+  resuming.clear();
   _resetPollingRunsForTesting();
   unsubscribeConnected?.();
   unsubscribeConnected = null;

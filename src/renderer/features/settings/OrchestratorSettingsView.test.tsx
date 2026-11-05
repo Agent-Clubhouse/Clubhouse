@@ -641,7 +641,7 @@ describe('OrchestratorSettingsView', () => {
 
       describe('turning MCP off for the project', () => {
         const losing = {
-          turnsOff: true, appLoses: false, appKeptByClubhouseMode: false, projectsLosing: ['my-app'], agentsLosing: 2, agentsKeeping: 1, helpersReportOnly: 1, orchestratorsLosing: 1, connectedLosing: 1,
+          turnsOff: true, appLoses: false, appKeptByClubhouseMode: false, projectsLosing: ['my-app'], agentsLosing: 2, quickAgentsLosing: 0, agentsKeeping: 1, helpersReportOnly: 1, orchestratorsLosing: 1, connectedLosing: 1,
           runningLosing: 1, runningOrchestratorsWithHelpers: 1, dispatcherGoesOff: false, dispatcherRunning: true, keeps: { projects: [], agents: [{ name: 'lead', project: 'my-app' }] }, unreadableProjects: [],
         };
 
@@ -667,13 +667,14 @@ describe('OrchestratorSettingsView', () => {
         });
 
         it('saves once confirmed', async () => {
-          const saveSettings = vi.fn().mockResolvedValue(undefined);
+          const saveSettings = vi.fn(async (updates: object) => { useMcpSettingsStore.setState(updates as never); });
           useMcpSettingsStore.setState({ enabled: true, saveSettings } as never);
           window.clubhouse.app.getMcpOffImpact = vi.fn(async () => losing);
           render(<OrchestratorSettingsView projectId="proj-1" />);
           fireEvent.change(screen.getByLabelText('MCP override'), { target: { value: 'off' } });
           fireEvent.click(await screen.findByTestId('mcp-off-confirm'));
           await waitFor(() => expect(saveSettings).toHaveBeenCalledWith({ projectOverrides: { '/home/user/my-app': false } }));
+          await waitFor(() => expect(screen.queryByTestId('mcp-off-dialog')).toBeNull());
         });
 
         it('asks when turning Clubhouse mode off for the project would take MCP with it', async () => {
@@ -688,7 +689,7 @@ describe('OrchestratorSettingsView', () => {
         });
 
         it('asks when turning Clubhouse mode off at app level would take MCP with it', async () => {
-          const setEnabled = vi.fn();
+          const setEnabled = vi.fn(async (enabled: boolean) => { useClubhouseModeStore.setState({ enabled }); });
           useClubhouseModeStore.setState({ enabled: true, setEnabled });
           window.clubhouse.app.getMcpOffImpact = vi.fn(async () => ({ ...losing, appLoses: true, dispatcherGoesOff: true }));
           render(<OrchestratorSettingsView />);

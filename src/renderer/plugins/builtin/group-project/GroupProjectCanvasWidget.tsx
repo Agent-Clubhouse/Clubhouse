@@ -108,6 +108,15 @@ export function GroupProjectCanvasWidget({
  */
 export function PausedPolling({ groupProjectId }: { groupProjectId: string }) {
   const [paused, setPaused] = useState<Array<{ agentId: string; agentName: string }>>([]);
+  const [failed, setFailed] = useState<string | null>(null);
+
+  const resume = (agentId: string) => {
+    setFailed(null);
+    void window.clubhouse.groupProject.resumePolling(groupProjectId, agentId).catch(() => {
+      // telemetry-exempt: main logs the read that failed; shown here, and the offer stays to try again.
+      setFailed(agentId);
+    }).finally(load);
+  };
 
   const load = useCallback(() => {
     window.clubhouse.groupProject.getPausedPolling(groupProjectId).then(setPaused).catch(() => {
@@ -129,11 +138,12 @@ export function PausedPolling({ groupProjectId }: { groupProjectId: string }) {
           <span className="flex-1 min-w-0 truncate">{member.agentName}: polling paused</span>
           <Button
             kind="ghost"
-            onClick={() => { void window.clubhouse.groupProject.resumePolling(groupProjectId, member.agentId).catch((): boolean => false).finally(load); }}
+            onClick={() => resume(member.agentId)}
             data-testid={`polling-resume-${member.agentId}`}
           >
             Resume
           </Button>
+          {failed === member.agentId && <span role="alert" className="text-ctp-error" data-testid="polling-resume-error">Couldn’t resume. Try again.</span>}
         </div>
       ))}
     </div>

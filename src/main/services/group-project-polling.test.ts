@@ -256,6 +256,41 @@ describe('group-project-polling', () => {
         expect(count('m-double', 'start polling')).toBe(1);
       });
 
+      it('a read that fails keeps the offer and says so, and Resume can be tried again', async () => {
+        const project = await polling('m-read');
+        await lose('m-read');
+        await regain('m-read');
+        const get = vi.spyOn(groupProjectRegistry, 'get').mockRejectedValueOnce(new Error('disk'));
+        await expect(resumePausedPolling(project.id, 'm-read')).rejects.toThrow('disk');
+        get.mockRestore();
+        expect(count('m-read', 'start polling')).toBe(0);
+        expect(listPausedPolling(project.id)).toHaveLength(1);
+        expect(await resumePausedPolling(project.id, 'm-read')).toBe(true);
+        expect(count('m-read', 'start polling')).toBe(1);
+      });
+
+      it('a second click during the read does nothing', async () => {
+        const project = await polling('m-slow');
+        await lose('m-slow');
+        await regain('m-slow');
+        const first = resumePausedPolling(project.id, 'm-slow');
+        expect(await resumePausedPolling(project.id, 'm-slow')).toBe(false);
+        expect(await first).toBe(true);
+        expect(count('m-slow', 'start polling')).toBe(1);
+      });
+
+      it('MCP going off during the read sends nothing and keeps the offer', async () => {
+        const project = await polling('m-during');
+        await lose('m-during');
+        await regain('m-during');
+        const pending = resumePausedPolling(project.id, 'm-during');
+        gate.closed.add('m-during');
+        expect(await pending).toBe(false);
+        expect(count('m-during', 'start polling')).toBe(0);
+        await regain('m-during');
+        expect(listPausedPolling(project.id)).toHaveLength(1);
+      });
+
       it('Resume does nothing while MCP is off again', async () => {
         const project = await polling('m-off-again');
         await lose('m-off-again');

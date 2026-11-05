@@ -15,9 +15,16 @@
  *   forces its bridge on so it can start. Without MCP it keeps only message_parent:
  *   it must be able to report (#2610), and delivery goes through the parent's
  *   runtime, not the parent's MCP.
- * - An agent with no config here, a quick agent, follows its project.
- * - A caller that isn't running is refused. The bridge only lets running agents in,
- *   so that takes something calling callTool directly.
+ * - A quick agent has no config and follows its project.
+ * - A durable agent whose row is missing has no override, so it follows its project too.
+ * - An agent whose config couldn't be read at start is refused until a read
+ *   succeeds. Its override is unknown, and so is whether it's a helper, so it can't
+ *   keep message_parent either, and a parent may not hear from that helper.
+ * - Anything else this doesn't know is refused, running or not. The bridge only lets
+ *   running agents in, so that takes something calling callTool directly.
+ *
+ * spawnAgent sets this before it sets the agent's nonce, and the bridge refuses
+ * everything without one, so no call can arrive before it.
  */
 
 import { isDispatcherPath } from '../dispatcher/dispatcher-paths';
@@ -30,9 +37,12 @@ export const HELPER_REPORT_TOOL = 'message_parent';
 
 export type McpCallAccess = 'open' | 'report_only' | 'closed';
 
+export type McpCallerKind = 'quick' | 'durable' | 'helper' | 'unreadable';
+
 interface Caller {
-  mcpOverride: boolean | undefined;
-  helper: boolean;
+  kind: McpCallerKind;
+  /** The agent's own raw setting. A helper's is read as saved, not forced on. */
+  mcpOverride?: boolean;
 }
 
 const callers = new Map<string, Caller>();
@@ -44,13 +54,40 @@ export function mcpCallAccess(agentId: string, projectPath: string | undefined):
   if (projectPath === undefined) return 'closed';
   if (isDispatcherPath(projectPath)) return isMcpOnAtAppLevel() ? 'open' : 'closed';
   const caller = callers.get(agentId);
-  if (isMcpEnabled(projectPath, caller?.mcpOverride)) return 'open';
-  return caller?.helper ? 'report_only' : 'closed';
+  if (!caller || caller.kind === 'unreadable') return 'closed';
+  if (isMcpEnabled(projectPath, caller.mcpOverride)) return 'open';
+  return caller.kind === 'helper' ? 'report_only' : 'closed';
 }
 
-/** Record a running agent's config. Null is an agent with none, a quick one. Its tool list refreshes if its access moved. */
+/** A quick agent is starting: it has no config, and never gets one. */
+export function setMcpCallerQuick(agentId: string, projectPath: string): void {
+  recordCaller(agentId, projectPath, { kind: 'quick' });
+}
+
+/**
+ * Record a durable agent's config, or a missing row as null. Its tool list refreshes
+ * if its access moved. For a quick agent this only refreshes: its kind doesn't change.
+ */
 export function setMcpCaller(agentId: string, projectPath: string, config: Pick<DurableAgentConfig, 'mcpOverride' | 'parentAgentId'> | null | undefined): void {
-  callers.set(agentId, { mcpOverride: config?.mcpOverride, helper: !!config?.parentAgentId });
+  if (callers.get(agentId)?.kind === 'quick') {
+    recordCaller(agentId, projectPath, { kind: 'quick' });
+    return;
+  }
+  recordCaller(agentId, projectPath, { kind: config?.parentAgentId ? 'helper' : 'durable', mcpOverride: config?.mcpOverride });
+}
+
+/** A durable agent whose config couldn't be read at start: closed until setMcpCaller has one. */
+export function setMcpCallerUnreadable(agentId: string, projectPath: string): void {
+  recordCaller(agentId, projectPath, { kind: 'unreadable' });
+}
+
+/** What this running agent was recorded as, for counting what a change would close. */
+export function mcpCallerKind(agentId: string): McpCallerKind | undefined {
+  return callers.get(agentId)?.kind;
+}
+
+function recordCaller(agentId: string, projectPath: string, caller: Caller): void {
+  callers.set(agentId, caller);
   const access = mcpCallAccess(agentId, projectPath);
   const before = lastAccess.get(agentId);
   lastAccess.set(agentId, access);

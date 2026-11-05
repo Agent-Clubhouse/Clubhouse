@@ -240,7 +240,7 @@ function AppAgentSettings() {
       setShowConfirm(true);
     } else {
       // MCP falls back to Clubhouse mode, so this can turn MCP off too.
-      void requestMcpChange({ proposal: { clubhouseMode: { enabled: false } }, apply: () => setClubhouseEnabled(false) });
+      void requestMcpChange({ proposal: { clubhouseMode: { enabled: false } }, apply: () => setClubhouseEnabled(false), saved: () => useClubhouseModeStore.getState().enabled === false });
     }
   };
 
@@ -564,15 +564,17 @@ function ProjectAgentSettings({ projectId }: { projectId: string }) {
     ? clubhouseOverrides[projectPath]
     : clubhouseGlobal;
   const handleClubhouseModeChange = (value: string) => {
-    const apply = () => {
-      if (value === 'global') clearClubhouseOverride(projectPath);
-      else setClubhouseOverride(projectPath, value === 'on');
-    };
+    const apply = () => (value === 'global' ? clearClubhouseOverride(projectPath) : setClubhouseOverride(projectPath, value === 'on'));
     const projectOverrides = { ...clubhouseOverrides };
     if (value === 'global') delete projectOverrides[projectPath];
     else projectOverrides[projectPath] = value === 'on';
     // MCP falls back to Clubhouse mode, so this can turn MCP off for the project too.
-    void requestMcpChange({ proposal: { clubhouseMode: { projectOverrides } }, projectName, apply });
+    void requestMcpChange({
+      proposal: { clubhouseMode: { projectOverrides } },
+      projectName,
+      apply,
+      saved: () => useClubhouseModeStore.getState().projectOverrides[projectPath] === projectOverrides[projectPath],
+    });
   };
 
   // Session name
@@ -606,6 +608,7 @@ function ProjectAgentSettings({ projectId }: { projectId: string }) {
       proposal: { mcp: { projectOverrides: updated } },
       projectName,
       apply: () => mcpSaveSettings({ projectOverrides: Object.keys(updated).length > 0 ? updated : undefined }),
+      saved: () => (useMcpSettingsStore.getState().projectOverrides as Record<string, boolean> | undefined)?.[projectPath] === updated[projectPath],
     });
   };
 

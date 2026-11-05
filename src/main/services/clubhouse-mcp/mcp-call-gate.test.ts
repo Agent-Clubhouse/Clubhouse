@@ -18,7 +18,7 @@ vi.mock('../mcp-settings', async () => {
 vi.mock('../dispatcher/dispatcher-paths', () => ({ isDispatcherPath: (p?: string) => p === 'dispatcher-folder' }));
 
 import { clubhouseMcpOverride } from '../../../shared/agent-helpers';
-import { _resetMcpCallGateForTesting, forgetMcpCaller, mcpCallAccess, setMcpCaller } from './mcp-call-gate';
+import { _resetMcpCallGateForTesting, forgetMcpCaller, mcpCallAccess, mcpCallerKind, setMcpCaller, setMcpCallerQuick, setMcpCallerUnreadable } from './mcp-call-gate';
 import { _resetOrchestrationGateForTesting, onOrchestrationGateChange } from './orchestration-gate';
 
 const P = 'some-project';
@@ -85,17 +85,34 @@ describe('the caller\'s effective MCP', () => {
     expect(mcpCallAccess('a', P)).toBe('open');
   });
 
-  it('a quick agent has no config and follows its project', () => {
+  it('a quick agent has no config and follows its project, and stays quick through a refresh', () => {
+    setMcpCallerQuick('quick', P);
     expect(mcpCallAccess('quick', P)).toBe('open');
     h.mcp = { enabled: false };
     expect(mcpCallAccess('quick', P)).toBe('closed');
     h.mcp = { enabled: false, projectOverrides: { [P]: true } };
     expect(mcpCallAccess('quick', P)).toBe('open');
+    setMcpCaller('quick', P, null);
+    expect(mcpCallerKind('quick')).toBe('quick');
   });
 
   it('fails closed for a caller that isn\'t running', () => {
     setMcpCaller('a', P, { mcpOverride: true });
     expect(mcpCallAccess('a', undefined)).toBe('closed');
+  });
+
+  it('fails closed for a running caller nothing has recorded: only a real quick agent gets that path', () => {
+    expect(mcpCallAccess('nobody', P)).toBe('closed');
+    expect(mcpCallerKind('nobody')).toBeUndefined();
+  });
+
+  it('names each kind', () => {
+    setMcpCallerQuick('q', P);
+    setMcpCaller('d', P, {});
+    setMcpCaller('m', P, null);
+    setMcpCaller('h', P, { parentAgentId: 'lead' });
+    setMcpCallerUnreadable('u', P);
+    expect(['q', 'd', 'm', 'h', 'u'].map(mcpCallerKind)).toEqual(['quick', 'durable', 'durable', 'helper', 'unreadable']);
   });
 
   it('forgets an agent that stopped, so a later start isn\'t read with its old override', () => {
@@ -104,6 +121,47 @@ describe('the caller\'s effective MCP', () => {
     expect(mcpCallAccess('a', P)).toBe('open');
     forgetMcpCaller('a');
     expect(mcpCallAccess('a', P)).toBe('closed');
+    expect(mcpCallerKind('a')).toBeUndefined();
+  });
+});
+
+describe('a config that couldn\'t be read at start', () => {
+  it('is closed whatever the settings say, a helper included, since nothing is known', () => {
+    setMcpCallerUnreadable('a', P);
+    expect(mcpCallAccess('a', P)).toBe('closed');
+    h.mcp = { enabled: false, projectOverrides: { [P]: true } };
+    expect(mcpCallAccess('a', P)).toBe('closed');
+  });
+
+  it('opens once a read succeeds, and tells its CLI', () => {
+    const changed = vi.fn();
+    const off = onOrchestrationGateChange(changed);
+    setMcpCallerUnreadable('a', P);
+    setMcpCaller('a', P, { mcpOverride: true });
+    expect(mcpCallAccess('a', P)).toBe('open');
+    expect(changed).toHaveBeenCalledTimes(1);
+    off();
+  });
+
+  it('a helper keeps message_parent again once it is known to be one', () => {
+    h.mcp = { enabled: false };
+    setMcpCallerUnreadable('h', P);
+    expect(mcpCallAccess('h', P)).toBe('closed');
+    setMcpCaller('h', P, { parentAgentId: 'lead' });
+    expect(mcpCallAccess('h', P)).toBe('report_only');
+  });
+
+  it('a missing row is different: no config, so it follows its project like a quick agent', () => {
+    setMcpCaller('a', P, null);
+    expect(mcpCallerKind('a')).toBe('durable');
+    expect(mcpCallAccess('a', P)).toBe('open');
+    h.mcp = { enabled: false };
+    expect(mcpCallAccess('a', P)).toBe('closed');
+  });
+
+  it('doesn\'t change the Dispatcher, which is known by its folder', () => {
+    setMcpCallerUnreadable('d', 'dispatcher-folder');
+    expect(mcpCallAccess('d', 'dispatcher-folder')).toBe('open');
   });
 });
 

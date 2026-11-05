@@ -119,6 +119,11 @@ export interface ResolvedOrchestrationPolicy extends OrchestrationPolicy {
    * settings, which come back when MCP does.
    */
   mcpOff?: McpDependentSwitches;
+  /**
+   * A helper whose own MCP setting resolves off. Its forced bridge keeps `mcpOff`
+   * unset, so it can start and report, but the call gate leaves it only message_parent.
+   */
+  mcpReportOnly?: true;
 }
 
 /** What `orchestrate` resolves to from the saved settings, MCP on or off. */
@@ -265,7 +270,7 @@ export function applyOrchestrationPatch(
 export function resolveOrchestrationPolicy(
   agentConfig: OrchestrationPolicyConfig | undefined,
   personaDefaults: OrchestrationPolicyConfig | undefined,
-  options: { helper?: boolean; mcpOff?: boolean } = {},
+  options: { helper?: boolean; mcpOff?: boolean; mcpReportOnly?: boolean } = {},
 ): ResolvedOrchestrationPolicy {
   const agent = normalizeOrchestrationConfig(agentConfig) ?? {};
   const persona = normalizeOrchestrationConfig(personaDefaults) ?? {};
@@ -299,7 +304,7 @@ export function resolveOrchestrationPolicy(
       mcpOff: { orchestrate, crossProjectHelpers, connectToDispatcher, autoHelpers },
     };
   }
-  return { ...policy, sources, ...personaAutoOff };
+  return { ...policy, sources, ...personaAutoOff, ...(options.mcpReportOnly && { mcpReportOnly: true as const }) };
 }
 
 // ── Access ───────────────────────────────────────────────────────────────

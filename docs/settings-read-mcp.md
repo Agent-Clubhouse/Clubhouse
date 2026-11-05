@@ -67,7 +67,7 @@ Only the keys below ever come out. Each is read by name from its source, never b
 | `agent.cli` | `orchestrator`, `model`, `runtime` |
 | `agent.persona` | `persona`, `mission` (ids) |
 | `agent.access` | `free_agent_mode`, `permission_mode` |
-| `agent.mcp` | `clubhouse_mcp`, `clubhouse_mode`, `mcp_ids` (ids) |
+| `agent.mcp` | `clubhouse_mcp`, `clubhouse_bridge`, `clubhouse_mode`, `mcp_ids` (ids) |
 | `agent.idle` | `idle_sleep` |
 | `agent.orchestration` | `orchestrate`, `access`, `control`, `max_helpers`, `cross_project_helpers`, `connect_to_dispatcher`, `auto_helpers` |
 | `project.identity` | `name`, `display_name`, `color`, `emoji`, `has_image` |
@@ -111,7 +111,8 @@ Each value has `effective` and `source`, and `stored` with `detail`.
 - **A save still queued** shows on the next read. The file is checked, while `effective` comes from the store's memory.
 - **`uncertain` still has an `effective`.** It's what the app is using: its in-memory value, or the default if it never loaded the file.
 - **A preview-only experimental flag in a stable build** keeps `stored` and `source: app` when it's saved, and its `effective` is `false`. The flag is still in the file and comes back with Preview, but the build doesn't honour it. Compare `stored` with `detail` on.
-- **Fixed rules read `default`.** A helper always gets Clubhouse MCP and is never connected to the Dispatcher, whatever is saved. Compare `stored` with `detail` on.
+- **A bridge isn't what an agent can call.** `clubhouse_bridge` says whether the bridge is injected at its start, and `clubhouse_mcp` what it can call. They only differ for a helper, whose bridge is always there, a fixed rule that reads `default`. With MCP off for it, `clubhouse_mcp` is off with `reason: helper_report_only`: its only working Clubhouse tool is `message_parent`.
+- **Fixed rules read `default`.** A helper is never connected to the Dispatcher, whatever is saved. Compare `stored` with `detail` on.
 - **A sleeping helper's `free_agent_mode`** is its saved value, before its orchestrator's ceiling applies at the next start. Awake, it's what the helper runs with.
 - **`agent.cli.model`** reads `default` when the CLI picks. No CLI is asked which model that means, since that can spawn a process.
 - **A saved Free Agent permission mode has no agent level**, so `agent.access.permission_mode` has a `stored` of `null`. See `project.modes` and `app.defaults` for the saved values.
@@ -129,6 +130,7 @@ Turning something off never rewrites what depends on it. The dependent value rea
 | `dispatcher_enabled` | `switch_off` | Its switch is saved off. |
 | `dispatcher_enabled` | `classic_layout` | Nothing is saved and this session runs the classic layout. `source` is `default`. A saved `true` stays on there. |
 | `dispatcher_enabled` | `experimental_off` | Nothing is saved on its switch, and `experimental-settings.json` has `dispatcher: false` from before the flag was removed. |
+| `clubhouse_mcp`, `orchestrate`, `cross_project_helpers`, `auto_helpers` on a helper | `helper_report_only` | MCP is off for it by its own setting, its project's or the app's. It keeps `message_parent` and nothing else. |
 | `clubhouse_mcp` on the Dispatcher | `mcp_off` | It can't start without MCP at app level, whatever its own override says. |
 
 `dispatcher_enabled` with nothing saved reads `source: default`, `effective: true` in the new layout.

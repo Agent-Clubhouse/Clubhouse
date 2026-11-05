@@ -13,6 +13,8 @@ export interface McpOffImpact {
   projectsLosing: string[];
   /** Agents that lose Clubhouse tools, helpers aside. */
   agentsLosing: number;
+  /** Quick agents running now that lose them. They keep running. */
+  quickAgentsLosing: number;
   /** Agents that keep MCP: in a project that keeps it, or through their own setting. */
   agentsKeeping: number;
   /** Helpers that lose it. They can still report to their parent. */

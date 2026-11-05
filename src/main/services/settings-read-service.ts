@@ -18,7 +18,7 @@
  * close the tool gate), and never asks a CLI for its models or availability.
  */
 
-import { clubhouseMcpOverride, isDisposedAgent } from '../../shared/agent-helpers';
+import { isDisposedAgent } from '../../shared/agent-helpers';
 import { COPILOT_SDK_FLAG } from '../../shared/chat';
 import { DISPATCHER_PROJECT_ID } from '../../shared/dispatcher-types';
 import { CHAT_IDLE_SETTINGS, MCP_SETTINGS } from '../../shared/settings-definitions';
@@ -61,7 +61,7 @@ export interface SettingValue {
   reason?: SettingOffReason;
 }
 
-export type SettingOffReason = 'mcp_off' | 'dispatcher_off' | 'classic_layout' | 'experimental_off' | 'switch_off';
+export type SettingOffReason = 'mcp_off' | 'dispatcher_off' | 'classic_layout' | 'experimental_off' | 'switch_off' | 'helper_report_only';
 
 /** Who is asking. The tools say; this enforces. */
 export type SettingsActor =
@@ -214,7 +214,7 @@ function runtimeSource(ctx: AgentContext): SettingSource {
 
 /** The level that turned MCP off for this agent, and that a switch derived off by it reads as. */
 function mcpOffLevel(ctx: AgentContext): SettingSource {
-  return mcpLevel(ctx.path, clubhouseMcpOverride(ctx.config), ctx).source;
+  return mcpLevel(ctx.path, ctx.config.mcpOverride, ctx).source;
 }
 
 /** A switch that needs Clubhouse MCP (#2589): off without it, with `stored` kept. Other fields don't. */
@@ -226,8 +226,8 @@ const orchestrationField = (key: keyof NonNullable<AgentContext['view']['orchest
     const { config, view } = ctx;
     if (!view.orchestration) return undefined;
     const stored = config.orchestration?.[key] ?? null;
-    if (MCP_DEPENDENT.has(key) && !view.orchestration.mcpEnabled) {
-      return { stored, effective: false, source: mcpOffLevel(ctx), reason: 'mcp_off' };
+    if (MCP_DEPENDENT.has(key) && (!view.orchestration.mcpEnabled || view.orchestration.mcpReportOnly)) {
+      return { stored, effective: false, source: mcpOffLevel(ctx), reason: view.orchestration.mcpReportOnly ? 'helper_report_only' : 'mcp_off' };
     }
     return { stored, effective: view.orchestration[key], source: view.orchestration.sources[key] };
   },
@@ -311,9 +311,24 @@ const AGENT_SECTIONS: ReadonlyArray<Section<AgentContext>> = [
           const app = mcpLevel(undefined, undefined, ctx);
           return { stored: config.mcpOverride ?? null, effective: app.enabled, source: app.source, ...(!app.enabled && { reason: 'mcp_off' as const }) };
         }
-        const { enabled, source } = mcpLevel(ctx.path, clubhouseMcpOverride(config), ctx);
-        // A helper always gets the bridge, whatever is saved.
-        return { stored: config.mcpOverride ?? null, effective: enabled, source: config.parentAgentId ? 'default' : source };
+        // What it can call, by its own setting. Whether its bridge is there is clubhouse_bridge.
+        const { enabled, source } = mcpLevel(ctx.path, config.mcpOverride, ctx);
+        return {
+          stored: config.mcpOverride ?? null, effective: enabled, source,
+          ...(config.parentAgentId && !enabled && { reason: 'helper_report_only' as const }),
+        };
+      }],
+      ['clubhouse_bridge', (ctx) => {
+        const { config } = ctx;
+        // As the Dispatcher can't start without MCP at app level, it gets none then.
+        if (isDispatcherAgentId(config.id)) {
+          const app = mcpLevel(undefined, undefined, ctx);
+          return { stored: null, effective: app.enabled, source: app.source };
+        }
+        // A helper always gets the bridge, whatever is saved, so it can start and report.
+        if (config.parentAgentId) return { stored: null, effective: true, source: 'default' };
+        const { enabled, source } = mcpLevel(ctx.path, config.mcpOverride, ctx);
+        return { stored: null, effective: enabled, source };
       }],
       ['clubhouse_mode', (ctx) => {
         const projectOn = ctx.view.settings.clubhouseMode.projectEnabled;
@@ -352,7 +367,9 @@ const AGENT_SECTIONS: ReadonlyArray<Section<AgentContext>> = [
         const { config, view } = ctx;
         if (!view.orchestration) return undefined;
         const stored = config.orchestration?.autoHelpers ?? null;
-        if (!view.orchestration.mcpEnabled) return { stored, effective: false, source: mcpOffLevel(ctx), reason: 'mcp_off' };
+        if (!view.orchestration.mcpEnabled || view.orchestration.mcpReportOnly) {
+          return { stored, effective: false, source: mcpOffLevel(ctx), reason: view.orchestration.mcpReportOnly ? 'helper_report_only' : 'mcp_off' };
+        }
         return { stored, effective: view.orchestration.autoHelpersEffective, source: view.orchestration.sources.autoHelpers };
       }],
     ],

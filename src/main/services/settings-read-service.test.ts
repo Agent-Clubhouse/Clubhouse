@@ -144,7 +144,7 @@ describe('the allowlist', () => {
       'agent.cli': ['orchestrator', 'model', 'runtime'],
       'agent.persona': ['persona', 'mission'],
       'agent.access': ['free_agent_mode', 'permission_mode'],
-      'agent.mcp': ['clubhouse_mcp', 'clubhouse_mode', 'mcp_ids'],
+      'agent.mcp': ['clubhouse_mcp', 'clubhouse_bridge', 'clubhouse_mode', 'mcp_ids'],
       'agent.idle': ['idle_sleep'],
       'agent.orchestration': ['orchestrate', 'access', 'control', 'max_helpers', 'cross_project_helpers', 'connect_to_dispatcher', 'auto_helpers'],
       'project.identity': ['name', 'display_name', 'color', 'emoji', 'has_image'],
@@ -316,12 +316,13 @@ describe('settings derived off, with a reason', () => {
     }
   });
 
-  it('a helper keeps MCP as a fixed rule, and is never connected', async () => {
-    writeAgents(one, [agent('a1'), agent('h1', { parentAgentId: 'a1', orchestration: { connectToDispatcher: true } })]);
+  it('a helper with MCP off reads report-only, its orchestration off with the same reason, and is never connected', async () => {
+    writeAgents(one, [agent('a1'), agent('h1', { parentAgentId: 'a1', orchestration: { orchestrate: true, connectToDispatcher: true } })]);
     writeApp('mcp-settings.json', { enabled: false });
     layout(true);
-    const { settings } = (await read(ordinary('h1'), { select: ['agent.mcp.clubhouse_mcp', 'agent.orchestration.connect_to_dispatcher'], detail: true })).targets[0];
-    expect(settings['agent.mcp.clubhouse_mcp']).toEqual({ stored: null, effective: true, source: 'default' });
+    const { settings } = (await read(ordinary('h1'), { select: ['agent.mcp.clubhouse_mcp', 'agent.orchestration.orchestrate', 'agent.orchestration.connect_to_dispatcher'], detail: true })).targets[0];
+    expect(settings['agent.mcp.clubhouse_mcp']).toEqual({ stored: null, effective: false, source: 'app', reason: 'helper_report_only' });
+    expect(settings['agent.orchestration.orchestrate']).toEqual({ stored: true, effective: false, source: 'app', reason: 'helper_report_only' });
     expect(settings['agent.orchestration.connect_to_dispatcher']).toMatchObject({ effective: false });
   });
 });
@@ -547,10 +548,23 @@ describe('values and sources', () => {
     expect(await mcp()).toEqual({ effective: true, source: 'app' });
   });
 
-  it('gives a helper the bridge whatever is saved, as a fixed rule', async () => {
-    writeAgents(one, [agent('helper', { parentAgentId: 'a1', mcpOverride: false })]);
-    expect((await read(ordinary('helper'), { select: ['agent.mcp.clubhouse_mcp'], detail: true })).targets[0].settings['agent.mcp.clubhouse_mcp'])
-      .toEqual({ stored: false, effective: true, source: 'default' });
+  it('reports what a helper can call apart from whether its bridge is there', async () => {
+    const both = async (id: string) => {
+      const { settings } = (await read(ordinary(id), { select: ['agent.mcp.clubhouse_mcp', 'agent.mcp.clubhouse_bridge'], detail: true })).targets[0];
+      return [settings['agent.mcp.clubhouse_mcp'], settings['agent.mcp.clubhouse_bridge']];
+    };
+    const bridge = { stored: null, effective: true, source: 'default' };
+    writeAgents(one, [agent('off', { parentAgentId: 'a1', mcpOverride: false }), agent('on', { parentAgentId: 'a1', mcpOverride: true }), agent('unset', { parentAgentId: 'a1' }), agent('plain')]);
+    expect(await both('off')).toEqual([{ stored: false, effective: false, source: 'agent', reason: 'helper_report_only' }, bridge]);
+    expect(await both('on')).toEqual([{ stored: true, effective: true, source: 'agent' }, bridge]);
+    expect(await both('unset')).toEqual([{ stored: null, effective: true, source: 'default' }, bridge]);
+    writeApp('mcp-settings.json', { enabled: false });
+    resetAllSettingsStoresForTests();
+    expect(await both('unset')).toEqual([{ stored: null, effective: false, source: 'app', reason: 'helper_report_only' }, bridge]);
+    // Anyone else's bridge goes with its MCP: there is no second answer.
+    expect((await both('plain'))[1]).toEqual({ stored: null, effective: false, source: 'app' });
+    fs.rmSync(path.join(dirs.userData, 'mcp-settings.json'), { force: true });
+    resetAllSettingsStoresForTests();
   });
 
   it('inherits persona, mission, MCP ids and orchestrator from the project', async () => {

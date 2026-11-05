@@ -150,6 +150,8 @@ export function mobileOrchestration(policy: ResolvedOrchestrationPolicy) {
     autoHelpers: sources.autoHelpers === 'agent' ? policy.mcpOff?.autoHelpers ?? policy.autoHelpers : null,
     autoHelpersEffective: policy.autoEffective?.effective ?? false,
     mcpEnabled: !policy.mcpOff,
+    // A helper keeps mcpEnabled for its forced bridge. With this it can only message its parent.
+    ...(policy.mcpReportOnly && { mcpReportOnly: true as const }),
     sources: {
       orchestrate: sources.orchestrate, access: sources.access, control: sources.control, maxHelpers: sources.maxHelpers,
       crossProjectHelpers: sources.crossProjectHelpers, connectToDispatcher: sources.connectToDispatcher, autoHelpers: sources.autoHelpers,

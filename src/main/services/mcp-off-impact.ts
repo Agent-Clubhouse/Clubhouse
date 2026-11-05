@@ -10,6 +10,7 @@
  * loses them can still report to its parent.
  */
 
+import * as path from 'path';
 import { isDisposedAgent } from '../../shared/agent-helpers';
 import { savedOrchestrate } from '../../shared/orchestration-policy';
 import type { DurableAgentConfig } from '../../shared/types';
@@ -24,6 +25,7 @@ import { appLog } from './log-service';
 import { getSettings as getMcpSettings, isMcpEnabled, isMcpOnAtAppLevel, resolveMcpWithProposal, type McpProposal } from './mcp-settings';
 import { resolveOrchestrationPolicies } from './orchestration-policy';
 import * as projectStore from './project-store';
+import { mcpCallerKind } from './clubhouse-mcp/mcp-call-gate';
 import type { McpOffImpact, McpKeptBy } from '../../shared/mcp-off-impact';
 
 /** Why a project still has MCP under the proposal: its MCP override wins over Clubhouse mode. */
@@ -81,6 +83,16 @@ async function addProject(
   }
 }
 
+/** Running quick agents the gate would close, by the same rule: they follow their project. */
+function addQuickAgents(impact: McpOffImpact, proposal: McpProposal, projectPath: string): void {
+  for (const [agentId, registration] of agentRegistry.getAllRegistrations()) {
+    if (path.resolve(registration.projectPath) !== path.resolve(projectPath) || mcpCallerKind(agentId) !== 'quick') continue;
+    if (!isMcpEnabled(projectPath) || resolveMcpWithProposal(proposal, projectPath)) continue;
+    impact.quickAgentsLosing++;
+    impact.turnsOff = true;
+  }
+}
+
 export async function readMcpOffImpact(proposal: McpProposal): Promise<McpOffImpact> {
   const appBefore = isMcpOnAtAppLevel();
   const appAfter = resolveMcpWithProposal(proposal);
@@ -95,6 +107,7 @@ export async function readMcpOffImpact(proposal: McpProposal): Promise<McpOffImp
     appKeptByClubhouseMode: !appAfter ? false : !{ ...getMcpSettings(), ...proposal.mcp }.enabled && clubhouseAfter,
     projectsLosing: [],
     agentsLosing: 0,
+    quickAgentsLosing: 0,
     agentsKeeping: 0,
     helpersReportOnly: 0,
     orchestratorsLosing: 0,
@@ -110,6 +123,8 @@ export async function readMcpOffImpact(proposal: McpProposal): Promise<McpOffImp
   for (const project of await projectStore.list()) {
     if (isDispatcherPath(project.path)) continue;
     const name = project.displayName || project.name;
+    // Outside the read below: they are running, whether or not its agents can be read.
+    addQuickAgents(impact, proposal, project.path);
     try {
       await addProject(impact, proposal, { path: project.path, name }, await agentConfig.listDurable(project.path));
     } catch (err) {

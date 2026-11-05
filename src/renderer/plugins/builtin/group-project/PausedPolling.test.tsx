@@ -27,6 +27,19 @@ describe('PausedPolling', () => {
     await waitFor(() => expect(screen.queryByTestId('polling-paused')).toBeNull());
   });
 
+  it('says so when Resume fails, keeps the offer, and clears it on the next try', async () => {
+    window.clubhouse.groupProject.getPausedPolling = vi.fn(async () => [{ agentId: 'a1', agentName: 'runner' }]);
+    window.clubhouse.groupProject.resumePolling = vi.fn().mockRejectedValueOnce(new Error('disk')).mockResolvedValue(true);
+    render(<PausedPolling groupProjectId="gp" />);
+    await screen.findByText('runner: polling paused');
+    await act(async () => { fireEvent.click(screen.getByTestId('polling-resume-a1')); });
+    expect(await screen.findByRole('alert')).toHaveTextContent('Couldn’t resume. Try again.');
+    expect(screen.getByTestId('polling-resume-a1')).toBeInTheDocument();
+    await act(async () => { fireEvent.click(screen.getByTestId('polling-resume-a1')); });
+    expect(screen.queryByRole('alert')).toBeNull();
+    expect(window.clubhouse.groupProject.resumePolling).toHaveBeenCalledTimes(2);
+  });
+
   it('reads again when the members offered change', async () => {
     render(<PausedPolling groupProjectId="gp" />);
     await waitFor(() => expect(changed).toBeTruthy());

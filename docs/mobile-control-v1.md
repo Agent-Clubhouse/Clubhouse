@@ -752,6 +752,7 @@ Every durable agent in the snapshot (`agents[projectId][]`), `GET /api/v1/projec
 - **control**: one of `controls` (hands-off, ask before starting helpers, ask about everything).
 - **maxHelpers**: "Helpers at once", a whole number from 1 to `maxHelpersCap` (the app-wide helper cap, at most 100).
 - **crossProjectHelpers**: "Cross-project helpers" (#2512): the agent may start helpers in other registered projects. The desktop shows it while `orchestrate` is on; turning it off leaves helpers already running elsewhere alone.
+- **mcpReportOnly**: present and `true` on a helper whose own MCP setting resolves off. `mcpEnabled` stays `true` for it, because its bridge is always injected, but its only working Clubhouse tool is `message_parent`. Treat its orchestration switches as off.
 - **connectToDispatcher**: "Connect to Dispatcher" (#2534): the Dispatcher may message this agent and get its reports. The desktop shows it while the [Dispatcher](#dispatcher) is on, with `orchestrate` on or off; turning it on while the Dispatcher is off is 409 `dispatcher_off`, or `mcp_off` when Clubhouse MCP at app level is why it is off. Unset (source `default`), it follows `orchestrate` (#2578). A helper (an agent with `parentAgentId`) talks only to its parent, so on a helper it is always `false` with source `default`, and a value sent for one has no effect while it is a helper. Don't offer the switch on a helper. So an agent can report `true` with the Dispatcher off: send this field only when the user changes it.
 - **mcpEnabled**: whether Clubhouse MCP is on for this agent (#2589), following its own setting, then its project's, then the app's. A helper always has it (#2610). No Clubhouse MCP means no orchestration: while it is `false`, `orchestrate`, `crossProjectHelpers` and `connectToDispatcher` read `false`, the agent gets no Dispatcher wire and isn't in the Dispatcher's `list_agents`. Their `sources` still describe the saved settings, which are kept and come back when MCP does. Disable those switches and say they need Clubhouse MCP. Helpers already running keep running. The snapshot refreshes when an MCP setting changes.
 - **sources**: where each field comes from. `agent` is an override on the agent, which `null` clears; `persona` is the persona's front-matter; `default` is the built-in default.
@@ -957,7 +958,7 @@ Optional fields on the snapshot's `dispatcher`, `dispatcher:changed` and the cap
 | --- | --- |
 | `offReason` | `switched_off` (its switch is off, which wins over `mcp_off`), `mcp_off` (Clubhouse MCP is off at app level) or `classic_layout` (the classic layout with nothing saved on). Saved on with the classic layout is on. Tolerate other values. |
 | `running` | Whether its session is running. MCP going off stops nothing. |
-| `status` | `running` or `sleeping`, as for any agent. |
+| `status` | The same as `agent.status`, which for a desktop agent is `running` or `sleeping`. |
 | `detail` | Plain text to show. `MCP off; session running`, `MCP off`, `Turned off` or `Needs the new layout`. |
 | `commandsWhileOff` | What is accepted for its id now. |
 | `agent` | The record, in the same shape as `agents[projectId][]`, or `null` before it was first created. The snapshot's `dispatcher` keeps it while it is off, so history isn't lost. |

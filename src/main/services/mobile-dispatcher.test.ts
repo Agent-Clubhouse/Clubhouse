@@ -93,6 +93,13 @@ describe('with Clubhouse MCP off', () => {
     });
   });
 
+  it('its status is what the agent says, so the two can\'t differ', () => {
+    Object.assign(S, { enabled: true, flagOn: false, running: true });
+    expect(dispatcherOffFields(dispatcher.getDispatcherState(), () => ({ status: 'sleeping' }))).toMatchObject({ running: true, status: 'sleeping' });
+    S.config = null;
+    expect(dispatcherOffFields(dispatcher.getDispatcherState(), view)).toMatchObject({ status: 'running', agent: null });
+  });
+
   it('adds nothing while it is on', () => {
     Object.assign(S, { enabled: true, flagOn: true });
     expect(dispatcherOffFields(dispatcher.getDispatcherState(), view)).toEqual({});
@@ -178,7 +185,9 @@ describe('dispatcher.setEnabled', () => {
     S.enabled = false;
     S.flagOn = true;
     S.newLayout = false;
-    expect(await refusal(setDispatcherEnabledFromPhone(true, allow))).toMatchObject({ code: 'dispatcher_layout_off', statusCode: 409 });
+    expect(await refusal(setDispatcherEnabledFromPhone(true, allow))).toMatchObject({
+      code: 'dispatcher_layout_off', statusCode: 409, detail: 'The Dispatcher needs the new layout. Turn off Classic layout in Settings > Display & UI on the desktop.',
+    });
     expect(dispatcher.setDispatcherEnabled).not.toHaveBeenCalled();
   });
 
