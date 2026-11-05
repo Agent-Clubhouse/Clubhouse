@@ -929,7 +929,7 @@ The app-wide Dispatcher (#2533): one durable agent that coordinates the orchestr
 ```
 
 - **enabled**: it is on now.
-- **flagOn**: whether it can be turned on: `false` while Clubhouse MCP is off at app level. The experimental flag it once reported is gone. Older phones say "Turn on Dispatcher in Settings > Experimental on the desktop" here; a phone that wants the current words can show the refusal's `message`.
+- **flagOn**: `false` while Clubhouse MCP is off at app level. The experimental flag it once reported is gone. See [While it is off](#while-it-is-off).
 - **newLayout**: the desktop runs the New layout this session. The Dispatcher's view is in the new layout only, so turning it on needs it; one that is still on can always be turned off.
 
 ### Snapshot
@@ -949,15 +949,43 @@ The snapshot's `dispatcher` is `null` while the Dispatcher is off (or was never 
 
 `dispatcher:changed` is broadcast and buffered for `mobile:replay` whenever `enabled`, `flagOn` or the agent id change, from the desktop or a phone: `{"enabled":bool,"flagOn":bool,"agentId":"id"|null}` (`agentId` is null while it is off). A fresh `snapshot` follows it, and also follows any change to its config (its CLI or model changed on the desktop). Add or drop the Dispatcher from that snapshot.
 
+### While it is off
+
+Optional fields on the snapshot's `dispatcher`, `dispatcher:changed` and the capabilities' `dispatcher`, present only while it is off, and the same in all three. A phone that doesn't know them keeps working: `enabled` is `false`, and `agentId` in `dispatcher:changed` is `null`, as ever. An older phone drops the Dispatcher then, so it may not show one still running. The desktop can stop it.
+
+| Field | Meaning |
+| --- | --- |
+| `offReason` | `switched_off` (its switch is off, which wins over `mcp_off`), `mcp_off` (Clubhouse MCP is off at app level) or `classic_layout` (the classic layout with nothing saved on). Saved on with the classic layout is on. Tolerate other values. |
+| `running` | Whether its session is running. MCP going off stops nothing. |
+| `status` | `running` or `sleeping`, as for any agent. |
+| `detail` | Plain text to show. `MCP off; session running`, `MCP off`, `Turned off` or `Needs the new layout`. |
+| `commandsWhileOff` | What is accepted for its id now. |
+| `agent` | The record, in the same shape as `agents[projectId][]`, or `null` before it was first created. The snapshot's `dispatcher` keeps it while it is off, so history isn't lost. |
+
+| State | `commandsWhileOff` | Reads | Anything else |
+| --- | --- | --- | --- |
+| `mcp_off`, running | `agent.stop`, `chat.interrupt`, `chat.send`, `chat.queue.remove`, `chat.permission`, `chat.question`, `dispatcher.setEnabled` | Answer | 409 `mcp_off` |
+| `mcp_off`, stopped | `dispatcher.setEnabled` | Answer, as history | 409 `mcp_off` |
+| `switched_off` | `dispatcher.setEnabled` | 404 `agent_not_found`, as ever | 409 `dispatcher_off`, as ever |
+| `classic_layout` | `dispatcher.setEnabled` | 404 `agent_not_found`, as ever | 409 `dispatcher_off`, as ever |
+
+- `dispatcher.setEnabled` with `enabled: false` always works. With `true` it answers as under [dispatcher.setEnabled](#dispatchersetenabled).
+- `chat.permission` and `chat.question` are for requests already pending. With nothing pending, 409 `mcp_off`.
+- `chat.send` goes to the running session, as the desktop's composer does. It never wakes: with no session it is refused.
+- A shell in its folder is only for while it is on.
+- When MCP is back, `enabled` is `true`, these fields are gone, and nothing has been started.
+
+Fixtures: `snapshot-dispatcher-mcp-off-running.json`, and `dispatcher-off-states.json` and `dispatcher-off-routes.json` for every state. Fixtures from before these fields show the older shape: they are what a phone that doesn't know the fields reads.
+
 ### dispatcher.setEnabled
 
-`{type:"dispatcher.setEnabled", enabled:bool}` is Settings > Dispatcher's switch. Result `{enabled, flagOn, agentId}`, as `dispatcher:changed`. Turning it off stops the agent and keeps its folder, notes and config, so turning it on again carries on. Refusals (409): `dispatcher_flag_off` (turning it on while Clubhouse MCP is off at app level, with `message` saying so) and `dispatcher_layout_off` (turning it on while the desktop runs the classic layout, unless its switch is already saved on). Turning on one that is on, or off one that is off, succeeds with the current state.
+`{type:"dispatcher.setEnabled", enabled:bool}` is Settings > Dispatcher's switch. Result `{enabled, flagOn, agentId}`, as `dispatcher:changed`. Turning it off stops the agent and keeps its folder, notes and config, so turning it on again carries on. Refusals (409): `mcp_off` (turning it on while its switch is on and Clubhouse MCP is off at app level), `dispatcher_flag_off` (turning it on while its switch is off and Clubhouse MCP is off too) and `dispatcher_layout_off` (turning it on while the desktop runs the classic layout, unless its switch is already saved on). Turning on one that is on, or off one that is off, succeeds with the current state.
 
 ### Its agent
 
 While it is on, its id works wherever an agent id does: the chat snapshot, chat history pages, `/chat/sessions`, `/content`, attachments, `/settings`, every `chat.*` command, `agent.start`, `agent.stop`, `agent.update`, `pty:attach`, and `GET /api/v1/agents/:id/sessions…` with `projectId=__dispatcher__`. While it is off and stopped, GET routes answer 404 `agent_not_found` and commands 409 `dispatcher_off`.
 
-**Still running with Clubhouse MCP off.** MCP going off at app level stops nothing. A running Dispatcher stays listed and reachable until it stops: `dispatcher` in the snapshot has `enabled:false`, `flagOn:false` and its `agent`, `dispatcher:changed` still carries its `agentId`, and its id works everywhere above, so `agent.stop` stops it. `agent.start` is refused once it has stopped, since it can't start without MCP. A fresh snapshot follows each change.
+See [While it is off](#while-it-is-off) for what changes with Clubhouse MCP off.
 
 - **Shells.** `pty:spawn-shell` with `projectId: "__dispatcher__"` (with or without its `agentId`) opens a shell in its folder while it is on; otherwise `project_not_found`.
 - **No git.** Git routes for `__dispatcher__` answer 409 `{"error":"not_git_repo"}`. Its settings' `details.changes`, `branch` and `worktree` are null.

@@ -97,6 +97,7 @@ describe('McpSettingsView', () => {
     const stop = screen.getByTestId('mcp-off-stop-dispatcher') as HTMLInputElement;
     expect(stop.checked).toBe(false);
     expect(stop.closest('label')).toHaveTextContent('Also stop the Dispatcher now. This interrupts whatever it is doing.');
+    expect(screen.getByTestId('mcp-off-older-go')).toHaveTextContent('Older Clubhouse Go versions may not show a Dispatcher that’s still running with MCP off. You can stop it here.');
     await act(async () => { fireEvent.click(screen.getByTestId('mcp-off-confirm')); });
     expect(saveSettings).toHaveBeenCalledWith({ enabled: false });
     expect(window.clubhouse.dispatcher.stop).not.toHaveBeenCalled();
@@ -113,6 +114,7 @@ describe('McpSettingsView', () => {
   it('offers the stop only while it is running', async () => {
     await openDialog({ ...IMPACT, dispatcherRunning: false });
     expect(screen.queryByTestId('mcp-off-stop-dispatcher')).toBeNull();
+    expect(screen.queryByTestId('mcp-off-older-go')).toBeNull();
     expect(screen.getByTestId('mcp-off-counts')).toHaveTextContent('The Dispatcher is not running.');
   });
 

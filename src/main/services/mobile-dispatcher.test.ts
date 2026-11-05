@@ -1,12 +1,13 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const S = vi.hoisted(() => ({
-  flagOn: true, enabled: false, newLayout: true, running: false,
+  flagOn: true, enabled: false, newLayout: true, running: false, classicUnsaved: false,
   config: { id: 'durable_d', name: 'Dispatcher', color: 'indigo', createdAt: '2026-01-01' } as Record<string, unknown> | null,
 }));
 
 vi.mock('./dispatcher/dispatcher-service', () => {
-  const state = () => ({ enabled: S.flagOn && S.enabled, flagOn: S.flagOn, savedOn: S.enabled, mcpOff: !S.flagOn, classic: !S.newLayout, running: S.running, agentId: (S.config?.id as string) ?? null,
+  const state = () => ({ enabled: S.flagOn && S.enabled, flagOn: S.flagOn, savedOn: S.enabled, mcpOff: !S.flagOn, classic: !S.newLayout, running: S.running,
+    offReason: S.flagOn && S.enabled ? null : S.enabled ? 'mcp_off' : S.classicUnsaved ? 'classic_layout' : 'switch_off', agentId: (S.config?.id as string) ?? null,
     path: S.config ? '/base/dispatcher' : null, config: S.config });
   return {
     DISPATCHER_NAME: 'Dispatcher',
@@ -20,9 +21,11 @@ vi.mock('./dispatcher/dispatcher-service', () => {
 vi.mock('../window-chrome', () => ({ newChromeEnabled: () => S.newLayout }));
 
 import * as dispatcher from './dispatcher/dispatcher-service';
+import { MobileControlError } from './mobile-control';
 import { MCP_REQUIRED_MESSAGE } from '../../shared/orchestration-policy';
 import {
-  activeDispatcher, dispatcherCapability, dispatcherChange, dispatcherFolderProject, dispatcherSnapshotFlags, isDisabledDispatcherId, setDispatcherEnabledFromPhone,
+  activeDispatcher, assertDispatcherCommand, dispatcherCapability, dispatcherChange, dispatcherCommandsWhileOff, dispatcherFolderProject, dispatcherNothingPending,
+  dispatcherOffFields, dispatcherShellProject, isDisabledDispatcherId, setDispatcherEnabledFromPhone,
 } from './mobile-dispatcher';
 
 const allow = () => {};
@@ -32,7 +35,7 @@ async function refusal(promise: Promise<unknown>) {
 }
 
 beforeEach(() => {
-  Object.assign(S, { flagOn: true, enabled: false, newLayout: true, running: false, config: { id: 'durable_d', name: 'Dispatcher', color: 'indigo', createdAt: '2026-01-01' } });
+  Object.assign(S, { flagOn: true, enabled: false, newLayout: true, running: false, classicUnsaved: false, config: { id: 'durable_d', name: 'Dispatcher', color: 'indigo', createdAt: '2026-01-01' } });
   vi.mocked(dispatcher.setDispatcherEnabled).mockClear();
 });
 
@@ -53,41 +56,100 @@ describe('resolving the Dispatcher for phones', () => {
     expect(dispatcherFolderProject('proj_app')).toBeUndefined();
   });
 
-  it('is off without MCP at app level, whatever the setting says, and before it was ever created', () => {
-    S.enabled = true;
+  it('answers nothing switched off, whatever MCP says, or before it was ever created', () => {
+    S.enabled = false;
     S.flagOn = false;
     expect(activeDispatcher('durable_d')).toBeNull();
+    S.enabled = true;
     S.flagOn = true;
     S.config = null;
     expect(activeDispatcher()).toBeNull();
   });
 });
 
-describe('a Dispatcher still running with MCP off', () => {
-  beforeEach(() => { Object.assign(S, { enabled: true, flagOn: false, running: true }); });
+describe('with Clubhouse MCP off', () => {
+  const view = (config: unknown) => ({ view: config });
 
-  it('stays reachable: listed, by id, and with its folder', () => {
-    expect(activeDispatcher()).not.toBeNull();
+  it('running: its routes answer, its shell does not, and every payload says so', () => {
+    Object.assign(S, { enabled: true, flagOn: false, running: true });
     expect(activeDispatcher('durable_d')).toMatchObject({ config: { id: 'durable_d' } });
     expect(isDisabledDispatcherId('durable_d')).toBe(false);
     expect(dispatcherFolderProject('__dispatcher__')).toMatchObject({ path: '/base/dispatcher' });
-    expect(dispatcherChange()).toEqual({ enabled: false, flagOn: false, agentId: 'durable_d' });
-    expect(dispatcherSnapshotFlags()).toEqual({ enabled: false, flagOn: false });
+    expect(dispatcherShellProject('__dispatcher__')).toBeUndefined();
+    expect(dispatcherChange()).toEqual({ enabled: false, flagOn: false, agentId: null });
+    expect(dispatcherOffFields(dispatcher.getDispatcherState(), view)).toEqual({
+      offReason: 'mcp_off', running: true, status: 'running', detail: 'MCP off; session running',
+      commandsWhileOff: ['agent.stop', 'chat.interrupt', 'chat.permission', 'chat.queue.remove', 'chat.question', 'chat.send', 'dispatcher.setEnabled'],
+      agent: { view: S.config },
+    });
   });
 
-  it('goes once it has stopped', () => {
-    S.running = false;
-    expect(activeDispatcher('durable_d')).toBeNull();
-    expect(isDisabledDispatcherId('durable_d')).toBe(true);
-    expect(dispatcherFolderProject('__dispatcher__')).toBeUndefined();
-    expect(dispatcherChange()).toEqual({ enabled: false, flagOn: false, agentId: null });
+  it('stopped: history still reads, and only setEnabled is left', () => {
+    Object.assign(S, { enabled: true, flagOn: false, running: false });
+    expect(activeDispatcher('durable_d')).toMatchObject({ config: { id: 'durable_d' } });
+    expect(isDisabledDispatcherId('durable_d')).toBe(false);
+    expect(dispatcherOffFields(dispatcher.getDispatcherState(), view)).toEqual({
+      offReason: 'mcp_off', running: false, status: 'sleeping', detail: 'MCP off', commandsWhileOff: ['dispatcher.setEnabled'], agent: { view: S.config },
+    });
+  });
+
+  it('adds nothing while it is on', () => {
+    Object.assign(S, { enabled: true, flagOn: true });
+    expect(dispatcherOffFields(dispatcher.getDispatcherState(), view)).toEqual({});
+    expect(dispatcherCommandsWhileOff(dispatcher.getDispatcherState())).toEqual([]);
+  });
+});
+
+describe('the one list of commands', () => {
+  const EVERY_COMMAND = ['agent.start', 'agent.stop', 'agent.update', 'chat.send', 'chat.interrupt', 'chat.permission', 'chat.question', 'chat.queue.remove', 'chat.setModel', 'chat.setLevel'];
+  const STATES: Array<[name: string, state: Partial<typeof S>, reason: string, code: string]> = [
+    ['mcp_off running', { enabled: true, flagOn: false, running: true }, 'mcp_off', 'mcp_off'],
+    ['mcp_off stopped', { enabled: true, flagOn: false, running: false }, 'mcp_off', 'mcp_off'],
+    ['switched_off', { enabled: false, flagOn: true }, 'switched_off', 'dispatcher_off'],
+    ['switched_off with MCP off too', { enabled: false, flagOn: false }, 'switched_off', 'dispatcher_off'],
+    ['classic_layout', { enabled: false, flagOn: true, newLayout: false, classicUnsaved: true }, 'classic_layout', 'dispatcher_off'],
+  ];
+
+  it.each(STATES)('%s: what is advertised is exactly what is accepted', (_name, state, reason, code) => {
+    Object.assign(S, state);
+    const current = dispatcher.getDispatcherState();
+    const { commandsWhileOff, offReason } = dispatcherOffFields(current, (c) => c) as { commandsWhileOff: string[]; offReason: string };
+    expect(offReason).toBe(reason);
+    const accepted = EVERY_COMMAND.filter((type) => {
+      try {
+        assertDispatcherCommand(type, 'durable_d');
+        return true;
+      } catch (err) {
+        expect((err as { code: string; statusCode: number }).code).toBe(code);
+        expect((err as { statusCode: number }).statusCode).toBe(409);
+        return false;
+      }
+    });
+    expect(accepted.sort()).toEqual(commandsWhileOff.filter((c) => c !== 'dispatcher.setEnabled').sort());
+    expect(commandsWhileOff).toContain('dispatcher.setEnabled');
+  });
+
+  it('leaves other agents alone', () => {
+    Object.assign(S, { enabled: true, flagOn: false });
+    expect(() => assertDispatcherCommand('agent.start', 'durable_other')).not.toThrow();
+  });
+
+  it('turns a pending-only command with nothing pending into mcp_off, with MCP off only', () => {
+    const missing = new MobileControlError('pending_request_not_found');
+    Object.assign(S, { enabled: true, flagOn: false, running: true });
+    expect(dispatcherNothingPending('durable_d', missing)).toMatchObject({ code: 'mcp_off', statusCode: 409 });
+    expect(dispatcherNothingPending('durable_other', missing)).toBeNull();
+    expect(dispatcherNothingPending('durable_d', new MobileControlError('session_mismatch'))).toBeNull();
+    Object.assign(S, { enabled: true, flagOn: true });
+    expect(dispatcherNothingPending('durable_d', missing)).toBeNull();
   });
 });
 
 describe('capability and change event', () => {
   it('reports the gate and the layout', () => {
+    S.enabled = true;
     expect(dispatcherCapability()).toEqual({
-      version: 1, enabled: false, flagOn: true, newLayout: true, projectId: '__dispatcher__',
+      version: 1, enabled: true, flagOn: true, newLayout: true, projectId: '__dispatcher__',
       snapshotField: 'dispatcher', event: 'dispatcher:changed', commands: ['dispatcher.setEnabled'],
     });
   });
@@ -108,8 +170,12 @@ describe('dispatcher.setEnabled', () => {
 
   it('refuses turning it on without MCP or on the classic layout, as Settings > Dispatcher does', async () => {
     S.flagOn = false;
-    // An existing code, so an older phone handles it, with today's words.
+    // Switched off as well: the existing path and code, with today's words.
     expect(await refusal(setDispatcherEnabledFromPhone(true, allow))).toMatchObject({ code: 'dispatcher_flag_off', statusCode: 409, detail: MCP_REQUIRED_MESSAGE });
+    // Saved on, and off only for want of MCP.
+    S.enabled = true;
+    expect(await refusal(setDispatcherEnabledFromPhone(true, allow))).toMatchObject({ code: 'mcp_off', statusCode: 409 });
+    S.enabled = false;
     S.flagOn = true;
     S.newLayout = false;
     expect(await refusal(setDispatcherEnabledFromPhone(true, allow))).toMatchObject({ code: 'dispatcher_layout_off', statusCode: 409 });

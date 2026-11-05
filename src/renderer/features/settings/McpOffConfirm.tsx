@@ -55,6 +55,7 @@ export function mcpOffKeeps({ keeps }: McpOffImpact): string {
 }
 
 export const MCP_OFF_RUNNING_NOTE = 'Stops new Clubhouse tool calls for these agents now. Running agents keep working on what they can do without Clubhouse tools, and can’t message other agents. Helpers can still report to their parent.';
+export const MCP_OFF_OLDER_GO_NOTE = 'Older Clubhouse Go versions may not show a Dispatcher that’s still running with MCP off. You can stop it here.';
 export const MCP_OFF_RESTORE_NOTE = 'Turning Clubhouse MCP back on restores your saved settings. It doesn’t start any session.';
 
 interface Pending {
@@ -138,6 +139,7 @@ export function useMcpOffConfirm() {
             <span>Also stop the Dispatcher now. This interrupts whatever it is doing.</span>
           </label>
         )}
+        {offerStop && <p data-testid="mcp-off-older-go">{MCP_OFF_OLDER_GO_NOTE}</p>}
       </div>
     </Modal>
   );

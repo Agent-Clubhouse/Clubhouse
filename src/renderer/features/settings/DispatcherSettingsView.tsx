@@ -156,7 +156,7 @@ export function DispatcherSettingsView() {
         {switchError && <p className={`${settingsError} mt-1.5`} role="alert" data-testid="dispatcher-enabled-error">{switchError}</p>}
         {state.running && !state.enabled && (
           <p className={`${settingsHelp} mt-2`} data-testid="dispatcher-still-running">
-            It is still running. It can’t use Clubhouse tools or be started again until Clubhouse MCP is back. You can stop it from its view.
+            It is still running. It can’t use Clubhouse tools or be started again until Clubhouse MCP is back. Older Clubhouse Go versions may not show a Dispatcher that’s still running with MCP off. You can stop it from its view.
           </p>
         )}
         {state.path && <p className={`${settingsHelp} mt-2`} data-testid="dispatcher-folder">Its folder is {state.path}</p>}

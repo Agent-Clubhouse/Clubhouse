@@ -473,7 +473,8 @@ describe('every appearance change reaches a phone as a snapshot', () => {
         // Stopped, as turning it off does to a real one: it was only ever registered here.
         agentRegistry.untrack(dispatcherId);
         await dispatcher.setDispatcherEnabled(false);
-      }, (p) => !shown(p));
+      // Its record stays listed while it is off, so history isn't lost.
+      }, (p) => p.dispatcher?.enabled === false && p.dispatcher.offReason === 'switched_off' && !!shown(p));
     }, 30_000);
   });
 });
