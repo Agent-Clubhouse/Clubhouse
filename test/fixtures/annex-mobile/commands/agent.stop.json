@@ -94,6 +94,54 @@
         },
         "status": 200
       }
+    },
+    {
+      "name": "guided: stop failed",
+      "request": {
+        "agentId": "durable_term",
+        "commandId": "cmd_182",
+        "epoch": "00000000-0000-4000-8000-000000000001",
+        "type": "agent.stop",
+        "version": 1,
+        "waitForStopped": true
+      },
+      "response": {
+        "body": {
+          "commandId": "cmd_182",
+          "epoch": "00000000-0000-4000-8000-000000000001",
+          "error": {
+            "code": "command_failed",
+            "message": "command_failed"
+          },
+          "status": "failed",
+          "version": 1
+        },
+        "status": 500
+      }
+    },
+    {
+      "name": "guided: capture failed",
+      "request": {
+        "agentId": "durable_term",
+        "commandId": "cmd_183",
+        "epoch": "00000000-0000-4000-8000-000000000001",
+        "type": "agent.stop",
+        "version": 1,
+        "waitForStopped": true
+      },
+      "response": {
+        "body": {
+          "commandId": "cmd_183",
+          "epoch": "00000000-0000-4000-8000-000000000001",
+          "error": {
+            "code": "session_capture_failed",
+            "message": "session_capture_failed"
+          },
+          "status": "rejected",
+          "version": 1
+        },
+        "status": 409
+      }
     }
   ],
   "type": "agent.stop"

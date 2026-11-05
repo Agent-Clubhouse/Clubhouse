@@ -11,6 +11,7 @@
  * `npm run fixtures:annex-mobile` rewrites the files; this suite (and
  * `npm run fixtures:annex-mobile -- --check`) fails when they are stale.
  */
+import { noteSessionCaptureFailure, clearSessionCaptures } from './session-capture-barrier';
 import { _resetProviderQuotaForTesting } from './provider-quota';
 import { noteRoutingPolicyChanged } from './helper-routing-changes';
 import { _settleHelperRoutingForTesting } from './helper-routing';
@@ -36,6 +37,7 @@ const W = vi.hoisted(() => ({
   sessions: {} as Record<string, unknown[]>,
   projectsThrow: false,
   guidedAvailable: false,
+  stopFails: false,
   iconsUnavailable: false,
   iconDir: null as string | null,
   spawnShellError: null as string | null,
@@ -306,7 +308,7 @@ vi.mock('./agent-system', () => ({
   }),
   resolveProfileEnv: async () => undefined,
   spawnAgent: async () => {},
-  killAgent: async (id: string, _p: string, _o: string, _t: string, opts?: { waitForExit?: boolean }) => { if (opts?.waitForExit) W.running.delete(id); },
+  killAgent: async (id: string, _p: string, _o: string, _t: string, opts?: { waitForExit?: boolean }) => { if (opts?.waitForExit && !W.stopFails) W.running.delete(id); },
   isAgentRunning: (id: string) => W.running.has(id),
   isAgentStopping: () => false,
   waitForAgentStopped: async (id: string) => !W.running.has(id),
@@ -2757,6 +2759,28 @@ describe('Annex mobile contract fixtures', { timeout: TEST_TIMEOUT_MS }, () => {
     const start = await command('guided: explicit fresh start', { type: 'agent.start', agentId: 'durable_term', resume: false, expectedProvider: 'codex-cli' });
     expect(start.status).toBe(200);
     W.guidedAvailable = false;
+  });
+
+  it('guided stop and save refuse failed exit or session capture', async () => {
+    resetWorld();
+    W.stopFails = true;
+    try {
+      const stopped = await command('guided: stop failed', { type: 'agent.stop', agentId: 'durable_term', waitForStopped: true });
+      expect(stopped.status).not.toBe(200);
+      expect(stopped.body.result).toBeUndefined();
+      expect(W.running.has('durable_term')).toBe(true);
+    } finally { W.stopFails = false; }
+    noteSessionCaptureFailure('durable_term');
+    try {
+      const stopped = await command('guided: capture failed', { type: 'agent.stop', agentId: 'durable_term', waitForStopped: true });
+      expect(stopped.body.error.code).toBe('session_capture_failed');
+      expect(stopped.body.result).toBeUndefined();
+      W.guidedAvailable = true;
+      const p = await command('guided: capture blocks save', { type: 'agent.providerPreview', agentId: 'durable_term', provider: 'codex-cli' });
+      expect(p.body.result).toMatchObject({ canSave: false, blocked: 'session_capture_failed' });
+      const changed = await command('guided: capture refuses save', { type: 'agent.providerChange', agentId: 'durable_term', provider: 'codex-cli', expectedState: p.body.result.expectedState });
+      expect(changed.body.error.code).toBe('session_capture_failed');
+    } finally { clearSessionCaptures(); W.guidedAvailable = false; }
   });
 
   it('every command type has an accepted request and receipt', () => {

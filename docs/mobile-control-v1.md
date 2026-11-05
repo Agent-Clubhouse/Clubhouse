@@ -1168,7 +1168,10 @@ No extra command-id field is introduced.
 strict resume never falls back to a fresh session. Native chat resume must honor
 the exact requested native ID. Terminal strict resume is conservatively refused
 in this slice; legacy start remains compatible. Switching back does not promise
-resumption of the previous provider's session. A fresh start is explicit.
+resumption of the previous provider's session. A fresh start is explicit. The initial guided phone UI offers **Start new only**;
+Resume is unavailable. This slice exposes no validated provider-tagged resume
+eligibility read. `resume_requires_validation`, including on a same-provider
+preview, and `hasSession` must never enable Resume.
 
 The paired phone retains its existing manual controller authority. Dispatcher MCP
 `preview_provider` and `change_provider` use existing target control policy, not a

@@ -1942,6 +1942,14 @@ describe('addSessionEntry', () => {
     expect(config!.lastSessionId).toBe('sess-001');
   });
 
+  it('retains late old-provider history without restoring its resume pointer', async () => {
+    setupWritableAgents([{ id: 'durable_1', name: 'agent-1', color: 'indigo', createdAt: '2024-01-01', orchestrator: 'codex-cli', lastSessionId: 'codex-new' }]);
+    await addSessionEntry(PROJECT_PATH, 'durable_1', { sessionId: 'claude-old', orchestrator: 'claude-code', startedAt: '2024-06-01', lastActiveAt: '2024-06-01' });
+    const config = await getDurableConfig(PROJECT_PATH, 'durable_1');
+    expect(config!.lastSessionId).toBe('codex-new');
+    expect(config!.sessionHistory).toEqual([expect.objectContaining({ sessionId: 'claude-old', orchestrator: 'claude-code' })]);
+  });
+
   it('updates existing session entry and preserves friendly name', async () => {
     setupWritableAgents([
       {

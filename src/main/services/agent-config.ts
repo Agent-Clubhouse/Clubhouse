@@ -1476,8 +1476,11 @@ export async function addSessionEntry(projectPath: string, agentId: string, entr
     agent.sessionHistory = agent.sessionHistory.slice(0, MAX_SESSION_HISTORY);
   }
 
-  // Also update lastSessionId
-  agent.lastSessionId = entry.sessionId;
+  // Preserve late history, but never restore an old provider's resume pointer
+  // after a saved provider change.
+  if (!entry.orchestrator || !agent.orchestrator || entry.orchestrator === agent.orchestrator) {
+    agent.lastSessionId = entry.sessionId;
+  }
 
   await writeAgents(projectPath, agents);
 }

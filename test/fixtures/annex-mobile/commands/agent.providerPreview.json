@@ -89,6 +89,51 @@
         },
         "status": 200
       }
+    },
+    {
+      "name": "guided: capture blocks save",
+      "request": {
+        "agentId": "durable_term",
+        "commandId": "cmd_184",
+        "epoch": "00000000-0000-4000-8000-000000000001",
+        "provider": "codex-cli",
+        "type": "agent.providerPreview",
+        "version": 1
+      },
+      "response": {
+        "body": {
+          "commandId": "cmd_184",
+          "epoch": "00000000-0000-4000-8000-000000000001",
+          "result": {
+            "activeProvider": null,
+            "agentId": "durable_term",
+            "availabilityMeaning": "local_cli_only",
+            "available": true,
+            "blocked": "session_capture_failed",
+            "canSave": false,
+            "contextTransferred": false,
+            "expectedState": "ff30c99ca2b1affdd944d264613a935f728e76e006a3d3d1ea73e4d41c6d815e",
+            "historyRetained": true,
+            "instructionScope": "native_primary_only",
+            "instructions": "equivalent",
+            "nextStart": "new_session",
+            "provider": "codex-cli",
+            "savedProvider": "claude-code",
+            "settingsReset": [
+              "model",
+              "effort",
+              "contextWindow",
+              "routing",
+              "resumePointer"
+            ],
+            "state": "sleeping",
+            "targetRuntime": "terminal"
+          },
+          "status": "completed",
+          "version": 1
+        },
+        "status": 200
+      }
     }
   ],
   "type": "agent.providerPreview"

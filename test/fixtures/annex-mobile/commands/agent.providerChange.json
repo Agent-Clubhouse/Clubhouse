@@ -70,6 +70,31 @@
         },
         "status": 409
       }
+    },
+    {
+      "name": "guided: capture refuses save",
+      "request": {
+        "agentId": "durable_term",
+        "commandId": "cmd_185",
+        "epoch": "00000000-0000-4000-8000-000000000001",
+        "expectedState": "ff30c99ca2b1affdd944d264613a935f728e76e006a3d3d1ea73e4d41c6d815e",
+        "provider": "codex-cli",
+        "type": "agent.providerChange",
+        "version": 1
+      },
+      "response": {
+        "body": {
+          "commandId": "cmd_185",
+          "epoch": "00000000-0000-4000-8000-000000000001",
+          "error": {
+            "code": "session_capture_failed",
+            "message": "session_capture_failed"
+          },
+          "status": "rejected",
+          "version": 1
+        },
+        "status": 409
+      }
     }
   ],
   "type": "agent.providerChange"

@@ -174,8 +174,15 @@ export abstract class BaseProvider implements OrchestratorProvider {
       const opened = await file.stat();
       if (!opened.isFile() || opened.dev !== before.dev || opened.ino !== before.ino || opened.size > 2 * 1024 * 1024) throw new Error('instructions_changed');
       const buffer = Buffer.alloc(2 * 1024 * 1024 + 1);
-      const { bytesRead } = await file.read(buffer, 0, buffer.length, 0);
+      let bytesRead = 0;
+      while (bytesRead < buffer.length) {
+        const read = await file.read(buffer, bytesRead, buffer.length - bytesRead, bytesRead);
+        if (!read.bytesRead) break;
+        bytesRead += read.bytesRead;
+      }
       if (bytesRead > 2 * 1024 * 1024) throw new Error('instructions_too_large');
+      const after = await file.stat();
+      if (after.size !== bytesRead || after.size !== opened.size || after.mtimeMs !== opened.mtimeMs || after.ctimeMs !== opened.ctimeMs) throw new Error('instructions_changed');
       return buffer.subarray(0, bytesRead).toString('utf8');
     } catch (err) {
       if ((err as NodeJS.ErrnoException).code === 'ENOENT') return '';
