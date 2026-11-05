@@ -1,6 +1,7 @@
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { EXPERIMENTAL_FEATURES, ExperimentalSettingsView } from './ExperimentalSettingsView';
 import { PREVIEW_ONLY_EXPERIMENTAL_FLAGS } from '../../../shared/types';
+import { SETTING_NOT_SAVED_TEXT } from './SettingsLayout';
 
 const mockGetExperimentalSettings = vi.fn();
 const mockSaveExperimentalSettings = vi.fn();
@@ -90,16 +91,27 @@ describe('ExperimentalSettingsView', () => {
     expect(screen.queryByText(/Needs Chat/)).not.toBeInTheDocument();
   });
 
-  it('renders the Telemetry export toggle and saves it under the telemetry id', async () => {
-    mockGetExperimentalSettings.mockResolvedValue({});
+  it('does not list Telemetry export, and saving another flag keeps its saved value for a downgrade', async () => {
+    mockGetExperimentalSettings.mockResolvedValue({ telemetry: true });
     render(<ExperimentalSettingsView />);
     await waitFor(() => {
-      expect(screen.getByText('Telemetry export')).toBeInTheDocument();
+      expect(screen.getByText('Goobers')).toBeInTheDocument();
     });
-    fireEvent.click(screen.getByRole('switch', { name: 'Telemetry export' }));
+    expect(screen.queryByText('Telemetry export')).toBeNull();
+    fireEvent.click(screen.getByRole('switch', { name: 'Goobers' }));
     await waitFor(() => {
-      expect(mockSaveExperimentalSettings).toHaveBeenCalledWith({ telemetry: true });
+      expect(mockSaveExperimentalSettings).toHaveBeenCalledWith({ telemetry: true, goobers: true });
     });
+  });
+
+  it('shows a failed save and puts the switch back', async () => {
+    mockGetExperimentalSettings.mockResolvedValue({});
+    mockSaveExperimentalSettings.mockRejectedValueOnce(new Error('refused'));
+    render(<ExperimentalSettingsView />);
+    const toggle = await screen.findByRole('switch', { name: 'Goobers' });
+    fireEvent.click(toggle);
+    expect(await screen.findByRole('alert')).toHaveTextContent(SETTING_NOT_SAVED_TEXT);
+    expect(toggle).toHaveAttribute('aria-checked', 'false');
   });
 
   it('does not list Clubhouse MCP as experimental (promoted)', async () => {

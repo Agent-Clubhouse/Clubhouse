@@ -18,7 +18,8 @@ import { isValidIdentity } from './ids';
 import { createLocalRecorder, type LocalRecorder } from './local-recorder';
 import { pruneLogDir, RETENTION_INTERVAL_MS } from './local-retention';
 import { createScrubber } from './scrubber';
-import { enabledDestinations, getTelemetrySettings, isExperimentEnabled } from './settings';
+import { newChromeEnabled } from '../window-chrome';
+import { enabledDestinations, getTelemetrySettings } from './settings';
 
 /** The default level: flows and errors; Detailed-only signals (per-IPC spans, tool calls) stay off. */
 export const LOCAL_RECORDING_LEVEL: LocalTelemetryLevel = 'standard';
@@ -28,12 +29,15 @@ export function localRecordingLevel(settings: LoggingSettings = logSettings.getS
   return settings.telemetryLevel === 'detailed' ? 'detailed' : LOCAL_RECORDING_LEVEL;
 }
 
-/** True when export was set up to send Detailed data before the local level existed. */
+/**
+ * True when export was set up to send Detailed data before the local level
+ * existed. These settings have been through the export graduation, so a setup
+ * the old experiment gate held back no longer has an enabled destination here.
+ */
 function exportWasDetailed(): boolean {
   try {
     const t = getTelemetrySettings();
     return (
-      isExperimentEnabled() &&
       t.consentVersion >= TELEMETRY_CONSENT_VERSION &&
       enabledDestinations(t).some((d) => d.level === 'detailed')
     );
@@ -145,7 +149,7 @@ function start(level: LocalTelemetryLevel, signals: boolean): void {
     signals,
     hashSalt: hashSalt(),
     scrub: createScrubber({ homeDir: os.homedir(), username, hostname: os.hostname() }),
-    session: { appVersion: app.getVersion(), platform: process.platform, arch: process.arch },
+    session: { appVersion: app.getVersion(), platform: process.platform, arch: process.arch, uiChrome: newChromeEnabled() ? 'v2' : 'legacy' },
     onRotate: () => void runRetention(),
   });
   if (signals) setLocalSink(recorder);

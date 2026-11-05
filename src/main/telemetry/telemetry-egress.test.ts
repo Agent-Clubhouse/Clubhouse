@@ -60,7 +60,6 @@ vi.mock('./settings', async (importActual) => {
       state.settings = fn(state.settings);
       return state.settings;
     },
-    isExperimentEnabled: () => true,
     hasDestinationConfigured: () => true,
     migrateLegacySecrets: async () => true,
   };

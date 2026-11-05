@@ -139,6 +139,20 @@ function CollapsiblePanel({ id, title, summary, defaultOpen, forceOpen, children
   );
 }
 
+/** Export paused on a settings file that couldn't be read. Also used on the Feedback page. */
+export function TelemetryPausedNotice({ fileCopy, onResume, error }: { fileCopy?: string; onResume: () => void; error?: string }) {
+  return (
+    <div className="flex flex-wrap items-center gap-3 my-2" data-testid="telemetry-paused">
+      <p className="text-xs text-ctp-subtext1">
+        Clubhouse couldn&apos;t read a settings file, so telemetry export is paused. Your telemetry settings are kept. Other experimental settings may not be as you left them.
+        {fileCopy && <> The file as it was is saved at <span className="font-mono break-all">{fileCopy}</span>.</>}
+      </p>
+      <Button kind="ghost" onClick={onResume}>Resume</Button>
+      {error && <p className="text-xs text-ctp-error" role="alert">{error}</p>}
+    </div>
+  );
+}
+
 export function TelemetrySettingsSection() {
   const [status, setStatus] = useState<TelemetryStatus | null>(null);
   const [error, setError] = useState<{ panel: string; message: string } | null>(null);
@@ -201,7 +215,7 @@ export function TelemetrySettingsSection() {
     return false;
   }, [applyStatus]);
 
-  if (!status || !status.available) return null;
+  if (!status) return null;
 
   const dest = (id: string) => status.destinations.find((d) => d.id === id);
   const azure = dest('azure');
@@ -258,6 +272,13 @@ export function TelemetrySettingsSection() {
   return (
     <div data-testid="telemetry-settings">
       <SettingsSection title="Telemetry export" />
+      {status.exportPaused && (
+        <TelemetryPausedNotice
+          fileCopy={status.pausedFileCopy}
+          onResume={() => void handleResult('paused', 'paused', () => api().resume())}
+          error={error?.panel === 'paused' ? error.message : undefined}
+        />
+      )}
       <p className="text-xs text-ctp-overlay1 mb-1">
         Send anonymized telemetry to your own Azure Application Insights, an OpenTelemetry backend, or both, each with its own level. Nothing goes to the Clubhouse developer unless you turn that on in Settings, Feedback. Off by default.
       </p>

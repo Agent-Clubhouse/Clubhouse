@@ -12,14 +12,14 @@ const logSettings = vi.hoisted(() => ({
 vi.mock('../services/log-settings', () => logSettings);
 const telemetrySettings = vi.hoisted(() => ({
   value: { consentVersion: 0, destinations: [] as Array<{ id: string; enabled: boolean; level: string }> } as Record<string, unknown>,
-  experiment: false,
 }));
+const chrome = vi.hoisted(() => ({ on: false }));
+vi.mock('../window-chrome', () => ({ newChromeEnabled: () => chrome.on }));
 const retention = vi.hoisted(() => ({ pruneLogDir: vi.fn(async () => ({ deleted: [] as string[] })), RETENTION_INTERVAL_MS: 3_600_000 }));
 vi.mock('./local-retention', () => retention);
 vi.mock('./settings', () => ({
   getTelemetrySettings: vi.fn(() => telemetrySettings.value),
   enabledDestinations: (s: { destinations: Array<{ enabled: boolean }> }) => s.destinations.filter((d) => d.enabled),
-  isExperimentEnabled: () => telemetrySettings.experiment,
 }));
 
 import * as path from 'path';
@@ -38,7 +38,7 @@ beforeEach(() => {
   retention.pruneLogDir.mockClear();
   logSettings.getSettings.mockReturnValue({ ...base });
   telemetrySettings.value = { consentVersion: 0, destinations: [] };
-  telemetrySettings.experiment = false;
+  chrome.on = false;
 });
 
 afterEach(async () => {
@@ -63,6 +63,14 @@ describe('local recording control', () => {
     expect(path.dirname(file)).toBe(path.join('/home/tester', '.clubhouse', 'logs'));
     expect(path.basename(file)).toMatch(/^telemetry-\d{4}-\d\d-\d\dT\d\d-\d\d-\d\d\.\d{3}\.jsonl$/);
     expect(data).toContain('"t":"event"');
+  });
+
+  it.each([[false, 'legacy'], [true, 'v2']] as const)('records the session\'s shell on the session line (new layout %s: %s)', async (on, uiChrome) => {
+    chrome.on = on;
+    await syncLocalRecording();
+    await forceFlushTelemetry();
+    const [, data] = fsp.appendFile.mock.calls[0] as unknown as [string, string];
+    expect(JSON.parse(data.split('\n')[0])).toMatchObject({ t: 'session', uiChrome });
   });
 
   it('writes nothing while local logging is off', async () => {
@@ -219,8 +227,7 @@ describe('retention while recording (#2298)', () => {
 describe('one-time local level migration (#2289)', () => {
   const unmigrated = { enabled: true, namespaces: {}, retention: 'medium', minLogLevel: 'info' } as never;
 
-  function exportingAt(level: string, opts: { consent?: boolean; experiment?: boolean; enabled?: boolean } = {}) {
-    telemetrySettings.experiment = opts.experiment ?? true;
+  function exportingAt(level: string, opts: { consent?: boolean; enabled?: boolean } = {}) {
     telemetrySettings.value = {
       consentVersion: opts.consent === false ? 0 : TELEMETRY_CONSENT_VERSION,
       destinations: [{ id: 'otlp', enabled: opts.enabled ?? true, level }],
@@ -251,7 +258,6 @@ describe('one-time local level migration (#2289)', () => {
       () => exportingAt('standard'),
       () => exportingAt('detailed', { enabled: false }),
       () => exportingAt('detailed', { consent: false }),
-      () => exportingAt('detailed', { experiment: false }),
     ]) {
       logSettings.updateSettings.mockClear();
       setup();

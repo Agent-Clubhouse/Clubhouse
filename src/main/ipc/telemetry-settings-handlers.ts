@@ -101,4 +101,5 @@ export function registerTelemetrySettingsHandlers(): void {
   ipcMain.handle(IPC.TELEMETRY_SETTINGS.RESET_ID, () => control.resetInstallId());
   ipcMain.handle(IPC.TELEMETRY_SETTINGS.CLEAR_OFFLINE, () => control.clearOfflineQueue());
   ipcMain.handle(IPC.TELEMETRY_SETTINGS.DELETE_LOCAL_DATA, () => control.deleteLocalData());
+  ipcMain.handle(IPC.TELEMETRY_SETTINGS.RESUME, () => control.resumeExport());
 }

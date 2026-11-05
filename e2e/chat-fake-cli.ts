@@ -3,6 +3,7 @@ import * as os from 'os';
 import * as path from 'path';
 import {
   chatFixturePath,
+  FAKE_CLI_SCRIPT,
   writeFakeCliShims,
   type ChatFixtureCli,
   type FakeCliReport,
@@ -30,10 +31,32 @@ export interface FakeClis {
 }
 
 /**
+ * Windows: what npm writes for a CLI, so the app runs node on the script as it
+ * does for a real install, without cmd.exe. A quick agent needs this: its system
+ * prompt has a line break, which the app won't send through a plain batch file.
+ */
+async function writeNpmStyleShim(binDir: string, name: string, shim: { fixture: string; report: string }): Promise<string> {
+  const script = `${name}-npm.mjs`;
+  const fakeArgs = ['--fake-fixture', shim.fixture, '--fake-report', shim.report];
+  await fs.promises.writeFile(path.join(binDir, script), [
+    "import { pathToFileURL } from 'node:url';",
+    `process.argv.splice(2, 0, ...${JSON.stringify(fakeArgs)});`,
+    `await import(pathToFileURL(${JSON.stringify(FAKE_CLI_SCRIPT)}).href);`,
+    '',
+  ].join('\n'));
+  const shimPath = path.join(binDir, `${name}-npm.cmd`);
+  await fs.promises.writeFile(shimPath, `@echo off\r\nnode "%~dp0\\${script}" %*\r\n`);
+  return shimPath;
+}
+
+/**
  * `fixtures` maps each CLI to a committed fixture's name, or to the absolute
  * path of one built at run time (e2e/chat-rich/harness.ts).
  */
-export async function installFakeClis(fixtures: Partial<Record<ChatFixtureCli, string>>): Promise<FakeClis> {
+export async function installFakeClis(
+  fixtures: Partial<Record<ChatFixtureCli, string>>,
+  { npmStyleShims = false }: { npmStyleShims?: boolean } = {},
+): Promise<FakeClis> {
   const root = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'clubhouse-e2e-fake-cli-'));
   const binDir = path.join(root, 'bin');
   const reports: Partial<Record<ChatFixtureCli, string>> = {};
@@ -43,6 +66,9 @@ export async function installFakeClis(fixtures: Partial<Record<ChatFixtureCli, s
     shims[cli] = { fixture: path.isAbsolute(name) ? name : chatFixturePath(cli, name), report: reports[cli] as string };
   }
   const written = await writeFakeCliShims(binDir, shims);
+  if (npmStyleShims && process.platform === 'win32') {
+    for (const [cli, shim] of Object.entries(shims)) written[cli] = await writeNpmStyleShim(binDir, cli, shim);
+  }
 
   // Pin every provider's binary, not just the faked ones, through the
   // unpackaged-only CLUBHOUSE_TEST_CLI_BINARIES seam. The app's normal lookup
