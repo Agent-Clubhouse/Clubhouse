@@ -390,6 +390,68 @@ describe('config-diff-service', () => {
       expect(modified).toHaveLength(1);
     });
 
+    describe('#2650: Clubhouse MCP bridge entry', () => {
+      const bridgeEntry = {
+        command: 'node',
+        args: ['/Applications/Clubhouse.app/Contents/Resources/bridge/clubhouse-mcp-bridge.js'],
+        env: { CLUBHOUSE_MCP_FALLBACK_PORT: '41234', CLUBHOUSE_MCP_FALLBACK_AGENT_ID: 'test_001' },
+      };
+
+      it('reports no diff when the worktree has only the bridge entry and defaults are empty', async () => {
+        mockFileSystem({
+          'agents.json': agentsJsonWith(testAgent),
+          '.mcp.json': JSON.stringify({ mcpServers: { clubhouse: bridgeEntry } }),
+        });
+        vi.mocked(mockProvider.readInstructions).mockReturnValue('');
+
+        const result = await computeConfigDiff({ projectPath: '/project', agentId: 'test_001', provider: mockProvider });
+
+        expect(result.hasDiffs).toBe(false);
+        expect(result.items).toEqual([]);
+      });
+
+      it('reports only the user server when the worktree has the bridge plus a user server', async () => {
+        mockFileSystem({
+          'agents.json': agentsJsonWith(testAgent),
+          '.mcp.json': JSON.stringify({
+            mcpServers: { clubhouse: bridgeEntry, github: { command: 'gh-mcp' } },
+          }),
+        });
+        vi.mocked(mockProvider.readInstructions).mockReturnValue('');
+
+        const result = await computeConfigDiff({ projectPath: '/project', agentId: 'test_001', provider: mockProvider });
+
+        expect(result.items.map((i) => i.id)).toEqual(['mcp:added:github']);
+      });
+
+      it('still reports a user server named clubhouse that is not the bridge', async () => {
+        mockFileSystem({
+          'agents.json': agentsJsonWith(testAgent),
+          '.mcp.json': JSON.stringify({ mcpServers: { clubhouse: { command: 'my-own-clubhouse-server' } } }),
+        });
+        vi.mocked(mockProvider.readInstructions).mockReturnValue('');
+
+        const result = await computeConfigDiff({ projectPath: '/project', agentId: 'test_001', provider: mockProvider });
+
+        expect(result.items.map((i) => i.id)).toEqual(['mcp:added:clubhouse']);
+      });
+
+      it('does not report a bridge entry that already leaked into the defaults', async () => {
+        mockFileSystem({
+          'agents.json': agentsJsonWith(testAgent),
+          'settings.json': settingsJsonWith({
+            mcpJson: JSON.stringify({ mcpServers: { clubhouse: { ...bridgeEntry, args: ['/old/path/clubhouse-mcp-bridge.js'] } } }),
+          }),
+          '.mcp.json': JSON.stringify({ mcpServers: { clubhouse: bridgeEntry } }),
+        });
+        vi.mocked(mockProvider.readInstructions).mockReturnValue('');
+
+        const result = await computeConfigDiff({ projectPath: '/project', agentId: 'test_001', provider: mockProvider });
+
+        expect(result.hasDiffs).toBe(false);
+      });
+    });
+
     it('skips diff when clubhouseModeOverride is true', async () => {
       const overrideAgent = { ...testAgent, clubhouseModeOverride: true };
       mockFileSystem({
@@ -555,6 +617,35 @@ describe('config-diff-service', () => {
       expect(written.agentDefaults.instructions).toContain('@@AgentName');
       expect(written.agentDefaults.instructions).toContain('@@Path');
       expect(written.agentDefaults.instructions).not.toContain('bold-falcon');
+    });
+
+    it('never writes the bridge entry into the defaults (#2650)', async () => {
+      mockFileSystem({
+        'agents.json': agentsJsonWith(testAgent),
+        '.mcp.json': JSON.stringify({
+          mcpServers: {
+            clubhouse: { command: 'node', args: ['/app/bridge/clubhouse-mcp-bridge.js'] },
+            github: { command: 'gh-mcp' },
+          },
+        }),
+      });
+      vi.mocked(mockProvider.readInstructions).mockReturnValue('');
+
+      const result = await propagateChanges({
+        projectPath: '/project',
+        agentId: 'test_001',
+        selectedItemIds: ['mcp:added:clubhouse', 'mcp:added:github'],
+        provider: mockProvider,
+      });
+
+      expect(result.propagatedCount).toBe(1);
+      const writeCall = vi.mocked(fsp.writeFile).mock.calls.find(
+        (call) => String(call[0]).includes('settings.json'),
+      );
+      expect(writeCall).toBeDefined();
+      const written = JSON.parse(writeCall![1] as string);
+      const servers = JSON.parse(written.agentDefaults.mcpJson).mcpServers;
+      expect(Object.keys(servers)).toEqual(['github']);
     });
 
     it('returns error when agent not found', async () => {
