@@ -12,6 +12,7 @@ import { useUIStore } from '../../stores/uiStore';
 import { resetChatFlagCache } from '../agents/chat/AgentRuntimePane';
 import { RICH_CHAT_CONTENT_FLAG, resetRichChatContentFlag } from '../agents/chat/rich/rich-flag';
 import { ProjectAgentDefaultsSection } from './ProjectAgentDefaultsSection';
+import { useMcpOffConfirm } from './McpOffConfirm';
 import { SettingsPage, SettingsSection, SettingsField, SettingsBlock, settingsInput, settingsHelp, settingsError, SETTING_NOT_SAVED_TEXT } from './SettingsLayout';
 import type { FreeAgentPermissionMode, SourceControlProvider } from '../../../shared/types';
 import { COPILOT_SDK_FLAG, type AgentRuntimeMode, type ChatDriverId, type ChatRuntimeSettings } from '../../../shared/chat';
@@ -205,6 +206,7 @@ function AppAgentSettings() {
   const loadClubhouseSettings = useClubhouseModeStore((s) => s.loadSettings);
   const clubhouseScp = useClubhouseModeStore((s) => s.sourceControlProvider);
   const setClubhouseScp = useClubhouseModeStore((s) => s.setSourceControlProvider);
+  const { requestMcpChange, mcpOffDialog } = useMcpOffConfirm();
   const promptForName = useSessionSettingsStore((s) => s.promptForName);
   const setPromptForName = useSessionSettingsStore((s) => s.setPromptForName);
   const loadSessionSettings = useSessionSettingsStore((s) => s.loadSettings);
@@ -267,7 +269,8 @@ function AppAgentSettings() {
     if (!clubhouseEnabled) {
       setShowConfirm(true);
     } else {
-      setClubhouseEnabled(false);
+      // MCP falls back to Clubhouse mode, so this can turn MCP off too.
+      void requestMcpChange({ proposal: { clubhouseMode: { enabled: false } }, apply: () => setClubhouseEnabled(false), saved: () => useClubhouseModeStore.getState().enabled === false });
     }
   };
 
@@ -376,6 +379,7 @@ function AppAgentSettings() {
         )}
       </SettingsSection>
 
+      {mcpOffDialog}
       <Modal open={showConfirm} onClose={() => setShowConfirm(false)} title="Enable Clubhouse Mode?" width="w-[420px] max-w-[calc(100vw-32px)]" testId="clubhouse-mode-confirm" footer={
         <>
           <Button onClick={() => setShowConfirm(false)} kind="ghost">
@@ -563,6 +567,7 @@ function ProjectAgentSettings({ projectId }: { projectId: string }) {
   const clubhouseOverrides = useClubhouseModeStore((s) => s.projectOverrides);
   const setClubhouseOverride = useClubhouseModeStore((s) => s.setProjectOverride);
   const clearClubhouseOverride = useClubhouseModeStore((s) => s.clearProjectOverride);
+  const { requestMcpChange, mcpOffDialog } = useMcpOffConfirm();
   const loadClubhouseSettings = useClubhouseModeStore((s) => s.loadSettings);
 
   const sessionPromptGlobal = useSessionSettingsStore((s) => s.promptForName);
@@ -593,6 +598,7 @@ function ProjectAgentSettings({ projectId }: { projectId: string }) {
   if (!project) return null;
 
   const projectPath = project.path;
+  const projectName = project.displayName || project.name;
   const currentOrchestrator = project.orchestrator || 'claude-code';
 
   // Headless mode
@@ -612,8 +618,17 @@ function ProjectAgentSettings({ projectId }: { projectId: string }) {
     ? clubhouseOverrides[projectPath]
     : clubhouseGlobal;
   const handleClubhouseModeChange = (value: string) => {
-    if (value === 'global') clearClubhouseOverride(projectPath);
-    else setClubhouseOverride(projectPath, value === 'on');
+    const apply = () => (value === 'global' ? clearClubhouseOverride(projectPath) : setClubhouseOverride(projectPath, value === 'on'));
+    const projectOverrides = { ...clubhouseOverrides };
+    if (value === 'global') delete projectOverrides[projectPath];
+    else projectOverrides[projectPath] = value === 'on';
+    // MCP falls back to Clubhouse mode, so this can turn MCP off for the project too.
+    void requestMcpChange({
+      proposal: { clubhouseMode: { projectOverrides } },
+      projectName,
+      apply,
+      saved: () => useClubhouseModeStore.getState().projectOverrides[projectPath] === projectOverrides[projectPath],
+    });
   };
 
   // Session name
@@ -643,7 +658,12 @@ function ProjectAgentSettings({ projectId }: { projectId: string }) {
     } else {
       updated[projectPath] = value === 'on';
     }
-    mcpSaveSettings({ projectOverrides: Object.keys(updated).length > 0 ? updated : undefined });
+    void requestMcpChange({
+      proposal: { mcp: { projectOverrides: updated } },
+      projectName,
+      apply: () => mcpSaveSettings({ projectOverrides: Object.keys(updated).length > 0 ? updated : undefined }),
+      saved: () => (useMcpSettingsStore.getState().projectOverrides as Record<string, boolean> | undefined)?.[projectPath] === updated[projectPath],
+    });
   };
 
   const onOff = (v: boolean) => (v ? 'On' : 'Off');
@@ -718,9 +738,9 @@ function ProjectAgentSettings({ projectId }: { projectId: string }) {
           </select>
         </SettingsField>
 
-        {/* MCP override, shown when the app-wide MCP bridge is on */}
-        {mcpLoaded && mcpGlobalEnabled && (
-          <SettingsField label="MCP override" help="Override MCP bridge injection for this project." htmlFor={`${idBase}-mcp`}>
+        {/* Shown with the app-wide MCP bridge off too: an override keeps working then, and this is where to see it. */}
+        {mcpLoaded && (
+          <SettingsField label="MCP override" help="Override MCP bridge injection for this project. An override here doesn’t keep the Dispatcher on." htmlFor={`${idBase}-mcp`}>
             <select
               id={`${idBase}-mcp`}
               value={currentMcpMode}
@@ -735,6 +755,7 @@ function ProjectAgentSettings({ projectId }: { projectId: string }) {
         )}
       </SettingsSection>
 
+      {mcpOffDialog}
       <ProjectAgentDefaultsSection projectPath={project.path} clubhouseMode={clubhouseEffective} />
     </>
   );

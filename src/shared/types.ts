@@ -1031,10 +1031,8 @@ export const STRUCTURED_MODE_REMOVED_NOTICE_KEY = 'structuredModeRemovedNotice';
  * Graduated flags (`chat`, `richChatContent`, `themeGradients`) aren't here: every build honours them as saved.
  */
 export const PREVIEW_ONLY_EXPERIMENTAL_FLAGS: readonly string[] = [
-  'newChrome',
   'goobers',
   'copilotSdk',
-  'dispatcher',
   'telemetry',
 ];
 

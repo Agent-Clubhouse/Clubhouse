@@ -15,7 +15,8 @@
  *
  * It only shows when chat comes from the default for an agent that already
  * exists: never with the flag saved either way, any saved provider or agent
- * choice, or no agent that would open in chat. If the marker can't be written,
+ * choice, or no agent that would open in chat. The Dispatcher is in no project,
+ * so it never counts. If the marker can't be written,
  * it doesn't show at all: a tip that can't be remembered would come back on
  * every launch. A launch that can't read the settings decides nothing, so the
  * next one asks again.

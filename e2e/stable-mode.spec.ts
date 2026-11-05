@@ -4,6 +4,7 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import { createDisposableProfile, seedProfile, type DisposableProfile } from './app-profile';
+import { installFakeClis, type FakeClis } from './chat-fake-cli';
 import { launchApp, type LaunchedApp } from './launch';
 import { addProject } from './smoke-helpers';
 import {
@@ -43,6 +44,7 @@ const STABLE_BUILD = { CLUBHOUSE_TEST_STABLE_BUILD: '1' };
 
 let app: LaunchedApp | undefined;
 let profile: DisposableProfile | undefined;
+let fakes: FakeClis | undefined;
 const tempDirs: string[] = [];
 
 test.afterEach(async () => {
@@ -50,6 +52,8 @@ test.afterEach(async () => {
   app = undefined;
   profile?.dispose();
   profile = undefined;
+  await fakes?.cleanup();
+  fakes = undefined;
   for (const dir of tempDirs.splice(0)) {
     // Windows: a process that was just killed can hold its files for a moment.
     await fs.promises.rm(dir, { recursive: true, force: true, maxRetries: 20, retryDelay: 100 });
@@ -142,13 +146,6 @@ const wakesInChat = (w: Page, projectPath: string, id = AGENT_ID) => w.evaluate(
 const chatMessageShown = (w: Page) => w.evaluate((key) => localStorage.getItem(key), CHAT_MESSAGE_SHOWN_KEY);
 const chatTipRuledOut = (w: Page) => w.evaluate((key) => localStorage.getItem(key), CHAT_TIP_RULED_OUT_KEY);
 
-async function expectLegacyLayout(w: Page): Promise<void> {
-  await expect(w.locator('[data-testid="title-bar"]')).toBeVisible({ timeout: 15_000 });
-  await expect(w.locator('[data-testid="chrome-title-bar"]')).toHaveCount(0);
-  await expect(w.locator('[data-testid="chrome-sidebar"]')).toHaveCount(0);
-  expect(await w.evaluate(() => (window.clubhouse as { newChromeLayout?: unknown }).newChromeLayout)).toBe(false);
-}
-
 async function expectNewLayout(w: Page): Promise<void> {
   await expect(w.locator('[data-testid="chrome-title-bar"]')).toBeVisible({ timeout: 15_000 });
   await expect(w.locator('[data-testid="chrome-sidebar"]')).toBeVisible();
@@ -170,13 +167,13 @@ async function expectSettingsPages(w: Page, listed: string[]): Promise<void> {
   await expect(settingsNav(w, 'Updates')).toBeHidden();
 }
 
-test('Preview off, fresh install: the legacy layout, and turning Preview on is the only way in', async () => {
+test('Preview off, fresh install: the new layout, and turning Preview on is the only way in', async () => {
   profile = createDisposableProfile({ label: 'stable-fresh' });
   app = await launchApp({ profile, env: STABLE_BUILD });
   const w = app.window;
 
   expect(await eligible(w)).toBe(false);
-  await expectLegacyLayout(w);
+  await expectNewLayout(w);
   expect(await flagsInForce(w)).toEqual({});
   await expectSettingsPages(w, []);
 
@@ -199,7 +196,7 @@ test('Preview off, fresh install: the legacy layout, and turning Preview on is t
   await expect.poll(() => savedPreview(profile!)).toBe(false);
 });
 
-test('Preview off, saved beta state with Chat off: the legacy layout, a terminal, and nothing saved changes', async () => {
+test('Preview off, saved beta state with Chat off: the new layout, a terminal, and nothing saved changes', async () => {
   const cli = installIdleCli();
   const projectDir = makeProject();
   profile = createDisposableProfile({ label: 'stable-beta-state' });
@@ -210,15 +207,17 @@ test('Preview off, saved beta state with Chat off: the legacy layout, a terminal
   const { electronApp, window: w } = app;
 
   expect(await eligible(w)).toBe(false);
-  await expectLegacyLayout(w);
+  await expectNewLayout(w);
   const flags = await flagsInForce(w);
   for (const flag of PREVIEW_ONLY_FLAGS) expect(flags).not.toHaveProperty(flag);
   await expectSettingsPages(w, []);
-  await expect(w.locator('[data-testid="dispatcher-row"]')).toHaveCount(0);
+  // Preview doesn't gate the Dispatcher, and nothing starts it.
+  await expect(w.locator('[data-testid="dispatcher-row"]')).toBeVisible({ timeout: 15_000 });
 
   // A saved false outranks the agent's own Chat mode: it wakes in the terminal, on the session it had.
   await addProject(electronApp, w, projectDir);
   expect(await wakesInChat(w, projectDir)).toBe(false);
+  await w.locator('[data-testid^="sleeping-fold-"]').first().click();
   await w.locator(`[data-testid="agent-item-${AGENT_ID}"]`).click();
   await w.locator('[data-testid="wake-button"]').click();
   await expect(w.locator('[data-testid="agent-terminal"]')).toBeVisible({ timeout: 20_000 });
@@ -236,17 +235,17 @@ test('Preview off, saved beta state with Chat off: the legacy layout, a terminal
   expect(await savedPreview(profile)).toBe(false);
   const agents = JSON.parse(await readText(path.join(projectDir, '.clubhouse', 'agents.json')));
   expect(agents.find((a: { id: string }) => a.id === AGENT_ID).runtimeMode).toBe('chat');
-  // Never created: nothing turned the Dispatcher on behind the flag.
-  expect(fs.existsSync(dispatcherFolder(profile))).toBe(false);
+  // The switch saved on is honoured: it has a record and a row, and nothing started it.
+  expect(fs.existsSync(path.join(dispatcherFolder(profile), '.clubhouse', 'agents.json'))).toBe(true);
 });
 
-test('Preview on, no saved flags: the legacy layout with the Preview pages to opt in from', async () => {
+test('Preview on, no saved flags: the new layout with the Preview pages to opt in from', async () => {
   profile = createDisposableProfile({ label: 'stable-preview-on' });
   app = await launchApp({ profile, userDataFiles: updateSettings(true), env: STABLE_BUILD });
   const w = app.window;
 
   expect(await eligible(w)).toBe(true);
-  await expectLegacyLayout(w);
+  await expectNewLayout(w);
   expect(await flagsInForce(w)).toEqual({});
   await expectSettingsPages(w, ['Experimental', 'Annex', 'Annex control']);
 });
@@ -268,6 +267,7 @@ test('Preview off, fresh install: Chat is on, no tip, and a saved agent choice w
   expect(await wakesInChat(w, projectDir)).toBe(true);
   expect(await wakesInChat(w, projectDir, overrideId)).toBe(false);
 
+  await w.locator('[data-testid^="sleeping-fold-"]').first().click();
   await w.locator(`[data-testid="agent-item-${overrideId}"]`).click();
   await w.locator('[data-testid="wake-button"]').click();
   await expect(w.locator('[data-testid="agent-terminal"]')).toBeVisible({ timeout: 20_000 });
@@ -309,6 +309,11 @@ test('Preview off, saved Chat off: Agents & providers turns it back on', async (
 
   await addProject(electronApp, w, projectDir);
   expect(await wakesInChat(w, projectDir)).toBe(false);
+  // The Dispatcher follows the same switch, whatever it has saved for itself.
+  const dispatcherFile = path.join(dispatcherFolder(profile), '.clubhouse', 'agents.json');
+  await expect.poll(() => fs.existsSync(dispatcherFile), { timeout: 15_000 }).toBe(true);
+  const [{ id: dispatcherId }] = JSON.parse(await readText(dispatcherFile));
+  expect(await wakesInChat(w, dispatcherFolder(profile), dispatcherId)).toBe(false);
 
   await w.locator('[data-testid="nav-settings"]').click();
   await settingsNav(w, 'Agents & providers').click();
@@ -317,6 +322,21 @@ test('Preview off, saved Chat off: Agents & providers turns it back on', async (
   await chatView.click();
   await expect(chatView).toHaveAttribute('aria-checked', 'true');
   await expect.poll(() => wakesInChat(w, projectDir)).toBe(true);
+  expect(await wakesInChat(w, dispatcherFolder(profile), dispatcherId)).toBe(true);
+});
+
+test('Preview off: the Dispatcher wakes in chat', async () => {
+  fakes = await installFakeClis({ claude: 'session-info' });
+  profile = createDisposableProfile({ label: 'stable-dispatcher-chat' });
+  // Stream-json, which the fixtures speak.
+  const userDataFiles = { ...stableFiles(), 'chat-runtime-settings.json': { [ORCHESTRATOR]: { mode: 'chat', driver: 'claude_stream_json' } } };
+  app = await launchApp({ profile, userDataFiles, env: { ...STABLE_BUILD, ...fakes.env } });
+  const w = app.window;
+
+  expect(await eligible(w)).toBe(false);
+  await w.locator('[data-testid="dispatcher-row"] [role="treeitem"]').click();
+  await w.locator('[data-testid="dispatcher-view"] [data-testid="wake-button"]').click();
+  await expect(w.locator('[data-testid="dispatcher-view"] [data-testid="chat-view"]')).toBeVisible({ timeout: 20_000 });
 });
 
 test('saved beta state survives Preview on, then off, then on', async () => {
@@ -354,15 +374,15 @@ test('saved beta state survives Preview on, then off, then on', async () => {
 
   const savedLayoutWidth = (page: Page) => page.evaluate((key) => JSON.parse(localStorage.getItem(key) ?? '{}').sidebarWidth, CHROME_STORAGE_KEY);
 
-  // Preview off: only the graduated flags are in force, and all of it is still there.
+  // Preview off: only the graduated features are in force, the Dispatcher stays, and all of it is still there.
   app = await launchApp({ profile, userDataFiles: updateSettings(false), env });
   w = app.window;
   expect(await eligible(w)).toBe(false);
-  await expectLegacyLayout(w);
+  await expectNewLayout(w);
   const flags = await flagsInForce(w);
   for (const flag of PREVIEW_ONLY_FLAGS) expect(flags).not.toHaveProperty(flag);
   await expectSettingsPages(w, []);
-  await expect(w.locator('[data-testid="dispatcher-row"]')).toHaveCount(0);
+  await expect(w.locator('[data-testid="dispatcher-row"]')).toBeVisible({ timeout: 15_000 });
   expect(await wakesInChat(w, projectDir)).toBe(true);
   expect(await savedLayoutWidth(w)).toBe(SAVED_SIDEBAR_WIDTH);
   await app.electronApp.close();

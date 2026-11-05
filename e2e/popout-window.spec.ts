@@ -170,7 +170,7 @@ test.beforeAll(async () => {
   ]);
 
   // These cover the CLI view in a pop-out: a fake PTY never answers as a chat runtime.
-  ({ electronApp, window: mainWindow } = await launchApp({ experimental: { chat: false } }));
+  ({ electronApp, window: mainWindow } = await launchApp({ experimental: { newChrome: false, chat: false } }));
   await addProject(FIXTURE_DIR);
   await waitForDurableAgents();
 });

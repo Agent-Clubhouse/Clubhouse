@@ -193,14 +193,15 @@ export function expectedFor({ state, preview, flags }) {
   const inForce = preview && flags;
   return {
     previewEligible: preview,
-    newChrome: inForce,
+    // The default, and what BETA_FLAGS saves, in every scenario.
+    newChrome: true,
     // On unless saved off, and no scenario saves it off.
     chatEnabled: true,
     flagsInForce: inForce ? BETA_FLAGS : null,
     settingsPages: !preview ? [] : flags ? PREVIEW_PAGES : ['Experimental', 'Annex', 'Annex control'],
-    dispatcherRow: inForce && state === 'beta',
+    // On by default in the new layout, which every scenario runs, and Preview doesn't gate it.
+    dispatcherRow: true,
     savedFilesUntouched: state === 'beta' && !preview,
-    dispatcherFolderAbsent: !inForce || state !== 'beta',
   };
 }
 

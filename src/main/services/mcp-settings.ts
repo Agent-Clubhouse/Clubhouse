@@ -10,8 +10,7 @@
 import { createSettingsStore } from './settings-store';
 import { isClubhouseModeEnabled, getSettings as getClubhouseModeSettings } from './clubhouse-mode-settings';
 import { MCP_SETTINGS } from '../../shared/settings-definitions';
-import { isDispatcherEnabled } from './dispatcher/dispatcher-settings';
-import type { McpSettings } from '../../shared/types';
+import type { ClubhouseModeSettings, McpSettings } from '../../shared/types';
 
 /**
  * The one store for this file. The settings IPC (ipc/settings-handlers) shares
@@ -100,6 +99,31 @@ export function resolveMcpEnabled(projectPath?: string, agentOverride?: boolean)
   return { enabled, source: fromProject ? 'project' : 'app' };
 }
 
+/** MCP at app level, with no project or agent to ask about: the MCP switch, then the global Clubhouse mode. */
+export function isMcpOnAtAppLevel(): boolean {
+  return resolveMcpEnabled().enabled;
+}
+
+/** A change to the MCP or Clubhouse mode settings, to ask what it would do before saving it. */
+export interface McpProposal {
+  mcp?: Partial<McpSettings>;
+  clubhouseMode?: Partial<ClubhouseModeSettings>;
+}
+
+/**
+ * isMcpEnabled's chain as it would resolve with `proposal` saved, for showing
+ * what a change costs before it happens. Changes nothing.
+ */
+export function resolveMcpWithProposal(proposal: McpProposal, projectPath?: string, agentOverride?: boolean): boolean {
+  if (agentOverride !== undefined) return agentOverride;
+  const mcp = { ...getSettings(), ...proposal.mcp };
+  if (projectPath && mcp.projectOverrides?.[projectPath] !== undefined) return mcp.projectOverrides[projectPath];
+  if (mcp.enabled) return true;
+  const clubhouse = { ...getClubhouseModeSettings(), ...proposal.clubhouseMode };
+  const own = projectPath ? clubhouse.projectOverrides?.[projectPath] : undefined;
+  return own ?? clubhouse.enabled;
+}
+
 /**
  * Check whether MCP is enabled for ANY project. Used at app startup to decide
  * whether the bridge server and IPC handlers should be initialized — before a
@@ -107,16 +131,15 @@ export function resolveMcpEnabled(projectPath?: string, agentOverride?: boolean)
  *
  * Returns true if the global MCP toggle is on, any MCP project override is
  * true, the global Clubhouse Mode toggle is on, or any Clubhouse Mode project
- * override is true. The Dispatcher (#2535) needs MCP for its tools, so it
- * turns it on while it is enabled. Agent-level settings live in each project's
- * agents.json, so they count from when such an agent starts: see
- * ensureMcpBridgeForAgent.
+ * override is true. The Dispatcher never turns it on: it is off without MCP at
+ * app level, so its own `mcpOverride` keeps no bridge up. Agent-level settings
+ * live in each project's agents.json, so they count from when such an agent
+ * starts: see ensureMcpBridgeForAgent.
  */
 export function isMcpEnabledForAny(): boolean {
   if (agentNeedsBridge) return true;
   const mcpSettings = getSettings();
   if (mcpSettings.enabled) return true;
-  if (isDispatcherEnabled()) return true;
 
   if (mcpSettings.projectOverrides) {
     for (const enabled of Object.values(mcpSettings.projectOverrides)) {

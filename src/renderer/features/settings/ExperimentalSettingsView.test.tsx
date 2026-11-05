@@ -48,7 +48,7 @@ describe('ExperimentalSettingsView', () => {
   it('renders feature toggles', async () => {
     render(<ExperimentalSettingsView />);
     await waitFor(() => {
-      expect(screen.getByText('New layout')).toBeInTheDocument();
+      expect(screen.getByText('Goobers')).toBeInTheDocument();
     });
     // Graduated features moved to their own settings pages
     expect(screen.queryByText('Theme gradients & fonts')).not.toBeInTheDocument();
@@ -68,9 +68,10 @@ describe('ExperimentalSettingsView', () => {
     });
   });
 
-  it('points the Dispatcher flag at Settings > Dispatcher', async () => {
+  it('no longer offers a Dispatcher flag: it has its own page', async () => {
     render(<ExperimentalSettingsView />);
-    expect(await screen.findByText(/Needs New layout\. After turning this on, switch it on in Settings > Dispatcher\./)).toBeInTheDocument();
+    await screen.findByText('Goobers');
+    expect(screen.queryByRole('switch', { name: 'Dispatcher' })).toBeNull();
   });
 
   it('offers the Copilot SDK driver flag, off by default, and says when it needs Chat', async () => {
@@ -104,27 +105,27 @@ describe('ExperimentalSettingsView', () => {
   it('does not list Clubhouse MCP as experimental (promoted)', async () => {
     render(<ExperimentalSettingsView />);
     await waitFor(() => {
-      expect(screen.getByText('New layout')).toBeInTheDocument();
+      expect(screen.getByText('Goobers')).toBeInTheDocument();
     });
     expect(screen.queryByText('Clubhouse MCP')).not.toBeInTheDocument();
   });
 
   it('toggles a feature and saves', async () => {
-    mockGetExperimentalSettings.mockResolvedValue({ newChrome: false });
+    mockGetExperimentalSettings.mockResolvedValue({ goobers: false });
     const { container } = render(<ExperimentalSettingsView />);
 
     await waitFor(() => {
-      expect(screen.getByText('New layout')).toBeInTheDocument();
+      expect(screen.getByText('Goobers')).toBeInTheDocument();
     });
 
     // The Toggle component renders a button with a rounded-full class
-    // First toggle is the New layout feature
+    // First toggle is the Goobers feature
     const toggleBtn = container.querySelector('button.rounded-full') as HTMLElement;
     expect(toggleBtn).toBeInTheDocument();
     fireEvent.click(toggleBtn);
 
     await waitFor(() => {
-      expect(mockSaveExperimentalSettings).toHaveBeenCalledWith({ newChrome: true });
+      expect(mockSaveExperimentalSettings).toHaveBeenCalledWith({ goobers: true });
     });
   });
 

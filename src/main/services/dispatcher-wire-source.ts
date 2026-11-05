@@ -19,14 +19,18 @@
  * that run.
  *
  * The switch resolves off where Clubhouse MCP is off for the agent (#2589), so
- * an MCP change moves wires too. The Dispatcher turning MCP on for itself
- * (mcpOverride, isMcpEnabledForAny) gives no other agent MCP, so it gives none
- * of them a wire.
+ * an MCP change moves wires too. The Dispatcher is itself off without MCP at app
+ * level, so that takes every wire, an agent's own MCP setting or not. Wires come
+ * back from the saved policy when MCP does.
+ *
+ * A wire the user removes stays removed: the policy is what would bring it back
+ * after a restart, so the removal saves Connect to Dispatcher off on the agent.
+ * Only this user action writes that value, never an MCP change.
  */
 
 import * as projectStore from './project-store';
 import { listDurable, onAgentConfigChanged } from './agent-config';
-import { resolveOrchestrationPolicies } from './orchestration-policy';
+import { resolveOrchestrationPolicies, setOrchestrationPolicy } from './orchestration-policy';
 import { onMcpEnablementChanged } from './mcp-settings';
 import { onPersonaChanged } from './persona-change-hook';
 import {
@@ -36,7 +40,7 @@ import {
   isDispatcherPath,
   onDispatcherChanged,
 } from './dispatcher/dispatcher-service';
-import { bindingSignature, type CollectedBindings, type PersistedBinding, type PersistedBindingSource } from './persisted-bindings';
+import { bindingSignature, onBindingRemovedByUser, type CollectedBindings, type PersistedBinding, type PersistedBindingSource } from './persisted-bindings';
 import { isDisposedAgent } from '../../shared/agent-helpers';
 import type { DurableAgentConfig } from '../../shared/types';
 import { appLog } from './log-service';
@@ -191,6 +195,17 @@ export const dispatcherWireBindingSource: PersistedBindingSource = {
   },
 };
 
+/** The user removed a Dispatcher wire: save Connect to Dispatcher off, so a restart doesn't bring it back. */
+async function saveWireRemoval(agentId: string): Promise<void> {
+  for (const { path } of await registeredProjects()) {
+    if (isDispatcherPath(path)) continue;
+    const agent = (await listDurable(path)).find((a) => a.id === agentId);
+    if (!agent) continue;
+    await setOrchestrationPolicy(path, agentId, { connectToDispatcher: false });
+    return;
+  }
+}
+
 /** Retry delays after a rebuild that did not bring the wires up to date. */
 const RETRY_DELAYS_MS = [1_000, 5_000, 15_000, 60_000];
 
@@ -318,6 +333,17 @@ export function watchDispatcherWires(onWiresChanged: () => unknown): () => void 
     onMcpEnablementChanged(allChanged),
     // Rare (add, remove, rename): read every project, and drop the wires of one that went.
     projectStore.onProjectsChanged(allChanged),
+    onBindingRemovedByUser((agentId, targetId) => {
+      const dispatcherId = getDispatcherAgentId();
+      const other = agentId === dispatcherId ? targetId : targetId === dispatcherId ? agentId : null;
+      if (!other) return;
+      saveWireRemoval(other).catch((err) => {
+        // telemetry-exempt: logged; the pair stays skipped this session
+        appLog('core:mcp', 'warn', 'Could not save a removed Dispatcher wire', {
+          meta: { agentId: other, error: err instanceof Error ? err.message : String(err) },
+        });
+      });
+    }),
   ];
   return () => {
     stopped = true;

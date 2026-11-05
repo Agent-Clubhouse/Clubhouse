@@ -24,7 +24,7 @@ let electronApp: Awaited<ReturnType<typeof electron.launch>>;
 let window: Page;
 
 test.beforeAll(async () => {
-  ({ electronApp, window } = await launchApp());
+  ({ electronApp, window } = await launchApp({ experimental: { newChrome: false } }));
 
   await addProject(electronApp, window, FIXTURE_SMOKE);
   await addProject(electronApp, window, FIXTURE_B);

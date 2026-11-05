@@ -95,6 +95,12 @@ export const CROSS_PROJECT_OFF_MESSAGE = 'Cross-project helpers are turned off f
 /** The refusal for turning orchestration or the Dispatcher connection on where Clubhouse MCP is off (#2589). */
 export const MCP_REQUIRED_MESSAGE = 'This needs Clubhouse MCP, which is off for this agent. Turn it on first.';
 
+/** The refusal for any Clubhouse tool once MCP is off for the caller: see clubhouse-mcp/mcp-call-gate. */
+export const MCP_OFF_TOOL_MESSAGE = 'Clubhouse MCP is off for this agent, so Clubhouse tools are unavailable. Tell the user.';
+
+/** The same for a helper, which can still report to its parent. */
+export const MCP_OFF_HELPER_TOOL_MESSAGE = 'Clubhouse MCP is off for this agent, so the only Clubhouse tool available is message_parent. Tell your parent or the user.';
+
 /** Where each field of a resolved policy came from. */
 export type OrchestrationPolicySource = 'agent' | 'persona' | 'default';
 
@@ -113,6 +119,28 @@ export interface ResolvedOrchestrationPolicy extends OrchestrationPolicy {
    * settings, which come back when MCP does.
    */
   mcpOff?: McpDependentSwitches;
+  /**
+   * A helper whose own MCP setting resolves off. Its forced bridge keeps `mcpOff`
+   * unset, so it can start and report, but the call gate leaves it only message_parent.
+   * The switches above hold what is saved: as with `mcpOff`, none can be turned on
+   * and none opens a gate. Decide with {@link isMcpDependentOff}.
+   */
+  mcpReportOnly?: true;
+}
+
+/** No Clubhouse MCP for this agent's own calls, a helper's forced bridge aside: its switches can't be turned on and open nothing. */
+export function isMcpDependentOff(policy: Pick<ResolvedOrchestrationPolicy, 'mcpOff' | 'mcpReportOnly'>): boolean {
+  return !!policy.mcpOff || !!policy.mcpReportOnly;
+}
+
+/** A report-only helper as the surfaces show one: its switches off, what is saved in `mcpOff`, as for any agent without MCP. */
+export function asShownPolicy(policy: ResolvedOrchestrationPolicy): ResolvedOrchestrationPolicy {
+  if (!policy.mcpReportOnly) return policy;
+  const { orchestrate, crossProjectHelpers, connectToDispatcher, autoHelpers } = policy;
+  return {
+    ...policy, orchestrate: false, crossProjectHelpers: false, connectToDispatcher: false, autoHelpers: false,
+    mcpOff: { orchestrate, crossProjectHelpers, connectToDispatcher, autoHelpers },
+  };
 }
 
 /** What `orchestrate` resolves to from the saved settings, MCP on or off. */
@@ -132,10 +160,10 @@ export type HelperAutoSource = 'agent' | 'project' | 'persona' | 'app' | 'defaul
 export function decideHelperAuto(input: {
   app: boolean;
   projectOff: boolean;
-  policy?: Pick<ResolvedOrchestrationPolicy, 'orchestrate' | 'autoHelpers' | 'sources' | 'personaAutoOff' | 'mcpOff'>;
+  policy?: Pick<ResolvedOrchestrationPolicy, 'orchestrate' | 'autoHelpers' | 'sources' | 'personaAutoOff' | 'mcpOff' | 'mcpReportOnly'>;
 }): { effective: boolean; reason?: HelperAutoOffReason; source: HelperAutoSource } {
   const { app, projectOff, policy } = input;
-  if (policy?.mcpOff) return { effective: false, source: 'mcp_off', reason: 'mcp_off' };
+  if (policy && isMcpDependentOff(policy)) return { effective: false, source: 'mcp_off', reason: 'mcp_off' };
   if (projectOff) return { effective: false, source: 'project', reason: 'project_off' };
   if (policy?.personaAutoOff) return { effective: false, source: 'persona', reason: 'persona_off' };
   const own = policy?.sources.autoHelpers === 'agent' ? policy.autoHelpers : undefined;
@@ -259,7 +287,7 @@ export function applyOrchestrationPatch(
 export function resolveOrchestrationPolicy(
   agentConfig: OrchestrationPolicyConfig | undefined,
   personaDefaults: OrchestrationPolicyConfig | undefined,
-  options: { helper?: boolean; mcpOff?: boolean } = {},
+  options: { helper?: boolean; mcpOff?: boolean; mcpReportOnly?: boolean } = {},
 ): ResolvedOrchestrationPolicy {
   const agent = normalizeOrchestrationConfig(agentConfig) ?? {};
   const persona = normalizeOrchestrationConfig(personaDefaults) ?? {};
@@ -293,7 +321,7 @@ export function resolveOrchestrationPolicy(
       mcpOff: { orchestrate, crossProjectHelpers, connectToDispatcher, autoHelpers },
     };
   }
-  return { ...policy, sources, ...personaAutoOff };
+  return { ...policy, sources, ...personaAutoOff, ...(options.mcpReportOnly && { mcpReportOnly: true as const }) };
 }
 
 // ── Access ───────────────────────────────────────────────────────────────

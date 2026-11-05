@@ -64,6 +64,27 @@ describe('HeadlessAgentView', () => {
     expect(screen.getByTestId('headless-agent-view')).toHaveAttribute('data-phase', 'start');
   });
 
+  it('leaves the starting state once events arrive, even ones that make no step (#2813)', async () => {
+    transcript.page = vi.fn().mockResolvedValue({
+      events: [{ type: 'assistant.turn_start', data: { turnId: '0' } }, { type: 'assistant.message', data: { content: 'hi' } }],
+      totalEvents: 2,
+    });
+    render(<HeadlessAgentView agent={headlessAgent} />);
+    await flushAsyncWork();
+    expect(screen.getByTestId('headless-agent-view')).toHaveAttribute('data-phase', 'run');
+    expect(screen.getByTestId('run-toolbar')).not.toHaveTextContent('starting');
+    expect(screen.queryByTestId('run-starting')).not.toBeInTheDocument();
+    expect(screen.getByTestId('run-no-steps')).toHaveTextContent('Running swift-runner');
+  });
+
+  it('stays on run with no Stop between the exit and the completed record (#2813)', () => {
+    const exited: Agent = { ...headlessAgent, status: 'sleeping' };
+    useAgentStore.setState({ agents: { [exited.id]: exited } });
+    render(<HeadlessAgentView agent={exited} />);
+    expect(screen.getByTestId('headless-agent-view')).toHaveAttribute('data-phase', 'run');
+    expect(screen.queryByTestId('stop-agent-button')).not.toBeInTheDocument();
+  });
+
   it('renders the treehouse in theme tokens, with the run state', () => {
     const { container } = render(<HeadlessAgentView agent={headlessAgent} />);
     expect(screen.getByTestId('treehouse')).toHaveAttribute('data-phase', 'start');

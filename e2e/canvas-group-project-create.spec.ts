@@ -22,6 +22,7 @@ async function navigateToCanvas(page: Page): Promise<void> {
 test.beforeAll(async () => {
   fs.rmSync(FIXTURE_STATE, { recursive: true, force: true });
   ({ electronApp, window, userDataDir } = await launchApp({
+    experimental: { newChrome: false },
     userDataFiles: {
       'mcp-settings.json': { enabled: false, projectDefault: false },
     },
