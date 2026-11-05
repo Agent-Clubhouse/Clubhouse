@@ -1,13 +1,14 @@
 /**
  * App settings, Dispatcher (#2535): the switch that turns the app-wide
- * Dispatcher on, and its agent settings once it exists. Listed only while the
- * experimental flag is on; reached with the flag off, the switch is disabled
- * and says why (#2555). Its row and view are in the new layout only, so on the
- * classic layout the switch is disabled too (#2565). Its persona,
- * orchestration settings and folder can't change here or anywhere else.
+ * Dispatcher on, and its agent settings once it exists. Always listed. Clubhouse
+ * MCP off at app level shows the switch off and disabled, with the saved value
+ * kept. Its row and view are in the new layout only, so on the classic layout a
+ * switch that's off stays off (#2565). Its persona, orchestration settings and
+ * folder can't change here or anywhere else.
  */
 
 import { useEffect, useState } from 'react';
+import { DISPATCHER_CLASSIC_MESSAGE, type DispatcherState } from '../../../shared/dispatcher-types';
 import type { DurableConfigUpdates } from '../../../shared/types';
 import { AGENT_IDLE_SLEEP_MINUTES, formatIdleMinutes, normalizeIdleSleep } from '../../../shared/idle-sleep';
 import { Button } from '../../components/Button';
@@ -15,7 +16,6 @@ import { Toggle } from '../../components/Toggle';
 import { useModelOptions } from '../../hooks/useModelOptions';
 import { useContextWindowOptions } from '../../hooks/useContextWindowOptions';
 import { ContextWindowSelect, contextWindowHelp } from '../agents/ContextWindowField';
-import { useChromeFlagStore } from '../../chrome/chromeFlag';
 import { useOrchestratorStore } from '../../stores/orchestratorStore';
 import { ipcErrorMessage } from '../../utils/ipc-error';
 import { useAppIdleMinutes, SELECT_CLASS } from '../agents/details/AutoSleepRow';
@@ -26,9 +26,32 @@ import { SettingsField, SettingsPage, SettingsSection, settingsError, settingsHe
 const TITLE = 'Dispatcher';
 const DESCRIPTION = 'One agent for the whole app that coordinates the orchestrators in your projects.';
 
+/** The line under the switch: what it is doing, and which setting to change if it can't be turned on here. */
+export function dispatcherSwitchHelp({ enabled, savedOn, mcpOff, classic }: Pick<DispatcherState, 'enabled' | 'savedOn' | 'mcpOff' | 'classic'>): string {
+  const mcpReturn = 'Turning it back on restores your settings and doesn’t start any session.';
+  if (mcpOff && classic && !savedOn) {
+    return `On by default in the new layout only, and it needs Clubhouse MCP. To turn it on, turn on Clubhouse MCP in Settings and turn off Classic layout in Settings > Display & UI, then restart Clubhouse. ${mcpReturn}`;
+  }
+  if (mcpOff && classic) {
+    return `Off because Clubhouse MCP is off. Turn on Clubhouse MCP in Settings. ${mcpReturn} Its view is in the new layout only. To use it, turn off Classic layout in Settings > Display & UI, then restart Clubhouse.`;
+  }
+  if (mcpOff) {
+    return `${savedOn ? 'Off because Clubhouse MCP is off.' : 'It needs Clubhouse MCP, which is off.'} Turn on Clubhouse MCP in Settings. ${mcpReturn}`;
+  }
+  if (classic && enabled) {
+    return 'On because you turned it on before. It has no row here because its row and view are in the new layout only. To use it, turn off Classic layout in Settings > Display & UI, then restart Clubhouse. You can turn it off here, and on the classic layout it can’t be turned back on.';
+  }
+  if (classic) {
+    return DISPATCHER_CLASSIC_MESSAGE;
+  }
+  const kept = 'Its folder and notes are kept, so turning it back on carries on where it left off.';
+  return enabled
+    ? `On by default in the new layout. It stays asleep until you start it. Turning it off stops it. ${kept}`
+    : `On by default in the new layout, and turned off here. ${kept}`;
+}
+
 export function DispatcherSettingsView() {
   const { state, error: readError, retry } = useDispatcherRead();
-  const newLayout = useChromeFlagStore((s) => s.enabled);
   const [switching, setSwitching] = useState(false);
   const [switchError, setSwitchError] = useState<string | null>(null);
   const [saveError, setSaveError] = useState<string | null>(null);
@@ -117,26 +140,25 @@ export function DispatcherSettingsView() {
         <SettingsField
           label="Turn on Dispatcher"
           help={(
-            <span id="dispatcher-enabled-help">
-              {!state.flagOn
-                ? 'Turn on Dispatcher in Settings > Experimental first.'
-                : !newLayout
-                  ? 'The Dispatcher needs the new layout. Turn on New layout in Settings > Experimental.'
-                  : 'Turning it off stops it. Its folder and notes are kept, so turning it back on carries on where it left off.'}
-            </span>
+            <span id="dispatcher-enabled-help">{dispatcherSwitchHelp(state)}</span>
           )}
         >
-          {/* On the classic layout one that's still on can be turned off, not on (#2565). */}
+          {/* On the classic layout one that's still on can be turned off, not on (#2565). Without MCP it reads off whatever is saved. */}
           <Toggle
             aria-label="Turn on Dispatcher"
             aria-describedby="dispatcher-enabled-help"
             checked={state.enabled}
-            disabled={switching || !state.flagOn || (!newLayout && !state.enabled)}
+            disabled={switching || state.mcpOff || (state.classic && !state.enabled)}
             onChange={(on) => void turn(on)}
             data-testid="dispatcher-enabled"
           />
         </SettingsField>
         {switchError && <p className={`${settingsError} mt-1.5`} role="alert" data-testid="dispatcher-enabled-error">{switchError}</p>}
+        {state.running && !state.enabled && (
+          <p className={`${settingsHelp} mt-2`} data-testid="dispatcher-still-running">
+            It is still running. It can’t use Clubhouse tools or be started again until Clubhouse MCP is back. Older Clubhouse Go versions may not show a Dispatcher that’s still running with MCP off. You can stop it from its view.
+          </p>
+        )}
         {state.path && <p className={`${settingsHelp} mt-2`} data-testid="dispatcher-folder">Its folder is {state.path}</p>}
       </section>
 

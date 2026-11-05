@@ -12,6 +12,8 @@ const MAX_NOTES = 50;
 export interface RunTranscript {
   steps: Step[];
   totals: RunTotals;
+  /** Transcript events read so far, understood or not. */
+  eventCount: number;
   /** Bumps on every post-tool and stop hook, for refreshing diff stats. */
   toolTick: number;
 }
@@ -23,7 +25,7 @@ export interface RunTranscript {
  * live it loads the whole transcript once (from disk after exit).
  */
 export function useRunTranscript(agentId: string, live: boolean): RunTranscript {
-  const [state, setState] = useState<RunTranscript>(() => ({ steps: [], totals: emptyTotals(), toolTick: 0 }));
+  const [state, setState] = useState<RunTranscript>(() => ({ steps: [], totals: emptyTotals(), eventCount: 0, toolTick: 0 }));
   const builderRef = useRef<TimelineBuilder>(new TimelineBuilder());
   const notesRef = useRef<Step[]>([]);
   /** Byte cursor into the transcript file. */
@@ -40,7 +42,7 @@ export function useRunTranscript(agentId: string, live: boolean): RunTranscript 
     notesRef.current = [];
     offsetRef.current = 0;
     tickRef.current = 0;
-    setState({ steps: [], totals: emptyTotals(), toolTick: 0 });
+    setState({ steps: [], totals: emptyTotals(), eventCount: 0, toolTick: 0 });
 
     // Batch state updates to one per animation frame
     const publish = () => {
@@ -52,7 +54,7 @@ export function useRunTranscript(agentId: string, live: boolean): RunTranscript 
         const steps = notesRef.current.length
           ? [...b.steps, ...notesRef.current].sort((a, c) => a.ts - c.ts)
           : [...b.steps];
-        setState({ steps, totals: { ...b.totals }, toolTick: tickRef.current });
+        setState({ steps, totals: { ...b.totals }, eventCount: b.eventCount, toolTick: tickRef.current });
       });
     };
 

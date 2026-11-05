@@ -60,6 +60,11 @@ describe('QuickAgentGhost', () => {
     expect(screen.queryByText('Headless')).toBeNull();
   });
 
+  it('titles a run with no mission by its name (#2813)', () => {
+    render(<QuickAgentGhost {...defaultProps} completed={makeCompleted({ mission: '' })} />);
+    expect(screen.getByTestId('quick-mission')).toHaveTextContent('quick-fox');
+  });
+
   it('lists files changed with diff sizes', async () => {
     render(<QuickAgentGhost completed={{ ...defaultProps.completed, cwd: '/wt', baseSha: 'abc' }} onDismiss={vi.fn()} />);
     expect(screen.getAllByTestId('file-row')).toHaveLength(2);

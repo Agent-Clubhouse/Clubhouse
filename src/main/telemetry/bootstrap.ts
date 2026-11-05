@@ -28,8 +28,7 @@ import { restartLocalRecording, syncLocalRecording } from './local-control';
 import { createIdentity, isValidIdentity, type TelemetryIdentity } from './ids';
 import { deleteOfflineData, getOfflineDir, OFFLINE_PRUNE_INTERVAL_MS, pruneOfflineDir } from './offline';
 import { buildResourceAttributes, type ResourceInputs } from './resource';
-import { getSettings as getExperimentalSettings } from '../services/experimental-settings';
-import { NEW_CHROME_FLAG } from '../../shared/chrome-flag';
+import { newChromeEnabled } from '../window-chrome';
 import { createScrubber } from './scrubber';
 import {
   enabledDestinations,
@@ -136,17 +135,12 @@ function annexRole(): ResourceInputs['annexRole'] {
 }
 
 /**
- * The chrome shell for this session. The renderer reads the same experimental
- * flag once at startup and switching takes effect on the next launch, so the
- * value cannot change mid-session (docs/chrome-redesign-spec.md §4.1, §8).
+ * The chrome shell for this session, as the windows were told. Switching takes
+ * effect on the next launch, so the value cannot change mid-session
+ * (docs/chrome-redesign-spec.md §4.1, §8).
  */
 export function uiChrome(): ResourceInputs['uiChrome'] {
-  try {
-    return getExperimentalSettings()[NEW_CHROME_FLAG] === true ? 'v2' : 'legacy';
-  } catch {
-    // Settings unreadable: the renderer falls back to the legacy shell too.
-    return 'legacy';
-  }
+  return newChromeEnabled() ? 'v2' : 'legacy';
 }
 
 /** Ports of Clubhouse's own loopback servers; OTLP must never post into them. */

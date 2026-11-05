@@ -71,7 +71,7 @@ test.afterEach(async () => {
 async function openChat(p: ProviderCase, fixture: string) {
   fakes = await installFakeClis({ [p.cli]: fixture });
   projectDir = await fs.promises.mkdtemp(path.join(os.tmpdir(), `chat-e2e-${p.cli}-`));
-  const app = await launchApp({ experimental: { chat: true }, userDataFiles: USER_DATA_FILES, env: fakes.env });
+  const app = await launchApp({ experimental: { newChrome: false, chat: true }, userDataFiles: USER_DATA_FILES, env: fakes.env });
   const { electronApp, window } = app;
 
   await addProject(electronApp, window, projectDir);

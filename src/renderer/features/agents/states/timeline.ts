@@ -89,6 +89,8 @@ interface ContentBlock {
 export class TimelineBuilder {
   readonly steps: Step[] = [];
   readonly totals: RunTotals = { toolCalls: 0, inputTokens: 0, outputTokens: 0, summary: null, resultIsError: false };
+  /** Every event seen, including ones that make no step: a CLI whose events aren't understood is still running. */
+  eventCount = 0;
   private byToolUseId = new Map<string, ToolStep>();
   private legacyBlocks = new Map<number, ToolStep>();
   private pendingText = '';
@@ -106,6 +108,7 @@ export class TimelineBuilder {
   constructor(private readonly now: () => number = Date.now) {}
 
   push(events: TranscriptEventLike[]): void {
+    this.eventCount += events.length;
     for (const e of events) this.pushOne(e);
   }
 

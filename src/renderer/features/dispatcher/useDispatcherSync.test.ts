@@ -8,7 +8,7 @@ import { useDispatcherSync } from './useDispatcherSync';
 import { findLocalProject, isDispatcherAgent, useDispatcherStore } from './dispatcherStore';
 
 const config = { id: 'disp', name: 'Dispatcher', color: 'indigo', createdAt: '2026-10-31T00:00:00.000Z', model: 'opus' } as DurableAgentConfig;
-const ON: DispatcherState = { enabled: true, flagOn: true, agentId: 'disp', path: 'dispatcher-dir', config };
+const ON: DispatcherState = { ...DISPATCHER_OFF, enabled: true, savedOn: true, offReason: null, agentId: 'disp', path: 'dispatcher-dir', config };
 
 describe('useDispatcherSync', () => {
   let emit: ((s: DispatcherState) => void) | null;
@@ -48,6 +48,20 @@ describe('useDispatcherSync', () => {
     expect(useAgentStore.getState().agents.disp).toBeUndefined();
     expect(useUIStore.getState().dispatcherOpen).toBe(false);
     expect(findLocalProject(DISPATCHER_PROJECT_ID)).toBeUndefined();
+  });
+
+  it('keeps the agent and its view while it runs with MCP off, and drops them once it stops', async () => {
+    window.clubhouse.dispatcher.get = vi.fn().mockResolvedValue({ ...ON, running: true });
+    renderHook(() => useDispatcherSync());
+    await waitFor(() => expect(useAgentStore.getState().agents.disp).toBeTruthy());
+    act(() => useUIStore.setState({ dispatcherOpen: true }));
+    act(() => emit?.({ ...ON, enabled: false, offReason: 'mcp_off', mcpOff: true, running: true }));
+    expect(useAgentStore.getState().agents.disp).toBeTruthy();
+    expect(useUIStore.getState().dispatcherOpen).toBe(true);
+    expect(findLocalProject(DISPATCHER_PROJECT_ID)).toBeTruthy();
+    act(() => emit?.({ ...ON, enabled: false, offReason: 'mcp_off', mcpOff: true, running: false }));
+    expect(useAgentStore.getState().agents.disp).toBeUndefined();
+    expect(useUIStore.getState().dispatcherOpen).toBe(false);
   });
 
   it('repairs a record a resume keyed on the folder before the state arrived (#2552)', async () => {

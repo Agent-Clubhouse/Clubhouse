@@ -1,9 +1,11 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { renderHook, act, waitFor } from '@testing-library/react';
-import type { DispatcherState } from '../../../shared/dispatcher-types';
-import { useDispatcherEnabled, useDispatcherFlagOn, useDispatcherRead, useDispatcherState } from './useDispatcherEnabled';
+import { DISPATCHER_OFF, type DispatcherState } from '../../../shared/dispatcher-types';
+import { useDispatcherConnection, useDispatcherRead, useDispatcherState } from './useDispatcherEnabled';
 
-const ON: DispatcherState = { enabled: true, flagOn: true, agentId: 'durable_1', path: 'dispatcher-dir', config: null };
+const useDispatcherEnabled = () => useDispatcherState()?.enabled ?? false;
+
+const ON: DispatcherState = { ...DISPATCHER_OFF, enabled: true, savedOn: true, offReason: null, agentId: 'durable_1', path: 'dispatcher-dir', config: null };
 
 describe('useDispatcherState', () => {
   let listener: ((s: DispatcherState) => void) | null;
@@ -55,12 +57,14 @@ describe('useDispatcherState', () => {
     expect(result.current.error).toBeNull();
   });
 
-  it('reports the flag apart from the setting', async () => {
-    window.clubhouse.dispatcher.get = vi.fn().mockResolvedValue({ ...ON, enabled: false, flagOn: false });
-    const { result } = renderHook(() => useDispatcherFlagOn());
+  it('shows the Connect row while it is on, and while it is off only because of MCP', async () => {
+    window.clubhouse.dispatcher.get = vi.fn().mockResolvedValue({ ...ON, enabled: false, offReason: 'switch_off' });
+    const { result } = renderHook(() => useDispatcherConnection());
     await waitFor(() => expect(window.clubhouse.dispatcher.get).toHaveBeenCalled());
-    expect(result.current).toBe(false);
-    act(() => listener?.({ ...ON, enabled: false }));
-    expect(result.current).toBe(true);
+    await waitFor(() => expect(result.current).toEqual({ show: false, offForMcp: false }));
+    act(() => listener?.({ ...ON, enabled: false, offReason: 'mcp_off', mcpOff: true }));
+    expect(result.current).toEqual({ show: true, offForMcp: true });
+    act(() => listener?.(ON));
+    expect(result.current).toEqual({ show: true, offForMcp: false });
   });
 });

@@ -11,7 +11,8 @@ import { useDispatcherStore } from './dispatcherStore';
  * Keeps the renderer's Dispatcher in step with main (#2538): the shared
  * state, and its agent in the agent store under DISPATCHER_PROJECT_ID with
  * its folder as the project path, loaded the way a project's agents are.
- * Turning it off drops the agent and closes its view. A failed load is kept
+ * Turning it off drops the agent and closes its view, once it has stopped: MCP
+ * going off leaves a running one running, so it stays. A failed load is kept
  * in the store for the view to show, and Retry loads again. Mounted once, by
  * the shell.
  */
@@ -24,7 +25,7 @@ export function useDispatcherSync(): void {
     const store = useDispatcherStore.getState();
     store.setState(state);
     store.setLoadError(null);
-    const on = !!state?.enabled && !!state.agentId && !!state.path;
+    const on = (!!state?.enabled || !!state?.running) && !!state.agentId && !!state.path;
     if (!on) {
       if (loadedId.current) useAgentStore.getState().removeAgent(loadedId.current);
       loadedId.current = null;

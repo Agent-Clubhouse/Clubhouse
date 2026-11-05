@@ -63,6 +63,16 @@ interface HeadlessSession {
   killTimer?: ReturnType<typeof setTimeout>;
   /** Stored so stale sweeper can invoke it when exit events are missed. */
   onExitCallback?: (agentId: string, exitCode: number) => void;
+  /** The stale sweeper already reported this run's exit; a late close must not repeat it. */
+  exitReported?: boolean;
+  /** Last stdout from the CLI, for diagnosing a run that looks stuck (#2813). */
+  lastOutputAt?: number;
+  /** When the first `result` event arrived. */
+  resultSeenAt?: number;
+  /** How many of each raw `type` the CLI emitted, before normalization. */
+  rawEventTypes: Map<string, number>;
+  /** Report a quiet run again once it has been quiet this long. */
+  nextLiveReportMs: number;
 }
 
 const sessions = new Map<string, HeadlessSession>();
@@ -87,22 +97,66 @@ function cleanupHeadlessSession(agentId: string): void {
   sessions.delete(agentId);
 }
 
+/** A live run is first reported after this long without output, then at each doubling. */
+const LIVE_REPORT_QUIET_MS = 60_000;
+
+/** Distinct raw event types kept per run, so a CLI can't grow this without bound. */
+const MAX_RAW_EVENT_TYPES = 32;
+const MAX_RAW_EVENT_TYPE_LENGTH = 48;
+
+/**
+ * Facts for diagnosing a run that looks stuck (#2813). Event type names and
+ * counts only: never prompt, output or tool content.
+ */
+function runDiagnostics(session: HeadlessSession): Record<string, unknown> {
+  const now = Date.now();
+  return {
+    agentId: session.agentId,
+    pid: session.process.pid,
+    runMs: now - session.startedAt,
+    msSinceLastEvent: session.lastOutputAt === undefined ? null : now - session.lastOutputAt,
+    resultSeen: session.resultSeenAt !== undefined,
+    msSinceResult: session.resultSeenAt === undefined ? null : now - session.resultSeenAt,
+    events: session.totalTranscriptEvents,
+    rawEventTypes: Object.fromEntries(session.rawEventTypes),
+  };
+}
+
+function noteRawEvent(session: HeadlessSession, raw: StreamJsonEvent): void {
+  const type = typeof raw?.type === 'string' ? raw.type.slice(0, MAX_RAW_EVENT_TYPE_LENGTH) : '(none)';
+  const known = session.rawEventTypes.has(type);
+  const key = known || session.rawEventTypes.size < MAX_RAW_EVENT_TYPES ? type : '(other)';
+  session.rawEventTypes.set(key, (session.rawEventTypes.get(key) ?? 0) + 1);
+}
+
+/** Node sets exitCode on a normal exit and signalCode on a kill, never both. */
+function hasExited(proc: ChildProcess): boolean {
+  return proc.exitCode !== null || (proc.signalCode ?? null) !== null;
+}
+
 const staleSweeper = new StaleSweeper<HeadlessSession>(sessions, {
-  isStale: (_agentId, session) => {
-    // ChildProcess.exitCode is non-null once the process has exited
-    return session.process.exitCode !== null;
-  },
+  // Exited with no close: a child still holds its stdout open (#2813).
+  isStale: (_agentId, session) => hasExited(session.process),
   onStale: (agentId, session) => {
+    const signal = session.process.signalCode ?? null;
     appLog('core:headless', 'warn', 'Stale headless session detected, cleaning up', {
-      meta: { agentId, exitCode: session.process.exitCode },
+      meta: { ...runDiagnostics(session), exitCode: session.process.exitCode, signal },
     });
     agentSwept(agentId);
-    const exitCode = session.process.exitCode ?? 1;
+    const exitCode = resolveExitCode(session.process.exitCode, signal);
     const { onExitCallback } = session;
+    session.exitReported = true;
     cleanupHeadlessSession(agentId);
     broadcastAgentExit(agentId, exitCode);
     // Invoke onExit so the agent registry is cleaned up (prevents memory leak)
     onExitCallback?.(agentId, exitCode);
+  },
+  onLive: (_agentId, session) => {
+    const quietMs = Date.now() - (session.lastOutputAt ?? session.startedAt);
+    if (quietMs < session.nextLiveReportMs) return;
+    session.nextLiveReportMs *= 2;
+    const level = session.resultSeenAt !== undefined ? 'warn' : 'info';
+    appLog('core:headless', level, 'Headless run still live and quiet', { meta: runDiagnostics(session) });
   },
 });
 
@@ -268,6 +322,8 @@ function createSessionRecord(
     transcriptPath,
     startedAt: Date.now(),
     onExitCallback: onExit,
+    rawEventTypes: new Map(),
+    nextLiveReportMs: LIVE_REPORT_QUIET_MS,
   };
 }
 
@@ -317,6 +373,7 @@ function setupTranscriptPipeline(
   const toolNamesById = new Map<string, string>();
 
   session.parser.on('line', (raw: StreamJsonEvent) => {
+    noteRawEvent(session, raw);
     // Providers whose CLI emits its own vocabulary translate here, so the rest
     // of the pipeline only ever sees stream-json. One raw line can expand to
     // several events, or to none.
@@ -334,6 +391,7 @@ function handleTranscriptEvent(
   toolNamesById: Map<string, string>,
 ): void {
   appendTranscriptEvent(session, event, logStream);
+  if (event.type === 'result') session.resultSeenAt ??= Date.now();
 
   // Log first event for diagnostics
   if (session.transcript.length === 1) {
@@ -387,6 +445,8 @@ function setupStdoutHandler(
   };
   proc.stdout?.on('data', (chunk: Buffer) => {
     const str = decoder.write(chunk);
+    session.lastOutputAt = Date.now();
+    session.nextLiveReportMs = LIVE_REPORT_QUIET_MS;
     io.stdoutBytes += chunk.length;
     agentOutput(agentId, chunk.length);
     if (io.stdoutBytes === chunk.length) {
@@ -513,6 +573,11 @@ function setupExitHandlers(
 
     endTranscript(logStream);
 
+    if (session.exitReported) {
+      appLog('core:headless', 'info', 'Process closed after the stale sweep reported it', { meta: { agentId, exitCode, signal } });
+      return;
+    }
+
     // Only clean up and broadcast exit if this session has not been replaced.
     // When spawnHeadless replaces a session, the old process's close handler
     // fires after the new session is already stored — without this guard the
@@ -522,7 +587,7 @@ function setupExitHandlers(
       cleanupHeadlessSession(agentId);
 
       appLog('core:headless', 'info', `Process exited`, {
-        meta: { agentId, exitCode, signal, stdoutBytes: io.stdoutBytes, events: session.transcript.length, stderr: io.stderrChunks.join('\n').slice(0, 500) },
+        meta: { ...runDiagnostics(session), exitCode, signal, stdoutBytes: io.stdoutBytes, stderr: io.stderrChunks.join('\n').slice(0, 500) },
       });
 
       onExit?.(agentId, exitCode);
@@ -541,6 +606,7 @@ function setupExitHandlers(
 
     appLog('core:headless', 'error', `Process error`, { meta: { agentId, error: err.message } });
     endTranscript(logStream);
+    if (session.exitReported) return;
 
     // Only clean up and broadcast exit if this session has not been replaced (CQ-2).
     const currentSession = sessions.get(agentId);
@@ -627,6 +693,7 @@ export const _internal = {
   mapToHookEvent,
   stderrTail,
   closingTranscripts,
+  sessions,
 };
 
 export function kill(agentId: string): void {
@@ -649,6 +716,8 @@ export function kill(agentId: string): void {
   session.killTimer = setTimeout(() => {
     const current = sessions.get(agentId);
     if (current && current.process === proc) {
+      // SIGTERM worked, and a child holding stdout is delaying close. The sweep reports the exit.
+      if (hasExited(proc)) return;
       agentKillStage(agentId, 'sigkill');
       try {
         if (proc.kill('SIGKILL') === false) throw new Error('Kill signal was not delivered');
@@ -658,7 +727,8 @@ export function kill(agentId: string): void {
         });
         return; // Retain the live session for strict stop failure/retry.
       }
-      cleanupHeadlessSession(agentId);
+      // Keep the session until close or the sweep reports the exit. Dropping it
+      // here loses the exit when a child holds stdout, so the view never ends (#2813).
     }
   }, 5000);
 }
@@ -674,7 +744,7 @@ const STOP_ALL_TIMEOUT_MS = 7_000;
 export async function stopAll(timeoutMs = STOP_ALL_TIMEOUT_MS): Promise<void> {
   const closes = [...sessions.entries()].map(([agentId, session]) => {
     const proc = session.process;
-    const closed = proc.exitCode !== null || (proc.signalCode ?? null) !== null
+    const closed = hasExited(proc)
       ? Promise.resolve()
       : new Promise<void>((resolve) => {
         proc.once('close', () => resolve());

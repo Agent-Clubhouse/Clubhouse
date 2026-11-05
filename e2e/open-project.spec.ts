@@ -6,7 +6,7 @@ let electronApp: Awaited<ReturnType<typeof electron.launch>>;
 let window: Page;
 
 test.beforeAll(async () => {
-  ({ electronApp, window } = await launchApp());
+  ({ electronApp, window } = await launchApp({ experimental: { newChrome: false } }));
 });
 
 test.afterAll(async () => {
