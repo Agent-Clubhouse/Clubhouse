@@ -1,8 +1,8 @@
 import { beforeEach, expect, it, vi } from 'vitest';
-const w = vi.hoisted(() => ({ enabled: true, access: 'open', version: 1, removed: false, disabled: [] as string[], control: 'hands-off', connected: true, helper: false, mcp: true, commits: 0, revoke: false }));
+const w = vi.hoisted(() => ({ enabled: true, access: 'open', version: 1, removed: false, disabled: [] as string[], control: 'hands-off', connected: true, helper: false, mcp: true, commits: 0, revoke: false, revokeBinding: false }));
 vi.mock('./agent-provider-control', () => ({
   previewAgentProvider: async (_p: string, _t: string, _v: string, actor: any) => { await actor.assertAuthorized(); return { canSave: true }; },
-  changeAgentProvider: async (_p: string, _t: string, _v: string, _s: string, actor: any) => { if (w.revoke) w.control = 'ask-everything'; await actor.assertAuthorized(); w.commits++; return { status: 'changed' }; },
+  changeAgentProvider: async (_p: string, _t: string, _v: string, _s: string, actor: any) => { if (w.revoke) w.control = 'ask-everything'; if (w.revokeBinding) w.version++; await actor.assertAuthorized(); w.commits++; return { status: 'changed' }; },
 }));
 vi.mock('./agent-registry', () => ({ agentRegistry: { get: () => ({ projectPath: '/dispatcher' }) } }));
 vi.mock('./clubhouse-mcp/dispatcher-gate', () => ({ isDispatcherAgent: () => w.enabled }));
@@ -16,7 +16,7 @@ vi.mock('./project-store', () => ({ list: async () => [{ path: '/project', id: '
 vi.mock('../util/ipc-broadcast', () => ({ broadcastToAllWindows: vi.fn() }));
 import { dispatcherProviderControl } from './dispatcher-provider-control';
 const run = () => dispatcherProviderControl('dispatcher', 'target', true, { provider: 'codex-cli', expectedState: 'token' });
-beforeEach(() => { Object.assign(w, { enabled: true, access: 'open', version: 1, removed: false, disabled: [], control: 'hands-off', connected: true, helper: false, mcp: true, commits: 0, revoke: false }); });
+beforeEach(() => { Object.assign(w, { enabled: true, access: 'open', version: 1, removed: false, disabled: [], control: 'hands-off', connected: true, helper: false, mcp: true, commits: 0, revoke: false, revokeBinding: false }); });
 it.each(['hands-off', 'ask-before-start'])('saves under existing %s control without starting', async (control) => { w.control = control; expect(await run()).toMatchObject({ status: 'changed' }); expect(w.commits).toBe(1); });
 it.each([
   ['enabled', false, 'not_dispatcher'], ['access', 'report_only', 'not_dispatcher'], ['removed', true, 'permission_revoked'],
@@ -29,3 +29,5 @@ it('does not expose arbitrary settings, self or unwired targets', async () => {
   await expect(dispatcherProviderControl('dispatcher', 'dispatcher', false, { provider: 'codex-cli' })).rejects.toMatchObject({ code: 'self_target' });
   await expect(dispatcherProviderControl('dispatcher', 'other', false, { provider: 'codex-cli' })).rejects.toMatchObject({ code: 'permission_revoked' });
 });
+
+it('rejects a changed wire version at commit', async () => { w.revokeBinding = true; await expect(run()).rejects.toMatchObject({ code: 'permission_revoked' }); expect(w.commits).toBe(0); });

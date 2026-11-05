@@ -57,7 +57,7 @@ export async function previewAgentProvider(projectPath: string, agentId: string,
   if (hash(fresh) !== hash(config) || agentTransitionGeneration(agentId) !== generation) return fail('stale_state');
   // Secrets and source text participate only in this opaque precondition; neither is returned/logged.
   const expectedState = hash([actor.key, projectPath, config, generation, providerId, current.id, state,
-    defaults, env, getPermissionMode(projectPath), instructionFingerprint, blocked]);
+    defaults, env, mode, getPermissionMode(projectPath), instructionFingerprint, blocked]);
   return {
     agentId, savedProvider: current.id, activeProvider, provider: providerId, state, expectedState,
     available: availability.available, availabilityMeaning: 'local_cli_only' as const,
