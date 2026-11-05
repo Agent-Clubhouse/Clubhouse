@@ -467,6 +467,20 @@ describe('initAppEventBridge', () => {
       headless: true, orchestrator: 'claude-code', freeAgentMode: true, runCwd: '/repo/wt', runBaseSha: 'abc1234',
     };
 
+    it('records a finished headless run that has no mission, so its view can end (#2813)', async () => {
+      const completed = await exitQuickAgent({ ...headlessAgent, mission: undefined }, null, 0);
+      expect(completed).toMatchObject({ id: 'q1', mission: '', summary: null, exitCode: 0, headless: true });
+    });
+
+    it('records a Copilot-shaped transcript with no summary and the real exit code (#2813)', async () => {
+      const transcript = [
+        { type: 'assistant.message', data: { content: 'all done', toolRequests: [] } },
+        { type: 'session.shutdown', data: {} },
+      ].map((e) => JSON.stringify(e)).join('\n');
+      const completed = await exitQuickAgent({ ...headlessAgent, orchestrator: 'copilot-cli' }, transcript, 0);
+      expect(completed).toMatchObject({ summary: null, exitCode: 0, toolCalls: 0, filesModified: [] });
+    });
+
     it('records files, stats, cwd, base sha and start time for a finished headless run', async () => {
       const lines = [
         { type: 'assistant', message: { id: 'm1', content: [{ type: 'tool_use', id: 't1', name: 'Write', input: { file_path: '/repo/wt/a.ts' } }], usage: { input_tokens: 10, output_tokens: 2 } }, _ts: 2_000 },

@@ -282,7 +282,12 @@ export function RunMonitor({ run, steps, totals, files, cwd, now, actions, stack
             Show {plural(rows.length - MAX_ROWS, 'earlier step')}
           </button>
         )}
-        {rows.length === 0 && live ? (
+        {rows.length === 0 && run.phase === 'run' ? (
+          <div data-testid="run-no-steps">
+            <div className="h-[30px] flex items-center gap-2 text-[13px] text-ctp-subtext1"><StateDot kind="working" />Running {run.name}</div>
+            <p className="pl-4 text-xs leading-normal text-ctp-overlay1">No steps to show yet. Some CLIs don't report steps in a form this view can read.</p>
+          </div>
+        ) : rows.length === 0 && live ? (
           <div data-testid="run-starting">
             <div className="h-[30px] flex items-center gap-2 text-[13px] text-ctp-subtext1"><StateDot kind="working" />Starting {run.name}</div>
             <p className="pl-4 text-xs leading-normal text-ctp-overlay1">The first step shows here as soon as the CLI reports it, usually within a few seconds.</p>

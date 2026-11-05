@@ -20,11 +20,11 @@ interface Props {
 }
 
 /** Map the live agent's status to the monitor's phase. */
-function livePhase(agent: Agent, hasSteps: boolean, finished: boolean): RunPhase {
+function livePhase(agent: Agent, hasOutput: boolean, finished: boolean): RunPhase {
   if (agent.status === 'error') return 'fail';
   // Exited, waiting for the completed record: show the outcome as soon as it's known
   if (agent.status === 'sleeping') return finished ? 'done' : 'run';
-  return hasSteps ? 'run' : 'start';
+  return hasOutput ? 'run' : 'start';
 }
 
 /**
@@ -36,7 +36,7 @@ export function HeadlessAgentView({ agent, stacked }: Props) {
   const spawnedAt = useAgentStore((s) => s.agentSpawnedAt[agent.id]);
   const parentName = useAgentStore((s) => (agent.parentAgentId ? s.agents[agent.parentAgentId]?.name : undefined));
   const active = agent.status !== 'sleeping' && agent.status !== 'error';
-  const { steps, totals, toolTick } = useRunTranscript(agent.id, true);
+  const { steps, totals, eventCount, toolTick } = useRunTranscript(agent.id, true);
   const now = useNow(active);
   const [confirmKill, setConfirmKill] = useState(false);
   const [inset, setInset] = useState<{ kind: 'transcript' } | { kind: 'file'; path: string } | null>(null);
@@ -45,7 +45,7 @@ export function HeadlessAgentView({ agent, stacked }: Props) {
   const paths = useMemo(() => changedPaths(steps, cwd), [steps, cwd]);
   const files = useRunFiles(paths, cwd, agent.runBaseSha, toolTick);
 
-  const phase = livePhase(agent, steps.length > 0, totals.summary !== null);
+  const phase = livePhase(agent, steps.length > 0 || eventCount > 0, totals.summary !== null);
   const run: RunInfo = {
     name: agent.name,
     mission: agent.mission ?? '',
