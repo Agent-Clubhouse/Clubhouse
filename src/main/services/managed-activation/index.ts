@@ -1,4 +1,4 @@
-/** Main-only activation entry points. No agent tools, IPC handlers or renderer API expose this yet. */
+/** Main-only activation entry points. Local-user IPC resolves targets before calling these APIs. */
 import * as path from 'path';
 import * as fs from 'fs';
 import type { DurableAgentConfig } from '../../../shared/types';
@@ -84,22 +84,30 @@ export async function previewManagedActivation(input: PreviewManagedActivationRe
     return preview;
   });
 }
+/** Trusted main-only target validation, prepared inside the agent transition reservation. */
+export interface ManagedMutationGuard {
+  prepare(): Promise<() => void>;
+}
 /** A delivery preview token, not a composition-only fingerprint, authorizes the exact next-start snapshot. */
-export async function adoptManagedActivation(agentId: string, previewToken: string) {
+export async function adoptManagedActivation(agentId: string, previewToken: string, guard?: ManagedMutationGuard) {
   assertUser();
   return withAgentTransition(agentId, async () => {
+    const beforeCommit = await guard?.prepare();
     const preview = pendingPreviews.get(previewToken);
     if (!preview || preview.expires < Date.now() || preview.input.agentId !== agentId) throw new ManagedActivationError('activation_stale');
     const resolved = await context(preview.input.workspace.projectPath, agentId);
     await assertDeliveryCapability(preview.input.capability, resolved.binary);
     // Rebuild the preview with current context; its token detects capability, scope and catalog changes.
-    const result = await getService().adopt({ ...preview.input, workspace: resolved.workspace, previewToken });
+    const result = await getService().adopt({ ...preview.input, workspace: resolved.workspace, previewToken }, beforeCommit);
     pendingPreviews.delete(previewToken); return result;
   });
 }
-export async function unassignManagedActivation(agentId: string, expectedRevision: number) {
+export async function unassignManagedActivation(agentId: string, expectedRevision: number, guard?: ManagedMutationGuard) {
   assertUser();
-  return withAgentTransition(agentId, () => getService().unassign(agentId, expectedRevision));
+  return withAgentTransition(agentId, async () => {
+    const beforeCommit = await guard?.prepare();
+    return getService().unassign(agentId, expectedRevision, beforeCommit);
+  });
 }
 export async function readManagedActivation(agentId: string) { assertUser(); return getService().read(agentId); }
 

@@ -1,3 +1,4 @@
+import { AgentAdoptionSection } from './AgentAdoptionSection';
 import { useEffect, useRef, useState } from 'react';
 import type { BuilderBlock, BuilderCommand, BuilderView } from '../../../shared/agent-builder-types';
 import type { TemplateOperationalDefaults } from '../../../shared/asset-catalog-types';
@@ -5,7 +6,7 @@ import { Button } from '../../components/Button';
 import { inputClass, selectClass, textareaClass, SectionHeading } from './agentSettingsUi';
 import { useReportDirty } from './agentSettingsPages';
 
-const SAVED_ONLY = "Changes are saved here and aren't used by this agent yet.";
+const SAVED_ONLY = "Builder edits are saved only. Review a separate snapshot below for next-start adoption.";
 
 const OPERATIONAL_LABELS: Record<keyof TemplateOperationalDefaults, string> = {
   agentAccess: 'Agent access', orchestrate: 'Start helpers', access: 'Helper access',
@@ -21,8 +22,8 @@ function operationalValue(value: string | number | boolean): string {
   return typeof value === 'string' ? labels[value] ?? value : String(value);
 }
 
-export function AgentBuilderSection({ projectPath, agentId, onDirtyChange }: {
-  projectPath: string; agentId: string; onDirtyChange?: (dirty: boolean) => void;
+export function AgentBuilderSection({ projectPath, projectId, agentId, onDirtyChange }: {
+  projectPath: string; projectId: string; agentId: string; onDirtyChange?: (dirty: boolean) => void;
 }) {
   const [view, setView] = useState<BuilderView | null>(null);
   const [busy, setBusy] = useState(false);
@@ -247,6 +248,7 @@ export function AgentBuilderSection({ projectPath, agentId, onDirtyChange }: {
         </ol>
         <pre data-testid="builder-effective-preview" className="whitespace-pre-wrap break-words min-w-0 text-xs font-mono text-ctp-text border border-surface-0 rounded-md p-3">{preview}</pre>
       </div>
+      <AgentAdoptionSection projectId={projectId} agentId={agentId} compositionRevision={view.revision} hasDrafts={dirty || busy} />
     </>}
   </section>;
 }

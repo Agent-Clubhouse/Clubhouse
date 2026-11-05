@@ -1,4 +1,5 @@
 import { ipcRenderer } from 'electron';
+import type { ActivationTarget, ActivationPreviewRequest, ActivationAdoptRequest, ActivationUnassignRequest, ActivationReceiptView, ActivationDeliveryPreview, ActivationUiResult } from '../shared/managed-activation-ui';
 import { IPC } from '../shared/ipc-channels';
 import type { BuilderCommand, BuilderResult } from '../shared/agent-builder-types';
 import type { ComposedInstructions } from '../main/services/asset-catalog/composer';
@@ -6,6 +7,10 @@ import type { AgentWildcardSettings } from '../shared/types';
 
 export const agentSettings = {
   agentSettings: {
+  activationRead: (target: ActivationTarget): Promise<ActivationUiResult<ActivationReceiptView>> => ipcRenderer.invoke(IPC.AGENT.ACTIVATION_READ, target),
+  activationPreview: (request: ActivationPreviewRequest): Promise<ActivationUiResult<ActivationDeliveryPreview>> => ipcRenderer.invoke(IPC.AGENT.ACTIVATION_PREVIEW, request),
+  activationAdopt: (request: ActivationAdoptRequest): Promise<ActivationUiResult<ActivationReceiptView>> => ipcRenderer.invoke(IPC.AGENT.ACTIVATION_ADOPT, request),
+  activationUnassign: (request: ActivationUnassignRequest): Promise<ActivationUiResult<ActivationReceiptView>> => ipcRenderer.invoke(IPC.AGENT.ACTIVATION_UNASSIGN, request),
   builderRead: (projectPath: string, agentId: string): Promise<BuilderResult> =>
     ipcRenderer.invoke(IPC.AGENT.BUILDER_READ, projectPath, agentId),
   builderCommand: (projectPath: string, agentId: string, revision: number, command: BuilderCommand): Promise<BuilderResult> =>

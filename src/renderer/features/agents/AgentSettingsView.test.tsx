@@ -848,7 +848,7 @@ describe('AgentSettingsView', () => {
       expect(window.clubhouse.agentSettings.builderRead).not.toHaveBeenCalled();
       act(() => useAgentSettingsPages.getState().setPage('builder'));
       await screen.findByLabelText('Notes text');
-      expect(screen.getByText("Changes are saved here and aren't used by this agent yet.")).toBeVisible();
+      expect(screen.getByText("Builder edits are saved only. Review a separate snapshot below for next-start adoption.")).toBeVisible();
       fireEvent.change(screen.getByLabelText('Notes text'), { target: { value: 'Unsaved' } });
       expect(useAgentSettingsPages.getState().dirtyPages).toContain('builder');
       act(() => requestCloseAgentSettings());

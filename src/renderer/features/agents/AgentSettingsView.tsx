@@ -1530,7 +1530,7 @@ export function AgentSettingsView({ agent }: Props) {
     };
     const content: Record<AgentSettingsPage, React.ReactNode> = {
       general,
-      builder: page === 'builder' || builderHasOpened ? <AgentBuilderSection key={agent.id} agentId={agent.id} projectPath={projectPath} onDirtyChange={setBuilderDirty} /> : null,
+      builder: page === 'builder' || builderHasOpened ? <AgentBuilderSection key={agent.id} projectId={agent.projectId} agentId={agent.id} projectPath={projectPath} onDirtyChange={setBuilderDirty} /> : null,
       instructions: instructionsEditor,
       skills: skillsSection,
       definitions: definitionsSection,
