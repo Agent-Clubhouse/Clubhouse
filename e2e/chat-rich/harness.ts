@@ -189,7 +189,7 @@ export async function openRichChat(opts: RichChatOptions): Promise<RichChat> {
   let electronApp: ElectronApp | undefined;
   try {
     const app = await launchApp({
-      experimental: { chat: true },
+      experimental: { newChrome: false, chat: true },
       userDataFiles: USER_DATA_FILES,
       env: { ...fakes.env, CLUBHOUSE_TEST_HELPER_SEAM: '1', [GITHUB_REFS_ENV]: githubRefsDir, ...(copilotHome && { COPILOT_HOME: copilotHome }) },
     });

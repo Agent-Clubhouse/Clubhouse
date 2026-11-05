@@ -87,7 +87,7 @@ test.beforeAll(async () => {
     { id: 'durable_r3', name: 'gamma-agent', color: 'red' },
   ]);
 
-  ({ electronApp, window } = await launchApp());
+  ({ electronApp, window } = await launchApp({ experimental: { newChrome: false } }));
   await addProject(FIXTURE_A);
   await window.waitForTimeout(1_000);
 });
