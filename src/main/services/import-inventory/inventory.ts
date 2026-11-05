@@ -53,6 +53,7 @@ import type {
   InventoryProjectReport,
   InventoryScope,
   InventorySource,
+  InventorySourceCaveat,
 } from '../../../shared/import-inventory-types';
 import {
   NON_DEFINITION_DIRS,
@@ -66,6 +67,8 @@ import { parseJsonMcpServers, parseTomlMcpServers, readMcpEntry } from './mcp-de
 
 const LOG_NS = 'core:import-inventory';
 const CLUBHOUSE_MODE_SETTINGS_FILE = 'clubhouse-mode-settings.json';
+/** The other settings files with `projectOverrides` keyed by project path. Read only to report orphans. */
+const OTHER_OVERRIDE_SETTINGS_FILES: readonly string[] = ['mcp-settings.json', 'session-settings.json', 'free-agent-settings.json', 'headless-settings.json'];
 
 /** Every provider's instructions file; import-inventory.test.ts checks this against the providers. */
 export const INSTRUCTION_FILES: readonly string[] = ['CLAUDE.md', 'AGENTS.md', '.github/copilot-instructions.md'];
@@ -254,6 +257,7 @@ interface RawItem {
   builtinId?: string;
   mcp?: InventoryMcpDefinition;
   persona?: InventoryPersonaMetadata;
+  caveats?: InventorySourceCaveat[];
 }
 
 interface Context {
@@ -687,7 +691,12 @@ async function countMissions(ctx: Context, projectPath: string): Promise<number>
   }
 }
 
-/** Instructions in a worktree Clubhouse Mode doesn't write. Possibly hand-edited, so offered by agent, with the path. */
+/**
+ * Instructions in a worktree Clubhouse Mode doesn't write now, offered as found,
+ * by agent, with the path. Nothing can say who wrote them: a persona applied
+ * outside Clubhouse Mode writes expanded text here, and turning the mode off
+ * leaves its output behind. The caveats on the source say so.
+ */
 async function scanAgentInstructions(ctx: Context, agent: DurableAgentConfig, worktree: string): Promise<RawItem[]> {
   const items: RawItem[] = [];
   for (const rel of INSTRUCTION_FILES) {
@@ -695,9 +704,32 @@ async function scanAgentInstructions(ctx: Context, agent: DurableAgentConfig, wo
     if (outcome === 'excluded' || outcome === 'missing') continue;
     const item = singleFileItem('agent-instructions', `${agent.name}/${rel}`, 'project', outcome.file);
     item.agent = { id: agent.id, name: agent.name };
+    item.caveats = ['wildcards-may-be-expanded', 'git-state-is-a-hint'];
     items.push(item);
   }
   return items;
+}
+
+/**
+ * MCP config files in a worktree holding something besides the bridge, counted
+ * and not offered. A file that won't parse counts, since it can't be shown to be
+ * only Clubhouse's. Its entries touch no project totals.
+ */
+async function countWorktreeMcpFiles(ctx: Context, worktree: string): Promise<number> {
+  let count = 0;
+  for (const { file, format } of PROJECT_MCP_FILES) {
+    const before = { ...ctx.excluded };
+    const outcome = await readDefinitionFile(ctx, worktree, path.join(worktree, ...file.split('/')), { maxBytes: ctx.limits.maxConfigFileBytes, allowAnyExtension: true, skipContentCheck: true });
+    if (outcome === 'missing') continue;
+    if (outcome === 'excluded') {
+      // A file over the limit or unreadable can't be shown to be only Clubhouse's either.
+      if (before['over-limit'] === ctx.excluded['over-limit']) count++;
+      continue;
+    }
+    const servers = format === 'toml' ? parseTomlMcpServers(outcome.file.text) : parseJsonMcpServers(outcome.file.text);
+    if (!servers || Object.values(servers).some((entry) => readMcpEntry(entry).kind !== 'bridge')) count++;
+  }
+  return count;
 }
 
 async function scanProviderFolders(ctx: Context, root: string, scope: InventoryScope, configDirs: readonly string[]): Promise<RawItem[]> {
@@ -721,12 +753,7 @@ async function readStoredMode(): Promise<StoredMode> {
   const stored = await peekStoredSettings(CLUBHOUSE_MODE_SETTINGS_FILE);
   if (stored === 'missing') return { state: 'ok', enabled: false, overrides: {} };
   if (stored === 'unreadable') return { state: 'unreadable', enabled: false, overrides: {} };
-  const overrides = stored.projectOverrides;
-  return {
-    state: 'ok',
-    enabled: stored.enabled === true,
-    overrides: overrides && typeof overrides === 'object' && !Array.isArray(overrides) ? overrides as Record<string, unknown> : {},
-  };
+  return { state: 'ok', enabled: stored.enabled === true, overrides: overridesIn(stored) };
 }
 
 /** Mirrors isClubhouseModeEnabled, from what's on disk and without its store's cache. */
@@ -780,6 +807,7 @@ async function scanProject(
       status: 'no-worktree',
       persona: agent.persona ?? defaults.persona,
       mission: agent.mission ?? defaults.mission,
+      mcpFilesNotInventoried: 0,
     };
     agents.push(report);
     if (!agent.worktreePath) continue;
@@ -801,6 +829,7 @@ async function scanProject(
     }
     report.status = 'scanned';
     items.push(...await scanAgentInstructions(ctx, agent, agent.worktreePath));
+    report.mcpFilesNotInventoried = await countWorktreeMcpFiles(ctx, agent.worktreePath);
   }
 
   if (includeProviderConfig) {
@@ -885,6 +914,7 @@ async function toSources(items: readonly RawItem[], signal: AbortSignal, project
     };
     if (item.pointer) source.pointer = item.pointer;
     if (item.agent) source.agent = item.agent;
+    if (item.caveats) source.caveats = item.caveats;
     sources.set(item, source);
   }
   // File text has done its work; a large install shouldn't hold it for the rest of the scan.
@@ -948,17 +978,27 @@ function mergeBuiltinMatches(sourced: readonly Sourced[]): InventoryBuiltinMatch
   return [...merged.values()].sort((a, b) => a.kind.localeCompare(b.kind) || a.name.localeCompare(b.name));
 }
 
-function orphanedConfig(mode: StoredMode, registered: readonly { path: string }[], missingPaths: ReadonlySet<string>): InventoryOrphanedConfig[] {
+function overridesIn(stored: Awaited<ReturnType<typeof peekStoredSettings>>): Record<string, unknown> {
+  const overrides = typeof stored === 'object' ? stored.projectOverrides : undefined;
+  return overrides && typeof overrides === 'object' && !Array.isArray(overrides) ? overrides as Record<string, unknown> : {};
+}
+
+function orphanedConfig(
+  settingsFile: string,
+  overrides: Record<string, unknown>,
+  registered: readonly { path: string }[],
+  missingPaths: ReadonlySet<string>,
+): InventoryOrphanedConfig[] {
   const registeredExact = new Set(registered.map((p) => p.path));
   const registeredKeys = new Set(registered.map((p) => projectPathKey(p.path)));
   const orphaned: InventoryOrphanedConfig[] = [];
-  for (const stored of Object.keys(mode.overrides)) {
+  for (const stored of Object.keys(overrides)) {
     let reason: InventoryOrphanedConfig['reason'] | null = null;
     if (registeredExact.has(stored)) reason = missingPaths.has(stored) ? 'project-missing' : null;
     else reason = registeredKeys.has(projectPathKey(stored)) ? 'path-variant' : 'unregistered';
-    if (reason) orphaned.push({ settingsFile: CLUBHOUSE_MODE_SETTINGS_FILE, path: stored, reason });
+    if (reason) orphaned.push({ settingsFile, path: stored, reason });
   }
-  return orphaned.sort((a, b) => a.path.localeCompare(b.path));
+  return orphaned;
 }
 
 /**
@@ -1105,7 +1145,11 @@ export async function scanImportInventory(options: InventoryOptions = {}): Promi
   }
 
   // Only a project known missing makes a stored override orphaned: one not looked at this run may be fine.
-  const orphaned = orphanedConfig(storedMode, registered, missingPaths);
+  const orphaned = orphanedConfig(CLUBHOUSE_MODE_SETTINGS_FILE, storedMode.overrides, registered, missingPaths);
+  for (const settingsFile of OTHER_OVERRIDE_SETTINGS_FILES) {
+    orphaned.push(...orphanedConfig(settingsFile, overridesIn(await peekStoredSettings(settingsFile)), registered, missingPaths));
+  }
+  orphaned.sort((a, b) => a.path.localeCompare(b.path) || a.settingsFile.localeCompare(b.settingsFile));
 
   const globalSourced: Sourced[] = [];
   let globalExcluded = emptyExclusions();

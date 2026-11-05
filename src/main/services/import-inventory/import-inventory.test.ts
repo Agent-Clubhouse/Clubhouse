@@ -407,7 +407,28 @@ describe('agent instructions and worktrees', () => {
     expect(instructions.sources[0].path).toBe(path.join(worktree, 'CLAUDE.md'));
     expect(instructions.sources[0].root).toBe(worktree);
     expect(instructions.sources[0].files[0].gitState).toBe('untracked');
+    expect(instructions.sources[0].caveats).toEqual(['wildcards-may-be-expanded', 'git-state-is-a-hint']);
     expect(result.projects[0].agents[0]).toMatchObject({ status: 'scanned', managed: false });
+  });
+
+  it('counts an unmanaged worktree\'s MCP files, without offering them', async () => {
+    const project = makeProject('alpha');
+    const worktree = addWorktree(project, 'lead');
+    const bridgeOnly = addWorktree(project, 'quiet');
+    const bridge = { command: 'node', args: [path.join('app', 'clubhouse-mcp-bridge.js')] };
+    write(worktree, '.mcp.json', JSON.stringify({ mcpServers: { clubhouse: bridge, mine: { command: 'x', env: { K: 'WORKTREE-ENV-VALUE' } } } }));
+    write(worktree, '.github/mcp.json', '{ broken');
+    write(worktree, '.codex/config.toml', `[mcp_servers.clubhouse]\ncommand = "node"\nargs = [${JSON.stringify(bridge.args[0])}]\n`);
+    write(bridgeOnly, '.mcp.json', JSON.stringify({ mcpServers: { clubhouse: bridge } }));
+    setAgents(project, [{ id: 'a1', name: 'lead', worktreePath: worktree }, { id: 'a2', name: 'quiet', worktreePath: bridgeOnly }]);
+    registerProjects([project]);
+
+    const result = await scanImportInventory();
+
+    expect(result.entries).toEqual([]);
+    expect(result.projects[0].agents.map((a) => a.mcpFilesNotInventoried)).toEqual([2, 0]);
+    expect(result.projects[0].bridgeEntriesFiltered).toBe(0);
+    expect(JSON.stringify(result)).not.toContain('WORKTREE-ENV-VALUE');
   });
 
   it('never reads a managed worktree', async () => {
@@ -569,6 +590,21 @@ describe('orphaned config', () => {
 
     expect(result.orphaned).toEqual([{ settingsFile: 'clubhouse-mode-settings.json', path: variant, reason: 'path-variant' }]);
     expect(result.projects[0].clubhouseMode).toEqual({ enabled: false, source: 'app' });
+  });
+
+  it('reports stale paths in the other settings files with project overrides', async () => {
+    const project = makeProject('alpha');
+    const stale = path.join(root, 'stale');
+    for (const file of ['mcp-settings.json', 'session-settings.json', 'free-agent-settings.json', 'headless-settings.json']) {
+      write(dirs.userData, file, JSON.stringify({ projectOverrides: { [stale]: true, [project]: true } }));
+    }
+    write(dirs.userData, 'sound-settings.json', JSON.stringify({ projectOverrides: { [stale]: true } }));
+    registerProjects([project]);
+
+    const result = await scanImportInventory();
+
+    expect(result.orphaned).toEqual(['free-agent-settings.json', 'headless-settings.json', 'mcp-settings.json', 'session-settings.json']
+      .map((settingsFile) => ({ settingsFile, path: stale, reason: 'unregistered' })));
   });
 
   it('judges orphans against every registered project, not the selected scope', async () => {

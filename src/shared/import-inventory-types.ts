@@ -41,6 +41,13 @@ export interface InventoryFile {
   sizeBytes: number;
 }
 
+/**
+ * What a source can't promise. On instructions from a worktree Clubhouse Mode
+ * doesn't write: they may hold text Clubhouse wrote, wildcards already expanded,
+ * and git state hints at who wrote them without saying. Never read as hand-edited.
+ */
+export type InventorySourceCaveat = 'wildcards-may-be-expanded' | 'git-state-is-a-hint';
+
 /** One place an entry was found. */
 export interface InventorySource {
   /** Null for global sources, which belong to no project. */
@@ -54,6 +61,7 @@ export interface InventorySource {
   pointer?: string;
   /** Set for `agent-instructions`: whose worktree this came from. */
   agent?: { id: string; name: string };
+  caveats?: InventorySourceCaveat[];
   files: InventoryFile[];
   /** Files in this source left out of `files` and of the hash. Nonzero means the entry is partial. */
   excludedFileCount: number;
@@ -128,6 +136,8 @@ export interface InventoryAgentReport {
   managed: boolean | 'unknown';
   persona?: string;
   mission?: string;
+  /** MCP config files in this worktree holding more than the bridge. Counted, not offered. */
+  mcpFilesNotInventoried: number;
 }
 
 /** What Clubhouse Mode produces for a project, from its source folders. Names and counts only. */
@@ -181,10 +191,10 @@ export type InventoryOrphanReason =
   | 'unregistered'
   /** The project is registered but its folder is gone. */
   | 'project-missing'
-  /** Names a registered project in a different spelling, which isClubhouseModeEnabled won't match. */
+  /** Names a registered project in a different spelling, which the exact-string lookups won't match. */
   | 'path-variant';
 
-/** Stored config for a path that isn't a usable project. Reported only: the path isn't touched. */
+/** A stored `projectOverrides` key for a path that isn't a usable project. Reported only: the path isn't touched. */
 export interface InventoryOrphanedConfig {
   settingsFile: string;
   path: string;
