@@ -61,6 +61,12 @@ describe('FirstRun', () => {
     expect(rows[1].querySelector('.opacity-45')).not.toBeNull();
   });
 
+  it('offers Annex without asking whether this is a Preview build (#2811)', () => {
+    window.clubhouse.app.isPreviewEligible = vi.fn().mockResolvedValue(false);
+    render(<FirstRun />);
+    expect(screen.getByTestId('first-run-annex')).toBeTruthy();
+  });
+
   it('adds a dropped folder', () => {
     vi.spyOn(window.clubhouse, 'getPathForFile').mockReturnValue('/Users/me/src/site');
     render(<FirstRun />);

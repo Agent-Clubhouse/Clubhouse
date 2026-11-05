@@ -24,7 +24,9 @@ export const ORCHESTRATOR = 'claude-code';
 export const LAST_SESSION = '11111111-2222-4333-8444-555555555555';
 export const CHROME_STORAGE_KEY = 'clubhouse_chrome_v2';
 export const SAVED_SIDEBAR_WIDTH = 300;
-export const PREVIEW_PAGES = ['Experimental', 'Annex', 'Annex control', 'Dispatcher', 'Goobers'];
+export const PREVIEW_PAGES = ['Experimental', 'Dispatcher', 'Goobers'];
+/** Settings pages every build lists, Preview or not. */
+export const ANNEX_PAGES = ['Annex', 'Annex control'];
 
 /** Preview-gated files a stable launch must not change, byte for byte. */
 export const UNTOUCHED_FILES = [

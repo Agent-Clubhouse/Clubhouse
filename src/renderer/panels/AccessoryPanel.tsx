@@ -23,7 +23,6 @@ export interface SettingsCategory { label: string; page: SettingsSubPage }
 export function useSettingsCategories(): { app: SettingsCategory[]; project: SettingsCategory[] } {
   const previewChannel = useUpdateStore((s) => s.settings.previewChannel);
   const [showExperimental, setShowExperimental] = useState(false);
-  const [showAnnex, setShowAnnex] = useState(false);
   const [showGoobers, setShowGoobers] = useState(false);
   // Follows dispatcher:changed, so the page shows and hides as the flag flips (#2555).
   const showDispatcher = useDispatcherFlagOn();
@@ -32,8 +31,6 @@ export function useSettingsCategories(): { app: SettingsCategory[]; project: Set
   useEffect(() => {
     window.clubhouse.app.isPreviewEligible().then((isPreview) => {
       setShowExperimental(isPreview);
-      // Annex is always available on preview-eligible builds
-      setShowAnnex(isPreview);
     });
     window.clubhouse.app.getExperimentalSettings().then((s) => {
       setShowGoobers(!!s.goobers);
@@ -51,7 +48,8 @@ export function useSettingsCategories(): { app: SettingsCategory[]; project: Set
     { label: 'Keyboard shortcuts', page: 'keyboard-shortcuts' },
     { label: 'Notifications & alerts', page: 'notifications' },
     { label: 'Plugins', page: 'plugins' },
-    ...(showAnnex ? [{ label: 'Annex', page: 'annex' as SettingsSubPage }, { label: 'Annex control', page: 'annex-control' as SettingsSubPage }] : []),
+    { label: 'Annex', page: 'annex' },
+    { label: 'Annex control', page: 'annex-control' },
     { label: 'Clubhouse MCP', page: 'mcp' },
     ...(showGoobers ? [{ label: 'Goobers', page: 'goobers' as SettingsSubPage }] : []),
     { label: 'Updates', page: 'updates' },
