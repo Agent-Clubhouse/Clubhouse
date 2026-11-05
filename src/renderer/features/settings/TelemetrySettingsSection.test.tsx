@@ -59,6 +59,33 @@ describe('TelemetrySettingsSection', () => {
     expect(flags).not.toHaveBeenCalled();
   });
 
+  it('says export is paused and offers Resume, which takes the new status', async () => {
+    const api = mockApi(makeStatus({ exportPaused: true }));
+    const resume = vi.spyOn(api, 'resume').mockResolvedValue({ ok: true, status: makeStatus({ exportPaused: false }) });
+    render(<TelemetrySettingsSection />);
+    const notice = await screen.findByTestId('telemetry-paused');
+    expect(notice).toHaveTextContent('Clubhouse couldn\'t read a settings file, so telemetry export is paused. Your settings are kept.');
+    fireEvent.click(screen.getByRole('button', { name: 'Resume' }));
+    await waitFor(() => expect(resume).toHaveBeenCalled());
+    await waitFor(() => expect(screen.queryByTestId('telemetry-paused')).toBeNull());
+  });
+
+  it('shows why Resume failed, and stays paused', async () => {
+    const api = mockApi(makeStatus({ exportPaused: true }));
+    vi.spyOn(api, 'resume').mockResolvedValue({ ok: false, reason: 'opt_in_not_saved', message: 'Couldn\'t save this choice, so telemetry stays paused. Try again.', status: makeStatus({ exportPaused: true }) });
+    render(<TelemetrySettingsSection />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Resume' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent('stays paused');
+    expect(screen.getByTestId('telemetry-paused')).toBeInTheDocument();
+  });
+
+  it('shows no notice while export isn\'t paused', async () => {
+    mockApi(makeStatus({ exportPaused: false }));
+    render(<TelemetrySettingsSection />);
+    await screen.findByTestId('telemetry-settings');
+    expect(screen.queryByTestId('telemetry-paused')).toBeNull();
+  });
+
   it('leads with the App Insights panel and keeps OTLP in its own panel', async () => {
     mockApi(makeStatus());
     render(<TelemetrySettingsSection />);

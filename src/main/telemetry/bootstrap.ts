@@ -13,7 +13,6 @@ import { telemetryInstanceId as instanceId } from './instance';
 import { app } from 'electron';
 import { appLog } from '../services/log-service';
 import { ATTR } from '../../shared/telemetry/attributes';
-import { TELEMETRY_CONSENT_VERSION } from '../../shared/telemetry/settings-types';
 import {
   abortPending,
   beginPending,
@@ -35,9 +34,11 @@ import {
   enabledDestinations,
   getTelemetrySettings,
   applyExportGraduation,
+  exportPermitted,
   hasDestinationConfigured,
   migrateLegacySecrets,
   normalizeSampleRate,
+  preserveSuspendedFlagFile,
   updateTelemetrySettings,
   withDestination,
   type TelemetrySettings,
@@ -73,7 +74,7 @@ export function isTelemetryConfigured(settings: TelemetrySettings = getTelemetry
   return (
     // Consent is recorded before anything is exported. Phase 1 files predate
     // it (consentVersion 0), so those users are asked once in Settings.
-    settings.consentVersion >= TELEMETRY_CONSENT_VERSION &&
+    exportPermitted(settings) &&
     hasDestinationConfigured(settings)
   );
 }
@@ -342,7 +343,7 @@ export async function migrateLegacySecretsOnReady(): Promise<void> {
 function finishExportGraduation(graduation: NonNullable<ReturnType<typeof applyExportGraduation>>): void {
   appLog(LOG_NS, 'info', 'Telemetry export settings migrated for this install', { meta: { outcome: graduation.outcome } });
   // As turning a destination off does: a queue from before must not be sent if it's turned on again.
-  if (graduation.outcome !== 'kept') void deleteOfflineData().catch(() => {});
+  if (graduation.outcome === 'off' || graduation.outcome === 'opted_out') void deleteOfflineData().catch(() => {});
   graduation.saved.catch((err) => {
     // telemetry-exempt: logged; this run uses the migrated settings and the next launch saves again.
     appLog(LOG_NS, 'warn', 'Could not save the telemetry export settings migration', {
@@ -355,6 +356,14 @@ export function initTelemetry(): void {
   // Before anything reads the settings to decide: local recording's level
   // migration below included, and a Feedback sync can't come sooner.
   const graduation = applyExportGraduation();
+  try {
+    preserveSuspendedFlagFile();
+  } catch (err) {
+    // telemetry-exempt: logged; this run stays paused and the next launch tries again. The code only: never the file's contents.
+    appLog(LOG_NS, 'warn', 'Could not keep a copy of the unreadable settings file', {
+      meta: { code: (err as NodeJS.ErrnoException)?.code ?? 'unknown' },
+    });
+  }
   // Local recording (spec §6.12) has its own switch and starts synchronously,
   // so startup signals are recorded even with no export destination.
   void syncLocalRecording();

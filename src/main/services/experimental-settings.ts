@@ -1,4 +1,4 @@
-import { createSettingsStore } from './settings-store';
+import { backupUnreadableSettings, createSettingsStore, peekStoredSettingsSync } from './settings-store';
 import { isPreviewEligible } from './preview-eligible';
 import { PREVIEW_ONLY_EXPERIMENTAL_FLAGS, STRUCTURED_MODE_REMOVED_NOTICE_KEY, type ExperimentalSettings } from '../../shared/types';
 
@@ -16,7 +16,8 @@ export function migrateExperimentalSettings(raw: Record<string, unknown>): Exper
   return settings as ExperimentalSettings;
 }
 
-const store = createSettingsStore<ExperimentalSettings>('experimental-settings.json', {}, migrateExperimentalSettings, { audit: { key: 'experimental' } });
+const FILE = 'experimental-settings.json';
+const store = createSettingsStore<ExperimentalSettings>(FILE, {}, migrateExperimentalSettings, { audit: { key: 'experimental' } });
 
 function pickFlags(settings: ExperimentalSettings, keep: (key: string) => boolean): ExperimentalSettings {
   return Object.fromEntries(Object.entries(settings).filter(([key]) => keep(key)));
@@ -34,13 +35,37 @@ export function getSettings(): ExperimentalSettings {
 }
 
 /**
+ * Saved flags only main sets. The renderer gets them with the rest, and whatever
+ * it sends back for them, including nothing, leaves the saved value alone.
+ */
+const MAIN_OWNED_FLAGS: readonly string[] = ['telemetry'];
+
+/** What one flag holds on disk right now, not what this run has in memory. A value of the wrong type is unreadable. */
+export function peekStoredFlag(key: string): 'true' | 'false' | 'missing' | 'unreadable' {
+  const stored = peekStoredSettingsSync(FILE);
+  if (stored === 'missing' || stored === 'unreadable') return stored;
+  if (!(key in stored)) return 'missing';
+  return stored[key] === true ? 'true' : stored[key] === false ? 'false' : 'unreadable';
+}
+
+/**
+ * Keep a copy of a file that can't be read, because the next save replaces it.
+ * Throws if it can't, and the save must then not happen.
+ */
+export function preserveUnreadableFile(): void {
+  if (peekStoredSettingsSync(FILE) === 'unreadable') backupUnreadableSettings(FILE);
+}
+
+/**
  * Set one saved flag and leave the rest as they are, whatever this build honours.
  * Rejects if it can't be saved, with this run back on the value it had: the store
  * takes a new value into memory before writing it.
  */
 export async function setStoredFlag(key: string, value: boolean): Promise<void> {
   const saved = store.get();
-  if (saved[key] === value) return;
+  const unreadable = peekStoredSettingsSync(FILE) === 'unreadable';
+  if (saved[key] === value && !unreadable) return;
+  if (unreadable) preserveUnreadableFile();
   try {
     await store.update((current) => ({ ...current, [key]: value }));
   } catch (err) {
@@ -55,12 +80,15 @@ export async function setStoredFlag(key: string, value: boolean): Promise<void> 
 /**
  * Save the flags. Callers write back what getSettings gave them, so in a build
  * that isn't preview-eligible the saved preview-only flags are kept as they are,
- * and turning Preview on later finds them again.
+ * and turning Preview on later finds them again. Main-owned flags are kept as
+ * saved in every build.
  */
 export async function saveSettings(settings: ExperimentalSettings): Promise<void> {
-  if (isPreviewEligible()) return store.save(settings);
+  preserveUnreadableFile();
+  const eligible = isPreviewEligible();
+  const keepSaved = (key: string): boolean => MAIN_OWNED_FLAGS.includes(key) || (!eligible && isPreviewOnly(key));
   await store.update((saved) => ({
-    ...pickFlags(settings, (key) => !isPreviewOnly(key)),
-    ...pickFlags(saved, isPreviewOnly),
+    ...pickFlags(settings, (key) => !keepSaved(key)),
+    ...pickFlags(saved, keepSaved),
   }));
 }

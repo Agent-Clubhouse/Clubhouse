@@ -7,7 +7,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { Toggle } from '../../components/Toggle';
 import { Button } from '../../components/Button';
 import { SettingsSection, SettingsField, settingsHelp } from './SettingsLayout';
-import { DestinationControls } from './TelemetrySettingsSection';
+import { DestinationControls, TelemetryPausedNotice } from './TelemetrySettingsSection';
 import { FeedbackTelemetryPrompt, type TelemetryShareAsk } from './FeedbackTelemetryPrompt';
 import type { TelemetryDestinationStatus, TelemetryEnableResult } from '../../../shared/telemetry/settings-types';
 
@@ -30,6 +30,7 @@ export function shareTelemetry(ask: TelemetryShareAsk): Promise<TelemetryEnableR
  */
 export function DeveloperTelemetrySection({ refreshKey }: { refreshKey?: unknown }) {
   const [dest, setDest] = useState<TelemetryDestinationStatus | null>(null);
+  const [paused, setPaused] = useState(false);
   const [ask, setAsk] = useState<TelemetryShareAsk | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [test, setTest] = useState<string | null>(null);
@@ -38,6 +39,7 @@ export function DeveloperTelemetrySection({ refreshKey }: { refreshKey?: unknown
     try {
       const status = await api().getStatus();
       setDest(status?.destinations.find((d) => d.id === 'framebriar') ?? null);
+      setPaused(status?.exportPaused === true);
     } catch {
       // telemetry-exempt: the section stays hidden when telemetry can't be read.
       setDest(null);
@@ -48,6 +50,7 @@ export function DeveloperTelemetrySection({ refreshKey }: { refreshKey?: unknown
   const apply = (result: TelemetryEnableResult) => {
     const next = result.status?.destinations.find((d) => d.id === 'framebriar');
     if (next) setDest(next);
+    if (result.status) setPaused(result.status.exportPaused === true);
     if (!result.ok && !('needs' in result)) setError('message' in result ? result.message : 'Something went wrong.');
   };
 
@@ -70,6 +73,14 @@ export function DeveloperTelemetrySection({ refreshKey }: { refreshKey?: unknown
   return (
     <div data-testid="developer-telemetry">
       <SettingsSection title="Telemetry for the developer">
+        {paused && (
+          <TelemetryPausedNotice
+            onResume={() => {
+              setError(null);
+              void api().resume().then(apply);
+            }}
+          />
+        )}
         <p className={settingsHelp}>
           Send user activity and errors to the Clubhouse developer so your feedback comes with context, with the same redaction as any telemetry. It works while Feedback is connected and stays off until you turn it on.
         </p>

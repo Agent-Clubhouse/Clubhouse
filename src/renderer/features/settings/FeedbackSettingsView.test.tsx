@@ -597,6 +597,20 @@ describe('FeedbackSettingsView telemetry prompt', () => {
     expect(setEnabled).toHaveBeenLastCalledWith('framebriar', true, { host: HOST });
   });
 
+  it('says export is paused and offers Resume on the Feedback page too', async () => {
+    const status = { consentAccepted: true, exportPaused: true, destinations: [dest('framebriar')] };
+    vi.mocked(window.clubhouse.telemetrySettings.getStatus).mockResolvedValue(status as never);
+    const resume = vi.fn(async () => ({ ok: true, status: { ...status, exportPaused: false } }));
+    window.clubhouse.telemetrySettings.resume = resume as never;
+    setFeedback(true);
+    render(<FeedbackSettingsView />);
+    await act(async () => {});
+    expect(screen.getByTestId('telemetry-paused')).toHaveTextContent('Your settings are kept.');
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Resume' })); });
+    expect(resume).toHaveBeenCalled();
+    expect(screen.queryByTestId('telemetry-paused')).toBeNull();
+  });
+
   it('hides the developer switch when there is no developer destination to show (#2097)', async () => {
     vi.mocked(window.clubhouse.telemetrySettings.getStatus).mockResolvedValue({ destinations: [] } as never);
     setFeedback(true);

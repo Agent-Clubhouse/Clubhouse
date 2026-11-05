@@ -28,6 +28,7 @@ import { resetAllSettingsStoresForTests } from '../services/settings-store';
 import { initTelemetry, isTelemetryConfigured, whenStarted } from './bootstrap';
 import * as control from './control';
 import { setFramebriarTelemetrySource } from './destinations/framebriar-source';
+import { getLocalSink } from './facade';
 import { _resetLocalRecordingForTests } from './local-control';
 import { getOfflineDir } from './offline';
 import { getTelemetrySettings, migrateTelemetrySettings, type TelemetrySettings } from './settings';
@@ -613,13 +614,6 @@ describe('a saved false always wins', () => {
       expect(exportAttempts()).toBe(1);
     });
 
-    it('a corrupt flag file reads as missing once migrated: an active setup stays on', async () => {
-      seedGate('corrupt', true);
-      writeJson(SETTINGS_FILE, graduated(otlp(true), framebriar()));
-      await launch();
-      expect(entryOf('otlp').enabled).toBe(true);
-    });
-
     it('the older build never changed the flag (Preview off there, say): the flag is still true, so it resumes', async () => {
       seedGate(true, false);
       writeJson(SETTINGS_FILE, graduated(otlp(true), framebriar()));
@@ -627,34 +621,370 @@ describe('a saved false always wins', () => {
       expect(entryOf('otlp').enabled).toBe(true);
     });
   });
+});
 
-  describe('a stale save over a newer true', () => {
-    async function optedIn(): Promise<void> {
+describe('an unreadable flag file', () => {
+  const FLAG_FILE = 'experimental-settings.json';
+  // Short, so a JSON parser's message would quote all of it.
+  const RAW = 'RAW-FILE-CONTENT';
+  const graduated = (...destinations: object[]) => ({ ...file(1, ...destinations), exportGraduation: 1 });
+  const active = () => graduated(otlp(true), framebriar({ confirmedHost: FB_HOST }));
+  const corruptFlags = () => fs.writeFileSync(userDataPath(FLAG_FILE), RAW);
+  const entryOf = (kind: string) => getTelemetrySettings().destinations.find((d) => d.kind === kind)!;
+  const prefs = (settings: TelemetrySettings) => JSON.stringify(settings.destinations);
+  const recoveryCopies = () => fs.readdirSync(userData.dir).filter((name) => name.startsWith(`${FLAG_FILE}.unreadable`)).sort();
+  const connect = () => setFramebriarTelemetrySource(() => ({
+    host: FB_HOST,
+    sessionId: 's-1',
+    options: (signal) => ({ url: `https://${FB_HOST}/v1/${signal}`, headers: async () => ({}) }),
+  }));
+
+  /** An active setup, paused by this launch and saved. */
+  async function paused(seed: () => void = corruptFlags): Promise<void> {
+    seedGate(undefined, true);
+    seed();
+    writeJson(SETTINGS_FILE, active());
+    await launch();
+    await vi.waitFor(() => expect(readSaved().exportSuspended).toBe('flag_unreadable'));
+  }
+
+  describe('what counts as unreadable', () => {
+    it.each<[string, () => void, string]>([
+      ['no file is missing', () => undefined, 'missing'],
+      ['no key is missing', () => writeJson(FLAG_FILE, { chat: true }), 'missing'],
+      ['true', () => writeJson(FLAG_FILE, { telemetry: true }), 'true'],
+      ['false', () => writeJson(FLAG_FILE, { telemetry: false }), 'false'],
+      ['bad JSON', corruptFlags, 'unreadable'],
+      ['an empty file', () => fs.writeFileSync(userDataPath(FLAG_FILE), ''), 'unreadable'],
+      ['an array', () => writeJson(FLAG_FILE, [{ telemetry: true }]), 'unreadable'],
+      ['null', () => writeJson(FLAG_FILE, null), 'unreadable'],
+      ['a number', () => writeJson(FLAG_FILE, 1), 'unreadable'],
+      ['a flag of the wrong type', () => writeJson(FLAG_FILE, { telemetry: 'true' }), 'unreadable'],
+      ['a read error', () => fs.mkdirSync(userDataPath(FLAG_FILE)), 'unreadable'],
+    ])('%s', (_name, seed, expected) => {
+      seed();
+      expect(experimentalSettings.peekStoredFlag('telemetry')).toBe(expected);
+    });
+  });
+
+  describe('with an active setup', () => {
+    it('pauses export and changes nothing else, with local recording still on', async () => {
+      seedGate(undefined, true);
+      corruptFlags();
+      writeJson(SETTINGS_FILE, active());
+      const before = migrateTelemetrySettings({ ...active() });
+      await fsp.mkdir(getOfflineDir(), { recursive: true });
+      await fsp.writeFile(path.join(getOfflineDir(), 'queued.ai.json'), '[1]');
       await launch();
-      await control.saveOtlpConfig({ endpoint: `http://${LOOPBACK_HOST}`, headers: [] });
-      await control.setEnabled('otlp', true, { consent: true, host: LOOPBACK_HOST });
-      await vi.waitFor(() => expect(savedFlags().telemetry).toBe(true));
-      await vi.waitFor(() => expect(readSaved().destinations.find((d) => d.kind === 'otlp')?.enabled).toBe(true));
-    }
 
-    it.each([
-      { name: 'a preview-eligible build', eligible: true },
-      { name: 'a stable build with Preview off', eligible: false },
-    ])('with a stale false fails toward off on the next launch: $name', async ({ eligible }) => {
-      seedGate(undefined, eligible);
-      await optedIn();
-      await experimentalSettings.saveSettings({ telemetry: false, themeGradients: true });
-      await upgradeAndWaitForOff();
+      expect(getTelemetrySettings().exportSuspended).toBe('flag_unreadable');
+      expect(exportAttempts()).toBe(0);
+      expect(isTelemetryConfigured()).toBe(false);
+      expect(getLocalSink()).not.toBeNull();
+      await vi.waitFor(() => expect(readSaved().exportSuspended).toBe('flag_unreadable'));
+
+      expect(prefs(readSaved())).toBe(prefs(before));
+      expect(readSaved().consentVersion).toBe(1);
+      expect(await fsp.readFile(path.join(getOfflineDir(), 'queued.ai.json'), 'utf8')).toBe('[1]');
+      expect((await control.getStatus()).exportPaused).toBe(true);
+    });
+
+    it('a flag of the wrong type pauses too', async () => {
+      await paused(() => writeJson(FLAG_FILE, { telemetry: 'true' }));
       expect(exportAttempts()).toBe(0);
     });
 
-    it('with no key at all, drops the flag and leaves the opt-in on', async () => {
-      seedGate(undefined, true);
-      await optedIn();
-      await experimentalSettings.saveSettings({ themeGradients: true });
-      await vi.waitFor(() => expect(savedFlags()).toEqual({ themeGradients: true }));
-      await launch();
-      expect(entryOf('otlp').enabled).toBe(true);
+    it('no export path gets through: Framebriar follow, turning one on, filters, clearing another', async () => {
+      await paused();
+      const saved = prefs(readSaved());
+      connect();
+
+      await control.syncFramebriarDestination();
+      expect(entryOf('framebriar').enabled).toBe(false);
+      expect(await control.setEnabled('azure', true, { host: 'x' })).toMatchObject({ ok: false, reason: 'export_paused' });
+      expect(await control.setEnabled('framebriar', true, { host: FB_HOST })).toMatchObject({ ok: false, reason: 'export_paused' });
+      await control.setFilter('otlp', 'standard', 'all');
+      await control.clearAzureConnectionString();
+
+      expect(exportAttempts()).toBe(0);
+      expect(experimentalSettings.peekStoredFlag('telemetry')).toBe('unreadable');
+      expect(prefs(getTelemetrySettings())).toBe(saved);
     });
+
+    it('repeated starts are no-ops, with one recovery copy', async () => {
+      await paused();
+      const bytes = readText(SETTINGS_FILE);
+      for (let run = 0; run < 2; run++) {
+        await launch();
+        expect(readText(SETTINGS_FILE)).toBe(bytes);
+        expect(exportAttempts()).toBe(0);
+      }
+      expect(recoveryCopies()).toEqual([`${FLAG_FILE}.unreadable`]);
+    });
+
+    it('turning everything off leaves nothing suspended', async () => {
+      await paused();
+      await control.setEnabled('otlp', false);
+      await control.setEnabled('framebriar', false);
+      expect(getTelemetrySettings().exportSuspended).toBeUndefined();
+      expect((await control.getStatus()).exportPaused).toBe(false);
+    });
+  });
+
+  it('with nothing active: nothing suspended, nothing written, no copy', async () => {
+    seedGate(undefined, true);
+    corruptFlags();
+    writeJson(SETTINGS_FILE, graduated(otlp(false), framebriar({ userOff: true })));
+    const bytes = readText(SETTINGS_FILE);
+    await launch();
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(getTelemetrySettings().exportSuspended).toBeUndefined();
+    expect(readText(SETTINGS_FILE)).toBe(bytes);
+    expect(recoveryCopies()).toEqual([]);
+  });
+
+  it('a fresh install is unaffected, with no telemetry file written', async () => {
+    seedGate(undefined, false);
+    corruptFlags();
+    await launch();
+    expect(getTelemetrySettings().exportSuspended).toBeUndefined();
+    expect(fs.existsSync(userDataPath(SETTINGS_FILE))).toBe(false);
+    expect(recoveryCopies()).toEqual([]);
+  });
+
+  it('before graduation it still counts as flag off, not a pause', async () => {
+    seedGate(undefined, true);
+    corruptFlags();
+    writeJson(SETTINGS_FILE, file(1, otlp(true), framebriar()));
+    await launchAndWaitForMarker();
+    expect(readSaved().destinations.some((d) => d.enabled)).toBe(false);
+    expect(readSaved().exportSuspended).toBeUndefined();
+  });
+
+  describe('resolution', () => {
+    it('reads true: clears and resumes, with settings as they were', async () => {
+      await paused();
+      const saved = prefs(readSaved());
+      writeJson(FLAG_FILE, { telemetry: true });
+      await launch();
+      expect(getTelemetrySettings().exportSuspended).toBeUndefined();
+      expect(exportAttempts()).toBe(1);
+      await vi.waitFor(() => expect(readSaved().exportSuspended).toBeUndefined());
+      expect(prefs(readSaved())).toBe(saved);
+    });
+
+    it('reads false: the existing switch-off', async () => {
+      await paused();
+      await fsp.mkdir(getOfflineDir(), { recursive: true });
+      writeJson(FLAG_FILE, { telemetry: false });
+      await launch();
+      expect(getTelemetrySettings().exportSuspended).toBeUndefined();
+      expect(getTelemetrySettings().destinations.some((d) => d.enabled)).toBe(false);
+      expect(entryOf('framebriar').framebriar).toEqual({ userOff: true });
+      expect(exportAttempts()).toBe(0);
+      await vi.waitFor(() => expect(fs.existsSync(getOfflineDir())).toBe(false));
+    });
+
+    it.each<[string, () => void]>([
+      ['still unreadable', () => fs.writeFileSync(userDataPath(FLAG_FILE), 'differently broken')],
+      ['an older build rewrote it without the key', () => writeJson(FLAG_FILE, { chat: true })],
+      ['the file is gone', () => fs.rmSync(userDataPath(FLAG_FILE))],
+    ])('stays suspended: %s', async (_name, change) => {
+      await paused();
+      change();
+      await launch();
+      expect(getTelemetrySettings().exportSuspended).toBe('flag_unreadable');
+      expect(exportAttempts()).toBe(0);
+    });
+
+    it('an unrelated save from the renderer doesn\'t clear it', async () => {
+      await paused();
+      await experimentalSettings.saveSettings({ themeGradients: true });
+      await vi.waitFor(() => expect(JSON.parse(readText(FLAG_FILE))).toEqual({ themeGradients: true }));
+      await launch();
+      expect(getTelemetrySettings().exportSuspended).toBe('flag_unreadable');
+      expect(exportAttempts()).toBe(0);
+      expect(readText(`${FLAG_FILE}.unreadable`)).toBe(RAW);
+    });
+  });
+
+  describe('the recovery copy', () => {
+    it('is exact, keeps the source\'s permissions, and stays out of the logs', async () => {
+      const warn = vi.spyOn(console, 'warn');
+      const error = vi.spyOn(console, 'error');
+      await paused(() => {
+        corruptFlags();
+        fs.chmodSync(userDataPath(FLAG_FILE), 0o640);
+      });
+      expect(readText(`${FLAG_FILE}.unreadable`)).toBe(RAW);
+      if (process.platform !== 'win32') {
+        expect(fs.statSync(userDataPath(`${FLAG_FILE}.unreadable`)).mode & 0o777).toBe(0o640);
+      }
+      await _resetLocalRecordingForTests();
+      const logDir = path.join(userData.dir, '.clubhouse', 'logs');
+      const logged = fs.existsSync(logDir) ? fs.readdirSync(logDir).map((name) => fs.readFileSync(path.join(logDir, name), 'utf8')).join('') : '';
+      expect(logged).not.toContain('RAW-FILE-CONTENT');
+      expect(JSON.stringify([...warn.mock.calls, ...error.mock.calls])).not.toContain('RAW-FILE-CONTENT');
+    });
+
+    it('never overwrites an existing copy: different bytes get the next number', async () => {
+      fs.writeFileSync(userDataPath(`${FLAG_FILE}.unreadable`), 'from an earlier time');
+      await paused();
+      expect(readText(`${FLAG_FILE}.unreadable`)).toBe('from an earlier time');
+      expect(readText(`${FLAG_FILE}.unreadable.1`)).toBe(RAW);
+    });
+
+    it('failing to make it stays paused, refuses writes over the file, and retries next launch', async () => {
+      // A directory in the way: reading it as a copy fails.
+      fs.mkdirSync(userDataPath(`${FLAG_FILE}.unreadable`));
+      await paused();
+      expect(exportAttempts()).toBe(0);
+      expect(await control.resumeExport()).toMatchObject({ ok: false, reason: 'opt_in_not_saved' });
+      await expect(experimentalSettings.saveSettings({ themeGradients: true })).rejects.toThrow();
+      expect(readText(FLAG_FILE)).toBe(RAW);
+      expect(getTelemetrySettings().exportSuspended).toBe('flag_unreadable');
+
+      fs.rmdirSync(userDataPath(`${FLAG_FILE}.unreadable`));
+      await launch();
+      expect(readText(`${FLAG_FILE}.unreadable`)).toBe(RAW);
+      expect(exportAttempts()).toBe(0);
+    });
+  });
+
+  it('a failed save of the pause stays paused in memory and retries next launch', async () => {
+    seedGate(undefined, true);
+    corruptFlags();
+    writeJson(SETTINGS_FILE, active());
+    const before = readText(SETTINGS_FILE);
+    failWritesTo(SETTINGS_FILE);
+    const quiet = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    await launch();
+    await vi.waitFor(() => expect(quiet).toHaveBeenCalled());
+    expect(readText(SETTINGS_FILE)).toBe(before);
+    expect(getTelemetrySettings().exportSuspended).toBe('flag_unreadable');
+    expect(isTelemetryConfigured()).toBe(false);
+    expect(exportAttempts()).toBe(0);
+
+    vi.mocked(fs.promises.writeFile).mockRestore();
+    await launch();
+    await vi.waitFor(() => expect(readSaved().exportSuspended).toBe('flag_unreadable'));
+    expect(exportAttempts()).toBe(0);
+  });
+
+  it('known limit: a failed save of the pause, then a rewrite in that run, leaves no record, and export resumes', async () => {
+    seedGate(undefined, true);
+    corruptFlags();
+    writeJson(SETTINGS_FILE, active());
+    failWritesTo(SETTINGS_FILE);
+    const quiet = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    await launch();
+    await vi.waitFor(() => expect(quiet).toHaveBeenCalled());
+    await experimentalSettings.saveSettings({ themeGradients: true });
+    await vi.waitFor(() => expect(JSON.parse(readText(FLAG_FILE))).toEqual({ themeGradients: true }));
+
+    vi.mocked(fs.promises.writeFile).mockRestore();
+    await launch();
+    expect(getTelemetrySettings().exportSuspended).toBeUndefined();
+    expect(exportAttempts()).toBe(1);
+    // The copy of the original is there to see what happened.
+    expect(readText(`${FLAG_FILE}.unreadable`)).toBe(RAW);
+  });
+
+  describe('Resume', () => {
+    it('sets the flag, clears the pause and starts export, with no dialog', async () => {
+      await paused();
+      const saved = prefs(readSaved());
+      expect((await control.getStatus()).consentAccepted).toBe(true);
+      const result = await control.resumeExport();
+      expect(result.status.exportPaused).toBe(false);
+      expect('needs' in result).toBe(false);
+      expect(exportAttempts()).toBeGreaterThan(0);
+      await vi.waitFor(() => expect(JSON.parse(readText(FLAG_FILE)).telemetry).toBe(true));
+      await vi.waitFor(() => expect(readSaved().exportSuspended).toBeUndefined());
+      expect(prefs(readSaved())).toBe(saved);
+      expect(readText(`${FLAG_FILE}.unreadable`)).toBe(RAW);
+
+      await launch();
+      expect(getTelemetrySettings().exportSuspended).toBeUndefined();
+      expect(entryOf('otlp').enabled).toBe(true);
+      expect(exportAttempts()).toBe(1);
+    });
+
+    it('stays paused if the flag can\'t be saved', async () => {
+      await paused();
+      failWritesTo(FLAG_FILE);
+      vi.spyOn(console, 'error').mockImplementation(() => undefined);
+      expect(await control.resumeExport()).toMatchObject({ ok: false, reason: 'opt_in_not_saved', message: expect.stringContaining('paused') });
+      expect(getTelemetrySettings().exportSuspended).toBe('flag_unreadable');
+      expect(exportAttempts()).toBe(0);
+      expect(readText(FLAG_FILE)).toBe(RAW);
+    });
+
+    it('does nothing when nothing is paused', async () => {
+      seedGate(undefined, true);
+      await launch();
+      expect(await control.resumeExport()).toMatchObject({ ok: true });
+      expect(fs.existsSync(userDataPath(SETTINGS_FILE))).toBe(false);
+      expect(experimentalSettings.getStoredSettings()).not.toHaveProperty('telemetry');
+    });
+  });
+});
+
+describe('the renderer doesn\'t own the telemetry flag', () => {
+  const FLAG_FILE = 'experimental-settings.json';
+  const saved = () => JSON.parse(readText(FLAG_FILE));
+
+  describe.each([
+    { build: 'a preview-eligible build', eligible: true },
+    { build: 'a stable build with Preview off', eligible: false },
+  ])('$build', ({ eligible }) => {
+    it.each<[string, boolean | undefined, Record<string, boolean>]>([
+      ['false over a stored true', true, { telemetry: false, themeGradients: true }],
+      ['a dropped key over a stored true', true, { themeGradients: true }],
+      ['true over a stored false', false, { telemetry: true, themeGradients: true }],
+      ['a dropped key over a stored false', false, { themeGradients: true }],
+      ['true with none stored', undefined, { telemetry: true, themeGradients: true }],
+      ['false with none stored', undefined, { telemetry: false, themeGradients: true }],
+    ])('%s leaves the stored value alone', async (_name, stored, sent) => {
+      seedGate(stored, eligible);
+      resetAllSettingsStoresForTests();
+      await experimentalSettings.saveSettings(sent);
+      await vi.waitFor(() => expect(saved().themeGradients).toBe(true));
+      expect(saved().telemetry).toBe(stored);
+    });
+  });
+
+  it('a renderer true alone enables nothing, and a renderer false changes nothing', async () => {
+    seedGate(false, true);
+    writeJson(SETTINGS_FILE, { ...file(1, otlp(false), framebriar({ userOff: true })), exportGraduation: 1 });
+    await launch();
+    await experimentalSettings.saveSettings({ telemetry: true });
+    await launch();
+    expect(getTelemetrySettings().destinations.some((d) => d.enabled)).toBe(false);
+    expect(exportAttempts()).toBe(0);
+    expect(saved().telemetry).toBe(false);
+  });
+
+  it('over an unreadable file, a renderer true isn\'t written, so it can\'t resume a pause', async () => {
+    seedGate(undefined, true);
+    fs.writeFileSync(userDataPath(FLAG_FILE), '{broken');
+    writeJson(SETTINGS_FILE, { ...file(1, otlp(true), framebriar()), exportGraduation: 1 });
+    await launch();
+    await vi.waitFor(() => expect(readSaved().exportSuspended).toBe('flag_unreadable'));
+    await experimentalSettings.saveSettings({ telemetry: true, themeGradients: true });
+    await vi.waitFor(() => expect(saved()).toEqual({ themeGradients: true }));
+    await launch();
+    expect(getTelemetrySettings().exportSuspended).toBe('flag_unreadable');
+    expect(exportAttempts()).toBe(0);
+  });
+
+  it('main\'s opt-in still writes it, and a later renderer save keeps it', async () => {
+    seedGate(false, true);
+    writeJson(SETTINGS_FILE, { ...file(1, otlp(false), framebriar({ userOff: true })), exportGraduation: 1 });
+    await launch();
+    await control.setEnabled('otlp', true, { host: LOOPBACK_HOST });
+    await vi.waitFor(() => expect(saved().telemetry).toBe(true));
+    await experimentalSettings.saveSettings({ telemetry: false, themeGradients: true });
+    await vi.waitFor(() => expect(saved()).toEqual({ telemetry: true, themeGradients: true }));
   });
 });

@@ -56,19 +56,13 @@ export function resetAllSettingsStoresForTests(): void {
   }
 }
 
-/**
- * What a settings file holds right now, before any defaults are merged in, for
- * telling a saved value from an absent one (#2653). Reads and nothing else: no
- * cache, no recovery. A save still queued shows on the next read.
- */
-export async function peekStoredSettings(filename: string): Promise<Record<string, unknown> | 'missing' | 'unreadable'> {
-  let raw: string;
-  try {
-    raw = await fs.promises.readFile(path.join(app.getPath('userData'), filename), 'utf-8');
-  } catch (err) {
-    // telemetry-exempt: the caller reports the source as uncertain
-    return (err as NodeJS.ErrnoException)?.code === 'ENOENT' ? 'missing' : 'unreadable';
-  }
+export type PeekedSettings = Record<string, unknown> | 'missing' | 'unreadable';
+
+function readErrorKind(err: unknown): 'missing' | 'unreadable' {
+  return (err as NodeJS.ErrnoException)?.code === 'ENOENT' ? 'missing' : 'unreadable';
+}
+
+function parsePeeked(raw: string): Record<string, unknown> | 'unreadable' {
   try {
     const parsed: unknown = JSON.parse(raw);
     return parsed !== null && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed as Record<string, unknown> : 'unreadable';
@@ -76,6 +70,60 @@ export async function peekStoredSettings(filename: string): Promise<Record<strin
     // telemetry-exempt: the caller reports the source as uncertain
     return 'unreadable';
   }
+}
+
+/**
+ * What a settings file holds right now, before any defaults are merged in, for
+ * telling a saved value from an absent one (#2653). Reads and nothing else: no
+ * cache, no recovery. A save still queued shows on the next read.
+ */
+export async function peekStoredSettings(filename: string): Promise<PeekedSettings> {
+  let raw: string;
+  try {
+    raw = await fs.promises.readFile(path.join(app.getPath('userData'), filename), 'utf-8');
+  } catch (err) {
+    // telemetry-exempt: the caller reports the source as uncertain
+    return readErrorKind(err);
+  }
+  return parsePeeked(raw);
+}
+
+/** `peekStoredSettings` for a decision that has to be made before anything else runs. */
+export function peekStoredSettingsSync(filename: string): PeekedSettings {
+  let raw: string;
+  try {
+    raw = fs.readFileSync(path.join(app.getPath('userData'), filename), 'utf-8');
+  } catch (err) {
+    // telemetry-exempt: the caller reports the source as uncertain
+    return readErrorKind(err);
+  }
+  return parsePeeked(raw);
+}
+
+const MAX_RECOVERY_COPIES = 100;
+
+/**
+ * Copy a file next to itself as `<name>.unreadable`, with its permissions, before
+ * something overwrites it. An existing copy is never overwritten: different bytes
+ * get the next number (`.unreadable.1`), and the same bytes need no second copy,
+ * so a file that stays broken across launches is copied once. Throws if it can't.
+ */
+export function backupUnreadableSettings(filename: string): void {
+  const source = path.join(app.getPath('userData'), filename);
+  const bytes = fs.readFileSync(source);
+  const mode = fs.statSync(source).mode & 0o777;
+  for (let n = 0; n < MAX_RECOVERY_COPIES; n++) {
+    const target = `${source}.unreadable${n === 0 ? '' : `.${n}`}`;
+    if (fs.existsSync(target)) {
+      if (fs.readFileSync(target).equals(bytes)) return;
+      continue;
+    }
+    fs.writeFileSync(target, bytes, { flag: 'wx', mode });
+    // The create mode is subject to the umask. No-op on Windows, where POSIX modes don't apply.
+    if (process.platform !== 'win32') fs.chmodSync(target, mode);
+    return;
+  }
+  throw new Error('Too many recovery copies');
 }
 
 export function createSettingsStore<T>(
@@ -115,9 +163,10 @@ export function createSettingsStore<T>(
     } catch (err) {
       if (fs.existsSync(filePath)) {
         persist.recovery('settings', 'reset_to_default');
+        // A parser's message quotes the file, which stays out of the log.
         console.warn(
           `[settings-store] Failed to parse ${filename}, using defaults:`,
-          err instanceof Error ? err.message : err,
+          err instanceof SyntaxError ? 'invalid JSON' : err instanceof Error ? err.message : err,
         );
       }
       cachedSettings = cloneSettings(defaults);

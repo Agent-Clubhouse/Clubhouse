@@ -88,6 +88,12 @@ export interface TelemetrySettingsFile {
    * setup the old gate held back was switched off, so it doesn't start.
    */
   exportGraduation?: number;
+  /**
+   * Export is paused: the saved flag couldn't be read, so an active setup has no
+   * verified opt-in. Nothing else is changed. Set until the flag reads true or
+   * false, or the user chooses Resume.
+   */
+  exportSuspended?: 'flag_unreadable';
 }
 
 export type SecureStorageState = 'available' | 'weak' | 'unavailable';
@@ -122,6 +128,8 @@ export interface TelemetryDestinationStatus {
 }
 
 export interface TelemetryStatus {
+  /** Export is paused because a settings file couldn't be read. Resume is offered. */
+  exportPaused: boolean;
   /** At least one destination is enabled (with consent recorded). */
   enabled: boolean;
   /** An exporter is running right now. */

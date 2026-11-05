@@ -606,6 +606,7 @@ export const IPC = {
     RESET_ID: 'telemetry-settings:reset-id',
     CLEAR_OFFLINE: 'telemetry-settings:clear-offline',
     DELETE_LOCAL_DATA: 'telemetry-settings:delete-local-data',
+    RESUME: 'telemetry-settings:resume',
   },
   FEEDBACK: {
     GET_STATUS: 'feedback:get-status',

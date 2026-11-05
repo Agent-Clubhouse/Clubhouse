@@ -398,6 +398,37 @@ test.describe('Telemetry export', () => {
     }
   });
 
+  test('unreadable flag file: export pauses with zero requests, the file is kept, and Resume starts it', async () => {
+    const mock = await startMockIngestion();
+    const profile = createDisposableProfile({ label: 'telemetry-flag-unreadable' });
+    const flagFile = path.join(profile.userDataDir, 'experimental-settings.json');
+    fs.writeFileSync(flagFile, '{"telemetry": tru');
+    let open: Awaited<ReturnType<typeof launchApp>> | undefined;
+    try {
+      const first = open = await launchApp({ profile, userDataFiles: { 'telemetry-settings.json': { ...upgradeSettings(mock.port), exportGraduation: 1 } } });
+      await expect(first.window.locator('body')).toBeVisible();
+      expect((await first.window.evaluate(() => window.clubhouse.telemetrySettings.getStatus())).exportPaused).toBe(true);
+      await quitAndWait(first.electronApp);
+      expect(mock.received).toEqual([]);
+      expect(await fs.promises.readFile(`${flagFile}.unreadable`, 'utf-8')).toBe('{"telemetry": tru');
+      const saved = JSON.parse(await fs.promises.readFile(path.join(profile.userDataDir, 'telemetry-settings.json'), 'utf-8'));
+      expect(saved.exportSuspended).toBe('flag_unreadable');
+      expect(saved.destinations.find((d: { id: string }) => d.id === 'otlp').enabled).toBe(true);
+
+      const second = open = await launchApp({ profile });
+      await expect(second.window.locator('body')).toBeVisible();
+      const resumed = await second.window.evaluate(() => window.clubhouse.telemetrySettings.resume());
+      expect(resumed.status.exportPaused).toBe(false);
+      await quitAndWait(second.electronApp);
+      expect(mock.received.length).toBeGreaterThan(0);
+      expect(JSON.parse(await fs.promises.readFile(flagFile, 'utf-8')).telemetry).toBe(true);
+    } finally {
+      await open?.electronApp.close().catch(() => {});
+      mock.server.close();
+      profile.dispose();
+    }
+  });
+
   test('upgrade with the flag saved on in a stable build with Preview off: zero requests', async () => {
     const mock = await startMockIngestion();
     const { electronApp, window, userDataDir } = await launchApp({

@@ -260,8 +260,8 @@ describe.each([
     expect(dispatcherCapability()).toMatchObject({ newLayout: true, flagOn: true, enabled: true });
   });
 
-  it('saves exactly what it is given', async () => {
-    await saveSettings({ chat: false });
-    expect(JSON.parse(bytes(EXPERIMENTAL_FILE))).toEqual({ chat: false });
+  it('saves what it is given, except the telemetry flag, which main owns', async () => {
+    await saveSettings({ chat: false, telemetry: false });
+    expect(JSON.parse(bytes(EXPERIMENTAL_FILE))).toEqual({ chat: false, telemetry: true });
   });
 });
