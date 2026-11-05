@@ -627,7 +627,8 @@ describe('the home folder', () => {
     git(project, 'init', '-q', '-b', 'main');
     write(project, '.clubhouse/skills/s/SKILL.md', 'x');
     register([project]);
-    const ignoreFile = write(root, 'global-ignore', 'SKILL.md\n');
+    // Forward slashes: a backslash starts an escape in git config, and `\U` makes the file invalid.
+    const ignoreFile = write(root, 'global-ignore', 'SKILL.md\n').split(path.sep).join('/');
     const state = async (options: Partial<InventoryOptions> = {}) => (await scan(options)).entries[0].sources[0].files[0].gitState;
 
     // What the process has set makes no difference.
