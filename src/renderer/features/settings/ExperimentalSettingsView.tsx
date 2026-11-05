@@ -17,11 +17,6 @@ export const EXPERIMENTAL_FEATURES: Array<{
     description: 'Allow themes to define custom font families and background gradients. Requires app restart.',
   },
   {
-    id: 'newChrome',
-    label: 'New layout',
-    description: 'One resizable sidebar for projects and agents, with project tabs in the title bar. Work in progress. Requires app restart.',
-  },
-  {
     id: 'goobers',
     label: 'Goobers',
     description: 'Monitor and control a local Goobers instance from an app-level panel. Not available on Windows. Requires app restart.',
@@ -40,11 +35,6 @@ export const EXPERIMENTAL_FEATURES: Array<{
     id: COPILOT_SDK_FLAG,
     label: 'Copilot SDK driver',
     description: 'Offer the Copilot SDK as a chat driver, in Settings > Agents & providers > Copilot CLI. ACP stays the default until you choose it. Running agents keep their driver until they restart.',
-  },
-  {
-    id: 'dispatcher',
-    label: 'Dispatcher',
-    description: 'One app-wide agent that coordinates the orchestrators in your projects. Needs New layout. After turning this on, switch it on in Settings > Dispatcher.',
   },
   {
     id: 'telemetry',

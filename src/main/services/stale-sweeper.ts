@@ -6,6 +6,8 @@ export interface StaleSweepCallbacks<T> {
   isStale: (agentId: string, session: T) => boolean;
   /** Handle cleanup and notifications for a stale session. */
   onStale: (agentId: string, session: T) => void;
+  /** Called each sweep for a session that isn't stale. */
+  onLive?: (agentId: string, session: T) => void;
 }
 
 /**
@@ -30,6 +32,8 @@ export class StaleSweeper<T> {
       for (const [agentId, session] of this.sessions) {
         if (this.callbacks.isStale(agentId, session)) {
           this.callbacks.onStale(agentId, session);
+        } else {
+          this.callbacks.onLive?.(agentId, session);
         }
       }
     }, this.intervalMs);

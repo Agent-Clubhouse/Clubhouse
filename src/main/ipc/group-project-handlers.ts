@@ -5,7 +5,7 @@
 import { ipcMain } from 'electron';
 import { IPC } from '../../shared/ipc-channels';
 import { groupProjectRegistry } from '../services/group-project-registry';
-import { setProjectPolling } from '../services/group-project-polling';
+import { listPausedPolling, onPollingPauseChanged, resumePausedPolling, setProjectPolling, watchPollingForMcp } from '../services/group-project-polling';
 import { getBulletinBoard, destroyBulletinBoard } from '../services/group-project-bulletin';
 import { initGroupProjectLifecycle } from '../services/group-project-lifecycle';
 import { executeShoulderTap } from '../services/group-project-shoulder-tap';
@@ -54,6 +54,7 @@ export function registerGroupProjectHandlers(): void {
 
   // Tool registration is handled centrally in registerMcpBindingHandlers().
   initGroupProjectLifecycle();
+  watchPollingForMcp();
 
   appLog('core:group-project', 'info', 'Group project handlers registered');
 
@@ -268,4 +269,14 @@ export function registerGroupProjectHandlers(): void {
       return setProjectPolling(projectId as string, enabled as boolean);
     },
   ));
+
+  ipcMain.handle(IPC.GROUP_PROJECT.GET_PAUSED_POLLING, withValidatedArgs(
+    [stringArg()],
+    (_event, projectId) => listPausedPolling(projectId as string),
+  ));
+  ipcMain.handle(IPC.GROUP_PROJECT.RESUME_POLLING, withValidatedArgs(
+    [stringArg(), stringArg()],
+    (_event, projectId, agentId) => resumePausedPolling(projectId as string, agentId as string),
+  ));
+  onPollingPauseChanged(() => broadcastToAllWindows(IPC.GROUP_PROJECT.PAUSED_POLLING_CHANGED));
 }

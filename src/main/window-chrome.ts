@@ -1,6 +1,7 @@
 import type { BrowserWindowConstructorOptions } from 'electron';
-import { getSettings as getExperimentalSettings } from './services/experimental-settings';
+import { getSettings as getExperimentalSettings, savedSettingsUnreadable } from './services/experimental-settings';
 import { NEW_CHROME_FLAG } from '../shared/chrome-flag';
+import { isGraduatedFlagOn } from '../shared/graduated-flags';
 
 /**
  * Window chrome per platform (docs/chrome-redesign-spec.md §4.7).
@@ -14,14 +15,15 @@ import { NEW_CHROME_FLAG } from '../shared/chrome-flag';
 let cachedNewChrome: boolean | undefined;
 
 /**
- * Whether this session uses the new chrome layout (experimental flag). Read
- * once, so the main window and every popout agree even if the setting changes
- * mid-session; the switch takes effect on the next launch.
+ * Whether this session uses the new chrome layout: on unless a saved false
+ * chooses the classic one (Settings > Display & UI). Read once, so the main
+ * window and every popout agree even if the setting changes mid-session; the
+ * switch takes effect on the next launch.
  */
 export function newChromeEnabled(): boolean {
   if (cachedNewChrome === undefined) {
     try {
-      cachedNewChrome = getExperimentalSettings()[NEW_CHROME_FLAG] === true;
+      cachedNewChrome = !savedSettingsUnreadable() && isGraduatedFlagOn(getExperimentalSettings(), NEW_CHROME_FLAG);
     } catch {
       // Unreadable settings: start on the legacy layout, as the renderer would.
       cachedNewChrome = false;

@@ -149,6 +149,7 @@ vi.mock('../services/annex-server', () => ({
 }));
 
 vi.mock('../services/experimental-settings', () => ({
+  savedSettingsUnreadable: vi.fn(() => false),
   getSettings: vi.fn(() => ({})),
   saveSettings: vi.fn(),
 }));
@@ -507,7 +508,7 @@ describe('app-handlers', () => {
     const mockSetOverlay = vi.fn();
     try {
       resetNewChromeCacheForTests();
-      vi.mocked(experimental.getSettings).mockReturnValue({} as never);
+      vi.mocked(experimental.getSettings).mockReturnValue({ newChrome: false } as never);
       vi.mocked(BrowserWindow.getAllWindows).mockReturnValue([{ isDestroyed: () => false, setTitleBarOverlay: mockSetOverlay } as any]);
       await handler({}, { color: '#000', symbolColor: '#fff' });
       expect(mockSetOverlay).not.toHaveBeenCalled();

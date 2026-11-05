@@ -47,6 +47,7 @@ vi.mock('../services/clubhouse-mcp/tools/group-project-tools', () => ({
 vi.mock('../services/agent-registry', () => ({
   agentRegistry: {
     get: vi.fn(() => ({ orchestrator: 'claude-code', runtime: 'pty' })),
+    onAuthChange: vi.fn(() => () => {}),
   },
 }));
 
@@ -148,6 +149,8 @@ describe('group-project-handlers', () => {
       IPC.GROUP_PROJECT.SAVE_RETENTION_CONFIG,
       IPC.GROUP_PROJECT.INJECT_MESSAGE,
       IPC.GROUP_PROJECT.SET_POLLING,
+      IPC.GROUP_PROJECT.GET_PAUSED_POLLING,
+      IPC.GROUP_PROJECT.RESUME_POLLING,
     ];
     for (const channel of expectedChannels) {
       expect(handlers.has(channel), `Missing handler for ${channel}`).toBe(true);

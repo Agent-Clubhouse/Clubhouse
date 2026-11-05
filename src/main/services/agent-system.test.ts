@@ -6,6 +6,7 @@ import { IPC } from '../../shared/ipc-channels';
 import { setProducingRuntime } from '../telemetry/__test-utils__/producing-runtime';
 import type { TelemetryRuntime } from '../telemetry/types';
 import type { FreeAgentPermissionMode } from '../../shared/types';
+import { mcpCallAccess } from './clubhouse-mcp/mcp-call-gate';
 import { launchAccessFor, providerAccessLevel, resolveHelperAccess, type AgentLaunchAccess } from '../../shared/orchestration-policy';
 
 // Mock config-pipeline
@@ -66,6 +67,18 @@ vi.mock('./mcp-settings', () => ({
   isMcpEnabled: (...args: unknown[]) => mockIsMcpEnabled(...args),
   ensureMcpBridgeForAgent: (...args: unknown[]) => mockEnsureMcpBridge(...args),
 }));
+
+// The real gate, watched, so a test can see what it held when a nonce was set.
+const { mockSetMcpCaller } = vi.hoisted(() => ({ mockSetMcpCaller: vi.fn() }));
+vi.mock('./clubhouse-mcp/mcp-call-gate', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('./clubhouse-mcp/mcp-call-gate')>();
+  return {
+    ...actual,
+    setMcpCaller: (...args: Parameters<typeof actual.setMcpCaller>) => { mockSetMcpCaller('config', ...args); actual.setMcpCaller(...args); },
+    setMcpCallerQuick: (...args: Parameters<typeof actual.setMcpCallerQuick>) => { mockSetMcpCaller('quick', ...args); actual.setMcpCallerQuick(...args); },
+    setMcpCallerUnreadable: (...args: Parameters<typeof actual.setMcpCallerUnreadable>) => { mockSetMcpCaller('unreadable', ...args); actual.setMcpCallerUnreadable(...args); },
+  };
+});
 
 // Mock agent-config
 const mockGetDurableConfig = vi.fn(() => null);
@@ -3303,5 +3316,98 @@ describe('helper launch ceiling on the normal spawn path', () => {
     await spawnAgent({ agentId: 'helper-1', projectPath, cwd: projectPath, kind: 'quick', freeAgentMode: true });
     expect(mockResolveHelperLaunchSettings).not.toHaveBeenCalled();
     expect(lastBuild()).toMatchObject({ freeAgentMode: true, permissionMode: 'skip-all' });
+  });
+});
+
+describe('the MCP call gate is set before anything can call a tool', () => {
+  const projectPath = path.join(path.sep, 'project');
+  const id = 'gate-order';
+  const start = (extra: Record<string, unknown> = {}) => spawnAgent({ agentId: id, projectPath, cwd: projectPath, kind: 'durable', ...extra });
+  /** What the gate said at the moment the nonce arrived: the bridge refuses everything before that. */
+  let atNonce: string[];
+  let setNonce: ReturnType<typeof vi.spyOn>;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    atNonce = [];
+    mockIsMcpEnabled.mockImplementation(((_path: unknown, override: unknown) => override ?? true) as never);
+    mockMcpWaitReady.mockResolvedValue(23456);
+    const real = agentRegistry.setNonce.bind(agentRegistry);
+    setNonce = vi.spyOn(agentRegistry, 'setNonce').mockImplementation((agentId: string, nonce: string) => {
+      atNonce.push(mcpCallAccess(agentId, agentRegistry.get(agentId)?.projectPath));
+      real(agentId, nonce);
+    });
+  });
+
+  afterEach(() => {
+    setNonce.mockRestore();
+    untrackAgent(id);
+    mockIsMcpEnabled.mockReset();
+    mockGetDurableConfig.mockReset();
+    mockGetDurableConfig.mockImplementation(() => null);
+  });
+
+  it('an agent saved off reads closed when its nonce arrives: with no entry it would read open', async () => {
+    mockGetDurableConfig.mockImplementation((async () => ({ id, name: 'off', mcpOverride: false })) as never);
+    await start();
+    expect(atNonce.length).toBeGreaterThan(0);
+    expect(atNonce.every((access) => access === 'closed')).toBe(true);
+  });
+
+  it('a helper saved off keeps message_parent when its nonce arrives', async () => {
+    mockGetDurableConfig.mockImplementation((async () => ({ id, name: 'helper', parentAgentId: 'lead', mcpOverride: false })) as never);
+    await start();
+    expect(atNonce.length).toBeGreaterThan(0);
+    expect(atNonce.every((access) => access === 'report_only')).toBe(true);
+  });
+
+  it('an agent saved on reads open when its nonce arrives, with its project off', async () => {
+    mockIsMcpEnabled.mockImplementation(((_path: unknown, override: unknown) => override ?? false) as never);
+    mockGetDurableConfig.mockImplementation((async () => ({ id, name: 'on', mcpOverride: true })) as never);
+    await start();
+    expect(atNonce.every((access) => access === 'open')).toBe(true);
+  });
+
+  it('goes before the chat runtime, which sets its nonce inside', async () => {
+    mockGetDurableConfig.mockImplementation((async () => ({ id, name: 'off', mcpOverride: false })) as never);
+    const atChat: string[] = [];
+    // Stands in for the runtime, and goes on to the terminal as the real one can.
+    mockTryStartChatAgent.mockImplementationOnce(async () => {
+      atChat.push(mcpCallAccess(id, agentRegistry.get(id)?.projectPath));
+      return 'terminal';
+    });
+    await start();
+    expect(atChat).toEqual(['closed']);
+  });
+
+  it('goes before a headless agent\'s nonce, with no config for a quick agent', async () => {
+    mockGetSpawnMode.mockReturnValueOnce('headless');
+    mockMcpWaitReady.mockResolvedValueOnce(23456);
+    const headless = mockProvider as unknown as { buildHeadlessCommand?: unknown };
+    headless.buildHeadlessCommand = vi.fn(async () => ({ binary: '/usr/bin/claude', args: [], env: {} }));
+    try {
+      await start({ kind: 'quick', mission: 'do thing' });
+      expect(mockHeadlessSpawn).toHaveBeenCalled();
+    } finally {
+      delete headless.buildHeadlessCommand;
+    }
+    expect(mockSetMcpCaller).toHaveBeenCalledWith('quick', id, projectPath);
+    expect(setNonce.mock.invocationCallOrder[0]).toBeGreaterThan(mockSetMcpCaller.mock.invocationCallOrder[0]);
+  });
+
+  it('a config it couldn\'t read is closed from the start, and the spawn goes on', async () => {
+    mockGetDurableConfig.mockImplementation((async () => { throw new Error('unreadable'); }) as never);
+    await start();
+    expect(mockSetMcpCaller).toHaveBeenCalledWith('unreadable', id, projectPath);
+    expect(atNonce.length).toBeGreaterThan(0);
+    expect(atNonce.every((access) => access === 'closed')).toBe(true);
+    expect(mockPtySpawn).toHaveBeenCalled();
+  });
+
+  it('a missing row isn\'t unreadable: no config, so it follows its project', async () => {
+    mockGetDurableConfig.mockImplementation((async () => null) as never);
+    await start();
+    expect(mockSetMcpCaller).toHaveBeenCalledWith('config', id, projectPath, null);
+    expect(atNonce.every((access) => access === 'open')).toBe(true);
   });
 });

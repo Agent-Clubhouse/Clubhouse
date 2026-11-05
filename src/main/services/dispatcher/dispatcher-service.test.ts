@@ -7,6 +7,8 @@ import type { DurableAgentConfig, DurableConfigUpdates } from '../../../shared/t
 const h = vi.hoisted(() => ({
   baseDir: '',
   experimental: {} as Record<string, boolean>,
+  newLayout: true,
+  detection: Promise.resolve() as Promise<void>,
   enabledProviders: ['claude-code'] as string[],
   agents: new Map<string, DurableAgentConfig[]>(),
   configListeners: new Set<(projectPath: string) => void>(),
@@ -17,7 +19,8 @@ const h = vi.hoisted(() => ({
 vi.mock('../base-dir', () => ({ getBaseDirPath: () => h.baseDir }));
 vi.mock('../log-service', () => ({ appLog: vi.fn() }));
 vi.mock('../experimental-settings', () => ({ getSettings: () => h.experimental }));
-vi.mock('../orchestrator-settings', () => ({ getSettings: () => ({ enabled: h.enabledProviders }) }));
+vi.mock('../../window-chrome', () => ({ newChromeEnabled: () => h.newLayout }));
+vi.mock('../orchestrator-settings', () => ({ getSettings: () => ({ enabled: h.enabledProviders }), whenDefaultsDetected: () => h.detection }));
 vi.mock('../materialization-service', () => ({
   resolvePersonaContent: vi.fn(async (_dir: string, id: string) => (id === 'dispatcher' ? 'You are the Dispatcher.' : undefined)),
 }));
@@ -82,15 +85,22 @@ vi.mock('../agent-config', async () => {
   };
 });
 
+// Every way an agent starts goes through spawnAgent, so "never called" means no tokens.
 vi.mock('../agent-system', () => ({
   isAgentRunning: (id: string) => h.running.has(id),
   killAgent: vi.fn(async (id: string) => { h.running.delete(id); }),
+  spawnAgent: vi.fn(),
 }));
 
 import * as agentConfig from '../agent-config';
 import * as agentSystem from '../agent-system';
 import * as svc from './dispatcher-service';
 import { getSettings, updateSettings } from './dispatcher-settings';
+import { agentRegistry } from '../agent-registry';
+import { notifyMcpEnablementChanged, isMcpEnabledForAny, saveSettings as saveMcp } from '../mcp-settings';
+import { getSettings as getClubhouseMode, saveSettings as saveClubhouseMode } from '../clubhouse-mode-settings';
+import { DISPATCHER_CLASSIC_MESSAGE } from '../../../shared/dispatcher-types';
+import { MCP_REQUIRED_MESSAGE } from '../../../shared/orchestration-policy';
 
 const dispatcherDir = () => path.join(h.baseDir, 'dispatcher');
 
@@ -100,6 +110,8 @@ const settle = () => svc._whenIdleForTesting();
 beforeEach(async () => {
   h.baseDir = fs.mkdtempSync(path.join(os.tmpdir(), 'dispatcher-test-'));
   h.experimental = {};
+  h.newLayout = true;
+  h.detection = Promise.resolve();
   h.enabledProviders = ['claude-code'];
   h.agents.clear();
   h.configListeners.clear();
@@ -111,84 +123,236 @@ beforeEach(async () => {
     fakeProvider('codex-cli', 'AGENTS.md'),
   ];
   svc._resetDispatcherForTesting();
-  await updateSettings(() => ({ enabled: false }));
+  await updateSettings(() => ({}));
+  await saveMcp({ enabled: true });
+  await saveClubhouseMode({ enabled: false });
+  for (const agentId of agentRegistry.getAllRegistrations().keys()) agentRegistry.untrack(agentId);
   vi.mocked(agentConfig.createDurable).mockClear();
   vi.mocked(agentSystem.killAgent).mockClear();
+  vi.mocked(agentSystem.spawnAgent).mockClear();
 });
 
 afterEach(() => {
   fs.rmSync(h.baseDir, { recursive: true, force: true });
 });
 
+/** MCP off at app level: its switch saved off and the global Clubhouse mode off. */
+async function mcpOffAtApp(): Promise<void> {
+  await saveMcp({ enabled: false });
+  await saveClubhouseMode({ enabled: false });
+  notifyMcpEnablementChanged();
+  await settle();
+}
+
+async function mcpBackAtApp(): Promise<void> {
+  await saveMcp({ enabled: true });
+  notifyMcpEnablementChanged();
+  await settle();
+}
+
 describe('gating', () => {
-  it('is off on a fresh profile and creates nothing at start-up', async () => {
+  it('is on by default in the new layout: creates and connects, and never starts it', async () => {
+    await svc.initDispatcher();
+    expect(svc.getDispatcherState()).toMatchObject({ enabled: true, savedOn: true, flagOn: true, offReason: null, running: false, agentId: 'durable_1', path: dispatcherDir() });
+    expect(agentConfig.createDurable).toHaveBeenCalledTimes(1);
+    expect(fs.readFileSync(path.join(dispatcherDir(), 'CLAUDE.md'), 'utf-8')).toBe('You are the Dispatcher.');
+    // What default-on must not do: start the agent, so no tokens are spent.
+    expect(agentSystem.spawnAgent).not.toHaveBeenCalled();
+    expect(agentRegistry.get('durable_1')).toBeUndefined();
+    // And it saves nothing: the switch stays missing, so the default can still move.
+    expect(getSettings().enabled).toBeUndefined();
+  });
+
+  it('waits for first-run CLI detection before creating, so a Codex-only install isn\'t pinned to Claude', async () => {
+    let finish!: () => void;
+    h.detection = new Promise((resolve) => { finish = resolve; });
+    const init = svc.initDispatcher();
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(agentConfig.createDurable).not.toHaveBeenCalled();
+    h.enabledProviders = ['codex-cli'];
+    finish();
+    await init;
+    expect(svc.getDispatcherState().config?.orchestrator).toBe('codex-cli');
+    expect(fs.readFileSync(path.join(dispatcherDir(), 'AGENTS.md'), 'utf-8')).toBe('You are the Dispatcher.');
+  });
+
+  it('is off on the classic layout with nothing saved, and creates nothing at start-up', async () => {
+    h.newLayout = false;
     await svc.initDispatcher();
     expect(svc.isDispatcherEnabled()).toBe(false);
-    expect(svc.getDispatcherState()).toEqual({ enabled: false, flagOn: false, agentId: null, path: null, config: null });
+    expect(svc.getDispatcherState()).toMatchObject({ enabled: false, savedOn: false, offReason: 'classic_layout', classic: true, agentId: null, path: null, config: null });
     expect(fs.existsSync(dispatcherDir())).toBe(false);
     expect(agentConfig.createDurable).not.toHaveBeenCalled();
   });
 
-  it('needs both the flag and the setting', async () => {
-    h.experimental = { dispatcher: true };
-    await svc.onExperimentalSettingsChanged();
-    expect(svc.isDispatcherEnabled()).toBe(false);
-    expect(svc.getDispatcherState()).toMatchObject({ enabled: false, flagOn: true });
+  it('keeps a saved true on, on the classic layout: it can be turned off, and not back on (#2565)', async () => {
+    await updateSettings(() => ({ enabled: true }));
+    h.newLayout = false;
+    await svc.initDispatcher();
+    expect(svc.getDispatcherState()).toMatchObject({ enabled: true, classic: true, agentId: 'durable_1' });
+    await svc.setDispatcherEnabled(true); // Already on: nothing to refuse.
+    await svc.setDispatcherEnabled(false);
+    expect(svc.getDispatcherState()).toMatchObject({ enabled: false, offReason: 'switch_off' });
+    await expect(svc.setDispatcherEnabled(true)).rejects.toThrow(DISPATCHER_CLASSIC_MESSAGE);
+    expect(getSettings().enabled).toBe(false);
+  });
+
+  it('refuses turning it on from missing on the classic layout, and saves nothing', async () => {
+    h.newLayout = false;
+    await expect(svc.setDispatcherEnabled(true)).rejects.toThrow(DISPATCHER_CLASSIC_MESSAGE);
+    expect(getSettings().enabled).toBeUndefined();
+  });
+
+  it('keeps a saved false off, in the new layout, and creates nothing', async () => {
+    await updateSettings(() => ({ enabled: false }));
+    await svc.initDispatcher();
+    expect(svc.getDispatcherState()).toMatchObject({ enabled: false, savedOn: false, offReason: 'switch_off', agentId: null });
     expect(agentConfig.createDurable).not.toHaveBeenCalled();
-
-    const state = await svc.setDispatcherEnabled(true);
-    expect(state.enabled).toBe(true);
-    expect(state.agentId).toBe('durable_1');
-    expect(state.path).toBe(dispatcherDir());
   });
 
-  it("won't save it on while the flag is off (#2555)", async () => {
-    await expect(svc.setDispatcherEnabled(true)).rejects.toThrow('Turn on Dispatcher in Settings > Experimental first.');
-    h.experimental = { dispatcher: true };
-    await svc.onExperimentalSettingsChanged();
-    expect(svc.isDispatcherEnabled()).toBe(false);
+  it('reads a saved experimental false as off until the switch says otherwise', async () => {
+    h.experimental = { dispatcher: false };
+    await svc.initDispatcher();
+    expect(svc.getDispatcherState()).toMatchObject({ enabled: false, offReason: 'experimental_off', agentId: null });
     expect(agentConfig.createDurable).not.toHaveBeenCalled();
-    // Turning it off still works with the flag off.
-    h.experimental = {};
-    await expect(svc.setDispatcherEnabled(false)).resolves.toMatchObject({ enabled: false, flagOn: false });
-  });
-
-  it('broadcasts a flag change even while the setting is off, so the nav follows it', async () => {
-    const seen: boolean[] = [];
-    const off = svc.onDispatcherChanged((s) => seen.push(s.flagOn));
-    h.experimental = { dispatcher: true };
-    await svc.onExperimentalSettingsChanged();
-    h.experimental = {};
-    await svc.onExperimentalSettingsChanged();
-    off();
-    expect(seen).toEqual([true, false]);
-  });
-
-  it('turning the flag off stops the agent', async () => {
-    h.experimental = { dispatcher: true };
     await svc.setDispatcherEnabled(true);
+    expect(svc.getDispatcherState()).toMatchObject({ enabled: true, agentId: 'durable_1' });
+  });
+
+  it('a saved experimental true changes nothing', async () => {
+    h.experimental = { dispatcher: true };
+    await svc.initDispatcher();
+    expect(svc.getDispatcherState()).toMatchObject({ enabled: true });
+    await svc.setDispatcherEnabled(false);
+    expect(svc.getDispatcherState()).toMatchObject({ enabled: false, offReason: 'switch_off' });
+  });
+
+  it('a saved experimental flag going off stops the agent, as its switch would', async () => {
+    await svc.initDispatcher();
     h.running.add('durable_1');
-    h.experimental = {};
+    h.experimental = { dispatcher: false };
     await svc.onExperimentalSettingsChanged();
     expect(agentSystem.killAgent).toHaveBeenCalledWith('durable_1', dispatcherDir(), 'claude-code');
     expect(svc.getDispatcherState().enabled).toBe(false);
-  });
-
-  it('with the flag reading as off, keeps the agent, its files and the saved switch', async () => {
-    h.experimental = { dispatcher: true };
-    await svc.setDispatcherEnabled(true);
-    const created = svc.getDispatcherState().agentId;
-    h.experimental = {};
-    await svc.initDispatcher();
-    expect(svc.getDispatcherState()).toMatchObject({ enabled: false, flagOn: false, agentId: created });
-    expect(getSettings().enabled).toBe(true);
     expect(fs.existsSync(dispatcherDir())).toBe(true);
   });
 });
 
-describe('turning it on', () => {
-  beforeEach(() => { h.experimental = { dispatcher: true }; });
+describe('Clubhouse MCP at app level', () => {
+  it('creates nothing and starts no bridge for a user with MCP saved off (#2589)', async () => {
+    await saveMcp({ enabled: false });
+    await svc.initDispatcher();
+    expect(svc.getDispatcherState()).toMatchObject({ enabled: false, savedOn: true, offReason: 'mcp_off', mcpOff: true, agentId: null });
+    expect(fs.existsSync(dispatcherDir())).toBe(false);
+    expect(isMcpEnabledForAny()).toBe(false);
+    expect(getSettings().enabled).toBeUndefined();
+  });
 
+  it('a project override keeps its own agents on MCP and does not keep the Dispatcher on', async () => {
+    await saveMcp({ enabled: false, projectOverrides: { '/some/project': true } });
+    await svc.initDispatcher();
+    expect(svc.getDispatcherState()).toMatchObject({ enabled: false, offReason: 'mcp_off' });
+    // The override is why the bridge starts, not the Dispatcher.
+    expect(isMcpEnabledForAny()).toBe(true);
+  });
+
+  it('the global Clubhouse mode counts as MCP on, with its own switch off', async () => {
+    await saveMcp({ enabled: false });
+    await saveClubhouseMode({ ...getClubhouseMode(), enabled: true });
+    await svc.initDispatcher();
+    expect(svc.getDispatcherState()).toMatchObject({ enabled: true, mcpOff: false, agentId: 'durable_1' });
+  });
+
+  it('a Clubhouse mode override on a project does not keep the Dispatcher on', async () => {
+    await saveMcp({ enabled: false });
+    await saveClubhouseMode({ enabled: false, projectOverrides: { '/some/project': true } });
+    await svc.initDispatcher();
+    expect(svc.getDispatcherState()).toMatchObject({ enabled: false, offReason: 'mcp_off' });
+  });
+
+  it('never stops a running Dispatcher: it stays running, derived off, with the saved value kept', async () => {
+    await svc.setDispatcherEnabled(true);
+    h.running.add('durable_1');
+    agentRegistry.register('durable_1', { projectPath: dispatcherDir(), orchestrator: 'claude-code', runtime: 'chat' } as never);
+    const changed = vi.fn();
+    svc.onDispatcherChanged(changed);
+
+    await mcpOffAtApp();
+
+    expect(agentSystem.killAgent).not.toHaveBeenCalled();
+    expect(svc.getDispatcherState()).toMatchObject({ enabled: false, savedOn: true, offReason: 'mcp_off', running: true, agentId: 'durable_1' });
+    expect(getSettings().enabled).toBe(true);
+    expect(changed).toHaveBeenCalledWith(expect.objectContaining({ enabled: false, running: true }));
+  });
+
+  it('the state follows it stopping, so its row and view go then', async () => {
+    await svc.setDispatcherEnabled(true);
+    const changed = vi.fn();
+    svc.onDispatcherChanged(changed);
+    agentRegistry.register('durable_1', { projectPath: dispatcherDir(), orchestrator: 'claude-code', runtime: 'chat' } as never);
+    agentRegistry.setNonce('durable_1', 'n1');
+    expect(changed).toHaveBeenLastCalledWith(expect.objectContaining({ running: true }));
+    await mcpOffAtApp();
+    agentRegistry.untrack('durable_1');
+    expect(changed).toHaveBeenLastCalledWith(expect.objectContaining({ enabled: false, running: false }));
+  });
+
+  it('refuses turning it on with MCP off, and saves nothing', async () => {
+    await saveMcp({ enabled: false });
+    await expect(svc.setDispatcherEnabled(true)).rejects.toThrow(MCP_REQUIRED_MESSAGE);
+    expect(getSettings().enabled).toBeUndefined();
+    expect(agentConfig.createDurable).not.toHaveBeenCalled();
+  });
+
+  it('the direct switch still stops a running one with MCP off', async () => {
+    await svc.setDispatcherEnabled(true);
+    h.running.add('durable_1');
+    await mcpOffAtApp();
+    expect(agentSystem.killAgent).not.toHaveBeenCalled();
+    await svc.setDispatcherEnabled(false);
+    expect(agentSystem.killAgent).toHaveBeenCalledTimes(1);
+    expect(getSettings().enabled).toBe(false);
+  });
+
+  it('the stop in the turn-off dialog stops it and changes nothing saved', async () => {
+    await svc.setDispatcherEnabled(true);
+    h.running.add('durable_1');
+    await mcpOffAtApp();
+    await svc.stopDispatcherNow();
+    expect(agentSystem.killAgent).toHaveBeenCalledWith('durable_1', dispatcherDir(), 'claude-code');
+    expect(getSettings().enabled).toBe(true);
+  });
+
+  it('MCP back returns it to its saved state without starting it, and keeps its folder and notes', async () => {
+    await svc.setDispatcherEnabled(true);
+    fs.writeFileSync(path.join(dispatcherDir(), 'notes', 'plan.md'), 'keep me');
+    await mcpOffAtApp();
+    expect(svc.getDispatcherState().enabled).toBe(false);
+
+    await mcpBackAtApp();
+
+    expect(svc.getDispatcherState()).toMatchObject({ enabled: true, agentId: 'durable_1', running: false });
+    expect(agentSystem.spawnAgent).not.toHaveBeenCalled();
+    expect(agentConfig.createDurable).toHaveBeenCalledTimes(1);
+    expect(fs.readFileSync(path.join(dispatcherDir(), 'notes', 'plan.md'), 'utf-8')).toBe('keep me');
+  });
+
+  it('MCP back leaves a saved false off, and a never-created one is created then, not before', async () => {
+    await saveMcp({ enabled: false });
+    await svc.initDispatcher();
+    expect(agentConfig.createDurable).not.toHaveBeenCalled();
+    await mcpBackAtApp();
+    expect(agentConfig.createDurable).toHaveBeenCalledTimes(1);
+    expect(svc.getDispatcherState().enabled).toBe(true);
+
+    await svc.setDispatcherEnabled(false);
+    await mcpOffAtApp();
+    await mcpBackAtApp();
+    expect(svc.getDispatcherState()).toMatchObject({ enabled: false, offReason: 'switch_off' });
+  });
+});
+
+describe('turning it on', () => {
   it('creates the folder, notes/ and one agent with the defaults', async () => {
     const state = await svc.setDispatcherEnabled(true);
     expect(fs.statSync(path.join(dispatcherDir(), 'notes')).isDirectory()).toBe(true);
@@ -245,8 +409,6 @@ describe('turning it on', () => {
 });
 
 describe('turning it off', () => {
-  beforeEach(() => { h.experimental = { dispatcher: true }; });
-
   it('stops the agent and keeps the folder, notes and config for turning back on', async () => {
     await svc.setDispatcherEnabled(true);
     fs.writeFileSync(path.join(dispatcherDir(), 'notes', 'plan.md'), 'keep me');
@@ -271,7 +433,6 @@ describe('turning it off', () => {
 
 describe('change events', () => {
   it('carry a new look, and a restart keeps it (#2645)', async () => {
-    h.experimental = { dispatcher: true };
     await svc.setDispatcherEnabled(true);
     await settle();
     const changed = vi.fn();
@@ -291,7 +452,6 @@ describe('change events', () => {
   it('fire once per real change', async () => {
     const changed = vi.fn();
     svc.onDispatcherChanged(changed);
-    h.experimental = { dispatcher: true };
     await svc.setDispatcherEnabled(true);
     await settle();
     const calls = changed.mock.calls.length;

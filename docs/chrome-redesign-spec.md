@@ -66,7 +66,7 @@ Status as of 2026-10-16:
 
 ### 4.1 Flag and shell
 
-- Add an experimental flag `newChrome` (stored with `ExperimentalSettings` in `src/shared/types.ts`).
+- The flag `newChrome` is stored with `ExperimentalSettings` in `src/shared/types.ts`. Since v1.0.0 a missing or true value means the new layout, and a saved false means classic, set by **Classic layout** in Settings > Display & UI. Unreadable settings start on classic.
 - `App.tsx` picks one of two shells:
   - `LegacyShell`: today's `TitleBar` + `RailSection` + `ProjectPanelLayout`, unchanged.
   - `ChromeShell`: new, `src/renderer/chrome/ChromeShell.tsx`.
@@ -376,7 +376,7 @@ Twenty-five E2E files use the old IDs, counting helpers and fixtures. All of the
 |---|---|---|
 | Experimental | `newChrome` off by default, toggled in Settings → Experimental | Phases 1–3 landed. Maintainer dogfoods daily. No P0 or P1 bugs open. |
 | Stable, opt-in | Flag graduates to a regular setting (“Use the new layout”), still off by default. Preview channel defaults it on. | Phase 4 landed. Telemetry checklist items 1–4 pass. E2E green on both shells on all three OSes. |
-| Default | On for everyone, with “Use classic layout” in Settings | Checklist item 5 passes over at least one release on the preview channel. The plugin-author note is published. |
+| Default (current, v1.0.0) | On for everyone, with “Classic layout” in Settings > Display & UI, on any build | Checklist item 5 passes over at least one release on the preview channel. The plugin-author note is published. |
 | Dual support | Classic layout still available but frozen (no new features) | Bounded to two stable releases after Default. |
 | Legacy removal | Delete the §4.4 files and the legacy keys (§5). Remove the setting. | No blocking issues filed against the new shell during dual support. |
 

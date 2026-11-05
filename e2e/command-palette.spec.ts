@@ -73,7 +73,7 @@ async function isPaletteOpen(): Promise<boolean> {
 // ---------------------------------------------------------------------------
 
 test.beforeAll(async () => {
-  ({ electronApp, window } = await launchApp());
+  ({ electronApp, window } = await launchApp({ experimental: { newChrome: false } }));
 
   // Add a project so the palette has project/agent entries
   await addProject(FIXTURE_A);

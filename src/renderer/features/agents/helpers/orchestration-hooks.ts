@@ -16,6 +16,7 @@ import {
   type HelperProjectGroup,
   type OrchestrationPolicyPatch,
   type ResolvedOrchestrationPolicy,
+  asShownPolicy,
 } from '../../../../shared/orchestration-policy';
 import { useAgentStore } from '../../../stores/agentStore';
 import { useProjectStore } from '../../../stores/projectStore';
@@ -182,6 +183,8 @@ export interface OrchestrationState {
  */
 export function useOrchestration(projectPath: string | undefined, agent: Pick<Agent, 'id' | 'name' | 'status'>): OrchestrationState {
   const [policy, setPolicyState] = useState<ResolvedOrchestrationPolicy | null>(null);
+  // A report-only helper reads off and disabled, as any agent without MCP does.
+  const shownPolicy = useMemo(() => policy && asShownPolicy(policy), [policy]);
   const [access, setAccess] = useState<HelperAccessResolution | null>(null);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -289,8 +292,8 @@ export function useOrchestration(projectPath: string | undefined, agent: Pick<Ag
   const reload = useCallback(() => setNonce((n) => n + 1), []);
 
   return useMemo(() => ({
-    policy, access, globalCap, saving, error, note, turnOff, setPolicy, setOrchestrate, setCrossProjectHelpers, setAutoHelpers, setConnectToDispatcher, finishTurnOff, reload,
-  }), [policy, access, globalCap, saving, error, note, turnOff, setPolicy, setOrchestrate, setCrossProjectHelpers, setAutoHelpers, setConnectToDispatcher, finishTurnOff, reload]);
+    policy: shownPolicy, access, globalCap, saving, error, note, turnOff, setPolicy, setOrchestrate, setCrossProjectHelpers, setAutoHelpers, setConnectToDispatcher, finishTurnOff, reload,
+  }), [shownPolicy, access, globalCap, saving, error, note, turnOff, setPolicy, setOrchestrate, setCrossProjectHelpers, setAutoHelpers, setConnectToDispatcher, finishTurnOff, reload]);
 }
 
 // ── Start approvals (#2234) ─────────────────────────────────────────────
