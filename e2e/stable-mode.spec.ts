@@ -132,13 +132,6 @@ const wakesInChat = (w: Page, projectPath: string) => w.evaluate(
   { id: AGENT_ID, orchestrator: ORCHESTRATOR, projectPath },
 );
 
-async function expectLegacyLayout(w: Page): Promise<void> {
-  await expect(w.locator('[data-testid="title-bar"]')).toBeVisible({ timeout: 15_000 });
-  await expect(w.locator('[data-testid="chrome-title-bar"]')).toHaveCount(0);
-  await expect(w.locator('[data-testid="chrome-sidebar"]')).toHaveCount(0);
-  expect(await w.evaluate(() => (window.clubhouse as { newChromeLayout?: unknown }).newChromeLayout)).toBe(false);
-}
-
 async function expectNewLayout(w: Page): Promise<void> {
   await expect(w.locator('[data-testid="chrome-title-bar"]')).toBeVisible({ timeout: 15_000 });
   await expect(w.locator('[data-testid="chrome-sidebar"]')).toBeVisible();
@@ -160,13 +153,13 @@ async function expectSettingsPages(w: Page, listed: string[]): Promise<void> {
   await expect(settingsNav(w, 'Updates')).toBeHidden();
 }
 
-test('Preview off, fresh install: the legacy layout, and turning Preview on is the only way in', async () => {
+test('Preview off, fresh install: the new layout, and turning Preview on is the only way in', async () => {
   profile = createDisposableProfile({ label: 'stable-fresh' });
   app = await launchApp({ profile, env: STABLE_BUILD });
   const w = app.window;
 
   expect(await eligible(w)).toBe(false);
-  await expectLegacyLayout(w);
+  await expectNewLayout(w);
   expect(await flagsInForce(w)).toEqual({});
   await expectSettingsPages(w, []);
 
@@ -189,7 +182,7 @@ test('Preview off, fresh install: the legacy layout, and turning Preview on is t
   await expect.poll(() => savedPreview(profile!)).toBe(false);
 });
 
-test('Preview off, saved beta state: the legacy layout, a terminal, and nothing saved changes', async () => {
+test('Preview off, saved beta state: the new layout, a terminal, and nothing saved changes', async () => {
   const cli = installIdleCli();
   const projectDir = makeProject();
   profile = createDisposableProfile({ label: 'stable-beta-state' });
@@ -200,7 +193,7 @@ test('Preview off, saved beta state: the legacy layout, a terminal, and nothing 
   const { electronApp, window: w } = app;
 
   expect(await eligible(w)).toBe(false);
-  await expectLegacyLayout(w);
+  await expectNewLayout(w);
   const flags = await flagsInForce(w);
   for (const flag of PREVIEW_ONLY_FLAGS) expect(flags).not.toHaveProperty(flag);
   await expectSettingsPages(w, []);
@@ -209,6 +202,7 @@ test('Preview off, saved beta state: the legacy layout, a terminal, and nothing 
   // The Chat-mode agent wakes in the terminal, on the session it had.
   await addProject(electronApp, w, projectDir);
   expect(await wakesInChat(w, projectDir)).toBe(false);
+  await w.locator('[data-testid^="sleeping-fold-"]').first().click();
   await w.locator(`[data-testid="agent-item-${AGENT_ID}"]`).click();
   await w.locator('[data-testid="wake-button"]').click();
   await expect(w.locator('[data-testid="agent-terminal"]')).toBeVisible({ timeout: 20_000 });
@@ -230,13 +224,13 @@ test('Preview off, saved beta state: the legacy layout, a terminal, and nothing 
   expect(fs.existsSync(dispatcherFolder(profile))).toBe(false);
 });
 
-test('Preview on, no saved flags: the legacy layout with the Preview pages to opt in from', async () => {
+test('Preview on, no saved flags: the new layout with the Preview pages to opt in from', async () => {
   profile = createDisposableProfile({ label: 'stable-preview-on' });
   app = await launchApp({ profile, userDataFiles: updateSettings(true), env: STABLE_BUILD });
   const w = app.window;
 
   expect(await eligible(w)).toBe(true);
-  await expectLegacyLayout(w);
+  await expectNewLayout(w);
   expect(await flagsInForce(w)).toEqual({});
   await expectSettingsPages(w, ['Experimental', 'Annex', 'Annex control']);
 });
@@ -278,7 +272,7 @@ test('saved beta state survives Preview on, then off, then on', async () => {
   app = await launchApp({ profile, userDataFiles: updateSettings(false), env });
   w = app.window;
   expect(await eligible(w)).toBe(false);
-  await expectLegacyLayout(w);
+  await expectNewLayout(w);
   const flags = await flagsInForce(w);
   for (const flag of PREVIEW_ONLY_FLAGS) expect(flags).not.toHaveProperty(flag);
   await expectSettingsPages(w, []);

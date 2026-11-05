@@ -193,7 +193,8 @@ export function expectedFor({ state, preview, flags }) {
   const inForce = preview && flags;
   return {
     previewEligible: preview,
-    newChrome: inForce,
+    // The default, and what BETA_FLAGS saves, in every scenario.
+    newChrome: true,
     chatEnabled: inForce,
     flagsInForce: inForce ? BETA_FLAGS : null,
     settingsPages: !preview ? [] : flags ? PREVIEW_PAGES : ['Experimental', 'Annex', 'Annex control'],

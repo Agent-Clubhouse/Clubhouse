@@ -26,7 +26,7 @@ let window: Page;
 const consoleErrors: string[] = [];
 
 test.beforeAll(async () => {
-  ({ electronApp, window } = await launchApp());
+  ({ electronApp, window } = await launchApp({ experimental: { newChrome: false } }));
 
   window.on('console', (msg) => {
     if (msg.type() === 'error') {
