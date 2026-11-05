@@ -52,6 +52,7 @@ import {
   type ImpactContext,
   type OriginStatus,
   type RunRecord,
+  type SkillAssetPayload,
   type StructureBinding,
   type StructureCheck,
   type StructureChoice,
@@ -128,6 +129,7 @@ export function assetCatalogDir(): string {
   return path.join(getBaseDirPath(), 'asset-catalog');
 }
 
+const ACTIVATION_PIN_PREFIX = 'activation-pin-';
 const INDEX_FILE = 'catalog.json';
 /**
  * One turn at a time per catalog, in this process. Other processes are kept out by
@@ -243,6 +245,43 @@ export function installBuiltinAsset(store: object, input: BuiltinInstall): Promi
   const install = builtinInstallers.get(store);
   if (!install) throw new TypeError('not an asset catalog store');
   return install(input);
+}
+
+/** Main-internal frozen input. Never expose through the catalog IPC or agent tools. */
+export interface FrozenActivation {
+  pinId: string;
+  plan: ActivationPlan;
+  /** Literal composer output, including wildcard tokens. Null means unadopted. */
+  instructions: string | null;
+  skills: Array<{ assetId: string; revision: number; payload: SkillAssetPayload }>;
+}
+
+interface ActivationAccess {
+  preview(input: Omit<PlanRequest, 'draft'>): Promise<FrozenActivation>;
+  prepare(input: Omit<PlanRequest, 'draft'> & { pinId: string; expectedFingerprint: string }): Promise<{ frozen: FrozenActivation; hash: string }>;
+  read(pinId: string, expectedHash: string): Promise<FrozenActivation>;
+}
+const activationAccess = new WeakMap<object, ActivationAccess>();
+
+/** User-authorized delivery preview of saved bytes, without retention or writes. */
+export function previewFrozenActivation(store: object, input: Omit<PlanRequest, 'draft'>) {
+  const access = activationAccess.get(store);
+  if (!access) throw new TypeError('not an asset catalog store');
+  return access.preview(input);
+}
+
+/** Explicit user adoption only. Planning, exact payload validation and retention commit together. */
+export function prepareFrozenActivation(store: object, input: Parameters<ActivationAccess['prepare']>[0]) {
+  const access = activationAccess.get(store);
+  if (!access) throw new TypeError('not an asset catalog store');
+  return access.prepare(input);
+}
+
+/** Runtime read of a previously authorized, retained snapshot. No planner or user-preview gate bypass. */
+export function readFrozenActivation(store: object, pinId: string, expectedHash: string) {
+  const access = activationAccess.get(store);
+  if (!access) throw new TypeError('not an asset catalog store');
+  return access.read(pinId, expectedHash);
 }
 
 export type AssetCatalogStore = ReturnType<typeof createAssetCatalogStore>;
@@ -793,6 +832,50 @@ export function createAssetCatalogStore(options: AssetCatalogStoreOptions) {
     }));
   }
 
+  const pinPath = (id: string) => path.join(dir, 'activation-pins', `${id}.json`);
+
+  // Deliberately narrow: this adapter delivers only primary instructions and selected skill bundles.
+  function frozenRefs(plan: ActivationPlan): RunRecord['revisions'] {
+    receiptStructure(plan);
+    if (!plan.instructions || plan.instructions.destination.kind !== 'instruction-document'
+      || plan.instructions.destination.key !== 'instructions/primary' || plan.subagents.length
+      || plan.operationalDefaults.length || plan.assets.some((asset) => asset.kind !== 'skill')) {
+      throw new AssetCatalogError('plan_blocked');
+    }
+    return [...new Map([
+      ...(plan.structure ? [{ assetId: plan.structure.templateId, kind: 'template' as const, revision: plan.structure.resolvedRevision }] : []),
+      ...plan.instructions.blocks.map((block) => ({ assetId: block.assetId, kind: 'block' as const, revision: block.revision })),
+      ...plan.assets.map((asset) => ({ assetId: asset.assetId, kind: asset.kind, revision: asset.revision })),
+    ].map((ref) => [`${ref.assetId}@${ref.revision}`, ref])).values()];
+  }
+
+  async function frozenWith(index: CatalogIndex, pinId: string, plan: ActivationPlan): Promise<FrozenActivation> {
+    const payloads = new Map<string, AssetPayload>();
+    for (const ref of frozenRefs(plan)) {
+      const entry = getEntry(index, ref.assetId);
+      if (entry.kind !== ref.kind) throw new AssetCatalogError('payload_corrupt');
+      const payload = await readRevisionFile(entry, ref.revision);
+      const validation = validatePayload(ref.kind, payload);
+      if (!validation.ok) throw new AssetCatalogError('payload_corrupt');
+      payloads.set(`${ref.assetId}@${ref.revision}`, payload);
+    }
+    const payloadFor = (ref: { assetId: string; revision: number; contentHash: string }): AssetPayload => {
+      const payload = payloads.get(`${ref.assetId}@${ref.revision}`);
+      if (!payload || canonicalHash(payload) !== ref.contentHash) throw new AssetCatalogError('payload_corrupt');
+      return payload;
+    };
+    const composed = composeInstructions(plan.instructions!.blocks.map((block) => ({ content: (payloadFor(block) as BlockAssetPayload).content })));
+    if (!composed.ok) throw new AssetCatalogError('plan_blocked');
+    const skills = plan.assets.map((asset) => {
+      const payload = payloadFor(asset) as SkillAssetPayload;
+      if (asset.destination.kind !== 'skill-directory' || asset.destination.key !== `skills/${payload.skillName}`) {
+        throw new AssetCatalogError('payload_corrupt');
+      }
+      return { assetId: asset.assetId, revision: asset.revision, payload };
+    });
+    return { pinId, plan, instructions: composed.text, skills };
+  }
+
   const api = {
     /** The whole index, as stored. Holds no payload content: for planning and listing. */
     read(): Promise<CatalogIndex> {
@@ -1296,6 +1379,7 @@ export function createAssetCatalogStore(options: AssetCatalogStoreOptions) {
      */
     recordRun(input: { runId: string; plan: ActivationPlan }): Promise<RunRecord> {
       return serial(async () => {
+        if (typeof input.runId === 'string' && input.runId.startsWith(ACTIVATION_PIN_PREFIX)) throw new AssetCatalogError('agent_not_permitted');
         if (!isCatalogId(input.runId)) throw new AssetCatalogError('invalid_composition', { issues: [{ code: 'invalid_identifier', path: 'runId' }] });
         const index = await loadIndex();
         if (hasOwn(index.runs, input.runId)) throw new AssetCatalogError('run_exists');
@@ -1346,6 +1430,7 @@ export function createAssetCatalogStore(options: AssetCatalogStoreOptions) {
 
     /** Forget a run. Revisions only it kept, of assets since deleted, go with it. */
     releaseRun(runId: string): Promise<void> {
+      if (runId.startsWith(ACTIVATION_PIN_PREFIX)) return Promise.reject(new AssetCatalogError('agent_not_permitted'));
       // This can free what deletion kept, so it's refused from agent surfaces like any other write that removes things.
       return guarded({ scope: 'agent', key: 'assetCatalog.run', targetId: isCatalogId(runId) ? runId : undefined }, () => serial(async () => {
         const index = await loadIndex();
@@ -1366,6 +1451,61 @@ export function createAssetCatalogStore(options: AssetCatalogStoreOptions) {
       }));
     },
   };
+  activationAccess.set(api, {
+    preview(input) {
+      return serial(async () => {
+        if (!isUserWritePermitted()) throw new AssetCatalogError('agent_not_permitted');
+        const index = await loadIndex();
+        const planned = planWith(index, { agentId: input.agentId, projectId: input.projectId, adoption: input.adoption, foreign: input.foreign });
+        if (!planned.activation) throw new AssetCatalogError('composition_blocked');
+        return frozenWith(index, 'preview', planned.activation);
+      });
+    },
+    prepare(input) {
+      return guarded({ scope: 'agent', key: 'managedActivation.prepared', targetId: isCatalogId(input.agentId) ? input.agentId : undefined }, () => serial(async () => {
+        if (!isUserWritePermitted()) throw new AssetCatalogError('agent_not_permitted');
+        if (!isCatalogId(input.pinId) || !input.pinId.startsWith(ACTIVATION_PIN_PREFIX)) throw new AssetCatalogError('invalid_reference');
+        const index = await loadIndex();
+        if (hasOwn(index.runs, input.pinId)) throw new AssetCatalogError('run_exists');
+        // No draft: only the saved, explicitly previewed composition can be adopted.
+        const planned = planWith(index, { agentId: input.agentId, projectId: input.projectId, adoption: input.adoption, foreign: input.foreign });
+        if (!planned.activation) throw new AssetCatalogError('composition_blocked');
+        if (planned.fingerprint !== input.expectedFingerprint) throw new AssetCatalogError('stale_preview');
+        const frozen = await frozenWith(index, input.pinId, planned.activation);
+        const hash = canonicalHash(frozen);
+        const run: RunRecord = {
+          runId: input.pinId, agentId: planned.agentId, recordedAt: now(),
+          planFingerprint: planned.fingerprint, structure: receiptStructure(planned.activation),
+          revisions: frozenRefs(planned.activation),
+        };
+        // As with revision payloads, the index rename commits retention. An orphan pin is inert.
+        await writeAtomically(pinPath(input.pinId), JSON.stringify(planned.activation));
+        await commitIndex({ ...index, runs: { ...index.runs, [input.pinId]: run } });
+        await auditCommitted('agent', 'managedActivation.prepared', input.agentId);
+        return { frozen, hash };
+      }));
+    },
+    read(pinId, expectedHash) {
+      return serial(async () => {
+        if (!isCatalogId(pinId) || !/^[a-f0-9]{64}$/.test(expectedHash)) throw new AssetCatalogError('invalid_reference');
+        const index = await loadIndex();
+        if (!hasOwn(index.runs, pinId)) throw new AssetCatalogError('run_missing');
+        try {
+          const plan: ActivationPlan = JSON.parse(await fsp.readFile(pinPath(pinId), 'utf8'));
+          const run = index.runs[pinId];
+          if (plan.agentId !== run.agentId || plan.fingerprint !== run.planFingerprint
+            || canonicalHash(frozenRefs(plan)) !== canonicalHash(run.revisions)
+            || canonicalHash(receiptStructure(plan)) !== canonicalHash(run.structure)) throw new AssetCatalogError('payload_corrupt');
+          const frozen = await frozenWith(index, pinId, plan);
+          if (canonicalHash(frozen) !== expectedHash) throw new AssetCatalogError('payload_corrupt');
+          return frozen;
+        } catch {
+          // telemetry-exempt: payload bytes and parser messages must never reach logs or telemetry.
+          throw new AssetCatalogError('payload_corrupt');
+        }
+      });
+    },
+  });
   builtinInstallers.set(api, installBuiltin);
   return api;
 }

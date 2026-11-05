@@ -1,4 +1,8 @@
-import { AgentResumeError, assertProviderSelection, withAgentActivity } from './agent-transition';
+import { AgentResumeError, assertProviderSelection } from './agent-transition';
+import { withManagedActivationLaunch } from './managed-activation';
+import type { ManagedLaunchLease } from './managed-activation/service';
+import { ManagedActivationError, ProcessStartedReceiptError } from './managed-activation/types';
+import { cleanupManagedReceiptFailure, recordManagedProcessStart } from './managed-activation/runtime-start';
 import * as path from 'path';
 import { randomUUID } from 'crypto';
 import { getProvider, getAllProviders, OrchestratorId, OrchestratorProvider, isHookCapable, isHeadlessCapable, isSessionCapable } from '../orchestrators';
@@ -239,9 +243,9 @@ async function capHelperLaunch(
 export async function spawnAgent(params: SpawnAgentParams): Promise<void> {
   // Quit and update close this before stopping runtimes (#2053).
   assertLaunchesOpen();
-  const spawn = withAgentActivity(params.agentId, () => {
+  const spawn = withManagedActivationLaunch(params, () => isAgentRunning(params.agentId), (managed) => {
     assertProviderSelection(params.agentId, params.orchestrator);
-    return spawnAgentTracked(params);
+    return spawnAgentTracked(params, managed);
   });
   inflightSpawns.add(spawn);
   try {
@@ -251,7 +255,7 @@ export async function spawnAgent(params: SpawnAgentParams): Promise<void> {
   }
 }
 
-async function spawnAgentTracked(params: SpawnAgentParams): Promise<void> {
+async function spawnAgentTracked(params: SpawnAgentParams, managed: ManagedLaunchLease | null): Promise<void> {
   const facts: SpawnFacts = { model: params.model };
   const startMs = Date.now();
   await tel.flow(
@@ -259,10 +263,10 @@ async function spawnAgentTracked(params: SpawnAgentParams): Promise<void> {
     { attrs: [ATTR.agentKind(params.kind), ATTR.agentResume(params.resume === true)] },
     async (span) => {
       try {
-        await spawnAgentInner(params, facts);
+        await spawnAgentInner(params, facts, managed);
       } catch (err) {
         try {
-          clearSpawnKind(params.agentId);
+          if (!(err instanceof ProcessStartedReceiptError)) clearSpawnKind(params.agentId);
           recordSpawn(params.kind, facts, startMs, err);
           span.set(...spawnAttrs(facts));
         } catch {
@@ -289,7 +293,7 @@ function assertDispatcherCanStart({ kind, projectPath }: SpawnAgentParams): void
   throw tagError(new Error(reason === 'mcp_off' ? MCP_REQUIRED_MESSAGE : 'The Dispatcher is turned off.'), 'preflight_failed');
 }
 
-async function spawnAgentInner(inParams: SpawnAgentParams, facts: SpawnFacts): Promise<void> {
+async function spawnAgentInner(inParams: SpawnAgentParams, facts: SpawnFacts, managed: ManagedLaunchLease | null): Promise<void> {
   let params = inParams;
   assertDispatcherCanStart(params);
   // An agent still being created has no worktree yet, and a failed one never
@@ -358,7 +362,7 @@ async function spawnAgentInner(inParams: SpawnAgentParams, facts: SpawnFacts): P
 
     // Clubhouse Mode: materialize project defaults into worktree before spawn
     facts.clubhouseMode = params.kind === 'durable' && clubhouseModeSettings.isClubhouseModeEnabled(params.projectPath);
-    if (facts.clubhouseMode) {
+    if (facts.clubhouseMode && !managed) {
       try {
         const config = await getDurableConfig(params.projectPath, params.agentId);
         if (config && !config.clubhouseModeOverride && config.worktreePath) {
@@ -544,7 +548,7 @@ async function spawnAgentInner(inParams: SpawnAgentParams, facts: SpawnFacts): P
         throw err;
       }
     };
-    chatStart = await startChat(params);
+    chatStart = managed ? 'terminal' : await startChat(params);
 
     // Chat couldn't resume because the session is gone: don't let anything
     // retry the same dead id (#2086). The chat runtime still works, so start a
@@ -648,10 +652,10 @@ async function spawnAgentInner(inParams: SpawnAgentParams, facts: SpawnFacts): P
 
     // Fall back to PTY mode
     facts.runtime = 'pty';
-    await spawnPtyAgent(params, provider, allowedTools, profileEnv, commandPrefix, wrapperConfig, resolvedMcpIds, resolvedMcpConfigs, facts);
-    broadcastToAllWindows(IPC.AGENT.AGENT_AWOKE, params.agentId);
+    await spawnPtyAgent(params, provider, allowedTools, profileEnv, commandPrefix, wrapperConfig, resolvedMcpIds, resolvedMcpConfigs, facts, managed);
+    if (!managed || ptyManager.isRunning(params.agentId)) broadcastToAllWindows(IPC.AGENT.AGENT_AWOKE, params.agentId);
   } catch (err) {
-    untrackAgent(params.agentId);
+    if (!(err instanceof ProcessStartedReceiptError)) untrackAgent(params.agentId);
     throw err;
   }
 }
@@ -666,13 +670,14 @@ async function spawnPtyAgent(
   mcpIds?: string[],
   mcpConfigs?: Record<string, Record<string, string>>,
   facts: SpawnFacts = {},
+  managed: ManagedLaunchLease | null = null,
 ): Promise<void> {
   const nonce = randomUUID();
   agentRegistry.setNonce(params.agentId, nonce);
 
   // Snapshot hooks config before writing so we can restore on exit
   const hookConfigPath = configPipeline.getHooksConfigPath(provider, params.cwd);
-  if (hookConfigPath) {
+  if (hookConfigPath && !managed) {
     configPipeline.snapshotFile(params.agentId, hookConfigPath);
   }
 
@@ -693,7 +698,7 @@ async function spawnPtyAgent(
   facts.mcpEnabled = mcpEnabledForSpawn;
   // Snapshot MCP config for all formats — TOML injection is now supported
   // and the config-pipeline restore logic handles both JSON and TOML files.
-  if (mcpEnabledForSpawn) {
+  if (mcpEnabledForSpawn && !managed) {
     configPipeline.snapshotFile(params.agentId, mcpJsonPath);
   }
 
@@ -704,18 +709,18 @@ async function spawnPtyAgent(
   // Run hook server setup, MCP bridge setup, and command building in parallel.
   let mcpPort = 0;
   const [, , spawnCmd] = await tel.step('clubhouse.agent.prepare_pty', () => Promise.all([
-    waitHookServerReady().then((port) => tel.step('clubhouse.hooks.configure', async () => {
+    managed ? Promise.resolve() : waitHookServerReady().then((port) => tel.step('clubhouse.hooks.configure', async () => {
       // Inject Clubhouse hooks only when the provider supports them AND the
       // user has opted this orchestrator into the hook server (app-level).
       // Default: on for Claude Code, off for every other orchestrator.
       facts.hooksEnabled = false;
-      if (isHookCapable(provider) && orchestratorSettings.isHookServerEnabled(provider.id)) {
+      if (!managed && isHookCapable(provider) && orchestratorSettings.isHookServerEnabled(provider.id)) {
         facts.hooksEnabled = true;
         const hookUrl = `http://127.0.0.1:${port}/hook`;
         await provider.writeHooksConfig(params.cwd, hookUrl);
       }
     })),
-    waitMcpBridgeReady().then((port) => tel.step('clubhouse.mcp.inject', async () => {
+    managed ? Promise.resolve() : waitMcpBridgeReady().then((port) => tel.step('clubhouse.mcp.inject', async () => {
       mcpPort = port;
       await injectClubhouseMcp(params.cwd, params.agentId, port, provider.conventions, { projectPath: params.projectPath, agentOverride: agentMcpOverride });
     })).catch((err) => {
@@ -747,6 +752,13 @@ async function spawnPtyAgent(
   // Inject MCP args for providers that need CLI-based MCP config (e.g. Copilot CLI)
   let { binary, args } = spawnCmd;
   const { env } = spawnCmd;
+  if (managed) {
+    if (params.systemPrompt || args.some((arg) => ['--continue', '--resume', '--system-prompt', '--append-system-prompt', '--system-prompt-file', '--append-system-prompt-file', '--plugin-dir', '--bare', '--settings', '--setting-sources'].includes(arg))) {
+      throw new ManagedActivationError('activation_unsupported');
+    }
+    args = [...args, '--append-system-prompt-file', managed.instructionFile,
+      ...(managed.pluginDir ? ['--plugin-dir', managed.pluginDir] : [])];
+  }
   // Only when MCP is on for this agent (agent > project > global): an agent
   // with it turned off gets neither the bridge nor project servers (#2223). A
   // helper always gets the bridge; project servers keep following the settings
@@ -831,9 +843,21 @@ async function spawnPtyAgent(
 
   noteSpawnKind(params.agentId, params.kind);
   const spawnedAt = Date.now();
+  let createdIdentity: string | undefined;
+  let managedExitConfirmed = false;
+  if (managed) {
+    await managed.beforeStart(binary);
+    // Freeze PATH/symlink resolution to the exact installed binary that supplied flag evidence.
+    binary = managed.binary;
+  }
   assertLaunchesOpen();
-  await tel.step('clubhouse.pty.spawn', () => withErrorType('pty_spawn_failed', () => ptyManager.spawn(params.agentId, params.cwd, binary, args, spawnEnv, (exitAgentId, exitCode, buffer, killed) => {
-    configPipeline.restoreForAgent(exitAgentId);
+  const spawnArgs: Parameters<typeof ptyManager.spawn> = [params.agentId, params.cwd, binary, args, spawnEnv, (exitAgentId, exitCode, buffer, killed) => {
+    if (managed) {
+      void managed.exited().catch(() => {
+        // telemetry-exempt: failed receipt bookkeeping cannot change the observed runtime exit.
+        appLog('core:agent', 'warn', 'Could not record managed process exit', { meta: { agentId: exitAgentId } });
+      });
+    } else configPipeline.restoreForAgent(exitAgentId);
     if (params.kind !== 'durable') bindingManager.unbindAgent(exitAgentId);
     untrackAgent(exitAgentId);
     // A terminal agent's run ended: a non-zero exit nobody asked for is an error (#2098).
@@ -848,7 +872,29 @@ async function spawnPtyAgent(
       });
       if (capture) trackSessionCapture(exitAgentId, capture);
     }
-  }, commandPrefix)));
+  }, commandPrefix];
+  if (managed) spawnArgs.push({ onCreated: (identity: string) => { createdIdentity = identity; }, onObservedExit: () => { managedExitConfirmed = true; } });
+  try {
+    await tel.step('clubhouse.pty.spawn', () => withErrorType('pty_spawn_failed', () => ptyManager.spawn(...spawnArgs)));
+  } catch (err) {
+    if (managed && !createdIdentity) await managed.notCreated();
+    if (managed && createdIdentity) {
+      await cleanupManagedReceiptFailure(managed, new ProcessStartedReceiptError(managed.attemptId, createdIdentity), {
+        requestIfCurrent: (identity) => ptyManager.stopCreatedProcessIfCurrent(params.agentId, identity),
+        waitForExit: async () => { await waitForAgentStopped(params.agentId); },
+        exitConfirmed: () => managedExitConfirmed,
+      });
+    }
+    throw err;
+  }
+  if (managed) {
+    if (!createdIdentity) throw new ManagedActivationError('activation_start_failed');
+    await recordManagedProcessStart(managed, createdIdentity, {
+      requestIfCurrent: (identity) => ptyManager.stopCreatedProcessIfCurrent(params.agentId, identity),
+      waitForExit: async () => { await waitForAgentStopped(params.agentId); },
+      exitConfirmed: () => managedExitConfirmed,
+    });
+  }
 }
 
 /** A resume that exits non-zero this soon on its own, without printing a session id, never got going. */

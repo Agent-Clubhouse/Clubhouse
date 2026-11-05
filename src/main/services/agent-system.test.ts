@@ -23,10 +23,12 @@ vi.mock('./config-pipeline', () => ({
 // Mock pty-manager
 const mockPtySpawn = vi.fn();
 const mockPtyGracefulKill = vi.fn();
+const mockStopCreatedProcess = vi.fn(() => false);
 const mockPtyIsRunning = vi.fn(() => false);
 vi.mock('./pty-manager', () => ({
   spawn: (...args: unknown[]) => mockPtySpawn(...args),
   gracefulKill: (...args: unknown[]) => mockPtyGracefulKill(...args),
+  stopCreatedProcessIfCurrent: (...args: unknown[]) => mockStopCreatedProcess(...args),
   isRunning: (...args: unknown[]) => mockPtyIsRunning(...args),
 }));
 
@@ -3419,5 +3421,65 @@ describe('the MCP call gate is set before anything can call a tool', () => {
     await start();
     expect(mockSetMcpCaller).toHaveBeenCalledWith('config', id, projectPath, null);
     expect(atNonce.every((access) => access === 'open')).toBe(true);
+  });
+});
+
+
+import * as managedActivation from './managed-activation';
+import type { ManagedLaunchLease } from './managed-activation/service';
+import { ProcessStartedReceiptError } from './managed-activation/types';
+import { withAgentActivity } from './agent-transition';
+
+describe('managed instructions in the real terminal launch seam', () => {
+  let lease: ManagedLaunchLease;
+  beforeEach(() => {
+    mockIsMcpEnabled.mockReturnValue(false);
+    mockPtyIsRunning.mockReturnValue(false);
+    mockGetDurableConfig.mockResolvedValue({ id: 'managed-launch', name: 'managed', worktreePath: '/workspace', orchestrator: 'claude-code', model: 'opus', runtimeMode: 'terminal' } as never);
+    lease = { attemptId: 'attempt-fixture', instructionFile: '/private/generation/instructions.txt', pluginDir: '/private/generation/plugin', binary: '/usr/local/bin/claude',
+      beforeStart: vi.fn(async () => undefined), started: vi.fn(async () => undefined), notCreated: vi.fn(async () => undefined), cleanup: vi.fn(async () => undefined), exited: vi.fn(async () => undefined) };
+    vi.spyOn(managedActivation, 'withManagedActivationLaunch').mockImplementation((params, _isRunning, run) => withAgentActivity(params.agentId, () => run(lease)));
+    mockPtySpawn.mockImplementation(async (...args: unknown[]) => {
+      (args[7] as { onCreated(id: string): void }).onCreated('pty:fixture:123');
+    });
+  });
+  afterEach(() => { untrackAgent('managed-launch'); });
+  const start = () => spawnAgent({ agentId: 'managed-launch', projectPath: '/project', cwd: '/workspace', kind: 'durable', orchestrator: 'claude-code' });
+  it('passes only private file paths, preserves launch settings and skips legacy writes/restoration/chat', async () => {
+    mockIsClubhouseModeEnabled.mockReturnValue(true); // The actual production gate refuses this combination.
+    await start();
+    expect(mockPtySpawn).toHaveBeenCalledWith('managed-launch', '/workspace', '/usr/local/bin/claude',
+      ['--model', 'opus', '--append-system-prompt-file', lease.instructionFile, '--plugin-dir', lease.pluginDir], expect.any(Object), expect.any(Function), undefined, expect.any(Object));
+    expect(lease.beforeStart).toHaveBeenCalledWith('/usr/local/bin/claude');
+    expect(lease.started).toHaveBeenCalledWith('pty:fixture:123');
+    expect(mockMaterializeAgent).not.toHaveBeenCalled(); expect(mockSnapshotFile).not.toHaveBeenCalled();
+    expect(mockProvider.writeHooksConfig).not.toHaveBeenCalled(); expect(mockTryStartChatAgent).not.toHaveBeenCalled();
+    const args = mockPtySpawn.mock.calls[0];
+    args[7].onObservedExit(); args[5]('managed-launch', 0, '', false);
+    expect(lease.exited).toHaveBeenCalled(); expect(mockRestoreForAgent).not.toHaveBeenCalled();
+  });
+  it('refuses before runtime when final capability/file validation fails', async () => {
+    vi.mocked(lease.beforeStart).mockRejectedValue(new Error('stale capability'));
+    await expect(start()).rejects.toThrow('stale capability');
+    expect(mockPtySpawn).not.toHaveBeenCalled(); expect(agentRegistry.get('managed-launch')).toBeUndefined();
+  });
+  it('keeps live registry through the legacy catches when receipt fails and cleanup refuses another identity', async () => {
+    const error = new ProcessStartedReceiptError('attempt-fixture', 'pty:fixture:123');
+    vi.mocked(lease.started).mockRejectedValue(error); mockStopCreatedProcess.mockReturnValue(false);
+    await expect(start()).rejects.toBe(error);
+    expect(error).toMatchObject({ cleanupRequested: false, cleanupConfirmed: false, cleanupFailure: 'identity_changed' });
+    expect(agentRegistry.get('managed-launch')?.runtime).toBe('pty');
+    expect(mockStopCreatedProcess).toHaveBeenCalledWith('managed-launch', 'pty:fixture:123');
+  });
+  it('keeps the identity-bearing error and registry when requesting cleanup throws', async () => {
+    const error = new ProcessStartedReceiptError('attempt-fixture', 'pty:fixture:123');
+    vi.mocked(lease.started).mockRejectedValue(error); mockStopCreatedProcess.mockImplementation(() => { throw new Error('signal dispatch failed'); });
+    await expect(start()).rejects.toBe(error);
+    expect(error.cleanupFailure).toBe('request_failed'); expect(agentRegistry.get('managed-launch')).toBeDefined();
+  });
+  it('marks no process created after a pre-creation spawn error and retains materialized snapshot ownership', async () => {
+    mockPtySpawn.mockRejectedValue(new Error('spawn failed'));
+    await expect(start()).rejects.toThrow('spawn failed');
+    expect(lease.notCreated).toHaveBeenCalled(); expect(lease.started).not.toHaveBeenCalled();
   });
 });
