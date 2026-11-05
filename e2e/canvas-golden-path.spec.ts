@@ -23,6 +23,7 @@
 import { test, expect, _electron as electron, type Page } from '@playwright/test';
 import * as path from 'path';
 import { launchApp } from './launch';
+import { clickExplorerTab } from './smoke-helpers';
 
 const FIXTURE_PROJECT = path.resolve(__dirname, 'fixtures/project-a');
 
@@ -50,7 +51,7 @@ async function stubDialogForPath(dirPath: string) {
 async function navigateToCanvas(win: Page) {
   const canvasTab = win.locator('[data-testid="explorer-tab-plugin:canvas"]');
   await expect(canvasTab).toBeVisible({ timeout: 10_000 });
-  await canvasTab.click();
+  await clickExplorerTab(electronApp, win, 'explorer-tab-plugin:canvas');
   await expect(win.locator('[data-testid="canvas-panel"]')).toBeVisible({ timeout: 10_000 });
 }
 
