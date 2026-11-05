@@ -404,7 +404,7 @@ test('saved beta state survives Preview on, then off, then on', async () => {
   expect(await savedLayoutWidth(w)).toBe(SAVED_SIDEBAR_WIDTH);
 });
 
-// Saved-only Builder, on the default layout, in the existing Linux/Windows job.
+// Builder and separate saved-delivery adoption, in the existing Linux/Windows job.
 // Every CLI points at a nonexistent path and model probes are disabled.
 async function openBuilder(w: Page) {
   const agent = w.getByTestId(`agent-item-${AGENT_ID}`);
@@ -413,7 +413,7 @@ async function openBuilder(w: Page) {
   await w.getByTestId('ctx-settings').click();
   await w.getByTestId('agent-settings-nav-builder').click();
   await expect(w.getByTestId('agent-builder')).toBeVisible();
-  await expect(w.getByText("Changes are saved here and aren't used by this agent yet.")).toBeVisible();
+  await expect(w.getByText("Builder edits are saved only. Review a separate snapshot below for next-start adoption.")).toBeVisible();
 }
 
 test('default-layout Builder saves blocks, previews exact text, forks independently and survives restart without changing the agent', async () => {
@@ -472,6 +472,18 @@ test('default-layout Builder saves blocks, previews exact text, forks independen
   }, { project: root, id: AGENT_ID, revision: saved.view.revision });
   expect(originalIdentity).toContain('@@AgentName');
   expect(originalIdentity).not.toContain('Keep this local.');
+  // The delivery action is separate from the unsaved Builder preview. These
+  // platforms fail closed before invoking any installed CLI or starting a PTY.
+  const adoption = w.getByRole('region', { name: 'Next-start adoption' });
+  await expect(adoption.getByLabel('Content revision policy')).toHaveValue('');
+  await expect(adoption.getByLabel('Structure adoption policy')).toHaveValue('');
+  await expect(adoption.getByRole('button', { name: 'Preview saved delivery', exact: true })).toBeDisabled();
+  await adoption.getByLabel('Content revision policy').selectOption('hold-preview');
+  await adoption.getByLabel('Structure adoption policy').selectOption('accepted');
+  await adoption.getByRole('button', { name: 'Preview saved delivery', exact: true }).click();
+  await expect(adoption.getByRole('alert')).toHaveText(/local macOS Claude fresh terminal sessions/);
+  await expect(adoption.getByRole('button', { name: 'Adopt snapshot for next fresh start', exact: true })).toHaveCount(0);
+  await expect(adoption.getByText('No next-start snapshot is adopted.', { exact: false })).toBeVisible();
   await app.electronApp.close();
   app = await launchApp({ profile, env: noCli });
   w = app.window;

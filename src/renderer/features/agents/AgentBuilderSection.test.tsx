@@ -9,7 +9,7 @@ const identity: BuilderBlock = { key: 'base:identity', entry: { baseEntryId: 'id
 const role: BuilderBlock = { ...identity, key: 'base:role', entry: { baseEntryId: 'role', source: { kind: 'follow' } }, assetId: 'role', name: 'Researcher role', content: 'Find the evidence.' };
 let saved: BuilderView;
 let requests: BuilderCommand[];
-const renderBuilder = () => render(<AgentBuilderSection projectPath="/project" agentId="agent-1" />);
+const renderBuilder = () => render(<AgentBuilderSection projectId="project-1" projectPath="/project" agentId="agent-1" />);
 const rows = () => screen.getAllByTestId('builder-block');
 const settle = () => waitFor(() => expect(screen.queryByText('Saving in Builder…')).not.toBeInTheDocument());
 beforeEach(() => {
@@ -36,7 +36,7 @@ beforeEach(() => {
 });
 it('shows the permanent saved-only notice, names sources and shows exact composer text with boundaries beside it', async () => {
   renderBuilder();
-  expect(screen.getByText("Changes are saved here and aren't used by this agent yet.")).toBeVisible();
+  expect(screen.getByText("Builder edits are saved only. Review a separate snapshot below for next-start adoption.")).toBeVisible();
   await screen.findByText('1. Identity');
   await waitFor(() => expect(screen.getByTestId('builder-effective-preview').textContent).toBe(saved.text));
   expect(within(screen.getByRole('list', { name: 'Preview block boundaries' })).getByText(/Lines 1 to 1/)).toBeVisible();
