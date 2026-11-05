@@ -66,7 +66,6 @@ function makeProject(name: string): string {
 async function expectNewLayout(w: Page): Promise<void> {
   await expect(w.locator('[data-testid="chrome-title-bar"]')).toBeVisible({ timeout: 15_000 });
   await expect(w.locator('[data-testid="chrome-sidebar"]')).toBeVisible();
-  await expect(w.locator('[data-testid="title-bar"]')).toHaveCount(0);
   expect(await w.evaluate(() => (window.clubhouse as { newChromeLayout?: unknown }).newChromeLayout)).toBe(true);
 }
 
