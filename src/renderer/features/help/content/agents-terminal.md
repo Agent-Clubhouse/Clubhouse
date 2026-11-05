@@ -1,6 +1,6 @@
 # CLI & Transcripts
 
-Every agent has a CLI view showing real-time output, plus a structured transcript for organized review.
+Every agent has a CLI view showing real-time output, plus a structured transcript for organized review. Agents open in chat by default. To use the CLI view, choose **CLI** for a provider in **Settings > Agents & providers**, or set one agent's **Runtime** setting. If a provider's CLI can't run chat, its agents open in the CLI view.
 
 ## CLI View
 

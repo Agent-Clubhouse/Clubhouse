@@ -6,7 +6,6 @@ import { useProjectStore } from '../../../stores/projectStore';
 import { useAgentStore } from '../../../stores/agentStore';
 import { AgentRuntimePane, resetChatFlagCache, switchAgentRuntime } from './AgentRuntimePane';
 import { chatFixture, FIXTURE_AGENT_ID } from './fixtures';
-import { CHAT_DEFAULT_TIP_KEY } from './chat-default-tip';
 import { CHAT_CONTRACT_VERSION, MINIMAL_CHAT_CAPABILITIES, type ChatEvent } from '../../../../shared/chat';
 
 const agent: Agent = {
@@ -39,34 +38,52 @@ describe('AgentRuntimePane', () => {
     useProjectStore.setState({ projects: [{ id: 'proj-1', name: 'Clubhouse', path: '/work/clubhouse' }] } as never);
   });
 
-  it('renders the terminal under the pane toolbar and never asks for the runtime with the flag off', async () => {
+  it('shows an agent still live in chat with the flag off, as a window opened after Chat went off', async () => {
     setFlag(false);
-    setRuntime(true, true);
+    setRuntime(true, false);
+    render(<AgentRuntimePane agent={agent} terminal={terminal} />);
+    expect(await screen.findByTestId('chat-view')).toBeInTheDocument();
+    expect(screen.queryByTestId('fake-terminal')).not.toBeInTheDocument();
+  });
+
+  it('renders the terminal under the pane toolbar with the flag off, with no Chat to switch to', async () => {
+    setFlag(false);
+    setRuntime(false, false);
     render(<AgentRuntimePane agent={agent} terminal={terminal} />);
     await act(async () => { await Promise.resolve(); });
     expect(screen.getByTestId('fake-terminal')).toBeInTheDocument();
     expect(screen.getByTestId('terminal-pane-bar')).toBeInTheDocument();
     expect(screen.getByTestId('agent-details-toggle')).toBeInTheDocument();
-    expect(api.chat.getAgentRuntime).not.toHaveBeenCalled();
     // No Chat to switch to: the switch is CLI, with the Changes review beside it.
     expect(screen.getAllByRole('radio').map((r) => r.textContent)).toEqual(['CLI']);
     expect(screen.getByTestId('view-changes')).toBeInTheDocument();
   });
 
+  it('offers no Chat switch when main says none is available, so nothing can write over a saved CLI choice', async () => {
+    setFlag(true);
+    setRuntime(false, false);
+    render(<AgentRuntimePane agent={agent} terminal={terminal} />);
+    await screen.findByTestId('fake-terminal');
+    await waitFor(() => expect(api.chat.getAgentRuntime).toHaveBeenCalled());
+    expect(screen.getAllByRole('radio').map((r) => r.textContent)).toEqual(['CLI']);
+    expect(screen.queryByRole('radio', { name: 'Chat' })).not.toBeInTheDocument();
+  });
+
   it('renders the terminal alone outside the main pane', async () => {
     setFlag(false);
+    setRuntime(false, false);
     const { container } = render(<AgentRuntimePane agent={agent} terminal={terminal} canSwitch={false} />);
     await act(async () => { await Promise.resolve(); });
     expect(container.firstChild).toBe(screen.getByTestId('fake-terminal'));
   });
 
-  it('keeps the flag off in builds that are not preview-eligible', async () => {
-    setFlag(true, false);
+  it('asks main for the runtime with the flag missing, in any build', async () => {
+    api.app.getExperimentalSettings = vi.fn(async () => ({})) as typeof api.app.getExperimentalSettings;
+    api.app.isPreviewEligible = vi.fn(async () => false);
     setRuntime(true, true);
     render(<AgentRuntimePane agent={agent} terminal={terminal} />);
-    await act(async () => { await Promise.resolve(); });
-    expect(screen.getByTestId('fake-terminal')).toBeInTheDocument();
-    expect(api.chat.getAgentRuntime).not.toHaveBeenCalled();
+    await waitFor(() => expect(api.chat.getAgentRuntime).toHaveBeenCalled());
+    expect(screen.queryByTestId('fake-terminal')).not.toBeInTheDocument();
   });
 
   it('shows ChatView for an agent running in chat', async () => {
@@ -232,9 +249,6 @@ describe('AgentRuntimePane', () => {
     // Waits for the exit so the respawn resumes the session the old process just saved.
     expect(killAgent).toHaveBeenCalledWith(FIXTURE_AGENT_ID, '/work/clubhouse', { waitForExit: true });
     expect(spawnDurableAgent).toHaveBeenCalledWith('proj-1', '/work/clubhouse', config, true);
-    // Choosing Terminal is explicit: the "Agents now open in Chat" tip is never needed again.
-    expect(localStorage.getItem(CHAT_DEFAULT_TIP_KEY)).toBe('chose_terminal');
-    localStorage.removeItem(CHAT_DEFAULT_TIP_KEY);
   });
 
   it('asks before switching during a turn', async () => {

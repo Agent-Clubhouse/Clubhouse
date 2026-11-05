@@ -67,11 +67,11 @@ test.afterEach(async () => {
   projectDir = undefined;
 });
 
-/** Launch with Chat on and the fake CLI installed, add a project, create a durable agent and open its chat. */
+/** Launch with nothing saved for Chat, so it's on by default, and the fake CLI installed, add a project, create a durable agent and open its chat. */
 async function openChat(p: ProviderCase, fixture: string) {
   fakes = await installFakeClis({ [p.cli]: fixture });
   projectDir = await fs.promises.mkdtemp(path.join(os.tmpdir(), `chat-e2e-${p.cli}-`));
-  const app = await launchApp({ experimental: { newChrome: false, chat: true }, userDataFiles: USER_DATA_FILES, env: fakes.env });
+  const app = await launchApp({ experimental: { newChrome: false }, userDataFiles: USER_DATA_FILES, env: fakes.env });
   const { electronApp, window } = app;
 
   await addProject(electronApp, window, projectDir);

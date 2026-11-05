@@ -14,12 +14,21 @@ vi.mock('./agent-runtime/chat-files', async (importOriginal) => ({
   ...await importOriginal<typeof import('./agent-runtime/chat-files')>(),
   agentFolders: vi.fn(async () => ['/test/project/.clubhouse/agents/a', '/test/project']),
 }));
-import { getSettings as getExperimentalSettings } from './experimental-settings';
+import { getSettings as getExperimentalSettings, savedSettingsUnreadable } from './experimental-settings';
 vi.mock('./mobile-helper-requests', () => ({
   buildMobileHelperRequests: vi.fn(() => []),
   runHelperCommand: vi.fn(async () => ({ requestId: 'hstart_1', kind: 'start', declined: true })),
 }));
-vi.mock('./experimental-settings', () => ({ getSettings: vi.fn(() => ({})), saveSettings: vi.fn() }));
+vi.mock('./experimental-settings', () => {
+  const getSettings = vi.fn((): Record<string, boolean> => ({}));
+  const savedSettingsUnreadable = vi.fn(() => false);
+  return {
+    getSettings,
+    savedSettingsUnreadable,
+    isGraduatedFeatureOn: (key: string) => !savedSettingsUnreadable() && getSettings()[key] !== false,
+    saveSettings: vi.fn(),
+  };
+});
 import * as projectStateStore from './project-state-store';
 // An in-memory main store running the real shared rules (#2458).
 vi.mock('./project-state-store', async () => {
@@ -1080,14 +1089,23 @@ describe('annex-server', () => {
       expect(ptyManagerModule.spawnShell).not.toHaveBeenCalled();
     });
 
-    it('advertises rich content only while the flag reads as on', async () => {
+    it('advertises rich content unless the flag is saved off', async () => {
       const { port, token } = await startAndPair();
       const capabilities = async () => JSON.parse((await request(port, 'GET', '/api/v1/mobile/capabilities', undefined, authHeaders(token))).body);
-      expect((await capabilities()).richContent.enabled).toBe(false);
-      vi.mocked(getExperimentalSettings).mockReturnValue({ richChatContent: true } as any);
+      expect((await capabilities()).richContent.enabled).toBe(true);
+      vi.mocked(getExperimentalSettings).mockReturnValue({ richChatContent: false } as any);
       try {
-        expect((await capabilities()).richContent.enabled).toBe(true);
+        expect((await capabilities()).richContent.enabled).toBe(false);
       } finally { vi.mocked(getExperimentalSettings).mockReturnValue({} as any); }
+    });
+
+    it('advertises no rich content while the settings file can\'t be read', async () => {
+      const { port, token } = await startAndPair();
+      vi.mocked(savedSettingsUnreadable).mockReturnValue(true);
+      try {
+        const body = JSON.parse((await request(port, 'GET', '/api/v1/mobile/capabilities', undefined, authHeaders(token))).body);
+        expect(body.richContent.enabled).toBe(false);
+      } finally { vi.mocked(savedSettingsUnreadable).mockReturnValue(false); }
     });
 
     it('advertises the terminal capability', async () => {
@@ -1435,9 +1453,11 @@ describe('annex-server', () => {
       vi.mocked(agentConfigModule.listDurable).mockReturnValue([{ id: 'a', name: 'agent', color: 'blue', createdAt: '2026-01-01' }] as any);
       const { port, token } = await startAndPair();
       const chat = async () => JSON.parse((await request(port, 'GET', '/api/v1/mobile/agents/a/chat', undefined, authHeaders(token))).body);
-      expect(await chat()).toMatchObject({ contentRoots: [], contentAnyPath: false });
-      expect(agentFolders).not.toHaveBeenCalled();
-      vi.mocked(getExperimentalSettings).mockReturnValue({ richChatContent: true } as any);
+      vi.mocked(getExperimentalSettings).mockReturnValue({ richChatContent: false } as any);
+      try {
+        expect(await chat()).toMatchObject({ contentRoots: [], contentAnyPath: false });
+        expect(agentFolders).not.toHaveBeenCalled();
+      } finally { vi.mocked(getExperimentalSettings).mockReturnValue({} as any); }
       try {
         expect(await chat()).toMatchObject({ contentRoots: ['/test/project/.clubhouse/agents/a', '/test/project'], contentAnyPath: true });
         expect(agentFolders).toHaveBeenCalledWith('a');

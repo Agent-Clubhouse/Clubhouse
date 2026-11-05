@@ -8,15 +8,22 @@
  * checkpoints cover revert meanwhile).
  */
 
-/** Concrete chat transports. Also the `c.chat.driver` telemetry values. */
-export type ChatDriverId =
-  | 'claude_agent_sdk'
-  | 'claude_stream_json'
-  | 'codex_app_server'
-  | 'copilot_acp'
-  | 'copilot_sdk'
+/**
+ * Concrete chat transports. Also the `c.chat.driver` telemetry values. A value at
+ * runtime so scripts/ci/cli-denylist.test.ts can hold the kill switch's publish
+ * validation to it.
+ */
+export const CHAT_DRIVER_IDS = [
+  'claude_agent_sdk',
+  'claude_stream_json',
+  'codex_app_server',
+  'copilot_acp',
+  'copilot_sdk',
   /** Any other ACP agent (Gemini CLI, etc.) through the generic ACP driver. */
-  | 'acp';
+  'acp',
+] as const;
+
+export type ChatDriverId = (typeof CHAT_DRIVER_IDS)[number];
 
 /** Experimental flag that offers `copilot_sdk` as a chat driver (Settings › Experimental). */
 export const COPILOT_SDK_FLAG = 'copilotSdk';

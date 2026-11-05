@@ -22,6 +22,9 @@ import { parseHelperCount } from './orchestration-hooks';
 /** The help line under the "Connect to Dispatcher" switch (#2534). */
 export const DISPATCHER_HELP = 'Let the Dispatcher message this agent and get its reports.';
 
+/** The same line while the Dispatcher is off because of Clubhouse MCP. */
+export const DISPATCHER_MCP_OFF_HELP = 'The Dispatcher is off because Clubhouse MCP is off. Turn on Clubhouse MCP in Settings. Your setting here is kept.';
+
 /** The help line under the "Cross-project helpers" switch (#2512). */
 export const CROSS_PROJECT_HELP = 'Let this agent start helpers in other projects.';
 export const AUTO_HELPERS_HELP = 'Let Clubhouse pick between Claude Code and Codex for a helper, from helper counts and plan limits. This balances counts, not cost.';

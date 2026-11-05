@@ -681,6 +681,15 @@ describe('plugin-loader', () => {
       expect(mockApp.saveExperimentalSettings).toHaveBeenCalledWith({});
     });
 
+    it('clears the stale annex, clubhouseMcp and review flags, keeping the rest', async () => {
+      setupCanvasBuiltins();
+      mockApp.getExperimentalSettings.mockResolvedValue({ annex: true, clubhouseMcp: true, review: false, chat: false });
+
+      await initializePluginSystem();
+
+      expect(mockApp.saveExperimentalSettings).toHaveBeenCalledWith({ chat: false });
+    });
+
     it('clears stale mcp flag even when canvas is not present', async () => {
       setupCanvasBuiltins();
       mockApp.getExperimentalSettings.mockResolvedValue({ mcp: true });

@@ -30,7 +30,7 @@ export type MobileCommand = CommandBase & (
   // The start page's "Finished, waiting on you" list (#2467).
   | { type: 'quick.dismiss'; projectId: string; agentId: string }
   | { type: 'quick.clear'; projectId: string }
-  // Settings > Dispatcher's switch (#2533). Never the experimental flag.
+  // Settings > Dispatcher's switch (#2533).
   | { type: 'dispatcher.setEnabled'; enabled: boolean }
   // App-wide helper presets (#2671). `revision` is what the change was made from; 409 helper_routing_stale changes nothing.
   | ({ type: 'helperRouting.update'; scope: string; projectId?: string } & import('./helper-routing').HelperRoutingUpdate)

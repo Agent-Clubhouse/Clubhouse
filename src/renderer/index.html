@@ -45,7 +45,7 @@
           if (font) {
             document.documentElement.classList.add('theme-mono');
           }
-          // Experimental: restore font/gradient classes from cached vars
+          // Restore font/gradient classes from cached vars. applyTheme only caches them with the feature on.
           if (vars && vars['--theme-font-ui']) document.documentElement.classList.add('theme-font-ui');
           if (vars && vars['--theme-font-mono']) document.documentElement.classList.add('theme-font-mono');
           if (vars && vars['--theme-gradient-bg']) document.documentElement.classList.add('theme-gradient-bg');

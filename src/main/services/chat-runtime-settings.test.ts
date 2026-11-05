@@ -1,7 +1,10 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 const flags = vi.hoisted(() => ({ value: {} as Record<string, boolean> }));
-vi.mock('./experimental-settings', () => ({ getSettings: () => flags.value }));
+vi.mock('./experimental-settings', () => ({
+  getSettings: () => flags.value,
+  isGraduatedFeatureOn: (key: string) => (flags.value as Record<string, boolean>)[key] !== false,
+}));
 const preview = vi.hoisted(() => ({ value: true }));
 vi.mock('./preview-eligible', () => ({ isPreviewEligible: () => preview.value }));
 const stored = vi.hoisted(() => ({ value: {} as Record<string, unknown> }));
@@ -14,22 +17,34 @@ import { resolveRuntimeMode, isChatEnabled, isCopilotSdkEnabled } from './chat-r
 beforeEach(() => { flags.value = {}; stored.value = {}; preview.value = true; });
 
 describe('chat runtime settings', () => {
-  it('uses the terminal for everything while the flag is off', () => {
+  it('uses the terminal for everything, overrides included, while the flag is saved off', () => {
+    flags.value = { chat: false };
     stored.value = { 'claude-code': { mode: 'chat' } };
     expect(isChatEnabled()).toBe(false);
     expect(resolveRuntimeMode('claude-code', 'chat')).toEqual({ mode: 'terminal' });
   });
 
-  it('ignores the flag outside beta builds', () => {
-    flags.value = { chat: true };
-    preview.value = false;
+  it.each([[true], [false]])('is the same in every build (preview-eligible: %s)', (eligible) => {
+    preview.value = eligible;
+    expect(isChatEnabled()).toBe(true);
+    expect(resolveRuntimeMode('codex-cli')).toEqual({ mode: 'chat' });
+    flags.value = { chat: false };
     expect(isChatEnabled()).toBe(false);
     expect(resolveRuntimeMode('codex-cli')).toEqual({ mode: 'terminal' });
   });
 
-  it('defaults providers to chat once the flag is on', () => {
+  it('defaults providers to chat with the flag missing or saved on', () => {
+    expect(resolveRuntimeMode('codex-cli')).toEqual({ mode: 'chat' });
     flags.value = { chat: true };
     expect(resolveRuntimeMode('codex-cli')).toEqual({ mode: 'chat' });
+  });
+
+  it('lets a saved agent override and provider choice win over the default', () => {
+    stored.value = { 'claude-code': { mode: 'terminal' } };
+    expect(resolveRuntimeMode('claude-code')).toEqual({ mode: 'terminal' });
+    expect(resolveRuntimeMode('claude-code', 'chat')).toEqual({ mode: 'chat' });
+    stored.value = {};
+    expect(resolveRuntimeMode('claude-code', 'terminal')).toEqual({ mode: 'terminal' });
   });
 
   it('honours the provider setting, its driver and a per-agent override', () => {
@@ -71,7 +86,7 @@ describe('chat runtime settings', () => {
     });
 
     it('needs Chat, and counts only in beta builds', () => {
-      flags.value = { copilotSdk: true };
+      flags.value = { chat: false, copilotSdk: true };
       stored.value = saved;
       expect(resolveRuntimeMode('copilot-cli')).toEqual({ mode: 'terminal' });
       flags.value = { chat: true, copilotSdk: true };

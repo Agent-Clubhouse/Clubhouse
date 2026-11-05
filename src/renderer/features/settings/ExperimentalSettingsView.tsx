@@ -1,9 +1,9 @@
 import { useEffect, useState } from 'react';
 import { Toggle } from '../../components/Toggle';
-import { SettingsPage, SettingsSection, SettingsField } from './SettingsLayout';
+import { SettingsPage, SettingsSection, SettingsField, settingsError, SETTING_NOT_SAVED_TEXT } from './SettingsLayout';
 import { Button } from '../../components/Button';
-import { RICH_CHAT_CONTENT_FLAG, resetRichChatContentFlag } from '../agents/chat/rich/rich-flag';
 import { COPILOT_SDK_FLAG } from '../../../shared/chat';
+import { isGraduatedFlagOn } from '../../../shared/graduated-flags';
 
 /** Feature definitions for the experimental settings page. */
 export const EXPERIMENTAL_FEATURES: Array<{
@@ -12,45 +12,21 @@ export const EXPERIMENTAL_FEATURES: Array<{
   description: string;
 }> = [
   {
-    id: 'themeGradients',
-    label: 'Theme gradients & fonts',
-    description: 'Allow themes to define custom font families and background gradients. Requires app restart.',
-  },
-  {
     id: 'goobers',
     label: 'Goobers',
     description: 'Monitor and control a local Goobers instance from an app-level panel. Not available on Windows. Requires app restart.',
-  },
-  {
-    id: 'chat',
-    label: 'Chat',
-    description: 'Talk to Claude Code, Codex and Copilot agents in a native chat view. The CLI view stays available for every provider.',
-  },
-  {
-    id: RICH_CHAT_CONTENT_FLAG,
-    label: 'Rich chat content',
-    description: 'Show images agents return inline in chat, links as links, and GitHub pull requests, issues and commits as references with a hover card. Images from the web load only when you click them, and GitHub details load through the gh CLI only when you hover one.',
   },
   {
     id: COPILOT_SDK_FLAG,
     label: 'Copilot SDK driver',
     description: 'Offer the Copilot SDK as a chat driver, in Settings > Agents & providers > Copilot CLI. ACP stays the default until you choose it. Running agents keep their driver until they restart.',
   },
-  {
-    id: 'dispatcher',
-    label: 'Dispatcher',
-    description: 'One app-wide agent that coordinates the orchestrators in your projects. Needs New layout. After turning this on, switch it on in Settings > Dispatcher.',
-  },
-  {
-    id: 'telemetry',
-    label: 'Telemetry export',
-    description: 'Send anonymized telemetry to your own Application Insights resource or OTLP collector (Settings, Logging), or to the Clubhouse developer with your feedback (Settings, Feedback).',
-  },
 ];
 
 export function ExperimentalSettingsView() {
   const [settings, setSettings] = useState<Record<string, boolean>>({});
   const [loaded, setLoaded] = useState(false);
+  const [saveFailed, setSaveFailed] = useState(false);
 
   useEffect(() => {
     window.clubhouse.app.getExperimentalSettings().then((s) => {
@@ -62,9 +38,14 @@ export function ExperimentalSettingsView() {
   const handleToggle = async (id: string, enabled: boolean) => {
     const updated = { ...settings, [id]: enabled };
     setSettings(updated);
-    await window.clubhouse.app.saveExperimentalSettings(updated);
-    // Chat panes opened from now on read the new value.
-    if (id === RICH_CHAT_CONTENT_FLAG) resetRichChatContentFlag();
+    setSaveFailed(false);
+    try {
+      await window.clubhouse.app.saveExperimentalSettings(updated);
+    } catch {
+      // telemetry-exempt: shown to the user, and the switch goes back to what's saved.
+      setSettings(settings);
+      setSaveFailed(true);
+    }
   };
 
   const handleRestart = () => {
@@ -82,9 +63,11 @@ export function ExperimentalSettingsView() {
         Experimental features may change or go away in future releases. Turning one on or off may need a restart to take full effect.
       </p>
 
+      {saveFailed && <p className={`${settingsError} mt-3`} role="alert">{SETTING_NOT_SAVED_TEXT}</p>}
+
       <SettingsSection title="Features">
         {EXPERIMENTAL_FEATURES.map(({ id, label, description }) => (
-          <SettingsField key={id} label={label} help={id === COPILOT_SDK_FLAG && !settings.chat ? `${description} Needs Chat, which is off.` : description}>
+          <SettingsField key={id} label={label} help={id === COPILOT_SDK_FLAG && !isGraduatedFlagOn(settings, 'chat') ? `${description} Needs Chat, which is off in Settings > Agents & providers.` : description}>
             <Toggle
               aria-label={label}
               checked={!!settings[id]}

@@ -1,4 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+
+const gate = vi.hoisted(() => ({ access: 'open' as 'open' | 'report_only' | 'closed' }));
+vi.mock('./mcp-call-gate', async (original) => ({ ...await original<typeof import('./mcp-call-gate')>(), mcpCallAccess: () => gate.access }));
 import type { PluginManifest } from '../../../shared/plugin-types';
 import { clear as clearManifestRegistry, registerTrustedManifest } from '../plugin-manifest-registry';
 

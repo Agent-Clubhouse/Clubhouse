@@ -7,7 +7,7 @@ import { AgentHelpersSettings } from './AgentHelpersSettings';
 
 /** Whether the Dispatcher is turned on, for the "Connect to Dispatcher" switch (#2534). */
 let dispatcherOn = false;
-vi.mock('../../dispatcher/useDispatcherEnabled', () => ({ useDispatcherEnabled: () => dispatcherOn }));
+vi.mock('../../dispatcher/useDispatcherEnabled', () => ({ useDispatcherConnection: () => ({ show: dispatcherOn, offForMcp: false }) }));
 
 const PROJECT = path.join('/work', 'proj');
 const lead: Agent = { id: 'lead', projectId: 'p1', name: 'epic-lead', kind: 'durable', status: 'sleeping', color: 'teal' };

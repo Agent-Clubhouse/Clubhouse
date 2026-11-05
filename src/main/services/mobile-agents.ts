@@ -14,7 +14,6 @@ import type { MobileAgentCreate, MobileAgentUpdate, MobileContextWindow, MobileS
 import { AGENT_IDLE_SLEEP_MINUTES, normalizeIdleSleep, resolveIdleSleep } from '../../shared/idle-sleep';
 import { AGENT_COLORS, generateDurableName } from '../../shared/name-generator';
 import { validateAgentGitName } from '../../shared/agent-name';
-import { clubhouseMcpOverride } from '../../shared/agent-helpers';
 import * as agentConfig from './agent-config';
 import { parseStartCreationParams, personaInjection, startDurableCreation } from './agent-creation';
 import { checkAvailability, getAvailableOrchestrators, resolveOrchestrator, resolveProfileEnv } from './agent-system';
@@ -31,7 +30,7 @@ import { getBranchChanges, isInsideGitRepo } from './git-service';
 import { MobileControlError } from './mobile-control';
 import * as orchestrationPolicy from './orchestration-policy';
 import * as orchestrationSettings from './orchestration-settings';
-import { isDispatcherEnabled } from './dispatcher/dispatcher-settings';
+import { dispatcherEnablement } from './dispatcher/dispatcher-settings';
 import { isMcpEnabled } from './mcp-settings';
 import {
   ACCESS_LEVELS, MAX_HELPER_LIMIT, MCP_REQUIRED_MESSAGE, ORCHESTRATION_CONTROLS, patchTurnsOnMcpSwitch, validateOrchestrationPatch,
@@ -150,6 +149,8 @@ export function mobileOrchestration(policy: ResolvedOrchestrationPolicy) {
     autoHelpers: sources.autoHelpers === 'agent' ? policy.mcpOff?.autoHelpers ?? policy.autoHelpers : null,
     autoHelpersEffective: policy.autoEffective?.effective ?? false,
     mcpEnabled: !policy.mcpOff,
+    // A helper keeps mcpEnabled for its forced bridge. With this it can only message its parent.
+    ...(policy.mcpReportOnly && { mcpReportOnly: true as const }),
     sources: {
       orchestrate: sources.orchestrate, access: sources.access, control: sources.control, maxHelpers: sources.maxHelpers,
       crossProjectHelpers: sources.crossProjectHelpers, connectToDispatcher: sources.connectToDispatcher, autoHelpers: sources.autoHelpers,
@@ -173,8 +174,9 @@ const CLEAR_ALL: OrchestrationPolicyPatch = {
  * A phone's orchestration patch, checked with the desktop's rules: the shared
  * validator, and Helpers at once no higher than the app-wide cap. `null`
  * clears a field on update; create only sets fields. `mcpEnabled` is whether
- * Clubhouse MCP is on for the agent: without it, turning a switch that needs it
- * on is refused, and turning one off or clearing it is still allowed (#2589).
+ * Clubhouse MCP is on for the agent's own calls, by its own setting and not a
+ * helper's forced bridge: without it, turning a switch that needs it on is refused,
+ * and turning one off or clearing it is still allowed (#2589).
  */
 export function parseMobileOrchestration(raw: unknown, mode: 'update' | 'create', { mcpEnabled }: { mcpEnabled: boolean }): OrchestrationPolicyPatch {
   if (raw === null && mode === 'update') return { ...CLEAR_ALL };
@@ -191,8 +193,11 @@ export function parseMobileOrchestration(raw: unknown, mode: 'update' | 'create'
   if (mode === 'create' && Object.values(patch).some((v) => v === null)) throw invalid('invalid_orchestration', 'A new agent has no orchestration overrides to clear');
   if (typeof patch.maxHelpers === 'number' && patch.maxHelpers > cap) throw invalid('invalid_orchestration', capMessage);
   // The Orchestration card offers Connect to Dispatcher only while the Dispatcher is on (#2534); off is always allowed.
-  if (patch.connectToDispatcher === true && !isDispatcherEnabled()) {
-    throw new MobileControlError('dispatcher_off', 409, 'rejected', 'Turn on the Dispatcher first.');
+  if (patch.connectToDispatcher === true) {
+    const { enabled, reason } = dispatcherEnablement();
+    // Off only because of MCP, so MCP is what to turn on. The code is the one a phone already gets for that.
+    if (reason === 'mcp_off') throw mcpOff();
+    if (!enabled) throw new MobileControlError('dispatcher_off', 409, 'rejected', 'Turn on the Dispatcher first.');
   }
   if (!mcpEnabled && patchTurnsOnMcpSwitch(patch)) throw mcpOff();
   return patch;
@@ -513,7 +518,7 @@ export async function updateMobileAgent(
     await assertContextWindow(project, orchestrator, command.model ?? (command.orchestrator !== undefined ? undefined : config.model), command.contextWindow);
     updates.contextWindow = command.contextWindow;
   }
-  const orchestration = command.orchestration !== undefined ? parseMobileOrchestration(command.orchestration, 'update', { mcpEnabled: isMcpEnabled(project.path, clubhouseMcpOverride(config)) }) : undefined;
+  const orchestration = command.orchestration !== undefined ? parseMobileOrchestration(command.orchestration, 'update', { mcpEnabled: isMcpEnabled(project.path, config.mcpOverride) }) : undefined;
 
   assertAuthorized();
   const hadSession = !!config.lastSessionId;

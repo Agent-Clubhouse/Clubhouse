@@ -43,6 +43,7 @@ While a controller is connected, the satellite shows a lock screen naming the co
 - Everything stays on your local network. There's no cloud service in between.
 - Each instance has its own key pair. After pairing, connections use mutual TLS, and each side checks the other's certificate.
 - After 3 wrong PINs from one address, pairing slows down. After 6, it locks for 5 minutes.
+- While **Rich chat content** is on in **Settings > Agents & providers**, paired phones (Clubhouse Go) can read any file your user account can read on this computer, up to a size limit, with no prompt for each file. Turn it off to stop that.
 - **Reset Annex** on the Annex page, and **Forget all satellites** on the Annex control page, drop all pairings, so every device has to pair again.
 
 ## If something goes wrong

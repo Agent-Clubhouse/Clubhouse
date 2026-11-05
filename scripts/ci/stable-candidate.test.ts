@@ -460,14 +460,14 @@ describe('the matrix', () => {
 
   it('expects nothing Preview-gated without Preview', () => {
     for (const scenario of SCENARIOS.filter((s: { preview: boolean }) => !s.preview)) {
-      expect(expectedFor(scenario)).toMatchObject({ previewEligible: false, newChrome: true, chatEnabled: false, flagsInForce: null, settingsPages: [], dispatcherRow: false, dispatcherFolderAbsent: true });
+      expect(expectedFor(scenario)).toMatchObject({ previewEligible: false, newChrome: true, chatEnabled: true, flagsInForce: null, settingsPages: [], dispatcherRow: true });
     }
   });
 
   it('expects flags to take effect only with Preview on', () => {
-    expect(expectedFor({ state: 'beta', preview: true, flags: true })).toMatchObject({ previewEligible: true, newChrome: true, chatEnabled: true, flagsInForce: BETA_FLAGS, settingsPages: PREVIEW_PAGES, dispatcherRow: true, wakesInChatMustBeFalse: false });
-    expect(expectedFor({ state: 'beta', preview: true, flags: false })).toMatchObject({ previewEligible: true, newChrome: true, chatEnabled: false, flagsInForce: null, settingsPages: ['Experimental', 'Annex', 'Annex control'], wakesInChatMustBeFalse: true });
-    expect(expectedFor({ state: 'fresh', preview: true, flags: true })).toMatchObject({ newChrome: true, dispatcherRow: false, wakesInChatMustBeFalse: false });
+    expect(expectedFor({ state: 'beta', preview: true, flags: true })).toMatchObject({ previewEligible: true, newChrome: true, chatEnabled: true, flagsInForce: BETA_FLAGS, settingsPages: PREVIEW_PAGES, dispatcherRow: true });
+    expect(expectedFor({ state: 'beta', preview: true, flags: false })).toMatchObject({ previewEligible: true, newChrome: true, chatEnabled: true, flagsInForce: null, settingsPages: ['Experimental', 'Annex', 'Annex control'], dispatcherRow: true });
+    expect(expectedFor({ state: 'fresh', preview: true, flags: true })).toMatchObject({ newChrome: true, dispatcherRow: true });
   });
 
   it('expects saved beta files to stay byte for byte only with Preview off', () => {
@@ -480,7 +480,7 @@ describe('the matrix', () => {
 
 describe('checkStartupRecord', () => {
   const expected = expectedFor({ state: 'fresh', preview: false, flags: false });
-  const good = { packaged: true, version: '0.42.0', electron: '45.1.0', previewEligible: false, newChrome: true, chatEnabled: false };
+  const good = { packaged: true, version: '0.42.0', electron: '45.1.0', previewEligible: false, newChrome: true, chatEnabled: true };
   const opts = { version: '0.42.0', electron: '45.1.0' };
 
   it('passes a matching record', () => {
@@ -493,7 +493,7 @@ describe('checkStartupRecord', () => {
     ['electron', { electron: '45.2.0' }],
     ['previewEligible', { previewEligible: true }],
     ['newChrome', { newChrome: false }],
-    ['chatEnabled', { chatEnabled: true }],
+    ['chatEnabled', { chatEnabled: false }],
   ])('fails on %s', (field, change) => {
     expect(checkStartupRecord({ ...good, ...change }, expected, opts).join()).toContain(field);
   });
@@ -507,7 +507,7 @@ describe('checkStartupRecord', () => {
 describe('checkRenderer', () => {
   const offObserved = {
     eligible: false, flags: {}, newChromeLayout: true, titleBar: false, chromeTitleBar: true, chromeSidebar: true,
-    dispatcherRow: false, wakesInChat: false, settingsPages: [],
+    dispatcherRow: true, wakesInChat: false, settingsPages: [],
   };
 
   it('passes the new layout with Preview off', () => {
@@ -520,10 +520,9 @@ describe('checkRenderer', () => {
     ['title-bar', { titleBar: true }],
     ['chrome-title-bar', { chromeTitleBar: false }],
     ['chrome-sidebar', { chromeSidebar: false }],
-    ['dispatcher-row', { dispatcherRow: true }],
+    ['dispatcher-row', { dispatcherRow: false }],
     ['settings pages', { settingsPages: ['Experimental'] }],
-    ['wakes in chat', { wakesInChat: true }],
-    ['flags in force', { flags: { chat: true } }],
+    ['flags in force', { flags: { goobers: true } }],
   ])('fails on %s', (label, change) => {
     expect(checkRenderer({ ...offObserved, ...change }, expectedFor({ state: 'beta', preview: false, flags: true })).join()).toContain(label);
   });

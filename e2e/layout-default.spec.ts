@@ -104,6 +104,9 @@ test('fresh install: the new layout, its first-run page, and onboarding counted 
 
   await expectNewLayout(w);
   await expect(w.locator('[data-testid="first-run"]')).toBeVisible({ timeout: 15_000 });
+  // On by default here, beside the first-run page, with nothing saved for it.
+  await expect(w.locator('[data-testid="dispatcher-row"]')).toBeVisible({ timeout: 15_000 });
+  expect(fs.existsSync(path.join(profile.userDataDir, 'dispatcher-settings.json'))).toBe(false);
   // The classic shell's modal comes up after 500 ms, so give a wrong one time to show.
   await w.waitForTimeout(1_500);
   await expect(w.locator('[data-testid="onboarding-backdrop"]')).toHaveCount(0);

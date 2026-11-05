@@ -93,6 +93,14 @@ jobs:
       # with no clear message (#2347).
       - name: Check paths are valid on Windows
         run: node scripts/ci/check-windows-paths.mjs
+      # Here because this job runs on every change, including one that edits only
+      # the list. docs/release-publishing.md, "Lifting an entry".
+      - name: Check the CLI kill switch list isn't reset
+        if: ${{ github.event_name == 'pull_request' || github.event_name == 'push' }}
+        env:
+          BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
+          HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: node scripts/ci/cli-denylist.mjs check-change --base "$BASE" --head "$HEAD"
       - name: Classify the change
         id: plan
         env:
@@ -416,22 +424,23 @@ jobs:
   # Dispatcher spec (e2e/dispatcher.spec.ts, #2533, ~15 s), in a job of
   # their own so they never lengthen the E2E shards, the run's long pole.
   # Linux and Windows only, full-ci included: nothing in them differs on
-  # macOS (docs/testing/chat-e2e-plan.md). Add shards here as the folder grows.
+  # macOS (docs/testing/chat-e2e-plan.md).
   e2e-chat:
     needs: [changes, build]
     if: ${{ !cancelled() && needs.build.result == 'success' }}
     name: Chat E2E Tests (${{ matrix.os }}, ${{ matrix.shard }}/3)
     runs-on: ${{ matrix.os }}
-    # Three shards, sized for all nine area specs (docs/testing/chat-e2e-plan.md,
-    # "Shard-time budget"). --fully-parallel shards by test rather than by file,
-    # so one big spec doesn't land in a single shard; serial groups stay
-    # together, and workers stay at 1. An area spec only needs a new file.
+    # Three shards, each an explicit list of specs in e2e/chat-shards.mjs, balanced
+    # by hand from measured times (docs/testing/chat-e2e-plan.md, "Shard-time
+    # budget"). A new spec must be added to a list, and a unit test fails if it
+    # isn't. That needs no change here, so it doesn't run the macOS build.
     strategy:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, windows-2022]
         shard: [1, 2, 3]
     env:
+      PLAYWRIGHT_CHAT_SHARD: ${{ matrix.shard }}
       PLAYWRIGHT_JUNIT_OUTPUT_NAME: test-results/junit.xml
     steps:
       - uses: actions/checkout@v7
@@ -459,10 +468,10 @@ jobs:
           path: .webpack/
       - name: Run chat E2E tests
         if: runner.os != 'Linux'
-        run: npx playwright test e2e/chat-rich/ e2e/dispatcher.spec.ts --fully-parallel --shard=${{ matrix.shard }}/3 --pass-with-no-tests --reporter=line,junit
+        run: npx playwright test --reporter=line,junit
       - name: Run chat E2E tests (Linux — requires virtual display)
         if: runner.os == 'Linux'
-        run: xvfb-run --auto-servernum npx playwright test e2e/chat-rich/ e2e/dispatcher.spec.ts --fully-parallel --shard=${{ matrix.shard }}/3 --pass-with-no-tests --reporter=line,junit
+        run: xvfb-run --auto-servernum npx playwright test --reporter=line,junit
         env:
           # chrome-sandbox is not SUID root on GitHub runners
           ELECTRON_DISABLE_SANDBOX: '1'

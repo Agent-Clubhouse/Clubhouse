@@ -9,25 +9,36 @@
  * folder at create, on app start and whenever its CLI changes. There is no
  * systemPrompt path.
  *
- * Turning it off (or the experimental flag going off) stops the agent and
- * leaves the folder, `notes/` and the config alone, so turning it back on
- * resumes where it left off.
+ * On by default in the new layout: a missing switch creates the agent's record
+ * and writes its instructions. Nothing here ever starts it, so that costs no
+ * tokens. See resolveDispatcherEnablement for the rules.
+ *
+ * Turning its switch off stops the agent and leaves the folder, `notes/` and the
+ * config alone, so turning it back on resumes where it left off. MCP going off
+ * at app level derives it off and stops nothing: a running Dispatcher keeps
+ * running, loses its connections, and can't be started again until MCP is back,
+ * when it returns to what its saved values say without being started.
  */
 import * as fsp from 'fs/promises';
 import * as agentConfig from '../agent-config';
 import * as agentSystem from '../agent-system';
 import { getAllProviders, getProvider, type OrchestratorId } from '../../orchestrators';
-import { getSettings as getOrchestratorSettings } from '../orchestrator-settings';
+import { getSettings as getOrchestratorSettings, whenDefaultsDetected } from '../orchestrator-settings';
 import { resolvePersonaContent } from '../materialization-service';
 import { appLog } from '../log-service';
 import { AGENT_COLORS } from '../../../shared/name-generator';
 import type { DispatcherState } from '../../../shared/dispatcher-types';
 import type { DurableAgentConfig } from '../../../shared/types';
+import { agentRegistry } from '../agent-registry';
+import { isMcpOnAtAppLevel, onMcpEnablementChanged } from '../mcp-settings';
+import { newChromeEnabled } from '../../window-chrome';
+import { MCP_REQUIRED_MESSAGE } from '../../../shared/orchestration-policy';
+import { DISPATCHER_CLASSIC_MESSAGE } from '../../../shared/dispatcher-types';
 import { DISPATCHER_PERSONA, getDispatcherNotesPath, getDispatcherPath, isDispatcherPath } from './dispatcher-paths';
-import { isDispatcherEnabled, isDispatcherFlagOn, updateSettings } from './dispatcher-settings';
+import { dispatcherEnablement, getSettings as getDispatcherSettings, isDispatcherEnabled, updateSettings } from './dispatcher-settings';
 
 export { DISPATCHER_PERSONA, getDispatcherPath, getDispatcherNotesPath, isDispatcherPath } from './dispatcher-paths';
-export { isDispatcherEnabled, isDispatcherFlagOn, DISPATCHER_FLAG } from './dispatcher-settings';
+export { isDispatcherEnabled, DISPATCHER_FLAG } from './dispatcher-settings';
 
 const NS = 'core:dispatcher';
 export const DISPATCHER_NAME = 'Dispatcher';
@@ -39,7 +50,7 @@ let instructionsWrittenFor: string | null = null;
 /** Every change runs after the previous one, so two toggles can't race a create. */
 let queue: Promise<unknown> = Promise.resolve();
 let lastBroadcast = '';
-let stopWatchingConfig: (() => void) | null = null;
+let stopWatching: (() => void) | null = null;
 
 type DispatcherListener = (state: DispatcherState) => void;
 const listeners = new Set<DispatcherListener>();
@@ -55,9 +66,15 @@ export function isDispatcherAgentId(agentId: string | undefined | null): boolean
 }
 
 export function getDispatcherState(): DispatcherState {
+  const { enabled, savedOn, reason } = dispatcherEnablement();
   return {
-    enabled: isDispatcherEnabled(),
-    flagOn: isDispatcherFlagOn(),
+    enabled,
+    flagOn: isMcpOnAtAppLevel(),
+    savedOn,
+    offReason: reason,
+    mcpOff: !isMcpOnAtAppLevel(),
+    classic: !newChromeEnabled(),
+    running: !!config && !!agentRegistry.get(config.id),
     agentId: config?.id ?? null,
     path: config ? getDispatcherPath() : null,
     config: config ? { ...config } : null,
@@ -124,6 +141,8 @@ async function ensureCreated(): Promise<DurableAgentConfig> {
   await fsp.mkdir(getDispatcherNotesPath(), { recursive: true });
   const existing = await readConfig();
   if (existing) return existing;
+  // On by default means this can run at first launch: wait for what the probe finds, so it isn't pinned to a CLI the user doesn't have.
+  await whenDefaultsDetected();
   const orchestrator = defaultDispatcherOrchestrator();
   const created = await agentConfig.createDurable(
     dir,
@@ -163,22 +182,26 @@ async function stopAgent(agent: DurableAgentConfig): Promise<void> {
   await agentSystem.killAgent(agent.id, getDispatcherPath(), agent.orchestrator);
 }
 
-/** Bring the agent in line with the gate: create and write instructions when on, stop when off. */
+/**
+ * Bring the agent in line with the gate: create and write instructions when on.
+ * Only its saved values going off stop it, never MCP. Starts nothing.
+ */
 async function reconcile(): Promise<void> {
-  watchConfig();
-  if (isDispatcherEnabled()) {
+  watchChanges();
+  const { enabled, savedOn } = dispatcherEnablement();
+  if (enabled) {
     config = await ensureCreated();
     await writeInstructions(config);
   } else {
     config = await readConfig();
-    if (config) await stopAgent(config);
+    if (config && !savedOn) await stopAgent(config);
   }
   emitChanged();
 }
 
-function watchConfig(): void {
-  if (stopWatchingConfig) return;
-  stopWatchingConfig = agentConfig.onAgentConfigChanged((projectPath) => {
+function watchChanges(): void {
+  if (stopWatching) return;
+  const unsubscribers = [agentConfig.onAgentConfigChanged((projectPath) => {
     if (!isDispatcherPath(projectPath)) return;
     void enqueue(async () => {
       const next = await readConfig();
@@ -193,13 +216,24 @@ function watchConfig(): void {
         meta: { error: err instanceof Error ? err.message : String(err) },
       });
     });
-  });
+  }),
+  // MCP at app level turns it off and on, without touching what is saved.
+  onMcpEnablementChanged(() => {
+    void enqueue(reconcile).catch((err) => {
+      appLog(NS, 'warn', 'Dispatcher update after an MCP change failed', {
+        meta: { error: err instanceof Error ? err.message : String(err) },
+      });
+    });
+  }),
+  // Its row and view stay while it runs, whatever MCP does.
+  agentRegistry.onAuthChange((agentId) => { if (agentId === config?.id) emitChanged(); })];
+  stopWatching = () => { for (const unsubscribe of unsubscribers) unsubscribe(); };
 }
 
 /**
  * At app start: read the existing record, and when the Dispatcher is on,
- * rewrite its instructions so persona updates reach it. Creates nothing on a
- * profile that never turned it on.
+ * create it if needed and rewrite its instructions so persona updates reach it.
+ * Creates nothing while it is off, and never starts it.
  */
 export function initDispatcher(): Promise<void> {
   return enqueue(reconcile).catch((err) => {
@@ -209,16 +243,33 @@ export function initDispatcher(): Promise<void> {
   });
 }
 
-/** Turn the Dispatcher on or off from Settings > Dispatcher. Resolves with the new state. */
+/**
+ * Turn the Dispatcher on or off from Settings > Dispatcher or a phone. Resolves
+ * with the new state. Off always works. On is refused, with nothing saved, where
+ * it couldn't take effect: without MCP at app level, and in the classic layout
+ * unless its saved value is already on (#2565).
+ */
 export async function setDispatcherEnabled(on: boolean): Promise<DispatcherState> {
-  // Saving it on behind the flag would start the Dispatcher the next time anyone turns the flag on (#2555).
-  if (on && !isDispatcherFlagOn()) throw new Error('Turn on Dispatcher in Settings > Experimental first.');
+  if (on && getDispatcherSettings().enabled !== true) {
+    if (!isMcpOnAtAppLevel()) throw new Error(MCP_REQUIRED_MESSAGE);
+    if (!newChromeEnabled()) throw new Error(DISPATCHER_CLASSIC_MESSAGE);
+  }
   await updateSettings((current) => ({ ...current, enabled: on }));
   await enqueue(reconcile);
   return getDispatcherState();
 }
 
-/** The experimental flags changed; the gate may have flipped. */
+/** Stop the running agent and keep every saved value. For the choice in the MCP turn-off dialog. */
+export async function stopDispatcherNow(): Promise<DispatcherState> {
+  await enqueue(async () => {
+    config = await readConfig();
+    if (config) await stopAgent(config);
+    emitChanged();
+  });
+  return getDispatcherState();
+}
+
+/** The experimental flags changed; a saved `dispatcher` may have flipped. */
 export function onExperimentalSettingsChanged(): Promise<void> {
   return enqueue(reconcile).catch((err) => {
     appLog(NS, 'error', 'Dispatcher update after a flag change failed', {
@@ -242,7 +293,7 @@ export function _resetDispatcherForTesting(): void {
   instructionsWrittenFor = null;
   queue = Promise.resolve();
   lastBroadcast = '';
-  stopWatchingConfig?.();
-  stopWatchingConfig = null;
+  stopWatching?.();
+  stopWatching = null;
   listeners.clear();
 }

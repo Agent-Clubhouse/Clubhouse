@@ -19,7 +19,7 @@ These come from the maintainer and apply to all #2480 work.
 - **Specs:** `e2e/chat-rich/*.spec.ts`, one file per area below.
 - **Harness:** `e2e/chat-rich/harness.ts` (launch, flags, DOM helpers) and `src/main/orchestrators/adapters/testing/chat-script.ts` (scripted turns).
 - **Media:** `test/chat-media/` (see its README).
-- **CI job:** `e2e-chat` in `.github/workflows/validate.yml`, "Chat E2E Tests (os, shard)". It runs on `ubuntu-latest` and `windows-2022` from the same `build` artifact as the other E2E jobs, in parallel with the three E2E shards and Annex E2E. It has three shards per OS (`--shard=N/3 --fully-parallel`), so tests rather than files are spread across shards; a `serial` group stays in one shard. A new area spec needs no workflow change.
+- **CI job:** `e2e-chat` in `.github/workflows/validate.yml`, "Chat E2E Tests (os, shard)". It runs on `ubuntu-latest` and `windows-2022` from the same `build` artifact as the other E2E jobs, in parallel with the three E2E shards and Annex E2E. It has three shards per OS, each an explicit list of specs in `e2e/chat-shards.mjs`, which `playwright.config.ts` reads through `PLAYWRIGHT_CHAT_SHARD`. **A new spec must be added to a list by hand:** put it in the shard with the most room. `test/chat-e2e-shards.test.ts` fails if a chat spec is in no list or in two. Adding one needs no workflow edit, so it doesn't run the macOS build.
 - **Kept out of everything else:** the sharded E2E job sets `PLAYWRIGHT_IGNORE_CHAT_RICH=1`, which `playwright.config.ts` turns into a `testIgnore` for `**/chat-rich/**`. That keeps the existing shards exactly as long as before.
 
 ### How specs avoid macOS runners
@@ -101,7 +101,7 @@ Recording costs tokens, and a recording names your machine's paths, so area fixt
 
 ## Harness
 
-- **`openRichChat({ cli, script, flags?, projectFiles?, outsideFiles? })`:** builds and installs the script, launches with Chat on (seeded, since it's read at mount), sets the flags through the settings IPC (`setExperimentalFlags`, default `richChatContent: true`), adds a temp project, creates a durable agent on that provider and opens its chat. It checks that the app spawned the fake before returning. `script` can be a function of `{ projectDir, outsideDir }`.
+- **`openRichChat({ cli, script, flags?, projectFiles?, outsideFiles? })`:** builds and installs the script, launches with nothing saved, so Chat and rich content are on by default, saves any `flags` through the settings IPC (`setExperimentalFlags`), adds a temp project, creates a durable agent on that provider and opens its chat. It checks that the app spawned the fake before returning. `script` can be a function of `{ projectDir, outsideDir }`.
 - **`setExperimentalFlags(window, flags)`:** saves through `window.clubhouse.app.saveExperimentalSettings`, as the Settings toggle does, then reads the flags back. The renderer reads `richChatContent` once, when the first chat pane mounts, so set flags before opening a chat, or `window.reload()` after changing them mid-session.
 - **`chatDom(window)`:** locators for file chips (`fileChip(path)`, `mutedChip(path)`), the preview popover and PDF canvas, tool images, the lightbox, media cards, the permission and question dock, the queue, and the composer.
 - **`expectImageLoaded`, `expectCanvasPainted`, `expectNoPageScroll`:** state checks that poll until true. "Painted" means not every pixel is the same, which proves pdf.js drew the page.
@@ -132,7 +132,7 @@ Recording costs tokens, and a recording names your machine's paths, so area fixt
 **Budget:**
 
 - A chat shard must finish within the slowest existing Windows E2E shard's p50, about **4 minutes** of job time, so it never becomes the long pole. Job overhead (checkout, `npm ci`, artifact download) is about 1.3 minutes on Windows, which leaves about 2.5 minutes of tests per shard.
-- **Add a shard** (`shard: [1, 2, 3, 4]` and `--shard=N/4` in `e2e-chat`) when a chat shard's measured run time passes 3.5 minutes on either OS. Shards are runners in parallel, so they add CI minutes but not wall clock.
+- **Rebalance first.** When a chat shard's job time nears 4 minutes on either OS, move specs between the lists in `e2e/chat-shards.mjs`, using times from the job's junit artifact. **Add a shard** (a new list, and `shard: [1, 2, 3, 4]` and the job name in `e2e-chat`) only when rebalancing can't get every shard under budget. Shards are runners in parallel, so they add CI minutes but not wall clock.
 - Phase 2 estimate: about 35 tests at 25 to 35 s each on Windows (each launches the app), so 15 to 20 minutes of tests, which is 6 to 8 shards at one launch per test. Sharing one launch per area where tests allow cuts that to about 4. Each area PR reports its measured time in the job and adjusts the shard count.
 - **Phase 1:** the two example specs fit in one shard. The measured delta is in the Phase 1 PR body.
 
@@ -145,6 +145,8 @@ Recording costs tokens, and a recording names your machine's paths, so area fixt
 - The graduation gate below needs **zero** flaky chat tests across its window.
 
 ## Phase 3 graduation gate
+
+Status: the default flipped for v1.0.0. The window starts with the first main run after that. Counted: five completed main Validate runs that actually ran chat jobs, first attempt, no retry-passes. Skipped runs, runs with no chat jobs, and runs cancelled before chat results neither count nor reset. An observed chat failure or retry-pass resets the count even if the run was later cancelled. An unrelated job failure doesn't reset it. Critical path is compared against comparable PR runs. macOS stays unmeasured until a baseline number exists.
 
 `richChatContent` becomes the default only when all of these hold:
 

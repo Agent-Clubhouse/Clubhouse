@@ -7,7 +7,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { Toggle } from '../../components/Toggle';
 import { Button } from '../../components/Button';
 import { SettingsSection, SettingsField, settingsHelp } from './SettingsLayout';
-import { DestinationControls } from './TelemetrySettingsSection';
+import { DestinationControls, TelemetryPausedNotice } from './TelemetrySettingsSection';
 import { FeedbackTelemetryPrompt, type TelemetryShareAsk } from './FeedbackTelemetryPrompt';
 import type { TelemetryDestinationStatus, TelemetryEnableResult } from '../../../shared/telemetry/settings-types';
 
@@ -29,8 +29,9 @@ export function shareTelemetry(ask: TelemetryShareAsk): Promise<TelemetryEnableR
  * reloads it when the page changes the destination itself (the connect prompt).
  */
 export function DeveloperTelemetrySection({ refreshKey }: { refreshKey?: unknown }) {
-  const [available, setAvailable] = useState(false);
   const [dest, setDest] = useState<TelemetryDestinationStatus | null>(null);
+  const [paused, setPaused] = useState(false);
+  const [fileCopy, setFileCopy] = useState<string | undefined>();
   const [ask, setAsk] = useState<TelemetryShareAsk | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [test, setTest] = useState<string | null>(null);
@@ -38,11 +39,12 @@ export function DeveloperTelemetrySection({ refreshKey }: { refreshKey?: unknown
   const load = useCallback(async () => {
     try {
       const status = await api().getStatus();
-      setAvailable(!!status?.available);
       setDest(status?.destinations.find((d) => d.id === 'framebriar') ?? null);
+      setPaused(status?.exportPaused === true);
+      setFileCopy(status?.pausedFileCopy);
     } catch {
       // telemetry-exempt: the section stays hidden when telemetry can't be read.
-      setAvailable(false);
+      setDest(null);
     }
   }, []);
   useEffect(() => { void load(); }, [load, refreshKey]);
@@ -50,6 +52,7 @@ export function DeveloperTelemetrySection({ refreshKey }: { refreshKey?: unknown
   const apply = (result: TelemetryEnableResult) => {
     const next = result.status?.destinations.find((d) => d.id === 'framebriar');
     if (next) setDest(next);
+    if (result.status) setPaused(result.status.exportPaused === true);
     if (!result.ok && !('needs' in result)) setError('message' in result ? result.message : 'Something went wrong.');
   };
 
@@ -67,11 +70,20 @@ export function DeveloperTelemetrySection({ refreshKey }: { refreshKey?: unknown
     if (pending) apply(await shareTelemetry(pending));
   };
 
-  if (!available || !dest) return null;
+  if (!dest) return null;
 
   return (
     <div data-testid="developer-telemetry">
       <SettingsSection title="Telemetry for the developer">
+        {paused && (
+          <TelemetryPausedNotice
+            fileCopy={fileCopy}
+            onResume={() => {
+              setError(null);
+              void api().resume().then(apply);
+            }}
+          />
+        )}
         <p className={settingsHelp}>
           Send user activity and errors to the Clubhouse developer so your feedback comes with context, with the same redaction as any telemetry. It works while Feedback is connected and stays off until you turn it on.
         </p>

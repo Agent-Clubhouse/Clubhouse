@@ -7,7 +7,7 @@ if [ -n "${FAIL_MATCH:-}" ] && [[ "$args" == *"$FAIL_MATCH"* ]]; then
   echo "az: injected failure" >&2
   exit 1
 fi
-name=""; file=""; overwrite=""; dest=""; source=""
+name=""; file=""; overwrite=""; dest=""; source=""; if_match=""; query=""
 while [ $# -gt 0 ]; do
   case "$1" in
     --name) name="$2"; shift ;;
@@ -15,9 +15,20 @@ while [ $# -gt 0 ]; do
     --overwrite) if [ "${2:-}" = "false" ]; then overwrite=false; shift; else overwrite=true; fi ;;
     --destination-blob) dest="$2"; shift ;;
     --source-uri) source="$2"; shift ;;
+    --if-match) if_match="$2"; shift ;;
+    --query) query="$2"; shift ;;
   esac
   shift
 done
+etag() { cksum < "$STORE/$name" | tr -d ' \t'; }
+# Something else writes this blob just before an upload of it, such as a release.
+if [ -n "${RACE_UPLOAD_OF:-}" ] && [ "$name" = "$RACE_UPLOAD_OF" ] && [[ "$args" == "storage blob upload"* ]]; then
+  printf ' ' >> "$STORE/$name"
+fi
+if [ -n "$if_match" ] && { [ ! -f "$STORE/$name" ] || [ "$(etag)" != "$if_match" ]; }; then
+  echo "ConditionNotMet: $name" >&2
+  exit 1
+fi
 case "$args" in
   "storage blob exists"*)
     if [ -f "$STORE/$name" ]; then echo true; else echo false; fi ;;
@@ -36,7 +47,12 @@ case "$args" in
     cp "$src" "$STORE/$dest"
     echo "copy $dest" >> "$WRITES" ;;
   "storage blob show"*)
-    echo success ;;
+    if [ "$query" = "properties.etag" ]; then
+      [ -f "$STORE/$name" ] || { echo "BlobNotFound: $name" >&2; exit 3; }
+      if [ "${EMPTY_ETAG_OF:-}" != "$name" ]; then etag; fi
+    else
+      echo success
+    fi ;;
   *)
     echo "fake az: unknown command: $args" >&2
     exit 99 ;;

@@ -592,6 +592,14 @@ jobs:
               }
             }' > "artifacts/${MANIFEST_NAME}"
 
+          # Chat's CLI kill switch. The list isn't part of the build, so it comes
+          # from main, not this tag: a tag sits on its bump commit, and a re-run
+          # can come days later, so a list merged since would otherwise be
+          # dropped from every client. docs/release-publishing.md has the rest.
+          git fetch --depth=1 origin main
+          git show FETCH_HEAD:release/chat-cli-denylist.json > "$RUNNER_TEMP/chat-cli-denylist.json"
+          node scripts/ci/cli-denylist.mjs add-to-manifest --file "artifacts/${MANIFEST_NAME}" --list "$RUNNER_TEMP/chat-cli-denylist.json"
+
           echo "Generated ${MANIFEST_NAME}:"
           cat "artifacts/${MANIFEST_NAME}"
 

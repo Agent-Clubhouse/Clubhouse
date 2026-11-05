@@ -1,5 +1,8 @@
 import * as path from 'path';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+
+// What the gate decides is covered in mcp-call-gate.test.ts and test/mcp-off.
+vi.mock('../mcp-call-gate', async (original) => ({ ...await original<typeof import('../mcp-call-gate')>(), mcpCallAccess: () => 'open' }));
 import type { ModelList } from '../../../orchestrators/types';
 
 // ── Mocks: providers list fixed models; no CLI is spawned ────────────────

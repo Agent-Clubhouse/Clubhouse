@@ -24,7 +24,6 @@ function makeStatus(
   dests: { azure?: Partial<TelemetryDestinationStatus>; otlp?: Partial<TelemetryDestinationStatus> } = {},
 ): TelemetryStatus {
   return {
-    available: true,
     enabled: false,
     running: false,
     destinations: [destStatus('azure', dests.azure), destStatus('otlp', dests.otlp)],
@@ -52,11 +51,48 @@ function mockApi(status: TelemetryStatus) {
 }
 
 describe('TelemetrySettingsSection', () => {
-  it('renders nothing while the experimental flag is off', async () => {
-    mockApi(makeStatus({ available: false }));
-    const { container } = render(<TelemetrySettingsSection />);
-    await waitFor(() => expect(window.clubhouse.telemetrySettings.getStatus).toHaveBeenCalled());
-    expect(container).toBeEmptyDOMElement();
+  it('shows with no experimental flag read: every build has it, and everything starts off', async () => {
+    mockApi(makeStatus());
+    const flags = vi.spyOn(window.clubhouse.app, 'getExperimentalSettings');
+    render(<TelemetrySettingsSection />);
+    expect(await screen.findByTestId('telemetry-settings')).toBeInTheDocument();
+    expect(flags).not.toHaveBeenCalled();
+  });
+
+  it('says export is paused and offers Resume, which takes the new status', async () => {
+    const api = mockApi(makeStatus({ exportPaused: true, pausedFileCopy: '/data/experimental-settings.json.unreadable' }));
+    const resume = vi.spyOn(api, 'resume').mockResolvedValue({ ok: true, status: makeStatus({ exportPaused: false }) });
+    render(<TelemetrySettingsSection />);
+    const notice = await screen.findByTestId('telemetry-paused');
+    expect(notice).toHaveTextContent('Clubhouse couldn\'t read a settings file, so telemetry export is paused. Your telemetry settings are kept. Other experimental settings may not be as you left them. The file as it was is saved at /data/experimental-settings.json.unreadable.');
+    fireEvent.click(screen.getByRole('button', { name: 'Resume' }));
+    await waitFor(() => expect(resume).toHaveBeenCalled());
+    await waitFor(() => expect(screen.queryByTestId('telemetry-paused')).toBeNull());
+  });
+
+  it('doesn\'t name a copy when none was kept, and doesn\'t claim the other settings were kept', async () => {
+    mockApi(makeStatus({ exportPaused: true }));
+    render(<TelemetrySettingsSection />);
+    const notice = await screen.findByTestId('telemetry-paused');
+    expect(notice).toHaveTextContent('Other experimental settings may not be as you left them.');
+    expect(notice).not.toHaveTextContent('saved at');
+    expect(notice).not.toHaveTextContent('Your settings are kept');
+  });
+
+  it('shows why Resume failed, and stays paused', async () => {
+    const api = mockApi(makeStatus({ exportPaused: true }));
+    vi.spyOn(api, 'resume').mockResolvedValue({ ok: false, reason: 'opt_in_not_saved', message: 'Couldn\'t save this choice, so telemetry stays paused. Try again.', status: makeStatus({ exportPaused: true }) });
+    render(<TelemetrySettingsSection />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Resume' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent('stays paused');
+    expect(screen.getByTestId('telemetry-paused')).toBeInTheDocument();
+  });
+
+  it('shows no notice while export isn\'t paused', async () => {
+    mockApi(makeStatus({ exportPaused: false }));
+    render(<TelemetrySettingsSection />);
+    await screen.findByTestId('telemetry-settings');
+    expect(screen.queryByTestId('telemetry-paused')).toBeNull();
   });
 
   it('leads with the App Insights panel and keeps OTLP in its own panel', async () => {

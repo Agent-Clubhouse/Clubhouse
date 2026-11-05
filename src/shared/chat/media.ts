@@ -1,11 +1,11 @@
 /**
- * Rich chat content (experimental `richChatContent` flag): images agents
+ * Rich chat content (`richChatContent` flag, on unless saved off): images agents
  * return, stored by main under the agent's media folder and read back by
  * reference. Pure helpers shared by main and tests: type sniffing, header
  * dimensions and media refs.
  */
 
-/** The experimental flag's id in experimental settings. */
+/** The flag's id in experimental settings. */
 export const RICH_CHAT_CONTENT_FLAG = 'richChatContent';
 
 /** Image types chat shows inline. SVG only ever renders through `<img>`. */
