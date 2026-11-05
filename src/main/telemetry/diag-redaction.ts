@@ -55,6 +55,16 @@ export function isContentKey(key: string): boolean {
 }
 
 const SECRET_NAME = String.raw`(?:(?:access|refresh|id|auth|session|bearer)[_-]?)?token|(?:client[_-]?)?secret|password|passwd|api[_-]?key|authorization|cookie|account[_-]?key|shared[_-]?access[_-]?key|(?<![A-Za-z])(?:sig|auth)(?![A-Za-z])`;
+/** Well-known token and key formats: secrets by their shape alone, whatever surrounds them. */
+const SECRET_TOKEN_RES: Array<[RegExp, string]> = [
+  [/\bsk-[A-Za-z0-9_-]{16,}/g, REDACTED],
+  [/\b(?:gh[pousr]_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,})/g, REDACTED],
+  [/\bxox[abprs]-[A-Za-z0-9-]{10,}/g, REDACTED],
+  [/\b(?:AKIA|ASIA)[0-9A-Z]{16}\b/g, REDACTED],
+  [/\bAIza[0-9A-Za-z_-]{35}/g, REDACTED],
+  [/\beyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}/g, REDACTED],
+  [/-----BEGIN [A-Z ]*PRIVATE KEY-----[\s\S]*?(?:-----END [A-Z ]*PRIVATE KEY-----|$)/g, REDACTED],
+];
 const SECRET_VALUE_RES: Array<[RegExp, string]> = [
   [/\b(bearer|basic)\s+[A-Za-z0-9._~+/=-]{6,}/gi, `$1 ${REDACTED}`],
   // `"apiKey": "x y"`, `token='x'`
@@ -65,18 +75,24 @@ const SECRET_VALUE_RES: Array<[RegExp, string]> = [
   [/(--(?:api[_-]?key|token|password|secret|auth[_-]?token))(\s+|=)(?!<)\S+/gi, `$1$2${REDACTED}`],
   // userinfo in a URL: https://user:pass@host
   [/\b([a-z][a-z0-9+.-]*:\/\/)[^\s/@:"']+:[^\s/@"']+@/gi, `$1${REDACTED}@`],
-  [/\bsk-[A-Za-z0-9_-]{16,}/g, REDACTED],
-  [/\b(?:gh[pousr]_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,})/g, REDACTED],
-  [/\bxox[abprs]-[A-Za-z0-9-]{10,}/g, REDACTED],
-  [/\b(?:AKIA|ASIA)[0-9A-Z]{16}\b/g, REDACTED],
-  [/\bAIza[0-9A-Za-z_-]{35}/g, REDACTED],
-  [/\beyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}/g, REDACTED],
+  ...SECRET_TOKEN_RES,
   // child_process: `Command failed: claude -p "<mission>"` keeps the executable only.
   [/\b(Command failed: )("[^"]*"|\S+)[^\n]*/g, `$1$2 ${REDACTED}`],
   // V8 JSON errors quote the input: `"hello priv"... is not valid JSON`.
   [/"(?:[^"\\\n]|\\.)*"(?:\.\.\.)? is not valid JSON/g, `${REDACTED} is not valid JSON`],
-  [/-----BEGIN [A-Z ]*PRIVATE KEY-----[\s\S]*?(?:-----END [A-Z ]*PRIVATE KEY-----|$)/g, REDACTED],
 ];
+
+/** Whether text holds a well-known token or key format. For rejecting text before it's kept, not for scrubbing it. */
+export function containsSecretToken(input: string): boolean {
+  return SECRET_TOKEN_RES.some(([re]) => input.search(re) >= 0);
+}
+
+/** Every secret pattern over the whole text: unlike DiagRedactor.text, no home directory handling and no length cut. */
+export function redactSecretValues(input: string): string {
+  let out = input;
+  for (const [re, sub] of SECRET_VALUE_RES) out = out.replace(re, sub);
+  return out;
+}
 
 function cut(s: string, max = DIAG_MAX_STRING_CHARS): string {
   return s.length > max ? `${s.slice(0, max)}…[cut]` : s;

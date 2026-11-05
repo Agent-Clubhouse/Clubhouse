@@ -18,6 +18,7 @@ export const KNOWN_LOG_NAMESPACES: readonly string[] = [
   'core:annex',
   'core:annex-client',
   'core:annex-server',
+  'core:asset-catalog',
   'core:blueprint',
   'core:canvas-index',
   'core:chat',

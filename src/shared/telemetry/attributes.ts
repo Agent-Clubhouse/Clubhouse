@@ -396,7 +396,7 @@ export const ATTR = {
 
   // Persistence integrity (§12 H1, Phase 3c)
   persistStore: enumAttr('clubhouse.persist.store', [
-    'settings', 'agents', 'projects', 'plugin_kv', 'canvas', 'group_registry', 'bulletin',
+    'settings', 'agents', 'projects', 'plugin_kv', 'canvas', 'group_registry', 'bulletin', 'asset_catalog',
   ]),
   persistResult: enumAttr('clubhouse.persist.result', ['ok', 'failed']),
   persistAction: enumAttr('clubhouse.persist.action', [
