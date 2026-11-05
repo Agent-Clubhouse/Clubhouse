@@ -25,6 +25,8 @@
  * - Every `versions[]`, `range.from` and `range.to` must be a plain
  *   `x.y.z[-prerelease]` version. An entry with anything else is dropped
  *   whole, so a typo can't match every version.
+ * - Publish through release/chat-cli-denylist.json (docs/release-publishing.md).
+ *   scripts/ci/cli-denylist.mjs repeats these rules and fails on a bad entry.
  */
 
 import type { ChatDriverId } from '../../../shared/chat';

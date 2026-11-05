@@ -93,6 +93,14 @@ jobs:
       # with no clear message (#2347).
       - name: Check paths are valid on Windows
         run: node scripts/ci/check-windows-paths.mjs
+      # Here because this job runs on every change, including one that edits only
+      # the list. docs/release-publishing.md, "Lifting an entry".
+      - name: Check the CLI kill switch list isn't reset
+        if: ${{ github.event_name == 'pull_request' || github.event_name == 'push' }}
+        env:
+          BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
+          HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: node scripts/ci/cli-denylist.mjs check-change --base "$BASE" --head "$HEAD"
       - name: Classify the change
         id: plan
         env:

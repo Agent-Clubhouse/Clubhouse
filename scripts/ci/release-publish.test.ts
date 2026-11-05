@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { spawnSync } from 'child_process';
+import { execFileSync, spawnSync } from 'child_process';
 import { readFileSync } from 'node:fs';
 import * as fs from 'fs';
 import * as os from 'os';
@@ -18,6 +18,8 @@ const SCRIPT = path.join(__dirname, 'release-publish.sh');
 const WORKFLOW = path.join(REPO, '.github/workflows/release.yml');
 const SCRIPT_TEXT = readFileSync(SCRIPT, 'utf8');
 const WORKFLOW_TEXT = readFileSync(WORKFLOW, 'utf8');
+const DENYLIST_SCRIPT = path.join(__dirname, 'publish-cli-denylist.sh');
+const DENYLIST_WORKFLOW_TEXT = readFileSync(path.join(REPO, '.github/workflows/publish-cli-denylist.yml'), 'utf8');
 
 const FAKES = path.join(__dirname, '__fixtures__/release-publish');
 
@@ -40,7 +42,7 @@ class Sandbox {
 
   constructor(public version: string, public preview: boolean, previewVersion = '0.42.0-beta.13') {
     fs.mkdirSync(this.bin);
-    for (const fake of ['az', 'gh']) {
+    for (const fake of ['az', 'gh', 'curl']) {
       fs.copyFileSync(path.join(FAKES, fake), path.join(this.bin, fake));
       fs.chmodSync(path.join(this.bin, fake), 0o755);
     }
@@ -82,9 +84,9 @@ class Sandbox {
     return JSON.parse(this.blob(blob) ?? '{}').version;
   }
 
-  run(env: Record<string, string> = {}) {
+  run(env: Record<string, string> = {}, script = SCRIPT) {
     // A clean environment: no Azure or GitHub credentials, and the fakes first on PATH.
-    const result = spawnSync('bash', [SCRIPT], {
+    const result = spawnSync('bash', [script], {
       cwd: this.work,
       encoding: 'utf8',
       env: {
@@ -401,6 +403,402 @@ describe.skipIf(!CAN_RUN)('release-publish.sh against fake az and gh', { timeout
       expect(s.run({ [name]: '' })).not.toBe(0);
       expect(s.calls()).toEqual([]);
     });
+  });
+});
+
+// Each test runs a real script or the real workflow step against the fakes above.
+describe.skipIf(!CAN_RUN)('chat CLI denylist', { timeout: 60_000 }, () => {
+  const ENTRY = { provider: 'claude-code', versions: ['2.1.250'], reason: 'hangs on start' };
+  const LATER = { driver: 'codex_app_server', versions: ['0.166.0'], reason: 'drops the session' };
+  const STABLE_BLOBS = ['updates/latest.json', 'updates/v2/latest.json'];
+  const PREVIEW_BLOBS = ['updates/preview.json', 'updates/v2/preview.json'];
+  const ALL_BLOBS = [...STABLE_BLOBS, ...PREVIEW_BLOBS];
+  const UPLOADS = ALL_BLOBS.map((b) => `upload ${b}`);
+  const PUBLISH = { GITHUB_REF: 'refs/heads/main', DRY_RUN: 'false' };
+
+  /** Bytes a rewrite has to leave alone: an escape, a non-ASCII letter, a number's exact form. */
+  const manifestBytes = (blob: string) => `{\n  "version": "0.41.0",\n  "releaseNotes": "caf\u00e9 \\"${blob}\\" \\u2014",\n  "artifacts": {"a": {"size": 1.50}}\n}\n`;
+  const withList = (before: string, list: unknown) => before.replace('\n}\n', `,\n  "chatCliDenylist": ${JSON.stringify(list)}\n}\n`);
+  const liveList = (s: Sandbox, blob: string) => JSON.parse(s.blob(blob) ?? '{}').chatCliDenylist;
+
+  let sandboxes: Sandbox[] = [];
+  const sandbox = (list: unknown, version = STABLE, preview = false) => {
+    const s = new Sandbox(version, preview);
+    sandboxes.push(s);
+    for (const blob of ALL_BLOBS) s.seed(blob, manifestBytes(blob));
+    writeList(s, list);
+    return s;
+  };
+  const writeList = (s: Sandbox, list: unknown) => {
+    fs.mkdirSync(path.join(s.work, 'release'), { recursive: true });
+    fs.writeFileSync(path.join(s.work, 'release/chat-cli-denylist.json'), `${JSON.stringify(list)}\n`);
+  };
+  const publish = (s: Sandbox, env: Record<string, string> = {}) => s.run({ ...PUBLISH, ...env }, DENYLIST_SCRIPT);
+
+  beforeEach(() => {
+    sandboxes = [];
+  });
+
+  afterEach(() => {
+    for (const s of sandboxes) s.cleanup();
+  });
+
+  describe('publishing', () => {
+    it('changes only the field, on both manifests of both channels, legacy path first', () => {
+      const s = sandbox([ENTRY]);
+      const history = s.blob('updates/v2/history.json');
+      expect(publish(s)).toBe(0);
+      expect(s.writes()).toEqual(UPLOADS);
+      for (const blob of ALL_BLOBS) {
+        expect(s.blob(blob)).toBe(withList(manifestBytes(blob), [ENTRY]));
+      }
+      expect(s.blob('updates/v2/history.json')).toBe(history);
+    });
+
+    it('replaces a list that is already there, in place', () => {
+      const s = sandbox([ENTRY, LATER]);
+      const before = (blob: string) => `{\n  "version": "0.41.0",\n  "chatCliDenylist": ${JSON.stringify([ENTRY])},\n  "minVersion": "0.1.0"\n}\n`.replace('0.41.0', blob);
+      for (const blob of ALL_BLOBS) s.seed(blob, before(blob));
+      expect(publish(s)).toBe(0);
+      for (const blob of ALL_BLOBS) {
+        expect(s.blob(blob)).toBe(before(blob).replace(JSON.stringify([ENTRY]), JSON.stringify([ENTRY, LATER])));
+      }
+    });
+
+    it('writes nothing when every manifest already has the list', () => {
+      const s = sandbox([ENTRY]);
+      expect(publish(s)).toBe(0);
+      s.clearWrites();
+      expect(publish(s)).toBe(0);
+      expect(s.writes()).toEqual([]);
+    });
+
+    it('a failure part way leaves the rest alone, and a re-run writes only what is left', () => {
+      const s = sandbox([ENTRY]);
+      expect(publish(s, { FAIL_MATCH: 'blob upload --account-name stclubhousereleases --container-name releases --auth-mode login --name updates/preview.json' })).not.toBe(0);
+      expect(s.writes()).toEqual(STABLE_BLOBS.map((b) => `upload ${b}`));
+      expect(s.blob('updates/preview.json')).toBe(manifestBytes('updates/preview.json'));
+      s.clearWrites();
+
+      expect(publish(s)).toBe(0);
+      expect(s.writes()).toEqual(PREVIEW_BLOBS.map((b) => `upload ${b}`));
+      for (const blob of ALL_BLOBS) expect(liveList(s, blob)).toEqual([ENTRY]);
+    });
+
+    it.each(ALL_BLOBS)('writes nothing when %s cannot be read', (blob) => {
+      const s = sandbox([ENTRY]);
+      fs.rmSync(path.join(s.store, blob));
+      expect(publish(s)).not.toBe(0);
+      expect(s.writes()).toEqual([]);
+    });
+
+    it('writes nothing when a manifest is not a manifest', () => {
+      const s = sandbox([ENTRY]);
+      s.seed('updates/v2/preview.json', '{}');
+      expect(publish(s)).not.toBe(0);
+      expect(s.writes()).toEqual([]);
+    });
+
+    it('fails rather than overwrite a manifest written since it was read', () => {
+      const s = sandbox([ENTRY]);
+      const blob = 'updates/v2/latest.json';
+      expect(publish(s, { RACE_UPLOAD_OF: blob })).not.toBe(0);
+      expect(s.blob(blob)).toBe(`${manifestBytes(blob)} `);
+      expect(s.writes()).toEqual(['upload updates/latest.json']);
+    });
+
+    // The fake gh applies the script's own --jq filter to these runs.
+    it.each([
+      ['in progress', ['in_progress']],
+      ['queued', ['queued']],
+      ['waiting', ['waiting']],
+      ['requested', ['requested']],
+      ['pending', ['pending']],
+      ['active among finished ones', ['completed', 'in_progress', 'completed']],
+    ])('refuses while a release is %s', (_label, statuses) => {
+      const s = sandbox([ENTRY]);
+      s.seed('.release-runs', JSON.stringify(statuses.map((status) => ({ status }))));
+      expect(publish(s)).not.toBe(0);
+      expect(s.lastOutput).toContain('A Release run is in progress');
+      expect(s.writes()).toEqual([]);
+      expect(s.calls().filter((c) => c.startsWith('az '))).toEqual([]);
+    });
+
+    it.each([
+      ['every recent release finished', ['completed', 'completed']],
+      ['no recent release', []],
+    ])('goes ahead with %s', (_label, statuses) => {
+      const s = sandbox([ENTRY]);
+      s.seed('.release-runs', JSON.stringify(statuses.map((status) => ({ status }))));
+      expect(publish(s)).toBe(0);
+      expect(s.writes()).toEqual(UPLOADS);
+    });
+
+    it.each(ALL_BLOBS)('stops on an empty ETag for %s, rather than passing it to az', (blob) => {
+      const s = sandbox([ENTRY]);
+      expect(publish(s, { EMPTY_ETAG_OF: blob })).not.toBe(0);
+      expect(s.lastOutput).toContain(`No ETag for ${blob}`);
+      expect(s.writes()).toEqual([]);
+      expect(s.calls().some((c) => c.includes('blob download') && c.includes(`--name ${blob} `))).toBe(false);
+      expect(s.calls().some((c) => /--if-match( |$)(--|$)/.test(c))).toBe(false);
+    });
+
+    it.each([['a branch', 'refs/heads/some-branch'], ['a tag', 'refs/tags/v1.0.0'], ['no ref', '']])('refuses from %s', (_label, ref) => {
+      const s = sandbox([ENTRY]);
+      expect(publish(s, { GITHUB_REF: ref })).not.toBe(0);
+      expect(s.lastOutput).toContain('runs from main only');
+      expect(s.calls()).toEqual([]);
+    });
+
+    it.each([
+      ['no reason', [{ provider: 'claude-code', versions: ['2.1.250'] }]],
+      ['a wildcard version', [{ ...ENTRY, versions: ['2.1.*'] }]],
+      ['an unknown provider', [{ ...ENTRY, provider: 'claude' }]],
+      ['an object, not a list', { entries: [ENTRY] }],
+    ])('a bad list stops the run before it touches anything: %s', (_label, list) => {
+      const s = sandbox(list);
+      expect(publish(s)).not.toBe(0);
+      expect(s.lastOutput).toContain("can't be published");
+      expect(s.calls()).toEqual([]);
+    });
+
+    it('one bad entry among good ones stops the run', () => {
+      const s = sandbox([ENTRY, { ...LATER, reason: '' }]);
+      expect(publish(s)).not.toBe(0);
+      expect(s.lastOutput).toContain('entry 1 needs a reason');
+      expect(s.calls()).toEqual([]);
+    });
+
+    it('a null list has nothing to publish', () => {
+      const s = sandbox(null);
+      expect(publish(s)).not.toBe(0);
+      expect(s.lastOutput).toContain('no list to publish');
+      expect(s.writes()).toEqual([]);
+    });
+
+    it('an empty list is written only on purpose', () => {
+      const s = sandbox([]);
+      expect(publish(s)).not.toBe(0);
+      expect(s.lastOutput).toContain('empties the saved list');
+      expect(s.writes()).toEqual([]);
+
+      expect(publish(s, { CLEAR_LIST: 'true' })).toBe(0);
+      for (const blob of ALL_BLOBS) expect(s.blob(blob)).toBe(withList(manifestBytes(blob), []));
+    });
+
+    it('asks only the fake storage, under the release account by default', () => {
+      const s = sandbox([ENTRY]);
+      expect(publish(s)).toBe(0);
+      const az = s.calls().filter((c) => c.startsWith('az '));
+      expect(az.length).toBeGreaterThan(0);
+      for (const call of az) expect(call).toContain('--account-name stclubhousereleases --container-name releases');
+      expect(az.filter((c) => c.includes('blob upload')).every((c) => c.includes('--if-match') && c.includes('--content-type application/json'))).toBe(true);
+    });
+  });
+
+  describe('a dry run', () => {
+    it.each([
+      ['with nothing set', {}],
+      ['when asked for', { DRY_RUN: 'true' }],
+      ['from anything but an exact "false"', { DRY_RUN: 'False' }],
+      ['with an empty value', { DRY_RUN: '' }],
+    ])('writes nothing and never calls az: %s', (_label, env) => {
+      const s = sandbox([ENTRY]);
+      expect(s.run(env, DENYLIST_SCRIPT)).toBe(0);
+      expect(s.writes()).toEqual([]);
+      expect(s.calls().filter((c) => !c.startsWith('curl '))).toEqual([]);
+      for (const blob of ALL_BLOBS) expect(s.blob(blob)).toBe(manifestBytes(blob));
+      expect(s.lastOutput).toContain('4 manifest(s) would change. Nothing was written.');
+    });
+
+    it('reads the public manifests and shows the change', () => {
+      const s = sandbox([ENTRY]);
+      expect(s.run({}, DENYLIST_SCRIPT)).toBe(0);
+      expect(s.calls().map((c) => c.split(' ').at(-3))).toEqual(ALL_BLOBS.map((b) => `https://stclubhousereleases.blob.core.windows.net/releases/${b}`));
+      expect(s.lastOutput).toContain('updates/v2/preview.json: status=updated');
+      expect(s.lastOutput).toContain('+    "reason": "hangs on start"');
+    });
+
+    it('works from a branch, for previewing a PR', () => {
+      const s = sandbox([ENTRY]);
+      expect(s.run({ GITHUB_REF: 'refs/heads/some-branch' }, DENYLIST_SCRIPT)).toBe(0);
+    });
+
+    it('still fails on a bad entry', () => {
+      const s = sandbox([{ ...ENTRY, reason: '' }]);
+      expect(s.run({}, DENYLIST_SCRIPT)).not.toBe(0);
+      expect(s.calls()).toEqual([]);
+    });
+
+    it('still refuses an unmarked empty list', () => {
+      const s = sandbox([]);
+      expect(s.run({}, DENYLIST_SCRIPT)).not.toBe(0);
+    });
+  });
+
+  describe('release.yml\'s Generate update manifest step', () => {
+    const stepStart = WORKFLOW_TEXT.indexOf('- name: Generate update manifest');
+    const stepEnd = WORKFLOW_TEXT.indexOf('- name: Authenticate to Azure', stepStart);
+    const runBlock = WORKFLOW_TEXT.slice(stepStart, stepEnd).split(/\r?\n/);
+    const block = runBlock.slice(runBlock.findIndex((l) => l.trim() === 'run: |') + 1).map((l) => l.replace(/^ {10}/, '')).join('\n');
+
+    /** A repo standing in for GitHub, with main's list as its only file. */
+    function setOrigin(s: Sandbox, list: unknown) {
+      const origin = path.join(s.dir, 'origin');
+      const git = (...args: string[]) => execFileSync('git', ['-c', 'user.name=Test', '-c', 'user.email=test@example.com', '-c', 'commit.gpgsign=false', ...args], { cwd: origin, encoding: 'utf8' });
+      if (!fs.existsSync(origin)) {
+        fs.mkdirSync(path.join(origin, 'release'), { recursive: true });
+        git('init', '-q', '-b', 'main');
+      }
+      fs.writeFileSync(path.join(origin, 'release/chat-cli-denylist.json'), `${JSON.stringify(list)}\n`);
+      git('add', '-A');
+      git('commit', '-q', '--allow-empty', '-m', 'list');
+    }
+
+    /** Runs the real step, as the publish job would, in a checkout of the tag. */
+    function generate(s: Sandbox) {
+      if (!fs.existsSync(path.join(s.work, '.git'))) {
+        fs.mkdirSync(path.join(s.work, 'scripts/ci'), { recursive: true });
+        for (const f of ['cli-denylist.mjs', 'release-notes.mjs']) fs.copyFileSync(path.join(__dirname, f), path.join(s.work, 'scripts/ci', f));
+        execFileSync('git', ['init', '-q'], { cwd: s.work });
+        execFileSync('git', ['remote', 'add', 'origin', path.join(s.dir, 'origin')], { cwd: s.work });
+      }
+      const script = block.replace(/\$\{\{ needs\.[\w-]+\.outputs\.(\w+) \}\}/g, (_m, name: string) => {
+        if (name === 'version') return s.version;
+        if (name === 'is_preview') return String(s.preview);
+        return name.startsWith('size_') ? '1' : 'abc';
+      });
+      const result = spawnSync('bash', ['-e', '-c', script], {
+        cwd: s.work,
+        encoding: 'utf8',
+        env: { PATH: process.env.PATH, HOME: s.dir, RUNNER_TEMP: s.dir, RELEASE_MESSAGE: 'Message', RELEASE_NOTES: 'Notes' },
+      });
+      s.lastOutput = `${result.stdout}${result.stderr}`;
+      return result.status;
+    }
+
+    const generated = (s: Sandbox) => JSON.parse(readFileSync(path.join(s.work, 'artifacts', s.preview ? 'preview.json' : 'latest.json'), 'utf8'));
+
+    it.each([['stable', STABLE, false], ['preview', BETA, true]] as const)('includes the list in a %s manifest', (_label, version, preview) => {
+      const s = sandbox(null, version, preview);
+      setOrigin(s, [ENTRY]);
+      expect(generate(s), s.lastOutput).toBe(0);
+      const manifest = generated(s);
+      expect(manifest.chatCliDenylist).toEqual([ENTRY]);
+      expect(manifest.version).toBe(version);
+      expect(manifest.artifacts['darwin-arm64'].size).toBe(1);
+    });
+
+    it('leaves the field out while the list is null, so a release clears nothing', () => {
+      const s = sandbox(null);
+      setOrigin(s, null);
+      expect(generate(s), s.lastOutput).toBe(0);
+      expect(generated(s)).not.toHaveProperty('chatCliDenylist');
+    });
+
+    it('writes [] once the file says so', () => {
+      const s = sandbox(null);
+      setOrigin(s, []);
+      expect(generate(s), s.lastOutput).toBe(0);
+      expect(generated(s).chatCliDenylist).toEqual([]);
+    });
+
+    it('reads main, not the tag, so a list merged after the bump commit survives', () => {
+      const s = sandbox([ENTRY]);
+      setOrigin(s, [ENTRY, LATER]);
+      expect(generate(s), s.lastOutput).toBe(0);
+      expect(generated(s).chatCliDenylist).toEqual([ENTRY, LATER]);
+    });
+
+    it('fails on a bad list rather than ship it', () => {
+      const s = sandbox(null);
+      setOrigin(s, [{ ...ENTRY, reason: '' }]);
+      expect(generate(s)).not.toBe(0);
+      expect(s.lastOutput).toContain('entry 0 needs a reason');
+    });
+
+    it.each([
+      ['driver', { driver: 'future_driver', versions: ['1.0.0'], reason: 'hangs' }],
+      ['provider', { provider: 'future-cli', versions: ['1.0.0'], reason: 'hangs' }],
+    ])('a re-run of an older tag fails before any write when main names a %s the tag doesn\'t know', (_label, entry) => {
+      const s = sandbox(null);
+      setOrigin(s, [entry]);
+      expect(generate(s)).not.toBe(0);
+      expect(s.lastOutput).toContain('names an unknown');
+      expect(s.writes()).toEqual([]);
+      expect(s.calls().filter((c) => c.startsWith('az ') || c.startsWith('gh '))).toEqual([]);
+      for (const blob of ALL_BLOBS) expect(s.blob(blob)).toBe(manifestBytes(blob));
+    });
+
+    it('fails when main can\'t be read rather than publish without the list', () => {
+      const s = sandbox(null);
+      expect(generate(s)).not.toBe(0);
+    });
+
+    it.each([['stable', STABLE, false], ['preview', BETA, true]] as const)('a %s release after a publish still has the entry', (_label, version, preview) => {
+      const s = sandbox([ENTRY], version, preview);
+      setOrigin(s, [ENTRY]);
+      expect(publish(s)).toBe(0);
+
+      expect(generate(s), s.lastOutput).toBe(0);
+      expect(s.run()).toBe(0);
+      const blob = preview ? 'updates/v2/preview.json' : 'updates/v2/latest.json';
+      expect(s.liveVersion(blob)).toBe(version);
+      expect(liveList(s, blob)).toEqual([ENTRY]);
+      expect(liveList(s, preview ? 'updates/preview.json' : 'updates/latest.json')).toEqual([ENTRY]);
+      // The other channel isn't part of this release, and keeps what was published.
+      expect(liveList(s, preview ? 'updates/v2/latest.json' : 'updates/v2/preview.json')).toEqual([ENTRY]);
+    });
+
+    it('a publish after a release changes only the list in the manifest that release wrote', () => {
+      const s = sandbox([ENTRY]);
+      setOrigin(s, [ENTRY]);
+      expect(generate(s), s.lastOutput).toBe(0);
+      expect(s.run()).toBe(0);
+      const released = s.blob('updates/v2/latest.json') ?? '';
+
+      writeList(s, [ENTRY, LATER]);
+      expect(publish(s)).toBe(0);
+      const after = s.blob('updates/v2/latest.json') ?? '';
+      expect(JSON.parse(after).chatCliDenylist).toEqual([ENTRY, LATER]);
+      expect(after).toBe(released.replace(JSON.stringify([ENTRY]), JSON.stringify([ENTRY, LATER])));
+    });
+  });
+});
+
+describe('publish-cli-denylist.yml wiring', () => {
+  const publishJob = DENYLIST_WORKFLOW_TEXT.slice(DENYLIST_WORKFLOW_TEXT.indexOf('\n  publish:'));
+  const previewJob = DENYLIST_WORKFLOW_TEXT.slice(DENYLIST_WORKFLOW_TEXT.indexOf('\n  preview:'), DENYLIST_WORKFLOW_TEXT.indexOf('\n  publish:'));
+
+  it('only ever starts by hand', () => {
+    const on = DENYLIST_WORKFLOW_TEXT.slice(DENYLIST_WORKFLOW_TEXT.indexOf('\non:'), DENYLIST_WORKFLOW_TEXT.indexOf('\nconcurrency:'));
+    expect(on.split(/\r?\n/).filter((l) => /^ {2}\S/.test(l))).toEqual(['  workflow_dispatch:']);
+  });
+
+  it('is dry by default, and clearing is off by default', () => {
+    expect(DENYLIST_WORKFLOW_TEXT).toMatch(/dry_run:[\s\S]*?default: true/);
+    expect(DENYLIST_WORKFLOW_TEXT).toMatch(/clear_list:[\s\S]*?default: false/);
+  });
+
+  it('has no input that could carry a list', () => {
+    const inputs = DENYLIST_WORKFLOW_TEXT.slice(DENYLIST_WORKFLOW_TEXT.indexOf('inputs:'), DENYLIST_WORKFLOW_TEXT.indexOf('\nconcurrency:'));
+    expect(inputs.split(/\r?\n/).filter((l) => /^ {6}\S/.test(l))).toEqual(['      clear_list:', '      dry_run:']);
+  });
+
+  it('gives the preview job no way to write', () => {
+    expect(previewJob).not.toMatch(/azure\/login|id-token|environment:|secrets\./);
+    expect(previewJob).toContain("DRY_RUN: 'true'");
+  });
+
+  it('publishes only when not dry, from main, with the release environment\'s credentials', () => {
+    expect(publishJob).toContain('if: ${{ !inputs.dry_run }}');
+    expect(publishJob).toContain('environment: release');
+    expect(publishJob).toMatch(/actions\/checkout@\S+\r?\n\s+with:\r?\n\s+ref: main/);
+    expect(publishJob.indexOf('azure/login')).toBeLessThan(publishJob.indexOf('run: bash scripts/ci/publish-cli-denylist.sh'));
+  });
+
+  it('never queues behind itself out of order or cancels a run part way', () => {
+    expect(DENYLIST_WORKFLOW_TEXT).toContain('cancel-in-progress: false');
   });
 });
 
