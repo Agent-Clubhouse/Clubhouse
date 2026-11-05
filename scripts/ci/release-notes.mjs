@@ -257,7 +257,7 @@ export function valueSpans(text) {
 }
 
 /** Encodes a string the way the file encodes non-ASCII text (raw UTF-8 or \u escapes). */
-function encodeLike(fileText, value) {
+export function encodeLike(fileText, value) {
   const json = JSON.stringify(value);
   const asciiOnly = /\\u(?!00[0-7])[0-9a-fA-F]{4}/.test(fileText) && !/[\u0080-\uffff]/.test(fileText);
   return asciiOnly ? json.replace(/[\u0080-\uffff]/g, (c) => `\\u${c.charCodeAt(0).toString(16).padStart(4, '0')}`) : json;
