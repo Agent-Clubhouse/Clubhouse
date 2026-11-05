@@ -136,6 +136,20 @@ describe('DisplaySettingsView', () => {
       expect(screen.getByRole('button', { name: 'Restart' })).toBeInTheDocument();
     });
 
+    it.each([
+      ['the new layout', true, 'false'],
+      ['the classic layout', false, 'true'],
+    ])('when the saved settings can\'t be read in %s, shows that layout with no restart and no error', async (_name, enabled, checked) => {
+      useChromeFlagStore.setState({ enabled });
+      getExperimentalSettings.mockRejectedValue(new Error('gone'));
+      render(<DisplaySettingsView />);
+      await act(async () => {});
+      expect(getExperimentalSettings).toHaveBeenCalled();
+      expect(screen.getByRole('switch', { name: 'Classic layout' }).getAttribute('aria-checked')).toBe(checked);
+      expect(screen.queryByRole('button', { name: 'Restart' })).toBeNull();
+      expect(screen.queryByRole('alert')).toBeNull();
+    });
+
     const SAVE_FAILED = "Couldn't save that setting, so it wasn't changed. Try again.";
 
     it.each([

@@ -24,6 +24,8 @@ function ClassicLayoutSetting() {
   useEffect(() => {
     window.clubhouse.app.getExperimentalSettings().then((s) => {
       setClassic(!isGraduatedFlagOn(s, NEW_CHROME_FLAG));
+    }).catch(() => {
+      // telemetry-exempt: the switch keeps showing this session's layout, and a save reports its own failure.
     });
   }, []);
 
@@ -143,6 +145,8 @@ export function DisplaySettingsView() {
   useEffect(() => {
     window.clubhouse.app.getExperimentalSettings().then((s) => {
       setGradientsEnabled(!!s.themeGradients);
+    }).catch(() => {
+      // telemetry-exempt: the theme cards just preview without gradients.
     });
   }, []);
 
