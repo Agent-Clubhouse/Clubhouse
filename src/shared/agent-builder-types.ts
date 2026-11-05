@@ -1,4 +1,4 @@
-import type { InstanceEntry, StructureBinding } from './asset-catalog-types';
+import type { InstanceEntry, PlannedOperationalDefault, StructureBinding } from './asset-catalog-types';
 
 export interface BuilderBlock {
   key: string;
@@ -18,9 +18,10 @@ export interface BuilderView {
   customOrder: boolean;
   text: string;
   templateBinding?: StructureBinding;
+  operationalIncreases?: Array<Pick<PlannedOperationalDefault, 'key' | 'value'>>;
 }
 export type BuilderCommand =
-  | { type: 'template'; templateId: string; confirm: boolean; binding?: StructureBinding }
+  | { type: 'template'; templateId: string; confirm: boolean; binding?: StructureBinding; acknowledgeOperationalIncreases?: boolean }
   | { type: 'order'; keys: string[] }
   | { type: 'baseOrder' }
   | { type: 'append'; name: string; content: string }

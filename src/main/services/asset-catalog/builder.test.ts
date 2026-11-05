@@ -4,7 +4,7 @@ import * as path from 'path';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { createAgentBuilder, builderSnapshotAdoption } from './builder';
 import { seedBuilderTemplates, IDENTITY_TEXT } from './builder-seeds';
-import { createAssetCatalogStore, type AssetCatalogStore } from './store';
+import { createAssetCatalogStore, installBuiltinAsset, type AssetCatalogStore } from './store';
 import { composeInstructions } from './composer';
 import { withSettingsSurface } from '../settings-audit';
 import { getPersonaTemplate } from '../../../renderer/features/personas';
@@ -48,6 +48,7 @@ it('seeds once across stores, with original persona bodies and Identity; Custom 
   for (const id of ['orchestrator', 'project-manager', 'researcher']) {
     expect(await store.readRevision(`builtin-builder-${id}-role`, 1)).toEqual({ content: stripPersonaFrontMatter(getPersonaTemplate(id)!.content) });
   }
+  expect((await command({ type: 'template', templateId: 'builtin-builder-custom', confirm: false })).operationalIncreases).toEqual([]);
   expect((await choose('custom')).blocks.map((b) => b.content)).toEqual([IDENTITY_TEXT]);
 });
 it('refuses seeding and all mutations from agent surfaces', async () => {
@@ -154,4 +155,32 @@ it('requires the exact template preview binding at confirmation', async () => {
   await expect(command({ type: 'template', templateId: 'builtin-builder-custom', confirm: true })).rejects.toMatchObject({ code: 'stale_choice' });
   await expect(command({ type: 'template', templateId: 'builtin-builder-custom', confirm: true, binding: { ...preview.templateBinding!, toFingerprint: 'changed' } })).rejects.toMatchObject({ code: 'stale_choice' });
   expect((await read()).revision).toBe(0);
+});
+
+it('uses the catalog instruction preview for saved text and refuses raw previews from agent surfaces', async () => {
+  await choose();
+  const previewInstructions = vi.spyOn(store, 'previewInstructions');
+  const view = await read();
+  expect(previewInstructions).toHaveBeenCalledWith({ agentId, adoption: await adoption(), draft: await builder.compositionOf(agentId) });
+  const preview = await store.previewInstructions({ agentId, adoption: await adoption() });
+  expect(preview.composed).toMatchObject({ ok: true, text: view.text });
+  expect(preview.blocks.map((b) => b.text)).toEqual(view.blocks.map((b) => b.content));
+  await expect(withSettingsSurface('mcp', agentId, () => read())).rejects.toMatchObject({ code: 'agent_not_permitted' });
+});
+it('surfaces operational increases from the latest template and requires a person to acknowledge them', async () => {
+  const templateId = 'builtin-builder-custom';
+  const payload = await store.readRevision(templateId, 1);
+  await installBuiltinAsset(store, {
+    assetId: templateId, kind: 'template', name: 'Custom', builtinId: templateId, expectedRevision: 1,
+    payload: { ...payload, operationalDefaults: { agentAccess: 'bypass', orchestrate: true, maxHelpers: 10 } },
+  });
+  const preview = await command({ type: 'template', templateId, confirm: false });
+  expect(preview.operationalIncreases).toEqual(expect.arrayContaining([
+    { key: 'agentAccess', value: 'bypass' }, { key: 'orchestrate', value: true }, { key: 'maxHelpers', value: 10 },
+  ]));
+  expect((await read()).revision).toBe(0);
+  const confirm = { type: 'template' as const, templateId, confirm: true, binding: preview.templateBinding };
+  await expect(command(confirm)).rejects.toMatchObject({ code: 'structure_needs_choice' });
+  expect((await read()).revision).toBe(0);
+  expect((await command({ ...confirm, acknowledgeOperationalIncreases: true })).revision).toBe(1);
 });

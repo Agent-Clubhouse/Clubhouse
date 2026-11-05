@@ -141,3 +141,24 @@ it('failed edit reverts the textarea and preview, and transport errors show a re
   expect(screen.getByRole('alert')).toHaveTextContent('Try Reload');
   expect(screen.getByRole('alert')).not.toHaveTextContent('private content');
 });
+
+it('shows raised defaults and requires explicit agreement before saving a template', async () => {
+  renderBuilder();
+  await screen.findByText('1. Identity');
+  vi.mocked(api.builderCommand).mockResolvedValueOnce({ ok: true, view: {
+    ...saved, templateId: 'builtin-builder-custom', blocks: [identity], operationalIncreases: [
+      { key: 'agentAccess', value: 'bypass' }, { key: 'orchestrate', value: true }, { key: 'maxHelpers', value: 10 },
+    ],
+  } });
+  fireEvent.change(screen.getByLabelText('Choose a template'), { target: { value: 'builtin-builder-custom' } });
+  const increases = await screen.findByRole('list', { name: 'Operational increases' });
+  expect(increases).toHaveTextContent('Agent access: Skip permission prompts');
+  expect(increases).toHaveTextContent('Start helpers: On');
+  expect(increases).toHaveTextContent('Helper limit: 10');
+  expect(screen.getByRole('button', { name: 'Save template' })).toBeDisabled();
+  expect(screen.getByText(/raises these saved operational defaults/)).toHaveTextContent("They aren't used by this agent yet.");
+  fireEvent.click(screen.getByRole('checkbox', { name: 'I agree to save these increases in Builder' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Save template' }));
+  await settle();
+  expect(requests[requests.length - 1]).toMatchObject({ type: 'template', confirm: true, acknowledgeOperationalIncreases: true });
+});

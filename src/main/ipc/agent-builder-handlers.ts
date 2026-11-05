@@ -13,7 +13,7 @@ export const builderCommandArg: ArgValidator<BuilderCommand> = (value, label) =>
   const raw = objectArg<Record<string, unknown>>()(value, label);
   const type = stringArg()(raw.type, 'command type');
   const fields: Record<string, string[]> = {
-    template: ['templateId', 'confirm', 'binding'], order: ['keys'], baseOrder: [], append: ['name', 'content'],
+    template: ['templateId', 'confirm', 'binding', 'acknowledgeOperationalIncreases'], order: ['keys'], baseOrder: [], append: ['name', 'content'],
     fork: ['key'], return: ['key'], edit: ['key', 'content'], remove: ['key'],
   };
   if (!Object.prototype.hasOwnProperty.call(fields, type) || Object.keys(raw).some((key) => key !== 'type' && !fields[type].includes(key))) throw new Error('Invalid builder command');
@@ -24,7 +24,8 @@ export const builderCommandArg: ArgValidator<BuilderCommand> = (value, label) =>
         if (Object.keys(binding).length !== 3) throw new Error('Invalid builder binding');
         for (const field of ['fromFingerprint', 'toFingerprint', 'instanceFingerprint']) stringArg({ maxLength: 64 })(binding[field], 'fingerprint');
       }
-    } else if (key === 'keys') arrayArg(stringArg({ maxLength: 256 }), { maxLength: 256 })(raw[key], 'order');
+    } else if (key === 'acknowledgeOperationalIncreases') booleanArg({ optional: true })(raw[key], key);
+    else if (key === 'keys') arrayArg(stringArg({ maxLength: 256 }), { maxLength: 256 })(raw[key], 'order');
     else if (key === 'confirm') booleanArg()(raw[key], 'confirm');
     else stringArg({ minLength: key === 'content' ? 0 : 1, maxLength: key === 'content' ? 256 * 1024 : 256 })(raw[key], key);
   }

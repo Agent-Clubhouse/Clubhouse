@@ -1,7 +1,6 @@
 import { randomUUID } from 'crypto';
-import type { BaseAdoption, BlockAssetPayload, CompositionInput, InstanceEntry } from '../../../shared/asset-catalog-types';
+import type { BaseAdoption, CompositionInput, InstanceEntry } from '../../../shared/asset-catalog-types';
 import type { BuilderCommand, BuilderView } from '../../../shared/agent-builder-types';
-import { composeInstructions } from './composer';
 import { emptyComposition } from './planner';
 import { BUILDER_TEMPLATES } from './builder-seeds';
 import { AssetCatalogError, type AssetCatalogStore } from './store';
@@ -35,24 +34,22 @@ export function createAgentBuilder(store: AssetCatalogStore) {
   async function read(agentId: string, adoption: BaseAdoption, draft?: CompositionInput): Promise<BuilderView> {
     const composition = draft ?? await compositionOf(agentId);
     const index = await store.read();
-    const plan = await store.plan({ agentId, adoption, draft: composition });
+    const { plan, blocks: resolvedBlocks, composed } = await store.previewInstructions({ agentId, adoption, draft: composition });
     if (plan.blockers.length) throw new AssetCatalogError('composition_blocked');
-    const blocks = await Promise.all((plan.instructions?.blocks ?? []).map(async (block) => {
+    const blocks = resolvedBlocks.map((block) => {
       const entry = composition.entries.find((e) => keyOf(e) === block.entryKey)!;
-      const payload = await store.readRevision(block.assetId, block.revision) as BlockAssetPayload;
       const from = entry.source.kind === 'fork' ? entry.source.forkedFrom : null;
       return {
         key: block.entryKey, entry, assetId: block.assetId, revision: block.revision,
-        name: block.name, content: payload.content,
+        name: block.name, content: block.text,
         source: from ? `Fork of ${index.assets[from.assetId]?.name ?? 'missing block'} at revision ${from.revision}`
           : entry.source.kind === 'local' ? "This agent's" : 'Inherited from template',
         editable: entry.source.kind !== 'follow',
       };
-    }));
-    const composed = composeInstructions(blocks);
+    });
     if (!composed.ok) throw new AssetCatalogError('composition_blocked');
     return {
-      revision: index.compositions[agentId]?.revision ?? 0, templateId: composition.template?.templateId ?? null,
+      revision: plan.compositionRevision, templateId: composition.template?.templateId ?? null,
       templates: BUILDER_TEMPLATES.map((t) => ({ id: `builtin-builder-${t.id}`, name: t.name })),
       blocks, customOrder: plan.structure?.customOrder ?? false, text: composed.text,
     };
@@ -64,11 +61,18 @@ export function createAgentBuilder(store: AssetCatalogStore) {
     if (action.type === 'template') {
       if (!BUILDER_TEMPLATES.some((t) => `builtin-builder-${t.id}` === action.templateId)) throw new AssetCatalogError('invalid_composition');
       // Replace with a preview. This slice carries nothing to another template.
-      const projection = index.assets[action.templateId]?.revisions[0]?.projection;
+      const template = index.assets[action.templateId];
+      const projection = template?.revisions.find((r) => r.revision === template.headRevision)?.projection;
       if (projection?.kind !== 'template') throw new AssetCatalogError('invalid_composition');
       const targetAdoption: BaseAdoption = { content: { mode: 'hold', revisions: Object.fromEntries(projection.entries.map((e) => [e.blockId, e.blockRevision])) }, structure: adoption.structure };
       const preview = await store.previewTemplateSwitch({ agentId, templateId: action.templateId, selection: {}, adoption: targetAdoption });
-      if (!action.confirm) return { ...await read(agentId, targetAdoption, preview.composition), templateBinding: preview.binding };
+      if (!action.confirm) return {
+        ...await read(agentId, targetAdoption, preview.composition), templateBinding: preview.binding,
+        operationalIncreases: preview.plan.operationalDefaults
+          .filter((item) => preview.operationalIncreases.includes(item.key))
+          .map(({ key, value }) => ({ key, value })),
+      };
+      if (preview.operationalIncreases.length > 0 && action.acknowledgeOperationalIncreases !== true) throw new AssetCatalogError('structure_needs_choice');
       if (!action.binding) throw new AssetCatalogError('stale_choice');
       await store.switchTemplate({ agentId, expectedRevision, templateId: action.templateId, selection: {}, binding: action.binding, adoption: targetAdoption });
       return read(agentId, targetAdoption);

@@ -1,10 +1,25 @@
 import { useEffect, useRef, useState } from 'react';
 import type { BuilderBlock, BuilderCommand, BuilderView } from '../../../shared/agent-builder-types';
+import type { TemplateOperationalDefaults } from '../../../shared/asset-catalog-types';
 import { Button } from '../../components/Button';
 import { inputClass, selectClass, textareaClass, SectionHeading } from './agentSettingsUi';
 import { useReportDirty } from './agentSettingsPages';
 
 const SAVED_ONLY = "Changes are saved here and aren't used by this agent yet.";
+
+const OPERATIONAL_LABELS: Record<keyof TemplateOperationalDefaults, string> = {
+  agentAccess: 'Agent access', orchestrate: 'Start helpers', access: 'Helper access',
+  control: 'Helper approvals', maxHelpers: 'Helper limit', crossProjectHelpers: 'Cross-project helpers',
+  connectToDispatcher: 'Dispatcher connection', autoHelpers: 'Automatic helper provider',
+};
+function operationalValue(value: string | number | boolean): string {
+  if (typeof value === 'boolean') return value ? 'On' : 'Off';
+  const labels: Record<string, string> = {
+    standard: 'Ask for permissions', auto: 'Automatic permissions', bypass: 'Skip permission prompts',
+    same: 'Same as agent', 'hands-off': 'Without approvals', 'ask-before-start': 'Ask before starting', 'ask-everything': 'Ask before each action',
+  };
+  return typeof value === 'string' ? labels[value] ?? value : String(value);
+}
 
 export function AgentBuilderSection({ projectPath, agentId, onDirtyChange }: {
   projectPath: string; agentId: string; onDirtyChange?: (dirty: boolean) => void;
@@ -17,6 +32,7 @@ export function AgentBuilderSection({ projectPath, agentId, onDirtyChange }: {
   const [name, setName] = useState('');
   const [content, setContent] = useState('');
   const [template, setTemplate] = useState('');
+  const [acknowledgeIncreases, setAcknowledgeIncreases] = useState(false);
   const [replacement, setReplacement] = useState<BuilderView | null>(null);
   const [preview, setPreview] = useState('');
   const [previewError, setPreviewError] = useState('');
@@ -87,6 +103,7 @@ export function AgentBuilderSection({ projectPath, agentId, onDirtyChange }: {
         return;
       }
       if (action.type === 'template' && !action.confirm) {
+        setAcknowledgeIncreases(false);
         setReplacement(result.view);
       } else {
         setView(result.view);
@@ -190,7 +207,17 @@ export function AgentBuilderSection({ projectPath, agentId, onDirtyChange }: {
       </select>
       {replacement && <div className="my-3 space-y-2">
         <p>This replaces the saved block list. Forks and local blocks will be left out. Review the preview below before saving.</p>
-        <div className="flex gap-2"><Button kind="primary" disabled={busy} onClick={() => void run({ type: 'template', templateId: template, confirm: true, binding: replacement.templateBinding })}>Save template</Button>
+        {!!replacement.operationalIncreases?.length && <div>
+          <p>This template raises these saved operational defaults. They aren't used by this agent yet.</p>
+          <ul aria-label="Operational increases" className="list-disc pl-5 my-2">
+            {replacement.operationalIncreases.map((item) => <li key={item.key}>{OPERATIONAL_LABELS[item.key]}: {operationalValue(item.value)}</li>)}
+          </ul>
+          <label className="flex items-center gap-2">
+            <input type="checkbox" checked={acknowledgeIncreases} disabled={busy} onChange={(event) => setAcknowledgeIncreases(event.target.checked)} />
+            I agree to save these increases in Builder
+          </label>
+        </div>}
+        <div className="flex gap-2"><Button kind="primary" disabled={busy || (!!replacement.operationalIncreases?.length && !acknowledgeIncreases)} onClick={() => void run({ type: 'template', templateId: template, confirm: true, binding: replacement.templateBinding, ...(replacement.operationalIncreases?.length ? { acknowledgeOperationalIncreases: acknowledgeIncreases } : {}) })}>Save template</Button>
           <Button kind="quiet" disabled={busy} onClick={discardReplacement}>Cancel</Button></div>
       </div>}
       {view.templateId && !replacement && <>
