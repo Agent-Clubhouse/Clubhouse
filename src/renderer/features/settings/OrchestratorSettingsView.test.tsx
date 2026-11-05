@@ -17,6 +17,8 @@ vi.mock('./ProjectAgentDefaultsSection', () => ({
   ),
 }));
 
+const originalMcpOffImpact = window.clubhouse.app.getMcpOffImpact;
+
 function resetStores() {
   useOrchestratorStore.setState({
     enabled: ['claude-code'],
@@ -58,6 +60,7 @@ function resetStores() {
     setProjectOverride: vi.fn(),
     clearProjectOverride: vi.fn(),
   });
+  window.clubhouse.app.getMcpOffImpact = originalMcpOffImpact;
   useMcpSettingsStore.setState({
     enabled: false,
     projectDefault: true,
@@ -153,14 +156,14 @@ describe('OrchestratorSettingsView', () => {
         expect(screen.queryByText('Enable Clubhouse Mode?')).not.toBeInTheDocument();
       });
 
-      it('disables without confirmation when already enabled', () => {
+      it('disables without confirmation when already enabled, if MCP stays on', async () => {
         const setEnabled = vi.fn();
         useClubhouseModeStore.setState({ enabled: true, setEnabled });
 
         render(<OrchestratorSettingsView />);
         fireEvent.click(screen.getByRole('switch', { name: 'Clubhouse Mode' }));
 
-        expect(setEnabled).toHaveBeenCalledWith(false);
+        await waitFor(() => expect(setEnabled).toHaveBeenCalledWith(false));
         expect(screen.queryByText('Enable Clubhouse Mode?')).not.toBeInTheDocument();
       });
 
@@ -636,14 +639,75 @@ describe('OrchestratorSettingsView', () => {
         }
       });
 
-      it('Clubhouse Mode dropdown responds to change events when clubhouse is on', () => {
+      describe('turning MCP off for the project', () => {
+        const losing = {
+          turnsOff: true, appLoses: false, appKeptByClubhouseMode: false, projectsLosing: ['my-app'], agentsLosing: 2, agentsKeeping: 1, helpersReportOnly: 1, orchestratorsLosing: 1, connectedLosing: 1,
+          runningLosing: 1, runningOrchestratorsWithHelpers: 1, dispatcherGoesOff: false, dispatcherRunning: true, keeps: { projects: [], agents: [{ name: 'lead', project: 'my-app' }] }, unreadableProjects: [],
+        };
+
+        it('shows the MCP override with the app-wide bridge off: it still works then', () => {
+          render(<OrchestratorSettingsView projectId="proj-1" />);
+          expect(screen.getByLabelText('MCP override')).toBeInTheDocument();
+        });
+
+        it('asks before saving an override off, names what stays, and Cancel leaves it', async () => {
+          const saveSettings = vi.fn().mockResolvedValue(undefined);
+          useMcpSettingsStore.setState({ enabled: true, saveSettings } as never);
+          window.clubhouse.app.getMcpOffImpact = vi.fn(async () => losing);
+          render(<OrchestratorSettingsView projectId="proj-1" />);
+          fireEvent.change(screen.getByLabelText('MCP override'), { target: { value: 'off' } });
+          expect(await screen.findByTestId('mcp-off-dialog')).toBeInTheDocument();
+          expect(window.clubhouse.app.getMcpOffImpact).toHaveBeenCalledWith({ mcp: { projectOverrides: { '/home/user/my-app': false } } });
+          expect(screen.getByTestId('mcp-off-lead')).toHaveTextContent('In my-app, helpers, orchestration and connections to the Dispatcher stop working.');
+          expect(screen.getByTestId('mcp-off-keeps')).toHaveTextContent('These keep Clubhouse MCP: lead in my-app (its own setting).');
+          // App-level only: a project going off leaves the Dispatcher alone.
+          expect(screen.queryByTestId('mcp-off-stop-dispatcher')).toBeNull();
+          fireEvent.click(screen.getByTestId('mcp-off-cancel'));
+          expect(saveSettings).not.toHaveBeenCalled();
+        });
+
+        it('saves once confirmed', async () => {
+          const saveSettings = vi.fn().mockResolvedValue(undefined);
+          useMcpSettingsStore.setState({ enabled: true, saveSettings } as never);
+          window.clubhouse.app.getMcpOffImpact = vi.fn(async () => losing);
+          render(<OrchestratorSettingsView projectId="proj-1" />);
+          fireEvent.change(screen.getByLabelText('MCP override'), { target: { value: 'off' } });
+          fireEvent.click(await screen.findByTestId('mcp-off-confirm'));
+          await waitFor(() => expect(saveSettings).toHaveBeenCalledWith({ projectOverrides: { '/home/user/my-app': false } }));
+        });
+
+        it('asks when turning Clubhouse mode off for the project would take MCP with it', async () => {
+          const setProjectOverride = vi.fn();
+          useClubhouseModeStore.setState({ enabled: true, setProjectOverride });
+          window.clubhouse.app.getMcpOffImpact = vi.fn(async () => losing);
+          render(<OrchestratorSettingsView projectId="proj-1" />);
+          fireEvent.change(screen.getByLabelText('Clubhouse Mode'), { target: { value: 'off' } });
+          await screen.findByTestId('mcp-off-dialog');
+          expect(window.clubhouse.app.getMcpOffImpact).toHaveBeenCalledWith({ clubhouseMode: { projectOverrides: { '/home/user/my-app': false } } });
+          expect(setProjectOverride).not.toHaveBeenCalled();
+        });
+
+        it('asks when turning Clubhouse mode off at app level would take MCP with it', async () => {
+          const setEnabled = vi.fn();
+          useClubhouseModeStore.setState({ enabled: true, setEnabled });
+          window.clubhouse.app.getMcpOffImpact = vi.fn(async () => ({ ...losing, appLoses: true, dispatcherGoesOff: true }));
+          render(<OrchestratorSettingsView />);
+          fireEvent.click(screen.getByRole('switch', { name: 'Clubhouse Mode' }));
+          await screen.findByTestId('mcp-off-dialog');
+          expect(setEnabled).not.toHaveBeenCalled();
+          fireEvent.click(screen.getByTestId('mcp-off-confirm'));
+          await waitFor(() => expect(setEnabled).toHaveBeenCalledWith(false));
+        });
+      });
+
+      it('Clubhouse Mode dropdown responds to change events when clubhouse is on', async () => {
         const setProjectOverride = vi.fn();
         useClubhouseModeStore.setState({ enabled: true, setProjectOverride });
 
         render(<OrchestratorSettingsView projectId="proj-1" />);
         const select = screen.getByLabelText('Clubhouse Mode');
         fireEvent.change(select, { target: { value: 'on' } });
-        expect(setProjectOverride).toHaveBeenCalledWith('/home/user/my-app', true);
+        await waitFor(() => expect(setProjectOverride).toHaveBeenCalledWith('/home/user/my-app', true));
       });
     });
   });

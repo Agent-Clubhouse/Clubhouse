@@ -1,12 +1,12 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const S = vi.hoisted(() => ({
-  flagOn: true, enabled: false, newLayout: true,
+  flagOn: true, enabled: false, newLayout: true, running: false,
   config: { id: 'durable_d', name: 'Dispatcher', color: 'indigo', createdAt: '2026-01-01' } as Record<string, unknown> | null,
 }));
 
 vi.mock('./dispatcher/dispatcher-service', () => {
-  const state = () => ({ enabled: S.flagOn && S.enabled, flagOn: S.flagOn, agentId: (S.config?.id as string) ?? null,
+  const state = () => ({ enabled: S.flagOn && S.enabled, flagOn: S.flagOn, savedOn: S.enabled, mcpOff: !S.flagOn, classic: !S.newLayout, running: S.running, agentId: (S.config?.id as string) ?? null,
     path: S.config ? '/base/dispatcher' : null, config: S.config });
   return {
     DISPATCHER_NAME: 'Dispatcher',
@@ -20,8 +20,9 @@ vi.mock('./dispatcher/dispatcher-service', () => {
 vi.mock('../window-chrome', () => ({ newChromeEnabled: () => S.newLayout }));
 
 import * as dispatcher from './dispatcher/dispatcher-service';
+import { MCP_REQUIRED_MESSAGE } from '../../shared/orchestration-policy';
 import {
-  activeDispatcher, dispatcherCapability, dispatcherChange, dispatcherFolderProject, isDisabledDispatcherId, setDispatcherEnabledFromPhone,
+  activeDispatcher, dispatcherCapability, dispatcherChange, dispatcherFolderProject, dispatcherSnapshotFlags, isDisabledDispatcherId, setDispatcherEnabledFromPhone,
 } from './mobile-dispatcher';
 
 const allow = () => {};
@@ -31,7 +32,7 @@ async function refusal(promise: Promise<unknown>) {
 }
 
 beforeEach(() => {
-  Object.assign(S, { flagOn: true, enabled: false, newLayout: true, config: { id: 'durable_d', name: 'Dispatcher', color: 'indigo', createdAt: '2026-01-01' } });
+  Object.assign(S, { flagOn: true, enabled: false, newLayout: true, running: false, config: { id: 'durable_d', name: 'Dispatcher', color: 'indigo', createdAt: '2026-01-01' } });
   vi.mocked(dispatcher.setDispatcherEnabled).mockClear();
 });
 
@@ -52,13 +53,34 @@ describe('resolving the Dispatcher for phones', () => {
     expect(dispatcherFolderProject('proj_app')).toBeUndefined();
   });
 
-  it('is off with the flag off, whatever the setting says, and before it was ever created', () => {
+  it('is off without MCP at app level, whatever the setting says, and before it was ever created', () => {
     S.enabled = true;
     S.flagOn = false;
     expect(activeDispatcher('durable_d')).toBeNull();
     S.flagOn = true;
     S.config = null;
     expect(activeDispatcher()).toBeNull();
+  });
+});
+
+describe('a Dispatcher still running with MCP off', () => {
+  beforeEach(() => { Object.assign(S, { enabled: true, flagOn: false, running: true }); });
+
+  it('stays reachable: listed, by id, and with its folder', () => {
+    expect(activeDispatcher()).not.toBeNull();
+    expect(activeDispatcher('durable_d')).toMatchObject({ config: { id: 'durable_d' } });
+    expect(isDisabledDispatcherId('durable_d')).toBe(false);
+    expect(dispatcherFolderProject('__dispatcher__')).toMatchObject({ path: '/base/dispatcher' });
+    expect(dispatcherChange()).toEqual({ enabled: false, flagOn: false, agentId: 'durable_d' });
+    expect(dispatcherSnapshotFlags()).toEqual({ enabled: false, flagOn: false });
+  });
+
+  it('goes once it has stopped', () => {
+    S.running = false;
+    expect(activeDispatcher('durable_d')).toBeNull();
+    expect(isDisabledDispatcherId('durable_d')).toBe(true);
+    expect(dispatcherFolderProject('__dispatcher__')).toBeUndefined();
+    expect(dispatcherChange()).toEqual({ enabled: false, flagOn: false, agentId: null });
   });
 });
 
@@ -84,13 +106,21 @@ describe('dispatcher.setEnabled', () => {
     expect(dispatcher.setDispatcherEnabled).toHaveBeenCalledTimes(2);
   });
 
-  it('refuses turning it on with the flag off or on the classic layout, as Settings > Dispatcher does', async () => {
+  it('refuses turning it on without MCP or on the classic layout, as Settings > Dispatcher does', async () => {
     S.flagOn = false;
-    expect(await refusal(setDispatcherEnabledFromPhone(true, allow))).toMatchObject({ code: 'dispatcher_flag_off', statusCode: 409 });
+    // An existing code, so an older phone handles it, with today's words.
+    expect(await refusal(setDispatcherEnabledFromPhone(true, allow))).toMatchObject({ code: 'dispatcher_flag_off', statusCode: 409, detail: MCP_REQUIRED_MESSAGE });
     S.flagOn = true;
     S.newLayout = false;
     expect(await refusal(setDispatcherEnabledFromPhone(true, allow))).toMatchObject({ code: 'dispatcher_layout_off', statusCode: 409 });
     expect(dispatcher.setDispatcherEnabled).not.toHaveBeenCalled();
+  });
+
+  it('still turns off a saved-on Dispatcher while MCP is off, which stops it', async () => {
+    S.enabled = true;
+    S.flagOn = false;
+    expect(await setDispatcherEnabledFromPhone(false, allow)).toMatchObject({ enabled: false, agentId: null });
+    expect(dispatcher.setDispatcherEnabled).toHaveBeenCalledWith(false);
   });
 
   it('lets one that is still on be turned off on the classic layout, and leaves one that is on alone', async () => {

@@ -46,6 +46,7 @@ import { isOrchestrationEnabled, onOrchestrationGateChange, setOrchestrationEnab
 import { getOrchestrationPolicy } from './orchestration-policy';
 import { peekProjects } from './project-store';
 import { resetAllSettingsStoresForTests } from './settings-store';
+import { resetNewChromeCacheForTests } from '../window-chrome';
 import {
   listSettings, MAX_PAGE, MAX_PAGE_CHARS, MAX_SELECT, readSettings, SettingsReadError,
   type ReadSettingsRequest, type SettingsActor,
@@ -150,7 +151,7 @@ describe('the allowlist', () => {
       'project.defaults': ['orchestrator', 'persona', 'mission', 'free_agent_mode', 'profile_id', 'source_control_provider', 'default_mcps'],
       'project.modes': ['clubhouse_mode', 'mcp', 'permission_mode'],
       'app.defaults': ['idle_timeout_minutes', 'chat_enabled', 'provider_runtime', 'mcp_enabled', 'clubhouse_mode_enabled', 'permission_mode', 'global_helper_cap', 'enabled_orchestrators'],
-      'app.system': ['dispatcher_enabled', 'experimental_chat', 'experimental_copilot_sdk', 'experimental_dispatcher', 'annex_server_enabled', 'annex_client_enabled'],
+      'app.system': ['dispatcher_enabled', 'experimental_chat', 'experimental_copilot_sdk', 'annex_server_enabled', 'annex_client_enabled'],
     });
   });
 
@@ -209,20 +210,135 @@ describe('the allowlist', () => {
   });
 });
 
+describe('settings derived off, with a reason', () => {
+  const dispatcherEnabled = async () => (await read(dispatcher, { select: ['app.system.dispatcher_enabled'], detail: true })).targets[0].settings['app.system.dispatcher_enabled'];
+  const layout = (on: boolean) => {
+    writeApp('experimental-settings.json', { newChrome: on });
+    resetNewChromeCacheForTests();
+    resetAllSettingsStoresForTests();
+  };
+  afterEach(() => {
+    fs.rmSync(path.join(dirs.userData, 'experimental-settings.json'), { force: true });
+    fs.rmSync(path.join(dirs.userData, 'dispatcher-settings.json'), { force: true });
+    fs.rmSync(path.join(dirs.userData, 'mcp-settings.json'), { force: true });
+    fs.rmSync(path.join(dirs.userData, 'clubhouse-mode-settings.json'), { force: true });
+    resetNewChromeCacheForTests();
+    resetAllSettingsStoresForTests();
+  });
+
+  it('reports the Dispatcher on by default in the new layout, and off by default on the classic', async () => {
+    layout(true);
+    expect(await dispatcherEnabled()).toEqual({ stored: null, effective: true, source: 'default' });
+    layout(false);
+    expect(await dispatcherEnabled()).toEqual({ stored: null, effective: false, source: 'default', reason: 'classic_layout' });
+  });
+
+  it('reports a saved switch as the app\'s, on either layout', async () => {
+    writeApp('dispatcher-settings.json', { enabled: true });
+    layout(false);
+    expect(await dispatcherEnabled()).toEqual({ stored: true, effective: true, source: 'app' });
+    writeApp('dispatcher-settings.json', { enabled: false });
+    layout(true);
+    expect(await dispatcherEnabled()).toEqual({ stored: false, effective: false, source: 'app', reason: 'switch_off' });
+  });
+
+  it('names MCP at app level, and keeps the saved value, with MCP off', async () => {
+    writeApp('dispatcher-settings.json', { enabled: true });
+    writeApp('mcp-settings.json', { enabled: false, projectOverrides: { [one]: true } });
+    layout(true);
+    expect(await dispatcherEnabled()).toEqual({ stored: true, effective: false, source: 'app', reason: 'mcp_off' });
+  });
+
+  it('counts the global Clubhouse mode as MCP on', async () => {
+    writeApp('mcp-settings.json', { enabled: false });
+    writeApp('clubhouse-mode-settings.json', { enabled: true });
+    layout(true);
+    expect(await dispatcherEnabled()).toEqual({ stored: null, effective: true, source: 'default' });
+  });
+
+  it('reads a saved experimental false', async () => {
+    writeApp('experimental-settings.json', { newChrome: true, dispatcher: false });
+    resetNewChromeCacheForTests();
+    resetAllSettingsStoresForTests();
+    expect(await dispatcherEnabled()).toEqual({ stored: null, effective: false, source: 'app', reason: 'experimental_off' });
+  });
+
+  it('no longer lists the experimental flag', async () => {
+    expect((await refusal(read(dispatcher, { select: ['app.system.experimental_dispatcher'] }))).code).toBe('invalid');
+  });
+
+  const orchestrated = () => agent('a1', { orchestration: { orchestrate: true, crossProjectHelpers: true, autoHelpers: true, connectToDispatcher: true } });
+  const policy = async () => (await read(ordinary('a1'), { select: ['agent.orchestration'], detail: true })).targets[0].settings;
+
+  it('reads orchestration off with MCP off at app level, keeping what is stored', async () => {
+    writeAgents(one, [orchestrated()]);
+    writeApp('mcp-settings.json', { enabled: false });
+    layout(true);
+    const off = { effective: false, source: 'app', reason: 'mcp_off' };
+    expect(await policy()).toMatchObject({
+      'agent.orchestration.orchestrate': { stored: true, ...off },
+      'agent.orchestration.cross_project_helpers': { stored: true, ...off },
+      'agent.orchestration.connect_to_dispatcher': { stored: true, ...off },
+      'agent.orchestration.auto_helpers': { stored: true, ...off },
+    });
+  });
+
+  it('names the project level when a project override turned MCP off', async () => {
+    writeAgents(one, [orchestrated()]);
+    writeApp('mcp-settings.json', { enabled: true, projectOverrides: { [one]: false } });
+    layout(true);
+    expect((await policy())['agent.orchestration.orchestrate']).toEqual({ stored: true, effective: false, source: 'project', reason: 'mcp_off' });
+  });
+
+  it('with its own MCP, an agent orchestrates, and its Dispatcher connection reads off for want of MCP at app level', async () => {
+    writeAgents(one, [{ ...orchestrated(), mcpOverride: true }]);
+    writeApp('mcp-settings.json', { enabled: false });
+    layout(true);
+    const settings = await policy();
+    expect(settings['agent.orchestration.orchestrate']).toEqual({ stored: true, effective: true, source: 'agent' });
+    expect(settings['agent.orchestration.connect_to_dispatcher']).toEqual({ stored: true, effective: false, source: 'app', reason: 'mcp_off' });
+  });
+
+  it('with MCP on, reads the connection off while the Dispatcher\'s switch is', async () => {
+    writeAgents(one, [orchestrated()]);
+    writeApp('dispatcher-settings.json', { enabled: false });
+    layout(true);
+    expect((await policy())['agent.orchestration.connect_to_dispatcher']).toEqual({ stored: true, effective: false, source: 'app', reason: 'dispatcher_off' });
+  });
+
+  it('applies every saved value again with MCP back', async () => {
+    writeAgents(one, [orchestrated()]);
+    writeApp('mcp-settings.json', { enabled: true });
+    layout(true);
+    const settings = await policy();
+    for (const key of ['orchestrate', 'cross_project_helpers', 'connect_to_dispatcher']) {
+      expect(settings[`agent.orchestration.${key}`]).toEqual({ stored: true, effective: true, source: 'agent' });
+    }
+  });
+
+  it('a helper keeps MCP as a fixed rule, and is never connected', async () => {
+    writeAgents(one, [agent('a1'), agent('h1', { parentAgentId: 'a1', orchestration: { connectToDispatcher: true } })]);
+    writeApp('mcp-settings.json', { enabled: false });
+    layout(true);
+    const { settings } = (await read(ordinary('h1'), { select: ['agent.mcp.clubhouse_mcp', 'agent.orchestration.connect_to_dispatcher'], detail: true })).targets[0];
+    expect(settings['agent.mcp.clubhouse_mcp']).toEqual({ stored: null, effective: true, source: 'default' });
+    expect(settings['agent.orchestration.connect_to_dispatcher']).toMatchObject({ effective: false });
+  });
+});
+
 describe('a preview-only flag in a stable build', () => {
   const packaged = (on: boolean) => { (app as { isPackaged: boolean }).isPackaged = on; };
   afterEach(() => { packaged(false); resetAllSettingsStoresForTests(); });
 
   it('reports what is saved, and that the build does not honour it', async () => {
-    writeApp('experimental-settings.json', { chat: true, copilotSdk: true, dispatcher: true });
+    writeApp('experimental-settings.json', { chat: true, copilotSdk: true });
     resetAllSettingsStoresForTests();
     packaged(true);
 
-    const { targets } = await read(dispatcher, { select: ['app.defaults.chat_enabled', 'app.system.experimental_dispatcher', 'app.system.experimental_copilot_sdk'], detail: true });
+    const { targets } = await read(dispatcher, { select: ['app.defaults.chat_enabled', 'app.system.experimental_copilot_sdk'], detail: true });
     const off = { stored: true, effective: false, source: 'app' };
     expect(targets[0].settings).toMatchObject({
       'app.defaults.chat_enabled': off,
-      'app.system.experimental_dispatcher': off,
       'app.system.experimental_copilot_sdk': off,
     });
   });
@@ -424,7 +540,8 @@ describe('values and sources', () => {
     writeApp('mcp-settings.json', { enabled: false });
     writeAgents(one, [agent('a1')]);
     resetAllSettingsStoresForTests();
-    expect(await mcp()).toEqual({ effective: false, source: 'default' });
+    // Its own switch saved off decided, not Clubhouse mode's default.
+    expect(await mcp()).toEqual({ effective: false, source: 'app' });
     writeApp('clubhouse-mode-settings.json', { enabled: true });
     resetAllSettingsStoresForTests();
     expect(await mcp()).toEqual({ effective: true, source: 'app' });

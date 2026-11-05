@@ -226,8 +226,8 @@ test('Preview off, saved beta state: the legacy layout, a terminal, and nothing 
   expect(await savedPreview(profile)).toBe(false);
   const agents = JSON.parse(await readText(path.join(projectDir, '.clubhouse', 'agents.json')));
   expect(agents.find((a: { id: string }) => a.id === AGENT_ID).runtimeMode).toBe('chat');
-  // Never created: nothing turned the Dispatcher on behind the flag.
-  expect(fs.existsSync(dispatcherFolder(profile))).toBe(false);
+  // The switch saved on is honoured, on the classic layout too: it has a record and a settings page, and nothing started it.
+  expect(fs.existsSync(path.join(dispatcherFolder(profile), '.clubhouse', 'agents.json'))).toBe(true);
 });
 
 test('Preview on, no saved flags: the legacy layout with the Preview pages to opt in from', async () => {

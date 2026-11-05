@@ -95,6 +95,12 @@ export const CROSS_PROJECT_OFF_MESSAGE = 'Cross-project helpers are turned off f
 /** The refusal for turning orchestration or the Dispatcher connection on where Clubhouse MCP is off (#2589). */
 export const MCP_REQUIRED_MESSAGE = 'This needs Clubhouse MCP, which is off for this agent. Turn it on first.';
 
+/** The refusal for any Clubhouse tool once MCP is off for the caller: see clubhouse-mcp/mcp-call-gate. */
+export const MCP_OFF_TOOL_MESSAGE = 'Clubhouse MCP is off for this agent, so Clubhouse tools are unavailable. Tell the user.';
+
+/** The same for a helper, which can still report to its parent. */
+export const MCP_OFF_HELPER_TOOL_MESSAGE = 'Clubhouse MCP is off for this agent, so the only Clubhouse tool available is message_parent. Tell your parent or the user.';
+
 /** Where each field of a resolved policy came from. */
 export type OrchestrationPolicySource = 'agent' | 'persona' | 'default';
 

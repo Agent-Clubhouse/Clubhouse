@@ -17,12 +17,15 @@ export function registerDispatcherHandlers(): void {
     [booleanArg()],
     async (_event, on): Promise<DispatcherState> => dispatcher.setDispatcherEnabled(on),
   ));
+  ipcMain.handle(IPC.DISPATCHER.STOP, (): Promise<DispatcherState> => dispatcher.stopDispatcherNow());
 
+  let lastApplied = '';
   dispatcher.onDispatcherChanged((state) => {
     broadcastToAllWindows(IPC.DISPATCHER.CHANGED, state);
-    // The Dispatcher turns MCP on (isMcpEnabledForAny), so start the bridge
-    // and rebuild persisted bindings without a restart.
-    if (state.enabled) onMcpSettingsChanged();
+    // Rebuild its wires without a restart. Its agent starting or stopping moves none.
+    const applied = JSON.stringify({ ...state, running: false });
+    if (state.enabled && applied !== lastApplied) onMcpSettingsChanged();
+    lastApplied = applied;
   });
 
   void dispatcher.initDispatcher();

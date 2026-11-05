@@ -31,7 +31,7 @@ import { getBranchChanges, isInsideGitRepo } from './git-service';
 import { MobileControlError } from './mobile-control';
 import * as orchestrationPolicy from './orchestration-policy';
 import * as orchestrationSettings from './orchestration-settings';
-import { isDispatcherEnabled } from './dispatcher/dispatcher-settings';
+import { dispatcherEnablement } from './dispatcher/dispatcher-settings';
 import { isMcpEnabled } from './mcp-settings';
 import {
   ACCESS_LEVELS, MAX_HELPER_LIMIT, MCP_REQUIRED_MESSAGE, ORCHESTRATION_CONTROLS, patchTurnsOnMcpSwitch, validateOrchestrationPatch,
@@ -191,8 +191,11 @@ export function parseMobileOrchestration(raw: unknown, mode: 'update' | 'create'
   if (mode === 'create' && Object.values(patch).some((v) => v === null)) throw invalid('invalid_orchestration', 'A new agent has no orchestration overrides to clear');
   if (typeof patch.maxHelpers === 'number' && patch.maxHelpers > cap) throw invalid('invalid_orchestration', capMessage);
   // The Orchestration card offers Connect to Dispatcher only while the Dispatcher is on (#2534); off is always allowed.
-  if (patch.connectToDispatcher === true && !isDispatcherEnabled()) {
-    throw new MobileControlError('dispatcher_off', 409, 'rejected', 'Turn on the Dispatcher first.');
+  if (patch.connectToDispatcher === true) {
+    const { enabled, reason } = dispatcherEnablement();
+    // Off only because of MCP, so MCP is what to turn on. The code is the one a phone already gets for that.
+    if (reason === 'mcp_off') throw mcpOff();
+    if (!enabled) throw new MobileControlError('dispatcher_off', 409, 'rejected', 'Turn on the Dispatcher first.');
   }
   if (!mcpEnabled && patchTurnsOnMcpSwitch(patch)) throw mcpOff();
   return patch;

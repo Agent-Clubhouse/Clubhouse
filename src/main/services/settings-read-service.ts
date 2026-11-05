@@ -57,7 +57,11 @@ export interface SettingValue {
   source: SettingSource;
   /** Present and false when the setting has no effect on this target. */
   applies?: false;
+  /** Why `effective` is off whatever is saved here: the saved value comes back when this clears. */
+  reason?: SettingOffReason;
 }
+
+export type SettingOffReason = 'mcp_off' | 'dispatcher_off' | 'classic_layout' | 'experimental_off' | 'switch_off';
 
 /** Who is asking. The tools say; this enforces. */
 export type SettingsActor =
@@ -182,7 +186,21 @@ function permissionModeLevel(path: string, { files }: AppContext): SettingSource
 function mcpLevel(path: string | undefined, override: boolean | undefined, ctx: AppContext): { enabled: boolean; source: SettingSource } {
   const { enabled, source } = resolveMcpEnabled(path, override);
   if (source !== 'app') return { enabled, source };
-  return { enabled, source: getMcpSettings().enabled ? savedLevel(ctx.files.mcp, 'enabled').source : savedLevel(ctx.files.clubhouseMode, 'enabled').source };
+  // Clubhouse mode decides only where it keeps MCP on. Off, the MCP switch saved off is what decided.
+  return { enabled, source: enabled && !getMcpSettings().enabled ? savedLevel(ctx.files.clubhouseMode, 'enabled').source : savedLevel(ctx.files.mcp, 'enabled').source };
+}
+
+/**
+ * The Dispatcher's switch: what its saved values and MCP at app level make of it.
+ * `source` is the level that decided, so a value derived off names what to change.
+ */
+function dispatcherValue({ files }: AppContext): SettingValue {
+  const { enabled, reason } = dispatcherSettings.dispatcherEnablement();
+  const saved = savedLevel(files.dispatcher, 'enabled');
+  const off = reason ? { reason } : {};
+  if (reason === 'mcp_off') return { stored: saved.stored, effective: enabled, source: savedLevel(files.mcp, 'enabled').source, ...off };
+  if (reason === 'experimental_off') return { stored: saved.stored, effective: enabled, source: savedLevel(files.experimental, dispatcherSettings.DISPATCHER_FLAG).source, ...off };
+  return { ...saved, effective: enabled, ...off };
 }
 
 function runtimeSource(ctx: AgentContext): SettingSource {
@@ -194,12 +212,43 @@ function runtimeSource(ctx: AgentContext): SettingSource {
   return saved?.mode ? 'app' : 'default';
 }
 
+/** The level that turned MCP off for this agent, and that a switch derived off by it reads as. */
+function mcpOffLevel(ctx: AgentContext): SettingSource {
+  return mcpLevel(ctx.path, clubhouseMcpOverride(ctx.config), ctx).source;
+}
+
+/** A switch that needs Clubhouse MCP (#2589): off without it, with `stored` kept. Other fields don't. */
+const MCP_DEPENDENT: ReadonlySet<string> = new Set(['orchestrate', 'crossProjectHelpers', 'connectToDispatcher']);
+
 const orchestrationField = (key: keyof NonNullable<AgentContext['view']['orchestration']>['sources'], name: string): Field<AgentContext> => [
   name,
-  ({ config, view }) => view.orchestration
-    ? { stored: config.orchestration?.[key] ?? null, effective: view.orchestration[key], source: view.orchestration.sources[key] }
-    : undefined,
+  (ctx) => {
+    const { config, view } = ctx;
+    if (!view.orchestration) return undefined;
+    const stored = config.orchestration?.[key] ?? null;
+    if (MCP_DEPENDENT.has(key) && !view.orchestration.mcpEnabled) {
+      return { stored, effective: false, source: mcpOffLevel(ctx), reason: 'mcp_off' };
+    }
+    return { stored, effective: view.orchestration[key], source: view.orchestration.sources[key] };
+  },
 ];
+
+/** Connect to Dispatcher: the agent's own switch, then whether there is a Dispatcher to connect to. */
+const connectToDispatcherField = (): Field<AgentContext> => {
+  const [name, read] = orchestrationField('connectToDispatcher', 'connect_to_dispatcher');
+  return [name, (ctx) => {
+    const value = read(ctx);
+    if (!value || !value.effective) return value;
+    const { enabled, reason } = dispatcherSettings.dispatcherEnablement();
+    if (enabled) return value;
+    return {
+      stored: value.stored,
+      effective: false,
+      source: reason === 'mcp_off' ? savedLevel(ctx.files.mcp, 'enabled').source : savedLevel(ctx.files.dispatcher, 'enabled').source,
+      reason: reason === 'mcp_off' ? 'mcp_off' : 'dispatcher_off',
+    };
+  }];
+};
 
 const AGENT_SECTIONS: ReadonlyArray<Section<AgentContext>> = [
   {
@@ -257,6 +306,11 @@ const AGENT_SECTIONS: ReadonlyArray<Section<AgentContext>> = [
     fields: [
       ['clubhouse_mcp', (ctx) => {
         const { config } = ctx;
+        // The Dispatcher starts only with MCP at app level, whatever its own override says.
+        if (isDispatcherAgentId(config.id)) {
+          const app = mcpLevel(undefined, undefined, ctx);
+          return { stored: config.mcpOverride ?? null, effective: app.enabled, source: app.source, ...(!app.enabled && { reason: 'mcp_off' as const }) };
+        }
         const { enabled, source } = mcpLevel(ctx.path, clubhouseMcpOverride(config), ctx);
         // A helper always gets the bridge, whatever is saved.
         return { stored: config.mcpOverride ?? null, effective: enabled, source: config.parentAgentId ? 'default' : source };
@@ -292,15 +346,15 @@ const AGENT_SECTIONS: ReadonlyArray<Section<AgentContext>> = [
       orchestrationField('control', 'control'),
       orchestrationField('maxHelpers', 'max_helpers'),
       orchestrationField('crossProjectHelpers', 'cross_project_helpers'),
-      orchestrationField('connectToDispatcher', 'connect_to_dispatcher'),
+      connectToDispatcherField(),
       // Whether Auto works for this agent, app and project included. `stored` is its own switch.
-      ['auto_helpers', ({ config, view }) => view.orchestration
-        ? {
-          stored: config.orchestration?.autoHelpers ?? null,
-          effective: view.orchestration.autoHelpersEffective,
-          source: view.orchestration.sources.autoHelpers,
-        }
-        : undefined],
+      ['auto_helpers', (ctx) => {
+        const { config, view } = ctx;
+        if (!view.orchestration) return undefined;
+        const stored = config.orchestration?.autoHelpers ?? null;
+        if (!view.orchestration.mcpEnabled) return { stored, effective: false, source: mcpOffLevel(ctx), reason: 'mcp_off' };
+        return { stored, effective: view.orchestration.autoHelpersEffective, source: view.orchestration.sources.autoHelpers };
+      }],
     ],
   },
 ];
@@ -389,10 +443,9 @@ const APP_SECTIONS: ReadonlyArray<Section<AppContext>> = [
     name: 'app.system',
     dispatcherOnly: true,
     fields: [
-      ['dispatcher_enabled', ({ files }) => appValue(files.dispatcher, 'enabled', dispatcherSettings.isDispatcherEnabled())],
+      ['dispatcher_enabled', dispatcherValue],
       ['experimental_chat', ({ files }) => appValue(files.experimental, chatFlag, chatRuntimeSettings.isChatEnabled())],
       ['experimental_copilot_sdk', ({ files }) => appValue(files.experimental, COPILOT_SDK_FLAG, chatRuntimeSettings.isCopilotSdkEnabled())],
-      ['experimental_dispatcher', ({ files }) => appValue(files.experimental, dispatcherSettings.DISPATCHER_FLAG, dispatcherSettings.isDispatcherFlagOn())],
       ['annex_server_enabled', ({ files }) => appValue(files.annex, ['enableServer', 'enabled'], annexSettings.getSettings().enableServer)],
       ['annex_client_enabled', ({ files }) => appValue(files.annex, ['enableClient', 'enabled'], annexSettings.getSettings().enableClient)],
     ],

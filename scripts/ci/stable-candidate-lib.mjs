@@ -197,11 +197,13 @@ export function expectedFor({ state, preview, flags }) {
     chatEnabled: inForce,
     flagsInForce: inForce ? BETA_FLAGS : null,
     settingsPages: !preview ? [] : flags ? PREVIEW_PAGES : ['Experimental', 'Annex', 'Annex control'],
-    dispatcherRow: inForce && state === 'beta',
+    // On by default in the new layout. The classic layout has no row, whatever is saved.
+    dispatcherRow: inForce,
     // Only asserted when it must be false: with no CLI on the runner, true can't be reached.
     wakesInChatMustBeFalse: state === 'beta' && !inForce,
     savedFilesUntouched: state === 'beta' && !preview,
-    dispatcherFolderAbsent: !inForce || state !== 'beta',
+    // A saved true is honoured on the classic layout too, so only a fresh classic profile has none.
+    dispatcherFolderAbsent: !inForce && state !== 'beta',
   };
 }
 

@@ -17,6 +17,7 @@ import { _settleHelperRoutingForTesting } from './helper-routing';
 import type { HelperStartWarning } from '../../shared/helper-routing';
 import { QUOTA_STALE_MS, quotaRefetchDelaySeconds } from '../../shared/helper-routing';
 import { CLAUDE_WORKING_WINDOW_NOTE } from '../../shared/context-window';
+import { MCP_REQUIRED_MESSAGE } from '../../shared/orchestration-policy';
 import { describe, it, expect, beforeAll, afterAll, beforeEach, vi } from 'vitest';
 import fs from 'fs';
 import path from 'path';
@@ -53,7 +54,7 @@ const W = vi.hoisted(() => ({
   projectStateReady: true,
   finishedReady: true,
   // The app-wide Dispatcher (#2533): off unless a test turns it on.
-  dispatcher: { flagOn: false, enabled: false, newLayout: true },
+  dispatcher: { flagOn: false, enabled: false, newLayout: true, running: false },
   dispatcherListeners: new Set<(state: any) => void>(),
   // What the CLI offers for the model (#2660); a case sets it, else Claude's.
   contextOptions: null as null | Record<string, unknown>,
@@ -64,7 +65,7 @@ const DISPATCHER_PATH = vi.hoisted(() => '/Users/me/.clubhouse/dispatcher');
 vi.mock('./dispatcher/dispatcher-service', () => {
   const config = () => (W.durables[DISPATCHER_PATH] ?? [])[0] ?? null;
   const enabled = () => W.dispatcher.flagOn && W.dispatcher.enabled;
-  const state = () => ({ enabled: enabled(), flagOn: W.dispatcher.flagOn, agentId: config()?.id ?? null,
+  const state = () => ({ enabled: enabled(), flagOn: W.dispatcher.flagOn, savedOn: W.dispatcher.enabled, mcpOff: !W.dispatcher.flagOn, classic: !W.dispatcher.newLayout, offReason: enabled() ? null : W.dispatcher.enabled ? 'mcp_off' : 'switch_off', running: W.dispatcher.running, agentId: config()?.id ?? null,
     path: config() ? DISPATCHER_PATH : null, config: config() ? { ...config() } : null });
   return {
     DISPATCHER_NAME: 'Dispatcher',
@@ -80,7 +81,14 @@ vi.mock('./dispatcher/dispatcher-service', () => {
     },
   };
 });
-vi.mock('./dispatcher/dispatcher-settings', () => ({ isDispatcherEnabled: () => W.dispatcher.flagOn && W.dispatcher.enabled }));
+vi.mock('./dispatcher/dispatcher-settings', () => ({
+  isDispatcherEnabled: () => W.dispatcher.flagOn && W.dispatcher.enabled,
+  dispatcherEnablement: () => ({
+    savedOn: W.dispatcher.enabled,
+    enabled: W.dispatcher.flagOn && W.dispatcher.enabled,
+    reason: !W.dispatcher.enabled ? 'switch_off' : W.dispatcher.flagOn ? null : 'mcp_off',
+  }),
+}));
 vi.mock('../window-chrome', () => ({ newChromeEnabled: () => W.dispatcher.newLayout }));
 
 vi.mock('./annex-chat-content', () => ({ readMobileChatContent: async () => ({ kind: 'text', name: 'README.md', text: '# App' }) }));
@@ -549,7 +557,7 @@ function resetWorld() {
         idleSleep: 'never', runtimeMode: 'chat', mcpOverride: true, createdAt: '2026-10-07T09:00:00.000Z', lastSessionId: 'sess_dispatch' },
     ],
   };
-  W.dispatcher = { flagOn: false, enabled: false, newLayout: true };
+  W.dispatcher = { flagOn: false, enabled: false, newLayout: true, running: false };
   W.running = new Set(['durable_term']);
   W.revert = new Set();
   W.transcripts = {
@@ -1385,7 +1393,10 @@ describe('Annex mobile contract fixtures', { timeout: TEST_TIMEOUT_MS }, () => {
 
   it('the Dispatcher (#2533)', async () => {
     const off = { type: 'dispatcher.setEnabled', enabled: true };
-    await command('dispatcher_flag_off', off);
+    const flagOff = await command('dispatcher_flag_off', off);
+    expect(flagOff.body.error).toMatchObject({ code: 'dispatcher_flag_off', message: MCP_REQUIRED_MESSAGE });
+    // The words phones vendored: the code is the contract, and `message` can change (docs/mobile-control-v1.md).
+    flagOff.body.error.message = 'Turn on Dispatcher in Settings > Experimental on the desktop first.';
     W.dispatcher.flagOn = true;
     W.dispatcher.newLayout = false;
     await command('dispatcher_layout_off', off);
@@ -1446,7 +1457,7 @@ describe('Annex mobile contract fixtures', { timeout: TEST_TIMEOUT_MS }, () => {
     const seq = (f: any) => ({ ...f, seq: 1000 });
     fixtures.set('dispatcher-changed.json', { direction: 'desktop-to-phone', note: 'seq is the replay sequence; a snapshot follows each.', frames: [seq(changedOn), seq(changedOff)] });
     fixtures.set('dispatcher-routes.json', routes);
-    W.dispatcher = { flagOn: false, enabled: false, newLayout: true };
+    W.dispatcher = { flagOn: false, enabled: false, newLayout: true, running: false };
     W.durables[DISPATCHER_PATH][0] = { ...W.durables[DISPATCHER_PATH][0], model: undefined, orchestrator: 'claude-code' };
   });
 
@@ -1454,16 +1465,16 @@ describe('Annex mobile contract fixtures', { timeout: TEST_TIMEOUT_MS }, () => {
     const route = '/api/v1/icons/agent/durable_dispatcher';
     const saved = W.durables[DISPATCHER_PATH][0];
     W.durables[DISPATCHER_PATH][0] = { ...saved, icon: 'durable_dispatcher.abc.png' };
-    W.dispatcher = { flagOn: true, enabled: true, newLayout: true };
+    W.dispatcher = { flagOn: true, enabled: true, newLayout: true, running: false };
     expect((await send('GET', route)).status).toBe(200);
-    W.dispatcher = { flagOn: false, enabled: false, newLayout: true };
+    W.dispatcher = { flagOn: false, enabled: false, newLayout: true, running: false };
     expect((await send('GET', route)).status).toBe(404);
     W.durables[DISPATCHER_PATH][0] = saved;
   });
 
   it('sender identity: every kind of sender, drawn from the snapshot alone', async () => {
     resetWorld();
-    W.dispatcher = { flagOn: true, enabled: true, newLayout: true };
+    W.dispatcher = { flagOn: true, enabled: true, newLayout: true, running: false };
     W.durables[DISPATCHER_PATH][0] = { ...W.durables[DISPATCHER_PATH][0], icon: 'durable_dispatcher.abc.png' };
     // A disposed helper keeps its config row; a helper in another project shares a name with one here.
     W.durables[APP].push({ id: 'durable_gone', name: 'old-helper', color: 'rose', parentAgentId: 'durable_chat', disposedAt: '2026-10-09T09:00:00.000Z', createdAt: '2026-10-08T09:00:00.000Z' });
@@ -2137,7 +2148,7 @@ describe('Annex mobile contract fixtures', { timeout: TEST_TIMEOUT_MS }, () => {
   it('icon refs: the snapshot forms, changes, removals and the routes', async () => {
     const saved = W.durables[DISPATCHER_PATH][0];
     W.durables[DISPATCHER_PATH][0] = { ...saved, icon: 'durable_dispatcher.png' };
-    W.dispatcher = { flagOn: true, enabled: true, newLayout: true };
+    W.dispatcher = { flagOn: true, enabled: true, newLayout: true, running: false };
     const refsSocket = () => connect('mtls', { iconRefs: true });
     const firstSnapshot = async () => frames(await refsSocket()).find((f) => f.type === 'snapshot').payload;
     const SHA = /^[0-9a-f]{64}$/;
@@ -2298,7 +2309,7 @@ describe('Annex mobile contract fixtures', { timeout: TEST_TIMEOUT_MS }, () => {
     fixtures.set('icon-images.json', { note: 'One real image of each type, as the real code describes it.', images });
 
     W.durables[DISPATCHER_PATH][0] = saved;
-    W.dispatcher = { flagOn: false, enabled: false, newLayout: true };
+    W.dispatcher = { flagOn: false, enabled: false, newLayout: true, running: false };
   }, TEST_TIMEOUT_MS);
 
   afterAll(() => {
@@ -2538,6 +2549,23 @@ describe('Annex mobile contract fixtures', { timeout: TEST_TIMEOUT_MS }, () => {
       omittedQuestion: { note: 'A question in history too large for any page. Not pending, so nothing to answer.', event: stub },
       queuedRow: { note: 'A row named by queuedMessageIds, in front of a tail that does not reach it. nextBeforeSeq does not count it.', firstEvents: withQueued.body.events.slice(0, 2).map((e: any) => ({ seq: e.seq, type: e.type, ...(e.type === 'user_message' && { data: e.data }) })), nextBeforeSeq: '<the seq of the second event>', queuedMessageIds: withQueued.body.queuedMessageIds },
     });
+  }, TEST_TIMEOUT_MS);
+
+  it('a Dispatcher still running with MCP off stays listed and stoppable, and its fixtures are untouched', async () => {
+    W.dispatcher = { flagOn: false, enabled: true, newLayout: true, running: true };
+    const settings = await send('GET', '/api/v1/mobile/agents/durable_dispatcher/settings');
+    expect(settings.status).toBe(200);
+    expect(settings.body).toMatchObject({ agentId: 'durable_dispatcher', isDispatcher: true });
+    const ws = await connect();
+    const { lastSnapshot } = await (async () => {
+      await eventually(() => expect(frames(ws).some((f) => f.type === 'snapshot')).toBe(true));
+      return { lastSnapshot: frames(ws).filter((f) => f.type === 'snapshot').at(-1).payload };
+    })();
+    expect(lastSnapshot.dispatcher).toMatchObject({ enabled: false, flagOn: false, projectId: '__dispatcher__', agent: { id: 'durable_dispatcher', isDispatcher: true } });
+    const stop = await send('POST', '/api/v1/mobile/commands', { version: 1, epoch, commandId: 'cmd_running_stop', type: 'agent.stop', agentId: 'durable_dispatcher' });
+    expect(stop.status).not.toBe(409);
+    W.dispatcher = { flagOn: false, enabled: false, newLayout: true, running: false };
+    expect((await send('GET', '/api/v1/mobile/agents/durable_dispatcher/settings')).status).toBe(404);
   }, TEST_TIMEOUT_MS);
 
   it('fixtures on disk match (npm run fixtures:annex-mobile to update)', () => {

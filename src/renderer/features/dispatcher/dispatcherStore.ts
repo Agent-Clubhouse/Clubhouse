@@ -8,7 +8,7 @@ import { useProjectStore } from '../../stores/projectStore';
  * useDispatcherSync so the sidebar, the view and the agent views read one
  * subscription. The Dispatcher isn't in projectStore (#2533): its agent runs
  * under DISPATCHER_PROJECT_ID with its folder as the project path, and
- * `project` is that pair, set only while it's turned on.
+ * `project` is that pair, set while it's turned on or still running.
  */
 
 /** What agent views need of an agent's project: its id, name and folder. */
@@ -36,7 +36,7 @@ export const useDispatcherStore = create<DispatcherStoreState>((set, get) => ({
   loadError: null,
   loadAttempt: 0,
   setState: (state) => {
-    const path = state?.enabled && state.agentId ? state.path : null;
+    const path = (state?.enabled || state?.running) && state.agentId ? state.path : null;
     // Keep the same object while the folder is the same, so selectors stay stable.
     const current = get().project;
     const project = !path ? null : current?.path === path ? current : { id: DISPATCHER_PROJECT_ID, name: 'Dispatcher', path };
@@ -62,7 +62,7 @@ export function isDispatcherAgent(agent: Pick<Agent, 'id' | 'projectId'> | null 
   return !!agentId && agent.id === agentId;
 }
 
-/** The Dispatcher's agent id while it's turned on. */
+/** The Dispatcher's agent id while it's turned on or still running. */
 export function useDispatcherAgentId(): string | null {
   return useDispatcherStore((s) => (s.project ? s.state?.agentId ?? null : null));
 }

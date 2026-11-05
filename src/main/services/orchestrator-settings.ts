@@ -80,7 +80,21 @@ export function setHookServerEnabled(
  * persisted preferences), their choices are preserved and only the
  * `autoDetected` flag is stamped so this logic never re-runs.
  */
-export async function autoDetectDefaults(
+export function autoDetectDefaults(
+  providers: Array<{ id: string; checkAvailability: () => Promise<{ available: boolean; error?: string }> }>,
+): Promise<void> {
+  detection = detectDefaults(providers);
+  return detection;
+}
+
+let detection: Promise<void> = Promise.resolve();
+
+/** Resolves once first-run detection has settled, whatever it found, so a first choice of CLI can use its answer. */
+export function whenDefaultsDetected(): Promise<void> {
+  return detection.catch((): void => undefined);
+}
+
+async function detectDefaults(
   providers: Array<{ id: string; checkAvailability: () => Promise<{ available: boolean; error?: string }> }>,
 ): Promise<void> {
   const settings = store.get();

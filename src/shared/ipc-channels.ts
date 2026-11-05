@@ -329,6 +329,8 @@ export const IPC = {
     READ_CLIPBOARD_TEXT: 'app:read-clipboard-text',
     READ_CLIPBOARD_IMAGE: 'app:read-clipboard-image',
     GET_CLUBHOUSE_MODE_SETTINGS: 'app:get-clubhouse-mode-settings',
+    /** What a proposed MCP or Clubhouse mode change would turn off, before it is saved. */
+    GET_MCP_OFF_IMPACT: 'app:get-mcp-off-impact',
     SAVE_CLUBHOUSE_MODE_SETTINGS: 'app:save-clubhouse-mode-settings',
     GET_SOUND_SETTINGS: 'app:get-sound-settings',
     SAVE_SOUND_SETTINGS: 'app:save-sound-settings',
@@ -584,6 +586,8 @@ export const IPC = {
   DISPATCHER: {
     GET: 'dispatcher:get',
     SET_ENABLED: 'dispatcher:set-enabled',
+    /** Stop its running agent and keep every saved value. */
+    STOP: 'dispatcher:stop',
     /** Main → renderer broadcast: DispatcherState after any change. */
     CHANGED: 'dispatcher:changed',
   },

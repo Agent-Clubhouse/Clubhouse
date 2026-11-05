@@ -23,6 +23,9 @@ import { agentRegistry, resolveOrchestrator, untrackAgent, readProjectOrchestrat
 import { waitReady as waitMcpBridgeReady } from './clubhouse-mcp/bridge-server';
 import { injectClubhouseMcp } from './clubhouse-mcp/injection';
 import { syncDispatcherGate } from './clubhouse-mcp/dispatcher-gate';
+import { setMcpCaller } from './clubhouse-mcp/mcp-call-gate';
+import { isDispatcherPath } from './dispatcher/dispatcher-paths';
+import { dispatcherEnablement } from './dispatcher/dispatcher-settings';
 import { bindingManager } from './clubhouse-mcp/binding-manager';
 import { ensureMcpBridgeForAgent, isMcpEnabled } from './mcp-settings';
 import { resolveHelperLaunchSettings, syncOrchestrationGate } from './orchestration-policy';
@@ -34,6 +37,7 @@ import {
   rankHelperLaunch,
   type AgentLaunchAccess,
   type HelperLaunch,
+  MCP_REQUIRED_MESSAGE,
 } from '../../shared/orchestration-policy';
 import { broadcastToAllWindows } from '../util/ipc-broadcast';
 import { IPC } from '../../shared/ipc-channels';
@@ -268,8 +272,21 @@ async function spawnAgentTracked(params: SpawnAgentParams): Promise<void> {
   );
 }
 
+/**
+ * The Dispatcher starts only while it is on. Every way of starting one comes
+ * through here, so a wake from a view, a phone, a tool or an update resume is
+ * refused alike. Its own `mcpOverride` says nothing about this.
+ */
+function assertDispatcherCanStart({ kind, projectPath }: SpawnAgentParams): void {
+  if (kind !== 'durable' || !isDispatcherPath(projectPath)) return;
+  const { enabled, reason } = dispatcherEnablement();
+  if (enabled) return;
+  throw tagError(new Error(reason === 'mcp_off' ? MCP_REQUIRED_MESSAGE : 'The Dispatcher is turned off.'), 'preflight_failed');
+}
+
 async function spawnAgentInner(inParams: SpawnAgentParams, facts: SpawnFacts): Promise<void> {
   let params = inParams;
+  assertDispatcherCanStart(params);
   // An agent still being created has no worktree yet, and a failed one never
   // will (#2226): refuse before anything touches its folder.
   if (params.kind === 'durable') {
@@ -431,6 +448,8 @@ async function spawnAgentInner(inParams: SpawnAgentParams, facts: SpawnFacts): P
     if (params.kind === 'durable') await syncOrchestrationGate(params.projectPath, params.agentId);
     // Likewise the Dispatcher's tools (#2536), only for the Dispatcher.
     await syncDispatcherGate(params.projectPath, params.agentId);
+    // Before the MCP connects. Its config was read above, and a quick agent has none.
+    setMcpCaller(params.agentId, params.projectPath, params.kind === 'durable' ? durableConfig : null);
     facts.model = params.model;
     if (params.kind === 'durable' && durableConfig?.contextWindow) {
       const { value, notice } = await contextWindowForLaunch(params.projectPath, provider.id, params.agentId, params.model, durableConfig.contextWindow);

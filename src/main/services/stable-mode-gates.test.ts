@@ -25,7 +25,10 @@ vi.mock('./log-service', () => ({ appLog: vi.fn() }));
 vi.mock('./dispatcher/dispatcher-service', async () => {
   const settings = await vi.importActual<typeof import('./dispatcher/dispatcher-settings')>('./dispatcher/dispatcher-settings');
   return {
-    getDispatcherState: () => ({ enabled: settings.isDispatcherEnabled(), flagOn: settings.isDispatcherFlagOn(), agentId: null, path: null, config: null }),
+    getDispatcherState: () => {
+      const { enabled, savedOn, reason } = settings.dispatcherEnablement();
+      return { enabled, savedOn, offReason: reason, flagOn: reason !== 'mcp_off', mcpOff: reason === 'mcp_off', classic: false, running: false, agentId: null, path: null, config: null };
+    },
     isDispatcherAgentId: () => false,
     onDispatcherChanged: () => () => {},
   };
@@ -35,7 +38,7 @@ import { resetAllSettingsStoresForTests } from './settings-store';
 import { getSettings, getStoredSettings, saveSettings } from './experimental-settings';
 import { isPreviewEligible } from './preview-eligible';
 import { CHAT_EXPERIMENTAL_FLAG, isChatEnabled, isCopilotSdkEnabled, resolveRuntimeMode } from './chat-runtime-settings';
-import { DISPATCHER_FLAG, isDispatcherEnabled, isDispatcherFlagOn } from './dispatcher/dispatcher-settings';
+import { isDispatcherEnabled } from './dispatcher/dispatcher-settings';
 import { isMcpEnabledForAny } from './mcp-settings';
 import { dispatcherCapability } from './mobile-dispatcher';
 import { EXPERIMENTAL_FLAG as TELEMETRY_FLAG, getTelemetrySettings, isExperimentEnabled } from '../telemetry/settings';
@@ -52,7 +55,6 @@ const ALL_SAVED = {
   chat: true,
   richChatContent: true,
   copilotSdk: true,
-  dispatcher: true,
   telemetry: true,
   themeGradients: true,
   [STRUCTURED_MODE_REMOVED_NOTICE_KEY]: true,
@@ -98,7 +100,7 @@ afterEach(() => {
 describe('the preview-only list', () => {
   it('names each feature by the same key its reader uses', () => {
     expect([...PREVIEW_ONLY_EXPERIMENTAL_FLAGS].sort()).toEqual([
-      NEW_CHROME_FLAG, 'goobers', CHAT_EXPERIMENTAL_FLAG, RICH_CHAT_CONTENT_FLAG, COPILOT_SDK_FLAG, DISPATCHER_FLAG, TELEMETRY_FLAG,
+      NEW_CHROME_FLAG, 'goobers', CHAT_EXPERIMENTAL_FLAG, RICH_CHAT_CONTENT_FLAG, COPILOT_SDK_FLAG, TELEMETRY_FLAG,
     ].sort());
   });
 });
@@ -126,7 +128,8 @@ describe('a packaged stable build with Preview off', () => {
   it('starts on the legacy layout, for main, telemetry and the phone', () => {
     expect(newChromeEnabled()).toBe(false);
     expect(uiChrome()).toBe('legacy');
-    expect(dispatcherCapability()).toMatchObject({ newLayout: false, flagOn: false, enabled: false });
+    // A saved true stays on in the classic layout, where it can be turned off and not on again (#2565).
+    expect(dispatcherCapability()).toMatchObject({ newLayout: false, flagOn: true, enabled: true });
   });
 
   it('runs a Chat-mode agent in the terminal and leaves its saved choices alone', () => {
@@ -138,12 +141,10 @@ describe('a packaged stable build with Preview off', () => {
     expect(bytes(CHAT_RUNTIME_FILE)).toBe(saved);
   });
 
-  it('turns the Dispatcher off without changing its saved switch', () => {
-    // With MCP off in its own settings, only the Dispatcher could turn it on.
+  it('keeps the Dispatcher off with MCP off, without changing its saved switch, and starts no bridge for it', () => {
     write('mcp-settings.json', { enabled: false, projectDefault: false });
     relaunch();
     const saved = bytes(DISPATCHER_FILE);
-    expect(isDispatcherFlagOn()).toBe(false);
     expect(isDispatcherEnabled()).toBe(false);
     expect(isMcpEnabledForAny()).toBe(false);
     expect(bytes(DISPATCHER_FILE)).toBe(saved);
@@ -231,7 +232,8 @@ describe('with no saved flags, a packaged stable build', () => {
     expect(getSettings()).toEqual({});
     expect(newChromeEnabled()).toBe(false);
     expect(isChatEnabled()).toBe(false);
-    expect(isDispatcherFlagOn()).toBe(false);
+    // Nothing saved in the classic layout: off, with nothing to reach it.
+    expect(isDispatcherEnabled()).toBe(false);
     expect(fs.readdirSync(h.userData)).toEqual([]);
   });
 });

@@ -50,6 +50,8 @@ import * as agentConfig from '../../src/main/services/agent-config';
 import * as projectStore from '../../src/main/services/project-store';
 import * as dispatcher from '../../src/main/services/dispatcher/dispatcher-service';
 import * as experimentalSettings from '../../src/main/services/experimental-settings';
+import { resetNewChromeCacheForTests } from '../../src/main/window-chrome';
+import { NEW_CHROME_FLAG } from '../../src/shared/chrome-flag';
 import { agentRegistry } from '../../src/main/services/agent-registry';
 import { CLI_TOKEN_HEADER, handleCliRequest, publishCliEndpoint, unpublishCliEndpoint } from '../../src/main/services/cli-endpoint';
 import { registerAgentHandlers } from '../../src/main/ipc/agent-handlers';
@@ -432,7 +434,8 @@ describe('every appearance change reaches a phone as a snapshot', () => {
     const dispatcherPath = () => dispatcher.getDispatcherState().path!;
 
     it('turned on', async () => {
-      experimentalSettings.saveSettings({ ...experimentalSettings.getSettings(), [dispatcher.DISPATCHER_FLAG]: true });
+      experimentalSettings.saveSettings({ ...experimentalSettings.getSettings(), [NEW_CHROME_FLAG]: true });
+      resetNewChromeCacheForTests();
       await expectSnapshotAfter(() => dispatcher.setDispatcherEnabled(true), (p) => !!shown(p));
       dispatcherId = dispatcher.getDispatcherAgentId()!;
       expect(shown(snapshots().at(-1)).id).toBe(dispatcherId);
@@ -466,7 +469,11 @@ describe('every appearance change reaches a phone as a snapshot', () => {
     }, 60_000);
 
     it('turned off', async () => {
-      await expectSnapshotAfter(() => dispatcher.setDispatcherEnabled(false), (p) => !shown(p));
+      await expectSnapshotAfter(async () => {
+        // Stopped, as turning it off does to a real one: it was only ever registered here.
+        agentRegistry.untrack(dispatcherId);
+        await dispatcher.setDispatcherEnabled(false);
+      }, (p) => !shown(p));
     }, 30_000);
   });
 });

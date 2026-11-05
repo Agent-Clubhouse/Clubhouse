@@ -74,7 +74,7 @@ Only the keys below ever come out. Each is read by name from its source, never b
 | `project.defaults` | `orchestrator`, `persona`, `mission`, `free_agent_mode`, `profile_id`, `source_control_provider`, `default_mcps` |
 | `project.modes` | `clubhouse_mode`, `mcp`, `permission_mode` |
 | `app.defaults` | `idle_timeout_minutes`, `chat_enabled`, `provider_runtime`, `mcp_enabled`, `clubhouse_mode_enabled`, `permission_mode`, `global_helper_cap`, `enabled_orchestrators` |
-| `app.system` | `dispatcher_enabled`, `experimental_chat`, `experimental_copilot_sdk`, `experimental_dispatcher`, `annex_server_enabled`, `annex_client_enabled` |
+| `app.system` | `dispatcher_enabled`, `experimental_chat`, `experimental_copilot_sdk`, `annex_server_enabled`, `annex_client_enabled` |
 
 `app.defaults` is open to every agent because those values feed its own effective settings.
 
@@ -94,6 +94,7 @@ Each value has `effective` and `source`, and `stored` with `detail`.
 - `effective` comes from the resolvers the app itself uses: `buildAgentSettings`, `resolveOrchestrationPolicies`, `resolveMcpEnabled`, `resolvePersonaId` and so on. For an awake agent it's what the agent runs with now, and for a sleeping one it's what the next start uses.
 - `stored` is what is saved at the level the key belongs to, or `null`.
 - `applies: false` marks a setting with no effect on this target. Only chat agents idle-sleep, so `idle_sleep` on a terminal agent has it.
+- `reason` is there when a value is derived off, and `stored` is what comes back when that clears. See [Derived off](#derived-off).
 
 | `source` | Meaning |
 | --- | --- |
@@ -114,6 +115,42 @@ Each value has `effective` and `source`, and `stored` with `detail`.
 - **A sleeping helper's `free_agent_mode`** is its saved value, before its orchestrator's ceiling applies at the next start. Awake, it's what the helper runs with.
 - **`agent.cli.model`** reads `default` when the CLI picks. No CLI is asked which model that means, since that can spawn a process.
 - **A saved Free Agent permission mode has no agent level**, so `agent.access.permission_mode` has a `stored` of `null`. See `project.modes` and `app.defaults` for the saved values.
+
+### Derived off
+
+Turning something off never rewrites what depends on it. The dependent value reads `effective: false` with a `reason`, and `source` is the level that decided, so it names what to change, not where the kept value lives. `stored` still shows the kept value.
+
+| Key | `reason` | Means |
+| --- | --- | --- |
+| `orchestrate`, `cross_project_helpers`, `connect_to_dispatcher`, `auto_helpers` | `mcp_off` | Clubhouse MCP is off for this agent. `source` is the level that turned it off. |
+| `connect_to_dispatcher` | `dispatcher_off` | MCP is on for this agent, and the Dispatcher's own switch is off. |
+| `connect_to_dispatcher` | `mcp_off` | MCP is on for this agent through its own setting, and off at app level, so there's no Dispatcher to connect to. |
+| `dispatcher_enabled` | `mcp_off` | Clubhouse MCP is off at app level: `mcp_enabled` false and the global Clubhouse mode off. A project or agent override doesn't keep it on. |
+| `dispatcher_enabled` | `switch_off` | Its switch is saved off. |
+| `dispatcher_enabled` | `classic_layout` | Nothing is saved and this session runs the classic layout. `source` is `default`. A saved `true` stays on there. |
+| `dispatcher_enabled` | `experimental_off` | Nothing is saved on its switch, and `experimental-settings.json` has `dispatcher: false` from before the flag was removed. |
+| `clubhouse_mcp` on the Dispatcher | `mcp_off` | It can't start without MCP at app level, whatever its own override says. |
+
+`dispatcher_enabled` with nothing saved reads `source: default`, `effective: true` in the new layout.
+
+`effective` says what the settings give. A running agent keeps the connection it started with, so some of its tools outlast a change. [Running agents after MCP goes off](#running-agents-after-mcp-goes-off) says which.
+
+## Running agents after MCP goes off
+
+Turning MCP off stops no agent, and the bridge keeps running until a restart. It stops new tool calls. `clubhouse-mcp/mcp-call-gate.ts` answers at the entry of `callTool` and `getScopedToolList`, before anything else, by the caller's effective MCP: `isMcpEnabled(project, its own mcpOverride)`. So a CLI still holding an old tool list is refused the same way as one that re-read it, and calls already running finish.
+
+| Caller | Tool list | New calls |
+| --- | --- | --- |
+| MCP on: its own override, its project's, the app's or Clubhouse mode | Everything it had | Everything it had |
+| MCP off | Empty | All refused with `mcp_off`: orchestration, cross-project, Dispatcher, wires of every kind, group projects, browser, plugin, `call_wire_tool` and global tools |
+| A helper with MCP off | `message_parent` | `message_parent` only |
+| The Dispatcher with MCP off at app level | Empty | All refused. Its own override and project overrides don't count. It stays running and stoppable. |
+
+When MCP is back, new calls work again at once in a session that started with the bridge, and the CLI is told to re-list. An agent that started with MCP off never got the config, so it needs a restart.
+
+A helper's forced `clubhouseMcpOverride` still decides whether the bridge is injected. The gate decides what is callable, with its raw `mcpOverride`.
+
+**Not gated:** inbound messages. The rule is about the caller, so an agent with MCP on can still message a running agent with MCP off, and a group project still nudges a running member. A dormant recipient isn't woken: the sender is told it is sleeping. The `clubhouse` CLI endpoint isn't an MCP tool and isn't gated. `test/mcp-off/mcp-off-revocation.test.ts` checks each row over HTTP.
 
 ## Reads change nothing
 

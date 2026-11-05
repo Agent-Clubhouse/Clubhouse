@@ -32,7 +32,11 @@
  *
  * Helpers aren't touched when MCP goes off: they keep running and keep their
  * parent. The orchestrator's gate closes, so it loses the helper tools until
- * MCP is back, and the Helpers card still lets the user manage them.
+ * MCP is back, and the Helpers card still lets the user manage them. New tool
+ * calls stop too, for every tool: see clubhouse-mcp/mcp-call-gate.
+ *
+ * The Dispatcher follows the same rule at app level (resolveDispatcherEnablement):
+ * derived off, its saved value kept, and a running one left running.
  *
  * The tool gate. Only three things open it: a spawn (syncOrchestrationGate),
  * setOrchestrationPolicy, and MCP coming back for a gate MCP going off closed
@@ -75,6 +79,7 @@ import {
   isOrchestrationEnabled,
   setOrchestrationEnabled,
 } from './clubhouse-mcp/orchestration-gate';
+import { setMcpCaller } from './clubhouse-mcp/mcp-call-gate';
 import { appLog } from './log-service';
 import { noteRoutingPolicyChanged } from './helper-routing-changes';
 import { appendSettingsAudit, currentSettingsOrigin, type SettingsAuditRow, type SettingsAuditSurface } from './settings-audit';
@@ -757,14 +762,37 @@ function reconcileMcpGates(onlyProject?: string): void {
 }
 
 /**
+ * Refresh the call gate's copy of running agents' configs, and through it their
+ * tool lists. The gate reads the app and project settings live, so this only
+ * matters for an agent's own `mcpOverride` and for telling a CLI to re-list.
+ */
+function refreshMcpCallers(onlyProject?: string): void {
+  for (const [agentId, { projectPath }] of agentRegistry.getAllRegistrations()) {
+    if (onlyProject !== undefined && !samePath(projectPath, onlyProject)) continue;
+    agentConfig.getDurableConfig(projectPath, agentId).then((config) => setMcpCaller(agentId, projectPath, config)).catch((err) => {
+      // telemetry-exempt: logged; the gate keeps the config it had, and the next change retries
+      appLog('core:orchestration', 'warn', 'Could not update the MCP call gate after a change', {
+        meta: { agentId, error: errorText(err) },
+      });
+    });
+  }
+}
+
+/**
  * Keep running agents' gates following MCP: the app and project settings, and
  * an agent's own `mcpOverride`, which arrives as a config change. Returns an
  * unsubscribe function.
  */
 export function watchMcpForOrchestration(): () => void {
   const unsubscribers = [
-    onMcpEnablementChanged(() => reconcileMcpGates()),
-    agentConfig.onAgentConfigChanged((projectPath) => reconcileMcpGates(projectPath)),
+    onMcpEnablementChanged(() => {
+      reconcileMcpGates();
+      refreshMcpCallers();
+    }),
+    agentConfig.onAgentConfigChanged((projectPath) => {
+      reconcileMcpGates(projectPath);
+      refreshMcpCallers(projectPath);
+    }),
   ];
   return () => { for (const unsubscribe of unsubscribers) unsubscribe(); };
 }

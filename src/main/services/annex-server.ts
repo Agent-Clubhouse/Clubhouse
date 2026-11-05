@@ -21,7 +21,7 @@ import { readMobileChatContent } from './annex-chat-content';
 import { agentFolders } from './agent-runtime/chat-files';
 import { buildAgentDetails, buildAgentSettings, buildAgentSettingsOptions, buildCreateOptions, createMobileAgent, mobileOrchestration, updateMobileAgent, updateMobileDispatcher } from './mobile-agents';
 import {
-  DISPATCHER_CHANGED_EVENT, DISPATCHER_PROJECT_ID, activeDispatcher, dispatcherCapability, dispatcherChange, dispatcherFolderProject,
+  DISPATCHER_CHANGED_EVENT, DISPATCHER_PROJECT_ID, activeDispatcher, dispatcherCapability, dispatcherChange, dispatcherFolderProject, dispatcherSnapshotFlags,
   isDisabledDispatcherId, isDispatcherProjectId, setDispatcherEnabledFromPhone, type MobileDispatcherChange,
 } from './mobile-dispatcher';
 import { onDispatcherChanged } from './dispatcher/dispatcher-service';
@@ -1074,9 +1074,9 @@ function assembleSnapshot(sources: SnapshotSources): BuiltSnapshot {
     bulletinDigests,
     groupProjectMembers,
     ptyHost: annexPtyHost(process.platform, detectWindowsPty()),
-    // Null while the Dispatcher is off; its agent is the agents[projectId][] shape plus isDispatcher.
+    // Null while the Dispatcher is off and stopped; its agent is the agents[projectId][] shape plus isDispatcher.
     dispatcher: dispatcherAgent
-      ? { enabled: true, flagOn: true, projectId: DISPATCHER_PROJECT_ID, agent: dispatcherAgent }
+      ? { ...dispatcherSnapshotFlags(), projectId: DISPATCHER_PROJECT_ID, agent: dispatcherAgent }
       : null,
   } };
 }
