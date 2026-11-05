@@ -1,5 +1,5 @@
 /**
- * Telemetry settings and the `experimental.telemetry` gate (spec §6.8).
+ * Telemetry settings (spec §6.8).
  *
  * Non-secret settings live in `telemetry-settings.json` (0600) through the
  * TELEMETRY_SETTINGS managed-settings definition. Secrets (the connection
@@ -17,14 +17,20 @@
  * `destinations` list, one entry per kind, each with its own switch, level
  * and preset; `migrate()` converts the Phase 2 shape with no change in what
  * is sent.
+ *
+ * Export left Experimental in v1.0.0. Every load of a file from before that
+ * goes through `graduateExport`, so nothing can read settings the old gate
+ * would have kept from running.
  */
 import * as fs from 'fs';
 import { app } from 'electron';
 import { createManagedSettings } from '../services/managed-settings';
 import * as experimentalSettings from '../services/experimental-settings';
+import { isPreviewEligible } from '../services/preview-eligible';
 import { TELEMETRY_SETTINGS } from '../../shared/settings-definitions';
 import { TELEMETRY_LEVELS, type TelemetryLevel } from '../../shared/telemetry/attributes';
 import {
+  TELEMETRY_CONSENT_VERSION,
   TELEMETRY_DESTINATION_KINDS,
   TELEMETRY_FILTER_PRESETS,
   type OtlpTemporality,
@@ -34,8 +40,6 @@ import {
 } from '../../shared/telemetry/settings-types';
 import { getSecretPath, getSecureStorageState, updateSecrets, type TelemetrySecrets } from './secret-store';
 import { getFramebriarTelemetrySource } from './destinations/framebriar-source';
-
-export const EXPERIMENTAL_FLAG = 'telemetry';
 
 export interface AzureDestinationConfig {
   kind: 'azure';
@@ -213,13 +217,114 @@ function migrateDeveloperRule(settings: TelemetrySettings): void {
   if (!ownOn) developer.framebriar = { ...developer.framebriar, userOff: true };
 }
 
+/**
+ * The saved `experimental.telemetry` flag. Nothing is gated on it any more:
+ * this migration is its only reader, and it stays on disk so a downgrade
+ * behaves as the user left it.
+ */
+const LEGACY_EXPERIMENT_FLAG = 'telemetry';
+
+/** The graduation this file has been through: 1 once export left Experimental (v1.0.0). */
+export const EXPORT_GRADUATION = 1;
+
+/** What the old gate asked for besides consent. */
+export interface LegacyExportGate {
+  /** The saved flag, whatever this build honours. */
+  flagOn: boolean;
+  previewEligible: boolean;
+}
+
+/** Anything unreadable counts against: the flag reads as off, the build as not eligible. */
+export function readLegacyExportGate(): LegacyExportGate {
+  let flagOn = false;
+  let previewEligible = false;
+  try {
+    flagOn = experimentalSettings.getStoredSettings()[LEGACY_EXPERIMENT_FLAG] === true;
+  } catch {
+    // telemetry-exempt: unreadable counts as off, which is the safe answer.
+  }
+  try {
+    previewEligible = isPreviewEligible() === true;
+  } catch {
+    // telemetry-exempt: unreadable counts as not eligible, which is the safe answer.
+  }
+  return { flagOn, previewEligible };
+}
+
+function isGraduated(settings: TelemetrySettings): boolean {
+  return typeof settings.exportGraduation === 'number' && settings.exportGraduation >= EXPORT_GRADUATION;
+}
+
+/** An old setup stays active only if all of the old gate held. */
+function passedLegacyGate(settings: TelemetrySettings, gate: LegacyExportGate): boolean {
+  return gate.flagOn && gate.previewEligible && settings.consentVersion >= TELEMETRY_CONSENT_VERSION;
+}
+
+/**
+ * Export used to run only behind the flag, in a preview-eligible build, with
+ * consent. Without the gate, every setup it held back would start, so anything
+ * that didn't pass it is switched off here. The developer destination is also
+ * recorded as switched off if it was confirmed or consent exists, or it would
+ * follow Feedback on later. A setup with no consent and no confirmed host keeps
+ * its offer: that one still asks for the user's choice.
+ * Runs once: the marker keeps a later opt-in from being undone.
+ */
+export function graduateExport(settings: TelemetrySettings, gate: LegacyExportGate): TelemetrySettings {
+  if (isGraduated(settings)) return settings;
+  if (passedLegacyGate(settings, gate)) return { ...settings, exportGraduation: EXPORT_GRADUATION };
+  const consented = settings.consentVersion >= TELEMETRY_CONSENT_VERSION;
+  return {
+    ...settings,
+    exportGraduation: EXPORT_GRADUATION,
+    destinations: settings.destinations.map((d) => {
+      const followsLater = d.kind === 'framebriar' && (d.confirmedHost !== undefined || consented);
+      return { ...d, enabled: false, ...(followsLater ? { framebriar: { ...d.framebriar, userOff: true } } : {}) };
+    }),
+  };
+}
+
+export type ExportGraduationOutcome = 'kept' | 'off';
+
+/** Set when this run's load applied the graduation and it hasn't been saved yet. */
+let unsavedGraduation: ExportGraduationOutcome | null = null;
+
 const managed = createManagedSettings<TelemetrySettings>(TELEMETRY_SETTINGS as typeof TELEMETRY_SETTINGS & { defaults: TelemetrySettings }, {
-  migrate: migrateTelemetrySettings,
+  migrate: (raw) => {
+    const settings = migrateTelemetrySettings(raw);
+    const gate = readLegacyExportGate();
+    const graduated = graduateExport(settings, gate);
+    if (graduated !== settings) unsavedGraduation = passedLegacyGate(settings, gate) ? 'kept' : 'off';
+    return graduated;
+  },
   mode: 0o600,
 });
 
 export const getTelemetrySettings = managed.store.get;
-export const updateTelemetrySettings = managed.store.update;
+
+/**
+ * Every save carries the markers. They can't be in the defaults, because the
+ * store merges those over the file before migrating, and an old file would then
+ * look migrated. A file first written by this build (no file or an unreadable
+ * one reads as the defaults, unmigrated) would otherwise have its first opt-in
+ * undone by these migrations on the next launch.
+ */
+export function updateTelemetrySettings(fn: (current: TelemetrySettings) => TelemetrySettings): Promise<TelemetrySettings> {
+  return managed.store.update((current) => ({ ...fn(current), developerRule: DEVELOPER_RULE, exportGraduation: EXPORT_GRADUATION }));
+}
+
+/**
+ * Load the settings, which applies the graduation in memory before this returns,
+ * and start saving the result. `null` when there was nothing to do. If the save
+ * fails, this run still uses the migrated settings, and the next launch, finding
+ * no marker on disk, migrates again.
+ */
+export function applyExportGraduation(): { outcome: ExportGraduationOutcome; saved: Promise<unknown> } | null {
+  getTelemetrySettings();
+  const outcome = unsavedGraduation;
+  if (!outcome) return null;
+  unsavedGraduation = null;
+  return { outcome, saved: updateTelemetrySettings((current) => current) };
+}
 
 /** Secrets carried by a not-yet-migrated Phase 1 file. */
 export function legacySecrets(settings: TelemetrySettings = getTelemetrySettings()): TelemetrySecrets {
@@ -313,14 +418,6 @@ export function isEntryConfigured(entry: TelemetryDestinationEntry, settings: Te
 /** Some enabled destination looks configured. */
 export function hasDestinationConfigured(settings: TelemetrySettings): boolean {
   return enabledDestinations(settings).some((d) => isEntryConfigured(d, settings));
-}
-
-export function isExperimentEnabled(): boolean {
-  try {
-    return experimentalSettings.getSettings()[EXPERIMENTAL_FLAG] === true;
-  } catch {
-    return false;
-  }
 }
 
 // --- Destination validation -------------------------------------------------

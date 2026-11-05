@@ -81,7 +81,7 @@ if (process.env.CLUBHOUSE_USER_DATA) {
   app.setPath('home', process.env.CLUBHOUSE_USER_DATA);
 }
 
-// Opt-in telemetry export (experimental.telemetry). Reads its settings after
+// Opt-in telemetry export, off by default. Reads its settings after
 // the userData override above; when enabled, the SDK chunk loads in the
 // background and never blocks `ready`. When disabled, nothing is imported.
 initTelemetry();

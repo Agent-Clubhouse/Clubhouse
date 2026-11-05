@@ -1037,7 +1037,6 @@ export const PREVIEW_ONLY_EXPERIMENTAL_FLAGS: readonly string[] = [
   'richChatContent',
   'copilotSdk',
   'dispatcher',
-  'telemetry',
 ];
 
 // --- Security settings ---

@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { app } from 'electron';
 import { TELEMETRY_SETTINGS } from '../../shared/settings-definitions';
 
@@ -7,7 +7,6 @@ const state = vi.hoisted(() => ({
   secrets: {} as { connectionString?: string; otlpHeaders?: Record<string, string> },
   storage: 'available' as 'available' | 'weak' | 'unavailable',
   running: false,
-  experiment: true,
   calls: [] as string[],
   /** Destination ids the fake runtime is exporting to. */
   active: [] as string[],
@@ -39,7 +38,6 @@ vi.mock('./settings', async (importActual) => {
       state.settings = fn(state.settings);
       return state.settings;
     },
-    isExperimentEnabled: () => state.experiment,
     migrateLegacySecrets: async () => true,
   };
 });
@@ -98,7 +96,6 @@ beforeEach(() => {
   state.secrets = {};
   state.storage = 'available';
   state.running = false;
-  state.experiment = true;
   state.calls = [];
   state.active = [];
   state.startErrors = {};
@@ -277,12 +274,6 @@ describe('telemetry settings control', () => {
     expect(await control.saveOtlpConfig({ endpoint: 'https://o.example', headers: [{ name: 'a', value: '1' }, { name: 'A', value: '2' }] })).toMatchObject({ reason: 'duplicate_header_name' });
   });
 
-  it('is unavailable without the experimental flag', async () => {
-    state.experiment = false;
-    state.secrets.connectionString = CS;
-    expect(await control.setEnabled('azure', true, { consent: true })).toMatchObject({ ok: false, reason: 'not_available' });
-  });
-
   it('restarts a running export when the filter, advanced settings or install id change', async () => {
     state.running = true;
     await control.setFilter('azure', 'errors', 'all');
@@ -374,32 +365,19 @@ describe('Framebriar destination follows Feedback', () => {
     state.calls = [];
   }
 
-  describe('in a build that is not preview-eligible', () => {
-    const asPackagedStable = (packaged: boolean) => { (app as { isPackaged: boolean }).isPackaged = packaged; };
-    afterEach(() => asPackagedStable(false));
-
-    it('leaves consent and the destinations as saved when Feedback connects or drops', async () => {
+  it('follows Feedback the same way in a stable build: the migration, not a gate, holds old setups back', async () => {
+    (app as { isPackaged: boolean }).isPackaged = true;
+    try {
       await shared();
-      const saved = JSON.stringify(state.settings);
-      // The gate reads the flag as off, as getSettings does in this build.
-      state.experiment = false;
-      asPackagedStable(true);
-
       disconnect();
       await control.syncFramebriarDestination();
+      expect(fbEntry().enabled).toBe(false);
       connect('s-later');
       await control.syncFramebriarDestination();
-
-      expect(JSON.stringify(state.settings)).toBe(saved);
-      expect(state.calls).toEqual([]);
-    });
-  });
-
-  it('with the flag turned off in an eligible build, Framebriar still follows it off', async () => {
-    await shared();
-    state.experiment = false;
-    await control.syncFramebriarDestination();
-    expect(fbEntry().enabled).toBe(false);
+      expect(fbEntry().enabled).toBe(true);
+    } finally {
+      (app as { isPackaged: boolean }).isPackaged = false;
+    }
   });
 
   it('defaults to off with the "User activity and errors" filter', () => {

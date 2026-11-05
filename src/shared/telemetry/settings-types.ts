@@ -52,9 +52,8 @@ export interface TelemetryDestinationEntry {
 
 /**
  * The developer destination follows Feedback (spec §6.11): its `enabled` is
- * derived, true exactly while Feedback is connected, telemetry is allowed
- * (experiment and consent), its host is confirmed, and the user hasn't
- * switched it off. Since #2097 it doesn't need another destination on.
+ * derived, true exactly while Feedback is connected, consent is recorded,
+ * its host is confirmed, and the user hasn't switched it off. Since #2097 it doesn't need another destination on.
  */
 export interface FramebriarDestinationSettings {
   /** The user turned it off themselves ("Not now", or its switch): it stays off until they turn it on. */
@@ -84,6 +83,11 @@ export interface TelemetrySettingsFile {
    * own export doesn't start alone after the update).
    */
   developerRule?: number;
+  /**
+   * 1 once the file has been through export leaving Experimental (v1.0.0): a
+   * setup the old gate held back was switched off, so it doesn't start.
+   */
+  exportGraduation?: number;
 }
 
 export type SecureStorageState = 'available' | 'weak' | 'unavailable';
@@ -118,8 +122,6 @@ export interface TelemetryDestinationStatus {
 }
 
 export interface TelemetryStatus {
-  /** `experimental.telemetry` is on; the section is hidden otherwise. */
-  available: boolean;
   /** At least one destination is enabled (with consent recorded). */
   enabled: boolean;
   /** An exporter is running right now. */

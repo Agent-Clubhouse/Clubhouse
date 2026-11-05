@@ -100,15 +100,16 @@ describe('ExperimentalSettingsView', () => {
     });
   });
 
-  it('renders the Telemetry export toggle and saves it under the telemetry id', async () => {
-    mockGetExperimentalSettings.mockResolvedValue({});
+  it('does not list Telemetry export, and saving another flag keeps its saved value for a downgrade', async () => {
+    mockGetExperimentalSettings.mockResolvedValue({ telemetry: true });
     render(<ExperimentalSettingsView />);
     await waitFor(() => {
-      expect(screen.getByText('Telemetry export')).toBeInTheDocument();
+      expect(screen.getByText('Theme gradients & fonts')).toBeInTheDocument();
     });
-    fireEvent.click(screen.getByRole('switch', { name: 'Telemetry export' }));
+    expect(screen.queryByText('Telemetry export')).toBeNull();
+    fireEvent.click(screen.getByRole('switch', { name: 'Theme gradients & fonts' }));
     await waitFor(() => {
-      expect(mockSaveExperimentalSettings).toHaveBeenCalledWith({ telemetry: true });
+      expect(mockSaveExperimentalSettings).toHaveBeenCalledWith({ telemetry: true, themeGradients: true });
     });
   });
 

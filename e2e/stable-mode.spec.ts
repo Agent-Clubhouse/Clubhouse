@@ -228,6 +228,11 @@ test('Preview off, saved beta state: the legacy layout, a terminal, and nothing 
   expect(agents.find((a: { id: string }) => a.id === AGENT_ID).runtimeMode).toBe('chat');
   // Never created: nothing turned the Dispatcher on behind the flag.
   expect(fs.existsSync(dispatcherFolder(profile))).toBe(false);
+  // The dormant telemetry setup was switched off, consent kept, and the developer destination can't follow Feedback on.
+  const telemetry = JSON.parse(await readText(path.join(profile.userDataDir, 'telemetry-settings.json')));
+  expect(telemetry).toMatchObject({ consentVersion: 1, exportGraduation: 1 });
+  expect(telemetry.destinations.filter((d: { enabled: boolean }) => d.enabled)).toEqual([]);
+  expect(telemetry.destinations.find((d: { id: string }) => d.id === 'framebriar').framebriar.userOff).toBe(true);
 });
 
 test('Preview on, no saved flags: the legacy layout with the Preview pages to opt in from', async () => {

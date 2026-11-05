@@ -46,7 +46,6 @@ import {
   findDestination,
   getTelemetrySettings,
   HEADER_TOKEN_RE,
-  isExperimentEnabled,
   legacySecrets,
   migrateLegacySecrets,
   parseConnectionString,
@@ -59,7 +58,6 @@ import {
 import type { ExportRecord } from './types';
 import { getBoundFramebriarSession, getFramebriarTelemetrySource, onFramebriarConnectionChanged } from './destinations/framebriar-source';
 import { appLog } from '../services/log-service';
-import { isPreviewEligible } from '../services/preview-eligible';
 
 const last4 = (value: string): string => value.slice(-4);
 
@@ -153,7 +151,6 @@ export async function getStatus(): Promise<TelemetryStatus> {
   });
   const anyEnabled = destinations.some((d) => d.enabled);
   return {
-    available: isExperimentEnabled(),
     // A Phase 1 file can be enabled without recorded consent; it isn't
     // exporting, so show it as off until the user turns it on (and consents).
     enabled: anyEnabled,
@@ -374,7 +371,6 @@ export async function setEnabled(
     if (clearOffline || enabledIds(next) !== before) await applyRuntime({ clearOffline });
     return done();
   }
-  if (!isExperimentEnabled()) return fail('not_available', 'Telemetry export is an experimental feature. Turn it on in Experimental settings first.');
 
   const { config, validation } = resolveEntry(entry, settings, secrets);
   if (!config || !('host' in validation)) {
@@ -456,9 +452,9 @@ const NOT_CONFIGURED: Record<TelemetryDestinationEntry['kind'], string> = {
 
 // --- Framebriar follows Feedback (spec §6.11) ------------------------------------
 
-/** Telemetry may export at all: the experiment is on and the user consented (#2097: no other destination needed). */
+/** Telemetry may export at all: the user consented (#2097: no other destination needed). */
 function exportAllowed(settings: TelemetrySettings): boolean {
-  return isExperimentEnabled() && settings.consentVersion >= TELEMETRY_CONSENT_VERSION;
+  return settings.consentVersion >= TELEMETRY_CONSENT_VERSION;
 }
 
 function currentFramebriarHost(): string | undefined {
@@ -474,7 +470,7 @@ function framebriarFollowHost(settings: TelemetrySettings): string | undefined {
 
 /**
  * Whether the developer destination should be exporting (spec §6.11): while
- * Feedback is connected, telemetry is allowed (experiment and consent), its
+ * Feedback is connected, consent is recorded, its
  * current host is the one the user confirmed, and the user hasn't switched it
  * off. It doesn't need another destination on (#2097).
  */
@@ -507,10 +503,6 @@ let syncing: Promise<void> = Promise.resolve();
  */
 export function syncFramebriarDestination(): Promise<void> {
   syncing = syncing.then(async () => {
-    // Without the flag in force, Framebriar would follow off and the save would
-    // change what the user set. In a build that isn't preview-eligible they didn't
-    // turn anything off, so what they saved stays as it is for when Preview is back.
-    if (!isPreviewEligible()) return;
     const settings = getTelemetrySettings();
     const entry = findDestination(settings, 'framebriar');
     if (!entry) return;

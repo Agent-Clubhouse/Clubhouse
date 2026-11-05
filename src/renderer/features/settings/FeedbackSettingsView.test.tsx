@@ -526,7 +526,7 @@ describe('FeedbackSettingsView telemetry prompt', () => {
     window.clubhouse.telemetrySettings = {
       ...realTelemetry,
       getStatus: vi.fn(async () => ({
-        available: true, consentAccepted: true,
+        consentAccepted: true,
         destinations: [dest('azure', { enabled: true }), dest('framebriar')],
       })),
       setEnabled,
@@ -565,7 +565,7 @@ describe('FeedbackSettingsView telemetry prompt', () => {
 
   it('does not ask again after "Not now"', async () => {
     vi.mocked(window.clubhouse.telemetrySettings.getStatus).mockResolvedValue({
-      available: true, consentAccepted: true, destinations: [dest('azure', { enabled: true }), dest('framebriar', { userOff: true })],
+      consentAccepted: true, destinations: [dest('azure', { enabled: true }), dest('framebriar', { userOff: true })],
     } as never);
     await connect();
     expect(screen.queryByTestId('feedback-telemetry-prompt')).toBeNull();
@@ -574,7 +574,7 @@ describe('FeedbackSettingsView telemetry prompt', () => {
 
   it('asks even with no other destination on, and the prompt is the consent then (#2097)', async () => {
     vi.mocked(window.clubhouse.telemetrySettings.getStatus).mockResolvedValue({
-      available: true, consentAccepted: false, destinations: [dest('azure'), dest('framebriar')],
+      consentAccepted: false, destinations: [dest('azure'), dest('framebriar')],
     } as never);
     setEnabled.mockImplementation(async (_id: string, on: boolean, ack?: { host?: string }) =>
       (on && !ack?.host ? { ok: false, needs: ['consent', 'destination'], host: HOST, hosts: [HOST] } : { ok: true }));
@@ -597,8 +597,8 @@ describe('FeedbackSettingsView telemetry prompt', () => {
     expect(setEnabled).toHaveBeenLastCalledWith('framebriar', true, { host: HOST });
   });
 
-  it('hides the developer switch while telemetry is unavailable (#2097)', async () => {
-    vi.mocked(window.clubhouse.telemetrySettings.getStatus).mockResolvedValue({ available: false, destinations: [] } as never);
+  it('hides the developer switch when there is no developer destination to show (#2097)', async () => {
+    vi.mocked(window.clubhouse.telemetrySettings.getStatus).mockResolvedValue({ destinations: [] } as never);
     setFeedback(true);
     render(<FeedbackSettingsView />);
     await act(async () => {});

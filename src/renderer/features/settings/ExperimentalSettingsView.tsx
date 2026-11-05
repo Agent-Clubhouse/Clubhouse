@@ -46,11 +46,6 @@ export const EXPERIMENTAL_FEATURES: Array<{
     label: 'Dispatcher',
     description: 'One app-wide agent that coordinates the orchestrators in your projects. Needs New layout. After turning this on, switch it on in Settings > Dispatcher.',
   },
-  {
-    id: 'telemetry',
-    label: 'Telemetry export',
-    description: 'Send anonymized telemetry to your own Application Insights resource or OTLP collector (Settings, Logging), or to the Clubhouse developer with your feedback (Settings, Feedback).',
-  },
 ];
 
 export function ExperimentalSettingsView() {

@@ -29,7 +29,6 @@ export function shareTelemetry(ask: TelemetryShareAsk): Promise<TelemetryEnableR
  * reloads it when the page changes the destination itself (the connect prompt).
  */
 export function DeveloperTelemetrySection({ refreshKey }: { refreshKey?: unknown }) {
-  const [available, setAvailable] = useState(false);
   const [dest, setDest] = useState<TelemetryDestinationStatus | null>(null);
   const [ask, setAsk] = useState<TelemetryShareAsk | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -38,11 +37,10 @@ export function DeveloperTelemetrySection({ refreshKey }: { refreshKey?: unknown
   const load = useCallback(async () => {
     try {
       const status = await api().getStatus();
-      setAvailable(!!status?.available);
       setDest(status?.destinations.find((d) => d.id === 'framebriar') ?? null);
     } catch {
       // telemetry-exempt: the section stays hidden when telemetry can't be read.
-      setAvailable(false);
+      setDest(null);
     }
   }, []);
   useEffect(() => { void load(); }, [load, refreshKey]);
@@ -67,7 +65,7 @@ export function DeveloperTelemetrySection({ refreshKey }: { refreshKey?: unknown
     if (pending) apply(await shareTelemetry(pending));
   };
 
-  if (!available || !dest) return null;
+  if (!dest) return null;
 
   return (
     <div data-testid="developer-telemetry">

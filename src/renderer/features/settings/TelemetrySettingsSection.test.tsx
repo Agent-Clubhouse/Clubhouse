@@ -24,7 +24,6 @@ function makeStatus(
   dests: { azure?: Partial<TelemetryDestinationStatus>; otlp?: Partial<TelemetryDestinationStatus> } = {},
 ): TelemetryStatus {
   return {
-    available: true,
     enabled: false,
     running: false,
     destinations: [destStatus('azure', dests.azure), destStatus('otlp', dests.otlp)],
@@ -52,11 +51,12 @@ function mockApi(status: TelemetryStatus) {
 }
 
 describe('TelemetrySettingsSection', () => {
-  it('renders nothing while the experimental flag is off', async () => {
-    mockApi(makeStatus({ available: false }));
-    const { container } = render(<TelemetrySettingsSection />);
-    await waitFor(() => expect(window.clubhouse.telemetrySettings.getStatus).toHaveBeenCalled());
-    expect(container).toBeEmptyDOMElement();
+  it('shows with no experimental flag read: every build has it, and everything starts off', async () => {
+    mockApi(makeStatus());
+    const flags = vi.spyOn(window.clubhouse.app, 'getExperimentalSettings');
+    render(<TelemetrySettingsSection />);
+    expect(await screen.findByTestId('telemetry-settings')).toBeInTheDocument();
+    expect(flags).not.toHaveBeenCalled();
   });
 
   it('leads with the App Insights panel and keeps OTLP in its own panel', async () => {

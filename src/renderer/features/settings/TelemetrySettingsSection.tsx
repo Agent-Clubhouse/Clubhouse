@@ -201,7 +201,7 @@ export function TelemetrySettingsSection() {
     return false;
   }, [applyStatus]);
 
-  if (!status || !status.available) return null;
+  if (!status) return null;
 
   const dest = (id: string) => status.destinations.find((d) => d.id === id);
   const azure = dest('azure');
