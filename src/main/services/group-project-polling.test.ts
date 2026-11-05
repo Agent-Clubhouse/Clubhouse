@@ -50,9 +50,11 @@ import { groupProjectRegistry } from './group-project-registry';
 import {
   setProjectPolling,
   getProjectPollingState,
+  listPausedPolling,
+  onPollingPauseChanged,
+  resumePausedPolling,
   watchPollingForMcp,
   _resetPollingForTesting,
-  _pausedByMcpForTesting,
   _pendingStartsForTesting,
   _DEFERRED_POLLING_DELAY_MS_FOR_TESTING,
 } from './group-project-polling';
@@ -192,22 +194,14 @@ describe('group-project-polling', () => {
       const regain = async (id: string) => { gate.closed.delete(id); notifyToolGateChange(id); await vi.advanceTimersByTimeAsync(_DEFERRED_POLLING_DELAY_MS_FOR_TESTING + 10); };
       beforeEach(() => { vi.useFakeTimers(); });
 
-      it('paused by MCP: one stop, however often the gate moves, then one start for the same session', async () => {
+      it('one stop, however often the gate moves', async () => {
         await polling('m-loop');
         await lose('m-loop');
         expect(count('m-loop', 'stop polling')).toBe(1);
-        expect(count('m-loop', 'start polling')).toBe(0);
         notifyToolGateChange('m-loop');
         notifyToolGateChange('m-loop');
         await vi.advanceTimersByTimeAsync(_DEFERRED_POLLING_DELAY_MS_FOR_TESTING + 10);
         expect(count('m-loop', 'stop polling')).toBe(1);
-
-        await regain('m-loop');
-        notifyToolGateChange('m-loop');
-        await vi.advanceTimersByTimeAsync(_DEFERRED_POLLING_DELAY_MS_FOR_TESTING + 10);
-        expect(count('m-loop', 'stop polling')).toBe(1);
-        expect(count('m-loop', 'start polling')).toBe(1);
-        expect(_pausedByMcpForTesting.has('m-loop')).toBe(false);
       });
 
       it('two events at once still send one stop', async () => {
@@ -219,32 +213,69 @@ describe('group-project-polling', () => {
         expect(count('m-race', 'stop polling')).toBe(1);
       });
 
-      it('repeated flips send one stop and one start each', async () => {
-        await polling('m-flips');
+      it('no start is sent when MCP returns, whatever else moves', async () => {
+        const project = await polling('m-return');
+        await lose('m-return');
+        await regain('m-return');
+        notifyToolGateChange('m-return');
+        emitAgentMcpConnected('m-return');
+        await vi.advanceTimersByTimeAsync(_DEFERRED_POLLING_DELAY_MS_FOR_TESTING + 10);
+        expect(count('m-return', 'start polling')).toBe(0);
+        expect(listPausedPolling(project.id)).toEqual([{ agentId: 'm-return', agentName: 'looper' }]);
+      });
+
+      it('is offered Resume only with MCP back', async () => {
+        const project = await polling('m-offer');
+        const changed = vi.fn();
+        const off = onPollingPauseChanged(changed);
+        await lose('m-offer');
+        expect(listPausedPolling(project.id)).toEqual([]);
+        await regain('m-offer');
+        expect(listPausedPolling(project.id)).toHaveLength(1);
+        expect(changed).toHaveBeenCalled();
+        off();
+      });
+
+      it('Resume sends one start to a live same-session member, once', async () => {
+        const project = await polling('m-resume');
+        await lose('m-resume');
+        await regain('m-resume');
+        expect(await resumePausedPolling(project.id, 'm-resume')).toBe(true);
+        expect(count('m-resume', 'start polling')).toBe(1);
+        expect(await resumePausedPolling(project.id, 'm-resume')).toBe(false);
+        expect(count('m-resume', 'start polling')).toBe(1);
+        expect(listPausedPolling(project.id)).toEqual([]);
+      });
+
+      it('two clicks at once send one start', async () => {
+        const project = await polling('m-double');
+        await lose('m-double');
+        await regain('m-double');
+        const answers = await Promise.all([resumePausedPolling(project.id, 'm-double'), resumePausedPolling(project.id, 'm-double')]);
+        expect(answers.filter(Boolean)).toHaveLength(1);
+        expect(count('m-double', 'start polling')).toBe(1);
+      });
+
+      it('Resume does nothing while MCP is off again', async () => {
+        const project = await polling('m-off-again');
+        await lose('m-off-again');
+        expect(await resumePausedPolling(project.id, 'm-off-again')).toBe(false);
+        expect(count('m-off-again', 'start polling')).toBe(0);
+      });
+
+      it('a resumed loop that loses MCP again costs one more stop, and needs Resume again', async () => {
+        const project = await polling('m-flips');
         for (let cycle = 1; cycle <= 3; cycle++) {
           await lose('m-flips');
           expect(count('m-flips', 'stop polling')).toBe(cycle);
           await regain('m-flips');
+          expect(count('m-flips', 'start polling')).toBe(cycle - 1);
+          expect(await resumePausedPolling(project.id, 'm-flips')).toBe(true);
           expect(count('m-flips', 'start polling')).toBe(cycle);
         }
       });
 
-      it('flips inside the start\'s delay send no start until it can arrive, and only one', async () => {
-        await polling('m-flap');
-        await lose('m-flap');
-        gate.closed.delete('m-flap');
-        notifyToolGateChange('m-flap');
-        await vi.advanceTimersByTimeAsync(10);
-        gate.closed.add('m-flap');
-        notifyToolGateChange('m-flap');
-        await vi.advanceTimersByTimeAsync(_DEFERRED_POLLING_DELAY_MS_FOR_TESTING + 10);
-        expect(count('m-flap', 'start polling')).toBe(0);
-        expect(count('m-flap', 'stop polling')).toBe(1);
-        await regain('m-flap');
-        expect(count('m-flap', 'start polling')).toBe(1);
-      });
-
-      it('one stop per project it polls, and a project it doesn\'t poll gets nothing', async () => {
+      it('one stop per project it polls, each with its own offer, and a project it doesn\'t poll gets nothing', async () => {
         const first = await polling('m-both', 'First');
         const second = await groupProjectRegistry.create('Second');
         const quiet = await groupProjectRegistry.create('Quiet');
@@ -254,33 +285,41 @@ describe('group-project-polling', () => {
         mockPtyWrite.mockClear();
         await lose('m-both');
         expect(count('m-both', 'stop polling')).toBe(2);
-        expect([..._pausedByMcpForTesting.get('m-both')!.keys()].sort()).toEqual([first.id, second.id].sort());
+        await regain('m-both');
+        expect(listPausedPolling(first.id)).toHaveLength(1);
+        expect(listPausedPolling(second.id)).toHaveLength(1);
+        expect(listPausedPolling(quiet.id)).toEqual([]);
       });
 
-      it('user-stopped while paused doesn\'t resume', async () => {
+      it('user-stopped while paused isn\'t offered, and Resume sends nothing', async () => {
         const project = await polling('m-user');
         await lose('m-user');
         await setProjectPolling(project.id, false);
         mockPtyWrite.mockClear();
         await regain('m-user');
+        expect(listPausedPolling(project.id)).toEqual([]);
+        expect(await resumePausedPolling(project.id, 'm-user')).toBe(false);
         expect(instructions()).toEqual([]);
       });
 
-      it('user-stopped before MCP went off gets no stop and no start', async () => {
+      it('user-stopped before MCP went off gets no stop and no offer', async () => {
         const project = await polling('m-before');
         await setProjectPolling(project.id, false);
         mockPtyWrite.mockClear();
         await lose('m-before');
         await regain('m-before');
         expect(instructions()).toEqual([]);
+        expect(listPausedPolling(project.id)).toEqual([]);
       });
 
-      it('an agent that ended its own loop reads as ended once its reads stop: no stop and no start', async () => {
-        await polling('m-self');
+      it('a session with no recent reads reads as ended: no stop and no offer', async () => {
+        const project = await polling('m-self');
         await vi.advanceTimersByTimeAsync(POLLING_LIVE_WINDOW_MS + 1);
+        mockPtyWrite.mockClear();
         await lose('m-self');
         await regain('m-self');
         expect(instructions()).toEqual([]);
+        expect(listPausedPolling(project.id)).toEqual([]);
       });
 
       it('reads keep a loop live past that window', async () => {
@@ -302,15 +341,18 @@ describe('group-project-polling', () => {
         await lose('m-reader');
         await regain('m-reader');
         expect(instructions()).toEqual([]);
+        expect(listPausedPolling(project.id)).toEqual([]);
       });
 
-      it('a stopped agent doesn\'t resume or wake, then or at its next handshake', async () => {
-        await polling('m-stopped');
+      it('a stopped agent gets no offer, and Resume neither starts nor wakes it', async () => {
+        const project = await polling('m-stopped');
         await lose('m-stopped');
         agentRegistry.untrack('m-stopped');
         mockIsRunning.mockReturnValue(false);
         mockPtyWrite.mockClear();
         await regain('m-stopped');
+        expect(listPausedPolling(project.id)).toEqual([]);
+        expect(await resumePausedPolling(project.id, 'm-stopped')).toBe(false);
         expect(instructions()).toEqual([]);
         expect(agentRegistry.get('m-stopped')).toBeUndefined();
 
@@ -318,6 +360,7 @@ describe('group-project-polling', () => {
         emitAgentMcpConnected('m-stopped');
         await vi.advanceTimersByTimeAsync(_DEFERRED_POLLING_DELAY_MS_FOR_TESTING + 10);
         expect(instructions()).toEqual([]);
+        expect(listPausedPolling(project.id)).toEqual([]);
       });
 
       it('a sleeping member gets no stop, and nothing wakes it', async () => {
@@ -330,30 +373,32 @@ describe('group-project-polling', () => {
         expect(agentRegistry.get('m-asleep')).toBeUndefined();
       });
 
-      it('a new session doesn\'t inherit: a restart while MCP is off drops the pause', async () => {
-        await polling('m-new');
+      it('a new session doesn\'t inherit: a restart with no gap ends the offer', async () => {
+        const project = await polling('m-new');
         await lose('m-new');
-        // Replaced with no gap, so it never reads as stopped.
         start('m-new');
         mockPtyWrite.mockClear();
         await regain('m-new');
+        expect(listPausedPolling(project.id)).toEqual([]);
+        expect(await resumePausedPolling(project.id, 'm-new')).toBe(false);
         expect(instructions()).toEqual([]);
-        expect(_pausedByMcpForTesting.get('m-new')?.size ?? 0).toBe(0);
       });
 
       it('a new session gets no stop for a loop the last one ran', async () => {
         await polling('m-next');
         start('m-next');
+        mockPtyWrite.mockClear();
         await lose('m-next');
         expect(instructions()).toEqual([]);
       });
 
-      it('leaving the project while paused drops it', async () => {
+      it('leaving the project while paused ends the offer', async () => {
         const project = await polling('m-left');
         await lose('m-left');
         bindingManager.unbind('m-left', project.id);
         mockPtyWrite.mockClear();
         await regain('m-left');
+        expect(await resumePausedPolling(project.id, 'm-left')).toBe(false);
         expect(instructions()).toEqual([]);
       });
 
@@ -367,7 +412,7 @@ describe('group-project-polling', () => {
         expect(instructions()).toEqual([]);
       });
 
-      it('one held by the toggle never polled, so it gets no stop, and its start is the one it was owed', async () => {
+      it('a start never delivered still delivers by itself: no loop was stopped, and someone asked', async () => {
         const project = await offMember('m-never');
         await setProjectPolling(project.id, true);
         watchPollingForMcp();
@@ -376,6 +421,7 @@ describe('group-project-polling', () => {
         expect(count('m-never', 'stop polling')).toBe(0);
         await regain('m-never');
         expect(count('m-never', 'start polling')).toBe(1);
+        expect(listPausedPolling(project.id)).toEqual([]);
       });
     });
 

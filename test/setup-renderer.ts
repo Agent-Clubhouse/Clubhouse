@@ -476,6 +476,9 @@ vi.stubGlobal('clubhouse', {
     getMessage: async () => null,
     injectMessage: async () => true,
     setPolling: async () => ({ pollingEnabled: false, members: [] }),
+    getPausedPolling: async () => [],
+    resumePolling: async () => false,
+    onPausedPollingChanged: () => noop,
     onChanged: () => noop,
   },
   mcpBinding: {

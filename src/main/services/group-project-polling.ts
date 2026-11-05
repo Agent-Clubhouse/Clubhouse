@@ -16,14 +16,18 @@
  *
  * A running member losing MCP gets one stop as well, if its session looks to be
  * polling (group-project-polling-runs). The loop is the agent's own, so nothing
- * here can end it otherwise, and each refused firing spends a turn. When MCP is
- * back, that same session gets one start. A stopped, sleeping or replaced session
- * gets nothing, and neither does a loop the user turned off meanwhile.
+ * here can end it otherwise, and each refused firing spends a turn.
+ *
+ * Nothing restarts that loop by itself when MCP is back: the app can't tell a loop
+ * this paused from one someone has since ended. The member shows as paused, and
+ * Resume sends the start. Only the same session is offered that. A stopped,
+ * sleeping or replaced session gets nothing and isn't woken, and a loop the user
+ * turned off isn't offered.
  */
 
 import { bindingManager } from './clubhouse-mcp/binding-manager';
 import { groupProjectRegistry } from './group-project-registry';
-import { getAgentOrchestrator } from './agent-registry';
+import { agentRegistry, getAgentOrchestrator } from './agent-registry';
 import { canPoll, isAgentAlive, injectPtyMessage } from './group-project-lifecycle';
 import { inboxChannelName } from './group-project-bulletin';
 import { pollingStartMsg, pollingStopMsg } from '../../shared/polling-messages';
@@ -67,26 +71,39 @@ function queuePendingStart(agentId: string, projectId: string): void {
 
 /**
  * Loops stopped because MCP went off: agentId → projectId → the session that was
- * polling. Only that session is ever resumed. Apart from pendingStarts, which are
- * starts nobody has had yet and so wait for a handshake.
+ * polling. This only decides who is offered Resume. Apart from pendingStarts, which
+ * are starts nobody has had yet and so still deliver by themselves.
  */
 const pausedByMcp = new Map<string, Map<string, PollingSession>>();
+
+const pauseListeners = new Set<() => void>();
+
+/** Listen for the members offered Resume changing. Returns an unsubscribe function. */
+export function onPollingPauseChanged(listener: () => void): () => void {
+  pauseListeners.add(listener);
+  return () => { pauseListeners.delete(listener); };
+}
+
+function notifyPauseChanged(): void {
+  for (const listener of [...pauseListeners]) listener();
+}
+
+let unsubscribeAuth: (() => void) | null = null;
 
 /** A member's access moving arrives here, whichever setting moved it. */
 export function watchPollingForMcp(): void {
   if (unsubscribeGate) return;
   unsubscribeGate = onOrchestrationGateChange((id) => {
-    if (!isAgentAlive(id)) {
-      pausedByMcp.delete(id);
-      return;
-    }
+    if (!isAgentAlive(id)) return;
     if (canPoll(id)) {
       void flushPendingStarts(id);
-      void resumePollingAfterMcp(id);
+      if (pausedByMcp.has(id)) notifyPauseChanged();
     } else {
       void pausePollingForMcp(id);
     }
   });
+  // A member stopping or starting again ends its offer.
+  unsubscribeAuth = agentRegistry.onAuthChange((id) => { if (pausedByMcp.has(id)) notifyPauseChanged(); });
 }
 
 /**
@@ -119,48 +136,51 @@ async function pausePollingForMcp(agentId: string): Promise<void> {
   }
 }
 
-/** Whether this pause still stands for this agent and project: same session, still a member, polling still on. */
-async function pauseStillStands(agentId: string, projectId: string, session: PollingSession) {
-  const now = currentPollingSession(agentId);
-  if (!now || !isSamePollingSession(session, now)) return null;
-  if (!groupProjectMemberBindings(projectId).some((b) => b.agentId === agentId)) return null;
-  let project: Awaited<ReturnType<typeof groupProjectRegistry.get>>;
-  try {
-    project = await groupProjectRegistry.get(projectId);
-  } catch {
-    // telemetry-exempt: the registry logs its own read failures; nothing is resumed on a guess
-    return null;
-  }
-  return project?.metadata?.pollingEnabled ? project : null;
-}
-
-/** MCP is back: one start for each loop it paused, if nothing has changed since. */
-async function resumePollingAfterMcp(agentId: string): Promise<void> {
+function forgetPause(agentId: string, projectId: string): void {
   const paused = pausedByMcp.get(agentId);
-  if (!paused) return;
-  for (const [projectId, session] of [...paused]) {
-    const project = await pauseStillStands(agentId, projectId, session);
-    if (!project) {
-      paused.delete(projectId);
-      continue;
-    }
-    setTimeout(() => {
-      // MCP can go off again in the delay: the pause stands, unsent. Anything else ends it.
-      if (!canPoll(agentId)) return;
-      void pauseStillStands(agentId, projectId, session).then((current) => {
-        if (pausedByMcp.get(agentId)?.delete(projectId) && current && canPoll(agentId)) {
-          appLog('core:group-project', 'info', 'Sending polling start to member whose loop Clubhouse MCP paused', { meta: { agentId, projectId } });
-          injectPtyMessage(agentId, pollingStartMsg(current.name || projectId, getAgentOrchestrator(agentId), inboxChannelName(agentNameIn(projectId, agentId))));
-          notePollingStart(agentId, projectId);
-        }
-        if (pausedByMcp.get(agentId)?.size === 0) pausedByMcp.delete(agentId);
-      });
-    }, DEFERRED_POLLING_DELAY_MS);
-  }
+  paused?.delete(projectId);
+  if (paused?.size === 0) pausedByMcp.delete(agentId);
 }
 
-function agentNameIn(projectId: string, agentId: string): string {
-  return groupProjectMemberBindings(projectId).find((b) => b.agentId === agentId)?.agentName || agentId;
+/** Whether this pause still stands: same session, still a member. Ends it for good when it doesn't. */
+function pauseStands(agentId: string, projectId: string): boolean {
+  const paused = pausedByMcp.get(agentId)?.get(projectId);
+  if (!paused) return false;
+  const now = currentPollingSession(agentId);
+  if (now && isSamePollingSession(paused, now) && groupProjectMemberBindings(projectId).some((b) => b.agentId === agentId)) return true;
+  forgetPause(agentId, projectId);
+  return false;
+}
+
+/** The members to offer Resume: paused by MCP, in the same session, with MCP back. */
+export function listPausedPolling(projectId: string): Array<{ agentId: string; agentName: string }> {
+  return groupProjectMemberBindings(projectId)
+    .filter((b) => pauseStands(b.agentId, projectId) && canPoll(b.agentId))
+    .map((b) => ({ agentId: b.agentId, agentName: b.agentName || b.agentId }));
+}
+
+/**
+ * Resume: one start, to a member offered it. Anything else sends nothing and wakes
+ * nothing. Returns whether it was sent.
+ */
+export async function resumePausedPolling(projectId: string, agentId: string): Promise<boolean> {
+  if (!pauseStands(agentId, projectId) || !canPoll(agentId) || !isAgentAlive(agentId)) {
+    notifyPauseChanged();
+    return false;
+  }
+  // Taken now, so a second click can't send a second start.
+  forgetPause(agentId, projectId);
+  const project = await groupProjectRegistry.get(projectId);
+  if (!project?.metadata?.pollingEnabled) {
+    notifyPauseChanged();
+    return false;
+  }
+  const agentName = groupProjectMemberBindings(projectId).find((b) => b.agentId === agentId)?.agentName || agentId;
+  injectPtyMessage(agentId, pollingStartMsg(project.name || projectId, getAgentOrchestrator(agentId), inboxChannelName(agentName)));
+  notePollingStart(agentId, projectId);
+  appLog('core:group-project', 'info', 'Resumed polling for a member on request', { meta: { agentId, projectId } });
+  notifyPauseChanged();
+  return true;
 }
 
 /** A new member without Clubhouse MCP: it gets its start message when it has MCP again. */
@@ -271,7 +291,8 @@ export async function setProjectPolling(projectId: string, enabled: boolean): Pr
     clearPendingStarts(projectId);
     // The user ended these loops, so nothing may bring them back.
     forgetPollingRuns(projectId);
-    for (const paused of pausedByMcp.values()) paused.delete(projectId);
+    for (const agentId of [...pausedByMcp.keys()]) forgetPause(agentId, projectId);
+    notifyPauseChanged();
   }
 
   const members = groupProjectMemberBindings(projectId).map((b) => {
@@ -312,6 +333,9 @@ export function _resetPollingForTesting(): void {
   unsubscribeConnected = null;
   unsubscribeGate?.();
   unsubscribeGate = null;
+  unsubscribeAuth?.();
+  unsubscribeAuth = null;
+  pauseListeners.clear();
 }
 
-export { pausedByMcp as _pausedByMcpForTesting, pendingStarts as _pendingStartsForTesting, DEFERRED_POLLING_DELAY_MS as _DEFERRED_POLLING_DELAY_MS_FOR_TESTING };
+export { pendingStarts as _pendingStartsForTesting, DEFERRED_POLLING_DELAY_MS as _DEFERRED_POLLING_DELAY_MS_FOR_TESTING };

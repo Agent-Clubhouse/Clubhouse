@@ -66,7 +66,7 @@ import { connectionsStorePath, orchestratorConnectionSource, _resetOrchestratorC
 import { rebuildPersistedBindings, registerPersistedBindingSource, _resetPersistedBindingSourcesForTesting } from '../../src/main/services/persisted-bindings';
 import { readMcpOffImpact } from '../../src/main/services/mcp-off-impact';
 import { groupProjectRegistry } from '../../src/main/services/group-project-registry';
-import { setProjectPolling, watchPollingForMcp, _pendingStartsForTesting } from '../../src/main/services/group-project-polling';
+import { listPausedPolling, resumePausedPolling, setProjectPolling, watchPollingForMcp, _pendingStartsForTesting } from '../../src/main/services/group-project-polling';
 import { executeShoulderTap } from '../../src/main/services/group-project-shoulder-tap';
 
 const ORCH = 'durable_orch';
@@ -156,6 +156,7 @@ describe('Clubhouse MCP going off, for running agents', () => {
   }
 
   let polledProject = '';
+  let loopingProject = '';
   let polledSent: string[] = [];
 
   /** Every group, as [caller, tool]. Filled in once the wires are up. */
@@ -299,6 +300,7 @@ describe('Clubhouse MCP going off, for running agents', () => {
       watchPollingForMcp();
       polledSent = fakeRuntime(CODEX);
       const looping = await groupProjectRegistry.create('looping');
+      loopingProject = looping.id;
       bindingManager.bind(CODEX, { targetId: looping.id, targetKind: 'group-project', label: 'looping' });
       await setProjectPolling(looping.id, true);
       expect(polledSent.filter((m) => m.includes('start polling for "looping"'))).toHaveLength(1);
@@ -527,10 +529,15 @@ describe('Clubhouse MCP going off, for running agents', () => {
 
     it('polling: the running member gets its start back, in the same session, and nothing is woken', async () => {
       await vi.waitFor(() => {
+        // Never delivered, so it still goes out by itself.
         expect(polledSent.filter((m) => m.includes('start polling for "polled"'))).toHaveLength(1);
-        // Its first when it joined, and one more now.
-        expect(polledSent.filter((m) => m.includes('start polling for "looping"'))).toHaveLength(2);
       }, { timeout: 10_000 });
+      // The loop MCP stopped doesn't restart by itself: its first start only, and it is offered Resume.
+      expect(polledSent.filter((m) => m.includes('start polling for "looping"'))).toHaveLength(1);
+      expect(listPausedPolling(loopingProject).map((m) => m.agentId)).toEqual([CODEX]);
+      expect(await resumePausedPolling(loopingProject, CODEX)).toBe(true);
+      expect(polledSent.filter((m) => m.includes('start polling for "looping"'))).toHaveLength(2);
+      expect(await resumePausedPolling(loopingProject, CODEX)).toBe(false);
       expect(agentRegistry.get(PEER)).toBeUndefined();
       expect(_pendingStartsForTesting.get(PEER)?.has(polledProject)).toBe(true);
     });

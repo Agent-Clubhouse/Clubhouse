@@ -527,6 +527,12 @@ export const IPC = {
     GET_MESSAGE: 'group-project:get-message',
     INJECT_MESSAGE: 'group-project:inject-message',
     SET_POLLING: 'group-project:set-polling',
+    /** Members whose polling Clubhouse MCP going off stopped, now that it is back. */
+    GET_PAUSED_POLLING: 'group-project:get-paused-polling',
+    /** Send one such member its start. */
+    RESUME_POLLING: 'group-project:resume-polling',
+    /** Main → renderer: those members changed. */
+    PAUSED_POLLING_CHANGED: 'group-project:paused-polling-changed',
   },
   MCP_BINDING: {
     GET_BINDINGS: 'mcp-binding:get-bindings',

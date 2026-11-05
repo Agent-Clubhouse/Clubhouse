@@ -154,9 +154,11 @@ A helper's forced `clubhouseMcpOverride` still decides whether the bridge is inj
 
 **Polling instructions stop too.** A member without MCP can't read the board, so it gets no polling start, and `nudge_polling` to it is refused. A start it missed is sent when MCP is back for it while it runs, or after its next start otherwise. Nothing is woken for this. A polling stop still goes out.
 
-A running member whose session is polling gets one stop when it loses MCP, and that same session gets one start when MCP is back. Polling is a loop the agent runs itself, so otherwise it keeps firing and being refused, spending a turn each time. The stop and the start cost one turn each, per project.
+A running member whose session is polling gets one stop when it loses MCP. Polling is a loop the agent runs itself, so otherwise it keeps firing and being refused, spending a turn each time. Nothing restarts it by itself when MCP is back, because the app can't tell that loop from one someone has since ended. The group project shows the member as paused, with a Resume button that sends one start, in the same session only. So polling stays off after MCP returns until someone resumes it. A stopped, sleeping or replaced session gets none of this and isn't woken.
 
-The app can't see inside the loop. A session counts as polling if it was told to in this session and has called `read_bulletin` in the last 5 minutes, or was told within them. So a loop the agent ended itself counts as ended after 5 minutes, and a turn longer than that with no read costs a loop its stop and its resume, leaving it to be refused until polling is restarted. A stopped, sleeping or replaced session gets nothing, and neither does a loop the user turned off. `test/mcp-off/mcp-off-revocation.test.ts` checks each row over HTTP.
+The app can't see inside the loop, so it decides who to stop and offer Resume by what it can see: this session was told to poll, and called `read_bulletin` in the last 5 minutes or was told within them. A start nobody has had yet, one the user asked for with MCP off or a new member's first, isn't a loop being restarted, so it still delivers when MCP is back or at the next handshake.
+
+`test/mcp-off/mcp-off-revocation.test.ts` checks each row over HTTP.
 
 ## Reads change nothing
 
