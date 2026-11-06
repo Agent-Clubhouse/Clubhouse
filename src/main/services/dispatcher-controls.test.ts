@@ -69,7 +69,7 @@ vi.mock('./log-service', () => ({ appLog: vi.fn() }));
 vi.mock('./base-dir', () => ({ getBaseDirPath: () => state.base }));
 vi.mock('./project-store', () => ({
   list: vi.fn(async () => [...state.projects]),
-  onProjectsChanged: vi.fn(() => () => undefined),
+  onProjectsChanged: vi.fn((): (() => void) => (): undefined => undefined),
 }));
 vi.mock('./fs-utils', () => ({ pathExists: vi.fn(async () => true) }));
 vi.mock('./agent-config', () => ({
@@ -82,8 +82,8 @@ vi.mock('./agent-config', () => ({
     return () => state.agentListeners.delete(listener);
   }),
 }));
-vi.mock('./mcp-settings', () => ({ onMcpEnablementChanged: vi.fn(() => () => undefined) }));
-vi.mock('./persona-change-hook', () => ({ onPersonaChanged: vi.fn(() => () => undefined) }));
+vi.mock('./mcp-settings', () => ({ onMcpEnablementChanged: vi.fn((): (() => void) => (): undefined => undefined) }));
+vi.mock('./persona-change-hook', () => ({ onPersonaChanged: vi.fn((): (() => void) => (): undefined => undefined) }));
 vi.mock('./helper-index', () => ({
   listHelpersEverywhere: vi.fn(async (_p: string, id: string) => state.helpers.get(id) ?? []),
 }));
@@ -231,7 +231,7 @@ function startApp(): void {
       // Public operation rejections may be expected by .rejects. A rejected full
       // watcher tail is unexpected: retain it explicitly, rather than hiding an
       // unhandled rejection by enabling the ownership observer.
-      void terminal.then(() => undefined, (error: unknown) => {
+      void terminal.then((): undefined => undefined, (error: unknown) => {
         owner.watcherRejected = true;
         owner.watcherError = error;
       });
@@ -244,7 +244,7 @@ function startApp(): void {
 /** Retire the old epoch before forgetting memory; case/setup roots stay outside it. */
 async function restart(): Promise<void> {
   const owner = fixture();
-  const resetAndStart = () => {
+  const resetAndStart = (): undefined => {
     for (const { agentId } of bindingManager.getAllBindings()) bindingManager.unbindAgent(agentId);
     _resetPersistedBindingSourcesForTesting();
     _resetDispatcherConnectionsForTesting();
@@ -258,7 +258,7 @@ async function restart(): Promise<void> {
 }
 
 const text = (r: { content: Array<{ text?: string }> }) => r.content[0].text ?? '';
-const call = ownOperation((name: string, args: Record<string, unknown> = {}, caller = 'dispatcher') => callTool(caller, name, args));
+const call = ownOperation((name: string, args: Record<string, unknown> = {}, caller: Parameters<typeof callTool>[0] = 'dispatcher') => callTool(caller, name, args));
 const isBound = (a: string, b: string) => bindingManager.getBindingsForAgent(a).some((x) => x.targetId === b);
 const storedPairs = async () => (await readDispatcherConnections()).map((c) => `${c.agentId}>${c.targetId}`);
 
