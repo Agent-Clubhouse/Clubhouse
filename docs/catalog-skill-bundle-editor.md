@@ -2,9 +2,10 @@
 
 This component and typed bridge edit existing installation-catalog skill bundles.
 They reuse `SkillAssetPayload`, catalog validation, impact planning and immutable
-revision saving. They introduce no filesystem skill model. No Settings navigation
-or Builder host is wired in this change. Host integration is a separate reviewed
-step coordinated with #2819, #2820 and #2740.
+revision saving. They introduce no filesystem skill model. This stacked host adds
+App Settings > Skill library with an explicit registered-project scope. Builder
+and native discovery remain separate. Host and visual/integration acceptance
+remain outstanding under #2819 and #2740.
 
 `SkillBundleEditor` is controlled by a complete `SkillAssetPayload`. Its folder
 list is derived only from `files`; selecting a member does not read a directory.
@@ -67,9 +68,12 @@ are never logged by this boundary.
 ## Host integration contract and remaining limits
 
 `CatalogSkillBundleEditor` accepts `{context, assetId, bridge?, onDirtyChange?}`.
-The future host must provide the clicked, registered context and a catalog asset
-selection; it must handle unsaved-navigation confirmation using existing Settings
-patterns. Do not replace the current on-disk Skills page or the held Builder
+The Settings host supplies the explicit registered-project context and catalog
+selection. It confirms draft discard on asset/project/list replacement and keeps
+the page mounted, hidden and inert during ordinary navigation. This is memory-only
+preservation, not durable draft recovery. Returning/focus revalidates catalog state;
+main still checks revision/context at mutation. Optional busy/saved callbacks bind
+to editor identity and operation number. Do not replace the current on-disk Skills page or the held Builder
 surface with this editor. Native skills must eventually be visible without
 requiring import, but no confined directory enumeration exists for that adapter
 yet. #2830's confinement hold is unchanged.
