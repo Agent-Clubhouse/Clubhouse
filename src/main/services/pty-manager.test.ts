@@ -102,6 +102,7 @@ import * as headlessTerminal from './pty-headless-terminal';
 import { appLog } from './log-service';
 import { PTY_RENDER_LOG_NS, _resetForTests as resetRenderDiag } from './pty-render-diagnostics';
 import { HOST_SESSION_ENV_FIXTURE, USER_CLAUDE_CONFIG_FIXTURE } from '../util/__fixtures__/host-session-env';
+import { resyncOffset } from '../../shared/pty-snapshot';
 
 // Helper: spawn and immediately fire resize to clear pendingCommands
 // so that onData callbacks start buffering data.
@@ -126,6 +127,107 @@ describe('pty-manager', () => {
   describe('getBuffer', () => {
     it('returns empty string for unknown agent', () => {
       expect(getBuffer('nonexistent')).toBe('');
+    });
+  });
+
+  describe('two-mode replay checkpoint', () => {
+    const cap = 2 * 1024 * 1024;
+    const enabled = '\x1b[?1h\x1b[?2004h';
+    const latestData = () => mockProcess.onData.mock.calls.at(-1)![0];
+
+    it.each(['agent', 'shell'] as const)('restores evicted modes for a %s without changing raw/live output, seq or size order', async (kind) => {
+      const id = `mode_head_${kind}`;
+      if (kind === 'agent') await spawnAndActivate(id); else await spawnShell(id, '/project');
+      const start = getBufferSnapshot(id).seq;
+      const data = latestData(); const writes = [...mockProcess.write.mock.calls];
+      data(enabled); data('x'.repeat(cap));
+      resize(id, 80, 24);
+      const tail = '\x1b[mvisible'; data(tail);
+      resize(id, 60, 20); data('next');
+      const snapshot = getBufferSnapshot(id);
+      expect(snapshot).toEqual({ data: enabled + tail + 'next', seq: start + enabled.length + cap + tail.length + 4,
+        sizes: [{ offset: 0, cols: 80, rows: 24 }, { offset: enabled.length + tail.length, cols: 60, rows: 20 }] });
+      expect(getBuffer(id)).toBe(tail + 'next');
+      expect(annexEventBus.emitPtyData).toHaveBeenLastCalledWith(id, 'next', snapshot.seq);
+      expect(broadcastToAllWindows).toHaveBeenLastCalledWith('pty:data', id, 'next', snapshot.seq);
+      expect(mockProcess.write.mock.calls).toEqual(writes);
+    });
+
+    it.each([['disable', '\x1b[?1;2004l'], ['RIS', '\x1bc'], ['DECSTR', '\x1b[!p']])('does not resurrect modes cleared in evicted history by %s', async (name, reset) => {
+      const id = `mode_reset_${name}`; await spawnShell(id, '/project'); const data = latestData();
+      data(enabled); data(reset); data('x'.repeat(cap)); data('\nvisible');
+      expect(getBufferSnapshot(id).data).toBe('visible');
+    });
+
+    it('carries a combined mode command split across fully evicted chunks', async () => {
+      await spawnShell('mode_split_evicted', '/project'); const data = latestData();
+      data('\x1b[?1;20'); data('04h'); data('x'.repeat(cap)); data('\nvisible');
+      expect(getBufferSnapshot('mode_split_evicted').data).toBe(enabled + 'visible');
+    });
+
+    it('includes a mode completed in the resync-skipped prefix without consuming the stored checkpoint', async () => {
+      await spawnShell('mode_resync', '/project'); const data = latestData();
+      data('x'.repeat(cap - 6) + '\x1b[?20');
+      const retained = '04hdiscarded\n\x1b[?1hvisible'; data(retained);
+      expect(resyncOffset(retained)).toBe('04hdiscarded\n'.length);
+      const snapshot = getBufferSnapshot('mode_resync');
+      expect(snapshot.data).toBe('\x1b[?2004h\x1b[?1hvisible');
+      expect(getBufferSnapshot('mode_resync')).toEqual(snapshot);
+      expect(getBuffer('mode_resync')).toBe(retained);
+    });
+
+    it('keeps retained disables after the prelude and passes that same replay to the bounded raw serializer', async () => {
+      await spawnShell('mode_retained', '/project'); const data = latestData();
+      data(enabled); data('x'.repeat(cap)); const retained = '\x1b[?2004lvisible'; data(retained);
+      const snapshot = getBufferSnapshot('mode_retained');
+      expect(snapshot.data).toBe(enabled + retained);
+      vi.mocked(headlessTerminal.snapshot).mockResolvedValueOnce(null);
+      vi.mocked(headlessTerminal.serializeRawWithin).mockResolvedValueOnce({ data: 'fitted', scrollbackLines: 0 });
+      expect(await getSerializedBufferSnapshot('mode_retained', { maxEncodedBytes: 1 })).toEqual({
+        data: 'fitted', scrollbackLines: 0, seq: snapshot.seq, cols: 120, rows: 30,
+      });
+      expect(headlessTerminal.serializeRawWithin).toHaveBeenLastCalledWith(enabled + retained, { cols: 120, rows: 30, maxEncodedBytes: 1 });
+      expect(getBuffer('mode_retained')).toBe(retained);
+    });
+
+    it('seeds activation and reactivation with one consistent snapshot, then feeds live bytes once', async () => {
+      const id = 'mode_activation'; await spawnAndActivate(id); const data = latestData();
+      data(enabled); data('x'.repeat(cap)); data('\x1b[mvisible');
+      const snapshot = getBufferSnapshot(id);
+      vi.mocked(headlessTerminal.feedData).mockClear();
+      vi.mocked(annexEventBus.isActive).mockReturnValue(true); mockActiveChange.listener!(true);
+      const callsForId = () => vi.mocked(headlessTerminal.feedData).mock.calls.filter(([agentId]) => agentId === id);
+      expect(callsForId()).toEqual([[id, enabled + '\x1b[mvisible', snapshot.seq]]);
+      const ensureIndex = vi.mocked(headlessTerminal.ensure).mock.calls.findIndex(([agentId]) => agentId === id);
+      const feedIndex = vi.mocked(headlessTerminal.feedData).mock.calls.findIndex(([agentId]) => agentId === id);
+      expect(vi.mocked(headlessTerminal.ensure).mock.invocationCallOrder[ensureIndex])
+        .toBeLessThan(vi.mocked(headlessTerminal.feedData).mock.invocationCallOrder[feedIndex]);
+      data('\x1b[?2004lLIVE');
+      expect(callsForId().at(-1)).toEqual([id, '\x1b[?2004lLIVE', getBufferSnapshot(id).seq]);
+      expect(callsForId()).toHaveLength(2);
+      vi.mocked(annexEventBus.isActive).mockReturnValue(false); mockActiveChange.listener!(false);
+      expect(headlessTerminal.dispose).toHaveBeenCalledWith(id); expect(headlessTerminal.disposeAll).not.toHaveBeenCalled();
+      data('x'.repeat(cap)); data('\nnew');
+      const next = getBufferSnapshot(id); expect(next.data).toBe('\x1b[?1hnew');
+      vi.mocked(annexEventBus.isActive).mockReturnValue(true); mockActiveChange.listener!(true);
+      expect(callsForId().at(-1)).toEqual([id, next.data, next.seq]); expect(callsForId()).toHaveLength(3);
+    });
+
+    it('starts a respawn with fresh mode state rather than inheriting an evicted checkpoint', async () => {
+      const id = 'mode_respawn'; await spawnShell(id, '/project'); let data = latestData();
+      data(enabled); data('x'.repeat(cap)); data('\nold');
+      await spawnShell(id, '/project'); data = latestData();
+      data('plain'); expect(getBufferSnapshot(id).data).toBe('plain');
+      data('x'.repeat(cap)); data('\nnew'); expect(getBufferSnapshot(id).data).toBe('new');
+    });
+
+    it('characterizes the UNRESOLVED zero-resync cut CSI; this is not complete split-boundary recovery', async () => {
+      const id = 'mode_cut_csi_limit'; await spawnShell(id, '/project'); const data = latestData();
+      data('x'.repeat(cap - 6) + '\x1b[?20'); data('04htext');
+      expect(resyncOffset(getBuffer(id))).toBe(0);
+      // The introducer was evicted and no safe boundary was found. The new
+      // checkpoint deliberately does not repair/reinsert an incomplete CSI.
+      expect(getBufferSnapshot(id).data).toBe('04htext');
     });
   });
 
