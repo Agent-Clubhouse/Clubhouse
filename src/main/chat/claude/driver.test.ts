@@ -522,6 +522,13 @@ describe('ClaudeChatDriverSession mapping (scripted transport)', () => {
     const reports = drafts.of('session_info').filter((d) => d.data.providerSkills).map((d) => d.data.providerSkills);
     expect(reports.map((r) => r?.names)).toEqual([['review'], null, null, []]);
     expect(reports[0]).toEqual({ provider: 'claude-code', driver: 'claude_agent_sdk', source: 'system/init', nativeSessionId: 'native', names: ['review'] });
+    transport.sessionId = 'replacement-native';
+    transport.emit(normalizer.normalize({ type: 'system', subtype: 'init', session_id: 'replacement-native', model: 'replacement-model', skills: ['replacement-skill'] })[0]);
+    await settle();
+    expect(drafts.of('session_info').at(-1)?.data).toMatchObject({
+      nativeSessionId: 'replacement-native', model: 'replacement-model',
+      providerSkills: { nativeSessionId: 'replacement-native', names: ['replacement-skill'] },
+    });
     const count = drafts.all.length;
     transport.emit(normalizer.normalize({ type: 'system', subtype: 'init', session_id: 'child', parent_tool_use_id: 'task', skills: ['child-only'] })[0]);
     await settle();

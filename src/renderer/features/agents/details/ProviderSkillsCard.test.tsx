@@ -1,8 +1,9 @@
 import { describe, expect, it, vi } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { act, render, screen } from '@testing-library/react';
 import type { Agent } from '../../../../shared/types';
 import { createChatViewState, type ChatViewState } from '../../../stores/chatStore';
 import { ProviderSkillsCard } from './ProviderSkillsCard';
+import { useProjectStore } from '../../../stores/projectStore';
 
 const agent: Agent = { id: 'a', projectId: 'p', name: 'test', kind: 'durable', status: 'running', color: 'teal', orchestrator: 'claude-code' };
 function chat(names: string[] | null = ['review']): ChatViewState {
@@ -13,6 +14,22 @@ function chat(names: string[] | null = ['review']): ChatViewState {
 }
 
 describe('ProviderSkillsCard', () => {
+  it('invalidates an inherited report when the project default changes, and refuses unresolved inheritance', () => {
+    const inherited = { ...agent, orchestrator: undefined };
+    useProjectStore.setState({ projects: [{ id: 'p', name: 'project', path: '/project', orchestrator: 'claude-code' }] });
+    const { rerender } = render(<ProviderSkillsCard agent={inherited} chat={chat()} open onToggle={vi.fn()} />);
+    expect(screen.getByText('review')).toBeInTheDocument();
+    act(() => { useProjectStore.setState({ projects: [{ id: 'p', name: 'project', path: '/project', orchestrator: 'codex-cli' }] }); });
+    expect(screen.queryByText('review')).not.toBeInTheDocument();
+    expect(screen.getByTestId('details-card-provider-skills-summary')).toHaveTextContent('Unknown');
+    // An explicit agent override still wins over the new project default.
+    rerender(<ProviderSkillsCard agent={agent} chat={chat()} open onToggle={vi.fn()} />);
+    expect(screen.getByText('review')).toBeInTheDocument();
+    rerender(<ProviderSkillsCard agent={inherited} chat={chat()} open onToggle={vi.fn()} />);
+    act(() => { useProjectStore.setState({ projects: [] }); });
+    expect(screen.queryByText('review')).not.toBeInTheDocument();
+  });
+
   it('renders literal names, exact session/source/time, limited coverage and no execution claim', () => {
     const state = chat(['../review', '<script>alert(1)</script>']);
     const { container } = render(<ProviderSkillsCard agent={agent} chat={state} open onToggle={vi.fn()} />);

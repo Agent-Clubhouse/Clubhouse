@@ -1383,7 +1383,21 @@ describe('passive provider skills on session_info', () => {
       expect(reduceChatEvent(state, stale)).toBe(state);
     }
     expect(reduceChatEvent(undefined, makeEmitter()('session_info', info())).providerSkills).toBeNull();
-    expect(reduceChatEvent(state, ev('session_info', info(), { sessionId: 's2' }))).toBe(state);
+  });
+
+  it('accepts an authoritative root native-identity transition within the current shared session', () => {
+    const ev = makeEmitter();
+    const state = fold([sessionStarted(ev), ev('session_info', info())]);
+    const transition = ev('session_info', {
+      nativeSessionId: 'replacement-native', cliVersion: 'new-version', model: 'new-model',
+      providerSkills: { ...report(['new-skill']), nativeSessionId: 'replacement-native' },
+    });
+    const next = reduceChatEvent(state, transition);
+    expect(next).toMatchObject({ nativeSessionId: 'replacement-native', cliVersion: 'new-version', model: 'new-model' });
+    expect(next.providerSkills).toEqual({ ...report(['new-skill']), nativeSessionId: 'replacement-native', sessionId: 's1', reportedAt: transition.ts });
+    const stale = { ...ev('session_info', info(), { sessionId: 'old-shared-session' }), ts: transition.ts + 1 };
+    expect(reduceChatEvent(next, stale)).toBe(next);
+    expect(reduceChatEvent(next, transition)).toBe(next);
   });
 
   it('rejects invalid report dates before they can reach the session card', () => {

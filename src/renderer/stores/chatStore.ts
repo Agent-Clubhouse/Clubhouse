@@ -528,12 +528,12 @@ export function reduceChatEvent(prev: ChatViewState | undefined, event: ChatEven
 
   if (event.type === 'session_info' && event.data.providerSkills !== undefined) {
     const report = readProviderSkills(event.data.providerSkills);
-    // A passive report cannot create/reactivate a session, change its provider,
-    // or replace a known native identity (including a late prior-run report).
+    // A passive report cannot create/reactivate a shared session or change its
+    // provider/driver. A root init can authoritatively change the native id
+    // within that current shared session (e.g. resume fallback).
     if (!report || base.sessionId !== event.sessionId || base.provider !== report.provider
       || base.driver !== report.driver || !Number.isFinite(event.ts) || Math.abs(event.ts) > 8.64e15
       || event.ts < (base.sessionStartedAt ?? 0)
-      || (base.nativeSessionId !== null && base.nativeSessionId !== report.nativeSessionId)
       || event.data.nativeSessionId !== report.nativeSessionId) return base;
   }
 

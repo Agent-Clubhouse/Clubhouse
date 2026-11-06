@@ -1,5 +1,6 @@
 import type { Agent } from '../../../../shared/types';
 import type { ChatViewState } from '../../../stores/chatStore';
+import { useProjectStore } from '../../../stores/projectStore';
 import { CardNote, CardRow, DetailsCard } from './DetailsCard';
 
 /** Only renders metadata already in chat state. No filesystem reads or provider requests. */
@@ -10,7 +11,11 @@ export function ProviderSkillsCard({ agent, chat, open, onToggle }: {
   onToggle: () => void;
 }) {
   const matchesAgent = chat.agentId === agent.id;
-  const matchesProvider = !agent.orchestrator || agent.orchestrator === chat.provider;
+  const project = useProjectStore((s) => s.projects.find((p) => p.id === agent.projectId));
+  // Match the selected override, else the known project's default. An absent
+  // project cannot establish an inherited selection (e.g. during hydration).
+  const effectiveProvider = agent.orchestrator || (project ? project.orchestrator || 'claude-code' : null);
+  const matchesProvider = effectiveProvider !== null && effectiveProvider === chat.provider;
   const report = matchesAgent && matchesProvider && chat.provider === 'claude-code'
     && chat.providerSkills?.sessionId === chat.sessionId
     && chat.providerSkills.driver === chat.driver
