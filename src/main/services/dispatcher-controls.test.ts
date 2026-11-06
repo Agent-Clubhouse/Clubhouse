@@ -827,14 +827,16 @@ describe('a removal the store can\'t take', () => {
       await removeWire('a', 'b');
       state.failWrite = null;
       userDraws('a', 'b');
-      await vi.waitFor(() => expect(storeFile().connections).toEqual([]));
-      expect(storeFile().removedByUser).toEqual([]);
-      expect(pendingFile()).toBe(false);
+      await vi.waitFor(() => {
+        expect(storeFile().connections).toEqual([]);
+        expect(storeFile().removedByUser).toEqual([]);
+        expect(pendingFile()).toBe(false);
+      });
       await restart();
       expect(isBound('a', 'b')).toBe(true);
     });
 
-    it('a redraw store write precedes pending cleanup; interruption preserves the user wire and fails closed', async () => {
+    it('a redraw folds its tombstone before pending cleanup; interruption preserves the user wire and fails closed', async () => {
       state.failWrite = storeRefuses;
       await removeWire('a', 'b');
       expect(pendingFile()).toBe(true);
@@ -860,7 +862,7 @@ describe('a removal the store can\'t take', () => {
         userDraws('a', 'b');
         await vi.waitFor(() => expect(captured).toBeDefined());
         expect(storeFile().connections).toEqual([]);
-        expect(storeFile().removedByUser).toEqual([]);
+        expect(storeFile().removedByUser).toEqual([expect.objectContaining({ agentId: 'a', targetId: 'b' })]);
         expect(pendingFile()).toBe(true);
         expect(isBound('a', 'b')).toBe(true);
       } catch (error) {
@@ -907,7 +909,7 @@ describe('a removal the store can\'t take', () => {
       expect(isBound('a', 'b')).toBe(true);
     });
 
-    it('a completed redraw cleanup can leave replayable pending bytes when removal fails', async () => {
+    it('a redraw rejects failed pending cleanup and retains both removal records', async () => {
       state.failWrite = storeRefuses;
       await removeWire('a', 'b');
       const pendingBefore = fs.readFileSync(dispatcherPendingRemovalsPath());
@@ -924,9 +926,9 @@ describe('a removal the store can\'t take', () => {
         // Invoke the same listener operation directly so its actual completion is observable.
         // The real event handler discards this boolean; it is not a UI saved acknowledgement.
         userDraws('a', 'b');
-        expect(await clearUserRemoval({ agentId: 'a', targetId: 'b' })).toBe(true);
+        await expect(clearUserRemoval({ agentId: 'a', targetId: 'b' })).rejects.toMatchObject({ code: 'EACCES' });
         expect(storeFile().connections).toEqual([]);
-        expect(storeFile().removedByUser).toEqual([]);
+        expect(storeFile().removedByUser).toEqual([expect.objectContaining({ agentId: 'a', targetId: 'b' })]);
         expect(fs.readFileSync(dispatcherPendingRemovalsPath())).toEqual(pendingBefore);
       } finally {
         state.beforeRemove = null;
@@ -941,6 +943,85 @@ describe('a removal the store can\'t take', () => {
       await isRemovalUnsaved({ agentId: 'a', targetId: 'b' });
       expect(pendingFile()).toBe(false);
       expect(storeFile().removedByUser).toEqual([]);
+    });
+
+    it.each([1, 2])('redraw store write %i failure keeps removal durable across restart', async (failedWrite) => {
+      state.failWrite = storeRefuses;
+      await removeWire('a', 'b');
+      const pendingBefore = fs.readFileSync(dispatcherPendingRemovalsPath());
+      const storeBefore = fs.readFileSync(dispatcherConnectionsPath());
+      stopWatching?.();
+      stopWatching = null;
+      await isRemovalUnsaved({ agentId: 'a', targetId: 'b' });
+      let writes = 0;
+      state.failWrite = (file) => storeRefuses(file) && ++writes === failedWrite;
+      userDraws('a', 'b');
+      await expect(clearUserRemoval({ agentId: 'a', targetId: 'b' })).rejects.toMatchObject({ code: 'ENOSPC' });
+      expect(writes).toBe(failedWrite);
+      if (failedWrite === 1) {
+        expect(fs.readFileSync(dispatcherConnectionsPath())).toEqual(storeBefore);
+        expect(fs.readFileSync(dispatcherPendingRemovalsPath())).toEqual(pendingBefore);
+      } else {
+        // The fold committed and pending deletion completed, but target clear did not.
+        expect(pendingFile()).toBe(false);
+        expect(storeFile().removedByUser).toEqual([expect.objectContaining({ agentId: 'a', targetId: 'b' })]);
+      }
+      state.failWrite = null;
+      await restart();
+      expect(isBound('a', 'b')).toBe(true);
+      expect((await call('connect_orchestrators', { from: 'a', to: 'b' })).isError).toBe(true);
+      expect(lastAudit()).toMatchObject({ code: 'removed_by_user' });
+      userDraws('a', 'b');
+      await isRemovalUnsaved({ agentId: 'a', targetId: 'b' });
+      expect(storeFile().removedByUser).toEqual([]);
+      expect(pendingFile()).toBe(false);
+    });
+
+    it('redrawing one pending pair preserves the other pair across restart', async () => {
+      expect((await call('connect_orchestrators', { from: 'a', to: 'c' })).isError).not.toBe(true);
+      state.failWrite = storeRefuses;
+      await removeWire('a', 'b');
+      await removeWire('a', 'c');
+      state.failWrite = null;
+      userDraws('a', 'b');
+      await isRemovalUnsaved({ agentId: 'a', targetId: 'b' });
+      expect(pendingFile()).toBe(false);
+      expect(storeFile().removedByUser).toEqual([expect.objectContaining({ agentId: 'a', targetId: 'c' })]);
+      await restart();
+      expect(isBound('a', 'b')).toBe(true);
+      expect(isBound('a', 'c')).toBe(false);
+      expect((await call('connect_orchestrators', { from: 'a', to: 'c' })).isError).toBe(true);
+      expect(lastAudit()).toMatchObject({ code: 'removed_by_user' });
+    });
+
+    it('a removal callback during redraw cleanup queues behind the fold and is not erased', async () => {
+      expect((await call('connect_orchestrators', { from: 'a', to: 'c' })).isError).not.toBe(true);
+      state.failWrite = storeRefuses;
+      await removeWire('a', 'b');
+      state.failWrite = null;
+      let queued = false;
+      state.beforeRemove = async (file) => {
+        if (file !== dispatcherPendingRemovalsPath()) return;
+        state.beforeRemove = null;
+        // Runs inside awaited rm. The real listener queues, rather than mutating pending state.
+        bindingManager.unbind('a', 'c');
+        markBindingRemovedByUser('a', 'c');
+        queued = true;
+      };
+      try {
+        userDraws('a', 'b');
+        await vi.waitFor(() => expect(queued).toBe(true));
+        await isRemovalUnsaved({ agentId: 'a', targetId: 'c' });
+        expect(storeFile().removedByUser).toEqual([expect.objectContaining({ agentId: 'a', targetId: 'c' })]);
+        expect(pendingFile()).toBe(false);
+      } finally {
+        state.beforeRemove = null;
+      }
+      await restart();
+      expect(isBound('a', 'b')).toBe(true);
+      expect(isBound('a', 'c')).toBe(false);
+      expect((await call('connect_orchestrators', { from: 'a', to: 'c' })).isError).toBe(true);
+      expect(lastAudit()).toMatchObject({ code: 'removed_by_user' });
     });
 
     it('drawing the pair while nothing can be saved keeps the Dispatcher refused and leaves the wire', async () => {
