@@ -14,7 +14,7 @@ import { PluginRegistryEntry } from '../../shared/plugin-types';
 import { initialsTextColor } from '../../shared/agent-avatar';
 import { getAgentColorHex } from '../../shared/name-generator';
 import { sanitizeSvg } from '../utils/sanitize-svg';
-import { showConfirmDialog } from '../plugins/PluginDialog';
+import { requestCloseProject } from '../features/projects/close-project';
 import { FeedbackButton } from '../features/feedback/FeedbackButton';
 
 function ProjectContextMenu({ position, onClose, onSettings, onCloseProject }: {
@@ -244,7 +244,6 @@ export function ProjectRail() {
   const setActiveProject = useProjectStore((s) => s.setActiveProject);
   const pickAndAddProject = useProjectStore((s) => s.pickAndAddProject);
   const reorderProjects = useProjectStore((s) => s.reorderProjects);
-  const removeProject = useProjectStore((s) => s.removeProject);
   const openProjectSettings = useUIStore((s) => s.openProjectSettings);
   const toggleSettings = useUIStore((s) => s.toggleSettings);
   const toggleHelp = useUIStore((s) => s.toggleHelp);
@@ -778,12 +777,7 @@ export function ProjectRail() {
             setActiveProject(contextMenu.projectId);
             openProjectSettings(contextMenu.projectId);
           }}
-          onCloseProject={async () => {
-            const { promise } = showConfirmDialog('Close this project? Project-specific settings may need to be reconfigured.');
-            if (await promise) {
-              removeProject(contextMenu.projectId);
-            }
-          }}
+          onCloseProject={() => { void requestCloseProject(contextMenu.projectId); }}
         />
       )}
     </div>

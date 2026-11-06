@@ -31,6 +31,7 @@ function baseProps(): ProjectTreeProps {
     onDismissCompleted: vi.fn(),
     onClearCompleted: vi.fn(),
     onOpenSettings: vi.fn(),
+    onCloseProject: vi.fn(),
     onReorderAgents: vi.fn(),
   };
 }
@@ -180,11 +181,12 @@ describe('ProjectTree menus', () => {
     expect(props.onReorderAgents).toHaveBeenCalledWith('a', ['a1', 's2', 'a3', 's1']);
   });
 
-  it('has no move or settings items on a satellite', () => {
-    setup({ onReorder: undefined, onOpenSettings: undefined, onReorderAgents: undefined, onNewAgent: undefined });
+  it('has no move, settings or close items on a satellite', () => {
+    setup({ onReorder: undefined, onOpenSettings: undefined, onCloseProject: undefined, onReorderAgents: undefined, onNewAgent: undefined });
     fireEvent.contextMenu(key('project:a'));
     expect(screen.queryByTestId('project-menu-move-up')).toBeNull();
     expect(screen.queryByTestId('project-menu-settings')).toBeNull();
+    expect(screen.queryByTestId('project-menu-close-project')).toBeNull();
     expect(screen.getByTestId('project-menu-pin')).toBeTruthy();
   });
 });
@@ -475,7 +477,7 @@ describe('ProjectTree sort modes and inactive projects (#2116)', () => {
   });
 
   it('has no Mark inactive on a satellite', () => {
-    setup({ onReorder: undefined, onOpenSettings: undefined, onReorderAgents: undefined, onNewAgent: undefined });
+    setup({ onReorder: undefined, onOpenSettings: undefined, onCloseProject: undefined, onReorderAgents: undefined, onNewAgent: undefined });
     fireEvent.contextMenu(key('project:a'));
     expect(screen.queryByText('Mark inactive')).toBeNull();
   });

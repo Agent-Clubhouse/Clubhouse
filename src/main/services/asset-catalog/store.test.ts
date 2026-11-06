@@ -2,6 +2,7 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { withTestPhaseDiagnostic, traceTestPhase } from '../../../../test/test-phase-diagnostic';
 
 const W = vi.hoisted(() => ({ home: '', auditFails: false }));
 
@@ -11,7 +12,7 @@ vi.mock('../settings-audit', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../settings-audit')>();
   return {
     ...actual,
-    auditChanged: (...args: Parameters<typeof actual.auditChanged>) => (W.auditFails ? Promise.reject(new Error('audit down')) : actual.auditChanged(...args)),
+    auditChanged: (...args: Parameters<typeof actual.auditChanged>) => traceTestPhase('catalog.audit', () => (W.auditFails ? Promise.reject(new Error('audit down')) : actual.auditChanged(...args))),
   };
 });
 
@@ -53,11 +54,11 @@ function makeStore(): AssetCatalogStore {
     dir,
     newId: () => `asset-${++nextId}`,
     now: () => '2026-11-04T00:00:00.000Z',
-    rename: async (from, to) => {
+    rename: async (from, to) => traceTestPhase('catalog.rename', async () => {
       const fault = renameFault?.(from, to);
       if (fault) throw fault;
       await fs.promises.rename(from, to);
-    },
+    }),
   });
 }
 
@@ -87,13 +88,13 @@ const code = async (promise: Promise<unknown>): Promise<string> => (await reject
 
 /** Compose through the path a user takes: preview, then commit that preview. */
 async function compose(agentId: string, composition: CompositionInput, expectedRevision = 0) {
-  const preview = await store.plan({ agentId, adoption: ACCEPTED, draft: composition });
-  return store.saveComposition({ agentId, expectedRevision, composition, adoption: ACCEPTED, previewFingerprint: preview.fingerprint });
+  const preview = await traceTestPhase('catalog.compose-plan', () => store.plan({ agentId, adoption: ACCEPTED, draft: composition }));
+  return traceTestPhase('catalog.compose-save', () => store.saveComposition({ agentId, expectedRevision, composition, adoption: ACCEPTED, previewFingerprint: preview.fingerprint }));
 }
 
 async function saveEdit(assetId: string, payload: unknown, expectedRevision: number) {
-  const impact = await store.previewAssetEdit({ assetId, payload });
-  return store.saveRevision({ assetId, expectedRevision, payload, impactFingerprint: impact.fingerprint });
+  const impact = await traceTestPhase('catalog.edit-preview', () => store.previewAssetEdit({ assetId, payload }));
+  return traceTestPhase('catalog.edit-save', () => store.saveRevision({ assetId, expectedRevision, payload, impactFingerprint: impact.fingerprint }));
 }
 
 async function publish(request: PublicationRequest) {
@@ -118,11 +119,11 @@ function instanceOf(template: CatalogEntry, over: Partial<CompositionInput> = {}
 
 /** Identity and Job blocks, a skill, an MCP definition and a template of them. */
 async function seedBase() {
-  const identity = await store.createAsset({ kind: 'block', name: 'Identity', payload: doc('You are @@AgentName.') });
-  const job = await store.createAsset({ kind: 'block', name: 'Job', payload: doc('Do the work. Keep the rules.') });
-  const review = await store.createAsset({ kind: 'skill', name: 'Code review', payload: skillOf('code-review') });
-  const git = await store.createAsset({ kind: 'mcp', name: 'Git', payload: mcpOf('git') });
-  const base = await store.createAsset({
+  const identity = await traceTestPhase('catalog.seed-identity', () => store.createAsset({ kind: 'block', name: 'Identity', payload: doc('You are @@AgentName.') }));
+  const job = await traceTestPhase('catalog.seed-job', () => store.createAsset({ kind: 'block', name: 'Job', payload: doc('Do the work. Keep the rules.') }));
+  const review = await traceTestPhase('catalog.seed-skill', () => store.createAsset({ kind: 'skill', name: 'Code review', payload: skillOf('code-review') }));
+  const git = await traceTestPhase('catalog.seed-mcp', () => store.createAsset({ kind: 'mcp', name: 'Git', payload: mcpOf('git') }));
+  const base = await traceTestPhase('catalog.seed-template', () => store.createAsset({
     kind: 'template',
     name: 'Orchestrator',
     payload: {
@@ -132,7 +133,7 @@ async function seedBase() {
       mcps: [git.id],
       operationalDefaults: { orchestrate: true },
     },
-  });
+  }));
   return { identity, job, review, git, base };
 }
 
@@ -1926,48 +1927,48 @@ describe('previewInstructions', () => {
 });
 
 describe('the builder actions', () => {
-  it('a base, a new skill, an existing skill, an MCP and a forked block, without touching the agent id or the base', async () => {
-    const { identity, job, review, base } = await seedBase();
-    const beforeBase = (await store.read()).assets[base.id];
-    await compose('release-lead', instanceOf(base));
-    await compose('other-agent', instanceOf(base));
+  it('a base, a new skill, an existing skill, an MCP and a forked block, without touching the agent id or the base', withTestPhaseDiagnostic('catalog-builder', async (diagnostic) => {
+    const { identity, job, review, base } = await diagnostic.step('catalog.seed', () => seedBase());
+    const beforeBase = (await diagnostic.step('catalog.read-base', () => store.read())).assets[base.id];
+    await diagnostic.step('catalog.compose-primary', () => compose('release-lead', instanceOf(base)));
+    await diagnostic.step('catalog.compose-other', () => compose('other-agent', instanceOf(base)));
 
     // New skill: saved to the library, assigned to this agent only.
-    const notes = await store.createAsset({ kind: 'skill', name: 'Release notes', payload: skillOf('release-notes') });
+    const notes = await diagnostic.step('catalog.create-notes', () => store.createAsset({ kind: 'skill', name: 'Release notes', payload: skillOf('release-notes') }));
     // Existing skill, as a copy.
-    const shared = await store.createAsset({ kind: 'skill', name: 'Triage', payload: skillOf('triage') });
-    const triage = await store.copyAsset({ assetId: shared.id, revision: 1, agentId: 'release-lead' });
+    const shared = await diagnostic.step('catalog.create-shared', () => store.createAsset({ kind: 'skill', name: 'Triage', payload: skillOf('triage') }));
+    const triage = await diagnostic.step('catalog.copy-skill', () => store.copyAsset({ assetId: shared.id, revision: 1, agentId: 'release-lead' }));
     // MCP: through its configuration, with its secret left to the runtime.
-    const workiq = await store.createAsset({ kind: 'mcp', name: 'WorkIQ', payload: { ...mcpOf('workiq'), envVars: ['WORKIQ_TENANT'] } });
+    const workiq = await diagnostic.step('catalog.create-mcp', () => store.createAsset({ kind: 'mcp', name: 'WorkIQ', payload: { ...mcpOf('workiq'), envVars: ['WORKIQ_TENANT'] } }));
     // Fork one block: a copy owned by this agent, in that block's slot. A local block joins it.
-    const fork = await store.copyAsset({ assetId: job.id, revision: 1, agentId: 'release-lead', name: 'Local job' });
-    await saveEdit(fork.id, doc('Do the release work. Keep the rules.'), 1);
-    const local = await store.createAsset({ kind: 'block', name: 'Release rules', payload: doc('Tag from the bump PR.'), owner: { kind: 'agent', agentId: 'release-lead' } });
+    const fork = await diagnostic.step('catalog.fork-block', () => store.copyAsset({ assetId: job.id, revision: 1, agentId: 'release-lead', name: 'Local job' }));
+    await diagnostic.step('catalog.edit-fork', () => saveEdit(fork.id, doc('Do the release work. Keep the rules.'), 1));
+    const local = await diagnostic.step('catalog.local-block', () => store.createAsset({ kind: 'block', name: 'Release rules', payload: doc('Tag from the bump PR.'), owner: { kind: 'agent', agentId: 'release-lead' } }));
 
-    const stored = await compose('release-lead', instanceOf(base, {
+    const stored = await diagnostic.step('catalog.compose-fork', () => compose('release-lead', instanceOf(base, {
       entries: [
         follow('Identity'),
         { baseEntryId: 'Job', source: { kind: 'fork', blockId: fork.id, forkedFrom: { assetId: job.id, revision: 1 } } },
         { localId: 'Rules', source: { kind: 'local', blockId: local.id } },
       ],
       additions: [notes.id, triage.id, workiq.id],
-    }), 1);
+    }), 1));
     expect(stored.agentId).toBe('release-lead');
 
-    const plan = await store.plan({ agentId: 'release-lead', adoption: ACCEPTED });
+    const plan = await diagnostic.step('catalog.plan', () => store.plan({ agentId: 'release-lead', adoption: ACCEPTED }));
     expect(plan.blockers).toEqual([]);
     expect(plan.instructions?.blocks.map((block) => [block.assetId, block.source])).toEqual([[identity.id, 'follow'], [fork.id, 'fork'], [local.id, 'local']]);
     expect(plan.structure?.customOrder).toBe(true);
     expect(plan.skills.map((asset) => asset.assetId).sort()).toEqual([notes.id, review.id, triage.id].sort());
     expect(plan.mcpServers.find((asset) => asset.assetId === workiq.id)?.projection).toMatchObject({ auth: 'external', envVars: ['WORKIQ_TENANT'] });
     expect(plan.operationalDefaults).toEqual([{ key: 'orchestrate', value: true, templateId: base.id, templateRevision: 1 }]);
-    expect(await textOf(plan)).toBe('You are @@AgentName.\n\nDo the release work. Keep the rules.\n\nTag from the bump PR.');
+    expect(await diagnostic.step('catalog.text', () => textOf(plan))).toBe('You are @@AgentName.\n\nDo the release work. Keep the rules.\n\nTag from the bump PR.');
 
-    expect((await store.read()).assets[base.id]).toEqual(beforeBase);
-    const other = await store.plan({ agentId: 'other-agent', adoption: ACCEPTED });
+    expect((await diagnostic.step('catalog.read-base', () => store.read())).assets[base.id]).toEqual(beforeBase);
+    const other = await diagnostic.step('catalog.plan-other', () => store.plan({ agentId: 'other-agent', adoption: ACCEPTED }));
     expect(other.instructions?.blocks.map((block) => block.assetId)).toEqual([identity.id, job.id]);
     expect(other.skills.map((asset) => asset.assetId)).toEqual([review.id]);
-  });
+  }));
 
   it('a whole-document import is one block, and renders byte-identical', async () => {
     const document = '# Persona\r\n\r\nKeeps  odd spacing.\n\n';

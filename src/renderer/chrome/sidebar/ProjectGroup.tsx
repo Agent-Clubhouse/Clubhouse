@@ -115,6 +115,8 @@ export interface ProjectGroupProps {
   canMoveDown?: boolean;
   /** Opens the project's settings; absent for a satellite's projects. */
   onOpenSettings?: (projectId: string) => void;
+  /** Unregisters the clicked local project; absent on satellite projects. */
+  onCloseProject?: (projectId: string) => void;
   /** Saves a new durable-agent order; absent for a satellite's projects. */
   onReorderAgents?: (projectId: string, orderedIds: string[]) => void;
   /** Projects are in Recent order, so Move up / Move down are replaced by a note saying so (#2116). */
@@ -172,7 +174,7 @@ export const ProjectGroup = React.memo(function ProjectGroup(props: ProjectGroup
     activeProjectId, activeAgentId, headerSelected, selectedCompletedId,
     onSelectProject, onToggleCollapsed, onTogglePinned, onToggleFold, onCloseFold, onToggleSleepingPinned, onNewAgent,
     onSelectAgent, onOpenTerminal, onSelectCompleted, onDismissCompleted, onClearCompleted, dragHandlers, dropIndicator, draggable = true,
-    onMoveProject, canMoveUp, canMoveDown, onOpenSettings, onReorderAgents, level = 1, parentKey,
+    onMoveProject, canMoveUp, canMoveDown, onOpenSettings, onCloseProject, onReorderAgents, level = 1, parentKey,
     sortedByRecent, inSection, onSetInactive, onAgentReorderHint,
   } = props;
   const [menu, setMenu] = useState<{ x: number; y: number } | null>(null);
@@ -341,6 +343,7 @@ export const ProjectGroup = React.memo(function ProjectGroup(props: ProjectGroup
     { id: 'collapse', label: expanded ? 'Collapse' : 'Expand', onSelect: () => onToggleCollapsed(project.id) },
     ...(onNewAgent ? [{ id: 'new-agent', label: 'New agent…', onSelect: () => onNewAgent(project.id) }] : []),
     ...(onOpenSettings ? [{ id: 'settings', label: 'Project settings', onSelect: () => onOpenSettings(project.id) }] : []),
+    ...(onCloseProject ? [{ id: 'close-project', label: 'Close project', onSelect: () => onCloseProject(project.id) }] : []),
   ];
   const openMenu = (x: number, y: number) => {
     setMenu({ x, y });
