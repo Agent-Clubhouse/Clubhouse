@@ -7,6 +7,19 @@ import { toWirePermissionResult, toWireUserMessage } from './transport';
 const kinds = (evs: Array<{ kind: string }>) => evs.map((e) => e.kind);
 
 describe('ClaudeNormalizer', () => {
+  it.each([undefined, null, {}, ['valid', 3], [], ['review', 'review', 'other']])('preserves explicit empty skills and treats malformed as unknown: %j', (skills) => {
+    const [event] = new ClaudeNormalizer().normalize({ type: 'system', subtype: 'init', session_id: 'native', skills });
+    expect(event).toMatchObject({ kind: 'session_started', skills: Array.isArray(skills) && skills.every((s) => typeof s === 'string') ? [...new Set(skills)] : null });
+  });
+
+  it('marks nested init and preserves the parent native session identity', () => {
+    const n = new ClaudeNormalizer();
+    n.normalize({ type: 'system', subtype: 'init', session_id: 'root', skills: ['root-skill'] });
+    expect(n.normalize({ type: 'system', subtype: 'init', session_id: 'child', parent_tool_use_id: 'task-1', skills: ['child-skill'] })[0])
+      .toMatchObject({ kind: 'session_started', parentToolCallId: 'task-1' });
+    expect(n.currentSessionId).toBe('root');
+  });
+
   it('keeps partial streams of a subagent apart from the main thread', () => {
     const n = new ClaudeNormalizer();
     n.normalize({ type: 'stream_event', event: { type: 'message_start', message: { id: 'main' } }, parent_tool_use_id: null });

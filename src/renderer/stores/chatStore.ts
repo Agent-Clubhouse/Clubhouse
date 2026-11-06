@@ -13,6 +13,7 @@
  */
 
 import type { ContextLimits } from '../../shared/context-window';
+import { readProviderSkills, type ChatProviderSkills } from '../../shared/chat/provider-skills';
 import { useMemo } from 'react';
 import { create } from 'zustand';
 import { useShallow } from 'zustand/react/shallow';
@@ -265,6 +266,8 @@ export interface ChatViewState {
   levelNames: Partial<Record<PermissionLevel, string>>;
   /** MCP servers the CLI reported at session start; null when it doesn't report them. */
   mcpServers: ChatMcpServer[] | null;
+  /** A passive snapshot, bound to the exact chat run; not proof of execution. */
+  providerSkills: (ChatProviderSkills & { sessionId: string; reportedAt: number }) | null;
   queued: QueuedMessage[];
   /** Native messages the driver didn't recognize (protocol drift), by name. */
   protocolUnknown: Record<string, number>;
@@ -312,6 +315,7 @@ export function createChatViewState(agentId: string): ChatViewState {
     efforts: [],
     levelNames: {},
     mcpServers: null,
+    providerSkills: null,
     queued: [],
     protocolUnknown: {},
     workspaceRevision: 0,
@@ -522,6 +526,17 @@ export function reduceChatEvent(prev: ChatViewState | undefined, event: ChatEven
   const last = base.lastSeq[event.sessionId];
   if (last !== undefined && event.seq <= last) return base;
 
+  if (event.type === 'session_info' && event.data.providerSkills !== undefined) {
+    const report = readProviderSkills(event.data.providerSkills);
+    // A passive report cannot create/reactivate a shared session or change its
+    // provider/driver. A root init can authoritatively change the native id
+    // within that current shared session (e.g. resume fallback).
+    if (!report || base.sessionId !== event.sessionId || base.provider !== report.provider
+      || base.driver !== report.driver || !Number.isFinite(event.ts) || Math.abs(event.ts) > 8.64e15
+      || event.ts < (base.sessionStartedAt ?? 0)
+      || event.data.nativeSessionId !== report.nativeSessionId) return base;
+  }
+
   if (base.sessionId !== null && base.sessionId !== event.sessionId) {
     // A late end/message from a retired session must not replace the live view.
     // A fresh start can reactivate a previously seen session when resuming it.
@@ -560,6 +575,7 @@ export function reduceChatEvent(prev: ChatViewState | undefined, event: ChatEven
         efforts: [],
         levelNames: {},
         mcpServers: null,
+        providerSkills: null,
         state: 'idle',
         // A new run: whatever the last one left open (the app quit mid-turn,
         // with no session_ended) is over. Nothing still streams or waits.
@@ -587,6 +603,9 @@ export function reduceChatEvent(prev: ChatViewState | undefined, event: ChatEven
         efforts: d.efforts ?? state.efforts,
         levelNames: d.levelNames ?? state.levelNames,
         mcpServers: d.mcpServers ?? state.mcpServers,
+        providerSkills: d.providerSkills !== undefined
+          ? { ...readProviderSkills(d.providerSkills)!, sessionId: event.sessionId, reportedAt: event.ts }
+          : d.nativeSessionId !== undefined && d.nativeSessionId !== state.nativeSessionId ? null : state.providerSkills,
         contextLimits: d.contextLimits ?? state.contextLimits,
         capabilities: d.capabilities
           ? { ...(state.capabilities ?? MINIMAL_CHAT_CAPABILITIES), ...d.capabilities }

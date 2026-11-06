@@ -216,6 +216,7 @@ describe.each<ClaudeChatDriverId>(['claude_agent_sdk', 'claude_stream_json'])('C
     expect(drafts.of('session_info').filter((d) => d.data.nativeSessionId).map((d) => d.data)).toEqual([{
       nativeSessionId: 'fake-session-1', cliVersion: '2.1.300-fake', model: 'claude-fake-1',
       mcpServers: [{ name: 'clubhouse', status: 'connected' }, { name: 'github', status: 'needs_auth' }],
+      providerSkills: { provider: 'claude-code', driver: id, source: 'system/init', nativeSessionId: 'fake-session-1', names: [] },
     }]);
     // The CLI's model id maps onto its menu row, so the chip names it.
     expect(drafts.of('model_changed').map((d) => d.data.modelId)).toEqual(['fake']);
@@ -507,6 +508,35 @@ describe('ClaudeChatDriverSession mapping (scripted transport)', () => {
   const result = (over: Partial<Extract<ClaudeChatEventBody, { kind: 'turn_ended' }>> = {}): ClaudeChatEventBody =>
     ({ kind: 'turn_ended', subtype: 'success', isError: false, ...over });
   const settle = () => new Promise((r) => setImmediate(r));
+
+  it('passively forwards root init skills, unknown and explicit empty, never commands or subagent lists', async () => {
+    const { transport, session, drafts } = await scripted();
+    expect(drafts.of('session_info').some((d) => d.data.providerSkills)).toBe(false);
+    const normalizer = new ClaudeNormalizer();
+    transport.sessionId = 'native';
+    for (const skills of [['review'], undefined, ['review', 3], []]) {
+      const [event] = normalizer.normalize({ type: 'system', subtype: 'init', session_id: 'native', skills });
+      transport.emit(event);
+      await settle();
+    }
+    const reports = drafts.of('session_info').filter((d) => d.data.providerSkills).map((d) => d.data.providerSkills);
+    expect(reports.map((r) => r?.names)).toEqual([['review'], null, null, []]);
+    expect(reports[0]).toEqual({ provider: 'claude-code', driver: 'claude_agent_sdk', source: 'system/init', nativeSessionId: 'native', names: ['review'] });
+    transport.sessionId = 'replacement-native';
+    transport.emit(normalizer.normalize({ type: 'system', subtype: 'init', session_id: 'replacement-native', model: 'replacement-model', skills: ['replacement-skill'] })[0]);
+    await settle();
+    expect(drafts.of('session_info').find((d) => d.data.nativeSessionId === 'replacement-native')?.data).toMatchObject({
+      nativeSessionId: 'replacement-native', model: 'replacement-model',
+      providerSkills: { nativeSessionId: 'replacement-native', names: ['replacement-skill'] },
+    });
+    const count = drafts.all.length;
+    transport.emit(normalizer.normalize({ type: 'system', subtype: 'init', session_id: 'child', parent_tool_use_id: 'task', skills: ['child-only'] })[0]);
+    await settle();
+    expect(drafts.all).toHaveLength(count);
+    expect(transport.sent).toEqual([]);
+    expect(transport.calls).toEqual([]);
+    await session.close();
+  });
 
   const menuRows = [
     { value: 'opus', displayName: 'Opus 5.5', resolvedModel: 'claude-opus-5-5', efforts: ['low', 'high'] },

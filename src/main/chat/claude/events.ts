@@ -44,6 +44,10 @@ export type ClaudeChatEventBody =
       cliVersion: string;
       tools: string[];
       slashCommands: string[];
+      /** Only a root init describes the main session's skill list. */
+      parentToolCallId?: string;
+      /** Missing/malformed is unknown; an explicit [] reports none. */
+      skills?: string[] | null;
       apiKeySource?: string;
       capabilities?: unknown;
       /** MCP servers from init's `mcp_servers`; absent when the CLI didn't send the field. */

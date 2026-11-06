@@ -1343,6 +1343,86 @@ describe('MCP servers on session_info', () => {
   });
 });
 
+describe('passive provider skills on session_info', () => {
+  const report = (names: string[] | null = ['review']): NonNullable<ChatEventDataMap['session_info']['providerSkills']> => ({
+    provider: 'claude-code', driver: 'claude_agent_sdk', source: 'system/init', nativeSessionId: 'native', names,
+  });
+  const info = (names: string[] | null = ['review']): ChatEventDataMap['session_info'] => ({ nativeSessionId: 'native', providerSkills: report(names) });
+
+  it('keeps missing unknown, explicit empty distinct, and malformed replay metadata unknown', () => {
+    const ev = makeEmitter();
+    let state = fold([sessionStarted(ev)]);
+    expect(state.providerSkills).toBeNull();
+    state = fold([ev('session_info', info([]))], state);
+    expect(state.providerSkills).toMatchObject({ names: [], sessionId: 's1', reportedAt: 1002 });
+    state = fold([ev('session_info', { model: 'opus' })], state);
+    expect(state.providerSkills?.names).toEqual([]);
+    state = fold([ev('session_info', info(null))], state);
+    expect(state.providerSkills?.names).toBeNull();
+    state = fold([ev('session_info', { nativeSessionId: 'native', providerSkills: { ...report(), names: ['valid', 42] } as unknown as ReturnType<typeof report> })], state);
+    expect(state.providerSkills?.names).toBeNull();
+  });
+
+  it('resets on repeated start, provider/driver change and native session change', () => {
+    const ev = makeEmitter();
+    const previous = fold([sessionStarted(ev), ev('session_info', info())]);
+    expect(fold([sessionStarted(ev)], previous).providerSkills).toBeNull();
+    expect(fold([ev('session_info', { nativeSessionId: 'other-native' })], previous).providerSkills).toBeNull();
+    const codex = fold([sessionStarted(ev, 's1', { provider: 'codex', driver: 'codex_app_server' })], previous);
+    const late = ev('session_info', info());
+    expect(reduceChatEvent(codex, late)).toBe(codex);
+    const stream = fold([sessionStarted(ev, 's1', { driver: 'claude_stream_json' })], previous);
+    expect(reduceChatEvent(stream, ev('session_info', info()))).toBe(stream);
+  });
+
+  it('rejects same-agent old-session reports, even unseen seq1, without reactivating them', () => {
+    const ev = makeEmitter();
+    const state = fold([sessionStarted(ev), ev('session_info', info()), sessionStarted(ev, 's2', { nativeSessionId: 'new-native' })]);
+    for (const sid of ['s1', 'unseen-old']) {
+      const stale = { ...ev('session_info', info(), { sessionId: sid }), ts: 9999 };
+      expect(reduceChatEvent(state, stale)).toBe(state);
+    }
+    expect(reduceChatEvent(undefined, makeEmitter()('session_info', info())).providerSkills).toBeNull();
+  });
+
+  it('accepts an authoritative root native-identity transition within the current shared session', () => {
+    const ev = makeEmitter();
+    const state = fold([sessionStarted(ev), ev('session_info', info())]);
+    const transition = ev('session_info', {
+      nativeSessionId: 'replacement-native', cliVersion: 'new-version', model: 'new-model',
+      providerSkills: { ...report(['new-skill']), nativeSessionId: 'replacement-native' },
+    });
+    const next = reduceChatEvent(state, transition);
+    expect(next).toMatchObject({ nativeSessionId: 'replacement-native', cliVersion: 'new-version', model: 'new-model' });
+    expect(next.providerSkills).toEqual({ ...report(['new-skill']), nativeSessionId: 'replacement-native', sessionId: 's1', reportedAt: transition.ts });
+    const stale = { ...ev('session_info', info(), { sessionId: 'old-shared-session' }), ts: transition.ts + 1 };
+    expect(reduceChatEvent(next, stale)).toBe(next);
+    expect(reduceChatEvent(next, transition)).toBe(next);
+  });
+
+  it('rejects invalid report dates before they can reach the session card', () => {
+    const ev = makeEmitter();
+    const state = fold([sessionStarted(ev)]);
+    for (const ts of [NaN, Infinity, 8.64e15 + 1]) {
+      expect(reduceChatEvent(state, { ...ev('session_info', info()), ts })).toBe(state);
+    }
+  });
+
+  it('replays an ended session as an aged snapshot, deduplicates overlap and clears it at the next session', () => {
+    const ev = makeEmitter();
+    const start = sessionStarted(ev);
+    const observed = ev('session_info', info());
+    const ended = ev('session_ended', { reason: 'stopped' });
+    const history = fold([start, observed, ended]);
+    expect(history.providerSkills).toEqual({ ...report(), sessionId: 's1', reportedAt: observed.ts });
+    expect(history.state).toBe('sleeping');
+    expect(reduceChatEvent(history, observed)).toBe(history);
+    const next = fold([sessionStarted(ev, 's2')], history);
+    expect(next.providerSkills).toBeNull();
+    expect(fold([observed], next)).toBe(next);
+  });
+});
+
 describe('reduceChatEvent: context compaction', () => {
   let ev: ReturnType<typeof makeEmitter>;
   beforeEach(() => { ev = makeEmitter(); });

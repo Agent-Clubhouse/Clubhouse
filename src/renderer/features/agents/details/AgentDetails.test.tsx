@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { act, fireEvent, render, renderHook, screen, waitFor } from '@testing-library/react';
 import type { Agent } from '../../../../shared/types';
 import { useProjectStore } from '../../../stores/projectStore';
+import { createChatViewState } from '../../../stores/chatStore';
 import { AgentDetails, BRANCH_REFRESH_MS, relativeFolder, useBranchChanges } from './AgentDetails';
 import { DetailsToggle } from './DetailsToggle';
 import { useAgentDetailsStore } from './detailsStore';
@@ -26,6 +27,22 @@ afterEach(() => {
 });
 
 describe('AgentDetails in the terminal', () => {
+  it('exposes passive chat skill reports in a separate details card', async () => {
+    const chat = {
+      ...createChatViewState(agent.id), sessionId: 'shared-session', nativeSessionId: 'native-session',
+      provider: 'claude-code', driver: 'claude_agent_sdk' as const,
+      providerSkills: {
+        provider: 'claude-code' as const, driver: 'claude_agent_sdk' as const, source: 'system/init' as const,
+        nativeSessionId: 'native-session', sessionId: 'shared-session', reportedAt: 1000, names: ['review'],
+      },
+    };
+    render(<AgentDetails agent={agent} chat={chat} />);
+    expect(screen.getByTestId('details-card-provider-skills-summary')).toHaveTextContent('1 reported');
+    fireEvent.click(screen.getByTestId('details-card-provider-skills-toggle'));
+    expect(screen.getByText('review')).toBeInTheDocument();
+    expect(await screen.findByText('1 file')).toBeInTheDocument();
+  });
+
   it('fills the cards it can and leaves out the ones the terminal can\'t fill', async () => {
     render(<AgentDetails agent={agent} />);
     expect(await screen.findByText('1 file')).toBeInTheDocument();
