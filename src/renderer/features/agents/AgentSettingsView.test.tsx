@@ -500,6 +500,71 @@ describe('AgentSettingsView', () => {
       });
     });
 
+    it('keeps unknown runtime disabled after load failure and permits an explicit retry', async () => {
+      window.clubhouse.agent.getDurableConfig = vi.fn().mockRejectedValue(new Error('read failed'));
+      renderSettings();
+      const retry = await screen.findByRole('button', { name: 'Retry loading runtime' });
+      expect(screen.getByLabelText('Runtime')).toBeDisabled();
+      vi.mocked(window.clubhouse.agent.getDurableConfig).mockResolvedValue({ runtimeMode: 'terminal' } as never);
+      fireEvent.click(retry);
+      await waitFor(() => expect(screen.getByLabelText('Runtime')).not.toBeDisabled());
+      expect(screen.getByLabelText('Runtime')).toHaveValue('terminal');
+    });
+
+    it('ignores a previous target configuration arriving after the current target loads', async () => {
+      let resolveOld!: (value: unknown) => void;
+      window.clubhouse.agent.getDurableConfig = vi.fn().mockImplementation((_path, id) => id === 'agent-1'
+        ? new Promise((resolve) => { resolveOld = resolve; }) : Promise.resolve({ runtimeMode: 'chat' }));
+      const view = renderSettings();
+      await waitFor(() => expect(window.clubhouse.agent.getDurableConfig).toHaveBeenCalled());
+      const other = { ...defaultAgent, id: 'agent-2' };
+      useAgentStore.setState({ agents: { [other.id]: other } });
+      view.rerender(<AgentSettingsView agent={other} />);
+      await waitFor(() => expect(screen.getByLabelText('Runtime')).not.toBeDisabled());
+      expect(screen.getByLabelText('Runtime')).toHaveValue('chat');
+      await act(async () => resolveOld({ runtimeMode: 'terminal' }));
+      expect(screen.getByLabelText('Runtime')).toHaveValue('chat');
+    });
+
+    it('rolls back a failed runtime save, prevents overlap, and permits retry', async () => {
+      window.clubhouse.agent.getDurableConfig = vi.fn().mockResolvedValue({ runtimeMode: 'terminal' } as never);
+      let reject!: (error: Error) => void;
+      const update = vi.fn().mockImplementationOnce(() => new Promise<void>((_resolve, fail) => { reject = fail; })).mockResolvedValue(undefined);
+      window.clubhouse.agent.updateDurableConfig = update;
+      renderSettings();
+      const select = await screen.findByLabelText('Runtime');
+      await waitFor(() => expect(select).toHaveValue('terminal'));
+      fireEvent.change(select, { target: { value: 'chat' } });
+      expect(select).toBeDisabled();
+      fireEvent.change(select, { target: { value: '' } });
+      expect(update).toHaveBeenCalledTimes(1);
+      await act(async () => reject(new Error('synthetic failure')));
+      expect(select).toHaveValue('terminal');
+      expect(screen.getByRole('alert')).toHaveTextContent("Couldn't save that setting");
+      fireEvent.change(select, { target: { value: 'chat' } });
+      await waitFor(() => expect(select).not.toBeDisabled());
+      expect(select).toHaveValue('chat');
+      expect(screen.queryByText(/Couldn't save that setting/)).not.toBeInTheDocument();
+    });
+
+    it('ignores a rejected save after switching to another target', async () => {
+      window.clubhouse.agent.getDurableConfig = vi.fn().mockImplementation(async (_path, id) => ({ runtimeMode: id === 'agent-1' ? 'terminal' : 'chat' }));
+      let reject!: (error: Error) => void;
+      window.clubhouse.agent.updateDurableConfig = vi.fn(() => new Promise<void>((_resolve, fail) => { reject = fail; }));
+      const view = renderSettings();
+      const select = await screen.findByLabelText('Runtime');
+      await waitFor(() => expect(select).toHaveValue('terminal'));
+      fireEvent.change(select, { target: { value: 'chat' } });
+      const other = { ...defaultAgent, id: 'agent-2' };
+      useAgentStore.setState({ agents: { [other.id]: other } });
+      view.rerender(<AgentSettingsView agent={other} />);
+      await waitFor(() => expect(screen.getByLabelText('Runtime')).not.toBeDisabled());
+      expect(screen.getByLabelText('Runtime')).toHaveValue('chat');
+      await act(async () => reject(new Error('old target failure')));
+      expect(screen.getByLabelText('Runtime')).toHaveValue('chat');
+      expect(screen.queryByText(/Couldn't save that setting/)).not.toBeInTheDocument();
+    });
+
     it('is disabled with a tooltip while the agent is running', async () => {
       window.clubhouse.app.getExperimentalSettings = vi.fn().mockResolvedValue({ chat: true });
       window.clubhouse.app.isPreviewEligible = vi.fn().mockResolvedValue(true);
