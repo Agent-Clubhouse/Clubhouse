@@ -64,7 +64,7 @@ jobs:
           CLUBHOUSE_CHAT_HANDSHAKE_SMOKE: '1'
           CLUBHOUSE_CHAT_HANDSHAKE_PROVIDERS: ${{ matrix.provider }}
           CLUBHOUSE_CHAT_HANDSHAKE_REPORT: ${{ runner.temp }}/chat-handshake.json
-        run: npx vitest run src/main/chat/handshake-smoke.test.ts
+        run: npx vitest run --config vitest.live-qa.config.ts src/main/chat/handshake-smoke.test.ts
 
       - name: Dispatcher flow against a local fake model (no paid requests)
         shell: bash
@@ -73,7 +73,7 @@ jobs:
           CLUBHOUSE_FAKE_MODEL_PROVIDERS: ${{ matrix.provider }}
           CLUBHOUSE_FAKE_MODEL_REPORT: ${{ runner.temp }}/fake-model.json
         run: |
-          CLUBHOUSE_FAKE_MODEL_BIN_DIR="$(npm prefix -g)/bin" npx vitest run src/main/chat/fake-model-smoke.test.ts
+          CLUBHOUSE_FAKE_MODEL_BIN_DIR="$(npm prefix -g)/bin" npx vitest run --config vitest.live-qa.config.ts src/main/chat/fake-model-smoke.test.ts
 
       - name: Publish handshake summary
         if: always()

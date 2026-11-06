@@ -123,6 +123,7 @@ const report = {
   protocol,
   argv: opts.cliArgs,
   env: Object.fromEntries(REPORTED_ENV.map((name) => [name, process.env[name] ?? null])),
+  credentialKeysPresent: ['GH_TOKEN', 'GITHUB_TOKEN', 'COPILOT_GITHUB_TOKEN', 'CLUBHOUSE_CREDENTIAL_SENTINEL'].filter((key) => key in process.env),
   total: entries.length,
   consumed: 0,
   complete: false,
