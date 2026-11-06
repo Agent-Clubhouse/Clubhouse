@@ -9,6 +9,7 @@ const preview = vi.hoisted(() => ({ value: true }));
 vi.mock('./preview-eligible', () => ({ isPreviewEligible: () => preview.value }));
 const stored = vi.hoisted(() => ({ value: {} as Record<string, unknown> }));
 vi.mock('./settings-store', () => ({
+  peekStoredSettingsSync: () => 'missing',
   createSettingsStore: () => ({ get: () => stored.value, save: async (v: Record<string, unknown>) => { stored.value = v; } }),
 }));
 
