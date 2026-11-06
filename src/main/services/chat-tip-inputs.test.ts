@@ -33,8 +33,10 @@ it('keeps project read uncertainty after quarantine and accepts a complete backu
   expect(restarted.isChatTipProjectReadUncertain()).toBe(true);
   fs.writeFileSync(path.join(base, 'projects.json'), '{bad');
   fs.writeFileSync(path.join(base, 'projects.json.bak'), JSON.stringify({ version: 1, projects: [] }));
-  await restarted.list();
-  expect(restarted.isChatTipProjectReadUncertain()).toBe(false);
+  vi.resetModules();
+  const recovered = await import('./project-store');
+  await recovered.list();
+  expect(recovered.isChatTipProjectReadUncertain()).toBe(false);
 });
 
 it('keeps agent read uncertainty through a cached empty result and accepts a complete backup', async () => {

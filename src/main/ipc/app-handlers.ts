@@ -566,7 +566,8 @@ export function registerAppHandlers(): void {
   });
 
   ipcMain.handle(IPC.APP.IS_CHAT_TIP_READ_UNCERTAIN, () =>
-    experimentalSettings.savedSettingsUnreadable() || projectStore.isChatTipProjectReadUncertain() ||
+    experimentalSettings.savedSettingsUnreadable() || experimentalSettings.isChatTipExperimentalReadUncertain() ||
+    projectStore.isChatTipProjectReadUncertain() ||
     agentConfig.isChatTipAgentReadUncertain() || chatRuntimeSettings.isChatTipRuntimeReadUncertain());
 
   ipcMain.handle(IPC.APP.IS_EXPERIMENTAL_SETTINGS_UNREADABLE, () => experimentalSettings.savedSettingsUnreadable());

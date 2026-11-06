@@ -18,7 +18,7 @@ beforeEach(() => {
   const values = new Map<string, string>();
   vi.stubGlobal('localStorage', { getItem: (k: string) => values.get(k) ?? null, setItem: (k: string, v: string) => values.set(k, v) });
   vi.stubGlobal('window', { clubhouse: {
-    app: { isChatTipReadUncertain: async () => false, isExperimentalSettingsUnreadable: async () => flags.savedSettingsUnreadable(), getExperimentalSettings: async () => flags.getSettingsForRenderer() },
+    app: { isChatTipReadUncertain: async () => flags.isChatTipExperimentalReadUncertain(), isExperimentalSettingsUnreadable: async () => flags.savedSettingsUnreadable(), getExperimentalSettings: async () => flags.getSettingsForRenderer() },
     chat: { getRuntimeSettings: async () => ({}), getAgentRuntime: async () => ({ chat: true }) },
     project: { list: async () => [{ path: '/synthetic' }] },
     agent: { listDurable: async () => [{ id: 'a1' }] },
@@ -47,4 +47,20 @@ it('keeps the decision pending through a corrupt flags launch, then shows once a
   resetAllSettingsStoresForTests(); // another launch
   await showChatDefaultTip();
   expect(fixture.toast).toHaveBeenCalledTimes(1);
+});
+
+
+it('does not decide using cached defaults after a transient flags read failure', async () => {
+  const file = path.join(fixture.dir, 'experimental-settings.json');
+  fs.writeFileSync(file, '{broken');
+  flags.getStoredSettings();
+  fs.writeFileSync(file, JSON.stringify({ chat: false }));
+  await showChatDefaultTip();
+  expect(fixture.toast).not.toHaveBeenCalled();
+  expect(localStorage.getItem(CHAT_TIP_RULED_OUT_KEY)).toBeNull();
+  expect(localStorage.getItem(CHAT_MESSAGE_SHOWN_KEY)).toBeNull();
+  resetAllSettingsStoresForTests();
+  await showChatDefaultTip();
+  expect(fixture.toast).not.toHaveBeenCalled();
+  expect(localStorage.getItem(CHAT_TIP_RULED_OUT_KEY)).toBe('saved_choice');
 });
