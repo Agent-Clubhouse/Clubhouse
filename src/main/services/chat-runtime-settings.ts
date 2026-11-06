@@ -3,7 +3,7 @@
  * choice. With the flag saved off, every agent runs in the terminal.
  */
 
-import { createSettingsStore, peekStoredSettingsSync } from './settings-store';
+import { createSettingsStore } from './settings-store';
 import * as experimentalSettings from './experimental-settings';
 import { isPreviewEligible } from './preview-eligible';
 import { COPILOT_SDK_FLAG, type AgentRuntimeMode, type ChatDriverId, type ChatRuntimeSettings } from '../../shared/chat';
@@ -14,19 +14,31 @@ export const CHAT_EXPERIMENTAL_FLAG = 'chat';
 /** Mode a provider gets when the flag is on and the user hasn't chosen. */
 export const DEFAULT_CHAT_PROVIDER_MODE: AgentRuntimeMode = 'chat';
 
-const store = createSettingsStore<ChatRuntimeSettings>('chat-runtime-settings.json', {}, undefined, { audit: { key: 'chat_runtime' } });
-
 let chatTipRuntimeReadUncertain = false;
-export function isChatTipRuntimeReadUncertain(): boolean { return chatTipRuntimeReadUncertain; }
-export function getSettings(): ChatRuntimeSettings {
-  const disk = peekStoredSettingsSync('chat-runtime-settings.json');
-  if (disk === 'unreadable' || (disk !== 'missing' && Object.values(disk).some((value) =>
-    !value || typeof value !== 'object' || Array.isArray(value) ||
-    ('mode' in value && value.mode !== 'chat' && value.mode !== 'terminal')
-  ))) chatTipRuntimeReadUncertain = true;
-  return store.get();
+function validRuntimeSettings(value: unknown): boolean {
+  return !!value && typeof value === 'object' && !Array.isArray(value) && Object.values(value).every((entry) =>
+    !!entry && typeof entry === 'object' && !Array.isArray(entry) &&
+    (!('mode' in entry) || entry.mode === 'chat' || entry.mode === 'terminal')
+  );
 }
-export const saveSettings = store.save;
+const store = createSettingsStore<ChatRuntimeSettings>('chat-runtime-settings.json', {}, undefined, {
+  audit: { key: 'chat_runtime' },
+  onLoad: (result) => {
+    if ('error' in result) {
+      chatTipRuntimeReadUncertain = (result.error as NodeJS.ErrnoException)?.code !== 'ENOENT';
+      return;
+    }
+    try { chatTipRuntimeReadUncertain = !validRuntimeSettings(JSON.parse(result.raw)); }
+    catch { chatTipRuntimeReadUncertain = true; } // telemetry-exempt: the toast defers
+  },
+});
+
+export function isChatTipRuntimeReadUncertain(): boolean { return chatTipRuntimeReadUncertain; }
+export const getSettings = store.get;
+export async function saveSettings(settings: ChatRuntimeSettings): Promise<void> {
+  await store.save(settings);
+  chatTipRuntimeReadUncertain = !validRuntimeSettings(settings);
+}
 
 /** Chat is on in every build unless the flag is saved off, or the file that may say so can't be read. */
 export function isChatEnabled(): boolean {

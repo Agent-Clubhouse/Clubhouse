@@ -142,6 +142,8 @@ export function createSettingsStore<T>(
   migrate?: (raw: Record<string, unknown>) => T,
   options?: {
     mode?: number;
+    /** Observe the actual initial load, including a fallback to defaults. */
+    onLoad?: (result: { raw: string } | { error: unknown }) => void;
     audit?: SettingsStoreAudit;
     /**
      * After a failed write, go back to the value before it. Off by default: a
@@ -179,7 +181,9 @@ export function createSettingsStore<T>(
       const raw = fs.readFileSync(filePath, 'utf-8');
       cachedSettings = parseSettings(raw);
       cacheLoaded = true;
+      options?.onLoad?.({ raw });
     } catch (err) {
+      options?.onLoad?.({ error: err });
       if (fs.existsSync(filePath)) {
         persist.recovery('settings', 'reset_to_default');
         // A parser's message quotes the file, which stays out of the log.

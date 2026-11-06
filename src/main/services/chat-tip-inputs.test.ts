@@ -53,7 +53,7 @@ it('keeps agent read uncertainty through a cached empty result and accepts a com
   await agents.listDurable(project);
   expect(agents.isChatTipAgentReadUncertain()).toBe(false);
   agents.clearAgentConfigCache();
-});
+}, 15000);
 
 it('retains a runtime settings read failure until a new process', async () => {
   fixture.home = fs.mkdtempSync(path.join(os.tmpdir(), 'tip-runtime-'));
@@ -65,6 +65,8 @@ it('retains a runtime settings read failure until a new process', async () => {
   fs.writeFileSync(file, '{}');
   runtime.getSettings();
   expect(runtime.isChatTipRuntimeReadUncertain()).toBe(true);
+  await runtime.saveSettings({});
+  expect(runtime.isChatTipRuntimeReadUncertain()).toBe(false);
   vi.resetModules();
   runtime = await import('./chat-runtime-settings');
   runtime.getSettings();

@@ -2001,3 +2001,13 @@ describe('writeIconFile', () => {
     expect(fsp.unlink).not.toHaveBeenCalled();
   });
 });
+
+it('retains uncertainty when the registry becomes unreadable after existence is checked', async () => {
+  const { isChatTipProjectReadUncertain } = await import('./project-store');
+  vi.mocked(pathExists).mockImplementation(async (p) => String(p) === STORE_PATH);
+  vi.mocked(fsp.readFile).mockRejectedValueOnce(Object.assign(new Error('read failed'), { code: 'EACCES' }));
+  vi.mocked(fsp.rename).mockResolvedValue(undefined);
+  vi.mocked(fsp.readdir).mockResolvedValue([]);
+  await list();
+  expect(isChatTipProjectReadUncertain()).toBe(true);
+});

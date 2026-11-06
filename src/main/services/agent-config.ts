@@ -393,12 +393,18 @@ function isMissingFileError(err: unknown): boolean {
  * and is rethrown so it never turns into a cached — and later persisted — empty
  * agent list while the file on disk is still intact.
  */
-async function readConfigFileIfPresent(filePath: string): Promise<string | null> {
-  if (!(await pathExists(filePath))) return null;
+async function readConfigFileIfPresent(filePath: string, uncertain?: () => void): Promise<string | null> {
+  if (!(await pathExists(filePath))) {
+    if (uncertain) {
+      try { await fsp.readFile(filePath, 'utf-8'); uncertain(); }
+      catch (err) { if (!isMissingFileError(err)) uncertain(); } // telemetry-exempt: retained for the tip
+    }
+    return null;
+  }
   try {
     return await fsp.readFile(filePath, 'utf-8');
   } catch (err) {
-    if (isMissingFileError(err)) return null;
+    if (isMissingFileError(err)) { uncertain?.(); return null; }
     appLog('core:agent-config', 'error', 'Failed to read agent config file', {
       meta: { filePath, error: err instanceof Error ? err.message : String(err) },
     });
@@ -410,27 +416,7 @@ async function readConfigFileIfPresent(filePath: string): Promise<string | null>
 const chatTipUncertainProjects = new Set<string>();
 export function isChatTipAgentReadUncertain(): boolean { return chatTipUncertainProjects.size > 0; }
 
-async function noteChatTipAgentRead(projectPath: string): Promise<void> {
-  let failed = false;
-  for (const file of [agentsConfigPath(projectPath), agentsBackupPath(projectPath)]) {
-    try {
-      const raw: unknown = JSON.parse(await fsp.readFile(file, 'utf-8'));
-      if (Array.isArray(raw) && (raw.length === 0 || raw.some(isAgentRecord))) {
-        if (raw.every(isAgentRecord)) chatTipUncertainProjects.delete(projectPath);
-        else chatTipUncertainProjects.add(projectPath);
-        return;
-      }
-      failed = true;
-    } catch (err) {
-      // telemetry-exempt: retained as an uncertain toast decision.
-      if ((err as NodeJS.ErrnoException).code !== 'ENOENT') failed = true;
-    }
-  }
-  if (failed) chatTipUncertainProjects.add(projectPath);
-}
-
 async function readAgentsFromDisk(projectPath: string): Promise<DurableAgentConfig[]> {
-  await noteChatTipAgentRead(projectPath);
   const configPath = agentsConfigPath(projectPath);
   const backupPath = agentsBackupPath(projectPath);
 
@@ -444,7 +430,8 @@ async function readAgentsFromDisk(projectPath: string): Promise<DurableAgentConf
   let droppedInvalid = false;
 
   // Try to read main config
-  const mainRaw = await readConfigFileIfPresent(configPath);
+  const markUncertain = () => { chatTipUncertainProjects.add(projectPath); };
+  const mainRaw = await readConfigFileIfPresent(configPath, markUncertain);
   if (mainRaw !== null) {
     try {
       const parsed: unknown = JSON.parse(mainRaw);
@@ -454,6 +441,8 @@ async function readAgentsFromDisk(projectPath: string): Promise<DurableAgentConf
           agents = valid;
           source = 'main';
           droppedInvalid = valid.length !== parsed.length;
+          if (droppedInvalid) chatTipUncertainProjects.add(projectPath);
+          else chatTipUncertainProjects.delete(projectPath);
           if (droppedInvalid) {
             appLog('core:agent-config', 'warn', `Dropped ${parsed.length - valid.length} invalid record(s) from agents.json`, {
               meta: { configPath },
@@ -484,11 +473,18 @@ async function readAgentsFromDisk(projectPath: string): Promise<DurableAgentConf
 
   // Main file missing or corrupt — fall back to backup
   if (!agents) {
-    const backupRaw = await readConfigFileIfPresent(backupPath);
+    if (mainRaw !== null) chatTipUncertainProjects.add(projectPath);
+    const backupRaw = await readConfigFileIfPresent(backupPath, markUncertain);
     if (backupRaw !== null) {
       try {
         const parsed: unknown = JSON.parse(backupRaw);
         const valid = Array.isArray(parsed) ? parsed.filter(isAgentRecord) : [];
+        if (valid.length > 0 || (Array.isArray(parsed) && parsed.length === 0)) {
+          if (Array.isArray(parsed) && parsed.length === valid.length) chatTipUncertainProjects.delete(projectPath);
+          else chatTipUncertainProjects.add(projectPath);
+        } else {
+          chatTipUncertainProjects.add(projectPath);
+        }
         if (valid.length > 0) {
           agents = valid;
           source = 'backup';
@@ -505,6 +501,7 @@ async function readAgentsFromDisk(projectPath: string): Promise<DurableAgentConf
           await writeAgentsToDiskSkippingBackup(projectPath, agents);
         }
       } catch (backupErr) {
+        chatTipUncertainProjects.add(projectPath);
         persist.recovery('agents', 'backup_corrupt');
         appLog('core:agent-config', 'error', 'Backup agents.json.bak is also corrupt', {
           meta: { backupPath, error: backupErr instanceof Error ? backupErr.message : String(backupErr) },
