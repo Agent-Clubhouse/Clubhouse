@@ -22,7 +22,8 @@ You can change any of these in **Settings > Keyboard shortcuts**. A binding you 
 | `⌘1` | Agents tab |
 | `⌘2` to `⌘9` | The other title-bar tabs, in order |
 | `⌥⌘1` to `⌥⌘9` | Switch to agent 1 to 9, in sidebar order |
-| `⇧⌘N` | New quick agent: opens the active project's start page with the box focused |
+| `⌘N` | New quick agent |
+| `⇧⌘N` | New agent, with Durable selected |
 | `⇧⌘T` | Focus the active agent's CLI view, if typing stops reaching it |
 
 There are no shortcuts to switch projects by number. Use `⌘K` and type `/` with part of the project name.

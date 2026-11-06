@@ -58,6 +58,19 @@ describe('palette in the new shell', () => {
     expect(useAgentStore.getState().activeAgentId).toBe(ra);
   });
 
+  it('shows separate agent shortcuts and opens the selected kind', () => {
+    const list = items();
+    const quick = list.find((i) => i.id === 'action:new-quick-agent')!;
+    const durable = list.find((i) => i.id === 'action:new-agent')!;
+    expect(quick.shortcut).toBeTruthy();
+    expect(durable.shortcut).toBeTruthy();
+    expect(quick.shortcut).not.toEqual(durable.shortcut);
+    act(() => quick.execute());
+    expect(useChromeStore.getState().newAgent?.kind).toBe('quick');
+    act(() => durable.execute());
+    expect(useChromeStore.getState().newAgent?.kind).toBe('durable');
+  });
+
   it('shows the ⌘N tab shortcut on tab commands', () => {
     const list = items();
     expect(list.find((i) => i.id === 'nav:agents')?.shortcut).toBeTruthy();
