@@ -32,7 +32,7 @@
  * already upload `test-results/` as artifacts.
  */
 
-import { execFileSync } from 'child_process';
+import { readProcessTable, type ProcessInfo, type ProcessTableResult } from './cleanup-process-table';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
@@ -96,53 +96,34 @@ export function recordElectronApp(pid: number | undefined, userDataDir?: string,
   }
 }
 
-function readLaunchRecords(paths?: CleanupPaths): LaunchRecord[] {
+type LaunchSnapshot = { kind: 'present'; bytes: Buffer; records: LaunchRecord[] }
+  | { kind: 'absent'; records: [] } | { kind: 'unknown' };
+
+/** Derive records from the same exact bytes later compared after enumeration. */
+function readLaunchSnapshot(paths?: CleanupPaths): LaunchSnapshot {
+  let bytes: Buffer;
   try {
-    return fs.readFileSync(pidFileOf(paths), 'utf-8')
+    bytes = fs.readFileSync(pidFileOf(paths));
+  } catch (error) {
+    return (error as NodeJS.ErrnoException).code === 'ENOENT' ? { kind: 'absent', records: [] } : { kind: 'unknown' };
+  }
+  try {
+    const records = bytes.toString('utf-8')
       .split('\n')
       .filter((line) => line.trim())
       .map((line) => JSON.parse(line) as LaunchRecord)
       .filter((r) => typeof r.pid === 'number');
+    return { kind: 'present', bytes, records };
   } catch {
-    return [];
+    return { kind: 'unknown' };
   }
 }
 
-interface ProcessInfo {
-  pid: number;
-  ppid: number;
-  command: string;
-}
-
-/** Snapshot the process table. Returns an empty list if it cannot be read. */
-function listProcesses(): ProcessInfo[] {
-  try {
-    if (process.platform === 'win32') {
-      const out = execFileSync(
-        'powershell.exe',
-        ['-NoProfile', '-Command',
-          'Get-CimInstance Win32_Process | Select-Object ProcessId,ParentProcessId,CommandLine | ConvertTo-Json -Compress'],
-        { encoding: 'utf-8', maxBuffer: 32 * 1024 * 1024 },
-      );
-      const parsed = JSON.parse(out) as Array<{ ProcessId: number; ParentProcessId: number; CommandLine: string | null }>;
-      return (Array.isArray(parsed) ? parsed : [parsed]).map((p) => ({
-        pid: p.ProcessId,
-        ppid: p.ParentProcessId,
-        command: p.CommandLine ?? '',
-      }));
-    }
-    const out = execFileSync('ps', ['-Ao', 'pid=,ppid=,command='], {
-      encoding: 'utf-8',
-      maxBuffer: 32 * 1024 * 1024,
-    });
-    return out.split('\n').flatMap((line) => {
-      const match = line.match(/^\s*(\d+)\s+(\d+)\s+(.*)$/);
-      if (!match) return [];
-      return [{ pid: Number(match[1]), ppid: Number(match[2]), command: match[3] }];
-    });
-  } catch {
-    return [];
-  }
+function compareLaunchSnapshots(before: LaunchSnapshot, current: LaunchSnapshot): 'same' | 'changed' | 'unknown' {
+  if (before.kind === 'unknown' || current.kind === 'unknown') return 'unknown';
+  if (before.kind !== current.kind) return 'changed';
+  if (before.kind === 'absent' || current.kind === 'absent') return 'same';
+  return before.bytes.equals(current.bytes) ? 'same' : 'changed';
 }
 
 /**
@@ -238,22 +219,52 @@ function removeStrayTempDirs(paths?: CleanupPaths): number {
 export interface SweepResult {
   killed: number;
   tempDirsRemoved: number;
+  /** Unknown enumeration never permits a kill, directory removal or state deletion. */
+  processTable?: 'complete' | 'timeout' | 'error' | 'invalid' | 'unreconciled';
+  recordState?: 'changed' | 'unknown';
 }
 
 /**
  * Kill Electron instances left over from this run and remove their temp dirs.
  * No-op in CI. Never throws — cleanup must not fail a run.
  */
-export function sweepE2EProcesses(paths?: CleanupPaths): SweepResult {
+export async function sweepE2EProcesses(paths?: CleanupPaths, query: () => Promise<ProcessTableResult> = readProcessTable): Promise<SweepResult> {
   const result: SweepResult = { killed: 0, tempDirsRemoved: 0 };
   if (!isLocalRun()) return result;
 
   try {
-    const records = readLaunchRecords(paths);
+    const launchSnapshot = readLaunchSnapshot(paths);
+    const stillCurrent = () => {
+      const status = compareLaunchSnapshots(launchSnapshot, readLaunchSnapshot(paths));
+      if (status === 'same') return true;
+      result.recordState = status;
+      console.warn('[e2e cleanup] launch state unavailable or changed; remaining sweep/state retained', { status });
+      return false;
+    };
+    if (launchSnapshot.kind === 'unknown') {
+      result.recordState = 'unknown';
+      console.warn('[e2e cleanup] launch state unavailable or changed; remaining sweep/state retained', { status: 'unknown' });
+      return result;
+    }
+    const records = launchSnapshot.records;
     const livePids = records.map((r) => r.pid).filter(isAlive);
 
     if (livePids.length > 0) {
-      const processes = listProcesses();
+      const snapshot = await query();
+      if (snapshot.ok === false) {
+        result.processTable = snapshot.reason;
+        // Fixed metadata only. No raw process table, command line, PID or paths.
+        console.warn('[e2e cleanup] process table unavailable; sweep/state retained', {
+          reason: snapshot.reason, elapsedMs: snapshot.elapsedMs,
+          cleanupRequested: snapshot.cleanupRequested, exitObserved: snapshot.exitObserved,
+        });
+        return result;
+      }
+      result.processTable = 'complete';
+      // A recorder can append while enumeration awaits. Do not kill or delete
+      // anything from this old snapshot if its exact source bytes changed.
+      if (!stillCurrent()) return result;
+      const processes = snapshot.processes;
       const byPid = new Map(processes.map((p) => [p.pid, p]));
       const candidates = withDescendants(livePids, processes);
 
@@ -272,11 +283,15 @@ export function sweepE2EProcesses(paths?: CleanupPaths): SweepResult {
       }
     }
 
+    if (!stillCurrent()) return result;
     for (const record of records) {
       if (record.userDataDir) removeTempDir(record.userDataDir, paths);
     }
     result.tempDirsRemoved = removeStrayTempDirs(paths);
 
+    // Detect a later write before removing state. This is not cross-process CAS:
+    // another local run may still append during the subsequent sync operations.
+    if (!stillCurrent()) return result;
     try {
       fs.rmSync(stateDirOf(paths), { recursive: true, force: true });
     } catch {

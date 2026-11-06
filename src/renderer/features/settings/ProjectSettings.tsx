@@ -10,7 +10,7 @@ import { EmojiPicker } from '../../components/EmojiPicker';
 import { computeCatalogDiff } from '../../../shared/wrapper-diff';
 import { pluginCommandRegistry } from '../../plugins/plugin-commands';
 import type { LaunchWrapperConfig, McpCatalogEntry, WrapperCatalogSnapshot } from '../../../shared/types';
-import { showConfirmDialog } from '../../plugins/PluginDialog';
+import { requestCloseProject } from '../projects/close-project';
 import { ConfirmDestructiveAction } from '../../components/ConfirmDestructiveAction';
 import { Spinner } from '../../components/Spinner';
 import {
@@ -513,10 +513,13 @@ function RemoveProjectSection({ projectId, projectPath, projectName }: { project
   const [showResetDialog, setShowResetDialog] = useState(false);
 
   const handleClose = async () => {
-    const { promise } = showConfirmDialog('Close this project? Project-specific settings may need to be reconfigured.');
-    if (!(await promise)) return;
-    toggleSettings();
-    removeProject(projectId);
+    await requestCloseProject(projectId, () => {
+      const current = useUIStore.getState();
+      if (current.explorerTab === 'settings' && current.settingsContext === projectId && current.settingsSubPage === 'project') {
+        // Leave this view at confirmation, before IPC. Its completion must never navigate.
+        useUIStore.setState({ explorerTab: current.previousExplorerTab || 'agents', previousExplorerTab: null });
+      }
+    });
   };
 
   const handleReset = async () => {
