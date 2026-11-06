@@ -75,3 +75,10 @@ first await, and the shared whole-file write path covers other settings writers.
 Receipts carry only closed status text, a registered driver id, a validated version
 and an opaque context hash; raw binary, prefix, environment and CLI diagnostics
 stay out of them.
+
+Project witness keys use normalized paths. Registration is validated before any
+renderer-selected project file is inspected. Fingerprints inspect only known
+regular files, reject inputs over 4 MiB, use bounded nonblocking reads, and refuse
+observed disappearance or dev/ino replacement after the initial lstat. These
+refusals are tested with synthetic interleavings; they do not prove atomic parent
+path confinement or protection against every out-of-process filesystem race.

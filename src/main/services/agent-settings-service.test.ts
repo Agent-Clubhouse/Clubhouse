@@ -641,6 +641,7 @@ describe('writeProjectAgentDefaults', () => {
     const saving = writeProjectAgentDefaults(PROJECT, { commandPrefix: 'export SYNTHETIC=1' });
     const settled = saving.then(() => 'saved', () => 'failed');
     expect(projectSettingsMutationState(PROJECT).pending).toBe(true);
+    expect(projectSettingsMutationState(PROJECT + '/.').pending).toBe(true);
     expect(projectSettingsMutationState(PROJECT).generation).toBeGreaterThan(before.generation);
     finish('{}');
     expect(await settled).toBe(fail ? 'failed' : 'saved');

@@ -20,17 +20,47 @@ import { binaryIdentity, driverHealthKey, probeDriver, recordDriverSuccess } fro
 import { evaluateCliVersion } from './chat-version-policy';
 
 const hash = (value: unknown): string => createHash('sha256').update(JSON.stringify(value) ?? 'undefined').digest('hex');
+export const MAX_HANDSHAKE_INPUT_BYTES = 4 * 1024 * 1024;
 function fileWitness(file: string): string {
-  try { return createHash('sha256').update(fs.readFileSync(file)).digest('hex'); }
-  catch (err) {
+  let observed: fs.Stats;
+  try { observed = fs.lstatSync(file); } catch (err) {
     if ((err as NodeJS.ErrnoException).code === 'ENOENT') return 'missing';
     throw new RetryContextError('Launch settings could not be inspected. Refresh before checking.');
   }
+  let fd: number | undefined;
+  try {
+    if (!observed.isFile()) throw new RetryContextError('Launch settings must be regular files.');
+    fd = fs.openSync(file, fs.constants.O_RDONLY | fs.constants.O_NONBLOCK | (fs.constants.O_NOFOLLOW ?? 0));
+    const before = fs.fstatSync(fd);
+    if (before.dev !== observed.dev || before.ino !== observed.ino) throw new RetryContextError('Launch settings were replaced during inspection.');
+    if (!before.isFile() || before.size > MAX_HANDSHAKE_INPUT_BYTES) throw new RetryContextError('Launch settings are not regular files or exceed the inspection limit.');
+    // A bounded read also detects growth after fstat without reading unbounded bytes.
+    const buffer = Buffer.alloc(before.size + 1);
+    let bytes = 0;
+    while (bytes < buffer.length) {
+      const n = fs.readSync(fd, buffer, bytes, buffer.length - bytes, bytes);
+      if (!n) break;
+      bytes += n;
+    }
+    const after = fs.fstatSync(fd);
+    if (bytes !== before.size || after.size !== before.size || after.mtimeMs !== before.mtimeMs) throw new RetryContextError('Launch settings changed during inspection.');
+    return createHash('sha256').update(buffer.subarray(0, bytes)).digest('hex');
+  } catch (err) {
+    throw err instanceof RetryContextError ? err : new RetryContextError('Launch settings could not be inspected. Refresh before checking.');
+  } finally { if (fd !== undefined) fs.closeSync(fd); }
 }
 
 class RetryContextError extends Error {}
 
-async function context(projectPath: string, agentId: string) {
+async function context(requestedProjectPath: string, agentId: string) {
+  const registryVersion = projectRegistryMutationState();
+  if (registryVersion.pending) throw new RetryContextError('Project settings are changing. Wait and check again.');
+  const registryFiles = () => hash(['projects.json', 'projects.json.bak'].map((name) => fileWitness(path.join(getBaseDirPath(), name))));
+  const registryBytes = registryFiles();
+  const registered = (await peekProjects()).find((p) => path.resolve(p.path) === path.resolve(requestedProjectPath));
+  if (!registered && !isDispatcherPath(requestedProjectPath)) throw new RetryContextError('Project is no longer registered.');
+  if (hash(projectRegistryMutationState()) !== hash(registryVersion) || registryFiles() !== registryBytes) throw new RetryContextError('Project registration changed while resolving this check.');
+  const projectPath = path.resolve(registered?.path ?? requestedProjectPath);
   const mutationWitness = () => [projectRegistryMutationState(), projectSettingsMutationState(projectPath)];
   if (mutationWitness().some((m) => m.pending)) throw new RetryContextError('Project settings are changing. Wait and check again.');
   const versions = hash(mutationWitness());
@@ -43,14 +73,13 @@ async function context(projectPath: string, agentId: string) {
   const configVersion = agentConfigGeneration();
   const transition = agentTransitionGeneration(agentId);
   const profiles = hash(profileSettings());
-  if (!isDispatcherPath(projectPath) && !(await peekProjects()).some((p) => path.resolve(p.path) === path.resolve(projectPath))) throw new RetryContextError('Project is no longer registered.');
   const config = (await peekDurableConfigs(projectPath)).find((a) => a.id === agentId);
   if (!config || isDisposedAgent(config) || config.creation) throw new RetryContextError('Agent is unavailable for a handshake check.');
   const generation = transition;
   const cwd = config.worktreePath || projectPath;
   const provider = await resolveOrchestrator(projectPath, config.orchestrator);
   const active = agentRegistry.get(agentId);
-  if (active && (active.projectPath !== projectPath || active.orchestrator !== provider.id || (active.cwd && path.resolve(active.cwd) !== path.resolve(cwd)))) throw new RetryContextError('Agent target changed. Refresh before checking again.');
+  if (active && (path.resolve(active.projectPath) !== projectPath || active.orchestrator !== provider.id || (active.cwd && path.resolve(active.cwd) !== path.resolve(cwd)))) throw new RetryContextError('Agent target changed. Refresh before checking again.');
   const mode = resolveRuntimeMode(provider.id, config.runtimeMode);
   if (mode.mode !== 'chat') throw new RetryContextError('Chat is off for this agent. No handshake was requested.');
   const driver = resolveChatDriver(provider.id, mode.driver);

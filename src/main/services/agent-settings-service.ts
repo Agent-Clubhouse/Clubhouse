@@ -189,12 +189,13 @@ async function readSettings(projectPath: string): Promise<ProjectSettings> {
 // Read-only launch witnesses, including a write already pending at capture time.
 const settingsMutations = new Map<string, { generation: number; pending: number }>();
 export function projectSettingsMutationState(projectPath: string): { generation: number; pending: boolean } {
-  const state = settingsMutations.get(projectPath);
+  const state = settingsMutations.get(path.resolve(projectPath));
   return { generation: state?.generation ?? 0, pending: (state?.pending ?? 0) > 0 };
 }
 async function settingsMutation<T>(projectPath: string, run: () => Promise<T>): Promise<T> {
-  const state = settingsMutations.get(projectPath) ?? { generation: 0, pending: 0 };
-  settingsMutations.set(projectPath, state); state.generation++; state.pending++;
+  const key = path.resolve(projectPath);
+  const state = settingsMutations.get(key) ?? { generation: 0, pending: 0 };
+  settingsMutations.set(key, state); state.generation++; state.pending++;
   try { return await run(); } finally { state.pending--; }
 }
 

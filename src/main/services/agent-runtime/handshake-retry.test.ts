@@ -5,6 +5,10 @@ import * as path from 'node:path';
 import type { DurableAgentConfig } from '../../../shared/types';
 import type { OrchestratorProvider } from '../../orchestrators';
 const state = vi.hoisted(() => ({ agents: [] as DurableAgentConfig[], projects: [] as { path: string }[], binary: '', prefix: '', env: { SAFE: 'synthetic' }, mode: { mode: 'chat' } as { mode: 'chat' | 'terminal'; driver?: 'codex_app_server' }, active: undefined as unknown, registry: { generation: 0, pending: false }, defaults: { generation: 0, pending: false }, configGeneration: 0, profiles: {} as object }));
+vi.mock('node:fs', async (actual) => {
+  const real = await actual<typeof import('node:fs')>();
+  return { ...real, lstatSync: vi.fn(real.lstatSync), openSync: vi.fn(real.openSync) };
+});
 vi.mock('../agent-config', () => ({ peekDurableConfigs: vi.fn(async () => state.agents), agentConfigGeneration: () => state.configGeneration }));
 vi.mock('../project-store', () => ({ peekProjects: vi.fn(async () => state.projects), projectRegistryMutationState: () => ({ ...state.registry }) }));
 vi.mock('../base-dir', () => ({ getBaseDirPath: () => state.projects[0]?.path || '/synthetic-unregistered' }));
@@ -19,7 +23,7 @@ vi.mock('../agent-system', () => ({
 vi.mock('../chat-runtime-settings', () => ({ resolveRuntimeMode: () => state.mode }));
 vi.mock('./chat-spawn', () => ({ chatLaunchEnvironment: vi.fn((env) => env) }));
 vi.mock('../log-service', () => ({ appLog: vi.fn() }));
-import { retryAgentHandshake } from './handshake-retry';
+import { MAX_HANDSHAKE_INPUT_BYTES, retryAgentHandshake } from './handshake-retry';
 import { FakeChatDriver } from './fake-chat-driver';
 import { clearChatDrivers, registerChatDriver } from './chat-drivers';
 import { clearDriverHealth, driverHealthKey, driverPausedReason, probeDriver, recordDriverFailure, DRIVER_FAILURE_THRESHOLD } from './chat-driver-health';
@@ -150,6 +154,33 @@ describe('explicit scoped handshake retry', () => {
     if (reason === 'policy') policy.blocked = true;
     expect((await retryAgentHandshake(dir, 'a')).status).toBe(reason === 'login' ? 'login_required' : 'policy_blocked');
     expect(driverPausedReason(key())).toBeTruthy();
+  });
+  it('validates registration before inspecting renderer-supplied project files', async () => {
+    const unknown = path.join(dir, 'unregistered'); fs.mkdirSync(path.join(unknown, '.clubhouse'), { recursive: true });
+    fs.writeFileSync(path.join(unknown, '.clubhouse/settings.json'), 'private');
+    vi.mocked(fs.lstatSync).mockClear(); vi.mocked(fs.openSync).mockClear();
+    expect(await retryAgentHandshake(unknown, 'a')).toMatchObject({ status: 'cannot_probe', message: 'Project is no longer registered.' });
+    expect(vi.mocked(fs.lstatSync).mock.calls.some(([file]) => String(file).startsWith(unknown))).toBe(false);
+    expect(driver.probe).not.toHaveBeenCalled();
+  });
+  it.each(['directory', 'oversized'])('refuses %s settings without reading their contents', async (kind) => {
+    fs.mkdirSync(path.join(dir, '.clubhouse'), { recursive: true }); const file = path.join(dir, '.clubhouse/settings.json');
+    if (kind === 'directory') fs.mkdirSync(file);
+    else { fs.writeFileSync(file, ''); fs.truncateSync(file, MAX_HANDSHAKE_INPUT_BYTES + 1); }
+    expect((await retryAgentHandshake(dir, 'a')).status).toBe('cannot_probe'); expect(driver.probe).not.toHaveBeenCalled();
+  });
+  it.each(['disappear', 'replace'])('refuses observed post-lstat file %s instead of treating it as missing/current', async (change) => {
+    fs.mkdirSync(path.join(dir, '.clubhouse'), { recursive: true }); const file = path.join(dir, '.clubhouse/settings.json');
+    fs.writeFileSync(file, '{}'); const real = process.getBuiltinModule('fs') as typeof import('node:fs'); let changed = false;
+    vi.mocked(fs.openSync).mockImplementation((target, flags, mode) => {
+      if (target === file && !changed) {
+        changed = true;
+        if (change === 'disappear') fs.unlinkSync(file);
+        else { fs.writeFileSync(file + '.new', '{"replacement":true}'); fs.renameSync(file + '.new', file); }
+      }
+      return real.openSync(target, flags, mode);
+    });
+    expect((await retryAgentHandshake(dir, 'a')).status).toBe('cannot_probe'); expect(changed).toBe(true); expect(driver.probe).not.toHaveBeenCalled();
   });
   it('keeps raw binary/prefix/environment diagnostics out of receipts', async () => {
     driver.probe = vi.fn(async () => ({ handshakeOk: false, error: 'SECRET_BINARY SECRET_PREFIX SECRET_ENV', capabilities: driver.capabilities }));
