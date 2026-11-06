@@ -30,6 +30,19 @@ async function getConventions(projectPath?: string): Promise<SettingsConventions
   }
 }
 
+/** Bind the existing skill folder to the selected agent, not the project default. */
+async function withSkillTarget<T>(worktreePath: string, projectPath: string | undefined, agentId: string | undefined, mutate: boolean, action: (conventions: SettingsConventions | undefined) => Promise<T>): Promise<T> {
+  const run = async () => {
+    if (!agentId) return action(await getConventions(projectPath)); // Legacy project-scoped callers.
+    if (!projectPath) throw new Error('A project is required for agent skills.');
+    const agent = await getDurableConfig(projectPath, agentId);
+    if (!agent || agent.creation || agent.disposedAt || path.resolve(agent.worktreePath || projectPath) !== path.resolve(worktreePath)) throw new Error('Agent skill target changed. Reload before continuing.');
+    const provider = await resolveOrchestrator(projectPath, agent.orchestrator);
+    return action(provider.conventions);
+  };
+  return mutate && agentId ? withAgentTransition(agentId, run) : run();
+}
+
 /** Agent MCP edits must resolve the same provider and folder as the next start. */
 async function getMcpContext(worktreePath: string, projectPath?: string, agentId?: string) {
   if (!projectPath) {
@@ -98,9 +111,9 @@ export function registerAgentSettingsHandlers(): void {
   ));
 
   ipcMain.handle(IPC.AGENT.LIST_SKILLS, withValidatedArgs(
-    [stringArg(), stringArg({ optional: true })],
-    async (_event, worktreePath, projectPath) => {
-      return agentSettings.listSkills(worktreePath, await getConventions(projectPath));
+    [stringArg(), stringArg({ optional: true }), stringArg({ optional: true })],
+    async (_event, worktreePath, projectPath, agentId) => {
+      return withSkillTarget(worktreePath, projectPath, agentId, false, (conventions) => agentSettings.listSkills(worktreePath, conventions));
     },
   ));
 
@@ -157,23 +170,23 @@ export function registerAgentSettingsHandlers(): void {
   // --- Skill content CRUD ---
 
   ipcMain.handle(IPC.AGENT.READ_SKILL_CONTENT, withValidatedArgs(
-    [stringArg(), stringArg(), stringArg({ optional: true })],
-    async (_event, worktreePath, skillName, projectPath) => {
-      return agentSettings.readSkillContent(worktreePath, skillName, await getConventions(projectPath));
+    [stringArg(), stringArg(), stringArg({ optional: true }), stringArg({ optional: true })],
+    async (_event, worktreePath, skillName, projectPath, agentId) => {
+      return withSkillTarget(worktreePath, projectPath, agentId, false, (conventions) => agentSettings.readSkillContent(worktreePath, skillName, conventions));
     },
   ));
 
   ipcMain.handle(IPC.AGENT.WRITE_SKILL_CONTENT, withValidatedArgs(
-    [stringArg(), stringArg(), stringArg({ minLength: 0 }), stringArg({ optional: true })],
-    async (_event, worktreePath, skillName, content, projectPath) => {
-      await agentSettings.writeSkillContent(worktreePath, skillName, content, await getConventions(projectPath));
+    [stringArg(), stringArg(), stringArg({ minLength: 0 }), stringArg({ optional: true }), stringArg({ optional: true })],
+    async (_event, worktreePath, skillName, content, projectPath, agentId) => {
+      return withSkillTarget(worktreePath, projectPath, agentId, true, (conventions) => agentSettings.writeSkillContent(worktreePath, skillName, content, conventions));
     },
   ));
 
   ipcMain.handle(IPC.AGENT.DELETE_SKILL, withValidatedArgs(
-    [stringArg(), stringArg(), stringArg({ optional: true })],
-    async (_event, worktreePath, skillName, projectPath) => {
-      await agentSettings.deleteSkill(worktreePath, skillName, await getConventions(projectPath));
+    [stringArg(), stringArg(), stringArg({ optional: true }), stringArg({ optional: true })],
+    async (_event, worktreePath, skillName, projectPath, agentId) => {
+      return withSkillTarget(worktreePath, projectPath, agentId, true, (conventions) => agentSettings.deleteSkill(worktreePath, skillName, conventions));
     },
   ));
 

@@ -10,8 +10,8 @@ export const agentSettings = {
     ipcRenderer.invoke(IPC.AGENT.SAVE_INSTRUCTIONS, worktreePath, content, projectPath),
   readMcpConfig: (worktreePath: string, projectPath?: string, agentId?: string) =>
     ipcRenderer.invoke(IPC.AGENT.READ_MCP_CONFIG, worktreePath, projectPath, agentId),
-  listSkills: (worktreePath: string, projectPath?: string) =>
-    ipcRenderer.invoke(IPC.AGENT.LIST_SKILLS, worktreePath, projectPath),
+  listSkills: (worktreePath: string, projectPath?: string, agentId?: string) =>
+    ipcRenderer.invoke(IPC.AGENT.LIST_SKILLS, worktreePath, projectPath, agentId),
   listAgentTemplates: (worktreePath: string, projectPath?: string) =>
     ipcRenderer.invoke(IPC.AGENT.LIST_AGENT_TEMPLATES, worktreePath, projectPath),
   listSourceSkills: (projectPath: string) =>
@@ -61,12 +61,12 @@ export const agentSettings = {
     ipcRenderer.invoke(IPC.AGENT.READ_PERMISSIONS, worktreePath, projectPath),
   savePermissions: (worktreePath: string, permissions: { allow?: string[]; deny?: string[] }, projectPath?: string) =>
     ipcRenderer.invoke(IPC.AGENT.SAVE_PERMISSIONS, worktreePath, permissions, projectPath),
-  readSkillContent: (worktreePath: string, skillName: string, projectPath?: string): Promise<string> =>
-    ipcRenderer.invoke(IPC.AGENT.READ_SKILL_CONTENT, worktreePath, skillName, projectPath),
-  writeSkillContent: (worktreePath: string, skillName: string, content: string, projectPath?: string) =>
-    ipcRenderer.invoke(IPC.AGENT.WRITE_SKILL_CONTENT, worktreePath, skillName, content, projectPath),
-  deleteSkill: (worktreePath: string, skillName: string, projectPath?: string) =>
-    ipcRenderer.invoke(IPC.AGENT.DELETE_SKILL, worktreePath, skillName, projectPath),
+  readSkillContent: (worktreePath: string, skillName: string, projectPath?: string, agentId?: string): Promise<string> =>
+    ipcRenderer.invoke(IPC.AGENT.READ_SKILL_CONTENT, worktreePath, skillName, projectPath, agentId),
+  writeSkillContent: (worktreePath: string, skillName: string, content: string, projectPath?: string, agentId?: string) =>
+    ipcRenderer.invoke(IPC.AGENT.WRITE_SKILL_CONTENT, worktreePath, skillName, content, projectPath, agentId),
+  deleteSkill: (worktreePath: string, skillName: string, projectPath?: string, agentId?: string) =>
+    ipcRenderer.invoke(IPC.AGENT.DELETE_SKILL, worktreePath, skillName, projectPath, agentId),
   readAgentTemplateContent: (worktreePath: string, agentName: string, projectPath?: string): Promise<string> =>
     ipcRenderer.invoke(IPC.AGENT.READ_AGENT_TEMPLATE_CONTENT, worktreePath, agentName, projectPath),
   writeAgentTemplateContent: (worktreePath: string, agentName: string, content: string, projectPath?: string) =>

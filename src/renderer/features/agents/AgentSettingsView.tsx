@@ -1381,6 +1381,7 @@ export function AgentSettingsView({ agent }: Props) {
 
   const skillsSection = (
     <SkillsSection
+      agentId={agent.id}
       worktreePath={worktreePath}
       projectPath={projectPath}
       disabled={isRunning}

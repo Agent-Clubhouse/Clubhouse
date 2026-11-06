@@ -1,4 +1,4 @@
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor, act } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { SkillsSection } from './SkillsSection';
 import type { SkillEntry } from '../../../shared/types';
@@ -39,6 +39,20 @@ describe('SkillsSection', () => {
     window.clubhouse.agentSettings.writeSkillContent = vi.fn().mockResolvedValue(undefined);
     window.clubhouse.agentSettings.deleteSkill = vi.fn().mockResolvedValue(undefined);
     window.clubhouse.file.showInFolder = vi.fn();
+  });
+
+  it('passes selected identity and discards a late prior-target list', async () => {
+    let finish!: (value: SkillEntry[]) => void;
+    window.clubhouse.agentSettings.listSkills = vi.fn().mockImplementationOnce(() => new Promise((resolve) => { finish = resolve; })).mockResolvedValue([{ name: 'current', path: '/b/.github/skills/current' }]);
+    const count = vi.fn();
+    const view = renderSkills({ worktreePath: '/a', projectPath: '/p', agentId: 'a', onCountChange: count });
+    view.rerender(<SkillsSection worktreePath="/b" projectPath="/p" agentId="b" disabled={false} refreshKey={0} onCountChange={count} />);
+    expect(await screen.findByText('current')).toBeInTheDocument();
+    await act(async () => finish([{ name: 'obsolete', path: '/a/.claude/skills/obsolete' }]));
+    expect(screen.queryByText('obsolete')).not.toBeInTheDocument();
+    expect(window.clubhouse.agentSettings.listSkills).toHaveBeenLastCalledWith('/b', '/p', 'b');
+    expect(count).toHaveBeenCalledTimes(1);
+    expect(screen.getByText('/b/.github/skills/current')).toBeInTheDocument();
   });
 
   describe('list view', () => {
@@ -121,7 +135,7 @@ describe('SkillsSection', () => {
           '/project',
           'deploy',
           expect.any(String),
-          undefined,
+          undefined, undefined,
         );
       });
     });
@@ -144,7 +158,7 @@ describe('SkillsSection', () => {
 
       await waitFor(() => {
         expect(window.clubhouse.agentSettings.readSkillContent).toHaveBeenCalledWith(
-          '/project', 'mission', undefined,
+          '/project', 'mission', undefined, undefined,
         );
       });
       expect(await screen.findByText('Edit: mission')).toBeInTheDocument();
@@ -158,7 +172,7 @@ describe('SkillsSection', () => {
       fireEvent.click(screen.getByText('Save'));
       await waitFor(() => {
         expect(window.clubhouse.agentSettings.writeSkillContent).toHaveBeenCalledWith(
-          '/project', 'mission', expect.any(String), undefined,
+          '/project', 'mission', expect.any(String), undefined, undefined,
         );
       });
     });
@@ -183,7 +197,7 @@ describe('SkillsSection', () => {
 
       await waitFor(() => {
         expect(window.clubhouse.agentSettings.deleteSkill).toHaveBeenCalledWith(
-          '/project', 'mission', undefined,
+          '/project', 'mission', undefined, undefined,
         );
       });
     });
