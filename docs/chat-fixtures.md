@@ -212,7 +212,7 @@ Don't use a real model for these. `src/main/chat/copilot/record-fixtures.test.ts
 ```sh
 PROFILE='(version 1)(allow default)(deny network-outbound)(allow network-outbound (remote ip "localhost:*"))'
 CLUBHOUSE_RECORD_COPILOT_SDK=1 sandbox-exec -p "$PROFILE" \
-  npx vitest run --project main src/main/chat/copilot/record-fixtures.test.ts
+  npx vitest run --config vitest.live-qa.config.ts src/main/chat/copilot/record-fixtures.test.ts
 ```
 
 It removes the CLI's system prompt and built-in skills, which a driver doesn't read, and adds `match` to answers, session modes and delivery modes.

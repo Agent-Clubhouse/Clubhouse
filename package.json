@@ -14,6 +14,7 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "test:unit": "vitest run --project main --project shared",
+    "qa:copilot-runtime": "vitest run --config vitest.copilot-runtime.config.ts",
     "test:components": "vitest run --project renderer",
     "test:e2e": "npx playwright test",
     "check:test-coverage-ratchet": "node scripts/check-test-coverage-ratchet.mjs",

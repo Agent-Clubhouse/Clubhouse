@@ -330,12 +330,14 @@ describe('ProjectSettings', () => {
 
     it('clicking Close removes project and closes settings', async () => {
       resetStores();
+      useUIStore.setState({ explorerTab: 'settings', previousExplorerTab: 'agents', settingsContext: 'proj-1', settingsSubPage: 'project' });
       render(<ProjectSettings />);
       fireEvent.click(screen.getByText('Close…'));
 
       await waitFor(() => {
         expect(showConfirmDialog).toHaveBeenCalled();
-        expect(mockToggleSettings).toHaveBeenCalled();
+        expect(useUIStore.getState().explorerTab).toBe('agents');
+        expect(mockToggleSettings).not.toHaveBeenCalled();
         expect(mockRemoveProject).toHaveBeenCalledWith('proj-1');
       });
     });

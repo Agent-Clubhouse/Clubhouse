@@ -325,14 +325,18 @@ export async function tryStartChatAgent(
   const resolved = resolveRuntimeMode(provider.id, durableConfig?.runtimeMode);
   if (resolved.mode !== 'chat') return 'terminal';
   const candidates = chatDriverCandidates(provider.id, resolved.driver);
+  const unavailablePreference = resolved.driver && candidates[0]?.id !== resolved.driver
+    ? `${DRIVER_LABELS[resolved.driver] ?? resolved.driver} is not registered for ${cliLabel(provider.id)}`
+    : undefined;
   if (candidates.length === 0) {
+    if (unavailablePreference) notifyFallback(params.agentId, { level: 'warn', code: 'fallback', message: `Opened in the CLI view: ${unavailablePreference}` });
     appLog('core:chat', 'info', 'No chat driver registered for provider; using the terminal', {
       meta: { agentId: params.agentId, provider: provider.id },
     });
     facts.reason = 'no_driver';
     return 'terminal';
   }
-  facts.preferredDriver = candidates[0].id;
+  facts.preferredDriver = resolved.driver ?? candidates[0].id;
   if (!provider.getBinaryPath) {
     facts.reason = 'binary_missing';
     return 'terminal';
@@ -367,7 +371,7 @@ export async function tryStartChatAgent(
   }
   onStarting?.();
   try {
-    return await runChatStart(params, provider, profileEnv, commandPrefix, durableConfig, candidates, binaryPath, start, facts);
+    return await runChatStart(params, provider, profileEnv, commandPrefix, durableConfig, candidates, binaryPath, start, facts, unavailablePreference);
   } catch (err) {
     if (!(err instanceof ChatStartCancelledError)) {
       facts.reason = 'error';
@@ -396,6 +400,7 @@ async function runChatStart(
   binaryPath: string,
   start: InflightStart,
   facts: ChatStartFacts,
+  unavailablePreference?: string,
 ): Promise<ChatStartResult> {
   const { signal } = start.controller;
   /** Called after every await: a cancelled start stops where it is. */
@@ -423,7 +428,7 @@ async function runChatStart(
 
   // Probe lazily, in order, and stop at the first usable driver: the
   // preferred driver working means no other driver is probed or reported.
-  const skipped: string[] = [];
+  const skipped: string[] = unavailablePreference ? [unavailablePreference] : [];
   let login: { hint?: string } | undefined;
   for (const [index, driver] of candidates.entries()) {
     const key = driverHealthKey(driver, binaryPath, launchEnv, commandPrefix);
@@ -457,7 +462,7 @@ async function runChatStart(
     }
     prepared ??= await prepare();
     checkpoint();
-    const fallbackNotice: ChatRuntimeNotice | undefined = index > 0
+    const fallbackNotice: ChatRuntimeNotice | undefined = index > 0 || unavailablePreference !== undefined
       ? { level: 'warn', code: 'fallback', message: `Using ${driverLabel(driver)}: ${skipped.join('; ')}` }
       : undefined;
     const sessionStartedAt = Date.now();

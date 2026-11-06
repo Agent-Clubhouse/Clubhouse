@@ -43,6 +43,7 @@ import { TruncatedLabel } from '../components/TruncatedLabel';
 import { DISPATCHER_PROJECT_ID } from '../../shared/dispatcher-types';
 import { DispatcherRow } from './sidebar/DispatcherRow';
 import { isDispatcherAgent, useDispatcherAgentId, useDispatcherStore } from '../features/dispatcher/dispatcherStore';
+import { requestCloseProject } from '../features/projects/close-project';
 import { closeDispatcher, openDispatcher } from '../features/dispatcher/dispatcherNav';
 
 /**
@@ -510,6 +511,7 @@ export function ChromeSidebar() {
   }, [openAgent]);
 
   const openProjectSettings = useCallback((projectId: string) => useUIStore.getState().openProjectSettings(projectId), []);
+  const closeProject = useCallback((projectId: string) => { void requestCloseProject(projectId); }, []);
   const reorderProjectAgents = useCallback((projectId: string, orderedIds: string[]) => {
     const project = useProjectStore.getState().projects.find((p) => p.id === projectId);
     if (!project) return;
@@ -748,6 +750,7 @@ export function ChromeSidebar() {
           onOpenTerminal={isRemoteHost ? undefined : openTerminal}
           terminalProjectIds={terminalProjectIds}
           onOpenSettings={isRemoteHost ? undefined : openProjectSettings}
+          onCloseProject={isRemoteHost ? undefined : closeProject}
           onReorderAgents={isRemoteHost ? undefined : reorderProjectAgents}
           onSelectCompleted={selectCompleted}
           onDismissCompleted={dismissCompleted}

@@ -481,6 +481,15 @@ export function AgentSettingsView({ agent }: Props) {
   // when Chat is on.
   const [chatFlagEnabled, setChatFlagEnabled] = useState(false);
   const [runtimeMode, setRuntimeMode] = useState<AgentRuntimeMode | ''>('');
+  const runtimeTarget = JSON.stringify([projectPath, agent.id]);
+  const runtimeRequest = useRef({ target: runtimeTarget, epoch: 0, pending: false });
+  if (runtimeRequest.current.target !== runtimeTarget) runtimeRequest.current = { target: runtimeTarget, epoch: 0, pending: false };
+  const [runtimeSaving, setRuntimeSaving] = useState(false);
+  const [runtimeSaveFailed, setRuntimeSaveFailed] = useState(false);
+  const [runtimeLoadedTarget, setRuntimeLoadedTarget] = useState('');
+  const [runtimeLoadFailed, setRuntimeLoadFailed] = useState(false);
+  const [runtimeLoadAttempt, setRuntimeLoadAttempt] = useState(0);
+
 
   useEffect(() => {
     loadClubhouseSettings();
@@ -498,17 +507,25 @@ export function AgentSettingsView({ agent }: Props) {
   // Load clubhouse mode override + persona from durable config
   useEffect(() => {
     if (!projectPath) return;
+    let cancelled = false;
+    const request = runtimeRequest.current;
+    const epoch = request.epoch;
+    setRuntimeSaving(false); setRuntimeSaveFailed(false); setRuntimeLoadedTarget(''); setRuntimeLoadFailed(false);
     (async () => {
       try {
         const config = await window.clubhouse.agent.getDurableConfig(projectPath, agent.id);
+        if (cancelled || request !== runtimeRequest.current) return;
         setClubhouseModeOverride(config?.clubhouseModeOverride ?? false);
         setAgentPersona(config?.persona ?? '');
-        setRuntimeMode(config?.runtimeMode ?? '');
+        if (request.epoch === epoch) setRuntimeMode(config?.runtimeMode ?? '');
+        setRuntimeLoadedTarget(runtimeTarget);
       } catch {
-        // ignore
+        // telemetry-exempt: do not offer an unknown rollback value after a failed read.
+        if (!cancelled && request === runtimeRequest.current) setRuntimeLoadFailed(true);
       }
     })();
-  }, [projectPath, agent.id]);
+    return () => { cancelled = true; request.epoch++; };
+  }, [projectPath, agent.id, runtimeLoadAttempt]);
 
   const handlePersonaChange = async (value: string) => {
     if (!projectPath) return;
@@ -517,9 +534,22 @@ export function AgentSettingsView({ agent }: Props) {
   };
 
   const handleRuntimeModeChange = async (value: AgentRuntimeMode | '') => {
-    if (!projectPath) return;
-    setRuntimeMode(value);
-    await window.clubhouse.agent.updateDurableConfig(projectPath, agent.id, { runtimeMode: value === '' ? null : value });
+    const request = runtimeRequest.current;
+    if (!projectPath || isRunning || request.pending || runtimeLoadedTarget !== runtimeTarget) return;
+    const epoch = ++request.epoch;
+    request.pending = true;
+    const previous = runtimeMode;
+    setRuntimeSaving(true); setRuntimeSaveFailed(false); setRuntimeMode(value);
+    const current = () => runtimeRequest.current === request && request.epoch === epoch;
+    try {
+      await window.clubhouse.agent.updateDurableConfig(projectPath, agent.id, { runtimeMode: value === '' ? null : value });
+    } catch {
+      // telemetry-exempt: fixed visible failure, with the previous choice restored.
+      if (current()) { setRuntimeMode(previous); setRuntimeSaveFailed(true); }
+    } finally {
+      request.pending = false;
+      if (current()) setRuntimeSaving(false);
+    }
   };
 
   // Load materialization preview when managed
@@ -1162,7 +1192,7 @@ export function AgentSettingsView({ agent }: Props) {
             aria-label="Runtime"
             value={runtimeMode}
             onChange={(e) => handleRuntimeModeChange(e.target.value as AgentRuntimeMode | '')}
-            disabled={isRunning}
+            disabled={isRunning || runtimeSaving || runtimeLoadedTarget !== runtimeTarget}
             title={stopFirst}
             className={selectClass}
           >
@@ -1170,6 +1200,8 @@ export function AgentSettingsView({ agent }: Props) {
             <option value="chat">Chat</option>
             <option value="terminal">CLI</option>
           </select>
+          {runtimeLoadFailed && <p role="alert" className="text-ctp-error mt-1">Couldn't load the saved runtime. <button type="button" onClick={() => setRuntimeLoadAttempt((n) => n + 1)}>Retry loading runtime</button></p>}
+          {runtimeSaveFailed && <p role="alert" className="text-ctp-error mt-1">Couldn't save that setting, so it wasn't changed. Try again.</p>}
         </Field>
       )}
       {chatFlagEnabled && projectPath && !isRemoteProjectId(agent.projectId) && (
