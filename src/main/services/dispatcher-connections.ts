@@ -230,9 +230,17 @@ async function savePendingRemovals(): Promise<void> {
   }
 }
 
-/** The store now holds these removals. A leftover file only re-applies what the store already says. */
-async function clearPendingRemovals(): Promise<void> {
+/** Required cleanup is used only after a redraw has durably folded every pending tombstone. */
+async function clearPendingRemovals(requireCleanup = false): Promise<void> {
   if (pendingRemovals.size === 0) return;
+  if (requireCleanup) {
+    // Keep both memory and bytes authoritative on failure. The store lock also
+    // queues removal callbacks until this fold/delete/target-clear has finished.
+    await fsp.rm(dispatcherPendingRemovalsPath(), { force: true });
+    pendingRemovals.clear();
+    pendingSaved = true;
+    return;
+  }
   pendingRemovals.clear();
   pendingSaved = true;
   await fsp.rm(dispatcherPendingRemovalsPath(), { force: true }).catch((err) => {
@@ -267,7 +275,7 @@ async function loadStore(): Promise<StoreState> {
 }
 
 /** Takes state from loadStore, so a save carries every pending removal with it. */
-async function saveStore(state: StoreState): Promise<void> {
+async function saveStore(state: StoreState, requirePendingCleanup = false): Promise<void> {
   if (!state.writable) {
     throw new Error('The Dispatcher connections file was written by a newer version of Clubhouse, so this version leaves it unchanged.');
   }
@@ -278,7 +286,7 @@ async function saveStore(state: StoreState): Promise<void> {
   }, null, 2));
   writesProven = true;
   writesBlocked = false;
-  await clearPendingRemovals();
+  await clearPendingRemovals(requirePendingCleanup);
 }
 
 let lock: Promise<unknown> = Promise.resolve();
@@ -461,6 +469,10 @@ export function clearUserRemoval(pair: Pair): Promise<boolean> {
   return withStoreLock(async () => {
     const state = await loadStore();
     if (!state.removedByUser.some((r) => samePair(r, pair))) return false;
+    // Pending bytes must not replay a successfully cleared tombstone. First fold
+    // all removals durably, then delete their pending record, and only then clear
+    // this pair. Failure at either boundary leaves the removal fail-closed.
+    if (pendingRemovals.size > 0) await saveStore(state, true);
     await saveStore({ ...state, removedByUser: state.removedByUser.filter((r) => !samePair(r, pair)) });
     return true;
   });
