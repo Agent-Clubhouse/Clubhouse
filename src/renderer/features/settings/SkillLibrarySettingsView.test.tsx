@@ -59,7 +59,9 @@ const chooseProject = async (id = 'p1') => {
   await screen.findByRole('button', { name: /First bundle/ });
 };
 const chooseAsset = async (name = 'First bundle', initial = 'initial one') => {
-  fireEvent.click(screen.getByRole('button', { name: new RegExp(name) }));
+  const row = await screen.findByRole('button', { name: new RegExp(name) });
+  await waitFor(() => expect(row).toBeEnabled());
+  fireEvent.click(row);
   await screen.findByDisplayValue(initial);
   await waitFor(() => expect(screen.getByRole('combobox', { name: 'Registered project' })).toBeEnabled());
 };
@@ -96,10 +98,16 @@ it('confirms draft discard for selection, project change and refresh, preserving
   vi.mocked(showConfirmDialog).mockReturnValueOnce({ promise: Promise.resolve(false) } as never);
   fireEvent.click(screen.getByRole('button', { name: /Second bundle/ }));
   await act(async () => {}); expect(screen.getByLabelText('Text content')).toHaveValue('edited');
+  const nextList = deferred<Awaited<ReturnType<SkillBundleEditorBridge['list']>>>();
+  vi.mocked(bridge.list).mockReturnValueOnce(nextList.promise);
   fireEvent.change(screen.getByRole('combobox', { name: 'Registered project' }), { target: { value: 'p2' } });
   await waitFor(() => expect(screen.queryByLabelText('Text content')).not.toBeInTheDocument());
   expect(showConfirmDialog).toHaveBeenCalledWith('Discard unsaved skill bundle changes?');
-  await chooseAsset(); edit();
+  expect(screen.queryByRole('button', { name: /First bundle/ })).not.toBeInTheDocument();
+  expect(screen.getByRole('combobox', { name: 'Registered project' })).toBeDisabled();
+  const selection = chooseAsset();
+  await act(async () => nextList.resolve({ ok: true, value: Object.values(documents) }));
+  await selection; edit();
   fireEvent.click(screen.getByRole('button', { name: 'Refresh list and discard edits' }));
   await waitFor(() => expect(screen.queryByLabelText('Text content')).not.toBeInTheDocument());
 });
