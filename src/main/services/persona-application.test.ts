@@ -53,6 +53,14 @@ import { updateDurableConfig } from './agent-config';
 import { getPersonaTemplate } from '../../renderer/features/personas';
 import { getDispatcherPath } from './dispatcher/dispatcher-paths';
 
+import { CopilotCliProvider } from '../orchestrators/copilot-cli-provider';
+import { extractAgentPersona } from './materialization-service';
+import { writeSourcePersonaContent } from './agent-settings-service';
+import { serializePersonaFile } from '../../shared/persona-pattern';
+import { resolveOrchestrator } from './agent-system';
+import { isClubhouseModeEnabled } from './clubhouse-mode-settings';
+import type { DurableAgentConfig } from '../../shared/types';
+
 describe('applyPersonaToAgent', () => {
   let root: string;
   let projectPath: string;
@@ -67,6 +75,8 @@ describe('applyPersonaToAgent', () => {
 
   beforeEach(async () => {
     vi.clearAllMocks();
+    vi.mocked(resolveOrchestrator).mockResolvedValue(provider as never);
+    vi.mocked(isClubhouseModeEnabled).mockReturnValue(false);
     root = await fsp.mkdtemp(path.join(os.tmpdir(), 'persona-apply-'));
     home.dir = path.join(root, 'home');
     projectPath = path.join(root, 'project');
@@ -178,4 +188,49 @@ describe('applyPersonaToAgent', () => {
       expect(provider.writeInstructions).not.toHaveBeenCalled();
     });
   });
+  it.each([false, true])('Extract -> save -> Apply preserves Copilot root custom text without a persona (Clubhouse mode %s)', async (mode) => {
+    const source = path.join(projectPath, 'source');
+    const target = path.join(projectPath, 'target');
+    await fsp.mkdir(path.join(source, '.github'), { recursive: true });
+    await fsp.mkdir(target, { recursive: true });
+    await fsp.writeFile(path.join(source, '.github/copilot-instructions.md'), 'Identity for source-bot with @@Path.');
+    await fsp.writeFile(path.join(source, 'CLAUDE.md'), 'UNIQUE_CUSTOM_MARKER: preserve the operator checklist.');
+    await fsp.writeFile(path.join(source, 'AGENTS.md'), 'ADDITIONAL_ROOT_MARKER');
+    const copilot = new CopilotCliProvider();
+    const agent: DurableAgentConfig = { id: 'source', name: 'source-bot', color: 'blue', createdAt: '2026-11-05T00:00:00Z', worktreePath: source, orchestrator: 'copilot-cli' };
+    const captured = await extractAgentPersona({ projectPath, agent, provider: copilot });
+    expect(captured.sources).toEqual(['.github/copilot-instructions.md', 'AGENTS.md', 'CLAUDE.md']);
+    expect(captured.content).toContain('UNIQUE_CUSTOM_MARKER');
+    expect(captured.content).toContain('@@AgentName');
+    await writeSourcePersonaContent(projectPath, 'captured', serializePersonaFile(captured.settings, captured.content), 'project');
+    store.set('target', { ...agent, id: 'target', name: 'target-bot', worktreePath: target });
+    vi.mocked(resolveOrchestrator).mockResolvedValue(copilot);
+    vi.mocked(isClubhouseModeEnabled).mockReturnValue(mode);
+    await applyPersonaToAgent(projectPath, 'target', 'captured');
+    const delivered = await fsp.readFile(path.join(target, '.github/copilot-instructions.md'), 'utf8');
+    expect(delivered).toContain('UNIQUE_CUSTOM_MARKER: preserve the operator checklist.');
+    expect(delivered).toContain('ADDITIONAL_ROOT_MARKER');
+    expect(delivered).toContain('target-bot');
+    expect(delivered).not.toContain('source-bot');
+    expect(await fsp.readFile(path.join(source, 'CLAUDE.md'), 'utf8')).toBe('UNIQUE_CUSTOM_MARKER: preserve the operator checklist.');
+    expect(store.get('target')?.orchestrator).toBe('copilot-cli');
+  });
+
+  it('refuses extraction when a supplementary document is unreadable instead of exporting the primary alone', async () => {
+    const source = path.join(projectPath, 'source');
+    await fsp.mkdir(path.join(source, '.github'), { recursive: true });
+    await fsp.writeFile(path.join(source, '.github/copilot-instructions.md'), 'generic identity');
+    await fsp.mkdir(path.join(source, 'CLAUDE.md')); // deterministic non-regular source, including root-run tests
+    const agent = { id: 'source', name: 'source', color: 'blue', createdAt: '', worktreePath: source };
+    await expect(extractAgentPersona({ projectPath, agent, provider: new CopilotCliProvider() })).rejects.toThrow('Cannot extract CLAUDE.md');
+    await expect(fsp.stat(path.join(projectPath, '.clubhouse/personas/captured.md'))).rejects.toMatchObject({ code: 'ENOENT' });
+  });
+
+  it('surfaces a primary read failure instead of returning an empty export', async () => {
+    const source = path.join(projectPath, 'source');
+    await fsp.mkdir(path.join(source, '.github/copilot-instructions.md'), { recursive: true });
+    const agent = { id: 'source', name: 'source', color: 'blue', createdAt: '', worktreePath: source };
+    await expect(extractAgentPersona({ projectPath, agent, provider: new CopilotCliProvider() })).rejects.toThrow('No persona was extracted');
+  });
+
 });

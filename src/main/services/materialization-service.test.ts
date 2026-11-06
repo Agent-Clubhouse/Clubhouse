@@ -357,7 +357,7 @@ describe('materialization-service', () => {
       const agent = { ...testAgent, model: 'claude-opus-4-8', mcpIds: ['github'], freeAgentMode: true };
       const provider = {
         ...mockProvider,
-        readInstructions: vi.fn(async () => 'Agent bold-falcon at .clubhouse/agents/bold-falcon/'),
+        inspectInstructions: vi.fn(async () => 'Agent bold-falcon at .clubhouse/agents/bold-falcon/'),
       };
       const { content, settings } = await extractAgentPersona({ projectPath: '/project', agent, provider });
       expect(content).toBe('Agent @@AgentName at @@Path');
@@ -366,7 +366,7 @@ describe('materialization-service', () => {
 
     it('extractAgentPersona keeps orchestration access, control and limits but never orchestrate (#2228)', async () => {
       mockSettingsFile(JSON.stringify({ defaults: {}, quickOverrides: {} }));
-      const provider = { ...mockProvider, readInstructions: vi.fn(async () => 'body') };
+      const provider = { ...mockProvider, inspectInstructions: vi.fn(async () => 'body') };
       const on = { ...testAgent, orchestration: { orchestrate: true, control: 'ask-everything' as const, maxHelpers: 3 } };
       expect((await extractAgentPersona({ projectPath: '/project', agent: on, provider })).settings.orchestration)
         .toEqual({ control: 'ask-everything', maxHelpers: 3 });

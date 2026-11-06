@@ -41,22 +41,27 @@ export function ExtractPersonaDialog() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
+  const [loadFailed, setLoadFailed] = useState(false);
+  const [sources, setSources] = useState<string[]>([]);
+  const [reviewed, setReviewed] = useState(false);
 
   // Load the extracted persona when the dialog opens.
   useEffect(() => {
     if (!extractPersonaDialogAgent || !projectPath) return;
     let cancelled = false;
-    setLoading(true);
+    setLoading(true); setError(''); setLoadFailed(false); setReviewed(false); setSources([]); setContent('');
     (async () => {
       try {
         const result = await window.clubhouse.agentSettings.extractAgentPersona(projectPath, extractPersonaDialogAgent);
         if (cancelled) return;
-        const s = (result?.settings ?? {}) as PatternSettings;
+        if (!result) throw new Error('Target unavailable');
+        setSources(result.sources ?? []);
+        const s = (result.settings ?? {}) as PatternSettings;
         setContent(result?.content ?? '');
         setSettings(s);
         setChecked(new Set(PATTERN_SETTING_KEYS.filter((k) => s[k] !== undefined)));
       } catch {
-        if (!cancelled) { setContent(''); setSettings({}); setChecked(new Set()); }
+        if (!cancelled) { setContent(''); setSettings({}); setChecked(new Set()); setLoadFailed(true); setError('Could not read instructions. No persona was extracted. Close and retry after checking the source files.'); }
       } finally {
         if (!cancelled) setLoading(false);
       }
@@ -85,6 +90,7 @@ export function ExtractPersonaDialog() {
   };
 
   const handleSave = async () => {
+    if (loading || loadFailed || !reviewed || saving) return;
     const trimmed = id.trim();
     if (!trimmed) { setError('Enter an id for the persona.'); return; }
     if (!ID_PATTERN.test(trimmed)) { setError('Use only letters, numbers, dots, dashes, and underscores.'); return; }
@@ -137,13 +143,15 @@ export function ExtractPersonaDialog() {
         </div>
 
         <div>
+          <p className="text-xs text-ctp-subtext0 mb-2">Capture covers the provider's primary worktree document and, for Copilot, root AGENTS.md, CLAUDE.md and GEMINI.md when present. It does not capture the full running context: ancestor/user instructions, nested rules, referenced files and session context are not resolved.</p>
+          {!loading && !loadFailed && <p className="text-xs text-ctp-subtext0 mb-2">Captured sources: {sources.length ? sources.join(', ') : 'No text found in the supported files.'}</p>}
           <label className="block text-xs text-ctp-subtext0 mb-1">Instructions (persona body)</label>
           <textarea
             value={loading ? 'Loading…' : content}
             onChange={(e) => setContent(e.target.value)}
-            disabled={loading || saving}
+            disabled={loading || saving || loadFailed}
             spellCheck={false}
-            placeholder="This agent has no instructions to capture."
+            placeholder="The captured files contain no text. Other instruction sources may still exist."
             className="w-full h-44 bg-surface-0 text-ctp-text text-sm font-mono rounded-lg p-2 resize-y border border-surface-1 focus-ring"
           />
         </div>
@@ -171,7 +179,11 @@ export function ExtractPersonaDialog() {
           )}
         </div>
 
-        {error && <p className="text-xs text-ctp-error">{error}</p>}
+        <label className="flex items-center gap-2 text-xs text-ctp-subtext0">
+          <input type="checkbox" checked={reviewed} disabled={loading || loadFailed || saving} onChange={(event) => setReviewed(event.target.checked)} />
+          I reviewed this bounded capture and any omitted sources before saving.
+        </label>
+        {error && <p role="alert" className="text-xs text-ctp-error">{error}</p>}
 
         <div className="flex justify-end gap-2">
           <button
@@ -183,7 +195,7 @@ export function ExtractPersonaDialog() {
           </button>
           <button
             onClick={handleSave}
-            disabled={saving || loading}
+            disabled={saving || loading || loadFailed || !reviewed}
             className="text-xs px-3 py-1.5 rounded bg-ctp-accent text-white hover:bg-ctp-accent/80 cursor-pointer transition-colors disabled:opacity-50"
           >
             {saving ? 'Saving…' : 'Save persona'}
