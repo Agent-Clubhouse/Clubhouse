@@ -130,10 +130,11 @@ describe('ProjectAgentDefaultsSection', () => {
 
       const toggle = screen.getByRole('switch', { name: 'Free agent mode by default' });
       expect(toggle).toHaveAttribute('aria-checked', 'false');
+      expect(screen.getByText('Start new agents with the configured Free agent permission mode.')).toBeInTheDocument();
       fireEvent.click(toggle);
       expect(toggle).toHaveAttribute('aria-checked', 'true');
 
-      expect(await screen.findByText(/skip all permission prompts/)).toBeInTheDocument();
+      expect(await screen.findByText(/configured Free agent permission mode/)).toBeInTheDocument();
     });
   });
 

@@ -861,7 +861,7 @@ export function AgentSettingsView({ agent }: Props) {
   const skillsPathLabel = conventions ? `${conventions.configDir}/${conventions.skillsDir}/` : '.claude/skills/';
   const agentTemplatesPathLabel = conventions ? `${conventions.configDir}/${conventions.agentTemplatesDir}/` : '.claude/agents/';
   const mcpPathLabel = conventions?.mcpConfigFile || '.mcp.json';
-  const permissionsPathLabel = conventions ? `${conventions.configDir}/${conventions.localSettingsFile}` : '.claude/settings.local.json';
+  const permissionsPathLabel = conventions?.permissionRules === false ? 'Not supported by this provider' : conventions ? `${conventions.configDir}/${conventions.localSettingsFile}` : '.claude/settings.local.json';
 
   const handleSaveQad = async () => {
     if (!projectPath) return;
@@ -1054,7 +1054,7 @@ export function AgentSettingsView({ agent }: Props) {
 
   const freeAgentModeHelp = !permissionsSupported
     ? `Not supported by ${orchestratorName}.`
-    : 'Skip every permission prompt while this agent runs.';
+    : 'Handle permissions using the configured Free agent permission mode.';
 
   const general = (
     <>
@@ -1229,7 +1229,7 @@ export function AgentSettingsView({ agent }: Props) {
       <Field
         label="Free Agent Mode"
         help={freeAgentMode && permissionsSupported
-          ? <span className="text-ctp-error">This agent runs with full access and no tool approvals.</span>
+          ? <span className="text-ctp-error">Permissions follow the configured Free agent permission mode.</span>
           : freeAgentModeHelp}
         testId="agent-settings-free-agent-mode"
       >
@@ -1443,7 +1443,9 @@ export function AgentSettingsView({ agent }: Props) {
     </>
   );
 
-  const permissionsEditor = permLoaded && (
+  const permissionsEditor = conventions?.permissionRules === false ? (
+    <p>Allow and deny rules are not supported by this provider. Use its native access controls.</p>
+  ) : permLoaded && (
     <div className="mt-1.5">
       <FieldLabel htmlFor="agent-settings-perm-allow">Allowed tools, one per line</FieldLabel>
       <textarea

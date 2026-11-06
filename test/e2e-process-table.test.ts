@@ -3,7 +3,7 @@ import type { execFile } from 'node:child_process';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
-import { afterEach, beforeEach, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createProcessTableReader, PROCESS_TABLE_DEADLINE_MS, type ProcessTableResult } from '../e2e/cleanup-process-table';
 import { ELECTRON_DIST_DIR, recordElectronApp, sweepE2EProcesses } from '../e2e/e2e-cleanup';
 
@@ -15,16 +15,154 @@ class QueryChild extends EventEmitter {
   unref = vi.fn();
 }
 type Reply = (error: Error | null, output: string) => void;
-function fixture(platform: NodeJS.Platform = 'win32') {
+type Lifecycle = Readonly<{
+  spawnObserved: boolean; spawnAtMs?: number;
+  exitEventObserved: boolean; exitEventAtMs?: number;
+  callbackObserved: boolean; callbackAtMs?: number;
+  closeObserved: boolean; closeAtMs?: number;
+  deadlineObserved: boolean; deadlineAtMs?: number;
+  cleanupRequested: boolean;
+}>;
+type LifecycleObserver = (phase: 'deadline' | 'close-after-deadline', snapshot: Lifecycle) => void;
+function fixture(platform: NodeJS.Platform = 'win32', observe?: LifecycleObserver) {
   const children: QueryChild[] = [], replies: Reply[] = [];
   const execute = vi.fn((_file: string, _args: string[], _options: unknown, callback: Reply) => {
     const child = new QueryChild(); children.push(child); replies.push(callback); return child;
   });
-  const read = createProcessTableReader({ platform, execute: execute as unknown as typeof execFile });
+  const read = createProcessTableReader({ platform, execute: execute as unknown as typeof execFile, observe });
   return { read, execute, children, replies };
 }
 beforeEach(() => vi.useFakeTimers());
 afterEach(() => { vi.useRealTimers(); vi.restoreAllMocks(); });
+
+describe('query lifecycle diagnostics', () => {
+  it('freezes deadline evidence separately from late callback, exit and close receipts', async () => {
+    const clock = vi.spyOn(performance, 'now').mockReturnValue(500);
+    const observe = vi.fn<LifecycleObserver>();
+    const { read, children, replies, execute } = fixture('win32', observe);
+    const pending = read();
+    clock.mockReturnValue(507); children[0].emit('spawn');
+    clock.mockReturnValue(10_500); await vi.advanceTimersByTimeAsync(PROCESS_TABLE_DEADLINE_MS);
+    const result = await pending;
+    const deadline = {
+      spawnObserved: true, spawnAtMs: 7, exitEventObserved: false, callbackObserved: false,
+      closeObserved: false, deadlineObserved: true, deadlineAtMs: 10_000, cleanupRequested: true,
+    };
+    expect(result).toEqual({ ok: false, reason: 'timeout', elapsedMs: 10_000,
+      cleanupRequested: true, exitObserved: false, lifecycle: deadline });
+    expect(observe).toHaveBeenCalledExactlyOnceWith('deadline', deadline);
+    expect(Object.isFrozen(observe.mock.calls[0][1])).toBe(true);
+    expect(children[0].kill).toHaveBeenCalledExactlyOnceWith('SIGKILL');
+    for (const handle of [children[0].stdin, children[0].stdout, children[0].stderr]) expect(handle.destroy).toHaveBeenCalledOnce();
+    expect(children[0].unref).toHaveBeenCalledOnce();
+
+    clock.mockReturnValue(10_501);
+    replies[0](null, '[{"ProcessId":123,"ParentProcessId":1,"CommandLine":"PRIVATE LATE TABLE"}]');
+    expect(await read()).toMatchObject({ ok: false, reason: 'unreconciled', exitObserved: false });
+    clock.mockReturnValue(10_504); children[0].emit('exit', 0, null);
+    expect(await read()).toMatchObject({ ok: false, reason: 'unreconciled' });
+    expect(execute).toHaveBeenCalledOnce(); expect(observe).toHaveBeenCalledOnce();
+    clock.mockReturnValue(10_507); children[0].emit('close', 0, null);
+    const closed = { ...deadline, callbackObserved: true, callbackAtMs: 10_001,
+      exitEventObserved: true, exitEventAtMs: 10_004, closeObserved: true, closeAtMs: 10_007 };
+    expect(observe).toHaveBeenNthCalledWith(2, 'close-after-deadline', closed);
+    expect(Object.isFrozen(observe.mock.calls[1][1])).toBe(true);
+    expect(observe.mock.calls[0][1]).toEqual(deadline);
+    expect(result).toMatchObject({ reason: 'timeout', exitObserved: false, lifecycle: deadline });
+    children[0].emit('close'); expect(observe).toHaveBeenCalledTimes(2);
+    const next = read(); expect(execute).toHaveBeenCalledTimes(2);
+    children[1].emit('close'); replies[1](null, '[]'); expect(await next).toMatchObject({ ok: true, processes: [] });
+    expect(JSON.stringify(observe.mock.calls)).not.toContain('PRIVATE');
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it('distinguishes exit without close and keeps the query reservation through its deadline', async () => {
+    const clock = vi.spyOn(performance, 'now').mockReturnValue(0);
+    const observe = vi.fn<LifecycleObserver>();
+    const { read, children, replies, execute } = fixture('win32', observe); const pending = read();
+    clock.mockReturnValue(3); children[0].emit('spawn');
+    clock.mockReturnValue(8); children[0].emit('exit', 0, null);
+    expect(await read()).toMatchObject({ ok: false, reason: 'unreconciled', exitObserved: false });
+    clock.mockReturnValue(10_000); await vi.advanceTimersByTimeAsync(PROCESS_TABLE_DEADLINE_MS);
+    expect(await pending).toMatchObject({ reason: 'timeout', exitObserved: false,
+      lifecycle: { exitEventObserved: true, exitEventAtMs: 8, closeObserved: false, callbackObserved: false } });
+    expect(await read()).toMatchObject({ reason: 'unreconciled' }); expect(execute).toHaveBeenCalledOnce();
+    clock.mockReturnValue(10_003); children[0].emit('close', 0, null);
+    expect(observe).toHaveBeenLastCalledWith('close-after-deadline', expect.objectContaining({ closeObserved: true, closeAtMs: 10_003 }));
+    const next = read(); children[1].emit('close'); replies[1](null, '[]'); expect(execute).toHaveBeenCalledTimes(2);
+    expect(await next).toMatchObject({ ok: true }); expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it.each(['success', 'error'] as const)('does not turn a %s callback or exit event into close evidence', async (mode) => {
+    const observe = vi.fn<LifecycleObserver>();
+    const { read, children, replies, execute } = fixture('win32', observe); const pending = read();
+    replies[0](mode === 'error' ? new Error('PRIVATE callback error') : null, '[]');
+    expect(await pending).toMatchObject(mode === 'error'
+      ? { ok: false, reason: 'error', exitObserved: false, lifecycle: { callbackObserved: true, closeObserved: false } }
+      : { ok: true, processes: [] });
+    children[0].emit('exit', 0, null);
+    expect(await read()).toMatchObject({ reason: 'unreconciled', exitObserved: false }); expect(execute).toHaveBeenCalledOnce();
+    children[0].emit('close'); expect(observe).not.toHaveBeenCalled();
+    const next = read(); children[1].emit('close'); replies[1](null, '[]'); expect(await next).toMatchObject({ ok: true });
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it.each(['deadline', 'close-after-deadline'] as const)('isolates an observer throwing at %s from query cleanup and ownership', async (phase) => {
+    const observe = vi.fn<LifecycleObserver>((event) => { if (event === phase) throw new Error('PRIVATE observer error'); });
+    const { read, children, replies, execute } = fixture('win32', observe); const pending = read();
+    await expect(vi.advanceTimersByTimeAsync(PROCESS_TABLE_DEADLINE_MS)).resolves.toBeDefined();
+    const result = await pending; expect(result).toMatchObject({ reason: 'timeout', exitObserved: false });
+    expect(children[0].kill).toHaveBeenCalledExactlyOnceWith('SIGKILL');
+    for (const handle of [children[0].stdin, children[0].stdout, children[0].stderr]) expect(handle.destroy).toHaveBeenCalledOnce();
+    expect(children[0].unref).toHaveBeenCalledOnce();
+    expect(await read()).toMatchObject({ reason: 'unreconciled' }); expect(execute).toHaveBeenCalledOnce();
+    expect(() => children[0].emit('close')).not.toThrow(); expect(observe).toHaveBeenCalledTimes(2);
+    expect(result).toMatchObject({ reason: 'timeout', exitObserved: false, lifecycle: { closeObserved: false } });
+    const next = read(); children[1].emit('close'); replies[1](null, '[]'); expect(await next).toMatchObject({ ok: true });
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it('isolates a throwing default close receipt sink without claiming the deadline observed close', async () => {
+    const warning = vi.spyOn(console, 'warn').mockImplementation(() => { throw new Error('PRIVATE sink error'); });
+    const { read, children, replies } = fixture(); const pending = read();
+    await vi.advanceTimersByTimeAsync(PROCESS_TABLE_DEADLINE_MS); const result = await pending;
+    expect(warning).not.toHaveBeenCalled();
+    expect(() => children[0].emit('close')).not.toThrow();
+    expect(warning).toHaveBeenCalledExactlyOnceWith('[e2e cleanup] query closed after deadline', expect.objectContaining({ closeObserved: true }));
+    expect(result).toMatchObject({ reason: 'timeout', exitObserved: false, lifecycle: { closeObserved: false } });
+    const next = read(); children[1].emit('close'); replies[1](null, '[]'); expect(await next).toMatchObject({ ok: true });
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it('forwards frozen deadline metadata without target signals or changes to retained state and temp files', async () => {
+    const oldCi = process.env.CI; delete process.env.CI;
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'cleanup-lifecycle-fixture-'));
+    const paths = { stateDir: path.join(root, 'state'), tmpDir: path.join(root, 'tmp') };
+    const retained = path.join(paths.tmpDir, 'clubhouse-e2e-retained'); fs.mkdirSync(retained, { recursive: true });
+    fs.writeFileSync(path.join(retained, 'marker'), 'PRIVATE retained content');
+    const kill = vi.spyOn(process, 'kill').mockImplementation(() => true);
+    const warning = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const { read, children } = fixture('win32', vi.fn<LifecycleObserver>());
+    try {
+      recordElectronApp(12345, retained, paths);
+      const stateFile = path.join(paths.stateDir, 'electron-pids.jsonl'); const before = await fs.promises.readFile(stateFile);
+      const pending = sweepE2EProcesses(paths, read);
+      await vi.advanceTimersByTimeAsync(PROCESS_TABLE_DEADLINE_MS);
+      expect(await pending).toEqual({ killed: 0, tempDirsRemoved: 0, processTable: 'timeout' });
+      expect(kill.mock.calls.every((call) => call[1] === 0)).toBe(true);
+      expect(await fs.promises.readFile(stateFile)).toEqual(before); expect(await fs.promises.readFile(path.join(retained, 'marker'), 'utf8')).toBe('PRIVATE retained content');
+      expect(warning).toHaveBeenCalledExactlyOnceWith('[e2e cleanup] process table unavailable; sweep/state retained', {
+        reason: 'timeout', elapsedMs: expect.any(Number), cleanupRequested: true, exitObserved: false,
+        lifecycle: expect.objectContaining({ deadlineObserved: true, spawnObserved: false, closeObserved: false, callbackObserved: false }),
+      });
+      expect(Object.isFrozen(warning.mock.calls[0][1].lifecycle)).toBe(true);
+      expect(JSON.stringify(warning.mock.calls)).not.toContain('PRIVATE');
+    } finally {
+      children[0]?.emit('close'); fs.rmSync(root, { recursive: true, force: true });
+      if (oldCi === undefined) delete process.env.CI; else process.env.CI = oldCi;
+    }
+  });
+});
 
 it('bounds a never replying query, distinguishes requested/observed cleanup and fences replacements until actual close', async () => {
   const { read, children, replies, execute } = fixture();

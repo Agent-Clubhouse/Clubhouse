@@ -578,6 +578,18 @@ describe('materialization-service', () => {
       );
     });
 
+    it('rejects unsupported Copilot rules before applying defaults', async () => {
+      mockSettingsFile(JSON.stringify({ defaults: {}, quickOverrides: {}, agentDefaults: {
+        permissions: { deny: ['WebFetch'] }, mcpJson: '{"mcpServers":{"test":{"command":"test"}}}',
+      } }));
+      const provider = { ...mockProvider, conventions: { ...mockProvider.conventions,
+        configDir: '.github', mcpConfigFile: '.github/mcp.json', localSettingsFile: 'hooks/hooks.json', permissionRules: false,
+      } };
+      await expect(materializeAgent({ projectPath: '/project', agent: testAgent, provider })).rejects.toThrow('No permission rules were applied');
+      expect(vi.mocked(fsp.writeFile).mock.calls.some(([p]) => String(p).endsWith('.github/mcp.json'))).toBe(false);
+      expect(vi.mocked(fsp.writeFile).mock.calls.some(([p]) => String(p).endsWith('hooks/hooks.json'))).toBe(false);
+    });
+
     it('writes MCP JSON with wildcards replaced', async () => {
       mockSettingsFile(JSON.stringify({
         defaults: {},

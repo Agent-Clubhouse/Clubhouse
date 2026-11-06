@@ -154,7 +154,7 @@ function AgentListItemInner({ agent, isActive, isThinking, onSelect, onSpawnQuic
           {agent.freeAgentMode && (
             <div
               className="absolute -top-0.5 -right-0.5 w-4 h-4 rounded-full bg-ctp-error flex items-center justify-center ring-2 ring-ctp-base z-20"
-              title="Free Agent Mode — all permissions bypassed"
+              title="Free Agent Mode — permissions follow the configured mode"
             >
               <span className="text-[9px] font-bold text-white leading-none">!</span>
             </div>

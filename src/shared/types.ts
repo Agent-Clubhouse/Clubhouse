@@ -47,6 +47,7 @@ export interface OrchestratorInfo {
     skillsDir: string;
     agentTemplatesDir: string;
     localSettingsFile: string;
+    permissionRules?: boolean;
   };
 }
 

@@ -6,10 +6,12 @@ Quick agents run one task and stop. They don't keep a branch or any state betwee
 
 The quickest way is the project's start page:
 
-1. Select the project's name in the sidebar, or press `⇧⌘N` to open the active project's start page with the box focused.
+1. Select the project's name in the sidebar to open its start page.
 2. Type what the agent should do.
 3. Pick **Runs on** and **Model** if you want something other than the defaults.
 4. Press `⌘Enter` or click **Start**.
+
+You can also press `⌘N` to open **New agent** with **Quick** selected. `⇧⌘N` selects **Durable** instead. On Windows and Linux, use `Ctrl` in place of `⌘`. These are the default bindings; you can change them in **Settings > Keyboard shortcuts**.
 
 For more options, click **New** at the top of the sidebar and choose **Quick agent…**. That dialog adds:
 
@@ -19,7 +21,7 @@ For more options, click **New** at the top of the sidebar and choose **Quick age
 
 ## Free agent mode
 
-Free Agent Mode handles permission prompts for you. By default it skips them all. If your CLI supports `--permission-mode auto`, you can switch to **Auto** under **Free agent permission mode** in **Settings > Agents & providers**, for all projects or one. Auto runs a safety check that allows safe actions and blocks risky ones, like force pushes, mass deletions and sending credentials out.
+Free Agent Mode handles permission prompts for you. By default it skips them all. If your CLI supports `--permission-mode auto`, you can switch to **Auto** under **Free agent permission mode** in **Settings > Agents & providers**, for all projects or one. Auto uses a classifier to decide which actions need approval. The classifier can be wrong.
 
 ## Headless or interactive
 

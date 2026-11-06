@@ -12,6 +12,9 @@ import { validateCommandPrefix } from './command-prefix-validation';
 
 const LOG_NS = 'core:agent-settings';
 
+import { UnsupportedPermissionRulesError } from './permission-rules-error';
+export { UnsupportedPermissionRulesError } from './permission-rules-error';
+
 /** Check whether an error is a filesystem "file not found" (ENOENT). */
 function isEnoent(err: unknown): boolean {
   return (err as NodeJS.ErrnoException)?.code === 'ENOENT';
@@ -27,6 +30,7 @@ export interface SettingsConventions {
   agentTemplatesDir: string;   // e.g. 'agents'
   mcpConfigFile: string;       // e.g. '.mcp.json', '.github/mcp.json'
   localSettingsFile: string;   // e.g. 'settings.local.json', 'hooks/hooks.json'
+  permissionRules?: boolean;
   settingsFormat?: 'json' | 'toml';  // defaults to 'json'
 }
 
@@ -513,6 +517,7 @@ export async function createAgentTemplateDir(basePath: string, name: string, isS
  */
 export async function readPermissions(worktreePath: string, conv?: SettingsConventions): Promise<PermissionsConfig> {
   const c = conv || CLAUDE_CODE_CONVENTIONS;
+  if (c.permissionRules === false) return {};
   // Non-JSON settings files (e.g. TOML) are not supported — return empty
   if (c.settingsFormat && c.settingsFormat !== 'json') return {};
   const settingsPath = path.join(worktreePath, c.configDir, c.localSettingsFile);
@@ -706,8 +711,16 @@ export async function writeMcpRawJson(worktreePath: string, content: string, con
  * Write permissions to .claude/settings.local.json in the given worktree.
  * Merges with existing file content (preserves hooks and other settings).
  */
+export function assertPermissionRulesSupported(permissions: PermissionsConfig, conv?: SettingsConventions): void {
+  if (conv?.permissionRules === false && (permissions.allow?.length || permissions.deny?.length)) {
+    throw new UnsupportedPermissionRulesError('Copilot does not support Clubhouse allow/deny permission rules. Remove these project defaults or configure access using Copilot settings. No permission rules were applied.');
+  }
+}
+
 export async function writePermissions(worktreePath: string, permissions: PermissionsConfig, conv?: SettingsConventions): Promise<void> {
   const c = conv || CLAUDE_CODE_CONVENTIONS;
+  assertPermissionRulesSupported(permissions, c);
+  if (c.permissionRules === false) return;
   // Non-JSON settings files (e.g. TOML) are not supported — skip write
   if (c.settingsFormat && c.settingsFormat !== 'json') return;
   const settingsPath = path.join(worktreePath, c.configDir, c.localSettingsFile);
@@ -822,6 +835,8 @@ export async function applyAgentDefaults(
   const defaults = await readProjectAgentDefaults(projectPath);
   if (!defaults) return;
 
+  if (defaults.permissions) assertPermissionRulesSupported(defaults.permissions, c);
+
   if (defaults.instructions) {
     if (writeInstructions) {
       await writeInstructions(worktreePath, defaults.instructions);
@@ -830,9 +845,6 @@ export async function applyAgentDefaults(
     }
   }
 
-  if (defaults.permissions) {
-    await writePermissions(worktreePath, defaults.permissions, conv);
-  }
 
   if (defaults.mcpJson) {
     try {
@@ -854,6 +866,10 @@ export async function applyAgentDefaults(
       appLog(LOG_NS, 'warn', 'Skipped invalid MCP config in agent defaults', { meta: { error: err instanceof Error ? err.message : String(err) } });
     }
   }
+  if (defaults.permissions) {
+    await writePermissions(worktreePath, defaults.permissions, conv);
+  }
+
 }
 
 /**

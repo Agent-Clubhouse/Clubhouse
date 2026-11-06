@@ -40,9 +40,9 @@ vi.mock('./headless-settings', () => ({
   saveSettings: vi.fn(),
 }));
 
-// Mock fs/promises for readProjectOrchestrator
+// Model a missing file for project settings and the Copilot hook preflight.
 vi.mock('fs/promises', () => ({
-  readFile: vi.fn(() => { throw new Error('ENOENT'); }),
+  readFile: vi.fn(() => { throw Object.assign(new Error('ENOENT'), { code: 'ENOENT' }); }),
 }));
 
 // Provider that does NOT have buildHeadlessCommand (like Copilot)

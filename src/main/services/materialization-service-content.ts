@@ -414,7 +414,7 @@ Neither \`@@Mission\` nor \`@@Persona\` appear in the built-in default template 
 | Tweak a skill body                         | Edit the file under \`.clubhouse/skills/<name>/SKILL.md\`    |
 | Add a new wildcard target                  | (Code change — see \`src/shared/wildcard-replacer.ts\`)      |
 | Disable Clubhouse Mode for this project    | \`projectOverrides[<path>] = false\` in user settings        |
-| Opt one agent out of materialization       | \`clubhouseModeOverride: false\` in that agent's entry       |
+| Opt one agent out of materialization       | \`clubhouseModeOverride: true\` in that agent's entry       |
 
 ---
 

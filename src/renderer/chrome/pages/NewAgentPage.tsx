@@ -431,7 +431,7 @@ export function NewAgentPage({ request }: { request: NewAgentRequest }) {
           label="Permissions"
           help={!supportsPermissions
             ? `${selectedOrch?.displayName ?? 'This CLI'} doesn't support it.`
-            : durable ? 'Skips every permission prompt. Off unless you trust this agent with the project.' : 'Skips every permission prompt.'}
+            : durable ? 'Uses the configured Free agent permission mode. Enable only if you trust this agent with the project.' : 'Uses the configured Free agent permission mode.'}
         >
           <Toggle checked={supportsPermissions && freeAgentMode} onChange={setFreeAgentMode} disabled={!supportsPermissions} aria-label="Free Agent Mode" />
           <span className={`text-[13px] ${supportsPermissions ? 'text-ctp-text' : 'text-ctp-overlay1'}`}>Free Agent Mode</span>

@@ -125,6 +125,8 @@ export interface OrchestratorConventions {
   agentTemplatesDir: string;
   /** Settings filename within configDir (e.g. 'settings.local.json') */
   localSettingsFile: string;
+  /** Whether the local settings file supports Clubhouse allow/deny permission rules. */
+  permissionRules?: boolean;
   /**
    * Filename within configDir that hooks are written to, when it differs from
    * `localSettingsFile`.  Codex keeps hooks in `.codex/hooks.json` while its

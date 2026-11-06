@@ -109,7 +109,7 @@ export const AgentHoverCard = forwardRef<HTMLDivElement, {
         {agent.branch && <Row label="Branch"><span className="font-mono">{agent.branch}</span></Row>}
         {worktree && <Row label="Worktree"><Tooltip content={agent.worktreePath} disabled={worktree === agent.worktreePath}><span className="font-mono">{worktree}</span></Tooltip></Row>}
         {agent.mcpIds && agent.mcpIds.length > 0 && <Row label="MCP">{agent.mcpIds.join(', ')}</Row>}
-        {agent.freeAgentMode && <Row label="Permissions"><span className="text-ctp-error">Free Agent Mode, all bypassed</span></Row>}
+        {agent.freeAgentMode && <Row label="Permissions"><span className="text-ctp-error">Free Agent Mode, permissions follow the configured mode</span></Row>}
       </dl>
       {(onOpenTerminal || quick.length > 0) && (
         <div className="flex items-center gap-3 pt-1 border-t border-surface-0">

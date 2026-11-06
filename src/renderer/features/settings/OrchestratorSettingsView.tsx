@@ -291,7 +291,7 @@ function AppAgentSettings() {
         </SettingsField>
         <SettingsField
           label="Free agent permission mode"
-          help={<>Skip all bypasses every check. Auto uses a safety classifier and needs <code className={CODE_CLASS}>--permission-mode</code> support in your CLI.</>}
+          help={<>Skip all bypasses every check. Auto uses a classifier that can be wrong and needs <code className={CODE_CLASS}>--permission-mode</code> support in your CLI.</>}
           htmlFor={`${idBase}-free-mode`}
         >
           <select
@@ -498,7 +498,7 @@ function AppAgentSettings() {
                   {hookCapable && (
                     <SettingsField
                       label="Hook server"
-                      help="Receives this provider's hook callbacks, like permission requests and tool events. When off, its agents get no hooks, so remote permissions and observability stop working. Running agents need a restart for the change to take full effect."
+                      help="Receives terminal hook callbacks, like permission requests and tool events. Chat uses its runtime protocol for status and approvals. Running agents need a restart for the change to take full effect."
                     >
                       <Toggle
                         aria-label={`Hook server for ${o.displayName}`}
