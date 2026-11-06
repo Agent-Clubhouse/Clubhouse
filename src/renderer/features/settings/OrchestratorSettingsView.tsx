@@ -291,7 +291,7 @@ function AppAgentSettings() {
         </SettingsField>
         <SettingsField
           label="Free agent permission mode"
-          help={<>Skip all bypasses every check. Auto uses a safety classifier and needs <code className={CODE_CLASS}>--permission-mode</code> support in your CLI.</>}
+          help={<>Skip all bypasses every check. Auto uses a classifier that can be wrong and needs <code className={CODE_CLASS}>--permission-mode</code> support in your CLI.</>}
           htmlFor={`${idBase}-free-mode`}
         >
           <select

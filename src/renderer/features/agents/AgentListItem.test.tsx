@@ -59,6 +59,11 @@ describe('AgentListItem activity animation', () => {
     vi.clearAllMocks();
   });
 
+  it('describes Free Agent Mode without guessing the permission level', () => {
+    renderItem({ freeAgentMode: true });
+    expect(screen.getByTitle('Free Agent Mode — permissions follow the configured mode')).toBeInTheDocument();
+  });
+
   it('does not apply animation classes when agent is sleeping', () => {
     const { container } = renderItem({ status: 'sleeping' });
     const avatarWrapper = container.querySelector('[class*="flex-shrink-0"]');

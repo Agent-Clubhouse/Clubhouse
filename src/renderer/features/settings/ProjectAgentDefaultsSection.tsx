@@ -593,8 +593,8 @@ export function ProjectAgentDefaultsSection({ projectPath, clubhouseMode }: Prop
         <SettingsField
           label="Free agent mode by default"
           help={freeAgentMode
-            ? <span className="text-ctp-error">New agents will skip all permission prompts by default.</span>
-            : 'Start new agents with permission prompts skipped.'}
+            ? <span className="text-ctp-error">New agents will use the configured Free agent permission mode.</span>
+            : 'Start new agents with the configured Free agent permission mode.'}
         >
           <Toggle
             aria-label="Free agent mode by default"

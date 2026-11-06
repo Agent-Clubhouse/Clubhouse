@@ -4,6 +4,7 @@ import { render, screen, fireEvent, act } from '@testing-library/react';
 import { AgentRow, HOVER_OPEN_MS } from './AgentRow';
 import { useAgentStore } from '../../stores/agentStore';
 import { useProjectStore } from '../../stores/projectStore';
+import { useFreeAgentSettingsStore } from '../../stores/freeAgentSettingsStore';
 import { createChatViewState, useChatStore } from '../../stores/chatStore';
 import type { Agent } from '../../../shared/types';
 
@@ -48,6 +49,16 @@ describe('AgentRow identity and activity', () => {
     expect(screen.getByText('SF')).toHaveClass('w-[18px]', 'h-[18px]');
     fireEvent.click(glyph);
     expect(onSelect).toHaveBeenCalledTimes(1);
+  });
+
+  it.each(['auto', 'skip-all'] as const)('describes Free Agent Mode without guessing the permission level with %s configured', (mode) => {
+    useFreeAgentSettingsStore.setState({ defaultMode: mode, projectOverrides: {} });
+    vi.useFakeTimers();
+    const { row } = setup(durable({ freeAgentMode: true }));
+    expect(screen.getByRole('img', { name: 'Free Agent Mode: permissions follow the configured mode' })).toBeInTheDocument();
+    fireEvent.mouseEnter(row);
+    act(() => { vi.advanceTimersByTime(HOVER_OPEN_MS); });
+    expect(screen.getByTestId('agent-hover-card')).toHaveTextContent('Free Agent Mode, permissions follow the configured mode');
   });
 
   it('opens only the row hover card when hovering its provider glyph', () => {
