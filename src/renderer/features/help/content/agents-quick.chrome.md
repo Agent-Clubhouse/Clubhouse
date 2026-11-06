@@ -21,7 +21,7 @@ For more options, click **New** at the top of the sidebar and choose **Quick age
 
 ## Free agent mode
 
-Free Agent Mode handles permission prompts for you. By default it skips them all. If your CLI supports `--permission-mode auto`, you can switch to **Auto** under **Free agent permission mode** in **Settings > Agents & providers**, for all projects or one. Auto runs a safety check that allows safe actions and blocks risky ones, like force pushes, mass deletions and sending credentials out.
+Free Agent Mode handles permission prompts for you. By default it skips them all. If your CLI supports `--permission-mode auto`, you can switch to **Auto** under **Free agent permission mode** in **Settings > Agents & providers**, for all projects or one. Auto uses a classifier to decide which actions need approval. The classifier can be wrong.
 
 ## Headless or interactive
 

@@ -11,7 +11,7 @@ Clubhouse enforces a permission system that controls what each plugin can access
 | **git** | Git status, log, branches, diffs |
 | **terminal** | Spawn and control shell sessions |
 | **agents** | List, run, kill, resume, and monitor agents |
-| **agents.free-agent-mode** | Spawn agents that bypass all permission prompts (elevated — requires `agents`) |
+| **agents.free-agent-mode** | Spawn agents using the configured Free Agent Permission Mode (elevated — requires `agents`) |
 | **notifications** | Show notices, errors, confirmations, input prompts, open URLs |
 | **storage** | Persistent data storage (project, project-local, global scopes) |
 | **navigation** | Focus agents, switch Explorer tabs programmatically |

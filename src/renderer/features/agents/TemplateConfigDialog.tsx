@@ -204,7 +204,7 @@ export function TemplateConfigDialog({ persona, personaColor, projectPath, onClo
           {/* Free Agent Mode */}
           <label
             className={`flex items-center gap-2 mb-4 ${supportsPermissions ? 'cursor-pointer' : 'cursor-not-allowed opacity-50'}`}
-            title={supportsPermissions ? 'Skip all permission prompts when running' : 'Not supported by this CLI'}
+            title={supportsPermissions ? 'Handle permissions using the configured mode' : 'Not supported by this CLI'}
           >
             <input
               type="checkbox"
@@ -215,7 +215,7 @@ export function TemplateConfigDialog({ persona, personaColor, projectPath, onClo
             />
             <span className="text-xs text-ctp-subtext0 uppercase tracking-wider">Free Agent Mode</span>
             <span className="text-xs text-ctp-subtext0/70 ml-1">
-              {supportsPermissions ? '(skip all permissions)' : '(not supported)'}
+              {supportsPermissions ? '(uses configured permission mode)' : '(not supported)'}
             </span>
           </label>
 

@@ -532,7 +532,7 @@ function AgentListInner() {
         {/* Free Agent Mode toggle */}
         <label
           className={`flex items-center gap-1.5 ${supportsPermissions ? 'cursor-pointer' : 'cursor-not-allowed opacity-50'}`}
-          title={supportsPermissions ? 'Skip all permission prompts' : 'Not supported by this CLI'}
+          title={supportsPermissions ? 'Handle permissions using the configured mode' : 'Not supported by this CLI'}
         >
           <input
             type="checkbox"
@@ -543,7 +543,7 @@ function AgentListInner() {
           />
           <span className="text-xs text-ctp-subtext0">Free Agent Mode</span>
           {quickFreeAgentMode && supportsPermissions && (
-            <span className="text-xs text-ctp-error">skip all permissions</span>
+            <span className="text-xs text-ctp-error">uses configured permission mode</span>
           )}
         </label>
         <div className="flex gap-1.5">

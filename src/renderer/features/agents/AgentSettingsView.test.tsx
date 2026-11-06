@@ -339,6 +339,7 @@ describe('AgentSettingsView', () => {
     it('renders free agent mode as a switch', () => {
       renderSettings();
       expect(screen.getByRole('switch', { name: 'Free Agent Mode' })).toBeInTheDocument();
+      expect(screen.getByText('Handle permissions using the configured Free agent permission mode.')).toBeInTheDocument();
     });
 
     it('does not render a Structured Mode toggle, even with the legacy experimental flag set', async () => {

@@ -300,7 +300,7 @@ export const AgentRow = React.memo(function AgentRow({
             {agent.freeAgentMode && (
               <span
                 role="img"
-                aria-label="Free Agent Mode: all permissions bypassed"
+                aria-label="Free Agent Mode: permissions follow the configured mode"
                 className="absolute -top-0.5 -right-0.5 w-2 h-2 rounded-full bg-ctp-error ring-1 ring-ctp-mantle"
               />
             )}
