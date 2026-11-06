@@ -131,7 +131,7 @@ describe('Settings card (#2280)', () => {
     expect(card.getByTestId('details-setting-access')).toHaveTextContent('Full access');
     expect(card.getByTestId('details-setting-clubhouse-mode')).toHaveTextContent('On');
     // github from the wrapper (the agent's own pick) plus playwright from .mcp.json.
-    await waitFor(() => expect(card.getByTestId('details-setting-mcp')).toHaveTextContent('2 enabled'));
+    await waitFor(() => expect(card.getByTestId('details-setting-mcp')).toHaveTextContent('2 configured'));
     expect(window.clubhouse.project.readDefaultMcps).not.toHaveBeenCalled();
     await waitFor(() => expect(card.getByTestId('details-setting-instructions')).toHaveTextContent('Project Manager'));
 
@@ -185,7 +185,7 @@ describe('Settings card (#2280)', () => {
     // Only chat agents idle-sleep.
     expect(card.queryByTestId('details-setting-auto-sleep')).not.toBeInTheDocument();
     // No pick of its own: the project defaults, plus .mcp.json.
-    await waitFor(() => expect(card.getByTestId('details-setting-mcp')).toHaveTextContent('3 enabled'));
+    await waitFor(() => expect(card.getByTestId('details-setting-mcp')).toHaveTextContent('3 configured'));
     await waitFor(() => expect(card.getByTestId('details-setting-instructions')).toHaveTextContent('Custom, 3 lines'));
     expect(window.clubhouse.project.readDefaultMcps).toHaveBeenCalledWith('/work/proj');
   });
@@ -222,7 +222,7 @@ describe('Settings card edge cases', () => {
     window.clubhouse.project.readLaunchWrapper = vi.fn(async () => undefined) as never;
     render(<AgentDetails agent={agent} />);
     const card = openSettings();
-    await waitFor(() => expect(card.getByTestId('details-setting-mcp')).toHaveTextContent('1 enabled'));
+    await waitFor(() => expect(card.getByTestId('details-setting-mcp')).toHaveTextContent('1 configured'));
     expect(window.clubhouse.project.readDefaultMcps).not.toHaveBeenCalled();
   });
 

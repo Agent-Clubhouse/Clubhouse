@@ -1204,6 +1204,7 @@ describe('AgentSettingsView', () => {
           '/project/.clubhouse/agents/code-reviewer',
           expect.stringContaining('"review-server"'),
           '/project',
+          'new-agent-1',
         );
       });
     });

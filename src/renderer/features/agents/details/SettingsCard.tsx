@@ -123,13 +123,13 @@ function useRead<T>(key: string | null, read: () => Promise<T>, keepWithin?: str
 }
 
 /**
- * The servers the agent starts with: its .mcp.json ones (and the user's
+ * Configured file entries (not delivered or connected servers), including the user's
  * global ones), plus the launch wrapper's when the project has a wrapper,
  * which are the agent's own pick or else the project defaults (agent-system.ts).
  */
-async function readMcpNames(folder: string, projectPath: string, mcpIds: string[] | undefined): Promise<string[]> {
+async function readMcpNames(folder: string, projectPath: string, agentId: string, mcpIds: string[] | undefined): Promise<string[]> {
   const [servers, wrapper] = await Promise.all([
-    window.clubhouse.agentSettings.readMcpConfig(folder, projectPath),
+    window.clubhouse.agentSettings.readMcpConfig(folder, projectPath, agentId),
     window.clubhouse.project.readLaunchWrapper(projectPath),
   ]);
   const names = new Set<string>((Array.isArray(servers) ? servers : []).map((s: { name: string }) => s.name));
@@ -202,7 +202,7 @@ export function SettingsCard({ agent, chat, projectPath, provider }: {
   const folder = agent.worktreePath || projectPath;
   const readKey = open && local && loaded && folder ? `${agent.id}\n${folder}` : null;
   const mcpIds = config?.mcpIds;
-  const mcp = useRead(readKey && `${readKey}\n${(mcpIds ?? []).join(',')}:${mcpIds === undefined}`, () => readMcpNames(folder!, projectPath!, mcpIds));
+  const mcp = useRead(readKey && `${readKey}\n${(mcpIds ?? []).join(',')}:${mcpIds === undefined}`, () => readMcpNames(folder!, projectPath!, agent.id, mcpIds));
   const instructions = useRead(readKey, () => window.clubhouse.agentSettings.readInstructions(folder!, projectPath));
 
   // Saved values once the config has loaded (main drops unset ones); the agent's own until then.
@@ -381,7 +381,7 @@ export function SettingsCard({ agent, chat, projectPath, provider }: {
           />
         ) : undefined,
       },
-      { id: 'mcp', label: 'MCP servers', editable: 'never' as const, value: readText(mcp, (names) => (names.length === 0 ? 'None' : `${names.length} enabled`)) },
+      { id: 'mcp', label: 'MCP servers', editable: 'never' as const, value: readText(mcp, (names) => (names.length === 0 ? 'None' : `${names.length} configured`)) },
       { id: 'instructions', label: 'Instructions', editable: 'never' as const, value: readText(instructions, (text) => instructionsLabel(config?.persona, typeof text === 'string' ? text : null) ?? 'None') },
     ] : []),
   ];

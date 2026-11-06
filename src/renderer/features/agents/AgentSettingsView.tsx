@@ -630,7 +630,7 @@ export function AgentSettingsView({ agent }: Props) {
 
       // Inject MCP servers from the plugin template into the agent's .mcp.json
       if (entry.template.mcpServers && Object.keys(entry.template.mcpServers).length > 0) {
-        const rawJson = await window.clubhouse.agentSettings.readMcpRawJson(agentWorktree, projectPath);
+        const rawJson = await window.clubhouse.agentSettings.readMcpRawJson(agentWorktree, projectPath, config.id);
         let mcpConfig: Record<string, unknown>;
         try {
           mcpConfig = JSON.parse(rawJson);
@@ -644,7 +644,7 @@ export function AgentSettingsView({ agent }: Props) {
         for (const [serverName, serverDef] of Object.entries(entry.template.mcpServers)) {
           servers[serverName] = serverDef;
         }
-        await window.clubhouse.agentSettings.writeMcpRawJson(agentWorktree, JSON.stringify(mcpConfig, null, 2), projectPath);
+        await window.clubhouse.agentSettings.writeMcpRawJson(agentWorktree, JSON.stringify(mcpConfig, null, 2), projectPath, config.id);
       }
 
       // Refresh agent list so the new agent appears
@@ -1375,6 +1375,7 @@ export function AgentSettingsView({ agent }: Props) {
       <McpJsonSection
         worktreePath={worktreePath}
         projectPath={projectPath}
+        agentId={agent.id}
         disabled={isRunning}
         refreshKey={refreshKey}
         pathLabel={mcpPathLabel}
