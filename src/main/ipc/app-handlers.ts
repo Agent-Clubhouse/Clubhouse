@@ -26,6 +26,9 @@ import { ensureDefaultTemplates, enableExclusions, disableExclusions } from '../
 import { resolveOrchestrator } from '../services/agent-system';
 import * as annexServer from '../services/annex-server';
 import * as experimentalSettings from '../services/experimental-settings';
+import * as chatRuntimeSettings from '../services/chat-runtime-settings';
+import * as projectStore from '../services/project-store';
+import * as agentConfig from '../services/agent-config';
 import { withValidatedArgs, stringArg, objectArg, numberArg, booleanArg, arrayArg } from './validation';
 import { onMcpSettingsChanged } from './mcp-binding-handlers';
 import type { McpProposal } from '../services/mcp-settings';
@@ -561,6 +564,10 @@ export function registerAppHandlers(): void {
   ipcMain.handle(IPC.APP.GET_EXPERIMENTAL_SETTINGS, () => {
     return experimentalSettings.getSettingsForRenderer();
   });
+
+  ipcMain.handle(IPC.APP.IS_CHAT_TIP_READ_UNCERTAIN, () =>
+    experimentalSettings.savedSettingsUnreadable() || projectStore.isChatTipProjectReadUncertain() ||
+    agentConfig.isChatTipAgentReadUncertain() || chatRuntimeSettings.isChatTipRuntimeReadUncertain());
 
   ipcMain.handle(IPC.APP.IS_EXPERIMENTAL_SETTINGS_UNREADABLE, () => experimentalSettings.savedSettingsUnreadable());
 

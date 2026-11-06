@@ -18,7 +18,7 @@ beforeEach(() => {
   const values = new Map<string, string>();
   vi.stubGlobal('localStorage', { getItem: (k: string) => values.get(k) ?? null, setItem: (k: string, v: string) => values.set(k, v) });
   vi.stubGlobal('window', { clubhouse: {
-    app: { isExperimentalSettingsUnreadable: async () => flags.savedSettingsUnreadable(), getExperimentalSettings: async () => flags.getSettingsForRenderer() },
+    app: { isChatTipReadUncertain: async () => false, isExperimentalSettingsUnreadable: async () => flags.savedSettingsUnreadable(), getExperimentalSettings: async () => flags.getSettingsForRenderer() },
     chat: { getRuntimeSettings: async () => ({}), getAgentRuntime: async () => ({ chat: true }) },
     project: { list: async () => [{ path: '/synthetic' }] },
     agent: { listDurable: async () => [{ id: 'a1' }] },

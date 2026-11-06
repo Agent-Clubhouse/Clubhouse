@@ -350,6 +350,7 @@ export const IPC = {
     RESTART: 'app:restart',
     GET_EXPERIMENTAL_SETTINGS: 'app:get-experimental-settings',
     IS_EXPERIMENTAL_SETTINGS_UNREADABLE: 'app:is-experimental-settings-unreadable',
+    IS_CHAT_TIP_READ_UNCERTAIN: 'app:is-chat-tip-read-uncertain',
     SAVE_EXPERIMENTAL_SETTINGS: 'app:save-experimental-settings',
     // Session resume on update
     GET_PENDING_RESUMES: 'app:get-pending-resumes',

@@ -258,7 +258,40 @@ async function registryMutation<T>(run: () => Promise<T>): Promise<T> {
   finally { registryPending--; }
 }
 
+// Retained for the one-time chat tip: quarantine can make a failed read look
+// like a fresh install on a subsequent list in the same process.
+let chatTipProjectReadUncertain = false;
+export function isChatTipProjectReadUncertain(): boolean { return chatTipProjectReadUncertain; }
+
+async function noteChatTipProjectRead(): Promise<void> {
+  let failed = false;
+  for (const name of ['projects.json', 'projects.json.bak']) {
+    try {
+      const raw: unknown = JSON.parse(await fsp.readFile(path.join(getBaseDirPath(), name), 'utf-8'));
+      const { dropped } = migrate(raw);
+      if (dropped === 0) chatTipProjectReadUncertain = false;
+      else chatTipProjectReadUncertain = true;
+      return;
+    } catch (err) {
+      // telemetry-exempt: retained as an uncertain toast decision.
+      if ((err as NodeJS.ErrnoException).code !== 'ENOENT') failed = true;
+    }
+  }
+  if (!failed) {
+    try {
+      // Quarantine is existing durable evidence that an absent registry was not
+      // necessarily a fresh install, including after the process restarts.
+      failed = (await fsp.readdir(getBaseDirPath())).some((name) => name.startsWith('projects.json.corrupt-'));
+    } catch (err) {
+      // telemetry-exempt: retained as an uncertain toast decision.
+      if ((err as NodeJS.ErrnoException).code !== 'ENOENT') failed = true;
+    }
+  }
+  if (failed) chatTipProjectReadUncertain = true;
+}
+
 async function readStore(): Promise<ProjectStoreV1> {
+  await noteChatTipProjectRead();
   const storePath = await getStorePath();
   const backupPath = await getBackupPath();
 

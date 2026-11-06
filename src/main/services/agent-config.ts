@@ -406,7 +406,31 @@ async function readConfigFileIfPresent(filePath: string): Promise<string | null>
   }
 }
 
+// A failed read must not become an empty-install decision for the chat tip.
+const chatTipUncertainProjects = new Set<string>();
+export function isChatTipAgentReadUncertain(): boolean { return chatTipUncertainProjects.size > 0; }
+
+async function noteChatTipAgentRead(projectPath: string): Promise<void> {
+  let failed = false;
+  for (const file of [agentsConfigPath(projectPath), agentsBackupPath(projectPath)]) {
+    try {
+      const raw: unknown = JSON.parse(await fsp.readFile(file, 'utf-8'));
+      if (Array.isArray(raw) && (raw.length === 0 || raw.some(isAgentRecord))) {
+        if (raw.every(isAgentRecord)) chatTipUncertainProjects.delete(projectPath);
+        else chatTipUncertainProjects.add(projectPath);
+        return;
+      }
+      failed = true;
+    } catch (err) {
+      // telemetry-exempt: retained as an uncertain toast decision.
+      if ((err as NodeJS.ErrnoException).code !== 'ENOENT') failed = true;
+    }
+  }
+  if (failed) chatTipUncertainProjects.add(projectPath);
+}
+
 async function readAgentsFromDisk(projectPath: string): Promise<DurableAgentConfig[]> {
+  await noteChatTipAgentRead(projectPath);
   const configPath = agentsConfigPath(projectPath);
   const backupPath = agentsBackupPath(projectPath);
 
