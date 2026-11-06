@@ -18,7 +18,7 @@ const ERRNOS = new Set(['ENOENT', 'EEXIST', 'EPERM', 'EACCES', 'EBUSY', 'EIO', '
 const LIMITS = { recent: 32, phases: 64, fs: 128, shownFs: 32 } as const;
 const scope = new AsyncLocalStorage<{ diagnostic: TestPhaseDiagnostic; phase: string }>();
 type Phase = { phase: string; at: number };
-type CaseId = 'catalog-builder' | 'sdk-incident' | 'sdk-send' | 'fixture';
+type CaseId = 'catalog-builder' | 'sdk-incident' | 'sdk-send' | 'cleanup-safety' | 'fixture';
 
 export type TestPhaseDiagnostic = ReturnType<typeof startTestPhaseDiagnostic>;
 

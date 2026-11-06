@@ -32,7 +32,7 @@
  * already upload `test-results/` as artifacts.
  */
 
-import { execFileSync } from 'child_process';
+import { readProcessTable, type ProcessInfo, type ProcessTableResult } from './cleanup-process-table';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
@@ -103,43 +103,6 @@ function readLaunchRecords(paths?: CleanupPaths): LaunchRecord[] {
       .filter((line) => line.trim())
       .map((line) => JSON.parse(line) as LaunchRecord)
       .filter((r) => typeof r.pid === 'number');
-  } catch {
-    return [];
-  }
-}
-
-interface ProcessInfo {
-  pid: number;
-  ppid: number;
-  command: string;
-}
-
-/** Snapshot the process table. Returns an empty list if it cannot be read. */
-function listProcesses(): ProcessInfo[] {
-  try {
-    if (process.platform === 'win32') {
-      const out = execFileSync(
-        'powershell.exe',
-        ['-NoProfile', '-Command',
-          'Get-CimInstance Win32_Process | Select-Object ProcessId,ParentProcessId,CommandLine | ConvertTo-Json -Compress'],
-        { encoding: 'utf-8', maxBuffer: 32 * 1024 * 1024 },
-      );
-      const parsed = JSON.parse(out) as Array<{ ProcessId: number; ParentProcessId: number; CommandLine: string | null }>;
-      return (Array.isArray(parsed) ? parsed : [parsed]).map((p) => ({
-        pid: p.ProcessId,
-        ppid: p.ParentProcessId,
-        command: p.CommandLine ?? '',
-      }));
-    }
-    const out = execFileSync('ps', ['-Ao', 'pid=,ppid=,command='], {
-      encoding: 'utf-8',
-      maxBuffer: 32 * 1024 * 1024,
-    });
-    return out.split('\n').flatMap((line) => {
-      const match = line.match(/^\s*(\d+)\s+(\d+)\s+(.*)$/);
-      if (!match) return [];
-      return [{ pid: Number(match[1]), ppid: Number(match[2]), command: match[3] }];
-    });
   } catch {
     return [];
   }
@@ -238,13 +201,15 @@ function removeStrayTempDirs(paths?: CleanupPaths): number {
 export interface SweepResult {
   killed: number;
   tempDirsRemoved: number;
+  /** Unknown enumeration never permits a kill, directory removal or state deletion. */
+  processTable?: 'complete' | 'timeout' | 'error' | 'invalid' | 'unreconciled';
 }
 
 /**
  * Kill Electron instances left over from this run and remove their temp dirs.
  * No-op in CI. Never throws — cleanup must not fail a run.
  */
-export function sweepE2EProcesses(paths?: CleanupPaths): SweepResult {
+export async function sweepE2EProcesses(paths?: CleanupPaths, query: () => Promise<ProcessTableResult> = readProcessTable): Promise<SweepResult> {
   const result: SweepResult = { killed: 0, tempDirsRemoved: 0 };
   if (!isLocalRun()) return result;
 
@@ -253,7 +218,18 @@ export function sweepE2EProcesses(paths?: CleanupPaths): SweepResult {
     const livePids = records.map((r) => r.pid).filter(isAlive);
 
     if (livePids.length > 0) {
-      const processes = listProcesses();
+      const snapshot = await query();
+      if (snapshot.ok === false) {
+        result.processTable = snapshot.reason;
+        // Fixed metadata only. No raw process table, command line, PID or paths.
+        console.warn('[e2e cleanup] process table unavailable; sweep/state retained', {
+          reason: snapshot.reason, elapsedMs: snapshot.elapsedMs,
+          cleanupRequested: snapshot.cleanupRequested, exitObserved: snapshot.exitObserved,
+        });
+        return result;
+      }
+      result.processTable = 'complete';
+      const processes = snapshot.processes;
       const byPid = new Map(processes.map((p) => [p.pid, p]));
       const candidates = withDescendants(livePids, processes);
 
