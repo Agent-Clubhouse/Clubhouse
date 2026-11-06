@@ -787,6 +787,7 @@ const COPILOT_CONVENTIONS: SettingsConventions = {
   agentTemplatesDir: 'agents',
   mcpConfigFile: '.github/mcp.json',
   localSettingsFile: 'hooks/hooks.json',
+  permissionRules: false,
 };
 
 describe('orchestrator convention routing', () => {
@@ -928,73 +929,28 @@ describe('orchestrator convention routing', () => {
     );
   });
 
-  it('readPermissions uses convention configDir/localSettingsFile', async () => {
+  it('does not read Copilot hook documents as permission settings', async () => {
+    expect(await readPermissions(WORKTREE, COPILOT_CONVENTIONS)).toEqual({});
+    expect(fsp.readFile).not.toHaveBeenCalled();
+  });
+
+  it('rejects unsupported Copilot permission rules without writing a hook file', async () => {
+    await expect(writePermissions(WORKTREE, { allow: ['Read'] }, COPILOT_CONVENTIONS))
+      .rejects.toThrow('No permission rules were applied');
+    expect(fsp.writeFile).not.toHaveBeenCalled();
+    await writePermissions(WORKTREE, {}, COPILOT_CONVENTIONS);
+    expect(fsp.writeFile).not.toHaveBeenCalled();
+  });
+
+  it('reports unsupported project default rules instead of creating a hook document', async () => {
     vi.mocked(fsp.readFile).mockResolvedValue(JSON.stringify({
-      permissions: { allow: ['Read'] },
+      defaults: {}, quickOverrides: {}, agentDefaults: { permissions: { deny: ['WebFetch'] } },
     }));
-    await readPermissions(WORKTREE, COPILOT_CONVENTIONS);
-    expect(fsp.readFile).toHaveBeenCalledWith(
-      path.join(WORKTREE, '.github', 'hooks', 'hooks.json'),
-      'utf-8',
-    );
+    await expect(applyAgentDefaults(WORKTREE, PROJECT, undefined, COPILOT_CONVENTIONS))
+      .rejects.toThrow('No permission rules were applied');
+    expect(fsp.writeFile).not.toHaveBeenCalled();
   });
 
-  it('writePermissions uses convention configDir/localSettingsFile', async () => {
-    vi.mocked(fsp.readFile).mockResolvedValue('{}');
-    await writePermissions(WORKTREE, { allow: ['Read'] }, COPILOT_CONVENTIONS);
-    expect(fsp.writeFile).toHaveBeenCalledWith(
-      path.join(WORKTREE, '.github', 'hooks', 'hooks.json'),
-      expect.any(String),
-      'utf-8',
-    );
-  });
-
-  it('writePermissions creates parent directory of settings file if missing', async () => {
-    vi.mocked(fsp.readFile).mockRejectedValue(makeEnoent());
-    await writePermissions(WORKTREE, { allow: ['Read'] }, COPILOT_CONVENTIONS);
-    // Should create the parent dir of hooks/hooks.json, which is .github/hooks
-    expect(fsp.mkdir).toHaveBeenCalledWith(
-      path.dirname(path.join(WORKTREE, '.github', 'hooks', 'hooks.json')),
-      { recursive: true },
-    );
-    expect(appLog).not.toHaveBeenCalled();
-  });
-
-  it('applyAgentDefaults uses convention for MCP and permissions', async () => {
-    const mcpContent = '{"mcpServers": {"test": {}}}';
-    vi.mocked(fsp.readFile).mockImplementation(async (p: any) => {
-      const s = String(p);
-      if (s.includes('settings.json') && !s.includes('settings.local') && !s.includes('hooks')) {
-        return Promise.resolve(JSON.stringify({
-          defaults: {},
-          quickOverrides: {},
-          agentDefaults: {
-            mcpJson: mcpContent,
-            permissions: { allow: ['Read'] },
-          },
-        }));
-      }
-      return Promise.resolve('{}');
-    });
-    vi.mocked(fsp.mkdir).mockResolvedValue(undefined);
-    vi.mocked(fsp.writeFile).mockResolvedValue(undefined);
-
-    const writeInstructions = vi.fn();
-    await applyAgentDefaults(WORKTREE, PROJECT, writeInstructions, COPILOT_CONVENTIONS);
-
-    // MCP should be written to convention path
-    const mcpWriteCall = vi.mocked(fsp.writeFile).mock.calls.find(
-      (c) => String(c[0]).includes('mcp.json'),
-    );
-    expect(mcpWriteCall).toBeDefined();
-    expect(String(mcpWriteCall![0])).toBe(path.join(WORKTREE, '.github', 'mcp.json'));
-
-    // Permissions should use convention path
-    const permWriteCall = vi.mocked(fsp.writeFile).mock.calls.find(
-      (c) => String(c[0]).includes('hooks.json'),
-    );
-    expect(permWriteCall).toBeDefined();
-  });
 });
 
 // =============================================================================

@@ -423,15 +423,6 @@ export async function materializeAgent(params: {
     await provider.writeInstructions(worktreePath, resolvedPersonaContent!);
   }
 
-  // 2. Permissions
-  if (defaults.permissions) {
-    const resolvedPerms = {
-      allow: defaults.permissions.allow?.map((r) => replaceWildcards(r, ctx)),
-      deny: defaults.permissions.deny?.map((r) => replaceWildcards(r, ctx)),
-    };
-    await writePermissions(worktreePath, resolvedPerms, conv);
-  }
-
   // 3. Local overrides own their entire MCP map, even during explicit persona materialization.
   if (defaults.mcpJson && !agent.clubhouseModeOverride) {
     try {
@@ -486,6 +477,15 @@ export async function materializeAgent(params: {
 
   // 5. Source agent templates → copy to worktree with wildcard replacement
   await copySourceDir(projectPath, worktreePath, 'agentTemplates', conv, ctx);
+
+  // 2. Permissions
+  if (defaults.permissions) {
+    const resolvedPerms = {
+      allow: defaults.permissions.allow?.map((r) => replaceWildcards(r, ctx)),
+      deny: defaults.permissions.deny?.map((r) => replaceWildcards(r, ctx)),
+    };
+    await writePermissions(worktreePath, resolvedPerms, conv);
+  }
 
   appLog('core:materialization', 'info', `Materialized settings for agent ${agent.name}`, {
     meta: { agentName: agent.name, projectPath },

@@ -132,6 +132,7 @@ const mockReadLaunchWrapper = vi.fn(() => undefined);
 const mockReadDefaultMcps = vi.fn(() => []);
 const mockReadMcpConfigs = vi.fn(() => ({}));
 vi.mock('./agent-settings-service', () => ({
+  UnsupportedPermissionRulesError: class UnsupportedPermissionRulesError extends Error {},
   readProjectAgentDefaults: (...args: unknown[]) => mockReadProjectAgentDefaults(...args),
   readLaunchWrapper: (...args: unknown[]) => mockReadLaunchWrapper(...args),
   readDefaultMcps: (...args: unknown[]) => mockReadDefaultMcps(...args),
@@ -2657,6 +2658,16 @@ describe('agent-system', () => {
       });
 
       expect(mockMaterializeAgent).not.toHaveBeenCalled();
+    });
+
+    it('stops launch when inherited permission rules cannot be applied', async () => {
+      mockIsClubhouseModeEnabled.mockReturnValue(true);
+      mockGetDurableConfig.mockReturnValue({ id: 'agent-1', name: 'agent-1', worktreePath: '/project/agent' });
+      const { UnsupportedPermissionRulesError } = await import('./agent-settings-service');
+      mockMaterializeAgent.mockRejectedValueOnce(new UnsupportedPermissionRulesError('Rules not applied'));
+      await expect(spawnAgent({ agentId: 'agent-1', projectPath: '/project', cwd: '/project', kind: 'durable' }))
+        .rejects.toThrow('Rules not applied');
+      expect(mockPtySpawn).not.toHaveBeenCalled();
     });
 
     it('continues spawn when materialization throws', async () => {

@@ -11,7 +11,7 @@ vi.mock('fs', () => ({
 
 vi.mock('fs/promises', () => ({
   mkdir: vi.fn(async () => undefined),
-  readFile: vi.fn(async () => { throw new Error('ENOENT'); }),
+  readFile: vi.fn(async () => { throw Object.assign(new Error('ENOENT'), { code: 'ENOENT' }); }),
   writeFile: vi.fn(async () => undefined),
   readdir: vi.fn(async () => []),
   stat: vi.fn(async () => ({
@@ -485,6 +485,14 @@ describe('CopilotCliProvider', () => {
   });
 
   describe('writeHooksConfig', () => {
+    it('preserves ambiguous permissions-only and corrupt files with an actionable error', async () => {
+      for (const content of ['{"permissions":{"allow":["Read"]}}', '{']) {
+        vi.mocked(fsp.readFile).mockResolvedValueOnce(content);
+        await expect(provider.writeHooksConfig('/project', 'http://127.0.0.1:9999/hook')).rejects.toThrow(/hooks/i);
+        expect(fsp.writeFile).not.toHaveBeenCalled();
+      }
+    });
+
     it('creates hooks directory and writes hooks.json', async () => {
       vi.mocked(fs.existsSync).mockReturnValue(false);
       await provider.writeHooksConfig('/project', 'http://127.0.0.1:9999/hook');

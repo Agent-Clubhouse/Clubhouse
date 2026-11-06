@@ -100,6 +100,7 @@ export class CopilotCliProvider extends BaseProvider implements HookCapable, Hea
     skillsDir: 'skills',
     agentTemplatesDir: 'agents',
     localSettingsFile: 'hooks/hooks.json',
+    permissionRules: false,
   };
 
   // ── BaseProvider configuration ──────────────────────────────────────────
@@ -324,8 +325,16 @@ export class CopilotCliProvider extends BaseProvider implements HookCapable, Hea
     let existing: Record<string, unknown> = { version: 1 };
     try {
       existing = JSON.parse(await fsp.readFile(settingsPath, 'utf-8'));
-    } catch {
-      // No existing file
+    } catch (err) {
+      if ((err as NodeJS.ErrnoException)?.code !== 'ENOENT') {
+        throw new Error(`Cannot read Copilot hooks at ${settingsPath}: ${err instanceof Error ? err.message : String(err)}. Fix the file before starting the agent.`);
+      }
+    }
+
+    if (!existing || typeof existing !== 'object' || Array.isArray(existing) ||
+        ('hooks' in existing && (!existing.hooks || typeof existing.hooks !== 'object' || Array.isArray(existing.hooks))) ||
+        ('permissions' in existing)) {
+      throw new Error(`Invalid or conflicting Copilot hooks at ${settingsPath}. Review and repair this file; Clubhouse permission rules are not supported there.`);
     }
 
     const mergedHooks = mergeHookEntries(existing, ourHooks, isClubhouseHookEntry);
