@@ -25,13 +25,13 @@ test('copilot SDK standard default: send, stream and finish two fake turns', asy
     await session.send('Reply with the word one.');
     await expect(dom.turnFooters).toHaveCount(1, { timeout: TURN_TIMEOUT });
     await expect(dom.turnFooters.first()).toHaveAttribute('data-stop-reason', 'end_turn');
-    await expect(dom.agentMessages.first()).toHaveText('one');
+    await expect(dom.agentMessages.first().locator('.chat-markdown')).toHaveText('one');
     await expect(dom.agentMessages.first().getByLabel('Streaming')).toHaveCount(0);
     await expect(chat).toHaveAttribute('data-state', 'idle');
     await session.send('Now reply with the word two.');
     await expect(dom.turnFooters).toHaveCount(2, { timeout: TURN_TIMEOUT });
     await expect(dom.turnFooters.nth(1)).toHaveAttribute('data-stop-reason', 'end_turn');
-    await expect(dom.agentMessages.nth(1)).toHaveText('two');
+    await expect(dom.agentMessages.nth(1).locator('.chat-markdown')).toHaveText('two');
     await expect(dom.userMessages).toHaveCount(2);
     await expect(chat).toHaveAttribute('data-state', 'idle');
     await session.expectScriptComplete();
