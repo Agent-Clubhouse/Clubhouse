@@ -34,6 +34,12 @@ test('copilot SDK standard default: send, stream and finish two fake turns', asy
     await expect(dom.agentMessages.nth(1).locator('.chat-markdown')).toHaveText('two');
     await expect(dom.userMessages).toHaveCount(2);
     await expect(chat).toHaveAttribute('data-state', 'idle');
+    // The recording includes detach; stop through the app before checking every line.
+    await window.evaluate(({ agentId, projectDir }) =>
+      (window as unknown as { clubhouse: { agent: {
+        killAgent(id: string, projectPath: string, waitForExit?: boolean): Promise<void>;
+      } } }).clubhouse.agent.killAgent(agentId, projectDir, true),
+    { agentId: session.agentId, projectDir: session.projectDir });
     await session.expectScriptComplete();
   } finally {
     await session.close();
