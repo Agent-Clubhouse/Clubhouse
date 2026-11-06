@@ -26,7 +26,8 @@ const DEFAULT_PROVIDER = 'claude-code';
 
 export async function getAgentRuntimeInfo(agentId: string, provider: string | undefined, query: AgentRuntimeQuery = {}): Promise<ChatAgentRuntimeInfo> {
   // With Chat off nothing can start in it, so there's no switch to offer.
-  const chatAvailable = isChatEnabled() && !!resolveChatDriver(provider || DEFAULT_PROVIDER);
+  const providerId = provider || DEFAULT_PROVIDER;
+  const chatAvailable = isChatEnabled() && !!resolveChatDriver(providerId, resolveRuntimeMode(providerId).driver);
   const live = isChatAgent(agentId);
   if (live || hasChatStartInFlight(agentId)) return { chat: true, live, chatAvailable };
   // A running terminal answers it, including a chat start that fell back.

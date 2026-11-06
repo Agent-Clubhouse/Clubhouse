@@ -34,7 +34,7 @@ import { summarizeHeadlessTranscript } from '../../shared/headless-transcript';
 import { TimelineBuilder } from '../../renderer/features/agents/states/timeline';
 import { agentKillStage } from '../telemetry/agent-telemetry';
 import { appLog } from './log-service';
-import { isHeadless, kill, spawnHeadless, startStaleSweep, stopStaleSweep } from './headless-manager';
+import { _internal, isHeadless, kill, spawnHeadless, startStaleSweep, stopStaleSweep } from './headless-manager';
 
 const FAKE_CLI = path.join(__dirname, '__fixtures__', 'fake-headless-cli.mjs');
 const AGENT = 'fake-cli-agent';
@@ -187,21 +187,33 @@ describe('headless-manager with a fake CLI (#2813)', () => {
     // Case (b).
     it('an exit is missed by close and recovered by the next sweep, once', async () => {
       await start('exit-child-holds-stdout');
+      const proc = _internal.sessions.get(AGENT)!.process;
+      const exited = vi.fn();
+      const closed = vi.fn();
+      proc.on('exit', exited);
+      proc.on('close', closed);
       await until(holderStarted, 'the holder');
-      await until(() => !isAlive(cliPid()), 'the CLI to exit');
-      await realSleep(100);
+      await until(() => exited.mock.calls.length === 1, 'Node to observe the CLI exit');
+      expect(exited).toHaveBeenCalledExactlyOnceWith(0, null);
+      expect(proc.exitCode).toBe(0);
 
       expect(isHeadless(AGENT)).toBe(true);
       expect(exits()).toEqual([]);
+      expect(closed).not.toHaveBeenCalled();
 
-      vi.advanceTimersByTime(SWEEP_MS);
+      vi.advanceTimersByTime(SWEEP_MS - 1);
+      expect(isHeadless(AGENT)).toBe(true);
+      expect(exits()).toEqual([]);
+      expect(onExit).not.toHaveBeenCalled();
+      vi.advanceTimersByTime(1);
       expect(isHeadless(AGENT)).toBe(false);
       expect(exits().map((e) => e[1])).toEqual([0]);
       expect(onExit).toHaveBeenCalledTimes(1);
 
       // The holder ends, so close finally fires. The run has already been reported.
       process.kill(holderPid(), 'SIGKILL');
-      await until(() => logLines('Process closed after the stale sweep reported it').length === 1, 'the late close');
+      await until(() => closed.mock.calls.length === 1, 'the late child close event');
+      expect(closed).toHaveBeenCalledExactlyOnceWith(0, null);
       expect(exits()).toHaveLength(1);
       expect(onExit).toHaveBeenCalledTimes(1);
     });
@@ -227,6 +239,12 @@ describe('headless-manager with a fake CLI (#2813)', () => {
 
     it('a CLI that needed SIGKILL still reports its exit', async () => {
       await start('ignore-sigterm-child-holds-stdout');
+      const proc = _internal.sessions.get(AGENT)!.process;
+      const startedAt = Date.now();
+      const exited = vi.fn(() => Date.now());
+      const closed = vi.fn();
+      proc.on('exit', exited);
+      proc.on('close', closed);
       await until(holderStarted, 'the holder');
 
       kill(AGENT);
@@ -235,12 +253,32 @@ describe('headless-manager with a fake CLI (#2813)', () => {
 
       vi.advanceTimersByTime(KILL_ESCALATION_MS);
       expect(agentKillStage).toHaveBeenCalledWith(AGENT, 'sigkill');
-      await until(() => !isAlive(cliPid()), 'the CLI to die');
-      await realSleep(100);
+      await until(() => exited.mock.calls.length === 1, 'Node to observe the SIGKILL exit');
+      expect(exited).toHaveBeenCalledExactlyOnceWith(null, 'SIGKILL');
+      expect(exited.mock.results[0].value).toBe(startedAt + KILL_ESCALATION_MS);
+      expect(proc.signalCode).toBe('SIGKILL');
+      expect(proc.exitCode).toBeNull();
+      expect(closed).not.toHaveBeenCalled();
 
+      // SIGKILL's real exit is observed at fake T=5s. The sweep at T=30s
+      // sees only 25s of grace and must leave the session tracked.
+      vi.advanceTimersByTime(SWEEP_MS - KILL_ESCALATION_MS);
+      expect(exits()).toEqual([]);
+      expect(onExit).not.toHaveBeenCalled();
+      expect(isHeadless(AGENT)).toBe(true);
+      expect(closed).not.toHaveBeenCalled();
+
+      // T=60s is the next sweep, after a full drain grace. A held pipe
+      // cannot postpone exit reporting beyond that eligible sweep.
       vi.advanceTimersByTime(SWEEP_MS);
       expect(exits().map((e) => e[1])).toEqual([128 + os.constants.signals.SIGKILL]);
       expect(isHeadless(AGENT)).toBe(false);
+      expect(onExit).toHaveBeenCalledTimes(1);
+      process.kill(holderPid(), 'SIGKILL');
+      await until(() => closed.mock.calls.length === 1, 'the late SIGKILL child close event');
+      expect(closed).toHaveBeenCalledExactlyOnceWith(null, 'SIGKILL');
+      expect(exits()).toHaveLength(1);
+      expect(onExit).toHaveBeenCalledTimes(1);
     });
   });
 });

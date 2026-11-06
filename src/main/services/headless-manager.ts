@@ -61,10 +61,12 @@ interface HeadlessSession {
   textBuffer?: string;
   /** Timer for force-kill escalation in kill(). */
   killTimer?: ReturnType<typeof setTimeout>;
-  /** Stored so stale sweeper can invoke it when exit events are missed. */
+  /** Registry callback, invoked by the session finalizer. */
   onExitCallback?: (agentId: string, exitCode: number) => void;
-  /** The stale sweeper already reported this run's exit; a late close must not repeat it. */
-  exitReported?: boolean;
+  /** Exit event time, or first observation of an exited process if that event was missed. */
+  exitedAt?: number;
+  /** Shared, idempotent finalization for close, error, and stale sweep. */
+  finalize?: (code: number | null, signal: NodeJS.Signals | null, error?: Error) => void;
   /** Last stdout from the CLI, for diagnosing a run that looks stuck (#2813). */
   lastOutputAt?: number;
   /** When the first `result` event arrived. */
@@ -81,12 +83,35 @@ const sessions = new Map<string, HeadlessSession>();
 const closingTranscripts = new Set<Promise<void>>();
 
 /** End a run's transcript stream, tracking it until its writes are flushed (or failed). */
-function endTranscript(logStream: fs.WriteStream): void {
-  const flushed = new Promise<void>((resolve) => {
-    logStream.end(() => resolve());
-  });
+function endTranscript(logStream: fs.WriteStream, agentId: string): void {
+  let finish!: () => void;
+  const flushed = new Promise<void>((resolve) => { finish = resolve; });
   closingTranscripts.add(flushed);
   void flushed.then(() => closingTranscripts.delete(flushed));
+  try {
+    logStream.end(finish);
+  } catch (error) {
+    finish();
+    runFinalizationStep(agentId, 'transcript destroy', () => { logStream.destroy(); });
+    throw error; // Let the finalizer diagnose synchronous end failures too.
+  }
+}
+
+/** A failed output or observer step must not strand the rest of finalization. */
+function runFinalizationStep(agentId: string, step: string, action: () => void): void {
+  try {
+    action();
+  } catch (error) {
+    // telemetry-exempt: Diagnose locally even when telemetry is off; continue mandatory teardown.
+    appLog('core:headless', 'error', 'Headless finalization step failed', {
+      meta: { agentId, step, error: error instanceof Error ? error.message : String(error) },
+    });
+  }
+}
+
+/** Old output may finish its transcript, but must not change a replacement's status. */
+function canEmitSessionHooks(session: HeadlessSession): boolean {
+  return sessions.get(session.agentId) === session;
 }
 
 function cleanupHeadlessSession(agentId: string): void {
@@ -134,22 +159,23 @@ function hasExited(proc: ChildProcess): boolean {
   return proc.exitCode !== null || (proc.signalCode ?? null) !== null;
 }
 
+/** Allow stdout/stderr to drain for at least one sweep interval after exit. */
+const EXIT_CLOSE_GRACE_MS = 30_000;
+
 const staleSweeper = new StaleSweeper<HeadlessSession>(sessions, {
   // Exited with no close: a child still holds its stdout open (#2813).
-  isStale: (_agentId, session) => hasExited(session.process),
+  isStale: (_agentId, session) => {
+    if (!hasExited(session.process)) return false;
+    session.exitedAt ??= Date.now();
+    return Date.now() - session.exitedAt >= EXIT_CLOSE_GRACE_MS;
+  },
   onStale: (agentId, session) => {
     const signal = session.process.signalCode ?? null;
     appLog('core:headless', 'warn', 'Stale headless session detected, cleaning up', {
       meta: { ...runDiagnostics(session), exitCode: session.process.exitCode, signal },
     });
     agentSwept(agentId);
-    const exitCode = resolveExitCode(session.process.exitCode, signal);
-    const { onExitCallback } = session;
-    session.exitReported = true;
-    cleanupHeadlessSession(agentId);
-    broadcastAgentExit(agentId, exitCode);
-    // Invoke onExit so the agent registry is cleaned up (prevents memory leak)
-    onExitCallback?.(agentId, exitCode);
+    session.finalize?.(session.process.exitCode, signal);
   },
   onLive: (_agentId, session) => {
     const quietMs = Date.now() - (session.lastOutputAt ?? session.startedAt);
@@ -364,22 +390,27 @@ function setupTranscriptPipeline(
   session: HeadlessSession,
   logStream: fs.WriteStream,
   agentId: string,
-): void {
-  if (!session.parser) return;
+): () => void {
+  const parser = session.parser;
+  if (!parser) return () => {};
 
   // Track which content_block indices are tool_use (for matching content_block_stop)
   const activeToolBlocks = new Map<number, string>();
   // tool_use id → tool name, so post_tool events can name the tool they finish
   const toolNamesById = new Map<string, string>();
 
-  session.parser.on('line', (raw: StreamJsonEvent) => {
-    noteRawEvent(session, raw);
-    // Providers whose CLI emits its own vocabulary translate here, so the rest
-    // of the pipeline only ever sees stream-json. One raw line can expand to
-    // several events, or to none.
-    const events = session.normalizeEvent ? session.normalizeEvent(raw) : [raw];
-    for (const event of events) handleTranscriptEvent(session, event, logStream, agentId, activeToolBlocks, toolNamesById);
-  });
+  const onLine = (raw: StreamJsonEvent) => {
+    // JsonlParser also catches line-listener errors as malformed JSON. Diagnose
+    // failures here so a throwing tail normalizer/write isn't silently lost.
+    runFinalizationStep(agentId, 'transcript event', () => {
+      noteRawEvent(session, raw);
+      // One provider-specific raw line can expand to several events, or none.
+      const events = session.normalizeEvent ? session.normalizeEvent(raw) : [raw];
+      for (const event of events) handleTranscriptEvent(session, event, logStream, agentId, activeToolBlocks, toolNamesById);
+    });
+  };
+  parser.on('line', onLine);
+  return () => { parser.off('line', onLine); };
 }
 
 function handleTranscriptEvent(
@@ -406,6 +437,7 @@ function handleTranscriptEvent(
   }
 
   // Emit hook events to renderer + annex event bus for status tracking
+  if (!canEmitSessionHooks(session)) return;
   const hookEvents = mapToHookEvent(event, activeToolBlocks, toolNamesById);
   for (const hookEvent of hookEvents) {
     broadcastToAllWindows(IPC.AGENT.HOOK_EVENT, agentId, hookEvent);
@@ -432,7 +464,7 @@ function setupStdoutHandler(
   session: HeadlessSession,
   agentId: string,
   io: IOState,
-): void {
+): () => void {
   // Decode incrementally so a multi-byte UTF-8 character split across two
   // chunks is reassembled instead of becoming U+FFFD replacement chars.
   const decoder = new StringDecoder('utf8');
@@ -443,7 +475,7 @@ function setupStdoutHandler(
       session.textBuffer = (session.textBuffer || '') + str;
     }
   };
-  proc.stdout?.on('data', (chunk: Buffer) => {
+  const onData = (chunk: Buffer) => {
     const str = decoder.write(chunk);
     session.lastOutputAt = Date.now();
     session.nextLiveReportMs = LIVE_REPORT_QUIET_MS;
@@ -456,22 +488,33 @@ function setupStdoutHandler(
       });
     }
     consume(str);
-  });
-  proc.stdout?.on('end', () => {
+  };
+  let ended = false;
+  const onEnd = () => {
+    if (ended) return;
+    ended = true;
     const tail = decoder.end();
     if (tail) consume(tail);
-  });
+  };
+  proc.stdout?.on('data', onData);
+  proc.stdout?.on('end', onEnd);
+  return () => {
+    proc.stdout?.off('data', onData);
+    proc.stdout?.off('end', onEnd);
+    onEnd();
+  };
 }
 
 /** Wire stderr data to a bounded buffer and broadcast as notifications. */
 function setupStderrHandler(
   proc: ChildProcess,
+  session: HeadlessSession,
   agentId: string,
   io: IOState,
-): void {
+): () => void {
   const decoder = new StringDecoder('utf8');
-  proc.stderr?.on('data', (chunk: Buffer) => {
-    const msg = decoder.write(chunk).trim();
+  const consume = (str: string) => {
+    const msg = str.trim();
     if (!msg) return;
 
     const msgBytes = Buffer.byteLength(msg, 'utf-8');
@@ -486,6 +529,7 @@ function setupStderrHandler(
     appLog('core:headless', 'warn', `stderr`, { meta: { agentId, message: msg } });
 
     // Forward stderr to renderer + annex so headless view can show errors
+    if (!canEmitSessionHooks(session)) return;
     const stderrNotification = {
       kind: 'notification' as const,
       message: msg,
@@ -493,7 +537,21 @@ function setupStderrHandler(
     };
     broadcastToAllWindows(IPC.AGENT.HOOK_EVENT, agentId, stderrNotification);
     annexEventBus.emitHookEvent(agentId, stderrNotification);
-  });
+  };
+  const onData = (chunk: Buffer) => consume(decoder.write(chunk));
+  let ended = false;
+  const onEnd = () => {
+    if (ended) return;
+    ended = true;
+    consume(decoder.end());
+  };
+  proc.stderr?.on('data', onData);
+  proc.stderr?.on('end', onEnd);
+  return () => {
+    proc.stderr?.off('data', onData);
+    proc.stderr?.off('end', onEnd);
+    onEnd();
+  };
 }
 
 /**
@@ -539,18 +597,27 @@ function setupExitHandlers(
   agentId: string,
   outputKind: HeadlessOutputKind,
   io: IOState,
-  onExit?: (agentId: string, exitCode: number) => void,
+  finishStdout: () => void,
+  finishStderr: () => void,
+  detachParser: () => void,
 ): void {
-  let exited = false;
+  let finalized = false;
+  const noteExit = () => { session.exitedAt ??= Date.now(); };
+  proc.on('exit', noteExit);
 
-  proc.on('close', (code, signal) => {
-    if (exited) return;
-    exited = true;
-    const exitCode = resolveExitCode(code, signal);
+  session.finalize = (code, signal, error) => {
+    if (finalized) return;
+    finalized = true;
+    proc.off('exit', noteExit);
+    if (session.killTimer) clearTimeout(session.killTimer);
+    // A descendant may still own the pipes. Stop accepting output before
+    // flushing decoders/parser and ending the transcript, including on error.
+    runFinalizationStep(agentId, 'stdout finish', finishStdout);
+    runFinalizationStep(agentId, 'stderr finish', finishStderr);
+    const exitCode = error ? 1 : resolveExitCode(code, signal);
 
-    if (session.parser) {
-      session.parser.flush();
-    }
+    runFinalizationStep(agentId, 'parser flush', () => { session.parser?.flush(); });
+    runFinalizationStep(agentId, 'parser detach', detachParser);
 
     // For text mode, synthesize a result transcript entry from buffered output
     if (outputKind === 'text' && session.textBuffer) {
@@ -560,22 +627,23 @@ function setupExitHandlers(
         duration_ms: Date.now() - session.startedAt,
         cost_usd: 0,
       };
-      appendTranscriptEvent(session, resultEvent, logStream);
+      runFinalizationStep(agentId, 'text result', () => appendTranscriptEvent(session, resultEvent, logStream));
 
-      const stopEvent = {
-        kind: 'stop' as const,
-        message: session.textBuffer.trim().slice(0, 500),
-        timestamp: Date.now(),
-      };
-      broadcastToAllWindows(IPC.AGENT.HOOK_EVENT, agentId, stopEvent);
-      annexEventBus.emitHookEvent(agentId, stopEvent);
+      if (canEmitSessionHooks(session)) {
+        const stopEvent = {
+          kind: 'stop' as const,
+          message: session.textBuffer.trim().slice(0, 500),
+          timestamp: Date.now(),
+        };
+        runFinalizationStep(agentId, 'text stop broadcast', () => broadcastToAllWindows(IPC.AGENT.HOOK_EVENT, agentId, stopEvent));
+        runFinalizationStep(agentId, 'text stop event', () => annexEventBus.emitHookEvent(agentId, stopEvent));
+      }
     }
 
-    endTranscript(logStream);
+    runFinalizationStep(agentId, 'transcript end', () => endTranscript(logStream, agentId));
 
-    if (session.exitReported) {
-      appLog('core:headless', 'info', 'Process closed after the stale sweep reported it', { meta: { agentId, exitCode, signal } });
-      return;
+    if (error) {
+      appLog('core:headless', 'error', `Process error`, { meta: { agentId, error: error.message } });
     }
 
     // Only clean up and broadcast exit if this session has not been replaced.
@@ -583,41 +651,26 @@ function setupExitHandlers(
     // fires after the new session is already stored — without this guard the
     // handler would delete the NEW session (CQ-2 race condition).
     const currentSession = sessions.get(agentId);
-    if (!currentSession || currentSession.process === proc) {
+    if (currentSession === session) {
       cleanupHeadlessSession(agentId);
 
       appLog('core:headless', 'info', `Process exited`, {
         meta: { ...runDiagnostics(session), exitCode, signal, stdoutBytes: io.stdoutBytes, stderr: io.stderrChunks.join('\n').slice(0, 500) },
       });
 
-      onExit?.(agentId, exitCode);
+      runFinalizationStep(agentId, 'registry exit', () => session.onExitCallback?.(agentId, exitCode));
 
-      broadcastAgentExit(agentId, exitCode, stderrTail(io));
+      runFinalizationStep(agentId, 'exit broadcast', () => broadcastAgentExit(agentId, exitCode, error?.message || stderrTail(io)));
     } else {
       appLog('core:headless', 'info', `Old process exited after session replacement — skipping cleanup`, {
         meta: { agentId, exitCode, signal },
       });
     }
-  });
+  };
 
-  proc.on('error', (err) => {
-    if (exited) return;
-    exited = true;
-
-    appLog('core:headless', 'error', `Process error`, { meta: { agentId, error: err.message } });
-    endTranscript(logStream);
-    if (session.exitReported) return;
-
-    // Only clean up and broadcast exit if this session has not been replaced (CQ-2).
-    const currentSession = sessions.get(agentId);
-    if (!currentSession || currentSession.process === proc) {
-      cleanupHeadlessSession(agentId);
-
-      onExit?.(agentId, 1);
-
-      broadcastAgentExit(agentId, 1, err.message || stderrTail(io));
-    }
-  });
+  proc.on('close', (code, signal) => session.finalize!(code, signal ?? null));
+  // Keep the error listener after finalization: late errors must be harmless.
+  proc.on('error', (err) => session.finalize!(1, null, err));
 }
 
 // ── Main Entry Point ────────────────────────────────────────────────────────
@@ -672,11 +725,11 @@ export async function spawnHeadless(
   });
   const io: IOState = { stdoutBytes: 0, stderrChunks: [], stderrChunkSizes: [], stderrBytes: 0 };
 
-  setupTranscriptPipeline(session, logStream, agentId);
+  const detachParser = setupTranscriptPipeline(session, logStream, agentId);
   emitTextModeNotification(agentId, outputKind);
-  setupStdoutHandler(proc, session, agentId, io);
-  setupStderrHandler(proc, agentId, io);
-  setupExitHandlers(proc, session, logStream, agentId, outputKind, io, onExit);
+  const finishStdout = setupStdoutHandler(proc, session, agentId, io);
+  const finishStderr = setupStderrHandler(proc, session, agentId, io);
+  setupExitHandlers(proc, session, logStream, agentId, outputKind, io, finishStdout, finishStderr, detachParser);
 }
 
 /** @internal — exported for testing only */

@@ -2001,3 +2001,51 @@ describe('writeIconFile', () => {
     expect(fsp.unlink).not.toHaveBeenCalled();
   });
 });
+
+it('retains uncertainty when the registry becomes unreadable after existence is checked', async () => {
+  const { isChatTipProjectReadUncertain } = await import('./project-store');
+  vi.mocked(pathExists).mockImplementation(async (p) => String(p) === STORE_PATH);
+  vi.mocked(fsp.readFile).mockRejectedValueOnce(Object.assign(new Error('read failed'), { code: 'EACCES' }));
+  vi.mocked(fsp.rename).mockResolvedValue(undefined);
+  vi.mocked(fsp.readdir).mockResolvedValue([]);
+  await list();
+  expect(isChatTipProjectReadUncertain()).toBe(true);
+});
+
+it('does not rule out the toast when a later valid registry read overlaps the failed list it consumed', async () => {
+  vi.resetModules();
+  const projects = await import('./project-store');
+  const { showChatDefaultTip, CHAT_TIP_RULED_OUT_KEY, CHAT_MESSAGE_SHOWN_KEY } = await import('../../renderer/features/agents/chat/chat-default-tip');
+  let entered!: () => void; let release!: () => void;
+  const reached = new Promise<void>((resolve) => { entered = resolve; });
+  const held = new Promise<void>((resolve) => { release = resolve; });
+  let reads = 0;
+  vi.mocked(pathExists).mockImplementation(async (p) => String(p) === STORE_PATH);
+  vi.mocked(fsp.readFile).mockImplementation(async (p) => {
+    if (String(p) !== STORE_PATH) throw Object.assign(new Error('missing'), { code: 'ENOENT' });
+    if (++reads === 1) { entered(); await held; return JSON.stringify({ version: 1, projects: [] }); }
+    return '{broken';
+  });
+  vi.mocked(fsp.mkdir).mockResolvedValue(undefined);
+  vi.mocked(fsp.rename).mockResolvedValue(undefined);
+  vi.mocked(fsp.readdir).mockResolvedValue([]);
+  const values = new Map<string, string>();
+  vi.stubGlobal('localStorage', { getItem: (key: string) => values.get(key) ?? null, setItem: (key: string, value: string) => values.set(key, value) });
+  let releaseStatus!: () => void;
+  const statusHeld = new Promise<void>((resolve) => { releaseStatus = resolve; });
+  vi.stubGlobal('window', { clubhouse: {
+    app: { isExperimentalSettingsUnreadable: async () => false, getExperimentalSettings: async () => ({}), isChatTipReadUncertain: async () => { await statusHeld; return projects.isChatTipProjectReadUncertain(); } },
+    chat: { getRuntimeSettings: async () => ({}) },
+    project: { list: () => projects.list() },
+  } });
+  try {
+    const laterValid = projects.list();
+    await reached;
+    const tip = showChatDefaultTip();
+    await vi.waitFor(() => expect(projects.isChatTipProjectReadUncertain()).toBe(true));
+    release(); await laterValid;
+    releaseStatus(); await tip;
+    expect(localStorage.getItem(CHAT_TIP_RULED_OUT_KEY)).toBeNull();
+    expect(localStorage.getItem(CHAT_MESSAGE_SHOWN_KEY)).toBeNull();
+  } finally { release(); releaseStatus(); vi.unstubAllGlobals(); }
+});

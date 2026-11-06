@@ -61,7 +61,7 @@ export async function effectiveOrchestrators(projectPath: string) {
   return inProfile.length > 0 ? inProfile : all;
 }
 
-const chatAvailable = (orchestrator: string): boolean => isChatEnabled() && !!resolveChatDriver(orchestrator);
+const chatAvailable = (orchestrator: string): boolean => isChatEnabled() && !!resolveChatDriver(orchestrator, resolveRuntimeMode(orchestrator).driver);
 /** Free Agent Mode needs a CLI with permission support, as the New agent page and Settings card require. */
 const permissionsSupported = (orchestrator: string): boolean =>
   getAvailableOrchestrators().find((o) => o.id === orchestrator)?.capabilities?.permissions ?? false;

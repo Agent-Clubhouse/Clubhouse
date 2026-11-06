@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { Toggle } from '../../components/Toggle';
 import { SettingsPage, SettingsSection, SettingsField, settingsError, SETTING_NOT_SAVED_TEXT } from './SettingsLayout';
 import { Button } from '../../components/Button';
-import { COPILOT_SDK_FLAG } from '../../../shared/chat';
+import { LEGACY_COPILOT_ACP_FLAG } from '../../../shared/chat';
 import { isGraduatedFlagOn } from '../../../shared/graduated-flags';
 
 /** Feature definitions for the experimental settings page. */
@@ -17,9 +17,9 @@ export const EXPERIMENTAL_FEATURES: Array<{
     description: 'Monitor and control a local Goobers instance from an app-level panel. Not available on Windows. Requires app restart.',
   },
   {
-    id: COPILOT_SDK_FLAG,
-    label: 'Copilot SDK driver',
-    description: 'On selects Copilot SDK for the next chat start; off selects ACP. Running sessions keep their current driver. If SDK cannot start, chat reports the fallback and its reason. Details > Session > Runs on shows the actual driver.',
+    id: LEGACY_COPILOT_ACP_FLAG,
+    label: 'Use legacy Copilot ACP',
+    description: 'Copilot SDK is now the standard chat driver. Turn this on to use legacy ACP at the next start. Previous SDK settings do not enable legacy ACP. Running sessions keep their current driver. SDK failures never automatically select ACP. Details > Session > Runs on shows the actual driver.',
   },
 ];
 
@@ -79,7 +79,7 @@ export function ExperimentalSettingsView() {
 
       <SettingsSection title="Features">
         {EXPERIMENTAL_FEATURES.map(({ id, label, description }) => (
-          <SettingsField key={id} label={label} help={id === COPILOT_SDK_FLAG && !isGraduatedFlagOn(settings, 'chat') ? `${description} Needs Chat, which is off in Settings > Agents & providers.` : description}>
+          <SettingsField key={id} label={label} help={id === LEGACY_COPILOT_ACP_FLAG && !isGraduatedFlagOn(settings, 'chat') ? `${description} Needs Chat, which is off in Settings > Agents & providers.` : description}>
             <Toggle
               aria-label={label}
               checked={!!settings[id]}

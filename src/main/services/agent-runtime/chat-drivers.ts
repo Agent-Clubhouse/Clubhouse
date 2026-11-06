@@ -17,6 +17,10 @@ export function registerChatDriver(driver: ChatDriver): () => void {
 
 /** The preferred driver if registered for this provider, else the first one for it that isn't opt-in. */
 export function resolveChatDriver(provider: string, preferred?: ChatDriverId): ChatDriver | undefined {
+  if (provider === 'copilot-cli') {
+    const selected = drivers.get(preferred ?? 'copilot_sdk');
+    return selected?.provider === provider ? selected : undefined;
+  }
   if (preferred) {
     const d = drivers.get(preferred);
     if (d && d.provider === provider) return d;

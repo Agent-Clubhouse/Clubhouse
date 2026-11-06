@@ -6,7 +6,7 @@
 import { createSettingsStore } from './settings-store';
 import * as experimentalSettings from './experimental-settings';
 import { isPreviewEligible } from './preview-eligible';
-import { COPILOT_SDK_FLAG, type AgentRuntimeMode, type ChatDriverId, type ChatRuntimeSettings } from '../../shared/chat';
+import { LEGACY_COPILOT_ACP_FLAG, type AgentRuntimeMode, type ChatDriverId, type ChatRuntimeSettings } from '../../shared/chat';
 
 /** The flag's id in experimental settings (Settings › Agents & providers › Chat view). */
 export const CHAT_EXPERIMENTAL_FLAG = 'chat';
@@ -14,19 +14,45 @@ export const CHAT_EXPERIMENTAL_FLAG = 'chat';
 /** Mode a provider gets when the flag is on and the user hasn't chosen. */
 export const DEFAULT_CHAT_PROVIDER_MODE: AgentRuntimeMode = 'chat';
 
-const store = createSettingsStore<ChatRuntimeSettings>('chat-runtime-settings.json', {}, undefined, { audit: { key: 'chat_runtime' } });
+let chatTipRuntimeReadUncertain = false;
+function validRuntimeSettings(value: unknown): boolean {
+  return !!value && typeof value === 'object' && !Array.isArray(value) && Object.values(value).every((entry) =>
+    !!entry && typeof entry === 'object' && !Array.isArray(entry) &&
+    (!('mode' in entry) || entry.mode === 'chat' || entry.mode === 'terminal')
+  );
+}
+const store = createSettingsStore<ChatRuntimeSettings>('chat-runtime-settings.json', {}, undefined, {
+  audit: { key: 'chat_runtime' },
+  onLoad: (result) => {
+    if ('error' in result) {
+      chatTipRuntimeReadUncertain = (result.error as NodeJS.ErrnoException)?.code !== 'ENOENT';
+      return;
+    }
+    try { chatTipRuntimeReadUncertain = !validRuntimeSettings(JSON.parse(result.raw)); }
+    catch { chatTipRuntimeReadUncertain = true; } // telemetry-exempt: the toast defers
+  },
+});
 
+export function isChatTipRuntimeReadUncertain(): boolean { return chatTipRuntimeReadUncertain; }
 export const getSettings = store.get;
-export const saveSettings = store.save;
+export async function saveSettings(settings: ChatRuntimeSettings): Promise<void> {
+  await store.save(settings);
+  chatTipRuntimeReadUncertain = !validRuntimeSettings(settings);
+}
 
 /** Chat is on in every build unless the flag is saved off, or the file that may say so can't be read. */
 export function isChatEnabled(): boolean {
   return experimentalSettings.isGraduatedFeatureOn(CHAT_EXPERIMENTAL_FLAG);
 }
 
-/** The Copilot SDK driver's own flag: still experimental, so beta-only. */
+/** ACP is an explicit experimental escape hatch; old SDK flags never opt in. */
+export function isLegacyCopilotAcpEnabled(): boolean {
+  return isPreviewEligible() && experimentalSettings.getSettings()[LEGACY_COPILOT_ACP_FLAG] === true;
+}
+
+/** SDK is standard, including builds without experimental settings. */
 export function isCopilotSdkEnabled(): boolean {
-  return isPreviewEligible() && experimentalSettings.getSettings()[COPILOT_SDK_FLAG] === true;
+  return !isLegacyCopilotAcpEnabled();
 }
 
 export interface ResolvedRuntimeMode {

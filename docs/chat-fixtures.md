@@ -78,6 +78,18 @@ The same rules apply, with these differences:
 
 The driver only takes a binary path, so its tests use `writeFakeCliShims` with `createFakeCli`'s `reportPath`, as `src/main/chat/copilot/fixture-replay.test.ts` does.
 
+### Copilot app E2E transport selection
+
+The existing rich-chat Copilot scripts speak ACP, including client-queue and session-journal image coverage. `e2e/chat-rich/harness.ts` explicitly enables `copilotLegacyAcp` only for that fixture path, then checks flag readback, preview eligibility, the actual transcript driver, fake protocol and launch arguments. Contradictory transport/flag choices are rejected. This does not change production selection or global fake defaults.
+
+`providers.spec.ts` separately exercises the SDK standard default with `copilotTransport: 'sdk'` and no legacy flag or driver preference. `copilot-sdk-fixture.ts` copies the committed SDK `multi-turn` recording into the test's temporary directory, changes only its logged-out auth response to synthetic authenticated status, and marks the derived header as hand-made with its source and synthesized field. The original recording stays unchanged. No real login, provider, model request or fixture recording is performed. This checks app selection and replayed transport/UI behavior, not installed-runtime or real-auth compatibility.
+
+The recording's `session.create` entry has no explicit payload `match`, so the existing strict matcher checks its method, not the recorded BYOK `provider` object. No matcher or leniency setting changes. Successful replay cannot establish provider-payload or authentication parity.
+
+Every provider binary remains pinned to a Node replay shim or a nonexistent path, and model probes remain disabled. Copilot state uses a test-owned `COPILOT_HOME`; the SDK path also points `HOME`, `USERPROFILE` and XDG config/state homes there. Explicit provider/model overrides are applied at app launch and through a test-owned project profile after shell-env resolution: an empty provider base URL disables provider mapping, provider keys/commands are empty, and the model is `fake-model`. The app's remaining environment is inherited; this is neither a general environment allowlist nor an OS network sandbox. The fake replays messages and has no model client.
+
+Proposed fake-only selection (requires a separately authorized prepared app/E2E run; not a build command): `npx playwright test e2e/chat-rich/providers.spec.ts --grep 'copilot SDK standard default|copilot legacy ACP'`. To include the existing ACP image, client-queue and long-approval cases, use `npx playwright test e2e/chat-rich --grep copilot`. The SDK case stays in the existing providers spec on Chat E2E shard 2; ACP scenarios keep their existing shards.
+
 ## Using it in tests
 
 ```ts

@@ -29,6 +29,7 @@ beforeEach(() => {
   listDurable.mockReset().mockResolvedValue([{ id: 'a1', orchestrator: 'codex-cli' }]);
   listProjects.mockReset().mockResolvedValue([{ id: 'p1', path: '/proj' }]);
   isExperimentalSettingsUnreadable.mockReset().mockResolvedValue(false);
+  window.clubhouse.app.isChatTipReadUncertain = vi.fn().mockResolvedValue(false);
   window.clubhouse.app.getExperimentalSettings = getExperimentalSettings;
   window.clubhouse.app.isExperimentalSettingsUnreadable = isExperimentalSettingsUnreadable;
   window.clubhouse.chat.getRuntimeSettings = getRuntimeSettings;
@@ -59,6 +60,23 @@ describe('showChatDefaultTip', () => {
     await showChatDefaultTip();
     expect(toasts()).toEqual([]);
     expect(getExperimentalSettings).not.toHaveBeenCalled();
+  });
+
+  it('does not show if the intro covers chat while eligibility is being read', async () => {
+    let release!: (value: object) => void;
+    getRuntimeSettings.mockReturnValueOnce(new Promise((resolve) => { release = resolve; }));
+    const pending = showChatDefaultTip();
+    await vi.waitFor(() => expect(getRuntimeSettings).toHaveBeenCalled());
+    markChatMessageShown();
+    release({});
+    await pending;
+    expect(toasts()).toEqual([]);
+    expect(localStorage.getItem(CHAT_TIP_RULED_OUT_KEY)).toBeNull();
+  });
+
+  it('shows only once if two decisions overlap', async () => {
+    await Promise.all([showChatDefaultTip(), showChatDefaultTip()]);
+    expect(toasts()).toHaveLength(1);
   });
 
   it('links straight to the provider on Settings > Agents & providers', async () => {
@@ -138,6 +156,19 @@ describe('showChatDefaultTip', () => {
     await showChatDefaultTip();
     expect(toasts()).toHaveLength(1);
     expect(localStorage.getItem(CHAT_MESSAGE_SHOWN_KEY)).toBe('true');
+  });
+
+  it.each(['saved_choice', 'no_chat_agents', 'eligible'] as const)('defers %s when an input read was uncertain, then retries', async (outcome) => {
+    window.clubhouse.app.isChatTipReadUncertain = vi.fn().mockResolvedValueOnce(true).mockResolvedValue(false);
+    if (outcome === 'saved_choice') getRuntimeSettings.mockResolvedValueOnce({ 'codex-cli': { mode: 'chat' } });
+    if (outcome === 'no_chat_agents') listProjects.mockResolvedValueOnce([]);
+    await showChatDefaultTip();
+    expect(toasts()).toEqual([]);
+    expect(localStorage.getItem(CHAT_TIP_RULED_OUT_KEY)).toBeNull();
+    expect(localStorage.getItem(CHAT_MESSAGE_SHOWN_KEY)).toBeNull();
+    await showChatDefaultTip();
+    await showChatDefaultTip();
+    expect(toasts()).toHaveLength(1);
   });
 
   it('decides nothing when a project\'s agents can\'t be listed, so the next launch asks again', async () => {
