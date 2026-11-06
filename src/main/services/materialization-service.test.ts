@@ -5,7 +5,7 @@ vi.mock('electron', () => ({
 }));
 
 vi.mock('fs', () => {
-  const readFileSyncFn = vi.fn(() => { throw new Error('ENOENT'); });
+  const readFileSyncFn = vi.fn(() => { throw Object.assign(new Error('ENOENT'), { code: 'ENOENT' }); });
   const readdirSyncFn = vi.fn(() => []);
   return {
     existsSync: vi.fn(() => false),
@@ -21,14 +21,14 @@ vi.mock('fs', () => {
       readdir: vi.fn(async (...args: unknown[]) => readdirSyncFn(...args)),
       rm: vi.fn(async () => undefined),
       unlink: vi.fn(async () => undefined),
-      access: vi.fn(async () => { throw new Error('ENOENT'); }),
+      access: vi.fn(async () => { throw Object.assign(new Error('ENOENT'), { code: 'ENOENT' }); }),
     },
   };
 });
 
 // materialization-service itself now uses fs/promises
 vi.mock('fs/promises', () => ({
-  readFile: vi.fn(() => Promise.reject(new Error('ENOENT'))),
+  readFile: vi.fn(() => Promise.reject(Object.assign(new Error('ENOENT'), { code: 'ENOENT' }))),
   writeFile: vi.fn(() => Promise.resolve(undefined)),
   mkdir: vi.fn(() => Promise.resolve(undefined)),
   readdir: vi.fn(() => Promise.resolve([])),
@@ -146,7 +146,7 @@ function mockSettingsFile(settingsJson: string): void {
   vi.mocked(fsp.readFile).mockImplementation(async (p: unknown) => {
     const filePath = String(p);
     if (filePath.includes('settings.json')) return settingsJson;
-    throw new Error('ENOENT');
+    throw Object.assign(new Error('ENOENT'), { code: 'ENOENT' });
   });
 }
 
@@ -156,7 +156,7 @@ describe('materialization-service', () => {
 
     vi.mocked(fsp.mkdir).mockResolvedValue(undefined);
     vi.mocked(fsp.writeFile).mockResolvedValue(undefined);
-    vi.mocked(fsp.readFile).mockRejectedValue(new Error('ENOENT'));
+    vi.mocked(fsp.readFile).mockRejectedValue(Object.assign(new Error('ENOENT'), { code: 'ENOENT' }));
     vi.mocked(fsp.readdir).mockResolvedValue([]);
     vi.mocked(fsp.copyFile).mockResolvedValue(undefined);
     vi.mocked(fsp.rm).mockResolvedValue(undefined);
@@ -337,7 +337,7 @@ describe('materialization-service', () => {
         if (fp.startsWith('/project') && fp.endsWith('.clubhouse/personas/qa.md')) {
           return '---\nmodel: "claude-opus-4-8"\n---\n# Role: QA';
         }
-        throw new Error('ENOENT');
+        throw Object.assign(new Error('ENOENT'), { code: 'ENOENT' });
       });
       expect(await resolvePersonaContent('/project', 'qa')).toBe('# Role: QA');
     });
@@ -347,7 +347,7 @@ describe('materialization-service', () => {
       vi.mocked(fsp.readFile).mockImplementation(async (p: unknown) => {
         const fp = String(p).replace(/\\/g, '/');
         if (fp.startsWith('/project') && fp.endsWith('.clubhouse/personas/qa.md')) return raw;
-        throw new Error('ENOENT');
+        throw Object.assign(new Error('ENOENT'), { code: 'ENOENT' });
       });
       expect(await readPersonaForEdit('/project', 'qa')).toBe(raw);
     });
@@ -380,7 +380,7 @@ describe('materialization-service', () => {
         const fp = String(p).replace(/\\/g, '/');
         if (fp.endsWith('settings.json')) return JSON.stringify({ defaults: {}, quickOverrides: {} });
         if (fp.endsWith('.clubhouse/personas/qa.md')) return '---\nmodel: "x"\n---\nPersona for @@AgentName';
-        throw new Error('ENOENT');
+        throw Object.assign(new Error('ENOENT'), { code: 'ENOENT' });
       });
       const provider = { ...mockProvider, writeInstructions: vi.fn() };
       await writeResolvedPersonaInstructions({ projectPath: '/project', agent, provider });
@@ -397,7 +397,7 @@ describe('materialization-service', () => {
       vi.mocked(fsp.readFile).mockImplementation(async (p: unknown) => {
         const fp = String(p).replace(/\\/g, '/');
         if (fp.startsWith('/project') && fp.endsWith('.clubhouse/personas/qa.md')) return 'PROJECT QA PERSONA';
-        throw new Error('ENOENT');
+        throw Object.assign(new Error('ENOENT'), { code: 'ENOENT' });
       });
       expect(await resolvePersonaContent('/project', 'qa')).toBe('PROJECT QA PERSONA');
     });
@@ -407,7 +407,7 @@ describe('materialization-service', () => {
         const fp = String(p).replace(/\\/g, '/');
         // Project layer (under /project) misses; user-global layer (under home) hits.
         if (!fp.startsWith('/project') && fp.endsWith('.clubhouse/personas/qa.md')) return 'USER QA PERSONA';
-        throw new Error('ENOENT');
+        throw Object.assign(new Error('ENOENT'), { code: 'ENOENT' });
       });
       expect(await resolvePersonaContent('/project', 'qa')).toBe('USER QA PERSONA');
     });
@@ -415,20 +415,20 @@ describe('materialization-service', () => {
     it('project layer wins over user-global layer for the same id', async () => {
       vi.mocked(fsp.readFile).mockImplementation(async (p: unknown) => {
         const fp = String(p).replace(/\\/g, '/');
-        if (!fp.endsWith('.clubhouse/personas/qa.md')) throw new Error('ENOENT');
+        if (!fp.endsWith('.clubhouse/personas/qa.md')) throw Object.assign(new Error('ENOENT'), { code: 'ENOENT' });
         return fp.startsWith('/project') ? 'PROJECT QA PERSONA' : 'USER QA PERSONA';
       });
       expect(await resolvePersonaContent('/project', 'qa')).toBe('PROJECT QA PERSONA');
     });
 
     it('falls back to the built-in template when no disk file exists', async () => {
-      vi.mocked(fsp.readFile).mockRejectedValue(new Error('ENOENT'));
+      vi.mocked(fsp.readFile).mockRejectedValue(Object.assign(new Error('ENOENT'), { code: 'ENOENT' }));
       const content = await resolvePersonaContent('/project', 'qa');
       expect(content).toContain('Quality Assurance');
     });
 
     it('returns undefined for an unknown persona with no disk file', async () => {
-      vi.mocked(fsp.readFile).mockRejectedValue(new Error('ENOENT'));
+      vi.mocked(fsp.readFile).mockRejectedValue(Object.assign(new Error('ENOENT'), { code: 'ENOENT' }));
       expect(await resolvePersonaContent('/project', 'nonexistent')).toBeUndefined();
     });
   });
@@ -521,7 +521,7 @@ describe('materialization-service', () => {
         if (filePath.includes('.clubhouse/skills/go-standby/SKILL.md')) {
           return GO_STANDBY_SKILL_CONTENT;
         }
-        throw new Error('ENOENT');
+        throw Object.assign(new Error('ENOENT'), { code: 'ENOENT' });
       });
 
       await materializeAgent({ projectPath: '/project', agent: testAgent, provider: mockProvider });
@@ -548,6 +548,13 @@ describe('materialization-service', () => {
         testAgent.worktreePath,
         'Agent bold-falcon at .clubhouse/agents/bold-falcon/',
       );
+    });
+
+    it('explicit instruction/persona materialization preserves a local-override MCP map (#2849)', async () => {
+      mockSettingsFile(JSON.stringify({ agentDefaults: { instructions: 'Chosen persona for @@AgentName', mcpJson: '{"mcpServers":{"inherited":{"command":"project"}}}' } }));
+      await materializeAgent({ projectPath: '/project', agent: { ...testAgent, clubhouseModeOverride: true }, provider: mockProvider });
+      expect(mockProvider.writeInstructions).toHaveBeenCalledWith(testAgent.worktreePath, 'Chosen persona for bold-falcon');
+      expect(vi.mocked(fsp.writeFile).mock.calls.filter(([file]) => String(file).endsWith('.mcp.json'))).toEqual([]);
     });
 
     it('writes permissions with wildcards replaced', async () => {
@@ -694,7 +701,7 @@ describe('materialization-service', () => {
           });
         }
         if (filePath.includes('SKILL.md')) return '# Mission';
-        throw new Error('ENOENT');
+        throw Object.assign(new Error('ENOENT'), { code: 'ENOENT' });
       });
 
       await materializeAgent({ projectPath: '/project', agent: testAgent, provider: mockProvider });
@@ -732,7 +739,7 @@ describe('materialization-service', () => {
           });
         }
         if (filePath.includes('SKILL.md')) return '# Mission';
-        throw new Error('ENOENT');
+        throw Object.assign(new Error('ENOENT'), { code: 'ENOENT' });
       });
 
       await materializeAgent({ projectPath: '/project', agent: testAgent, provider: mockProvider });
@@ -940,7 +947,7 @@ describe('materialization-service', () => {
           });
         }
         if (fp.endsWith('missions/do-the-thing.md')) return '# Mission body content';
-        throw new Error('ENOENT');
+        throw Object.assign(new Error('ENOENT'), { code: 'ENOENT' });
       });
 
       await materializeAgent({ projectPath: '/project', agent: testAgent, provider: mockProvider });
@@ -966,7 +973,7 @@ describe('materialization-service', () => {
         }
         if (fp.endsWith('missions/agent-override.md')) return 'AGENT BODY';
         if (fp.endsWith('missions/project-default.md')) return 'PROJECT BODY';
-        throw new Error('ENOENT');
+        throw Object.assign(new Error('ENOENT'), { code: 'ENOENT' });
       });
 
       await materializeAgent({ projectPath: '/project', agent: agentWithMission, provider: mockProvider });
@@ -988,7 +995,7 @@ describe('materialization-service', () => {
             },
           });
         }
-        throw new Error('ENOENT'); // mission file does not exist
+        throw Object.assign(new Error('ENOENT'), { code: 'ENOENT' }); // mission file does not exist
       });
 
       await materializeAgent({ projectPath: '/project', agent: testAgent, provider: mockProvider });
@@ -1378,7 +1385,7 @@ describe('materialization-service', () => {
 
   describe('ensureDefaultSkills', () => {
     it('creates all seven skills when none exist', async () => {
-      vi.mocked(fsp.readFile).mockRejectedValue(new Error('ENOENT'));
+      vi.mocked(fsp.readFile).mockRejectedValue(Object.assign(new Error('ENOENT'), { code: 'ENOENT' }));
 
       await ensureDefaultSkills('/project');
 
@@ -1588,7 +1595,7 @@ describe('materialization-service', () => {
     });
 
     it('does nothing when file does not exist', async () => {
-      vi.mocked(fsp.readFile).mockRejectedValue(new Error('ENOENT'));
+      vi.mocked(fsp.readFile).mockRejectedValue(Object.assign(new Error('ENOENT'), { code: 'ENOENT' }));
 
       await cleanupStaleJsonInTomlConfigs('/worktree', tomlConventions);
 

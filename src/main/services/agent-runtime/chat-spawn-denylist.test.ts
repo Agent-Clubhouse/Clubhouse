@@ -41,7 +41,7 @@ vi.mock('../clubhouse-mcp/injection', () => ({
   CLUBHOUSE_NONCE_ENV: 'CLUBHOUSE_HOOK_NONCE',
 }));
 vi.mock('../mcp-settings', () => ({ isMcpEnabled: vi.fn(() => true) }));
-vi.mock('../materialization-service', () => ({ resolveProjectMcpServers: vi.fn(async () => ({})) }));
+vi.mock('../materialization-service', () => ({ resolveAgentMcpServers: vi.fn(async () => ({})) }));
 vi.mock('../agent-config', () => ({ touchSessionEntry: vi.fn(async () => {}), updateDurableConfig: vi.fn(async () => {}) }));
 vi.mock('../agent-exit-broadcast', () => ({ broadcastAgentExit: vi.fn() }));
 vi.mock('../../util/ipc-broadcast', () => ({ broadcastToAllWindows: vi.fn() }));

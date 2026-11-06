@@ -42,7 +42,7 @@ vi.mock('../clubhouse-mcp/injection', () => ({
   CLUBHOUSE_NONCE_ENV: 'CLUBHOUSE_HOOK_NONCE',
 }));
 vi.mock('../mcp-settings', () => ({ isMcpEnabled: vi.fn(() => true) }));
-vi.mock('../materialization-service', () => ({ resolveProjectMcpServers: vi.fn(async () => ({})) }));
+vi.mock('../materialization-service', () => ({ resolveAgentMcpServers: vi.fn(async () => ({})) }));
 const agentConfig = vi.hoisted(() => ({ touchSessionEntry: vi.fn(async () => {}), updateDurableConfig: vi.fn(async () => {}) }));
 vi.mock('../agent-config', () => agentConfig);
 const exitBroadcast = vi.hoisted(() => ({ broadcastAgentExit: vi.fn() }));
@@ -79,7 +79,7 @@ import type { OrchestratorProvider } from '../../orchestrators';
 import { getShellEnvironment } from '../../util/shell';
 import { injectClubhouseMcp, buildClubhouseMcpDef } from '../clubhouse-mcp/injection';
 import { isMcpEnabled } from '../mcp-settings';
-import { resolveProjectMcpServers } from '../materialization-service';
+import { resolveAgentMcpServers } from '../materialization-service';
 import { CodexChatDriver } from '../../orchestrators/adapters/codex-chat-driver';
 import { ClaudeChatDriver } from '../../chat/claude/driver';
 import { ClaudeSdkTransport, SDK_INIT_TIMEOUT_MS } from '../../chat/claude/sdk-transport';
@@ -292,7 +292,7 @@ require('readline').createInterface({ input: process.stdin }).on('line', line =>
     ['its own setting off', { mcpOverride: false }],
   ])('gives a helper in an MCP-off project the bridge but not its project servers, with %s (#2610)', async (_label, own) => {
     vi.mocked(isMcpEnabled).mockImplementation((_p?: string, agentOverride?: boolean) => agentOverride ?? false);
-    vi.mocked(resolveProjectMcpServers).mockResolvedValue({ github: { command: 'gh' } } as never);
+    vi.mocked(resolveAgentMcpServers).mockResolvedValue({ github: { command: 'gh' } } as never);
     try {
       const driver = new FakeChatDriver();
       registerChatDriver(driver);
@@ -302,7 +302,7 @@ require('readline').createInterface({ input: process.stdin }).on('line', line =>
       expect(Object.keys(driver.last.startOptions!.mcpServers!)).toEqual(['clubhouse']);
     } finally {
       vi.mocked(isMcpEnabled).mockImplementation(() => true);
-      vi.mocked(resolveProjectMcpServers).mockResolvedValue({});
+      vi.mocked(resolveAgentMcpServers).mockResolvedValue({});
     }
   });
 

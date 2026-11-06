@@ -4,7 +4,10 @@ import { IPC } from '../../shared/ipc-channels';
 import * as agentSettings from '../services/agent-settings-service';
 import { SettingsConventions } from '../services/agent-settings-service';
 import { resolveOrchestrator } from '../services/agent-system';
-import { getDurableConfig } from '../services/agent-config';
+import * as path from 'path';
+import { withAgentTransition } from '../services/agent-transition';
+import { isClubhouseModeEnabled } from '../services/clubhouse-mode-settings';
+import { peekDurableConfigs, getDurableConfig } from '../services/agent-config';
 import { extractAgentPersona, getAgentWildcards, listAvailablePersonas, materializeAgent, previewMaterialization, readPersonaForEdit, resetProjectAgentDefaults } from '../services/materialization-service';
 import { applyPersonaToAgent } from '../services/persona-application';
 import { computeConfigDiff, propagateChanges } from '../services/config-diff-service';
@@ -25,6 +28,41 @@ async function getConventions(projectPath?: string): Promise<SettingsConventions
     appLog('core:agent-settings', 'warn', `Failed to resolve orchestrator conventions for ${projectPath}`, { meta: { error: err instanceof Error ? err.message : String(err) } });
     return undefined;
   }
+}
+
+/** Agent MCP edits must resolve the same provider and folder as the next start. */
+async function getMcpContext(worktreePath: string, projectPath?: string, agentId?: string) {
+  if (!projectPath) {
+    if (agentId) throw new Error('A project is required for agent MCP settings.');
+    return { conventions: undefined, managed: false, agentId: undefined as string | undefined, target: undefined as string | undefined };
+  }
+  const agents = await peekDurableConfigs(projectPath);
+  const matches = agents.filter((a) => path.resolve(a.worktreePath || projectPath) === path.resolve(worktreePath));
+  const agent = agentId ? agents.find((a) => a.id === agentId) : matches.length === 1 ? matches[0] : undefined;
+  if (agentId && (!agent || !matches.includes(agent))) throw new Error('Agent MCP settings do not match this project and worktree.');
+  if (!agentId && matches.length > 1) throw new Error('This folder is shared by agents. Select an agent for MCP settings.');
+  if (!agent && path.resolve(worktreePath) !== path.resolve(projectPath)) throw new Error('No agent in this project owns this MCP settings folder.');
+  const provider = await resolveOrchestrator(projectPath, agent?.orchestrator);
+  const managed = !!agent && isClubhouseModeEnabled(projectPath) && !agent.clubhouseModeOverride;
+  return { conventions: provider.conventions, managed, agentId: agent?.id,
+    target: JSON.stringify([agent?.id, path.resolve(agent?.worktreePath || projectPath), provider.id, provider.conventions, managed]) };
+}
+
+async function saveAgentMcp(worktreePath: string, content: string, projectPath?: string, agentId?: string) {
+  const save = async (expected?: Awaited<ReturnType<typeof getMcpContext>>) => {
+    const context = await getMcpContext(worktreePath, projectPath, agentId);
+    if (expected && expected.target !== context.target) throw new Error('Agent MCP target changed. Reload before saving.');
+    if (context.managed) return { ok: false, error: 'Clubhouse Mode manages MCP from project defaults. Turn on Local overrides in General before saving agent MCP settings.' };
+    return agentSettings.writeMcpRawJson(worktreePath, content, context.conventions, async () => {
+      const current = await getMcpContext(worktreePath, projectPath, context.agentId);
+      if (current.target !== context.target) throw new Error('Agent MCP target changed. Reload before saving.');
+    });
+  };
+  // Reserve before the first await when identity is supplied. Legacy callers
+  // infer a unique identity first, then revalidate inside the same reservation.
+  if (agentId) return withAgentTransition(agentId, () => save());
+  const context = await getMcpContext(worktreePath, projectPath);
+  return context.agentId ? withAgentTransition(context.agentId, () => save(context)) : save(context);
 }
 
 export function registerAgentSettingsHandlers(): void {
@@ -53,9 +91,9 @@ export function registerAgentSettingsHandlers(): void {
   ));
 
   ipcMain.handle(IPC.AGENT.READ_MCP_CONFIG, withValidatedArgs(
-    [stringArg(), stringArg({ optional: true })],
-    async (_event, worktreePath, projectPath) => {
-      return agentSettings.readMcpConfig(worktreePath, await getConventions(projectPath));
+    [stringArg(), stringArg({ optional: true }), stringArg({ optional: true })],
+    async (_event, worktreePath, projectPath, agentId) => {
+      return agentSettings.readMcpConfig(worktreePath, (await getMcpContext(worktreePath, projectPath, agentId)).conventions);
     },
   ));
 
@@ -172,23 +210,23 @@ export function registerAgentSettingsHandlers(): void {
   // --- MCP raw JSON ---
 
   ipcMain.handle(IPC.AGENT.READ_MCP_RAW_JSON, withValidatedArgs(
-    [stringArg(), stringArg({ optional: true })],
-    async (_event, worktreePath, projectPath) => {
-      return agentSettings.readMcpRawJson(worktreePath, await getConventions(projectPath));
+    [stringArg(), stringArg({ optional: true }), stringArg({ optional: true })],
+    async (_event, worktreePath, projectPath, agentId) => {
+      return agentSettings.readMcpRawJson(worktreePath, (await getMcpContext(worktreePath, projectPath, agentId)).conventions);
     },
   ));
 
   ipcMain.handle(IPC.AGENT.GET_MCP_SHADOW_WARNING, withValidatedArgs(
-    [stringArg(), stringArg({ optional: true })],
-    async (_event, worktreePath, projectPath) => {
-      return agentSettings.getMcpShadowWarning(worktreePath, await getConventions(projectPath));
+    [stringArg(), stringArg({ optional: true }), stringArg({ optional: true })],
+    async (_event, worktreePath, projectPath, agentId) => {
+      return agentSettings.getMcpShadowWarning(worktreePath, (await getMcpContext(worktreePath, projectPath, agentId)).conventions);
     },
   ));
 
   ipcMain.handle(IPC.AGENT.WRITE_MCP_RAW_JSON, withValidatedArgs(
-    [stringArg(), stringArg({ minLength: 0 }), stringArg({ optional: true })],
-    async (_event, worktreePath, content, projectPath) => {
-      return agentSettings.writeMcpRawJson(worktreePath, content, await getConventions(projectPath));
+    [stringArg(), stringArg({ minLength: 0 }), stringArg({ optional: true }), stringArg({ optional: true })],
+    async (_event, worktreePath, content, projectPath, agentId) => {
+      return saveAgentMcp(worktreePath, content, projectPath, agentId);
     },
   ));
 
