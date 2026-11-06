@@ -102,7 +102,7 @@ function identityChanged(recorded: string | undefined, current: string | undefin
 }
 
 /** What changes when the binary is replaced: mtime, size and inode. */
-function binaryIdentity(binaryPath: string): string | undefined {
+export function binaryIdentity(binaryPath: string): string | undefined {
   try {
     const st = fs.statSync(binaryPath);
     return `${st.mtimeMs}:${st.size}:${st.ino}`;
@@ -135,9 +135,10 @@ async function runProbe(driver: ChatDriver, binaryPath: string, env: Record<stri
  * and counts one failure for the key. A probe past PROBE_DEADLINE_MS fails
  * for every caller sharing it and leaves nothing in flight or cached.
  */
-export function probeDriver(driver: ChatDriver, binaryPath: string, env?: Record<string, string>, commandPrefix?: string): Promise<ChatDriverProbe> {
+export function probeDriver(driver: ChatDriver, binaryPath: string, env?: Record<string, string>, commandPrefix?: string, options: { fresh?: boolean; cacheSuccess?: boolean } = {}): Promise<ChatDriverProbe> {
   const key = driverHealthKey(driver, binaryPath, env, commandPrefix);
   const identity = binaryIdentity(binaryPath);
+  if (options.fresh) probes.delete(key);
   const cached = probes.get(key);
   if (cached && identity !== undefined && cached.identity === identity) return Promise.resolve(cached.probe);
   // A probe of the binary this one replaced isn't shared.
@@ -154,7 +155,7 @@ export function probeDriver(driver: ChatDriver, binaryPath: string, env?: Record
       probes.delete(key);
     } else if (result.handshakeOk) {
       // A version lookup that failed may pass next time; don't pin "unknown".
-      if (identity !== undefined && !result.versionTransient) probes.set(key, { identity, probe: result });
+      if (options.cacheSuccess !== false && identity !== undefined && !result.versionTransient) probes.set(key, { identity, probe: result });
       else probes.delete(key);
     } else {
       probes.delete(key);

@@ -220,6 +220,7 @@ export const IPC = {
     GET_RUNTIME_SETTINGS: 'chat:get-runtime-settings',
     SAVE_RUNTIME_SETTINGS: 'chat:save-runtime-settings',
     GET_AGENT_RUNTIME: 'chat:get-agent-runtime',
+    RETRY_HANDSHAKE: 'chat:retry-handshake',
     LIST_CHECKPOINTS: 'chat:list-checkpoints',
     GET_CHANGES: 'chat:get-changes',
     REVERT_TURN: 'chat:revert-turn',

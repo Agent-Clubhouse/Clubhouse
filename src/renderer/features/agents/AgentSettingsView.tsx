@@ -11,6 +11,7 @@ import { useAgentStore } from '../../stores/agentStore';
 import { useProjectStore } from '../../stores/projectStore';
 import { useOrchestratorStore } from '../../stores/orchestratorStore';
 import { useClubhouseModeStore } from '../../stores/clubhouseModeStore';
+import { HandshakeRetry } from './HandshakeRetry';
 import { UtilityTerminal } from './UtilityTerminal';
 import { ImageCropDialog } from '../../components/ImageCropDialog';
 import { EmojiPicker } from '../../components/EmojiPicker';
@@ -1170,6 +1171,9 @@ export function AgentSettingsView({ agent }: Props) {
             <option value="terminal">CLI</option>
           </select>
         </Field>
+      )}
+      {chatFlagEnabled && projectPath && !isRemoteProjectId(agent.projectId) && (
+        <HandshakeRetry projectPath={projectPath} agentId={agent.id} provider={agentOrchestrator} runtime={runtimeMode} />
       )}
       <Field
         label="Persona"

@@ -381,6 +381,11 @@ export async function tryStartChatAgent(
   }
 }
 
+/** Exactly the environment passed to both a launch probe and session start. */
+export function chatLaunchEnvironment(profileEnv?: Record<string, string>): Record<string, string> {
+  return cleanSpawnEnv({ ...getShellEnvironment(), ...profileEnv });
+}
+
 async function runChatStart(
   params: ChatSpawnParams,
   provider: OrchestratorProvider,
@@ -401,7 +406,7 @@ async function runChatStart(
   // Electron's inherited PATH may not contain Node for npm CLI shims. Match
   // the terminal launch and use the same effective env for probing, health
   // keys and the actual session; profile values remain overrides.
-  const launchEnv = cleanSpawnEnv({ ...getShellEnvironment(), ...profileEnv });
+  const launchEnv = chatLaunchEnvironment(profileEnv);
   const level = levelForFreeAgent(params.freeAgentMode, params.permissionMode);
   const resumeNativeSessionId = params.resume ? params.sessionId : undefined;
   appLog('core:chat', 'info', 'Chat start requested', {

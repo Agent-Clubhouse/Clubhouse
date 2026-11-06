@@ -360,3 +360,13 @@ export interface ProviderRuntimeSetting {
  * default. Durable agents can override `mode` individually.
  */
 export type ChatRuntimeSettings = Record<string, ProviderRuntimeSetting>;
+
+/** A point-in-time handshake check; never session/auth/model readiness. */
+export interface ChatHandshakeRetryResult {
+  status: 'passed' | 'failed' | 'login_required' | 'policy_blocked' | 'cannot_probe' | 'stale';
+  message: string;
+  driver?: ChatDriverId;
+  cliVersion?: string;
+  /** Opaque identity for this check only. It confers no authority or readiness. */
+  contextId?: string;
+}
