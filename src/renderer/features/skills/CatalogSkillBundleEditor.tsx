@@ -13,13 +13,18 @@ const messages: Record<SkillBundleErrorCode, string> = {
 };
 
 /** Integration seam only: the caller supplies a catalog asset ID and registered context. */
-export function CatalogSkillBundleEditor({ context, assetId, bridge = window.clubhouse.catalogSkillBundles, onDirtyChange }: {
+export function CatalogSkillBundleEditor({ context, assetId, bridge = window.clubhouse.catalogSkillBundles, onDirtyChange, onBusyChange, onSaved, suspended = false }: {
   context: SkillBundleContext; assetId: string; bridge?: SkillBundleEditorBridge; onDirtyChange?: (dirty: boolean) => void;
+  onBusyChange?: (busy: boolean, operation: number) => void;
+  onSaved?: (document: SkillBundleDocument, operation: number) => void;
+  suspended?: boolean;
 }) {
   const target = JSON.stringify([context.projectId, context.agentId, assetId]);
   const currentTarget = useRef(target); currentTarget.current = target;
   const sequence = useRef(0);
+  const mounted = useRef(true);
   const busyRef = useRef(false);
+  const suspendedRef = useRef(suspended); suspendedRef.current = suspended;
   const [document, setDocument] = useState<SkillBundleDocument | null>(null);
   const [draft, setDraft] = useState<SkillAssetPayload | null>(null);
   const [preview, setPreview] = useState<SkillBundleEditPreview | null>(null);
@@ -28,10 +33,11 @@ export function CatalogSkillBundleEditor({ context, assetId, bridge = window.clu
   const [loadedTarget, setLoadedTarget] = useState('');
   const dirty = !!document && JSON.stringify(document.payload) !== JSON.stringify(draft);
   useEffect(() => { onDirtyChange?.(dirty); return () => onDirtyChange?.(false); }, [dirty, onDirtyChange]);
-  const valid = (id: number) => currentTarget.current === target && sequence.current === id;
+  const valid = (id: number) => mounted.current && currentTarget.current === target && sequence.current === id;
+  const markBusy = (value: boolean, id: number) => { busyRef.current = value; setBusy(value); onBusyChange?.(value, id); };
   const read = async () => {
     const id = ++sequence.current;
-    busyRef.current = true; setBusy(true); setPreview(null); setError(null);
+    markBusy(true, id); setPreview(null); setError(null);
     try {
       const result = await bridge.read(context, assetId);
       if (!valid(id)) return;
@@ -40,41 +46,42 @@ export function CatalogSkillBundleEditor({ context, assetId, bridge = window.clu
     } catch {
       // telemetry-exempt: raw transport errors and bundle contents stay out of logs.
       if (valid(id)) setError(messages.save_failed);
-    } finally { if (valid(id)) { busyRef.current = false; setBusy(false); } }
+    } finally { if (valid(id)) markBusy(false, id); }
   };
   useEffect(() => {
+    mounted.current = true;
     setDocument(null); setDraft(null); setLoadedTarget('');
     void read();
-    return () => { sequence.current++; };
+    return () => { mounted.current = false; sequence.current++; };
   }, [target, bridge]);
   const review = async () => {
-    if (busyRef.current || currentTarget.current !== target || loadedTarget !== target || !document || !draft) return;
-    const id = ++sequence.current; busyRef.current = true; setBusy(true); setPreview(null); setError(null);
+    if (!mounted.current || suspendedRef.current || busyRef.current || currentTarget.current !== target || loadedTarget !== target || !document || !draft) return;
+    const id = ++sequence.current; markBusy(true, id); setPreview(null); setError(null);
     try {
       const result = await bridge.preview({ context, assetId, expectedRevision: document.revision, payload: draft });
       if (valid(id)) { if (result.ok === true) setPreview(result.value); else setError(messages[result.code]); }
     } catch {
       // telemetry-exempt: show only a fixed transport failure.
       if (valid(id)) setError(messages.save_failed);
-    } finally { if (valid(id)) { busyRef.current = false; setBusy(false); } }
+    } finally { if (valid(id)) markBusy(false, id); }
   };
   const save = async () => {
-    if (busyRef.current || currentTarget.current !== target || loadedTarget !== target || !document || !preview || preview.blocked) return;
-    const id = ++sequence.current; busyRef.current = true; setBusy(true); setError(null);
+    if (!mounted.current || suspendedRef.current || busyRef.current || currentTarget.current !== target || loadedTarget !== target || !document || !preview || preview.blocked) return;
+    const id = ++sequence.current; markBusy(true, id); setError(null);
     try {
       const result = await bridge.save({ context, assetId, expectedRevision: document.revision, token: preview.token });
       if (!valid(id)) return;
       setPreview(null);
-      if (result.ok === true) { setDocument(result.value); setDraft(result.value.payload); }
+      if (result.ok === true) { setDocument(result.value); setDraft(result.value.payload); onSaved?.(result.value, id); }
       else setError(messages[result.code]);
     } catch {
       // telemetry-exempt: retain drafts, never log bundle contents or raw transport errors.
       if (valid(id)) { setPreview(null); setError(messages.save_failed); }
-    } finally { if (valid(id)) { busyRef.current = false; setBusy(false); } }
+    } finally { if (valid(id)) markBusy(false, id); }
   };
   return <section aria-label="Catalog skill bundle" className="space-y-3">
     <p className="text-xs text-ctp-subtext0">Catalog copy only. Saving does not assign, enable or run this skill.</p>
-    <Button disabled={busy} onClick={() => { void read(); }}>Reload saved bundle{dirty ? ' and discard edits' : ''}</Button>
+    <Button disabled={busy || suspended} onClick={() => { if (mounted.current && currentTarget.current === target && !suspendedRef.current && !busyRef.current) void read(); }}>Reload saved bundle{dirty ? ' and discard edits' : ''}</Button>
     {busy && <p role="status" className="text-xs text-ctp-subtext0">Loading catalog operation...</p>}
     {error && <p role="alert" className="text-xs text-ctp-error">{error}</p>}
     {document && draft && loadedTarget === target && <>
@@ -83,13 +90,13 @@ export function CatalogSkillBundleEditor({ context, assetId, bridge = window.clu
         {' '}Owner: {document.owner.kind}{document.owner.kind === 'agent' ? ` ${document.owner.agentId}` : document.owner.kind === 'project' ? ` ${document.owner.projectId}` : ''}.
         {document.source.kind === 'copy' ? ` Copied from ${document.source.originAssetId} at revision ${document.source.originRevision}.` : ''}
         {document.readOnly ? ' Built-in, read-only.' : ''}</p>
-      <SkillBundleEditor key={target} value={draft} disabled={busy} readOnly={document.readOnly} onChange={(value) => {
-        if (busyRef.current || currentTarget.current !== target) return;
+      <SkillBundleEditor key={target} value={draft} disabled={busy || suspended} readOnly={document.readOnly} onChange={(value) => {
+        if (!mounted.current || suspendedRef.current || busyRef.current || currentTarget.current !== target) return;
         sequence.current++; setDraft(value); setPreview(null); setError(null);
       }} />
       {!document.readOnly && <div className="flex gap-2">
-        <Button disabled={busy || !dirty} onClick={() => { void review(); }}>Review catalog edit</Button>
-        <Button kind="primary" disabled={busy || !preview || preview.blocked} onClick={() => { void save(); }}>Save catalog revision</Button>
+        <Button disabled={busy || suspended || !dirty} onClick={() => { void review(); }}>Review catalog edit</Button>
+        <Button kind="primary" disabled={busy || suspended || !preview || preview.blocked} onClick={() => { void save(); }}>Save catalog revision</Button>
       </div>}
       {preview && <div className="space-y-1 text-xs text-ctp-subtext0">
         <p>Consumers: {preview.impact.agents.length} agents, {preview.impact.templates.length} templates, {preview.impact.subagents.length} subagents. Copies: {preview.impact.copies.length}.</p>

@@ -38,8 +38,21 @@ import { AnnexDisabledView } from './AnnexDisabledView';
 import { SatelliteDisconnectedOverlay } from './SatelliteDisconnectedOverlay';
 import { useAnnexClientStore } from '../stores/annexClientStore';
 import { FeedbackSettingsView } from '../features/settings/FeedbackSettingsView';
+import { SkillLibrarySettingsView } from '../features/settings/SkillLibrarySettingsView';
 
 export function MainContentView() {
+  const visible = useUIStore((state) => state.explorerTab === 'settings' && state.settingsContext === 'app' && state.settingsSubPage === 'skill-library');
+  const [visited, setVisited] = useState(visible);
+  useEffect(() => { if (visible) setVisited(true); }, [visible]);
+  return <>
+    {(visible || visited) && <div hidden={!visible} inert={!visible} className="h-full" data-testid="skill-library-pane">
+      <SkillLibrarySettingsView visible={visible} />
+    </div>}
+    <MainContentBody />
+  </>;
+}
+
+function MainContentBody() {
   const explorerTab = useUIStore((s) => s.explorerTab);
   const settingsSubPage = useUIStore((s) => s.settingsSubPage);
   const settingsContext = useUIStore((s) => s.settingsContext);
@@ -264,6 +277,7 @@ export function MainContentView() {
 
   if (explorerTab === 'settings') {
     const projectId = settingsContext !== 'app' ? settingsContext : undefined;
+    if (settingsSubPage === 'skill-library' && settingsContext === 'app') return null;
     if (settingsSubPage === 'orchestrators') return <OrchestratorSettingsView projectId={projectId} />;
     if (settingsSubPage === 'profiles') return <ProfilesSettingsView />;
     if (settingsSubPage === 'notifications') return <NotificationSettingsView projectId={projectId} />;
