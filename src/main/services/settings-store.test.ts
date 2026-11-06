@@ -80,6 +80,18 @@ describe('settings-store', () => {
       expect(store.get()).toEqual(saved);
     });
 
+    it('preserves the loaded settings when a load observer throws', () => {
+      const saved = { name: 'saved', count: 1, nested: { flag: true } };
+      vi.mocked(fs.readFileSync).mockReturnValue(JSON.stringify(saved));
+      const warning = vi.spyOn(console, 'warn').mockImplementation(() => {});
+      const observer = vi.fn(() => { throw new Error('observer failed'); });
+      const store = createSettingsStore<TestSettings>('test.json', DEFAULTS, undefined, { onLoad: observer });
+      expect(store.get()).toEqual(saved);
+      expect(store.get()).toEqual(saved);
+      expect(observer).toHaveBeenCalledTimes(1);
+      warning.mockRestore();
+    });
+
     it('merges partial settings with defaults', () => {
       vi.mocked(fs.readFileSync).mockReturnValue(JSON.stringify({ name: 'partial' }));
       const store = createSettingsStore<TestSettings>('test.json', DEFAULTS);

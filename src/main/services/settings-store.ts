@@ -175,15 +175,23 @@ export function createSettingsStore<T>(
     return cloneSettings(parsed);
   }
 
+  function notifyLoad(result: { raw: string } | { error: unknown }): void {
+    try { options?.onLoad?.(result); }
+    catch (err) {
+      // An observer must not turn a successful load into a reset to defaults.
+      console.warn(`[settings-store] Load observer for ${filename} failed:`, err instanceof Error ? err.message : err);
+    }
+  }
+
   function loadSettings(): void {
     const filePath = getFilePath();
     try {
       const raw = fs.readFileSync(filePath, 'utf-8');
       cachedSettings = parseSettings(raw);
       cacheLoaded = true;
-      options?.onLoad?.({ raw });
+      notifyLoad({ raw });
     } catch (err) {
-      options?.onLoad?.({ error: err });
+      notifyLoad({ error: err });
       if (fs.existsSync(filePath)) {
         persist.recovery('settings', 'reset_to_default');
         // A parser's message quotes the file, which stays out of the log.
