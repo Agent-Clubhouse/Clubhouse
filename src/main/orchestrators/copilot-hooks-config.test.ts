@@ -36,6 +36,11 @@ describe('Copilot hook document boundary', () => {
     JSON.stringify({ version: 1, hooks: { preToolUse: [{ type: 'command' }] } }),
     JSON.stringify({ version: 1, hooks: { preToolUse: [{ type: 'command', bash: 42 }] } }),
     JSON.stringify({ version: 1, hooks: { preToolUse: [{ type: 'http' }] } }),
+    JSON.stringify({ version: 1, hooks: { preToolUse: [{ type: 'command', exec: 'checker', bash: 'echo test' }] } }),
+    JSON.stringify({ version: 1, hooks: { postToolUse: [{ type: 'http', url: 'not-a-url' }] } }),
+    JSON.stringify({ version: 1, hooks: { preToolUse: [{ type: 'http', url: 'http://localhost/hook' }] } }),
+    JSON.stringify({ version: 1, hooks: { PermissionRequest: [{ type: 'http', url: 'http://localhost/hook' }] } }),
+    JSON.stringify({ version: 1, hooks: { postToolUse: [{ type: 'http', url: 'http://localhost/hook', allowedEnvVars: ['TOKEN'] }] } }),
     JSON.stringify({ version: 1, hooks: { sessionStart: [{ type: 'prompt' }] } }),
     JSON.stringify({ version: 1, hooks: { preToolUse: [{ type: 'future-type', data: 'keep' }] } }),
   ])('rejects ambiguous or invalid input without changing it: %s', async (content) => {
@@ -48,6 +53,7 @@ describe('Copilot hook document boundary', () => {
   it('accepts documented command, HTTP and prompt entries without rewriting them', async () => {
     const content = JSON.stringify({ version: 1, hooks: {
       sessionStart: [{ type: 'prompt', prompt: 'hello' }],
+      SessionStart: [{ type: 'prompt', prompt: 'hello' }],
       preToolUse: [{ command: 'echo custom' }, { type: 'command', exec: 'checker', args: ['--check'] }],
       postToolUse: [{ type: 'http', url: 'https://example.invalid/hook' }],
     } });

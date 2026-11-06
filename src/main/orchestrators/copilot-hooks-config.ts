@@ -14,12 +14,23 @@ function validHookEntry(event: string, value: unknown): boolean {
   if (kind === 'command') {
     return ['bash', 'powershell', 'command', 'exec'].every(optionalText) &&
       ['bash', 'powershell', 'command', 'exec'].some(text) && optionalText('cwd') &&
+      !(item.exec !== undefined && ['bash', 'powershell', 'command'].some((key) => item[key] !== undefined)) &&
       (item.args === undefined || (Array.isArray(item.args) && item.args.every((arg) => typeof arg === 'string'))) &&
       stringMap('env');
   }
-  if (kind === 'http') return text('url') && stringMap('headers') &&
-    (item.allowedEnvVars === undefined || (Array.isArray(item.allowedEnvVars) && item.allowedEnvVars.every((v) => typeof v === 'string')));
-  if (kind === 'prompt') return event === 'sessionStart' && text('prompt');
+  if (kind === 'http') {
+    if (!text('url') || !stringMap('headers') ||
+        (item.allowedEnvVars !== undefined && (!Array.isArray(item.allowedEnvVars) || !item.allowedEnvVars.every((v) => typeof v === 'string')))) return false;
+    try {
+      const url = new URL(item.url as string);
+      if (url.protocol !== 'http:' && url.protocol !== 'https:') return false;
+      const requiresHttps = ['preToolUse', 'PreToolUse', 'permissionRequest', 'PermissionRequest'].includes(event) || item.allowedEnvVars !== undefined;
+      return !requiresHttps || url.protocol === 'https:';
+    } catch {
+      return false;
+    }
+  }
+  if (kind === 'prompt') return (event === 'sessionStart' || event === 'SessionStart') && text('prompt');
   // Unknown types may belong to a newer CLI. Refuse to rewrite them, not delete them.
   return false;
 }
