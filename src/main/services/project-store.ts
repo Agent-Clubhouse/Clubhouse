@@ -245,6 +245,19 @@ function logLoadedIfChanged(storePath: string, store: ProjectStoreV1): void {
   });
 }
 
+// Includes recovery/migration writes, not only user mutation entry points. A pending
+// libuv write can finish without a JS callback between another service's checks.
+let registryGeneration = 0;
+let registryPending = 0;
+export function projectRegistryMutationState(): { generation: number; pending: boolean } {
+  return { generation: registryGeneration, pending: registryPending > 0 };
+}
+async function registryMutation<T>(run: () => Promise<T>): Promise<T> {
+  registryGeneration++; registryPending++;
+  try { return await run(); }
+  finally { registryPending--; }
+}
+
 async function readStore(): Promise<ProjectStoreV1> {
   const storePath = await getStorePath();
   const backupPath = await getBackupPath();
@@ -277,8 +290,10 @@ async function readStore(): Promise<ProjectStoreV1> {
       persist.recovery('projects', 'primary_corrupt');
       // Quarantine the corrupt file so it is not silently overwritten by the next write
       try {
-        const quarantinePath = await getQuarantinePath();
-        await fsp.rename(storePath, quarantinePath);
+        const quarantinePath = await registryMutation(async () => {
+          const destination = await getQuarantinePath();
+          await fsp.rename(storePath, destination); return destination;
+        });
         persist.recovery('projects', 'quarantined');
         appLog('core:project-store', 'info', 'Corrupt projects.json quarantined', {
           meta: { corrupted: storePath, quarantined: quarantinePath },
@@ -326,6 +341,9 @@ async function readStore(): Promise<ProjectStoreV1> {
 }
 
 async function writeStore(store: ProjectStoreV1): Promise<void> {
+  return registryMutation(() => writeStoreInner(store));
+}
+async function writeStoreInner(store: ProjectStoreV1): Promise<void> {
   const storePath = await getStorePath();
   const backupPath = await getBackupPath();
 
@@ -404,9 +422,11 @@ async function updateProjects(fn: (projects: Project[]) => Project[] | Promise<P
     return updated;
   };
 
-  const next = projectUpdateQueue.then(run, run);
-  projectUpdateQueue = next.then((): void => undefined, (): void => undefined);
-  return next;
+  return registryMutation(() => {
+    const next = projectUpdateQueue.then(run, run);
+    projectUpdateQueue = next.then((): void => undefined, (): void => undefined);
+    return next;
+  });
 }
 
 export async function list(): Promise<Project[]> {

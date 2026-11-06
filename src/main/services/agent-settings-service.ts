@@ -186,7 +186,22 @@ async function readSettings(projectPath: string): Promise<ProjectSettings> {
   }
 }
 
+// Read-only launch witnesses, including a write already pending at capture time.
+const settingsMutations = new Map<string, { generation: number; pending: number }>();
+export function projectSettingsMutationState(projectPath: string): { generation: number; pending: boolean } {
+  const state = settingsMutations.get(projectPath);
+  return { generation: state?.generation ?? 0, pending: (state?.pending ?? 0) > 0 };
+}
+async function settingsMutation<T>(projectPath: string, run: () => Promise<T>): Promise<T> {
+  const state = settingsMutations.get(projectPath) ?? { generation: 0, pending: 0 };
+  settingsMutations.set(projectPath, state); state.generation++; state.pending++;
+  try { return await run(); } finally { state.pending--; }
+}
+
 async function writeSettings(projectPath: string, settings: ProjectSettings): Promise<void> {
+  return settingsMutation(projectPath, () => writeSettingsInner(projectPath, settings));
+}
+async function writeSettingsInner(projectPath: string, settings: ProjectSettings): Promise<void> {
   const dir = path.join(projectPath, '.clubhouse');
   await fsp.mkdir(dir, { recursive: true });
   await fsp.writeFile(path.join(dir, 'settings.json'), JSON.stringify(settings, null, 2), 'utf-8');
@@ -758,6 +773,9 @@ const PROJECT_DEFAULTS_AUDIT_CATALOG: Readonly<Record<keyof ProjectAgentDefaults
  * Write project-level agent defaults to .clubhouse/settings.json.
  */
 export async function writeProjectAgentDefaults(projectPath: string, defaults: ProjectAgentDefaults): Promise<void> {
+  return settingsMutation(projectPath, () => writeProjectAgentDefaultsInner(projectPath, defaults));
+}
+async function writeProjectAgentDefaultsInner(projectPath: string, defaults: ProjectAgentDefaults): Promise<void> {
   if (defaults.commandPrefix) {
     validateCommandPrefix(defaults.commandPrefix);
   }

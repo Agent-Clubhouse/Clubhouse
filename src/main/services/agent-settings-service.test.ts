@@ -30,7 +30,7 @@ import {
   readAgentTemplateContent, writeAgentTemplateContent, deleteAgentTemplate,
   listAgentTemplateFiles, listSkills, listAgentTemplates,
   readMcpRawJson, writeMcpRawJson, readMcpConfig,
-  readProjectAgentDefaults, writeProjectAgentDefaults, applyAgentDefaults,
+  readProjectAgentDefaults, writeProjectAgentDefaults, projectSettingsMutationState, applyAgentDefaults,
   readWrapperCatalogSnapshot, writeWrapperCatalogSnapshot,
   readMcpConfigs, writeMcpConfigs,
   listSourceMissions, readSourceMissionContent,
@@ -633,6 +633,20 @@ describe('readProjectAgentDefaults', () => {
 });
 
 describe('writeProjectAgentDefaults', () => {
+  it.each([false, true])('marks a defaults write pending before its first read and clears it on completion/failure (%s)', async (fail) => {
+    let finish!: (value: string) => void;
+    vi.mocked(fsp.readFile).mockImplementationOnce(() => new Promise<string>((r) => { finish = r; }));
+    vi.mocked(fsp.writeFile).mockImplementation(async () => { if (fail) throw new Error('synthetic write failure'); });
+    const before = projectSettingsMutationState(PROJECT);
+    const saving = writeProjectAgentDefaults(PROJECT, { commandPrefix: 'export SYNTHETIC=1' });
+    const settled = saving.then(() => 'saved', () => 'failed');
+    expect(projectSettingsMutationState(PROJECT).pending).toBe(true);
+    expect(projectSettingsMutationState(PROJECT).generation).toBeGreaterThan(before.generation);
+    finish('{}');
+    expect(await settled).toBe(fail ? 'failed' : 'saved');
+    expect(projectSettingsMutationState(PROJECT).pending).toBe(false);
+  });
+
   it('tells helper routing when a project\'s Auto or default persona changes, and not otherwise (#2671)', async () => {
     const listener = vi.fn();
     setRoutingPolicyListener(listener);

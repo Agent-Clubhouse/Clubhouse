@@ -48,7 +48,7 @@ interface Health {
 
 const health = new Map<string, Health>();
 const probes = new Map<string, { identity: string; probe: ChatDriverProbe }>();
-const inFlight = new Map<string, { identity: string | undefined; probe: Promise<ChatDriverProbe> }>();
+const inFlight = new Map<string, { identity: string | undefined; probe: Promise<ChatDriverProbe>; cacheSuccess: boolean }>();
 
 /** Health and probe-cache key: driver, binary, the profile env it runs with and any command prefix it's launched through. */
 export function driverHealthKey(driver: Pick<ChatDriver, 'id'>, binaryPath: string, env?: Record<string, string>, commandPrefix?: string): string {
@@ -143,19 +143,24 @@ export function probeDriver(driver: ChatDriver, binaryPath: string, env?: Record
   if (cached && identity !== undefined && cached.identity === identity) return Promise.resolve(cached.probe);
   // A probe of the binary this one replaced isn't shared.
   const pending = inFlight.get(key);
-  if (pending && !identityChanged(pending.identity, identity)) return pending.probe;
+  if (pending && !identityChanged(pending.identity, identity)) {
+    // Every joiner can suppress caching; no later ordinary join can restore it.
+    if (options.cacheSuccess === false) pending.cacheSuccess = false;
+    return pending.probe;
+  }
 
   const startedAt = Date.now();
   const probe = runProbe(driver, binaryPath, env, commandPrefix).then((result) => {
     // Superseded by a probe of a replacement binary: stale, so neither cached nor counted.
     if (inFlight.get(key)?.probe !== probe) return result;
+    const cacheSuccess = inFlight.get(key)!.cacheSuccess;
     inFlight.delete(key);
     if (result.handshakeOk && result.needsLogin) {
       // Healthy CLI, user not logged in: probe again next time rather than caching or pausing.
       probes.delete(key);
     } else if (result.handshakeOk) {
       // A version lookup that failed may pass next time; don't pin "unknown".
-      if (options.cacheSuccess !== false && identity !== undefined && !result.versionTransient) probes.set(key, { identity, probe: result });
+      if (cacheSuccess && identity !== undefined && !result.versionTransient) probes.set(key, { identity, probe: result });
       else probes.delete(key);
     } else {
       probes.delete(key);
@@ -176,7 +181,7 @@ export function probeDriver(driver: ChatDriver, binaryPath: string, env?: Record
     }
     return result;
   });
-  inFlight.set(key, { identity, probe });
+  inFlight.set(key, { identity, probe, cacheSuccess: options.cacheSuccess !== false });
   return probe;
 }
 
