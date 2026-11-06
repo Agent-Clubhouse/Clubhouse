@@ -499,58 +499,39 @@ describe('OrchestratorSettingsView', () => {
         await waitFor(() => expect(saveRuntimeSettings).toHaveBeenCalledWith({ 'copilot-cli': { mode: 'terminal', driver: 'copilot_sdk' } }));
       });
 
-      it('defaults to ACP, and only Copilot offers it', async () => {
+      it('does not offer a second driver selector even when SDK is enabled', async () => {
         setSdkFlag();
         render(<OrchestratorSettingsView />);
-        const select = await screen.findByTestId('chat-driver-copilot-cli');
-        expect(select).toHaveValue('copilot_acp');
-        expect(screen.queryByTestId('chat-driver-claude-code')).not.toBeInTheDocument();
+        await screen.findByTestId('runtime-mode-copilot-cli');
+        expect(screen.queryByTestId('chat-driver-copilot-cli')).not.toBeInTheDocument();
       });
 
-      it('saves the SDK when chosen, and clears the choice on going back', async () => {
-        setSdkFlag();
-        getRuntimeSettings.mockResolvedValue({ 'claude-code': { mode: 'terminal' } });
-        render(<OrchestratorSettingsView />);
-        const select = await screen.findByTestId('chat-driver-copilot-cli');
-        fireEvent.change(select, { target: { value: 'copilot_sdk' } });
-        await waitFor(() => expect(saveRuntimeSettings).toHaveBeenCalledWith({ 'claude-code': { mode: 'terminal' }, 'copilot-cli': { mode: 'chat', driver: 'copilot_sdk' } }));
-        expect(select).toHaveValue('copilot_sdk');
-
-        getRuntimeSettings.mockResolvedValue({ 'copilot-cli': { mode: 'chat', driver: 'copilot_sdk' } });
-        fireEvent.change(select, { target: { value: 'copilot_acp' } });
-        await waitFor(() => expect(saveRuntimeSettings).toHaveBeenLastCalledWith({ 'copilot-cli': { mode: 'chat' } }));
-      });
-
-      it('restores saved driver on failure, exposes retry and preserves other providers', async () => {
-        setSdkFlag();
+      it('rolls back a failed mode save and supports retry while preserving other providers', async () => {
         const saved = { 'claude-code': { mode: 'terminal' as const }, 'copilot-cli': { mode: 'chat' as const } };
         getRuntimeSettings.mockResolvedValue(saved);
-        saveRuntimeSettings.mockRejectedValueOnce(new Error('synthetic failure')).mockResolvedValue(undefined);
+        saveRuntimeSettings.mockRejectedValueOnce(new Error('refused')).mockResolvedValue(undefined);
         render(<OrchestratorSettingsView />);
-        const select = await screen.findByTestId('chat-driver-copilot-cli');
-        fireEvent.change(select, { target: { value: 'copilot_sdk' } });
+        const row = await screen.findByTestId('runtime-mode-copilot-cli');
+        const cli = within(row).getByRole('radio', { name: 'CLI' });
+        fireEvent.click(cli);
         expect(await screen.findByRole('alert')).toHaveTextContent("Couldn't save that setting");
-        expect(select).toHaveValue('copilot_acp');
-        expect(select).not.toBeDisabled();
-        fireEvent.change(select, { target: { value: 'copilot_sdk' } });
-        await waitFor(() => expect(select).not.toBeDisabled());
-        expect(select).toHaveValue('copilot_sdk');
-        expect(screen.queryByRole('alert')).not.toBeInTheDocument();
-        expect(saveRuntimeSettings).toHaveBeenLastCalledWith({ ...saved, 'copilot-cli': { mode: 'chat', driver: 'copilot_sdk' } });
+        expect(within(row).getByRole('radio', { name: 'Chat' })).toHaveAttribute('aria-checked', 'true');
+        fireEvent.click(cli);
+        await waitFor(() => expect(cli).not.toBeDisabled());
+        expect(saveRuntimeSettings).toHaveBeenLastCalledWith({ ...saved, 'copilot-cli': { mode: 'terminal' } });
       });
 
-      it('does not save after the refresh read fails and restores the loaded choice', async () => {
-        setSdkFlag();
-        getRuntimeSettings.mockResolvedValueOnce({ 'copilot-cli': { mode: 'chat' } }).mockRejectedValueOnce(new Error('read failed'));
+      it('does not write after a refresh read fails', async () => {
+        getRuntimeSettings.mockResolvedValueOnce({ 'copilot-cli': { mode: 'chat' } }).mockRejectedValueOnce(new Error('refused'));
         render(<OrchestratorSettingsView />);
-        const select = await screen.findByTestId('chat-driver-copilot-cli');
-        fireEvent.change(select, { target: { value: 'copilot_sdk' } });
+        const row = await screen.findByTestId('runtime-mode-copilot-cli');
+        fireEvent.click(within(row).getByRole('radio', { name: 'CLI' }));
         expect(await screen.findByRole('alert')).toHaveTextContent("Couldn't save that setting");
-        expect(select).toHaveValue('copilot_acp');
+        expect(within(row).getByRole('radio', { name: 'Chat' })).toHaveAttribute('aria-checked', 'true');
         expect(saveRuntimeSettings).not.toHaveBeenCalled();
       });
 
-      it('serializes mode and driver saves and rolls back mode after a rejected write', async () => {
+      it('serializes mode saves and rolls back mode after a rejected write', async () => {
         setSdkFlag();
         getRuntimeSettings.mockResolvedValue({ 'copilot-cli': { mode: 'chat', driver: 'copilot_sdk' } });
         let reject!: (error: Error) => void;
@@ -565,7 +546,7 @@ describe('OrchestratorSettingsView', () => {
         reject(new Error('synthetic failure'));
         expect(await screen.findByRole('alert')).toHaveTextContent("Couldn't save that setting");
         expect(within(row).getByRole('radio', { name: 'Chat' })).toHaveAttribute('aria-checked', 'true');
-        expect(screen.getByTestId('chat-driver-copilot-cli')).toHaveValue('copilot_sdk');
+        expect(screen.queryByTestId('chat-driver-copilot-cli')).not.toBeInTheDocument();
       });
 
       it('is hidden when the agent opens in the CLI, and when chat is off', async () => {
