@@ -60,7 +60,7 @@ import { getDispatcherPath } from './dispatcher/dispatcher-paths';
 
 import { CopilotCliProvider } from '../orchestrators/copilot-cli-provider';
 import { extractAgentPersona } from './materialization-service';
-import { writeSourcePersonaContent } from './agent-settings-service';
+import { writeProjectAgentDefaults, writeSourcePersonaContent } from './agent-settings-service';
 import { serializePersonaFile } from '../../shared/persona-pattern';
 import { resolveOrchestrator } from './agent-system';
 import { isClubhouseModeEnabled } from './clubhouse-mode-settings';
@@ -193,7 +193,7 @@ describe('applyPersonaToAgent', () => {
       expect(provider.writeInstructions).not.toHaveBeenCalled();
     });
   });
-  it.each([false, true])('Extract -> save -> Apply preserves Copilot root custom text without a persona (Clubhouse mode %s)', async (mode) => {
+  it.each([[false, false], [true, false], [false, true], [true, true]])('Extract -> save -> Apply preserves Copilot custom text and MCP policy (mode=%s, localOverride=%s)', async (mode, localOverride) => {
     const source = path.join(projectPath, 'source');
     const target = path.join(projectPath, 'target');
     await fsp.mkdir(path.join(source, '.github'), { recursive: true });
@@ -208,7 +208,11 @@ describe('applyPersonaToAgent', () => {
     expect(captured.content).toContain('UNIQUE_CUSTOM_MARKER');
     expect(captured.content).toContain('@@AgentName');
     await writeSourcePersonaContent(projectPath, 'captured', serializePersonaFile(captured.settings, captured.content), 'project');
-    store.set('target', { ...agent, id: 'target', name: 'target-bot', worktreePath: target });
+    const localMcp = '{"mcpServers":{"local":{"command":"never-executed-local"}}}';
+    await fsp.mkdir(path.join(target, '.github'), { recursive: true });
+    await fsp.writeFile(path.join(target, '.github/mcp.json'), localMcp);
+    await writeProjectAgentDefaults(projectPath, { mcpJson: '{"mcpServers":{"canonical":{"command":"never-executed-canonical"}}}' });
+    store.set('target', { ...agent, id: 'target', name: 'target-bot', worktreePath: target, clubhouseModeOverride: localOverride });
     vi.mocked(resolveOrchestrator).mockResolvedValue(copilot);
     vi.mocked(isClubhouseModeEnabled).mockReturnValue(mode);
     await applyPersonaToAgent(projectPath, 'target', 'captured');
@@ -219,6 +223,9 @@ describe('applyPersonaToAgent', () => {
     expect(delivered).not.toContain('source-bot');
     expect(await fsp.readFile(path.join(source, 'CLAUDE.md'), 'utf8')).toBe('UNIQUE_CUSTOM_MARKER: preserve the operator checklist.');
     expect(store.get('target')?.orchestrator).toBe('copilot-cli');
+    const mcpAfter = await fsp.readFile(path.join(target, '.github/mcp.json'), 'utf8');
+    if (localOverride || !mode) expect(mcpAfter).toBe(localMcp);
+    else expect(JSON.parse(mcpAfter).mcpServers).toEqual({ canonical: { command: 'never-executed-canonical' } });
   });
 
   it('refuses extraction when a supplementary document is unreadable instead of exporting the primary alone', async () => {

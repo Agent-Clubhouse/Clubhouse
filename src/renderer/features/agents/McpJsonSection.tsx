@@ -1,4 +1,5 @@
-import { useEffect, useState, useCallback } from 'react';
+import { parseMcpJson } from '../../../shared/mcp-config';
+import { useEffect, useState, useCallback, useRef } from 'react';
 import { SettingsMonacoEditor } from '../../components/SettingsMonacoEditor';
 import { Button } from '../../components/Button';
 import { useReportDirty, useSaveBarSlot, type SaveHandle } from './agentSettingsPages';
@@ -6,8 +7,7 @@ import { useReportDirty, useSaveBarSlot, type SaveHandle } from './agentSettings
 /** Servers in an .mcp.json text, or undefined when it doesn't parse. */
 function countServers(raw: string): number | undefined {
   try {
-    const servers = (JSON.parse(raw) as { mcpServers?: unknown }).mcpServers;
-    return servers && typeof servers === 'object' ? Object.keys(servers).length : 0;
+    return Object.keys(parseMcpJson(raw)).length;
   } catch {
     // telemetry-exempt: invalid JSON is shown in the editor; it only means no count
     return undefined;
@@ -16,6 +16,7 @@ function countServers(raw: string): number | undefined {
 
 interface Props {
   worktreePath: string;
+  agentId?: string;
   projectPath?: string;
   disabled: boolean;
   refreshKey: number;
@@ -30,47 +31,71 @@ interface Props {
   onCountChange?: (count: number) => void;
 }
 
-export function McpJsonSection({ worktreePath, projectPath, disabled, refreshKey, pathLabel, hideTitle, onDirtyChange, onRegisterSave, onCountChange }: Props) {
+export function McpJsonSection({ worktreePath, projectPath, agentId, disabled, refreshKey, pathLabel, hideTitle, onDirtyChange, onRegisterSave, onCountChange }: Props) {
+  const target = JSON.stringify([worktreePath, projectPath, agentId, pathLabel, refreshKey]);
+  const currentTarget = useRef(target);
+  currentTarget.current = target;
+  const requests = useRef(0);
+  const pendingSave = useRef<{ target: string; request: number; token: symbol } | null>(null);
+  const [loadedTarget, setLoadedTarget] = useState<string | null>(null);
   const [content, setContent] = useState('');
   const [dirty, setDirty] = useState(false);
   const [saving, setSaving] = useState(false);
   const [warning, setWarning] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [readFailed, setReadFailed] = useState(false);
   const [loaded, setLoaded] = useState(false);
 
   const loadContent = useCallback(async () => {
     if (!worktreePath) return;
+    const request = ++requests.current;
+    const current = () => requests.current === request && currentTarget.current === target;
+    setLoaded(false);
+    setDirty(false);
+    setSaving(false);
+    setContent('');
+    setError(null);
+    setWarning(null);
     try {
       const [raw, shadowWarning] = await Promise.all([
-        window.clubhouse.agentSettings.readMcpRawJson(worktreePath, projectPath),
-        window.clubhouse.agentSettings.getMcpShadowWarning(worktreePath, projectPath),
+        window.clubhouse.agentSettings.readMcpRawJson(worktreePath, projectPath, agentId),
+        window.clubhouse.agentSettings.getMcpShadowWarning(worktreePath, projectPath, agentId),
       ]);
+      if (!current()) return;
+      setLoadedTarget(target);
+      setReadFailed(false);
       setContent(raw);
       const count = countServers(raw);
       if (count !== undefined) onCountChange?.(count);
       setWarning(shadowWarning ?? null);
       setLoaded(true);
       setDirty(false);
-      setError(null);
+      try { parseMcpJson(raw); setError(null); } catch (err) {
+        setError(err instanceof Error ? err.message : 'Invalid MCP configuration');
+      }
     } catch (err) {
-      setContent('{\n  "mcpServers": {}\n}');
+      if (!current()) return;
+      setLoadedTarget(target);
+      setReadFailed(true);
       setWarning(null);
       setLoaded(true);
       setDirty(false);
       setError(err instanceof Error ? err.message : 'Failed to read MCP config');
     }
-  }, [worktreePath, projectPath, onCountChange]);
+  }, [worktreePath, projectPath, agentId, target, onCountChange]);
 
   useEffect(() => {
-    loadContent();
-  }, [loadContent, refreshKey]);
+    void loadContent();
+    return () => { requests.current++; };
+  }, [loadContent]);
 
   const handleChange = (value: string) => {
+    if (pendingSave.current?.target === target && pendingSave.current.request === requests.current) return;
     setContent(value);
     setDirty(true);
     // Live JSON validation
     try {
-      JSON.parse(value);
+      parseMcpJson(value);
       setError(null);
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Invalid JSON');
@@ -79,11 +104,17 @@ export function McpJsonSection({ worktreePath, projectPath, disabled, refreshKey
 
   /** Throws when the file can't be written, so the save bar can say so. */
   const handleSave = async () => {
-    if (!worktreePath || !dirty) return;
+    if (!worktreePath || !dirty || readFailed || !loaded || loadedTarget !== target) return;
+    const request = requests.current;
+    if (pendingSave.current?.target === target && pendingSave.current.request === request) return;
+    const current = () => requests.current === request && currentTarget.current === target;
     if (countServers(content) === undefined) throw new Error(error || 'Invalid JSON');
+    const token = Symbol('mcp-save');
+    pendingSave.current = { target, request, token };
     setSaving(true);
     try {
-      const result = await window.clubhouse.agentSettings.writeMcpRawJson(worktreePath, content, projectPath);
+      const result = await window.clubhouse.agentSettings.writeMcpRawJson(worktreePath, content, projectPath, agentId);
+      if (!current()) return;
       if (!result.ok) {
         setError(result.error || 'Failed to save');
         throw new Error(result.error || 'Failed to save');
@@ -92,8 +123,13 @@ export function McpJsonSection({ worktreePath, projectPath, disabled, refreshKey
       setError(null);
       const count = countServers(content);
       if (count !== undefined) onCountChange?.(count);
+    } catch (err) {
+      if (!current()) return;
+      setError(err instanceof Error ? err.message : 'Failed to save MCP configuration');
+      throw err;
     } finally {
-      setSaving(false);
+      if (pendingSave.current?.token === token) pendingSave.current = null;
+      if (current()) setSaving(false);
     }
   };
 
@@ -105,7 +141,7 @@ export function McpJsonSection({ worktreePath, projectPath, disabled, refreshKey
   useReportDirty(onDirtyChange, dirty);
   useSaveBarSlot(onRegisterSave, handleSave, () => { void loadContent(); });
 
-  if (!loaded) return null;
+  if (!loaded || loadedTarget !== target) return null;
 
   return (
     <section className={hideTitle ? 'mt-3' : 'mt-[22px]'}>
@@ -121,11 +157,16 @@ export function McpJsonSection({ worktreePath, projectPath, disabled, refreshKey
         )}
       </div>
 
+      <p className="text-xs text-ctp-overlay1 mb-2">
+        Saved entries configure the next start; they do not prove delivery or connection.
+        A missing local file inherits project defaults. Save an empty mcpServers object to use no local servers.
+        The live Clubhouse bridge follows its separate MCP setting.
+      </p>
       <SettingsMonacoEditor
         value={content}
         language="json"
         onChange={handleChange}
-        readOnly={disabled}
+        readOnly={disabled || readFailed || saving}
         height="200px"
         editorKey="mcp-json"
       />

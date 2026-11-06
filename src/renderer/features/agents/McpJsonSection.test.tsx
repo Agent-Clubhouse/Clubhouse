@@ -24,6 +24,13 @@ function renderSection(overrides: Partial<React.ComponentProps<typeof McpJsonSec
   );
 }
 
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  let reject!: (error: Error) => void;
+  const promise = new Promise<T>((yes, no) => { resolve = yes; reject = no; });
+  return { promise, resolve, reject };
+}
+
 describe('McpJsonSection', () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -32,18 +39,71 @@ describe('McpJsonSection', () => {
     window.clubhouse.agentSettings.writeMcpRawJson = vi.fn().mockResolvedValue({ ok: true });
   });
 
+  it.each(['success', 'error'])('ignores an obsolete target read %s and keeps the current editor unavailable while loading', async (outcome) => {
+    const a = deferred<string>(); const b = deferred<string>();
+    window.clubhouse.agentSettings.readMcpRawJson = vi.fn().mockReturnValueOnce(a.promise).mockReturnValueOnce(b.promise);
+    const view = renderSection({ agentId: 'a', worktreePath: '/a', projectPath: '/project' });
+    view.rerender(<McpJsonSection agentId="b" worktreePath="/b" projectPath="/project" disabled={false} refreshKey={0} />);
+    expect(screen.queryByTestId('monaco-editor')).not.toBeInTheDocument();
+    await act(async () => { if (outcome === 'success') a.resolve('{"mcpServers":{"a":{"command":"A"}}}'); else a.reject(new Error('obsolete A error')); });
+    expect(screen.queryByTestId('monaco-editor')).not.toBeInTheDocument();
+    await act(async () => { b.resolve('{"mcpServers":{"b":{"command":"B"}}}'); });
+    expect(screen.getByTestId('monaco-editor')).toHaveValue('{"mcpServers":{"b":{"command":"B"}}}');
+    expect(screen.queryByText('obsolete A error')).not.toBeInTheDocument();
+    fireEvent.change(screen.getByTestId('monaco-editor'), { target: { value: '{"mcpServers":{}}' } });
+    fireEvent.click(screen.getByText('Save'));
+    await waitFor(() => expect(window.clubhouse.agentSettings.writeMcpRawJson).toHaveBeenCalledWith('/b', '{"mcpServers":{}}', '/project', 'b'));
+  });
+
+  it.each(['success', 'error'])('does not apply a stale target save %s to the next agent', async (outcome) => {
+    const write = deferred<{ ok: boolean }>();
+    window.clubhouse.agentSettings.writeMcpRawJson = vi.fn().mockReturnValueOnce(write.promise);
+    const view = renderSection({ agentId: 'a', worktreePath: '/a', projectPath: '/project' });
+    await screen.findByTestId('monaco-editor');
+    fireEvent.change(screen.getByTestId('monaco-editor'), { target: { value: '{"mcpServers":{"a":{"command":"A"}}}' } });
+    fireEvent.click(screen.getByText('Save'));
+    view.rerender(<McpJsonSection agentId="b" worktreePath="/b" projectPath="/project" disabled={false} refreshKey={0} />);
+    await screen.findByTestId('monaco-editor');
+    fireEvent.change(screen.getByTestId('monaco-editor'), { target: { value: '{"mcpServers":{"b":{"command":"B"}}}' } });
+    await act(async () => { if (outcome === 'success') write.resolve({ ok: true }); else write.reject(new Error('obsolete A save error')); });
+    expect(screen.getByTestId('monaco-editor')).toHaveValue('{"mcpServers":{"b":{"command":"B"}}}');
+    expect(screen.getByText('Save')).not.toBeDisabled();
+    expect(screen.queryByText('obsolete A save error')).not.toBeInTheDocument();
+  });
+
+  it('freezes the saved revision and rejects duplicate saves while same-target IPC is pending', async () => {
+    const write = deferred<{ ok: boolean }>();
+    window.clubhouse.agentSettings.writeMcpRawJson = vi.fn().mockReturnValueOnce(write.promise);
+    const onRegisterSave = vi.fn();
+    renderSection({ agentId: 'a', worktreePath: '/a', projectPath: '/project', onRegisterSave });
+    await screen.findByTestId('monaco-editor');
+    const saved = '{"mcpServers":{"saved":{"command":"A"}}}';
+    fireEvent.change(screen.getByTestId('monaco-editor'), { target: { value: saved } });
+    const handle = onRegisterSave.mock.calls.at(-1)![0];
+    let first!: Promise<void>;
+    await act(async () => { first = handle.save(); });
+    expect(screen.getByTestId('monaco-editor')).toHaveAttribute('readonly');
+    fireEvent.change(screen.getByTestId('monaco-editor'), { target: { value: '{"mcpServers":{"newer":{"command":"B"}}}' } });
+    expect(screen.getByTestId('monaco-editor')).toHaveValue(saved);
+    await act(async () => { await handle.save(); });
+    expect(window.clubhouse.agentSettings.writeMcpRawJson).toHaveBeenCalledTimes(1);
+    await act(async () => { write.resolve({ ok: true }); await first; });
+    expect(screen.getByTestId('monaco-editor')).not.toHaveAttribute('readonly');
+    expect(window.clubhouse.agentSettings.writeMcpRawJson).toHaveBeenCalledWith('/a', saved, '/project', 'a');
+  });
+
   it('renders the MCP Servers heading', async () => {
     renderSection();
     expect(await screen.findByText('MCP servers')).toBeInTheDocument();
   });
 
   it('loads content from API', async () => {
-    const customJson = '{"mcpServers": {"foo": {}}}';
+    const customJson = '{"mcpServers": {"foo": {"command":"test"}}}';
     window.clubhouse.agentSettings.readMcpRawJson = vi.fn().mockResolvedValue(customJson);
     renderSection();
 
     await waitFor(() => {
-      expect(window.clubhouse.agentSettings.readMcpRawJson).toHaveBeenCalledWith('/project', undefined);
+      expect(window.clubhouse.agentSettings.readMcpRawJson).toHaveBeenCalledWith('/project', undefined, undefined);
     });
   });
 
@@ -68,7 +128,7 @@ describe('McpJsonSection', () => {
     await screen.findByText('MCP servers');
 
     const editor = screen.getByTestId('monaco-editor');
-    fireEvent.change(editor, { target: { value: '{"mcpServers": {"new": {}}}' } });
+    fireEvent.change(editor, { target: { value: '{"mcpServers": {"new": {"command":"test"}}}' } });
 
     expect(screen.getByText('Save')).not.toBeDisabled();
   });
@@ -82,7 +142,7 @@ describe('McpJsonSection', () => {
 
     await waitFor(() => {
       // JSON.parse error message should appear
-      expect(screen.getByText(/Expected property name|Unexpected token/i)).toBeInTheDocument();
+      expect(screen.getByText(/Invalid MCP JSON/i)).toBeInTheDocument();
     });
   });
 
@@ -101,13 +161,14 @@ describe('McpJsonSection', () => {
     await screen.findByText('MCP servers');
 
     const editor = screen.getByTestId('monaco-editor');
-    fireEvent.change(editor, { target: { value: '{"mcpServers": {"test": {}}}' } });
+    fireEvent.change(editor, { target: { value: '{"mcpServers": {"test": {"command":"test"}}}' } });
     fireEvent.click(screen.getByText('Save'));
 
     await waitFor(() => {
       expect(window.clubhouse.agentSettings.writeMcpRawJson).toHaveBeenCalledWith(
         '/project',
-        '{"mcpServers": {"test": {}}}',
+        '{"mcpServers": {"test": {"command":"test"}}}',
+        undefined,
         undefined,
       );
     });
@@ -142,11 +203,13 @@ describe('McpJsonSection', () => {
     expect(container.innerHTML).toBe('');
   });
 
-  it('falls back to default JSON on load error', async () => {
+  it('shows an unreadable configuration without fabricating an editable empty file', async () => {
     window.clubhouse.agentSettings.readMcpRawJson = vi.fn().mockRejectedValue(new Error('fail'));
     renderSection();
-    // Should still render after error
     expect(await screen.findByText('MCP servers')).toBeInTheDocument();
+    expect(screen.getByTestId('monaco-editor')).toHaveAttribute('readonly');
+    expect(screen.getByTestId('monaco-editor')).toHaveValue('');
+    expect(screen.getByText('Save')).toBeDisabled();
   });
 
   it('shows the shadowing warning when a GHCP config is blocked by .mcp.json precedence', async () => {
@@ -161,7 +224,7 @@ describe('McpJsonSection', () => {
 
   describe('in the agent settings save bar', () => {
     it('drops its own Save, reports dirty and the server count, and saves through the handle', async () => {
-      window.clubhouse.agentSettings.readMcpRawJson = vi.fn().mockResolvedValue('{"mcpServers":{"a":{},"b":{}}}');
+      window.clubhouse.agentSettings.readMcpRawJson = vi.fn().mockResolvedValue('{"mcpServers":{"a":{"command":"test"},"b":{"command":"test"}}}');
       const onRegisterSave = vi.fn();
       const onDirtyChange = vi.fn();
       const onCountChange = vi.fn();
@@ -170,12 +233,12 @@ describe('McpJsonSection', () => {
       expect(screen.queryByText('Save')).not.toBeInTheDocument();
       expect(onCountChange).toHaveBeenCalledWith(2);
 
-      fireEvent.change(screen.getByTestId('monaco-editor'), { target: { value: '{"mcpServers":{"a":{}}}' } });
+      fireEvent.change(screen.getByTestId('monaco-editor'), { target: { value: '{"mcpServers":{"a":{"command":"test"}}}' } });
       expect(onDirtyChange).toHaveBeenLastCalledWith(true);
 
       const handle = onRegisterSave.mock.calls[0][0];
       await act(() => handle.save());
-      expect(window.clubhouse.agentSettings.writeMcpRawJson).toHaveBeenCalledWith('/project', '{"mcpServers":{"a":{}}}', undefined);
+      expect(window.clubhouse.agentSettings.writeMcpRawJson).toHaveBeenCalledWith('/project', '{"mcpServers":{"a":{"command":"test"}}}', undefined, undefined);
       expect(onDirtyChange).toHaveBeenLastCalledWith(false);
       expect(onCountChange).toHaveBeenLastCalledWith(1);
     });

@@ -21,7 +21,7 @@ import { agentEndpointUrl, NONCE_HEADER, waitReady as waitMcpBridgeReady } from 
 import { injectClubhouseMcp, buildClubhouseMcpDef, CLUBHOUSE_NONCE_ENV } from '../clubhouse-mcp/injection';
 import { clubhouseMcpOverride } from '../../../shared/agent-helpers';
 import { isMcpEnabled } from '../mcp-settings';
-import { resolveProjectMcpServers } from '../materialization-service';
+import { resolveAgentMcpServers } from '../materialization-service';
 import { touchSessionEntry } from '../agent-config';
 import { broadcastAgentExit } from '../agent-exit-broadcast';
 import { appLog } from '../log-service';
@@ -414,7 +414,7 @@ async function runChatStart(
       profileEnvKeys: profileEnv ? Object.keys(profileEnv) : [],
     },
   });
-  let prepared: { env: Record<string, string>; mcpServers: Record<string, unknown>; mcpHttpEndpoints: Record<string, McpHttpEndpoint>; continued?: { sessionId: string; lastSeq: number } } | undefined;
+  let prepared: { env: Record<string, string>; mcpServers: Record<string, unknown>; mcpHttpEndpoints: Record<string, McpHttpEndpoint>; mcpNotices: ChatRuntimeNotice[]; continued?: { sessionId: string; lastSeq: number } } | undefined;
 
   // Probe lazily, in order, and stop at the first usable driver: the
   // preferred driver working means no other driver is probed or reported.
@@ -456,7 +456,7 @@ async function runChatStart(
       ? { level: 'warn', code: 'fallback', message: `Using ${driverLabel(driver)}: ${skipped.join('; ')}` }
       : undefined;
     const sessionStartedAt = Date.now();
-    const outcome = await startChatRuntime(driver, [...(fallbackNotice ? [fallbackNotice] : []), ...check.notices, ...(params.contextWindowNotice ? [params.contextWindowNotice] : [])], prepared);
+    const outcome = await startChatRuntime(driver, [...(fallbackNotice ? [fallbackNotice] : []), ...check.notices, ...prepared.mcpNotices, ...(params.contextWindowNotice ? [params.contextWindowNotice] : [])], prepared);
     attempt.sessionStartMs = Date.now() - sessionStartedAt;
     // Covers a start whose driver timed out after the cancel: it never counts
     // as a driver failure, tries the next driver or falls back.
@@ -511,22 +511,29 @@ async function runChatStart(
   /** Nonce, Clubhouse MCP bridge + project servers and env: once, before the first start attempt. */
   async function prepare(): Promise<NonNullable<typeof prepared>> {
     const nonce = randomUUID();
-    agentRegistry.setNonce(params.agentId, nonce);
-    agentRegistry.setRuntime(params.agentId, 'chat');
-    start.prepared = true;
 
     // A helper always gets the bridge; project servers keep following the settings (#2610).
     const bridgeOverride = clubhouseMcpOverride(durableConfig);
     const mcpEnabled = isMcpEnabled(params.projectPath, bridgeOverride);
     const projectServersEnabled = isMcpEnabled(params.projectPath, durableConfig?.mcpOverride);
+    // Resolve before bridge injection or any write, including on a missing local file.
+    const mcpNotices: ChatRuntimeNotice[] = [];
+    const configuredServers = projectServersEnabled
+      ? await resolveAgentMcpServers(params.projectPath, durableConfig ?? undefined, { cwd: params.cwd, conventions: provider.conventions, onNotice: (message) => mcpNotices.push({ level: 'warn', code: 'mcp_configuration', message }) })
+      : {};
+    checkpoint();
+    agentRegistry.setNonce(params.agentId, nonce);
+    agentRegistry.setRuntime(params.agentId, 'chat');
+    start.prepared = true;
     const mcpJsonPath = path.join(params.cwd, provider.conventions.mcpConfigFile || '.mcp.json');
-    if (mcpEnabled) configPipeline.snapshotFile(params.agentId, mcpJsonPath);
+    const injectFile = provider.conventions.settingsFormat !== 'toml';
+    if (mcpEnabled && injectFile) configPipeline.snapshotFile(params.agentId, mcpJsonPath);
     let mcpPort = 0;
     try {
       mcpPort = await waitMcpBridgeReady();
       // A newer start has its own nonce: don't overwrite its MCP config with this one.
       checkpoint();
-      await injectClubhouseMcp(params.cwd, params.agentId, mcpPort, provider.conventions, { projectPath: params.projectPath, agentOverride: bridgeOverride });
+      if (injectFile) await injectClubhouseMcp(params.cwd, params.agentId, mcpPort, provider.conventions, { projectPath: params.projectPath, agentOverride: bridgeOverride });
     } catch (err) {
       if (err instanceof ChatStartCancelledError) throw err;
       appLog('core:mcp', 'warn', 'MCP bridge injection skipped for chat agent', {
@@ -534,7 +541,7 @@ async function runChatStart(
       });
     }
     const mcpServers = {
-      ...(projectServersEnabled ? await resolveProjectMcpServers(params.projectPath, durableConfig ?? undefined) : {}),
+      ...configuredServers,
       // The bridge too follows the agent > project > global setting (#2223).
       ...(mcpEnabled && mcpPort > 0 ? { clubhouse: buildClubhouseMcpDef(mcpPort, params.agentId) } : {}),
     };
@@ -556,7 +563,7 @@ async function runChatStart(
     // No bridge here: never point the agent at a port from its base env (#2620).
     if (mcpPort <= 0) delete env.CLUBHOUSE_MCP_PORT;
     const continued = resumeNativeSessionId ? await findChatSessionFor(params.agentId, resumeNativeSessionId) : undefined;
-    return { env, mcpServers, mcpHttpEndpoints, continued };
+    return { env, mcpServers, mcpHttpEndpoints, mcpNotices, continued };
   }
 
   /**
