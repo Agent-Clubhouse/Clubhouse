@@ -81,3 +81,76 @@ describe('Copilot hook document boundary', () => {
     expect(result.hooks.preToolUse[0]).toEqual(custom);
   });
 });
+
+
+describe('Copilot generated callback ownership', () => {
+  const posix = 'cat | curl -s -X POST http://127.0.0.1:9999/hook/${CLUBHOUSE_AGENT_ID}/preToolUse -H \'Content-Type: application/json\' -H "X-Clubhouse-Nonce: ${CLUBHOUSE_HOOK_NONCE}" --data-binary @- || true';
+  const windows = 'curl -s -X POST http://127.0.0.1:%CLUBHOUSE_HOOK_PORT%/hook/%CLUBHOUSE_AGENT_ID%/preToolUse -H "Content-Type: application/json" -H "X-Clubhouse-Nonce: %CLUBHOUSE_HOOK_NONCE%" -d @- || (exit /b 0)';
+  const supported = [posix, posix.replace(':9999', ':${CLUBHOUSE_HOOK_PORT}'), windows, windows.replace('%CLUBHOUSE_HOOK_PORT%', '9999')]
+    .flatMap((command) => ['preToolUse', 'postToolUse', 'errorOccurred', 'permissionRequest', 'sessionStart', 'sessionEnd', 'userPromptSubmitted']
+      .map((event) => ({ event, entry: { type: 'command', bash: command.replace('/preToolUse ', `/${event} `), timeoutSec: event === 'permissionRequest' ? 120 : 5 } })));
+  it.each(supported)('recognizes supported generated entries for chat refusal: $event $entry.bash', async ({ event, entry }) => {
+    const { root } = await fixture(JSON.stringify({ version: 1, hooks: { [event]: [entry] } }));
+    await expect(assertNoCopilotTerminalHooksForChat(root)).rejects.toThrow(/callbacks could be duplicated/);
+  });
+
+  it.each(supported)('replaces only supported generated entries on repeated writes: $event $entry.bash', async ({ event, entry }) => {
+    const custom = { type: 'command', bash: 'echo custom' };
+    const { root, file } = await fixture(JSON.stringify({ version: 1, hooks: { [event]: [custom, entry] } }));
+    const provider = new CopilotCliProvider();
+    await provider.writeHooksConfig(root, 'http://127.0.0.1:9999/hook');
+    await provider.writeHooksConfig(root, 'http://127.0.0.1:9999/hook');
+    const entries = JSON.parse(await fsp.readFile(file, 'utf8')).hooks[event];
+    expect(entries).toHaveLength(2);
+    expect(entries[0]).toEqual(custom);
+    expect(entries[1]).toMatchObject({ type: 'command', timeoutSec: entry.timeoutSec });
+  });
+
+  const generated = { type: 'command', bash: posix, timeoutSec: 5 };
+  const extended = [
+    { ...generated, powershell: 'Write-Output custom' },
+    { ...generated, command: 'echo custom' },
+    { ...generated, env: { CUSTOM: 'keep' } },
+    { ...generated, args: ['custom'] },
+    { ...generated, cwd: '/custom' },
+    { ...generated, matcher: 'custom' },
+    { ...generated, timeout: 5000 },
+    { ...generated, extension: { keep: true } },
+    { ...generated, timeoutSec: 10 },
+    { ...generated, timeoutSec: 120 },
+    { type: 'command', bash: posix },
+    { ...generated, bash: posix.replace('/preToolUse ', '/permissionRequest ') },
+  ];
+  it.each(extended)('preserves extended or modified generated entries across repeated provider writes: %j', async (entry) => {
+    const bytes = JSON.stringify({ version: 1, hooks: { preToolUse: [generated, entry] } }, null, 2);
+    const { root, file } = await fixture(bytes);
+    const provider = new CopilotCliProvider();
+    for (let attempt = 0; attempt < 2; attempt++) {
+      await expect(provider.writeHooksConfig(root, 'http://127.0.0.1:9999/hook')).rejects.toThrow(/repair.*restart/i);
+      expect(await fsp.readFile(file, 'utf8')).toBe(bytes);
+    }
+    await expect(readCopilotHooksConfig(root)).rejects.toThrow(/repair.*restart/i);
+    await expect(assertNoCopilotTerminalHooksForChat(root)).rejects.toThrow(/repair.*restart/i);
+  });
+
+  it('preserves custom hook URLs across repeated provider writes and permits them in chat', async () => {
+    const custom = { type: 'command', bash: 'curl https://example.invalid/hook/audit' };
+    const { root, file } = await fixture(JSON.stringify({ version: 1, hooks: { preToolUse: [custom] } }));
+    await expect(assertNoCopilotTerminalHooksForChat(root)).resolves.toBeUndefined();
+    const provider = new CopilotCliProvider();
+    await provider.writeHooksConfig(root, 'http://127.0.0.1:9999/hook');
+    await provider.writeHooksConfig(root, 'http://127.0.0.1:9999/hook');
+    const result = JSON.parse(await fsp.readFile(file, 'utf8'));
+    expect(result.hooks.preToolUse).toHaveLength(2);
+    expect(result.hooks.preToolUse[0]).toEqual(custom);
+  });
+
+  it('preserves unrecognized marked callback forms for manual repair', async () => {
+    const bytes = JSON.stringify({ version: 1, hooks: { preToolUse: [{ type: 'command', bash: 'curl /hook/${CLUBHOUSE_AGENT_ID}' }] } }, null, 2);
+    const { root, file } = await fixture(bytes);
+    await expect(readCopilotHooksConfig(root)).rejects.toThrow(/repair.*restart/i);
+    await expect(new CopilotCliProvider().writeHooksConfig(root, 'http://127.0.0.1:9999/hook')).rejects.toThrow(/repair.*restart/i);
+    await expect(assertNoCopilotTerminalHooksForChat(root)).rejects.toThrow(/repair.*restart/i);
+    expect(await fsp.readFile(file, 'utf8')).toBe(bytes);
+  });
+});

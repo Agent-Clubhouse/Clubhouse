@@ -24,7 +24,7 @@ import type { McpServerDef } from '../../shared/types';
 import { BaseProvider } from './base-provider';
 import { probeCopilotModels, type ModelProbeContext } from './model-probes';
 import { homePath, parseModelChoicesFromHelp, validateHookUrl, buildHookCurlCommand, mergeHookEntries, parseJsonlFile } from './shared';
-import { isClubhouseHookEntry } from '../services/config-pipeline';
+import { isCopilotClubhouseHookEntry } from './copilot-hooks-document';
 import { appLog } from '../services/log-service';
 import { buildCliSpawnEnv, getShellEnvironment } from '../util/shell';
 import { copilotContextWindowOptions, type ContextWindowOptions } from '../../shared/context-window';
@@ -325,7 +325,7 @@ export class CopilotCliProvider extends BaseProvider implements HookCapable, Hea
 
     const existing = await readCopilotHooksConfig(cwd) ?? { version: 1, hooks: {} };
 
-    const mergedHooks = mergeHookEntries(existing, ourHooks, isClubhouseHookEntry);
+    const mergedHooks = mergeHookEntries(existing, ourHooks, isCopilotClubhouseHookEntry);
     await fsp.writeFile(settingsPath, JSON.stringify({ ...existing, hooks: mergedHooks }, null, 2), 'utf-8');
   }
 

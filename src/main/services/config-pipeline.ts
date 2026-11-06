@@ -1,3 +1,4 @@
+import { isCopilotHooksDocument, isCopilotClubhouseHookEntry, hasUnrecognizedCopilotCallback } from '../orchestrators/copilot-hooks-document';
 import * as fsp from 'fs/promises';
 import * as path from 'path';
 import { ATTR } from '../../shared/telemetry/attributes';
@@ -5,6 +6,59 @@ import { OrchestratorProvider } from '../orchestrators/types';
 import { appLog } from './log-service';
 import { pathExists } from './fs-utils';
 import { scrubClubhouseNonce, scrubClubhouseNonceToml, stripClubhouseMcpToml } from './clubhouse-mcp/injection';
+
+/** Optional observer for a cleanup that needs manual repair; existing callers need no changes. */
+export interface ConfigCleanupOptions {
+  onRepairRequired?: (message: string) => void;
+}
+
+function isCopilotHooksPath(file: string): boolean {
+  return file.endsWith(path.join('.github', 'hooks', 'hooks.json'));
+}
+
+function reportCopilotRepair(file: string, detail: string, options?: ConfigCleanupOptions): void {
+  const message = `Copilot hooks at ${file}: ${detail}. Review and repair the file, then restart the agent.`;
+  appLog('core:config-pipeline', 'warn', 'Copilot hooks require manual repair', { meta: { filePath: file, detail } });
+  try { options?.onRepairRequired?.(message); }
+  catch (err) {
+    // A failed observer cannot authorize cleanup or change a skipped outcome.
+    appLog('core:config-pipeline', 'warn', 'Copilot repair notice failed', { meta: { error: err instanceof Error ? err.message : String(err) } });
+  }
+}
+
+async function cleanupCopilotHooksFile(file: string, options?: ConfigCleanupOptions): Promise<boolean> {
+  let contents: string;
+  try { contents = await fsp.readFile(file, 'utf-8'); }
+  catch (err) {
+    if ((err as NodeJS.ErrnoException)?.code !== 'ENOENT') reportCopilotRepair(file, 'could not read current contents; left unchanged', options);
+    return false;
+  }
+  let current: unknown;
+  try { current = JSON.parse(contents); }
+  catch {
+    // Preserve the current bytes even if a known-good snapshot exists.
+    reportCopilotRepair(file, 'invalid JSON; left unchanged', options);
+    return false;
+  }
+  if (!isCopilotHooksDocument(current) || hasUnrecognizedCopilotCallback(current)) {
+    reportCopilotRepair(file, 'invalid, unsupported, or conflicting document; left unchanged', options);
+    return false;
+  }
+  if (!Object.values(current.hooks).some((entries) => entries.some(isCopilotClubhouseHookEntry))) return false;
+  const hooks: Record<string, unknown[]> = {};
+  for (const [event, entries] of Object.entries(current.hooks)) {
+    const kept = entries.filter((entry) => !isCopilotClubhouseHookEntry(entry));
+    if (kept.length || entries.length === 0) hooks[event] = kept;
+  }
+  try {
+    await fsp.writeFile(file, JSON.stringify({ ...current, hooks }, null, 2), 'utf-8');
+    return true;
+  } catch {
+    // A write failure is not evidence of success or of unchanged bytes.
+    reportCopilotRepair(file, 'cleanup write failed; inspect current contents', options);
+    return false;
+  }
+}
 
 interface FileSnapshot {
   originalContent: string | null; // null = file didn't exist before us
@@ -65,7 +119,7 @@ export function snapshotFile(agentId: string, filePath: string): Promise<void> {
  * Restore config files for a single agent.
  * Decrements refCount; when it hits 0, restores the original file.
  */
-export function restoreForAgent(agentId: string): Promise<void> {
+export function restoreForAgent(agentId: string, options?: ConfigCleanupOptions): Promise<void> {
   return withMutex(async () => {
     const files = agentFiles.get(agentId);
     if (!files) return;
@@ -80,7 +134,7 @@ export function restoreForAgent(agentId: string): Promise<void> {
       snapshot.refCount--;
       if (snapshot.refCount <= 0) {
         snapshots.delete(absPath);
-        await restoreSnapshot(absPath, snapshot);
+        await restoreSnapshot(absPath, snapshot, options);
       }
     }
   });
@@ -89,10 +143,10 @@ export function restoreForAgent(agentId: string): Promise<void> {
 /**
  * Restore all snapshots immediately (for app quit).
  */
-export function restoreAll(): Promise<void> {
+export function restoreAll(options?: ConfigCleanupOptions): Promise<void> {
   return withMutex(async () => {
     for (const [absPath, snapshot] of snapshots) {
-      await restoreSnapshot(absPath, snapshot);
+      await restoreSnapshot(absPath, snapshot, options);
     }
     snapshots.clear();
     agentFiles.clear();
@@ -198,9 +252,10 @@ export function stripClubhouseHooks(settings: Record<string, unknown>): Record<s
  * no Clubhouse entries. Mutex-guarded so it serialises with snapshot/restore
  * on the same path. Returns true only when an entry was actually removed.
  */
-export function stripClubhouseHooksFromFile(filePath: string): Promise<boolean> {
+export function stripClubhouseHooksFromFile(filePath: string, options?: ConfigCleanupOptions): Promise<boolean> {
   return withMutex(async () => {
     const absPath = path.resolve(filePath);
+    if (isCopilotHooksPath(absPath)) return cleanupCopilotHooksFile(absPath, options);
     if (!(await pathExists(absPath))) return false;
 
     let current: unknown;
@@ -212,9 +267,6 @@ export function stripClubhouseHooksFromFile(filePath: string): Promise<boolean> 
     if (!current || typeof current !== 'object' || Array.isArray(current)) return false;
 
     const settings = current as Record<string, unknown>;
-    const copilotHooksFile = absPath.endsWith(path.join('.github', 'hooks', 'hooks.json'));
-    // Never rewrite ambiguous legacy permission documents during a hook toggle.
-    if (copilotHooksFile && ('permissions' in settings || settings.version !== 1)) return false;
     const hooks = settings.hooks;
     if (!hooks || typeof hooks !== 'object') return false;
 
@@ -224,8 +276,6 @@ export function stripClubhouseHooksFromFile(filePath: string): Promise<boolean> 
     if (!hadClubhouse) return false;
 
     const cleaned = stripClubhouseHooks(settings);
-    // Copilot requires a hooks object even when all Clubhouse entries were removed.
-    if (copilotHooksFile && !cleaned.hooks) cleaned.hooks = {};
     try {
       if (Object.keys(cleaned).length === 0) {
         await fsp.unlink(absPath);
@@ -270,7 +320,12 @@ function isTomlFile(filePath: string): boolean {
   return filePath.endsWith('.toml');
 }
 
-async function restoreSnapshot(absPath: string, snapshot: FileSnapshot): Promise<void> {
+async function restoreSnapshot(absPath: string, snapshot: FileSnapshot, options?: ConfigCleanupOptions): Promise<void> {
+  // Keep Copilot out of generic corrupt-file unlink/snapshot-fallback recovery.
+  if (isCopilotHooksPath(absPath)) {
+    await cleanupCopilotHooksFile(absPath, options);
+    return;
+  }
   try {
     if (snapshot.originalContent === null) {
       // File didn't exist before us — do a smart cleanup of the current file

@@ -11,6 +11,7 @@ vi.mock('../util/ipc-broadcast', () => ({
 
 vi.mock('../../shared/ipc-channels', () => ({
   IPC: {
+    CHAT: { RUNTIME_NOTICE: 'chat:runtime-notice' },
     HOOK_SERVER: {
       AGENTS_NEED_RESTART: 'hook-server:agents-need-restart',
     },
@@ -95,9 +96,9 @@ describe('hook-server-toggle', () => {
       ]));
       const affected = await applyDisabledForOrchestrator('copilot-cli');
       expect(affected).toEqual(['agent-a', 'agent-c']);
-      expect(mockRestoreForAgent).toHaveBeenCalledWith('agent-a');
-      expect(mockRestoreForAgent).toHaveBeenCalledWith('agent-c');
-      expect(mockRestoreForAgent).not.toHaveBeenCalledWith('agent-b');
+      expect(mockRestoreForAgent).toHaveBeenCalledWith('agent-a', expect.objectContaining({ onRepairRequired: expect.any(Function) }));
+      expect(mockRestoreForAgent).toHaveBeenCalledWith('agent-c', expect.objectContaining({ onRepairRequired: expect.any(Function) }));
+      expect(mockRestoreForAgent.mock.calls.map((args) => args[0])).not.toContain('agent-b');
     });
 
     it('clears in-flight permissions for the target orchestrator\'s agents only', async () => {
@@ -167,7 +168,7 @@ describe('hook-server-toggle', () => {
 
       const affected = await applyDisabledForOrchestrator('copilot-cli');
 
-      expect(mockStripClubhouseHooksFromFile).toHaveBeenCalledWith('/p/dur-a/.github/hooks/hooks.json');
+      expect(mockStripClubhouseHooksFromFile).toHaveBeenCalledWith('/p/dur-a/.github/hooks/hooks.json', expect.objectContaining({ onRepairRequired: expect.any(Function) }));
       expect(affected).toEqual(['dur-a']);
       expect(mockBroadcastToAllWindows).toHaveBeenCalledWith(
         'hook-server:agents-need-restart',
@@ -186,7 +187,7 @@ describe('hook-server-toggle', () => {
 
       const affected = await applyDisabledForOrchestrator('copilot-cli');
 
-      expect(mockRestoreForAgent).toHaveBeenCalledWith('dur-a');
+      expect(mockRestoreForAgent).toHaveBeenCalledWith('dur-a', expect.objectContaining({ onRepairRequired: expect.any(Function) }));
       expect(mockStripClubhouseHooksFromFile).not.toHaveBeenCalled();
       expect(affected).toEqual(['dur-a']);
     });
@@ -201,8 +202,8 @@ describe('hook-server-toggle', () => {
 
       const affected = await applyDisabledForOrchestrator('copilot-cli');
 
-      expect(mockStripClubhouseHooksFromFile).toHaveBeenCalledWith('/p/dur-copilot/.github/hooks/hooks.json');
-      expect(mockStripClubhouseHooksFromFile).not.toHaveBeenCalledWith('/p/dur-claude/.github/hooks/hooks.json');
+      expect(mockStripClubhouseHooksFromFile).toHaveBeenCalledWith('/p/dur-copilot/.github/hooks/hooks.json', expect.objectContaining({ onRepairRequired: expect.any(Function) }));
+      expect(mockStripClubhouseHooksFromFile.mock.calls.map((args) => args[0])).not.toContain('/p/dur-claude/.github/hooks/hooks.json');
       expect(affected).toEqual(['dur-copilot']);
     });
 
@@ -283,7 +284,7 @@ describe('hook-server-toggle', () => {
 
       const affected = await applyDisabledForOrchestrator('copilot-cli');
 
-      expect(mockStripClubhouseHooksFromFile).toHaveBeenCalledWith(`${DISPATCHER_DIR}|hooks`);
+      expect(mockStripClubhouseHooksFromFile).toHaveBeenCalledWith(`${DISPATCHER_DIR}|hooks`, expect.objectContaining({ onRepairRequired: expect.any(Function) }));
       expect(affected).toEqual(['disp']);
     });
 
@@ -407,5 +408,112 @@ describe('hook-server-toggle', () => {
       await onOrchestratorHookServerChanged('claude-code', false);
       expect(mockRestoreForAgent).toHaveBeenCalledWith('agent-a');
     });
+  });
+});
+
+
+describe('Copilot terminal-only hook toggles', () => {
+  const provider = { id: 'copilot-cli', writeHooksConfig: vi.fn(async () => {}) };
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockBroadcastToAllWindows.mockReset();
+    mockClearForAgent.mockReset();
+    mockSnapshotFile.mockReset().mockResolvedValue(undefined);
+    mockListDurable.mockReset().mockResolvedValue([]);
+    provider.writeHooksConfig.mockReset().mockResolvedValue(undefined);
+    mockRestoreForAgent.mockReset().mockResolvedValue(undefined);
+    mockStripClubhouseHooksFromFile.mockReset().mockResolvedValue(true);
+    mockGetProvider.mockReturnValue(provider);
+    mockIsHookCapable.mockReturnValue(true);
+    mockGetPort.mockReturnValue(12345);
+    mockPathExists.mockResolvedValue(false);
+    mockProjectStoreList.mockResolvedValue([]);
+    mockGetAllRegistrations.mockReturnValue(new Map());
+    mockReadProjectOrchestrator.mockResolvedValue('copilot-cli');
+    mockGetHooksConfigPath.mockImplementation((_provider: unknown, cwd: unknown) => `${cwd}/.github/hooks/hooks.json`);
+  });
+  const registrations = () => new Map([
+    ['chat', { projectPath: '/p', cwd: '/p/chat', orchestrator: 'copilot-cli', runtime: 'chat' }],
+    ['terminal', { projectPath: '/p', cwd: '/p/terminal', orchestrator: 'copilot-cli', runtime: 'pty' }],
+  ]);
+
+  it('does not inject or snapshot terminal callbacks into Copilot chat', async () => {
+    mockGetAllRegistrations.mockReturnValue(registrations());
+    expect(await applyEnabledForOrchestrator('copilot-cli')).toEqual(['terminal']);
+    expect(provider.writeHooksConfig.mock.calls).toEqual([['/p/terminal', 'http://127.0.0.1:12345/hook']]);
+    expect(mockSnapshotFile.mock.calls).toEqual([['terminal', '/p/terminal/.github/hooks/hooks.json']]);
+  });
+
+  it('leaves chat approvals and MCP snapshots intact and excludes its cwd from stopped reconciliation', async () => {
+    const approvals = new Set(['chat', 'terminal']);
+    const mcpSnapshots = new Set(['chat', 'terminal']);
+    mockClearForAgent.mockImplementation((id: unknown) => { approvals.delete(String(id)); });
+    mockRestoreForAgent.mockImplementation(async (...args: unknown[]) => { mcpSnapshots.delete(String(args[0])); });
+    mockGetAllRegistrations.mockReturnValue(registrations());
+    mockProjectStoreList.mockResolvedValue([{ path: '/p' }]);
+    mockListDurable.mockResolvedValue([
+      { id: 'same-cwd', orchestrator: 'copilot-cli', worktreePath: '/p/chat' },
+      { id: 'stopped', orchestrator: 'copilot-cli', worktreePath: '/p/stopped' },
+    ]);
+    expect(await applyDisabledForOrchestrator('copilot-cli')).toEqual(['terminal', 'stopped']);
+    expect(approvals).toEqual(new Set(['chat']));
+    expect(mcpSnapshots).toEqual(new Set(['chat']));
+    expect(mockRestoreForAgent.mock.calls.map((args) => args[0])).toEqual(['terminal']);
+    expect(mockClearForAgent.mock.calls).toEqual([['terminal']]);
+    expect(mockStripClubhouseHooksFromFile.mock.calls.map((args) => args[0])).toEqual(['/p/stopped/.github/hooks/hooks.json']);
+  });
+
+  it('keeps existing other-provider chat toggle behavior', async () => {
+    mockGetAllRegistrations.mockReturnValue(new Map([
+      ['other-chat', { cwd: '/p/other', orchestrator: 'claude-code', runtime: 'chat' }],
+    ]));
+    expect(await applyEnabledForOrchestrator('claude-code')).toEqual(['other-chat']);
+    expect(provider.writeHooksConfig).toHaveBeenCalledWith('/p/other', expect.any(String));
+    expect(await applyDisabledForOrchestrator('claude-code')).toEqual(['other-chat']);
+    expect(mockRestoreForAgent).toHaveBeenCalledWith('other-chat');
+  });
+
+  it.each(['running', 'stopped'] as const)('reports skipped %s cleanup without claiming success', async (kind) => {
+    const message = 'Copilot hooks at /p/bad were left unchanged. Review and repair the file, then restart.';
+    const fail = async (...args: unknown[]) => {
+      (args[1] as { onRepairRequired: (message: string) => void }).onRepairRequired(message);
+    };
+    if (kind === 'running') {
+      mockGetAllRegistrations.mockReturnValue(new Map([
+        ['bad', { cwd: '/p/bad', orchestrator: 'copilot-cli', runtime: 'pty' }],
+      ]));
+      mockRestoreForAgent.mockImplementationOnce(fail);
+    } else {
+      mockProjectStoreList.mockResolvedValue([{ path: '/p' }]);
+      mockListDurable.mockResolvedValue([{ id: 'bad', orchestrator: 'copilot-cli', worktreePath: '/p/bad' }]);
+      mockStripClubhouseHooksFromFile.mockImplementationOnce(async (...args: unknown[]) => { await fail(...args); return false; });
+    }
+    expect(await applyDisabledForOrchestrator('copilot-cli')).toEqual([]);
+    expect(mockBroadcastToAllWindows.mock.calls).toEqual([
+      ['chat:runtime-notice', 'bad', { level: 'warn', code: 'copilot_hooks_repair', message }],
+    ]);
+  });
+
+  it('does not claim success when a skipped cleanup notice cannot be delivered', async () => {
+    mockGetAllRegistrations.mockReturnValue(new Map([
+      ['bad', { cwd: '/p/bad', orchestrator: 'copilot-cli', runtime: 'pty' }],
+    ]));
+    mockBroadcastToAllWindows.mockImplementation(() => { throw new Error('window closed'); });
+    mockRestoreForAgent.mockImplementationOnce(async (...args: unknown[]) => {
+      (args[1] as { onRepairRequired: (message: string) => void }).onRepairRequired('Review and repair the file.');
+    });
+    expect(await applyDisabledForOrchestrator('copilot-cli')).toEqual([]);
+    expect(mockBroadcastToAllWindows).toHaveBeenCalledTimes(1);
+    expect(mockStripClubhouseHooksFromFile).not.toHaveBeenCalled();
+  });
+
+  it('reports a failed enable without announcing a successful injection', async () => {
+    mockGetAllRegistrations.mockReturnValue(new Map([
+      ['bad', { cwd: '/p/bad', orchestrator: 'copilot-cli', runtime: 'pty' }],
+    ]));
+    provider.writeHooksConfig.mockRejectedValueOnce(new Error('Review and repair the file, then restart.'));
+    expect(await applyEnabledForOrchestrator('copilot-cli')).toEqual([]);
+    expect(mockBroadcastToAllWindows).toHaveBeenCalledWith('chat:runtime-notice', 'bad', expect.objectContaining({ code: 'copilot_hooks_repair' }));
+    expect(mockBroadcastToAllWindows).not.toHaveBeenCalledWith('hook-server:agents-need-restart', expect.anything());
   });
 });

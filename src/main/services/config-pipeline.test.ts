@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import * as path from 'path';
+import { readCopilotHooksConfig } from '../orchestrators/copilot-hooks-config';
 
 vi.mock('fs/promises', () => ({
   readFile: vi.fn(() => Promise.reject(new Error('ENOENT'))),
@@ -31,6 +32,7 @@ import {
 } from './config-pipeline';
 
 const CLUBHOUSE_HOOK_CMD = 'cat | curl -s -X POST http://127.0.0.1:9999/hook/${CLUBHOUSE_AGENT_ID} -H \'Content-Type: application/json\' -H "X-Clubhouse-Nonce: ${CLUBHOUSE_HOOK_NONCE}" --data-binary @- || true';
+const COPILOT_OWNED_ENTRY = { type: 'command', bash: CLUBHOUSE_HOOK_CMD.replace('${CLUBHOUSE_AGENT_ID}', '${CLUBHOUSE_AGENT_ID}/preToolUse'), timeoutSec: 5 };
 
 describe('config-pipeline', () => {
   beforeEach(() => {
@@ -82,7 +84,7 @@ describe('config-pipeline', () => {
       vi.mocked(pathExists).mockResolvedValueOnce(true);
       vi.mocked(fsp.readFile).mockResolvedValueOnce(JSON.stringify({
         version: 1,
-        hooks: { preToolUse: [{ type: 'command', bash: CLUBHOUSE_HOOK_CMD }] },
+        hooks: { preToolUse: [COPILOT_OWNED_ENTRY] },
       }));
       const result = await stripClubhouseHooksFromFile('/p/dur/.github/hooks/hooks.json');
       expect(result).toBe(true);
@@ -95,7 +97,7 @@ describe('config-pipeline', () => {
       vi.mocked(pathExists).mockResolvedValueOnce(true);
       vi.mocked(fsp.readFile).mockResolvedValueOnce(JSON.stringify({
         version: 1, permissions: { deny: ['WebFetch'] },
-        hooks: { preToolUse: [{ type: 'command', bash: CLUBHOUSE_HOOK_CMD }] },
+        hooks: { preToolUse: [COPILOT_OWNED_ENTRY] },
       }));
       expect(await stripClubhouseHooksFromFile('/p/dur/.github/hooks/hooks.json')).toBe(false);
       expect(fsp.writeFile).not.toHaveBeenCalled();
@@ -516,7 +518,7 @@ describe('config-pipeline', () => {
       // Mock reads for smart restore
       vi.mocked(fsp.readFile)
         .mockResolvedValueOnce(JSON.stringify({ hooks: { PreToolUse: [{ hooks: [{ type: 'command', command: CLUBHOUSE_HOOK_CMD }] }] } }))
-        .mockResolvedValueOnce(JSON.stringify({ hooks: { PreToolUse: [{ hooks: [{ type: 'command', command: CLUBHOUSE_HOOK_CMD }] }] } }));
+        .mockResolvedValueOnce(JSON.stringify({ version: 1, hooks: { preToolUse: [COPILOT_OWNED_ENTRY] } }));
 
       await restoreAll();
 
@@ -711,5 +713,155 @@ describe('config-pipeline', () => {
       // Without mutex, overlapping writes would interleave.
       expect(callOrder.filter(c => c === 'write-start').length).toBeLessThanOrEqual(1);
     });
+  });
+});
+
+
+describe('Copilot cleanup preservation boundary', () => {
+  const file = path.resolve('/copilot/.github/hooks/hooks.json');
+  const owned = COPILOT_OWNED_ENTRY;
+  const custom = { type: 'command', bash: 'curl https://example.invalid/hook/audit' };
+  const original = JSON.stringify({ version: 1, hooks: {}, keep: 'original' });
+  const ambiguous = [
+    '{broken',
+    'null',
+    '[]',
+    JSON.stringify({ version: 1 }),
+    JSON.stringify({ version: 1, hooks: { preToolUse: [owned], postToolUse: { bash: 'echo custom' } } }, null, 2),
+    JSON.stringify({ version: 1, hooks: [owned] }),
+    JSON.stringify({ version: 2, hooks: { preToolUse: [owned] } }),
+    JSON.stringify({ version: 1, hooks: { preToolUse: [owned] }, permissions: { deny: ['WebFetch'] } }),
+    JSON.stringify({ version: 1, hooks: { preToolUse: [owned, { type: 'future', payload: 'keep' }] } }),
+    JSON.stringify({ version: 1, hooks: { preToolUse: [owned, { type: 'command', bash: 'echo ${CLUBHOUSE_AGENT_ID}' }] } }),
+    ...[
+      { ...owned, powershell: 'Write-Output custom' },
+      { ...owned, command: 'echo custom' },
+      { ...owned, env: { CUSTOM: 'keep' } },
+      { ...owned, args: ['custom'] },
+      { ...owned, cwd: '/custom' },
+      { ...owned, matcher: 'custom' },
+      { ...owned, timeout: 5000 },
+      { ...owned, extension: { keep: true } },
+      { ...owned, timeoutSec: 10 },
+      { ...owned, timeoutSec: 120 },
+      { type: 'command', bash: owned.bash },
+      { ...owned, bash: owned.bash.replace('/preToolUse ', '/permissionRequest ') },
+    ].map((entry) => JSON.stringify({ version: 1, hooks: { preToolUse: [owned, entry] }, keep: 'custom additions' }, null, 2)),
+  ];
+  function disk(bytes: string | undefined) {
+    const state = { bytes, denied: false };
+    vi.mocked(fsp.readFile).mockImplementation(async () => {
+      if (state.denied) throw Object.assign(new Error('denied'), { code: 'EACCES' });
+      if (state.bytes === undefined) throw Object.assign(new Error('missing'), { code: 'ENOENT' });
+      return state.bytes;
+    });
+    vi.mocked(fsp.writeFile).mockImplementation(async (_file, value) => { state.bytes = String(value); });
+    vi.mocked(fsp.unlink).mockImplementation(async () => { state.bytes = undefined; });
+    vi.mocked(pathExists).mockImplementation(async () => state.bytes !== undefined);
+    return state;
+  }
+  beforeEach(() => {
+    _resetForTesting();
+    vi.clearAllMocks();
+    vi.mocked(fsp.readFile).mockReset();
+    vi.mocked(fsp.writeFile).mockReset();
+    vi.mocked(fsp.unlink).mockReset();
+    vi.mocked(pathExists).mockReset();
+  });
+
+  it.each(ambiguous)('leaves a stopped ambiguous document byte-exact: %s', async (bytes) => {
+    const state = disk(bytes);
+    expect(await stripClubhouseHooksFromFile(file)).toBe(false);
+    expect(state.bytes).toBe(bytes);
+    expect(fsp.writeFile).not.toHaveBeenCalled();
+    expect(fsp.unlink).not.toHaveBeenCalled();
+    expect(appLog).toHaveBeenCalledWith('core:config-pipeline', 'warn', expect.stringMatching(/repair/i), expect.anything());
+  });
+
+  for (const existing of [false, true]) {
+    for (const all of [false, true]) {
+      it.each(ambiguous)(`preserves ambiguous current bytes (original=${existing}, all=${all}): %s`, async (bytes) => {
+        const state = disk(existing ? original : undefined);
+        await snapshotFile('copilot-agent', file);
+        state.bytes = bytes;
+        if (all) await restoreAll();
+        else await restoreForAgent('copilot-agent');
+        expect(state.bytes).toBe(bytes);
+        expect(fsp.writeFile).not.toHaveBeenCalled();
+        expect(fsp.unlink).not.toHaveBeenCalled();
+      });
+
+      it(`keeps valid empty hooks readable on next start (original=${existing}, all=${all})`, async () => {
+        const state = disk(existing ? original : undefined);
+        await snapshotFile('copilot-agent', file);
+        state.bytes = JSON.stringify({ version: 1, hooks: { preToolUse: [owned] }, keep: 'current' });
+        if (all) await restoreAll();
+        else await restoreForAgent('copilot-agent');
+        expect(JSON.parse(state.bytes!)).toEqual({ version: 1, hooks: {}, keep: 'current' });
+        await expect(readCopilotHooksConfig('/copilot')).resolves.toEqual({ version: 1, hooks: {}, keep: 'current' });
+        expect(fsp.unlink).not.toHaveBeenCalled();
+      });
+    }
+  }
+
+  it('preserves custom hook URLs while removing only generated callbacks', async () => {
+    const state = disk(JSON.stringify({ version: 1, hooks: { preToolUse: [custom, owned] }, keep: true }));
+    expect(await stripClubhouseHooksFromFile(file)).toBe(true);
+    expect(JSON.parse(state.bytes!)).toEqual({ version: 1, hooks: { preToolUse: [custom] }, keep: true });
+  });
+
+  it('leaves a custom URL-only document byte-exact', async () => {
+    const bytes = JSON.stringify({ version: 1, hooks: { preToolUse: [custom] } }, null, 2);
+    const state = disk(bytes);
+    expect(await stripClubhouseHooksFromFile(file)).toBe(false);
+    expect(state.bytes).toBe(bytes);
+    expect(fsp.writeFile).not.toHaveBeenCalled();
+  });
+
+  it.each([false, true])('does not overwrite unreadable current bytes (original=%s)', async (existing) => {
+    const state = disk(existing ? original : undefined);
+    await snapshotFile('copilot-agent', file);
+    state.bytes = 'unreadable-current-evidence';
+    state.denied = true;
+    await restoreForAgent('copilot-agent');
+    expect(state.bytes).toBe('unreadable-current-evidence');
+    expect(fsp.writeFile).not.toHaveBeenCalled();
+    expect(fsp.unlink).not.toHaveBeenCalled();
+  });
+
+  it.each([false, true])('preserves failed running cleanup when the observer throws (all=%s)', async (all) => {
+    const state = disk(original);
+    await snapshotFile('copilot-agent', file);
+    state.bytes = '{corrupt-current';
+    const options = { onRepairRequired: vi.fn(() => { throw new Error('notice failed'); }) };
+    if (all) await restoreAll(options);
+    else await restoreForAgent('copilot-agent', options);
+    expect(options.onRepairRequired).toHaveBeenCalledTimes(1);
+    expect(state.bytes).toBe('{corrupt-current');
+    expect(fsp.writeFile).not.toHaveBeenCalled();
+    expect(fsp.unlink).not.toHaveBeenCalled();
+  });
+
+  it('reports a write failure as failure without falling back to an old snapshot', async () => {
+    const state = disk(JSON.stringify({ version: 1, hooks: { preToolUse: [owned] } }));
+    vi.mocked(fsp.writeFile).mockRejectedValueOnce(new Error('disk full'));
+    const options = { onRepairRequired: vi.fn(() => { throw new Error('notice failed'); }) };
+    expect(await stripClubhouseHooksFromFile(file, options)).toBe(false);
+    expect(options.onRepairRequired).toHaveBeenCalledTimes(1);
+    expect(options.onRepairRequired).toHaveBeenCalledWith(expect.stringContaining('cleanup write failed'));
+    expect(fsp.writeFile).toHaveBeenCalledTimes(1);
+    expect(fsp.unlink).not.toHaveBeenCalled();
+    expect(state.bytes).toContain('preToolUse');
+  });
+
+  it('does not turn a failed cleanup into mutation when its repair observer throws', async () => {
+    const bytes = ambiguous[1];
+    const state = disk(bytes);
+    const options = { onRepairRequired: vi.fn(() => { throw new Error('notice failed'); }) };
+    expect(await stripClubhouseHooksFromFile(file, options)).toBe(false);
+    expect(options.onRepairRequired).toHaveBeenCalledTimes(1);
+    expect(state.bytes).toBe(bytes);
+    expect(fsp.writeFile).not.toHaveBeenCalled();
+    expect(fsp.unlink).not.toHaveBeenCalled();
   });
 });

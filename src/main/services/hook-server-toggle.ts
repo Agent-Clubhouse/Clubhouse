@@ -36,6 +36,17 @@ import { pathExists } from './fs-utils';
 
 const NS = 'core:hook-server-toggle';
 
+function copilotRepairNotice(agentId: string, message: string): void {
+  try {
+    // This existing channel has a renderer toast consumer; restart broadcasts alone do not.
+    broadcastToAllWindows(IPC.CHAT.RUNTIME_NOTICE, agentId, { level: 'warn', code: 'copilot_hooks_repair', message });
+  } catch (err) {
+    appLog(NS, 'warn', 'Could not deliver Copilot hook repair notice', {
+      meta: { agentId, error: err instanceof Error ? err.message : String(err) },
+    });
+  }
+}
+
 /**
  * Apply the disabled state for a single orchestrator: resolve its pending
  * permissions, strip injected hooks from each of its running agents' configs,
@@ -43,6 +54,7 @@ const NS = 'core:hook-server-toggle';
  * broadcast restart-needed.  Other orchestrators' agents are left untouched.
  */
 export async function applyDisabledForOrchestrator(orchestratorId: string): Promise<string[]> {
+  const isCopilot = orchestratorId === 'copilot-cli';
   const registrations = agentRegistry.getAllRegistrations();
   const affectedAgentIds: string[] = [];
   const runningCwds = new Set<string>();
@@ -52,6 +64,9 @@ export async function applyDisabledForOrchestrator(orchestratorId: string): Prom
   for (const [agentId, registration] of registrations) {
     if (registration.orchestrator !== orchestratorId) continue;
     if (registration.cwd) runningCwds.add(path.resolve(registration.cwd));
+    // Keep live chat CWDs excluded from stopped reconciliation, without touching
+    // protocol approvals or its unrelated MCP snapshots.
+    if (isCopilot && registration.runtime === 'chat') continue;
 
     // Release this agent's in-flight permissions so curls return immediately;
     // `clearForAgent` resolves each pending entry as 'timeout', which the hook
@@ -59,8 +74,14 @@ export async function applyDisabledForOrchestrator(orchestratorId: string): Prom
     permissionQueue.clearForAgent(agentId);
 
     try {
-      await configPipeline.restoreForAgent(agentId);
-      affectedAgentIds.push(agentId);
+      let repairRequired = false;
+      if (isCopilot) {
+        await configPipeline.restoreForAgent(agentId, { onRepairRequired: (message) => {
+          repairRequired = true;
+          copilotRepairNotice(agentId, message);
+        } });
+      } else await configPipeline.restoreForAgent(agentId);
+      if (!repairRequired) affectedAgentIds.push(agentId);
     } catch (err) {
       appLog(NS, 'error', 'Failed to strip hooks for agent', {
         meta: { agentId, orchestrator: orchestratorId, error: err instanceof Error ? err.message : String(err) },
@@ -105,6 +126,7 @@ async function reconcileStoppedDurableAgents(
   runningCwds: Set<string>,
 ): Promise<string[]> {
   const affected: string[] = [];
+  const isCopilot = orchestratorId === 'copilot-cli';
 
   const provider = getProvider(orchestratorId);
   if (!provider || !isHookCapable(provider)) {
@@ -154,7 +176,9 @@ async function reconcileStoppedDurableAgents(
       if (!hookConfigPath) continue;
 
       try {
-        const stripped = await configPipeline.stripClubhouseHooksFromFile(hookConfigPath);
+        const stripped = isCopilot
+          ? await configPipeline.stripClubhouseHooksFromFile(hookConfigPath, { onRepairRequired: (message) => copilotRepairNotice(durable.id, message) })
+          : await configPipeline.stripClubhouseHooksFromFile(hookConfigPath);
         if (stripped) affected.push(durable.id);
       } catch (err) {
         appLog(NS, 'error', 'Failed to strip hooks for stopped durable agent', {
@@ -176,6 +200,7 @@ async function reconcileStoppedDurableAgents(
  * into each of its running agents' configs, broadcast restart-needed.
  */
 export async function applyEnabledForOrchestrator(orchestratorId: string): Promise<string[]> {
+  const isCopilot = orchestratorId === 'copilot-cli';
   const registrations = agentRegistry.getAllRegistrations();
   const affectedAgentIds: string[] = [];
 
@@ -196,6 +221,7 @@ export async function applyEnabledForOrchestrator(orchestratorId: string): Promi
 
   for (const [agentId, registration] of registrations) {
     if (registration.orchestrator !== orchestratorId) continue;
+    if (isCopilot && registration.runtime === 'chat') continue;
     if (!registration.cwd) {
       appLog(NS, 'warn', 'Cannot re-inject hooks for agent — cwd unknown', {
         meta: { agentId, orchestrator: registration.orchestrator },
@@ -213,6 +239,8 @@ export async function applyEnabledForOrchestrator(orchestratorId: string): Promi
       await provider.writeHooksConfig(registration.cwd, hookUrl);
       affectedAgentIds.push(agentId);
     } catch (err) {
+      if (isCopilot) copilotRepairNotice(agentId,
+        `Copilot hook setup failed: ${err instanceof Error ? err.message : String(err)}. Review the hook file and restart after repair.`);
       appLog(NS, 'error', 'Failed to re-inject hooks for agent', {
         meta: { agentId, orchestrator: orchestratorId, error: err instanceof Error ? err.message : String(err) },
       });
