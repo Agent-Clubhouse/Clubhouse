@@ -588,6 +588,16 @@ require('readline').createInterface({ input: process.stdin }).on('line', line =>
         expect(logged.find((l) => l.msg === 'Chat driver check' && l.meta.driver === 'copilot_sdk')?.meta).toMatchObject({ ok: false, reason: expect.stringContaining(why) });
       });
 
+      it('reports an unavailable selected SDK in both the ACP transcript and toast', async () => {
+        const acp = new FakeChatDriver('copilot_acp', 'copilot-cli');
+        registerChatDriver(acp);
+        mode.value = { mode: 'chat', driver: 'copilot_sdk' };
+        expect(await tryStartChatAgent(params, copilot, undefined, undefined, null)).toBe('chat');
+        expect(acp.sessions).toHaveLength(1);
+        expect(toasts()[0]).toMatchObject({ code: 'fallback', message: expect.stringContaining('Copilot SDK is not registered') });
+        expect(notices()).toEqual(toasts());
+      });
+
       it('sends a missing login to the CLI view rather than ACP', async () => {
         const { acp, sdk } = copilotDrivers();
         mode.value = { mode: 'chat', driver: 'copilot_sdk' };

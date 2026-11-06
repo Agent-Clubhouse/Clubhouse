@@ -9,6 +9,7 @@
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { spawn, type ChildProcess } from 'child_process';
+import { withTestPhaseDiagnostic } from './test-phase-diagnostic';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
@@ -103,18 +104,19 @@ afterEach(() => {
 // ── The safety gate ──────────────────────────────────────────────────────
 
 describe('kill safety', () => {
-  it('does NOT kill a recorded process that is not a repo-local Electron', async () => {
+  it('does NOT kill a recorded process that is not a repo-local Electron', withTestPhaseDiagnostic('cleanup-safety', async (diagnostic) => {
     // Simulates a stale PID file entry whose PID has been recycled by an
     // unrelated program. Killing it would be the worst-case bug.
     const victim = spawnMarked('/Applications/Clubhouse.app/Contents/MacOS/Clubhouse');
-    await waitUntilVisible(victim.pid!);
-    recordElectronApp(victim.pid, undefined, paths);
+    await diagnostic.step('cleanup.probe-visible', () => waitUntilVisible(victim.pid!));
+    await diagnostic.step('cleanup.record', () => recordElectronApp(victim.pid, undefined, paths));
 
-    const result = sweepE2EProcesses(paths);
+    const result = await diagnostic.step('cleanup.process-table-and-sweep', () => sweepE2EProcesses(paths));
+    expect(result.processTable).toBe('complete');
 
     expect(result.killed).toBe(0);
     expect(isAlive(victim.pid!)).toBe(true);
-  });
+  }));
 
   it('does NOT kill a process merely because its command line mentions .webpack', async () => {
     // A developer's installed Clubhouse.app runs from app.asar.unpacked/.webpack.
@@ -122,7 +124,8 @@ describe('kill safety', () => {
     await waitUntilVisible(victim.pid!);
     recordElectronApp(victim.pid, undefined, paths);
 
-    sweepE2EProcesses(paths);
+    const result = await sweepE2EProcesses(paths);
+    expect(result.processTable).toBe('complete');
 
     expect(isAlive(victim.pid!)).toBe(true);
   });
@@ -133,7 +136,8 @@ describe('kill safety', () => {
     await waitUntilVisible(victim.pid!);
     recordElectronApp(victim.pid, undefined, paths);
 
-    sweepE2EProcesses(paths);
+    const result = await sweepE2EProcesses(paths);
+    expect(result.processTable).toBe('complete');
 
     expect(isAlive(victim.pid!)).toBe(true);
   });
@@ -143,7 +147,7 @@ describe('kill safety', () => {
     await waitUntilVisible(target.pid!);
     recordElectronApp(target.pid, undefined, paths);
 
-    const result = sweepE2EProcesses(paths);
+    const result = await sweepE2EProcesses(paths);
 
     expect(result.killed).toBeGreaterThan(0);
     expect(await waitFor(() => !isAlive(target.pid!))).toBe(true);
@@ -156,7 +160,7 @@ describe('kill safety', () => {
     await waitUntilVisible(devInstance.pid!);
     // Deliberately not recorded.
 
-    const result = sweepE2EProcesses(paths);
+    const result = await sweepE2EProcesses(paths);
 
     expect(result.killed).toBe(0);
     expect(isAlive(devInstance.pid!)).toBe(true);
@@ -191,7 +195,7 @@ describe('kill safety', () => {
     // Only the parent is recorded — the helper must be found by descent.
     recordElectronApp(parent.pid, undefined, paths);
 
-    sweepE2EProcesses(paths);
+    await sweepE2EProcesses(paths);
 
     expect(await waitFor(() => !isAlive(parent.pid!)), 'parent survived').toBe(true);
     expect(await waitFor(() => !isAlive(helperPid)), 'helper survived').toBe(true);
@@ -205,7 +209,7 @@ describe('kill safety', () => {
     await waitFor(() => !isAlive(pid));
     recordElectronApp(pid, undefined, paths);
 
-    expect(() => sweepE2EProcesses(paths)).not.toThrow();
+    await expect(sweepE2EProcesses(paths)).resolves.toMatchObject({ killed: 0, tempDirsRemoved: 0 });
   });
 });
 
@@ -246,14 +250,14 @@ describe('temp directory safety', () => {
     expect(fs.existsSync(escapeTarget)).toBe(true);
   });
 
-  it('sweeps every stray clubhouse-e2e-* dir and reports the count', () => {
+  it('sweeps every stray clubhouse-e2e-* dir and reports the count', async () => {
     for (const name of ['clubhouse-e2e-assistant-a', 'clubhouse-e2e-builder-project-b', 'clubhouse-e2e-c']) {
       fs.mkdirSync(path.join(paths.tmpDir!, name), { recursive: true });
     }
     const keep = path.join(paths.tmpDir!, 'unrelated-dir');
     fs.mkdirSync(keep, { recursive: true });
 
-    const result = sweepE2EProcesses(paths);
+    const result = await sweepE2EProcesses(paths);
 
     expect(result.tempDirsRemoved).toBe(3);
     expect(fs.existsSync(keep)).toBe(true);
@@ -283,7 +287,7 @@ describe('CI is never affected', () => {
     fs.mkdirSync(strayDir, { recursive: true });
 
     process.env.CI = '1';
-    const result = sweepE2EProcesses(paths);
+    const result = await sweepE2EProcesses(paths);
 
     expect(result).toEqual({ killed: 0, tempDirsRemoved: 0 });
     expect(isAlive(target.pid!)).toBe(true);
@@ -312,7 +316,7 @@ describe('PID recording', () => {
     await waitUntilVisible(target.pid!);
 
     recordElectronApp(target.pid, dir, paths);
-    const result = sweepE2EProcesses(paths);
+    const result = await sweepE2EProcesses(paths);
 
     expect(result.killed).toBeGreaterThan(0);
     expect(await waitFor(() => !isAlive(target.pid!))).toBe(true);
@@ -328,7 +332,7 @@ describe('PID recording', () => {
 
     recordElectronApp(first.pid, undefined, paths);
     recordElectronApp(second.pid, undefined, paths);
-    sweepE2EProcesses(paths);
+    await sweepE2EProcesses(paths);
 
     expect(await waitFor(() => !isAlive(first.pid!)), 'first survived').toBe(true);
     expect(await waitFor(() => !isAlive(second.pid!)), 'second survived').toBe(true);
@@ -339,30 +343,30 @@ describe('PID recording', () => {
     expect(fs.existsSync(path.join(paths.stateDir!, 'electron-pids.jsonl'))).toBe(false);
   });
 
-  it('clears the state file after a sweep, so the next run starts clean', () => {
+  it('clears the state file after a sweep, so the next run starts clean', async () => {
     recordElectronApp(999999, undefined, paths);
-    sweepE2EProcesses(paths);
+    await sweepE2EProcesses(paths);
     expect(fs.existsSync(path.join(paths.stateDir!, 'electron-pids.jsonl'))).toBe(false);
   });
 
-  it('removes the userDataDir recorded for a launch', () => {
+  it('removes the userDataDir recorded for a launch', async () => {
     const dir = path.join(paths.tmpDir!, 'clubhouse-e2e-recorded');
     fs.mkdirSync(dir, { recursive: true });
     recordElectronApp(999999, dir, paths);
 
-    sweepE2EProcesses(paths);
+    await sweepE2EProcesses(paths);
 
     expect(fs.existsSync(dir)).toBe(false);
   });
 
-  it('survives a corrupt state file', () => {
+  it('survives a corrupt state file', async () => {
     fs.mkdirSync(paths.stateDir!, { recursive: true });
     fs.writeFileSync(path.join(paths.stateDir!, 'electron-pids.jsonl'), 'not json\n{"pid":\n', 'utf-8');
 
-    expect(() => sweepE2EProcesses(paths)).not.toThrow();
+    await expect(sweepE2EProcesses(paths)).resolves.toMatchObject({ killed: 0, tempDirsRemoved: 0 });
   });
 
-  it('returns zeroes when there is nothing to clean', () => {
-    expect(sweepE2EProcesses(paths)).toEqual({ killed: 0, tempDirsRemoved: 0 });
+  it('returns zeroes when there is nothing to clean', async () => {
+    expect(await sweepE2EProcesses(paths)).toEqual({ killed: 0, tempDirsRemoved: 0 });
   });
 });

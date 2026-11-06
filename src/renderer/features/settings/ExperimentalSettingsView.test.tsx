@@ -114,6 +114,28 @@ describe('ExperimentalSettingsView', () => {
     expect(toggle).toHaveAttribute('aria-checked', 'false');
   });
 
+  it('failed SDK flag save rolls back, blocks duplicate changes, then retries without changing other flags', async () => {
+    mockGetExperimentalSettings.mockResolvedValue({ copilotSdk: false, telemetry: true });
+    let reject!: (reason: Error) => void;
+    mockSaveExperimentalSettings.mockImplementationOnce(() => new Promise<void>((_resolve, fail) => { reject = fail; }));
+    render(<ExperimentalSettingsView />);
+    const toggle = await screen.findByRole('switch', { name: 'Copilot SDK driver' });
+    fireEvent.click(toggle);
+    await waitFor(() => expect(mockSaveExperimentalSettings).toHaveBeenCalledTimes(1));
+    expect(toggle).toBeDisabled();
+    fireEvent.click(toggle);
+    expect(mockSaveExperimentalSettings).toHaveBeenCalledTimes(1);
+    reject(new Error('synthetic refusal'));
+    expect(await screen.findByRole('alert')).toHaveTextContent(SETTING_NOT_SAVED_TEXT);
+    expect(toggle).toHaveAttribute('aria-checked', 'false');
+    expect(mockRestart).not.toHaveBeenCalled();
+    fireEvent.click(toggle);
+    await waitFor(() => expect(toggle).not.toBeDisabled());
+    expect(toggle).toHaveAttribute('aria-checked', 'true');
+    expect(mockSaveExperimentalSettings).toHaveBeenLastCalledWith({ copilotSdk: true, telemetry: true });
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+  });
+
   it('does not list Clubhouse MCP as experimental (promoted)', async () => {
     render(<ExperimentalSettingsView />);
     await waitFor(() => {

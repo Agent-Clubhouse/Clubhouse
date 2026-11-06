@@ -7,15 +7,27 @@ import * as fs from 'fs';
 import * as net from 'net';
 import * as os from 'os';
 import * as path from 'path';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import type { ChatDriverSession, ChatDriverStartOptions } from '../../../shared/chat/runtime';
 import { EventLog, chatFixturePath, createFakeCli, writeFakeCliShims, type FakeCli } from '../../orchestrators/adapters/testing/fake-cli';
 import { CopilotSdkChatDriver } from './driver';
+import { fakeCopilotEnv } from './test-env';
 import { COPILOT_OPTION_ALLOW, COPILOT_OPTION_DENY } from './normalizer';
 
 const cleanups: Array<() => unknown> = [];
+let originalEnv: NodeJS.ProcessEnv;
+beforeEach(() => {
+  originalEnv = process.env;
+  const home = fs.mkdtempSync(path.join(fs.realpathSync(os.tmpdir()), 'copilot-fake-home-'));
+  process.env = fakeCopilotEnv(originalEnv, home);
+  cleanups.push(() => fs.promises.rm(home, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 }));
+});
 afterEach(async () => {
-  while (cleanups.length) await cleanups.pop()?.();
+  try {
+    while (cleanups.length) await cleanups.pop()?.();
+  } finally {
+    process.env = originalEnv;
+  }
 });
 
 /** A `copilot` on disk that replays a fixture. */
@@ -51,6 +63,21 @@ async function expectComplete(session: ChatDriverSession, fake: FakeCli): Promis
 
 const say = (session: ChatDriverSession, text: string) => session.send([{ type: 'text', text }], 'prompt');
 
+describe('fake child environment', () => {
+  it('strips inherited credential sentinels for probe and session start', async () => {
+    const contaminated = { ...originalEnv, GH_TOKEN: 'sentinel', GITHUB_TOKEN: 'sentinel', COPILOT_GITHUB_TOKEN: 'sentinel', CLUBHOUSE_CREDENTIAL_SENTINEL: 'sentinel' };
+    process.env = fakeCopilotEnv(contaminated, process.env.HOME!);
+    const probe = await fakeCopilot('handshake');
+    expect((await new CopilotSdkChatDriver().probe(probe.binary)).handshakeOk).toBe(true);
+    expect((await probe.fake.waitForReport()).credentialKeysPresent).toEqual([]);
+
+    const { fake, session } = await start('multi-turn');
+    const report = await fake.readReport();
+    expect(report.credentialKeysPresent).toEqual([]);
+    await session.close();
+  });
+});
+
 describe('CopilotSdkChatDriver probe against fake Copilot', () => {
   const probe = async (name: string, env: Record<string, string> = {}, probeTimeoutMs?: number) => {
     const { fake, binary } = await fakeCopilot(name);
@@ -69,6 +96,11 @@ describe('CopilotSdkChatDriver probe against fake Copilot', () => {
     const { result } = await probe('handshake', LOGIN_STAND_IN);
     expect(result.handshakeOk).toBe(true);
     expect(result.needsLogin).toBeUndefined();
+  });
+
+  it('does not treat provider settings without a base URL as a login', async () => {
+    const { result } = await probe('handshake', { COPILOT_PROVIDER_API_KEY: 'fake-key', COPILOT_MODEL: 'fake-model' });
+    expect(result).toMatchObject({ handshakeOk: true, needsLogin: true });
   });
 
   it('falls back on a protocol mismatch', async () => {

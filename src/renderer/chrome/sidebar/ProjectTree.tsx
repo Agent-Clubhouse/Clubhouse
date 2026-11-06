@@ -54,6 +54,7 @@ export interface ProjectTreeProps {
   onClearCompleted: (projectId: string) => void;
   /** Absent on a satellite host. */
   onOpenSettings?: (projectId: string) => void;
+  onCloseProject?: (projectId: string) => void;
   onReorderAgents?: (projectId: string, orderedIds: string[]) => void;
 }
 
@@ -430,6 +431,7 @@ export function ProjectTree(props: ProjectTreeProps) {
       canMoveUp={neighbour(project.id, -1) !== null}
       canMoveDown={neighbour(project.id, 1) !== null}
       onOpenSettings={props.onOpenSettings}
+      onCloseProject={props.onCloseProject}
       onReorderAgents={onReorderAgents}
       collapsedAgentIds={collapsedAgentSet}
       onToggleAgentCollapsed={onToggleAgentCollapsed}

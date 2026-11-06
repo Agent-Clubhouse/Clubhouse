@@ -26,6 +26,7 @@ export function SettingsNav() {
   const settingsSubPage = useUIStore((s) => s.settingsSubPage);
   const setSettingsContext = useUIStore((s) => s.setSettingsContext);
   const setSettingsSubPage = useUIStore((s) => s.setSettingsSubPage);
+  // Persisted manual order stays stable here; Recent and pin/idle groups belong to the agent tree.
   const projects = useProjectStore((s) => s.projects);
   const { app, project } = useSettingsCategories();
   const isApp = settingsContext === 'app';
@@ -62,6 +63,7 @@ export function SettingsNav() {
           <div className="px-1.5 pb-1 flex items-center text-xs font-semibold text-ctp-subtext0">
             Projects<span className="ml-auto font-normal text-ctp-overlay1">{projects.length}</span>
           </div>
+          <p className="px-1.5 pb-1 text-xs text-ctp-overlay1">Saved manual order. Sidebar activity and groups do not change this list.</p>
           {projects.map((p) => {
             const expanded = !isApp && settingsContext === p.id;
             return (
