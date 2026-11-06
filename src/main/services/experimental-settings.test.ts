@@ -75,6 +75,25 @@ describe('experimental-settings', () => {
       expect(isChatTipExperimentalReadUncertain()).toBe(false);
     });
 
+    it.each(['null', '[]', '42', '"text"', 'true'])('treats cached %s as uncertain until a good load or save', async (raw) => {
+      vi.mocked(fs.readFileSync).mockReturnValue(raw);
+      getSettings();
+      expect(isChatTipExperimentalReadUncertain()).toBe(true);
+      vi.mocked(fs.readFileSync).mockReturnValue(JSON.stringify({ chat: false }));
+      expect(isChatTipExperimentalReadUncertain()).toBe(true);
+      resetAllSettingsStoresForTests();
+      expect(getSettings()).toEqual({ chat: false });
+      expect(isChatTipExperimentalReadUncertain()).toBe(false);
+
+      resetAllSettingsStoresForTests();
+      vi.mocked(fs.readFileSync).mockReturnValue(raw);
+      getSettings();
+      expect(isChatTipExperimentalReadUncertain()).toBe(true);
+      vi.mocked(fs.readFileSync).mockReturnValue('{}');
+      await saveSettings({ chat: false });
+      expect(isChatTipExperimentalReadUncertain()).toBe(false);
+    });
+
     it('returns empty defaults when the file does not exist', () => {
       expect(getSettings()).toEqual({});
     });

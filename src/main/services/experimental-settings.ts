@@ -28,9 +28,17 @@ const store = createSettingsStore<ExperimentalSettings>(FILENAME, {}, migrateExp
   audit: { key: 'experimental' },
   rollBackFailedSaves: true,
   onLoad: (result) => {
-    chatTipCachedLoadUncertain = 'error' in result
-      ? (result.error as NodeJS.ErrnoException)?.code !== 'ENOENT'
-      : false;
+    if ('error' in result) {
+      chatTipCachedLoadUncertain = (result.error as NodeJS.ErrnoException)?.code !== 'ENOENT';
+      return;
+    }
+    try {
+      const parsed: unknown = JSON.parse(result.raw);
+      chatTipCachedLoadUncertain = parsed === null || typeof parsed !== 'object' || Array.isArray(parsed);
+    } catch {
+      // telemetry-exempt: the toast defers if the cached source is uncertain.
+      chatTipCachedLoadUncertain = true;
+    }
   },
 });
 
