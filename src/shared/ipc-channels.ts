@@ -1,4 +1,10 @@
 export const IPC = {
+  SKILL_BUNDLE: {
+    LIST: 'catalog-skill-bundle:list',
+    READ: 'catalog-skill-bundle:read',
+    PREVIEW: 'catalog-skill-bundle:preview',
+    SAVE: 'catalog-skill-bundle:save',
+  },
   PTY: {
     SPAWN_SHELL: 'pty:spawn-shell',
     WRITE: 'pty:write',

@@ -5,6 +5,7 @@ import { project } from './project';
 import { agent } from './agent';
 import { git } from './git';
 import { agentSettings } from './agentSettings';
+import { skillBundle } from './skillBundle';
 import { file } from './file';
 import { blueprint } from './blueprint';
 import { plugin } from './plugin';
@@ -57,6 +58,7 @@ export const api = {
   ...agent,
   ...git,
   ...agentSettings,
+  ...skillBundle,
   ...file,
   ...blueprint,
   ...plugin,
