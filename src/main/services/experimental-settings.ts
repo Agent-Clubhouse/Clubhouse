@@ -22,7 +22,25 @@ export function migrateExperimentalSettings(raw: Record<string, unknown>): Exper
 const FILENAME = 'experimental-settings.json';
 
 // A failed save must not stay in memory: a toggle that reverted would show it again on remount, and the next save would write it.
-const store = createSettingsStore<ExperimentalSettings>(FILENAME, {}, migrateExperimentalSettings, { audit: { key: 'experimental' }, rollBackFailedSaves: true });
+let chatTipCachedLoadUncertain = false;
+export function isChatTipExperimentalReadUncertain(): boolean { return chatTipCachedLoadUncertain; }
+const store = createSettingsStore<ExperimentalSettings>(FILENAME, {}, migrateExperimentalSettings, {
+  audit: { key: 'experimental' },
+  rollBackFailedSaves: true,
+  onLoad: (result) => {
+    if ('error' in result) {
+      chatTipCachedLoadUncertain = (result.error as NodeJS.ErrnoException)?.code !== 'ENOENT';
+      return;
+    }
+    try {
+      const parsed: unknown = JSON.parse(result.raw);
+      chatTipCachedLoadUncertain = parsed === null || typeof parsed !== 'object' || Array.isArray(parsed);
+    } catch {
+      // telemetry-exempt: the toast defers if the cached source is uncertain.
+      chatTipCachedLoadUncertain = true;
+    }
+  },
+});
 
 function pickFlags(settings: ExperimentalSettings, keep: (key: string) => boolean): ExperimentalSettings {
   return Object.fromEntries(Object.entries(settings).filter(([key]) => keep(key)));
@@ -54,6 +72,7 @@ async function updateFlags(fn: (current: ExperimentalSettings) => ExperimentalSe
   savesInFlight++;
   try {
     await store.update(fn);
+    chatTipCachedLoadUncertain = false;
   } finally {
     savesInFlight--;
   }

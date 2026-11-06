@@ -77,7 +77,8 @@ afterEach(async () => { await stopAllChatAgents(); clearChatDrivers(); clearChat
 
 async function save(content: string) { return handlers.get(IPC.AGENT.WRITE_MCP_RAW_JSON)!({}, cwd, content, root, agent.id); }
 async function start() {
-  const driver = new FakeChatDriver('copilot_acp', 'copilot-cli'); registerChatDriver(driver);
+  // No explicit legacy selection: exercise the standard Copilot SDK adapter.
+  const driver = new FakeChatDriver('copilot_sdk', 'copilot-cli'); registerChatDriver(driver);
   await materializeAgent({ projectPath: root, agent, provider: copilot });
   expect(await tryStartChatAgent({ agentId: agent.id, projectPath: root, cwd, kind: 'durable', permissionMode: 'auto' }, copilot, undefined, undefined, agent)).toBe('chat');
   return driver.last.startOptions!.mcpServers;

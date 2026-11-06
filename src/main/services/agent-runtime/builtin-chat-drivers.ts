@@ -23,7 +23,7 @@ export function registerBuiltinChatDrivers(): () => void {
     registerChatDriver(new CodexChatDriver({
       onLog: (level, message, meta) => appLog('core:chat:codex', level, message, meta && { meta }),
     })),
-    // Copilot: ACP (copilot_acp), then the opt-in Copilot SDK driver.
+    // Copilot SDK is the registry default; ACP remains explicitly selectable.
     registerCopilotChatDrivers(registerChatDriver, (level, message, meta) => appLog('core:chat:copilot', level, message, meta && { meta })),
     registerCopilotSdkChatDriver(registerChatDriver, (level, message, meta) => appLog('core:chat:copilot', level, message, meta && { meta })),
   ];

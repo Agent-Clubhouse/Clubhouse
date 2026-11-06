@@ -5,7 +5,7 @@ vi.mock('../log-service', () => ({ appLog: vi.fn() }));
 import { registerBuiltinChatDrivers } from './builtin-chat-drivers';
 import { appLog } from '../log-service';
 import { CodexChatDriver } from '../../orchestrators/adapters/codex-chat-driver';
-import { clearChatDrivers, listChatDrivers, resolveChatDriver } from './chat-drivers';
+import { clearChatDrivers, registerChatDriver, listChatDrivers, resolveChatDriver } from './chat-drivers';
 
 describe('registerBuiltinChatDrivers', () => {
   afterEach(() => clearChatDrivers());
@@ -38,10 +38,24 @@ describe('registerBuiltinChatDrivers', () => {
     expect(appLog).toHaveBeenCalledWith('core:chat:codex', 'warn', 'no meta', undefined);
   });
 
-  it('keeps ACP as the Copilot default, with the SDK driver only when chosen', () => {
+  it('uses SDK by default and preserves explicit legacy ACP', () => {
     registerBuiltinChatDrivers();
-    expect(resolveChatDriver('copilot-cli')?.id).toBe('copilot_acp');
+    expect(resolveChatDriver('copilot-cli')?.id).toBe('copilot_sdk');
+    expect(resolveChatDriver('copilot-cli', 'copilot_acp')?.id).toBe('copilot_acp');
     expect(resolveChatDriver('copilot-cli', 'copilot_sdk')?.id).toBe('copilot_sdk');
+  });
+
+  it('never substitutes the other Copilot adapter when the selected one is missing', () => {
+    registerBuiltinChatDrivers();
+    const sdk = resolveChatDriver('copilot-cli', 'copilot_sdk')!;
+    const acp = resolveChatDriver('copilot-cli', 'copilot_acp')!;
+    clearChatDrivers();
+    registerChatDriver(acp);
+    expect(resolveChatDriver('copilot-cli')).toBeUndefined();
+    expect(resolveChatDriver('copilot-cli', 'copilot_sdk')).toBeUndefined();
+    clearChatDrivers();
+    registerChatDriver(sdk);
+    expect(resolveChatDriver('copilot-cli', 'copilot_acp')).toBeUndefined();
   });
 
   it('unregisters what it registered', () => {

@@ -1033,7 +1033,8 @@ export const STRUCTURED_MODE_REMOVED_NOTICE_KEY = 'structuredModeRemovedNotice';
  */
 export const PREVIEW_ONLY_EXPERIMENTAL_FLAGS: readonly string[] = [
   'goobers',
-  'copilotSdk',
+  'copilotSdk', // Legacy preference retained for downgrade compatibility only.
+  'copilotLegacyAcp',
 ];
 
 // --- Security settings ---

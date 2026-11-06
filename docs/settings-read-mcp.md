@@ -74,7 +74,7 @@ Only the keys below ever come out. Each is read by name from its source, never b
 | `project.defaults` | `orchestrator`, `persona`, `mission`, `free_agent_mode`, `profile_id`, `source_control_provider`, `default_mcps` |
 | `project.modes` | `clubhouse_mode`, `mcp`, `permission_mode` |
 | `app.defaults` | `idle_timeout_minutes`, `chat_enabled`, `provider_runtime`, `mcp_enabled`, `clubhouse_mode_enabled`, `permission_mode`, `global_helper_cap`, `enabled_orchestrators` |
-| `app.system` | `dispatcher_enabled`, `experimental_chat`, `experimental_copilot_sdk`, `annex_server_enabled`, `annex_client_enabled` |
+| `app.system` | `dispatcher_enabled`, `experimental_chat`, `experimental_copilot_sdk`, `experimental_copilot_legacy_acp`, `annex_server_enabled`, `annex_client_enabled` |
 
 `app.defaults` is open to every agent because those values feed its own effective settings.
 
@@ -112,6 +112,7 @@ Each value has `effective` and `source`, and `stored` with `detail`.
 - **`uncertain` still has an `effective`.** It's what the app is using: its in-memory value, or the default if it never loaded the file.
 - **`chat_enabled` and `experimental_chat`** are on when nothing is saved: `stored: null`, `effective: true`, `source: default`. A saved `false` reads `effective: false`, `source: app`, in every build. While `experimental-settings.json` can't be read they read `effective: false`, `source: uncertain`, since a saved `false` may be in it.
 - **A preview-only experimental flag in a stable build** keeps `stored` and `source: app` when it's saved, and its `effective` is `false`. The flag is still in the file and comes back with Preview, but the build doesn't honour it. Compare `stored` with `detail` on.
+- **`experimental_copilot_sdk` is a retired control**, not a temporarily gated flag: its `effective` is always `false`, while raw `stored` and `source` remain available for provenance. Copilot SDK itself is standard. `experimental_copilot_legacy_acp` is the current preview-only opt-in for legacy ACP on the next start; existing sessions retain their active driver.
 - **A bridge isn't what an agent can call.** `clubhouse_bridge` says whether the bridge is injected at its start, and `clubhouse_mcp` what it can call. They only differ for a helper, whose bridge is always there, a fixed rule that reads `default`. With MCP off for it, `clubhouse_mcp` is off with `reason: helper_report_only`: its only working Clubhouse tool is `message_parent`.
 - **Fixed rules read `default`.** A helper is never connected to the Dispatcher, whatever is saved. Compare `stored` with `detail` on.
 - **A sleeping helper's `free_agent_mode`** is its saved value, before its orchestrator's ceiling applies at the next start. Awake, it's what the helper runs with.
