@@ -1386,6 +1386,14 @@ describe('passive provider skills on session_info', () => {
     expect(reduceChatEvent(state, ev('session_info', info(), { sessionId: 's2' }))).toBe(state);
   });
 
+  it('rejects invalid report dates before they can reach the session card', () => {
+    const ev = makeEmitter();
+    const state = fold([sessionStarted(ev)]);
+    for (const ts of [NaN, Infinity, 8.64e15 + 1]) {
+      expect(reduceChatEvent(state, { ...ev('session_info', info()), ts })).toBe(state);
+    }
+  });
+
   it('replays an ended session as an aged snapshot, deduplicates overlap and clears it at the next session', () => {
     const ev = makeEmitter();
     const start = sessionStarted(ev);

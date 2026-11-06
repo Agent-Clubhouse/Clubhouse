@@ -15,8 +15,8 @@ export interface ChatProviderSkills {
 export function reportedSkillNames(value: unknown): string[] | null {
   if (!Array.isArray(value) || value.length > MAX_REPORTED_SKILLS) return null;
   for (const name of value) {
-    if (typeof name !== 'string' || name.length > MAX_REPORTED_SKILL_NAME_LENGTH
-      || name.trim().length === 0 || /[\u0000-\u001f\u007f]/u.test(name)) return null;
+    if (typeof name !== 'string' || name.length > MAX_REPORTED_SKILL_NAME_LENGTH || name.trim().length === 0) return null;
+    if ([...name].some((char) => char.charCodeAt(0) < 32 || char.charCodeAt(0) === 127)) return null;
   }
   return [...new Set(value as string[])];
 }
