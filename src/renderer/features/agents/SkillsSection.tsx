@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useRef } from 'react';
 import { SkillEntry } from '../../../shared/types';
 import { SettingsMonacoEditor } from '../../components/SettingsMonacoEditor';
 import { Button } from '../../components/Button';
@@ -7,6 +7,7 @@ import { useReportDirty } from './agentSettingsPages';
 interface Props {
   worktreePath: string;
   projectPath?: string;
+  agentId?: string;
   disabled: boolean;
   refreshKey: number;
   pathLabel?: string;
@@ -20,7 +21,13 @@ interface Props {
 
 type View = 'list' | 'create' | 'edit';
 
-export function SkillsSection({ worktreePath, projectPath, disabled, refreshKey, pathLabel, hideTitle, onDirtyChange, onCountChange }: Props) {
+export function SkillsSection(props: Props) {
+  return <SkillsTarget key={JSON.stringify([props.worktreePath, props.projectPath, props.agentId, props.pathLabel])} {...props} />;
+}
+
+function SkillsTarget({ worktreePath, projectPath, agentId, disabled, refreshKey, pathLabel, hideTitle, onDirtyChange, onCountChange }: Props) {
+  const active = useRef(true);
+  useEffect(() => { active.current = true; return () => { active.current = false; }; }, []);
   const [skills, setSkills] = useState<SkillEntry[]>([]);
   const [view, setView] = useState<View>('list');
   const [editingSkill, setEditingSkill] = useState<string | null>(null);
@@ -33,13 +40,14 @@ export function SkillsSection({ worktreePath, projectPath, disabled, refreshKey,
   const loadSkills = useCallback(async () => {
     if (!worktreePath) return;
     try {
-      const list = await window.clubhouse.agentSettings.listSkills(worktreePath, projectPath);
+      const list = await window.clubhouse.agentSettings.listSkills(worktreePath, projectPath, agentId);
+      if (!active.current) return;
       setSkills(list);
       onCountChange?.(list.length);
     } catch {
-      setSkills([]);
+      if (active.current) setSkills([]);
     }
-  }, [worktreePath, projectPath, onCountChange]);
+  }, [worktreePath, projectPath, agentId, onCountChange]);
 
   useEffect(() => {
     loadSkills();
@@ -56,7 +64,8 @@ export function SkillsSection({ worktreePath, projectPath, disabled, refreshKey,
   };
 
   const handleEdit = async (name: string) => {
-    const content = await window.clubhouse.agentSettings.readSkillContent(worktreePath, name, projectPath);
+    const content = await window.clubhouse.agentSettings.readSkillContent(worktreePath, name, projectPath, agentId);
+    if (!active.current) return;
     setEditingSkill(name);
     setEditorContent(content);
     setEditorInitial(content);
@@ -67,7 +76,8 @@ export function SkillsSection({ worktreePath, projectPath, disabled, refreshKey,
     const name = skillName.trim().toLowerCase().replace(/[^a-z0-9-]/g, '-');
     if (!name) return;
     setSaving(true);
-    await window.clubhouse.agentSettings.writeSkillContent(worktreePath, name, editorContent, projectPath);
+    await window.clubhouse.agentSettings.writeSkillContent(worktreePath, name, editorContent, projectPath, agentId);
+    if (!active.current) return;
     setSaving(false);
     setView('list');
     await loadSkills();
@@ -76,7 +86,8 @@ export function SkillsSection({ worktreePath, projectPath, disabled, refreshKey,
   const handleSaveEdit = async () => {
     if (!editingSkill) return;
     setSaving(true);
-    await window.clubhouse.agentSettings.writeSkillContent(worktreePath, editingSkill, editorContent, projectPath);
+    await window.clubhouse.agentSettings.writeSkillContent(worktreePath, editingSkill, editorContent, projectPath, agentId);
+    if (!active.current) return;
     setSaving(false);
     setView('list');
     setEditingSkill(null);
@@ -84,7 +95,7 @@ export function SkillsSection({ worktreePath, projectPath, disabled, refreshKey,
   };
 
   const handleDelete = async (name: string) => {
-    await window.clubhouse.agentSettings.deleteSkill(worktreePath, name, projectPath);
+    await window.clubhouse.agentSettings.deleteSkill(worktreePath, name, projectPath, agentId);
     setDeleteTarget(null);
     await loadSkills();
   };
@@ -155,6 +166,7 @@ export function SkillsSection({ worktreePath, projectPath, disabled, refreshKey,
         </Button>
       </div>
 
+      <p className="text-xs text-ctp-overlay1 mb-2">Worktree files. This list does not confirm which skills the provider loaded.</p>
       {skills.length === 0 ? (
         <p className="text-xs text-ctp-overlay1 py-2">No skills defined.</p>
       ) : (
@@ -170,6 +182,7 @@ export function SkillsSection({ worktreePath, projectPath, disabled, refreshKey,
                 title="Click to edit"
               >
                 {skill.name}
+                <span className="block text-[11px] text-ctp-overlay1 truncate" title={skill.path}>{skill.path}</span>
               </button>
               <div className="flex gap-1 flex-shrink-0 ml-2">
                 <Button
