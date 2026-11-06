@@ -64,6 +64,7 @@ export default defineConfig({
           name: 'main',
           ...sharedTestConfig,
           include: ['src/main/**/*.test.ts', 'scripts/**/*.test.ts'],
+          setupFiles: ['./test/standard-runtime-boundary.ts'],
           environment: 'node',
         },
         resolve: { alias: aliases },

@@ -140,7 +140,7 @@ function runSmoke({ label, exec, bundle, runtime, cwd, home, extraEnv, failures 
 }
 
 /** Returns { report, failures }; failures is empty when every check passes. */
-export async function checkCopilotSdkChunk({ requireElectron = false } = {}) {
+export async function checkCopilotSdkChunk({ requireElectron = false, staticOnly = false } = {}) {
   const mainConfig = loadMainConfig();
   const outDir = mkdtempSync(path.join(tmpdir(), 'clubhouse-copilot-sdk-chunk-'));
   const config = {
@@ -199,6 +199,10 @@ export async function checkCopilotSdkChunk({ requireElectron = false } = {}) {
     if (leakedModules.length) failures.push(`Bundle contains modules it shouldn't: ${leakedModules.join(', ')}`);
 
     const report = { limitBytes: LIMIT_BYTES, sdkBytes, mainEntryBytes: mainBytes };
+    if (staticOnly) {
+      report.runtimeSmoke = 'not run: static-only';
+      return { report, failures };
+    }
     const runtime = findRuntime();
     if (!runtime) {
       failures.push(`No @github/copilot-sdk-${process.platform}-${process.arch} in node_modules, so the bundled smoke can't run. Was it installed with optional dependencies?`);
@@ -232,7 +236,7 @@ export async function checkCopilotSdkChunk({ requireElectron = false } = {}) {
 }
 
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
-  const { report, failures } = await checkCopilotSdkChunk({ requireElectron: process.argv.includes('--require-electron') });
+  const { report, failures } = await checkCopilotSdkChunk({ requireElectron: process.argv.includes('--require-electron'), staticOnly: process.argv.includes('--static-only') });
   if (process.argv.includes('--json')) {
     console.log(JSON.stringify(report, null, 2));
   } else if (report.sdkBytes !== undefined) {

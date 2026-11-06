@@ -38,6 +38,7 @@ export interface FakeCliReport {
    * bridge variables, so an E2E can call MCP tools as the agent.
    */
   env: Record<string, string | null>;
+  credentialKeysPresent: string[];
   total: number;
   consumed: number;
   /** Every fixture line was replayed or matched. */
