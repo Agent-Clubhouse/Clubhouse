@@ -3,6 +3,11 @@ import * as fsp from 'fs/promises';
 import * as path from 'path';
 import * as os from 'os';
 
+vi.mock('fs/promises', async (original) => {
+  const actual = await original<typeof import('fs/promises')>();
+  return { ...actual, open: vi.fn(actual.open) };
+});
+
 const { home } = vi.hoisted(() => ({ home: { dir: '' } }));
 
 vi.mock('os', async (importOriginal) => {
@@ -231,6 +236,19 @@ describe('applyPersonaToAgent', () => {
     await fsp.mkdir(path.join(source, '.github/copilot-instructions.md'), { recursive: true });
     const agent = { id: 'source', name: 'source', color: 'blue', createdAt: '', worktreePath: source };
     await expect(extractAgentPersona({ projectPath, agent, provider: new CopilotCliProvider() })).rejects.toThrow('No persona was extracted');
+  });
+
+  it('refuses primary extraction when open fails after a successful inspection', async () => {
+    const source = path.join(projectPath, 'source');
+    await fsp.mkdir(path.join(source, '.github'), { recursive: true });
+    const file = path.join(source, '.github/copilot-instructions.md');
+    await fsp.writeFile(file, 'PRIMARY_CUSTOM_MARKER');
+    const open = vi.mocked(fsp.open).mockRejectedValueOnce(Object.assign(new Error('gone after inspection'), { code: 'ENOENT' }));
+    try {
+      const agent = { id: 'source', name: 'source', color: 'blue', createdAt: '', worktreePath: source };
+      await expect(extractAgentPersona({ projectPath, agent, provider: new CopilotCliProvider() })).rejects.toThrow('No persona was extracted');
+      expect(open).toHaveBeenCalled();
+    } finally { open.mockClear(); }
   });
 
 });
