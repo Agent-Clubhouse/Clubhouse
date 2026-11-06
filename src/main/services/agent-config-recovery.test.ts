@@ -256,3 +256,14 @@ describe('auditRecovery', () => {
     expect(result.healthy).toBe(true);
   });
 });
+
+it('retains uncertainty from the actual corrupt agent read', async () => {
+  const { isChatTipAgentReadUncertain } = await import('./agent-config');
+  vi.mocked(pathExists).mockImplementation(async (p) => String(p).endsWith('agents.json'));
+  vi.mocked(fsp.readFile).mockImplementation(async (p) => {
+    if (String(p).endsWith('agents.json')) return '{broken';
+    throw Object.assign(new Error('missing'), { code: 'ENOENT' });
+  });
+  await listDurable(PROJECT_PATH);
+  expect(isChatTipAgentReadUncertain()).toBe(true);
+});

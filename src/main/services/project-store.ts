@@ -258,18 +258,25 @@ async function registryMutation<T>(run: () => Promise<T>): Promise<T> {
   finally { registryPending--; }
 }
 
+// Retained for the one-time chat tip: quarantine can make a failed read look
+// like a fresh install on a subsequent list in the same process.
+let chatTipProjectReadUncertain = false;
+export function isChatTipProjectReadUncertain(): boolean { return chatTipProjectReadUncertain; }
+
 async function readStore(): Promise<ProjectStoreV1> {
   const storePath = await getStorePath();
   const backupPath = await getBackupPath();
 
   let store: ProjectStoreV1 | null = null;
+  let uncertain = false;
 
   // Try to read main store
   if (await pathExists(storePath)) {
-    try {
+  try {
       const raw = JSON.parse(await fsp.readFile(storePath, 'utf-8'));
       const { store: loaded, dropped } = migrate(raw);
       store = loaded;
+      uncertain = dropped > 0;
       if (dropped > 0) {
         appLog('core:project-store', 'warn', `Dropped ${dropped} malformed project entr${dropped === 1 ? 'y' : 'ies'} from projects.json`, {
           meta: { storePath, dropped },
@@ -284,6 +291,8 @@ async function readStore(): Promise<ProjectStoreV1> {
         await writeStore(store);
       }
     } catch (err) {
+      uncertain = true;
+      if ((err as NodeJS.ErrnoException).code !== 'ENOENT') {
       appLog('core:project-store', 'error', 'Failed to parse or validate projects.json — quarantining and attempting recovery from backup', {
         meta: { storePath, error: err instanceof Error ? err.message : String(err) },
       });
@@ -306,11 +315,19 @@ async function readStore(): Promise<ProjectStoreV1> {
     }
   }
 
+  } else {
+    try { await fsp.readFile(storePath, 'utf-8'); uncertain = true; }
+    catch (err) { if ((err as NodeJS.ErrnoException).code !== 'ENOENT') uncertain = true; } // telemetry-exempt: retained for the tip
+  }
+
   // Main file missing or corrupt — fall back to backup
-  if (!store && await pathExists(backupPath)) {
+  const backupExists = !store && await pathExists(backupPath);
+  if (backupExists) {
     try {
       const raw = JSON.parse(await fsp.readFile(backupPath, 'utf-8'));
-      store = migrate(raw).store;
+      const recovered = migrate(raw);
+      store = recovered.store;
+      uncertain = recovered.dropped > 0;
       if (store.projects.length > 0) {
         persist.recovery('projects', 'restored_from_backup');
         appLog('core:project-store', 'warn', `Recovered ${store.projects.length} project(s) from backup`, {
@@ -323,20 +340,35 @@ async function readStore(): Promise<ProjectStoreV1> {
         await writeStore(store);
       }
     } catch (backupErr) {
+      uncertain = true;
+      if ((backupErr as NodeJS.ErrnoException).code !== 'ENOENT') {
       persist.recovery('projects', 'backup_corrupt');
       appLog('core:project-store', 'error', 'Backup projects.json.bak is also corrupt', {
         meta: { backupPath, error: backupErr instanceof Error ? backupErr.message : String(backupErr) },
       });
+      }
     }
   }
 
+  if (!store && !backupExists) {
+    try { await fsp.readFile(backupPath, 'utf-8'); uncertain = true; }
+    catch (err) { if ((err as NodeJS.ErrnoException).code !== 'ENOENT') uncertain = true; } // telemetry-exempt: retained for the tip
+  }
   if (!store) {
+    try {
+      if ((await fsp.readdir(getBaseDirPath())).some((name) => name.startsWith('projects.json.corrupt-'))) uncertain = true;
+    } catch (err) {
+      // telemetry-exempt: retain uncertainty when quarantine evidence cannot be read.
+      if ((err as NodeJS.ErrnoException).code !== 'ENOENT') uncertain = true;
+    }
     appLog('core:project-store', 'info', 'No project store found on disk, starting with empty list', {
       meta: { storePath, backupPath },
     });
+    chatTipProjectReadUncertain ||= uncertain;
     return { version: CURRENT_VERSION, projects: [] };
   }
 
+  chatTipProjectReadUncertain ||= uncertain;
   return store;
 }
 

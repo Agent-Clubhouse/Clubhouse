@@ -15,8 +15,39 @@ import { chatDom, openRichChat, TURN_TIMEOUT, type RichChat } from './harness';
 
 const PROVIDERS = ['codex', 'copilot'] as const;
 
+test('copilot SDK standard default: send, stream and finish two fake turns', async () => {
+  // No legacy flag or saved driver preference: exercise the production default.
+  // The harness derives only synthetic auth from the existing SDK recording.
+  const session = await openRichChat({ cli: 'copilot', copilotTransport: 'sdk', script: 'multi-turn' });
+  try {
+    const { window, chat } = session;
+    const dom = chatDom(window);
+    await session.send('Reply with the word one.');
+    await expect(dom.turnFooters).toHaveCount(1, { timeout: TURN_TIMEOUT });
+    await expect(dom.turnFooters.first()).toHaveAttribute('data-stop-reason', 'end_turn');
+    await expect(dom.agentMessages.first().locator('.chat-markdown')).toHaveText('one');
+    await expect(dom.agentMessages.first().getByLabel('Streaming')).toHaveCount(0);
+    await expect(chat).toHaveAttribute('data-state', 'idle');
+    await session.send('Now reply with the word two.');
+    await expect(dom.turnFooters).toHaveCount(2, { timeout: TURN_TIMEOUT });
+    await expect(dom.turnFooters.nth(1)).toHaveAttribute('data-stop-reason', 'end_turn');
+    await expect(dom.agentMessages.nth(1).locator('.chat-markdown')).toHaveText('two');
+    await expect(dom.userMessages).toHaveCount(2);
+    await expect(chat).toHaveAttribute('data-state', 'idle');
+    // The recording includes detach; stop through the app before checking every line.
+    await window.evaluate(({ agentId, projectDir }) =>
+      (window as unknown as { clubhouse: { agent: {
+        killAgent(id: string, projectPath: string, waitForExit?: boolean): Promise<void>;
+      } } }).clubhouse.agent.killAgent(agentId, projectDir, true),
+    { agentId: session.agentId, projectDir: session.projectDir });
+    await session.expectScriptComplete();
+  } finally {
+    await session.close();
+  }
+});
+
 for (const cli of PROVIDERS) {
-  test.describe(`${cli} chat over the fake CLI`, () => {
+  test.describe(`${cli === 'copilot' ? 'copilot legacy ACP' : cli} chat over the fake CLI`, () => {
     test.describe('multi-turn', () => {
       test.describe.configure({ mode: 'serial' });
       let session: RichChat;

@@ -353,7 +353,7 @@ export class CopilotSdkChatSession implements ChatDriverSession {
     });
     this.push({
       type: 'notice',
-      data: { level: 'info', code: 'copilot_sdk_active', message: `This chat runs on the experimental Copilot SDK driver${cliVersion ? ` with Copilot CLI ${cliVersion}` : ''}.` },
+      data: { level: 'info', code: 'copilot_sdk_active', message: `This chat runs on the Copilot SDK driver${cliVersion ? ` with Copilot CLI ${cliVersion}` : ''}.` },
     });
     void this.loadModels();
     this.commandsLoaded = this.loadCommands();
@@ -1011,13 +1011,12 @@ export interface CopilotSdkDriverOptions {
 
 /**
  * Copilot chat over `@github/copilot-sdk`, running the user's own `copilot`.
- * Opt-in: only used when chosen in Settings, and never reached as a fallback
- * from another driver. A failed probe falls back to ACP (chat-spawn.ts).
+ * Standard Copilot adapter. A failed probe never selects legacy ACP automatically.
  */
 export class CopilotSdkChatDriver implements ChatDriver {
   readonly id = 'copilot_sdk' as const;
   readonly provider = PROVIDER;
-  readonly optIn = true;
+  readonly optIn = false;
   private readonly log: Log;
 
   constructor(private readonly options: CopilotSdkDriverOptions = {}) {
@@ -1119,7 +1118,7 @@ export async function readCopilotTierCatalog(binary: string, env: Record<string,
   }
 }
 
-/** Register the driver after ACP, so a provider with no choice saved stays on ACP. Returns the unregister function. */
+/** Register the standard Copilot driver. Returns the unregister function. */
 export function registerCopilotSdkChatDriver(register: (driver: ChatDriver) => () => void, log?: Log): () => void {
   return register(new CopilotSdkChatDriver({ log }));
 }
