@@ -92,6 +92,8 @@ export async function showChatDefaultTip(): Promise<void> {
   if (isMarked(CHAT_MESSAGE_SHOWN_KEY) || isMarked(CHAT_TIP_RULED_OUT_KEY)) return;
   if (await window.clubhouse.app.isExperimentalSettingsUnreadable()) return;
   const found = await findDefaultChatAgent();
+  // An intro or another invocation may have completed while the reads awaited.
+  if (isMarked(CHAT_MESSAGE_SHOWN_KEY) || isMarked(CHAT_TIP_RULED_OUT_KEY)) return;
   if (typeof found === 'string') {
     mark(CHAT_TIP_RULED_OUT_KEY, found);
     return;

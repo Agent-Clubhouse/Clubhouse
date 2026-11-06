@@ -61,6 +61,23 @@ describe('showChatDefaultTip', () => {
     expect(getExperimentalSettings).not.toHaveBeenCalled();
   });
 
+  it('does not show if the intro covers chat while eligibility is being read', async () => {
+    let release!: (value: object) => void;
+    getRuntimeSettings.mockReturnValueOnce(new Promise((resolve) => { release = resolve; }));
+    const pending = showChatDefaultTip();
+    await vi.waitFor(() => expect(getRuntimeSettings).toHaveBeenCalled());
+    markChatMessageShown();
+    release({});
+    await pending;
+    expect(toasts()).toEqual([]);
+    expect(localStorage.getItem(CHAT_TIP_RULED_OUT_KEY)).toBeNull();
+  });
+
+  it('shows only once if two decisions overlap', async () => {
+    await Promise.all([showChatDefaultTip(), showChatDefaultTip()]);
+    expect(toasts()).toHaveLength(1);
+  });
+
   it('links straight to the provider on Settings > Agents & providers', async () => {
     await showChatDefaultTip();
     toasts()[0].action!.onClick();
