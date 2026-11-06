@@ -4,14 +4,14 @@ import * as os from 'os';
 
 vi.mock('fs', () => ({
   existsSync: vi.fn(() => false),
-  readFileSync: vi.fn(() => { throw new Error('ENOENT'); }),
+  readFileSync: vi.fn(() => { throw Object.assign(new Error('ENOENT'), { code: 'ENOENT' }); }),
   writeFileSync: vi.fn(),
   mkdirSync: vi.fn(),
 }));
 
 vi.mock('fs/promises', () => ({
   mkdir: vi.fn(async () => undefined),
-  readFile: vi.fn(async () => { throw new Error('ENOENT'); }),
+  readFile: vi.fn(async () => { throw Object.assign(new Error('ENOENT'), { code: 'ENOENT' }); }),
   writeFile: vi.fn(async () => undefined),
 }));
 
@@ -881,7 +881,7 @@ describe('Provider integration tests', () => {
         return isKnownBinary(s) || s.includes('.github');
       });
       // fsp.readFile rejects (no existing file)
-      vi.mocked(fsp.readFile).mockRejectedValueOnce(new Error('ENOENT'));
+      vi.mocked(fsp.readFile).mockRejectedValueOnce(Object.assign(new Error('ENOENT'), { code: 'ENOENT' }));
 
       await provider.writeHooksConfig('/project', 'http://127.0.0.1:9999/hook');
 
@@ -889,6 +889,24 @@ describe('Provider integration tests', () => {
       expect(written.version).toBe(1);
       expect(written.hooks.preToolUse).toHaveLength(1);
       expect(written.hooks.preToolUse[0].bash).toContain('CLUBHOUSE_AGENT_ID');
+    });
+
+    it.each([
+      Object.assign(new Error('permission denied'), { code: 'EACCES' }),
+      Object.assign(new Error('unknown I/O failure'), { code: 'EIO' }),
+      new Error('ENOENT'),
+    ])('CopilotCli: refuses unreadable config without writing: %s', async (error) => {
+      vi.mocked(fsp.readFile).mockRejectedValueOnce(error);
+      await expect(new CopilotCliProvider().writeHooksConfig('/project', 'http://127.0.0.1:9999/hook'))
+        .rejects.toThrow(/Cannot read Copilot hooks.*Fix access and restart/);
+      expect(fsp.writeFile).not.toHaveBeenCalled();
+    });
+
+    it('CopilotCli: refuses malformed config without writing', async () => {
+      vi.mocked(fsp.readFile).mockResolvedValueOnce('{broken');
+      await expect(new CopilotCliProvider().writeHooksConfig('/project', 'http://127.0.0.1:9999/hook'))
+        .rejects.toThrow(/Invalid JSON.*repair.*restart/);
+      expect(fsp.writeFile).not.toHaveBeenCalled();
     });
   });
 

@@ -12,6 +12,7 @@ import {
   readProjectAgentDefaults,
   readLocalMcpJson,
   writePermissions,
+  assertPermissionRulesSupported,
   listSourceSkills,
   listSourceAgentTemplates,
   writeProjectAgentDefaults,
@@ -396,6 +397,7 @@ export async function materializeAgent(params: {
   const ctx = buildWildcardContext(agent, projectPath, scp, commands, missionContent, personaContent);
   const resolvedPersonaContent = personaContent ? replaceWildcards(personaContent, ctx) : undefined;
   const conv = provider.conventions;
+  if (defaults.permissions) assertPermissionRulesSupported(defaults.permissions, conv);
   if (defaults.mcpJson && !agent.clubhouseModeOverride && (!conv.settingsFormat || conv.settingsFormat === 'json')) {
     const local = await readLocalMcpJson(worktreePath, conv);
     if (local !== null) parseMcpJson(local);
@@ -421,15 +423,6 @@ export async function materializeAgent(params: {
   } else if (personaContent) {
     // No project defaults but agent has a persona — write persona instructions alone
     await provider.writeInstructions(worktreePath, resolvedPersonaContent!);
-  }
-
-  // 2. Permissions
-  if (defaults.permissions) {
-    const resolvedPerms = {
-      allow: defaults.permissions.allow?.map((r) => replaceWildcards(r, ctx)),
-      deny: defaults.permissions.deny?.map((r) => replaceWildcards(r, ctx)),
-    };
-    await writePermissions(worktreePath, resolvedPerms, conv);
   }
 
   // 3. Local overrides own their entire MCP map, even during explicit persona materialization.
@@ -486,6 +479,15 @@ export async function materializeAgent(params: {
 
   // 5. Source agent templates → copy to worktree with wildcard replacement
   await copySourceDir(projectPath, worktreePath, 'agentTemplates', conv, ctx);
+
+  // 2. Permissions
+  if (defaults.permissions) {
+    const resolvedPerms = {
+      allow: defaults.permissions.allow?.map((r) => replaceWildcards(r, ctx)),
+      deny: defaults.permissions.deny?.map((r) => replaceWildcards(r, ctx)),
+    };
+    await writePermissions(worktreePath, resolvedPerms, conv);
+  }
 
   appLog('core:materialization', 'info', `Materialized settings for agent ${agent.name}`, {
     meta: { agentName: agent.name, projectPath },

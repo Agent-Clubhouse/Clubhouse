@@ -11,7 +11,7 @@ vi.mock('fs', () => ({
 
 vi.mock('fs/promises', () => ({
   mkdir: vi.fn(async () => undefined),
-  readFile: vi.fn(async () => { throw new Error('ENOENT'); }),
+  readFile: vi.fn(async () => { throw Object.assign(new Error('ENOENT'), { code: 'ENOENT' }); }),
   writeFile: vi.fn(async () => undefined),
   readdir: vi.fn(async () => []),
   stat: vi.fn(async () => ({
@@ -45,10 +45,6 @@ vi.mock('./shared', async (importOriginal) => {
   };
 });
 
-vi.mock('../services/config-pipeline', () => ({
-  isClubhouseHookEntry: vi.fn(() => false),
-}));
-
 vi.mock('../services/log-service', () => ({
   appLog: vi.fn(),
 }));
@@ -73,7 +69,6 @@ import { getShellEnvironment } from '../util/shell';
 import { CopilotCliProvider } from './copilot-cli-provider';
 import { copilotSessionInCwd, findCopilotRunSession, findCopilotTranscript, hasCopilotSession, listCopilotSessions } from './copilot-session-store';
 import { findBinaryInPath } from './shared';
-import { isClubhouseHookEntry } from '../services/config-pipeline';
 
 describe('CopilotCliProvider', () => {
   let provider: CopilotCliProvider;
@@ -485,6 +480,14 @@ describe('CopilotCliProvider', () => {
   });
 
   describe('writeHooksConfig', () => {
+    it('preserves ambiguous permissions-only and corrupt files with an actionable error', async () => {
+      for (const content of ['{"permissions":{"allow":["Read"]}}', '{']) {
+        vi.mocked(fsp.readFile).mockResolvedValueOnce(content);
+        await expect(provider.writeHooksConfig('/project', 'http://127.0.0.1:9999/hook')).rejects.toThrow(/hooks/i);
+        expect(fsp.writeFile).not.toHaveBeenCalled();
+      }
+    });
+
     it('creates hooks directory and writes hooks.json', async () => {
       vi.mocked(fs.existsSync).mockReturnValue(false);
       await provider.writeHooksConfig('/project', 'http://127.0.0.1:9999/hook');
@@ -525,8 +528,6 @@ describe('CopilotCliProvider', () => {
           preToolUse: [{ type: 'command', bash: 'echo user-hook', timeoutSec: 3 }],
         },
       }));
-      vi.mocked(isClubhouseHookEntry).mockReturnValue(false);
-
       await provider.writeHooksConfig('/project', 'http://127.0.0.1:9999/hook');
 
       const written = JSON.parse(vi.mocked(fsp.writeFile).mock.calls[0][1] as string);
@@ -540,17 +541,15 @@ describe('CopilotCliProvider', () => {
       vi.mocked(fsp.readFile).mockResolvedValue(JSON.stringify({
         version: 1,
         hooks: {
-          preToolUse: [{ type: 'command', bash: 'old-clubhouse-hook' }],
+          preToolUse: [{ type: 'command', bash: 'cat | curl -s -X POST http://127.0.0.1:1234/hook/${CLUBHOUSE_AGENT_ID}/preToolUse -H \'Content-Type: application/json\' -H "X-Clubhouse-Nonce: ${CLUBHOUSE_HOOK_NONCE}" --data-binary @- || true', timeoutSec: 5 }],
         },
       }));
-      vi.mocked(isClubhouseHookEntry).mockReturnValue(true);
-
       await provider.writeHooksConfig('/project', 'http://127.0.0.1:9999/hook');
 
       const written = JSON.parse(vi.mocked(fsp.writeFile).mock.calls[0][1] as string);
       // Stale hook should be removed, only new Clubhouse hook present
       expect(written.hooks.preToolUse).toHaveLength(1);
-      expect(written.hooks.preToolUse[0].bash).not.toBe('old-clubhouse-hook');
+      expect(written.hooks.preToolUse[0].bash).not.toContain(':1234');
     });
 
     it('each hook entry has type command and timeoutSec', async () => {

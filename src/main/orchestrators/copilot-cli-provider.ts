@@ -1,3 +1,4 @@
+import { readCopilotHooksConfig } from './copilot-hooks-config';
 import * as fsp from 'fs/promises';
 import * as path from 'path';
 import { randomUUID } from 'crypto';
@@ -23,7 +24,7 @@ import type { McpServerDef } from '../../shared/types';
 import { BaseProvider } from './base-provider';
 import { probeCopilotModels, type ModelProbeContext } from './model-probes';
 import { homePath, parseModelChoicesFromHelp, validateHookUrl, buildHookCurlCommand, mergeHookEntries, parseJsonlFile } from './shared';
-import { isClubhouseHookEntry } from '../services/config-pipeline';
+import { isCopilotClubhouseHookEntry } from './copilot-hooks-document';
 import { appLog } from '../services/log-service';
 import { buildCliSpawnEnv, getShellEnvironment } from '../util/shell';
 import { copilotContextWindowOptions, type ContextWindowOptions } from '../../shared/context-window';
@@ -100,6 +101,7 @@ export class CopilotCliProvider extends BaseProvider implements HookCapable, Hea
     skillsDir: 'skills',
     agentTemplatesDir: 'agents',
     localSettingsFile: 'hooks/hooks.json',
+    permissionRules: false,
   };
 
   // ── BaseProvider configuration ──────────────────────────────────────────
@@ -321,14 +323,9 @@ export class CopilotCliProvider extends BaseProvider implements HookCapable, Hea
 
     const settingsPath = path.join(hooksDir, 'hooks.json');
 
-    let existing: Record<string, unknown> = { version: 1 };
-    try {
-      existing = JSON.parse(await fsp.readFile(settingsPath, 'utf-8'));
-    } catch {
-      // No existing file
-    }
+    const existing = await readCopilotHooksConfig(cwd) ?? { version: 1, hooks: {} };
 
-    const mergedHooks = mergeHookEntries(existing, ourHooks, isClubhouseHookEntry);
+    const mergedHooks = mergeHookEntries(existing, ourHooks, isCopilotClubhouseHookEntry);
     await fsp.writeFile(settingsPath, JSON.stringify({ ...existing, hooks: mergedHooks }, null, 2), 'utf-8');
   }
 

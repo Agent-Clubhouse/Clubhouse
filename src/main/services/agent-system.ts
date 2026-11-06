@@ -1,3 +1,4 @@
+import { readCopilotHooksConfig } from '../orchestrators/copilot-hooks-config';
 import { AgentResumeError, assertProviderSelection } from './agent-transition';
 import { withManagedActivationLaunch } from './managed-activation';
 import type { ManagedLaunchLease } from './managed-activation/service';
@@ -20,7 +21,7 @@ import { getDurableConfig, addSessionEntry, updateDurableConfig } from './agent-
 import { clubhouseMcpOverride, isDisposedAgent, isEffortValue } from '../../shared/agent-helpers';
 import { materializeAgent, cleanupStaleJsonInTomlConfigs } from './materialization-service';
 import * as profileSettings from './profile-settings';
-import { readProjectAgentDefaults, readLaunchWrapper, readDefaultMcps, readMcpConfigs } from './agent-settings-service';
+import { readProjectAgentDefaults, readLaunchWrapper, readDefaultMcps, readMcpConfigs, UnsupportedPermissionRulesError } from './agent-settings-service';
 import { applyLaunchWrapper, validateWrapperConfig } from '../orchestrators/shared';
 import type { DurableAgentConfig, LaunchWrapperConfig, FreeAgentPermissionMode } from '../../shared/types';
 import type { RoutedMessagePart } from '../../shared/chat';
@@ -316,6 +317,9 @@ async function spawnAgentInner(inParams: SpawnAgentParams, facts: SpawnFacts, ma
   );
   facts.orchestrator = provider.id;
 
+  // Copilot discovers repository hooks in every runtime, even with the Clubhouse hook server off.
+  if (provider.id === 'copilot-cli') await readCopilotHooksConfig(params.cwd);
+
   // Resolve profile env early so it can be passed to checkAvailability.
   // This ensures auth checks (e.g. CLAUDE_CONFIG_DIR) use the correct
   // config directory when a profile is active.
@@ -370,6 +374,7 @@ async function spawnAgentInner(inParams: SpawnAgentParams, facts: SpawnFacts, ma
           );
         }
       } catch (err) {
+        if (err instanceof UnsupportedPermissionRulesError) throw err;
         const errorMessage = err instanceof Error ? err.message : String(err);
         appLog('core:agent', 'warn', 'Clubhouse mode materialization failed, continuing spawn', {
           meta: { agentId: params.agentId, error: errorMessage },
@@ -1285,6 +1290,7 @@ export function getAvailableOrchestrators() {
       skillsDir: p.conventions.skillsDir,
       agentTemplatesDir: p.conventions.agentTemplatesDir,
       localSettingsFile: p.conventions.localSettingsFile,
+      permissionRules: p.conventions.permissionRules,
     },
   }));
 }

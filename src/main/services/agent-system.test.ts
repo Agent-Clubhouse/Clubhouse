@@ -132,6 +132,7 @@ const mockReadLaunchWrapper = vi.fn(() => undefined);
 const mockReadDefaultMcps = vi.fn(() => []);
 const mockReadMcpConfigs = vi.fn(() => ({}));
 vi.mock('./agent-settings-service', () => ({
+  UnsupportedPermissionRulesError: class UnsupportedPermissionRulesError extends Error {},
   readProjectAgentDefaults: (...args: unknown[]) => mockReadProjectAgentDefaults(...args),
   readLaunchWrapper: (...args: unknown[]) => mockReadLaunchWrapper(...args),
   readDefaultMcps: (...args: unknown[]) => mockReadDefaultMcps(...args),
@@ -169,7 +170,7 @@ vi.mock('../util/ipc-broadcast', () => ({
 }));
 
 // Mock fs/promises for readProjectOrchestrator
-const mockReadFile = vi.fn(() => Promise.reject(new Error('ENOENT')));
+const mockReadFile = vi.fn(() => Promise.reject(Object.assign(new Error('ENOENT'), { code: 'ENOENT' })));
 vi.mock('fs/promises', () => ({
   readFile: (...args: unknown[]) => mockReadFile(...args),
 }));
@@ -547,6 +548,24 @@ describe('agent-system', () => {
         kind: 'durable',
       });
       expect(getAgentOrchestrator('agent-1')).toBe('codex-cli');
+    });
+
+    it.each([false, true])('refuses a legacy Copilot hook document before launch with hook server %s', async (enabled) => {
+      mockIsHookServerEnabled.mockReturnValue(enabled);
+      const hookFile = path.join('/project', '.github', 'hooks', 'hooks.json');
+      mockReadFile.mockImplementation(async (file: unknown) => {
+        if (file === hookFile) return JSON.stringify({ permissions: { allow: ['Read'] } });
+        throw Object.assign(new Error('ENOENT'), { code: 'ENOENT' });
+      });
+      try {
+        await expect(spawnAgent({ agentId: 'agent-1', projectPath: '/project', cwd: '/project', kind: 'durable', orchestrator: 'copilot-cli' }))
+          .rejects.toThrow(/repair.*restart/i);
+        expect(mockReadFile).toHaveBeenCalledWith(hookFile, 'utf-8');
+        expect(mockPtySpawn).not.toHaveBeenCalled();
+        expect(mockTryStartChatAgent).not.toHaveBeenCalled();
+      } finally {
+        mockReadFile.mockReset().mockRejectedValue(Object.assign(new Error('ENOENT'), { code: 'ENOENT' }));
+      }
     });
 
     it('writes hooks config with base URL (no agentId)', async () => {
@@ -2657,6 +2676,16 @@ describe('agent-system', () => {
       });
 
       expect(mockMaterializeAgent).not.toHaveBeenCalled();
+    });
+
+    it('stops launch when inherited permission rules cannot be applied', async () => {
+      mockIsClubhouseModeEnabled.mockReturnValue(true);
+      mockGetDurableConfig.mockReturnValue({ id: 'agent-1', name: 'agent-1', worktreePath: '/project/agent' });
+      const { UnsupportedPermissionRulesError } = await import('./agent-settings-service');
+      mockMaterializeAgent.mockRejectedValueOnce(new UnsupportedPermissionRulesError('Rules not applied'));
+      await expect(spawnAgent({ agentId: 'agent-1', projectPath: '/project', cwd: '/project', kind: 'durable' }))
+        .rejects.toThrow('Rules not applied');
+      expect(mockPtySpawn).not.toHaveBeenCalled();
     });
 
     it('continues spawn when materialization throws', async () => {

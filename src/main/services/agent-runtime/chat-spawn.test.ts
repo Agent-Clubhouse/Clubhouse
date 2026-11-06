@@ -6,6 +6,8 @@ import type { ChatDriver, ChatDriverSession, ChatDriverStartOptions, ChatEvent }
 import { CHAT_CONTRACT_VERSION } from '../../../shared/chat';
 import { HOST_SESSION_ENV_FIXTURE, USER_CLAUDE_CONFIG_FIXTURE } from '../../util/__fixtures__/host-session-env';
 
+const checkCopilotHooks = vi.hoisted(() => vi.fn(async (_cwd: string) => {}));
+vi.mock('../../orchestrators/copilot-hooks-config', () => ({ assertNoCopilotTerminalHooksForChat: checkCopilotHooks }));
 const previewEligibility = vi.hoisted(() => ({ value: true }));
 vi.mock('../preview-eligible', () => ({ isPreviewEligible: () => previewEligibility.value }));
 const mode = vi.hoisted(() => ({ value: { mode: 'chat' } as { mode: 'chat' | 'terminal'; driver?: string } }));
@@ -539,6 +541,15 @@ require('readline').createInterface({ input: process.stdin }).on('line', line =>
         registerChatDriver(sdk);
         return { acp, sdk };
       }
+
+      it.each(['copilot_acp', 'copilot_sdk'])('refuses duplicate terminal callbacks before starting %s', async (driver) => {
+        const { acp, sdk } = copilotDrivers();
+        mode.value = { mode: 'chat', driver };
+        checkCopilotHooks.mockRejectedValueOnce(new Error('callbacks could be duplicated'));
+        await expect(tryStartChatAgent(params, copilot, undefined, undefined, null)).rejects.toThrow('callbacks could be duplicated');
+        expect(acp.sessions).toHaveLength(0);
+        expect(sdk.sessions).toHaveLength(0);
+      });
 
       it('uses SDK when nothing is chosen', async () => {
         const { acp, sdk } = copilotDrivers();
