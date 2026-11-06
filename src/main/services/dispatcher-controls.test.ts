@@ -1008,15 +1008,31 @@ describe('a removal the store can\'t take', () => {
         markBindingRemovedByUser('a', 'c');
         queued = true;
       };
+      let boundaryFailed = false;
+      let boundaryError: unknown;
+      let drainFailed = false;
+      let drainError: unknown;
       try {
         userDraws('a', 'b');
         await vi.waitFor(() => expect(queued).toBe(true));
         await isRemovalUnsaved({ agentId: 'a', targetId: 'c' });
         expect(storeFile().removedByUser).toEqual([expect.objectContaining({ agentId: 'a', targetId: 'c' })]);
         expect(pendingFile()).toBe(false);
+      } catch (error) {
+        boundaryFailed = true;
+        boundaryError = error;
       } finally {
         state.beforeRemove = null;
+        // Drain even if the callback wait or an assertion failed before its barrier.
+        try {
+          await isRemovalUnsaved({ agentId: 'a', targetId: 'c' });
+        } catch (error) {
+          drainFailed = true;
+          drainError = error;
+        }
       }
+      if (boundaryFailed) throw boundaryError;
+      if (drainFailed) throw drainError;
       await restart();
       expect(isBound('a', 'b')).toBe(true);
       expect(isBound('a', 'c')).toBe(false);
