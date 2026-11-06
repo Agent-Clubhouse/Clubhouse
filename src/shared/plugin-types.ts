@@ -227,7 +227,7 @@ export const PERMISSION_DESCRIPTIONS: Record<PluginPermission, string> = {
   'agent-config': 'Inject skills, agent templates, and instruction content into project agents',
   'agent-config.cross-project': 'Inject agent configuration into other projects where the plugin is also enabled (elevated)',
   'agent-config.permissions': 'Modify agent permission allow/deny rules (elevated)',
-  'agents.free-agent-mode': 'Spawn agents with all permissions bypassed (elevated, dangerous)',
+  'agents.free-agent-mode': 'Spawn agents using the configured Free Agent permission mode (elevated)',
   'agent-config.mcp': 'Inject MCP server configurations into project agents (elevated)',
   sounds: 'Register and manage custom notification sound packs',
   theme: 'Read the current theme and subscribe to theme changes',
