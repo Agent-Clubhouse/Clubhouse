@@ -6,10 +6,12 @@ Quick agents run one task and stop. They don't keep a branch or any state betwee
 
 The quickest way is the project's start page:
 
-1. Select the project's name in the sidebar, or press `⇧⌘N` to open the active project's start page with the box focused.
+1. Select the project's name in the sidebar to open its start page.
 2. Type what the agent should do.
 3. Pick **Runs on** and **Model** if you want something other than the defaults.
 4. Press `⌘Enter` or click **Start**.
+
+You can also press `⌘N` to open **New agent** with **Quick** selected. `⇧⌘N` selects **Durable** instead. On Windows and Linux, use `Ctrl` in place of `⌘`. These are the default bindings; you can change them in **Settings > Keyboard shortcuts**.
 
 For more options, click **New** at the top of the sidebar and choose **Quick agent…**. That dialog adds:
 
