@@ -787,8 +787,12 @@ describe('a removal the store can\'t take', () => {
     state.failWrite = folderRefuses;
     await removeWire('a', 'b');
     await waitFor(() => expect(timers.mock.calls.some(([, ms]) => ms === 30_000)).toBe(true));
-    const retry = timers.mock.calls.find(([, ms]) => ms === 30_000)![0] as () => void;
+    const retryIndex = timers.mock.calls.findIndex(([, ms]) => ms === 30_000);
+    const retry = timers.mock.calls[retryIndex][0] as () => void;
+    const retryHandle = timers.mock.results[retryIndex];
     timers.mockRestore();
+    expect(retryHandle.type).toBe('return');
+    clearTimeout(retryHandle.value as ReturnType<typeof setTimeout>);
     state.failWrite = null;
     retry();
     await waitFor(() => expect(storeFile().removedByUser).toHaveLength(1));
