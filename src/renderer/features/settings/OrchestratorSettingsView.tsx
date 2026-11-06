@@ -57,6 +57,11 @@ function useChatRuntimeSettings() {
   /** The last Chat view or Rich chat content change couldn't be saved. */
   const [flagSaveFailed, setFlagSaveFailed] = useState(false);
   const [runtimeSettings, setRuntimeSettings] = useState<ChatRuntimeSettings>({});
+  const [runtimeSaving, setRuntimeSaving] = useState(false);
+  const [runtimeSaveFailed, setRuntimeSaveFailed] = useState<string | null>(null);
+  const runtimeSavePending = useRef(false);
+  const mounted = useRef(true);
+  useEffect(() => { mounted.current = true; return () => { mounted.current = false; }; }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -108,33 +113,35 @@ function useChatRuntimeSettings() {
     resetRichChatContentFlag();
   };
 
-  const setRuntimeMode = async (orchestratorId: string, mode: AgentRuntimeMode) => {
-    setRuntimeSettings((prev) => ({ ...prev, [orchestratorId]: { ...prev[orchestratorId], mode } }));
+  // The API saves the whole provider map. Serialize this view's edits so
+  // overlapping mode/driver changes cannot overwrite each other's read.
+  const saveRuntime = async (provider: string, change: (current: ChatRuntimeSettings) => ChatRuntimeSettings) => {
+    if (runtimeSavePending.current || !chatResolved) return;
+    runtimeSavePending.current = true;
+    setRuntimeSaving(true); setRuntimeSaveFailed(null);
+    let previous = runtimeSettings;
+    setRuntimeSettings(change(previous));
     try {
-      const current = (await window.clubhouse.chat.getRuntimeSettings()) ?? {};
-      await window.clubhouse.chat.saveRuntimeSettings({
-        ...current,
-        [orchestratorId]: { ...current[orchestratorId], mode },
-      });
+      previous = (await window.clubhouse.chat.getRuntimeSettings()) ?? {};
+      const next = change(previous);
+      await window.clubhouse.chat.saveRuntimeSettings(next);
+      if (mounted.current) setRuntimeSettings(next);
     } catch {
-      // Best-effort; the optimistic value stays until the next load.
+      // telemetry-exempt: restore the last saved values and show a retryable error.
+      if (mounted.current) { setRuntimeSettings(previous); setRuntimeSaveFailed(provider); }
+    } finally {
+      runtimeSavePending.current = false;
+      if (mounted.current) setRuntimeSaving(false);
     }
   };
+  const setRuntimeMode = (provider: string, mode: AgentRuntimeMode) => saveRuntime(provider,
+    (current) => ({ ...current, [provider]: { ...current[provider], mode } }));
+  const setChatDriver = (provider: string, mode: AgentRuntimeMode, driver: ChatDriverId | undefined) => saveRuntime(provider, (current) => {
+    const { driver: _old, ...rest } = current[provider] ?? { mode };
+    return { ...current, [provider]: { ...rest, mode: rest.mode ?? mode, ...(driver && { driver }) } };
+  });
 
-  const setChatDriver = async (orchestratorId: string, mode: AgentRuntimeMode, driver: ChatDriverId | undefined) => {
-    const withDriver = (prev: ChatRuntimeSettings): ChatRuntimeSettings => {
-      const { driver: _old, ...rest } = prev[orchestratorId] ?? { mode };
-      return { ...prev, [orchestratorId]: { ...rest, mode: rest.mode ?? mode, ...(driver && { driver }) } };
-    };
-    setRuntimeSettings(withDriver);
-    try {
-      await window.clubhouse.chat.saveRuntimeSettings(withDriver((await window.clubhouse.chat.getRuntimeSettings()) ?? {}));
-    } catch {
-      // Best-effort; the optimistic value stays until the next load.
-    }
-  };
-
-  return { chatEnabled, richChatEnabled, copilotSdkEnabled, chatResolved, flagSaveFailed, runtimeSettings, setChatFlag, setRichChatFlag, setRuntimeMode, setChatDriver };
+  return { chatEnabled, richChatEnabled, copilotSdkEnabled, chatResolved, flagSaveFailed, runtimeSaving, runtimeSaveFailed, runtimeSettings, setChatFlag, setRichChatFlag, setRuntimeMode, setChatDriver };
 }
 
 /**
@@ -163,7 +170,7 @@ function idleChoiceLabel(minutes: number): string {
   return `${minutes} minutes`;
 }
 
-function RuntimeModeControl({ value, onChange }: { value: AgentRuntimeMode; onChange: (mode: AgentRuntimeMode) => void }) {
+function RuntimeModeControl({ value, onChange, disabled }: { value: AgentRuntimeMode; onChange: (mode: AgentRuntimeMode) => void; disabled?: boolean }) {
   return (
     <div role="radiogroup" aria-label="Runtime" className="flex h-7 p-0.5 gap-0.5 rounded-md border border-surface-1">
       {RUNTIME_MODE_OPTIONS.map((opt) => {
@@ -174,6 +181,7 @@ function RuntimeModeControl({ value, onChange }: { value: AgentRuntimeMode; onCh
             type="button"
             role="radio"
             aria-checked={selected}
+            disabled={disabled}
             onClick={() => { if (!selected) onChange(opt.value); }}
             className={`px-2 rounded text-xs cursor-pointer transition-colors ${
               selected ? 'bg-surface-1 text-ctp-text' : 'text-ctp-overlay1 hover:text-ctp-text'
@@ -214,7 +222,7 @@ function AppAgentSettings() {
   const setFreeAgentDefaultMode = useFreeAgentSettingsStore((s) => s.setDefaultMode);
   const loadFreeAgentSettings = useFreeAgentSettingsStore((s) => s.loadSettings);
   const [showConfirm, setShowConfirm] = useState(false);
-  const { chatEnabled, richChatEnabled, copilotSdkEnabled, chatResolved, flagSaveFailed, runtimeSettings, setChatFlag, setRichChatFlag, setRuntimeMode, setChatDriver } = useChatRuntimeSettings();
+  const { chatEnabled, richChatEnabled, copilotSdkEnabled, chatResolved, flagSaveFailed, runtimeSaving, runtimeSaveFailed, runtimeSettings, setChatFlag, setRichChatFlag, setRuntimeMode, setChatDriver } = useChatRuntimeSettings();
   const idleMinutes = useChatIdleSettingsStore((st) => st.idleTimeoutMinutes as number);
   const saveIdle = useChatIdleSettingsStore((st) => st.saveSettings);
   const loadIdle = useChatIdleSettingsStore((st) => st.loadSettings);
@@ -495,9 +503,11 @@ function AppAgentSettings() {
                       >
                         <RuntimeModeControl
                           value={runtimeMode}
+                          disabled={runtimeSaving || !chatResolved}
                           onChange={(mode) => setRuntimeMode(o.id, mode)}
                         />
                       </SettingsField>
+                      {runtimeSaveFailed === o.id && <p role="alert" className={settingsError}>{SETTING_NOT_SAVED_TEXT}</p>}
                       {runtimeMode === 'chat' && copilotSdkEnabled && CHAT_DRIVER_CHOICES[o.id] && (
                         <SettingsField
                           label="Chat driver"
@@ -507,6 +517,7 @@ function AppAgentSettings() {
                           <select
                             id={`${idBase}-driver-${o.id}`}
                             data-testid={`chat-driver-${o.id}`}
+                            disabled={runtimeSaving || !chatResolved}
                             value={runtimeSettings[o.id]?.driver ?? CHAT_DRIVER_CHOICES[o.id][0].value}
                             onChange={(e) => {
                               const value = e.target.value as ChatDriverId;
