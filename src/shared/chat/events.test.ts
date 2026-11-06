@@ -28,6 +28,18 @@ function envelope(overrides: Partial<Record<string, unknown>> = {}): Record<stri
 }
 
 describe('chat event contract', () => {
+  it('round-trips passive Claude skill provenance, unknown and explicit empty in session_info', () => {
+    for (const names of [null, [], ['review']]) {
+      const data: ChatEventDataMap['session_info'] = {
+        nativeSessionId: 'native',
+        providerSkills: { provider: 'claude-code', driver: 'claude_agent_sdk', source: 'system/init', nativeSessionId: 'native', names },
+      };
+      const value: unknown = JSON.parse(JSON.stringify(envelope({ type: 'session_info', data })));
+      expect(isChatEvent(value)).toBe(true);
+      if (isChatEvent(value) && value.type === 'session_info') expect(value.data.providerSkills?.names).toEqual(names);
+    }
+  });
+
   it('keeps the type list and payload map in sync', () => {
     expect(listMatchesMap).toBe(true);
     expect(new Set(CHAT_EVENT_TYPES).size).toBe(CHAT_EVENT_TYPES.length);

@@ -6,3 +6,4 @@ export * from './sessions';
 export * from './media';
 export * from './coalesce';
 export * from './message-routing';
+export * from './provider-skills';

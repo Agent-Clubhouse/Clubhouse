@@ -1,4 +1,5 @@
 import type { ChatImage } from '../../../shared/chat';
+import { reportedSkillNames } from '../../../shared/chat/provider-skills';
 import type { ClaudeBackgroundTask, ClaudeChatEvent, ClaudeChatEventBody, ClaudeCommand, ClaudePermissionUpdate, ClaudeUsage } from './events';
 
 /**
@@ -94,7 +95,8 @@ export class ClaudeNormalizer {
 
   normalize(msg: ClaudeWireMessage): ClaudeChatEvent[] {
     const sid = str(msg.session_id);
-    if (sid) this.sessionId = sid;
+    // A nested init must not replace the parent transport's native identity.
+    if (sid && !(msg.type === 'system' && msg.subtype === 'init' && str(msg.parent_tool_use_id))) this.sessionId = sid;
     return this.map(msg).map((b) => {
       const ev = this.emit(b);
       if (b.kind === 'turn_ended') this.turnPending = true;
@@ -155,6 +157,8 @@ export class ClaudeNormalizer {
         cliVersion: str(msg.claude_code_version) ?? '',
         tools: arr(msg.tools).filter((t): t is string => typeof t === 'string'),
         slashCommands: arr(msg.slash_commands).filter((t): t is string => typeof t === 'string'),
+        parentToolCallId: str(msg.parent_tool_use_id),
+        skills: reportedSkillNames(msg.skills),
         apiKeySource: str(msg.apiKeySource),
         capabilities: msg.capabilities,
         ...(Array.isArray(msg.mcp_servers) && {

@@ -32,6 +32,7 @@ import { ChangesCard, type ChangesScope } from './ChangesCard';
 import { CardNote, CardRow, DetailsCard, UsageBar } from './DetailsCard';
 import { SettingsCard } from './SettingsCard';
 import { McpCard } from './McpCard';
+import { ProviderSkillsCard } from './ProviderSkillsCard';
 import { useAgentDetailsStore } from './detailsStore';
 import { useMcpBindingStore } from '../../../stores/mcpBindingStore';
 import type { LastSessionInfo } from '../states/useLastSession';
@@ -39,7 +40,7 @@ import { describeSleep, formatAgo, formatShortDuration, formatUsd } from '../sta
 import { ConnectionsCard, type Connection } from '../helpers/ConnectionsCard';
 import { OrchestrationCardPair, useOrchestrationCards } from '../helpers/OrchestrationCards';
 
-export type CardId = 'changes' | 'subagents' | 'canvases' | 'orchestrate' | 'helpers' | 'connections' | 'context' | 'mcp' | 'session';
+export type CardId = 'changes' | 'subagents' | 'canvases' | 'orchestrate' | 'helpers' | 'connections' | 'context' | 'mcp' | 'provider-skills' | 'session';
 
 /** A worktree inside the project, as a path relative to it; null when it lives elsewhere. */
 export function relativeFolder(worktree: string | undefined, projectPath: string | undefined): string | null {
@@ -383,6 +384,8 @@ export function AgentDetails({ agent, chat, onShowInStream, missedSubagentId, on
         open={open('mcp')}
         onToggle={() => toggleCard('mcp')}
       />}
+
+      {chat && <ProviderSkillsCard agent={agent} chat={chat} open={open('provider-skills')} onToggle={() => toggleCard('provider-skills')} />}
 
       {asleep && (
         <DetailsCard id="session" title="Last session" summary={lastSummary} open={open('session')} onToggle={() => toggleCard('session')}>
