@@ -104,7 +104,12 @@ it('confirms draft discard for selection, project change and refresh, preserving
   await waitFor(() => expect(screen.queryByLabelText('Text content')).not.toBeInTheDocument());
   expect(showConfirmDialog).toHaveBeenCalledWith('Discard unsaved skill bundle changes?');
   expect(screen.queryByRole('button', { name: /First bundle/ })).not.toBeInTheDocument();
-  expect(screen.getByRole('combobox', { name: 'Registered project' })).toBeDisabled();
+  await waitFor(() => {
+    expect(bridge.list).toHaveBeenLastCalledWith({ projectId: 'p2' });
+    expect(screen.getByRole('combobox', { name: 'Registered project' })).toBeDisabled();
+  });
+  expect(screen.queryByLabelText('Text content')).not.toBeInTheDocument();
+  expect(screen.queryByRole('button', { name: /First bundle/ })).not.toBeInTheDocument();
   const selection = chooseAsset();
   await act(async () => nextList.resolve({ ok: true, value: Object.values(documents) }));
   await selection; edit();
