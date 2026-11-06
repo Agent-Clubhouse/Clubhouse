@@ -70,34 +70,34 @@ async function running(steer: boolean, resumed = false) {
 }
 
 describe('Copilot composer through renderer store, real IPC handlers and runtime (fake driver only)', () => {
-  it.each(['copilot_acp', 'copilot_sdk'])('the single toggle selects successive sessions despite legacy %s, leaving an existing session unchanged', async (legacy) => {
+  it.each(['copilot_sdk', 'copilot_acp'])('the single toggle selects successive sessions despite legacy %s, leaving an existing session unchanged', async (legacy) => {
     preferences.saved = { 'copilot-cli': { mode: 'chat', driver: legacy } };
     window.clubhouse.app.getExperimentalSettings = vi.fn(async () => preferences.flags);
     window.clubhouse.app.saveExperimentalSettings = vi.fn(async (next) => { preferences.flags = next; });
     const old = await running(resolveRuntimeMode('copilot-cli').driver === 'copilot_sdk');
-    expect(screen.getByTestId('chat-send-primary')).toHaveTextContent('Stop & send');
+    expect(screen.getByTestId('chat-send-primary')).toHaveTextContent('Steer');
     const settings = render(<ExperimentalSettingsView />);
-    const toggle = await screen.findByRole('switch', { name: 'Copilot SDK driver' });
-    fireEvent.click(toggle);
-    await waitFor(() => expect(resolveRuntimeMode('copilot-cli').driver).toBe('copilot_sdk'));
-    expect(old.driver.id).toBe('copilot_acp');
-    expect(screen.getByTestId('chat-send-primary')).toHaveTextContent('Stop & send');
-    old.view.unmount();
-    const first = await running(resolveRuntimeMode('copilot-cli').driver === 'copilot_sdk');
-    expect(first.state.driver).toBe('copilot_sdk');
-    expect(screen.getByTestId('chat-send-primary')).toHaveTextContent('Steer');
-    first.view.unmount();
-    const second = await running(resolveRuntimeMode('copilot-cli').driver === 'copilot_sdk');
-    expect(second.state.capabilities?.steer).toBe(true);
-    expect(screen.getByTestId('chat-send-primary')).toHaveTextContent('Steer');
+    const toggle = await screen.findByRole('switch', { name: 'Use legacy Copilot ACP' });
     fireEvent.click(toggle);
     await waitFor(() => expect(resolveRuntimeMode('copilot-cli').driver).toBe('copilot_acp'));
-    expect(second.driver.id).toBe('copilot_sdk');
+    expect(old.driver.id).toBe('copilot_sdk');
     expect(screen.getByTestId('chat-send-primary')).toHaveTextContent('Steer');
+    old.view.unmount();
+    const first = await running(resolveRuntimeMode('copilot-cli').driver === 'copilot_sdk');
+    expect(first.state.driver).toBe('copilot_acp');
+    expect(screen.getByTestId('chat-send-primary')).toHaveTextContent('Stop & send');
+    first.view.unmount();
+    const second = await running(resolveRuntimeMode('copilot-cli').driver === 'copilot_sdk');
+    expect(second.state.capabilities?.steer).toBe(false);
+    expect(screen.getByTestId('chat-send-primary')).toHaveTextContent('Stop & send');
+    fireEvent.click(toggle);
+    await waitFor(() => expect(resolveRuntimeMode('copilot-cli').driver).toBe('copilot_sdk'));
+    expect(second.driver.id).toBe('copilot_acp');
+    expect(screen.getByTestId('chat-send-primary')).toHaveTextContent('Stop & send');
     second.view.unmount(); settings.unmount();
     const last = await running(resolveRuntimeMode('copilot-cli').driver === 'copilot_sdk');
-    expect(last.state.driver).toBe('copilot_acp');
-    expect(screen.getByTestId('chat-send-primary')).toHaveTextContent('Stop & send');
+    expect(last.state.driver).toBe('copilot_sdk');
+    expect(screen.getByTestId('chat-send-primary')).toHaveTextContent('Steer');
     expect(preferences.saved).toEqual({ 'copilot-cli': { mode: 'chat', driver: legacy } });
   });
 

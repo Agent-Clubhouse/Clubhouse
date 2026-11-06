@@ -9,6 +9,7 @@ const preview = vi.hoisted(() => ({ value: true }));
 vi.mock('./preview-eligible', () => ({ isPreviewEligible: () => preview.value }));
 const stored = vi.hoisted(() => ({ value: {} as Record<string, unknown> }));
 vi.mock('./settings-store', () => ({
+  peekStoredSettingsSync: () => 'missing',
   createSettingsStore: () => ({ get: () => stored.value, save: async (v: Record<string, unknown>) => { stored.value = v; } }),
 }));
 
@@ -54,56 +55,39 @@ describe('chat runtime settings', () => {
     expect(resolveRuntimeMode('claude-code', 'chat')).toEqual({ mode: 'chat', driver: 'claude_stream_json' });
   });
 
-  describe('the Copilot SDK flag', () => {
-    const saved = { 'copilot-cli': { mode: 'chat', driver: 'copilot_sdk' } };
-
-    it('is off by default, and on its own chooses SDK', () => {
-      flags.value = { chat: true };
-      expect(isCopilotSdkEnabled()).toBe(false);
-      flags.value = { chat: true, copilotSdk: true };
-      expect(isCopilotSdkEnabled()).toBe(true);
-      expect(resolveRuntimeMode('copilot-cli')).toEqual({ mode: 'chat', driver: 'copilot_sdk' });
+  describe('SDK standard and explicit legacy ACP', () => {
+    it.each([true, false])('defaults to SDK in preview=%s regardless of old flags and preferences', (eligible) => {
+      preview.value = eligible;
+      for (const oldFlag of [undefined, false, true]) {
+        for (const driver of [undefined, 'copilot_acp', 'copilot_sdk']) {
+          flags.value = oldFlag === undefined ? {} : { copilotSdk: oldFlag };
+          stored.value = { 'copilot-cli': { mode: 'chat', driver } };
+          const original = structuredClone(stored.value);
+          expect(isCopilotSdkEnabled()).toBe(true);
+          expect(resolveRuntimeMode('copilot-cli')).toEqual({ mode: 'chat', driver: 'copilot_sdk' });
+          expect(stored.value).toEqual(original);
+        }
+      }
     });
 
-    it('with the flag off, ignores a saved choice without changing it', () => {
-      flags.value = { chat: true };
-      stored.value = saved;
-      expect(resolveRuntimeMode('copilot-cli')).toEqual({ mode: 'chat', driver: 'copilot_acp' });
-      expect(stored.value).toEqual(saved);
-    });
-
-    it('with the flag on again, the saved choice applies', () => {
-      flags.value = { chat: true, copilotSdk: true };
-      stored.value = saved;
-      expect(resolveRuntimeMode('copilot-cli')).toEqual({ mode: 'chat', driver: 'copilot_sdk' });
-    });
-
-    it('leaves other drivers alone with the flag off', () => {
-      flags.value = { chat: true };
-      stored.value = { 'copilot-cli': { mode: 'chat', driver: 'copilot_acp' }, 'claude-code': { mode: 'chat', driver: 'claude_stream_json' } };
-      expect(resolveRuntimeMode('copilot-cli')).toEqual({ mode: 'chat', driver: 'copilot_acp' });
-      expect(resolveRuntimeMode('claude-code')).toEqual({ mode: 'chat', driver: 'claude_stream_json' });
-    });
-
-    it.each([undefined, 'copilot_acp', 'copilot_sdk'] as const)('the flag overrides legacy preference %s without rewriting settings', (driver) => {
-      stored.value = { 'copilot-cli': { mode: 'terminal', driver }, 'claude-code': { mode: 'chat', driver: 'claude_stream_json' } };
+    it('only the new legacy flag opts in, preserving unrelated preferences and per-agent mode', () => {
+      stored.value = { 'copilot-cli': { mode: 'terminal', driver: 'copilot_sdk' }, 'claude-code': { mode: 'chat', driver: 'claude_stream_json' } };
       const original = structuredClone(stored.value);
       for (const enabled of [true, false, true]) {
-        flags.value = { copilotSdk: enabled };
-        expect(resolveRuntimeMode('copilot-cli', 'chat')).toEqual({ mode: 'chat', driver: enabled ? 'copilot_sdk' : 'copilot_acp' });
+        flags.value = { copilotLegacyAcp: enabled, copilotSdk: false };
+        expect(resolveRuntimeMode('copilot-cli', 'chat')).toEqual({ mode: 'chat', driver: enabled ? 'copilot_acp' : 'copilot_sdk' });
         expect(resolveRuntimeMode('copilot-cli').mode).toBe('terminal');
         expect(resolveRuntimeMode('claude-code')).toEqual({ mode: 'chat', driver: 'claude_stream_json' });
         expect(stored.value).toEqual(original);
       }
     });
 
-    it('needs Chat, and counts only in beta builds', () => {
-      flags.value = { chat: false, copilotSdk: true };
-      stored.value = saved;
+    it('keeps the legacy experimental flag gated and honors Chat off', () => {
+      flags.value = { chat: false, copilotLegacyAcp: true };
       expect(resolveRuntimeMode('copilot-cli')).toEqual({ mode: 'terminal' });
-      flags.value = { chat: true, copilotSdk: true };
+      flags.value.chat = true;
       preview.value = false;
-      expect(isCopilotSdkEnabled()).toBe(false);
+      expect(resolveRuntimeMode('copilot-cli')).toEqual({ mode: 'chat', driver: 'copilot_sdk' });
     });
   });
 });

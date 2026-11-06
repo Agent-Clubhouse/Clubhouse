@@ -4,7 +4,7 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 import type { DurableAgentConfig } from '../../../shared/types';
 import type { OrchestratorProvider } from '../../orchestrators';
-const state = vi.hoisted(() => ({ agents: [] as DurableAgentConfig[], projects: [] as { path: string }[], binary: '', prefix: '', env: { SAFE: 'synthetic' }, mode: { mode: 'chat' } as { mode: 'chat' | 'terminal'; driver?: 'codex_app_server' }, active: undefined as unknown, registry: { generation: 0, pending: false }, defaults: { generation: 0, pending: false }, configGeneration: 0, profiles: {} as object }));
+const state = vi.hoisted(() => ({ agents: [] as DurableAgentConfig[], projects: [] as { path: string }[], binary: '', prefix: '', env: { SAFE: 'synthetic' }, mode: { mode: 'chat' } as { mode: 'chat' | 'terminal'; driver?: 'codex_app_server' | 'copilot_sdk' | 'copilot_acp' }, active: undefined as unknown, registry: { generation: 0, pending: false }, defaults: { generation: 0, pending: false }, configGeneration: 0, profiles: {} as object }));
 vi.mock('node:fs', async (actual) => {
   const real = await actual<typeof import('node:fs')>();
   return { ...real, lstatSync: vi.fn(real.lstatSync), openSync: vi.fn(real.openSync) };
@@ -46,6 +46,18 @@ beforeEach(() => {
 });
 afterEach(() => { clearChatDrivers(); clearDriverHealth(); fs.rmSync(dir, { recursive: true, force: true }); });
 describe('explicit scoped handshake retry', () => {
+  it.each([
+    ['copilot_sdk', 'copilot_acp'], ['copilot_acp', 'copilot_sdk'],
+  ] as const)('does not probe %s selection through registered %s', async (selected, registered) => {
+    clearChatDrivers();
+    state.agents[0].orchestrator = 'copilot-cli';
+    state.mode = { mode: 'chat', driver: selected };
+    const other = new FakeChatDriver(registered, 'copilot-cli');
+    const probe = vi.spyOn(other, 'probe');
+    registerChatDriver(other);
+    expect(await retryAgentHandshake(dir, 'a')).toMatchObject({ status: 'cannot_probe' });
+    expect(probe).not.toHaveBeenCalled();
+  });
   it('recovers a repaired same-path script with identical saved prefix/key and no session', async () => {
     const original = key(); pause('unrelated');
     for (let i = 0; i < DRIVER_FAILURE_THRESHOLD; i++) await probeDriver(driver, state.binary, state.env, state.prefix);

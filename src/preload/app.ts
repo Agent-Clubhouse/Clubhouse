@@ -219,6 +219,8 @@ export const app = {
   /** The flags file exists and can't be read, so getExperimentalSettings is partly a stand-in. */
   isExperimentalSettingsUnreadable: (): Promise<boolean> =>
     ipcRenderer.invoke(IPC.APP.IS_EXPERIMENTAL_SETTINGS_UNREADABLE),
+  isChatTipReadUncertain: (): Promise<boolean> =>
+    ipcRenderer.invoke(IPC.APP.IS_CHAT_TIP_READ_UNCERTAIN),
   saveExperimentalSettings: (settings: Record<string, boolean>) =>
     ipcRenderer.invoke(IPC.APP.SAVE_EXPERIMENTAL_SETTINGS, settings),
   },

@@ -14,7 +14,7 @@ vi.mock('fs', () => ({
 
 import * as fs from 'fs';
 import { resetAllSettingsStoresForTests } from './settings-store';
-import { getSettings, saveSettings, migrateExperimentalSettings } from './experimental-settings';
+import { getSettings, saveSettings, migrateExperimentalSettings, isChatTipExperimentalReadUncertain } from './experimental-settings';
 import { STRUCTURED_MODE_REMOVED_NOTICE_KEY } from '../../shared/types';
 
 describe('experimental-settings', () => {
@@ -62,6 +62,36 @@ describe('experimental-settings', () => {
       expect(settings).not.toHaveProperty('structuredMode');
       expect(settings[STRUCTURED_MODE_REMOVED_NOTICE_KEY]).toBe(true);
       expect(settings.otherFlag).toBe(true);
+    });
+
+    it('retains an EACCES load failure until the cached fallback is replaced', () => {
+      vi.mocked(fs.readFileSync).mockImplementationOnce(() => { throw Object.assign(new Error('denied'), { code: 'EACCES' }); });
+      expect(getSettings()).toEqual({});
+      vi.mocked(fs.readFileSync).mockReturnValue(JSON.stringify({ chat: false }));
+      expect(getSettings()).toEqual({});
+      expect(isChatTipExperimentalReadUncertain()).toBe(true);
+      resetAllSettingsStoresForTests();
+      expect(getSettings()).toEqual({ chat: false });
+      expect(isChatTipExperimentalReadUncertain()).toBe(false);
+    });
+
+    it.each(['null', '[]', '42', '"text"', 'true'])('treats cached %s as uncertain until a good load or save', async (raw) => {
+      vi.mocked(fs.readFileSync).mockReturnValue(raw);
+      getSettings();
+      expect(isChatTipExperimentalReadUncertain()).toBe(true);
+      vi.mocked(fs.readFileSync).mockReturnValue(JSON.stringify({ chat: false }));
+      expect(isChatTipExperimentalReadUncertain()).toBe(true);
+      resetAllSettingsStoresForTests();
+      expect(getSettings()).toEqual({ chat: false });
+      expect(isChatTipExperimentalReadUncertain()).toBe(false);
+
+      resetAllSettingsStoresForTests();
+      vi.mocked(fs.readFileSync).mockReturnValue(raw);
+      getSettings();
+      expect(isChatTipExperimentalReadUncertain()).toBe(true);
+      vi.mocked(fs.readFileSync).mockReturnValue('{}');
+      await saveSettings({ chat: false });
+      expect(isChatTipExperimentalReadUncertain()).toBe(false);
     });
 
     it('returns empty defaults when the file does not exist', () => {
