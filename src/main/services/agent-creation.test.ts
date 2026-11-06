@@ -83,6 +83,8 @@ import {
   getDurableConfig,
   updateDurableConfig,
 } from './agent-config';
+import { applyAgentDefaults } from './agent-settings-service';
+import { UnsupportedPermissionRulesError } from './permission-rules-error';
 import { getDispatcherPath } from './dispatcher/dispatcher-paths';
 import { cancelDurableCreation, onDurableCreationEvent, startDurableCreation } from './agent-creation';
 
@@ -340,6 +342,18 @@ describe('startDurableCreation (#2226)', () => {
     expect(diskAgents().find((a) => a.id === started.agentId)).not.toHaveProperty('creation');
     expect(isDurableCreationActive(started.agentId)).toBe(false);
     expect(gitArgv()).toContainEqual(['branch', '--no-track', '--', 'helper/standby', SHA]);
+  });
+
+  it('fails creation visibly when permission defaults cannot be applied', async () => {
+    const reason = 'Copilot does not support these permission rules';
+    vi.mocked(applyAgentDefaults).mockRejectedValueOnce(new UnsupportedPermissionRulesError(reason));
+    const inject = vi.fn();
+    const started = await startDurableCreation(PROJECT_PATH, { name: 'unsupported', color: 'indigo' }, { inject });
+    expect(await started.done).toBe('failed');
+    expect(events.map((e) => e.stage)).toEqual(['config_created', 'worktree_added', 'failed']);
+    expect(events.at(-1)).toMatchObject({ reason, config: { creation: { state: 'failed', reason } } });
+    expect(inject).not.toHaveBeenCalled();
+    expect(diskAgents().find((agent) => agent.id === started.agentId)?.creation).toMatchObject({ state: 'failed', reason });
   });
 
   it('runs the injection hook before ready', async () => {

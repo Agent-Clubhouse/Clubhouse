@@ -31,10 +31,28 @@ describe('Copilot hook document boundary', () => {
     JSON.stringify({ version: 1, hooks: {}, permissions: { deny: ['WebFetch'] } }),
     JSON.stringify({ version: 2, hooks: {} }),
     JSON.stringify({ version: 1, hooks: { preToolUse: {} } }),
+    JSON.stringify({ version: 1, hooks: { preToolUse: [null] } }),
+    JSON.stringify({ version: 1, hooks: { preToolUse: [42] } }),
+    JSON.stringify({ version: 1, hooks: { preToolUse: [{ type: 'command' }] } }),
+    JSON.stringify({ version: 1, hooks: { preToolUse: [{ type: 'command', bash: 42 }] } }),
+    JSON.stringify({ version: 1, hooks: { preToolUse: [{ type: 'http' }] } }),
+    JSON.stringify({ version: 1, hooks: { sessionStart: [{ type: 'prompt' }] } }),
+    JSON.stringify({ version: 1, hooks: { preToolUse: [{ type: 'future-type', data: 'keep' }] } }),
   ])('rejects ambiguous or invalid input without changing it: %s', async (content) => {
     const { root, file } = await fixture(content);
     await expect(readCopilotHooksConfig(root)).rejects.toThrow(/repair.*restart/i);
     await expect(new CopilotCliProvider().writeHooksConfig(root, 'http://127.0.0.1:9999/hook')).rejects.toThrow(/repair.*restart/i);
+    expect(await fsp.readFile(file, 'utf8')).toBe(content);
+  });
+
+  it('accepts documented command, HTTP and prompt entries without rewriting them', async () => {
+    const content = JSON.stringify({ version: 1, hooks: {
+      sessionStart: [{ type: 'prompt', prompt: 'hello' }],
+      preToolUse: [{ command: 'echo custom' }, { type: 'command', exec: 'checker', args: ['--check'] }],
+      postToolUse: [{ type: 'http', url: 'https://example.invalid/hook' }],
+    } });
+    const { root, file } = await fixture(content);
+    expect(await readCopilotHooksConfig(root)).toEqual(JSON.parse(content));
     expect(await fsp.readFile(file, 'utf8')).toBe(content);
   });
 

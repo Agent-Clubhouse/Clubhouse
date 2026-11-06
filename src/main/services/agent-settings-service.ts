@@ -12,7 +12,8 @@ import { validateCommandPrefix } from './command-prefix-validation';
 
 const LOG_NS = 'core:agent-settings';
 
-export class UnsupportedPermissionRulesError extends Error {}
+import { UnsupportedPermissionRulesError } from './permission-rules-error';
+export { UnsupportedPermissionRulesError } from './permission-rules-error';
 
 /** Check whether an error is a filesystem "file not found" (ENOENT). */
 function isEnoent(err: unknown): boolean {

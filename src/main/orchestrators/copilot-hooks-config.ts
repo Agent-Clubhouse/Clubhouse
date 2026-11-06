@@ -1,6 +1,29 @@
 import * as fsp from 'fs/promises';
 import * as path from 'path';
 
+/** Check documented hook item forms without changing unknown or invalid input. */
+function validHookEntry(event: string, value: unknown): boolean {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
+  const item = value as Record<string, unknown>;
+  const kind = item.type ?? 'command';
+  const text = (key: string) => typeof item[key] === 'string' && (item[key] as string).trim().length > 0;
+  const optionalText = (key: string) => item[key] === undefined || typeof item[key] === 'string';
+  const optionalNumber = (key: string) => item[key] === undefined || (typeof item[key] === 'number' && Number.isFinite(item[key]));
+  const stringMap = (key: string) => item[key] === undefined || (!!item[key] && typeof item[key] === 'object' && !Array.isArray(item[key]) && Object.values(item[key] as object).every((v) => typeof v === 'string'));
+  if (!optionalNumber('timeout') || !optionalNumber('timeoutSec') || !optionalText('matcher')) return false;
+  if (kind === 'command') {
+    return ['bash', 'powershell', 'command', 'exec'].every(optionalText) &&
+      ['bash', 'powershell', 'command', 'exec'].some(text) && optionalText('cwd') &&
+      (item.args === undefined || (Array.isArray(item.args) && item.args.every((arg) => typeof arg === 'string'))) &&
+      stringMap('env');
+  }
+  if (kind === 'http') return text('url') && stringMap('headers') &&
+    (item.allowedEnvVars === undefined || (Array.isArray(item.allowedEnvVars) && item.allowedEnvVars.every((v) => typeof v === 'string')));
+  if (kind === 'prompt') return event === 'sessionStart' && text('prompt');
+  // Unknown types may belong to a newer CLI. Refuse to rewrite them, not delete them.
+  return false;
+}
+
 /** Read the one hook document Clubhouse manages, without modifying ambiguous files. */
 export async function readCopilotHooksConfig(cwd: string): Promise<Record<string, unknown> | null> {
   const file = path.join(cwd, '.github', 'hooks', 'hooks.json');
@@ -20,8 +43,8 @@ export async function readCopilotHooksConfig(cwd: string): Promise<Record<string
   const doc = value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : null;
   const hooks = doc?.hooks;
   if (!doc || doc.version !== 1 || !hooks || typeof hooks !== 'object' || Array.isArray(hooks) ||
-      Object.values(hooks).some((entries) => !Array.isArray(entries)) || 'permissions' in doc) {
-    throw new Error(`Invalid or conflicting Copilot hooks at ${file}. Review and repair the file, then restart the agent. Copilot hook documents require version 1 and a hooks object with event arrays; Clubhouse allow/deny rules are not supported there. Clubhouse did not modify it.`);
+      Object.entries(hooks).some(([event, entries]) => !Array.isArray(entries) || entries.some((entry) => !validHookEntry(event, entry))) || 'permissions' in doc) {
+    throw new Error(`Invalid, unsupported, or conflicting Copilot hooks at ${file}. Review and repair the file, then restart the agent. Copilot hook documents require version 1 and a hooks object with valid event entries; Clubhouse allow/deny rules are not supported there. Clubhouse did not modify it.`);
   }
   return doc;
 }

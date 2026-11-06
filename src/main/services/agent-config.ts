@@ -1,3 +1,4 @@
+import { UnsupportedPermissionRulesError } from './permission-rules-error';
 import { noteProviderSelection, withAgentActivity } from './agent-transition';
 import { execFile } from 'child_process';
 import { watch, type FSWatcher } from 'fs';
@@ -2226,6 +2227,7 @@ async function runDurableCreation(
           provider.conventions,
         );
       } catch (err) {
+        if (err instanceof UnsupportedPermissionRulesError) throw err;
         appLog('core:agent-config', 'warn', 'Failed to apply project agent defaults', {
           meta: { agentName: initial.name, error: errorMessage(err) },
         });
