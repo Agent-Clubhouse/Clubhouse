@@ -23,8 +23,11 @@ beforeEach(() => {
   cleanups.push(() => fs.promises.rm(home, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 }));
 });
 afterEach(async () => {
-  while (cleanups.length) await cleanups.pop()?.();
-  process.env = originalEnv;
+  try {
+    while (cleanups.length) await cleanups.pop()?.();
+  } finally {
+    process.env = originalEnv;
+  }
 });
 
 /** A `copilot` on disk that replays a fixture. */
