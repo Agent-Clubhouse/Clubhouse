@@ -692,14 +692,9 @@ export function AgentSettingsView({ agent }: Props) {
   // Load quick agent defaults and agent model from config
   useEffect(() => {
     if (!projectPath) return;
-    let cancelled = false;
-    const request = runtimeRequest.current;
-    const epoch = request.epoch;
-    setRuntimeSaving(false); setRuntimeSaveFailed(false); setRuntimeLoadedTarget(''); setRuntimeLoadFailed(false);
     (async () => {
       try {
         const config = await window.clubhouse.agent.getDurableConfig(projectPath, agent.id);
-        if (cancelled || request !== runtimeRequest.current) return;
         const defaults = config?.quickAgentDefaults;
         if (defaults) {
           const base = {
