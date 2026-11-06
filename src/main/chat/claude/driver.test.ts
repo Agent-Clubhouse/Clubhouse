@@ -525,7 +525,7 @@ describe('ClaudeChatDriverSession mapping (scripted transport)', () => {
     transport.sessionId = 'replacement-native';
     transport.emit(normalizer.normalize({ type: 'system', subtype: 'init', session_id: 'replacement-native', model: 'replacement-model', skills: ['replacement-skill'] })[0]);
     await settle();
-    expect(drafts.of('session_info').at(-1)?.data).toMatchObject({
+    expect(drafts.of('session_info').find((d) => d.data.nativeSessionId === 'replacement-native')?.data).toMatchObject({
       nativeSessionId: 'replacement-native', model: 'replacement-model',
       providerSkills: { nativeSessionId: 'replacement-native', names: ['replacement-skill'] },
     });
