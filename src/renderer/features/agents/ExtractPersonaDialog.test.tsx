@@ -29,7 +29,7 @@ describe('ExtractPersonaDialog', () => {
     vi.clearAllMocks();
     resetStores();
     window.clubhouse.agentSettings.extractAgentPersona = vi.fn().mockResolvedValue({
-      content: 'Agent @@AgentName',
+      content: 'Agent @@AgentName', sources: ['CLAUDE.md'],
       settings: { model: 'claude-opus-4-8', mcpIds: ['github'] },
     });
     window.clubhouse.agentSettings.writeSourcePersonaContent = vi.fn().mockResolvedValue(undefined);
@@ -53,6 +53,7 @@ describe('ExtractPersonaDialog', () => {
   it('saves the pattern with front-matter to the user library by default', async () => {
     render(<ExtractPersonaDialog />);
     await screen.findByDisplayValue('Agent @@AgentName');
+    fireEvent.click(screen.getByRole('checkbox', { name: /I reviewed/ }));
     fireEvent.click(screen.getByText('Save persona'));
     await waitFor(() => {
       expect(window.clubhouse.agentSettings.writeSourcePersonaContent).toHaveBeenCalled();
@@ -77,4 +78,24 @@ describe('ExtractPersonaDialog', () => {
     await waitFor(() => expect(window.clubhouse.agentSettings.extractAgentPersona).toHaveBeenCalled());
     expect(window.clubhouse.agentSettings.extractAgentPersona).toHaveBeenCalledWith('/home/user/project', expect.anything());
   });
+  it('does not turn a failed read into a savable empty persona', async () => {
+    window.clubhouse.agentSettings.extractAgentPersona = vi.fn().mockRejectedValue(new Error('PRIVATE_PATH'));
+    render(<ExtractPersonaDialog />);
+    expect(await screen.findByRole('alert')).toHaveTextContent('No persona was extracted');
+    expect(screen.getByText('Save persona')).toBeDisabled();
+    expect(screen.queryByText(/PRIVATE_PATH/)).not.toBeInTheDocument();
+    expect(window.clubhouse.agentSettings.writeSourcePersonaContent).not.toHaveBeenCalled();
+  });
+
+  it('requires explicit review of bounded sources, including a legitimately empty result', async () => {
+    window.clubhouse.agentSettings.extractAgentPersona = vi.fn().mockResolvedValue({ content: '', settings: {}, sources: [] });
+    render(<ExtractPersonaDialog />);
+    await screen.findByText(/No text found in the supported files/);
+    expect(screen.getByText('Save persona')).toBeDisabled();
+    fireEvent.click(screen.getByRole('checkbox', { name: /I reviewed/ }));
+    expect(screen.getByText('Save persona')).not.toBeDisabled();
+    fireEvent.click(screen.getByText('Save persona'));
+    await waitFor(() => expect(window.clubhouse.agentSettings.writeSourcePersonaContent).toHaveBeenCalled());
+  });
+
 });

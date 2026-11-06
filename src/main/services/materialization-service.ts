@@ -1,3 +1,4 @@
+import { readExtractionDocument } from './persona-extraction-sources';
 import { parseMcpJson } from '../../shared/mcp-config';
 import * as fsp from 'fs/promises';
 import type { McpServerDef } from '../../shared/types';
@@ -249,7 +250,7 @@ export async function extractAgentPersona(params: {
   projectPath: string;
   agent: DurableAgentConfig;
   provider: OrchestratorProvider;
-}): Promise<{ content: string; settings: PatternSettings }> {
+}): Promise<{ content: string; settings: PatternSettings; sources: string[] }> {
   const { projectPath, agent, provider } = params;
   const defaults = await readProjectAgentDefaults(projectPath);
   const scp = await resolveSourceControlProvider(projectPath, agent);
@@ -258,16 +259,30 @@ export async function extractAgentPersona(params: {
   // commands, and provider so the body isn't accidentally collapsed to a token.
   const ctx = buildWildcardContext(agent, projectPath, scp, commands);
 
-  let instructions = '';
-  if (agent.worktreePath) {
-    try {
-      instructions = await provider.readInstructions(agent.worktreePath);
-    } catch {
-      instructions = '';
+  if (!agent.worktreePath) throw new Error('The agent has no worktree to extract.');
+  if (!provider.inspectInstructions) throw new Error('This provider cannot inspect instructions for extraction.');
+  const primaryName = provider.id === 'copilot-cli' ? '.github/copilot-instructions.md'
+    : provider.id === 'codex-cli' ? 'AGENTS.md' : 'CLAUDE.md';
+  const documents: Array<{ name: string; content: string }> = [];
+  try {
+    const primary = await provider.inspectInstructions(agent.worktreePath);
+    if (primary) documents.push({ name: primaryName, content: primary });
+  } catch {
+    throw new Error('Could not read the primary instruction file. No persona was extracted.');
+  }
+  // Copilot's documented root instruction documents. This intentionally excludes
+  // ancestor/user files, nested rules, @references and session-specific context.
+  if (provider.id === 'copilot-cli') {
+    for (const name of ['AGENTS.md', 'CLAUDE.md', 'GEMINI.md']) {
+      const text = await readExtractionDocument(agent.worktreePath, name);
+      if (text !== null) documents.push({ name, content: text });
     }
   }
-  const content = instructions ? unreplaceWildcards(instructions, ctx) : '';
-  return { content, settings: pickPatternSettings(agent) };
+  const parts = documents.map(({ name, content }) => {
+    const body = unreplaceWildcards(content, ctx);
+    return documents.length > 1 ? `## Captured from ${name}\n\n${body}` : body;
+  });
+  return { content: parts.join('\n\n'), settings: pickPatternSettings(agent), sources: documents.map(({ name }) => name) };
 }
 
 /**
@@ -379,6 +394,7 @@ export async function materializeAgent(params: {
   const missionContent = missionId ? await readSourceMissionContent(projectPath, missionId) : undefined;
   const personaContent = await resolvePersonaContent(projectPath, personaId);
   const ctx = buildWildcardContext(agent, projectPath, scp, commands, missionContent, personaContent);
+  const resolvedPersonaContent = personaContent ? replaceWildcards(personaContent, ctx) : undefined;
   const conv = provider.conventions;
   if (defaults.mcpJson && !agent.clubhouseModeOverride && (!conv.settingsFormat || conv.settingsFormat === 'json')) {
     const local = await readLocalMcpJson(worktreePath, conv);
@@ -398,13 +414,13 @@ export async function materializeAgent(params: {
     // so users who opt into the wildcard don't get the persona injected twice.
     const templateUsesPersonaToken = defaults.instructions.includes('@@Persona');
     if (personaContent && !templateUsesPersonaToken) {
-      await provider.writeInstructions(worktreePath, `${resolved}\n\n${personaContent}`);
+      await provider.writeInstructions(worktreePath, `${resolved}\n\n${resolvedPersonaContent}`);
     } else {
       await provider.writeInstructions(worktreePath, resolved);
     }
   } else if (personaContent) {
     // No project defaults but agent has a persona — write persona instructions alone
-    await provider.writeInstructions(worktreePath, personaContent);
+    await provider.writeInstructions(worktreePath, resolvedPersonaContent!);
   }
 
   // 2. Permissions
