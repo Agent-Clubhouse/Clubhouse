@@ -8,7 +8,7 @@ import { useChromeStore } from '../../chrome/chromeStore';
 import { isNewChromeEnabled } from '../../chrome/chromeFlag';
 import { FOCUS_ACTIVE_TERMINAL_EVENT } from '../agents/AgentTerminal';
 import { NEXT_AGENT_MESSAGE_EVENT, PREVIOUS_AGENT_MESSAGE_EVENT } from '../../stores/keyboardShortcutsStore';
-import { openNewAgentFromShortcut } from '../../chrome/startPage';
+import { openNewAgentFromShortcut, openNewAgentOrDialog } from '../../chrome/startPage';
 import { groupProjectAgents } from '../../chrome/sidebar/treeModel';
 
 export interface CommandAction {
@@ -54,6 +54,11 @@ export function getCommandActions(): CommandAction[] {
       global: true,
       // The new shell opens the New agent page with Durable chosen (#2031).
       execute: () => openNewAgentFromShortcut(),
+    },
+    {
+      id: 'open-quick-agent',
+      global: true,
+      execute: () => openNewAgentOrDialog('quick'),
     },
     {
       id: 'focus-active-terminal',

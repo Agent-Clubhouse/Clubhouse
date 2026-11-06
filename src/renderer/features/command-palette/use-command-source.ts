@@ -464,7 +464,7 @@ export function useCommandSource(): CommandItem[] {
       id: 'action:new-quick-agent',
       label: 'New quick agent',
       category: CATEGORY.commands,
-      shortcut: isNewChromeEnabled() ? undefined : getShortcut(shortcuts, 'new-quick-agent'),
+      shortcut: getShortcut(shortcuts, isNewChromeEnabled() ? 'open-quick-agent' : 'new-quick-agent'),
       keywords: ['agent', 'mission', 'quick'],
       execute: () => openNewAgentOrDialog('quick'),
     });

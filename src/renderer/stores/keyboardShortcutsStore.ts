@@ -170,6 +170,7 @@ export const CHROME_SHORTCUTS: ShortcutSpec[] = [
   ...LEGACY_SHORTCUTS.filter((s) => SHARED_IDS.includes(s.id)).map((s) =>
     s.id === 'toggle-sidebar' ? { ...s, category: 'General' }
       : s.id === 'new-quick-agent' ? { ...s, label: 'New Agent' } : s),
+  { id: 'open-quick-agent', label: 'New Quick Agent', category: 'Agents', defaultBinding: 'Meta+N' },
   ...Array.from({ length: 9 }, (_, i) => ({
     id: `tab-${i + 1}`,
     label: i === 0 ? 'Agents Tab' : `Tab ${i + 1}`,
