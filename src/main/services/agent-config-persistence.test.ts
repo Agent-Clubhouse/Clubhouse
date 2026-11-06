@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import * as path from 'path';
+import * as fsp from 'fs/promises';
 
 // In-memory filesystem so tests can interleave mutations with in-flight writes.
 const files = new Map<string, string>();
@@ -75,6 +76,7 @@ import {
   flushAgentConfig,
   flushAllAgentConfigs,
   isSameProject,
+  isChatTipAgentReadUncertain,
   listDurable,
   projectKey,
   renameDurable,
@@ -362,4 +364,49 @@ describe('agent-config cross-project durable ID collisions', () => {
     expect(restoredIds[1]).not.toBe(AGENT_A.id);
     expect(diskIds(OTHER_CONFIG)).toEqual(restoredIds);
   });
+});
+
+
+it('keeps the winning cache read uncertainty when a concurrent valid disk read finishes later', async () => {
+  const originalRead = vi.mocked(fsp.readFile).getMockImplementation()!;
+  let releaseBackup!: () => void;
+  let backupEntered!: () => void;
+  const backupHeld = new Promise<void>((resolve) => { releaseBackup = resolve; });
+  const backupReached = new Promise<void>((resolve) => { backupEntered = resolve; });
+  let releaseValid!: () => void;
+  let validEntered!: () => void;
+  const validHeld = new Promise<void>((resolve) => { releaseValid = resolve; });
+  const validReached = new Promise<void>((resolve) => { validEntered = resolve; });
+  const valid = JSON.stringify([AGENT_A]);
+  files.set(CONFIG_PATH, '{broken');
+  vi.mocked(fsp.readFile).mockImplementation(async (file, ...args) => {
+    if (String(file) === BACKUP_PATH) {
+      backupEntered();
+      await backupHeld;
+      throw Object.assign(new Error('ENOENT'), { code: 'ENOENT' });
+    }
+    if (String(file) === CONFIG_PATH && files.get(CONFIG_PATH) === valid) {
+      validEntered();
+      await validHeld;
+      return valid;
+    }
+    return originalRead(file, ...args);
+  });
+  try {
+    const corrupt = listDurable(PROJECT_PATH);
+    await backupReached;
+    files.set(CONFIG_PATH, valid);
+    const readable = listDurable(PROJECT_PATH);
+    await validReached;
+    releaseBackup();
+    expect(await corrupt).toEqual([]);
+    expect(isChatTipAgentReadUncertain()).toBe(true);
+    releaseValid();
+    expect(await readable).toEqual([]);
+    expect(isChatTipAgentReadUncertain()).toBe(true);
+  } finally {
+    releaseBackup();
+    releaseValid();
+    vi.mocked(fsp.readFile).mockImplementation(originalRead);
+  }
 });
