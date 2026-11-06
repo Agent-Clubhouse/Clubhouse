@@ -1,6 +1,11 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import * as path from 'path';
 import * as fsp from 'fs/promises';
+import { watch } from 'fs';
+
+const tip = vi.hoisted(() => ({ toast: vi.fn(), openSettings: vi.fn() }));
+vi.mock('../../renderer/stores/toastStore', () => ({ useToastStore: { getState: () => ({ addToast: tip.toast }) } }));
+vi.mock('../../renderer/stores/uiStore', () => ({ useUIStore: { getState: () => ({ openRuntimeSettings: tip.openSettings }) } }));
 
 // In-memory filesystem so tests can interleave mutations with in-flight writes.
 const files = new Map<string, string>();
@@ -408,5 +413,64 @@ it('keeps the winning cache read uncertainty when a concurrent valid disk read f
     releaseBackup();
     releaseValid();
     vi.mocked(fsp.readFile).mockImplementation(originalRead);
+  }
+});
+
+it('does not rule out the tip after a newer accepted cache replaces the uncertain list it consumed', async () => {
+  vi.mocked(watch).mockClear();
+  tip.toast.mockClear();
+  vi.resetModules();
+  const agents = await import('./agent-config');
+  const { showChatDefaultTip, CHAT_MESSAGE_SHOWN_KEY, CHAT_TIP_RULED_OUT_KEY } = await import('../../renderer/features/agents/chat/chat-default-tip');
+  expect(agents.isChatTipAgentReadUncertain()).toBe(false);
+  files.set(CONFIG_PATH, '{broken');
+  let firstListed!: () => void;
+  const firstRead = new Promise<void>((resolve) => { firstListed = resolve; });
+  let releaseSlow!: () => void;
+  const slowList = new Promise<never[]>((resolve) => { releaseSlow = () => resolve([]); });
+  const values = new Map<string, string>();
+  vi.stubGlobal('localStorage', { getItem: (key: string) => values.get(key) ?? null, setItem: (key: string, value: string) => values.set(key, value) });
+  vi.stubGlobal('window', { clubhouse: {
+    app: { getExperimentalSettings: async () => ({}), isExperimentalSettingsUnreadable: async () => false, isChatTipReadUncertain: async () => agents.isChatTipAgentReadUncertain() },
+    chat: { getRuntimeSettings: async () => ({}), getAgentRuntime: async () => ({ chat: true }) },
+    project: { list: async () => [{ path: PROJECT_PATH }, { path: '/slow-project' }] },
+    agent: { listDurable: async (projectPath: string) => {
+      if (projectPath !== PROJECT_PATH) return slowList;
+      const configs = await agents.listDurable(projectPath);
+      firstListed();
+      return configs;
+    } },
+  } });
+  const pending = showChatDefaultTip();
+  try {
+    await firstRead; // The tip has the uncertain empty list, but still awaits the other project.
+    expect(agents.isChatTipAgentReadUncertain()).toBe(true);
+    files.set(CONFIG_PATH, JSON.stringify([AGENT_A]));
+    // Calls were cleared before this module was imported: this must be its watcher.
+    expect(vi.mocked(watch)).toHaveBeenCalledTimes(1);
+    const [directory, notify] = vi.mocked(watch).mock.calls[0];
+    expect(String(directory)).toBe(path.dirname(CONFIG_PATH));
+    expect(notify).toBeTypeOf('function');
+    (notify as unknown as (event: string, filename: string) => void)('change', 'agents.json');
+    // Model the normal config-change refresh: this read installs a NEW healthy cache.
+    expect(await agents.listDurable(PROJECT_PATH)).toEqual([AGENT_A]);
+    releaseSlow();
+    await pending;
+    expect(localStorage.getItem(CHAT_TIP_RULED_OUT_KEY)).toBeNull();
+    expect(localStorage.getItem(CHAT_MESSAGE_SHOWN_KEY)).toBeNull();
+    expect(tip.toast).not.toHaveBeenCalled();
+
+    // A later decision in the same process also waits rather than guessing away the failed read.
+    await showChatDefaultTip();
+    expect(agents.isChatTipAgentReadUncertain()).toBe(true);
+    expect(localStorage.getItem(CHAT_TIP_RULED_OUT_KEY)).toBeNull();
+    expect(localStorage.getItem(CHAT_MESSAGE_SHOWN_KEY)).toBeNull();
+    expect(tip.toast).not.toHaveBeenCalled();
+  } finally {
+    releaseSlow();
+    // Preserve a prior assertion failure if the decision also rejects during cleanup.
+    await pending.catch((): void => undefined);
+    agents.clearAgentConfigCache();
+    vi.unstubAllGlobals();
   }
 });

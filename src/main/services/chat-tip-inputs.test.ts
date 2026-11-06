@@ -39,7 +39,7 @@ it('keeps project read uncertainty after quarantine and accepts a complete backu
   expect(recovered.isChatTipProjectReadUncertain()).toBe(false);
 });
 
-it('keeps agent read uncertainty through a cached empty result and accepts a complete backup', async () => {
+it('keeps accepted agent read uncertainty through cache recovery until a new process', async () => {
   fixture.home = fs.mkdtempSync(path.join(os.tmpdir(), 'tip-agent-'));
   const project = path.join(fixture.home, 'project');
   const dir = path.join(project, '.clubhouse');
@@ -51,10 +51,21 @@ it('keeps agent read uncertainty through a cached empty result and accepts a com
   await agents.listDurable(project);
   expect(agents.isChatTipAgentReadUncertain()).toBe(true);
   agents.clearAgentConfigCache();
-  fs.writeFileSync(path.join(dir, 'agents.json.bak'), '[]');
-  await agents.listDurable(project);
-  expect(agents.isChatTipAgentReadUncertain()).toBe(false);
+  fs.writeFileSync(path.join(dir, 'agents.json'), '[]');
+  expect(await agents.listDurable(project)).toEqual([]);
+  expect(agents.isChatTipAgentReadUncertain()).toBe(true);
   agents.clearAgentConfigCache();
+  fs.writeFileSync(path.join(dir, 'agents.json'), '{bad');
+  fs.writeFileSync(path.join(dir, 'agents.json.bak'), '[]');
+  expect(await agents.listDurable(project)).toEqual([]);
+  expect(agents.isChatTipAgentReadUncertain()).toBe(true);
+  agents.clearAgentConfigCache();
+
+  vi.resetModules(); // Fresh process: a complete backup can certify this read.
+  const recovered = await import('./agent-config');
+  expect(await recovered.listDurable(project)).toEqual([]);
+  expect(recovered.isChatTipAgentReadUncertain()).toBe(false);
+  recovered.clearAgentConfigCache();
 }, 15000);
 
 it('retains a runtime settings read failure until a new process', async () => {

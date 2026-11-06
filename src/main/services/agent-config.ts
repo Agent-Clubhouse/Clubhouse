@@ -412,7 +412,9 @@ async function readConfigFileIfPresent(filePath: string, uncertain?: () => void)
   }
 }
 
-// A failed read must not become an empty-install decision for the chat tip.
+// Retain accepted read uncertainty for this process: the tip may still hold
+// that snapshot after a watcher invalidates the cache and a healthy read wins.
+// A later launch can decide from recovered data, as with project-store.
 const chatTipUncertainProjects = new Set<string>();
 export function isChatTipAgentReadUncertain(): boolean { return chatTipUncertainProjects.size > 0; }
 
@@ -911,7 +913,6 @@ async function readAgents(projectPath: string): Promise<DurableAgentConfig[]> {
     };
     configCache.set(projectPath, entry);
     if (disk.uncertain) chatTipUncertainProjects.add(projectPath);
-    else chatTipUncertainProjects.delete(projectPath);
     syncAgentIdClaims(identity, agents);
     ensureConfigWatcher(projectPath);
     appLog('core:agent-config', 'info', `Cache initialized with ${agents.length} agent(s)`, {
