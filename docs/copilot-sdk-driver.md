@@ -170,7 +170,9 @@ The TCP listener is safe enough for this: it bound to `127.0.0.1`, and with `COP
 
 **Sessions carry over between drivers, so falling back doesn't lose context.** An SDK session loaded over ACP `session/load`, and an ACP session opened with `resumeSession`. In both directions the model saw the earlier messages. This held on 1.0.82, 1.0.83, 1.0.98 and 1.0.106-2. So existing Copilot agents need no migration, and the transcript stays Clubhouse's.
 
-**Selection (2026-11-05).** In preview-eligible builds, Settings > Experimental > Copilot SDK driver is the single Copilot chat-driver choice: off selects ACP, on selects SDK for the next chat start. It does not change an existing session or enable Chat/override CLI mode. Legacy per-provider `driver` values remain stored for downgrade compatibility but are ignored for Copilot selection; unrelated providers keep their settings. There is no separate Copilot driver selector. The SDK remains registered with `optIn: true`, so an ACP selection never falls forward to SDK. SDK check/start failures may fall back to ACP with a reason in the transcript and a toast; a missing SDK registration is also reported. Details > Session > Runs on identifies the actual driver. An active SDK session offers Steer while busy; ACP offers Stop & send, which interrupts before sending. The v0.42 report (#2862) was confirmed to be running ACP, not an SDK steering failure. Failed preference saves (#2838) are handled with rollback and retry, but were not established as the cause of that report.
+**Selection (2026-11-05, superseding SDK opt-in).** Copilot SDK is the standard chat adapter in every build. In preview-eligible builds, Settings > Experimental > Use legacy Copilot ACP is the sole escape hatch, off by default. Old `copilotSdk` flags and per-provider `driver` preferences remain stored for downgrade compatibility but cannot opt into legacy ACP. Only an explicit `copilotLegacyAcp: true` selects it. The change applies at the next start; running sessions retain their driver, and saved CLI mode remains CLI. There is no separate driver selector. Missing or failed SDK never automatically selects ACP; the existing CLI recovery path reports the failure with an explicit legacy opt-in route. Stable builds with Preview off explain that eligibility is required to expose that route. Details > Session > Runs on identifies the actual driver. SDK offers Steer; ACP offers interrupting Stop & send. The v0.42 report (#2862) was confirmed ACP, not SDK steering failure.
+
+ACP removal remains a follow-up: three-platform installed-runtime validation, migration notice, no-ACP failure behavior, fixtures/E2E, telemetry/mobile driver contract, documentation and #1534 parity. No arbitrary removal date or release-QA waiver. Synthetic tests establish selection/transport wiring only; real-login and runtime QA remain outstanding.
 
 ## Shape of the code
 
@@ -192,15 +194,11 @@ Levels: `plan` is `mode.set('plan')`, `ask` is the handler, `full_access` is `se
 
 ## Trying it
 
-The driver is off by default. To turn it on, in a beta or dev build:
+For Copilot agents with Runtime set to Chat, a fresh start selects SDK by default. Existing running sessions keep their current driver until a user restarts them. No restart is triggered by changing the setting.
 
-1. Settings › Experimental: turn on **Copilot SDK driver**. It needs Chat, which is on unless **Chat view** is off in Settings › Agents & providers.
-2. Settings › Agents & providers › Copilot CLI: leave Runtime on Chat, and set **Chat driver** to **Copilot SDK (experimental)**.
-3. Start or restart a Copilot agent.
+To explicitly select legacy ACP in a preview-eligible build, turn on **Use legacy Copilot ACP** in Settings > Experimental. Turn it off to select SDK for the next start. Both choices still need Chat enabled. Failure does not automatically switch between them.
 
-The flag only offers the choice. With it off, Copilot uses ACP and the Chat driver setting is hidden. A saved choice is kept, and applies again when the flag comes back. Running agents keep their driver until they restart.
-
-**Which driver is running:** the chat opens with "This chat runs on the experimental Copilot SDK driver with Copilot CLI x.y.z". The agent glyph's tooltip shows the same driver and version. On a fallback, a toast and a chat notice say "Using Copilot CLI (ACP): " and the reason.
+**Which driver is running:** the chat opens with “This chat runs on the Copilot SDK driver with Copilot CLI x.y.z”. Details > Session > Runs on and the agent glyph tooltip identify the actual session driver/version, independently of the next-start selection.
 
 **In the logs** (`~/.clubhouse/logs`):
 

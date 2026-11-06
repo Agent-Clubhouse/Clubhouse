@@ -151,7 +151,7 @@ describe('the allowlist', () => {
       'project.defaults': ['orchestrator', 'persona', 'mission', 'free_agent_mode', 'profile_id', 'source_control_provider', 'default_mcps'],
       'project.modes': ['clubhouse_mode', 'mcp', 'permission_mode'],
       'app.defaults': ['idle_timeout_minutes', 'chat_enabled', 'provider_runtime', 'mcp_enabled', 'clubhouse_mode_enabled', 'permission_mode', 'global_helper_cap', 'enabled_orchestrators'],
-      'app.system': ['dispatcher_enabled', 'experimental_chat', 'experimental_copilot_sdk', 'annex_server_enabled', 'annex_client_enabled'],
+      'app.system': ['dispatcher_enabled', 'experimental_chat', 'experimental_copilot_sdk', 'experimental_copilot_legacy_acp', 'annex_server_enabled', 'annex_client_enabled'],
     });
   });
 
@@ -343,6 +343,21 @@ describe('a preview-only flag in a stable build', () => {
       'app.defaults.chat_enabled': { stored: true, effective: true, source: 'app' },
       'app.system.experimental_copilot_sdk': off,
     });
+  });
+
+  it('reports the new legacy choice separately from the retired SDK flag', async () => {
+    writeApp('experimental-settings.json', { copilotSdk: false, copilotLegacyAcp: true });
+    resetAllSettingsStoresForTests();
+    packaged(false);
+    const selection = ['app.system.experimental_copilot_sdk', 'app.system.experimental_copilot_legacy_acp'];
+    const result = await read(dispatcher, { select: selection, detail: true });
+    expect(result.targets[0].settings).toMatchObject({
+      'app.system.experimental_copilot_sdk': { stored: false, effective: false, source: 'app' },
+      'app.system.experimental_copilot_legacy_acp': { stored: true, effective: true, source: 'app' },
+    });
+    packaged(true);
+    expect((await read(dispatcher, { select: selection, detail: true })).targets[0].settings)
+      .toMatchObject({ 'app.system.experimental_copilot_legacy_acp': { stored: true, effective: false, source: 'app' } });
   });
 
   it('reads Chat as off, and uncertain, while the file can\'t be read', async () => {

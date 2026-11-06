@@ -25,8 +25,10 @@ export const CHAT_DRIVER_IDS = [
 
 export type ChatDriverId = (typeof CHAT_DRIVER_IDS)[number];
 
-/** Experimental flag that offers `copilot_sdk` as a chat driver (Settings › Experimental). */
+/** Retained legacy setting key; no longer selects a driver. */
 export const COPILOT_SDK_FLAG = 'copilotSdk';
+/** Explicit next-start opt-in to the deprecated Copilot ACP adapter. */
+export const LEGACY_COPILOT_ACP_FLAG = 'copilotLegacyAcp';
 
 /**
  * Clubhouse's five-level permission ladder. Each driver maps these to its
