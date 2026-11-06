@@ -76,6 +76,7 @@ function createMockProcess() {
   const proc = new EventEmitter() as EventEmitter & {
     pid: number;
     exitCode: number | null;
+    signalCode: NodeJS.Signals | null;
     stdin: { end: ReturnType<typeof vi.fn> } | null;
     stdout: EventEmitter | null;
     stderr: EventEmitter | null;
@@ -83,6 +84,7 @@ function createMockProcess() {
   };
   proc.pid = 12345;
   proc.exitCode = null; // matches real ChildProcess default
+  proc.signalCode = null;
   proc.stdin = { end: vi.fn() };
   proc.stdout = new EventEmitter();
   proc.stderr = new EventEmitter();
@@ -1535,6 +1537,155 @@ describe('headless-manager', () => {
   // Stale session sweep (Issue #326)
   // ============================================================
   describe('stale session sweep', () => {
+    it('lets close drain final output when exit occurs just before a sweep (#2839)', async () => {
+      const onExit = vi.fn();
+      await spawnHeadless('test-agent', '/project', '/fake/cli', [], undefined, 'stream-json', onExit);
+      startStaleSweep();
+      vi.advanceTimersByTime(29_999);
+      mockProcess.exitCode = 0;
+      mockProcess.emit('exit', 0, null);
+      vi.advanceTimersByTime(1);
+      expect(isHeadless('test-agent')).toBe(true);
+      expect(onExit).not.toHaveBeenCalled();
+      mockProcess.stdout!.emit('data', Buffer.from('{"type":"result","result":"drained"}'));
+      mockProcess.stderr!.emit('data', Buffer.from('last diagnostic'));
+      mockProcess.emit('close', 0, null);
+      expect(mockWriteStream.write).toHaveBeenCalledWith(expect.stringContaining('"result":"drained"'));
+      expect(onExit).toHaveBeenCalledExactlyOnceWith('test-agent', 0);
+      expect(mockSend).toHaveBeenCalledWith(IPC.PTY.EXIT, 'test-agent', 0, 'last diagnostic');
+      expect(mockWriteStream.end).toHaveBeenCalledTimes(1);
+    });
+
+    it('finalizes a missed exit once after observation grace and refuses late output (#2839)', async () => {
+      const pendingTranscripts = _internal.closingTranscripts.size;
+      let finishTranscript!: () => void;
+      mockWriteStream.end.mockImplementationOnce((cb: () => void) => { finishTranscript = cb; });
+      const onExit = vi.fn(() => {
+        expect(mockWriteStream.write).toHaveBeenCalledWith(expect.stringContaining('"result":"last line"'));
+        expect(mockWriteStream.end).toHaveBeenCalledTimes(1);
+      });
+      await spawnHeadless('test-agent', '/project', '/fake/cli', [], undefined, 'stream-json', onExit);
+      const session = _internal.sessions.get('test-agent')!;
+      const flush = vi.spyOn(session.parser!, 'flush');
+      mockProcess.stdout!.emit('data', Buffer.from('{"type":"result","result":"last line"}'));
+      mockProcess.stderr!.emit('data', Buffer.from('stderr tail'));
+      mockProcess.exitCode = 1; // Even the exit event is missing.
+      startStaleSweep();
+      vi.advanceTimersByTime(30_000);
+      expect(isHeadless('test-agent')).toBe(true);
+      expect(onExit).not.toHaveBeenCalled();
+      vi.advanceTimersByTime(30_000);
+      expect(isHeadless('test-agent')).toBe(false);
+      expect(flush).toHaveBeenCalledTimes(1);
+      expect(session.parser!.listenerCount('line')).toBe(0);
+      expect(mockProcess.listenerCount('exit')).toBe(0);
+      expect(onExit).toHaveBeenCalledExactlyOnceWith('test-agent', 1);
+      expect(mockSend).toHaveBeenCalledWith(IPC.PTY.EXIT, 'test-agent', 1, 'stderr tail');
+      expect(mockEmitPtyExit).toHaveBeenCalledTimes(1);
+      for (const stream of [mockProcess.stdout!, mockProcess.stderr!]) {
+        expect(stream.listenerCount('data')).toBe(0);
+        expect(stream.listenerCount('end')).toBe(0);
+      }
+      const writes = mockWriteStream.write.mock.calls.length;
+      const hooks = mockEmitHookEvent.mock.calls.length;
+      mockProcess.stdout!.emit('data', Buffer.from('{"type":"result","result":"too late"}\n'));
+      mockProcess.stderr!.emit('data', Buffer.from('too late'));
+      mockProcess.stdout!.emit('end');
+      mockProcess.stderr!.emit('end');
+      mockProcess.emit('close', 1, null);
+      mockProcess.emit('error', new Error('late error'));
+      vi.advanceTimersByTime(60_000);
+      expect(mockWriteStream.write).toHaveBeenCalledTimes(writes);
+      expect(mockEmitHookEvent).toHaveBeenCalledTimes(hooks);
+      expect(flush).toHaveBeenCalledTimes(1);
+      expect(mockWriteStream.end).toHaveBeenCalledTimes(1);
+      expect(onExit).toHaveBeenCalledTimes(1);
+      expect(mockEmitPtyExit).toHaveBeenCalledTimes(1);
+      expect(_internal.closingTranscripts.size).toBe(pendingTranscripts + 1);
+      finishTranscript();
+      await Promise.resolve();
+      expect(_internal.closingTranscripts.size).toBe(pendingTranscripts);
+    });
+
+    it.each([false, true])('sweep synthesizes text once and drains decoders (pipes ended: %s) (#2839)', async (pipesEnded) => {
+      await spawnHeadless('test-agent', '/project', '/fake/cli', [], undefined, 'text');
+      mockProcess.stdout!.emit('data', Buffer.from([0x68, 0x69, 0xe2]));
+      mockProcess.stderr!.emit('data', Buffer.from([0x65, 0xe2]));
+      if (pipesEnded) {
+        mockProcess.stdout!.emit('end');
+        mockProcess.stderr!.emit('end');
+      }
+      mockProcess.exitCode = 0;
+      mockProcess.emit('exit', 0, null);
+      startStaleSweep();
+      vi.advanceTimersByTime(30_000);
+      const results = mockWriteStream.write.mock.calls.map(([line]) => JSON.parse(line));
+      expect(results).toEqual([expect.objectContaining({ type: 'result', result: 'hi�' })]);
+      expect(mockSend).toHaveBeenCalledWith(IPC.PTY.EXIT, 'test-agent', 0, 'e\n�');
+      mockProcess.emit('close', 0, null);
+      expect(mockWriteStream.write).toHaveBeenCalledTimes(1);
+      expect(mockWriteStream.end).toHaveBeenCalledTimes(1);
+      expect(mockEmitHookEvent.mock.calls.filter(([, event]) => event.kind === 'stop')).toHaveLength(1);
+    });
+
+    it.each(['close', 'error'] as const)('finalizes %s once, preserving unrelated stream listeners (#2839)', async (first) => {
+      const onExit = vi.fn();
+      await spawnHeadless('test-agent', '/project', '/fake/cli', [], undefined, 'stream-json', onExit);
+      const session = _internal.sessions.get('test-agent')!;
+      const flush = vi.spyOn(session.parser!, 'flush');
+      const unrelated = vi.fn();
+      for (const stream of [mockProcess.stdout!, mockProcess.stderr!]) {
+        stream.on('data', unrelated);
+        stream.on('end', unrelated);
+      }
+      mockProcess.stdout!.emit('data', Buffer.from('{"type":"result","result":"buffered"}'));
+      if (first === 'close') mockProcess.emit('close', 0, null);
+      else mockProcess.emit('error', new Error('process failed'));
+      mockProcess.emit('close', 0, null);
+      mockProcess.emit('error', new Error('late error'));
+      expect(flush).toHaveBeenCalledTimes(1);
+      expect(session.parser!.listenerCount('line')).toBe(0);
+      expect(mockWriteStream.write).toHaveBeenCalledTimes(1);
+      expect(mockWriteStream.end).toHaveBeenCalledTimes(1);
+      expect(onExit).toHaveBeenCalledExactlyOnceWith('test-agent', first === 'error' ? 1 : 0);
+      expect(mockEmitPtyExit).toHaveBeenCalledTimes(1);
+      for (const stream of [mockProcess.stdout!, mockProcess.stderr!]) {
+        expect(stream.listeners('data')).toEqual([unrelated]);
+        expect(stream.listeners('end')).toEqual([unrelated]);
+      }
+      mockProcess.stdout!.emit('data', Buffer.from('{"type":"result"}\n'));
+      mockProcess.stderr!.emit('data', Buffer.from('late diagnostic'));
+      expect(mockWriteStream.write).toHaveBeenCalledTimes(1);
+    });
+
+    it('a swept session cannot finalize a later replacement again (#2839)', async () => {
+      const oldExit = vi.fn();
+      await spawnHeadless('test-agent', '/project', '/fake/cli', [], undefined, 'stream-json', oldExit);
+      const oldProcess = mockProcess;
+      oldProcess.signalCode = 'SIGTERM';
+      oldProcess.emit('exit', null, 'SIGTERM');
+      startStaleSweep();
+      vi.advanceTimersByTime(30_000);
+      expect(oldExit).toHaveBeenCalledTimes(1);
+      mockProcess = createMockProcess();
+      const replacementExit = vi.fn();
+      await spawnHeadless('test-agent', '/project', '/fake/cli', [], undefined, 'stream-json', replacementExit);
+      const replacement = _internal.sessions.get('test-agent');
+      mockSend.mockClear();
+      mockEmitPtyExit.mockClear();
+      mockWriteStream.end.mockClear();
+      oldProcess.stdout!.emit('data', Buffer.from('{"type":"result"}\n'));
+      oldProcess.emit('close', null, 'SIGTERM');
+      oldProcess.emit('error', new Error('late error'));
+      vi.advanceTimersByTime(60_000);
+      expect(_internal.sessions.get('test-agent')).toBe(replacement);
+      expect(replacementExit).not.toHaveBeenCalled();
+      expect(oldExit).toHaveBeenCalledTimes(1);
+      expect(mockEmitPtyExit).not.toHaveBeenCalled();
+      expect(mockSend.mock.calls.filter(([channel]) => channel === IPC.PTY.EXIT)).toHaveLength(0);
+      expect(mockWriteStream.end).not.toHaveBeenCalled();
+    });
+
     it('startStaleSweep and stopStaleSweep are idempotent', async () => {
       startStaleSweep();
       startStaleSweep();
@@ -1551,7 +1702,7 @@ describe('headless-manager', () => {
       (mockProcess as any).exitCode = 1;
 
       startStaleSweep();
-      vi.advanceTimersByTime(30_000);
+      vi.advanceTimersByTime(60_000); // First observation plus a full drain grace.
 
       // Sweep should have detected the stale session
       expect(isHeadless('test-agent')).toBe(false);
@@ -1579,7 +1730,7 @@ describe('headless-manager', () => {
       (mockProcess as any).exitCode = 1;
 
       startStaleSweep();
-      vi.advanceTimersByTime(30_000);
+      vi.advanceTimersByTime(60_000);
 
       // Session should be cleaned up and onExit should have been called
       expect(isHeadless('test-agent')).toBe(false);
@@ -1593,7 +1744,7 @@ describe('headless-manager', () => {
       (mockProcess as any).signalCode = 'SIGTERM';
 
       startStaleSweep();
-      vi.advanceTimersByTime(30_000);
+      vi.advanceTimersByTime(60_000);
 
       expect(isHeadless('test-agent')).toBe(false);
       expect(onExit).toHaveBeenCalledWith('test-agent', 128 + os.constants.signals.SIGTERM);
@@ -1618,12 +1769,13 @@ describe('headless-manager', () => {
       (mockProcess as any).exitCode = 0;
 
       startStaleSweep();
-      vi.advanceTimersByTime(30_000);
+      vi.advanceTimersByTime(60_000);
+      expect(isHeadless('test-agent')).toBe(false);
       mockProcess.emit('close', 0);
 
       expect(onExit).toHaveBeenCalledTimes(1);
       expect(mockEmitPtyExit).toHaveBeenCalledTimes(1);
-      expect(mockWriteStream.end).toHaveBeenCalled();
+      expect(mockWriteStream.end).toHaveBeenCalledTimes(1);
     });
 
     describe('live run diagnostics (#2813)', () => {
