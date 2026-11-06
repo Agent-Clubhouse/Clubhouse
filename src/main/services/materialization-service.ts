@@ -1,3 +1,5 @@
+import { readExtractionDocument } from './persona-extraction-sources';
+import { parseMcpJson } from '../../shared/mcp-config';
 import * as fsp from 'fs/promises';
 import type { McpServerDef } from '../../shared/types';
 import * as path from 'path';
@@ -8,6 +10,7 @@ import { PatternSettings, stripPersonaFrontMatter } from '../../shared/persona-p
 import { OrchestratorProvider } from '../orchestrators/types';
 import {
   readProjectAgentDefaults,
+  readLocalMcpJson,
   writePermissions,
   listSourceSkills,
   listSourceAgentTemplates,
@@ -247,7 +250,7 @@ export async function extractAgentPersona(params: {
   projectPath: string;
   agent: DurableAgentConfig;
   provider: OrchestratorProvider;
-}): Promise<{ content: string; settings: PatternSettings }> {
+}): Promise<{ content: string; settings: PatternSettings; sources: string[] }> {
   const { projectPath, agent, provider } = params;
   const defaults = await readProjectAgentDefaults(projectPath);
   const scp = await resolveSourceControlProvider(projectPath, agent);
@@ -256,16 +259,30 @@ export async function extractAgentPersona(params: {
   // commands, and provider so the body isn't accidentally collapsed to a token.
   const ctx = buildWildcardContext(agent, projectPath, scp, commands);
 
-  let instructions = '';
-  if (agent.worktreePath) {
-    try {
-      instructions = await provider.readInstructions(agent.worktreePath);
-    } catch {
-      instructions = '';
+  if (!agent.worktreePath) throw new Error('The agent has no worktree to extract.');
+  if (!provider.inspectInstructions) throw new Error('This provider cannot inspect instructions for extraction.');
+  const primaryName = provider.id === 'copilot-cli' ? '.github/copilot-instructions.md'
+    : provider.id === 'codex-cli' ? 'AGENTS.md' : 'CLAUDE.md';
+  const documents: Array<{ name: string; content: string }> = [];
+  try {
+    const primary = await provider.inspectInstructions(agent.worktreePath);
+    if (primary) documents.push({ name: primaryName, content: primary });
+  } catch {
+    throw new Error('Could not read the primary instruction file. No persona was extracted.');
+  }
+  // Copilot's documented root instruction documents. This intentionally excludes
+  // ancestor/user files, nested rules, @references and session-specific context.
+  if (provider.id === 'copilot-cli') {
+    for (const name of ['AGENTS.md', 'CLAUDE.md', 'GEMINI.md']) {
+      const text = await readExtractionDocument(agent.worktreePath, name);
+      if (text !== null) documents.push({ name, content: text });
     }
   }
-  const content = instructions ? unreplaceWildcards(instructions, ctx) : '';
-  return { content, settings: pickPatternSettings(agent) };
+  const parts = documents.map(({ name, content }) => {
+    const body = unreplaceWildcards(content, ctx);
+    return documents.length > 1 ? `## Captured from ${name}\n\n${body}` : body;
+  });
+  return { content: parts.join('\n\n'), settings: pickPatternSettings(agent), sources: documents.map(({ name }) => name) };
 }
 
 /**
@@ -377,7 +394,13 @@ export async function materializeAgent(params: {
   const missionContent = missionId ? await readSourceMissionContent(projectPath, missionId) : undefined;
   const personaContent = await resolvePersonaContent(projectPath, personaId);
   const ctx = buildWildcardContext(agent, projectPath, scp, commands, missionContent, personaContent);
+  const resolvedPersonaContent = personaContent ? replaceWildcards(personaContent, ctx) : undefined;
   const conv = provider.conventions;
+  if (defaults.mcpJson && !agent.clubhouseModeOverride && (!conv.settingsFormat || conv.settingsFormat === 'json')) {
+    const local = await readLocalMcpJson(worktreePath, conv);
+    if (local !== null) parseMcpJson(local);
+  }
+  if (defaults.mcpJson && !agent.clubhouseModeOverride) parseMcpJson(replaceWildcards(defaults.mcpJson, ctx));
 
   // 0. Clean up stale JSON content in TOML config files (legacy migration)
   if (conv.settingsFormat === 'toml') {
@@ -391,13 +414,13 @@ export async function materializeAgent(params: {
     // so users who opt into the wildcard don't get the persona injected twice.
     const templateUsesPersonaToken = defaults.instructions.includes('@@Persona');
     if (personaContent && !templateUsesPersonaToken) {
-      await provider.writeInstructions(worktreePath, `${resolved}\n\n${personaContent}`);
+      await provider.writeInstructions(worktreePath, `${resolved}\n\n${resolvedPersonaContent}`);
     } else {
       await provider.writeInstructions(worktreePath, resolved);
     }
   } else if (personaContent) {
     // No project defaults but agent has a persona — write persona instructions alone
-    await provider.writeInstructions(worktreePath, personaContent);
+    await provider.writeInstructions(worktreePath, resolvedPersonaContent!);
   }
 
   // 2. Permissions
@@ -409,8 +432,8 @@ export async function materializeAgent(params: {
     await writePermissions(worktreePath, resolvedPerms, conv);
   }
 
-  // 3. MCP config — write to the orchestrator's config file format
-  if (defaults.mcpJson) {
+  // 3. Local overrides own their entire MCP map, even during explicit persona materialization.
+  if (defaults.mcpJson && !agent.clubhouseModeOverride) {
     try {
       const resolved = replaceWildcards(defaults.mcpJson, ctx);
       const mcpPath = path.join(worktreePath, conv.mcpConfigFile);
@@ -506,54 +529,48 @@ export async function cleanupStaleJsonInTomlConfigs(
   }
 }
 
-/**
- * Preview materialization results without writing files.
- */
-/**
- * Resolve the MCP servers a project has configured, with wildcards applied.
- *
- * This is the canonical source — the same `defaults.mcpJson` that
- * materialisation renders into the provider's config file.  Providers that
- * read a project-level MCP file (Claude Code's `.mcp.json`) pick the servers up
- * from disk; Codex and Copilot read MCP only from their own user-level config,
- * so for them the rendered file is inert and the servers must be handed over as
- * launch flags instead (see `OrchestratorProvider.buildMcpArgs`).
- *
- * Reading the canonical JSON rather than the rendered file keeps one code path
- * for both providers — Codex's rendered file is TOML, which can't be read back
- * without adding a parser dependency.
- *
- * `agent` is optional: quick agents have no durable config, and
- * agent-scoped wildcards simply stay unresolved for them. Returns an empty map
- * on any read or parse failure — a malformed MCP config must never stop an
- * agent from launching.
- */
+/** Project defaults with agent wildcards. Invalid desired config is an explicit failure. */
 export async function resolveProjectMcpServers(
   projectPath: string,
   agent?: DurableAgentConfig,
 ): Promise<Record<string, McpServerDef>> {
-  try {
-    const defaults = await readProjectAgentDefaults(projectPath);
-    if (!defaults.mcpJson) return {};
-
-    let json = defaults.mcpJson;
-    if (agent) {
-      const scp = await resolveSourceControlProvider(projectPath, agent);
-      const commands = resolveAgentCommands(agent, defaults);
-      json = replaceWildcards(json, buildWildcardContext(agent, projectPath, scp, commands));
-    }
-
-    const parsed = JSON.parse(json) as { mcpServers?: Record<string, McpServerDef> };
-    const servers = parsed?.mcpServers;
-    if (!servers || typeof servers !== 'object') return {};
-
-    // The Clubhouse bridge is injected separately with a live port and nonce;
-    // a stale entry of the same name must not shadow it.
-    const { clubhouse: _clubhouse, ...rest } = servers;
-    return rest;
-  } catch {
-    return {};
+  const defaults = await readProjectAgentDefaults(projectPath);
+  if (!defaults.mcpJson) return {};
+  let json = defaults.mcpJson;
+  if (agent) {
+    const scp = await resolveSourceControlProvider(projectPath, agent);
+    json = replaceWildcards(json, buildWildcardContext(agent, projectPath, scp, resolveAgentCommands(agent, defaults)));
   }
+  const { clubhouse: _clubhouse, ...rest } = parseMcpJson(json);
+  return rest;
+}
+
+/**
+ * Local overrides/unmanaged: the whole local map wins, including an empty map.
+ * Missing local file inherits project defaults. Managed agents use defaults.
+ * Read before injecting the live bridge: injection can create an otherwise missing file.
+ */
+export async function resolveAgentMcpServers(
+  projectPath: string,
+  agent: DurableAgentConfig | undefined,
+  local: { cwd: string; conventions: SettingsConventions; onNotice?: (message: string) => void },
+): Promise<Record<string, McpServerDef>> {
+  const managed = clubhouseModeSettings.isClubhouseModeEnabled(projectPath) && !!agent && !agent.clubhouseModeOverride;
+  // No TOML reader exists here. Preserve canonical delivery and make the limitation visible.
+  if (local.conventions.settingsFormat === 'toml') {
+    local.onNotice?.('Local TOML MCP configuration is not supported by chat preparation. Chat uses project MCP JSON defaults; local TOML servers are not delivered by this path. The local file is preserved.');
+    return resolveProjectMcpServers(projectPath, agent);
+  }
+  const raw = await readLocalMcpJson(local.cwd, local.conventions);
+  const servers = raw === null ? undefined : parseMcpJson(raw);
+  if (managed || !servers) return resolveProjectMcpServers(projectPath, agent);
+  const { clubhouse: _clubhouse, ...rest } = servers;
+  if (_clubhouse) {
+    const message = 'Configured clubhouse entry is reserved; only the separately controlled live bridge is delivered.';
+    appLog('core:mcp', 'warn', message);
+    local.onNotice?.(message);
+  }
+  return rest;
 }
 
 export async function previewMaterialization(params: {

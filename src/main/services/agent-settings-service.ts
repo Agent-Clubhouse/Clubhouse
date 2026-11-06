@@ -1,3 +1,4 @@
+import { parseMcpJson } from '../../shared/mcp-config';
 import { auditChanges, projectAuditTarget, type AuditKeyFormat } from './settings-audit';
 import { noteRoutingPolicyChanged } from './helper-routing-changes';
 import * as fsp from 'fs/promises';
@@ -100,10 +101,11 @@ async function parseMcpServers(filePath: string, scope: 'project' | 'global'): P
 
 export async function readMcpConfig(worktreePath: string, conv?: SettingsConventions): Promise<McpServerEntry[]> {
   const c = conv || CLAUDE_CODE_CONVENTIONS;
-  const [projectServers, globalServers] = await Promise.all([
-    parseMcpServers(path.join(worktreePath, c.mcpConfigFile), 'project'),
-    parseMcpServers(path.join(os.homedir(), '.claude.json'), 'global'),
-  ]);
+  const raw = await readLocalMcpJson(worktreePath, c);
+  const projectServers: McpServerEntry[] = raw === null ? [] : Object.entries(parseMcpJson(raw)).map(([name, def]) => ({
+    name, command: def.command || '', args: def.args, env: def.env, scope: 'project',
+  }));
+  const globalServers = c.configDir === '.claude' ? await parseMcpServers(path.join(os.homedir(), '.claude.json'), 'global') : [];
 
   // Dedupe: project-scoped servers take priority over global ones with the same name
   const seen = new Set(projectServers.map((s) => s.name));
@@ -626,43 +628,46 @@ export async function listAgentTemplateFiles(worktreePath: string, conv?: Settin
   }
 }
 
+/** Missing and intentionally empty are different. Never hide read errors or non-JSON files. */
+export async function readLocalMcpJson(worktreePath: string, conv?: SettingsConventions): Promise<string | null> {
+  const c = conv || CLAUDE_CODE_CONVENTIONS;
+  let raw: string;
+  try { raw = await fsp.readFile(path.join(worktreePath, c.mcpConfigFile), 'utf-8'); } catch (err) {
+    if (isEnoent(err)) return null;
+    throw new Error('Could not read local MCP configuration. Check file access before starting.');
+  }
+  if (c.settingsFormat && c.settingsFormat !== 'json') {
+    throw new Error('Local MCP configuration uses an unsupported non-JSON format. This editor and chat preparation cannot read it; the file was preserved.');
+  }
+  return raw;
+}
+
 /**
  * Read the raw MCP config file content as a string.
  * Uses conventions to resolve the correct MCP config file path.
  */
 export async function readMcpRawJson(worktreePath: string, conv?: SettingsConventions): Promise<string> {
   const c = conv || CLAUDE_CODE_CONVENTIONS;
-  // Non-JSON config files (e.g. TOML) cannot be read as JSON — return empty default
-  if (c.settingsFormat && c.settingsFormat !== 'json') return '{\n  "mcpServers": {}\n}';
-
-  const shadowWarning = await getMcpShadowWarning(worktreePath, c);
-  if (shadowWarning) {
-    appLog(LOG_NS, 'warn', shadowWarning, { meta: { worktreePath, mcpConfigFile: c.mcpConfigFile } });
+  if (c.settingsFormat && c.settingsFormat !== 'json') {
+    throw new Error('The MCP JSON editor does not support this provider’s non-JSON settings format. The file was preserved.');
   }
-
-  const filePath = path.join(worktreePath, c.mcpConfigFile);
-  try {
-    return await fsp.readFile(filePath, 'utf-8');
-  } catch (err) {
-    if (!isEnoent(err)) {
-      appLog(LOG_NS, 'warn', `Failed to read MCP config from ${filePath}`, { meta: { error: err instanceof Error ? err.message : String(err) } });
-    }
-    return '{\n  "mcpServers": {}\n}';
-  }
+  const warning = await getMcpShadowWarning(worktreePath, c);
+  if (warning) appLog(LOG_NS, 'warn', warning, { meta: { worktreePath, mcpConfigFile: c.mcpConfigFile } });
+  return await readLocalMcpJson(worktreePath, c) ?? '{\n  "mcpServers": {}\n}';
 }
 
 /**
  * Write raw JSON string to MCP config file. Validates JSON before writing.
  * Returns { ok: true } on success, or { ok: false, error: string } on parse failure.
  */
-export async function writeMcpRawJson(worktreePath: string, content: string, conv?: SettingsConventions): Promise<{ ok: boolean; error?: string }> {
+export async function writeMcpRawJson(worktreePath: string, content: string, conv?: SettingsConventions, beforeWrite?: () => Promise<void>): Promise<{ ok: boolean; error?: string }> {
   const c = conv || CLAUDE_CODE_CONVENTIONS;
   // Non-JSON config files (e.g. TOML) — refuse to write JSON content
   if (c.settingsFormat && c.settingsFormat !== 'json') {
     return { ok: false, error: 'MCP config writes are not supported for non-JSON settings formats' };
   }
   try {
-    JSON.parse(content); // Validate
+    parseMcpJson(content); // Validate shape and transport before touching the file
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : 'Invalid JSON' };
   }
@@ -676,6 +681,7 @@ export async function writeMcpRawJson(worktreePath: string, content: string, con
   // Ensure parent directory exists (e.g. .github/ for copilot)
   const dir = path.dirname(filePath);
   await fsp.mkdir(dir, { recursive: true });
+  await beforeWrite?.();
   await fsp.writeFile(filePath, content, 'utf-8');
   return { ok: true };
 }

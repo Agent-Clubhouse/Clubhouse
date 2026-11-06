@@ -1010,9 +1010,8 @@ describe('TOML settingsFormat guard', () => {
     expect(fsp.mkdir).not.toHaveBeenCalled();
   });
 
-  it('readMcpRawJson returns empty default for TOML conventions without reading file', async () => {
-    const result = await readMcpRawJson(WORKTREE, CODEX_CONVENTIONS);
-    expect(JSON.parse(result)).toEqual({ mcpServers: {} });
+  it('readMcpRawJson explicitly rejects unsupported TOML without reading or changing it', async () => {
+    await expect(readMcpRawJson(WORKTREE, CODEX_CONVENTIONS)).rejects.toThrow('non-JSON');
     expect(fsp.readFile).not.toHaveBeenCalled();
   });
 
@@ -1124,15 +1123,9 @@ describe('error logging in catch blocks', () => {
     expect(appLog).not.toHaveBeenCalled();
   });
 
-  it('readMcpConfig logs warning on corrupt JSON', async () => {
+  it('readMcpConfig rejects corrupt local JSON rather than showing no servers', async () => {
     vi.mocked(fsp.readFile).mockResolvedValue('not valid json');
-    const result = await readMcpConfig(WORKTREE);
-    expect(result).toEqual([]);
-    expect(appLog).toHaveBeenCalledWith(
-      'core:agent-settings', 'warn',
-      expect.stringContaining('Failed to parse MCP config'),
-      expect.objectContaining({ meta: expect.objectContaining({ error: expect.any(String) }) }),
-    );
+    await expect(readMcpConfig(WORKTREE)).rejects.toThrow('Invalid MCP JSON');
   });
 
   it('listSkills logs warning on directory read failure', async () => {
@@ -1197,15 +1190,9 @@ describe('error logging in catch blocks', () => {
     );
   });
 
-  it('readMcpRawJson logs warning on non-ENOENT read failure', async () => {
+  it('readMcpRawJson rejects an unreadable file instead of fabricating an empty config', async () => {
     vi.mocked(fsp.readFile).mockRejectedValue(new Error('EACCES'));
-    const result = await readMcpRawJson(WORKTREE);
-    expect(JSON.parse(result)).toEqual({ mcpServers: {} });
-    expect(appLog).toHaveBeenCalledWith(
-      'core:agent-settings', 'warn',
-      expect.stringContaining('Failed to read MCP config'),
-      expect.objectContaining({ meta: { error: 'EACCES' } }),
-    );
+    await expect(readMcpRawJson(WORKTREE)).rejects.toThrow('Could not read local MCP');
   });
 
   it('readMcpRawJson does not log warning on ENOENT', async () => {

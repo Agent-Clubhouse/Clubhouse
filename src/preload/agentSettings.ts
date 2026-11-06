@@ -8,8 +8,8 @@ export const agentSettings = {
     ipcRenderer.invoke(IPC.AGENT.READ_INSTRUCTIONS, worktreePath, projectPath),
   saveInstructions: (worktreePath: string, content: string, projectPath?: string) =>
     ipcRenderer.invoke(IPC.AGENT.SAVE_INSTRUCTIONS, worktreePath, content, projectPath),
-  readMcpConfig: (worktreePath: string, projectPath?: string) =>
-    ipcRenderer.invoke(IPC.AGENT.READ_MCP_CONFIG, worktreePath, projectPath),
+  readMcpConfig: (worktreePath: string, projectPath?: string, agentId?: string) =>
+    ipcRenderer.invoke(IPC.AGENT.READ_MCP_CONFIG, worktreePath, projectPath, agentId),
   listSkills: (worktreePath: string, projectPath?: string) =>
     ipcRenderer.invoke(IPC.AGENT.LIST_SKILLS, worktreePath, projectPath),
   listAgentTemplates: (worktreePath: string, projectPath?: string) =>
@@ -51,7 +51,7 @@ export const agentSettings = {
     ipcRenderer.invoke(IPC.AGENT.DELETE_SOURCE_PERSONA, projectPath, personaId, scope),
   applyPersonaToAgent: (projectPath: string, agentId: string, personaId: string): Promise<void> =>
     ipcRenderer.invoke(IPC.AGENT.APPLY_PERSONA_TO_AGENT, projectPath, agentId, personaId),
-  extractAgentPersona: (projectPath: string, agentId: string): Promise<{ content: string; settings: import('../shared/persona-pattern').PatternSettings } | null> =>
+  extractAgentPersona: (projectPath: string, agentId: string): Promise<{ content: string; settings: import('../shared/persona-pattern').PatternSettings; sources: string[] } | null> =>
     ipcRenderer.invoke(IPC.AGENT.EXTRACT_AGENT_PERSONA, projectPath, agentId),
   createSkill: (basePath: string, name: string, isSource: boolean, projectPath?: string) =>
     ipcRenderer.invoke(IPC.AGENT.CREATE_SKILL, basePath, name, isSource, projectPath),
@@ -75,12 +75,12 @@ export const agentSettings = {
     ipcRenderer.invoke(IPC.AGENT.DELETE_AGENT_TEMPLATE, worktreePath, agentName, projectPath),
   listAgentTemplateFiles: (worktreePath: string, projectPath?: string) =>
     ipcRenderer.invoke(IPC.AGENT.LIST_AGENT_TEMPLATE_FILES, worktreePath, projectPath),
-  readMcpRawJson: (worktreePath: string, projectPath?: string): Promise<string> =>
-    ipcRenderer.invoke(IPC.AGENT.READ_MCP_RAW_JSON, worktreePath, projectPath),
-  getMcpShadowWarning: (worktreePath: string, projectPath?: string): Promise<string | undefined> =>
-    ipcRenderer.invoke(IPC.AGENT.GET_MCP_SHADOW_WARNING, worktreePath, projectPath),
-  writeMcpRawJson: (worktreePath: string, content: string, projectPath?: string): Promise<{ ok: boolean; error?: string }> =>
-    ipcRenderer.invoke(IPC.AGENT.WRITE_MCP_RAW_JSON, worktreePath, content, projectPath),
+  readMcpRawJson: (worktreePath: string, projectPath?: string, agentId?: string): Promise<string> =>
+    ipcRenderer.invoke(IPC.AGENT.READ_MCP_RAW_JSON, worktreePath, projectPath, agentId),
+  getMcpShadowWarning: (worktreePath: string, projectPath?: string, agentId?: string): Promise<string | undefined> =>
+    ipcRenderer.invoke(IPC.AGENT.GET_MCP_SHADOW_WARNING, worktreePath, projectPath, agentId),
+  writeMcpRawJson: (worktreePath: string, content: string, projectPath?: string, agentId?: string): Promise<{ ok: boolean; error?: string }> =>
+    ipcRenderer.invoke(IPC.AGENT.WRITE_MCP_RAW_JSON, worktreePath, content, projectPath, agentId),
   readProjectAgentDefaults: (projectPath: string): Promise<{
     helperAuto?: 'off';
     instructions?: string;

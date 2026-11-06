@@ -162,6 +162,7 @@ export abstract class BaseProvider implements OrchestratorProvider {
   /** Inspect only the conventional primary file, never a symlink or special file. */
   async inspectInstructions(worktreePath: string): Promise<string> {
     const filePath = this.getInstructionsPath(worktreePath);
+    let observed = false;
     let file: Awaited<ReturnType<typeof fsp.open>> | undefined;
     try {
       const root = await fsp.realpath(worktreePath);
@@ -169,6 +170,7 @@ export abstract class BaseProvider implements OrchestratorProvider {
       const relative = path.relative(root, parent);
       if (relative.startsWith('..') || path.isAbsolute(relative)) throw new Error('instructions_outside_worktree');
       const before = await fsp.lstat(filePath);
+      observed = true;
       if (!before.isFile() || before.isSymbolicLink() || before.size > 2 * 1024 * 1024) throw new Error('instructions_unreadable');
       file = await fsp.open(filePath, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK);
       const opened = await file.stat();
@@ -185,7 +187,7 @@ export abstract class BaseProvider implements OrchestratorProvider {
       if (after.size !== bytesRead || after.size !== opened.size || after.mtimeMs !== opened.mtimeMs || after.ctimeMs !== opened.ctimeMs) throw new Error('instructions_changed');
       return buffer.subarray(0, bytesRead).toString('utf8');
     } catch (err) {
-      if ((err as NodeJS.ErrnoException).code === 'ENOENT') return '';
+      if (!observed && (err as NodeJS.ErrnoException).code === 'ENOENT') return '';
       throw err;
     } finally { await file?.close(); }
   }
