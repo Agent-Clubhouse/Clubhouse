@@ -29,7 +29,7 @@ Requests carry a registered `projectId`, an optional current `agentId`, and cata
 asset IDs. Renderer-supplied absolute paths, capability objects, delivery policy,
 assignment manifests and arbitrary commit bytes are absent from the API. IPC
 validators reject extra fields. Main resolves current registration and agent
-config; Dispatcher contexts, helpers and disposed agents are refused. The
+config; Dispatcher contexts, helpers, disposed and partial-creation agents are refused. The
 service independently requires UI origin without an acting agent. No wire,
 mobile, MCP or CLI entry is added.
 
@@ -75,7 +75,8 @@ requiring import, but no confined directory enumeration exists for that adapter
 yet. #2830's confinement hold is unchanged.
 
 The component clears preview on any payload edit, reload or target change and
-ignores late target/operation replies. It shows fixed visible failures, retains
+ignores late target/operation replies. Synchronous callback guards reject retained
+Monaco changes and duplicate review/save callbacks while an operation is pending. It shows fixed visible failures, retains
 unsaved drafts after failed saves and offers explicit reload/discard for stale
 revisions. It does not claim rollback of a committed catalog revision.
 

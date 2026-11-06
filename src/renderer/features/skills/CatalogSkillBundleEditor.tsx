@@ -48,7 +48,7 @@ export function CatalogSkillBundleEditor({ context, assetId, bridge = window.clu
     return () => { sequence.current++; };
   }, [target, bridge]);
   const review = async () => {
-    if (!document || !draft) return;
+    if (busyRef.current || currentTarget.current !== target || loadedTarget !== target || !document || !draft) return;
     const id = ++sequence.current; busyRef.current = true; setBusy(true); setPreview(null); setError(null);
     try {
       const result = await bridge.preview({ context, assetId, expectedRevision: document.revision, payload: draft });
@@ -59,7 +59,7 @@ export function CatalogSkillBundleEditor({ context, assetId, bridge = window.clu
     } finally { if (valid(id)) { busyRef.current = false; setBusy(false); } }
   };
   const save = async () => {
-    if (!document || !preview || preview.blocked) return;
+    if (busyRef.current || currentTarget.current !== target || loadedTarget !== target || !document || !preview || preview.blocked) return;
     const id = ++sequence.current; busyRef.current = true; setBusy(true); setError(null);
     try {
       const result = await bridge.save({ context, assetId, expectedRevision: document.revision, token: preview.token });

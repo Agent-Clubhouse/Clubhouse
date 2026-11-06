@@ -3,6 +3,14 @@ import { beforeEach, expect, it, vi } from 'vitest';
 import type { AssetImpact } from '../../../shared/asset-catalog-types';
 import type { SkillBundleDocument, SkillBundleEditorBridge, SkillBundleResult } from '../../../shared/skill-bundle-editor-types';
 import { CatalogSkillBundleEditor } from './CatalogSkillBundleEditor';
+const retainedButton = vi.hoisted(() => ({ save: undefined as (() => void) | undefined }));
+vi.mock('../../components/Button', async (original) => {
+  const actual = await original<typeof import('../../components/Button')>();
+  return { ...actual, Button: (props: import('react').ComponentProps<typeof actual.Button>) => {
+    if (props.children === 'Save catalog revision') retainedButton.save = () => props.onClick?.(undefined);
+    return <actual.Button {...props} />;
+  } };
+});
 const delayedEditor = vi.hoisted(() => ({ onChange: undefined as ((value: string) => void) | undefined }));
 vi.mock('../../components/SettingsMonacoEditor', () => ({ SettingsMonacoEditor: ({ value, onChange, readOnly }: { value: string; onChange: (value: string) => void; readOnly: boolean }) => {
   delayedEditor.onChange = onChange;
@@ -103,4 +111,17 @@ it.each(['preview', 'save'] as const)('ignores delayed same-target Monaco change
   expect(screen.getByLabelText('Text content')).toHaveValue('newer draft');
   expect(screen.getByRole('button', { name: 'Save catalog revision' })).toBeDisabled();
   expect(screen.getByRole('button', { name: 'Review catalog edit' })).toBeEnabled();
+});
+
+it('guards a retained duplicate Save callback before consuming a single-use token twice', async () => {
+  renderEditor(); await edit(); await review();
+  const saved = deferred<Awaited<ReturnType<SkillBundleEditorBridge['save']>>>();
+  vi.mocked(bridge.save).mockReturnValueOnce(saved.promise).mockResolvedValue({ ok: false, code: 'stale_preview' });
+  const retained = retainedButton.save!;
+  act(() => { retained(); retained(); });
+  expect(bridge.save).toHaveBeenCalledOnce();
+  await act(async () => saved.resolve(success({ ...document, revision: 2, payload: { ...document.payload, files: [{ ...document.payload.files[0], content: 'edited' }, document.payload.files[1]] } })));
+  expect(screen.getByText(/Catalog revision 2/)).toBeVisible();
+  expect(screen.queryByRole('alert')).not.toBeInTheDocument(); expect(screen.queryByRole('status')).not.toBeInTheDocument();
+  expect(screen.getByLabelText('Text content')).toHaveValue('edited');
 });
