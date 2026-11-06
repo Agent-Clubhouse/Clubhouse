@@ -37,7 +37,7 @@ vi.mock('./log-service', () => ({
 import * as fsp from 'fs/promises';
 import { appLog } from './log-service';
 import { pathExists } from './fs-utils';
-import { list, add, remove, update, reorder, readIconData, setIcon, saveCroppedIcon, removeIconFile, writeIconFile, onProjectsChanged } from './project-store';
+import { list, add, remove, update, reorder, readIconData, setIcon, saveCroppedIcon, removeIconFile, writeIconFile, onProjectsChanged, projectRegistryMutationState } from './project-store';
 import { getSettings as getBadgeSettings, saveSettings as saveBadgeSettings } from './badge-settings';
 import { getSettings as getSoundSettings, saveSettings as saveSoundSettings } from './sound-service';
 
@@ -68,6 +68,39 @@ function mockNoStoreFile() {
     return true; // base dir exists
   });
 }
+
+describe('registry mutation evidence', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.mocked(fsp.writeFile).mockResolvedValue(undefined);
+    vi.mocked(fsp.mkdir).mockResolvedValue(undefined);
+    vi.mocked(fsp.readdir).mockResolvedValue([]);
+    vi.mocked(fsp.rename).mockResolvedValue(undefined);
+  });
+  it.each(['update', 'migration', 'restore', 'quarantine'] as const)('marks real %s I/O pending before rename and clears it after failure', async (operation) => {
+    const project = { id: 'proj_pending', name: 'Pending', path: '/pending' };
+    mockStoreFile(operation === 'migration' ? [project] : { version: 1, projects: [project] });
+    if (operation === 'restore') {
+      vi.mocked(pathExists).mockImplementation(async (file) => String(file) !== STORE_PATH);
+      vi.mocked(fsp.readFile).mockResolvedValue(JSON.stringify({ version: 1, projects: [project] }));
+    }
+    if (operation === 'quarantine') vi.mocked(fsp.readFile).mockResolvedValue('broken');
+    let release!: () => void; let entered!: () => void;
+    const waiting = new Promise<void>((resolve) => { entered = resolve; });
+    const hold = new Promise<void>((resolve) => { release = resolve; });
+    const before = projectRegistryMutationState();
+    vi.mocked(fsp.rename).mockImplementationOnce(async () => { entered(); await hold; throw new Error('injected registry rename failure'); });
+    const result = operation === 'update' ? update(project.id, { displayName: 'Changed' }) : list();
+    // Attach rejection handling before releasing the injected failure.
+    const settled = result.then(() => 'resolved', () => 'rejected');
+    await waiting;
+    expect(projectRegistryMutationState()).toMatchObject({ pending: true });
+    expect(projectRegistryMutationState().generation).toBeGreaterThan(before.generation);
+    release(); await settled;
+    expect(projectRegistryMutationState().pending).toBe(false);
+    expect(projectRegistryMutationState().generation).toBeGreaterThan(before.generation);
+  });
+});
 
 describe('read logging (#2662)', () => {
   const lines = () => vi.mocked(appLog).mock.calls.filter(([ns]) => ns === 'core:project-store');
