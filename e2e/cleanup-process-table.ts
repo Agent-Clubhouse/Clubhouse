@@ -52,7 +52,7 @@ export function createProcessTableReader(options: { execute?: typeof execFile; p
         finish(failure('timeout'));
         // A failed cleanup must not pin the test worker's event loop, and must
         // not spawn replacements while the unresolved child can still be alive.
-        for (const release of [() => attempt.child?.stdout?.destroy(), () => attempt.child?.stderr?.destroy(), () => attempt.child?.unref()]) {
+        for (const release of [() => attempt.child?.stdin?.destroy(), () => attempt.child?.stdout?.destroy(), () => attempt.child?.stderr?.destroy(), () => attempt.child?.unref()]) {
           try { release(); } catch {
             // telemetry-exempt: best-effort local query handles; no raw errors or process data.
           }

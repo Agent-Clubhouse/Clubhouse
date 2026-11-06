@@ -19,7 +19,8 @@ enumerator child is eligible for deadline cleanup. Requested signalling and
 observed close are distinct; a request, error or late callback cannot release
 the query reservation. Another query is refused until the actual close event.
 A failed cleanup detaches optional stream/worker handles without claiming exit.
-It does not wait indefinitely for process termination or launch replacement
+Owned stdin, stdout and stderr releases are independent best-effort actions;
+stream destruction does not count as exit. It does not wait indefinitely for process termination or launch replacement
 enumerators alongside an unresolved one.
 
 Timeout, query failure, malformed output and unresolved worker are unknown
@@ -40,3 +41,14 @@ state/files without any real process enumeration. Existing Node-process safety
 fixtures still verify target selection. These tests do not prove a Windows
 PowerShell cause, hard OS process termination, or freedom from unrelated event
 loop stalls. No app/provider launch or test-limit increase is required.
+
+
+Launch records are derived from one exact byte snapshot (absent and empty differ).
+Read or parse errors are unknown and preserve directories/state. The awaited
+query permits a recorder to append, so the sweep rechecks that exact snapshot
+before any target signal or deletion and abandons cleanup on changes/errors.
+It also checks before directory cleanup and final state removal. Global teardown
+has no cross-run exclusivity guarantee. These checks detect changes, not atomic
+cross-process CAS: an append during later synchronous filesystem operations can
+still race. Deferred append/removal/replacement/empty/read-failure fixtures cover
+the newly introduced await boundary without claiming wider confinement.

@@ -96,16 +96,34 @@ export function recordElectronApp(pid: number | undefined, userDataDir?: string,
   }
 }
 
-function readLaunchRecords(paths?: CleanupPaths): LaunchRecord[] {
+type LaunchSnapshot = { kind: 'present'; bytes: Buffer; records: LaunchRecord[] }
+  | { kind: 'absent'; records: [] } | { kind: 'unknown' };
+
+/** Derive records from the same exact bytes later compared after enumeration. */
+function readLaunchSnapshot(paths?: CleanupPaths): LaunchSnapshot {
+  let bytes: Buffer;
   try {
-    return fs.readFileSync(pidFileOf(paths), 'utf-8')
+    bytes = fs.readFileSync(pidFileOf(paths));
+  } catch (error) {
+    return (error as NodeJS.ErrnoException).code === 'ENOENT' ? { kind: 'absent', records: [] } : { kind: 'unknown' };
+  }
+  try {
+    const records = bytes.toString('utf-8')
       .split('\n')
       .filter((line) => line.trim())
       .map((line) => JSON.parse(line) as LaunchRecord)
       .filter((r) => typeof r.pid === 'number');
+    return { kind: 'present', bytes, records };
   } catch {
-    return [];
+    return { kind: 'unknown' };
   }
+}
+
+function compareLaunchSnapshots(before: LaunchSnapshot, current: LaunchSnapshot): 'same' | 'changed' | 'unknown' {
+  if (before.kind === 'unknown' || current.kind === 'unknown') return 'unknown';
+  if (before.kind !== current.kind) return 'changed';
+  if (before.kind === 'absent' || current.kind === 'absent') return 'same';
+  return before.bytes.equals(current.bytes) ? 'same' : 'changed';
 }
 
 /**
@@ -203,6 +221,7 @@ export interface SweepResult {
   tempDirsRemoved: number;
   /** Unknown enumeration never permits a kill, directory removal or state deletion. */
   processTable?: 'complete' | 'timeout' | 'error' | 'invalid' | 'unreconciled';
+  recordState?: 'changed' | 'unknown';
 }
 
 /**
@@ -214,7 +233,20 @@ export async function sweepE2EProcesses(paths?: CleanupPaths, query: () => Promi
   if (!isLocalRun()) return result;
 
   try {
-    const records = readLaunchRecords(paths);
+    const launchSnapshot = readLaunchSnapshot(paths);
+    const stillCurrent = () => {
+      const status = compareLaunchSnapshots(launchSnapshot, readLaunchSnapshot(paths));
+      if (status === 'same') return true;
+      result.recordState = status;
+      console.warn('[e2e cleanup] launch state unavailable or changed; remaining sweep/state retained', { status });
+      return false;
+    };
+    if (launchSnapshot.kind === 'unknown') {
+      result.recordState = 'unknown';
+      console.warn('[e2e cleanup] launch state unavailable or changed; remaining sweep/state retained', { status: 'unknown' });
+      return result;
+    }
+    const records = launchSnapshot.records;
     const livePids = records.map((r) => r.pid).filter(isAlive);
 
     if (livePids.length > 0) {
@@ -229,6 +261,9 @@ export async function sweepE2EProcesses(paths?: CleanupPaths, query: () => Promi
         return result;
       }
       result.processTable = 'complete';
+      // A recorder can append while enumeration awaits. Do not kill or delete
+      // anything from this old snapshot if its exact source bytes changed.
+      if (!stillCurrent()) return result;
       const processes = snapshot.processes;
       const byPid = new Map(processes.map((p) => [p.pid, p]));
       const candidates = withDescendants(livePids, processes);
@@ -248,11 +283,15 @@ export async function sweepE2EProcesses(paths?: CleanupPaths, query: () => Promi
       }
     }
 
+    if (!stillCurrent()) return result;
     for (const record of records) {
       if (record.userDataDir) removeTempDir(record.userDataDir, paths);
     }
     result.tempDirsRemoved = removeStrayTempDirs(paths);
 
+    // Detect a later write before removing state. This is not cross-process CAS:
+    // another local run may still append during the subsequent sync operations.
+    if (!stillCurrent()) return result;
     try {
       fs.rmSync(stateDirOf(paths), { recursive: true, force: true });
     } catch {

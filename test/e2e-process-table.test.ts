@@ -5,10 +5,11 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { createProcessTableReader, PROCESS_TABLE_DEADLINE_MS, type ProcessTableResult } from '../e2e/cleanup-process-table';
-import { recordElectronApp, sweepE2EProcesses } from '../e2e/e2e-cleanup';
+import { ELECTRON_DIST_DIR, recordElectronApp, sweepE2EProcesses } from '../e2e/e2e-cleanup';
 
 class QueryChild extends EventEmitter {
   kill = vi.fn(() => true);
+  stdin = { destroy: vi.fn() };
   stdout = { destroy: vi.fn() };
   stderr = { destroy: vi.fn() };
   unref = vi.fn();
@@ -33,7 +34,7 @@ it('bounds a never replying query, distinguishes requested/observed cleanup and 
   const result = await pending;
   expect(result).toMatchObject({ ok: false, reason: 'timeout', cleanupRequested: true, exitObserved: false });
   expect(children[0].kill).toHaveBeenCalledExactlyOnceWith('SIGKILL');
-  expect(children[0].stdout.destroy).toHaveBeenCalledOnce(); expect(children[0].unref).toHaveBeenCalledOnce();
+  expect(children[0].stdin.destroy).toHaveBeenCalledOnce(); expect(children[0].stdout.destroy).toHaveBeenCalledOnce(); expect(children[0].unref).toHaveBeenCalledOnce();
   expect(await read()).toMatchObject({ ok: false, reason: 'unreconciled', cleanupRequested: true, exitObserved: false });
   replies[0](null, JSON.stringify([{ ProcessId: 123, ParentProcessId: 1, CommandLine: 'synthetic late table' }]));
   expect(await read()).toMatchObject({ ok: false, reason: 'unreconciled' }); expect(execute).toHaveBeenCalledOnce();
@@ -46,13 +47,17 @@ it('bounds a never replying query, distinguishes requested/observed cleanup and 
 it.each(['false', 'throw'] as const)('retains ownership when query cleanup returns %s', async (mode) => {
   const { read, children, execute } = fixture(); const pending = read();
   children[0].kill.mockImplementation(() => { if (mode === 'throw') throw new Error('synthetic private message'); return false; });
+  children[0].stdin.destroy.mockImplementation(() => { throw new Error('synthetic stream failure'); });
   await vi.advanceTimersByTimeAsync(PROCESS_TABLE_DEADLINE_MS);
   expect(await pending).toMatchObject({ ok: false, reason: 'timeout', cleanupRequested: false, exitObserved: false });
   expect(await read()).toMatchObject({ ok: false, reason: 'unreconciled', cleanupRequested: false }); expect(execute).toHaveBeenCalledOnce();
+  for (const handle of [children[0].stdin, children[0].stdout, children[0].stderr]) expect(handle.destroy).toHaveBeenCalledOnce();
+  expect(children[0].unref).toHaveBeenCalledOnce();
   children[0].emit('close'); expect(vi.getTimerCount()).toBe(0);
 });
 it('does not let errors from optional stream/unref cleanup escape the deadline callback', async () => {
   const { read, children } = fixture(); const pending = read();
+  children[0].stdin.destroy.mockImplementation(() => { throw new Error('synthetic'); });
   children[0].stdout.destroy.mockImplementation(() => { throw new Error('synthetic'); });
   children[0].stderr.destroy.mockImplementation(() => { throw new Error('synthetic'); });
   children[0].unref.mockImplementation(() => { throw new Error('synthetic'); });
@@ -117,4 +122,57 @@ it('records actual close during cleanup separately from request and ignores its 
   await vi.advanceTimersByTimeAsync(PROCESS_TABLE_DEADLINE_MS);
   expect(await pending).toMatchObject({ ok: false, reason: 'timeout', cleanupRequested: true, exitObserved: true });
   expect(vi.getTimerCount()).toBe(0);
+});
+
+function deferred<T>() { let resolve!: (value: T) => void; const promise = new Promise<T>((done) => { resolve = done; }); return { promise, resolve }; }
+
+it.each(['append', 'remove', 'replace', 'empty', 'read-failure'] as const)('preserves state and all directories when launch snapshot changes during awaited query: %s', async (mutation) => {
+  vi.useRealTimers(); const oldCi = process.env.CI; delete process.env.CI;
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'cleanup-append-fixture-'));
+  const paths = { stateDir: path.join(root, 'state'), tmpDir: path.join(root, 'tmp') };
+  const oldDir = path.join(paths.tmpDir, 'clubhouse-e2e-before');
+  const newDir = path.join(paths.tmpDir, 'clubhouse-e2e-after');
+  for (const dir of [oldDir, newDir]) { fs.mkdirSync(dir, { recursive: true }); fs.writeFileSync(path.join(dir, 'marker'), 'synthetic'); }
+  const kill = vi.spyOn(process, 'kill').mockImplementation(() => true);
+  vi.spyOn(console, 'warn').mockImplementation(() => {});
+  try {
+    recordElectronApp(12345, oldDir, paths);
+    const stateFile = path.join(paths.stateDir, 'electron-pids.jsonl');
+    const delayed = deferred<ProcessTableResult>(); const query = vi.fn(() => delayed.promise);
+    const pending = sweepE2EProcesses(paths, query); expect(query).toHaveBeenCalledOnce();
+    if (mutation === 'append') recordElectronApp(23456, newDir, paths);
+    if (mutation === 'remove') fs.unlinkSync(stateFile);
+    if (mutation === 'replace') fs.writeFileSync(stateFile, JSON.stringify({ pid: 23456, userDataDir: newDir }) + '\n');
+    if (mutation === 'empty') fs.writeFileSync(stateFile, '');
+    if (mutation === 'read-failure') { fs.unlinkSync(stateFile); fs.mkdirSync(stateFile); }
+    const bytes = mutation === 'remove' || mutation === 'read-failure' ? null : await fs.promises.readFile(stateFile);
+    delayed.resolve({ ok: true, elapsedMs: 3, processes: [{ pid: 12345, ppid: 1, command: path.join(ELECTRON_DIST_DIR, 'synthetic') }] });
+    expect(await pending).toEqual({ killed: 0, tempDirsRemoved: 0, processTable: 'complete', recordState: mutation === 'read-failure' ? 'unknown' : 'changed' });
+    expect(kill.mock.calls.every((call) => call[1] === 0)).toBe(true);
+    for (const dir of [oldDir, newDir]) expect(await fs.promises.readFile(path.join(dir, 'marker'), 'utf8')).toBe('synthetic');
+    if (bytes !== null) expect(await fs.promises.readFile(stateFile)).toEqual(bytes);
+    else if (mutation === 'read-failure') expect(fs.statSync(stateFile).isDirectory()).toBe(true);
+    else expect(fs.existsSync(stateFile)).toBe(false);
+    expect(fs.existsSync(paths.stateDir)).toBe(true);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+    if (oldCi === undefined) delete process.env.CI; else process.env.CI = oldCi;
+  }
+});
+
+it('treats initial launch-state read failure as unknown without enumerating or deleting directories', async () => {
+  vi.useRealTimers(); const oldCi = process.env.CI; delete process.env.CI;
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'cleanup-read-fixture-'));
+  const paths = { stateDir: path.join(root, 'state'), tmpDir: path.join(root, 'tmp') };
+  fs.mkdirSync(path.join(paths.stateDir, 'electron-pids.jsonl'), { recursive: true });
+  const retained = path.join(paths.tmpDir, 'clubhouse-e2e-retained'); fs.mkdirSync(retained, { recursive: true });
+  const query = vi.fn(); vi.spyOn(console, 'warn').mockImplementation(() => {});
+  try {
+    expect(await sweepE2EProcesses(paths, query)).toEqual({ killed: 0, tempDirsRemoved: 0, recordState: 'unknown' });
+    expect(query).not.toHaveBeenCalled(); expect(fs.existsSync(retained)).toBe(true);
+    expect(fs.statSync(path.join(paths.stateDir, 'electron-pids.jsonl')).isDirectory()).toBe(true);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+    if (oldCi === undefined) delete process.env.CI; else process.env.CI = oldCi;
+  }
 });
