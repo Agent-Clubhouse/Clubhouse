@@ -28,6 +28,7 @@ vi.mock('electron', () => ({
   nativeImage: { createFromBuffer: () => ({ isEmpty: () => false, toPNG: () => Buffer.from('encoded-png') }) },
 }));
 const richContent = vi.hoisted(() => ({ on: true }));
+vi.mock('../services/agent-runtime/handshake-retry', () => ({ retryAgentHandshake: vi.fn(async () => ({ status: 'passed', message: 'synthetic handshake only' })) }));
 vi.mock('../services/experimental-settings', () => ({ isGraduatedFeatureOn: () => richContent.on }));
 vi.mock('../services/agent-runtime/chat-media', async (importOriginal) => ({
   ...await importOriginal<typeof import('../services/agent-runtime/chat-media')>(),
@@ -49,6 +50,7 @@ vi.mock('../services/chat-runtime-settings', () => ({ loadSettings: vi.fn(), sav
 vi.mock('../services/annex-event-bus', () => ({ emitHookEvent: vi.fn() }));
 vi.mock('../util/ipc-broadcast', () => ({ broadcastToAllWindows: vi.fn() }));
 
+import { retryAgentHandshake } from '../services/agent-runtime/handshake-retry';
 import { ipcMain } from 'electron';
 import { IPC } from '../../shared/ipc-channels';
 import { registerChatHandlers, RICH_CHAT_CALLS_GLOBAL, RICH_CHAT_CHANNELS } from './chat-handlers';
@@ -82,6 +84,19 @@ beforeEach(() => {
 
 afterEach(() => {
   fs.rmSync(dir, { recursive: true, force: true });
+});
+
+describe('explicit local handshake recovery IPC', () => {
+  it('accepts a local top-frame action and validates target arguments', async () => {
+    await expect(call(IPC.CHAT.RETRY_HANDSHAKE, '/project', 'a')).resolves.toMatchObject({ status: 'passed' });
+    expect(retryAgentHandshake).toHaveBeenCalledWith('/project', 'a');
+    await expect(call(IPC.CHAT.RETRY_HANDSHAKE, '', 'a')).rejects.toThrow();
+  });
+  it('refuses iframes and non-app callers before any probe resolution', async () => {
+    await expect(callFrom({}, IPC.CHAT.RETRY_HANDSHAKE, '/project', 'a')).rejects.toThrow('local Clubhouse window');
+    await expect(callFrom({ sender: appWindow, senderFrame: {} }, IPC.CHAT.RETRY_HANDSHAKE, '/project', 'a')).rejects.toThrow('local Clubhouse window');
+    expect(retryAgentHandshake).not.toHaveBeenCalled();
+  });
 });
 
 describe('chat image clipboard on Electron 45', () => {

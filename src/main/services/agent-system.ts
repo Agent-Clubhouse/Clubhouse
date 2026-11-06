@@ -323,8 +323,7 @@ async function spawnAgentInner(inParams: SpawnAgentParams, facts: SpawnFacts, ma
   facts.profileActive = profileEnv !== undefined;
 
   // Read project-level command prefix for shell environment setup
-  const projectDefaults = await readProjectAgentDefaults(params.projectPath);
-  const commandPrefix = projectDefaults?.commandPrefix || undefined;
+  const commandPrefix = await resolveCommandPrefix(params.projectPath);
 
   // Pre-flight: verify the orchestrator CLI is available before spawning.
   // This catches missing binaries and auth issues early with clear errors,
@@ -1162,6 +1161,11 @@ export async function checkAvailability(
   }
   const profileEnv = projectPath ? await resolveProfileEnv(projectPath, id) : undefined;
   return provider.checkAvailability(profileEnv);
+}
+
+/** Shared by actual launch and an explicit handshake check. */
+export async function resolveCommandPrefix(projectPath: string): Promise<string | undefined> {
+  return (await readProjectAgentDefaults(projectPath))?.commandPrefix || undefined;
 }
 
 /**

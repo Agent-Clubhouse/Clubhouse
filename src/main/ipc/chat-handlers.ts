@@ -3,6 +3,7 @@
  * the registry, so a request for an agent that isn't running in chat fails
  * cleanly instead of reaching a PTY.
  */
+import { retryAgentHandshake } from '../services/agent-runtime/handshake-retry';
 import * as fsp from 'fs/promises';
 import { app, BrowserWindow, clipboard, ClipboardItem, ipcMain, nativeImage, net, shell, type IpcMainInvokeEvent } from 'electron';
 import { IPC } from '../../shared/ipc-channels';
@@ -356,6 +357,14 @@ export function registerChatHandlers(): void {
         clean[provider] = { mode: value.mode, ...(driver ? { driver } : {}) };
       }
       await chatRuntimeSettings.saveSettings(clean);
+    },
+  ));
+
+  ipcMain.handle(IPC.CHAT.RETRY_HANDSHAKE, withValidatedArgs(
+    [stringArg(), stringArg()],
+    async (event, projectPath, agentId) => {
+      assertTopFrameOfAppWindow(event, 'Handshake retry is only available from a local Clubhouse window.');
+      return retryAgentHandshake(projectPath, agentId);
     },
   ));
 

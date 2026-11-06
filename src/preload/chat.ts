@@ -63,6 +63,9 @@ export const chat = {
       ipcRenderer.invoke(IPC.CHAT.SET_LEVEL, agentId, level),
     setModel: (agentId: string, modelId: string, effort?: string | null): Promise<void> =>
       ipcRenderer.invoke(IPC.CHAT.SET_MODEL, agentId, modelId, effort),
+    /** Explicit local-user check only: no session, wake or settings change. */
+    retryHandshake: (projectPath: string, agentId: string): Promise<import('../shared/chat').ChatHandshakeRetryResult> =>
+      ipcRenderer.invoke(IPC.CHAT.RETRY_HANDSHAKE, projectPath, agentId),
     getRuntimeSettings: (): Promise<ChatRuntimeSettings> =>
       ipcRenderer.invoke(IPC.CHAT.GET_RUNTIME_SETTINGS),
     saveRuntimeSettings: (settings: ChatRuntimeSettings): Promise<void> =>
