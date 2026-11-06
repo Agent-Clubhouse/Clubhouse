@@ -6,7 +6,7 @@
 import { createSettingsStore } from './settings-store';
 import * as experimentalSettings from './experimental-settings';
 import { isPreviewEligible } from './preview-eligible';
-import { COPILOT_SDK_FLAG, type AgentRuntimeMode, type ChatDriverId, type ChatRuntimeSettings } from '../../shared/chat';
+import { LEGACY_COPILOT_ACP_FLAG, type AgentRuntimeMode, type ChatDriverId, type ChatRuntimeSettings } from '../../shared/chat';
 
 /** The flag's id in experimental settings (Settings › Agents & providers › Chat view). */
 export const CHAT_EXPERIMENTAL_FLAG = 'chat';
@@ -24,9 +24,14 @@ export function isChatEnabled(): boolean {
   return experimentalSettings.isGraduatedFeatureOn(CHAT_EXPERIMENTAL_FLAG);
 }
 
-/** The Copilot SDK driver's own flag: still experimental, so beta-only. */
+/** ACP is an explicit experimental escape hatch; old SDK flags never opt in. */
+export function isLegacyCopilotAcpEnabled(): boolean {
+  return isPreviewEligible() && experimentalSettings.getSettings()[LEGACY_COPILOT_ACP_FLAG] === true;
+}
+
+/** SDK is standard, including builds without experimental settings. */
 export function isCopilotSdkEnabled(): boolean {
-  return isPreviewEligible() && experimentalSettings.getSettings()[COPILOT_SDK_FLAG] === true;
+  return !isLegacyCopilotAcpEnabled();
 }
 
 export interface ResolvedRuntimeMode {

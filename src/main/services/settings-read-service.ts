@@ -19,7 +19,7 @@
  */
 
 import { isDisposedAgent } from '../../shared/agent-helpers';
-import { COPILOT_SDK_FLAG } from '../../shared/chat';
+import { COPILOT_SDK_FLAG, LEGACY_COPILOT_ACP_FLAG } from '../../shared/chat';
 import { DISPATCHER_PROJECT_ID } from '../../shared/dispatcher-types';
 import { CHAT_IDLE_SETTINGS, MCP_SETTINGS } from '../../shared/settings-definitions';
 import type { DurableAgentConfig, Project, ProjectAgentDefaults } from '../../shared/types';
@@ -462,7 +462,9 @@ const APP_SECTIONS: ReadonlyArray<Section<AppContext>> = [
     fields: [
       ['dispatcher_enabled', dispatcherValue],
       ['experimental_chat', ({ files }) => appValue(files.experimental, chatFlag, chatRuntimeSettings.isChatEnabled())],
-      ['experimental_copilot_sdk', ({ files }) => appValue(files.experimental, COPILOT_SDK_FLAG, chatRuntimeSettings.isCopilotSdkEnabled())],
+      // Deprecated raw flag: retained for clients, but no longer a driver selector.
+      ['experimental_copilot_sdk', ({ files }) => appValue(files.experimental, COPILOT_SDK_FLAG, false)],
+      ['experimental_copilot_legacy_acp', ({ files }) => appValue(files.experimental, LEGACY_COPILOT_ACP_FLAG, chatRuntimeSettings.isLegacyCopilotAcpEnabled())],
       ['annex_server_enabled', ({ files }) => appValue(files.annex, ['enableServer', 'enabled'], annexSettings.getSettings().enableServer)],
       ['annex_client_enabled', ({ files }) => appValue(files.annex, ['enableClient', 'enabled'], annexSettings.getSettings().enableClient)],
     ],

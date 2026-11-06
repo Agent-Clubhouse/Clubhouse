@@ -25,6 +25,7 @@ import { resolveAgentMcpServers } from '../materialization-service';
 import { touchSessionEntry } from '../agent-config';
 import { broadcastAgentExit } from '../agent-exit-broadcast';
 import { appLog } from '../log-service';
+import { isPreviewEligible } from '../preview-eligible';
 import { resolveRuntimeMode } from '../chat-runtime-settings';
 import { isGraduatedFeatureOn } from '../experimental-settings';
 import { RICH_CHAT_CONTENT_FLAG } from '../../../shared/chat';
@@ -106,6 +107,14 @@ function driverLabel(driver: ChatDriver): string {
   return `${cliLabel(driver.provider)} (${DRIVER_LABELS[driver.id] ?? driver.id})`;
 }
 
+function copilotRecoveryHint(provider: string, driver?: ChatDriver['id']): string {
+  return provider === 'copilot-cli' && driver === 'copilot_sdk'
+    ? (isPreviewEligible()
+      ? '. Copilot SDK chat failed. Retry after resolving the reported problem, or explicitly enable Use legacy Copilot ACP in Settings > Experimental for the next start.'
+      : '. Copilot SDK chat failed. Retry after resolving the reported problem. The legacy ACP escape hatch requires Preview eligibility in Settings > Updates, then Use legacy Copilot ACP in Settings > Experimental; it applies at the next start.')
+    : '';
+}
+
 /**
  * Drivers to try for a provider, in fallback order: the preferred one (or the
  * provider default), then the provider's other drivers in registration order.
@@ -113,6 +122,11 @@ function driverLabel(driver: ChatDriver): string {
  * opt-in driver only appears when it is the preferred one.
  */
 export function chatDriverCandidates(provider: string, preferred?: ChatDriver['id']): ChatDriver[] {
+  // Copilot has one next-start choice. Never silently change adapters when it fails.
+  if (provider === 'copilot-cli') {
+    const selected = preferred ?? 'copilot_sdk';
+    return listChatDrivers().filter((driver) => driver.provider === provider && driver.id === selected);
+  }
   const first = resolveChatDriver(provider, preferred);
   if (!first) return [];
   return [first, ...listChatDrivers().filter((d) => d.provider === provider && d !== first && !d.optIn)];
@@ -329,7 +343,7 @@ export async function tryStartChatAgent(
     ? `${DRIVER_LABELS[resolved.driver] ?? resolved.driver} is not registered for ${cliLabel(provider.id)}`
     : undefined;
   if (candidates.length === 0) {
-    if (unavailablePreference) notifyFallback(params.agentId, { level: 'warn', code: 'fallback', message: `Opened in the CLI view: ${unavailablePreference}` });
+    if (unavailablePreference) notifyFallback(params.agentId, { level: 'warn', code: 'fallback', message: `Opened in the CLI view: ${unavailablePreference}${copilotRecoveryHint(provider.id, resolved.driver)}` });
     appLog('core:chat', 'info', 'No chat driver registered for provider; using the terminal', {
       meta: { agentId: params.agentId, provider: provider.id },
     });
@@ -515,7 +529,7 @@ async function runChatStart(
         code: 'login_required',
         message: `${cliLabel(provider.id)} needs you to log in. Opening the CLI view so you can log in${login.hint ? ` (${login.hint})` : ''}. Chat starts next time.`,
       }
-    : { level: 'warn', code: 'fallback', message: `Opened in the CLI view: ${skipped.join('; ')}` });
+    : { level: 'warn', code: 'fallback', message: `Opened in the CLI view: ${skipped.join('; ')}${copilotRecoveryHint(provider.id, candidates[0]?.id)}` });
   return 'terminal';
 
   /** Nonce, Clubhouse MCP bridge + project servers and env: once, before the first start attempt. */
