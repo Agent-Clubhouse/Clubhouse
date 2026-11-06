@@ -710,14 +710,16 @@ export async function writeMcpRawJson(worktreePath: string, content: string, con
  * Write permissions to .claude/settings.local.json in the given worktree.
  * Merges with existing file content (preserves hooks and other settings).
  */
+export function assertPermissionRulesSupported(permissions: PermissionsConfig, conv?: SettingsConventions): void {
+  if (conv?.permissionRules === false && (permissions.allow?.length || permissions.deny?.length)) {
+    throw new UnsupportedPermissionRulesError('Copilot does not support Clubhouse allow/deny permission rules. Remove these project defaults or configure access using Copilot settings. No permission rules were applied.');
+  }
+}
+
 export async function writePermissions(worktreePath: string, permissions: PermissionsConfig, conv?: SettingsConventions): Promise<void> {
   const c = conv || CLAUDE_CODE_CONVENTIONS;
-  if (c.permissionRules === false) {
-    if (permissions.allow?.length || permissions.deny?.length) {
-      throw new UnsupportedPermissionRulesError('Copilot does not support Clubhouse allow/deny permission rules. Remove these project defaults or configure access using Copilot settings. No permission rules were applied.');
-    }
-    return;
-  }
+  assertPermissionRulesSupported(permissions, c);
+  if (c.permissionRules === false) return;
   // Non-JSON settings files (e.g. TOML) are not supported — skip write
   if (c.settingsFormat && c.settingsFormat !== 'json') return;
   const settingsPath = path.join(worktreePath, c.configDir, c.localSettingsFile);
@@ -831,6 +833,8 @@ export async function applyAgentDefaults(
   const c = conv || CLAUDE_CODE_CONVENTIONS;
   const defaults = await readProjectAgentDefaults(projectPath);
   if (!defaults) return;
+
+  if (defaults.permissions) assertPermissionRulesSupported(defaults.permissions, c);
 
   if (defaults.instructions) {
     if (writeInstructions) {

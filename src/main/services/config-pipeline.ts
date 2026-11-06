@@ -212,6 +212,9 @@ export function stripClubhouseHooksFromFile(filePath: string): Promise<boolean> 
     if (!current || typeof current !== 'object' || Array.isArray(current)) return false;
 
     const settings = current as Record<string, unknown>;
+    const copilotHooksFile = absPath.endsWith(path.join('.github', 'hooks', 'hooks.json'));
+    // Never rewrite ambiguous legacy permission documents during a hook toggle.
+    if (copilotHooksFile && ('permissions' in settings || settings.version !== 1)) return false;
     const hooks = settings.hooks;
     if (!hooks || typeof hooks !== 'object') return false;
 
@@ -221,6 +224,8 @@ export function stripClubhouseHooksFromFile(filePath: string): Promise<boolean> 
     if (!hadClubhouse) return false;
 
     const cleaned = stripClubhouseHooks(settings);
+    // Copilot requires a hooks object even when all Clubhouse entries were removed.
+    if (copilotHooksFile && !cleaned.hooks) cleaned.hooks = {};
     try {
       if (Object.keys(cleaned).length === 0) {
         await fsp.unlink(absPath);

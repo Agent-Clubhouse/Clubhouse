@@ -88,7 +88,18 @@ describe('config-pipeline', () => {
       expect(result).toBe(true);
       expect(fsp.unlink).not.toHaveBeenCalled();
       const written = JSON.parse(vi.mocked(fsp.writeFile).mock.calls[0][1] as string);
-      expect(written).toEqual({ version: 1 });
+      expect(written).toEqual({ version: 1, hooks: {} });
+    });
+
+    it('does not rewrite ambiguous Copilot permissions on hook disable', async () => {
+      vi.mocked(pathExists).mockResolvedValueOnce(true);
+      vi.mocked(fsp.readFile).mockResolvedValueOnce(JSON.stringify({
+        version: 1, permissions: { deny: ['WebFetch'] },
+        hooks: { preToolUse: [{ type: 'command', bash: CLUBHOUSE_HOOK_CMD }] },
+      }));
+      expect(await stripClubhouseHooksFromFile('/p/dur/.github/hooks/hooks.json')).toBe(false);
+      expect(fsp.writeFile).not.toHaveBeenCalled();
+      expect(fsp.unlink).not.toHaveBeenCalled();
     });
 
     it('preserves user-authored hooks alongside the stripped Clubhouse entry', async () => {

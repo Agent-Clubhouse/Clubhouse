@@ -12,6 +12,7 @@ import {
   readProjectAgentDefaults,
   readLocalMcpJson,
   writePermissions,
+  assertPermissionRulesSupported,
   listSourceSkills,
   listSourceAgentTemplates,
   writeProjectAgentDefaults,
@@ -396,6 +397,7 @@ export async function materializeAgent(params: {
   const ctx = buildWildcardContext(agent, projectPath, scp, commands, missionContent, personaContent);
   const resolvedPersonaContent = personaContent ? replaceWildcards(personaContent, ctx) : undefined;
   const conv = provider.conventions;
+  if (defaults.permissions) assertPermissionRulesSupported(defaults.permissions, conv);
   if (defaults.mcpJson && !agent.clubhouseModeOverride && (!conv.settingsFormat || conv.settingsFormat === 'json')) {
     const local = await readLocalMcpJson(worktreePath, conv);
     if (local !== null) parseMcpJson(local);

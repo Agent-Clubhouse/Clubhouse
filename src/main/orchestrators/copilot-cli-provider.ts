@@ -1,3 +1,4 @@
+import { readCopilotHooksConfig } from './copilot-hooks-config';
 import * as fsp from 'fs/promises';
 import * as path from 'path';
 import { randomUUID } from 'crypto';
@@ -322,20 +323,7 @@ export class CopilotCliProvider extends BaseProvider implements HookCapable, Hea
 
     const settingsPath = path.join(hooksDir, 'hooks.json');
 
-    let existing: Record<string, unknown> = { version: 1 };
-    try {
-      existing = JSON.parse(await fsp.readFile(settingsPath, 'utf-8'));
-    } catch (err) {
-      if ((err as NodeJS.ErrnoException)?.code !== 'ENOENT') {
-        throw new Error(`Cannot read Copilot hooks at ${settingsPath}: ${err instanceof Error ? err.message : String(err)}. Fix the file before starting the agent.`);
-      }
-    }
-
-    if (!existing || typeof existing !== 'object' || Array.isArray(existing) ||
-        ('hooks' in existing && (!existing.hooks || typeof existing.hooks !== 'object' || Array.isArray(existing.hooks))) ||
-        ('permissions' in existing)) {
-      throw new Error(`Invalid or conflicting Copilot hooks at ${settingsPath}. Review and repair this file; Clubhouse permission rules are not supported there.`);
-    }
+    const existing = await readCopilotHooksConfig(cwd) ?? { version: 1, hooks: {} };
 
     const mergedHooks = mergeHookEntries(existing, ourHooks, isClubhouseHookEntry);
     await fsp.writeFile(settingsPath, JSON.stringify({ ...existing, hooks: mergedHooks }, null, 2), 'utf-8');

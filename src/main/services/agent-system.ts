@@ -1,3 +1,4 @@
+import { readCopilotHooksConfig } from '../orchestrators/copilot-hooks-config';
 import { AgentResumeError, assertProviderSelection } from './agent-transition';
 import { withManagedActivationLaunch } from './managed-activation';
 import type { ManagedLaunchLease } from './managed-activation/service';
@@ -315,6 +316,9 @@ async function spawnAgentInner(inParams: SpawnAgentParams, facts: SpawnFacts, ma
     withErrorType('orchestrator_unknown', () => resolveOrchestrator(params.projectPath, params.orchestrator)),
   );
   facts.orchestrator = provider.id;
+
+  // Copilot discovers repository hooks in every runtime, even with the Clubhouse hook server off.
+  if (provider.id === 'copilot-cli') await readCopilotHooksConfig(params.cwd);
 
   // Resolve profile env early so it can be passed to checkAvailability.
   // This ensures auth checks (e.g. CLAUDE_CONFIG_DIR) use the correct

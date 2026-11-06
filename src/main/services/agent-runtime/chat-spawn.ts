@@ -10,6 +10,7 @@
  */
 
 import { isLoginRequiredError } from './login-error';
+import { assertNoCopilotTerminalHooksForChat } from '../../orchestrators/copilot-hooks-config';
 import { randomUUID } from 'crypto';
 import * as path from 'path';
 import type { OrchestratorProvider } from '../../orchestrators';
@@ -324,6 +325,7 @@ export async function tryStartChatAgent(
   if (params.kind !== 'durable' && !(params.kind === 'quick' && params.interactive)) return 'terminal';
   const resolved = resolveRuntimeMode(provider.id, durableConfig?.runtimeMode);
   if (resolved.mode !== 'chat') return 'terminal';
+  if (provider.id === 'copilot-cli') await assertNoCopilotTerminalHooksForChat(params.cwd);
   const candidates = chatDriverCandidates(provider.id, resolved.driver);
   if (candidates.length === 0) {
     appLog('core:chat', 'info', 'No chat driver registered for provider; using the terminal', {

@@ -170,7 +170,7 @@ vi.mock('../util/ipc-broadcast', () => ({
 }));
 
 // Mock fs/promises for readProjectOrchestrator
-const mockReadFile = vi.fn(() => Promise.reject(new Error('ENOENT')));
+const mockReadFile = vi.fn(() => Promise.reject(Object.assign(new Error('ENOENT'), { code: 'ENOENT' })));
 vi.mock('fs/promises', () => ({
   readFile: (...args: unknown[]) => mockReadFile(...args),
 }));
@@ -548,6 +548,22 @@ describe('agent-system', () => {
         kind: 'durable',
       });
       expect(getAgentOrchestrator('agent-1')).toBe('codex-cli');
+    });
+
+    it.each([false, true])('refuses a legacy Copilot hook document before launch with hook server %s', async (enabled) => {
+      mockIsHookServerEnabled.mockReturnValue(enabled);
+      mockReadFile.mockImplementation(async (file: unknown) => {
+        if (String(file).endsWith('hooks/hooks.json')) return JSON.stringify({ permissions: { allow: ['Read'] } });
+        throw Object.assign(new Error('ENOENT'), { code: 'ENOENT' });
+      });
+      try {
+        await expect(spawnAgent({ agentId: 'agent-1', projectPath: '/project', cwd: '/project', kind: 'durable', orchestrator: 'copilot-cli' }))
+          .rejects.toThrow(/repair.*restart/i);
+        expect(mockPtySpawn).not.toHaveBeenCalled();
+        expect(mockTryStartChatAgent).not.toHaveBeenCalled();
+      } finally {
+        mockReadFile.mockReset().mockRejectedValue(Object.assign(new Error('ENOENT'), { code: 'ENOENT' }));
+      }
     });
 
     it('writes hooks config with base URL (no agentId)', async () => {
