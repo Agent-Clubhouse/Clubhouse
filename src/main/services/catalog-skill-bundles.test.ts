@@ -6,7 +6,7 @@ import type { CatalogEntry, SkillAssetPayload } from '../../shared/asset-catalog
 import type { SkillBundleEditorBridge, SkillBundleResult } from '../../shared/skill-bundle-editor-types';
 
 const state = vi.hoisted(() => ({ generation: 0, pending: false, config: 0, projects: [{ id: 'project-1', name: 'Synthetic', path: '/synthetic/project' }],
-  agents: [{ id: 'agent-1', parentAgentId: undefined as string | undefined, disposedAt: undefined as string | undefined }] }));
+  agents: [{ id: 'agent-1', parentAgentId: undefined as string | undefined, disposedAt: undefined as string | undefined, creation: undefined as { state: string } | undefined }] }));
 vi.mock('electron', () => ({ app: { isPackaged: false, getPath: () => '/synthetic/home' } }));
 vi.mock('./project-store', () => ({ peekProjects: async () => state.projects,
   projectRegistryMutationState: () => ({ generation: state.generation, pending: state.pending }) }));
@@ -33,7 +33,7 @@ beforeEach(async () => {
   root = fs.mkdtempSync(path.join(os.tmpdir(), 'catalog-bundle-editor-')); dir = path.join(root, 'catalog');
   state.generation = 0; state.pending = false; state.config = 0;
   state.projects = [{ id: 'project-1', name: 'Synthetic', path: '/synthetic/project' }];
-  state.agents = [{ id: 'agent-1', parentAgentId: undefined, disposedAt: undefined }];
+  state.agents = [{ id: 'agent-1', parentAgentId: undefined, disposedAt: undefined, creation: undefined }];
   beforeRename = undefined; failRename = false; clock = 0;
   _resetSettingsAuditForTesting(false);
   store = createAssetCatalogStore({ dir });
@@ -128,4 +128,9 @@ it.each([
 ])('uses catalog validation for entire bundle without partial saves', async (payload) => {
   expect(await preview(payload)).toEqual({ ok: false, code: 'invalid_payload' });
   expect((await store.read()).assets[asset.id].headRevision).toBe(1);
+});
+
+it.each(['creating', 'failed'])('refuses an agent with partial creation state %s', async (creation) => {
+  state.agents[0].creation = { state: creation };
+  expect(await user(() => editor.list({ ...context, agentId: 'agent-1' }))).toEqual({ ok: false, code: 'target_changed' });
 });

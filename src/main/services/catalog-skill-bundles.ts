@@ -23,7 +23,7 @@ async function registeredContext(context: SkillBundleContext): Promise<() => voi
   const configGeneration = agentConfigGeneration();
   if (context.agentId) {
     const agent = (await peekDurableConfigs(project.path)).find((a) => a.id === context.agentId);
-    if (!agent || agent.disposedAt || agent.parentAgentId) refuse('target_changed');
+    if (!agent || agent.creation || agent.disposedAt || agent.parentAgentId) refuse('target_changed');
   }
   const guard = () => {
     const current = projectRegistryMutationState();

@@ -11,7 +11,7 @@ it('forwards only the typed catalog context, asset/revision and preview/save DTO
   await skillBundle.catalogSkillBundles.preview(request);
   await skillBundle.catalogSkillBundles.save({ context, assetId: 'asset-1', expectedRevision: 2, token: 'preview-token' });
   expect(vi.mocked(ipcRenderer.invoke).mock.calls).toEqual([
-    [IPC.SKILL_BUNDLE.LIST, context], [IPC.SKILL_BUNDLE.READ, context, 'asset-1'],
-    [IPC.SKILL_BUNDLE.PREVIEW, request], [IPC.SKILL_BUNDLE.SAVE, { context, assetId: 'asset-1', expectedRevision: 2, token: 'preview-token' }],
+    [IPC.CATALOG_SKILL_BUNDLE.LIST, context], [IPC.CATALOG_SKILL_BUNDLE.READ, context, 'asset-1'],
+    [IPC.CATALOG_SKILL_BUNDLE.PREVIEW, request], [IPC.CATALOG_SKILL_BUNDLE.SAVE, { context, assetId: 'asset-1', expectedRevision: 2, token: 'preview-token' }],
   ]);
 });

@@ -3,8 +3,10 @@ import { beforeEach, expect, it, vi } from 'vitest';
 import type { AssetImpact } from '../../../shared/asset-catalog-types';
 import type { SkillBundleDocument, SkillBundleEditorBridge, SkillBundleResult } from '../../../shared/skill-bundle-editor-types';
 import { CatalogSkillBundleEditor } from './CatalogSkillBundleEditor';
-vi.mock('../../components/SettingsMonacoEditor', () => ({ SettingsMonacoEditor: ({ value, onChange, readOnly }: { value: string; onChange: (value: string) => void; readOnly: boolean }) =>
-  <textarea aria-label="Text content" value={value} readOnly={readOnly} onChange={(event) => onChange(event.target.value)} /> }));
+const delayedEditor = vi.hoisted(() => ({ onChange: undefined as ((value: string) => void) | undefined }));
+vi.mock('../../components/SettingsMonacoEditor', () => ({ SettingsMonacoEditor: ({ value, onChange, readOnly }: { value: string; onChange: (value: string) => void; readOnly: boolean }) => {
+  delayedEditor.onChange = onChange;
+  return <textarea aria-label="Text content" value={value} readOnly={readOnly} onChange={(event) => onChange(event.target.value)} />; } }));
 const context = { projectId: 'project-1' };
 const document: SkillBundleDocument = { assetId: 'asset-1', name: 'Fixture bundle', revision: 1,
   owner: { kind: 'library' }, source: { kind: 'user' }, readOnly: false,
@@ -78,4 +80,27 @@ it('shows builtin provenance and hides every edit/save operation', async () => {
   expect(screen.getByLabelText('Text content')).toHaveAttribute('readonly');
   expect(screen.queryByRole('button', { name: 'Review catalog edit' })).not.toBeInTheDocument();
   expect(screen.queryByRole('button', { name: 'Save catalog revision' })).not.toBeInTheDocument();
+});
+
+it.each(['preview', 'save'] as const)('ignores delayed same-target Monaco change while %s is pending without sticking busy or discarding a newer draft', async (operation) => {
+  const latePreview = deferred<Awaited<ReturnType<SkillBundleEditorBridge['preview']>>>();
+  const lateSave = deferred<Awaited<ReturnType<SkillBundleEditorBridge['save']>>>();
+  renderEditor(); await edit();
+  const queued = delayedEditor.onChange!;
+  if (operation === 'preview') {
+    vi.mocked(bridge.preview).mockReturnValueOnce(latePreview.promise);
+    fireEvent.click(screen.getByRole('button', { name: 'Review catalog edit' }));
+  } else {
+    await review(); vi.mocked(bridge.save).mockReturnValueOnce(lateSave.promise);
+    fireEvent.click(screen.getByRole('button', { name: 'Save catalog revision' }));
+  }
+  act(() => queued('late queued editor event'));
+  expect(screen.getByLabelText('Text content')).toHaveValue('edited');
+  if (operation === 'preview') await act(async () => latePreview.resolve(success({ token: 'token', impact, blocked: false })));
+  else await act(async () => lateSave.resolve(success({ ...document, revision: 2, payload: { ...document.payload, files: [{ ...document.payload.files[0], content: 'edited' }, document.payload.files[1]] } })));
+  expect(screen.queryByRole('status')).not.toBeInTheDocument();
+  fireEvent.change(screen.getByLabelText('Text content'), { target: { value: 'newer draft' } });
+  expect(screen.getByLabelText('Text content')).toHaveValue('newer draft');
+  expect(screen.getByRole('button', { name: 'Save catalog revision' })).toBeDisabled();
+  expect(screen.getByRole('button', { name: 'Review catalog edit' })).toBeEnabled();
 });

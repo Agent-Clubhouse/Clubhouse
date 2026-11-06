@@ -32,8 +32,8 @@ const saveArg: ArgValidator<SaveRequest> = objectArg({ validate: (request: SaveR
 } });
 
 export function registerSkillBundleHandlers(service: SkillBundleEditorBridge = createCatalogSkillBundleEditor()): void {
-  ipcMain.handle(IPC.SKILL_BUNDLE.LIST, withValidatedArgs([contextArg], (_event, context) => service.list(context)));
-  ipcMain.handle(IPC.SKILL_BUNDLE.READ, withValidatedArgs([contextArg, stringArg({ maxLength: 128 })], (_event, context, assetId) => service.read(context, assetId)));
-  ipcMain.handle(IPC.SKILL_BUNDLE.PREVIEW, withValidatedArgs([previewArg], (_event, request) => service.preview(request)));
-  ipcMain.handle(IPC.SKILL_BUNDLE.SAVE, withValidatedArgs([saveArg], (_event, request) => service.save(request)));
+  ipcMain.handle(IPC.CATALOG_SKILL_BUNDLE.LIST, withValidatedArgs([contextArg], (_event, context) => service.list(context)));
+  ipcMain.handle(IPC.CATALOG_SKILL_BUNDLE.READ, withValidatedArgs([contextArg, stringArg({ maxLength: 128 })], (_event, context, assetId) => service.read(context, assetId)));
+  ipcMain.handle(IPC.CATALOG_SKILL_BUNDLE.PREVIEW, withValidatedArgs([previewArg], (_event, request) => service.preview(request)));
+  ipcMain.handle(IPC.CATALOG_SKILL_BUNDLE.SAVE, withValidatedArgs([saveArg], (_event, request) => service.save(request)));
 }

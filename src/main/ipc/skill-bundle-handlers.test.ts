@@ -18,29 +18,29 @@ beforeEach(() => {
   registerSkillBundleHandlers(bridge);
 });
 it('registers only four typed catalog operations in local UI audit scope', async () => {
-  expect([...handlers.keys()]).toEqual(Object.values(IPC.SKILL_BUNDLE));
-  const invoke = handlers.get(IPC.SKILL_BUNDLE.LIST)!;
+  expect([...handlers.keys()]).toEqual(Object.values(IPC.CATALOG_SKILL_BUNDLE));
+  const invoke = handlers.get(IPC.CATALOG_SKILL_BUNDLE.LIST)!;
   expect(await invoke({}, context)).toEqual({ ok: true, value: { surface: 'ui' } });
   expect(bridge.list).toHaveBeenCalledWith(context);
 });
 it('passes complete preview payload and saves by token without renderer bytes or filesystem paths', async () => {
   const request = { context, assetId: 'asset-1', expectedRevision: 3, payload: { skillName: 'test', files: [{ path: 'SKILL.md', content: 'synthetic' }] } };
-  await handlers.get(IPC.SKILL_BUNDLE.PREVIEW)!({}, request);
+  await handlers.get(IPC.CATALOG_SKILL_BUNDLE.PREVIEW)!({}, request);
   expect(bridge.preview).toHaveBeenCalledWith(request);
   const save = { context, assetId: 'asset-1', expectedRevision: 3, token: 'token' };
-  await handlers.get(IPC.SKILL_BUNDLE.SAVE)!({}, save);
+  await handlers.get(IPC.CATALOG_SKILL_BUNDLE.SAVE)!({}, save);
   expect(bridge.save).toHaveBeenCalledWith(save);
-  expect(() => handlers.get(IPC.SKILL_BUNDLE.SAVE)!({}, { ...save, payload: request.payload })).toThrow();
-  expect(() => handlers.get(IPC.SKILL_BUNDLE.SAVE)!({}, { ...save, stagingPath: '/outside' })).toThrow();
+  expect(() => handlers.get(IPC.CATALOG_SKILL_BUNDLE.SAVE)!({}, { ...save, payload: request.payload })).toThrow();
+  expect(() => handlers.get(IPC.CATALOG_SKILL_BUNDLE.SAVE)!({}, { ...save, stagingPath: '/outside' })).toThrow();
 });
 it.each([
   undefined, { projectId: '' }, { projectId: 'project-1', projectPath: '/outside' },
   { projectId: 'project-1', agentId: 4 }, { projectId: 'project-1', capability: {} },
 ])('rejects malformed or path/capability-bearing context before service access', (context) => {
-  expect(() => handlers.get(IPC.SKILL_BUNDLE.LIST)!({}, context)).toThrow();
+  expect(() => handlers.get(IPC.CATALOG_SKILL_BUNDLE.LIST)!({}, context)).toThrow();
   expect(bridge.list).not.toHaveBeenCalled();
 });
 it.each([0, -1, 1.5, '3', NaN])('requires a saved catalog revision, received %s', (expectedRevision) => {
-  expect(() => handlers.get(IPC.SKILL_BUNDLE.SAVE)!({}, { context, assetId: 'asset-1', expectedRevision, token: 'token' })).toThrow();
+  expect(() => handlers.get(IPC.CATALOG_SKILL_BUNDLE.SAVE)!({}, { context, assetId: 'asset-1', expectedRevision, token: 'token' })).toThrow();
   expect(bridge.save).not.toHaveBeenCalled();
 });

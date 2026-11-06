@@ -19,6 +19,7 @@ export function CatalogSkillBundleEditor({ context, assetId, bridge = window.clu
   const target = JSON.stringify([context.projectId, context.agentId, assetId]);
   const currentTarget = useRef(target); currentTarget.current = target;
   const sequence = useRef(0);
+  const busyRef = useRef(false);
   const [document, setDocument] = useState<SkillBundleDocument | null>(null);
   const [draft, setDraft] = useState<SkillAssetPayload | null>(null);
   const [preview, setPreview] = useState<SkillBundleEditPreview | null>(null);
@@ -30,7 +31,7 @@ export function CatalogSkillBundleEditor({ context, assetId, bridge = window.clu
   const valid = (id: number) => currentTarget.current === target && sequence.current === id;
   const read = async () => {
     const id = ++sequence.current;
-    setBusy(true); setPreview(null); setError(null);
+    busyRef.current = true; setBusy(true); setPreview(null); setError(null);
     try {
       const result = await bridge.read(context, assetId);
       if (!valid(id)) return;
@@ -39,7 +40,7 @@ export function CatalogSkillBundleEditor({ context, assetId, bridge = window.clu
     } catch {
       // telemetry-exempt: raw transport errors and bundle contents stay out of logs.
       if (valid(id)) setError(messages.save_failed);
-    } finally { if (valid(id)) setBusy(false); }
+    } finally { if (valid(id)) { busyRef.current = false; setBusy(false); } }
   };
   useEffect(() => {
     setDocument(null); setDraft(null); setLoadedTarget('');
@@ -48,18 +49,18 @@ export function CatalogSkillBundleEditor({ context, assetId, bridge = window.clu
   }, [target, bridge]);
   const review = async () => {
     if (!document || !draft) return;
-    const id = ++sequence.current; setBusy(true); setPreview(null); setError(null);
+    const id = ++sequence.current; busyRef.current = true; setBusy(true); setPreview(null); setError(null);
     try {
       const result = await bridge.preview({ context, assetId, expectedRevision: document.revision, payload: draft });
       if (valid(id)) { if (result.ok === true) setPreview(result.value); else setError(messages[result.code]); }
     } catch {
       // telemetry-exempt: show only a fixed transport failure.
       if (valid(id)) setError(messages.save_failed);
-    } finally { if (valid(id)) setBusy(false); }
+    } finally { if (valid(id)) { busyRef.current = false; setBusy(false); } }
   };
   const save = async () => {
     if (!document || !preview || preview.blocked) return;
-    const id = ++sequence.current; setBusy(true); setError(null);
+    const id = ++sequence.current; busyRef.current = true; setBusy(true); setError(null);
     try {
       const result = await bridge.save({ context, assetId, expectedRevision: document.revision, token: preview.token });
       if (!valid(id)) return;
@@ -69,7 +70,7 @@ export function CatalogSkillBundleEditor({ context, assetId, bridge = window.clu
     } catch {
       // telemetry-exempt: retain drafts, never log bundle contents or raw transport errors.
       if (valid(id)) { setPreview(null); setError(messages.save_failed); }
-    } finally { if (valid(id)) setBusy(false); }
+    } finally { if (valid(id)) { busyRef.current = false; setBusy(false); } }
   };
   return <section aria-label="Catalog skill bundle" className="space-y-3">
     <p className="text-xs text-ctp-subtext0">Catalog copy only. Saving does not assign, enable or run this skill.</p>
@@ -83,6 +84,7 @@ export function CatalogSkillBundleEditor({ context, assetId, bridge = window.clu
         {document.source.kind === 'copy' ? ` Copied from ${document.source.originAssetId} at revision ${document.source.originRevision}.` : ''}
         {document.readOnly ? ' Built-in, read-only.' : ''}</p>
       <SkillBundleEditor key={target} value={draft} disabled={busy} readOnly={document.readOnly} onChange={(value) => {
+        if (busyRef.current || currentTarget.current !== target) return;
         sequence.current++; setDraft(value); setPreview(null); setError(null);
       }} />
       {!document.readOnly && <div className="flex gap-2">

@@ -1,5 +1,5 @@
 export const IPC = {
-  SKILL_BUNDLE: {
+  CATALOG_SKILL_BUNDLE: {
     LIST: 'catalog-skill-bundle:list',
     READ: 'catalog-skill-bundle:read',
     PREVIEW: 'catalog-skill-bundle:preview',
