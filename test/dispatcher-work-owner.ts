@@ -1,4 +1,4 @@
-/** Test-only groundwork. Never imported by production; not wired into the 104-case harness. */
+/** Test-only ownership. Never imported by production; requires an explicit producer inventory. */
 export class AcceptedWork {
   private pending = new Map<object, Promise<void>>();
   private ended = false;
@@ -81,6 +81,11 @@ export class FixtureWork {
   async restart(epoch: Epoch, start: () => undefined): Promise<void> {
     epoch.stop();
     await epoch.work.settle();
+    this.start(start);
+  }
+
+  /** Synchronous guard before bootstrap/reset/replay mutations, also on the first epoch. */
+  start(start: () => undefined): void {
     if (this.closing || this.incomplete) throw new Error('Fixture cannot start another epoch');
     start(); // No await gap between the guard and this fixture mutation.
   }
@@ -132,4 +137,40 @@ export async function preservingFailure(body: () => Promise<void>, cleanup: () =
 export function withFixtureWork(body: (fixture: FixtureWork) => Promise<void>): Promise<void> {
   const fixture = new FixtureWork();
   return preservingFailure(() => fixture.roots.observe(body(fixture)), () => fixture.close());
+}
+
+/**
+ * This fixture uses only plain tests, .each and argument-free setup hooks, with
+ * no custom Vitest fixtures/concurrent chains. Capture the RAW callback result,
+ * before Vitest's outer timeout/cancellation wrapper can abandon it. Proxies
+ * retain callback name/arity/this/args and the exact return value; they do not
+ * synthesize an async callback or change registration options/deadlines.
+ */
+export function ownedRegistration<T extends object>(registration: T, callbackIndex: number, observe: (promise: Promise<unknown>) => void): T {
+  if (typeof registration !== 'function') throw new Error('Owned registration must be callable');
+  const accept = (result: unknown) => {
+    if (result && typeof result === 'object' && typeof (result as { then?: unknown }).then === 'function') observe(result as Promise<unknown>);
+    return result;
+  };
+  return new Proxy(registration, {
+    apply(target, receiver, args: unknown[]) {
+      const callback = args[callbackIndex];
+      if (typeof callback === 'function') {
+        args = [...args];
+        args[callbackIndex] = new Proxy(callback, {
+          apply(body, bodyThis, values: unknown[]) { return accept(Reflect.apply(body, bodyThis, values)); },
+        });
+      }
+      if (typeof target !== 'function') throw new Error('Owned registration must be callable');
+      return accept(Reflect.apply(target, receiver, args));
+    },
+    get(target, key) {
+      const value: unknown = Reflect.get(target, key, target);
+      if (key === 'each' && typeof value === 'function') {
+        return (...cases: unknown[]) => ownedRegistration(Reflect.apply(value, target, cases), callbackIndex, observe);
+      }
+      if (typeof value === 'function' && key !== 'toString') throw new Error('Unsupported owned registration chain');
+      return value;
+    },
+  });
 }

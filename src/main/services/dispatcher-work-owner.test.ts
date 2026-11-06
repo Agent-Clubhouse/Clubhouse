@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { AcceptedWork, FixtureWork, preservingFailure, withFixtureWork } from '../../../test/dispatcher-work-owner';
+import { AcceptedWork, FixtureWork, ownedRegistration, preservingFailure, withFixtureWork } from '../../../test/dispatcher-work-owner';
 
 function deferred<T>() {
   let resolve!: (value: T) => void;
@@ -162,5 +162,126 @@ describe('isolated Dispatcher ownership groundwork', () => {
     }));
     expect(await operation.result).toEqual({ ok: false, error: undefined });
     expect(release).toHaveBeenCalledTimes(1);
+  });
+});
+
+
+describe('serial Dispatcher harness registration ownership', () => {
+  it('preserves raw callback identity metadata, receiver, arguments, return and plain/each registration options', async () => {
+    const raw = deferred<void>();
+    const rawResult = observed(raw.promise);
+    const receiver = {};
+    let registered!: (this: object, value: string) => Promise<void>;
+    let optionsSeen: unknown;
+    let nameSeen = '';
+    const options = { timeout: 1234 };
+    const rows = ['row'];
+    let rowsSeen: unknown;
+    function register(name: string, callback: typeof registered, config: typeof options) {
+      nameSeen = name;
+      registered = callback;
+      optionsSeen = config;
+    }
+    const registrar = Object.assign(register, { each: (cases: typeof rows) => { rowsSeen = cases; return register; } });
+    const accept = vi.fn();
+    const wrapped = ownedRegistration(registrar, 1, accept);
+    function original(this: object, value: string) {
+      expect(this).toBe(receiver);
+      expect(value).toBe('argument');
+      return raw.promise;
+    }
+    await preservingFailure(async () => {
+      expect(wrapped('plain', original, options)).toBeUndefined();
+      expect(nameSeen).toBe('plain');
+      expect(optionsSeen).toBe(options);
+      expect(registered.name).toBe(original.name);
+      expect(registered.length).toBe(original.length);
+      expect(registered.call(receiver, 'argument')).toBe(raw.promise);
+      expect(accept).toHaveBeenLastCalledWith(raw.promise);
+      wrapped.each(rows)('each %s', original, options);
+      expect(rowsSeen).toBe(rows);
+      expect(nameSeen).toBe('each %s');
+      expect(optionsSeen).toBe(options);
+      expect(registered.call(receiver, 'argument')).toBe(raw.promise);
+      const throwsUndefined = () => { throw undefined; };
+      wrapped('throws', throwsUndefined, options);
+      let thrown = false;
+      let error: unknown;
+      try { registered.call(receiver, 'argument'); } catch (caught) { thrown = true; error = caught; }
+      expect(thrown).toBe(true);
+      expect(error).toBeUndefined();
+      expect(accept).toHaveBeenCalledTimes(2);
+    }, async () => { raw.resolve(); await rawResult.result; });
+  });
+
+  it('a simulated outer timeout cannot admit mutation while the raw body and its late restart remain live', async () => {
+    const fixture = new FixtureWork();
+    const epoch = fixture.epoch(vi.fn());
+    const bodyGate = deferred<void>();
+    const childGate = deferred<void>();
+    const childStarted = deferred<void>();
+    const timeout = deferred<void>();
+    let callback!: () => Promise<void>;
+    const register = ownedRegistration((body: typeof callback) => { callback = body; }, 0, (promise) => { fixture.roots.observe(promise); });
+    const mutateBase = vi.fn();
+    register(async () => {
+      await bodyGate.promise;
+      epoch.work.observe(childGate.promise);
+      childStarted.resolve();
+      await fixture.restart(epoch, mutateBase);
+    });
+    const raw = observed(callback()); // Immediate observation before any rejection can run.
+    const outer = observed(Promise.race([raw.promise, timeout.promise]));
+    const close = observed(fixture.close()); // Deliberately NOT a root it would await.
+    await preservingFailure(async () => {
+      timeout.reject(undefined);
+      expect(await outer.result).toEqual({ ok: false, error: undefined });
+      expect(() => fixture.admitNext(mutateBase)).toThrow(/incomplete/);
+      expect(() => fixture.start(mutateBase)).toThrow(/cannot start/);
+      bodyGate.resolve();
+      expect(await Promise.race([childStarted.promise.then(() => true), raw.result.then(() => false)])).toBe(true);
+      expect(() => fixture.admitNext(mutateBase)).toThrow(/incomplete/);
+      childGate.resolve();
+      expect((await raw.result).ok).toBe(false); // Closing refuses the late restart.
+      expect((await close.result).ok).toBe(true); // Rejection is accounted settlement.
+      expect(mutateBase).not.toHaveBeenCalled();
+      fixture.admitNext(mutateBase);
+      expect(mutateBase).toHaveBeenCalledTimes(1);
+    }, async () => {
+      timeout.resolve();
+      bodyGate.resolve();
+      childGate.resolve();
+      await outer.result;
+      await raw.result;
+      await close.result;
+    });
+  });
+
+  it('a rejected setup root keeps its accepted epoch descendant alive before teardown admission', async () => {
+    const fixture = new FixtureWork();
+    const epoch = fixture.epoch(vi.fn());
+    const childGate = deferred<void>();
+    let setup!: () => Promise<void>;
+    const registerSetup = ownedRegistration((body: typeof setup) => { setup = body; }, 0, (promise) => { fixture.roots.observe(promise); });
+    registerSetup(async () => {
+      epoch.work.observe(childGate.promise);
+      throw undefined;
+    });
+    const result = observed(setup());
+    const close = observed(fixture.close());
+    const mutateBase = vi.fn();
+    await preservingFailure(async () => {
+      expect(await result.result).toEqual({ ok: false, error: undefined });
+      expect(() => fixture.admitNext(mutateBase)).toThrow(/incomplete/);
+      expect(mutateBase).not.toHaveBeenCalled();
+      childGate.resolve();
+      expect((await close.result).ok).toBe(true);
+      fixture.admitNext(mutateBase);
+      expect(mutateBase).toHaveBeenCalledTimes(1);
+    }, async () => {
+      childGate.resolve();
+      await result.result;
+      await close.result;
+    });
   });
 });
