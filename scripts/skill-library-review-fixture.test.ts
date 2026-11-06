@@ -12,6 +12,15 @@ beforeEach(async () => { root = await fs.mkdtemp(path.join(os.tmpdir(), 'clubhou
 afterEach(async () => { await fs.rm(root, { recursive: true, force: true }); });
 it('prepares complete catalog fixtures through the real store, with no agents or running receipts', async () => {
   const fixture = await prepareSkillLibraryReview(root, 'a'.repeat(40));
+  expect(fixture.home).toBe(path.join(await fs.realpath(root), 'home'));
+  for (const directory of [fixture.root, fixture.home, fixture.profile]) {
+    const stat = await fs.lstat(directory);
+    expect(stat.isDirectory()).toBe(true); expect(stat.isSymbolicLink()).toBe(false);
+    // The guarded launcher is macOS only; Windows does not expose POSIX modes.
+    if (process.platform !== 'win32') expect(stat.mode & 0o777).toBe(0o700);
+    expect(await fs.realpath(directory)).toBe(directory);
+  }
+  expect(await fs.readdir(fixture.home)).toEqual([]);
   const catalog = createAssetCatalogStore({ dir: fixture.catalogDir }); const index = await catalog.read();
   expect(index.compositions).toEqual({}); expect(index.runs).toEqual({});
   const original = await catalog.readRevision(fixture.assets.editable, 1);

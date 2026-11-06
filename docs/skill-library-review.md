@@ -1,7 +1,7 @@
 # Skill library host review
 
-This host is stacked on component/bridge PR #2865 at `72002bce0`. Its own PR must
-target that foundation branch until it lands, then retarget main. Held Builder
+Component/bridge PR #2865 landed on main as `3a51192d9` from reviewed `72002bce0`.
+This host targets main and preserves the foundation contract. Held Builder
 `38a5777c9`, adoption `139903edc` and their packages are separate and unchanged.
 This host does not complete #2819 or #2740 acceptance. Native discovery remains
 behind the #2830 confinement hold; import, assignment, adoption, MCP and native
@@ -40,7 +40,10 @@ bash scripts/launch-skill-library-review.sh <exact-reviewed-host-head> --prepare
 This writes a new private temporary fixture and reports its root. It registers
 two synthetic projects, empty agent lists and valid catalog bundles through the
 existing catalog store. Preparation launches no app, CUA, process or provider.
-Its manifest binds source head/profile/catalog location. Keep the printed root:
+Its manifest binds source head/private home/profile/catalog location. Preparation
+validates private nonsymlink directories and prints the exact `HOME`, `USERPROFILE`,
+`CLUBHOUSE_USER_DATA` and `--user-data-dir` destinations without launching the app.
+Keep the printed root:
 
 ```bash
 CLUBHOUSE_SKILL_LIBRARY_REVIEW_ROOT=<printed-root> \
@@ -49,7 +52,8 @@ CLUBHOUSE_SKILL_LIBRARY_REVIEW_ROOT=<printed-root> \
 
 This human-operated macOS launcher runs unpackaged `npm start`, which builds the
 `.webpack/main` entry before launch. It passes a throwaway `--user-data-dir` and
-sets `CLUBHOUSE_USER_DATA` for both app userData/home. All three provider overrides
+sets `CLUBHOUSE_USER_DATA` for app userData/home, plus `HOME` and `USERPROFILE` to
+the separately validated private fixture home. All three provider overrides
 are verified nonexistent paths and fail closed without normal binary fallback;
 model probes/updates are disabled through existing unpackaged seams. Do not use
 a packaged app: packaged builds ignore those protective test seams. No fake or

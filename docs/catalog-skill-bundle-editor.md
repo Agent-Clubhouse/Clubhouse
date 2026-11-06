@@ -2,7 +2,7 @@
 
 This component and typed bridge edit existing installation-catalog skill bundles.
 They reuse `SkillAssetPayload`, catalog validation, impact planning and immutable
-revision saving. They introduce no filesystem skill model. This stacked host adds
+revision saving. They introduce no filesystem skill model. This host adds
 App Settings > Skill library with an explicit registered-project scope. Builder
 and native discovery remain separate. Host and visual/integration acceptance
 remain outstanding under #2819 and #2740.

@@ -8,6 +8,8 @@ export async function prepareSkillLibraryReview(root: string, sourceHead: string
   const stat = await fs.lstat(root);
   if (!stat.isDirectory() || stat.isSymbolicLink() || (await fs.readdir(root)).length) throw new Error('Empty private fixture directory required');
   await fs.chmod(root, 0o700); root = await fs.realpath(root);
+  const home = path.join(root, 'home');
+  await fs.mkdir(home, { mode: 0o700 });
   const profile = path.join(root, 'profile'); const base = path.join(profile, '.clubhouse-dev');
   const json = async (file: string, value: unknown) => { await fs.mkdir(path.dirname(file), { recursive: true, mode: 0o700 }); await fs.writeFile(file, JSON.stringify(value, null, 2), { mode: 0o600 }); };
   const projects = ['one', 'two'].map((id) => ({ id: `skill-review-${id}`, name: `Skill review ${id}`, path: path.join(root, `project-${id}`) }));
@@ -38,7 +40,7 @@ export async function prepareSkillLibraryReview(root: string, sourceHead: string
   const shared = await catalog.createAsset({ kind: 'skill', name: 'Shared consumer blocks edits', payload: payload('shared-review') });
   const block = await catalog.createAsset({ kind: 'block', name: 'Fixture role', payload: { content: 'Synthetic fixture only.' } });
   await catalog.createAsset({ kind: 'template', name: 'Synthetic consumer', payload: { entries: [{ entryId: 'Role', blockId: block.id, blockRevision: 1 }], subagents: [], skills: [shared.id], mcps: [] } });
-  const manifest = { sourceHead, root, profile, projects, catalogDir, assets: { editable: editable.id, projectOwned: projectOwned.id, builtin: builtin.id, shared: shared.id } };
+  const manifest = { sourceHead, root, home, profile, projects, catalogDir, assets: { editable: editable.id, projectOwned: projectOwned.id, builtin: builtin.id, shared: shared.id } };
   await json(path.join(root, 'review-manifest.json'), manifest);
   await fs.writeFile(path.join(root, 'README.txt'), 'Synthetic catalog review only. No agents or providers. Use unpackaged guarded launcher; do not create/start agents, enable providers, scan/import or run scripts.\n');
   return manifest;
