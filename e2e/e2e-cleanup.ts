@@ -257,6 +257,7 @@ export async function sweepE2EProcesses(paths?: CleanupPaths, query: () => Promi
         console.warn('[e2e cleanup] process table unavailable; sweep/state retained', {
           reason: snapshot.reason, elapsedMs: snapshot.elapsedMs,
           cleanupRequested: snapshot.cleanupRequested, exitObserved: snapshot.exitObserved,
+          ...(snapshot.lifecycle ? { lifecycle: snapshot.lifecycle } : {}),
         });
         return result;
       }
