@@ -854,6 +854,8 @@ describe('a removal the store can\'t take', () => {
       };
       let boundaryFailed = false;
       let boundaryError: unknown;
+      let drainFailed = false;
+      let drainError: unknown;
       try {
         userDraws('a', 'b');
         await vi.waitFor(() => expect(captured).toBeDefined());
@@ -871,10 +873,12 @@ describe('a removal the store can\'t take', () => {
         try {
           await isRemovalUnsaved({ agentId: 'a', targetId: 'b' });
         } catch (error) {
-          if (!boundaryFailed) throw error;
+          drainFailed = true;
+          drainError = error;
         }
       }
       if (boundaryFailed) throw boundaryError;
+      if (drainFailed) throw drainError;
       expect(pendingFile()).toBe(false);
       await restart();
       expect(isBound('a', 'b')).toBe(true);
