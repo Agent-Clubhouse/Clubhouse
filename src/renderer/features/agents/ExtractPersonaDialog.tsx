@@ -181,7 +181,7 @@ export function ExtractPersonaDialog() {
 
         <label className="flex items-center gap-2 text-xs text-ctp-subtext0">
           <input type="checkbox" checked={reviewed} disabled={loading || loadFailed || saving} onChange={(event) => setReviewed(event.target.checked)} />
-          I reviewed this bounded capture and any omitted sources before saving.
+          I reviewed the captured files and any omitted sources before saving.
         </label>
         {error && <p role="alert" className="text-xs text-ctp-error">{error}</p>}
 
