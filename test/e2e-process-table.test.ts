@@ -145,12 +145,12 @@ describe('query lifecycle diagnostics', () => {
     const { read, children } = fixture('win32', vi.fn<LifecycleObserver>());
     try {
       recordElectronApp(12345, retained, paths);
-      const stateFile = path.join(paths.stateDir, 'electron-pids.jsonl'); const before = fs.readFileSync(stateFile);
+      const stateFile = path.join(paths.stateDir, 'electron-pids.jsonl'); const before = await fs.promises.readFile(stateFile);
       const pending = sweepE2EProcesses(paths, read);
       await vi.advanceTimersByTimeAsync(PROCESS_TABLE_DEADLINE_MS);
       expect(await pending).toEqual({ killed: 0, tempDirsRemoved: 0, processTable: 'timeout' });
       expect(kill.mock.calls.every((call) => call[1] === 0)).toBe(true);
-      expect(fs.readFileSync(stateFile)).toEqual(before); expect(fs.readFileSync(path.join(retained, 'marker'), 'utf8')).toBe('PRIVATE retained content');
+      expect(await fs.promises.readFile(stateFile)).toEqual(before); expect(await fs.promises.readFile(path.join(retained, 'marker'), 'utf8')).toBe('PRIVATE retained content');
       expect(warning).toHaveBeenCalledExactlyOnceWith('[e2e cleanup] process table unavailable; sweep/state retained', {
         reason: 'timeout', elapsedMs: expect.any(Number), cleanupRequested: true, exitObserved: false,
         lifecycle: expect.objectContaining({ deadlineObserved: true, spawnObserved: false, closeObserved: false, callbackObserved: false }),
