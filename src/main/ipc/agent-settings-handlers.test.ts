@@ -88,6 +88,65 @@ describe('agent-settings-handlers', () => {
     registerAgentSettingsHandlers();
   });
 
+  it('uses the explicit agent provider for the existing skill list and content operations', async () => {
+    vi.mocked(agentConfig.getDurableConfig).mockResolvedValueOnce({ id: 'copilot', worktreePath: '/worktree', orchestrator: 'copilot-cli' } as never);
+    const conventions = { configDir: '.github', skillsDir: 'skills' };
+    vi.mocked(agentSystem.resolveOrchestrator).mockResolvedValueOnce({ conventions } as never);
+    await handlers.get(IPC.AGENT.LIST_SKILLS)!({}, '/worktree', '/project', 'copilot');
+    expect(agentSystem.resolveOrchestrator).toHaveBeenCalledWith('/project', 'copilot-cli');
+    expect(agentSettings.listSkills).toHaveBeenCalledWith('/worktree', conventions);
+    for (const [channel, args, method] of [
+      [IPC.AGENT.READ_SKILL_CONTENT, ['/worktree', 'review', '/project', 'copilot'], agentSettings.readSkillContent],
+      [IPC.AGENT.WRITE_SKILL_CONTENT, ['/worktree', 'review', 'body', '/project', 'copilot'], agentSettings.writeSkillContent],
+      [IPC.AGENT.DELETE_SKILL, ['/worktree', 'review', '/project', 'copilot'], agentSettings.deleteSkill],
+    ] as const) {
+      vi.mocked(agentConfig.getDurableConfig).mockResolvedValueOnce({ id: 'copilot', worktreePath: '/worktree', orchestrator: 'copilot-cli' } as never);
+      vi.mocked(agentSystem.resolveOrchestrator).mockResolvedValueOnce({ conventions } as never);
+      await handlers.get(channel)!({}, ...args);
+      expect(method).toHaveBeenLastCalledWith(...args.slice(0, -2), conventions);
+    }
+  });
+
+  it('lists and edits the effective-provider file while preserving supporting bundle bytes and mode', async () => {
+    const fs = await import('node:fs/promises');
+    const os = await import('node:os');
+    const path = await import('node:path');
+    const actual = await vi.importActual<typeof import('../services/agent-settings-service')>('../services/agent-settings-service');
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), 'skill-provider-'));
+    const worktree = path.join(root, 'agent');
+    const skill = path.join(worktree, '.github/skills/review');
+    const other = path.join(worktree, '.claude/skills/review');
+    try {
+      await fs.mkdir(path.join(skill, 'scripts'), { recursive: true });
+      await fs.mkdir(other, { recursive: true });
+      await fs.writeFile(path.join(skill, 'SKILL.md'), 'Copilot instructions');
+      await fs.writeFile(path.join(skill, 'scripts/check.sh'), '#!/bin/sh\nexit 99\n', { mode: 0o755 });
+      await fs.writeFile(path.join(other, 'SKILL.md'), 'Untouched Claude instructions');
+      const scriptBefore = await fs.readFile(path.join(skill, 'scripts/check.sh'));
+      const modeBefore = (await fs.stat(path.join(skill, 'scripts/check.sh'))).mode;
+      const bind = () => {
+        vi.mocked(agentConfig.getDurableConfig).mockResolvedValueOnce({ id: 'c', worktreePath: worktree, orchestrator: 'copilot-cli' } as never);
+        vi.mocked(agentSystem.resolveOrchestrator).mockResolvedValueOnce({ conventions: { configDir: '.github', skillsDir: 'skills' } } as never);
+      };
+      bind(); vi.mocked(agentSettings.listSkills).mockImplementationOnce(actual.listSkills);
+      expect(await handlers.get(IPC.AGENT.LIST_SKILLS)!({}, worktree, root, 'c')).toEqual([expect.objectContaining({ name: 'review', path: skill })]);
+      bind(); vi.mocked(agentSettings.readSkillContent).mockImplementationOnce(actual.readSkillContent);
+      expect(await handlers.get(IPC.AGENT.READ_SKILL_CONTENT)!({}, worktree, 'review', root, 'c')).toBe('Copilot instructions');
+      bind(); vi.mocked(agentSettings.writeSkillContent).mockImplementationOnce(actual.writeSkillContent);
+      await handlers.get(IPC.AGENT.WRITE_SKILL_CONTENT)!({}, worktree, 'review', 'Edited Copilot instructions', root, 'c');
+      expect(await fs.readFile(path.join(skill, 'SKILL.md'), 'utf8')).toBe('Edited Copilot instructions');
+      expect(await fs.readFile(path.join(other, 'SKILL.md'), 'utf8')).toBe('Untouched Claude instructions');
+      expect(await fs.readFile(path.join(skill, 'scripts/check.sh'))).toEqual(scriptBefore);
+      expect((await fs.stat(path.join(skill, 'scripts/check.sh'))).mode).toBe(modeBefore);
+    } finally { await fs.rm(root, { recursive: true, force: true }); }
+  });
+
+  it('refuses an explicit skill target whose current folder no longer matches', async () => {
+    vi.mocked(agentConfig.getDurableConfig).mockResolvedValueOnce({ id: 'a1', worktreePath: '/different', orchestrator: 'claude-code' } as never);
+    await expect(handlers.get(IPC.AGENT.WRITE_SKILL_CONTENT)!({}, '/worktree', 'review', 'body', '/project', 'a1')).rejects.toThrow('target changed');
+    expect(agentSettings.writeSkillContent).not.toHaveBeenCalled();
+  });
+
   it('registers all agent-settings IPC handlers', () => {
     const expectedChannels = [
       IPC.AGENT.READ_INSTRUCTIONS, IPC.AGENT.SAVE_INSTRUCTIONS,

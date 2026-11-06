@@ -901,6 +901,7 @@ export class ClaudeChatDriverSession implements ChatDriverSession {
       }
       case 'session_started':
         // system/init only arrives with the first prompt: the native session id and resolved model are known now.
+        if (ev.parentToolCallId || this.closing) return;
         this.costIsEstimate = ev.apiKeySource === undefined || ev.apiKeySource === 'none';
         this.push({
           type: 'session_info',
@@ -909,6 +910,10 @@ export class ClaudeChatDriverSession implements ChatDriverSession {
             cliVersion: ev.cliVersion || undefined,
             model: ev.model || undefined,
             ...(ev.mcpServers && { mcpServers: ev.mcpServers.map((s) => ({ name: s.name, status: claudeMcpStatus(s.status) })) }),
+            ...(ev.sessionId && ev.sessionId.length <= 512 && { providerSkills: {
+              provider: PROVIDER, driver: this.driverId, source: 'system/init' as const,
+              nativeSessionId: ev.sessionId, names: ev.skills ?? null,
+            } }),
           },
         });
         // A per-turn init reports the model the turn started with, before any /model in it ran.
