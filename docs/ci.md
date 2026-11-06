@@ -55,7 +55,7 @@ Over the 67 PRs measured below, macOS build would have run on **12 (18%)**:
 
 ## The Copilot SDK chunk
 
-The `copilot-sdk-chunk` job runs `scripts/check-copilot-sdk-chunk.mjs` (docs/copilot-sdk-driver.md, Packaging): it fails if a CLI or native binary reaches the bundle, and it runs the bundled SDK under Node and Electron's Node against the runtime in `node_modules`, with no credentials and no prompt. It also fails if `koffi` was compiled from source during `npm ci`. Nothing depends on it, so it can't lengthen the long pole.
+The `copilot-sdk-chunk` job runs `scripts/check-copilot-sdk-chunk.mjs --static-only` (docs/copilot-test-boundary.md): it checks chunk size and fails if a CLI or native binary reaches the bundle. It also fails if `koffi` was compiled from source during `npm ci`. The runtime handshake is separately authorized QA; this CI job does not prove it. Nothing depends on the job, so it can't lengthen the long pole.
 
 It runs on Linux and Windows for any change that affects the app, and on macOS only with `full-ci` or a manual run. A bump of `@github/copilot-sdk` should carry `full-ci`.
 

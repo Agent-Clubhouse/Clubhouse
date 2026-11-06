@@ -68,3 +68,9 @@ Each former `driver.test.ts` real-runtime test keeps the same name in `driver.ru
 | tells the server when the session closes on an open question | Runtime-only close during elicitation |
 | accepts a form with no fields straight from the approval card | Runtime-only empty form elicitation |
 | passes an HTTP MCP server with its header from the environment | driver.test.ts pure MCP conversion case |
+
+## Other opt-in real CLI tests and CI
+
+Standard main-project setup clears inherited `CLUBHOUSE_RECORD_COPILOT_SDK`, `CLUBHOUSE_CHECK_COPILOT_SDK_CHUNK`, `CLUBHOUSE_FAKE_MODEL_SMOKE`, `CLUBHOUSE_CHAT_HANDSHAKE_SMOKE`, and `CLUBHOUSE_LIVE_DRIVER_SMOKE` flags before loading tests. These suites remain available through `vitest.live-qa.config.ts`, with their original flags and assertions. They need their own explicit authorization and appropriate credential/network boundary. The scheduled chat-handshake workflow is separately configured real CLI QA; it is not a standard test or an egress sandbox.
+
+The PR `copilot-sdk-chunk` job runs `--static-only`: it still builds and checks the SDK chunk size, assets, and modules, but does not launch the bundled runtime. The existing runtime handshake remains available in `check-copilot-sdk-chunk.mjs` without that flag for separately authorized, isolated QA. The static job cannot prove that the bundled SDK opens a real runtime under Node or Electron.
