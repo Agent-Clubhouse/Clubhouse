@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Toggle } from '../../components/Toggle';
 import { SettingsPage, SettingsSection, SettingsField, settingsError, SETTING_NOT_SAVED_TEXT } from './SettingsLayout';
 import { Button } from '../../components/Button';
@@ -19,7 +19,7 @@ export const EXPERIMENTAL_FEATURES: Array<{
   {
     id: COPILOT_SDK_FLAG,
     label: 'Copilot SDK driver',
-    description: 'Offer the Copilot SDK as a chat driver, in Settings > Agents & providers > Copilot CLI. ACP stays the default until you choose it. Running agents keep their driver until they restart.',
+    description: 'On selects Copilot SDK for the next chat start; off selects ACP. Running sessions keep their current driver. If SDK cannot start, chat reports the fallback and its reason. Details > Session > Runs on shows the actual driver.',
   },
 ];
 
@@ -27,6 +27,8 @@ export function ExperimentalSettingsView() {
   const [settings, setSettings] = useState<Record<string, boolean>>({});
   const [loaded, setLoaded] = useState(false);
   const [saveFailed, setSaveFailed] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const pending = useRef(false);
 
   useEffect(() => {
     window.clubhouse.app.getExperimentalSettings().then((s) => {
@@ -36,15 +38,25 @@ export function ExperimentalSettingsView() {
   }, []);
 
   const handleToggle = async (id: string, enabled: boolean) => {
+    if (pending.current) return;
+    pending.current = true;
+    setSaving(true);
+    let previous = settings;
     const updated = { ...settings, [id]: enabled };
     setSettings(updated);
     setSaveFailed(false);
     try {
-      await window.clubhouse.app.saveExperimentalSettings(updated);
+      previous = await window.clubhouse.app.getExperimentalSettings();
+      const next = { ...previous, [id]: enabled };
+      await window.clubhouse.app.saveExperimentalSettings(next);
+      setSettings(next);
     } catch {
       // telemetry-exempt: shown to the user, and the switch goes back to what's saved.
-      setSettings(settings);
+      setSettings(previous);
       setSaveFailed(true);
+    } finally {
+      pending.current = false;
+      setSaving(false);
     }
   };
 
@@ -71,6 +83,7 @@ export function ExperimentalSettingsView() {
             <Toggle
               aria-label={label}
               checked={!!settings[id]}
+              disabled={saving}
               onChange={(enabled) => handleToggle(id, enabled)}
             />
           </SettingsField>

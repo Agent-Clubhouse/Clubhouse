@@ -57,18 +57,18 @@ describe('chat runtime settings', () => {
   describe('the Copilot SDK flag', () => {
     const saved = { 'copilot-cli': { mode: 'chat', driver: 'copilot_sdk' } };
 
-    it('is off by default, and on its own does not choose the driver', () => {
+    it('is off by default, and on its own chooses SDK', () => {
       flags.value = { chat: true };
       expect(isCopilotSdkEnabled()).toBe(false);
       flags.value = { chat: true, copilotSdk: true };
       expect(isCopilotSdkEnabled()).toBe(true);
-      expect(resolveRuntimeMode('copilot-cli')).toEqual({ mode: 'chat' });
+      expect(resolveRuntimeMode('copilot-cli')).toEqual({ mode: 'chat', driver: 'copilot_sdk' });
     });
 
     it('with the flag off, ignores a saved choice without changing it', () => {
       flags.value = { chat: true };
       stored.value = saved;
-      expect(resolveRuntimeMode('copilot-cli')).toEqual({ mode: 'chat' });
+      expect(resolveRuntimeMode('copilot-cli')).toEqual({ mode: 'chat', driver: 'copilot_acp' });
       expect(stored.value).toEqual(saved);
     });
 
@@ -83,6 +83,18 @@ describe('chat runtime settings', () => {
       stored.value = { 'copilot-cli': { mode: 'chat', driver: 'copilot_acp' }, 'claude-code': { mode: 'chat', driver: 'claude_stream_json' } };
       expect(resolveRuntimeMode('copilot-cli')).toEqual({ mode: 'chat', driver: 'copilot_acp' });
       expect(resolveRuntimeMode('claude-code')).toEqual({ mode: 'chat', driver: 'claude_stream_json' });
+    });
+
+    it.each([undefined, 'copilot_acp', 'copilot_sdk'] as const)('the flag overrides legacy preference %s without rewriting settings', (driver) => {
+      stored.value = { 'copilot-cli': { mode: 'terminal', driver }, 'claude-code': { mode: 'chat', driver: 'claude_stream_json' } };
+      const original = structuredClone(stored.value);
+      for (const enabled of [true, false, true]) {
+        flags.value = { copilotSdk: enabled };
+        expect(resolveRuntimeMode('copilot-cli', 'chat')).toEqual({ mode: 'chat', driver: enabled ? 'copilot_sdk' : 'copilot_acp' });
+        expect(resolveRuntimeMode('copilot-cli').mode).toBe('terminal');
+        expect(resolveRuntimeMode('claude-code')).toEqual({ mode: 'chat', driver: 'claude_stream_json' });
+        expect(stored.value).toEqual(original);
+      }
     });
 
     it('needs Chat, and counts only in beta builds', () => {

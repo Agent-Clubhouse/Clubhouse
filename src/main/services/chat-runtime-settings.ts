@@ -38,8 +38,11 @@ export interface ResolvedRuntimeMode {
 export function resolveRuntimeMode(provider: string, agentOverride?: AgentRuntimeMode): ResolvedRuntimeMode {
   if (!isChatEnabled()) return { mode: 'terminal' };
   const setting = getSettings()[provider];
-  // With its flag off, a saved SDK choice is ignored but kept, so it applies again when the flag comes back.
-  const driver = setting?.driver === 'copilot_sdk' && !isCopilotSdkEnabled() ? undefined : setting?.driver;
+  // The experimental flag is the sole Copilot choice. Legacy preferences are
+  // retained for downgrade compatibility but cannot override either flag state.
+  const driver = provider === 'copilot-cli'
+    ? (isCopilotSdkEnabled() ? 'copilot_sdk' : 'copilot_acp')
+    : setting?.driver;
   return {
     mode: agentOverride ?? setting?.mode ?? DEFAULT_CHAT_PROVIDER_MODE,
     ...(driver ? { driver } : {}),
