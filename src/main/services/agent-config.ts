@@ -2196,6 +2196,7 @@ async function runDurableCreation(
   heartbeat.unref?.();
 
   let compositionAttempted = false;
+  let compositionJournal: DurableAgentCreation['composition'];
   let ownsFolder = false;
   let branchOwned = false;
   let branchStartSha: string | undefined;
@@ -2336,9 +2337,10 @@ async function runDurableCreation(
           // Set before persistence: even an ambiguous journal write must retain the record.
           compositionAttempted = true;
           active.compositionAttempted = true;
+          compositionJournal = { reservationId, agentId: id, beforeRevision: 0, expectedRevision: 1, phase: 'prepared' };
           await update((agent) => {
             if (!agent.creation) throw new DurableCreationCancelledError();
-            agent.creation.composition = { reservationId, agentId: id, beforeRevision: 0, expectedRevision: 1, phase: 'prepared' };
+            agent.creation.composition = { ...compositionJournal! };
           }, true);
         },
         commit: () => options.commitComposition!(cloneAgent(initial), reservation),
@@ -2346,6 +2348,7 @@ async function runDurableCreation(
           await update((agent) => {
             if (agent.creation?.composition?.reservationId !== reservationId) throw new CreationCompositionRetainedError();
             agent.creation.composition.phase = 'committed';
+            compositionJournal = { ...agent.creation.composition };
           }, true);
         },
       });
@@ -2356,6 +2359,7 @@ async function runDurableCreation(
     checkCancelled();
     // Flushed when a worktree was made, so a quit right after ready is not mistaken for an interrupted creation.
     const ready = await update((agent) => { checkCancelled(); delete agent.creation; }, !!plan || compositionAttempted);
+    if (compositionAttempted) checkCancelled();
     emit('ready', ready);
     return ready;
   } catch (err) {
@@ -2378,7 +2382,7 @@ async function runDurableCreation(
         delete agent.branchOwned;
         delete agent.branchStartSha;
         const { owner: _owner, heartbeatAt: _beat, folderOwned: _folder, ...rest } = agent.creation ?? { startedAt: initial.createdAt, state: 'failed' as const };
-        agent.creation = { ...rest, state: 'failed', stage: 'failed', reason };
+        agent.creation = { ...rest, ...(compositionJournal && { composition: compositionJournal }), state: 'failed', stage: 'failed', reason };
       }, { flush: true });
       emit('failed', failed ?? undefined, reason);
     } else {

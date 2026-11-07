@@ -5,7 +5,7 @@ import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import type { DurableAgentConfig } from '../../shared/types';
 import type { BaseAdoption } from '../../shared/asset-catalog-types';
 
-const state = vi.hoisted(() => ({ root: '', beforeRename: undefined as undefined | (() => void) }));
+const state = vi.hoisted(() => ({ root: '', beforeRename: undefined as undefined | (() => void), beforeReadyRename: undefined as undefined | (() => void) }));
 vi.mock('electron', () => ({ app: { isPackaged: false, getPath: () => state.root } }));
 vi.mock('./base-dir', () => ({ getBaseDirPath: () => state.root }));
 vi.mock('./log-service', () => ({ appLog: vi.fn() }));
@@ -17,7 +17,13 @@ vi.mock('./agent-system', () => ({ resolveOrchestrator: async () => ({ conventio
 // Real writes/sync/rename. Hook only the owned catalog staging boundary.
 vi.mock('fs/promises', async (importOriginal) => {
   const actual = await importOriginal<typeof import('fs/promises')>();
-  return { ...actual, open: async (...args: Parameters<typeof actual.open>) => {
+  return { ...actual, rename: async (...args: Parameters<typeof actual.rename>) => {
+    if (String(args[1]).endsWith(path.join('.clubhouse', 'agents.json')) && state.beforeReadyRename) {
+      const records = JSON.parse(await actual.readFile(args[0], 'utf8')) as DurableAgentConfig[];
+      if (records.some((record) => !record.creation)) state.beforeReadyRename();
+    }
+    return actual.rename(...args);
+  }, open: async (...args: Parameters<typeof actual.open>) => {
     const handle = await actual.open(...args);
     if (!String(args[0]).startsWith(path.join(state.root, 'asset-catalog', 'catalog.json.tmp.'))) return handle;
     return { writeFile: handle.writeFile.bind(handle), close: handle.close.bind(handle),
@@ -45,10 +51,10 @@ const indexPath = () => path.join(assetCatalogDir(), 'catalog.json');
 beforeEach(() => {
   state.root = fs.mkdtempSync(path.join(os.tmpdir(), 'creation-composition-'));
   project = path.join(state.root, 'project'); fs.mkdirSync(project);
-  state.beforeRename = undefined; clearAgentConfigCache(); _resetSettingsAuditForTesting(false);
+  state.beforeRename = undefined; state.beforeReadyRename = undefined; clearAgentConfigCache(); _resetSettingsAuditForTesting(false);
 });
 afterEach(async () => {
-  state.beforeRename = undefined;
+  state.beforeRename = undefined; state.beforeReadyRename = undefined;
   await Promise.all(owned.splice(0));
   await flushAgentConfig(); clearAgentConfigCache(); _resetSettingsAuditForTesting(false);
   fs.rmSync(state.root, { recursive: true, force: true });
@@ -133,4 +139,22 @@ it('binds source revisions and leaves a newer asset untouched on refusal', async
   expect(newerBytes).toBeDefined();
   expect(fs.readFileSync(indexPath())).toEqual(newerBytes);
   expect((await store.read()).assets[asset.id].headRevision).toBe(2);
+});
+
+it('restores the journal and reports failed when cancellation arrives during readiness flush', async () => {
+  let cancellation: ReturnType<typeof observe> | undefined;
+  const started = await startDurableCreation(project, { name: 'flush-cancel', color: 'blue', useWorktree: false }, {
+    commitComposition: async (config, reservation) => {
+      await creationCompositionCommit(await reviewed(config.id), () => {})(config, reservation);
+      state.beforeReadyRename = () => {
+        state.beforeReadyRename = undefined;
+        cancellation = observe(cancelDurableCreation(project, config.id));
+      };
+    },
+  });
+  observe(started.done);
+  expect(await started.done).toBe('failed');
+  expect((await cancellation)?.ok).toBe(false);
+  expect(records()[0].creation).toMatchObject({ state: 'failed', composition: { phase: 'committed' } });
+  expect((await createAssetCatalogStore({ dir: assetCatalogDir() }).read()).compositions[started.agentId].revision).toBe(1);
 });
