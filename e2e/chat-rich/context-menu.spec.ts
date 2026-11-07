@@ -101,7 +101,7 @@ test('native copy menu preserves rich link, image and selection content', async 
     const address = 'https://example.invalid/clipboard-fixture.png';
     const originalSource = await image.getAttribute('src');
     await image.evaluate((el, src) => { el.style.width = '100px'; el.style.height = '100px'; el.setAttribute('src', src); }, address);
-    await expect.poll(() => image.evaluate(el => el.complete && el.naturalWidth === 0)).toBe(true);
+    await expect.poll(() => image.evaluate(el => { if (!(el instanceof HTMLImageElement)) throw new Error('Expected image fixture'); return el.complete && el.naturalWidth === 0; })).toBe(true);
     const unavailable = await menu(image);
     expect(unavailable).toContain('Copy image address'); expect(unavailable).not.toContain('Copy image');
     await choose('Copy image address'); await expect.poll(text).toBe(address);
