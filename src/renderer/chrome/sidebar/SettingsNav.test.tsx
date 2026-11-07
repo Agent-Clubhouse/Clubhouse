@@ -91,3 +91,9 @@ describe('SettingsNav', () => {
     expect(useUIStore.getState()).toMatchObject({ settingsContext: 'p2', settingsSubPage: 'notifications' });
   });
 });
+
+it('opens Skill library as an App Settings page', () => {
+  render(<SettingsNav />);
+  fireEvent.click(screen.getByTestId('settings-nav-app-skill-library'));
+  expect(useUIStore.getState()).toMatchObject({ settingsContext: 'app', settingsSubPage: 'skill-library' });
+});
