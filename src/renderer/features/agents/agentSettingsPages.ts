@@ -17,7 +17,8 @@ export type AgentSettingsPage =
   | 'mcp'
   | 'permissions'
   | 'helpers'
-  | 'quick';
+  | 'quick'
+  | 'preview';
 
 export const AGENT_SETTINGS_PAGES: ReadonlyArray<{ page: AgentSettingsPage; label: string }> = [
   { page: 'general', label: 'General' },
@@ -28,6 +29,7 @@ export const AGENT_SETTINGS_PAGES: ReadonlyArray<{ page: AgentSettingsPage; labe
   { page: 'permissions', label: 'Permissions' },
   { page: 'helpers', label: 'Helpers' },
   { page: 'quick', label: 'Quick agents' },
+  { page: 'preview', label: 'Preview' },
 ];
 
 interface AgentSettingsPagesState {
@@ -59,7 +61,8 @@ const INITIAL: Pick<AgentSettingsPagesState, 'page' | 'dirtyPages' | 'counts' | 
   page: 'general',
   dirtyPages: [],
   counts: {},
-  hiddenPages: [],
+  // Preview is for managed agents only (#2895); the view unhides it.
+  hiddenPages: ['preview'],
   shellOpen: false,
   pendingLeave: null,
 };
@@ -166,6 +169,15 @@ export function useAgentSettingsTarget(explorerTab: string): Agent | null {
  * orchestrate in v1, and for an agent on another machine, whose policy lives
  * there. The same rule as the Orchestration card.
  */
-export function hiddenAgentSettingsPages(agent: Pick<Agent, 'parentAgentId' | 'projectId'>, remote: boolean): AgentSettingsPage[] {
-  return agent.parentAgentId || remote ? ['helpers'] : [];
+export function hiddenAgentSettingsPages(
+  agent: Pick<Agent, 'parentAgentId' | 'projectId'>,
+  remote: boolean,
+  managed?: { flag: boolean; on: boolean },
+): AgentSettingsPage[] {
+  const hidden: AgentSettingsPage[] = agent.parentAgentId || remote ? ['helpers'] : [];
+  // Clubhouse-managed agents (#2893): the builder takes over the file pages for
+  // a managed agent; an unmanaged agent keeps one basic page plus orchestration.
+  if (!managed?.flag || remote) return [...hidden, 'preview'];
+  if (managed.on) return [...hidden, 'definitions', 'permissions'];
+  return [...hidden, 'instructions', 'skills', 'definitions', 'mcp', 'permissions', 'preview'];
 }
