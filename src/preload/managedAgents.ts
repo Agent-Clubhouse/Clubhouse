@@ -1,4 +1,4 @@
-import { ipcRenderer } from 'electron';
+import { ipcRenderer, webUtils } from 'electron';
 import { IPC } from '../shared/ipc-channels';
 import type {
   ManagedAgentSetup,
@@ -25,7 +25,7 @@ const managed = {
   listParts: (kind: ManagedPartKind) => call<ManagedPartSummary[]>(IPC.MANAGED.LIST_PARTS, kind),
   getPart: (id: string) => call<ManagedPart>(IPC.MANAGED.GET_PART, id),
   createPart: (input: { name: string; description?: string; content: ManagedPartContent }) => call<ManagedPartSummary>(IPC.MANAGED.CREATE_PART, input),
-  updatePart: (input: { id: string; expectedRevision: number; name?: string; description?: string; content?: ManagedPartContent }) => call<ManagedPartSummary>(IPC.MANAGED.UPDATE_PART, input),
+  updatePart: (input: { id: string; expectedRevision: number; expectedName?: string; expectedDescription?: string; name?: string; description?: string; content?: ManagedPartContent }) => call<ManagedPartSummary>(IPC.MANAGED.UPDATE_PART, input),
   forkPart: (id: string, agent?: { projectPath: string; agentId: string }, name?: string) => call<ManagedPartSummary>(IPC.MANAGED.FORK_PART, id, agent, name),
   backToShared: (projectPath: string, agentId: string, id: string) => call<void>(IPC.MANAGED.BACK_TO_SHARED, projectPath, agentId, id),
   deletePart: (id: string, expectedRevision: number, mode: 'copy' | 'remove') => call<void>(IPC.MANAGED.DELETE_PART, id, expectedRevision, mode),
@@ -63,6 +63,15 @@ const managed = {
   isWorking: (agentId: string) => call<boolean>(IPC.MANAGED.IS_WORKING, agentId),
   restart: (projectPath: string, agentId: string, options?: { fresh?: boolean; whenTurnEnds?: boolean }) => call<{ resumed: boolean; noSession?: boolean }>(IPC.MANAGED.RESTART, projectPath, agentId, options),
   setClubhouseFeatures: (projectPath: string, agentId: string, on: boolean) => call<void>(IPC.MANAGED.SET_CLUBHOUSE_FEATURES, projectPath, agentId, on),
+  /**
+   * Skill import (#2894): each file's real executable bit, or null when it
+   * can't be told (Windows, or a file that isn't on disk). The paths never
+   * reach page code: they are resolved here from the File objects.
+   */
+  executableBits: (files: File[]) => {
+    const paths = files.map((f) => { try { return webUtils.getPathForFile(f); } catch { return ''; } });
+    return call<Array<boolean | null>>(IPC.MANAGED.EXECUTABLE_BITS, paths);
+  },
   /** Parts, templates or setups changed somewhere. Returns an unsubscribe function. */
   onChanged: (listener: () => void): (() => void) => {
     const handler = () => listener();

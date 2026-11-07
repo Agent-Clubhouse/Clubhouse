@@ -22,6 +22,22 @@ export interface ManagedAgentSetup {
   mcps: string[];
   /** The template the agent was made from, for display and for pushing template edits. Not a live link. */
   templateId?: string;
+  /**
+   * A helper only: the parts start_helper added to or left out of its
+   * template, for Details ("Helper template, plus Playwright, minus
+   * code-review"). Dropped once the setup's parts change (D91).
+   */
+  helperChanges?: ManagedHelperChanges;
+  /** Who last changed the setup, when not the person: for example "Dispatcher" (D90). */
+  updatedBy?: string;
+  /** When the setup was last saved (ISO time). */
+  updatedAt?: string;
+}
+
+/** What start_helper changed from a helper's template, by part id. */
+export interface ManagedHelperChanges {
+  added: string[];
+  removed: string[];
 }
 
 /**
@@ -179,6 +195,8 @@ export interface ManagedTemplate {
   setup: Omit<ManagedAgentSetup, 'version' | 'templateId'>;
   settings: ManagedTemplateSettings;
   updatedAt?: string;
+  /** Who last changed it, when not the person: for example "Dispatcher" (D90). */
+  updatedBy?: string;
 }
 
 /** One difference between a template's saved version and an edit, for the push dialog. */
@@ -250,6 +268,20 @@ export interface ManagedAgentStatus {
   migrated?: { from: ManagedMigrationFrom; backup: string };
   /** An unmanaged agent whose automatic switch failed: the reason (D59). */
   migrationFailed?: string;
+  /**
+   * A running agent's MCP servers that can't start because variables they
+   * need aren't set in the environment its session started with. Names only,
+   * never values (D95).
+   */
+  mcpProblems?: ManagedMcpProblem[];
+}
+
+/** An MCP server of this session that can't start, and why, in names only. */
+export interface ManagedMcpProblem {
+  /** The server key, as the CLI and the MCP servers card name it. */
+  server: string;
+  /** Variable names it needs that the session's environment doesn't have. */
+  missingEnv: string[];
 }
 
 /** The exact result an agent gets at its next start. */

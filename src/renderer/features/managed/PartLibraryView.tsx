@@ -112,7 +112,7 @@ function PartDetail({ part, onEdit, onFork, onDelete }: {
     setBusy(true);
     setError(null);
     try {
-      await unwrap(managed().updatePart({ id: part.id, expectedRevision: part.revision, name: next }));
+      await unwrap(managed().updatePart({ id: part.id, expectedRevision: part.revision, expectedName: part.name, name: next }));
       setRenaming(false);
     } catch (err) {
       // telemetry-exempt: shown in the detail panel.

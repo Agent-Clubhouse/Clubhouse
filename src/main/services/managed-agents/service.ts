@@ -10,7 +10,7 @@
  */
 import { canonicalHash } from '../asset-catalog/planner';
 import { AssetCatalogError, installBuiltinAsset, type AssetCatalogStore } from '../asset-catalog/store';
-import { auditChanged, auditChanges, withSettingsSurface } from '../settings-audit';
+import { auditChanged, auditChanges, currentSettingsOrigin, withSettingsSurface } from '../settings-audit';
 import { appLog } from '../log-service';
 import type { AssetPayload, BlockAssetPayload, CatalogEntry, McpAssetPayload, SkillAssetPayload } from '../../../shared/asset-catalog-types';
 import type { DurableAgentConfig } from '../../../shared/types';
@@ -24,6 +24,7 @@ import {
   isListed,
   type ManagedAgentSetup,
   type ManagedErrorCode,
+  type ManagedHelperChanges,
   type ManagedPart,
   type ManagedPartConsumer,
   type ManagedPartContent,
@@ -89,6 +90,21 @@ export function withClubhouseSetup(setup: ManagedAgentSetup): ManagedAgentSetup 
 
 function withClubhousePartIn<T extends { setup: { blocks: string[]; skills: string[]; mcps: string[] } }>(t: T): T {
   return t.setup.mcps.includes(CLUBHOUSE_MCP_PART_ID) ? t : { ...t, setup: { ...t.setup, mcps: withClubhousePart(t.setup.mcps) } };
+}
+
+/**
+ * Who a write is attributed to when it isn't the person (D90): the caller's
+ * own name for it, else "Dispatcher" for a write that runs under the
+ * Dispatcher's surface (its builder tools), else nobody.
+ */
+export function actorOf(explicit?: string): string | undefined {
+  if (explicit) return explicit;
+  return currentSettingsOrigin().surface === 'dispatcher' ? 'Dispatcher' : undefined;
+}
+
+function sameParts(a: Pick<ManagedAgentSetup, 'blocks' | 'skills' | 'mcps'>, b: Pick<ManagedAgentSetup, 'blocks' | 'skills' | 'mcps'>): boolean {
+  const key = (x: Pick<ManagedAgentSetup, 'blocks' | 'skills' | 'mcps'>) => JSON.stringify([x.blocks, x.skills, withClubhousePart(x.mcps)]);
+  return key(a) === key(b);
 }
 
 function listOf(setup: ManagedAgentSetup, kind: ManagedPartKind): string[] {
@@ -323,8 +339,33 @@ export function createManagedAgentsService(deps: ManagedAgentsDeps) {
     return `${wanted} ${Date.now()}`;
   }
 
-  async function writeAgentSetup(projectPath: string, agentId: string, setup: ManagedAgentSetup): Promise<void> {
-    await deps.setManagedSetup(projectPath, agentId, setup);
+  /**
+   * Every setup write goes through here. It stamps when and, for a write that
+   * isn't the person's, who (D90). A helper's start_helper changes are kept
+   * while its parts stay as they were, and dropped once they change (D91).
+   */
+  async function writeAgentSetup(
+    projectPath: string,
+    agentId: string,
+    setup: ManagedAgentSetup,
+    opts: { before?: DurableAgentConfig | null; helperChanges?: ManagedHelperChanges; actor?: string } = {},
+  ): Promise<ManagedAgentSetup> {
+    const before = opts.before !== undefined ? opts.before : await deps.getAgent(projectPath, agentId);
+    const kept = before?.managed?.helperChanges && sameParts(before.managed, setup) ? before.managed.helperChanges : undefined;
+    const helperChanges = opts.helperChanges ?? kept;
+    const actor = actorOf(opts.actor);
+    const written: ManagedAgentSetup = {
+      version: 1,
+      blocks: setup.blocks,
+      skills: setup.skills,
+      mcps: setup.mcps,
+      ...(setup.templateId && { templateId: setup.templateId }),
+      ...(helperChanges && (helperChanges.added.length > 0 || helperChanges.removed.length > 0) && { helperChanges }),
+      updatedAt: new Date().toISOString(),
+      ...(actor && { updatedBy: actor }),
+    };
+    await deps.setManagedSetup(projectPath, agentId, written);
+    return written;
   }
 
   const api = {
@@ -392,18 +433,33 @@ export function createManagedAgentsService(deps: ManagedAgentsDeps) {
         mapCatalogError(err);
       }
       await state.update((s) => {
-        s.parts[entry.id] = { ...(input.description?.trim() && { description: input.description.trim() }), ...(input.actor && { updatedBy: input.actor }) };
+        const actor = actorOf(input.actor);
+        s.parts[entry.id] = { ...(input.description?.trim() && { description: input.description.trim() }), ...(actor && { updatedBy: actor }) };
       });
       await auditManaged('managed.part.created', entry.id);
       changed();
       return summarize(entry);
     },
 
-    /** Edit a custom part for everyone who uses it. Built-ins are read-only. */
-    async updatePart(input: { id: string; expectedRevision: number; name?: string; description?: string; content?: ManagedPartContent; actor?: string }): Promise<ManagedPartSummary> {
+    /**
+     * Edit a custom part for everyone who uses it. Built-ins are read-only.
+     * A rename or a description edit doesn't change the revision, so the
+     * editor and the MCP tool also send the name and description they read
+     * (`expectedName`, `expectedDescription`): a part renamed or redescribed
+     * since is refused as stale like a content change (D92).
+     */
+    async updatePart(input: {
+      id: string; expectedRevision: number; expectedName?: string; expectedDescription?: string;
+      name?: string; description?: string; content?: ManagedPartContent; actor?: string;
+    }): Promise<ManagedPartSummary> {
       let entry = await entryOf(input.id);
       if (entry.source.kind === 'builtin') throw new ManagedError('builtin_read_only', 'Built-in parts can\'t be edited. Make your copy instead.');
       if (entry.headRevision !== input.expectedRevision) throw new ManagedError('stale', 'It changed since you opened it.');
+      const currentDescription = (await state.read()).parts[entry.id]?.description ?? '';
+      if ((input.expectedName !== undefined && input.expectedName.trim() !== entry.name)
+        || (input.expectedDescription !== undefined && input.expectedDescription.trim() !== currentDescription)) {
+        throw new ManagedError('stale', 'It changed since you opened it.');
+      }
       refuseEnvValues(input.content);
       try {
         if (input.content) {
@@ -433,7 +489,8 @@ export function createManagedAgentsService(deps: ManagedAgentsDeps) {
           if (input.description.trim()) meta.description = input.description.trim();
           else delete meta.description;
         }
-        if (input.actor) meta.updatedBy = input.actor;
+        const actor = actorOf(input.actor);
+        if (actor) meta.updatedBy = actor;
         else delete meta.updatedBy;
         s.parts[entry.id] = meta;
       });
@@ -472,11 +529,12 @@ export function createManagedAgentsService(deps: ManagedAgentsDeps) {
       const s0 = await state.read();
       const description = entry.source.kind === 'builtin' ? BUILTINS.get(entry.id)?.description : s0.parts[entry.id]?.description;
       await state.update((s) => {
-        s.parts[copy.id] = { ...(description && { description }), forkedFrom: entry.id, ...(input.actor && { updatedBy: input.actor }) };
+        const actor = actorOf(input.actor);
+        s.parts[copy.id] = { ...(description && { description }), forkedFrom: entry.id, ...(actor && { updatedBy: actor }) };
       });
       await auditManaged('managed.part.created', copy.id);
       if (agent && input.agent) {
-        await writeAgentSetup(input.agent.projectPath, input.agent.agentId, replaceIn(agent.managed!, entry.id, copy.id));
+        await writeAgentSetup(input.agent.projectPath, input.agent.agentId, replaceIn(agent.managed!, entry.id, copy.id), { before: agent, actor: input.actor });
       }
       changed();
       return summarize(copy);
@@ -490,7 +548,7 @@ export function createManagedAgentsService(deps: ManagedAgentsDeps) {
       const origin = s.parts[input.id]?.forkedFrom;
       const live = await liveEntries();
       if (!origin || !live[origin]) throw new ManagedError('not_found', 'The part it was copied from is gone.');
-      await writeAgentSetup(input.projectPath, input.agentId, replaceIn(agent.managed, input.id, origin));
+      await writeAgentSetup(input.projectPath, input.agentId, replaceIn(agent.managed, input.id, origin), { before: agent });
       changed();
     },
 
@@ -524,9 +582,9 @@ export function createManagedAgentsService(deps: ManagedAgentsDeps) {
           const copy = await catalog.createAsset({ kind: entry.kind, name, payload: contentToPayload(content) });
           await state.update((s) => { s.parts[copy.id] = { ...(description && { description }) }; });
           await auditManaged('managed.part.created', copy.id);
-          await writeAgentSetup(projectPath, agent.id, replaceIn(setup, entry.id, copy.id));
+          await writeAgentSetup(projectPath, agent.id, replaceIn(setup, entry.id, copy.id), { before: agent });
         } else {
-          await writeAgentSetup(projectPath, agent.id, replaceIn(setup, entry.id, null));
+          await writeAgentSetup(projectPath, agent.id, replaceIn(setup, entry.id, null), { before: agent });
         }
       }
       await state.update((s) => {
@@ -584,15 +642,26 @@ export function createManagedAgentsService(deps: ManagedAgentsDeps) {
       return next;
     },
 
-    /** Save what an agent is built from, after checkSetup's checks. The Clubhouse MCP part is added when it's missing. */
-    async saveSetup(projectPath: string, agentId: string, setup: Omit<ManagedAgentSetup, 'version'>): Promise<ManagedAgentSetup> {
+    /**
+     * Save what an agent is built from, after checkSetup's checks. The Clubhouse
+     * MCP part is added when it's missing. `helperChanges` is start_helper's
+     * record of what it changed from the template; who saved it comes from
+     * `actor` or the surface the call runs under (D90). Bookkeeping fields the
+     * caller passes inside `setup` are ignored.
+     */
+    async saveSetup(
+      projectPath: string,
+      agentId: string,
+      setup: Omit<ManagedAgentSetup, 'version'>,
+      opts: { helperChanges?: ManagedHelperChanges; actor?: string } = {},
+    ): Promise<ManagedAgentSetup> {
       const agent = await deps.getAgent(projectPath, agentId);
       if (!agent) throw new ManagedError('not_found');
       if (!agent.worktreePath) throw new ManagedError('invalid', `${agent.name} works in the project folder. Managed agents need their own folder.`);
       const next = await api.checkSetup(setup);
-      await writeAgentSetup(projectPath, agentId, next);
+      const written = await writeAgentSetup(projectPath, agentId, next, { before: agent, ...opts });
       changed();
-      return next;
+      return written;
     },
 
     /**
@@ -621,7 +690,7 @@ export function createManagedAgentsService(deps: ManagedAgentsDeps) {
       return t;
     },
 
-    async saveTemplate(input: Omit<ManagedTemplate, 'builtin' | 'updatedAt' | 'id'> & { id?: string }): Promise<ManagedTemplate> {
+    async saveTemplate(input: Omit<ManagedTemplate, 'builtin' | 'updatedAt' | 'updatedBy' | 'id'> & { id?: string; actor?: string }): Promise<ManagedTemplate> {
       if (input.id && BUILTIN_TEMPLATES.has(input.id)) throw new ManagedError('builtin_read_only', 'Built-in templates can\'t be edited. Make your copy instead.');
       const name = input.name.trim();
       if (!name) throw new ManagedError('invalid', 'Give it a name.');
@@ -629,6 +698,7 @@ export function createManagedAgentsService(deps: ManagedAgentsDeps) {
       // Parts that exist, each once (as checkSetup keeps them), so a repeated skill is no clash with itself.
       const keep = (ids: string[]) => [...new Set(ids)].filter((id) => live[id]);
       refuseSkillFolderClash(await skillFolders(keep(input.setup.skills), live));
+      const actor = actorOf(input.actor);
       const template = await state.update((s) => {
         const id = input.id ?? `template-${Math.random().toString(36).slice(2, 10)}${Date.now().toString(36)}`;
         if (input.id && !s.templates[input.id]) throw new ManagedError('not_found');
@@ -640,6 +710,7 @@ export function createManagedAgentsService(deps: ManagedAgentsDeps) {
           setup: { blocks: keep(input.setup.blocks), skills: keep(input.setup.skills), mcps: withClubhousePart(keep(input.setup.mcps)) },
           settings: templateSettingsToKeep(input.settings ?? {}),
           updatedAt: new Date().toISOString(),
+          ...(actor && { updatedBy: actor }),
         };
         s.templates[id] = t;
         return t;
@@ -658,6 +729,15 @@ export function createManagedAgentsService(deps: ManagedAgentsDeps) {
       });
       await auditManaged('managed.template.deleted', id);
       changed();
+    },
+
+    /** The agents made from a template, with project and status, for a delete's preview. */
+    async templateConsumers(id: string): Promise<ManagedPartConsumer[]> {
+      return (await managedAgents())
+        .filter(({ agent }) => agent.managed?.templateId === id)
+        .map(({ projectPath, projectName, agent }) => ({
+          projectPath, projectName, agentId: agent.id, agentName: agent.name, color: agent.color, running: deps.isRunning(agent.id),
+        }));
     },
 
     /** Save an agent's whole setup and settings as a new template. */
@@ -747,9 +827,12 @@ export function createManagedAgentsService(deps: ManagedAgentsDeps) {
         }
       }
       if (!BUILTIN_TEMPLATES.has(id)) {
+        const actor = actorOf();
         await state.update((s) => {
           const t = s.templates[id];
-          if (t) s.templates[id] = { ...t, setup: { ...next.setup }, settings: templateSettingsToKeep(next.settings), updatedAt: new Date().toISOString() };
+          if (!t) return;
+          const { updatedBy: _was, ...rest } = t;
+          s.templates[id] = { ...rest, setup: { ...next.setup }, settings: templateSettingsToKeep(next.settings), updatedAt: new Date().toISOString(), ...(actor && { updatedBy: actor }) };
         });
       }
       // Each agent's own setup change is recorded where agent configs are written.

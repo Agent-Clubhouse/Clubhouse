@@ -11,14 +11,14 @@ import { IPC } from '../../../shared/ipc-channels';
 import { appLog } from '../log-service';
 import type { OrchestratorProvider } from '../../orchestrators/types';
 import type { DurableAgentConfig, McpServerDef } from '../../../shared/types';
-import type { ManagedAgentStatus, ManagedRunningSnapshot } from '../../../shared/managed-agents-types';
+import type { ManagedAgentStatus, ManagedMcpProblem, ManagedRunningSnapshot } from '../../../shared/managed-agents-types';
 import { createManagedAgentsService, ManagedError, type ManagedAgentsService } from './service';
 import { createManagedStateStore, managedStateDir } from './state-store';
 import { ensureBuiltinsOnceFor } from './builtins-once';
 import { MCP_BACKUP_DIR } from './mcp-backup';
 import { keepInstructionsAtFirstStart } from './before-managed';
 import * as path from 'path';
-import { delivered, failedDeliveries, forgetDelivery } from './delivery-records';
+import { delivered, failedDeliveries, forgetDelivery, mcpProblems } from './delivery-records';
 import {
   deliverManagedSetup,
   managedSettingsRows,
@@ -84,6 +84,14 @@ export function _setManagedAgentsForTesting(next: ManagedAgentsService | null): 
 // ── What each running session started with ─────────────────────────────
 
 // Freed when the agent is deleted or a helper disposed, and the text when its session ends (delivery-records).
+
+/** The spawn path: what this session's MCP servers lack. Details shows it while the agent runs; delivery-records frees it. */
+export function recordMcpStartProblems(agentId: string, problems: ManagedMcpProblem[]): void {
+  const before = JSON.stringify(mcpProblems.get(agentId) ?? []);
+  if (problems.length > 0) mcpProblems.set(agentId, problems.map((p) => ({ server: p.server, missingEnv: [...p.missingEnv] })));
+  else mcpProblems.delete(agentId);
+  if (JSON.stringify(problems) !== before) broadcastToAllWindows(IPC.MANAGED.CHANGED);
+}
 
 /** Spawn path: write the setup into the agent's folder and remember what this session got. */
 export async function deliverForSpawn(projectPath: string, agent: DurableAgentConfig, provider: OrchestratorProvider): Promise<void> {
@@ -191,9 +199,11 @@ export async function statusFor(projectPath: string, agentId: string): Promise<M
     const migrationFailed = agent?.managedMigrationFailure?.message;
     return { managed: false, running, waiting: false, changes: [], cliChanged: false, ...(migrationFailed && { migrationFailed }) };
   }
-  const notice = agent.managedMigration && !agent.managedMigration.dismissed
-    ? { migrated: { from: agent.managedMigration.from, backup: agent.managedMigration.backup } }
-    : {};
+  const problems = running ? mcpProblems.get(agentId) : undefined;
+  const notice = {
+    ...(agent.managedMigration && !agent.managedMigration.dismissed && { migrated: { from: agent.managedMigration.from, backup: agent.managedMigration.backup } }),
+    ...(problems && problems.length > 0 && { mcpProblems: problems }),
+  };
   const failed = failedDeliveries.get(agentId);
   if (running && failed) {
     return { managed: true, running, waiting: true, changes: [`Setup couldn't be written: ${failed}`], cliChanged: false, deliveryFailed: failed, ...notice };

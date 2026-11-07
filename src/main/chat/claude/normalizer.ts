@@ -164,7 +164,8 @@ export class ClaudeNormalizer {
         ...(Array.isArray(msg.mcp_servers) && {
           mcpServers: msg.mcp_servers.filter(isObj).flatMap((s) => {
             const name = str(s.name);
-            return name ? [{ name, status: str(s.status) ?? '' }] : [];
+            const error = str(s.error);
+            return name ? [{ name, status: str(s.status) ?? '', ...(error && { error }) }] : [];
           }),
         }),
       }];

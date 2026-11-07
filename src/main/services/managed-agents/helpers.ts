@@ -5,7 +5,7 @@
  * helper only. Nothing is saved back.
  */
 import type { HelperStartArgs } from '../../../shared/types';
-import { CLUBHOUSE_MCP_PART_ID, type ManagedAgentSetup, type ManagedTemplateSettings } from '../../../shared/managed-agents-types';
+import { CLUBHOUSE_MCP_PART_ID, type ManagedAgentSetup, type ManagedHelperChanges, type ManagedTemplateSettings } from '../../../shared/managed-agents-types';
 import type { ManagedAgentsService } from './service';
 import { ensureBuiltinsOnceFor } from './builtins-once';
 import { appLog } from '../log-service';
@@ -49,7 +49,7 @@ export async function managedHelperSetup(
   args: Pick<HelperStartArgs, 'template' | 'addParts' | 'removeParts'>,
   /** The orchestrator's own helper template (`helperTemplateId`), when it has one. */
   agentTemplateId?: string,
-): Promise<ManagedAgentSetup & { templateId: string; settings: ManagedTemplateSettings }> {
+): Promise<ManagedAgentSetup & { templateId: string; settings: ManagedTemplateSettings; helperChanges: ManagedHelperChanges }> {
   // Every helper's setup uses built-in parts (the Clubhouse MCP part at least), so
   // a start before startup installed them, or after that install failed, waits for them.
   try {
@@ -93,17 +93,24 @@ export async function managedHelperSetup(
     skills: working.skills.filter((id) => !drop.has(id)),
     mcps: working.mcps.filter((id) => !drop.has(id)),
   };
+  // Recorded against the template after the Identity swap, so Details says what the helper got (D91).
+  const added: string[] = [];
   for (const raw of args.addParts ?? []) {
     const id = asWorking(raw);
     const kind = live[id]?.kind;
     const list = kind === 'block' ? setup.blocks : kind === 'skill' ? setup.skills : kind === 'mcp' ? setup.mcps : null;
     if (!list) throw new Error(`there is no agent part "${raw}" to add. Call list_agent_parts for ids.`);
     if (!list.includes(id)) list.push(id);
+    // A part the template already had (and wasn't removed) isn't an addition.
+    if (!inTemplate.has(id) || drop.has(id)) { if (!added.includes(id)) added.push(id); }
   }
+  // Removed and added again (a swap back) is no change either way.
+  const removed = [...drop].filter((id) => !added.includes(id));
+  const helperChanges: ManagedHelperChanges = { added: added.filter((id) => !drop.has(id)), removed };
   if (!setup.mcps.includes(CLUBHOUSE_MCP_PART_ID)) setup.mcps.unshift(CLUBHOUSE_MCP_PART_ID);
   // The same checks a saved setup runs, so a helper is never created with a setup that can't be saved.
   const checked = await service.checkSetup({ ...setup, templateId });
-  return { ...checked, templateId, settings: base.settings };
+  return { ...checked, templateId, settings: base.settings, helperChanges };
 }
 
 /**

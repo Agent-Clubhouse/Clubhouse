@@ -378,6 +378,7 @@ export function AgentDetails({ agent, chat, onShowInStream, missedSubagentId, on
 
       {!asleep && <McpCard
         agent={agent}
+        projectPath={projectPath}
         live={chat?.mcpServers ?? null}
         spawnedAt={spawnedAt}
         refreshKey={refreshKey}

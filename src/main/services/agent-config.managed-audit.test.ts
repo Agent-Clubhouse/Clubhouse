@@ -103,6 +103,18 @@ describe('managed setup audit (D13)', () => {
     await setManagedSetup(PROJECT_PATH, 'a1', { version: 1, blocks: ['b1'], skills: [], mcps: ['m1', CLUBHOUSE_MCP_PART_ID] });
     expect((await getDurableConfig(PROJECT_PATH, 'a1'))?.managed?.mcps).toEqual(['m1', CLUBHOUSE_MCP_PART_ID]);
   });
+
+  it('keeps who saved it, when, and start_helper\'s changes, none of them as settings rows (D90, D91)', async () => {
+    await setManagedSetup(PROJECT_PATH, 'a1', {
+      version: 1, blocks: ['b1'], skills: [], mcps: [], helperChanges: { added: ['b1'], removed: ['b0'] }, updatedAt: 't1', updatedBy: 'Dispatcher',
+    });
+    expect((await getDurableConfig(PROJECT_PATH, 'a1'))?.managed).toMatchObject({ helperChanges: { added: ['b1'], removed: ['b0'] }, updatedAt: 't1', updatedBy: 'Dispatcher' });
+    expect(Object.keys(lastAudit().after as object).some((k) => /updated|helper/i.test(k))).toBe(false);
+    await setManagedSetup(PROJECT_PATH, 'a1', { version: 1, blocks: ['b1'], skills: [], mcps: [] });
+    const after = (await getDurableConfig(PROJECT_PATH, 'a1'))?.managed;
+    expect(after).not.toHaveProperty('updatedBy');
+    expect(after).not.toHaveProperty('helperChanges');
+  });
 });
 
 describe('the automatic switch marker (D59)', () => {
