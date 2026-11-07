@@ -137,11 +137,12 @@ export function registerManagedAgentsHandlers(): void {
   ));
   // The effort levels each model of a CLI takes, for the builder's Effort list. `default` is the CLI's default model's.
   ipcMain.handle(IPC.MANAGED.MODEL_EFFORTS, withValidatedArgs([stringArg({ maxLength: 64 }), stringArg({ optional: true, maxLength: 4096 })],
-    (_e, cli, projectPath) => result(async (): Promise<Record<string, string[]>> => {
+    // The project path is still accepted from older renderers but unused: with provider profiles gone (#2935), a CLI's model list is the same in every project.
+    (_e, cli, _projectPath) => result(async (): Promise<Record<string, string[]>> => {
       const provider = getProvider(cli as OrchestratorId);
       if (!provider) return {};
       // telemetry-exempt: a list that can't be read offers no levels; the Effort row says so.
-      const list = await modelListFor(provider, projectPath).catch((): null => null);
+      const list = await modelListFor(provider).catch((): null => null);
       const out: Record<string, string[]> = {};
       for (const m of list?.models ?? []) {
         if (m.efforts?.length) out[m.id] = [...m.efforts];
