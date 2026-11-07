@@ -27,7 +27,9 @@ export const CHAT_SHARDS = {
   ],
 };
 
-/** The specs a shard runs, as `testMatch` globs. An unknown or empty shard throws, rather than running everything or nothing. */
+/** The specs a shard runs, as `testMatch` globs. An unknown or empty shard throws, rather than running everything or nothing.
+ * @param {Record<string, string[]>} [shards]
+ */
 export function chatShardTestMatch(shard, shards = CHAT_SHARDS) {
   const specs = shards[shard];
   if (!specs) throw new Error(`PLAYWRIGHT_CHAT_SHARD is ${shard}, and e2e/chat-shards.mjs has shards ${Object.keys(shards).join(', ')}`);
@@ -35,7 +37,9 @@ export function chatShardTestMatch(shard, shards = CHAT_SHARDS) {
   return specs.map((spec) => `**/${spec}`);
 }
 
-/** What's wrong with the lists, given the chat specs on disk. Empty when each is in exactly one list. */
+/** What's wrong with the lists, given the chat specs on disk. Empty when each is in exactly one list.
+ * @param {Record<string, string[]>} [shards]
+ */
 export function chatShardProblems(specsOnDisk, shards = CHAT_SHARDS) {
   const listed = Object.values(shards).flat();
   const problems = [];

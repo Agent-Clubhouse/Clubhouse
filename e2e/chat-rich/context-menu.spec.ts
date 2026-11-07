@@ -92,8 +92,13 @@ test('native copy menu preserves rich link, image and selection content', async 
     }, path.join(chat.projectDir, 'copy-image.png'));
     expect(await menu(image)).toContain('Copy image');
     await choose('Copy image');
-    await expect.poll(() => app.evaluate(async ({ clipboard }) => {
-      const image = await clipboard.readImage();
+    await expect.poll(() => app.evaluate(async ({ clipboard, nativeImage }) => {
+      const items = await clipboard.read();
+      const type = ['image/png', 'image/jpeg'].find(mime => items.some(item => item.types.includes(mime)));
+      if (!type) return null;
+      const blob = await items.find(item => item.types.includes(type))!.getType(type);
+      if (!('arrayBuffer' in blob)) throw new Error('Expected clipboard image bytes');
+      const image = nativeImage.createFromBuffer(Buffer.from(await blob.arrayBuffer()));
       return { size: image.getSize(), pixels: image.toBitmap().toString('base64') };
     })).toEqual(expected);
 
