@@ -39,7 +39,7 @@ function install(level: LocalTelemetrySink['level'] = 'standard'): void {
   setRuntime({
     level, event: (name: string) => exported.push(name),
     flow: vi.fn(), step: vi.fn(), count: vi.fn(), exception: vi.fn(), replaySpan: vi.fn(), replayTree: vi.fn(),
-    preview: () => [], recentExports: () => [], forceFlush: async () => {}, shutdown: async () => {},
+    preview: (): never[] => [], recentExports: (): never[] => [], forceFlush: async () => {}, shutdown: async () => {},
   } as unknown as TelemetryRuntime);
 }
 
